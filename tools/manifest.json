@@ -1,0 +1,46 @@
+{
+  "profiles": {
+    "linux-x64": {
+      "requiredBundled": [
+        { "name": "rpiboot", "binary": "rpiboot" }
+      ],
+      "requiredBundledDirs": ["mass-storage-gadget64"],
+      "hostRuntimeDependencies": ["ip", "lsusb", "lsblk", "dd", "xz", "sudo", "sync"]
+    },
+    "linux-arm64": {
+      "requiredBundled": [
+        { "name": "rpiboot", "binary": "rpiboot" }
+      ],
+      "requiredBundledDirs": ["mass-storage-gadget64"],
+      "hostRuntimeDependencies": ["ip", "lsusb", "lsblk", "dd", "xz", "sudo", "sync"]
+    },
+    "macos-x64": {
+      "requiredBundled": [
+        { "name": "rpiboot", "binary": "rpiboot" }
+      ],
+      "requiredBundledDirs": ["mass-storage-gadget64"],
+      "hostRuntimeDependencies": []
+    },
+    "macos-arm64": {
+      "requiredBundled": [
+        { "name": "rpiboot", "binary": "rpiboot" }
+      ],
+      "requiredBundledDirs": ["mass-storage-gadget64"],
+      "hostRuntimeDependencies": []
+    },
+    "windows-x64": {
+      "requiredBundled": [
+        { "name": "rpiboot", "binary": "rpiboot.exe" }
+      ],
+      "requiredBundledDirs": ["mass-storage-gadget64"],
+      "hostRuntimeDependencies": []
+    },
+    "windows-arm64": {
+      "requiredBundled": [
+        { "name": "rpiboot", "binary": "rpiboot.exe" }
+      ],
+      "requiredBundledDirs": ["mass-storage-gadget64"],
+      "hostRuntimeDependencies": []
+    }
+  }
+}

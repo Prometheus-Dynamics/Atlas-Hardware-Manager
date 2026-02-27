@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Atlas Hardware Manager
+Comment=Instrument-grade Atlas hardware configuration tool
+Exec=atlas-hardware-manager
+Icon=ca.prometheusdynamics.atlas-hardware-manager
+Terminal=false
+Categories=Utility;
+StartupWMClass=atlas-hardware-manager

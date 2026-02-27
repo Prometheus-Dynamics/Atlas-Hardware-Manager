@@ -1,0 +1,27 @@
+@import "./fonts.css";
+@import "@fortawesome/fontawesome-free/css/all.min.css";
+@import "tailwindcss";
+@plugin "@tailwindcss/forms";
+@plugin "@tailwindcss/typography";
+
+@import "@skeletonlabs/skeleton";
+@import "./themes/helios.css";
+
+@source "../node_modules/@skeletonlabs/skeleton/dist";
+@source "../node_modules/@skeletonlabs/skeleton-svelte/dist";
+
+body {
+  font-family: var(--base-font-family), sans-serif;
+}
+
+.btn.preset-tonal-surface {
+  background-color: color-mix(in oklch, var(--color-surface-400) 28%, var(--color-surface-950));
+  color: var(--color-surface-contrast-light);
+  border-color: color-mix(in oklch, var(--color-surface-600) 40%, var(--color-surface-950));
+}
+
+.btn.preset-tonal-secondary {
+  background-color: color-mix(in oklch, var(--color-secondary-400) 32%, var(--color-surface-950));
+  color: var(--color-secondary-contrast-light);
+  border-color: color-mix(in oklch, var(--color-secondary-500) 45%, var(--color-surface-900));
+}

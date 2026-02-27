@@ -1,0 +1,27 @@
+# Node / SvelteKit
+.DS_Store
+node_modules
+/build
+/.svelte-kit
+/dist
+/package
+/outputs
+bun.lockb
+.cache
+.env
+.env.*
+!.env.example
+tools/**/rpiboot
+tools/**/rpiboot.exe
+tools/**/mass-storage-gadget64/
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# Cargo / Rust
+# (retain Cargo.lock to ensure reproducible builds)
+debug/
+target/
+src-tauri/gen/
+src-tauri/.cargo/
+**/*.rs.bk
+*.pdb

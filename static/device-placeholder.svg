@@ -1,0 +1,23 @@
+<svg width="320" height="200" viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Device Placeholder</title>
+  <desc id="desc">Abstract placeholder illustration for Atlas CAN hardware.</desc>
+  <defs>
+    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2b2f3a"/>
+      <stop offset="100%" stop-color="#161920"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#f59e0b"/>
+      <stop offset="100%" stop-color="#a855f7"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="200" rx="16" fill="url(#gradient)"/>
+  <rect x="36" y="42" width="248" height="116" rx="12" fill="#1f242f" stroke="#2f3542" stroke-width="2"/>
+  <rect x="56" y="62" width="208" height="76" rx="8" fill="#131720" stroke="#3a4253" stroke-width="1.5"/>
+  <path d="M80 150h160" stroke="url(#accent)" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="92" cy="100" r="10" fill="#f59e0b"/>
+  <circle cx="124" cy="100" r="10" fill="#f59e0b" opacity="0.75"/>
+  <circle cx="216" cy="100" r="10" fill="#a855f7"/>
+  <circle cx="248" cy="100" r="10" fill="#a855f7" opacity="0.75"/>
+  <path d="M150 86h40v28h-40z" fill="none" stroke="#4b5563" stroke-width="2" stroke-dasharray="4 6"/>
+</svg>

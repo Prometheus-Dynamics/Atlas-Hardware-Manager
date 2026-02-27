@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["deb", "appimage", "rpm"],
+    "linux": {
+      "deb": {
+        "desktopTemplate": "linux/desktop-template.hbs",
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "librsvg2-2",
+          "iproute2",
+          "usbutils",
+          "util-linux",
+          "xz-utils",
+          "sudo",
+          "coreutils"
+        ],
+        "files": {
+          "/usr/share/applications/Atlas Hardware Manager.desktop": "linux/atlas-hardware-manager.desktop",
+          "/usr/share/applications/atlas-hardware-manager.desktop": "linux/atlas-hardware-manager.desktop",
+          "/usr/share/applications/ca.prometheusdynamics.atlas-hardware-manager.desktop": "linux/ca.prometheusdynamics.atlas-hardware-manager.desktop",
+          "/usr/share/icons/hicolor/scalable/apps/atlas-hardware-manager.svg": "../static/logo.svg",
+          "/usr/share/icons/hicolor/scalable/apps/ca.prometheusdynamics.atlas-hardware-manager.svg": "../static/logo.svg",
+          "/usr/share/icons/hicolor/32x32/apps/ca.prometheusdynamics.atlas-hardware-manager.png": "icons/32x32.png",
+          "/usr/share/icons/hicolor/128x128/apps/ca.prometheusdynamics.atlas-hardware-manager.png": "icons/128x128.png",
+          "/usr/share/icons/hicolor/256x256@2/apps/ca.prometheusdynamics.atlas-hardware-manager.png": "icons/128x128@2x.png"
+        }
+      },
+      "rpm": {
+        "desktopTemplate": "linux/desktop-template.hbs",
+        "files": {
+          "/usr/share/applications/Atlas Hardware Manager.desktop": "linux/atlas-hardware-manager.desktop",
+          "/usr/share/applications/atlas-hardware-manager.desktop": "linux/atlas-hardware-manager.desktop",
+          "/usr/share/applications/ca.prometheusdynamics.atlas-hardware-manager.desktop": "linux/ca.prometheusdynamics.atlas-hardware-manager.desktop",
+          "/usr/share/icons/hicolor/scalable/apps/atlas-hardware-manager.svg": "../static/logo.svg",
+          "/usr/share/icons/hicolor/scalable/apps/ca.prometheusdynamics.atlas-hardware-manager.svg": "../static/logo.svg",
+          "/usr/share/icons/hicolor/32x32/apps/ca.prometheusdynamics.atlas-hardware-manager.png": "icons/32x32.png",
+          "/usr/share/icons/hicolor/128x128/apps/ca.prometheusdynamics.atlas-hardware-manager.png": "icons/128x128.png",
+          "/usr/share/icons/hicolor/256x256@2/apps/ca.prometheusdynamics.atlas-hardware-manager.png": "icons/128x128@2x.png"
+        }
+      }
+    }
+  }
+}

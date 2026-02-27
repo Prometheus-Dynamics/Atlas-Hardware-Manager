@@ -1,0 +1,319 @@
+name: Release Installers
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-version:
+    name: Sync Version From Tag
+    runs-on: ubuntu-22.04
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Update version files
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          if [[ -z "$VERSION" || "$VERSION" == "$TAG" ]]; then
+            echo "Tag must be in v<version> format (received: $TAG)"
+            exit 1
+          fi
+          node scripts/set-project-version.mjs "$VERSION"
+
+      - name: Commit and push version update
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json src-tauri/tauri.windows.conf.json src-tauri/Cargo.lock
+          if git diff --cached --quiet; then
+            echo "Version files already match ${GITHUB_REF_NAME}; nothing to commit."
+            exit 0
+          fi
+
+          git commit -m "chore(release): sync version to ${GITHUB_REF_NAME}"
+          git fetch origin "$DEFAULT_BRANCH"
+          git rebase "origin/$DEFAULT_BRANCH"
+          git push origin "HEAD:$DEFAULT_BRANCH"
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: sync-version
+    if: needs.sync-version.result == 'success' || needs.sync-version.result == 'skipped'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x64
+            os: ubuntu-22.04
+            build_cmd: bun run build:linux:x64
+            rust_target: ""
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+            build_cmd: bun run build:linux:arm64
+            rust_target: aarch64-unknown-linux-gnu
+          - name: windows-x64
+            os: windows-2022
+            build_cmd: bun run build:windows:x64
+            rust_target: ""
+          - name: windows-arm64
+            os: windows-2022
+            build_cmd: bun run build:windows:arm64
+            rust_target: aarch64-pc-windows-msvc
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/set-project-version.mjs "${GITHUB_REF_NAME}"
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.9
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Rust target
+        if: matrix.rust_target != ''
+        run: rustup target add ${{ matrix.rust_target }}
+
+      - name: Configure signing env
+        shell: bash
+        run: |
+          if [ -n "${{ secrets.ATLAS_WINDOWS_TIMESTAMP_URL }}" ]; then
+            echo "ATLAS_WINDOWS_TIMESTAMP_URL=${{ secrets.ATLAS_WINDOWS_TIMESTAMP_URL }}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Import Windows signing certificate
+        if: runner.os == 'Windows'
+        shell: powershell
+        env:
+          ATLAS_WINDOWS_CERTIFICATE_PFX_BASE64: ${{ secrets.ATLAS_WINDOWS_CERTIFICATE_PFX_BASE64 }}
+          ATLAS_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.ATLAS_WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:ATLAS_WINDOWS_CERTIFICATE_PFX_BASE64)) {
+            Write-Host "ATLAS_WINDOWS_CERTIFICATE_PFX_BASE64 is not set; skipping Windows cert import."
+            exit 0
+          }
+          $certDir = Join-Path $env:RUNNER_TEMP "atlas-codesign"
+          New-Item -Path $certDir -ItemType Directory -Force | Out-Null
+          $pfxPath = Join-Path $certDir "atlas-signing.pfx"
+          [System.IO.File]::WriteAllBytes(
+            $pfxPath,
+            [System.Convert]::FromBase64String($env:ATLAS_WINDOWS_CERTIFICATE_PFX_BASE64)
+          )
+          $securePassword = ConvertTo-SecureString $env:ATLAS_WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+          Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $securePassword | Out-Null
+          $thumbprint = (Get-PfxCertificate -FilePath $pfxPath).Thumbprint
+          "ATLAS_WINDOWS_CERT_THUMBPRINT=$thumbprint" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Linux packaging deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            librsvg2-bin \
+            libusb-1.0-0-dev \
+            build-essential \
+            rpm
+
+      - name: Windows rpiboot deps
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            make
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-libusb
+            mingw-w64-x86_64-pkgconf
+
+      - name: Install JS deps
+        run: bun install --frozen-lockfile
+
+      - name: Build installers (Linux)
+        if: runner.os == 'Linux'
+        run: ${{ matrix.build_cmd }}
+
+      - name: Build installers (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        env:
+          ATLAS_WINDOWS_CERT_THUMBPRINT: ${{ env.ATLAS_WINDOWS_CERT_THUMBPRINT }}
+          ATLAS_WINDOWS_TIMESTAMP_URL: ${{ env.ATLAS_WINDOWS_TIMESTAMP_URL }}
+          BUN_INSTALL: ${{ env.BUN_INSTALL }}
+          MSYS2_PATH_TYPE: inherit
+        run: |
+          if ! command -v bun >/dev/null 2>&1; then
+            if [ -n "$BUN_INSTALL" ]; then
+              export PATH="$(cygpath -u "$BUN_INSTALL")/bin:$PATH"
+            fi
+          fi
+
+          export MSYS2_ENV_CONV_EXCL="${MSYS2_ENV_CONV_EXCL:+${MSYS2_ENV_CONV_EXCL};}PKG_CONFIG_PATH;PKG_CONFIG_LIBDIR;PKG_CONFIG"
+          export PKG_CONFIG_PATH="/mingw64/lib/pkgconfig;/mingw64/share/pkgconfig"
+          export PKG_CONFIG_LIBDIR="/mingw64/lib/pkgconfig;/mingw64/share/pkgconfig;/usr/lib/pkgconfig;/usr/share/pkgconfig"
+          export PKG_CONFIG="/mingw64/bin/pkg-config"
+          export ATLAS_RPIBOOT_CC="/mingw64/bin/gcc"
+          export ATLAS_RPIBOOT_CPPFLAGS="-D_POSIX_VERSION=200809L"
+          export ATLAS_RPIBOOT_CFLAGS="-I/mingw64/include/libusb-1.0"
+          export ATLAS_RPIBOOT_LDFLAGS="-L/mingw64/lib -lusb-1.0"
+
+          if ! "$PKG_CONFIG" --modversion libusb-1.0 >/dev/null 2>&1; then
+            echo "::warning::MSYS2 pkg-config lookup for libusb-1.0 failed; using explicit include/library fallback flags."
+            pacman -Q mingw-w64-x86_64-libusb mingw-w64-x86_64-pkgconf || true
+          fi
+
+          command -v bun
+          bun --version
+          ${{ matrix.build_cmd }}
+
+      - name: Upload bundle artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-files-${{ matrix.name }}
+          if-no-files-found: error
+          compression-level: 9
+          path: |
+            outputs/**
+            src-tauri/target/**/bundle/**/*.deb
+            src-tauri/target/**/bundle/**/*.rpm
+            src-tauri/target/**/bundle/**/*.msi
+            src-tauri/target/**/bundle/**/*.exe
+            src-tauri/target/**/bundle/**/*.AppImage
+            src-tauri/target/**/bundle/**/*.appimage
+            src-tauri/target/**/release/atlas-hardware-manager
+            src-tauri/target/**/release/atlas-hardware-manager.exe
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-22.04
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate SHA256 checksums
+        shell: bash
+        run: |
+          cd dist
+          find . -type f -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > SHA256SUMS.txt
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+
+          ASSET_DIR="release-assets"
+          rm -rf "$ASSET_DIR"
+          mkdir -p "$ASSET_DIR"
+          cp SHA256SUMS.txt "$ASSET_DIR/"
+
+          mapfile -d '' candidates < <(
+            find . -type f \
+              ! -path "./$ASSET_DIR/*" \
+              \( \
+                -name "*.deb" -o \
+                -name "*.rpm" -o \
+                -name "*.msi" -o \
+                -name "*-setup.exe" -o \
+                -name "*.AppImage" -o \
+                -name "*.appimage" -o \
+                -name "*.dmg" -o \
+                -name "atlas-hardware-manager" -o \
+                -name "atlas-hardware-manager.exe" \
+              \) \
+              -print0 | sort -z
+          )
+
+          declare -A seen_names=()
+          for file in "${candidates[@]}"; do
+            rel="${file#./}"
+            base="$(basename "$rel")"
+            name="$base"
+
+            if [[ -n "${seen_names[$name]:-}" ]]; then
+              stem="$base"
+              ext=""
+              if [[ "$base" == *.* ]]; then
+                stem="${base%.*}"
+                ext=".${base##*.}"
+              fi
+
+              dir_part="$(dirname "$rel")"
+              dir_part="${dir_part//\//-}"
+              dir_part="${dir_part// /-}"
+              dir_part="$(echo "$dir_part" | tr -cd 'A-Za-z0-9._-')"
+              if [[ -z "$dir_part" || "$dir_part" == "." ]]; then
+                dir_part="artifact"
+              fi
+              name="${stem}-${dir_part}${ext}"
+            fi
+
+            if [[ -n "${seen_names[$name]:-}" ]]; then
+              stem="$name"
+              ext=""
+              if [[ "$name" == *.* ]]; then
+                stem="${name%.*}"
+                ext=".${name##*.}"
+              fi
+
+              index=2
+              while [[ -n "${seen_names[${stem}-${index}${ext}]:-}" ]]; do
+                ((index++))
+              done
+              name="${stem}-${index}${ext}"
+            fi
+
+            cp "$rel" "$ASSET_DIR/$name"
+            seen_names["$name"]=1
+            echo "Prepared asset: $rel -> $ASSET_DIR/$name"
+          done
+
+          echo "Final release assets:"
+          ls -1 "$ASSET_DIR"
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/release-assets/*
+          generate_release_notes: true
