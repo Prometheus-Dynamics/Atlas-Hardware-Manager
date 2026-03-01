@@ -193,7 +193,7 @@ fn run_dd_with_progress(
                                         "flash",
                                         "flash",
                                         "info",
-                                        "Image payload copied. Waiting for device flush/process exit (this can take a while on slower media).",
+                                        "Image payload copied. Waiting for device cache flush/process exit (often 30-90s on USB bridges, independent of image size).",
                                     );
                                 } else if let Some(copy_complete_instant) = copy_complete_at {
                                     let elapsed_after_copy = copy_complete_instant.elapsed().as_secs();
@@ -204,7 +204,7 @@ fn run_dd_with_progress(
                                         "flash",
                                         "info",
                                         format!(
-                                            "Still finalizing device flush ({elapsed_after_copy}s since payload copy completed)."
+                                            "Still finalizing device cache flush ({elapsed_after_copy}s since payload copy completed)."
                                         ),
                                     );
                                 }

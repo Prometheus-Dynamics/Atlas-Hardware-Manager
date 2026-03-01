@@ -1,3 +1,7 @@
+#[path = "app_entry_and_update_state/updater_state.rs"]
+mod updater_state;
+pub(crate) use updater_state::*;
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -23,28 +27,28 @@ pub fn run() {
             greet,
             discover_helios_devices,
             discover_network_devices,
-            get_connection_status,
-            fetch_device_log,
-            list_roborio_wpilib_logs,
-            download_roborio_wpilib_logs,
-            delete_roborio_wpilib_logs,
-            download_and_delete_roborio_wpilib_logs,
-            start_device_telemetry_stream,
-            stop_device_telemetry_stream,
-            list_helios_release_images,
-            get_host_setup_status,
-            run_host_setup_repair,
-            relaunch_elevated,
-            probe_existing_device_ota_update,
-            attach_existing_ota_update,
-            cancel_helios_update,
-            recover_ota_update_session,
-            start_install_helios_os,
-            start_mount_helios_bootloader,
-            install_helios_os,
-            mount_helios_bootloader,
-            run_rpiboot,
-            flash_helios_image
+            telemetry_and_connection::status_and_logs::get_connection_status,
+            telemetry_and_connection::status_and_logs::fetch_device_log,
+            roborio_log_commands::list_roborio_wpilib_logs,
+            roborio_log_commands::download_roborio_wpilib_logs,
+            roborio_log_commands::delete_roborio_wpilib_logs,
+            roborio_log_commands::download_and_delete_roborio_wpilib_logs,
+            telemetry_and_connection::start_device_telemetry_stream,
+            telemetry_and_connection::status_and_logs::stop_device_telemetry_stream,
+            updater_commands::list_helios_release_images,
+            updater_commands::clear_release_image_download_cache,
+            updater_commands::get_host_setup_status,
+            updater_commands::run_host_setup_repair,
+            updater_commands::relaunch_elevated,
+            updater_commands::probe_existing_device_ota_update,
+            updater_commands::attach_existing_ota_update,
+            updater_commands::cancel_helios_update,
+            updater_commands::recover_ota_update_session,
+            updater_commands::start_install_helios_os,
+            updater_commands::start_mount_helios_bootloader,
+            install_flow_main::install_helios_os,
+            updater_mount_helpers::run_rpiboot,
+            updater_mount_helpers::flash_helios_image
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -297,54 +301,4 @@ fn clear_ota_recovery_if_run_matches(app: &tauri::AppHandle, run_id: Option<&str
     if state.run_id == run_id {
         clear_updater_recovery_state(app);
     }
-}
-
-fn is_update_cancel_requested() -> bool {
-    UPDATE_CANCEL_REQUESTED.load(Ordering::Relaxed)
-}
-
-fn set_update_cancel_requested(value: bool) {
-    UPDATE_CANCEL_REQUESTED.store(value, Ordering::Relaxed);
-}
-
-fn begin_updater_job() -> Result<(), String> {
-    UPDATER_JOB_ACTIVE
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .map(|_| ())
-        .map_err(|_| "Another update is already running.".to_string())
-}
-
-fn finish_updater_job() {
-    UPDATER_JOB_ACTIVE.store(false, Ordering::SeqCst);
-}
-
-struct UpdateCancelGuard;
-
-impl UpdateCancelGuard {
-    fn begin() -> Self {
-        set_update_cancel_requested(false);
-        Self
-    }
-}
-
-impl Drop for UpdateCancelGuard {
-    fn drop(&mut self) {
-        set_update_cancel_requested(false);
-    }
-}
-
-fn fail_if_update_cancelled(
-    app: &tauri::AppHandle,
-    run_id: Option<&str>,
-    mode: &str,
-    step: &str,
-) -> Result<(), String> {
-    if !is_update_cancel_requested() {
-        return Ok(());
-    }
-
-    let message = "Update canceled by user.".to_string();
-    emit_updater_progress(app, run_id, mode, step, "error", message.clone());
-    emit_updater_progress(app, run_id, mode, "complete", "error", message.clone());
-    Err(message)
 }

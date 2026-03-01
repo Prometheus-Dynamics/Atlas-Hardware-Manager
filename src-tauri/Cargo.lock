@@ -227,6 +227,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "thiserror 2.0.17",
  "tungstenite",
  "xz2",
  "zip",

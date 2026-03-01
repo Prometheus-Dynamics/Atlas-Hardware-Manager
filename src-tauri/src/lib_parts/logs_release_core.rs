@@ -1,3 +1,9 @@
+#[path = "logs_release_core/release_image_resolution.rs"]
+mod release_image_resolution;
+pub(crate) use release_image_resolution::{
+    clear_release_download_cache, resolve_install_image_path,
+};
+
 fn extract_log_text_from_response(payload: &[u8], content_type: Option<&str>) -> Option<String> {
     if payload.is_empty() {
         return None;
@@ -308,98 +314,6 @@ fn fetch_release_images_from_github() -> Result<Vec<ReleaseImageOption>, String>
     }
 
     Ok(options)
-}
-
-fn resolve_install_image_path(request: &ReleaseInstallRequest) -> Result<(String, String), String> {
-    let release_url = request
-        .release_download_url
-        .as_ref()
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty());
-    let local_path = request
-        .local_image_path
-        .as_ref()
-        .map(|value| value.trim())
-        .filter(|value| !value.is_empty());
-
-    if release_url.is_some() && local_path.is_some() {
-        return Err("Choose either a release image or a local image path, not both.".to_string());
-    }
-
-    if let Some(path) = local_path {
-        let image_path = Path::new(path);
-        if !image_path.is_file() {
-            return Err(format!("Local image path does not exist: {path}"));
-        }
-        return Ok((path.to_string(), "local".to_string()));
-    }
-
-    if let Some(url) = release_url {
-        if !is_supported_release_download_url(url) {
-            return Err("Only GitHub release download URLs are allowed.".to_string());
-        }
-        let downloaded = download_release_asset(url)?;
-        return Ok((downloaded, "release".to_string()));
-    }
-
-    Err("Select a release image or provide a local image path.".to_string())
-}
-
-fn is_supported_release_download_url(url: &str) -> bool {
-    url.starts_with("https://github.com/")
-        || url.starts_with("https://objects.githubusercontent.com/")
-        || url.starts_with("https://github-releases.githubusercontent.com/")
-}
-
-fn download_release_asset(url: &str) -> Result<String, String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(180))
-        .build()
-        .map_err(|error| format!("Unable to build HTTP client: {error}"))?;
-
-    let mut response = client
-        .get(url)
-        .header(reqwest::header::USER_AGENT, "Atlas-Hardware-Manager")
-        .send()
-        .map_err(|error| format!("Failed to download release image: {error}"))?;
-
-    if !response.status().is_success() {
-        return Err(format!(
-            "Release image download failed with status {}",
-            response.status()
-        ));
-    }
-
-    let file_name = url
-        .rsplit('/')
-        .next()
-        .filter(|name| !name.trim().is_empty())
-        .unwrap_or("helios-release.img");
-    let safe_file_name = file_name
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '.' || ch == '-' || ch == '_' {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>();
-
-    let base_dir = env::temp_dir()
-        .join("atlas-hardware-manager")
-        .join("downloads");
-    fs::create_dir_all(&base_dir)
-        .map_err(|error| format!("Unable to create download cache directory: {error}"))?;
-
-    let target_path = base_dir.join(format!("{}-{}", epoch_ms(), safe_file_name));
-    let mut file = fs::File::create(&target_path)
-        .map_err(|error| format!("Unable to create download file: {error}"))?;
-
-    io::copy(&mut response, &mut file)
-        .map_err(|error| format!("Failed while writing downloaded release image: {error}"))?;
-
-    Ok(path_to_string(target_path))
 }
 
 fn select_flash_target_after_rpiboot(before_paths: &HashSet<String>) -> Result<String, String> {

@@ -1,3 +1,41 @@
+fn updater_terminal_complete_runs_slot() -> &'static Mutex<HashSet<String>> {
+    static EMITTED_TERMINAL_COMPLETE_RUNS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    EMITTED_TERMINAL_COMPLETE_RUNS.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+fn mark_terminal_complete_emitted_for_run(run_id: Option<&str>) -> bool {
+    let Some(run_id) = normalize_updater_run_id(run_id) else {
+        return true;
+    };
+    let mut emitted = updater_terminal_complete_runs_slot()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if emitted.contains(&run_id) {
+        return false;
+    }
+    emitted.insert(run_id);
+    true
+}
+
+fn clear_terminal_complete_marker_for_run(run_id: Option<&str>) {
+    let Some(run_id) = normalize_updater_run_id(run_id) else {
+        return;
+    };
+    let mut emitted = updater_terminal_complete_runs_slot()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    emitted.remove(&run_id);
+}
+
+fn emit_updater_event_payload(app: &tauri::AppHandle, payload: UpdaterProgressEvent) {
+    if payload.step == UpdaterStep::Complete
+        && !mark_terminal_complete_emitted_for_run(payload.run_id.as_deref())
+    {
+        return;
+    }
+    let _ = app.emit(UPDATER_PROGRESS_EVENT, payload);
+}
+
 fn emit_updater_progress(
     app: &tauri::AppHandle,
     run_id: Option<&str>,
@@ -8,9 +46,9 @@ fn emit_updater_progress(
 ) {
     let payload = UpdaterProgressEvent {
         run_id: run_id.map(str::to_string),
-        mode: mode.to_string(),
-        step: step.to_string(),
-        status: status.to_string(),
+        mode: mode.into(),
+        step: step.into(),
+        status: status.into(),
         message: message.into(),
         timestamp_epoch_ms: epoch_ms(),
         stdout: None,
@@ -23,7 +61,7 @@ fn emit_updater_progress(
         bytes_written: None,
         bytes_total: None,
     };
-    let _ = app.emit(UPDATER_PROGRESS_EVENT, payload);
+    emit_updater_event_payload(app, payload);
 }
 
 fn emit_operation_progress(
@@ -37,9 +75,9 @@ fn emit_operation_progress(
 ) {
     let payload = UpdaterProgressEvent {
         run_id: run_id.map(str::to_string),
-        mode: mode.to_string(),
-        step: step.to_string(),
-        status: status.to_string(),
+        mode: mode.into(),
+        step: step.into(),
+        status: status.into(),
         message: message.into(),
         timestamp_epoch_ms: epoch_ms(),
         stdout: if operation.stdout.trim().is_empty() {
@@ -60,7 +98,7 @@ fn emit_operation_progress(
         bytes_written: None,
         bytes_total: None,
     };
-    let _ = app.emit(UPDATER_PROGRESS_EVENT, payload);
+    emit_updater_event_payload(app, payload);
 }
 
 fn emit_flash_write_progress(
@@ -109,9 +147,9 @@ fn emit_flash_write_progress(
 
     let payload = UpdaterProgressEvent {
         run_id: context.run_id.clone(),
-        mode: "flash".to_string(),
-        step: "flash".to_string(),
-        status: "running".to_string(),
+        mode: UpdaterMode::Flash,
+        step: UpdaterStep::Flash,
+        status: UpdaterStatus::Running,
         message,
         timestamp_epoch_ms: epoch_ms(),
         stdout: None,
@@ -124,7 +162,7 @@ fn emit_flash_write_progress(
         bytes_written: Some(bytes_written),
         bytes_total,
     };
-    let _ = context.app.emit(UPDATER_PROGRESS_EVENT, payload);
+    emit_updater_event_payload(&context.app, payload);
 }
 
 fn emit_flash_elevation_prompt(context: Option<&FlashProgressContext>, method: &str) {
@@ -139,6 +177,38 @@ fn emit_flash_elevation_prompt(context: Option<&FlashProgressContext>, method: &
         "info",
         format!("Requesting elevated permissions via {method}. Approve the prompt to continue."),
     );
+}
+
+#[cfg(test)]
+mod updater_event_dedupe_tests {
+    use super::*;
+
+    fn updater_event_test_serial_lock() -> &'static Mutex<()> {
+        static SERIAL_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        SERIAL_LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn terminal_complete_marker_deduplicates_per_run_and_resets() {
+        let _serial = updater_event_test_serial_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        clear_terminal_complete_marker_for_run(Some("dedupe-run"));
+        assert!(mark_terminal_complete_emitted_for_run(Some("dedupe-run")));
+        assert!(!mark_terminal_complete_emitted_for_run(Some("dedupe-run")));
+        clear_terminal_complete_marker_for_run(Some("dedupe-run"));
+        assert!(mark_terminal_complete_emitted_for_run(Some("dedupe-run")));
+        clear_terminal_complete_marker_for_run(Some("dedupe-run"));
+    }
+
+    #[test]
+    fn terminal_complete_marker_does_not_dedupe_missing_run_id() {
+        let _serial = updater_event_test_serial_lock()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        assert!(mark_terminal_complete_emitted_for_run(None));
+        assert!(mark_terminal_complete_emitted_for_run(None));
+    }
 }
 
 fn build_host_setup_status() -> HostSetupStatus {

@@ -177,7 +177,114 @@ fn has_passwordless_sudo() -> bool {
     output.status.success()
 }
 
+fn build_pkexec_shell_wrapper_args(program: &str, args: &[String]) -> Result<Vec<String>, String> {
+    let sh_path = resolve_required_tool("sh")?;
+    let mut wrapped = vec![
+        path_to_string(&sh_path),
+        "-c".to_string(),
+        "exec \"$@\"".to_string(),
+        "atlas-pkexec".to_string(),
+        program.to_string(),
+    ];
+    wrapped.extend(args.iter().cloned());
+    Ok(wrapped)
+}
+
+fn ensure_sudo_credentials() -> Result<(), String> {
+    let Some(sudo_path) = find_in_path("sudo") else {
+        return Err("`sudo` is not installed on this Linux host.".to_string());
+    };
+
+    if has_passwordless_sudo() {
+        return Ok(());
+    }
+
+    let askpass_path = resolve_sudo_askpass_helper();
+    let output = if let Some(path) = askpass_path.as_ref() {
+        let askpass_path_string = path_to_string(path);
+        Command::new(&sudo_path)
+            .arg("-A")
+            .arg("-v")
+            .env("SUDO_ASKPASS", askpass_path_string)
+            .output()
+            .map_err(|error| format!("Failed to prompt for sudo credentials: {error}"))?
+    } else {
+        Command::new(&sudo_path)
+            .arg("-v")
+            .output()
+            .map_err(|error| format!("Failed to prompt for sudo credentials: {error}"))?
+    };
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let detail = if stderr.is_empty() {
+            "sudo credential prompt was cancelled or failed.".to_string()
+        } else {
+            stderr
+        };
+        return Err(format!("Unable to acquire sudo credentials: {detail}"));
+    }
+
+    if has_passwordless_sudo() {
+        return Ok(());
+    }
+
+    Err("sudo credentials were not reusable for non-interactive commands.".to_string())
+}
+
+fn atlas_sudo_askpass_helper_path() -> Option<PathBuf> {
+    static ATLAS_SUDO_ASKPASS_HELPER: OnceLock<Option<PathBuf>> = OnceLock::new();
+    ATLAS_SUDO_ASKPASS_HELPER
+        .get_or_init(create_atlas_sudo_askpass_helper)
+        .clone()
+}
+
+fn create_atlas_sudo_askpass_helper() -> Option<PathBuf> {
+    if find_in_path("zenity").is_none() && find_in_path("kdialog").is_none() {
+        return None;
+    }
+
+    let helper_dir = env::temp_dir()
+        .join("atlas-hardware-manager")
+        .join("helpers");
+    if fs::create_dir_all(&helper_dir).is_err() {
+        return None;
+    }
+
+    let helper_path = helper_dir.join("atlas-sudo-askpass.sh");
+    let script = r#"#!/bin/sh
+PROMPT="${1:-Atlas requires administrator privileges.}"
+TITLE="Atlas Hardware Manager"
+if command -v zenity >/dev/null 2>&1; then
+  exec zenity --password --title="$TITLE" --text="$PROMPT"
+fi
+if command -v kdialog >/dev/null 2>&1; then
+  exec kdialog --password "$PROMPT" --title "$TITLE"
+fi
+exit 1
+"#;
+    let needs_write = match fs::read_to_string(&helper_path) {
+        Ok(existing) => existing != script,
+        Err(_) => true,
+    };
+    if needs_write && fs::write(&helper_path, script).is_err() {
+        return None;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = fs::set_permissions(&helper_path, fs::Permissions::from_mode(0o700));
+    }
+
+    Some(helper_path)
+}
+
 fn resolve_sudo_askpass_helper() -> Option<PathBuf> {
+    if let Some(path) = atlas_sudo_askpass_helper_path() {
+        return Some(path);
+    }
+
     for candidate in [
         "ssh-askpass",
         "ksshaskpass",
@@ -206,15 +313,18 @@ fn linux_privilege_strategy() -> Result<LinuxPrivilegeStrategy, String> {
     }
 
     let has_sudo = find_in_path("sudo").is_some();
-    let has_pkexec = find_in_path("pkexec").is_some();
-    // Prefer pkexec for GUI-triggered elevation prompts. This keeps prompts
-    // aligned with the prior system dialog behavior and avoids ssh-askpass UI.
-    if has_pkexec {
-        return Ok(LinuxPrivilegeStrategy::PkexecPrompt);
+    if has_sudo {
+        if let Err(error) = ensure_sudo_credentials() {
+            return Err(format!(
+                "Unable to initialize a reusable sudo authorization session for this update run: {error}"
+            ));
+        }
+        return Ok(LinuxPrivilegeStrategy::SudoNoPrompt);
     }
 
-    if has_sudo {
-        return Ok(LinuxPrivilegeStrategy::SudoPrompt);
+    let has_pkexec = find_in_path("pkexec").is_some();
+    if has_pkexec {
+        return Ok(LinuxPrivilegeStrategy::PkexecPrompt);
     }
 
     Err("No Linux elevation helper found (`pkexec` or `sudo`). Run the app as root.".to_string())

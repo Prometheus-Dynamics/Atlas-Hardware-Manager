@@ -5,201 +5,45 @@
   import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { Panel } from "$lib/components";
+  import {
+    buildStepTemplate,
+    calculateInstallProgress,
+    chipClass,
+    clampPercent,
+    formatBytes,
+    generateInstallRunId,
+    installStepClass,
+    installStepStateLabel,
+    normalizeOtaStageForUi,
+    otaStageProgressHintForUi,
+    statusClass,
+    statusLabel,
+    stepSupportsProgress,
+  } from "$lib/network/helpers";
+  import type {
+    DeviceDiscoveryProgressEvent,
+    DeviceDiscoverySnapshot,
+    DeviceFact,
+    DeviceLogResult,
+    DeviceTelemetryEvent,
+    DiscoveredDevice,
+    ExistingOtaUpdateProbeResult,
+    InstallDeviceHint,
+    InstallLogEntry,
+    OtaApplyTransport,
+    PowerCycleReminder,
+    ReleaseDownloadCacheClearResult,
+    ReleaseImageOption,
+    ReleaseInstallResult,
+    UpdaterProgressEvent,
+    UpdaterRecoverySession,
+    UpdaterStep,
+    WpilibLogActionResult,
+    WpilibLogEntry,
+    WpilibLogListResult,
+    WpilibLogSelection,
+  } from "$lib/network/models";
   import { resetPageHeader, setPageHeader } from "$lib/stores/pageHeader";
-
-  interface DiscoveredDevice {
-    id: string;
-    displayName: string;
-    status: string;
-    connectionChips: string[];
-    ipAddress?: string | null;
-    macAddress?: string | null;
-    interfaceName?: string | null;
-    usbLocation?: string | null;
-    vendorProduct?: string | null;
-    runtimeProduct?: string | null;
-    firmwareVersion?: string | null;
-    osVersion?: string | null;
-    telemetrySummary?: string | null;
-    detail: string;
-  }
-
-  interface DeviceDiscoverySnapshot {
-    generatedAtEpochMs: number;
-    devices: DiscoveredDevice[];
-    warnings: string[];
-  }
-
-  interface DeviceDiscoveryProgressEvent {
-    generatedAtEpochMs: number;
-    devices: DiscoveredDevice[];
-    warnings: string[];
-    inProgress: boolean;
-  }
-
-  interface ReleaseImageOption {
-    releaseTag: string;
-    releaseName: string;
-    prerelease: boolean;
-    assetName: string;
-    downloadUrl: string;
-    sizeBytes: number;
-    publishedAt?: string | null;
-  }
-
-  interface ReleaseInstallResult {
-    success: boolean;
-    mode: string;
-    imagePath?: string | null;
-    selectedTargetPath?: string | null;
-    rpiboot?: OperationResult | null;
-    flash?: OperationResult | null;
-    message: string;
-  }
-
-  interface OperationResult {
-    success: boolean;
-    exitCode?: number | null;
-    durationMs?: number | null;
-    stdout?: string | null;
-    stderr?: string | null;
-    message?: string | null;
-    timedOut?: boolean;
-  }
-
-  interface InstallLogEntry {
-    timestamp: number;
-    level: "info" | "warn" | "error";
-    text: string;
-  }
-
-  interface UpdaterProgressEvent {
-    runId?: string | null;
-    mode: string;
-    step: string;
-    status: "running" | "success" | "error" | "skipped" | "info";
-    message: string;
-    timestampEpochMs: number;
-    stdout?: string | null;
-    stderr?: string | null;
-    exitCode?: number | null;
-    durationMs?: number | null;
-    imagePath?: string | null;
-    targetPath?: string | null;
-    progressPercent?: number | null;
-    bytesWritten?: number | null;
-    bytesTotal?: number | null;
-  }
-
-  type UpdaterStepStatus = "pending" | "active" | "done" | "error" | "skipped";
-
-  interface UpdaterStep {
-    key: string;
-    label: string;
-    detail: string;
-    status: UpdaterStepStatus;
-  }
-
-  interface DeviceFact {
-    label: string;
-    value: string;
-  }
-
-  interface DeviceLogResult {
-    success: boolean;
-    sourceUrl?: string | null;
-    lineCount: number;
-    truncated: boolean;
-    fetchedAtEpochMs: number;
-    logText: string;
-    message: string;
-  }
-
-  interface DeviceTelemetryEvent {
-    streamId: string;
-    status: "connecting" | "data" | "error" | "stopped";
-    message: string;
-    timestampEpochMs: number;
-    runtimeProduct?: string | null;
-    osVersion?: string | null;
-    telemetrySummary?: string | null;
-    sourceUrl?: string | null;
-  }
-
-  interface WpilibLogEntry {
-    id: string;
-    fileName: string;
-    remotePath: string;
-    sizeBytes: number;
-    modifiedEpochMs?: number | null;
-  }
-
-  interface WpilibLogListResult {
-    success: boolean;
-    fetchedAtEpochMs: number;
-    entries: WpilibLogEntry[];
-    message: string;
-  }
-
-  interface WpilibLogSelection {
-    fileName: string;
-    remotePath: string;
-  }
-
-  interface WpilibLogActionItemResult {
-    fileName: string;
-    remotePath: string;
-    localPath?: string | null;
-    success: boolean;
-    message: string;
-  }
-
-  interface WpilibLogActionResult {
-    success: boolean;
-    processedCount: number;
-    successCount: number;
-    failedCount: number;
-    completedAtEpochMs: number;
-    downloadDirectory?: string | null;
-    results: WpilibLogActionItemResult[];
-    message: string;
-  }
-  
-  interface UpdaterRecoverySession {
-    runId: string;
-    mode: string;
-    targetIpAddress?: string | null;
-    expectedUpdateId?: string | null;
-    startedAtEpochMs: number;
-    resumedAtEpochMs: number;
-    note?: string | null;
-  }
-
-  interface ExistingOtaUpdateProbeResult {
-    targetIpAddress: string;
-    updateId?: string | null;
-    stage?: string | null;
-    progressPercent?: number | null;
-    lastError?: string | null;
-  }
-
-  interface PowerCycleReminder {
-    runId?: string | null;
-    deviceId?: string | null;
-    message: string;
-    createdAtEpochMs: number;
-  }
-
-  interface InstallDeviceHint {
-    usbLocation?: string | null;
-    macAddress?: string | null;
-    ipAddress?: string | null;
-    vendorProduct?: string | null;
-    runtimeProduct?: string | null;
-    displayName?: string | null;
-  }
-
-  type OtaApplyTransport = "api" | "usb";
 
   let devices: DiscoveredDevice[] = [];
   let selectedDeviceId: string | null = null;
@@ -216,6 +60,8 @@
   let releaseOptions: ReleaseImageOption[] = [];
   let releasesLoading = false;
   let releasesError: string | null = null;
+  let releaseCacheActionBusy = false;
+  let releaseCacheMessage: string | null = null;
   let installAction: "flash" | "mount" | "ota" = "flash";
   let otaApplyMenuOpen = false;
   let imageSource: "release" | "local" = "release";
@@ -493,11 +339,7 @@
       const activeMode = currentInstallMode();
       if (payloadRunId) {
         if (payloadRunId !== expectedRunId) {
-          if (!installBusy || payload.mode !== activeMode) {
-            return;
-          }
-          // Keep receiving progress when backend run-id formatting differs during the same active mode.
-          installRunId = payloadRunId;
+          return;
         }
       } else if (!installBusy || payload.mode !== activeMode) {
         return;
@@ -554,6 +396,7 @@
       } else if (normalizedStepStatus === "error") {
         installSessionStatus = "error";
         recordInstallError(payload.message);
+        installError = payload.message;
       }
       if (payload.stdout) {
         appendInstallLog("info", payload.stdout);
@@ -583,6 +426,11 @@
           installSessionStatus = "success";
         } else {
           installSessionStatus = "error";
+          if (installLatestError) {
+            installError = installLatestError;
+          } else {
+            installError = payload.message || "Updater failed. Check logs for details.";
+          }
         }
         const wasBusy = installBusy;
         installBusy = false;
@@ -930,26 +778,6 @@
     return candidates;
   }
 
-  function normalizeOtaStageForUi(value: string | null | undefined): string {
-    const normalized = (value ?? "").trim().toLowerCase();
-    if (!normalized) {
-      return "unknown";
-    }
-    return normalized.replace(/\s+/g, "_");
-  }
-
-  function otaStageProgressHintForUi(stage: string): number | null {
-    if (stage === "downloading") return 15;
-    if (stage === "verifying") return 35;
-    if (stage === "awaiting_window") return 55;
-    if (stage === "applying" || stage === "installing") return 75;
-    if (stage === "committing") return 88;
-    if (stage === "finalizing") return 94;
-    if (stage === "pending_reboot" || stage === "pending-reboot") return 97;
-    if (stage === "rebooting" || stage === "complete") return 100;
-    return null;
-  }
-
   function seedOtaAttachSessionFromProbe(probe: ExistingOtaUpdateProbeResult): void {
     const stage = normalizeOtaStageForUi(probe.stage);
     const hasExplicitProgress =
@@ -986,12 +814,6 @@
         "ota-monitor": progress,
       };
     }
-  }
-
-  function generateInstallRunId(): string {
-    return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
 
   async function attachToExistingOtaUpdateSession(
@@ -1892,6 +1714,27 @@
     }
   }
 
+  async function clearReleaseDownloadCache(): Promise<void> {
+    if (installBusy || releaseCacheActionBusy) {
+      return;
+    }
+
+    releaseCacheActionBusy = true;
+    releasesError = null;
+    releaseCacheMessage = null;
+    try {
+      const result = await invoke<ReleaseDownloadCacheClearResult>(
+        "clear_release_image_download_cache",
+      );
+      releaseCacheMessage = result.message;
+    } catch (error) {
+      releasesError =
+        error instanceof Error ? error.message : "Unable to clear release download cache.";
+    } finally {
+      releaseCacheActionBusy = false;
+    }
+  }
+
   async function openUpdateModal(): Promise<void> {
     if (!supportsUpdateAction(selectedDevice)) {
       actionError = "Updates are not available for this device.";
@@ -2196,41 +2039,6 @@
     installLatestError = null;
   }
 
-  function buildStepTemplate(mode: "flash" | "mount" | "ota"): UpdaterStep[] {
-    if (mode === "ota") {
-      return [
-        { key: "resolve-image", label: "Resolve Image", detail: "Download/select update image.", status: "pending" },
-        { key: "resolve-target", label: "Resolve Target", detail: "Resolve OTA API endpoint for the selected device.", status: "pending" },
-        { key: "ota-upload", label: "Upload OTA", detail: "Upload image to OTA endpoint.", status: "pending" },
-        { key: "ota-apply", label: "Apply OTA", detail: "Trigger and track device-side OTA apply stages.", status: "pending" },
-        { key: "ota-monitor", label: "Track OTA State", detail: "Read OTA stage/progress from device state.", status: "pending" },
-        { key: "ota-reconnect", label: "Wait Reconnect", detail: "Wait for reboot and online reconnect.", status: "pending" },
-        { key: "complete", label: "Complete", detail: "OTA workflow finished.", status: "pending" },
-      ];
-    }
-    if (mode === "mount") {
-      return [
-        { key: "scan-targets", label: "Scan Targets", detail: "Inspect removable flash targets.", status: "pending" },
-        { key: "bootloader-check", label: "Detect Bootloader", detail: "Check USB bootloader presence.", status: "pending" },
-        { key: "rpiboot", label: "Run rpiboot", detail: "Mount mass-storage gadget if needed.", status: "pending" },
-        { key: "select-target", label: "Select Target", detail: "Choose mounted flash disk.", status: "pending" },
-        { key: "complete", label: "Complete", detail: "Mount workflow finished.", status: "pending" },
-      ];
-    }
-
-    return [
-      { key: "resolve-image", label: "Resolve Image", detail: "Download/select install image.", status: "pending" },
-      { key: "scan-targets", label: "Scan Targets", detail: "Inspect removable flash targets.", status: "pending" },
-      { key: "bootloader-check", label: "Detect Bootloader", detail: "Check USB bootloader presence.", status: "pending" },
-      { key: "rpiboot", label: "Run rpiboot", detail: "Mount mass-storage gadget if needed.", status: "pending" },
-      { key: "select-target", label: "Select Target", detail: "Choose flash disk for write.", status: "pending" },
-      { key: "flash", label: "Write Image", detail: "Flash image to selected target.", status: "pending" },
-      { key: "verify", label: "Verify Image", detail: "Verify flashed target against source image.", status: "pending" },
-      { key: "finalize-target", label: "Finalize Device", detail: "Attempt eject/power-cycle after write.", status: "pending" },
-      { key: "complete", label: "Complete", detail: "Install workflow finished.", status: "pending" },
-    ];
-  }
-
   function applyStepProgress(step: string, status: UpdaterProgressEvent["status"]): void {
     const stepIndex = installSteps.findIndex((entry) => entry.key === step);
     if (stepIndex < 0) {
@@ -2309,77 +2117,6 @@
     });
   }
 
-  function calculateInstallProgress(
-    steps: UpdaterStep[],
-    stepProgressPercent: Record<string, number>,
-  ): number {
-    if (steps.length === 0) {
-      return 0;
-    }
-
-    const otaMode = steps.some((step) => step.key.startsWith("ota-"));
-    const flashMode = !otaMode && steps.some((step) => step.key === "flash");
-    const weightByStep = new Map<string, number>(
-      otaMode
-        ? [
-            ["resolve-image", 0.05],
-            ["resolve-target", 0.05],
-            ["ota-upload", 0.2],
-            ["ota-apply", 0.1],
-            ["ota-monitor", 0.35],
-            ["ota-reconnect", 0.25],
-            ["complete", 0.0],
-          ]
-        : flashMode
-        ? [
-            ["resolve-image", 0.03],
-            ["scan-targets", 0.03],
-            ["bootloader-check", 0.03],
-            ["rpiboot", 0.03],
-            ["select-target", 0.03],
-            ["flash", 0.7],
-            ["verify", 0.1],
-            ["finalize-target", 0.05],
-            ["complete", 0.0],
-          ]
-        : [
-            ["scan-targets", 0.25],
-            ["bootloader-check", 0.2],
-            ["rpiboot", 0.2],
-            ["select-target", 0.3],
-            ["complete", 0.05],
-          ],
-    );
-
-    let completedWeight = 0;
-    let totalWeight = 0;
-    for (const step of steps) {
-      const weight = weightByStep.get(step.key) ?? 0;
-      totalWeight += weight;
-
-      if (weight <= 0) {
-        continue;
-      }
-
-      if (step.status === "done" || step.status === "skipped" || step.status === "error") {
-        completedWeight += weight;
-      } else if (step.status === "active") {
-        const progress = stepProgressPercent[step.key];
-        if (progress != null && Number.isFinite(progress)) {
-          completedWeight += weight * (clampPercent(progress) / 100);
-        } else {
-          completedWeight += weight * 0.5;
-        }
-      }
-    }
-
-    if (totalWeight <= 0) {
-      return 0;
-    }
-
-    return Math.min(1, Math.max(0, completedWeight / totalWeight));
-  }
-
   function currentInstallMode(): "flash" | "mount" | "ota" {
     if (installSessionMode) {
       return installSessionMode;
@@ -2429,24 +2166,6 @@
     return "Failed";
   }
 
-  function formatBytes(value: number): string {
-    if (!value || value <= 0) {
-      return "0 B";
-    }
-    const units = ["B", "KB", "MB", "GB", "TB"];
-    const index = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
-    const scaled = value / 1024 ** index;
-    return `${scaled.toFixed(scaled >= 10 ? 0 : 1)} ${units[index]}`;
-  }
-
-  function clampPercent(value: number): number {
-    return Math.min(100, Math.max(0, value));
-  }
-
-  function stepSupportsProgress(stepKey: string): boolean {
-    return stepKey === "flash" || stepKey === "verify" || stepKey.startsWith("ota-");
-  }
-
   function installStepProgressValue(step: UpdaterStep): number | null {
     if (!stepSupportsProgress(step.key) || step.status === "skipped") {
       return null;
@@ -2471,45 +2190,6 @@
       return `${Math.round(progress)}% · ${formatBytes(bytes.written)} / ${formatBytes(bytes.total)}`;
     }
     return `${Math.round(progress)}%`;
-  }
-
-  function chipClass(chip: string): string {
-    if (chip === "PhotonVision") {
-      return "border-tertiary-500/50 bg-tertiary-500/10 text-tertiary-100";
-    }
-    if (chip === "HeliOS") {
-      return "border-success-500/50 bg-success-500/10 text-success-100";
-    }
-    if (chip === "Bootloader Device") {
-      return "border-warning-500/50 bg-warning-500/10 text-warning-100";
-    }
-    if (chip === "Mounted") {
-      return "border-success-500/50 bg-success-500/10 text-success-100";
-    }
-    if (chip === "USB IP") {
-      return "border-primary-500/50 bg-primary-500/10 text-primary-100";
-    }
-    return "border-secondary-500/50 bg-secondary-500/10 text-secondary-100";
-  }
-
-  function statusClass(status: string): string {
-    if (status === "bootloader") {
-      return "text-warning-300";
-    }
-    if (status === "mounted") {
-      return "text-success-300";
-    }
-    return "text-success-300";
-  }
-
-  function statusLabel(status: string): string {
-    if (status === "bootloader") {
-      return "Bootloader";
-    }
-    if (status === "mounted") {
-      return "Mounted";
-    }
-    return "Online";
   }
 
   function panelConnectionChips(device: DiscoveredDevice): string[] {
@@ -2632,30 +2312,6 @@
       return "Updated just now";
     }
     return `Updated ${seconds}s ago`;
-  }
-
-  function installStepClass(status: UpdaterStepStatus): string {
-    if (status === "done") {
-      return "border-success-500/40 bg-success-500/10 text-success-100";
-    }
-    if (status === "active") {
-      return "border-primary-500/50 bg-primary-500/10 text-primary-100";
-    }
-    if (status === "error") {
-      return "border-error-500/50 bg-error-500/10 text-error-100";
-    }
-    if (status === "skipped") {
-      return "border-warning-500/40 bg-warning-500/10 text-warning-100";
-    }
-    return "border-surface-700/70 bg-surface-900/60 text-surface-300";
-  }
-
-  function installStepStateLabel(status: UpdaterStepStatus): string {
-    if (status === "done") return "Done";
-    if (status === "active") return "Running";
-    if (status === "error") return "Error";
-    if (status === "skipped") return "Skipped";
-    return "Pending";
   }
 
   function hasFailedInstallForDevice(deviceId: string): boolean {
@@ -3340,19 +2996,29 @@
                 <label class="uppercase text-[0.56rem] tracking-[0.32em] text-surface-500" for="release-select">
                   GitHub Release
                 </label>
-                <button
-                  class="inline-flex h-8 w-8 items-center justify-center rounded border border-surface-700/80 bg-surface-900/80 text-surface-200 transition hover:border-primary-500/60 hover:text-primary-200 disabled:cursor-not-allowed disabled:opacity-50"
-                  type="button"
-                  aria-label="Refresh releases"
-                  title="Refresh releases"
-                  disabled={releasesLoading || installBusy}
-                  onclick={() => void loadReleaseOptions()}
-                >
-                  <svg class={`h-4 w-4 ${releasesLoading ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
-                    <polyline points="21 3 21 9 15 9"></polyline>
-                  </svg>
-                </button>
+                <div class="flex items-center gap-2">
+                  <button
+                    class="inline-flex h-8 items-center justify-center rounded border border-surface-700/80 bg-surface-900/80 px-2 text-[0.62rem] uppercase tracking-[0.24em] text-surface-200 transition hover:border-primary-500/60 hover:text-primary-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    disabled={releaseCacheActionBusy || installBusy}
+                    onclick={() => void clearReleaseDownloadCache()}
+                  >
+                    {releaseCacheActionBusy ? "Clearing..." : "Clear Cache"}
+                  </button>
+                  <button
+                    class="inline-flex h-8 w-8 items-center justify-center rounded border border-surface-700/80 bg-surface-900/80 text-surface-200 transition hover:border-primary-500/60 hover:text-primary-200 disabled:cursor-not-allowed disabled:opacity-50"
+                    type="button"
+                    aria-label="Refresh releases"
+                    title="Refresh releases"
+                    disabled={releasesLoading || installBusy}
+                    onclick={() => void loadReleaseOptions()}
+                  >
+                    <svg class={`h-4 w-4 ${releasesLoading ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 12a9 9 0 1 1-2.64-6.36"></path>
+                      <polyline points="21 3 21 9 15 9"></polyline>
+                    </svg>
+                  </button>
+                </div>
               </div>
 
               <select
@@ -3390,6 +3056,11 @@
               {#if releasesError}
                 <p class="rounded border border-error-500/40 bg-error-500/10 px-3 py-2 text-xs text-error-100">
                   {releasesError}
+                </p>
+              {/if}
+              {#if releaseCacheMessage}
+                <p class="rounded border border-success-500/40 bg-success-500/10 px-3 py-2 text-xs text-success-100">
+                  {releaseCacheMessage}
                 </p>
               {/if}
             </div>
