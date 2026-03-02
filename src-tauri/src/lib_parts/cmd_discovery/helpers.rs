@@ -135,6 +135,16 @@ pub(crate) fn build_discovered_ip_device(
         detail_segments.push(telemetry);
     }
     detail_segments.push(format!("State: {state_text}"));
+    let interface_name = candidate.interface.clone();
+    let usb_location = if candidate.is_usb_link {
+        if let Some(usb_path) = resolve_usb_topology_path_for_interface(&interface_name) {
+            Some(format!("USB Path {usb_path} · Interface {interface_name}"))
+        } else {
+            Some(format!("Interface {interface_name}"))
+        }
+    } else {
+        None
+    };
 
     DiscoveredDevice {
         id: format!(
@@ -149,12 +159,8 @@ pub(crate) fn build_discovered_ip_device(
         connection_chips: chips,
         ip_address: Some(candidate.ip),
         mac_address: candidate.mac,
-        interface_name: Some(candidate.interface.clone()),
-        usb_location: if candidate.is_usb_link {
-            Some(format!("Interface {}", candidate.interface))
-        } else {
-            None
-        },
+        interface_name: Some(interface_name),
+        usb_location,
         vendor_product: candidate
             .usb_identity
             .as_ref()

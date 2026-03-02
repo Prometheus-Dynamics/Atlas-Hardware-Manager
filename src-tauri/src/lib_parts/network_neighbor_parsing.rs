@@ -305,6 +305,282 @@ fn discovery_rank(status: &str, chips: &[String]) -> u8 {
     3
 }
 
+pub(crate) fn resolve_usb_topology_path_for_interface(interface: &str) -> Option<String> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    let trimmed_interface = interface.trim();
+    if trimmed_interface.is_empty() {
+        return None;
+    }
+
+    let device_path = Path::new("/sys/class/net")
+        .join(trimmed_interface)
+        .join("device");
+    let canonical = fs::canonicalize(device_path).ok()?;
+    resolve_usb_topology_path_from_sys_path(canonical)
+}
+
+fn resolve_usb_topology_path_for_block_device(device_path: &str) -> Option<String> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    let trimmed_path = device_path.trim();
+    if trimmed_path.is_empty() {
+        return None;
+    }
+
+    let block_name = Path::new(trimmed_path)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+
+    let mut block_candidates = vec![block_name.to_string()];
+    let trimmed_digits = block_name.trim_end_matches(|character: char| character.is_ascii_digit());
+    if trimmed_digits != block_name {
+        let mut candidate = trimmed_digits.to_string();
+        if candidate.ends_with('p') {
+            candidate.pop();
+        }
+        if !candidate.is_empty() && candidate != block_name {
+            block_candidates.push(candidate);
+        }
+    }
+
+    for candidate in block_candidates {
+        let canonical = match fs::canonicalize(Path::new("/sys/class/block").join(&candidate)) {
+            Ok(path) => path,
+            Err(_) => continue,
+        };
+        if let Some(usb_path) = resolve_usb_topology_path_from_sys_path(canonical) {
+            return Some(usb_path);
+        }
+    }
+
+    None
+}
+
+fn resolve_usb_topology_path_from_sys_path(mut path: PathBuf) -> Option<String> {
+    loop {
+        if let Some(name) = path.file_name().and_then(|value| value.to_str()) {
+            if let Some(usb_path) = normalize_usb_topology_path(name) {
+                return Some(usb_path);
+            }
+        }
+        if !path.pop() {
+            break;
+        }
+    }
+    None
+}
+
+fn resolve_usb_topology_path_from_text(text: &str) -> Option<String> {
+    text.split(|character: char| {
+        character.is_whitespace()
+            || matches!(
+                character,
+                '·' | '|' | ',' | ';' | '(' | ')' | '[' | ']' | '{' | '}' | '/' | '\\'
+            )
+    })
+    .find_map(normalize_usb_topology_path)
+}
+
+fn normalize_usb_topology_path(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().trim_matches(|character: char| {
+        !character.is_ascii_alphanumeric() && !matches!(character, '-' | '.' | ':')
+    });
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let without_suffix = trimmed.split(':').next().unwrap_or(trimmed).trim();
+    let (bus_raw, ports_raw) = without_suffix.split_once('-')?;
+    if bus_raw.is_empty() || ports_raw.is_empty() {
+        return None;
+    }
+    if !bus_raw.chars().all(|character| character.is_ascii_digit()) {
+        return None;
+    }
+
+    let mut normalized_ports = Vec::new();
+    for segment in ports_raw.split('.') {
+        if segment.is_empty() || !segment.chars().all(|character| character.is_ascii_digit()) {
+            return None;
+        }
+        let parsed = segment.parse::<u16>().ok()?;
+        normalized_ports.push(parsed.to_string());
+    }
+    if normalized_ports.is_empty() {
+        return None;
+    }
+
+    let bus = bus_raw.parse::<u16>().ok()?;
+    Some(format!("{bus}-{}", normalized_ports.join(".")))
+}
+
+fn resolve_device_usb_topology_path(device: &DiscoveredDevice) -> Option<String> {
+    if let Some(usb_location) = device.usb_location.as_deref() {
+        if let Some(path) = resolve_usb_topology_path_from_text(usb_location) {
+            return Some(path);
+        }
+        if let Some(path) = resolve_usb_topology_path_for_block_device(usb_location) {
+            return Some(path);
+        }
+    }
+
+    device
+        .interface_name
+        .as_deref()
+        .and_then(resolve_usb_topology_path_for_interface)
+}
+
+fn is_bootloader_or_mounted_status(status: &str) -> bool {
+    matches!(status, "bootloader" | "mounted")
+}
+
+fn is_live_usb_device(device: &DiscoveredDevice) -> bool {
+    if device.status != "online" {
+        return false;
+    }
+
+    if device
+        .connection_chips
+        .iter()
+        .any(|chip| chip.eq_ignore_ascii_case("USB IP"))
+    {
+        return true;
+    }
+
+    device
+        .interface_name
+        .as_deref()
+        .map(|interface| {
+            !should_ignore_interface(interface) && is_usb_network_interface(interface)
+        })
+        .unwrap_or(false)
+}
+
+fn usb_path_preference_score(device: &DiscoveredDevice) -> i32 {
+    let mut score = match device.status.as_str() {
+        "online" => 300,
+        "mounted" => 200,
+        "bootloader" => 100,
+        _ => 0,
+    };
+
+    if device
+        .connection_chips
+        .iter()
+        .any(|chip| chip.eq_ignore_ascii_case("USB IP"))
+    {
+        score += 40;
+    }
+    if device
+        .runtime_product
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_some()
+    {
+        score += 20;
+    }
+    if device
+        .ip_address
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_some()
+    {
+        score += 10;
+    }
+
+    score
+}
+
+fn select_preferred_usb_path_device(
+    indexes: &[usize],
+    devices: &[DiscoveredDevice],
+) -> Option<usize> {
+    indexes.iter().copied().max_by(|left, right| {
+        usb_path_preference_score(&devices[*left])
+            .cmp(&usb_path_preference_score(&devices[*right]))
+            .then_with(|| devices[*left].display_name.cmp(&devices[*right].display_name))
+            .then_with(|| devices[*left].id.cmp(&devices[*right].id))
+    })
+}
+
+fn prune_usb_port_stale_devices(devices: &mut Vec<DiscoveredDevice>) {
+    let mut indexes_by_usb_path: HashMap<String, Vec<usize>> = HashMap::new();
+    for (index, device) in devices.iter().enumerate() {
+        let Some(usb_path) = resolve_device_usb_topology_path(device) else {
+            continue;
+        };
+        indexes_by_usb_path.entry(usb_path).or_default().push(index);
+    }
+
+    let mut remove_indexes = HashSet::new();
+    for indexes in indexes_by_usb_path.into_values() {
+        if indexes.len() < 2 {
+            continue;
+        }
+
+        let online_indexes = indexes
+            .iter()
+            .copied()
+            .filter(|index| is_live_usb_device(&devices[*index]))
+            .collect::<Vec<_>>();
+
+        if !online_indexes.is_empty() {
+            let Some(keep_index) = select_preferred_usb_path_device(&online_indexes, devices) else {
+                continue;
+            };
+            for index in indexes {
+                if index == keep_index {
+                    continue;
+                }
+                if is_bootloader_or_mounted_status(devices[index].status.as_str())
+                    || is_live_usb_device(&devices[index])
+                {
+                    remove_indexes.insert(index);
+                }
+            }
+            continue;
+        }
+
+        let transitional_indexes = indexes
+            .iter()
+            .copied()
+            .filter(|index| is_bootloader_or_mounted_status(devices[*index].status.as_str()))
+            .collect::<Vec<_>>();
+        if transitional_indexes.len() < 2 {
+            continue;
+        }
+
+        let Some(keep_index) = select_preferred_usb_path_device(&transitional_indexes, devices)
+        else {
+            continue;
+        };
+        for index in transitional_indexes {
+            if index != keep_index {
+                remove_indexes.insert(index);
+            }
+        }
+    }
+
+    if remove_indexes.is_empty() {
+        return;
+    }
+
+    let mut pruned = Vec::with_capacity(devices.len().saturating_sub(remove_indexes.len()));
+    for (index, device) in devices.drain(..).enumerate() {
+        if !remove_indexes.contains(&index) {
+            pruned.push(device);
+        }
+    }
+    *devices = pruned;
+}
+
 fn dedupe_discovered_devices(devices: &mut Vec<DiscoveredDevice>) {
     let mut merged: Vec<DiscoveredDevice> = Vec::new();
 
@@ -374,6 +650,7 @@ fn dedupe_discovered_devices(devices: &mut Vec<DiscoveredDevice>) {
         device.connection_chips.sort();
         device.connection_chips.dedup();
     }
+    prune_usb_port_stale_devices(&mut merged);
 
     *devices = merged;
 }
@@ -534,3 +811,102 @@ fn prime_neighbor_cache_for_local_frc_subnets(existing_entries: &[RawNeighborEnt
     thread::sleep(Duration::from_millis(250));
 }
 
+#[cfg(test)]
+mod network_neighbor_parsing_tests {
+    use super::*;
+
+    fn make_device(
+        id: &str,
+        status: &str,
+        chips: &[&str],
+        usb_location: Option<&str>,
+        interface_name: Option<&str>,
+    ) -> DiscoveredDevice {
+        DiscoveredDevice {
+            id: id.to_string(),
+            display_name: id.to_string(),
+            status: status.to_string(),
+            connection_chips: chips.iter().map(|chip| chip.to_string()).collect(),
+            ip_address: None,
+            mac_address: None,
+            interface_name: interface_name.map(|value| value.to_string()),
+            usb_location: usb_location.map(|value| value.to_string()),
+            vendor_product: None,
+            runtime_product: None,
+            firmware_version: None,
+            os_version: None,
+            telemetry_summary: None,
+            detail: String::new(),
+        }
+    }
+
+    #[test]
+    fn normalize_usb_topology_path_handles_suffixes_and_padding() {
+        assert_eq!(
+            normalize_usb_topology_path("001-02.003:1.0"),
+            Some("1-2.3".to_string())
+        );
+        assert_eq!(
+            resolve_usb_topology_path_from_text("USB Path 2-4.1 · Bus 002 Device 013"),
+            Some("2-4.1".to_string())
+        );
+    }
+
+    #[test]
+    fn dedupe_drops_bootloader_and_mounted_when_live_usb_exists_on_same_port() {
+        let mut devices = vec![
+            make_device(
+                "bootloader",
+                "bootloader",
+                &["Bootloader Device"],
+                Some("USB Path 1-2 · Bus 001 Device 007"),
+                None,
+            ),
+            make_device(
+                "mounted",
+                "mounted",
+                &["Mounted"],
+                Some("USB Path 1-2 · Bus 001 Device 008"),
+                None,
+            ),
+            make_device(
+                "live",
+                "online",
+                &["USB IP", "HeliOS"],
+                Some("USB Path 1-2 · Interface usb0"),
+                Some("usb0"),
+            ),
+        ];
+
+        dedupe_discovered_devices(&mut devices);
+
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].id, "live");
+        assert_eq!(devices[0].status, "online");
+    }
+
+    #[test]
+    fn dedupe_collapses_transition_states_on_same_usb_port() {
+        let mut devices = vec![
+            make_device(
+                "bootloader-a",
+                "bootloader",
+                &["Bootloader Device"],
+                Some("USB Path 3-1.4 · Bus 003 Device 019"),
+                None,
+            ),
+            make_device(
+                "mounted-a",
+                "mounted",
+                &["Mounted"],
+                Some("USB Path 3-1.4 · Bus 003 Device 020"),
+                None,
+            ),
+        ];
+
+        dedupe_discovered_devices(&mut devices);
+
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].status, "mounted");
+    }
+}
