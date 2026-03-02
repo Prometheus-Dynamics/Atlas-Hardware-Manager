@@ -2,6 +2,8 @@ use super::*;
 use super::roborio_support_and_ota_probe::{
     normalize_ota_probe_targets, ota_runtime_state_is_attachable, UpdaterJobStartGuard,
 };
+#[path = "updater_commands/client_update_check.rs"]
+mod client_update_check;
 
 struct UpdaterWorkerManager;
 
@@ -44,6 +46,16 @@ impl UpdaterWorkerManager {
 #[tauri::command]
 pub(crate) fn list_helios_release_images() -> Result<Vec<ReleaseImageOption>, String> {
     fetch_release_images_from_github()
+}
+
+#[tauri::command]
+pub(crate) fn get_client_update_status() -> Result<ClientUpdateStatus, String> {
+    client_update_check::get_client_update_status_internal()
+}
+
+#[tauri::command]
+pub(crate) fn start_client_self_update() -> Result<ClientSelfUpdateResult, String> {
+    client_update_check::start_client_self_update_internal()
 }
 
 #[tauri::command]

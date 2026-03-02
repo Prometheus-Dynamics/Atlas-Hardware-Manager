@@ -42,6 +42,8 @@ pub(crate) const DEFAULT_HELIOS_WORKSPACE: &str =
 pub(crate) const HELIOS_USB_ID_ALLOWLIST: [(&str, &str); 1] = [("1d6b", "0104")];
 pub(crate) const HELIOS_RELEASES_API_URL: &str =
     "https://api.github.com/repos/Prometheus-Dynamics/HeliOS/releases?per_page=40";
+pub(crate) const ATLAS_RELEASES_API_URL: &str =
+    "https://api.github.com/repos/Prometheus-Dynamics/Atlas-Hardware-Manager/releases?per_page=20";
 pub(crate) const HELIOS_RUNTIME_API_PATHS: [&str; 22] = [
     "/v1/health",
     "/v1/device/os",

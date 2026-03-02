@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
+  import { openUrl } from "@tauri-apps/plugin-opener";
   import { Panel } from "$lib/components";
   import { resetPageHeader, setPageHeader } from "$lib/stores/pageHeader";
 
@@ -39,11 +40,41 @@
     timedOut: boolean;
   }
 
+  interface ClientUpdateStatus {
+    currentVersion: string;
+    latestVersion?: string | null;
+    latestTag?: string | null;
+    latestName?: string | null;
+    prerelease: boolean;
+    updateAvailable: boolean;
+    downloadAssetName?: string | null;
+    downloadUrl?: string | null;
+    releasePageUrl?: string | null;
+    publishedAt?: string | null;
+    checkedAtEpochMs: number;
+  }
+
+  interface ClientSelfUpdateResult {
+    success: boolean;
+    started: boolean;
+    message: string;
+    currentVersion: string;
+    latestVersion?: string | null;
+    downloadAssetName?: string | null;
+    downloadUrl?: string | null;
+    releasePageUrl?: string | null;
+    installerPath?: string | null;
+  }
+
   let setupStatus: HostSetupStatus | null = null;
+  let clientUpdateStatus: ClientUpdateStatus | null = null;
   let loadBusy = false;
+  let updateBusy = false;
   let repairBusy = false;
   let loadError: string | null = null;
+  let updateError: string | null = null;
   let actionMessage: string | null = null;
+  let updateMessage: string | null = null;
   let actionWarnings: string[] = [];
   const HIDDEN_ADVISORY_CHECK_IDS = new Set(["linux-elevation", "windows-admin", "macos-root"]);
 
@@ -55,6 +86,7 @@
   $: missingRequiredCount = requiredChecks.filter((check) => !check.ready).length;
   $: canRelaunchElevated =
     (setupStatus?.platform ?? "") === "windows" || (setupStatus?.platform ?? "") === "macos";
+  $: updateAvailable = clientUpdateStatus?.updateAvailable ?? false;
 
   onMount(() => {
     setPageHeader({
@@ -63,6 +95,7 @@
       actions: [],
     });
     void loadSetupStatus();
+    void loadClientUpdateStatus();
     return () => resetPageHeader();
   });
 
@@ -104,6 +137,52 @@
       loadError = error instanceof Error ? error.message : "Host setup repair failed.";
     } finally {
       repairBusy = false;
+    }
+  }
+
+  async function loadClientUpdateStatus(): Promise<void> {
+    if (updateBusy) {
+      return;
+    }
+    updateBusy = true;
+    updateError = null;
+    updateMessage = null;
+
+    try {
+      clientUpdateStatus = await invoke<ClientUpdateStatus>("get_client_update_status");
+    } catch (error) {
+      updateError = error instanceof Error ? error.message : "Failed to check for client updates.";
+    } finally {
+      updateBusy = false;
+    }
+  }
+
+  async function startClientSelfUpdate(): Promise<void> {
+    if (updateBusy || !updateAvailable) {
+      return;
+    }
+    updateBusy = true;
+    updateError = null;
+    updateMessage = null;
+
+    try {
+      const result = await invoke<ClientSelfUpdateResult>("start_client_self_update");
+      if (result.started) {
+        updateMessage = result.message;
+      } else if (result.releasePageUrl) {
+        await openUrl(result.releasePageUrl);
+        updateMessage = `${result.message} Opened release page in browser.`;
+      } else {
+        updateMessage = result.message;
+      }
+      clientUpdateStatus = await invoke<ClientUpdateStatus>("get_client_update_status");
+    } catch (error) {
+      updateError =
+        error instanceof Error
+          ? error.message
+          : "Unable to run client self-update.";
+    } finally {
+      updateBusy = false;
     }
   }
 
@@ -150,9 +229,79 @@
     }
     return `Updated ${new Date(setupStatus.generatedAtEpochMs).toLocaleString()}`;
   }
+
+  function updateCheckedLabel(): string {
+    if (!clientUpdateStatus?.checkedAtEpochMs) {
+      return "No update check yet";
+    }
+    return `Checked ${new Date(clientUpdateStatus.checkedAtEpochMs).toLocaleString()}`;
+  }
 </script>
 
 <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto pr-1">
+  <Panel eyebrow="Application" title="Atlas Client Updates">
+    <svelte:fragment slot="actions">
+      <button
+        class="btn btn-3xs preset-tonal-secondary uppercase tracking-[0.2em] disabled:cursor-not-allowed disabled:opacity-60"
+        type="button"
+        disabled={updateBusy}
+        onclick={() => void loadClientUpdateStatus()}
+      >
+        {updateBusy ? "Checking..." : "Check Updates"}
+      </button>
+      <button
+        class="btn btn-3xs preset-tonal-surface uppercase tracking-[0.2em] disabled:cursor-not-allowed disabled:opacity-60"
+        type="button"
+        disabled={updateBusy || !updateAvailable}
+        onclick={() => void startClientSelfUpdate()}
+      >
+        {updateBusy ? "Updating..." : "Update Client"}
+      </button>
+    </svelte:fragment>
+
+    {#if updateError}
+      <p class="rounded border border-error-500/40 bg-error-500/10 px-3 py-2 text-sm text-error-100">
+        {updateError}
+      </p>
+    {/if}
+    {#if updateMessage}
+      <p class="rounded border border-primary-500/40 bg-primary-500/10 px-3 py-2 text-sm text-primary-100">
+        {updateMessage}
+      </p>
+    {/if}
+
+    {#if updateAvailable}
+      <p class="rounded border border-warning-500/50 bg-warning-500/15 px-3 py-2 text-sm text-warning-100">
+        Update available:
+        <span class="font-semibold">v{clientUpdateStatus?.latestVersion ?? clientUpdateStatus?.latestTag ?? "latest"}</span>
+      </p>
+    {/if}
+
+    <div class="flex flex-wrap items-center gap-2 text-xs">
+      <span class="rounded border border-surface-700/70 bg-surface-900/60 px-2 py-1 uppercase tracking-[0.22em] text-surface-300">
+        Current v{clientUpdateStatus?.currentVersion ?? "unknown"}
+      </span>
+      <span class="rounded border border-surface-700/70 bg-surface-900/60 px-2 py-1 uppercase tracking-[0.22em] text-surface-300">
+        Latest v{clientUpdateStatus?.latestVersion ?? clientUpdateStatus?.latestTag ?? "unknown"}
+      </span>
+      {#if clientUpdateStatus?.downloadAssetName}
+        <span class="rounded border border-surface-700/70 bg-surface-900/60 px-2 py-1 uppercase tracking-[0.22em] text-surface-300">
+          Asset {clientUpdateStatus.downloadAssetName}
+        </span>
+      {/if}
+      <span
+        class={`rounded border px-2 py-1 uppercase tracking-[0.22em] ${
+          updateAvailable
+            ? "border-warning-500/50 bg-warning-500/10 text-warning-100"
+            : "border-success-500/50 bg-success-500/10 text-success-100"
+        }`}
+      >
+        {updateAvailable ? "Update Available" : "Up To Date"}
+      </span>
+      <span class="text-surface-500">{updateCheckedLabel()}</span>
+    </div>
+  </Panel>
+
   <Panel eyebrow="Host Runtime" title="Tool Detection">
     <svelte:fragment slot="actions">
       <button

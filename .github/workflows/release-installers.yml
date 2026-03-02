@@ -71,6 +71,14 @@ jobs:
             os: ubuntu-24.04-arm
             build_cmd: bun run build:linux:arm64
             rust_target: aarch64-unknown-linux-gnu
+          - name: linux-appimage-x64
+            os: ubuntu-22.04
+            build_cmd: bun run build:linux:appimage:x64
+            rust_target: ""
+          - name: linux-appimage-arm64
+            os: ubuntu-24.04-arm
+            build_cmd: bun run build:linux:appimage:arm64
+            rust_target: aarch64-unknown-linux-gnu
           - name: windows-x64
             os: windows-2022
             build_cmd: bun run build:windows:x64
@@ -207,14 +215,6 @@ jobs:
           compression-level: 9
           path: |
             outputs/**
-            src-tauri/target/**/bundle/**/*.deb
-            src-tauri/target/**/bundle/**/*.rpm
-            src-tauri/target/**/bundle/**/*.msi
-            src-tauri/target/**/bundle/**/*.exe
-            src-tauri/target/**/bundle/**/*.AppImage
-            src-tauri/target/**/bundle/**/*.appimage
-            src-tauri/target/**/release/atlas-hardware-manager
-            src-tauri/target/**/release/atlas-hardware-manager.exe
 
   release:
     name: Publish GitHub Release

@@ -125,3 +125,33 @@ pub(crate) struct ReleaseImageOption {
     pub(crate) size_bytes: u64,
     pub(crate) published_at: Option<String>,
 }
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ClientUpdateStatus {
+    pub(crate) current_version: String,
+    pub(crate) latest_version: Option<String>,
+    pub(crate) latest_tag: Option<String>,
+    pub(crate) latest_name: Option<String>,
+    pub(crate) prerelease: bool,
+    pub(crate) update_available: bool,
+    pub(crate) download_asset_name: Option<String>,
+    pub(crate) download_url: Option<String>,
+    pub(crate) release_page_url: Option<String>,
+    pub(crate) published_at: Option<String>,
+    pub(crate) checked_at_epoch_ms: u64,
+}
+
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ClientSelfUpdateResult {
+    pub(crate) success: bool,
+    pub(crate) started: bool,
+    pub(crate) message: String,
+    pub(crate) current_version: String,
+    pub(crate) latest_version: Option<String>,
+    pub(crate) download_asset_name: Option<String>,
+    pub(crate) download_url: Option<String>,
+    pub(crate) release_page_url: Option<String>,
+    pub(crate) installer_path: Option<String>,
+}

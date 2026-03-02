@@ -120,6 +120,32 @@ mod updater_install_flow_tests {
         assert_eq!(parsed.stage.as_deref(), Some("applying"));
         assert_eq!(parsed.progress_percent, Some(33.0));
     }
+
+    #[test]
+    fn ota_poll_error_detects_reqwest_send_failures() {
+        assert!(ota_poll_error_indicates_offline(
+            "http://172.31.250.1:5801/v1/ota/state: error sending request for url (http://172.31.250.1:5801/v1/ota/state)"
+        ));
+    }
+
+    #[test]
+    fn ota_monitor_treats_post_apply_poll_errors_as_expected_offline() {
+        assert!(ota_monitor_poll_error_should_be_treated_as_offline(
+            "unclassified transport failure",
+            true,
+            false
+        ));
+        assert!(ota_monitor_poll_error_should_be_treated_as_offline(
+            "another transport failure",
+            false,
+            true
+        ));
+        assert!(!ota_monitor_poll_error_should_be_treated_as_offline(
+            "unexpected parser error",
+            false,
+            false
+        ));
+    }
 }
 
 pub(crate) fn is_ota_apply_stage(stage: &str) -> bool {
@@ -177,6 +203,8 @@ pub(crate) fn ota_poll_error_indicates_offline(message: &str) -> bool {
     normalized.contains("connection refused")
         || normalized.contains("connection reset")
         || normalized.contains("connection aborted")
+        || normalized.contains("error sending request for url")
+        || normalized.contains("request failed")
         || normalized.contains("timed out")
         || normalized.contains("timeout")
         || normalized.contains("no route to host")
@@ -189,6 +217,14 @@ pub(crate) fn ota_poll_error_indicates_offline(message: &str) -> bool {
         || normalized.contains("http 502")
         || normalized.contains("http 503")
         || normalized.contains("http 504")
+}
+
+pub(crate) fn ota_monitor_poll_error_should_be_treated_as_offline(
+    message: &str,
+    saw_apply_related_stage: bool,
+    saw_reboot_stage: bool,
+) -> bool {
+    saw_apply_related_stage || saw_reboot_stage || ota_poll_error_indicates_offline(message)
 }
 
 pub(crate) fn ota_stage_progress_hint(stage: &str) -> Option<f64> {

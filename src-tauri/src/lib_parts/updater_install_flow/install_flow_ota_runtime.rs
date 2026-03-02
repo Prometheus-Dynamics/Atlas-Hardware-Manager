@@ -1,22 +1,5 @@
 use super::*;
 
-pub(crate) fn ota_api_base_urls(target_ip: &str) -> Vec<String> {
-    let mut candidates = vec![
-        format!("http://{target_ip}:5801"),
-        format!("http://{target_ip}:5800"),
-        format!("http://{target_ip}:80"),
-        format!("http://{target_ip}"),
-    ];
-    candidates.retain(|value| !value.trim().is_empty());
-    let mut deduped = Vec::new();
-    for candidate in candidates {
-        if !deduped.contains(&candidate) {
-            deduped.push(candidate);
-        }
-    }
-    deduped
-}
-
 pub(crate) fn wait_for_ota_reboot_and_reconnect(
     app: &tauri::AppHandle,
     run_id_ref: Option<&str>,
@@ -58,6 +41,38 @@ pub(crate) fn wait_for_ota_reboot_and_reconnect(
     let mut apply_success_emitted = false;
     let mut last_apply_stage: Option<String> = None;
     let mut last_apply_percent_bucket: Option<i32> = None;
+    let mut last_http_poll_attempt = Instant::now() - Duration::from_secs(15);
+    let mut last_ws_state: Option<OtaRuntimeState> = None;
+    let mut ota_ws_monitor = match OtaWebsocketMonitor::connect(target_ip) {
+        Ok(monitor) => {
+            emit_ota_step_progress(
+                app,
+                run_id_ref,
+                "ota-monitor",
+                "info",
+                format!(
+                    "Connected OTA websocket monitor at {}. Using websocket-first runtime updates.",
+                    monitor.source_url()
+                ),
+                None,
+            );
+            Some(monitor)
+        }
+        Err(error) => {
+            emit_ota_step_progress(
+                app,
+                run_id_ref,
+                "ota-monitor",
+                "info",
+                format!(
+                    "OTA websocket monitor unavailable ({error}). Falling back to HTTP OTA state polling."
+                ),
+                None,
+            );
+            None
+        }
+    };
+    let mut last_ws_connect_attempt = Instant::now();
 
     loop {
         fail_if_update_cancelled(
@@ -78,7 +93,75 @@ pub(crate) fn wait_for_ota_reboot_and_reconnect(
             ));
         }
 
-        match fetch_ota_runtime_state(&poll_client, api_bases) {
+        if ota_ws_monitor.is_none() && last_ws_connect_attempt.elapsed() >= Duration::from_secs(12)
+        {
+            last_ws_connect_attempt = Instant::now();
+            if let Ok(monitor) = OtaWebsocketMonitor::connect(target_ip) {
+                emit_ota_step_progress(
+                    app,
+                    run_id_ref,
+                    "ota-monitor",
+                    "info",
+                    format!(
+                        "OTA websocket monitor reconnected at {}.",
+                        monitor.source_url()
+                    ),
+                    None,
+                );
+                ota_ws_monitor = Some(monitor);
+            }
+        }
+
+        let mut drop_ws_monitor = false;
+        let state_result = if let Some(ws_monitor) = ota_ws_monitor.as_mut() {
+            match ws_monitor.poll_runtime_state() {
+                Ok(Some(state)) => {
+                    last_ws_state = Some(state.clone());
+                    Ok(state)
+                }
+                Ok(None) => {
+                    if last_http_poll_attempt.elapsed() >= Duration::from_secs(12)
+                        || last_ws_state.is_none()
+                    {
+                        last_http_poll_attempt = Instant::now();
+                        fetch_ota_runtime_state(&poll_client, api_bases)
+                    } else {
+                        match last_ws_state.clone() {
+                            Some(state) => Ok(state),
+                            None => {
+                                last_http_poll_attempt = Instant::now();
+                                fetch_ota_runtime_state(&poll_client, api_bases)
+                            }
+                        }
+                    }
+                }
+                Err(error) => {
+                    emit_ota_step_progress(
+                        app,
+                        run_id_ref,
+                        "ota-monitor",
+                        "info",
+                        format!(
+                            "OTA websocket monitor lost ({error}). Continuing with HTTP OTA polling."
+                        ),
+                        None,
+                    );
+                    drop_ws_monitor = true;
+                    last_http_poll_attempt = Instant::now();
+                    fetch_ota_runtime_state(&poll_client, api_bases)
+                }
+            }
+        } else {
+            last_http_poll_attempt = Instant::now();
+            fetch_ota_runtime_state(&poll_client, api_bases)
+        };
+        if drop_ws_monitor {
+            ota_ws_monitor = None;
+            last_ws_connect_attempt = Instant::now() - Duration::from_secs(10);
+            last_ws_state = None;
+        }
+
+        match state_result {
             Ok(state) => {
                 let stage = state
                     .stage
@@ -255,7 +338,11 @@ pub(crate) fn wait_for_ota_reboot_and_reconnect(
             }
             Err(error) => {
                 consecutive_online_checks = 0;
-                let treat_as_offline = ota_poll_error_indicates_offline(&error);
+                let treat_as_offline = ota_monitor_poll_error_should_be_treated_as_offline(
+                    &error,
+                    saw_apply_related_stage,
+                    saw_reboot_stage,
+                );
                 if is_ota_out_of_space_error(&error) {
                     let error_reason = format!(
                         "OTA apply failed: device reported insufficient storage. {error}"
@@ -279,28 +366,6 @@ pub(crate) fn wait_for_ota_reboot_and_reconnect(
                     return Err(error_reason);
                 }
                 if saw_apply_related_stage || saw_reboot_stage {
-                    if !treat_as_offline {
-                        let error_reason = format!(
-                            "OTA state polling failed during apply: {error}"
-                        );
-                        emit_ota_step_progress(
-                            app,
-                            run_id_ref,
-                            "ota-apply",
-                            "error",
-                            error_reason.clone(),
-                            Some(0.0),
-                        );
-                        emit_ota_step_progress(
-                            app,
-                            run_id_ref,
-                            "ota-monitor",
-                            "error",
-                            error_reason.clone(),
-                            Some(0.0),
-                        );
-                        return Err(error_reason);
-                    }
                     if !saw_offline_after_apply {
                         saw_offline_after_apply = true;
                         emit_ota_step_progress(
@@ -308,7 +373,9 @@ pub(crate) fn wait_for_ota_reboot_and_reconnect(
                             run_id_ref,
                             "ota-monitor",
                             "running",
-                            "OTA endpoint went offline, indicating reboot started.",
+                            format!(
+                                "OTA state endpoint became unreachable after apply ({error}). Treating this as expected reboot transition."
+                            ),
                             Some(100.0),
                         );
                     }
@@ -334,7 +401,8 @@ pub(crate) fn wait_for_ota_reboot_and_reconnect(
                         );
                         reconnect_running_emitted = true;
                     }
-                } else if last_wait_notice.elapsed() >= Duration::from_secs(20) {
+                } else if !treat_as_offline && last_wait_notice.elapsed() >= Duration::from_secs(20)
+                {
                     emit_ota_step_progress(
                         app,
                         run_id_ref,
@@ -351,202 +419,3 @@ pub(crate) fn wait_for_ota_reboot_and_reconnect(
         thread::sleep(Duration::from_secs(2));
     }
 }
-
-pub(crate) fn fetch_ota_runtime_state(
-    client: &reqwest::blocking::Client,
-    api_bases: &[String],
-) -> Result<OtaRuntimeState, String> {
-    let mut errors = Vec::new();
-    for base in api_bases {
-        let url = format!("{base}/v1/ota/state");
-        let response = match client
-            .get(&url)
-            .header(reqwest::header::USER_AGENT, "Atlas-Hardware-Manager")
-            .header(reqwest::header::ACCEPT, "application/json,text/plain,*/*")
-            .send()
-        {
-            Ok(response) => response,
-            Err(error) => {
-                errors.push(format!("{url}: {error}"));
-                continue;
-            }
-        };
-        if !response.status().is_success() {
-            let status = response.status();
-            let body = response
-                .text()
-                .ok()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-                .unwrap_or_else(|| "<no response body>".to_string());
-            errors.push(format!("{url}: HTTP {status} ({body})"));
-            continue;
-        }
-        let raw_state = match response.json::<Value>() {
-            Ok(value) => value,
-            Err(error) => {
-                errors.push(format!("{url}: invalid JSON response ({error})"));
-                continue;
-            }
-        };
-        return Ok(parse_ota_runtime_state(Some(&raw_state)));
-    }
-
-    if errors.is_empty() {
-        Err("No OTA state endpoints were available.".to_string())
-    } else {
-        Err(errors.join(" | "))
-    }
-}
-
-pub(crate) fn parse_ota_runtime_state(raw: Option<&Value>) -> OtaRuntimeState {
-    let Some(raw) = raw else {
-        return OtaRuntimeState::default();
-    };
-    let root = match raw {
-        Value::Object(root) => root,
-        _ => return OtaRuntimeState::default(),
-    };
-
-    let read_text_from =
-        |source: &serde_json::Map<String, Value>, keys: &[&str]| -> Option<String> {
-            for key in keys {
-                if let Some(value) = source.get(*key) {
-                    let parsed = match value {
-                        Value::String(text) => Some(text.trim().to_string()),
-                        Value::Number(number) => Some(number.to_string()),
-                        Value::Bool(flag) => Some(flag.to_string()),
-                        _ => None,
-                    }
-                    .filter(|text| !text.is_empty());
-                    if parsed.is_some() {
-                        return parsed;
-                    }
-                }
-            }
-            None
-        };
-    let read_progress_from =
-        |source: &serde_json::Map<String, Value>, keys: &[&str]| -> Option<f64> {
-            for key in keys {
-                if let Some(value) = source.get(*key) {
-                    if let Some(parsed) = parse_ota_runtime_progress_value(value, key) {
-                        return Some(parsed);
-                    }
-                }
-            }
-            None
-        };
-
-    let sources = collect_ota_runtime_state_sources(root);
-
-    let read_text = |keys: &[&str]| -> Option<String> {
-        for source in &sources {
-            if let Some(value) = read_text_from(source, keys) {
-                return Some(value);
-            }
-        }
-        None
-    };
-    let read_progress = |keys: &[&str]| -> Option<f64> {
-        for source in &sources {
-            if let Some(value) = read_progress_from(source, keys) {
-                return Some(value);
-            }
-        }
-        None
-    };
-
-    OtaRuntimeState {
-        update_id: read_text(&["update_id", "updateId", "id"]),
-        stage: read_text(&[
-            "stage",
-            "status",
-            "phase",
-            "state",
-            "state_name",
-            "stateName",
-            "update_stage",
-            "updateStage",
-            "apply_state",
-            "applyState",
-            "ota_stage",
-            "otaStage",
-            "current_stage",
-            "currentStage",
-        ])
-        .map(normalize_ota_stage_name),
-        progress_percent: read_progress(&[
-            "progress_percent",
-            "progressPercent",
-            "progress",
-            "percent",
-            "pct",
-            "stage_percent",
-            "stagePercent",
-            "apply_progress",
-            "applyProgress",
-            "apply_percent",
-            "applyPercent",
-            "progress_ratio",
-            "progressRatio",
-            "progress_fraction",
-            "progressFraction",
-            "fraction_complete",
-            "fractionComplete",
-        ])
-        .map(|value| value.clamp(0.0, 100.0)),
-        last_error: read_text(&[
-            "last_error",
-            "lastError",
-            "error",
-            "error_message",
-            "errorMessage",
-            "reason",
-            "detail",
-            "message",
-            "failure_reason",
-            "failureReason",
-        ]),
-    }
-}
-
-pub(crate) fn collect_ota_runtime_state_sources(
-    root: &serde_json::Map<String, Value>,
-) -> Vec<&serde_json::Map<String, Value>> {
-    const CHILD_KEYS: [&str; 15] = [
-        "state",
-        "active_update",
-        "activeUpdate",
-        "active",
-        "ota",
-        "update",
-        "updater",
-        "snapshot",
-        "payload",
-        "result",
-        "data",
-        "runtime",
-        "status",
-        "progress",
-        "apply_progress",
-    ];
-
-    let mut sources = Vec::<&serde_json::Map<String, Value>>::new();
-    let mut queue = vec![root];
-    let mut seen = HashSet::<usize>::new();
-    while let Some(source) = queue.pop() {
-        let ptr = source as *const _ as usize;
-        if !seen.insert(ptr) {
-            continue;
-        }
-        sources.push(source);
-        for key in CHILD_KEYS {
-            if let Some(Value::Object(child)) = source.get(key) {
-                queue.push(child);
-            }
-        }
-    }
-    sources
-}
-

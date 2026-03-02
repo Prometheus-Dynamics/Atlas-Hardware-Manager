@@ -6,11 +6,17 @@ mod install_flow_ota;
 mod install_flow_usb_helpers;
 #[path = "updater_install_flow/install_flow_ota_runtime.rs"]
 mod install_flow_ota_runtime;
+#[path = "updater_install_flow/install_flow_ota_http_runtime.rs"]
+mod install_flow_ota_http_runtime;
+#[path = "updater_install_flow/install_flow_ota_ws_runtime.rs"]
+mod install_flow_ota_ws_runtime;
 #[path = "updater_install_flow/install_flow_parsing_and_tests.rs"]
 mod install_flow_parsing_and_tests;
 
 pub(crate) use install_flow_main::*;
 pub(crate) use install_flow_ota::*;
+pub(crate) use install_flow_ota_http_runtime::*;
 pub(crate) use install_flow_ota_runtime::*;
+pub(crate) use install_flow_ota_ws_runtime::*;
 pub(crate) use install_flow_parsing_and_tests::*;
 pub(crate) use install_flow_usb_helpers::*;

@@ -36,6 +36,8 @@ pub fn run() {
             telemetry_and_connection::start_device_telemetry_stream,
             telemetry_and_connection::status_and_logs::stop_device_telemetry_stream,
             updater_commands::list_helios_release_images,
+            updater_commands::get_client_update_status,
+            updater_commands::start_client_self_update,
             updater_commands::clear_release_image_download_cache,
             updater_commands::get_host_setup_status,
             updater_commands::run_host_setup_repair,
