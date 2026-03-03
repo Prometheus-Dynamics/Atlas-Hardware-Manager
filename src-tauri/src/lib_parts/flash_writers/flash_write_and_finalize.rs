@@ -22,6 +22,113 @@ fn emit_direct_io_fallback_notice(progress_context: Option<&FlashProgressContext
     );
 }
 
+fn read_target_range_bytes(
+    device_path: &str,
+    linux_strategy: Option<LinuxPrivilegeStrategy>,
+    progress_context: Option<&FlashProgressContext>,
+    byte_offset: u64,
+    byte_count: u64,
+) -> Result<Vec<u8>, String> {
+    #[cfg(target_os = "linux")]
+    if let Some(strategy) = linux_strategy {
+        let mut reader =
+            spawn_linux_verify_reader(device_path, strategy, byte_offset, byte_count, progress_context)?;
+        let mut stdout = reader
+            .stdout
+            .take()
+            .ok_or_else(|| "Unable to capture verification reader stdout for geometry check.".to_string())?;
+        let mut bytes = Vec::with_capacity(byte_count as usize);
+        std::io::Read::read_to_end(&mut stdout, &mut bytes)
+            .map_err(|error| format!("Failed to read target geometry bytes: {error}"))?;
+        let output = reader
+            .wait_with_output()
+            .map_err(|error| format!("Failed to finalize target geometry reader: {error}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "Target geometry reader failed: {}",
+                trim_output(&output.stderr)
+            ));
+        }
+        if bytes.len() as u64 != byte_count {
+            return Err(format!(
+                "Target geometry read length mismatch: read {} bytes, expected {} bytes.",
+                bytes.len(),
+                byte_count
+            ));
+        }
+        return Ok(bytes);
+    }
+
+    let mut file = fs::File::open(device_path)
+        .map_err(|error| format!("Failed to open flashed target for geometry check: {error}"))?;
+    std::io::Seek::seek(&mut file, std::io::SeekFrom::Start(byte_offset))
+        .map_err(|error| format!("Failed to seek flashed target for geometry check: {error}"))?;
+    let mut bytes = vec![0u8; byte_count as usize];
+    std::io::Read::read_exact(&mut file, &mut bytes)
+        .map_err(|error| format!("Failed to read flashed target for geometry check: {error}"))?;
+    Ok(bytes)
+}
+
+fn verify_ext4_root_geometry(
+    device_path: &str,
+    linux_strategy: Option<LinuxPrivilegeStrategy>,
+    progress_context: Option<&FlashProgressContext>,
+    root_range: Option<(u64, u64)>,
+) -> Result<(), String> {
+    let Some((root_start, root_len)) = root_range else {
+        return Ok(());
+    };
+
+    // Read the first 4 KiB of the root partition and inspect ext4 superblock fields.
+    let probe_len = 4096u64;
+    let bytes = read_target_range_bytes(
+        device_path,
+        linux_strategy,
+        progress_context,
+        root_start,
+        probe_len,
+    )?;
+    if bytes.len() < 2048 {
+        return Err(format!(
+            "Root geometry probe was too short ({} bytes).",
+            bytes.len()
+        ));
+    }
+
+    let sb = &bytes[1024..2048];
+    let magic = u16::from_le_bytes([sb[56], sb[57]]);
+    if magic != 0xEF53 {
+        return Err(format!(
+            "Root partition does not contain a valid ext4 superblock (magic=0x{magic:04x})."
+        ));
+    }
+
+    let blocks_lo = u32::from_le_bytes([sb[4], sb[5], sb[6], sb[7]]) as u64;
+    let log_block_size = u32::from_le_bytes([sb[24], sb[25], sb[26], sb[27]]);
+    let block_size = 1024u64
+        .checked_shl(log_block_size)
+        .ok_or_else(|| format!("Invalid ext4 block size shift value: {log_block_size}"))?;
+
+    let feature_incompat = u32::from_le_bytes([sb[96], sb[97], sb[98], sb[99]]);
+    let mut blocks = blocks_lo;
+    // ext4 INCOMPAT_64BIT: include high block-count bits when present.
+    if feature_incompat & 0x80 != 0 {
+        let blocks_hi = u32::from_le_bytes([sb[0x150], sb[0x151], sb[0x152], sb[0x153]]) as u64;
+        blocks |= blocks_hi << 32;
+    }
+
+    let fs_bytes = blocks
+        .checked_mul(block_size)
+        .ok_or_else(|| "Ext4 filesystem size overflow during geometry validation.".to_string())?;
+    if fs_bytes > root_len {
+        return Err(format!(
+            "Root filesystem geometry is invalid: superblock advertises {fs_bytes} bytes, but the root partition is {root_len} bytes."
+        ));
+    }
+
+    Ok(())
+}
+
 pub(crate) fn verify_flashed_target_matches_image(
     image_path: &Path,
     device_path: &str,
@@ -105,6 +212,10 @@ pub(crate) fn verify_flashed_target_matches_image(
             ignored_mismatch_ranges,
         )?;
     }
+
+    // Always validate root ext4 geometry explicitly. Non-strict verification mode skips
+    // full root byte comparison, so this catches impossible superblock/partition mismatches.
+    verify_ext4_root_geometry(device_path, linux_strategy, progress_context, root_range)?;
 
     Ok(())
 }
