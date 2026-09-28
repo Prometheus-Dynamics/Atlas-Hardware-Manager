@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, HashMap};
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use atlas_core::{
     Atlas, DeviceJobStatus, DeviceRecord, Event, JobPlan, Presence, ReleaseTarget, StagedRollout,
     UpdateRequest,
 };
-use atlas_driver::{CapabilityKind, Concurrency, DeviceKey, DeviceMode, Family};
+use atlas_driver::{Artifact, CapabilityKind, Concurrency, DeviceKey, DeviceMode, Family};
 use serde_json::json;
 use tokio::sync::broadcast::error::RecvError;
 
@@ -97,10 +98,30 @@ pub(crate) struct UpdateOptions {
     pub(crate) releases: Vec<String>,
     pub(crate) staged: StagedRollout,
     pub(crate) dry_run: bool,
+    pub(crate) image: Option<PathBuf>,
     pub(crate) json: bool,
 }
 
-fn build_request(atlas: &Atlas, options: &UpdateOptions) -> Result<UpdateRequest, String> {
+/// Hashes a local image once so the driver can check it again before use.
+async fn local_artifact(path: &Path) -> Result<Artifact, String> {
+    let size_bytes = std::fs::metadata(path)
+        .map_err(|error| format!("{}: {error}", path.display()))?
+        .len();
+    let sha256 = atlas_release::sha256_file(path)
+        .await
+        .map_err(|error| error.to_string())?;
+    Ok(Artifact {
+        name: path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "image".into()),
+        path: path.to_path_buf(),
+        sha256,
+        size_bytes,
+    })
+}
+
+async fn build_request(atlas: &Atlas, options: &UpdateOptions) -> Result<UpdateRequest, String> {
     let devices: Vec<DeviceKey> = if options.all {
         atlas
             .devices()
@@ -140,8 +161,20 @@ fn build_request(atlas: &Atlas, options: &UpdateOptions) -> Result<UpdateRequest
                 .or_insert_with(|| ReleaseTarget::version(version.clone()));
         }
     }
+    if let Some(path) = &options.image {
+        let artifact = local_artifact(path).await?;
+        let version = options.version.clone().unwrap_or_else(|| "local".into());
+        for key in &devices {
+            releases
+                .entry(key.family.clone())
+                .or_insert_with(|| ReleaseTarget::version(version.clone()))
+                .artifact = Some(artifact.clone());
+        }
+    }
     if releases.is_empty() {
-        return Err("choose a version with --version or --release family=version".into());
+        return Err(
+            "choose a version with --version, --release family=version, or an --image".into(),
+        );
     }
     Ok(UpdateRequest {
         devices,
@@ -174,7 +207,7 @@ fn print_plan(plan: &JobPlan) {
 
 pub(crate) async fn update(atlas: &Atlas, options: UpdateOptions) -> CommandResult {
     atlas.scan().await;
-    let request = build_request(atlas, &options)?;
+    let request = build_request(atlas, &options).await?;
     let plan = atlas
         .plan_update(&request)
         .map_err(|error| error.to_string())?;

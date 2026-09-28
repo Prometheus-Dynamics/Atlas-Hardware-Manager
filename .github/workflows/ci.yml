@@ -2,18 +2,20 @@ name: CI
 
 on:
   push:
+    tags: ["v*"]
+    branches: ["**"]
   pull_request:
   workflow_dispatch:
 
 jobs:
   workspace:
-    name: ${{ matrix.os }}
+    name: checks (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-22.04, windows-latest, macos-latest]
     defaults:
       run:
         shell: bash
@@ -21,13 +23,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.94.0
         with:
           components: rustfmt, clippy
 
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.9
+
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
+
+      # The Tauri shell embeds the built frontend, so it is built first.
+      - name: Check and build the frontend
+        working-directory: apps/desktop
+        run: |
+          bun install --frozen-lockfile
+          bun run check
+          bun run build
 
       - name: Check formatting
         run: cargo fmt --all --check
@@ -41,7 +63,7 @@ jobs:
       - name: Run tests
         run: cargo test --workspace
 
-      # Phase 0 gate: the CLI lists devices and runs an update job on every OS.
+      # Phase 0 gate: the CLI lists devices and runs update jobs on every OS.
       - name: Smoke test the CLI against simulated devices
         run: |
           cargo run -q -p atlas-cli -- --sim demo ls
@@ -52,3 +74,62 @@ jobs:
             echo "a rolled-back device must make the update exit non-zero" >&2
             exit 1
           fi
+
+      - name: Smoke test host checks
+        run: |
+          cargo run -q -p atlas-cli -- disks
+          cargo run -q -p atlas-cli -- doctor || true
+
+  bundle:
+    name: bundle (${{ matrix.os }})
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: workspace
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev rpm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.94.0
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.2.9
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build installers
+        working-directory: apps/desktop
+        run: |
+          bun install --frozen-lockfile
+          bun run bundle
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: atlas-${{ runner.os }}
+          path: |
+            target/release/bundle/**/*.deb
+            target/release/bundle/**/*.rpm
+            target/release/bundle/**/*.AppImage
+            target/release/bundle/**/*.msi
+            target/release/bundle/**/*.exe
+            target/release/bundle/**/*.dmg
+          if-no-files-found: error

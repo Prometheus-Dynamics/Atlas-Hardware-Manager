@@ -157,8 +157,9 @@ async fn run_job(
     )
     .await;
 
-    let summary = {
+    let (summary, final_state, touches_robots) = {
         let mut state = inner.state();
+        let touches_robots = !state.robots.is_empty();
         let Some(record) = state.jobs.get_mut(&job) else {
             return;
         };
@@ -170,10 +171,18 @@ async fn run_job(
         } else {
             JobState::Finished
         };
+        let final_state = record.state;
         state.job_cancel.remove(&job);
-        summary
+        (summary, final_state, touches_robots)
     };
-    inner.events.emit(Event::JobFinished { job, summary });
+    inner.events.emit(Event::JobFinished {
+        job,
+        state: final_state,
+        summary,
+    });
+    if touches_robots {
+        inner.events.emit(Event::RobotsChanged);
+    }
     inner.persist();
     let _ = done.send(true);
 }

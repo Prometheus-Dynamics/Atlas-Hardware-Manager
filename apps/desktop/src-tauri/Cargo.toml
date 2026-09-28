@@ -21,6 +21,7 @@ tauri-build = { version = "2", features = [] }
 atlas-core.workspace = true
 atlas-driver.workspace = true
 atlas-driver-mock.workspace = true
+atlas-driver-rpi.workspace = true
 atlas-release.workspace = true
 dirs.workspace = true
 serde.workspace = true

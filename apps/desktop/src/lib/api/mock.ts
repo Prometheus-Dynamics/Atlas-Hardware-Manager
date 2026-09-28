@@ -1,0 +1,245 @@
+// In-memory simulated backend for previewing the UI in a plain browser
+// (`bun run dev`). Same shape as `api` in commands.ts; see client.ts.
+
+import type { api as tauriApi } from "./commands";
+import type { AppInfo, DeviceAction, HealthCheck, ReleaseEntry, RobotProfile } from "./types";
+import { keyString } from "./types";
+import { atlasChannel, downloadChannel, emit, latency, resyncChannel, sleep } from "./mock/bus";
+import { fleet, inventory, jobs, releases, robots, settings, simDevice, sources } from "./mock/data";
+import * as runner from "./mock/runner";
+import { listRecords, robotStatuses, robotUpdateRequest, scan, touch } from "./mock/scan";
+
+type Api = typeof tauriApi;
+
+// JSON round-trip: inputs may be Svelte state proxies, which structuredClone rejects.
+const clone = <T>(value: T): T => (value === undefined ? value : JSON.parse(JSON.stringify(value)));
+
+async function reply<T>(work: () => T): Promise<T> {
+  await latency();
+  try {
+    return clone(work());
+  } catch (error) {
+    throw typeof error === "string" ? error : String(error);
+  }
+}
+
+function stored(key: { family: string; serial: string }) {
+  const entry = inventory.get(keyString(key));
+  if (!entry) throw `no device ${keyString(key)} in the inventory`;
+  return entry;
+}
+
+const ACTIONS: DeviceAction[] = [
+  { id: "locate", label: "Locate", destructive: false },
+  { id: "reboot", label: "Reboot", destructive: false },
+  { id: "factory-reset", label: "Factory reset", destructive: true },
+];
+
+function validateRobot(profile: RobotProfile) {
+  if (!profile.name.trim()) throw "invalid robot profile: the name is empty";
+  for (const role of profile.roles) {
+    if (!role.role.trim()) throw "invalid robot profile: a role has no name";
+    if (role.device && role.device.family !== role.family)
+      throw `invalid robot profile: role \`${role.role}\` expects a ${role.family} device`;
+  }
+}
+
+let scanTimer: ReturnType<typeof setTimeout> | null = null;
+function autoScan() {
+  if (scanTimer) return;
+  const loop = async () => {
+    if (settings.auto_scan) await scan();
+    scanTimer = setTimeout(loop, Math.max(1000, settings.scan_interval_ms));
+  };
+  scanTimer = setTimeout(loop, 400);
+}
+
+export const mockApi: Api = {
+  scan: () => scan().then(clone),
+  listDevices: () => reply(listRecords),
+  setDeviceLabel: (key, label) =>
+    reply(() => {
+      stored(key).label = label?.trim() || null;
+      touch(key);
+    }),
+  setDeviceRobot: (key, robot) =>
+    reply(() => {
+      stored(key).robot = robot;
+      touch(key);
+      emit({ type: "robots-changed" });
+    }),
+  forgetDevice: (key) =>
+    reply(() => {
+      if (stored(key).presence === "online") throw `${keyString(key)} is online; only offline devices can be forgotten`;
+      inventory.delete(keyString(key));
+      emit({ type: "device-forgotten", key });
+    }),
+  deviceActions: (key) =>
+    reply(() => {
+      const sim = simDevice(key);
+      if (stored(key).presence !== "online") throw `${keyString(key)} is offline; reconnect it or run a scan`;
+      if (!sim || sim.mode === "recovery") throw `${keyString(key)} does not support actions`;
+      return ACTIONS;
+    }),
+  runDeviceAction: (key, action) =>
+    reply(() => {
+      if (!ACTIONS.some((a) => a.id === action)) throw `${keyString(key)} has no action named \`${action}\``;
+    }),
+
+  planUpdate: (request) => reply(() => runner.plan(clone(request))),
+  startUpdate: (request) => reply(() => runner.start(clone(request))),
+  cancelJob: (id) => reply(() => runner.cancel(id)),
+  listJobs: () => reply(() => jobs),
+  getJob: (id) => reply(() => jobs.find((job) => job.id === id) ?? null),
+
+  listRobots: () => reply(() => robots),
+  robotStatuses: () => reply(robotStatuses),
+  saveRobot: (profile, previousName = null) =>
+    reply(() => {
+      validateRobot(profile);
+      const index = robots.findIndex((r) => r.name === (previousName ?? profile.name));
+      if (previousName && previousName !== profile.name && robots.some((r) => r.name === profile.name))
+        throw `invalid robot profile: a robot named \`${profile.name}\` already exists`;
+      if (index >= 0) robots[index] = clone(profile);
+      else robots.push(clone(profile));
+      emit({ type: "robots-changed" });
+    }),
+  deleteRobot: (name) =>
+    reply(() => {
+      const index = robots.findIndex((r) => r.name === name);
+      if (index < 0) throw `no robot named \`${name}\``;
+      robots.splice(index, 1);
+      emit({ type: "robots-changed" });
+    }),
+  robotUpdateRequest: (name, staged = null) => reply(() => robotUpdateRequest(name, staged, settings.staged_default)),
+
+  listReleases: () => reply(() => releases),
+  addLocalRelease: (path, family, version) =>
+    reply(() => {
+      if (!family.trim() || !version.trim()) throw "a local release needs a family and a version";
+      const name = path.split(/[\\/]/).pop() ?? path;
+      const entry: ReleaseEntry = {
+        id: `local/${family}/${version}`,
+        family,
+        version,
+        channel: "local",
+        origin: { kind: "local-file" },
+        artifact_name: name,
+        sha256: Math.random().toString(16).slice(2).padEnd(64, "0"),
+        size_bytes: 1_000_000 + Math.floor(Math.random() * 9_000_000),
+        path,
+        signed: false,
+        boards: [],
+        notes_url: null,
+        added_ms: Date.now(),
+      };
+      const index = releases.findIndex((r) => r.id === entry.id);
+      if (index >= 0) releases[index] = entry;
+      else releases.push(entry);
+      return entry;
+    }),
+  removeRelease: (id) =>
+    reply(() => {
+      const index = releases.findIndex((r) => r.id === id);
+      if (index < 0) throw `no release ${id} in the catalog`;
+      releases.splice(index, 1);
+    }),
+  refreshReleases: () =>
+    reply(() => (sources.length ? [`${sources[sources.length - 1].name}: manifest signature did not match any key`] : [])),
+  downloadRelease: async (id) => {
+    const entry = releases.find((r) => r.id === id);
+    if (!entry) throw `no release ${id} in the catalog`;
+    const total = entry.size_bytes;
+    for (let i = 1; i <= 20; i++) {
+      await sleep(120);
+      downloadChannel.emit({ id, downloaded: Math.round((total * i) / 20), total });
+    }
+    entry.path = `/home/atlas/.cache/atlas/releases/${entry.artifact_name}`;
+    return clone(entry);
+  },
+  listReleaseSources: () => reply(() => sources),
+  setReleaseSource: (source) =>
+    reply(() => {
+      if (!/^https?:\/\//.test(source.index_url)) throw "the index URL must start with http:// or https://";
+      if (source.public_keys.some((k) => !/^ed25519:[0-9a-f]{64}$/i.test(k)))
+        throw "public keys look like ed25519:<64 hex characters>";
+      const index = sources.findIndex((s) => s.name === source.name);
+      if (index >= 0) sources[index] = clone(source);
+      else sources.push(clone(source));
+    }),
+  removeReleaseSource: (name) =>
+    reply(() => {
+      const index = sources.findIndex((s) => s.name === name);
+      if (index >= 0) sources.splice(index, 1);
+    }),
+
+  appInfo: () =>
+    reply((): AppInfo => ({
+      version: "0.1.0-browser",
+      platform: "browser",
+      arch: "wasm",
+      simulated: "demo",
+      paths: {
+        data_dir: "/home/atlas/.local/share/atlas",
+        cache_dir: "/home/atlas/.cache/atlas",
+        settings_file: "/home/atlas/.local/share/atlas/settings.json",
+        inventory_file: "/home/atlas/.local/share/atlas/inventory.json",
+        releases_file: "/home/atlas/.local/share/atlas/releases.json",
+        release_cache_dir: "/home/atlas/.cache/atlas/releases",
+      },
+      startup_warnings: ["Running in a browser without Tauri: every device and job is simulated."],
+    })),
+  healthChecks: () =>
+    reply((): HealthCheck[] => [
+      { id: "data-dir", label: "Data directory", status: "ok", detail: "Writable.", fix: null },
+      {
+        id: "usb-boot",
+        label: "USB boot access",
+        status: "warning",
+        detail: "No udev rule grants access to Raspberry Pi USB boot devices.",
+        fix: "Install the Atlas udev rules, then unplug and replug the device.",
+      },
+      {
+        id: "network",
+        label: "USB network interfaces",
+        status: "error",
+        detail: "No usb0 interface is configured for the 10.55.0.0/24 link.",
+        fix: "Enable the USB gadget network in your network manager.",
+      },
+    ]),
+  getSettings: () => reply(() => settings),
+  saveSettings: (next) =>
+    reply(() => {
+      const restart = next.simulated !== settings.simulated;
+      Object.assign(settings, next);
+      return restart;
+    }),
+  restartApp: async () => {
+    await latency();
+    location.reload();
+  },
+};
+
+export const mockEvents = {
+  onAtlasEvent: (handler: Parameters<typeof atlasChannel.listen>[0]) => {
+    autoScan();
+    return atlasChannel.listen(handler);
+  },
+  onResync: (handler: () => void) => resyncChannel.listen(handler),
+  onDownloadProgress: (handler: Parameters<typeof downloadChannel.listen>[0]) => downloadChannel.listen(handler),
+};
+
+// Console hook for trying offline flows in the preview:
+// `__atlasMock.setOnline("H-1003", false)` then wait for the next scan.
+if (typeof window !== "undefined") {
+  (window as unknown as { __atlasMock: object }).__atlasMock = {
+    setOnline(serial: string, online: boolean) {
+      const device = fleet.find((d) => d.key.serial === serial);
+      if (device) device.online = online;
+    },
+    neverConfirms(serial: string, value = true) {
+      const device = fleet.find((d) => d.key.serial === serial);
+      if (device) device.neverConfirms = value;
+    },
+  };
+}

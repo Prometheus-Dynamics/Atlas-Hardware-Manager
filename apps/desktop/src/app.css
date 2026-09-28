@@ -8,8 +8,95 @@
 
 @source "../node_modules/@skeletonlabs/skeleton-svelte/dist";
 
+/* Atlas is dark-only: `dark:` follows the class on <html>, not the OS. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 html,
 body {
   height: 100%;
   font-family: var(--base-font-family), sans-serif;
+  color-scheme: dark;
+  overflow: hidden;
+}
+
+/* Compact, instrument-like defaults shared by every screen. */
+@layer components {
+  .micro-label {
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.22em;
+    color: var(--color-surface-400);
+    font-weight: 500;
+  }
+  .field {
+    background-color: var(--color-surface-900);
+    border: 1px solid var(--color-surface-700);
+    border-radius: var(--radius-base);
+    color: var(--color-surface-50);
+    font-size: 0.8rem;
+    padding: 0.3rem 0.5rem;
+    min-height: 1.9rem;
+  }
+  .field:focus {
+    outline: none;
+    border-color: var(--color-primary-400);
+    box-shadow: 0 0 0 1px var(--color-primary-400);
+  }
+  .field:disabled {
+    opacity: 0.5;
+  }
+  .chip-toggle {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    padding: 0.15rem 0.5rem;
+    border: 1px solid var(--color-surface-700);
+    border-radius: var(--radius-base);
+    color: var(--color-surface-300);
+  }
+  .chip-toggle[aria-pressed="true"] {
+    border-color: var(--color-primary-400);
+    color: var(--color-surface-50);
+    background-color: color-mix(in oklab, var(--color-primary-500) 25%, transparent);
+  }
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    font-size: 0.62rem;
+    line-height: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    padding: 0 0.35rem;
+    border-radius: var(--radius-base);
+    border: 1px solid currentColor;
+    white-space: nowrap;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary-400);
+  outline-offset: 1px;
+}
+
+@keyframes atlas-flash {
+  from {
+    background-color: color-mix(in oklab, var(--color-success-500) 22%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+.row-new {
+  animation: atlas-flash 2.4s ease-out;
+}
+
+/* Quiet buttons: a faint lift off the charcoal surface. */
+.preset-tonal {
+  background-color: var(--color-surface-800);
+  color: var(--color-surface-100);
+}
+.preset-tonal:not(:disabled):hover {
+  background-color: var(--color-surface-700);
+  filter: none;
 }

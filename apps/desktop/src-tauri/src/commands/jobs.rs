@@ -154,3 +154,8 @@ pub fn cancel_job(state: State<'_, AppState>, id: JobId) -> CmdResult<()> {
 pub fn list_jobs(state: State<'_, AppState>) -> Vec<JobRecord> {
     state.atlas.jobs()
 }
+
+#[tauri::command]
+pub fn get_job(state: State<'_, AppState>, id: JobId) -> Option<JobRecord> {
+    state.atlas.job(id)
+}

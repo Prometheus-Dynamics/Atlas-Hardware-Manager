@@ -270,6 +270,7 @@ export type AtlasEvent =
   | { type: "device-seen"; record: DeviceRecord; new: boolean }
   | { type: "device-offline"; key: DeviceKey }
   | { type: "device-forgotten"; key: DeviceKey }
+  /** A profile changed, or a device in a robot changed version or presence. */
   | { type: "robots-changed" }
   | { type: "scan-warning"; message: string }
   | { type: "scan-finished"; report: ScanReport }
@@ -278,7 +279,7 @@ export type AtlasEvent =
   | { type: "job-step"; job: JobId; device: DeviceKey; step: UpdateStep }
   | { type: "job-progress"; job: JobId; device: DeviceKey; step: UpdateStep; fraction: number }
   | { type: "job-log"; job: JobId; device: DeviceKey; message: string }
-  | { type: "job-finished"; job: JobId; summary: JobSummary };
+  | { type: "job-finished"; job: JobId; state: JobState; summary: JobSummary };
 
 /** Payload of `atlas://download`. */
 export interface DownloadEvent {

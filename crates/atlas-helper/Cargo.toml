@@ -1,0 +1,22 @@
+[package]
+name = "atlas-helper"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Privileged helper that writes a verified image to a removable disk, and nothing else."
+
+[[bin]]
+name = "atlas-helper"
+path = "src/main.rs"
+
+[dependencies]
+atlas-blockdev.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

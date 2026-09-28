@@ -37,12 +37,20 @@ export const api = {
     invoke<void>("run_device_action", { key, action }),
 
   // Jobs
-  /** What an update would do, per device. Does not download anything. */
+  /**
+   * What an update would do, per device. Uses catalog metadata only: remote
+   * releases need not be downloaded yet, and nothing is hashed.
+   */
   planUpdate: (request: UpdateRequestInput) => invoke<JobPlan>("plan_update", { request }),
-  /** Downloads and verifies files, then starts the job. Follow it with events. */
+  /**
+   * Downloads remote releases and re-checks every file's SHA-256, then starts
+   * the job. Unsigned local files are refused unless settings allow them.
+   * Follow progress with events.
+   */
   startUpdate: (request: UpdateRequestInput) => invoke<JobId>("start_update", { request }),
   cancelJob: (id: JobId) => invoke<void>("cancel_job", { id }),
   listJobs: () => invoke<JobRecord[]>("list_jobs"),
+  getJob: (id: JobId) => invoke<JobRecord | null>("get_job", { id }),
 
   // Robots
   listRobots: () => invoke<RobotProfile[]>("list_robots"),

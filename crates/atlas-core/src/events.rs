@@ -2,7 +2,7 @@ use atlas_driver::{DeviceKey, UpdateStep};
 use serde::Serialize;
 use tokio::sync::broadcast;
 
-use crate::{DeviceJobStatus, DeviceRecord, JobId, JobSummary, ScanReport};
+use crate::{DeviceJobStatus, DeviceRecord, JobId, JobState, JobSummary, ScanReport};
 
 /// Every state change in Atlas. Hosts render these; nothing else is needed
 /// to keep a UI in sync.
@@ -23,7 +23,8 @@ pub enum Event {
     DeviceForgotten {
         key: DeviceKey,
     },
-    /// A robot profile was created, changed, or deleted.
+    /// A robot profile was created, changed, or deleted, or a device in a
+    /// robot changed version or presence. Re-read robot statuses.
     RobotsChanged,
     ScanWarning {
         message: String,
@@ -58,6 +59,7 @@ pub enum Event {
     },
     JobFinished {
         job: JobId,
+        state: JobState,
         summary: JobSummary,
     },
 }

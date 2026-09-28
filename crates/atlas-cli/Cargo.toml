@@ -17,7 +17,10 @@ path = "src/main.rs"
 [dependencies]
 atlas-core.workspace = true
 atlas-driver.workspace = true
+atlas-blockdev.workspace = true
 atlas-driver-mock.workspace = true
+atlas-driver-rpi.workspace = true
+atlas-release.workspace = true
 clap.workspace = true
 dirs.workspace = true
 serde_json.workspace = true

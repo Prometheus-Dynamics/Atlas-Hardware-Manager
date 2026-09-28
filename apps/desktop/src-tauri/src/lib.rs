@@ -86,6 +86,7 @@ pub fn run() {
             commands::jobs::start_update,
             commands::jobs::cancel_job,
             commands::jobs::list_jobs,
+            commands::jobs::get_job,
             commands::robots::list_robots,
             commands::robots::robot_statuses,
             commands::robots::save_robot,

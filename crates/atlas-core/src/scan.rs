@@ -32,6 +32,8 @@ struct Scan<'a> {
     /// Best link rank per device seen so far in this scan.
     best: BTreeMap<DeviceKey, u8>,
     warnings: Vec<String>,
+    /// Whether any device was new or changed, so robot statuses may too.
+    changed: bool,
 }
 
 impl Scan<'_> {
@@ -73,6 +75,7 @@ impl Scan<'_> {
                 .upsert(identity, pending.link_kind.clone(), kinds, now_ms())
         };
         if outcome != Upsert::Unchanged {
+            self.changed = true;
             self.inner.events.emit(Event::DeviceSeen {
                 record: Box::new(record),
                 new: outcome == Upsert::New,
@@ -214,6 +217,7 @@ pub(crate) async fn run(inner: &Inner) -> ScanReport {
         inner,
         best: BTreeMap::new(),
         warnings: Vec::new(),
+        changed: false,
     };
     let mut frontier = scan.discover(links).await;
     for depth in 0..=inner.options.max_gateway_depth {
@@ -239,6 +243,9 @@ pub(crate) async fn run(inner: &Inner) -> ScanReport {
     };
     for key in &went_offline {
         inner.events.emit(Event::DeviceOffline { key: key.clone() });
+    }
+    if (scan.changed || !went_offline.is_empty()) && !inner.state().robots.is_empty() {
+        inner.events.emit(Event::RobotsChanged);
     }
     inner.persist();
 

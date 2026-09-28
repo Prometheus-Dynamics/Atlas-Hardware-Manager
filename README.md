@@ -4,47 +4,98 @@ Atlas is the one tool for Prometheus Dynamics hardware: connect to a robot
 once, see every PD device on it, and update, configure, or recover any of
 them, on Linux, Windows, and macOS.
 
-This branch is a ground-up rebuild. The shipping app lives on `dev` and
-`main` until the v1 gate below passes.
+This branch is a ground-up rebuild. The previous app lives on `dev` and
+`main` until this one replaces it.
 
-## Status: phase 0 (foundations)
+## What works today
 
-| Phase | Scope | Exit gate |
-| --- | --- | --- |
-| **0 Foundations** (this branch) | Workspace, driver contract, core, simulated devices, CLI, CI on 3 OSes | `atlas ls` and a simulated update job run in CI on Linux, Windows, macOS |
-| 1 HeliOS + UI | HeliOS driver (new and legacy API), Tauri app, inventory and device panel | A HeliOS device on `dev` and overhaul images shows up and updates from the UI |
-| 2 Bulk + robots | Robot profiles, bulk jobs, resume after restart | 10 devices on the test rig update from one profile |
-| 3 Recover + sign | Rust rpiboot, privileged write helper, signed release manifests | USB recovery works on all 3 OSes; tampered artifacts are refused |
-| 4 STM32 | Custom USB bootloader driver, gateway relay | An STM32 board updates directly and through a HeliOS gateway |
+- **Desktop app** (`apps/desktop`): inventory with live discovery, device
+  panel, update and recovery flow with a plan preview, bulk jobs with staged
+  rollout, a jobs tray, robot profiles ("is this robot ready?" and one-click
+  "Make ready"), a release catalog, and host health checks.
+- **Raspberry Pi flashing, no rpiboot binary**: a compute module in USB boot
+  mode appears as a recovery device. Recovering it boots it over USB with a
+  pure-Rust port of the rpiboot protocol, waits for its eMMC to appear as a
+  disk, writes the image through an elevated helper, and verifies it by
+  reading it back.
+- **Releases**: local image files (hashed, re-checked before every install)
+  and remote indexes of ed25519-signed manifests.
+- **`atlas` CLI**: every flow from a terminal, for scripts and CI.
+- **Simulated devices** for demos, UI work, and CI.
 
-## Workspace layout
+Not yet: the HeliOS driver (waiting on the HeliOS device API), the STM32
+bootloader driver, job history across restarts, and a signed Atlas
+self-update.
 
-- `crates/atlas-driver`: the driver contract. Identity, links, capabilities, and the driver registry.
-- `crates/atlas-core`: product logic. Inventory, scanning, the job engine, events, persistence.
-- `crates/atlas-driver-mock`: simulated devices with gateways, recovery mode, and failure injection.
-- `crates/atlas-cli`: the `atlas` command, a thin shell over `atlas-core`.
-- `docs/`: design notes, including the UI [design language](docs/design-language.md).
+## Workspace
 
-Design rules:
+| Path | What it is |
+| --- | --- |
+| `crates/atlas-driver` | The driver contract: identity (`family:serial`), links, capabilities, health checks, registry |
+| `crates/atlas-core` | Inventory, scanning, jobs, robot profiles, events, persistence |
+| `crates/atlas-release` | Release catalog, signed manifests, verified downloads |
+| `crates/atlas-usbboot` | Raspberry Pi USB boot (rpiboot protocol) over `nusb` |
+| `crates/atlas-blockdev` | Disk listing, safety checks, verified image writes, helper client |
+| `crates/atlas-helper` | The only privileged binary: writes one image to one removable disk |
+| `crates/atlas-driver-rpi` | Pi compute modules in USB boot mode |
+| `crates/atlas-driver-mock` | Simulated robot with gateways, recovery mode, and failure injection |
+| `crates/atlas-cli` | The `atlas` command |
+| `apps/desktop` | Tauri 2 shell (`src-tauri`) and SvelteKit UI (`src`) |
 
-- A device is keyed by `family:serial`, never by IP address or USB port.
-- The UI and CLI only send intents and render the event stream; all logic is in `atlas-core`.
-- A device family is added by writing a driver crate. Nothing else changes.
-- No shelling out on the hot path. USB, serial, and block-device access live in Rust.
+Design rules: devices are keyed by `family:serial`, never by IP or port.
+Hosts only send intents and render the event stream. A device family is a
+driver crate and nothing else. USB, serial, and disk access live in Rust.
 
-## Try it
+## Run it
 
-No real drivers ship yet, so use the simulated robot:
+Prerequisites: Rust 1.94 (pinned in `rust-toolchain.toml`), Bun 1.2.9, and
+the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS.
 
 ```bash
-cargo run -p atlas-cli -- --sim demo ls
-cargo run -p atlas-cli -- --sim demo update --all --release sim-helios=2026.3.1 --release sim-mcu=1.5.0
-cargo run -p atlas-cli -- --sim flaky update cam-rear cam-left --version 2026.3.1
-cargo run -p atlas-cli -- --sim demo action cam-front locate
+cd apps/desktop
+bun install
+bun run app:sim   # the desktop app with simulated devices
+bun run app       # the desktop app with real hardware
+bun run dev       # the UI alone in a browser, with an in-browser mock backend
 ```
 
-`--json` prints machine-readable output; `update --json` prints one event per line.
-`--dry-run` shows the update plan without running it.
+For real hardware, fetch the pinned USB boot files once:
+
+```bash
+scripts/fetch-usbboot-files.sh
+```
+
+On Linux, allow your user to open Pi boot devices (`atlas doctor` prints the
+exact rule and fixes for anything else it finds):
+
+```bash
+echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="0a5c", ATTR{idProduct}=="2711|2712|2763|2764", MODE="0660", TAG+="uaccess"' | sudo tee /etc/udev/rules.d/60-atlas-usbboot.rules
+```
+
+The CLI:
+
+```bash
+cargo run -p atlas-cli -- doctor
+cargo run -p atlas-cli -- disks
+cargo run -p atlas-cli -- ls
+cargo run -p atlas-cli -- update rpi:port-1-2 --image helios-cm5.img.xz
+cargo run -p atlas-cli -- --sim demo update --all --release sim-helios=2026.3.1 --release sim-mcu=1.5.0
+```
+
+## Build installers
+
+```bash
+cd apps/desktop
+bun run bundle
+```
+
+This fetches the boot files, builds `atlas-helper` as a sidecar, and runs
+`tauri build` with `src-tauri/tauri.bundle.conf.json`. CI does the same on
+Linux, Windows, and macOS for tags and manual runs.
+
+Windows needs the WinUSB driver bound to the Pi boot device (the Raspberry Pi
+rpiboot installer provides it); `atlas doctor` and the Settings screen say so
+when it is missing.
 
 ## Development
 
@@ -53,5 +104,5 @@ cargo run -p atlas-cli -- --sim demo action cam-front locate
 ```
 
 That runs `cargo fmt --check`, the 600-line file-size check, clippy with
-`-D warnings`, and the tests. CI runs the same checks, plus a CLI smoke
-test, on Linux, Windows, and macOS.
+`-D warnings`, and the tests. In `apps/desktop`, `bun run check` type-checks
+the UI. CI runs all of it, plus CLI smoke tests, on Linux, Windows, and macOS.

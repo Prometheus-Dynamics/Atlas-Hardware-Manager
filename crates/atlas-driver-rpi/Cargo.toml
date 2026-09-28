@@ -1,0 +1,24 @@
+[package]
+name = "atlas-driver-rpi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Atlas driver for Raspberry Pi compute modules in USB boot mode: boot, write, verify."
+
+[dependencies]
+async-trait.workspace = true
+atlas-blockdev.workspace = true
+atlas-driver.workspace = true
+atlas-usbboot.workspace = true
+tokio = { workspace = true, features = ["rt", "time", "sync", "macros"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros", "time"] }
+
+[lints]
+workspace = true

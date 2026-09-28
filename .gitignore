@@ -25,3 +25,4 @@ src-tauri/gen/
 src-tauri/.cargo/
 **/*.rs.bk
 *.pdb
+/tools/usbboot/

@@ -3,6 +3,7 @@
 
 mod commands;
 mod output;
+mod system;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -10,6 +11,7 @@ use std::sync::Arc;
 
 use atlas_core::{Atlas, InventoryStore, JsonFileStore, StagedRollout};
 use atlas_driver_mock::MockFleet;
+use atlas_driver_rpi::{RpiConfig, RpiDriver, UsbBootLinks};
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
@@ -67,7 +69,16 @@ enum Command {
         /// Show the plan and stop.
         #[arg(long)]
         dry_run: bool,
+        /// Image or firmware file to install, for devices that need one
+        /// (for example a Pi in USB boot mode). Applies to every family in
+        /// the selection.
+        #[arg(long, value_name = "FILE")]
+        image: Option<PathBuf>,
     },
+    /// Check USB access, boot files, and the disk writer on this computer.
+    Doctor,
+    /// List disks and whether Atlas would write to them.
+    Disks,
     /// Run a device action such as `locate` or `reboot`.
     Action {
         device: String,
@@ -107,15 +118,26 @@ fn build_atlas(cli: &Cli) -> Result<Atlas, String> {
     if let Some(path) = state_path {
         builder = builder.store(Arc::new(JsonFileStore::new(path)) as Arc<dyn InventoryStore>);
     }
-    if let Some(scenario) = cli.sim {
-        let fleet = match scenario {
-            SimScenario::Demo => MockFleet::demo(),
-            SimScenario::Flaky => MockFleet::flaky(),
-        };
-        for driver in fleet.drivers() {
-            builder = builder.driver(driver);
+    match cli.sim {
+        Some(scenario) => {
+            let fleet = match scenario {
+                SimScenario::Demo => MockFleet::demo(),
+                SimScenario::Flaky => MockFleet::flaky(),
+            };
+            for driver in fleet.drivers() {
+                builder = builder.driver(driver);
+            }
+            builder = builder.link_source(fleet.link_source());
         }
-        builder = builder.link_source(fleet.link_source());
+        None => {
+            let mut boot_file_dirs = Vec::new();
+            if let Some(data) = dirs::data_dir() {
+                boot_file_dirs.push(data.join("atlas").join("usbboot"));
+            }
+            builder = builder
+                .driver(Arc::new(RpiDriver::new(RpiConfig { boot_file_dirs })))
+                .link_source(Arc::new(UsbBootLinks));
+        }
     }
     builder.build().map_err(|error| error.to_string())
 }
@@ -130,14 +152,6 @@ async fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    if !atlas.has_drivers() {
-        output::error(
-            "No device drivers are included in this build yet. \
-             Try `atlas --sim demo ls` to use simulated devices.",
-        );
-        return ExitCode::from(2);
-    }
-
     let result = match cli.command {
         Command::Ls => commands::ls(&atlas, cli.json).await,
         Command::Update {
@@ -147,6 +161,7 @@ async fn main() -> ExitCode {
             releases,
             staged,
             dry_run,
+            image,
         } => {
             let options = commands::UpdateOptions {
                 selectors: devices,
@@ -155,6 +170,7 @@ async fn main() -> ExitCode {
                 releases,
                 staged: staged.into(),
                 dry_run,
+                image,
                 json: cli.json,
             };
             commands::update(&atlas, options).await
@@ -162,6 +178,8 @@ async fn main() -> ExitCode {
         Command::Action { device, action } => {
             commands::action(&atlas, &device, action.as_deref(), cli.json).await
         }
+        Command::Doctor => system::doctor(&atlas, cli.json).await,
+        Command::Disks => system::disks(cli.json).await,
     };
     match result {
         Ok(code) => code,
