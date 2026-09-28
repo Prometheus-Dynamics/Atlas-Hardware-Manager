@@ -1,0 +1,22 @@
+[package]
+name = "atlas-driver-mock"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Simulated devices for Atlas tests, CI, and UI work."
+
+[dependencies]
+atlas-driver.workspace = true
+async-trait.workspace = true
+tokio = { workspace = true, features = ["time", "macros"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "time", "macros"] }
+
+[lints]
+workspace = true

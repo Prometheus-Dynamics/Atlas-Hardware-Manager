@@ -1,0 +1,51 @@
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+use crate::{Candidate, Capabilities, DriverError, Family, Identity, Link, LinkKind};
+
+/// Static description of a driver, used for matching and ranking.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DriverManifest {
+    pub family: Family,
+    /// Human-readable driver name, for example `HeliOS`.
+    pub name: String,
+    pub version: String,
+    /// Link kinds this driver can discover devices on.
+    pub link_kinds: Vec<LinkKind>,
+    /// Higher wins when two drivers claim the same family. Default 0.
+    pub priority: i32,
+}
+
+impl DriverManifest {
+    pub fn handles(&self, link: &LinkKind) -> bool {
+        self.link_kinds.iter().any(|kind| kind.same_variant(link))
+    }
+}
+
+/// One device family's implementation.
+#[async_trait]
+pub trait Driver: Send + Sync {
+    fn manifest(&self) -> &DriverManifest;
+
+    /// Finds candidates on one link. Must return quickly; slow probing
+    /// belongs in [`identify`](Self::identify), which runs in parallel.
+    async fn discover(&self, link: &Link) -> Result<Vec<Candidate>, DriverError>;
+
+    /// Asks a candidate who it is.
+    async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError>;
+
+    /// The capabilities this driver grants the device.
+    fn capabilities(&self, device: &Identity) -> Capabilities;
+
+    /// Devices reachable through this one. Only gateways return anything.
+    async fn children(&self, _device: &Identity) -> Result<Vec<Candidate>, DriverError> {
+        Ok(Vec::new())
+    }
+}
+
+/// Supplies the links present on this computer, for example USB network
+/// interfaces or USB boot devices. Transports implement this.
+#[async_trait]
+pub trait LinkSource: Send + Sync {
+    async fn links(&self) -> Vec<Link>;
+}

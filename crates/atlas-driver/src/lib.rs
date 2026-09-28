@@ -1,0 +1,26 @@
+//! The contract between Atlas and a device family.
+//!
+//! A driver tells Atlas three things: how to find its devices on a [`Link`],
+//! who each device is ([`Identity`]), and which [`Capabilities`] it offers.
+//! Everything above this crate works only with those types, so a new device
+//! family is added by writing a driver, not by changing the core or the UI.
+
+mod capability;
+mod driver;
+mod error;
+mod registry;
+mod types;
+
+pub use capability::{
+    ActionsCapability, Capabilities, CapabilityKind, Concurrency, DeviceAction, ProgressSink,
+    ProgressUpdate, ReleaseRef, UpdateCapability, UpdateOutcome, UpdatePlan, UpdateStep,
+};
+pub use driver::{Driver, DriverManifest, LinkSource};
+pub use error::DriverError;
+pub use registry::DriverRegistry;
+pub use types::{
+    Candidate, DeviceKey, DeviceMode, Family, Identity, Link, LinkId, LinkKind, Serial,
+};
+
+/// Cancellation handle passed to long-running driver operations.
+pub use tokio_util::sync::CancellationToken;

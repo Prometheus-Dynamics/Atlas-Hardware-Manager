@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  workspace:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.94.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run file-size lint
+        run: ./scripts/check-file-sizes.sh
+
+      - name: Run clippy
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --workspace
+
+      # Phase 0 gate: the CLI lists devices and runs an update job on every OS.
+      - name: Smoke test the CLI against simulated devices
+        run: |
+          cargo run -q -p atlas-cli -- --sim demo ls
+          cargo run -q -p atlas-cli -- --sim demo update --all \
+            --release sim-helios=2026.3.1 --release sim-mcu=1.5.0
+          if cargo run -q -p atlas-cli -- --sim flaky update --all --staged off \
+            --release sim-helios=2026.3.1 --release sim-mcu=1.5.0; then
+            echo "a rolled-back device must make the update exit non-zero" >&2
+            exit 1
+          fi
