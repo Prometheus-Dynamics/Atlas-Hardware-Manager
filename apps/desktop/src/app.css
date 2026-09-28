@@ -1,0 +1,15 @@
+@import "./fonts.css";
+@import "@fortawesome/fontawesome-free/css/all.min.css";
+@import "tailwindcss";
+@plugin "@tailwindcss/forms";
+
+@import "@skeletonlabs/skeleton";
+@import "./themes/helios.css";
+
+@source "../node_modules/@skeletonlabs/skeleton-svelte/dist";
+
+html,
+body {
+  height: 100%;
+  font-family: var(--base-font-family), sans-serif;
+}

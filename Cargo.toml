@@ -5,6 +5,7 @@ members = [
     "crates/atlas-driver-mock",
     "crates/atlas-release",
     "crates/atlas-cli",
+    "apps/desktop/src-tauri",
 ]
 resolver = "3"
 

@@ -1,0 +1,84 @@
+// Typed wrappers for every Tauri command in apps/desktop/src-tauri.
+// Argument names are camelCase: Tauri maps them to the Rust snake_case
+// parameters. Rejected promises carry a user-facing sentence (a string).
+
+import { invoke } from "@tauri-apps/api/core";
+import type {
+  AppInfo,
+  AppSettings,
+  DeviceAction,
+  DeviceKey,
+  DeviceRecord,
+  HealthCheck,
+  JobId,
+  JobPlan,
+  JobRecord,
+  ReleaseEntry,
+  RemoteSource,
+  RobotProfile,
+  RobotStatus,
+  ScanReport,
+  StagedRollout,
+  UpdateRequestInput,
+} from "./types";
+
+export const api = {
+  // Devices
+  scan: () => invoke<ScanReport>("scan"),
+  listDevices: () => invoke<DeviceRecord[]>("list_devices"),
+  setDeviceLabel: (key: DeviceKey, label: string | null) =>
+    invoke<void>("set_device_label", { key, label }),
+  setDeviceRobot: (key: DeviceKey, robot: string | null) =>
+    invoke<void>("set_device_robot", { key, robot }),
+  /** Only offline devices can be forgotten. */
+  forgetDevice: (key: DeviceKey) => invoke<void>("forget_device", { key }),
+  deviceActions: (key: DeviceKey) => invoke<DeviceAction[]>("device_actions", { key }),
+  runDeviceAction: (key: DeviceKey, action: string) =>
+    invoke<void>("run_device_action", { key, action }),
+
+  // Jobs
+  /** What an update would do, per device. Does not download anything. */
+  planUpdate: (request: UpdateRequestInput) => invoke<JobPlan>("plan_update", { request }),
+  /** Downloads and verifies files, then starts the job. Follow it with events. */
+  startUpdate: (request: UpdateRequestInput) => invoke<JobId>("start_update", { request }),
+  cancelJob: (id: JobId) => invoke<void>("cancel_job", { id }),
+  listJobs: () => invoke<JobRecord[]>("list_jobs"),
+
+  // Robots
+  listRobots: () => invoke<RobotProfile[]>("list_robots"),
+  robotStatuses: () => invoke<RobotStatus[]>("robot_statuses"),
+  /** Creates or replaces a profile; pass previousName to rename. */
+  saveRobot: (profile: RobotProfile, previousName: string | null = null) =>
+    invoke<void>("save_robot", { profile, previousName }),
+  deleteRobot: (name: string) => invoke<void>("delete_robot", { name }),
+  /** The request that brings the robot to its targets, or null if it is ready. */
+  robotUpdateRequest: (name: string, staged: StagedRollout | null = null) =>
+    invoke<UpdateRequestInput | null>("robot_update_request", { name, staged }),
+
+  // Releases
+  listReleases: () => invoke<ReleaseEntry[]>("list_releases"),
+  addLocalRelease: (path: string, family: string, version: string) =>
+    invoke<ReleaseEntry>("add_local_release", { path, family, version }),
+  removeRelease: (id: string) => invoke<void>("remove_release", { id }),
+  /** Returns warnings such as manifests rejected for bad signatures. */
+  refreshReleases: () => invoke<string[]>("refresh_releases"),
+  downloadRelease: (id: string) => invoke<ReleaseEntry>("download_release", { id }),
+  listReleaseSources: () => invoke<RemoteSource[]>("list_release_sources"),
+  setReleaseSource: (source: RemoteSource) => invoke<void>("set_release_source", { source }),
+  removeReleaseSource: (name: string) => invoke<void>("remove_release_source", { name }),
+
+  // System
+  appInfo: () => invoke<AppInfo>("app_info"),
+  healthChecks: () => invoke<HealthCheck[]>("health_checks"),
+  getSettings: () => invoke<AppSettings>("get_settings"),
+  /** Resolves true when a change applies only after restartApp(). */
+  saveSettings: (settings: AppSettings) => invoke<boolean>("save_settings", { settings }),
+  restartApp: () => invoke<void>("restart_app"),
+};
+
+/** Normalizes a rejected command into a displayable sentence. */
+export function errorText(error: unknown): string {
+  if (typeof error === "string") return error;
+  if (error instanceof Error) return error.message;
+  return String(error);
+}

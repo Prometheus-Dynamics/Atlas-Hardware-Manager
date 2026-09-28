@@ -71,6 +71,8 @@ pub(crate) struct Inner {
     /// One permit per exclusive host resource, shared by every job.
     pub(crate) exclusive: Mutex<HashMap<String, Arc<Semaphore>>>,
     pub(crate) parallel: Arc<Semaphore>,
+    /// Scans run one at a time; a second request waits for the first.
+    pub(crate) scan_lock: tokio::sync::Mutex<()>,
 }
 
 impl Inner {
@@ -163,6 +165,7 @@ impl AtlasBuilder {
                 options: self.options,
                 state: Mutex::new(state),
                 exclusive: Mutex::new(HashMap::new()),
+                scan_lock: tokio::sync::Mutex::new(()),
             }),
         })
     }

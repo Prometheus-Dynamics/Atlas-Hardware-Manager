@@ -200,6 +200,7 @@ impl Scan<'_> {
 }
 
 pub(crate) async fn run(inner: &Inner) -> ScanReport {
+    let _one_at_a_time = inner.scan_lock.lock().await;
     let started = Instant::now();
     inner.events.emit(Event::ScanStarted);
 

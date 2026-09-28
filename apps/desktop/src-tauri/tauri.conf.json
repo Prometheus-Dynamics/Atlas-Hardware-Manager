@@ -1,0 +1,43 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Atlas Hardware Manager",
+  "version": "0.1.0",
+  "identifier": "ca.prometheusdynamics.atlas-hardware-manager",
+  "build": {
+    "beforeDevCommand": "bun run dev",
+    "devUrl": "http://localhost:1422",
+    "beforeBuildCommand": "bun run build",
+    "frontendDist": "../build"
+  },
+  "app": {
+    "enableGTKAppId": true,
+    "windows": [
+      {
+        "title": "Atlas Hardware Manager",
+        "width": 1320,
+        "height": 860,
+        "minWidth": 1024,
+        "minHeight": 680,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: asset:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "Prometheus Dynamics",
+    "shortDescription": "Find, update, and recover Prometheus Dynamics devices",
+    "longDescription": "Atlas Hardware Manager finds every Prometheus Dynamics device on a robot and updates, configures, or recovers them over USB and network links.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}
