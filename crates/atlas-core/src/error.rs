@@ -23,6 +23,12 @@ pub enum CoreError {
     UnknownJob(JobId),
     #[error("jobs must be started from inside a Tokio runtime")]
     NoRuntime,
+    #[error("no robot named `{0}`")]
+    UnknownRobot(String),
+    #[error("invalid robot profile: {0}")]
+    InvalidRobot(String),
+    #[error("{0} is online; only offline devices can be forgotten")]
+    DeviceOnline(DeviceKey),
     #[error(transparent)]
     Store(#[from] StoreError),
     #[error(transparent)]

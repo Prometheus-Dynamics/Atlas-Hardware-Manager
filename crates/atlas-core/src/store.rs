@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::DeviceRecord;
+use crate::{DeviceRecord, RobotProfile};
 
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -16,42 +16,52 @@ pub enum StoreError {
     Format { path: PathBuf, message: String },
 }
 
-/// Where the remembered inventory lives between sessions.
+/// Everything Atlas remembers between sessions.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Snapshot {
+    pub devices: Vec<DeviceRecord>,
+    #[serde(default)]
+    pub robots: Vec<RobotProfile>,
+}
+
+/// Where the remembered inventory and robot profiles live between sessions.
 pub trait InventoryStore: Send + Sync {
-    fn load(&self) -> Result<Vec<DeviceRecord>, StoreError>;
-    fn save(&self, records: &[DeviceRecord]) -> Result<(), StoreError>;
+    fn load(&self) -> Result<Snapshot, StoreError>;
+    fn save(&self, snapshot: &Snapshot) -> Result<(), StoreError>;
 }
 
 /// Keeps the inventory for the life of the process only.
 #[derive(Default)]
 pub struct MemoryStore {
-    records: Mutex<Vec<DeviceRecord>>,
+    snapshot: Mutex<Snapshot>,
 }
 
 impl InventoryStore for MemoryStore {
-    fn load(&self) -> Result<Vec<DeviceRecord>, StoreError> {
+    fn load(&self) -> Result<Snapshot, StoreError> {
         Ok(self
-            .records
+            .snapshot
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone())
     }
 
-    fn save(&self, records: &[DeviceRecord]) -> Result<(), StoreError> {
+    fn save(&self, snapshot: &Snapshot) -> Result<(), StoreError> {
         *self
-            .records
+            .snapshot
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = records.to_vec();
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = snapshot.clone();
         Ok(())
     }
 }
 
-const FORMAT_VERSION: u32 = 1;
+/// Version 1 held devices only; version 2 adds robot profiles.
+const FORMAT_VERSION: u32 = 2;
 
 #[derive(Serialize, Deserialize)]
 struct InventoryFile {
     version: u32,
-    devices: Vec<DeviceRecord>,
+    #[serde(flatten)]
+    snapshot: Snapshot,
 }
 
 /// A JSON file written atomically: temp file, sync, rename.
@@ -77,10 +87,12 @@ impl JsonFileStore {
 }
 
 impl InventoryStore for JsonFileStore {
-    fn load(&self) -> Result<Vec<DeviceRecord>, StoreError> {
+    fn load(&self) -> Result<Snapshot, StoreError> {
         let data = match fs::read(&self.path) {
             Ok(data) => data,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(Snapshot::default());
+            }
             Err(error) => return Err(self.io_error(error)),
         };
         let file: InventoryFile =
@@ -88,25 +100,25 @@ impl InventoryStore for JsonFileStore {
                 path: self.path.clone(),
                 message: error.to_string(),
             })?;
-        if file.version != FORMAT_VERSION {
+        if !(1..=FORMAT_VERSION).contains(&file.version) {
             return Err(StoreError::Format {
                 path: self.path.clone(),
                 message: format!(
-                    "format version {} is not supported (expected {FORMAT_VERSION})",
+                    "format version {} is not supported (expected up to {FORMAT_VERSION})",
                     file.version
                 ),
             });
         }
-        Ok(file.devices)
+        Ok(file.snapshot)
     }
 
-    fn save(&self, records: &[DeviceRecord]) -> Result<(), StoreError> {
+    fn save(&self, snapshot: &Snapshot) -> Result<(), StoreError> {
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent).map_err(|error| self.io_error(error))?;
         }
         let file = InventoryFile {
             version: FORMAT_VERSION,
-            devices: records.to_vec(),
+            snapshot: snapshot.clone(),
         };
         let data = serde_json::to_vec_pretty(&file).map_err(|error| StoreError::Format {
             path: self.path.clone(),
@@ -167,9 +179,16 @@ mod tests {
         let path = temp_path("roundtrip");
         let store = JsonFileStore::new(&path);
 
-        store.save(&[record()]).unwrap();
-        store.save(&[record()]).unwrap();
-        assert_eq!(store.load().unwrap(), vec![record()]);
+        let snapshot = Snapshot {
+            devices: vec![record()],
+            robots: vec![RobotProfile {
+                name: "comp".into(),
+                ..RobotProfile::default()
+            }],
+        };
+        store.save(&snapshot).unwrap();
+        store.save(&snapshot).unwrap();
+        assert_eq!(store.load().unwrap(), snapshot);
 
         let _ = fs::remove_file(path);
     }
@@ -177,7 +196,20 @@ mod tests {
     #[test]
     fn missing_file_loads_empty() {
         let store = JsonFileStore::new(temp_path("missing"));
-        assert!(store.load().unwrap().is_empty());
+        assert_eq!(store.load().unwrap(), Snapshot::default());
+    }
+
+    #[test]
+    fn version_one_files_load_without_robots() {
+        let path = temp_path("v1");
+        let v1 = serde_json::json!({ "version": 1, "devices": [record()] });
+        fs::write(&path, serde_json::to_vec(&v1).unwrap()).unwrap();
+
+        let snapshot = JsonFileStore::new(&path).load().unwrap();
+        assert_eq!(snapshot.devices, vec![record()]);
+        assert!(snapshot.robots.is_empty());
+
+        let _ = fs::remove_file(path);
     }
 
     #[test]

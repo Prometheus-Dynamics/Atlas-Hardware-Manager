@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
-use crate::{Candidate, Capabilities, DriverError, Family, Identity, Link, LinkKind};
+use crate::{Candidate, Capabilities, DriverError, Family, HealthCheck, Identity, Link, LinkKind};
 
 /// Static description of a driver, used for matching and ranking.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,6 +41,12 @@ pub trait Driver: Send + Sync {
     async fn children(&self, _device: &Identity) -> Result<Vec<Candidate>, DriverError> {
         Ok(Vec::new())
     }
+
+    /// Host readiness checks this driver depends on, such as boot files or
+    /// USB permissions. Shown in Settings and `atlas doctor`.
+    async fn health(&self) -> Vec<HealthCheck> {
+        Vec::new()
+    }
 }
 
 /// Supplies the links present on this computer, for example USB network
@@ -48,4 +54,9 @@ pub trait Driver: Send + Sync {
 #[async_trait]
 pub trait LinkSource: Send + Sync {
     async fn links(&self) -> Vec<Link>;
+
+    /// Host readiness checks for this kind of link.
+    async fn health(&self) -> Vec<HealthCheck> {
+        Vec::new()
+    }
 }

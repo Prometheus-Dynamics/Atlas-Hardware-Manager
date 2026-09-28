@@ -41,6 +41,10 @@ impl DriverRegistry {
             .collect()
     }
 
+    pub fn all(&self) -> Vec<Arc<dyn Driver>> {
+        self.drivers.values().cloned().collect()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.drivers.is_empty()
     }

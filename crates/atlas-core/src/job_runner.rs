@@ -45,13 +45,14 @@ pub(crate) fn plan(inner: &Inner, request: &UpdateRequest) -> Result<JobPlan, Co
                 .update
                 .as_ref()
                 .ok_or_else(|| CoreError::NoUpdateCapability(key.clone()))?;
-            let version = request
+            let target = request
                 .releases
                 .get(&key.family)
                 .ok_or_else(|| CoreError::NoReleaseForFamily(key.family.clone()))?;
             let release = ReleaseRef {
                 family: key.family.clone(),
-                version: version.clone(),
+                version: target.version.clone(),
+                artifact: target.artifact.clone(),
             };
             let plan = update.plan(&record.identity, &release)?;
             devices.push(PlannedDevice {
@@ -310,7 +311,7 @@ async fn refresh_identity(
     match tokio::time::timeout(inner.options.identify_timeout, identify).await {
         Ok(Ok(identity)) => {
             let capabilities = live.driver.capabilities(&identity);
-            let kinds = capabilities.kinds();
+            let kinds = capabilities.kinds_for(identity.mode);
             let (outcome, record) = {
                 let mut state = inner.state();
                 if let Some(entry) = state.live.get_mut(key) {

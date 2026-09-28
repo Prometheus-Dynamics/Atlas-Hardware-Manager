@@ -8,15 +8,18 @@
 mod capability;
 mod driver;
 mod error;
+mod health;
 mod registry;
 mod types;
 
 pub use capability::{
-    ActionsCapability, Capabilities, CapabilityKind, Concurrency, DeviceAction, ProgressSink,
-    ProgressUpdate, ReleaseRef, UpdateCapability, UpdateOutcome, UpdatePlan, UpdateStep,
+    ActionsCapability, Artifact, Capabilities, CapabilityKind, Concurrency, DeviceAction,
+    ProgressSink, ProgressUpdate, ReleaseRef, UpdateCapability, UpdateOutcome, UpdatePlan,
+    UpdateStep,
 };
 pub use driver::{Driver, DriverManifest, LinkSource};
 pub use error::DriverError;
+pub use health::{HealthCheck, HealthStatus};
 pub use registry::DriverRegistry;
 pub use types::{
     Candidate, DeviceKey, DeviceMode, Family, Identity, Link, LinkId, LinkKind, Serial,

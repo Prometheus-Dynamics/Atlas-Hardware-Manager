@@ -1,11 +1,12 @@
 use std::fmt;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
-use crate::{DriverError, Family, Identity};
+use crate::{DeviceMode, DriverError, Family, Identity};
 
 /// Everything a device can offer. The UI shows a tab or action only for the
 /// kinds a device reports.
@@ -33,9 +34,18 @@ pub struct Capabilities {
 impl Capabilities {
     /// The capability kinds this device supports, `Info` always first.
     pub fn kinds(&self) -> Vec<CapabilityKind> {
+        self.kinds_for(DeviceMode::Normal)
+    }
+
+    /// Like [`kinds`](Self::kinds), but a device in recovery mode reports
+    /// `Recover` instead of `Update`: the same capability, a different promise.
+    pub fn kinds_for(&self, mode: DeviceMode) -> Vec<CapabilityKind> {
         let mut kinds = vec![CapabilityKind::Info];
         if self.update.is_some() {
-            kinds.push(CapabilityKind::Update);
+            kinds.push(match mode {
+                DeviceMode::Normal => CapabilityKind::Update,
+                DeviceMode::Recovery => CapabilityKind::Recover,
+            });
         }
         if self.actions.is_some() {
             kinds.push(CapabilityKind::Actions);
@@ -52,13 +62,26 @@ impl fmt::Debug for Capabilities {
     }
 }
 
+/// A local file to install, already checked against its SHA-256.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Artifact {
+    /// File name shown to users, for example `helios-2026.3.1-cm5.img.xz`.
+    pub name: String,
+    pub path: PathBuf,
+    /// Lowercase hex SHA-256 of the file at `path`.
+    pub sha256: String,
+    pub size_bytes: u64,
+}
+
 /// A release a device can be moved to.
-///
-/// Phase 0 carries only the version. Signed manifests arrive with `atlas-release`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReleaseRef {
     pub family: Family,
     pub version: String,
+    /// The file to install. Drivers that write images or firmware require
+    /// it; drivers whose devices fetch their own updates may ignore it.
+    #[serde(default)]
+    pub artifact: Option<Artifact>,
 }
 
 /// The named steps every update reports, whatever the device family.

@@ -142,6 +142,15 @@ impl Inventory {
         self.records.get(key)
     }
 
+    pub(crate) fn get_mut(&mut self, key: &DeviceKey) -> Option<&mut DeviceRecord> {
+        self.records.get_mut(key)
+    }
+
+    /// Removes a device the user no longer wants remembered.
+    pub(crate) fn remove(&mut self, key: &DeviceKey) -> Option<DeviceRecord> {
+        self.records.remove(key)
+    }
+
     pub(crate) fn all(&self) -> Vec<DeviceRecord> {
         self.records.values().cloned().collect()
     }

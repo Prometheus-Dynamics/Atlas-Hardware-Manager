@@ -11,6 +11,8 @@ mod events;
 mod inventory;
 mod job_runner;
 mod jobs;
+mod manage;
+mod robots;
 mod scan;
 mod store;
 mod time;
@@ -21,7 +23,8 @@ pub use events::Event;
 pub use inventory::{DeviceRecord, Presence};
 pub use jobs::{
     DeviceJobState, DeviceJobStatus, JobId, JobPlan, JobRecord, JobState, JobSummary,
-    PlannedDevice, StagedRollout, UpdateRequest,
+    PlannedDevice, ReleaseTarget, StagedRollout, UpdateRequest,
 };
+pub use robots::{RobotProfile, RobotRole, RobotState, RobotStatus, RoleStatus};
 pub use scan::ScanReport;
-pub use store::{InventoryStore, JsonFileStore, MemoryStore, StoreError};
+pub use store::{InventoryStore, JsonFileStore, MemoryStore, Snapshot, StoreError};

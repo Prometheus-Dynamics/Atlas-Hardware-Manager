@@ -2,7 +2,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::process::ExitCode;
 
 use atlas_core::{
-    Atlas, DeviceJobStatus, DeviceRecord, Event, JobPlan, Presence, StagedRollout, UpdateRequest,
+    Atlas, DeviceJobStatus, DeviceRecord, Event, JobPlan, Presence, ReleaseTarget, StagedRollout,
+    UpdateRequest,
 };
 use atlas_driver::{CapabilityKind, Concurrency, DeviceKey, DeviceMode, Family};
 use serde_json::json;
@@ -127,13 +128,16 @@ fn build_request(atlas: &Atlas, options: &UpdateOptions) -> Result<UpdateRequest
             .split_once('=')
             .filter(|(family, version)| !family.trim().is_empty() && !version.trim().is_empty())
             .ok_or_else(|| format!("--release expects `family=version`, got `{entry}`"))?;
-        releases.insert(Family::new(family.trim()), version.trim().to_string());
+        releases.insert(
+            Family::new(family.trim()),
+            ReleaseTarget::version(version.trim()),
+        );
     }
     if let Some(version) = &options.version {
         for key in &devices {
             releases
                 .entry(key.family.clone())
-                .or_insert_with(|| version.clone());
+                .or_insert_with(|| ReleaseTarget::version(version.clone()));
         }
     }
     if releases.is_empty() {

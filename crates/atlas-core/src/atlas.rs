@@ -11,7 +11,10 @@ use tokio_util::sync::CancellationToken;
 use crate::events::EventBus;
 use crate::inventory::Inventory;
 use crate::jobs::{JobPlan, JobRecord, UpdateRequest};
-use crate::{CoreError, DeviceRecord, Event, InventoryStore, JobId, ScanReport, job_runner, scan};
+use crate::{
+    CoreError, DeviceRecord, Event, InventoryStore, JobId, RobotProfile, ScanReport, Snapshot,
+    job_runner, scan,
+};
 
 /// Tunables with defaults suited to a robot on a desk.
 #[derive(Clone, Debug)]
@@ -55,6 +58,7 @@ pub(crate) struct State {
     pub(crate) job_done: HashMap<JobId, watch::Receiver<bool>>,
     pub(crate) job_cancel: HashMap<JobId, CancellationToken>,
     pub(crate) next_job: u64,
+    pub(crate) robots: BTreeMap<String, RobotProfile>,
 }
 
 pub(crate) struct Inner {
@@ -90,8 +94,14 @@ impl Inner {
         let Some(store) = &self.store else {
             return;
         };
-        let records = self.state().inventory.all();
-        if let Err(error) = store.save(&records) {
+        let snapshot = {
+            let state = self.state();
+            Snapshot {
+                devices: state.inventory.all(),
+                robots: state.robots.values().cloned().collect(),
+            }
+        };
+        if let Err(error) = store.save(&snapshot) {
             self.events.emit(Event::ScanWarning {
                 message: format!("Could not save the device inventory: {error}"),
             });
@@ -129,12 +139,17 @@ impl AtlasBuilder {
 
     /// Builds Atlas and restores the saved inventory, all devices offline.
     pub fn build(self) -> Result<Atlas, CoreError> {
-        let records = match &self.store {
+        let snapshot = match &self.store {
             Some(store) => store.load()?,
-            None => Vec::new(),
+            None => Snapshot::default(),
         };
         let state = State {
-            inventory: Inventory::from_records(records),
+            inventory: Inventory::from_records(snapshot.devices),
+            robots: snapshot
+                .robots
+                .into_iter()
+                .map(|robot| (robot.name.clone(), robot))
+                .collect(),
             next_job: 1,
             ..State::default()
         };
@@ -156,7 +171,7 @@ impl AtlasBuilder {
 /// The Atlas core. Cheap to clone; all clones share one state.
 #[derive(Clone)]
 pub struct Atlas {
-    inner: Arc<Inner>,
+    pub(crate) inner: Arc<Inner>,
 }
 
 impl Atlas {
@@ -273,7 +288,10 @@ impl Atlas {
         self.job(id).ok_or(CoreError::UnknownJob(id))
     }
 
-    fn live_device(&self, key: &DeviceKey) -> Result<(LiveDevice, DeviceRecord), CoreError> {
+    pub(crate) fn live_device(
+        &self,
+        key: &DeviceKey,
+    ) -> Result<(LiveDevice, DeviceRecord), CoreError> {
         let state = self.inner.state();
         let record = state
             .inventory

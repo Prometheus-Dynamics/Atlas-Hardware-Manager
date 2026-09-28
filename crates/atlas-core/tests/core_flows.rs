@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use atlas_core::{
     Atlas, CoreError, DeviceJobStatus, Event, InventoryStore, JobState, JsonFileStore, MemoryStore,
-    Presence, StagedRollout, UpdateRequest,
+    Presence, ReleaseTarget, StagedRollout, UpdateRequest,
 };
 use atlas_driver::{DeviceKey, DeviceMode, Family, LinkKind};
 use atlas_driver_mock::{MockDevice, MockFleet, SIM_HELIOS, SIM_MCU};
@@ -34,7 +34,7 @@ fn atlas_with_store(fleet: &MockFleet, store: Arc<dyn InventoryStore>) -> Atlas 
 fn cameras_request(version: &str, staged: StagedRollout) -> UpdateRequest {
     UpdateRequest {
         devices: vec![helios("H-1001"), helios("H-1002"), helios("H-1003")],
-        releases: BTreeMap::from([(Family::new(SIM_HELIOS), version.to_string())]),
+        releases: BTreeMap::from([(Family::new(SIM_HELIOS), ReleaseTarget::version(version))]),
         staged,
     }
 }
@@ -179,7 +179,7 @@ async fn devices_sharing_a_gateway_update_one_at_a_time() {
     let job = atlas
         .start_update(UpdateRequest {
             devices: vec![mcu("M-2001"), mcu("M-2002")],
-            releases: BTreeMap::from([(Family::new(SIM_MCU), "1.5.0".to_string())]),
+            releases: BTreeMap::from([(Family::new(SIM_MCU), ReleaseTarget::version("1.5.0"))]),
             staged: StagedRollout::Off,
         })
         .unwrap();
@@ -198,7 +198,7 @@ async fn recovery_brings_a_device_back_to_normal() {
     let job = atlas
         .start_update(UpdateRequest {
             devices: vec![mcu("M-2003")],
-            releases: BTreeMap::from([(Family::new(SIM_MCU), "1.5.0".to_string())]),
+            releases: BTreeMap::from([(Family::new(SIM_MCU), ReleaseTarget::version("1.5.0"))]),
             staged: StagedRollout::Off,
         })
         .unwrap();
@@ -220,7 +220,7 @@ async fn cancelling_before_apply_leaves_devices_untouched() {
     let job = atlas
         .start_update(UpdateRequest {
             devices: vec![helios("slow-a"), helios("slow-b")],
-            releases: BTreeMap::from([(Family::new(SIM_HELIOS), "2.0.0".to_string())]),
+            releases: BTreeMap::from([(Family::new(SIM_HELIOS), ReleaseTarget::version("2.0.0"))]),
             staged: StagedRollout::Off,
         })
         .unwrap();
@@ -257,7 +257,10 @@ async fn a_release_is_required_for_every_family() {
     let error = atlas
         .plan_update(&UpdateRequest {
             devices: vec![helios("H-1001"), mcu("M-2001")],
-            releases: BTreeMap::from([(Family::new(SIM_HELIOS), "2026.3.1".to_string())]),
+            releases: BTreeMap::from([(
+                Family::new(SIM_HELIOS),
+                ReleaseTarget::version("2026.3.1"),
+            )]),
             staged: StagedRollout::Off,
         })
         .unwrap_err();

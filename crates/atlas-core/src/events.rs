@@ -19,6 +19,12 @@ pub enum Event {
     DeviceOffline {
         key: DeviceKey,
     },
+    /// A device was removed from the remembered inventory.
+    DeviceForgotten {
+        key: DeviceKey,
+    },
+    /// A robot profile was created, changed, or deleted.
+    RobotsChanged,
     ScanWarning {
         message: String,
     },

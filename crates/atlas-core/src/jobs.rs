@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
-use atlas_driver::{DeviceKey, Family, ReleaseRef, UpdatePlan, UpdateStep};
+use atlas_driver::{Artifact, DeviceKey, Family, ReleaseRef, UpdatePlan, UpdateStep};
 use serde::{Deserialize, Serialize};
 
 /// Log lines kept per device in a job; older lines are dropped first.
@@ -36,12 +36,31 @@ pub enum StagedRollout {
     Off,
 }
 
+/// The release chosen for one family in an update request.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ReleaseTarget {
+    pub version: String,
+    /// The verified file to install, for families that need one.
+    #[serde(default)]
+    pub artifact: Option<Artifact>,
+}
+
+impl ReleaseTarget {
+    /// A target with a version and no file, for devices that fetch their own.
+    pub fn version(version: impl Into<String>) -> Self {
+        Self {
+            version: version.into(),
+            artifact: None,
+        }
+    }
+}
+
 /// Update these devices to the chosen release of their family.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UpdateRequest {
     pub devices: Vec<DeviceKey>,
-    /// Target version per family.
-    pub releases: BTreeMap<Family, String>,
+    /// Target release per family.
+    pub releases: BTreeMap<Family, ReleaseTarget>,
     pub staged: StagedRollout,
 }
 
