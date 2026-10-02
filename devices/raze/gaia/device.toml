@@ -1,0 +1,29 @@
+# Raze device package, Gaia v2 layer (device package contract 1).
+#
+# An OS build imports this file; it is the package's only entry point:
+#
+#   [[sources]]
+#   id = "atlas"
+#   kind = "git"
+#   repo = "https://github.com/Prometheus-Dynamics/Atlas-Hardware-Manager.git"
+#   rev = "<pinned commit>"
+#
+#   imports = [
+#     ...OS base layers...,
+#     { source = "atlas", path = "devices/raze/gaia/device.toml", when = { target = "raze" } },
+#     ...OS layers that override device defaults...,
+#   ]
+#
+# Paths in these files use @self, the directory of the TOML file that contains
+# them, so they work wherever the package is mounted (git source, vendored copy,
+# --set sources.atlas.path=<checkout>). Later imports override earlier ones, so
+# an OS changes any device default by setting it in a layer imported after this
+# one. See devices/README.md for what the OS still has to provide.
+description = "Raze (CM5 + OV9782) device support: kernel, camera, boot configuration and overlays, identity endpoint, USB gadget."
+
+imports = [
+  "./kernel.toml",
+  "./camera.toml",
+  "./boot.toml",
+  "./runtime.toml",
+]

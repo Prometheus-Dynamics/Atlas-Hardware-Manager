@@ -1,0 +1,37 @@
+# Raze device configuration (device package "raze", contract 1).
+#
+# The OS config.txt pulls this in at top level (under [all]) with:
+#
+#   include raze-device.txt
+#
+# Everything here is a default. To change an overlay's parameters, or to drop a
+# line, copy the lines you want into your own config.txt instead of including
+# this file.
+
+[cm5]
+# Hardware I2C for the power and magnetometer sensors: /dev/i2c-1 on GPIO10/11.
+dtoverlay=i2c1-pi5,pins_10_11
+# Software I2C bus 4 for the IMU: SDA GPIO8, SCL GPIO7.
+dtoverlay=i2c-gpio,bus=4,i2c_gpio_sda=8,i2c_gpio_scl=7
+
+# Status LED ring: 16 LEDs on GPIO13 via RP1 PIO, /dev/leds0.
+dtoverlay=ws2812-pio,gpio=13,num_leds=16,brightness=255,dev_name=leds%d
+
+# External USB-A and USB-C port power, held on by the kernel.
+dtoverlay=raze-usb-power
+
+# Fan, driven by the kernel thermal governor.
+dtoverlay=raze-fan
+
+# GPU (V3D) and display (KMS) drivers.
+dtoverlay=vc4-kms-v3d-pi5
+
+# CM5 USB 2.0 OTG controller (dwc2) as a USB peripheral, for the USB gadget
+# (network + serial). Which Raze connector it is wired to is not recorded yet.
+dtoverlay=dwc2,dr_mode=peripheral
+
+# OV9782 global-shutter camera on CAM0, continuous clock.
+camera_auto_detect=0
+dtoverlay=ov9782,cam0,clk-continuous
+
+[all]

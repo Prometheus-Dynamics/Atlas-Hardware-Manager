@@ -1,0 +1,20 @@
+# Optional, not imported by device.toml: GPU userspace for camera paths that
+# process frames on the V3D GPU (EGL, GLES and gbm through Mesa), such as
+# PhotonVision's libcamera GL driver. The kernel side (vc4-kms-v3d-pi5) is
+# always on in raze-device.txt. Import next to device.toml:
+#   { source = "atlas", path = "devices/raze/gaia/gpu.toml" }
+description = "Raze GPU userspace: Mesa V3D/VC4 with EGL, GLES and gbm."
+
+[image]
+kind = "buildroot"
+config_overrides = [
+  ["BR2_PACKAGE_MESA3D", "y"],
+  # Mesa installs no libEGL/libGLESv2/libgbm without a Gallium driver. V3D is
+  # the Pi 5/CM5 3D core; VC4 provides KMS for it.
+  ["BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_V3D", "y"],
+  ["BR2_PACKAGE_MESA3D_GALLIUM_DRIVER_VC4", "y"],
+  ["BR2_PACKAGE_MESA3D_OPENGL_EGL", "y"],
+  ["BR2_PACKAGE_MESA3D_OPENGL_ES", "y"],
+  ["BR2_PACKAGE_MESA3D_GBM", "y"],
+  ["BR2_PACKAGE_LIBDRM", "y"],
+]

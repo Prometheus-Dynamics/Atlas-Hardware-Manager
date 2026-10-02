@@ -1,0 +1,25 @@
+[Unit]
+Description=Device identity endpoint request
+CollectMode=inactive-or-failed
+
+[Service]
+ExecStart=/usr/lib/pd-device/identity-http
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+RuntimeMaxSec=10
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+MemoryMax=32M
+TasksMax=32

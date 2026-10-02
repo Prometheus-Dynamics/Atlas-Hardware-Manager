@@ -1,0 +1,2 @@
+name: RAZE_DEVICE
+desc: Raze device package (pd-device contract 1): OV9782 kernel extension, libcamera/libpisp overrides

@@ -1,0 +1,27 @@
+description = "Raze kernel and firmware: Raspberry Pi kernel for CM5, OV9782 sensor support, Raspberry Pi firmware and overlays."
+
+[image]
+kind = "buildroot"
+defconfig = "raspberrypicm5io_defconfig"
+# Linux extension for OV9782 (linux/) and Gaia package overrides for libcamera
+# and libpisp (packages/). Gaia takes one external_tree value and the last
+# import wins: an OS with its own tree sets a colon-separated list of both.
+external_tree = "@self/buildroot-external"
+external_tree_mode = "required"
+config_overrides = [
+  ["BR2_LINUX_KERNEL", "y"],
+  ["BR2_LINUX_KERNEL_CUSTOM_TARBALL", "y"],
+  # Hash in buildroot-external/linux/linux.hash (wired in external.mk).
+  ["BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION", "\"https://github.com/raspberrypi/linux/archive/refs/tags/stable_20250916.tar.gz\""],
+  ["BR2_LINUX_KERNEL_DEFCONFIG", "\"bcm2712\""],
+  # OV9782 as a variant of the upstream ov9282 driver (VIDEO_OV9282=m).
+  ["BR2_LINUX_KERNEL_EXT_OV9782", "y"],
+  ["BR2_PACKAGE_RPI_FIRMWARE", "y"],
+  # Stock overlays used by raze-device.txt (dwc2, i2c1-pi5, i2c-gpio,
+  # ws2812-pio, vc4-kms-v3d-pi5).
+  ["BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS", "y"],
+  # vcgencmd and friends.
+  ["BR2_PACKAGE_RPI_USERLAND", "y"],
+  # dtc for the compile-dts assembly transforms in boot.toml.
+  ["BR2_PACKAGE_HOST_DTC", "y"],
+]

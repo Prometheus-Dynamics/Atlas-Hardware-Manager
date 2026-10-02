@@ -1,0 +1,208 @@
+{
+  "schema": "urn:pd-device:manifest:1",
+  "contract": 1,
+  "model": "raze",
+  "package_version": "1.0.0",
+  "display_name": "Raze",
+  "description": "Raspberry Pi CM5 vision device with an OV9782 global-shutter camera.",
+  "vendor": "Prometheus Dynamics",
+  "platform": {
+    "soc": "bcm2712",
+    "module": "cm5",
+    "arch": "aarch64"
+  },
+  "revisions": [
+    {
+      "id": "a",
+      "match": { "default": true },
+      "display_name": "Rev A",
+      "notes": "TODO(hardware): placeholder. No board revision source is recorded in any of the sources, so every board reports this revision until rev_source is defined."
+    }
+  ],
+  "rev_source": {
+    "kind": "none",
+    "override_file": "/etc/pd-device/rev",
+    "hook": "/usr/lib/pd-device/rev-detect",
+    "todo": "Decide where the board revision lives (CM5 OTP customer row, a bootloader EEPROM config key, or GPIO straps), then set kind/key/mapping here and ship /usr/lib/pd-device/rev-detect. Until then the identity reports PD_DEVICE_REV_DEFAULT from device-package.env, or the id in /etc/pd-device/rev."
+  },
+  "identity": {
+    "serial_source": {
+      "kind": "devicetree",
+      "path": "/proc/device-tree/serial-number",
+      "format": "lowercase-hex",
+      "serial8": "last 8 hex digits of the serial"
+    },
+    "hostname_pattern": "raze-{serial8}",
+    "hostname_policy": "Default only. Applied at boot as the transient hostname when /etc/hostname is unset or one of the stock names (localhost, localhost.localdomain, buildroot, (none)); never written to /etc. OS-tunable in /etc/pd-device/hostname.env (PD_HOSTNAME_POLICY, PD_HOSTNAME_PATTERN, PD_HOSTNAME_STOCK).",
+    "mac_rule": {
+      "seed": "board serial (lowercase hex, as in serial_source)",
+      "fallback_seed": "\"machine-id:\" + /etc/machine-id when no serial is readable; with neither, no address is set and the kernel picks random ones. Never a fixed constant.",
+      "algorithm": "base = 02:b0:b1:b2:b3:b4 where b0..b4 are the first 5 bytes of sha256(seed); host side = base with the last byte XOR 0x01; each interface XORs the last byte of both with its mask",
+      "first_octet": "02",
+      "interfaces": {
+        "usb-ecm": { "device_xor": "0x00", "host_xor": "0x00" },
+        "usb-rndis": { "device_xor": "0x10", "host_xor": "0x10" },
+        "usb-ncm": { "device_xor": "0x20", "host_xor": "0x20" },
+        "usbbr0": { "device_xor": "0x00", "host_xor": "0x00" }
+      }
+    },
+    "usb_gadget": {
+      "vid": "1d6b",
+      "pid": "0104",
+      "manufacturer": "Prometheus Dynamics",
+      "product": "Raze",
+      "serial": "board serial (first 16 hex digits of /etc/machine-id without one)",
+      "functions": ["ecm", "rndis", "acm"],
+      "optional_functions": ["ncm"],
+      "network": {
+        "bridge": "usbbr0",
+        "address": "172.31.250.1/24",
+        "dhcp_range": "172.31.250.2-172.31.250.20",
+        "dns": false,
+        "default_route": false,
+        "note": "USB only: gadget interfaces are bridged with each other, never with Ethernet."
+      }
+    }
+  },
+  "recovery": {
+    "usb_boot": { "vid": "0a5c", "pid": "2712" },
+    "method": "mass-storage-gadget",
+    "storage_target": "emmc",
+    "storage_target_evidence": [
+      "The old Raze bootloader.conf uses boot_partition=/dev/mmcblk0p1 and the PhotonVision Raze cmdline uses root=/dev/mmcblk0p2: the CM5 eMMC (mmcblk0 on a CM5 with eMMC).",
+      "Raze images are written over USB with the mass-storage-gadget boot files, which expose the eMMC as a USB disk."
+    ],
+    "instructions": [
+      "Power the Raze off.",
+      "TODO(hardware): hold the CM5 nRPIBOOT line low while powering on (which button or jumper on the Raze does this is not recorded).",
+      "TODO(hardware): connect the Raze USB port wired to the CM5 USB 2.0 boot interface to the computer running Atlas (which connector this is is not recorded).",
+      "The Raze enumerates as 0a5c:2712 (BCM2712 boot ROM). Atlas sends the mass-storage-gadget boot files and the eMMC appears as a USB disk to write the image to.",
+      "TODO(hardware): LED behaviour in USB boot mode is not recorded."
+    ],
+    "todo": [
+      "Confirm no Raze build uses a CM5 Lite (SD card instead of eMMC).",
+      "Record the RPIBOOT control, the USB boot connector and the LED meanings."
+    ]
+  },
+  "eeprom": {
+    "min_version": {
+      "date": "2025-12-08",
+      "timestamp": 1765222194,
+      "hash": "2226a853bb9f5fd80392e3a4a89e457aeca88008"
+    },
+    "files": [
+      {
+        "path": "eeprom/pieeprom-2025-12-08.upd",
+        "role": "pieeprom",
+        "sha256": "aef058c6c223ece5f567ac671ea253943da3227d28536b6b837967f8288beb66",
+        "notes": "Bootloader image with bootconf.txt embedded. Flash as pieeprom.bin (rpiboot recovery) or pieeprom.upd (in-OS self-update)."
+      },
+      {
+        "path": "eeprom/pieeprom-2025-12-08.sig",
+        "role": "pieeprom-sig",
+        "sha256": "66a716ef29777cf5ace2cb2fbab42bdb4c1416a0a4aef1ef50fcbe06cb62b0f3",
+        "notes": "rpi-eeprom-digest file (sha256 of the image plus timestamp), not a cryptographic signature. Use as pieeprom.sig."
+      },
+      {
+        "path": "eeprom/bootconf.txt",
+        "role": "bootconf",
+        "sha256": "06d730fe0ed7064c7a7eaf10b7f8dca8216de556e68d70092e9089db8c6d7453",
+        "notes": "The configuration embedded in the image, extracted for reference."
+      },
+      {
+        "path": "eeprom/recovery.bin",
+        "role": "recovery",
+        "fetch": "recovery.bin",
+        "notes": "Not in git; see fetch.lock."
+      }
+    ],
+    "update_method": "rpiboot-recovery",
+    "bootconf": {
+      "BOOT_UART": "1",
+      "POWER_OFF_ON_HALT": "1",
+      "BOOT_ORDER": "0xf2461"
+    }
+  },
+  "capabilities": {
+    "camera": {
+      "sensor": "ov9782",
+      "kind": "global-shutter",
+      "interface": "csi",
+      "port": "cam0",
+      "data_lanes": 2,
+      "link_frequency_hz": 400000000,
+      "clock_hz": 24000000,
+      "i2c_address": "0x60",
+      "overlay": "ov9782,cam0,clk-continuous",
+      "kernel_driver": "ov9282 with the ovti,ov9782 variant (buildroot-external/linux/ov9782)",
+      "libcamera_pipeline": "rpi/pisp",
+      "tuning": [
+        "/usr/share/libcamera/ipa/rpi/pisp/ov9782.json",
+        "/usr/share/libcamera/tuning/ov9782.overrides.json"
+      ]
+    },
+    "fan": {
+      "control": "kernel thermal governor (pwm-fan); no daemon",
+      "overlay": "raze-fan",
+      "pwm": {
+        "controller": "rp1_pwm1",
+        "channel": 3,
+        "period_ns": 41566,
+        "polarity": "inverted"
+      },
+      "cooling_levels": [224, 240, 248, 255, 255],
+      "trips_c": [50, 60, 67.5, 75],
+      "overlay_params": ["level0..level4", "period_ns", "polarity"]
+    },
+    "leds": {
+      "kind": "ws2812",
+      "driver": "ws2812-pio-rp1",
+      "gpio": 13,
+      "count": 16,
+      "device": "/dev/leds0",
+      "brightness": 255,
+      "rgbw": false,
+      "todo": "The old leds.toml describes the ring as sk6812-ec20 with colour order rgbw, but both boot configs load ws2812-pio without rgbw. Confirm the LED part and add rgbw to the overlay line if it is RGBW."
+    },
+    "usb-power": {
+      "control": "kernel gpio hogs (raze-usb-power overlay), on at boot",
+      "ports": [
+        { "name": "usb-a", "gpio": 20, "active_high": true },
+        { "name": "usb-c", "gpio": 16, "active_high": true }
+      ],
+      "overlay_params": ["usba=off", "usbc=off", "hog=off (runtime control by the OS)"],
+      "power_policy": "udev 60-raze-usb-power.rules: power/control=on and USB2 hardware LPM off for every USB device"
+    },
+    "gadget-net": {
+      "functions": ["ecm", "rndis", "acm"],
+      "address": "172.31.250.1/24",
+      "dhcp": true,
+      "settings": "/usr/lib/pd-device/usb-gadget.env (override in /etc/pd-device/usb-gadget.env)"
+    },
+    "i2c": {
+      "buses": [
+        { "bus": 1, "kind": "hardware", "pins": "GPIO10 SDA, GPIO11 SCL", "overlay": "i2c1-pi5,pins_10_11" },
+        { "bus": 4, "kind": "i2c-gpio", "pins": "GPIO8 SDA, GPIO7 SCL", "overlay": "i2c-gpio,bus=4,i2c_gpio_sda=8,i2c_gpio_scl=7" }
+      ],
+      "devices": [
+        { "part": "BMI088", "bus": 4, "address": "0x18" },
+        { "part": "BMI088", "bus": 4, "address": "0x68" },
+        { "part": "BMM150", "bus": 1, "address": "0x10" },
+        { "part": "INA238", "bus": 1, "address": "0x40", "shunt_ohm": 0.01 }
+      ],
+      "description_file": "/usr/share/pd-device/raze/sensors.toml"
+    }
+  },
+  "identity_service": {
+    "protocol": "http",
+    "port": 5899,
+    "path": "/.well-known/pd-device",
+    "mdns_service": "_pd-device._tcp",
+    "schema": "../schema/identity.schema.json",
+    "txt": ["contract", "model", "rev", "serial", "os", "os_ver", "path"]
+  },
+  "gaia": {
+    "layer": "gaia/device.toml",
+    "optional_layers": ["gaia/gpu.toml"]
+  }
+}

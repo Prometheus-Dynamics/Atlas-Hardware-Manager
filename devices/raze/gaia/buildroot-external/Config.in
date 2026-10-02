@@ -1,0 +1,3 @@
+# The Raze device tree only provides Linux extensions (linux/Config.ext.in,
+# sourced by Buildroot itself) and Gaia package overrides (packages/, which
+# Gaia stages into Buildroot). There are no Buildroot packages of its own.

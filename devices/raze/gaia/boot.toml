@@ -1,0 +1,52 @@
+description = "Raze boot partition: device config.txt fragment, device overlays, and the stock overlays it loads."
+
+# The OS declares the boot partition as an assembly tree with id "boot" and
+# adds `include raze-device.txt` to its config.txt.
+
+[[image.assembly.files]]
+tree = "boot"
+src = "@self/assets/boot/raze-device.txt"
+dest = "raze-device.txt"
+
+[[image.assembly.transforms]]
+kind = "compile-dts"
+src = "@self/assets/boot/overlays/ov9782-overlay.dts"
+dest = "$assembly.tree.boot/overlays/ov9782.dtbo"
+
+[[image.assembly.transforms]]
+kind = "compile-dts"
+src = "@self/assets/boot/overlays/raze-fan-overlay.dts"
+dest = "$assembly.tree.boot/overlays/raze-fan.dtbo"
+
+[[image.assembly.transforms]]
+kind = "compile-dts"
+src = "@self/assets/boot/overlays/raze-usb-power-overlay.dts"
+dest = "$assembly.tree.boot/overlays/raze-usb-power.dtbo"
+
+[[image.assembly.files]]
+tree = "boot"
+src = "$provider.buildroot_output/images/rpi-firmware/overlays/dwc2.dtbo"
+dest = "overlays/dwc2.dtbo"
+
+[[image.assembly.files]]
+tree = "boot"
+src = "$provider.buildroot_output/images/rpi-firmware/overlays/i2c1-pi5.dtbo"
+dest = "overlays/i2c1-pi5.dtbo"
+
+[[image.assembly.files]]
+tree = "boot"
+src = "$provider.buildroot_output/images/rpi-firmware/overlays/i2c-gpio.dtbo"
+dest = "overlays/i2c-gpio.dtbo"
+
+[[image.assembly.files]]
+tree = "boot"
+src = "$provider.buildroot_output/images/rpi-firmware/overlays/ws2812-pio.dtbo"
+dest = "overlays/ws2812-pio.dtbo"
+
+[[image.assembly.files]]
+tree = "boot"
+src = "$provider.buildroot_output/images/rpi-firmware/overlays/vc4-kms-v3d-pi5.dtbo"
+dest = "overlays/vc4-kms-v3d-pi5.dtbo"
+
+[image]
+kind = "buildroot"

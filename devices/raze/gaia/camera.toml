@@ -1,0 +1,29 @@
+description = "Raze camera: libcamera with the Raspberry Pi PiSP pipeline (CM5) and the OV9782 tuning."
+
+[[stage.files]]
+id = "raze-libcamera-pisp-ov9782"
+src = "@self/assets/rootfs/usr/share/libcamera/ipa/rpi/pisp/ov9782.json"
+dest = "/usr/share/libcamera/ipa/rpi/pisp/ov9782.json"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-libcamera-tuning-ov9782"
+src = "@self/assets/rootfs/usr/share/libcamera/tuning/ov9782.overrides.json"
+dest = "/usr/share/libcamera/tuning/ov9782.overrides.json"
+origin = "static-asset"
+
+[image]
+kind = "buildroot"
+# libcamera and libpisp themselves come from the package overrides in
+# buildroot-external/packages/ (OV9782 patches, IPA signing, opt-in LTTng
+# tracing with BR2_PACKAGE_LIBCAMERA_TRACING).
+config_overrides = [
+  ["BR2_PACKAGE_LIBCAMERA", "y"],
+  ["BR2_PACKAGE_LIBCAMERA_PIPELINE_RPI_PISP", "y"],
+]
+
+[image.feed]
+stage_files = [
+  "raze-libcamera-pisp-ov9782",
+  "raze-libcamera-tuning-ov9782",
+]

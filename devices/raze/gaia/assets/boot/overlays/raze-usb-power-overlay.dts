@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Raze: power enables for the external USB-A (RP1 GPIO20) and USB-C (RP1
+ * GPIO16) ports, both active-high. The kernel drives them at boot through
+ * gpio hogs, so the ports are powered without any userspace service.
+ *
+ * Load:   dtoverlay=raze-usb-power[,<param>=<val>]
+ * Params: usba      Power the USB-A port (default on; usba=off holds it off)
+ *         usbc      Power the USB-C port (default on; usbc=off holds it off)
+ *         hog       Hold both lines from the kernel (default on). hog=off
+ *                   leaves GPIO16/GPIO20 free so the OS can switch the ports
+ *                   at runtime (gpiod or sysfs) instead.
+ *
+ * Replaces helios-usb-power.dts (its gpio-export node had no driver in the
+ * kernel, so it did nothing) and helios-usb-power-setup.sh (sysfs export with
+ * a Python /dev/mem fallback). Pins and polarity come from usb-power.env:
+ * USB_POWER_USB_A_GPIO=20, USB_POWER_USB_C_GPIO=16, *_ACTIVE_HIGH=1.
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2712";
+
+	fragment@0 {
+		target = <&rp1_gpio>;
+		__overlay__ {
+			usba_pwr_en: usba-pwr-en-hog {
+				gpio-hog;
+				gpios = <20 0>;
+				output-high;
+				line-name = "USBA_PWR_EN";
+			};
+
+			usbc_pwr_en: usbc-pwr-en-hog {
+				gpio-hog;
+				gpios = <16 0>;
+				output-high;
+				line-name = "USBC_PWR_EN";
+			};
+		};
+	};
+
+	__overrides__ {
+		usba = <&usba_pwr_en>, "output-high?",
+		       <&usba_pwr_en>, "output-low!";
+		usbc = <&usbc_pwr_en>, "output-high?",
+		       <&usbc_pwr_en>, "output-low!";
+		hog = <&usba_pwr_en>, "status",
+		      <&usbc_pwr_en>, "status";
+	};
+};

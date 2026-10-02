@@ -1,0 +1,34 @@
+#!/bin/sh
+# DHCP server for the USB gadget link (pd-device-usb-gadget-dhcp.service).
+# Runs dnsmasq in the foreground with the configuration pd-device-usb-gadget
+# generated: DHCP on the gadget bridge only, DNS disabled.
+# Extra dnsmasq settings: /etc/pd-device/usb-gadget-dnsmasq.d/*.conf
+set -eu
+
+PD_LIB_DIR=${PD_LIB_DIR:-/usr/lib/pd-device}
+# shellcheck source=lib.sh
+. "$PD_LIB_DIR/lib.sh"
+
+pd_load_env usb-gadget.env
+
+if [ "${USB_GADGET_ENABLED:-1}" != 1 ] || [ "${USB_GADGET_NET:-bridge}" != bridge ] || [ "${USB_GADGET_DHCP:-1}" != 1 ]; then
+	pd_log "USB gadget DHCP is off"
+	exit 0
+fi
+
+conf="$PD_RUN_DIR/usb-gadget-dnsmasq.conf"
+if [ ! -r "$conf" ]; then
+	pd_log "$conf is missing; pd-device-usb-gadget.service has not set up the link"
+	exit 1
+fi
+
+if ! command -v dnsmasq >/dev/null 2>&1; then
+	pd_log "dnsmasq is not installed; the host must configure the USB link itself"
+	exit 0
+fi
+
+extra="$PD_ETC_DIR/usb-gadget-dnsmasq.d"
+if [ -d "$extra" ]; then
+	exec dnsmasq --keep-in-foreground --pid-file= --conf-file="$conf" --conf-dir="$extra,*.conf"
+fi
+exec dnsmasq --keep-in-foreground --pid-file= --conf-file="$conf"

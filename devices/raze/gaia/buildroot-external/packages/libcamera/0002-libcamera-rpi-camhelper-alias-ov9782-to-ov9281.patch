@@ -1,0 +1,9 @@
+diff --git a/src/ipa/rpi/cam_helper/cam_helper_ov9281.cpp b/src/ipa/rpi/cam_helper/cam_helper_ov9281.cpp
+index 7e6530d13..a1fbd2b0b 100644
+--- a/src/ipa/rpi/cam_helper/cam_helper_ov9281.cpp
++++ b/src/ipa/rpi/cam_helper/cam_helper_ov9281.cpp
+@@ -55,3 +55,4 @@ static CamHelper *create()
+ }
+ 
+ static RegisterCamHelper reg("ov9281", &create);
++static RegisterCamHelper reg9782("ov9782", &create);

@@ -1,0 +1,37 @@
+#!/bin/sh
+# Raze LED ring: make sure /dev/leds0 exists. ws2812-pio-rp1 can probe before
+# the RP1 PIO block is ready and then gives up; bind the PIO, reload the LED
+# driver and bind it again. Ported from the old ws2812-reprobe.service.
+set -u
+
+PIO_DEV=1f00178000.pio
+LED_DEV=ws2812_pio@d
+LED_NODE=/dev/leds0
+
+[ -e "$LED_NODE" ] && exit 0
+
+i=0
+while [ "$i" -lt 40 ]; do
+	[ -e "/sys/bus/platform/devices/$PIO_DEV/driver" ] && break
+	if [ -e /sys/bus/platform/drivers/rp1-pio/bind ]; then
+		echo "$PIO_DEV" > /sys/bus/platform/drivers/rp1-pio/bind 2>/dev/null || true
+	fi
+	sleep 1
+	i=$((i + 1))
+done
+
+modprobe -r ws2812_pio_rp1 2>/dev/null || true
+modprobe ws2812_pio_rp1 || true
+if [ -e /sys/bus/platform/drivers/ws2812-pio-rp1/bind ] && [ -e "/sys/bus/platform/devices/$LED_DEV" ] &&
+	[ ! -e "/sys/bus/platform/devices/$LED_DEV/driver" ]; then
+	echo "$LED_DEV" > /sys/bus/platform/drivers/ws2812-pio-rp1/bind 2>/dev/null || true
+fi
+
+i=0
+while [ "$i" -lt 5 ]; do
+	[ -e "$LED_NODE" ] && exit 0
+	sleep 1
+	i=$((i + 1))
+done
+echo "raze-leds-reprobe: $LED_NODE did not appear" >&2
+exit 1

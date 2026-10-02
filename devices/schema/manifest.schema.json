@@ -1,0 +1,213 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pd-device:manifest:1",
+  "title": "Device package manifest (contract 1)",
+  "description": "devices/<model>/manifest.json: what Atlas needs to recognise, recover and flash a device, and what an OS build gets from the package. Checksums are informational: tools may verify them and warn, but must let the user proceed.",
+  "type": "object",
+  "required": [
+    "schema",
+    "contract",
+    "model",
+    "package_version",
+    "display_name",
+    "revisions",
+    "rev_source",
+    "identity",
+    "recovery",
+    "eeprom",
+    "capabilities",
+    "identity_service"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "urn:pd-device:manifest:1" },
+    "contract": { "const": 1 },
+    "model": { "$ref": "#/$defs/id" },
+    "package_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
+    },
+    "display_name": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "vendor": { "type": "string" },
+    "platform": {
+      "type": "object",
+      "properties": {
+        "soc": { "type": "string" },
+        "module": { "type": "string" },
+        "arch": { "type": "string" }
+      }
+    },
+    "revisions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "match"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "match": {
+            "description": "How a value read from rev_source selects this revision. {\"default\": true} matches when nothing else does.",
+            "type": "object",
+            "minProperties": 1,
+            "properties": {
+              "default": { "type": "boolean" },
+              "value": { "type": ["string", "integer"] },
+              "values": { "type": "array", "items": { "type": ["string", "integer"] } }
+            }
+          },
+          "display_name": { "type": "string" },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "rev_source": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "enum": ["none", "otp-customer", "eeprom-config", "gpio-strap", "devicetree"]
+        },
+        "key": { "type": "string", "description": "OTP row, EEPROM config key, GPIO list or DT path, depending on kind." },
+        "mapping": { "type": "object", "additionalProperties": { "$ref": "#/$defs/id" } },
+        "override_file": { "type": "string" },
+        "hook": { "type": "string" },
+        "todo": { "type": "string" }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "required": ["serial_source", "hostname_pattern", "mac_rule", "usb_gadget"],
+      "properties": {
+        "serial_source": {
+          "type": "object",
+          "required": ["kind", "path", "format"],
+          "properties": {
+            "kind": { "enum": ["devicetree", "file", "otp"] },
+            "path": { "type": "string" },
+            "format": { "const": "lowercase-hex" },
+            "serial8": { "type": "string" }
+          }
+        },
+        "hostname_pattern": { "type": "string", "pattern": "\\{serial8?\\}" },
+        "hostname_policy": { "type": "string" },
+        "mac_rule": {
+          "type": "object",
+          "required": ["seed", "fallback_seed", "algorithm", "first_octet", "interfaces"],
+          "properties": {
+            "seed": { "type": "string" },
+            "fallback_seed": { "type": "string" },
+            "algorithm": { "type": "string" },
+            "first_octet": { "const": "02" },
+            "interfaces": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "required": ["device_xor", "host_xor"],
+                "properties": {
+                  "device_xor": { "$ref": "#/$defs/hexbyte" },
+                  "host_xor": { "$ref": "#/$defs/hexbyte" }
+                }
+              }
+            }
+          }
+        },
+        "usb_gadget": {
+          "type": "object",
+          "required": ["vid", "pid", "manufacturer", "product", "serial"],
+          "properties": {
+            "vid": { "$ref": "#/$defs/usbid" },
+            "pid": { "$ref": "#/$defs/usbid" },
+            "manufacturer": { "type": "string" },
+            "product": { "type": "string" },
+            "serial": { "type": "string" },
+            "functions": { "type": "array", "items": { "type": "string" } },
+            "optional_functions": { "type": "array", "items": { "type": "string" } },
+            "network": { "type": "object" }
+          }
+        }
+      }
+    },
+    "recovery": {
+      "type": "object",
+      "required": ["usb_boot", "method", "storage_target", "instructions"],
+      "properties": {
+        "usb_boot": {
+          "type": "object",
+          "required": ["vid", "pid"],
+          "properties": {
+            "vid": { "$ref": "#/$defs/usbid" },
+            "pid": { "$ref": "#/$defs/usbid" }
+          }
+        },
+        "method": { "enum": ["mass-storage-gadget"] },
+        "storage_target": { "enum": ["emmc", "sd", "nvme", "usb"] },
+        "storage_target_evidence": { "type": "array", "items": { "type": "string" } },
+        "instructions": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "todo": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "eeprom": {
+      "type": "object",
+      "required": ["min_version", "files", "update_method"],
+      "properties": {
+        "min_version": {
+          "type": "object",
+          "required": ["date", "timestamp"],
+          "properties": {
+            "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+            "timestamp": { "type": "integer", "minimum": 0 },
+            "hash": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+          }
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["path", "role"],
+            "properties": {
+              "path": { "type": "string" },
+              "role": { "enum": ["pieeprom", "pieeprom-sig", "recovery", "bootconf"] },
+              "sha256": { "$ref": "#/$defs/sha256" },
+              "fetch": { "type": "string", "description": "Name of a fetch.lock entry, for files not kept in git." },
+              "notes": { "type": "string" }
+            }
+          }
+        },
+        "update_method": { "enum": ["rpiboot-recovery"] },
+        "bootconf": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "required": ["camera", "fan", "leds", "usb-power", "gadget-net"],
+      "additionalProperties": { "type": "object" }
+    },
+    "identity_service": {
+      "type": "object",
+      "required": ["port", "path", "mdns_service"],
+      "properties": {
+        "port": { "const": 5899 },
+        "path": { "const": "/.well-known/pd-device" },
+        "mdns_service": { "const": "_pd-device._tcp" },
+        "protocol": { "const": "http" },
+        "schema": { "type": "string" },
+        "txt": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "gaia": {
+      "type": "object",
+      "properties": {
+        "layer": { "type": "string" },
+        "optional_layers": { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "usbid": { "type": "string", "pattern": "^[0-9a-f]{4}$" },
+    "hexbyte": { "type": "string", "pattern": "^0x[0-9a-f]{2}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+  }
+}

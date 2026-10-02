@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pd-device:identity:1",
+  "title": "Device identity document (contract 1)",
+  "description": "Served at GET http://<device>:5899/.well-known/pd-device and written to /run/pd-device/identity.json. Readers must ignore properties they do not know; later contract versions only add properties.",
+  "type": "object",
+  "required": [
+    "contract",
+    "model",
+    "rev",
+    "serial",
+    "hostname",
+    "os",
+    "device_package",
+    "update_methods",
+    "manage_url",
+    "macs"
+  ],
+  "properties": {
+    "contract": { "const": 1 },
+    "model": { "type": ["string", "null"] },
+    "rev": { "type": ["string", "null"] },
+    "serial": {
+      "description": "Board serial, lowercase hex; null when the device tree has none.",
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]+$"
+    },
+    "hostname": { "type": ["string", "null"] },
+    "os": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": ["string", "null"], "description": "os-release ID" },
+        "version": { "type": ["string", "null"], "description": "os-release VERSION_ID, else VERSION" }
+      }
+    },
+    "device_package": {
+      "type": "object",
+      "required": ["version", "commit"],
+      "properties": {
+        "version": { "type": ["string", "null"] },
+        "commit": { "type": ["string", "null"] }
+      }
+    },
+    "bootloader": {
+      "description": "Omitted when the bootloader version cannot be read.",
+      "type": "object",
+      "required": ["version"],
+      "properties": {
+        "version": { "type": ["string", "null"] },
+        "timestamp": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "update_methods": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "contains": { "const": "image-write" },
+      "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" }
+    },
+    "manage_url": { "type": ["string", "null"] },
+    "macs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[0-9a-f]{2}(:[0-9a-f]{2}){5}$"
+      }
+    }
+  }
+}

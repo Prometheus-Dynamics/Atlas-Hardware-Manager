@@ -1,0 +1,13 @@
+[Unit]
+Description=DHCP server for the USB gadget link
+Documentation=file:/usr/lib/pd-device/usb-gadget.env
+Requires=pd-device-usb-gadget.service
+After=pd-device-usb-gadget.service
+
+[Service]
+ExecStart=/usr/lib/pd-device/usb-gadget-dhcp
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

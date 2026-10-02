@@ -1,0 +1,5 @@
+config BR2_LINUX_KERNEL_EXT_OV9782
+	bool "OV9782 camera sensor support"
+	help
+	  Patch and enable the upstream OV9282 V4L2 sensor driver with
+	  OV9782 variant support in the Linux kernel built by Buildroot.
