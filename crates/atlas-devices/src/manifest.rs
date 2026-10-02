@@ -32,6 +32,9 @@ impl<'de> Deserialize<'de> for UsbId {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Revision {
     pub id: String,
+    /// How people see it, for example `Gen 1`.
+    #[serde(default)]
+    pub display_name: Option<String>,
     /// A value, a list of values, or an object of `fact: value` pairs that
     /// must all match, compared against facts read from the board (for
     /// example `USER_BOARDREV` from the bootloader's OTP metadata).
@@ -215,6 +218,16 @@ impl DeviceManifest {
         (gadget.manufacturer.is_some() || gadget.product.is_some())
             && check(&gadget.manufacturer, manufacturer)
             && check(&gadget.product, product)
+    }
+
+    /// The name shown for a revision id: its display name when the package
+    /// gives one, else the id.
+    pub fn revision_label(&self, id: &str) -> String {
+        self.revisions
+            .iter()
+            .find(|rev| same(&rev.id, id))
+            .and_then(|rev| rev.display_name.clone())
+            .unwrap_or_else(|| id.to_string())
     }
 
     pub fn has_capability(&self, name: &str) -> bool {

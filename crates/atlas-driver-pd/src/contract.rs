@@ -116,7 +116,12 @@ impl PdIdentity {
                 self.serial.to_ascii_lowercase(),
             ),
             model: match &self.rev {
-                Some(rev) => format!("{model_name} rev {rev}"),
+                Some(rev) => {
+                    let label = package
+                        .map(|package| package.manifest.revision_label(rev))
+                        .unwrap_or_else(|| rev.clone());
+                    format!("{model_name} {label}")
+                }
                 None => model_name,
             },
             mode: DeviceMode::Normal,
@@ -151,7 +156,7 @@ mod tests {
         let identity = reported.to_identity(None, LinkId("mdns".into()), "x".into());
 
         assert_eq!(identity.key, DeviceKey::new("raze", "10000000abcdef01"));
-        assert_eq!(identity.model, "raze rev b");
+        assert_eq!(identity.model, "raze b");
         assert_eq!(identity.primary_version(), Some("v2026.1.0"));
         assert_eq!(identity.name.as_deref(), Some("raze-abcdef01"));
         assert_eq!(identity.attributes["os"], "photonvision");

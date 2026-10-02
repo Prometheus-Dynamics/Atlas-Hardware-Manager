@@ -220,9 +220,9 @@ impl UpdateCapability for RpiRecovery {
             && let Some(revision) = package.manifest.revision_for(&booted.metadata)
         {
             progress.log(format!(
-                "board is {} revision {}",
+                "board is {} {}",
                 package.manifest.display_name(),
-                revision.id
+                package.manifest.revision_label(&revision.id)
             ));
         }
 

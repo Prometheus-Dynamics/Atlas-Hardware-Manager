@@ -44,6 +44,8 @@ fn raze_is_recognised_in_recovery_and_running() {
     assert!(raze.manifest.eeprom_file("pieeprom").is_some());
     assert!(raze.manifest.eeprom_file("pieeprom-sig").is_some());
     assert!(raze.eeprom_dir().is_some());
-    // With no revision source yet, every board falls back to the default.
-    assert!(raze.manifest.revision_for(&BTreeMap::new()).is_some());
+    // Gen 1 boards carry no revision marker, so an unmarked board is gen1.
+    let unmarked = raze.manifest.revision_for(&BTreeMap::new()).unwrap();
+    assert_eq!(unmarked.id, "gen1");
+    assert_eq!(raze.manifest.revision_label("gen1"), "Gen 1");
 }
