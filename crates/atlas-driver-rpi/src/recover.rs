@@ -180,7 +180,7 @@ impl UpdateCapability for RpiRecovery {
             location: Some(device.address.clone()),
             ..BootOptions::default()
         };
-        boot_device(
+        let booted = boot_device(
             &files,
             &options,
             &move |event| match event {
@@ -210,6 +210,21 @@ impl UpdateCapability for RpiRecovery {
                 failed(UpdateStep::Transfer, format!("{other}.{fix}"))
             }
         })?;
+        if let Some(serial) = &booted.serial {
+            progress.log(format!("board serial {serial}"));
+        }
+        if let Some(package) = device
+            .attributes
+            .get("model")
+            .and_then(|model| self.config.catalog.by_model(model))
+            && let Some(revision) = package.manifest.revision_for(&booted.metadata)
+        {
+            progress.log(format!(
+                "board is {} revision {}",
+                package.manifest.display_name(),
+                revision.id
+            ));
+        }
 
         progress.step_started(UpdateStep::Apply);
         progress.log("waiting for the eMMC to appear as a USB disk");
@@ -305,6 +320,7 @@ mod tests {
             name: None,
             link: LinkId("usb-boot".into()),
             address: "1-2".into(),
+            attributes: BTreeMap::new(),
         }
     }
 

@@ -102,6 +102,7 @@ impl Driver for MockDriver {
             name: device.name.clone(),
             link: candidate.link.clone(),
             address: candidate.address.clone(),
+            attributes: BTreeMap::new(),
             key,
         })
     }

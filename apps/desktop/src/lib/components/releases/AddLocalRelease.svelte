@@ -72,10 +72,8 @@
       <input class="field font-mono" bind:value={version} required placeholder="e.g. 2026.3.0" />
     </label>
     <p class="col-span-3 text-[0.7rem] text-warning-300">
-      <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>Local files are unsigned.
-      {#if system.settings && !system.settings.allow_unsigned_local}
-        Installing them is turned off in Settings (allow unsigned local files).
-      {/if}
+      <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>Local files are unsigned. Atlas
+      hashes them now and warns if they change before installing.
     </p>
     {#if error}<p class="col-span-3 text-xs text-error-300" role="alert">{error}</p>{/if}
     <div class="col-span-3 flex gap-2">

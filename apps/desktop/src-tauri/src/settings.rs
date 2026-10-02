@@ -32,8 +32,6 @@ pub struct AppSettings {
     pub scan_interval_ms: u64,
     /// Default for the staged rollout switch in the update dialog.
     pub staged_default: StagedRollout,
-    /// Allow installing local files that no trusted key signed.
-    pub allow_unsigned_local: bool,
 }
 
 impl Default for AppSettings {
@@ -43,7 +41,6 @@ impl Default for AppSettings {
             auto_scan: true,
             scan_interval_ms: 3000,
             staged_default: StagedRollout::Auto,
-            allow_unsigned_local: true,
         }
     }
 }

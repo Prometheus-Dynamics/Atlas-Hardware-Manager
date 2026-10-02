@@ -1,5 +1,6 @@
 //! USB boot over nusb: finding Pis in boot mode and running both rounds.
 
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -238,7 +239,7 @@ async fn wait_for_round(
     previous_index: Option<u8>,
     timeout: Duration,
     cancelled: &(dyn Fn() -> bool + Send + Sync),
-) -> Result<(UsbBootTransport, u8, Chip, String), UsbBootError> {
+) -> Result<(UsbBootTransport, u8, Chip, String, Option<String>), UsbBootError> {
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
         if cancelled() {
@@ -251,7 +252,12 @@ async fn wait_for_round(
             }
             match UsbBootTransport::open(&info).await {
                 Ok((transport, index)) if Some(index) != previous_index => {
-                    return Ok((transport, index, chip, here));
+                    let serial = info
+                        .serial_number()
+                        .map(str::trim)
+                        .filter(|serial| !serial.is_empty())
+                        .map(str::to_string);
+                    return Ok((transport, index, chip, here, serial));
                 }
                 Ok(_) => {}
                 // Access problems will not fix themselves; report them now.
@@ -268,20 +274,42 @@ async fn wait_for_round(
     }
 }
 
-/// Boots one Pi with `files`. Returns the chip and location that booted.
-/// With the mass-storage-gadget files, the Pi's eMMC appears as a USB disk
-/// a few seconds after this returns.
+/// What a finished USB boot learned about the board.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct BootOutcome {
+    pub chip: Option<Chip>,
+    pub location: String,
+    /// The board serial, from the second stage's USB serial string.
+    pub serial: Option<String>,
+    /// Facts the bootloader sent, such as `MAC_ADDR` and `USER_BOARDREV`.
+    pub metadata: BTreeMap<String, String>,
+}
+
+/// Boots one Pi with `files`. With the mass-storage-gadget files, the Pi's
+/// eMMC appears as a USB disk a few seconds after this returns; with
+/// EEPROM recovery files, the bootloader is rewritten.
 pub async fn boot_device(
     files: &BootFiles,
     options: &BootOptions,
     on_event: &(dyn Fn(BootEvent) + Send + Sync),
     cancelled: &(dyn Fn() -> bool + Send + Sync),
-) -> Result<(Chip, String), UsbBootError> {
+) -> Result<BootOutcome, UsbBootError> {
+    let metadata = std::sync::Mutex::new(BTreeMap::new());
+    let collect = |event: BootEvent| {
+        if let BootEvent::Metadata { name, value } = &event {
+            metadata
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .insert(name.clone(), value.clone());
+        }
+        on_event(event);
+    };
     let mut location = options.location.clone();
     let mut previous_index = None;
+    let mut serial = None;
     for _ in 0..options.max_rounds.max(1) {
         on_event(BootEvent::WaitingForDevice);
-        let (mut transport, index, chip, here) = wait_for_round(
+        let (mut transport, index, chip, here, round_serial) = wait_for_round(
             location.as_deref(),
             previous_index,
             options.appear_timeout,
@@ -299,9 +327,17 @@ pub async fn boot_device(
             });
             second_stage(&mut transport, &bootcode).await?;
         } else {
-            match file_server(&mut transport, files, chip, on_event).await? {
+            serial = round_serial.or(serial);
+            match file_server(&mut transport, files, chip, &collect).await? {
                 FileServerOutcome::Done | FileServerOutcome::Disconnected => {
-                    return Ok((chip, here));
+                    return Ok(BootOutcome {
+                        chip: Some(chip),
+                        location: here,
+                        serial,
+                        metadata: metadata
+                            .into_inner()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+                    });
                 }
             }
         }

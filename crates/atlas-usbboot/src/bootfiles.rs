@@ -18,6 +18,10 @@ pub struct BootFiles {
     entries: HashMap<String, (usize, usize)>,
 }
 
+/// The EEPROM flashing tool's own name. EEPROM recovery folders may ship it
+/// under this name instead of `bootcode*.bin`.
+const RECOVERY_TOOL: &str = "recovery.bin";
+
 impl BootFiles {
     pub fn open(dir: impl Into<PathBuf>) -> Result<Self, UsbBootError> {
         let dir = dir.into();
@@ -43,7 +47,10 @@ impl BootFiles {
         };
         let has_bootcode = [Chip::Bcm2837, Chip::Bcm2711, Chip::Bcm2712]
             .iter()
-            .any(|chip| files.contains(*chip, chip.second_stage_file()));
+            .any(|chip| {
+                files.contains(*chip, chip.second_stage_file())
+                    || files.contains(*chip, RECOVERY_TOOL)
+            });
         if !has_bootcode {
             return Err(UsbBootError::BootFilesMissing(files.dir));
         }
@@ -98,9 +105,13 @@ impl BootFiles {
         Ok(None)
     }
 
-    /// The second-stage bootloader for `chip`.
+    /// The second-stage bootloader for `chip`: `bootcode*.bin`, or the
+    /// EEPROM tool `recovery.bin` in an EEPROM recovery folder.
     pub fn second_stage(&self, chip: Chip) -> Result<Vec<u8>, UsbBootError> {
-        self.read(chip, chip.second_stage_file())?
+        if let Some(data) = self.read(chip, chip.second_stage_file())? {
+            return Ok(data);
+        }
+        self.read(chip, RECOVERY_TOOL)?
             .ok_or(UsbBootError::MissingFile {
                 name: chip.second_stage_file().into(),
                 chip: chip.label(),
@@ -237,6 +248,22 @@ pub(crate) mod tests {
         assert_eq!(
             files.read(Chip::Bcm2711, "config.txt").unwrap().unwrap(),
             b"override"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_eeprom_folder_may_name_its_tool_recovery_bin() {
+        let dir = temp_dir("eeprom");
+        std::fs::write(dir.join("recovery.bin"), b"tool").unwrap();
+        std::fs::write(dir.join("pieeprom.bin"), b"image").unwrap();
+
+        let files = BootFiles::open(&dir).unwrap();
+
+        assert_eq!(files.second_stage(Chip::Bcm2712).unwrap(), b"tool");
+        assert_eq!(
+            files.read(Chip::Bcm2712, "pieeprom.bin").unwrap().unwrap(),
+            b"image"
         );
         let _ = std::fs::remove_dir_all(dir);
     }

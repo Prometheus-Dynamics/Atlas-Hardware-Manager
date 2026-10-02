@@ -166,6 +166,10 @@ pub struct Identity {
     /// Where the device was reached during this scan.
     pub link: LinkId,
     pub address: String,
+    /// Driver-specific facts shown in the device panel, for example `os`,
+    /// `revision`, `hostname`, `manage_url`, `mac.usb0`.
+    #[serde(default)]
+    pub attributes: BTreeMap<String, String>,
 }
 
 impl Identity {

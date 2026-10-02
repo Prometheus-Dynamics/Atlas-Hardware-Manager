@@ -45,6 +45,8 @@
   let planError = $state<string | null>(null);
   let planning = $state(false);
   let starting = $state(false);
+  /** The last start failed a checksum; offer "download again" or "flash anyway". */
+  let checksumFailed = $state(false);
 
   const missing = $derived(families.filter((f) => !choices[f]?.version.trim()));
   const unsigned = $derived(
@@ -60,11 +62,15 @@
       .filter((v): v is string => !!v);
   }
 
-  function buildRequest(): UpdateRequestInput {
+  function buildRequest(ignoreChecksum = false): UpdateRequestInput {
     const picked: Record<string, ReleaseChoice> = {};
     for (const family of families) {
       const c = choices[family];
-      picked[family] = { version: c.version.trim(), release_id: c.release_id ?? null };
+      picked[family] = {
+        version: c.version.trim(),
+        release_id: c.release_id ?? null,
+        ignore_checksum: ignoreChecksum && !!c.release_id,
+      };
     }
     return { devices: keys, releases: picked, staged };
   }
@@ -99,15 +105,18 @@
     return () => clearTimeout(timer);
   });
 
-  async function start() {
+  async function start(ignoreChecksum = false) {
     if (starting || !plan) return;
     starting = true;
+    checksumFailed = false;
     try {
-      const job = await api.startUpdate(buildRequest());
+      const job = await api.startUpdate(buildRequest(ignoreChecksum));
       toasts.info(`Job #${job} started: ${plan.devices.length} device${plan.devices.length === 1 ? "" : "s"}.`);
       onstarted?.(job);
     } catch (error) {
-      planError = sentence(errorText(error));
+      const text = errorText(error);
+      checksumFailed = text.includes("SHA-256");
+      planError = sentence(text);
     } finally {
       starting = false;
     }
@@ -175,13 +184,23 @@
       <p class="rounded-base border border-error-500/50 bg-error-500/10 px-3 py-2 text-xs text-error-200" role="alert">
         <i class="fa-solid fa-circle-exclamation mr-1" aria-hidden="true"></i>{planError}
       </p>
+      {#if checksumFailed}
+        <div class="flex gap-2">
+          <button type="button" class="btn btn-sm preset-tonal" disabled={starting} onclick={() => start(false)}>
+            <i class="fa-solid fa-rotate" aria-hidden="true"></i>Download again
+          </button>
+          <button type="button" class="btn btn-sm preset-tonal-warning" disabled={starting} onclick={() => start(true)}>
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>Flash anyway
+          </button>
+        </div>
+      {/if}
     {:else if plan}
       <PlanTable {plan} />
     {/if}
     {#if unsigned.length > 0}
       <p class="rounded-base border border-warning-600/50 bg-warning-500/10 px-3 py-2 text-xs text-warning-200">
         <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
-        Installing an unsigned local file. Atlas cannot verify where it came from.
+        Installing an unsigned release. Atlas cannot verify where it came from, but it will not stop you.
       </p>
     {/if}
   </section>
@@ -192,7 +211,7 @@
       type="button"
       class="btn btn-sm preset-filled-primary-500 uppercase tracking-[0.12em]"
       disabled={!plan || planning || starting}
-      onclick={start}
+      onclick={() => start(false)}
     >
       {#if starting}<i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i>{/if}
       {verb} {plan ? plan.devices.length : keys.length} device{(plan ? plan.devices.length : keys.length) === 1 ? "" : "s"}

@@ -1,0 +1,19 @@
+[package]
+name = "atlas-devices"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Device packages for Atlas: model manifests and informational compatibility lists."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lints]
+workspace = true

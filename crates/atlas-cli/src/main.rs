@@ -10,7 +10,9 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use atlas_core::{Atlas, InventoryStore, JsonFileStore, StagedRollout};
+use atlas_devices::DeviceCatalog;
 use atlas_driver_mock::MockFleet;
+use atlas_driver_pd::{NetworkLinks, drivers_for_catalog};
 use atlas_driver_rpi::{RpiConfig, RpiDriver, UsbBootLinks};
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -134,9 +136,26 @@ fn build_atlas(cli: &Cli) -> Result<Atlas, String> {
             if let Some(data) = dirs::data_dir() {
                 boot_file_dirs.push(data.join("atlas").join("usbboot"));
             }
+            let mut device_dirs = Vec::new();
+            if let Some(data) = dirs::data_dir() {
+                device_dirs.push(data.join("atlas").join("devices"));
+            }
+            let catalog = Arc::new(DeviceCatalog::load(&atlas_devices::default_search_dirs(
+                &device_dirs,
+            )));
+            for warning in catalog.warnings() {
+                output::error(&format!("device package: {warning}"));
+            }
             builder = builder
-                .driver(Arc::new(RpiDriver::new(RpiConfig { boot_file_dirs })))
-                .link_source(Arc::new(UsbBootLinks));
+                .driver(Arc::new(RpiDriver::new(RpiConfig {
+                    boot_file_dirs,
+                    catalog: catalog.clone(),
+                })))
+                .link_source(Arc::new(UsbBootLinks))
+                .link_source(Arc::new(NetworkLinks));
+            for driver in drivers_for_catalog(&catalog) {
+                builder = builder.driver(driver);
+            }
         }
     }
     builder.build().map_err(|error| error.to_string())

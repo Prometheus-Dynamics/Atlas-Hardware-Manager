@@ -18,8 +18,16 @@ This branch is a ground-up rebuild. The previous app lives on `dev` and
   pure-Rust port of the rpiboot protocol, waits for its eMMC to appear as a
   disk, writes the image through an elevated helper, and verifies it by
   reading it back.
-- **Releases**: local image files (hashed, re-checked before every install)
-  and remote indexes of ed25519-signed manifests.
+- **Device packages** (`devices/<model>/`): each hardware model's manifest,
+  informational compatibility list, EEPROM files, and the Gaia layer every
+  OS build imports. Atlas reads the manifests to name boards in recovery,
+  show their recovery steps, and offer bootloader updates.
+- **Any OS, one contract**: running devices are found over mDNS
+  (`_pd-device._tcp`) and identified through `/.well-known/pd-device`,
+  keyed by model and serial; the OS is just an attribute.
+- **Releases**: local image files and remote manifests. Signatures and
+  checksums are used when available and never required: unsigned images get
+  a warning, a checksum mismatch stops by default with "flash anyway".
 - **`atlas` CLI**: every flow from a terminal, for scripts and CI.
 - **Simulated devices** for demos, UI work, and CI.
 
@@ -37,7 +45,10 @@ self-update.
 | `crates/atlas-usbboot` | Raspberry Pi USB boot (rpiboot protocol) over `nusb` |
 | `crates/atlas-blockdev` | Disk listing, safety checks, verified image writes, helper client |
 | `crates/atlas-helper` | The only privileged binary: writes one image to one removable disk |
-| `crates/atlas-driver-rpi` | Pi compute modules in USB boot mode |
+| `crates/atlas-devices` | Device package manifests and compatibility lists |
+| `crates/atlas-driver-rpi` | Pi compute modules in USB boot mode, EEPROM updates |
+| `crates/atlas-driver-pd` | Running PD devices via mDNS and the identity endpoint |
+| `devices/` | Device packages, shared with the OS builds |
 | `crates/atlas-driver-mock` | Simulated robot with gateways, recovery mode, and failure injection |
 | `crates/atlas-cli` | The `atlas` command |
 | `apps/desktop` | Tauri 2 shell (`src-tauri`) and SvelteKit UI (`src`) |

@@ -173,6 +173,7 @@ mod tests {
             name: None,
             link: LinkId("usbnet:0".into()),
             address: "10.0.0.2".into(),
+            attributes: BTreeMap::new(),
         }
     }
 

@@ -15,6 +15,7 @@
 
 mod boot_files;
 mod driver;
+mod eeprom;
 mod health;
 mod recover;
 

@@ -26,6 +26,8 @@ export interface Identity {
   name: string | null;
   link: string;
   address: string;
+  /** Driver facts such as `os`, `revision`, `hostname`, `manage_url`, `mac.usb0`. */
+  attributes: Record<string, string>;
 }
 
 export type CapabilityKind =
@@ -155,6 +157,8 @@ export interface ReleaseChoice {
   version: string;
   /** Catalog entry whose file is installed. Omit for devices that fetch their own. */
   release_id?: string | null;
+  /** Use the file even if it fails its SHA-256 check ("flash anyway"). */
+  ignore_checksum?: boolean;
 }
 
 export interface UpdateRequestInput {
@@ -243,7 +247,6 @@ export interface AppSettings {
   auto_scan: boolean;
   scan_interval_ms: number;
   staged_default: StagedRollout;
-  allow_unsigned_local: boolean;
 }
 
 export interface AppPaths {

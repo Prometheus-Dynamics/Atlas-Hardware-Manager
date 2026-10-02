@@ -18,6 +18,10 @@ pub struct ReleaseChoice {
     pub version: String,
     #[serde(default)]
     pub release_id: Option<String>,
+    /// Use the file even though it does not match its expected SHA-256.
+    /// Atlas never blocks a deliberate choice; it only stops by default.
+    #[serde(default)]
+    pub ignore_checksum: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -41,6 +45,7 @@ impl UpdateRequestInput {
                         ReleaseChoice {
                             version: target.version,
                             release_id: None,
+                            ignore_checksum: false,
                         },
                     )
                 })
@@ -52,15 +57,15 @@ impl UpdateRequestInput {
 
 /// Turns release ids into artifacts. With `fetch`, remote releases are
 /// downloaded and every file is re-checked against its SHA-256; without it
-/// (planning) the catalog's metadata is used as-is. Unsigned local files
-/// are refused unless the user allowed them.
+/// (planning) the catalog's metadata is used as-is. Unsigned files are
+/// allowed; the UI shows them as unsigned. A checksum mismatch stops unless
+/// the choice says `ignore_checksum`.
 async fn resolve(
     app: &AppHandle,
     state: &AppState,
     input: UpdateRequestInput,
     fetch: bool,
 ) -> CmdResult<UpdateRequest> {
-    let allow_unsigned = state.settings().allow_unsigned_local;
     let mut releases = BTreeMap::new();
     for (family, choice) in input.releases {
         let artifact = match &choice.release_id {
@@ -70,12 +75,6 @@ async fn resolve(
                     .releases
                     .entry(id)
                     .ok_or_else(|| ReleaseError::UnknownRelease(id.clone()).to_string())?;
-                if !entry.signed && !allow_unsigned {
-                    return Err(format!(
-                        "{} is an unsigned local file. Allow unsigned local files in Settings to install it.",
-                        entry.artifact_name
-                    ));
-                }
                 if !fetch {
                     releases.insert(
                         family,
@@ -93,7 +92,7 @@ async fn resolve(
                 }
                 let id_for_events = id.clone();
                 let app_for_events = app.clone();
-                state
+                let downloaded = state
                     .releases
                     .download(id, move |progress| {
                         let _ = app_for_events.emit(
@@ -105,9 +104,28 @@ async fn resolve(
                             },
                         );
                     })
-                    .await
-                    .map_err(text)?;
-                Some(state.releases.artifact(id).await.map_err(text)?)
+                    .await;
+                let checked = match downloaded {
+                    Ok(_) => state.releases.artifact(id).await,
+                    Err(error) => Err(error),
+                };
+                Some(match checked {
+                    Ok(artifact) => artifact,
+                    Err(ReleaseError::HashMismatch { .. }) if choice.ignore_checksum => {
+                        state.releases.artifact_unchecked(id).await.map_err(text)?
+                    }
+                    Err(ReleaseError::HashMismatch {
+                        expected, actual, ..
+                    }) => {
+                        return Err(format!(
+                            "{} failed its SHA-256 check (expected {expected}, got {actual}). \
+                             The download may be corrupt: download it again, or choose \
+                             Flash anyway to use it as it is.",
+                            entry.artifact_name
+                        ));
+                    }
+                    Err(error) => return Err(error.to_string()),
+                })
             }
         };
         releases.insert(

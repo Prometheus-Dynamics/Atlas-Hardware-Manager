@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, errorText, type DeviceRecord } from "$lib/api/client";
+  import { api, errorText, openExternal, type DeviceRecord } from "$lib/api/client";
   import ConfirmButton from "$lib/components/common/ConfirmButton.svelte";
   import { clockTime, linkText, timeAgo } from "$lib/format";
   import { clock } from "$lib/stores/clock.svelte";
@@ -8,6 +8,16 @@
   import { toasts } from "$lib/stores/toasts.svelte";
 
   let { record }: { record: DeviceRecord } = $props();
+
+  // Attributes shown specially are left out of the generic list.
+  const special = new Set(["manage_url", "recovery_steps"]);
+  const details = $derived(
+    Object.entries(record.identity.attributes ?? {}).filter(([name]) => !special.has(name)),
+  );
+  const manageUrl = $derived(record.identity.attributes?.manage_url ?? null);
+  const recoverySteps = $derived(
+    (record.identity.attributes?.recovery_steps ?? "").split("\n").filter((step) => step.trim()),
+  );
 
   // svelte-ignore state_referenced_locally
   let label = $state(record.label ?? "");
@@ -92,6 +102,37 @@
       {/each}
     </dl>
   </div>
+
+  {#if recoverySteps.length > 0}
+    <div class="rounded-base border border-warning-600/40 bg-warning-500/5 px-3 py-2">
+      <p class="micro-label mb-1">Recovery steps</p>
+      <ol class="list-decimal space-y-0.5 pl-4 text-xs text-surface-100">
+        {#each recoverySteps as step, index (index)}
+          <li>{step}</li>
+        {/each}
+      </ol>
+    </div>
+  {/if}
+
+  {#if details.length > 0 || manageUrl}
+    <div>
+      <p class="micro-label mb-1">Details</p>
+      <dl class="grid grid-cols-[7rem_1fr] gap-y-1 text-xs">
+        {#each details as [name, value] (name)}
+          <dt class="text-surface-400">{name.replaceAll("_", " ")}</dt>
+          <dd class="break-all font-mono text-surface-100">{value}</dd>
+        {/each}
+        {#if manageUrl}
+          <dt class="text-surface-400">web UI</dt>
+          <dd>
+            <button type="button" class="anchor break-all text-left text-xs" onclick={() => openExternal(manageUrl)}>
+              {manageUrl} <i class="fa-solid fa-arrow-up-right-from-square text-[0.6rem]" aria-hidden="true"></i>
+            </button>
+          </dd>
+        {/if}
+      </dl>
+    </div>
+  {/if}
 
   <div>
     <p class="micro-label mb-1">Identity</p>

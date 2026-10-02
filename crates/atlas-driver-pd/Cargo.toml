@@ -1,0 +1,26 @@
+[package]
+name = "atlas-driver-pd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Atlas driver for running PD devices that follow device contract v1 (mDNS + identity endpoint)."
+
+[dependencies]
+async-trait.workspace = true
+atlas-devices.workspace = true
+atlas-driver.workspace = true
+mdns-sd.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros", "net", "io-util"] }
+
+[lints]
+workspace = true

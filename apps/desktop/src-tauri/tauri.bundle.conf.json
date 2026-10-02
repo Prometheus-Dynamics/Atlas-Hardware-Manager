@@ -3,7 +3,8 @@
   "bundle": {
     "externalBin": ["binaries/atlas-helper"],
     "resources": {
-      "../../../tools/usbboot/mass-storage-gadget64/": "usbboot/mass-storage-gadget64/"
+      "../../../tools/usbboot/mass-storage-gadget64/": "usbboot/mass-storage-gadget64/",
+      "../../../devices/": "devices/"
     },
     "linux": {
       "deb": {

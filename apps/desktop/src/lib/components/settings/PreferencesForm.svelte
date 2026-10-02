@@ -72,13 +72,6 @@
       </select>
     </label>
 
-    <label class="flex items-start gap-3">
-      <input type="checkbox" class="checkbox mt-0.5 h-3.5 w-3.5 rounded-sm border-surface-600 bg-surface-900" bind:checked={draft.allow_unsigned_local} />
-      <span class="text-xs">
-        <span class="block text-surface-100">Allow unsigned local files</span>
-        <span class="text-surface-400">Install images and firmware you added from disk. Their origin cannot be verified.</span>
-      </span>
-    </label>
 
     <label class="grid grid-cols-[1fr_8rem] items-center gap-3">
       <span class="text-xs">

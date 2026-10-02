@@ -2,8 +2,10 @@
 members = [
     "crates/atlas-driver",
     "crates/atlas-core",
+    "crates/atlas-devices",
     "crates/atlas-driver-mock",
     "crates/atlas-driver-rpi",
+    "crates/atlas-driver-pd",
     "crates/atlas-release",
     "crates/atlas-usbboot",
     "crates/atlas-blockdev",
@@ -26,8 +28,10 @@ publish = false
 [workspace.dependencies]
 atlas-driver = { path = "crates/atlas-driver" }
 atlas-core = { path = "crates/atlas-core" }
+atlas-devices = { path = "crates/atlas-devices" }
 atlas-driver-mock = { path = "crates/atlas-driver-mock" }
 atlas-driver-rpi = { path = "crates/atlas-driver-rpi" }
+atlas-driver-pd = { path = "crates/atlas-driver-pd" }
 atlas-release = { path = "crates/atlas-release" }
 atlas-usbboot = { path = "crates/atlas-usbboot" }
 atlas-blockdev = { path = "crates/atlas-blockdev" }
@@ -38,6 +42,7 @@ ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 futures = "0.3"
 lzma-rs = "0.3"
+mdns-sd = "0.21"
 nusb = "0.2.7"
 nix = { version = "0.30", default-features = false }
 plist = "1"

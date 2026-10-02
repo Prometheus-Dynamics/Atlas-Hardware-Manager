@@ -13,11 +13,14 @@ description = "Atlas driver for Raspberry Pi compute modules in USB boot mode: b
 [dependencies]
 async-trait.workspace = true
 atlas-blockdev.workspace = true
+atlas-devices.workspace = true
 atlas-driver.workspace = true
 atlas-usbboot.workspace = true
+sha2.workspace = true
 tokio = { workspace = true, features = ["rt", "time", "sync", "macros"] }
 
 [dev-dependencies]
+serde_json.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "time"] }
 
 [lints]

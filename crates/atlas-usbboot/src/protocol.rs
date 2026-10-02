@@ -50,6 +50,19 @@ pub enum BootEvent {
         name: String,
     },
     FileServerDone,
+    /// A board fact sent by the bootloader, for example `MAC_ADDR` or
+    /// `USER_BOARDREV` (needs `recovery_metadata=1` in the recovery config).
+    Metadata {
+        name: String,
+        value: String,
+    },
+}
+
+/// Splits a `*NAME*value` file server message into its parts.
+pub(crate) fn parse_metadata(message: &str) -> Option<(String, String)> {
+    let (name, value) = message.strip_prefix('*')?.split_once('*')?;
+    let name = name.trim();
+    (!name.is_empty()).then(|| (name.to_string(), value.trim().to_string()))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -156,6 +169,9 @@ pub async fn file_server(
         // `*NAME*value` messages carry board metadata; acknowledge them.
         if name.starts_with('*') && command != 2 {
             ep_write(transport, &[]).await?;
+            if let Some((name, value)) = parse_metadata(&name) {
+                on_event(BootEvent::Metadata { name, value });
+            }
             continue;
         }
 
@@ -351,7 +367,21 @@ mod tests {
             name: "cmdline.txt".into()
         }));
         assert_eq!(events.last(), Some(&BootEvent::FileServerDone));
+        assert!(events.contains(&BootEvent::Metadata {
+            name: "SERIAL".into(),
+            value: "1000abcd".into()
+        }));
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn metadata_messages_split_into_name_and_value() {
+        assert_eq!(
+            parse_metadata("*MAC_ADDR*d8:3a:dd:05:ee:78"),
+            Some(("MAC_ADDR".into(), "d8:3a:dd:05:ee:78".into()))
+        );
+        assert_eq!(parse_metadata("*BAD"), None);
+        assert_eq!(parse_metadata("config.txt"), None);
     }
 
     #[tokio::test(start_paused = true)]

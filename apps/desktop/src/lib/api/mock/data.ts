@@ -93,6 +93,7 @@ export function identityOf(device: SimDevice) {
     name: device.name,
     link: device.parent ? `gateway:${keyString(device.parent)}` : "sim0",
     address: device.key.serial,
+    attributes: {},
   };
 }
 
@@ -215,7 +216,6 @@ export const settings: AppSettings = {
   auto_scan: true,
   scan_interval_ms: 3000,
   staged_default: "auto",
-  allow_unsigned_local: false,
 };
 
 export const jobs: JobRecord[] = [];

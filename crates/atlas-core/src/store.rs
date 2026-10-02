@@ -155,6 +155,7 @@ mod tests {
                 name: Some("cam-front".into()),
                 link: LinkId("usbnet:0".into()),
                 address: "10.0.0.2".into(),
+                attributes: BTreeMap::new(),
             },
             link_kind: LinkKind::UsbNetwork,
             capabilities: vec![CapabilityKind::Info],

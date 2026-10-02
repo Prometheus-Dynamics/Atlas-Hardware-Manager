@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use atlas_core::AtlasBuilder;
+use atlas_devices::DeviceCatalog;
+use atlas_driver_pd::{NetworkLinks, drivers_for_catalog};
 use atlas_driver_rpi::{RpiConfig, RpiDriver, UsbBootLinks};
 
 use crate::settings::AppPaths;
@@ -33,15 +35,36 @@ fn resource_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+/// Folders that may hold device packages (`devices/<model>/`).
+fn device_dirs(paths: &AppPaths) -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = resource_dirs()
+        .into_iter()
+        .filter_map(|dir| dir.parent().map(|parent| parent.join("devices")))
+        .collect();
+    dirs.push(paths.data_dir.join("devices"));
+    atlas_devices::default_search_dirs(&dirs)
+}
+
 /// Registers every hardware driver and link source this build includes.
 pub fn register_hardware(
     builder: AtlasBuilder,
     paths: &AppPaths,
-    _warnings: &mut Vec<String>,
+    warnings: &mut Vec<String>,
 ) -> AtlasBuilder {
+    let catalog = Arc::new(DeviceCatalog::load(&device_dirs(paths)));
+    warnings.extend(catalog.warnings().iter().cloned());
+
     let mut boot_file_dirs = resource_dirs();
     boot_file_dirs.push(paths.data_dir.join("usbboot"));
-    builder
-        .driver(Arc::new(RpiDriver::new(RpiConfig { boot_file_dirs })))
+    let mut builder = builder
+        .driver(Arc::new(RpiDriver::new(RpiConfig {
+            boot_file_dirs,
+            catalog: catalog.clone(),
+        })))
         .link_source(Arc::new(UsbBootLinks))
+        .link_source(Arc::new(NetworkLinks));
+    for driver in drivers_for_catalog(&catalog) {
+        builder = builder.driver(driver);
+    }
+    builder
 }
