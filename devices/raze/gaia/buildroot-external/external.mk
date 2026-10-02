@@ -27,10 +27,12 @@ endif
 # aarch64-linux-*. OpenJDK's configure only looks for $(GNU_TARGET_NAME)-*
 # (aarch64-buildroot-linux-gnu-*), and when it finds none it silently falls
 # back to the host's objcopy/strip; jlink then fails to strip the aarch64
-# binaries. Hand it the target tools explicitly. The configure recipe expands
-# OPENJDK_CONF_ENV at build time, so appending here takes effect.
+# binaries. Hand it the target tools explicitly, as configure arguments: it
+# ignores these variables when they come from the environment. The configure
+# recipe expands OPENJDK_CONF_OPTS at build time, so appending here takes
+# effect.
 ifeq ($(BR2_PACKAGE_OPENJDK),y)
-OPENJDK_CONF_ENV += \
+OPENJDK_CONF_OPTS += \
 	OBJCOPY=$(TARGET_OBJCOPY) \
 	STRIP=$(TARGET_STRIP) \
 	NM=$(TARGET_NM) \
