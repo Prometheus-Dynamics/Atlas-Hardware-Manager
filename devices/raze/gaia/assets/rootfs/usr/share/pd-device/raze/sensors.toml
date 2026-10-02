@@ -1,0 +1,25 @@
+schema_version = 1
+
+[sensors]
+
+  [[sensors.devices]]
+  driver = "BMI088"
+  bus = 4
+  address = 0x18
+
+  [[sensors.devices]]
+  driver = "BMI088"
+  bus = 4
+  address = 0x68
+
+  [[sensors.devices]]
+  driver = "BMM150"
+  bus = 1
+  address = 0x10
+
+  [[sensors.devices]]
+  driver = "INA238AIDGSR"
+  bus = 1
+  address = 0x40
+  shunt_resistance = 0.010
+  current_scale = 1.0

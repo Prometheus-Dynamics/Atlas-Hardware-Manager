@@ -1,0 +1,15 @@
+[Unit]
+Description=Raze LED ring: re-probe the WS2812 PIO driver if /dev/leds0 is missing
+After=systemd-modules-load.service
+ConditionPathExists=!/dev/leds0
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/pd-device/raze-leds-reprobe
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

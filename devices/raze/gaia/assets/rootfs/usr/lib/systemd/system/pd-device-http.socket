@@ -1,0 +1,12 @@
+[Unit]
+Description=Device identity endpoint (TCP 5899, GET /.well-known/pd-device)
+
+[Socket]
+ListenStream=5899
+Accept=yes
+MaxConnections=16
+MaxConnectionsPerSource=4
+NoDelay=yes
+
+[Install]
+WantedBy=sockets.target

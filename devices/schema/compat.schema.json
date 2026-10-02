@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:pd-device:compat:1",
+  "title": "Device OS compatibility (informational)",
+  "description": "devices/<model>/compat.json: which OS images are known to work on which revisions. Informational only: tools may show it, but must never block flashing or booting any image because of it.",
+  "type": "object",
+  "required": ["schema", "model", "entries"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "urn:pd-device:compat:1" },
+    "model": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["os", "versions", "revisions", "status", "notes"],
+        "additionalProperties": false,
+        "properties": {
+          "os": {
+            "description": "os-release ID of the OS.",
+            "type": "string",
+            "pattern": "^[a-z0-9][a-z0-9._-]*$"
+          },
+          "versions": {
+            "description": "OS versions (os-release VERSION_ID) or ranges such as \">=v2026.3.0\"; \"*\" for any.",
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "revisions": {
+            "description": "Board revision ids from manifest.json; \"*\" for all.",
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "status": { "enum": ["known-good", "known-issues", "untested"] },
+          "notes": { "type": "string" },
+          "images": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["url"],
+              "additionalProperties": false,
+              "properties": {
+                "url": { "type": "string" },
+                "version": { "type": "string" },
+                "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

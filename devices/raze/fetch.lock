@@ -1,0 +1,15 @@
+{
+  "schema": "urn:pd-device:fetch-lock:1",
+  "description": "Files the package needs but does not keep in git (large or third-party). Each is fetched from a pinned URL and checked against sha256. Checksums are advisory: a tool may warn on a mismatch but must let the user proceed.",
+  "entries": [
+    {
+      "name": "recovery.bin",
+      "dest": "eeprom/recovery.bin",
+      "role": "recovery",
+      "source": "raspberrypi/rpi-eeprom, firmware-2712/<release>/recovery.bin",
+      "url": null,
+      "sha256": null,
+      "todo": "Pin a commit of https://github.com/raspberrypi/rpi-eeprom and fill in url (raw.githubusercontent.com/raspberrypi/rpi-eeprom/<commit>/firmware-2712/latest/recovery.bin) and its sha256. Needed only for update_method rpiboot-recovery: rpiboot loads it as bootcode5.bin with pieeprom.bin and pieeprom.sig to flash the bootloader. raspberrypi/usbboot ships the same file as recovery5/bootcode5.bin."
+    }
+  ]
+}

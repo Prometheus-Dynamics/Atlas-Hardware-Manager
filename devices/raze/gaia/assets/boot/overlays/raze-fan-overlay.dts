@@ -1,0 +1,62 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ * Raze: CM5 fan on RP1 PWM1 channel 3, driven by the kernel thermal governor
+ * (pwm-fan + the CM5 cpu thermal trips). No userspace daemon is needed.
+ *
+ * Load:   dtoverlay=raze-fan[,<param>=<val>]
+ *
+ * Replaces the old helios-fan-overlays.sh, which wrote four base64 .dtbo blobs
+ * into configfs at runtime and hard-coded the RP1 PWM phandle (0x62). Values
+ * recovered from those blobs with `dtc -I dtb -O dts`:
+ *   /cooling_fan            status = "okay"
+ *   /cooling_fan            cooling-levels = <0xe0 0xf0 0xf8 0xff 0xff>
+ *   /axi/pcie@1000120000/rp1/pwm@9c000   status = "okay"
+ *   /cooling_fan            pwms = <0x62 0x03 0xa25e 0x00>
+ *                           (rp1_pwm1, channel 3, 41566 ns, flags 0)
+ *
+ * Polarity: the old overlay set normal polarity (flags 0), and helios-peripherals
+ * then inverted the duty in software (fan.toml invert_pwm = true), so the pin
+ * was driven inverted. With the kernel in control and no daemon, the inversion
+ * belongs in the PWM flags: PWM_POLARITY_INVERTED (1), which is also what the
+ * CM5 base device tree uses. Override with polarity=0 if a board revision
+ * drives the fan non-inverted.
+ *
+ * Levels: index 0 is the duty below the first trip (cpu-tepid, 50 C), then one
+ * per trip (60, 67.5, 75 C). 224/255 = 88 %, 240 = 94 %, 248 = 97 %, 255 = 100 %,
+ * the old "about 90-100 %" intent. The trip temperatures are the base DT's and
+ * can be tuned with the base dtparams fan_temp0..3 (put them before any
+ * dtoverlay= line).
+ */
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2712";
+
+	fragment@0 {
+		target = <&rp1_pwm1>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@1 {
+		target = <&fan>;
+		fan_props: __overlay__ {
+			status = "okay";
+			cooling-levels = <224 240 248 255 255>;
+			/* rp1_pwm1 channel 3, 41566 ns (~24 kHz), PWM_POLARITY_INVERTED */
+			pwms = <&rp1_pwm1 3 41566 1>;
+		};
+	};
+
+	__overrides__ {
+		level0 = <&fan_props>, "cooling-levels:0";
+		level1 = <&fan_props>, "cooling-levels:4";
+		level2 = <&fan_props>, "cooling-levels:8";
+		level3 = <&fan_props>, "cooling-levels:12";
+		level4 = <&fan_props>, "cooling-levels:16";
+		period_ns = <&fan_props>, "pwms:8";
+		polarity = <&fan_props>, "pwms:12";
+	};
+};

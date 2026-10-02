@@ -1,0 +1,17 @@
+[Unit]
+Description=Device identity (/run/pd-device/identity.json) and mDNS advertisement
+Documentation=file:/usr/lib/pd-device/identity.env
+# Runs before systemd-resolved so the generated DNS-SD file in
+# /run/systemd/dnssd/ is read when resolved starts.
+DefaultDependencies=no
+After=local-fs.target pd-device-hostname.service
+Before=sysinit.target shutdown.target systemd-resolved.service
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/pd-device/identity --write --dnssd --quiet
+
+[Install]
+WantedBy=sysinit.target

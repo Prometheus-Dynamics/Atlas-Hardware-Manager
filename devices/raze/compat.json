@@ -1,0 +1,20 @@
+{
+  "schema": "urn:pd-device:compat:1",
+  "model": "raze",
+  "entries": [
+    {
+      "os": "helios",
+      "versions": ["*"],
+      "revisions": ["*"],
+      "status": "untested",
+      "notes": "No HeliOS image has been built from this package yet; HeliOS still carries its own copy of the Raze support in gaia/."
+    },
+    {
+      "os": "photonvision",
+      "versions": ["*"],
+      "revisions": ["*"],
+      "status": "untested",
+      "notes": "No PhotonVision image has been built from this package yet; the helios-raze target in photon-image-modifier still carries its own copy."
+    }
+  ]
+}
