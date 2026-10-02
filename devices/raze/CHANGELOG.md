@@ -1,11 +1,5 @@
 # Raze device package changelog
 
-## 1.0.2
-
-- EEPROM: `recovery.bin` is now in the package (from raspberrypi/rpi-eeprom
-  `v2025.12.08-2712`, commit `cb1a22eff0b1`, matching the bundled 2025-12-08
-  bootloader), so Atlas's bootloader update works without a fetch step.
-
 ## 1.0.1
 
 - Revisions: the placeholder rev `a` is now `gen1`. First-generation boards
