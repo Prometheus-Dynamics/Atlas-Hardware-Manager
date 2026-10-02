@@ -226,6 +226,32 @@ mod tests {
     }
 
     #[test]
+    fn the_repo_raze_package_stages_a_bootable_eeprom_update() {
+        let devices = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../devices");
+        let catalog = atlas_devices::DeviceCatalog::load(&[devices]);
+        let raze = catalog.by_model("raze").expect("devices/raze is present");
+        let staging = std::env::temp_dir().join(format!(
+            "atlas-eeprom-raze-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+        ));
+
+        // Checks every listed SHA-256 on the way.
+        let staged = stage(raze, &staging).unwrap();
+        let files = BootFiles::open(&staged).unwrap();
+
+        let tool = files.second_stage(atlas_usbboot::Chip::Bcm2712).unwrap();
+        assert_eq!(
+            hex(&Sha256::digest(&tool)),
+            "7993e58a2f1a6200cf4c556f6fe14c268048109d6be3241d2e54dc1549e2218c"
+        );
+        let image = std::fs::read(staged.join("pieeprom.bin")).unwrap();
+        assert_eq!(image.len(), 2 * 1024 * 1024);
+        assert!(staged.join("pieeprom.sig").is_file());
+        let _ = std::fs::remove_dir_all(staging);
+    }
+
+    #[test]
     fn a_missing_tool_or_corrupt_image_stops_the_update() {
         let dir = package_dir("missing");
         std::fs::write(dir.join("eeprom/pieeprom-2025.upd"), b"image").unwrap();

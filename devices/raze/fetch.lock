@@ -7,9 +7,10 @@
       "dest": "eeprom/recovery.bin",
       "role": "recovery",
       "source": "raspberrypi/rpi-eeprom, firmware-2712/<release>/recovery.bin",
-      "url": null,
-      "sha256": null,
-      "todo": "Pin a commit of https://github.com/raspberrypi/rpi-eeprom and fill in url (raw.githubusercontent.com/raspberrypi/rpi-eeprom/<commit>/firmware-2712/latest/recovery.bin) and its sha256. Needed only for update_method rpiboot-recovery: rpiboot loads it as bootcode5.bin with pieeprom.bin and pieeprom.sig to flash the bootloader. raspberrypi/usbboot ships the same file as recovery5/bootcode5.bin."
+      "url": "https://raw.githubusercontent.com/raspberrypi/rpi-eeprom/360324a17edebeb625c3fffe872321a0e2c20dc4/firmware-2712/latest/recovery.bin",
+      "sha256": "7993e58a2f1a6200cf4c556f6fe14c268048109d6be3241d2e54dc1549e2218c",
+      "vendored": true,
+      "note": "Also kept in git at eeprom/recovery.bin; the URL and digest record where it came from."
     }
   ]
 }

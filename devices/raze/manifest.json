@@ -2,7 +2,7 @@
   "schema": "urn:pd-device:manifest:1",
   "contract": 1,
   "model": "raze",
-  "package_version": "1.0.1",
+  "package_version": "1.0.2",
   "display_name": "Raze",
   "description": "Raspberry Pi CM5 vision device with an OV9782 global-shutter camera.",
   "vendor": "Prometheus Dynamics",
@@ -100,10 +100,8 @@
       "Power the Raze off.",
       "Hold the boot button on the Raze.",
       "While holding it, connect the Raze's regular USB port (the one used for flashing) to the computer running Atlas, then release the button once the device appears.",
+      "The status LED is red while the button is held with power applied. It turns green, and the fan starts, once Atlas begins the USB boot.",
       "The Raze enumerates as 0a5c:2712 (BCM2712 boot ROM). Atlas sends the mass-storage-gadget boot files and the eMMC appears as a USB disk to write the image to."
-    ],
-    "todo": [
-      "Record LED behaviour in USB boot mode, if any, so Atlas can show it."
     ]
   },
   "eeprom": {
@@ -134,8 +132,9 @@
       {
         "path": "eeprom/recovery.bin",
         "role": "recovery",
-        "fetch": "recovery.bin",
-        "notes": "Not in git; see fetch.lock."
+        "notes": "rpi-eeprom recovery.bin for BCM2712 (2025-08-27), the EEPROM flashing tool rpiboot loads as the second stage. Kept in git (about 100 KB).",
+        "sha256": "7993e58a2f1a6200cf4c556f6fe14c268048109d6be3241d2e54dc1549e2218c",
+        "source": "https://raw.githubusercontent.com/raspberrypi/rpi-eeprom/360324a17edebeb625c3fffe872321a0e2c20dc4/firmware-2712/latest/recovery.bin"
       }
     ],
     "update_method": "rpiboot-recovery",
