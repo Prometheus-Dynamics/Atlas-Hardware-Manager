@@ -1,5 +1,14 @@
 # Raze device package changelog
 
+## 1.0.2
+
+- EEPROM: `eeprom/recovery.bin` added (rpi-eeprom `360324a`, BCM2712
+  2025-08-27, sha256 `7993e58a…218c`), so bootloader updates over USB boot
+  work without a separate fetch.
+- Recovery instructions: the status LED is red while the boot button is held
+  with power applied, then turns green and the fan starts once the USB boot
+  begins.
+
 ## 1.0.1
 
 - Revisions: the placeholder rev `a` is now `gen1`. First-generation boards
