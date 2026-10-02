@@ -22,3 +22,17 @@ define RPI_USERLAND_INSTALL_STAGING_CMDS
 	@echo "rpi-userland: not installed to staging (keeps Mesa's EGL/GLES headers)"
 endef
 endif
+
+# The CM5 defconfig uses Bootlin's external toolchain, whose tools are named
+# aarch64-linux-*. OpenJDK's configure only looks for $(GNU_TARGET_NAME)-*
+# (aarch64-buildroot-linux-gnu-*), and when it finds none it silently falls
+# back to the host's objcopy/strip; jlink then fails to strip the aarch64
+# binaries. Hand it the target tools explicitly. The configure recipe expands
+# OPENJDK_CONF_ENV at build time, so appending here takes effect.
+ifeq ($(BR2_PACKAGE_OPENJDK),y)
+OPENJDK_CONF_ENV += \
+	OBJCOPY=$(TARGET_OBJCOPY) \
+	STRIP=$(TARGET_STRIP) \
+	NM=$(TARGET_NM) \
+	AR=$(TARGET_AR)
+endif
