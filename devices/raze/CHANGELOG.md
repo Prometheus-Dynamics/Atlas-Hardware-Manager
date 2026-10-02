@@ -1,5 +1,11 @@
 # Raze device package changelog
 
+## 1.0.6
+
+- Toolchain: pass OpenJDK's target binutils as configure arguments. 1.0.5 set
+  them in the environment, which OpenJDK's configure ignores ("Use command
+  line variables instead"), so it still used the host objcopy/strip.
+
 ## 1.0.5
 
 - Toolchain: OpenJDK's configure now gets the target objcopy, strip, nm and
