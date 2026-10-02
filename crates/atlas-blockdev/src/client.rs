@@ -236,13 +236,45 @@ fn powershell_quote(arg: &str) -> String {
     format!("'{}'", arg.replace('\'', "''"))
 }
 
+/// An AppImage runs from a FUSE mount that root cannot read, so pkexec
+/// could not start the helper from there. Copy it to a fresh private folder
+/// first and elevate the copy.
+#[cfg(target_os = "linux")]
+fn runnable_from_root(helper: &Path) -> Result<PathBuf, BlockError> {
+    use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
+
+    let in_appimage =
+        std::env::var_os("APPDIR").is_some_and(|appdir| helper.starts_with(PathBuf::from(appdir)));
+    if !in_appimage {
+        return Ok(helper.to_path_buf());
+    }
+    let dir = std::env::temp_dir().join(format!(
+        "atlas-helper-bin-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|time| time.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::DirBuilder::new()
+        .mode(0o700)
+        .create(&dir)
+        .map_err(|error| BlockError::io(&dir, error))?;
+    let copy = dir.join("atlas-helper");
+    std::fs::copy(helper, &copy).map_err(|error| BlockError::io(&copy, error))?;
+    std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o700))
+        .map_err(|error| BlockError::io(&copy, error))?;
+    Ok(copy)
+}
+
 #[cfg(target_os = "linux")]
 fn spawn_elevated(helper: &Path, args: &[OsString]) -> Result<Child, BlockError> {
+    let helper = runnable_from_root(helper)?;
     let mut command = if nix::unistd::geteuid().is_root() {
-        Command::new(helper)
+        Command::new(&helper)
     } else {
         let mut pkexec = Command::new("pkexec");
-        pkexec.arg(helper);
+        pkexec.arg(&helper);
         pkexec
     };
     command
