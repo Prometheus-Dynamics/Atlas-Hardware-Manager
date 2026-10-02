@@ -2,7 +2,7 @@
   "schema": "urn:pd-device:manifest:1",
   "contract": 1,
   "model": "raze",
-  "package_version": "1.0.1",
+  "package_version": "1.0.2",
   "display_name": "Raze",
   "description": "Raspberry Pi CM5 vision device with an OV9782 global-shutter camera.",
   "vendor": "Prometheus Dynamics",
@@ -134,8 +134,8 @@
       {
         "path": "eeprom/recovery.bin",
         "role": "recovery",
-        "fetch": "recovery.bin",
-        "notes": "Not in git; see fetch.lock."
+        "notes": "From raspberrypi/rpi-eeprom tag v2025.12.08-2712 (commit cb1a22eff0b15b15a686318a885d1f1a2563ff6f), firmware-2712/latest/recovery.bin. rpiboot loads it to flash pieeprom.bin + pieeprom.sig.",
+        "sha256": "ad66b2960559c1bad92687f915bd9d993017f5a2ee7d7495ba866776ad6f1d3d"
       }
     ],
     "update_method": "rpiboot-recovery",
