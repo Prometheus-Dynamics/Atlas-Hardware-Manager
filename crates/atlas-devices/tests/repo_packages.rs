@@ -49,3 +49,45 @@ fn raze_is_recognised_in_recovery_and_running() {
     assert_eq!(unmarked.id, "gen1");
     assert_eq!(raze.manifest.revision_label("gen1"), "Gen 1");
 }
+
+/// Every `device-package.env` under a package reports the manifest's
+/// `package_version`, so the identity document never claims a stale one.
+#[test]
+fn device_package_env_matches_the_manifest_version() {
+    fn env_files(dir: &Path, found: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                env_files(&path, found);
+            } else if path
+                .file_name()
+                .is_some_and(|name| name == "device-package.env")
+            {
+                found.push(path);
+            }
+        }
+    }
+
+    for package in repo_catalog().packages() {
+        let expected = package
+            .manifest
+            .package_version
+            .as_deref()
+            .expect("package_version is set");
+        let mut found = Vec::new();
+        env_files(&package.dir, &mut found);
+        for file in found {
+            let text = std::fs::read_to_string(&file).unwrap();
+            let reported = text
+                .lines()
+                .find_map(|line| line.trim().strip_prefix("PD_DEVICE_PACKAGE_VERSION="))
+                .map(|value| value.trim().trim_matches('"'));
+            assert_eq!(
+                reported,
+                Some(expected),
+                "{} reports a different package version than manifest.json",
+                file.display()
+            );
+        }
+    }
+}
