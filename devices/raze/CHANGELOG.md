@@ -1,5 +1,12 @@
 # Raze device package changelog
 
+## 1.0.5
+
+- Toolchain: OpenJDK's configure now gets the target objcopy, strip, nm and
+  ar explicitly. With the Bootlin external toolchain (tools named
+  `aarch64-linux-*`) it fell back to the host's x86 objcopy, and jlink failed
+  to strip the aarch64 runtime. Only applies when OpenJDK is selected.
+
 ## 1.0.4
 
 - GPU: with `gpu.toml` (Mesa EGL), the external tree keeps rpi-userland out of
