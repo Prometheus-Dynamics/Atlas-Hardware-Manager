@@ -158,6 +158,10 @@ esac
 commit=$(git -C "$atlas" rev-parse --verify "$rev^{commit}" 2>/dev/null) ||
 	die "cannot resolve $rev in $atlas"
 
+if [ -d "$dest" ] && [ -d "$atlas/devices/$model" ] &&
+	[ "$(cd "$dest" && pwd -P)" = "$(cd "$atlas/devices/$model" && pwd -P)" ]; then
+	die "$dest is the package source in Atlas itself"
+fi
 if [ -e "$dest" ] && [ "$force" = 0 ]; then
 	if [ ! -f "$dest/$LOCK_NAME" ] && [ -n "$(ls -A "$dest" 2>/dev/null)" ]; then
 		die "$dest exists and was not written by sync-device.sh; use --force to replace it"
