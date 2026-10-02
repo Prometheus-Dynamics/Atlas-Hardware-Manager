@@ -5,6 +5,8 @@
   import Pill from "$lib/components/common/Pill.svelte";
   import ProgressBar from "$lib/components/common/ProgressBar.svelte";
   import { clockTime, jobStatusDetail, jobStatusLabel, jobStatusTone, overallFraction, sentence } from "$lib/format";
+  import ActivityFeed from "$lib/components/overview/ActivityFeed.svelte";
+  import { activity } from "$lib/stores/activity.svelte";
   import { jobs } from "$lib/stores/jobs.svelte";
   import { ui } from "$lib/stores/ui.svelte";
   import { rise } from "$lib/ui/motion";
@@ -15,6 +17,8 @@
     jobs.sorted.flatMap((job) => job.devices.filter((d) => sameKey(d.device, record.key)).map((state) => ({ job, state }))),
   );
 
+  const timeline = $derived(activity.entries.filter((e) => sameKey(e.device, record.key)));
+
   function open(id: number) {
     ui.selectedJob = id;
     ui.close();
@@ -22,12 +26,12 @@
   }
 </script>
 
-{#if entries.length === 0}
+{#if entries.length === 0 && timeline.length === 0}
   <div class="flex flex-col items-center gap-2 py-8 text-center">
     <Icon name="history" size={22} class="text-fg-faint" />
-    <p class="text-[13px] text-fg-muted">No updates for this device in this session.</p>
+    <p class="text-[13px] text-fg-muted">Nothing has happened to this device yet.</p>
   </div>
-{:else}
+{:else if entries.length > 0}
   <ul class="flex flex-col gap-2">
     {#each entries as { job, state } (job.id)}
       {@const detail = jobStatusDetail(state.status)}
@@ -46,6 +50,13 @@
       </li>
     {/each}
   </ul>
+{/if}
+
+{#if timeline.length > 0}
+  <section class="mt-6 flex flex-col gap-2">
+    <h3 class="text-[12px] font-medium uppercase tracking-[0.06em] text-fg-faint">Timeline</h3>
+    <ActivityFeed entries={timeline} limit={10} />
+  </section>
 {/if}
 
 <style>

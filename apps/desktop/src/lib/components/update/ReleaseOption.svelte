@@ -38,7 +38,7 @@
     padding: 10px 14px;
     border-radius: var(--r-card);
     background: var(--glass);
-    border: 0.5px solid var(--glass-border);
+    border: 1px solid var(--glass-border);
     cursor: pointer;
     transition:
       background var(--t-fast),

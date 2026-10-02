@@ -9,8 +9,6 @@ mod drivers;
 mod settings;
 mod state;
 
-use std::time::Duration;
-
 use tauri::{Emitter, Manager};
 use tokio::sync::broadcast::error::RecvError;
 
@@ -36,18 +34,11 @@ fn forward_events(app: &tauri::AppHandle, state: &AppState) {
     });
 }
 
-/// Scans in the background at the configured interval.
-fn auto_scan(app: &tauri::AppHandle) {
+/// Starts watching for devices inside the async runtime.
+fn start_watch(app: &tauri::AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        loop {
-            let state = app.state::<AppState>();
-            let settings = state.settings();
-            if settings.auto_scan {
-                state.atlas.scan().await;
-            }
-            tokio::time::sleep(Duration::from_millis(settings.scan_interval_ms.max(1000))).await;
-        }
+        app.state::<AppState>().apply_watch();
     });
 }
 
@@ -71,7 +62,7 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle();
             forward_events(handle, &app.state::<AppState>());
-            auto_scan(handle);
+            start_watch(handle);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -82,6 +73,10 @@ pub fn run() {
             commands::devices::forget_device,
             commands::devices::device_actions,
             commands::devices::run_device_action,
+            commands::devices::device_telemetry,
+            commands::devices::device_logs,
+            commands::devices::list_activity,
+            commands::devices::save_support_bundle,
             commands::jobs::plan_update,
             commands::jobs::start_update,
             commands::jobs::cancel_job,
@@ -102,6 +97,7 @@ pub fn run() {
             commands::releases::remove_release_source,
             commands::system::app_info,
             commands::system::health_checks,
+            commands::system::discovery_status,
             commands::system::fix_health,
             commands::system::get_settings,
             commands::system::save_settings,

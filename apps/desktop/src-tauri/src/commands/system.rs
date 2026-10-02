@@ -3,7 +3,7 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use super::CmdResult;
-use crate::settings::{AppPaths, AppSettings, SimScenario};
+use crate::settings::{AppPaths, AppSettings, FALLBACK_RANGE_MS, SimScenario};
 use crate::state::AppState;
 
 #[derive(Clone, Debug, Serialize)]
@@ -29,6 +29,12 @@ pub fn app_info(state: State<'_, AppState>) -> AppInfo {
     }
 }
 
+/// How devices are being found: which sources push changes, which are polled.
+#[tauri::command]
+pub fn discovery_status(state: State<'_, AppState>) -> atlas_core::DiscoveryStatus {
+    state.atlas.discovery()
+}
+
 #[tauri::command]
 pub async fn health_checks(state: State<'_, AppState>) -> CmdResult<Vec<HealthCheck>> {
     Ok(state.atlas.health_checks().await)
@@ -51,15 +57,24 @@ pub fn get_settings(state: State<'_, AppState>) -> AppSettings {
 
 /// Saves settings. Returns true when a change applies only after a restart.
 #[tauri::command]
-pub fn save_settings(state: State<'_, AppState>, settings: AppSettings) -> CmdResult<bool> {
+pub async fn save_settings(state: State<'_, AppState>, settings: AppSettings) -> CmdResult<bool> {
     let mut settings = settings;
-    settings.scan_interval_ms = settings.scan_interval_ms.clamp(1000, 60_000);
+    let (low, high) = FALLBACK_RANGE_MS;
+    settings.scan_interval_ms = settings.scan_interval_ms.clamp(low, high);
     let needs_restart = settings.simulated != state.simulated;
     settings.save(&AppPaths::resolve(false).settings_file)?;
-    *state
-        .settings
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner()) = settings;
+    let previous = std::mem::replace(
+        &mut *state
+            .settings
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        settings.clone(),
+    );
+    if previous.auto_scan != settings.auto_scan
+        || previous.scan_interval_ms != settings.scan_interval_ms
+    {
+        state.apply_watch();
+    }
     Ok(needs_restart)
 }
 

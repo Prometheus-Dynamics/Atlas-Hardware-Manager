@@ -27,8 +27,11 @@ impl SimScenario {
 pub struct AppSettings {
     /// Use simulated devices instead of hardware. Applies after a restart.
     pub simulated: Option<SimScenario>,
-    /// Scan in the background so devices appear without pressing Scan.
+    /// Watch for devices: scan on USB hotplug and network announcements,
+    /// so devices appear and disappear without pressing Scan.
     pub auto_scan: bool,
+    /// The safety-net rescan while watching, for devices that leave without
+    /// a notice. Not a polling rate: changes are picked up immediately.
     pub scan_interval_ms: u64,
     /// Default for the staged rollout switch in the update dialog.
     pub staged_default: StagedRollout,
@@ -39,18 +42,27 @@ impl Default for AppSettings {
         Self {
             simulated: None,
             auto_scan: true,
-            scan_interval_ms: 3000,
+            scan_interval_ms: DEFAULT_FALLBACK_MS,
             staged_default: StagedRollout::Auto,
         }
     }
 }
 
+pub const DEFAULT_FALLBACK_MS: u64 = 20_000;
+pub const FALLBACK_RANGE_MS: (u64, u64) = (5_000, 300_000);
+
 impl AppSettings {
     pub fn load(path: &Path) -> Self {
-        std::fs::read(path)
+        let mut settings: Self = std::fs::read(path)
             .ok()
             .and_then(|data| serde_json::from_slice(&data).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        // Older versions polled every few seconds; that value is not a
+        // sensible safety-net interval.
+        if settings.scan_interval_ms < FALLBACK_RANGE_MS.0 {
+            settings.scan_interval_ms = DEFAULT_FALLBACK_MS;
+        }
+        settings
     }
 
     pub fn save(&self, path: &Path) -> Result<(), String> {

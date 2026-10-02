@@ -1,9 +1,8 @@
 <script lang="ts">
   import Button from "$lib/components/common/Button.svelte";
+  import DiscoveryStatus from "$lib/components/shell/DiscoveryStatus.svelte";
   import SegmentedControl from "$lib/components/common/SegmentedControl.svelte";
   import Toggle from "$lib/components/common/Toggle.svelte";
-  import { timeAgo } from "$lib/format";
-  import { clock } from "$lib/stores/clock.svelte";
   import { devices } from "$lib/stores/devices.svelte";
   import { ui, type InventoryView } from "$lib/stores/ui.svelte";
   import { pop } from "$lib/ui/motion";
@@ -12,17 +11,6 @@
     { value: "cards", label: "Cards", icon: "layout-grid" },
     { value: "list", label: "List", icon: "layout-list" },
   ];
-
-  /** Only a scan the user asked for spins the button; background scans are quiet. */
-  let manual = $state(false);
-  async function scan() {
-    manual = true;
-    try {
-      await devices.scanNow();
-    } finally {
-      manual = false;
-    }
-  }
 
   function toggleFamily(family: string) {
     if (ui.families.has(family)) ui.families.delete(family);
@@ -56,10 +44,7 @@
       <Button variant="ghost" size="sm" onclick={() => ui.selection.clear()}>Clear</Button>
       <span class="text-fg-faint">·</span>
     {/if}
-    <span aria-live="polite">
-      {#if devices.lastScanAt}Checked {timeAgo(devices.lastScanAt, clock.now)}{:else if devices.scanning}Looking for devices…{/if}
-    </span>
-    <Button variant="ghost" size="sm" icon="radar-2" busy={manual} onclick={scan} title="Scan now (S)">Scan</Button>
+    <DiscoveryStatus />
   </div>
 </div>
 
@@ -71,7 +56,7 @@
     font-size: 12px;
     font-weight: 500;
     color: var(--fg-muted);
-    border: 0.5px solid var(--glass-border);
+    border: 1px solid var(--glass-border);
     background: transparent;
     transition:
       background var(--t-fast),

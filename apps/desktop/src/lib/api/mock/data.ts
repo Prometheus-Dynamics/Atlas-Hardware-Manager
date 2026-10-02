@@ -14,6 +14,7 @@ import type {
   RobotProfile,
 } from "../types";
 import { keyString } from "../types";
+import { TEST_PATTERN } from "./pattern";
 
 export interface SimDevice {
   key: DeviceKey;
@@ -54,6 +55,13 @@ const camera = (serial: string, name: string): SimDevice => ({
   parent: null,
   online: true,
   neverConfirms: false,
+  attributes: {
+    os: "helios",
+    hostname: `${name}.local`,
+    manage_url: `http://${name}.local:5800/`,
+    camera_stream: TEST_PATTERN,
+    pipeline: "apriltag",
+  },
 });
 
 const board = (serial: string, name: string, parent: DeviceKey | null): SimDevice => ({
@@ -65,6 +73,7 @@ const board = (serial: string, name: string, parent: DeviceKey | null): SimDevic
   parent,
   online: true,
   neverConfirms: false,
+  attributes: { bus: "CAN 1 Mbit/s", can_id: String(parseInt(serial.slice(2), 10) % 60) },
 });
 
 const front = { family: HELIOS, serial: "H-1001" };
@@ -116,9 +125,14 @@ const razeRunning: SimDevice = {
     "mac.usb0": "02:3a:dd:8f:3a:1d",
     update_methods: "atlas-ota, rpiboot-recovery",
     contract: "1",
+    camera_stream: TEST_PATTERN,
   },
   link: { kind: "usb-network" },
-  caps: ["info", "update", "actions", "open-ui"],
+  caps: ["info", "update", "actions", "telemetry", "logs"],
+  actions: [
+    { id: "locate", label: "Find it", destructive: false },
+    { id: "reboot", label: "Restart", destructive: false },
+  ],
 };
 
 export const fleet: SimDevice[] = [
@@ -143,7 +157,7 @@ function versionName(device: SimDevice): string {
 
 export function capabilities(device: SimDevice): CapabilityKind[] {
   if (device.caps) return device.caps;
-  return device.mode === "recovery" ? ["info", "recover"] : ["info", "update", "actions"];
+  return device.mode === "recovery" ? ["info", "recover"] : ["info", "update", "actions", "telemetry", "logs"];
 }
 
 export function identityOf(device: SimDevice) {
@@ -157,7 +171,7 @@ export function identityOf(device: SimDevice) {
     name: device.name,
     link: device.parent ? `gateway:${keyString(device.parent)}` : device.link?.kind === "usb-boot" ? "usb:3-2" : "sim0",
     address: device.link?.kind === "usb-network" ? "fe80::3a:ddff:fe8f:3a1d%usb0" : device.key.serial,
-    attributes: { ...(device.attributes ?? {}) },
+    attributes: device.mode === "recovery" && !device.caps ? {} : { ...(device.attributes ?? {}) },
   };
 }
 
@@ -324,7 +338,7 @@ export const sources: RemoteSource[] = [
 export const settings: AppSettings = {
   simulated: "demo",
   auto_scan: true,
-  scan_interval_ms: 3000,
+  scan_interval_ms: 20000,
   staged_default: "auto",
 };
 

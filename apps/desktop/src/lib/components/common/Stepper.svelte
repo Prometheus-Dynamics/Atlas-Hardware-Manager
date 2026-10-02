@@ -47,7 +47,7 @@
     padding: 12px;
     border-radius: var(--r-card);
     background: var(--glass);
-    border: 0.5px solid var(--glass-border);
+    border: 1px solid var(--glass-border);
     transition:
       background var(--t-med),
       border-color var(--t-med);

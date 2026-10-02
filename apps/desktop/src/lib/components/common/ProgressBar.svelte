@@ -43,7 +43,7 @@
   .fill {
     height: 100%;
     border-radius: inherit;
-    transition: width 300ms var(--ease-out);
+    transition: width var(--t-data) var(--ease-out);
   }
   .primary {
     background: linear-gradient(90deg, var(--accent-press), var(--accent-hover));

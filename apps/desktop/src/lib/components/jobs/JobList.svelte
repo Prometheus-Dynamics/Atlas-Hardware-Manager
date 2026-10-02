@@ -63,7 +63,7 @@
     padding: 10px 12px;
     border-radius: 12px;
     text-align: left;
-    border: 0.5px solid transparent;
+    border: 1px solid transparent;
     transition:
       background var(--t-fast),
       border-color var(--t-fast);

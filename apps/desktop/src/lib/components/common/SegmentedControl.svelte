@@ -69,7 +69,7 @@
     gap: 2px;
     border-radius: var(--r-pill);
     background: var(--inset);
-    border: 0.5px solid var(--glass-border);
+    border: 1px solid var(--glass-border);
     width: fit-content;
     max-width: 100%;
     overflow-x: auto;
@@ -82,7 +82,7 @@
     left: 3px;
     border-radius: var(--r-pill);
     background: var(--glass-strong);
-    border: 0.5px solid var(--glass-border-strong);
+    border: 1px solid var(--glass-border-strong);
     transition:
       transform var(--t-med) var(--ease-out),
       width var(--t-med) var(--ease-out);

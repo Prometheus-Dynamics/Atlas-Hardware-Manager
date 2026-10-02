@@ -4,10 +4,12 @@
   import IconTile from "$lib/components/common/IconTile.svelte";
   import StatusDot, { type DotState } from "$lib/components/common/StatusDot.svelte";
   import { deviceName } from "$lib/format";
+  import { metricTone, metricValue } from "$lib/metrics";
   import { deviceIcon, deviceSubline, isRecovery, viaName } from "$lib/present";
   import { devices } from "$lib/stores/devices.svelte";
   import { insights } from "$lib/stores/insights.svelte";
   import { jobs } from "$lib/stores/jobs.svelte";
+  import { live } from "$lib/stores/live.svelte";
   import { ui } from "$lib/stores/ui.svelte";
   import DeviceStatus from "./DeviceStatus.svelte";
   import { clickCheck, clickDevice } from "./select";
@@ -23,6 +25,16 @@
   const waiting = $derived(online && isRecovery(record));
   const via = $derived(viaName(record, devices.nameOf));
   const fresh = $derived(devices.fresh.has(id));
+
+  /** Up to two live readings, when the device reports them. */
+  const glance = $derived(
+    online
+      ? ["temp", "fps", "voltage", "cpu"]
+          .map((m) => live.metric(id, m))
+          .filter((m) => !!m)
+          .slice(0, 2)
+      : [],
+  );
 
   const dot = $derived.by((): { state: DotState; label: string } => {
     if (!online) return { state: "offline", label: "Offline" };
@@ -65,12 +77,41 @@
     {#if via}<p class="truncate text-[12px] text-fg-faint">via {via}</p>{/if}
   </div>
 
+  {#if glance.length > 0}
+    <div class="glance">
+      {#each glance as metric (metric.id)}
+        {@const shown = metricValue(metric)}
+        <span class="reading {metricTone(metric)}">{shown.value}<small>{shown.unit}</small></span>
+      {/each}
+    </div>
+  {/if}
+
   <div class="mt-auto flex min-h-[26px] items-end pt-3">
     <DeviceStatus {record} />
   </div>
 </article>
 
 <style>
+  .glance {
+    display: flex;
+    gap: 10px;
+    margin-top: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .reading small {
+    margin-left: 2px;
+    font-size: 11px;
+    color: var(--fg-faint);
+  }
+  .reading.warn {
+    color: var(--warn-fg);
+  }
+  .reading.err {
+    color: var(--err-fg);
+  }
   .card {
     position: relative;
     display: flex;
@@ -79,7 +120,7 @@
     padding: 16px;
     border-radius: var(--r-card);
     background: var(--glass);
-    border: 0.5px solid var(--glass-border);
+    border: 1px solid var(--glass-border);
     transition:
       transform var(--t-med) var(--ease-out),
       background var(--t-fast),

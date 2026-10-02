@@ -7,7 +7,7 @@
   import { system } from "$lib/stores/system.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import type { IconName } from "$lib/ui/icons";
-  import { rise } from "$lib/ui/motion";
+  import { rise, stagger } from "$lib/ui/motion";
 
   let fixing = $state<string | null>(null);
 
@@ -42,7 +42,7 @@
   {/snippet}
   <ul class="flex flex-col gap-2">
     {#each system.healthSorted as check, i (check.id)}
-      <li class="glass flex items-start gap-3 px-4 py-3" in:rise={{ delay: i * 30 }}>
+      <li class="glass flex items-start gap-3 px-4 py-3" in:rise={{ delay: stagger(i) }}>
         <IconTile icon={style[check.status].icon} tone={style[check.status].tone} size={30} />
         <div class="min-w-0 flex-1">
           <p class="text-[13px] font-semibold text-fg">{check.label}</p>

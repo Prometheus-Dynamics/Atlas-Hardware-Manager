@@ -9,10 +9,22 @@ This branch is a ground-up rebuild. The previous app lives on `dev` and
 
 ## What works today
 
-- **Desktop app** (`apps/desktop`): inventory with live discovery, device
-  panel, update and recovery flow with a plan preview, bulk jobs with staged
-  rollout, a jobs tray, robot profiles ("is this robot ready?" and one-click
-  "Make ready"), a release catalog, and host health checks.
+- **Desktop app** (`apps/desktop`): an overview per robot (readiness, live
+  summary, how everything is connected, recent activity), inventory, a device
+  page with live readings, camera view, logs, and quick actions, update and
+  recovery flows with a plan preview, bulk jobs with staged rollout, robot
+  profiles ("is this robot ready?" and one-click "Make ready"), a release
+  catalog, and host health checks.
+- **Live discovery, no polling**: USB hotplug and mDNS announcements trigger
+  a look the moment something changes; a slow safety-net rescan catches
+  devices that leave without saying so.
+- **Features follow the device**: metrics, logs, actions, a camera stream,
+  and a web UI link appear only when a device offers them. A running PD
+  device opts in by listing `endpoints` (`metrics`, `logs`, `actions`),
+  `actions`, and `camera_stream` in its identity document; responses are read
+  leniently (see `crates/atlas-driver-pd/src/live.rs`). Nothing is required.
+- **Fleet history**: devices found, lost, updated, and acted on, kept
+  between sessions.
 - **Raspberry Pi flashing, no rpiboot binary**: a compute module in USB boot
   mode appears as a recovery device. Recovering it boots it over USB with a
   pure-Rust port of the rpiboot protocol, waits for its eMMC to appear as a

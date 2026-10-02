@@ -12,7 +12,7 @@
 
 <svelte:head><title>Jobs · Atlas</title></svelte:head>
 
-<div class="flex flex-col gap-5">
+<div class="reveal flex flex-col gap-5">
   <PageHeader
     title="Jobs"
     subtitle={jobs.running.length > 0 ? `${jobs.running.length} running now` : "Every update and flash from this session, newest first."}
@@ -26,7 +26,7 @@
       <JobList selectedId={selected?.id ?? null} />
       {#if selected}
         {#key selected.id}
-          <div in:softFade={{ duration: 160 }}><JobDetail job={selected} /></div>
+          <div in:softFade><JobDetail job={selected} /></div>
         {/key}
       {/if}
     </div>

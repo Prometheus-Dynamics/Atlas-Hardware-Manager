@@ -405,6 +405,7 @@ name = "atlas-usbboot"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "futures",
  "nusb",
  "serde",
  "thiserror 2.0.21",

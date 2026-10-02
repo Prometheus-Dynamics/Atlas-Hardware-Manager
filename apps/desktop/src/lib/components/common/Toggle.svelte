@@ -17,7 +17,7 @@
     height: 20px;
     border-radius: var(--r-pill);
     background: var(--glass-strong);
-    border: 0.5px solid var(--glass-border);
+    border: 1px solid var(--glass-border);
     cursor: pointer;
     transition: background var(--t-med);
     flex-shrink: 0;

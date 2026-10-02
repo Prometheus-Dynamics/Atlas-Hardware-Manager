@@ -60,16 +60,14 @@ body {
   /* A glass surface: cards and panels. */
   .glass {
     background: var(--glass);
-    border: 0.5px solid var(--glass-border);
+    border: 1px solid var(--glass-border);
     border-radius: var(--r-card);
   }
   /* A floating glass layer: sheets, popovers, trays, toasts. */
   .glass-layer {
     background: var(--layer);
-    border: 0.5px solid var(--glass-border);
+    border: 1px solid var(--glass-border);
     box-shadow: var(--shadow-layer);
-    backdrop-filter: blur(var(--blur)) saturate(140%);
-    -webkit-backdrop-filter: blur(var(--blur)) saturate(140%);
   }
   .mono {
     font-family: var(--font-code);
@@ -97,7 +95,7 @@ body {
     font-size: 13px;
     color: var(--fg);
     background: var(--inset);
-    border: 0.5px solid var(--glass-border);
+    border: 1px solid var(--glass-border);
     border-radius: var(--r-md);
     transition:
       border-color var(--t-fast),
@@ -159,7 +157,7 @@ body {
     padding: 3px 6px;
     color: var(--fg-muted);
     background: var(--glass);
-    border: 0.5px solid var(--glass-border);
+    border: 1px solid var(--glass-border);
     border-radius: 6px;
   }
 }
@@ -199,4 +197,34 @@ body {
   .spin {
     animation: spin 1.6s linear infinite !important;
   }
+}
+
+/*
+ * Page entrance: the direct children of `.reveal` rise in one after another,
+ * once, when the page mounts. Every page uses this, so screens arrive the
+ * same way. Live updates afterwards never replay it.
+ */
+@keyframes reveal {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.reveal > * {
+  animation: reveal var(--t-enter) var(--ease-out) both;
+}
+.reveal > :nth-child(2) {
+  animation-delay: calc(var(--stagger) * 1);
+}
+.reveal > :nth-child(3) {
+  animation-delay: calc(var(--stagger) * 2);
+}
+.reveal > :nth-child(4) {
+  animation-delay: calc(var(--stagger) * 3);
+}
+.reveal > :nth-child(5) {
+  animation-delay: calc(var(--stagger) * 4);
+}
+.reveal > :nth-child(n + 6) {
+  animation-delay: calc(var(--stagger) * 5);
 }

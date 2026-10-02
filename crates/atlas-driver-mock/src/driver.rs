@@ -9,6 +9,7 @@ use atlas_driver::{
 };
 
 use crate::fleet::ALL_UPDATES;
+use crate::observe::{MockLogs, MockTelemetry, TEST_PATTERN};
 use crate::{MockBehavior, MockDevice, MockFleet, SIM_HELIOS};
 
 const STEPS: [UpdateStep; 5] = [
@@ -54,6 +55,42 @@ fn version_name(device: &MockDevice) -> &'static str {
         (DeviceMode::Normal, SIM_HELIOS) => "os",
         (DeviceMode::Normal, _) => "firmware",
     }
+}
+
+/// What a running simulated device tells Atlas beyond its version.
+fn attributes(device: &MockDevice) -> BTreeMap<String, String> {
+    let mut attributes = BTreeMap::new();
+    if device.mode == DeviceMode::Recovery {
+        return attributes;
+    }
+    if device.key.family.as_str() == SIM_HELIOS {
+        let host = device
+            .name
+            .clone()
+            .unwrap_or_else(|| device.key.serial.0.to_ascii_lowercase());
+        attributes.insert(
+            atlas_driver::attributes::HOSTNAME.into(),
+            format!("{host}.local"),
+        );
+        attributes.insert(
+            atlas_driver::attributes::WEB_UI.into(),
+            format!("http://{host}.local:5800/"),
+        );
+        attributes.insert(
+            atlas_driver::attributes::CAMERA_STREAM.into(),
+            TEST_PATTERN.into(),
+        );
+        attributes.insert("os".into(), "helios".into());
+        attributes.insert("pipeline".into(), "apriltag".into());
+    } else {
+        attributes.insert("bus".into(), "CAN 1 Mbit/s".into());
+        attributes.insert("can_id".into(), format!("{}", phase_id(device)));
+    }
+    attributes
+}
+
+fn phase_id(device: &MockDevice) -> u32 {
+    device.key.serial.0.bytes().map(u32::from).sum::<u32>() % 60 + 1
 }
 
 fn concurrency(device: &MockDevice) -> Concurrency {
@@ -102,20 +139,31 @@ impl Driver for MockDriver {
             name: device.name.clone(),
             link: candidate.link.clone(),
             address: candidate.address.clone(),
-            attributes: BTreeMap::new(),
+            attributes: attributes(&device),
             key,
         })
     }
 
     fn capabilities(&self, device: &Identity) -> Capabilities {
+        let running = device.mode == DeviceMode::Normal;
         Capabilities {
             update: Some(Arc::new(MockUpdater {
                 fleet: self.fleet.clone(),
             })),
-            actions: (device.mode == DeviceMode::Normal).then(|| {
+            actions: running.then(|| {
                 Arc::new(MockActions {
                     fleet: self.fleet.clone(),
                 }) as Arc<dyn ActionsCapability>
+            }),
+            telemetry: running.then(|| {
+                Arc::new(MockTelemetry {
+                    fleet: self.fleet.clone(),
+                }) as Arc<dyn atlas_driver::TelemetryCapability>
+            }),
+            logs: running.then(|| {
+                Arc::new(MockLogs {
+                    fleet: self.fleet.clone(),
+                }) as Arc<dyn atlas_driver::LogsCapability>
             }),
         }
     }
@@ -288,12 +336,12 @@ impl ActionsCapability for MockActions {
         vec![
             DeviceAction {
                 id: "locate".into(),
-                label: "Locate".into(),
+                label: "Find it".into(),
                 destructive: false,
             },
             DeviceAction {
                 id: "reboot".into(),
-                label: "Reboot".into(),
+                label: "Restart".into(),
                 destructive: false,
             },
             DeviceAction {
@@ -309,8 +357,13 @@ impl ActionsCapability for MockActions {
             .device(&device.key)
             .filter(|mock| mock.online)
             .ok_or_else(|| DriverError::Unreachable(device.key.to_string()))?;
-        self.fleet
-            .lock()
+        let mut state = self.fleet.lock();
+        if action_id == "reboot"
+            && let Some(mock) = state.devices.get_mut(&device.key)
+        {
+            mock.booted = std::time::Instant::now();
+        }
+        state
             .actions
             .push((device.key.clone(), action_id.to_string()));
         Ok(())

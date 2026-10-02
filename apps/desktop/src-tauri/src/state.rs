@@ -1,6 +1,9 @@
 use std::sync::{Arc, Mutex};
 
-use atlas_core::{Atlas, InventoryStore, JsonFileStore};
+use std::time::Duration;
+
+use atlas_core::{Atlas, InventoryStore, JsonFileStore, WatchOptions};
+use atlas_driver::CancellationToken;
 use atlas_driver_mock::MockFleet;
 use atlas_release::ReleaseCatalog;
 
@@ -17,6 +20,8 @@ pub struct AppState {
     pub simulated: Option<SimScenario>,
     /// Startup problems shown on the Settings screen.
     pub startup_warnings: Vec<String>,
+    /// Stops the running device watch, when one runs.
+    watch: Mutex<Option<CancellationToken>>,
 }
 
 impl AppState {
@@ -72,7 +77,30 @@ impl AppState {
             paths,
             simulated,
             startup_warnings,
+            watch: Mutex::new(None),
         })
+    }
+
+    /// Starts or stops watching for devices to match the settings. Call from
+    /// inside the async runtime.
+    pub fn apply_watch(&self) {
+        let settings = self.settings();
+        let mut watch = self
+            .watch
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(running) = watch.take() {
+            running.cancel();
+        }
+        if settings.auto_scan {
+            *watch = self
+                .atlas
+                .watch(WatchOptions {
+                    fallback: Duration::from_millis(settings.scan_interval_ms),
+                    ..WatchOptions::default()
+                })
+                .ok();
+        }
     }
 
     pub fn settings(&self) -> AppSettings {

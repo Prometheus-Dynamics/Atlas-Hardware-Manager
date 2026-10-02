@@ -1,3 +1,6 @@
+use std::fmt;
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -55,11 +58,45 @@ pub trait Driver: Send + Sync {
     }
 }
 
+/// How a link source tells Atlas that something may have changed: a USB
+/// device was plugged in, a network device announced itself. Cheap to clone
+/// and safe to call from any thread, as often as needed; Atlas coalesces.
+#[derive(Clone)]
+pub struct ChangeNotifier(Arc<dyn Fn() + Send + Sync>);
+
+impl ChangeNotifier {
+    pub fn new(notify: impl Fn() + Send + Sync + 'static) -> Self {
+        Self(Arc::new(notify))
+    }
+
+    pub fn notify(&self) {
+        (self.0)();
+    }
+}
+
+impl fmt::Debug for ChangeNotifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ChangeNotifier")
+    }
+}
+
 /// Supplies the links present on this computer, for example USB network
 /// interfaces or USB boot devices. Transports implement this.
 #[async_trait]
 pub trait LinkSource: Send + Sync {
     async fn links(&self) -> Vec<Link>;
+
+    /// A short name for status lines, for example `USB` or `Network`.
+    fn name(&self) -> &str {
+        "links"
+    }
+
+    /// Starts pushing change notices to `notify`, for example from USB
+    /// hotplug or mDNS announcements. Returns false when this source cannot
+    /// watch and must be polled; Atlas then rescans it on a slow timer.
+    fn watch(&self, _notify: ChangeNotifier) -> bool {
+        false
+    }
 
     /// Host readiness checks for this kind of link.
     async fn health(&self) -> Vec<HealthCheck> {

@@ -2,7 +2,6 @@
   // One device inside a multi-device job: compact stages and bar, with
   // the full stage cards and log a click away.
   import { slide } from "svelte/transition";
-  import { cubicOut } from "svelte/easing";
   import type { DeviceJobState } from "$lib/api/client";
   import Icon from "$lib/components/common/Icon.svelte";
   import Pill from "$lib/components/common/Pill.svelte";
@@ -12,7 +11,7 @@
   import { duration, jobStatusDetail, jobStatusTone, overallFraction, sentence } from "$lib/format";
   import { outcomeText } from "$lib/present";
   import { clock } from "$lib/stores/clock.svelte";
-  import { ms } from "$lib/ui/motion";
+  import { DUR, ease, ms } from "$lib/ui/motion";
   import LogTail from "./LogTail.svelte";
   import StageProgress from "./StageProgress.svelte";
 
@@ -43,7 +42,7 @@
   </button>
   {#if detail && !open}<p class="px-4 pb-3 pl-11 text-[12.5px] text-fg-muted">{sentence(detail)}</p>{/if}
   {#if open}
-    <div class="flex flex-col gap-4 px-4 pb-4 pt-1" transition:slide={{ duration: ms(220), easing: cubicOut }}>
+    <div class="flex flex-col gap-4 px-4 pb-4 pt-1" transition:slide={{ duration: ms(DUR.med), easing: ease }}>
       <Stepper {job} />
       <StageProgress {job} />
       {#if detail}<p class="text-[13px] text-fg-muted">{sentence(detail)}</p>{/if}

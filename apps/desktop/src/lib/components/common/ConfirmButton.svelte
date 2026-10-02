@@ -64,6 +64,6 @@
     padding: 3px 4px 3px 12px;
     border-radius: var(--r-pill);
     background: var(--err-bg);
-    border: 0.5px solid var(--err-bg);
+    border: 1px solid var(--err-bg);
   }
 </style>

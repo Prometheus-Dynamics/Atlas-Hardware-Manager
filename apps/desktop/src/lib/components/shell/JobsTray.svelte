@@ -2,7 +2,6 @@
   // The persistent jobs tray: running jobs at a glance, a click from detail.
   import { goto } from "$app/navigation";
   import { slide } from "svelte/transition";
-  import { cubicOut } from "svelte/easing";
   import { keyString, type JobRecord } from "$lib/api/client";
   import Button from "$lib/components/common/Button.svelte";
   import Icon from "$lib/components/common/Icon.svelte";
@@ -13,7 +12,7 @@
   import { jobTitle, outcomeText } from "$lib/present";
   import { jobs } from "$lib/stores/jobs.svelte";
   import { ui } from "$lib/stores/ui.svelte";
-  import { ms } from "$lib/ui/motion";
+  import { DUR, ease, ms } from "$lib/ui/motion";
 
   const running = $derived(jobs.running);
   const last = $derived(jobs.sorted.find((j) => j.state !== "running"));
@@ -35,7 +34,7 @@
 </script>
 
 {#if running.length > 0 || last}
-  <section class="tray glass-layer" aria-label="Jobs" transition:slide={{ duration: ms(220), easing: cubicOut }}>
+  <section class="tray glass-layer" aria-label="Jobs" transition:slide={{ duration: ms(DUR.med), easing: ease }}>
     {#if running.length > 0}
       {#each running as job (job.id)}
         {@const p = progress(job)}
@@ -59,7 +58,7 @@
           <Button variant="ghost" size="sm" iconRight="arrow-right" onclick={() => openJob(job.id)}>Open</Button>
         </div>
         {#if ui.trayOpen && job.devices.length > 1}
-          <ul class="devices" transition:slide={{ duration: ms(220), easing: cubicOut }}>
+          <ul class="devices" transition:slide={{ duration: ms(DUR.med), easing: ease }}>
             {#each job.devices as state (keyString(state.device))}
               <li class="flex items-center gap-3 text-[12.5px]">
                 <span class="w-32 truncate text-fg-muted" title={state.name}>{state.name}</span>

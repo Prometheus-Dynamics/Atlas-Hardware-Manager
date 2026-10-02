@@ -8,8 +8,10 @@
   import { devices } from "$lib/stores/devices.svelte";
   import { robots } from "$lib/stores/robots.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import CameraPreview from "./CameraPreview.svelte";
   import Disclosure from "./Disclosure.svelte";
   import FactGrid from "./FactGrid.svelte";
+  import LiveStats from "./LiveStats.svelte";
 
   let { record }: { record: DeviceRecord } = $props();
 
@@ -18,7 +20,10 @@
 
   const attrs = $derived(record.identity.attributes ?? {});
   const manageUrl = $derived(attrs.manage_url ?? null);
-  const shown = new Set(["os", "os_version", "revision", "hostname", "manage_url", "recovery_steps", "storage", "model"]);
+  const online = $derived(record.presence === "online");
+  const stream = $derived(online ? (attrs.camera_stream ?? null) : null);
+  const telemetry = $derived(online && record.capabilities.includes("telemetry"));
+  const shown = new Set(["os", "os_version", "revision", "hostname", "manage_url", "recovery_steps", "storage", "model", "camera_stream"]);
   const macs = $derived(Object.entries(attrs).filter(([name]) => name.startsWith("mac.")));
   const extra = $derived(Object.entries(attrs).filter(([name]) => !shown.has(name) && !name.startsWith("mac.")));
 
@@ -79,9 +84,17 @@
 </script>
 
 <div class="flex flex-col gap-6">
+  {#if stream}
+    <CameraPreview src={stream} name={record.label ?? record.identity.name ?? record.key.serial} />
+  {/if}
+
+  {#if telemetry}
+    <LiveStats {record} />
+  {/if}
+
   <FactGrid {facts} />
 
-  {#if manageUrl}
+  {#if manageUrl && !online}
     <div class="flex items-center gap-3">
       <Button icon="world-www" iconRight="external-link" onclick={() => openExternal(manageUrl)}>Open web UI</Button>
       <span class="mono truncate text-[12px] text-fg-faint">{manageUrl}</span>

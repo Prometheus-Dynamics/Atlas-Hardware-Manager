@@ -2,7 +2,9 @@ use atlas_driver::{DeviceKey, UpdateStep};
 use serde::Serialize;
 use tokio::sync::broadcast;
 
-use crate::{DeviceJobStatus, DeviceRecord, JobId, JobState, JobSummary, ScanReport};
+use crate::{
+    ActivityEntry, DeviceJobStatus, DeviceRecord, JobId, JobState, JobSummary, ScanReport,
+};
 
 /// Every state change in Atlas. Hosts render these; nothing else is needed
 /// to keep a UI in sync.
@@ -61,6 +63,10 @@ pub enum Event {
         job: JobId,
         state: JobState,
         summary: JobSummary,
+    },
+    /// Something worth a line in the fleet history.
+    Activity {
+        entry: ActivityEntry,
     },
 }
 

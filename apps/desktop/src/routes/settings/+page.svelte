@@ -8,7 +8,7 @@
 
 <svelte:head><title>Settings · Atlas</title></svelte:head>
 
-<div class="flex flex-col gap-5">
+<div class="reveal flex flex-col gap-5">
   <PageHeader title="Settings" subtitle="This computer's health, your preferences, and where Atlas keeps its files." />
   <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
     <div class="flex flex-col gap-4">

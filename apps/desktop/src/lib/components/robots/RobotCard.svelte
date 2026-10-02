@@ -35,7 +35,7 @@
 
   function showDevices() {
     ui.robot = profile.name;
-    void goto("/");
+    void goto("/devices");
   }
 </script>
 

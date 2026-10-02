@@ -17,6 +17,7 @@ import { keyString } from "../types";
 import { emit, sleep } from "./bus";
 import { inventory, jobs, releases, simDevice, type SimDevice } from "./data";
 import { touch } from "./scan";
+import { record } from "./observe";
 
 const STEPS: UpdateStep[] = ["preflight", "transfer", "apply", "reboot", "confirm"];
 const STEP_MS: Record<UpdateStep, number> = { preflight: 700, transfer: 3200, apply: 2400, reboot: 1800, confirm: 900 };
@@ -145,6 +146,11 @@ function setStatus(job: JobRecord, state: DeviceJobState, status: DeviceJobStatu
   state.status = status;
   if (status.status !== "running" && status.status !== "queued") state.finished_ms = Date.now();
   emit({ type: "job-device", job: job.id, device: state.device, status });
+  const name = state.name;
+  if (status.status === "verified") record("update-result", "success", state.device, `${name} updated to ${status.version}`);
+  else if (status.status === "rolled-back") record("update-result", "warning", state.device, `${name} rolled back its update: ${status.reason}`);
+  else if (status.status === "needs-recovery") record("update-result", "error", state.device, `${name} needs recovery: ${status.reason}`);
+  else if (status.status === "failed") record("update-result", "error", state.device, `${name} update failed: ${status.error}`);
 }
 
 async function runDevice(job: JobRecord, state: DeviceJobState): Promise<boolean> {

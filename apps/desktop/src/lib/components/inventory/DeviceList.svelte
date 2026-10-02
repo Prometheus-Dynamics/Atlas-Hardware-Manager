@@ -5,7 +5,7 @@
   import Skeleton from "$lib/components/common/Skeleton.svelte";
   import { devices } from "$lib/stores/devices.svelte";
   import { ui } from "$lib/stores/ui.svelte";
-  import { ms, rise, softFade } from "$lib/ui/motion";
+  import { DUR, ease, ms, rise, softFade } from "$lib/ui/motion";
   import DeviceListRow from "./DeviceListRow.svelte";
   import GroupHeader from "./GroupHeader.svelte";
   import { groupByRobot } from "./groups";
@@ -34,7 +34,7 @@
       <div class="px-1.5 pb-1" in:softFade>
         {#if ui.grouped}<div class="px-2 pt-2"><GroupHeader robot={group.robot} count={group.records.length} /></div>{/if}
         {#each group.records as record (keyString(record.key))}
-          <div animate:flip={{ duration: ms(240) }} in:rise={{ y: 4 }} out:softFade>
+          <div animate:flip={{ duration: ms(DUR.enter), easing: ease }} in:rise out:softFade>
             <DeviceListRow {record} />
           </div>
         {/each}
@@ -55,7 +55,7 @@
     gap: 16px;
     padding: 6px 20px 10px;
     margin-bottom: 4px;
-    border-bottom: 0.5px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
     font-size: 12px;
     font-weight: 500;
     color: var(--fg-faint);

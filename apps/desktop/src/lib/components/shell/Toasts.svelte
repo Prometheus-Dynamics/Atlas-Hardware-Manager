@@ -3,7 +3,7 @@
   import Icon from "$lib/components/common/Icon.svelte";
   import { toasts, type ToastTone } from "$lib/stores/toasts.svelte";
   import type { IconName } from "$lib/ui/icons";
-  import { ms, slideIn, softFade } from "$lib/ui/motion";
+  import { DUR, ease, ms, slideIn, softFade } from "$lib/ui/motion";
 
   const icon: Record<ToastTone, IconName> = {
     success: "circle-check",
@@ -18,7 +18,7 @@
     <div
       class="toast glass-layer {toast.tone}"
       role={toast.tone === "error" ? "alert" : "status"}
-      animate:flip={{ duration: ms(200) }}
+      animate:flip={{ duration: ms(DUR.enter), easing: ease }}
       in:slideIn={{ x: 24, duration: 220 }}
       out:softFade
     >

@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{DeviceRecord, RobotProfile};
+use crate::{ActivityEntry, DeviceRecord, RobotProfile};
 
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -22,6 +22,9 @@ pub struct Snapshot {
     pub devices: Vec<DeviceRecord>,
     #[serde(default)]
     pub robots: Vec<RobotProfile>,
+    /// Fleet history, oldest first.
+    #[serde(default)]
+    pub activity: Vec<ActivityEntry>,
 }
 
 /// Where the remembered inventory and robot profiles live between sessions.
@@ -186,6 +189,7 @@ mod tests {
                 name: "comp".into(),
                 ..RobotProfile::default()
             }],
+            activity: Vec::new(),
         };
         store.save(&snapshot).unwrap();
         store.save(&snapshot).unwrap();

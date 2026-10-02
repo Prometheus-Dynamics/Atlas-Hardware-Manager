@@ -40,6 +40,14 @@ impl LinkSource for UsbBootLinks {
         }]
     }
 
+    fn name(&self) -> &str {
+        "USB"
+    }
+
+    fn watch(&self, notify: atlas_driver::ChangeNotifier) -> bool {
+        atlas_usbboot::watch_usb(move || notify.notify()).is_ok()
+    }
+
     async fn health(&self) -> Vec<HealthCheck> {
         vec![health::usb_access().await]
     }
@@ -198,6 +206,7 @@ impl Driver for RpiDriver {
                 Arc::new(EepromUpdate::new(self.config.clone()))
                     as Arc<dyn atlas_driver::ActionsCapability>
             }),
+            ..Capabilities::default()
         }
     }
 

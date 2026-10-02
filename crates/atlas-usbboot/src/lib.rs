@@ -18,12 +18,14 @@
 mod bootfiles;
 mod chip;
 mod error;
+mod hotplug;
 mod protocol;
 mod usb;
 
 pub use bootfiles::BootFiles;
 pub use chip::{BROADCOM_VENDOR_ID, Chip};
 pub use error::UsbBootError;
+pub use hotplug::watch_usb;
 pub use protocol::{BootEvent, BootTransport, FileServerOutcome, file_server, second_stage};
 pub use usb::{
     BOOT_PRODUCT_IDS, BootDevice, BootOptions, BootOutcome, LINUX_UDEV_RULE, LINUX_UDEV_RULES_FILE,

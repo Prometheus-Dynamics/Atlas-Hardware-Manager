@@ -2,9 +2,8 @@
   // A quiet collapsible section that opens smoothly.
   import type { Snippet } from "svelte";
   import { slide } from "svelte/transition";
-  import { cubicOut } from "svelte/easing";
   import Icon from "$lib/components/common/Icon.svelte";
-  import { ms } from "$lib/ui/motion";
+  import { DUR, ease, ms } from "$lib/ui/motion";
 
   let {
     title,
@@ -24,7 +23,7 @@
     {#if count !== undefined}<span class="text-fg-faint">{count}</span>{/if}
   </button>
   {#if open}
-    <div class="pt-3" transition:slide={{ duration: ms(200), easing: cubicOut }}>{@render children()}</div>
+    <div class="pt-3" transition:slide={{ duration: ms(DUR.med), easing: ease }}>{@render children()}</div>
   {/if}
 </div>
 

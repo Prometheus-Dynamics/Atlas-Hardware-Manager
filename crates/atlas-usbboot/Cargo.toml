@@ -12,6 +12,7 @@ description = "Pure-Rust Raspberry Pi USB boot (rpiboot) for Atlas, on Linux, Wi
 
 [dependencies]
 async-trait.workspace = true
+futures.workspace = true
 nusb.workspace = true
 serde.workspace = true
 thiserror.workspace = true

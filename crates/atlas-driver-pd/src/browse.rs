@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex, OnceLock};
 
+use atlas_driver::ChangeNotifier;
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 
 pub const SERVICE_TYPE: &str = "_pd-device._tcp.local.";
@@ -38,10 +39,13 @@ impl Advertisement {
 }
 
 type Services = Arc<Mutex<BTreeMap<String, Advertisement>>>;
+type Listeners = Arc<Mutex<Vec<ChangeNotifier>>>;
 
 /// Browses `_pd-device._tcp` in the background and keeps the current set.
+/// Subscribers hear about every device that appears, changes, or leaves.
 pub struct Browser {
     state: Result<Services, String>,
+    listeners: Listeners,
 }
 
 impl Browser {
@@ -57,6 +61,7 @@ impl Browser {
             Err(error) => {
                 return Self {
                     state: Err(error.to_string()),
+                    listeners: Listeners::default(),
                 };
             }
         };
@@ -65,9 +70,12 @@ impl Browser {
             Err(error) => {
                 return Self {
                     state: Err(error.to_string()),
+                    listeners: Listeners::default(),
                 };
             }
         };
+        let listeners = Listeners::default();
+        let notify = listeners.clone();
         let services: Services = Arc::default();
         let sink = services.clone();
         let spawned = std::thread::Builder::new()
@@ -77,6 +85,7 @@ impl Browser {
                 let _daemon = daemon;
                 while let Ok(event) = receiver.recv() {
                     let mut map = sink.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                    let before = map.clone();
                     match event {
                         ServiceEvent::ServiceResolved(service) => {
                             let addresses: Vec<IpAddr> = service
@@ -115,14 +124,27 @@ impl Browser {
                         }
                         _ => {}
                     }
+                    let changed = *map != before;
+                    drop(map);
+                    if changed {
+                        for listener in notify
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .iter()
+                        {
+                            listener.notify();
+                        }
+                    }
                 }
             });
         match spawned {
             Ok(_) => Self {
                 state: Ok(services),
+                listeners,
             },
             Err(error) => Self {
                 state: Err(error.to_string()),
+                listeners,
             },
         }
     }
@@ -138,6 +160,19 @@ impl Browser {
                 .collect()),
             Err(error) => Err(error.clone()),
         }
+    }
+
+    /// Calls `notify` whenever the set of advertisements changes. Returns
+    /// false when the browser could not start.
+    pub fn subscribe(&self, notify: ChangeNotifier) -> bool {
+        if self.state.is_err() {
+            return false;
+        }
+        self.listeners
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .push(notify);
+        true
     }
 
     pub fn error(&self) -> Option<&str> {

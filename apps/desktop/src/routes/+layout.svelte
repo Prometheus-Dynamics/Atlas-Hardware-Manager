@@ -17,12 +17,11 @@
 <svelte:window onkeydown={handleShortcut} />
 
 <div class="app flex h-full">
-  <div class="glow" aria-hidden="true"></div>
   <NavRail />
   <div class="relative flex min-w-0 flex-1 flex-col">
     <div class="relative min-h-0 flex-1">
-      <main class="h-full overflow-y-auto px-8 pb-10 pt-7">
-        <div class="mx-auto max-w-[1360px]">
+      <main class="h-full overflow-y-auto px-6 pb-10 pt-7 xl:px-8 min-[1800px]:px-12">
+        <div class="mx-auto max-w-[2200px]">
           {@render children()}
         </div>
       </main>
@@ -39,15 +38,5 @@
     position: relative;
     background: var(--bg);
     isolation: isolate;
-  }
-  /* Faint light behind the glass: warm top right, cool bottom left. */
-  .glow {
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    pointer-events: none;
-    background:
-      radial-gradient(900px 600px at 92% -8%, var(--glow-warm), transparent 70%),
-      radial-gradient(800px 600px at 8% 108%, var(--glow-cool), transparent 70%);
   }
 </style>

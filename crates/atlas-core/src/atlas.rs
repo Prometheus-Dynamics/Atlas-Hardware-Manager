@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -8,6 +8,7 @@ use atlas_driver::{
 use tokio::sync::{Semaphore, broadcast, watch};
 use tokio_util::sync::CancellationToken;
 
+use crate::activity::{ActivityEntry, ActivityKind, ActivityLevel};
 use crate::events::EventBus;
 use crate::inventory::Inventory;
 use crate::jobs::{JobPlan, JobRecord, UpdateRequest};
@@ -59,6 +60,7 @@ pub(crate) struct State {
     pub(crate) job_cancel: HashMap<JobId, CancellationToken>,
     pub(crate) next_job: u64,
     pub(crate) robots: BTreeMap<String, RobotProfile>,
+    pub(crate) activity: VecDeque<ActivityEntry>,
 }
 
 pub(crate) struct Inner {
@@ -73,11 +75,22 @@ pub(crate) struct Inner {
     pub(crate) parallel: Arc<Semaphore>,
     /// Scans run one at a time; a second request waits for the first.
     pub(crate) scan_lock: tokio::sync::Mutex<()>,
+    pub(crate) discovery: Mutex<crate::DiscoveryStatus>,
+    /// Woken by link sources when something may have changed.
+    pub(crate) changes: Arc<tokio::sync::Notify>,
+    /// Source names that push changes, and those that must be polled.
+    pub(crate) subscriptions: std::sync::OnceLock<(Vec<String>, Vec<String>)>,
 }
 
 impl Inner {
     pub(crate) fn state(&self) -> MutexGuard<'_, State> {
         self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    pub(crate) fn discovery(&self) -> MutexGuard<'_, crate::DiscoveryStatus> {
+        self.discovery
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
@@ -101,6 +114,7 @@ impl Inner {
             Snapshot {
                 devices: state.inventory.all(),
                 robots: state.robots.values().cloned().collect(),
+                activity: state.activity.iter().cloned().collect(),
             }
         };
         if let Err(error) = store.save(&snapshot) {
@@ -152,6 +166,7 @@ impl AtlasBuilder {
                 .into_iter()
                 .map(|robot| (robot.name.clone(), robot))
                 .collect(),
+            activity: snapshot.activity.into_iter().collect(),
             next_job: 1,
             ..State::default()
         };
@@ -166,6 +181,9 @@ impl AtlasBuilder {
                 state: Mutex::new(state),
                 exclusive: Mutex::new(HashMap::new()),
                 scan_lock: tokio::sync::Mutex::new(()),
+                discovery: Mutex::new(crate::DiscoveryStatus::default()),
+                changes: Arc::new(tokio::sync::Notify::new()),
+                subscriptions: std::sync::OnceLock::new(),
             }),
         })
     }
@@ -241,7 +259,29 @@ impl Atlas {
                 action: action.to_string(),
             });
         }
-        Ok(actions.run_action(&record.identity, action).await?)
+        let label = actions
+            .actions(&record.identity)
+            .into_iter()
+            .find(|candidate| candidate.id == action)
+            .map_or_else(|| action.to_string(), |candidate| candidate.label);
+        let result = actions.run_action(&record.identity, action).await;
+        let name = record.display_name();
+        self.inner.record_activity(vec![match &result {
+            Ok(()) => ActivityEntry::about(
+                &record,
+                ActivityKind::ActionRun,
+                ActivityLevel::Info,
+                format!("{label} on {name}"),
+            ),
+            Err(error) => ActivityEntry::about(
+                &record,
+                ActivityKind::ActionRun,
+                ActivityLevel::Error,
+                format!("{label} on {name} failed: {error}"),
+            ),
+        }]);
+        self.inner.persist();
+        Ok(result?)
     }
 
     /// Describes what an update would do, per device, without starting it.

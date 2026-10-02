@@ -9,6 +9,7 @@ mod capability;
 mod driver;
 mod error;
 mod health;
+mod observe;
 mod registry;
 mod types;
 
@@ -17,9 +18,12 @@ pub use capability::{
     ProgressSink, ProgressUpdate, ReleaseRef, UpdateCapability, UpdateOutcome, UpdatePlan,
     UpdateStep,
 };
-pub use driver::{Driver, DriverManifest, LinkSource};
+pub use driver::{ChangeNotifier, Driver, DriverManifest, LinkSource};
 pub use error::DriverError;
 pub use health::{HealthCheck, HealthStatus};
+pub use observe::{
+    LogLevel, LogLine, LogsCapability, Metric, TelemetryCapability, attributes, metric_ids,
+};
 pub use registry::DriverRegistry;
 pub use types::{
     Candidate, DeviceKey, DeviceMode, Family, Identity, Link, LinkId, LinkKind, Serial,

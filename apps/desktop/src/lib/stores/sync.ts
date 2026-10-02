@@ -2,6 +2,7 @@
 // every event is dispatched to the store that owns that state.
 
 import { onAtlasEvent, onDownloadProgress, onResync, keyString, type AtlasEvent } from "$lib/api/client";
+import { activity } from "./activity.svelte";
 import { devices } from "./devices.svelte";
 import { jobs } from "./jobs.svelte";
 import { releases } from "./releases.svelte";
@@ -10,7 +11,7 @@ import { system } from "./system.svelte";
 import { ui } from "./ui.svelte";
 
 export async function loadAll() {
-  await Promise.all([devices.load(), jobs.load(), robots.load(), releases.load(), system.load()]);
+  await Promise.all([devices.load(), activity.load(), jobs.load(), robots.load(), releases.load(), system.load()]);
 }
 
 function dispatch(event: AtlasEvent) {
@@ -43,6 +44,9 @@ function dispatch(event: AtlasEvent) {
     }
     case "robots-changed":
       void robots.load();
+      break;
+    case "activity":
+      activity.push(event.entry);
       break;
     default:
       // The jobs page follows the newest job.

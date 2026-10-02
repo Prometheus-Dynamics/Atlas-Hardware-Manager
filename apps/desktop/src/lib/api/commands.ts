@@ -4,7 +4,9 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  ActivityEntry,
   AppInfo,
+  DiscoveryStatus,
   AppSettings,
   DeviceAction,
   DeviceKey,
@@ -13,6 +15,8 @@ import type {
   JobId,
   JobPlan,
   JobRecord,
+  LogLine,
+  Metric,
   ReleaseEntry,
   RemoteSource,
   RobotProfile,
@@ -35,6 +39,14 @@ export const api = {
   deviceActions: (key: DeviceKey) => invoke<DeviceAction[]>("device_actions", { key }),
   runDeviceAction: (key: DeviceKey, action: string) =>
     invoke<void>("run_device_action", { key, action }),
+  /** Live readings; only for devices with the `telemetry` capability. */
+  deviceTelemetry: (key: DeviceKey) => invoke<Metric[]>("device_telemetry", { key }),
+  /** Recent log lines, oldest first; only for devices with `logs`. */
+  deviceLogs: (key: DeviceKey, lines: number) => invoke<LogLine[]>("device_logs", { key, lines }),
+  /** Fleet history, newest first. */
+  listActivity: (limit: number) => invoke<ActivityEntry[]>("list_activity", { limit }),
+  /** Writes identity, readings, logs, and history to a text file. */
+  saveSupportBundle: (key: DeviceKey, path: string) => invoke<void>("save_support_bundle", { key, path }),
 
   // Jobs
   /**
@@ -77,6 +89,7 @@ export const api = {
 
   // System
   appInfo: () => invoke<AppInfo>("app_info"),
+  discoveryStatus: () => invoke<DiscoveryStatus>("discovery_status"),
   healthChecks: () => invoke<HealthCheck[]>("health_checks"),
   /** Runs a health check's fix action; resolves with what changed. */
   fixHealth: (action: string) => invoke<string>("fix_health", { action }),

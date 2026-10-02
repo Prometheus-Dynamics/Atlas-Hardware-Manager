@@ -10,7 +10,7 @@
   import { toasts } from "$lib/stores/toasts.svelte";
   import { ui } from "$lib/stores/ui.svelte";
   import type { IconName } from "$lib/ui/icons";
-  import { ms, rise, softFade } from "$lib/ui/motion";
+  import { DUR, ease, ms, rise, softFade } from "$lib/ui/motion";
   import { flip } from "svelte/animate";
   import Banner from "./Banner.svelte";
 
@@ -109,7 +109,7 @@
 {#if items.length > 0}
   <div class="flex flex-col gap-2" aria-label="Needs you">
     {#each items as item (item.key)}
-      <div animate:flip={{ duration: ms(220) }} in:rise out:softFade>
+      <div animate:flip={{ duration: ms(DUR.enter), easing: ease }} in:rise out:softFade>
         <Banner
           icon={item.icon}
           tone={item.tone}

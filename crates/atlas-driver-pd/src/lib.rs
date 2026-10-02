@@ -5,6 +5,8 @@
 //! - `GET <path>` (default `/.well-known/pd-device`) returning the identity
 //!   JSON: model, revision, serial, hostname, OS, device package, bootloader,
 //!   update methods, management URL, MACs.
+//! - Optionally, `endpoints` for metrics, logs, and actions, and a camera
+//!   stream. Atlas offers each only when the device lists it; see `live`.
 //!
 //! The device family is the hardware model from its device package
 //! (`raze`); the OS is an attribute. One [`PdDriver`] serves each model in
@@ -13,6 +15,7 @@
 mod browse;
 mod contract;
 mod driver;
+mod live;
 
 pub use browse::{Browser, SERVICE_TYPE};
 pub use contract::{IDENTITY_PATH, PdIdentity};

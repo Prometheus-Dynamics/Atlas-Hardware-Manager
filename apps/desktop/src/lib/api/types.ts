@@ -68,6 +68,47 @@ export interface DeviceAction {
   destructive: boolean;
 }
 
+/** One live reading, for example temperature in °C. */
+export interface Metric {
+  id: string;
+  label: string;
+  value: number;
+  unit: string | null;
+  /** Top of the normal range, for gauges. */
+  max: number | null;
+  /** Above this the reading is a warning. */
+  warn_above: number | null;
+}
+
+export type LogLevel = "debug" | "info" | "warning" | "error";
+
+export interface LogLine {
+  at_ms: number | null;
+  level: LogLevel;
+  source: string | null;
+  message: string;
+}
+
+export type ActivityKind =
+  | "device-found"
+  | "device-online"
+  | "device-offline"
+  | "version-changed"
+  | "mode-changed"
+  | "update-result"
+  | "action-run";
+
+export type ActivityLevel = "info" | "success" | "warning" | "error";
+
+export interface ActivityEntry {
+  at_ms: number;
+  kind: ActivityKind;
+  level: ActivityLevel;
+  device: DeviceKey | null;
+  robot: string | null;
+  message: string;
+}
+
 export type UpdateStep = "preflight" | "transfer" | "apply" | "reboot" | "confirm";
 
 export type Concurrency = { kind: "parallel" } | { kind: "exclusive"; resource: string };
@@ -284,7 +325,19 @@ export type AtlasEvent =
   | { type: "job-step"; job: JobId; device: DeviceKey; step: UpdateStep }
   | { type: "job-progress"; job: JobId; device: DeviceKey; step: UpdateStep; fraction: number }
   | { type: "job-log"; job: JobId; device: DeviceKey; message: string }
-  | { type: "job-finished"; job: JobId; state: JobState; summary: JobSummary };
+  | { type: "job-finished"; job: JobId; state: JobState; summary: JobSummary }
+  | { type: "activity"; entry: ActivityEntry };
+
+/** How Atlas keeps the inventory current. */
+export interface DiscoveryStatus {
+  /** True while Atlas watches for devices. */
+  live: boolean;
+  /** Sources that push changes, such as `USB` and `Network`. */
+  watching: string[];
+  /** Sources only checked on the safety-net timer. */
+  polled: string[];
+  fallback_ms: number;
+}
 
 /** Payload of `atlas://download`. */
 export interface DownloadEvent {

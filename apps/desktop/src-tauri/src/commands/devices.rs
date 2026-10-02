@@ -1,5 +1,8 @@
-use atlas_core::{DeviceRecord, ScanReport};
-use atlas_driver::{DeviceAction, DeviceKey};
+use std::fmt::Write as _;
+use std::path::PathBuf;
+
+use atlas_core::{ActivityEntry, DeviceRecord, ScanReport};
+use atlas_driver::{DeviceAction, DeviceKey, LogLine, Metric};
 use tauri::State;
 
 use super::{CmdResult, text};
@@ -50,4 +53,82 @@ pub async fn run_device_action(
     action: String,
 ) -> CmdResult<()> {
     state.atlas.run_action(&key, &action).await.map_err(text)
+}
+
+/// Live readings, for devices that report telemetry.
+#[tauri::command]
+pub async fn device_telemetry(
+    state: State<'_, AppState>,
+    key: DeviceKey,
+) -> CmdResult<Vec<Metric>> {
+    state.atlas.telemetry(&key).await.map_err(text)
+}
+
+/// The last `lines` log lines, oldest first, for devices that report logs.
+#[tauri::command]
+pub async fn device_logs(
+    state: State<'_, AppState>,
+    key: DeviceKey,
+    lines: usize,
+) -> CmdResult<Vec<LogLine>> {
+    state.atlas.logs(&key, lines).await.map_err(text)
+}
+
+/// Fleet history, newest first.
+#[tauri::command]
+pub fn list_activity(state: State<'_, AppState>, limit: usize) -> Vec<ActivityEntry> {
+    state.atlas.activity(limit.clamp(1, 1000))
+}
+
+/// Writes what Atlas knows about a device to a text file for a bug report:
+/// identity, readings, recent logs, and its history. Parts the device does
+/// not offer are left out.
+#[tauri::command]
+pub async fn save_support_bundle(
+    state: State<'_, AppState>,
+    key: DeviceKey,
+    path: PathBuf,
+) -> CmdResult<()> {
+    let atlas = &state.atlas;
+    let record = atlas
+        .device(&key)
+        .ok_or_else(|| format!("no device {key} in the inventory"))?;
+    let mut out = String::new();
+    let _ = writeln!(out, "Atlas support bundle for {}", record.display_name());
+    let _ = writeln!(
+        out,
+        "Atlas {} on {}",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS
+    );
+    let _ = writeln!(out, "\n== Device\n{}", pretty(&record));
+    if let Ok(metrics) = atlas.telemetry(&key).await {
+        let _ = writeln!(out, "\n== Readings");
+        for metric in metrics {
+            let unit = metric.unit.unwrap_or_default();
+            let _ = writeln!(out, "{}: {} {unit}", metric.label, metric.value);
+        }
+    }
+    if let Ok(lines) = atlas.logs(&key, 500).await {
+        let _ = writeln!(out, "\n== Logs");
+        for line in lines {
+            let source = line.source.unwrap_or_default();
+            let at = line.at_ms.map(|ms| ms.to_string()).unwrap_or_default();
+            let _ = writeln!(out, "{at} {:?} [{source}] {}", line.level, line.message);
+        }
+    }
+    let _ = writeln!(out, "\n== History");
+    for entry in atlas
+        .activity(1000)
+        .into_iter()
+        .filter(|entry| entry.device.as_ref() == Some(&key))
+    {
+        let _ = writeln!(out, "{} {:?} {}", entry.at_ms, entry.level, entry.message);
+    }
+    std::fs::write(&path, out)
+        .map_err(|error| format!("could not write {}: {error}", path.display()))
+}
+
+fn pretty(value: &impl serde::Serialize) -> String {
+    serde_json::to_string_pretty(value).unwrap_or_default()
 }

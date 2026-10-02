@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { devices } from "$lib/stores/devices.svelte";
   import { api, errorText, type AppSettings, type SimScenario, type StagedRollout } from "$lib/api/client";
   import Button from "$lib/components/common/Button.svelte";
   import Field from "$lib/components/common/Field.svelte";
@@ -45,6 +46,7 @@
     error = null;
     try {
       const restart = await api.saveSettings($state.snapshot(draft));
+      void devices.loadDiscovery();
       system.settings = { ...draft };
       if (restart) system.restartNeeded = true;
       toasts.success(restart ? "Saved. Restart Atlas to apply every change." : "Settings saved.");
@@ -63,19 +65,20 @@
 
 <GlassCard title="Preferences" subtitle="How Atlas looks for devices and rolls out updates" icon="settings" large>
   <form class="flex flex-col gap-5" onsubmit={save}>
-    <Field inline label="Look for devices automatically" hint="Scans in the background so the device list stays live.">
-      <Toggle bind:checked={draft.auto_scan} label="Look for devices automatically" />
+    <Field inline label="Watch for devices" hint="Devices appear and disappear as they're plugged in, unplugged, or announce themselves on the network.">
+      <Toggle bind:checked={draft.auto_scan} label="Watch for devices" />
     </Field>
 
-    <Field inline label="How often" hint="Every {seconds.toFixed(1)} s. At least 1 s.">
+    <Field inline label="Safety-net check" hint="Every {seconds.toFixed(0)} s Atlas also looks again, for devices that leave without saying so.">
       <input
         class="input mono w-28"
         type="number"
-        min="1000"
-        step="500"
+        min="5000"
+        max="300000"
+        step="5000"
         bind:value={draft.scan_interval_ms}
         disabled={!draft.auto_scan}
-        aria-label="Scan interval in milliseconds"
+        aria-label="Safety-net check interval in milliseconds"
       />
     </Field>
 

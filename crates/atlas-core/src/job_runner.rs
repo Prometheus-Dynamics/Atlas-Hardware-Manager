@@ -419,5 +419,9 @@ fn finish_device(
         device: key.clone(),
         status: status.clone(),
     });
+    let record = inner.state().inventory.get(key).cloned();
+    if let Some(entry) = record.and_then(|record| crate::activity::for_update(&record, &status)) {
+        inner.record_activity(vec![entry]);
+    }
     status
 }

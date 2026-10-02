@@ -6,7 +6,7 @@
   import Skeleton from "$lib/components/common/Skeleton.svelte";
   import { deviceName } from "$lib/format";
   import { toasts } from "$lib/stores/toasts.svelte";
-  import { rise } from "$lib/ui/motion";
+  import { rise, stagger } from "$lib/ui/motion";
 
   let { record }: { record: DeviceRecord } = $props();
 
@@ -40,7 +40,7 @@
 {:else}
   <ul class="flex flex-col gap-2">
     {#each actions as action, i (action.id)}
-      <li class="glass flex items-center justify-between gap-3 px-4 py-2.5" in:rise={{ delay: i * 30 }}>
+      <li class="glass flex items-center justify-between gap-3 px-4 py-2.5" in:rise={{ delay: stagger(i) }}>
         <span class="text-[13px] text-fg">
           {action.label}
           {#if action.destructive}<span class="ml-1.5 text-[12px] text-err-fg">Can't be undone</span>{/if}

@@ -1,10 +1,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use atlas_driver::{
-    DeviceKey, DeviceMode, Driver, Family, Link, LinkId, LinkKind, LinkSource, UpdateStep,
+    ChangeNotifier, DeviceKey, DeviceMode, Driver, Family, Link, LinkId, LinkKind, LinkSource,
+    UpdateStep,
 };
 
 use crate::{MockDriver, SIM_HELIOS, SIM_MCU};
@@ -39,6 +40,8 @@ pub struct MockDevice {
     pub online: bool,
     /// Simulated time per update step.
     pub step_time: Duration,
+    /// When the device last started; uptime and logs count from here.
+    pub booted: Instant,
 }
 
 impl MockDevice {
@@ -53,6 +56,10 @@ impl MockDevice {
             parent: None,
             online: true,
             step_time: Duration::from_millis(40),
+            // Simulated devices have been up a while when Atlas starts.
+            booted: Instant::now()
+                .checked_sub(Duration::from_secs(3 * 3600 + 17 * 60))
+                .unwrap_or_else(Instant::now),
         }
     }
 
@@ -99,6 +106,8 @@ pub(crate) struct FleetState {
     pub(crate) running: BTreeMap<String, usize>,
     pub(crate) peaks: BTreeMap<String, usize>,
     pub(crate) actions: Vec<(DeviceKey, String)>,
+    /// Told whenever a device is plugged in or unplugged.
+    pub(crate) watchers: Vec<ChangeNotifier>,
 }
 
 /// Shared state for a set of simulated devices. Cheap to clone.
@@ -165,17 +174,35 @@ impl MockFleet {
     }
 
     pub fn link_source(&self) -> Arc<dyn LinkSource> {
-        Arc::new(MockLinks)
+        Arc::new(MockLinks {
+            fleet: self.clone(),
+        })
     }
 
+    /// Plugs a device in or out, and tells anyone watching, like hotplug.
     pub fn set_online(&self, key: &DeviceKey, online: bool) {
-        if let Some(device) = self.lock().devices.get_mut(key) {
-            device.online = online;
+        let watchers = {
+            let mut state = self.lock();
+            match state.devices.get_mut(key) {
+                Some(device) if device.online != online => device.online = online,
+                _ => return,
+            }
+            state.watchers.clone()
+        };
+        for watcher in watchers {
+            watcher.notify();
         }
     }
 
     pub fn device(&self, key: &DeviceKey) -> Option<MockDevice> {
         self.lock().devices.get(key).cloned()
+    }
+
+    /// The device if it is online and running normally.
+    pub(crate) fn online(&self, key: &DeviceKey) -> Result<MockDevice, atlas_driver::DriverError> {
+        self.device(key)
+            .filter(|device| device.online && device.mode == DeviceMode::Normal)
+            .ok_or_else(|| atlas_driver::DriverError::Unreachable(key.to_string()))
     }
 
     /// Most updates that ran at once, across all devices.
@@ -214,10 +241,21 @@ fn board(serial: &str, name: &str) -> MockDevice {
         .version("1.4.0")
 }
 
-struct MockLinks;
+struct MockLinks {
+    fleet: MockFleet,
+}
 
 #[async_trait]
 impl LinkSource for MockLinks {
+    fn name(&self) -> &str {
+        "Simulated"
+    }
+
+    fn watch(&self, notify: ChangeNotifier) -> bool {
+        self.fleet.lock().watchers.push(notify);
+        true
+    }
+
     async fn links(&self) -> Vec<Link> {
         vec![Link {
             id: LinkId(SIM_LINK_ID.into()),

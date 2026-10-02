@@ -39,6 +39,16 @@ export async function pickReleaseFile(): Promise<string | null> {
   return typeof picked === "string" ? picked : null;
 }
 
+/** Asks where to save a file; null when the user cancels. */
+export async function pickSavePath(defaultName: string): Promise<string | null> {
+  if (!isTauri) {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    return `/home/atlas/Downloads/${defaultName}`;
+  }
+  const { save } = await import("@tauri-apps/plugin-dialog");
+  return save({ defaultPath: defaultName, filters: [{ name: "Text", extensions: ["txt"] }] });
+}
+
 /** Opens a URL in the system browser. */
 export async function openExternal(url: string): Promise<void> {
   if (!isTauri) {

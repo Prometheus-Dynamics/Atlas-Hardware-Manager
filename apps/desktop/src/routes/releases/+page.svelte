@@ -10,7 +10,7 @@
   import SourcesPanel from "$lib/components/releases/SourcesPanel.svelte";
   import { releases } from "$lib/stores/releases.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
-  import { rise, softFade } from "$lib/ui/motion";
+  import { rise, softFade, stagger } from "$lib/ui/motion";
 
   let adding = $state(false);
 
@@ -23,7 +23,7 @@
 
 <svelte:head><title>Releases · Atlas</title></svelte:head>
 
-<div class="flex flex-col gap-5">
+<div class="reveal flex flex-col gap-5">
   <PageHeader title="Releases" subtitle="Images and firmware Atlas can install, by device family.">
     {#snippet actions()}
       <Button icon="refresh" action={refresh}>Check for new releases</Button>
@@ -52,7 +52,7 @@
   {/if}
 
   {#each releases.families as family, i (family)}
-    <div in:rise={{ delay: i * 40 }}><ReleaseGroup {family} /></div>
+    <div in:rise={{ delay: stagger(i) }}><ReleaseGroup {family} /></div>
   {/each}
 
   <SourcesPanel />

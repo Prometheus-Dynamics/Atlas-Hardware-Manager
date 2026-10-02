@@ -13,6 +13,11 @@ pub enum CoreError {
     NoUpdateCapability(DeviceKey),
     #[error("{0} does not support actions")]
     NoActionsCapability(DeviceKey),
+    #[error("{device} does not report {what}")]
+    Unsupported {
+        device: DeviceKey,
+        what: &'static str,
+    },
     #[error("{device} has no action named `{action}`")]
     UnknownAction { device: DeviceKey, action: String },
     #[error("no release chosen for the {0} family")]

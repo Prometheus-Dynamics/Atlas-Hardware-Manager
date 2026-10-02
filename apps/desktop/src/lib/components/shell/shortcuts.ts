@@ -6,7 +6,7 @@ import { devices } from "$lib/stores/devices.svelte";
 import { system } from "$lib/stores/system.svelte";
 import { ui } from "$lib/stores/ui.svelte";
 
-const ROUTES = ["/", "/robots", "/jobs", "/releases", "/settings"];
+const ROUTES = ["/", "/devices", "/robots", "/jobs", "/releases", "/settings"];
 
 function typing(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -23,7 +23,7 @@ export function handleShortcut(event: KeyboardEvent) {
   }
   if (typing(event.target) || event.altKey || event.metaKey) return;
 
-  const onInventory = page.url.pathname === "/";
+  const onInventory = page.url.pathname === "/devices";
   if (event.ctrlKey) {
     if (onInventory && event.key.toLowerCase() === "a") {
       event.preventDefault();
@@ -32,7 +32,7 @@ export function handleShortcut(event: KeyboardEvent) {
     return;
   }
 
-  const index = ["1", "2", "3", "4", "5"].indexOf(event.key);
+  const index = ["1", "2", "3", "4", "5", "6"].indexOf(event.key);
   if (index >= 0) {
     event.preventDefault();
     void goto(ROUTES[index]);

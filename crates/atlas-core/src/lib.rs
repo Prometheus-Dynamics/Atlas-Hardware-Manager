@@ -5,6 +5,7 @@
 //! one typed [`Event`] stream. Hosts are thin: they send intents and render
 //! events.
 
+mod activity;
 mod atlas;
 mod error;
 mod events;
@@ -12,11 +13,14 @@ mod inventory;
 mod job_runner;
 mod jobs;
 mod manage;
+mod observe;
 mod robots;
 mod scan;
 mod store;
 mod time;
+mod watch;
 
+pub use activity::{ActivityEntry, ActivityKind, ActivityLevel};
 pub use atlas::{Atlas, AtlasBuilder, AtlasOptions};
 pub use error::CoreError;
 pub use events::Event;
@@ -28,3 +32,4 @@ pub use jobs::{
 pub use robots::{RobotProfile, RobotRole, RobotState, RobotStatus, RoleStatus};
 pub use scan::ScanReport;
 pub use store::{InventoryStore, JsonFileStore, MemoryStore, Snapshot, StoreError};
+pub use watch::{DiscoveryStatus, WatchOptions};

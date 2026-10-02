@@ -3,6 +3,7 @@
 import type { DeviceKey, DeviceRecord, RobotStatus, ScanReport, UpdateRequestInput, StagedRollout } from "../types";
 import { keyString, sameKey } from "../types";
 import { emit, sleep } from "./bus";
+import { record as recordActivity } from "./observe";
 import { capabilities, fleet, identityOf, inventory, linkKindOf, releases, robots, simDevice, type SimDevice } from "./data";
 
 export function recordOf(device: SimDevice): DeviceRecord {
@@ -54,17 +55,24 @@ async function runScan(): Promise<ScanReport> {
     if (device.online && parentOnline) {
       await sleep(60 + Math.random() * 90);
       const isNew = !stored;
+      const wasOffline = stored?.presence === "offline";
       const now = Date.now();
-      stored ??= { first_seen_ms: now, last_seen_ms: now, label: null, robot: null, presence: "online", record: null };
+      // Devices already in a robot's roles belong to it, as atlas-core does on save.
+      const robot = robots.find((p) => p.roles.some((r) => sameKey(r.device, device.key)))?.name ?? null;
+      stored ??= { first_seen_ms: now, last_seen_ms: now, label: null, robot, presence: "online", record: null };
       stored.last_seen_ms = now;
       stored.presence = "online";
       inventory.set(id, stored);
       online.push(device.key);
-      emit({ type: "device-seen", record: recordOf(device), new: isNew });
+      const seen = recordOf(device);
+      emit({ type: "device-seen", record: seen, new: isNew });
+      if (isNew) recordActivity("device-found", "info", device.key, `Found ${displayName(seen, device.key)} (${device.model})`);
+      else if (wasOffline) recordActivity("device-online", "info", device.key, `${displayName(seen, device.key)} came online`);
     } else if (stored && stored.presence === "online") {
       stored.presence = "offline";
       wentOffline.push(device.key);
       emit({ type: "device-offline", key: device.key });
+      recordActivity("device-offline", "warning", device.key, `${displayName(stored.record, device.key)} went offline`);
     }
   }
   const report: ScanReport = { online, went_offline: wentOffline, warnings: [], duration_ms: Date.now() - started };

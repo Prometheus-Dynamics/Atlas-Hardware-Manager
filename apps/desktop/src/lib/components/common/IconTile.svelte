@@ -24,7 +24,7 @@
     height: var(--s);
     border-radius: calc(var(--s) * 0.3);
     background: var(--glass-strong);
-    border: 0.5px solid var(--glass-border);
+    border: 1px solid var(--glass-border);
     color: var(--fg);
     transition:
       background var(--t-med),

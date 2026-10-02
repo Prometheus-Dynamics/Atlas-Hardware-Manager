@@ -6,6 +6,7 @@ use atlas_driver::{Candidate, DeviceKey, Driver, Identity, Link, LinkKind};
 use serde::Serialize;
 use tokio::task::JoinSet;
 
+use crate::activity::{self, ActivityEntry, ActivityKind, ActivityLevel};
 use crate::atlas::{Inner, LiveDevice};
 use crate::inventory::{Upsert, link_rank};
 use crate::time::now_ms;
@@ -60,8 +61,9 @@ impl Scan<'_> {
         let capabilities = pending.driver.capabilities(&identity);
         let kinds = capabilities.kinds_for(identity.mode);
         let key = identity.key.clone();
-        let (outcome, record): (Upsert, DeviceRecord) = {
+        let (outcome, record, previous): (Upsert, DeviceRecord, Option<DeviceRecord>) = {
             let mut state = self.inner.state();
+            let previous = state.inventory.get(&key).cloned();
             state.live.insert(
                 key,
                 LiveDevice {
@@ -70,12 +72,16 @@ impl Scan<'_> {
                     capabilities,
                 },
             );
-            state
-                .inventory
-                .upsert(identity, pending.link_kind.clone(), kinds, now_ms())
+            let (outcome, record) =
+                state
+                    .inventory
+                    .upsert(identity, pending.link_kind.clone(), kinds, now_ms());
+            (outcome, record, previous)
         };
         if outcome != Upsert::Unchanged {
             self.changed = true;
+            self.inner
+                .record_activity(activity::for_sighting(previous.as_ref(), &record));
             self.inner.events.emit(Event::DeviceSeen {
                 record: Box::new(record),
                 new: outcome == Upsert::New,
@@ -241,9 +247,25 @@ pub(crate) async fn run(inner: &Inner) -> ScanReport {
         }
         gone
     };
+    let offline_entries = {
+        let state = inner.state();
+        went_offline
+            .iter()
+            .filter_map(|key| state.inventory.get(key))
+            .map(|record| {
+                ActivityEntry::about(
+                    record,
+                    ActivityKind::DeviceOffline,
+                    ActivityLevel::Warning,
+                    format!("{} went offline", record.display_name()),
+                )
+            })
+            .collect()
+    };
     for key in &went_offline {
         inner.events.emit(Event::DeviceOffline { key: key.clone() });
     }
+    inner.record_activity(offline_entries);
     if (scan.changed || !went_offline.is_empty()) && !inner.state().robots.is_empty() {
         inner.events.emit(Event::RobotsChanged);
     }

@@ -7,7 +7,10 @@ import { keyString } from "./types";
 import { atlasChannel, downloadChannel, emit, latency, resyncChannel, sleep } from "./mock/bus";
 import { fleet, inventory, jobs, releases, robots, settings, simDevice, sources } from "./mock/data";
 import * as runner from "./mock/runner";
+import { activity, logLines, metrics, online, record, restart, seedHistory } from "./mock/observe";
 import { listRecords, robotStatuses, robotUpdateRequest, scan, touch } from "./mock/scan";
+
+seedHistory();
 
 type Api = typeof tauriApi;
 
@@ -30,8 +33,8 @@ function stored(key: { family: string; serial: string }) {
 }
 
 const ACTIONS: DeviceAction[] = [
-  { id: "locate", label: "Locate", destructive: false },
-  { id: "reboot", label: "Reboot", destructive: false },
+  { id: "locate", label: "Find it", destructive: false },
+  { id: "reboot", label: "Restart", destructive: false },
   { id: "factory-reset", label: "Factory reset", destructive: true },
 ];
 
@@ -44,14 +47,30 @@ function validateRobot(profile: RobotProfile) {
   }
 }
 
-let scanTimer: ReturnType<typeof setTimeout> | null = null;
-function autoScan() {
-  if (scanTimer) return;
-  const loop = async () => {
+// Like atlas-core's watch: look once at start, again whenever the fleet
+// changes (see __atlasMock.setOnline), and on the slow safety-net timer.
+let watching = false;
+let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+let changeTimer: ReturnType<typeof setTimeout> | null = null;
+
+function schedule() {
+  if (fallbackTimer) clearTimeout(fallbackTimer);
+  fallbackTimer = setTimeout(async () => {
     if (settings.auto_scan) await scan();
-    scanTimer = setTimeout(loop, Math.max(1000, settings.scan_interval_ms));
-  };
-  scanTimer = setTimeout(loop, 400);
+    schedule();
+  }, settings.scan_interval_ms);
+}
+
+function changed() {
+  if (!settings.auto_scan) return;
+  if (changeTimer) clearTimeout(changeTimer);
+  changeTimer = setTimeout(() => void scan().then(schedule), 300);
+}
+
+function autoScan() {
+  if (watching) return;
+  watching = true;
+  setTimeout(() => void scan().then(schedule), 400);
 }
 
 export const mockApi: Api = {
@@ -84,8 +103,19 @@ export const mockApi: Api = {
     }),
   runDeviceAction: (key, action) =>
     reply(() => {
-      if (simDevice(key)?.actions?.some((a) => a.id === action)) return;
-      if (!ACTIONS.some((a) => a.id === action)) throw `${keyString(key)} has no action named \`${action}\``;
+      const found = (simDevice(key)?.actions ?? ACTIONS).find((a) => a.id === action);
+      if (!found) throw `${keyString(key)} has no action named \`${action}\``;
+      if (action === "reboot") restart(key);
+      const entry = stored(key);
+      const name = entry.label ?? entry.record?.identity.name ?? keyString(key);
+      record("action-run", "info", key, `${found.label} on ${name}`);
+    }),
+  deviceTelemetry: (key) => reply(() => metrics(online(key))),
+  deviceLogs: (key, lines) => reply(() => logLines(online(key), Math.max(1, Math.min(lines, 2000)))),
+  listActivity: (limit) => reply(() => activity.slice(-limit).reverse()),
+  saveSupportBundle: (key) =>
+    reply(() => {
+      stored(key);
     }),
 
   planUpdate: (request) => reply(() => runner.plan(clone(request))),
@@ -211,6 +241,8 @@ export const mockApi: Api = {
         fix_action: null,
       },
     ]),
+  discoveryStatus: () =>
+    reply(() => ({ live: settings.auto_scan, watching: ["Simulated"], polled: [], fallback_ms: settings.scan_interval_ms })),
   fixHealth: (action) => reply(() => `Fixed ${action} (simulated).`),
   getSettings: () => reply(() => settings),
   saveSettings: (next) =>
@@ -241,6 +273,7 @@ if (typeof window !== "undefined") {
     setOnline(serial: string, online: boolean) {
       const device = fleet.find((d) => d.key.serial === serial);
       if (device) device.online = online;
+      changed();
     },
     neverConfirms(serial: string, value = true) {
       const device = fleet.find((d) => d.key.serial === serial);

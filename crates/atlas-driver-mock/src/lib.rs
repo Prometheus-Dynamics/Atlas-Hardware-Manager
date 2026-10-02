@@ -7,6 +7,7 @@
 
 mod driver;
 mod fleet;
+mod observe;
 
 pub use driver::MockDriver;
 pub use fleet::{MockBehavior, MockDevice, MockFleet, SIM_LINK_ID};

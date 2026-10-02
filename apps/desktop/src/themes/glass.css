@@ -7,23 +7,21 @@
   color-scheme: dark;
 
   /* Surfaces */
-  --bg: #15171d;
-  --rail: #111318;
+  --bg: #121419;
+  --rail: #0e1014;
   --hairline: rgba(255, 255, 255, 0.06);
-  --glass: rgba(255, 255, 255, 0.05);
-  --glass-hover: rgba(255, 255, 255, 0.075);
-  --glass-strong: rgba(255, 255, 255, 0.09);
-  --glass-border: rgba(255, 255, 255, 0.1);
-  --glass-border-strong: rgba(255, 255, 255, 0.16);
-  --layer: rgba(30, 32, 40, 0.78);
-  --layer-solid: #1b1d24;
+  --glass: rgba(255, 255, 255, 0.04);
+  --glass-hover: rgba(255, 255, 255, 0.065);
+  --glass-strong: rgba(255, 255, 255, 0.08);
+  --glass-border: rgba(255, 255, 255, 0.075);
+  --glass-border-strong: rgba(255, 255, 255, 0.14);
+  /* Floating layers are opaque: no backdrop blur, which is costly on older GPUs. */
+  --layer: #1a1d24;
+  --layer-solid: #1a1d24;
   --inset: rgba(0, 0, 0, 0.22);
   --scrim: rgba(8, 9, 12, 0.35);
   --shadow-layer: 0 24px 60px -12px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.25);
   --shadow-lift: 0 6px 18px -6px rgba(0, 0, 0, 0.5);
-  --glow-warm: rgba(255, 107, 107, 0.06);
-  --glow-cool: rgba(96, 140, 255, 0.055);
-  --blur: 16px;
 
   /* Text */
   --fg: #eef0f5;
@@ -63,16 +61,21 @@
   /* Shape */
   --r-sm: 8px;
   --r-md: 10px;
-  --r-card: 14px;
-  --r-panel: 18px;
+  --r-card: 12px;
+  --r-panel: 14px;
   --r-pill: 99px;
 
   /* Type */
   --font-ui: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-code: "JetBrains Mono", ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
 
-  /* Motion */
-  --ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
-  --t-fast: 120ms;
-  --t-med: 220ms;
+  /* Motion: fast, and only for UI state. Live data snaps to new values.
+     fast = hover and press, med = swaps and state changes, enter = appearing.
+     Nothing loops except spinners and loading placeholders. */
+  --ease-out: cubic-bezier(0.2, 0.9, 0.3, 1);
+  --t-fast: 90ms;
+  --t-med: 140ms;
+  --t-enter: 180ms;
+  --t-data: 0ms;
+  --stagger: 20ms;
 }

@@ -1,7 +1,7 @@
 // Inventory projection: loaded once, then kept current by device events.
 
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import { api, errorText, keyString, type DeviceKey, type DeviceRecord, type ScanReport } from "$lib/api/client";
+import { api, errorText, keyString, type DeviceKey, type DeviceRecord, type DiscoveryStatus, type ScanReport } from "$lib/api/client";
 import { deviceName } from "$lib/format";
 import { toasts } from "./toasts.svelte";
 
@@ -16,6 +16,7 @@ class DeviceStore {
   lastScan = $state<ScanReport | null>(null);
   lastScanAt = $state<number | null>(null);
   scanWarnings = $state<string[]>([]);
+  discovery = $state<DiscoveryStatus | null>(null);
 
   all = $derived([...this.map.values()]);
   online = $derived(this.all.filter((d) => d.presence === "online").length);
@@ -31,7 +32,16 @@ class DeviceStore {
     return record ? deviceName(record) : typeof key === "string" ? key : keyString(key);
   };
 
+  async loadDiscovery() {
+    try {
+      this.discovery = await api.discoveryStatus();
+    } catch {
+      this.discovery = null;
+    }
+  }
+
   async load() {
+    void this.loadDiscovery();
     try {
       const list = await api.listDevices();
       this.map.clear();

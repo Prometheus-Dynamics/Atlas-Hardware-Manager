@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
-use crate::{DeviceMode, DriverError, Family, Identity};
+use crate::{DeviceMode, DriverError, Family, Identity, LogsCapability, TelemetryCapability};
 
 /// Everything a device can offer. The UI shows a tab or action only for the
 /// kinds a device reports.
@@ -29,6 +29,8 @@ pub enum CapabilityKind {
 pub struct Capabilities {
     pub update: Option<Arc<dyn UpdateCapability>>,
     pub actions: Option<Arc<dyn ActionsCapability>>,
+    pub telemetry: Option<Arc<dyn TelemetryCapability>>,
+    pub logs: Option<Arc<dyn LogsCapability>>,
 }
 
 impl Capabilities {
@@ -49,6 +51,12 @@ impl Capabilities {
         }
         if self.actions.is_some() {
             kinds.push(CapabilityKind::Actions);
+        }
+        if self.telemetry.is_some() {
+            kinds.push(CapabilityKind::Telemetry);
+        }
+        if self.logs.is_some() {
+            kinds.push(CapabilityKind::Logs);
         }
         kinds
     }

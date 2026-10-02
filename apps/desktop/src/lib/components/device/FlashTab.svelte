@@ -14,7 +14,7 @@
   import { system } from "$lib/stores/system.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
   import { ui } from "$lib/stores/ui.svelte";
-  import { rise } from "$lib/ui/motion";
+  import { rise, stagger } from "$lib/ui/motion";
   import BootloaderRow from "./BootloaderRow.svelte";
 
   let { record }: { record: DeviceRecord } = $props();
@@ -68,7 +68,7 @@
     {#if steps.length > 0}
       <ol class="flex flex-col gap-2">
         {#each steps as step, i (i)}
-          <li class="glass flex gap-3 px-3.5 py-3" in:rise={{ delay: i * 40 }}>
+          <li class="glass flex gap-3 px-3.5 py-3" in:rise={{ delay: stagger(i) }}>
             <span class="num">{i + 1}</span>
             <span class="text-[13px] leading-relaxed text-fg">{step}</span>
           </li>

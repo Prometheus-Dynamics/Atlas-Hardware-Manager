@@ -44,7 +44,7 @@
   .log {
     border-radius: var(--r-card);
     background: var(--inset);
-    border: 0.5px solid var(--hairline);
+    border: 1px solid var(--hairline);
   }
   pre {
     margin: 0;

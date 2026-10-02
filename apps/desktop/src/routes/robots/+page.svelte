@@ -6,14 +6,14 @@
   import RobotCard from "$lib/components/robots/RobotCard.svelte";
   import { robots } from "$lib/stores/robots.svelte";
   import { ui } from "$lib/stores/ui.svelte";
-  import { rise } from "$lib/ui/motion";
+  import { rise, stagger } from "$lib/ui/motion";
 
   const ready = $derived(robots.statuses.filter((s) => s.state === "ready").length);
 </script>
 
 <svelte:head><title>Robots · Atlas</title></svelte:head>
 
-<div class="flex flex-col gap-5">
+<div class="reveal flex flex-col gap-5">
   <PageHeader
     title="Robots"
     subtitle={robots.profiles.length ? `${robots.profiles.length} robot${robots.profiles.length === 1 ? "" : "s"} · ${ready} ready` : "Which device fills which role, and the versions each robot should run."}
@@ -35,7 +35,7 @@
   {:else}
     <div class="grid grid-cols-[repeat(auto-fill,minmax(24rem,1fr))] gap-4">
       {#each robots.profiles as profile, i (profile.name)}
-        <div in:rise={{ delay: i * 40 }}><RobotCard {profile} status={robots.status(profile.name)} /></div>
+        <div in:rise={{ delay: stagger(i) }}><RobotCard {profile} status={robots.status(profile.name)} /></div>
       {/each}
     </div>
   {/if}

@@ -43,7 +43,7 @@
     padding: 12px 14px 12px 16px;
     border-radius: var(--r-card);
     background: var(--glass);
-    border: 0.5px solid var(--glass-border);
+    border: 1px solid var(--glass-border);
     overflow: hidden;
   }
   .banner::before {

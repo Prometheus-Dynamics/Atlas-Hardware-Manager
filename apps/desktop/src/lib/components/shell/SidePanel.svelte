@@ -11,8 +11,13 @@
   const label = $derived(
     ui.panel?.kind === "device" ? "Device" : ui.panel?.kind === "robot" ? "Robot" : ui.panel?.kind === "update" ? ui.panel.title : "",
   );
-  const width = $derived(ui.panel?.kind === "device" ? (wide ? 820 : 480) : 460);
+  // The device panel grows with the window so live readings get room.
+  let viewport = $state(1280);
+  const deviceWidth = $derived(Math.round(Math.min(760, Math.max(520, viewport * 0.36))));
+  const width = $derived(ui.panel?.kind === "device" ? (wide ? Math.max(820, deviceWidth) : deviceWidth) : 460);
 </script>
+
+<svelte:window bind:innerWidth={viewport} />
 
 {#if ui.panel}
   <Sheet label="{label} details" {width} onclose={() => ui.close()} scroll={ui.panel.kind !== "device"}>

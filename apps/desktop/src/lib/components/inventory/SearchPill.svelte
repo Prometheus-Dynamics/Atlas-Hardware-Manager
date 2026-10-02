@@ -42,7 +42,7 @@
     padding: 0 8px 0 13px;
     border-radius: var(--r-pill);
     background: var(--glass);
-    border: 0.5px solid var(--glass-border);
+    border: 1px solid var(--glass-border);
     transition:
       width var(--t-med) var(--ease-out),
       border-color var(--t-fast),

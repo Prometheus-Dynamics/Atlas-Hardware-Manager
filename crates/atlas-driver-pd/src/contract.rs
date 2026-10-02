@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use atlas_devices::DevicePackage;
-use atlas_driver::{DeviceKey, DeviceMode, Identity, LinkId};
+use atlas_driver::{DeviceAction, DeviceKey, DeviceMode, Identity, LinkId};
 use serde::Deserialize;
 
 pub const IDENTITY_PATH: &str = "/.well-known/pd-device";
@@ -41,6 +41,35 @@ pub struct PdIdentity {
     pub manage_url: Option<String>,
     #[serde(default)]
     pub macs: BTreeMap<String, String>,
+    /// Optional live endpoints by name: `metrics`, `logs`, `actions`.
+    #[serde(default)]
+    pub endpoints: BTreeMap<String, String>,
+    /// Actions the `actions` endpoint accepts.
+    #[serde(default)]
+    pub actions: Vec<ReportedAction>,
+    /// A camera view: an MJPEG stream or a still image, path or URL.
+    #[serde(default)]
+    pub camera_stream: Option<String>,
+}
+
+/// An action as a device lists it; only `id` is required.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct ReportedAction {
+    pub id: String,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub destructive: bool,
+}
+
+impl ReportedAction {
+    pub fn to_action(&self) -> DeviceAction {
+        DeviceAction {
+            id: self.id.clone(),
+            label: self.label.clone().unwrap_or_else(|| self.id.clone()),
+            destructive: self.destructive,
+        }
+    }
 }
 
 impl PdIdentity {
@@ -109,6 +138,13 @@ impl PdIdentity {
             attributes.insert(format!("mac.{interface}"), mac.clone());
         }
         attributes.insert("contract".into(), self.contract.to_string());
+        if let Some(stream) = self
+            .camera_stream
+            .as_deref()
+            .and_then(|stream| crate::live::resolve(&address, stream))
+        {
+            attributes.insert(atlas_driver::attributes::CAMERA_STREAM.into(), stream);
+        }
 
         Identity {
             key: DeviceKey::new(

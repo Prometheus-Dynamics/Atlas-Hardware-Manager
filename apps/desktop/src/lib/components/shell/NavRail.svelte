@@ -12,11 +12,12 @@
   const notReady = $derived(robots.statuses.filter((s) => s.state !== "ready").length);
 
   const items: { href: string; label: string; icon: IconName; key: string; badge: () => number; accent?: boolean }[] = [
-    { href: "/", label: "Devices", icon: "layout-grid", key: "1", badge: () => insights.needYou, accent: true },
-    { href: "/robots", label: "Robots", icon: "robot", key: "2", badge: () => notReady },
-    { href: "/jobs", label: "Jobs", icon: "activity", key: "3", badge: () => jobs.running.length, accent: true },
-    { href: "/releases", label: "Releases", icon: "package", key: "4", badge: () => 0 },
-    { href: "/settings", label: "Settings", icon: "settings", key: "5", badge: () => system.healthProblems },
+    { href: "/", label: "Overview", icon: "heartbeat", key: "1", badge: () => 0 },
+    { href: "/devices", label: "Devices", icon: "layout-grid", key: "2", badge: () => insights.needYou, accent: true },
+    { href: "/robots", label: "Robots", icon: "robot", key: "3", badge: () => notReady },
+    { href: "/jobs", label: "Jobs", icon: "activity", key: "4", badge: () => jobs.running.length, accent: true },
+    { href: "/releases", label: "Releases", icon: "package", key: "5", badge: () => 0 },
+    { href: "/settings", label: "Settings", icon: "settings", key: "6", badge: () => system.healthProblems },
   ];
 
   function active(href: string) {
@@ -78,7 +79,7 @@
     flex-shrink: 0;
     padding: 14px 0 12px;
     background: var(--rail);
-    border-right: 0.5px solid var(--hairline);
+    border-right: 1px solid var(--hairline);
   }
   .logo {
     width: 24px;
@@ -143,7 +144,7 @@
     padding: 5px 9px;
     border-radius: 8px;
     background: var(--layer-solid);
-    border: 0.5px solid var(--glass-border);
+    border: 1px solid var(--glass-border);
     box-shadow: var(--shadow-lift);
     color: var(--fg);
     font-size: 12px;

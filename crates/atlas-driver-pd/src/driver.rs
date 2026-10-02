@@ -1,15 +1,18 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use atlas_devices::{DeviceCatalog, DevicePackage};
 use atlas_driver::{
-    Candidate, Capabilities, Driver, DriverError, DriverManifest, Family, HealthCheck, Identity,
-    Link, LinkId, LinkKind, LinkSource,
+    ActionsCapability, Candidate, Capabilities, DeviceKey, Driver, DriverError, DriverManifest,
+    Family, HealthCheck, Identity, Link, LinkId, LinkKind, LinkSource, LogsCapability,
+    TelemetryCapability,
 };
 
 use crate::browse::Browser;
 use crate::contract::PdIdentity;
+use crate::live::{PdActions, PdLogs, PdTelemetry, resolve};
 
 const LINK_ID: &str = "mdns";
 const FETCH_TIMEOUT: Duration = Duration::from_secs(2);
@@ -29,6 +32,14 @@ impl LinkSource for NetworkLinks {
             kind: LinkKind::Ethernet,
             label: "Network (mDNS)".into(),
         }]
+    }
+
+    fn name(&self) -> &str {
+        "Network"
+    }
+
+    fn watch(&self, notify: atlas_driver::ChangeNotifier) -> bool {
+        Browser::shared().subscribe(notify)
     }
 
     async fn health(&self) -> Vec<HealthCheck> {
@@ -57,6 +68,8 @@ pub struct PdDriver {
     manifest: DriverManifest,
     package: Arc<DevicePackage>,
     http: reqwest::Client,
+    /// What each device last reported, for the optional live endpoints.
+    reported: Mutex<HashMap<DeviceKey, (String, PdIdentity)>>,
 }
 
 impl PdDriver {
@@ -74,7 +87,16 @@ impl PdDriver {
                 .timeout(FETCH_TIMEOUT)
                 .build()
                 .unwrap_or_default(),
+            reported: Mutex::new(HashMap::new()),
         }
+    }
+
+    fn reported(&self, key: &DeviceKey) -> Option<(String, PdIdentity)> {
+        self.reported
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(key)
+            .cloned()
     }
 
     async fn fetch(&self, url: &str) -> Result<PdIdentity, String> {
@@ -148,17 +170,56 @@ impl Driver for PdDriver {
                 candidate.address, reported.model, self.manifest.family
             )));
         }
-        Ok(reported.to_identity(
+        let identity = reported.to_identity(
             Some(&self.package),
             candidate.link.clone(),
             candidate.address.clone(),
-        ))
+        );
+        self.reported
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(identity.key.clone(), (candidate.address.clone(), reported));
+        Ok(identity)
     }
 
-    fn capabilities(&self, _device: &Identity) -> Capabilities {
-        // Updates for running devices come from OS adapters (HeliOS OTA and
-        // others) as they land; reflashing goes through USB boot recovery.
-        Capabilities::default()
+    /// Updates for running devices come from OS adapters (HeliOS OTA and
+    /// others) as they land; reflashing goes through USB boot recovery.
+    /// Metrics, logs, and actions are offered when the device lists them.
+    fn capabilities(&self, device: &Identity) -> Capabilities {
+        let Some((identity_url, reported)) = self.reported(&device.key) else {
+            return Capabilities::default();
+        };
+        let endpoint = |name: &str| {
+            reported
+                .endpoints
+                .get(name)
+                .and_then(|path| resolve(&identity_url, path))
+        };
+        let http = self.http.clone();
+        Capabilities {
+            telemetry: endpoint("metrics").map(|url| {
+                Arc::new(PdTelemetry {
+                    http: http.clone(),
+                    url,
+                }) as Arc<dyn TelemetryCapability>
+            }),
+            logs: endpoint("logs").map(|url| {
+                Arc::new(PdLogs {
+                    http: http.clone(),
+                    url,
+                }) as Arc<dyn LogsCapability>
+            }),
+            actions: endpoint("actions")
+                .filter(|_| !reported.actions.is_empty())
+                .map(|url| {
+                    Arc::new(PdActions {
+                        http: http.clone(),
+                        url,
+                        actions: reported.actions.iter().map(|a| a.to_action()).collect(),
+                    }) as Arc<dyn ActionsCapability>
+                }),
+            ..Capabilities::default()
+        }
     }
 }
 
@@ -216,6 +277,52 @@ mod tests {
         assert_eq!(identity.key.to_string(), "raze:abc");
         assert_eq!(identity.model, "Raze");
         assert_eq!(identity.attributes["os"], "helios");
+    }
+
+    #[tokio::test]
+    async fn listed_endpoints_become_capabilities() {
+        let url = serve_once(
+            r#"{ "model": "raze", "serial": "1",
+                 "endpoints": { "metrics": "/api/metrics", "actions": "/api/actions" },
+                 "actions": [ { "id": "locate", "label": "Find it" } ],
+                 "camera_stream": "/stream.mjpg" }"#,
+        )
+        .await;
+        let driver = PdDriver::new(package());
+        let identity = driver
+            .identify(&Candidate {
+                link: LinkId("mdns".into()),
+                family: Family::new("raze"),
+                address: url.clone(),
+            })
+            .await
+            .unwrap();
+
+        let capabilities = driver.capabilities(&identity);
+        assert!(capabilities.telemetry.is_some());
+        assert!(capabilities.logs.is_none());
+        let actions = capabilities.actions.unwrap().actions(&identity);
+        assert_eq!(actions[0].label, "Find it");
+        assert!(identity.attributes["camera_stream"].ends_with("/stream.mjpg"));
+    }
+
+    #[tokio::test]
+    async fn a_plain_device_offers_no_extras() {
+        let url = serve_once(r#"{ "model": "raze", "serial": "2" }"#).await;
+        let driver = PdDriver::new(package());
+        let identity = driver
+            .identify(&Candidate {
+                link: LinkId("mdns".into()),
+                family: Family::new("raze"),
+                address: url,
+            })
+            .await
+            .unwrap();
+        let capabilities = driver.capabilities(&identity);
+        assert_eq!(
+            capabilities.kinds(),
+            vec![atlas_driver::CapabilityKind::Info]
+        );
     }
 
     #[tokio::test]

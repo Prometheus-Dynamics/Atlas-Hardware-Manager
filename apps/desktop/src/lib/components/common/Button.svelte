@@ -91,7 +91,7 @@
     height: 34px;
     padding: 0 15px;
     border-radius: var(--r-pill);
-    border: 0.5px solid transparent;
+    border: 1px solid transparent;
     font: inherit;
     font-size: 13px;
     font-weight: 500;

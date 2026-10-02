@@ -13,7 +13,9 @@
   import ActionsTab from "./ActionsTab.svelte";
   import FlashTab from "./FlashTab.svelte";
   import HistoryTab from "./HistoryTab.svelte";
+  import LogsTab from "./LogsTab.svelte";
   import OverviewTab from "./OverviewTab.svelte";
+  import QuickActions from "./QuickActions.svelte";
 
   let {
     key,
@@ -30,6 +32,7 @@
     const list: { value: string; label: string; icon: IconName }[] = [{ value: "overview", label: "Overview", icon: "info-circle" }];
     if (caps.includes("recover") || (recovery && record?.presence === "online")) list.push({ value: "flash", label: "Flash", icon: "bolt" });
     else if (caps.includes("update")) list.push({ value: "update", label: "Update", icon: "arrow-up" });
+    if (caps.includes("logs")) list.push({ value: "logs", label: "Logs", icon: "file-text" });
     if (caps.includes("actions") && !recovery) list.push({ value: "actions", label: "Actions", icon: "tool" });
     list.push({ value: "history", label: "History", icon: "history" });
     return list;
@@ -73,6 +76,9 @@
       {#if recovery && record.presence === "online"}<Pill tone="primary" icon="usb" label="Waiting for an image" />{/if}
       <Pill tone="neutral" mono label={record.key.serial} title={key} />
     </div>
+    {#if !recovery}
+      <div class="mt-3"><QuickActions {record} /></div>
+    {/if}
     {#if tabs.length > 1}
       <div class="mt-4">
         <SegmentedControl options={tabs} bind:value={tab} label="Device sections" />
@@ -82,7 +88,7 @@
 
   <div class="min-h-0 flex-1 overflow-y-auto border-t border-hairline px-6 pb-6 pt-5" role="tabpanel">
     {#key current}
-      <div in:softFade={{ duration: 160 }}>
+      <div in:softFade>
         {#if current === "overview"}
           <OverviewTab {record} />
         {:else if current === "flash"}
@@ -92,6 +98,8 @@
             request={{ devices: [record.key], releases: {}, staged: system.settings?.staged_default ?? "auto" }}
             onstarted={() => (tab = "history")}
           />
+        {:else if current === "logs"}
+          <LogsTab {record} />
         {:else if current === "actions"}
           <ActionsTab {record} />
         {:else}
