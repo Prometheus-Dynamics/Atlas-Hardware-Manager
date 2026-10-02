@@ -243,7 +243,7 @@ mod tests {
         let tool = files.second_stage(atlas_usbboot::Chip::Bcm2712).unwrap();
         assert_eq!(
             hex(&Sha256::digest(&tool)),
-            "7993e58a2f1a6200cf4c556f6fe14c268048109d6be3241d2e54dc1549e2218c"
+            "ad66b2960559c1bad92687f915bd9d993017f5a2ee7d7495ba866776ad6f1d3d"
         );
         let image = std::fs::read(staged.join("pieeprom.bin")).unwrap();
         assert_eq!(image.len(), 2 * 1024 * 1024);

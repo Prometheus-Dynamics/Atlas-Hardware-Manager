@@ -6,9 +6,9 @@
       "name": "recovery.bin",
       "dest": "eeprom/recovery.bin",
       "role": "recovery",
-      "source": "raspberrypi/rpi-eeprom, firmware-2712/<release>/recovery.bin",
-      "url": "https://raw.githubusercontent.com/raspberrypi/rpi-eeprom/360324a17edebeb625c3fffe872321a0e2c20dc4/firmware-2712/latest/recovery.bin",
-      "sha256": "7993e58a2f1a6200cf4c556f6fe14c268048109d6be3241d2e54dc1549e2218c",
+      "source": "raspberrypi/rpi-eeprom v2025.12.08-2712 (cb1a22e), firmware-2712/latest/recovery.bin",
+      "url": "https://raw.githubusercontent.com/raspberrypi/rpi-eeprom/cb1a22eff0b15b15a686318a885d1f1a2563ff6f/firmware-2712/latest/recovery.bin",
+      "sha256": "ad66b2960559c1bad92687f915bd9d993017f5a2ee7d7495ba866776ad6f1d3d",
       "vendored": true,
       "note": "Also kept in git at eeprom/recovery.bin; the URL and digest record where it came from."
     }

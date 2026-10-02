@@ -2,7 +2,7 @@
   "schema": "urn:pd-device:manifest:1",
   "contract": 1,
   "model": "raze",
-  "package_version": "1.0.2",
+  "package_version": "1.0.3",
   "display_name": "Raze",
   "description": "Raspberry Pi CM5 vision device with an OV9782 global-shutter camera.",
   "vendor": "Prometheus Dynamics",
@@ -132,9 +132,9 @@
       {
         "path": "eeprom/recovery.bin",
         "role": "recovery",
-        "notes": "rpi-eeprom recovery.bin for BCM2712 (2025-08-27), the EEPROM flashing tool rpiboot loads as the second stage. Kept in git (about 100 KB).",
-        "sha256": "7993e58a2f1a6200cf4c556f6fe14c268048109d6be3241d2e54dc1549e2218c",
-        "source": "https://raw.githubusercontent.com/raspberrypi/rpi-eeprom/360324a17edebeb625c3fffe872321a0e2c20dc4/firmware-2712/latest/recovery.bin"
+        "notes": "rpi-eeprom recovery.bin for BCM2712 from release v2025.12.08-2712, matching the bundled pieeprom. The EEPROM flashing tool rpiboot loads as the second stage. Kept in git (about 100 KB).",
+        "sha256": "ad66b2960559c1bad92687f915bd9d993017f5a2ee7d7495ba866776ad6f1d3d",
+        "source": "https://raw.githubusercontent.com/raspberrypi/rpi-eeprom/cb1a22eff0b15b15a686318a885d1f1a2563ff6f/firmware-2712/latest/recovery.bin"
       }
     ],
     "update_method": "rpiboot-recovery",

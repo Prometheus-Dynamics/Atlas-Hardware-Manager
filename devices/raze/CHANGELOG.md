@@ -1,5 +1,11 @@
 # Raze device package changelog
 
+## 1.0.3
+
+- EEPROM: `eeprom/recovery.bin` is now the one from rpi-eeprom release
+  `v2025.12.08-2712` (`cb1a22e`, sha256 `ad66b296…1d3d`), matching the bundled
+  2025-12-08 pieeprom, instead of the 2025-08-27 build usbboot pins.
+
 ## 1.0.2
 
 - EEPROM: `eeprom/recovery.bin` added (rpi-eeprom `360324a`, BCM2712
