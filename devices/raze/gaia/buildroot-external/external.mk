@@ -8,3 +8,17 @@
 # expanded when the download runs, after this file is read, and Buildroot
 # accepts the tarball when any listed hash file matches it.
 LINUX_HASH_FILES += $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/linux.hash
+
+# With Mesa's EGL (gpu.toml), keep rpi-userland out of staging. On aarch64
+# rpi-userland builds no EGL/GLES libraries, but its install still copies the
+# old Broadcom EGL/GLES/KHR headers into staging, where they can overwrite
+# Mesa's depending on build order; anything compiled against the sysroot
+# (e.g. PhotonVision's libcamera GL driver) then sees the wrong headers.
+# vcgencmd and friends are still installed to the target. The staging recipe
+# expands this variable at build time, so redefining it here, after the
+# package makefiles, takes effect.
+ifeq ($(BR2_aarch64)$(BR2_PACKAGE_RPI_USERLAND)$(BR2_PACKAGE_MESA3D_OPENGL_EGL),yyy)
+define RPI_USERLAND_INSTALL_STAGING_CMDS
+	@echo "rpi-userland: not installed to staging (keeps Mesa's EGL/GLES headers)"
+endef
+endif

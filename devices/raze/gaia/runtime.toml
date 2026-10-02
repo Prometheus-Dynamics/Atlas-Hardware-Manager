@@ -25,6 +25,12 @@ dest = "/usr/lib/modules-load.d/pd-device-usb-gadget.conf"
 origin = "static-asset"
 
 [[stage.files]]
+id = "raze-modules-load-d-raze-i2c-dev-conf"
+src = "@self/assets/rootfs/usr/lib/modules-load.d/raze-i2c-dev.conf"
+dest = "/usr/lib/modules-load.d/raze-i2c-dev.conf"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-pd-device-device-package-env"
 src = "@self/assets/rootfs/usr/lib/pd-device/device-package.env"
 dest = "/usr/lib/pd-device/device-package.env"
@@ -187,6 +193,7 @@ stage_files = [
   "raze-NetworkManager-conf-d-60-pd-device-conf",
   "raze-modprobe-d-raze-ws2812-pio-conf",
   "raze-modules-load-d-pd-device-usb-gadget-conf",
+  "raze-modules-load-d-raze-i2c-dev-conf",
   "raze-pd-device-device-package-env",
   "raze-pd-device-hostname-default",
   "raze-pd-device-hostname-env",

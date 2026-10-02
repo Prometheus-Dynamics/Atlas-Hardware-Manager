@@ -1,5 +1,15 @@
 # Raze device package changelog
 
+## 1.0.4
+
+- GPU: with `gpu.toml` (Mesa EGL), the external tree keeps rpi-userland out of
+  staging so its old Broadcom EGL/GLES headers can't replace Mesa's. OSes no
+  longer need their own copy of this fix.
+- I2C: `i2c-dev` is loaded by the package (`/usr/lib/modules-load.d/raze-i2c-dev.conf`),
+  so the I2C buses it enables have userspace device nodes.
+- README: OSes that manage Ethernet with NetworkManager should clear
+  `BR2_SYSTEM_DHCP`, or systemd-networkd runs a second DHCP client on it.
+
 ## 1.0.3
 
 - EEPROM: `eeprom/recovery.bin` is now the one from rpi-eeprom release
