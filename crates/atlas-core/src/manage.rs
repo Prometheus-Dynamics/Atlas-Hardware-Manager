@@ -191,6 +191,19 @@ impl Atlas {
             .collect()
     }
 
+    /// Runs a health check's fix action through the driver that offers it.
+    pub async fn fix_health(&self, action: &str) -> Result<String, CoreError> {
+        for driver in self.inner.registry.all() {
+            match driver.fix(action).await {
+                Err(atlas_driver::DriverError::Unsupported(_)) => continue,
+                result => return result.map_err(CoreError::from),
+            }
+        }
+        Err(CoreError::Driver(atlas_driver::DriverError::Unsupported(
+            format!("no driver offers the fix `{action}`"),
+        )))
+    }
+
     /// Host readiness from every driver and link source, worst first.
     pub async fn health_checks(&self) -> Vec<HealthCheck> {
         let drivers = self.inner.registry.all();

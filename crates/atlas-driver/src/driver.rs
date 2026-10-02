@@ -47,6 +47,12 @@ pub trait Driver: Send + Sync {
     async fn health(&self) -> Vec<HealthCheck> {
         Vec::new()
     }
+
+    /// Runs a fix offered by one of this driver's health checks
+    /// ([`HealthCheck::fix_action`]) and returns what changed.
+    async fn fix(&self, action: &str) -> Result<String, DriverError> {
+        Err(DriverError::Unsupported(format!("no fix named `{action}`")))
+    }
 }
 
 /// Supplies the links present on this computer, for example USB network

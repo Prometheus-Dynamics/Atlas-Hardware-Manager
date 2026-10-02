@@ -26,3 +26,4 @@ src-tauri/.cargo/
 **/*.rs.bk
 *.pdb
 /tools/usbboot/
+/tools/windows/

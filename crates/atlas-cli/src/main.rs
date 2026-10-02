@@ -79,6 +79,8 @@ enum Command {
     },
     /// Check USB access, boot files, and the disk writer on this computer.
     Doctor,
+    /// Run a fix that `doctor` offers, such as `usbboot.install-access`.
+    Fix { action: String },
     /// List disks and whether Atlas would write to them.
     Disks,
     /// Run a device action such as `locate` or `reboot`.
@@ -198,6 +200,7 @@ async fn main() -> ExitCode {
             commands::action(&atlas, &device, action.as_deref(), cli.json).await
         }
         Command::Doctor => system::doctor(&atlas, cli.json).await,
+        Command::Fix { action } => system::fix(&atlas, &action).await,
         Command::Disks => system::disks(cli.json).await,
     };
     match result {

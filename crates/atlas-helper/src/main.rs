@@ -1,6 +1,7 @@
 //! `atlas-helper`: the only part of Atlas that runs with elevated rights.
 //!
-//! It does one thing: write a verified image to a removable disk. It trusts
+//! It does two things: write a verified image to a removable disk, and
+//! install USB access for Pi boot devices (`install-usb-access`). It trusts
 //! nothing from the app. It lists disks itself, refuses system, internal,
 //! and resized disks, checks the image's SHA-256 when given one, and
 //! reports progress as JSON lines to a file the app follows.
@@ -73,13 +74,30 @@ fn parse_write(args: &[String]) -> Result<WriteArgs, String> {
     Ok(parsed)
 }
 
+mod usb_access;
+
 /// Sends messages to the progress file, or stdout when there is none.
-struct Reporter {
+pub(crate) struct Reporter {
     file: Option<std::fs::File>,
 }
 
 impl Reporter {
-    fn send(&mut self, message: &HelperMessage) {
+    pub(crate) fn open(path: Option<&std::path::Path>) -> Result<Self, String> {
+        Ok(Self {
+            file: match path {
+                Some(path) => Some(
+                    OpenOptions::new()
+                        .append(true)
+                        .create(true)
+                        .open(path)
+                        .map_err(|error| format!("{}: {error}", path.display()))?,
+                ),
+                None => None,
+            },
+        })
+    }
+
+    pub(crate) fn send(&mut self, message: &HelperMessage) {
         let line = message.to_line();
         match &mut self.file {
             Some(file) => {
@@ -94,18 +112,7 @@ impl Reporter {
 }
 
 fn run_write(args: WriteArgs) -> Result<(), String> {
-    let mut reporter = Reporter {
-        file: match &args.progress {
-            Some(path) => Some(
-                OpenOptions::new()
-                    .append(true)
-                    .create(true)
-                    .open(path)
-                    .map_err(|error| format!("{}: {error}", path.display()))?,
-            ),
-            None => None,
-        },
-    };
+    let mut reporter = Reporter::open(args.progress.as_deref())?;
 
     let result = (|| {
         let disks = list_disks().map_err(|error| error.to_string())?;
@@ -171,7 +178,8 @@ fn main() -> ExitCode {
                 let _ = writeln!(std::io::stdout(), "{json}");
             }),
         Some("write") => parse_write(&args[1..]).and_then(run_write),
-        _ => Err("usage: atlas-helper list | atlas-helper write --device <path> --image <path> --expected-size <bytes> [--progress <file>] [--cancel-file <file>] [--image-sha256 <hex>] [--no-verify]".into()),
+        Some("install-usb-access") => usb_access::parse(&args[1..]).and_then(usb_access::run),
+        _ => Err("usage: atlas-helper list | atlas-helper install-usb-access [--progress <file>] | atlas-helper write --device <path> --image <path> --expected-size <bytes> [--progress <file>] [--cancel-file <file>] [--image-sha256 <hex>] [--no-verify]".into()),
     };
     match outcome {
         Ok(()) => ExitCode::SUCCESS,

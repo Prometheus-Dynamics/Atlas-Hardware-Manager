@@ -33,5 +33,8 @@ tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
 
+[dev-dependencies]
+atlas-usbboot.workspace = true
+
 [lints]
 workspace = true

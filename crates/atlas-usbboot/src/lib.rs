@@ -26,6 +26,6 @@ pub use chip::{BROADCOM_VENDOR_ID, Chip};
 pub use error::UsbBootError;
 pub use protocol::{BootEvent, BootTransport, FileServerOutcome, file_server, second_stage};
 pub use usb::{
-    BootDevice, BootOptions, BootOutcome, LINUX_UDEV_RULE, UsbBootTransport, boot_device,
-    list_boot_devices,
+    BOOT_PRODUCT_IDS, BootDevice, BootOptions, BootOutcome, LINUX_UDEV_RULE, LINUX_UDEV_RULES_FILE,
+    UsbBootTransport, boot_device, list_boot_devices,
 };

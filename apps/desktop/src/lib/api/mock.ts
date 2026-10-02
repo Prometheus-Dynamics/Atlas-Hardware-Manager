@@ -191,22 +191,25 @@ export const mockApi: Api = {
     })),
   healthChecks: () =>
     reply((): HealthCheck[] => [
-      { id: "data-dir", label: "Data directory", status: "ok", detail: "Writable.", fix: null },
+      { id: "data-dir", label: "Data directory", status: "ok", detail: "Writable.", fix: null, fix_action: null },
       {
-        id: "usb-boot",
-        label: "USB boot access",
+        id: "usbboot.udev",
+        label: "USB boot permissions",
         status: "warning",
-        detail: "No udev rule grants access to Raspberry Pi USB boot devices.",
-        fix: "Install the Atlas udev rules, then unplug and replug the device.",
+        detail: "No udev rule for Pi boot devices was found, so USB boot would need root.",
+        fix: "Press Fix to install it (one password prompt), then replug the board.",
+        fix_action: "usbboot.install-access",
       },
       {
-        id: "network",
-        label: "USB network interfaces",
-        status: "error",
-        detail: "No usb0 interface is configured for the 10.55.0.0/24 link.",
-        fix: "Enable the USB gadget network in your network manager.",
+        id: "network.mdns",
+        label: "Network discovery",
+        status: "ok",
+        detail: "Listening for PD devices with mDNS; 0 advertised right now.",
+        fix: null,
+        fix_action: null,
       },
     ]),
+  fixHealth: (action) => reply(() => `Fixed ${action} (simulated).`),
   getSettings: () => reply(() => settings),
   saveSettings: (next) =>
     reply(() => {

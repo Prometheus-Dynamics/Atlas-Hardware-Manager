@@ -8,9 +8,19 @@ use crate::{WriteProgress, WriteReport};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case", tag = "type")]
 pub enum HelperMessage {
-    Progress { progress: WriteProgress },
-    Done { report: WriteReport },
-    Error { message: String },
+    Progress {
+        progress: WriteProgress,
+    },
+    Done {
+        report: WriteReport,
+    },
+    /// A non-write command (such as `install-usb-access`) succeeded.
+    Fixed {
+        message: String,
+    },
+    Error {
+        message: String,
+    },
 }
 
 impl HelperMessage {

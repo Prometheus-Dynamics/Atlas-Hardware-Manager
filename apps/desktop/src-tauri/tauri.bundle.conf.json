@@ -1,17 +1,35 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
-    "externalBin": ["binaries/atlas-helper"],
+    "externalBin": [
+      "binaries/atlas-helper"
+    ],
     "resources": {
       "../../../tools/usbboot/mass-storage-gadget64/": "usbboot/mass-storage-gadget64/",
       "../../../devices/": "devices/"
     },
     "linux": {
       "deb": {
-        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0", "pkexec | policykit-1"]
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "pkexec | policykit-1"
+        ],
+        "files": {
+          "/usr/lib/udev/rules.d/60-atlas-usbboot.rules": "bundle/linux/60-atlas-usbboot.rules"
+        },
+        "postInstallScript": "bundle/linux/postinst.sh"
       },
       "rpm": {
-        "depends": ["webkit2gtk4.1", "gtk3", "polkit"]
+        "depends": [
+          "webkit2gtk4.1",
+          "gtk3",
+          "polkit"
+        ],
+        "files": {
+          "/usr/lib/udev/rules.d/60-atlas-usbboot.rules": "bundle/linux/60-atlas-usbboot.rules"
+        },
+        "postInstallScript": "bundle/linux/postinst.sh"
       }
     }
   }

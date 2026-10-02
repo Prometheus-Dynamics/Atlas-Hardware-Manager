@@ -28,6 +28,9 @@ pub(crate) async fn doctor(atlas: &Atlas, as_json: bool) -> CommandResult {
             if let Some(fix) = &check.fix {
                 output::line(&format!("       fix: {fix}"));
             }
+            if let Some(action) = &check.fix_action {
+                output::line(&format!("       run: atlas fix {action}"));
+            }
         }
     }
     Ok(if failing {
@@ -35,6 +38,15 @@ pub(crate) async fn doctor(atlas: &Atlas, as_json: bool) -> CommandResult {
     } else {
         ExitCode::SUCCESS
     })
+}
+
+pub(crate) async fn fix(atlas: &Atlas, action: &str) -> CommandResult {
+    let message = atlas
+        .fix_health(action)
+        .await
+        .map_err(|error| error.to_string())?;
+    output::line(&message);
+    Ok(ExitCode::SUCCESS)
 }
 
 pub(crate) async fn disks(as_json: bool) -> CommandResult {

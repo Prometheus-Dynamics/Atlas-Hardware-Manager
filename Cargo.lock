@@ -262,6 +262,7 @@ dependencies = [
  "atlas-driver-pd",
  "atlas-driver-rpi",
  "atlas-release",
+ "atlas-usbboot",
  "dirs 6.0.0",
  "serde",
  "serde_json",
@@ -380,6 +381,7 @@ name = "atlas-helper"
 version = "0.1.0"
 dependencies = [
  "atlas-blockdev",
+ "atlas-usbboot",
  "serde_json",
 ]
 

@@ -68,3 +68,16 @@ pub fn register_hardware(
     }
     builder
 }
+
+#[cfg(test)]
+mod tests {
+    /// The rule the Linux packages install must be the one the helper's
+    /// one-click fix writes, so both paths give the same access.
+    #[test]
+    fn packaged_udev_rule_matches_the_helper() {
+        assert_eq!(
+            include_str!("../bundle/linux/60-atlas-usbboot.rules"),
+            atlas_usbboot::LINUX_UDEV_RULES_FILE
+        );
+    }
+}

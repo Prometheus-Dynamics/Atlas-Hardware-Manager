@@ -238,6 +238,8 @@ export interface HealthCheck {
   status: HealthStatus;
   detail: string;
   fix: string | null;
+  /** When set, `api.fixHealth(fix_action)` fixes it (may ask for a password). */
+  fix_action: string | null;
 }
 
 export type SimScenario = "demo" | "flaky";

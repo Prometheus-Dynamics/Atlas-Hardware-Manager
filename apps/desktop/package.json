@@ -12,7 +12,7 @@
     "tauri": "tauri",
     "app": "cargo build -p atlas-helper && ATLAS_HELPER=$PWD/../../target/debug/atlas-helper ATLAS_USBBOOT_DIR=$PWD/../../tools/usbboot/mass-storage-gadget64 tauri dev",
     "app:sim": "ATLAS_SIM=demo tauri dev",
-    "bundle": "../../scripts/prepare-bundle.sh && tauri build --config src-tauri/tauri.bundle.conf.json"
+    "bundle": "bash ../../scripts/bundle.sh"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^7.2.0",

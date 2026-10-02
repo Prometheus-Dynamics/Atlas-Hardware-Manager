@@ -34,6 +34,16 @@ pub async fn health_checks(state: State<'_, AppState>) -> CmdResult<Vec<HealthCh
     Ok(state.atlas.health_checks().await)
 }
 
+/// Runs a health check's fix action, such as installing USB access.
+#[tauri::command]
+pub async fn fix_health(state: State<'_, AppState>, action: String) -> CmdResult<String> {
+    state
+        .atlas
+        .fix_health(&action)
+        .await
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub fn get_settings(state: State<'_, AppState>) -> AppSettings {
     state.settings()

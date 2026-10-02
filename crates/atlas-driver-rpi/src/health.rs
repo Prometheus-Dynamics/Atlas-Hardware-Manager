@@ -1,14 +1,42 @@
 //! Host readiness for USB boot and image writes.
 
 use atlas_blockdev::HelperClient;
-use atlas_driver::HealthCheck;
+use atlas_driver::{DriverError, HealthCheck};
 use atlas_usbboot::list_boot_devices;
+
+/// Fix action: install the udev rule (Linux) or WinUSB driver (Windows).
+pub(crate) const INSTALL_USB_ACCESS: &str = "usbboot.install-access";
+
+/// Runs [`INSTALL_USB_ACCESS`] through the elevated helper.
+pub(crate) async fn fix(action: &str) -> Result<String, DriverError> {
+    if action != INSTALL_USB_ACCESS {
+        return Err(DriverError::Unsupported(format!("no fix named `{action}`")));
+    }
+    tokio::task::spawn_blocking(|| {
+        HelperClient::locate().and_then(|helper| helper.install_usb_access())
+    })
+    .await
+    .map_err(|error| DriverError::Other(error.to_string()))?
+    .map_err(|error| match error {
+        atlas_blockdev::BlockError::Elevation { message, fix } => {
+            DriverError::Other(format!("{message} {fix}"))
+        }
+        other => DriverError::Other(other.to_string()),
+    })
+}
 
 use crate::RpiConfig;
 use crate::boot_files::find_boot_files;
 
 pub(crate) async fn usb_access() -> HealthCheck {
     match list_boot_devices().await {
+        Ok(devices) if devices.iter().any(|device| device.needs_driver) => HealthCheck::error(
+            "usb.driver",
+            "USB boot driver",
+            "A Pi is in USB boot mode, but Windows has no WinUSB driver bound to it.",
+            "Press Fix to install the driver (one administrator prompt), then replug the board.",
+        )
+        .with_fix_action(INSTALL_USB_ACCESS),
         Ok(devices) => HealthCheck::ok(
             "usb.access",
             "USB access",
@@ -56,13 +84,10 @@ fn udev_check() -> Option<HealthCheck> {
         HealthCheck::warning(
             "usbboot.udev",
             "USB boot permissions",
-            "No udev rule for Pi boot devices was found, so USB boot may need root.",
-            format!(
-                "Create /etc/udev/rules.d/60-atlas-usbboot.rules containing `{}`, run \
-                 `sudo udevadm control --reload`, then replug the board.",
-                atlas_usbboot::LINUX_UDEV_RULE.trim()
-            ),
+            "No udev rule for Pi boot devices was found, so USB boot would need root.",
+            "Press Fix to install it (one password prompt), then replug the board.",
         )
+        .with_fix_action(INSTALL_USB_ACCESS)
     })
 }
 

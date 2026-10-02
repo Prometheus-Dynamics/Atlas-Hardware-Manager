@@ -21,9 +21,19 @@ pub struct HealthCheck {
     pub detail: String,
     /// What the user can do about it, when there is something.
     pub fix: Option<String>,
+    /// An action Atlas can run to fix this itself, passed to
+    /// [`Driver::fix`](crate::Driver::fix). Shown as a Fix button.
+    #[serde(default)]
+    pub fix_action: Option<String>,
 }
 
 impl HealthCheck {
+    /// Offers a one-click fix that runs `action` through the driver.
+    pub fn with_fix_action(mut self, action: &str) -> Self {
+        self.fix_action = Some(action.into());
+        self
+    }
+
     pub fn ok(id: &str, label: &str, detail: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -31,6 +41,7 @@ impl HealthCheck {
             status: HealthStatus::Ok,
             detail: detail.into(),
             fix: None,
+            fix_action: None,
         }
     }
 
@@ -46,6 +57,7 @@ impl HealthCheck {
             status: HealthStatus::Warning,
             detail: detail.into(),
             fix: Some(fix.into()),
+            fix_action: None,
         }
     }
 
@@ -56,6 +68,7 @@ impl HealthCheck {
             status: HealthStatus::Error,
             detail: detail.into(),
             fix: Some(fix.into()),
+            fix_action: None,
         }
     }
 }

@@ -78,6 +78,8 @@ export const api = {
   // System
   appInfo: () => invoke<AppInfo>("app_info"),
   healthChecks: () => invoke<HealthCheck[]>("health_checks"),
+  /** Runs a health check's fix action; resolves with what changed. */
+  fixHealth: (action: string) => invoke<string>("fix_health", { action }),
   getSettings: () => invoke<AppSettings>("get_settings"),
   /** Resolves true when a change applies only after restartApp(). */
   saveSettings: (settings: AppSettings) => invoke<boolean>("save_settings", { settings }),

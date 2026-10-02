@@ -204,6 +204,10 @@ impl Driver for RpiDriver {
     async fn health(&self) -> Vec<HealthCheck> {
         health::driver_checks(&self.config).await
     }
+
+    async fn fix(&self, action: &str) -> Result<String, DriverError> {
+        health::fix(action).await
+    }
 }
 
 #[cfg(test)]
@@ -215,6 +219,7 @@ mod tests {
             location: "1-2.3".into(),
             chip: Chip::Bcm2711,
             serial: serial.map(str::to_string),
+            needs_driver: false,
         }
     }
 

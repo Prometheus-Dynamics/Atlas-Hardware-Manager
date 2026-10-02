@@ -66,19 +66,7 @@ impl HelperClient {
         on_progress: &mut dyn FnMut(WriteProgress),
         cancel: &AtomicBool,
     ) -> Result<WriteReport, BlockError> {
-        let work_dir = std::env::temp_dir().join(format!(
-            "atlas-helper-{}-{}",
-            std::process::id(),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|time| time.as_nanos())
-                .unwrap_or(0)
-        ));
-        std::fs::create_dir_all(&work_dir).map_err(|error| BlockError::io(&work_dir, error))?;
-        let progress_file = work_dir.join("progress.jsonl");
-        let cancel_file = work_dir.join("cancel");
-        std::fs::write(&progress_file, b"")
-            .map_err(|error| BlockError::io(&progress_file, error))?;
+        let (work_dir, progress_file, cancel_file) = work_files()?;
 
         let mut args: Vec<OsString> = vec![
             "write".into(),
@@ -110,8 +98,56 @@ impl HelperClient {
             cancel,
         );
         let _ = std::fs::remove_dir_all(&work_dir);
-        result
+        match result? {
+            HelperMessage::Done { report } => Ok(report),
+            _ => Err(BlockError::Helper(
+                "the helper did not report a write".into(),
+            )),
+        }
     }
+
+    /// Lets this computer open Pi boot devices without root: installs the
+    /// udev rule on Linux, binds WinUSB on Windows. One elevation prompt.
+    pub fn install_usb_access(&self) -> Result<String, BlockError> {
+        let (work_dir, progress_file, cancel_file) = work_files()?;
+        let args: Vec<OsString> = vec![
+            "install-usb-access".into(),
+            "--progress".into(),
+            progress_file.clone().into(),
+        ];
+        let mut child = spawn_elevated(&self.helper, &args)?;
+        let result = follow(
+            &mut child,
+            &progress_file,
+            &cancel_file,
+            &mut |_| {},
+            &AtomicBool::new(false),
+        );
+        let _ = std::fs::remove_dir_all(&work_dir);
+        match result? {
+            HelperMessage::Fixed { message } => Ok(message),
+            _ => Err(BlockError::Helper(
+                "the helper did not report a result".into(),
+            )),
+        }
+    }
+}
+
+/// A fresh private folder holding the progress and cancel files.
+fn work_files() -> Result<(PathBuf, PathBuf, PathBuf), BlockError> {
+    let work_dir = std::env::temp_dir().join(format!(
+        "atlas-helper-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|time| time.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&work_dir).map_err(|error| BlockError::io(&work_dir, error))?;
+    let progress_file = work_dir.join("progress.jsonl");
+    let cancel_file = work_dir.join("cancel");
+    std::fs::write(&progress_file, b"").map_err(|error| BlockError::io(&progress_file, error))?;
+    Ok((work_dir, progress_file, cancel_file))
 }
 
 fn follow(
@@ -120,9 +156,9 @@ fn follow(
     cancel_file: &Path,
     on_progress: &mut dyn FnMut(WriteProgress),
     cancel: &AtomicBool,
-) -> Result<WriteReport, BlockError> {
+) -> Result<HelperMessage, BlockError> {
     let mut offset = 0u64;
-    let mut outcome: Option<Result<WriteReport, BlockError>> = None;
+    let mut outcome: Option<Result<HelperMessage, BlockError>> = None;
     loop {
         if cancel.load(Ordering::Relaxed) && !cancel_file.exists() {
             let _ = std::fs::write(cancel_file, b"cancel");
@@ -144,7 +180,9 @@ fn follow(
                 offset += line.len() as u64;
                 match serde_json::from_str::<HelperMessage>(line.trim()) {
                     Ok(HelperMessage::Progress { progress }) => on_progress(progress),
-                    Ok(HelperMessage::Done { report }) => outcome = Some(Ok(report)),
+                    Ok(done @ (HelperMessage::Done { .. } | HelperMessage::Fixed { .. })) => {
+                        outcome = Some(Ok(done));
+                    }
                     Ok(HelperMessage::Error { message }) => {
                         outcome = Some(Err(if message.contains("cancelled") {
                             BlockError::Cancelled
@@ -165,7 +203,7 @@ fn follow(
                 } else {
                     BlockError::Elevation {
                         message:
-                            "The disk writer did not run; administrator rights were not granted."
+                            "The Atlas helper did not run; administrator rights were not granted."
                                 .into(),
                         fix: elevation_fix().into(),
                     }

@@ -18,6 +18,19 @@ const CONTROL_IN_TIMEOUT: Duration = Duration::from_secs(20);
 const BULK_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
 
+/// The installed udev rules file: the rule plus a header saying who owns
+/// it. Linux packages ship it in `/usr/lib/udev/rules.d`; `atlas-helper
+/// install-usb-access` writes it to `/etc/udev/rules.d` for AppImage users.
+pub const LINUX_UDEV_RULES_FILE: &str = concat!(
+    "# Installed by Atlas Hardware Manager: lets the logged-in user USB-boot\n",
+    "# Raspberry Pi boards (BCM2835/2837/2711/2712 boot ROMs) without root.\n",
+    "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"0a5c\", ",
+    "ATTR{idProduct}==\"2711|2712|2763|2764\", MODE=\"0660\", TAG+=\"uaccess\"\n",
+);
+
+/// The Windows USB product ids that need WinUSB bound for USB boot.
+pub const BOOT_PRODUCT_IDS: [u16; 4] = [0x2763, 0x2764, 0x2711, 0x2712];
+
 /// udev rule that lets the logged-in user open Pi boot devices on Linux.
 pub const LINUX_UDEV_RULE: &str = "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"0a5c\", \
 ATTR{idProduct}==\"2711|2712|2763|2764\", MODE=\"0660\", TAG+=\"uaccess\"\n";
@@ -30,6 +43,8 @@ pub struct BootDevice {
     pub location: String,
     pub chip: Chip,
     pub serial: Option<String>,
+    /// Windows only: no WinUSB driver is bound, so it cannot be opened yet.
+    pub needs_driver: bool,
 }
 
 fn location(info: &DeviceInfo) -> String {
@@ -61,8 +76,21 @@ pub async fn list_boot_devices() -> Result<Vec<BootDevice>, UsbBootError> {
             location: location(&info),
             chip,
             serial: info.serial_number().map(str::to_string),
+            needs_driver: needs_driver(&info),
         })
         .collect())
+}
+
+#[cfg(target_os = "windows")]
+fn needs_driver(info: &DeviceInfo) -> bool {
+    !info
+        .driver()
+        .is_some_and(|driver| driver.eq_ignore_ascii_case("winusb"))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn needs_driver(_info: &DeviceInfo) -> bool {
+    false
 }
 
 fn access_error(error: &nusb::Error) -> UsbBootError {
@@ -94,8 +122,8 @@ fn access_error(error: &nusb::Error) -> UsbBootError {
 fn windows_driver_error() -> UsbBootError {
     UsbBootError::Access {
         message: "Windows has no WinUSB driver bound to the Pi's USB boot device.".into(),
-        fix: "Install the Raspberry Pi USB boot driver (from the rpiboot installer), or bind \
-              WinUSB to the \"BCM2711 Boot\" / \"BCM2712 Boot\" device with Zadig, then replug."
+        fix: "Use Fix in Settings > Host health (or reinstall Atlas) to install the driver, \
+              then replug the board."
             .into(),
     }
 }
@@ -117,11 +145,7 @@ impl UsbBootTransport {
     /// Opens a boot device and returns it with its serial string index,
     /// which tells the two boot rounds apart (0 or 3 means round one).
     pub async fn open(info: &DeviceInfo) -> Result<(Self, u8), UsbBootError> {
-        #[cfg(target_os = "windows")]
-        if !info
-            .driver()
-            .is_some_and(|driver| driver.eq_ignore_ascii_case("winusb"))
-        {
+        if needs_driver(info) {
             return Err(windows_driver_error());
         }
 

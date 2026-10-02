@@ -102,6 +102,7 @@ pub fn run() {
             commands::releases::remove_release_source,
             commands::system::app_info,
             commands::system::health_checks,
+            commands::system::fix_health,
             commands::system::get_settings,
             commands::system::save_settings,
             commands::system::restart_app,

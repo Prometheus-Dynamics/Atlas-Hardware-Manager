@@ -126,10 +126,10 @@ jobs:
         with:
           name: atlas-${{ runner.os }}
           path: |
-            target/release/bundle/**/*.deb
-            target/release/bundle/**/*.rpm
-            target/release/bundle/**/*.AppImage
-            target/release/bundle/**/*.msi
-            target/release/bundle/**/*.exe
-            target/release/bundle/**/*.dmg
+            target/*/release/bundle/**/*.deb
+            target/*/release/bundle/**/*.rpm
+            target/*/release/bundle/**/*.AppImage
+            target/*/release/bundle/**/*.msi
+            target/*/release/bundle/**/*.exe
+            target/*/release/bundle/**/*.dmg
           if-no-files-found: error

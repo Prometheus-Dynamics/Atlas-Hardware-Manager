@@ -1,6 +1,23 @@
 <script lang="ts">
+  import { api, errorText } from "$lib/api/client";
   import Panel from "$lib/components/common/Panel.svelte";
   import { system } from "$lib/stores/system.svelte";
+  import { toasts } from "$lib/stores/toasts.svelte";
+
+  let fixing = $state<string | null>(null);
+
+  async function runFix(action: string) {
+    if (fixing) return;
+    fixing = action;
+    try {
+      toasts.success(await api.fixHealth(action));
+      await system.checkHealth();
+    } catch (error) {
+      toasts.error(errorText(error));
+    } finally {
+      fixing = null;
+    }
+  }
 
   const style = {
     ok: { icon: "fa-circle-check", cls: "text-success-400" },
@@ -24,6 +41,17 @@
           <p class="text-surface-300">{check.detail}</p>
           {#if check.fix}
             <p class="mt-1 text-surface-400"><span class="micro-label mr-1">Fix</span>{check.fix}</p>
+          {/if}
+          {#if check.fix_action}
+            {@const action = check.fix_action}
+            <button
+              type="button"
+              class="btn btn-sm preset-filled-primary-500 mt-2"
+              disabled={fixing !== null}
+              onclick={() => runFix(action)}
+            >
+              <i class="fa-solid {fixing === action ? 'fa-circle-notch fa-spin' : 'fa-wrench'}" aria-hidden="true"></i>Fix
+            </button>
           {/if}
         </div>
       </li>
