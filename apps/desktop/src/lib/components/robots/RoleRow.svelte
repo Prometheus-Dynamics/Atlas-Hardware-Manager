@@ -1,5 +1,6 @@
 <script lang="ts">
   import { keyString, type RobotRole } from "$lib/api/client";
+  import Button from "$lib/components/common/Button.svelte";
   import { deviceName } from "$lib/format";
   import { devices } from "$lib/stores/devices.svelte";
 
@@ -23,31 +24,22 @@
   }
 </script>
 
-<li class="grid grid-cols-[1fr_7rem_auto] gap-2 rounded-base border border-surface-800 p-2">
-  <label class="flex flex-col gap-0.5">
-    <span class="micro-label">Role</span>
-    <input class="field" bind:value={role.role} placeholder="e.g. front camera" aria-label="Role {index + 1} name" />
-  </label>
-  <label class="flex flex-col gap-0.5">
-    <span class="micro-label">Family</span>
-    <select class="field" value={role.family} onchange={(e) => setFamily(e.currentTarget.value)}>
+<div class="glass flex flex-col gap-2 p-3">
+  <div class="grid grid-cols-[1fr_8rem_auto] items-center gap-2">
+    <input class="input" bind:value={role.role} placeholder="Role, e.g. front camera" aria-label="Role {index + 1} name" />
+    <select class="select" value={role.family} onchange={(e) => setFamily(e.currentTarget.value)} aria-label="Role {index + 1} family">
       {#each families as family (family)}
         <option value={family}>{family}</option>
       {/each}
     </select>
-  </label>
-  <button type="button" class="mt-4 self-center text-surface-400 hover:text-error-300" onclick={onremove} aria-label="Remove role {role.role || index + 1}">
-    <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-  </button>
-  <label class="col-span-3 flex flex-col gap-0.5">
-    <span class="micro-label">Device</span>
-    <select class="field" value={deviceValue} onchange={(e) => setDevice(e.currentTarget.value)}>
-      <option value="">Not assigned</option>
-      {#each candidates as d (keyString(d.key))}
-        <option value={keyString(d.key)}>
-          {deviceName(d)} · {d.key.serial}{d.presence === "online" ? "" : " (offline)"}{d.robot && d.robot !== "" ? ` · ${d.robot}` : ""}
-        </option>
-      {/each}
-    </select>
-  </label>
-</li>
+    <Button variant="ghost" size="sm" icon="x" label="Remove role {role.role || index + 1}" onclick={onremove} />
+  </div>
+  <select class="select" value={deviceValue} onchange={(e) => setDevice(e.currentTarget.value)} aria-label="Role {index + 1} device">
+    <option value="">No device yet</option>
+    {#each candidates as d (keyString(d.key))}
+      <option value={keyString(d.key)}>
+        {deviceName(d)} · {d.key.serial}{d.presence === "online" ? "" : " (offline)"}{d.robot ? ` · ${d.robot}` : ""}
+      </option>
+    {/each}
+  </select>
+</div>

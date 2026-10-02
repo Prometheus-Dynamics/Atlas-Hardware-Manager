@@ -8,10 +8,10 @@
 
 <svelte:head><title>Settings · Atlas</title></svelte:head>
 
-<div class="flex flex-col gap-3">
-  <PageHeader eyebrow="Settings" title="Settings and host health" />
-  <div class="grid grid-cols-1 items-start gap-3 xl:grid-cols-2">
-    <div class="flex flex-col gap-3">
+<div class="flex flex-col gap-5">
+  <PageHeader title="Settings" subtitle="This computer's health, your preferences, and where Atlas keeps its files." />
+  <div class="grid grid-cols-1 items-start gap-4 xl:grid-cols-2">
+    <div class="flex flex-col gap-4">
       <HealthPanel />
       <AboutPanel />
     </div>

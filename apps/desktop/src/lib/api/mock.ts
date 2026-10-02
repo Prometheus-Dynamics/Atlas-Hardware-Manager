@@ -78,11 +78,13 @@ export const mockApi: Api = {
     reply(() => {
       const sim = simDevice(key);
       if (stored(key).presence !== "online") throw `${keyString(key)} is offline; reconnect it or run a scan`;
+      if (sim?.actions) return sim.actions;
       if (!sim || sim.mode === "recovery") throw `${keyString(key)} does not support actions`;
       return ACTIONS;
     }),
   runDeviceAction: (key, action) =>
     reply(() => {
+      if (simDevice(key)?.actions?.some((a) => a.id === action)) return;
       if (!ACTIONS.some((a) => a.id === action)) throw `${keyString(key)} has no action named \`${action}\``;
     }),
 

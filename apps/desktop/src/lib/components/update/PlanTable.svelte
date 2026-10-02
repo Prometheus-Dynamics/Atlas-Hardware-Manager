@@ -1,29 +1,33 @@
 <script lang="ts">
   import type { JobPlan, PlannedDevice } from "$lib/api/client";
   import { keyString } from "$lib/api/client";
+  import Icon from "$lib/components/common/Icon.svelte";
+  import Pill from "$lib/components/common/Pill.svelte";
+  import type { Tone } from "$lib/format";
 
   let { plan }: { plan: JobPlan } = $props();
 
-  function order(device: PlannedDevice): { text: string; cls: string } {
-    if (device.canary) return { text: "first (staged)", cls: "text-warning-300" };
-    if (device.plan.concurrency.kind === "exclusive")
-      return { text: `one at a time (${device.plan.concurrency.resource})`, cls: "text-secondary-200" };
-    return { text: "parallel", cls: "text-surface-300" };
+  function order(device: PlannedDevice): { text: string; tone: Tone } {
+    if (device.canary) return { text: "Goes first", tone: "warning" };
+    if (device.plan.concurrency.kind === "exclusive") return { text: "One at a time", tone: "info" };
+    return { text: "In parallel", tone: "neutral" };
   }
 </script>
 
-<ul class="divide-y divide-surface-800 rounded-base border border-surface-800">
+<ul class="flex flex-col gap-1.5">
   {#each plan.devices as device (keyString(device.device))}
     {@const o = order(device)}
-    <li class="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 px-3 py-2 text-xs">
-      <span class="truncate font-medium text-surface-50">{device.name}</span>
-      <span class="font-mono text-[0.7rem]">
-        <span class="text-surface-400">{device.from_version ?? "?"}</span>
-        <i class="fa-solid fa-arrow-right mx-1 text-[0.55rem] text-surface-500" aria-hidden="true"></i>
-        <span class="text-surface-50">{device.release.version}</span>
-      </span>
-      <span class="text-[0.65rem] text-surface-400">{device.plan.summary}</span>
-      <span class="text-right text-[0.65rem] {o.cls}">{o.text}</span>
+    <li class="glass flex flex-col gap-1 px-3.5 py-2.5">
+      <div class="flex items-center justify-between gap-3">
+        <span class="truncate text-[13px] font-medium text-fg">{device.name}</span>
+        <Pill tone={o.tone} label={o.text} title={device.plan.concurrency.kind === "exclusive" ? device.plan.concurrency.resource : undefined} />
+      </div>
+      <div class="flex items-center gap-1.5 text-[12px]">
+        <span class="mono text-fg-faint">{device.from_version ?? "?"}</span>
+        <Icon name="arrow-right" size={12} class="text-fg-faint" />
+        <span class="mono truncate text-fg">{device.release.version}</span>
+      </div>
+      <p class="text-[12px] text-fg-muted">{device.plan.summary}</p>
     </li>
   {/each}
 </ul>

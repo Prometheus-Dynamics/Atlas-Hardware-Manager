@@ -21,10 +21,18 @@ const RELEASE_FILTERS = [
   { name: "Any file", extensions: ["*"] },
 ];
 
+const BROWSER_PICKS = [
+  "/home/atlas/Downloads/helios-raze-2026.3.1-rc1.img.xz",
+  "/home/atlas/builds/raze-custom.img",
+];
+let picks = 0;
+
 /** Asks for a release file; null when the user cancels. */
 export async function pickReleaseFile(): Promise<string | null> {
   if (!isTauri) {
-    return window.prompt("Path to a release file (browser preview)", "/home/atlas/builds/custom.img.xz");
+    // Browser preview: no native picker, so pretend the user chose a build.
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    return BROWSER_PICKS[picks++ % BROWSER_PICKS.length];
   }
   const { open } = await import("@tauri-apps/plugin-dialog");
   const picked = await open({ multiple: false, directory: false, filters: RELEASE_FILTERS });

@@ -1,8 +1,10 @@
 <script lang="ts">
   import { api, openExternal, type ReleaseEntry } from "$lib/api/client";
+  import Button from "$lib/components/common/Button.svelte";
   import ConfirmButton from "$lib/components/common/ConfirmButton.svelte";
+  import Icon from "$lib/components/common/Icon.svelte";
+  import Pill from "$lib/components/common/Pill.svelte";
   import ProgressBar from "$lib/components/common/ProgressBar.svelte";
-  import Tag from "$lib/components/common/Tag.svelte";
   import { bytes, type Tone } from "$lib/format";
   import { releases } from "$lib/stores/releases.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
@@ -10,7 +12,11 @@
   let { entry }: { entry: ReleaseEntry } = $props();
 
   const progress = $derived(releases.downloads.get(entry.id));
-  const channelTone: Record<ReleaseEntry["channel"], Tone> = { stable: "success", beta: "info", local: "neutral" };
+  const channel: Record<ReleaseEntry["channel"], { label: string; tone: Tone }> = {
+    stable: { label: "Stable", tone: "success" },
+    beta: { label: "Beta", tone: "info" },
+    local: { label: "Local file", tone: "neutral" },
+  };
 
   async function remove() {
     await api.removeRelease(entry.id);
@@ -19,47 +25,55 @@
   }
 </script>
 
-<tr class="border-b border-surface-800/70 text-xs last:border-b-0">
-  <td class="px-3 py-1.5 font-mono text-surface-50">{entry.version}</td>
-  <td class="px-2 py-1.5"><Tag tone={channelTone[entry.channel]} label={entry.channel} /></td>
-  <td class="px-2 py-1.5">
+<div class="row">
+  <div class="min-w-0">
+    <p class="mono truncate text-[13px] font-medium text-fg">{entry.version}</p>
+    <p class="truncate text-[12px] text-fg-faint" title={entry.path ?? entry.artifact_name}>
+      <span class="mono">{entry.artifact_name}</span> · {entry.origin.kind === "remote" ? `from ${entry.origin.source}` : "added by you"}{entry.boards.length ? ` · ${entry.boards.join(", ")}` : ""}
+    </p>
+  </div>
+  <div class="flex flex-wrap items-center gap-1.5">
+    <Pill tone={channel[entry.channel].tone} label={channel[entry.channel].label} />
     {#if entry.signed}
-      <Tag tone="success" icon="fa-signature" label="signed" />
+      <Pill tone="success" icon="shield-check" label="Signed" />
     {:else}
-      <Tag tone="warning" icon="fa-triangle-exclamation" label="unsigned" title="No signature: Atlas cannot verify where this file came from" />
+      <Pill tone="warning" icon="alert-triangle" label="Unsigned" title="No signature: Atlas can't verify where this file came from" />
     {/if}
-  </td>
-  <td class="px-2 py-1.5">
-    <span class="block truncate font-mono text-[0.68rem] text-surface-300" title={entry.path ?? entry.artifact_name}>{entry.artifact_name}</span>
-    <span class="block text-[0.6rem] text-surface-500">
-      {entry.origin.kind === "remote" ? `from ${entry.origin.source}` : "local file"}{entry.boards.length ? ` · ${entry.boards.join(", ")}` : ""}
-    </span>
-  </td>
-  <td class="px-2 py-1.5 text-right text-surface-300">{bytes(entry.size_bytes)}</td>
-  <td class="w-40 px-2 py-1.5">
+  </div>
+  <span class="text-right text-[12.5px] tabular-nums text-fg-muted">{bytes(entry.size_bytes)}</span>
+  <div class="flex min-w-0 items-center justify-end">
     {#if progress}
-      <ProgressBar value={progress.total ? progress.downloaded / progress.total : null} label="Download progress" />
-      <span class="text-[0.6rem] text-surface-400">
-        {bytes(progress.downloaded)}{progress.total ? ` of ${bytes(progress.total)}` : ""}
-      </span>
+      <div class="flex w-full flex-col gap-1">
+        <ProgressBar value={progress.total ? progress.downloaded / progress.total : null} label="Download progress" size={5} />
+        <span class="text-[11.5px] tabular-nums text-fg-faint">
+          {bytes(progress.downloaded)}{progress.total ? ` of ${bytes(progress.total)}` : ""}
+        </span>
+      </div>
     {:else if entry.path}
-      <span class="text-success-400"><i class="fa-solid fa-hard-drive mr-1" aria-hidden="true"></i>on disk</span>
+      <span class="flex items-center gap-1.5 text-[12.5px] text-ok-fg"><Icon name="device-sd-card" size={15} />On this computer</span>
     {:else}
-      <button type="button" class="btn btn-sm preset-tonal" onclick={() => releases.download(entry.id)}>
-        <i class="fa-solid fa-download" aria-hidden="true"></i>Download
-      </button>
+      <Button size="sm" icon="download" onclick={() => releases.download(entry.id)}>Download</Button>
     {/if}
-  </td>
-  <td class="px-2 py-1.5">
+  </div>
+  <div class="flex items-center justify-end gap-1">
     {#if entry.notes_url}
-      <button type="button" class="text-secondary-300 hover:underline" onclick={() => openExternal(entry.notes_url!)}>
-        Notes <i class="fa-solid fa-arrow-up-right-from-square text-[0.55rem]" aria-hidden="true"></i>
-      </button>
+      <Button variant="ghost" size="sm" iconRight="external-link" onclick={() => openExternal(entry.notes_url!)}>Notes</Button>
     {/if}
-  </td>
-  <td class="px-3 py-1.5 text-right">
-    <ConfirmButton action={remove} prompt="Remove?" confirmLabel="Remove" class="text-surface-500 hover:text-error-300">
-      <i class="fa-solid fa-trash" aria-hidden="true"></i><span class="sr-only">Remove {entry.version}</span>
-    </ConfirmButton>
-  </td>
-</tr>
+    <ConfirmButton action={remove} size="sm" variant="ghost" icon="trash" label="Remove {entry.version}" prompt="Remove?" confirmLabel="Remove" />
+  </div>
+</div>
+
+<style>
+  .row {
+    display: grid;
+    grid-template-columns: minmax(200px, 1.6fr) minmax(170px, 1fr) 70px minmax(140px, 0.8fr) minmax(110px, auto);
+    align-items: center;
+    gap: 16px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    transition: background var(--t-fast);
+  }
+  .row:hover {
+    background: var(--glass);
+  }
+</style>

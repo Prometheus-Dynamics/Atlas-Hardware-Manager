@@ -1,9 +1,10 @@
 import type { RobotState } from "$lib/api/client";
 import type { Tone } from "$lib/format";
+import type { IconName } from "$lib/ui/icons";
 
-export const ROBOT_STATE: Record<RobotState, { label: string; tone: Tone; icon: string }> = {
-  ready: { label: "ready", tone: "success", icon: "fa-circle-check" },
-  "needs-update": { label: "needs update", tone: "warning", icon: "fa-arrow-up-from-bracket" },
-  "missing-devices": { label: "missing devices", tone: "error", icon: "fa-plug-circle-xmark" },
-  unassigned: { label: "roles unassigned", tone: "neutral", icon: "fa-circle-question" },
+export const ROBOT_STATE: Record<RobotState, { label: string; tone: Tone; icon: IconName }> = {
+  ready: { label: "Ready", tone: "success", icon: "circle-check" },
+  "needs-update": { label: "Needs updates", tone: "warning", icon: "arrow-up" },
+  "missing-devices": { label: "Devices missing", tone: "error", icon: "plug-connected-x" },
+  unassigned: { label: "Roles to fill", tone: "neutral", icon: "circle-dashed" },
 };

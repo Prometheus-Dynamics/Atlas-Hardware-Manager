@@ -1,39 +1,114 @@
 <script lang="ts">
-  import type { DeviceJobStatus, UpdateStep } from "$lib/api/client";
-  import { STEP_LABELS } from "$lib/format";
+  // Stage cards for one device's job: done (tick), current (red tint,
+  // spinner, percent), next (quiet). Failed stages turn rose.
+  import type { DeviceJobState } from "$lib/api/client";
+  import { stageStates, stepLabel, isRecoveryPlan } from "$lib/present";
+  import { pop } from "$lib/ui/motion";
+  import Icon from "./Icon.svelte";
 
-  let {
-    steps,
-    current,
-    status,
-  }: { steps: UpdateStep[]; current: UpdateStep | null; status: DeviceJobStatus } = $props();
+  let { job }: { job: DeviceJobState } = $props();
 
-  const index = $derived(current ? steps.indexOf(current) : -1);
-  const done = $derived(status.status === "verified");
-  const failed = $derived(["failed", "rolled-back", "needs-recovery"].includes(status.status));
-
-  function state(i: number): "done" | "active" | "failed" | "todo" {
-    if (done || i < index) return "done";
-    if (i === index) return failed ? "failed" : status.status === "running" ? "active" : "todo";
-    return "todo";
-  }
-
-  const cls = {
-    done: "border-success-600 text-success-400",
-    active: "border-secondary-400 text-secondary-200 bg-secondary-500/15",
-    failed: "border-error-500 text-error-300 bg-error-500/15",
-    todo: "border-surface-700 text-surface-500",
-  };
+  const stages = $derived(stageStates(job));
+  const recovery = $derived(isRecoveryPlan(job.plan));
 </script>
 
-<ol class="flex items-center gap-1" aria-label="Update steps">
-  {#each steps as step, i (step)}
-    {@const s = state(i)}
-    <li
-      class="rounded-base border px-1.5 text-[0.6rem] uppercase tracking-[0.12em] {cls[s]}"
-      aria-current={s === "active" ? "step" : undefined}
-    >
-      {#if s === "done"}<i class="fa-solid fa-check mr-0.5 text-[0.5rem]" aria-hidden="true"></i>{/if}{STEP_LABELS[step]}
+<ol class="stages" aria-label="Stages">
+  {#each stages as stage, i (stage.step)}
+    <li class="stage {stage.state}" aria-current={stage.state === "current" ? "step" : undefined}>
+      <span class="badge">
+        {#if stage.state === "done"}
+          <span class="inline-flex" in:pop><Icon name="check" size={14} stroke={2.5} /></span>
+        {:else if stage.state === "current"}
+          <Icon name="loader-2" size={14} stroke={2.25} class="spin" />
+        {:else if stage.state === "failed"}
+          <Icon name="x" size={14} stroke={2.5} />
+        {:else}
+          <span class="num">{i + 1}</span>
+        {/if}
+      </span>
+      <span class="name">{stepLabel(stage.step, recovery)}</span>
+      <span class="meta">
+        {#if stage.state === "done"}Done{:else if stage.state === "current"}{Math.round(job.fraction * 100)}%{:else if stage.state === "failed"}Stopped{:else}Next{/if}
+      </span>
     </li>
   {/each}
 </ol>
+
+<style>
+  .stages {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+    gap: 8px;
+  }
+  .stage {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    border-radius: var(--r-card);
+    background: var(--glass);
+    border: 0.5px solid var(--glass-border);
+    transition:
+      background var(--t-med),
+      border-color var(--t-med);
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--glass-strong);
+    color: var(--fg-faint);
+  }
+  .num {
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg-muted);
+  }
+  .meta {
+    font-size: 12px;
+    color: var(--fg-faint);
+  }
+  .done .badge {
+    background: var(--ok-bg);
+    color: var(--ok-fg);
+  }
+  .done .name {
+    color: var(--fg);
+  }
+  .current {
+    background: var(--accent-tint);
+    border-color: var(--accent-tint-strong);
+  }
+  .current .badge {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  .current .name {
+    color: var(--fg);
+  }
+  .current .meta {
+    color: var(--accent-text-strong);
+    font-variant-numeric: tabular-nums;
+  }
+  .failed {
+    background: var(--err-bg);
+    border-color: var(--err-bg);
+  }
+  .failed .badge {
+    background: var(--err);
+    color: var(--bg);
+  }
+  .failed .meta {
+    color: var(--err-fg);
+  }
+  .upcoming {
+    opacity: 0.75;
+  }
+</style>

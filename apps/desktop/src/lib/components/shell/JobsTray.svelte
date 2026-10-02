@@ -1,12 +1,32 @@
 <script lang="ts">
+  // The persistent jobs tray: running jobs at a glance, a click from detail.
   import { goto } from "$app/navigation";
+  import { slide } from "svelte/transition";
+  import { cubicOut } from "svelte/easing";
+  import { keyString, type JobRecord } from "$lib/api/client";
+  import Button from "$lib/components/common/Button.svelte";
+  import Icon from "$lib/components/common/Icon.svelte";
   import ProgressBar from "$lib/components/common/ProgressBar.svelte";
-  import { jobStatusLabel, jobStatusTone, overallFraction, STEP_LABELS, toneText } from "$lib/format";
+  import StageDots from "$lib/components/common/StageDots.svelte";
+  import StatusDot from "$lib/components/common/StatusDot.svelte";
+  import { overallFraction } from "$lib/format";
+  import { jobTitle, outcomeText } from "$lib/present";
   import { jobs } from "$lib/stores/jobs.svelte";
   import { ui } from "$lib/stores/ui.svelte";
+  import { ms } from "$lib/ui/motion";
 
   const running = $derived(jobs.running);
   const last = $derived(jobs.sorted.find((j) => j.state !== "running"));
+
+  function progress(job: JobRecord): number {
+    if (job.devices.length === 0) return 0;
+    return job.devices.reduce((sum, d) => sum + overallFraction(d), 0) / job.devices.length;
+  }
+
+  function problems(job: JobRecord): number {
+    const s = job.summary;
+    return s ? s.failed + s.rolled_back + s.needs_recovery : 0;
+  }
 
   function openJob(id: number) {
     ui.selectedJob = id;
@@ -14,64 +34,88 @@
   }
 </script>
 
-<section class="shrink-0 border-t border-surface-800 bg-surface-900/80" aria-label="Jobs tray">
-  <div class="flex h-8 items-center gap-3 px-4 text-xs">
-    <span class="micro-label">Jobs</span>
+{#if running.length > 0 || last}
+  <section class="tray glass-layer" aria-label="Jobs" transition:slide={{ duration: ms(220), easing: cubicOut }}>
     {#if running.length > 0}
-      <span class="text-secondary-200">
-        <i class="fa-solid fa-circle-notch fa-spin mr-1" aria-hidden="true"></i>{running.length} running
-      </span>
-      <button
-        type="button"
-        class="ml-auto text-[0.65rem] uppercase tracking-[0.14em] text-surface-400 hover:text-surface-100"
-        onclick={() => (ui.trayOpen = !ui.trayOpen)}
-        aria-expanded={ui.trayOpen}
-      >
-        {ui.trayOpen ? "Collapse" : "Expand"}
-        <i class="fa-solid {ui.trayOpen ? 'fa-chevron-down' : 'fa-chevron-up'} ml-1" aria-hidden="true"></i>
-      </button>
-    {:else if last}
-      <button type="button" class="truncate text-surface-400 hover:text-surface-100" onclick={() => openJob(last.id)}>
-        Idle · last job #{last.id}
-        {#if last.summary}
-          — {last.summary.verified} verified{#if last.summary.failed + last.summary.rolled_back + last.summary.needs_recovery > 0}, <span class="text-warning-400">{last.summary.failed + last.summary.rolled_back + last.summary.needs_recovery} with problems</span>{/if}
-        {/if}
-      </button>
-    {:else}
-      <span class="text-surface-500">Idle</span>
-    {/if}
-  </div>
-
-  {#if running.length > 0 && ui.trayOpen}
-    <div class="max-h-44 overflow-y-auto border-t border-surface-800 px-4 py-2">
       {#each running as job (job.id)}
-        <div class="mb-2 last:mb-0">
-          <button
-            type="button"
-            class="mb-1 text-[0.65rem] uppercase tracking-[0.14em] text-surface-300 hover:text-surface-50"
-            onclick={() => openJob(job.id)}
-          >
-            Job #{job.id} · {job.devices.length} device{job.devices.length === 1 ? "" : "s"}
-            <i class="fa-solid fa-arrow-right ml-1" aria-hidden="true"></i>
+        {@const p = progress(job)}
+        <div class="row">
+          <StatusDot state="busy" label="Running" />
+          <button type="button" class="min-w-0 truncate text-left text-[13px] font-medium text-fg hover:underline" onclick={() => openJob(job.id)}>
+            {jobTitle(job)}
           </button>
-          <ul class="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-x-4 gap-y-1">
-            {#each job.devices as state (state.device.family + state.device.serial)}
-              {@const tone = jobStatusTone(state.status)}
-              <li class="grid grid-cols-[7rem_1fr_4.5rem] items-center gap-2 text-xs">
-                <span class="truncate text-surface-200" title={state.name}>{state.name}</span>
-                <ProgressBar
-                  value={overallFraction(state)}
-                  tone={tone === "error" ? "error" : tone === "warning" ? "warning" : tone === "success" ? "success" : "primary"}
-                  label="{state.name} progress"
-                />
-                <span class="truncate text-right text-[0.65rem] {toneText[tone]}">
-                  {state.status.status === "running" && state.step ? STEP_LABELS[state.step] : jobStatusLabel(state.status)}
+          {#if job.devices.length === 1}<StageDots job={job.devices[0]} />{/if}
+          <span class="flex-1"><ProgressBar value={p} size={5} label="{jobTitle(job)} progress" /></span>
+          <span class="w-10 text-right text-[12.5px] tabular-nums text-accent-text">{Math.round(p * 100)}%</span>
+          {#if job.devices.length > 1}
+            <Button
+              variant="ghost"
+              size="sm"
+              icon={ui.trayOpen ? "chevron-down" : "chevron-up"}
+              label={ui.trayOpen ? "Hide devices" : "Show devices"}
+              onclick={() => (ui.trayOpen = !ui.trayOpen)}
+            />
+          {/if}
+          <Button variant="ghost" size="sm" iconRight="arrow-right" onclick={() => openJob(job.id)}>Open</Button>
+        </div>
+        {#if ui.trayOpen && job.devices.length > 1}
+          <ul class="devices" transition:slide={{ duration: ms(220), easing: cubicOut }}>
+            {#each job.devices as state (keyString(state.device))}
+              <li class="flex items-center gap-3 text-[12.5px]">
+                <span class="w-32 truncate text-fg-muted" title={state.name}>{state.name}</span>
+                <StageDots job={state} />
+                <span class="flex-1"><ProgressBar value={overallFraction(state)} size={4} label="{state.name} progress" /></span>
+                <span class="w-24 truncate text-right text-fg-faint">
+                  {state.status.status === "running" ? `${Math.round(overallFraction(state) * 100)}%` : state.status.status === "verified" ? "Verified" : outcomeText(state)}
                 </span>
               </li>
             {/each}
           </ul>
-        </div>
+        {/if}
       {/each}
-    </div>
-  {/if}
-</section>
+    {:else if last}
+      <button type="button" class="row idle" onclick={() => openJob(last.id)}>
+        <Icon
+          name={problems(last) > 0 ? "alert-circle" : "circle-check"}
+          size={16}
+          class={problems(last) > 0 ? "text-err-fg" : "text-ok-fg"}
+        />
+        <span class="truncate text-[12.5px] text-fg-muted">
+          {jobTitle(last)}{#if last.summary}{` · ${last.summary.verified} verified`}{#if problems(last)}, <span class="text-err-fg">{problems(last)} didn't finish</span>{/if}{/if}
+        </span>
+        <span class="ml-auto text-[12px] text-fg-faint">Nothing running</span>
+      </button>
+    {/if}
+  </section>
+{/if}
+
+<style>
+  .tray {
+    margin: 0 12px 12px;
+    padding: 4px 6px;
+    border-radius: var(--r-card);
+    flex-shrink: 0;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 40px;
+    padding: 0 8px 0 12px;
+  }
+  .row.idle {
+    width: 100%;
+    text-align: left;
+    border-radius: 10px;
+    transition: background var(--t-fast);
+  }
+  .row.idle:hover {
+    background: var(--glass);
+  }
+  .devices {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 12px 12px 32px;
+  }
+</style>

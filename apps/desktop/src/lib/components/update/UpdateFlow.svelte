@@ -1,59 +1,25 @@
 <script lang="ts">
-  // The one update flow, shared by the inventory selection, the device
-  // panel, and robot "Make ready": choose releases, preview the plan, start.
-  import {
-    api,
-    errorText,
-    keyString,
-    type JobPlan,
-    type ReleaseChoice,
-    type StagedRollout,
-    type UpdateRequestInput,
-  } from "$lib/api/client";
-  import { primaryVersion, sentence } from "$lib/format";
+  // The update flow for a selection or robot "Make ready": choose releases,
+  // preview the plan, start. Recovery devices use the Flash tab instead.
+  import { keyString, type StagedRollout, type UpdateRequestInput } from "$lib/api/client";
+  import Button from "$lib/components/common/Button.svelte";
+  import Icon from "$lib/components/common/Icon.svelte";
+  import SegmentedControl from "$lib/components/common/SegmentedControl.svelte";
+  import { primaryVersion } from "$lib/format";
   import { devices } from "$lib/stores/devices.svelte";
-  import { releases } from "$lib/stores/releases.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
+  import { rise } from "$lib/ui/motion";
   import PlanTable from "./PlanTable.svelte";
   import ReleasePicker from "./ReleasePicker.svelte";
+  import { UpdateDraft } from "./updateDraft.svelte";
 
   let { request, onstarted }: { request: UpdateRequestInput; onstarted?: (job: number) => void } = $props();
 
   // The request is the starting point; edits here stay local to the flow.
   // svelte-ignore state_referenced_locally
-  const initial = request;
-  const keys = initial.devices;
-  const records = $derived(keys.map((k) => devices.get(k)));
-  const families = [...new Set(keys.map((k) => k.family))].sort();
+  const draft = new UpdateDraft(request);
+  const records = $derived(draft.keys.map((k) => devices.get(k)));
   const recover = $derived(records.length > 0 && records.every((r) => r?.identity.mode === "recovery"));
-  const verb = $derived(recover ? "Recover" : "Update");
-
-  function defaultChoice(family: string): ReleaseChoice {
-    const given = initial.releases[family];
-    if (given) {
-      const match = releases.forFamily(family).find((e) => e.id === given.release_id || (!given.release_id && e.version === given.version));
-      return match ? { version: match.version, release_id: match.id } : { version: given.version, release_id: null };
-    }
-    const entries = releases.forFamily(family);
-    const preferred = entries.find((e) => e.signed && e.channel === "stable") ?? entries[0];
-    return preferred ? { version: preferred.version, release_id: preferred.id } : { version: "", release_id: null };
-  }
-
-  let choices = $state<Record<string, ReleaseChoice>>(Object.fromEntries(families.map((f) => [f, defaultChoice(f)])));
-  let staged = $state<StagedRollout>(initial.staged);
-  let plan = $state<JobPlan | null>(null);
-  let planError = $state<string | null>(null);
-  let planning = $state(false);
-  let starting = $state(false);
-  /** The last start failed a checksum; offer "download again" or "flash anyway". */
-  let checksumFailed = $state(false);
-
-  const missing = $derived(families.filter((f) => !choices[f]?.version.trim()));
-  const unsigned = $derived(
-    families
-      .map((f) => releases.entries.find((e) => e.id === choices[f]?.release_id))
-      .filter((e) => e && !e.signed),
-  );
+  const count = $derived(draft.plan ? draft.plan.devices.length : draft.keys.length);
 
   function currentVersions(family: string): string[] {
     return records
@@ -62,159 +28,131 @@
       .filter((v): v is string => !!v);
   }
 
-  function buildRequest(ignoreChecksum = false): UpdateRequestInput {
-    const picked: Record<string, ReleaseChoice> = {};
-    for (const family of families) {
-      const c = choices[family];
-      picked[family] = {
-        version: c.version.trim(),
-        release_id: c.release_id ?? null,
-        ignore_checksum: ignoreChecksum && !!c.release_id,
-      };
-    }
-    return { devices: keys, releases: picked, staged };
-  }
-
-  // Re-plan whenever the choices change, so the preview is always current.
-  let generation = 0;
-  $effect(() => {
-    const next = buildRequest();
-    if (missing.length > 0) {
-      plan = null;
-      planError = null;
-      return;
-    }
-    const mine = ++generation;
-    planning = true;
-    const timer = setTimeout(async () => {
-      try {
-        const result = await api.planUpdate(next);
-        if (mine === generation) {
-          plan = result;
-          planError = null;
-        }
-      } catch (error) {
-        if (mine === generation) {
-          plan = null;
-          planError = sentence(errorText(error));
-        }
-      } finally {
-        if (mine === generation) planning = false;
-      }
-    }, 200);
-    return () => clearTimeout(timer);
-  });
-
   async function start(ignoreChecksum = false) {
-    if (starting || !plan) return;
-    starting = true;
-    checksumFailed = false;
-    try {
-      const job = await api.startUpdate(buildRequest(ignoreChecksum));
-      toasts.info(`Job #${job} started: ${plan.devices.length} device${plan.devices.length === 1 ? "" : "s"}.`);
-      onstarted?.(job);
-    } catch (error) {
-      const text = errorText(error);
-      checksumFailed = text.includes("SHA-256");
-      planError = sentence(text);
-    } finally {
-      starting = false;
-    }
+    const job = await draft.start(ignoreChecksum);
+    if (job !== null) onstarted?.(job);
   }
 
-  const stagedOptions: { value: StagedRollout; label: string; hint: string }[] = [
-    { value: "auto", label: "Auto", hint: "One device first when a family has three or more" },
-    { value: "on", label: "On", hint: "One device per family first; the rest wait for it to verify" },
-    { value: "off", label: "Off", hint: "All devices at once, within resource limits" },
+  const stagedOptions: { value: StagedRollout; label: string; title: string }[] = [
+    { value: "auto", label: "Auto", title: "One device first when a family has three or more" },
+    { value: "on", label: "One first", title: "One device per family first; the rest wait for it to verify" },
+    { value: "off", label: "All at once", title: "All devices at once, within resource limits" },
   ];
 </script>
 
-<div class="flex flex-col gap-4">
-  <section>
-    <p class="micro-label mb-1">Devices</p>
-    <ul class="flex flex-wrap gap-1">
-      {#each keys as key (keyString(key))}
+<div class="flex flex-col gap-6">
+  <section class="flex flex-col gap-2">
+    <h3 class="section-title">Devices</h3>
+    <ul class="flex flex-wrap gap-1.5">
+      {#each draft.keys as key (keyString(key))}
         {@const record = devices.get(key)}
-        <li class="rounded-base border border-surface-700 px-1.5 text-[0.7rem] {record?.presence === 'online' ? 'text-surface-200' : 'text-error-300'}">
-          {devices.nameOf(key)}{record?.presence === "online" ? "" : " (offline)"}
+        {@const online = record?.presence === "online"}
+        <li class="chip" class:offline={!online}>
+          <span class="dot" class:on={online}></span>{devices.nameOf(key)}{online ? "" : " · offline"}
         </li>
       {/each}
     </ul>
   </section>
 
-  <section class="flex flex-col gap-2">
-    <p class="micro-label">1 · Choose {families.length === 1 ? "a release" : "releases"}</p>
-    {#each families as family (family)}
+  <section class="flex flex-col gap-4">
+    <h3 class="section-title">Choose {draft.families.length === 1 ? "a release" : "releases"}</h3>
+    {#each draft.families as family (family)}
       <ReleasePicker
         {family}
-        count={keys.filter((k) => k.family === family).length}
+        count={draft.keys.filter((k) => k.family === family).length}
         current={currentVersions(family)}
-        bind:choice={choices[family]}
+        bind:choice={draft.choices[family]}
       />
     {/each}
 
-    <fieldset class="mt-1">
-      <legend class="micro-label mb-1">Staged rollout</legend>
-      <div class="inline-flex overflow-hidden rounded-base border border-surface-700" role="radiogroup">
-        {#each stagedOptions as option (option.value)}
-          <button
-            type="button"
-            role="radio"
-            aria-checked={staged === option.value}
-            title={option.hint}
-            class="px-3 py-1 text-[0.7rem] uppercase tracking-[0.12em] {staged === option.value ? 'bg-primary-500/30 text-surface-50' : 'text-surface-400 hover:bg-surface-800'}"
-            onclick={() => (staged = option.value)}
-          >
-            {option.label}
-          </button>
-        {/each}
-      </div>
-      <p class="mt-1 text-[0.65rem] text-surface-500">{stagedOptions.find((o) => o.value === staged)?.hint}.</p>
-    </fieldset>
+    <div class="flex flex-col gap-1.5">
+      <span class="text-[12.5px] font-medium text-fg-muted">Staged rollout</span>
+      <SegmentedControl options={stagedOptions} bind:value={draft.staged} label="Staged rollout" size="sm" />
+      <p class="hint">{stagedOptions.find((o) => o.value === draft.staged)?.title}.</p>
+    </div>
   </section>
 
   <section class="flex flex-col gap-2">
-    <p class="micro-label flex items-center gap-2">
-      2 · Review the plan
-      {#if planning}<i class="fa-solid fa-circle-notch fa-spin text-surface-500" aria-hidden="true"></i>{/if}
-    </p>
-    {#if missing.length > 0}
-      <p class="text-xs text-surface-400">Choose a version for {missing.join(" and ")} to see the plan.</p>
-    {:else if planError}
-      <p class="rounded-base border border-error-500/50 bg-error-500/10 px-3 py-2 text-xs text-error-200" role="alert">
-        <i class="fa-solid fa-circle-exclamation mr-1" aria-hidden="true"></i>{planError}
+    <h3 class="section-title flex items-center gap-2">
+      What will happen
+      {#if draft.planning}<Icon name="loader-2" size={14} class="spin text-fg-faint" />{/if}
+    </h3>
+    {#if draft.missing.length > 0}
+      <p class="text-[13px] text-fg-muted">Choose a version for {draft.missing.join(" and ")} to see the plan.</p>
+    {:else if draft.planError}
+      <p class="problem" role="alert" in:rise>
+        <Icon name="alert-circle" size={16} />{draft.planError}
       </p>
-      {#if checksumFailed}
+      {#if draft.checksumFailed}
         <div class="flex gap-2">
-          <button type="button" class="btn btn-sm preset-tonal" disabled={starting} onclick={() => start(false)}>
-            <i class="fa-solid fa-rotate" aria-hidden="true"></i>Download again
-          </button>
-          <button type="button" class="btn btn-sm preset-tonal-warning" disabled={starting} onclick={() => start(true)}>
-            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>Flash anyway
-          </button>
+          <Button size="sm" icon="refresh" disabled={draft.starting} onclick={() => start(false)}>Download again</Button>
+          <Button size="sm" variant="danger" icon="alert-triangle" disabled={draft.starting} onclick={() => start(true)}>
+            Flash anyway
+          </Button>
         </div>
       {/if}
-    {:else if plan}
-      <PlanTable {plan} />
+    {:else if draft.plan}
+      <PlanTable plan={draft.plan} />
     {/if}
-    {#if unsigned.length > 0}
-      <p class="rounded-base border border-warning-600/50 bg-warning-500/10 px-3 py-2 text-xs text-warning-200">
-        <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
-        Installing an unsigned release. Atlas cannot verify where it came from, but it will not stop you.
-      </p>
+    {#if draft.unsigned.length > 0}
+      <p class="warn"><Icon name="alert-triangle" size={16} />Unsigned release. Atlas can't verify where it came from, but won't stop you.</p>
     {/if}
   </section>
 
-  <section class="flex items-center gap-2 border-t border-surface-800 pt-3">
-    <p class="micro-label mr-auto">3 · Confirm</p>
-    <button
-      type="button"
-      class="btn btn-sm preset-filled-primary-500 uppercase tracking-[0.12em]"
-      disabled={!plan || planning || starting}
-      onclick={() => start(false)}
-    >
-      {#if starting}<i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i>{/if}
-      {verb} {plan ? plan.devices.length : keys.length} device{(plan ? plan.devices.length : keys.length) === 1 ? "" : "s"}
-    </button>
-  </section>
+  <Button
+    variant="primary"
+    size="lg"
+    full
+    icon={recover ? "bolt" : "arrow-up"}
+    busy={draft.starting}
+    disabled={!draft.plan || draft.planning}
+    onclick={() => start(false)}
+  >
+    {recover ? "Flash" : "Update"} {count} device{count === 1 ? "" : "s"}
+  </Button>
 </div>
+
+<style>
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 26px;
+    padding: 0 10px;
+    border-radius: var(--r-pill);
+    background: var(--glass);
+    border: 0.5px solid var(--glass-border);
+    font-size: 12.5px;
+    color: var(--fg);
+  }
+  .chip.offline {
+    color: var(--err-fg);
+  }
+  .dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--offline);
+  }
+  .dot.on {
+    background: var(--ok);
+  }
+  .problem,
+  .warn {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 10px 14px;
+    border-radius: var(--r-card);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .problem {
+    background: var(--err-bg);
+    color: var(--err-fg);
+  }
+  .warn {
+    background: var(--warn-bg);
+    color: var(--warn-fg);
+  }
+</style>

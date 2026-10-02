@@ -1,10 +1,16 @@
 <script lang="ts">
-  import { api, errorText, type AppSettings } from "$lib/api/client";
-  import AsyncButton from "$lib/components/common/AsyncButton.svelte";
-  import Panel from "$lib/components/common/Panel.svelte";
+  import { api, errorText, type AppSettings, type SimScenario, type StagedRollout } from "$lib/api/client";
+  import Button from "$lib/components/common/Button.svelte";
+  import Field from "$lib/components/common/Field.svelte";
+  import GlassCard from "$lib/components/common/GlassCard.svelte";
+  import Icon from "$lib/components/common/Icon.svelte";
+  import Pill from "$lib/components/common/Pill.svelte";
+  import SegmentedControl from "$lib/components/common/SegmentedControl.svelte";
+  import Toggle from "$lib/components/common/Toggle.svelte";
   import { sentence } from "$lib/format";
   import { system } from "$lib/stores/system.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { rise } from "$lib/ui/motion";
 
   let { settings }: { settings: AppSettings } = $props();
 
@@ -15,6 +21,22 @@
 
   const dirty = $derived(JSON.stringify(draft) !== JSON.stringify(system.settings));
   const seconds = $derived(draft.scan_interval_ms / 1000);
+
+  const stagedOptions: { value: StagedRollout; label: string }[] = [
+    { value: "auto", label: "Auto" },
+    { value: "on", label: "One first" },
+    { value: "off", label: "All at once" },
+  ];
+  const simOptions: { value: "off" | SimScenario; label: string }[] = [
+    { value: "off", label: "Off" },
+    { value: "demo", label: "Demo robot" },
+    { value: "flaky", label: "Flaky robot" },
+  ];
+  // svelte-ignore state_referenced_locally
+  let sim = $state<"off" | SimScenario>(settings.simulated ?? "off");
+  $effect(() => {
+    draft.simulated = sim === "off" ? null : sim;
+  });
 
   async function save(event: SubmitEvent) {
     event.preventDefault();
@@ -32,25 +54,22 @@
       saving = false;
     }
   }
+
+  function revert() {
+    draft = { ...settings };
+    sim = settings.simulated ?? "off";
+  }
 </script>
 
-<Panel eyebrow="Preferences" title="How Atlas works">
-  <form class="flex flex-col gap-4" onsubmit={save}>
-    <label class="flex items-start gap-3">
-      <input type="checkbox" class="checkbox mt-0.5 h-3.5 w-3.5 rounded-sm border-surface-600 bg-surface-900" bind:checked={draft.auto_scan} />
-      <span class="text-xs">
-        <span class="block text-surface-100">Scan automatically</span>
-        <span class="text-surface-400">Look for devices in the background so the inventory stays live.</span>
-      </span>
-    </label>
+<GlassCard title="Preferences" subtitle="How Atlas looks for devices and rolls out updates" icon="settings" large>
+  <form class="flex flex-col gap-5" onsubmit={save}>
+    <Field inline label="Look for devices automatically" hint="Scans in the background so the device list stays live.">
+      <Toggle bind:checked={draft.auto_scan} label="Look for devices automatically" />
+    </Field>
 
-    <label class="grid grid-cols-[1fr_8rem] items-center gap-3">
-      <span class="text-xs">
-        <span class="block text-surface-100">Scan interval</span>
-        <span class="text-surface-400">Every {seconds.toFixed(1)} s. At least 1 s.</span>
-      </span>
+    <Field inline label="How often" hint="Every {seconds.toFixed(1)} s. At least 1 s.">
       <input
-        class="field font-mono"
+        class="input mono w-28"
         type="number"
         min="1000"
         step="500"
@@ -58,48 +77,31 @@
         disabled={!draft.auto_scan}
         aria-label="Scan interval in milliseconds"
       />
-    </label>
+    </Field>
 
-    <label class="grid grid-cols-[1fr_8rem] items-center gap-3">
-      <span class="text-xs">
-        <span class="block text-surface-100">Staged rollout default</span>
-        <span class="text-surface-400">Auto updates one device first when a family has three or more.</span>
-      </span>
-      <select class="field" bind:value={draft.staged_default}>
-        <option value="auto">Auto</option>
-        <option value="on">On</option>
-        <option value="off">Off</option>
-      </select>
-    </label>
+    <div class="flex flex-col gap-1.5">
+      <span class="text-[13px] font-medium text-fg">Staged rollout</span>
+      <span class="text-[12px] text-fg-faint">Auto updates one device first when a family has three or more.</span>
+      <div class="mt-1"><SegmentedControl options={stagedOptions} bind:value={draft.staged_default} label="Staged rollout default" size="sm" /></div>
+    </div>
 
+    <div class="flex flex-col gap-1.5">
+      <span class="flex items-center gap-2 text-[13px] font-medium text-fg">Simulated devices <Pill tone="warning" label="Needs a restart" /></span>
+      <span class="text-[12px] text-fg-faint">Replace real hardware with a simulated robot for demos and training.</span>
+      <div class="mt-1"><SegmentedControl options={simOptions} bind:value={sim} label="Simulated devices" size="sm" /></div>
+    </div>
 
-    <label class="grid grid-cols-[1fr_8rem] items-center gap-3">
-      <span class="text-xs">
-        <span class="block text-surface-100">Simulated devices <span class="tag ml-1 text-warning-300">restart required</span></span>
-        <span class="text-surface-400">Replace real hardware with a simulated robot for demos and training.</span>
-      </span>
-      <select class="field" bind:value={draft.simulated}>
-        <option value={null}>Off</option>
-        <option value="demo">Demo robot</option>
-        <option value="flaky">Flaky robot</option>
-      </select>
-    </label>
+    {#if error}<p class="flex items-center gap-2 text-[13px] text-err-fg" role="alert"><Icon name="alert-circle" size={15} />{error}</p>{/if}
 
-    {#if error}<p class="text-xs text-error-300" role="alert">{error}</p>{/if}
-
-    <div class="flex items-center gap-2 border-t border-surface-800 pt-3">
-      <button type="submit" class="btn btn-sm preset-filled-primary-500" disabled={!dirty || saving}>
-        {#if saving}<i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i>{/if}Save
-      </button>
-      <button type="button" class="btn btn-sm preset-tonal" disabled={!dirty || saving} onclick={() => (draft = { ...settings })}>Revert</button>
+    <div class="flex items-center gap-2 border-t border-hairline pt-4">
+      <Button type="submit" variant="primary" busy={saving} disabled={!dirty}>Save</Button>
+      <Button variant="ghost" disabled={!dirty || saving} onclick={revert}>Revert</Button>
       {#if system.restartNeeded}
-        <span class="ml-auto flex items-center gap-2 text-xs text-warning-300">
+        <span class="ml-auto flex items-center gap-2 text-[13px] text-warn-fg" in:rise>
           Restart to apply.
-          <AsyncButton class="btn btn-sm preset-outlined-warning-500" action={() => api.restartApp()}>
-            <i class="fa-solid fa-power-off" aria-hidden="true"></i>Restart now
-          </AsyncButton>
+          <Button size="sm" icon="power" action={() => api.restartApp()}>Restart now</Button>
         </span>
       {/if}
     </div>
   </form>
-</Panel>
+</GlassCard>

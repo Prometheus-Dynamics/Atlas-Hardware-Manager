@@ -1,6 +1,10 @@
 <script lang="ts">
   import { api, errorText, type RobotProfile } from "$lib/api/client";
+  import Button from "$lib/components/common/Button.svelte";
   import ConfirmButton from "$lib/components/common/ConfirmButton.svelte";
+  import Field from "$lib/components/common/Field.svelte";
+  import Icon from "$lib/components/common/Icon.svelte";
+  import { rise, softFade } from "$lib/ui/motion";
   import { sentence } from "$lib/format";
   import { devices } from "$lib/stores/devices.svelte";
   import { releases } from "$lib/stores/releases.svelte";
@@ -60,50 +64,48 @@
   }
 </script>
 
-<form class="flex flex-col gap-4 p-4" onsubmit={save}>
-  <h2 class="text-base font-semibold text-surface-50">{original ? `Edit ${original.name}` : "New robot"}</h2>
+<form class="flex flex-col gap-6 px-6 pb-6 pt-5" onsubmit={save}>
+  <h2 class="pr-10 text-[18px] font-semibold text-fg">{original ? `Edit ${original.name}` : "New robot"}</h2>
 
-  <label class="flex flex-col gap-1">
-    <span class="micro-label">Name</span>
-    <input class="field" bind:value={draft.name} required placeholder="e.g. Atlas-02" />
-  </label>
+  <Field label="Name">
+    <input class="input" bind:value={draft.name} required placeholder="e.g. Atlas-02" />
+  </Field>
 
-  <label class="flex flex-col gap-1">
-    <span class="micro-label">Notes</span>
-    <textarea class="field min-h-14" bind:value={notes} placeholder="Optional"></textarea>
-  </label>
+  <Field label="Notes">
+    <textarea class="textarea" bind:value={notes} placeholder="Optional"></textarea>
+  </Field>
 
-  <section class="flex flex-col gap-2">
+  <section class="flex flex-col gap-2.5">
     <div class="flex items-center justify-between">
-      <p class="micro-label">Roles</p>
-      <button type="button" class="btn btn-sm preset-tonal" onclick={addRole} disabled={knownFamilies.length === 0}>
-        <i class="fa-solid fa-plus" aria-hidden="true"></i>Add role
-      </button>
+      <h3 class="section-title">Roles</h3>
+      <Button size="sm" icon="plus" onclick={addRole} disabled={knownFamilies.length === 0}>Add role</Button>
     </div>
     {#if knownFamilies.length === 0}
-      <p class="text-xs text-surface-400">Connect a device or add a release first so Atlas knows which families exist.</p>
+      <p class="text-[13px] text-fg-muted">Connect a device or add a release first so Atlas knows which families exist.</p>
     {/if}
-    <ul class="flex flex-col gap-2">
+    <div class="flex flex-col gap-2">
       {#each draft.roles as _, i (i)}
-        <RoleRow bind:role={draft.roles[i]} families={knownFamilies} index={i} onremove={() => draft.roles.splice(i, 1)} />
+        <div in:rise out:softFade>
+          <RoleRow bind:role={draft.roles[i]} families={knownFamilies} index={i} onremove={() => draft.roles.splice(i, 1)} />
+        </div>
       {/each}
-    </ul>
+    </div>
   </section>
 
-  <section class="flex flex-col gap-2">
-    <p class="micro-label">Target versions</p>
+  <section class="flex flex-col gap-2.5">
+    <h3 class="section-title">Versions to run</h3>
     {#if targetFamilies.length === 0}
-      <p class="text-xs text-surface-400">Add a role to set the version its family should run.</p>
+      <p class="text-[13px] text-fg-muted">Add a role to set the version its family should run.</p>
     {/if}
     {#each targetFamilies as family (family)}
-      <label class="grid grid-cols-[7rem_1fr] items-center gap-2">
-        <span class="text-xs text-surface-300">{family}</span>
+      <label class="grid grid-cols-[8rem_1fr] items-center gap-3">
+        <span class="truncate text-[13px] text-fg-muted">{family}</span>
         <input
-          class="field font-mono"
+          class="input mono"
           list="targets-{family}"
           value={draft.targets[family] ?? ""}
           onchange={(e) => setTarget(family, e.currentTarget.value)}
-          placeholder="no target"
+          placeholder="No target"
         />
         <datalist id="targets-{family}">
           {#each releases.forFamily(family) as entry (entry.id)}
@@ -115,17 +117,17 @@
   </section>
 
   {#if error}
-    <p class="rounded-base border border-error-500/50 bg-error-500/10 px-3 py-2 text-xs text-error-200" role="alert">{error}</p>
+    <p class="flex items-start gap-2 rounded-[var(--r-card)] bg-[var(--err-bg)] px-3.5 py-2.5 text-[13px] text-err-fg" role="alert">
+      <Icon name="alert-circle" size={16} />{error}
+    </p>
   {/if}
 
-  <div class="flex items-center gap-2 border-t border-surface-800 pt-3">
-    <button type="submit" class="btn btn-sm preset-filled-primary-500" disabled={saving}>
-      {#if saving}<i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i>{/if}Save robot
-    </button>
-    <button type="button" class="btn btn-sm preset-tonal" onclick={() => ui.close()}>Cancel</button>
+  <div class="flex items-center gap-2 border-t border-hairline pt-4">
+    <Button type="submit" variant="primary" busy={saving}>Save robot</Button>
+    <Button variant="ghost" onclick={() => ui.close()}>Cancel</Button>
     {#if original}
       <span class="ml-auto">
-        <ConfirmButton action={remove} prompt="Delete {original.name}?" confirmLabel="Delete">Delete</ConfirmButton>
+        <ConfirmButton action={remove} icon="trash" prompt="Delete {original.name}?" confirmLabel="Delete">Delete</ConfirmButton>
       </span>
     {/if}
   </div>

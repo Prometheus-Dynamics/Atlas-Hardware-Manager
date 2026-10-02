@@ -1,18 +1,23 @@
 <script lang="ts">
   import { page } from "$app/state";
+  import Icon from "$lib/components/common/Icon.svelte";
+  import { insights } from "$lib/stores/insights.svelte";
   import { jobs } from "$lib/stores/jobs.svelte";
   import { robots } from "$lib/stores/robots.svelte";
   import { system } from "$lib/stores/system.svelte";
+  import { ui } from "$lib/stores/ui.svelte";
+  import type { IconName } from "$lib/ui/icons";
+  import { pop } from "$lib/ui/motion";
 
   const notReady = $derived(robots.statuses.filter((s) => s.state !== "ready").length);
 
-  const items = $derived([
-    { href: "/", label: "Inventory", icon: "fa-microchip", key: "1", badge: 0, tone: "" },
-    { href: "/robots", label: "Robots", icon: "fa-robot", key: "2", badge: notReady, tone: "bg-warning-500 text-surface-950" },
-    { href: "/jobs", label: "Jobs", icon: "fa-list-check", key: "3", badge: jobs.running.length, tone: "bg-secondary-500 text-white" },
-    { href: "/releases", label: "Releases", icon: "fa-box-archive", key: "4", badge: 0, tone: "" },
-    { href: "/settings", label: "Settings", icon: "fa-gear", key: "5", badge: system.healthProblems, tone: "bg-error-500 text-white" },
-  ]);
+  const items: { href: string; label: string; icon: IconName; key: string; badge: () => number; accent?: boolean }[] = [
+    { href: "/", label: "Devices", icon: "layout-grid", key: "1", badge: () => insights.needYou, accent: true },
+    { href: "/robots", label: "Robots", icon: "robot", key: "2", badge: () => notReady },
+    { href: "/jobs", label: "Jobs", icon: "activity", key: "3", badge: () => jobs.running.length, accent: true },
+    { href: "/releases", label: "Releases", icon: "package", key: "4", badge: () => 0 },
+    { href: "/settings", label: "Settings", icon: "settings", key: "5", badge: () => system.healthProblems },
+  ];
 
   function active(href: string) {
     const path = page.url.pathname;
@@ -20,34 +25,141 @@
   }
 </script>
 
-<nav
-  class="flex w-[4.6rem] shrink-0 flex-col items-stretch border-r border-surface-800 bg-surface-900/80 py-3"
-  aria-label="Main"
->
-  <div class="mb-4 flex justify-center">
-    <img src="/logo.svg" alt="Atlas" class="h-7 w-7" />
-  </div>
-  <ul class="flex flex-col gap-1 px-1.5">
+<nav class="rail" aria-label="Main">
+  <img src="/logo.svg" alt="Atlas" class="logo" />
+  <ul class="flex flex-col items-center gap-1.5">
     {#each items as item (item.href)}
+      {@const count = item.badge()}
       <li>
         <a
           href={item.href}
-          class="relative flex flex-col items-center gap-1 rounded-base px-1 py-2 text-[0.58rem] uppercase tracking-[0.14em] transition-colors
-            {active(item.href)
-            ? 'bg-primary-500/20 text-surface-50 ring-1 ring-primary-500/60'
-            : 'text-surface-400 hover:bg-surface-800 hover:text-surface-100'}"
+          class="item"
+          class:active={active(item.href)}
           aria-current={active(item.href) ? "page" : undefined}
-          title="{item.label} ({item.key})"
+          aria-label={item.label}
+          data-tip="{item.label} · {item.key}"
         >
-          <i class="fa-solid {item.icon} text-base" aria-hidden="true"></i>
-          {item.label}
-          {#if item.badge > 0}
-            <span class="absolute right-1.5 top-1 min-w-4 rounded-full px-1 text-center text-[0.55rem] leading-4 tracking-normal {item.tone}">
-              {item.badge}
-            </span>
+          <Icon name={item.icon} size={20} stroke={1.6} />
+          {#if count > 0}
+            <span class="badge" class:accent={item.accent} in:pop>{count}</span>
           {/if}
         </a>
       </li>
     {/each}
   </ul>
+
+  <div class="mt-auto flex flex-col items-center gap-1.5">
+    {#if system.info?.simulated}
+      <span class="item quiet" data-tip="Simulated devices ({system.info.simulated})" aria-label="Simulated devices">
+        <Icon name="flask" size={18} stroke={1.6} />
+      </span>
+    {/if}
+    <button
+      type="button"
+      class="item"
+      class:active={ui.helpOpen}
+      onclick={() => (ui.helpOpen = !ui.helpOpen)}
+      aria-label="Keyboard shortcuts"
+      data-tip="Shortcuts · ?"
+    >
+      <Icon name="keyboard" size={18} stroke={1.6} />
+    </button>
+  </div>
 </nav>
+
+<style>
+  .rail {
+    position: relative;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 52px;
+    flex-shrink: 0;
+    padding: 14px 0 12px;
+    background: var(--rail);
+    border-right: 0.5px solid var(--hairline);
+  }
+  .logo {
+    width: 24px;
+    height: 24px;
+    margin-bottom: 18px;
+  }
+  .item {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    color: var(--fg-faint);
+    transition:
+      background var(--t-fast),
+      color var(--t-fast),
+      transform var(--t-fast);
+  }
+  .item:hover {
+    color: var(--fg);
+    background: var(--glass);
+  }
+  .item:active {
+    transform: scale(0.94);
+  }
+  .item.active {
+    color: var(--accent-text-strong);
+    background: var(--accent-tint-hover);
+  }
+  .item.quiet {
+    color: var(--warn-fg);
+    opacity: 0.8;
+  }
+  .badge {
+    position: absolute;
+    top: 1px;
+    right: 0;
+    min-width: 15px;
+    height: 15px;
+    padding: 0 4px;
+    border-radius: var(--r-pill);
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 15px;
+    text-align: center;
+    background: var(--glass-border-strong);
+    color: var(--fg);
+    box-shadow: 0 0 0 2px var(--rail);
+  }
+  .badge.accent {
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  /* Tooltips to the right of the rail. */
+  [data-tip]::after {
+    content: attr(data-tip);
+    position: absolute;
+    left: calc(100% + 10px);
+    top: 50%;
+    padding: 5px 9px;
+    border-radius: 8px;
+    background: var(--layer-solid);
+    border: 0.5px solid var(--glass-border);
+    box-shadow: var(--shadow-lift);
+    color: var(--fg);
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transform: translate(-4px, -50%);
+    transition:
+      opacity var(--t-fast),
+      transform var(--t-fast) var(--ease-out);
+  }
+  [data-tip]:hover::after,
+  [data-tip]:focus-visible::after {
+    opacity: 1;
+    transform: translate(0, -50%);
+    transition-delay: 250ms;
+  }
+</style>

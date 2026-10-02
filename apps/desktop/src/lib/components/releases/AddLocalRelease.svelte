@@ -1,10 +1,13 @@
 <script lang="ts">
   import { api, errorText, pickReleaseFile } from "$lib/api/client";
-  import Panel from "$lib/components/common/Panel.svelte";
+  import Button from "$lib/components/common/Button.svelte";
+  import Field from "$lib/components/common/Field.svelte";
+  import GlassCard from "$lib/components/common/GlassCard.svelte";
+  import Icon from "$lib/components/common/Icon.svelte";
   import { sentence } from "$lib/format";
+  import { versionFromFileName } from "$lib/present";
   import { devices } from "$lib/stores/devices.svelte";
   import { releases } from "$lib/stores/releases.svelte";
-  import { system } from "$lib/stores/system.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
 
   let { onclose }: { onclose: () => void } = $props();
@@ -22,9 +25,7 @@
       const picked = await pickReleaseFile();
       if (picked) {
         path = picked;
-        // Guess a version from names like image-2026.3.0.img.xz.
-        const match = picked.match(/(\d+\.\d+(?:\.\d+)?(?:-[\w.]+)?)/);
-        if (match && !version) version = match[1].replace(/\.(img|bin|hex|zip)$/, "");
+        if (!version) version = versionFromFileName(picked);
       }
     } catch (e) {
       toasts.error(errorText(e));
@@ -49,38 +50,30 @@
   }
 </script>
 
-<Panel eyebrow="Add" title="Local release file">
-  <form class="grid grid-cols-[1fr_12rem_10rem] items-end gap-3" onsubmit={add}>
-    <div class="flex flex-col gap-1">
-      <span class="micro-label">File</span>
-      <div class="flex items-center gap-2">
-        <button type="button" class="btn btn-sm preset-tonal" onclick={pick}>
-          <i class="fa-solid fa-folder-open" aria-hidden="true"></i>Choose file…
-        </button>
-        <span class="truncate font-mono text-[0.7rem] {path ? 'text-surface-200' : 'text-surface-500'}">{path ?? "No file chosen"}</span>
-      </div>
+<GlassCard title="Add a file from this computer" subtitle="Images and firmware you built or downloaded" icon="file-plus" large>
+  <form class="flex flex-col gap-4" onsubmit={add}>
+    <div class="flex items-center gap-3">
+      <Button icon="folder-open" onclick={pick}>Choose file…</Button>
+      <span class="mono truncate text-[12.5px] {path ? 'text-fg' : 'text-fg-faint'}">{path ?? "No file chosen"}</span>
     </div>
-    <label class="flex flex-col gap-1">
-      <span class="micro-label">Family</span>
-      <input class="field" list="release-families" bind:value={family} required />
-      <datalist id="release-families">
-        {#each families as f (f)}<option value={f}></option>{/each}
-      </datalist>
-    </label>
-    <label class="flex flex-col gap-1">
-      <span class="micro-label">Version</span>
-      <input class="field font-mono" bind:value={version} required placeholder="e.g. 2026.3.0" />
-    </label>
-    <p class="col-span-3 text-[0.7rem] text-warning-300">
-      <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>Local files are unsigned. Atlas
-      hashes them now and warns if they change before installing.
+    <div class="grid grid-cols-2 gap-3">
+      <Field label="Device family" hint="Which devices this file is for, e.g. rpi for boards in USB boot.">
+        <input class="input" list="release-families" bind:value={family} required />
+        <datalist id="release-families">
+          {#each families as f (f)}<option value={f}></option>{/each}
+        </datalist>
+      </Field>
+      <Field label="Version">
+        <input class="input mono" bind:value={version} required placeholder="e.g. 2026.3.0" />
+      </Field>
+    </div>
+    <p class="flex items-center gap-2 text-[12.5px] text-warn-fg">
+      <Icon name="alert-triangle" size={15} />Local files are unsigned. Atlas hashes them now and warns if they change before installing.
     </p>
-    {#if error}<p class="col-span-3 text-xs text-error-300" role="alert">{error}</p>{/if}
-    <div class="col-span-3 flex gap-2">
-      <button type="submit" class="btn btn-sm preset-filled-primary-500" disabled={!path || saving}>
-        {#if saving}<i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i>{/if}Add to catalog
-      </button>
-      <button type="button" class="btn btn-sm preset-tonal" onclick={onclose}>Cancel</button>
+    {#if error}<p class="flex items-center gap-2 text-[13px] text-err-fg" role="alert"><Icon name="alert-circle" size={15} />{error}</p>{/if}
+    <div class="flex gap-2">
+      <Button type="submit" variant="primary" busy={saving} disabled={!path}>Add to catalog</Button>
+      <Button variant="ghost" onclick={onclose}>Cancel</Button>
     </div>
   </form>
-</Panel>
+</GlassCard>

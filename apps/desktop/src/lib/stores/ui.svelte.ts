@@ -14,6 +14,18 @@ export type Panel =
 /** Robot filter value meaning "no robot assigned". */
 export const NO_ROBOT = "\u0000none";
 
+export type InventoryView = "cards" | "list";
+
+const VIEW_KEY = "atlas.inventory.view";
+
+function savedView(): InventoryView {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "list" ? "list" : "cards";
+  } catch {
+    return "cards";
+  }
+}
+
 export function canUpdate(record: DeviceRecord): boolean {
   return (
     record.presence === "online" && (record.capabilities.includes("update") || record.capabilities.includes("recover"))
@@ -36,6 +48,14 @@ class UiStore {
   selectedJob = $state<JobId | null>(null);
   trayOpen = $state(true);
 
+  /** Inventory layout, remembered per machine. */
+  view = $state<InventoryView>(savedView());
+  /** "Needs you" banners the user dismissed this session. */
+  dismissed = new SvelteSet<string>();
+
+  /** Group the inventory by robot when no robot filter is active. */
+  grouped = $derived(this.robot === null && devices.all.some((d) => d.robot));
+
   /** Filtered inventory in display order: online first, then by name. */
   visible = $derived.by(() => {
     const text = this.filterText.trim().toLowerCase();
@@ -52,6 +72,11 @@ class UiStore {
         return hay.includes(text);
       })
       .sort((a, b) => {
+        if (this.grouped && a.robot !== b.robot) {
+          if (!a.robot) return 1;
+          if (!b.robot) return -1;
+          return a.robot.localeCompare(b.robot, undefined, { numeric: true });
+        }
         if (a.presence !== b.presence) return a.presence === "online" ? -1 : 1;
         return deviceName(a).localeCompare(deviceName(b), undefined, { numeric: true });
       });
@@ -67,6 +92,15 @@ class UiStore {
   );
 
   filterInput: HTMLInputElement | null = null;
+
+  setView(view: InventoryView) {
+    this.view = view;
+    try {
+      localStorage.setItem(VIEW_KEY, view);
+    } catch {
+      // Private mode or blocked storage: the choice lasts this session.
+    }
+  }
 
   clearFilters() {
     this.filterText = "";
@@ -95,7 +129,7 @@ class UiStore {
     const recover = records.every((r) => r.identity.mode === "recovery");
     this.openUpdate(
       { devices: records.map((r) => r.key), releases: {}, staged },
-      `${recover ? "Recover" : "Update"} ${records.length} device${records.length === 1 ? "" : "s"}`,
+      `${recover ? "Flash" : "Update"} ${records.length} device${records.length === 1 ? "" : "s"}`,
     );
   }
 

@@ -1,8 +1,12 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
   import { api, keyString, type RobotProfile, type RobotStatus } from "$lib/api/client";
-  import AsyncButton from "$lib/components/common/AsyncButton.svelte";
+  import Button from "$lib/components/common/Button.svelte";
   import ConfirmButton from "$lib/components/common/ConfirmButton.svelte";
-  import Tag from "$lib/components/common/Tag.svelte";
+  import Icon from "$lib/components/common/Icon.svelte";
+  import IconTile from "$lib/components/common/IconTile.svelte";
+  import Pill from "$lib/components/common/Pill.svelte";
+  import StatusDot from "$lib/components/common/StatusDot.svelte";
   import { devices } from "$lib/stores/devices.svelte";
   import { system } from "$lib/stores/system.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
@@ -28,66 +32,91 @@
     if (editing) ui.close();
     toasts.success(`Deleted ${profile.name}.`);
   }
+
+  function showDevices() {
+    ui.robot = profile.name;
+    void goto("/");
+  }
 </script>
 
-<article class="flex flex-col rounded-container border bg-surface-900/40 {editing ? 'border-primary-500/60' : 'border-surface-800'}">
-  <header class="flex items-start justify-between gap-2 border-b border-surface-800 px-4 py-3">
-    <div class="min-w-0">
-      <h2 class="truncate text-sm font-semibold text-surface-50">{profile.name}</h2>
-      {#if profile.notes}<p class="truncate text-[0.7rem] text-surface-400">{profile.notes}</p>{/if}
+<article class="glass card flex flex-col" class:editing>
+  <header class="flex items-start gap-3 px-5 pt-4">
+    <IconTile icon="robot" />
+    <div class="min-w-0 flex-1">
+      <h2 class="truncate text-[15px] font-semibold text-fg">{profile.name}</h2>
+      <p class="truncate text-[12.5px] text-fg-muted">{profile.notes ?? `${profile.roles.length} role${profile.roles.length === 1 ? "" : "s"}`}</p>
     </div>
-    {#if badge}<Tag tone={badge.tone} icon={badge.icon} label={badge.label} />{/if}
+    {#if badge}<Pill tone={badge.tone} icon={badge.icon} label={badge.label} />{/if}
   </header>
 
-  <ul class="flex-1 divide-y divide-surface-800/70 px-4 py-1">
+  <ul class="flex flex-1 flex-col gap-0.5 px-3 py-3">
     {#each status?.roles ?? [] as role, i (i)}
-      <li class="grid grid-cols-[6.5rem_1fr_auto] items-center gap-2 py-1.5 text-xs">
-        <span class="truncate text-surface-400" title={role.role}>{role.role}</span>
+      <li class="role">
+        <span class="truncate text-[12.5px] text-fg-faint" title={role.role}>{role.role[0]?.toUpperCase() + role.role.slice(1)}</span>
         {#if role.device}
-          <button type="button" class="truncate text-left text-surface-100 hover:underline" onclick={() => ui.openDevice(keyString(role.device!))}>
-            <span class="mr-1 inline-block h-1.5 w-1.5 rounded-full {role.presence === 'online' ? 'bg-success-500' : 'bg-error-500'}" title={role.presence ?? "never seen"}></span>
-            {role.device_name ?? keyString(role.device)}
+          <button type="button" class="flex min-w-0 items-center gap-2 text-left text-[13px] text-fg hover:underline" onclick={() => ui.openDevice(keyString(role.device!))}>
+            <StatusDot state={role.presence === "online" ? "online" : "offline"} label={role.presence ?? "Never seen"} />
+            <span class="truncate">{role.device_name ?? keyString(role.device)}</span>
           </button>
         {:else}
-          <span class="text-surface-500 italic">unassigned · {role.family}</span>
+          <span class="flex items-center gap-2 text-[13px] text-fg-faint"><Icon name="circle-dashed" size={14} />Empty · {role.family}</span>
         {/if}
-        <span class="whitespace-nowrap font-mono text-[0.68rem]">
+        <span class="justify-self-end whitespace-nowrap text-[12px]">
           {#if role.up_to_date}
-            <span class="text-success-400">{role.version} <i class="fa-solid fa-check" aria-label="up to date"></i></span>
+            <span class="mono inline-flex items-center gap-1 text-ok-fg">{role.version}<Icon name="check" size={13} label="Up to date" /></span>
           {:else if role.version && role.target}
-            <span class="text-warning-300">{role.version}</span><span class="text-surface-500"> → {role.target}</span>
+            <span class="mono text-warn-fg">{role.version}</span><span class="mono text-fg-faint"> → {role.target}</span>
           {:else}
-            <span class="text-surface-500">{role.version ?? "—"}{role.target ? ` / ${role.target}` : ""}</span>
+            <span class="mono text-fg-faint">{role.version ?? "—"}{role.target ? ` / ${role.target}` : ""}</span>
           {/if}
         </span>
       </li>
     {:else}
-      <li class="py-2 text-xs text-surface-500">No roles yet. Edit the robot to add some.</li>
+      <li class="px-2 py-2 text-[13px] text-fg-faint">No roles yet. Edit the robot to add some.</li>
     {/each}
   </ul>
 
   {#if status && status.unassigned_devices.length > 0}
-    <p class="border-t border-surface-800 px-4 py-2 text-[0.7rem] text-surface-400">
-      Tagged but not in a role:
+    <p class="mx-5 mb-3 text-[12.5px] text-fg-muted">
+      On this robot but not in a role:
       {#each status.unassigned_devices as key, i (keyString(key))}
-        <button type="button" class="text-surface-200 underline-offset-2 hover:underline" onclick={() => ui.openDevice(keyString(key))}>{devices.nameOf(key)}</button>{i < status.unassigned_devices.length - 1 ? ", " : ""}
+        <button type="button" class="text-fg hover:underline" onclick={() => ui.openDevice(keyString(key))}>{devices.nameOf(key)}</button>{i < status.unassigned_devices.length - 1 ? ", " : ""}
       {/each}
     </p>
   {/if}
 
-  <footer class="flex flex-wrap items-center gap-2 border-t border-surface-800 px-4 py-2">
+  <footer class="flex flex-wrap items-center gap-2 border-t border-hairline px-4 py-3">
     {#if status && status.state !== "ready"}
-      <AsyncButton class="btn btn-sm preset-filled-primary-500" action={makeReady}>
-        <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>Make ready
-      </AsyncButton>
+      <Button variant="tint" size="sm" icon="wand" action={makeReady}>Make ready</Button>
     {/if}
-    <button type="button" class="btn btn-sm preset-tonal" onclick={() => ui.openRobot(profile.name)}>
-      <i class="fa-solid fa-pen" aria-hidden="true"></i>Edit
-    </button>
+    <Button size="sm" icon="layout-grid" onclick={showDevices}>Devices</Button>
+    <Button variant="ghost" size="sm" icon="pencil" onclick={() => ui.openRobot(profile.name)}>Edit</Button>
     <span class="ml-auto">
-      <ConfirmButton action={remove} prompt="Delete {profile.name}?" confirmLabel="Delete" class="btn btn-sm preset-tonal text-error-300">
-        <i class="fa-solid fa-trash" aria-hidden="true"></i><span class="sr-only">Delete {profile.name}</span>
-      </ConfirmButton>
+      <ConfirmButton action={remove} size="sm" variant="ghost" icon="trash" label="Delete {profile.name}" prompt="Delete {profile.name}?" confirmLabel="Delete" />
     </span>
   </footer>
 </article>
+
+<style>
+  .card {
+    border-radius: var(--r-panel);
+    transition:
+      border-color var(--t-fast),
+      box-shadow var(--t-med);
+  }
+  .card.editing {
+    border-color: var(--glass-border-strong);
+    box-shadow: var(--shadow-lift);
+  }
+  .role {
+    display: grid;
+    grid-template-columns: 7rem minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 8px;
+    border-radius: 10px;
+  }
+  .role:hover {
+    background: var(--glass);
+  }
+</style>

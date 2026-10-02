@@ -181,8 +181,13 @@ async function runDevice(job: JobRecord, state: DeviceJobState): Promise<boolean
       log(job, state, `${step}: done`);
     }
     sim.version = state.release.version;
-    sim.mode = "normal";
-    touch(state.device);
+    if (sim.link?.kind === "usb-boot") {
+      // A flashed board reboots out of USB boot; the next scan sees it leave.
+      sim.online = false;
+    } else {
+      sim.mode = "normal";
+      touch(state.device);
+    }
     setStatus(job, state, { status: "verified", version: state.release.version });
     return true;
   });

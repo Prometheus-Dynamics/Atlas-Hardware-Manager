@@ -1,9 +1,12 @@
 <script lang="ts">
   import type { JobRecord } from "$lib/api/client";
-  import Tag from "$lib/components/common/Tag.svelte";
-  import { clockTime } from "$lib/format";
+  import StatusDot from "$lib/components/common/StatusDot.svelte";
+  import { timeAgo } from "$lib/format";
+  import { jobTitle } from "$lib/present";
+  import { clock } from "$lib/stores/clock.svelte";
   import { jobs } from "$lib/stores/jobs.svelte";
   import { ui } from "$lib/stores/ui.svelte";
+  import { rise } from "$lib/ui/motion";
 
   let { selectedId }: { selectedId: number | null } = $props();
 
@@ -12,42 +15,64 @@
     return s ? s.failed + s.rolled_back + s.needs_recovery : 0;
   }
 
-  function stateTone(job: JobRecord) {
-    if (job.state === "running") return "info" as const;
-    if (job.state === "cancelled") return "neutral" as const;
-    return problems(job) > 0 ? ("warning" as const) : ("success" as const);
+  function dot(job: JobRecord) {
+    if (job.state === "running") return "busy" as const;
+    if (problems(job) > 0) return "failed" as const;
+    if (job.state === "cancelled") return "offline" as const;
+    return "online" as const;
+  }
+
+  function line(job: JobRecord): string {
+    const s = job.summary;
+    if (job.state === "running") return "Running now";
+    if (!s) return job.state;
+    const parts = [`${s.verified} verified`];
+    if (problems(job)) parts.push(`${problems(job)} didn't finish`);
+    if (s.skipped) parts.push(`${s.skipped} skipped`);
+    if (s.cancelled) parts.push(`${s.cancelled} cancelled`);
+    return parts.join(" · ");
   }
 </script>
 
 <ul class="flex flex-col gap-1" aria-label="Jobs">
   {#each jobs.sorted as job (job.id)}
-    {@const s = job.summary}
-    <li>
+    <li in:rise>
       <button
         type="button"
-        class="w-full rounded-base border px-3 py-2 text-left transition-colors
-          {selectedId === job.id ? 'border-primary-500/70 bg-primary-500/10' : 'border-surface-800 hover:border-surface-600'}"
+        class="item"
+        class:active={selectedId === job.id}
         onclick={() => (ui.selectedJob = job.id)}
         aria-current={selectedId === job.id}
       >
-        <div class="flex items-center justify-between gap-2">
-          <span class="text-xs font-semibold text-surface-50">Job #{job.id}</span>
-          <Tag tone={stateTone(job)} label={job.state} />
-        </div>
-        <p class="mt-0.5 text-[0.65rem] text-surface-400">
-          {clockTime(job.created_ms)} · {job.devices.length} device{job.devices.length === 1 ? "" : "s"}
-        </p>
-        {#if s}
-          <p class="mt-1 flex flex-wrap gap-x-2 text-[0.65rem]">
-            <span class="text-success-400">{s.verified} verified</span>
-            {#if s.rolled_back}<span class="text-warning-400">{s.rolled_back} rolled back</span>{/if}
-            {#if s.needs_recovery}<span class="text-error-400">{s.needs_recovery} need recovery</span>{/if}
-            {#if s.failed}<span class="text-error-400">{s.failed} failed</span>{/if}
-            {#if s.skipped}<span class="text-surface-400">{s.skipped} skipped</span>{/if}
-            {#if s.cancelled}<span class="text-surface-400">{s.cancelled} cancelled</span>{/if}
-          </p>
-        {/if}
+        <StatusDot state={dot(job)} label={job.state} />
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-[13px] font-medium text-fg">{jobTitle(job)}</span>
+          <span class="block truncate text-[12px] text-fg-faint">#{job.id} · {timeAgo(job.created_ms, clock.now)} · {line(job)}</span>
+        </span>
       </button>
     </li>
   {/each}
 </ul>
+
+<style>
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    text-align: left;
+    border: 0.5px solid transparent;
+    transition:
+      background var(--t-fast),
+      border-color var(--t-fast);
+  }
+  .item:hover {
+    background: var(--glass);
+  }
+  .item.active {
+    background: var(--glass-strong);
+    border-color: var(--glass-border);
+  }
+</style>

@@ -1,6 +1,6 @@
 // Small display helpers shared by every screen.
 
-import type { DeviceJobState, DeviceJobStatus, DeviceRecord, Identity, LinkKind, UpdateStep } from "$lib/api/client";
+import type { DeviceJobState, DeviceJobStatus, DeviceRecord, Identity, LinkKind } from "$lib/api/client";
 import { keyString } from "$lib/api/client";
 
 export function deviceName(record: DeviceRecord): string {
@@ -15,15 +15,15 @@ export function primaryVersion(identity: Identity): string | null {
 export function linkText(link: LinkKind, nameOf: (key: string) => string): string {
   switch (link.kind) {
     case "usb-network":
-      return "usb-net";
+      return "USB network";
     case "usb-serial":
-      return "usb-serial";
+      return "USB serial";
     case "usb-boot":
-      return "usb-boot";
+      return "USB boot";
     case "ethernet":
-      return "ethernet";
+      return "Ethernet";
     case "simulated":
-      return "simulated";
+      return "Simulated";
     case "gateway":
       return `via ${nameOf(keyString(link.via))}`;
   }
@@ -69,15 +69,6 @@ export function bytes(n: number): string {
 
 export type Tone = "success" | "warning" | "error" | "primary" | "neutral" | "info";
 
-export const toneText: Record<Tone, string> = {
-  success: "text-success-400",
-  warning: "text-warning-400",
-  error: "text-error-400",
-  primary: "text-primary-300",
-  neutral: "text-surface-400",
-  info: "text-secondary-300",
-};
-
 export function jobStatusTone(status: DeviceJobStatus): Tone {
   switch (status.status) {
     case "verified":
@@ -88,14 +79,15 @@ export function jobStatusTone(status: DeviceJobStatus): Tone {
     case "failed":
       return "error";
     case "running":
-      return "info";
+      return "primary";
     default:
       return "neutral";
   }
 }
 
 export function jobStatusLabel(status: DeviceJobStatus): string {
-  return status.status.replace("-", " ");
+  const text = status.status.replace("-", " ");
+  return text[0].toUpperCase() + text.slice(1);
 }
 
 /** The sentence attached to a finished status, if any. */
@@ -113,14 +105,6 @@ export function jobStatusDetail(status: DeviceJobStatus): string | null {
       return null;
   }
 }
-
-export const STEP_LABELS: Record<UpdateStep, string> = {
-  preflight: "Preflight",
-  transfer: "Transfer",
-  apply: "Apply",
-  reboot: "Reboot",
-  confirm: "Confirm",
-};
 
 /** Newest first by dotted numeric parts, falling back to string order. */
 export function compareVersionsDesc(a: string, b: string): number {

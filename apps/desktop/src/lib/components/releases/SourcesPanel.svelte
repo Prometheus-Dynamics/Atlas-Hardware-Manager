@@ -1,10 +1,14 @@
 <script lang="ts">
   import { api, errorText } from "$lib/api/client";
+  import Button from "$lib/components/common/Button.svelte";
   import ConfirmButton from "$lib/components/common/ConfirmButton.svelte";
-  import Panel from "$lib/components/common/Panel.svelte";
+  import Field from "$lib/components/common/Field.svelte";
+  import GlassCard from "$lib/components/common/GlassCard.svelte";
+  import Icon from "$lib/components/common/Icon.svelte";
   import { sentence } from "$lib/format";
   import { releases } from "$lib/stores/releases.svelte";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { rise } from "$lib/ui/motion";
 
   let adding = $state(false);
   let name = $state("");
@@ -39,61 +43,44 @@
   }
 </script>
 
-<Panel eyebrow="Sources" title="Remote release sources" subtitle="Signed manifests Atlas checks for new releases.">
+<GlassCard title="Where releases come from" subtitle="Signed manifests Atlas checks for new releases" icon="world-www" large>
   {#snippet actions()}
-    {#if !adding}
-      <button type="button" class="btn btn-sm preset-tonal" onclick={() => (adding = true)}>
-        <i class="fa-solid fa-plus" aria-hidden="true"></i>Add source
-      </button>
-    {/if}
+    {#if !adding}<Button size="sm" icon="plus" onclick={() => (adding = true)}>Add source</Button>{/if}
   {/snippet}
 
   {#if releases.sources.length === 0 && !adding}
-    <p class="text-xs text-surface-400">No remote sources. Only local files are available.</p>
+    <p class="text-[13px] text-fg-muted">No remote sources. Only local files are available.</p>
   {/if}
 
   <ul class="flex flex-col gap-2">
     {#each releases.sources as source (source.name)}
-      <li class="flex items-start justify-between gap-3 rounded-base border border-surface-800 px-3 py-2">
-        <div class="min-w-0 text-xs">
-          <p class="font-semibold text-surface-50">{source.name}</p>
-          <p class="truncate font-mono text-[0.68rem] text-surface-300">{source.index_url}</p>
+      <li class="glass flex items-start justify-between gap-3 px-4 py-3">
+        <div class="min-w-0">
+          <p class="text-[13px] font-semibold text-fg">{source.name}</p>
+          <p class="mono truncate text-[12px] text-fg-muted">{source.index_url}</p>
           {#each source.public_keys as key (key)}
-            <p class="truncate font-mono text-[0.6rem] text-surface-500" title={key}>
-              <i class="fa-solid fa-key mr-1" aria-hidden="true"></i>{key}
-            </p>
+            <p class="mono mt-0.5 flex items-center gap-1.5 truncate text-[11.5px] text-fg-faint" title={key}><Icon name="key" size={12} />{key}</p>
           {:else}
-            <p class="text-[0.65rem] text-warning-300">No public keys: every manifest from this source is rejected.</p>
+            <p class="mt-1 text-[12.5px] text-warn-fg">No public keys: every manifest from this source is rejected.</p>
           {/each}
         </div>
-        <ConfirmButton action={() => remove(source.name)} prompt="Remove {source.name}?" confirmLabel="Remove" class="text-surface-500 hover:text-error-300">
-          <i class="fa-solid fa-trash" aria-hidden="true"></i><span class="sr-only">Remove {source.name}</span>
-        </ConfirmButton>
+        <ConfirmButton action={() => remove(source.name)} size="sm" variant="ghost" icon="trash" label="Remove {source.name}" prompt="Remove {source.name}?" confirmLabel="Remove" />
       </li>
     {/each}
   </ul>
 
   {#if adding}
-    <form class="mt-3 grid grid-cols-[10rem_1fr] gap-3 rounded-base border border-surface-700 p-3" onsubmit={add}>
-      <label class="flex flex-col gap-1">
-        <span class="micro-label">Name</span>
-        <input class="field" bind:value={name} required placeholder="pd-stable" />
-      </label>
-      <label class="flex flex-col gap-1">
-        <span class="micro-label">Index URL</span>
-        <input class="field font-mono" type="url" bind:value={url} required placeholder="https://…/index.json" />
-      </label>
-      <label class="col-span-2 flex flex-col gap-1">
-        <span class="micro-label">Public keys (one per line)</span>
-        <textarea class="field min-h-14 font-mono text-[0.7rem]" bind:value={keys} placeholder="ed25519:…"></textarea>
-      </label>
-      {#if error}<p class="col-span-2 text-xs text-error-300" role="alert">{error}</p>{/if}
+    <form class="glass mt-3 grid grid-cols-[10rem_1fr] gap-3 p-4" onsubmit={add} in:rise>
+      <Field label="Name"><input class="input" bind:value={name} required placeholder="pd-stable" /></Field>
+      <Field label="Index URL"><input class="input mono" type="url" bind:value={url} required placeholder="https://…/index.json" /></Field>
+      <Field label="Public keys, one per line" class="col-span-2">
+        <textarea class="textarea mono" bind:value={keys} placeholder="ed25519:…"></textarea>
+      </Field>
+      {#if error}<p class="col-span-2 flex items-center gap-2 text-[13px] text-err-fg" role="alert"><Icon name="alert-circle" size={15} />{error}</p>{/if}
       <div class="col-span-2 flex gap-2">
-        <button type="submit" class="btn btn-sm preset-filled-primary-500" disabled={saving}>
-          {#if saving}<i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i>{/if}Save source
-        </button>
-        <button type="button" class="btn btn-sm preset-tonal" onclick={() => (adding = false)}>Cancel</button>
+        <Button type="submit" busy={saving} icon="device-floppy">Save source</Button>
+        <Button variant="ghost" onclick={() => (adding = false)}>Cancel</Button>
       </div>
     </form>
   {/if}
-</Panel>
+</GlassCard>

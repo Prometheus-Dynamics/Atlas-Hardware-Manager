@@ -3,20 +3,29 @@
   import type { Snippet } from "svelte";
   import { errorText } from "$lib/api/client";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { rise } from "$lib/ui/motion";
+  import type { IconName } from "$lib/ui/icons";
+  import Button from "./Button.svelte";
 
   let {
     action,
     children,
     prompt = "Are you sure?",
     confirmLabel = "Confirm",
-    class: extra = "btn btn-sm preset-outlined-error-500",
+    variant = "danger",
+    size = "md",
+    icon,
+    label,
     disabled = false,
   }: {
     action: () => Promise<unknown>;
-    children: Snippet;
+    children?: Snippet;
     prompt?: string;
     confirmLabel?: string;
-    class?: string;
+    variant?: "danger" | "glass" | "ghost" | "tint";
+    size?: "sm" | "md";
+    icon?: IconName;
+    label?: string;
     disabled?: boolean;
   } = $props();
 
@@ -37,15 +46,24 @@
 </script>
 
 {#if asking}
-  <span class="inline-flex flex-wrap items-center gap-2 rounded-base border border-error-500/50 bg-error-500/10 px-2 py-1">
-    <span class="text-xs text-error-200">{prompt}</span>
-    <button type="button" class="btn btn-sm preset-filled-error-500" disabled={busy} onclick={confirm}>
-      {#if busy}<i class="fa-solid fa-circle-notch fa-spin" aria-hidden="true"></i>{/if}{confirmLabel}
-    </button>
-    <button type="button" class="btn btn-sm preset-tonal" disabled={busy} onclick={() => (asking = false)}>
-      Cancel
-    </button>
+  <span class="confirm" in:rise={{ y: 3, duration: 140 }}>
+    <span class="text-[12.5px] text-err-fg">{prompt}</span>
+    <Button variant="danger" size="sm" {busy} onclick={confirm} icon="alert-triangle">{confirmLabel}</Button>
+    <Button variant="ghost" size="sm" disabled={busy} onclick={() => (asking = false)}>Cancel</Button>
   </span>
 {:else}
-  <button type="button" class={extra} {disabled} onclick={() => (asking = true)}>{@render children()}</button>
+  <Button {variant} {size} {icon} {label} {disabled} onclick={() => (asking = true)} {children} />
 {/if}
+
+<style>
+  .confirm {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 4px 3px 12px;
+    border-radius: var(--r-pill);
+    background: var(--err-bg);
+    border: 0.5px solid var(--err-bg);
+  }
+</style>

@@ -45,6 +45,8 @@ function dispatch(event: AtlasEvent) {
       void robots.load();
       break;
     default:
+      // The jobs page follows the newest job.
+      if (event.type === "job-started") ui.selectedJob = event.job;
       jobs.apply(event);
       if (event.type === "job-finished") robots.refreshStatusesSoon();
   }

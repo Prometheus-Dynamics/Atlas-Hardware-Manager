@@ -1,31 +1,81 @@
 <script lang="ts">
+  import { flip } from "svelte/animate";
+  import Icon from "$lib/components/common/Icon.svelte";
   import { toasts, type ToastTone } from "$lib/stores/toasts.svelte";
+  import type { IconName } from "$lib/ui/icons";
+  import { ms, slideIn, softFade } from "$lib/ui/motion";
 
-  const style: Record<ToastTone, string> = {
-    success: "border-success-600/70 text-success-200",
-    error: "border-error-500/70 text-error-100",
-    warning: "border-warning-600/70 text-warning-200",
-    info: "border-secondary-500/70 text-secondary-100",
-  };
-  const icon: Record<ToastTone, string> = {
-    success: "fa-circle-check",
-    error: "fa-circle-exclamation",
-    warning: "fa-triangle-exclamation",
-    info: "fa-circle-info",
+  const icon: Record<ToastTone, IconName> = {
+    success: "circle-check",
+    error: "alert-circle",
+    warning: "alert-triangle",
+    info: "info-circle",
   };
 </script>
 
-<div class="pointer-events-none fixed right-4 top-[5.75rem] z-50 flex w-96 max-w-[calc(100vw-2rem)] flex-col gap-2" aria-live="polite">
+<div class="stack" aria-live="polite">
   {#each toasts.items as toast (toast.id)}
     <div
-      class="pointer-events-auto flex items-start gap-2 rounded-container border bg-surface-900 px-3 py-2 text-xs {style[toast.tone]}"
+      class="toast glass-layer {toast.tone}"
       role={toast.tone === "error" ? "alert" : "status"}
+      animate:flip={{ duration: ms(200) }}
+      in:slideIn={{ x: 24, duration: 220 }}
+      out:softFade
     >
-      <i class="fa-solid {icon[toast.tone]} mt-0.5" aria-hidden="true"></i>
-      <p class="flex-1 text-surface-100">{toast.message}</p>
-      <button type="button" class="text-surface-400 hover:text-surface-50" aria-label="Dismiss" onclick={() => toasts.dismiss(toast.id)}>
-        <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+      <span class="ic"><Icon name={icon[toast.tone]} size={16} stroke={2} /></span>
+      <p class="flex-1 text-[13px] leading-snug text-fg">{toast.message}</p>
+      <button type="button" class="close" aria-label="Dismiss" onclick={() => toasts.dismiss(toast.id)}>
+        <Icon name="x" size={14} />
       </button>
     </div>
   {/each}
 </div>
+
+<style>
+  .stack {
+    position: absolute;
+    right: 20px;
+    bottom: 16px;
+    z-index: 50;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 360px;
+    max-width: calc(100vw - 40px);
+    pointer-events: none;
+  }
+  .toast {
+    pointer-events: auto;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px 12px;
+    border-radius: var(--r-card);
+  }
+  .ic {
+    display: inline-flex;
+    margin-top: 1px;
+  }
+  .success .ic {
+    color: var(--ok-fg);
+  }
+  .error .ic {
+    color: var(--err-fg);
+  }
+  .warning .ic {
+    color: var(--warn-fg);
+  }
+  .info .ic {
+    color: var(--info-fg);
+  }
+  .close {
+    display: inline-flex;
+    padding: 2px;
+    border-radius: 6px;
+    color: var(--fg-faint);
+  }
+  .close:hover {
+    color: var(--fg);
+    background: var(--glass-hover);
+  }
+</style>

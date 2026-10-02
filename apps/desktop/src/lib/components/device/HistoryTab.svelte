@@ -1,45 +1,63 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import { sameKey, type DeviceRecord } from "$lib/api/client";
+  import Icon from "$lib/components/common/Icon.svelte";
+  import Pill from "$lib/components/common/Pill.svelte";
   import ProgressBar from "$lib/components/common/ProgressBar.svelte";
-  import Tag from "$lib/components/common/Tag.svelte";
-  import { clockTime, jobStatusDetail, jobStatusLabel, jobStatusTone, overallFraction } from "$lib/format";
+  import { clockTime, jobStatusDetail, jobStatusLabel, jobStatusTone, overallFraction, sentence } from "$lib/format";
   import { jobs } from "$lib/stores/jobs.svelte";
   import { ui } from "$lib/stores/ui.svelte";
+  import { rise } from "$lib/ui/motion";
 
   let { record }: { record: DeviceRecord } = $props();
 
   const entries = $derived(
-    jobs.sorted.flatMap((job) =>
-      job.devices.filter((d) => sameKey(d.device, record.key)).map((state) => ({ job, state })),
-    ),
+    jobs.sorted.flatMap((job) => job.devices.filter((d) => sameKey(d.device, record.key)).map((state) => ({ job, state }))),
   );
 
   function open(id: number) {
     ui.selectedJob = id;
+    ui.close();
     void goto("/jobs");
   }
 </script>
 
 {#if entries.length === 0}
-  <p class="text-xs text-surface-400">No updates recorded for this device in this session.</p>
+  <div class="flex flex-col items-center gap-2 py-8 text-center">
+    <Icon name="history" size={22} class="text-fg-faint" />
+    <p class="text-[13px] text-fg-muted">No updates for this device in this session.</p>
+  </div>
 {:else}
   <ul class="flex flex-col gap-2">
     {#each entries as { job, state } (job.id)}
       {@const detail = jobStatusDetail(state.status)}
-      <li>
-        <button type="button" class="w-full rounded-base border border-surface-800 px-3 py-2 text-left hover:border-surface-600" onclick={() => open(job.id)}>
-          <div class="flex items-center justify-between gap-2 text-xs">
-            <span class="text-surface-100">Job #{job.id} · {state.release.version}</span>
-            <Tag tone={jobStatusTone(state.status)} label={jobStatusLabel(state.status)} />
+      <li in:rise>
+        <button type="button" class="glass row w-full px-4 py-3 text-left" onclick={() => open(job.id)}>
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[13px] font-medium text-fg">Job #{job.id} · <span class="mono">{state.release.version}</span></span>
+            <Pill tone={jobStatusTone(state.status)} label={jobStatusLabel(state.status)} />
           </div>
-          <p class="mt-0.5 text-[0.65rem] text-surface-500">{clockTime(job.created_ms)}</p>
+          <p class="mt-0.5 text-[12px] text-fg-faint">{clockTime(job.created_ms)}</p>
           {#if state.status.status === "running"}
-            <div class="mt-1"><ProgressBar value={overallFraction(state)} label="Progress" /></div>
+            <div class="mt-2"><ProgressBar value={overallFraction(state)} label="Progress" /></div>
           {/if}
-          {#if detail}<p class="mt-1 text-[0.7rem] text-surface-300">{detail}</p>{/if}
+          {#if detail}<p class="mt-1.5 text-[12.5px] text-fg-muted">{sentence(detail)}</p>{/if}
         </button>
       </li>
     {/each}
   </ul>
 {/if}
+
+<style>
+  .row {
+    transition:
+      background var(--t-fast),
+      transform var(--t-fast);
+  }
+  .row:hover {
+    background: var(--glass-hover);
+  }
+  .row:active {
+    transform: scale(0.99);
+  }
+</style>

@@ -59,7 +59,7 @@ driver crate and nothing else. USB, serial, and disk access live in Rust.
 
 ## Run it
 
-Prerequisites: Rust 1.94 (pinned in `rust-toolchain.toml`), Bun 1.2.9, and
+Prerequisites: Rust 1.94 (pinned in `rust-toolchain.toml`), Bun 1.3.14, and
 the [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS.
 
 ```bash

@@ -1,5 +1,7 @@
 <script lang="ts">
-  import Panel from "$lib/components/common/Panel.svelte";
+  import GlassCard from "$lib/components/common/GlassCard.svelte";
+  import Icon from "$lib/components/common/Icon.svelte";
+  import Skeleton from "$lib/components/common/Skeleton.svelte";
   import { system } from "$lib/stores/system.svelte";
 
   const paths = $derived(
@@ -16,29 +18,26 @@
   );
 </script>
 
-<Panel eyebrow="About" title="Atlas Hardware Manager">
+<GlassCard title="Atlas Hardware Manager" subtitle={system.info ? `Version ${system.info.version}` : undefined} icon="info-circle" large>
   {#if system.info}
-    <dl class="grid grid-cols-[7rem_1fr] gap-y-1 text-xs">
-      <dt class="text-surface-400">Version</dt>
-      <dd class="font-mono text-surface-50">{system.info.version}</dd>
-      <dt class="text-surface-400">Platform</dt>
-      <dd class="text-surface-100">{system.info.platform} / {system.info.arch}</dd>
-      <dt class="text-surface-400">Devices</dt>
-      <dd class="text-surface-100">{system.info.simulated ? `simulated (${system.info.simulated})` : "real hardware"}</dd>
+    <dl class="grid grid-cols-[7.5rem_1fr] gap-x-3 gap-y-2 text-[13px]">
+      <dt class="text-fg-faint">Platform</dt>
+      <dd class="text-fg">{system.info.platform} / {system.info.arch}</dd>
+      <dt class="text-fg-faint">Devices</dt>
+      <dd class="text-fg">{system.info.simulated ? `Simulated (${system.info.simulated})` : "Real hardware"}</dd>
       {#each paths as [name, path] (name)}
-        <dt class="text-surface-400">{name}</dt>
-        <dd class="break-all font-mono text-[0.68rem] text-surface-200">{path}</dd>
+        <dt class="text-fg-faint">{name}</dt>
+        <dd class="mono break-all text-[12px] text-fg-muted">{path}</dd>
       {/each}
     </dl>
     {#if system.info.startup_warnings.length > 0}
-      <p class="micro-label mb-1 mt-4">Startup warnings</p>
-      <ul class="flex flex-col gap-1 text-xs text-warning-200">
+      <ul class="mt-4 flex flex-col gap-1.5 text-[13px] text-warn-fg">
         {#each system.info.startup_warnings as warning, i (i)}
-          <li><i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>{warning}</li>
+          <li class="flex items-start gap-2"><Icon name="alert-triangle" size={15} class="mt-0.5" />{warning}</li>
         {/each}
       </ul>
     {/if}
   {:else}
-    <p class="text-xs text-surface-400">Loading…</p>
+    <div class="flex flex-col gap-2"><Skeleton width="50%" /><Skeleton width="70%" /><Skeleton width="60%" /></div>
   {/if}
-</Panel>
+</GlassCard>

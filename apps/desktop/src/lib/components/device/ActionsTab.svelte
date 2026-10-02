@@ -1,9 +1,12 @@
 <script lang="ts">
   import { api, errorText, type DeviceAction, type DeviceRecord } from "$lib/api/client";
-  import AsyncButton from "$lib/components/common/AsyncButton.svelte";
+  import Button from "$lib/components/common/Button.svelte";
   import ConfirmButton from "$lib/components/common/ConfirmButton.svelte";
+  import Icon from "$lib/components/common/Icon.svelte";
+  import Skeleton from "$lib/components/common/Skeleton.svelte";
   import { deviceName } from "$lib/format";
   import { toasts } from "$lib/stores/toasts.svelte";
+  import { rise } from "$lib/ui/motion";
 
   let { record }: { record: DeviceRecord } = $props();
 
@@ -27,25 +30,27 @@
 </script>
 
 {#if error}
-  <p class="text-xs text-error-300">{error}</p>
+  <p class="flex items-center gap-2 text-[13px] text-err-fg"><Icon name="alert-circle" size={16} />{error}</p>
 {:else if !actions}
-  <p class="text-xs text-surface-400"><i class="fa-solid fa-circle-notch fa-spin mr-1" aria-hidden="true"></i>Loading actions…</p>
+  <div class="flex flex-col gap-2">
+    {#each [0, 1, 2] as i (i)}<Skeleton height={48} />{/each}
+  </div>
 {:else if actions.length === 0}
-  <p class="text-xs text-surface-400">This device offers no actions.</p>
+  <p class="text-[13px] text-fg-muted">This device offers no actions.</p>
 {:else}
   <ul class="flex flex-col gap-2">
-    {#each actions as action (action.id)}
-      <li class="flex items-center justify-between gap-3 rounded-base border border-surface-800 px-3 py-2">
-        <span class="text-xs text-surface-100">
+    {#each actions as action, i (action.id)}
+      <li class="glass flex items-center justify-between gap-3 px-4 py-2.5" in:rise={{ delay: i * 30 }}>
+        <span class="text-[13px] text-fg">
           {action.label}
-          {#if action.destructive}<span class="ml-1 text-[0.6rem] uppercase tracking-[0.12em] text-error-300">destructive</span>{/if}
+          {#if action.destructive}<span class="ml-1.5 text-[12px] text-err-fg">Can't be undone</span>{/if}
         </span>
         {#if action.destructive}
-          <ConfirmButton action={() => run(action)} prompt="{action.label} {deviceName(record)}?" confirmLabel={action.label}>
+          <ConfirmButton action={() => run(action)} size="sm" prompt="{action.label}?" confirmLabel={action.label}>
             {action.label}
           </ConfirmButton>
         {:else}
-          <AsyncButton action={() => run(action)}>{action.label}</AsyncButton>
+          <Button size="sm" action={() => run(action)}>{action.label}</Button>
         {/if}
       </li>
     {/each}

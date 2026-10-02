@@ -1,90 +1,103 @@
 <script lang="ts">
-  import Tag from "$lib/components/common/Tag.svelte";
+  import IconTile from "$lib/components/common/IconTile.svelte";
+  import Pill from "$lib/components/common/Pill.svelte";
+  import SegmentedControl from "$lib/components/common/SegmentedControl.svelte";
   import UpdateFlow from "$lib/components/update/UpdateFlow.svelte";
-  import { deviceName, primaryVersion } from "$lib/format";
+  import { deviceName, timeAgo } from "$lib/format";
+  import { deviceIcon, isRecovery, modelName, storageName } from "$lib/present";
+  import { clock } from "$lib/stores/clock.svelte";
   import { devices } from "$lib/stores/devices.svelte";
   import { system } from "$lib/stores/system.svelte";
+  import type { IconName } from "$lib/ui/icons";
+  import { softFade } from "$lib/ui/motion";
   import ActionsTab from "./ActionsTab.svelte";
+  import FlashTab from "./FlashTab.svelte";
   import HistoryTab from "./HistoryTab.svelte";
   import OverviewTab from "./OverviewTab.svelte";
 
-  let { key, initialTab }: { key: string; initialTab?: string } = $props();
+  let {
+    key,
+    initialTab,
+    onwide,
+  }: { key: string; initialTab?: string; onwide?: (wide: boolean) => void } = $props();
 
   const record = $derived(devices.get(key));
-  const recovery = $derived(record?.identity.mode === "recovery");
+  const recovery = $derived(record ? isRecovery(record) : false);
 
   // Tabs come from what the device can do right now.
   const tabs = $derived.by(() => {
     const caps = record?.capabilities ?? [];
-    const list = [{ id: "overview", label: "Overview" }];
-    if (caps.includes("recover")) list.push({ id: "update", label: "Recover" });
-    else if (caps.includes("update")) list.push({ id: "update", label: "Update" });
-    if (caps.includes("actions")) list.push({ id: "actions", label: "Actions" });
-    list.push({ id: "history", label: "History" });
+    const list: { value: string; label: string; icon: IconName }[] = [{ value: "overview", label: "Overview", icon: "info-circle" }];
+    if (caps.includes("recover") || (recovery && record?.presence === "online")) list.push({ value: "flash", label: "Flash", icon: "bolt" });
+    else if (caps.includes("update")) list.push({ value: "update", label: "Update", icon: "arrow-up" });
+    if (caps.includes("actions") && !recovery) list.push({ value: "actions", label: "Actions", icon: "tool" });
+    list.push({ value: "history", label: "History", icon: "history" });
     return list;
   });
 
   // svelte-ignore state_referenced_locally
-  let tab = $state(initialTab ?? "overview");
-  const current = $derived(tabs.some((t) => t.id === tab) ? tab : "overview");
+  let tab = $state(initialTab ?? (recovery ? "flash" : "overview"));
+  const current = $derived(tabs.some((t) => t.value === tab) ? tab : "overview");
+
+  $effect(() => {
+    onwide?.(current === "flash");
+  });
+  $effect(() => () => onwide?.(false));
+
+  const subline = $derived.by(() => {
+    if (!record) return "";
+    const storage = storageName(record.identity.attributes?.storage);
+    return [modelName(record), recovery ? "USB boot" : record.presence === "online" ? "Running" : "Offline", storage]
+      .filter(Boolean)
+      .join(" · ");
+  });
 </script>
 
 {#if !record}
-  <p class="p-4 text-xs text-surface-400">This device is no longer in the inventory.</p>
+  <p class="p-6 text-[13px] text-fg-muted">This device is no longer in the inventory.</p>
 {:else}
-  <div class="border-b border-surface-800 px-4 pb-0 pt-3">
-    <div class="flex items-start justify-between gap-2">
-      <div class="min-w-0">
-        <h2 class="truncate text-base font-semibold text-surface-50">{deviceName(record)}</h2>
-        <p class="font-mono text-[0.65rem] text-surface-500">{key}</p>
-      </div>
-      <div class="flex shrink-0 flex-col items-end gap-1">
-        {#if record.presence === "online"}
-          <Tag tone="success" label="online" />
-        {:else}
-          <Tag tone="error" label="offline" />
-        {/if}
-        {#if recovery}<Tag tone="error" icon="fa-kit-medical" label="recovery" />{/if}
+  <header class="shrink-0 px-6 pb-4 pt-5" in:softFade>
+    <div class="flex items-center gap-4 pr-10">
+      <IconTile icon={deviceIcon(record)} size={52} tone={recovery && record.presence === "online" ? "accent" : "neutral"} />
+      <div class="min-w-0 flex-1">
+        <h2 class="truncate text-[18px] font-semibold text-fg">{deviceName(record)}</h2>
+        <p class="truncate text-[13px] text-fg-muted">{subline}</p>
       </div>
     </div>
-    <p class="mt-1 text-xs text-surface-300">
-      {record.identity.model} · <span class="font-mono">{primaryVersion(record.identity) ?? "unknown version"}</span>
-    </p>
-    <div class="mt-3 flex gap-1" role="tablist">
-      {#each tabs as t (t.id)}
-        <button
-          type="button"
-          role="tab"
-          aria-selected={current === t.id}
-          class="-mb-px border-b-2 px-2.5 py-1.5 text-[0.68rem] uppercase tracking-[0.14em]
-            {current === t.id ? 'border-primary-500 text-surface-50' : 'border-transparent text-surface-400 hover:text-surface-100'}"
-          onclick={() => (tab = t.id)}
-        >
-          {t.label}
-        </button>
-      {/each}
-    </div>
-  </div>
-
-  <div class="p-4" role="tabpanel">
-    {#if current === "overview"}
-      <OverviewTab {record} />
-    {:else if current === "update"}
-      {#if recovery}
-        <p class="mb-3 rounded-base border border-error-500/40 bg-error-500/10 px-3 py-2 text-xs text-error-100">
-          This device is in recovery mode and only accepts a full recovery write. Pick the image to write.
-        </p>
+    <div class="mt-3 flex flex-wrap items-center gap-1.5">
+      {#if record.presence === "online"}
+        <Pill tone="success" icon="circle-check" label="Online" />
+      {:else}
+        <Pill tone="neutral" icon="plug-connected-x" label="Offline · seen {timeAgo(record.last_seen_ms, clock.now)}" />
       {/if}
-      {#key record.identity.mode}
-        <UpdateFlow
-          request={{ devices: [record.key], releases: {}, staged: system.settings?.staged_default ?? "auto" }}
-          onstarted={() => (tab = "history")}
-        />
-      {/key}
-    {:else if current === "actions"}
-      <ActionsTab {record} />
-    {:else}
-      <HistoryTab {record} />
+      {#if recovery && record.presence === "online"}<Pill tone="primary" icon="usb" label="Waiting for an image" />{/if}
+      <Pill tone="neutral" mono label={record.key.serial} title={key} />
+    </div>
+    {#if tabs.length > 1}
+      <div class="mt-4">
+        <SegmentedControl options={tabs} bind:value={tab} label="Device sections" />
+      </div>
     {/if}
+  </header>
+
+  <div class="min-h-0 flex-1 overflow-y-auto border-t border-hairline px-6 pb-6 pt-5" role="tabpanel">
+    {#key current}
+      <div in:softFade={{ duration: 160 }}>
+        {#if current === "overview"}
+          <OverviewTab {record} />
+        {:else if current === "flash"}
+          <FlashTab {record} />
+        {:else if current === "update"}
+          <UpdateFlow
+            request={{ devices: [record.key], releases: {}, staged: system.settings?.staged_default ?? "auto" }}
+            onstarted={() => (tab = "history")}
+          />
+        {:else if current === "actions"}
+          <ActionsTab {record} />
+        {:else}
+          <HistoryTab {record} />
+        {/if}
+      </div>
+    {/key}
   </div>
 {/if}
