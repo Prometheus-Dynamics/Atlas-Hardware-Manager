@@ -1,5 +1,14 @@
 # Raze device package changelog
 
+## 1.0.1
+
+- Revisions: the placeholder rev `a` is now `gen1`. First-generation boards
+  carry no revision marker, so a board without one is `gen1`; later revisions
+  will be provisioned with a marker.
+- Recovery instructions: hold the boot button and connect the regular USB port
+  (the flashing port). Storage is eMMC on every current board.
+- LEDs: the ring is SK6812 RGBW, so the `ws2812-pio` overlay now passes `rgbw`.
+
 ## 1.0.0 (contract 1)
 
 First shared package, reconciled from HeliOS (`gaia/` on
