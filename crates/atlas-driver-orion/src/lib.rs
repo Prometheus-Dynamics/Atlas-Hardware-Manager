@@ -10,20 +10,16 @@
 //! else; Orion is never the only way in.
 //!
 //! The transport is a trait. [`RemoteTransport`] implements it with Orion's
-//! remote operator client (signed orion+tcp) on Linux and macOS; the client
-//! doesn't build on Windows yet.
+//! remote operator client (signed orion+tcp).
 
 mod actions;
 mod directory;
 mod metrics;
-#[cfg(unix)]
 mod remote;
 mod transport;
 mod update;
 
 pub use directory::OrionDirectory;
-#[cfg(unix)]
 pub use orion_client::remote::OperatorIdentity;
-#[cfg(unix)]
 pub use remote::{OrionConnection, RemoteTransport};
 pub use transport::{BundleHost, OrionTransport};

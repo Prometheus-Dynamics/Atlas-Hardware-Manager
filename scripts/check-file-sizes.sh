@@ -17,19 +17,17 @@ if [[ ${#scan_roots[@]} -eq 0 ]]; then
     exit 0
 fi
 
-declare -A baseline=()
-if [[ -f "$baseline_file" ]]; then
-    while IFS= read -r line; do
-        [[ -z "$line" || "$line" =~ ^# ]] && continue
-        baseline["$line"]=1
-    done <"$baseline_file"
-fi
+# Bash 3.2 compatible (macOS): no associative arrays, and empty arrays are
+# expanded as ${arr[@]+"${arr[@]}"} because `set -u` rejects them there.
+in_baseline() {
+    [[ -f "$baseline_file" ]] && grep -v '^#' "$baseline_file" | grep -Fxq -- "$1"
+}
 
 is_excluded() {
     local rel_path="$1"
     local raw
     IFS=':' read -r -a raw <<<"$exclude_dirs"
-    for entry in "${raw[@]}"; do
+    for entry in ${raw[@]+"${raw[@]}"}; do
         entry="${entry#/}"
         entry="${entry%/}"
         [[ -z "$entry" ]] && continue
@@ -49,18 +47,18 @@ while IFS= read -r record; do
 done < <(find "${scan_roots[@]}" -type f -name '*.rs' -print0 | xargs -0 wc -l | awk -v limit="$limit" '$2 != "total" && $1 > limit { print $1 " " $2 }' | sort -nr)
 
 declare -a filtered=()
-for entry in "${over_limit[@]}"; do
+for entry in ${over_limit[@]+"${over_limit[@]}"}; do
     rel_path="${entry#* }"
     if ! is_excluded "$rel_path"; then
         filtered+=("$entry")
     fi
 done
-over_limit=("${filtered[@]}")
+over_limit=(${filtered[@]+"${filtered[@]}"})
 
 declare -a violations=()
-for entry in "${over_limit[@]}"; do
+for entry in ${over_limit[@]+"${over_limit[@]}"}; do
     rel_path="${entry#* }"
-    if [[ -z "${baseline[$rel_path]:-}" ]]; then
+    if ! in_baseline "$rel_path"; then
         violations+=("$entry")
     fi
 done

@@ -1,5 +1,5 @@
 //! Orion: where Atlas connects, how it enrolls, and how the connection is
-//! doing. `None` where this build has no Orion (Windows, simulated devices).
+//! doing. `None` when Orion is off for this session (simulated devices).
 
 use tauri::State;
 
@@ -7,30 +7,15 @@ use super::CmdResult;
 use crate::settings::AppPaths;
 use crate::state::AppState;
 
-#[cfg(unix)]
 pub use atlas_driver_orion::OrionConnection;
 
-/// Stand-in so the command signatures compile where Orion isn't built.
-#[cfg(not(unix))]
-#[derive(Clone, Debug, serde::Serialize)]
-pub struct OrionConnection {}
-
-#[cfg(unix)]
 fn transport(state: &AppState) -> Option<&atlas_driver_orion::RemoteTransport> {
     state.orion.as_ref().map(|orion| orion.transport.as_ref())
 }
 
 #[tauri::command]
 pub fn orion_connection(state: State<'_, AppState>) -> Option<OrionConnection> {
-    #[cfg(unix)]
-    {
-        transport(&state).map(atlas_driver_orion::RemoteTransport::connection)
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = state;
-        None
-    }
+    transport(&state).map(atlas_driver_orion::RemoteTransport::connection)
 }
 
 /// Saves the Orion address, reconnects, and rescans so devices pick up
@@ -55,7 +40,6 @@ pub async fn set_orion_url(
         .settings
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner()) = settings;
-    #[cfg(unix)]
     if let Some(transport) = transport(&state) {
         transport.set_url(url).await;
     }
@@ -66,7 +50,6 @@ pub async fn set_orion_url(
 /// Tries the connection now and reports how it went.
 #[tauri::command]
 pub async fn check_orion(state: State<'_, AppState>) -> CmdResult<Option<OrionConnection>> {
-    #[cfg(unix)]
     if let Some(orion) = &state.orion {
         // Errors land in the connection state; the UI shows them there.
         let _ = orion.directory.refresh().await;
@@ -81,7 +64,6 @@ pub async fn enroll_orion_with_key(
     state: State<'_, AppState>,
     key: String,
 ) -> CmdResult<Option<OrionConnection>> {
-    #[cfg(unix)]
     if let Some(transport) = transport(&state) {
         transport
             .enroll_with_key(key.trim())
@@ -89,7 +71,5 @@ pub async fn enroll_orion_with_key(
             .map_err(|error| error.to_string())?;
         state.atlas.scan().await;
     }
-    #[cfg(not(unix))]
-    let _ = key;
     Ok(orion_connection(state))
 }

@@ -47,9 +47,9 @@ lzma-rs = "0.3"
 mdns-sd = "0.21"
 nusb = { version = "0.2.7", features = ["tokio"] }
 # Orion (control protocol 4) and its remote operator client, pinned together.
-orion-client = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "48074583ec98fcb69fc386af577afad216eb724d", default-features = false, features = ["remote"] }
-orion-control-plane = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "48074583ec98fcb69fc386af577afad216eb724d", default-features = false, features = ["std"] }
-orion-core = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "48074583ec98fcb69fc386af577afad216eb724d", default-features = false, features = ["std"] }
+orion-client = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "6776a0d97866deaaec1c846456749785f4933082", default-features = false, features = ["remote"] }
+orion-control-plane = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "6776a0d97866deaaec1c846456749785f4933082", default-features = false, features = ["std"] }
+orion-core = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "6776a0d97866deaaec1c846456749785f4933082", default-features = false, features = ["std"] }
 nix = { version = "0.30", default-features = false }
 plist = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }

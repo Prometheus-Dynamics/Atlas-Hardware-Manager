@@ -12,6 +12,7 @@ use std::process::Command;
 
 use crate::{BlockError, Disk};
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn run(program: &str, args: &[&str]) -> Result<String, BlockError> {
     let output = Command::new(program)
         .args(args)

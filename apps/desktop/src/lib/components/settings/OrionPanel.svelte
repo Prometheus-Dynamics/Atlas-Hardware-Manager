@@ -63,7 +63,7 @@
   {:else if connection === null}
     <p class="flex items-start gap-2 text-[13px] text-fg-muted">
       <Icon name="info-circle" size={15} class="mt-0.5 shrink-0" />
-      Orion isn't available in this build: it needs real hardware (not simulated devices) on Linux or macOS. Windows support is coming.
+      Orion is off while Atlas uses simulated devices.
     </p>
   {:else}
     <div class="flex flex-col gap-4">

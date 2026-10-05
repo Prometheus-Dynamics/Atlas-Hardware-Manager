@@ -1,6 +1,5 @@
 //! Orion for the desktop app: Atlas's operator identity, the connection,
-//! and the directory that adds Orion's capabilities to devices. Linux and
-//! macOS only until Orion's operator client builds on Windows.
+//! and the directory that adds Orion's capabilities to devices.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -16,6 +15,9 @@ const PIN_FILE: &str = "orion-node.pin";
 fn operator_name() -> String {
     let host = std::fs::read_to_string("/etc/hostname")
         .or_else(|_| std::fs::read_to_string("/proc/sys/kernel/hostname"))
+        .ok()
+        .or_else(|| std::env::var("COMPUTERNAME").ok())
+        .or_else(|| std::env::var("HOSTNAME").ok())
         .unwrap_or_default();
     let host: String = host
         .trim()
@@ -45,13 +47,18 @@ fn identity(dir: &Path) -> Result<OperatorIdentity, String> {
     Ok(identity)
 }
 
+/// Creates `file` readable only by this user (0600 on Unix; on Windows the
+/// per-user data directory's ACL already restricts it).
 fn write_private(file: &Path, bytes: &[u8]) -> Result<(), String> {
     use std::io::Write;
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut handle = std::fs::OpenOptions::new()
-        .create_new(true)
-        .write(true)
-        .mode(0o600)
+    let mut options = std::fs::OpenOptions::new();
+    options.create_new(true).write(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let mut handle = options
         .open(file)
         .map_err(|error| format!("{}: {error}", file.display()))?;
     handle
@@ -87,16 +94,19 @@ mod tests {
 
     #[test]
     fn the_operator_key_is_created_once_and_kept_private() {
-        use std::os::unix::fs::PermissionsExt;
         let dir = std::env::temp_dir().join(format!("atlas-orion-{}", std::process::id()));
         let first = identity(&dir).unwrap();
         let again = identity(&dir).unwrap();
         assert_eq!(first.fingerprint(), again.fingerprint());
-        let mode = std::fs::metadata(dir.join(KEY_FILE))
-            .unwrap()
-            .permissions()
-            .mode();
-        assert_eq!(mode & 0o777, 0o600);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = std::fs::metadata(dir.join(KEY_FILE))
+                .unwrap()
+                .permissions()
+                .mode();
+            assert_eq!(mode & 0o777, 0o600);
+        }
         assert!(operator_name().starts_with("atlas"));
         let _ = std::fs::remove_dir_all(dir);
     }

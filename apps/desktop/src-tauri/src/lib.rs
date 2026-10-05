@@ -7,7 +7,6 @@
 mod commands;
 mod drivers;
 mod logfile;
-#[cfg(unix)]
 mod orion;
 mod settings;
 mod state;

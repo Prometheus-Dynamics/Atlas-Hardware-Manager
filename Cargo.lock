@@ -2995,7 +2995,7 @@ dependencies = [
 [[package]]
 name = "orion-auth"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=6776a0d97866deaaec1c846456749785f4933082#6776a0d97866deaaec1c846456749785f4933082"
 dependencies = [
  "ed25519-dalek",
  "hmac",
@@ -3010,7 +3010,7 @@ dependencies = [
 [[package]]
 name = "orion-client"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=6776a0d97866deaaec1c846456749785f4933082#6776a0d97866deaaec1c846456749785f4933082"
 dependencies = [
  "ed25519-dalek",
  "orion-auth",
@@ -3028,7 +3028,7 @@ dependencies = [
 [[package]]
 name = "orion-control-plane"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=6776a0d97866deaaec1c846456749785f4933082#6776a0d97866deaaec1c846456749785f4933082"
 dependencies = [
  "orion-core",
  "rkyv",
@@ -3041,7 +3041,7 @@ dependencies = [
 [[package]]
 name = "orion-core"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=6776a0d97866deaaec1c846456749785f4933082#6776a0d97866deaaec1c846456749785f4933082"
 dependencies = [
  "rkyv",
  "serde",
@@ -3051,7 +3051,7 @@ dependencies = [
 [[package]]
 name = "orion-data-plane"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=6776a0d97866deaaec1c846456749785f4933082#6776a0d97866deaaec1c846456749785f4933082"
 dependencies = [
  "orion-core",
  "rkyv",
@@ -3062,7 +3062,7 @@ dependencies = [
 [[package]]
 name = "orion-runtime"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=6776a0d97866deaaec1c846456749785f4933082#6776a0d97866deaaec1c846456749785f4933082"
 dependencies = [
  "orion-control-plane",
  "orion-core",
@@ -3072,7 +3072,7 @@ dependencies = [
 [[package]]
 name = "orion-transport-common"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=6776a0d97866deaaec1c846456749785f4933082#6776a0d97866deaaec1c846456749785f4933082"
 dependencies = [
  "tokio",
 ]
@@ -3080,7 +3080,7 @@ dependencies = [
 [[package]]
 name = "orion-transport-http"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=6776a0d97866deaaec1c846456749785f4933082#6776a0d97866deaaec1c846456749785f4933082"
 dependencies = [
  "orion-auth",
  "orion-control-plane",
@@ -3094,7 +3094,7 @@ dependencies = [
 [[package]]
 name = "orion-transport-ipc"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=6776a0d97866deaaec1c846456749785f4933082#6776a0d97866deaaec1c846456749785f4933082"
 dependencies = [
  "libc",
  "orion-control-plane",
