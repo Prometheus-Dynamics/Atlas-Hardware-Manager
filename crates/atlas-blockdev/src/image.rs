@@ -101,9 +101,11 @@ mod tests {
 
     fn temp(label: &str, bytes: &[u8]) -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!(
-            "atlas-blockdev-image-{label}-{}-{:?}",
+            "atlas-blockdev-image-{label}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.as_nanos())
         ));
         std::fs::write(&path, bytes).unwrap();
         path

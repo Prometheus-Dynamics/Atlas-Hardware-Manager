@@ -316,9 +316,11 @@ mod tests {
 
     fn temp(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
-            "atlas-blockdev-writer-{label}-{}-{:?}",
+            "atlas-blockdev-writer-{label}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.as_nanos())
         ))
     }
 

@@ -151,9 +151,11 @@ mod tests {
 
     fn temp_root(label: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "atlas-devices-{label}-{}-{:?}",
+            "atlas-devices-{label}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.as_nanos())
         ));
         std::fs::create_dir_all(&dir).unwrap();
         dir

@@ -171,9 +171,11 @@ mod tests {
 
     fn package_dir(label: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "atlas-eeprom-test-{label}-{}-{:?}",
+            "atlas-eeprom-test-{label}-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.as_nanos())
         ));
         std::fs::create_dir_all(dir.join("eeprom")).unwrap();
         dir
@@ -231,9 +233,11 @@ mod tests {
         let catalog = atlas_devices::DeviceCatalog::load(&[devices]);
         let raze = catalog.by_model("raze").expect("devices/raze is present");
         let staging = std::env::temp_dir().join(format!(
-            "atlas-eeprom-raze-{}-{:?}",
+            "atlas-eeprom-raze-{}-{}",
             std::process::id(),
             std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |elapsed| elapsed.as_nanos())
         ));
 
         // Checks every listed SHA-256 on the way.
