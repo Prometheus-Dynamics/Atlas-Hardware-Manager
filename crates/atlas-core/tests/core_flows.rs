@@ -270,10 +270,14 @@ async fn a_release_is_required_for_every_family() {
 
 #[tokio::test]
 async fn inventory_is_remembered_between_sessions() {
+    // Only file-name-safe characters: Windows rejects the ':' a Debug
+    // SystemTime would add.
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_nanos());
     let path = std::env::temp_dir().join(format!(
-        "atlas-core-session-{}-{:?}.json",
-        std::process::id(),
-        std::time::SystemTime::now()
+        "atlas-core-session-{}-{nanos}.json",
+        std::process::id()
     ));
     let fleet = MockFleet::demo();
     atlas_with_store(&fleet, Arc::new(JsonFileStore::new(&path)))
