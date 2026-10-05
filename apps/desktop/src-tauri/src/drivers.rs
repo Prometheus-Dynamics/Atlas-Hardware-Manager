@@ -6,7 +6,7 @@ use std::sync::Arc;
 use atlas_core::AtlasBuilder;
 use atlas_devices::DeviceCatalog;
 use atlas_driver_pd::{NetworkLinks, drivers_for_catalog};
-use atlas_driver_rpi::{RpiConfig, RpiDriver, UsbBootLinks};
+use atlas_driver_rpi::{RpiConfig, RpiDriver, SshKeys, UsbBootLinks};
 
 use crate::settings::AppPaths;
 
@@ -49,6 +49,7 @@ fn device_dirs(paths: &AppPaths) -> Vec<PathBuf> {
 pub fn register_hardware(
     builder: AtlasBuilder,
     paths: &AppPaths,
+    ssh_keys: &SshKeys,
     warnings: &mut Vec<String>,
 ) -> AtlasBuilder {
     let catalog = Arc::new(DeviceCatalog::load(&device_dirs(paths)));
@@ -60,6 +61,7 @@ pub fn register_hardware(
         .driver(Arc::new(RpiDriver::new(RpiConfig {
             boot_file_dirs,
             catalog: catalog.clone(),
+            ssh_keys: ssh_keys.clone(),
         })))
         .link_source(Arc::new(UsbBootLinks))
         .link_source(Arc::new(NetworkLinks));

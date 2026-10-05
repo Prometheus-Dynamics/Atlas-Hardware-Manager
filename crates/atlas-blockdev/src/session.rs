@@ -103,10 +103,7 @@ pub fn mount_read_only(disk: &Disk) -> Result<Vec<PathBuf>, BlockError> {
                 "udisksctl",
                 &["mount", "--no-user-interaction", "-b", &part, "-o", "ro"],
             )?;
-            // "Mounted /dev/sdc1 at /run/media/user/BOOT"
-            if let Some((_, point)) = output.trim().rsplit_once(" at ") {
-                points.push(PathBuf::from(point.trim_end_matches('.')));
-            }
+            points.push(mounted_at(&output)?);
         }
         Ok(points)
     }
@@ -142,4 +139,122 @@ pub fn open_folder(path: &Path) -> Result<(), BlockError> {
         .spawn()
         .map(|_| ())
         .map_err(|error| BlockError::Desktop(format!("{program}: {error}")))
+}
+
+/// Writes `contents` to `relative` (for example `pd-device/authorized_keys`)
+/// on the disk's first partition, the boot partition of a Pi image. Mounts
+/// it read-write for the write when nothing has it mounted, and unmounts it
+/// again; reuses a read-write mount the desktop already made.
+pub fn write_boot_file(disk: &Disk, relative: &str, contents: &str) -> Result<(), BlockError> {
+    #[cfg(target_os = "linux")]
+    {
+        let part = partitions(disk)
+            .into_iter()
+            .next()
+            .ok_or_else(|| BlockError::Desktop(format!("{} has no partitions", disk.name)))?;
+        let options =
+            run("findmnt", &["-n", "-o", "OPTIONS", "--source", &part]).unwrap_or_default();
+        let mounted =
+            run("findmnt", &["-n", "-o", "TARGET", "--source", &part]).unwrap_or_default();
+        let existing = mounted
+            .lines()
+            .next()
+            .map(str::trim)
+            .filter(|point| !point.is_empty());
+        let read_write = options.split(',').any(|option| option.trim() == "rw");
+        let (point, ours) = match existing {
+            Some(point) if read_write => (PathBuf::from(point), false),
+            Some(_) => {
+                // Mounted read-only (say, by Browse files): remount it ours.
+                run(
+                    "udisksctl",
+                    &["unmount", "--no-user-interaction", "-b", &part],
+                )?;
+                (mount_rw(&part)?, true)
+            }
+            None => (mount_rw(&part)?, true),
+        };
+        let target = point.join(relative);
+        let result = (|| {
+            if let Some(parent) = target.parent() {
+                std::fs::create_dir_all(parent).map_err(|error| BlockError::io(parent, error))?;
+            }
+            std::fs::write(&target, contents).map_err(|error| BlockError::io(&target, error))?;
+            let file =
+                std::fs::File::open(&target).map_err(|error| BlockError::io(&target, error))?;
+            file.sync_all()
+                .map_err(|error| BlockError::io(&target, error))
+        })();
+        if ours {
+            let _ = run(
+                "udisksctl",
+                &["unmount", "--no-user-interaction", "-b", &part],
+            );
+        }
+        result
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (disk, relative, contents);
+        Err(BlockError::Desktop(
+            "writing to the boot partition is only supported on Linux so far".into(),
+        ))
+    }
+}
+
+/// Reads `relative` from the disk's boot partition, if it is there.
+pub fn read_boot_file(disk: &Disk, relative: &str) -> Result<Option<String>, BlockError> {
+    #[cfg(target_os = "linux")]
+    {
+        let part = partitions(disk)
+            .into_iter()
+            .next()
+            .ok_or_else(|| BlockError::Desktop(format!("{} has no partitions", disk.name)))?;
+        let mounted =
+            run("findmnt", &["-n", "-o", "TARGET", "--source", &part]).unwrap_or_default();
+        let (point, ours) = match mounted
+            .lines()
+            .next()
+            .map(str::trim)
+            .filter(|p| !p.is_empty())
+        {
+            Some(point) => (PathBuf::from(point), false),
+            None => {
+                let output = run(
+                    "udisksctl",
+                    &["mount", "--no-user-interaction", "-b", &part, "-o", "ro"],
+                )?;
+                (mounted_at(&output)?, true)
+            }
+        };
+        let text = std::fs::read_to_string(point.join(relative)).ok();
+        if ours {
+            let _ = run(
+                "udisksctl",
+                &["unmount", "--no-user-interaction", "-b", &part],
+            );
+        }
+        Ok(text)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = (disk, relative);
+        Ok(None)
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn mount_rw(part: &str) -> Result<PathBuf, BlockError> {
+    let output = run("udisksctl", &["mount", "--no-user-interaction", "-b", part])?;
+    mounted_at(&output)
+}
+
+/// The mount point in udisksctl's "Mounted /dev/sdc1 at /run/media/u/BOOT".
+#[cfg(target_os = "linux")]
+fn mounted_at(output: &str) -> Result<PathBuf, BlockError> {
+    output
+        .trim()
+        .rsplit_once(" at ")
+        .map(|(_, point)| PathBuf::from(point.trim_end_matches('.')))
+        .ok_or_else(|| BlockError::Desktop(format!("unexpected udisksctl output: {output}")))
 }

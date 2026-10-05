@@ -33,6 +33,15 @@
     { value: "demo", label: "Demo robot" },
     { value: "flaky", label: "Flaky robot" },
   ];
+  const DEFAULT_KEY = "~/.ssh/id_ed25519.pub";
+  // svelte-ignore state_referenced_locally
+  let keyOn = $state(!!settings.ssh_key_file);
+  // svelte-ignore state_referenced_locally
+  let keyFile = $state(settings.ssh_key_file ?? DEFAULT_KEY);
+  $effect(() => {
+    draft.ssh_key_file = keyOn && keyFile.trim() ? keyFile.trim() : null;
+  });
+
   // svelte-ignore state_referenced_locally
   let sim = $state<"off" | SimScenario>(settings.simulated ?? "off");
   $effect(() => {
@@ -60,6 +69,8 @@
   function revert() {
     draft = { ...settings };
     sim = settings.simulated ?? "off";
+    keyOn = !!settings.ssh_key_file;
+    keyFile = settings.ssh_key_file ?? DEFAULT_KEY;
   }
 </script>
 
@@ -81,6 +92,19 @@
         aria-label="Safety-net check interval in milliseconds"
       />
     </Field>
+
+    <Field
+      inline
+      label="Add my SSH key to boards I flash"
+      hint="Puts your public key on the board's boot partition; the board installs it for root on first start. Password login stays off."
+    >
+      <Toggle bind:checked={keyOn} label="Add my SSH key to boards I flash" />
+    </Field>
+    {#if keyOn}
+      <Field label="Public key file" hint="The .pub file, never the private key.">
+        <input class="input mono" bind:value={keyFile} placeholder={DEFAULT_KEY} aria-label="Public key file" />
+      </Field>
+    {/if}
 
     <div class="flex flex-col gap-1.5">
       <span class="text-[13px] font-medium text-fg">Staged rollout</span>

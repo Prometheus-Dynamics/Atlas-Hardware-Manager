@@ -21,4 +21,4 @@ mod health;
 mod recover;
 
 pub use boot_files::find_boot_files;
-pub use driver::{RPI_FAMILY, RpiConfig, RpiDriver, UsbBootLinks};
+pub use driver::{RPI_FAMILY, RpiConfig, RpiDriver, SshKeys, UsbBootLinks};

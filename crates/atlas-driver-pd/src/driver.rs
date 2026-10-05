@@ -170,11 +170,14 @@ impl Driver for PdDriver {
                 candidate.address, reported.model, self.manifest.family
             )));
         }
-        let identity = reported.to_identity(
+        let mut identity = reported.to_identity(
             Some(&self.package),
             candidate.link.clone(),
             candidate.address.clone(),
         );
+        if let Some(tty) = crate::serial::serial_console(&reported.serial) {
+            identity.attributes.insert("serial_console".into(), tty);
+        }
         self.reported
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())

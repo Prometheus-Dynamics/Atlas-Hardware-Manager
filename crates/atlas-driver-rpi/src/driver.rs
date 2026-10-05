@@ -19,6 +19,41 @@ use crate::recover::RpiRecovery;
 pub const RPI_FAMILY: &str = "rpi";
 const LINK_ID: &str = "usb-boot";
 
+/// Public SSH keys to leave on a board's boot partition, where the device
+/// package installs them for root at boot (`pd-device/authorized_keys`).
+/// `None` writes nothing. Shared so the app can change it from settings.
+#[derive(Clone, Default)]
+pub struct SshKeys(Arc<std::sync::RwLock<Option<String>>>);
+
+impl std::fmt::Debug for SshKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(if self.get().is_some() {
+            "SshKeys(set)"
+        } else {
+            "SshKeys(none)"
+        })
+    }
+}
+
+impl SshKeys {
+    pub fn set(&self, keys: Option<String>) {
+        *self
+            .0
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = keys;
+    }
+
+    pub fn get(&self) -> Option<String> {
+        self.0
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+}
+
+/// Where the device package looks for keys on the boot partition.
+pub(crate) const BOOT_KEYS_PATH: &str = "pd-device/authorized_keys";
+
 /// Where to look for boot files beyond the defaults, such as the app's
 /// bundled resources folder, and which device packages are known.
 #[derive(Clone, Debug, Default)]
@@ -27,6 +62,8 @@ pub struct RpiConfig {
     /// Device packages, used to name boards in recovery and to find their
     /// EEPROM files and recovery instructions.
     pub catalog: Arc<DeviceCatalog>,
+    /// Keys written to the boot partition after a flash, when set.
+    pub ssh_keys: SshKeys,
 }
 
 /// The single link for every Pi in USB boot mode on this computer.
@@ -347,6 +384,7 @@ mod tests {
         let driver = RpiDriver::new(RpiConfig {
             boot_file_dirs: Vec::new(),
             catalog: Arc::new(catalog),
+            ssh_keys: Default::default(),
         });
         let gadget = StorageGadget {
             location: "001-4".into(),

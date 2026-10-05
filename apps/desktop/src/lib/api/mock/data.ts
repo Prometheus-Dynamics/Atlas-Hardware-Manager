@@ -343,6 +343,7 @@ export const settings: AppSettings = {
   auto_scan: true,
   scan_interval_ms: 20000,
   staged_default: "auto",
+  ssh_key_file: null,
 };
 
 export const jobs: JobRecord[] = [];

@@ -377,6 +377,20 @@ impl UpdateCapability for RpiRecovery {
             report.seconds,
             &report.sha256[..12.min(report.sha256.len())]
         ));
+        // Opt-in access: leave the user's public keys where the device
+        // package installs them at first boot.
+        if let Some(keys) = self.config.ssh_keys.get() {
+            let target = disk.clone();
+            match tokio::task::spawn_blocking(move || {
+                atlas_blockdev::write_boot_file(&target, crate::driver::BOOT_KEYS_PATH, &keys)
+            })
+            .await
+            {
+                Ok(Ok(())) => progress.log("added your SSH key to the boot partition"),
+                Ok(Err(error)) => progress.log(format!("could not add your SSH key: {error}")),
+                Err(error) => progress.log(format!("could not add your SSH key: {error}")),
+            }
+        }
         // Eject before the desktop auto-mounts the fresh partitions: a
         // mount that is still there when the board loses power leaves the
         // new filesystems dirty.

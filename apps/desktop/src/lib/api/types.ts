@@ -292,6 +292,8 @@ export interface AppSettings {
   auto_scan: boolean;
   scan_interval_ms: number;
   staged_default: StagedRollout;
+  /** Public key file put on boards Atlas flashes (SSH as root); null is off. */
+  ssh_key_file: string | null;
 }
 
 export interface AppPaths {

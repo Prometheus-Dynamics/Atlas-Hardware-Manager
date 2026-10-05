@@ -5,6 +5,7 @@ use std::time::Duration;
 use atlas_core::{Atlas, InventoryStore, JsonFileStore, WatchOptions};
 use atlas_driver::CancellationToken;
 use atlas_driver_mock::MockFleet;
+use atlas_driver_rpi::SshKeys;
 use atlas_release::ReleaseCatalog;
 
 use crate::drivers;
@@ -22,12 +23,20 @@ pub struct AppState {
     pub startup_warnings: Vec<String>,
     /// Stops the running device watch, when one runs.
     watch: Mutex<Option<CancellationToken>>,
+    /// The public keys written to boards after a flash (from settings).
+    pub ssh_keys: SshKeys,
 }
 
 impl AppState {
     pub fn build() -> Result<Self, String> {
         let default_paths = AppPaths::resolve(false);
         let settings = AppSettings::load(&default_paths.settings_file);
+        let ssh_keys = SshKeys::default();
+        let mut key_warning = None;
+        match crate::settings::read_ssh_keys(settings.ssh_key_file.as_deref()) {
+            Ok(keys) => ssh_keys.set(keys),
+            Err(error) => key_warning = Some(format!("SSH key not used: {error}")),
+        }
         let simulated = std::env::var("ATLAS_SIM")
             .ok()
             .and_then(|value| SimScenario::parse(&value))
@@ -49,7 +58,10 @@ impl AppState {
                 }
                 builder = builder.link_source(fleet.link_source());
             }
-            None => builder = drivers::register_hardware(builder, &paths, &mut startup_warnings),
+            None => {
+                builder =
+                    drivers::register_hardware(builder, &paths, &ssh_keys, &mut startup_warnings)
+            }
         }
 
         let atlas = match builder.build() {
@@ -61,12 +73,18 @@ impl AppState {
                 ));
                 let mut builder = Atlas::builder();
                 if simulated.is_none() {
-                    builder = drivers::register_hardware(builder, &paths, &mut startup_warnings);
+                    builder = drivers::register_hardware(
+                        builder,
+                        &paths,
+                        &ssh_keys,
+                        &mut startup_warnings,
+                    );
                 }
                 builder.build().map_err(|error| error.to_string())?
             }
         };
 
+        startup_warnings.extend(key_warning);
         let releases = ReleaseCatalog::open(&paths.releases_file, &paths.release_cache_dir)
             .map_err(|error| error.to_string())?;
 
@@ -78,6 +96,7 @@ impl AppState {
             simulated,
             startup_warnings,
             watch: Mutex::new(None),
+            ssh_keys,
         })
     }
 

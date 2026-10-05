@@ -17,11 +17,13 @@
     "open-as-disk": "device-sd-card",
     "browse-files": "folder-open",
     eject: "player-eject",
+    "add-ssh-key": "key",
   };
   const DONE: Record<string, string> = {
     "open-as-disk": "is starting as a USB disk; its eMMC shows up in a few seconds.",
     "browse-files": "is open read-only in your file manager.",
     eject: "is ejected and safe to unplug.",
+    "add-ssh-key": "has your SSH key; it's installed for root on the next start.",
   };
 
   let actions = $state<DeviceAction[]>([]);

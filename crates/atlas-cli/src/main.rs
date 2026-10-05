@@ -152,6 +152,7 @@ fn build_atlas(cli: &Cli) -> Result<Atlas, String> {
                 .driver(Arc::new(RpiDriver::new(RpiConfig {
                     boot_file_dirs,
                     catalog: catalog.clone(),
+                    ssh_keys: Default::default(),
                 })))
                 .link_source(Arc::new(UsbBootLinks))
                 .link_source(Arc::new(NetworkLinks));

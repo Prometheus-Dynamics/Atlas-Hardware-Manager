@@ -3,7 +3,9 @@
 //! - In USB boot: "Open as USB disk" boots the mass-storage gadget and
 //!   writes nothing, so the eMMC can be looked at or backed up.
 //! - With the eMMC exposed: "Browse files" mounts it read-only and opens
-//!   the file manager; "Eject safely" unmounts and powers it off.
+//!   the file manager; "Eject safely" unmounts and powers it off; "Add my
+//!   SSH key" (when a key is set in Atlas) puts it on the boot partition,
+//!   where the device package installs it for root at boot.
 //! - The bootloader (EEPROM) update, when the device package ships one.
 
 use std::sync::Arc;
@@ -14,12 +16,14 @@ use atlas_usbboot::{BootOptions, boot_device};
 
 use crate::RpiConfig;
 use crate::boot_files::find_boot_files;
+use crate::driver::BOOT_KEYS_PATH;
 use crate::eeprom::{EepromUpdate, UPDATE_BOOTLOADER};
 use crate::recover::{exposed_disk, storage_port};
 
 const EXPOSE: &str = "open-as-disk";
 const BROWSE: &str = "browse-files";
 const EJECT: &str = "eject";
+const ADD_KEY: &str = "add-ssh-key";
 
 pub(crate) struct RpiActions {
     config: Arc<RpiConfig>,
@@ -33,6 +37,22 @@ impl RpiActions {
             config,
         }
     }
+}
+
+/// `existing` plus the lines of `keys` it doesn't have yet.
+fn merge_keys(existing: &str, keys: &str) -> String {
+    let mut lines: Vec<&str> = existing
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    for key in keys.lines().map(str::trim).filter(|line| !line.is_empty()) {
+        if !lines.iter().any(|line| line.trim() == key) {
+            lines.push(key);
+        }
+    }
+    let mut merged = lines.join("\n");
+    merged.push('\n');
+    merged
 }
 
 fn action(id: &str, label: &str, destructive: bool) -> DeviceAction {
@@ -60,10 +80,12 @@ async fn blocking<T: Send + 'static>(
 impl ActionsCapability for RpiActions {
     fn actions(&self, device: &Identity) -> Vec<DeviceAction> {
         if storage_port(device).is_some() {
-            return vec![
-                action(BROWSE, "Browse files", false),
-                action(EJECT, "Eject safely", false),
-            ];
+            let mut list = vec![action(BROWSE, "Browse files", false)];
+            if self.config.ssh_keys.get().is_some() {
+                list.push(action(ADD_KEY, "Add my SSH key", false));
+            }
+            list.push(action(EJECT, "Eject safely", false));
+            return list;
         }
         let mut list = vec![action(EXPOSE, "Open as USB disk", false)];
         if let Some(eeprom) = &self.eeprom {
@@ -87,12 +109,25 @@ impl ActionsCapability for RpiActions {
                     .map(|_| ())
                     .map_err(|error| unavailable(error.to_string()))
             }
-            BROWSE | EJECT => {
+            BROWSE | EJECT | ADD_KEY => {
                 let port = storage_port(device)
                     .ok_or_else(|| unavailable("this board's eMMC is not exposed as a disk"))?;
                 let disk = exposed_disk(&port).await?;
                 if action_id == EJECT {
                     return blocking(move || atlas_blockdev::eject(&disk)).await;
+                }
+                if action_id == ADD_KEY {
+                    let keys =
+                        self.config.ssh_keys.get().ok_or_else(|| {
+                            unavailable("set your SSH key in Atlas settings first")
+                        })?;
+                    return blocking(move || {
+                        let existing = atlas_blockdev::read_boot_file(&disk, BOOT_KEYS_PATH)?
+                            .unwrap_or_default();
+                        let merged = merge_keys(&existing, &keys);
+                        atlas_blockdev::write_boot_file(&disk, BOOT_KEYS_PATH, &merged)
+                    })
+                    .await;
                 }
                 let points = blocking(move || atlas_blockdev::mount_read_only(&disk)).await?;
                 for point in &points {
@@ -144,10 +179,30 @@ mod tests {
     }
 
     #[test]
+    fn keys_are_merged_without_duplicates() {
+        let merged = merge_keys(
+            "ssh-ed25519 AAA a@x\n",
+            "ssh-ed25519 AAA a@x\nssh-ed25519 BBB b@y",
+        );
+        assert_eq!(merged, "ssh-ed25519 AAA a@x\nssh-ed25519 BBB b@y\n");
+        assert_eq!(merge_keys("", "ssh-rsa C c"), "ssh-rsa C c\n");
+    }
+
+    #[test]
+    fn the_key_action_shows_only_with_a_key_set() {
+        let config = Arc::new(RpiConfig::default());
+        let actions = RpiActions::new(config.clone(), false);
+        assert!(!ids(&actions, &board(Some("storage"))).contains(&ADD_KEY.to_string()));
+        config.ssh_keys.set(Some("ssh-ed25519 AAA a@x".into()));
+        assert!(ids(&actions, &board(Some("storage"))).contains(&ADD_KEY.to_string()));
+    }
+
+    #[test]
     fn actions_follow_where_the_board_is() {
         let config = Arc::new(RpiConfig {
             boot_file_dirs: Vec::new(),
             catalog: Arc::new(DeviceCatalog::default()),
+            ssh_keys: Default::default(),
         });
         let with_eeprom = RpiActions::new(config.clone(), true);
         assert_eq!(

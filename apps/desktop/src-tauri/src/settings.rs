@@ -35,6 +35,10 @@ pub struct AppSettings {
     pub scan_interval_ms: u64,
     /// Default for the staged rollout switch in the update dialog.
     pub staged_default: StagedRollout,
+    /// A public key file (like `~/.ssh/id_ed25519.pub`) to put on boards
+    /// Atlas flashes, for SSH as root. Off when unset.
+    #[serde(default)]
+    pub ssh_key_file: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -44,6 +48,7 @@ impl Default for AppSettings {
             auto_scan: true,
             scan_interval_ms: DEFAULT_FALLBACK_MS,
             staged_default: StagedRollout::Auto,
+            ssh_key_file: None,
         }
     }
 }
@@ -114,5 +119,62 @@ impl AppPaths {
             data_dir,
             cache_dir,
         }
+    }
+}
+
+/// Reads the public key file named in the settings: `Ok(None)` when unset,
+/// an error when it is set but missing or not an OpenSSH public key.
+pub fn read_ssh_keys(file: Option<&str>) -> Result<Option<String>, String> {
+    let Some(file) = file.map(str::trim).filter(|file| !file.is_empty()) else {
+        return Ok(None);
+    };
+    let path = match file.strip_prefix("~/") {
+        Some(rest) => dirs::home_dir()
+            .ok_or("no home directory to expand ~ in")?
+            .join(rest),
+        None => std::path::PathBuf::from(file),
+    };
+    let text = std::fs::read_to_string(&path)
+        .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+    let keys: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| {
+            ["ssh-", "ecdsa-", "sk-ssh-", "sk-ecdsa-"]
+                .iter()
+                .any(|prefix| line.starts_with(prefix))
+        })
+        .collect();
+    if keys.is_empty() {
+        return Err(format!(
+            "{} is not an OpenSSH public key (choose the .pub file, never the private key)",
+            path.display()
+        ));
+    }
+    Ok(Some(keys.join("\n")))
+}
+
+#[cfg(test)]
+mod ssh_key_tests {
+    use super::read_ssh_keys;
+
+    #[test]
+    fn only_public_keys_are_accepted() {
+        let dir = std::env::temp_dir().join(format!("atlas-keys-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let public = dir.join("id.pub");
+        std::fs::write(&public, "ssh-ed25519 AAAA me@host\n").unwrap();
+        let private = dir.join("id");
+        std::fs::write(&private, "-----BEGIN OPENSSH PRIVATE KEY-----\n").unwrap();
+
+        assert_eq!(read_ssh_keys(None).unwrap(), None);
+        assert_eq!(read_ssh_keys(Some(" ")).unwrap(), None);
+        assert_eq!(
+            read_ssh_keys(public.to_str()).unwrap().as_deref(),
+            Some("ssh-ed25519 AAAA me@host")
+        );
+        assert!(read_ssh_keys(private.to_str()).is_err());
+        assert!(read_ssh_keys(Some("/nonexistent/key.pub")).is_err());
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
