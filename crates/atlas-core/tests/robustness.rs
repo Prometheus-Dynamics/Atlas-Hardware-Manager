@@ -90,3 +90,42 @@ async fn cancel_ends_a_job_whose_driver_stopped_responding() {
         other => panic!("expected the device to be let go, got {other:?}"),
     }
 }
+
+#[tokio::test]
+async fn a_flashed_board_replaces_its_recovery_record() {
+    // The same board as the boot ROM sees it, and as its running OS does.
+    let recovery = DeviceKey::new("sim-boot", "e5226d57");
+    let running = DeviceKey::new(SIM_HELIOS, "a317bcbee5226d57");
+    let fleet = MockFleet::new()
+        .with(
+            MockDevice::new("sim-boot", "e5226d57")
+                .recovery()
+                .board("e5226d57"),
+        )
+        .with(MockDevice::new(SIM_HELIOS, "a317bcbee5226d57").board("e5226d57"));
+    fleet.set_online(&running, false);
+    let atlas = atlas_for(&fleet);
+    atlas.scan().await;
+    atlas
+        .set_label(&recovery, Some("front cam".into()))
+        .unwrap();
+
+    // Flashed: it leaves USB boot and comes up running.
+    fleet.set_online(&recovery, false);
+    fleet.set_online(&running, true);
+    atlas.scan().await;
+
+    assert!(
+        atlas.device(&recovery).is_none(),
+        "the recovery record is gone"
+    );
+    let board = atlas.device(&running).unwrap();
+    assert_eq!(board.label.as_deref(), Some("front cam"));
+    assert!(
+        atlas
+            .activity(5)
+            .iter()
+            .any(|entry| entry.message.contains("left recovery")),
+        "the history says what happened"
+    );
+}

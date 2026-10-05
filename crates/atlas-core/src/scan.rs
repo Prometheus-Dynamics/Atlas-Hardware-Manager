@@ -266,6 +266,19 @@ pub(crate) async fn run(inner: &Inner) -> ScanReport {
         inner.events.emit(Event::DeviceOffline { key: key.clone() });
     }
     inner.record_activity(offline_entries);
+    // Only now are records that left this scan offline, so a board that
+    // went from recovery to running can take its old record's place.
+    let running: Vec<DeviceRecord> = {
+        let state = inner.state();
+        seen.iter()
+            .filter_map(|key| state.inventory.get(key).cloned())
+            .collect()
+    };
+    for record in &running {
+        if crate::lineage::absorb_recovery_records(inner, record).is_some() {
+            scan.changed = true;
+        }
+    }
     if (scan.changed || !went_offline.is_empty()) && !inner.state().robots.is_empty() {
         inner.events.emit(Event::RobotsChanged);
     }

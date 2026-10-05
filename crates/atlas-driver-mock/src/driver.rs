@@ -60,6 +60,12 @@ fn version_name(device: &MockDevice) -> &'static str {
 /// What a running simulated device tells Atlas beyond its version.
 fn attributes(device: &MockDevice) -> BTreeMap<String, String> {
     let mut attributes = BTreeMap::new();
+    if let Some(serial) = &device.board_serial {
+        attributes.insert(
+            atlas_driver::attributes::BOARD_SERIAL.into(),
+            serial.clone(),
+        );
+    }
     if device.mode == DeviceMode::Recovery {
         return attributes;
     }

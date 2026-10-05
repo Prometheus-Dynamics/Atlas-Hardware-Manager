@@ -12,6 +12,7 @@ mod events;
 mod inventory;
 mod job_runner;
 mod jobs;
+mod lineage;
 mod manage;
 mod observe;
 mod robots;

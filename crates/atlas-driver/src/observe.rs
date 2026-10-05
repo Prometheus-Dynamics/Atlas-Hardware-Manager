@@ -18,6 +18,10 @@ pub mod attributes {
     pub const CAMERA_STREAM: &str = "camera_stream";
     /// The device's network hostname.
     pub const HOSTNAME: &str = "hostname";
+    /// The physical board's own serial, the same whichever way a driver
+    /// sees it (boot ROM, recovery gadget, running OS). Lets Atlas tell that
+    /// a recovery device and a running device are one board.
+    pub const BOARD_SERIAL: &str = "board_serial";
 }
 
 /// Metric ids with a shared meaning. The UI gives these a gauge and uses

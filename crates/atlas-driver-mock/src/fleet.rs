@@ -46,6 +46,9 @@ pub struct MockDevice {
     pub step_time: Duration,
     /// When the device last started; uptime and logs count from here.
     pub booted: Instant,
+    /// The physical board's serial, shared across the identities one board
+    /// has (see `atlas_driver::attributes::BOARD_SERIAL`).
+    pub board_serial: Option<String>,
 }
 
 impl MockDevice {
@@ -64,7 +67,13 @@ impl MockDevice {
             booted: Instant::now()
                 .checked_sub(Duration::from_secs(3 * 3600 + 17 * 60))
                 .unwrap_or_else(Instant::now),
+            board_serial: None,
         }
+    }
+
+    pub fn board(mut self, serial: &str) -> Self {
+        self.board_serial = Some(serial.into());
+        self
     }
 
     pub fn name(mut self, name: &str) -> Self {

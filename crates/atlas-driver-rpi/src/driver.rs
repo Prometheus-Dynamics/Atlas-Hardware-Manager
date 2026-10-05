@@ -82,6 +82,9 @@ impl RpiDriver {
         let mut attributes = recovery_attributes(None, &packages);
         attributes.insert("stage".into(), "storage".into());
         attributes.insert("usb_port".into(), gadget.port.clone());
+        if let Some(serial) = gadget.board_serial() {
+            attributes.insert(atlas_driver::attributes::BOARD_SERIAL.into(), serial);
+        }
         Identity {
             key: DeviceKey::new(
                 RPI_FAMILY,
@@ -251,8 +254,17 @@ impl Driver for RpiDriver {
                 device.location
             )),
             link: candidate.link.clone(),
-            address: device.location,
-            attributes: recovery_attributes(Some(device.chip), &packages),
+            address: device.location.clone(),
+            attributes: {
+                let mut attributes = recovery_attributes(Some(device.chip), &packages);
+                let serial = serial_for(&device);
+                if !serial.starts_with("port-") {
+                    // The last 8 hex digits, as the running OS reports them too.
+                    let tail = serial[serial.len().saturating_sub(8)..].to_string();
+                    attributes.insert(atlas_driver::attributes::BOARD_SERIAL.into(), tail);
+                }
+                attributes
+            },
         })
     }
 
@@ -353,6 +365,7 @@ mod tests {
         assert_eq!(identity.mode, DeviceMode::Recovery);
         assert_eq!(identity.attributes["stage"], "storage");
         assert_eq!(identity.attributes["usb_port"], "1-4");
+        assert_eq!(identity.attributes["board_serial"], "e5226d57");
         assert_eq!(identity.attributes["model"], "raze");
     }
 
