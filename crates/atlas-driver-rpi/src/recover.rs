@@ -17,6 +17,10 @@ use atlas_usbboot::{BootEvent, BootOptions, boot_device};
 use crate::RpiConfig;
 use crate::boot_files::find_boot_files;
 
+/// The last log line of a flash. The UI shows it as the next step, too.
+pub(crate) const NEXT_STEP: &str =
+    "next: power-cycle the board without holding its boot button to start the new image";
+
 /// How long the eMMC may take to appear as a disk after USB boot.
 const DISK_APPEAR_TIMEOUT: Duration = Duration::from_secs(90);
 const DISK_POLL: Duration = Duration::from_secs(1);
@@ -65,7 +69,7 @@ async fn disks() -> Result<Vec<Disk>, DriverError> {
 }
 
 /// The USB port of a board already in eMMC-as-disk mode, if this is one.
-fn storage_port(device: &Identity) -> Option<String> {
+pub(crate) fn storage_port(device: &Identity) -> Option<String> {
     (device.attributes.get("stage").map(String::as_str) == Some("storage"))
         .then(|| device.attributes.get("usb_port").cloned())
         .flatten()
@@ -73,7 +77,7 @@ fn storage_port(device: &Identity) -> Option<String> {
 
 /// Picks the disk of a board already in eMMC-as-disk mode: the USB disk on
 /// its port. Where disks don't report a port, the one Pi gadget disk.
-async fn exposed_disk(port: &str) -> Result<Disk, DriverError> {
+pub(crate) async fn exposed_disk(port: &str) -> Result<Disk, DriverError> {
     let candidates: Vec<Disk> = disks()
         .await?
         .into_iter()
@@ -373,7 +377,19 @@ impl UpdateCapability for RpiRecovery {
             report.seconds,
             &report.sha256[..12.min(report.sha256.len())]
         ));
-        progress.log("remove the nRPIBOOT jumper and power-cycle the board to boot the new image");
+        // Eject before the desktop auto-mounts the fresh partitions: a
+        // mount that is still there when the board loses power leaves the
+        // new filesystems dirty.
+        let ejected = disk.clone();
+        match tokio::task::spawn_blocking(move || atlas_blockdev::eject(&ejected)).await {
+            Ok(Ok(())) => progress.log(format!("ejected {} safely", disk.name)),
+            Ok(Err(error)) => progress.log(format!(
+                "could not eject {} ({error}); unmount it before unplugging the board",
+                disk.name
+            )),
+            Err(error) => progress.log(format!("could not eject {}: {error}", disk.name)),
+        }
+        progress.log(NEXT_STEP);
         Ok(UpdateOutcome::Verified {
             version: release.version.clone(),
         })

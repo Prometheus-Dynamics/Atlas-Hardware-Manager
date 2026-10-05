@@ -9,7 +9,20 @@
 
   let { record }: { record: DeviceRecord } = $props();
 
-  const ICON: Record<string, IconName> = { locate: "focus-2", identify: "focus-2", reboot: "refresh", restart: "refresh" };
+  const ICON: Record<string, IconName> = {
+    locate: "focus-2",
+    identify: "focus-2",
+    reboot: "refresh",
+    restart: "refresh",
+    "open-as-disk": "device-sd-card",
+    "browse-files": "folder-open",
+    eject: "player-eject",
+  };
+  const DONE: Record<string, string> = {
+    "open-as-disk": "is starting as a USB disk; its eMMC shows up in a few seconds.",
+    "browse-files": "is open read-only in your file manager.",
+    eject: "is ejected and safe to unplug.",
+  };
 
   let actions = $state<DeviceAction[]>([]);
   const quick = $derived(actions.filter((a) => !a.destructive).slice(0, 3));
@@ -31,7 +44,14 @@
 
   async function run(action: DeviceAction) {
     await api.runDeviceAction(record.key, action.id);
-    toasts.success(action.id === "locate" ? `${deviceName(record)} is signalling. Look for it.` : `${action.label}: sent to ${deviceName(record)}.`);
+    const done = DONE[action.id];
+    toasts.success(
+      action.id === "locate"
+        ? `${deviceName(record)} is signalling. Look for it.`
+        : done
+          ? `${deviceName(record)} ${done}`
+          : `${action.label}: sent to ${deviceName(record)}.`,
+    );
   }
 </script>
 

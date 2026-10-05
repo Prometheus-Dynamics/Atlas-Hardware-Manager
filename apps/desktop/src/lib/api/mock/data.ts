@@ -101,7 +101,10 @@ const razeInUsbBoot: SimDevice = {
   attributes: { chip: "BCM2712", model: "raze", storage: "emmc", recovery_steps: RAZE_STEPS },
   link: { kind: "usb-boot" },
   caps: ["info", "recover", "actions"],
-  actions: [{ id: "update-bootloader", label: "Update bootloader (EEPROM)", destructive: true }],
+  actions: [
+    { id: "open-as-disk", label: "Open as USB disk", destructive: false },
+    { id: "update-bootloader", label: "Update bootloader (EEPROM)", destructive: true },
+  ],
 };
 
 /** A running Raze on the robot network, as atlas-driver-pd reports one. */

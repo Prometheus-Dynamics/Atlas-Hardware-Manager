@@ -12,6 +12,7 @@ import {
   type JobRecord,
 } from "$lib/api/client";
 import { toasts } from "./toasts.svelte";
+import { isRecoveryPlan } from "$lib/present";
 
 const LOG_LIMIT = 500;
 
@@ -111,6 +112,12 @@ class JobStore {
         const text = `Job #${event.job} finished: ${s.verified} verified${bad ? `, ${bad} with problems` : ""}${s.skipped ? `, ${s.skipped} skipped` : ""}.`;
         if (bad) toasts.warning(text);
         else toasts.success(text);
+        // A flashed board only starts its new image after a power-cycle.
+        const flashed = job?.devices.filter((d) => isRecoveryPlan(d.plan) && d.status.status === "verified") ?? [];
+        if (flashed.length > 0) {
+          const who = flashed.length === 1 ? flashed[0].name : `${flashed.length} boards`;
+          toasts.push("info", `Now power-cycle ${who}: unplug its power and plug it back in, without holding the boot button.`, 15000);
+        }
         break;
       }
     }

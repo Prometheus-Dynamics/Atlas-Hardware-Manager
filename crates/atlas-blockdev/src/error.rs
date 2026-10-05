@@ -10,6 +10,9 @@ pub enum BlockError {
     List(String),
     #[error("{0}")]
     Unsafe(String),
+    /// The desktop's disk service (UDisks2, diskutil) refused or is missing.
+    #[error("{0}")]
+    Desktop(String),
     #[error("no disk at {0}; it may have been unplugged")]
     NotFound(String),
     #[error("{0} is in use and could not be unmounted: {1}")]

@@ -62,6 +62,20 @@
         {#if detail && single.status.status !== "verified"}<span class="text-[13px] text-fg-muted">{sentence(detail)}</span>{/if}
       </div>
     {/if}
+    {#if isRecoveryPlan(single.plan) && single.status.status === "verified"}
+      {@const notEjected = single.log.some((line) => line.startsWith("could not eject"))}
+      <div class="next" in:rise>
+        <IconTile icon="power" tone="accent" size={36} />
+        <div class="min-w-0 flex-1">
+          <p class="text-[14px] font-semibold text-fg">Next: power-cycle {single.name}</p>
+          <p class="mt-0.5 text-[13px] leading-relaxed text-fg-muted">
+            {#if notEjected}Atlas couldn't eject the eMMC, so unmount it from your file manager first. Then unplug{:else}The eMMC is ejected and safe to unplug. Unplug{/if}
+            the board's power and plug it back in <strong class="text-fg">without</strong> holding the boot button. The first start can take a minute
+            or two.
+          </p>
+        </div>
+      </div>
+    {/if}
     <LogTail lines={single.log} />
   {:else}
     <ul class="flex flex-col gap-2">
@@ -73,6 +87,15 @@
 </section>
 
 <style>
+  .next {
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+    padding: 14px 16px;
+    border-radius: var(--r-card);
+    border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+    background: var(--accent-tint);
+  }
   .detail {
     border-radius: var(--r-panel);
   }

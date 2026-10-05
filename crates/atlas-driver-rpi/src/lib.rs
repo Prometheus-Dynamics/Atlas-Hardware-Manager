@@ -13,6 +13,7 @@
 //! jumper comes off and it powers up, whatever OS was written takes over
 //! (and its own driver finds it).
 
+mod actions;
 mod boot_files;
 mod driver;
 mod eeprom;

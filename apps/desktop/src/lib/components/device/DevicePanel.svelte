@@ -80,9 +80,7 @@
       {#if recovery && record.presence === "online"}<Pill tone="primary" icon="usb" label="Waiting for an image" />{/if}
       <Pill tone="neutral" mono label={record.key.serial} title={key} />
     </div>
-    {#if !recovery}
-      <div class="mt-3"><QuickActions {record} /></div>
-    {/if}
+    <div class="mt-3"><QuickActions {record} /></div>
     {#if tabs.length > 1}
       <div class="mt-4">
         <SegmentedControl options={tabs} bind:value={tab} label="Device sections" />

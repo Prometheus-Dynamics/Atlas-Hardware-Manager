@@ -55,6 +55,7 @@ import IPackage from "@tabler/icons-svelte-runes/icons/package";
 import IPencil from "@tabler/icons-svelte-runes/icons/pencil";
 import IPhotoOff from "@tabler/icons-svelte-runes/icons/photo-off";
 import IPlayerPause from "@tabler/icons-svelte-runes/icons/player-pause";
+import IPlayerEject from "@tabler/icons-svelte-runes/icons/player-eject";
 import IPlayerPlay from "@tabler/icons-svelte-runes/icons/player-play";
 import IPlayerStop from "@tabler/icons-svelte-runes/icons/player-stop";
 import IPlugConnected from "@tabler/icons-svelte-runes/icons/plug-connected";
@@ -137,6 +138,7 @@ export const ICONS = {
   "pencil": IPencil,
   "photo-off": IPhotoOff,
   "player-pause": IPlayerPause,
+  "player-eject": IPlayerEject,
   "player-play": IPlayerPlay,
   "player-stop": IPlayerStop,
   "plug-connected": IPlugConnected,

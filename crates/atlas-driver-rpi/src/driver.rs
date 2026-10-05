@@ -12,7 +12,7 @@ use atlas_usbboot::{
     BROADCOM_VENDOR_ID, BootDevice, Chip, StorageGadget, list_boot_devices, list_storage_gadgets,
 };
 
-use crate::eeprom::EepromUpdate;
+use crate::actions::RpiActions;
 use crate::health;
 use crate::recover::RpiRecovery;
 
@@ -264,10 +264,8 @@ impl Driver for RpiDriver {
             .is_some_and(|package| package.eeprom_dir().is_some());
         Capabilities {
             update: Some(Arc::new(RpiRecovery::new(self.config.clone()))),
-            actions: eeprom.then(|| {
-                Arc::new(EepromUpdate::new(self.config.clone()))
-                    as Arc<dyn atlas_driver::ActionsCapability>
-            }),
+            actions: Some(Arc::new(RpiActions::new(self.config.clone(), eeprom))
+                as Arc<dyn atlas_driver::ActionsCapability>),
             ..Capabilities::default()
         }
     }
