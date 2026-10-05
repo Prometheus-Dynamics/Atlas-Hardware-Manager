@@ -22,6 +22,42 @@ pub mod attributes {
     /// sees it (boot ROM, recovery gadget, running OS). Lets Atlas tell that
     /// a recovery device and a running device are one board.
     pub const BOARD_SERIAL: &str = "board_serial";
+
+    /// Atlas's board-serial rule: the last 8 hex digits, lowercase. A
+    /// Raspberry Pi's boot ROM reports just those; the running OS (device
+    /// tree `serial-number`, often NUL-terminated) and Orion report the full
+    /// serial. `None` when the serial isn't hex.
+    pub fn normalize_board_serial(raw: &str) -> Option<String> {
+        let serial = raw.trim_matches(|c: char| c.is_whitespace() || c == '\0');
+        let tail = serial.get(serial.len().checked_sub(8)?..)?;
+        serial
+            .chars()
+            .all(|c| c.is_ascii_hexdigit())
+            .then(|| tail.to_ascii_lowercase())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::normalize_board_serial;
+
+        #[test]
+        fn board_serials_normalize_to_their_last_8_hex_digits() {
+            assert_eq!(
+                normalize_board_serial("a317bcbee5226d57").as_deref(),
+                Some("e5226d57")
+            );
+            assert_eq!(
+                normalize_board_serial("10000000ABCDEF01\0\n").as_deref(),
+                Some("abcdef01")
+            );
+            assert_eq!(
+                normalize_board_serial("e5226d57").as_deref(),
+                Some("e5226d57")
+            );
+            assert_eq!(normalize_board_serial("short"), None);
+            assert_eq!(normalize_board_serial("not-a-hex-serial"), None);
+        }
+    }
 }
 
 /// Metric ids with a shared meaning. The UI gives these a gauge and uses

@@ -1,8 +1,10 @@
 # Updating running devices (OTA): design draft
 
 Status: draft, revised after Orion's review (its counterpart is Orion's
-`docs/update-recovery.md`). Nothing here is built yet; atlas-driver-orion
-waits for Orion's v4 types. It covers devices that run a full OS on eMMC
+`docs/update-recovery.md`). atlas-driver-orion is built against
+Orion v4 (`3cc974e`) and tested with a fake Orion; it waits for Orion's
+operator client as its transport. The device-side writer and agent aren't
+built yet. It covers devices that run a full OS on eMMC
 (Raze today) and leaves microcontrollers (STM32) for their own driver.
 
 ## Principles

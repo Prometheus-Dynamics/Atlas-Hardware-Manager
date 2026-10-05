@@ -58,7 +58,7 @@ impl Scan<'_> {
         }
         self.best.insert(identity.key.clone(), rank);
 
-        let capabilities = pending.driver.capabilities(&identity);
+        let capabilities = self.inner.capabilities(pending.driver.as_ref(), &identity);
         let kinds = capabilities.kinds_for(identity.mode);
         let key = identity.key.clone();
         let (outcome, record, previous): (Upsert, DeviceRecord, Option<DeviceRecord>) = {

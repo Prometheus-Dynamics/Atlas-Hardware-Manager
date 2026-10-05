@@ -6,6 +6,7 @@ members = [
     "crates/atlas-driver-mock",
     "crates/atlas-driver-rpi",
     "crates/atlas-driver-pd",
+    "crates/atlas-driver-orion",
     "crates/atlas-release",
     "crates/atlas-usbboot",
     "crates/atlas-blockdev",
@@ -32,6 +33,7 @@ atlas-devices = { path = "crates/atlas-devices" }
 atlas-driver-mock = { path = "crates/atlas-driver-mock" }
 atlas-driver-rpi = { path = "crates/atlas-driver-rpi" }
 atlas-driver-pd = { path = "crates/atlas-driver-pd" }
+atlas-driver-orion = { path = "crates/atlas-driver-orion" }
 atlas-release = { path = "crates/atlas-release" }
 atlas-usbboot = { path = "crates/atlas-usbboot" }
 atlas-blockdev = { path = "crates/atlas-blockdev" }
@@ -44,6 +46,9 @@ futures = "0.3"
 lzma-rs = "0.3"
 mdns-sd = "0.21"
 nusb = { version = "0.2.7", features = ["tokio"] }
+# Orion v4 wire types (control protocol 4), pinned to the pushed commit.
+orion-control-plane = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "3cc974e12e69a6fb41e9c91a75f860a617dfa4ca", default-features = false, features = ["std"] }
+orion-core = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "3cc974e12e69a6fb41e9c91a75f860a617dfa4ca", default-features = false, features = ["std"] }
 nix = { version = "0.30", default-features = false }
 plist = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json"] }

@@ -1,0 +1,24 @@
+[package]
+name = "atlas-driver-orion"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Orion as a capability source for Atlas: live readings, actions, and A/B updates for boards other drivers find."
+
+[dependencies]
+async-trait.workspace = true
+atlas-driver.workspace = true
+orion-control-plane.workspace = true
+orion-core.workspace = true
+tokio = { workspace = true, features = ["time", "sync"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros", "time", "test-util"] }
+
+[lints]
+workspace = true

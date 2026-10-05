@@ -355,7 +355,7 @@ async fn refresh_identity(
     let identify = live.driver.identify(&live.candidate);
     match tokio::time::timeout(inner.options.identify_timeout, identify).await {
         Ok(Ok(identity)) => {
-            let capabilities = live.driver.capabilities(&identity);
+            let capabilities = inner.capabilities(live.driver.as_ref(), &identity);
             let kinds = capabilities.kinds_for(identity.mode);
             let (outcome, record) = {
                 let mut state = inner.state();

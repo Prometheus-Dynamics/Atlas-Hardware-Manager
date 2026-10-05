@@ -105,3 +105,60 @@ async fn running_devices_report_metrics_and_logs() {
         Err(CoreError::Unsupported { .. })
     ));
 }
+
+/// Adds telemetry to the one device it knows, like Orion does by serial.
+struct ExtraReadings(DeviceKey);
+
+#[async_trait::async_trait]
+impl atlas_driver::TelemetryCapability for ExtraReadings {
+    async fn read(
+        &self,
+        _device: &atlas_driver::Identity,
+    ) -> Result<Vec<atlas_driver::Metric>, atlas_driver::DriverError> {
+        Ok(vec![atlas_driver::Metric::new(
+            "temp",
+            "Temperature",
+            40.0,
+            Some("°C"),
+        )])
+    }
+}
+
+impl atlas_driver::CapabilitySource for ExtraReadings {
+    fn capabilities_for(&self, device: &atlas_driver::Identity) -> atlas_driver::Capabilities {
+        if device.key != self.0 {
+            return atlas_driver::Capabilities::default();
+        }
+        atlas_driver::Capabilities {
+            telemetry: Some(Arc::new(ExtraReadings(self.0.clone()))),
+            ..atlas_driver::Capabilities::default()
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_capability_source_fills_in_what_the_driver_lacks() {
+    // A board in recovery has no telemetry of its own.
+    let board = DeviceKey::new(SIM_MCU, "M-2003");
+    let fleet = MockFleet::demo();
+    let mut builder = Atlas::builder()
+        .link_source(fleet.link_source())
+        .capability_source(Arc::new(ExtraReadings(board.clone())));
+    for driver in fleet.drivers() {
+        builder = builder.driver(driver);
+    }
+    let atlas = builder.build().unwrap();
+    atlas.scan().await;
+
+    assert!(
+        atlas
+            .device(&board)
+            .unwrap()
+            .capabilities
+            .contains(&CapabilityKind::Telemetry)
+    );
+    assert_eq!(atlas.telemetry(&board).await.unwrap()[0].value, 40.0);
+    // Devices with their own telemetry keep theirs.
+    let camera = DeviceKey::new(SIM_HELIOS, "H-1001");
+    assert!(atlas.telemetry(&camera).await.unwrap().len() > 1);
+}

@@ -72,16 +72,6 @@ impl ReportedAction {
     }
 }
 
-/// The part of a Raspberry Pi board serial the boot ROM reports: its last 8
-/// hex digits. The full serial is 16 hex digits on CM5 (`a317bcbee5226d57`),
-/// and the boot ROM shows `e5226d57`; matching them ties a recovery device
-/// to the running board.
-fn board_serial(serial: &str) -> Option<String> {
-    let serial = serial.trim();
-    let tail = serial.get(serial.len().checked_sub(8)?..)?;
-    (serial.chars().all(|c| c.is_ascii_hexdigit())).then(|| tail.to_ascii_lowercase())
-}
-
 impl PdIdentity {
     /// Builds an identity from the mDNS TXT record alone, for when the
     /// identity endpoint does not answer.
@@ -148,7 +138,7 @@ impl PdIdentity {
             attributes.insert(format!("mac.{interface}"), mac.clone());
         }
         attributes.insert("contract".into(), self.contract.to_string());
-        if let Some(board) = board_serial(&self.serial) {
+        if let Some(board) = atlas_driver::attributes::normalize_board_serial(&self.serial) {
             attributes.insert(atlas_driver::attributes::BOARD_SERIAL.into(), board);
         }
         if let Some(stream) = self

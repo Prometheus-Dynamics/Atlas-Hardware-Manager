@@ -5,6 +5,7 @@
 //! Everything above this crate works only with those types, so a new device
 //! family is added by writing a driver, not by changing the core or the UI.
 
+mod augment;
 mod capability;
 mod driver;
 mod error;
@@ -13,6 +14,7 @@ mod observe;
 mod registry;
 mod types;
 
+pub use augment::CapabilitySource;
 pub use capability::{
     ActionsCapability, Artifact, Capabilities, CapabilityKind, Concurrency, DeviceAction,
     ProgressSink, ProgressUpdate, ReleaseRef, UpdateCapability, UpdateOutcome, UpdatePlan,

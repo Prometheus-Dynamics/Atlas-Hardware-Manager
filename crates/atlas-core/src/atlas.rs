@@ -3,7 +3,8 @@ use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use atlas_driver::{
-    Candidate, Capabilities, DeviceAction, DeviceKey, Driver, DriverRegistry, LinkSource,
+    Candidate, Capabilities, CapabilitySource, DeviceAction, DeviceKey, Driver, DriverRegistry,
+    Identity, LinkSource,
 };
 use tokio::sync::{Semaphore, broadcast, watch};
 use tokio_util::sync::CancellationToken;
@@ -66,6 +67,8 @@ pub(crate) struct State {
 pub(crate) struct Inner {
     pub(crate) registry: DriverRegistry,
     pub(crate) link_sources: Vec<Arc<dyn LinkSource>>,
+    /// Extra capabilities for devices other drivers own (Orion, …).
+    pub(crate) capability_sources: Vec<Arc<dyn CapabilitySource>>,
     pub(crate) store: Option<Arc<dyn InventoryStore>>,
     pub(crate) options: AtlasOptions,
     pub(crate) events: EventBus,
@@ -93,6 +96,16 @@ impl Inner {
         self.discovery
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// The owning driver's capabilities, filled in from every capability
+    /// source.
+    pub(crate) fn capabilities(&self, driver: &dyn Driver, identity: &Identity) -> Capabilities {
+        let mut capabilities = driver.capabilities(identity);
+        for source in &self.capability_sources {
+            capabilities.fill_from(source.capabilities_for(identity));
+        }
+        capabilities
     }
 
     pub(crate) fn exclusive_slot(&self, resource: &str) -> Arc<Semaphore> {
@@ -128,6 +141,7 @@ impl Inner {
 pub struct AtlasBuilder {
     registry: DriverRegistry,
     link_sources: Vec<Arc<dyn LinkSource>>,
+    capability_sources: Vec<Arc<dyn CapabilitySource>>,
     store: Option<Arc<dyn InventoryStore>>,
     options: AtlasOptions,
 }
@@ -140,6 +154,13 @@ impl AtlasBuilder {
 
     pub fn link_source(mut self, source: Arc<dyn LinkSource>) -> Self {
         self.link_sources.push(source);
+        self
+    }
+
+    /// Adds capabilities to devices other drivers own, such as a management
+    /// agent's telemetry and actions for a board found over mDNS.
+    pub fn capability_source(mut self, source: Arc<dyn CapabilitySource>) -> Self {
+        self.capability_sources.push(source);
         self
     }
 
@@ -174,6 +195,7 @@ impl AtlasBuilder {
             inner: Arc::new(Inner {
                 registry: self.registry,
                 link_sources: self.link_sources,
+                capability_sources: self.capability_sources,
                 store: self.store,
                 events: EventBus::new(self.options.event_capacity),
                 parallel: Arc::new(Semaphore::new(self.options.max_parallel_updates.max(1))),
@@ -200,6 +222,7 @@ impl Atlas {
         AtlasBuilder {
             registry: DriverRegistry::new(),
             link_sources: Vec::new(),
+            capability_sources: Vec::new(),
             store: None,
             options: AtlasOptions::default(),
         }

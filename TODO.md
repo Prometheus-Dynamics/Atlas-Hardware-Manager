@@ -78,9 +78,13 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
 
 ## Next
 
-- [ ] atlas-driver-orion: starts on Orion's HTTP control API once its v4
-      types land, then moves to Orion's embeddable operator client (signed
-      orion+tcp). Facts, status lanes, and actions, merged by board serial.
+- [x] atlas-driver-orion against Orion v4 (3cc974e): Orion adds readings,
+      locate/reboot, and A/B updates to the device with the same board
+      serial (capability sources in the core); tested against a fake Orion.
+- [ ] Orion transport: Orion's embeddable operator client (signed
+      orion+tcp, per-identity action rights). HTTP is query-only in v4, so
+      the app registers no Orion directory until it lands.
+- [ ] Bundle host: serve update bundles over HTTP for devices to pull.
 - [ ] OTA for running devices: `docs/ota.md` (A/B tryboot, `pd-device-update`
       writer and `pd-device-agent` in the device package, Orion for intent
       and progress, SSH and USB boot without Orion).
