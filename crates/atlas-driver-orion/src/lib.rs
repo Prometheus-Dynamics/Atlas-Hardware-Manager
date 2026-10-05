@@ -9,15 +9,21 @@
 //! and A/B updates (see docs/ota.md). Without Orion, devices keep everything
 //! else; Orion is never the only way in.
 //!
-//! The transport is a trait. Orion's remote operator client (signed
-//! orion+tcp) is the intended implementation; until it lands, only tests use
-//! one, and the app registers no directory.
+//! The transport is a trait. [`RemoteTransport`] implements it with Orion's
+//! remote operator client (signed orion+tcp) on Linux and macOS; the client
+//! doesn't build on Windows yet.
 
 mod actions;
 mod directory;
 mod metrics;
+#[cfg(unix)]
+mod remote;
 mod transport;
 mod update;
 
 pub use directory::OrionDirectory;
+#[cfg(unix)]
+pub use orion_client::remote::OperatorIdentity;
+#[cfg(unix)]
+pub use remote::{OrionConnection, RemoteTransport};
 pub use transport::{BundleHost, OrionTransport};

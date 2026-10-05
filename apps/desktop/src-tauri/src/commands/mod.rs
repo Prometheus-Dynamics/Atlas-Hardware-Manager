@@ -4,6 +4,7 @@
 
 pub mod devices;
 pub mod jobs;
+pub mod orion;
 pub mod releases;
 pub mod robots;
 pub mod system;

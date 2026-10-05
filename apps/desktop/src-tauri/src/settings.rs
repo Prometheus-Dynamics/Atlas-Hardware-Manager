@@ -39,6 +39,10 @@ pub struct AppSettings {
     /// Atlas flashes, for SSH as root. Off when unset.
     #[serde(default)]
     pub ssh_key_file: Option<String>,
+    /// The Orion node Atlas connects to as an operator
+    /// (`orion+tcp://host:port`). Off when unset.
+    #[serde(default)]
+    pub orion_url: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -49,6 +53,7 @@ impl Default for AppSettings {
             scan_interval_ms: DEFAULT_FALLBACK_MS,
             staged_default: StagedRollout::Auto,
             ssh_key_file: None,
+            orion_url: None,
         }
     }
 }

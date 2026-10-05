@@ -7,6 +7,8 @@
 mod commands;
 mod drivers;
 mod logfile;
+#[cfg(unix)]
+mod orion;
 mod settings;
 mod state;
 
@@ -101,6 +103,10 @@ pub fn run() {
             commands::releases::remove_release_source,
             commands::system::app_info,
             commands::system::health_checks,
+            commands::orion::orion_connection,
+            commands::orion::set_orion_url,
+            commands::orion::check_orion,
+            commands::orion::enroll_orion_with_key,
             commands::system::discovery_status,
             commands::system::fix_health,
             commands::system::get_settings,

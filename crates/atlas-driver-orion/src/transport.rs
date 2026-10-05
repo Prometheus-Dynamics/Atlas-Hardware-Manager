@@ -8,6 +8,12 @@ use orion_control_plane::{ActionRequest, ActionResult, NodeRecord, StatusEntry, 
 /// with `DriverError::Unreachable` when Orion can't be reached.
 #[async_trait]
 pub trait OrionTransport: Send + Sync {
+    /// False while Atlas has no Orion to talk to; the directory then stays
+    /// quiet instead of reporting a connection problem.
+    fn configured(&self) -> bool {
+        true
+    }
+
     /// Every node Orion knows, with its observed host facts. A rebooted
     /// node's new `boot_id` shows up here (not on the status lane) once it
     /// is back and has synced; until then the old record may still appear.

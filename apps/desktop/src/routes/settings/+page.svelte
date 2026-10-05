@@ -2,6 +2,7 @@
   import PageHeader from "$lib/components/common/PageHeader.svelte";
   import AboutPanel from "$lib/components/settings/AboutPanel.svelte";
   import HealthPanel from "$lib/components/settings/HealthPanel.svelte";
+  import OrionPanel from "$lib/components/settings/OrionPanel.svelte";
   import PreferencesForm from "$lib/components/settings/PreferencesForm.svelte";
   import { system } from "$lib/stores/system.svelte";
 </script>
@@ -15,8 +16,11 @@
       <HealthPanel />
       <AboutPanel />
     </div>
-    {#if system.settings}
-      <PreferencesForm settings={system.settings} />
-    {/if}
+    <div class="flex flex-col gap-4">
+      {#if system.settings}
+        <PreferencesForm settings={system.settings} />
+      {/if}
+      <OrionPanel />
+    </div>
   </div>
 </div>

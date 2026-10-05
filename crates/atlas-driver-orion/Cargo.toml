@@ -15,7 +15,13 @@ async-trait.workspace = true
 atlas-driver.workspace = true
 orion-control-plane.workspace = true
 orion-core.workspace = true
+serde.workspace = true
 tokio = { workspace = true, features = ["time", "sync"] }
+
+# The operator client doesn't build on Windows yet (its frame code is
+# Unix-only upstream); Atlas offers Orion on Linux and macOS until it does.
+[target.'cfg(unix)'.dependencies]
+orion-client.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "time", "test-util"] }

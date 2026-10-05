@@ -7,6 +7,7 @@ import type {
   ActivityEntry,
   AppInfo,
   DiscoveryStatus,
+  OrionConnection,
   AppSettings,
   DeviceAction,
   DeviceKey,
@@ -89,6 +90,11 @@ export const api = {
 
   // System
   appInfo: () => invoke<AppInfo>("app_info"),
+  /** Null where this build has no Orion (Windows, simulated devices). */
+  orionConnection: () => invoke<OrionConnection | null>("orion_connection"),
+  setOrionUrl: (url: string | null) => invoke<OrionConnection | null>("set_orion_url", { url }),
+  checkOrion: () => invoke<OrionConnection | null>("check_orion"),
+  enrollOrionWithKey: (key: string) => invoke<OrionConnection | null>("enroll_orion_with_key", { key }),
   discoveryStatus: () => invoke<DiscoveryStatus>("discovery_status"),
   healthChecks: () => invoke<HealthCheck[]>("health_checks"),
   /** Runs a health check's fix action; resolves with what changed. */

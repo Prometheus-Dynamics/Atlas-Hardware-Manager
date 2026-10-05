@@ -91,7 +91,14 @@ impl OrionDirectory {
 impl LinkSource for OrionDirectory {
     async fn links(&self) -> Vec<Link> {
         // Orion contributes capabilities, not links: refresh before each scan.
-        let _ = self.refresh().await;
+        if self.transport.configured() {
+            let _ = self.refresh().await;
+        } else {
+            self.nodes
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .clear();
+        }
         Vec::new()
     }
 
@@ -100,6 +107,9 @@ impl LinkSource for OrionDirectory {
     }
 
     async fn health(&self) -> Vec<HealthCheck> {
+        if !self.transport.configured() {
+            return Vec::new();
+        }
         let error = self
             .last_error
             .lock()

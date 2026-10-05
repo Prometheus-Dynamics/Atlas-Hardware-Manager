@@ -294,6 +294,24 @@ export interface AppSettings {
   staged_default: StagedRollout;
   /** Public key file put on boards Atlas flashes (SSH as root); null is off. */
   ssh_key_file: string | null;
+  /** The Orion node Atlas connects to (orion+tcp://host:port); null is off. */
+  orion_url: string | null;
+}
+
+/** Atlas's connection to Orion as an operator. */
+export interface OrionConnection {
+  url: string | null;
+  /** `operator:<name>`: what an administrator enrolls. */
+  operator_id: string;
+  /** `sha256:<32 hex>`, matched against `orionctl operators list`. */
+  fingerprint: string;
+  /** What an administrator runs on a node to let Atlas in. */
+  enroll_command: string;
+  connected: boolean;
+  enrolled: boolean;
+  node_id: string | null;
+  node_fingerprint: string | null;
+  error: string | null;
 }
 
 export interface AppPaths {

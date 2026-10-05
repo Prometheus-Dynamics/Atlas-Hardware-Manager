@@ -2,7 +2,7 @@
 // (`bun run dev`). Same shape as `api` in commands.ts; see client.ts.
 
 import type { api as tauriApi } from "./commands";
-import type { AppInfo, DeviceAction, HealthCheck, ReleaseEntry, RobotProfile } from "./types";
+import type { AppInfo, DeviceAction, HealthCheck, OrionConnection, ReleaseEntry, RobotProfile } from "./types";
 import { keyString } from "./types";
 import { atlasChannel, downloadChannel, emit, latency, resyncChannel, sleep } from "./mock/bus";
 import { fleet, inventory, jobs, releases, robots, settings, simDevice, sources } from "./mock/data";
@@ -49,6 +49,19 @@ function validateRobot(profile: RobotProfile) {
 
 // Like atlas-core's watch: look once at start, again whenever the fleet
 // changes (see __atlasMock.setOnline), and on the slow safety-net timer.
+const orion: OrionConnection = {
+  url: null,
+  operator_id: "operator:atlas-workstation",
+  fingerprint: "sha256:9c41b7e2d0f8a3c65e1b2d4f7a8c9e01",
+  enroll_command:
+    "orionctl operators enroll operator:atlas-workstation --fingerprint sha256:9c41b7e2d0f8a3c65e1b2d4f7a8c9e01 --action 'update' --action 'reboot' --action 'locate'",
+  connected: false,
+  enrolled: false,
+  node_id: null,
+  node_fingerprint: null,
+  error: null,
+};
+
 let watching = false;
 let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
 let changeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -242,6 +255,25 @@ export const mockApi: Api = {
         fix_action: null,
       },
     ]),
+  orionConnection: () => reply(() => orion),
+  setOrionUrl: (url) =>
+    reply(() => {
+      if (url && !url.startsWith("orion+tcp://")) throw "Orion addresses look like orion+tcp://host:port";
+      settings.orion_url = url;
+      orion.url = url;
+      orion.connected = !!url;
+      orion.enrolled = false;
+      orion.node_id = url ? "raze-8f3a1c2d" : null;
+      orion.node_fingerprint = url ? "sha256:5b1f0c2e9a7d44e18c3a06b2f9d1e7a4" : null;
+      return orion;
+    }),
+  checkOrion: () => reply(() => orion),
+  enrollOrionWithKey: (key) =>
+    reply(() => {
+      if (!key.trim()) throw "enter the node's enrollment key";
+      orion.enrolled = true;
+      return orion;
+    }),
   discoveryStatus: () =>
     reply(() => ({ live: settings.auto_scan, watching: ["Simulated"], polled: [], fallback_ms: settings.scan_interval_ms })),
   fixHealth: (action) => reply(() => `Fixed ${action} (simulated).`),

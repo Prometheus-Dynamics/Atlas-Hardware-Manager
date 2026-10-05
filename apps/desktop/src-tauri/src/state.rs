@@ -25,6 +25,9 @@ pub struct AppState {
     watch: Mutex<Option<CancellationToken>>,
     /// The public keys written to boards after a flash (from settings).
     pub ssh_keys: SshKeys,
+    /// Orion, when this build supports it (not with simulated devices).
+    #[cfg(unix)]
+    pub orion: Option<crate::orion::Orion>,
 }
 
 impl AppState {
@@ -44,7 +47,25 @@ impl AppState {
         let paths = AppPaths::resolve(simulated.is_some());
         let mut startup_warnings = Vec::new();
 
+        #[cfg(unix)]
+        let orion = match simulated {
+            Some(_) => None,
+            None => match crate::orion::Orion::new(&paths, settings.orion_url.clone()) {
+                Ok(orion) => Some(orion),
+                Err(error) => {
+                    startup_warnings.push(format!("Orion is unavailable: {error}"));
+                    None
+                }
+            },
+        };
+
         let mut builder = Atlas::builder();
+        #[cfg(unix)]
+        if let Some(orion) = &orion {
+            builder = builder
+                .link_source(orion.directory.clone())
+                .capability_source(orion.directory.clone());
+        }
         let store: Arc<dyn InventoryStore> = Arc::new(JsonFileStore::new(&paths.inventory_file));
         builder = builder.store(store);
         match simulated {
@@ -72,6 +93,12 @@ impl AppState {
                     "The saved inventory could not be read ({error}); starting with an empty one."
                 ));
                 let mut builder = Atlas::builder();
+                #[cfg(unix)]
+                if let Some(orion) = &orion {
+                    builder = builder
+                        .link_source(orion.directory.clone())
+                        .capability_source(orion.directory.clone());
+                }
                 if simulated.is_none() {
                     builder = drivers::register_hardware(
                         builder,
@@ -97,6 +124,8 @@ impl AppState {
             startup_warnings,
             watch: Mutex::new(None),
             ssh_keys,
+            #[cfg(unix)]
+            orion,
         })
     }
 

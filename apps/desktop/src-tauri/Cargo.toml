@@ -22,6 +22,7 @@ atlas-core.workspace = true
 atlas-driver.workspace = true
 atlas-driver-mock.workspace = true
 atlas-devices.workspace = true
+atlas-driver-orion.workspace = true
 atlas-driver-pd.workspace = true
 atlas-driver-rpi.workspace = true
 atlas-release.workspace = true

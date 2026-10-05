@@ -344,6 +344,7 @@ export const settings: AppSettings = {
   scan_interval_ms: 20000,
   staged_default: "auto",
   ssh_key_file: null,
+  orion_url: null,
 };
 
 export const jobs: JobRecord[] = [];

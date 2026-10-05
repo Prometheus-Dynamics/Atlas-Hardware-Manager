@@ -259,6 +259,7 @@ dependencies = [
  "atlas-devices",
  "atlas-driver",
  "atlas-driver-mock",
+ "atlas-driver-orion",
  "atlas-driver-pd",
  "atlas-driver-rpi",
  "atlas-release",
@@ -356,8 +357,10 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "atlas-driver",
+ "orion-client",
  "orion-control-plane",
  "orion-core",
+ "serde",
  "tokio",
 ]
 
@@ -1111,6 +1114,7 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer",
  "crypto-common",
+ "subtle",
 ]
 
 [[package]]
@@ -1258,6 +1262,7 @@ checksum = "70e796c081cee67dc755e1a36a0a172b897fab85fc3f6bc48307991f64e4eca9"
 dependencies = [
  "curve25519-dalek",
  "ed25519",
+ "rand_core 0.6.4",
  "serde",
  "sha2",
  "subtle",
@@ -1897,6 +1902,15 @@ name = "hex"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
+
+[[package]]
+name = "hmac"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
+dependencies = [
+ "digest",
+]
 
 [[package]]
 name = "html5ever"
@@ -2979,9 +2993,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "orion-auth"
+version = "1.0.0"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+dependencies = [
+ "ed25519-dalek",
+ "hmac",
+ "orion-control-plane",
+ "orion-core",
+ "rkyv",
+ "serde",
+ "sha2",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "orion-client"
+version = "1.0.0"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+dependencies = [
+ "ed25519-dalek",
+ "orion-auth",
+ "orion-control-plane",
+ "orion-core",
+ "orion-runtime",
+ "orion-transport-http",
+ "orion-transport-ipc",
+ "rand_core 0.6.4",
+ "serde",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
 name = "orion-control-plane"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=3cc974e12e69a6fb41e9c91a75f860a617dfa4ca#3cc974e12e69a6fb41e9c91a75f860a617dfa4ca"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
 dependencies = [
  "orion-core",
  "rkyv",
@@ -2994,11 +3041,70 @@ dependencies = [
 [[package]]
 name = "orion-core"
 version = "1.0.0"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=3cc974e12e69a6fb41e9c91a75f860a617dfa4ca#3cc974e12e69a6fb41e9c91a75f860a617dfa4ca"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
 dependencies = [
  "rkyv",
  "serde",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "orion-data-plane"
+version = "1.0.0"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+dependencies = [
+ "orion-core",
+ "rkyv",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "orion-runtime"
+version = "1.0.0"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+dependencies = [
+ "orion-control-plane",
+ "orion-core",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "orion-transport-common"
+version = "1.0.0"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+dependencies = [
+ "tokio",
+]
+
+[[package]]
+name = "orion-transport-http"
+version = "1.0.0"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+dependencies = [
+ "orion-auth",
+ "orion-control-plane",
+ "orion-core",
+ "orion-transport-common",
+ "rkyv",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "orion-transport-ipc"
+version = "1.0.0"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?rev=48074583ec98fcb69fc386af577afad216eb724d#48074583ec98fcb69fc386af577afad216eb724d"
+dependencies = [
+ "libc",
+ "orion-control-plane",
+ "orion-core",
+ "orion-data-plane",
+ "orion-transport-common",
+ "rkyv",
+ "serde",
+ "thiserror 2.0.21",
+ "tokio",
 ]
 
 [[package]]
