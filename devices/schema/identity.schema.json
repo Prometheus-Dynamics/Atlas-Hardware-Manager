@@ -17,54 +17,167 @@
     "macs"
   ],
   "properties": {
-    "contract": { "const": 1 },
-    "model": { "type": ["string", "null"] },
-    "rev": { "type": ["string", "null"] },
+    "contract": {
+      "const": 1
+    },
+    "model": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "rev": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "serial": {
       "description": "Board serial, lowercase hex; null when the device tree has none.",
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "pattern": "^[0-9a-f]+$"
     },
-    "hostname": { "type": ["string", "null"] },
+    "hostname": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "os": {
       "type": "object",
-      "required": ["name", "version"],
+      "required": [
+        "name",
+        "version"
+      ],
       "properties": {
-        "name": { "type": ["string", "null"], "description": "os-release ID" },
-        "version": { "type": ["string", "null"], "description": "os-release VERSION_ID, else VERSION" }
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "os-release ID"
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "os-release VERSION_ID, else VERSION"
+        }
       }
     },
     "device_package": {
       "type": "object",
-      "required": ["version", "commit"],
+      "required": [
+        "version",
+        "commit"
+      ],
       "properties": {
-        "version": { "type": ["string", "null"] },
-        "commit": { "type": ["string", "null"] }
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "commit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
       }
     },
     "bootloader": {
       "description": "Omitted when the bootloader version cannot be read.",
       "type": "object",
-      "required": ["version"],
+      "required": [
+        "version"
+      ],
       "properties": {
-        "version": { "type": ["string", "null"] },
-        "timestamp": { "type": "integer", "minimum": 0 }
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timestamp": {
+          "type": "integer",
+          "minimum": 0
+        }
       }
     },
     "update_methods": {
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "contains": { "const": "image-write" },
-      "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" }
+      "contains": {
+        "const": "image-write"
+      },
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._-]*$"
+      }
     },
-    "manage_url": { "type": ["string", "null"] },
+    "manage_url": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "macs": {
       "type": "object",
       "additionalProperties": {
         "type": "string",
         "pattern": "^[0-9a-f]{2}(:[0-9a-f]{2}){5}$"
       }
+    },
+    "endpoints": {
+      "type": "object",
+      "description": "Optional live endpoints, paths relative to this document's origin. Atlas uses each one it finds: metrics, logs, actions.",
+      "properties": {
+        "metrics": {
+          "type": "string"
+        },
+        "logs": {
+          "type": "string"
+        },
+        "actions": {
+          "type": "string",
+          "description": "POST <actions>/<id> runs action <id>; any 2xx means accepted."
+        }
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "actions": {
+      "type": "array",
+      "description": "Actions the actions endpoint accepts.",
+      "items": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          },
+          "label": {
+            "type": "string"
+          },
+          "destructive": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "camera_stream": {
+      "type": "string",
+      "description": "Optional camera view: an MJPEG stream or still image, path or URL."
     }
   }
 }

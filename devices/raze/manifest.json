@@ -2,7 +2,7 @@
   "schema": "urn:pd-device:manifest:1",
   "contract": 1,
   "model": "raze",
-  "package_version": "1.0.6",
+  "package_version": "1.0.7",
   "display_name": "Raze",
   "description": "Raspberry Pi CM5 vision device with an OV9782 global-shutter camera.",
   "vendor": "Prometheus Dynamics",
@@ -198,7 +198,24 @@
       "device": "/dev/leds0",
       "brightness": 255,
       "rgbw": true,
-      "notes": "SK6812 RGBW ring per the original leds.toml; confirm on hardware if colours look wrong."
+      "notes": "SK6812 RGBW ring per the original leds.toml; confirm on hardware if colours look wrong.",
+      "helper": {
+        "path": "/usr/lib/pd-device/raze-leds",
+        "commands": ["on", "off", "set <0|1>", "dim <0-100>", "color <r> <g> <b> [<w>]", "status <ok|warn|error|busy|off>", "blink [<hz>]", "locate [<seconds>]", "show"],
+        "byte_order": "RGBW, RAZE_LEDS_ORDER in /etc/pd-device/raze-leds.env",
+        "state": "/run/pd-device/leds.state"
+      }
+    },
+    "ssh-keys": {
+      "kind": "opt-in",
+      "source": "<boot partition>/pd-device/authorized_keys",
+      "unit": "pd-device-ssh-keys.service",
+      "notes": "OpenSSH public keys on the boot partition are added to /root/.ssh/authorized_keys at boot. Nothing is removed and password login is never enabled. Atlas can write the file when it flashes a board."
+    },
+    "serial-console": {
+      "ports": ["ttyGS0", "ttyGS1"],
+      "login": "root, no password (autologin)",
+      "notes": "The USB gadget's ACM ports (ttyACM* on the host) give a recovery console that works without networking. Physical access to the port already allows a reflash. An OS turns it off by masking serial-getty@ttyGS0/1.service."
     },
     "usb-power": {
       "control": "kernel gpio hogs (raze-usb-power overlay), on at boot",
@@ -278,6 +295,12 @@
     "path": "/.well-known/pd-device",
     "mdns_service": "_pd-device._tcp",
     "schema": "../schema/identity.schema.json",
+    "actions": {
+      "path": "/actions/{id}",
+      "method": "POST",
+      "offered": ["locate"],
+      "notes": "PD_ACTIONS in /etc/pd-device/identity.env. A request drops /run/pd-device/requests/<id>; a root path unit runs the action, so the endpoint stays unprivileged."
+    },
     "txt": [
       "contract",
       "model",

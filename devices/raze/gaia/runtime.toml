@@ -163,6 +163,62 @@ dest = "/usr/lib/systemd/system/pd-device-usb-gadget.service"
 origin = "static-asset"
 
 [[stage.files]]
+id = "raze-pd-device-raze-leds"
+src = "@self/assets/rootfs/usr/lib/pd-device/raze-leds"
+dest = "/usr/lib/pd-device/raze-leds"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
+id = "raze-pd-device-ssh-keys"
+src = "@self/assets/rootfs/usr/lib/pd-device/ssh-keys"
+dest = "/usr/lib/pd-device/ssh-keys"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
+id = "raze-pd-device-ssh-keys-env"
+src = "@self/assets/rootfs/usr/lib/pd-device/ssh-keys.env"
+dest = "/usr/lib/pd-device/ssh-keys.env"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-tmpfiles-d-pd-device-conf"
+src = "@self/assets/rootfs/usr/lib/tmpfiles.d/pd-device.conf"
+dest = "/usr/lib/tmpfiles.d/pd-device.conf"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-pd-device-locate-path"
+src = "@self/assets/rootfs/usr/lib/systemd/system/pd-device-locate.path"
+dest = "/usr/lib/systemd/system/pd-device-locate.path"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-pd-device-locate-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/pd-device-locate.service"
+dest = "/usr/lib/systemd/system/pd-device-locate.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-pd-device-ssh-keys-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/pd-device-ssh-keys.service"
+dest = "/usr/lib/systemd/system/pd-device-ssh-keys.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-serial-getty-ttygs0-dropin"
+src = "@self/assets/rootfs/usr/lib/systemd/system/serial-getty@ttyGS0.service.d/50-pd-device.conf"
+dest = "/usr/lib/systemd/system/serial-getty@ttyGS0.service.d/50-pd-device.conf"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-serial-getty-ttygs1-dropin"
+src = "@self/assets/rootfs/usr/lib/systemd/system/serial-getty@ttyGS1.service.d/50-pd-device.conf"
+dest = "/usr/lib/systemd/system/serial-getty@ttyGS1.service.d/50-pd-device.conf"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-systemd-system-raze-leds-reprobe-service"
 src = "@self/assets/rootfs/usr/lib/systemd/system/raze-leds-reprobe.service"
 dest = "/usr/lib/systemd/system/raze-leds-reprobe.service"
@@ -218,4 +274,13 @@ stage_files = [
   "raze-systemd-system-raze-leds-reprobe-service",
   "raze-udev-rules-d-60-raze-usb-power-rules",
   "raze-pd-device-raze-sensors-toml",
+  "raze-pd-device-raze-leds",
+  "raze-pd-device-ssh-keys",
+  "raze-pd-device-ssh-keys-env",
+  "raze-tmpfiles-d-pd-device-conf",
+  "raze-systemd-system-pd-device-locate-path",
+  "raze-systemd-system-pd-device-locate-service",
+  "raze-systemd-system-pd-device-ssh-keys-service",
+  "raze-systemd-system-serial-getty-ttygs0-dropin",
+  "raze-systemd-system-serial-getty-ttygs1-dropin",
 ]

@@ -177,6 +177,10 @@ if [ "${USB_GADGET_ACM:-1}" = 1 ]; then
 fi
 
 echo "$udc" > "$G/UDC"
+# The ACM ports exist now: start their consoles if the OS wants them.
+if [ "${USB_GADGET_ACM:-1}" = 1 ] && command -v systemctl >/dev/null 2>&1; then
+	systemctl --no-block start serial-getty@ttyGS0.service serial-getty@ttyGS1.service 2>/dev/null || true
+fi
 pd_log "gadget bound to $udc: ${USB_GADGET_VID:-0x1d6b}:${USB_GADGET_PID:-0x0104} serial=$serial functions:$net_functions acm=${USB_GADGET_ACM:-1} mac=${dev_addr:-random}"
 
 if [ "${USB_GADGET_NET:-bridge}" != bridge ] || [ -z "$net_functions" ]; then

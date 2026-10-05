@@ -11,6 +11,8 @@ RuntimeMaxSec=10
 DynamicUser=yes
 NoNewPrivileges=yes
 ProtectSystem=strict
+# The only write: an action request for the root path units to act on.
+ReadWritePaths=-/run/pd-device/requests
 ProtectHome=yes
 PrivateTmp=yes
 PrivateDevices=yes

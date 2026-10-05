@@ -207,6 +207,35 @@ pd_macs() {
 }
 
 # The identity document (contract 1), one line of JSON.
+# The label Atlas shows for an action id.
+pd_action_label() {
+	case "$1" in
+	locate) printf 'Find it' ;;
+	*) printf '%s' "$1" ;;
+	esac
+}
+
+# Actions this device offers (PD_ACTIONS), as optional identity fields:
+# ,"endpoints":{"actions":"/actions"},"actions":[{"id":..,"label":..}]
+pd_actions_json() {
+	[ -n "${PD_ACTIONS:-}" ] || return 0
+	printf ',"endpoints":{"actions":"/actions"},"actions":['
+	_pd_sep=''
+	for _pd_a in $PD_ACTIONS; do
+		printf '%s{"id":%s,"label":%s}' "$_pd_sep" "$(pd_json_str "$_pd_a")" "$(pd_json_str "$(pd_action_label "$_pd_a")")"
+		_pd_sep=','
+	done
+	printf ']'
+}
+
+# Whether <action> is one this device offers.
+pd_action_offered() {
+	for _pd_a in ${PD_ACTIONS:-}; do
+		[ "$_pd_a" = "$1" ] && return 0
+	done
+	return 1
+}
+
 pd_identity_json() {
 	pd_load_env device-package.env
 	pd_load_env identity.env
@@ -239,6 +268,7 @@ pd_identity_json() {
 	done
 	printf ']'
 	printf ',"manage_url":%s' "$(pd_json_str "$(pd_first_line "$PD_ETC_DIR/manage-url" "$PD_LIB_DIR/manage-url")")"
+	pd_actions_json
 	printf ',"macs":{'
 	_pd_sep=''
 	pd_macs | while read -r _pd_name _pd_mac; do

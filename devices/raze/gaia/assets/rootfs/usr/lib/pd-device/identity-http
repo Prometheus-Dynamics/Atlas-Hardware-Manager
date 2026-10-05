@@ -1,8 +1,11 @@
 #!/bin/sh
 # One HTTP/1.0 exchange on stdin/stdout, started per connection by
-# pd-device-http.socket (Accept=yes). Unauthenticated and read-only:
+# pd-device-http.socket (Accept=yes). Unauthenticated:
 #   GET|HEAD /.well-known/pd-device  -> 200, the identity JSON
-#   other methods on that path       -> 405
+#   POST /actions/<id>               -> 202 when <id> is in PD_ACTIONS: drops
+#                                       /run/pd-device/requests/<id>, which a
+#                                       root path unit acts on; 404 otherwise
+#   other methods on those paths     -> 405
 #   anything else                    -> 404
 set -u
 
@@ -46,6 +49,31 @@ while [ "$n" -lt 100 ] && IFS= read -r header; do
 	[ -n "$header" ] || break
 	n=$((n + 1))
 done
+
+pd_load_env identity.env
+
+case "$path" in
+/actions/*)
+	action=${path#/actions/}
+	case "$action" in
+	'' | *[!a-z0-9-]*) action='' ;;
+	esac
+	if [ -z "$action" ] || ! pd_action_offered "$action"; then
+		respond '404 Not Found' 'text/plain' "no such action
+"
+	elif [ "$method" != POST ]; then
+		respond '405 Method Not Allowed' 'text/plain' "method not allowed
+" 'Allow: POST'
+	elif : > "$PD_RUN_DIR/requests/$action" 2>/dev/null; then
+		respond '202 Accepted' 'text/plain' "ok
+"
+	else
+		respond '503 Service Unavailable' 'text/plain' "actions unavailable
+"
+	fi
+	exit 0
+	;;
+esac
 
 if [ "$path" != /.well-known/pd-device ]; then
 	respond '404 Not Found' 'text/plain' "not found

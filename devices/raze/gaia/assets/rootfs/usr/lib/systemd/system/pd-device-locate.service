@@ -1,0 +1,11 @@
+[Unit]
+Description=Locate: blink the LED ring so someone can find the board
+Documentation=file:/usr/lib/pd-device/raze-leds
+
+[Service]
+Type=simple
+# Consume the request first, so the path unit doesn't fire again for it.
+ExecStartPre=/bin/rm -f /run/pd-device/requests/locate
+Environment=RAZE_LEDS_FOREGROUND=1
+ExecStart=/usr/lib/pd-device/raze-leds locate 10
+TimeoutStopSec=5

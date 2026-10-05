@@ -8,3 +8,6 @@ enable pd-device-http.socket
 enable pd-device-usb-gadget.service
 enable pd-device-usb-gadget-dhcp.service
 enable raze-leds-reprobe.service
+enable pd-device-locate.path
+enable pd-device-ssh-keys.service
+enable serial-getty@.service ttyGS0 ttyGS1

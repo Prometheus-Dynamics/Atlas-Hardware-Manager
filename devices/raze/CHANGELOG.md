@@ -1,5 +1,26 @@
 # Raze device package changelog
 
+## 1.0.7
+
+- LED ring helper `/usr/lib/pd-device/raze-leds`: `on`, `off`, `set <0|1>`,
+  `dim <0-100>`, `color <r> <g> <b> [<w>]`, `status <ok|warn|error|busy|off>`,
+  `blink [<hz>]`, `locate [<seconds>]`, `show`. Writes 16 x RGBW frames to
+  `/dev/leds0`; state in `/run/pd-device/leds.state`. `set` and `dim` fit
+  PhotonVision's custom LED commands (`raze-leds set {v}`, `raze-leds dim {v}`).
+- Locate over the identity endpoint: the identity JSON lists
+  `"endpoints": {"actions": "/actions"}` and a `locate` action; `POST
+  /actions/locate` on port 5899 blinks the ring for 10 s. The endpoint stays
+  unprivileged: it drops a request file that `pd-device-locate.path` acts on.
+  `PD_ACTIONS` in `identity.env` lists the offered actions.
+- Opt-in SSH keys: `pd-device-ssh-keys.service` adds the public keys in
+  `<boot partition>/pd-device/authorized_keys` to root's `authorized_keys` at
+  boot. Nothing is removed and password login is never enabled.
+- Serial recovery console on the USB gadget's ACM ports (`ttyGS0`, `ttyGS1`):
+  root autologin, started by the gadget service once the ports exist. Mask
+  `serial-getty@ttyGS0/1.service` to turn it off.
+- Identity schema: documents the optional `endpoints`, `actions`, and
+  `camera_stream` fields Atlas reads.
+
 ## 1.0.6
 
 - Toolchain: pass OpenJDK's target binutils as configure arguments. 1.0.5 set

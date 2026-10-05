@@ -1,0 +1,81 @@
+#!/bin/sh
+# Opt-in SSH access: install public keys left on the boot partition for root.
+#
+# Put one or more OpenSSH public keys, one per line, in
+#   <boot partition>/pd-device/authorized_keys
+# (Atlas can write it when it flashes a board, or with "Browse files" on an
+# exposed eMMC). At boot they are added to /root/.ssh/authorized_keys. Keys
+# already there are kept; nothing is ever removed, and password login is
+# never enabled. No file, no change. Settings: ssh-keys.env.
+set -eu
+
+PD_LIB_DIR=${PD_LIB_DIR:-/usr/lib/pd-device}
+# shellcheck source=lib.sh
+. "$PD_LIB_DIR/lib.sh"
+pd_load_env ssh-keys.env
+
+[ "${SSH_KEYS_ENABLED:-1}" = 1 ] || exit 0
+
+TARGET_HOME=${SSH_KEYS_HOME:-/root}
+SOURCE_NAME=${SSH_KEYS_SOURCE:-pd-device/authorized_keys}
+
+# The boot partition: partition 1 of the disk the root filesystem is on,
+# unless SSH_KEYS_BOOT_PARTITION names one.
+boot_partition() {
+	if [ -n "${SSH_KEYS_BOOT_PARTITION:-}" ]; then
+		echo "$SSH_KEYS_BOOT_PARTITION"
+		return
+	fi
+	root=$(findmnt -n -o SOURCE / 2>/dev/null) || return 1
+	case "$root" in
+	*[0-9]p[0-9]*) echo "${root%p[0-9]*}p1" ;; # mmcblk0p2, nvme0n1p2
+	*[a-z][0-9]*) echo "${root%%[0-9]*}1" ;;   # sda2
+	*) return 1 ;;
+	esac
+}
+
+part=$(boot_partition) || {
+	pd_log "cannot tell which partition is the boot partition"
+	exit 0
+}
+[ -b "$part" ] || {
+	pd_log "no boot partition at $part"
+	exit 0
+}
+
+# Use the boot partition where the OS mounted it, else mount it read-only.
+mnt=$(findmnt -n -o TARGET --source "$part" 2>/dev/null | head -n 1) || mnt=''
+own=''
+if [ -z "$mnt" ]; then
+	mnt="$PD_RUN_DIR/boot"
+	mkdir -p "$mnt"
+	mount -o ro "$part" "$mnt"
+	own=1
+fi
+cleanup() {
+	[ -z "$own" ] || umount "$mnt" 2>/dev/null || true
+}
+trap cleanup EXIT
+
+src="$mnt/$SOURCE_NAME"
+[ -r "$src" ] || exit 0
+
+ssh_dir="$TARGET_HOME/.ssh"
+keys="$ssh_dir/authorized_keys"
+mkdir -p "$ssh_dir"
+chmod 700 "$ssh_dir"
+touch "$keys"
+chmod 600 "$keys"
+
+# Only lines that look like public keys; comments and junk are ignored.
+tr -d '\r' < "$src" | while IFS= read -r line; do
+	case "$line" in
+	ssh-* | ecdsa-* | sk-ssh-* | sk-ecdsa-*) ;;
+	*) continue ;;
+	esac
+	if ! grep -qxF "$line" "$keys"; then
+		printf '%s\n' "$line" >> "$keys"
+		pd_log "added a key for ${TARGET_HOME##*/}: ${line%% *} ${line##* }"
+	fi
+done
+exit 0
