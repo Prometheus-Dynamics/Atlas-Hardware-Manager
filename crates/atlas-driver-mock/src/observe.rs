@@ -14,7 +14,7 @@ use crate::{MockDevice, MockFleet, SIM_HELIOS};
 /// A simulated camera view: a test pattern any `<img>` can show.
 pub(crate) const TEST_PATTERN: &str = "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 180'%3E%3Crect width='320' height='180' fill='%23111'/%3E%3Cg opacity='.85'%3E%3Crect x='0' width='46' height='120' fill='%23ddd'/%3E%3Crect x='46' width='46' height='120' fill='%23dd0'/%3E%3Crect x='92' width='46' height='120' fill='%230dd'/%3E%3Crect x='138' width='46' height='120' fill='%230d0'/%3E%3Crect x='184' width='46' height='120' fill='%23d0d'/%3E%3Crect x='230' width='46' height='120' fill='%23d00'/%3E%3Crect x='276' width='44' height='120' fill='%2300d'/%3E%3C/g%3E%3Ctext x='160' y='156' fill='%23aaa' font-family='sans-serif' font-size='14' text-anchor='middle'%3ESimulated camera%3C/text%3E%3C/svg%3E";
 
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
@@ -42,7 +42,7 @@ fn round(value: f64, places: i32) -> f64 {
 }
 
 pub(crate) fn metrics(device: &MockDevice) -> Vec<Metric> {
-    let uptime = device.booted.elapsed().as_secs_f64();
+    let uptime = now_ms().saturating_sub(device.booted_ms) as f64 / 1000.0;
     if device.key.family.as_str() == SIM_HELIOS {
         let cpu = wave(device, 23.0, 18.0, 71.0);
         let temp = 42.0 + cpu * 0.32 + wave(device, 61.0, 0.0, 3.0);
@@ -142,8 +142,7 @@ pub(crate) fn log_lines(device: &MockDevice, lines: usize) -> Vec<LogLine> {
     };
     let step = 2000;
     let now = now_ms() / step * step;
-    let booted =
-        now.saturating_sub(u64::try_from(device.booted.elapsed().as_millis()).unwrap_or(0));
+    let booted = device.booted_ms;
     (0..lines as u64)
         .rev()
         .map(|back| now.saturating_sub(back * step))
@@ -206,7 +205,7 @@ mod tests {
         let mut device = MockDevice::new(SIM_HELIOS, "H-1");
         assert_eq!(log_lines(&device, 50).len(), 50);
         // Just restarted: at most the current line.
-        device.booted = std::time::Instant::now();
+        device.booted_ms = now_ms();
         assert!(log_lines(&device, 50).len() <= 1);
     }
 }

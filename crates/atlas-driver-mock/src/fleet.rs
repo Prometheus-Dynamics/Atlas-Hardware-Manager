@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use atlas_driver::{
@@ -44,8 +44,10 @@ pub struct MockDevice {
     pub online: bool,
     /// Simulated time per update step.
     pub step_time: Duration,
-    /// When the device last started; uptime and logs count from here.
-    pub booted: Instant,
+    /// When the device last started; uptime and logs count from here. A
+    /// timestamp (Unix milliseconds) rather than an `Instant`: Windows can't
+    /// make an `Instant` from before the computer itself booted.
+    pub booted_ms: u64,
     /// The physical board's serial, shared across the identities one board
     /// has (see `atlas_driver::attributes::BOARD_SERIAL`).
     pub board_serial: Option<String>,
@@ -64,9 +66,7 @@ impl MockDevice {
             online: true,
             step_time: Duration::from_millis(40),
             // Simulated devices have been up a while when Atlas starts.
-            booted: Instant::now()
-                .checked_sub(Duration::from_secs(3 * 3600 + 17 * 60))
-                .unwrap_or_else(Instant::now),
+            booted_ms: crate::observe::now_ms().saturating_sub((3 * 3600 + 17 * 60) * 1000),
             board_serial: None,
         }
     }

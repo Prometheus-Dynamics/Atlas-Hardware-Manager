@@ -374,7 +374,7 @@ impl ActionsCapability for MockActions {
         if action_id == "reboot"
             && let Some(mock) = state.devices.get_mut(&device.key)
         {
-            mock.booted = std::time::Instant::now();
+            mock.booted_ms = crate::observe::now_ms();
         }
         state
             .actions
