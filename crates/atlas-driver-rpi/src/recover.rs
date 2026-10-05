@@ -64,6 +64,67 @@ async fn disks() -> Result<Vec<Disk>, DriverError> {
         .map_err(|error| DriverError::Other(error.to_string()))
 }
 
+/// The USB port of a board already in eMMC-as-disk mode, if this is one.
+fn storage_port(device: &Identity) -> Option<String> {
+    (device.attributes.get("stage").map(String::as_str) == Some("storage"))
+        .then(|| device.attributes.get("usb_port").cloned())
+        .flatten()
+}
+
+/// Picks the disk of a board already in eMMC-as-disk mode: the USB disk on
+/// its port. Where disks don't report a port, the one Pi gadget disk.
+async fn exposed_disk(port: &str) -> Result<Disk, DriverError> {
+    let candidates: Vec<Disk> = disks()
+        .await?
+        .into_iter()
+        .filter(|disk| disk.usb && !disk.system && disk.size_bytes > 0)
+        .collect();
+    let on_port: Vec<&Disk> = candidates
+        .iter()
+        .filter(|disk| disk.usb_port.as_deref() == Some(port))
+        .collect();
+    let chosen: Vec<&Disk> =
+        if on_port.is_empty() && candidates.iter().all(|disk| disk.usb_port.is_none()) {
+            candidates
+                .iter()
+                .filter(|disk| {
+                    let text = format!(
+                        "{} {}",
+                        disk.vendor.as_deref().unwrap_or(""),
+                        disk.model.as_deref().unwrap_or("")
+                    )
+                    .to_ascii_lowercase();
+                    text.contains("mmcblk")
+                        || text.contains("raspberry")
+                        || text.contains("multi-function")
+                })
+                .collect()
+        } else {
+            on_port
+        };
+    match chosen.as_slice() {
+        [disk] => Ok((*disk).clone()),
+        [] => Err(failed(
+            UpdateStep::Apply,
+            format!(
+                "the board's eMMC is not showing as a disk on USB port {port}; replug it and try again"
+            ),
+        )),
+        several => Err(failed(
+            UpdateStep::Apply,
+            format!(
+                "{} USB disks could be this board's eMMC ({}); unplug other drives and try again",
+                several.len(),
+                several
+                    .iter()
+                    .map(|disk| disk.name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        )),
+    }
+}
+
 /// Waits for exactly one new USB disk that was not there before booting.
 async fn wait_for_new_disk(
     before: &BTreeSet<PathBuf>,
@@ -120,8 +181,13 @@ async fn wait_for_new_disk(
 
 #[async_trait]
 impl UpdateCapability for RpiRecovery {
-    fn plan(&self, _device: &Identity, release: &ReleaseRef) -> Result<UpdatePlan, DriverError> {
+    fn plan(&self, device: &Identity, release: &ReleaseRef) -> Result<UpdatePlan, DriverError> {
         let artifact = artifact(release)?;
+        let how = if storage_port(device).is_some() {
+            "The eMMC is already exposed over USB:"
+        } else {
+            "USB boot,"
+        };
         Ok(UpdatePlan {
             steps: vec![
                 UpdateStep::Preflight,
@@ -132,7 +198,7 @@ impl UpdateCapability for RpiRecovery {
             // One USB boot at a time keeps "which new disk is it" unambiguous.
             concurrency: Concurrency::Exclusive("usb-boot".into()),
             summary: format!(
-                "USB boot, write {} ({}) to the eMMC, then verify",
+                "{how} write {} ({}) to the eMMC, then verify",
                 artifact.name,
                 human_size(artifact.size_bytes)
             ),
@@ -173,62 +239,73 @@ impl UpdateCapability for RpiRecovery {
         let before: BTreeSet<PathBuf> = disks().await?.into_iter().map(|disk| disk.path).collect();
         progress.log(format!("boot files: {}", files.dir().display()));
 
-        progress.step_started(UpdateStep::Transfer);
-        let events = progress.clone();
-        let token = cancel.clone();
-        let options = BootOptions {
-            location: Some(device.address.clone()),
-            ..BootOptions::default()
-        };
-        let booted = boot_device(
-            &files,
-            &options,
-            &move |event| match event {
-                BootEvent::SecondStage { chip, bytes } => {
-                    events.log(format!(
-                        "sent second stage for {} ({bytes} bytes)",
-                        chip.label()
-                    ));
-                    events.step_progress(UpdateStep::Transfer, 0.3);
-                }
-                BootEvent::FileSent { name, bytes } => {
-                    events.log(format!("sent {name} ({bytes} bytes)"));
-                    if name == "boot.img" {
-                        events.step_progress(UpdateStep::Transfer, 0.9);
-                    }
-                }
-                BootEvent::FileServerDone => events.step_progress(UpdateStep::Transfer, 1.0),
-                _ => {}
-            },
-            &move || token.is_cancelled(),
-        )
-        .await
-        .map_err(|error| match error {
-            atlas_usbboot::UsbBootError::Cancelled => DriverError::Cancelled,
-            other => {
-                let fix = other.fix().map(|fix| format!(" {fix}")).unwrap_or_default();
-                failed(UpdateStep::Transfer, format!("{other}.{fix}"))
-            }
-        })?;
-        if let Some(serial) = &booted.serial {
-            progress.log(format!("board serial {serial}"));
-        }
-        if let Some(package) = device
-            .attributes
-            .get("model")
-            .and_then(|model| self.config.catalog.by_model(model))
-            && let Some(revision) = package.manifest.revision_for(&booted.metadata)
-        {
+        let disk = if let Some(port) = storage_port(device) {
+            // A previous USB boot already exposed the eMMC; write it directly.
+            progress.step_started(UpdateStep::Transfer);
             progress.log(format!(
-                "board is {} {}",
-                package.manifest.display_name(),
-                package.manifest.revision_label(&revision.id)
+                "the eMMC is already exposed over USB on port {port}; skipping USB boot"
             ));
-        }
+            progress.step_progress(UpdateStep::Transfer, 1.0);
+            progress.step_started(UpdateStep::Apply);
+            exposed_disk(&port).await?
+        } else {
+            progress.step_started(UpdateStep::Transfer);
+            let events = progress.clone();
+            let token = cancel.clone();
+            let options = BootOptions {
+                location: Some(device.address.clone()),
+                ..BootOptions::default()
+            };
+            let booted = boot_device(
+                &files,
+                &options,
+                &move |event| match event {
+                    BootEvent::SecondStage { chip, bytes } => {
+                        events.log(format!(
+                            "sent second stage for {} ({bytes} bytes)",
+                            chip.label()
+                        ));
+                        events.step_progress(UpdateStep::Transfer, 0.3);
+                    }
+                    BootEvent::FileSent { name, bytes } => {
+                        events.log(format!("sent {name} ({bytes} bytes)"));
+                        if name == "boot.img" {
+                            events.step_progress(UpdateStep::Transfer, 0.9);
+                        }
+                    }
+                    BootEvent::FileServerDone => events.step_progress(UpdateStep::Transfer, 1.0),
+                    _ => {}
+                },
+                &move || token.is_cancelled(),
+            )
+            .await
+            .map_err(|error| match error {
+                atlas_usbboot::UsbBootError::Cancelled => DriverError::Cancelled,
+                other => {
+                    let fix = other.fix().map(|fix| format!(" {fix}")).unwrap_or_default();
+                    failed(UpdateStep::Transfer, format!("{other}.{fix}"))
+                }
+            })?;
+            if let Some(serial) = &booted.serial {
+                progress.log(format!("board serial {serial}"));
+            }
+            if let Some(package) = device
+                .attributes
+                .get("model")
+                .and_then(|model| self.config.catalog.by_model(model))
+                && let Some(revision) = package.manifest.revision_for(&booted.metadata)
+            {
+                progress.log(format!(
+                    "board is {} {}",
+                    package.manifest.display_name(),
+                    package.manifest.revision_label(&revision.id)
+                ));
+            }
 
-        progress.step_started(UpdateStep::Apply);
-        progress.log("waiting for the eMMC to appear as a USB disk");
-        let disk = wait_for_new_disk(&before, cancel, progress).await?;
+            progress.step_started(UpdateStep::Apply);
+            progress.log("waiting for the eMMC to appear as a USB disk");
+            wait_for_new_disk(&before, cancel, progress).await?
+        };
 
         // From here the write runs in the elevated helper. Cancelling asks
         // it to stop, which leaves the eMMC partly written: the device

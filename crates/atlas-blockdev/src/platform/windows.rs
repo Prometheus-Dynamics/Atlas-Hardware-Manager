@@ -109,6 +109,7 @@ pub(super) fn list_disks() -> Result<Vec<Disk>, BlockError> {
                 serial: disk.serial_number.map(|serial| serial.trim().to_string()),
                 removable: usb,
                 usb,
+                usb_port: None,
                 system: disk.is_boot.unwrap_or(false) || disk.is_system.unwrap_or(false),
                 mount_points,
             }

@@ -9,7 +9,7 @@
   import StageDots from "$lib/components/common/StageDots.svelte";
   import Stepper from "$lib/components/common/Stepper.svelte";
   import { duration, jobStatusDetail, jobStatusTone, overallFraction, sentence } from "$lib/format";
-  import { outcomeText } from "$lib/present";
+  import { outcomeText, quietFor } from "$lib/present";
   import { clock } from "$lib/stores/clock.svelte";
   import { DUR, ease, ms } from "$lib/ui/motion";
   import LogTail from "./LogTail.svelte";
@@ -21,6 +21,7 @@
   const tone = $derived(jobStatusTone(job.status));
   const detail = $derived(job.status.status === "verified" ? null : jobStatusDetail(job.status));
   const elapsed = $derived(job.started_ms ? (job.finished_ms ?? clock.now) - job.started_ms : null);
+  const quiet = $derived(quietFor(job, clock.now));
   const bar = $derived(tone === "error" ? "error" : tone === "warning" ? "warning" : tone === "success" ? "success" : tone === "neutral" ? "neutral" : "primary");
 </script>
 
@@ -37,6 +38,7 @@
     <span class="w-full"><ProgressBar value={overallFraction(job)} tone={bar} size={5} label="{job.name} progress" /></span>
     <span class="flex items-center justify-end gap-2">
       {#if elapsed !== null}<span class="mono text-[11.5px] text-fg-faint">{duration(elapsed)}</span>{/if}
+      {#if quiet !== null}<Pill tone="warning" icon="alert-triangle" label="Quiet {duration(quiet)}" title="No report from the device for {duration(quiet)}" />{/if}
       <Pill {tone} label={job.status.status === "running" ? `${Math.round(overallFraction(job) * 100)}%` : job.status.status === "verified" ? "Verified" : outcomeText(job)} />
     </span>
   </button>

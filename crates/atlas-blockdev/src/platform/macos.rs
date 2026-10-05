@@ -99,6 +99,7 @@ pub(super) fn list_disks() -> Result<Vec<Disk>, BlockError> {
                 || flag(info, "RemovableMedia")
                 || flag(info, "Ejectable"),
             usb,
+            usb_port: None,
             system: system || (internal && !usb),
             mount_points,
         });

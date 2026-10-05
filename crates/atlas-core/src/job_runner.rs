@@ -126,6 +126,7 @@ pub(crate) fn start(inner: &Arc<Inner>, request: UpdateRequest) -> Result<JobId,
                 log: Vec::new(),
                 started_ms: None,
                 finished_ms: None,
+                last_activity_ms: None,
             })
             .collect();
         state.jobs.insert(
@@ -294,6 +295,7 @@ async fn run_device(
     with_device(&inner, job, &key, |device| {
         device.status = DeviceJobStatus::Running;
         device.started_ms = Some(now_ms());
+        device.last_activity_ms = device.started_ms;
     });
     inner.events.emit(Event::JobDevice {
         job,
@@ -308,18 +310,25 @@ async fn run_device(
     };
     // A driver that panics must fail its device, not strand the job as
     // running forever with its resources held.
-    let result =
-        AssertUnwindSafe(update.run(&identity, &planned.release, &sink, &cancel.child_token()))
-            .catch_unwind()
-            .await
-            .unwrap_or_else(|panic| {
-                let detail = panic
-                    .downcast_ref::<String>()
-                    .map(String::as_str)
-                    .or_else(|| panic.downcast_ref::<&str>().copied())
-                    .unwrap_or("no details");
-                Err(DriverError::Other(format!("the driver crashed: {detail}")))
-            });
+    let driver_cancel = cancel.child_token();
+    let run = AssertUnwindSafe(update.run(&identity, &planned.release, &sink, &driver_cancel))
+        .catch_unwind();
+    let result = tokio::select! {
+        outcome = run => outcome.unwrap_or_else(|panic| {
+            let detail = panic
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| panic.downcast_ref::<&str>().copied())
+                .unwrap_or("no details");
+            Err(DriverError::Other(format!("the driver crashed: {detail}")))
+        }),
+        // A cancelled driver that has gone silent is let go, so Cancel
+        // always ends the job. One still reporting (mid-write) is waited on.
+        () = silent_after_cancel(&inner, job, &key, &cancel) => Err(DriverError::Other(
+            "stopped responding after Cancel, so Atlas let it go; replug the device before trying again"
+                .into(),
+        )),
+    };
     let status = match result {
         Ok(UpdateOutcome::Verified { version }) => DeviceJobStatus::Verified { version },
         Ok(UpdateOutcome::RolledBack { reason }) => DeviceJobStatus::RolledBack { reason },
@@ -377,7 +386,41 @@ async fn refresh_identity(
     }
 }
 
+/// How long a cancelled device may stay silent before Atlas lets it go.
+const CANCEL_GRACE: std::time::Duration = std::time::Duration::from_secs(20);
+
+/// Resolves once `cancel` fired and the device then reported nothing for
+/// [`CANCEL_GRACE`]. Never resolves while it keeps reporting.
+async fn silent_after_cancel(
+    inner: &Inner,
+    job: JobId,
+    key: &DeviceKey,
+    cancel: &CancellationToken,
+) {
+    cancel.cancelled().await;
+    let activity = || {
+        inner
+            .state()
+            .jobs
+            .get(&job)
+            .and_then(|record| record.devices.iter().find(|device| &device.device == key))
+            .and_then(|device| device.last_activity_ms)
+    };
+    let mut seen = activity();
+    loop {
+        tokio::time::sleep(CANCEL_GRACE).await;
+        let now = activity();
+        if now == seen {
+            return;
+        }
+        seen = now;
+    }
+}
+
 fn report_progress(inner: &Inner, job: JobId, key: &DeviceKey, update: ProgressUpdate) {
+    with_device(inner, job, key, |device| {
+        device.last_activity_ms = Some(now_ms())
+    });
     match update {
         ProgressUpdate::StepStarted { step } => {
             with_device(inner, job, key, |device| {

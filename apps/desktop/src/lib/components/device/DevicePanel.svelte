@@ -10,7 +10,9 @@
   import { system } from "$lib/stores/system.svelte";
   import type { IconName } from "$lib/ui/icons";
   import { softFade } from "$lib/ui/motion";
+  import { jobs } from "$lib/stores/jobs.svelte";
   import ActionsTab from "./ActionsTab.svelte";
+  import ActiveJob from "./ActiveJob.svelte";
   import FlashTab from "./FlashTab.svelte";
   import HistoryTab from "./HistoryTab.svelte";
   import LogsTab from "./LogsTab.svelte";
@@ -25,6 +27,8 @@
 
   const record = $derived(devices.get(key));
   const recovery = $derived(record ? isRecovery(record) : false);
+  /** A job already running on this device: Flash and Update show it instead. */
+  const active = $derived(jobs.active.get(key) ?? null);
 
   // Tabs come from what the device can do right now.
   const tabs = $derived.by(() => {
@@ -43,7 +47,7 @@
   const current = $derived(tabs.some((t) => t.value === tab) ? tab : "overview");
 
   $effect(() => {
-    onwide?.(current === "flash");
+    onwide?.(current === "flash" && !active);
   });
   $effect(() => () => onwide?.(false));
 
@@ -91,6 +95,8 @@
       <div in:softFade>
         {#if current === "overview"}
           <OverviewTab {record} />
+        {:else if (current === "flash" || current === "update") && active}
+          <ActiveJob job={active.job} state={active.state} />
         {:else if current === "flash"}
           <FlashTab {record} />
         {:else if current === "update"}

@@ -18,6 +18,11 @@ pub struct Disk {
     pub removable: bool,
     /// Attached over USB, which includes a Pi in mass-storage-gadget mode.
     pub usb: bool,
+    /// The USB port path it hangs off, like `1-4.2` (Linux `bus-ports`
+    /// form). Lets a driver tell which board a disk belongs to. Linux only
+    /// for now; `None` elsewhere.
+    #[serde(default)]
+    pub usb_port: Option<String>,
     /// Holds the running system, a boot partition, or swap.
     pub system: bool,
     pub mount_points: Vec<String>,
@@ -87,6 +92,7 @@ pub(crate) mod tests {
             serial: None,
             removable: true,
             usb: true,
+            usb_port: None,
             system: false,
             mount_points: Vec::new(),
         }

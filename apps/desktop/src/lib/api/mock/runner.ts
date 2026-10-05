@@ -122,6 +122,7 @@ export function start(request: UpdateRequestInput): JobId {
       log: [],
       started_ms: null,
       finished_ms: null,
+      last_activity_ms: null,
     })),
   };
   jobs.push(job);
@@ -139,6 +140,7 @@ export function cancel(id: JobId) {
 function log(job: JobRecord, state: DeviceJobState, message: string) {
   const line = `${new Date().toISOString().slice(11, 19)} ${message}`;
   state.log.push(line);
+  state.last_activity_ms = Date.now();
   emit({ type: "job-log", job: job.id, device: state.device, message: line });
 }
 
@@ -161,10 +163,12 @@ async function runDevice(job: JobRecord, state: DeviceJobState): Promise<boolean
       return false;
     }
     state.started_ms = Date.now();
+    state.last_activity_ms = state.started_ms;
     setStatus(job, state, { status: "running" });
     for (const step of state.plan.steps) {
       state.step = step;
       state.fraction = 0;
+      state.last_activity_ms = Date.now();
       emit({ type: "job-step", job: job.id, device: state.device, step });
       log(job, state, `${step}: started`);
       const ticks = 8;
@@ -176,6 +180,7 @@ async function runDevice(job: JobRecord, state: DeviceJobState): Promise<boolean
           return false;
         }
         state.fraction = i / ticks;
+        state.last_activity_ms = Date.now();
         emit({ type: "job-progress", job: job.id, device: state.device, step, fraction: state.fraction });
       }
       if (step === "confirm" && sim.neverConfirms) {

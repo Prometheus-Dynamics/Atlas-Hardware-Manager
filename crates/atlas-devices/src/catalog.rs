@@ -69,6 +69,14 @@ impl DeviceCatalog {
         catalog
     }
 
+    /// A catalog of packages already in memory, for tests and embedders.
+    pub fn from_packages(packages: Vec<DevicePackage>) -> Self {
+        Self {
+            packages,
+            ..Self::default()
+        }
+    }
+
     pub fn packages(&self) -> &[DevicePackage] {
         &self.packages
     }

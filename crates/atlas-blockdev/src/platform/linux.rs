@@ -102,6 +102,25 @@ fn partitions(sys: &Path, name: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// The deepest `bus-port[.port…]` component of a sysfs device path, such as
+/// `1-4.2` in `/sys/devices/…/usb1/1-4/1-4.2/1-4.2:1.0/host6/…`.
+fn usb_port(resolved: &Path) -> Option<String> {
+    resolved
+        .components()
+        .rev()
+        .filter_map(|part| part.as_os_str().to_str())
+        .find(|text| {
+            let Some((bus, ports)) = text.split_once('-') else {
+                return false;
+            };
+            !bus.is_empty()
+                && bus.bytes().all(|b| b.is_ascii_digit())
+                && !ports.is_empty()
+                && ports.bytes().all(|b| b.is_ascii_digit() || b == b'.')
+        })
+        .map(str::to_string)
+}
+
 pub(super) fn list_disks() -> Result<Vec<Disk>, BlockError> {
     let entries =
         fs::read_dir("/sys/block").map_err(|error| BlockError::List(error.to_string()))?;
@@ -126,6 +145,7 @@ pub(super) fn list_disks() -> Result<Vec<Disk>, BlockError> {
                 .to_str()
                 .is_some_and(|text| text.starts_with("usb"))
         });
+        let usb_port = usb.then(|| usb_port(&resolved)).flatten();
 
         let parts = partitions(&sys, &name);
         let mut nodes = vec![format!("/dev/{name}")];
@@ -158,6 +178,7 @@ pub(super) fn list_disks() -> Result<Vec<Disk>, BlockError> {
             serial: read_trimmed(&sys.join("device/serial")),
             removable: read_trimmed(&sys.join("removable")).as_deref() == Some("1"),
             usb,
+            usb_port,
             system,
             mount_points,
             name,
@@ -202,6 +223,18 @@ pub(super) fn open_for_verify(disk: &Disk) -> Result<File, BlockError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_usb_port_is_the_deepest_port_component() {
+        let path = Path::new(
+            "/sys/devices/pci0000:00/0000:02:00.0/usb1/1-4/1-4.2/1-4.2:1.0/host6/target6:0:0/6:0:0:0/block/sdc",
+        );
+        assert_eq!(usb_port(path).as_deref(), Some("1-4.2"));
+        assert_eq!(
+            usb_port(Path::new("/sys/devices/virtual/block/zram0")),
+            None
+        );
+    }
 
     #[test]
     fn mount_escapes_are_decoded() {

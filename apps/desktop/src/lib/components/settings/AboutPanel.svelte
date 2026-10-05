@@ -7,6 +7,7 @@
   const paths = $derived(
     system.info
       ? [
+          ["Log", system.info.paths.log_file],
           ["Data", system.info.paths.data_dir],
           ["Cache", system.info.paths.cache_dir],
           ["Settings", system.info.paths.settings_file],

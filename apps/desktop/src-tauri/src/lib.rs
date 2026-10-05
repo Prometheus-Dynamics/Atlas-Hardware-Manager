@@ -6,6 +6,7 @@
 
 mod commands;
 mod drivers;
+mod logfile;
 mod settings;
 mod state;
 
@@ -23,6 +24,7 @@ fn forward_events(app: &tauri::AppHandle, state: &AppState) {
         loop {
             match events.recv().await {
                 Ok(event) => {
+                    logfile::event(&event);
                     let _ = app.emit("atlas://event", &event);
                 }
                 Err(RecvError::Lagged(_)) => {
@@ -43,6 +45,8 @@ fn start_watch(app: &tauri::AppHandle) {
 }
 
 pub fn run() {
+    // Log first, so problems while starting are recorded too.
+    logfile::init(&settings::AppPaths::resolve(false).log_file);
     let state = match AppState::build() {
         Ok(state) => state,
         Err(error) => {

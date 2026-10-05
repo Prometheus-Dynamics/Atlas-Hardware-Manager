@@ -300,6 +300,9 @@ impl UpdateCapability for MockUpdater {
                 progress.step_progress(step, tick as f32 / ticks as f32);
             }
 
+            if mock.behavior == MockBehavior::Hangs && step == UpdateStep::Preflight {
+                std::future::pending::<()>().await;
+            }
             if mock.behavior == MockBehavior::FailsAt(step) {
                 return Err(DriverError::StepFailed {
                     step: step.label().into(),

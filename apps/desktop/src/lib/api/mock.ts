@@ -218,6 +218,7 @@ export const mockApi: Api = {
         inventory_file: "/home/atlas/.local/share/atlas/inventory.json",
         releases_file: "/home/atlas/.local/share/atlas/releases.json",
         release_cache_dir: "/home/atlas/.cache/atlas/releases",
+        log_file: "/home/atlas/.local/share/atlas/atlas.log",
       },
       startup_warnings: ["Running in a browser without Tauri: every device and job is simulated."],
     })),

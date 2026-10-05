@@ -67,3 +67,26 @@ async fn a_device_cannot_be_in_two_jobs_at_once() {
     atlas.wait_job(first).await.unwrap();
     assert!(atlas.start_update(request(&key)).is_ok());
 }
+
+#[tokio::test(start_paused = true)]
+async fn cancel_ends_a_job_whose_driver_stopped_responding() {
+    let key = DeviceKey::new(SIM_HELIOS, "stuck");
+    let fleet =
+        MockFleet::new().with(MockDevice::new(SIM_HELIOS, "stuck").behavior(MockBehavior::Hangs));
+    let atlas = atlas_for(&fleet);
+    atlas.scan().await;
+
+    let job = atlas.start_update(request(&key)).unwrap();
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    atlas.cancel_job(job).unwrap();
+    let record = tokio::time::timeout(Duration::from_secs(120), atlas.wait_job(job))
+        .await
+        .expect("cancel ended the job")
+        .unwrap();
+
+    assert_eq!(record.state, JobState::Cancelled);
+    match &record.devices[0].status {
+        DeviceJobStatus::Failed { error } => assert!(error.contains("let it go"), "{error}"),
+        other => panic!("expected the device to be let go, got {other:?}"),
+    }
+}

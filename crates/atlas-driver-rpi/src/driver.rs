@@ -8,7 +8,9 @@ use atlas_driver::{
     Candidate, Capabilities, DeviceKey, DeviceMode, Driver, DriverError, DriverManifest, Family,
     HealthCheck, Identity, Link, LinkId, LinkKind, LinkSource,
 };
-use atlas_usbboot::{BROADCOM_VENDOR_ID, BootDevice, Chip, list_boot_devices};
+use atlas_usbboot::{
+    BROADCOM_VENDOR_ID, BootDevice, Chip, StorageGadget, list_boot_devices, list_storage_gadgets,
+};
 
 use crate::eeprom::EepromUpdate;
 use crate::health;
@@ -58,7 +60,45 @@ pub struct RpiDriver {
     config: Arc<RpiConfig>,
 }
 
+/// Candidate addresses of boards in eMMC-as-disk mode start with this.
+const STORAGE_PREFIX: &str = "storage:";
+
 impl RpiDriver {
+    /// A board that finished USB boot and exposes its eMMC as a USB disk.
+    /// It keeps the key it had in USB boot (the boot ROM serial), so it is
+    /// the same device in the inventory, now one step further along.
+    fn storage_identity(&self, candidate: &Candidate, gadget: &StorageGadget) -> Identity {
+        let packages: Vec<&DevicePackage> = self
+            .config
+            .catalog
+            .packages()
+            .iter()
+            .filter(|package| package.manifest.recovery.storage_target.is_some())
+            .collect();
+        let display = match packages.as_slice() {
+            [package] => package.manifest.display_name().to_string(),
+            _ => "Raspberry Pi".to_string(),
+        };
+        let mut attributes = recovery_attributes(None, &packages);
+        attributes.insert("stage".into(), "storage".into());
+        attributes.insert("usb_port".into(), gadget.port.clone());
+        Identity {
+            key: DeviceKey::new(
+                RPI_FAMILY,
+                gadget
+                    .board_serial()
+                    .unwrap_or_else(|| format!("port-{}", gadget.location)),
+            ),
+            model: format!("{display} (eMMC exposed)"),
+            mode: DeviceMode::Recovery,
+            versions: BTreeMap::from([("bootloader".to_string(), "storage gadget".to_string())]),
+            name: Some(format!("{display} eMMC on USB {}", gadget.location)),
+            link: candidate.link.clone(),
+            address: candidate.address.clone(),
+            attributes,
+        }
+    }
+
     pub fn new(config: RpiConfig) -> Self {
         Self {
             manifest: DriverManifest {
@@ -98,8 +138,14 @@ fn serial_for(device: &BootDevice) -> String {
 /// What the device packages say about a board in recovery: its model when
 /// exactly one package uses this chip, the candidates otherwise, and the
 /// package's recovery steps.
-fn recovery_attributes(chip: Chip, packages: &[&DevicePackage]) -> BTreeMap<String, String> {
-    let mut attributes = BTreeMap::from([("chip".to_string(), chip.label().to_string())]);
+fn recovery_attributes(
+    chip: Option<Chip>,
+    packages: &[&DevicePackage],
+) -> BTreeMap<String, String> {
+    let mut attributes = BTreeMap::new();
+    if let Some(chip) = chip {
+        attributes.insert("chip".to_string(), chip.label().to_string());
+    }
     match packages {
         [package] => {
             let manifest = &package.manifest;
@@ -143,19 +189,35 @@ impl Driver for RpiDriver {
         if link.kind != LinkKind::UsbBoot {
             return Ok(Vec::new());
         }
-        Ok(list_boot_devices()
-            .await
-            .map_err(usb_error)?
+        let booting = list_boot_devices().await.map_err(usb_error)?;
+        // Boards that already finished USB boot and expose their eMMC.
+        let exposed = list_storage_gadgets().await.unwrap_or_default();
+        Ok(booting
             .into_iter()
-            .map(|device| Candidate {
+            .map(|device| device.location)
+            .chain(
+                exposed
+                    .into_iter()
+                    .map(|gadget| format!("{STORAGE_PREFIX}{}", gadget.location)),
+            )
+            .map(|address| Candidate {
                 link: link.id.clone(),
                 family: self.manifest.family.clone(),
-                address: device.location,
+                address,
             })
             .collect())
     }
 
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
+        if let Some(location) = candidate.address.strip_prefix(STORAGE_PREFIX) {
+            let gadget = list_storage_gadgets()
+                .await
+                .map_err(usb_error)?
+                .into_iter()
+                .find(|gadget| gadget.location == location)
+                .ok_or_else(|| DriverError::Unreachable(format!("no Pi eMMC at USB {location}")))?;
+            return Ok(self.storage_identity(candidate, &gadget));
+        }
         let device = list_boot_devices()
             .await
             .map_err(usb_error)?
@@ -190,7 +252,7 @@ impl Driver for RpiDriver {
             )),
             link: candidate.link.clone(),
             address: device.location,
-            attributes: recovery_attributes(device.chip, &packages),
+            attributes: recovery_attributes(Some(device.chip), &packages),
         })
     }
 
@@ -254,19 +316,46 @@ mod tests {
         let raze = package("raze");
         let other = package("other");
 
-        let one = recovery_attributes(Chip::Bcm2712, &[&raze]);
+        let one = recovery_attributes(Some(Chip::Bcm2712), &[&raze]);
         assert_eq!(one.get("model").map(String::as_str), Some("raze"));
         assert_eq!(
             one.get("recovery_steps").map(String::as_str),
             Some("Hold BOOT\nConnect USB-C")
         );
 
-        let many = recovery_attributes(Chip::Bcm2712, &[&raze, &other]);
+        let many = recovery_attributes(Some(Chip::Bcm2712), &[&raze, &other]);
         assert_eq!(
             many.get("possible_models").map(String::as_str),
             Some("raze, other")
         );
         assert!(!many.contains_key("model"));
+    }
+
+    #[test]
+    fn an_exposed_emmc_keeps_the_boards_key_and_is_marked_for_direct_write() {
+        let catalog = DeviceCatalog::from_packages(vec![package("raze")]);
+        let driver = RpiDriver::new(RpiConfig {
+            boot_file_dirs: Vec::new(),
+            catalog: Arc::new(catalog),
+        });
+        let gadget = StorageGadget {
+            location: "001-4".into(),
+            port: "1-4".into(),
+            serial: Some("a317bcbee5226d57".into()),
+        };
+        let candidate = Candidate {
+            link: LinkId(LINK_ID.into()),
+            family: Family::new(RPI_FAMILY),
+            address: format!("{STORAGE_PREFIX}001-4"),
+        };
+        let identity = driver.storage_identity(&candidate, &gadget);
+
+        // Same key as in USB boot, where the boot ROM reported e5226d57.
+        assert_eq!(identity.key, DeviceKey::new(RPI_FAMILY, "e5226d57"));
+        assert_eq!(identity.mode, DeviceMode::Recovery);
+        assert_eq!(identity.attributes["stage"], "storage");
+        assert_eq!(identity.attributes["usb_port"], "1-4");
+        assert_eq!(identity.attributes["model"], "raze");
     }
 
     #[test]

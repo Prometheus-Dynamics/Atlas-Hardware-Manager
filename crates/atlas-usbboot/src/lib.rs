@@ -18,6 +18,7 @@
 mod bootfiles;
 mod chip;
 mod error;
+mod gadget;
 mod hotplug;
 mod protocol;
 mod usb;
@@ -25,6 +26,7 @@ mod usb;
 pub use bootfiles::BootFiles;
 pub use chip::{BROADCOM_VENDOR_ID, Chip};
 pub use error::UsbBootError;
+pub use gadget::{STORAGE_GADGET_PRODUCT_ID, StorageGadget, list_storage_gadgets};
 pub use hotplug::watch_usb;
 pub use protocol::{BootEvent, BootTransport, FileServerOutcome, file_server, second_stage};
 pub use usb::{

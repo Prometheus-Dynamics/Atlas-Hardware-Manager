@@ -131,6 +131,10 @@ pub struct DeviceJobState {
     pub log: Vec<String>,
     pub started_ms: Option<u64>,
     pub finished_ms: Option<u64>,
+    /// When the driver last reported anything: a step, progress, or a log
+    /// line. A running device that stays quiet for long may be stuck.
+    #[serde(default)]
+    pub last_activity_ms: Option<u64>,
 }
 
 impl DeviceJobState {

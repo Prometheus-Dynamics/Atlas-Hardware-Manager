@@ -16,6 +16,7 @@
   import { ui } from "$lib/stores/ui.svelte";
   import { rise, stagger } from "$lib/ui/motion";
   import BootloaderRow from "./BootloaderRow.svelte";
+  import HostReadiness from "./HostReadiness.svelte";
 
   let { record }: { record: DeviceRecord } = $props();
 
@@ -34,7 +35,11 @@
       .filter(Boolean),
   );
 
+  /** Already past USB boot: the eMMC is exposed and gets written directly. */
+  const exposed = $derived(record.identity.attributes?.stage === "storage");
   let adding = $state(false);
+  /** A host problem that would make the flash fail, such as missing boot files. */
+  let hostBlocked = $state(false);
 
   async function chooseFile() {
     if (adding) return;
@@ -64,6 +69,13 @@
 
 <div class="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
   <section class="flex flex-col gap-3">
+    {#if exposed}
+      <h3 class="section-title">Ready to write</h3>
+      <p class="text-[13px] leading-relaxed text-fg-muted">
+        This {displayModel(record)} already finished USB boot and its eMMC is showing as a disk, so Atlas writes it
+        directly. No need to hold the button or replug.
+      </p>
+    {:else}
     <h3 class="section-title">Getting it into USB boot</h3>
     {#if steps.length > 0}
       <ol class="flex flex-col gap-2">
@@ -80,7 +92,8 @@
         This {displayModel(record)} is connected in USB boot and ready for an image.
       </p>
     {/if}
-    <BootloaderRow {record} />
+    {/if}
+    {#if !exposed}<BootloaderRow {record} />{/if}
   </section>
 
   <section class="flex flex-col gap-3">
@@ -104,6 +117,7 @@
     {#if entry}
       <FlashChecks {entry} />
     {/if}
+    <HostReadiness bind:blocking={hostBlocked} />
 
     {#if draft.planError}
       <p class="problem" role="alert" in:rise><Icon name="alert-circle" size={16} />{draft.planError}</p>
@@ -121,7 +135,7 @@
       full
       icon="bolt"
       busy={draft.starting}
-      disabled={!draft.plan || record.presence !== "online"}
+      disabled={!draft.plan || record.presence !== "online" || hostBlocked}
       onclick={() => flash(false)}
     >
       Flash this {displayModel(record)}

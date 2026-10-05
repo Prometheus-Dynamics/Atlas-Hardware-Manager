@@ -117,6 +117,13 @@ pub async fn save_support_bundle(
             let _ = writeln!(out, "{at} {:?} [{source}] {}", line.level, line.message);
         }
     }
+    let recent = crate::logfile::tail(300);
+    if !recent.is_empty() {
+        let _ = writeln!(out, "\n== Atlas log (last {} lines)", recent.len());
+        for line in recent {
+            let _ = writeln!(out, "{line}");
+        }
+    }
     let _ = writeln!(out, "\n== History");
     for entry in atlas
         .activity(1000)

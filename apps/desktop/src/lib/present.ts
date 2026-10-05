@@ -132,6 +132,21 @@ export function outcomeText(job: DeviceJobState): string {
   }
 }
 
+/** After this long without any report, a running device looks stuck. */
+export const QUIET_MS = 45_000;
+
+/**
+ * How long a running device has been silent, when that is long enough to
+ * worry about; null otherwise.
+ */
+export function quietFor(job: DeviceJobState, now: number): number | null {
+  if (job.status.status !== "running") return null;
+  const last = job.last_activity_ms ?? job.started_ms;
+  if (last === null) return null;
+  const quiet = now - last;
+  return quiet >= QUIET_MS ? quiet : null;
+}
+
 /** "emmc" → "eMMC"; null when the driver did not say. */
 export function storageName(storage: string | undefined): string | null {
   if (!storage) return null;

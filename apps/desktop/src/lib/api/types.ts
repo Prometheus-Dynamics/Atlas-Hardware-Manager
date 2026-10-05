@@ -169,6 +169,8 @@ export interface DeviceJobState {
   log: string[];
   started_ms: number | null;
   finished_ms: number | null;
+  /** When the driver last reported a step, progress, or log line. */
+  last_activity_ms: number | null;
 }
 
 export type JobId = number;
@@ -299,6 +301,8 @@ export interface AppPaths {
   inventory_file: string;
   releases_file: string;
   release_cache_dir: string;
+  /** What Atlas did and what went wrong; attach it to bug reports. */
+  log_file: string;
 }
 
 export interface AppInfo {

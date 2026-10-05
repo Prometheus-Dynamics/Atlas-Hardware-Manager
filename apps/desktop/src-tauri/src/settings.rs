@@ -85,6 +85,8 @@ pub struct AppPaths {
     pub inventory_file: PathBuf,
     pub releases_file: PathBuf,
     pub release_cache_dir: PathBuf,
+    /// What Atlas did and what went wrong, kept across restarts.
+    pub log_file: PathBuf,
 }
 
 impl AppPaths {
@@ -108,6 +110,7 @@ impl AppPaths {
             inventory_file: data_dir.join(inventory),
             releases_file: data_dir.join("releases.json"),
             release_cache_dir: cache_dir.join("releases"),
+            log_file: data_dir.join("atlas.log"),
             data_dir,
             cache_dir,
         }

@@ -26,6 +26,8 @@ pub enum MockBehavior {
     BricksAfterApply,
     /// The driver panics mid-update, like a library bug would.
     Panics,
+    /// The driver stops responding after preflight and ignores Cancel.
+    Hangs,
 }
 
 /// One simulated device.
