@@ -8,10 +8,15 @@ use orion_control_plane::{ActionRequest, ActionResult, NodeRecord, StatusEntry, 
 /// with `DriverError::Unreachable` when Orion can't be reached.
 #[async_trait]
 pub trait OrionTransport: Send + Sync {
-    /// Every node Orion knows, with its observed host facts.
+    /// Every node Orion knows, with its observed host facts. A rebooted
+    /// node's new `boot_id` shows up here (not on the status lane) once it
+    /// is back and has synced; until then the old record may still appear.
     async fn nodes(&self) -> Result<Vec<NodeRecord>, DriverError>;
 
     /// Status-lane entries (volatile metrics and durable `update.*` keys).
+    /// The status lane is per node and not replicated, so an implementation
+    /// must answer for the subject's own node: Orion's operator client
+    /// forwards the query there; anything else must connect to that node.
     async fn status(&self, query: StatusQuery) -> Result<Vec<StatusEntry>, DriverError>;
 
     /// Submits an action. Resubmitting the same `action_id` is idempotent.
