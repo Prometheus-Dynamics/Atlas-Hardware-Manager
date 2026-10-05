@@ -1,2 +1,16 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# LF everywhere, on every platform. Some files are used byte for byte on
+# Linux (udev rules, device-package scripts, shell scripts), and a Windows
+# checkout with CRLF would break them and the tests that compare them.
+* text=auto eol=lf
+
+# Binary assets.
+*.png binary
+*.ico binary
+*.icns binary
+*.bin binary
+*.upd binary
+*.sig binary
+*.img binary
+*.xz binary
+*.zst binary
+*.woff2 binary
