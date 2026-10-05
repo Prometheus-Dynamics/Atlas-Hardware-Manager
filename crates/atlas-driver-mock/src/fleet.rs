@@ -24,6 +24,8 @@ pub enum MockBehavior {
     NeverConfirms,
     /// Is left unusable after `Apply` and needs recovery.
     BricksAfterApply,
+    /// The driver panics mid-update, like a library bug would.
+    Panics,
 }
 
 /// One simulated device.

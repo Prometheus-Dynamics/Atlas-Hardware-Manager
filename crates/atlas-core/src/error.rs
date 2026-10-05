@@ -20,6 +20,8 @@ pub enum CoreError {
     },
     #[error("{device} has no action named `{action}`")]
     UnknownAction { device: DeviceKey, action: String },
+    #[error("{0} is already being updated; wait for that job or cancel it")]
+    DeviceBusy(DeviceKey),
     #[error("no release chosen for the {0} family")]
     NoReleaseForFamily(Family),
     #[error("no devices selected")]

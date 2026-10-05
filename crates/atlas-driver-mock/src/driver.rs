@@ -274,6 +274,10 @@ impl UpdateCapability for MockUpdater {
             .filter(|mock| mock.online)
             .ok_or_else(|| DriverError::Unreachable(device.key.to_string()))?;
         let _running = RunningGuard::start(&self.fleet, &concurrency(&mock));
+        assert!(
+            mock.behavior != MockBehavior::Panics,
+            "simulated driver bug"
+        );
 
         for step in STEPS {
             // Apply is the point of no return; cancelling after it is ignored.

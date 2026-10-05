@@ -1,5 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
+
+use futures::FutureExt;
 
 use atlas_driver::{
     Concurrency, DeviceKey, DriverError, Family, ProgressSink, ProgressUpdate, ReleaseRef,
@@ -93,6 +96,19 @@ pub(crate) fn start(inner: &Arc<Inner>, request: UpdateRequest) -> Result<JobId,
 
     let id = {
         let mut state = inner.state();
+        // One job per device at a time: a second would fight the first for
+        // the same USB port or disk. Checked under the lock so two clicks
+        // cannot both get through.
+        if let Some(busy) = job_plan.devices.iter().find(|planned| {
+            state.jobs.values().any(|record| {
+                record.state == JobState::Running
+                    && record.devices.iter().any(|device| {
+                        device.device == planned.device && !device.status.is_finished()
+                    })
+            })
+        }) {
+            return Err(CoreError::DeviceBusy(busy.device.clone()));
+        }
         let id = JobId(state.next_job);
         state.next_job += 1;
         let devices = job_plan
@@ -290,9 +306,20 @@ async fn run_device(
         let key = key.clone();
         ProgressSink::new(move |update| report_progress(&inner, job, &key, update))
     };
-    let result = update
-        .run(&identity, &planned.release, &sink, &cancel.child_token())
-        .await;
+    // A driver that panics must fail its device, not strand the job as
+    // running forever with its resources held.
+    let result =
+        AssertUnwindSafe(update.run(&identity, &planned.release, &sink, &cancel.child_token()))
+            .catch_unwind()
+            .await
+            .unwrap_or_else(|panic| {
+                let detail = panic
+                    .downcast_ref::<String>()
+                    .map(String::as_str)
+                    .or_else(|| panic.downcast_ref::<&str>().copied())
+                    .unwrap_or("no details");
+                Err(DriverError::Other(format!("the driver crashed: {detail}")))
+            });
     let status = match result {
         Ok(UpdateOutcome::Verified { version }) => DeviceJobStatus::Verified { version },
         Ok(UpdateOutcome::RolledBack { reason }) => DeviceJobStatus::RolledBack { reason },
