@@ -1,7 +1,8 @@
 # Updating running devices (OTA): design draft
 
-Status: draft for review by the Atlas, Orion, and HeliOS sessions.
-Nothing here is built yet. It covers devices that run a full OS on eMMC
+Status: draft, revised after Orion's review (its counterpart is Orion's
+`docs/update-recovery.md`). Nothing here is built yet; atlas-driver-orion
+waits for Orion's v4 types. It covers devices that run a full OS on eMMC
 (Raze today) and leaves microcontrollers (STM32) for their own driver.
 
 ## Principles
@@ -68,6 +69,15 @@ pd-device-update confirm                 # run by the new system once healthy: m
 pd-device-update rollback                # discard a staged update
 ```
 
+Besides the CLI, the package ships **`pd-device-agent`**, a small daemon in
+the `orion` group that connects to orion-node's local IPC socket and claims
+the node-level actions `update`, `reboot`, and `locate` for Node targets (the
+claim drops on disconnect, and pending actions then fail with "handler
+disconnected"). It runs the same writer and `raze-leds` as the CLI and the
+identity endpoint, and after every boot republishes `status` on Orion's
+status lane. Without orion-node it simply isn't connected; nothing else
+depends on it.
+
 States, reported in `status` (`state`, `slot_active`, `slot_staged`,
 `version_active`, `version_staged`, `progress` 0..1, `error`):
 
@@ -78,18 +88,25 @@ idle -> staging (verify, write inactive slot) -> staged -> trying (rebooted into
 
 `confirm` runs from `pd-device-update-confirm.service`, after
 `multi-user.target` and an OS-provided health check (`/etc/pd-device/update-health`;
-for PhotonVision: the service is up and its HTTP port answers). A hardware
-watchdog bounds the trial: no confirm within N minutes means reset, which
-boots the old slot.
+for PhotonVision: the service is up and its HTTP port answers). The check
+must not require Orion; it may add "orion-node READY" when Orion is
+installed. The trial is bounded by the hardware watchdog
+(`dtparam=watchdog=on`) with systemd `RuntimeWatchdogSec`: no confirm within
+N minutes means a reset, which boots the old slot.
 
 The identity endpoint advertises it: `"update_methods": ["image-write", "ab-tryboot"]`
 and `"update": {"state": ..., "slot": ..., "staged": ...}` from `status`.
 
 ## Transports
 
+Bundle bytes never travel over Orion. Atlas serves the bundle over HTTP
+from the computer running it, and the device pulls `bundle_url` and checks
+sha256, size, and (when required) the signature itself. Over SSH, Atlas
+streams it to `pd-device-update stage -`.
+
 | Path | Needs | Auth | Used when |
 |------|-------|------|-----------|
-| Orion | Orion running on the device | Orion's | Default for fleets |
+| Orion (intent) + Atlas URL (bytes) | orion-node and pd-device-agent on the device | Orion's | Default for fleets |
 | SSH | Package 1.0.7 keys installed | SSH key | No Orion, or Orion faulty |
 | USB boot full image | Nothing on the device | Physical | Always available; migration and recovery |
 
@@ -105,10 +122,20 @@ They map onto the existing steps:
 | Atlas step | Writer |
 |------------|--------|
 | Preflight | `status`: compatible model/revision, enough space, not mid-update |
-| Transfer | bundle to the device (Orion transfer, or `ssh … pd-device-update stage -`) |
+| Transfer | the device pulls `bundle_url` from Atlas (Orion), or `ssh … pd-device-update stage -` |
 | Apply | `stage` verify + slot write, then `apply` |
 | Reboot | wait for the device to drop and come back (identity endpoint, board_serial) |
-| Confirm | `status` says `confirmed` with the new version → `Verified`; `rolled-back` → `RolledBack` |
+| Confirm | durable state after boot: `update.state` = `confirmed` with the new version → `Verified`; `rolled-back` → `RolledBack` |
+
+The outcome is never taken from an action result. The `update` action ends
+`Succeeded` with `{phase: "rebooting", version_staged}` just before the
+reboot, meaning only "staged and apply issued", because action records live
+in orion-node's memory and don't survive it. Reboot and Confirm read durable
+state: the node's host facts (OS/image version, `board_serial`) and the
+status keys pd-device-agent republishes after boot. Atlas keeps its Orion
+capability behind one interface, so moving from actions to Orion's later
+durable UpdateIntent/UpdateStatus records (milestone U3) changes nothing in
+these steps.
 
 Concurrency is `Parallel`: each board updates itself, so staged rollout
 (one board first) and bulk updates work as they do today.
@@ -117,17 +144,25 @@ Concurrency is `Parallel`: each board updates itself, so staged rollout
 
 Atlas does not need Orion to understand partitions; it needs:
 
-- **Intent:** `ActionRequest { target: Node, action: "update", args: { bundle_url | transfer_id, sha256, size } }`.
-- **Progress:** status-lane updates mirroring `pd-device-update status`
-  (state, progress, error), so Atlas maps them onto the steps above.
-- **Result:** `ActionResult` with the final state and the active version.
-- **Facts:** the identity fields, including `board_serial`, so Atlas merges
-  the Orion record with the pd identity and USB records of the same board.
+- **Intent:** `ActionRequest { target: Node, action: "update", args: { bundle_url, sha256, size } }`.
+- **Progress while it runs:** status-lane keys `action.<action_id>.state|progress|error`
+  under the action's target subject (names to be confirmed with v4).
+- **Durable status across reboots:** stable keys under the Node subject,
+  republished by pd-device-agent after boot: `update.state`,
+  `update.version_active`, `update.slot_active`, `update.error`.
+- **Action result:** "staged and apply issued" only (see above).
+- **Facts:** `board_serial` raw from `/proc/device-tree/serial-number`
+  (DMI as a fallback), `board_model`, and `machine_id`. Atlas normalizes
+  `board_serial` to its matching rule (the last 8 hex digits, lowercase) to
+  merge the Orion record with the pd identity and USB records of a board.
+
+How Atlas reaches Orion: as an enrolled peer (orion+tcp, signed), with
+actions forwarded across nodes, ideally through an Orion client library
+compiled into Atlas behind an optional feature, rather than a separate
+orion-node on the user's computer. The HTTP control API is the fallback.
 
 ## Open questions
 
 - Slot sizes: is 2 GiB per root enough for PhotonVision + JDK with headroom?
-- Watchdog: CM5 `dtparam=watchdog=on` + systemd `RuntimeWatchdogSec`, or the
-  bootloader's own trial timeout?
 - Where the bundle signing key lives (device package vs OS).
 - Whether HeliOS images adopt the same layout, so one writer serves both.
