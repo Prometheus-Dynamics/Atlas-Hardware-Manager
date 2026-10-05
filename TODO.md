@@ -26,9 +26,10 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
       elevated helper per OS (pkexec, osascript, RunAs).
 - [x] Raspberry Pi recovery driver: USB boot, wait for the eMMC, write,
       verify; EEPROM (bootloader) update action.
-- [x] Device packages in `devices/` (Raze, currently 1.0.6 from the HeliOS
-      session's `raze-device` branch): catalog naming, recovery steps,
-      EEPROM files.
+- [x] Device packages in `devices/` (Raze, now 1.0.7, owned here): catalog
+      naming, recovery steps, EEPROM files, the `raze-leds` LED helper, a
+      locate action on the identity endpoint, opt-in SSH keys from the boot
+      partition, and a serial console on the USB gadget.
 - [x] PD driver for running devices: mDNS `_pd-device._tcp` +
       `/.well-known/pd-device`. Optional `endpoints` (metrics, logs,
       actions), `actions`, and `camera_stream` are used when a device lists
@@ -50,6 +51,14 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
 - [x] "Glass" visual style; fast motion system (no blur, no looping
       animations, data snaps) for older hardware.
 - [x] Browser mock with a fully simulated robot (`bun run dev`).
+- [x] Safer flashing: crashed drivers fail the job instead of hanging it,
+      one job per device, a warning when a device goes quiet, Cancel always
+      ends a job, host checks on the Flash tab, `atlas.log`.
+- [x] After a flash: the eMMC is ejected so the desktop can't mount it, and
+      Atlas says to power-cycle. "Open as USB disk", "Browse files", "Eject
+      safely", and "Add my SSH key" for a board's eMMC; a half-done flash
+      continues without a power-cycle.
+- [x] A flashed board replaces its USB-boot record (matched by board serial).
 
 ### Tooling and install
 - [x] `atlas` CLI covering every flow, with `--sim` fleets.
@@ -59,11 +68,22 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
 
 ## Not yet tested
 
-- [ ] Real Raze end to end: USB boot, eMMC write, verify, helper elevation.
+- [x] Real Raze end to end: USB boot, eMMC write, verify, helper elevation
+      (PhotonVision image, 2026-10-04/05).
+- [ ] Open as USB disk / Browse / Eject / Add my SSH key on hardware.
+- [ ] Raze 1.0.7 on hardware: LED colour order, locate, SSH keys, serial
+      console. Fan polarity (`dtoverlay=raze-fan,polarity=0`) still to test.
 - [ ] USB hotplug and mDNS watching on real hardware (Linux, Windows, macOS).
 - [ ] Windows and macOS installers on real machines.
 
 ## Next
+
+- [ ] atlas-driver-orion: starts on Orion's HTTP control API once its v4
+      types land, then moves to Orion's embeddable operator client (signed
+      orion+tcp). Facts, status lanes, and actions, merged by board serial.
+- [ ] OTA for running devices: `docs/ota.md` (A/B tryboot, `pd-device-update`
+      writer and `pd-device-agent` in the device package, Orion for intent
+      and progress, SSH and USB boot without Orion).
 
 - [ ] UI direction: confirm the current style fits; else compare 2-3
       directions side by side.
