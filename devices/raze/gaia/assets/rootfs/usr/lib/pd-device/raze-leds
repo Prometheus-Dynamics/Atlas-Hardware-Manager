@@ -1,11 +1,13 @@
 #!/bin/sh
-# Raze LED ring: 16 SK6812 RGBW LEDs on /dev/leds0 (ws2812-pio-rp1). Writes
-# one frame of 16 x 4 bytes per change; the ring keeps it until the next.
+# Raze LED ring: 16 SK6812-EC20 LEDs (24-bit RGB) on /dev/leds0 (ws2812-pio-rp1).
+# Writes one frame of 16 x 4 bytes per change; the ring keeps it until the
+# next. The driver always reads 4 bytes (R, G, B, W) per LED from userspace and
+# drops W on the wire, so white is `color 255 255 255`.
 #
 #   raze-leds on | off                 light the ring in its colour, or not
 #   raze-leds set <0|1>                same, for PhotonVision ({v} = 0 or 1)
 #   raze-leds dim <0-100>              brightness in percent (default 100)
-#   raze-leds color <r> <g> <b> [<w>]  colour, 0-255 each (default white)
+#   raze-leds color <r> <g> <b> [<w>]  colour, 0-255 each; w is ignored by this ring
 #   raze-leds status <ok|warn|error|busy|off>   green, amber, red, blue, off
 #   raze-leds blink [<hz>]             blink the current colour (default 2 Hz)
 #   raze-leds locate [<seconds>]       blink bright cyan, then go back (10 s)
@@ -14,9 +16,10 @@
 # State lives in /run/pd-device/leds.state, so commands combine: `color` then
 # `dim` keeps the colour. Any command stops a running blink. With
 # RAZE_LEDS_FOREGROUND=1 a blink runs in the foreground (as
-# pd-device-locate.service does). Byte order is RGBW; set
-# RAZE_LEDS_ORDER=grbw (and so on) in /etc/pd-device/raze-leds.env if colours
-# come out swapped on a board revision.
+# pd-device-locate.service does). Byte order is rgbw, the driver's 4-byte
+# layout; if colours come out swapped on a board revision, reorder the four
+# letters in RAZE_LEDS_ORDER (/etc/pd-device/raze-leds.env), e.g. grbw. Keep
+# all four: a 3-letter order misaligns the driver's buffer.
 set -eu
 
 PD_LIB_DIR=${PD_LIB_DIR:-/usr/lib/pd-device}

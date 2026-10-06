@@ -23,8 +23,8 @@
  * that really drives the fan inverted.
  *
  * Levels: index 0 is the duty below the first trip (cpu-tepid, 50 C), then one
- * per trip (60, 67.5, 75 C): 128/255 = 50 % minimum (always moving air), 160 =
- * 63 %, 200 = 78 %, then 100 %. The trip temperatures are the base DT's and can
+ * per trip (60, 67.5, 75 C): 179/255 = 70 % minimum (always moving air), 212 =
+ * 83 %, 245 = 96 %, then 100 %. The trip temperatures are the base DT's and can
  * be tuned with the base dtparams fan_temp0..3 (put them before any
  * dtoverlay= line).
  */
@@ -45,7 +45,7 @@
 		target = <&fan>;
 		fan_props: __overlay__ {
 			status = "okay";
-			cooling-levels = <128 160 200 255 255>;
+			cooling-levels = <179 212 245 255 255>;
 			/* rp1_pwm1 channel 3, 41566 ns (~24 kHz), normal polarity */
 			pwms = <&rp1_pwm1 3 41566 0>;
 		};

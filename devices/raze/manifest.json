@@ -2,7 +2,7 @@
   "schema": "urn:pd-device:manifest:1",
   "contract": 1,
   "model": "raze",
-  "package_version": "1.0.9",
+  "package_version": "1.0.10",
   "display_name": "Raze",
   "description": "Raspberry Pi CM5 vision device with an OV9782 global-shutter camera.",
   "vendor": "Prometheus Dynamics",
@@ -172,9 +172,9 @@
         "polarity": "normal"
       },
       "cooling_levels": [
-        128,
-        160,
-        200,
+        179,
+        212,
+        245,
         255,
         255
       ],
@@ -197,12 +197,12 @@
       "count": 16,
       "device": "/dev/leds0",
       "brightness": 255,
-      "rgbw": true,
-      "notes": "SK6812 RGBW ring per the original leds.toml; confirm on hardware if colours look wrong.",
+      "rgbw": false,
+      "notes": "SK6812-EC20, 24-bit RGB (verified on hardware 2026-10-06). The overlay must not pass rgbw; userspace still writes 4 bytes per LED and W is dropped.",
       "helper": {
         "path": "/usr/lib/pd-device/raze-leds",
         "commands": ["on", "off", "set <0|1>", "dim <0-100>", "color <r> <g> <b> [<w>]", "status <ok|warn|error|busy|off>", "blink [<hz>]", "locate [<seconds>]", "show"],
-        "byte_order": "RGBW, RAZE_LEDS_ORDER in /etc/pd-device/raze-leds.env",
+        "byte_order": "rgbw (driver layout, W ignored), RAZE_LEDS_ORDER in /etc/pd-device/raze-leds.env; always four letters",
         "state": "/run/pd-device/leds.state"
       }
     },

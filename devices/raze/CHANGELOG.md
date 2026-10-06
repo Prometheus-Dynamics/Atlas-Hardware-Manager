@@ -1,5 +1,16 @@
 # Raze device package changelog
 
+## 1.0.10
+
+- LEDs: the ring is SK6812-EC20, 24-bit RGB, not RGBW. The `ws2812-pio`
+  overlay no longer passes `rgbw` (32 bits per LED smeared the colours around
+  the ring). `raze-leds` keeps writing 4 bytes per LED, the driver's
+  userspace layout; W is dropped on the wire, so white is `color 255 255 255`.
+  `RAZE_LEDS_ORDER` must stay four letters. Verified on a Raze: red, green,
+  blue and white on all 16 LEDs.
+- Fan: 70 % minimum, levels 179/212/245/255/255 (70, 83, 96, 100 %), normal
+  polarity. Verified on a Raze: 83 % at 58 °C.
+
 ## 1.0.9
 
 - A/B updates: `/usr/lib/pd-device/update` (status, stage, apply, confirm,

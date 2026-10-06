@@ -14,8 +14,10 @@ dtoverlay=i2c1-pi5,pins_10_11
 # Software I2C bus 4 for the IMU: SDA GPIO8, SCL GPIO7.
 dtoverlay=i2c-gpio,bus=4,i2c_gpio_sda=8,i2c_gpio_scl=7
 
-# Status LED ring: 16 LEDs on GPIO13 via RP1 PIO, /dev/leds0.
-dtoverlay=ws2812-pio,gpio=13,num_leds=16,brightness=255,rgbw,dev_name=leds%d
+# Status LED ring: 16 SK6812-EC20 LEDs (24-bit RGB, no white channel) on
+# GPIO13 via RP1 PIO, /dev/leds0. No `rgbw`: that sends 32 bits per LED and
+# smears the colours around the ring.
+dtoverlay=ws2812-pio,gpio=13,num_leds=16,brightness=255,dev_name=leds%d
 
 # External USB-A and USB-C port power, held on by the kernel.
 dtoverlay=raze-usb-power
