@@ -51,26 +51,13 @@ die() {
 	exit 1
 }
 
-# The root device, e.g. /dev/mmcblk0p5. The kernel command line names it;
-# /proc/mounts can only say /dev/root on a Pi.
-root_source() {
-	src=$(tr ' ' '\n' < "${UPDATE_PROC_CMDLINE:-/proc/cmdline}" | sed -n 's/^root=//p' | tail -n 1)
-	case "$src" in
-	PARTUUID=* | UUID=* | LABEL=*) src=$(findfs "$src" 2>/dev/null || blkid -l -o device -t "$src" 2>/dev/null || true) ;;
-	esac
-	if [ -z "$src" ] || [ "$src" = /dev/root ]; then
-		src=$(awk '$2 == "/" && $1 != "rootfs" { print $1 }' /proc/mounts | tail -n 1)
-	fi
-	echo "$src"
-}
-
 # The disk's partition prefix, e.g. /dev/mmcblk0p or /dev/sda.
 root_disk() {
 	if [ -n "$PART_PREFIX" ]; then
 		echo "$PART_PREFIX"
 		return
 	fi
-	root=$(root_source)
+	root=$(pd_root_device)
 	case "$root" in
 	*[0-9]p[0-9]*) echo "${root%p[0-9]*}p" ;;
 	*) echo "${root%%[0-9]*}" ;;
@@ -85,7 +72,7 @@ active_root() {
 		echo "$CMDLINE_ROOT"
 		return
 	fi
-	src=$(root_source)
+	src=$(pd_root_device)
 	echo "${src##*[!0-9]}"
 }
 

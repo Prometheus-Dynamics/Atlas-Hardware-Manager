@@ -1,5 +1,18 @@
 # Raze device package changelog
 
+## 1.0.11
+
+- `ssh-keys` finds the boot partition from `root=` on the kernel command line
+  (PARTUUID/UUID/LABEL resolved), so an overlay or squashfs root works; with
+  no block device behind `/` it falls back to `/dev/mmcblk0p1`.
+  `SSH_KEYS_BOOT_PARTITION` still overrides. On the A/B layout that is p1,
+  shared by both slots, so keys survive updates.
+- `lib.sh`: `pd_root_device` and `pd_sibling_partition`, shared by `ssh-keys`
+  and `update`.
+- `PD_DEVICE_PACKAGE_COMMIT`: an OS that imports the layer straight from git
+  sets it in `/etc/pd-device/device-package.env` (Gaia:
+  `${source.<id>.commit}`), which is read after the package's file.
+
 ## 1.0.10
 
 - LEDs: the ring is SK6812-EC20, 24-bit RGB, not RGBW. The `ws2812-pio`

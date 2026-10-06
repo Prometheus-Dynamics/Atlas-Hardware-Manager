@@ -19,19 +19,24 @@ pd_load_env ssh-keys.env
 TARGET_HOME=${SSH_KEYS_HOME:-/root}
 SOURCE_NAME=${SSH_KEYS_SOURCE:-pd-device/authorized_keys}
 
-# The boot partition: partition 1 of the disk the root filesystem is on,
-# unless SSH_KEYS_BOOT_PARTITION names one.
+# The boot partition: partition 1 of the disk the root filesystem is on
+# (from root= on the kernel command line, so an overlay root works too), else
+# the eMMC's first partition, unless SSH_KEYS_BOOT_PARTITION names one. On the
+# A/B layout partition 1 holds autoboot.txt and is shared by both slots, so
+# keys left there survive updates.
 boot_partition() {
 	if [ -n "${SSH_KEYS_BOOT_PARTITION:-}" ]; then
 		echo "$SSH_KEYS_BOOT_PARTITION"
 		return
 	fi
-	root=$(findmnt -n -o SOURCE / 2>/dev/null) || return 1
-	case "$root" in
-	*[0-9]p[0-9]*) echo "${root%p[0-9]*}p1" ;; # mmcblk0p2, nvme0n1p2
-	*[a-z][0-9]*) echo "${root%%[0-9]*}1" ;;   # sda2
-	*) return 1 ;;
-	esac
+	root=$(pd_root_device)
+	if [ -n "$root" ] && pd_sibling_partition "$root" 1; then
+		return
+	fi
+	for fallback in /dev/mmcblk0p1 /dev/nvme0n1p1; do
+		[ -b "$fallback" ] && echo "$fallback" && return
+	done
+	return 1
 }
 
 part=$(boot_partition) || {

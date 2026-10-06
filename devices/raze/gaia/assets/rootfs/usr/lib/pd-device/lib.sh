@@ -22,6 +22,37 @@ PD_OS_RELEASE=${PD_OS_RELEASE:-}
 PD_MACHINE_ID=${PD_MACHINE_ID:-/etc/machine-id}
 PD_HOSTNAME_PROC=${PD_HOSTNAME_PROC:-/proc/sys/kernel/hostname}
 
+# The root filesystem's block device, e.g. /dev/mmcblk0p5. The kernel command
+# line names it (resolving PARTUUID=, UUID=, LABEL=); /proc/mounts is only a
+# fallback, since it says /dev/root on a Pi and overlay on an overlay root.
+# Empty when there is no block device behind / (overlay on tmpfs, ramdisk).
+#   PD_PROC_CMDLINE  kernel command line   (/proc/cmdline)
+pd_root_device() {
+	_pd_src=$(tr ' ' '\n' < "${PD_PROC_CMDLINE:-/proc/cmdline}" 2>/dev/null | sed -n 's/^root=//p' | tail -n 1)
+	case "$_pd_src" in
+	PARTUUID=* | UUID=* | LABEL=*)
+		_pd_src=$(findfs "$_pd_src" 2>/dev/null || blkid -l -o device -t "$_pd_src" 2>/dev/null || true)
+		;;
+	esac
+	case "$_pd_src" in
+	/dev/root | /dev/ram* | '')
+		_pd_src=$(awk '$2 == "/" { print $1 }' /proc/mounts 2>/dev/null | tail -n 1)
+		;;
+	esac
+	case "$_pd_src" in
+	/dev/*[0-9]) echo "$_pd_src" ;;
+	esac
+}
+
+# Partition <n> of the disk the root device <dev> is on.
+pd_sibling_partition() {
+	case "$1" in
+	*[0-9]p[0-9]*) echo "${1%p[0-9]*}p$2" ;; # mmcblk0p2, nvme0n1p2
+	*[a-z][0-9]*) echo "${1%%[0-9]*}$2" ;;   # sda2
+	*) return 1 ;;
+	esac
+}
+
 pd_log() {
 	printf '%s: %s\n' "${0##*/}" "$*" >&2
 }

@@ -42,7 +42,14 @@ fn partitions(disk: &Disk) -> Vec<String> {
         .filter(|name| name.starts_with(&disk.name) && name != &disk.name)
         .map(|name| format!("/dev/{name}"))
         .collect();
-    parts.sort();
+    // By partition number: sdX10 sorts after sdX9.
+    parts.sort_by_key(|name| {
+        let digits = name.len() - name.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+        (
+            name[name.len() - digits..].parse::<u32>().unwrap_or(0),
+            name.clone(),
+        )
+    });
     parts
 }
 

@@ -60,7 +60,9 @@ jobs:
       # The device-side A/B updater, under the runner's POSIX sh (dash on Ubuntu).
       - name: Test the device update writer
         if: runner.os == 'Linux'
-        run: sh devices/raze/tests/update.sh
+        run: |
+          sh devices/raze/tests/update.sh
+          sh devices/raze/tests/root-device.sh
 
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
