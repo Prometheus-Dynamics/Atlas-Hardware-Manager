@@ -1,5 +1,13 @@
 # Raze device package changelog
 
+## 1.2.0
+
+- New optional layer `gaia/gpu-vulkan.toml`, imported after `gpu.toml`. It
+  adds Vulkan on the V3D GPU: Mesa's v3dv driver
+  (`BR2_PACKAGE_MESA3D_VULKAN_DRIVER_BROADCOM`), the Vulkan loader and
+  headers, and vulkan-tools (vulkaninfo, vkcube; pulls in vulkan-sdk). An
+  OS that only needs GLES doesn't import it and doesn't pay for it.
+
 ## 1.1.1
 
 - **Toolchain:** Bootlin aarch64 glibc **bleeding-edge** 2025.08-1 (gcc 15,

@@ -1,0 +1,19 @@
+# Optional, not imported by device.toml: Vulkan on the V3D GPU, for OS code
+# that uses wgpu or Vulkan directly (dmabuf import, fences). Import after
+# gpu.toml, which provides Mesa and libdrm:
+#   { source = "atlas", path = "devices/raze/gaia/gpu.toml" }
+#   { source = "atlas", path = "devices/raze/gaia/gpu-vulkan.toml" }
+description = "Raze Vulkan: Mesa's v3dv driver, the Vulkan loader, and vulkaninfo."
+
+[image]
+kind = "buildroot"
+config_overrides = [
+  # v3dv, Mesa's Vulkan driver for the Pi 5/CM5 V3D core (ICD in
+  # /usr/share/vulkan/icd.d/broadcom_icd.*.json).
+  ["BR2_PACKAGE_MESA3D_VULKAN_DRIVER_BROADCOM", "y"],
+  # libvulkan.so, which applications link against; it finds the ICD.
+  ["BR2_PACKAGE_VULKAN_HEADERS", "y"],
+  ["BR2_PACKAGE_VULKAN_LOADER", "y"],
+  # vulkaninfo and vkcube, for diagnostics (pulls in vulkan-sdk).
+  ["BR2_PACKAGE_VULKAN_TOOLS", "y"],
+]

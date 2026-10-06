@@ -143,7 +143,9 @@ The Raze layer (`devices/raze/gaia/device.toml`) needs from the OS:
    Package overrides in a later tree's `packages/` win over the device's.
 5. **Optional GPU userspace.** Import `devices/raze/gaia/gpu.toml` as well when
    the OS processes camera frames on the GPU (Mesa V3D/VC4, EGL, GLES, gbm), as
-   PhotonVision's libcamera GL driver does.
+   PhotonVision's libcamera GL driver does. For Vulkan (Mesa's v3dv, the
+   loader and vulkaninfo; wgpu needs it), also import
+   `devices/raze/gaia/gpu-vulkan.toml` after `gpu.toml`.
 
 The device units are installed in `/usr/lib/systemd/system` and enabled by
 `/usr/lib/systemd/system-preset/70-pd-device.preset` when Buildroot runs
