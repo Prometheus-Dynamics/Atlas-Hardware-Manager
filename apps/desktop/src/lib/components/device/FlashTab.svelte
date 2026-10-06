@@ -17,6 +17,7 @@
   import { rise, stagger } from "$lib/ui/motion";
   import BootloaderRow from "./BootloaderRow.svelte";
   import HostReadiness from "./HostReadiness.svelte";
+  import SshKeyOption from "./SshKeyOption.svelte";
 
   let { record }: { record: DeviceRecord } = $props();
 
@@ -151,6 +152,8 @@
         </div>
       {/if}
     {/if}
+
+    <SshKeyOption />
 
     <Button
       variant="primary"
