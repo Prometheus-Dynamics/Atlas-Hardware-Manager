@@ -180,6 +180,10 @@ pd_json_str() {
 pd_update_methods() {
 	{
 		printf '%s\n' image-write
+		# pd-device-update writes this once it has seen an A/B layout.
+		if grep -q '"slot_active":"[AB]"' "$PD_RUN_DIR/update.json" 2>/dev/null; then
+			printf '%s\n' ab-tryboot
+		fi
 		for _pd_d in "$PD_LIB_DIR/update-methods.d" "$PD_ETC_DIR/update-methods.d"; do
 			[ -d "$_pd_d" ] || continue
 			for _pd_f in "$_pd_d"/*; do
@@ -267,6 +271,10 @@ pd_identity_json() {
 		_pd_sep=','
 	done
 	printf ']'
+	# The A/B updater's state, as pd-device-update last wrote it.
+	if [ -s "$PD_RUN_DIR/update.json" ]; then
+		printf ',"update":%s' "$(head -n 1 "$PD_RUN_DIR/update.json")"
+	fi
 	printf ',"manage_url":%s' "$(pd_json_str "$(pd_first_line "$PD_ETC_DIR/manage-url" "$PD_LIB_DIR/manage-url")")"
 	pd_actions_json
 	printf ',"macs":{'

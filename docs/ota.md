@@ -53,23 +53,30 @@ that path; the image builder also emits an update bundle (below).
 
 `<os>-<version>-<model>.pdupdate`: a tar with
 
-- `manifest.json`: model, compatible revisions, OS name and version,
-  device-package version, minimum current version (if any), and per-file
-  size and sha256;
+- `manifest.env`: shell `KEY=value` lines (the image has no JSON parser):
+  `MODEL`, `VERSION`, `OS`, and `BOOT_SHA256` / `ROOTFS_SHA256`, the
+  SHA-256 of the two `.zst` members as stored in the tar;
 - `boot.vfat.zst` and `rootfs.ext4.zst`: the slot images;
-- `manifest.sig` (optional): ed25519 over `manifest.json`. Signing follows
+- `manifest.sig` (optional): ed25519 over `manifest.env` (not checked yet). Signing follows
   the Atlas release rule: used when present, never required for a local
   file, required when the bundle arrives over an unauthenticated transport.
 
 ## The writer: `pd-device-update` (device package)
 
+Installed as `/usr/lib/pd-device/update` (Raze 1.0.9; tested off-device by
+`devices/raze/tests/update.sh`). Settings: `update.env`.
+
 ```
-pd-device-update status                  # JSON on stdout, also /run/pd-device/update.json
-pd-device-update stage <bundle|->        # verify + write the inactive slot; '-' reads stdin
-pd-device-update apply                   # set [tryboot] to the staged slot, reboot "0 tryboot"
-pd-device-update confirm                 # run by the new system once healthy: make it the default
-pd-device-update rollback                # discard a staged update
+update status             # JSON on stdout, also /run/pd-device/update.json
+update stage <bundle>     # verify every hash, then write the inactive slot
+update apply              # set [tryboot] to the staged slot, reboot "0 tryboot"
+update confirm            # run on the trial boot once healthy: make it the default
+update rollback           # discard a staged update
 ```
+
+The bundle is a file on the device (copy it to `/data` first; `/run` is
+RAM). Both slots can use one boot image: `stage` rewrites `root=` in the
+written slot's `cmdline.txt` to that slot's root partition.
 
 Besides the CLI, the package ships **`pd-device-agent`**, a small daemon in
 the `orion` group that connects to orion-node's local IPC socket and claims
@@ -81,7 +88,7 @@ status lane. Without orion-node it simply isn't connected; nothing else
 depends on it.
 
 States, reported in `status` (`state`, `slot_active`, `slot_staged`,
-`version_active`, `version_staged`, `progress` 0..1, `error`):
+`version_active`, `version_staged`, `progress` 0..1000, `error`):
 
 ```
 idle -> staging (verify, write inactive slot) -> staged -> trying (rebooted into it)
@@ -92,12 +99,13 @@ idle -> staging (verify, write inactive slot) -> staged -> trying (rebooted into
 `multi-user.target` and an OS-provided health check (`/etc/pd-device/update-health`;
 for PhotonVision: the service is up and its HTTP port answers). The check
 must not require Orion; it may add "orion-node READY" when Orion is
-installed. The trial is bounded by the hardware watchdog
-(`dtparam=watchdog=on`) with systemd `RuntimeWatchdogSec`: no confirm within
-N minutes means a reset, which boots the old slot.
+installed. A failed check restarts the board at once (`UPDATE_REBOOT_ON_FAIL`),
+which boots the old slot. A trial that hangs is reset by the hardware
+watchdog (systemd `RuntimeWatchdogSec=15s`), with the same result.
 
 The identity endpoint advertises it: `"update_methods": ["image-write", "ab-tryboot"]`
-and `"update": {"state": ..., "slot": ..., "staged": ...}` from `status`.
+(the first only when `status` has seen an A/B layout) and `"update"`, the
+`status` object.
 
 ## Transports
 

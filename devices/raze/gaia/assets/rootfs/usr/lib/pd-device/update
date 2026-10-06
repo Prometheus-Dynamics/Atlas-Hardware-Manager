@@ -1,0 +1,322 @@
+#!/bin/sh
+# pd-device-update: A/B updates with the Pi bootloader's tryboot (docs/ota.md).
+#
+#   update status              JSON on stdout (also /run/pd-device/update.json)
+#   update stage <bundle>      verify, write the inactive slot, fix its cmdline
+#   update apply               boot the staged slot once on trial ("0 tryboot")
+#   update confirm             on the trial boot, once healthy: keep it
+#   update rollback            forget a staged update
+#
+# Layout (MBR on the eMMC): p1 holds autoboot.txt only; boot A/B are p2/p3
+# (FAT), root A/B are p5/p6. autoboot.txt's [all] boot_partition is the
+# default; its [tryboot] section is what `reboot "0 tryboot"` boots once.
+# If the trial never confirms, the next reset boots the default again.
+#
+# A bundle (<name>.pdupdate) is a tar of manifest.env, boot.vfat.zst, and
+# rootfs.ext4.zst. manifest.env holds MODEL, VERSION, OS, and BOOT_SHA256 /
+# ROOTFS_SHA256 (of the .zst members). The writer checks every hash before
+# it writes anything. State lives on p1 (shared by both slots) in
+# pd-update.env. Settings: update.env.
+set -eu
+
+PD_LIB_DIR=${PD_LIB_DIR:-/usr/lib/pd-device}
+# shellcheck source=lib.sh
+. "$PD_LIB_DIR/lib.sh"
+pd_load_env device-package.env
+pd_load_env update.env
+
+# Partition numbers of the two slots: "<boot> <root>".
+SLOT_A=${UPDATE_SLOT_A:-2 5}
+SLOT_B=${UPDATE_SLOT_B:-3 6}
+AUTOBOOT_PART=${UPDATE_AUTOBOOT_PART:-1}
+# Test hooks: where partitions live and how a FAT partition is mounted.
+PART_PREFIX=${UPDATE_PART_PREFIX:-}
+MOUNT=${UPDATE_MOUNT:-mount}
+UMOUNT=${UPDATE_UMOUNT:-umount}
+REBOOT=${UPDATE_REBOOT:-systemctl reboot "0 tryboot"}
+CMDLINE_ROOT=${UPDATE_CMDLINE_ROOT:-}
+WORK=${PD_RUN_DIR}/update
+STATUS_JSON=${PD_RUN_DIR}/update.json
+
+die() {
+	pd_log "$*"
+	# Inside with_autoboot, p1 is already mounted: record the failure there.
+	if [ -n "${AB:-}" ] && [ -d "$AB" ]; then
+		STATE=error
+		ERROR="$*"
+		save_state 2>/dev/null || true
+		sync
+		$UMOUNT "$AB" >/dev/null 2>&1 || true
+	fi
+	exit 1
+}
+
+# The root device, e.g. /dev/mmcblk0p5. The kernel command line names it;
+# /proc/mounts can only say /dev/root on a Pi.
+root_source() {
+	src=$(tr ' ' '\n' < "${UPDATE_PROC_CMDLINE:-/proc/cmdline}" | sed -n 's/^root=//p' | tail -n 1)
+	case "$src" in
+	PARTUUID=* | UUID=* | LABEL=*) src=$(findfs "$src" 2>/dev/null || blkid -l -o device -t "$src" 2>/dev/null || true) ;;
+	esac
+	if [ -z "$src" ] || [ "$src" = /dev/root ]; then
+		src=$(awk '$2 == "/" && $1 != "rootfs" { print $1 }' /proc/mounts | tail -n 1)
+	fi
+	echo "$src"
+}
+
+# The disk's partition prefix, e.g. /dev/mmcblk0p or /dev/sda.
+root_disk() {
+	if [ -n "$PART_PREFIX" ]; then
+		echo "$PART_PREFIX"
+		return
+	fi
+	root=$(root_source)
+	case "$root" in
+	*[0-9]p[0-9]*) echo "${root%p[0-9]*}p" ;;
+	*) echo "${root%%[0-9]*}" ;;
+	esac
+}
+
+part() { echo "$(root_disk)$1"; }
+
+# The root partition number the system booted from.
+active_root() {
+	if [ -n "$CMDLINE_ROOT" ]; then
+		echo "$CMDLINE_ROOT"
+		return
+	fi
+	src=$(root_source)
+	echo "${src##*[!0-9]}"
+}
+
+slot_of_root() {
+	a_root=$(echo "$SLOT_A" | cut -d' ' -f2)
+	b_root=$(echo "$SLOT_B" | cut -d' ' -f2)
+	case "$(active_root)" in
+	"$a_root") echo A ;;
+	"$b_root") echo B ;;
+	*) echo unknown ;;
+	esac
+}
+
+other() { [ "$1" = A ] && echo B || echo A; }
+slot_boot() { if [ "$1" = A ]; then echo "$SLOT_A" | cut -d' ' -f1; else echo "$SLOT_B" | cut -d' ' -f1; fi; }
+slot_root() { if [ "$1" = A ]; then echo "$SLOT_A" | cut -d' ' -f2; else echo "$SLOT_B" | cut -d' ' -f2; fi; }
+
+# Mounts partition $1 at a fresh directory and prints it.
+mount_part() {
+	dir="$WORK/mnt-$1"
+	mkdir -p "$dir"
+	$MOUNT "$(part "$1")" "$dir" >/dev/null
+	echo "$dir"
+}
+
+with_autoboot() {
+	# with_autoboot <function>: runs it with $AB pointing at mounted p1.
+	AB=$(mount_part "$AUTOBOOT_PART")
+	rc=0
+	"$1" || rc=$?
+	sync
+	$UMOUNT "$AB" >/dev/null 2>&1 || true
+	return "$rc"
+}
+
+load_state() {
+	STATE=idle SLOT_STAGED= VERSION_ACTIVE= VERSION_STAGED= ERROR= PROGRESS=0
+	if [ -r "$AB/pd-update.env" ]; then
+		# shellcheck disable=SC1091
+		. "$AB/pd-update.env"
+	fi
+}
+
+save_state() {
+	{
+		printf 'STATE=%s\n' "$STATE"
+		printf 'SLOT_STAGED=%s\n' "$SLOT_STAGED"
+		printf 'VERSION_ACTIVE=%s\n' "$(quote "$VERSION_ACTIVE")"
+		printf 'VERSION_STAGED=%s\n' "$(quote "$VERSION_STAGED")"
+		printf 'ERROR=%s\n' "$(quote "$ERROR")"
+		printf 'PROGRESS=%s\n' "$PROGRESS"
+	} > "$AB/pd-update.env.tmp"
+	mv "$AB/pd-update.env.tmp" "$AB/pd-update.env"
+	write_status_json
+}
+
+quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+write_status_json() {
+	mkdir -p "$PD_RUN_DIR"
+	printf '{"state":%s,"slot_active":%s,"slot_staged":%s,"version_active":%s,"version_staged":%s,"progress":%s,"error":%s}\n' \
+		"$(pd_json_str "$STATE")" "$(pd_json_str "$(slot_of_root)")" "$(pd_json_str "$SLOT_STAGED")" \
+		"$(pd_json_str "$VERSION_ACTIVE")" "$(pd_json_str "$VERSION_STAGED")" "${PROGRESS:-0}" \
+		"$(pd_json_str "$ERROR")" > "$STATUS_JSON.tmp"
+	mv "$STATUS_JSON.tmp" "$STATUS_JSON"
+}
+
+# autoboot.txt for "<default boot> [<tryboot boot>]".
+write_autoboot() {
+	{
+		echo "[all]"
+		echo "tryboot_a_b=1"
+		echo "boot_partition=$1"
+		if [ -n "${2:-}" ]; then
+			echo "[tryboot]"
+			echo "boot_partition=$2"
+		fi
+	} > "$AB/autoboot.txt.tmp"
+	mv "$AB/autoboot.txt.tmp" "$AB/autoboot.txt"
+}
+
+default_boot() { sed -n '/^\[all\]/,/^\[/{s/^boot_partition=\([0-9]*\).*/\1/p}' "$AB/autoboot.txt" | head -n 1; }
+
+cmd_status() {
+	with_autoboot _status
+}
+_status() {
+	load_state
+	if [ -z "$VERSION_ACTIVE" ]; then
+		VERSION_ACTIVE=$(pd_os_field VERSION_ID)
+	fi
+	write_status_json
+	cat "$STATUS_JSON"
+}
+
+member_sha() { tar -xOf "$1" "$2" | sha256sum | cut -d' ' -f1; }
+
+cmd_stage() {
+	BUNDLE=${1:-}
+	[ -r "$BUNDLE" ] || die "no bundle at '$BUNDLE'"
+	mkdir -p "$WORK"
+	with_autoboot _stage
+}
+_stage() {
+	load_state
+	case "$STATE" in
+	staging | trying) die "an update is already $STATE" ;;
+	esac
+	active=$(slot_of_root)
+	[ "$active" != unknown ] || die "this system is not on an A/B layout (root partition $(active_root))"
+	target=$(other "$active")
+
+	tar -xOf "$BUNDLE" manifest.env > "$WORK/manifest.env" || die "the bundle has no manifest.env"
+	MODEL='' VERSION='' BOOT_SHA256='' ROOTFS_SHA256=''
+	# shellcheck disable=SC1091
+	. "$WORK/manifest.env"
+	[ -z "${PD_DEVICE_MODEL:-}" ] || [ "$MODEL" = "$PD_DEVICE_MODEL" ] ||
+		die "the bundle is for '$MODEL', this is a '$PD_DEVICE_MODEL'"
+	[ -n "$VERSION" ] || die "the bundle's manifest has no VERSION"
+
+	STATE=staging VERSION_STAGED=$VERSION SLOT_STAGED=$target ERROR='' PROGRESS=0
+	save_state
+
+	# Check everything before writing anything.
+	[ "$(member_sha "$BUNDLE" boot.vfat.zst)" = "$BOOT_SHA256" ] || die "boot.vfat.zst failed its SHA-256 check"
+	PROGRESS=100
+	save_state
+	[ "$(member_sha "$BUNDLE" rootfs.ext4.zst)" = "$ROOTFS_SHA256" ] || die "rootfs.ext4.zst failed its SHA-256 check"
+	PROGRESS=200
+	save_state
+
+	boot=$(slot_boot "$target")
+	root=$(slot_root "$target")
+	tar -xOf "$BUNDLE" rootfs.ext4.zst | zstd -dc | dd of="$(part "$root")" bs=4M conv=fsync 2>/dev/null ||
+		die "writing root $target failed"
+	PROGRESS=850
+	save_state
+	tar -xOf "$BUNDLE" boot.vfat.zst | zstd -dc | dd of="$(part "$boot")" bs=4M conv=fsync 2>/dev/null ||
+		die "writing boot $target failed"
+
+	# One boot image serves both slots: point this copy at its own root.
+	mnt=$(mount_part "$boot")
+	if [ -f "$mnt/cmdline.txt" ]; then
+		sed -i "s#root=[^ ]*#root=$(part "$root")#" "$mnt/cmdline.txt"
+	fi
+	sync
+	$UMOUNT "$mnt" >/dev/null 2>&1 || true
+
+	STATE=staged PROGRESS=1000
+	save_state
+	pd_log "staged $VERSION in slot $target"
+}
+
+cmd_apply() {
+	with_autoboot _apply
+	pd_log "rebooting into the staged slot on trial"
+	sync
+	eval "$REBOOT"
+}
+_apply() {
+	load_state
+	[ "$STATE" = staged ] || die "nothing is staged (state: $STATE)"
+	active=$(slot_of_root)
+	write_autoboot "$(slot_boot "$active")" "$(slot_boot "$SLOT_STAGED")"
+	STATE=trying
+	save_state
+}
+
+cmd_confirm() {
+	with_autoboot _confirm
+}
+_confirm() {
+	load_state
+	[ "$STATE" = trying ] || { write_status_json; return 0; }
+	active=$(slot_of_root)
+	if [ "$active" != "$SLOT_STAGED" ]; then
+		# The trial boot didn't stick; the bootloader went back by itself.
+		STATE=rolled-back ERROR=${ERROR:-"the new version didn't start; back on $VERSION_ACTIVE"}
+		write_autoboot "$(slot_boot "$active")"
+		save_state
+		return 0
+	fi
+	# Give the services a moment to come up before judging them.
+	sleep "${UPDATE_CONFIRM_DELAY:-0}"
+	health=${UPDATE_HEALTH:-}
+	if [ -z "$health" ]; then
+		for candidate in "$PD_ETC_DIR/update-health" "$PD_LIB_DIR/update-health"; do
+			[ -x "$candidate" ] && health=$candidate && break
+		done
+	fi
+	if [ -n "$health" ] && ! "$health"; then
+		# Leave the trial unconfirmed: the next reset returns to the old slot.
+		ERROR="the health check failed on $VERSION_STAGED"
+		save_state
+		if [ "${UPDATE_REBOOT_ON_FAIL:-1}" = 1 ]; then
+			pd_log "$ERROR; restarting into $VERSION_ACTIVE"
+			sync
+			$UMOUNT "$AB" >/dev/null 2>&1 || true
+			eval "${UPDATE_REBOOT_PLAIN:-systemctl reboot}"
+		fi
+		return 1
+	fi
+	write_autoboot "$(slot_boot "$active")"
+	STATE=confirmed VERSION_ACTIVE=$VERSION_STAGED ERROR=''
+	save_state
+	pd_log "confirmed $VERSION_ACTIVE in slot $active"
+}
+
+cmd_rollback() {
+	with_autoboot _rollback
+}
+_rollback() {
+	load_state
+	case "$STATE" in
+	staged | error | rolled-back) ;;
+	trying) die "the trial boot is running; reboot to go back" ;;
+	*) ;;
+	esac
+	write_autoboot "$(slot_boot "$(slot_of_root)")"
+	STATE=idle SLOT_STAGED='' VERSION_STAGED='' ERROR='' PROGRESS=0
+	save_state
+}
+
+case "${1:-}" in
+status) cmd_status ;;
+stage) shift; cmd_stage "$@" ;;
+apply) cmd_apply ;;
+confirm) cmd_confirm ;;
+rollback) cmd_rollback ;;
+*)
+	sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' >&2
+	exit 2
+	;;
+esac

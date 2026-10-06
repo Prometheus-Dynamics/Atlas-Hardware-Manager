@@ -10,6 +10,9 @@ cargo fmt --all --check
 echo "==> Checking file sizes"
 "$root_dir/scripts/check-file-sizes.sh"
 
+echo "==> Testing the device update writer"
+sh devices/raze/tests/update.sh
+
 echo "==> Running clippy"
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 

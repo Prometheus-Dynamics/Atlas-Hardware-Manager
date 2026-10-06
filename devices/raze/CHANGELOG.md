@@ -1,5 +1,23 @@
 # Raze device package changelog
 
+## 1.0.9
+
+- A/B updates: `/usr/lib/pd-device/update` (status, stage, apply, confirm,
+  rollback) writes a `.pdupdate` bundle (`manifest.env`, `boot.vfat.zst`,
+  `rootfs.ext4.zst`) to the inactive slot after checking every SHA-256,
+  boots it once with tryboot, and keeps it only when
+  `pd-device-update-confirm.service` finds it healthy. Otherwise the board
+  restarts into the previous version. The layout is p1 autoboot.txt,
+  p2/p3 boot, p5/p6 root (docs/ota.md). Images built without that layout
+  are unaffected.
+- The identity reports `update_methods: ["image-write", "ab-tryboot"]` and an
+  `update` object (state, slots, versions, progress, error) on an A/B layout.
+- The hardware watchdog is armed (RuntimeWatchdogSec=15s), so a hung trial
+  boot resets back to the confirmed slot.
+- The image gets zstd (`BR2_PACKAGE_ZSTD`).
+- Settings live in `update.env`; an OS adds its health check as
+  `/etc/pd-device/update-health`.
+
 ## 1.0.8
 
 - Fan: normal PWM polarity and a 50 % minimum. On a Raze Gen 1 the inverted
