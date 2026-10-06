@@ -76,6 +76,7 @@ config BR2_PACKAGE_LIBCAMERA_PIPELINE_RPI_VC4
 config BR2_PACKAGE_LIBCAMERA_PIPELINE_RPI_PISP
 	bool "rpi/pisp pipeline"
 	depends on BR2_arm || BR2_aarch64
+	depends on BR2_TOOLCHAIN_HEADERS_AT_LEAST_5_6 # libpisp
 	select BR2_PACKAGE_LIBCAMERA_HAS_PIPELINE
 	select BR2_PACKAGE_LIBPISP
 	select BR2_PACKAGE_LIBYUV
@@ -83,6 +84,10 @@ config BR2_PACKAGE_LIBCAMERA_PIPELINE_RPI_PISP
 	select BR2_PACKAGE_JPEG
 	help
 	  Pipeline for Raspberry Pi 5 (RP1/PiSP) devices.
+
+comment "rpi/pisp pipeline needs a toolchain w/ headers >= 5.6"
+	depends on BR2_arm || BR2_aarch64
+	depends on !BR2_TOOLCHAIN_HEADERS_AT_LEAST_5_6
 
 config BR2_PACKAGE_LIBCAMERA_PIPELINE_SIMPLE
 	bool "simple pipeline"

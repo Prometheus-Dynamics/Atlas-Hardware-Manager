@@ -9,7 +9,8 @@ LIBCAMERA_SITE_METHOD = git
 # Raspberry Pi libcamera snapshot on upstream 0.7.2 (soname libcamera.so.0.7:
 # anything linked against 0.6, such as PhotonVision's libcamera GL driver, must
 # be rebuilt). Needs libpisp >= 1.7.0 (libpisp.mk).
-LIBCAMERA_VERSION = v0.7.2+rpt20260817
+# Tag v0.7.2+rpt20260817, by commit so the archive (and its hash) is stable.
+LIBCAMERA_VERSION = 6c1dd9d55573010f710c9e190a73e7e76f0d9432
 LIBCAMERA_DEPENDENCIES = \
 	host-openssl \
 	host-pkgconf \

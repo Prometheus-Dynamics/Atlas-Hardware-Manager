@@ -1,5 +1,18 @@
 # Raze device package changelog
 
+## 1.1.1
+
+- **Toolchain:** Bootlin aarch64 glibc **bleeding-edge** 2025.08-1 (gcc 15,
+  kernel headers 5.15) instead of the defconfig's stable one (gcc 14, headers
+  5.4). libpisp 1.7.0 needs `linux/dma-heap.h` (5.6), and PhotonVision's
+  natives need glibc >= 2.38.
+- libpisp and libcamera's rpi/pisp pipeline now `depends on
+  BR2_TOOLCHAIN_HEADERS_AT_LEAST_5_6`, so an older toolchain fails at
+  configure time instead of mid-build.
+- libpisp and libcamera are pinned by commit. libpisp has both a tag and a
+  branch named v1.7.0. Both packages now ship `.hash` files (tarball and
+  license files).
+
 ## 1.1.0
 
 Platform upgrade: every layer moves to its newest release. Validated off the

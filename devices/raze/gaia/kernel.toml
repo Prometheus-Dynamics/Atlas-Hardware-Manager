@@ -9,6 +9,12 @@ defconfig = "raspberrypicm5io_defconfig"
 external_tree = "@self/buildroot-external"
 external_tree_mode = "required"
 config_overrides = [
+  # Bootlin's newest aarch64 glibc toolchain (2025.08-1: gcc 15, kernel
+  # headers 5.15). The defconfig's "stable" one has 5.4 headers, too old for
+  # libpisp (linux/dma-heap.h, 5.6); PhotonVision's natives also want
+  # glibc >= 2.38.
+  ["BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_STABLE", "n"],
+  ["BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_BLEEDING_EDGE", "y"],
   ["BR2_LINUX_KERNEL", "y"],
   ["BR2_LINUX_KERNEL_CUSTOM_TARBALL", "y"],
   # Hash in buildroot-external/linux/linux.hash (wired in external.mk).

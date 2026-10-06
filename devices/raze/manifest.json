@@ -2,7 +2,7 @@
   "schema": "urn:pd-device:manifest:1",
   "contract": 1,
   "model": "raze",
-  "package_version": "1.1.0",
+  "package_version": "1.1.1",
   "display_name": "Raze",
   "description": "Raspberry Pi CM5 vision device with an OV9782 global-shutter camera.",
   "vendor": "Prometheus Dynamics",
