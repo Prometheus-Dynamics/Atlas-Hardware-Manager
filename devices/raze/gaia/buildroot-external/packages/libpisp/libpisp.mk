@@ -1,5 +1,5 @@
 # Raspberry Pi PiSP helper library
-LIBPISP_VERSION = pios/1.3.0-1
+LIBPISP_VERSION = v1.7.0
 LIBPISP_SITE = https://github.com/raspberrypi/libpisp.git
 LIBPISP_SITE_METHOD = git
 LIBPISP_LICENSE = BSD-2-Clause

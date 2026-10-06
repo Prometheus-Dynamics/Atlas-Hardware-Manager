@@ -1,5 +1,44 @@
 # Raze device package changelog
 
+## 1.1.0
+
+Platform upgrade: every layer moves to its newest release. Validated off the
+board (see below); not yet run on hardware.
+
+- **Buildroot 2026.08** (from 2025.11.3). `raspberrypicm5io_defconfig` and
+  `board/raspberrypi` are unchanged, and every `config_overrides` symbol
+  survives `olddefconfig` with the packages staged as Gaia does.
+  - OpenJDK's default becomes 25.
+  - Mesa moves to 26.1.8, and dnsmasq to 2.93.
+- **Kernel:** raspberrypi/linux `rpi-7.2.y` at 53679a5 (7.2.9) replaces
+  `stable_20250916` (6.12). It still uses bcm2712 with 16K pages.
+  - The ov9782 patch is ported to 7.2's CCI-regmap ov9282 driver, with the
+    same behaviour.
+  - `make Image modules dtbs` builds cleanly.
+  - Every module and symbol the OS uses is present: RP1 CFE, PiSP BE, rp1-pio,
+    ws2812-pio-rp1, dwc2/libcomposite/configfs gadget functions, pwm-fan with
+    pwm-rp1, i2c, and ov9282.
+  - Behaviour change: the CFE driver for `raspberrypi,rp1-cfe` is now
+    `rp1-cfe-downstream.ko`. `rp1-cfe.ko` is the upstream driver and binds
+    only `-upstream`. Both register as "rp1-cfe"; nothing in the package names
+    the module.
+- **Firmware:** rpi-firmware 1.20260915 (`packages/rpi-firmware` override;
+  the tarball is 182 MB).
+  - The stock overlays raze-device.txt loads are now built from the kernel
+    (`images/raze-overlays/`, external.mk) instead of being taken from the
+    firmware. The firmware's overlays come from its own kernel (6.18), and
+    7.2's `ws2812-pio` changed.
+- **libcamera** v0.7.2+rpt20260817 and **libpisp** v1.7.0.
+  - The ov9782 patches are rebased and apply cleanly.
+  - The ov9782 tuning still parses under 0.7.2's controller.
+  - The soname moves from libcamera.so.0.6 to 0.7: rebuild anything linked
+    against it, such as PhotonVision's libcamera GL driver.
+- **rpi-userland removed** (Buildroot dropped it). `vcgencmd` now comes from
+  `packages/rpi-utils` (raspberrypi/utils e0484c8, vcgencmd only). The
+  external tree no longer hides rpi-userland's EGL headers from staging.
+  Other userland tools (vcmailbox, dtoverlay) are gone; nothing here used
+  them.
+
 ## 1.0.12
 
 - `update` takes a lock (`/run/pd-device/update.lock`), so two commands never

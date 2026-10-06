@@ -1,0 +1,12 @@
+config BR2_PACKAGE_RPI_UTILS
+	bool "rpi-utils (vcgencmd)"
+	depends on BR2_arm || BR2_aarch64
+	help
+	  vcgencmd from Raspberry Pi's utils repository: queries the
+	  VideoCore firmware through /dev/vcio (bootloader version,
+	  clocks, temperatures, throttling).
+
+	  Buildroot 2026.08 removed rpi-userland, which used to provide
+	  vcgencmd. Only the vcgencmd tool is built from this repository.
+
+	  https://github.com/raspberrypi/utils

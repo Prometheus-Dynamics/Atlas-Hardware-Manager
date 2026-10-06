@@ -9,20 +9,6 @@
 # accepts the tarball when any listed hash file matches it.
 LINUX_HASH_FILES += $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/linux.hash
 
-# With Mesa's EGL (gpu.toml), keep rpi-userland out of staging. On aarch64
-# rpi-userland builds no EGL/GLES libraries, but its install still copies the
-# old Broadcom EGL/GLES/KHR headers into staging, where they can overwrite
-# Mesa's depending on build order; anything compiled against the sysroot
-# (e.g. PhotonVision's libcamera GL driver) then sees the wrong headers.
-# vcgencmd and friends are still installed to the target. The staging recipe
-# expands this variable at build time, so redefining it here, after the
-# package makefiles, takes effect.
-ifeq ($(BR2_aarch64)$(BR2_PACKAGE_RPI_USERLAND)$(BR2_PACKAGE_MESA3D_OPENGL_EGL),yyy)
-define RPI_USERLAND_INSTALL_STAGING_CMDS
-	@echo "rpi-userland: not installed to staging (keeps Mesa's EGL/GLES headers)"
-endef
-endif
-
 # The CM5 defconfig uses Bootlin's external toolchain, whose tools are named
 # aarch64-linux-*. OpenJDK's configure only looks for $(GNU_TARGET_NAME)-*
 # (aarch64-buildroot-linux-gnu-*), and when it finds none it silently falls
@@ -37,4 +23,27 @@ OPENJDK_CONF_OPTS += \
 	STRIP=$(TARGET_STRIP) \
 	NM=$(TARGET_NM) \
 	AR=$(TARGET_AR)
+endif
+
+# The stock overlays raze-device.txt loads are built from the kernel being
+# built, not taken from rpi-firmware: the firmware release carries overlays
+# from its own kernel series (1.20260915: 6.18), and 7.2 changed some of
+# them (ws2812-pio no longer sets the pin function). boot.toml copies them
+# from images/raze-overlays/.
+RAZE_KERNEL_OVERLAYS = dwc2 i2c1-pi5 i2c-gpio ws2812-pio vc4-kms-v3d-pi5
+
+ifeq ($(BR2_LINUX_KERNEL_EXT_OV9782),y)
+define RAZE_BUILD_KERNEL_OVERLAYS
+	$(LINUX_MAKE_ENV) $(BR2_MAKE) $(LINUX_MAKE_FLAGS) -C $(LINUX_DIR) \
+		$(foreach o,$(RAZE_KERNEL_OVERLAYS),overlays/$(o).dtbo)
+endef
+LINUX_POST_BUILD_HOOKS += RAZE_BUILD_KERNEL_OVERLAYS
+
+define RAZE_INSTALL_KERNEL_OVERLAYS
+	$(INSTALL) -d $(BINARIES_DIR)/raze-overlays
+	$(foreach o,$(RAZE_KERNEL_OVERLAYS),\
+		$(INSTALL) -m 0644 $(LINUX_ARCH_PATH)/boot/dts/overlays/$(o).dtbo \
+			$(BINARIES_DIR)/raze-overlays/$(o).dtbo$(sep))
+endef
+LINUX_POST_INSTALL_IMAGES_HOOKS += RAZE_INSTALL_KERNEL_OVERLAYS
 endif

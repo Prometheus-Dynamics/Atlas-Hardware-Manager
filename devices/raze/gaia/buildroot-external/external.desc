@@ -1,2 +1,2 @@
 name: RAZE_DEVICE
-desc: Raze device package (pd-device contract 1): OV9782 kernel extension, libcamera/libpisp overrides
+desc: Raze device package (pd-device contract 1): OV9782 kernel extension, libcamera/libpisp/rpi-firmware overrides, rpi-utils (vcgencmd)

@@ -12,16 +12,20 @@ config_overrides = [
   ["BR2_LINUX_KERNEL", "y"],
   ["BR2_LINUX_KERNEL_CUSTOM_TARBALL", "y"],
   # Hash in buildroot-external/linux/linux.hash (wired in external.mk).
-  ["BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION", "\"https://github.com/raspberrypi/linux/archive/refs/tags/stable_20250916.tar.gz\""],
+  # raspberrypi/linux rpi-7.2.y at 53679a5 (Linux 7.2.9), pinned by commit.
+  ["BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION", "\"https://github.com/raspberrypi/linux/archive/53679a5788f7912272b412fd78029bccae6f2b1a.tar.gz\""],
   ["BR2_LINUX_KERNEL_DEFCONFIG", "\"bcm2712\""],
   # OV9782 as a variant of the upstream ov9282 driver (VIDEO_OV9282=m).
   ["BR2_LINUX_KERNEL_EXT_OV9782", "y"],
   ["BR2_PACKAGE_RPI_FIRMWARE", "y"],
-  # Stock overlays used by raze-device.txt (dwc2, i2c1-pi5, i2c-gpio,
-  # ws2812-pio, vc4-kms-v3d-pi5).
+  # The firmware's overlay set, for OS-level overlays. The ones raze-device.txt
+  # loads (dwc2, i2c1-pi5, i2c-gpio, ws2812-pio, vc4-kms-v3d-pi5) are built from
+  # this kernel instead (external.mk, RAZE_KERNEL_OVERLAYS): the firmware's come
+  # from its own kernel series.
   ["BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS", "y"],
-  # vcgencmd and friends.
-  ["BR2_PACKAGE_RPI_USERLAND", "y"],
+  # vcgencmd (buildroot-external/packages/rpi-utils; Buildroot 2026.08
+  # removed rpi-userland).
+  ["BR2_PACKAGE_RPI_UTILS", "y"],
   # dtc for the compile-dts assembly transforms in boot.toml.
   ["BR2_PACKAGE_HOST_DTC", "y"],
 ]

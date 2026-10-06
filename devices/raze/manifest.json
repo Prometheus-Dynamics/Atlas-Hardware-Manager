@@ -2,7 +2,7 @@
   "schema": "urn:pd-device:manifest:1",
   "contract": 1,
   "model": "raze",
-  "package_version": "1.0.12",
+  "package_version": "1.1.0",
   "display_name": "Raze",
   "description": "Raspberry Pi CM5 vision device with an OV9782 global-shutter camera.",
   "vendor": "Prometheus Dynamics",
@@ -315,6 +315,14 @@
     "layer": "gaia/device.toml",
     "optional_layers": [
       "gaia/gpu.toml"
-    ]
+    ],
+    "stack": {
+      "buildroot": "2026.08",
+      "defconfig": "raspberrypicm5io_defconfig",
+      "kernel": "raspberrypi/linux rpi-7.2.y 53679a5788f7912272b412fd78029bccae6f2b1a (7.2.9), bcm2712 (16K pages)",
+      "firmware": "raspberrypi/firmware 1.20260915 (stock overlays built from the kernel instead)",
+      "libcamera": "raspberrypi/libcamera v0.7.2+rpt20260817",
+      "libpisp": "raspberrypi/libpisp v1.7.0"
+    }
   }
 }

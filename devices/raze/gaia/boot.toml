@@ -23,29 +23,30 @@ kind = "compile-dts"
 src = "@self/assets/boot/overlays/raze-usb-power-overlay.dts"
 dest = "$assembly.tree.boot/overlays/raze-usb-power.dtbo"
 
+# Stock overlays, built from the same kernel (external.mk, RAZE_KERNEL_OVERLAYS).
 [[image.assembly.files]]
 tree = "boot"
-src = "$provider.buildroot_output/images/rpi-firmware/overlays/dwc2.dtbo"
+src = "$provider.buildroot_output/images/raze-overlays/dwc2.dtbo"
 dest = "overlays/dwc2.dtbo"
 
 [[image.assembly.files]]
 tree = "boot"
-src = "$provider.buildroot_output/images/rpi-firmware/overlays/i2c1-pi5.dtbo"
+src = "$provider.buildroot_output/images/raze-overlays/i2c1-pi5.dtbo"
 dest = "overlays/i2c1-pi5.dtbo"
 
 [[image.assembly.files]]
 tree = "boot"
-src = "$provider.buildroot_output/images/rpi-firmware/overlays/i2c-gpio.dtbo"
+src = "$provider.buildroot_output/images/raze-overlays/i2c-gpio.dtbo"
 dest = "overlays/i2c-gpio.dtbo"
 
 [[image.assembly.files]]
 tree = "boot"
-src = "$provider.buildroot_output/images/rpi-firmware/overlays/ws2812-pio.dtbo"
+src = "$provider.buildroot_output/images/raze-overlays/ws2812-pio.dtbo"
 dest = "overlays/ws2812-pio.dtbo"
 
 [[image.assembly.files]]
 tree = "boot"
-src = "$provider.buildroot_output/images/rpi-firmware/overlays/vc4-kms-v3d-pi5.dtbo"
+src = "$provider.buildroot_output/images/raze-overlays/vc4-kms-v3d-pi5.dtbo"
 dest = "overlays/vc4-kms-v3d-pi5.dtbo"
 
 [image]

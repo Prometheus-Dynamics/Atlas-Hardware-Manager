@@ -6,8 +6,10 @@
 LIBCAMERA_SITE = https://github.com/raspberrypi/libcamera.git
 # LIBCAMERA_SITE = https://github.com/libcamera-org/libcamera.git
 LIBCAMERA_SITE_METHOD = git
-# Raspberry Pi libcamera snapshot matching upstream 0.6 ABI
-LIBCAMERA_VERSION = v0.6.0+rpt20251202
+# Raspberry Pi libcamera snapshot on upstream 0.7.2 (soname libcamera.so.0.7:
+# anything linked against 0.6, such as PhotonVision's libcamera GL driver, must
+# be rebuilt). Needs libpisp >= 1.7.0 (libpisp.mk).
+LIBCAMERA_VERSION = v0.7.2+rpt20260817
 LIBCAMERA_DEPENDENCIES = \
 	host-openssl \
 	host-pkgconf \
