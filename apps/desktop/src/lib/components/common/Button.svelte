@@ -4,9 +4,9 @@
   // With `action`, it runs an async function once at a time, shows it is
   // busy, and turns a rejection into an error toast.
   import type { Snippet } from "svelte";
-  import { errorText } from "$lib/api/client";
-  import { toasts } from "$lib/stores/toasts.svelte";
-  import type { IconName } from "$lib/ui/icons";
+  import { errorText } from "#lib/api/client.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
+  import type { IconName } from "#lib/ui/icons.ts";
   import Icon from "./Icon.svelte";
 
   type Variant = "primary" | "tint" | "glass" | "ghost" | "danger";

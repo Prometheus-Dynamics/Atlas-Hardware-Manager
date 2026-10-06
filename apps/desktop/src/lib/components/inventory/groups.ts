@@ -1,6 +1,6 @@
 // Splits the visible inventory into robot groups (already sorted by ui).
 
-import type { DeviceRecord } from "$lib/api/client";
+import type { DeviceRecord } from "#lib/api/client.ts";
 
 export interface DeviceGroup {
   robot: string | null;

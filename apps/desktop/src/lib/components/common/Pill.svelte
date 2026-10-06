@@ -1,8 +1,8 @@
 <script lang="ts">
   // A soft status pill: tinted background, light text, optional icon.
   import type { Snippet } from "svelte";
-  import type { Tone } from "$lib/format";
-  import type { IconName } from "$lib/ui/icons";
+  import type { Tone } from "#lib/format.ts";
+  import type { IconName } from "#lib/ui/icons.ts";
   import Icon from "./Icon.svelte";
 
   let {

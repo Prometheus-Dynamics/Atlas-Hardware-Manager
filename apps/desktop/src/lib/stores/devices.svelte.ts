@@ -1,8 +1,8 @@
 // Inventory projection: loaded once, then kept current by device events.
 
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import { api, errorText, keyString, type DeviceKey, type DeviceRecord, type DiscoveryStatus, type ScanReport } from "$lib/api/client";
-import { deviceName } from "$lib/format";
+import { api, errorText, keyString, type DeviceKey, type DeviceRecord, type DiscoveryStatus, type ScanReport } from "#lib/api/client.ts";
+import { deviceName } from "#lib/format.ts";
 import { toasts } from "./toasts.svelte";
 
 const FRESH_MS = 2500;

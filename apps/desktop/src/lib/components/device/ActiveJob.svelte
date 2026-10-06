@@ -2,11 +2,11 @@
   // Shown instead of Flash or Update while this device is already in a job,
   // so a second job can't be started on top of the first.
   import { goto } from "$app/navigation";
-  import type { DeviceJobState, JobId } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import StageProgress from "$lib/components/jobs/StageProgress.svelte";
-  import { isRecoveryPlan } from "$lib/present";
-  import { ui } from "$lib/stores/ui.svelte";
+  import type { DeviceJobState, JobId } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import StageProgress from "#lib/components/jobs/StageProgress.svelte";
+  import { isRecoveryPlan } from "#lib/present.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
 
   let { job, state }: { job: JobId; state: DeviceJobState } = $props();
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   // A glass panel with an optional header (icon, title, subline, actions).
   import type { Snippet } from "svelte";
-  import type { IconName } from "$lib/ui/icons";
+  import type { IconName } from "#lib/ui/icons.ts";
   import IconTile from "./IconTile.svelte";
 
   let {

@@ -1,7 +1,7 @@
 // The single subscription to backend events. Lists are loaded once, then
 // every event is dispatched to the store that owns that state.
 
-import { onAtlasEvent, onDownloadProgress, onResync, keyString, type AtlasEvent } from "$lib/api/client";
+import { onAtlasEvent, onDownloadProgress, onResync, keyString, type AtlasEvent } from "#lib/api/client.ts";
 import { activity } from "./activity.svelte";
 import { devices } from "./devices.svelte";
 import { jobs } from "./jobs.svelte";

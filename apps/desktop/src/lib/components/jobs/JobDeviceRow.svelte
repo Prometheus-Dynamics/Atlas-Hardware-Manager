@@ -2,16 +2,16 @@
   // One device inside a multi-device job: compact stages and bar, with
   // the full stage cards and log a click away.
   import { slide } from "svelte/transition";
-  import type { DeviceJobState } from "$lib/api/client";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import Pill from "$lib/components/common/Pill.svelte";
-  import ProgressBar from "$lib/components/common/ProgressBar.svelte";
-  import StageDots from "$lib/components/common/StageDots.svelte";
-  import Stepper from "$lib/components/common/Stepper.svelte";
-  import { duration, jobStatusDetail, jobStatusTone, overallFraction, sentence } from "$lib/format";
-  import { outcomeText, quietFor } from "$lib/present";
-  import { clock } from "$lib/stores/clock.svelte";
-  import { DUR, ease, ms } from "$lib/ui/motion";
+  import type { DeviceJobState } from "#lib/api/client.ts";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import Pill from "#lib/components/common/Pill.svelte";
+  import ProgressBar from "#lib/components/common/ProgressBar.svelte";
+  import StageDots from "#lib/components/common/StageDots.svelte";
+  import Stepper from "#lib/components/common/Stepper.svelte";
+  import { duration, jobStatusDetail, jobStatusTone, overallFraction, sentence } from "#lib/format.ts";
+  import { outcomeText, quietFor } from "#lib/present.ts";
+  import { clock } from "#lib/stores/clock.svelte.ts";
+  import { DUR, ease, ms } from "#lib/ui/motion.ts";
   import LogTail from "./LogTail.svelte";
   import StageProgress from "./StageProgress.svelte";
 

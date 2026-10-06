@@ -1,10 +1,10 @@
 <script lang="ts">
   // "Add my SSH key" right where a flash starts, so it can't be missed. The
   // same remembered setting as in Settings; turning it on checks the key.
-  import { api, errorText } from "$lib/api/client";
-  import Checkbox from "$lib/components/common/Checkbox.svelte";
-  import { system } from "$lib/stores/system.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
+  import { api, errorText } from "#lib/api/client.ts";
+  import Checkbox from "#lib/components/common/Checkbox.svelte";
+  import { system } from "#lib/stores/system.svelte.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
 
   const DEFAULT_KEY = "~/.ssh/id_ed25519.pub";
   const keyFile = $derived(system.settings?.ssh_key_file ?? null);

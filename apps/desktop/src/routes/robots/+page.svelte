@@ -1,12 +1,12 @@
 <script lang="ts">
-  import Button from "$lib/components/common/Button.svelte";
-  import EmptyState from "$lib/components/common/EmptyState.svelte";
-  import PageHeader from "$lib/components/common/PageHeader.svelte";
-  import Skeleton from "$lib/components/common/Skeleton.svelte";
-  import RobotCard from "$lib/components/robots/RobotCard.svelte";
-  import { robots } from "$lib/stores/robots.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
-  import { rise, stagger } from "$lib/ui/motion";
+  import Button from "#lib/components/common/Button.svelte";
+  import EmptyState from "#lib/components/common/EmptyState.svelte";
+  import PageHeader from "#lib/components/common/PageHeader.svelte";
+  import Skeleton from "#lib/components/common/Skeleton.svelte";
+  import RobotCard from "#lib/components/robots/RobotCard.svelte";
+  import { robots } from "#lib/stores/robots.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
+  import { rise, stagger } from "#lib/ui/motion.ts";
 
   const ready = $derived(robots.statuses.filter((s) => s.state === "ready").length);
 </script>

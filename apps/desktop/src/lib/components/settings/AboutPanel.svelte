@@ -1,8 +1,8 @@
 <script lang="ts">
-  import GlassCard from "$lib/components/common/GlassCard.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import Skeleton from "$lib/components/common/Skeleton.svelte";
-  import { system } from "$lib/stores/system.svelte";
+  import GlassCard from "#lib/components/common/GlassCard.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import Skeleton from "#lib/components/common/Skeleton.svelte";
+  import { system } from "#lib/stores/system.svelte.ts";
 
   const paths = $derived(
     system.info

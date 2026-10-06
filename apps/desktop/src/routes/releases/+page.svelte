@@ -1,16 +1,16 @@
 <script lang="ts">
-  import { api } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import EmptyState from "$lib/components/common/EmptyState.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import PageHeader from "$lib/components/common/PageHeader.svelte";
-  import Skeleton from "$lib/components/common/Skeleton.svelte";
-  import AddLocalRelease from "$lib/components/releases/AddLocalRelease.svelte";
-  import ReleaseGroup from "$lib/components/releases/ReleaseGroup.svelte";
-  import SourcesPanel from "$lib/components/releases/SourcesPanel.svelte";
-  import { releases } from "$lib/stores/releases.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
-  import { rise, softFade, stagger } from "$lib/ui/motion";
+  import { api } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import EmptyState from "#lib/components/common/EmptyState.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import PageHeader from "#lib/components/common/PageHeader.svelte";
+  import Skeleton from "#lib/components/common/Skeleton.svelte";
+  import AddLocalRelease from "#lib/components/releases/AddLocalRelease.svelte";
+  import ReleaseGroup from "#lib/components/releases/ReleaseGroup.svelte";
+  import SourcesPanel from "#lib/components/releases/SourcesPanel.svelte";
+  import { releases } from "#lib/stores/releases.svelte.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
+  import { rise, softFade, stagger } from "#lib/ui/motion.ts";
 
   let adding = $state(false);
 

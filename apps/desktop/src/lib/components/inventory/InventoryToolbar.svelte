@@ -1,11 +1,11 @@
 <script lang="ts">
-  import Button from "$lib/components/common/Button.svelte";
-  import DiscoveryStatus from "$lib/components/shell/DiscoveryStatus.svelte";
-  import SegmentedControl from "$lib/components/common/SegmentedControl.svelte";
-  import Toggle from "$lib/components/common/Toggle.svelte";
-  import { devices } from "$lib/stores/devices.svelte";
-  import { ui, type InventoryView } from "$lib/stores/ui.svelte";
-  import { pop } from "$lib/ui/motion";
+  import Button from "#lib/components/common/Button.svelte";
+  import DiscoveryStatus from "#lib/components/shell/DiscoveryStatus.svelte";
+  import SegmentedControl from "#lib/components/common/SegmentedControl.svelte";
+  import Toggle from "#lib/components/common/Toggle.svelte";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { ui, type InventoryView } from "#lib/stores/ui.svelte.ts";
+  import { pop } from "#lib/ui/motion.ts";
 
   const views: { value: InventoryView; label: string; icon: "layout-grid" | "layout-list" }[] = [
     { value: "cards", label: "Cards", icon: "layout-grid" },

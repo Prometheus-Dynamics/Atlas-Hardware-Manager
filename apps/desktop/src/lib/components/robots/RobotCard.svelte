@@ -1,16 +1,16 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { api, keyString, type RobotProfile, type RobotStatus } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import ConfirmButton from "$lib/components/common/ConfirmButton.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import IconTile from "$lib/components/common/IconTile.svelte";
-  import Pill from "$lib/components/common/Pill.svelte";
-  import StatusDot from "$lib/components/common/StatusDot.svelte";
-  import { devices } from "$lib/stores/devices.svelte";
-  import { system } from "$lib/stores/system.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
+  import { api, keyString, type RobotProfile, type RobotStatus } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import IconTile from "#lib/components/common/IconTile.svelte";
+  import Pill from "#lib/components/common/Pill.svelte";
+  import StatusDot from "#lib/components/common/StatusDot.svelte";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { system } from "#lib/stores/system.svelte.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
   import { ROBOT_STATE } from "./robotState";
 
   let { profile, status }: { profile: RobotProfile; status: RobotStatus | undefined } = $props();

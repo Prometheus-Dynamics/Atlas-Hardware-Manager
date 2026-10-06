@@ -1,6 +1,6 @@
 // Robot profiles and their computed status.
 
-import { api, errorText, type RobotProfile, type RobotStatus } from "$lib/api/client";
+import { api, errorText, type RobotProfile, type RobotStatus } from "#lib/api/client.ts";
 import { toasts } from "./toasts.svelte";
 
 class RobotStore {

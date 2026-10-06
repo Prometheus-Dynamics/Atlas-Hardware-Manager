@@ -2,15 +2,15 @@
   // "Needs you": one plain-language banner per situation, each with the
   // action that resolves it.
   import { goto } from "$app/navigation";
-  import { api, keyString } from "$lib/api/client";
-  import { deviceName, jobStatusDetail, sentence } from "$lib/format";
-  import { aDevice } from "$lib/present";
-  import { insights } from "$lib/stores/insights.svelte";
-  import { system } from "$lib/stores/system.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
-  import type { IconName } from "$lib/ui/icons";
-  import { DUR, ease, ms, rise, softFade } from "$lib/ui/motion";
+  import { api, keyString } from "#lib/api/client.ts";
+  import { deviceName, jobStatusDetail, sentence } from "#lib/format.ts";
+  import { aDevice } from "#lib/present.ts";
+  import { insights } from "#lib/stores/insights.svelte.ts";
+  import { system } from "#lib/stores/system.svelte.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
+  import type { IconName } from "#lib/ui/icons.ts";
+  import { DUR, ease, ms, rise, softFade } from "#lib/ui/motion.ts";
   import { flip } from "svelte/animate";
   import Banner from "./Banner.svelte";
 

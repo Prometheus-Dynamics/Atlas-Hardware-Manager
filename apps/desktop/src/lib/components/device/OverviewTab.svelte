@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { api, errorText, openExternal, type DeviceRecord } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import ConfirmButton from "$lib/components/common/ConfirmButton.svelte";
-  import Field from "$lib/components/common/Field.svelte";
-  import { clockTime, linkText, primaryVersion, timeAgo } from "$lib/format";
-  import { clock } from "$lib/stores/clock.svelte";
-  import { devices } from "$lib/stores/devices.svelte";
-  import { robots } from "$lib/stores/robots.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
+  import { api, errorText, openExternal, type DeviceRecord } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
+  import Field from "#lib/components/common/Field.svelte";
+  import { clockTime, linkText, primaryVersion, timeAgo } from "#lib/format.ts";
+  import { clock } from "#lib/stores/clock.svelte.ts";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { robots } from "#lib/stores/robots.svelte.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
   import CameraPreview from "./CameraPreview.svelte";
   import Disclosure from "./Disclosure.svelte";
   import FactGrid from "./FactGrid.svelte";

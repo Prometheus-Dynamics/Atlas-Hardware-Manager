@@ -1,7 +1,7 @@
 // Small display helpers shared by every screen.
 
-import type { DeviceJobState, DeviceJobStatus, DeviceRecord, Identity, LinkKind } from "$lib/api/client";
-import { keyString } from "$lib/api/client";
+import type { DeviceJobState, DeviceJobStatus, DeviceRecord, Identity, LinkKind } from "#lib/api/client.ts";
+import { keyString } from "#lib/api/client.ts";
 
 export function deviceName(record: DeviceRecord): string {
   return record.label ?? record.identity.name ?? keyString(record.key);

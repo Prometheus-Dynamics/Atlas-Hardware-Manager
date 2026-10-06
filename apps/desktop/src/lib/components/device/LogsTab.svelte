@@ -1,11 +1,11 @@
 <script lang="ts">
   // The device's own log, followed live while this tab is open.
-  import { api, errorText, type DeviceRecord, type LogLevel, type LogLine } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import SegmentedControl from "$lib/components/common/SegmentedControl.svelte";
-  import Skeleton from "$lib/components/common/Skeleton.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
+  import { api, errorText, type DeviceRecord, type LogLevel, type LogLine } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import SegmentedControl from "#lib/components/common/SegmentedControl.svelte";
+  import Skeleton from "#lib/components/common/Skeleton.svelte";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
   import { saveSupportBundle } from "./supportBundle";
 
   let { record }: { record: DeviceRecord } = $props();

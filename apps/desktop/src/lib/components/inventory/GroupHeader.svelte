@@ -1,7 +1,7 @@
 <script lang="ts">
-  import Button from "$lib/components/common/Button.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
+  import Button from "#lib/components/common/Button.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import { ui } from "#lib/stores/ui.svelte.ts";
 
   let { robot, count }: { robot: string | null; count: number } = $props();
 </script>

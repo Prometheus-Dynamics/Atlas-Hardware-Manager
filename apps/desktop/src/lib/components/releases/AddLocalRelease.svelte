@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { api, errorText, pickReleaseFile } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import Field from "$lib/components/common/Field.svelte";
-  import GlassCard from "$lib/components/common/GlassCard.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import { sentence } from "$lib/format";
-  import { versionFromFileName } from "$lib/present";
-  import { devices } from "$lib/stores/devices.svelte";
-  import { releases } from "$lib/stores/releases.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
+  import { api, errorText, pickReleaseFile } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import Field from "#lib/components/common/Field.svelte";
+  import GlassCard from "#lib/components/common/GlassCard.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import { sentence } from "#lib/format.ts";
+  import { versionFromFileName } from "#lib/present.ts";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { releases } from "#lib/stores/releases.svelte.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
 
   let { onclose }: { onclose: () => void } = $props();
 

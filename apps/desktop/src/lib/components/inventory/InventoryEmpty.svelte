@@ -1,7 +1,7 @@
 <script lang="ts">
-  import Button from "$lib/components/common/Button.svelte";
-  import EmptyState from "$lib/components/common/EmptyState.svelte";
-  import { devices } from "$lib/stores/devices.svelte";
+  import Button from "#lib/components/common/Button.svelte";
+  import EmptyState from "#lib/components/common/EmptyState.svelte";
+  import { devices } from "#lib/stores/devices.svelte.ts";
 </script>
 
 <EmptyState icon="plug-connected" title={devices.scanning ? "Looking for devices…" : "No devices yet"}>

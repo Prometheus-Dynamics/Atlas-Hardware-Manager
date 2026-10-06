@@ -1,7 +1,7 @@
 <script lang="ts">
   // "Live": Atlas is watching for devices and shows changes as they happen,
   // so there is no refresh to press. Clicking still forces a look.
-  import { devices } from "$lib/stores/devices.svelte";
+  import { devices } from "#lib/stores/devices.svelte.ts";
 
   const status = $derived(devices.discovery);
   const live = $derived(status?.live ?? false);

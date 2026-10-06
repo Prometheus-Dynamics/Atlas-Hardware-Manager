@@ -1,14 +1,14 @@
 <script lang="ts">
-  import { api, errorText } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import ConfirmButton from "$lib/components/common/ConfirmButton.svelte";
-  import Field from "$lib/components/common/Field.svelte";
-  import GlassCard from "$lib/components/common/GlassCard.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import { sentence } from "$lib/format";
-  import { releases } from "$lib/stores/releases.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
-  import { rise } from "$lib/ui/motion";
+  import { api, errorText } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
+  import Field from "#lib/components/common/Field.svelte";
+  import GlassCard from "#lib/components/common/GlassCard.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import { sentence } from "#lib/format.ts";
+  import { releases } from "#lib/stores/releases.svelte.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
+  import { rise } from "#lib/ui/motion.ts";
 
   let adding = $state(false);
   let name = $state("");

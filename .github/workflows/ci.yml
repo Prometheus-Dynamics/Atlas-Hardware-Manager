@@ -21,7 +21,7 @@ jobs:
         shell: bash
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
@@ -31,14 +31,14 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.94.0
+        uses: dtolnay/rust-toolchain@1.99.0
         with:
           components: rustfmt, clippy
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.2
 
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
@@ -102,7 +102,7 @@ jobs:
         shell: bash
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
@@ -112,12 +112,12 @@ jobs:
             libayatana-appindicator3-dev librsvg2-dev rpm
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@1.94.0
+        uses: dtolnay/rust-toolchain@1.99.0
 
       - name: Install Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.2
 
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
@@ -129,7 +129,7 @@ jobs:
           bun run bundle
 
       - name: Upload installers
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: atlas-${{ runner.os }}
           path: |

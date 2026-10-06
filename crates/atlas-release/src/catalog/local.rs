@@ -20,7 +20,7 @@ pub(crate) fn prune_local(entries: &mut Vec<ReleaseEntry>) {
     if unpinned.len() <= KEEP_LOCAL {
         return;
     }
-    unpinned.sort_by(|a, b| b.0.cmp(&a.0));
+    unpinned.sort_by_key(|(added_ms, _)| std::cmp::Reverse(*added_ms));
     let drop: Vec<String> = unpinned
         .into_iter()
         .skip(KEEP_LOCAL)

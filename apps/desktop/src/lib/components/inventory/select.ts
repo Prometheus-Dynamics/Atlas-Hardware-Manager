@@ -1,6 +1,6 @@
 // Pointer selection shared by the card grid and the list.
 
-import { ui } from "$lib/stores/ui.svelte";
+import { ui } from "#lib/stores/ui.svelte.ts";
 
 /** Click opens; Ctrl/Cmd-click toggles; Shift-click selects a range. */
 export function clickDevice(event: MouseEvent, id: string) {

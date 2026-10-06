@@ -2,19 +2,19 @@
   // Flash a device in USB boot: how to get it there (left), which image
   // to write and what Atlas checks (right), then one red button.
   import { goto } from "$app/navigation";
-  import { api, errorText, pickReleaseFile, type DeviceRecord } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
+  import { api, errorText, pickReleaseFile, type DeviceRecord } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
   import FlashChecks from "./FlashChecks.svelte";
-  import ReleaseOption from "$lib/components/update/ReleaseOption.svelte";
-  import { UpdateDraft } from "$lib/components/update/updateDraft.svelte";
-  import { sentence } from "$lib/format";
-  import { displayModel, versionFromFileName } from "$lib/present";
-  import { releases } from "$lib/stores/releases.svelte";
-  import { system } from "$lib/stores/system.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
-  import { rise, stagger } from "$lib/ui/motion";
+  import ReleaseOption from "#lib/components/update/ReleaseOption.svelte";
+  import { UpdateDraft } from "#lib/components/update/updateDraft.svelte.ts";
+  import { sentence } from "#lib/format.ts";
+  import { displayModel, versionFromFileName } from "#lib/present.ts";
+  import { releases } from "#lib/stores/releases.svelte.ts";
+  import { system } from "#lib/stores/system.svelte.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
+  import { rise, stagger } from "#lib/ui/motion.ts";
   import BootloaderRow from "./BootloaderRow.svelte";
   import HostReadiness from "./HostReadiness.svelte";
   import SshKeyOption from "./SshKeyOption.svelte";

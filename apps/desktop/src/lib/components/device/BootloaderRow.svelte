@@ -1,10 +1,10 @@
 <script lang="ts">
   // The "Update bootloader" action for boards that offer it in USB boot.
-  import { api, errorText, type DeviceAction, type DeviceRecord } from "$lib/api/client";
-  import ConfirmButton from "$lib/components/common/ConfirmButton.svelte";
-  import IconTile from "$lib/components/common/IconTile.svelte";
-  import { deviceName } from "$lib/format";
-  import { toasts } from "$lib/stores/toasts.svelte";
+  import { api, errorText, type DeviceAction, type DeviceRecord } from "#lib/api/client.ts";
+  import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
+  import IconTile from "#lib/components/common/IconTile.svelte";
+  import { deviceName } from "#lib/format.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
 
   let { record }: { record: DeviceRecord } = $props();
 

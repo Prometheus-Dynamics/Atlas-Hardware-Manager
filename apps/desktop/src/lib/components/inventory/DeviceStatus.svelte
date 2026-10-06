@@ -1,13 +1,13 @@
 <script lang="ts">
   // The one status line for a device: progress, waiting, failure, or version.
-  import { keyString, type DeviceRecord } from "$lib/api/client";
-  import Pill from "$lib/components/common/Pill.svelte";
-  import ProgressBar from "$lib/components/common/ProgressBar.svelte";
-  import { jobStatusLabel, overallFraction, primaryVersion, timeAgo } from "$lib/format";
-  import { isRecovery, isRecoveryPlan, stepLabel } from "$lib/present";
-  import { clock } from "$lib/stores/clock.svelte";
-  import { insights } from "$lib/stores/insights.svelte";
-  import { jobs } from "$lib/stores/jobs.svelte";
+  import { keyString, type DeviceRecord } from "#lib/api/client.ts";
+  import Pill from "#lib/components/common/Pill.svelte";
+  import ProgressBar from "#lib/components/common/ProgressBar.svelte";
+  import { jobStatusLabel, overallFraction, primaryVersion, timeAgo } from "#lib/format.ts";
+  import { isRecovery, isRecoveryPlan, stepLabel } from "#lib/present.ts";
+  import { clock } from "#lib/stores/clock.svelte.ts";
+  import { insights } from "#lib/stores/insights.svelte.ts";
+  import { jobs } from "#lib/stores/jobs.svelte.ts";
 
   let { record, compact = false }: { record: DeviceRecord; compact?: boolean } = $props();
 

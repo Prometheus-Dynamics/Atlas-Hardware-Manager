@@ -1,9 +1,9 @@
 <script lang="ts">
   // What Atlas checks for the chosen image, in plain words.
-  import type { ReleaseEntry } from "$lib/api/client";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import { bytes } from "$lib/format";
-  import type { IconName } from "$lib/ui/icons";
+  import type { ReleaseEntry } from "#lib/api/client.ts";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import { bytes } from "#lib/format.ts";
+  import type { IconName } from "#lib/ui/icons.ts";
 
   let { entry }: { entry: ReleaseEntry } = $props();
 

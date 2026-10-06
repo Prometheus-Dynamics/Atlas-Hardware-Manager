@@ -2,14 +2,14 @@
   // Orion: the management agent on running devices. Atlas connects to one
   // node as an operator (never a cluster member); an administrator enrolls
   // it once per node. Everything else in Atlas works without it.
-  import { api, errorText, type OrionConnection } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import Field from "$lib/components/common/Field.svelte";
-  import GlassCard from "$lib/components/common/GlassCard.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import Pill from "$lib/components/common/Pill.svelte";
-  import type { Tone } from "$lib/format";
-  import { toasts } from "$lib/stores/toasts.svelte";
+  import { api, errorText, type OrionConnection } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import Field from "#lib/components/common/Field.svelte";
+  import GlassCard from "#lib/components/common/GlassCard.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import Pill from "#lib/components/common/Pill.svelte";
+  import type { Tone } from "#lib/format.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
 
   let connection = $state<OrionConnection | null | undefined>(undefined);
   let url = $state("");

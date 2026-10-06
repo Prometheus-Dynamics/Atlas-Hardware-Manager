@@ -1,9 +1,9 @@
 <script lang="ts">
   import { flip } from "svelte/animate";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import { toasts, type ToastTone } from "$lib/stores/toasts.svelte";
-  import type { IconName } from "$lib/ui/icons";
-  import { DUR, ease, ms, slideIn, softFade } from "$lib/ui/motion";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import { toasts, type ToastTone } from "#lib/stores/toasts.svelte.ts";
+  import type { IconName } from "#lib/ui/icons.ts";
+  import { DUR, ease, ms, slideIn, softFade } from "#lib/ui/motion.ts";
 
   const icon: Record<ToastTone, IconName> = {
     success: "circle-check",

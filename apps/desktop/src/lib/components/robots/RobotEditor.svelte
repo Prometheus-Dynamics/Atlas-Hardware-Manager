@@ -1,16 +1,16 @@
 <script lang="ts">
-  import { api, errorText, type RobotProfile } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import ConfirmButton from "$lib/components/common/ConfirmButton.svelte";
-  import Field from "$lib/components/common/Field.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import { rise, softFade } from "$lib/ui/motion";
-  import { sentence } from "$lib/format";
-  import { devices } from "$lib/stores/devices.svelte";
-  import { releases } from "$lib/stores/releases.svelte";
-  import { robots } from "$lib/stores/robots.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
+  import { api, errorText, type RobotProfile } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
+  import Field from "#lib/components/common/Field.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import { rise, softFade } from "#lib/ui/motion.ts";
+  import { sentence } from "#lib/format.ts";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { releases } from "#lib/stores/releases.svelte.ts";
+  import { robots } from "#lib/stores/robots.svelte.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
   import RoleRow from "./RoleRow.svelte";
 
   let { name }: { name: string | null } = $props();

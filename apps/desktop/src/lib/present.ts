@@ -1,8 +1,8 @@
 // How devices and jobs are shown: icons, sublines, friendly stage names.
 
-import { keyString, type DeviceJobState, type DeviceRecord, type JobRecord, type UpdatePlan, type UpdateStep } from "$lib/api/client";
-import { deviceName } from "$lib/format";
-import type { IconName } from "$lib/ui/icons";
+import { keyString, type DeviceJobState, type DeviceRecord, type JobRecord, type UpdatePlan, type UpdateStep } from "#lib/api/client.ts";
+import { deviceName } from "#lib/format.ts";
+import type { IconName } from "#lib/ui/icons.ts";
 
 const VISION = /raze|helios|cam|vision|photon|ov\d/i;
 const BOARD = /mcu|stm32|esp32|rp2040|board|teensy|arduino/i;

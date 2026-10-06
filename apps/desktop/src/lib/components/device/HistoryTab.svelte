@@ -1,15 +1,15 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { sameKey, type DeviceRecord } from "$lib/api/client";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import Pill from "$lib/components/common/Pill.svelte";
-  import ProgressBar from "$lib/components/common/ProgressBar.svelte";
-  import { clockTime, jobStatusDetail, jobStatusLabel, jobStatusTone, overallFraction, sentence } from "$lib/format";
-  import ActivityFeed from "$lib/components/overview/ActivityFeed.svelte";
-  import { activity } from "$lib/stores/activity.svelte";
-  import { jobs } from "$lib/stores/jobs.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
-  import { rise } from "$lib/ui/motion";
+  import { sameKey, type DeviceRecord } from "#lib/api/client.ts";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import Pill from "#lib/components/common/Pill.svelte";
+  import ProgressBar from "#lib/components/common/ProgressBar.svelte";
+  import { clockTime, jobStatusDetail, jobStatusLabel, jobStatusTone, overallFraction, sentence } from "#lib/format.ts";
+  import ActivityFeed from "#lib/components/overview/ActivityFeed.svelte";
+  import { activity } from "#lib/stores/activity.svelte.ts";
+  import { jobs } from "#lib/stores/jobs.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
+  import { rise } from "#lib/ui/motion.ts";
 
   let { record }: { record: DeviceRecord } = $props();
 

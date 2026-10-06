@@ -1,13 +1,13 @@
 <script lang="ts">
   import { page } from "$app/state";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import { insights } from "$lib/stores/insights.svelte";
-  import { jobs } from "$lib/stores/jobs.svelte";
-  import { robots } from "$lib/stores/robots.svelte";
-  import { system } from "$lib/stores/system.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
-  import type { IconName } from "$lib/ui/icons";
-  import { pop } from "$lib/ui/motion";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import { insights } from "#lib/stores/insights.svelte.ts";
+  import { jobs } from "#lib/stores/jobs.svelte.ts";
+  import { robots } from "#lib/stores/robots.svelte.ts";
+  import { system } from "#lib/stores/system.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
+  import type { IconName } from "#lib/ui/icons.ts";
+  import { pop } from "#lib/ui/motion.ts";
 
   const notReady = $derived(robots.statuses.filter((s) => s.state !== "ready").length);
 

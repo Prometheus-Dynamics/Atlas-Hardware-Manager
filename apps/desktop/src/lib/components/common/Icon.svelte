@@ -1,6 +1,6 @@
 <script lang="ts">
   // A Tabler outline icon by name, sized to sit on the text baseline.
-  import { ICONS, type IconName } from "$lib/ui/icons";
+  import { ICONS, type IconName } from "#lib/ui/icons.ts";
 
   let {
     name,

@@ -1,12 +1,12 @@
 <script lang="ts">
   import "../app.css";
-  import HelpPopover from "$lib/components/shell/HelpPopover.svelte";
-  import JobsTray from "$lib/components/shell/JobsTray.svelte";
-  import NavRail from "$lib/components/shell/NavRail.svelte";
-  import SidePanel from "$lib/components/shell/SidePanel.svelte";
-  import Toasts from "$lib/components/shell/Toasts.svelte";
-  import { handleShortcut } from "$lib/components/shell/shortcuts";
-  import { startSync } from "$lib/stores/sync";
+  import HelpPopover from "#lib/components/shell/HelpPopover.svelte";
+  import JobsTray from "#lib/components/shell/JobsTray.svelte";
+  import NavRail from "#lib/components/shell/NavRail.svelte";
+  import SidePanel from "#lib/components/shell/SidePanel.svelte";
+  import Toasts from "#lib/components/shell/Toasts.svelte";
+  import { handleShortcut } from "#lib/components/shell/shortcuts.ts";
+  import { startSync } from "#lib/stores/sync.ts";
 
   let { children } = $props();
 

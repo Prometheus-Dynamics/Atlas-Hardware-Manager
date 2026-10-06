@@ -1,11 +1,11 @@
 <script lang="ts">
-  import EmptyState from "$lib/components/common/EmptyState.svelte";
-  import PageHeader from "$lib/components/common/PageHeader.svelte";
-  import JobDetail from "$lib/components/jobs/JobDetail.svelte";
-  import JobList from "$lib/components/jobs/JobList.svelte";
-  import { jobs } from "$lib/stores/jobs.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
-  import { softFade } from "$lib/ui/motion";
+  import EmptyState from "#lib/components/common/EmptyState.svelte";
+  import PageHeader from "#lib/components/common/PageHeader.svelte";
+  import JobDetail from "#lib/components/jobs/JobDetail.svelte";
+  import JobList from "#lib/components/jobs/JobList.svelte";
+  import { jobs } from "#lib/stores/jobs.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
+  import { softFade } from "#lib/ui/motion.ts";
 
   const selected = $derived((ui.selectedJob !== null ? jobs.get(ui.selectedJob) : undefined) ?? jobs.sorted[0]);
 </script>

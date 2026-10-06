@@ -2,9 +2,9 @@
 
 import { goto } from "$app/navigation";
 import { page } from "$app/state";
-import { devices } from "$lib/stores/devices.svelte";
-import { system } from "$lib/stores/system.svelte";
-import { ui } from "$lib/stores/ui.svelte";
+import { devices } from "#lib/stores/devices.svelte.ts";
+import { system } from "#lib/stores/system.svelte.ts";
+import { ui } from "#lib/stores/ui.svelte.ts";
 
 const ROUTES = ["/", "/devices", "/robots", "/jobs", "/releases", "/settings"];
 

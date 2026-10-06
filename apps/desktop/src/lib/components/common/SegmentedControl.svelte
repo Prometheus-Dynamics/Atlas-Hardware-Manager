@@ -1,6 +1,6 @@
 <script lang="ts" generics="T extends string">
   // A pill-shaped segmented control; the active thumb slides between options.
-  import type { IconName } from "$lib/ui/icons";
+  import type { IconName } from "#lib/ui/icons.ts";
   import Icon from "./Icon.svelte";
 
   let {

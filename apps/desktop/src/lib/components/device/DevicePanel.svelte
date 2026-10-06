@@ -1,16 +1,16 @@
 <script lang="ts">
-  import IconTile from "$lib/components/common/IconTile.svelte";
-  import Pill from "$lib/components/common/Pill.svelte";
-  import SegmentedControl from "$lib/components/common/SegmentedControl.svelte";
-  import UpdateFlow from "$lib/components/update/UpdateFlow.svelte";
-  import { deviceName, timeAgo } from "$lib/format";
-  import { deviceIcon, isRecovery, modelName, storageName } from "$lib/present";
-  import { clock } from "$lib/stores/clock.svelte";
-  import { devices } from "$lib/stores/devices.svelte";
-  import { system } from "$lib/stores/system.svelte";
-  import type { IconName } from "$lib/ui/icons";
-  import { softFade } from "$lib/ui/motion";
-  import { jobs } from "$lib/stores/jobs.svelte";
+  import IconTile from "#lib/components/common/IconTile.svelte";
+  import Pill from "#lib/components/common/Pill.svelte";
+  import SegmentedControl from "#lib/components/common/SegmentedControl.svelte";
+  import UpdateFlow from "#lib/components/update/UpdateFlow.svelte";
+  import { deviceName, timeAgo } from "#lib/format.ts";
+  import { deviceIcon, isRecovery, modelName, storageName } from "#lib/present.ts";
+  import { clock } from "#lib/stores/clock.svelte.ts";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { system } from "#lib/stores/system.svelte.ts";
+  import type { IconName } from "#lib/ui/icons.ts";
+  import { softFade } from "#lib/ui/motion.ts";
+  import { jobs } from "#lib/stores/jobs.svelte.ts";
   import ActionsTab from "./ActionsTab.svelte";
   import ActiveJob from "./ActiveJob.svelte";
   import FlashTab from "./FlashTab.svelte";

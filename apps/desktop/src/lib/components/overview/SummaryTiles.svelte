@@ -2,15 +2,15 @@
   // The robot at a glance. Each tile appears only when some device reports
   // the reading behind it, so a fleet without telemetry still looks whole.
   import { goto } from "$app/navigation";
-  import { keyString, type DeviceRecord } from "$lib/api/client";
-  import StatusDot from "$lib/components/common/StatusDot.svelte";
-  import { deviceName } from "$lib/format";
-  import { metricTone, metricValue, toneColor } from "$lib/metrics";
-  import { insights } from "$lib/stores/insights.svelte";
-  import Skeleton from "$lib/components/common/Skeleton.svelte";
-  import { hasTelemetry, live, watchLive } from "$lib/stores/live.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
-  import { rise, stagger } from "$lib/ui/motion";
+  import { keyString, type DeviceRecord } from "#lib/api/client.ts";
+  import StatusDot from "#lib/components/common/StatusDot.svelte";
+  import { deviceName } from "#lib/format.ts";
+  import { metricTone, metricValue, toneColor } from "#lib/metrics.ts";
+  import { insights } from "#lib/stores/insights.svelte.ts";
+  import Skeleton from "#lib/components/common/Skeleton.svelte";
+  import { hasTelemetry, live, watchLive } from "#lib/stores/live.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
+  import { rise, stagger } from "#lib/ui/motion.ts";
   import StatTile from "./StatTile.svelte";
 
   let { records }: { records: DeviceRecord[] } = $props();

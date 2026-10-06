@@ -1,16 +1,16 @@
 <script lang="ts">
-  import { keyString, type DeviceRecord } from "$lib/api/client";
-  import Checkbox from "$lib/components/common/Checkbox.svelte";
-  import IconTile from "$lib/components/common/IconTile.svelte";
-  import StatusDot, { type DotState } from "$lib/components/common/StatusDot.svelte";
-  import { deviceName } from "$lib/format";
-  import { metricTone, metricValue } from "$lib/metrics";
-  import { deviceIcon, deviceSubline, isRecovery, viaName } from "$lib/present";
-  import { devices } from "$lib/stores/devices.svelte";
-  import { insights } from "$lib/stores/insights.svelte";
-  import { jobs } from "$lib/stores/jobs.svelte";
-  import { live } from "$lib/stores/live.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
+  import { keyString, type DeviceRecord } from "#lib/api/client.ts";
+  import Checkbox from "#lib/components/common/Checkbox.svelte";
+  import IconTile from "#lib/components/common/IconTile.svelte";
+  import StatusDot, { type DotState } from "#lib/components/common/StatusDot.svelte";
+  import { deviceName } from "#lib/format.ts";
+  import { metricTone, metricValue } from "#lib/metrics.ts";
+  import { deviceIcon, deviceSubline, isRecovery, viaName } from "#lib/present.ts";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { insights } from "#lib/stores/insights.svelte.ts";
+  import { jobs } from "#lib/stores/jobs.svelte.ts";
+  import { live } from "#lib/stores/live.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
   import DeviceStatus from "./DeviceStatus.svelte";
   import { clickCheck, clickDevice } from "./select";
 

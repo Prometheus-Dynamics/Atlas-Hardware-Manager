@@ -1,6 +1,6 @@
 <script lang="ts">
   // A round selection check: empty ring, or a red badge with a tick.
-  import { pop } from "$lib/ui/motion";
+  import { pop } from "#lib/ui/motion.ts";
   import Icon from "./Icon.svelte";
 
   let {

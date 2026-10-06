@@ -1,14 +1,14 @@
 <script lang="ts">
   // A timeline of fleet history: what came and went, what was updated.
   // Entries about a device open it.
-  import { keyString, type ActivityEntry, type ActivityKind, type ActivityLevel } from "$lib/api/client";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import { timeAgo } from "$lib/format";
-  import { clock } from "$lib/stores/clock.svelte";
-  import { devices } from "$lib/stores/devices.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
-  import type { IconName } from "$lib/ui/icons";
-  import { rise, stagger } from "$lib/ui/motion";
+  import { keyString, type ActivityEntry, type ActivityKind, type ActivityLevel } from "#lib/api/client.ts";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import { timeAgo } from "#lib/format.ts";
+  import { clock } from "#lib/stores/clock.svelte.ts";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
+  import type { IconName } from "#lib/ui/icons.ts";
+  import { rise, stagger } from "#lib/ui/motion.ts";
 
   let { entries, limit = 12, empty = "Nothing has happened yet." }: { entries: ActivityEntry[]; limit?: number; empty?: string } = $props();
 

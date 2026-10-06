@@ -1,6 +1,6 @@
-import type { RobotState } from "$lib/api/client";
-import type { Tone } from "$lib/format";
-import type { IconName } from "$lib/ui/icons";
+import type { RobotState } from "#lib/api/client.ts";
+import type { Tone } from "#lib/format.ts";
+import type { IconName } from "#lib/ui/icons.ts";
 
 export const ROBOT_STATE: Record<RobotState, { label: string; tone: Tone; icon: IconName }> = {
   ready: { label: "Ready", tone: "success", icon: "circle-check" },

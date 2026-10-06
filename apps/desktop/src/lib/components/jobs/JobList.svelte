@@ -1,12 +1,12 @@
 <script lang="ts">
-  import type { JobRecord } from "$lib/api/client";
-  import StatusDot from "$lib/components/common/StatusDot.svelte";
-  import { timeAgo } from "$lib/format";
-  import { jobTitle } from "$lib/present";
-  import { clock } from "$lib/stores/clock.svelte";
-  import { jobs } from "$lib/stores/jobs.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
-  import { rise } from "$lib/ui/motion";
+  import type { JobRecord } from "#lib/api/client.ts";
+  import StatusDot from "#lib/components/common/StatusDot.svelte";
+  import { timeAgo } from "#lib/format.ts";
+  import { jobTitle } from "#lib/present.ts";
+  import { clock } from "#lib/stores/clock.svelte.ts";
+  import { jobs } from "#lib/stores/jobs.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
+  import { rise } from "#lib/ui/motion.ts";
 
   let { selectedId }: { selectedId: number | null } = $props();
 

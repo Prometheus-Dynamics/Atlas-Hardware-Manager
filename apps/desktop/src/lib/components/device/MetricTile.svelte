@@ -1,13 +1,13 @@
 <script lang="ts">
   // One live reading: a gauge when the metric has a range, its value, and
   // a trend line of the last couple of minutes.
-  import type { Metric } from "$lib/api/client";
-  import AnimatedNumber from "$lib/components/common/AnimatedNumber.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import IconTile from "$lib/components/common/IconTile.svelte";
-  import Ring from "$lib/components/common/Ring.svelte";
-  import Sparkline from "$lib/components/common/Sparkline.svelte";
-  import { isTextMetric, metricDecimals, metricFraction, metricIcon, metricTone, metricValue, toneColor } from "$lib/metrics";
+  import type { Metric } from "#lib/api/client.ts";
+  import AnimatedNumber from "#lib/components/common/AnimatedNumber.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import IconTile from "#lib/components/common/IconTile.svelte";
+  import Ring from "#lib/components/common/Ring.svelte";
+  import Sparkline from "#lib/components/common/Sparkline.svelte";
+  import { isTextMetric, metricDecimals, metricFraction, metricIcon, metricTone, metricValue, toneColor } from "#lib/metrics.ts";
 
   let { metric, series = [] }: { metric: Metric; series?: number[] } = $props();
 

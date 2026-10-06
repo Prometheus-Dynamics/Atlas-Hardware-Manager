@@ -1,16 +1,16 @@
 <script lang="ts">
   // How everything is connected, drawn as a tree from this computer.
   // Live links carry a moving dash; offline ones fade.
-  import { keyString, type DeviceRecord } from "$lib/api/client";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import StatusDot from "$lib/components/common/StatusDot.svelte";
-  import { deviceName, primaryVersion } from "$lib/format";
-  import { metricValue } from "$lib/metrics";
-  import { deviceIcon, isRecovery } from "$lib/present";
-  import { insights } from "$lib/stores/insights.svelte";
-  import { jobs } from "$lib/stores/jobs.svelte";
-  import { live } from "$lib/stores/live.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
+  import { keyString, type DeviceRecord } from "#lib/api/client.ts";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import StatusDot from "#lib/components/common/StatusDot.svelte";
+  import { deviceName, primaryVersion } from "#lib/format.ts";
+  import { metricValue } from "#lib/metrics.ts";
+  import { deviceIcon, isRecovery } from "#lib/present.ts";
+  import { insights } from "#lib/stores/insights.svelte.ts";
+  import { jobs } from "#lib/stores/jobs.svelte.ts";
+  import { live } from "#lib/stores/live.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
   import { HOST, layoutMap, type MapNode } from "./layout";
 
   let { records }: { records: DeviceRecord[] } = $props();

@@ -2,8 +2,8 @@
   // A quiet collapsible section that opens smoothly.
   import type { Snippet } from "svelte";
   import { slide } from "svelte/transition";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import { DUR, ease, ms } from "$lib/ui/motion";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import { DUR, ease, ms } from "#lib/ui/motion.ts";
 
   let {
     title,

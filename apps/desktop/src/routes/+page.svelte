@@ -2,21 +2,21 @@
   // Home: the robot (or everything) at a glance. Readiness first, then live
   // numbers, how it's all connected, and what happened lately.
   import { goto } from "$app/navigation";
-  import { sameKey } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import GlassCard from "$lib/components/common/GlassCard.svelte";
-  import Skeleton from "$lib/components/common/Skeleton.svelte";
-  import PageHeader from "$lib/components/common/PageHeader.svelte";
-  import RobotMenu from "$lib/components/inventory/RobotMenu.svelte";
-  import DiscoveryStatus from "$lib/components/shell/DiscoveryStatus.svelte";
-  import ActivityFeed from "$lib/components/overview/ActivityFeed.svelte";
-  import Readiness from "$lib/components/overview/Readiness.svelte";
-  import SummaryTiles from "$lib/components/overview/SummaryTiles.svelte";
-  import TopologyMap from "$lib/components/overview/TopologyMap.svelte";
-  import { activity } from "$lib/stores/activity.svelte";
-  import { devices } from "$lib/stores/devices.svelte";
-  import { robots } from "$lib/stores/robots.svelte";
-  import { NO_ROBOT, ui } from "$lib/stores/ui.svelte";
+  import { sameKey } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import GlassCard from "#lib/components/common/GlassCard.svelte";
+  import Skeleton from "#lib/components/common/Skeleton.svelte";
+  import PageHeader from "#lib/components/common/PageHeader.svelte";
+  import RobotMenu from "#lib/components/inventory/RobotMenu.svelte";
+  import DiscoveryStatus from "#lib/components/shell/DiscoveryStatus.svelte";
+  import ActivityFeed from "#lib/components/overview/ActivityFeed.svelte";
+  import Readiness from "#lib/components/overview/Readiness.svelte";
+  import SummaryTiles from "#lib/components/overview/SummaryTiles.svelte";
+  import TopologyMap from "#lib/components/overview/TopologyMap.svelte";
+  import { activity } from "#lib/stores/activity.svelte.ts";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { robots } from "#lib/stores/robots.svelte.ts";
+  import { NO_ROBOT, ui } from "#lib/stores/ui.svelte.ts";
 
   const robot = $derived(ui.robot !== null && ui.robot !== NO_ROBOT ? ui.robot : null);
   // A robot's devices: those assigned to it and those filling its roles.

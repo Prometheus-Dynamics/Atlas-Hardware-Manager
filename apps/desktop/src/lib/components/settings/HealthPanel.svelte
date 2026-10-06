@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { api, errorText } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import GlassCard from "$lib/components/common/GlassCard.svelte";
-  import IconTile from "$lib/components/common/IconTile.svelte";
-  import Skeleton from "$lib/components/common/Skeleton.svelte";
-  import { system } from "$lib/stores/system.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
-  import type { IconName } from "$lib/ui/icons";
-  import { rise, stagger } from "$lib/ui/motion";
+  import { api, errorText } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import GlassCard from "#lib/components/common/GlassCard.svelte";
+  import IconTile from "#lib/components/common/IconTile.svelte";
+  import Skeleton from "#lib/components/common/Skeleton.svelte";
+  import { system } from "#lib/stores/system.svelte.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
+  import type { IconName } from "#lib/ui/icons.ts";
+  import { rise, stagger } from "#lib/ui/motion.ts";
 
   let fixing = $state<string | null>(null);
 

@@ -1,13 +1,13 @@
 <script lang="ts">
-  import { api, openExternal, type ReleaseEntry } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import ConfirmButton from "$lib/components/common/ConfirmButton.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import Pill from "$lib/components/common/Pill.svelte";
-  import ProgressBar from "$lib/components/common/ProgressBar.svelte";
-  import { bytes, type Tone } from "$lib/format";
-  import { releases } from "$lib/stores/releases.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
+  import { api, openExternal, type ReleaseEntry } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import Pill from "#lib/components/common/Pill.svelte";
+  import ProgressBar from "#lib/components/common/ProgressBar.svelte";
+  import { bytes, type Tone } from "#lib/format.ts";
+  import { releases } from "#lib/stores/releases.svelte.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
 
   let { entry }: { entry: ReleaseEntry } = $props();
 

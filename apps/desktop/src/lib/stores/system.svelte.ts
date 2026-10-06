@@ -1,6 +1,6 @@
 // App info, settings, and host health.
 
-import { api, errorText, type AppInfo, type AppSettings, type HealthCheck } from "$lib/api/client";
+import { api, errorText, type AppInfo, type AppSettings, type HealthCheck } from "#lib/api/client.ts";
 import { toasts } from "./toasts.svelte";
 
 const ORDER = { error: 0, warning: 1, ok: 2 } as const;

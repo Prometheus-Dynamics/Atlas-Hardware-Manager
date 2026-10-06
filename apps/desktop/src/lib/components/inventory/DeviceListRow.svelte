@@ -1,11 +1,11 @@
 <script lang="ts">
-  import { keyString, type DeviceRecord } from "$lib/api/client";
-  import Checkbox from "$lib/components/common/Checkbox.svelte";
-  import IconTile from "$lib/components/common/IconTile.svelte";
-  import { deviceName, linkText, primaryVersion } from "$lib/format";
-  import { deviceIcon, deviceSubline, isRecovery } from "$lib/present";
-  import { devices } from "$lib/stores/devices.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
+  import { keyString, type DeviceRecord } from "#lib/api/client.ts";
+  import Checkbox from "#lib/components/common/Checkbox.svelte";
+  import IconTile from "#lib/components/common/IconTile.svelte";
+  import { deviceName, linkText, primaryVersion } from "#lib/format.ts";
+  import { deviceIcon, deviceSubline, isRecovery } from "#lib/present.ts";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
   import DeviceStatus from "./DeviceStatus.svelte";
   import { clickCheck, clickDevice } from "./select";
 

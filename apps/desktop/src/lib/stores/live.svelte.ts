@@ -4,7 +4,7 @@
 // capability are never asked.
 
 import { SvelteMap } from "svelte/reactivity";
-import { api, errorText, keyString, type DeviceRecord, type Metric } from "$lib/api/client";
+import { api, errorText, keyString, type DeviceRecord, type Metric } from "#lib/api/client.ts";
 import { devices } from "./devices.svelte";
 
 const POLL_MS = 2000;

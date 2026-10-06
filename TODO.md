@@ -91,6 +91,12 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
 - [ ] Verify A/B on a real Raze with HeliOS's PhotonVision image (they test
       stage/apply/confirm/rollback first).
 - [ ] `pd-device-agent` for Orion-driven updates.
+- [ ] HeliOS secured mode (helios-api `docs/docs/api/http.md`): when
+      `/v1/identity` reports `helios.auth.mode = secured`, send
+      `Authorization: Bearer helios_<64 hex>` on everything but health,
+      identity and auth/status (incl. `/v1/ota/*` and the `/v1/device/os`
+      reconnect probe). Store tokens per board; prompt to paste one on 401
+      (`WWW-Authenticate: Bearer`). Off by default; not used by PhotonVision.
 
 - [ ] UI direction: confirm the current style fits; else compare 2-3
       directions side by side.

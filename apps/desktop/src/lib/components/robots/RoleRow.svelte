@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { keyString, type RobotRole } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import { deviceName } from "$lib/format";
-  import { devices } from "$lib/stores/devices.svelte";
+  import { keyString, type RobotRole } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import { deviceName } from "#lib/format.ts";
+  import { devices } from "#lib/stores/devices.svelte.ts";
 
   let {
     role = $bindable(),

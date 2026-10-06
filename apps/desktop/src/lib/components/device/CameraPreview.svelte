@@ -1,7 +1,7 @@
 <script lang="ts">
   // What the camera sees, when the device offers a stream. MJPEG streams
   // and still images both work in an <img>.
-  import Icon from "$lib/components/common/Icon.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
 
   let { src, name }: { src: string; name: string } = $props();
 

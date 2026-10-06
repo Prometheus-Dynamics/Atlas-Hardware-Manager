@@ -1,9 +1,9 @@
 <script lang="ts">
-  import type { JobPlan, PlannedDevice } from "$lib/api/client";
-  import { keyString } from "$lib/api/client";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import Pill from "$lib/components/common/Pill.svelte";
-  import type { Tone } from "$lib/format";
+  import type { JobPlan, PlannedDevice } from "#lib/api/client.ts";
+  import { keyString } from "#lib/api/client.ts";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import Pill from "#lib/components/common/Pill.svelte";
+  import type { Tone } from "#lib/format.ts";
 
   let { plan }: { plan: JobPlan } = $props();
 

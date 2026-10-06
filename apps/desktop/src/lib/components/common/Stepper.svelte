@@ -1,9 +1,9 @@
 <script lang="ts">
   // Stage cards for one device's job: done (tick), current (red tint,
   // spinner, percent), next (quiet). Failed stages turn rose.
-  import type { DeviceJobState } from "$lib/api/client";
-  import { stageStates, stepLabel, isRecoveryPlan } from "$lib/present";
-  import { pop } from "$lib/ui/motion";
+  import type { DeviceJobState } from "#lib/api/client.ts";
+  import { stageStates, stepLabel, isRecoveryPlan } from "#lib/present.ts";
+  import { pop } from "#lib/ui/motion.ts";
   import Icon from "./Icon.svelte";
 
   let { job }: { job: DeviceJobState } = $props();

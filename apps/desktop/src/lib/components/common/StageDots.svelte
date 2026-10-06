@@ -1,7 +1,7 @@
 <script lang="ts">
   // A compact row of stage dots for lists and the jobs tray.
-  import type { DeviceJobState } from "$lib/api/client";
-  import { stageStates, stepLabel, isRecoveryPlan } from "$lib/present";
+  import type { DeviceJobState } from "#lib/api/client.ts";
+  import { stageStates, stepLabel, isRecoveryPlan } from "#lib/present.ts";
 
   let { job }: { job: DeviceJobState } = $props();
   const stages = $derived(stageStates(job));

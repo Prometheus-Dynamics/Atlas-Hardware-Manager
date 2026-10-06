@@ -1,12 +1,12 @@
 <script lang="ts">
   import { flip } from "svelte/animate";
-  import { keyString } from "$lib/api/client";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import Skeleton from "$lib/components/common/Skeleton.svelte";
-  import { devices } from "$lib/stores/devices.svelte";
-  import { watchLive } from "$lib/stores/live.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
-  import { DUR, ease, ms, rise, softFade } from "$lib/ui/motion";
+  import { keyString } from "#lib/api/client.ts";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import Skeleton from "#lib/components/common/Skeleton.svelte";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { watchLive } from "#lib/stores/live.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
+  import { DUR, ease, ms, rise, softFade } from "#lib/ui/motion.ts";
   import DeviceCard from "./DeviceCard.svelte";
   import GroupHeader from "./GroupHeader.svelte";
   import { groupByRobot } from "./groups";

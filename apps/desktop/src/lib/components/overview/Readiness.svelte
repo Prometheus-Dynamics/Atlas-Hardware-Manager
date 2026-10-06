@@ -1,17 +1,17 @@
 <script lang="ts">
   // The verdict, big: is this robot good to go, and the one button that
   // gets it there.
-  import { api, keyString, sameKey, type DeviceRecord } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import { isRecovery } from "$lib/present";
-  import { devices } from "$lib/stores/devices.svelte";
-  import { insights } from "$lib/stores/insights.svelte";
-  import { robots } from "$lib/stores/robots.svelte";
-  import { system } from "$lib/stores/system.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
-  import { softFade } from "$lib/ui/motion";
+  import { api, keyString, sameKey, type DeviceRecord } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import { isRecovery } from "#lib/present.ts";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { insights } from "#lib/stores/insights.svelte.ts";
+  import { robots } from "#lib/stores/robots.svelte.ts";
+  import { system } from "#lib/stores/system.svelte.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
+  import { softFade } from "#lib/ui/motion.ts";
   import { verdict } from "./readiness";
 
   let { records, robot }: { records: DeviceRecord[]; robot: string | null } = $props();

@@ -1,9 +1,9 @@
 <script lang="ts">
   // The inventory title doubles as the robot filter: "All devices ▾".
-  import Icon from "$lib/components/common/Icon.svelte";
-  import { robots } from "$lib/stores/robots.svelte";
-  import { NO_ROBOT, ui } from "$lib/stores/ui.svelte";
-  import { popover } from "$lib/ui/motion";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import { robots } from "#lib/stores/robots.svelte.ts";
+  import { NO_ROBOT, ui } from "#lib/stores/ui.svelte.ts";
+  import { popover } from "#lib/ui/motion.ts";
 
   let open = $state(false);
   let root: HTMLElement | undefined = $state();

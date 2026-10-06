@@ -1,13 +1,13 @@
 <script lang="ts">
   // The update flow for a selection or robot "Make ready": choose releases,
   // preview the plan, start. Recovery devices use the Flash tab instead.
-  import { keyString, type StagedRollout, type UpdateRequestInput } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import SegmentedControl from "$lib/components/common/SegmentedControl.svelte";
-  import { primaryVersion } from "$lib/format";
-  import { devices } from "$lib/stores/devices.svelte";
-  import { rise } from "$lib/ui/motion";
+  import { keyString, type StagedRollout, type UpdateRequestInput } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import SegmentedControl from "#lib/components/common/SegmentedControl.svelte";
+  import { primaryVersion } from "#lib/format.ts";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { rise } from "#lib/ui/motion.ts";
   import PlanTable from "./PlanTable.svelte";
   import ReleasePicker from "./ReleasePicker.svelte";
   import { UpdateDraft } from "./updateDraft.svelte";

@@ -1,11 +1,11 @@
 <script lang="ts">
   // The everyday controls in the device header: the device's non-destructive
   // actions (Find it, Restart, …) and its web page. Only what it offers.
-  import { api, openExternal, type DeviceAction, type DeviceRecord } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import { deviceName } from "$lib/format";
-  import { toasts } from "$lib/stores/toasts.svelte";
-  import type { IconName } from "$lib/ui/icons";
+  import { api, openExternal, type DeviceAction, type DeviceRecord } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import { deviceName } from "#lib/format.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
+  import type { IconName } from "#lib/ui/icons.ts";
 
   let { record }: { record: DeviceRecord } = $props();
 

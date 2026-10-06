@@ -1,7 +1,7 @@
 <script lang="ts">
-  import Button from "$lib/components/common/Button.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
-  import { popover } from "$lib/ui/motion";
+  import Button from "#lib/components/common/Button.svelte";
+  import { ui } from "#lib/stores/ui.svelte.ts";
+  import { popover } from "#lib/ui/motion.ts";
 
   const groups = [
     {

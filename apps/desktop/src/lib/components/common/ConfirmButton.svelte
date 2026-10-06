@@ -1,10 +1,10 @@
 <script lang="ts">
   // Two-stage inline confirm for destructive actions: no modal wall.
   import type { Snippet } from "svelte";
-  import { errorText } from "$lib/api/client";
-  import { toasts } from "$lib/stores/toasts.svelte";
-  import { rise } from "$lib/ui/motion";
-  import type { IconName } from "$lib/ui/icons";
+  import { errorText } from "#lib/api/client.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
+  import { rise } from "#lib/ui/motion.ts";
+  import type { IconName } from "#lib/ui/icons.ts";
   import Button from "./Button.svelte";
 
   let {

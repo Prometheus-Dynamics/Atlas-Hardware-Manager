@@ -2,8 +2,8 @@
 // place in robot summaries; any other metric a device reports still shows,
 // as a plain value with its own label and unit.
 
-import type { Metric } from "$lib/api/client";
-import type { IconName } from "$lib/ui/icons";
+import type { Metric } from "#lib/api/client.ts";
+import type { IconName } from "#lib/ui/icons.ts";
 
 const ICON: Record<string, IconName> = {
   cpu: "cpu",

@@ -1,6 +1,6 @@
 // Fleet history: loaded once, then extended by `activity` events.
 
-import { api, type ActivityEntry } from "$lib/api/client";
+import { api, type ActivityEntry } from "#lib/api/client.ts";
 
 const KEEP = 300;
 

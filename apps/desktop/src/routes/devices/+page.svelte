@@ -1,20 +1,20 @@
 <script lang="ts">
-  import { keyString } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import PageHeader from "$lib/components/common/PageHeader.svelte";
-  import DeviceGrid from "$lib/components/inventory/DeviceGrid.svelte";
-  import DeviceList from "$lib/components/inventory/DeviceList.svelte";
-  import InventoryEmpty from "$lib/components/inventory/InventoryEmpty.svelte";
-  import InventoryToolbar from "$lib/components/inventory/InventoryToolbar.svelte";
-  import NeedsYou from "$lib/components/inventory/NeedsYou.svelte";
-  import RobotMenu from "$lib/components/inventory/RobotMenu.svelte";
-  import SearchPill from "$lib/components/inventory/SearchPill.svelte";
-  import { devices } from "$lib/stores/devices.svelte";
-  import { insights } from "$lib/stores/insights.svelte";
-  import { system } from "$lib/stores/system.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
-  import { softFade } from "$lib/ui/motion";
+  import { keyString } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import PageHeader from "#lib/components/common/PageHeader.svelte";
+  import DeviceGrid from "#lib/components/inventory/DeviceGrid.svelte";
+  import DeviceList from "#lib/components/inventory/DeviceList.svelte";
+  import InventoryEmpty from "#lib/components/inventory/InventoryEmpty.svelte";
+  import InventoryToolbar from "#lib/components/inventory/InventoryToolbar.svelte";
+  import NeedsYou from "#lib/components/inventory/NeedsYou.svelte";
+  import RobotMenu from "#lib/components/inventory/RobotMenu.svelte";
+  import SearchPill from "#lib/components/inventory/SearchPill.svelte";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { insights } from "#lib/stores/insights.svelte.ts";
+  import { system } from "#lib/stores/system.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
+  import { softFade } from "#lib/ui/motion.ts";
 
   const shown = $derived(ui.visible);
   const online = $derived(shown.filter((d) => d.presence === "online").length);

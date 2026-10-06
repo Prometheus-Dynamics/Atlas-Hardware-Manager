@@ -1,15 +1,15 @@
 <script lang="ts">
-  import { keyString, type JobRecord } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import IconTile from "$lib/components/common/IconTile.svelte";
-  import Pill from "$lib/components/common/Pill.svelte";
-  import Skeleton from "$lib/components/common/Skeleton.svelte";
-  import Stepper from "$lib/components/common/Stepper.svelte";
-  import { duration, jobStatusDetail, jobStatusTone, sentence, timeAgo } from "$lib/format";
-  import { isRecoveryPlan, jobTitle, outcomeText } from "$lib/present";
-  import { clock } from "$lib/stores/clock.svelte";
-  import { jobs } from "$lib/stores/jobs.svelte";
-  import { rise } from "$lib/ui/motion";
+  import { keyString, type JobRecord } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import IconTile from "#lib/components/common/IconTile.svelte";
+  import Pill from "#lib/components/common/Pill.svelte";
+  import Skeleton from "#lib/components/common/Skeleton.svelte";
+  import Stepper from "#lib/components/common/Stepper.svelte";
+  import { duration, jobStatusDetail, jobStatusTone, sentence, timeAgo } from "#lib/format.ts";
+  import { isRecoveryPlan, jobTitle, outcomeText } from "#lib/present.ts";
+  import { clock } from "#lib/stores/clock.svelte.ts";
+  import { jobs } from "#lib/stores/jobs.svelte.ts";
+  import { rise } from "#lib/ui/motion.ts";
   import JobDeviceRow from "./JobDeviceRow.svelte";
   import LogTail from "./LogTail.svelte";
   import StageProgress from "./StageProgress.svelte";

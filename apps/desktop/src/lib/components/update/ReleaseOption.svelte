@@ -1,9 +1,9 @@
 <script lang="ts">
   // One selectable release row: a radio styled as a glass row.
-  import type { ReleaseEntry } from "$lib/api/client";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import { bytes } from "$lib/format";
-  import { releases } from "$lib/stores/releases.svelte";
+  import type { ReleaseEntry } from "#lib/api/client.ts";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import { bytes } from "#lib/format.ts";
+  import { releases } from "#lib/stores/releases.svelte.ts";
 
   let {
     entry,

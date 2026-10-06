@@ -1,11 +1,11 @@
 <script lang="ts">
   // Live readings for one device, polled while shown.
-  import { keyString, type DeviceRecord } from "$lib/api/client";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import Skeleton from "$lib/components/common/Skeleton.svelte";
-  import { sortMetrics } from "$lib/metrics";
-  import { live, watchLive } from "$lib/stores/live.svelte";
-  import { rise, stagger } from "$lib/ui/motion";
+  import { keyString, type DeviceRecord } from "#lib/api/client.ts";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import Skeleton from "#lib/components/common/Skeleton.svelte";
+  import { sortMetrics } from "#lib/metrics.ts";
+  import { live, watchLive } from "#lib/stores/live.svelte.ts";
+  import { rise, stagger } from "#lib/ui/motion.ts";
   import MetricTile from "./MetricTile.svelte";
 
   let { record }: { record: DeviceRecord } = $props();

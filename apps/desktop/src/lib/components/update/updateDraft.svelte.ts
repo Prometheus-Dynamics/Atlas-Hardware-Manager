@@ -11,10 +11,10 @@ import {
   type ReleaseChoice,
   type StagedRollout,
   type UpdateRequestInput,
-} from "$lib/api/client";
-import { sentence } from "$lib/format";
-import { releases } from "$lib/stores/releases.svelte";
-import { toasts } from "$lib/stores/toasts.svelte";
+} from "#lib/api/client.ts";
+import { sentence } from "#lib/format.ts";
+import { releases } from "#lib/stores/releases.svelte.ts";
+import { toasts } from "#lib/stores/toasts.svelte.ts";
 
 export class UpdateDraft {
   readonly keys: DeviceKey[];

@@ -1,10 +1,10 @@
 <script lang="ts">
-  import PageHeader from "$lib/components/common/PageHeader.svelte";
-  import AboutPanel from "$lib/components/settings/AboutPanel.svelte";
-  import HealthPanel from "$lib/components/settings/HealthPanel.svelte";
-  import OrionPanel from "$lib/components/settings/OrionPanel.svelte";
-  import PreferencesForm from "$lib/components/settings/PreferencesForm.svelte";
-  import { system } from "$lib/stores/system.svelte";
+  import PageHeader from "#lib/components/common/PageHeader.svelte";
+  import AboutPanel from "#lib/components/settings/AboutPanel.svelte";
+  import HealthPanel from "#lib/components/settings/HealthPanel.svelte";
+  import OrionPanel from "#lib/components/settings/OrionPanel.svelte";
+  import PreferencesForm from "#lib/components/settings/PreferencesForm.svelte";
+  import { system } from "#lib/stores/system.svelte.ts";
 </script>
 
 <svelte:head><title>Settings · Atlas</title></svelte:head>

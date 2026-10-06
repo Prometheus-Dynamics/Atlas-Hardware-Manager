@@ -2,17 +2,17 @@
   // The persistent jobs tray: running jobs at a glance, a click from detail.
   import { goto } from "$app/navigation";
   import { slide } from "svelte/transition";
-  import { keyString, type JobRecord } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import ProgressBar from "$lib/components/common/ProgressBar.svelte";
-  import StageDots from "$lib/components/common/StageDots.svelte";
-  import StatusDot from "$lib/components/common/StatusDot.svelte";
-  import { overallFraction } from "$lib/format";
-  import { jobTitle, outcomeText } from "$lib/present";
-  import { jobs } from "$lib/stores/jobs.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
-  import { DUR, ease, ms } from "$lib/ui/motion";
+  import { keyString, type JobRecord } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import ProgressBar from "#lib/components/common/ProgressBar.svelte";
+  import StageDots from "#lib/components/common/StageDots.svelte";
+  import StatusDot from "#lib/components/common/StatusDot.svelte";
+  import { overallFraction } from "#lib/format.ts";
+  import { jobTitle, outcomeText } from "#lib/present.ts";
+  import { jobs } from "#lib/stores/jobs.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
+  import { DUR, ease, ms } from "#lib/ui/motion.ts";
 
   const running = $derived(jobs.running);
   const last = $derived(jobs.sorted.find((j) => j.state !== "running"));

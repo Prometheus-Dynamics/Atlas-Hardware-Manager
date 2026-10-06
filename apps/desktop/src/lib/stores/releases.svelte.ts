@@ -1,8 +1,8 @@
 // Release catalog, remote sources, and download progress.
 
 import { SvelteMap } from "svelte/reactivity";
-import { api, errorText, type DownloadEvent, type ReleaseEntry, type RemoteSource } from "$lib/api/client";
-import { compareVersionsDesc } from "$lib/format";
+import { api, errorText, type DownloadEvent, type ReleaseEntry, type RemoteSource } from "#lib/api/client.ts";
+import { compareVersionsDesc } from "#lib/format.ts";
 import { toasts } from "./toasts.svelte";
 
 class ReleaseStore {

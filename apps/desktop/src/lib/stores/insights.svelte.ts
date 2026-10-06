@@ -1,9 +1,9 @@
 // Facts derived across stores for the inventory: what is outdated, what
 // failed, and what is waiting for the user. Read-only; no backend calls.
 
-import { keyString, type DeviceJobState, type DeviceRecord, type JobId, type ReleaseChoice, type UpdateRequestInput } from "$lib/api/client";
-import { compareVersionsDesc, primaryVersion } from "$lib/format";
-import { isRecovery } from "$lib/present";
+import { keyString, type DeviceJobState, type DeviceRecord, type JobId, type ReleaseChoice, type UpdateRequestInput } from "#lib/api/client.ts";
+import { compareVersionsDesc, primaryVersion } from "#lib/format.ts";
+import { isRecovery } from "#lib/present.ts";
 import { devices } from "./devices.svelte";
 import { jobs } from "./jobs.svelte";
 import { releases } from "./releases.svelte";

@@ -1,9 +1,9 @@
 <script lang="ts">
   // Release choice for one family: a catalog entry, or a free-text version
   // for devices that fetch their own image.
-  import type { ReleaseChoice } from "$lib/api/client";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import { releases } from "$lib/stores/releases.svelte";
+  import type { ReleaseChoice } from "#lib/api/client.ts";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import { releases } from "#lib/stores/releases.svelte.ts";
   import ReleaseOption from "./ReleaseOption.svelte";
 
   let {

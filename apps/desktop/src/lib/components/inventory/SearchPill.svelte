@@ -1,6 +1,6 @@
 <script lang="ts">
-  import Icon from "$lib/components/common/Icon.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import { ui } from "#lib/stores/ui.svelte.ts";
 
   let input: HTMLInputElement | undefined = $state();
   $effect(() => {

@@ -1,8 +1,8 @@
 // Saving a device's support bundle: ask where, then let the backend write it.
 
-import { api, errorText, pickSavePath, type DeviceRecord } from "$lib/api/client";
-import { deviceName } from "$lib/format";
-import { toasts } from "$lib/stores/toasts.svelte";
+import { api, errorText, pickSavePath, type DeviceRecord } from "#lib/api/client.ts";
+import { deviceName } from "#lib/format.ts";
+import { toasts } from "#lib/stores/toasts.svelte.ts";
 
 export async function saveSupportBundle(record: DeviceRecord): Promise<void> {
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");

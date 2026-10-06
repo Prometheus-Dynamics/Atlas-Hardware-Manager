@@ -1,7 +1,7 @@
 <script lang="ts">
   // The last few log lines, expandable to the full log, with copy.
-  import Button from "$lib/components/common/Button.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
+  import Button from "#lib/components/common/Button.svelte";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
 
   let { lines, tail = 6 }: { lines: string[]; tail?: number } = $props();
 

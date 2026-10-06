@@ -1,6 +1,6 @@
 <script lang="ts">
   // A rounded square holding an icon: the face of a device or a section.
-  import type { IconName } from "$lib/ui/icons";
+  import type { IconName } from "#lib/ui/icons.ts";
   import Icon from "./Icon.svelte";
 
   let {

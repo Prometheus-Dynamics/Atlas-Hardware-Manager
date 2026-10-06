@@ -1,10 +1,10 @@
 <script lang="ts">
   // A summary number with a label, a detail line, and an optional trend.
   import type { Snippet } from "svelte";
-  import AnimatedNumber from "$lib/components/common/AnimatedNumber.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import Sparkline from "$lib/components/common/Sparkline.svelte";
-  import type { IconName } from "$lib/ui/icons";
+  import AnimatedNumber from "#lib/components/common/AnimatedNumber.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import Sparkline from "#lib/components/common/Sparkline.svelte";
+  import type { IconName } from "#lib/ui/icons.ts";
 
   let {
     icon,

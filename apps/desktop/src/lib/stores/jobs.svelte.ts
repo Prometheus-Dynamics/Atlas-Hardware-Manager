@@ -10,9 +10,9 @@ import {
   type DeviceKey,
   type JobId,
   type JobRecord,
-} from "$lib/api/client";
+} from "#lib/api/client.ts";
 import { toasts } from "./toasts.svelte";
-import { isRecoveryPlan } from "$lib/present";
+import { isRecoveryPlan } from "#lib/present.ts";
 
 const LOG_LIMIT = 500;
 

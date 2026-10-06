@@ -2,7 +2,7 @@
   // A floating glass sheet that slides in from the right edge of its
   // positioned parent. The page behind stays usable.
   import type { Snippet } from "svelte";
-  import { slideIn } from "$lib/ui/motion";
+  import { slideIn } from "#lib/ui/motion.ts";
   import Button from "./Button.svelte";
 
   let {

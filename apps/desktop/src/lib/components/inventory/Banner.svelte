@@ -1,7 +1,7 @@
 <script lang="ts">
-  import Button from "$lib/components/common/Button.svelte";
-  import IconTile from "$lib/components/common/IconTile.svelte";
-  import type { IconName } from "$lib/ui/icons";
+  import Button from "#lib/components/common/Button.svelte";
+  import IconTile from "#lib/components/common/IconTile.svelte";
+  import type { IconName } from "#lib/ui/icons.ts";
 
   let {
     icon,

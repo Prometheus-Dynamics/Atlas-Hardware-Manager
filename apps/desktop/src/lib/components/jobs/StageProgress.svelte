@@ -1,12 +1,12 @@
 <script lang="ts">
   // The current stage of one device: name, percent, a big bar, and an ETA
   // derived from how fast this stage has moved so far.
-  import type { DeviceJobState } from "$lib/api/client";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import ProgressBar from "$lib/components/common/ProgressBar.svelte";
-  import { duration } from "$lib/format";
-  import { isRecoveryPlan, quietFor, stepLabel } from "$lib/present";
-  import { clock } from "$lib/stores/clock.svelte";
+  import type { DeviceJobState } from "#lib/api/client.ts";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import ProgressBar from "#lib/components/common/ProgressBar.svelte";
+  import { duration } from "#lib/format.ts";
+  import { isRecoveryPlan, quietFor, stepLabel } from "#lib/present.ts";
+  import { clock } from "#lib/stores/clock.svelte.ts";
 
   let { job }: { job: DeviceJobState } = $props();
 

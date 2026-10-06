@@ -2,7 +2,7 @@
 // into it in the next column, and devices reached through a gateway further
 // right. Pure geometry; the component draws it.
 
-import { keyString, type DeviceRecord } from "$lib/api/client";
+import { keyString, type DeviceRecord } from "#lib/api/client.ts";
 
 export const HOST = "host";
 

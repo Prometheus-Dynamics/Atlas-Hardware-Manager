@@ -1,10 +1,10 @@
 // One verdict for what the overview shows: is it good to go, and if not,
 // the single most useful thing to do next.
 
-import { keyString, type DeviceRecord, type RobotStatus } from "$lib/api/client";
-import { deviceName } from "$lib/format";
-import { aDevice, isRecovery } from "$lib/present";
-import type { IconName } from "$lib/ui/icons";
+import { keyString, type DeviceRecord, type RobotStatus } from "#lib/api/client.ts";
+import { deviceName } from "#lib/format.ts";
+import { aDevice, isRecovery } from "#lib/present.ts";
+import type { IconName } from "#lib/ui/icons.ts";
 
 export type Verdict = {
   tone: "ok" | "warn" | "err" | "accent" | "neutral";

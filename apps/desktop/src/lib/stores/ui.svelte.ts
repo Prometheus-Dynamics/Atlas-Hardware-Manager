@@ -1,8 +1,8 @@
 // View state: side panel, inventory selection and filters, help.
 
 import { SvelteSet } from "svelte/reactivity";
-import { keyString, type DeviceRecord, type JobId, type UpdateRequestInput } from "$lib/api/client";
-import { deviceName } from "$lib/format";
+import { keyString, type DeviceRecord, type JobId, type UpdateRequestInput } from "#lib/api/client.ts";
+import { deviceName } from "#lib/format.ts";
 import { devices } from "./devices.svelte";
 
 export type Panel =

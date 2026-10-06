@@ -2,11 +2,11 @@
   // The host checks a flash depends on (USB access, boot files, the write
   // helper), re-run when the Flash tab opens. Problems show here with their
   // fix, before anything starts; an error blocks the Flash button.
-  import { api, errorText } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import { system } from "$lib/stores/system.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
+  import { api, errorText } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import { system } from "#lib/stores/system.svelte.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
 
   let { blocking = $bindable(false) }: { blocking?: boolean } = $props();
 

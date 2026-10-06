@@ -1,9 +1,9 @@
 <script lang="ts">
-  import Sheet from "$lib/components/common/Sheet.svelte";
-  import DevicePanel from "$lib/components/device/DevicePanel.svelte";
-  import RobotEditor from "$lib/components/robots/RobotEditor.svelte";
-  import UpdateFlow from "$lib/components/update/UpdateFlow.svelte";
-  import { ui } from "$lib/stores/ui.svelte";
+  import Sheet from "#lib/components/common/Sheet.svelte";
+  import DevicePanel from "#lib/components/device/DevicePanel.svelte";
+  import RobotEditor from "#lib/components/robots/RobotEditor.svelte";
+  import UpdateFlow from "#lib/components/update/UpdateFlow.svelte";
+  import { ui } from "#lib/stores/ui.svelte.ts";
 
   /** The device panel widens for the two-column Flash tab. */
   let wide = $state(false);

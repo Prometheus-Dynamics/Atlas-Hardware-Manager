@@ -1,8 +1,8 @@
 <script lang="ts">
   import { flip } from "svelte/animate";
-  import GlassCard from "$lib/components/common/GlassCard.svelte";
-  import { releases } from "$lib/stores/releases.svelte";
-  import { DUR, ease, ms, rise, softFade } from "$lib/ui/motion";
+  import GlassCard from "#lib/components/common/GlassCard.svelte";
+  import { releases } from "#lib/stores/releases.svelte.ts";
+  import { DUR, ease, ms, rise, softFade } from "#lib/ui/motion.ts";
   import ReleaseRow from "./ReleaseRow.svelte";
 
   let { family }: { family: string } = $props();

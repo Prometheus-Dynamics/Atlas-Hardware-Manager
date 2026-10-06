@@ -1,12 +1,12 @@
 <script lang="ts">
-  import { api, errorText, type DeviceAction, type DeviceRecord } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import ConfirmButton from "$lib/components/common/ConfirmButton.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import Skeleton from "$lib/components/common/Skeleton.svelte";
-  import { deviceName } from "$lib/format";
-  import { toasts } from "$lib/stores/toasts.svelte";
-  import { rise, stagger } from "$lib/ui/motion";
+  import { api, errorText, type DeviceAction, type DeviceRecord } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import Skeleton from "#lib/components/common/Skeleton.svelte";
+  import { deviceName } from "#lib/format.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
+  import { rise, stagger } from "#lib/ui/motion.ts";
 
   let { record }: { record: DeviceRecord } = $props();
 

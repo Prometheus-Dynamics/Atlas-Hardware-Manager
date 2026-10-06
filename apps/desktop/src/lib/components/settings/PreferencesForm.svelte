@@ -1,17 +1,17 @@
 <script lang="ts">
-  import { devices } from "$lib/stores/devices.svelte";
-  import { api, errorText, type AppSettings, type SimScenario, type StagedRollout } from "$lib/api/client";
-  import Button from "$lib/components/common/Button.svelte";
-  import Field from "$lib/components/common/Field.svelte";
-  import GlassCard from "$lib/components/common/GlassCard.svelte";
-  import Icon from "$lib/components/common/Icon.svelte";
-  import Pill from "$lib/components/common/Pill.svelte";
-  import SegmentedControl from "$lib/components/common/SegmentedControl.svelte";
-  import Toggle from "$lib/components/common/Toggle.svelte";
-  import { sentence } from "$lib/format";
-  import { system } from "$lib/stores/system.svelte";
-  import { toasts } from "$lib/stores/toasts.svelte";
-  import { rise } from "$lib/ui/motion";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { api, errorText, type AppSettings, type SimScenario, type StagedRollout } from "#lib/api/client.ts";
+  import Button from "#lib/components/common/Button.svelte";
+  import Field from "#lib/components/common/Field.svelte";
+  import GlassCard from "#lib/components/common/GlassCard.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import Pill from "#lib/components/common/Pill.svelte";
+  import SegmentedControl from "#lib/components/common/SegmentedControl.svelte";
+  import Toggle from "#lib/components/common/Toggle.svelte";
+  import { sentence } from "#lib/format.ts";
+  import { system } from "#lib/stores/system.svelte.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
+  import { rise } from "#lib/ui/motion.ts";
 
   let { settings }: { settings: AppSettings } = $props();
 
