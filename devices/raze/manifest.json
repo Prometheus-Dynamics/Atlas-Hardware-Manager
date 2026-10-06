@@ -2,7 +2,7 @@
   "schema": "urn:pd-device:manifest:1",
   "contract": 1,
   "model": "raze",
-  "package_version": "1.0.7",
+  "package_version": "1.0.8",
   "display_name": "Raze",
   "description": "Raspberry Pi CM5 vision device with an OV9782 global-shutter camera.",
   "vendor": "Prometheus Dynamics",
@@ -169,12 +169,12 @@
         "controller": "rp1_pwm1",
         "channel": 3,
         "period_ns": 41566,
-        "polarity": "inverted"
+        "polarity": "normal"
       },
       "cooling_levels": [
-        224,
-        240,
-        248,
+        128,
+        160,
+        200,
         255,
         255
       ],

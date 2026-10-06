@@ -1,5 +1,13 @@
 # Raze device package changelog
 
+## 1.0.8
+
+- Fan: normal PWM polarity and a 50 % minimum. On a Raze Gen 1 the inverted
+  default left the fan "basically not moving" (the 88 % low level came out
+  near 12 %, and full speed would have stopped it). Levels are now 128/160/
+  200/255/255 (50 %, 63 %, 78 %, 100 %). `dtoverlay=raze-fan,polarity=1`
+  restores inverted drive for a revision that needs it.
+
 ## 1.0.7
 
 - LED ring helper `/usr/lib/pd-device/raze-leds`: `on`, `off`, `set <0|1>`,

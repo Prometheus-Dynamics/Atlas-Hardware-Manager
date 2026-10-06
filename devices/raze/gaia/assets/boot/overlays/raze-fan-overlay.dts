@@ -14,17 +14,18 @@
  *   /cooling_fan            pwms = <0x62 0x03 0xa25e 0x00>
  *                           (rp1_pwm1, channel 3, 41566 ns, flags 0)
  *
- * Polarity: the old overlay set normal polarity (flags 0), and helios-peripherals
- * then inverted the duty in software (fan.toml invert_pwm = true), so the pin
- * was driven inverted. With the kernel in control and no daemon, the inversion
- * belongs in the PWM flags: PWM_POLARITY_INVERTED (1), which is also what the
- * CM5 base device tree uses. Override with polarity=0 if a board revision
- * drives the fan non-inverted.
+ * Polarity: normal (flags 0). Package 1.0.7 and earlier inverted it
+ * (PWM_POLARITY_INVERTED, as the CM5 base device tree does), but on a Raze
+ * Gen 1 that left the fan "basically not moving": the 88 % low level came out
+ * near 12 %, and the 100 % top level would have stopped the fan when the board
+ * was hottest. The old helios setup inverted twice (overlay normal, daemon
+ * invert_pwm), which also comes out normal. Use polarity=1 for a revision
+ * that really drives the fan inverted.
  *
  * Levels: index 0 is the duty below the first trip (cpu-tepid, 50 C), then one
- * per trip (60, 67.5, 75 C). 224/255 = 88 %, 240 = 94 %, 248 = 97 %, 255 = 100 %,
- * the old "about 90-100 %" intent. The trip temperatures are the base DT's and
- * can be tuned with the base dtparams fan_temp0..3 (put them before any
+ * per trip (60, 67.5, 75 C): 128/255 = 50 % minimum (always moving air), 160 =
+ * 63 %, 200 = 78 %, then 100 %. The trip temperatures are the base DT's and can
+ * be tuned with the base dtparams fan_temp0..3 (put them before any
  * dtoverlay= line).
  */
 /dts-v1/;
@@ -44,9 +45,9 @@
 		target = <&fan>;
 		fan_props: __overlay__ {
 			status = "okay";
-			cooling-levels = <224 240 248 255 255>;
-			/* rp1_pwm1 channel 3, 41566 ns (~24 kHz), PWM_POLARITY_INVERTED */
-			pwms = <&rp1_pwm1 3 41566 1>;
+			cooling-levels = <128 160 200 255 255>;
+			/* rp1_pwm1 channel 3, 41566 ns (~24 kHz), normal polarity */
+			pwms = <&rp1_pwm1 3 41566 0>;
 		};
 	};
 
