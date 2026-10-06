@@ -11,7 +11,8 @@ mod hash;
 mod manifest;
 
 pub use catalog::{
-    Channel, DownloadProgress, ReleaseCatalog, ReleaseEntry, ReleaseOrigin, RemoteSource,
+    Channel, DownloadProgress, KEEP_LOCAL, ReleaseCatalog, ReleaseEntry, ReleaseOrigin,
+    RemoteSource, local_artifact,
 };
 pub use error::ReleaseError;
 pub use hash::{normalize_sha256, sha256_file};

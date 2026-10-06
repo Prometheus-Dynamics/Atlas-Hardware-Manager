@@ -15,10 +15,12 @@
 mod browse;
 mod contract;
 mod driver;
+mod gadget;
 mod live;
 mod serial;
 
 pub use browse::{Browser, SERVICE_TYPE};
 pub use contract::{IDENTITY_PATH, PdIdentity};
 pub use driver::{NetworkLinks, PdDriver, drivers_for_catalog};
+pub use gadget::UsbGadgetLinks;
 pub use serial::serial_console;

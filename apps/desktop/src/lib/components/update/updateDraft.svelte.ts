@@ -96,6 +96,11 @@ export class UpdateDraft {
     if (entry) this.choices[family] = { version: entry.version, release_id: entry.id };
   }
 
+  /** Uses a file once, without adding it to the release list. */
+  chooseFile(family: string, path: string, version: string) {
+    this.choices[family] = { version, release_id: null, path };
+  }
+
   buildRequest(ignoreChecksum = false): UpdateRequestInput {
     const picked: Record<string, ReleaseChoice> = {};
     for (const family of this.families) {
@@ -104,6 +109,7 @@ export class UpdateDraft {
         version: c.version.trim(),
         release_id: c.release_id ?? null,
         ignore_checksum: ignoreChecksum && !!c.release_id,
+        path: c.path ?? null,
       };
     }
     return { devices: this.keys, releases: picked, staged: this.staged };

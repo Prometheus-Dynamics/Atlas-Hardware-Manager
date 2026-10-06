@@ -95,6 +95,7 @@ pub fn run() {
             commands::releases::list_releases,
             commands::releases::add_local_release,
             commands::releases::remove_release,
+            commands::releases::set_release_pinned,
             commands::releases::refresh_releases,
             commands::releases::download_release,
             commands::releases::list_release_sources,

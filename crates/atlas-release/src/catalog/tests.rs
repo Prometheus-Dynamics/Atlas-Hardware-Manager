@@ -96,3 +96,64 @@ fn cache_file_names_are_sanitized() {
     assert_eq!(safe_file_name("helios 1.img.xz"), "helios_1.img.xz");
     assert_eq!(safe_file_name(".."), "artifact");
 }
+
+async fn add(catalog: &ReleaseCatalog, dir: &Path, name: &str, body: &str) -> ReleaseEntry {
+    let path = dir.join(name);
+    std::fs::write(&path, body).unwrap();
+    catalog
+        .add_local_file(&path, Family::new("rpi"), name.into())
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn local_images_dont_pile_up() {
+    let dir = temp_dir("pileup");
+    let catalog = ReleaseCatalog::open(dir.join("catalog.json"), dir.join("cache")).unwrap();
+    let locals = |catalog: &ReleaseCatalog| {
+        catalog
+            .entries()
+            .into_iter()
+            .filter(|entry| entry.channel == Channel::Local)
+            .count()
+    };
+
+    // The same file twice is one entry.
+    add(&catalog, &dir, "a.img", "a").await;
+    add(&catalog, &dir, "a.img", "a").await;
+    assert_eq!(locals(&catalog), 1);
+
+    // A rebuilt file at the same path replaces its entry.
+    let rebuilt = add(&catalog, &dir, "a.img", "a2").await;
+    assert_eq!(locals(&catalog), 1);
+    assert!(catalog.entry(&rebuilt.id).is_some());
+
+    // A pinned image survives pruning; only KEEP_LOCAL unpinned are kept.
+    catalog.set_pinned(&rebuilt.id, true).unwrap();
+    for i in 0..(KEEP_LOCAL + 3) {
+        std::thread::sleep(std::time::Duration::from_millis(2));
+        add(&catalog, &dir, &format!("b{i}.img"), &format!("b{i}")).await;
+    }
+    assert_eq!(locals(&catalog), KEEP_LOCAL + 1);
+    assert!(catalog.entry(&rebuilt.id).unwrap().pinned);
+    // The oldest unpinned ones went; the newest stayed.
+    let names: Vec<String> = catalog
+        .entries()
+        .into_iter()
+        .map(|entry| entry.artifact_name)
+        .collect();
+    assert!(names.contains(&format!("b{}.img", KEEP_LOCAL + 2)));
+    assert!(!names.contains(&"b0.img".to_string()));
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn a_one_time_file_is_hashed_but_not_listed() {
+    let dir = temp_dir("onetime");
+    let path = dir.join("x.img");
+    std::fs::write(&path, b"abc").unwrap();
+    let artifact = local_artifact(&path).await.unwrap();
+    assert_eq!(artifact.size_bytes, 3);
+    assert_eq!(artifact.sha256.len(), 64);
+    let _ = std::fs::remove_dir_all(dir);
+}

@@ -202,6 +202,8 @@ export interface ReleaseChoice {
   release_id?: string | null;
   /** Use the file even if it fails its SHA-256 check ("flash anyway"). */
   ignore_checksum?: boolean;
+  /** A file used once, without adding it to the release list. */
+  path?: string | null;
 }
 
 export interface UpdateRequestInput {
@@ -264,6 +266,8 @@ export interface ReleaseEntry {
   boards: string[];
   notes_url: string | null;
   added_ms: number;
+  /** Kept when older unpinned local images drop off the list. */
+  pinned: boolean;
 }
 
 export interface RemoteSource {

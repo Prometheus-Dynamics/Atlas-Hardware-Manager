@@ -15,6 +15,7 @@ async-trait.workspace = true
 atlas-devices.workspace = true
 atlas-driver.workspace = true
 mdns-sd.workspace = true
+nusb.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true

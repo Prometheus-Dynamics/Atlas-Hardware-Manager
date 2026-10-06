@@ -81,6 +81,8 @@ export const api = {
   addLocalRelease: (path: string, family: string, version: string) =>
     invoke<ReleaseEntry>("add_local_release", { path, family, version }),
   removeRelease: (id: string) => invoke<void>("remove_release", { id }),
+  /** Pinned releases stay when older local images drop off the list. */
+  setReleasePinned: (id: string, pinned: boolean) => invoke<void>("set_release_pinned", { id, pinned }),
   /** Returns warnings such as manifests rejected for bad signatures. */
   refreshReleases: () => invoke<string[]>("refresh_releases"),
   downloadRelease: (id: string) => invoke<ReleaseEntry>("download_release", { id }),

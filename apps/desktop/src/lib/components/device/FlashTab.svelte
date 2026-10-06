@@ -41,20 +41,33 @@
   /** A host problem that would make the flash fail, such as missing boot files. */
   let hostBlocked = $state(false);
 
+  /** A picked file is used once; "Keep in list" saves it for next time. */
+  const oneTime = $derived(choice?.path ?? null);
+  const oneTimeName = $derived(oneTime ? (oneTime.split(/[\\/]/).pop() ?? oneTime) : null);
+
   async function chooseFile() {
     if (adding) return;
     adding = true;
     try {
       const path = await pickReleaseFile();
       if (!path) return;
-      const added = await api.addLocalRelease(path, family, versionFromFileName(path));
-      await releases.load();
-      draft.choose(family, added.id);
-      toasts.success(`Added ${added.artifact_name}.`);
+      draft.chooseFile(family, path, versionFromFileName(path));
     } catch (error) {
       toasts.error(sentence(errorText(error)));
     } finally {
       adding = false;
+    }
+  }
+
+  async function keepInList() {
+    if (!oneTime) return;
+    try {
+      const added = await api.addLocalRelease(oneTime, family, choice.version);
+      await releases.load();
+      draft.choose(family, added.id);
+      toasts.success(`Saved ${added.artifact_name} to your images.`);
+    } catch (error) {
+      toasts.error(sentence(errorText(error)));
     }
   }
 
@@ -104,11 +117,21 @@
           <ReleaseOption entry={option} name="flash-image" selected={choice?.release_id === option.id} onselect={() => draft.choose(family, option.id)} />
         </div>
       {/each}
+      {#if oneTime}
+        <div class="once" in:rise>
+          <span class="tile"><Icon name="file-text" size={18} /></span>
+          <span class="min-w-0 flex-1">
+            <span class="mono block truncate text-[13px] font-medium text-fg" title={oneTime}>{oneTimeName}</span>
+            <span class="block text-[12px] text-fg-faint">Just this once · not added to your images</span>
+          </span>
+          <Button size="sm" variant="ghost" icon="pin" action={keepInList}>Keep in list</Button>
+        </div>
+      {/if}
       <button type="button" class="choose" onclick={chooseFile} disabled={adding}>
         <span class="tile"><Icon name={adding ? "loader-2" : "folder-open"} size={18} class={adding ? "spin" : ""} /></span>
         <span class="min-w-0 flex-1 text-left">
           <span class="block text-[13px] font-medium text-fg">Choose image file…</span>
-          <span class="block text-[12px] text-fg-faint">An .img or .img.xz you built or downloaded</span>
+          <span class="block text-[12px] text-fg-faint">An .img or .img.xz you built or downloaded; used once unless you keep it</span>
         </span>
         <Icon name="chevron-right" size={16} class="text-fg-faint" />
       </button>
@@ -159,6 +182,15 @@
     color: var(--fg-muted);
     font-size: 12px;
     font-weight: 600;
+  }
+  .once {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: var(--r-card);
+    border: 1px solid var(--accent-ring);
+    background: var(--accent-tint);
   }
   .choose {
     display: flex;

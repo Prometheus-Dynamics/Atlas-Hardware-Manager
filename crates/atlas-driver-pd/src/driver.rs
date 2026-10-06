@@ -91,6 +91,32 @@ impl PdDriver {
         }
     }
 
+    /// This model's boards plugged in over USB, probed at the package's
+    /// gadget address. Several boards on one computer share that address,
+    /// so with more than one only mDNS can tell them apart.
+    async fn gadget_candidates(&self, link: &Link) -> Vec<Candidate> {
+        let Some(address) = self.package.manifest.gadget_address() else {
+            return Vec::new();
+        };
+        let mine = crate::gadget::gadgets()
+            .await
+            .into_iter()
+            .filter(|gadget| {
+                self.package
+                    .manifest
+                    .matches_gadget(gadget.manufacturer.as_deref(), gadget.product.as_deref())
+            })
+            .count();
+        if mine != 1 {
+            return Vec::new();
+        }
+        vec![Candidate {
+            link: link.id.clone(),
+            family: self.manifest.family.clone(),
+            address: format!("http://{address}:5899{}", crate::IDENTITY_PATH),
+        }]
+    }
+
     fn reported(&self, key: &DeviceKey) -> Option<(String, PdIdentity)> {
         self.reported
             .lock()
@@ -128,6 +154,9 @@ impl Driver for PdDriver {
     }
 
     async fn discover(&self, link: &Link) -> Result<Vec<Candidate>, DriverError> {
+        if link.id.0 == crate::gadget::LINK_ID {
+            return Ok(self.gadget_candidates(link).await);
+        }
         if link.id.0 != LINK_ID {
             return Ok(Vec::new());
         }

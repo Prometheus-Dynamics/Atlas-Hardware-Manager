@@ -22,6 +22,9 @@ pub struct ReleaseChoice {
     /// Atlas never blocks a deliberate choice; it only stops by default.
     #[serde(default)]
     pub ignore_checksum: bool,
+    /// A file to use once, without adding it to the release list.
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -46,6 +49,7 @@ impl UpdateRequestInput {
                             version: target.version,
                             release_id: None,
                             ignore_checksum: false,
+                            path: None,
                         },
                     )
                 })
@@ -68,6 +72,38 @@ async fn resolve(
 ) -> CmdResult<UpdateRequest> {
     let mut releases = BTreeMap::new();
     for (family, choice) in input.releases {
+        if let Some(path) = choice
+            .path
+            .as_deref()
+            .filter(|path| !path.trim().is_empty())
+        {
+            let path = std::path::Path::new(path);
+            // Planning only needs the name and size; starting hashes it so
+            // the write is still verified against the file.
+            let artifact = if fetch {
+                atlas_release::local_artifact(path).await.map_err(text)?
+            } else {
+                let metadata = std::fs::metadata(path)
+                    .map_err(|error| format!("{}: {error}", path.display()))?;
+                Artifact {
+                    name: path
+                        .file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "image".into()),
+                    path: path.to_path_buf(),
+                    sha256: String::new(),
+                    size_bytes: metadata.len(),
+                }
+            };
+            releases.insert(
+                family,
+                ReleaseTarget {
+                    version: choice.version,
+                    artifact: Some(artifact),
+                },
+            );
+            continue;
+        }
         let artifact = match &choice.release_id {
             None => None,
             Some(id) => {

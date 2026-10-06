@@ -24,7 +24,7 @@
 <svelte:head><title>Releases · Atlas</title></svelte:head>
 
 <div class="reveal flex flex-col gap-5">
-  <PageHeader title="Releases" subtitle="Images and firmware Atlas can install, by device family.">
+  <PageHeader title="Releases" subtitle="Images and firmware Atlas can install, by device family. Your 5 newest local images stay listed; pin any you want to keep.">
     {#snippet actions()}
       <Button icon="refresh" action={refresh}>Check for new releases</Button>
       <Button variant="primary" icon="file-plus" onclick={() => (adding = true)} disabled={adding}>Add a file</Button>

@@ -46,6 +46,12 @@ pub fn remove_release(state: State<'_, AppState>, id: String) -> CmdResult<()> {
     state.releases.remove(&id).map_err(text)
 }
 
+/// Pins a release so it stays when older local images drop off the list.
+#[tauri::command]
+pub fn set_release_pinned(state: State<'_, AppState>, id: String, pinned: bool) -> CmdResult<()> {
+    state.releases.set_pinned(&id, pinned).map_err(text)
+}
+
 /// Fetches every release source. Returns warnings, for example manifests
 /// rejected for a bad signature.
 #[tauri::command]

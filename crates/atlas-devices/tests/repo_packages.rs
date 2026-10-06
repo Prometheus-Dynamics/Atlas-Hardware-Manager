@@ -91,3 +91,16 @@ fn device_package_env_matches_the_manifest_version() {
         }
     }
 }
+
+#[test]
+fn raze_names_its_gadget_address() {
+    let catalog = atlas_devices::DeviceCatalog::load(&[std::path::PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../devices"
+    ))]);
+    let raze = catalog.by_model("raze").expect("raze package");
+    assert_eq!(
+        raze.manifest.gadget_address().as_deref(),
+        Some("172.31.250.1")
+    );
+}

@@ -372,6 +372,7 @@ dependencies = [
  "atlas-devices",
  "atlas-driver",
  "mdns-sd",
+ "nusb",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

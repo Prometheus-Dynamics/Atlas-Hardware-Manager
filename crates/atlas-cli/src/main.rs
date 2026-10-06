@@ -12,7 +12,7 @@ use std::sync::Arc;
 use atlas_core::{Atlas, InventoryStore, JsonFileStore, StagedRollout};
 use atlas_devices::DeviceCatalog;
 use atlas_driver_mock::MockFleet;
-use atlas_driver_pd::{NetworkLinks, drivers_for_catalog};
+use atlas_driver_pd::{NetworkLinks, UsbGadgetLinks, drivers_for_catalog};
 use atlas_driver_rpi::{RpiConfig, RpiDriver, UsbBootLinks};
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -155,7 +155,8 @@ fn build_atlas(cli: &Cli) -> Result<Atlas, String> {
                     ssh_keys: Default::default(),
                 })))
                 .link_source(Arc::new(UsbBootLinks))
-                .link_source(Arc::new(NetworkLinks));
+                .link_source(Arc::new(NetworkLinks))
+                .link_source(Arc::new(UsbGadgetLinks));
             for driver in drivers_for_catalog(&catalog) {
                 builder = builder.driver(driver);
             }

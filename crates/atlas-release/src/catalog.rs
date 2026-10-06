@@ -60,6 +60,9 @@ pub struct ReleaseEntry {
     pub boards: Vec<String>,
     pub notes_url: Option<String>,
     pub added_ms: u64,
+    /// Kept when older unpinned local images are pruned.
+    #[serde(default)]
+    pub pinned: bool,
 }
 
 /// A remote index: a JSON array of signed manifests at `index_url`.
@@ -255,9 +258,44 @@ impl ReleaseCatalog {
             boards: Vec::new(),
             notes_url: None,
             added_ms: now_ms(),
+            pinned: false,
         };
-        self.upsert(entry.clone())?;
-        Ok(entry)
+        {
+            let mut state = self.state();
+            // Re-adding the same file keeps its pin, and a rebuilt file at
+            // the same path replaces its old entry instead of piling up.
+            let pinned = state.entries.iter().any(|existing| {
+                existing.pinned && (existing.id == entry.id || existing.path == entry.path)
+            });
+            state.entries.retain(|existing| {
+                existing.id != entry.id
+                    && !(existing.channel == Channel::Local && existing.path == entry.path)
+            });
+            state.entries.push(ReleaseEntry {
+                pinned,
+                ..entry.clone()
+            });
+            prune_local(&mut state.entries);
+        }
+        self.save()?;
+        Ok(self.entry(&entry.id).unwrap_or(entry))
+    }
+
+    /// Pins a release so pruning keeps it, or unpins it.
+    pub fn set_pinned(&self, id: &str, pinned: bool) -> Result<(), ReleaseError> {
+        {
+            let mut state = self.state();
+            let entry = state
+                .entries
+                .iter_mut()
+                .find(|entry| entry.id == id)
+                .ok_or_else(|| ReleaseError::UnknownRelease(id.to_string()))?;
+            entry.pinned = pinned;
+            if !pinned {
+                prune_local(&mut state.entries);
+            }
+        }
+        self.save()
     }
 
     fn upsert(&self, entry: ReleaseEntry) -> Result<(), ReleaseError> {
@@ -341,6 +379,7 @@ impl ReleaseCatalog {
                 boards: body.boards,
                 notes_url: body.notes_url,
                 added_ms: now_ms(),
+                pinned: false,
             };
             if let Err(error) = self.upsert(entry) {
                 warnings.push(error.to_string());
@@ -526,6 +565,11 @@ impl ReleaseCatalog {
         })
     }
 }
+
+mod local;
+
+use local::prune_local;
+pub use local::{KEEP_LOCAL, local_artifact};
 
 #[cfg(test)]
 mod tests;

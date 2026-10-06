@@ -177,11 +177,18 @@ export const mockApi: Api = {
         boards: [],
         notes_url: null,
         added_ms: Date.now(),
+        pinned: false,
       };
       const index = releases.findIndex((r) => r.id === entry.id);
       if (index >= 0) releases[index] = entry;
       else releases.push(entry);
       return entry;
+    }),
+  setReleasePinned: (id, pinned) =>
+    reply(() => {
+      const entry = releases.find((r) => r.id === id);
+      if (!entry) throw `no release ${id} in the catalog`;
+      entry.pinned = pinned;
     }),
   removeRelease: (id) =>
     reply(() => {

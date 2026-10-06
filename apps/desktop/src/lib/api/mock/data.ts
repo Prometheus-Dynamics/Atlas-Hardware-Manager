@@ -217,6 +217,7 @@ export const releases: ReleaseEntry[] = [
     boards: ["cm5"],
     notes_url: "https://example.com/helios/2026.3.0",
     added_ms: now - 2 * day,
+    pinned: false,
   },
   {
     id: "pd-stable/sim-helios/2026.2.4",
@@ -232,6 +233,7 @@ export const releases: ReleaseEntry[] = [
     boards: ["cm5"],
     notes_url: null,
     added_ms: now - 30 * day,
+    pinned: false,
   },
   {
     id: "pd-beta/sim-mcu/1.5.0",
@@ -247,6 +249,7 @@ export const releases: ReleaseEntry[] = [
     boards: ["stm32g4"],
     notes_url: "https://example.com/mcu/1.5.0",
     added_ms: now - 5 * day,
+    pinned: false,
   },
   {
     id: "pd-stable/sim-mcu/1.4.0",
@@ -262,6 +265,7 @@ export const releases: ReleaseEntry[] = [
     boards: ["stm32g4"],
     notes_url: null,
     added_ms: now - 60 * day,
+    pinned: false,
   },
   {
     id: "pd-stable/rpi/helios-raze-2026.3.0",
@@ -277,6 +281,7 @@ export const releases: ReleaseEntry[] = [
     boards: ["raze"],
     notes_url: "https://example.com/helios/2026.3.0",
     added_ms: now - 2 * day,
+    pinned: false,
   },
   {
     id: "pd-stable/rpi/photonvision-raze-2026.1.0",
@@ -292,6 +297,7 @@ export const releases: ReleaseEntry[] = [
     boards: ["raze"],
     notes_url: null,
     added_ms: now - 12 * day,
+    pinned: false,
   },
   {
     id: "pd-stable/raze/2026.3.0",
@@ -307,6 +313,7 @@ export const releases: ReleaseEntry[] = [
     boards: ["raze"],
     notes_url: "https://example.com/helios/2026.3.0",
     added_ms: now - 2 * day,
+    pinned: false,
   },
   {
     id: "local/sim-mcu/1.5.1-dev",
@@ -322,6 +329,7 @@ export const releases: ReleaseEntry[] = [
     boards: [],
     notes_url: null,
     added_ms: now - day,
+    pinned: false,
   },
 ];
 

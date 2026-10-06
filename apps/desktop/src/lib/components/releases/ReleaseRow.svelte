@@ -18,6 +18,11 @@
     local: { label: "Local file", tone: "neutral" },
   };
 
+  async function togglePin() {
+    await api.setReleasePinned(entry.id, !entry.pinned);
+    await releases.load();
+  }
+
   async function remove() {
     await api.removeRelease(entry.id);
     await releases.load();
@@ -58,6 +63,16 @@
   <div class="flex items-center justify-end gap-1">
     {#if entry.notes_url}
       <Button variant="ghost" size="sm" iconRight="external-link" onclick={() => openExternal(entry.notes_url!)}>Notes</Button>
+    {/if}
+    {#if entry.channel === "local"}
+      <Button
+        variant="ghost"
+        size="sm"
+        icon={entry.pinned ? "pinned" : "pin"}
+        label={entry.pinned ? "Unpin" : "Pin"}
+        title={entry.pinned ? "Pinned: stays in the list" : "Pin to keep it; unpinned images drop off after the 5 newest"}
+        action={togglePin}
+      />
     {/if}
     <ConfirmButton action={remove} size="sm" variant="ghost" icon="trash" label="Remove {entry.version}" prompt="Remove?" confirmLabel="Remove" />
   </div>

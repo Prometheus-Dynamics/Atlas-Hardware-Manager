@@ -230,6 +230,18 @@ impl DeviceManifest {
             .unwrap_or_else(|| id.to_string())
     }
 
+    /// The device's own address on its USB gadget network
+    /// (`capabilities.gadget-net.address`, without the prefix length).
+    pub fn gadget_address(&self) -> Option<String> {
+        let address = self
+            .capabilities
+            .get("gadget-net")?
+            .get("address")?
+            .as_str()?;
+        let host = address.split('/').next()?.trim();
+        (!host.is_empty()).then(|| host.to_string())
+    }
+
     pub fn has_capability(&self, name: &str) -> bool {
         match &self.capabilities {
             Value::Array(items) => items
