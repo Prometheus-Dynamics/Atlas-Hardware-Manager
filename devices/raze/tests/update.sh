@@ -125,6 +125,21 @@ UPDATE_CMDLINE_ROOT=6 update confirm
 UPDATE_CMDLINE_ROOT=6 update status | grep -q '"slot_active":"B","slot_staged":"B","version_active":"2.0"' ||
 	fail "status after confirm: $(cat "$T/run/update.json")"
 
+echo "status answers while another command holds the lock"
+if command -v flock >/dev/null 2>&1; then
+	exec 8> "$T/run/update.lock"
+	flock -n 8
+	update status | grep -q '"state":"confirmed"' || fail "busy status should print the last state"
+	if update rollback 2>/dev/null; then fail "a second writer should be refused"; fi
+	exec 8>&-
+fi
+
+echo "an interrupted stage can be redone"
+sed -i 's/^STATE=.*/STATE=staging/' "$T/disk/p1.d/pd-update.env"
+UPDATE_CMDLINE_ROOT=6 update stage "$T/good.pdupdate"
+[ "$(state)" = staged ] || fail "state should be staged, is $(state)"
+UPDATE_CMDLINE_ROOT=6 update rollback
+
 echo "identity reports the A/B method and state"
 . "$lib/lib.sh"
 pd_update_methods | grep -qx ab-tryboot || fail "update_methods should include ab-tryboot"

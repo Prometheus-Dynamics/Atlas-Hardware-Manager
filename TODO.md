@@ -85,9 +85,12 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
       orion+tcp, per-identity action rights). HTTP is query-only in v4, so
       the app registers no Orion directory until it lands.
 - [ ] Bundle host: serve update bundles over HTTP for devices to pull.
-- [ ] OTA for running devices: `docs/ota.md` (A/B tryboot, `pd-device-update`
-      writer and `pd-device-agent` in the device package, Orion for intent
-      and progress, SSH and USB boot without Orion).
+- [x] A/B writer in the device package (Raze 1.0.9–1.0.12, tested
+      off-device in `devices/raze/tests/update.sh`).
+- [x] SSH update transport for boards listing `ab-tryboot`.
+- [ ] Verify A/B on a real Raze with HeliOS's PhotonVision image (they test
+      stage/apply/confirm/rollback first).
+- [ ] `pd-device-agent` for Orion-driven updates.
 
 - [ ] UI direction: confirm the current style fits; else compare 2-3
       directions side by side.

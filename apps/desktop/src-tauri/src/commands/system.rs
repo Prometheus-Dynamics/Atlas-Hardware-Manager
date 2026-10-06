@@ -62,6 +62,10 @@ pub async fn save_settings(state: State<'_, AppState>, settings: AppSettings) ->
     // Check the key before saving, so a wrong path is reported, not stored.
     let keys = crate::settings::read_ssh_keys(settings.ssh_key_file.as_deref())?;
     state.ssh_keys.set(keys);
+    state.ssh_access.set(crate::settings::ssh_config(
+        &state.paths,
+        settings.ssh_key_file.as_deref(),
+    ));
     let (low, high) = FALLBACK_RANGE_MS;
     settings.scan_interval_ms = settings.scan_interval_ms.clamp(low, high);
     let needs_restart = settings.simulated != state.simulated;

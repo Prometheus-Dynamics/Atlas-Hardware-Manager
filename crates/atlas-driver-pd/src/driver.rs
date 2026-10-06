@@ -7,12 +7,13 @@ use atlas_devices::{DeviceCatalog, DevicePackage};
 use atlas_driver::{
     ActionsCapability, Candidate, Capabilities, DeviceKey, Driver, DriverError, DriverManifest,
     Family, HealthCheck, Identity, Link, LinkId, LinkKind, LinkSource, LogsCapability,
-    TelemetryCapability,
+    TelemetryCapability, UpdateCapability,
 };
 
 use crate::browse::Browser;
 use crate::contract::PdIdentity;
 use crate::live::{PdActions, PdLogs, PdTelemetry, resolve};
+use crate::ssh::{AB_METHOD, SshAccess, SshUpdate};
 
 const LINK_ID: &str = "mdns";
 const FETCH_TIMEOUT: Duration = Duration::from_secs(2);
@@ -70,10 +71,16 @@ pub struct PdDriver {
     http: reqwest::Client,
     /// What each device last reported, for the optional live endpoints.
     reported: Mutex<HashMap<DeviceKey, (String, PdIdentity)>>,
+    ssh: SshAccess,
 }
 
 impl PdDriver {
     pub fn new(package: DevicePackage) -> Self {
+        Self::with_ssh(package, SshAccess::default())
+    }
+
+    /// A driver that updates A/B boards over SSH with `ssh`.
+    pub fn with_ssh(package: DevicePackage, ssh: SshAccess) -> Self {
         Self {
             manifest: DriverManifest {
                 family: Family::new(package.manifest.model.to_ascii_lowercase()),
@@ -88,6 +95,7 @@ impl PdDriver {
                 .build()
                 .unwrap_or_default(),
             reported: Mutex::new(HashMap::new()),
+            ssh,
         }
     }
 
@@ -138,12 +146,15 @@ impl PdDriver {
     }
 }
 
-/// A driver for every model in the catalog.
-pub fn drivers_for_catalog(catalog: &DeviceCatalog) -> Vec<Arc<dyn Driver>> {
+/// A driver for every model in the catalog, updating A/B boards over SSH
+/// with `ssh`.
+pub fn drivers_for_catalog(catalog: &DeviceCatalog, ssh: &SshAccess) -> Vec<Arc<dyn Driver>> {
     catalog
         .packages()
         .iter()
-        .map(|package| Arc::new(PdDriver::new(package.clone())) as Arc<dyn Driver>)
+        .map(|package| {
+            Arc::new(PdDriver::with_ssh(package.clone(), ssh.clone())) as Arc<dyn Driver>
+        })
         .collect()
 }
 
@@ -214,9 +225,9 @@ impl Driver for PdDriver {
         Ok(identity)
     }
 
-    /// Updates for running devices come from OS adapters (HeliOS OTA and
-    /// others) as they land; reflashing goes through USB boot recovery.
-    /// Metrics, logs, and actions are offered when the device lists them.
+    /// Boards listing `ab-tryboot` update over SSH; reflashing goes through
+    /// USB boot recovery. Metrics, logs, and actions are offered when the
+    /// device lists them.
     fn capabilities(&self, device: &Identity) -> Capabilities {
         let Some((identity_url, reported)) = self.reported(&device.key) else {
             return Capabilities::default();
@@ -228,7 +239,25 @@ impl Driver for PdDriver {
                 .and_then(|path| resolve(&identity_url, path))
         };
         let http = self.http.clone();
+        let update = reported
+            .update_methods
+            .iter()
+            .any(|method| method == AB_METHOD)
+            .then(|| reqwest::Url::parse(&identity_url).ok())
+            .flatten()
+            .and_then(|url| {
+                url.host_str()
+                    .map(|host| host.trim_matches(['[', ']']).to_string())
+            })
+            .map(|host| {
+                Arc::new(SshUpdate {
+                    access: self.ssh.clone(),
+                    host,
+                    key: device.key.clone(),
+                }) as Arc<dyn UpdateCapability>
+            });
         Capabilities {
+            update,
             telemetry: endpoint("metrics").map(|url| {
                 Arc::new(PdTelemetry {
                     http: http.clone(),
@@ -250,7 +279,6 @@ impl Driver for PdDriver {
                         actions: reported.actions.iter().map(|a| a.to_action()).collect(),
                     }) as Arc<dyn ActionsCapability>
                 }),
-            ..Capabilities::default()
         }
     }
 }
@@ -355,6 +383,39 @@ mod tests {
             capabilities.kinds(),
             vec![atlas_driver::CapabilityKind::Info]
         );
+    }
+
+    #[tokio::test]
+    async fn an_ab_board_updates_over_ssh() {
+        let url = serve_once(
+            r#"{ "model": "raze", "serial": "3", "update_methods": ["image-write", "ab-tryboot"] }"#,
+        )
+        .await;
+        let driver = PdDriver::new(package());
+        let identity = driver
+            .identify(&Candidate {
+                link: LinkId("mdns".into()),
+                family: Family::new("raze"),
+                address: url,
+            })
+            .await
+            .unwrap();
+        let update = driver.capabilities(&identity).update.unwrap();
+        let release = |name: &str| atlas_driver::ReleaseRef {
+            family: Family::new("raze"),
+            version: "2.0".into(),
+            artifact: Some(atlas_driver::Artifact {
+                name: name.into(),
+                path: name.into(),
+                sha256: String::new(),
+                size_bytes: 1,
+            }),
+        };
+        assert!(update.plan(&identity, &release("pv.pdupdate")).is_ok());
+        assert!(matches!(
+            update.plan(&identity, &release("pv.img.xz")),
+            Err(DriverError::Incompatible(_))
+        ));
     }
 
     #[tokio::test]

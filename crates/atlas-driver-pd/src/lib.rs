@@ -7,6 +7,7 @@
 //!   update methods, management URL, MACs.
 //! - Optionally, `endpoints` for metrics, logs, and actions, and a camera
 //!   stream. Atlas offers each only when the device lists it; see `live`.
+//! - `ab-tryboot` in `update_methods`: A/B updates over SSH; see `ssh`.
 //!
 //! The device family is the hardware model from its device package
 //! (`raze`); the OS is an attribute. One [`PdDriver`] serves each model in
@@ -18,9 +19,11 @@ mod driver;
 mod gadget;
 mod live;
 mod serial;
+mod ssh;
 
 pub use browse::{Browser, SERVICE_TYPE};
 pub use contract::{IDENTITY_PATH, PdIdentity};
 pub use driver::{NetworkLinks, PdDriver, drivers_for_catalog};
 pub use gadget::UsbGadgetLinks;
 pub use serial::serial_console;
+pub use ssh::{AB_METHOD, SshAccess, SshConfig, private_key_for};

@@ -178,9 +178,7 @@ cmd_stage() {
 }
 _stage() {
 	load_state
-	case "$STATE" in
-	staging | trying) die "an update is already $STATE" ;;
-	esac
+	[ "$STATE" != trying ] || die "the last update is still on trial; reboot or confirm it first"
 	active=$(slot_of_root)
 	[ "$active" != unknown ] || die "this system is not on an A/B layout (root partition $(active_root))"
 	target=$(other "$active")
@@ -295,6 +293,20 @@ _rollback() {
 	STATE=idle SLOT_STAGED='' VERSION_STAGED='' ERROR='' PROGRESS=0
 	save_state
 }
+
+# One writer at a time: a state of `staging` seen under the lock is left over
+# from an interrupted stage and may be redone.
+mkdir -p "$PD_RUN_DIR"
+exec 9> "$PD_RUN_DIR/update.lock"
+if command -v flock >/dev/null 2>&1 && ! flock -n 9; then
+	# Busy: status answers from what the running command last wrote.
+	if [ "${1:-}" = status ] && [ -r "$STATUS_JSON" ]; then
+		cat "$STATUS_JSON"
+		exit 0
+	fi
+	pd_log "another update command is running"
+	exit 1
+fi
 
 case "${1:-}" in
 status) cmd_status ;;

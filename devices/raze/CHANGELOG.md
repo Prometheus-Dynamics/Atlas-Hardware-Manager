@@ -1,5 +1,13 @@
 # Raze device package changelog
 
+## 1.0.12
+
+- `update` takes a lock (`/run/pd-device/update.lock`), so two commands never
+  write at once. `status` still answers while another command runs, from the
+  last `update.json`, which is how Atlas shows staging progress. A `staging`
+  state left by an interrupted stage can now be staged again; only a running
+  trial (`trying`) blocks a new stage.
+
 ## 1.0.11
 
 - `ssh-keys` finds the boot partition from `root=` on the kernel command line

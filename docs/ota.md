@@ -111,8 +111,15 @@ The identity endpoint advertises it: `"update_methods": ["image-write", "ab-tryb
 
 Bundle bytes never travel over Orion. Atlas serves the bundle over HTTP
 from the computer running it, and the device pulls `bundle_url` and checks
-sha256, size, and (when required) the signature itself. Over SSH, Atlas
-streams it to `pd-device-update stage -`.
+sha256, size, and (when required) the signature itself. Over SSH
+(`atlas-driver-pd`, `ssh.rs`), Atlas streams it to `/data/pd-update/` and
+checks its sha256 there. Then it runs `update stage`, reading progress from
+`update status`, and `update apply`. It waits for a new boot id and polls
+`status` until `confirmed` or `rolled-back`. It runs the system OpenSSH as
+root with the key chosen in Settings. Host keys are trusted on first use and
+pinned per board (`HostKeyAlias=pd-<model>-<serial>` in Atlas's own
+known_hosts), because every board shares the USB gadget address. Atlas
+offers it for boards whose identity lists `ab-tryboot`.
 
 | Path | Needs | Auth | Used when |
 |------|-------|------|-----------|

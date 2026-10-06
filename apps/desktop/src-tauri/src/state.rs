@@ -5,6 +5,7 @@ use std::time::Duration;
 use atlas_core::{Atlas, InventoryStore, JsonFileStore, WatchOptions};
 use atlas_driver::CancellationToken;
 use atlas_driver_mock::MockFleet;
+use atlas_driver_pd::SshAccess;
 use atlas_driver_rpi::SshKeys;
 use atlas_release::ReleaseCatalog;
 
@@ -25,6 +26,8 @@ pub struct AppState {
     watch: Mutex<Option<CancellationToken>>,
     /// The public keys written to boards after a flash (from settings).
     pub ssh_keys: SshKeys,
+    /// How A/B boards are reached over SSH for updates (from settings).
+    pub ssh_access: SshAccess,
     /// Orion, when this build supports it (not with simulated devices).
     pub orion: Option<crate::orion::Orion>,
 }
@@ -44,6 +47,10 @@ impl AppState {
             .and_then(|value| SimScenario::parse(&value))
             .or(settings.simulated);
         let paths = AppPaths::resolve(simulated.is_some());
+        let ssh_access = SshAccess::new(crate::settings::ssh_config(
+            &paths,
+            settings.ssh_key_file.as_deref(),
+        ));
         let mut startup_warnings = Vec::new();
 
         let orion = match simulated {
@@ -77,8 +84,13 @@ impl AppState {
                 builder = builder.link_source(fleet.link_source());
             }
             None => {
-                builder =
-                    drivers::register_hardware(builder, &paths, &ssh_keys, &mut startup_warnings)
+                builder = drivers::register_hardware(
+                    builder,
+                    &paths,
+                    &ssh_keys,
+                    &ssh_access,
+                    &mut startup_warnings,
+                )
             }
         }
 
@@ -100,6 +112,7 @@ impl AppState {
                         builder,
                         &paths,
                         &ssh_keys,
+                        &ssh_access,
                         &mut startup_warnings,
                     );
                 }
@@ -120,6 +133,7 @@ impl AppState {
             startup_warnings,
             watch: Mutex::new(None),
             ssh_keys,
+            ssh_access,
             orion,
         })
     }
