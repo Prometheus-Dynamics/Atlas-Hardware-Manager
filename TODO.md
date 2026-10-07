@@ -59,6 +59,11 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
       safely", and "Add my SSH key" for a board's eMMC; a half-done flash
       continues without a power-cycle.
 - [x] A flashed board replaces its USB-boot record (matched by board serial).
+- [x] Hardware self-test: the Raze manifest is the source of the board's
+      hardware facts (generated config, `gen-raze.py --check` lint), the
+      device package has `selftest`, and Atlas runs it after a flash or
+      update, keeps the result per board serial and shows it on a Self-test
+      card with "Run again".
 
 ### Tooling and install
 - [x] `atlas` CLI covering every flow, with `--sim` fleets.
