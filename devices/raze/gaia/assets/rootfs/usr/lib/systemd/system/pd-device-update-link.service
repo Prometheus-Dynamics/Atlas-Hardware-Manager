@@ -1,0 +1,13 @@
+[Unit]
+Description=Go back to the previous slot when the management link stays down
+Documentation=file:/usr/lib/pd-device/update
+After=multi-user.target pd-device-update-confirm.service
+ConditionPathExists=/usr/lib/pd-device/update
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/pd-device/update check-link
+
+[Install]
+WantedBy=multi-user.target

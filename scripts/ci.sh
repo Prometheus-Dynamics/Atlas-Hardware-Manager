@@ -15,6 +15,7 @@ sh devices/raze/tests/update.sh
 sh devices/raze/tests/root-device.sh
 sh devices/raze/tests/usb-boot.sh
 sh devices/raze/tests/ssh-keys.sh
+sh devices/raze/tests/stage-files.sh
 
 echo "==> Running clippy"
 cargo clippy --workspace --all-targets --all-features -- -D warnings
