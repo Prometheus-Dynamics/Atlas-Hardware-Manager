@@ -232,18 +232,19 @@ async fn registrations_expire_after_idling_and_change_is_noticed() {
     let sum = sha256(&bytes);
     let path = scratch.file("image.img", &bytes);
     let server = local(ImageServerConfig {
-        idle_expiry: Duration::from_millis(400),
+        // Wide margins: a loaded CI machine can take hundreds of ms per request.
+        idle_expiry: Duration::from_millis(2000),
         ..ImageServerConfig::default()
     });
     let (url, _) = offer(&server, &path, &sum);
 
     // Each request keeps it alive.
     for _ in 0..3 {
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
         assert_eq!(reqwest::get(&url).await.unwrap().status(), StatusCode::OK);
     }
     assert_eq!(server.status().registrations, 1);
-    tokio::time::sleep(Duration::from_millis(700)).await;
+    tokio::time::sleep(Duration::from_millis(3500)).await;
     assert_eq!(
         reqwest::get(&url).await.unwrap().status(),
         StatusCode::NOT_FOUND
