@@ -2,54 +2,55 @@
   import IconTile from "#lib/components/common/IconTile.svelte";
   import Pill from "#lib/components/common/Pill.svelte";
   import SegmentedControl from "#lib/components/common/SegmentedControl.svelte";
-  import UpdateFlow from "#lib/components/update/UpdateFlow.svelte";
+  import { handoffs } from "#lib/components/software/handoff.svelte.ts";
+  import { updateMethods } from "#lib/components/software/software.ts";
   import { deviceName, timeAgo } from "#lib/format.ts";
   import { deviceIcon, isRecovery, modelName, storageName } from "#lib/present.ts";
   import { clock } from "#lib/stores/clock.svelte.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
-  import { system } from "#lib/stores/system.svelte.ts";
   import type { IconName } from "#lib/ui/icons.ts";
   import { softFade } from "#lib/ui/motion.ts";
   import { jobs } from "#lib/stores/jobs.svelte.ts";
   import ActionsTab from "./ActionsTab.svelte";
   import ActiveJob from "./ActiveJob.svelte";
-  import FlashTab from "./FlashTab.svelte";
   import HistoryTab from "./HistoryTab.svelte";
   import LogsTab from "./LogsTab.svelte";
   import OverviewTab from "./OverviewTab.svelte";
   import QuickActions from "./QuickActions.svelte";
+  import SoftwareTab from "./SoftwareTab.svelte";
 
-  let {
-    key,
-    initialTab,
-    onwide,
-  }: { key: string; initialTab?: string; onwide?: (wide: boolean) => void } = $props();
+  let { key, initialTab }: { key: string; initialTab?: string } = $props();
 
   const record = $derived(devices.get(key));
   const recovery = $derived(record ? isRecovery(record) : false);
-  /** A job already running on this device: Flash and Update show it instead. */
+  /** A job already running on this device: Software shows it instead. */
   const active = $derived(jobs.active.get(key) ?? null);
+  /** A fresh install waiting for this board to reach USB boot. */
+  const handoff = $derived(handoffs.get(key));
 
   // Tabs come from what the device can do right now.
   const tabs = $derived.by(() => {
     const caps = record?.capabilities ?? [];
     const list: { value: string; label: string; icon: IconName }[] = [{ value: "overview", label: "Overview", icon: "info-circle" }];
-    if (caps.includes("recover") || (recovery && record?.presence === "online")) list.push({ value: "flash", label: "Flash", icon: "bolt" });
-    else if (caps.includes("update")) list.push({ value: "update", label: "Update", icon: "arrow-up" });
+    const software =
+      caps.includes("update") ||
+      caps.includes("recover") ||
+      (recovery && record?.presence === "online") ||
+      (record ? updateMethods(record).length > 0 : false) ||
+      !!handoff;
+    if (software) list.push({ value: "software", label: "Software", icon: "package" });
     if (caps.includes("logs")) list.push({ value: "logs", label: "Logs", icon: "file-text" });
     if (caps.includes("actions") && !recovery) list.push({ value: "actions", label: "Actions", icon: "tool" });
     list.push({ value: "history", label: "History", icon: "history" });
     return list;
   });
 
+  // Older links name the tabs Software replaced.
   // svelte-ignore state_referenced_locally
-  let tab = $state(initialTab ?? (recovery ? "flash" : "overview"));
+  const asked = initialTab === "flash" || initialTab === "update" ? "software" : initialTab;
+  // svelte-ignore state_referenced_locally
+  let tab = $state(asked ?? (recovery ? "software" : "overview"));
   const current = $derived(tabs.some((t) => t.value === tab) ? tab : "overview");
-
-  $effect(() => {
-    onwide?.(current === "flash" && !active);
-  });
-  $effect(() => () => onwide?.(false));
 
   const subline = $derived.by(() => {
     if (!record) return "";
@@ -93,15 +94,10 @@
       <div in:softFade>
         {#if current === "overview"}
           <OverviewTab {record} />
-        {:else if (current === "flash" || current === "update") && active}
+        {:else if current === "software" && active && !handoff}
           <ActiveJob job={active.job} state={active.state} />
-        {:else if current === "flash"}
-          <FlashTab {record} />
-        {:else if current === "update"}
-          <UpdateFlow
-            request={{ devices: [record.key], releases: {}, staged: system.settings?.staged_default ?? "auto" }}
-            onstarted={() => (tab = "history")}
-          />
+        {:else if current === "software"}
+          <SoftwareTab {record} />
         {:else if current === "logs"}
           <LogsTab {record} />
         {:else if current === "actions"}

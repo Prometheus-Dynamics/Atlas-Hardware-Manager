@@ -15,8 +15,8 @@ import type {
 } from "../types";
 import { keyString } from "../types";
 import { emit, sleep } from "./bus";
-import { inventory, jobs, releases, simDevice, type SimDevice } from "./data";
-import { touch } from "./scan";
+import { AB_ACTIONS, AB_METHODS, fleet, inventory, jobs, releases, simDevice, type SimDevice } from "./data";
+import { scan, touch } from "./scan";
 import { record } from "./observe";
 
 const STEPS: UpdateStep[] = ["preflight", "transfer", "apply", "reboot", "confirm"];
@@ -42,8 +42,14 @@ export function plan(request: UpdateRequestInput): JobPlan {
     const choice = request.releases[key.family];
     if (!choice) throw `no release chosen for the ${key.family} family`;
     if (!choice.version.trim()) throw "the release has no version";
-    const entry = choice.release_id ? releases.find((r) => r.id === choice.release_id) : undefined;
-    if (choice.release_id && !entry) throw `no release ${choice.release_id} in the catalog`;
+    const entry = choice.path ? undefined : choice.release_id ? releases.find((r) => r.id === choice.release_id) : undefined;
+    if (choice.release_id && !choice.path && !entry) throw `no release ${choice.release_id} in the catalog`;
+    const fileName = entry?.artifact_name ?? choice.path?.split(/[\\/]/).pop() ?? null;
+    const caps = sim.caps ?? [];
+    if (sim.mode !== "recovery" && sim.caps && !caps.includes("update"))
+      throw `${stored.label ?? sim.name} can't update in place; install it fresh over USB`;
+    const ab = (sim.attributes?.update_methods ?? "").includes("ab-tryboot");
+    if (ab && fileName && !fileUsesAb(fileName)) throw `${fileName} doesn't use the A/B layout; install it fresh over USB`;
     const from = sim.version;
     return {
       device: key,
@@ -54,7 +60,9 @@ export function plan(request: UpdateRequestInput): JobPlan {
         version: choice.version,
         artifact: entry
           ? { name: entry.artifact_name, path: entry.path ?? "", sha256: entry.sha256, size_bytes: entry.size_bytes }
-          : null,
+          : choice.path
+            ? { name: fileName ?? "image", path: choice.path, sha256: "", size_bytes: 1_800_000_000 }
+            : null,
       },
       plan: {
         steps: STEPS,
@@ -62,7 +70,9 @@ export function plan(request: UpdateRequestInput): JobPlan {
         summary:
           sim.mode === "recovery"
             ? `Recovery write of ${choice.version} over USB boot`
-            : `${from} to ${choice.version}; the device reboots`,
+            : ab
+              ? `Update to ${choice.version} over SSH: the board writes its spare slot, restarts into it, and keeps it once it's healthy`
+              : `${from} to ${choice.version}; the device reboots`,
       },
       canary: false,
     };
@@ -80,6 +90,42 @@ export function plan(request: UpdateRequestInput): JobPlan {
     }
   }
   return { devices };
+}
+
+/** In the simulation, every image but PhotonVision's uses the A/B layout. */
+function fileUsesAb(name: string): boolean {
+  return !/photonvision/i.test(name);
+}
+
+/**
+ * A freshly installed board starts its OS: the running record of the same
+ * board comes back on the new version, and the USB boot record is folded
+ * into it, as atlas-core's lineage does.
+ */
+function comesBackRunning(recovery: SimDevice, version: string, fileName: string) {
+  const board = recovery.attributes?.board_serial;
+  const running = fleet.find((d) => d.mode === "normal" && board && d.attributes?.board_serial === board);
+  if (!running) return;
+  setTimeout(() => {
+    const ab = fileUsesAb(fileName);
+    const os = version.replace(/^[a-z]+-raze-/i, "");
+    running.version = os;
+    running.online = true;
+    running.attributes = {
+      ...running.attributes,
+      os_version: os,
+      update_methods: ab ? AB_METHODS : "image-write",
+      ...(ab ? { slot_active: "A", update_state: "committed" } : {}),
+    };
+    running.caps = ab ? ["info", "update", "actions", "telemetry", "logs"] : ["info", "actions", "telemetry", "logs"];
+    running.actions = ab ? AB_ACTIONS : AB_ACTIONS.slice(0, 2);
+    const index = fleet.indexOf(recovery);
+    if (index >= 0) fleet.splice(index, 1);
+    void scan().then(() => {
+      inventory.delete(keyString(recovery.key));
+      emit({ type: "device-forgotten", key: recovery.key });
+    });
+  }, 2500);
 }
 
 let nextJob = 1;
@@ -195,8 +241,13 @@ async function runDevice(job: JobRecord, state: DeviceJobState): Promise<boolean
     if (sim.link?.kind === "usb-boot") {
       // A flashed board reboots out of USB boot; the next scan sees it leave.
       sim.online = false;
+      comesBackRunning(sim, state.release.version, state.release.artifact?.name ?? "");
     } else {
       sim.mode = "normal";
+      if (sim.attributes?.os_version) {
+        sim.version = state.release.version.replace(/^[a-z]+-raze-/i, "");
+        sim.attributes = { ...sim.attributes, os_version: sim.version };
+      }
       touch(state.device);
     }
     setStatus(job, state, { status: "verified", version: state.release.version });

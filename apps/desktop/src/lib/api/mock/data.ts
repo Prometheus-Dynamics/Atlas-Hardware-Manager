@@ -88,55 +88,63 @@ const RAZE_STEPS = [
 ].join("\n");
 
 /** A Raze in USB boot, as atlas-driver-rpi reports one. */
-const razeInUsbBoot: SimDevice = {
-  key: { family: RPI, serial: "port-3-2" },
-  model: "Raze",
-  name: "Raze",
-  version: "",
-  mode: "recovery",
-  parent: null,
-  online: true,
-  neverConfirms: false,
-  versions: {},
-  attributes: { chip: "BCM2712", model: "raze", storage: "emmc", recovery_steps: RAZE_STEPS },
-  link: { kind: "usb-boot" },
-  caps: ["info", "recover", "actions"],
-  actions: [
-    { id: "open-as-disk", label: "Open as USB disk", destructive: false },
-    { id: "update-bootloader", label: "Update bootloader (EEPROM)", destructive: true },
-  ],
-};
+export function razeUsbBoot(serial: string, board: string): SimDevice {
+  return {
+    key: { family: RPI, serial },
+    model: "Raze",
+    name: "Raze",
+    version: "",
+    mode: "recovery",
+    parent: null,
+    online: true,
+    neverConfirms: false,
+    versions: {},
+    attributes: { chip: "BCM2712", model: "raze", storage: "emmc", recovery_steps: RAZE_STEPS, board_serial: board },
+    link: { kind: "usb-boot" },
+    caps: ["info", "recover", "actions"],
+    actions: [
+      { id: "open-as-disk", label: "Open as USB disk", destructive: false },
+      { id: "update-bootloader", label: "Update bootloader (EEPROM)", destructive: true },
+    ],
+  };
+}
+
+/** Methods, capabilities, and actions of a Raze on the A/B layout. */
+export const AB_METHODS = "image-write, ab-tryboot, usb-boot-reboot";
+export const AB_ACTIONS: DeviceAction[] = [
+  { id: "locate", label: "Find it", destructive: false },
+  { id: "reboot", label: "Restart", destructive: false },
+  { id: "usb-boot", label: "Restart into USB boot", destructive: true },
+];
 
 /** A running Raze on the robot network, as atlas-driver-pd reports one. */
-const razeRunning: SimDevice = {
-  key: { family: RAZE, serial: "8f3a1c2d" },
+const razeRunning = (serial: string, version: string, ab: boolean): SimDevice => ({
+  key: { family: RAZE, serial },
   model: "Raze",
-  name: "raze-8f3a1c2d",
-  version: "2026.1.2",
+  name: `raze-${serial}`,
+  version,
   mode: "normal",
   parent: null,
   online: true,
   neverConfirms: false,
-  versions: { bootloader: "2025-12-08", device_package: "1.0.4" },
+  versions: { bootloader: "2025-12-08", device_package: ab ? "1.0.10" : "1.0.4" },
   attributes: {
     os: "HeliOS",
-    os_version: "2026.1.2",
+    os_version: version,
     revision: "gen1",
-    hostname: "raze-8f3a1c2d",
-    manage_url: "http://raze-8f3a1c2d.local:5800",
-    "mac.eth0": "d8:3a:dd:8f:3a:1c",
-    "mac.usb0": "02:3a:dd:8f:3a:1d",
-    update_methods: "atlas-ota, rpiboot-recovery",
+    hostname: `raze-${serial}`,
+    manage_url: `http://raze-${serial}.local:5800`,
+    "mac.eth0": `d8:3a:dd:${serial.slice(0, 2)}:${serial.slice(2, 4)}:${serial.slice(4, 6)}`,
+    update_methods: ab ? AB_METHODS : "image-write",
+    board_serial: serial,
     contract: "1",
     camera_stream: TEST_PATTERN,
+    ...(ab ? { slot_active: "A", update_state: "committed" } : {}),
   },
   link: { kind: "usb-network" },
-  caps: ["info", "update", "actions", "telemetry", "logs"],
-  actions: [
-    { id: "locate", label: "Find it", destructive: false },
-    { id: "reboot", label: "Restart", destructive: false },
-  ],
-};
+  caps: ab ? ["info", "update", "actions", "telemetry", "logs"] : ["info", "actions", "telemetry", "logs"],
+  actions: ab ? AB_ACTIONS : AB_ACTIONS.slice(0, 2),
+});
 
 export const fleet: SimDevice[] = [
   camera("H-1001", "cam-front"),
@@ -145,8 +153,9 @@ export const fleet: SimDevice[] = [
   board("M-2001", "drive-mcu-1", front),
   board("M-2002", "drive-mcu-2", front),
   { ...board("M-2003", "arm-mcu", null), version: "bootloader-2.1", mode: "recovery" },
-  razeRunning,
-  razeInUsbBoot,
+  razeRunning("8f3a1c2d", "2026.3.0", true),
+  razeRunning("5c0ffee1", "2025.4.2", false),
+  razeUsbBoot("port-3-2", "e5226d57"),
 ];
 
 export function simDevice(key: DeviceKey): SimDevice | undefined {
@@ -268,6 +277,22 @@ export const releases: ReleaseEntry[] = [
     pinned: false,
   },
   {
+    id: "pd-stable/rpi/helios-raze-2026.3.1",
+    family: RPI,
+    version: "helios-raze-2026.3.1",
+    channel: "stable",
+    origin: { kind: "remote", source: "pd-stable", url: "https://releases.example/helios-raze-2026.3.1.img.zst" },
+    artifact_name: "helios-raze-2026.3.1.img.zst",
+    sha256: "a12e".padEnd(64, "0"),
+    size_bytes: 1_930_000_000,
+    path: null,
+    signed: true,
+    boards: ["raze"],
+    notes_url: "https://example.com/helios/2026.3.1",
+    added_ms: now - day,
+    pinned: false,
+  },
+  {
     id: "pd-stable/rpi/helios-raze-2026.3.0",
     family: RPI,
     version: "helios-raze-2026.3.0",
@@ -297,22 +322,6 @@ export const releases: ReleaseEntry[] = [
     boards: ["raze"],
     notes_url: null,
     added_ms: now - 12 * day,
-    pinned: false,
-  },
-  {
-    id: "pd-stable/raze/2026.3.0",
-    family: RAZE,
-    version: "2026.3.0",
-    channel: "stable",
-    origin: { kind: "remote", source: "pd-stable", url: "https://releases.example/raze-ota-2026.3.0.tar.zst" },
-    artifact_name: "raze-ota-2026.3.0.tar.zst",
-    sha256: "0ca7".padEnd(64, "0"),
-    size_bytes: 412_000_000,
-    path: null,
-    signed: true,
-    boards: ["raze"],
-    notes_url: "https://example.com/helios/2026.3.0",
-    added_ms: now - 2 * day,
     pinned: false,
   },
   {

@@ -40,7 +40,7 @@
         title: `${aDevice(record)} is waiting in USB boot`,
         text: "Pick an image and Atlas will flash it and check every byte.",
         action: "Flash",
-        run: () => ui.openDevice(id, "flash"),
+        run: () => ui.openDevice(id, "software"),
         dismissable: false,
       });
     }

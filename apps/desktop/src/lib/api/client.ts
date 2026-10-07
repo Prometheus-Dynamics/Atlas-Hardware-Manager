@@ -17,7 +17,7 @@ export const onResync = isTauri ? tauriEvents.onResync : mockEvents.onResync;
 export const onDownloadProgress = isTauri ? tauriEvents.onDownloadProgress : mockEvents.onDownloadProgress;
 
 const RELEASE_FILTERS = [
-  { name: "Images, firmware, and update bundles", extensions: ["img", "xz", "zst", "gz", "bin", "hex", "zip", "pdupdate"] },
+  { name: "Images and firmware", extensions: ["img", "xz", "zst", "gz", "bin", "hex", "zip"] },
   { name: "Any file", extensions: ["*"] },
 ];
 

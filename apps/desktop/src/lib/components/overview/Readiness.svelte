@@ -45,7 +45,7 @@
       }
       case "flash": {
         const waiting = records.find((r) => r.presence === "online" && isRecovery(r));
-        if (waiting) ui.openDevice(keyString(waiting.key), "flash");
+        if (waiting) ui.openDevice(keyString(waiting.key), "software");
         return;
       }
       case "open-failed": {

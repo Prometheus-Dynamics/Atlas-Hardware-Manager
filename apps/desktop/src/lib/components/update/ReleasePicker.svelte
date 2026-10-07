@@ -1,9 +1,8 @@
 <script lang="ts">
-  // Release choice for one family: a catalog entry, or a free-text version
-  // for devices that fetch their own image.
-  import type { ReleaseChoice } from "#lib/api/client.ts";
+  // Release choice for one family in a fleet update: a catalog entry. A
+  // typed version only where the devices fetch their own image.
+  import type { ReleaseChoice, ReleaseEntry } from "#lib/api/client.ts";
   import Icon from "#lib/components/common/Icon.svelte";
-  import { releases } from "#lib/stores/releases.svelte.ts";
   import ReleaseOption from "./ReleaseOption.svelte";
 
   let {
@@ -11,15 +10,21 @@
     count,
     choice = $bindable(),
     current,
-  }: { family: string; count: number; choice: ReleaseChoice; current: string[] } = $props();
-
-  const entries = $derived(releases.forFamily(family));
-  const custom = $derived(!choice.release_id);
+    needsFile,
+    entries,
+  }: {
+    family: string;
+    count: number;
+    choice: ReleaseChoice;
+    current: string[];
+    needsFile: boolean;
+    /** Images that fit these devices, newest first. */
+    entries: ReleaseEntry[];
+  } = $props();
+  // A robot's target that isn't in the catalog: the devices fetch it themselves.
+  // svelte-ignore state_referenced_locally
+  const requested = !choice.release_id && !choice.path && choice.version.trim() ? choice.version.trim() : null;
   const upToDate = $derived(!!choice.version && current.length > 0 && current.every((v) => v === choice.version));
-
-  function pickCustom() {
-    choice = { version: choice.version, release_id: null };
-  }
 </script>
 
 <div class="flex flex-col gap-2">
@@ -39,33 +44,27 @@
     />
   {/each}
 
-  <div class="other" class:selected={custom}>
-    {#if entries.length > 0}
-      <label class="flex items-center gap-2 text-[12.5px] text-fg-muted">
-        <input type="radio" name="release-{family}" checked={custom} onchange={pickCustom} class="accent-[var(--accent)]" />
-        Another version (the device fetches it)
-      </label>
-    {/if}
-    {#if custom}
-      <input class="input mono mt-2" placeholder="e.g. 2026.3.0" bind:value={choice.version} aria-label="{family} version" />
-      {#if entries.length === 0}
-        <p class="hint mt-1.5">
-          No catalog entries for this family. Devices that fetch their own image only need a version; add a file on the
-          Releases page for devices that need one.
-        </p>
-      {/if}
-    {/if}
-  </div>
+  {#if requested && entries.length > 0}
+    <label class="flex items-center gap-2 px-1 text-[12.5px] text-fg-muted">
+      <input
+        type="radio"
+        name="release-{family}"
+        checked={!choice.release_id}
+        onchange={() => (choice = { version: requested, release_id: null })}
+        class="accent-[var(--accent)]"
+      />
+      <span class="mono">{requested}</span> · the devices fetch it
+    </label>
+  {:else if entries.length === 0 && needsFile}
+    <p class="hint">No images for {family} yet. Add one on the Releases page.</p>
+  {:else if entries.length === 0}
+    <input class="input mono" placeholder="Version, e.g. 2026.3.0" bind:value={choice.version} aria-label="{family} version" />
+    <p class="hint -mt-1">These devices fetch the version themselves.</p>
+  {/if}
 
   {#if upToDate}
-    <p class="flex items-center gap-1.5 text-[12px] text-warn-fg">
-      <Icon name="info-circle" size={14} />Already on {choice.version}; this reinstalls it.
+    <p class="flex items-center gap-1.5 text-[12px] text-fg-faint">
+      <Icon name="info-circle" size={14} />Already on {choice.version}; this installs it again.
     </p>
   {/if}
 </div>
-
-<style>
-  .other {
-    padding: 2px 4px;
-  }
-</style>

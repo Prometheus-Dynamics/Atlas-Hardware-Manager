@@ -1,5 +1,5 @@
 // The state behind every update or flash: release choices, the live plan
-// preview, and starting the job. Shared by UpdateFlow and the Flash tab.
+// preview, and starting the job. Shared by UpdateFlow and the Software tab.
 // Create it during component initialisation: it re-plans in an $effect.
 
 import {

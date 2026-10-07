@@ -50,6 +50,24 @@ pub struct PdIdentity {
     /// A camera view: an MJPEG stream or a still image, path or URL.
     #[serde(default)]
     pub camera_stream: Option<String>,
+    /// The A/B updater's state (`update status`), when the board has one.
+    #[serde(default)]
+    pub update: Option<UpdateReport>,
+}
+
+/// `update status` as the identity carries it; every field is optional.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct UpdateReport {
+    #[serde(default)]
+    pub state: Option<String>,
+    #[serde(default)]
+    pub slot_active: Option<String>,
+    #[serde(default)]
+    pub version_active: Option<String>,
+    #[serde(default)]
+    pub version_staged: Option<String>,
+    #[serde(default)]
+    pub error: Option<String>,
 }
 
 /// An action as a device lists it; only `id` is required.
@@ -131,6 +149,13 @@ impl PdIdentity {
         put("hostname", &self.hostname);
         put("manage_url", &self.manage_url);
         put("device_package_commit", &self.device_package.commit);
+        if let Some(update) = &self.update {
+            put("update_state", &update.state);
+            put("slot_active", &update.slot_active);
+            put("update_version_active", &update.version_active);
+            put("update_version_staged", &update.version_staged);
+            put("update_error", &update.error);
+        }
         if !self.update_methods.is_empty() {
             attributes.insert("update_methods".into(), self.update_methods.join(", "));
         }
@@ -186,6 +211,9 @@ mod tests {
         "update_methods": ["image-write"],
         "manage_url": "http://raze-abcdef01.local:5800/",
         "macs": { "usb0": "02:aa:bb:cc:dd:01" },
+        "update": { "state": "confirmed", "slot_active": "B", "slot_staged": "B",
+                    "version_active": "v2026.1.0", "version_staged": "v2026.1.0",
+                    "progress": 1000, "error": "" },
         "something_new": 42
     }"#;
 
@@ -202,6 +230,9 @@ mod tests {
         assert_eq!(identity.attributes["mac.usb0"], "02:aa:bb:cc:dd:01");
         assert_eq!(identity.versions["bootloader"], "2025-06-01");
         assert_eq!(identity.attributes["board_serial"], "abcdef01");
+        assert_eq!(identity.attributes["update_state"], "confirmed");
+        assert_eq!(identity.attributes["slot_active"], "B");
+        assert!(!identity.attributes.contains_key("update_error"));
     }
 
     #[test]

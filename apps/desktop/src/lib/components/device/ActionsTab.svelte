@@ -18,7 +18,8 @@
     let stale = false;
     api
       .deviceActions(key)
-      .then((list) => !stale && (actions = list))
+      // Restarting into USB boot belongs to Software, which continues into the install.
+      .then((list) => !stale && (actions = list.filter((a) => a.id !== "usb-boot")))
       .catch((e) => !stale && (error = errorText(e)));
     return () => (stale = true);
   });

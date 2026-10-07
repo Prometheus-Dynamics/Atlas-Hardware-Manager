@@ -5,7 +5,7 @@ import type { api as tauriApi } from "./commands";
 import type { AppInfo, DeviceAction, HealthCheck, OrionConnection, ReleaseEntry, RobotProfile } from "./types";
 import { keyString } from "./types";
 import { atlasChannel, downloadChannel, emit, latency, resyncChannel, sleep } from "./mock/bus";
-import { fleet, inventory, jobs, releases, robots, settings, simDevice, sources } from "./mock/data";
+import { fleet, inventory, jobs, razeUsbBoot, releases, robots, settings, simDevice, sources } from "./mock/data";
 import * as runner from "./mock/runner";
 import { activity, logLines, metrics, online, record, restart, seedHistory } from "./mock/observe";
 import { listRecords, robotStatuses, robotUpdateRequest, scan, touch } from "./mock/scan";
@@ -80,6 +80,28 @@ function changed() {
   changeTimer = setTimeout(() => void scan().then(schedule), 300);
 }
 
+/**
+ * The board restarts straight into USB boot: the running record goes
+ * offline, and a few seconds later the same board (same board_serial)
+ * shows up as a USB boot device.
+ */
+function intoUsbBoot(serial: string) {
+  const running = fleet.find((d) => d.key.serial === serial);
+  const board = running?.attributes?.board_serial;
+  if (!running || !board) return;
+  setTimeout(() => {
+    running.online = false;
+    void scan();
+  }, 600);
+  setTimeout(() => {
+    const port = `port-1-${board.slice(0, 4)}`;
+    const existing = fleet.find((d) => d.key.serial === port);
+    if (existing) existing.online = true;
+    else fleet.push(razeUsbBoot(port, board));
+    void scan();
+  }, 4500);
+}
+
 function autoScan() {
   if (watching) return;
   watching = true;
@@ -119,6 +141,7 @@ export const mockApi: Api = {
       const found = (simDevice(key)?.actions ?? ACTIONS).find((a) => a.id === action);
       if (!found) throw `${keyString(key)} has no action named \`${action}\``;
       if (action === "reboot") restart(key);
+      if (action === "usb-boot") intoUsbBoot(key.serial);
       const entry = stored(key);
       const name = entry.label ?? entry.record?.identity.name ?? keyString(key);
       record("action-run", "info", key, `${found.label} on ${name}`);
@@ -314,6 +337,10 @@ if (typeof window !== "undefined") {
       const device = fleet.find((d) => d.key.serial === serial);
       if (device) device.online = online;
       changed();
+    },
+    /** Holding the boot button while plugging in: `__atlasMock.holdBoot("5c0ffee1")`. */
+    holdBoot(serial: string) {
+      intoUsbBoot(serial);
     },
     neverConfirms(serial: string, value = true) {
       const device = fleet.find((d) => d.key.serial === serial);

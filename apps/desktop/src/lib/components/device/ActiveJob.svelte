@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Shown instead of Flash or Update while this device is already in a job,
+  // Shown in the Software tab while this device is already in a job,
   // so a second job can't be started on top of the first.
   import { goto } from "$app/navigation";
   import type { DeviceJobState, JobId } from "#lib/api/client.ts";
