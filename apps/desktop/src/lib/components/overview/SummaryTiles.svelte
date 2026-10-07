@@ -84,10 +84,11 @@
   }
 </script>
 
-<div class="grid gap-3" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr))">
+<!-- As many columns as fit: five across on a wide window, wrapping on a narrow one. -->
+<div class="auto-grid fit shrink-0" style="--min: 168px">
   {#if !ready}
     {#each Array(placeholders) as _, i (i)}
-      <div class="glass flex h-[132px] flex-col gap-3 p-4" aria-hidden="true">
+      <div class="glass flex h-[112px] flex-col gap-3 p-4" aria-hidden="true">
         <Skeleton width="40%" height={12} />
         <Skeleton width="55%" height={26} />
         <div class="mt-auto"><Skeleton height={24} /></div>

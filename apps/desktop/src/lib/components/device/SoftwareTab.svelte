@@ -159,7 +159,11 @@
 {#if handoff}
   <HandoffView {handoff} {steps} />
 {:else}
-  <div class="flex flex-col gap-6">
+  <!-- One column, or two in a wide panel: what's installed and what to
+       install | how, its checks, and the button. The button stays in view
+       at the bottom either way. -->
+  <div class="software">
+    <div class="pick flex min-w-0 flex-col gap-6">
     <section class="flex flex-col gap-2">
       <h3 class="section-title">Installed</h3>
       <InstalledCard {record} />
@@ -174,10 +178,11 @@
         </p>
       {/if}
     </section>
+    </div>
 
-    <section class="flex flex-col gap-3">
+    <section class="how flex min-w-0 flex-col gap-3">
       <h3 class="section-title">How</h3>
-      <div class="grid gap-2" class:grid-cols-2={!!fresh}>
+      <div class="auto-grid" style="--min: 220px; --gap: 8px; --max: {fresh ? 2 : 1}">
         <MethodCard
           title="Update in place"
           icon="arrow-up"
@@ -231,7 +236,7 @@
       {/if}
     </section>
 
-    <div class="flex flex-col gap-2">
+    <div class="act flex min-w-0 flex-col gap-2">
       {#if problem && version}
         <p class="problem" role="alert" in:rise><Icon name="alert-circle" size={16} />{problem}</p>
         {#if draft.checksumFailed}
@@ -275,6 +280,42 @@
 {/if}
 
 <style>
+  .software {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+  /* The action sticks to the bottom of the tab while the rest scrolls. */
+  .act {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin: -12px 0 -16px;
+    padding: 12px 0 16px;
+    background: linear-gradient(to bottom, transparent, var(--layer) 12px);
+  }
+  @container (min-width: 640px) {
+    .software {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+      grid-template-rows: auto 1fr;
+      grid-template-areas:
+        "pick how"
+        "pick act";
+      gap: 16px 28px;
+      align-items: start;
+    }
+    .pick {
+      grid-area: pick;
+    }
+    .how {
+      grid-area: how;
+    }
+    .act {
+      grid-area: act;
+      margin-top: -4px;
+    }
+  }
   .problem {
     display: flex;
     gap: 8px;

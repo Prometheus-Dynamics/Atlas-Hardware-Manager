@@ -15,15 +15,18 @@
 
   let { records }: { records: DeviceRecord[] } = $props();
 
-  const NODE_H = 48;
-  const ROW_H = 64;
   const PAD = 8;
 
+  // The map fits the box it is given: rows spread out when there is height
+  // to spare and tighten (down to a floor, then scroll) when there isn't.
   let width = $state(720);
+  let boxHeight = $state(360);
   // Nodes widen on big screens so names and readings have room.
-  const NODE_W = $derived(Math.round(Math.min(260, Math.max(188, width / 5))));
   const map = $derived(layoutMap(records));
-  const colW = $derived(map.depth === 0 ? 0 : Math.max(NODE_W + 56, (width - NODE_W - PAD * 2) / map.depth));
+  const NODE_W = $derived(Math.round(Math.min(280, Math.max(140, (width - PAD * 2) / (map.depth + 1) - 64))));
+  const ROW_H = $derived(Math.floor(Math.min(92, Math.max(44, (boxHeight - PAD * 2) / Math.max(1, map.rows)))));
+  const NODE_H = $derived(Math.min(54, Math.max(36, ROW_H - 12)));
+  const colW = $derived(map.depth === 0 ? 0 : Math.max(NODE_W + 40, (width - NODE_W - PAD * 2) / map.depth));
   const height = $derived(map.rows * ROW_H + PAD * 2);
   const byId = $derived(new Map(map.nodes.map((n) => [n.id, n])));
 
@@ -61,8 +64,8 @@
   }
 </script>
 
-<div class="relative w-full overflow-x-auto" bind:clientWidth={width}>
-  <div class="relative" style="height: {height}px; min-width: {map.depth * colW + NODE_W + PAD * 2}px">
+<div class="box" bind:clientWidth={width} bind:clientHeight={boxHeight}>
+  <div class="relative my-auto shrink-0" style="height: {height}px; min-width: {map.depth * colW + NODE_W + PAD * 2}px">
     <svg class="absolute inset-0 h-full w-full" aria-hidden="true">
       {#each map.edges as edge (edge.from + edge.to)}
         {@const from = byId.get(edge.from)}
@@ -81,7 +84,7 @@
         <div class="node host" style="left: {x(node)}px; top: {y(node) - NODE_H / 2}px; width: {NODE_W}px; height: {NODE_H}px">
           <span class="ico"><Icon name="device-laptop" size={17} stroke={1.7} /></span>
           <span class="min-w-0">
-            <span class="name">This computer</span>
+            <span class="name" title="This computer">This computer</span>
             <span class="sub">Atlas</span>
           </span>
         </div>
@@ -97,8 +100,8 @@
         >
           <span class="ico"><Icon name={deviceIcon(record)} size={17} stroke={1.7} /></span>
           <span class="min-w-0 flex-1">
-            <span class="name">{deviceName(record)}</span>
-            <span class="sub">{detail(record)}</span>
+            <span class="name" title={deviceName(record)}>{deviceName(record)}</span>
+            <span class="sub" title={detail(record)}>{detail(record)}</span>
           </span>
           <StatusDot state={dotState(record)} />
         </button>
@@ -108,6 +111,15 @@
 </div>
 
 <style>
+  /* Fills the card body; the map sits centred in it (auto margins never
+     push content out of reach the way centring would). */
+  .box {
+    position: absolute;
+    inset: 6px 10px 10px;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+  }
   .wire {
     fill: none;
     stroke: var(--glass-border);

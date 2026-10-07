@@ -45,7 +45,7 @@
 
 <style>
   .list {
-    padding: 6px 0;
+    padding: 0 0 6px;
     border-radius: var(--r-panel);
   }
   .head {
@@ -53,8 +53,14 @@
     grid-template-columns: 20px minmax(180px, 1.4fr) minmax(120px, 1fr) minmax(90px, 0.7fr) minmax(90px, 0.8fr) minmax(150px, 1fr);
     align-items: center;
     gap: 16px;
-    padding: 6px 20px 10px;
+    padding: 12px 20px 10px;
     margin-bottom: 4px;
+    /* Column names stay in view while the rows scroll under them. */
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--layer-solid);
+    border-radius: var(--r-panel) var(--r-panel) 0 0;
     border-bottom: 1px solid var(--hairline);
     font-size: 12px;
     font-weight: 500;

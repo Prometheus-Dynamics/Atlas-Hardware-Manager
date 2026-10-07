@@ -3,6 +3,8 @@
   import Button from "#lib/components/common/Button.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
   import PageHeader from "#lib/components/common/PageHeader.svelte";
+  import Page from "#lib/components/layout/Page.svelte";
+  import Region from "#lib/components/layout/Region.svelte";
   import DeviceGrid from "#lib/components/inventory/DeviceGrid.svelte";
   import DeviceList from "#lib/components/inventory/DeviceList.svelte";
   import InventoryEmpty from "#lib/components/inventory/InventoryEmpty.svelte";
@@ -43,50 +45,55 @@
 
 <svelte:head><title>Devices · Atlas</title></svelte:head>
 
-<div class="reveal flex flex-col gap-5">
-  <PageHeader subtitle={subline}>
-    {#snippet heading()}<RobotMenu />{/snippet}
-    {#snippet actions()}
-      <SearchPill />
-      {#if selecting}
-        <Button
-          variant="primary"
-          icon={flashOnly ? "bolt" : "arrow-up"}
-          disabled={count === 0}
-          title={count === 0 ? "None of the selected devices can be updated right now" : "Update the selection (U)"}
-          onclick={() => ui.updateSelection(staged)}
-        >
-          {flashOnly ? "Flash" : "Update"} ({count})
-        </Button>
-      {:else if insights.outdated.length > 0}
-        <Button variant="primary" icon="arrow-up" onclick={updateAll}>Update all</Button>
-      {/if}
-    {/snippet}
-  </PageHeader>
+<Page>
+  {#snippet header()}
+    <PageHeader subtitle={subline}>
+      {#snippet heading()}<RobotMenu />{/snippet}
+      {#snippet actions()}
+        <SearchPill />
+        {#if selecting}
+          <Button
+            variant="primary"
+            icon={flashOnly ? "bolt" : "arrow-up"}
+            disabled={count === 0}
+            title={count === 0 ? "None of the selected devices can be updated right now" : "Update the selection (U)"}
+            onclick={() => ui.updateSelection(staged)}
+          >
+            {flashOnly ? "Flash" : "Update"} ({count})
+          </Button>
+        {:else if insights.outdated.length > 0}
+          <Button variant="primary" icon="arrow-up" onclick={updateAll}>Update all</Button>
+        {/if}
+      {/snippet}
+    </PageHeader>
+  {/snippet}
 
   {#if devices.loaded && devices.all.length === 0}
-    <InventoryEmpty />
+    <Region><InventoryEmpty /></Region>
   {:else}
     <NeedsYou />
     <InventoryToolbar />
 
-    {#if devices.loaded && shown.length === 0}
-      <p class="py-10 text-center text-[13px] text-fg-muted" in:softFade>
-        No device matches.
-        <button type="button" class="link" onclick={() => ui.clearFilters()}>Clear filters</button>
-      </p>
-    {:else if ui.view === "cards"}
-      <DeviceGrid />
-    {:else}
-      <DeviceList />
-    {/if}
+    <!-- The devices take the rest of the height and scroll inside it. -->
+    <Region class="-mx-1" inner="p-1" label="Devices">
+      {#if devices.loaded && shown.length === 0}
+        <p class="py-10 text-center text-[13px] text-fg-muted" in:softFade>
+          No device matches.
+          <button type="button" class="link" onclick={() => ui.clearFilters()}>Clear filters</button>
+        </p>
+      {:else if ui.view === "cards"}
+        <DeviceGrid />
+      {:else}
+        <DeviceList />
+      {/if}
+    </Region>
 
     {#if devices.scanWarnings.length > 0}
-      <ul class="flex flex-col gap-1 text-[12.5px] text-warn-fg">
+      <ul class="flex shrink-0 flex-col gap-1 text-[12.5px] text-warn-fg">
         {#each devices.scanWarnings as warning, i (i)}
           <li class="flex items-center gap-2"><Icon name="alert-triangle" size={14} />{warning}</li>
         {/each}
       </ul>
     {/if}
   {/if}
-</div>
+</Page>

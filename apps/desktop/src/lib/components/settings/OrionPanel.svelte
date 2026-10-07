@@ -57,7 +57,7 @@
   }
 </script>
 
-<GlassCard title="Orion" subtitle="Readings, actions, and updates through the agent on your devices" icon="router" large>
+<GlassCard title="Orion" subtitle="Readings, actions, and updates through the agent on your devices" icon="router" large fill>
   {#if connection === undefined}
     <p class="hint">Checking…</p>
   {:else if connection === null}

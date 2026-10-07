@@ -10,6 +10,7 @@
   import { clock } from "#lib/stores/clock.svelte.ts";
   import { jobs } from "#lib/stores/jobs.svelte.ts";
   import { rise } from "#lib/ui/motion.ts";
+  import Region from "#lib/components/layout/Region.svelte";
   import JobDeviceRow from "./JobDeviceRow.svelte";
   import LogTail from "./LogTail.svelte";
   import StageProgress from "./StageProgress.svelte";
@@ -30,12 +31,14 @@
   const icon = $derived(single && isRecoveryPlan(single.plan) ? ("bolt" as const) : ("arrow-up" as const));
 </script>
 
-<section class="glass detail flex flex-col gap-6 p-6">
-  <header class="flex items-start gap-4">
+<!-- Fills the space it's given: the header stays, the rest scrolls, and a
+     single device's log takes whatever height is left. -->
+<section class="glass detail flex h-full min-h-0 flex-col">
+  <header class="flex shrink-0 items-start gap-4 border-b border-hairline px-6 pb-4 pt-5">
     <IconTile icon={running ? icon : problems > 0 ? "alert-circle" : job.state === "cancelled" ? "player-stop" : "circle-check"} tone={tile} size={44} />
     <div class="min-w-0 flex-1">
-      <h2 class="truncate text-[20px] font-semibold tracking-[-0.01em] text-fg">{jobTitle(job)}</h2>
-      <p class="mt-0.5 truncate text-[13px] text-fg-muted">
+      <h2 class="truncate text-[20px] font-semibold tracking-[-0.01em] text-fg" title={jobTitle(job)}>{jobTitle(job)}</h2>
+      <p class="mt-0.5 truncate text-[13px] text-fg-muted" title={image}>
         <span class="mono">{image}</span> · started {timeAgo(job.created_ms, clock.now)}{running ? "" : ` · took ${duration(total)}`}
       </p>
     </div>
@@ -50,6 +53,7 @@
     {/if}
   </header>
 
+  <Region inner="flex min-h-full flex-col gap-5 px-6 pb-6 pt-5">
   {#if job.devices.length === 0}
     <div class="flex flex-col gap-3"><Skeleton height={80} /><Skeleton height={40} /></div>
   {:else if single}
@@ -76,7 +80,7 @@
         </div>
       </div>
     {/if}
-    <LogTail lines={single.log} />
+    <LogTail lines={single.log} fill />
   {:else}
     <ul class="flex flex-col gap-2">
       {#each job.devices as state (keyString(state.device))}
@@ -84,6 +88,7 @@
       {/each}
     </ul>
   {/if}
+  </Region>
 </section>
 
 <style>

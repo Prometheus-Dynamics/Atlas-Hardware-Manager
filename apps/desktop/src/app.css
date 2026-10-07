@@ -150,6 +150,34 @@ body {
   .link:hover {
     text-decoration: underline;
   }
+  /*
+   * Layout primitives. A page fills the window: header, then a body that
+   * takes the rest of the height (see Page.svelte). Only regions with
+   * unbounded content scroll, inside their own bounds (Region.svelte).
+   *
+   * `.auto-grid`: as many columns as fit, each at least --min wide and at
+   * most --max columns, driven by the width it is given, not the viewport.
+   */
+  .auto-grid {
+    --min: 240px;
+    --max: 12;
+    --gap: 12px;
+    display: grid;
+    gap: var(--gap);
+    grid-template-columns: repeat(
+      auto-fill,
+      minmax(max(min(var(--min), 100%), calc((100% - (var(--max) - 1) * var(--gap)) / var(--max))), 1fr)
+    );
+  }
+  .auto-grid.fit {
+    grid-template-columns: repeat(
+      auto-fit,
+      minmax(max(min(var(--min), 100%), calc((100% - (var(--max) - 1) * var(--gap)) / var(--max))), 1fr)
+    );
+  }
+  .auto-grid > * {
+    min-width: 0;
+  }
   kbd {
     font-family: var(--font-code);
     font-size: 11px;
@@ -210,8 +238,12 @@ body {
     transform: translateY(4px);
   }
 }
+/* `backwards` holds the first frame during the stagger delay only. Once an
+ * element has risen it drops the animation's styles, so nothing is left on a
+ * composited layer: with `both`, Chromium sometimes never repainted finished
+ * cards (the Releases list stayed blank). */
 .reveal > * {
-  animation: reveal var(--t-enter) var(--ease-out) both;
+  animation: reveal var(--t-enter) var(--ease-out) backwards;
 }
 .reveal > :nth-child(2) {
   animation-delay: calc(var(--stagger) * 1);

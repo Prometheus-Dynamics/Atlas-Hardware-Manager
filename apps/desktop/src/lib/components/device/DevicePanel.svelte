@@ -11,6 +11,7 @@
   import type { IconName } from "#lib/ui/icons.ts";
   import { softFade } from "#lib/ui/motion.ts";
   import { jobs } from "#lib/stores/jobs.svelte.ts";
+  import Region from "#lib/components/layout/Region.svelte";
   import ActionsTab from "./ActionsTab.svelte";
   import ActiveJob from "./ActiveJob.svelte";
   import HistoryTab from "./HistoryTab.svelte";
@@ -68,8 +69,8 @@
     <div class="flex items-center gap-4 pr-10">
       <IconTile icon={deviceIcon(record)} size={52} tone={recovery && record.presence === "online" ? "accent" : "neutral"} />
       <div class="min-w-0 flex-1">
-        <h2 class="truncate text-[18px] font-semibold text-fg">{deviceName(record)}</h2>
-        <p class="truncate text-[13px] text-fg-muted">{subline}</p>
+        <h2 class="truncate text-[18px] font-semibold text-fg" title={deviceName(record)}>{deviceName(record)}</h2>
+        <p class="truncate text-[13px] text-fg-muted" title={subline}>{subline}</p>
       </div>
     </div>
     <div class="mt-3 flex flex-wrap items-center gap-1.5">
@@ -89,7 +90,10 @@
     {/if}
   </header>
 
-  <div class="min-h-0 flex-1 overflow-y-auto border-t border-hairline px-6 pb-6 pt-5" role="tabpanel">
+  <!-- The tab scrolls under a fixed header. Its width is a container, so a
+       wide panel can lay a tab out in columns. -->
+  <div class="flex min-h-0 flex-1 flex-col border-t border-hairline" role="tabpanel">
+    <Region inner="device-tab px-6 pb-6 pt-5">
     {#key current}
       <div in:softFade>
         {#if current === "overview"}
@@ -107,5 +111,12 @@
         {/if}
       </div>
     {/key}
+    </Region>
   </div>
 {/if}
+
+<style>
+  :global(.device-tab) {
+    container-type: inline-size;
+  }
+</style>

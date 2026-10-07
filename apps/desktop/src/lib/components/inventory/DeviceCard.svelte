@@ -116,7 +116,7 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    min-height: 168px;
+    min-height: var(--card-h, 168px);
     padding: 16px;
     border-radius: var(--r-card);
     background: var(--glass);

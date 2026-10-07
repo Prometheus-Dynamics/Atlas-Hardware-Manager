@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
   import { api, keyString, type RobotProfile, type RobotStatus } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
@@ -8,24 +7,27 @@
   import Pill from "#lib/components/common/Pill.svelte";
   import StatusDot from "#lib/components/common/StatusDot.svelte";
   import { devices } from "#lib/stores/devices.svelte.ts";
-  import { system } from "#lib/stores/system.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
+  import { makeReady, showDevices } from "./robotActions";
   import { ROBOT_STATE } from "./robotState";
 
-  let { profile, status }: { profile: RobotProfile; status: RobotStatus | undefined } = $props();
+  let {
+    profile,
+    status,
+    selected = false,
+    onselect,
+  }: {
+    profile: RobotProfile;
+    status: RobotStatus | undefined;
+    /** Shown in the detail view beside the list. */
+    selected?: boolean;
+    /** Makes the name a button that shows this robot in the detail view. */
+    onselect?: () => void;
+  } = $props();
 
   const badge = $derived(status ? ROBOT_STATE[status.state] : null);
   const editing = $derived(ui.panel?.kind === "robot" && ui.panel.name === profile.name);
-
-  async function makeReady() {
-    const request = await api.robotUpdateRequest(profile.name, system.settings?.staged_default ?? null);
-    if (!request) {
-      toasts.success(`${profile.name} is already ready.`);
-      return;
-    }
-    ui.openUpdate(request, `Make ${profile.name} ready`);
-  }
 
   async function remove() {
     await api.deleteRobot(profile.name);
@@ -33,17 +35,21 @@
     toasts.success(`Deleted ${profile.name}.`);
   }
 
-  function showDevices() {
-    ui.robot = profile.name;
-    void goto("/devices");
-  }
 </script>
 
-<article class="glass card flex flex-col" class:editing>
+<article class="glass card flex flex-col" class:editing class:selected>
   <header class="flex items-start gap-3 px-5 pt-4">
     <IconTile icon="robot" />
     <div class="min-w-0 flex-1">
-      <h2 class="truncate text-[15px] font-semibold text-fg">{profile.name}</h2>
+      {#if onselect}
+        <h2 class="min-w-0">
+          <button type="button" class="block max-w-full truncate text-left text-[15px] font-semibold text-fg hover:underline" aria-pressed={selected} title={profile.name} onclick={onselect}>
+            {profile.name}
+          </button>
+        </h2>
+      {:else}
+        <h2 class="truncate text-[15px] font-semibold text-fg" title={profile.name}>{profile.name}</h2>
+      {/if}
       <p class="truncate text-[12.5px] text-fg-muted">{profile.notes ?? `${profile.roles.length} role${profile.roles.length === 1 ? "" : "s"}`}</p>
     </div>
     {#if badge}<Pill tone={badge.tone} icon={badge.icon} label={badge.label} />{/if}
@@ -87,9 +93,9 @@
 
   <footer class="flex flex-wrap items-center gap-2 border-t border-hairline px-4 py-3">
     {#if status && status.state !== "ready"}
-      <Button variant="tint" size="sm" icon="wand" action={makeReady}>Make ready</Button>
+      <Button variant="tint" size="sm" icon="wand" action={() => makeReady(profile.name)}>Make ready</Button>
     {/if}
-    <Button size="sm" icon="layout-grid" onclick={showDevices}>Devices</Button>
+    <Button size="sm" icon="layout-grid" onclick={() => showDevices(profile.name)}>Devices</Button>
     <Button variant="ghost" size="sm" icon="pencil" onclick={() => ui.openRobot(profile.name)}>Edit</Button>
     <span class="ml-auto">
       <ConfirmButton action={remove} size="sm" variant="ghost" icon="trash" label="Delete {profile.name}" prompt="Delete {profile.name}?" confirmLabel="Delete" />
@@ -103,6 +109,10 @@
     transition:
       border-color var(--t-fast),
       box-shadow var(--t-med);
+  }
+  .card.selected {
+    border-color: var(--accent-tint-strong);
+    background: var(--glass-hover);
   }
   .card.editing {
     border-color: var(--glass-border-strong);

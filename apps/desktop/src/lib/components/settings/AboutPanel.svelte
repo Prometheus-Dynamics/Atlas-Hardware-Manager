@@ -19,7 +19,7 @@
   );
 </script>
 
-<GlassCard title="Atlas Hardware Manager" subtitle={system.info ? `Version ${system.info.version}` : undefined} icon="info-circle" large>
+<GlassCard title="Atlas Hardware Manager" subtitle={system.info ? `Version ${system.info.version}` : undefined} icon="info-circle" large fill>
   {#if system.info}
     <dl class="grid grid-cols-[7.5rem_1fr] gap-x-3 gap-y-2 text-[13px]">
       <dt class="text-fg-faint">Platform</dt>

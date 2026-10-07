@@ -1,6 +1,6 @@
 <script lang="ts">
-  // The verdict, big: is this robot good to go, and the one button that
-  // gets it there.
+  // The verdict as a slim strip: is this robot good to go, and the one
+  // button that gets it there.
   import { api, keyString, sameKey, type DeviceRecord } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
@@ -61,17 +61,17 @@
 
 <section class="hero glass {v.tone}">
   <div class="mark">
-    <Icon name={v.icon} size={30} stroke={1.7} />
+    <Icon name={v.icon} size={18} stroke={1.9} />
   </div>
   {#key v.title + v.detail}
-    <div class="min-w-0 flex-1" in:softFade>
-      <h2 class="text-[24px] font-semibold tracking-[-0.02em] text-fg">{v.title}</h2>
-      <p class="mt-0.5 text-[13.5px] text-fg-muted">{v.detail}</p>
+    <div class="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-0.5" in:softFade>
+      <h2 class="truncate text-[16px] font-semibold tracking-[-0.01em] text-fg" title={v.title}>{v.title}</h2>
+      <p class="min-w-0 truncate text-[13px] text-fg-muted" title={v.detail}>{v.detail}</p>
     </div>
   {/key}
   {#if v.next}
     {@const step = NEXT[v.next]}
-    <Button variant={v.next === "scan" ? "glass" : "primary"} size="lg" icon={step.icon} action={next} busy={v.next === "scan" && devices.scanning}>
+    <Button variant={v.next === "scan" ? "glass" : "primary"} icon={step.icon} action={next} busy={v.next === "scan" && devices.scanning}>
       {step.label}
     </Button>
   {/if}
@@ -82,10 +82,11 @@
     --tone: var(--info);
     position: relative;
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
-    gap: 16px 20px;
-    padding: 22px 24px;
+    flex-shrink: 0;
+    gap: 8px 14px;
+    padding: 10px 14px 10px 18px;
     overflow: hidden;
     border-radius: var(--r-panel);
   }
@@ -119,8 +120,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 60px;
-    height: 60px;
+    width: 34px;
+    height: 34px;
     flex-shrink: 0;
     border-radius: 50%;
     color: var(--tone);

@@ -1,11 +1,13 @@
 <script lang="ts">
-  // The last few log lines, expandable to the full log, with copy.
+  // The last few log lines, expandable to the full log, with copy. With
+  // `fill` it takes the height its parent leaves and shows the whole log.
   import Button from "#lib/components/common/Button.svelte";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
 
-  let { lines, tail = 6 }: { lines: string[]; tail?: number } = $props();
+  let { lines, tail = 6, fill = false }: { lines: string[]; tail?: number; fill?: boolean } = $props();
 
-  let expanded = $state(false);
+  // svelte-ignore state_referenced_locally
+  let expanded = $state(fill);
   let box: HTMLPreElement | undefined = $state();
   const shown = $derived(expanded ? lines : lines.slice(-tail));
 
@@ -25,11 +27,11 @@
   }
 </script>
 
-<div class="log">
+<div class="log" class:fill>
   <div class="flex items-center justify-between gap-2 px-4 pt-2.5">
     <span class="text-[12px] font-medium text-fg-faint">Log · {lines.length} line{lines.length === 1 ? "" : "s"}</span>
     <div class="flex gap-1">
-      {#if lines.length > tail}
+      {#if lines.length > tail && !fill}
         <Button variant="ghost" size="sm" icon={expanded ? "chevron-up" : "chevron-down"} onclick={() => (expanded = !expanded)}>
           {expanded ? "Show less" : "Show all"}
         </Button>
@@ -61,5 +63,16 @@
   }
   pre.expanded {
     max-height: 320px;
+  }
+  .log.fill {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 13em;
+  }
+  .fill pre {
+    flex: 1 1 0;
+    min-height: 8em;
+    max-height: none;
   }
 </style>

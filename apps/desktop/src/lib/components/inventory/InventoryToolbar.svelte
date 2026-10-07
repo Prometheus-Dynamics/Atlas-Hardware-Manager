@@ -18,18 +18,19 @@
   }
 </script>
 
-<div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+<!-- One line at every width: the family chips scroll sideways if they must. -->
+<div class="flex shrink-0 items-center gap-3 whitespace-nowrap">
   <SegmentedControl options={views} value={ui.view} label="Layout" size="sm" onchange={(v) => ui.setView(v)} />
 
   {#if devices.families.length > 1}
-    <div class="flex flex-wrap items-center gap-1" role="group" aria-label="Device family">
+    <div class="families flex min-w-0 items-center gap-1" role="group" aria-label="Device family">
       {#each devices.families as family (family)}
         <button type="button" class="chip" aria-pressed={ui.families.has(family)} onclick={() => toggleFamily(family)}>{family}</button>
       {/each}
     </div>
   {/if}
 
-  <label class="flex items-center gap-2 text-[12.5px] text-fg-muted">
+  <label class="flex shrink-0 items-center gap-2 text-[12.5px] text-fg-muted">
     <Toggle bind:checked={ui.showOffline} label="Show offline devices" />
     Show offline
   </label>
@@ -38,7 +39,7 @@
     <Button variant="ghost" size="sm" icon="filter-off" onclick={() => ui.clearFilters()}>Clear filters</Button>
   {/if}
 
-  <div class="ml-auto flex items-center gap-2 text-[12.5px] text-fg-faint">
+  <div class="ml-auto flex shrink-0 items-center gap-2 text-[12.5px] text-fg-faint">
     {#if ui.selection.size > 0}
       <span class="text-accent-text" in:pop>{ui.selection.size} selected</span>
       <Button variant="ghost" size="sm" onclick={() => ui.selection.clear()}>Clear</Button>
@@ -49,7 +50,12 @@
 </div>
 
 <style>
+  .families {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
   .chip {
+    flex-shrink: 0;
     height: 26px;
     padding: 0 11px;
     border-radius: var(--r-pill);

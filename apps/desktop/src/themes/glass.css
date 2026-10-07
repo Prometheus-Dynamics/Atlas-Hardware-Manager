@@ -22,6 +22,8 @@
   --scrim: rgba(8, 9, 12, 0.35);
   --shadow-layer: 0 24px 60px -12px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.25);
   --shadow-lift: 0 6px 18px -6px rgba(0, 0, 0, 0.5);
+  /* The shade at the edge of a scrolled region: more above or below. */
+  --scroll-edge: rgba(0, 0, 0, 0.3);
 
   /* Text */
   --fg: #eef0f5;

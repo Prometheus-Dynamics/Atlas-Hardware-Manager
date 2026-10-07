@@ -8,9 +8,10 @@
   const label = $derived(
     ui.panel?.kind === "device" ? "Device" : ui.panel?.kind === "robot" ? "Robot" : ui.panel?.kind === "update" ? ui.panel.title : "",
   );
-  // The device panel grows with the window so live readings get room.
+  // The device panel grows with the window, like clamp(480px, 38vw, 820px):
+  // live readings get room, and past ~700px its tabs lay out in two columns.
   let viewport = $state(1280);
-  const deviceWidth = $derived(Math.round(Math.min(760, Math.max(520, viewport * 0.36))));
+  const deviceWidth = $derived(Math.round(Math.min(820, Math.max(480, viewport * 0.38))));
   const width = $derived(ui.panel?.kind === "device" ? deviceWidth : 460);
 </script>
 

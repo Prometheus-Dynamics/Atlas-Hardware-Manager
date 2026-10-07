@@ -20,8 +20,10 @@
   <NavRail />
   <div class="relative flex min-w-0 flex-1 flex-col">
     <div class="relative min-h-0 flex-1">
-      <main class="h-full overflow-y-auto px-6 pb-10 pt-7 xl:px-8 min-[1800px]:px-12">
-        <div class="mx-auto max-w-[2200px]">
+      <!-- Pages fill this box (Page.svelte); it only scrolls when the window
+           is shorter than a page can fold to. -->
+      <main class="h-full overflow-y-auto px-5 py-5 xl:px-7 min-[1800px]:px-10">
+        <div class="mx-auto h-full max-w-[2400px]">
           {@render children()}
         </div>
       </main>

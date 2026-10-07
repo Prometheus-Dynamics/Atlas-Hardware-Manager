@@ -52,9 +52,12 @@
 {/if}
 
 <style>
+  /* Cards grow with the page (cqw/cqh: the page body), so a big window
+     gets bigger, roomier cards rather than a sliver of small ones. */
   .grid-cards {
+    --card-h: clamp(168px, 21cqh, 250px);
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(clamp(240px, 16cqw, 340px), 1fr));
     gap: 12px;
   }
   .grid-cards > :global(div) {
@@ -66,7 +69,7 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
-    min-height: 168px;
+    min-height: var(--card-h);
     padding: 16px;
     text-align: center;
     border-radius: var(--r-card);

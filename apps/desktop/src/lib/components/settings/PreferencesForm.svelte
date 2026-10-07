@@ -74,7 +74,7 @@
   }
 </script>
 
-<GlassCard title="Preferences" subtitle="How Atlas looks for devices and rolls out updates" icon="settings" large>
+<GlassCard title="Preferences" subtitle="How Atlas looks for devices and rolls out updates" icon="settings" large fill>
   <form class="flex flex-col gap-5" onsubmit={save}>
     <Field inline label="Watch for devices" hint="Devices appear and disappear as they're plugged in, unplugged, or announce themselves on the network.">
       <Toggle bind:checked={draft.auto_scan} label="Watch for devices" />
@@ -120,7 +120,8 @@
 
     {#if error}<p class="flex items-center gap-2 text-[13px] text-err-fg" role="alert"><Icon name="alert-circle" size={15} />{error}</p>{/if}
 
-    <div class="flex items-center gap-2 border-t border-hairline pt-4">
+    <!-- Save stays in view when the card scrolls. -->
+    <div class="save flex items-center gap-2 border-t border-hairline pb-1 pt-4">
       <Button type="submit" variant="primary" busy={saving} disabled={!dirty}>Save</Button>
       <Button variant="ghost" disabled={!dirty || saving} onclick={revert}>Revert</Button>
       {#if system.restartNeeded}
@@ -132,3 +133,13 @@
     </div>
   </form>
 </GlassCard>
+
+<style>
+  .save {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    /* Opaque, but the same colour as the card: its glass over the page. */
+    background: linear-gradient(var(--glass), var(--glass)), var(--bg);
+  }
+</style>

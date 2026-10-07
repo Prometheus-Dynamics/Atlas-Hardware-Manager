@@ -7,6 +7,7 @@
   import GlassCard from "#lib/components/common/GlassCard.svelte";
   import Skeleton from "#lib/components/common/Skeleton.svelte";
   import PageHeader from "#lib/components/common/PageHeader.svelte";
+  import Page from "#lib/components/layout/Page.svelte";
   import RobotMenu from "#lib/components/inventory/RobotMenu.svelte";
   import DiscoveryStatus from "#lib/components/shell/DiscoveryStatus.svelte";
   import ActivityFeed from "#lib/components/overview/ActivityFeed.svelte";
@@ -45,47 +46,70 @@
 
 <svelte:head><title>Overview · Atlas</title></svelte:head>
 
-<div class="flex flex-col gap-5">
-  <PageHeader>
-    {#snippet heading()}<RobotMenu />{/snippet}
-    {#snippet actions()}
-      <DiscoveryStatus />
-      <Button icon="layout-grid" onclick={() => goto("/devices")}>All devices</Button>
-    {/snippet}
-  </PageHeader>
+<Page>
+  {#snippet header()}
+    <PageHeader>
+      {#snippet heading()}<RobotMenu />{/snippet}
+      {#snippet actions()}
+        <DiscoveryStatus />
+        <Button icon="layout-grid" onclick={() => goto("/devices")}>All devices</Button>
+      {/snippet}
+    </PageHeader>
+  {/snippet}
 
   {#if !ready}
-    <div class="flex flex-col gap-5" aria-busy="true" aria-label="Loading the overview">
-      <div class="glass flex h-[104px] items-center gap-5 px-6" style="border-radius: var(--r-panel)">
-        <Skeleton width="60px" height={60} round />
-        <div class="flex flex-1 flex-col gap-2"><Skeleton width="30%" height={20} /><Skeleton width="45%" height={12} /></div>
+    <div class="contents" aria-busy="true" aria-label="Loading the overview">
+      <div class="glass flex h-[58px] shrink-0 items-center gap-4 px-5" style="border-radius: var(--r-panel)">
+        <Skeleton width="34px" height={34} round />
+        <div class="flex flex-1 flex-col gap-2"><Skeleton width="30%" height={14} /><Skeleton width="45%" height={10} /></div>
       </div>
-      <div class="grid gap-3" style="grid-template-columns: repeat(auto-fit, minmax(210px, 1fr))">
-        {#each [0, 1, 2, 3, 4] as i (i)}<Skeleton height={132} />{/each}
+      <div class="auto-grid fit shrink-0" style="--min: 170px">
+        {#each [0, 1, 2, 3, 4] as i (i)}<Skeleton height={112} />{/each}
       </div>
-      <div class="grid gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
-        <Skeleton height={360} />
-        <Skeleton height={360} />
+      <div class="split">
+        <div class="shimmer"></div>
+        <div class="shimmer"></div>
       </div>
     </div>
   {:else}
-    <div class="reveal flex flex-col gap-5">
-      <Readiness {records} {robot} />
+    <Readiness {records} {robot} />
 
-      {#if records.length > 0}
-        <SummaryTiles {records} />
+    {#if records.length > 0}
+      <SummaryTiles {records} />
 
-        <div class="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)] min-[1800px]:grid-cols-[minmax(0,2.4fr)_minmax(380px,1fr)]">
-          <GlassCard class="min-w-0" title="How it's connected" subtitle="Click a device to open it" icon="sitemap">
-            <div class="px-1 pb-2"><TopologyMap {records} /></div>
-          </GlassCard>
-          <GlassCard class="min-w-0" title="Recent activity" icon="history">
-            <div class="flex flex-col pb-2">
-              <ActivityFeed entries={feed} limit={9} empty="Nothing has happened here yet." />
-            </div>
-          </GlassCard>
-        </div>
-      {/if}
-    </div>
+      <div class="split">
+        <GlassCard fill scroll={false} pad={false} large title="How it's connected" subtitle="Click a device to open it" icon="sitemap">
+          <TopologyMap {records} />
+        </GlassCard>
+        <GlassCard fill large title="Recent activity" icon="history" pad={false}>
+          <div class="flex flex-col px-3 pb-3 pt-2">
+            <ActivityFeed entries={feed} limit={60} empty="Nothing has happened here yet." />
+          </div>
+        </GlassCard>
+      </div>
+    {/if}
   {/if}
-</div>
+</Page>
+
+<style>
+  /* Topology and activity share whatever height is left. */
+  .split {
+    flex: 1 1 0;
+    min-height: 0;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr);
+  }
+  @container page (min-width: 1600px) {
+    .split {
+      grid-template-columns: minmax(0, 2.4fr) minmax(380px, 1fr);
+    }
+  }
+  /* Narrow: stacked, the map on top. */
+  @container page (max-width: 720px) {
+    .split {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1.4fr) minmax(0, 1fr);
+    }
+  }
+</style>

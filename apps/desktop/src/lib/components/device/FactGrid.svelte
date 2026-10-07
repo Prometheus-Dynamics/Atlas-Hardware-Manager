@@ -14,7 +14,7 @@
     {/each}
   </dl>
 {:else}
-  <dl class="grid grid-cols-2 gap-2">
+  <dl class="auto-grid" style="--min: 170px; --gap: 8px">
     {#each facts as fact (fact.label)}
       <div class="glass min-w-0 px-3.5 py-2.5">
         <dt class="text-[12px] text-fg-faint">{fact.label}</dt>

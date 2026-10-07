@@ -36,6 +36,7 @@
   subtitle="Checks Atlas runs on this computer"
   icon="shield-check"
   large
+  fill
 >
   {#snippet actions()}
     <Button variant="ghost" size="sm" icon="refresh" busy={system.checking} onclick={() => system.checkHealth()}>Check again</Button>

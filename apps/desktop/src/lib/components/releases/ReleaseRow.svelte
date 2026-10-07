@@ -31,13 +31,13 @@
 </script>
 
 <div class="row">
-  <div class="min-w-0">
-    <p class="mono truncate text-[13px] font-medium text-fg">{entry.version}</p>
+  <div class="main min-w-0">
+    <p class="mono truncate text-[13px] font-medium text-fg" title={entry.version}>{entry.version}</p>
     <p class="truncate text-[12px] text-fg-faint" title={entry.path ?? entry.artifact_name}>
       <span class="mono">{entry.artifact_name}</span> · {entry.origin.kind === "remote" ? `from ${entry.origin.source}` : "added by you"}{entry.boards.length ? ` · ${entry.boards.join(", ")}` : ""}
     </p>
   </div>
-  <div class="flex flex-wrap items-center gap-1.5">
+  <div class="pills flex flex-wrap items-center gap-1.5">
     <Pill tone={channel[entry.channel].tone} label={channel[entry.channel].label} />
     {#if entry.signed}
       <Pill tone="success" icon="shield-check" label="Signed" />
@@ -45,8 +45,8 @@
       <Pill tone="warning" icon="alert-triangle" label="Unsigned" title="No signature: Atlas can't verify where this file came from" />
     {/if}
   </div>
-  <span class="text-right text-[12.5px] tabular-nums text-fg-muted">{bytes(entry.size_bytes)}</span>
-  <div class="flex min-w-0 items-center justify-end">
+  <span class="size text-right text-[12.5px] tabular-nums text-fg-muted">{bytes(entry.size_bytes)}</span>
+  <div class="state flex min-w-0 items-center justify-end">
     {#if progress}
       <div class="flex w-full flex-col gap-1">
         <ProgressBar value={progress.total ? progress.downloaded / progress.total : null} label="Download progress" size={5} />
@@ -55,12 +55,12 @@
         </span>
       </div>
     {:else if entry.path}
-      <span class="flex items-center gap-1.5 text-[12.5px] text-ok-fg"><Icon name="device-sd-card" size={15} />On this computer</span>
+      <span class="flex items-center gap-1.5 whitespace-nowrap text-[12.5px] text-ok-fg"><Icon name="device-sd-card" size={15} />On this computer</span>
     {:else}
       <Button size="sm" icon="download" onclick={() => releases.download(entry.id)}>Download</Button>
     {/if}
   </div>
-  <div class="flex items-center justify-end gap-1">
+  <div class="tools flex items-center justify-end gap-1">
     {#if entry.notes_url}
       <Button variant="ghost" size="sm" iconRight="external-link" onclick={() => openExternal(entry.notes_url!)}>Notes</Button>
     {/if}
@@ -90,5 +90,32 @@
   }
   .row:hover {
     background: var(--glass);
+  }
+  /* In a narrower family card: two lines. What it is and where it stands on
+     top; channel, signature, size and the row's tools below. */
+  @container (max-width: 760px) {
+    .row {
+      grid-template-columns: minmax(0, 1fr) auto auto;
+      grid-template-areas:
+        "main main state"
+        "pills size tools";
+      gap: 6px 12px;
+      padding: 10px 12px;
+    }
+    .main {
+      grid-area: main;
+    }
+    .pills {
+      grid-area: pills;
+    }
+    .size {
+      grid-area: size;
+    }
+    .state {
+      grid-area: state;
+    }
+    .tools {
+      grid-area: tools;
+    }
   }
 </style>

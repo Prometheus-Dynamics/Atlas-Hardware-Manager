@@ -47,10 +47,10 @@
     {label}
   </div>
   <p class="value">{#if typeof value === "number"}<AnimatedNumber {value} {decimals} />{:else}{value}{/if}{#if unit}<span class="unit">{unit}</span>{/if}</p>
-  {#if sub}<p class="truncate text-[12px] text-fg-faint">{sub}</p>{/if}
+  {#if sub}<p class="truncate text-[12px] text-fg-faint" title={sub}>{sub}</p>{/if}
   {#if extra}{@render extra()}{/if}
   {#if series.length > 1}
-    <div class="mt-auto pt-2"><Sparkline values={series} {color} height={30} /></div>
+    <div class="mt-auto pt-2"><Sparkline values={series} {color} height={26} /></div>
   {/if}
 </svelte:element>
 
@@ -63,8 +63,9 @@
     display: flex;
     flex-direction: column;
     gap: 2px;
-    min-height: 132px;
-    padding: 14px 16px 12px;
+    /* Taller tiles when the page has height to spare (cqh: the page body). */
+    min-height: clamp(104px, 12cqh, 168px);
+    padding: 12px 16px 10px;
     text-align: left;
     overflow: hidden;
     transition:
@@ -90,8 +91,8 @@
     background: color-mix(in srgb, var(--tone) 14%, transparent);
   }
   .value {
-    margin-top: 6px;
-    font-size: 28px;
+    margin-top: 4px;
+    font-size: clamp(22px, 2.6cqh, 32px);
     font-weight: 600;
     letter-spacing: -0.03em;
     line-height: 1.1;
