@@ -274,8 +274,12 @@ config_overrides = [
   # DHCP server for the USB gadget link (pd-device-usb-gadget-dhcp.service).
   # Buildroot installs no dnsmasq systemd unit, so nothing else starts it.
   ["BR2_PACKAGE_DNSMASQ", "y"],
-  # pd-device-update unpacks .zst slot images.
+  # pd-device-update: the image it installs may be .img.xz (busybox xzcat
+  # works too; xz-utils is faster) or .img.zst, and pd-image-slots copies the
+  # slot partitions out of the stream (buildroot-external/packages).
+  ["BR2_PACKAGE_XZ", "y"],
   ["BR2_PACKAGE_ZSTD", "y"],
+  ["BR2_PACKAGE_PD_IMAGE_SLOTS", "y"],
 ]
 
 [image.feed]

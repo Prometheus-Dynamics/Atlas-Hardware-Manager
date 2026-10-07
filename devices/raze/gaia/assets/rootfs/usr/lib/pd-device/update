@@ -2,7 +2,11 @@
 # pd-device-update: A/B updates with the Pi bootloader's tryboot (docs/ota.md).
 #
 #   update status              JSON on stdout (also /run/pd-device/update.json)
-#   update stage <bundle>      verify, write the inactive slot, fix its cmdline
+#   update stage <image> --sha256 <hex>
+#                              verify, copy the image's slot A into the
+#                              inactive slot, fix its cmdline
+#   update stage - --sha256 <hex> [--format xz|zst|gz|raw]
+#                              the same from stdin (checked at the end)
 #   update apply               boot the staged slot once on trial ("0 tryboot")
 #   update confirm             on the trial boot, once healthy: keep it
 #   update rollback            forget a staged update
@@ -12,11 +16,22 @@
 # default; its [tryboot] section is what `reboot "0 tryboot"` boots once.
 # If the trial never confirms, the next reset boots the default again.
 #
-# A bundle (<name>.pdupdate) is a tar of manifest.env, boot.vfat.zst, and
-# rootfs.ext4.zst. manifest.env holds MODEL, VERSION, OS, and BOOT_SHA256 /
-# ROOTFS_SHA256 (of the .zst members). The writer checks every hash before
-# it writes anything. State lives on p1 (shared by both slots) in
-# pd-update.env. Settings: update.env.
+# The input is the same whole-disk image that is flashed over USB (.img,
+# .img.xz, .img.zst or .img.gz, A/B layout). pd-image-slots copies its boot
+# slot A (p2) and root slot A (p5) out of the decompressed stream into this
+# board's inactive slot in one pass; p1, the other slot and /data in the
+# image are skipped. A file is checked against --sha256 (of the file as
+# given) before anything is written; stdin is checked when it ends, and a
+# mismatch leaves the slot unstaged. The new root's device-package.env must
+# name this model, and its os-release gives the version.
+#
+# The OS may add hooks in /etc/pd-device/update.d/: pre-stage, post-stage,
+# pre-reboot, post-boot (plus update-health). A failing pre- hook stops that
+# step; post- hooks are logged only. They get PD_UPDATE_SLOT,
+# PD_UPDATE_VERSION and PD_UPDATE_IMAGE.
+#
+# State lives on p1 (shared by both slots) in pd-update.env. Settings:
+# update.env.
 set -eu
 
 PD_LIB_DIR=${PD_LIB_DIR:-/usr/lib/pd-device}
@@ -33,7 +48,9 @@ AUTOBOOT_PART=${UPDATE_AUTOBOOT_PART:-1}
 PART_PREFIX=${UPDATE_PART_PREFIX:-}
 MOUNT=${UPDATE_MOUNT:-mount}
 UMOUNT=${UPDATE_UMOUNT:-umount}
+MOUNT_RO=${UPDATE_MOUNT_RO:-mount -o ro}
 REBOOT=${UPDATE_REBOOT:-systemctl reboot "0 tryboot"}
+SLOTS=${UPDATE_SLOTS_TOOL:-pd-image-slots}
 CMDLINE_ROOT=${UPDATE_CMDLINE_ROOT:-}
 WORK=${PD_RUN_DIR}/update
 STATUS_JSON=${PD_RUN_DIR}/update.json
@@ -95,6 +112,14 @@ mount_part() {
 	dir="$WORK/mnt-$1"
 	mkdir -p "$dir"
 	$MOUNT "$(part "$1")" "$dir" >/dev/null
+	echo "$dir"
+}
+
+# Mounts partition $1 read-only (a slot's new root) and prints where.
+mount_part_ro() {
+	dir="$WORK/mnt-$1"
+	mkdir -p "$dir"
+	$MOUNT_RO "$(part "$1")" "$dir" >/dev/null
 	echo "$dir"
 }
 
@@ -168,11 +193,66 @@ _status() {
 	cat "$STATUS_JSON"
 }
 
-member_sha() { tar -xOf "$1" "$2" | sha256sum | cut -d' ' -f1; }
+# run_hook <name>: the OS's hook, if any. Prints nothing; returns its status.
+run_hook() {
+	hook=$PD_ETC_DIR/update.d/$1
+	[ -x "$hook" ] || return 0
+	pd_log "running the $1 hook"
+	PD_UPDATE_SLOT=${SLOT_STAGED:-} PD_UPDATE_VERSION=${VERSION_STAGED:-} \
+		PD_UPDATE_IMAGE=${IMAGE:-} "$hook"
+}
+
+# The image's compression, from --format or its first bytes.
+image_format() {
+	if [ -n "$FORMAT" ]; then
+		echo "$FORMAT"
+		return
+	fi
+	case "$(od -An -tx1 -N6 "$IMAGE" | tr -d ' \n')" in
+	fd377a585a00) echo xz ;;
+	28b52ffd*) echo zst ;;
+	1f8b*) echo gz ;;
+	*) echo raw ;;
+	esac
+}
+
+decompressor() {
+	case "$1" in
+	xz) if command -v xz >/dev/null 2>&1; then echo "xz -dc"; else echo xzcat; fi ;;
+	zst) echo "zstd -dc" ;;
+	gz) echo "gzip -dc" ;;
+	raw) echo cat ;;
+	*) die "unknown image format '$1' (xz, zst, gz or raw)" ;;
+	esac
+}
+
+# pd-image-slots's own reason, else a generic one.
+slots_error() {
+	reason=$(sed -n 's/^pd-image-slots: //p' "$WORK/slots.err" 2>/dev/null | tail -n 1)
+	echo "${reason:-copying the image into slot $1 failed}"
+}
+
+# Reads a key from an os-release style file.
+field() { sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n 1 | tr -d "\"'"; }
 
 cmd_stage() {
-	BUNDLE=${1:-}
-	[ -r "$BUNDLE" ] || die "no bundle at '$BUNDLE'"
+	IMAGE='' SHA256='' FORMAT=''
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--sha256) SHA256=${2:-}; shift 2 ;;
+		--format) FORMAT=${2:-}; shift 2 ;;
+		-*) [ "$1" = - ] || die "unknown option '$1'"; IMAGE=-; shift ;;
+		*) IMAGE=$1; shift ;;
+		esac
+	done
+	[ -n "$IMAGE" ] || die "usage: update stage <image|-> --sha256 <hex>"
+	[ "$IMAGE" = - ] || [ -r "$IMAGE" ] || die "no image at '$IMAGE'"
+	case "$SHA256" in
+	*[!0-9a-fA-F]* | '') die "give the image's SHA-256 with --sha256" ;;
+	esac
+	[ ${#SHA256} -eq 64 ] || die "--sha256 must be 64 hex digits"
+	SHA256=$(echo "$SHA256" | tr 'A-F' 'a-f')
+	[ "$IMAGE" != - ] || FORMAT=${FORMAT:-xz}
 	mkdir -p "$WORK"
 	with_autoboot _stage
 }
@@ -182,34 +262,56 @@ _stage() {
 	active=$(slot_of_root)
 	[ "$active" != unknown ] || die "this system is not on an A/B layout (root partition $(active_root))"
 	target=$(other "$active")
-
-	tar -xOf "$BUNDLE" manifest.env > "$WORK/manifest.env" || die "the bundle has no manifest.env"
-	MODEL='' VERSION='' BOOT_SHA256='' ROOTFS_SHA256=''
-	# shellcheck disable=SC1091
-	. "$WORK/manifest.env"
-	[ -z "${PD_DEVICE_MODEL:-}" ] || [ "$MODEL" = "$PD_DEVICE_MODEL" ] ||
-		die "the bundle is for '$MODEL', this is a '$PD_DEVICE_MODEL'"
-	[ -n "$VERSION" ] || die "the bundle's manifest has no VERSION"
-
-	STATE=staging VERSION_STAGED=$VERSION SLOT_STAGED=$target ERROR='' PROGRESS=0
-	save_state
-
-	# Check everything before writing anything.
-	[ "$(member_sha "$BUNDLE" boot.vfat.zst)" = "$BOOT_SHA256" ] || die "boot.vfat.zst failed its SHA-256 check"
-	PROGRESS=100
-	save_state
-	[ "$(member_sha "$BUNDLE" rootfs.ext4.zst)" = "$ROOTFS_SHA256" ] || die "rootfs.ext4.zst failed its SHA-256 check"
-	PROGRESS=200
-	save_state
-
 	boot=$(slot_boot "$target")
 	root=$(slot_root "$target")
-	tar -xOf "$BUNDLE" rootfs.ext4.zst | zstd -dc | dd of="$(part "$root")" bs=4M conv=fsync 2>/dev/null ||
-		die "writing root $target failed"
-	PROGRESS=850
+	unzip=$(decompressor "$(image_format)")
+
+	STATE=staging SLOT_STAGED=$target VERSION_STAGED='' ERROR='' PROGRESS=0
 	save_state
-	tar -xOf "$BUNDLE" boot.vfat.zst | zstd -dc | dd of="$(part "$boot")" bs=4M conv=fsync 2>/dev/null ||
-		die "writing boot $target failed"
+
+	# A file is checked before anything is written.
+	if [ "$IMAGE" != - ]; then
+		[ "$(sha256sum < "$IMAGE" | cut -d' ' -f1)" = "$SHA256" ] ||
+			die "the image failed its SHA-256 check (damaged or incomplete copy)"
+		PROGRESS=100
+		save_state
+	fi
+	run_hook pre-stage || die "the pre-stage hook stopped the update"
+
+	rm -f "$WORK/progress" "$WORK/sum"
+	if [ "$IMAGE" = - ]; then
+		rm -f "$WORK/hash.fifo"
+		mkfifo "$WORK/hash.fifo"
+		sha256sum < "$WORK/hash.fifo" > "$WORK/sum" &
+		hasher=$!
+		tee "$WORK/hash.fifo" | $unzip | "$SLOTS" --drain --progress "$WORK/progress" \
+			--boot-out "$(part "$boot")" --root-out "$(part "$root")" > "$WORK/slots.env" 2> "$WORK/slots.err" ||
+			die "$(slots_error "$target")"
+		wait "$hasher" || true
+		rm -f "$WORK/hash.fifo"
+		[ "$(cut -d' ' -f1 "$WORK/sum")" = "$SHA256" ] ||
+			die "the image failed its SHA-256 check; slot $target was written but is not used"
+	else
+		$unzip < "$IMAGE" | "$SLOTS" --progress "$WORK/progress" \
+			--boot-out "$(part "$boot")" --root-out "$(part "$root")" > "$WORK/slots.env" 2> "$WORK/slots.err" ||
+			die "$(slots_error "$target")"
+	fi
+	PROGRESS=950
+	save_state
+
+	# The new root says what it is.
+	newroot=$(mount_part_ro "$root")
+	model=$(field PD_DEVICE_MODEL "$newroot/usr/lib/pd-device/device-package.env")
+	version=$(field IMAGE_VERSION "$newroot/etc/os-release")
+	[ -n "$version" ] || version=$(field VERSION_ID "$newroot/etc/os-release")
+	[ -n "$version" ] || version=$(field VERSION_ID "$newroot/usr/lib/os-release")
+	[ -n "$version" ] || version=$(field VERSION "$newroot/etc/os-release")
+	$UMOUNT "$newroot" >/dev/null 2>&1 || true
+	if [ -n "$model" ] && [ -n "${PD_DEVICE_MODEL:-}" ] && [ "$model" != "$PD_DEVICE_MODEL" ]; then
+		die "the image is for a '$model', this is a '$PD_DEVICE_MODEL'"
+	fi
+	[ -n "$model" ] || pd_log "the image carries no device package; it can't be updated in place again"
+	VERSION_STAGED=${version:-unknown}
 
 	# One boot image serves both slots: point this copy at its own root.
 	mnt=$(mount_part "$boot")
@@ -221,7 +323,8 @@ _stage() {
 
 	STATE=staged PROGRESS=1000
 	save_state
-	pd_log "staged $VERSION in slot $target"
+	run_hook post-stage || pd_log "the post-stage hook failed"
+	pd_log "staged $VERSION_STAGED in slot $target"
 }
 
 cmd_apply() {
@@ -233,6 +336,11 @@ cmd_apply() {
 _apply() {
 	load_state
 	[ "$STATE" = staged ] || die "nothing is staged (state: $STATE)"
+	# A refusal keeps the update staged, to apply later.
+	run_hook pre-reboot || {
+		pd_log "the pre-reboot hook stopped the restart; still staged"
+		exit 1
+	}
 	active=$(slot_of_root)
 	write_autoboot "$(slot_boot "$active")" "$(slot_boot "$SLOT_STAGED")"
 	STATE=trying
@@ -253,6 +361,7 @@ _confirm() {
 		save_state
 		return 0
 	fi
+	run_hook post-boot || pd_log "the post-boot hook failed"
 	# Give the services a moment to come up before judging them.
 	sleep "${UPDATE_CONFIRM_DELAY:-0}"
 	health=${UPDATE_HEALTH:-}
@@ -301,7 +410,12 @@ exec 9> "$PD_RUN_DIR/update.lock"
 if command -v flock >/dev/null 2>&1 && ! flock -n 9; then
 	# Busy: status answers from what the running command last wrote.
 	if [ "${1:-}" = status ] && [ -r "$STATUS_JSON" ]; then
-		cat "$STATUS_JSON"
+		# While staging, the copy's own progress (0-1000) maps to 100-950.
+		pm=$(cat "$WORK/progress" 2>/dev/null || echo)
+		case "$pm" in
+		'' | *[!0-9]*) cat "$STATUS_JSON" ;;
+		*) sed "s/\"progress\":[0-9]*/\"progress\":$((100 + pm * 85 / 100))/" "$STATUS_JSON" ;;
+		esac
 		exit 0
 	fi
 	pd_log "another update command is running"

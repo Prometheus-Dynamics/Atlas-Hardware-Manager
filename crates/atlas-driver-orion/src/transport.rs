@@ -33,7 +33,7 @@ pub trait OrionTransport: Send + Sync {
 }
 
 /// Makes a release file reachable by URL for devices to pull. Update bytes
-/// never travel over Orion; the device downloads the bundle from Atlas.
+/// never travel over Orion; the device downloads the image from Atlas.
 pub trait BundleHost: Send + Sync {
     fn url_for(&self, artifact: &Artifact) -> Result<String, DriverError>;
 }

@@ -1,6 +1,8 @@
 //! A/B updates over SSH (docs/ota.md) for boards whose identity lists
-//! `ab-tryboot`: Atlas streams the bundle to `/data`, the device package's
-//! writer (`/usr/lib/pd-device/update`) stages it into the spare slot,
+//! `ab-tryboot`: Atlas streams the same disk image that is flashed over USB
+//! (`.img`, `.img.xz`, `.img.zst`, `.img.gz`) to `/data` with its SHA-256,
+//! and the device package's writer (`/usr/lib/pd-device/update`) copies the
+//! image's slot A into the board's spare slot,
 //! trial-boots it, and keeps it once it's healthy. The outcome is read from
 //! the writer's durable state after the reboot, never from a command that
 //! the reboot cut off.
@@ -29,7 +31,9 @@ pub const AB_METHOD: &str = "ab-tryboot";
 
 const WRITER: &str = "/usr/lib/pd-device/update";
 const REMOTE_DIR: &str = "/data/pd-update";
-const REMOTE_BUNDLE: &str = "/data/pd-update/bundle.pdupdate";
+/// The writer detects the compression from the file's first bytes.
+const REMOTE_IMAGE: &str = "/data/pd-update/image";
+const IMAGE_SUFFIXES: [&str; 4] = [".img", ".img.xz", ".img.zst", ".img.gz"];
 const POLL: Duration = Duration::from_secs(3);
 /// Verify and write both slot images on a slow eMMC.
 const STAGE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
@@ -136,7 +140,7 @@ impl SshUpdate {
     }
 
     /// Runs `script` on the board and returns its stdout.
-    async fn run(&self, script: &str) -> Result<String, DriverError> {
+    pub(crate) async fn run(&self, script: &str) -> Result<String, DriverError> {
         let output = self
             .command()
             .arg(script)
@@ -180,7 +184,7 @@ impl SshUpdate {
         let mut child = self
             .command()
             .arg(format!(
-                "mkdir -p {REMOTE_DIR} && cat > {REMOTE_BUNDLE}.part && mv {REMOTE_BUNDLE}.part {REMOTE_BUNDLE}"
+                "mkdir -p {REMOTE_DIR} && cat > {REMOTE_IMAGE}.part && mv {REMOTE_IMAGE}.part {REMOTE_IMAGE}"
             ))
             .stdin(Stdio::piped())
             .spawn()
@@ -194,7 +198,7 @@ impl SshUpdate {
         loop {
             if cancel.is_cancelled() {
                 let _ = child.kill().await;
-                let _ = self.run(&format!("rm -f {REMOTE_BUNDLE}.part")).await;
+                let _ = self.run(&format!("rm -f {REMOTE_IMAGE}.part")).await;
                 return Err(DriverError::Cancelled);
             }
             let read = file
@@ -268,12 +272,14 @@ fn ssh_error(code: Option<i32>, stderr: &str) -> DriverError {
 #[async_trait]
 impl UpdateCapability for SshUpdate {
     fn plan(&self, _device: &Identity, release: &ReleaseRef) -> Result<UpdatePlan, DriverError> {
-        let artifact = release.artifact.as_ref().ok_or_else(|| {
-            DriverError::Incompatible("choose an update bundle (.pdupdate) to install".into())
-        })?;
-        if !artifact.name.ends_with(".pdupdate") {
+        let artifact = release
+            .artifact
+            .as_ref()
+            .ok_or_else(|| DriverError::Incompatible("choose an image to install".into()))?;
+        let name = artifact.name.to_ascii_lowercase();
+        if !IMAGE_SUFFIXES.iter().any(|suffix| name.ends_with(suffix)) {
             return Err(DriverError::Incompatible(format!(
-                "{} is not an update bundle: a running board takes a .pdupdate file (a full image needs a USB reflash)",
+                "{} isn't a disk image (.img, .img.xz, .img.zst or .img.gz)",
                 artifact.name
             )));
         }
@@ -287,7 +293,7 @@ impl UpdateCapability for SshUpdate {
             ],
             concurrency: Concurrency::Parallel,
             summary: format!(
-                "Update to {} over SSH with {}: the board writes its spare slot, restarts into it, and keeps it once it's healthy",
+                "Update to {} over SSH from {}: the board copies the new version into its spare slot, restarts into it, and keeps it once it's healthy; settings and data stay",
                 release.version, artifact.name
             ),
         })
@@ -303,7 +309,14 @@ impl UpdateCapability for SshUpdate {
         let artifact = release
             .artifact
             .as_ref()
-            .ok_or_else(|| DriverError::Incompatible("no update bundle".into()))?;
+            .ok_or_else(|| DriverError::Incompatible("no image chosen".into()))?;
+        // It goes into the board's command line: hex only.
+        if artifact.sha256.len() != 64 || !artifact.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(DriverError::Other(format!(
+                "{} has no usable SHA-256, which the board needs to check its copy",
+                artifact.name
+            )));
+        }
 
         progress.step_started(UpdateStep::Preflight);
         let status = self.status().await?;
@@ -323,7 +336,7 @@ impl UpdateCapability for SshUpdate {
             .unwrap_or(u64::MAX);
         if free_kib.saturating_mul(1024) < artifact.size_bytes + 16 * 1024 * 1024 {
             return Err(DriverError::Incompatible(format!(
-                "/data has {} MiB free; the bundle needs {} MiB",
+                "/data has {} MiB free; the image needs {} MiB",
                 free_kib / 1024,
                 artifact.size_bytes / (1024 * 1024) + 16
             )));
@@ -334,26 +347,18 @@ impl UpdateCapability for SshUpdate {
         progress.step_started(UpdateStep::Transfer);
         self.upload(&artifact.path, artifact.size_bytes, progress, cancel)
             .await?;
-        if !artifact.sha256.is_empty() {
-            let remote = self.run(&format!("sha256sum {REMOTE_BUNDLE}")).await?;
-            let remote = remote.split_whitespace().next().unwrap_or("");
-            if !remote.eq_ignore_ascii_case(&artifact.sha256) {
-                let _ = self.run(&format!("rm -f {REMOTE_BUNDLE}")).await;
-                return Err(DriverError::Other(format!(
-                    "the copy on the board doesn't match (sha256 {remote}, expected {})",
-                    artifact.sha256
-                )));
-            }
-        }
         if cancel.is_cancelled() {
-            let _ = self.run(&format!("rm -f {REMOTE_BUNDLE}")).await;
+            let _ = self.run(&format!("rm -f {REMOTE_IMAGE}")).await;
             return Err(DriverError::Cancelled);
         }
 
-        // Staging only writes the spare slot; the writer reports 0..1000.
+        // Staging only writes the spare slot, after the writer checks the
+        // copy's SHA-256; it reports 0..1000.
         progress.step_started(UpdateStep::Apply);
-        let script =
-            format!("{WRITER} stage {REMOTE_BUNDLE}; rc=$?; rm -f {REMOTE_BUNDLE}; exit $rc");
+        let script = format!(
+            "{WRITER} stage {REMOTE_IMAGE} --sha256 {}; rc=$?; rm -f {REMOTE_IMAGE}; exit $rc",
+            artifact.sha256.to_ascii_lowercase()
+        );
         let stage = self.run(&script);
         tokio::pin!(stage);
         let deadline = tokio::time::Instant::now() + STAGE_TIMEOUT;

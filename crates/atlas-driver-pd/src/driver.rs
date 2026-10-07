@@ -14,6 +14,7 @@ use crate::browse::Browser;
 use crate::contract::PdIdentity;
 use crate::live::{PdActions, PdLogs, PdTelemetry, resolve};
 use crate::ssh::{AB_METHOD, SshAccess, SshUpdate};
+use crate::ssh_actions::{PdDeviceActions, USB_BOOT_METHOD};
 
 const LINK_ID: &str = "mdns";
 const FETCH_TIMEOUT: Duration = Duration::from_secs(2);
@@ -239,23 +240,36 @@ impl Driver for PdDriver {
                 .and_then(|path| resolve(&identity_url, path))
         };
         let http = self.http.clone();
-        let update = reported
-            .update_methods
-            .iter()
-            .any(|method| method == AB_METHOD)
-            .then(|| reqwest::Url::parse(&identity_url).ok())
-            .flatten()
-            .and_then(|url| {
-                url.host_str()
-                    .map(|host| host.trim_matches(['[', ']']).to_string())
+        let has = |method: &str| reported.update_methods.iter().any(|m| m == method);
+        // Root work (A/B updates, restarting into USB boot) goes over SSH to
+        // the host the identity was read from.
+        let ssh = || {
+            let url = reqwest::Url::parse(&identity_url).ok()?;
+            let host = url.host_str()?.trim_matches(['[', ']']).to_string();
+            Some(SshUpdate {
+                access: self.ssh.clone(),
+                host,
+                key: device.key.clone(),
             })
-            .map(|host| {
-                Arc::new(SshUpdate {
-                    access: self.ssh.clone(),
-                    host,
-                    key: device.key.clone(),
-                }) as Arc<dyn UpdateCapability>
+        };
+        let update = has(AB_METHOD)
+            .then(ssh)
+            .flatten()
+            .map(|ssh| Arc::new(ssh) as Arc<dyn UpdateCapability>);
+        let http_actions = endpoint("actions")
+            .filter(|_| !reported.actions.is_empty())
+            .map(|url| PdActions {
+                http: http.clone(),
+                url,
+                actions: reported.actions.iter().map(|a| a.to_action()).collect(),
             });
+        let ssh_actions = has(USB_BOOT_METHOD).then(ssh).flatten();
+        let actions = (http_actions.is_some() || ssh_actions.is_some()).then(|| {
+            Arc::new(PdDeviceActions {
+                http: http_actions,
+                ssh: ssh_actions,
+            }) as Arc<dyn ActionsCapability>
+        });
         Capabilities {
             update,
             telemetry: endpoint("metrics").map(|url| {
@@ -270,15 +284,7 @@ impl Driver for PdDriver {
                     url,
                 }) as Arc<dyn LogsCapability>
             }),
-            actions: endpoint("actions")
-                .filter(|_| !reported.actions.is_empty())
-                .map(|url| {
-                    Arc::new(PdActions {
-                        http: http.clone(),
-                        url,
-                        actions: reported.actions.iter().map(|a| a.to_action()).collect(),
-                    }) as Arc<dyn ActionsCapability>
-                }),
+            actions,
         }
     }
 }
@@ -411,11 +417,36 @@ mod tests {
                 size_bytes: 1,
             }),
         };
-        assert!(update.plan(&identity, &release("pv.pdupdate")).is_ok());
+        assert!(update.plan(&identity, &release("pv-raze.img.xz")).is_ok());
         assert!(matches!(
-            update.plan(&identity, &release("pv.img.xz")),
+            update.plan(&identity, &release("pv.pdupdate")),
             Err(DriverError::Incompatible(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn a_board_that_can_restart_into_usb_boot_offers_it() {
+        let url = serve_once(
+            r#"{ "model": "raze", "serial": "4",
+                 "update_methods": ["image-write", "ab-tryboot", "usb-boot-reboot"] }"#,
+        )
+        .await;
+        let driver = PdDriver::new(package());
+        let identity = driver
+            .identify(&Candidate {
+                link: LinkId("mdns".into()),
+                family: Family::new("raze"),
+                address: url,
+            })
+            .await
+            .unwrap();
+        let actions = driver.capabilities(&identity).actions.unwrap();
+        let usb_boot = actions
+            .actions(&identity)
+            .into_iter()
+            .find(|action| action.id == crate::USB_BOOT_ACTION)
+            .unwrap();
+        assert!(usb_boot.destructive);
     }
 
     #[tokio::test]

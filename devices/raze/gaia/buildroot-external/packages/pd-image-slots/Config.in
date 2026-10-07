@@ -1,0 +1,9 @@
+config BR2_PACKAGE_PD_IMAGE_SLOTS
+	bool "pd-image-slots"
+	help
+	  Copies one slot's boot and root partitions out of a whole disk
+	  image streamed on stdin, without seeking. The device package's
+	  A/B updater (/usr/lib/pd-device/update) uses it to install the
+	  same .img.xz that is flashed over USB into the inactive slot.
+
+	  Source: src/pd-image-slots.c in this package.

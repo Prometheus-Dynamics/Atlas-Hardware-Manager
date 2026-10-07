@@ -202,8 +202,8 @@ fn release() -> ReleaseRef {
         family: Family::new("raze"),
         version: "2026.4.0".into(),
         artifact: Some(Artifact {
-            name: "photonvision-2026.4.0-raze.pdupdate".into(),
-            path: PathBuf::from("/tmp/x.pdupdate"),
+            name: "photonvision-2026.4.0-raze.img.xz".into(),
+            path: PathBuf::from("/tmp/x.img.xz"),
             sha256: "ab".repeat(32),
             size_bytes: 400_000_000,
         }),

@@ -1,5 +1,29 @@
 # Raze device package changelog
 
+## 1.4.0
+
+- **One image for everything:** `update stage` takes the same `.img`/`.img.xz`/
+  `.img.zst`/`.img.gz` that is flashed over USB, plus `--sha256` of that file.
+  The `.pdupdate` bundle is gone; nothing had shipped with it.
+  - The writer copies the image's boot slot A (p2) and root slot A (p5) into
+    the inactive slot and skips p1, the other slot and /data.
+  - It reads the image as one stream through `pd-image-slots`, a new C tool
+    in this package (`packages/pd-image-slots`, `BR2_PACKAGE_PD_IMAGE_SLOTS`).
+    The tool follows the MBR and EBR chain as they pass, checks the
+    partitions fit, and reports progress.
+  - A file is checked against `--sha256` before anything is written. stdin
+    (`stage - --sha256 <hex> [--format xz]`) is checked at the end, and a
+    mismatch leaves the slot unstaged.
+  - The new root must name this model, in its `device-package.env`. Its
+    os-release gives the version (`IMAGE_VERSION`, else `VERSION_ID`).
+  - Images without the A/B layout are refused with that reason.
+- **OS hooks** in `/etc/pd-device/update.d/`: `pre-stage`, `post-stage`,
+  `pre-reboot`, `post-boot`. A failing pre- hook stops its step.
+- The image gets xz-utils (`BR2_PACKAGE_XZ`). busybox `xzcat` still works
+  without it.
+- `tests/update.sh` now builds a real A/B image with sfdisk, compresses it
+  with xz and zstd, and compiles `pd-image-slots` from source.
+
 ## 1.3.0
 
 - **Restart into USB boot without the button:** `/usr/lib/pd-device/usb-boot`

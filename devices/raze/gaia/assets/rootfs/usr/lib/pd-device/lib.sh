@@ -213,7 +213,7 @@ pd_json_str() {
 # through the mailbox (set_reboot_order), and vcmailbox is installed.
 #   PD_VCMAILBOX  the vcmailbox command   (vcmailbox)
 pd_usb_boot_supported() {
-	tr '\000' '\n' < "$PD_DT_DIR/compatible" 2>/dev/null | grep -qx 'brcm,bcm2712' &&
+	tr '\000' '\n' 2>/dev/null < "$PD_DT_DIR/compatible" | grep -qx 'brcm,bcm2712' &&
 		command -v "${PD_VCMAILBOX:-vcmailbox}" >/dev/null 2>&1
 }
 

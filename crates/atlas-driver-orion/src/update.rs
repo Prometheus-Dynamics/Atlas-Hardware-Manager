@@ -1,5 +1,5 @@
 //! A/B updates through Orion (docs/ota.md): Orion carries the intent and
-//! progress, the device pulls the bundle from Atlas, and its package's
+//! progress, the device pulls the disk image from Atlas, and its package's
 //! writer stages, trial-boots, and confirms. The outcome is read from
 //! durable state after the reboot (`update.*` status keys and the node's
 //! boot id), never from the action result, which doesn't survive a reboot.
@@ -94,9 +94,10 @@ impl OrionUpdate {
 #[async_trait]
 impl UpdateCapability for OrionUpdate {
     fn plan(&self, _device: &Identity, release: &ReleaseRef) -> Result<UpdatePlan, DriverError> {
-        let artifact = release.artifact.as_ref().ok_or_else(|| {
-            DriverError::Incompatible("choose an update bundle (.pdupdate) to install".into())
-        })?;
+        let artifact = release
+            .artifact
+            .as_ref()
+            .ok_or_else(|| DriverError::Incompatible("choose an image to install".into()))?;
         Ok(UpdatePlan {
             steps: vec![
                 UpdateStep::Preflight,
@@ -123,7 +124,7 @@ impl UpdateCapability for OrionUpdate {
         let artifact = release
             .artifact
             .as_ref()
-            .ok_or_else(|| DriverError::Incompatible("no update bundle".into()))?;
+            .ok_or_else(|| DriverError::Incompatible("no image chosen".into()))?;
 
         progress.step_started(UpdateStep::Preflight);
         let status = self.update_status().await?;
@@ -146,7 +147,7 @@ impl UpdateCapability for OrionUpdate {
         // progress is the download, the second half the slot write.
         progress.step_started(UpdateStep::Transfer);
         let args = BTreeMap::from([
-            ("bundle_url".to_string(), TypedConfigValue::String(url)),
+            ("image_url".to_string(), TypedConfigValue::String(url)),
             (
                 "sha256".to_string(),
                 TypedConfigValue::String(artifact.sha256.clone()),

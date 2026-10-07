@@ -47,36 +47,56 @@ Target eMMC layout (replaces today's two partitions):
 
 Moving an existing board to this layout is a one-time full reflash over USB
 boot, which Atlas already does. Images keep shipping as one `.img.xz` for
-that path; the image builder also emits an update bundle (below).
+that path; the same image also updates running boards (below).
 
-## The update bundle
+## One image for everything
 
-`<os>-<version>-<model>.pdupdate`: a tar with
-
-- `manifest.env`: shell `KEY=value` lines (the image has no JSON parser):
-  `MODEL`, `VERSION`, `OS`, and `BOOT_SHA256` / `ROOTFS_SHA256`, the
-  SHA-256 of the two `.zst` members as stored in the tar;
-- `boot.vfat.zst` and `rootfs.ext4.zst`: the slot images;
-- `manifest.sig` (optional): ed25519 over `manifest.env` (not checked yet). Signing follows
-  the Atlas release rule: used when present, never required for a local
-  file, required when the bundle arrives over an unauthenticated transport.
+There is no separate update format. The same whole-disk image that is
+flashed over USB (`.img`, `.img.xz`, `.img.zst`, `.img.gz`, A/B layout)
+also updates a running board: the writer copies the image's **boot slot A
+(p2)** and **root slot A (p5)** into the board's inactive slot and skips the
+rest (p1's autoboot, the other slot, /data). The image's partitions must fit
+the board's slots.
 
 ## The writer: `pd-device-update` (device package)
 
-Installed as `/usr/lib/pd-device/update` (Raze 1.0.9; tested off-device by
-`devices/raze/tests/update.sh`). Settings: `update.env`.
+Installed as `/usr/lib/pd-device/update` (Raze 1.4.0; tested off-device by
+`devices/raze/tests/update.sh` against a real A/B layout made with sfdisk).
+Settings: `update.env`.
 
 ```
-update status             # JSON on stdout, also /run/pd-device/update.json
-update stage <bundle>     # verify every hash, then write the inactive slot
-update apply              # set [tryboot] to the staged slot, reboot "0 tryboot"
-update confirm            # run on the trial boot once healthy: make it the default
-update rollback           # discard a staged update
+update status                                # JSON, also /run/pd-device/update.json
+update stage <image> --sha256 <hex>          # check, then copy slot A into the inactive slot
+update stage - --sha256 <hex> [--format xz]  # the same from stdin, checked at the end
+update apply                                 # set [tryboot] to the staged slot, reboot "0 tryboot"
+update confirm                               # on the trial boot, once healthy: keep it
+update rollback                              # discard a staged update
 ```
 
-The bundle is a file on the device (copy it to `/data` first; `/run` is
-RAM). Both slots can use one boot image: `stage` rewrites `root=` in the
-written slot's `cmdline.txt` to that slot's root partition.
+- A file (copy it to `/data`; `/run` is RAM) is checked against `--sha256`
+  (of the file as given) before anything is written. From stdin, the hash is
+  checked when the stream ends; a mismatch leaves the slot written but never
+  staged.
+- `pd-image-slots` (a small C tool in the device package) reads the
+  decompressed stream once: the MBR, then each EBR as it passes, copying p2
+  and p5 straight into the inactive slot's partitions after checking they
+  fit. Nothing seeks, so the stream can come from a pipe.
+- The new root names its model (`/usr/lib/pd-device/device-package.env`,
+  refused if it differs) and version (`IMAGE_VERSION`, else `VERSION_ID`, in
+  its os-release).
+- Both slots can use one boot image: `stage` rewrites `root=` in the written
+  slot's `cmdline.txt` to that slot's root partition.
+
+OS hooks, executables in `/etc/pd-device/update.d/`, given `PD_UPDATE_SLOT`,
+`PD_UPDATE_VERSION` and `PD_UPDATE_IMAGE`:
+
+| Hook | When | On failure |
+|---|---|---|
+| `pre-stage` | after the checksum, before writing | the stage stops (error) |
+| `post-stage` | once staged | logged |
+| `pre-reboot` | in `apply`, before the trial restart | stays staged, no restart |
+| `post-boot` | on the trial boot, before the health check | logged |
+| `update-health` (in `/etc/pd-device/`) | on the trial boot | restart into the old slot |
 
 Besides the CLI, the package ships **`pd-device-agent`**, a small daemon in
 the `orion` group that connects to orion-node's local IPC socket and claims
@@ -104,16 +124,28 @@ which boots the old slot. A trial that hangs is reset by the hardware
 watchdog (systemd `RuntimeWatchdogSec=15s`), with the same result.
 
 The identity endpoint advertises it: `"update_methods": ["image-write", "ab-tryboot"]`
-(the first only when `status` has seen an A/B layout) and `"update"`, the
+(the second only when `status` has seen an A/B layout) and `"update"`, the
 `status` object.
+
+## Fresh installs without the button
+
+A fresh install (new layout, wiped /data) needs USB boot. On a running CM5,
+`/usr/lib/pd-device/usb-boot` sets a one-time boot order of RPIBOOT through
+the firmware mailbox (`set_reboot_order`, tag 0x0003808b) and reboots; the
+bootloader's own `BOOT_ORDER` never changes, and the next normal power-up
+boots the eMMC. RPIBOOT has no timeout, so the board waits for the host
+until it is flashed or power-cycled. The identity lists `usb-boot-reboot`
+when the board supports it, and Atlas offers "Restart into USB boot" over
+SSH (Orion later). It is never on the unauthenticated identity endpoint.
 
 ## Transports
 
-Bundle bytes never travel over Orion. Atlas serves the bundle over HTTP
-from the computer running it, and the device pulls `bundle_url` and checks
+Image bytes never travel over Orion. Atlas serves the image over HTTP
+from the computer running it, and the device pulls `image_url` and checks
 sha256, size, and (when required) the signature itself. Over SSH
-(`atlas-driver-pd`, `ssh.rs`), Atlas streams it to `/data/pd-update/` and
-checks its sha256 there. Then it runs `update stage`, reading progress from
+(`atlas-driver-pd`, `ssh.rs`), Atlas streams the image to `/data/pd-update/`
+and runs `update stage <file> --sha256 <hex>` (the board checks the copy),
+reading progress from
 `update status`, and `update apply`. It waits for a new boot id and polls
 `status` until `confirmed` or `rolled-back`. It runs the system OpenSSH as
 root with the key chosen in Settings. Host keys are trusted on first use and
@@ -139,7 +171,7 @@ They map onto the existing steps:
 | Atlas step | Writer |
 |------------|--------|
 | Preflight | `status`: compatible model/revision, enough space, not mid-update |
-| Transfer | the device pulls `bundle_url` from Atlas (Orion), or `ssh … pd-device-update stage -` |
+| Transfer | the device pulls `image_url` from Atlas (Orion), or Atlas copies it over SSH and runs `update stage <file> --sha256` |
 | Apply | `stage` verify + slot write, then `apply` |
 | Reboot | wait for the device to drop and come back (identity endpoint, board_serial) |
 | Confirm | durable state after boot: `update.state` = `confirmed` with the new version → `Verified`; `rolled-back` → `RolledBack` |
@@ -161,7 +193,7 @@ Concurrency is `Parallel`: each board updates itself, so staged rollout
 
 Atlas does not need Orion to understand partitions; it needs:
 
-- **Intent:** `ActionRequest { target: Node, action: "update", args: { bundle_url, sha256, size } }`.
+- **Intent:** `ActionRequest { target: Node, action: "update", args: { image_url, sha256, size } }`.
 - **Progress while it runs:** status-lane keys `action.<action_id>.state|progress|error`
   under the action's target subject (names to be confirmed with v4).
 - **Durable status across reboots:** stable keys under the Node subject,
@@ -181,5 +213,5 @@ orion-node on the user's computer. The HTTP control API is the fallback.
 ## Open questions
 
 - Slot sizes: is 2 GiB per root enough for PhotonVision + JDK with headroom?
-- Where the bundle signing key lives (device package vs OS).
+- Where an image signing key lives (device package vs OS), if images get signed.
 - Whether HeliOS images adopt the same layout, so one writer serves both.
