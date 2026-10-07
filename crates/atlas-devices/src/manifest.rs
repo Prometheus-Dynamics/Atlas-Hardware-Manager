@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
+use crate::gadget::GadgetAddressing;
+
 /// A USB id written as `"0a5c"`, `"0x0a5c"`, or a number.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
@@ -230,9 +232,18 @@ impl DeviceManifest {
             .unwrap_or_else(|| id.to_string())
     }
 
-    /// The device's own address on its USB gadget network
-    /// (`capabilities.gadget-net.address`, without the prefix length).
-    pub fn gadget_address(&self) -> Option<String> {
+    /// How this model's boards derive a per-board USB gadget address from
+    /// their USB serial (`capabilities.gadget-net.addressing`).
+    pub fn gadget_addressing(&self) -> Option<GadgetAddressing> {
+        let value = self.capabilities.get("gadget-net")?.get("addressing")?;
+        serde_json::from_value(value.clone()).ok()
+    }
+
+    /// The fixed gadget address of images from before per-board addressing,
+    /// and of boards whose serial gives no subnet
+    /// (`capabilities.gadget-net.address`, without the prefix length). Only
+    /// usable while one such board is plugged in: they all share it.
+    pub fn legacy_gadget_address(&self) -> Option<String> {
         let address = self
             .capabilities
             .get("gadget-net")?

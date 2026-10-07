@@ -147,6 +147,167 @@ pd_mac_variant() {
 	printf '%s:%02x\n' "$_pd_pre" $((0x$_pd_last ^ $2))
 }
 
+# USB gadget addressing, scheme serial-hash-v1 (manifest.json
+# capabilities.gadget-net.addressing; Atlas computes the same in Rust).
+#
+# The gadget's USB serial, normalized to its last 8 hex digits in lowercase,
+# picks one /USB_GADGET_ADDR_PREFIX subnet of USB_GADGET_ADDR_BASE: the first
+# 4 bytes of sha256(those 8 ASCII characters), as a big-endian number, modulo
+# the number of subnets outside USB_GADGET_ADDR_EXCLUDE, index the remaining
+# subnets in ascending order. The device takes the subnet's first host
+# address. A serial that isn't all hex or is shorter than 8 digits has no
+# subnet, and the board keeps PD_GADGET_LEGACY_ADDRESS.
+PD_GADGET_LEGACY_ADDRESS=172.31.250.1/24
+
+# Dotted IPv4 address to an integer. Fails on anything else.
+pd_ip4_int() {
+	printf '%s\n' "$1" | awk -F. '
+		NF != 4 { exit 1 }
+		{
+			for (i = 1; i <= 4; i++) {
+				if ($i !~ /^[0-9]+$/ || $i + 0 > 255) { exit 1 }
+			}
+			printf "%.0f\n", (($1 * 256 + $2) * 256 + $3) * 256 + $4
+		}'
+}
+
+# Integer to dotted IPv4.
+pd_int_ip4() {
+	printf '%d.%d.%d.%d\n' $(($1 >> 24 & 255)) $(($1 >> 16 & 255)) $(($1 >> 8 & 255)) $(($1 & 255))
+}
+
+# pd_board_serial8 <serial>: Atlas's board-serial rule (normalize_board_serial):
+# NULs and surrounding whitespace dropped, all hex, at least 8 digits; prints
+# the last 8 in lowercase. Fails otherwise.
+pd_board_serial8() {
+	_pd_s=$(printf '%s' "$1" | tr -d '\000')
+	while :; do
+		case "$_pd_s" in
+		[[:space:]]*) _pd_s=${_pd_s#?} ;;
+		*[[:space:]]) _pd_s=${_pd_s%?} ;;
+		*) break ;;
+		esac
+	done
+	case "$_pd_s" in
+	'' | *[!0-9A-Fa-f]*) return 1 ;;
+	esac
+	[ "${#_pd_s}" -ge 8 ] || return 1
+	printf '%s\n' "${_pd_s#"${_pd_s%????????}"}" | tr 'A-F' 'a-f'
+}
+
+# pd_gadget_subnet <usb serial>: this board's gadget address under
+# serial-hash-v1, as <address>/<prefix> (for example 172.31.209.217/29).
+# Fails when the serial gives no subnet or the settings are invalid.
+#   USB_GADGET_ADDR_BASE     the block subnets come from  (172.31.0.0/16)
+#   USB_GADGET_ADDR_PREFIX   each board's subnet length   (29)
+#   USB_GADGET_ADDR_EXCLUDE  CIDRs left out, space-separated (172.31.250.0/24)
+pd_gadget_subnet() {
+	_pd_s8=$(pd_board_serial8 "$1") || return 1
+	_pd_base=${USB_GADGET_ADDR_BASE:-172.31.0.0/16}
+	_pd_prefix=${USB_GADGET_ADDR_PREFIX:-29}
+	_pd_excl=${USB_GADGET_ADDR_EXCLUDE-172.31.250.0/24}
+	_pd_bpre=${_pd_base#*/}
+	case "$_pd_bpre$_pd_prefix" in
+	'' | *[!0-9]*) return 1 ;;
+	esac
+	[ "$_pd_bpre" -le "$_pd_prefix" ] && [ "$_pd_prefix" -le 30 ] || return 1
+	_pd_bnet=$(pd_ip4_int "${_pd_base%/*}") || return 1
+	_pd_size=$((1 << (32 - _pd_prefix)))
+	_pd_slots=$((1 << (_pd_prefix - _pd_bpre)))
+	_pd_bnet=$((_pd_bnet - _pd_bnet % (_pd_size * _pd_slots)))
+	# Excluded subnets as "first-slot count" lines, ascending.
+	_pd_ranges=''
+	for _pd_c in $_pd_excl; do
+		_pd_epre=${_pd_c#*/}
+		case "$_pd_epre" in
+		'' | *[!0-9]*) return 1 ;;
+		esac
+		[ "$_pd_epre" -ge "$_pd_bpre" ] && [ "$_pd_epre" -le "$_pd_prefix" ] || return 1
+		_pd_e=$(pd_ip4_int "${_pd_c%/*}") || return 1
+		_pd_e=$((_pd_e - _pd_e % (1 << (32 - _pd_epre)) - _pd_bnet))
+		[ "$_pd_e" -ge 0 ] && [ "$_pd_e" -lt $((_pd_size * _pd_slots)) ] || return 1
+		_pd_ranges="$_pd_ranges$((_pd_e / _pd_size)) $((1 << (_pd_prefix - _pd_epre)))
+"
+	done
+	_pd_ranges=$(printf '%s' "$_pd_ranges" | sort -n -k1,1 | uniq)
+	_pd_usable=$_pd_slots
+	while read -r _pd_start _pd_len; do
+		[ -n "$_pd_start" ] || continue
+		_pd_usable=$((_pd_usable - _pd_len))
+	done <<EOF
+$_pd_ranges
+EOF
+	[ "$_pd_usable" -gt 0 ] || return 1
+	_pd_h=$(printf '%s' "$_pd_s8" | sha256sum | cut -c1-8)
+	_pd_slot=$((0x$_pd_h % _pd_usable))
+	while read -r _pd_start _pd_len; do
+		[ -n "$_pd_start" ] || continue
+		if [ "$_pd_start" -le "$_pd_slot" ]; then
+			_pd_slot=$((_pd_slot + _pd_len))
+		fi
+	done <<EOF
+$_pd_ranges
+EOF
+	printf '%s/%s\n' "$(pd_int_ip4 $((_pd_bnet + _pd_slot * _pd_size + 1)))" "$_pd_prefix"
+}
+
+# The gadget's USB serial string: USB_GADGET_SERIAL, or with AUTO the board
+# serial, else the first 16 hex digits of the machine id.
+pd_gadget_serial() {
+	_pd_gs=${USB_GADGET_SERIAL:-AUTO}
+	if [ "$_pd_gs" = AUTO ]; then
+		_pd_gs=$(pd_serial)
+		[ -n "$_pd_gs" ] || _pd_gs=$(pd_machine_id | cut -c1-16)
+	fi
+	printf '%s\n' "$_pd_gs"
+}
+
+# The address the gadget bridge gets, after usb-gadget.env is loaded. Sets
+# PD_GADGET_CIDR (<address>/<prefix>) and PD_GADGET_ADDRESSING:
+#   serial-hash-v1  derived from the USB serial (USB_GADGET_ADDRESS=AUTO)
+#   pinned          USB_GADGET_ADDRESS (a bare address means /24)
+#   fallback        PD_GADGET_LEGACY_ADDRESS: the serial gives no subnet
+pd_gadget_address() {
+	case "${USB_GADGET_ADDRESS:-AUTO}" in
+	AUTO)
+		if PD_GADGET_CIDR=$(pd_gadget_subnet "$(pd_gadget_serial)"); then
+			PD_GADGET_ADDRESSING=serial-hash-v1
+		else
+			PD_GADGET_CIDR=$PD_GADGET_LEGACY_ADDRESS
+			PD_GADGET_ADDRESSING=fallback
+		fi
+		;;
+	*/*)
+		PD_GADGET_CIDR=$USB_GADGET_ADDRESS
+		PD_GADGET_ADDRESSING=pinned
+		;;
+	*)
+		PD_GADGET_CIDR=$USB_GADGET_ADDRESS/24
+		PD_GADGET_ADDRESSING=pinned
+		;;
+	esac
+}
+
+# pd_gadget_dhcp_range <address>/<prefix>: dnsmasq's dhcp-range for the host
+# end of the link: the addresses after the device's, up to 19 of them and the
+# subnet's last host address, with the netmask and a 1h lease. Fails when the
+# subnet has no room.
+pd_gadget_dhcp_range() {
+	_pd_pre=${1#*/}
+	case "$_pd_pre" in
+	'' | *[!0-9]*) return 1 ;;
+	esac
+	[ "$_pd_pre" -ge 8 ] && [ "$_pd_pre" -le 30 ] || return 1
+	_pd_a=$(pd_ip4_int "${1%/*}") || return 1
+	_pd_size=$((1 << (32 - _pd_pre)))
+	_pd_last=$((_pd_a - _pd_a % _pd_size + _pd_size - 2))
+	_pd_end=$((_pd_a + 19))
+	[ "$_pd_end" -le "$_pd_last" ] || _pd_end=$_pd_last
+	[ "$_pd_a" -lt "$_pd_end" ] || return 1
+	printf '%s,%s,%s,1h\n' "$(pd_int_ip4 $((_pd_a + 1)))" "$(pd_int_ip4 "$_pd_end")" \
+		"$(pd_int_ip4 $((0xffffffff - _pd_size + 1)))"
+}
+
 # Value of KEY in os-release, unquoted, with \" \\ \$ \` unescaped.
 pd_os_field() {
 	_pd_osr=$PD_OS_RELEASE
@@ -292,6 +453,21 @@ pd_action_offered() {
 	return 1
 }
 
+# The gadget network's address, as an optional identity field, when the
+# package runs it (USB_GADGET_NET=bridge):
+# ,"gadget":{"address":..,"prefix":..,"addressing":..}
+pd_gadget_json() {
+	pd_load_env usb-gadget.env
+	[ "${USB_GADGET_ENABLED:-1}" = 1 ] && [ "${USB_GADGET_NET:-bridge}" = bridge ] || return 0
+	pd_gadget_address
+	_pd_gpre=${PD_GADGET_CIDR#*/}
+	case "$_pd_gpre" in
+	'' | *[!0-9]*) return 0 ;;
+	esac
+	printf ',"gadget":{"address":%s,"prefix":%s,"addressing":%s}' \
+		"$(pd_json_str "${PD_GADGET_CIDR%/*}")" "$_pd_gpre" "$(pd_json_str "$PD_GADGET_ADDRESSING")"
+}
+
 pd_identity_json() {
 	pd_load_env device-package.env
 	pd_load_env identity.env
@@ -329,6 +505,7 @@ pd_identity_json() {
 	fi
 	printf ',"manage_url":%s' "$(pd_json_str "$(pd_first_line "$PD_ETC_DIR/manage-url" "$PD_LIB_DIR/manage-url")")"
 	pd_actions_json
+	pd_gadget_json
 	printf ',"macs":{'
 	_pd_sep=''
 	pd_macs | while read -r _pd_name _pd_mac; do

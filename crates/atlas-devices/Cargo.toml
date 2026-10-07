@@ -13,6 +13,7 @@ description = "Device packages for Atlas: model manifests and informational comp
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 
 [lints]

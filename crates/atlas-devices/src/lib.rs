@@ -13,10 +13,12 @@
 
 mod catalog;
 mod compat;
+mod gadget;
 mod manifest;
 
 pub use catalog::{DeviceCatalog, DevicePackage, default_search_dirs};
 pub use compat::{CompatEntry, CompatImage, CompatList, CompatStatus};
+pub use gadget::{GadgetAddressing, GadgetSubnet, SERIAL_HASH_V1};
 pub use manifest::{
     DeviceManifest, EepromFile, EepromInfo, IdentityRules, Recovery, Revision, UsbBootId,
     UsbGadget, UsbId,

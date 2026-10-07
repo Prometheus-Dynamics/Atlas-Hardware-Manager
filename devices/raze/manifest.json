@@ -76,8 +76,8 @@
       ],
       "network": {
         "bridge": "usbbr0",
-        "address": "172.31.250.1/24",
-        "dhcp_range": "172.31.250.2-172.31.250.20",
+        "address": "per board: capabilities.gadget-net.addressing (172.31.250.1/24 without a hex serial, or when USB_GADGET_ADDRESS pins one)",
+        "dhcp_range": "the rest of the board's subnet after its address, at most 19 addresses (.2-.6 of a /29)",
         "dns": false,
         "default_route": false,
         "note": "USB only: gadget interfaces are bridged with each other, never with Ethernet."
@@ -245,6 +245,22 @@
         "acm"
       ],
       "address": "172.31.250.1/24",
+      "addressing": {
+        "scheme": "serial-hash-v1",
+        "base": "172.31.0.0/16",
+        "prefix": 29,
+        "exclude": ["172.31.250.0/24"],
+        "input": "the gadget's USB serial (iSerialNumber, the board serial) normalized to Atlas's board-serial rule: all hex, at least 8 digits, the last 8 in lowercase",
+        "algorithm": "h = the first 4 bytes of sha256(the 8 ASCII characters) as a big-endian u32; split base into /prefix subnets, drop those inside an exclude range, and take the remaining subnet at index h mod their count (8160), counting up from the lowest. The device has the subnet's first host address; DHCP offers the host the rest.",
+        "fallback": "address (above), the fixed address of images before per-board addressing, when the serial gives no subnet or USB_GADGET_ADDRESS pins one; it is excluded from base so old and new boards never share a subnet",
+        "collisions": "two boards on one computer share a subnet with probability 1/8160; among k boards about k(k-1)/16320 (0.55% for 10)",
+        "vectors": {
+          "a317bcbee5226d57": "172.31.209.217/29",
+          "10000000abcdef01": "172.31.0.113/29",
+          "cfc0641d": "172.31.254.9/29"
+        },
+        "implementations": "lib.sh pd_gadget_subnet (device), atlas-devices GadgetAddressing (Atlas); devices/raze/tests/gadget-address.sh"
+      },
       "dhcp": true,
       "settings": "/usr/lib/pd-device/usb-gadget.env (override in /etc/pd-device/usb-gadget.env)"
     },

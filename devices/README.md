@@ -156,19 +156,83 @@ The device units are installed in `/usr/lib/systemd/system` and enabled by
 | `pd-device-hostname.service` | default hostname `raze-{serial8}`, only over an unset or stock hostname |
 | `pd-device-identity.service` | writes `/run/pd-device/identity.json` and `/run/systemd/dnssd/pd-device.dnssd` before resolved starts |
 | `pd-device-http.socket` (+ `pd-device-http@.service`) | identity endpoint on TCP 5899 |
-| `pd-device-usb-gadget.service` | USB gadget (ECM/RNDIS/ACM), gadget-only bridge `usbbr0` at 172.31.250.1/24 |
+| `pd-device-usb-gadget.service` | USB gadget (ECM/RNDIS/ACM) with the board serial as its USB serial, gadget-only bridge `usbbr0` on a per-board /29 (see "USB gadget network") |
 | `pd-device-usb-gadget-dhcp.service` | dnsmasq DHCP on `usbbr0` only, DNS off, no default route |
 | `raze-leds-reprobe.service` | re-probes the WS2812 PIO driver if `/dev/leds0` is missing |
 
 Fan, port power and LEDs need no service: they are device tree overlays in
 `raze-device.txt`, plus `/usr/lib/udev/rules.d/60-raze-usb-power.rules`.
 
+## USB gadget network
+
+Each board puts its USB network on a subnet of its own, so several boards
+plugged into one computer all work. The address derives from the gadget's
+USB serial string (iSerialNumber), which is the board serial, so the host
+can compute it from the USB descriptor without any network traffic. The
+scheme, `serial-hash-v1`, is described in `manifest.json`
+(`capabilities.gadget-net.addressing`); the device computes it in `lib.sh`
+(`pd_gadget_subnet`) from the same parameters in `usb-gadget.env`, and Atlas
+in `atlas-devices` (`GadgetAddressing`):
+
+1. Normalize the USB serial with Atlas's board-serial rule: all hex, at
+   least 8 digits, keep the last 8 in lowercase (`a317bcbee5226d57` gives
+   `e5226d57`).
+2. `h` = the first 4 bytes of `sha256` of those 8 ASCII characters, as a
+   big-endian number.
+3. Split `172.31.0.0/16` into /29 subnets and leave out the ones in
+   `172.31.250.0/24` (the fixed address of older images): 8160 remain. Take
+   the one at index `h mod 8160`, counting up from the lowest.
+4. The board has the subnet's first address; its DHCP server offers the
+   host the other five (a /29 rather than a /30, so a host that comes back
+   with another MAC, such as RNDIS after ECM, still gets a lease while the
+   old one runs out).
+
+| USB serial | Board address |
+| --- | --- |
+| `a317bcbee5226d57` | 172.31.209.217/29 |
+| `10000000abcdef01` | 172.31.0.113/29 |
+| `cfc0641d` | 172.31.254.9/29 (index 8097, past the excluded /24) |
+
+`devices/raze/tests/gadget-address.sh` and the `atlas-devices` unit tests
+check the same vectors, so the two sides can't drift.
+
+**Collisions.** Two boards share a subnet with probability 1/8160 (0.012 %).
+Among k boards on one computer the chance that any two do is about
+k(k-1)/16320: 0.12 % for 5 boards, 0.55 % for 10, 2.3 % for 20. Two boards
+that collide behave like two older images: the host reaches only one of
+them over the gadget link. Pin one with `USB_GADGET_ADDRESS` (it is then
+found by mDNS), or tell them apart over Ethernet.
+
+**Fallback.** A board whose USB serial gives no subnet (not hex, or shorter
+than 8 digits) keeps `172.31.250.1/24`, as does a board with
+`USB_GADGET_ADDRESS=172.31.250.1/24` pinned. Atlas probes that address only
+while exactly one matching gadget is plugged in, after the board's own
+address, so images from before per-board addressing still work one at a
+time. The identity reports the address in use:
+`"gadget": {"address": "172.31.209.217", "prefix": 29, "addressing": "serial-hash-v1"}`
+(`pinned` or `fallback` otherwise).
+
+**Atlas** lists every `1d6b:0104` USB device whose manufacturer and product
+match a package, reads its USB serial, and probes
+`http://<board address>:5899/.well-known/pd-device`. It accepts the answer
+only when the identity's serial normalizes to the same 8 digits as the USB
+serial, so a stale lease or a collision never shows the wrong board.
+
+**On the host.** Each board is a separate USB network interface. With
+NetworkManager every interface gets its own DHCP lease and a route to its
+own /29, which is what the distinct subnets are for; no default route or DNS
+is offered, so the host's other networks are unaffected. On Windows each
+RNDIS adapter does the same. `172.31.0.0/16` is the last of Docker's default
+bridge pools (`172.17`-`172.31`); a host with that many Docker networks, or
+a VPN that routes `172.31.0.0/16`, shadows the gadget subnets. Changing
+`base` means changing it in both `manifest.json` and `usb-gadget.env`.
+
 ## Overrides
 
 | To change | Do this |
 | --- | --- |
 | Hostname | Set `/etc/hostname` (always wins), or set `PD_HOSTNAME_POLICY=never`, `PD_HOSTNAME_PATTERN` or `PD_HOSTNAME_STOCK` in `/etc/pd-device/hostname.env`. An OS whose default name should give way to `raze-{serial8}` adds it: `PD_HOSTNAME_STOCK="$PD_HOSTNAME_STOCK photonvision"`. |
-| USB gadget | `/etc/pd-device/usb-gadget.env` (any key from `/usr/lib/pd-device/usb-gadget.env`; `USB_GADGET_ENABLED=0` turns it off, `USB_GADGET_NET=none` leaves networking to the OS). Extra dnsmasq settings in `/etc/pd-device/usb-gadget-dnsmasq.d/*.conf`. |
+| USB gadget | `/etc/pd-device/usb-gadget.env` (any key from `/usr/lib/pd-device/usb-gadget.env`; `USB_GADGET_ENABLED=0` turns it off, `USB_GADGET_NET=none` leaves networking to the OS, `USB_GADGET_ADDRESS=<address>/<prefix>` pins the address instead of the per-board one). Extra dnsmasq settings in `/etc/pd-device/usb-gadget-dnsmasq.d/*.conf`. |
 | mDNS advertisement | `PD_MDNS=0` in `/etc/pd-device/identity.env`. |
 | Identity endpoint | `disable pd-device-http.socket` in an OS preset, or mask it. |
 | Update methods / manage URL | One id per line in `/etc/pd-device/update-methods.d/<file>` (added after `image-write`); the URL in `/etc/pd-device/manage-url` (an empty file means `null`). |

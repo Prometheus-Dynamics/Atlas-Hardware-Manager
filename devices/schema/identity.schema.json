@@ -178,6 +178,28 @@
     "camera_stream": {
       "type": "string",
       "description": "Optional camera view: an MJPEG stream or still image, path or URL."
+    },
+    "gadget": {
+      "type": "object",
+      "description": "Optional: the device's address on its USB gadget network, when the package runs it. addressing says where it came from: serial-hash-v1 (derived from the USB serial, see the manifest's capabilities.gadget-net.addressing), pinned (USB_GADGET_ADDRESS) or fallback (the fixed address, the serial gave none).",
+      "required": [
+        "address",
+        "prefix"
+      ],
+      "properties": {
+        "address": {
+          "type": "string",
+          "format": "ipv4"
+        },
+        "prefix": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32
+        },
+        "addressing": {
+          "type": "string"
+        }
+      }
     }
   }
 }
