@@ -284,7 +284,7 @@
             "i2c": {
               "type": "object",
               "properties": {
-                "bus": { "type": ["integer", "null"], "description": "Linux bus number; null while unconfirmed." },
+                "bus": { "type": ["integer", "null"], "description": "Linux bus number (/dev/i2c-N); null when unknown." },
                 "bus_dt_label": { "type": "string" },
                 "address": { "$ref": "#/$defs/i2caddr" }
               }

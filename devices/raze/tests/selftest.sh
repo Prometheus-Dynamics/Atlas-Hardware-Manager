@@ -41,11 +41,11 @@ echo 212 > "$S/class/hwmon/hwmon2/pwm1"
 mkdir -p "$S/class/watchdog/watchdog0"
 echo bcm2835-wdt > "$S/class/watchdog/watchdog0/identity"
 
-# I2C: buses 1 and 4, the camera bound on bus 6.
-mkdir -p "$S/bus/i2c/devices/i2c-1" "$S/bus/i2c/devices/i2c-4" "$S/bus/i2c/devices/i2c-6" \
-	"$S/bus/i2c/drivers/ov9282" "$S/bus/i2c/devices/6-0060" "$S/class/video4linux/video0"
-echo ov9782 > "$S/bus/i2c/devices/6-0060/name"
-ln -s ../../drivers/ov9282 "$S/bus/i2c/devices/6-0060/driver"
+# I2C: buses 1 and 4, the camera bound on bus 10.
+mkdir -p "$S/bus/i2c/devices/i2c-1" "$S/bus/i2c/devices/i2c-4" "$S/bus/i2c/devices/i2c-10" \
+	"$S/bus/i2c/drivers/ov9282" "$S/bus/i2c/devices/10-0060" "$S/class/video4linux/video0"
+echo ov9782 > "$S/bus/i2c/devices/10-0060/name"
+ln -s ../../drivers/ov9282 "$S/bus/i2c/devices/10-0060/driver"
 echo rp1-cfe-csi2_ch0 > "$S/class/video4linux/video0/name"
 
 # Tools. i2cdetect answers for the addresses listed in $T/i2c ("bus addr").
@@ -71,7 +71,7 @@ cat > "$T/bin/media-ctl" <<'EOF'
 #!/bin/sh
 printf 'Media controller API version 7.2.9\n\nMedia device information\n------------------------\ndriver          rp1-cfe\nmodel           rp1-cfe\n\n'
 printf -- '- entity 1: csi2 (4 pads, 8 links)\n'
-printf -- '- entity 20: ov9282 6-0060 (1 pad, 1 link)\n'
+printf -- '- entity 20: ov9282 10-0060 (1 pad, 1 link)\n'
 EOF
 chmod +x "$T/bin/"*
 
@@ -163,7 +163,7 @@ out=$(SELFTEST_TTY_IN=$T/answers SELFTEST_TTY_OUT=$T/prompts selftest --interact
 check_status "$out" leds fail
 
 echo "broken hardware fails, and the text report exits 1"
-rm "$S/bus/i2c/devices/6-0060/driver"
+rm "$S/bus/i2c/devices/10-0060/driver"
 printf '4 0x18\n1 0x10\n1 0x40\n' > "$T/i2c"
 : > "$T/cfg/usb_gadget/g1/UDC"
 out=$(FAKE_WATCHDOG=0 FAKE_FAN_LEVELS='76 43 10 0 0' selftest --json)

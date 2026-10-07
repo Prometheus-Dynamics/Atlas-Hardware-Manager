@@ -47,8 +47,8 @@ function report(device: SimDevice): SelfTestReport {
       : {
           id: "camera",
           status: "ok",
-          message: "ov9782 bound to ov9282 at 6-0060 (chip id accepted), in the media graph (/dev/media0), 4 rp1-cfe video nodes",
-          data: { sensor: "ov9782", address: 96, i2c_client: "6-0060", driver: "ov9282", receiver_video_nodes: 4 },
+          message: "ov9782 bound to ov9282 at 10-0060 (chip id accepted), in the media graph (/dev/media0), 4 rp1-cfe video nodes",
+          data: { sensor: "ov9782", address: 96, i2c_client: "10-0060", driver: "ov9282", receiver_video_nodes: 4 },
         },
     {
       id: "i2c",

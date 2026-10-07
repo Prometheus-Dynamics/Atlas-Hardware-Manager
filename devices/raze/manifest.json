@@ -179,8 +179,10 @@
       "clock_hz": 24000000,
       "i2c_address": 96,
       "i2c": {
-        "bus": null,
+        "bus": 10,
         "bus_dt_label": "i2c_csi_dsi0",
+        "controller": "i2c6",
+        "bus_source": "kernel DT, rpi-7.2.y: bcm2712-rpi-cm5io.dtsi maps i2c_csi_dsi0 to RP1 i2c6 and bcm2712-rpi.dtsi aliases i2c10 = &i2c_csi_dsi0",
         "address": 96
       },
       "chip_id": {

@@ -72,7 +72,7 @@ prose:
 | `kernel` | source, branch, commit, version, defconfig, `page_size_kib`, `builtin`, the package fragment and `fragment_merge` (OS fragments first, the package's last, so the package wins) |
 | `capabilities.leds` | `part`, `gpio`, `count`, `device`, `brightness`, overlay `name`/`dev_name`, `wire_format` (`grb24`: bits on the data line), `userspace` (`layout` `rgbw`, `bytes_per_led` 4, `ignored_channels`), `index` (`offset`, `direction`: logical LED i is driver slot (offset + direction * i) mod count) |
 | `capabilities.fan` | `pwm` (`controller`, `channel`, `period_ns`, `polarity`), `cooling_levels`, `min_level` (the duty floor), `trips_c`, `thermal_zone`, `cooling_device_type`, `hwmon_name` |
-| `capabilities.camera` | `part`, `csi` (port, receiver), `i2c` (`bus` by Linux number, `null` until confirmed, `bus_dt_label`, `address`), `chip_id`, kernel driver and compatible, tuning files |
+| `capabilities.camera` | `part`, `csi` (port, receiver), `i2c` (Linux `bus` 10 from the kernel DT, `bus_dt_label`, `controller`, `address`), `chip_id`, kernel driver and compatible, tuning files |
 | `capabilities.i2c` | `buses` (Linux `bus`, kind, `sda_gpio`/`scl_gpio`, overlay) and `devices` (`id`, `part`, `bus`, 7-bit `address` as a number) |
 | `capabilities.watchdog` | `device`, `driver`, `runtime_sec`, `reboot_sec` |
 | `capabilities.selftest` | where the self-test is, its report format and checks |
