@@ -39,6 +39,32 @@ commit; the commits are listed per area.
 - **Update input:** `update stage` takes the same whole-disk image that is
   flashed over USB, plus `--sha256`. There is no separate update format (an
   interim `.pdupdate` bundle never shipped) (`696d3ad`).
+- **USB gadget address:** the gadget network moves from the fixed
+  `172.31.250.1/24` to a per-board /29 in `172.31.0.0/16`, derived from the
+  USB serial (scheme `serial-hash-v1`). `USB_GADGET_ADDRESS` and
+  `USB_GADGET_DHCP_RANGE` default to `AUTO`. Anything that hard-codes
+  172.31.250.1 (scripts, saved SSH hosts, firewall rules) must use the
+  board's address from the identity's new `gadget` field, or pin
+  `USB_GADGET_ADDRESS=172.31.250.1/24` in `/etc/pd-device/usb-gadget.env`.
+  Atlas needs this commit or later to reach new images over the gadget link
+  without mDNS (`e6afcf3`).
+
+### USB gadget addressing
+
+- Several Razes on one computer each get a subnet of their own: the USB
+  serial (the board serial) picks a /29 of `172.31.0.0/16` outside
+  `172.31.250.0/24` by sha256, so the host computes the address from the USB
+  descriptor. Parameters in `usb-gadget.env` (`USB_GADGET_ADDR_BASE`,
+  `USB_GADGET_ADDR_PREFIX`, `USB_GADGET_ADDR_EXCLUDE`) and in the manifest
+  (`capabilities.gadget-net.addressing`); `lib.sh` `pd_gadget_subnet`.
+- dnsmasq offers the host the rest of the /29 (`.2`-`.6`).
+- Without a hex serial, or when pinned, the board keeps 172.31.250.1/24.
+- The identity reports `gadget: {address, prefix, addressing}`.
+- Atlas probes every matching gadget at its own address and accepts it only
+  when the identity's serial matches the USB serial; 172.31.250.1 stays a
+  fallback while exactly one board is plugged in.
+- Collision odds and host notes: devices/README.md, "USB gadget network".
+- Commit: `e6afcf3`.
 
 ### Updates (A/B with tryboot)
 
@@ -119,6 +145,8 @@ commit; the commits are listed per area.
     with an EROFS root slot when erofs-utils is new enough.
   - `usb-boot.sh` uses a fake mailbox.
   - `root-device.sh` checks finding the root device.
+  - `gadget-address.sh` checks the gadget address vectors (shared with
+    Atlas), the identity field and `usb-gadget-setup` with a fake configfs.
 - CI runs them on Ubuntu 24.04.
 
 ## 1.0.7
