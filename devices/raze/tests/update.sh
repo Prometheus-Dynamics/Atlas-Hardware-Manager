@@ -60,7 +60,14 @@ cat > "$T/bin/reboot" <<'EOF'
 #!/bin/sh
 echo "$*" >> "$REBOOTS"
 EOF
-chmod +x "$T/bin/mount" "$T/bin/mount-ro" "$T/bin/umount" "$T/bin/reboot"
+cat > "$T/bin/systemctl" <<'EOF'
+#!/bin/sh
+# is-failed --quiet <unit>: failed when listed in $FAILED_UNITS.
+[ "$1" = is-failed ] || exit 0
+case " ${FAILED_UNITS:-} " in *" $3 "*) exit 0 ;; esac
+exit 1
+EOF
+chmod +x "$T/bin/mount" "$T/bin/mount-ro" "$T/bin/umount" "$T/bin/reboot" "$T/bin/systemctl"
 
 export PD_LIB_DIR=$lib PD_ETC_DIR=$T/etc PD_RUN_DIR=$T/run PD_OS_RELEASE=$T/os-release
 export PD_DEVICE_MODEL=raze
@@ -68,6 +75,12 @@ export UPDATE_PART_PREFIX=$T/disk/p UPDATE_MOUNT=$T/bin/mount UPDATE_MOUNT_RO=$T
 export UPDATE_UMOUNT=$T/bin/umount UPDATE_SLOTS_TOOL=$T/bin/pd-image-slots
 export UPDATE_REBOOT="$T/bin/reboot tryboot" UPDATE_REBOOT_PLAIN="$T/bin/reboot plain"
 export REBOOTS=$T/reboots UPDATE_CMDLINE_ROOT=5 UPDATE_SYNC=true
+# A booted slot that passes the package's checks: its kernel has modules, the
+# gadget is bound, and no critical unit failed.
+export UPDATE_SYSTEMCTL=$T/bin/systemctl UPDATE_UNAME_R=7.2.9-test
+export UPDATE_MODULES_ROOT=$T/sysroot UPDATE_GADGET_DIR=$T/gadget
+mkdir -p "$T/sysroot/lib/modules/7.2.9-test" "$T/gadget/g1"
+echo 1000480000.usb > "$T/gadget/g1/UDC"
 : > "$REBOOTS"
 
 update() { sh "$lib/update" "$@"; }
@@ -79,7 +92,15 @@ new_root() {
 	mkdir -p "$T/disk/p$1.d/etc" "$T/disk/p$1.d/usr/lib/pd-device"
 	printf 'ID=photonvision\nIMAGE_VERSION=%s\n' "$2" > "$T/disk/p$1.d/etc/os-release"
 	printf 'PD_DEVICE_MODEL=%s\n' "$3" > "$T/disk/p$1.d/usr/lib/pd-device/device-package.env"
+	rm -rf "$T/disk/p$1.d/lib/modules"
+	mkdir -p "$T/disk/p$1.d/lib/modules/${4:-7.2.9-test}"
 }
+# boot_kernel <boot part 2|3> <release>: a kernel image naming its release.
+boot_kernel() {
+	printf 'junk\000Linux version %s (builder@host) #1 SMP\000more' "$2" > "$T/disk/p$1.d/kernel_2712.img"
+}
+boot_kernel 3 7.2.9-test
+boot_kernel 2 7.2.9-test
 
 # A 40 MiB image with the A/B layout: p1 autoboot, p2/p3 boot, p4 extended,
 # p5/p6 root, p7 data. Slot A's partitions hold random bytes to compare.
@@ -155,6 +176,11 @@ if update apply 2>/dev/null; then fail "the hook should stop the restart"; fi
 [ ! -s "$REBOOTS" ] || fail "it restarted despite the hook"
 rm "$T/etc/update.d/pre-reboot"
 
+echo "a restart that doesn't happen leaves it staged, not trying"
+if UPDATE_REBOOT=false update apply 2>/dev/null; then fail "a failed restart should fail apply"; fi
+[ "$(state)" = staged ] || fail "state should stay staged, is $(state)"
+grep -q '\[tryboot\]' "$T/disk/p1.d/autoboot.txt" && fail "the tryboot section should be undone"
+
 echo "apply sets a one-time tryboot"
 update apply
 [ "$(state)" = trying ] || fail "state should be trying"
@@ -222,6 +248,59 @@ UPDATE_CMDLINE_ROOT=6 update stage "$img.xz" --sha256 "$(sha "$img.xz")"
 cmp -s "$T/root.ref" "$T/disk/p5" || fail "root A should now hold the image"
 UPDATE_CMDLINE_ROOT=6 update rollback
 
+echo "an image whose kernel doesn't match its root's modules is refused"
+UPDATE_CMDLINE_ROOT=6 update rollback
+new_root 5 5.0 raze 6.12.47-old
+boot_kernel 2 7.2.9-test
+if UPDATE_CMDLINE_ROOT=6 update stage "$img.xz" --sha256 "$(sha "$img.xz")" 2>/dev/null; then
+	fail "a kernel/modules mismatch should be refused"
+fi
+grep -q "match the modules on its root" "$T/disk/p1.d/pd-update.env" || fail "the error should say why"
+UPDATE_CMDLINE_ROOT=6 update rollback
+
+# trial <check to break>: stage into A, apply, then confirm on A with one check
+# broken; the trial must not be confirmed.
+trial() {
+	new_root 5 5.0 raze
+	UPDATE_CMDLINE_ROOT=6 update stage "$img.xz" --sha256 "$(sha "$img.xz")" >/dev/null 2>&1
+	UPDATE_CMDLINE_ROOT=6 update apply >/dev/null 2>&1
+	: > "$REBOOTS"
+	if UPDATE_CMDLINE_ROOT=5 "$@" sh "$lib/update" confirm 2>/dev/null; then fail "confirm should fail: $*"; fi
+	[ "$(state)" = trying ] || fail "state should stay trying ($*), is $(state)"
+	grep -q '^plain$' "$REBOOTS" || fail "it should restart into the old slot ($*)"
+	UPDATE_CMDLINE_ROOT=6 update confirm >/dev/null 2>&1 || true
+	UPDATE_CMDLINE_ROOT=6 update rollback
+}
+echo "a trial whose kernel has no modules on its root isn't confirmed"
+trial env UPDATE_UNAME_R=6.12.47-old
+grep -q "no modules on this root" "$T/disk/p1.d/pd-update.env" || true
+echo "a trial without the USB gadget isn't confirmed"
+mv "$T/gadget/g1/UDC" "$T/gadget/g1/UDC.off"; : > "$T/gadget/g1/UDC"
+trial env
+mv "$T/gadget/g1/UDC.off" "$T/gadget/g1/UDC"
+echo "a trial with a failed critical unit isn't confirmed"
+trial env FAILED_UNITS=pd-device-identity.service UPDATE_CRITICAL_UNITS=pd-device-identity.service
+
+echo "check-link goes back to the previous slot after bad boots"
+new_root 5 5.0 raze
+UPDATE_CMDLINE_ROOT=6 update stage "$img.xz" --sha256 "$(sha "$img.xz")" >/dev/null 2>&1
+UPDATE_CMDLINE_ROOT=6 update apply >/dev/null 2>&1
+UPDATE_CMDLINE_ROOT=5 update confirm >/dev/null 2>&1
+[ "$(state)" = confirmed ] || fail "the trial on A should be confirmed, is $(state)"
+grep -q '^PREVIOUS_SLOT=B' "$T/disk/p1.d/pd-update.env" || fail "confirm should remember slot B"
+: > "$REBOOTS"
+UPDATE_CMDLINE_ROOT=5 UPDATE_UNAME_R=broken UPDATE_LINK_DELAY=0 update check-link 2>/dev/null
+[ "$(state)" = confirmed ] || fail "one bad boot only counts"
+grep -q '^BAD_BOOTS=1' "$T/disk/p1.d/pd-update.env" || fail "it should count the bad boot"
+UPDATE_CMDLINE_ROOT=5 UPDATE_LINK_DELAY=0 update check-link 2>/dev/null
+grep -q '^BAD_BOOTS=0' "$T/disk/p1.d/pd-update.env" || fail "a good boot resets the count"
+UPDATE_CMDLINE_ROOT=5 UPDATE_UNAME_R=broken UPDATE_LINK_DELAY=0 update check-link 2>/dev/null
+UPDATE_CMDLINE_ROOT=5 UPDATE_UNAME_R=broken UPDATE_LINK_DELAY=0 update check-link 2>/dev/null
+[ "$(state)" = rolled-back ] || fail "two bad boots should go back, state $(state)"
+grep -q 'boot_partition=3' "$T/disk/p1.d/autoboot.txt" || fail "the default should be slot B again: $(autoboot)"
+grep -q '^plain$' "$REBOOTS" || fail "it should restart into slot B"
+grep -q '^PREVIOUS_SLOT=$' "$T/disk/p1.d/pd-update.env" || fail "no ping-pong: the previous slot is forgotten"
+
 if command -v mkfs.erofs >/dev/null 2>&1 && fsck.erofs --help 2>&1 | grep -q -- --extract; then
 	# erofs_image <version> <model> <out.img.xz>: the A/B image with an EROFS
 	# root slot A (lzma), padded to the slot partition's size.
@@ -230,6 +309,7 @@ if command -v mkfs.erofs >/dev/null 2>&1 && fsck.erofs --help 2>&1 | grep -q -- 
 		mkdir -p "$T/rootdir/etc" "$T/rootdir/usr/lib/pd-device"
 		printf 'ID=photonvision\nIMAGE_VERSION=%s\n' "$1" > "$T/rootdir/etc/os-release"
 		printf 'PD_DEVICE_MODEL=%s\n' "$2" > "$T/rootdir/usr/lib/pd-device/device-package.env"
+		mkdir -p "$T/rootdir/lib/modules/7.2.9-test"
 		mkfs.erofs -zlzma "$T/root.erofs" "$T/rootdir" >/dev/null 2>&1 ||
 			mkfs.erofs -zlz4hc "$T/root.erofs" "$T/rootdir" >/dev/null
 		truncate -s $((20480 * 512)) "$T/root.erofs"

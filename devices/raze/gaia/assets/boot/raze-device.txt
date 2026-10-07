@@ -37,3 +37,8 @@ camera_auto_detect=0
 dtoverlay=ov9782,cam0,clk-continuous
 
 [all]
+
+# Hardware watchdog available to the kernel from the start. systemd arms it
+# (RuntimeWatchdogSec, package system.conf.d) once PID 1 runs; a panic before
+# that restarts through panic= on the OS's cmdline (docs/ota.md).
+dtparam=watchdog=on

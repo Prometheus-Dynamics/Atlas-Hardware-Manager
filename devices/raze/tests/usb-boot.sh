@@ -24,7 +24,7 @@ MB
 chmod +x "$T/vcmailbox"
 
 export PD_LIB_DIR=$lib PD_DT_DIR=$T/dt PD_RUN_DIR=$T/run PD_VCMAILBOX=$T/vcmailbox
-export CALLS=$T/calls USB_BOOT_REBOOT="echo reboot >> $T/reboots"
+export CALLS=$T/calls USB_BOOT_REBOOT="echo reboot >> $T/reboots" USB_BOOT_SYNC=true
 run() { sh "$lib/usb-boot" "$@"; }
 
 echo "a CM5 with vcmailbox supports it"

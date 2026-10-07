@@ -18,6 +18,7 @@ PD_LIB_DIR=${PD_LIB_DIR:-/usr/lib/pd-device}
 
 VCMAILBOX=${PD_VCMAILBOX:-vcmailbox}
 REBOOT=${USB_BOOT_REBOOT:-systemctl reboot}
+SYNC=${USB_BOOT_SYNC:-sync}
 RPIBOOT_ORDER=0x3
 
 if [ "${1:-}" = --check ]; then
@@ -44,5 +45,5 @@ set -- $reply
 }
 
 pd_log "restarting into USB boot"
-sync
+$SYNC
 eval "$REBOOT"

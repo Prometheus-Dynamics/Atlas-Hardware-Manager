@@ -12,3 +12,4 @@ enable pd-device-locate.path
 enable pd-device-ssh-keys.service
 enable serial-getty@.service ttyGS0 ttyGS1
 enable pd-device-update-confirm.service
+enable pd-device-update-link.service
