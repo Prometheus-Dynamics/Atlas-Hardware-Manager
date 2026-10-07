@@ -1,198 +1,125 @@
 # Raze device package changelog
 
-## 1.5.0
+## Unreleased
 
-Smaller images, and a read-only root.
+Development work since 1.0.7, not yet validated on hardware as a release.
+The package version stays 1.0.7 until a real release. OSes pin this layer by
+commit; the commits are listed per area.
 
-- **EROFS root:** `CONFIG_EROFS_FS=y` (with LZMA and ZSTD) is built in, so a
-  read-only compressed root mounts without an initramfs. The OS's cmdline
-  adds `rootfstype=erofs ro`. Root slots target 512 MiB; nothing assumed
-  2 GiB (pd-image-slots checks the fit).
-- **Nothing writes to `/` at runtime:**
-  - gadget DHCP leases go to `/run/pd-device/`;
-  - SSH keys from the boot partition go to `/run/pd-device/ssh/authorized_keys`,
-    read through `/etc/ssh/sshd_config.d/50-pd-device.conf`. The OS's
-    sshd_config must `Include` that directory before any
-    `AuthorizedKeysFile`. The home directory copy is kept when writable;
-  - `*.env` overrides are also read from `/data/pd-device/`, after
-    `/etc/pd-device/`. device-package.env is never read from there.
-  - Identity, update and LED state already lived in `/run` or on p1.
-- **Kernel trims** (`buildroot-external/linux/raze.config`,
-  `BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES`): no Wi-Fi, Bluetooth, NFC,
-  802.15.4 or ATM; no analog/digital TV, radio, SDR, RC or gspca; 43 unused
-  camera sensors (only the OV9782 via ov9282); no MD RAID, DRBD or NBD; no
-  btrfs, xfs, f2fs, nfs/nfsd, cifs, ntfs3, iso9660, udf or hfs. Modules drop
-  from 25 MB to 15 MB (1889 to 1410).
-  - Sound stays, because DRM_VC4 (display and GPU) depends on it.
-  - Also kept: the bridge (USB gadget), CAN, USB cameras and USB Ethernet,
-    IIO and hwmon, and overlayfs.
-- **No udev hwdb:** `BR2_PACKAGE_SYSTEMD_HWDB` and
-  `BR2_PACKAGE_EUDEV_ENABLE_HWDB` are off, about 13 MB.
-- Mesa was already only v3d/vc4, plus v3dv in the Vulkan layer.
-- `update` takes `UPDATE_SYNC`, so tests can skip whole-system syncs.
-- `tests/update.sh` installs an image with a real EROFS (LZMA) root slot
-  when erofs-utils >= 1.5 is present. CI runs the device tests on Ubuntu
-  24.04 for that.
+### Breaking and ABI notes
 
-## 1.4.0
+- **Platform:** Buildroot 2026.08, kernel `rpi-7.2.y` (7.2.9, bcm2712, 16K
+  pages) and rpi-firmware 1.20260915 (`fd52491`). Buildroot 2026.08 removed
+  rpi-userland, so `BR2_PACKAGE_RPI_USERLAND` must go from OS overrides.
+  OpenJDK's default became 25.
+- **Toolchain:** Bootlin aarch64 glibc bleeding-edge 2025.08-1 (gcc 15,
+  kernel headers 5.15) replaces the defconfig's stable one, which has 5.4
+  headers. libpisp needs `linux/dma-heap.h` (5.6); libpisp and libcamera's
+  rpi/pisp pipeline now refuse an older toolchain at configure time
+  (`c881c60`).
+- **libcamera 0.7.2** (soname `libcamera.so.0.7`) and libpisp 1.7.0, pinned by
+  commit with `.hash` files. Rebuild anything linked against 0.6, such as
+  PhotonVision's libcamera GL driver (`fd52491`, `c881c60`).
+- **Kernel modules:** the CFE driver for `raspberrypi,rp1-cfe` is now
+  `rp1-cfe-downstream.ko`. A Raze kernel fragment
+  (`buildroot-external/linux/raze.config`, set through
+  `BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES`) removes:
+  - Wi-Fi, Bluetooth, NFC, 802.15.4 and ATM;
+  - TV, radio, SDR, RC and gspca;
+  - the 43 camera sensors other than the OV9782;
+  - MD RAID, DRBD and NBD;
+  - btrfs, xfs, f2fs, nfs/nfsd, cifs, ntfs3, iso9660, udf and hfs.
 
-- **One image for everything:** `update stage` takes the same `.img`/`.img.xz`/
-  `.img.zst`/`.img.gz` that is flashed over USB, plus `--sha256` of that file.
-  The `.pdupdate` bundle is gone; nothing had shipped with it.
-  - The writer copies the image's boot slot A (p2) and root slot A (p5) into
-    the inactive slot and skips p1, the other slot and /data.
-  - It reads the image as one stream through `pd-image-slots`, a new C tool
-    in this package (`packages/pd-image-slots`, `BR2_PACKAGE_PD_IMAGE_SLOTS`).
-    The tool follows the MBR and EBR chain as they pass, checks the
-    partitions fit, and reports progress.
-  - A file is checked against `--sha256` before anything is written. stdin
-    (`stage - --sha256 <hex> [--format xz]`) is checked at the end, and a
-    mismatch leaves the slot unstaged.
-  - The new root must name this model, in its `device-package.env`. Its
-    os-release gives the version (`IMAGE_VERSION`, else `VERSION_ID`).
-  - Images without the A/B layout are refused with that reason.
-- **OS hooks** in `/etc/pd-device/update.d/`: `pre-stage`, `post-stage`,
-  `pre-reboot`, `post-boot`. A failing pre- hook stops its step.
-- The image gets xz-utils (`BR2_PACKAGE_XZ`). busybox `xzcat` still works
-  without it.
-- `tests/update.sh` now builds a real A/B image with sfdisk, compresses it
-  with xz and zstd, and compiles `pd-image-slots` from source.
+  An OS that sets its own fragment files lists ours as well (`695d172`).
+- **Read-only root:** EROFS is built into the kernel, and nothing in the
+  package writes to `/`. SSH keys from the boot partition go to
+  `/run/pd-device/ssh/authorized_keys`, which needs the OS's sshd_config to
+  `Include /etc/ssh/sshd_config.d/*.conf` before any `AuthorizedKeysFile`
+  (`695d172`).
+- **Update input:** `update stage` takes the same whole-disk image that is
+  flashed over USB, plus `--sha256`. There is no separate update format (an
+  interim `.pdupdate` bundle never shipped) (`696d3ad`).
 
-## 1.3.0
+### Updates (A/B with tryboot)
 
-- **Restart into USB boot without the button:** `/usr/lib/pd-device/usb-boot`
-  sets a one-time boot order of RPIBOOT through the firmware mailbox
-  (`set_reboot_order`, tag 0x0003808b; Pi 5/CM5 only), then reboots. The
-  bootloader's own BOOT_ORDER is untouched, and the next normal power-up
-  boots the eMMC again. `usb-boot --check` reports whether the board
-  supports it.
-  - RPIBOOT has no timeout: the board waits for a USB host until it is
-    flashed or power-cycled. So the script is root-only and Atlas runs it
-    over SSH (Orion later). It is never offered on the unauthenticated
-    identity endpoint.
-- The identity's `update_methods` gains `usb-boot-reboot` when the board
-  supports it (a BCM2712 with vcmailbox).
-- `rpi-utils` now also builds `vcmailbox` (one C file, compiled directly).
-- Test: `devices/raze/tests/usb-boot.sh`, with a fake mailbox and device tree.
-- Not yet tried on hardware.
+- `/usr/lib/pd-device/update`: `status`, `stage`, `apply`, `confirm`,
+  `rollback`.
+  - **stage:** `stage <image> --sha256 <hex>`, or
+    `stage - --sha256 <hex> [--format xz|zst|gz|raw]` from stdin.
+    - It copies the image's boot slot A (p2) and root slot A (p5) into the
+      inactive slot in one streaming pass through `pd-image-slots`, a small C
+      tool in this package. The rest of the image is skipped.
+    - A file is checked against its SHA-256 before anything is written.
+    - The new root must name this model. Its os-release gives the version
+      (`IMAGE_VERSION`, else `VERSION_ID`).
+    - Images without the A/B layout are refused.
+  - **apply:** boots the new slot once with `reboot "0 tryboot"`.
+  - **confirm:** `pd-device-update-confirm.service` keeps the new slot after
+    the OS's `update-health` passes. A failed check restarts into the old
+    slot, and the hardware watchdog (RuntimeWatchdogSec=15s) covers a hung
+    trial.
+  - **Locking:** a lock lets only one writer run. `status` answers from the
+    last state while another command runs.
+  - Commits: `e12e22d`, `5baf83e`, `696d3ad`.
+- OS hooks in `/etc/pd-device/update.d/`: `pre-stage`, `post-stage`,
+  `pre-reboot`, `post-boot`. A failing pre- hook stops its step (`696d3ad`).
+- Layout: p1 autoboot.txt (and the update state), p2/p3 boot, p5/p6 root
+  (512 MiB target, EROFS), p7 /data. See docs/ota.md.
+- The identity lists `ab-tryboot` in `update_methods`, and an `update` object
+  with the state, slots, versions, progress and error.
+- The image gets zstd, xz-utils and pd-image-slots.
 
-## 1.2.0
+### Fresh installs without the boot button
 
-- New optional layer `gaia/gpu-vulkan.toml`, imported after `gpu.toml`. It
-  adds Vulkan on the V3D GPU: Mesa's v3dv driver
-  (`BR2_PACKAGE_MESA3D_VULKAN_DRIVER_BROADCOM`), the Vulkan loader and
-  headers, and vulkan-tools (vulkaninfo, vkcube; pulls in vulkan-sdk). An
-  OS that only needs GLES doesn't import it and doesn't pay for it.
+- `/usr/lib/pd-device/usb-boot` restarts a running CM5 straight into USB boot
+  (RPIBOOT). It uses the firmware's one-time `set_reboot_order`, so the
+  bootloader's own BOOT_ORDER never changes. It is root-only and run over SSH
+  (later Orion), never through the open identity endpoint.
+- The identity lists `usb-boot-reboot` when the board supports it.
+- `rpi-utils` builds `vcgencmd` and `vcmailbox` (`194a159`).
 
-## 1.1.1
+### Hardware
 
-- **Toolchain:** Bootlin aarch64 glibc **bleeding-edge** 2025.08-1 (gcc 15,
-  kernel headers 5.15) instead of the defconfig's stable one (gcc 14, headers
-  5.4). libpisp 1.7.0 needs `linux/dma-heap.h` (5.6), and PhotonVision's
-  natives need glibc >= 2.38.
-- libpisp and libcamera's rpi/pisp pipeline now `depends on
-  BR2_TOOLCHAIN_HEADERS_AT_LEAST_5_6`, so an older toolchain fails at
-  configure time instead of mid-build.
-- libpisp and libcamera are pinned by commit. libpisp has both a tag and a
-  branch named v1.7.0. Both packages now ship `.hash` files (tarball and
-  license files).
+- **LED ring:** SK6812-EC20, 24-bit RGB. The `ws2812-pio` overlay no longer
+  passes `rgbw`. `raze-leds` keeps the driver's 4-byte layout, so white is
+  `color 255 255 255` (`f98489f`). Verified on a Raze.
+- **Fan:** normal polarity, levels 179/212/245/255/255 (a 70 % minimum)
+  (`ff18ab8`, `f98489f`). Verified on a Raze. `dtoverlay=raze-fan,polarity=1`
+  restores inverted drive.
+- **Overlays:** the stock overlays `raze-device.txt` loads are built from the
+  kernel being built, not taken from the firmware (`fd52491`).
 
-## 1.1.0
+### Optional layers
 
-Platform upgrade: every layer moves to its newest release. Validated off the
-board (see below); not yet run on hardware.
+- `gaia/gpu-vulkan.toml`, after `gpu.toml`: Mesa's v3dv driver, the Vulkan
+  loader and vulkan-tools (`e5f9087`).
 
-- **Buildroot 2026.08** (from 2025.11.3). `raspberrypicm5io_defconfig` and
-  `board/raspberrypi` are unchanged, and every `config_overrides` symbol
-  survives `olddefconfig` with the packages staged as Gaia does.
-  - OpenJDK's default becomes 25.
-  - Mesa moves to 26.1.8, and dnsmasq to 2.93.
-- **Kernel:** raspberrypi/linux `rpi-7.2.y` at 53679a5 (7.2.9) replaces
-  `stable_20250916` (6.12). It still uses bcm2712 with 16K pages.
-  - The ov9782 patch is ported to 7.2's CCI-regmap ov9282 driver, with the
-    same behaviour.
-  - `make Image modules dtbs` builds cleanly.
-  - Every module and symbol the OS uses is present: RP1 CFE, PiSP BE, rp1-pio,
-    ws2812-pio-rp1, dwc2/libcomposite/configfs gadget functions, pwm-fan with
-    pwm-rp1, i2c, and ov9282.
-  - Behaviour change: the CFE driver for `raspberrypi,rp1-cfe` is now
-    `rp1-cfe-downstream.ko`. `rp1-cfe.ko` is the upstream driver and binds
-    only `-upstream`. Both register as "rp1-cfe"; nothing in the package names
-    the module.
-- **Firmware:** rpi-firmware 1.20260915 (`packages/rpi-firmware` override;
-  the tarball is 182 MB).
-  - The stock overlays raze-device.txt loads are now built from the kernel
-    (`images/raze-overlays/`, external.mk) instead of being taken from the
-    firmware. The firmware's overlays come from its own kernel (6.18), and
-    7.2's `ws2812-pio` changed.
-- **libcamera** v0.7.2+rpt20260817 and **libpisp** v1.7.0.
-  - The ov9782 patches are rebased and apply cleanly.
-  - The ov9782 tuning still parses under 0.7.2's controller.
-  - The soname moves from libcamera.so.0.6 to 0.7: rebuild anything linked
-    against it, such as PhotonVision's libcamera GL driver.
-- **rpi-userland removed** (Buildroot dropped it). `vcgencmd` now comes from
-  `packages/rpi-utils` (raspberrypi/utils e0484c8, vcgencmd only). The
-  external tree no longer hides rpi-userland's EGL headers from staging.
-  Other userland tools (vcmailbox, dtoverlay) are gone; nothing here used
-  them.
+### Smaller image
 
-## 1.0.12
+- No udev hwdb (systemd or eudev), about 13 MB.
+- Kernel modules drop from 25 MB to 15 MB; sound stays, because DRM_VC4
+  depends on it (`695d172`).
 
-- `update` takes a lock (`/run/pd-device/update.lock`), so two commands never
-  write at once. `status` still answers while another command runs, from the
-  last `update.json`, which is how Atlas shows staging progress. A `staging`
-  state left by an interrupted stage can now be staged again; only a running
-  trial (`trying`) blocks a new stage.
+### Runtime paths and settings
 
-## 1.0.11
+- **SSH keys:** `ssh-keys` finds the boot partition from `root=` on the
+  kernel command line, so an overlay root works. On the A/B layout that is
+  p1, shared by both slots (`a6dec52`).
+- **Overrides:** `*.env` settings are read from `/usr/lib/pd-device`, then
+  `/etc/pd-device`, then `/data/pd-device`. device-package.env is never read
+  from `/data` (`695d172`).
+- **Commit stamp:** `PD_DEVICE_PACKAGE_COMMIT` comes from the OS, in
+  `/etc/pd-device/device-package.env`, for git imports (`a6dec52`).
+- **DHCP leases** for the USB gadget live in `/run` (`695d172`).
 
-- `ssh-keys` finds the boot partition from `root=` on the kernel command line
-  (PARTUUID/UUID/LABEL resolved), so an overlay or squashfs root works; with
-  no block device behind `/` it falls back to `/dev/mmcblk0p1`.
-  `SSH_KEYS_BOOT_PARTITION` still overrides. On the A/B layout that is p1,
-  shared by both slots, so keys survive updates.
-- `lib.sh`: `pd_root_device` and `pd_sibling_partition`, shared by `ssh-keys`
-  and `update`.
-- `PD_DEVICE_PACKAGE_COMMIT`: an OS that imports the layer straight from git
-  sets it in `/etc/pd-device/device-package.env` (Gaia:
-  `${source.<id>.commit}`), which is read after the package's file.
+### Tests
 
-## 1.0.10
-
-- LEDs: the ring is SK6812-EC20, 24-bit RGB, not RGBW. The `ws2812-pio`
-  overlay no longer passes `rgbw` (32 bits per LED smeared the colours around
-  the ring). `raze-leds` keeps writing 4 bytes per LED, the driver's
-  userspace layout; W is dropped on the wire, so white is `color 255 255 255`.
-  `RAZE_LEDS_ORDER` must stay four letters. Verified on a Raze: red, green,
-  blue and white on all 16 LEDs.
-- Fan: 70 % minimum, levels 179/212/245/255/255 (70, 83, 96, 100 %), normal
-  polarity. Verified on a Raze: 83 % at 58 °C.
-
-## 1.0.9
-
-- A/B updates: `/usr/lib/pd-device/update` (status, stage, apply, confirm,
-  rollback) writes a `.pdupdate` bundle (`manifest.env`, `boot.vfat.zst`,
-  `rootfs.ext4.zst`) to the inactive slot after checking every SHA-256,
-  boots it once with tryboot, and keeps it only when
-  `pd-device-update-confirm.service` finds it healthy. Otherwise the board
-  restarts into the previous version. The layout is p1 autoboot.txt,
-  p2/p3 boot, p5/p6 root (docs/ota.md). Images built without that layout
-  are unaffected.
-- The identity reports `update_methods: ["image-write", "ab-tryboot"]` and an
-  `update` object (state, slots, versions, progress, error) on an A/B layout.
-- The hardware watchdog is armed (RuntimeWatchdogSec=15s), so a hung trial
-  boot resets back to the confirmed slot.
-- The image gets zstd (`BR2_PACKAGE_ZSTD`).
-- Settings live in `update.env`; an OS adds its health check as
-  `/etc/pd-device/update-health`.
-
-## 1.0.8
-
-- Fan: normal PWM polarity and a 50 % minimum. On a Raze Gen 1 the inverted
-  default left the fan "basically not moving" (the 88 % low level came out
-  near 12 %, and full speed would have stopped it). Levels are now 128/160/
-  200/255/255 (50 %, 63 %, 78 %, 100 %). `dtoverlay=raze-fan,polarity=1`
-  restores inverted drive for a revision that needs it.
+- `devices/raze/tests/`:
+  - `update.sh` uses a real sfdisk A/B image, compressed with xz and zstd,
+    with an EROFS root slot when erofs-utils is new enough.
+  - `usb-boot.sh` uses a fake mailbox.
+  - `root-device.sh` checks finding the root device.
+- CI runs them on Ubuntu 24.04.
 
 ## 1.0.7
 

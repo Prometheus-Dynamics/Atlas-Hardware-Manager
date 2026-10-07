@@ -60,7 +60,7 @@ the board's slots.
 
 ## The writer: `pd-device-update` (device package)
 
-Installed as `/usr/lib/pd-device/update` (Raze 1.4.0; tested off-device by
+Installed as `/usr/lib/pd-device/update` (Unreleased; tested off-device by
 `devices/raze/tests/update.sh` against a real A/B layout made with sfdisk).
 Settings: `update.env`.
 
