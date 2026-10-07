@@ -41,7 +41,11 @@ fn forward_events(app: &tauri::AppHandle, state: &AppState) {
 fn start_watch(app: &tauri::AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
-        app.state::<AppState>().apply_watch();
+        let state = app.state::<AppState>();
+        state.apply_watch();
+        if let Some(orion) = &state.orion {
+            orion.start_images_if_configured(&state.settings());
+        }
     });
 }
 
@@ -107,6 +111,8 @@ pub fn run() {
             commands::orion::set_orion_url,
             commands::orion::check_orion,
             commands::orion::enroll_orion_with_key,
+            commands::orion::image_server_status,
+            commands::orion::set_image_server,
             commands::system::discovery_status,
             commands::system::fix_health,
             commands::system::get_settings,

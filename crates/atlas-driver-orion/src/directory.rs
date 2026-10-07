@@ -120,7 +120,7 @@ impl LinkSource for OrionDirectory {
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .len();
-        vec![match error {
+        let mut checks = vec![match error {
             None => HealthCheck::ok(
                 "orion",
                 "Orion",
@@ -132,7 +132,9 @@ impl LinkSource for OrionDirectory {
                 format!("Orion can't be reached: {error}"),
                 "Devices still work over USB, the network identity, and SSH; Orion adds readings, actions, and updates when it's back.",
             ),
-        }]
+        }];
+        checks.extend(self.bundles.as_ref().and_then(|bundles| bundles.health()));
+        checks
     }
 }
 

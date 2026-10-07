@@ -43,6 +43,12 @@ pub struct AppSettings {
     /// (`orion+tcp://host:port`). Off when unset.
     #[serde(default)]
     pub orion_url: Option<String>,
+    /// The TCP port boards download update images from (Orion updates).
+    pub image_server_port: u16,
+    /// The host put in image URLs when Atlas can't tell which of its
+    /// addresses routes to a board. Automatic when unset.
+    #[serde(default)]
+    pub image_host: Option<String>,
 }
 
 impl Default for AppSettings {
@@ -54,6 +60,8 @@ impl Default for AppSettings {
             staged_default: StagedRollout::Auto,
             ssh_key_file: None,
             orion_url: None,
+            image_server_port: atlas_image_server::DEFAULT_PORT,
+            image_host: None,
         }
     }
 }
@@ -71,6 +79,9 @@ impl AppSettings {
         // sensible safety-net interval.
         if settings.scan_interval_ms < FALLBACK_RANGE_MS.0 {
             settings.scan_interval_ms = DEFAULT_FALLBACK_MS;
+        }
+        if settings.image_server_port == 0 {
+            settings.image_server_port = atlas_image_server::DEFAULT_PORT;
         }
         settings
     }

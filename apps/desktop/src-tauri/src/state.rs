@@ -55,7 +55,7 @@ impl AppState {
 
         let orion = match simulated {
             Some(_) => None,
-            None => match crate::orion::Orion::new(&paths, settings.orion_url.clone()) {
+            None => match crate::orion::Orion::new(&paths, &settings) {
                 Ok(orion) => Some(orion),
                 Err(error) => {
                     startup_warnings.push(format!("Orion is unavailable: {error}"));
