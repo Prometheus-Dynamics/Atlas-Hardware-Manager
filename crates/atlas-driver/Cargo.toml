@@ -13,6 +13,7 @@ description = "Device driver contract for Atlas: identity, links, capabilities, 
 [dependencies]
 async-trait.workspace = true
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
 tokio-util.workspace = true
 

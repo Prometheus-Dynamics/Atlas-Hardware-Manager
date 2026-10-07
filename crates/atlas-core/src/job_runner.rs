@@ -490,6 +490,12 @@ fn finish_device(
         status: status.clone(),
     });
     let record = inner.state().inventory.get(key).cloned();
+    if let Some(record) = &record
+        && status.is_verified()
+    {
+        // Self-test the board once it is back and running.
+        inner.queue_selftest(record);
+    }
     if let Some(entry) = record.and_then(|record| crate::activity::for_update(&record, &status)) {
         inner.record_activity(vec![entry]);
     }

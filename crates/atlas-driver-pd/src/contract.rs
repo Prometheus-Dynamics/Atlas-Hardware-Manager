@@ -53,6 +53,9 @@ pub struct PdIdentity {
     /// The A/B updater's state (`update status`), when the board has one.
     #[serde(default)]
     pub update: Option<UpdateReport>,
+    /// Root-only diagnostics run over SSH, such as `selftest`.
+    #[serde(default)]
+    pub diagnostics: Vec<String>,
 }
 
 /// `update status` as the identity carries it; every field is optional.

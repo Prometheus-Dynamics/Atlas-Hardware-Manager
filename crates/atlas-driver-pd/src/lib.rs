@@ -28,4 +28,4 @@ pub use driver::{NetworkLinks, PdDriver, drivers_for_catalog};
 pub use gadget::UsbGadgetLinks;
 pub use serial::serial_console;
 pub use ssh::{AB_METHOD, SshAccess, SshConfig, private_key_for};
-pub use ssh_actions::{USB_BOOT_ACTION, USB_BOOT_METHOD};
+pub use ssh_actions::{SELFTEST_DIAGNOSTIC, USB_BOOT_ACTION, USB_BOOT_METHOD};

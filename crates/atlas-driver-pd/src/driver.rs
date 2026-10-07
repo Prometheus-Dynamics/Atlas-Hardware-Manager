@@ -7,14 +7,14 @@ use atlas_devices::{DeviceCatalog, DevicePackage};
 use atlas_driver::{
     ActionsCapability, Candidate, Capabilities, DeviceKey, Driver, DriverError, DriverManifest,
     Family, HealthCheck, Identity, Link, LinkId, LinkKind, LinkSource, LogsCapability,
-    TelemetryCapability, UpdateCapability,
+    SelfTestCapability, TelemetryCapability, UpdateCapability,
 };
 
 use crate::browse::Browser;
 use crate::contract::PdIdentity;
 use crate::live::{PdActions, PdLogs, PdTelemetry, resolve};
 use crate::ssh::{AB_METHOD, SshAccess, SshUpdate};
-use crate::ssh_actions::{PdDeviceActions, USB_BOOT_METHOD};
+use crate::ssh_actions::{PdDeviceActions, PdSelfTest, SELFTEST_DIAGNOSTIC, USB_BOOT_METHOD};
 
 const LINK_ID: &str = "mdns";
 const FETCH_TIMEOUT: Duration = Duration::from_secs(2);
@@ -264,6 +264,13 @@ impl Driver for PdDriver {
                 actions: reported.actions.iter().map(|a| a.to_action()).collect(),
             });
         let ssh_actions = has(USB_BOOT_METHOD).then(ssh).flatten();
+        let selftest = reported
+            .diagnostics
+            .iter()
+            .any(|name| name == SELFTEST_DIAGNOSTIC)
+            .then(ssh)
+            .flatten()
+            .map(|ssh| Arc::new(PdSelfTest { ssh }) as Arc<dyn SelfTestCapability>);
         let actions = (http_actions.is_some() || ssh_actions.is_some()).then(|| {
             Arc::new(PdDeviceActions {
                 http: http_actions,
@@ -285,6 +292,7 @@ impl Driver for PdDriver {
                 }) as Arc<dyn LogsCapability>
             }),
             actions,
+            selftest,
         }
     }
 }
@@ -447,6 +455,28 @@ mod tests {
             .find(|action| action.id == crate::USB_BOOT_ACTION)
             .unwrap();
         assert!(usb_boot.destructive);
+    }
+
+    #[tokio::test]
+    async fn a_board_with_the_selftest_offers_it() {
+        let url =
+            serve_once(r#"{ "model": "raze", "serial": "5", "diagnostics": ["selftest"] }"#).await;
+        let driver = PdDriver::new(package());
+        let identity = driver
+            .identify(&Candidate {
+                link: LinkId("mdns".into()),
+                family: Family::new("raze"),
+                address: url,
+            })
+            .await
+            .unwrap();
+        let capabilities = driver.capabilities(&identity);
+        assert!(capabilities.selftest.is_some());
+        assert!(
+            capabilities
+                .kinds()
+                .contains(&atlas_driver::CapabilityKind::SelfTest)
+        );
     }
 
     #[tokio::test]

@@ -26,6 +26,8 @@ pub enum ActivityKind {
     ModeChanged,
     UpdateResult,
     ActionRun,
+    /// A self-test ran, by request or after an update.
+    SelfTest,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

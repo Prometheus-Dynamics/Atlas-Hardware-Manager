@@ -17,6 +17,7 @@ mod manage;
 mod observe;
 mod robots;
 mod scan;
+mod selftest;
 mod store;
 mod time;
 mod watch;
@@ -32,5 +33,6 @@ pub use jobs::{
 };
 pub use robots::{RobotProfile, RobotRole, RobotState, RobotStatus, RoleStatus};
 pub use scan::ScanReport;
+pub use selftest::{SelfTestRecord, SelfTestTrigger};
 pub use store::{InventoryStore, JsonFileStore, MemoryStore, Snapshot, StoreError};
 pub use watch::{DiscoveryStatus, WatchOptions};
