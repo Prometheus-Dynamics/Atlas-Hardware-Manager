@@ -1,5 +1,39 @@
 # Raze device package changelog
 
+## 1.5.0
+
+Smaller images, and a read-only root.
+
+- **EROFS root:** `CONFIG_EROFS_FS=y` (with LZMA and ZSTD) is built in, so a
+  read-only compressed root mounts without an initramfs. The OS's cmdline
+  adds `rootfstype=erofs ro`. Root slots target 512 MiB; nothing assumed
+  2 GiB (pd-image-slots checks the fit).
+- **Nothing writes to `/` at runtime:**
+  - gadget DHCP leases go to `/run/pd-device/`;
+  - SSH keys from the boot partition go to `/run/pd-device/ssh/authorized_keys`,
+    read through `/etc/ssh/sshd_config.d/50-pd-device.conf`. The OS's
+    sshd_config must `Include` that directory before any
+    `AuthorizedKeysFile`. The home directory copy is kept when writable;
+  - `*.env` overrides are also read from `/data/pd-device/`, after
+    `/etc/pd-device/`. device-package.env is never read from there.
+  - Identity, update and LED state already lived in `/run` or on p1.
+- **Kernel trims** (`buildroot-external/linux/raze.config`,
+  `BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES`): no Wi-Fi, Bluetooth, NFC,
+  802.15.4 or ATM; no analog/digital TV, radio, SDR, RC or gspca; 43 unused
+  camera sensors (only the OV9782 via ov9282); no MD RAID, DRBD or NBD; no
+  btrfs, xfs, f2fs, nfs/nfsd, cifs, ntfs3, iso9660, udf or hfs. Modules drop
+  from 25 MB to 15 MB (1889 to 1410).
+  - Sound stays, because DRM_VC4 (display and GPU) depends on it.
+  - Also kept: the bridge (USB gadget), CAN, USB cameras and USB Ethernet,
+    IIO and hwmon, and overlayfs.
+- **No udev hwdb:** `BR2_PACKAGE_SYSTEMD_HWDB` and
+  `BR2_PACKAGE_EUDEV_ENABLE_HWDB` are off, about 13 MB.
+- Mesa was already only v3d/vc4, plus v3dv in the Vulkan layer.
+- `update` takes `UPDATE_SYNC`, so tests can skip whole-system syncs.
+- `tests/update.sh` installs an image with a real EROFS (LZMA) root slot
+  when erofs-utils >= 1.5 is present. CI runs the device tests on Ubuntu
+  24.04 for that.
+
 ## 1.4.0
 
 - **One image for everything:** `update stage` takes the same `.img`/`.img.xz`/

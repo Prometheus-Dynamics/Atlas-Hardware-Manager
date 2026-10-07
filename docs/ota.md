@@ -41,8 +41,8 @@ Target eMMC layout (replaces today's two partitions):
 | p2 | 128 MiB FAT | boot A: kernel, DTBs, overlays, `config.txt`, `cmdline.txt` (root = p5) |
 | p3 | 128 MiB FAT | boot B: same, root = p6 |
 | p4 | extended | |
-| p5 | 2 GiB ext4 | root A |
-| p6 | 2 GiB ext4 | root B |
+| p5 | 512 MiB | root A: read-only EROFS (lzma) |
+| p6 | 512 MiB | root B |
 | p7 | rest, ext4 | `/data`: settings, PhotonVision config, logs, SSH keys. Kept across updates |
 
 Moving an existing board to this layout is a one-time full reflash over USB
@@ -126,6 +126,28 @@ watchdog (systemd `RuntimeWatchdogSec=15s`), with the same result.
 The identity endpoint advertises it: `"update_methods": ["image-write", "ab-tryboot"]`
 (the second only when `status` has seen an A/B layout) and `"update"`, the
 `status` object.
+
+## Read-only root (EROFS)
+
+Root slots hold a read-only, compressed EROFS filesystem. `CONFIG_EROFS_FS`
+is built into the Raze kernel (`buildroot-external/linux/raze.config`, with
+LZMA and ZSTD), so it mounts without an initramfs; the OS's cmdline adds
+`rootfstype=erofs ro`. The writer copies slots raw, so nothing changes for
+updates; it reads the new root's `os-release` and `device-package.env`
+through a read-only mount, which auto-detects EROFS.
+
+Nothing in the device package writes to `/` at runtime:
+
+| What | Where |
+|---|---|
+| identity, update status, LED state, action requests, gadget DHCP leases | `/run/pd-device/` |
+| SSH keys from the boot partition | `/run/pd-device/ssh/authorized_keys`, read by sshd through `/etc/ssh/sshd_config.d/50-pd-device.conf` (the OS's sshd_config must `Include /etc/ssh/sshd_config.d/*.conf` before any `AuthorizedKeysFile`) |
+| update state | p1 (`pd-update.env`), shared by both slots |
+| user overrides of the package's `*.env` settings | `/data/pd-device/` (read after `/etc/pd-device/`) |
+| hostname | the kernel's transient hostname; `/etc` is never written |
+
+The OS provides: `/data` mounted early, a persistent or transient
+`/etc/machine-id`, SSH host keys on `/data`, and its own writable paths.
 
 ## Fresh installs without the button
 
@@ -212,6 +234,5 @@ orion-node on the user's computer. The HTTP control API is the fallback.
 
 ## Open questions
 
-- Slot sizes: is 2 GiB per root enough for PhotonVision + JDK with headroom?
 - Where an image signing key lives (device package vs OS), if images get signed.
 - Whether HeliOS images adopt the same layout, so one writer serves both.

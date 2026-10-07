@@ -5,7 +5,9 @@
 # Every input path can be overridden through the environment, which is how the
 # scripts are tested off-device:
 #   PD_LIB_DIR      package files and defaults   (/usr/lib/pd-device)
-#   PD_ETC_DIR      OS and user overrides        (/etc/pd-device)
+#   PD_ETC_DIR      OS overrides                 (/etc/pd-device)
+#   PD_DATA_DIR     user overrides, persistent   (/data/pd-device; the root
+#                   may be read-only)
 #   PD_RUN_DIR      generated runtime state      (/run/pd-device)
 #   PD_DT_DIR       device tree                  (/proc/device-tree)
 #   PD_NET_DIR      network interfaces           (/sys/class/net)
@@ -15,6 +17,7 @@
 
 PD_LIB_DIR=${PD_LIB_DIR:-/usr/lib/pd-device}
 PD_ETC_DIR=${PD_ETC_DIR:-/etc/pd-device}
+PD_DATA_DIR=${PD_DATA_DIR:-/data/pd-device}
 PD_RUN_DIR=${PD_RUN_DIR:-/run/pd-device}
 PD_DT_DIR=${PD_DT_DIR:-/proc/device-tree}
 PD_NET_DIR=${PD_NET_DIR:-/sys/class/net}
@@ -57,10 +60,15 @@ pd_log() {
 	printf '%s: %s\n' "${0##*/}" "$*" >&2
 }
 
-# Source <name> from the package defaults, then from the OS/user override
-# directory, so a value in /etc/pd-device/<name> wins.
+# Source <name> from the package defaults, then the OS overrides in
+# /etc/pd-device, then the user's in /data/pd-device; the last value wins.
 pd_load_env() {
-	for _pd_env in "$PD_LIB_DIR/$1" "$PD_ETC_DIR/$1"; do
+	# /data/pd-device comes last, so a setting survives on a read-only root.
+	# device-package.env describes the image itself and is never taken
+	# from /data.
+	_pd_data="$PD_DATA_DIR/$1"
+	[ "$1" != device-package.env ] || _pd_data=''
+	for _pd_env in "$PD_LIB_DIR/$1" "$PD_ETC_DIR/$1" $_pd_data; do
 		if [ -r "$_pd_env" ]; then
 			# shellcheck disable=SC1090
 			. "$_pd_env"

@@ -8,6 +8,28 @@ on:
   workflow_dispatch:
 
 jobs:
+  # The device package's shell scripts and pd-image-slots, under the runner's
+  # POSIX sh (dash). 24.04 for erofs-utils >= 1.5, so update.sh also installs
+  # an image with a real EROFS root slot.
+  device:
+    name: device package tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends erofs-utils zstd xz-utils
+
+      - name: Run the tests
+        run: |
+          sh devices/raze/tests/update.sh
+          sh devices/raze/tests/root-device.sh
+          sh devices/raze/tests/usb-boot.sh
+
   workspace:
     name: checks (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -56,14 +78,6 @@ jobs:
 
       - name: Run file-size lint
         run: ./scripts/check-file-sizes.sh
-
-      # The device-side A/B updater, under the runner's POSIX sh (dash on Ubuntu).
-      - name: Test the device update writer
-        if: runner.os == 'Linux'
-        run: |
-          sh devices/raze/tests/update.sh
-          sh devices/raze/tests/root-device.sh
-          sh devices/raze/tests/usb-boot.sh
 
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings

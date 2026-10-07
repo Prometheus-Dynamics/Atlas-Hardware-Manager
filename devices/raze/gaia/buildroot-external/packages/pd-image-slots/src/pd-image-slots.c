@@ -236,8 +236,8 @@ int main(int argc, char **argv)
 		       "and extended partition)", boot_part);
 
 	/* Until root A's end is known, guess it lies a few boot slots past the
-	 * extended partition's start (a 2 GiB root after a 128 MiB boot). */
-	total = ext.start + 16 * boot.sectors;
+	 * extended partition's start (a 512 MiB root after a 128 MiB boot). */
+	total = ext.start + 4 * boot.sectors;
 
 	/* Walk the EBR chain in stream order, copying boot A when we pass it. */
 	ebr_at = ext.start;

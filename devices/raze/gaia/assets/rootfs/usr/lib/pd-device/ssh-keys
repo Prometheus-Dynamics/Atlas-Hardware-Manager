@@ -4,9 +4,11 @@
 # Put one or more OpenSSH public keys, one per line, in
 #   <boot partition>/pd-device/authorized_keys
 # (Atlas can write it when it flashes a board, or with "Browse files" on an
-# exposed eMMC). At boot they are added to /root/.ssh/authorized_keys. Keys
-# already there are kept; nothing is ever removed, and password login is
-# never enabled. No file, no change. Settings: ssh-keys.env.
+# exposed eMMC). At boot they are written to /run/pd-device/ssh/authorized_keys,
+# which sshd reads through /etc/ssh/sshd_config.d/50-pd-device.conf (the root
+# may be read-only), and added to /root/.ssh/authorized_keys when that is
+# writable. Keys already there are kept; nothing is ever removed from it, and
+# password login is never enabled. No file, no change. Settings: ssh-keys.env.
 set -eu
 
 PD_LIB_DIR=${PD_LIB_DIR:-/usr/lib/pd-device}
@@ -65,22 +67,31 @@ trap cleanup EXIT
 src="$mnt/$SOURCE_NAME"
 [ -r "$src" ] || exit 0
 
-ssh_dir="$TARGET_HOME/.ssh"
-keys="$ssh_dir/authorized_keys"
-mkdir -p "$ssh_dir"
-chmod 700 "$ssh_dir"
-touch "$keys"
-chmod 600 "$keys"
-
 # Only lines that look like public keys; comments and junk are ignored.
 tr -d '\r' < "$src" | while IFS= read -r line; do
 	case "$line" in
-	ssh-* | ecdsa-* | sk-ssh-* | sk-ecdsa-*) ;;
-	*) continue ;;
+	ssh-* | ecdsa-* | sk-ssh-* | sk-ecdsa-*) printf '%s\n' "$line" ;;
 	esac
-	if ! grep -qxF "$line" "$keys"; then
-		printf '%s\n' "$line" >> "$keys"
-		pd_log "added a key for ${TARGET_HOME##*/}: ${line%% *} ${line##* }"
-	fi
-done
+done | awk '!seen[$0]++' > "$PD_RUN_DIR/ssh-keys.new"
+
+# Always: the copy sshd reads, rebuilt every boot.
+run_dir="$PD_RUN_DIR/ssh"
+mkdir -p "$run_dir"
+chmod 700 "$run_dir"
+install -m 600 "$PD_RUN_DIR/ssh-keys.new" "$run_dir/authorized_keys"
+
+# When the home directory is writable, keep the keys there too.
+ssh_dir="$TARGET_HOME/.ssh"
+keys="$ssh_dir/authorized_keys"
+if mkdir -p "$ssh_dir" 2>/dev/null && touch "$keys" 2>/dev/null; then
+	chmod 700 "$ssh_dir"
+	chmod 600 "$keys"
+	while IFS= read -r line; do
+		if ! grep -qxF "$line" "$keys"; then
+			printf '%s\n' "$line" >> "$keys"
+			pd_log "added a key for ${TARGET_HOME##*/}: ${line%% *} ${line##* }"
+		fi
+	done < "$PD_RUN_DIR/ssh-keys.new"
+fi
+rm -f "$PD_RUN_DIR/ssh-keys.new"
 exit 0

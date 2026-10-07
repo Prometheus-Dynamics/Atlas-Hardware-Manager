@@ -51,6 +51,9 @@ UMOUNT=${UPDATE_UMOUNT:-umount}
 MOUNT_RO=${UPDATE_MOUNT_RO:-mount -o ro}
 REBOOT=${UPDATE_REBOOT:-systemctl reboot "0 tryboot"}
 SLOTS=${UPDATE_SLOTS_TOOL:-pd-image-slots}
+# Flushes writes to the eMMC; tests stub it, since a whole-system sync can
+# take minutes on a busy build machine.
+SYNC=${UPDATE_SYNC:-sync}
 CMDLINE_ROOT=${UPDATE_CMDLINE_ROOT:-}
 WORK=${PD_RUN_DIR}/update
 STATUS_JSON=${PD_RUN_DIR}/update.json
@@ -62,7 +65,7 @@ die() {
 		STATE=error
 		ERROR="$*"
 		save_state 2>/dev/null || true
-		sync
+		$SYNC
 		$UMOUNT "$AB" >/dev/null 2>&1 || true
 	fi
 	exit 1
@@ -128,7 +131,7 @@ with_autoboot() {
 	AB=$(mount_part "$AUTOBOOT_PART")
 	rc=0
 	"$1" || rc=$?
-	sync
+	$SYNC
 	$UMOUNT "$AB" >/dev/null 2>&1 || true
 	return "$rc"
 }
@@ -318,7 +321,7 @@ _stage() {
 	if [ -f "$mnt/cmdline.txt" ]; then
 		sed -i "s#root=[^ ]*#root=$(part "$root")#" "$mnt/cmdline.txt"
 	fi
-	sync
+	$SYNC
 	$UMOUNT "$mnt" >/dev/null 2>&1 || true
 
 	STATE=staged PROGRESS=1000
@@ -330,7 +333,7 @@ _stage() {
 cmd_apply() {
 	with_autoboot _apply
 	pd_log "rebooting into the staged slot on trial"
-	sync
+	$SYNC
 	eval "$REBOOT"
 }
 _apply() {
@@ -376,7 +379,7 @@ _confirm() {
 		save_state
 		if [ "${UPDATE_REBOOT_ON_FAIL:-1}" = 1 ]; then
 			pd_log "$ERROR; restarting into $VERSION_ACTIVE"
-			sync
+			$SYNC
 			$UMOUNT "$AB" >/dev/null 2>&1 || true
 			eval "${UPDATE_REBOOT_PLAIN:-systemctl reboot}"
 		fi

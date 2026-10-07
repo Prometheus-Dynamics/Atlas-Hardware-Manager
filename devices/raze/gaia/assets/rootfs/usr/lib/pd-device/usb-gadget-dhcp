@@ -27,8 +27,12 @@ if ! command -v dnsmasq >/dev/null 2>&1; then
 	exit 0
 fi
 
+# Leases live in /run: the root may be read-only, and a USB link's leases
+# don't need to outlive a boot.
+leases="$PD_RUN_DIR/usb-gadget-dnsmasq.leases"
 extra="$PD_ETC_DIR/usb-gadget-dnsmasq.d"
 if [ -d "$extra" ]; then
-	exec dnsmasq --keep-in-foreground --pid-file= --conf-file="$conf" --conf-dir="$extra,*.conf"
+	exec dnsmasq --keep-in-foreground --pid-file= --dhcp-leasefile="$leases" \
+		--conf-file="$conf" --conf-dir="$extra,*.conf"
 fi
-exec dnsmasq --keep-in-foreground --pid-file= --conf-file="$conf"
+exec dnsmasq --keep-in-foreground --pid-file= --dhcp-leasefile="$leases" --conf-file="$conf"

@@ -268,6 +268,12 @@ dest = "/usr/lib/pd-device/usb-boot"
 origin = "static-asset"
 mode = 493
 
+[[stage.files]]
+id = "raze-ssh-sshd-config-d-50-pd-device-conf"
+src = "@self/assets/rootfs/etc/ssh/sshd_config.d/50-pd-device.conf"
+dest = "/etc/ssh/sshd_config.d/50-pd-device.conf"
+origin = "static-asset"
+
 [image]
 kind = "buildroot"
 config_overrides = [
@@ -280,6 +286,11 @@ config_overrides = [
   ["BR2_PACKAGE_XZ", "y"],
   ["BR2_PACKAGE_ZSTD", "y"],
   ["BR2_PACKAGE_PD_IMAGE_SLOTS", "y"],
+  # No udev hardware database (about 13 MB): nothing on a Raze needs
+  # vendor/model names or input quirks from it. systemd or eudev, whichever
+  # the OS uses; the other symbol is simply absent.
+  ["BR2_PACKAGE_SYSTEMD_HWDB", "n"],
+  ["BR2_PACKAGE_EUDEV_ENABLE_HWDB", "n"],
 ]
 
 [image.feed]
@@ -323,6 +334,7 @@ stage_files = [
   "raze-systemd-system-serial-getty-ttygs1-dropin",
   "raze-pd-device-update",
   "raze-pd-device-usb-boot",
+  "raze-ssh-sshd-config-d-50-pd-device-conf",
   "raze-pd-device-update-env",
   "raze-systemd-system-pd-device-update-confirm-service",
   "raze-systemd-system-conf-d-60-pd-device-watchdog-conf",

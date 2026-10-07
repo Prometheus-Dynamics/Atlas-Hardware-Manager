@@ -4,6 +4,9 @@
 # contains is set up by hand in p6.d/p5.d), and reboots are recorded. The
 # image is a real A/B disk layout made with sfdisk, compressed with xz and
 # zstd, and pd-image-slots is compiled from source.
+# With erofs-utils (mkfs.erofs, fsck.erofs) it also installs an image whose
+# root slot is a real EROFS filesystem, read back through the writer's
+# read-only mount.
 # Needs sh, cc, sfdisk, xz, zstd, sha256sum. Run: sh devices/raze/tests/update.sh
 set -eu
 
@@ -36,22 +39,35 @@ cat > "$T/bin/mount" <<'EOF'
 rmdir "$2" 2>/dev/null || rm -f "$2"
 ln -s "$1.d" "$2"
 EOF
+cat > "$T/bin/mount-ro" <<'EOF'
+#!/bin/sh
+# mount -o ro <part> <dir>: an EROFS partition is extracted for real, any
+# other partition's directory stands in for it.
+[ "$1" = -o ] && shift 2
+rmdir "$2" 2>/dev/null || rm -rf "$2"
+if [ "$(od -An -tx1 -j1024 -N4 "$1" 2>/dev/null | tr -d ' \n')" = e2e1f5e0 ]; then
+	mkdir -p "$2"
+	fsck.erofs --extract="$2" "$1" >/dev/null
+else
+	ln -s "$1.d" "$2"
+fi
+EOF
 cat > "$T/bin/umount" <<'EOF'
 #!/bin/sh
-rm -f "$1"
+rm -rf "$1"
 EOF
 cat > "$T/bin/reboot" <<'EOF'
 #!/bin/sh
 echo "$*" >> "$REBOOTS"
 EOF
-chmod +x "$T/bin/mount" "$T/bin/umount" "$T/bin/reboot"
+chmod +x "$T/bin/mount" "$T/bin/mount-ro" "$T/bin/umount" "$T/bin/reboot"
 
 export PD_LIB_DIR=$lib PD_ETC_DIR=$T/etc PD_RUN_DIR=$T/run PD_OS_RELEASE=$T/os-release
 export PD_DEVICE_MODEL=raze
-export UPDATE_PART_PREFIX=$T/disk/p UPDATE_MOUNT=$T/bin/mount UPDATE_MOUNT_RO=$T/bin/mount
+export UPDATE_PART_PREFIX=$T/disk/p UPDATE_MOUNT=$T/bin/mount UPDATE_MOUNT_RO=$T/bin/mount-ro
 export UPDATE_UMOUNT=$T/bin/umount UPDATE_SLOTS_TOOL=$T/bin/pd-image-slots
 export UPDATE_REBOOT="$T/bin/reboot tryboot" UPDATE_REBOOT_PLAIN="$T/bin/reboot plain"
-export REBOOTS=$T/reboots UPDATE_CMDLINE_ROOT=5
+export REBOOTS=$T/reboots UPDATE_CMDLINE_ROOT=5 UPDATE_SYNC=true
 : > "$REBOOTS"
 
 update() { sh "$lib/update" "$@"; }
@@ -205,6 +221,43 @@ UPDATE_CMDLINE_ROOT=6 update stage "$img.xz" --sha256 "$(sha "$img.xz")"
 [ "$(state)" = staged ] || fail "state should be staged, is $(state)"
 cmp -s "$T/root.ref" "$T/disk/p5" || fail "root A should now hold the image"
 UPDATE_CMDLINE_ROOT=6 update rollback
+
+if command -v mkfs.erofs >/dev/null 2>&1 && fsck.erofs --help 2>&1 | grep -q -- --extract; then
+	# erofs_image <version> <model> <out.img.xz>: the A/B image with an EROFS
+	# root slot A (lzma), padded to the slot partition's size.
+	erofs_image() {
+		rm -rf "$T/rootdir" "$T/root.erofs"
+		mkdir -p "$T/rootdir/etc" "$T/rootdir/usr/lib/pd-device"
+		printf 'ID=photonvision\nIMAGE_VERSION=%s\n' "$1" > "$T/rootdir/etc/os-release"
+		printf 'PD_DEVICE_MODEL=%s\n' "$2" > "$T/rootdir/usr/lib/pd-device/device-package.env"
+		mkfs.erofs -zlzma "$T/root.erofs" "$T/rootdir" >/dev/null 2>&1 ||
+			mkfs.erofs -zlz4hc "$T/root.erofs" "$T/rootdir" >/dev/null
+		truncate -s $((20480 * 512)) "$T/root.erofs"
+		cp "$img" "$T/erofs.img"
+		dd if="$T/root.erofs" of="$T/erofs.img" bs=512 seek=14336 conv=notrunc 2>/dev/null
+		xz -T0 -c "$T/erofs.img" > "$3"
+	}
+	rm -rf "$T/disk/p5.d" "$T/disk/p6.d"
+	mkdir -p "$T/disk/p5.d" "$T/disk/p6.d"
+
+	echo "an EROFS root slot: version and model read from the image"
+	erofs_image 4.0 raze "$T/erofs.img.xz"
+	UPDATE_CMDLINE_ROOT=6 update stage "$T/erofs.img.xz" --sha256 "$(sha "$T/erofs.img.xz")"
+	[ "$(state)" = staged ] || fail "state should be staged, is $(state)"
+	grep -q "^VERSION_STAGED='4.0'" "$T/disk/p1.d/pd-update.env" ||
+		fail "the version should come from the EROFS root: $(grep VERSION_STAGED "$T/disk/p1.d/pd-update.env")"
+	cmp -s "$T/root.erofs" "$T/disk/p5" || fail "root A should hold the EROFS image byte for byte"
+	UPDATE_CMDLINE_ROOT=6 update rollback
+
+	echo "an EROFS root for another model is refused"
+	erofs_image 4.0 orion-cam "$T/erofs-other.img.xz"
+	if UPDATE_CMDLINE_ROOT=6 update stage "$T/erofs-other.img.xz" --sha256 "$(sha "$T/erofs-other.img.xz")" 2>/dev/null; then
+		fail "a wrong model in an EROFS root should fail"
+	fi
+	UPDATE_CMDLINE_ROOT=6 update rollback
+else
+	echo "skipped: EROFS root (needs erofs-utils >= 1.5 for fsck.erofs --extract)"
+fi
 
 echo "identity reports the A/B method and state"
 . "$lib/lib.sh"
