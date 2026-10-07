@@ -49,12 +49,17 @@ export async function pickSavePath(defaultName: string): Promise<string | null> 
   return save({ defaultPath: defaultName, filters: [{ name: "Text", extensions: ["txt"] }] });
 }
 
-/** Opens a URL in the system browser. */
+/** Opens a URL in the system browser; says so when it can't. */
 export async function openExternal(url: string): Promise<void> {
   if (!isTauri) {
     window.open(url, "_blank", "noopener");
     return;
   }
-  const { openUrl } = await import("@tauri-apps/plugin-opener");
-  await openUrl(url);
+  try {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl(url);
+  } catch (error) {
+    const { toasts } = await import("#lib/stores/toasts.svelte.ts");
+    toasts.error(`Couldn't open ${url}: ${errorText(error)}`);
+  }
 }
