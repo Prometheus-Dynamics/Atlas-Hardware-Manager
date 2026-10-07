@@ -1,12 +1,15 @@
 //! Orion for the desktop app: Atlas's operator identity, the connection,
-//! and the directory that adds Orion's capabilities to devices.
+//! the directory that adds Orion's capabilities to devices, and the image
+//! server boards download updates from.
 
+use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path;
 use std::sync::Arc;
 
-use atlas_driver_orion::{OperatorIdentity, OrionDirectory, RemoteTransport};
+use atlas_driver_orion::{BundleHost, OperatorIdentity, OrionDirectory, RemoteTransport};
+use atlas_image_server::{ImageServer, ImageServerConfig};
 
-use crate::settings::AppPaths;
+use crate::settings::{AppPaths, AppSettings};
 
 const KEY_FILE: &str = "orion-operator.key";
 const PIN_FILE: &str = "orion-node.pin";
@@ -66,25 +69,54 @@ fn write_private(file: &Path, bytes: &[u8]) -> Result<(), String> {
         .map_err(|error| format!("{}: {error}", file.display()))
 }
 
+/// The image server's settings: every IPv4 interface on the chosen port,
+/// since boards reach Atlas over the robot network or the USB gadget.
+pub fn image_config(settings: &AppSettings) -> ImageServerConfig {
+    ImageServerConfig {
+        bind: SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), settings.image_server_port),
+        host: settings
+            .image_host
+            .as_deref()
+            .map(str::trim)
+            .filter(|host| !host.is_empty())
+            .map(str::to_string),
+        ..ImageServerConfig::default()
+    }
+}
+
 pub struct Orion {
     pub transport: Arc<RemoteTransport>,
     pub directory: Arc<OrionDirectory>,
+    /// Serves update images to boards; Orion carries only the URL.
+    pub images: ImageServer,
 }
 
 impl Orion {
-    pub fn new(paths: &AppPaths, url: Option<String>) -> Result<Self, String> {
+    pub fn new(paths: &AppPaths, settings: &AppSettings) -> Result<Self, String> {
         let identity = identity(&paths.data_dir)?;
         let transport = Arc::new(RemoteTransport::new(
             identity,
-            url,
+            settings.orion_url.clone(),
             Some(paths.data_dir.join(PIN_FILE)),
         ));
-        // No bundle host yet: Orion adds readings and actions, not updates.
-        let directory = OrionDirectory::new(transport.clone(), None);
+        let images = ImageServer::new(image_config(settings))
+            .with_logger(Arc::new(|line| crate::logfile::line("IMAGES", line)));
+        let bundles: Arc<dyn BundleHost> = Arc::new(images.clone());
+        let directory = OrionDirectory::new(transport.clone(), Some(bundles));
         Ok(Self {
             transport,
             directory,
+            images,
         })
+    }
+
+    /// Starts the image server when Orion is set up; otherwise the first
+    /// update through Orion starts it. Call from inside the async runtime.
+    /// A failure shows on the health screen and in the Orion settings.
+    pub fn start_images_if_configured(&self, settings: &AppSettings) {
+        if settings.orion_url.is_some() {
+            let _ = self.images.start();
+        }
     }
 }
 
@@ -109,5 +141,18 @@ mod tests {
         }
         assert!(operator_name().starts_with("atlas"));
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn the_image_server_listens_everywhere_on_the_chosen_port() {
+        let settings = AppSettings {
+            image_server_port: 7801,
+            image_host: Some("  ".into()),
+            ..AppSettings::default()
+        };
+        let config = image_config(&settings);
+        assert_eq!(config.bind.to_string(), "0.0.0.0:7801");
+        assert_eq!(config.host, None);
+        assert_eq!(AppSettings::default().image_server_port, 7700);
     }
 }

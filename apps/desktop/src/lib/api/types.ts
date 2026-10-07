@@ -300,6 +300,25 @@ export interface AppSettings {
   ssh_key_file: string | null;
   /** The Orion node Atlas connects to (orion+tcp://host:port); null is off. */
   orion_url: string | null;
+  /** TCP port boards download update images from (Orion updates). */
+  image_server_port: number;
+  /** Host put in image URLs when the route to a board can't be told; null is automatic. */
+  image_host: string | null;
+}
+
+/** The HTTP server boards download update images from. */
+export interface ImageServerStatus {
+  listening: boolean;
+  /** The configured listen address, like `0.0.0.0:7700`. */
+  bind: string;
+  port: number;
+  /** Addresses boards can use, while listening. */
+  addresses: string[];
+  host: string | null;
+  /** Why it can't listen, when it can't. */
+  error: string | null;
+  /** Images on offer right now. */
+  registrations: number;
 }
 
 /** Atlas's connection to Orion as an operator. */

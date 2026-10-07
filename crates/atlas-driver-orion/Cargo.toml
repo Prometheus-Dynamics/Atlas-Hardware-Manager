@@ -17,11 +17,13 @@ orion-client.workspace = true
 orion-control-plane.workspace = true
 orion-core.workspace = true
 serde.workspace = true
-tokio = { workspace = true, features = ["time", "sync"] }
-
+tokio = { workspace = true, features = ["time", "sync", "net"] }
 
 [dev-dependencies]
-tokio = { workspace = true, features = ["rt", "macros", "time", "test-util"] }
+atlas-image-server.workspace = true
+reqwest.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time", "test-util"] }
 
 [lints]
 workspace = true

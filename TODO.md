@@ -84,7 +84,10 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
 - [ ] Orion transport: Orion's embeddable operator client (signed
       orion+tcp, per-identity action rights). HTTP is query-only in v4, so
       the app registers no Orion directory until it lands.
-- [ ] Bundle host: serve update bundles over HTTP for devices to pull.
+- [x] Bundle host: `atlas-image-server` serves update images over HTTP
+      (port 7700, per-update tokens, ranges, ETag) for boards to pull; the
+      app passes it to the Orion directory, so Orion-reachable boards get
+      updates. Still to test end to end with a real board's agent.
 - [x] A/B writer in the device package (Raze 1.0.9–1.0.12, tested
       off-device in `devices/raze/tests/update.sh`).
 - [x] SSH update transport for boards listing `ab-tryboot`.

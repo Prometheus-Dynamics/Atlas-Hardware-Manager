@@ -2,8 +2,9 @@
   // Orion: the management agent on running devices. Atlas connects to one
   // node as an operator (never a cluster member); an administrator enrolls
   // it once per node. Everything else in Atlas works without it.
-  import { api, errorText, type OrionConnection } from "#lib/api/client.ts";
+  import { api, errorText, type ImageServerStatus, type OrionConnection } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
+  import Disclosure from "#lib/components/device/Disclosure.svelte";
   import Field from "#lib/components/common/Field.svelte";
   import GlassCard from "#lib/components/common/GlassCard.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
@@ -16,12 +17,43 @@
   let key = $state("");
   let showKey = $state(false);
 
+  // The HTTP server boards download update images from.
+  let images = $state<ImageServerStatus | null>(null);
+  let imagePort = $state("7700");
+  let imageHost = $state("");
+
   $effect(() => {
     void api.orionConnection().then((value) => {
       connection = value;
       url = value?.url ?? "";
     });
+    void api.imageServerStatus().then((value) => {
+      images = value;
+      if (value) {
+        imagePort = String(value.port);
+        imageHost = value.host ?? "";
+      }
+    });
   });
+
+  const imagesLine = $derived.by((): string => {
+    if (!images) return "";
+    if (images.error) return images.error;
+    if (!images.listening) return `Starts on port ${images.port} when an update through Orion needs it.`;
+    const where = images.addresses.length ? images.addresses.join(", ") : "no network address yet";
+    return `Listening on port ${images.port}: ${where}.`;
+  });
+
+  async function saveImages() {
+    const port = Number(imagePort.trim());
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      toasts.error("Choose a port from 1 to 65535.");
+      return;
+    }
+    images = await api.setImageServer(port, imageHost.trim() || null);
+    if (images?.error) toasts.error(images.error);
+    else toasts.success("Image server saved.");
+  }
 
   const status = $derived.by((): { tone: Tone; label: string } => {
     if (!connection?.url) return { tone: "neutral", label: "Not set up" };
@@ -110,6 +142,29 @@
             <button type="button" class="link self-start text-[12.5px]" onclick={() => (showKey = true)}>Use the node's enrollment key instead</button>
           {/if}
         </div>
+      {/if}
+
+      {#if images}
+        <Disclosure title="Image server">
+          <div class="flex flex-col gap-3">
+            <p class="text-[12.5px] {images.error ? 'text-err-fg' : 'text-fg-muted'}">
+              Boards download updates from Atlas over HTTP. {imagesLine}
+            </p>
+            <div class="flex flex-wrap items-end gap-2">
+              <Field label="Port" class="w-24">
+                <input class="input mono" inputmode="numeric" bind:value={imagePort} aria-label="Image server port" />
+              </Field>
+              <Field label="Host in URLs" class="min-w-0 flex-1">
+                <input class="input mono" bind:value={imageHost} placeholder="automatic" aria-label="Image server host" />
+              </Field>
+              <Button action={saveImages}>Save</Button>
+            </div>
+            <span class="hint">
+              The host is used only when Atlas can't tell which of its addresses reaches a board. If downloads fail, allow
+              this TCP port through the computer's firewall.
+            </span>
+          </div>
+        </Disclosure>
       {/if}
     </div>
   {/if}

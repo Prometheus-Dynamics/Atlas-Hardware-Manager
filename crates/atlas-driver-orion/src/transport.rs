@@ -1,7 +1,9 @@
 //! What Atlas needs from Orion, independent of how it gets there.
 
 use async_trait::async_trait;
-use atlas_driver::{Artifact, DriverError};
+use std::net::IpAddr;
+
+use atlas_driver::{Artifact, DriverError, HealthCheck};
 use orion_control_plane::{ActionRequest, ActionResult, NodeRecord, StatusEntry, StatusQuery};
 
 /// One connection to an Orion cluster, as an operator. Every call may fail
@@ -35,5 +37,13 @@ pub trait OrionTransport: Send + Sync {
 /// Makes a release file reachable by URL for devices to pull. Update bytes
 /// never travel over Orion; the device downloads the image from Atlas.
 pub trait BundleHost: Send + Sync {
-    fn url_for(&self, artifact: &Artifact) -> Result<String, DriverError>;
+    /// A URL the device at `peer` (when its address is known) can fetch
+    /// `artifact` from: the host must be an address of this computer that
+    /// routes to the device.
+    fn url_for(&self, artifact: &Artifact, peer: Option<IpAddr>) -> Result<String, DriverError>;
+
+    /// Whether devices can reach the host, for the health screen.
+    fn health(&self) -> Option<HealthCheck> {
+        None
+    }
 }

@@ -175,6 +175,38 @@ pinned per board (`HostKeyAlias=pd-<model>-<serial>` in Atlas's own
 known_hosts), because every board shares the USB gadget address. Atlas
 offers it for boards whose identity lists `ab-tryboot`.
 
+### The image server
+
+For Orion updates, Atlas runs a small HTTP server (`crates/atlas-image-server`)
+that serves registered images only. Each update registers the chosen image
+and gets a URL `http://<host>:<port>/images/<token>/<file name>`: the token
+is 32 random bytes in hex, new for every registration, and the name must
+equal the file's name. Unknown tokens, other names, traversal attempts, and
+directory paths all get 404; nothing is ever listed. It answers `GET` and
+`HEAD` with `Content-Length`, ranges (`Range`/`If-Range`, so a board can
+resume), and a strong ETag (the image's SHA-256), streaming from disk so
+multi-gigabyte `.img`/`.img.xz`/`.img.zst` files never sit in memory. A
+registration expires a day after its last request (a running download keeps
+it alive) and allows four downloads at once; a fifth gets 503 with
+`Retry-After`. Requests and finished downloads go to `atlas.log` (`IMAGES`
+lines) with the token cut to 8 characters.
+
+- **Port:** TCP 7700 on every IPv4 interface by default (Settings › Orion ›
+  Image server), because boards reach Atlas over the robot network or the
+  USB gadget. It starts when Orion is set up, or on the first Orion update.
+- **Host in the URL:** the local address of the route to the board (Atlas
+  connects a UDP socket to the board's address from its identity, which
+  sends nothing, and reads the local address), else the configured image
+  host. With neither, the update stops and asks for an image host.
+- **Firewall:** a host firewall may block the port (firewalld on Fedora:
+  `sudo firewall-cmd --permanent --add-port=7700/tcp && sudo firewall-cmd
+  --reload`; ufw: `sudo ufw allow 7700/tcp`). The health screen's "Image
+  server" check says whether it listens and on which addresses, or why it
+  can't (port taken).
+- The token is the only credential: anyone on the network who learns a URL
+  can download that image until it expires. Images are not secret, and the
+  board checks size and SHA-256 itself, so a tampered transfer is refused.
+
 | Path | Needs | Auth | Used when |
 |------|-------|------|-----------|
 | Orion (intent) + Atlas URL (bytes) | orion-node and pd-device-agent on the device | Orion's | Default for fleets |

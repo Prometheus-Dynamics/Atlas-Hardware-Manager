@@ -2,7 +2,15 @@
 // (`bun run dev`). Same shape as `api` in commands.ts; see client.ts.
 
 import type { api as tauriApi } from "./commands";
-import type { AppInfo, DeviceAction, HealthCheck, OrionConnection, ReleaseEntry, RobotProfile } from "./types";
+import type {
+  AppInfo,
+  DeviceAction,
+  HealthCheck,
+  ImageServerStatus,
+  OrionConnection,
+  ReleaseEntry,
+  RobotProfile,
+} from "./types";
 import { keyString } from "./types";
 import { atlasChannel, downloadChannel, emit, latency, resyncChannel, sleep } from "./mock/bus";
 import { fleet, inventory, jobs, razeUsbBoot, releases, robots, settings, simDevice, sources } from "./mock/data";
@@ -61,6 +69,19 @@ const orion: OrionConnection = {
   node_fingerprint: null,
   error: null,
 };
+
+function imageServer(): ImageServerStatus {
+  const listening = !!settings.orion_url;
+  return {
+    listening,
+    bind: `0.0.0.0:${settings.image_server_port}`,
+    port: settings.image_server_port,
+    addresses: listening ? ["192.168.1.20", "172.31.250.2"] : [],
+    host: settings.image_host,
+    error: null,
+    registrations: 0,
+  };
+}
 
 let watching = false;
 let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
@@ -298,6 +319,14 @@ export const mockApi: Api = {
       return orion;
     }),
   checkOrion: () => reply(() => orion),
+  imageServerStatus: () => reply(imageServer),
+  setImageServer: (port, host) =>
+    reply(() => {
+      if (!Number.isInteger(port) || port < 1 || port > 65535) throw "Choose a port from 1 to 65535";
+      settings.image_server_port = port;
+      settings.image_host = host?.trim() || null;
+      return imageServer();
+    }),
   enrollOrionWithKey: (key) =>
     reply(() => {
       if (!key.trim()) throw "enter the node's enrollment key";

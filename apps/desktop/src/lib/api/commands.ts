@@ -13,6 +13,7 @@ import type {
   DeviceKey,
   DeviceRecord,
   HealthCheck,
+  ImageServerStatus,
   JobId,
   JobPlan,
   JobRecord,
@@ -97,6 +98,10 @@ export const api = {
   setOrionUrl: (url: string | null) => invoke<OrionConnection | null>("set_orion_url", { url }),
   checkOrion: () => invoke<OrionConnection | null>("check_orion"),
   enrollOrionWithKey: (key: string) => invoke<OrionConnection | null>("enroll_orion_with_key", { key }),
+  /** Null where this build has no Orion. */
+  imageServerStatus: () => invoke<ImageServerStatus | null>("image_server_status"),
+  setImageServer: (port: number, host: string | null) =>
+    invoke<ImageServerStatus | null>("set_image_server", { port, host }),
   discoveryStatus: () => invoke<DiscoveryStatus>("discovery_status"),
   healthChecks: () => invoke<HealthCheck[]>("health_checks"),
   /** Runs a health check's fix action; resolves with what changed. */

@@ -5,6 +5,7 @@
 //! boot id), never from the action result, which doesn't survive a reboot.
 
 use std::collections::{BTreeMap, HashMap};
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -91,6 +92,39 @@ impl OrionUpdate {
     }
 }
 
+/// The board's IP address from its identity address (a URL such as
+/// `http://172.31.250.1:5899/...`, or `host:port`), resolving a name. The
+/// bundle host uses it to pick the local address that routes to the board.
+async fn peer_address(address: &str) -> Option<IpAddr> {
+    let rest = address.split_once("://").map_or(address, |(_, rest)| rest);
+    let authority = rest.split(['/', '?', '#']).next()?;
+    let authority = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    if let Some(bracketed) = authority.strip_prefix('[') {
+        return bracketed.split(']').next()?.parse().ok();
+    }
+    if let Ok(ip) = authority.parse() {
+        return Some(ip);
+    }
+    let host = authority
+        .rsplit_once(':')
+        .map_or(authority, |(host, _)| host);
+    if host.is_empty() {
+        return None;
+    }
+    if let Ok(ip) = host.parse() {
+        return Some(ip);
+    }
+    let lookup = tokio::net::lookup_host((host, 0));
+    tokio::time::timeout(Duration::from_secs(5), lookup)
+        .await
+        .ok()?
+        .ok()?
+        .next()
+        .map(|socket| socket.ip())
+}
+
 #[async_trait]
 impl UpdateCapability for OrionUpdate {
     fn plan(&self, _device: &Identity, release: &ReleaseRef) -> Result<UpdatePlan, DriverError> {
@@ -116,7 +150,7 @@ impl UpdateCapability for OrionUpdate {
 
     async fn run(
         &self,
-        _device: &Identity,
+        device: &Identity,
         release: &ReleaseRef,
         progress: &ProgressSink,
         cancel: &CancellationToken,
@@ -138,7 +172,8 @@ impl UpdateCapability for OrionUpdate {
             .boot_id()
             .await?
             .ok_or_else(|| DriverError::Unreachable("the board isn't reporting to Orion".into()))?;
-        let url = self.bundles.url_for(artifact)?;
+        let peer = peer_address(&device.address).await;
+        let url = self.bundles.url_for(artifact, peer)?;
         if cancel.is_cancelled() {
             return Err(DriverError::Cancelled);
         }
@@ -239,5 +274,29 @@ impl UpdateCapability for OrionUpdate {
             }
             tokio::time::sleep(POLL).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::peer_address;
+
+    #[tokio::test]
+    async fn the_board_address_comes_from_its_identity_address() {
+        let ip = |text: &str| text.parse::<std::net::IpAddr>().ok();
+        assert_eq!(
+            peer_address("http://172.31.250.1:5899/.well-known/pd-device").await,
+            ip("172.31.250.1")
+        );
+        assert_eq!(peer_address("10.0.0.7:22").await, ip("10.0.0.7"));
+        assert_eq!(peer_address("10.0.0.7").await, ip("10.0.0.7"));
+        assert_eq!(peer_address("http://[fd00::2]:80/").await, ip("fd00::2"));
+        assert_eq!(peer_address("fd00::2").await, ip("fd00::2"));
+        assert!(
+            peer_address("http://localhost:1/")
+                .await
+                .is_some_and(|ip| ip.is_loopback())
+        );
+        assert_eq!(peer_address("http:///path").await, None);
     }
 }

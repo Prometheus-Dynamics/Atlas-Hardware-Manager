@@ -362,6 +362,8 @@ export const settings: AppSettings = {
   staged_default: "auto",
   ssh_key_file: null,
   orion_url: null,
+  image_server_port: 7700,
+  image_host: null,
 };
 
 export const jobs: JobRecord[] = [];
