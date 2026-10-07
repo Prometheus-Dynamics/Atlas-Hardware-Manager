@@ -23,9 +23,9 @@ mod ssh;
 mod ssh_actions;
 
 pub use browse::{Browser, SERVICE_TYPE};
-pub use contract::{IDENTITY_PATH, PdIdentity};
+pub use contract::{CLOCK_TOLERANCE_S, IDENTITY_PATH, PdIdentity};
 pub use driver::{NetworkLinks, PdDriver, drivers_for_catalog};
 pub use gadget::UsbGadgetLinks;
 pub use serial::serial_console;
 pub use ssh::{AB_METHOD, SshAccess, SshConfig, private_key_for};
-pub use ssh_actions::{USB_BOOT_ACTION, USB_BOOT_METHOD};
+pub use ssh_actions::{SET_CLOCK_ACTION, USB_BOOT_ACTION, USB_BOOT_METHOD};

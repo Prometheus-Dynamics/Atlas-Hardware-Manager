@@ -54,6 +54,26 @@ commit; the commits are listed per area.
 
 ### Updates (A/B with tryboot)
 
+- **Found on hardware (fixed):**
+  - `apply` used `systemctl reboot "0 tryboot"`, which systemd 258 rejects;
+    it now passes `--reboot-argument='0 tryboot'`.
+  - `apply` marked the update `trying` even when no restart happened. It now
+    does so only once the restart is accepted; otherwise it removes the
+    `[tryboot]` section and stays `staged`.
+  - A slot B carrying a stale 6.12 kernel on a 7.2 root (from an image
+    assembly bug) passed the OS health check and was confirmed. Three
+    safeguards now catch that:
+    - `stage` refuses an image whose boot slot's kernel release has no
+      matching `/lib/modules` on its root;
+    - `confirm` runs the package's own checks first (kernel/modules match,
+      USB gadget bound, no failed `UPDATE_CRITICAL_UNITS`);
+    - `update check-link` (`pd-device-update-link.service`) runs them after
+      every boot and returns to the previous good slot after
+      `UPDATE_LINK_MAX_BAD` bad boots in a row, with no USB needed.
+- `dtparam=watchdog=on` in raze-device.txt. The OS cmdline should add
+  `panic=5` so a panicking trial restarts into the old slot. docs/ota.md has
+  a table of what each safety net covers, and a hardware test procedure.
+
 - `/usr/lib/pd-device/update`: `status`, `stage`, `apply`, `confirm`,
   `rollback`.
   - **stage:** `stage <image> --sha256 <hex>`, or
@@ -114,6 +134,10 @@ commit; the commits are listed per area.
 
 ### Runtime paths and settings
 
+- **Clock:** the identity reports the board's `"time"`. Atlas shows how far
+  off it is, and offers "Set clock from this computer" over SSH when it's 5 s
+  or more off. The board has no RTC battery and no NTP over the USB link.
+  OS images should keep timesyncd's clock file on /data (docs/ota.md).
 - **SSH key fix** (found on hardware): `ssh-keys` installed nothing when the
   key file's last line had no newline. A POSIX `read` drops it, and Atlas's
   Flash tab wrote the file that way. The loop now reads an unterminated last

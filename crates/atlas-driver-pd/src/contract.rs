@@ -8,6 +8,9 @@ use serde::Deserialize;
 
 pub const IDENTITY_PATH: &str = "/.well-known/pd-device";
 
+/// A board clock this far off (seconds) is reported, and can be set.
+pub const CLOCK_TOLERANCE_S: i64 = 5;
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct NameVersion {
     #[serde(default)]
@@ -53,6 +56,9 @@ pub struct PdIdentity {
     /// The A/B updater's state (`update status`), when the board has one.
     #[serde(default)]
     pub update: Option<UpdateReport>,
+    /// The board's clock (Unix seconds) when it answered.
+    #[serde(default)]
+    pub time: Option<i64>,
 }
 
 /// `update status` as the identity carries it; every field is optional.
@@ -149,6 +155,22 @@ impl PdIdentity {
         put("hostname", &self.hostname);
         put("manage_url", &self.manage_url);
         put("device_package_commit", &self.device_package.commit);
+        // How far the board's clock is from this computer's, in seconds
+        // (negative: behind). A Raze has no RTC battery.
+        if let (Some(time), Ok(now)) = (
+            self.time,
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH),
+        ) {
+            let offset = time - now.as_secs() as i64;
+            // Only when it's off, rounded so it stays put between scans.
+            if offset.abs() >= CLOCK_TOLERANCE_S {
+                let rounded = (offset as f64 / 10.0).round() as i64 * 10;
+                put(
+                    atlas_driver::attributes::CLOCK_OFFSET_S,
+                    &Some(rounded.to_string()),
+                );
+            }
+        }
         if let Some(update) = &self.update {
             put("update_state", &update.state);
             put("slot_active", &update.slot_active);

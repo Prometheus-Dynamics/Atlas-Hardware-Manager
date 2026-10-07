@@ -22,6 +22,9 @@ pub mod attributes {
     /// sees it (boot ROM, recovery gadget, running OS). Lets Atlas tell that
     /// a recovery device and a running device are one board.
     pub const BOARD_SERIAL: &str = "board_serial";
+    /// How far the device's clock is from this computer's, in seconds
+    /// (negative: behind), when it is noticeably off. Absent when it's right.
+    pub const CLOCK_OFFSET_S: &str = "clock_offset_s";
 
     /// Atlas's board-serial rule: the last 8 hex digits, lowercase. A
     /// Raspberry Pi's boot ROM reports just those; the running OS (device

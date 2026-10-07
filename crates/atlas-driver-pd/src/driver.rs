@@ -263,11 +263,17 @@ impl Driver for PdDriver {
                 url,
                 actions: reported.actions.iter().map(|a| a.to_action()).collect(),
             });
-        let ssh_actions = has(USB_BOOT_METHOD).then(ssh).flatten();
+        let usb_boot = has(USB_BOOT_METHOD);
+        let set_clock = device
+            .attributes
+            .contains_key(atlas_driver::attributes::CLOCK_OFFSET_S);
+        let ssh_actions = (usb_boot || set_clock).then(ssh).flatten();
         let actions = (http_actions.is_some() || ssh_actions.is_some()).then(|| {
             Arc::new(PdDeviceActions {
                 http: http_actions,
                 ssh: ssh_actions,
+                usb_boot,
+                set_clock,
             }) as Arc<dyn ActionsCapability>
         });
         Capabilities {
@@ -447,6 +453,33 @@ mod tests {
             .find(|action| action.id == crate::USB_BOOT_ACTION)
             .unwrap();
         assert!(usb_boot.destructive);
+    }
+
+    #[tokio::test]
+    async fn a_board_with_a_wrong_clock_offers_to_set_it() {
+        let url = serve_once(r#"{ "model": "raze", "serial": "5", "time": 1773360000 }"#).await;
+        let driver = PdDriver::new(package());
+        let identity = driver
+            .identify(&Candidate {
+                link: LinkId("mdns".into()),
+                family: Family::new("raze"),
+                address: url,
+            })
+            .await
+            .unwrap();
+        let offset: i64 = identity.attributes["clock_offset_s"].parse().unwrap();
+        assert!(offset < -1_000_000, "months behind: {offset}");
+        let actions = driver
+            .capabilities(&identity)
+            .actions
+            .unwrap()
+            .actions(&identity);
+        assert!(
+            actions
+                .iter()
+                .any(|a| a.id == crate::SET_CLOCK_ACTION && !a.destructive)
+        );
+        assert!(!actions.iter().any(|a| a.id == crate::USB_BOOT_ACTION));
     }
 
     #[tokio::test]

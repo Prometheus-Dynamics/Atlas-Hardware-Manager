@@ -328,6 +328,9 @@ pd_identity_json() {
 		printf ',"update":%s' "$(head -n 1 "$PD_RUN_DIR/update.json")"
 	fi
 	printf ',"manage_url":%s' "$(pd_json_str "$(pd_first_line "$PD_ETC_DIR/manage-url" "$PD_LIB_DIR/manage-url")")"
+	# The board's clock, so a host can tell it is wrong: a Raze has no RTC
+	# battery and often no NTP over the USB link.
+	printf ',"time":%s' "$(date +%s)"
 	pd_actions_json
 	printf ',"macs":{'
 	_pd_sep=''

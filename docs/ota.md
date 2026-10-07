@@ -127,6 +127,56 @@ The identity endpoint advertises it: `"update_methods": ["image-write", "ab-tryb
 (the second only when `status` has seen an A/B layout) and `"update"`, the
 `status` object.
 
+## Safety nets, and what each covers
+
+| Failure on the new slot | What catches it |
+|---|---|
+| `apply`'s restart doesn't happen | The writer marks `trying` only once `systemctl reboot --reboot-argument='0 tryboot'` is accepted. If it isn't, the tryboot section is removed and the update stays `staged`. (systemd 258 dropped the positional `"0 tryboot"`.) |
+| The kernel panics before userspace (e.g. it can't mount root) | `panic=5` on the OS's cmdline restarts the board. The tryboot flag is one-shot, so the bootloader boots the default (old) slot. |
+| A hang after systemd starts | The hardware watchdog (`dtparam=watchdog=on` in raze-device.txt, armed by systemd's `RuntimeWatchdogSec=15s`) resets the board into the old slot. |
+| A hang before systemd starts, without a panic | Not caught automatically: power-cycle it, and the old slot boots, because tryboot is one-shot. |
+| The image's kernel doesn't match its root's modules | `stage` refuses it: the kernel release is read from the boot slot's kernel image and compared with `/lib/modules` on the new root. |
+| The new slot boots but its drivers or management link are broken | `confirm` runs the package's checks before the OS's `update-health`: the running kernel has modules on this root, the USB gadget is bound, and none of `UPDATE_CRITICAL_UNITS` failed. A failure leaves the trial unconfirmed and restarts into the old slot. |
+| A confirmed slot later loses its management link | `pd-device-update-link.service` runs the same checks after every boot (`UPDATE_LINK_DELAY`). After `UPDATE_LINK_MAX_BAD` bad boots in a row it switches the default back to the previous good slot (once, with no ping-pong) and restarts. |
+
+OS cmdline guidance: `panic=5 rootwait` (plus `rootfstype=erofs ro` for an
+EROFS root). The kernel's soft-lockup and hung-task detectors can be made to
+panic as well (`softlockup_panic=1`), which turns some silent hangs into a
+restart into the old slot.
+
+### Hardware test procedure (one board, USB connected)
+
+1. Flash the current image over USB boot, and check that `update status`
+   shows slot A, `idle`.
+2. **Healthy update:**
+   - copy the new `.img.xz` to `/data`;
+   - run `update stage /data/x.img.xz --sha256 $(sha256sum < /data/x.img.xz | cut -d' ' -f1)`
+     and check it reaches `staged` and that `cmdline.txt` on p3 names p6;
+   - run `update apply`: the board restarts into B;
+   - after `UPDATE_CONFIRM_DELAY`, check `status` shows `confirmed` on B and
+     autoboot.txt's `[all] boot_partition=3`.
+3. **Failed restart:** `UPDATE_REBOOT=false update apply` must leave it
+   `staged` with no `[tryboot]` section.
+4. **Trial that fails before root mounts:**
+   - stage an image, then on p3 (slot B's boot) edit `cmdline.txt` to
+     `root=/dev/mmcblk0p9`, a partition that doesn't exist;
+   - run `apply`;
+   - with `panic=5`, the kernel panics, restarts, and boots A;
+   - check `confirm` on A records `rolled-back`.
+5. **Trial whose drivers are broken:**
+   - stage, then remove `lib/modules/<release>` from slot B's root (it is
+     EROFS, so build a test image with a different kernel release in its
+     boot slot instead, which `stage` refuses; to test `confirm`, set
+     `UPDATE_UNAME_R=wrong` in `/data/pd-device/update.env` on B);
+   - run `apply`;
+   - check `confirm` restarts into A and `status` shows the reason.
+6. **Link loss after a confirmed update:** on B, mask
+   `pd-device-usb-gadget.service` and reboot twice; on the second boot,
+   `check-link` must switch back to A (`rolled-back`, with the reason).
+7. **Watchdog:** on a trial boot, `echo c > /proc/sysrq-trigger` (panic) and
+   a userspace hang (`kill -STOP 1` is caught by systemd's watchdog) must
+   both end on A.
+
 ## Read-only root (EROFS)
 
 Root slots hold a read-only, compressed EROFS filesystem. `CONFIG_EROFS_FS`
@@ -148,6 +198,21 @@ Nothing in the device package writes to `/` at runtime:
 
 The OS provides: `/data` mounted early, a persistent or transient
 `/etc/machine-id`, SSH host keys on `/data`, and its own writable paths.
+
+## Board clock
+
+A Raze has no RTC battery, and over the USB gadget there is usually no NTP:
+the host is the board's DHCP client, not a time server, and desktops rarely
+run one. So the board can boot with a date months old (systemd's build
+epoch). The identity reports `"time"` (Unix seconds); when it differs from
+the computer's by 5 s or more, Atlas shows the offset and offers "Set clock
+from this computer" (`set-clock`, over SSH: `date -u -s`).
+
+OS images: keep systemd-timesyncd's clock file on /data
+(`/var/lib/systemd/timesync/clock`, e.g. a symlink or bind into
+`/data/timesync/`), so after a reboot the clock starts at the last known
+time and never goes backwards, and let timesyncd sync whenever a network
+with NTP is reachable.
 
 ## Fresh installs without the button
 

@@ -1,6 +1,7 @@
-//! Actions that need root on the board, run over SSH like updates (`ssh`).
-//! Today that is `usb-boot`: restart straight into USB boot so Atlas can write
-//! a fresh image without anyone holding the boot button. It is never offered
+//! Actions that need root on the board, run over SSH like updates (`ssh`):
+//! `usb-boot`, which restarts straight into USB boot so Atlas can write a
+//! fresh image without anyone holding the boot button, and `set-clock`, which
+//! sets a board's clock (no RTC battery, often no NTP) from this computer. It is never offered
 //! on the identity endpoint, which is unauthenticated: a board waiting in USB
 //! boot stays there until it is flashed or power-cycled.
 
@@ -14,6 +15,8 @@ use crate::ssh::SshUpdate;
 pub const USB_BOOT_METHOD: &str = "usb-boot-reboot";
 /// The action id, shared with the app.
 pub const USB_BOOT_ACTION: &str = "usb-boot";
+/// Sets the board's clock from this computer's.
+pub const SET_CLOCK_ACTION: &str = "set-clock";
 
 const USB_BOOT: &str = "/usr/lib/pd-device/usb-boot";
 
@@ -25,10 +28,22 @@ pub(crate) fn usb_boot_action() -> DeviceAction {
     }
 }
 
+fn set_clock_action() -> DeviceAction {
+    DeviceAction {
+        id: SET_CLOCK_ACTION.into(),
+        label: "Set clock from this computer".into(),
+        destructive: false,
+    }
+}
+
 /// The board's own actions (identity endpoint) plus the SSH ones.
 pub(crate) struct PdDeviceActions {
     pub(crate) http: Option<PdActions>,
     pub(crate) ssh: Option<SshUpdate>,
+    /// Offer restarting into USB boot (the board supports it).
+    pub(crate) usb_boot: bool,
+    /// Offer setting the clock (it is off).
+    pub(crate) set_clock: bool,
 }
 
 #[async_trait]
@@ -40,8 +55,13 @@ impl ActionsCapability for PdDeviceActions {
             .map(|http| http.actions(device))
             .unwrap_or_default();
         if self.ssh.is_some() {
-            actions.retain(|action| action.id != USB_BOOT_ACTION);
-            actions.push(usb_boot_action());
+            actions.retain(|action| action.id != USB_BOOT_ACTION && action.id != SET_CLOCK_ACTION);
+            if self.set_clock {
+                actions.push(set_clock_action());
+            }
+            if self.usb_boot {
+                actions.push(usb_boot_action());
+            }
         }
         actions
     }
@@ -49,6 +69,7 @@ impl ActionsCapability for PdDeviceActions {
     async fn run_action(&self, device: &Identity, action_id: &str) -> Result<(), DriverError> {
         match (&self.ssh, &self.http) {
             (Some(ssh), _) if action_id == USB_BOOT_ACTION => restart_into_usb_boot(ssh).await,
+            (Some(ssh), _) if action_id == SET_CLOCK_ACTION => set_clock(ssh).await,
             (_, Some(http)) => http.run_action(device, action_id).await,
             _ => Err(DriverError::Incompatible(format!(
                 "this board doesn't offer {action_id}"
@@ -74,9 +95,52 @@ async fn restart_into_usb_boot(ssh: &SshUpdate) -> Result<(), DriverError> {
     }
 }
 
+/// Sets the board's clock to this computer's, in UTC, a form both busybox
+/// and coreutils `date -s` accept. A board without an RTC keeps it until
+/// power-off (or until NTP takes over).
+async fn set_clock(ssh: &SshUpdate) -> Result<(), DriverError> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| DriverError::Other(error.to_string()))?;
+    let stamp = utc_stamp(now.as_secs());
+    ssh.run(&format!("date -u -s '{stamp}' >/dev/null"))
+        .await
+        .map(|_| ())
+}
+
+/// `YYYY-MM-DD hh:mm:ss` in UTC for Unix seconds (proleptic Gregorian).
+fn utc_stamp(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    // Howard Hinnant's days-to-civil.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    format!(
+        "{year:04}-{month:02}-{day:02} {:02}:{:02}:{:02}",
+        rem / 3600,
+        rem % 3600 / 60,
+        rem % 60
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn utc_stamps_are_calendar_dates() {
+        assert_eq!(utc_stamp(0), "1970-01-01 00:00:00");
+        assert_eq!(utc_stamp(951_782_400), "2000-02-29 00:00:00");
+        assert_eq!(utc_stamp(1_791_331_200), "2026-10-07 00:00:00");
+        assert_eq!(utc_stamp(1_791_331_200 + 3_661), "2026-10-07 01:01:01");
+    }
 
     #[test]
     fn the_usb_boot_action_needs_a_confirm() {
