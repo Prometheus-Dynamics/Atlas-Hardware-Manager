@@ -274,6 +274,18 @@ src = "@self/assets/rootfs/etc/ssh/sshd_config.d/50-pd-device.conf"
 dest = "/etc/ssh/sshd_config.d/50-pd-device.conf"
 origin = "static-asset"
 
+[[stage.files]]
+id = "raze-pd-device-leds-env"
+src = "@self/assets/rootfs/usr/lib/pd-device/leds.env"
+dest = "/usr/lib/pd-device/leds.env"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-pd-device-hardware-env"
+src = "@self/assets/rootfs/usr/lib/pd-device/hardware.env"
+dest = "/usr/lib/pd-device/hardware.env"
+origin = "static-asset"
+
 [image]
 kind = "buildroot"
 config_overrides = [
@@ -338,4 +350,6 @@ stage_files = [
   "raze-pd-device-update-env",
   "raze-systemd-system-pd-device-update-confirm-service",
   "raze-systemd-system-conf-d-60-pd-device-watchdog-conf",
+  "raze-pd-device-leds-env",
+  "raze-pd-device-hardware-env",
 ]
