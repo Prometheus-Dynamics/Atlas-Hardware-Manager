@@ -11,6 +11,22 @@
     "module": "cm5",
     "arch": "aarch64"
   },
+  "kernel": {
+    "source": "raspberrypi/linux",
+    "branch": "rpi-7.2.y",
+    "commit": "53679a5788f7912272b412fd78029bccae6f2b1a",
+    "version": "7.2.9",
+    "defconfig": "bcm2712",
+    "page_size_kib": 4,
+    "builtin": ["erofs"],
+    "fragment": "gaia/buildroot-external/linux/raze.config",
+    "fragment_merge": "os-first-package-last",
+    "verified": {
+      "page_size_kib": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "KernelPageSize 4 kB measured on a Raze running the PhotonVision image (package c881c60); Buildroot applies BR2_ARM64_PAGE_SIZE_4K after fragments, so every Buildroot-built Raze kernel is 4 KiB. A package build check enforces it" },
+      "builtin": "unverified",
+      "version": "unverified"
+    }
+  },
   "revisions": [
     {
       "id": "gen1",
@@ -147,20 +163,49 @@
   "capabilities": {
     "camera": {
       "sensor": "ov9782",
+      "part": "OV9782",
       "kind": "global-shutter",
       "interface": "csi",
       "port": "cam0",
+      "csi": {
+        "port": "cam0",
+        "dt_target": "csi0",
+        "receiver_driver": "rp1-cfe",
+        "data_lanes": 2,
+        "clock_continuous": true
+      },
       "data_lanes": 2,
       "link_frequency_hz": 400000000,
       "clock_hz": 24000000,
-      "i2c_address": "0x60",
+      "i2c_address": 96,
+      "i2c": {
+        "bus": 10,
+        "bus_dt_label": "i2c_csi_dsi0",
+        "controller": "i2c6",
+        "bus_source": "kernel DT, rpi-7.2.y: bcm2712-rpi-cm5io.dtsi maps i2c_csi_dsi0 to RP1 i2c6 and bcm2712-rpi.dtsi aliases i2c10 = &i2c_csi_dsi0",
+        "address": 96
+      },
+      "chip_id": {
+        "register": 12298,
+        "accepted": [38786, 37505]
+      },
       "overlay": "ov9782,cam0,clk-continuous",
-      "kernel_driver": "ov9282 with the ovti,ov9782 variant (buildroot-external/linux/ov9782)",
+      "kernel_driver": "ov9282",
+      "kernel_compatible": "ovti,ov9782",
+      "kernel_driver_source": "buildroot-external/linux/ov9782 (ov9282 driver with an ov9782 variant)",
       "libcamera_pipeline": "rpi/pisp",
       "tuning": [
         "/usr/share/libcamera/ipa/rpi/pisp/ov9782.json",
         "/usr/share/libcamera/tuning/ov9782.overrides.json"
-      ]
+      ],
+      "verified": {
+        "part": "unverified",
+        "csi": "unverified",
+        "i2c.address": "unverified",
+        "i2c.bus": "unverified",
+        "chip_id": "unverified",
+        "tuning": "unverified"
+      }
     },
     "fan": {
       "control": "kernel thermal governor (pwm-fan); no daemon",
@@ -178,32 +223,72 @@
         255,
         255
       ],
+      "min_level": 179,
+      "level_max": 255,
       "trips_c": [
         50,
         60,
         67.5,
         75
       ],
+      "trips_source": "base-dt",
+      "thermal_zone": "cpu-thermal",
+      "cooling_device_type": "pwm-fan",
+      "hwmon_name": "pwmfan",
       "overlay_params": [
         "level0..level4",
         "period_ns",
         "polarity"
-      ]
+      ],
+      "verified": {
+        "pwm.controller": { "by": "Mathias (user)", "date": "2026-10-06", "method": "fan spins and follows the cooling state on a Raze Gen 1 (image 1.0.10)" },
+        "pwm.channel": { "by": "Mathias (user)", "date": "2026-10-06", "method": "fan spins and follows the cooling state on a Raze Gen 1 (image 1.0.10)" },
+        "pwm.period_ns": { "by": "Mathias (user)", "date": "2026-10-06", "method": "fan spins and follows the cooling state on a Raze Gen 1 (image 1.0.10); value from the old helios fan blobs" },
+        "pwm.polarity": { "by": "Mathias (user)", "date": "2026-10-06", "method": "normal polarity: higher levels run the fan faster on a Raze Gen 1 (image 1.0.10); inverted left it nearly stopped" },
+        "cooling_levels": { "by": "Mathias (user)", "date": "2026-10-06", "method": "cooling state 1 at 58 C read back 83 % (212/255) on a Raze Gen 1 (image 1.0.10)" },
+        "min_level": { "by": "Mathias (user)", "date": "2026-10-06", "method": "chosen by the user: a 70 % floor keeps air moving" },
+        "trips_c": "unverified"
+      }
     },
     "leds": {
       "kind": "ws2812",
       "driver": "ws2812-pio-rp1",
+      "part": "SK6812-EC20",
       "gpio": 13,
       "count": 16,
       "device": "/dev/leds0",
       "brightness": 255,
       "rgbw": false,
-      "notes": "SK6812-EC20, 24-bit RGB (verified on hardware 2026-10-06). The overlay must not pass rgbw; userspace still writes 4 bytes per LED and W is dropped.",
+      "overlay": {
+        "name": "ws2812-pio",
+        "dev_name": "leds%d"
+      },
+      "wire_format": "grb24",
+      "userspace": {
+        "layout": "rgbw",
+        "bytes_per_led": 4,
+        "ignored_channels": ["w"]
+      },
+      "index": {
+        "offset": 5,
+        "direction": 1
+      },
+      "notes": "SK6812-EC20, 24-bit GRB on the wire. The overlay must not pass rgbw; the ws2812-pio-rp1 driver always reads 4 bytes per LED (R, G, B, W) from userspace and drops W. Logical LED i is driver slot (offset + direction * i) mod count, as in HeliOS main.",
       "helper": {
         "path": "/usr/lib/pd-device/raze-leds",
-        "commands": ["on", "off", "set <0|1>", "dim <0-100>", "color <r> <g> <b> [<w>]", "status <ok|warn|error|busy|off>", "blink [<hz>]", "locate [<seconds>]", "show"],
+        "commands": ["on", "off", "set <0|1>", "dim <0-100>", "color <r> <g> <b> [<w>]", "status <ok|warn|error|busy|off>", "blink [<hz>]", "locate [<seconds>]", "pixel <index|all> <r> <g> <b> [<w>]", "refresh", "show"],
         "byte_order": "rgbw (driver layout, W ignored), RAZE_LEDS_ORDER in /etc/pd-device/raze-leds.env; always four letters",
+        "defaults": "/usr/lib/pd-device/leds.env (generated from this section)",
         "state": "/run/pd-device/leds.state"
+      },
+      "verified": {
+        "part": { "by": "Mathias (user) and the HeliOS coordinator", "date": "2026-10-06", "method": "colours correct with the overlay without rgbw on a Raze Gen 1 (image 1.0.10)" },
+        "wire_format": { "by": "Mathias (user) and the HeliOS coordinator", "date": "2026-10-06", "method": "with rgbw (32 bits per LED) the colours smeared around the ring; without it they were correct" },
+        "userspace.layout": { "by": "Mathias (user) and the HeliOS coordinator", "date": "2026-10-06", "method": "raze-leds writing 4 bytes per LED (R, G, B, W) gave correct colours; matches the ws2812-pio-rp1 driver source" },
+        "gpio": { "by": "Mathias (user)", "date": "2026-10-06", "method": "the ring lights on a Raze Gen 1 (image 1.0.10)" },
+        "count": "unverified",
+        "index.offset": { "by": "HeliOS main", "date": "2026-02-27", "method": "DEFAULT_LED_INDEX_OFFSET = 5 in backend/src/helios-peripherals/src/lighting.rs (HeliOS c85ce7f, on main at cb2789c): frame index i is written to slot (i + 5) mod count; not re-measured by Atlas" },
+        "index.direction": "unverified"
       }
     },
     "ssh-keys": {
@@ -269,40 +354,79 @@
         {
           "bus": 1,
           "kind": "hardware",
+          "controller": "i2c1",
+          "sda_gpio": 10,
+          "scl_gpio": 11,
           "pins": "GPIO10 SDA, GPIO11 SCL",
           "overlay": "i2c1-pi5,pins_10_11"
         },
         {
           "bus": 4,
           "kind": "i2c-gpio",
+          "sda_gpio": 8,
+          "scl_gpio": 7,
           "pins": "GPIO8 SDA, GPIO7 SCL",
           "overlay": "i2c-gpio,bus=4,i2c_gpio_sda=8,i2c_gpio_scl=7"
         }
       ],
       "devices": [
         {
+          "id": "imu-accel",
           "part": "BMI088",
+          "function": "accelerometer",
           "bus": 4,
-          "address": "0x18"
+          "address": 24
         },
         {
+          "id": "imu-gyro",
           "part": "BMI088",
+          "function": "gyroscope",
           "bus": 4,
-          "address": "0x68"
+          "address": 104
         },
         {
+          "id": "magnetometer",
           "part": "BMM150",
+          "function": "magnetometer",
           "bus": 1,
-          "address": "0x10"
+          "address": 16
         },
         {
+          "id": "power-monitor",
           "part": "INA238",
+          "part_number": "INA238AIDGSR",
+          "function": "power-monitor",
           "bus": 1,
-          "address": "0x40",
-          "shunt_ohm": 0.01
+          "address": 64,
+          "shunt_ohm": 0.01,
+          "current_scale": 1.0
         }
       ],
-      "description_file": "/usr/share/pd-device/raze/sensors.toml"
+      "description_file": "/usr/share/pd-device/raze/sensors.toml",
+      "verified": {
+        "buses": "unverified",
+        "devices": "unverified"
+      }
+    },
+    "watchdog": {
+      "device": "/dev/watchdog0",
+      "driver": "bcm2835-wdt",
+      "runtime_sec": 15,
+      "reboot_sec": 120,
+      "manager": "systemd",
+      "config": "/usr/lib/systemd/system.conf.d/60-pd-device-watchdog.conf",
+      "verified": {
+        "device": "unverified",
+        "driver": "unverified"
+      }
+    },
+    "selftest": {
+      "path": "/usr/lib/pd-device/selftest",
+      "result": "/run/pd-device/selftest.json",
+      "format_version": 1,
+      "settings": "/usr/lib/pd-device/hardware.env (generated from this manifest)",
+      "checks": ["leds", "fan", "camera", "i2c", "watchdog", "gadget"],
+      "gadget_reference": "identity.usb_gadget and capabilities.gadget-net; the check reads usb-gadget.env on the board"
     }
   },
   "identity_service": {
@@ -336,7 +460,7 @@
     "stack": {
       "buildroot": "2026.08",
       "defconfig": "raspberrypicm5io_defconfig",
-      "kernel": "raspberrypi/linux rpi-7.2.y 53679a5788f7912272b412fd78029bccae6f2b1a (7.2.9), bcm2712 (16K pages)",
+      "kernel": "raspberrypi/linux rpi-7.2.y 53679a5788f7912272b412fd78029bccae6f2b1a (7.2.9), bcm2712 (4K pages)",
       "firmware": "raspberrypi/firmware 1.20260915 (stock overlays built from the kernel instead)",
       "libcamera": "raspberrypi/libcamera v0.7.2+rpt20260817",
       "libpisp": "raspberrypi/libpisp v1.7.0"

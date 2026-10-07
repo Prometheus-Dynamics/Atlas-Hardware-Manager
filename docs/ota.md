@@ -324,6 +324,26 @@ these steps.
 Concurrency is `Parallel`: each board updates itself, so staged rollout
 (one board first) and bulk updates work as they do today.
 
+### Self-test after an install
+
+A verified flash (USB boot) or update (SSH, Orion) ends its job as soon as
+the board is written or confirmed. atlas-core then remembers the board by its
+board serial for 15 minutes. When a scan finds that board running, with the
+PD driver and a `self-test` capability (its identity lists
+`"diagnostics": ["selftest"]`), Atlas runs
+`/usr/lib/pd-device/selftest --json` over SSH once:
+
+- a board that doesn't answer over SSH yet is tried again on the next scans
+  until the 15 minutes are up, then the failure to run is recorded;
+- the result is kept per board serial with the inventory, shows as one line
+  in the device's History (and the fleet activity), and fills the device's
+  Self-test card, where "Run again" runs it by hand;
+- a failed check is shown, never fatal: the update stays verified, and the
+  board keeps running.
+
+The self-test checks the LED ring, fan, camera, I2C sensors, watchdog and USB
+gadget, and puts the fan and ring back as they were (devices/README.md).
+
 ## What Orion carries (for the v4 protocol)
 
 Atlas does not need Orion to understand partitions; it needs:

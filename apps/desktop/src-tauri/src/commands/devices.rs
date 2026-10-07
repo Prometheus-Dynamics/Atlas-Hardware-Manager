@@ -1,7 +1,7 @@
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
-use atlas_core::{ActivityEntry, DeviceRecord, ScanReport};
+use atlas_core::{ActivityEntry, DeviceRecord, ScanReport, SelfTestRecord};
 use atlas_driver::{DeviceAction, DeviceKey, LogLine, Metric};
 use tauri::State;
 
@@ -53,6 +53,19 @@ pub async fn run_device_action(
     action: String,
 ) -> CmdResult<()> {
     state.atlas.run_action(&key, &action).await.map_err(text)
+}
+
+/// Runs the device's self-test and returns the kept result, also when a
+/// check failed or the run couldn't finish.
+#[tauri::command]
+pub async fn run_selftest(state: State<'_, AppState>, key: DeviceKey) -> CmdResult<SelfTestRecord> {
+    state.atlas.run_selftest(&key).await.map_err(text)
+}
+
+/// The last self-test of this device's board, if it ever ran.
+#[tauri::command]
+pub fn device_selftest(state: State<'_, AppState>, key: DeviceKey) -> Option<SelfTestRecord> {
+    state.atlas.selftest(&key)
 }
 
 /// Live readings, for devices that report telemetry.
@@ -116,6 +129,9 @@ pub async fn save_support_bundle(
             let at = line.at_ms.map(|ms| ms.to_string()).unwrap_or_default();
             let _ = writeln!(out, "{at} {:?} [{source}] {}", line.level, line.message);
         }
+    }
+    if let Some(run) = atlas.selftest(&key) {
+        let _ = writeln!(out, "\n== Last self-test\n{}", pretty(&run));
     }
     let recent = crate::logfile::tail(300);
     if !recent.is_empty() {

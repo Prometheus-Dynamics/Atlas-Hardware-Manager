@@ -1,12 +1,20 @@
-//! Actions that need root on the board, run over SSH like updates (`ssh`):
-//! `usb-boot`, which restarts straight into USB boot so Atlas can write a
-//! fresh image without anyone holding the boot button, and `set-clock`, which
-//! sets a board's clock (no RTC battery, often no NTP) from this computer. It is never offered
-//! on the identity endpoint, which is unauthenticated: a board waiting in USB
-//! boot stays there until it is flashed or power-cycled.
+//! Work that needs root on the board, run over SSH like updates (`ssh`):
+//!
+//! - `usb-boot`: restart straight into USB boot so Atlas can write a fresh
+//!   image without anyone holding the boot button. It is never offered on
+//!   the identity endpoint, which is unauthenticated: a board waiting in USB
+//!   boot stays there until it is flashed or power-cycled.
+//! - `set-clock`: set the board's clock (no RTC battery, often no NTP) from
+//!   this computer's.
+//! - the self-test (`/usr/lib/pd-device/selftest --json`), for boards whose
+//!   identity lists `selftest` in `diagnostics`.
+
+use std::time::Duration;
 
 use async_trait::async_trait;
-use atlas_driver::{ActionsCapability, DeviceAction, DriverError, Identity};
+use atlas_driver::{
+    ActionsCapability, DeviceAction, DriverError, Identity, SelfTestCapability, SelfTestReport,
+};
 
 use crate::live::PdActions;
 use crate::ssh::SshUpdate;
@@ -19,6 +27,12 @@ pub const USB_BOOT_ACTION: &str = "usb-boot";
 pub const SET_CLOCK_ACTION: &str = "set-clock";
 
 const USB_BOOT: &str = "/usr/lib/pd-device/usb-boot";
+
+/// What a board lists in `diagnostics` when it has the self-test.
+pub const SELFTEST_DIAGNOSTIC: &str = "selftest";
+const SELFTEST: &str = "/usr/lib/pd-device/selftest --json";
+/// Stepping the fan through its states takes the longest, about 10 s.
+const SELFTEST_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 
 pub(crate) fn usb_boot_action() -> DeviceAction {
     DeviceAction {
@@ -128,6 +142,22 @@ fn utc_stamp(secs: u64) -> String {
         rem % 3600 / 60,
         rem % 60
     )
+}
+
+/// The board's self-test over SSH. The board puts the fan and LEDs back
+/// itself, also when the connection drops.
+pub(crate) struct PdSelfTest {
+    pub(crate) ssh: SshUpdate,
+}
+
+#[async_trait]
+impl SelfTestCapability for PdSelfTest {
+    async fn run_selftest(&self, _device: &Identity) -> Result<SelfTestReport, DriverError> {
+        let output = tokio::time::timeout(SELFTEST_TIMEOUT, self.ssh.run(SELFTEST))
+            .await
+            .map_err(|_| DriverError::Other("the self-test took too long".into()))??;
+        SelfTestReport::parse(&output).map_err(DriverError::Other)
+    }
 }
 
 #[cfg(test)]

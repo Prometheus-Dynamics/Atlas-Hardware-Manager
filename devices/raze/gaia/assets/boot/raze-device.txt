@@ -9,15 +9,19 @@
 # this file.
 
 [cm5]
-# Hardware I2C for the power and magnetometer sensors: /dev/i2c-1 on GPIO10/11.
+# >>> gen-raze: i2c (generated from manifest.json by devices/tools/gen-raze.py; do not edit)
+# Hardware I2C bus 1 (/dev/i2c-1): SDA GPIO10, SCL GPIO11; BMM150, INA238.
 dtoverlay=i2c1-pi5,pins_10_11
-# Software I2C bus 4 for the IMU: SDA GPIO8, SCL GPIO7.
+# Software (i2c-gpio) I2C bus 4 (/dev/i2c-4): SDA GPIO8, SCL GPIO7; BMI088.
 dtoverlay=i2c-gpio,bus=4,i2c_gpio_sda=8,i2c_gpio_scl=7
+# <<< gen-raze
 
-# Status LED ring: 16 SK6812-EC20 LEDs (24-bit RGB, no white channel) on
-# GPIO13 via RP1 PIO, /dev/leds0. No `rgbw`: that sends 32 bits per LED and
+# >>> gen-raze: leds (generated from manifest.json by devices/tools/gen-raze.py; do not edit)
+# Status LED ring: 16 SK6812-EC20 LEDs (24-bit GRB on the wire)
+# on GPIO13 via RP1 PIO, /dev/leds0. No `rgbw`: that sends 32 bits per LED and
 # smears the colours around the ring.
 dtoverlay=ws2812-pio,gpio=13,num_leds=16,brightness=255,dev_name=leds%d
+# <<< gen-raze
 
 # External USB-A and USB-C port power, held on by the kernel.
 dtoverlay=raze-usb-power
@@ -32,9 +36,11 @@ dtoverlay=vc4-kms-v3d-pi5
 # (network + serial). Which Raze connector it is wired to is not recorded yet.
 dtoverlay=dwc2,dr_mode=peripheral
 
+# >>> gen-raze: camera (generated from manifest.json by devices/tools/gen-raze.py; do not edit)
 # OV9782 global-shutter camera on CAM0, continuous clock.
 camera_auto_detect=0
 dtoverlay=ov9782,cam0,clk-continuous
+# <<< gen-raze
 
 [all]
 

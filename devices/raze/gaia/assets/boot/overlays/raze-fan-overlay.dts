@@ -45,9 +45,11 @@
 		target = <&fan>;
 		fan_props: __overlay__ {
 			status = "okay";
+			/* >>> gen-raze: fan (generated from manifest.json by devices/tools/gen-raze.py; do not edit) */
 			cooling-levels = <179 212 245 255 255>;
-			/* rp1_pwm1 channel 3, 41566 ns (~24 kHz), normal polarity */
+			/* rp1_pwm1 channel 3, 41566 ns, normal polarity */
 			pwms = <&rp1_pwm1 3 41566 0>;
+			/* <<< gen-raze */
 		};
 	};
 

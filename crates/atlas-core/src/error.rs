@@ -34,6 +34,8 @@ pub enum CoreError {
     UnknownRobot(String),
     #[error("invalid robot profile: {0}")]
     InvalidRobot(String),
+    #[error("a self-test is already running on {0}")]
+    SelfTestRunning(DeviceKey),
     #[error("{0} is online; only offline devices can be forgotten")]
     DeviceOnline(DeviceKey),
     #[error(transparent)]

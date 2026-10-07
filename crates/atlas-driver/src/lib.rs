@@ -12,6 +12,7 @@ mod error;
 mod health;
 mod observe;
 mod registry;
+mod selftest;
 mod types;
 
 pub use augment::CapabilitySource;
@@ -27,6 +28,9 @@ pub use observe::{
     LogLevel, LogLine, LogsCapability, Metric, TelemetryCapability, attributes, metric_ids,
 };
 pub use registry::DriverRegistry;
+pub use selftest::{
+    CheckStatus, SELFTEST_FORMAT, SelfTestCapability, SelfTestCheck, SelfTestReport,
+};
 pub use types::{
     Candidate, DeviceKey, DeviceMode, Family, Identity, Link, LinkId, LinkKind, Serial,
 };

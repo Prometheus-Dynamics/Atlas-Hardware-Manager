@@ -1,4 +1,4 @@
-description = "Raze runtime: identity endpoint and mDNS advertisement, default hostname, USB gadget network and serial, USB port power policy, LED ring probe, hardware description."
+description = "Raze runtime: identity endpoint and mDNS advertisement, default hostname, USB gadget network and serial, USB port power policy, LED ring probe, hardware description and self-test."
 
 # Units are installed in /usr/lib/systemd/system (not /etc), so an OS or user
 # can mask or replace them, and are enabled by 70-pd-device.preset when the
@@ -280,6 +280,31 @@ src = "@self/assets/rootfs/usr/lib/systemd/system/pd-device-update-link.service"
 dest = "/usr/lib/systemd/system/pd-device-update-link.service"
 origin = "static-asset"
 
+[[stage.files]]
+id = "raze-pd-device-leds-env"
+src = "@self/assets/rootfs/usr/lib/pd-device/leds.env"
+dest = "/usr/lib/pd-device/leds.env"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-pd-device-hardware-env"
+src = "@self/assets/rootfs/usr/lib/pd-device/hardware.env"
+dest = "/usr/lib/pd-device/hardware.env"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-pd-device-hw-sh"
+src = "@self/assets/rootfs/usr/lib/pd-device/hw.sh"
+dest = "/usr/lib/pd-device/hw.sh"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-pd-device-selftest"
+src = "@self/assets/rootfs/usr/lib/pd-device/selftest"
+dest = "/usr/lib/pd-device/selftest"
+origin = "static-asset"
+mode = 493
+
 [image]
 kind = "buildroot"
 config_overrides = [
@@ -297,6 +322,9 @@ config_overrides = [
   # the OS uses; the other symbol is simply absent.
   ["BR2_PACKAGE_SYSTEMD_HWDB", "n"],
   ["BR2_PACKAGE_EUDEV_ENABLE_HWDB", "n"],
+  # i2cdetect, for the selftest's I2C scan against the manifest's devices
+  # (/usr/lib/pd-device/selftest; it skips the scan without it).
+  ["BR2_PACKAGE_I2C_TOOLS", "y"],
 ]
 
 [image.feed]
@@ -345,4 +373,8 @@ stage_files = [
   "raze-systemd-system-pd-device-update-confirm-service",
   "raze-systemd-system-pd-device-update-link-service",
   "raze-systemd-system-conf-d-60-pd-device-watchdog-conf",
+  "raze-pd-device-leds-env",
+  "raze-pd-device-hardware-env",
+  "raze-pd-device-hw-sh",
+  "raze-pd-device-selftest",
 ]

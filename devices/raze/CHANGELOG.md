@@ -77,6 +77,23 @@ commit; the commits are listed per area.
   fallback while exactly one board is plugged in.
 - Collision odds and host notes: devices/README.md, "USB gadget network".
 - Commit: `e6afcf3`.
+- **Manifest values:** I2C addresses (`capabilities.i2c.devices[].address`,
+  `camera.i2c_address`) are now JSON numbers (24, not `"0x18"`), and
+  `camera.kernel_driver` is the driver name (`ov9282`; the prose moved to
+  `kernel_driver_source`). The schema still accepts the old strings and
+  Atlas reads both; no other reader is known (`47f8769`).
+- **Generated files:** `raze-device.txt` (its i2c, LED and camera lines),
+  `raze-fan-overlay.dts` (`cooling-levels`, `pwms`), `sensors.toml`,
+  `60-pd-device-watchdog.conf`, `leds.env` and `hardware.env` come from
+  `manifest.json` through `devices/tools/gen-raze.py`. Edit the manifest,
+  not those parts; CI fails when they disagree (`47f8769`).
+- **LED index offset:** `raze-leds` now maps LED index i to driver slot
+  (5 + i) mod 16, as HeliOS does. Whole-ring commands are unchanged; only
+  the new per-LED `pixel` is affected. `RAZE_LEDS_OFFSET=0` restores the
+  raw order (`c4bbf6e`).
+- **Image:** i2c-tools (`i2cdetect` and friends, small) is added for the
+  self-test's I2C scan (`c4bbf6e`).
+- **Identity:** an optional `diagnostics` array (`["selftest"]`) (`c4bbf6e`).
 
 ### Updates (A/B with tryboot)
 
@@ -138,14 +155,52 @@ commit; the commits are listed per area.
 
 ### Hardware
 
-- **LED ring:** SK6812-EC20, 24-bit RGB. The `ws2812-pio` overlay no longer
-  passes `rgbw`. `raze-leds` keeps the driver's 4-byte layout, so white is
-  `color 255 255 255` (`f98489f`). Verified on a Raze.
+- **LED ring:** SK6812-EC20, 24-bit GRB on the wire. The `ws2812-pio`
+  overlay no longer passes `rgbw`. `raze-leds` keeps the driver's 4-byte
+  layout, so white is `color 255 255 255` (`f98489f`). Verified on a Raze.
 - **Fan:** normal polarity, levels 179/212/245/255/255 (a 70 % minimum)
   (`ff18ab8`, `f98489f`). Verified on a Raze. `dtoverlay=raze-fan,polarity=1`
   restores inverted drive.
 - **Overlays:** the stock overlays `raze-device.txt` loads are built from the
   kernel being built, not taken from the firmware (`fd52491`).
+- **LED index offset:** HeliOS main writes frame index i to driver slot
+  (i + 5) mod count (`DEFAULT_LED_INDEX_OFFSET = 5` in
+  `backend/src/helios-peripherals/src/lighting.rs`, `HELIOS_LED_INDEX_OFFSET`
+  overrides it; static frames only). The package records it as
+  `leds.index.offset` 5, `direction` 1; not re-measured here (`47f8769`).
+
+### Manifest as the source of hardware facts
+
+- `manifest.json` describes the hardware precisely (LED part, wire format
+  grb24, userspace layout rgbw, index offset/direction; fan PWM
+  controller/channel/period/polarity, levels, duty floor, trips; camera CSI,
+  I2C and chip ids; I2C buses and devices; watchdog; kernel), each fact with
+  a `verified` note: `{by, date, method}` or `"unverified"` (`47f8769`,
+  `3f959d0`).
+- Verified on a Raze Gen 1 (image 1.0.10) on 2026-10-06 by Mathias and the
+  HeliOS coordinator: LED part, wire format and 4-byte layout, LED GPIO; fan
+  PWM channel, period, normal polarity and levels (state 1 at 58 °C read
+  back 83 %). 16 KiB pages: both OSes ran them on hardware. Unverified: LED
+  count and index direction, fan trips, camera facts, I2C devices, watchdog.
+- `devices/tools/gen-raze.py` renders the derived files; `--check` prints a
+  diff and fails on drift, on rule breaks and when the kernel facts disagree
+  with `gaia/kernel.toml` and `raze.config` (read only). The output is
+  committed rather than generated at package build time
+  (`47f8769`, `3f959d0`).
+
+### Self-test
+
+- `/usr/lib/pd-device/selftest [--interactive] [--json]`: LED ring, fan,
+  camera, I2C scan, watchdog and USB gadget, each ok/skip/fail with a message
+  and data. `--json` prints a format-1 report and writes
+  `/run/pd-device/selftest.json`. Root only; restores the fan and the ring on
+  exit or interrupt (`c4bbf6e`).
+- Hardware access goes through `hw.sh`, replaceable by another backend
+  (`PD_HW_BACKEND`). `raze-leds` uses it, applies the index offset, and has
+  `pixel` and `refresh` (`c4bbf6e`).
+- Atlas runs it over SSH after a flash or update and on request, keeps the
+  last result per board serial and shows it on the device panel (`d685975`,
+  `d06b5a3`).
 
 ### Optional layers
 
@@ -190,6 +245,10 @@ commit; the commits are listed per area.
   - `root-device.sh` checks finding the root device.
   - `gadget-address.sh` checks the gadget address vectors (shared with
     Atlas), the identity field and `usb-gadget-setup` with a fake configfs.
+  - `selftest.sh` runs the self-test and the LED offset against a fake
+    sysfs, /dev and configfs (`c4bbf6e`).
+  - `manifest-lint.sh` runs `gen-raze.py --check` and checks the lint catches
+    drift and rule breaks (`47f8769`, `3f959d0`).
 - CI runs them on Ubuntu 24.04.
 
 ## 1.0.7

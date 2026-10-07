@@ -32,6 +32,8 @@ jobs:
           sh devices/raze/tests/ssh-keys.sh
           sh devices/raze/tests/stage-files.sh
           sh devices/raze/tests/gadget-address.sh
+          sh devices/raze/tests/selftest.sh
+          sh devices/raze/tests/manifest-lint.sh
 
   workspace:
     name: checks (${{ matrix.os }})

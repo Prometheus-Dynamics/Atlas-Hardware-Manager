@@ -499,6 +499,10 @@ pd_identity_json() {
 		_pd_sep=','
 	done
 	printf ']'
+	# Root-only diagnostics, run over SSH.
+	if [ -x "$PD_LIB_DIR/selftest" ]; then
+		printf ',"diagnostics":["selftest"]'
+	fi
 	# The A/B updater's state, as pd-device-update last wrote it.
 	if [ -s "$PD_RUN_DIR/update.json" ]; then
 		printf ',"update":%s' "$(head -n 1 "$PD_RUN_DIR/update.json")"

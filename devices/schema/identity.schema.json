@@ -200,6 +200,15 @@
           "type": "string"
         }
       }
+    },
+    "diagnostics": {
+      "type": "array",
+      "description": "Root-only diagnostics the board has, run over SSH (never through this endpoint). \"selftest\": /usr/lib/pd-device/selftest --json prints a self-test report (format 1) and writes it to /run/pd-device/selftest.json.",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9._-]*$"
+      }
     }
   }
 }

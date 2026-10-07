@@ -12,6 +12,7 @@
   import Disclosure from "./Disclosure.svelte";
   import FactGrid from "./FactGrid.svelte";
   import LiveStats from "./LiveStats.svelte";
+  import SelfTestCard from "./SelfTestCard.svelte";
 
   let { record }: { record: DeviceRecord } = $props();
 
@@ -91,6 +92,8 @@
   {#if telemetry}
     <LiveStats {record} />
   {/if}
+
+  <SelfTestCard {record} />
 
   <FactGrid {facts} />
 

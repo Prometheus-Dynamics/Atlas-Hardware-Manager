@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -62,6 +62,12 @@ pub(crate) struct State {
     pub(crate) next_job: u64,
     pub(crate) robots: BTreeMap<String, RobotProfile>,
     pub(crate) activity: VecDeque<ActivityEntry>,
+    /// The last self-test per board serial.
+    pub(crate) selftests: BTreeMap<String, crate::SelfTestRecord>,
+    /// Boards to self-test when they come back, with a deadline (ms).
+    pub(crate) selftest_pending: HashMap<String, u64>,
+    /// Boards whose self-test is running now.
+    pub(crate) selftest_running: HashSet<String>,
 }
 
 pub(crate) struct Inner {
@@ -128,6 +134,7 @@ impl Inner {
                 devices: state.inventory.all(),
                 robots: state.robots.values().cloned().collect(),
                 activity: state.activity.iter().cloned().collect(),
+                selftests: state.selftests.values().cloned().collect(),
             }
         };
         if let Err(error) = store.save(&snapshot) {
@@ -188,6 +195,11 @@ impl AtlasBuilder {
                 .map(|robot| (robot.name.clone(), robot))
                 .collect(),
             activity: snapshot.activity.into_iter().collect(),
+            selftests: snapshot
+                .selftests
+                .into_iter()
+                .map(|run| (run.board_serial.clone(), run))
+                .collect(),
             next_job: 1,
             ..State::default()
         };
@@ -240,7 +252,10 @@ impl Atlas {
     /// Finds every device reachable now. Devices are published as
     /// [`Event::DeviceSeen`] as they answer, before the scan completes.
     pub async fn scan(&self) -> ScanReport {
-        scan::run(&self.inner).await
+        let report = scan::run(&self.inner).await;
+        // Boards back from a flash or an update get their self-test.
+        self.start_due_selftests();
+        report
     }
 
     /// Every known device, online first, then by name.

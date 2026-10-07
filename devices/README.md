@@ -19,6 +19,7 @@ devices/
     compat.schema.json
     identity.schema.json     the document served by the identity endpoint
   tools/sync-device.sh       vendor a package into an OS repo, and check it
+  tools/gen-raze.py          render the Raze config from its manifest; --check lints
   <model>/
     manifest.json            read by Atlas (and people)
     compat.json              which OS images are known to work (informational)
@@ -58,6 +59,83 @@ Contract 1 is:
 - neutral paths on the device: `/usr/lib/pd-device/` (package scripts and
   defaults), `/etc/pd-device/` (OS and user overrides), `/run/pd-device/`
   (generated state).
+
+## Hardware facts: the manifest is the source
+
+`manifest.json` holds every hardware fact of the board, precise enough to
+generate the package's config from (and, later, a hardware daemon's board
+definition). Values are numbers and enums with units in the key names, never
+prose:
+
+| Section | Facts |
+| --- | --- |
+| `kernel` | source, branch, commit, version, defconfig, `page_size_kib`, `builtin`, the package fragment and `fragment_merge` (OS fragments first, the package's last, so the package wins) |
+| `capabilities.leds` | `part`, `gpio`, `count`, `device`, `brightness`, overlay `name`/`dev_name`, `wire_format` (`grb24`: bits on the data line), `userspace` (`layout` `rgbw`, `bytes_per_led` 4, `ignored_channels`), `index` (`offset`, `direction`: logical LED i is driver slot (offset + direction * i) mod count) |
+| `capabilities.fan` | `pwm` (`controller`, `channel`, `period_ns`, `polarity`), `cooling_levels`, `min_level` (the duty floor), `trips_c`, `thermal_zone`, `cooling_device_type`, `hwmon_name` |
+| `capabilities.camera` | `part`, `csi` (port, receiver), `i2c` (Linux `bus` 10 from the kernel DT, `bus_dt_label`, `controller`, `address`), `chip_id`, kernel driver and compatible, tuning files |
+| `capabilities.i2c` | `buses` (Linux `bus`, kind, `sda_gpio`/`scl_gpio`, overlay) and `devices` (`id`, `part`, `bus`, 7-bit `address` as a number) |
+| `capabilities.watchdog` | `device`, `driver`, `runtime_sec`, `reboot_sec` |
+| `capabilities.selftest` | where the self-test is, its report format and checks |
+
+The USB gadget (`identity.usb_gadget`, `capabilities.gadget-net`) is a
+reference only: its settings live in `usb-gadget.env`.
+
+Each section has `verified`: per fact (a dotted path in the section) either
+`{"by", "date", "method"}` or `"unverified"`. Atlas reads the sections
+leniently (`atlas-devices`, `hardware.rs`); older manifests with `"0x18"`
+address strings still read.
+
+### Generated files and the lint
+
+`devices/tools/gen-raze.py` (python3, standard library) renders, from the
+manifest:
+
+- the `gen-raze: i2c`, `leds` and `camera` regions of `raze-device.txt` (the
+  `ws2812-pio` line passes `rgbw` only for a 32-bit `wire_format`);
+- the `gen-raze: fan` region of `raze-fan-overlay.dts` (`cooling-levels` and
+  `pwms`, polarity included);
+- whole files with a "Generated" header: `usr/lib/pd-device/leds.env`
+  (raze-leds defaults), `usr/lib/pd-device/hardware.env` (selftest facts),
+  `usr/share/pd-device/raze/sensors.toml` and the systemd watchdog drop-in.
+
+Edit the manifest and run the tool; never edit generated parts by hand.
+`gen-raze.py --check` changes nothing: it prints a diff and exits 1 when a
+file disagrees, when the manifest breaks a rule (levels, offsets, addresses,
+missing `verified` notes, rgbw vs wire format) or when the kernel facts
+disagree with `gaia/kernel.toml` and the fragment, which it only reads. The
+output is committed (Gaia has no build-time script step);
+`devices/raze/tests/manifest-lint.sh` runs the check in CI.
+
+## Self-test
+
+`/usr/lib/pd-device/selftest [--interactive] [--json]`, root only, one run at
+a time. Each check is `ok`, `skip` or `fail` with a message and data:
+
+| Check | What it does |
+| --- | --- |
+| `leds` | `/dev/leds0` takes a frame (redraws raze-leds' state, or only opens the device when another program owns the ring). `--interactive`: red, green, blue, a W-only frame a 24-bit ring must drop, and a walk round the ring by index with the offset applied; the operator answers on the terminal. |
+| `fan` | steps the pwm-fan cooling device through its states with the thermal zone paused, reads the duty (and rpm with a tachometer) back against `cooling_levels`, then restores the state and the governor |
+| `camera` | the sensor's I2C client is bound to its driver (which checked the chip id), and rp1-cfe video nodes, `media-ctl` or `cam -l` see it |
+| `i2c` | the manifest's devices answer (`i2cdetect -r`, in the image; skipped without it unless a kernel driver owns the address) |
+| `watchdog` | `/dev/watchdog0` exists and systemd's `RuntimeWatchdogUSec` is set |
+| `gadget` | the configfs gadget is bound to a UDC and `usbbr0` is up with an address |
+
+`--json` prints one object and writes it to `/run/pd-device/selftest.json`:
+
+```json
+{"version":1,"board_serial":"10000000a317bcbe","model":"raze","package_version":"1.0.7",
+ "at":1791347363,"interactive":false,"ok":true,
+ "checks":[{"id":"fan","status":"ok","message":"...","data":{"steps":[...]}}]}
+```
+
+With `--json` the exit status is 0 whenever a report was made; without it,
+1 when a check failed. The fan and the LED ring are restored on exit and on
+interrupt. All hardware access goes through `hw.sh` (`hw_leds_write_frame`,
+`hw_fan_set_state`, `hw_fan_read`, `hw_i2c_probe`, `hw_camera_list`, ...),
+so another backend can replace it (`PD_HW_BACKEND`) without changing the
+checks or the JSON. The identity lists `"diagnostics": ["selftest"]`; Atlas
+runs it over SSH after a flash or update and on request (docs/ota.md).
+`devices/raze/tests/selftest.sh` tests it off-device with a fake sysfs.
 
 ## Consuming a package from an OS build
 
@@ -237,6 +315,7 @@ a VPN that routes `172.31.0.0/16`, shadows the gadget subnets. Changing
 | Identity endpoint | `disable pd-device-http.socket` in an OS preset, or mask it. |
 | Update methods / manage URL | One id per line in `/etc/pd-device/update-methods.d/<file>` (added after `image-write`); the URL in `/etc/pd-device/manage-url` (an empty file means `null`). |
 | Board revision | The revision id in `/etc/pd-device/rev`. |
+| LED byte order, index offset and direction | `RAZE_LEDS_ORDER`, `RAZE_LEDS_OFFSET`, `RAZE_LEDS_DIRECTION` in `/etc/pd-device/raze-leds.env` (defaults from the generated `leds.env`). |
 | Fan, port power, LEDs, camera | Copy the lines you want from `raze-device.txt` into your `config.txt` instead of including it, and change their parameters (`raze-fan`: `level0`..`level4`, `period_ns`, `polarity`; `raze-usb-power`: `usba=off`, `usbc=off`, `hog=off`). |
 | Any unit | A preset file that sorts before `70-pd-device.preset`, a drop-in, or a mask. |
 | Any Buildroot option or default in the layer | Set it in a Gaia layer imported after the device layer. |

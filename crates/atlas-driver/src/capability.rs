@@ -6,7 +6,10 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
-use crate::{DeviceMode, DriverError, Family, Identity, LogsCapability, TelemetryCapability};
+use crate::{
+    DeviceMode, DriverError, Family, Identity, LogsCapability, SelfTestCapability,
+    TelemetryCapability,
+};
 
 /// Everything a device can offer. The UI shows a tab or action only for the
 /// kinds a device reports.
@@ -22,6 +25,8 @@ pub enum CapabilityKind {
     Actions,
     Gateway,
     OpenUi,
+    /// The device can check its own hardware.
+    SelfTest,
 }
 
 /// The capabilities a driver grants one device. Absent means unsupported.
@@ -31,6 +36,7 @@ pub struct Capabilities {
     pub actions: Option<Arc<dyn ActionsCapability>>,
     pub telemetry: Option<Arc<dyn TelemetryCapability>>,
     pub logs: Option<Arc<dyn LogsCapability>>,
+    pub selftest: Option<Arc<dyn SelfTestCapability>>,
 }
 
 impl Capabilities {
@@ -57,6 +63,9 @@ impl Capabilities {
         }
         if self.logs.is_some() {
             kinds.push(CapabilityKind::Logs);
+        }
+        if self.selftest.is_some() && mode == DeviceMode::Normal {
+            kinds.push(CapabilityKind::SelfTest);
         }
         kinds
     }

@@ -17,8 +17,10 @@ import { fleet, inventory, jobs, razeUsbBoot, releases, robots, settings, simDev
 import * as runner from "./mock/runner";
 import { activity, logLines, metrics, online, record, restart, seedHistory } from "./mock/observe";
 import { listRecords, robotStatuses, robotUpdateRequest, scan, touch } from "./mock/scan";
+import { lastSelftest, runSelftest, seedSelftests } from "./mock/selftest";
 
 seedHistory();
+seedSelftests();
 
 type Api = typeof tauriApi;
 
@@ -167,6 +169,15 @@ export const mockApi: Api = {
       const name = entry.label ?? entry.record?.identity.name ?? keyString(key);
       record("action-run", "info", key, `${found.label} on ${name}`);
     }),
+  runSelftest: async (key) => {
+    await latency();
+    try {
+      return clone(await runSelftest(key));
+    } catch (error) {
+      throw typeof error === "string" ? error : String(error);
+    }
+  },
+  deviceSelftest: (key) => reply(() => lastSelftest(key)),
   deviceTelemetry: (key) => reply(() => metrics(online(key))),
   deviceLogs: (key, lines) => reply(() => logLines(online(key), Math.max(1, Math.min(lines, 2000)))),
   listActivity: (limit) => reply(() => activity.slice(-limit).reverse()),

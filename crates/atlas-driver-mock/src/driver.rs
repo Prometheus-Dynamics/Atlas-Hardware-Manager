@@ -171,6 +171,7 @@ impl Driver for MockDriver {
                     fleet: self.fleet.clone(),
                 }) as Arc<dyn atlas_driver::LogsCapability>
             }),
+            selftest: None,
         }
     }
 

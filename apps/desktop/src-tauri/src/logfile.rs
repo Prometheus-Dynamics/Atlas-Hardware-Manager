@@ -130,6 +130,18 @@ pub fn event(event: &Event) {
             line("JOB", &format!("#{job} finished {state:?} {summary:?}"));
         }
         Event::Activity { entry } => line("ACTIVITY", &entry.message),
+        Event::SelfTest { record } => {
+            let checks = record.report.iter().flat_map(|report| &report.checks);
+            for check in checks.filter(|check| check.status != atlas_driver::CheckStatus::Ok) {
+                line(
+                    "SELFTEST",
+                    &format!(
+                        "{} {} {:?}: {}",
+                        record.device, check.id, check.status, check.message
+                    ),
+                );
+            }
+        }
         _ => {}
     }
 }

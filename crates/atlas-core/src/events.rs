@@ -4,6 +4,7 @@ use tokio::sync::broadcast;
 
 use crate::{
     ActivityEntry, DeviceJobStatus, DeviceRecord, JobId, JobState, JobSummary, ScanReport,
+    SelfTestRecord,
 };
 
 /// Every state change in Atlas. Hosts render these; nothing else is needed
@@ -67,6 +68,10 @@ pub enum Event {
     /// Something worth a line in the fleet history.
     Activity {
         entry: ActivityEntry,
+    },
+    /// A self-test finished (or couldn't run); the board's latest result.
+    SelfTest {
+        record: Box<SelfTestRecord>,
     },
 }
 

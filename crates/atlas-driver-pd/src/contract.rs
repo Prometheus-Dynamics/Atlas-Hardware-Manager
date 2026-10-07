@@ -59,6 +59,9 @@ pub struct PdIdentity {
     /// The board's clock (Unix seconds) when it answered.
     #[serde(default)]
     pub time: Option<i64>,
+    /// Root-only diagnostics run over SSH, such as `selftest`.
+    #[serde(default)]
+    pub diagnostics: Vec<String>,
 }
 
 /// `update status` as the identity carries it; every field is optional.
