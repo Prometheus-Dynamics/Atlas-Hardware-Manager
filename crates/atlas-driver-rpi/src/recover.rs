@@ -382,7 +382,9 @@ impl UpdateCapability for RpiRecovery {
         if let Some(keys) = self.config.ssh_keys.get() {
             let target = disk.clone();
             match tokio::task::spawn_blocking(move || {
-                atlas_blockdev::write_boot_file(&target, crate::driver::BOOT_KEYS_PATH, &keys)
+                // One key per line, newline-terminated, duplicates dropped.
+                let file = crate::actions::merge_keys("", &keys);
+                atlas_blockdev::write_boot_file(&target, crate::driver::BOOT_KEYS_PATH, &file)
             })
             .await
             {

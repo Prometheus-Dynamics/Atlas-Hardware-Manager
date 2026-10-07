@@ -39,8 +39,9 @@ impl RpiActions {
     }
 }
 
-/// `existing` plus the lines of `keys` it doesn't have yet.
-fn merge_keys(existing: &str, keys: &str) -> String {
+/// `existing` plus the lines of `keys` it doesn't have yet, one per line and
+/// newline-terminated: a POSIX `read` loop drops an unterminated last line.
+pub(crate) fn merge_keys(existing: &str, keys: &str) -> String {
     let mut lines: Vec<&str> = existing
         .lines()
         .filter(|line| !line.trim().is_empty())

@@ -41,34 +41,43 @@ boot_partition() {
 	return 1
 }
 
-part=$(boot_partition) || {
-	pd_log "cannot tell which partition is the boot partition"
-	exit 0
-}
-[ -b "$part" ] || {
-	pd_log "no boot partition at $part"
-	exit 0
-}
-
-# Use the boot partition where the OS mounted it, else mount it read-only.
-mnt=$(findmnt -n -o TARGET --source "$part" 2>/dev/null | head -n 1) || mnt=''
-own=''
-if [ -z "$mnt" ]; then
-	mnt="$PD_RUN_DIR/boot"
-	mkdir -p "$mnt"
-	mount -o ro "$part" "$mnt"
-	own=1
+# Tests point straight at a key file and skip the partition.
+if [ -n "${SSH_KEYS_SOURCE_FILE:-}" ]; then
+	src=$SSH_KEYS_SOURCE_FILE
+	install_keys=1
 fi
-cleanup() {
-	[ -z "$own" ] || umount "$mnt" 2>/dev/null || true
-}
-trap cleanup EXIT
 
-src="$mnt/$SOURCE_NAME"
-[ -r "$src" ] || exit 0
+if [ -z "${install_keys:-}" ]; then
+	part=$(boot_partition) || {
+		pd_log "cannot tell which partition is the boot partition"
+		exit 0
+	}
+	[ -b "$part" ] || {
+		pd_log "no boot partition at $part"
+		exit 0
+	}
 
-# Only lines that look like public keys; comments and junk are ignored.
-tr -d '\r' < "$src" | while IFS= read -r line; do
+	# Use the boot partition where the OS mounted it, else mount it read-only.
+	mnt=$(findmnt -n -o TARGET --source "$part" 2>/dev/null | head -n 1) || mnt=''
+	own=''
+	if [ -z "$mnt" ]; then
+		mnt="$PD_RUN_DIR/boot"
+		mkdir -p "$mnt"
+		mount -o ro "$part" "$mnt"
+		own=1
+	fi
+	cleanup() {
+		[ -z "$own" ] || umount "$mnt" 2>/dev/null || true
+	}
+	trap cleanup EXIT
+
+	src="$mnt/$SOURCE_NAME"
+	[ -r "$src" ] || exit 0
+fi
+
+# Only lines that look like public keys; comments and junk are ignored. CRLF
+# files and a last line without a newline (as some editors write) count too.
+tr -d '\r' < "$src" | while IFS= read -r line || [ -n "$line" ]; do
 	case "$line" in
 	ssh-* | ecdsa-* | sk-ssh-* | sk-ecdsa-*) printf '%s\n' "$line" ;;
 	esac
@@ -92,6 +101,12 @@ if mkdir -p "$ssh_dir" 2>/dev/null && touch "$keys" 2>/dev/null; then
 			pd_log "added a key for ${TARGET_HOME##*/}: ${line%% *} ${line##* }"
 		fi
 	done < "$PD_RUN_DIR/ssh-keys.new"
+fi
+count=$(grep -c . "$PD_RUN_DIR/ssh-keys.new" || true)
+if [ "$count" -gt 0 ]; then
+	pd_log "installed $count SSH key(s) from the boot partition"
+else
+	pd_log "warning: $SOURCE_NAME is on the boot partition but holds no usable public key"
 fi
 rm -f "$PD_RUN_DIR/ssh-keys.new"
 exit 0

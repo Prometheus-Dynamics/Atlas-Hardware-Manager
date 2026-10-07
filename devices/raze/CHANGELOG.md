@@ -114,6 +114,13 @@ commit; the commits are listed per area.
 
 ### Runtime paths and settings
 
+- **SSH key fix** (found on hardware): `ssh-keys` installed nothing when the
+  key file's last line had no newline. A POSIX `read` drops it, and Atlas's
+  Flash tab wrote the file that way. The loop now reads an unterminated last
+  line and CRLF files. It logs how many keys it installed, and warns when the
+  file exists but holds no usable key. The Flash tab now always writes one
+  key per line with a final newline. Test: `tests/ssh-keys.sh`.
+
 - **SSH keys:** `ssh-keys` finds the boot partition from `root=` on the
   kernel command line, so an overlay root works. On the A/B layout that is
   p1, shared by both slots (`a6dec52`).
