@@ -9,6 +9,23 @@
 # accepts the tarball when any listed hash file matches it.
 LINUX_HASH_FILES += $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/linux.hash
 
+# The Raze kernel fragment goes after any the OS lists in
+# BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES, so the package's decisions win
+# (later fragments override earlier ones). LINUX_KCONFIG_FRAGMENT_FILES is a
+# recursive variable that linux.mk defines before this file is read.
+LINUX_KCONFIG_FRAGMENT_FILES += $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/raze.config
+
+# Fail rather than ship a kernel whose core configuration drifted: the page
+# size (4 KiB) and a built-in EROFS are package decisions (raze.config,
+# kernel.toml).
+define RAZE_CHECK_KERNEL_CONFIG
+	@grep -qx 'CONFIG_ARM64_4K_PAGES=y' $(LINUX_DIR)/.config || \
+		{ echo "Raze: the kernel must use 4 KiB pages (CONFIG_ARM64_4K_PAGES, BR2_ARM64_PAGE_SIZE_4K); something changed it" >&2; exit 1; }
+	@grep -qx 'CONFIG_EROFS_FS=y' $(LINUX_DIR)/.config || \
+		{ echo "Raze: EROFS must be built in (CONFIG_EROFS_FS=y)" >&2; exit 1; }
+endef
+LINUX_POST_CONFIGURE_HOOKS += RAZE_CHECK_KERNEL_CONFIG
+
 # The CM5 defconfig uses Bootlin's external toolchain, whose tools are named
 # aarch64-linux-*. OpenJDK's configure only looks for $(GNU_TARGET_NAME)-*
 # (aarch64-buildroot-linux-gnu-*), and when it finds none it silently falls

@@ -30,7 +30,19 @@ commit; the commits are listed per area.
   - MD RAID, DRBD and NBD;
   - btrfs, xfs, f2fs, nfs/nfsd, cifs, ntfs3, iso9660, udf and hfs.
 
-  An OS that sets its own fragment files lists ours as well (`695d172`).
+  An OS adds its own fragments through `BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES`;
+  the package's are merged after them (`695d172`).
+- **Kernel page size: 4 KiB, explicit.** Buildroot sets the kernel's page size
+  from `BR2_ARM64_PAGE_SIZE_*` after all fragments, so every Raze image has
+  run 4K. bcm2712_defconfig's 16K and the kernel's "-v8-16k" name never
+  applied. kernel.toml now sets `BR2_ARM64_PAGE_SIZE_4K`, raze.config states
+  it, and the build fails if the kernel config disagrees. Moving to 16K needs
+  a hardware test of the OS's prebuilt native libraries first.
+- **Kernel fragment policy:** `BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES` belongs
+  to the OS (empty by default, which also drops the defconfig's 4K fragment).
+  The package's raze.config is appended after the OS's fragments in
+  external.mk, so the package's decisions win. The build also fails if EROFS
+  isn't built in.
 - **Read-only root:** EROFS is built into the kernel, and nothing in the
   package writes to `/`. SSH keys from the boot partition go to
   `/run/pd-device/ssh/authorized_keys`, which needs the OS's sshd_config to

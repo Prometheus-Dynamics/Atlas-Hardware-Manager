@@ -21,9 +21,16 @@ config_overrides = [
   # raspberrypi/linux rpi-7.2.y at 53679a5 (Linux 7.2.9), pinned by commit.
   ["BR2_LINUX_KERNEL_CUSTOM_TARBALL_LOCATION", "\"https://github.com/raspberrypi/linux/archive/53679a5788f7912272b412fd78029bccae6f2b1a.tar.gz\""],
   ["BR2_LINUX_KERNEL_DEFCONFIG", "\"bcm2712\""],
-  # Raze trims and a built-in EROFS (read-only compressed root):
-  # buildroot-external/linux/raze.config.
-  ["BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES", "\"$(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/raze.config\""],
+  # 4 KiB pages, explicitly: Buildroot forces this onto the kernel config
+  # after fragments (see raze.config). Change both together, after a hardware
+  # test, if the package moves to 16 KiB.
+  ["BR2_ARM64_PAGE_SIZE_4K", "y"],
+  # Kernel fragments are OS-owned: an OS may list extra fragments here (for
+  # modules it needs). The package's own decisions (16K pages, built-in EROFS,
+  # trims: buildroot-external/linux/raze.config) are appended after them by
+  # external.mk, so they always win. Empty by default, which also drops the
+  # defconfig's linux-4k-page-size.fragment.
+  ["BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES", "\"\""],
   # OV9782 as a variant of the upstream ov9282 driver (VIDEO_OV9282=m).
   ["BR2_LINUX_KERNEL_EXT_OV9782", "y"],
   ["BR2_PACKAGE_RPI_FIRMWARE", "y"],
