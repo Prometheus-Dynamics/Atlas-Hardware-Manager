@@ -15,7 +15,8 @@ import type {
 } from "../types";
 import { keyString } from "../types";
 import { emit, sleep } from "./bus";
-import { AB_ACTIONS, AB_METHODS, fleet, inventory, jobs, releases, simDevice, type SimDevice } from "./data";
+import { AB_ACTIONS, AB_METHODS, fleet, inventory, jobs, razeCaps, releases, simDevice, type SimDevice } from "./data";
+import { selftestWhenBack } from "./selftest";
 import { scan, touch } from "./scan";
 import { record } from "./observe";
 
@@ -117,7 +118,7 @@ function comesBackRunning(recovery: SimDevice, version: string, fileName: string
       update_methods: ab ? AB_METHODS : "image-write",
       ...(ab ? { slot_active: "A", update_state: "committed" } : {}),
     };
-    running.caps = ab ? ["info", "update", "actions", "telemetry", "logs"] : ["info", "actions", "telemetry", "logs"];
+    running.caps = razeCaps(ab);
     running.actions = ab ? AB_ACTIONS : AB_ACTIONS.slice(0, 2);
     const index = fleet.indexOf(recovery);
     if (index >= 0) fleet.splice(index, 1);
@@ -195,7 +196,12 @@ function setStatus(job: JobRecord, state: DeviceJobState, status: DeviceJobStatu
   if (status.status !== "running" && status.status !== "queued") state.finished_ms = Date.now();
   emit({ type: "job-device", job: job.id, device: state.device, status });
   const name = state.name;
-  if (status.status === "verified") record("update-result", "success", state.device, `${name} updated to ${status.version}`);
+  if (status.status === "verified") {
+    record("update-result", "success", state.device, `${name} updated to ${status.version}`);
+    // Like atlas-core: self-test the board once it is back and running.
+    const board = simDevice(state.device)?.attributes?.board_serial;
+    if (board) selftestWhenBack(board);
+  }
   else if (status.status === "rolled-back") record("update-result", "warning", state.device, `${name} rolled back its update: ${status.reason}`);
   else if (status.status === "needs-recovery") record("update-result", "error", state.device, `${name} needs recovery: ${status.reason}`);
   else if (status.status === "failed") record("update-result", "error", state.device, `${name} update failed: ${status.error}`);

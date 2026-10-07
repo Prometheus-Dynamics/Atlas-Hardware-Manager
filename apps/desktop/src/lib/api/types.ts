@@ -39,7 +39,9 @@ export type CapabilityKind =
   | "telemetry"
   | "actions"
   | "gateway"
-  | "open-ui";
+  | "open-ui"
+  /** The device can check its own hardware (see SelfTestRecord). */
+  | "self-test";
 
 export type Presence = "online" | "offline";
 
@@ -96,7 +98,8 @@ export type ActivityKind =
   | "version-changed"
   | "mode-changed"
   | "update-result"
-  | "action-run";
+  | "action-run"
+  | "self-test";
 
 export type ActivityLevel = "info" | "success" | "warning" | "error";
 
@@ -338,6 +341,45 @@ export interface AppInfo {
   startup_warnings: string[];
 }
 
+export type CheckStatus = "ok" | "skip" | "fail" | "unknown";
+
+/** One check of a device's self-test, as the device reports it. */
+export interface SelfTestCheck {
+  /** For example `fan` or `camera`. */
+  id: string;
+  status: CheckStatus;
+  message: string;
+  /** What the check measured; shape is up to the device. */
+  data: Record<string, unknown> | null;
+}
+
+/** The device's `selftest --json` report (format 1). */
+export interface SelfTestReport {
+  version: number;
+  board_serial: string | null;
+  model: string | null;
+  package_version: string | null;
+  /** Unix seconds on the device's clock. */
+  at: number | null;
+  interactive: boolean;
+  ok: boolean;
+  checks: SelfTestCheck[];
+}
+
+export type SelfTestTrigger = "manual" | "after-update";
+
+/** A self-test run as atlas-core keeps it, per board serial. */
+export interface SelfTestRecord {
+  /** Atlas's board serial (last 8 hex digits). */
+  board_serial: string;
+  device: DeviceKey;
+  at_ms: number;
+  trigger: SelfTestTrigger;
+  /** Null when the run itself failed; see `error`. */
+  report: SelfTestReport | null;
+  error: string | null;
+}
+
 /** Payload of `atlas://event`. */
 export type AtlasEvent =
   | { type: "scan-started" }
@@ -354,7 +396,9 @@ export type AtlasEvent =
   | { type: "job-progress"; job: JobId; device: DeviceKey; step: UpdateStep; fraction: number }
   | { type: "job-log"; job: JobId; device: DeviceKey; message: string }
   | { type: "job-finished"; job: JobId; state: JobState; summary: JobSummary }
-  | { type: "activity"; entry: ActivityEntry };
+  | { type: "activity"; entry: ActivityEntry }
+  /** A self-test finished or couldn't run: the board's latest result. */
+  | { type: "self-test"; record: SelfTestRecord };
 
 /** How Atlas keeps the inventory current. */
 export interface DiscoveryStatus {

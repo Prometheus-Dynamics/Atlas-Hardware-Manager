@@ -64,6 +64,7 @@
     "mode-changed": "usb",
     "update-result": "package",
     "action-run": "player-play",
+    "self-test": "list-check",
   };
 
   function icon(entry: ActivityEntry): IconName {

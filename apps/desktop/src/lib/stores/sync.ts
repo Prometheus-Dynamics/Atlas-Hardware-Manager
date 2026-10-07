@@ -7,6 +7,7 @@ import { devices } from "./devices.svelte";
 import { jobs } from "./jobs.svelte";
 import { releases } from "./releases.svelte";
 import { robots } from "./robots.svelte";
+import { selftests } from "./selftests.svelte";
 import { system } from "./system.svelte";
 import { ui } from "./ui.svelte";
 
@@ -47,6 +48,9 @@ function dispatch(event: AtlasEvent) {
       break;
     case "activity":
       activity.push(event.entry);
+      break;
+    case "self-test":
+      selftests.apply(event.record);
       break;
     default:
       // The jobs page follows the newest job.

@@ -23,6 +23,7 @@ import type {
   RobotProfile,
   RobotStatus,
   ScanReport,
+  SelfTestRecord,
   StagedRollout,
   UpdateRequestInput,
 } from "./types";
@@ -40,6 +41,13 @@ export const api = {
   deviceActions: (key: DeviceKey) => invoke<DeviceAction[]>("device_actions", { key }),
   runDeviceAction: (key: DeviceKey, action: string) =>
     invoke<void>("run_device_action", { key, action }),
+  /**
+   * Runs the device's self-test (devices with `self-test`). Resolves with the
+   * kept result, also when a check failed or the run couldn't finish.
+   */
+  runSelftest: (key: DeviceKey) => invoke<SelfTestRecord>("run_selftest", { key }),
+  /** The last self-test of this device's board, or null. */
+  deviceSelftest: (key: DeviceKey) => invoke<SelfTestRecord | null>("device_selftest", { key }),
   /** Live readings; only for devices with the `telemetry` capability. */
   deviceTelemetry: (key: DeviceKey) => invoke<Metric[]>("device_telemetry", { key }),
   /** Recent log lines, oldest first; only for devices with `logs`. */

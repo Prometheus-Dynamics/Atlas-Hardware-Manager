@@ -111,6 +111,9 @@ export function razeUsbBoot(serial: string, board: string): SimDevice {
 
 /** Methods, capabilities, and actions of a Raze on the A/B layout. */
 export const AB_METHODS = "image-write, ab-tryboot, usb-boot-reboot";
+/** A/B images carry the device package's self-test; older ones don't. */
+export const razeCaps = (ab: boolean): CapabilityKind[] =>
+  ab ? ["info", "update", "actions", "telemetry", "logs", "self-test"] : ["info", "actions", "telemetry", "logs"];
 export const AB_ACTIONS: DeviceAction[] = [
   { id: "locate", label: "Find it", destructive: false },
   { id: "reboot", label: "Restart", destructive: false },
@@ -142,7 +145,7 @@ const razeRunning = (serial: string, version: string, ab: boolean): SimDevice =>
     ...(ab ? { slot_active: "A", update_state: "committed" } : {}),
   },
   link: { kind: "usb-network" },
-  caps: ab ? ["info", "update", "actions", "telemetry", "logs"] : ["info", "actions", "telemetry", "logs"],
+  caps: razeCaps(ab),
   actions: ab ? AB_ACTIONS : AB_ACTIONS.slice(0, 2),
 });
 
