@@ -31,6 +31,7 @@ jobs:
           sh devices/raze/tests/usb-boot.sh
           sh devices/raze/tests/ssh-keys.sh
           sh devices/raze/tests/stage-files.sh
+          sh devices/raze/tests/gadget-address.sh
 
   workspace:
     name: checks (${{ matrix.os }})

@@ -225,6 +225,20 @@ until it is flashed or power-cycled. The identity lists `usb-boot-reboot`
 when the board supports it, and Atlas offers "Restart into USB boot" over
 SSH (Orion later). It is never on the unauthenticated identity endpoint.
 
+## Reaching a board over USB
+
+SSH and the identity endpoint work over the USB gadget network as well as
+Ethernet. Each board's gadget network is a /29 of its own inside
+172.31.0.0/16, picked by a hash of its board serial (scheme `serial-hash-v1`,
+`capabilities.gadget-net.addressing` in the manifest). The gadget's USB
+serial string is the board serial, so Atlas computes every plugged-in
+board's address from its USB descriptor and probes them all; an identity
+counts only when its serial matches the USB serial. Images from before
+per-board addressing sit at 172.31.250.1 (left out of the hashed range) and
+are reached there while they are the only board plugged in. The scheme,
+collision odds and host-side notes are in `devices/README.md`
+("USB gadget network").
+
 ## Transports
 
 Image bytes never travel over Orion. Atlas serves the image over HTTP
@@ -237,7 +251,9 @@ reading progress from
 `status` until `confirmed` or `rolled-back`. It runs the system OpenSSH as
 root with the key chosen in Settings. Host keys are trusted on first use and
 pinned per board (`HostKeyAlias=pd-<model>-<serial>` in Atlas's own
-known_hosts), because every board shares the USB gadget address. Atlas
+known_hosts), because one address can belong to different boards over time
+(older images all share 172.31.250.1, and two boards can collide on a
+per-board gadget subnet). Atlas
 offers it for boards whose identity lists `ab-tryboot`.
 
 | Path | Needs | Auth | Used when |

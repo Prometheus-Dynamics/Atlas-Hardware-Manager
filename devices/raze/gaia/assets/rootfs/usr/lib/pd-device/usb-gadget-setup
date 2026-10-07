@@ -6,6 +6,11 @@
 # (usbbr0) with a static address and a DHCP server for the host on the other
 # end of the cable. Ethernet (end0/end1/eth*) is never added to it.
 #
+# The USB serial string is the board serial, and the address derives from it
+# (lib.sh pd_gadget_subnet, scheme serial-hash-v1): each board gets its own
+# subnet, so several boards on one computer don't clash, and the host can
+# compute a board's address from its USB descriptor alone.
+#
 # MAC addresses derive from the board serial with the locally administered bit
 # set (lib.sh pd_mac_base), else from /etc/machine-id; never a fixed constant.
 # Settings: usb-gadget.env.
@@ -26,11 +31,7 @@ CONFIGFS=${PD_CONFIGFS:-/sys/kernel/config}
 UDC_CLASS=${PD_UDC_CLASS:-/sys/class/udc}
 G="$CONFIGFS/usb_gadget/${USB_GADGET_NAME:-g1}"
 
-serial=${USB_GADGET_SERIAL:-AUTO}
-if [ "$serial" = AUTO ] || [ -z "$serial" ]; then
-	serial=$(pd_serial)
-	[ -n "$serial" ] || serial=$(pd_machine_id | cut -c1-16)
-fi
+serial=$(pd_gadget_serial)
 
 dev_addr=${USB_GADGET_DEV_ADDR:-AUTO}
 host_addr=${USB_GADGET_HOST_ADDR:-AUTO}
@@ -211,13 +212,23 @@ for func in $net_functions; do
 	ip link set dev "$ifname" master "$bridge"
 	ip link set dev "$ifname" up
 done
-ip addr replace "${USB_GADGET_ADDRESS:-172.31.250.1/24}" dev "$bridge"
+pd_gadget_address
+ip addr replace "$PD_GADGET_CIDR" dev "$bridge"
 ip link set dev "$bridge" up
+pd_log "$bridge: $PD_GADGET_CIDR ($PD_GADGET_ADDRESSING)"
 
 # mDNS on the USB link, so the host can find the device by name. Ethernet mDNS
 # is the OS's network configuration (see devices/README.md).
 if command -v resolvectl >/dev/null 2>&1; then
 	resolvectl mdns "$bridge" yes 2>/dev/null || true
+fi
+
+dhcp_range=${USB_GADGET_DHCP_RANGE:-AUTO}
+if [ "$dhcp_range" = AUTO ]; then
+	dhcp_range=$(pd_gadget_dhcp_range "$PD_GADGET_CIDR") || {
+		pd_log "no room for a DHCP range in $PD_GADGET_CIDR; set USB_GADGET_DHCP_RANGE"
+		dhcp_range=''
+	}
 fi
 
 mkdir -p "$PD_RUN_DIR"
@@ -227,7 +238,7 @@ port=0
 interface=$bridge
 bind-dynamic
 dhcp-authoritative
-dhcp-range=${USB_GADGET_DHCP_RANGE:-172.31.250.2,172.31.250.20,255.255.255.0,1h}
+${dhcp_range:+dhcp-range=$dhcp_range}
 # No default route for the host.
 dhcp-option=option:router
 dhcp-leasefile=$PD_RUN_DIR/usb-gadget-dhcp.leases

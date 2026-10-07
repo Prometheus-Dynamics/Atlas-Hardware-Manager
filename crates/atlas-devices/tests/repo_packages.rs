@@ -92,15 +92,47 @@ fn device_package_env_matches_the_manifest_version() {
     }
 }
 
+/// A value from a pd-device `*.env` or `lib.sh` file: `KEY=value`, unquoted.
+fn shell_value(file: &Path, key: &str) -> Option<String> {
+    let text = std::fs::read_to_string(file).unwrap();
+    text.lines().find_map(|line| {
+        let value = line.trim().strip_prefix(key)?.strip_prefix('=')?;
+        Some(value.trim().trim_matches('"').to_string())
+    })
+}
+
 #[test]
 fn raze_names_its_gadget_address() {
-    let catalog = atlas_devices::DeviceCatalog::load(&[std::path::PathBuf::from(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../../devices"
-    ))]);
-    let raze = catalog.by_model("raze").expect("raze package");
+    let raze = repo_catalog();
+    let raze = raze.by_model("raze").expect("raze package");
+    let scripts = raze.dir.join("gaia/assets/rootfs/usr/lib/pd-device");
     assert_eq!(
-        raze.manifest.gadget_address().as_deref(),
+        raze.manifest.legacy_gadget_address().as_deref(),
         Some("172.31.250.1")
+    );
+    assert_eq!(
+        shell_value(&scripts.join("lib.sh"), "PD_GADGET_LEGACY_ADDRESS").as_deref(),
+        Some("172.31.250.1/24")
+    );
+
+    // The device computes its address from usb-gadget.env and Atlas from the
+    // manifest: they must describe the same scheme.
+    let addressing = raze.manifest.gadget_addressing().expect("addressing");
+    assert_eq!(addressing.scheme, atlas_devices::SERIAL_HASH_V1);
+    let env = scripts.join("usb-gadget.env");
+    let value = |key: &str| shell_value(&env, key).unwrap_or_default();
+    assert_eq!(value("USB_GADGET_ADDRESS"), "AUTO");
+    assert_eq!(value("USB_GADGET_ADDR_BASE"), addressing.base);
+    assert_eq!(
+        value("USB_GADGET_ADDR_PREFIX"),
+        addressing.prefix.to_string()
+    );
+    assert_eq!(
+        value("USB_GADGET_ADDR_EXCLUDE"),
+        addressing.exclude.join(" ")
+    );
+    assert_eq!(
+        addressing.subnet_for("e5226d57").map(|s| s.to_string()),
+        Some("172.31.209.217/29".into())
     );
 }

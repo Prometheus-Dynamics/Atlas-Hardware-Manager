@@ -12,6 +12,7 @@ use atlas_driver::{
 
 use crate::browse::Browser;
 use crate::contract::PdIdentity;
+use crate::gadget::GadgetProbe;
 use crate::live::{PdActions, PdLogs, PdTelemetry, resolve};
 use crate::ssh::{AB_METHOD, SshAccess, SshUpdate};
 use crate::ssh_actions::{PdDeviceActions, USB_BOOT_METHOD};
@@ -72,6 +73,8 @@ pub struct PdDriver {
     http: reqwest::Client,
     /// What each device last reported, for the optional live endpoints.
     reported: Mutex<HashMap<DeviceKey, (String, PdIdentity)>>,
+    /// The last discovery's USB gadget probes, by candidate address.
+    probes: Mutex<HashMap<String, GadgetProbe>>,
     ssh: SshAccess,
 }
 
@@ -96,34 +99,67 @@ impl PdDriver {
                 .build()
                 .unwrap_or_default(),
             reported: Mutex::new(HashMap::new()),
+            probes: Mutex::new(HashMap::new()),
             ssh,
         }
     }
 
-    /// This model's boards plugged in over USB, probed at the package's
-    /// gadget address. Several boards on one computer share that address,
-    /// so with more than one only mDNS can tell them apart.
+    /// This model's boards plugged in over USB, each probed at the gadget
+    /// address its USB serial gives (see `gadget`).
     async fn gadget_candidates(&self, link: &Link) -> Vec<Candidate> {
-        let Some(address) = self.package.manifest.gadget_address() else {
-            return Vec::new();
-        };
-        let mine = crate::gadget::gadgets()
-            .await
-            .into_iter()
-            .filter(|gadget| {
-                self.package
-                    .manifest
-                    .matches_gadget(gadget.manufacturer.as_deref(), gadget.product.as_deref())
+        let probes = crate::gadget::probes(&self.package.manifest, &crate::gadget::gadgets().await);
+        let candidates = probes
+            .iter()
+            .map(|probe| Candidate {
+                link: link.id.clone(),
+                family: self.manifest.family.clone(),
+                address: probe.url.clone(),
             })
-            .count();
-        if mine != 1 {
-            return Vec::new();
+            .collect();
+        *self.probes.lock().unwrap_or_else(|p| p.into_inner()) = probes
+            .into_iter()
+            .map(|probe| (probe.url.clone(), probe))
+            .collect();
+        candidates
+    }
+
+    /// A USB gadget board's identity: the first of its URLs that answers as
+    /// the board with its USB serial. Returns the URL that did.
+    async fn fetch_gadget(&self, probe: &GadgetProbe) -> Result<(String, PdIdentity), DriverError> {
+        let mut errors = Vec::new();
+        for url in probe.urls() {
+            match self.fetch(url).await {
+                Ok(reported) => {
+                    let serial = atlas_driver::attributes::normalize_board_serial(&reported.serial);
+                    match &probe.serial {
+                        Some(expected) if serial.as_ref() != Some(expected) => {
+                            errors.push(format!(
+                                "{url} is board {}, not the USB board {expected}",
+                                reported.serial
+                            ))
+                        }
+                        _ => return Ok((url.to_string(), reported)),
+                    }
+                }
+                Err(error) => errors.push(format!("{url}: {error}")),
+            }
         }
-        vec![Candidate {
-            link: link.id.clone(),
-            family: self.manifest.family.clone(),
-            address: format!("http://{address}:5899{}", crate::IDENTITY_PATH),
-        }]
+        Err(DriverError::Unreachable(errors.join("; ")))
+    }
+
+    /// A candidate's identity, or what its mDNS TXT record says when the
+    /// endpoint doesn't answer.
+    async fn fetch_candidate(&self, candidate: &Candidate) -> Result<PdIdentity, DriverError> {
+        match self.fetch(&candidate.address).await {
+            Ok(reported) => Ok(reported),
+            Err(error) => Browser::shared()
+                .advertisements()
+                .unwrap_or_default()
+                .into_iter()
+                .find(|ad| ad.identity_url() == candidate.address)
+                .and_then(|ad| PdIdentity::from_txt(&ad.txt))
+                .ok_or_else(|| DriverError::Unreachable(format!("{}: {error}", candidate.address))),
+        }
     }
 
     fn reported(&self, key: &DeviceKey) -> Option<(String, PdIdentity)> {
@@ -189,40 +225,41 @@ impl Driver for PdDriver {
             .collect())
     }
 
+    /// A USB gadget candidate counts only when the board that answers has
+    /// the USB serial its address came from.
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
-        let reported = match self.fetch(&candidate.address).await {
-            Ok(reported) => reported,
-            Err(error) => Browser::shared()
-                .advertisements()
-                .unwrap_or_default()
-                .into_iter()
-                .find(|ad| ad.identity_url() == candidate.address)
-                .and_then(|ad| PdIdentity::from_txt(&ad.txt))
-                .ok_or_else(|| {
-                    DriverError::Unreachable(format!("{}: {error}", candidate.address))
-                })?,
+        let probe = self
+            .probes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&candidate.address)
+            .filter(|_| candidate.link.0 == crate::gadget::LINK_ID)
+            .cloned();
+        let (address, reported) = match probe {
+            Some(probe) => self.fetch_gadget(&probe).await?,
+            None => (
+                candidate.address.clone(),
+                self.fetch_candidate(candidate).await?,
+            ),
         };
         if !reported
             .model
             .eq_ignore_ascii_case(self.manifest.family.as_str())
         {
             return Err(DriverError::Other(format!(
-                "{} reports model {}, but advertised {}",
-                candidate.address, reported.model, self.manifest.family
+                "{address} reports model {}, but advertised {}",
+                reported.model, self.manifest.family
             )));
         }
-        let mut identity = reported.to_identity(
-            Some(&self.package),
-            candidate.link.clone(),
-            candidate.address.clone(),
-        );
+        let mut identity =
+            reported.to_identity(Some(&self.package), candidate.link.clone(), address.clone());
         if let Some(tty) = crate::serial::serial_console(&reported.serial) {
             identity.attributes.insert("serial_console".into(), tty);
         }
         self.reported
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .insert(identity.key.clone(), (candidate.address.clone(), reported));
+            .insert(identity.key.clone(), (address, reported));
         Ok(identity)
     }
 
@@ -453,6 +490,63 @@ mod tests {
             .find(|action| action.id == crate::USB_BOOT_ACTION)
             .unwrap();
         assert!(usb_boot.destructive);
+    }
+
+    fn gadget_candidate(driver: &PdDriver, probe: GadgetProbe) -> Candidate {
+        let address = probe.url.clone();
+        driver.probes.lock().unwrap().insert(address.clone(), probe);
+        Candidate {
+            link: LinkId(crate::gadget::LINK_ID.into()),
+            family: Family::new("raze"),
+            address,
+        }
+    }
+
+    #[tokio::test]
+    async fn a_usb_gadget_board_must_report_its_usb_serial() {
+        let driver = PdDriver::new(package());
+        let mine = serve_once(r#"{ "model": "raze", "serial": "a317bcbee5226d57" }"#).await;
+        let candidate = gadget_candidate(
+            &driver,
+            GadgetProbe {
+                url: mine,
+                fallback: None,
+                serial: Some("e5226d57".into()),
+            },
+        );
+        let identity = driver.identify(&candidate).await.unwrap();
+        assert_eq!(identity.key.to_string(), "raze:a317bcbee5226d57");
+
+        let someone_else = serve_once(r#"{ "model": "raze", "serial": "10000000abcdef01" }"#).await;
+        let candidate = gadget_candidate(
+            &driver,
+            GadgetProbe {
+                url: someone_else,
+                fallback: None,
+                serial: Some("e5226d57".into()),
+            },
+        );
+        assert!(matches!(
+            driver.identify(&candidate).await,
+            Err(DriverError::Unreachable(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn an_image_without_per_board_addressing_answers_at_the_fixed_address() {
+        let driver = PdDriver::new(package());
+        let legacy = serve_once(r#"{ "model": "raze", "serial": "a317bcbee5226d57" }"#).await;
+        let candidate = gadget_candidate(
+            &driver,
+            GadgetProbe {
+                // Nothing listens on port 1.
+                url: "http://127.0.0.1:1/.well-known/pd-device".into(),
+                fallback: Some(legacy.clone()),
+                serial: Some("e5226d57".into()),
+            },
+        );
+        let identity = driver.identify(&candidate).await.unwrap();
+        assert_eq!(identity.address, legacy);
     }
 
     #[tokio::test]
