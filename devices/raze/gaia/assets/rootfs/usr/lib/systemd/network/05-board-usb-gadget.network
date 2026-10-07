@@ -1,0 +1,11 @@
+# USB gadget network interfaces (u_ether sets DEVTYPE=gadget) are configured by
+# board-usb-gadget.service. Keep networkd away from them, ahead of any
+# catch-all .network file. An OS that wants networkd to manage the link sets
+# USB_GADGET_NET=none in /etc/board/usb-gadget.env and masks this file
+# (and 05-board-usb-gadget-bridge.network) with an empty file of the same
+# name in /etc/systemd/network/.
+[Match]
+Property=DEVTYPE=gadget
+
+[Link]
+Unmanaged=yes

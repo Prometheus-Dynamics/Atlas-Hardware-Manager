@@ -5,7 +5,7 @@ members = [
     "crates/atlas-devices",
     "crates/atlas-driver-mock",
     "crates/atlas-driver-rpi",
-    "crates/atlas-driver-pd",
+    "crates/atlas-driver-board",
     "crates/atlas-driver-orion",
     "crates/atlas-image-server",
     "crates/atlas-release",
@@ -33,7 +33,7 @@ atlas-core = { path = "crates/atlas-core" }
 atlas-devices = { path = "crates/atlas-devices" }
 atlas-driver-mock = { path = "crates/atlas-driver-mock" }
 atlas-driver-rpi = { path = "crates/atlas-driver-rpi" }
-atlas-driver-pd = { path = "crates/atlas-driver-pd" }
+atlas-driver-board = { path = "crates/atlas-driver-board" }
 atlas-driver-orion = { path = "crates/atlas-driver-orion" }
 atlas-image-server = { path = "crates/atlas-image-server" }
 atlas-release = { path = "crates/atlas-release" }

@@ -53,11 +53,11 @@ Contract 1 is:
 - `manifest.json` as described by `schema/manifest.schema.json`;
 - the identity document (`schema/identity.schema.json`), served unauthenticated
   at `GET http://<device>:5899/.well-known/pd-device` (`application/json`) and
-  written at boot to `/run/pd-device/identity.json`;
+  written at boot to `/run/board/identity.json`;
 - the mDNS service `_pd-device._tcp`, port 5899, with TXT
   `contract=1 model=<model> rev=<id> serial=<hex> os=<ID> os_ver=<VERSION_ID> path=/.well-known/pd-device`;
-- neutral paths on the device: `/usr/lib/pd-device/` (package scripts and
-  defaults), `/etc/pd-device/` (OS and user overrides), `/run/pd-device/`
+- neutral paths on the device: `/usr/lib/board/` (package scripts and
+  defaults), `/etc/board/` (OS and user overrides), `/run/board/`
   (generated state).
 
 ## Hardware facts: the manifest is the source
@@ -94,9 +94,9 @@ manifest:
   `ws2812-pio` line passes `rgbw` only for a 32-bit `wire_format`);
 - the `gen-raze: fan` region of `raze-fan-overlay.dts` (`cooling-levels` and
   `pwms`, polarity included);
-- whole files with a "Generated" header: `usr/lib/pd-device/leds.env`
-  (raze-leds defaults), `usr/lib/pd-device/hardware.env` (selftest facts),
-  `usr/share/pd-device/raze/sensors.toml` and the systemd watchdog drop-in.
+- whole files with a "Generated" header: `usr/lib/board/leds.env`
+  (raze-leds defaults), `usr/lib/board/hardware.env` (selftest facts),
+  `usr/share/board/raze/sensors.toml` and the systemd watchdog drop-in.
 
 Edit the manifest and run the tool; never edit generated parts by hand.
 `gen-raze.py --check` changes nothing: it prints a diff and exits 1 when a
@@ -108,7 +108,7 @@ output is committed (Gaia has no build-time script step);
 
 ## Self-test
 
-`/usr/lib/pd-device/selftest [--interactive] [--json]`, root only, one run at
+`/usr/lib/board/selftest [--interactive] [--json]`, root only, one run at
 a time. Each check is `ok`, `skip` or `fail` with a message and data:
 
 | Check | What it does |
@@ -120,7 +120,7 @@ a time. Each check is `ok`, `skip` or `fail` with a message and data:
 | `watchdog` | `/dev/watchdog0` exists and systemd's `RuntimeWatchdogUSec` is set |
 | `gadget` | the configfs gadget is bound to a UDC and `usbbr0` is up with an address |
 
-`--json` prints one object and writes it to `/run/pd-device/selftest.json`:
+`--json` prints one object and writes it to `/run/board/selftest.json`:
 
 ```json
 {"version":1,"board_serial":"10000000a317bcbe","model":"raze","package_version":"1.0.7",
@@ -132,7 +132,7 @@ With `--json` the exit status is 0 whenever a report was made; without it,
 1 when a check failed. The fan and the LED ring are restored on exit and on
 interrupt. All hardware access goes through `hw.sh` (`hw_leds_write_frame`,
 `hw_fan_set_state`, `hw_fan_read`, `hw_i2c_probe`, `hw_camera_list`, ...),
-so another backend can replace it (`PD_HW_BACKEND`) without changing the
+so another backend can replace it (`BOARD_HW_BACKEND`) without changing the
 checks or the JSON. The identity lists `"diagnostics": ["selftest"]`; Atlas
 runs it over SSH after a flash or update and on request (docs/ota.md).
 `devices/raze/tests/selftest.sh` tests it off-device with a fake sysfs.
@@ -182,7 +182,7 @@ OS repo with `devices/tools/sync-device.sh` and import the vendored
 ```
 
 `sync-device.sh` writes `<dest>/.device-lock` with the Atlas commit and a
-content hash, and stamps the commit into the package's `device-package.env` so
+content hash, and stamps the commit into the package's `board-package.env` so
 the identity document reports it. With a git-source import the commit is not
 stamped yet (`device_package.commit` is `null`) until Gaia can pass a source's
 revision into the image.
@@ -200,12 +200,12 @@ The Raze layer (`devices/raze/gaia/device.toml`) needs from the OS:
    that tree. The OS keeps its own `config.txt`, `cmdline.txt`, kernel and DTB
    copying, partition layout and root filesystem.
 3. **mDNS on Ethernet.** The package turns on the resolved mDNS responder
-   (`/usr/lib/systemd/resolved.conf.d/60-pd-device-mdns.conf`) and mDNS on the
+   (`/usr/lib/systemd/resolved.conf.d/60-board-mdns.conf`) and mDNS on the
    USB link; mDNS must also be enabled per Ethernet link:
    - systemd-networkd (HeliOS): add `MulticastDNS=yes` to the `[Network]`
      section of the Ethernet `.network` file;
    - NetworkManager (PhotonVision): the package ships
-     `/usr/lib/NetworkManager/conf.d/60-pd-device.conf` with
+     `/usr/lib/NetworkManager/conf.d/60-board.conf` with
      `connection.mdns=2`; NetworkManager hands per-link mDNS to
      systemd-resolved as long as resolved is running (`[main]
      systemd-resolved=true`, the default). Do not also run avahi-daemon on
@@ -226,16 +226,16 @@ The Raze layer (`devices/raze/gaia/device.toml`) needs from the OS:
    `devices/raze/gaia/gpu-vulkan.toml` after `gpu.toml`.
 
 The device units are installed in `/usr/lib/systemd/system` and enabled by
-`/usr/lib/systemd/system-preset/70-pd-device.preset` when Buildroot runs
+`/usr/lib/systemd/system-preset/70-board.preset` when Buildroot runs
 `systemctl preset-all` at image build:
 
 | Unit | What it does |
 | --- | --- |
-| `pd-device-hostname.service` | default hostname `raze-{serial8}`, only over an unset or stock hostname |
-| `pd-device-identity.service` | writes `/run/pd-device/identity.json` and `/run/systemd/dnssd/pd-device.dnssd` before resolved starts |
-| `pd-device-http.socket` (+ `pd-device-http@.service`) | identity endpoint on TCP 5899 |
-| `pd-device-usb-gadget.service` | USB gadget (ECM/RNDIS/ACM) with the board serial as its USB serial, gadget-only bridge `usbbr0` on a per-board /29 (see "USB gadget network") |
-| `pd-device-usb-gadget-dhcp.service` | dnsmasq DHCP on `usbbr0` only, DNS off, no default route |
+| `board-hostname.service` | default hostname `raze-{serial8}`, only over an unset or stock hostname |
+| `board-identity.service` | writes `/run/board/identity.json` and `/run/systemd/dnssd/board.dnssd` before resolved starts |
+| `board-http.socket` (+ `board-http@.service`) | identity endpoint on TCP 5899 |
+| `board-usb-gadget.service` | USB gadget (ECM/RNDIS/ACM) with the board serial as its USB serial, gadget-only bridge `usbbr0` on a per-board /29 (see "USB gadget network") |
+| `board-usb-gadget-dhcp.service` | dnsmasq DHCP on `usbbr0` only, DNS off, no default route |
 | `raze-leds-reprobe.service` | re-probes the WS2812 PIO driver if `/dev/leds0` is missing |
 
 Fan, port power and LEDs need no service: they are device tree overlays in
@@ -249,7 +249,7 @@ USB serial string (iSerialNumber), which is the board serial, so the host
 can compute it from the USB descriptor without any network traffic. The
 scheme, `serial-hash-v1`, is described in `manifest.json`
 (`capabilities.gadget-net.addressing`); the device computes it in `lib.sh`
-(`pd_gadget_subnet`) from the same parameters in `usb-gadget.env`, and Atlas
+(`board_gadget_subnet`) from the same parameters in `usb-gadget.env`, and Atlas
 in `atlas-devices` (`GadgetAddressing`):
 
 1. Normalize the USB serial with Atlas's board-serial rule: all hex, at
@@ -309,13 +309,13 @@ a VPN that routes `172.31.0.0/16`, shadows the gadget subnets. Changing
 
 | To change | Do this |
 | --- | --- |
-| Hostname | Set `/etc/hostname` (always wins), or set `PD_HOSTNAME_POLICY=never`, `PD_HOSTNAME_PATTERN` or `PD_HOSTNAME_STOCK` in `/etc/pd-device/hostname.env`. An OS whose default name should give way to `raze-{serial8}` adds it: `PD_HOSTNAME_STOCK="$PD_HOSTNAME_STOCK photonvision"`. |
-| USB gadget | `/etc/pd-device/usb-gadget.env` (any key from `/usr/lib/pd-device/usb-gadget.env`; `USB_GADGET_ENABLED=0` turns it off, `USB_GADGET_NET=none` leaves networking to the OS, `USB_GADGET_ADDRESS=<address>/<prefix>` pins the address instead of the per-board one). Extra dnsmasq settings in `/etc/pd-device/usb-gadget-dnsmasq.d/*.conf`. |
-| mDNS advertisement | `PD_MDNS=0` in `/etc/pd-device/identity.env`. |
-| Identity endpoint | `disable pd-device-http.socket` in an OS preset, or mask it. |
-| Update methods / manage URL | One id per line in `/etc/pd-device/update-methods.d/<file>` (added after `image-write`); the URL in `/etc/pd-device/manage-url` (an empty file means `null`). |
-| Board revision | The revision id in `/etc/pd-device/rev`. |
-| LED byte order, index offset and direction | `RAZE_LEDS_ORDER`, `RAZE_LEDS_OFFSET`, `RAZE_LEDS_DIRECTION` in `/etc/pd-device/raze-leds.env` (defaults from the generated `leds.env`). |
+| Hostname | Set `/etc/hostname` (always wins), or set `BOARD_HOSTNAME_POLICY=never`, `BOARD_HOSTNAME_PATTERN` or `BOARD_HOSTNAME_STOCK` in `/etc/board/hostname.env`. An OS whose default name should give way to `raze-{serial8}` adds it: `BOARD_HOSTNAME_STOCK="$BOARD_HOSTNAME_STOCK photonvision"`. |
+| USB gadget | `/etc/board/usb-gadget.env` (any key from `/usr/lib/board/usb-gadget.env`; `USB_GADGET_ENABLED=0` turns it off, `USB_GADGET_NET=none` leaves networking to the OS, `USB_GADGET_ADDRESS=<address>/<prefix>` pins the address instead of the per-board one). Extra dnsmasq settings in `/etc/board/usb-gadget-dnsmasq.d/*.conf`. |
+| mDNS advertisement | `BOARD_MDNS=0` in `/etc/board/identity.env`. |
+| Identity endpoint | `disable board-http.socket` in an OS preset, or mask it. |
+| Update methods / manage URL | One id per line in `/etc/board/update-methods.d/<file>` (added after `image-write`); the URL in `/etc/board/manage-url` (an empty file means `null`). |
+| Board revision | The revision id in `/etc/board/rev`. |
+| LED byte order, index offset and direction | `RAZE_LEDS_ORDER`, `RAZE_LEDS_OFFSET`, `RAZE_LEDS_DIRECTION` in `/etc/board/raze-leds.env` (defaults from the generated `leds.env`). |
 | Fan, port power, LEDs, camera | Copy the lines you want from `raze-device.txt` into your `config.txt` instead of including it, and change their parameters (`raze-fan`: `level0`..`level4`, `period_ns`, `polarity`; `raze-usb-power`: `usba=off`, `usbc=off`, `hog=off`). |
-| Any unit | A preset file that sorts before `70-pd-device.preset`, a drop-in, or a mask. |
+| Any unit | A preset file that sorts before `70-board.preset`, a drop-in, or a mask. |
 | Any Buildroot option or default in the layer | Set it in a Gaia layer imported after the device layer. |

@@ -6,8 +6,8 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-lib=$here/../gaia/assets/rootfs/usr/lib/pd-device
-T=$(mktemp -d "${TMPDIR:-/tmp}/pd-selftest-test.XXXXXX")
+lib=$here/../gaia/assets/rootfs/usr/lib/board
+T=$(mktemp -d "${TMPDIR:-/tmp}/board-selftest-test.XXXXXX")
 trap 'rm -rf "$T"' EXIT
 
 fail() {
@@ -79,12 +79,12 @@ chmod +x "$T/bin/"*
 # cooling state is set (the duty follows; FAKE_FAN_LEVELS can break it), and
 # a hook that interrupts the self-test mid-way.
 cat > "$T/backend.sh" <<'EOF'
-. "$PD_LIB_DIR/hw.sh"
+. "$BOARD_LIB_DIR/hw.sh"
 hw_fan_set_state() {
 	printf '%s\n' "$1" > "$(hw_fan_cdev)/cur_state"
 	set -- "$1" ${FAKE_FAN_LEVELS:-$HW_FAN_LEVELS}
 	shift $(($1 + 1))
-	echo "$1" > "$PD_SYS_DIR/class/hwmon/hwmon2/pwm1"
+	echo "$1" > "$BOARD_SYS_DIR/class/hwmon/hwmon2/pwm1"
 	if [ "${FAKE_KILL_AT_STATE:-}" = "$(cat "$(hw_fan_cdev)/cur_state")" ]; then
 		kill -TERM $$
 	fi
@@ -92,10 +92,10 @@ hw_fan_set_state() {
 EOF
 
 export PATH="$T/bin:$PATH"
-export PD_LIB_DIR=$lib PD_ETC_DIR=$T/etc PD_DATA_DIR=$T/data PD_RUN_DIR=$T/run PD_DT_DIR=$T/dt
-export PD_SYS_DIR=$S PD_DEV_DIR=$T/dev PD_CONFIGFS=$T/cfg PD_NET_DIR=$T/net
-export PD_HW_BACKEND=$T/backend.sh PD_SELFTEST_ALLOW_USER=1 I2C_TABLE=$T/i2c
-export SELFTEST_FAN_SETTLE=0 SELFTEST_LED_STEP=0 SELFTEST_LED_HOLD=0 PD_HW_MISSING=cam
+export BOARD_LIB_DIR=$lib BOARD_ETC_DIR=$T/etc BOARD_DATA_DIR=$T/data BOARD_RUN_DIR=$T/run BOARD_DT_DIR=$T/dt
+export BOARD_SYS_DIR=$S BOARD_DEV_DIR=$T/dev BOARD_CONFIGFS=$T/cfg BOARD_NET_DIR=$T/net
+export BOARD_HW_BACKEND=$T/backend.sh BOARD_SELFTEST_ALLOW_USER=1 I2C_TABLE=$T/i2c
+export SELFTEST_FAN_SETTLE=0 SELFTEST_LED_STEP=0 SELFTEST_LED_HOLD=0 BOARD_HW_MISSING=cam
 
 selftest() { sh "$lib/selftest" "$@"; }
 # check_status <report> <id> <ok|skip|fail>
@@ -118,7 +118,7 @@ valid_json "$out"
 printf '%s' "$out" | grep -q '"ok":true' || fail "should pass: $out"
 printf '%s' "$out" | grep -q '"board_serial":"10000000a317bcbe"' || fail "board serial: $out"
 for id in leds fan camera i2c watchdog gadget; do check_status "$out" "$id" ok; done
-[ "$(cat "$T/run/selftest.json")" = "$out" ] || fail "the report should be written to /run/pd-device/selftest.json"
+[ "$(cat "$T/run/selftest.json")" = "$out" ] || fail "the report should be written to /run/board/selftest.json"
 printf '%s' "$out" | grep -q '"steps":\[{"state":0,"pwm":179,"expected":179' || fail "fan steps: $out"
 [ ! -s "$T/dev/leds0" ] || fail "with no raze-leds state, no LED frame may be written"
 
@@ -176,7 +176,7 @@ grep -q '^fail  camera' "$T/text" || fail "text report: $(cat "$T/text")"
 [ "$(cat "$S/class/thermal/cooling_device1/cur_state")" = 1 ] || fail "cur_state not restored after failures"
 
 echo "without i2cdetect the scan is skipped"
-out=$(PD_HW_MISSING='cam i2cdetect' selftest --json)
+out=$(BOARD_HW_MISSING='cam i2cdetect' selftest --json)
 check_status "$out" i2c skip
 
 echo "an interrupted self-test still hands the fan back"
@@ -190,11 +190,11 @@ mkdir "$T/run/selftest.lock"
 if selftest --json > /dev/null 2>&1; then fail "a second self-test should be refused"; fi
 rmdir "$T/run/selftest.lock"
 if [ "$(id -u)" != 0 ]; then
-	if PD_SELFTEST_ALLOW_USER=0 selftest --json > /dev/null 2>&1; then fail "it should refuse to run as a user"; fi
+	if BOARD_SELFTEST_ALLOW_USER=0 selftest --json > /dev/null 2>&1; then fail "it should refuse to run as a user"; fi
 fi
 
 echo "the identity lists the self-test"
 . "$lib/lib.sh"
-pd_identity_json | grep -q '"diagnostics":\["selftest"\]' || fail "identity: $(pd_identity_json)"
+board_identity_json | grep -q '"diagnostics":\["selftest"\]' || fail "identity: $(board_identity_json)"
 
 echo "ok"

@@ -50,7 +50,7 @@ fn raze_is_recognised_in_recovery_and_running() {
     assert_eq!(raze.manifest.revision_label("gen1"), "Gen 1");
 }
 
-/// Every `device-package.env` under a package reports the manifest's
+/// Every `board-package.env` under a package reports the manifest's
 /// `package_version`, so the identity document never claims a stale one.
 #[test]
 fn device_package_env_matches_the_manifest_version() {
@@ -61,7 +61,7 @@ fn device_package_env_matches_the_manifest_version() {
                 env_files(&path, found);
             } else if path
                 .file_name()
-                .is_some_and(|name| name == "device-package.env")
+                .is_some_and(|name| name == "board-package.env")
             {
                 found.push(path);
             }
@@ -80,7 +80,7 @@ fn device_package_env_matches_the_manifest_version() {
             let text = std::fs::read_to_string(&file).unwrap();
             let reported = text
                 .lines()
-                .find_map(|line| line.trim().strip_prefix("PD_DEVICE_PACKAGE_VERSION="))
+                .find_map(|line| line.trim().strip_prefix("BOARD_PACKAGE_VERSION="))
                 .map(|value| value.trim().trim_matches('"'));
             assert_eq!(
                 reported,
@@ -92,7 +92,7 @@ fn device_package_env_matches_the_manifest_version() {
     }
 }
 
-/// A value from a pd-device `*.env` or `lib.sh` file: `KEY=value`, unquoted.
+/// A value from a board `*.env` or `lib.sh` file: `KEY=value`, unquoted.
 fn shell_value(file: &Path, key: &str) -> Option<String> {
     let text = std::fs::read_to_string(file).unwrap();
     text.lines().find_map(|line| {
@@ -105,13 +105,13 @@ fn shell_value(file: &Path, key: &str) -> Option<String> {
 fn raze_names_its_gadget_address() {
     let raze = repo_catalog();
     let raze = raze.by_model("raze").expect("raze package");
-    let scripts = raze.dir.join("gaia/assets/rootfs/usr/lib/pd-device");
+    let scripts = raze.dir.join("gaia/assets/rootfs/usr/lib/board");
     assert_eq!(
         raze.manifest.legacy_gadget_address().as_deref(),
         Some("172.31.250.1")
     );
     assert_eq!(
-        shell_value(&scripts.join("lib.sh"), "PD_GADGET_LEGACY_ADDRESS").as_deref(),
+        shell_value(&scripts.join("lib.sh"), "BOARD_GADGET_LEGACY_ADDRESS").as_deref(),
         Some("172.31.250.1/24")
     );
 

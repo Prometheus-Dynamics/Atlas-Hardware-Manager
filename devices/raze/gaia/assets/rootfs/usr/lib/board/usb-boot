@@ -1,0 +1,49 @@
+#!/bin/sh
+# Restart straight into USB boot (RPIBOOT), so Atlas can write a fresh image
+# without anyone holding the boot button.
+#
+#   usb-boot           set a one-time boot order of RPIBOOT, then reboot
+#   usb-boot --check   exit 0 when this board supports it, 1 otherwise
+#
+# The firmware's set_reboot_order (Pi 5/CM5, mailbox tag 0x0003808b) applies
+# to the next boot only and clears itself, so the bootloader's own BOOT_ORDER
+# is never changed. RPIBOOT has no timeout: the board waits for a USB host
+# until it is flashed or power-cycled. Root only; offered over SSH (and
+# Orion), never on the unauthenticated identity endpoint.
+set -eu
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+
+VCMAILBOX=${BOARD_VCMAILBOX:-vcmailbox}
+REBOOT=${USB_BOOT_REBOOT:-systemctl reboot}
+SYNC=${USB_BOOT_SYNC:-sync}
+RPIBOOT_ORDER=0x3
+
+if [ "${1:-}" = --check ]; then
+	board_usb_boot_supported
+	exit
+fi
+[ $# -eq 0 ] || { sed -n '5,6p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+
+board_usb_boot_supported || {
+	board_log "this board can't restart into USB boot by itself (needs a BCM2712 and vcmailbox)"
+	exit 1
+}
+
+# Request words: size, code, tag, value size, request size, value, end tag.
+# The firmware answers with code 0x80000000 when it took the request.
+reply=$("$VCMAILBOX" 0x0003808b 4 4 "$RPIBOOT_ORDER") || {
+	board_log "the firmware mailbox request failed"
+	exit 1
+}
+set -- $reply
+[ "${2:-}" = 0x80000000 ] || {
+	board_log "the firmware refused the boot order request (reply: $reply)"
+	exit 1
+}
+
+board_log "restarting into USB boot"
+$SYNC
+eval "$REBOOT"

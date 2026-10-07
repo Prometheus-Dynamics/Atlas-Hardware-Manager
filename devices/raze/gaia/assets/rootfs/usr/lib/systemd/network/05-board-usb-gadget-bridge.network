@@ -1,0 +1,7 @@
+# The USB gadget bridge, configured by board-usb-gadget.service.
+# See 05-board-usb-gadget.network.
+[Match]
+Name=usbbr0
+
+[Link]
+Unmanaged=yes

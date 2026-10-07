@@ -1,5 +1,5 @@
 {
-  "schema": "urn:pd-device:manifest:1",
+  "schema": "urn:board:manifest:1",
   "contract": 1,
   "model": "raze",
   "package_version": "1.0.7",
@@ -39,9 +39,9 @@
   ],
   "rev_source": {
     "kind": "none",
-    "override_file": "/etc/pd-device/rev",
-    "hook": "/usr/lib/pd-device/rev-detect",
-    "notes": "Gen 1 has no revision marker, so every board reports gen1 (PD_DEVICE_REV_DEFAULT). Before the next hardware revision, provision a marker (for example a CM5 OTP customer row or a bootloader EEPROM config key), add the revision here, and ship /usr/lib/pd-device/rev-detect; a missing marker must keep meaning gen1."
+    "override_file": "/etc/board/rev",
+    "hook": "/usr/lib/board/rev-detect",
+    "notes": "Gen 1 has no revision marker, so every board reports gen1 (BOARD_DEVICE_REV_DEFAULT). Before the next hardware revision, provision a marker (for example a CM5 OTP customer row or a bootloader EEPROM config key), add the revision here, and ship /usr/lib/board/rev-detect; a missing marker must keep meaning gen1."
   },
   "identity": {
     "serial_source": {
@@ -51,7 +51,7 @@
       "serial8": "last 8 hex digits of the serial"
     },
     "hostname_pattern": "raze-{serial8}",
-    "hostname_policy": "Default only. Applied at boot as the transient hostname when /etc/hostname is unset or one of the stock names (localhost, localhost.localdomain, buildroot, (none)); never written to /etc. OS-tunable in /etc/pd-device/hostname.env (PD_HOSTNAME_POLICY, PD_HOSTNAME_PATTERN, PD_HOSTNAME_STOCK).",
+    "hostname_policy": "Default only. Applied at boot as the transient hostname when /etc/hostname is unset or one of the stock names (localhost, localhost.localdomain, buildroot, (none)); never written to /etc. OS-tunable in /etc/board/hostname.env (BOARD_HOSTNAME_POLICY, BOARD_HOSTNAME_PATTERN, BOARD_HOSTNAME_STOCK).",
     "mac_rule": {
       "seed": "board serial (lowercase hex, as in serial_source)",
       "fallback_seed": "\"machine-id:\" + /etc/machine-id when no serial is readable; with neither, no address is set and the kernel picks random ones. Never a fixed constant.",
@@ -275,11 +275,11 @@
       },
       "notes": "SK6812-EC20, 24-bit GRB on the wire. The overlay must not pass rgbw; the ws2812-pio-rp1 driver always reads 4 bytes per LED (R, G, B, W) from userspace and drops W. Logical LED i is driver slot (offset + direction * i) mod count, as in HeliOS main.",
       "helper": {
-        "path": "/usr/lib/pd-device/raze-leds",
+        "path": "/usr/lib/board/raze-leds",
         "commands": ["on", "off", "set <0|1>", "dim <0-100>", "color <r> <g> <b> [<w>]", "status <ok|warn|error|busy|off>", "blink [<hz>]", "locate [<seconds>]", "pixel <index|all> <r> <g> <b> [<w>]", "refresh", "show"],
-        "byte_order": "rgbw (driver layout, W ignored), RAZE_LEDS_ORDER in /etc/pd-device/raze-leds.env; always four letters",
-        "defaults": "/usr/lib/pd-device/leds.env (generated from this section)",
-        "state": "/run/pd-device/leds.state"
+        "byte_order": "rgbw (driver layout, W ignored), RAZE_LEDS_ORDER in /etc/board/raze-leds.env; always four letters",
+        "defaults": "/usr/lib/board/leds.env (generated from this section)",
+        "state": "/run/board/leds.state"
       },
       "verified": {
         "part": { "by": "Mathias (user) and the HeliOS coordinator", "date": "2026-10-06", "method": "colours correct with the overlay without rgbw on a Raze Gen 1 (image 1.0.10)" },
@@ -293,8 +293,8 @@
     },
     "ssh-keys": {
       "kind": "opt-in",
-      "source": "<boot partition>/pd-device/authorized_keys",
-      "unit": "pd-device-ssh-keys.service",
+      "source": "<boot partition>/board/authorized_keys",
+      "unit": "board-ssh-keys.service",
       "notes": "OpenSSH public keys on the boot partition are added to /root/.ssh/authorized_keys at boot. Nothing is removed and password login is never enabled. Atlas can write the file when it flashes a board."
     },
     "serial-console": {
@@ -344,10 +344,10 @@
           "10000000abcdef01": "172.31.0.113/29",
           "cfc0641d": "172.31.254.9/29"
         },
-        "implementations": "lib.sh pd_gadget_subnet (device), atlas-devices GadgetAddressing (Atlas); devices/raze/tests/gadget-address.sh"
+        "implementations": "lib.sh board_gadget_subnet (device), atlas-devices GadgetAddressing (Atlas); devices/raze/tests/gadget-address.sh"
       },
       "dhcp": true,
-      "settings": "/usr/lib/pd-device/usb-gadget.env (override in /etc/pd-device/usb-gadget.env)"
+      "settings": "/usr/lib/board/usb-gadget.env (override in /etc/board/usb-gadget.env)"
     },
     "i2c": {
       "buses": [
@@ -402,7 +402,7 @@
           "current_scale": 1.0
         }
       ],
-      "description_file": "/usr/share/pd-device/raze/sensors.toml",
+      "description_file": "/usr/share/board/raze/sensors.toml",
       "verified": {
         "buses": "unverified",
         "devices": "unverified"
@@ -414,17 +414,17 @@
       "runtime_sec": 15,
       "reboot_sec": 120,
       "manager": "systemd",
-      "config": "/usr/lib/systemd/system.conf.d/60-pd-device-watchdog.conf",
+      "config": "/usr/lib/systemd/system.conf.d/60-board-watchdog.conf",
       "verified": {
         "device": "unverified",
         "driver": "unverified"
       }
     },
     "selftest": {
-      "path": "/usr/lib/pd-device/selftest",
-      "result": "/run/pd-device/selftest.json",
+      "path": "/usr/lib/board/selftest",
+      "result": "/run/board/selftest.json",
       "format_version": 1,
-      "settings": "/usr/lib/pd-device/hardware.env (generated from this manifest)",
+      "settings": "/usr/lib/board/hardware.env (generated from this manifest)",
       "checks": ["leds", "fan", "camera", "i2c", "watchdog", "gadget"],
       "gadget_reference": "identity.usb_gadget and capabilities.gadget-net; the check reads usb-gadget.env on the board"
     }
@@ -439,7 +439,7 @@
       "path": "/actions/{id}",
       "method": "POST",
       "offered": ["locate"],
-      "notes": "PD_ACTIONS in /etc/pd-device/identity.env. A request drops /run/pd-device/requests/<id>; a root path unit runs the action, so the endpoint stays unprivileged."
+      "notes": "BOARD_ACTIONS in /etc/board/identity.env. A request drops /run/board/requests/<id>; a root path unit runs the action, so the endpoint stays unprivileged."
     },
     "txt": [
       "contract",

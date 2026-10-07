@@ -6,7 +6,7 @@ set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../../.." && pwd)
-T=$(mktemp -d "${TMPDIR:-/tmp}/pd-manifest-lint.XXXXXX")
+T=$(mktemp -d "${TMPDIR:-/tmp}/board-manifest-lint.XXXXXX")
 trap 'rm -rf "$T"' EXIT
 
 fail() {
@@ -37,7 +37,7 @@ if gen --check > "$T/diff" 2>/dev/null; then fail "--check should fail after a m
 grep -q '^+.*cooling-levels = <128 212 245 255 255>;' "$T/diff" || fail "the diff should show the new levels: $(cat "$T/diff")"
 gen > /dev/null
 gen --check > /dev/null || fail "--check should pass after regenerating"
-grep -q 'HW_FAN_LEVELS=.128 212 245 255 255.' "$T/devices/raze/gaia/assets/rootfs/usr/lib/pd-device/hardware.env" ||
+grep -q 'HW_FAN_LEVELS=.128 212 245 255 255.' "$T/devices/raze/gaia/assets/rootfs/usr/lib/board/hardware.env" ||
 	fail "hardware.env should follow the manifest"
 
 echo "a hand edit of a generated region is caught"

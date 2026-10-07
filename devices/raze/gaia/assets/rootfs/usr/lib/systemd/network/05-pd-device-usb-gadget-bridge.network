@@ -1,7 +1,0 @@
-# The USB gadget bridge, configured by pd-device-usb-gadget.service.
-# See 05-pd-device-usb-gadget.network.
-[Match]
-Name=usbbr0
-
-[Link]
-Unmanaged=yes

@@ -1,0 +1,112 @@
+#!/bin/sh
+# Opt-in SSH access: install public keys left on the boot partition for root.
+#
+# Put one or more OpenSSH public keys, one per line, in
+#   <boot partition>/board/authorized_keys
+# (Atlas can write it when it flashes a board, or with "Browse files" on an
+# exposed eMMC). At boot they are written to /run/board/ssh/authorized_keys,
+# which sshd reads through /etc/ssh/sshd_config.d/50-board.conf (the root
+# may be read-only), and added to /root/.ssh/authorized_keys when that is
+# writable. Keys already there are kept; nothing is ever removed from it, and
+# password login is never enabled. No file, no change. Settings: ssh-keys.env.
+set -eu
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+board_load_env ssh-keys.env
+
+[ "${SSH_KEYS_ENABLED:-1}" = 1 ] || exit 0
+
+TARGET_HOME=${SSH_KEYS_HOME:-/root}
+SOURCE_NAME=${SSH_KEYS_SOURCE:-board/authorized_keys}
+
+# The boot partition: partition 1 of the disk the root filesystem is on
+# (from root= on the kernel command line, so an overlay root works too), else
+# the eMMC's first partition, unless SSH_KEYS_BOOT_PARTITION names one. On the
+# A/B layout partition 1 holds autoboot.txt and is shared by both slots, so
+# keys left there survive updates.
+boot_partition() {
+	if [ -n "${SSH_KEYS_BOOT_PARTITION:-}" ]; then
+		echo "$SSH_KEYS_BOOT_PARTITION"
+		return
+	fi
+	root=$(board_root_device)
+	if [ -n "$root" ] && board_sibling_partition "$root" 1; then
+		return
+	fi
+	for fallback in /dev/mmcblk0p1 /dev/nvme0n1p1; do
+		[ -b "$fallback" ] && echo "$fallback" && return
+	done
+	return 1
+}
+
+# Tests point straight at a key file and skip the partition.
+if [ -n "${SSH_KEYS_SOURCE_FILE:-}" ]; then
+	src=$SSH_KEYS_SOURCE_FILE
+	install_keys=1
+fi
+
+if [ -z "${install_keys:-}" ]; then
+	part=$(boot_partition) || {
+		board_log "cannot tell which partition is the boot partition"
+		exit 0
+	}
+	[ -b "$part" ] || {
+		board_log "no boot partition at $part"
+		exit 0
+	}
+
+	# Use the boot partition where the OS mounted it, else mount it read-only.
+	mnt=$(findmnt -n -o TARGET --source "$part" 2>/dev/null | head -n 1) || mnt=''
+	own=''
+	if [ -z "$mnt" ]; then
+		mnt="$BOARD_RUN_DIR/boot"
+		mkdir -p "$mnt"
+		mount -o ro "$part" "$mnt"
+		own=1
+	fi
+	cleanup() {
+		[ -z "$own" ] || umount "$mnt" 2>/dev/null || true
+	}
+	trap cleanup EXIT
+
+	src="$mnt/$SOURCE_NAME"
+	[ -r "$src" ] || exit 0
+fi
+
+# Only lines that look like public keys; comments and junk are ignored. CRLF
+# files and a last line without a newline (as some editors write) count too.
+tr -d '\r' < "$src" | while IFS= read -r line || [ -n "$line" ]; do
+	case "$line" in
+	ssh-* | ecdsa-* | sk-ssh-* | sk-ecdsa-*) printf '%s\n' "$line" ;;
+	esac
+done | awk '!seen[$0]++' > "$BOARD_RUN_DIR/ssh-keys.new"
+
+# Always: the copy sshd reads, rebuilt every boot.
+run_dir="$BOARD_RUN_DIR/ssh"
+mkdir -p "$run_dir"
+chmod 700 "$run_dir"
+install -m 600 "$BOARD_RUN_DIR/ssh-keys.new" "$run_dir/authorized_keys"
+
+# When the home directory is writable, keep the keys there too.
+ssh_dir="$TARGET_HOME/.ssh"
+keys="$ssh_dir/authorized_keys"
+if mkdir -p "$ssh_dir" 2>/dev/null && touch "$keys" 2>/dev/null; then
+	chmod 700 "$ssh_dir"
+	chmod 600 "$keys"
+	while IFS= read -r line; do
+		if ! grep -qxF "$line" "$keys"; then
+			printf '%s\n' "$line" >> "$keys"
+			board_log "added a key for ${TARGET_HOME##*/}: ${line%% *} ${line##* }"
+		fi
+	done < "$BOARD_RUN_DIR/ssh-keys.new"
+fi
+count=$(grep -c . "$BOARD_RUN_DIR/ssh-keys.new" || true)
+if [ "$count" -gt 0 ]; then
+	board_log "installed $count SSH key(s) from the boot partition"
+else
+	board_log "warning: $SOURCE_NAME is on the boot partition but holds no usable public key"
+fi
+rm -f "$BOARD_RUN_DIR/ssh-keys.new"
+exit 0

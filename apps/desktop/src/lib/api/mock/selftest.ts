@@ -1,6 +1,6 @@
 // Simulated device self-tests for the browser mock: a Raze with the
 // `self-test` capability answers with a report shaped like
-// /usr/lib/pd-device/selftest --json, and a board back from a flash or an
+// /usr/lib/board/selftest --json, and a board back from a flash or an
 // update is tested by itself, as atlas-core does.
 
 import type { DeviceKey, SelfTestCheck, SelfTestRecord, SelfTestReport, SelfTestTrigger } from "../types";

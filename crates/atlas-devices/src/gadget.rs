@@ -1,7 +1,7 @@
 //! Per-board USB gadget addresses: `capabilities.gadget-net.addressing` in a
 //! device manifest.
 //!
-//! Scheme `serial-hash-v1`, the same as `pd_gadget_subnet` in the device
+//! Scheme `serial-hash-v1`, the same as `board_gadget_subnet` in the device
 //! package's `lib.sh`:
 //!
 //! 1. Take the gadget's USB serial (iSerialNumber), normalized to Atlas's

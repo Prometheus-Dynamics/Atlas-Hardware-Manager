@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:pd-device:manifest:1",
+  "$id": "urn:board:manifest:1",
   "title": "Device package manifest (contract 1)",
   "description": "devices/<model>/manifest.json: what Atlas needs to recognise, recover and flash a device, and what an OS build gets from the package. Checksums are informational: tools may verify them and warn, but must let the user proceed.",
   "type": "object",
@@ -20,7 +20,7 @@
   ],
   "additionalProperties": false,
   "properties": {
-    "schema": { "const": "urn:pd-device:manifest:1" },
+    "schema": { "const": "urn:board:manifest:1" },
     "contract": { "const": 1 },
     "model": { "$ref": "#/$defs/id" },
     "package_version": {

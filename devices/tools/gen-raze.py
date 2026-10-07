@@ -35,7 +35,7 @@ MANIFEST = PKG / "manifest.json"
 GAIA = PKG / "gaia"
 BOOT = GAIA / "assets" / "boot"
 ROOTFS = GAIA / "assets" / "rootfs"
-LIBDIR = ROOTFS / "usr" / "lib" / "pd-device"
+LIBDIR = ROOTFS / "usr" / "lib" / "board"
 
 SOURCE = "devices/raze/manifest.json"
 TOOL = "devices/tools/gen-raze.py"
@@ -296,8 +296,8 @@ def render_leds_env(manifest: dict) -> str:
         header("#"),
         "#\n",
         "# LED ring defaults for raze-leds and the selftest. Each value yields to the\n",
-        "# environment; OS and user overrides go in raze-leds.env (in /etc/pd-device or\n",
-        "# /data/pd-device), which raze-leds reads after this file.\n",
+        "# environment; OS and user overrides go in raze-leds.env (in /etc/board or\n",
+        "# /data/board), which raze-leds reads after this file.\n",
         "#\n",
         f"# {leds['part']}: {leds['wire_format']} on the wire. The driver reads\n",
         f"# {leds['userspace']['bytes_per_led']} bytes per LED in {leds['userspace']['layout']} order and drops "
@@ -338,7 +338,7 @@ def render_hardware_env(manifest: dict) -> str:
     body = "".join(f"{name}={sh_quote(value)}\n" for name, value in values)
     return (
         header("#")
-        + "#\n# Hardware facts for /usr/lib/pd-device/selftest. HW_I2C_DEVICES is\n"
+        + "#\n# Hardware facts for /usr/lib/board/selftest. HW_I2C_DEVICES is\n"
         + "# id:bus:address:part per device.\n"
         + body
     )
@@ -397,8 +397,8 @@ def outputs(manifest: dict) -> dict[Path, str]:
         fan_dts: replace_regions(fan_dts.read_text(), region_fan_dts(manifest), ("/*", "*/"), fan_dts),
         LIBDIR / "leds.env": render_leds_env(manifest),
         LIBDIR / "hardware.env": render_hardware_env(manifest),
-        ROOTFS / "usr" / "share" / "pd-device" / "raze" / "sensors.toml": render_sensors_toml(manifest),
-        ROOTFS / "usr" / "lib" / "systemd" / "system.conf.d" / "60-pd-device-watchdog.conf": render_watchdog_conf(manifest),
+        ROOTFS / "usr" / "share" / "board" / "raze" / "sensors.toml": render_sensors_toml(manifest),
+        ROOTFS / "usr" / "lib" / "systemd" / "system.conf.d" / "60-board-watchdog.conf": render_watchdog_conf(manifest),
     }
 
 

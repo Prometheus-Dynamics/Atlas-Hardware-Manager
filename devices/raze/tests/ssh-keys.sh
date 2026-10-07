@@ -5,8 +5,8 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-lib=$here/../gaia/assets/rootfs/usr/lib/pd-device
-T=$(mktemp -d "${TMPDIR:-/tmp}/pd-ssh-keys-test.XXXXXX")
+lib=$here/../gaia/assets/rootfs/usr/lib/board
+T=$(mktemp -d "${TMPDIR:-/tmp}/board-ssh-keys-test.XXXXXX")
 trap 'rm -rf "$T"' EXIT
 
 fail() {
@@ -14,7 +14,7 @@ fail() {
 	exit 1
 }
 
-export PD_LIB_DIR=$lib PD_ETC_DIR=$T/etc PD_DATA_DIR=$T/data PD_RUN_DIR=$T/run
+export BOARD_LIB_DIR=$lib BOARD_ETC_DIR=$T/etc BOARD_DATA_DIR=$T/data BOARD_RUN_DIR=$T/run
 mkdir -p "$T/run" "$T/home" "$T/etc"
 # ssh-keys.env sets the home directory; override it the supported way.
 printf 'SSH_KEYS_HOME=%s\n' "$T/home" > "$T/etc/ssh-keys.env"

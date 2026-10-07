@@ -1,0 +1,220 @@
+#!/bin/sh
+# Raze LED ring: 16 SK6812-EC20 LEDs (24-bit GRB) on /dev/leds0 (ws2812-pio-rp1).
+# Writes one frame of 16 x 4 bytes per change; the ring keeps it until the
+# next. The driver always reads 4 bytes (R, G, B, W) per LED from userspace and
+# drops W on the wire, so white is `color 255 255 255`.
+#
+#   raze-leds on | off                 light the ring in its colour, or not
+#   raze-leds set <0|1>                same, for PhotonVision ({v} = 0 or 1)
+#   raze-leds dim <0-100>              brightness in percent (default 100)
+#   raze-leds color <r> <g> <b> [<w>]  colour, 0-255 each; w is ignored by this ring
+#   raze-leds status <ok|warn|error|busy|off>   green, amber, red, blue, off
+#   raze-leds blink [<hz>]             blink the current colour (default 2 Hz)
+#   raze-leds locate [<seconds>]       blink bright cyan, then go back (10 s)
+#   raze-leds pixel <index|all> <r> <g> <b> [<w>]
+#                                      light one LED (or all) once; the saved
+#                                      state stays as it is
+#   raze-leds refresh                  draw the saved state again
+#   raze-leds show                     print the current state
+#
+# State lives in /run/board/leds.state, so commands combine: `color` then
+# `dim` keeps the colour. Any command but show and refresh stops a running
+# blink. With RAZE_LEDS_FOREGROUND=1 a blink runs in the foreground (as
+# board-locate.service does).
+#
+# Defaults come from leds.env, generated from the package manifest. Override
+# them in /etc/board/raze-leds.env (or /data/board/raze-leds.env):
+#   RAZE_LEDS_ORDER      the driver's 4-byte layout, rgbw. If colours come out
+#                        swapped on a board revision, reorder the four letters
+#                        (e.g. grbw); a 3-letter order misaligns the buffer.
+#   RAZE_LEDS_OFFSET     the driver slot of LED index 0 (5, as in HeliOS)
+#   RAZE_LEDS_DIRECTION  1, or -1 when indexes run the other way round
+#   RAZE_LEDS_COUNT, RAZE_LEDS_DEVICE
+# LED index i is driver slot (OFFSET + DIRECTION * i) mod COUNT. Frames go
+# through hw.sh, the package's hardware backend.
+set -eu
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+# shellcheck source=hw.sh
+. "${BOARD_HW_BACKEND:-$BOARD_LIB_DIR/hw.sh}"
+board_load_env raze-leds.env
+
+STATE_DIR=${BOARD_RUN_DIR:-/run/board}
+STATE=$STATE_DIR/leds.state
+BLINK_PID=$STATE_DIR/leds.blink.pid
+
+usage() {
+	sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' >&2
+	exit 2
+}
+
+byte() {
+	# byte <0-255>: clamp and validate
+	case "$1" in
+	'' | *[!0-9]*) echo "raze-leds: not a number: $1" >&2; exit 2 ;;
+	esac
+	if [ "$1" -gt 255 ]; then echo 255; else echo "$1"; fi
+}
+
+load_state() {
+	ON=0 R=255 G=255 B=255 W=0 BRIGHT=100
+	if [ -r "$STATE" ]; then
+		# shellcheck disable=SC1090
+		. "$STATE"
+	fi
+}
+
+save_state() {
+	mkdir -p "$STATE_DIR"
+	printf 'ON=%s R=%s G=%s B=%s W=%s BRIGHT=%s\n' "$ON" "$R" "$G" "$B" "$W" "$BRIGHT" > "$STATE.tmp"
+	mv "$STATE.tmp" "$STATE"
+}
+
+# frame <r> <g> <b> <w>: one colour on every LED, already scaled.
+frame() {
+	hw_leds_fill "$1,$2,$3,$4" || exit 1
+}
+
+scaled() {
+	# scaled <value> <percent>
+	echo $(($1 * $2 / 100))
+}
+
+render() {
+	if [ "$ON" = 1 ]; then
+		frame "$(scaled "$R" "$BRIGHT")" "$(scaled "$G" "$BRIGHT")" "$(scaled "$B" "$BRIGHT")" "$(scaled "$W" "$BRIGHT")"
+	else
+		frame 0 0 0 0
+	fi
+}
+
+stop_blink() {
+	if [ -r "$BLINK_PID" ]; then
+		kill "$(cat "$BLINK_PID")" 2>/dev/null || true
+		rm -f "$BLINK_PID"
+	fi
+}
+
+blink_loop() {
+	# blink_loop <half period, seconds> <until epoch or 0>
+	trap 'exit 0' TERM INT
+	while :; do
+		ON=1 render
+		sleep "$1"
+		ON=0 render
+		sleep "$1"
+		if [ "$2" -gt 0 ] && [ "$(date +%s)" -ge "$2" ]; then
+			break
+		fi
+	done
+}
+
+start_blink() {
+	# start_blink <hz> <seconds or 0 for until the next command>
+	half=$(awk -v hz="$1" 'BEGIN { if (hz <= 0) hz = 2; printf "%.3f", 0.5 / hz }')
+	until=0
+	if [ "$2" -gt 0 ]; then until=$(($(date +%s) + $2)); fi
+	# Under a service (RAZE_LEDS_FOREGROUND=1) the blink is the service.
+	if [ "${RAZE_LEDS_FOREGROUND:-0}" = 1 ]; then
+		blink_loop "$half" "$until"
+		load_state
+		render
+		return 0
+	fi
+	(
+		blink_loop "$half" "$until"
+		# A timed blink (locate) puts the saved state back when it ends.
+		load_state
+		render
+		rm -f "$BLINK_PID"
+	) </dev/null >/dev/null 2>&1 &
+	echo $! > "$BLINK_PID"
+}
+
+[ $# -ge 1 ] || usage
+cmd=$1
+shift
+load_state
+case "$cmd" in
+show | refresh) ;;
+*) stop_blink ;;
+esac
+
+case "$cmd" in
+on) ON=1 ;;
+off) ON=0 ;;
+set)
+	[ $# -eq 1 ] || usage
+	case "$1" in 0) ON=0 ;; 1) ON=1 ;; *) usage ;; esac
+	;;
+dim)
+	[ $# -eq 1 ] || usage
+	BRIGHT=$(byte "$1")
+	[ "$BRIGHT" -le 100 ] || BRIGHT=100
+	;;
+color | colour)
+	[ $# -ge 3 ] || usage
+	R=$(byte "$1") G=$(byte "$2") B=$(byte "$3") W=$(byte "${4:-0}")
+	ON=1
+	;;
+status)
+	[ $# -eq 1 ] || usage
+	case "$1" in
+	ok) R=0 G=255 B=0 W=0 ON=1 ;;
+	warn) R=255 G=160 B=0 W=0 ON=1 ;;
+	error) R=255 G=0 B=0 W=0 ON=1 ;;
+	busy) R=0 G=80 B=255 W=0 ON=1 ;;
+	off) ON=0 ;;
+	*) usage ;;
+	esac
+	;;
+blink)
+	save_state
+	start_blink "${1:-2}" 0
+	exit 0
+	;;
+locate)
+	seconds=${1:-10}
+	case "$seconds" in '' | *[!0-9]*) usage ;; esac
+	save_state
+	# Bright cyan, whatever the saved colour and brightness are.
+	(R=0 G=255 B=255 W=0 BRIGHT=100 && start_blink 3 "$seconds")
+	exit 0
+	;;
+pixel)
+	[ $# -ge 4 ] || usage
+	px=$(byte "$2"),$(byte "$3"),$(byte "$4"),$(byte "${5:-0}")
+	if [ "$1" = all ]; then
+		hw_leds_fill "$px" || exit 1
+		exit 0
+	fi
+	case "$1" in '' | *[!0-9]*) usage ;; esac
+	if [ "$1" -ge "${RAZE_LEDS_COUNT:-16}" ]; then
+		echo "raze-leds: LED $1 is outside 0..$((${RAZE_LEDS_COUNT:-16} - 1))" >&2
+		exit 2
+	fi
+	# Index i is the (i+1)th argument; the ones before it are off.
+	n=$1
+	set --
+	while [ "$#" -lt "$n" ]; do set -- "$@" 0,0,0,0; done
+	hw_leds_write_frame "$@" "$px" || exit 1
+	exit 0
+	;;
+refresh)
+	# A running blink redraws by itself.
+	[ -r "$BLINK_PID" ] && exit 0
+	render
+	exit 0
+	;;
+show)
+	printf 'on=%s color=%s,%s,%s,%s brightness=%s%% blinking=%s\n' "$ON" "$R" "$G" "$B" "$W" "$BRIGHT" \
+		"$([ -r "$BLINK_PID" ] && echo yes || echo no)"
+	exit 0
+	;;
+*) usage ;;
+esac
+
+save_state
+render

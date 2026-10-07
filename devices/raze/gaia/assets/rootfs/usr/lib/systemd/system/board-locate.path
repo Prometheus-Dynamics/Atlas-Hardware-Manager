@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch for "locate" requests from the identity endpoint
+Documentation=file:/usr/lib/board/identity.env
+
+[Path]
+PathExists=/run/board/requests/locate
+Unit=board-locate.service
+
+[Install]
+WantedBy=paths.target

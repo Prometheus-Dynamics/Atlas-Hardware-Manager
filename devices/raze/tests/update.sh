@@ -1,9 +1,9 @@
 #!/bin/sh
-# Off-device test of pd-device-update: the board's partitions are plain
+# Off-device test of board-update: the board's partitions are plain
 # files, a "mount" is a directory next to its file (so what a mounted new root
 # contains is set up by hand in p6.d/p5.d), and reboots are recorded. The
 # image is a real A/B disk layout made with sfdisk, compressed with xz and
-# zstd, and pd-image-slots is compiled from source.
+# zstd, and board-image-slots is compiled from source.
 # With erofs-utils (mkfs.erofs, fsck.erofs) it also installs an image whose
 # root slot is a real EROFS filesystem, read back through the writer's
 # read-only mount.
@@ -11,9 +11,9 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-lib=$here/../gaia/assets/rootfs/usr/lib/pd-device
-tool_src=$here/../gaia/buildroot-external/packages/pd-image-slots/src/pd-image-slots.c
-T=$(mktemp -d "${TMPDIR:-/tmp}/pd-update-test.XXXXXX")
+lib=$here/../gaia/assets/rootfs/usr/lib/board
+tool_src=$here/../gaia/buildroot-external/packages/board-image-slots/src/board-image-slots.c
+T=$(mktemp -d "${TMPDIR:-/tmp}/board-update-test.XXXXXX")
 trap 'rm -rf "$T"' EXIT
 PATH=$PATH:/usr/sbin:/sbin
 
@@ -23,7 +23,7 @@ fail() {
 }
 
 mkdir -p "$T/disk" "$T/etc/update.d" "$T/run" "$T/bin"
-cc -O2 -Wall -Wextra -Werror -o "$T/bin/pd-image-slots" "$tool_src"
+cc -O2 -Wall -Wextra -Werror -o "$T/bin/board-image-slots" "$tool_src"
 for n in 1 2 3 5 6; do
 	: > "$T/disk/p$n"
 	mkdir -p "$T/disk/p$n.d"
@@ -69,10 +69,10 @@ exit 1
 EOF
 chmod +x "$T/bin/mount" "$T/bin/mount-ro" "$T/bin/umount" "$T/bin/reboot" "$T/bin/systemctl"
 
-export PD_LIB_DIR=$lib PD_ETC_DIR=$T/etc PD_RUN_DIR=$T/run PD_OS_RELEASE=$T/os-release
-export PD_DEVICE_MODEL=raze
+export BOARD_LIB_DIR=$lib BOARD_ETC_DIR=$T/etc BOARD_RUN_DIR=$T/run BOARD_OS_RELEASE=$T/os-release
+export BOARD_DEVICE_MODEL=raze
 export UPDATE_PART_PREFIX=$T/disk/p UPDATE_MOUNT=$T/bin/mount UPDATE_MOUNT_RO=$T/bin/mount-ro
-export UPDATE_UMOUNT=$T/bin/umount UPDATE_SLOTS_TOOL=$T/bin/pd-image-slots
+export UPDATE_UMOUNT=$T/bin/umount UPDATE_SLOTS_TOOL=$T/bin/board-image-slots
 export UPDATE_REBOOT="$T/bin/reboot tryboot" UPDATE_REBOOT_PLAIN="$T/bin/reboot plain"
 export REBOOTS=$T/reboots UPDATE_CMDLINE_ROOT=5 UPDATE_SYNC=true
 # A booted slot that passes the package's checks: its kernel has modules, the
@@ -84,14 +84,14 @@ echo 1000480000.usb > "$T/gadget/g1/UDC"
 : > "$REBOOTS"
 
 update() { sh "$lib/update" "$@"; }
-state() { sed -n 's/^STATE=//p' "$T/disk/p1.d/pd-update.env"; }
+state() { sed -n 's/^STATE=//p' "$T/disk/p1.d/board-update.env"; }
 autoboot() { tr '\n' ' ' < "$T/disk/p1.d/autoboot.txt"; }
 sha() { sha256sum "$1" | cut -d' ' -f1; }
 # What the image's root slot "contains" once mounted on slot $1's root (5|6).
 new_root() {
-	mkdir -p "$T/disk/p$1.d/etc" "$T/disk/p$1.d/usr/lib/pd-device"
+	mkdir -p "$T/disk/p$1.d/etc" "$T/disk/p$1.d/usr/lib/board"
 	printf 'ID=photonvision\nIMAGE_VERSION=%s\n' "$2" > "$T/disk/p$1.d/etc/os-release"
-	printf 'PD_DEVICE_MODEL=%s\n' "$3" > "$T/disk/p$1.d/usr/lib/pd-device/device-package.env"
+	printf 'BOARD_DEVICE_MODEL=%s\n' "$3" > "$T/disk/p$1.d/usr/lib/board/board-package.env"
 	rm -rf "$T/disk/p$1.d/lib/modules"
 	mkdir -p "$T/disk/p$1.d/lib/modules/${4:-7.2.9-test}"
 }
@@ -136,7 +136,7 @@ update rollback
 
 echo "an image without the A/B layout is refused"
 if update stage "$old.xz" --sha256 "$(sha "$old.xz")" 2>/dev/null; then fail "the old layout should fail"; fi
-grep -q "A/B layout" "$T/disk/p1.d/pd-update.env" || fail "the error should name the layout"
+grep -q "A/B layout" "$T/disk/p1.d/board-update.env" || fail "the error should name the layout"
 update rollback
 
 echo "an image for another model is refused"
@@ -156,7 +156,7 @@ update rollback
 
 echo "stage copies the image's slot A into slot B"
 new_root 6 2.0 raze
-printf '#!/bin/sh\necho "$PD_UPDATE_SLOT $PD_UPDATE_VERSION" > "%s"\n' "$T/post-stage.ran" > "$T/etc/update.d/post-stage"
+printf '#!/bin/sh\necho "$BOARD_UPDATE_SLOT $BOARD_UPDATE_VERSION" > "%s"\n' "$T/post-stage.ran" > "$T/etc/update.d/post-stage"
 chmod +x "$T/etc/update.d/post-stage"
 update stage "$img.xz" --sha256 "$(sha "$img.xz")"
 [ "$(state)" = staged ] || fail "state should be staged, is $(state)"
@@ -164,7 +164,7 @@ cmp -s "$T/root.ref" "$T/disk/p6" || fail "root B differs from the image's root 
 cmp -s "$T/boot.ref" "$T/disk/p3" || fail "boot B differs from the image's boot A"
 grep -q "root=$T/disk/p6 " "$T/disk/p3.d/cmdline.txt" || fail "cmdline B should name p6"
 [ ! -s "$T/disk/p5" ] || fail "the running root was touched"
-grep -q "^VERSION_STAGED='2.0'" "$T/disk/p1.d/pd-update.env" || fail "the version comes from the image"
+grep -q "^VERSION_STAGED='2.0'" "$T/disk/p1.d/board-update.env" || fail "the version comes from the image"
 [ "$(cat "$T/post-stage.ran")" = "B 2.0" ] || fail "post-stage hook: $(cat "$T/post-stage.ran" 2>/dev/null)"
 rm "$T/etc/update.d/post-stage"
 
@@ -241,7 +241,7 @@ if command -v flock >/dev/null 2>&1; then
 fi
 
 echo "an interrupted stage can be redone"
-sed -i 's/^STATE=.*/STATE=staging/' "$T/disk/p1.d/pd-update.env"
+sed -i 's/^STATE=.*/STATE=staging/' "$T/disk/p1.d/board-update.env"
 new_root 5 3.0 raze
 UPDATE_CMDLINE_ROOT=6 update stage "$img.xz" --sha256 "$(sha "$img.xz")"
 [ "$(state)" = staged ] || fail "state should be staged, is $(state)"
@@ -255,7 +255,7 @@ boot_kernel 2 7.2.9-test
 if UPDATE_CMDLINE_ROOT=6 update stage "$img.xz" --sha256 "$(sha "$img.xz")" 2>/dev/null; then
 	fail "a kernel/modules mismatch should be refused"
 fi
-grep -q "match the modules on its root" "$T/disk/p1.d/pd-update.env" || fail "the error should say why"
+grep -q "match the modules on its root" "$T/disk/p1.d/board-update.env" || fail "the error should say why"
 UPDATE_CMDLINE_ROOT=6 update rollback
 
 # trial <check to break>: stage into A, apply, then confirm on A with one check
@@ -273,13 +273,13 @@ trial() {
 }
 echo "a trial whose kernel has no modules on its root isn't confirmed"
 trial env UPDATE_UNAME_R=6.12.47-old
-grep -q "no modules on this root" "$T/disk/p1.d/pd-update.env" || true
+grep -q "no modules on this root" "$T/disk/p1.d/board-update.env" || true
 echo "a trial without the USB gadget isn't confirmed"
 mv "$T/gadget/g1/UDC" "$T/gadget/g1/UDC.off"; : > "$T/gadget/g1/UDC"
 trial env
 mv "$T/gadget/g1/UDC.off" "$T/gadget/g1/UDC"
 echo "a trial with a failed critical unit isn't confirmed"
-trial env FAILED_UNITS=pd-device-identity.service UPDATE_CRITICAL_UNITS=pd-device-identity.service
+trial env FAILED_UNITS=board-identity.service UPDATE_CRITICAL_UNITS=board-identity.service
 
 echo "check-link goes back to the previous slot after bad boots"
 new_root 5 5.0 raze
@@ -287,28 +287,28 @@ UPDATE_CMDLINE_ROOT=6 update stage "$img.xz" --sha256 "$(sha "$img.xz")" >/dev/n
 UPDATE_CMDLINE_ROOT=6 update apply >/dev/null 2>&1
 UPDATE_CMDLINE_ROOT=5 update confirm >/dev/null 2>&1
 [ "$(state)" = confirmed ] || fail "the trial on A should be confirmed, is $(state)"
-grep -q '^PREVIOUS_SLOT=B' "$T/disk/p1.d/pd-update.env" || fail "confirm should remember slot B"
+grep -q '^PREVIOUS_SLOT=B' "$T/disk/p1.d/board-update.env" || fail "confirm should remember slot B"
 : > "$REBOOTS"
 UPDATE_CMDLINE_ROOT=5 UPDATE_UNAME_R=broken UPDATE_LINK_DELAY=0 update check-link 2>/dev/null
 [ "$(state)" = confirmed ] || fail "one bad boot only counts"
-grep -q '^BAD_BOOTS=1' "$T/disk/p1.d/pd-update.env" || fail "it should count the bad boot"
+grep -q '^BAD_BOOTS=1' "$T/disk/p1.d/board-update.env" || fail "it should count the bad boot"
 UPDATE_CMDLINE_ROOT=5 UPDATE_LINK_DELAY=0 update check-link 2>/dev/null
-grep -q '^BAD_BOOTS=0' "$T/disk/p1.d/pd-update.env" || fail "a good boot resets the count"
+grep -q '^BAD_BOOTS=0' "$T/disk/p1.d/board-update.env" || fail "a good boot resets the count"
 UPDATE_CMDLINE_ROOT=5 UPDATE_UNAME_R=broken UPDATE_LINK_DELAY=0 update check-link 2>/dev/null
 UPDATE_CMDLINE_ROOT=5 UPDATE_UNAME_R=broken UPDATE_LINK_DELAY=0 update check-link 2>/dev/null
 [ "$(state)" = rolled-back ] || fail "two bad boots should go back, state $(state)"
 grep -q 'boot_partition=3' "$T/disk/p1.d/autoboot.txt" || fail "the default should be slot B again: $(autoboot)"
 grep -q '^plain$' "$REBOOTS" || fail "it should restart into slot B"
-grep -q '^PREVIOUS_SLOT=$' "$T/disk/p1.d/pd-update.env" || fail "no ping-pong: the previous slot is forgotten"
+grep -q '^PREVIOUS_SLOT=$' "$T/disk/p1.d/board-update.env" || fail "no ping-pong: the previous slot is forgotten"
 
 if command -v mkfs.erofs >/dev/null 2>&1 && fsck.erofs --help 2>&1 | grep -q -- --extract; then
 	# erofs_image <version> <model> <out.img.xz>: the A/B image with an EROFS
 	# root slot A (lzma), padded to the slot partition's size.
 	erofs_image() {
 		rm -rf "$T/rootdir" "$T/root.erofs"
-		mkdir -p "$T/rootdir/etc" "$T/rootdir/usr/lib/pd-device"
+		mkdir -p "$T/rootdir/etc" "$T/rootdir/usr/lib/board"
 		printf 'ID=photonvision\nIMAGE_VERSION=%s\n' "$1" > "$T/rootdir/etc/os-release"
-		printf 'PD_DEVICE_MODEL=%s\n' "$2" > "$T/rootdir/usr/lib/pd-device/device-package.env"
+		printf 'BOARD_DEVICE_MODEL=%s\n' "$2" > "$T/rootdir/usr/lib/board/board-package.env"
 		mkdir -p "$T/rootdir/lib/modules/7.2.9-test"
 		mkfs.erofs -zlzma "$T/root.erofs" "$T/rootdir" >/dev/null 2>&1 ||
 			mkfs.erofs -zlz4hc "$T/root.erofs" "$T/rootdir" >/dev/null
@@ -324,8 +324,8 @@ if command -v mkfs.erofs >/dev/null 2>&1 && fsck.erofs --help 2>&1 | grep -q -- 
 	erofs_image 4.0 raze "$T/erofs.img.xz"
 	UPDATE_CMDLINE_ROOT=6 update stage "$T/erofs.img.xz" --sha256 "$(sha "$T/erofs.img.xz")"
 	[ "$(state)" = staged ] || fail "state should be staged, is $(state)"
-	grep -q "^VERSION_STAGED='4.0'" "$T/disk/p1.d/pd-update.env" ||
-		fail "the version should come from the EROFS root: $(grep VERSION_STAGED "$T/disk/p1.d/pd-update.env")"
+	grep -q "^VERSION_STAGED='4.0'" "$T/disk/p1.d/board-update.env" ||
+		fail "the version should come from the EROFS root: $(grep VERSION_STAGED "$T/disk/p1.d/board-update.env")"
 	cmp -s "$T/root.erofs" "$T/disk/p5" || fail "root A should hold the EROFS image byte for byte"
 	UPDATE_CMDLINE_ROOT=6 update rollback
 
@@ -341,6 +341,6 @@ fi
 
 echo "identity reports the A/B method and state"
 . "$lib/lib.sh"
-pd_update_methods | grep -qx ab-tryboot || fail "update_methods should include ab-tryboot"
+board_update_methods | grep -qx ab-tryboot || fail "update_methods should include ab-tryboot"
 
 echo "ok"

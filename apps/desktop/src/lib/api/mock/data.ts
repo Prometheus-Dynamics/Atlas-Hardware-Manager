@@ -26,7 +26,7 @@ export interface SimDevice {
   online: boolean;
   /** Never confirms its update and rolls back (the `flaky` scenario). */
   neverConfirms: boolean;
-  /** Real-driver extras: Raze boards report these (see atlas-driver-pd/-rpi). */
+  /** Real-driver extras: Raze boards report these (see atlas-driver-board/-rpi). */
   attributes?: Record<string, string>;
   versions?: Record<string, string>;
   link?: DeviceRecord["link_kind"];
@@ -120,7 +120,7 @@ export const AB_ACTIONS: DeviceAction[] = [
   { id: "usb-boot", label: "Restart into USB boot", destructive: true },
 ];
 
-/** A running Raze on the robot network, as atlas-driver-pd reports one. */
+/** A running Raze on the robot network, as atlas-driver-board reports one. */
 const razeRunning = (serial: string, version: string, ab: boolean): SimDevice => ({
   key: { family: RAZE, serial },
   model: "Raze",

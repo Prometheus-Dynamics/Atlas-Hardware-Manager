@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use atlas_core::{Atlas, InventoryStore, JsonFileStore, StagedRollout};
 use atlas_devices::DeviceCatalog;
+use atlas_driver_board::{NetworkLinks, SshAccess, SshConfig, UsbGadgetLinks, drivers_for_catalog};
 use atlas_driver_mock::MockFleet;
-use atlas_driver_pd::{NetworkLinks, SshAccess, SshConfig, UsbGadgetLinks, drivers_for_catalog};
 use atlas_driver_rpi::{RpiConfig, RpiDriver, UsbBootLinks};
 use clap::{Parser, Subcommand, ValueEnum};
 

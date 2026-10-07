@@ -1,22 +1,22 @@
 #!/bin/sh
-# pd_root_device / pd_sibling_partition (lib.sh), which ssh-keys and update
+# board_root_device / board_sibling_partition (lib.sh), which ssh-keys and update
 # use to find the eMMC. Run: sh devices/raze/tests/root-device.sh
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-T=$(mktemp -d "${TMPDIR:-/tmp}/pd-root-test.XXXXXX")
+T=$(mktemp -d "${TMPDIR:-/tmp}/board-root-test.XXXXXX")
 trap 'rm -rf "$T"' EXIT
-# shellcheck source=../gaia/assets/rootfs/usr/lib/pd-device/lib.sh
-. "$here/../gaia/assets/rootfs/usr/lib/pd-device/lib.sh"
-export PD_PROC_CMDLINE=$T/cmdline
+# shellcheck source=../gaia/assets/rootfs/usr/lib/board/lib.sh
+. "$here/../gaia/assets/rootfs/usr/lib/board/lib.sh"
+export BOARD_PROC_CMDLINE=$T/cmdline
 
 check() {
 	# check <cmdline> <expected root> <expected partition 1>
-	printf '%s\n' "$1" > "$PD_PROC_CMDLINE"
-	got=$(pd_root_device)
+	printf '%s\n' "$1" > "$BOARD_PROC_CMDLINE"
+	got=$(board_root_device)
 	[ "$got" = "$2" ] || { echo "FAIL: '$1' gave root '$got', want '$2'" >&2; exit 1; }
 	[ -n "$2" ] || return 0
-	p1=$(pd_sibling_partition "$got" 1)
+	p1=$(board_sibling_partition "$got" 1)
 	[ "$p1" = "$3" ] || { echo "FAIL: '$1' gave p1 '$p1', want '$3'" >&2; exit 1; }
 }
 

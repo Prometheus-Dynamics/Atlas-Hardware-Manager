@@ -7,7 +7,7 @@ StartLimitIntervalSec=0
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/lib/pd-device/raze-leds-reprobe
+ExecStart=/usr/lib/board/raze-leds-reprobe
 Restart=on-failure
 RestartSec=30
 

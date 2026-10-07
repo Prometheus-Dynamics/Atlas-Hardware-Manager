@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use atlas_core::{Atlas, InventoryStore, JsonFileStore, WatchOptions};
 use atlas_driver::CancellationToken;
+use atlas_driver_board::SshAccess;
 use atlas_driver_mock::MockFleet;
-use atlas_driver_pd::SshAccess;
 use atlas_driver_rpi::SshKeys;
 use atlas_release::ReleaseCatalog;
 

@@ -312,7 +312,7 @@ export const mockApi: Api = {
         id: "network.mdns",
         label: "Network discovery",
         status: "ok",
-        detail: "Listening for PD devices with mDNS; 0 advertised right now.",
+        detail: "Listening for boards with mDNS; 0 advertised right now.",
         fix: null,
         fix_action: null,
       },

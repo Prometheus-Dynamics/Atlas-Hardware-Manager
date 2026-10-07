@@ -1,0 +1,99 @@
+#!/bin/sh
+# One HTTP/1.0 exchange on stdin/stdout, started per connection by
+# board-http.socket (Accept=yes). Unauthenticated:
+#   GET|HEAD /.well-known/pd-device  -> 200, the identity JSON
+#   POST /actions/<id>               -> 202 when <id> is in BOARD_ACTIONS: drops
+#                                       /run/board/requests/<id>, which a
+#                                       root path unit acts on; 404 otherwise
+#   other methods on those paths     -> 405
+#   anything else                    -> 404
+set -u
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+
+CR=$(printf '\r')
+
+respond() {
+	# respond <status line> <content type> <body> [extra header line]
+	_len=$(printf '%s' "$3" | wc -c | tr -d ' ')
+	printf 'HTTP/1.0 %s\r\n' "$1"
+	printf 'Content-Type: %s\r\n' "$2"
+	printf 'Content-Length: %s\r\n' "$_len"
+	printf 'Cache-Control: no-store\r\n'
+	printf 'Access-Control-Allow-Origin: *\r\n'
+	if [ -n "${4:-}" ]; then
+		printf '%s\r\n' "$4"
+	fi
+	printf 'Connection: close\r\n\r\n'
+	if [ "$method" != HEAD ]; then
+		printf '%s' "$3"
+	fi
+}
+
+method=''
+line=''
+IFS= read -r line || [ -n "$line" ] || exit 0
+line=${line%"$CR"}
+method=${line%% *}
+rest=${line#* }
+target=${rest%% *}
+path=${target%%\?*}
+
+# Read the request headers before answering: closing a socket with unread
+# input makes the kernel send a reset, and the client can lose the response.
+n=0
+while [ "$n" -lt 100 ] && IFS= read -r header; do
+	header=${header%"$CR"}
+	[ -n "$header" ] || break
+	n=$((n + 1))
+done
+
+board_load_env identity.env
+
+case "$path" in
+/actions/*)
+	action=${path#/actions/}
+	case "$action" in
+	'' | *[!a-z0-9-]*) action='' ;;
+	esac
+	if [ -z "$action" ] || ! board_action_offered "$action"; then
+		respond '404 Not Found' 'text/plain' "no such action
+"
+	elif [ "$method" != POST ]; then
+		respond '405 Method Not Allowed' 'text/plain' "method not allowed
+" 'Allow: POST'
+	elif : > "$BOARD_RUN_DIR/requests/$action" 2>/dev/null; then
+		respond '202 Accepted' 'text/plain' "ok
+"
+	else
+		respond '503 Service Unavailable' 'text/plain' "actions unavailable
+"
+	fi
+	exit 0
+	;;
+esac
+
+if [ "$path" != /.well-known/pd-device ]; then
+	respond '404 Not Found' 'text/plain' "not found
+"
+	exit 0
+fi
+
+case "$method" in
+GET | HEAD) ;;
+*)
+	respond '405 Method Not Allowed' 'text/plain' "method not allowed
+" 'Allow: GET, HEAD'
+	exit 0
+	;;
+esac
+
+if body=$(board_identity_json) && [ -n "$body" ]; then
+	respond '200 OK' 'application/json' "$body
+"
+else
+	respond '500 Internal Server Error' 'text/plain' "identity unavailable
+"
+fi

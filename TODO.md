@@ -30,7 +30,7 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
       naming, recovery steps, EEPROM files, the `raze-leds` LED helper, a
       locate action on the identity endpoint, opt-in SSH keys from the boot
       partition, and a serial console on the USB gadget.
-- [x] PD driver for running devices: mDNS `_pd-device._tcp` +
+- [x] board driver for running devices: mDNS `_pd-device._tcp` +
       `/.well-known/pd-device`. Optional `endpoints` (metrics, logs,
       actions), `actions`, and `camera_stream` are used when a device lists
       them and read leniently; nothing is required.
@@ -98,7 +98,7 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
 - [x] SSH update transport for boards listing `ab-tryboot`.
 - [ ] Verify A/B on a real Raze with HeliOS's PhotonVision image (they test
       stage/apply/confirm/rollback first).
-- [ ] `pd-device-agent` for Orion-driven updates.
+- [ ] `board-agent` for Orion-driven updates.
 - [ ] HeliOS secured mode (helios-api `docs/docs/api/http.md`): when
       `/v1/identity` reports `helios.auth.mode = secured`, send
       `Authorization: Bearer helios_<64 hex>` on everything but health,

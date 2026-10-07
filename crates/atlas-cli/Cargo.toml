@@ -8,7 +8,7 @@ homepage.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 publish.workspace = true
-description = "The atlas command: manage PD devices from a terminal."
+description = "The atlas command: manage boards from a terminal."
 
 [[bin]]
 name = "atlas"
@@ -20,7 +20,7 @@ atlas-driver.workspace = true
 atlas-blockdev.workspace = true
 atlas-driver-mock.workspace = true
 atlas-devices.workspace = true
-atlas-driver-pd.workspace = true
+atlas-driver-board.workspace = true
 atlas-driver-rpi.workspace = true
 atlas-release.workspace = true
 clap.workspace = true

@@ -1,7 +1,7 @@
 //! Capabilities from more than one source for one device.
 //!
 //! A device has one owning driver: the one that found and identified it
-//! (for a running Raze, the PD driver over mDNS). A management agent such as
+//! (for a running Raze, the board driver over mDNS). A management agent such as
 //! Orion knows the same board by its serial and can add telemetry, actions,
 //! or updates, but must not become a second device. A [`CapabilitySource`]
 //! does that: Atlas asks every source about each device it identifies and

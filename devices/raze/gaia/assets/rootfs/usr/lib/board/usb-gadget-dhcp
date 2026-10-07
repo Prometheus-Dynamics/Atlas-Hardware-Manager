@@ -1,0 +1,38 @@
+#!/bin/sh
+# DHCP server for the USB gadget link (board-usb-gadget-dhcp.service).
+# Runs dnsmasq in the foreground with the configuration board-usb-gadget
+# generated: DHCP on the gadget bridge only, DNS disabled.
+# Extra dnsmasq settings: /etc/board/usb-gadget-dnsmasq.d/*.conf
+set -eu
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+
+board_load_env usb-gadget.env
+
+if [ "${USB_GADGET_ENABLED:-1}" != 1 ] || [ "${USB_GADGET_NET:-bridge}" != bridge ] || [ "${USB_GADGET_DHCP:-1}" != 1 ]; then
+	board_log "USB gadget DHCP is off"
+	exit 0
+fi
+
+conf="$BOARD_RUN_DIR/usb-gadget-dnsmasq.conf"
+if [ ! -r "$conf" ]; then
+	board_log "$conf is missing; board-usb-gadget.service has not set up the link"
+	exit 1
+fi
+
+if ! command -v dnsmasq >/dev/null 2>&1; then
+	board_log "dnsmasq is not installed; the host must configure the USB link itself"
+	exit 0
+fi
+
+# Leases live in /run: the root may be read-only, and a USB link's leases
+# don't need to outlive a boot.
+leases="$BOARD_RUN_DIR/usb-gadget-dnsmasq.leases"
+extra="$BOARD_ETC_DIR/usb-gadget-dnsmasq.d"
+if [ -d "$extra" ]; then
+	exec dnsmasq --keep-in-foreground --pid-file= --dhcp-leasefile="$leases" \
+		--conf-file="$conf" --conf-dir="$extra,*.conf"
+fi
+exec dnsmasq --keep-in-foreground --pid-file= --dhcp-leasefile="$leases" --conf-file="$conf"

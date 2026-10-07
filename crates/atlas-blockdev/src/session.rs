@@ -149,7 +149,7 @@ pub fn open_folder(path: &Path) -> Result<(), BlockError> {
         .map_err(|error| BlockError::Desktop(format!("{program}: {error}")))
 }
 
-/// Writes `contents` to `relative` (for example `pd-device/authorized_keys`)
+/// Writes `contents` to `relative` (for example `board/authorized_keys`)
 /// on the disk's first partition, the boot partition of a Pi image. Mounts
 /// it read-write for the write when nothing has it mounted, and unmounts it
 /// again; reuses a read-write mount the desktop already made.

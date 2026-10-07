@@ -1,0 +1,448 @@
+#!/bin/sh
+# Raze self-test: checks the board's hardware against its device package.
+#
+#   selftest [--interactive] [--json]
+#
+# Checks, each ok, skip or fail with a message:
+#   leds      /dev/leds0 takes frames. --interactive also sweeps red, green,
+#             blue and the W byte (dropped by this 24-bit ring), walks one LED
+#             round the ring by index (the manifest's offset applied), and asks
+#             on the terminal what was seen.
+#   fan       steps the pwm-fan cooling device through its states, reads the
+#             duty (and rpm, with a tachometer) back, then hands the fan back
+#             to the thermal governor.
+#   camera    the sensor's I2C client is bound to its driver (which checked the
+#             chip id), and rp1-cfe, media-ctl or libcamera's `cam -l` see it.
+#   i2c       the manifest's I2C devices answer (i2cdetect; skipped without it
+#             unless a kernel driver owns the address).
+#   watchdog  /dev/watchdog0 exists and systemd's RuntimeWatchdogUSec is set.
+#   gadget    the USB gadget is bound to its controller and usbbr0 is up with
+#             an address.
+#
+# --json prints one JSON object (format 1):
+#   {"version":1,"board_serial":..,"model":..,"package_version":..,"at":<unix s>,
+#    "interactive":false,"ok":true,"checks":[{"id":..,"status":"ok|skip|fail",
+#    "message":..,"data":{..}}]}
+# The report is also written to /run/board/selftest.json. With --json the
+# exit status is 0 whenever a report was made (read "ok"); without it, 1 when a
+# check failed. Root only. The fan and the LED ring are put back as they were
+# on exit, also when interrupted.
+#
+# Hardware access goes through hw.sh (BOARD_HW_BACKEND names another backend
+# with the same hw_* functions). Facts come from hardware.env and
+# leds.env, generated from the package manifest. Test hooks: the paths in
+# lib.sh and hw.sh, BOARD_SELFTEST_ALLOW_USER=1, SELFTEST_TTY_IN/SELFTEST_TTY_OUT
+# (the operator's terminal), SELFTEST_FAN_SETTLE, SELFTEST_LED_STEP and
+# SELFTEST_LED_HOLD (seconds).
+set -u
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+# shellcheck source=hw.sh
+. "${BOARD_HW_BACKEND:-$BOARD_LIB_DIR/hw.sh}"
+board_load_env board-package.env
+# The USB gadget's settings, read only: which gadget and bridge to look at.
+board_load_env usb-gadget.env
+
+FORMAT_VERSION=1
+FAN_SETTLE=${SELFTEST_FAN_SETTLE:-2}
+LED_STEP=${SELFTEST_LED_STEP:-0.15}
+LED_HOLD=${SELFTEST_LED_HOLD:-1}
+
+json=0
+interactive=0
+for arg in "$@"; do
+	case "$arg" in
+	--json) json=1 ;;
+	--interactive) interactive=1 ;;
+	-h | --help)
+		sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
+		exit 0
+		;;
+	*)
+		board_log "unknown argument: $arg (use --interactive, --json)"
+		exit 2
+		;;
+	esac
+done
+
+if [ "$(id -u)" != 0 ] && [ "${BOARD_SELFTEST_ALLOW_USER:-0}" != 1 ]; then
+	board_log "run it as root: it drives the fan and the LED ring"
+	exit 1
+fi
+
+mkdir -p "$BOARD_RUN_DIR"
+LOCK=$BOARD_RUN_DIR/selftest.lock
+if ! mkdir "$LOCK" 2>/dev/null; then
+	board_log "another selftest is running (remove $LOCK if it isn't)"
+	exit 1
+fi
+
+LEDS_TOUCHED=0
+FAN_TOUCHED=0
+FAN_ORIG=''
+
+restore_leds() {
+	if [ -r "$BOARD_RUN_DIR/leds.state" ] && [ -x "$BOARD_LIB_DIR/raze-leds" ]; then
+		"$BOARD_LIB_DIR/raze-leds" refresh 2>/dev/null && return 0
+	fi
+	hw_leds_fill 0,0,0,0 2>/dev/null || true
+}
+
+cleanup() {
+	if [ "$FAN_TOUCHED" = 1 ]; then
+		[ -z "$FAN_ORIG" ] || hw_fan_set_state "$FAN_ORIG" 2>/dev/null || true
+		hw_fan_release
+		FAN_TOUCHED=0
+	fi
+	if [ "$LEDS_TOUCHED" = 1 ]; then
+		restore_leds
+		LEDS_TOUCHED=0
+	fi
+	rmdir "$LOCK" 2>/dev/null || true
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM HUP
+
+if [ "$interactive" = 1 ]; then
+	tty_in=${SELFTEST_TTY_IN:-/dev/tty}
+	tty_out=${SELFTEST_TTY_OUT:-/dev/tty}
+	# A failed exec redirection would end the shell, so try it in a subshell.
+	if ! (: <"$tty_in" >>"$tty_out") 2>/dev/null; then
+		board_log "--interactive needs a terminal"
+		exit 2
+	fi
+	exec 3<"$tty_in" 4>>"$tty_out"
+fi
+
+# ask <question>: the operator's answer in ANSWER (yes, no or skip).
+ask() {
+	while :; do
+		printf '%s [y/n/s] ' "$1" >&4
+		if ! read -r _answer <&3; then
+			ANSWER=skip
+			return 0
+		fi
+		case "$_answer" in
+		y | Y | yes) ANSWER=yes ;;
+		n | N | no) ANSWER=no ;;
+		s | S | skip) ANSWER=skip ;;
+		*) continue ;;
+		esac
+		return 0
+	done
+}
+
+# Item <n> (from 1) of the remaining arguments.
+nth() {
+	_n=$1
+	[ "$_n" -lt "$#" ] || return 0
+	shift "$_n"
+	printf '%s' "${1:-}"
+}
+
+js() {
+	board_json_str "$1"
+}
+
+# A JSON number, or null when <value> isn't one.
+jn() {
+	case "$1" in
+	'' | *[!0-9.-]* | *[!0-9]) printf 'null' ;;
+	*) printf '%s' "$1" ;;
+	esac
+}
+
+CHECKS=''
+FAILED=0
+
+# result <id> <ok|skip|fail> <message> <data JSON object>
+result() {
+	[ "$2" != fail ] || FAILED=$((FAILED + 1))
+	CHECKS="$CHECKS${CHECKS:+,}{\"id\":$(js "$1"),\"status\":\"$2\",\"message\":$(js "$3"),\"data\":${4:-\{\}}}"
+	if [ "$json" = 0 ]; then
+		printf '%-4s  %-8s  %s\n' "$2" "$1" "$3"
+	fi
+}
+
+# ---------------------------------------------------------------------------
+
+check_leds() {
+	dev=$(hw_leds_device)
+	count=$(hw_leds_count)
+	data="{\"device\":$(js "${RAZE_LEDS_DEVICE:-/dev/leds0}"),\"count\":$count,\"offset\":${RAZE_LEDS_OFFSET:-0},\"direction\":${RAZE_LEDS_DIRECTION:-1},\"wire_format\":$(js "${HW_LEDS_WIRE:-}"),\"interactive\":$([ "$interactive" = 1 ] && echo true || echo false)"
+	if [ ! -e "$dev" ]; then
+		result leds fail "${RAZE_LEDS_DEVICE:-/dev/leds0} is missing: the ws2812-pio overlay or its driver didn't load (raze-leds-reprobe.service retries it)" "$data}"
+		return
+	fi
+	if [ "$interactive" = 0 ]; then
+		if [ -r "$BOARD_RUN_DIR/leds.state" ] && [ -w "$dev" ]; then
+			if "$BOARD_LIB_DIR/raze-leds" refresh 2>/dev/null; then
+				result leds ok "${RAZE_LEDS_DEVICE:-/dev/leds0} takes frames (redrew the ring's current state)" "$data,\"frame\":\"redrawn\"}"
+			else
+				result leds fail "writing a frame to ${RAZE_LEDS_DEVICE:-/dev/leds0} failed" "$data,\"frame\":\"failed\"}"
+			fi
+		elif hw_leds_open; then
+			result leds ok "${RAZE_LEDS_DEVICE:-/dev/leds0} opens for writing; no frame sent, since raze-leds has no state and another program may own the ring (--interactive tests it)" "$data,\"frame\":\"opened\"}"
+		else
+			result leds fail "${RAZE_LEDS_DEVICE:-/dev/leds0} can't be opened for writing" "$data,\"frame\":\"failed\"}"
+		fi
+		return
+	fi
+
+	LEDS_TOUCHED=1
+	answers=''
+	bad=''
+	for step in red:255,0,0,0 green:0,255,0,0 blue:0,0,255,0 w:0,0,0,255; do
+		name=${step%%:*}
+		if ! hw_leds_fill "${step#*:}"; then
+			result leds fail "writing a frame to ${RAZE_LEDS_DEVICE:-/dev/leds0} failed" "$data,\"frame\":\"failed\"}"
+			restore_leds
+			LEDS_TOUCHED=0
+			return
+		fi
+		case "$name:${HW_LEDS_WIRE:-grb24}" in
+		w:*24) ask "Only the W byte is set, which this 24-bit ring drops. Is the whole ring dark?" ;;
+		w:*) ask "Is the whole ring white (the W channel)?" ;;
+		*) ask "Is the whole ring $name?" ;;
+		esac
+		answers="$answers${answers:+,}\"$name\":\"$ANSWER\""
+		[ "$ANSWER" != no ] || bad="$bad $name"
+	done
+	# Index 0 green, then one LED at a time round the ring.
+	hw_leds_write_frame 0,255,0,0
+	sleep "$LED_HOLD"
+	i=1
+	while [ "$i" -lt "$count" ]; do
+		set --
+		while [ "$#" -lt "$i" ]; do set -- "$@" 0,0,0,0; done
+		hw_leds_write_frame "$@" 0,0,255,0
+		sleep "$LED_STEP"
+		i=$((i + 1))
+	done
+	ask "LED 0 lit green, then a blue LED walked once round the ring from beside it. Did it pass every LED once, in order, with no gaps?"
+	answers="$answers,\"walk\":\"$ANSWER\""
+	[ "$ANSWER" != no ] || bad="$bad walk"
+	restore_leds
+	LEDS_TOUCHED=0
+	data="$data,\"frame\":\"swept\",\"answers\":{$answers}}"
+	if [ -n "$bad" ]; then
+		result leds fail "the operator saw a problem with:$bad (check the wire format, RAZE_LEDS_ORDER and RAZE_LEDS_OFFSET)" "$data"
+	elif printf '%s' "$answers" | grep -q '"yes"'; then
+		result leds ok "colours and the index walk looked right to the operator" "$data"
+	else
+		result leds skip "the operator skipped every question" "$data"
+	fi
+}
+
+check_fan() {
+	if ! cdev=$(hw_fan_cdev); then
+		result fan fail "no ${HW_FAN_COOLING_TYPE:-pwm-fan} cooling device: the raze-fan overlay didn't load" '{}'
+		return
+	fi
+	max=$(hw_fan_max_state 2>/dev/null)
+	FAN_ORIG=$(hw_fan_get_state 2>/dev/null)
+	levels=${HW_FAN_LEVELS:-}
+	data="{\"cooling_device\":$(js "${cdev##*/}"),\"max_state\":$(jn "$max"),\"state_before\":$(jn "$FAN_ORIG")"
+	case "$max" in
+	'' | *[!0-9]*)
+		result fan fail "can't read the fan's cooling states" "$data}"
+		return
+		;;
+	esac
+	FAN_TOUCHED=1
+	hw_fan_hold
+	steps=''
+	mismatch=''
+	tach=false
+	rpms=''
+	s=0
+	while [ "$s" -le "$max" ]; do
+		if ! hw_fan_set_state "$s" 2>/dev/null; then
+			mismatch="$mismatch state $s refused;"
+			s=$((s + 1))
+			continue
+		fi
+		sleep "$FAN_SETTLE"
+		read -r pwm rpm <<-EOF
+			$(hw_fan_read)
+		EOF
+		expected=$(nth $((s + 1)) $levels)
+		steps="$steps${steps:+,}{\"state\":$s,\"pwm\":$(jn "$pwm"),\"expected\":$(jn "$expected"),\"rpm\":$(jn "$rpm")}"
+		if [ "$pwm" != - ] && [ -n "$expected" ] && [ "$pwm" != "$expected" ]; then
+			mismatch="$mismatch state $s gave $pwm, not $expected;"
+		fi
+		if [ "$rpm" != - ]; then
+			tach=true
+			rpms="$rpms $rpm"
+		fi
+		s=$((s + 1))
+	done
+	hw_fan_set_state "$FAN_ORIG" 2>/dev/null || true
+	hw_fan_release
+	FAN_TOUCHED=0
+	data="$data,\"levels\":[$(printf '%s' "$levels" | tr ' ' ',')],\"steps\":[$steps],\"tachometer\":$tach}"
+	nlevels=$(set -- $levels; echo $#)
+	if [ "$((max + 1))" != "$nlevels" ]; then
+		mismatch="$mismatch $((max + 1)) states but the package has $nlevels levels;"
+	fi
+	answer=''
+	if [ -z "$mismatch" ] && [ "$interactive" = 1 ] && [ "$tach" = false ]; then
+		ask "Did you hear the fan change speed during the last $(((max + 1) * FAN_SETTLE)) seconds?"
+		answer=$ANSWER
+		[ "$ANSWER" != no ] || mismatch=" the operator didn't hear it change speed;"
+	fi
+	if [ -n "$mismatch" ]; then
+		result fan fail "fan:${mismatch%;}" "$data"
+	elif [ "$tach" = true ]; then
+		result fan ok "states 0-$max set duty ${levels} as the package says;$rpms rpm; back to automatic" "$data"
+	else
+		result fan ok "states 0-$max set duty ${levels} as the package says; no tachometer${answer:+, the operator heard it}; back to automatic" "$data"
+	fi
+}
+
+check_camera() {
+	addr=${HW_CAMERA_ADDRESS:-0x60}
+	sensor=${HW_CAMERA_SENSOR:-ov9782}
+	driver=${HW_CAMERA_DRIVER:-ov9282}
+	list=$(hw_camera_list "$addr")
+	client=$(printf '%s\n' "$list" | awk -v s="$sensor" -v d="$driver" '$1 == "i2c" && ($2 == s || $4 == d) { print $3 " " $4; exit }')
+	media=$(printf '%s\n' "$list" | awk -v s="$sensor" -v d="$driver" '$1 == "media" && (index($4, s) || index($4, d)) { print $2; exit }')
+	videos=$(printf '%s\n' "$list" | awk -v r="${HW_CAMERA_RECEIVER:-rp1-cfe}" '$1 == "video" && index($3, r) == 1' | wc -l | tr -d ' ')
+	libcam=$(printf '%s\n' "$list" | awk -v s="$sensor" -v d="$driver" '$1 == "libcamera" && (index($2, s) || index($2, d)) { print "yes"; exit }')
+	where=${client%% *}
+	bound=${client#* }
+	data="{\"sensor\":$(js "$sensor"),\"address\":$(($addr)),\"i2c_client\":$(js "$where"),\"driver\":$(js "$bound"),\"media_device\":$(js "$media"),\"receiver_video_nodes\":$videos,\"libcamera\":$(if hw_have cam; then [ -n "$libcam" ] && echo true || echo false; else echo null; fi)}"
+	if [ -z "$client" ]; then
+		result camera fail "no $sensor at $addr on any I2C bus: is the camera connected, and does raze-device.txt load its overlay?" "$data"
+	elif [ "$bound" = unbound ]; then
+		result camera fail "$sensor at $where has no driver: the probe failed (chip id or power; see dmesg)" "$data"
+	elif [ -z "$media" ] && [ "$videos" = 0 ] && [ -z "$libcam" ]; then
+		result camera fail "$sensor is bound to $bound at $where, but ${HW_CAMERA_RECEIVER:-rp1-cfe} has no video nodes" "$data"
+	else
+		seen=''
+		[ -z "$media" ] || seen="$seen, in the media graph ($media)"
+		[ "$videos" = 0 ] || seen="$seen, $videos ${HW_CAMERA_RECEIVER:-rp1-cfe} video nodes"
+		[ -z "$libcam" ] || seen="$seen, listed by cam -l"
+		result camera ok "$sensor bound to $bound at $where (chip id accepted)$seen" "$data"
+	fi
+}
+
+check_i2c() {
+	devices=''
+	found=0
+	missing=''
+	unknown=0
+	total=0
+	for entry in ${HW_I2C_DEVICES:-}; do
+		id=${entry%%:*}
+		rest=${entry#*:}
+		bus=${rest%%:*}
+		rest=${rest#*:}
+		addr=${rest%%:*}
+		part=${rest#*:}
+		state=$(hw_i2c_probe "$bus" "$addr")
+		total=$((total + 1))
+		case "$state" in
+		bound | present) found=$((found + 1)) ;;
+		unknown) unknown=$((unknown + 1)) ;;
+		*) missing="$missing $part ($id) at $bus/$addr: $state;" ;;
+		esac
+		devices="$devices${devices:+,}{\"id\":$(js "$id"),\"part\":$(js "$part"),\"bus\":$bus,\"address\":$(($addr)),\"result\":\"$state\"}"
+	done
+	data="{\"probe\":\"$(hw_have i2cdetect && echo i2cdetect || echo sysfs)\",\"devices\":[$devices]}"
+	if [ "$total" = 0 ]; then
+		result i2c skip "the package lists no I2C devices" "$data"
+	elif [ -n "$missing" ]; then
+		result i2c fail "missing:${missing%;}" "$data"
+	elif [ "$unknown" = "$total" ]; then
+		result i2c skip "no i2cdetect, and no kernel driver owns these addresses, so they can't be probed" "$data"
+	elif [ "$unknown" -gt 0 ]; then
+		result i2c ok "$found of $total devices answer; $unknown can't be probed without i2cdetect" "$data"
+	else
+		result i2c ok "all $total devices answer" "$data"
+	fi
+}
+
+check_watchdog() {
+	wd=$(hw_watchdog_device)
+	identity=$(hw_watchdog_identity)
+	runtime=$(hw_watchdog_runtime)
+	data="{\"device\":$(js "${HW_WATCHDOG_DEVICE:-/dev/watchdog0}"),\"present\":$([ -n "$wd" ] && echo true || echo false),\"identity\":$(js "$identity"),\"runtime_watchdog\":$(js "$runtime"),\"expected_sec\":$(jn "${HW_WATCHDOG_RUNTIME_SEC:-}")}"
+	if [ -z "$wd" ]; then
+		result watchdog fail "${HW_WATCHDOG_DEVICE:-/dev/watchdog0} is missing" "$data"
+		return
+	fi
+	case "$runtime" in
+	'')
+		result watchdog skip "${HW_WATCHDOG_DEVICE:-/dev/watchdog0} exists${identity:+ ($identity)}; systemctl isn't there to ask about RuntimeWatchdogUSec" "$data"
+		;;
+	0 | infinity)
+		result watchdog fail "${HW_WATCHDOG_DEVICE:-/dev/watchdog0} exists, but systemd doesn't use it (RuntimeWatchdogUSec=$runtime)" "$data"
+		;;
+	*)
+		result watchdog ok "${HW_WATCHDOG_DEVICE:-/dev/watchdog0}${identity:+ ($identity)} is kept by systemd every $runtime" "$data"
+		;;
+	esac
+}
+
+check_gadget() {
+	name=${USB_GADGET_NAME:-g1}
+	bridge=${USB_GADGET_BRIDGE:-usbbr0}
+	if [ "${USB_GADGET_ENABLED:-1}" != 1 ]; then
+		result gadget skip "the USB gadget is turned off (USB_GADGET_ENABLED=0)" "{\"gadget\":$(js "$name")}"
+		return
+	fi
+	udc=$(hw_gadget_udc "$name")
+	data="{\"gadget\":$(js "$name"),\"udc\":$(js "$udc")"
+	if [ -z "$udc" ]; then
+		result gadget fail "the configfs gadget $name isn't bound to a USB controller" "$data}"
+		return
+	fi
+	if [ "${USB_GADGET_NET:-bridge}" != bridge ]; then
+		result gadget ok "gadget $name is bound to $udc; its network is left to the OS (USB_GADGET_NET=${USB_GADGET_NET:-})" "$data}"
+		return
+	fi
+	up=false
+	hw_net_up "$bridge" && up=true
+	oper=$(hw_net_operstate "$bridge")
+	addrs=$(hw_net_ipv4 "$bridge" | tr '\n' ' ')
+	addrs=${addrs% }
+	list=''
+	for a in $addrs; do list="$list${list:+,}$(js "$a")"; done
+	data="$data,\"bridge\":$(js "$bridge"),\"up\":$up,\"operstate\":$(js "$oper"),\"addresses\":[$list],\"expected_address\":$(js "${USB_GADGET_ADDRESS:-}")}"
+	if [ "$up" = false ]; then
+		result gadget fail "gadget $name is bound to $udc, but $bridge is ${oper:-missing}" "$data"
+	elif [ "$addrs" = '?' ]; then
+		result gadget ok "gadget $name is bound to $udc and $bridge is up (no ip tool to read its address)" "$data"
+	elif [ -z "$addrs" ]; then
+		result gadget fail "gadget $name is bound to $udc and $bridge is up, but has no IPv4 address" "$data"
+	else
+		result gadget ok "gadget $name is bound to $udc; $bridge is up at $addrs" "$data"
+	fi
+}
+
+check_leds
+check_fan
+check_camera
+check_i2c
+check_watchdog
+check_gadget
+
+ok=true
+[ "$FAILED" = 0 ] || ok=false
+report="{\"version\":$FORMAT_VERSION,\"board_serial\":$(js "$(board_serial)"),\"model\":$(js "${BOARD_DEVICE_MODEL:-${HW_MODEL:-}}"),\"package_version\":$(js "${BOARD_PACKAGE_VERSION:-}"),\"at\":$(date +%s),\"interactive\":$([ "$interactive" = 1 ] && echo true || echo false),\"ok\":$ok,\"checks\":[$CHECKS]}"
+printf '%s\n' "$report" > "$BOARD_RUN_DIR/selftest.json.tmp" &&
+	mv -f "$BOARD_RUN_DIR/selftest.json.tmp" "$BOARD_RUN_DIR/selftest.json"
+
+if [ "$json" = 1 ]; then
+	printf '%s\n' "$report"
+	exit 0
+fi
+if [ "$FAILED" = 0 ]; then
+	echo "self-test passed"
+	exit 0
+fi
+echo "self-test: $FAILED check(s) failed"
+exit 1

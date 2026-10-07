@@ -45,7 +45,7 @@ commit; the commits are listed per area.
   isn't built in.
 - **Read-only root:** EROFS is built into the kernel, and nothing in the
   package writes to `/`. SSH keys from the boot partition go to
-  `/run/pd-device/ssh/authorized_keys`, which needs the OS's sshd_config to
+  `/run/board/ssh/authorized_keys`, which needs the OS's sshd_config to
   `Include /etc/ssh/sshd_config.d/*.conf` before any `AuthorizedKeysFile`
   (`695d172`).
 - **Update input:** `update stage` takes the same whole-disk image that is
@@ -57,7 +57,7 @@ commit; the commits are listed per area.
   `USB_GADGET_DHCP_RANGE` default to `AUTO`. Anything that hard-codes
   172.31.250.1 (scripts, saved SSH hosts, firewall rules) must use the
   board's address from the identity's new `gadget` field, or pin
-  `USB_GADGET_ADDRESS=172.31.250.1/24` in `/etc/pd-device/usb-gadget.env`.
+  `USB_GADGET_ADDRESS=172.31.250.1/24` in `/etc/board/usb-gadget.env`.
   Atlas needs this commit or later to reach new images over the gadget link
   without mDNS (`e6afcf3`).
 
@@ -68,7 +68,7 @@ commit; the commits are listed per area.
   `172.31.250.0/24` by sha256, so the host computes the address from the USB
   descriptor. Parameters in `usb-gadget.env` (`USB_GADGET_ADDR_BASE`,
   `USB_GADGET_ADDR_PREFIX`, `USB_GADGET_ADDR_EXCLUDE`) and in the manifest
-  (`capabilities.gadget-net.addressing`); `lib.sh` `pd_gadget_subnet`.
+  (`capabilities.gadget-net.addressing`); `lib.sh` `board_gadget_subnet`.
 - dnsmasq offers the host the rest of the /29 (`.2`-`.6`).
 - Without a hex serial, or when pinned, the board keeps 172.31.250.1/24.
 - The identity reports `gadget: {address, prefix, addressing}`.
@@ -84,7 +84,7 @@ commit; the commits are listed per area.
   Atlas reads both; no other reader is known (`47f8769`).
 - **Generated files:** `raze-device.txt` (its i2c, LED and camera lines),
   `raze-fan-overlay.dts` (`cooling-levels`, `pwms`), `sensors.toml`,
-  `60-pd-device-watchdog.conf`, `leds.env` and `hardware.env` come from
+  `60-board-watchdog.conf`, `leds.env` and `hardware.env` come from
   `manifest.json` through `devices/tools/gen-raze.py`. Edit the manifest,
   not those parts; CI fails when they disagree (`47f8769`).
 - **LED index offset:** `raze-leds` now maps LED index i to driver slot
@@ -110,43 +110,43 @@ commit; the commits are listed per area.
       matching `/lib/modules` on its root;
     - `confirm` runs the package's own checks first (kernel/modules match,
       USB gadget bound, no failed `UPDATE_CRITICAL_UNITS`);
-    - `update check-link` (`pd-device-update-link.service`) runs them after
+    - `update check-link` (`board-update-link.service`) runs them after
       every boot and returns to the previous good slot after
       `UPDATE_LINK_MAX_BAD` bad boots in a row, with no USB needed.
 - `dtparam=watchdog=on` in raze-device.txt. The OS cmdline should add
   `panic=5` so a panicking trial restarts into the old slot. docs/ota.md has
   a table of what each safety net covers, and a hardware test procedure.
 
-- `/usr/lib/pd-device/update`: `status`, `stage`, `apply`, `confirm`,
+- `/usr/lib/board/update`: `status`, `stage`, `apply`, `confirm`,
   `rollback`.
   - **stage:** `stage <image> --sha256 <hex>`, or
     `stage - --sha256 <hex> [--format xz|zst|gz|raw]` from stdin.
     - It copies the image's boot slot A (p2) and root slot A (p5) into the
-      inactive slot in one streaming pass through `pd-image-slots`, a small C
+      inactive slot in one streaming pass through `board-image-slots`, a small C
       tool in this package. The rest of the image is skipped.
     - A file is checked against its SHA-256 before anything is written.
     - The new root must name this model. Its os-release gives the version
       (`IMAGE_VERSION`, else `VERSION_ID`).
     - Images without the A/B layout are refused.
   - **apply:** boots the new slot once with `reboot "0 tryboot"`.
-  - **confirm:** `pd-device-update-confirm.service` keeps the new slot after
+  - **confirm:** `board-update-confirm.service` keeps the new slot after
     the OS's `update-health` passes. A failed check restarts into the old
     slot, and the hardware watchdog (RuntimeWatchdogSec=15s) covers a hung
     trial.
   - **Locking:** a lock lets only one writer run. `status` answers from the
     last state while another command runs.
   - Commits: `e12e22d`, `5baf83e`, `696d3ad`.
-- OS hooks in `/etc/pd-device/update.d/`: `pre-stage`, `post-stage`,
+- OS hooks in `/etc/board/update.d/`: `pre-stage`, `post-stage`,
   `pre-reboot`, `post-boot`. A failing pre- hook stops its step (`696d3ad`).
 - Layout: p1 autoboot.txt (and the update state), p2/p3 boot, p5/p6 root
   (512 MiB target, EROFS), p7 /data. See docs/ota.md.
 - The identity lists `ab-tryboot` in `update_methods`, and an `update` object
   with the state, slots, versions, progress and error.
-- The image gets zstd, xz-utils and pd-image-slots.
+- The image gets zstd, xz-utils and board-image-slots.
 
 ### Fresh installs without the boot button
 
-- `/usr/lib/pd-device/usb-boot` restarts a running CM5 straight into USB boot
+- `/usr/lib/board/usb-boot` restarts a running CM5 straight into USB boot
   (RPIBOOT). It uses the firmware's one-time `set_reboot_order`, so the
   bootloader's own BOOT_ORDER never changes. It is root-only and run over SSH
   (later Orion), never through the open identity endpoint.
@@ -190,13 +190,13 @@ commit; the commits are listed per area.
 
 ### Self-test
 
-- `/usr/lib/pd-device/selftest [--interactive] [--json]`: LED ring, fan,
+- `/usr/lib/board/selftest [--interactive] [--json]`: LED ring, fan,
   camera, I2C scan, watchdog and USB gadget, each ok/skip/fail with a message
   and data. `--json` prints a format-1 report and writes
-  `/run/pd-device/selftest.json`. Root only; restores the fan and the ring on
+  `/run/board/selftest.json`. Root only; restores the fan and the ring on
   exit or interrupt (`c4bbf6e`).
 - Hardware access goes through `hw.sh`, replaceable by another backend
-  (`PD_HW_BACKEND`). `raze-leds` uses it, applies the index offset, and has
+  (`BOARD_HW_BACKEND`). `raze-leds` uses it, applies the index offset, and has
   `pixel` and `refresh` (`c4bbf6e`).
 - Atlas runs it over SSH after a flash or update and on request, keeps the
   last result per board serial and shows it on the device panel (`d685975`,
@@ -229,11 +229,11 @@ commit; the commits are listed per area.
 - **SSH keys:** `ssh-keys` finds the boot partition from `root=` on the
   kernel command line, so an overlay root works. On the A/B layout that is
   p1, shared by both slots (`a6dec52`).
-- **Overrides:** `*.env` settings are read from `/usr/lib/pd-device`, then
-  `/etc/pd-device`, then `/data/pd-device`. device-package.env is never read
+- **Overrides:** `*.env` settings are read from `/usr/lib/board`, then
+  `/etc/board`, then `/data/board`. board-package.env is never read
   from `/data` (`695d172`).
-- **Commit stamp:** `PD_DEVICE_PACKAGE_COMMIT` comes from the OS, in
-  `/etc/pd-device/device-package.env`, for git imports (`a6dec52`).
+- **Commit stamp:** `BOARD_PACKAGE_COMMIT` comes from the OS, in
+  `/etc/board/board-package.env`, for git imports (`a6dec52`).
 - **DHCP leases** for the USB gadget live in `/run` (`695d172`).
 
 ### Tests

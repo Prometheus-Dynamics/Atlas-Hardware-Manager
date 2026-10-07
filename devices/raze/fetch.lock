@@ -1,5 +1,5 @@
 {
-  "schema": "urn:pd-device:fetch-lock:1",
+  "schema": "urn:board:fetch-lock:1",
   "description": "Files the package needs but does not keep in git (large or third-party). Each is fetched from a pinned URL and checked against sha256. Checksums are advisory: a tool may warn on a mismatch but must let the user proceed.",
   "entries": [
     {

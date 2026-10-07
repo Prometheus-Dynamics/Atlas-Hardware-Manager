@@ -1,7 +1,7 @@
 # Atlas Hardware Manager (rebuild)
 
 Atlas is the one tool for Prometheus Dynamics hardware: connect to a robot
-once, see every PD device on it, and update, configure, or recover any of
+once, see every board on it, and update, configure, or recover any of
 them, on Linux, Windows, and macOS.
 
 This branch is a ground-up rebuild. The previous app lives on `dev` and
@@ -19,10 +19,10 @@ This branch is a ground-up rebuild. The previous app lives on `dev` and
   a look the moment something changes; a slow safety-net rescan catches
   devices that leave without saying so.
 - **Features follow the device**: metrics, logs, actions, a camera stream,
-  and a web UI link appear only when a device offers them. A running PD
+  and a web UI link appear only when a device offers them. A running
   device opts in by listing `endpoints` (`metrics`, `logs`, `actions`),
   `actions`, and `camera_stream` in its identity document; responses are read
-  leniently (see `crates/atlas-driver-pd/src/live.rs`). Nothing is required.
+  leniently (see `crates/atlas-driver-board/src/live.rs`). Nothing is required.
 - **Fleet history**: devices found, lost, updated, and acted on, kept
   between sessions.
 - **Raspberry Pi flashing, no rpiboot binary**: a compute module in USB boot
@@ -59,7 +59,7 @@ self-update.
 | `crates/atlas-helper` | The only privileged binary: writes one image to one removable disk |
 | `crates/atlas-devices` | Device package manifests and compatibility lists |
 | `crates/atlas-driver-rpi` | Pi compute modules in USB boot mode, EEPROM updates |
-| `crates/atlas-driver-pd` | Running PD devices via mDNS and the identity endpoint |
+| `crates/atlas-driver-board` | Running boards via mDNS and the identity endpoint |
 | `devices/` | Device packages, shared with the OS builds |
 | `crates/atlas-driver-mock` | Simulated robot with gateways, recovery mode, and failure injection |
 | `crates/atlas-cli` | The `atlas` command |

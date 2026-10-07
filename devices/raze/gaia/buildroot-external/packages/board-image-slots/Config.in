@@ -1,0 +1,9 @@
+config BR2_PACKAGE_BOARD_IMAGE_SLOTS
+	bool "board-image-slots"
+	help
+	  Copies one slot's boot and root partitions out of a whole disk
+	  image streamed on stdin, without seeking. The device package's
+	  A/B updater (/usr/lib/board/update) uses it to install the
+	  same .img.xz that is flashed over USB into the inactive slot.
+
+	  Source: src/board-image-slots.c in this package.

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use atlas_core::AtlasBuilder;
 use atlas_devices::DeviceCatalog;
-use atlas_driver_pd::{NetworkLinks, SshAccess, UsbGadgetLinks, drivers_for_catalog};
+use atlas_driver_board::{NetworkLinks, SshAccess, UsbGadgetLinks, drivers_for_catalog};
 use atlas_driver_rpi::{RpiConfig, RpiDriver, SshKeys, UsbBootLinks};
 
 use crate::settings::AppPaths;

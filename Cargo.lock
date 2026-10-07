@@ -258,9 +258,9 @@ dependencies = [
  "atlas-core",
  "atlas-devices",
  "atlas-driver",
+ "atlas-driver-board",
  "atlas-driver-mock",
  "atlas-driver-orion",
- "atlas-driver-pd",
  "atlas-driver-rpi",
  "atlas-image-server",
  "atlas-release",
@@ -298,8 +298,8 @@ dependencies = [
  "atlas-core",
  "atlas-devices",
  "atlas-driver",
+ "atlas-driver-board",
  "atlas-driver-mock",
- "atlas-driver-pd",
  "atlas-driver-rpi",
  "atlas-release",
  "clap",
@@ -346,6 +346,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-driver-board"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "atlas-devices",
+ "atlas-driver",
+ "mdns-sd",
+ "nusb",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-driver-mock"
 version = "0.1.0"
 dependencies = [
@@ -367,21 +382,6 @@ dependencies = [
  "reqwest",
  "serde",
  "sha2 0.11.0",
- "tokio",
-]
-
-[[package]]
-name = "atlas-driver-pd"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "atlas-devices",
- "atlas-driver",
- "mdns-sd",
- "nusb",
- "reqwest",
- "serde",
- "serde_json",
  "tokio",
 ]
 

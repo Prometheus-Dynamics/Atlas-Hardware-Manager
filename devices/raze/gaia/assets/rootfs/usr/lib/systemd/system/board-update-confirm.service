@@ -1,0 +1,13 @@
+[Unit]
+Description=Keep an A/B update once its trial boot is healthy
+Documentation=file:/usr/lib/board/update
+After=multi-user.target
+ConditionPathExists=/usr/lib/board/update
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/board/update confirm
+
+[Install]
+WantedBy=multi-user.target

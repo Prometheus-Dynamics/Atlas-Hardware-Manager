@@ -142,7 +142,7 @@ impl AppPaths {
 /// an error when it is set but missing or not an OpenSSH public key.
 /// How Atlas SSHes into boards for updates: the private key next to the
 /// chosen public key (else ssh's defaults) and Atlas's own known_hosts.
-pub fn ssh_config(paths: &AppPaths, file: Option<&str>) -> atlas_driver_pd::SshConfig {
+pub fn ssh_config(paths: &AppPaths, file: Option<&str>) -> atlas_driver_board::SshConfig {
     let identity_file = file
         .map(str::trim)
         .filter(|file| !file.is_empty())
@@ -150,8 +150,8 @@ pub fn ssh_config(paths: &AppPaths, file: Option<&str>) -> atlas_driver_pd::SshC
             Some(rest) => dirs::home_dir().unwrap_or_default().join(rest),
             None => std::path::PathBuf::from(file),
         })
-        .and_then(|public| atlas_driver_pd::private_key_for(&public));
-    atlas_driver_pd::SshConfig {
+        .and_then(|public| atlas_driver_board::private_key_for(&public));
+    atlas_driver_board::SshConfig {
         identity_file,
         known_hosts: Some(paths.data_dir.join("known_hosts")),
     }

@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:pd-device:identity:1",
+  "$id": "urn:board:identity:1",
   "title": "Device identity document (contract 1)",
-  "description": "Served at GET http://<device>:5899/.well-known/pd-device and written to /run/pd-device/identity.json. Readers must ignore properties they do not know; later contract versions only add properties.",
+  "description": "Served at GET http://<device>:5899/.well-known/pd-device and written to /run/board/identity.json. Readers must ignore properties they do not know; later contract versions only add properties.",
   "type": "object",
   "required": [
     "contract",
@@ -203,7 +203,7 @@
     },
     "diagnostics": {
       "type": "array",
-      "description": "Root-only diagnostics the board has, run over SSH (never through this endpoint). \"selftest\": /usr/lib/pd-device/selftest --json prints a self-test report (format 1) and writes it to /run/pd-device/selftest.json.",
+      "description": "Root-only diagnostics the board has, run over SSH (never through this endpoint). \"selftest\": /usr/lib/board/selftest --json prints a self-test report (format 1) and writes it to /run/board/selftest.json.",
       "uniqueItems": true,
       "items": {
         "type": "string",

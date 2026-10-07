@@ -1,0 +1,17 @@
+[Unit]
+Description=Device identity (/run/board/identity.json) and mDNS advertisement
+Documentation=file:/usr/lib/board/identity.env
+# Runs before systemd-resolved so the generated DNS-SD file in
+# /run/systemd/dnssd/ is read when resolved starts.
+DefaultDependencies=no
+After=local-fs.target board-hostname.service
+Before=sysinit.target shutdown.target systemd-resolved.service
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/board/identity --write --dnssd --quiet
+
+[Install]
+WantedBy=sysinit.target

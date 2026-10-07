@@ -1,15 +1,15 @@
 description = "Raze runtime: identity endpoint and mDNS advertisement, default hostname, USB gadget network and serial, USB port power policy, LED ring probe, hardware description and self-test."
 
 # Units are installed in /usr/lib/systemd/system (not /etc), so an OS or user
-# can mask or replace them, and are enabled by 70-pd-device.preset when the
-# image is built. Defaults live in /usr/lib/pd-device/*.env and are overridden
-# by files of the same name in /etc/pd-device/. Requires systemd as init and
+# can mask or replace them, and are enabled by 70-board.preset when the
+# image is built. Defaults live in /usr/lib/board/*.env and are overridden
+# by files of the same name in /etc/board/. Requires systemd as init and
 # systemd-resolved for the mDNS advertisement (see devices/README.md).
 
 [[stage.files]]
-id = "raze-NetworkManager-conf-d-60-pd-device-conf"
-src = "@self/assets/rootfs/usr/lib/NetworkManager/conf.d/60-pd-device.conf"
-dest = "/usr/lib/NetworkManager/conf.d/60-pd-device.conf"
+id = "raze-NetworkManager-conf-d-60-board-conf"
+src = "@self/assets/rootfs/usr/lib/NetworkManager/conf.d/60-board.conf"
+dest = "/usr/lib/NetworkManager/conf.d/60-board.conf"
 origin = "static-asset"
 
 [[stage.files]]
@@ -19,9 +19,9 @@ dest = "/usr/lib/modprobe.d/raze-ws2812-pio.conf"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-modules-load-d-pd-device-usb-gadget-conf"
-src = "@self/assets/rootfs/usr/lib/modules-load.d/pd-device-usb-gadget.conf"
-dest = "/usr/lib/modules-load.d/pd-device-usb-gadget.conf"
+id = "raze-modules-load-d-board-usb-gadget-conf"
+src = "@self/assets/rootfs/usr/lib/modules-load.d/board-usb-gadget.conf"
+dest = "/usr/lib/modules-load.d/board-usb-gadget.conf"
 origin = "static-asset"
 
 [[stage.files]]
@@ -31,191 +31,191 @@ dest = "/usr/lib/modules-load.d/raze-i2c-dev.conf"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-pd-device-device-package-env"
-src = "@self/assets/rootfs/usr/lib/pd-device/device-package.env"
-dest = "/usr/lib/pd-device/device-package.env"
+id = "raze-board-device-package-env"
+src = "@self/assets/rootfs/usr/lib/board/board-package.env"
+dest = "/usr/lib/board/board-package.env"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-pd-device-hostname-default"
-src = "@self/assets/rootfs/usr/lib/pd-device/hostname-default"
-dest = "/usr/lib/pd-device/hostname-default"
-origin = "static-asset"
-mode = 493
-
-[[stage.files]]
-id = "raze-pd-device-hostname-env"
-src = "@self/assets/rootfs/usr/lib/pd-device/hostname.env"
-dest = "/usr/lib/pd-device/hostname.env"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-pd-device-identity"
-src = "@self/assets/rootfs/usr/lib/pd-device/identity"
-dest = "/usr/lib/pd-device/identity"
+id = "raze-board-hostname-default"
+src = "@self/assets/rootfs/usr/lib/board/hostname-default"
+dest = "/usr/lib/board/hostname-default"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
-id = "raze-pd-device-identity-http"
-src = "@self/assets/rootfs/usr/lib/pd-device/identity-http"
-dest = "/usr/lib/pd-device/identity-http"
+id = "raze-board-hostname-env"
+src = "@self/assets/rootfs/usr/lib/board/hostname.env"
+dest = "/usr/lib/board/hostname.env"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-board-identity"
+src = "@self/assets/rootfs/usr/lib/board/identity"
+dest = "/usr/lib/board/identity"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
-id = "raze-pd-device-identity-env"
-src = "@self/assets/rootfs/usr/lib/pd-device/identity.env"
-dest = "/usr/lib/pd-device/identity.env"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-pd-device-lib-sh"
-src = "@self/assets/rootfs/usr/lib/pd-device/lib.sh"
-dest = "/usr/lib/pd-device/lib.sh"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-pd-device-raze-leds-reprobe"
-src = "@self/assets/rootfs/usr/lib/pd-device/raze-leds-reprobe"
-dest = "/usr/lib/pd-device/raze-leds-reprobe"
+id = "raze-board-identity-http"
+src = "@self/assets/rootfs/usr/lib/board/identity-http"
+dest = "/usr/lib/board/identity-http"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
-id = "raze-pd-device-usb-gadget-dhcp"
-src = "@self/assets/rootfs/usr/lib/pd-device/usb-gadget-dhcp"
-dest = "/usr/lib/pd-device/usb-gadget-dhcp"
+id = "raze-board-identity-env"
+src = "@self/assets/rootfs/usr/lib/board/identity.env"
+dest = "/usr/lib/board/identity.env"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-board-lib-sh"
+src = "@self/assets/rootfs/usr/lib/board/lib.sh"
+dest = "/usr/lib/board/lib.sh"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-board-raze-leds-reprobe"
+src = "@self/assets/rootfs/usr/lib/board/raze-leds-reprobe"
+dest = "/usr/lib/board/raze-leds-reprobe"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
-id = "raze-pd-device-usb-gadget-setup"
-src = "@self/assets/rootfs/usr/lib/pd-device/usb-gadget-setup"
-dest = "/usr/lib/pd-device/usb-gadget-setup"
+id = "raze-board-usb-gadget-dhcp"
+src = "@self/assets/rootfs/usr/lib/board/usb-gadget-dhcp"
+dest = "/usr/lib/board/usb-gadget-dhcp"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
-id = "raze-pd-device-usb-gadget-env"
-src = "@self/assets/rootfs/usr/lib/pd-device/usb-gadget.env"
-dest = "/usr/lib/pd-device/usb-gadget.env"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-systemd-network-05-pd-device-usb-gadget-bridge-network"
-src = "@self/assets/rootfs/usr/lib/systemd/network/05-pd-device-usb-gadget-bridge.network"
-dest = "/usr/lib/systemd/network/05-pd-device-usb-gadget-bridge.network"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-systemd-network-05-pd-device-usb-gadget-network"
-src = "@self/assets/rootfs/usr/lib/systemd/network/05-pd-device-usb-gadget.network"
-dest = "/usr/lib/systemd/network/05-pd-device-usb-gadget.network"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-systemd-resolved-conf-d-60-pd-device-mdns-conf"
-src = "@self/assets/rootfs/usr/lib/systemd/resolved.conf.d/60-pd-device-mdns.conf"
-dest = "/usr/lib/systemd/resolved.conf.d/60-pd-device-mdns.conf"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-systemd-system-preset-70-pd-device-preset"
-src = "@self/assets/rootfs/usr/lib/systemd/system-preset/70-pd-device.preset"
-dest = "/usr/lib/systemd/system-preset/70-pd-device.preset"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-systemd-system-pd-device-hostname-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/pd-device-hostname.service"
-dest = "/usr/lib/systemd/system/pd-device-hostname.service"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-systemd-system-pd-device-http-socket"
-src = "@self/assets/rootfs/usr/lib/systemd/system/pd-device-http.socket"
-dest = "/usr/lib/systemd/system/pd-device-http.socket"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-systemd-system-pd-device-http-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/pd-device-http@.service"
-dest = "/usr/lib/systemd/system/pd-device-http@.service"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-systemd-system-pd-device-identity-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/pd-device-identity.service"
-dest = "/usr/lib/systemd/system/pd-device-identity.service"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-systemd-system-pd-device-usb-gadget-dhcp-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/pd-device-usb-gadget-dhcp.service"
-dest = "/usr/lib/systemd/system/pd-device-usb-gadget-dhcp.service"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-systemd-system-pd-device-usb-gadget-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/pd-device-usb-gadget.service"
-dest = "/usr/lib/systemd/system/pd-device-usb-gadget.service"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-pd-device-raze-leds"
-src = "@self/assets/rootfs/usr/lib/pd-device/raze-leds"
-dest = "/usr/lib/pd-device/raze-leds"
+id = "raze-board-usb-gadget-setup"
+src = "@self/assets/rootfs/usr/lib/board/usb-gadget-setup"
+dest = "/usr/lib/board/usb-gadget-setup"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
-id = "raze-pd-device-ssh-keys"
-src = "@self/assets/rootfs/usr/lib/pd-device/ssh-keys"
-dest = "/usr/lib/pd-device/ssh-keys"
+id = "raze-board-usb-gadget-env"
+src = "@self/assets/rootfs/usr/lib/board/usb-gadget.env"
+dest = "/usr/lib/board/usb-gadget.env"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-network-05-board-usb-gadget-bridge-network"
+src = "@self/assets/rootfs/usr/lib/systemd/network/05-board-usb-gadget-bridge.network"
+dest = "/usr/lib/systemd/network/05-board-usb-gadget-bridge.network"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-network-05-board-usb-gadget-network"
+src = "@self/assets/rootfs/usr/lib/systemd/network/05-board-usb-gadget.network"
+dest = "/usr/lib/systemd/network/05-board-usb-gadget.network"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-resolved-conf-d-60-board-mdns-conf"
+src = "@self/assets/rootfs/usr/lib/systemd/resolved.conf.d/60-board-mdns.conf"
+dest = "/usr/lib/systemd/resolved.conf.d/60-board-mdns.conf"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-preset-70-board-preset"
+src = "@self/assets/rootfs/usr/lib/systemd/system-preset/70-board.preset"
+dest = "/usr/lib/systemd/system-preset/70-board.preset"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-hostname-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-hostname.service"
+dest = "/usr/lib/systemd/system/board-hostname.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-http-socket"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-http.socket"
+dest = "/usr/lib/systemd/system/board-http.socket"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-http-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-http@.service"
+dest = "/usr/lib/systemd/system/board-http@.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-identity-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-identity.service"
+dest = "/usr/lib/systemd/system/board-identity.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-usb-gadget-dhcp-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-usb-gadget-dhcp.service"
+dest = "/usr/lib/systemd/system/board-usb-gadget-dhcp.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-usb-gadget-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-usb-gadget.service"
+dest = "/usr/lib/systemd/system/board-usb-gadget.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-board-raze-leds"
+src = "@self/assets/rootfs/usr/lib/board/raze-leds"
+dest = "/usr/lib/board/raze-leds"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
-id = "raze-pd-device-ssh-keys-env"
-src = "@self/assets/rootfs/usr/lib/pd-device/ssh-keys.env"
-dest = "/usr/lib/pd-device/ssh-keys.env"
+id = "raze-board-ssh-keys"
+src = "@self/assets/rootfs/usr/lib/board/ssh-keys"
+dest = "/usr/lib/board/ssh-keys"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
+id = "raze-board-ssh-keys-env"
+src = "@self/assets/rootfs/usr/lib/board/ssh-keys.env"
+dest = "/usr/lib/board/ssh-keys.env"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-tmpfiles-d-pd-device-conf"
-src = "@self/assets/rootfs/usr/lib/tmpfiles.d/pd-device.conf"
-dest = "/usr/lib/tmpfiles.d/pd-device.conf"
+id = "raze-tmpfiles-d-board-conf"
+src = "@self/assets/rootfs/usr/lib/tmpfiles.d/board.conf"
+dest = "/usr/lib/tmpfiles.d/board.conf"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-systemd-system-pd-device-locate-path"
-src = "@self/assets/rootfs/usr/lib/systemd/system/pd-device-locate.path"
-dest = "/usr/lib/systemd/system/pd-device-locate.path"
+id = "raze-systemd-system-board-locate-path"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-locate.path"
+dest = "/usr/lib/systemd/system/board-locate.path"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-systemd-system-pd-device-locate-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/pd-device-locate.service"
-dest = "/usr/lib/systemd/system/pd-device-locate.service"
+id = "raze-systemd-system-board-locate-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-locate.service"
+dest = "/usr/lib/systemd/system/board-locate.service"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-systemd-system-pd-device-ssh-keys-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/pd-device-ssh-keys.service"
-dest = "/usr/lib/systemd/system/pd-device-ssh-keys.service"
+id = "raze-systemd-system-board-ssh-keys-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-ssh-keys.service"
+dest = "/usr/lib/systemd/system/board-ssh-keys.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-serial-getty-ttygs0-dropin"
-src = "@self/assets/rootfs/usr/lib/systemd/system/serial-getty@ttyGS0.service.d/50-pd-device.conf"
-dest = "/usr/lib/systemd/system/serial-getty@ttyGS0.service.d/50-pd-device.conf"
+src = "@self/assets/rootfs/usr/lib/systemd/system/serial-getty@ttyGS0.service.d/50-board.conf"
+dest = "/usr/lib/systemd/system/serial-getty@ttyGS0.service.d/50-board.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-serial-getty-ttygs1-dropin"
-src = "@self/assets/rootfs/usr/lib/systemd/system/serial-getty@ttyGS1.service.d/50-pd-device.conf"
-dest = "/usr/lib/systemd/system/serial-getty@ttyGS1.service.d/50-pd-device.conf"
+src = "@self/assets/rootfs/usr/lib/systemd/system/serial-getty@ttyGS1.service.d/50-board.conf"
+dest = "/usr/lib/systemd/system/serial-getty@ttyGS1.service.d/50-board.conf"
 origin = "static-asset"
 
 [[stage.files]]
@@ -231,150 +231,150 @@ dest = "/usr/lib/udev/rules.d/60-raze-usb-power.rules"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-pd-device-raze-sensors-toml"
-src = "@self/assets/rootfs/usr/share/pd-device/raze/sensors.toml"
-dest = "/usr/share/pd-device/raze/sensors.toml"
+id = "raze-board-raze-sensors-toml"
+src = "@self/assets/rootfs/usr/share/board/raze/sensors.toml"
+dest = "/usr/share/board/raze/sensors.toml"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-pd-device-update"
-src = "@self/assets/rootfs/usr/lib/pd-device/update"
-dest = "/usr/lib/pd-device/update"
-origin = "static-asset"
-mode = 493
-
-[[stage.files]]
-id = "raze-pd-device-update-env"
-src = "@self/assets/rootfs/usr/lib/pd-device/update.env"
-dest = "/usr/lib/pd-device/update.env"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-systemd-system-pd-device-update-confirm-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/pd-device-update-confirm.service"
-dest = "/usr/lib/systemd/system/pd-device-update-confirm.service"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-systemd-system-conf-d-60-pd-device-watchdog-conf"
-src = "@self/assets/rootfs/usr/lib/systemd/system.conf.d/60-pd-device-watchdog.conf"
-dest = "/usr/lib/systemd/system.conf.d/60-pd-device-watchdog.conf"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-pd-device-usb-boot"
-src = "@self/assets/rootfs/usr/lib/pd-device/usb-boot"
-dest = "/usr/lib/pd-device/usb-boot"
+id = "raze-board-update"
+src = "@self/assets/rootfs/usr/lib/board/update"
+dest = "/usr/lib/board/update"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
-id = "raze-ssh-sshd-config-d-50-pd-device-conf"
-src = "@self/assets/rootfs/etc/ssh/sshd_config.d/50-pd-device.conf"
-dest = "/etc/ssh/sshd_config.d/50-pd-device.conf"
+id = "raze-board-update-env"
+src = "@self/assets/rootfs/usr/lib/board/update.env"
+dest = "/usr/lib/board/update.env"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-systemd-system-pd-device-update-link-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/pd-device-update-link.service"
-dest = "/usr/lib/systemd/system/pd-device-update-link.service"
+id = "raze-systemd-system-board-update-confirm-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-update-confirm.service"
+dest = "/usr/lib/systemd/system/board-update-confirm.service"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-pd-device-leds-env"
-src = "@self/assets/rootfs/usr/lib/pd-device/leds.env"
-dest = "/usr/lib/pd-device/leds.env"
+id = "raze-systemd-system-conf-d-60-board-watchdog-conf"
+src = "@self/assets/rootfs/usr/lib/systemd/system.conf.d/60-board-watchdog.conf"
+dest = "/usr/lib/systemd/system.conf.d/60-board-watchdog.conf"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-pd-device-hardware-env"
-src = "@self/assets/rootfs/usr/lib/pd-device/hardware.env"
-dest = "/usr/lib/pd-device/hardware.env"
+id = "raze-board-usb-boot"
+src = "@self/assets/rootfs/usr/lib/board/usb-boot"
+dest = "/usr/lib/board/usb-boot"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
+id = "raze-ssh-sshd-config-d-50-board-conf"
+src = "@self/assets/rootfs/etc/ssh/sshd_config.d/50-board.conf"
+dest = "/etc/ssh/sshd_config.d/50-board.conf"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-pd-device-hw-sh"
-src = "@self/assets/rootfs/usr/lib/pd-device/hw.sh"
-dest = "/usr/lib/pd-device/hw.sh"
+id = "raze-systemd-system-board-update-link-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-update-link.service"
+dest = "/usr/lib/systemd/system/board-update-link.service"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-pd-device-selftest"
-src = "@self/assets/rootfs/usr/lib/pd-device/selftest"
-dest = "/usr/lib/pd-device/selftest"
+id = "raze-board-leds-env"
+src = "@self/assets/rootfs/usr/lib/board/leds.env"
+dest = "/usr/lib/board/leds.env"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-board-hardware-env"
+src = "@self/assets/rootfs/usr/lib/board/hardware.env"
+dest = "/usr/lib/board/hardware.env"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-board-hw-sh"
+src = "@self/assets/rootfs/usr/lib/board/hw.sh"
+dest = "/usr/lib/board/hw.sh"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-board-selftest"
+src = "@self/assets/rootfs/usr/lib/board/selftest"
+dest = "/usr/lib/board/selftest"
 origin = "static-asset"
 mode = 493
 
 [image]
 kind = "buildroot"
 config_overrides = [
-  # DHCP server for the USB gadget link (pd-device-usb-gadget-dhcp.service).
+  # DHCP server for the USB gadget link (board-usb-gadget-dhcp.service).
   # Buildroot installs no dnsmasq systemd unit, so nothing else starts it.
   ["BR2_PACKAGE_DNSMASQ", "y"],
-  # pd-device-update: the image it installs may be .img.xz (busybox xzcat
-  # works too; xz-utils is faster) or .img.zst, and pd-image-slots copies the
+  # board-update: the image it installs may be .img.xz (busybox xzcat
+  # works too; xz-utils is faster) or .img.zst, and board-image-slots copies the
   # slot partitions out of the stream (buildroot-external/packages).
   ["BR2_PACKAGE_XZ", "y"],
   ["BR2_PACKAGE_ZSTD", "y"],
-  ["BR2_PACKAGE_PD_IMAGE_SLOTS", "y"],
+  ["BR2_PACKAGE_BOARD_IMAGE_SLOTS", "y"],
   # No udev hardware database (about 13 MB): nothing on a Raze needs
   # vendor/model names or input quirks from it. systemd or eudev, whichever
   # the OS uses; the other symbol is simply absent.
   ["BR2_PACKAGE_SYSTEMD_HWDB", "n"],
   ["BR2_PACKAGE_EUDEV_ENABLE_HWDB", "n"],
   # i2cdetect, for the selftest's I2C scan against the manifest's devices
-  # (/usr/lib/pd-device/selftest; it skips the scan without it).
+  # (/usr/lib/board/selftest; it skips the scan without it).
   ["BR2_PACKAGE_I2C_TOOLS", "y"],
 ]
 
 [image.feed]
 stage_files = [
-  "raze-NetworkManager-conf-d-60-pd-device-conf",
+  "raze-NetworkManager-conf-d-60-board-conf",
   "raze-modprobe-d-raze-ws2812-pio-conf",
-  "raze-modules-load-d-pd-device-usb-gadget-conf",
+  "raze-modules-load-d-board-usb-gadget-conf",
   "raze-modules-load-d-raze-i2c-dev-conf",
-  "raze-pd-device-device-package-env",
-  "raze-pd-device-hostname-default",
-  "raze-pd-device-hostname-env",
-  "raze-pd-device-identity",
-  "raze-pd-device-identity-http",
-  "raze-pd-device-identity-env",
-  "raze-pd-device-lib-sh",
-  "raze-pd-device-raze-leds-reprobe",
-  "raze-pd-device-usb-gadget-dhcp",
-  "raze-pd-device-usb-gadget-setup",
-  "raze-pd-device-usb-gadget-env",
-  "raze-systemd-network-05-pd-device-usb-gadget-bridge-network",
-  "raze-systemd-network-05-pd-device-usb-gadget-network",
-  "raze-systemd-resolved-conf-d-60-pd-device-mdns-conf",
-  "raze-systemd-system-preset-70-pd-device-preset",
-  "raze-systemd-system-pd-device-hostname-service",
-  "raze-systemd-system-pd-device-http-socket",
-  "raze-systemd-system-pd-device-http-service",
-  "raze-systemd-system-pd-device-identity-service",
-  "raze-systemd-system-pd-device-usb-gadget-dhcp-service",
-  "raze-systemd-system-pd-device-usb-gadget-service",
+  "raze-board-device-package-env",
+  "raze-board-hostname-default",
+  "raze-board-hostname-env",
+  "raze-board-identity",
+  "raze-board-identity-http",
+  "raze-board-identity-env",
+  "raze-board-lib-sh",
+  "raze-board-raze-leds-reprobe",
+  "raze-board-usb-gadget-dhcp",
+  "raze-board-usb-gadget-setup",
+  "raze-board-usb-gadget-env",
+  "raze-systemd-network-05-board-usb-gadget-bridge-network",
+  "raze-systemd-network-05-board-usb-gadget-network",
+  "raze-systemd-resolved-conf-d-60-board-mdns-conf",
+  "raze-systemd-system-preset-70-board-preset",
+  "raze-systemd-system-board-hostname-service",
+  "raze-systemd-system-board-http-socket",
+  "raze-systemd-system-board-http-service",
+  "raze-systemd-system-board-identity-service",
+  "raze-systemd-system-board-usb-gadget-dhcp-service",
+  "raze-systemd-system-board-usb-gadget-service",
   "raze-systemd-system-raze-leds-reprobe-service",
   "raze-udev-rules-d-60-raze-usb-power-rules",
-  "raze-pd-device-raze-sensors-toml",
-  "raze-pd-device-raze-leds",
-  "raze-pd-device-ssh-keys",
-  "raze-pd-device-ssh-keys-env",
-  "raze-tmpfiles-d-pd-device-conf",
-  "raze-systemd-system-pd-device-locate-path",
-  "raze-systemd-system-pd-device-locate-service",
-  "raze-systemd-system-pd-device-ssh-keys-service",
+  "raze-board-raze-sensors-toml",
+  "raze-board-raze-leds",
+  "raze-board-ssh-keys",
+  "raze-board-ssh-keys-env",
+  "raze-tmpfiles-d-board-conf",
+  "raze-systemd-system-board-locate-path",
+  "raze-systemd-system-board-locate-service",
+  "raze-systemd-system-board-ssh-keys-service",
   "raze-systemd-system-serial-getty-ttygs0-dropin",
   "raze-systemd-system-serial-getty-ttygs1-dropin",
-  "raze-pd-device-update",
-  "raze-pd-device-usb-boot",
-  "raze-ssh-sshd-config-d-50-pd-device-conf",
-  "raze-pd-device-update-env",
-  "raze-systemd-system-pd-device-update-confirm-service",
-  "raze-systemd-system-pd-device-update-link-service",
-  "raze-systemd-system-conf-d-60-pd-device-watchdog-conf",
-  "raze-pd-device-leds-env",
-  "raze-pd-device-hardware-env",
-  "raze-pd-device-hw-sh",
-  "raze-pd-device-selftest",
+  "raze-board-update",
+  "raze-board-usb-boot",
+  "raze-ssh-sshd-config-d-50-board-conf",
+  "raze-board-update-env",
+  "raze-systemd-system-board-update-confirm-service",
+  "raze-systemd-system-board-update-link-service",
+  "raze-systemd-system-conf-d-60-board-watchdog-conf",
+  "raze-board-leds-env",
+  "raze-board-hardware-env",
+  "raze-board-hw-sh",
+  "raze-board-selftest",
 ]

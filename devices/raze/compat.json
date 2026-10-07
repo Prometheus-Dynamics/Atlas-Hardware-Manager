@@ -1,5 +1,5 @@
 {
-  "schema": "urn:pd-device:compat:1",
+  "schema": "urn:board:compat:1",
   "model": "raze",
   "entries": [
     {

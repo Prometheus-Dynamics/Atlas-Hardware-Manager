@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  # The device package's shell scripts and pd-image-slots, under the runner's
+  # The device package's shell scripts and board-image-slots, under the runner's
   # POSIX sh (dash). 24.04 for erofs-utils >= 1.5, so update.sh also installs
   # an image with a real EROFS root slot.
   device:

@@ -2,7 +2,7 @@
 //!
 //! Orion is the management agent on running devices (control protocol v4).
 //! Atlas doesn't treat an Orion node as a device of its own: the board is
-//! found and keyed by its identity driver (for a Raze, the PD driver over
+//! found and keyed by its identity driver (for a Raze, the board driver over
 //! mDNS), and when an Orion node reports the same board serial, this crate
 //! adds what Orion offers to that device: live readings from the node's
 //! status lane, the actions the on-device agent claims (`locate`, `reboot`),

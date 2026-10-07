@@ -18,7 +18,7 @@
 set -eu
 
 LOCK_NAME=.device-lock
-STAMP_FILE=gaia/assets/rootfs/usr/lib/pd-device/device-package.env
+STAMP_FILE=gaia/assets/rootfs/usr/lib/board/board-package.env
 
 die() {
 	printf 'sync-device: %s\n' "$*" >&2
@@ -71,7 +71,7 @@ export_package() {
 	git -C "$1" archive --format=tar "$2" "devices/$3" | tar -x -C "$4"
 	_stamp="$4/devices/$3/$STAMP_FILE"
 	if [ -f "$_stamp" ]; then
-		sed "s/^PD_DEVICE_PACKAGE_COMMIT=.*/PD_DEVICE_PACKAGE_COMMIT=$2/" "$_stamp" > "$_stamp.new"
+		sed "s/^BOARD_PACKAGE_COMMIT=.*/BOARD_PACKAGE_COMMIT=$2/" "$_stamp" > "$_stamp.new"
 		cat "$_stamp.new" > "$_stamp"
 		rm -f "$_stamp.new"
 	fi

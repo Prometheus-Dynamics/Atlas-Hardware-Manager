@@ -20,7 +20,7 @@ pub const RPI_FAMILY: &str = "rpi";
 const LINK_ID: &str = "usb-boot";
 
 /// Public SSH keys to leave on a board's boot partition, where the device
-/// package installs them for root at boot (`pd-device/authorized_keys`).
+/// package installs them for root at boot (`board/authorized_keys`).
 /// `None` writes nothing. Shared so the app can change it from settings.
 #[derive(Clone, Default)]
 pub struct SshKeys(Arc<std::sync::RwLock<Option<String>>>);
@@ -52,7 +52,7 @@ impl SshKeys {
 }
 
 /// Where the device package looks for keys on the boot partition.
-pub(crate) const BOOT_KEYS_PATH: &str = "pd-device/authorized_keys";
+pub(crate) const BOOT_KEYS_PATH: &str = "board/authorized_keys";
 
 /// Where to look for boot files beyond the defaults, such as the app's
 /// bundled resources folder, and which device packages are known.

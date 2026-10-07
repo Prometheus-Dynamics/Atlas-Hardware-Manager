@@ -1,4 +1,4 @@
-//! Simulated PD devices for tests, CI, and UI work without hardware.
+//! Simulated boards for tests, CI, and UI work without hardware.
 //!
 //! A [`MockFleet`] holds the simulated devices and their state. It hands out
 //! one [`MockDriver`] per family and a [`LinkSource`](atlas_driver::LinkSource)

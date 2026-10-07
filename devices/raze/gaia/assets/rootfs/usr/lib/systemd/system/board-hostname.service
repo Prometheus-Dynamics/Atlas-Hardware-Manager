@@ -1,0 +1,15 @@
+[Unit]
+Description=Apply the device default hostname when none is configured
+Documentation=file:/usr/lib/board/hostname.env
+DefaultDependencies=no
+After=local-fs.target
+Before=sysinit.target shutdown.target board-identity.service systemd-resolved.service network-pre.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/board/hostname-default
+
+[Install]
+WantedBy=sysinit.target
