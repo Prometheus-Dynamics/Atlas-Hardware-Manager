@@ -63,6 +63,7 @@ jobs:
         run: |
           sh devices/raze/tests/update.sh
           sh devices/raze/tests/root-device.sh
+          sh devices/raze/tests/usb-boot.sh
 
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings

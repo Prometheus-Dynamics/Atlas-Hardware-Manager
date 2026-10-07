@@ -16,4 +16,18 @@ RPI_UTILS_LICENSE_FILES = LICENCE
 # others, which need libfdt and more.
 RPI_UTILS_SUBDIR = vcgencmd
 
+# vcmailbox too: the device package's usb-boot uses it to set a one-time
+# boot order (set_reboot_order, Pi 5/CM5). It is one C file with no
+# dependencies, so it is compiled directly rather than through its CMake.
+define RPI_UTILS_BUILD_VCMAILBOX
+	$(TARGET_CC) $(TARGET_CFLAGS) $(TARGET_LDFLAGS) \
+		-o $(@D)/vcmailbox/vcmailbox $(@D)/vcmailbox/vcmailbox.c
+endef
+RPI_UTILS_POST_BUILD_HOOKS += RPI_UTILS_BUILD_VCMAILBOX
+
+define RPI_UTILS_INSTALL_VCMAILBOX
+	$(INSTALL) -D -m 0755 $(@D)/vcmailbox/vcmailbox $(TARGET_DIR)/usr/bin/vcmailbox
+endef
+RPI_UTILS_POST_INSTALL_TARGET_HOOKS += RPI_UTILS_INSTALL_VCMAILBOX
+
 $(eval $(cmake-package))

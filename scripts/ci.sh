@@ -13,6 +13,7 @@ echo "==> Checking file sizes"
 echo "==> Testing the device update writer"
 sh devices/raze/tests/update.sh
 sh devices/raze/tests/root-device.sh
+sh devices/raze/tests/usb-boot.sh
 
 echo "==> Running clippy"
 cargo clippy --workspace --all-targets --all-features -- -D warnings

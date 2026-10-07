@@ -261,6 +261,13 @@ src = "@self/assets/rootfs/usr/lib/systemd/system.conf.d/60-pd-device-watchdog.c
 dest = "/usr/lib/systemd/system.conf.d/60-pd-device-watchdog.conf"
 origin = "static-asset"
 
+[[stage.files]]
+id = "raze-pd-device-usb-boot"
+src = "@self/assets/rootfs/usr/lib/pd-device/usb-boot"
+dest = "/usr/lib/pd-device/usb-boot"
+origin = "static-asset"
+mode = 493
+
 [image]
 kind = "buildroot"
 config_overrides = [
@@ -311,6 +318,7 @@ stage_files = [
   "raze-systemd-system-serial-getty-ttygs0-dropin",
   "raze-systemd-system-serial-getty-ttygs1-dropin",
   "raze-pd-device-update",
+  "raze-pd-device-usb-boot",
   "raze-pd-device-update-env",
   "raze-systemd-system-pd-device-update-confirm-service",
   "raze-systemd-system-conf-d-60-pd-device-watchdog-conf",

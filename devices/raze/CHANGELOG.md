@@ -1,5 +1,23 @@
 # Raze device package changelog
 
+## 1.3.0
+
+- **Restart into USB boot without the button:** `/usr/lib/pd-device/usb-boot`
+  sets a one-time boot order of RPIBOOT through the firmware mailbox
+  (`set_reboot_order`, tag 0x0003808b; Pi 5/CM5 only), then reboots. The
+  bootloader's own BOOT_ORDER is untouched, and the next normal power-up
+  boots the eMMC again. `usb-boot --check` reports whether the board
+  supports it.
+  - RPIBOOT has no timeout: the board waits for a USB host until it is
+    flashed or power-cycled. So the script is root-only and Atlas runs it
+    over SSH (Orion later). It is never offered on the unauthenticated
+    identity endpoint.
+- The identity's `update_methods` gains `usb-boot-reboot` when the board
+  supports it (a BCM2712 with vcmailbox).
+- `rpi-utils` now also builds `vcmailbox` (one C file, compiled directly).
+- Test: `devices/raze/tests/usb-boot.sh`, with a fake mailbox and device tree.
+- Not yet tried on hardware.
+
 ## 1.2.0
 
 - New optional layer `gaia/gpu-vulkan.toml`, imported after `gpu.toml`. It

@@ -208,12 +208,25 @@ pd_json_str() {
 
 # Update method ids: "image-write" always, then one id per line from
 # update-methods.d/* in the package and OS directories.
+# True when this board can restart straight into USB boot (RPIBOOT) without
+# its button: a BCM2712 (Pi 5/CM5) firmware takes a one-time boot order
+# through the mailbox (set_reboot_order), and vcmailbox is installed.
+#   PD_VCMAILBOX  the vcmailbox command   (vcmailbox)
+pd_usb_boot_supported() {
+	tr '\000' '\n' < "$PD_DT_DIR/compatible" 2>/dev/null | grep -qx 'brcm,bcm2712' &&
+		command -v "${PD_VCMAILBOX:-vcmailbox}" >/dev/null 2>&1
+}
+
 pd_update_methods() {
 	{
 		printf '%s\n' image-write
 		# pd-device-update writes this once it has seen an A/B layout.
 		if grep -q '"slot_active":"[AB]"' "$PD_RUN_DIR/update.json" 2>/dev/null; then
 			printf '%s\n' ab-tryboot
+		fi
+		# Atlas can restart it into USB boot for a fresh install (usb-boot).
+		if pd_usb_boot_supported; then
+			printf '%s\n' usb-boot-reboot
 		fi
 		for _pd_d in "$PD_LIB_DIR/update-methods.d" "$PD_ETC_DIR/update-methods.d"; do
 			[ -d "$_pd_d" ] || continue

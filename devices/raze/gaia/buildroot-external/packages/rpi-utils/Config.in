@@ -1,12 +1,15 @@
 config BR2_PACKAGE_RPI_UTILS
-	bool "rpi-utils (vcgencmd)"
+	bool "rpi-utils (vcgencmd, vcmailbox)"
 	depends on BR2_arm || BR2_aarch64
 	help
 	  vcgencmd from Raspberry Pi's utils repository: queries the
 	  VideoCore firmware through /dev/vcio (bootloader version,
 	  clocks, temperatures, throttling).
 
+	  vcmailbox sends raw firmware mailbox requests; the device
+	  package uses it for a one-time reboot into USB boot.
+
 	  Buildroot 2026.08 removed rpi-userland, which used to provide
-	  vcgencmd. Only the vcgencmd tool is built from this repository.
+	  both. Only these two tools are built from this repository.
 
 	  https://github.com/raspberrypi/utils
