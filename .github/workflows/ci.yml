@@ -29,6 +29,8 @@ jobs:
           sh devices/raze/tests/update.sh
           sh devices/raze/tests/root-device.sh
           sh devices/raze/tests/usb-boot.sh
+          sh devices/raze/tests/selftest.sh
+          sh devices/raze/tests/manifest-lint.sh
 
   workspace:
     name: checks (${{ matrix.os }})

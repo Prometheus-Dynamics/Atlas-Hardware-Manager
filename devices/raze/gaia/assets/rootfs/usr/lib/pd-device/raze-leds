@@ -1,5 +1,5 @@
 #!/bin/sh
-# Raze LED ring: 16 SK6812-EC20 LEDs (24-bit RGB) on /dev/leds0 (ws2812-pio-rp1).
+# Raze LED ring: 16 SK6812-EC20 LEDs (24-bit GRB) on /dev/leds0 (ws2812-pio-rp1).
 # Writes one frame of 16 x 4 bytes per change; the ring keeps it until the
 # next. The driver always reads 4 bytes (R, G, B, W) per LED from userspace and
 # drops W on the wire, so white is `color 255 255 255`.
@@ -11,31 +11,42 @@
 #   raze-leds status <ok|warn|error|busy|off>   green, amber, red, blue, off
 #   raze-leds blink [<hz>]             blink the current colour (default 2 Hz)
 #   raze-leds locate [<seconds>]       blink bright cyan, then go back (10 s)
+#   raze-leds pixel <index|all> <r> <g> <b> [<w>]
+#                                      light one LED (or all) once; the saved
+#                                      state stays as it is
+#   raze-leds refresh                  draw the saved state again
 #   raze-leds show                     print the current state
 #
 # State lives in /run/pd-device/leds.state, so commands combine: `color` then
-# `dim` keeps the colour. Any command stops a running blink. With
-# RAZE_LEDS_FOREGROUND=1 a blink runs in the foreground (as
-# pd-device-locate.service does). Byte order is rgbw, the driver's 4-byte
-# layout; if colours come out swapped on a board revision, reorder the four
-# letters in RAZE_LEDS_ORDER (/etc/pd-device/raze-leds.env), e.g. grbw. Keep
-# all four: a 3-letter order misaligns the driver's buffer.
+# `dim` keeps the colour. Any command but show and refresh stops a running
+# blink. With RAZE_LEDS_FOREGROUND=1 a blink runs in the foreground (as
+# pd-device-locate.service does).
+#
+# Defaults come from leds.env, generated from the package manifest. Override
+# them in /etc/pd-device/raze-leds.env (or /data/pd-device/raze-leds.env):
+#   RAZE_LEDS_ORDER      the driver's 4-byte layout, rgbw. If colours come out
+#                        swapped on a board revision, reorder the four letters
+#                        (e.g. grbw); a 3-letter order misaligns the buffer.
+#   RAZE_LEDS_OFFSET     the driver slot of LED index 0 (5, as in HeliOS)
+#   RAZE_LEDS_DIRECTION  1, or -1 when indexes run the other way round
+#   RAZE_LEDS_COUNT, RAZE_LEDS_DEVICE
+# LED index i is driver slot (OFFSET + DIRECTION * i) mod COUNT. Frames go
+# through hw.sh, the package's hardware backend.
 set -eu
 
 PD_LIB_DIR=${PD_LIB_DIR:-/usr/lib/pd-device}
 # shellcheck source=lib.sh
 . "$PD_LIB_DIR/lib.sh"
+# shellcheck source=hw.sh
+. "${PD_HW_BACKEND:-$PD_LIB_DIR/hw.sh}"
 pd_load_env raze-leds.env
 
-DEV=${RAZE_LEDS_DEVICE:-/dev/leds0}
-COUNT=${RAZE_LEDS_COUNT:-16}
-ORDER=${RAZE_LEDS_ORDER:-rgbw}
 STATE_DIR=${PD_RUN_DIR:-/run/pd-device}
 STATE=$STATE_DIR/leds.state
 BLINK_PID=$STATE_DIR/leds.blink.pid
 
 usage() {
-	sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 }
 
@@ -63,24 +74,7 @@ save_state() {
 
 # frame <r> <g> <b> <w>: one colour on every LED, already scaled.
 frame() {
-	if [ ! -w "$DEV" ]; then
-		echo "raze-leds: $DEV is missing or not writable (is the LED ring driver loaded?)" >&2
-		exit 1
-	fi
-	px=''
-	for c in $(echo "$ORDER" | sed 's/./& /g'); do
-		case "$c" in
-		r) v=$1 ;; g) v=$2 ;; b) v=$3 ;; w) v=$4 ;; *) continue ;;
-		esac
-		px="$px\\$(printf '%03o' "$v")"
-	done
-	i=0 all=''
-	while [ "$i" -lt "$COUNT" ]; do
-		all="$all$px"
-		i=$((i + 1))
-	done
-	# shellcheck disable=SC2059
-	printf "$all" > "$DEV"
+	hw_leds_fill "$1,$2,$3,$4" || exit 1
 }
 
 scaled() {
@@ -143,7 +137,10 @@ start_blink() {
 cmd=$1
 shift
 load_state
-[ "$cmd" = show ] || stop_blink
+case "$cmd" in
+show | refresh) ;;
+*) stop_blink ;;
+esac
 
 case "$cmd" in
 on) ON=1 ;;
@@ -184,6 +181,31 @@ locate)
 	save_state
 	# Bright cyan, whatever the saved colour and brightness are.
 	(R=0 G=255 B=255 W=0 BRIGHT=100 && start_blink 3 "$seconds")
+	exit 0
+	;;
+pixel)
+	[ $# -ge 4 ] || usage
+	px=$(byte "$2"),$(byte "$3"),$(byte "$4"),$(byte "${5:-0}")
+	if [ "$1" = all ]; then
+		hw_leds_fill "$px" || exit 1
+		exit 0
+	fi
+	case "$1" in '' | *[!0-9]*) usage ;; esac
+	if [ "$1" -ge "${RAZE_LEDS_COUNT:-16}" ]; then
+		echo "raze-leds: LED $1 is outside 0..$((${RAZE_LEDS_COUNT:-16} - 1))" >&2
+		exit 2
+	fi
+	# Index i is the (i+1)th argument; the ones before it are off.
+	n=$1
+	set --
+	while [ "$#" -lt "$n" ]; do set -- "$@" 0,0,0,0; done
+	hw_leds_write_frame "$@" "$px" || exit 1
+	exit 0
+	;;
+refresh)
+	# A running blink redraws by itself.
+	[ -r "$BLINK_PID" ] && exit 0
+	render
 	exit 0
 	;;
 show)
