@@ -55,6 +55,11 @@ gen > /dev/null
 
 echo "rule breaks are refused"
 for change in \
+	'm["kernel"]["defconfig"] = "bcm2711"' \
+	'm["kernel"]["commit"] = "0" * 40' \
+	'm["kernel"]["builtin"] = ["btrfs"]' \
+	'm["kernel"]["page_size_kib"] = 8' \
+	'del m["kernel"]["verified"]["page_size_kib"]' \
 	'c["leds"]["rgbw"] = True' \
 	'c["leds"]["index"]["offset"] = 16' \
 	'c["leds"]["index"]["direction"] = 2' \

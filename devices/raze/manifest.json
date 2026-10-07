@@ -11,6 +11,22 @@
     "module": "cm5",
     "arch": "aarch64"
   },
+  "kernel": {
+    "source": "raspberrypi/linux",
+    "branch": "rpi-7.2.y",
+    "commit": "53679a5788f7912272b412fd78029bccae6f2b1a",
+    "version": "7.2.9",
+    "defconfig": "bcm2712",
+    "page_size_kib": 16,
+    "builtin": ["erofs"],
+    "fragment": "gaia/buildroot-external/linux/raze.config",
+    "fragment_merge": "os-first-package-last",
+    "verified": {
+      "page_size_kib": { "by": "HeliOS coordinator", "date": "2026-10-06", "method": "HeliOS and the PhotonVision image both ran 16 KiB-page kernels on Raze hardware; a package build check enforces it" },
+      "builtin": "unverified",
+      "version": "unverified"
+    }
+  },
   "revisions": [
     {
       "id": "gen1",

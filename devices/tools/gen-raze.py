@@ -2,8 +2,10 @@
 """Render the Raze device files that repeat hardware facts from manifest.json.
 
 devices/raze/manifest.json is the single source of truth for the board's
-hardware (LED ring, fan, camera, I2C devices, watchdog). This tool writes the
-files and file regions derived from it, and lints the manifest itself:
+hardware (LED ring, fan, camera, I2C devices, watchdog) and kernel. This tool
+writes the files and file regions derived from it, and lints the manifest
+itself, including that its kernel facts match gaia/kernel.toml and the kernel
+fragment (which it only reads):
 
     devices/tools/gen-raze.py            rewrite the generated files
     devices/tools/gen-raze.py --check    change nothing; print a diff and exit 1
@@ -79,27 +81,54 @@ def lookup(section: dict, path: str):
 
 
 def lint_verified(name: str, section: dict, required: list[str]) -> None:
+    where = name if "." in name or name == "kernel" else f"capabilities.{name}"
     notes = section.get("verified")
     if not isinstance(notes, dict):
-        raise LintError(f"capabilities.{name}.verified is missing")
+        raise LintError(f"{where}.verified is missing")
     for fact, note in notes.items():
         try:
             lookup(section, fact)
         except KeyError:
-            raise LintError(f"capabilities.{name}.verified names {fact}, which the section doesn't have")
+            raise LintError(f"{where}.verified names {fact}, which the section doesn't have")
         if note == "unverified":
             continue
         if not isinstance(note, dict) or set(note) != {"by", "date", "method"}:
-            raise LintError(
-                f'capabilities.{name}.verified.{fact} must be "unverified" or {{"by", "date", "method"}}'
-            )
+            raise LintError(f'{where}.verified.{fact} must be "unverified" or {{"by", "date", "method"}}')
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(note["date"])):
-            raise LintError(f"capabilities.{name}.verified.{fact}.date must be YYYY-MM-DD")
+            raise LintError(f"{where}.verified.{fact}.date must be YYYY-MM-DD")
         if not str(note["by"]).strip() or not str(note["method"]).strip():
-            raise LintError(f"capabilities.{name}.verified.{fact} needs who and how")
+            raise LintError(f"{where}.verified.{fact} needs who and how")
     for fact in required:
         if fact not in notes:
-            raise LintError(f"capabilities.{name}.verified.{fact} is missing (a note or \"unverified\")")
+            raise LintError(f"{where}.verified.{fact} is missing (a note or \"unverified\")")
+
+
+def lint_kernel(manifest: dict) -> None:
+    """The kernel facts agree with the files that build the kernel (read only)."""
+    kernel = manifest.get("kernel")
+    if not isinstance(kernel, dict):
+        raise LintError("kernel is missing")
+    for key in ("commit", "version", "defconfig", "page_size_kib", "fragment", "fragment_merge"):
+        if key not in kernel:
+            raise LintError(f"kernel.{key} is missing")
+    if kernel["page_size_kib"] not in (4, 16, 64):
+        raise LintError("kernel.page_size_kib must be 4, 16 or 64")
+    if kernel["fragment_merge"] != "os-first-package-last":
+        raise LintError('kernel.fragment_merge must be "os-first-package-last"')
+    toml = (GAIA / "kernel.toml").read_text()
+    if kernel["commit"] not in toml:
+        raise LintError(f"kernel.commit {kernel['commit'][:12]} is not the one gaia/kernel.toml builds")
+    defconfig = re.search(r'"BR2_LINUX_KERNEL_DEFCONFIG",\s*"\\"([^"\\]+)\\""', toml)
+    if not defconfig or defconfig.group(1) != kernel["defconfig"]:
+        raise LintError(f"kernel.defconfig {kernel['defconfig']} is not the one gaia/kernel.toml sets")
+    fragment = PKG / kernel["fragment"]
+    if not fragment.is_file():
+        raise LintError(f"kernel.fragment {kernel['fragment']} doesn't exist")
+    config = fragment.read_text()
+    for feature in kernel.get("builtin", []):
+        if not re.search(rf"^CONFIG_{re.escape(feature.upper())}_FS=y$|^CONFIG_{re.escape(feature.upper())}=y$", config, re.M):
+            raise LintError(f"kernel.builtin lists {feature}, but {kernel['fragment']} doesn't build it in")
+    lint_verified("kernel", kernel, ["page_size_kib"])
 
 
 def is_int(value: object) -> bool:
@@ -107,6 +136,7 @@ def is_int(value: object) -> bool:
 
 
 def lint(manifest: dict) -> None:
+    lint_kernel(manifest)
     caps = manifest.get("capabilities") or {}
     for name in ("leds", "fan", "camera", "i2c", "watchdog"):
         if not isinstance(caps.get(name), dict):

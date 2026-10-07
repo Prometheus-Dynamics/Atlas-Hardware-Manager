@@ -38,6 +38,22 @@
         "arch": { "type": "string" }
       }
     },
+    "kernel": {
+      "type": "object",
+      "description": "The kernel the package builds. OS kernel fragments are merged first and the package's fragment last, so the package's decisions win (fragment_merge).",
+      "properties": {
+        "source": { "type": "string" },
+        "branch": { "type": "string" },
+        "commit": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "version": { "type": "string" },
+        "defconfig": { "type": "string" },
+        "page_size_kib": { "enum": [4, 16, 64] },
+        "builtin": { "type": "array", "items": { "type": "string" }, "description": "Features built into the kernel, not modules (erofs, ...)." },
+        "fragment": { "type": "string", "description": "The package's kernel config fragment, relative to the package directory." },
+        "fragment_merge": { "enum": ["os-first-package-last"] },
+        "verified": { "$ref": "#/$defs/verified" }
+      }
+    },
     "revisions": {
       "type": "array",
       "minItems": 1,
