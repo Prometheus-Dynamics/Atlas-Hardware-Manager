@@ -199,11 +199,11 @@
         "/usr/share/libcamera/tuning/ov9782.overrides.json"
       ],
       "verified": {
-        "part": "unverified",
-        "csi": "unverified",
-        "i2c.address": "unverified",
-        "i2c.bus": "unverified",
-        "chip_id": "unverified",
+        "part": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); /sys/bus/i2c/devices/10-0060/name is ov9782" },
+        "csi": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); rp1-cfe and the PiSP front end probed with the sensor" },
+        "i2c.address": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); /sys/bus/i2c/devices/10-0060 exists" },
+        "i2c.bus": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); /sys/bus/i2c/devices/10-0060 exists" },
+        "chip_id": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); dmesg: ov9282 10-0060: OV9782 compatible reports OV9281 chip id, so 0x9281 is accepted for 0x9782" },
         "tuning": "unverified"
       }
     },
@@ -247,7 +247,9 @@
         "pwm.polarity": { "by": "Mathias (user)", "date": "2026-10-06", "method": "normal polarity: higher levels run the fan faster on a Raze Gen 1 (image 1.0.10); inverted left it nearly stopped" },
         "cooling_levels": { "by": "Mathias (user)", "date": "2026-10-06", "method": "cooling state 1 at 58 C read back 83 % (212/255) on a Raze Gen 1 (image 1.0.10)" },
         "min_level": { "by": "Mathias (user)", "date": "2026-10-06", "method": "chosen by the user: a 70 % floor keeps air moving" },
-        "trips_c": "unverified"
+        "trips_c": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); step_wise governor without polling; trips 50/60/67.5/75 C plus a 110 C critical trip" },
+        "cooling_device_type": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); the cooling device type is pwm-fan" },
+        "hwmon_name": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); hwmon name pwmfan, driver pwm-fan; no tachometer (fan1_input reads 0)" }
       }
     },
     "leds": {
@@ -287,7 +289,7 @@
         "userspace.layout": { "by": "Mathias (user) and the HeliOS coordinator", "date": "2026-10-06", "method": "raze-leds writing 4 bytes per LED (R, G, B, W) gave correct colours; matches the ws2812-pio-rp1 driver source" },
         "gpio": { "by": "Mathias (user)", "date": "2026-10-06", "method": "the ring lights on a Raze Gen 1 (image 1.0.10)" },
         "count": "unverified",
-        "index.offset": { "by": "HeliOS main", "date": "2026-02-27", "method": "DEFAULT_LED_INDEX_OFFSET = 5 in backend/src/helios-peripherals/src/lighting.rs (HeliOS c85ce7f, on main at cb2789c): frame index i is written to slot (i + 5) mod count; not re-measured by Atlas" },
+        "index.offset": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); all 16 LEDs show correct colours with offset 5, the 4-byte rgbw userspace layout and no rgbw overlay flag; HeliOS main uses the same offset" },
         "index.direction": "unverified"
       }
     },
@@ -416,8 +418,8 @@
       "manager": "systemd",
       "config": "/usr/lib/systemd/system.conf.d/60-board-watchdog.conf",
       "verified": {
-        "device": "unverified",
-        "driver": "unverified"
+        "device": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); /dev/watchdog0 is Broadcom BCM2835 Watchdog timer" },
+        "driver": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); /dev/watchdog0 is Broadcom BCM2835 Watchdog timer" }
       }
     },
     "selftest": {

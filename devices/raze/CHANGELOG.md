@@ -155,6 +155,18 @@ commit; the commits are listed per area.
 
 ### Hardware
 
+- **Verified on a Raze** (2026-10-07, sysfs on the PhotonVision image,
+  package c881c60): camera on I2C bus 10 at 0x60 (bound to ov9282; it
+  reports the OV9281 chip id, which is accepted), rp1-cfe and PiSP FE; fan
+  cooling device `pwm-fan` and hwmon `pwmfan` (no tachometer); thermal trips
+  50/60/67.5/75 °C; watchdog `/dev/watchdog0` (BCM2835); LED offset 5 with
+  the 24-bit wire format. Recorded in the manifest's `verified` notes. The
+  LED direction is still unverified.
+- **Self-test fan restore:** the thermal zone (step_wise, no polling) only
+  re-evaluates on a trip crossing, so after stepping the fan the self-test
+  now writes the zone's policy back to make the governor run at once.
+  Before, the fan stayed at the last stepped level.
+
 - **LED ring:** SK6812-EC20, 24-bit GRB on the wire. The `ws2812-pio`
   overlay no longer passes `rgbw`. `raze-leds` keeps the driver's 4-byte
   layout, so white is `color 255 255 255` (`f98489f`). Verified on a Raze.

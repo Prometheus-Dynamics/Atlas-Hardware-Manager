@@ -195,6 +195,14 @@ hw_fan_hold() {
 hw_fan_release() {
 	for _hw_z in $HW_FAN_HELD; do
 		echo enabled > "$_hw_z/mode" 2>/dev/null || true
+		# The Raze's step_wise zone doesn't poll: it only re-evaluates on a
+		# trip crossing, so the fan would stay at the last stepped level.
+		# Writing the zone's own policy back makes the governor run now
+		# (verified on a Raze, 2026-10-07).
+		if [ -w "$_hw_z/policy" ]; then
+			_hw_policy=$(cat "$_hw_z/policy" 2>/dev/null) &&
+				echo "$_hw_policy" > "$_hw_z/policy" 2>/dev/null || true
+		fi
 	done
 	HW_FAN_HELD=''
 }
