@@ -9,12 +9,13 @@ use async_trait::async_trait;
 use atlas_driver::attributes::{BOARD_SERIAL, normalize_board_serial};
 use atlas_driver::{
     ActionsCapability, Capabilities, CapabilitySource, HealthCheck, Identity, Link, LinkSource,
-    TelemetryCapability, UpdateCapability,
+    StatusCapability, TelemetryCapability, UpdateCapability,
 };
 use orion_control_plane::{NodeRecord, StatusQuery, StatusSubject, update_action};
 
 use crate::actions::OrionActions;
 use crate::metrics::OrionTelemetry;
+use crate::status::OrionStatus;
 use crate::transport::{BundleHost, OrionTransport};
 use crate::update::OrionUpdate;
 
@@ -216,6 +217,10 @@ impl CapabilitySource for OrionDirectory {
                 Arc::new(OrionActions::new(self.transport.clone(), id.clone(), agent))
                     as Arc<dyn ActionsCapability>,
             ),
+            status: Some(Arc::new(OrionStatus {
+                transport: self.transport.clone(),
+                node: id.clone(),
+            }) as Arc<dyn StatusCapability>),
             update: self.bundles.clone().and_then(|bundles| {
                 device.attributes.get(BOARD_SERIAL).map(|serial| {
                     Arc::new(OrionUpdate::new(

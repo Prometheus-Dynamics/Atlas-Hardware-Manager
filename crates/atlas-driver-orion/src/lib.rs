@@ -6,7 +6,8 @@
 //! mDNS), and when an Orion node reports the same board serial, this crate
 //! adds what Orion offers to that device: live readings from the node's
 //! status lane, the actions the on-device agent claims (`locate`, `reboot`),
-//! and A/B updates (see docs/ota.md). Without Orion, devices keep everything
+//! A/B updates (see docs/ota.md), and the board's state (boot, readings,
+//! the `update.*` keys) for boards that don't report it themselves. Without Orion, devices keep everything
 //! else; Orion is never the only way in.
 //!
 //! The transport is a trait. [`RemoteTransport`] implements it with Orion's
@@ -16,6 +17,7 @@ mod actions;
 mod directory;
 mod metrics;
 mod remote;
+mod status;
 mod transport;
 mod update;
 
