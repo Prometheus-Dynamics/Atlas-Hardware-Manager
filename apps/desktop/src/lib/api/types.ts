@@ -491,6 +491,31 @@ export interface Drift {
   items: DriftItem[];
 }
 
+/** One value a hardware device reports; null when it is unknown. */
+export interface HardwareReading {
+  name: string;
+  value: number | null;
+  unit: string;
+}
+
+/** A sensor, fan or other part of a board, as lemnosd reports it. */
+export interface HardwareDevice {
+  id: string;
+  class: string;
+  model: string;
+  /** available, degraded, faulted or missing. */
+  status: string;
+  readings: HardwareReading[];
+  /** Controls the device offers (not operable from Atlas yet). */
+  controls: string[];
+}
+
+/** The board's hardware at one moment (Unix seconds). */
+export interface HardwareSnapshot {
+  at: number;
+  devices: HardwareDevice[];
+}
+
 /** What a device is doing now and how it is; absent parts are unknown. */
 export interface DeviceStatus {
   time: number | null;
@@ -504,6 +529,8 @@ export interface DeviceStatus {
   clock_offset_s: number | null;
   ntp_synchronized: boolean | null;
   drift: Drift | null;
+  /** null: no fresh reading from the board's hardware service. */
+  hardware: HardwareSnapshot | null;
 }
 
 /** One line of a board's event log. */

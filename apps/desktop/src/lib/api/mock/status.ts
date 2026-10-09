@@ -9,6 +9,7 @@ import type {
   DeviceKey,
   DeviceStatus,
   EventSource,
+  HardwareSnapshot,
   HistoryEntry,
   UpdateState,
 } from "../types";
@@ -166,6 +167,80 @@ function advance(device: SimDevice, board: Board) {
   }
 }
 
+/** The A/B Raze's hardware as lemnosd reports it; the readings drift a little on every read. */
+function hardwareFor(device: SimDevice, now: number, celsius: number): HardwareSnapshot | null {
+  if (device.key.serial !== "8f3a1c2d") return null;
+  const t = now / 1000;
+  const jitter = (scale: number) => (Math.random() - 0.5) * 2 * scale;
+  const round = (value: number, digits: number) => Math.round(value * 10 ** digits) / 10 ** digits;
+  const volts = round(12.02 + Math.sin(t / 30) * 0.04 + jitter(0.01), 2);
+  const amps = round(1.5 + Math.sin(t / 11) * 0.1 + jitter(0.02), 3);
+  return {
+    at: sec(now),
+    devices: [
+      {
+        id: "imu",
+        class: "imu",
+        model: "bmi088",
+        status: "available",
+        readings: [
+          { name: "accel_x", value: round(0.04 * Math.sin(t / 7) + jitter(0.02), 3), unit: "m/s²" },
+          { name: "accel_y", value: round(-0.03 * Math.cos(t / 9) + jitter(0.02), 3), unit: "m/s²" },
+          { name: "accel_z", value: round(9.81 + jitter(0.03), 3), unit: "m/s²" },
+          { name: "gyro_x", value: round(jitter(0.01), 4), unit: "rad/s" },
+          { name: "gyro_y", value: round(jitter(0.01), 4), unit: "rad/s" },
+          { name: "gyro_z", value: round(jitter(0.01), 4), unit: "rad/s" },
+        ],
+        controls: [],
+      },
+      {
+        id: "power-monitor",
+        class: "power",
+        model: "ina238",
+        status: "available",
+        readings: [
+          { name: "voltage", value: volts, unit: "V" },
+          { name: "current", value: amps, unit: "A" },
+          { name: "power", value: round(volts * amps, 2), unit: "W" },
+        ],
+        controls: [],
+      },
+      {
+        id: "magnetometer",
+        class: "magnetometer",
+        model: "bmm150",
+        status: "faulted",
+        readings: [],
+        controls: [],
+      },
+      {
+        id: "fan",
+        class: "fan",
+        model: "pwmfan",
+        status: "available",
+        readings: [{ name: "duty", value: round(0.8 + Math.sin(t / 40) * 0.05 + jitter(0.01), 2), unit: "" }],
+        controls: ["duty"],
+      },
+      {
+        id: "cpu-thermal",
+        class: "temperature",
+        model: "bcm2712",
+        status: "available",
+        readings: [{ name: "temperature", value: celsius, unit: "°C" }],
+        controls: [],
+      },
+      {
+        id: "usb-a-power",
+        class: "power",
+        model: "tps2553",
+        status: "missing",
+        readings: [],
+        controls: [],
+      },
+    ],
+  };
+}
+
 export function hasStatus(device: SimDevice | undefined): device is SimDevice {
   return !!device?.caps?.includes("status");
 }
@@ -194,6 +269,7 @@ export function deviceStatus(key: DeviceKey): DeviceStatus {
     update: { ...board.update },
     clock_offset_s: board.clockOffset,
     ntp_synchronized: false,
+    hardware: hardwareFor(device, now, Math.round(temp * 10) / 10),
     drift: {
       checked_at: sec(now - 14 * 60 * S),
       slot: board.update.slot_active,

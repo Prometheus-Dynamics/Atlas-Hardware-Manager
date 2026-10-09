@@ -1,10 +1,10 @@
 [Unit]
-Description=Keep the board's failed units for the identity endpoint (/run/board/failed.json)
+Description=Keep the board's failed units and hardware for the identity endpoint (/run/board/failed.json, hardware.json)
 Documentation=file:/usr/lib/board/status
 
 [Service]
 Type=oneshot
-# Root: the identity endpoint's sandboxed user can't ask systemd itself, so
-# GET /status reads this kept list while it is fresh (status, 120 s).
-ExecStart=/usr/lib/board/status --refresh-failed --quiet
+# Root: the identity endpoint's sandboxed user can't ask systemd or lemnosd
+# itself, so GET /status reads these kept results while they are fresh.
+ExecStart=/usr/lib/board/status --refresh-failed --refresh-hardware --quiet
 Nice=10

@@ -39,12 +39,47 @@ printf 'foo.service loaded failed failed Foo\n'
 printf '● bar.mount loaded failed failed Bar\n'
 EOF
 chmod +x "$T/bin/systemctl"
+# lemnos-ctl --client board-status list | read <id>, as lemnosd answers it.
+# $T/lemnos-down: lemnosd isn't answering. $T/lemnos-reads: the ids read.
+cat > "$T/bin/lemnos-ctl" <<'EOF'
+#!/bin/sh
+dir=${0%/bin/lemnos-ctl}
+[ "$1" = --client ] && shift 2
+[ ! -e "$dir/lemnos-down" ] || { echo "lemnosd: connect: no answer" >&2; exit 1; }
+case "$1" in
+list)
+	printf '%-12s%-14s%-12s%-11s%s\n' imu imu bmi088 available \
+		'channels: [accel_x (m/s²), accel_y (m/s²), accel_z (m/s²), gyro_x (rad/s), gyro_y (rad/s), gyro_z (rad/s)] controls: []'
+	printf '%-12s%-14s%-12s%-11s%s\n' power power ina219 available \
+		'channels: [voltage (V), current (A), power (W)] controls: []'
+	printf '%-12s%-14s%-12s%-11s%s\n' mag magnetometer qmc5883l faulted \
+		'channels: [field_x (T), field_y (T), field_z (T)] controls: []'
+	printf '%-12s%-14s%-12s%-11s%s\n' fan fan pwmfan available \
+		'channels: [duty ()] controls: [duty]'
+	printf '%-12s%-14s%-12s%-11s%s\n' usb-a-power gpio load-switch missing \
+		'channels: [enable ()] controls: [enable]'
+	;;
+read)
+	echo "$2" >> "$dir/lemnos-reads"
+	case "$2" in
+	imu) echo 'imu 1234567us available accel_x=0.120000m/s² accel_y=-9.806650m/s² accel_z=0.500000m/s² gyro_x=0.010000rad/s gyro_y=-0.020000rad/s gyro_z=-' ;;
+	power) echo 'power 1234570us available voltage=12.034512V current=0.512000A power=6.160000W' ;;
+	mag) echo 'mag 1234575us faulted field_x=- field_y=- field_z=-' ;;
+	fan) echo 'fan 1234580us available duty=0.830000' ;;
+	usb-a-power) echo 'usb-a-power 1234590us available enable=1' ;;
+	*) exit 1 ;;
+	esac
+	;;
+*) exit 2 ;;
+esac
+EOF
+chmod +x "$T/bin/lemnos-ctl"
 
 export BOARD_LIB_DIR=$lib BOARD_ETC_DIR=$T/etc BOARD_DATA_DIR=$T/data BOARD_RUN_DIR=$T/run
 export BOARD_DT_DIR=$T/dt BOARD_NET_DIR=$T/net BOARD_SYS_DIR=$S BOARD_DEV_DIR=$T/dev BOARD_OS_RELEASE=$T/os-release
 export BOARD_BOOT_ID=boot-1 BOARD_UNAME_R=7.2.9-test UPDATE_CMDLINE_ROOT=5 BOARD_HW_BACKEND=sysfs
 export BOARD_PROC_UPTIME=$T/uptime BOARD_SYSTEMCTL=$T/bin/systemctl BOARD_ROOT_RO=1 BOARD_SSHD_DIR=$T/ssh
-export BOARD_DRIFT_BOOT_DIR=$T/boot BOARD_DRIFT_AB_DIR=$T/p1
+export BOARD_DRIFT_BOOT_DIR=$T/boot BOARD_DRIFT_AB_DIR=$T/p1 BOARD_LEMNOS_CTL=$T/bin/lemnos-ctl
 unset BOARD_EVENT_SOURCE 2>/dev/null || true
 
 # py <expression over d, the JSON on stdin>: prints its value.
@@ -199,6 +234,44 @@ if [ "$(id -u)" != 0 ]; then
 		fail "--refresh-drift needs root"
 	fi
 fi
+
+echo "hardware: lemnosd's devices and a reading of each, kept by root"
+rm -f "$T/run/hardware.json" "$T/lemnos-reads"
+sh "$lib/status" --refresh-hardware --quiet || fail "--refresh-hardware"
+[ -s "$T/run/hardware.json" ] || fail "the snapshot is kept"
+grep -q 'm/s²' "$T/run/hardware.json" || fail "the units are UTF-8 in the file"
+[ "$(tr '\n' ' ' < "$T/lemnos-reads")" = "imu power mag fan " ] || fail "the missing device was read: $(tr '\n' ' ' < "$T/lemnos-reads")"
+sh "$lib/status" | is True 'set(d["hardware"]) == {"at", "devices"} and isinstance(d["hardware"]["at"], int)' "the hardware shape"
+sh "$lib/status" | is "[('imu', 'imu', 'bmi088', 'available'), ('power', 'power', 'ina219', 'available'), ('mag', 'magnetometer', 'qmc5883l', 'faulted'), ('fan', 'fan', 'pwmfan', 'available'), ('usb-a-power', 'gpio', 'load-switch', 'missing')]" \
+	'[(x["id"], x["class"], x["model"], x["status"]) for x in d["hardware"]["devices"]]' "devices and their status"
+sh "$lib/status" | is "[('imu', []), ('power', []), ('mag', []), ('fan', ['duty']), ('usb-a-power', ['enable'])]" \
+	'[(x["id"], x["controls"]) for x in d["hardware"]["devices"]]' "controls"
+sh "$lib/status" | is "[('accel_x', 0.12, 'm/s\xb2'), ('accel_y', -9.80665, 'm/s\xb2'), ('accel_z', 0.5, 'm/s\xb2'), ('gyro_x', 0.01, 'rad/s'), ('gyro_y', -0.02, 'rad/s'), ('gyro_z', None, '')]" \
+	'ascii([(r["name"], r["value"], r["unit"]) for r in d["hardware"]["devices"][0]["readings"]])' "imu readings, a - is null"
+sh "$lib/status" | is "[('voltage', 12.034512, 'V'), ('current', 0.512, 'A'), ('power', 6.16, 'W')]" \
+	'[(r["name"], r["value"], r["unit"]) for r in d["hardware"]["devices"][1]["readings"]]' "power monitor readings, all digits kept"
+sh "$lib/status" | is "[('field_x', None, ''), ('field_y', None, ''), ('field_z', None, '')]" \
+	'[(r["name"], r["value"], r["unit"]) for r in d["hardware"]["devices"][2]["readings"]]' "a faulted device's readings are null"
+sh "$lib/status" | is "[('duty', 0.83, '')]" \
+	'[(r["name"], r["value"], r["unit"]) for r in d["hardware"]["devices"][3]["readings"]]' "fan duty"
+sh "$lib/status" | is "[]" 'd["hardware"]["devices"][4]["readings"]' "a missing device has no readings"
+
+echo "hardware: a stale snapshot, no lemnos-ctl, lemnosd not answering"
+BOARD_HARDWARE_MAX_AGE=0 sh "$lib/status" | is None 'd["hardware"]' "a stale snapshot is null"
+BOARD_LEMNOS_CTL=$T/no-such/lemnos-ctl sh "$lib/status" --refresh-hardware --quiet || fail "no lemnos-ctl must still exit 0"
+[ ! -e "$T/run/hardware.json" ] || fail "no lemnos-ctl: the kept snapshot is removed"
+sh "$lib/status" | is None 'd["hardware"]' "no lemnos-ctl: null"
+sh "$lib/status" --refresh-hardware --quiet || fail "--refresh-hardware keeps the timer's exit 0"
+touch "$T/lemnos-down"
+sh "$lib/status" --refresh-hardware --quiet || fail "lemnosd not answering must still exit 0"
+rm "$T/lemnos-down"
+[ ! -e "$T/run/hardware.json" ] || fail "lemnosd not answering: the kept snapshot is removed"
+
+echo "hardware: --refresh-failed and --refresh-hardware together both run"
+rm -f "$T/run/failed.json" "$T/run/hardware.json"
+sh "$lib/status" --refresh-failed --refresh-hardware --quiet || fail "both refreshes"
+is "['foo.service', 'bar.mount']" 'd["units"]' "failed units kept" < "$T/run/failed.json"
+is True 'isinstance(d["at"], int) and len(d["devices"]) == 5' "hardware kept" < "$T/run/hardware.json"
 
 echo "HTTP: GET /status and /events, read-only"
 # request <request line>: the whole response.

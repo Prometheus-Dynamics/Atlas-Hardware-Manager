@@ -5,7 +5,9 @@
 #   status --refresh-drift    as root: recheck the boot files and overrides
 #                             now and keep the result (board-drift.timer)
 #   status --refresh-failed   as root: keep the failed units for unprivileged
-#                             callers (board-health.timer, every 30 s)
+#                             callers (board-health.timer, every 10 s)
+#   status --refresh-hardware as root: keep lemnosd's devices and a reading
+#                             of each (board-health.timer, every 10 s)
 #   --quiet                   print nothing
 #
 #   {"version":1,"time":<unix s>,
@@ -16,6 +18,10 @@
 #    "fan":{"state":<n>,"max_state":<n>,"pwm":<0-255>,"rpm":<n>},
 #    "update":<update.json>,
 #    "clock":{"time":<unix s>,"ntp_synchronized":true|false|null},
+#    "hardware":{"at":<unix s>,"devices":[{"id":..,"class":..,"model":..,
+#                "status":"available|degraded|faulted|missing",
+#                "readings":[{"name":"accel_x","value":<n>|null,"unit":"m/s²"}],
+#                "controls":["duty",..]}]},     (null: no lemnosd, or stale)
 #    "drift":{"checked_at":..,"slot":..,"root_read_only":..,"baseline":
 #             "stage|first-seen|none","count":<n>,"flags":[..],
 #             "items":[{"area":"boot|root|etc|data","path":..,
@@ -27,6 +33,12 @@
 # ({"at":<unix s>,"units":[..]}); a result younger than
 # BOARD_FAILED_MAX_AGE seconds (120) is used. Otherwise systemctl is asked
 # directly, and when that fails the answer is null, never an empty list.
+#
+# Hardware: the board's devices as lemnosd sees them (`lemnos-ctl list`) and
+# one reading of each (`lemnos-ctl read`), kept by root in
+# /run/board/hardware.json for the same reason (lemnosd's socket is root's
+# and the `lemnos` group's); used while under BOARD_HARDWARE_MAX_AGE seconds
+# (60) old, else null.
 #
 # Drift: the running slot's boot files (config.txt, cmdline.txt, kernel*.img,
 # overlays/*) against the hashes the writer recorded on p1 when it staged the
@@ -58,16 +70,21 @@ DRIFT_DIR=$BOARD_DATA_DIR/drift
 MAX_AGE=${BOARD_DRIFT_MAX_AGE:-3600}
 FAILED_JSON=$BOARD_RUN_DIR/failed.json
 FAILED_MAX_AGE=${BOARD_FAILED_MAX_AGE:-120}
+HARDWARE_JSON=$BOARD_RUN_DIR/hardware.json
+HARDWARE_MAX_AGE=${BOARD_HARDWARE_MAX_AGE:-60}
+LEMNOS_CTL=${BOARD_LEMNOS_CTL:-lemnos-ctl}
 
 quiet=0
 refresh=0
 refresh_failed=0
+refresh_hardware=0
 for arg in "$@"; do
 	case "$arg" in
 	--json) ;;
 	--quiet) quiet=1 ;;
 	--refresh-drift) refresh=1 ;;
 	--refresh-failed) refresh_failed=1 ;;
+	--refresh-hardware) refresh_hardware=1 ;;
 	*)
 		sed -n '4,7p' "$0" | sed 's/^# \{0,1\}//' >&2
 		exit 2
@@ -142,6 +159,78 @@ refresh_failed_units() {
 	mkdir -p "$BOARD_RUN_DIR"
 	printf '{"at":%s,"units":%s}\n' "$(date +%s)" "$units" > "$FAILED_JSON.tmp" &&
 		chmod 0644 "$FAILED_JSON.tmp" && mv -f "$FAILED_JSON.tmp" "$FAILED_JSON"
+}
+
+# lemnosd's devices with one reading each, as the "hardware" object. Fails
+# without lemnos-ctl or when lemnosd doesn't answer.
+ask_hardware() {
+	command -v "$LEMNOS_CTL" >/dev/null 2>&1 || return 1
+	_list=$(bounded "$LEMNOS_CTL" --client board-status list 2>/dev/null) || return 1
+	_reads=''
+	for _id in $(printf '%s\n' "$_list" | awk 'NF >= 4 && $4 != "missing" && $1 ~ /^[a-z0-9-]+$/ { print $1 }'); do
+		_reads="$_reads$(bounded "$LEMNOS_CTL" --client board-status read "$_id" 2>/dev/null)
+"
+	done
+	# list: "<id> <class> <model> <status> channels: [a (u), ..] controls: [x, ..]"
+	# read: "<id> <t>us <status> a=<value><unit> b=- .."
+	{
+		printf '%s\n' "$_list" | sed 's/^/L /'
+		printf '%s' "$_reads" | sed 's/^/R /'
+	} | awk -v at="$(date +%s)" '
+		function js(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); return "\"" s "\"" }
+		$1 == "R" && NF >= 4 {
+			id = $2; out = ""
+			for (i = 5; i <= NF; i++) {
+				eq = index($i, "="); if (!eq) continue
+				name = substr($i, 1, eq - 1); rest = substr($i, eq + 1)
+				if (rest == "-") { value = "null"; unit = "" }
+				else if (match(rest, /^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?/)) {
+					value = substr(rest, 1, RLENGTH); unit = substr(rest, RLENGTH + 1)
+				} else continue
+				out = out (out == "" ? "" : ",") "{\"name\":" js(name) ",\"value\":" value ",\"unit\":" js(unit) "}"
+			}
+			readings[id] = out
+			next
+		}
+		$1 == "L" && NF >= 5 && $2 ~ /^[a-z0-9-]+$/ {
+			n++; ids[n] = $2; class[$2] = $3; model[$2] = $4; status[$2] = $5
+			ctl = ""
+			if (match($0, /controls: \[[^]]*\]/)) {
+				c = substr($0, RSTART + 11, RLENGTH - 12); m = split(c, parts, /, */)
+				for (j = 1; j <= m; j++) if (parts[j] != "") ctl = ctl (ctl == "" ? "" : ",") js(parts[j])
+			}
+			controls[$2] = ctl
+		}
+		END {
+			printf "{\"at\":%s,\"devices\":[", at
+			for (k = 1; k <= n; k++) {
+				id = ids[k]
+				printf "%s{\"id\":%s,\"class\":%s,\"model\":%s,\"status\":%s,\"readings\":[%s],\"controls\":[%s]}", \
+					(k > 1 ? "," : ""), js(id), js(class[id]), js(model[id]), js(status[id]), readings[id], controls[id]
+			}
+			printf "]}"
+		}'
+}
+
+# --refresh-hardware: keeps lemnosd's view for unprivileged callers.
+refresh_hardware() {
+	snapshot=$(ask_hardware) || { rm -f "$HARDWARE_JSON"; board_log "lemnosd did not answer"; return 1; }
+	mkdir -p "$BOARD_RUN_DIR"
+	printf '%s\n' "$snapshot" > "$HARDWARE_JSON.tmp" &&
+		chmod 0644 "$HARDWARE_JSON.tmp" && mv -f "$HARDWARE_JSON.tmp" "$HARDWARE_JSON"
+}
+
+# Root's kept snapshot while fresh, else null.
+hardware_json() {
+	if [ -s "$HARDWARE_JSON" ]; then
+		_line=$(head -n 1 "$HARDWARE_JSON")
+		_at=$(printf '%s' "$_line" | sed -n 's/^{"at":\([0-9]*\),.*/\1/p')
+		if [ -n "$_at" ] && [ $(($(date +%s) - _at)) -lt "$HARDWARE_MAX_AGE" ]; then
+			printf '%s' "$_line"
+			return
+		fi
+	fi
+	printf 'null'
 }
 
 temperatures_json() {
@@ -357,13 +446,16 @@ if [ "$refresh" = 1 ]; then
 	can_check || { board_log "checking drift needs root"; exit 1; }
 	check_drift
 fi
-if [ "$refresh_failed" = 1 ]; then
-	refresh_failed_units || exit 1
-	[ "$refresh" = 1 ] || exit 0
+if [ "$refresh_failed" = 1 ] || [ "$refresh_hardware" = 1 ]; then
+	rc=0
+	[ "$refresh_failed" = 0 ] || refresh_failed_units || rc=1
+	# No lemnosd (an OS without it) isn't an error for the timer.
+	[ "$refresh_hardware" = 0 ] || refresh_hardware || true
+	[ "$refresh" = 1 ] || exit "$rc"
 fi
 
-json=$(printf '{"version":1,"time":%s,"boot":%s,"failed_units":%s,"temperatures":%s,"fan":%s,"update":%s,"clock":%s,"drift":%s}' \
+json=$(printf '{"version":1,"time":%s,"boot":%s,"failed_units":%s,"temperatures":%s,"fan":%s,"update":%s,"clock":%s,"hardware":%s,"drift":%s}' \
 	"$(date +%s)" "$(boot_json)" "$(failed_units_json)" "$(temperatures_json)" "$(fan_json)" \
-	"$(update_json)" "$(clock_json)" "$(drift_json)")
+	"$(update_json)" "$(clock_json)" "$(hardware_json)" "$(drift_json)")
 [ "$quiet" = 1 ] || printf '%s\n' "$json"
 exit 0

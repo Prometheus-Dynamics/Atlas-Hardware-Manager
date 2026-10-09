@@ -8,12 +8,15 @@
   import { deviceIcon, isRecovery, modelName, storageName } from "#lib/present.ts";
   import { clock } from "#lib/stores/clock.svelte.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
+  import { deviceStatus } from "#lib/stores/status.svelte.ts";
+  import { keyString } from "#lib/api/client.ts";
   import type { IconName } from "#lib/ui/icons.ts";
   import { softFade } from "#lib/ui/motion.ts";
   import { jobs } from "#lib/stores/jobs.svelte.ts";
   import Region from "#lib/components/layout/Region.svelte";
   import ActionsTab from "./ActionsTab.svelte";
   import ActiveJob from "./ActiveJob.svelte";
+  import HardwareTab from "./HardwareTab.svelte";
   import HistoryTab from "./HistoryTab.svelte";
   import LogsTab from "./LogsTab.svelte";
   import OverviewTab from "./OverviewTab.svelte";
@@ -28,6 +31,15 @@
   const active = $derived(jobs.active.get(key) ?? null);
   /** A fresh install waiting for this board to reach USB boot. */
   const handoff = $derived(handoffs.get(key));
+  /** The board's hardware, when it has reported any devices. */
+  const hardware = $derived.by(() => {
+    if (!record) return null;
+    const snap = deviceStatus.byDevice.get(keyString(record.key))?.hardware ?? null;
+    return snap && snap.devices.length > 0 ? snap : null;
+  });
+
+  // The Hardware tab can open first, so this panel keeps the status read too.
+  $effect(() => (record ? deviceStatus.watch(record) : undefined));
 
   // Tabs come from what the device can do right now.
   const tabs = $derived.by(() => {
@@ -42,6 +54,7 @@
     if (software) list.push({ value: "software", label: "Software", icon: "package" });
     if (caps.includes("logs")) list.push({ value: "logs", label: "Logs", icon: "file-text" });
     if (caps.includes("actions") && !recovery) list.push({ value: "actions", label: "Actions", icon: "tool" });
+    if (hardware) list.push({ value: "hardware", label: "Hardware", icon: "cpu" });
     list.push({ value: "history", label: "History", icon: "history" });
     return list;
   });
@@ -102,6 +115,8 @@
           <ActiveJob job={active.job} state={active.state} />
         {:else if current === "software"}
           <SoftwareTab {record} />
+        {:else if current === "hardware" && hardware}
+          <HardwareTab hardware={hardware} />
         {:else if current === "logs"}
           <LogsTab {record} />
         {:else if current === "actions"}

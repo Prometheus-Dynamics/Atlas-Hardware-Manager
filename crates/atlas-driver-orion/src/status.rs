@@ -81,6 +81,7 @@ pub(crate) fn status_from(host: Option<&NodeHostFacts>, entries: &[StatusEntry])
         }),
         temperatures,
         update,
+        hardware: None,
         ..DeviceStatus::default()
     }
 }

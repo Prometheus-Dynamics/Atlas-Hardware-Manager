@@ -5,7 +5,8 @@
 //! ```json
 //! GET /status  {"version":1,"time":..,"boot":{..},"failed_units":[..],
 //!               "temperatures":[..],"fan":{..},"update":{..},
-//!               "clock":{"time":..,"ntp_synchronized":..},"drift":{..}}
+//!               "clock":{"time":..,"ntp_synchronized":..},"drift":{..},
+//!               "hardware":{"at":..,"devices":[..]}}
 //! GET /events?since=<t>&limit=<n>
 //!              {"time":..,"boot_id":..,"events":[{"t":..,"boot_id":..,
 //!               "kind":..,"source":..,"message":..,"data":{..}}]}
@@ -17,8 +18,9 @@
 
 use async_trait::async_trait;
 use atlas_driver::{
-    BootInfo, DeviceEvent, DeviceStatus, Drift, DriverError, EventSource, FanState, Identity,
-    Metric, StatusCapability, TelemetryCapability, Temperature, UpdateState, metric_ids,
+    BootInfo, DeviceEvent, DeviceStatus, Drift, DriverError, EventSource, FanState,
+    HardwareSnapshot, Identity, Metric, StatusCapability, TelemetryCapability, Temperature,
+    UpdateState, metric_ids,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -112,6 +114,7 @@ pub(crate) fn parse_status(value: &Value, now: i64) -> DeviceStatus {
             .and_then(|clock| clock.get("ntp_synchronized"))
             .and_then(Value::as_bool),
         drift: part::<Drift>(value, "drift"),
+        hardware: part::<HardwareSnapshot>(value, "hardware"),
     }
 }
 
@@ -270,6 +273,53 @@ mod tests {
         assert_eq!(drift.count, 1);
         assert_eq!(drift.items[0].path, "cmdline.txt");
         assert_eq!(status.fan.unwrap().pwm, Some(212));
+    }
+
+    #[test]
+    fn hardware_parses_with_nulls_and_units() {
+        let status = parse_status(
+            &json!({ "time": 5, "hardware": {
+                "at": 1_791_590_400, "future": "ignored",
+                "devices": [
+                    { "id": "imu", "class": "imu", "model": "bmi088", "status": "available",
+                      "readings": [ { "name": "accel_x", "value": 0.12, "unit": "m/s²" },
+                                    { "name": "gyro_z", "value": null, "unit": "" } ],
+                      "controls": [] },
+                    { "id": "fan", "class": "fan", "model": "pwmfan", "status": "available",
+                      "readings": [ { "name": "duty", "value": 0.83, "unit": "" } ],
+                      "controls": [ "duty" ] },
+                    { "id": "gone", "class": "fan", "model": "pwmfan", "status": "missing",
+                      "readings": [], "controls": [] }
+                ]
+            } }),
+            5,
+        );
+        let hardware = status.hardware.expect("hardware");
+        assert_eq!(hardware.at, 1_791_590_400);
+        assert_eq!(hardware.devices.len(), 3);
+        let imu = &hardware.devices[0];
+        assert_eq!((imu.id.as_str(), imu.model.as_str()), ("imu", "bmi088"));
+        assert_eq!(imu.readings[0].value, Some(0.12));
+        assert_eq!(imu.readings[0].unit, "m/s²");
+        assert_eq!(imu.readings[1].value, None);
+        assert_eq!(hardware.devices[1].controls, ["duty"]);
+        assert!(hardware.devices[2].readings.is_empty());
+    }
+
+    #[test]
+    fn hardware_null_or_malformed_is_unknown() {
+        let null = parse_status(&json!({ "time": 5, "hardware": null }), 5);
+        assert_eq!(null.hardware, None);
+        let absent = parse_status(&json!({ "time": 5 }), 5);
+        assert_eq!(absent.hardware, None);
+        // A bad part leaves hardware out; the rest of the status still reads.
+        let malformed = parse_status(
+            &json!({ "time": 5, "fan": { "pwm": 9 }, "hardware": { "at": 1, "devices": "imu" } }),
+            5,
+        );
+        assert_eq!(malformed.hardware, None);
+        assert_eq!(malformed.time, Some(5));
+        assert_eq!(malformed.fan.unwrap().pwm, Some(9));
     }
 
     #[test]

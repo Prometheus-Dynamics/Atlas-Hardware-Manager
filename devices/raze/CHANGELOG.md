@@ -93,6 +93,12 @@ commit; the commits are listed per area.
 
 ### Board awareness: events, status, drift
 
+- **Hardware in the status:** `GET /status` gains `hardware`: lemnosd's
+  devices (id, class, model, status, controls) with one reading each (name,
+  value, unit), kept by root's `board-health.timer`, now every 10 s, via
+  `status --refresh-hardware`; `null` without lemnosd or when stale. A
+  faulted sensor (like a BMI088 that fails to start) now shows without
+  Orion or SSH. Atlas renders it on a new Hardware tab.
 - **Failed units that don't lie** (found on a board): GET /status reported
   `failed_units: []` while sshd and board-locate had failed, because the
   endpoint's sandboxed user can't reach systemd and an empty answer looked

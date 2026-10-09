@@ -225,6 +225,47 @@ pub struct Drift {
     pub items: Vec<DriftItem>,
 }
 
+/// One reading of a device's sensor, with its unit (empty when it has none).
+/// `value` is `None` when the device can't tell.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HardwareReading {
+    #[serde(default)]
+    pub name: String,
+    #[serde(default)]
+    pub value: Option<f64>,
+    #[serde(default)]
+    pub unit: String,
+}
+
+/// One device on a board's hardware bus, with its latest readings.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HardwareDevice {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    pub class: String,
+    #[serde(default)]
+    pub model: String,
+    /// `available`, `degraded`, `faulted` or `missing`.
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub readings: Vec<HardwareReading>,
+    /// Names of the controls the device accepts.
+    #[serde(default)]
+    pub controls: Vec<String>,
+}
+
+/// What a board's devices read at one moment.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct HardwareSnapshot {
+    /// When the snapshot was taken (the board's clock, Unix seconds).
+    #[serde(default)]
+    pub at: i64,
+    #[serde(default)]
+    pub devices: Vec<HardwareDevice>,
+}
+
 /// A device's state now. Absent parts are unknown.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct DeviceStatus {
@@ -251,6 +292,10 @@ pub struct DeviceStatus {
     pub ntp_synchronized: Option<bool>,
     #[serde(default)]
     pub drift: Option<Drift>,
+    /// The board's sensors and devices; `None` when unknown (no hardware
+    /// service, or a stale snapshot).
+    #[serde(default)]
+    pub hardware: Option<HardwareSnapshot>,
 }
 
 /// A device that reports its state and, optionally, an event log.

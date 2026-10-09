@@ -305,6 +305,14 @@ through board-agent, or someone typing on the board.
   from root too (`board-health.timer`, every 30 s, `/run/board/failed.json`):
   the endpoint's sandboxed user can't ask systemd. Without a fresh list
   `failed_units` is `null` (unknown), never an empty list.
+- **Hardware.** The same root job (every 10 s) keeps lemnosd's view of the
+  board in `/run/board/hardware.json`: each device from `lemnos-ctl list`
+  (id, class, model, status: available, degraded, faulted or missing, and
+  controls) with one reading from `lemnos-ctl read` (name, value or null,
+  unit). `GET /status` serves it as `hardware` while under a minute old, else
+  `null`. Atlas shows it on the device's Hardware tab, a card per device with
+  short trends while the tab is open. Live readings and controls come
+  through Orion once lemnosd publishes its devices there.
 - **Endpoints.** `GET /status` and `GET /events?since=<t>&limit=<n>` on the
   identity endpoint (port 5899), read-only and listed in the identity's
   `endpoints`.
