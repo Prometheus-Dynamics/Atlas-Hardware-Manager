@@ -5,9 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-# Buildroot 2026.08 builds it with its own Rust (1.97.1), not the workspace pin;
-# Orion needs 1.94.
-rust-version = "1.94"
+rust-version.workspace = true
 authors.workspace = true
 publish.workspace = true
 description = "The device agent of the board device packages: claims update, update.cancel, update.rollback, reboot and locate on orion-node's local IPC and runs them with the package's writer (/usr/lib/board/update)."
@@ -16,7 +14,10 @@ description = "The device agent of the board device packages: claims update, upd
 name = "board-agent"
 path = "src/main.rs"
 
-[dependencies]
+# Linux only: it runs on the board, and Orion's IPC client doesn't build on
+# Windows. Elsewhere the crate is empty (and the binary only says so), so the
+# workspace still builds and other OSes don't compile its Orion stack.
+[target.'cfg(target_os = "linux")'.dependencies]
 # IPC only (no remote operator client): this runs on the board.
 orion-client = { workspace = true, features = ["ipc"] }
 orion-control-plane.workspace = true
@@ -25,7 +26,7 @@ serde.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["rt", "macros", "process", "time", "sync", "fs", "io-util"] }
 
-[dev-dependencies]
+[target.'cfg(target_os = "linux")'.dev-dependencies]
 # A real orion-node in-process, for tests/orion_node.rs (same commit as the client crates).
 orion-node.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "test-util"] }

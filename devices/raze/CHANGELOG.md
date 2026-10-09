@@ -269,11 +269,14 @@ commit; the commits are listed per area.
   `locate` drops the package's locate request. It publishes the `update.*`
   keys (with the boot id) after connecting, on change and every 30 s, and
   waits without orion-node (`17c2475`).
-- Buildroot package `packages/board-agent` builds it from the Atlas
-  checkout the package is imported from; on by default
-  (`BR2_PACKAGE_BOARD_AGENT` in runtime.toml), enabled by the preset. A
-  vendored copy needs `BOARD_AGENT_WORKSPACE` or the option off
-  (`3064d90`).
+- Built by Gaia as an artifact (`gaia/board-agent.toml`, imported by
+  `device.toml`): a static aarch64 musl binary, cross-built in Docker with
+  rust-lld from `crates/board-agent` in the OS build's `atlas` source, and
+  installed as `/usr/bin/board-agent`, enabled by the preset. It was first a
+  Buildroot package (`3064d90`); the artifact keeps Rust out of the
+  Buildroot tree and rebuilds incrementally. `BR2_PACKAGE_BOARD_AGENT` is
+  gone: drop it from OS overrides. There is no switch to leave the agent out;
+  without orion-node it waits.
 
 ### Fresh installs without the boot button
 
@@ -356,6 +359,17 @@ commit; the commits are listed per area.
 - Kernel modules drop from 25 MB to 15 MB; sound stays, because DRM_VC4
   depends on it (`695d172`).
 
+### Faster image builds
+
+- libpisp no longer depends on Boost. It used Boost only for logging, and
+  Buildroot's boost package has no Boost.Log unless an OS turns it on, so
+  logging was always off and Boost was extracted, installed and copied into
+  per-package trees for nothing. `-Dlogging=disabled` builds the same
+  library.
+- board-agent is a Gaia artifact instead of a Buildroot package (see Orion
+  device agent above): no Rust toolchain (host-rustc) in the Buildroot tree,
+  and a change to the agent no longer means a cold cargo build there.
+
 ### Runtime paths and settings
 
 - **Clock:** the identity reports the board's `"time"`. Atlas shows how far
@@ -392,7 +406,8 @@ commit; the commits are listed per area.
     sysfs, /dev and configfs (`c4bbf6e`).
   - `manifest-lint.sh` runs `gen-raze.py --check` and checks the lint catches
     drift and rule breaks (`47f8769`, `3f959d0`).
-- CI runs them on Ubuntu 24.04.
+- CI runs them on Ubuntu 24.04 when a change touches `devices/`, all at
+  once through `tests/all.sh`, which runs every `tests/*.sh`.
 
 ## 1.0.7
 

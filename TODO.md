@@ -110,7 +110,8 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
 - [x] `board-agent` for Orion-driven updates (crates/board-agent, Orion
       c22fa42; tested against a real orion-node with a fake writer).
 - [ ] Run board-agent on a Raze with orion-node: a full Orion update,
-      cancel and rollback, and the Buildroot package in a Gaia build.
+      cancel and rollback, and the Gaia artifact (gaia/board-agent.toml) in
+      a full image build.
 - [ ] Lemnos asks from the Raze integration: a fan "release" request that
       hands one fan back while lemnosd runs (today only `fan restore`,
       root, via sysfs; lemnosd keeps the first write's governor state); a

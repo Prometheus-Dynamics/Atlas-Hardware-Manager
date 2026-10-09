@@ -1,0 +1,52 @@
+# Raze: board-agent, the Orion device agent (crates/board-agent in this Atlas
+# repository; docs/ota.md), as a Gaia artifact: a static aarch64 musl binary,
+# cross-built in Docker with rust-lld (docker/aarch64-musl.Dockerfile) and
+# installed as /usr/bin/board-agent. Its unit, preset and orion-node drop-in
+# are staged by runtime.toml.
+#
+# It builds from the OS build's `atlas` source (the one device.toml is
+# imported from; a vendored copy needs that source declared too), in the
+# source's persistent cargo target directory, so Gaia rebuilds it only when
+# the source moves, and cargo then recompiles only what changed. No Rust
+# toolchain enters the Buildroot tree.
+#
+# Without orion-node the agent waits; nothing on the board depends on it.
+gaia_version = ">=2.1.0"
+
+[providers.rust]
+allow_nested_build = true
+
+[[artifacts]]
+id = "board-agent"
+kind = "rust"
+source = "atlas"
+package = "board-agent"
+target = "aarch64-unknown-linux-musl"
+# Cargo.toml: release, stripped.
+profile = "device"
+target_name = "board-agent"
+install_name = "board-agent"
+install_class = "binary"
+install_dest_hint = "/usr/bin/board-agent"
+output_path = "${workspace.out_dir}/artifacts/board-agent/board-agent"
+
+[artifacts.execution]
+backend = "docker"
+
+[artifacts.execution.docker]
+image = "board-aarch64-musl"
+dockerfile = "@self/docker/aarch64-musl.Dockerfile"
+context = "@self/docker"
+
+[[install]]
+id = "install-board-agent"
+artifact = "board-agent"
+dest = "/usr/bin/board-agent"
+replace = true
+mode = 493 # 0755
+
+[image]
+kind = "buildroot"
+
+[image.feed]
+install_entries = ["install-board-agent"]

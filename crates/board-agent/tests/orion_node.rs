@@ -2,7 +2,7 @@
 //! a fake writer (tests/fake-writer.sh) standing in for
 //! /usr/lib/board/update: the contract of Orion's docs/device-agent.md.
 
-#![cfg(unix)]
+#![cfg(target_os = "linux")]
 
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};

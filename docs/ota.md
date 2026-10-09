@@ -151,8 +151,9 @@ after connecting, whenever `update.json` changes, and every 30 s. Without
 orion-node it waits and retries; nothing else depends on it. Stopping it
 stops a stage it started (the stage is in its cgroup); `status` then records
 the interrupted stage as an error. Settings: `BOARD_AGENT_*` in
-`/etc/board/agent.env` or `/data/board/agent.env`. An OS without Orion sets
-`BR2_PACKAGE_BOARD_AGENT=n`.
+`/etc/board/agent.env` or `/data/board/agent.env`. Gaia builds it
+(`devices/raze/gaia/board-agent.toml`) as a static aarch64 musl binary from
+the OS build's `atlas` source; on an OS without Orion it stays idle.
 
 States, reported in `status` (`state`, `slot_active`, `slot_staged`,
 `version_active`, `version_staged`, `progress` 0..1000, `error`), the same

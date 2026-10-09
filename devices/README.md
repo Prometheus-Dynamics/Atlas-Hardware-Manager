@@ -270,11 +270,9 @@ OS repo with `devices/tools/sync-device.sh` and import the vendored
 ../Atlas-Hardware-Manager/devices/tools/sync-device.sh --check vendor/devices/raze
 ```
 
-A vendored copy has no `crates/board-agent` next to it, which the
-`board-agent` Buildroot package builds from: set `BOARD_AGENT_WORKSPACE` to
-an Atlas checkout at the same commit (in the environment of the build, or
-on make's command line), or turn the agent off with
-`BR2_PACKAGE_BOARD_AGENT=n`.
+A vendored copy still needs the `atlas` source declared in the OS build:
+`board-agent` is a Gaia artifact (`gaia/board-agent.toml`) built from
+`crates/board-agent` in that source.
 
 `sync-device.sh` writes `<dest>/.device-lock` with the Atlas commit and a
 content hash, and stamps the commit into the package's `board-package.env` so
@@ -339,7 +337,7 @@ The device units are installed in `/usr/lib/systemd/system` and enabled by
 | `raze-leds-reprobe.service` | re-probes the WS2812 PIO driver if `/dev/leds0` is missing |
 | `lemnosd.service` (Lemnos's unit and `80-lemnosd.preset`) | the hardware service: LED ring, fan, sensors, GPIO; `/etc/lemnos/board.toml` |
 | `board-locate.service` (+ `.path`) | the identity endpoint's locate action: `raze-leds locate 10` |
-| `board-agent.service` | Orion device agent (`BR2_PACKAGE_BOARD_AGENT`, on by default): claims `update`, `update.cancel`, `update.rollback`, `reboot` and `locate` on orion-node's local IPC and runs them with `/usr/lib/board/update` (docs/ota.md). Waits when the OS has no orion-node |
+| `board-agent.service` | Orion device agent (a Gaia artifact, `gaia/board-agent.toml`: a static aarch64 musl binary built from `crates/board-agent`): claims `update`, `update.cancel`, `update.rollback`, `reboot` and `locate` on orion-node's local IPC and runs them with `/usr/lib/board/update` (docs/ota.md). Waits when the OS has no orion-node |
 
 **orion-node local auth.** The package ships
 `orion-node.service.d/50-board-agent.conf`, setting

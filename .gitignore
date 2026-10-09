@@ -27,3 +27,6 @@ src-tauri/.cargo/
 *.pdb
 /tools/usbboot/
 /tools/windows/
+
+# Gaia (a checkout used as an OS build source: --set sources.atlas.path=...)
+.gaia/

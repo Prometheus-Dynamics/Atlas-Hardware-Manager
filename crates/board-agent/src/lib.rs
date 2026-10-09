@@ -7,6 +7,9 @@
 //! keeps the writer's state published as the `update.*` status keys of its
 //! node. Without orion-node it waits and retries; nothing on the board
 //! depends on it.
+//!
+//! Linux only: on other systems the crate is empty.
+#![cfg(target_os = "linux")]
 
 mod agent;
 mod config;

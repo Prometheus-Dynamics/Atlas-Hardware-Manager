@@ -37,4 +37,5 @@ imports = [
   "./boot.toml",
   "./runtime.toml",
   "./lemnos.toml",
+  "./board-agent.toml",
 ]

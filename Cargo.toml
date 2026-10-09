@@ -92,3 +92,9 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.sha2]
 opt-level = 3
+
+# Binaries built for the boards (board-agent, by the device package's Gaia
+# layer): release, stripped. No LTO, to keep image builds quick.
+[profile.device]
+inherits = "release"
+strip = "symbols"

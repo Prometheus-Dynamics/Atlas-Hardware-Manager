@@ -4,7 +4,6 @@ config BR2_PACKAGE_LIBPISP
 	depends on BR2_TOOLCHAIN_HAS_THREADS
 	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_9
 	depends on BR2_TOOLCHAIN_HEADERS_AT_LEAST_5_6 # linux/dma-heap.h
-	select BR2_PACKAGE_BOOST
 	select BR2_PACKAGE_JSON_FOR_MODERN_CPP
 	help
 	  Raspberry Pi PiSP helper library (backend/frontend configuration and

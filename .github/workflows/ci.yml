@@ -3,16 +3,87 @@ name: CI
 on:
   push:
     tags: ["v*"]
-    branches: ["**"]
+    # `rebuild` is always pushed at the same commit as `dev`; testing it again
+    # would run the whole matrix twice for nothing.
+    branches-ignore: ["rebuild"]
   pull_request:
   workflow_dispatch:
 
+# A newer push to the same branch or PR supersedes a running check.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 jobs:
+  # What the change touches decides what runs:
+  # - docs only (docs/, *.md): nothing;
+  # - the device package (devices/) and docs only: the device tests, and the
+  #   workspace checks on Linux (atlas-devices and atlas-driver-rpi read
+  #   devices/ in their tests), not on macOS and Windows;
+  # - anything else: everything.
+  # Tags, manual runs and anything the diff can't be computed for run
+  # everything.
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      device: ${{ steps.classify.outputs.device }}
+      workspace: ${{ steps.classify.outputs.workspace }}
+      oses: ${{ steps.classify.outputs.oses }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Classify the change
+        id: classify
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          REF: ${{ github.ref }}
+        run: |
+          all='["ubuntu-22.04","windows-latest","macos-latest"]'
+          everything() {
+            { echo "device=true"; echo "workspace=true"; echo "oses=$all"; } >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+          case "$EVENT:$REF" in push:refs/tags/*|workflow_dispatch:*) everything ;; esac
+          base=$BEFORE
+          [ "$EVENT" = pull_request ] && base=$BASE
+          if [ -z "$base" ] || [ "$base" = 0000000000000000000000000000000000000000 ] ||
+            ! files=$(git diff --name-only "$base" HEAD 2>/dev/null); then
+            everything
+          fi
+          echo "$files"
+          device=false workspace=false cross=false
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            case "$f" in
+              devices/*|scripts/ci.sh|.github/workflows/*) device=true ;;
+            esac
+            case "$f" in
+              docs/*|*.md) ;;
+              devices/*) workspace=true ;;
+              *) workspace=true; cross=true ;;
+            esac
+          done <<EOF
+          $files
+          EOF
+          oses='["ubuntu-22.04"]'
+          [ "$cross" = true ] && oses=$all
+          { echo "device=$device"; echo "workspace=$workspace"; echo "oses=$oses"; } >> "$GITHUB_OUTPUT"
+          echo "device=$device workspace=$workspace oses=$oses"
+
   # The device package's shell scripts and board-image-slots, under the runner's
   # POSIX sh (dash). 24.04 for erofs-utils >= 1.5, so update.sh also installs
   # an image with a real EROFS root slot.
   device:
     name: device package tests
+    needs: changes
+    if: needs.changes.outputs.device == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -24,25 +95,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends erofs-utils zstd xz-utils
 
+      # Every devices/raze/tests/*.sh, in parallel.
       - name: Run the tests
-        run: |
-          sh devices/raze/tests/update.sh
-          sh devices/raze/tests/root-device.sh
-          sh devices/raze/tests/usb-boot.sh
-          sh devices/raze/tests/ssh-keys.sh
-          sh devices/raze/tests/stage-files.sh
-          sh devices/raze/tests/gadget-address.sh
-          sh devices/raze/tests/selftest.sh
-          sh devices/raze/tests/manifest-lint.sh
+        run: sh devices/raze/tests/all.sh
 
   workspace:
     name: checks (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.workspace == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest, macos-latest]
+        os: ${{ fromJSON(needs.changes.outputs.oses) }}
     defaults:
       run:
         shell: bash
@@ -67,15 +133,20 @@ jobs:
         with:
           bun-version: 1.4.2
 
+      # Only dev saves the cache (the branch every push goes to); other
+      # branches and PRs restore it.
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
 
       # The Tauri shell embeds the built frontend, so it is built first.
+      # svelte-check is the same on every OS: Linux runs it.
       - name: Check and build the frontend
         working-directory: apps/desktop
         run: |
           bun install --frozen-lockfile
-          bun run check
+          if [ "$RUNNER_OS" = Linux ]; then bun run check; fi
           bun run build
 
       - name: Check formatting

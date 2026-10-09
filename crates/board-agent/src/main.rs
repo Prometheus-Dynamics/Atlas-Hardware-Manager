@@ -1,10 +1,18 @@
 //! `board-agent`: see the library docs. Settings come from the environment
 //! (`board_agent::Config`); it takes no arguments.
 
+#[cfg(target_os = "linux")]
 use std::time::Duration;
 
+#[cfg(target_os = "linux")]
 use board_agent::{Config, log, run};
 
+#[cfg(not(target_os = "linux"))]
+fn main() {
+    std::process::exit(2);
+}
+
+#[cfg(target_os = "linux")]
 fn main() {
     if std::env::args().nth(1).is_some() {
         log(

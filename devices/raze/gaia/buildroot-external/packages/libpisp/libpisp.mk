@@ -7,13 +7,15 @@ LIBPISP_LICENSE = BSD-2-Clause
 LIBPISP_LICENSE_FILES = LICENSE
 LIBPISP_INSTALL_STAGING = YES
 
-# Logging auto-enables when Boost is present; keep the dependency explicit.
-LIBPISP_DEPENDENCIES = \
-	boost \
-	json-for-modern-cpp
+# No Boost: libpisp uses it only for its logging (Boost.Log), which
+# Buildroot's boost package doesn't build unless BR2_PACKAGE_BOOST_LOG is set,
+# so `-Dlogging=auto` never found it and the dependency only cost build time
+# (extracting, installing and copying Boost's headers into every dependent's
+# per-package tree). libcamera logs the PiSP pipeline itself.
+LIBPISP_DEPENDENCIES = json-for-modern-cpp
 
 LIBPISP_CONF_OPTS = \
-	-Dlogging=auto \
+	-Dlogging=disabled \
 	-Dexamples=false
 
 $(eval $(meson-package))
