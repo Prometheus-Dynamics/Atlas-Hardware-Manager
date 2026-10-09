@@ -461,6 +461,7 @@
           "bus": 1,
           "address": 64,
           "shunt_ohm": 0.01,
+          "shunt_note": "unverified: the user remembers 10 or 20 mOhm; to be settled from the resistor marking (R010 or R020) or a USB-C meter comparison. If it is 20 mOhm, shunt_ohm becomes 0.02 and max_current halves",
           "current_scale": 1.0,
           "max_current_a": 16.384,
           "max_current_source": "derived, not a board rating: the INA238's full-scale shunt voltage (163.84 mV) over shunt_ohm, the largest current it can measure (a 0.5 mA current LSB)",
