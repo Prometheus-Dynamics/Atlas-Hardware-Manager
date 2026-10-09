@@ -63,6 +63,8 @@ impl Writer {
         command
             .args(args)
             .env("BOARD_RUN_DIR", &self.run_dir)
+            // The writer's events say Orion asked.
+            .env("BOARD_EVENT_SOURCE", crate::EVENT_SOURCE)
             .stdin(Stdio::null());
         command
     }

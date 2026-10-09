@@ -264,6 +264,8 @@ impl Agent {
                 // action record.
                 self.succeed(&id, phase(update_action::PHASE_REBOOTING))
                     .await;
+                self.event("reboot", "restart requested through Orion")
+                    .await;
                 self.reboot(uint("delay_ms", 0)).await;
             }
             action_names::LOCATE => {
@@ -486,6 +488,16 @@ impl Agent {
         self.reboot(0).await;
     }
 
+    /// Appends to the board's event log; best effort (an image without the
+    /// package's `event` loses only the line).
+    async fn event(&self, kind: &str, message: &str) {
+        let mut command = self.config.event_command.clone();
+        command.extend([kind.to_owned(), message.to_owned()]);
+        if let Err(error) = run_command(&command).await {
+            crate::log(&format!("event {kind}: {error}"));
+        }
+    }
+
     async fn reboot(&self, delay_ms: u64) {
         tokio::time::sleep(Duration::from_millis(delay_ms)).await;
         if let Err(error) = run_command(&self.config.reboot_command).await {
@@ -508,13 +520,15 @@ impl Agent {
     }
 }
 
-/// Runs a configured command (program and arguments).
+/// Runs a configured command (program and arguments), as Orion's for the
+/// board's event log.
 async fn run_command(command: &[String]) -> Result<(), String> {
     let (program, args) = command
         .split_first()
         .ok_or_else(|| "no command configured".to_owned())?;
     let output = tokio::process::Command::new(program)
         .args(args)
+        .env("BOARD_EVENT_SOURCE", crate::EVENT_SOURCE)
         .stdin(std::process::Stdio::null())
         .output()
         .await
