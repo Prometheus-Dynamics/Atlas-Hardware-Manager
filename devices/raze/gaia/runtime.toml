@@ -332,6 +332,18 @@ src = "@self/assets/rootfs/usr/lib/udev/rules.d/60-board-lemnosd.rules"
 dest = "/usr/lib/udev/rules.d/60-board-lemnosd.rules"
 origin = "static-asset"
 
+[[stage.files]]
+id = "raze-systemd-system-board-agent-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-agent.service"
+dest = "/usr/lib/systemd/system/board-agent.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-orion-node-board-agent-dropin"
+src = "@self/assets/rootfs/usr/lib/systemd/system/orion-node.service.d/50-board-agent.conf"
+dest = "/usr/lib/systemd/system/orion-node.service.d/50-board-agent.conf"
+origin = "static-asset"
+
 [image]
 kind = "buildroot"
 config_overrides = [
@@ -352,6 +364,11 @@ config_overrides = [
   # i2cdetect, for the selftest's I2C scan against the manifest's devices
   # (/usr/lib/board/selftest; it skips the scan without it).
   ["BR2_PACKAGE_I2C_TOOLS", "y"],
+  # board-agent, the Orion device agent (buildroot-external/packages,
+  # built from crates/board-agent in this Atlas checkout). An OS without
+  # Orion, or importing a vendored copy of the package, sets it to "n";
+  # board-agent.service then doesn't start.
+  ["BR2_PACKAGE_BOARD_AGENT", "y"],
 ]
 
 [image.feed]
@@ -408,4 +425,6 @@ stage_files = [
   "raze-board-hw-lemnosd-sh",
   "raze-lemnos-board",
   "raze-udev-rules-d-60-board-lemnosd-rules",
+  "raze-systemd-system-board-agent-service",
+  "raze-systemd-system-orion-node-board-agent-dropin",
 ]

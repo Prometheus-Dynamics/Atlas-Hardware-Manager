@@ -1,0 +1,34 @@
+[package]
+name = "board-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+# Buildroot 2026.08 builds it with its own Rust (1.97.1), not the workspace pin;
+# Orion needs 1.94.
+rust-version = "1.94"
+authors.workspace = true
+publish.workspace = true
+description = "The device agent of the board device packages: claims update, update.cancel, update.rollback, reboot and locate on orion-node's local IPC and runs them with the package's writer (/usr/lib/board/update)."
+
+[[bin]]
+name = "board-agent"
+path = "src/main.rs"
+
+[dependencies]
+# IPC only (no remote operator client): this runs on the board.
+orion-client = { workspace = true, features = ["ipc"] }
+orion-control-plane.workspace = true
+orion-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "process", "time", "sync", "fs", "io-util"] }
+
+[dev-dependencies]
+# A real orion-node in-process, for tests/orion_node.rs (same commit as the client crates).
+orion-node.workspace = true
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "test-util"] }
+
+[lints]
+workspace = true

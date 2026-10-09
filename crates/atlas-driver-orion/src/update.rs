@@ -1,13 +1,17 @@
 //! A/B updates through Orion (docs/ota.md): Orion carries the intent and
 //! progress, the device pulls the disk image from Atlas, and its package's
-//! writer stages, trial-boots, and confirms. The outcome is read from
-//! durable state after the reboot (`update.*` status keys and the node's
-//! boot id), never from the action result, which doesn't survive a reboot.
+//! writer stages, trial-boots, and confirms.
+//!
+//! The `update` action is asynchronous (Orion `docs/device-agent.md`): it
+//! succeeds with `phase = "staging"` once the board's agent has started the
+//! download and stage. Everything after that is read from durable state: the
+//! `update.*` status keys the agent keeps published (`staging` -> `staged` ->
+//! `rebooting`, then on the new boot `trying` -> `confirmed` |
+//! `rolled-back`), and the node's boot id, never from an action result.
 
 use std::collections::{BTreeMap, HashMap};
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -16,13 +20,14 @@ use atlas_driver::{
     CancellationToken, Concurrency, DriverError, Identity, ProgressSink, ReleaseRef,
     UpdateCapability, UpdateOutcome, UpdatePlan, UpdateStep,
 };
-use orion_control_plane::{StatusQuery, StatusSubject, TypedConfigValue};
+use orion_control_plane::{StatusQuery, StatusSubject, TypedConfigValue, update_action};
 use orion_core::NodeId;
 
 use crate::actions::{request, run_and_wait};
 use crate::transport::{BundleHost, OrionTransport};
 
-const POLL: Duration = Duration::from_secs(3);
+/// The `update` action only starts the stage.
+const START_TIMEOUT: Duration = Duration::from_secs(60);
 /// Download + write of a full slot on a slow link.
 const STAGE_TIMEOUT: Duration = Duration::from_secs(45 * 60);
 /// From "rebooting" to the node reporting a new boot id.
@@ -35,6 +40,15 @@ pub(crate) struct OrionUpdate {
     bundles: Arc<dyn BundleHost>,
     node: NodeId,
     board_serial: String,
+    poll: Duration,
+}
+
+/// How the stage ended, as the `update.*` keys tell it.
+enum Staged {
+    /// The board restarts into the new slot (or already did).
+    Restarting,
+    Failed(String),
+    Cancelled,
 }
 
 impl OrionUpdate {
@@ -43,21 +57,23 @@ impl OrionUpdate {
         bundles: Arc<dyn BundleHost>,
         node: NodeId,
         board_serial: String,
+        poll: Duration,
     ) -> Self {
         Self {
             transport,
             bundles,
             node,
             board_serial,
+            poll,
         }
     }
 
     /// The durable `update.*` keys the device's agent republishes.
-    async fn update_status(&self) -> Result<HashMap<String, String>, DriverError> {
+    async fn update_status(&self, node: &NodeId) -> Result<HashMap<String, String>, DriverError> {
         let entries = self
             .transport
             .status(StatusQuery {
-                subject: Some(StatusSubject::Node(self.node.clone())),
+                subject: Some(StatusSubject::Node(node.clone())),
                 key_prefix: Some("update.".into()),
             })
             .await?;
@@ -89,6 +105,103 @@ impl OrionUpdate {
                 let serial = normalize_board_serial(host.board_serial.as_deref()?)?;
                 (serial == self.board_serial).then_some((record.node_id, host.boot_id?))
             }))
+    }
+
+    /// Follows the stage through the `update.*` keys until the board
+    /// restarts, reporting the download as Transfer and the slot write as
+    /// Apply (the agent's progress: 0-500 and 500-1000 per mille). Atlas's
+    /// cancel sends `update.cancel` while it can still stop the stage.
+    async fn follow_stage(
+        &self,
+        boot_before: &str,
+        progress: &ProgressSink,
+        cancel: &CancellationToken,
+    ) -> Result<Staged, DriverError> {
+        let mut applying = false;
+        let deadline = tokio::time::Instant::now() + STAGE_TIMEOUT;
+        loop {
+            if cancel.is_cancelled() {
+                let result = run_and_wait(
+                    self.transport.as_ref(),
+                    request(&self.node, "update.cancel", BTreeMap::new()),
+                    START_TIMEOUT,
+                    &|_| {},
+                )
+                .await;
+                return match result {
+                    Ok(_) => Ok(Staged::Cancelled),
+                    // Too late (the restart began): carry on to the outcome.
+                    Err(error) => {
+                        progress.log(format!("couldn't cancel: {error}"));
+                        Ok(Staged::Restarting)
+                    }
+                };
+            }
+            // A new boot id: the board restarted (keys of the old boot may
+            // still be around, so this is checked first).
+            if let Ok(Some((_, boot))) = self.boot_id().await
+                && boot != boot_before
+            {
+                return Ok(Staged::Restarting);
+            }
+            let status = self.update_status(&self.node).await.unwrap_or_default();
+            let per_mille: u16 = status
+                .get(update_action::KEY_PROGRESS)
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(0);
+            match status.get(update_action::KEY_STATE).map(String::as_str) {
+                Some(update_action::STATE_STAGING) => {
+                    let fraction = f32::from(per_mille.min(1000)) / 1000.0;
+                    if fraction < 0.5 {
+                        progress.step_progress(UpdateStep::Transfer, fraction * 2.0);
+                    } else {
+                        if !applying {
+                            applying = true;
+                            progress.step_progress(UpdateStep::Transfer, 1.0);
+                            progress.step_started(UpdateStep::Apply);
+                        }
+                        progress.step_progress(UpdateStep::Apply, (fraction - 0.5) * 2.0);
+                    }
+                }
+                Some(update_action::STATE_STAGED) => {
+                    if !applying {
+                        applying = true;
+                        progress.step_started(UpdateStep::Apply);
+                    }
+                    progress.step_progress(UpdateStep::Apply, 1.0);
+                    // Staged with an error: the restart was refused (for
+                    // example the OS's pre-reboot hook); it stays staged.
+                    if let Some(error) = status.get(update_action::KEY_ERROR)
+                        && !error.is_empty()
+                    {
+                        return Ok(Staged::Failed(error.clone()));
+                    }
+                }
+                Some(
+                    update_action::STATE_REBOOTING
+                    | update_action::STATE_TRYING
+                    | update_action::STATE_CONFIRMED
+                    | update_action::STATE_ROLLED_BACK,
+                ) => return Ok(Staged::Restarting),
+                Some(update_action::STATE_ERROR) => {
+                    return Ok(Staged::Failed(
+                        status
+                            .get(update_action::KEY_ERROR)
+                            .filter(|error| !error.is_empty())
+                            .cloned()
+                            .unwrap_or_else(|| "the board couldn't stage the image".into()),
+                    ));
+                }
+                Some(update_action::STATE_CANCELLED) => return Ok(Staged::Cancelled),
+                _ => {}
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(DriverError::Unreachable(
+                    "the board didn't finish staging the image in time".into(),
+                ));
+            }
+            tokio::time::sleep(self.poll).await;
+        }
     }
 }
 
@@ -158,11 +271,15 @@ impl UpdateCapability for OrionUpdate {
         let artifact = release
             .artifact
             .as_ref()
-            .ok_or_else(|| DriverError::Incompatible("no image chosen".into()))?;
+            .ok_or_else(|| DriverError::Incompatible("choose an image to install".into()))?;
 
         progress.step_started(UpdateStep::Preflight);
-        let status = self.update_status().await?;
-        if let Some(state @ ("staging" | "trying")) = status.get("update.state").map(String::as_str)
+        let status = self.update_status(&self.node).await?;
+        if let Some(
+            state @ (update_action::STATE_STAGING
+            | update_action::STATE_REBOOTING
+            | update_action::STATE_TRYING),
+        ) = status.get(update_action::KEY_STATE).map(String::as_str)
         {
             return Err(DriverError::Incompatible(format!(
                 "the board is already updating ({state}); wait for it to finish"
@@ -178,72 +295,72 @@ impl UpdateCapability for OrionUpdate {
             return Err(DriverError::Cancelled);
         }
 
-        // Transfer and Apply both run on the device: the first half of its
-        // progress is the download, the second half the slot write.
+        // Transfer and Apply both run on the device: the action only starts
+        // them, the keys tell how far they got.
         progress.step_started(UpdateStep::Transfer);
         let args = BTreeMap::from([
-            ("image_url".to_string(), TypedConfigValue::String(url)),
             (
-                "sha256".to_string(),
+                update_action::ARG_IMAGE_URL.to_string(),
+                TypedConfigValue::String(url),
+            ),
+            (
+                update_action::ARG_SHA256.to_string(),
                 TypedConfigValue::String(artifact.sha256.clone()),
             ),
             (
-                "size".to_string(),
+                update_action::ARG_SIZE.to_string(),
                 TypedConfigValue::UInt(artifact.size_bytes),
             ),
         ]);
-        let applying = AtomicBool::new(false);
-        let report = |per_mille: u16| {
-            let fraction = f32::from(per_mille) / 1000.0;
-            if fraction < 0.5 {
-                progress.step_progress(UpdateStep::Transfer, fraction * 2.0);
-            } else {
-                if !applying.swap(true, Ordering::Relaxed) {
-                    progress.step_started(UpdateStep::Apply);
-                }
-                progress.step_progress(UpdateStep::Apply, (fraction - 0.5) * 2.0);
-            }
-        };
-        let staged = run_and_wait(
+        run_and_wait(
             self.transport.as_ref(),
             request(&self.node, "update", args),
-            STAGE_TIMEOUT,
-            &report,
+            START_TIMEOUT,
+            &|_| {},
         )
         .await?;
-        if !applying.load(Ordering::Relaxed) {
-            progress.step_started(UpdateStep::Apply);
+        match self.follow_stage(&boot_before, progress, cancel).await? {
+            Staged::Restarting => {}
+            Staged::Cancelled => return Err(DriverError::Cancelled),
+            Staged::Failed(message) => {
+                return Err(DriverError::StepFailed {
+                    step: "Writing the spare slot".into(),
+                    message,
+                });
+            }
         }
         progress.step_progress(UpdateStep::Apply, 1.0);
-        if let Some(TypedConfigValue::String(version)) = staged.output.get("version_staged") {
-            progress.log(format!("staged {version}; the board is restarting into it"));
-        }
+        progress.log("staged; the board is restarting into it".to_string());
 
         // Past this point the board is restarting: no cancelling.
         progress.step_started(UpdateStep::Reboot);
         let deadline = tokio::time::Instant::now() + REBOOT_TIMEOUT;
-        loop {
-            if let Ok(Some((_, boot))) = self.boot_id().await
+        let (node, boot_after) = loop {
+            if let Ok(Some((node, boot))) = self.boot_id().await
                 && boot != boot_before
             {
-                break;
+                break (node, boot);
             }
             if tokio::time::Instant::now() >= deadline {
                 return Ok(UpdateOutcome::NeedsRecovery {
                     reason: "the board didn't come back after restarting into the update".into(),
                 });
             }
-            tokio::time::sleep(POLL).await;
-        }
+            tokio::time::sleep(self.poll).await;
+        };
 
         progress.step_started(UpdateStep::Confirm);
         let deadline = tokio::time::Instant::now() + CONFIRM_TIMEOUT;
         loop {
-            let status = self.update_status().await.unwrap_or_default();
-            match status.get("update.state").map(String::as_str) {
-                Some("confirmed") => {
+            let status = self.update_status(&node).await.unwrap_or_default();
+            // Keys left from the boot before the restart don't count.
+            let this_boot = status
+                .get(update_action::KEY_BOOT_ID)
+                .is_none_or(|boot| boot.is_empty() || *boot == boot_after);
+            match status.get(update_action::KEY_STATE).map(String::as_str) {
+                Some(update_action::STATE_CONFIRMED) if this_boot => {
                     let active = status
-                        .get("update.version_active")
+                        .get(update_action::KEY_VERSION_ACTIVE)
                         .cloned()
                         .unwrap_or_default();
                     return Ok(if active == release.version {
@@ -257,10 +374,11 @@ impl UpdateCapability for OrionUpdate {
                         }
                     });
                 }
-                Some("rolled-back") => {
+                Some(update_action::STATE_ROLLED_BACK) if this_boot => {
                     return Ok(UpdateOutcome::RolledBack {
                         reason: status
-                            .get("update.error")
+                            .get(update_action::KEY_ERROR)
+                            .filter(|error| !error.is_empty())
                             .cloned()
                             .unwrap_or_else(|| "the new version didn't confirm itself".into()),
                     });
@@ -272,7 +390,7 @@ impl UpdateCapability for OrionUpdate {
                     reason: "the board never confirmed the new version; it returns to the old one on its next restart".into(),
                 });
             }
-            tokio::time::sleep(POLL).await;
+            tokio::time::sleep(self.poll).await;
         }
     }
 }

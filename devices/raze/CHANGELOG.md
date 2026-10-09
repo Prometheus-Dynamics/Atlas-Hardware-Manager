@@ -128,6 +128,27 @@ commit; the commits are listed per area.
   besides their number, which follows probe order. The self-test finds buses
   by it and reads the chip ids, waking the BMM150 for the read and putting
   its power control back when lemnosd isn't the owner (`d5302db`).
+- **`update rollback` changed meaning.** It used to forget a staged update;
+  it now boots the previous confirmed slot (switches autoboot.txt's default,
+  records `rolled-back`, restarts). The old behaviour is `update cancel`.
+  Scripts that ran `rollback` to clear a staged or failed update must call
+  `cancel` (`b2fc1ac`).
+- **New update states** `rebooting` (apply's or rollback's restart was
+  accepted; `apply` used to record `trying` directly) and `cancelled`, in
+  `board-update.env`, `update.json` and the identity's `update` object. The
+  values are Orion's `update_action::STATE_*` (`b2fc1ac`).
+- **Writer exit status:** a refusal (wrong state, another command holding
+  the lock) exits 3 and no longer records `error` (an `apply` with nothing
+  staged used to leave the state `error`). A `status` while a stage runs
+  prints update.json, which the stage now keeps current, instead of adding
+  the copy's progress itself (`b2fc1ac`).
+- **Orion:** board-agent is built against Orion `c22fa42` (control protocol
+  4 with a new layout fingerprint); the image's orion-node must come from
+  the same commit. The package adds an orion-node drop-in,
+  `orion-node.service.d/50-board-agent.conf`, that sets
+  `ORION_NODE_LOCAL_AUTH_ALLOW=root` so the agent (root) can use the
+  node's local IPC; an OS that sets that variable itself must include
+  `root` (`17c2475`, `3064d90`).
 
 ### USB gadget addressing
 
@@ -211,6 +232,42 @@ commit; the commits are listed per area.
 - The identity lists `ab-tryboot` in `update_methods`, and an `update` object
   with the state, slots, versions, progress and error.
 - The image gets zstd, xz-utils and board-image-slots.
+- **cancel, rollback, rebooting, stage-url** (`b2fc1ac`):
+  - `update cancel` stops a running stage (its PID is in
+    `/run/board/update.pid`; the process tree is frozen, then ended, and the
+    lock taken) or forgets a staged update, and prints `cancelled` or
+    `idle`. It refuses once the update is past staging.
+  - `update rollback [--no-reboot]` boots the previous confirmed slot;
+    refused while staging, on a trial boot or without a previous slot. The
+    slot it leaves becomes the previous one.
+  - `apply` and `rollback` record the boot they were made in: `rebooting`
+    read on the next boot reports `trying`, and `confirm` treats a leftover
+    `rebooting` like `trying`.
+  - `update stage-url <url> --sha256 <hex> --size <n>` downloads to
+    `/data/board/update/` with curl or wget (resuming a partial download),
+    checks size and SHA-256, then stages; progress 0-500 for the download,
+    500-1000 for the stage. An image already staged is done.
+  - A stage no longer leaves the slot it overwrites as the previous slot,
+    and `status` turns a stage interrupted by a power loss or a killed
+    process into an error.
+  - Tested in `tests/update.sh`, including a real HTTP server with and
+    without range support, with curl and wget.
+
+### Orion device agent
+
+- `board-agent` (Atlas `crates/board-agent`, `/usr/bin/board-agent`,
+  `board-agent.service`) claims `update`, `update.cancel`,
+  `update.rollback`, `reboot` and `locate` on orion-node's local IPC and
+  runs them with the writer, per Orion's `docs/device-agent.md`: `update`
+  starts `stage-url` and succeeds with `phase = "staging"`, then applies;
+  `locate` drops the package's locate request. It publishes the `update.*`
+  keys (with the boot id) after connecting, on change and every 30 s, and
+  waits without orion-node (`17c2475`).
+- Buildroot package `packages/board-agent` builds it from the Atlas
+  checkout the package is imported from; on by default
+  (`BR2_PACKAGE_BOARD_AGENT` in runtime.toml), enabled by the preset. A
+  vendored copy needs `BOARD_AGENT_WORKSPACE` or the option off
+  (`3064d90`).
 
 ### Fresh installs without the boot button
 

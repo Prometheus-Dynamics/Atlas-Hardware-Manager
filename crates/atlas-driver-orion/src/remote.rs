@@ -44,7 +44,13 @@ pub struct RemoteTransport {
 }
 
 /// The actions Atlas runs through Orion; the enroll command grants these.
-const ACTIONS: [&str; 3] = ["update", "reboot", "locate"];
+const ACTIONS: [&str; 5] = [
+    "update",
+    "update.cancel",
+    "update.rollback",
+    "reboot",
+    "locate",
+];
 
 impl RemoteTransport {
     pub fn new(identity: OperatorIdentity, url: Option<String>, pin_file: Option<PathBuf>) -> Self {

@@ -1,7 +1,9 @@
 //! The Orion nodes Atlas currently knows, keyed by board serial.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use atlas_driver::attributes::{BOARD_SERIAL, normalize_board_serial};
@@ -9,7 +11,7 @@ use atlas_driver::{
     ActionsCapability, Capabilities, CapabilitySource, HealthCheck, Identity, Link, LinkSource,
     TelemetryCapability, UpdateCapability,
 };
-use orion_control_plane::NodeRecord;
+use orion_control_plane::{NodeRecord, StatusQuery, StatusSubject, update_action};
 
 use crate::actions::OrionActions;
 use crate::metrics::OrionTelemetry;
@@ -23,6 +25,11 @@ pub struct OrionDirectory {
     pub(crate) transport: Arc<dyn OrionTransport>,
     bundles: Option<Arc<dyn BundleHost>>,
     nodes: RwLock<HashMap<String, NodeRecord>>,
+    /// Nodes whose device agent publishes `update.state`: it holds
+    /// `update`, and with it `update.cancel` and `update.rollback`.
+    agents: RwLock<HashSet<String>>,
+    /// How often an update polls the board's state, in milliseconds.
+    update_poll_ms: AtomicU64,
     last_error: Mutex<Option<String>>,
 }
 
@@ -36,6 +43,8 @@ impl OrionDirectory {
             transport,
             bundles,
             nodes: RwLock::new(HashMap::new()),
+            agents: RwLock::new(HashSet::new()),
+            update_poll_ms: AtomicU64::new(3_000),
             last_error: Mutex::new(None),
         })
     }
@@ -43,12 +52,7 @@ impl OrionDirectory {
     /// Re-reads the node list. Nodes without a usable board serial can't be
     /// matched to a device and are skipped.
     pub async fn refresh(&self) -> Result<usize, atlas_driver::DriverError> {
-        let result = self.transport.nodes().await;
-        let mut error = self
-            .last_error
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        match result {
+        let result = match self.transport.nodes().await {
             Ok(records) => {
                 let map: HashMap<String, NodeRecord> = records
                     .into_iter()
@@ -57,7 +61,22 @@ impl OrionDirectory {
                         Some((normalize_board_serial(serial)?, record))
                     })
                     .collect();
+                let agents = self.agents_among(map.values()).await;
+                Ok((map, agents))
+            }
+            Err(failure) => Err(failure),
+        };
+        let mut error = self
+            .last_error
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        match result {
+            Ok((map, agents)) => {
                 let count = map.len();
+                *self
+                    .agents
+                    .write()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()) = agents;
                 *self
                     .nodes
                     .write()
@@ -70,6 +89,40 @@ impl OrionDirectory {
                 Err(failure)
             }
         }
+    }
+
+    /// How often updates poll the board's `update.*` keys and boot id (3 s
+    /// by default; tests make it shorter).
+    pub fn set_update_poll(&self, every: Duration) {
+        let millis = u64::try_from(every.as_millis()).unwrap_or(u64::MAX).max(1);
+        self.update_poll_ms.store(millis, Ordering::Relaxed);
+    }
+
+    /// The nodes among `records` whose device agent publishes the update
+    /// keys (one status query per node, all at once).
+    async fn agents_among<'a>(
+        &self,
+        records: impl Iterator<Item = &'a NodeRecord>,
+    ) -> HashSet<String> {
+        let queries = records.map(|record| async move {
+            let entries = self
+                .transport
+                .status(StatusQuery {
+                    subject: Some(StatusSubject::Node(record.node_id.clone())),
+                    key_prefix: Some(update_action::KEY_STATE.into()),
+                })
+                .await
+                .unwrap_or_default();
+            entries
+                .iter()
+                .any(|entry| entry.key == update_action::KEY_STATE)
+                .then(|| record.node_id.to_string())
+        });
+        futures::future::join_all(queries)
+            .await
+            .into_iter()
+            .flatten()
+            .collect()
     }
 
     /// The Orion node running on this device's board, if any.
@@ -148,6 +201,11 @@ impl CapabilitySource for OrionDirectory {
             return Capabilities::default();
         };
         let id = node.node_id.clone();
+        let agent = self
+            .agents
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains(id.as_str());
         Capabilities {
             telemetry: Some(Arc::new(OrionTelemetry::new(
                 self.transport.clone(),
@@ -155,7 +213,7 @@ impl CapabilitySource for OrionDirectory {
                 &node,
             )) as Arc<dyn TelemetryCapability>),
             actions: Some(
-                Arc::new(OrionActions::new(self.transport.clone(), id.clone()))
+                Arc::new(OrionActions::new(self.transport.clone(), id.clone(), agent))
                     as Arc<dyn ActionsCapability>,
             ),
             update: self.bundles.clone().and_then(|bundles| {
@@ -165,6 +223,7 @@ impl CapabilitySource for OrionDirectory {
                         bundles,
                         id,
                         serial.clone(),
+                        Duration::from_millis(self.update_poll_ms.load(Ordering::Relaxed)),
                     )) as Arc<dyn UpdateCapability>
                 })
             }),

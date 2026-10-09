@@ -1,228 +1,16 @@
-use std::collections::{BTreeMap, HashMap};
-use std::net::IpAddr;
-use std::path::PathBuf;
+mod support;
+
 use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
 use atlas_driver::{
-    Artifact, CancellationToken, CapabilitySource, DeviceKey, DeviceMode, DriverError, Family,
-    Identity, LinkId, LinkSource, ProgressSink, ReleaseRef, UpdateOutcome,
+    Artifact, CancellationToken, CapabilitySource, DriverError, LinkSource, ProgressSink,
+    ReleaseRef, UpdateOutcome,
 };
-use atlas_driver_orion::{BundleHost, OrionDirectory, OrionTransport};
+use atlas_driver_orion::OrionDirectory;
 use atlas_image_server::{ImageServer, ImageServerConfig};
-use orion_control_plane::{
-    ActionRequest, ActionResult, ActionState, NodeHostFacts, NodeRecord, StatusEntry, StatusQuery,
-    StatusSubject, TypedConfigValue,
-};
-use orion_core::NodeId;
+use orion_control_plane::{ActionRequest, TypedConfigValue};
 use sha2::{Digest, Sha256};
-
-/// How the fake device answers an `update` action.
-#[derive(Clone, Copy, PartialEq)]
-enum Ending {
-    Confirms,
-    RollsBack,
-}
-
-#[derive(Default)]
-struct State {
-    nodes: Vec<NodeRecord>,
-    status: Vec<StatusEntry>,
-    actions: HashMap<String, ActionResult>,
-    polls: HashMap<String, u32>,
-    reject: bool,
-    ending: Option<Ending>,
-    /// The last `update` intent, as the board receives it.
-    update_request: Option<ActionRequest>,
-    /// Keep the update running until the board has downloaded the image.
-    hold_for_download: bool,
-    downloaded: bool,
-}
-
-#[derive(Clone, Default)]
-struct FakeOrion(Arc<Mutex<State>>);
-
-const NODE: &str = "raze-node";
-
-fn node(boot_id: &str) -> NodeRecord {
-    NodeRecord::builder(NodeId::new(NODE))
-        .host(NodeHostFacts {
-            board_serial: Some("a317bcbee5226d57\0".into()),
-            boot_id: Some(boot_id.into()),
-            cpu_count: Some(4),
-            ..NodeHostFacts::default()
-        })
-        .build()
-}
-
-fn status(key: &str, value: TypedConfigValue) -> StatusEntry {
-    StatusEntry::new(StatusSubject::Node(NodeId::new(NODE)), key, value)
-}
-
-impl FakeOrion {
-    fn new() -> Self {
-        let fake = Self::default();
-        fake.0.lock().unwrap().nodes = vec![node("boot-1")];
-        fake
-    }
-
-    fn set_status(&self, key: &str, value: TypedConfigValue) {
-        let mut state = self.0.lock().unwrap();
-        state.status.retain(|entry| entry.key != key);
-        state.status.push(status(key, value));
-    }
-}
-
-fn result(request: &ActionRequest, state: ActionState) -> ActionResult {
-    ActionResult {
-        action_id: request.action_id.clone(),
-        target: request.target.clone(),
-        name: request.name.clone(),
-        state,
-        output: BTreeMap::new(),
-        handled_by: NodeId::new(NODE),
-        requested_by: "atlas".into(),
-        created_at_ms: 0,
-        updated_at_ms: 0,
-    }
-}
-
-#[async_trait]
-impl OrionTransport for FakeOrion {
-    async fn nodes(&self) -> Result<Vec<NodeRecord>, DriverError> {
-        Ok(self.0.lock().unwrap().nodes.clone())
-    }
-
-    async fn status(&self, query: StatusQuery) -> Result<Vec<StatusEntry>, DriverError> {
-        let prefix = query.key_prefix.unwrap_or_default();
-        Ok(self
-            .0
-            .lock()
-            .unwrap()
-            .status
-            .iter()
-            .filter(|entry| entry.key.starts_with(&prefix))
-            .cloned()
-            .collect())
-    }
-
-    async fn run_action(&self, request: ActionRequest) -> Result<ActionResult, DriverError> {
-        let mut state = self.0.lock().unwrap();
-        let answer = if state.reject {
-            result(
-                &request,
-                ActionState::Rejected {
-                    reason: "no handler for locate".into(),
-                },
-            )
-        } else {
-            result(
-                &request,
-                ActionState::Running {
-                    progress: Some(250),
-                },
-            )
-        };
-        if request.name == "update" {
-            state.update_request = Some(request.clone());
-        }
-        state
-            .actions
-            .insert(request.action_id.clone(), answer.clone());
-        Ok(answer)
-    }
-
-    async fn query_action(&self, action_id: &str) -> Result<Option<ActionResult>, DriverError> {
-        let mut guard = self.0.lock().unwrap();
-        let state = &mut *guard;
-        let polls = state.polls.entry(action_id.into()).or_default();
-        *polls += 1;
-        let Some(current) = state.actions.get_mut(action_id) else {
-            return Ok(None);
-        };
-        if current.name == "update" && state.hold_for_download && !state.downloaded {
-            return Ok(Some(current.clone()));
-        }
-        if *polls >= 2 && matches!(current.state, ActionState::Running { .. }) {
-            current.state = ActionState::Succeeded;
-            if current.name == "update" {
-                current.output.insert(
-                    "version_staged".into(),
-                    TypedConfigValue::String("2026.4.0".into()),
-                );
-                // The board reboots into the new slot and reports back.
-                state.nodes = vec![node("boot-2")];
-                let ending = state.ending.unwrap_or(Ending::Confirms);
-                let entries = match ending {
-                    Ending::Confirms => vec![
-                        status("update.state", TypedConfigValue::String("confirmed".into())),
-                        status(
-                            "update.version_active",
-                            TypedConfigValue::String("2026.4.0".into()),
-                        ),
-                    ],
-                    Ending::RollsBack => vec![
-                        status(
-                            "update.state",
-                            TypedConfigValue::String("rolled-back".into()),
-                        ),
-                        status(
-                            "update.error",
-                            TypedConfigValue::String("PhotonVision didn't start".into()),
-                        ),
-                    ],
-                };
-                state
-                    .status
-                    .retain(|entry| !entry.key.starts_with("update."));
-                state.status.extend(entries);
-            }
-        } else if *polls == 1 && matches!(current.state, ActionState::Running { .. }) {
-            current.state = ActionState::Running {
-                progress: Some(750),
-            };
-        }
-        Ok(Some(current.clone()))
-    }
-}
-
-struct LocalBundles;
-
-impl BundleHost for LocalBundles {
-    fn url_for(&self, artifact: &Artifact, _peer: Option<IpAddr>) -> Result<String, DriverError> {
-        Ok(format!("http://atlas.local:7700/bundles/{}", artifact.name))
-    }
-}
-
-fn raze(board_serial: Option<&str>) -> Identity {
-    let mut attributes = BTreeMap::new();
-    if let Some(serial) = board_serial {
-        attributes.insert("board_serial".to_string(), serial.to_string());
-    }
-    Identity {
-        key: DeviceKey::new("raze", "a317bcbee5226d57"),
-        model: "Raze Gen 1".into(),
-        mode: DeviceMode::Normal,
-        versions: BTreeMap::from([("os".to_string(), "2026.3.0".to_string())]),
-        name: Some("photonvision".into()),
-        link: LinkId("mdns".into()),
-        address: "http://172.31.250.1:5899/.well-known/pd-device".into(),
-        attributes,
-    }
-}
-
-fn release() -> ReleaseRef {
-    ReleaseRef {
-        family: Family::new("raze"),
-        version: "2026.4.0".into(),
-        artifact: Some(Artifact {
-            name: "photonvision-2026.4.0-raze.img.xz".into(),
-            path: PathBuf::from("/tmp/x.img.xz"),
-            sha256: "ab".repeat(32),
-            size_bytes: 400_000_000,
-        }),
-    }
-}
+use support::{Ending, FakeOrion, LocalBundles, raze, release, text};
 
 #[tokio::test]
 async fn orion_adds_to_the_device_with_the_same_board_serial() {
@@ -288,11 +76,59 @@ async fn locate_waits_for_the_device_and_reports_rejections() {
     assert!(error.to_string().contains("no handler"), "{error}");
 }
 
-async fn update(ending: Ending) -> UpdateOutcome {
+#[tokio::test(start_paused = true)]
+async fn cancel_and_rollback_are_offered_when_the_agent_handles_updates() {
+    let fake = FakeOrion::new();
+    let directory = OrionDirectory::new(Arc::new(fake.clone()), None);
+    directory.refresh().await.unwrap();
+    let device = raze(Some("e5226d57"));
+    let ids = |directory: &OrionDirectory| -> Vec<String> {
+        let actions = directory.capabilities_for(&device).actions.unwrap();
+        actions.actions(&device).into_iter().map(|a| a.id).collect()
+    };
+    assert_eq!(
+        ids(&directory),
+        ["locate", "reboot"],
+        "no agent, no update actions"
+    );
+    let actions = directory.capabilities_for(&device).actions.unwrap();
+    assert!(
+        actions
+            .run_action(&device, "update.rollback")
+            .await
+            .is_err()
+    );
+
+    // The agent publishes update.state: it holds update and its siblings.
+    fake.set_status("update.state", text("confirmed"));
+    directory.refresh().await.unwrap();
+    assert_eq!(
+        ids(&directory),
+        ["locate", "reboot", "update.cancel", "update.rollback"]
+    );
+    let actions = directory.capabilities_for(&device).actions.unwrap();
+    let rollback = actions
+        .actions(&device)
+        .into_iter()
+        .find(|a| a.id == "update.rollback")
+        .unwrap();
+    assert!(rollback.destructive, "going back needs a confirm");
+    actions
+        .run_action(&device, "update.rollback")
+        .await
+        .unwrap();
+    actions.run_action(&device, "update.cancel").await.unwrap();
+    assert_eq!(fake.received(), ["update.rollback", "update.cancel"]);
+}
+
+async fn update_with(
+    ending: Ending,
+    cancel: CancellationToken,
+) -> (Result<UpdateOutcome, DriverError>, Vec<String>, FakeOrion) {
     let fake = FakeOrion::new();
     fake.0.lock().unwrap().ending = Some(ending);
-    fake.set_status("update.state", TypedConfigValue::String("idle".into()));
-    let directory = OrionDirectory::new(Arc::new(fake), Some(Arc::new(LocalBundles)));
+    fake.set_status("update.state", text("idle"));
+    let directory = OrionDirectory::new(Arc::new(fake.clone()), Some(Arc::new(LocalBundles)));
     directory.refresh().await.unwrap();
     let device = raze(Some("e5226d57"));
     let updater = directory.capabilities_for(&device).update.unwrap();
@@ -302,20 +138,31 @@ async fn update(ending: Ending) -> UpdateOutcome {
     let log = Arc::new(Mutex::new(Vec::new()));
     let sink = {
         let log = log.clone();
-        ProgressSink::new(move |update| log.lock().unwrap().push(format!("{update:?}")))
+        let cancel = cancel.clone();
+        let hangs = ending == Ending::Hangs;
+        ProgressSink::new(move |update| {
+            let line = format!("{update:?}");
+            // Atlas's cancel button, once the transfer shows progress.
+            if hangs && line.contains("StepProgress") {
+                cancel.cancel();
+            }
+            log.lock().unwrap().push(line);
+        })
     };
-    let outcome = updater
-        .run(&device, &release(), &sink, &CancellationToken::new())
-        .await
-        .unwrap();
-    let log = log.lock().unwrap();
+    let outcome = updater.run(&device, &release(), &sink, &cancel).await;
+    let log = log.lock().unwrap().clone();
+    (outcome, log, fake)
+}
+
+async fn update(ending: Ending) -> UpdateOutcome {
+    let (outcome, log, _) = update_with(ending, CancellationToken::new()).await;
     for step in ["Transfer", "Apply", "Reboot", "Confirm"] {
         assert!(
             log.iter().any(|line| line.contains(step)),
             "{step} reported: {log:?}"
         );
     }
-    outcome
+    outcome.unwrap()
 }
 
 #[tokio::test(start_paused = true)]
@@ -336,6 +183,45 @@ async fn a_rolled_back_update_says_why() {
             reason: "PhotonVision didn't start".into()
         }
     );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_stage_that_fails_on_the_board_fails_the_update() {
+    let (outcome, log, _) = update_with(Ending::FailsStaging, CancellationToken::new()).await;
+    let error = outcome.unwrap_err();
+    assert!(error.to_string().contains("SHA-256"), "{error}");
+    assert!(!log.iter().any(|line| line.contains("Reboot")), "{log:?}");
+}
+
+#[tokio::test(start_paused = true)]
+async fn cancelling_while_staging_cancels_on_the_board() {
+    let (outcome, _, fake) = update_with(Ending::Hangs, CancellationToken::new()).await;
+    assert!(
+        matches!(outcome, Err(DriverError::Cancelled)),
+        "{outcome:?}"
+    );
+    assert_eq!(fake.received(), ["update", "update.cancel"]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_update_already_running_is_refused() {
+    let fake = FakeOrion::new();
+    fake.set_status("update.state", text("staging"));
+    let directory = OrionDirectory::new(Arc::new(fake.clone()), Some(Arc::new(LocalBundles)));
+    directory.refresh().await.unwrap();
+    let device = raze(Some("e5226d57"));
+    let updater = directory.capabilities_for(&device).update.unwrap();
+    let error = updater
+        .run(
+            &device,
+            &release(),
+            &ProgressSink::new(|_| {}),
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("already updating"), "{error}");
+    assert!(fake.received().is_empty());
 }
 
 fn arg(request: &ActionRequest, key: &str) -> TypedConfigValue {
@@ -378,9 +264,10 @@ async fn the_board_downloads_and_checks_the_image_atlas_serves() {
     });
     let fake = FakeOrion::new();
     fake.0.lock().unwrap().hold_for_download = true;
-    fake.set_status("update.state", TypedConfigValue::String("idle".into()));
+    fake.set_status("update.state", text("idle"));
     let directory = OrionDirectory::new(Arc::new(fake.clone()), Some(Arc::new(server.clone())));
     directory.refresh().await.unwrap();
+    directory.set_update_poll(std::time::Duration::from_millis(20));
     let mut device = raze(Some("e5226d57"));
     device.address = "http://127.0.0.1:5899/.well-known/pd-device".into();
     let updater = directory.capabilities_for(&device).update.unwrap();

@@ -270,6 +270,12 @@ OS repo with `devices/tools/sync-device.sh` and import the vendored
 ../Atlas-Hardware-Manager/devices/tools/sync-device.sh --check vendor/devices/raze
 ```
 
+A vendored copy has no `crates/board-agent` next to it, which the
+`board-agent` Buildroot package builds from: set `BOARD_AGENT_WORKSPACE` to
+an Atlas checkout at the same commit (in the environment of the build, or
+on make's command line), or turn the agent off with
+`BR2_PACKAGE_BOARD_AGENT=n`.
+
 `sync-device.sh` writes `<dest>/.device-lock` with the Atlas commit and a
 content hash, and stamps the commit into the package's `board-package.env` so
 the identity document reports it. With a git-source import the commit is not
@@ -333,6 +339,7 @@ The device units are installed in `/usr/lib/systemd/system` and enabled by
 | `raze-leds-reprobe.service` | re-probes the WS2812 PIO driver if `/dev/leds0` is missing |
 | `lemnosd.service` (Lemnos's unit and `80-lemnosd.preset`) | the hardware service: LED ring, fan, sensors, GPIO; `/etc/lemnos/board.toml` |
 | `board-locate.service` (+ `.path`) | the identity endpoint's locate action: `raze-leds locate 10` |
+| `board-agent.service` | Orion device agent (`BR2_PACKAGE_BOARD_AGENT`, on by default): claims `update`, `update.cancel`, `update.rollback`, `reboot` and `locate` on orion-node's local IPC and runs them with `/usr/lib/board/update` (docs/ota.md). Waits when the OS has no orion-node |
 
 Fan, port power and LEDs work without a service: they are device tree
 overlays in `raze-device.txt`, plus `/usr/lib/udev/rules.d/60-raze-usb-power.rules`;
