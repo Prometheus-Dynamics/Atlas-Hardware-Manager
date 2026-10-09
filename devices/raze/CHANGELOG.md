@@ -477,6 +477,26 @@ commit; the commits are listed per area.
   EROFS root compresses them anyway, and xz-compressing ~1400 modules was
   most of the kernel's install time. Modules are plain `.ko` files.
 - **No virtualization (KVM)** in the kernel.
+- **A much smaller kernel build:** `raze.config` drops what a Raze never
+  runs: NIC vendors without hardware here, netfilter beyond a basic nftables
+  firewall (IPVS, ipset, ebtables, ALG helpers, exotic matches), most qdiscs,
+  HAT sound codecs and cards, DRM panels and fbtft, TV/radio/test media,
+  vendor HID drivers other than gamepads, unused filesystems and NLS tables,
+  HAT sensor/IIO/hwmon/RTC/GPIO chips (lemnosd reads the board's sensors over
+  i2c-dev), RAID/MTD/ATA extras, legacy gadget modules, KGDB and the ftrace
+  family. Measured on 53679a5 at -j24 (Image, modules, dtbs): 458 s -> 260 s
+  wall (6920 -> 3792 CPU-s), 1410 -> 312 modules, Image 24.4 -> 17.9 MB.
+  Gamepads stay (xpad is new; joydev, Sony/PlayStation/Microsoft/Nintendo/
+  Steam/Logitech HID), as do USB serial adapters, NVMe, device-mapper and
+  zram. Wireless is intentionally out. Needs a boot test of the gadget,
+  camera and display before release.
+- **Two trims that never worked now do:** the TV/DVB/radio/SDR/test media
+  options came back on because `MEDIA_SUPPORT_FILTER` was off (now on), and
+  `DM_RAID` selected RAID (`BLK_DEV_MD`, `MD_RAID456`) back on (now off).
+- **The build checks the kernel config:** `linux/check-config.sh` runs after
+  the kernel is configured and fails, naming each option, when anything
+  `raze.config` sets or turns off didn't take effect (on the old config it
+  names exactly those 8). Test: `tests/kernel-config.sh`.
 - libpisp no longer depends on Boost. It used Boost only for logging, and
   Buildroot's boost package has no Boost.Log unless an OS turns it on, so
   logging was always off and Boost was extracted, installed and copied into

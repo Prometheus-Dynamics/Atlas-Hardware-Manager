@@ -17,12 +17,16 @@ LINUX_KCONFIG_FRAGMENT_FILES += $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/raze.conf
 
 # Fail rather than ship a kernel whose core configuration drifted: the page
 # size (4 KiB) and a built-in EROFS are package decisions (raze.config,
-# kernel.toml).
+# kernel.toml), and every other option raze.config sets or turns off must
+# have taken effect (linux/check-config.sh: a "not set" that another option
+# selects back is otherwise dropped silently).
 define RAZE_CHECK_KERNEL_CONFIG
 	@grep -qx 'CONFIG_ARM64_4K_PAGES=y' $(LINUX_DIR)/.config || \
 		{ echo "Raze: the kernel must use 4 KiB pages (CONFIG_ARM64_4K_PAGES, BR2_ARM64_PAGE_SIZE_4K); something changed it" >&2; exit 1; }
 	@grep -qx 'CONFIG_EROFS_FS=y' $(LINUX_DIR)/.config || \
 		{ echo "Raze: EROFS must be built in (CONFIG_EROFS_FS=y)" >&2; exit 1; }
+	@sh $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/check-config.sh \
+		$(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/raze.config $(LINUX_DIR)/.config
 endef
 LINUX_POST_CONFIGURE_HOOKS += RAZE_CHECK_KERNEL_CONFIG
 
