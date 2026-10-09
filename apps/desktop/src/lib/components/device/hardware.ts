@@ -1,4 +1,5 @@
-// Helpers for the Hardware tab: readings named <prefix>_x, _y and _z become
+// Helpers for the Hardware tab: readings named <prefix>_x, _y and _z (or
+// <prefix>.x as Lemnos names them over Orion) become
 // one row, number formatting, status pills, and the trend samples.
 
 import type { HardwareReading } from "#lib/api/client.ts";
@@ -7,14 +8,14 @@ import type { Tone } from "#lib/format.ts";
 /** Trend points kept per reading while the tab is open. */
 export const SAMPLES = 60;
 
-const AXIS = /^(.+)_([xyz])$/;
+const AXIS = /^(.+)[._]([xyz])$/;
 
 export type ReadingEntry =
   | { kind: "single"; key: string; reading: HardwareReading }
   | { kind: "axes"; key: string; label: string; axes: { axis: string; reading: HardwareReading }[] };
 
-/** A reading name as words: accel_x reads "accel x", duty reads "duty". */
-export const label = (name: string) => name.replaceAll("_", " ");
+/** A reading name as words: accel_x and accel.x read "accel x". */
+export const label = (name: string) => name.replaceAll(/[._]/g, " ");
 
 /** Groups every <prefix>_x, _y, _z trio into one entry; the rest stay single. */
 export function groupReadings(readings: HardwareReading[]): ReadingEntry[] {

@@ -13,6 +13,7 @@ import type {
   DeviceKey,
   DeviceRecord,
   DeviceStatus,
+  HardwareCommand,
   HealthCheck,
   HistoryEntry,
   ImageServerStatus,
@@ -44,6 +45,12 @@ export const api = {
   deviceActions: (key: DeviceKey) => invoke<DeviceAction[]>("device_actions", { key }),
   runDeviceAction: (key: DeviceKey, action: string) =>
     invoke<void>("run_device_action", { key, action }),
+  /**
+   * Runs a command on one of the board's devices (`hardware` is its id in the
+   * hardware snapshot). A set resolves with the value the device applied.
+   */
+  controlHardware: (key: DeviceKey, hardware: string, command: HardwareCommand) =>
+    invoke<number | null>("control_hardware", { key, hardware, command }),
   /**
    * Runs the device's self-test (devices with `self-test`). Resolves with the
    * kept result, also when a check failed or the run couldn't finish.

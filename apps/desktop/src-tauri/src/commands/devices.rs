@@ -2,7 +2,7 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use atlas_core::{ActivityEntry, DeviceRecord, HistoryEntry, ScanReport, SelfTestRecord};
-use atlas_driver::{DeviceAction, DeviceKey, DeviceStatus, LogLine, Metric};
+use atlas_driver::{DeviceAction, DeviceKey, DeviceStatus, HardwareCommand, LogLine, Metric};
 use tauri::State;
 
 use super::{CmdResult, text};
@@ -53,6 +53,22 @@ pub async fn run_device_action(
     action: String,
 ) -> CmdResult<()> {
     state.atlas.run_action(&key, &action).await.map_err(text)
+}
+
+/// Runs a command on one of the board's devices (set, restore, release); a
+/// set answers the value the device applied.
+#[tauri::command]
+pub async fn control_hardware(
+    state: State<'_, AppState>,
+    key: DeviceKey,
+    hardware: String,
+    command: HardwareCommand,
+) -> CmdResult<Option<f64>> {
+    state
+        .atlas
+        .control_hardware(&key, &hardware, command)
+        .await
+        .map_err(text)
 }
 
 /// Runs the device's self-test and returns the kept result, also when a

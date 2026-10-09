@@ -2,6 +2,8 @@
 // the atlas-app shell. Field names are snake_case because that is what the
 // Rust side serializes. Keep in sync with those crates.
 
+import type { HardwareSnapshot } from "./hardware-types";
+
 export interface DeviceKey {
   family: string;
   serial: string;
@@ -43,7 +45,9 @@ export type CapabilityKind =
   /** The device can check its own hardware (see SelfTestRecord). */
   | "self-test"
   /** The device reports its state and an event log (see DeviceStatus). */
-  | "status";
+  | "status"
+  /** The board's devices take commands (see HardwareCommand). */
+  | "hardware-control";
 
 export type Presence = "online" | "offline";
 
@@ -491,32 +495,7 @@ export interface Drift {
   items: DriftItem[];
 }
 
-/** One value a hardware device reports; null when it is unknown. */
-export interface HardwareReading {
-  name: string;
-  value: number | null;
-  unit: string;
-}
-
-/** A sensor, fan or other part of a board, as lemnosd reports it. */
-export interface HardwareDevice {
-  id: string;
-  class: string;
-  model: string;
-  /** available, degraded, faulted or missing. */
-  status: string;
-  /** Why it isn't available, when the source says. */
-  reason?: string | null;
-  readings: HardwareReading[];
-  /** Controls the device offers (not operable from Atlas yet). */
-  controls: string[];
-}
-
-/** The board's hardware at one moment (Unix seconds). */
-export interface HardwareSnapshot {
-  at: number;
-  devices: HardwareDevice[];
-}
+export type { HardwareCommand, HardwareControl, HardwareDevice, HardwareReading, HardwareSnapshot } from "./hardware-types";
 
 /** What a device is doing now and how it is; absent parts are unknown. */
 export interface DeviceStatus {

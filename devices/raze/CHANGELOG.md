@@ -364,6 +364,11 @@ commit; the commits are listed per area.
 
 ### Orion device agent
 
+- **Orion 4fadba9** (request/response actions; `ActionRequest.wait_ms`
+  changed the wire layout): board-agent and Atlas move together, with every
+  orion-node they talk to. Handlers are unchanged. Atlas's own actions wait
+  on the node for their reply instead of asking every 500 ms, and its enroll
+  command also grants `clock.set`, `set`, `restore` and `release`.
 - **board-agent: the writer's own refusal text, also under load.** When the
   writer exited before its last stderr line was read, the action failed
   with "the writer failed (exit status: 3)" instead of the writer's reason

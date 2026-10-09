@@ -9,6 +9,7 @@
 
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use atlas_driver::DriverError;
@@ -48,12 +49,17 @@ pub struct RemoteTransport {
 }
 
 /// The actions Atlas runs through Orion; the enroll command grants these.
-const ACTIONS: [&str; 5] = [
+const ACTIONS: [&str; 9] = [
     "update",
     "update.cancel",
     "update.rollback",
     "reboot",
     "locate",
+    "clock.set",
+    // The board's devices (Lemnos): set, restore and release controls.
+    "set",
+    "restore",
+    "release",
 ];
 
 impl RemoteTransport {
@@ -281,6 +287,30 @@ impl OrionTransport for RemoteTransport {
         let id = action_id.to_string();
         self.call(|session| async move { session.query_action(&id).await })
             .await
+    }
+
+    async fn call_action(
+        &self,
+        request: ActionRequest,
+        timeout: Duration,
+    ) -> Result<ActionResult, DriverError> {
+        let id = request.action_id.clone();
+        let waited = self
+            .call(|session| async move {
+                match session.call_action(request, timeout).await {
+                    // Still running: the caller decides, as with the default.
+                    Err(RemoteError::ActionTimeout { .. }) => Ok(None),
+                    other => other.map(Some),
+                }
+            })
+            .await?;
+        match waited {
+            Some(result) => Ok(result),
+            None => self
+                .query_action(&id)
+                .await?
+                .ok_or_else(|| DriverError::Other(format!("Orion no longer tracks action {id}"))),
+        }
     }
 }
 

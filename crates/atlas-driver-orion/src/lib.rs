@@ -7,13 +7,15 @@
 //! adds what Orion offers to that device: live readings from the node's
 //! status lane, the actions the on-device agent claims (`locate`, `reboot`),
 //! A/B updates (see docs/ota.md), and the board's state (boot, readings,
-//! the `update.*` keys) for boards that don't report it themselves. Without Orion, devices keep everything
+//! the `update.*` keys), the board's devices (Lemnos's `lemnos.device`
+//! resources: readings, and commands to their controls) for boards that don't report it themselves. Without Orion, devices keep everything
 //! else; Orion is never the only way in.
 //!
 //! The transport is a trait. [`RemoteTransport`] implements it with Orion's
 //! remote operator client (signed orion+tcp).
 
 mod actions;
+mod control;
 mod directory;
 mod hardware;
 mod metrics;

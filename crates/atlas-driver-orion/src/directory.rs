@@ -8,8 +8,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use atlas_driver::attributes::{BOARD_SERIAL, normalize_board_serial};
 use atlas_driver::{
-    ActionsCapability, Capabilities, CapabilitySource, HealthCheck, Identity, Link, LinkSource,
-    StatusCapability, TelemetryCapability, UpdateCapability,
+    ActionsCapability, Capabilities, CapabilitySource, HardwareCapability, HealthCheck, Identity,
+    Link, LinkSource, StatusCapability, TelemetryCapability, UpdateCapability,
 };
 use orion_control_plane::{
     NodeRecord, StatusQuery, StatusSubject, TypedConfigValue, update_action,
@@ -19,6 +19,7 @@ use orion_control_plane::{
 const CLAIMED_KEY: &str = "action.claimed";
 
 use crate::actions::{OrionActions, legacy_claims};
+use crate::control::OrionHardware;
 use crate::metrics::OrionTelemetry;
 use crate::status::OrionStatus;
 use crate::transport::{BundleHost, OrionTransport};
@@ -239,6 +240,10 @@ impl CapabilitySource for OrionDirectory {
                 id.clone(),
                 claimed,
             )) as Arc<dyn ActionsCapability>),
+            hardware: Some(Arc::new(OrionHardware {
+                transport: self.transport.clone(),
+                node: id.clone(),
+            }) as Arc<dyn HardwareCapability>),
             status: Some(Arc::new(OrionStatus {
                 transport: self.transport.clone(),
                 node: id.clone(),

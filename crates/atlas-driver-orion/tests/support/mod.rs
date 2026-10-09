@@ -262,6 +262,13 @@ impl OrionTransport for FakeOrion {
 
     async fn run_action(&self, request: ActionRequest) -> Result<ActionResult, DriverError> {
         let mut state = self.0.lock().unwrap();
+        // The same request again returns the existing action, as on a node.
+        if let Some(existing) = state.actions.get_mut(&request.action_id) {
+            if existing.state == ActionState::Accepted {
+                existing.state = ActionState::Succeeded;
+            }
+            return Ok(existing.clone());
+        }
         state.received.push(request.name.clone());
         state.received_args.push(request.args.clone());
         if state.reject {
@@ -284,6 +291,12 @@ impl OrionTransport for FakeOrion {
                 let ending = state.ending.unwrap_or(Ending::Confirms);
                 state.steps = script(ending);
                 answer.output.insert("phase".into(), text("staging"));
+            }
+            // Lemnos's bridge: the value it applied.
+            "set" => {
+                if let Some(value) = request.args.get("value") {
+                    answer.output.insert("applied".into(), value.clone());
+                }
             }
             "update.cancel" => {
                 state.steps.clear();

@@ -46,6 +46,7 @@ pub(crate) fn request(
         deadline_ms: 0,
         // The node stamps the authenticated requester.
         requested_by: String::new(),
+        wait_ms: 0,
     }
 }
 
@@ -223,27 +224,38 @@ impl ActionsCapability for OrionActions {
             );
         }
         let request = request(&self.node, name, args);
-        let id = request.action_id.clone();
         // Unreachable here means it was never sent, so the device's own
         // transport may run it instead (Capabilities::fill_from). Once sent,
         // losing track of it is an ordinary error: running it again could
-        // restart the board twice.
-        let sent = self.transport.run_action(request).await?;
-        wait_for(
-            self.transport.as_ref(),
-            sent,
-            &id,
-            name,
-            Duration::from_secs(30),
-            &|_| {},
-        )
-        .await
-        .map_err(|error| match error {
-            DriverError::Unreachable(reason) => {
-                DriverError::Other(format!("{name} was sent through Orion, then: {reason}"))
+        // restart the board twice. Sending the same request again waits for
+        // its reply on the node (request/response); it never runs twice.
+        let sent = self.transport.run_action(request.clone()).await?;
+        let result = if sent.state.is_terminal() {
+            sent
+        } else {
+            self.transport
+                .call_action(request, Duration::from_secs(30))
+                .await
+                .map_err(|error| {
+                    DriverError::Other(format!("{name} was sent through Orion, then: {error}"))
+                })?
+        };
+        match result.state {
+            ActionState::Succeeded => {}
+            ActionState::Failed { reason } | ActionState::Rejected { reason } => {
+                return Err(DriverError::Other(format!("{name}: {reason}")));
             }
-            error => error,
-        })?;
+            ActionState::TimedOut => {
+                return Err(DriverError::Other(format!(
+                    "{name} timed out on the device"
+                )));
+            }
+            ActionState::Accepted | ActionState::Running { .. } => {
+                return Err(DriverError::Other(format!(
+                    "{name} was sent through Orion and gave no result in time"
+                )));
+            }
+        }
         Ok(())
     }
 }

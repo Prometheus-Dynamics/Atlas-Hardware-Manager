@@ -82,6 +82,7 @@ pub fn run() {
             commands::devices::forget_device,
             commands::devices::device_actions,
             commands::devices::run_device_action,
+            commands::devices::control_hardware,
             commands::devices::run_selftest,
             commands::devices::device_selftest,
             commands::devices::device_telemetry,

@@ -113,7 +113,7 @@ export function razeUsbBoot(serial: string, board: string): SimDevice {
 export const AB_METHODS = "image-write, ab-tryboot, usb-boot-reboot";
 /** A/B images carry the device package's self-test; older ones don't. */
 export const razeCaps = (ab: boolean): CapabilityKind[] =>
-  ab ? ["info", "update", "actions", "telemetry", "logs", "self-test", "status"] : ["info", "actions", "telemetry", "logs"];
+  ab ? ["info", "update", "actions", "telemetry", "logs", "self-test", "status", "hardware-control"] : ["info", "actions", "telemetry", "logs"];
 /** As atlas-driver-board offers them: locate on the endpoint, the rest over SSH. */
 export const AB_ACTIONS: DeviceAction[] = [
   { id: "locate", label: "Find it", destructive: false },

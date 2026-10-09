@@ -2,14 +2,21 @@
   // The board's hardware, one card per device. Each reading keeps a short
   // trend of the values seen while this tab is open; a new snapshot (its
   // `at`) adds a point.
-  import type { HardwareSnapshot } from "#lib/api/client.ts";
+  import type { DeviceKey, HardwareSnapshot } from "#lib/api/client.ts";
   import { clock } from "#lib/stores/clock.svelte.ts";
   import { untrack } from "svelte";
   import { SvelteMap } from "svelte/reactivity";
   import HardwareCard from "./HardwareCard.svelte";
   import { appendSample, sampleKey } from "./hardware.ts";
 
-  let { hardware }: { hardware: HardwareSnapshot } = $props();
+  let {
+    hardware,
+    deviceKey = null,
+  }: {
+    hardware: HardwareSnapshot;
+    /** The board, when its devices take commands (`hardware-control`). */
+    deviceKey?: DeviceKey | null;
+  } = $props();
 
   const history = new SvelteMap<string, number[]>();
   /** The `at` of the last snapshot sampled. */
@@ -35,7 +42,7 @@
 
 <div class="flex flex-col gap-4">
   {#each hardware.devices as device (device.id)}
-    <HardwareCard {device} seriesOf={(reading) => history.get(sampleKey(device.id, reading)) ?? []} />
+    <HardwareCard {device} {deviceKey} seriesOf={(reading) => history.get(sampleKey(device.id, reading)) ?? []} />
   {/each}
   <p class="text-[12px] text-fg-faint">Read {ago} s ago</p>
 </div>

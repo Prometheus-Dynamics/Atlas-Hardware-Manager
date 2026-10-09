@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use std::net::IpAddr;
+use std::time::Duration;
 
 use atlas_driver::{Artifact, DriverError, HealthCheck};
 use orion_control_plane::{
@@ -42,6 +43,28 @@ pub trait OrionTransport: Send + Sync {
 
     /// The newest result for one action, if Orion still tracks it.
     async fn query_action(&self, action_id: &str) -> Result<Option<ActionResult>, DriverError>;
+
+    /// Runs `request` and waits up to `timeout` for its final result; the
+    /// latest running one when `timeout` passes first. Orion's operator client
+    /// waits on the node (request/response actions); this default, for
+    /// transports without that, resubmits and then asks every 250 ms.
+    async fn call_action(
+        &self,
+        request: ActionRequest,
+        timeout: Duration,
+    ) -> Result<ActionResult, DriverError> {
+        let deadline = tokio::time::Instant::now() + timeout;
+        let id = request.action_id.clone();
+        let mut result = self.run_action(request).await?;
+        while !result.state.is_terminal() && tokio::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            match self.query_action(&id).await? {
+                Some(newer) => result = newer,
+                None => break,
+            }
+        }
+        Ok(result)
+    }
 }
 
 /// Makes a release file reachable by URL for devices to pull. Update bytes

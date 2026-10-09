@@ -1,14 +1,24 @@
 <script lang="ts">
   // One hardware device from the board's snapshot, rendered from its data
   // alone: a status pill, its readings (axis trios in a row), and its controls.
-  import type { HardwareDevice } from "#lib/api/client.ts";
+  import type { DeviceKey, HardwareDevice } from "#lib/api/client.ts";
   import GlassCard from "#lib/components/common/GlassCard.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
   import Pill from "#lib/components/common/Pill.svelte";
+  import HardwareControls from "./HardwareControls.svelte";
   import HardwareReadingTile from "./HardwareReadingTile.svelte";
   import { groupReadings, label, pillFor } from "./hardware.ts";
 
-  let { device, seriesOf }: { device: HardwareDevice; seriesOf: (reading: string) => number[] } = $props();
+  let {
+    device,
+    seriesOf,
+    deviceKey,
+  }: {
+    device: HardwareDevice;
+    seriesOf: (reading: string) => number[];
+    /** The board, when its devices take commands; null shows the controls' values only. */
+    deviceKey: DeviceKey | null;
+  } = $props();
 
   const pill = $derived(pillFor(device.status));
   const entries = $derived(groupReadings(device.readings));
@@ -28,7 +38,7 @@
   {/if}
 
   {#if entries.length === 0}
-    <p class="text-[13px] text-fg-muted">No readings.</p>
+    {#if device.controls.length === 0}<p class="text-[13px] text-fg-muted">No readings.</p>{/if}
   {:else}
     <div class="auto-grid" style="--min: 150px; --gap: 8px">
       {#each entries as entry (entry.key)}
@@ -48,9 +58,7 @@
     </div>
   {/if}
 
-  {#if device.controls.length > 0}
-    <p class="mt-3 text-[12px] text-fg-faint">Controls: {device.controls.join(", ")}</p>
-  {/if}
+  <HardwareControls {device} {deviceKey} />
 </GlassCard>
 
 <style>

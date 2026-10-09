@@ -116,7 +116,7 @@
         {:else if current === "software"}
           <SoftwareTab {record} />
         {:else if current === "hardware" && hardware}
-          <HardwareTab hardware={hardware} />
+          <HardwareTab {hardware} deviceKey={record.capabilities.includes("hardware-control") ? record.key : null} />
         {:else if current === "logs"}
           <LogsTab {record} />
         {:else if current === "actions"}

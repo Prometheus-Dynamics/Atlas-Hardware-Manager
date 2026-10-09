@@ -173,6 +173,7 @@ impl Driver for MockDriver {
             }),
             selftest: None,
             status: None,
+            hardware: None,
         }
     }
 

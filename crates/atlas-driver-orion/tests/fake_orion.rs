@@ -3,8 +3,8 @@ mod support;
 use std::sync::{Arc, Mutex};
 
 use atlas_driver::{
-    Artifact, CancellationToken, CapabilitySource, DriverError, HardwareDevice, HardwareReading,
-    LinkSource, ProgressSink, ReleaseRef, UpdateOutcome,
+    Artifact, CancellationToken, CapabilitySource, DriverError, HardwareControl, HardwareDevice,
+    HardwareReading, LinkSource, ProgressSink, ReleaseRef, UpdateOutcome,
 };
 use atlas_driver_orion::OrionDirectory;
 use atlas_image_server::{ImageServer, ImageServerConfig};
@@ -499,7 +499,13 @@ async fn the_board_hardware_comes_from_the_devices_on_this_node() {
                 status: "available".into(),
                 reason: None,
                 readings: vec![reading("rpm", 4200.0, "rpm")],
-                controls: vec!["duty".into()],
+                controls: vec![HardwareControl {
+                    name: "duty".into(),
+                    value: Some(0.83),
+                    min: Some(0.0),
+                    max: Some(1.0),
+                    unit: String::new(),
+                }],
             },
             HardwareDevice {
                 id: "imu".into(),

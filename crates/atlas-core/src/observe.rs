@@ -1,8 +1,9 @@
-//! Live views of a device and the fleet history.
+//! Live views of a device, commands to its board's devices, and the fleet
+//! history.
 
-use atlas_driver::{DeviceKey, LogLine, Metric};
+use atlas_driver::{DeviceKey, HardwareCommand, LogLine, Metric};
 
-use crate::{ActivityEntry, Atlas, CoreError};
+use crate::{ActivityEntry, ActivityKind, ActivityLevel, Atlas, CoreError};
 
 impl Atlas {
     /// Current readings, for devices whose driver offers telemetry.
@@ -23,6 +24,40 @@ impl Atlas {
             what: "logs",
         })?;
         Ok(logs.tail(&record.identity, lines.clamp(1, 2000)).await?)
+    }
+
+    /// Runs `command` on the board device `hardware` (its id in the device's
+    /// hardware snapshot) and logs it. A set answers the applied value.
+    pub async fn control_hardware(
+        &self,
+        key: &DeviceKey,
+        hardware: &str,
+        command: HardwareCommand,
+    ) -> Result<Option<f64>, CoreError> {
+        let (live, record) = self.live_device(key)?;
+        let control = live.capabilities.hardware.ok_or(CoreError::Unsupported {
+            device: key.clone(),
+            what: "hardware controls",
+        })?;
+        let what = format!("{hardware}: {}", command.describe());
+        let result = control.control(&record.identity, hardware, command).await;
+        let name = record.display_name();
+        self.inner.record_activity(vec![match &result {
+            Ok(_) => ActivityEntry::about(
+                &record,
+                ActivityKind::ActionRun,
+                ActivityLevel::Info,
+                format!("{what} on {name}"),
+            ),
+            Err(error) => ActivityEntry::about(
+                &record,
+                ActivityKind::ActionRun,
+                ActivityLevel::Error,
+                format!("{what} on {name} failed: {error}"),
+            ),
+        }]);
+        self.inner.persist();
+        Ok(result?)
     }
 
     /// Fleet history, newest first, at most `limit` entries.

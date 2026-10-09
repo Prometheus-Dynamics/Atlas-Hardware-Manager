@@ -3,7 +3,7 @@
 //! model, its channels' units, its controls); its status lane carries its
 //! state, its reason and one entry per channel.
 
-use atlas_driver::{HardwareDevice, HardwareReading, HardwareSnapshot};
+use atlas_driver::{HardwareControl, HardwareDevice, HardwareReading, HardwareSnapshot};
 use orion_control_plane::{
     AvailabilityState, HealthState, ResourceRecord, StatusEntry, TypedConfigValue, split_label,
 };
@@ -32,7 +32,7 @@ fn label_or_empty(record: &ResourceRecord, key: &str) -> String {
 }
 
 /// The device's id on its board: the resource id without `lemnos.<board>.`.
-fn device_id(record: &ResourceRecord) -> String {
+pub(crate) fn device_id(record: &ResourceRecord) -> String {
     let id = record.resource_id.as_str();
     label(record, "lemnos.board")
         .filter(|board| !board.is_empty())
@@ -55,6 +55,20 @@ fn status_from_availability(record: &ResourceRecord) -> &'static str {
         (_, HealthState::Failed) => "faulted",
         _ => "missing",
     }
+}
+
+/// A control's range label, `<min>..<max>` with the unit after a space when
+/// it has one (`0..1`, `2..16 g`).
+fn parse_range(text: &str) -> (Option<f64>, Option<f64>, String) {
+    let (range, unit) = text.trim().split_once(' ').unwrap_or((text.trim(), ""));
+    let Some((min, max)) = range.split_once("..") else {
+        return (None, None, unit.trim().to_string());
+    };
+    (
+        min.trim().parse().ok(),
+        max.trim().parse().ok(),
+        unit.trim().to_string(),
+    )
 }
 
 fn number(value: &TypedConfigValue) -> Option<f64> {
@@ -102,8 +116,16 @@ pub(crate) fn device(record: &ResourceRecord, entries: &[StatusEntry]) -> Hardwa
         .labels
         .iter()
         .filter_map(|label| {
-            let (name, _) = split_label(label)?;
-            name.strip_prefix("lemnos.control.").map(str::to_string)
+            let (key, range) = split_label(label)?;
+            let name = key.strip_prefix("lemnos.control.")?;
+            let (min, max, unit) = parse_range(range.unwrap_or_default());
+            Some(HardwareControl {
+                name: name.to_string(),
+                value: entry(&format!("{CONTROL_PREFIX}{name}")).and_then(number),
+                min,
+                max,
+                unit,
+            })
         })
         .collect();
 
@@ -181,7 +203,16 @@ mod tests {
         assert_eq!(device.model, "bmi088");
         assert_eq!(device.status, "available", "from availability and health");
         assert_eq!(device.reason, None);
-        assert_eq!(device.controls, vec!["range".to_string()]);
+        assert_eq!(
+            device.controls,
+            vec![HardwareControl {
+                name: "range".into(),
+                value: Some(4.0),
+                min: Some(2.0),
+                max: Some(16.0),
+                unit: "g".into(),
+            }]
+        );
         assert_eq!(
             device.readings,
             vec![HardwareReading {
@@ -260,7 +291,14 @@ mod tests {
                 entry("lemnos.raze.fan", "rpm", TypedConfigValue::UInt(4200)),
             ],
         );
-        assert_eq!(device.controls, vec!["duty".to_string()]);
+        assert_eq!(device.controls.len(), 1);
+        assert_eq!(device.controls[0].name, "duty");
+        assert_eq!(device.controls[0].value, Some(0.83));
+        assert_eq!(
+            (device.controls[0].min, device.controls[0].max),
+            (Some(0.0), Some(1.0))
+        );
+        assert_eq!(device.controls[0].unit, "");
         assert_eq!(device.readings.len(), 1);
         assert_eq!(device.readings[0].name, "rpm");
         assert_eq!(device.readings[0].value, Some(4200.0));

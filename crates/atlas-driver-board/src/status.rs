@@ -302,7 +302,10 @@ mod tests {
         assert_eq!(imu.readings[0].value, Some(0.12));
         assert_eq!(imu.readings[0].unit, "m/s²");
         assert_eq!(imu.readings[1].value, None);
-        assert_eq!(hardware.devices[1].controls, ["duty"]);
+        assert_eq!(
+            hardware.devices[1].controls,
+            [atlas_driver::HardwareControl::named("duty")]
+        );
         assert!(hardware.devices[2].readings.is_empty());
     }
 

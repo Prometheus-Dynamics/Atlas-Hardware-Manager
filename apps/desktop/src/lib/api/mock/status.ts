@@ -9,6 +9,7 @@ import type {
   DeviceKey,
   DeviceStatus,
   EventSource,
+  HardwareCommand,
   HardwareSnapshot,
   HistoryEntry,
   UpdateState,
@@ -167,6 +168,37 @@ function advance(device: SimDevice, board: Board) {
   }
 }
 
+/** Controls written from here, by `<device key>/<hardware>/<control>`; the board's own value otherwise. */
+const writes = new Map<string, number>();
+const writeKey = (key: DeviceKey, hardware: string, control: string) => `${keyString(key)}/${hardware}/${control}`;
+
+/** A command to the A/B Raze's devices, as Lemnos's Orion bridge answers it. */
+export function controlHardware(key: DeviceKey, hardware: string, command: HardwareCommand): number | null {
+  const device = online(key);
+  const snapshot = device ? hardwareFor(device, Date.now(), 50) : null;
+  const target = snapshot?.devices.find((d) => d.id === hardware);
+  if (!target) throw `Orion doesn't list the board's ${hardware}`;
+  const prefix = writeKey(key, hardware, "");
+  switch (command.command) {
+    case "set": {
+      const control = target.controls.find((c) => c.name === command.control);
+      if (!control) throw `${hardware}: no such control`;
+      if (control.min !== null && control.max !== null && (command.value < control.min || command.value > control.max))
+        throw `${hardware}: value out of range`;
+      writes.set(writeKey(key, hardware, command.control), command.value);
+      return command.value;
+    }
+    case "restore":
+      for (const k of [...writes.keys()])
+        if (k.startsWith(prefix) && (command.control === null || k === prefix + command.control)) writes.delete(k);
+      return null;
+    case "release":
+      if (target.class !== "fan") throw `${hardware}: device error: unsupported`;
+      for (const k of [...writes.keys()]) if (k.startsWith(prefix)) writes.delete(k);
+      return null;
+  }
+}
+
 /** The A/B Raze's hardware as lemnosd reports it; the readings drift a little on every read. */
 function hardwareFor(device: SimDevice, now: number, celsius: number): HardwareSnapshot | null {
   if (device.key.serial !== "8f3a1c2d") return null;
@@ -175,6 +207,7 @@ function hardwareFor(device: SimDevice, now: number, celsius: number): HardwareS
   const round = (value: number, digits: number) => Math.round(value * 10 ** digits) / 10 ** digits;
   const volts = round(12.02 + Math.sin(t / 30) * 0.04 + jitter(0.01), 2);
   const amps = round(1.5 + Math.sin(t / 11) * 0.1 + jitter(0.02), 3);
+  const fanDuty = writes.get(writeKey(device.key, "fan", "duty")) ?? round(0.8 + Math.sin(t / 40) * 0.05, 2);
   return {
     at: sec(now),
     devices: [
@@ -219,8 +252,8 @@ function hardwareFor(device: SimDevice, now: number, celsius: number): HardwareS
         class: "fan",
         model: "pwmfan",
         status: "available",
-        readings: [{ name: "duty", value: round(0.8 + Math.sin(t / 40) * 0.05 + jitter(0.01), 2), unit: "" }],
-        controls: ["duty"],
+        readings: [{ name: "rpm", value: Math.round(fanDuty * 5200 + jitter(40)), unit: "rpm" }],
+        controls: [{ name: "duty", value: fanDuty, min: 0, max: 1, unit: "" }],
       },
       {
         id: "cpu-thermal",

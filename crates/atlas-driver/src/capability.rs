@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
 use crate::{
-    DeviceMode, DriverError, Family, Identity, LogsCapability, SelfTestCapability,
-    StatusCapability, TelemetryCapability,
+    DeviceMode, DriverError, Family, HardwareCapability, Identity, LogsCapability,
+    SelfTestCapability, StatusCapability, TelemetryCapability,
 };
 
 /// Everything a device can offer. The UI shows a tab or action only for the
@@ -30,6 +30,8 @@ pub enum CapabilityKind {
     /// The device reports its state (boot, health, update, drift) and,
     /// usually, an event log.
     Status,
+    /// The board's devices take commands (set, restore and release controls).
+    HardwareControl,
 }
 
 /// The capabilities a driver grants one device. Absent means unsupported.
@@ -41,6 +43,7 @@ pub struct Capabilities {
     pub logs: Option<Arc<dyn LogsCapability>>,
     pub selftest: Option<Arc<dyn SelfTestCapability>>,
     pub status: Option<Arc<dyn StatusCapability>>,
+    pub hardware: Option<Arc<dyn HardwareCapability>>,
 }
 
 impl Capabilities {
@@ -73,6 +76,9 @@ impl Capabilities {
         }
         if self.status.is_some() && mode == DeviceMode::Normal {
             kinds.push(CapabilityKind::Status);
+        }
+        if self.hardware.is_some() && mode == DeviceMode::Normal {
+            kinds.push(CapabilityKind::HardwareControl);
         }
         kinds
     }

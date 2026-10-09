@@ -237,6 +237,65 @@ pub struct HardwareReading {
     pub unit: String,
 }
 
+/// One control a board device accepts, with what the source knows of it: its
+/// value now and its range, in `unit` (empty when it has none).
+#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+pub struct HardwareControl {
+    pub name: String,
+    pub value: Option<f64>,
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub unit: String,
+}
+
+impl HardwareControl {
+    pub fn named(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            ..Self::default()
+        }
+    }
+}
+
+/// A board lists its controls by name; Orion describes them. Both read.
+impl<'de> Deserialize<'de> for HardwareControl {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Wire {
+            Name(String),
+            Full {
+                #[serde(default)]
+                name: String,
+                #[serde(default)]
+                value: Option<f64>,
+                #[serde(default)]
+                min: Option<f64>,
+                #[serde(default)]
+                max: Option<f64>,
+                #[serde(default)]
+                unit: String,
+            },
+        }
+        Ok(match Wire::deserialize(deserializer)? {
+            Wire::Name(name) => Self::named(name),
+            Wire::Full {
+                name,
+                value,
+                min,
+                max,
+                unit,
+            } => Self {
+                name,
+                value,
+                min,
+                max,
+                unit,
+            },
+        })
+    }
+}
+
 /// One device on a board's hardware bus, with its latest readings.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct HardwareDevice {
@@ -254,9 +313,9 @@ pub struct HardwareDevice {
     pub reason: Option<String>,
     #[serde(default)]
     pub readings: Vec<HardwareReading>,
-    /// Names of the controls the device accepts.
+    /// The controls the device accepts.
     #[serde(default)]
-    pub controls: Vec<String>,
+    pub controls: Vec<HardwareControl>,
 }
 
 /// What a board's devices read at one moment.
@@ -335,6 +394,17 @@ mod tests {
         let bare: DeviceEvent = serde_json::from_str(r#"{"t":1,"kind":"x","data":null}"#).unwrap();
         assert_eq!(bare.source, EventSource::Unknown);
         assert!(bare.data.is_empty());
+    }
+
+    #[test]
+    fn controls_read_as_names_or_in_full() {
+        let device: HardwareDevice = serde_json::from_str(
+            r#"{"id":"fan","controls":["duty",{"name":"speed","value":0.5,"min":0,"max":1,"unit":""}]}"#,
+        )
+        .unwrap();
+        assert_eq!(device.controls[0], HardwareControl::named("duty"));
+        assert_eq!(device.controls[1].value, Some(0.5));
+        assert_eq!(device.controls[1].max, Some(1.0));
     }
 
     #[test]

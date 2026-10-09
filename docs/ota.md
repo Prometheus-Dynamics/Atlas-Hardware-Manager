@@ -2,7 +2,8 @@
 
 Status: draft, revised after Orion's review (its counterparts are Orion's
 `docs/update-recovery.md` and `docs/device-agent.md`). atlas-driver-orion is
-built against Orion `ec91d0a` (control protocol 4) and tested with a fake
+built against Orion `4fadba9` (control protocol 4, request/response
+actions) and tested with a fake
 Orion. The device-side writer (`/usr/lib/board/update`) is tested
 off-device, and `board-agent` (crates/board-agent) against a real
 orion-node with a fake writer; neither has run on a board with Orion yet.
@@ -311,8 +312,17 @@ through board-agent, or someone typing on the board.
   controls) with one reading from `lemnos-ctl read` (name, value or null,
   unit). `GET /status` serves it as `hardware` while under a minute old, else
   `null`. Atlas shows it on the device's Hardware tab, a card per device with
-  short trends while the tab is open. Live readings and controls come
-  through Orion once lemnosd publishes its devices there.
+  short trends while the tab is open. When Orion lists the board's
+  `lemnos.device` resources (Lemnos's bridge, its `docs/orion.md`), Atlas
+  takes the hardware from there instead (live, up to 2 Hz per device, with
+  each control's value and range) and the controls work: a slider sets a
+  control when let go, Restore undoes this computer's writes, and a fan can
+  be handed back to the board's cooling. These are Orion request/response
+  actions (`set`, `restore`, `release` on the device's resource): the node
+  holds its answer until the bridge has one. Lemnos applies the device's
+  `writers` to the caller `orion:<requested_by>`, which for Atlas is
+  `orion:operator:atlas-<host>`; a device whose list doesn't name it refuses
+  the write, and the card says so.
 - **Endpoints.** `GET /status` and `GET /events?since=<t>&limit=<n>` on the
   identity endpoint (port 5899), read-only and listed in the identity's
   `endpoints`.

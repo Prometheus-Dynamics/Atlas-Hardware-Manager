@@ -365,6 +365,7 @@ impl Driver for BoardDriver {
             actions,
             selftest,
             status: status.map(|status| status as Arc<dyn StatusCapability>),
+            hardware: None,
         }
     }
 }

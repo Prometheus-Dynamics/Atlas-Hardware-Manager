@@ -19,7 +19,7 @@
   const track = $derived(`${c * sweep} ${c}`);
 </script>
 
-<div class="ring" style="width: {size}px; height: {size}px">
+<div class="gauge" style="width: {size}px; height: {size}px">
   <svg viewBox="0 0 {size} {size}" aria-hidden="true">
     <g transform="rotate(135 {size / 2} {size / 2})">
       <circle cx={size / 2} cy={size / 2} {r} fill="none" style="stroke: var(--glass-strong)" stroke-width={stroke} stroke-linecap="round" stroke-dasharray={track} />
@@ -40,7 +40,8 @@
 </div>
 
 <style>
-  .ring {
+  /* Not `.ring`: that is also Tailwind's ring utility, a 1px outline. */
+  .gauge {
     position: relative;
     flex-shrink: 0;
   }

@@ -44,6 +44,9 @@ impl Capabilities {
         if self.selftest.is_none() {
             self.selftest = extra.selftest;
         }
+        if self.hardware.is_none() {
+            self.hardware = extra.hardware;
+        }
         self.status = match (self.status.take(), extra.status) {
             (Some(own), Some(more)) => Some(Arc::new(CombinedStatus { own, more })),
             (own, more) => own.or(more),

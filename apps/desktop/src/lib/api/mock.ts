@@ -18,7 +18,7 @@ import * as runner from "./mock/runner";
 import { activity, logLines, metrics, online, record, restart, seedHistory } from "./mock/observe";
 import { listRecords, robotStatuses, robotUpdateRequest, scan, touch } from "./mock/scan";
 import { lastSelftest, runSelftest, seedSelftests } from "./mock/selftest";
-import { boardAction, deviceHistory, deviceStatus } from "./mock/status";
+import { boardAction, controlHardware, deviceHistory, deviceStatus } from "./mock/status";
 
 seedHistory();
 seedSelftests();
@@ -184,6 +184,7 @@ export const mockApi: Api = {
   deviceTelemetry: (key) => reply(() => metrics(online(key))),
   deviceLogs: (key, lines) => reply(() => logLines(online(key), Math.max(1, Math.min(lines, 2000)))),
   deviceStatus: (key) => reply(() => deviceStatus(key)),
+  controlHardware: (key, hardware, command) => reply(() => controlHardware(key, hardware, command)),
   deviceHistory: (key, limit) => reply(() => deviceHistory(key, Math.max(1, Math.min(limit, 2000)))),
   listActivity: (limit) => reply(() => activity.slice(-limit).reverse()),
   saveSupportBundle: (key) =>

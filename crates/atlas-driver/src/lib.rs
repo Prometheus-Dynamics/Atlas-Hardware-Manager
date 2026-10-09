@@ -9,6 +9,7 @@ mod augment;
 mod capability;
 mod driver;
 mod error;
+mod hardware;
 mod health;
 mod observe;
 mod registry;
@@ -24,6 +25,7 @@ pub use capability::{
 };
 pub use driver::{ChangeNotifier, Driver, DriverManifest, LinkSource};
 pub use error::DriverError;
+pub use hardware::{HardwareCapability, HardwareCommand};
 pub use health::{HealthCheck, HealthStatus};
 pub use observe::{
     LogLevel, LogLine, LogsCapability, Metric, TelemetryCapability, attributes, metric_ids,
@@ -33,8 +35,8 @@ pub use selftest::{
     CheckStatus, SELFTEST_FORMAT, SelfTestCapability, SelfTestCheck, SelfTestReport,
 };
 pub use status::{
-    BootInfo, DeviceEvent, DeviceStatus, Drift, DriftItem, EventSource, FanState, HardwareDevice,
-    HardwareReading, HardwareSnapshot, StatusCapability, Temperature, UpdateState,
+    BootInfo, DeviceEvent, DeviceStatus, Drift, DriftItem, EventSource, FanState, HardwareControl,
+    HardwareDevice, HardwareReading, HardwareSnapshot, StatusCapability, Temperature, UpdateState,
 };
 pub use types::{
     Candidate, DeviceKey, DeviceMode, Family, Identity, Link, LinkId, LinkKind, Serial,
