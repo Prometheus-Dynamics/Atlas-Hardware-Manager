@@ -19,57 +19,28 @@ use orion_control_plane::{
 use tokio::process::Child;
 
 use crate::config::Config;
+pub use crate::stage::StageRequest;
 use crate::writer::{StderrTail, Writer, WriterStatus};
 
-/// The node actions the agent claims.
-pub const CLAIMED_ACTIONS: [&str; 5] = [
+/// The node actions the agent claims. Published as `action.claimed` (a
+/// comma-separated list), so operators can tell what this node offers.
+pub const CLAIMED_ACTIONS: [&str; 6] = [
     action_names::UPDATE,
     action_names::UPDATE_CANCEL,
     action_names::UPDATE_ROLLBACK,
     action_names::REBOOT,
     action_names::LOCATE,
+    crate::clock::CLOCK_SET,
 ];
+
+/// The status key listing [`CLAIMED_ACTIONS`].
+pub const CLAIMED_KEY: &str = "action.claimed";
 
 /// The writer's exit status for "refused, nothing changed".
 const WRITER_REFUSED: i32 = 3;
 
 /// How long `update` waits for the writer to take its lock.
 const START_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// The arguments of an `update` action.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct StageRequest {
-    pub image_url: String,
-    pub sha256: String,
-    pub size: u64,
-}
-
-impl StageRequest {
-    pub fn from_args(args: &BTreeMap<String, TypedConfigValue>) -> Result<Self, String> {
-        let text = |key: &str| match args.get(key) {
-            Some(TypedConfigValue::String(value)) if !value.is_empty() => Ok(value.clone()),
-            _ => Err(format!("`{key}` (string) is required")),
-        };
-        let image_url = text(update_action::ARG_IMAGE_URL)?;
-        if !(image_url.starts_with("http://") || image_url.starts_with("https://")) {
-            return Err("`image_url` must be an http:// or https:// URL".into());
-        }
-        let sha256 = text(update_action::ARG_SHA256)?.to_ascii_lowercase();
-        if sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit()) {
-            return Err("`sha256` must be 64 hex digits".into());
-        }
-        let size = match args.get(update_action::ARG_SIZE) {
-            Some(TypedConfigValue::UInt(size)) if *size > 0 => *size,
-            Some(TypedConfigValue::Int(size)) if *size > 0 => size.unsigned_abs(),
-            _ => return Err("`size` (uint, bytes) is required".into()),
-        };
-        Ok(Self {
-            image_url,
-            sha256,
-            size,
-        })
-    }
-}
 
 /// The `update.*` entries for `status` under `node/<id>` (TTL 0: the node's
 /// maximum).
@@ -102,6 +73,7 @@ pub fn update_status_entries(
         ),
         reporter.node_status_entry(update_action::KEY_ERROR, text(&status.error)),
         reporter.node_status_entry(update_action::KEY_BOOT_ID, text(boot_id)),
+        reporter.node_status_entry(CLAIMED_KEY, text(&CLAIMED_ACTIONS.join(","))),
     ]
 }
 
@@ -264,7 +236,7 @@ impl Agent {
                 // action record.
                 self.succeed(&id, phase(update_action::PHASE_REBOOTING))
                     .await;
-                self.event("reboot", "restart requested through Orion")
+                self.event("reboot", "restart requested through Orion", &[])
                     .await;
                 self.reboot(uint("delay_ms", 0)).await;
             }
@@ -278,6 +250,7 @@ impl Agent {
                     Err(error) => self.fail(&id, error).await,
                 }
             }
+            crate::clock::CLOCK_SET => self.set_clock(&id, &request.args).await,
             other => {
                 self.reject(&id, format!("unsupported action `{other}`"))
                     .await;
@@ -490,9 +463,10 @@ impl Agent {
 
     /// Appends to the board's event log; best effort (an image without the
     /// package's `event` loses only the line).
-    async fn event(&self, kind: &str, message: &str) {
+    async fn event(&self, kind: &str, message: &str, data: &[String]) {
         let mut command = self.config.event_command.clone();
         command.extend([kind.to_owned(), message.to_owned()]);
+        command.extend(data.iter().cloned());
         if let Err(error) = run_command(&command).await {
             crate::log(&format!("event {kind}: {error}"));
         }
@@ -508,6 +482,34 @@ impl Agent {
     /// Locate goes through the package's request file, which
     /// board-locate.path turns into board-locate.service (the LED ring's
     /// locate pattern); stopping it stops that service.
+    /// `clock.set`: validates the time (clock.rs), sets it and logs it.
+    async fn set_clock(&self, id: &str, args: &BTreeMap<String, TypedConfigValue>) {
+        let secs = match crate::clock::requested_time(args) {
+            Ok(secs) => secs,
+            Err(reason) => return self.reject(id, reason).await,
+        };
+        let old = crate::clock::now();
+        let mut command = self.config.set_clock_command.clone();
+        command.push(format!("@{secs}"));
+        if let Err(error) = run_command(&command).await {
+            return self
+                .fail(id, format!("setting the clock failed: {error}"))
+                .await;
+        }
+        let new = crate::clock::now();
+        self.event(
+            "clock.set",
+            "clock set through Orion",
+            &[format!("old={old}"), format!("new={new}")],
+        )
+        .await;
+        let output = BTreeMap::from([
+            ("old".to_owned(), TypedConfigValue::Int(old)),
+            ("new".to_owned(), TypedConfigValue::Int(new)),
+        ]);
+        self.succeed(id, output).await;
+    }
+
     async fn locate(&self, enabled: bool, duration_ms: u64) -> Result<(), String> {
         if !enabled {
             return run_command(&self.config.locate_stop_command).await;

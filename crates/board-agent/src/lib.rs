@@ -12,7 +12,9 @@
 #![cfg(target_os = "linux")]
 
 mod agent;
+mod clock;
 mod config;
+mod stage;
 mod writer;
 
 use std::sync::Arc;

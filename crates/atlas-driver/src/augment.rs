@@ -22,7 +22,9 @@ pub trait CapabilitySource: Send + Sync {
 
 impl Capabilities {
     /// Fills the capabilities this device lacks from `extra`. Actions are
-    /// combined: the owning driver's come first and win on equal ids.
+    /// combined: the owning driver's come first and win on equal ids, unless
+    /// `extra`'s are [`preferred`](ActionsCapability::preferred): then those
+    /// run, and the driver's only when they can't reach the device.
     pub fn fill_from(&mut self, extra: Capabilities) {
         if self.update.is_none() {
             self.update = extra.update;
@@ -64,15 +66,23 @@ impl ActionsCapability for CombinedActions {
     }
 
     async fn run_action(&self, device: &Identity, action_id: &str) -> Result<(), DriverError> {
-        if self
-            .own
-            .actions(device)
-            .iter()
-            .any(|action| action.id == action_id)
-        {
-            self.own.run_action(device, action_id).await
+        let offers = |source: &Arc<dyn ActionsCapability>| {
+            source
+                .actions(device)
+                .iter()
+                .any(|action| action.id == action_id)
+        };
+        let (own, more) = (offers(&self.own), offers(&self.more));
+        if more && (self.more.preferred() || !own) {
+            match self.more.run_action(device, action_id).await {
+                // Only when it never reached the device, so nothing runs twice.
+                Err(DriverError::Unreachable(_)) if own => {
+                    self.own.run_action(device, action_id).await
+                }
+                result => result,
+            }
         } else {
-            self.more.run_action(device, action_id).await
+            self.own.run_action(device, action_id).await
         }
     }
 }
@@ -143,6 +153,88 @@ mod tests {
         combined.run_action(&device(), "reboot").await.unwrap();
         assert_eq!(*own.1.lock().unwrap(), vec!["locate"]);
         assert_eq!(*more.1.lock().unwrap(), vec!["reboot"]);
+    }
+
+    /// A preferred source (Orion) whose runs fail with `outcome`.
+    struct Agent(
+        &'static [&'static str],
+        Mutex<Vec<String>>,
+        fn() -> DriverError,
+    );
+
+    #[async_trait]
+    impl ActionsCapability for Agent {
+        fn actions(&self, device: &Identity) -> Vec<DeviceAction> {
+            Named(self.0, Mutex::default()).actions(device)
+        }
+
+        fn preferred(&self) -> bool {
+            true
+        }
+
+        async fn run_action(&self, _device: &Identity, action_id: &str) -> Result<(), DriverError> {
+            self.1.lock().unwrap().push(action_id.into());
+            Err((self.2)())
+        }
+    }
+
+    fn combined(own: Arc<Named>, more: Arc<dyn ActionsCapability>) -> Arc<dyn ActionsCapability> {
+        let mut caps = Capabilities {
+            actions: Some(own),
+            ..Capabilities::default()
+        };
+        caps.fill_from(Capabilities {
+            actions: Some(more),
+            ..Capabilities::default()
+        });
+        caps.actions.unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_preferred_source_runs_shared_actions_and_falls_back_only_when_unreached() {
+        // Orion reachable: it runs the shared action, the driver doesn't.
+        let own = Arc::new(Named(
+            &["locate", "set-clock", "power-off"],
+            Mutex::default(),
+        ));
+        let more = Arc::new(Named(&["locate", "set-clock"], Mutex::default()));
+        struct Preferred(Arc<Named>);
+        #[async_trait]
+        impl ActionsCapability for Preferred {
+            fn actions(&self, device: &Identity) -> Vec<DeviceAction> {
+                self.0.actions(device)
+            }
+            fn preferred(&self) -> bool {
+                true
+            }
+            async fn run_action(&self, device: &Identity, id: &str) -> Result<(), DriverError> {
+                self.0.run_action(device, id).await
+            }
+        }
+        let actions = combined(own.clone(), Arc::new(Preferred(more.clone())));
+        actions.run_action(&device(), "set-clock").await.unwrap();
+        actions.run_action(&device(), "power-off").await.unwrap();
+        assert_eq!(*more.1.lock().unwrap(), vec!["set-clock"]);
+        assert_eq!(*own.1.lock().unwrap(), vec!["power-off"]);
+
+        // Never reached: the driver runs it instead.
+        let own = Arc::new(Named(&["locate"], Mutex::default()));
+        let down = Arc::new(Agent(&["locate"], Mutex::default(), || {
+            DriverError::Unreachable("no Orion".into())
+        }));
+        let actions = combined(own.clone(), down.clone());
+        actions.run_action(&device(), "locate").await.unwrap();
+        assert_eq!(*down.1.lock().unwrap(), vec!["locate"]);
+        assert_eq!(*own.1.lock().unwrap(), vec!["locate"]);
+
+        // Sent but failed: no second run.
+        let own = Arc::new(Named(&["reboot"], Mutex::default()));
+        let failed = Arc::new(Agent(&["reboot"], Mutex::default(), || {
+            DriverError::Other("lost track of it".into())
+        }));
+        let actions = combined(own.clone(), failed);
+        assert!(actions.run_action(&device(), "reboot").await.is_err());
+        assert!(own.1.lock().unwrap().is_empty());
     }
 
     #[test]

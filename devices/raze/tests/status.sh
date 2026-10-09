@@ -31,8 +31,10 @@ echo 212 > "$S/class/hwmon/hwmon0/pwm1"
 echo '1234.56 99.0' > "$T/uptime"
 cat > "$T/bin/systemctl" <<'EOF'
 #!/bin/sh
-# --failed --plain --no-legend
+# --failed --plain --no-legend; $T/systemctl-fails: as for the identity
+# endpoint's sandboxed user, which can't reach systemd.
 [ "$1" = --failed ] || exit 0
+[ ! -e "${0%/bin/systemctl}/systemctl-fails" ] || { echo "Failed to connect to bus" >&2; exit 1; }
 printf 'foo.service loaded failed failed Foo\n'
 printf '● bar.mount loaded failed failed Bar\n'
 EOF
@@ -126,6 +128,18 @@ board_boot_hashes "$T/boot" > "$T/p1/board-boot.A.sha256"
 sh "$lib/status" > "$T/status.json"
 is 1 'd["version"]' version < "$T/status.json"
 is "['foo.service', 'bar.mount']" 'd["failed_units"]' "failed units" < "$T/status.json"
+
+echo "failed units: root's kept list for the sandboxed endpoint; null, never [], when unknown"
+touch "$T/systemctl-fails"
+sh "$lib/status" | is None 'd["failed_units"]' "systemctl unreachable and nothing kept: unknown"
+rm "$T/systemctl-fails"
+sh "$lib/status" --refresh-failed --quiet || fail "--refresh-failed"
+is "['foo.service', 'bar.mount']" 'd["units"]' "the kept list" < "$T/run/failed.json"
+touch "$T/systemctl-fails"
+sh "$lib/status" | is "['foo.service', 'bar.mount']" 'd["failed_units"]' "a fresh kept list is used"
+BOARD_FAILED_MAX_AGE=0 sh "$lib/status" | is None 'd["failed_units"]' "a stale one isn't"
+if sh "$lib/status" --refresh-failed --quiet 2>/dev/null; then fail "--refresh-failed must fail without systemctl"; fi
+rm "$T/systemctl-fails" "$T/run/failed.json"
 is "[{'id': 'cpu-thermal', 'celsius': 54.3}]" 'd["temperatures"]' temperatures < "$T/status.json"
 is "{'state': 2, 'max_state': 4, 'pwm': 212, 'rpm': None}" 'd["fan"]' fan < "$T/status.json"
 is "3 A 1234 False" '" ".join(str(d["boot"][k]) for k in ("count", "slot", "uptime_s", "previous_clean"))' boot < "$T/status.json"

@@ -45,15 +45,26 @@
   const tiles = $derived.by((): Tile[] => {
     const list: Tile[] = [];
     const failed = status.failed_units;
-    list.push({
-      id: "services",
-      icon: "list-check",
-      label: "Services",
-      value: failed.length ? `${failed.length} failed` : "All running",
-      detail: failed.length ? failed.join(", ") : null,
-      look: failed.length ? "err" : "ok",
-      title: failed.join("\n") || undefined,
-    });
+    list.push(
+      failed === null
+        ? {
+            id: "services",
+            icon: "list-check",
+            label: "Services",
+            value: "Unknown",
+            detail: "the board couldn't check",
+            look: "plain",
+          }
+        : {
+            id: "services",
+            icon: "list-check",
+            label: "Services",
+            value: failed.length ? `${failed.length} failed` : "All running",
+            detail: failed.length ? failed.join(", ") : null,
+            look: failed.length ? "err" : "ok",
+            title: failed.join("\n") || undefined,
+          },
+    );
     const temp = status.temperatures.find((t) => t.id.includes("cpu")) ?? status.temperatures[0];
     const fan = status.fan;
     const fanText = fan?.rpm != null ? `fan ${fan.rpm} rpm` : fan?.pwm != null ? `fan ${Math.round((fan.pwm * 100) / 255)}%` : null;

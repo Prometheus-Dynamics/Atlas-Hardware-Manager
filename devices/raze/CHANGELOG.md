@@ -93,6 +93,13 @@ commit; the commits are listed per area.
 
 ### Board awareness: events, status, drift
 
+- **Failed units that don't lie** (found on a board): GET /status reported
+  `failed_units: []` while sshd and board-locate had failed, because the
+  endpoint's sandboxed user can't reach systemd and an empty answer looked
+  like "none". Root's `board-health.timer` (every 30 s, enabled by the
+  preset) now keeps them in `/run/board/failed.json`; `status` uses that
+  when it is under 2 minutes old, else asks systemctl itself, and answers
+  `null` when it can't. Atlas shows "Unknown" for null.
 - **Event log:** `board_event <kind> <message> [key=value ...]` (lib.sh) and
   `/usr/lib/board/event` append `{t, boot_id, kind, source, message, data}`
   to `/data/board/events.jsonl` (`/run/board` without a writable `/data`),
@@ -140,6 +147,12 @@ commit; the commits are listed per area.
 
 ### lemnosd, the hardware service
 
+- **Eased blink:** `raze-leds blink [<hz>]` (PhotonVision's blinking
+  statuses) is now lemnosd's breathe effect at full depth, ease-in-out, with
+  the same period (1000/hz ms): it fades to off and back, so it still reads
+  as blinking at 2 Hz without the hard on/off. `blink --hard` keeps the old
+  flash. Locate, status and the self-test already used eased effects. The
+  sysfs backend (no lemnosd) still flashes.
 - **Lemnos cca50f7** (from 62c3caf): raw GPIO, PWM, I2C and SPI through
   lemnosd, with arbitration; claims and writes end with the client's
   connection. In the package:
@@ -345,6 +358,12 @@ commit; the commits are listed per area.
 
 ### Orion device agent
 
+- **`clock.set`** (board-agent): sets the board's clock from `unix` or an
+  ISO `time` (UTC), refusing times before 2024 or from 2100, and logs a
+  `clock.set` event as Orion's. board-agent publishes what it claims as
+  `action.claimed`. Atlas offers "Set clock from this computer" through
+  Orion when the node lists it and prefers Orion for every action both
+  transports offer, falling back to SSH only when Orion was never reached.
 - **Orion ec91d0a** (from c22fa42): board-agent and Atlas use the same Orion
   commit as the OS images. Same control protocol (4) and wire fingerprint;
   it adds `TypedConfigValue::F64`, which Atlas shows as text.

@@ -6,7 +6,9 @@
 #   raze-leds dim <0-100>              brightness in percent (default 100)
 #   raze-leds color <r> <g> <b> [<w>]  colour, 0-255 each; w is ignored by this ring
 #   raze-leds status <ok|warn|error|busy|off>   green, amber, red, blue, off
-#   raze-leds blink [<hz>]             blink the current colour (default 2 Hz)
+#   raze-leds blink [--hard] [<hz>]    pulse the current colour (default 2 Hz):
+#                                      an eased fade to off and back; --hard
+#                                      flashes it on and off instead
 #   raze-leds locate [<seconds>]       the locate look, then back (10 s)
 #   raze-leds pixel <index|all> <r> <g> <b> [<w>]
 #                                      light one LED (or all) once; the saved
@@ -20,7 +22,8 @@
 # locate above status, status above colours), fades changes (250 ms, from
 # /etc/lemnos/board.toml) and shows `status` with the board's status effect
 # (breathe). `color`, `on`, `dim` send a colour intent, `status` a status
-# intent, `blink` the colour with lemnosd's blink effect, `locate` lemnosd's
+# intent, `blink` the colour with lemnosd's breathe effect at full depth
+# (eased, ease-in-out; --hard: its blink effect), `locate` lemnosd's
 # locate effect, `pixel` a one-off frame; `off` drops raze-leds' intents, so
 # other clients' looks show again. RAZE_LEDS_CLIENT names the client.
 #
@@ -75,7 +78,7 @@ byte() {
 }
 
 load_state() {
-	ON=0 R=255 G=255 B=255 W=0 BRIGHT=100 STATUS='' BLINK=0 SHOWN=''
+	ON=0 R=255 G=255 B=255 W=0 BRIGHT=100 STATUS='' BLINK=0 HARD=0 SHOWN=''
 	if [ -r "$STATE" ]; then
 		# shellcheck disable=SC1090
 		. "$STATE"
@@ -84,8 +87,8 @@ load_state() {
 
 save_state() {
 	mkdir -p "$STATE_DIR"
-	printf 'ON=%s R=%s G=%s B=%s W=%s BRIGHT=%s STATUS=%s BLINK=%s SHOWN=%s\n' \
-		"$ON" "$R" "$G" "$B" "$W" "$BRIGHT" "$STATUS" "$BLINK" "$SHOWN" > "$STATE.tmp"
+	printf 'ON=%s R=%s G=%s B=%s W=%s BRIGHT=%s STATUS=%s BLINK=%s HARD=%s SHOWN=%s\n' \
+		"$ON" "$R" "$G" "$B" "$W" "$BRIGHT" "$STATUS" "$BLINK" "$HARD" "$SHOWN" > "$STATE.tmp"
 	mv "$STATE.tmp" "$STATE"
 }
 
@@ -118,7 +121,14 @@ render_lemnosd() {
 	SHOWN=$kind
 	set -- --brightness "$(awk -v b="$BRIGHT" 'BEGIN { printf "%.2f", b / 100 }')"
 	if [ "$BLINK" != 0 ]; then
-		set -- "$@" --blink --period "$(awk -v hz="$BLINK" 'BEGIN { if (hz <= 0) hz = 2; printf "%d", 1000 / hz }')"
+		period=$(awk -v hz="$BLINK" 'BEGIN { if (hz <= 0) hz = 2; printf "%d", 1000 / hz }')
+		if [ "$HARD" = 1 ]; then
+			set -- "$@" --blink --period "$period"
+		else
+			# A full-depth breathe: fades all the way to off and back, so
+			# it still reads as blinking at 2 Hz, without the hard edges.
+			set -- "$@" --effect breathe --period "$period" --depth 1 --easing ease-in-out
+		fi
 	fi
 	if [ "$kind" = status ]; then
 		ctl_led status "$STATUS" "$@"
@@ -204,7 +214,7 @@ case "$cmd" in
 show | refresh) ;;
 *)
 	[ "$HW_BACKEND" = lemnosd ] || stop_blink
-	case "$cmd" in locate | pixel) ;; *) BLINK=0 ;; esac
+	case "$cmd" in locate | pixel) ;; *) BLINK=0 HARD=0 ;; esac
 	;;
 esac
 
@@ -240,6 +250,11 @@ status)
 	[ "$1" != off ] || STATUS=''
 	;;
 blink)
+	HARD=0
+	if [ "${1:-}" = --hard ]; then
+		HARD=1
+		shift
+	fi
 	hz=${1:-2}
 	case "$hz" in '' | *[!0-9.]*) usage ;; esac
 	if [ "$HW_BACKEND" = lemnosd ]; then

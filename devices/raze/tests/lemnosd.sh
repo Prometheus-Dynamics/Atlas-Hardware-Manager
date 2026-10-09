@@ -124,6 +124,8 @@ expect "raze-leds led off --device status-ring" "raze-leds led status warn --bri
 leds status warn
 expect "raze-leds led status warn --brightness 0.50 --device status-ring"
 leds blink 4
+expect "raze-leds led status warn --brightness 0.50 --effect breathe --period 250 --depth 1 --easing ease-in-out --device status-ring"
+leds blink --hard 4
 expect "raze-leds led status warn --brightness 0.50 --blink --period 250 --device status-ring"
 leds show | grep -qx 'on=1 color=255,160,0,0 brightness=50% blinking=yes' || fail "show: $(leds show)"
 leds color 0 0 255

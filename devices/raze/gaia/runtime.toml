@@ -383,6 +383,18 @@ src = "@self/assets/rootfs/usr/lib/systemd/system/board-drift.timer"
 dest = "/usr/lib/systemd/system/board-drift.timer"
 origin = "static-asset"
 
+[[stage.files]]
+id = "raze-systemd-system-board-health-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-health.service"
+dest = "/usr/lib/systemd/system/board-health.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-health-timer"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-health.timer"
+dest = "/usr/lib/systemd/system/board-health.timer"
+origin = "static-asset"
+
 [image]
 kind = "buildroot"
 config_overrides = [
@@ -469,4 +481,6 @@ stage_files = [
   "raze-systemd-system-board-boot-service",
   "raze-systemd-system-board-drift-service",
   "raze-systemd-system-board-drift-timer",
+  "raze-systemd-system-board-health-service",
+  "raze-systemd-system-board-health-timer",
 ]

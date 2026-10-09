@@ -90,7 +90,8 @@ pub(crate) fn parse_status(value: &Value, now: i64) -> DeviceStatus {
             boot.kernel = some(boot.kernel);
             boot
         }),
-        failed_units: part::<Vec<String>>(value, "failed_units").unwrap_or_default(),
+        // null (the board couldn't ask systemd) stays unknown.
+        failed_units: part::<Vec<String>>(value, "failed_units"),
         temperatures: value
             .get("temperatures")
             .and_then(Value::as_array)
@@ -256,8 +257,8 @@ mod tests {
         assert_eq!(status.ntp_synchronized, Some(false));
         let boot = status.boot.unwrap();
         assert_eq!((boot.count, boot.previous_clean), (Some(12), Some(false)));
-        // A list with a bad entry is unreadable as a whole.
-        assert!(status.failed_units.is_empty());
+        // A list with a bad entry is unreadable as a whole: unknown.
+        assert_eq!(status.failed_units, None);
         assert_eq!(status.temperatures.len(), 2);
         let update = status.update.unwrap();
         assert_eq!(update.state, "staging");

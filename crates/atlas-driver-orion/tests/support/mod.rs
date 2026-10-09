@@ -127,6 +127,8 @@ pub struct State {
     pub steps: VecDeque<Step>,
     /// Every action the board received, by name.
     pub received: Vec<String>,
+    /// Their arguments, in the same order.
+    pub received_args: Vec<BTreeMap<String, TypedConfigValue>>,
     /// The last `update` intent, as the board receives it.
     pub update_request: Option<ActionRequest>,
     /// Stage nothing until the board has downloaded the image.
@@ -229,6 +231,7 @@ impl OrionTransport for FakeOrion {
     async fn run_action(&self, request: ActionRequest) -> Result<ActionResult, DriverError> {
         let mut state = self.0.lock().unwrap();
         state.received.push(request.name.clone());
+        state.received_args.push(request.args.clone());
         if state.reject {
             let answer = result(
                 &request,

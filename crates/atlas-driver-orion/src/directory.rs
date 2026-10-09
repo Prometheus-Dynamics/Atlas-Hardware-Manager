@@ -1,6 +1,6 @@
 //! The Orion nodes Atlas currently knows, keyed by board serial.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
@@ -11,9 +11,14 @@ use atlas_driver::{
     ActionsCapability, Capabilities, CapabilitySource, HealthCheck, Identity, Link, LinkSource,
     StatusCapability, TelemetryCapability, UpdateCapability,
 };
-use orion_control_plane::{NodeRecord, StatusQuery, StatusSubject, update_action};
+use orion_control_plane::{
+    NodeRecord, StatusQuery, StatusSubject, TypedConfigValue, update_action,
+};
 
-use crate::actions::OrionActions;
+/// The status key board-agent lists its claimed actions under.
+const CLAIMED_KEY: &str = "action.claimed";
+
+use crate::actions::{OrionActions, legacy_claims};
 use crate::metrics::OrionTelemetry;
 use crate::status::OrionStatus;
 use crate::transport::{BundleHost, OrionTransport};
@@ -26,9 +31,10 @@ pub struct OrionDirectory {
     pub(crate) transport: Arc<dyn OrionTransport>,
     bundles: Option<Arc<dyn BundleHost>>,
     nodes: RwLock<HashMap<String, NodeRecord>>,
-    /// Nodes whose device agent publishes `update.state`: it holds
-    /// `update`, and with it `update.cancel` and `update.rollback`.
-    agents: RwLock<HashSet<String>>,
+    /// What each node's device agent claims, by node id: its `action.claimed`
+    /// list, or for an older agent that publishes only `update.state`, the
+    /// actions that implied. Nodes without an agent are absent.
+    agents: RwLock<HashMap<String, BTreeSet<String>>>,
     /// How often an update polls the board's state, in milliseconds.
     update_poll_ms: AtomicU64,
     last_error: Mutex<Option<String>>,
@@ -44,7 +50,7 @@ impl OrionDirectory {
             transport,
             bundles,
             nodes: RwLock::new(HashMap::new()),
-            agents: RwLock::new(HashSet::new()),
+            agents: RwLock::new(HashMap::new()),
             update_poll_ms: AtomicU64::new(3_000),
             last_error: Mutex::new(None),
         })
@@ -99,25 +105,38 @@ impl OrionDirectory {
         self.update_poll_ms.store(millis, Ordering::Relaxed);
     }
 
-    /// The nodes among `records` whose device agent publishes the update
-    /// keys (one status query per node, all at once).
+    /// What the device agent of each node among `records` claims (two
+    /// status queries per node, all nodes at once).
     async fn agents_among<'a>(
         &self,
         records: impl Iterator<Item = &'a NodeRecord>,
-    ) -> HashSet<String> {
+    ) -> HashMap<String, BTreeSet<String>> {
         let queries = records.map(|record| async move {
-            let entries = self
-                .transport
-                .status(StatusQuery {
-                    subject: Some(StatusSubject::Node(record.node_id.clone())),
-                    key_prefix: Some(update_action::KEY_STATE.into()),
-                })
-                .await
-                .unwrap_or_default();
-            entries
-                .iter()
-                .any(|entry| entry.key == update_action::KEY_STATE)
-                .then(|| record.node_id.to_string())
+            let key = |prefix: &str| {
+                let prefix = prefix.to_owned();
+                async move {
+                    self.transport
+                        .status(StatusQuery {
+                            subject: Some(StatusSubject::Node(record.node_id.clone())),
+                            key_prefix: Some(prefix.clone()),
+                        })
+                        .await
+                        .unwrap_or_default()
+                        .into_iter()
+                        .find(|entry| entry.key == prefix)
+                }
+            };
+            let claimed = match key(CLAIMED_KEY).await.map(|entry| entry.value) {
+                Some(TypedConfigValue::String(list)) => Some(
+                    list.split(',')
+                        .map(str::trim)
+                        .filter(|name| !name.is_empty())
+                        .map(str::to_owned)
+                        .collect(),
+                ),
+                _ => key(update_action::KEY_STATE).await.map(|_| legacy_claims()),
+            };
+            claimed.map(|claimed| (record.node_id.to_string(), claimed))
         });
         futures::future::join_all(queries)
             .await
@@ -202,21 +221,24 @@ impl CapabilitySource for OrionDirectory {
             return Capabilities::default();
         };
         let id = node.node_id.clone();
-        let agent = self
+        let claimed = self
             .agents
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .contains(id.as_str());
+            .get(id.as_str())
+            .cloned()
+            .unwrap_or_default();
         Capabilities {
             telemetry: Some(Arc::new(OrionTelemetry::new(
                 self.transport.clone(),
                 id.clone(),
                 &node,
             )) as Arc<dyn TelemetryCapability>),
-            actions: Some(
-                Arc::new(OrionActions::new(self.transport.clone(), id.clone(), agent))
-                    as Arc<dyn ActionsCapability>,
-            ),
+            actions: Some(Arc::new(OrionActions::new(
+                self.transport.clone(),
+                id.clone(),
+                claimed,
+            )) as Arc<dyn ActionsCapability>),
             status: Some(Arc::new(OrionStatus {
                 transport: self.transport.clone(),
                 node: id.clone(),

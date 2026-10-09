@@ -1,0 +1,11 @@
+[Unit]
+Description=Keep the board's failed units fresh for GET /status, every 30 s
+Documentation=file:/usr/lib/board/status
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=30s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target

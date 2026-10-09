@@ -24,6 +24,9 @@ pub struct Config {
     /// Appends to the board's event log (`BOARD_AGENT_EVENT`): the package's
     /// `event <kind> <message>`, run with `BOARD_EVENT_SOURCE=orion`.
     pub event_command: Vec<String>,
+    /// Sets the clock (`BOARD_AGENT_SET_CLOCK`); `@<unix seconds>` is
+    /// appended, a form busybox and coreutils `date -s` both take.
+    pub set_clock_command: Vec<String>,
     /// How often update.json is read for changes.
     pub poll: Duration,
     /// How often the `update.*` keys are published even without a change.
@@ -43,6 +46,7 @@ impl Default for Config {
             reboot_command: words("systemctl reboot"),
             locate_stop_command: words("systemctl stop board-locate.service"),
             event_command: words("/usr/lib/board/event"),
+            set_clock_command: words("date -u -s"),
             poll: Duration::from_secs(1),
             republish: Duration::from_secs(30),
             retry: Duration::from_secs(1),
@@ -82,6 +86,9 @@ impl Config {
         }
         if let Some(value) = get("BOARD_AGENT_EVENT") {
             config.event_command = words(&value);
+        }
+        if let Some(value) = get("BOARD_AGENT_SET_CLOCK") {
+            config.set_clock_command = words(&value);
         }
         config
     }

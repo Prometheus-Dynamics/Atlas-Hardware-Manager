@@ -143,6 +143,14 @@ node actions `update`, `update.cancel`, `update.rollback`, `reboot` and
 | `update.rollback` | rejected while staging; `update rollback --no-reboot` (rejected without a previous slot), reports `phase = "rebooting"`, then `systemctl reboot` |
 | `reboot` | reports `phase = "rebooting"`, then `systemctl reboot` after `delay_ms` |
 | `locate` | drops the package's request (`/run/board/requests/locate`, which `board-locate.path` turns into the LED ring's locate pattern); `enabled = false` stops `board-locate.service` |
+| `clock.set {unix \| time}` | sets the clock to `unix` (`Int`/`UInt` seconds) or `time` (`YYYY-MM-DDThh:mm:ssZ`, UTC) with `date -u -s @<s>`; times before 2024 or from 2100 are rejected. Logs a `clock.set` event (source orion, `old`/`new`) and succeeds with `old` and `new` |
+
+It lists what it claims in the status key `action.claimed` (comma-separated),
+so Atlas knows what each node offers. Atlas prefers Orion for the actions
+both it and the board's own transport offer (`locate`, `reboot`,
+`set-clock`, `update.cancel`, `update.rollback`), and uses SSH or the
+identity endpoint only when Orion can't be reached (never after an action
+was sent). Power off, USB boot and the self-test stay SSH only.
 
 It publishes the writer's state as the `update.*` keys of its node
 (`state`, `version_active`, `version_staged`, `slot_active`, `slot_staged`,
@@ -293,7 +301,10 @@ through board-agent, or someone typing on the board.
   staged that slot (`board-boot.<slot>.sha256`), else with what the board first
   saw, lists `/etc/board` and `/data/board` overrides, and on a writable root
   checks `sshd_config` and `/etc/board`; root's `board-drift.timer` does the
-  hashing and keeps the result in `/run/board/drift.json`.
+  hashing and keeps the result in `/run/board/drift.json`. Failed units come
+  from root too (`board-health.timer`, every 30 s, `/run/board/failed.json`):
+  the endpoint's sandboxed user can't ask systemd. Without a fresh list
+  `failed_units` is `null` (unknown), never an empty list.
 - **Endpoints.** `GET /status` and `GET /events?since=<t>&limit=<n>` on the
   identity endpoint (port 5899), read-only and listed in the identity's
   `endpoints`.

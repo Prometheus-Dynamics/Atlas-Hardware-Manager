@@ -4,12 +4,14 @@
 #   status [--json]           print it (the identity endpoint's GET /status)
 #   status --refresh-drift    as root: recheck the boot files and overrides
 #                             now and keep the result (board-drift.timer)
+#   status --refresh-failed   as root: keep the failed units for unprivileged
+#                             callers (board-health.timer, every 30 s)
 #   --quiet                   print nothing
 #
 #   {"version":1,"time":<unix s>,
 #    "boot":{"id":..,"count":<n>,"slot":..,"kernel":..,"previous_clean":..,
 #            "at":..,"uptime_s":<s>},
-#    "failed_units":["x.service"],
+#    "failed_units":["x.service"],     (null: couldn't ask systemd)
 #    "temperatures":[{"id":"cpu-thermal","celsius":54.2}],
 #    "fan":{"state":<n>,"max_state":<n>,"pwm":<0-255>,"rpm":<n>},
 #    "update":<update.json>,
@@ -19,6 +21,12 @@
 #             "items":[{"area":"boot|root|etc|data","path":..,
 #                       "change":"changed|added|missing|present","sha256":..}]}}
 # Anything unknown is null (or empty).
+#
+# Failed units: the identity endpoint runs as an unprivileged, sandboxed
+# user that can't reach systemd, so root keeps them in /run/board/failed.json
+# ({"at":<unix s>,"units":[..]}); a result younger than
+# BOARD_FAILED_MAX_AGE seconds (120) is used. Otherwise systemctl is asked
+# directly, and when that fails the answer is null, never an empty list.
 #
 # Drift: the running slot's boot files (config.txt, cmdline.txt, kernel*.img,
 # overlays/*) against the hashes the writer recorded on p1 when it staged the
@@ -48,14 +56,18 @@ SSHD_DIR=${BOARD_SSHD_DIR:-/etc/ssh}
 DRIFT_JSON=$BOARD_RUN_DIR/drift.json
 DRIFT_DIR=$BOARD_DATA_DIR/drift
 MAX_AGE=${BOARD_DRIFT_MAX_AGE:-3600}
+FAILED_JSON=$BOARD_RUN_DIR/failed.json
+FAILED_MAX_AGE=${BOARD_FAILED_MAX_AGE:-120}
 
 quiet=0
 refresh=0
+refresh_failed=0
 for arg in "$@"; do
 	case "$arg" in
 	--json) ;;
 	--quiet) quiet=1 ;;
 	--refresh-drift) refresh=1 ;;
+	--refresh-failed) refresh_failed=1 ;;
 	*)
 		sed -n '4,7p' "$0" | sed 's/^# \{0,1\}//' >&2
 		exit 2
@@ -102,12 +114,34 @@ boot_json() {
 	fi
 }
 
-failed_units_json() {
-	printf '['
-	bounded "$SYSTEMCTL" --failed --plain --no-legend 2>/dev/null |
+# The failed units as a JSON list, from systemctl; fails when systemctl
+# does (so the caller can say "unknown" instead of "none").
+ask_failed_units() {
+	_out=$(bounded "$SYSTEMCTL" --failed --plain --no-legend 2>/dev/null) || return 1
+	printf '%s\n' "$_out" |
 		awk '{ u = $1; if (u == "●" || u == "*") u = $2; if (u ~ /^[A-Za-z0-9@._:\\-]+$/) print u }' |
-		awk 'NR > 1 { printf "," } { printf "\"%s\"", $0 }'
-	printf ']'
+		awk 'BEGIN { printf "[" } NR > 1 { printf "," } { printf "\"%s\"", $0 } END { printf "]" }'
+}
+
+# Root's kept answer when it is fresh, else systemctl's own, else null.
+failed_units_json() {
+	if [ -s "$FAILED_JSON" ]; then
+		_line=$(head -n 1 "$FAILED_JSON")
+		_at=$(printf '%s' "$_line" | sed -n 's/^{"at":\([0-9]*\),"units":.*/\1/p')
+		if [ -n "$_at" ] && [ $(($(date +%s) - _at)) -lt "$FAILED_MAX_AGE" ]; then
+			printf '%s' "$_line" | sed 's/^{"at":[0-9]*,"units":\(.*\)}$/\1/'
+			return
+		fi
+	fi
+	ask_failed_units || printf 'null'
+}
+
+# --refresh-failed: keeps the failed units for unprivileged callers.
+refresh_failed_units() {
+	units=$(ask_failed_units) || { board_log "systemctl --failed did not answer"; return 1; }
+	mkdir -p "$BOARD_RUN_DIR"
+	printf '{"at":%s,"units":%s}\n' "$(date +%s)" "$units" > "$FAILED_JSON.tmp" &&
+		chmod 0644 "$FAILED_JSON.tmp" && mv -f "$FAILED_JSON.tmp" "$FAILED_JSON"
 }
 
 temperatures_json() {
@@ -322,6 +356,10 @@ drift_json() {
 if [ "$refresh" = 1 ]; then
 	can_check || { board_log "checking drift needs root"; exit 1; }
 	check_drift
+fi
+if [ "$refresh_failed" = 1 ]; then
+	refresh_failed_units || exit 1
+	[ "$refresh" = 1 ] || exit 0
 fi
 
 json=$(printf '{"version":1,"time":%s,"boot":%s,"failed_units":%s,"temperatures":%s,"fan":%s,"update":%s,"clock":%s,"drift":%s}' \

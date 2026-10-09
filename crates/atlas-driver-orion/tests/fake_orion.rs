@@ -121,6 +121,54 @@ async fn cancel_and_rollback_are_offered_when_the_agent_handles_updates() {
     assert_eq!(fake.received(), ["update.rollback", "update.cancel"]);
 }
 
+#[tokio::test(start_paused = true)]
+async fn the_clock_is_set_through_orion_when_the_agent_claims_it() {
+    let fake = FakeOrion::new();
+    // An agent from before `action.claimed`: update and its siblings only.
+    fake.set_status("update.state", text("idle"));
+    let directory = OrionDirectory::new(Arc::new(fake.clone()), None);
+    directory.refresh().await.unwrap();
+    let device = raze(Some("e5226d57"));
+    let ids = |directory: &OrionDirectory| -> Vec<String> {
+        let actions = directory.capabilities_for(&device).actions.unwrap();
+        actions.actions(&device).into_iter().map(|a| a.id).collect()
+    };
+    assert!(!ids(&directory).contains(&"set-clock".to_owned()));
+
+    // board-agent lists what it claims.
+    fake.set_status(
+        "action.claimed",
+        text("update,update.cancel,update.rollback,reboot,locate,clock.set"),
+    );
+    directory.refresh().await.unwrap();
+    assert_eq!(
+        ids(&directory),
+        [
+            "locate",
+            "reboot",
+            "update.cancel",
+            "update.rollback",
+            "set-clock"
+        ]
+    );
+    let actions = directory.capabilities_for(&device).actions.unwrap();
+    assert!(
+        actions.preferred(),
+        "Orion goes before SSH for shared actions"
+    );
+    actions.run_action(&device, "set-clock").await.unwrap();
+    assert_eq!(fake.received(), ["clock.set"]);
+    let args = fake.0.lock().unwrap().received_args[0].clone();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64;
+    match args.get("unix") {
+        Some(TypedConfigValue::Int(sent)) => assert!((sent - now).abs() < 5, "{sent} vs {now}"),
+        other => panic!("clock.set needs `unix` as Int: {other:?}"),
+    }
+}
+
 async fn update_with(
     ending: Ending,
     cancel: CancellationToken,

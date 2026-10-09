@@ -495,7 +495,8 @@ export interface Drift {
 export interface DeviceStatus {
   time: number | null;
   boot: BootInfo | null;
-  failed_units: string[];
+  /** null: the device can't tell; [] means none failed. */
+  failed_units: string[] | null;
   temperatures: Temperature[];
   fan: FanState | null;
   update: UpdateState | null;

@@ -252,5 +252,12 @@ pub struct DeviceAction {
 pub trait ActionsCapability: Send + Sync {
     fn actions(&self, device: &Identity) -> Vec<DeviceAction>;
 
+    /// Whether this source runs the actions it shares with the device's own
+    /// driver (a management agent such as Orion), with the driver's as the
+    /// fallback when it can't be reached. Default: the driver's run.
+    fn preferred(&self) -> bool {
+        false
+    }
+
     async fn run_action(&self, device: &Identity, action_id: &str) -> Result<(), DriverError>;
 }

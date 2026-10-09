@@ -74,6 +74,7 @@ impl Board {
             reboot_command: vec![record.display().to_string(), "reboot".into()],
             locate_stop_command: vec![record.display().to_string(), "locate-stop".into()],
             event_command: vec![record.display().to_string(), "event".into()],
+            set_clock_command: vec![record.display().to_string(), "date".into()],
             poll: Duration::from_millis(50),
             republish: Duration::from_millis(500),
             retry: Duration::from_millis(20),
@@ -405,6 +406,60 @@ async fn rollback_reboot_and_locate() {
     .await;
     assert_eq!(stop.state, ActionState::Succeeded, "{stop:?}");
     assert!(board.calls().iter().any(|c| c == "locate-stop"));
+
+    // clock.set: the agent lists it, sets the time it is sent and logs it as
+    // Orion's; nonsense times are refused before anything runs.
+    assert_eq!(
+        board.value("action.claimed"),
+        Some(text(
+            "update,update.cancel,update.rollback,reboot,locate,clock.set"
+        ))
+    );
+    let set = run(
+        &operator,
+        node_action("c1", "clock.set").with_arg("unix", TypedConfigValue::Int(1_791_590_400)),
+    )
+    .await;
+    assert_eq!(set.state, ActionState::Succeeded, "{set:?}");
+    assert!(
+        set.output.contains_key("old") && set.output.contains_key("new"),
+        "{set:?}"
+    );
+    assert!(
+        board.calls().iter().any(|c| c == "date @1791590400"),
+        "{:?}",
+        board.calls()
+    );
+    assert!(
+        board.calls().iter().any(
+            |c| c.starts_with("event clock.set clock set through Orion old=")
+                && c.ends_with(" source=orion")
+        ),
+        "{:?}",
+        board.calls()
+    );
+    let iso = run(
+        &operator,
+        node_action("c2", "clock.set").with_arg("time", text("2026-10-10T00:00:01Z")),
+    )
+    .await;
+    assert_eq!(iso.state, ActionState::Succeeded, "{iso:?}");
+    assert!(
+        board.calls().iter().any(|c| c == "date @1791590401"),
+        "{:?}",
+        board.calls()
+    );
+    let wrong = run(
+        &operator,
+        node_action("c3", "clock.set").with_arg("unix", TypedConfigValue::Int(0)),
+    )
+    .await;
+    assert!(rejected(&wrong, "not a plausible time"), "{wrong:?}");
+    assert!(
+        !board.calls().iter().any(|c| c == "date @0"),
+        "{:?}",
+        board.calls()
+    );
     assert!(
         !board
             .calls()

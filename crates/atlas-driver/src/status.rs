@@ -233,9 +233,10 @@ pub struct DeviceStatus {
     pub time: Option<i64>,
     #[serde(default)]
     pub boot: Option<BootInfo>,
-    /// Failed system services, by unit name.
+    /// Failed system services, by unit name; `None` when the device can't
+    /// tell (an empty list means none failed).
     #[serde(default)]
-    pub failed_units: Vec<String>,
+    pub failed_units: Option<Vec<String>>,
     #[serde(default)]
     pub temperatures: Vec<Temperature>,
     #[serde(default)]

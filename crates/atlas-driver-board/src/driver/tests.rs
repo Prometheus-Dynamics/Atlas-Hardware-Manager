@@ -355,7 +355,7 @@ async fn a_board_with_status_and_events_reports_them() {
         .status(&identity)
         .await
         .unwrap();
-    assert_eq!(status.failed_units, ["x.service"]);
+    assert_eq!(status.failed_units, Some(vec!["x.service".to_owned()]));
     let update = status.update.unwrap();
     assert_eq!(update.version_staged.as_deref(), Some("2.0"));
     assert_eq!(update.started_by, Some(atlas_driver::EventSource::Local));
