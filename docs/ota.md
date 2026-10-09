@@ -271,6 +271,46 @@ OS images: keep systemd-timesyncd's clock file on /data
 time and never goes backwards, and let timesyncd sync whenever a network
 with NTP is reachable.
 
+## Board awareness: who did what
+
+Atlas shows what a board is doing whoever started it: Atlas over SSH, Orion
+through board-agent, or someone typing on the board.
+
+- **Event log.** The package's scripts append to
+  `/data/board/events.jsonl`, one line per event:
+  `{"t":<unix s>,"boot_id":..,"kind":"update.staged","source":"atlas|orion|local","message":..,"data":{..}}`.
+  The source is `BOARD_EVENT_SOURCE`: Atlas exports `atlas` on every SSH
+  command, board-agent sets `orion`, anything else is `local`. The writer
+  records who started an update as `started_by` in `update.json`, and a
+  trial boot's outcome is logged under that source.
+- **Boot record.** `board-boot.service` counts boots and logs `boot` and, at a
+  clean shutdown, `shutdown`; a boot with no `shutdown` before it reports
+  `previous_clean: false`.
+- **Status.** `/usr/lib/board/status --json`: boot, failed units,
+  temperatures, fan, `update.json`, clock and drift. Drift compares the
+  running slot's boot files with the hashes the writer recorded on p1 when it
+  staged that slot (`board-boot.<slot>.sha256`), else with what the board first
+  saw, lists `/etc/board` and `/data/board` overrides, and on a writable root
+  checks `sshd_config` and `/etc/board`; root's `board-drift.timer` does the
+  hashing and keeps the result in `/run/board/drift.json`.
+- **Endpoints.** `GET /status` and `GET /events?since=<t>&limit=<n>` on the
+  identity endpoint (port 5899), read-only and listed in the identity's
+  `endpoints`.
+- **Atlas.** atlas-driver-board reads both (a `status` capability; without a
+  metrics endpoint the temperatures and fan are its telemetry). atlas-core
+  keeps each board's events (by board serial, at most 500, saved with the
+  inventory), fetches new ones when the device's status is read and at most
+  every minute after a scan, dedupes by boot, time, kind and message, and
+  merges them with its own entries into the device's history. New events
+  someone other than Atlas caused that matter (an update's outcome, an
+  unclean boot, new SSH keys) also get a fleet-history line. For a board
+  without the endpoints, Orion's `update.*` keys and host facts fill the
+  status.
+- **Controls.** Over SSH: `reboot`, `power-off` (`systemctl`), and on A/B
+  boards `update.cancel` and `update.rollback` (the writer), next to
+  `usb-boot` and `set-clock`; the ids are Orion's, so the device panel shows
+  one control whichever transport offers it.
+
 ## Fresh installs without the button
 
 A fresh install (new layout, wiped /data) needs USB boot. On a running CM5,

@@ -80,6 +80,63 @@ commit; the commits are listed per area.
   `status`, `handed_back`, per I2C device `bus_hint`, `bus_found_by`,
   `chip_id`, `lemnosd`); under lemnosd the fan check's `cooling_device` is
   the board.toml id `fan` (`d5302db`).
+- **Board awareness (additive):** `update.json` (and the identity's
+  `update`) gains `version_previous` and `started_by`; the identity always
+  has `endpoints` with `status` and `events`, also without `BOARD_ACTIONS`;
+  the board keeps `/data/board/events.jsonl` (at most 2000 lines),
+  `/data/board/boot-count`, `/data/board/drift/` and
+  `/data/board/ssh-keys.sum`, and the writer writes
+  `board-boot.<slot>.sha256` to p1 when it stages. New units, enabled by the
+  preset: `board-boot.service`, `board-drift.timer`. Readers that require an
+  exact `update.json` field set must accept the new fields (`019b215`,
+  `01d5290`).
+
+### Board awareness: events, status, drift
+
+- **Event log:** `board_event <kind> <message> [key=value ...]` (lib.sh) and
+  `/usr/lib/board/event` append `{t, boot_id, kind, source, message, data}`
+  to `/data/board/events.jsonl` (`/run/board` without a writable `/data`),
+  keeping the last 2000. `source` is `BOARD_EVENT_SOURCE` (`atlas` on Atlas's
+  SSH commands, `orion` for everything board-agent runs) or `local`. Events
+  come from the writer (`update.download`, `update.stage`, `update.staged`,
+  `update.failed`, `update.apply`, `update.apply-failed`, `update.confirmed`,
+  `update.trial-failed` with the reason, `update.rolled-back`,
+  `update.cancelled`, `update.rollback`, `update.rollback-failed`,
+  `update.link-bad`, `update.link-fallback`; a trial's outcome is attributed
+  to whoever started the update), ssh-keys (`ssh.keys`, when the key set
+  changes), usb-boot, the selftest (result summary), `boot` and `shutdown`,
+  and from Atlas's `reboot`, `power-off` and `clock.set` (`019b215`).
+- **Boot record:** `board-boot.service` runs `boot-record`: it counts boots
+  (`/data/board/boot-count`), writes `/run/board/boot.json` (id, count, slot,
+  kernel, `previous_clean`) and logs `boot`; its ExecStop logs `shutdown`, so
+  a boot after a power cut, watchdog reset or panic says the previous one
+  didn't end cleanly (`019b215`).
+- **Status:** `/usr/lib/board/status --json`: boot (with uptime), failed
+  units (`systemctl --failed`), temperatures (thermal zones), the fan
+  (through hw.sh, so the lemnosd backend works; sysfs reads when
+  unprivileged), `update.json`, the clock (time, NTP) and drift (`019b215`).
+- **Drift:** the running slot's `config.txt`, `cmdline.txt`, `kernel*.img`
+  and `overlays/*` against the hashes the writer recorded at stage
+  (`board-boot.<slot>.sha256` on p1), else against what the board first saw
+  (`/data/board/drift/`); `/etc/board` and `/data/board` files listed as
+  overrides with their hashes; on a writable root `/etc/ssh/sshd_config(.d)`
+  and `/etc/board` against their first-seen hashes (EROFS roots skipped).
+  Flags: `cmdline`, `config`, `sshd_config`, `update_env`. Checking mounts
+  the boot partitions read-only, so it is root's job (`board-drift.timer`,
+  2 min after boot and hourly, `status --refresh-drift`), kept in
+  `/run/board/drift.json` (`019b215`).
+- **Endpoints:** the identity endpoint answers `GET /status` and
+  `GET /events?since=<t>&limit=<n>` (read-only; `since`/`limit` must be plain
+  numbers, nothing from the query is evaluated; `limit` at most 2000) and
+  lists them in `endpoints` (`019b215`).
+- **board-agent:** runs the writer and its commands with
+  `BOARD_EVENT_SOURCE=orion` and logs a `reboot` event before an Orion
+  reboot (`BOARD_AGENT_EVENT`). Orion's contract (`c22fa42`) has no power-off
+  action, so the agent claims none (`01d5290`).
+- **Needs hardware:** the clean-shutdown detection across a real reboot and
+  a power cut, the drift check's mounts of the running boot slot and p1, and
+  `systemctl --failed` / `timedatectl` from the identity endpoint's
+  sandboxed user.
 
 ### lemnosd, the hardware service
 
@@ -386,6 +443,10 @@ commit; the commits are listed per area.
     sysfs, /dev and configfs (`c4bbf6e`).
   - `manifest-lint.sh` runs `gen-raze.py --check` and checks the lint catches
     drift and rule breaks (`47f8769`, `3f959d0`).
+  - `status.sh` covers the event log (sources, escaping, rotation, the /run
+    fallback), the boot record, `status` with a fake sysfs and systemctl,
+    drift, and `GET /status` / `GET /events` through identity-http, with
+    injection attempts in the query (`019b215`).
 - CI runs them on Ubuntu 24.04.
 
 ## 1.0.7
