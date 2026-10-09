@@ -1,3 +1,14 @@
 # The Raze device tree only provides Linux extensions (linux/Config.ext.in,
 # sourced by Buildroot itself) and Gaia package overrides (packages/, which
-# Gaia stages into Buildroot). There are no Buildroot packages of its own.
+# Gaia stages into Buildroot). There are no Buildroot packages of its own;
+# the one option below is how lemnos.toml hands Lemnos's users table in.
+
+config BR2_RAZE_LEMNOS_USERS_TABLE
+	string "Lemnos users table"
+	help
+	  A makeusers table whose users the image gets, next to the OS's
+	  own BR2_ROOTFS_USERS_TABLES (external.mk adds it to
+	  PACKAGES_USERS, so neither replaces the other). lemnos.toml sets
+	  it to Lemnos's packaging/buildroot/lemnos-users.table: the
+	  `lemnos` user lemnosd.service runs as, created at build time
+	  because systemd-sysusers can't add it on a read-only root.

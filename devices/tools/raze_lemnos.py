@@ -27,7 +27,7 @@ from pathlib import Path
 
 SELECTOR_KEYS = ("name", "compatible", "of", "node")
 
-# What lemnos-board's DriverRegistry (Lemnos 62c3caf, crates/lemnos-board/src
+# What lemnos-board's DriverRegistry (Lemnos cca50f7, crates/lemnos-board/src
 # registry.rs and light.rs) accepts: placement, config keys, match keys.
 LIGHT_KEYS = (
     "count", "wire", "offset", "direction", "brightness", "gpio", "fade_ms", "easing",
@@ -241,6 +241,9 @@ def board_definition(manifest: dict, version: str) -> tuple[dict, dict[str, list
             device["bus"] = bus_ref(caps, part["bus"])
             device["address"] = part["address"]
             device["poll_ms"] = ld["poll_ms"]
+            if "raw" in ld:
+                # Brokered raw reads for these clients (the self-test's chip-id check).
+                device["raw"] = ld["raw"]
             device["config"] = {}
             if "shunt_ohm" in part:
                 device["config"]["shunt_micro_ohms"] = round(part["shunt_ohm"] * 1e6)
@@ -256,6 +259,8 @@ def board_definition(manifest: dict, version: str) -> tuple[dict, dict[str, list
                 note.append("Bus selector from the device tree, unverified on hardware.")
             if "shunt_ohm" in part and unverified(i2c, f"devices.{index}.shunt_ohm"):
                 note.append(f"Shunt {part['shunt_ohm']} ohm: from the manifest, unverified against the schematic.")
+            if "raw" in ld:
+                note.append(f"Raw reads (chip id) through lemnosd for: {', '.join(ld['raw'])}.")
             if "max_current_a" in part:
                 note.append(f"Maximum current {part['max_current_a']} A: the INA238's 163.84 mV full scale over the")
                 note.append("shunt (a 0.5 mA LSB), derived, not a board rating.")
@@ -279,6 +284,10 @@ def board_definition(manifest: dict, version: str) -> tuple[dict, dict[str, list
     notes[port["device"]] = [
         f"The {port['port']} port's power enable. The raze-usb-power overlay hogs this line by",
         "default, so lemnosd reports it missing until the OS loads the overlay with hog=off.",
+        "Its safe state is on: lemnosd drives it high at start (initial), and a client's",
+        "write is undone when its connection ends (`lemnos-ctl set` writes persist until",
+        "`lemnos-ctl restore usb-a-power`). A device's line is never handed out raw, so",
+        "it needs no [[lines]] entry.",
     ]
     if unverified(usb, "gpio_chip"):
         notes[port["device"]].append("gpio chip label: unverified on hardware.")

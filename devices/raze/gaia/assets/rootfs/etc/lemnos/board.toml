@@ -40,6 +40,7 @@ poll_ms = 1000
 # BMI088 accelerometer at 0x18 on the i2c-gpio bus (i2c-4 on the 7.2.9 image).
 # Address and chip id verified on a board by chip-id register reads.
 # Bus selector from the device tree, unverified on hardware.
+# Raw reads (chip id) through lemnosd for: board-selftest.
 # BMI088 gyroscope at 0x68.
 [[devices]]
 id = "imu"
@@ -48,22 +49,26 @@ label = "IMU"
 bus = "i2c:compatible=i2c-gpio"
 address = 0x18
 poll_ms = 10
+raw = ["board-selftest"]
 config = { gyro_address = 0x68 }
 
 # BMM150 magnetometer at 0x10 on the hardware bus (i2c-1 on the 7.2.9 image).
 # Address and chip id verified on a board by chip-id register reads.
 # Bus selector from the device tree, unverified on hardware.
+# Raw reads (chip id) through lemnosd for: board-selftest.
 [[devices]]
 id = "magnetometer"
 driver = "bmm150"
 bus = "i2c:of=/axi/pcie@1000120000/rp1/i2c@74000"
 address = 0x10
 poll_ms = 100
+raw = ["board-selftest"]
 
 # INA238 power-monitor at 0x40 on the hardware bus (i2c-1 on the 7.2.9 image).
 # Address and chip id verified on a board by chip-id register reads.
 # Bus selector from the device tree, unverified on hardware.
 # Shunt 0.01 ohm: from the manifest, unverified against the schematic.
+# Raw reads (chip id) through lemnosd for: board-selftest.
 # Maximum current 16.384 A: the INA238's 163.84 mV full scale over the
 # shunt (a 0.5 mA LSB), derived, not a board rating.
 [[devices]]
@@ -73,10 +78,15 @@ label = "Board power"
 bus = "i2c:of=/axi/pcie@1000120000/rp1/i2c@74000"
 address = 0x40
 poll_ms = 100
+raw = ["board-selftest"]
 config = { shunt_micro_ohms = 10000, max_current_micro_amps = 16384000 }
 
 # The usb-a port's power enable. The raze-usb-power overlay hogs this line by
 # default, so lemnosd reports it missing until the OS loads the overlay with hog=off.
+# Its safe state is on: lemnosd drives it high at start (initial), and a client's
+# write is undone when its connection ends (`lemnos-ctl set` writes persist until
+# `lemnos-ctl restore usb-a-power`). A device's line is never handed out raw, so
+# it needs no [[lines]] entry.
 # gpio chip label: unverified on hardware.
 [[devices]]
 id = "usb-a-power"

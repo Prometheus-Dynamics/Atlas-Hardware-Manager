@@ -360,7 +360,7 @@
       "gaia_import": {
         "source": "lemnos",
         "repo": "https://github.com/Prometheus-Dynamics/Lemnos.git",
-        "rev": "62c3caf677c4bf9cef47fcb02b36d0e98f3248ef",
+        "rev": "cca50f73950f66c5606f1573a5c4b0d429bb963b",
         "path": "packaging/gaia/lemnosd.toml"
       }
     },
@@ -427,7 +427,7 @@
           "bus": 4,
           "address": 24,
           "chip_id": { "register": 0, "width": 8, "value": 30 },
-          "lemnosd": { "device": "imu", "driver": "bmi088", "label": "IMU", "poll_ms": 10 }
+          "lemnosd": { "device": "imu", "driver": "bmi088", "label": "IMU", "poll_ms": 10, "raw": ["board-selftest"] }
         },
         {
           "id": "imu-gyro",
@@ -451,7 +451,7 @@
             "power_control": { "register": 75, "bit": 0 },
             "notes": "The BMM150 boots suspended (0x4B = 0x00) and reads 0x00 for its id until power control bit 0 is set."
           },
-          "lemnosd": { "device": "magnetometer", "driver": "bmm150", "poll_ms": 100 }
+          "lemnosd": { "device": "magnetometer", "driver": "bmm150", "poll_ms": 100, "raw": ["board-selftest"] }
         },
         {
           "id": "power-monitor",
@@ -472,7 +472,7 @@
             "smbus_word": 18772,
             "notes": "Manufacturer id \"TI\" (0x5449). The registers are big-endian, so an SMBus word read (i2cget ... w) returns it byte-swapped (0x4954). Die id: register 0xFF = 0x2381."
           },
-          "lemnosd": { "device": "power", "driver": "ina238", "label": "Board power", "poll_ms": 100 }
+          "lemnosd": { "device": "power", "driver": "ina238", "label": "Board power", "poll_ms": 100, "raw": ["board-selftest"] }
         }
       ],
       "description_file": "/usr/share/board/raze/sensors.toml",

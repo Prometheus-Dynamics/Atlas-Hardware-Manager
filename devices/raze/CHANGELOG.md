@@ -140,6 +140,27 @@ commit; the commits are listed per area.
 
 ### lemnosd, the hardware service
 
+- **Lemnos cca50f7** (from 62c3caf): raw GPIO, PWM, I2C and SPI through
+  lemnosd, with arbitration; claims and writes end with the client's
+  connection. In the package:
+  - **The `lemnos` user** comes from Lemnos's
+    `packaging/buildroot/lemnos-users.table` (groups i2c, gpio, spi,
+    video): `gaia/lemnos.toml` sets `BR2_RAZE_LEMNOS_USERS_TABLE` to it and
+    `external.mk` adds its lines to `PACKAGES_USERS`, next to the OS's own
+    `BR2_ROOTFS_USERS_TABLES`. OSes drop their own copy.
+  - **board.toml:** the IMU, magnetometer and power monitor list
+    `raw = ["board-selftest"]`. USB-A power stays a `gpio-output` device
+    (`initial = true`): its safe state is on, since lemnosd undoes a
+    client's write when its connection ends, and a device's line is never
+    handed out raw, so no `[[lines]]` entry. The Raze has no free GPIO line,
+    PWM channel (the fan's is the kernel's) or spidev to declare, so no
+    `[[lines]]`, `[[pwms]]` or PWM/spidev udev rules.
+  - **Self-test:** with lemnosd, chip-id registers are read through lemnosd
+    (`lemnos-ctl i2c read`, brokered between its own transfers) instead of
+    i2cget, also for devices lemnosd has available, so a wrong chip fails
+    even while its driver runs. When lemnosd refuses (an older lemnosd) its
+    word stands, as before. The report's i2c data gains `reads`
+    (`lemnosd` or `i2cget`).
 - **Lemnos 62c3caf** (from b4d6cfe, no API changes): its Gaia layer asks
   for `gaia_version >= 2.0.0` (b4d6cfe asked for 2.1.0, which doesn't
   exist, so every OS build importing it failed), and both binaries build in

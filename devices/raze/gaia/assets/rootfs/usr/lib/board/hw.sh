@@ -186,10 +186,19 @@ hw_i2c_probe() {
 #   none                the manifest gives no chip id for it
 #   unknown             there is no way to read it (no i2cget/i2cset)
 # Reads are SMBus byte or word reads of a register (an SMBus word comes back
-# byte-swapped from a big-endian register; HW_I2C_IDS holds that form). A
+# byte-swapped from a big-endian register; HW_I2C_IDS holds that form), with
+# hw_i2c_get: i2cget here, lemnosd's brokered raw I2C in the lemnosd backend
+# (HW_I2C_BROKERED=1), which needs no i2c-tools and never interleaves with
+# lemnosd's own polling. A
 # chip that boots suspended (the BMM150) gets its power control bit set for
 # the read and the register put back as it was, unless a kernel driver owns
 # it or HW_I2C_POWER_DANCE=0 (the lemnosd backend: lemnosd owns the chip).
+# hw_i2c_get <bus> <address> <register> b|w: one register, printed as
+# i2cget prints it. The lemnosd backend replaces it.
+hw_i2c_get() {
+	i2cget -y "$1" "$2" "$3" "$4" 2>/dev/null
+}
+
 hw_i2c_chip_id() {
 	_hw_spec=''
 	for _hw_e in ${HW_I2C_IDS:-}; do
@@ -199,7 +208,7 @@ hw_i2c_chip_id() {
 		echo none
 		return 0
 	fi
-	if ! hw_have i2cget; then
+	if [ "${HW_I2C_BROKERED:-0}" != 1 ] && ! hw_have i2cget; then
 		echo unknown
 		return 0
 	fi
@@ -214,7 +223,7 @@ hw_i2c_chip_id() {
 	if [ -n "$_hw_power" ]; then
 		_hw_preg=${_hw_power%.*}
 		_hw_bit=$((1 << ${_hw_power#*.}))
-		_hw_pval=$(i2cget -y "$2" "$3" "$_hw_preg" b 2>/dev/null) || {
+		_hw_pval=$(hw_i2c_get "$2" "$3" "$_hw_preg" b) || {
 			echo failed
 			return 0
 		}
@@ -232,7 +241,7 @@ hw_i2c_chip_id() {
 			sleep 0.01 2>/dev/null || sleep 1
 		fi
 	fi
-	_hw_got=$(i2cget -y "$2" "$3" "$_hw_reg" "$_hw_mode" 2>/dev/null) || _hw_got=''
+	_hw_got=$(hw_i2c_get "$2" "$3" "$_hw_reg" "$_hw_mode") || _hw_got=''
 	[ -z "$_hw_restore" ] || i2cset -y "$2" "$3" "$_hw_preg" "$_hw_restore" b 2>/dev/null || true
 	if [ -z "$_hw_got" ]; then
 		echo failed

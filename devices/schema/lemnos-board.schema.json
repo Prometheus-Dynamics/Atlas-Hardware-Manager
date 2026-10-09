@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Prometheus-Dynamics/Lemnos/docs/schemas/lemnos-board.schema.json",
-  "$comment": "Vendored unchanged (apart from this comment) from Lemnos 62c3caf677c4 docs/schemas/lemnos-board.schema.json. devices/tools/gen-raze.py validates the generated /etc/lemnos/board.toml against it. Update it together with the Lemnos pin (capabilities.hardware-service.gaia_import.rev).",
+  "$comment": "Vendored unchanged (apart from this comment) from Lemnos cca50f73950f docs/schemas/lemnos-board.schema.json. devices/tools/gen-raze.py validates the generated /etc/lemnos/board.toml against it. Update it together with the Lemnos pin (capabilities.hardware-service.gaia_import.rev).",
   "title": "Lemnos board definition",
   "description": "A board's devices, each built from a generic Lemnos driver. TOML or JSON; see docs/board-definition.md. Driver-specific checks (config keys, values) are done by lemnos-board's DriverRegistry::validate.",
   "type": "object",
@@ -46,6 +46,75 @@
       "items": {
         "$ref": "#/$defs/device"
       }
+    },
+    "lines": {
+      "type": "array",
+      "description": "Named GPIO lines no device owns, for clients' raw claims.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "chip",
+          "line"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/id"
+          },
+          "chip": {
+            "type": "string",
+            "description": "gpiochipN or a chip label (pinctrl-rp1)."
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "safe": {
+            "enum": [
+              "input",
+              "low",
+              "high"
+            ],
+            "default": "input",
+            "description": "What the line goes back to when a claim ends."
+          }
+        }
+      }
+    },
+    "pwms": {
+      "type": "array",
+      "description": "Named PWM channels no device owns, for clients' raw claims.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "chip",
+          "channel"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/id"
+          },
+          "chip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "The pwmchipN number."
+          },
+          "channel": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "raw_clients": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Clients allowed raw bus and line access; empty: any client."
     }
   },
   "$defs": {
@@ -113,6 +182,13 @@
           "additionalProperties": {
             "$ref": "#/$defs/value"
           }
+        },
+        "raw": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Clients allowed raw I2C/SPI transactions to this device's addresses (brokered by the host); empty: none. Lines and PWM channels a device owns are never handed out raw."
         }
       }
     },

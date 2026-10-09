@@ -64,3 +64,14 @@ define RAZE_INSTALL_KERNEL_OVERLAYS
 endef
 LINUX_POST_INSTALL_IMAGES_HOOKS += RAZE_INSTALL_KERNEL_OVERLAYS
 endif
+
+# Lemnos's users table (lemnos.toml sets BR2_RAZE_LEMNOS_USERS_TABLE): its
+# lines join the users packages declare. Not BR2_ROOTFS_USERS_TABLES: an OS
+# sets that to its own tables, and fs/common.mk decides at parse time,
+# before this file, whether it reads any. PACKAGES_USERS is expanded when
+# the root filesystem tables are written, and mkusers skips the table's
+# comment lines.
+RAZE_LEMNOS_USERS_TABLE = $(call qstrip,$(BR2_RAZE_LEMNOS_USERS_TABLE))
+ifneq ($(RAZE_LEMNOS_USERS_TABLE),)
+PACKAGES_USERS += $(file <$(RAZE_LEMNOS_USERS_TABLE))$(sep)
+endif

@@ -247,7 +247,7 @@ rev = "<pinned commit>"
 id = "lemnos"
 kind = "git"
 repo = "https://github.com/Prometheus-Dynamics/Lemnos.git"
-rev = "62c3caf677c4bf9cef47fcb02b36d0e98f3248ef"
+rev = "cca50f73950f66c5606f1573a5c4b0d429bb963b"
 ```
 
 For local development against an Atlas checkout:
@@ -319,10 +319,13 @@ The Raze layer (`devices/raze/gaia/device.toml`) needs from the OS:
    loader and vulkaninfo; wgpu needs it), also import
    `devices/raze/gaia/gpu-vulkan.toml` after `gpu.toml`.
 6. **What lemnosd needs** (Lemnos `packaging/README.md`): Docker on the build
-   host (Lemnos's layer builds the binaries in a small Rust image),
-   `systemd-sysusers` (or a `lemnos` user created at build time on a
-   read-only root), and its own clients (HeliOS, PhotonVision) in the
-   `lemnos` group.
+   host (Lemnos's layer builds the binaries in a small Rust image) and its
+   own clients (HeliOS, PhotonVision) in the `lemnos` group. The `lemnos`
+   user comes with the package: `gaia/lemnos.toml` hands Lemnos's
+   `packaging/buildroot/lemnos-users.table` to the external tree, which adds
+   it next to the OS's own `BR2_ROOTFS_USERS_TABLES` (it doesn't replace
+   them), so the read-only root has the user without systemd-sysusers. An OS
+   drops any copy of that table it keeps itself.
 
 The device units are installed in `/usr/lib/systemd/system` and enabled by
 `/usr/lib/systemd/system-preset/70-board.preset` when Buildroot runs

@@ -16,7 +16,7 @@
 #   id = "lemnos"
 #   kind = "git"
 #   repo = "https://github.com/Prometheus-Dynamics/Lemnos.git"
-#   rev = "62c3caf677c4bf9cef47fcb02b36d0e98f3248ef"
+#   rev = "cca50f73950f66c5606f1573a5c4b0d429bb963b"
 #
 #   imports = [
 #     ...OS base layers...,

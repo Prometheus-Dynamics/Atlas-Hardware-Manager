@@ -16,11 +16,13 @@
 #             chip id), and rp1-cfe, media-ctl or libcamera's `cam -l` see it.
 #   i2c       the manifest's I2C devices answer on their bus (found by its
 #             device-tree selector, else its number), and their chip id
-#             registers read what the manifest says (i2cget). With lemnosd,
-#             a device its driver has available counts as checked (the driver
-#             reads the chip id), and the BMM150, which boots suspended, is
-#             left to it; without lemnosd its power bit is set for the read
-#             and put back.
+#             registers read what the manifest says. With lemnosd the reads go
+#             through it (brokered raw I2C, board.toml's `raw`), also for a
+#             device its driver has available, which then counts as checked
+#             when lemnosd refuses the read; the BMM150, which boots
+#             suspended, is left to lemnosd's driver. Without lemnosd they are
+#             i2cget reads, and the BMM150's power bit is set for the read and
+#             put back.
 #   watchdog  /dev/watchdog0 exists and systemd's RuntimeWatchdogUSec is set.
 #   gadget    the USB gadget is bound to its controller and usbbr0 is up with
 #             an address.
@@ -369,9 +371,17 @@ check_i2c() {
 		service=$(hw_i2c_service "$id")
 		total=$((total + 1))
 		if [ "$service" = available ]; then
-			# lemnosd's driver bound it, which checks the chip id.
+			# lemnosd's driver bound it, which checks the chip id. Read it
+			# again through lemnosd when it lets us; else take its word.
 			state=service
 			chip=service
+			if [ "${HW_I2C_BROKERED:-0}" = 1 ]; then
+				chip=$(hw_i2c_chip_id "$id" "$bus" "$addr")
+				case "$chip" in
+				ok* | mismatch*) ;;
+				*) chip=service ;;
+				esac
+			fi
 		else
 			state=$(hw_i2c_probe "$bus" "$addr")
 			chip=none
@@ -387,7 +397,7 @@ check_i2c() {
 		esac
 		devices="$devices${devices:+,}{\"id\":$(js "$id"),\"part\":$(js "$part"),\"bus\":$bus,\"bus_hint\":$hint,\"bus_found_by\":\"$how\",\"address\":$(($addr)),\"result\":\"$state\",\"chip_id\":$(js "$chip"),\"lemnosd\":$(js "$service")}"
 	done
-	data="{\"probe\":\"$(hw_have i2cdetect && echo i2cdetect || echo sysfs)\",\"backend\":$(js "$HW_BACKEND"),\"devices\":[$devices]}"
+	data="{\"probe\":\"$(hw_have i2cdetect && echo i2cdetect || echo sysfs)\",\"reads\":\"$([ "${HW_I2C_BROKERED:-0}" = 1 ] && echo lemnosd || echo i2cget)\",\"backend\":$(js "$HW_BACKEND"),\"devices\":[$devices]}"
 	if [ "$total" = 0 ]; then
 		result i2c skip "the package lists no I2C devices" "$data"
 	elif [ -n "$missing" ]; then

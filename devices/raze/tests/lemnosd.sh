@@ -2,7 +2,8 @@
 # Off-device test of the lemnosd backend: raze-leds and the self-test as
 # lemnosd clients, against a fake lemnos-ctl that records its calls and acts
 # like lemnosd (devices and their status, the fan's duty and writers, the fan
-# hand-back), on the fake board of fake-board.inc.
+# hand-back, brokered raw I2C for the clients board.toml lists in `raw`), on
+# the fake board of fake-board.inc.
 # Run: sh devices/raze/tests/lemnosd.sh
 set -eu
 
@@ -77,6 +78,22 @@ set)
 	echo "$2 $3 = $4"
 	;;
 led) ;;
+i2c)
+	# i2c read <bus> <addr> <reg> <count>, from fake-board.inc's registers
+	# (an SMBus word there is low byte first). Only board.toml's `raw`
+	# client; $T/raw-refused: an older lemnosd.
+	[ "$2" = read ] || { echo "lemnos-ctl: fake: only i2c read" >&2; exit 1; }
+	[ ! -e "$FAKE/raw-refused" ] && [ "$client" = board-selftest ] || { echo "lemnos-ctl: refused: owned" >&2; exit 1; }
+	bus=$3 addr=$(printf '0x%02x' $(($4))) reg=$(printf '0x%02x' $(($5)))
+	grep -qx "$bus $addr" "$I2C_TABLE" || { echo "lemnos-ctl: i2c: no acknowledge" >&2; exit 1; }
+	v=$(awk -v k="$bus $addr $reg" '$1 " " $2 " " $3 == k { print $4 }' "$I2C_REGS")
+	if [ "$addr" = 0x10 ] && [ "$reg" = 0x40 ]; then
+		p=$(awk -v k="$bus $addr 0x4b" '$1 " " $2 " " $3 == k { print $4 }' "$I2C_REGS")
+		[ $((p & 1)) = 1 ] || v=0x00
+	fi
+	v=$((${v:-0}))
+	if [ "${6:-1}" = 2 ]; then printf '%02x %02x\n' $((v & 255)) $((v >> 8)); else printf '%02x\n' "$v"; fi
+	;;
 *) echo "lemnos-ctl: unknown command $1" >&2; exit 1 ;;
 esac
 EOF
@@ -157,9 +174,33 @@ grep -e ' set fan ' -e ' fan release ' "$CTL_LOG" | tail -n 1 | grep -q '^board-
 [ -e "$T/fan-released" ] || fail "lemnos-ctl fan release should have run"
 [ "$(cat "$S/class/thermal/thermal_zone0/mode")" = enabled ] || fail "nothing is paused with lemnosd"
 [ ! -s "$T/dev/leds0" ] || fail "no frame may be written to /dev/leds0"
+i2c=$(check_data "$out" i2c)
+for want in '"id": "imu-accel", .*"result": "service", "chip_id": "ok 0x1e", "lemnosd": "available"' \
+	'"id": "imu-gyro", .*"result": "service", "chip_id": "ok 0x0f", "lemnosd": "available"' \
+	'"id": "power-monitor", .*"result": "service", "chip_id": "ok 0x4954", "lemnosd": "available"' \
+	'"reads": "lemnosd"'; do
+	printf '%s' "$i2c" | tr '}' '\n' | grep -q "$want" || fail "chip ids read through lemnosd ($want): $i2c"
+done
+grep -q '^board-selftest i2c read 4 0x18 0x00 1$' "$CTL_LOG" || fail "the BMI088's id through lemnosd: $(cat "$CTL_LOG")"
+grep -q '^board-selftest i2c read 1 0x40 0xfe 2$' "$CTL_LOG" || fail "the INA238's id is a word: $(cat "$CTL_LOG")"
+[ ! -s "$T/i2c.log" ] || fail "no i2c-tools reads while lemnosd has the sensors: $(cat "$T/i2c.log")"
+: > "$CTL_LOG"
+
+echo "lemnosd refuses the raw reads (an older lemnosd): its available devices count as checked"
+touch "$T/raw-refused"
+out=$(selftest --json)
+check_status "$out" i2c ok
 check_data "$out" i2c | grep -q '"result": "service", "chip_id": "service", "lemnosd": "available"' ||
-	fail "lemnosd's devices count as checked: $(check_data "$out" i2c)"
-[ ! -s "$T/i2c.log" ] || fail "no I2C reads while lemnosd has the sensors: $(cat "$T/i2c.log")"
+	fail "lemnosd's word stands: $(check_data "$out" i2c)"
+rm "$T/raw-refused"
+: > "$CTL_LOG"
+
+echo "a chip id that reads wrong through lemnosd fails the check"
+sed -i.bak 's/^4 0x68 0x00 0x0f$/4 0x68 0x00 0x0e/' "$T/regs"
+out=$(selftest --json)
+check_status "$out" i2c fail
+printf '%s' "$out" | grep -q "imu-gyro) at 4/0x68: chip id 0x0e, not the manifest's" || fail "the reason: $out"
+mv "$T/regs.bak" "$T/regs"
 : > "$CTL_LOG"
 
 echo "a sensor lemnosd lacks is probed, and the BMM150 is not woken behind lemnosd's back"
@@ -168,7 +209,9 @@ out=$(selftest --json)
 check_status "$out" i2c ok
 check_data "$out" i2c | grep -q '"result": "present", "chip_id": "suspended", "lemnosd": "missing"' ||
 	fail "magnetometer: $(check_data "$out" i2c)"
-! grep -q i2cset "$T/i2c.log" || fail "no i2cset with lemnosd: $(cat "$T/i2c.log")"
+! grep -qs i2cset "$T/i2c.log" || fail "no i2cset with lemnosd: $(cat "$T/i2c.log")"
+! grep -qs i2cget "$T/i2c.log" || fail "the id reads go through lemnosd: $(cat "$T/i2c.log")"
+grep -q '^board-selftest i2c read 1 0x10 0x4b 1$' "$CTL_LOG" || fail "the BMM150's power bit is read through lemnosd: $(cat "$CTL_LOG")"
 mv "$T/lemnos-devices.bak" "$T/lemnos-devices"
 : > "$CTL_LOG"
 

@@ -184,6 +184,26 @@ hw_fan_release() {
 # ---------------------------------------------------------------------------
 # I2C devices.
 
+# hw_i2c_get <bus> <address> <register> b|w: one register through lemnosd's
+# brokered raw I2C, printed as i2cget prints it (a word low byte first, as an
+# SMBus word read returns it). lemnosd answers only clients the board device
+# lists in board.toml's `raw` (the self-test, board-selftest), between its own
+# transfers; anything else, and an older lemnosd, is refused.
+HW_I2C_BROKERED=1
+hw_i2c_get() {
+	_hw_n=1
+	[ "$4" = w ] && _hw_n=2
+	_hw_bytes=$(_hw_ctl i2c read "$1" "$2" "$3" "$_hw_n" 2>/dev/null) || return 1
+	# shellcheck disable=SC2086
+	set -- $_hw_bytes
+	[ "$#" = "$_hw_n" ] || return 1
+	if [ "$_hw_n" = 2 ]; then
+		printf '0x%04x\n' $((0x$1 | (0x$2 << 8)))
+	else
+		printf '0x%02x\n' $((0x$1))
+	fi
+}
+
 # hw_i2c_service <manifest device id>: lemnosd's status for the board device
 # that drives it (available means its driver bound and checked the chip id),
 # "none" when board.toml has none.

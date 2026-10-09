@@ -19,7 +19,7 @@
 #   id = "lemnos"
 #   kind = "git"
 #   repo = "https://github.com/Prometheus-Dynamics/Lemnos.git"
-#   rev = "62c3caf677c4bf9cef47fcb02b36d0e98f3248ef"
+#   rev = "cca50f73950f66c5606f1573a5c4b0d429bb963b"
 #
 # Without it, resolving this layer fails and names the source `lemnos`. For
 # local development: --set sources.lemnos.path=/path/to/Lemnos.
@@ -27,6 +27,16 @@ description = "Raze hardware service: Lemnos's lemnosd layer, with the package's
 
 imports = [
   { source = "lemnos", path = "packaging/gaia/lemnosd.toml" },
+]
+
+# The `lemnos` user, from Lemnos's own Buildroot users table (the same user
+# as its sysusers entry, in groups i2c, gpio, spi and video), created at build
+# time: systemd-sysusers can't add it on the EROFS root. external.mk adds it
+# next to the OS's BR2_ROOTFS_USERS_TABLES; an OS needs no copy of its own.
+[image]
+kind = "buildroot"
+config_overrides = [
+  ["BR2_RAZE_LEMNOS_USERS_TABLE", "@source:lemnos/packaging/buildroot/lemnos-users.table"],
 ]
 
 # Replaces Lemnos's item of the same id (a later layer replaces the whole
