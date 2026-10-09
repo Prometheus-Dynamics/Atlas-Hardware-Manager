@@ -78,6 +78,15 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
 - [ ] Open as USB disk / Browse / Eject / Add my SSH key on hardware.
 - [ ] Raze 1.0.7 on hardware: LED colour order, locate, SSH keys, serial
       console. Fan polarity (`dtoverlay=raze-fan,polarity=0`) still to test.
+- [ ] Raze with lemnosd (Lemnos 8a126d3, `d5302db`) on hardware: an OS build
+      with the `lemnos` source; the sensors binding through the bus
+      selectors (`i2c:compatible=i2c-gpio`,
+      `i2c:of=/axi/pcie@1000120000/rp1/i2c@74000`) and their readings; the
+      udev rules (lemnosd as `lemnos`, not root); `raze-leds` and locate as
+      lemnosd clients; `selftest --interactive` (frames above other
+      clients' colours, but below a status: check with HeliOS running); the
+      fan check's duties and hand-back; the LED direction; the INA238 shunt
+      against the schematic; the RP1 GPIO chip label (`pinctrl-rp1`).
 - [ ] USB hotplug and mDNS watching on real hardware (Linux, Windows, macOS).
 - [ ] Windows and macOS installers on real machines.
 
@@ -99,6 +108,11 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
 - [ ] Verify A/B on a real Raze with HeliOS's PhotonVision image (they test
       stage/apply/confirm/rollback first).
 - [ ] `board-agent` for Orion-driven updates.
+- [ ] Lemnos asks from the Raze integration: a fan "release" request that
+      hands one fan back while lemnosd runs (today only `fan restore`,
+      root, via sysfs; lemnosd keeps the first write's governor state); a
+      test/diagnostic LED layer above status for the self-test; the Raze's
+      RP1 path (`/axi/pcie@1000120000/rp1/...`) in Lemnos's docs example.
 - [ ] HeliOS secured mode (helios-api `docs/docs/api/http.md`): when
       `/v1/identity` reports `helios.auth.mode = secured`, send
       `Authorization: Bearer helios_<64 hex>` on everything but health,
