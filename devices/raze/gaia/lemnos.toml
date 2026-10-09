@@ -35,8 +35,11 @@ imports = [
 # next to the OS's BR2_ROOTFS_USERS_TABLES; an OS needs no copy of its own.
 [image]
 kind = "buildroot"
+# A Kconfig string: quoted in .config, or olddefconfig resets it to "".
+# ${source.lemnos.path} is substituted anywhere in the value (an @source:
+# token only at its start, so not inside the quotes).
 config_overrides = [
-  ["BR2_RAZE_LEMNOS_USERS_TABLE", "@source:lemnos/packaging/buildroot/lemnos-users.table"],
+  ["BR2_RAZE_LEMNOS_USERS_TABLE", "\"${source.lemnos.path}/packaging/buildroot/lemnos-users.table\""],
 ]
 
 # Replaces Lemnos's item of the same id (a later layer replaces the whole
