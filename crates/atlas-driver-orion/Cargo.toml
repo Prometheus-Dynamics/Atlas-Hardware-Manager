@@ -13,7 +13,8 @@ description = "Orion as a capability source for Atlas: live readings, actions, a
 [dependencies]
 async-trait.workspace = true
 atlas-driver.workspace = true
-orion-client.workspace = true
+futures.workspace = true
+orion-client = { workspace = true, features = ["remote"] }
 orion-control-plane.workspace = true
 orion-core.workspace = true
 serde.workspace = true

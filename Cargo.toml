@@ -7,6 +7,7 @@ members = [
     "crates/atlas-driver-rpi",
     "crates/atlas-driver-board",
     "crates/atlas-driver-orion",
+    "crates/board-agent",
     "crates/atlas-image-server",
     "crates/atlas-release",
     "crates/atlas-usbboot",
@@ -48,10 +49,13 @@ futures = "0.3"
 lzma-rs = "0.3"
 mdns-sd = "0.21"
 nusb = { version = "0.2.7", features = ["tokio"] }
-# Orion (control protocol 4) and its remote operator client, pinned together.
-orion-client = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "6776a0d97866deaaec1c846456749785f4933082", default-features = false, features = ["remote"] }
-orion-control-plane = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "6776a0d97866deaaec1c846456749785f4933082", default-features = false, features = ["std"] }
-orion-core = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "6776a0d97866deaaec1c846456749785f4933082", default-features = false, features = ["std"] }
+# Orion (control protocol 4, layout of c22fa42) and its remote operator client, pinned together.
+# Features per crate: the remote operator client (Atlas), IPC (board-agent).
+orion-client = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "c22fa42a8dd4176805d292796e1580f5c865e23f", default-features = false }
+orion-control-plane = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "c22fa42a8dd4176805d292796e1580f5c865e23f", default-features = false, features = ["std"] }
+orion-core = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "c22fa42a8dd4176805d292796e1580f5c865e23f", default-features = false, features = ["std"] }
+# Tests only: a real node in-process (board-agent).
+orion-node = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "c22fa42a8dd4176805d292796e1580f5c865e23f", default-features = false }
 nix = { version = "0.31", default-features = false }
 plist = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "json"] }
