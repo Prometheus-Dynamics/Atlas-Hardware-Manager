@@ -85,6 +85,7 @@ impl OrionUpdate {
                     TypedConfigValue::UInt(n) => n.to_string(),
                     TypedConfigValue::Int(n) => n.to_string(),
                     TypedConfigValue::Bool(b) => b.to_string(),
+                    TypedConfigValue::F64(x) => x.to_string(),
                     TypedConfigValue::Bytes(_) => return None,
                 };
                 Some((entry.key, value))

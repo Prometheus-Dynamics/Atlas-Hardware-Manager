@@ -25,6 +25,7 @@ fn text(value: &TypedConfigValue) -> Option<String> {
         TypedConfigValue::UInt(n) => Some(n.to_string()),
         TypedConfigValue::Int(n) => Some(n.to_string()),
         TypedConfigValue::Bool(b) => Some(b.to_string()),
+        TypedConfigValue::F64(x) => Some(x.to_string()),
         TypedConfigValue::Bytes(_) => None,
     }
 }

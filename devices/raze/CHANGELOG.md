@@ -324,6 +324,9 @@ commit; the commits are listed per area.
 
 ### Orion device agent
 
+- **Orion ec91d0a** (from c22fa42): board-agent and Atlas use the same Orion
+  commit as the OS images. Same control protocol (4) and wire fingerprint;
+  it adds `TypedConfigValue::F64`, which Atlas shows as text.
 - `board-agent` (Atlas `crates/board-agent`, `/usr/bin/board-agent`,
   `board-agent.service`) claims `update`, `update.cancel`,
   `update.rollback`, `reboot` and `locate` on orion-node's local IPC and

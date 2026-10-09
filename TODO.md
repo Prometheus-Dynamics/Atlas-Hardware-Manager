@@ -108,7 +108,7 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
 - [ ] Verify A/B on a real Raze with HeliOS's PhotonVision image (they test
       stage/apply/confirm/rollback first).
 - [x] `board-agent` for Orion-driven updates (crates/board-agent, Orion
-      c22fa42; tested against a real orion-node with a fake writer).
+      ec91d0a; tested against a real orion-node with a fake writer).
 - [ ] Run board-agent on a Raze with orion-node: a full Orion update,
       cancel and rollback, and the Gaia artifact (gaia/board-agent.toml) in
       a full image build.

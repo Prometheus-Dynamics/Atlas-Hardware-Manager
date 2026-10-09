@@ -49,13 +49,13 @@ futures = "0.3"
 lzma-rs = "0.3"
 mdns-sd = "0.21"
 nusb = { version = "0.2.7", features = ["tokio"] }
-# Orion (control protocol 4, layout of c22fa42) and its remote operator client, pinned together.
+# Orion (control protocol 4, layout of ec91d0a) and its remote operator client, pinned together.
 # Features per crate: the remote operator client (Atlas), IPC (board-agent).
-orion-client = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "c22fa42a8dd4176805d292796e1580f5c865e23f", default-features = false }
-orion-control-plane = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "c22fa42a8dd4176805d292796e1580f5c865e23f", default-features = false, features = ["std"] }
-orion-core = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "c22fa42a8dd4176805d292796e1580f5c865e23f", default-features = false, features = ["std"] }
+orion-client = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "ec91d0a6999389a0aaef0cd11e05c9e419b96b99", default-features = false }
+orion-control-plane = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "ec91d0a6999389a0aaef0cd11e05c9e419b96b99", default-features = false, features = ["std"] }
+orion-core = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "ec91d0a6999389a0aaef0cd11e05c9e419b96b99", default-features = false, features = ["std"] }
 # Tests only: a real node in-process (board-agent).
-orion-node = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "c22fa42a8dd4176805d292796e1580f5c865e23f", default-features = false }
+orion-node = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "ec91d0a6999389a0aaef0cd11e05c9e419b96b99", default-features = false }
 nix = { version = "0.31", default-features = false }
 plist = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "json"] }
