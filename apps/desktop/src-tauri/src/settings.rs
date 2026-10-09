@@ -167,24 +167,7 @@ pub fn read_ssh_keys(file: Option<&str>) -> Result<Option<String>, String> {
             .join(rest),
         None => std::path::PathBuf::from(file),
     };
-    let text = std::fs::read_to_string(&path)
-        .map_err(|error| format!("could not read {}: {error}", path.display()))?;
-    let keys: Vec<&str> = text
-        .lines()
-        .map(str::trim)
-        .filter(|line| {
-            ["ssh-", "ecdsa-", "sk-ssh-", "sk-ecdsa-"]
-                .iter()
-                .any(|prefix| line.starts_with(prefix))
-        })
-        .collect();
-    if keys.is_empty() {
-        return Err(format!(
-            "{} is not an OpenSSH public key (choose the .pub file, never the private key)",
-            path.display()
-        ));
-    }
-    Ok(Some(keys.join("\n")))
+    atlas_driver_rpi::SshKeys::read_public(&path).map(Some)
 }
 
 #[cfg(test)]

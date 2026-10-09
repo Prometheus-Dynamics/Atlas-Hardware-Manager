@@ -2,18 +2,20 @@
 //! offers is available here, so flows can be scripted and tested in CI.
 
 mod commands;
+mod flash;
 mod output;
 mod system;
 
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
+use std::time::Duration;
 
-use atlas_core::{Atlas, InventoryStore, JsonFileStore, StagedRollout};
+use atlas_core::{Atlas, InventoryStore, JsonFileStore, StagedRollout, install};
 use atlas_devices::DeviceCatalog;
 use atlas_driver_board::{NetworkLinks, SshAccess, SshConfig, UsbGadgetLinks, drivers_for_catalog};
 use atlas_driver_mock::MockFleet;
-use atlas_driver_rpi::{RpiConfig, RpiDriver, UsbBootLinks};
+use atlas_driver_rpi::{RpiConfig, RpiDriver, SshKeys, UsbBootLinks};
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
@@ -89,6 +91,29 @@ enum Command {
         /// Omit to list the device's actions.
         action: Option<String>,
     },
+    /// Fresh install: write an image to a Raspberry Pi board in USB boot
+    /// (boot its mass-storage gadget, write the one new USB disk, read it
+    /// back, eject). Erases the board's eMMC.
+    Flash {
+        /// The image: .img, .img.xz or .img.zst.
+        #[arg(long)]
+        image: PathBuf,
+        /// OpenSSH public keys (.pub) to put on the boot partition; the
+        /// device package installs them for root on first start.
+        #[arg(long, value_name = "PUB")]
+        ssh_key: Option<PathBuf>,
+        /// The board in USB boot (name, `family:serial` or serial), when
+        /// there is more than one.
+        #[arg(long, conflicts_with = "usb_boot")]
+        device: Option<String>,
+        /// A running board to restart into USB boot first (its `usb-boot`
+        /// action, over SSH), then flash.
+        #[arg(long, value_name = "DEVICE")]
+        usb_boot: Option<String>,
+        /// Seconds to wait for a --usb-boot board to show up in USB boot.
+        #[arg(long, default_value_t = 90)]
+        wait: u64,
+    },
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -112,7 +137,7 @@ fn default_state_path() -> Option<PathBuf> {
     dirs::data_dir().map(|dir| dir.join("atlas").join("inventory.json"))
 }
 
-fn build_atlas(cli: &Cli) -> Result<Atlas, String> {
+fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
     let mut builder = Atlas::builder();
     let state_path = match (&cli.state, cli.sim) {
         (Some(path), _) => Some(path.clone()),
@@ -134,11 +159,11 @@ fn build_atlas(cli: &Cli) -> Result<Atlas, String> {
             builder = builder.link_source(fleet.link_source());
         }
         None => {
-            let mut boot_file_dirs = Vec::new();
+            let mut boot_file_dirs = install::bundled_usbboot_dirs();
             if let Some(data) = dirs::data_dir() {
                 boot_file_dirs.push(data.join("atlas").join("usbboot"));
             }
-            let mut device_dirs = Vec::new();
+            let mut device_dirs = install::bundled_device_dirs();
             if let Some(data) = dirs::data_dir() {
                 device_dirs.push(data.join("atlas").join("devices"));
             }
@@ -152,7 +177,7 @@ fn build_atlas(cli: &Cli) -> Result<Atlas, String> {
                 .driver(Arc::new(RpiDriver::new(RpiConfig {
                     boot_file_dirs,
                     catalog: catalog.clone(),
-                    ssh_keys: Default::default(),
+                    ssh_keys,
                 })))
                 .link_source(Arc::new(UsbBootLinks))
                 .link_source(Arc::new(NetworkLinks))
@@ -172,7 +197,21 @@ fn build_atlas(cli: &Cli) -> Result<Atlas, String> {
 #[tokio::main]
 async fn main() -> ExitCode {
     let cli = Cli::parse();
-    let atlas = match build_atlas(&cli) {
+    let ssh_keys = SshKeys::default();
+    if let Command::Flash {
+        ssh_key: Some(path),
+        ..
+    } = &cli.command
+    {
+        match SshKeys::read_public(path) {
+            Ok(keys) => ssh_keys.set(Some(keys)),
+            Err(error) => {
+                output::error(&error);
+                return ExitCode::from(2);
+            }
+        }
+    }
+    let atlas = match build_atlas(&cli, ssh_keys) {
         Ok(atlas) => atlas,
         Err(error) => {
             output::error(&error);
@@ -204,6 +243,22 @@ async fn main() -> ExitCode {
         }
         Command::Action { device, action } => {
             commands::action(&atlas, &device, action.as_deref(), cli.json).await
+        }
+        Command::Flash {
+            image,
+            device,
+            usb_boot,
+            wait,
+            ..
+        } => {
+            let options = flash::FlashOptions {
+                image,
+                device,
+                usb_boot,
+                wait: Duration::from_secs(wait),
+                json: cli.json,
+            };
+            flash::flash(&atlas, options).await
         }
         Command::Doctor => system::doctor(&atlas, cli.json).await,
         Command::Fix { action } => system::fix(&atlas, &action).await,

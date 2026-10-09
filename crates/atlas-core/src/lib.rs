@@ -10,6 +10,7 @@ mod atlas;
 mod error;
 mod events;
 mod history;
+pub mod install;
 mod inventory;
 mod job_runner;
 mod jobs;

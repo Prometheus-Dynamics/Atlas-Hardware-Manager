@@ -36,6 +36,29 @@ impl std::fmt::Debug for SshKeys {
 }
 
 impl SshKeys {
+    /// The OpenSSH public keys in `path` (an `authorized_keys` or `.pub`
+    /// file), one per line. Refuses a file with none, such as a private key.
+    pub fn read_public(path: &std::path::Path) -> Result<String, String> {
+        let text = std::fs::read_to_string(path)
+            .map_err(|error| format!("could not read {}: {error}", path.display()))?;
+        let keys: Vec<&str> = text
+            .lines()
+            .map(str::trim)
+            .filter(|line| {
+                ["ssh-", "ecdsa-", "sk-ssh-", "sk-ecdsa-"]
+                    .iter()
+                    .any(|prefix| line.starts_with(prefix))
+            })
+            .collect();
+        if keys.is_empty() {
+            return Err(format!(
+                "{} is not an OpenSSH public key (choose the .pub file, never the private key)",
+                path.display()
+            ));
+        }
+        Ok(keys.join("\n"))
+    }
+
     pub fn set(&self, keys: Option<String>) {
         *self
             .0

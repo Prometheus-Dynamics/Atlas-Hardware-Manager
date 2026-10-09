@@ -3,44 +3,16 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use atlas_core::AtlasBuilder;
+use atlas_core::{AtlasBuilder, install};
 use atlas_devices::DeviceCatalog;
 use atlas_driver_board::{NetworkLinks, SshAccess, UsbGadgetLinks, drivers_for_catalog};
 use atlas_driver_rpi::{RpiConfig, RpiDriver, SshKeys, UsbBootLinks};
 
 use crate::settings::AppPaths;
 
-/// Where installers put bundled resources relative to the executable:
-/// next to it (Windows, dev), `../Resources` (macOS), `../lib/<app>`
-/// (Linux packages).
-fn resource_dirs() -> Vec<PathBuf> {
-    let Some(exe_dir) = std::env::current_exe()
-        .ok()
-        .and_then(|exe| exe.parent().map(PathBuf::from))
-    else {
-        return Vec::new();
-    };
-    let mut dirs = vec![
-        exe_dir.join("usbboot"),
-        exe_dir.join("resources").join("usbboot"),
-        exe_dir.join("../Resources/usbboot"),
-    ];
-    for name in [
-        "atlas-hardware-manager",
-        "Atlas Hardware Manager",
-        "atlas-app",
-    ] {
-        dirs.push(exe_dir.join("../lib").join(name).join("usbboot"));
-    }
-    dirs
-}
-
 /// Folders that may hold device packages (`devices/<model>/`).
 fn device_dirs(paths: &AppPaths) -> Vec<PathBuf> {
-    let mut dirs: Vec<PathBuf> = resource_dirs()
-        .into_iter()
-        .filter_map(|dir| dir.parent().map(|parent| parent.join("devices")))
-        .collect();
+    let mut dirs: Vec<PathBuf> = install::bundled_device_dirs();
     dirs.push(paths.data_dir.join("devices"));
     atlas_devices::default_search_dirs(&dirs)
 }
@@ -56,7 +28,7 @@ pub fn register_hardware(
     let catalog = Arc::new(DeviceCatalog::load(&device_dirs(paths)));
     warnings.extend(catalog.warnings().iter().cloned());
 
-    let mut boot_file_dirs = resource_dirs();
+    let mut boot_file_dirs = install::bundled_usbboot_dirs();
     boot_file_dirs.push(paths.data_dir.join("usbboot"));
     let mut builder = builder
         .driver(Arc::new(RpiDriver::new(RpiConfig {

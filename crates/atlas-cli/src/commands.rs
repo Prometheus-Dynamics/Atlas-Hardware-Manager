@@ -12,7 +12,7 @@ use tokio::sync::broadcast::error::RecvError;
 
 use crate::output;
 
-type CommandResult = Result<ExitCode, String>;
+pub(crate) type CommandResult = Result<ExitCode, String>;
 
 pub(crate) async fn ls(atlas: &Atlas, as_json: bool) -> CommandResult {
     let report = atlas.scan().await;
@@ -60,7 +60,7 @@ fn device_row(device: &DeviceRecord) -> Vec<String> {
 }
 
 /// Finds one device by name, `family:serial`, or serial.
-fn resolve(atlas: &Atlas, selector: &str) -> Result<DeviceKey, String> {
+pub(crate) fn resolve(atlas: &Atlas, selector: &str) -> Result<DeviceKey, String> {
     let devices = atlas.devices();
     if let Some(key) = DeviceKey::parse(selector)
         && devices.iter().any(|device| device.key == key)

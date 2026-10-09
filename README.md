@@ -105,6 +105,24 @@ cargo run -p atlas-cli -- update rpi:port-1-2 --image helios-cm5.img.xz
 cargo run -p atlas-cli -- --sim demo update --all --release sim-helios=2026.3.1 --release sim-mcu=1.5.0
 ```
 
+The installers put the CLI next to the app (`/usr/bin/atlas` on Linux), where
+it finds `atlas-helper`, the Pi boot files and the device packages the way the
+app does. A fresh install from a terminal, the same job as the app's Flash:
+
+```bash
+# A board already in USB boot (boot button, or a blank eMMC):
+atlas flash --image helios-raze.img.xz --ssh-key ~/.ssh/id_ed25519.pub
+# A running board: restart it into USB boot over SSH first, then flash.
+atlas flash --usb-boot raze-8f3a1c2d --image helios-raze.img.xz --ssh-key ~/.ssh/id_ed25519.pub
+```
+
+It boots the board's mass-storage gadget, writes the one USB disk that appears
+(it refuses when none or several do, and never writes a disk that was already
+there), reads it back, puts the keys on the boot partition and ejects. The
+write runs `atlas-helper` through pkexec: over SSH, use a terminal (`ssh -t`)
+and type your password when polkit asks. `atlas doctor` checks USB access
+first (`atlas fix usbboot.install-access` installs the udev rule).
+
 ## Build installers
 
 ```bash
@@ -112,7 +130,8 @@ cd apps/desktop
 bun run bundle
 ```
 
-This fetches the boot files, builds `atlas-helper` as a sidecar, and runs
+This fetches the boot files, builds `atlas-helper` and the `atlas` CLI as
+sidecars, and runs
 `tauri build` with `src-tauri/tauri.bundle.conf.json`. CI does the same on
 Linux, Windows, and macOS for tags and manual runs.
 
