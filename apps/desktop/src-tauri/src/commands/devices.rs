@@ -1,8 +1,8 @@
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
-use atlas_core::{ActivityEntry, DeviceRecord, ScanReport, SelfTestRecord};
-use atlas_driver::{DeviceAction, DeviceKey, LogLine, Metric};
+use atlas_core::{ActivityEntry, DeviceRecord, HistoryEntry, ScanReport, SelfTestRecord};
+use atlas_driver::{DeviceAction, DeviceKey, DeviceStatus, LogLine, Metric};
 use tauri::State;
 
 use super::{CmdResult, text};
@@ -87,6 +87,24 @@ pub async fn device_logs(
     state.atlas.logs(&key, lines).await.map_err(text)
 }
 
+/// What the device is doing now and how it is, for devices that report
+/// `status`. Also brings its history up to date.
+#[tauri::command]
+pub async fn device_status(state: State<'_, AppState>, key: DeviceKey) -> CmdResult<DeviceStatus> {
+    state.atlas.device_status(&key).await.map_err(text)
+}
+
+/// The device's history, newest first: what Atlas did and what its board's
+/// event log says (Orion, someone on the board).
+#[tauri::command]
+pub fn device_history(
+    state: State<'_, AppState>,
+    key: DeviceKey,
+    limit: usize,
+) -> Vec<HistoryEntry> {
+    state.atlas.device_history(&key, limit)
+}
+
 /// Fleet history, newest first.
 #[tauri::command]
 pub fn list_activity(state: State<'_, AppState>, limit: usize) -> Vec<ActivityEntry> {
@@ -133,6 +151,9 @@ pub async fn save_support_bundle(
     if let Some(run) = atlas.selftest(&key) {
         let _ = writeln!(out, "\n== Last self-test\n{}", pretty(&run));
     }
+    if let Ok(status) = atlas.device_status(&key).await {
+        let _ = writeln!(out, "\n== Status\n{}", pretty(&status));
+    }
     let recent = crate::logfile::tail(300);
     if !recent.is_empty() {
         let _ = writeln!(out, "\n== Atlas log (last {} lines)", recent.len());
@@ -141,12 +162,12 @@ pub async fn save_support_bundle(
         }
     }
     let _ = writeln!(out, "\n== History");
-    for entry in atlas
-        .activity(1000)
-        .into_iter()
-        .filter(|entry| entry.device.as_ref() == Some(&key))
-    {
-        let _ = writeln!(out, "{} {:?} {}", entry.at_ms, entry.level, entry.message);
+    for entry in atlas.device_history(&key, 2000) {
+        let _ = writeln!(
+            out,
+            "{} {:?} {:?}/{:?} {} {}",
+            entry.at_ms, entry.level, entry.origin, entry.source, entry.kind, entry.message
+        );
     }
     std::fs::write(&path, out)
         .map_err(|error| format!("could not write {}: {error}", path.display()))

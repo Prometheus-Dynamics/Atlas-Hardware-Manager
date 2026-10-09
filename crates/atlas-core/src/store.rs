@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{ActivityEntry, DeviceRecord, RobotProfile, SelfTestRecord};
+use crate::{ActivityEntry, BoardEventLog, DeviceRecord, RobotProfile, SelfTestRecord};
 
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -28,6 +28,9 @@ pub struct Snapshot {
     /// The last self-test of each board.
     #[serde(default)]
     pub selftests: Vec<SelfTestRecord>,
+    /// Each board's recent events (its own event log).
+    #[serde(default)]
+    pub board_events: Vec<BoardEventLog>,
 }
 
 /// Where the remembered inventory and robot profiles live between sessions.
@@ -194,6 +197,17 @@ mod tests {
             }],
             activity: Vec::new(),
             selftests: Vec::new(),
+            board_events: vec![BoardEventLog {
+                board_serial: "abcdef01".into(),
+                events: vec![atlas_driver::DeviceEvent {
+                    t: 5,
+                    boot_id: "b".into(),
+                    kind: "boot".into(),
+                    source: atlas_driver::EventSource::Local,
+                    message: "boot 1".into(),
+                    data: Default::default(),
+                }],
+            }],
         };
         store.save(&snapshot).unwrap();
         store.save(&snapshot).unwrap();

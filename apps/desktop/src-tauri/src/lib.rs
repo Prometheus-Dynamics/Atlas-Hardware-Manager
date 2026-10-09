@@ -86,6 +86,8 @@ pub fn run() {
             commands::devices::device_selftest,
             commands::devices::device_telemetry,
             commands::devices::device_logs,
+            commands::devices::device_status,
+            commands::devices::device_history,
             commands::devices::list_activity,
             commands::devices::save_support_bundle,
             commands::jobs::plan_update,

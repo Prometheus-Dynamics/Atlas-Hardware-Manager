@@ -73,6 +73,10 @@ pub enum Event {
     SelfTest {
         record: Box<SelfTestRecord>,
     },
+    /// New events from the device's board: re-read its history.
+    DeviceHistory {
+        key: DeviceKey,
+    },
 }
 
 pub(crate) struct EventBus {

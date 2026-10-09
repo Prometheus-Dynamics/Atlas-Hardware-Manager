@@ -68,6 +68,10 @@ pub(crate) struct State {
     pub(crate) selftest_pending: HashMap<String, u64>,
     /// Boards whose self-test is running now.
     pub(crate) selftest_running: HashSet<String>,
+    /// Each board's recent events, by board serial, oldest first.
+    pub(crate) board_events: HashMap<String, VecDeque<atlas_driver::DeviceEvent>>,
+    /// When each board's events were last fetched (ms).
+    pub(crate) events_synced: HashMap<String, u64>,
 }
 
 pub(crate) struct Inner {
@@ -135,6 +139,14 @@ impl Inner {
                 robots: state.robots.values().cloned().collect(),
                 activity: state.activity.iter().cloned().collect(),
                 selftests: state.selftests.values().cloned().collect(),
+                board_events: state
+                    .board_events
+                    .iter()
+                    .map(|(board, events)| crate::BoardEventLog {
+                        board_serial: board.clone(),
+                        events: events.iter().cloned().collect(),
+                    })
+                    .collect(),
             }
         };
         if let Err(error) = store.save(&snapshot) {
@@ -200,6 +212,11 @@ impl AtlasBuilder {
                 .into_iter()
                 .map(|run| (run.board_serial.clone(), run))
                 .collect(),
+            board_events: snapshot
+                .board_events
+                .into_iter()
+                .map(|log| (log.board_serial, log.events.into_iter().collect()))
+                .collect(),
             next_job: 1,
             ..State::default()
         };
@@ -255,6 +272,8 @@ impl Atlas {
         let report = scan::run(&self.inner).await;
         // Boards back from a flash or an update get their self-test.
         self.start_due_selftests();
+        // Boards with an event log: fetch what happened since.
+        self.start_due_event_syncs();
         report
     }
 
