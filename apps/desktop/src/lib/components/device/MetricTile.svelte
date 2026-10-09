@@ -1,13 +1,15 @@
 <script lang="ts">
   // One live reading: a gauge when the metric has a range, its value, the
-  // raw numbers behind it, a bar per core for the CPU, and a trend line of
-  // the last couple of minutes.
+  // raw numbers behind it, and a trend line of the last couple of minutes.
+  // With cores, a switch shows a bar per core in the trend's place, so the
+  // tile keeps its size.
   import type { Metric } from "#lib/api/client.ts";
   import AnimatedNumber from "#lib/components/common/AnimatedNumber.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
   import IconTile from "#lib/components/common/IconTile.svelte";
   import Ring from "#lib/components/common/Ring.svelte";
   import Sparkline from "#lib/components/common/Sparkline.svelte";
+  import { coreView } from "#lib/stores/coreView.svelte.ts";
   import { isTextMetric, metricDecimals, metricFraction, metricIcon, metricTone, metricValue, toneColor } from "#lib/metrics.ts";
 
   let { metric, series = [], cores = [] }: { metric: Metric; series?: number[]; cores?: Metric[] } = $props();
@@ -28,34 +30,47 @@
     {:else}
       <IconTile icon={metricIcon(metric)} size={44} tone="muted" />
     {/if}
-    <div class="min-w-0">
+    <div class="min-w-0 flex-1">
       <p class="truncate text-[12px] text-fg-muted">{metric.label}</p>
       <p class="value">
         {#if isTextMetric(metric)}{shown.value}{:else}<AnimatedNumber value={metric.value} decimals={metricDecimals(metric)} />{/if}{#if shown.unit}<span class="unit">{shown.unit}</span>{/if}
       </p>
     </div>
+    {#if cores.length > 0}
+      <button
+        type="button"
+        class="view-switch"
+        onclick={() => coreView.toggle()}
+        title={coreView.perCore ? "Show the trend" : "Show each core"}
+        aria-label={coreView.perCore ? "Show the CPU trend" : "Show each CPU core"}
+        aria-pressed={coreView.perCore}
+      >
+        <Icon name={coreView.perCore ? "chart-line" : "layout-grid"} size={15} />
+      </button>
+    {/if}
   </div>
   {#if metric.detail}
     <p class="detail mt-1.5 truncate" title={metric.detail}>{metric.detail}</p>
   {/if}
-  {#if cores.length > 0}
-    <div class="cores mt-2" role="list" aria-label="Each core">
+  {#if cores.length > 0 && coreView.perCore}
+    <div class="cores mt-auto pt-2" role="list" aria-label="Each core">
       {#each cores as core (core.id)}
-        {@const coreTone = metricTone(core)}
-        <div class="core" role="listitem" title="{core.label}: {Math.round(core.value)} %">
-          <div class="bar"><span style="height: {Math.min(100, Math.max(0, core.value))}%; background: {toneColor(coreTone)}"></span></div>
-          <span class="core-value">{Math.round(core.value)}</span>
+        <div class="bar" role="listitem" title="{core.label}: {Math.round(core.value)} %" aria-label="{core.label}: {Math.round(core.value)} %">
+          <span style="height: {Math.min(100, Math.max(0, core.value))}%; background: {toneColor(metricTone(core))}"></span>
         </div>
       {/each}
     </div>
-  {/if}
-  {#if trend}
-    <div class="mt-2"><Sparkline values={series} {color} height={26} /></div>
+  {:else if trend}
+    <div class="mt-auto pt-2"><Sparkline values={series} {color} height={26} /></div>
   {/if}
 </div>
 
 <style>
   .tile {
+    /* Every tile in a row as tall as the tallest. */
+    height: 100%;
+    display: flex;
+    flex-direction: column;
     padding: 12px 14px;
     transition:
       border-color var(--t-med),
@@ -83,20 +98,15 @@
     font-variant-numeric: tabular-nums;
   }
   .cores {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(18px, 1fr));
-    gap: 4px;
-  }
-  .core {
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 2px;
+    gap: 3px;
+    /* The sparkline's box (26px line, its inline-box line height), so
+       switching views doesn't move anything. */
+    height: 33px;
   }
   .bar {
     position: relative;
-    width: 100%;
-    height: 22px;
+    flex: 1;
     border-radius: 3px;
     background: var(--glass-strong);
     overflow: hidden;
@@ -107,10 +117,22 @@
     border-radius: 3px;
     transition: height var(--t-data) var(--ease-out);
   }
-  .core-value {
-    font-size: 10px;
+  .view-switch {
+    align-self: flex-start;
+    display: grid;
+    place-items: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
     color: var(--fg-faint);
-    font-variant-numeric: tabular-nums;
+    transition:
+      color var(--t-fast),
+      background var(--t-fast);
+  }
+  .view-switch:hover,
+  .view-switch[aria-pressed="true"] {
+    color: var(--fg);
+    background: var(--glass-strong);
   }
   .unit {
     margin-left: 3px;
