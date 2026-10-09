@@ -1,15 +1,16 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { sameKey, type DeviceRecord } from "#lib/api/client.ts";
+  import { keyString, sameKey, type DeviceRecord, type HistoryEntry } from "#lib/api/client.ts";
   import Icon from "#lib/components/common/Icon.svelte";
   import Pill from "#lib/components/common/Pill.svelte";
   import ProgressBar from "#lib/components/common/ProgressBar.svelte";
   import { clockTime, jobStatusDetail, jobStatusLabel, jobStatusTone, overallFraction, sentence } from "#lib/format.ts";
-  import ActivityFeed from "#lib/components/overview/ActivityFeed.svelte";
   import { activity } from "#lib/stores/activity.svelte.ts";
   import { jobs } from "#lib/stores/jobs.svelte.ts";
+  import { deviceStatus } from "#lib/stores/status.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
   import { rise } from "#lib/ui/motion.ts";
+  import DeviceTimeline from "./DeviceTimeline.svelte";
 
   let { record }: { record: DeviceRecord } = $props();
 
@@ -17,7 +18,25 @@
     jobs.sorted.flatMap((job) => job.devices.filter((d) => sameKey(d.device, record.key)).map((state) => ({ job, state }))),
   );
 
-  const timeline = $derived(activity.entries.filter((e) => sameKey(e.device, record.key)));
+  // The merged history (Atlas's record and the board's event log); until it
+  // loads, Atlas's own entries for this device.
+  $effect(() => deviceStatus.watch(record));
+  const merged = $derived(deviceStatus.history.get(keyString(record.key)));
+  const timeline = $derived<HistoryEntry[]>(
+    merged ??
+      activity.entries
+        .filter((e) => sameKey(e.device, record.key))
+        .map((e) => ({
+          at_ms: e.at_ms,
+          level: e.level,
+          kind: e.kind,
+          source: "atlas",
+          origin: "atlas",
+          message: e.message,
+          boot_id: null,
+          data: {},
+        })),
+  );
 
   function open(id: number) {
     ui.selectedJob = id;
@@ -55,7 +74,7 @@
 {#if timeline.length > 0}
   <section class="mt-6 flex flex-col gap-2">
     <h3 class="text-[12px] font-medium uppercase tracking-[0.06em] text-fg-faint">Timeline</h3>
-    <ActivityFeed entries={timeline} limit={10} />
+    <DeviceTimeline entries={timeline} />
   </section>
 {/if}
 

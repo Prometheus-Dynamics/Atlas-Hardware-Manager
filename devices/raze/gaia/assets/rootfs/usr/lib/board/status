@@ -1,0 +1,331 @@
+#!/bin/sh
+# What the board is doing and how it is, as one JSON object (format 1):
+#
+#   status [--json]           print it (the identity endpoint's GET /status)
+#   status --refresh-drift    as root: recheck the boot files and overrides
+#                             now and keep the result (board-drift.timer)
+#   --quiet                   print nothing
+#
+#   {"version":1,"time":<unix s>,
+#    "boot":{"id":..,"count":<n>,"slot":..,"kernel":..,"previous_clean":..,
+#            "at":..,"uptime_s":<s>},
+#    "failed_units":["x.service"],
+#    "temperatures":[{"id":"cpu-thermal","celsius":54.2}],
+#    "fan":{"state":<n>,"max_state":<n>,"pwm":<0-255>,"rpm":<n>},
+#    "update":<update.json>,
+#    "clock":{"time":<unix s>,"ntp_synchronized":true|false|null},
+#    "drift":{"checked_at":..,"slot":..,"root_read_only":..,"baseline":
+#             "stage|first-seen|none","count":<n>,"flags":[..],
+#             "items":[{"area":"boot|root|etc|data","path":..,
+#                       "change":"changed|added|missing|present","sha256":..}]}}
+# Anything unknown is null (or empty).
+#
+# Drift: the running slot's boot files (config.txt, cmdline.txt, kernel*.img,
+# overlays/*) against the hashes the writer recorded on p1 when it staged the
+# slot (board-boot.<slot>.sha256), else against what the board first saw
+# (/data/board/drift/boot.<slot>.sha256). On a writable root also
+# /etc/ssh/sshd_config(.d) and /etc/board against their first-seen hashes;
+# an EROFS root can't drift, so it is skipped. Files in /etc/board and
+# /data/board are listed as overrides ("present"); those in /data count as
+# drift. Flags: cmdline, config (config.txt), sshd_config, update_env.
+# Checking needs root (it mounts the boot partitions read-only) and is kept
+# in /run/board/drift.json; it is redone when older than
+# BOARD_DRIFT_MAX_AGE seconds (3600), and never by an unprivileged caller,
+# which reads the kept result.
+#
+# Test hooks: the paths in lib.sh and hw.sh, BOARD_SYSTEMCTL, BOARD_PROC_UPTIME,
+# BOARD_ROOT_RO (1|0), BOARD_SSHD_DIR, BOARD_DRIFT_BOOT_DIR and
+# BOARD_DRIFT_AB_DIR (the running boot slot's and p1's files; with them no
+# partition is mounted and no root is needed).
+set -u
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+
+SYSTEMCTL=${BOARD_SYSTEMCTL:-systemctl}
+SSHD_DIR=${BOARD_SSHD_DIR:-/etc/ssh}
+DRIFT_JSON=$BOARD_RUN_DIR/drift.json
+DRIFT_DIR=$BOARD_DATA_DIR/drift
+MAX_AGE=${BOARD_DRIFT_MAX_AGE:-3600}
+
+quiet=0
+refresh=0
+for arg in "$@"; do
+	case "$arg" in
+	--json) ;;
+	--quiet) quiet=1 ;;
+	--refresh-drift) refresh=1 ;;
+	*)
+		sed -n '4,7p' "$0" | sed 's/^# \{0,1\}//' >&2
+		exit 2
+		;;
+	esac
+done
+
+is_root() { [ "$(id -u 2>/dev/null)" = 0 ]; }
+# Drift can be checked: as root, or with the test directories given.
+can_check() { is_root || { [ -n "${BOARD_DRIFT_BOOT_DIR:-}" ] && [ -n "${BOARD_DRIFT_AB_DIR:-}" ]; }; }
+
+# Unprivileged (the HTTP endpoint) reads the fan from sysfs: lemnosd's
+# socket is for root.
+is_root || BOARD_HW_BACKEND=sysfs
+case "${BOARD_HW_BACKEND:-}" in
+*/*) . "$BOARD_HW_BACKEND" ;;
+# shellcheck source=hw.sh
+*) . "$BOARD_LIB_DIR/hw.sh" ;;
+esac
+HW_LEMNOS_CLIENT=board-status
+
+num_or_null() {
+	case "${1:-}" in
+	'' | *[!0-9]*) printf 'null' ;;
+	*) printf '%s' "$1" ;;
+	esac
+}
+
+# A command that may hang (D-Bus) gets a few seconds.
+bounded() {
+	if command -v timeout >/dev/null 2>&1; then timeout 5 "$@"; else "$@"; fi
+}
+
+uptime_s() { cut -d. -f1 "${BOARD_PROC_UPTIME:-/proc/uptime}" 2>/dev/null; }
+
+boot_json() {
+	up=$(num_or_null "$(uptime_s)")
+	if [ -s "$BOARD_RUN_DIR/boot.json" ]; then
+		head -n 1 "$BOARD_RUN_DIR/boot.json" | sed "s/}[[:space:]]*\$/,\"uptime_s\":$up}/"
+	else
+		printf '{"id":%s,"count":null,"slot":%s,"kernel":%s,"previous_clean":null,"at":null,"uptime_s":%s}\n' \
+			"$(board_json_str "$(board_boot_id)")" "$(board_json_str "$(board_active_slot)")" \
+			"$(board_json_str "${BOARD_UNAME_R:-$(uname -r)}")" "$up"
+	fi
+}
+
+failed_units_json() {
+	printf '['
+	bounded "$SYSTEMCTL" --failed --plain --no-legend 2>/dev/null |
+		awk '{ u = $1; if (u == "●" || u == "*") u = $2; if (u ~ /^[A-Za-z0-9@._:\\-]+$/) print u }' |
+		awk 'NR > 1 { printf "," } { printf "\"%s\"", $0 }'
+	printf ']'
+}
+
+temperatures_json() {
+	printf '['
+	sep=''
+	for zone in "$BOARD_SYS_DIR"/class/thermal/thermal_zone*; do
+		temp=$(cat "$zone/temp" 2>/dev/null) || continue
+		case "$temp" in '' | *[!0-9-]*) continue ;; esac
+		type=$(cat "$zone/type" 2>/dev/null) || type=${zone##*/}
+		printf '%s{"id":%s,"celsius":%s}' "$sep" "$(board_json_str "$type")" \
+			"$(awk -v t="$temp" 'BEGIN { printf "%.1f", t / 1000 }')"
+		sep=','
+	done
+	printf ']'
+}
+
+fan_json() {
+	if ! hw_fan_cdev >/dev/null 2>&1; then
+		printf 'null'
+		return
+	fi
+	set -- $(hw_fan_read 2>/dev/null)
+	printf '{"state":%s,"max_state":%s,"pwm":%s,"rpm":%s}' \
+		"$(num_or_null "$(hw_fan_get_state 2>/dev/null)")" "$(num_or_null "$(hw_fan_max_state 2>/dev/null)")" \
+		"$(num_or_null "${1:-}")" "$(num_or_null "${2:-}")"
+}
+
+update_json() {
+	line=$(head -n 1 "$BOARD_RUN_DIR/update.json" 2>/dev/null) || line=''
+	case "$line" in
+	'{'*'}') printf '%s' "$line" ;;
+	*) printf 'null' ;;
+	esac
+}
+
+clock_json() {
+	ntp=null
+	if command -v timedatectl >/dev/null 2>&1; then
+		case "$(bounded timedatectl show -p NTPSynchronized --value 2>/dev/null)" in
+		yes) ntp=true ;;
+		no) ntp=false ;;
+		esac
+	fi
+	printf '{"time":%s,"ntp_synchronized":%s}' "$(date +%s)" "$ntp"
+}
+
+# ---------------------------------------------------------------------------
+# Drift.
+
+root_read_only() {
+	case "${BOARD_ROOT_RO:-}" in
+	1) return 0 ;;
+	0) return 1 ;;
+	esac
+	awk '$2 == "/" { o = $4 } END { exit !(o ~ /^ro(,|$)/) }' /proc/mounts 2>/dev/null
+}
+
+MOUNTED=''
+cleanup() {
+	for m in $MOUNTED; do umount "$m" >/dev/null 2>&1 || true; done
+	MOUNTED=''
+}
+trap cleanup EXIT
+
+# A partition's files, read-only: where the OS mounted it, else here.
+part_dir() {
+	dev=$1
+	[ -b "$dev" ] || return 1
+	mnt=$(findmnt -n -o TARGET --source "$dev" 2>/dev/null | head -n 1) || mnt=''
+	if [ -z "$mnt" ]; then
+		mnt=$BOARD_RUN_DIR/drift-mnt/${dev##*/}
+		mkdir -p "$mnt" && mount -o ro "$dev" "$mnt" >/dev/null 2>&1 || return 1
+		MOUNTED="$MOUNTED $mnt"
+	fi
+	printf '%s\n' "$mnt"
+}
+
+# The running slot's boot files and p1, as directories.
+slot_dirs() {
+	if [ -n "${BOARD_DRIFT_BOOT_DIR:-}" ]; then
+		BOOT_DIR=$BOARD_DRIFT_BOOT_DIR AB_DIR=${BOARD_DRIFT_AB_DIR:-}
+		return 0
+	fi
+	BOOT_DIR='' AB_DIR=''
+	root=$(board_root_device)
+	[ -n "$root" ] || return 0
+	(board_load_env update.env; echo "${UPDATE_SLOT_A:-2 5}|${UPDATE_SLOT_B:-3 6}|${UPDATE_AUTOBOOT_PART:-1}") > "$BOARD_RUN_DIR/drift-slots.$$"
+	IFS='|' read -r a b ab < "$BOARD_RUN_DIR/drift-slots.$$"
+	rm -f "$BOARD_RUN_DIR/drift-slots.$$"
+	case "$SLOT" in
+	A) bootnum=${a%% *} ;;
+	B) bootnum=${b%% *} ;;
+	*) return 0 ;;
+	esac
+	BOOT_DIR=$(part_dir "$(board_sibling_partition "$root" "$bootnum")") || BOOT_DIR=''
+	AB_DIR=$(part_dir "$(board_sibling_partition "$root" "$ab")") || AB_DIR=''
+}
+
+# compare <area> <baseline file> <current file>: drift items, one JSON
+# object per line.
+compare() {
+	awk -v area="$1" '
+		function js(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); return "\"" s "\"" }
+		FNR == NR { base[$2] = $1; next }
+		{
+			now[$2] = $1
+			if (!($2 in base)) print "{\"area\":" js(area) ",\"path\":" js($2) ",\"change\":\"added\",\"sha256\":" js($1) "}"
+			else if (base[$2] != $1) print "{\"area\":" js(area) ",\"path\":" js($2) ",\"change\":\"changed\",\"sha256\":" js($1) "}"
+		}
+		END {
+			for (p in base) if (!(p in now)) print "{\"area\":" js(area) ",\"path\":" js(p) ",\"change\":\"missing\",\"sha256\":null}"
+		}' "$2" "$3"
+}
+
+# hashes_of <dir> [<find args>]: "<sha256>  <path>" for the files under it.
+hashes_of() {
+	dir=$1
+	shift
+	[ -d "$dir" ] || return 0
+	find "$dir" -type f "$@" 2>/dev/null | sort | while IFS= read -r f; do
+		printf '%s  %s\n' "$(sha256sum < "$f" | cut -d' ' -f1)" "$f"
+	done
+}
+
+# Lists overrides: files in /etc/board and /data/board (not the board's own
+# state there).
+overrides() {
+	area=$1 dir=$2
+	[ -d "$dir" ] || return 0
+	find "$dir" -type f 2>/dev/null | sort | while IFS= read -r f; do
+		case "${f#"$dir"/}" in
+		events.jsonl* | boot-count* | ssh-keys.sum | drift/* | update/*) continue ;;
+		esac
+		printf '{"area":"%s","path":%s,"change":"present","sha256":"%s"}\n' "$area" \
+			"$(board_json_str "$f")" "$(sha256sum < "$f" | cut -d' ' -f1)"
+	done
+}
+
+check_drift() {
+	SLOT=$(board_active_slot)
+	work=$BOARD_RUN_DIR/drift.$$
+	mkdir -p "$work" "$DRIFT_DIR" 2>/dev/null || mkdir -p "$work"
+	: > "$work/items"
+	baseline=none
+	slot_dirs
+	if [ -n "$BOOT_DIR" ] && [ -d "$BOOT_DIR" ]; then
+		board_boot_hashes "$BOOT_DIR" > "$work/boot.now"
+		if [ -n "$AB_DIR" ] && [ -s "$AB_DIR/board-boot.$SLOT.sha256" ]; then
+			baseline=stage
+			cp "$AB_DIR/board-boot.$SLOT.sha256" "$work/boot.base"
+		elif [ -s "$DRIFT_DIR/boot.$SLOT.sha256" ]; then
+			baseline=first-seen
+			cp "$DRIFT_DIR/boot.$SLOT.sha256" "$work/boot.base"
+		else
+			# Nothing to compare with yet: what is there now is the baseline.
+			baseline=first-seen
+			cp "$work/boot.now" "$work/boot.base"
+			cp "$work/boot.now" "$DRIFT_DIR/boot.$SLOT.sha256" 2>/dev/null || true
+		fi
+		compare boot "$work/boot.base" "$work/boot.now" >> "$work/items"
+	fi
+	ro=true
+	if ! root_read_only; then
+		ro=false
+		{
+			hashes_of "$SSHD_DIR" -path "$SSHD_DIR/sshd_config*"
+			hashes_of "$BOARD_ETC_DIR"
+		} > "$work/root.now"
+		[ -s "$DRIFT_DIR/root.sha256" ] || cp "$work/root.now" "$DRIFT_DIR/root.sha256" 2>/dev/null || true
+		if [ -s "$DRIFT_DIR/root.sha256" ]; then
+			compare root "$DRIFT_DIR/root.sha256" "$work/root.now" >> "$work/items"
+		fi
+	fi
+	overrides etc "$BOARD_ETC_DIR" >> "$work/items"
+	overrides data "$BOARD_DATA_DIR" >> "$work/items"
+
+	count=$(grep -v -c '"area":"etc","path":[^}]*"change":"present"' "$work/items" || true)
+	flags=''
+	flag() { flags="$flags${flags:+,}\"$1\""; }
+	grep -q '"area":"boot","path":"cmdline.txt","change":"[a-z]*"' "$work/items" && flag cmdline
+	grep -q '"area":"boot","path":"config.txt","change":"[a-z]*"' "$work/items" && flag config
+	grep -q "\"area\":\"root\",\"path\":\"$SSHD_DIR/sshd_config" "$work/items" && flag sshd_config
+	if grep -q "\"area\":\"root\",\"path\":\"$BOARD_ETC_DIR/update.env\"" "$work/items" ||
+		grep -q "\"area\":\"data\",\"path\":\"$BOARD_DATA_DIR/update.env\"" "$work/items"; then
+		flag update_env
+	fi
+	printf '{"checked_at":%s,"slot":%s,"root_read_only":%s,"baseline":"%s","count":%s,"flags":[%s],"items":[%s]}\n' \
+		"$(date +%s)" "$(board_json_str "$SLOT")" "$ro" "$baseline" "${count:-0}" "$flags" \
+		"$(awk 'NR > 1 { printf "," } { printf "%s", $0 }' "$work/items")" > "$work/drift.json"
+	chmod 0644 "$work/drift.json"
+	mv -f "$work/drift.json" "$DRIFT_JSON"
+	rm -rf "$work"
+	cleanup
+}
+
+drift_json() {
+	stale=1
+	if [ -s "$DRIFT_JSON" ]; then
+		at=$(sed -n 's/^{"checked_at":\([0-9]*\),.*/\1/p' "$DRIFT_JSON")
+		[ -n "$at" ] && [ $(($(date +%s) - at)) -lt "$MAX_AGE" ] && stale=0
+	fi
+	if [ "$stale" = 1 ] && can_check; then
+		check_drift
+	fi
+	line=$(head -n 1 "$DRIFT_JSON" 2>/dev/null) || line=''
+	case "$line" in
+	'{'*'}') printf '%s' "$line" ;;
+	*) printf 'null' ;;
+	esac
+}
+
+if [ "$refresh" = 1 ]; then
+	can_check || { board_log "checking drift needs root"; exit 1; }
+	check_drift
+fi
+
+json=$(printf '{"version":1,"time":%s,"boot":%s,"failed_units":%s,"temperatures":%s,"fan":%s,"update":%s,"clock":%s,"drift":%s}' \
+	"$(date +%s)" "$(boot_json)" "$(failed_units_json)" "$(temperatures_json)" "$(fan_json)" \
+	"$(update_json)" "$(clock_json)" "$(drift_json)")
+[ "$quiet" = 1 ] || printf '%s\n' "$json"
+exit 0

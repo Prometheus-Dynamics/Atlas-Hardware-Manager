@@ -1,0 +1,12 @@
+[Unit]
+Description=Check the board's boot files and overrides for drift (/run/board/drift.json)
+Documentation=file:/usr/lib/board/status
+After=local-fs.target board-boot.service
+
+[Service]
+Type=oneshot
+# Root: it mounts the running boot slot and p1 read-only to hash them. The
+# identity endpoint's GET /status reads the kept result.
+ExecStart=/usr/lib/board/status --refresh-drift --quiet
+Nice=10
+IOSchedulingClass=idle

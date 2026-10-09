@@ -28,6 +28,9 @@ pub enum ActivityKind {
     ActionRun,
     /// A self-test ran, by request or after an update.
     SelfTest,
+    /// Something the board's own event log reported that someone other than
+    /// Atlas did (Orion, or a person on the board).
+    DeviceEvent,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

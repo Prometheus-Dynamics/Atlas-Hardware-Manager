@@ -90,6 +90,7 @@ chmod 700 "$run_dir"
 install -m 600 "$BOARD_RUN_DIR/ssh-keys.new" "$run_dir/authorized_keys"
 
 # When the home directory is writable, keep the keys there too.
+added=0
 ssh_dir="$TARGET_HOME/.ssh"
 keys="$ssh_dir/authorized_keys"
 if mkdir -p "$ssh_dir" 2>/dev/null && touch "$keys" 2>/dev/null; then
@@ -98,6 +99,7 @@ if mkdir -p "$ssh_dir" 2>/dev/null && touch "$keys" 2>/dev/null; then
 	while IFS= read -r line; do
 		if ! grep -qxF "$line" "$keys"; then
 			printf '%s\n' "$line" >> "$keys"
+			added=$((added + 1))
 			board_log "added a key for ${TARGET_HOME##*/}: ${line%% *} ${line##* }"
 		fi
 	done < "$BOARD_RUN_DIR/ssh-keys.new"
@@ -105,6 +107,13 @@ fi
 count=$(grep -c . "$BOARD_RUN_DIR/ssh-keys.new" || true)
 if [ "$count" -gt 0 ]; then
 	board_log "installed $count SSH key(s) from the boot partition"
+	# An event when the set of keys changed since the last boot (or a key
+	# was new to the home directory), not on every boot.
+	sum=$(sha256sum < "$BOARD_RUN_DIR/ssh-keys.new" | cut -c1-16)
+	if [ "$added" -gt 0 ] || [ "$sum" != "$(cat "$BOARD_DATA_DIR/ssh-keys.sum" 2>/dev/null)" ]; then
+		board_event ssh.keys "installed $count SSH key(s) from the boot partition" "count=$count" "added=$added" "keys=$sum"
+		{ mkdir -p "$BOARD_DATA_DIR" && printf '%s\n' "$sum" > "$BOARD_DATA_DIR/ssh-keys.sum"; } 2>/dev/null || true
+	fi
 else
 	board_log "warning: $SOURCE_NAME is on the boot partition but holds no usable public key"
 fi

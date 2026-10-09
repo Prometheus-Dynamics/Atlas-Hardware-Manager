@@ -7,7 +7,7 @@ use atlas_devices::{DeviceCatalog, DevicePackage};
 use atlas_driver::{
     ActionsCapability, Candidate, Capabilities, DeviceKey, Driver, DriverError, DriverManifest,
     Family, HealthCheck, Identity, Link, LinkId, LinkKind, LinkSource, LogsCapability,
-    SelfTestCapability, TelemetryCapability, UpdateCapability,
+    SelfTestCapability, StatusCapability, TelemetryCapability, UpdateCapability,
 };
 
 use crate::browse::Browser;
@@ -15,7 +15,10 @@ use crate::contract::BoardIdentity;
 use crate::gadget::GadgetProbe;
 use crate::live::{BoardActions, BoardLogs, BoardTelemetry, resolve};
 use crate::ssh::{AB_METHOD, SshAccess, SshUpdate};
-use crate::ssh_actions::{BoardDeviceActions, BoardSelfTest, SELFTEST_DIAGNOSTIC, USB_BOOT_METHOD};
+use crate::ssh_actions::{
+    BoardDeviceActions, BoardSelfTest, SELFTEST_DIAGNOSTIC, SshOffer, USB_BOOT_METHOD,
+};
+use crate::status::{BoardStatus, StatusTelemetry};
 
 const LINK_ID: &str = "mdns";
 const FETCH_TIMEOUT: Duration = Duration::from_secs(2);
@@ -267,8 +270,9 @@ impl Driver for BoardDriver {
     }
 
     /// Boards listing `ab-tryboot` update over SSH; reflashing goes through
-    /// USB boot recovery. Metrics, logs, and actions are offered when the
-    /// device lists them.
+    /// USB boot recovery. Metrics, logs, actions, status and events are
+    /// offered when the device lists them; without a metrics endpoint, the
+    /// status's temperatures and fan are the telemetry.
     fn capabilities(&self, device: &Identity) -> Capabilities {
         let Some((identity_url, reported)) = self.reported(&device.key) else {
             return Capabilities::default();
@@ -303,11 +307,27 @@ impl Driver for BoardDriver {
                 url,
                 actions: reported.actions.iter().map(|a| a.to_action()).collect(),
             });
-        let usb_boot = has(USB_BOOT_METHOD);
-        let set_clock = device
-            .attributes
-            .contains_key(atlas_driver::attributes::CLOCK_OFFSET_S);
-        let ssh_actions = (usb_boot || set_clock).then(ssh).flatten();
+        let status = endpoint("status").map(|status_url| {
+            Arc::new(BoardStatus {
+                http: http.clone(),
+                status_url,
+                events_url: endpoint("events"),
+            })
+        });
+        // A board with the device package's writer, self-test or status is
+        // one Atlas reaches as root over SSH (the Flash tab's key).
+        let package_board = has(AB_METHOD) || !reported.diagnostics.is_empty() || status.is_some();
+        let offer = SshOffer {
+            usb_boot: has(USB_BOOT_METHOD),
+            set_clock: device
+                .attributes
+                .contains_key(atlas_driver::attributes::CLOCK_OFFSET_S),
+            power: package_board,
+            updates: has(AB_METHOD),
+        };
+        let ssh_actions = (offer.usb_boot || offer.set_clock || offer.power)
+            .then(ssh)
+            .flatten();
         let selftest = reported
             .diagnostics
             .iter()
@@ -319,18 +339,23 @@ impl Driver for BoardDriver {
             Arc::new(BoardDeviceActions {
                 http: http_actions,
                 ssh: ssh_actions,
-                usb_boot,
-                set_clock,
+                offer,
             }) as Arc<dyn ActionsCapability>
         });
         Capabilities {
             update,
-            telemetry: endpoint("metrics").map(|url| {
-                Arc::new(BoardTelemetry {
-                    http: http.clone(),
-                    url,
-                }) as Arc<dyn TelemetryCapability>
-            }),
+            telemetry: endpoint("metrics")
+                .map(|url| {
+                    Arc::new(BoardTelemetry {
+                        http: http.clone(),
+                        url,
+                    }) as Arc<dyn TelemetryCapability>
+                })
+                .or_else(|| {
+                    status.clone().map(|status| {
+                        Arc::new(StatusTelemetry(status)) as Arc<dyn TelemetryCapability>
+                    })
+                }),
             logs: endpoint("logs").map(|url| {
                 Arc::new(BoardLogs {
                     http: http.clone(),
@@ -339,6 +364,7 @@ impl Driver for BoardDriver {
             }),
             actions,
             selftest,
+            status: status.map(|status| status as Arc<dyn StatusCapability>),
         }
     }
 }

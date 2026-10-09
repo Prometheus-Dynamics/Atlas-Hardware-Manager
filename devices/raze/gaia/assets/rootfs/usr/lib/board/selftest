@@ -469,6 +469,11 @@ check_gadget
 ok=true
 [ "$FAILED" = 0 ] || ok=false
 report="{\"version\":$FORMAT_VERSION,\"board_serial\":$(js "$(board_serial)"),\"model\":$(js "${BOARD_DEVICE_MODEL:-${HW_MODEL:-}}"),\"package_version\":$(js "${BOARD_PACKAGE_VERSION:-}"),\"at\":$(date +%s),\"interactive\":$([ "$interactive" = 1 ] && echo true || echo false),\"backend\":$(js "$HW_BACKEND"),\"ok\":$ok,\"checks\":[$CHECKS]}"
+if [ "$FAILED" = 0 ]; then
+	board_event selftest "self-test passed" ok=true failed=0 "interactive=$interactive"
+else
+	board_event selftest "self-test: $FAILED check(s) failed" ok=false "failed=$FAILED" "interactive=$interactive"
+fi
 printf '%s\n' "$report" > "$BOARD_RUN_DIR/selftest.json.tmp" &&
 	mv -f "$BOARD_RUN_DIR/selftest.json.tmp" "$BOARD_RUN_DIR/selftest.json"
 

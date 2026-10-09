@@ -12,7 +12,9 @@ import type {
   DeviceAction,
   DeviceKey,
   DeviceRecord,
+  DeviceStatus,
   HealthCheck,
+  HistoryEntry,
   ImageServerStatus,
   JobId,
   JobPlan,
@@ -53,6 +55,13 @@ export const api = {
   deviceTelemetry: (key: DeviceKey) => invoke<Metric[]>("device_telemetry", { key }),
   /** Recent log lines, oldest first; only for devices with `logs`. */
   deviceLogs: (key: DeviceKey, lines: number) => invoke<LogLine[]>("device_logs", { key, lines }),
+  /**
+   * What the device is doing now and how it is; only for devices with
+   * `status`. Also brings its history up to date.
+   */
+  deviceStatus: (key: DeviceKey) => invoke<DeviceStatus>("device_status", { key }),
+  /** The device's history, newest first: Atlas's record merged with its board's event log. */
+  deviceHistory: (key: DeviceKey, limit: number) => invoke<HistoryEntry[]>("device_history", { key, limit }),
   /** Fleet history, newest first. */
   listActivity: (limit: number) => invoke<ActivityEntry[]>("list_activity", { limit }),
   /** Writes identity, readings, logs, and history to a text file. */

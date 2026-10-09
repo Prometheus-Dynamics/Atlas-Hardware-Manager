@@ -432,11 +432,23 @@ board_action_label() {
 	esac
 }
 
-# Actions this device offers (BOARD_ACTIONS), as optional identity fields:
-# ,"endpoints":{"actions":"/actions"},"actions":[{"id":..,"label":..}]
+# The identity's optional endpoints and the actions this device offers
+# (BOARD_ACTIONS):
+# ,"endpoints":{"status":"/status","events":"/events","actions":"/actions"},
+#  "actions":[{"id":..,"label":..}]
+# status and events are read-only; they are listed when the package has
+# them.
 board_actions_json() {
+	_board_eps=''
+	if [ -x "$BOARD_LIB_DIR/status" ]; then
+		_board_eps='"status":"/status","events":"/events"'
+	fi
+	if [ -n "${BOARD_ACTIONS:-}" ]; then
+		_board_eps="$_board_eps${_board_eps:+,}\"actions\":\"/actions\""
+	fi
+	[ -z "$_board_eps" ] || printf ',"endpoints":{%s}' "$_board_eps"
 	[ -n "${BOARD_ACTIONS:-}" ] || return 0
-	printf ',"endpoints":{"actions":"/actions"},"actions":['
+	printf ',"actions":['
 	_board_sep=''
 	for _board_a in $BOARD_ACTIONS; do
 		printf '%s{"id":%s,"label":%s}' "$_board_sep" "$(board_json_str "$_board_a")" "$(board_json_str "$(board_action_label "$_board_a")")"
@@ -520,4 +532,137 @@ board_identity_json() {
 		_board_sep=','
 	done
 	printf '}}\n'
+}
+
+# ---------------------------------------------------------------------------
+# Event log: what happened to the board, whoever did it (docs/ota.md, "Board
+# awareness"). One JSON object per line:
+#   {"t":<unix s>,"boot_id":..,"kind":..,"source":..,"message":..,"data":{..}}
+# in $BOARD_DATA_DIR/events.jsonl (persistent), or $BOARD_RUN_DIR/events.jsonl
+# when /data isn't writable. The last BOARD_EVENT_MAX lines are kept.
+#   BOARD_EVENT_SOURCE  who asked: atlas (Atlas over SSH), orion (board-agent),
+#                       local (the default: someone on the board)
+#   BOARD_BOOT_ID       this boot's id (/proc/sys/kernel/random/boot_id)
+BOARD_EVENT_MAX=${BOARD_EVENT_MAX:-2000}
+
+# The kernel's id of this boot; empty when unknown.
+board_boot_id() {
+	_board_bid=${BOARD_BOOT_ID:-${UPDATE_BOOT_ID:-}}
+	if [ -z "$_board_bid" ]; then
+		_board_bid=$(tr -cd '0-9a-f-' < /proc/sys/kernel/random/boot_id 2>/dev/null) || _board_bid=''
+	fi
+	printf '%s\n' "$_board_bid"
+}
+
+# The file events are appended to: /data when it is writable, else /run.
+board_events_file() {
+	if mkdir -p "$BOARD_DATA_DIR" 2>/dev/null && [ -w "$BOARD_DATA_DIR" ]; then
+		printf '%s\n' "$BOARD_DATA_DIR/events.jsonl"
+	else
+		printf '%s\n' "$BOARD_RUN_DIR/events.jsonl"
+	fi
+}
+
+# The event source as given, else "local"; anything unknown counts as local.
+board_event_source() {
+	case "${BOARD_EVENT_SOURCE:-}" in
+	atlas | orion | local) printf '%s\n' "$BOARD_EVENT_SOURCE" ;;
+	*) echo local ;;
+	esac
+}
+
+# board_event <kind> <message> [key=value ...]: appends one event. Never
+# fails the caller: an event that can't be written is only lost.
+board_event() {
+	_board_ek=$(printf '%s' "${1:-}" | tr -cd 'A-Za-z0-9._-')
+	[ -n "$_board_ek" ] || return 0
+	_board_em=${2:-}
+	if [ $# -ge 2 ]; then shift 2; else shift $#; fi
+	_board_ed=''
+	for _board_kv in "$@"; do
+		case "$_board_kv" in
+		*=*) ;;
+		*) continue ;;
+		esac
+		_board_dk=$(printf '%s' "${_board_kv%%=*}" | tr -cd 'A-Za-z0-9._-')
+		[ -n "$_board_dk" ] || continue
+		_board_dv=$(board_json_str "${_board_kv#*=}")
+		[ "$_board_dv" != null ] || _board_dv='""'
+		_board_ed="$_board_ed${_board_ed:+,}\"$_board_dk\":$_board_dv"
+	done
+	_board_ef=$(board_events_file)
+	_board_line=$(printf '{"t":%s,"boot_id":%s,"kind":"%s","source":"%s","message":%s,"data":{%s}}' \
+		"$(date +%s)" "$(board_json_str "$(board_boot_id)")" "$_board_ek" "$(board_event_source)" \
+		"$(board_json_str "$_board_em")" "$_board_ed")
+	{
+		mkdir -p "${_board_ef%/*}" && printf '%s\n' "$_board_line" >> "$_board_ef" && chmod 0644 "$_board_ef"
+	} 2>/dev/null || return 0
+	board_events_rotate "$_board_ef"
+	return 0
+}
+
+# Keeps the last BOARD_EVENT_MAX lines once the file is 10 % over, under a
+# lock when flock is there (appends are single short writes, so they don't
+# interleave with each other).
+board_events_rotate() {
+	_board_n=$(wc -l < "$1" 2>/dev/null | tr -d ' ') || return 0
+	[ "${_board_n:-0}" -gt $((BOARD_EVENT_MAX + BOARD_EVENT_MAX / 10)) ] || return 0
+	(
+		if command -v flock >/dev/null 2>&1; then
+			flock -w 2 8 || exit 0
+		fi
+		tail -n "$BOARD_EVENT_MAX" "$1" > "$1.tmp.$$" && chmod 0644 "$1.tmp.$$" && mv -f "$1.tmp.$$" "$1"
+	) 8>> "$1.lock" 2>/dev/null || rm -f "$1.tmp.$$" 2>/dev/null
+	return 0
+}
+
+# board_events_json <since> <limit>: {"time":..,"boot_id":..,"events":[..]}
+# with the newest <limit> events whose t >= <since>, oldest first, from both
+# event files. Both arguments must be decimal numbers (callers check them).
+# A line that isn't a whole event (a write cut off by power loss) is skipped.
+board_events_json() {
+	printf '{"time":%s,"boot_id":%s,"events":[' "$(date +%s)" "$(board_json_str "$(board_boot_id)")"
+	cat "$BOARD_RUN_DIR/events.jsonl" "$BOARD_DATA_DIR/events.jsonl" 2>/dev/null |
+		awk -v since="$1" '
+			/^\{"t":[0-9]+,"boot_id":.*\}$/ {
+				t = substr($0, 6); sub(/,.*/, "", t)
+				if (t + 0 >= since + 0) print t "\t" $0
+			}' |
+		sort -s -n -k1,1 | tail -n "$2" | cut -f2- |
+		awk 'NR > 1 { printf "," } { printf "%s", $0 }'
+	printf ']}\n'
+}
+
+# The slot the root filesystem is in (A or B) by update.env's partition
+# numbers; "unknown" off the A/B layout.
+#   UPDATE_CMDLINE_ROOT  the root partition number (tests)
+board_active_slot() {
+	(
+		board_load_env update.env
+		_board_root=${UPDATE_CMDLINE_ROOT:-}
+		if [ -z "$_board_root" ]; then
+			_board_root=$(board_root_device)
+			_board_root=${_board_root##*[!0-9]}
+		fi
+		# shellcheck disable=SC2086
+		set -- ${UPDATE_SLOT_A:-2 5} ${UPDATE_SLOT_B:-3 6}
+		case "$_board_root" in
+		'') echo unknown ;;
+		"$2") echo A ;;
+		"$4") echo B ;;
+		*) echo unknown ;;
+		esac
+	)
+}
+
+# board_boot_hashes <boot dir>: "<sha256>  <path>" lines for the files that
+# decide how a slot boots: config.txt, cmdline.txt, kernel*.img, overlays/*.
+board_boot_hashes() {
+	(
+		cd "$1" 2>/dev/null || exit 0
+		for _board_f in config.txt cmdline.txt kernel*.img overlays/*; do
+			[ -f "$_board_f" ] || continue
+			printf '%s  %s\n' "$(sha256sum < "$_board_f" | cut -d' ' -f1)" "$_board_f"
+		done
+	)
 }

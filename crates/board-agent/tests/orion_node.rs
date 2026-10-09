@@ -44,7 +44,10 @@ impl Board {
         let record = dir.join("record");
         std::fs::write(
             &record,
-            format!("#!/bin/sh\necho \"$*\" >> {}/calls\n", run.display()),
+            format!(
+                "#!/bin/sh\n[ \"$1\" != event ] || set -- \"$@\" \"source=$BOARD_EVENT_SOURCE\"\necho \"$*\" >> {}/calls\n",
+                run.display()
+            ),
         )
         .unwrap();
         std::fs::set_permissions(&record, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -70,6 +73,7 @@ impl Board {
             boot_id_file: dir.join("boot_id"),
             reboot_command: vec![record.display().to_string(), "reboot".into()],
             locate_stop_command: vec![record.display().to_string(), "locate-stop".into()],
+            event_command: vec![record.display().to_string(), "event".into()],
             poll: Duration::from_millis(50),
             republish: Duration::from_millis(500),
             retry: Duration::from_millis(20),
@@ -373,6 +377,19 @@ async fn rollback_reboot_and_locate() {
     )
     .await;
     assert_eq!(phase(&reboot), Some(&text(update_action::PHASE_REBOOTING)));
+    for _ in 0..200 {
+        if board.calls().iter().any(|c| c.starts_with("event reboot")) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(
+        board
+            .calls()
+            .contains(&"event reboot restart requested through Orion source=orion".to_owned()),
+        "{:?}",
+        board.calls()
+    );
 
     // locate drops the package's request; enabled=false stops it.
     let locate = run(&operator, node_action("l1", "locate")).await;
@@ -388,6 +405,14 @@ async fn rollback_reboot_and_locate() {
     .await;
     assert_eq!(stop.state, ActionState::Succeeded, "{stop:?}");
     assert!(board.calls().iter().any(|c| c == "locate-stop"));
+    assert!(
+        !board
+            .calls()
+            .iter()
+            .any(|c| c.starts_with("source-missing")),
+        "{:?}",
+        board.calls()
+    );
 
     board.stop().await;
 }

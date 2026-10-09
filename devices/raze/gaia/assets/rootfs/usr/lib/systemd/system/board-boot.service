@@ -1,0 +1,19 @@
+[Unit]
+Description=Board boot record (/run/board/boot.json, boot and shutdown events)
+Documentation=file:/usr/lib/board/boot-record
+# After the saved clock is restored, so the boot event's time is as good as
+# the board can tell without NTP (a Raze has no RTC battery). Stopped at
+# shutdown, while /data is still mounted: its ExecStop logs the clean
+# shutdown that the next boot looks for.
+After=local-fs.target time-set.target
+Before=shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/board/boot-record
+ExecStop=/usr/lib/board/boot-record --shutdown
+
+[Install]
+WantedBy=multi-user.target

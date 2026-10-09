@@ -93,6 +93,7 @@ die() {
 		STATE=error
 		ERROR="$*"
 		save_state 2>/dev/null || true
+		board_event update.failed "$*" "slot=${SLOT_STAGED:-}"
 		$SYNC
 		$UMOUNT "$AB" >/dev/null 2>&1 || true
 	fi
@@ -120,6 +121,7 @@ _record_failure() {
 	load_state
 	STATE=error ERROR=$FAILURE
 	save_state
+	board_event update.failed "$FAILURE"
 }
 
 # The disk's partition prefix, e.g. /dev/mmcblk0p or /dev/sda.
@@ -191,7 +193,7 @@ with_autoboot() {
 
 load_state() {
 	STATE=idle SLOT_STAGED= VERSION_ACTIVE= VERSION_STAGED= ERROR= PROGRESS=0
-	PREVIOUS_SLOT= PREVIOUS_VERSION= BAD_BOOTS=0 SWITCH_BOOT= SHA256_STAGED=
+	PREVIOUS_SLOT= PREVIOUS_VERSION= BAD_BOOTS=0 SWITCH_BOOT= SHA256_STAGED= STARTED_BY=
 	if [ -r "$AB/board-update.env" ]; then
 		# shellcheck disable=SC1091
 		. "$AB/board-update.env"
@@ -213,6 +215,7 @@ save_state() {
 		printf 'BAD_BOOTS=%s\n' "${BAD_BOOTS:-0}"
 		printf 'SWITCH_BOOT=%s\n' "$(quote "${SWITCH_BOOT:-}")"
 		printf 'SHA256_STAGED=%s\n' "${SHA256_STAGED:-}"
+		printf 'STARTED_BY=%s\n' "${STARTED_BY:-}"
 	} > "$AB/board-update.env.tmp"
 	mv "$AB/board-update.env.tmp" "$AB/board-update.env"
 	write_status_json
@@ -254,10 +257,12 @@ reported_state() {
 
 write_status_json() {
 	mkdir -p "$BOARD_RUN_DIR"
-	printf '{"state":%s,"slot_active":%s,"slot_staged":%s,"version_active":%s,"version_staged":%s,"progress":%s,"error":%s}\n' \
+	printf '{"state":%s,"slot_active":%s,"slot_staged":%s,"version_active":%s,"version_staged":%s,"progress":%s,"error":%s,"version_previous":%s,"started_by":%s}\n' \
 		"$(board_json_str "$(reported_state)")" "$(board_json_str "$(slot_of_root)")" "$(board_json_str "$SLOT_STAGED")" \
 		"$(board_json_str "$VERSION_ACTIVE")" "$(board_json_str "$VERSION_STAGED")" "${PROGRESS:-0}" \
-		"$(board_json_str "$ERROR")" > "$STATUS_JSON.tmp.$$"
+		"$(board_json_str "$ERROR")" "$(board_json_str "${PREVIOUS_SLOT:+$PREVIOUS_VERSION}")" \
+		"$(board_json_str "${STARTED_BY:-}")" > "$STATUS_JSON.tmp.$$"
+	chmod 0644 "$STATUS_JSON.tmp.$$" 2>/dev/null || true
 	mv "$STATUS_JSON.tmp.$$" "$STATUS_JSON"
 }
 
@@ -474,6 +479,7 @@ _stage() {
 	unzip=$(decompressor "$(image_format)")
 
 	STATE=staging SLOT_STAGED=$target VERSION_STAGED='' ERROR='' SWITCH_BOOT='' SHA256_STAGED=''
+	STARTED_BY=$(board_event_source)
 	PROGRESS=$(stage_progress 0)
 	# The target slot is about to be overwritten: it is no longer a slot to
 	# go back to.
@@ -481,6 +487,7 @@ _stage() {
 		PREVIOUS_SLOT='' PREVIOUS_VERSION=''
 	fi
 	save_state
+	board_event update.stage "staging an update into slot $target" "slot=$target" "sha256=$SHA256"
 
 	# A file is checked before anything is written (stage-url checked its
 	# download already).
@@ -553,6 +560,10 @@ _stage() {
 	if [ -f "$mnt/cmdline.txt" ]; then
 		sed -i "s#root=[^ ]*#root=$(part "$root")#" "$mnt/cmdline.txt"
 	fi
+	# What the slot's boot files are, so `status` can tell when they drift.
+	board_boot_hashes "$mnt" > "$AB/board-boot.$target.sha256.tmp" &&
+		mv -f "$AB/board-boot.$target.sha256.tmp" "$AB/board-boot.$target.sha256"
+	rm -f "$BOARD_DATA_DIR/drift/boot.$target.sha256" 2>/dev/null || true
 	$SYNC
 	$UMOUNT "$mnt" >/dev/null 2>&1 || true
 
@@ -560,6 +571,7 @@ _stage() {
 	save_state
 	run_hook post-stage || board_log "the post-stage hook failed"
 	board_log "staged $VERSION_STAGED in slot $target"
+	board_event update.staged "staged $VERSION_STAGED in slot $target" "version=$VERSION_STAGED" "slot=$target"
 }
 
 # A file's size in bytes, 0 when it doesn't exist (ls works everywhere and
@@ -705,7 +717,9 @@ _stage_url_begin() {
 		return 0
 	fi
 	STATE=staging SLOT_STAGED='' VERSION_STAGED='' ERROR='' PROGRESS=0 SWITCH_BOOT='' SHA256_STAGED=''
+	STARTED_BY=$(board_event_source)
 	save_state
+	board_event update.download "downloading an update" "url=$URL" "size=$SIZE" "sha256=$SHA256"
 }
 
 cmd_apply() {
@@ -724,6 +738,7 @@ _apply_failed() {
 	STATE=staged SWITCH_BOOT='' ERROR="the restart into the new version didn't happen; it is still staged"
 	save_state
 	board_log "$ERROR"
+	board_event update.apply-failed "$ERROR"
 }
 _apply() {
 	load_state
@@ -740,6 +755,7 @@ _apply() {
 	# the restart isn't accepted, _apply_failed puts it back to staged.
 	STATE=rebooting SWITCH_BOOT=$(boot_id) ERROR=''
 	save_state
+	board_event update.apply "restarting into $VERSION_STAGED on trial" "version=$VERSION_STAGED" "slot=$SLOT_STAGED"
 }
 
 cmd_confirm() {
@@ -762,12 +778,15 @@ _confirm() {
 		;;
 	esac
 	STATE=trying SWITCH_BOOT=''
+	# The trial's outcome belongs to whoever started the update.
+	BOARD_EVENT_SOURCE=${BOARD_EVENT_SOURCE:-$STARTED_BY}
 	active=$(slot_of_root)
 	if [ "$active" != "$SLOT_STAGED" ]; then
 		# The trial boot didn't stick; the bootloader went back by itself.
 		STATE=rolled-back ERROR=${ERROR:-"the new version didn't start; back on $VERSION_ACTIVE"}
 		write_autoboot "$(slot_boot "$active")"
 		save_state
+		board_event update.rolled-back "$ERROR" "version=$VERSION_ACTIVE" "slot=$active"
 		return 0
 	fi
 	save_state
@@ -793,12 +812,14 @@ _confirm() {
 	STATE=confirmed VERSION_ACTIVE=$VERSION_STAGED ERROR=''
 	save_state
 	board_log "confirmed $VERSION_ACTIVE in slot $active"
+	board_event update.confirmed "kept $VERSION_ACTIVE in slot $active" "version=$VERSION_ACTIVE" "slot=$active"
 }
 
 # Leaves the trial unconfirmed: the next reset returns to the old slot.
 fail_trial() {
 	ERROR="$1 on $VERSION_STAGED"
 	save_state
+	board_event update.trial-failed "$ERROR" "reason=$1" "version=$VERSION_STAGED"
 	if [ "${UPDATE_REBOOT_ON_FAIL:-1}" = 1 ]; then
 		board_log "$ERROR; restarting into $VERSION_ACTIVE"
 		$SYNC
@@ -833,6 +854,7 @@ _link_bad() {
 	esac
 	BAD_BOOTS=$((${BAD_BOOTS:-0} + 1))
 	board_log "$REASON (bad boot $BAD_BOOTS of ${UPDATE_LINK_MAX_BAD:-2})"
+	board_event update.link-bad "$REASON" "bad_boots=$BAD_BOOTS" "max=${UPDATE_LINK_MAX_BAD:-2}"
 	active=$(slot_of_root)
 	if [ "$BAD_BOOTS" -lt "${UPDATE_LINK_MAX_BAD:-2}" ] || [ -z "$PREVIOUS_SLOT" ] ||
 		[ "$PREVIOUS_SLOT" = "$active" ] || [ "${UPDATE_LINK_FALLBACK:-1}" != 1 ]; then
@@ -845,6 +867,7 @@ _link_bad() {
 	SLOT_STAGED=$active PREVIOUS_SLOT='' PREVIOUS_VERSION='' BAD_BOOTS=0 SWITCH_BOOT=''
 	save_state
 	board_log "$ERROR"
+	board_event update.link-fallback "$ERROR" "version=$VERSION_ACTIVE" "from_slot=$active"
 	$SYNC
 	$UMOUNT "$AB" >/dev/null 2>&1 || true
 	plain_reboot
@@ -937,6 +960,7 @@ _cancel() {
 	active=$(slot_of_root)
 	[ "$active" = unknown ] || write_autoboot "$(slot_boot "$active")"
 	board_log "cancelled ${VERSION_STAGED:-the update}"
+	board_event update.cancelled "cancelled ${VERSION_STAGED:-the update}" "version=${VERSION_STAGED:-}" "stopped=${STOPPED:-0}"
 	STATE=cancelled SLOT_STAGED='' VERSION_STAGED='' ERROR='' PROGRESS=0 SWITCH_BOOT='' SHA256_STAGED=''
 	save_state
 	echo cancelled
@@ -973,6 +997,8 @@ _rollback() {
 	cp "$AB/board-update.env" "$AB/board-update.env.undo"
 	write_autoboot "$(slot_boot "$PREVIOUS_SLOT")"
 	board_log "going back to ${PREVIOUS_VERSION:-the previous version} in slot $PREVIOUS_SLOT"
+	board_event update.rollback "going back to ${PREVIOUS_VERSION:-the previous version} in slot $PREVIOUS_SLOT" \
+		"version=${PREVIOUS_VERSION:-}" "slot=$PREVIOUS_SLOT" "from=$VERSION_ACTIVE"
 	left=$VERSION_ACTIVE
 	STATE=rolled-back VERSION_ACTIVE=$PREVIOUS_VERSION PREVIOUS_VERSION=$left
 	PREVIOUS_SLOT=$active SLOT_STAGED='' VERSION_STAGED='' SHA256_STAGED=''
@@ -986,6 +1012,7 @@ _rollback_undo() {
 	ERROR="the restart into the previous version didn't happen"
 	save_state
 	board_log "$ERROR"
+	board_event update.rollback-failed "$ERROR"
 }
 
 # One writer at a time: a state of `staging` seen under the lock is left over

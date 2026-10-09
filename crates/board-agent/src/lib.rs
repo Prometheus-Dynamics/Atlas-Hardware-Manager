@@ -28,6 +28,10 @@ pub use writer::{Writer, WriterStatus};
 /// The client name on the node.
 pub const CLIENT_NAME: &str = "board-agent";
 
+/// `BOARD_EVENT_SOURCE` for everything the agent runs: the board's event log
+/// then says Orion asked.
+pub const EVENT_SOURCE: &str = "orion";
+
 /// One line on stderr (the journal under systemd).
 pub fn log(message: &str) {
     use std::io::Write;

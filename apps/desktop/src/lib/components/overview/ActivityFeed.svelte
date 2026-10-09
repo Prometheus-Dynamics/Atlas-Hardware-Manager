@@ -65,6 +65,7 @@
     "update-result": "package",
     "action-run": "player-play",
     "self-test": "list-check",
+    "device-event": "terminal-2",
   };
 
   function icon(entry: ActivityEntry): IconName {

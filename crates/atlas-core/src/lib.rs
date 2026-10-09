@@ -9,6 +9,7 @@ mod activity;
 mod atlas;
 mod error;
 mod events;
+mod history;
 mod inventory;
 mod job_runner;
 mod jobs;
@@ -26,6 +27,7 @@ pub use activity::{ActivityEntry, ActivityKind, ActivityLevel};
 pub use atlas::{Atlas, AtlasBuilder, AtlasOptions};
 pub use error::CoreError;
 pub use events::Event;
+pub use history::{BOARD_EVENTS_LIMIT, BoardEventLog, HistoryEntry, HistoryOrigin};
 pub use inventory::{DeviceRecord, Presence};
 pub use jobs::{
     DeviceJobState, DeviceJobStatus, JobId, JobPlan, JobRecord, JobState, JobSummary,

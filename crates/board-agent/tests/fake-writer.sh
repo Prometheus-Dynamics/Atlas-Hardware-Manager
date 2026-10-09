@@ -22,6 +22,8 @@ EOF
 }
 
 echo "$*" >> "$RUN/calls"
+# The agent runs the writer as Orion, for the board's event log.
+[ "${BOARD_EVENT_SOURCE:-}" = orion ] || echo "source-missing $*" >> "$RUN/calls"
 case "${1:-}" in
 status)
 	save

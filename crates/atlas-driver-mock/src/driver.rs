@@ -172,6 +172,7 @@ impl Driver for MockDriver {
                 }) as Arc<dyn atlas_driver::LogsCapability>
             }),
             selftest: None,
+            status: None,
         }
     }
 

@@ -1,0 +1,11 @@
+[Unit]
+Description=Check the board for drift after boot and hourly
+Documentation=file:/usr/lib/board/status
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1h
+RandomizedDelaySec=1min
+
+[Install]
+WantedBy=timers.target
