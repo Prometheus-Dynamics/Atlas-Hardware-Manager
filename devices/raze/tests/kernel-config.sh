@@ -48,6 +48,22 @@ for want in "CONFIG_ARM64_4K_PAGES: wanted y, got n" "CONFIG_EROFS_FS: wanted y,
 done
 printf '%s\n' "$out" | grep -q "MODULE_COMPRESS\|LOCALVERSION" && fail "options that took effect aren't named: $out"
 
+echo "an option an OS package's kernel fixups turn on (systemd: EFIVAR_FS) is reported, not failed"
+cat > "$T/fixups" <<'EOF'
+CONFIG_BLK_DEV_MD
+CONFIG_UNRELATED
+EOF
+cat > "$T/fixed-up" <<'EOF'
+CONFIG_ARM64_4K_PAGES=y
+CONFIG_EROFS_FS=y
+CONFIG_LOCALVERSION="-raze"
+CONFIG_BLK_DEV_MD=m
+EOF
+out=$(sh "$check" "$T/fragment" "$T/fixed-up" "$T/fixups" 2>&1) || fail "a package fixup should pass: $out"
+printf '%s\n' "$out" | grep -q "OS's Buildroot packages turn on" || fail "it should say so: $out"
+printf '%s\n' "$out" | grep -q "CONFIG_BLK_DEV_MD: wanted n, got m" || fail "and name it: $out"
+if sh "$check" "$T/fragment" "$T/bad" "$T/fixups" >/dev/null 2>&1; then fail "options no fixup explains still fail"; fi
+
 echo "the package's own raze.config parses (each line is a decision or a comment)"
 awk '!/^#/ && !/^$/ && !/^CONFIG_[A-Za-z0-9_]+=/ { print FILENAME ":" FNR ": " $0; bad = 1 } END { exit bad }' \
 	"$here/../gaia/buildroot-external/linux/raze.config" || fail "raze.config has lines the check can't read"

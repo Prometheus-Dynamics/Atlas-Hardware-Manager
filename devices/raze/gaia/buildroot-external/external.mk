@@ -25,9 +25,19 @@ define RAZE_CHECK_KERNEL_CONFIG
 		{ echo "Raze: the kernel must use 4 KiB pages (CONFIG_ARM64_4K_PAGES, BR2_ARM64_PAGE_SIZE_4K); something changed it" >&2; exit 1; }
 	@grep -qx 'CONFIG_EROFS_FS=y' $(LINUX_DIR)/.config || \
 		{ echo "Raze: EROFS must be built in (CONFIG_EROFS_FS=y)" >&2; exit 1; }
+	@printf '%s\n' $(RAZE_PACKAGE_KERNEL_FIXUPS) > $(LINUX_DIR)/.raze-package-fixups
 	@sh $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/check-config.sh \
-		$(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/raze.config $(LINUX_DIR)/.config
+		$(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/raze.config $(LINUX_DIR)/.config \
+		$(LINUX_DIR)/.raze-package-fixups
 endef
+
+# The kernel options the OS's enabled packages set in their
+# <PKG>_LINUX_CONFIG_FIXUPS (linux.mk applies them after every fragment):
+# the CONFIG_ names in their unexpanded text. Evaluated when the hook runs,
+# once every package is known.
+RAZE_RPAREN := )
+RAZE_PACKAGE_KERNEL_FIXUPS = $(sort $(filter CONFIG_%,$(subst $(comma), ,$(subst $(RAZE_RPAREN), , \
+	$(foreach p,$(PACKAGES),$(value $(call UPPERCASE,$(p))_LINUX_CONFIG_FIXUPS))))))
 LINUX_POST_CONFIGURE_HOOKS += RAZE_CHECK_KERNEL_CONFIG
 
 # The CM5 defconfig uses Bootlin's external toolchain, whose tools are named
