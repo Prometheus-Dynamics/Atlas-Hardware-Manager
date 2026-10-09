@@ -1,28 +1,35 @@
 <script lang="ts">
   import PageHeader from "#lib/components/common/PageHeader.svelte";
   import Page from "#lib/components/layout/Page.svelte";
+  import Region from "#lib/components/layout/Region.svelte";
   import AboutPanel from "#lib/components/settings/AboutPanel.svelte";
   import HealthPanel from "#lib/components/settings/HealthPanel.svelte";
   import OrionPanel from "#lib/components/settings/OrionPanel.svelte";
   import PreferencesForm from "#lib/components/settings/PreferencesForm.svelte";
   import { system } from "#lib/stores/system.svelte.ts";
+
+  let width = $state(0);
+  // Three columns from 1400 px: Orion gets its own.
+  const wide = $derived(width >= 1400);
 </script>
 
 <svelte:head><title>Settings · Atlas</title></svelte:head>
 
-<!-- Section cards in columns that fit the window. Each card takes its
-     column's height and scrolls inside when its content is longer. -->
+<!-- Section cards in columns that fit the window. Cards keep their natural
+     height; a column that runs out of room scrolls as a whole, so no card is
+     ever cut off with its own scrollbar. -->
 <Page>
   {#snippet header()}
-    <PageHeader title="Settings" subtitle="This computer's health, your preferences, and where Atlas keeps its files." />
+    <PageHeader title="Settings" subtitle="This computer's health, your preferences, and where files are kept." />
   {/snippet}
 
-  <div class="sections">
-    <div class="col health"><HealthPanel /><AboutPanel /></div>
-    <div class="col prefs">
+  <div class="sections" class:wide bind:clientWidth={width}>
+    <Region class="col" inner="stack" label="Checks and files"><HealthPanel /><AboutPanel /></Region>
+    <Region class="col" inner="stack" label={wide ? "Preferences" : "Preferences and Orion"}>
       {#if system.settings}<PreferencesForm settings={system.settings} />{/if}
-    </div>
-    <div class="col orion"><OrionPanel /></div>
+      {#if !wide}<OrionPanel />{/if}
+    </Region>
+    {#if wide}<Region class="col" inner="stack" label="Orion"><OrionPanel /></Region>{/if}
   </div>
 </Page>
 
@@ -33,66 +40,34 @@
     display: grid;
     gap: 12px;
     grid-template-columns: minmax(0, 1fr);
-    /* Rows as tall as their cards: when the grid scrolls, nothing squeezes. */
-    grid-auto-rows: max-content;
-    align-content: start;
-    overflow-y: auto;
+    grid-template-rows: minmax(0, 1fr);
   }
-  .col {
+  /* One column: everything in the first region's order, one scroll. */
+  .sections :global(.col) {
+    min-height: 0;
+  }
+  .sections :global(.stack) {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    min-width: 0;
-    min-height: 0;
+    padding-bottom: 4px;
   }
-  /* Cards keep their natural height and give way when the column is short
-     (their bodies scroll); the last one stretches so columns end together. */
-  .col > :global(*) {
-    flex: 0 1 auto;
-    min-height: 140px;
-  }
-  .col > :global(:last-child) {
-    flex-grow: 1;
+  @container page (max-width: 759px) {
+    .sections {
+      grid-template-rows: none;
+      overflow-y: auto;
+    }
+    .sections :global(.col) {
+      display: contents;
+    }
   }
   /* Two columns: checks and files | preferences over Orion. */
   @container page (min-width: 760px) {
     .sections {
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      grid-template-rows: fit-content(62%) minmax(0, 1fr);
-      grid-template-areas: "health prefs" "health orion";
-      align-content: stretch;
-      overflow: visible;
-    }
-    .health {
-      grid-area: health;
-    }
-    .prefs {
-      grid-area: prefs;
-    }
-    .orion {
-      grid-area: orion;
     }
   }
-  /* Three columns on a wide window. */
-  @container page (min-width: 1400px) {
-    .sections {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      grid-template-rows: minmax(0, 1fr);
-      grid-template-areas: "health prefs orion";
-    }
-  }
-  /* A short window: no room to split the height, so the cards keep their
-     natural height and the section grid scrolls as one region instead of
-     four cramped ones. */
-  @container page (max-height: 600px) {
-    .sections {
-      grid-template-rows: none;
-      grid-auto-rows: max-content;
-      align-content: start;
-      overflow-y: auto;
-    }
-    .col > :global(*) {
-      flex: none;
-    }
+  .sections.wide {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 </style>

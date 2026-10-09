@@ -29,7 +29,7 @@
 
 <Page>
   {#snippet header()}
-    <PageHeader title="Releases" subtitle="Images and firmware Atlas can install, by device family. Your 5 newest local images stay listed; pin any you want to keep.">
+    <PageHeader title="Releases" subtitle="Images and firmware to install, by device family. Your 5 newest local images stay listed; pin any you want to keep.">
       {#snippet actions()}
         <Button icon="refresh" action={refresh}>Check for new releases</Button>
         <Button variant="primary" icon="file-plus" onclick={() => (adding = true)} disabled={adding}>Add a file</Button>

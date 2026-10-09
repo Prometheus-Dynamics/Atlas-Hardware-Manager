@@ -33,7 +33,7 @@
         <p class="text-[12.5px] text-fg-muted">Starting the install of <span class="mono">{handoff.choice.version}</span>.</p>
       {:else if handoff.phase === "waiting"}
         <p class="text-[12.5px] text-fg-muted">
-          Atlas erases {handoff.name} and installs <span class="mono">{handoff.choice.version}</span> as soon as it shows up.
+          {handoff.name} is erased and gets <span class="mono">{handoff.choice.version}</span> as soon as it shows up.
           {handoff.restarted ? "This usually takes under a minute." : "Put it into USB boot as below."}
         </p>
         <p class="hint mt-1">Waiting {Math.round(elapsed / 1000)} s</p>
@@ -49,7 +49,7 @@
     <div class="flex flex-col gap-2" in:rise>
       {#if late}
         <p class="warn">
-          <Icon name="alert-triangle" size={16} />It hasn't shown up in USB boot yet. Put it there by hand; Atlas still continues
+          <Icon name="alert-triangle" size={16} />It hasn't shown up in USB boot yet. Put it there by hand; the install still starts
           on its own.
         </p>
       {/if}

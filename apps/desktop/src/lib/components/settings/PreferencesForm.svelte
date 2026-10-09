@@ -74,13 +74,13 @@
   }
 </script>
 
-<GlassCard title="Preferences" subtitle="How Atlas looks for devices and rolls out updates" icon="settings" large fill>
+<GlassCard title="Preferences" subtitle="Finding devices and rolling out updates" icon="settings" large fill>
   <form class="flex flex-col gap-5" onsubmit={save}>
     <Field inline label="Watch for devices" hint="Devices appear and disappear as they're plugged in, unplugged, or announce themselves on the network.">
       <Toggle bind:checked={draft.auto_scan} label="Watch for devices" />
     </Field>
 
-    <Field inline label="Safety-net check" hint="Every {seconds.toFixed(0)} s Atlas also looks again, for devices that leave without saying so.">
+    <Field inline label="Safety-net check" hint="Every {seconds.toFixed(0)} s, look again for devices that left without saying so.">
       <input
         class="input mono w-28"
         type="number"

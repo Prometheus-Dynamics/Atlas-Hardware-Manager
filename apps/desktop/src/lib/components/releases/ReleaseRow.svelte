@@ -42,7 +42,7 @@
     {#if entry.signed}
       <Pill tone="success" icon="shield-check" label="Signed" />
     {:else}
-      <Pill tone="warning" icon="alert-triangle" label="Unsigned" title="No signature: Atlas can't verify where this file came from" />
+      <Pill tone="warning" icon="alert-triangle" label="Unsigned" title="No signature: where this file came from can't be verified" />
     {/if}
   </div>
   <span class="size text-right text-[12.5px] tabular-nums text-fg-muted">{bytes(entry.size_bytes)}</span>

@@ -87,7 +87,7 @@ function seed(device: SimDevice): Board {
   event(board, now - 26 * H, "ssh.keys", "local", "installed 2 SSH key(s) from the boot partition", { count: "2", added: "1" });
   // A power cut: no shutdown event before the next boot.
   boot(now - 5 * H, false);
-  event(board, now - 4.8 * H, "clock.set", "atlas", "clock set from Atlas's computer", { old: String(sec(now - 400 * 24 * H)), new: String(sec(now - 4.8 * H)) });
+  event(board, now - 4.8 * H, "clock.set", "atlas", "clock set from a computer over SSH", { old: String(sec(now - 400 * 24 * H)), new: String(sec(now - 4.8 * H)) });
   // Someone on the board staged an image by hand, then thought better of it.
   event(board, now - 2.2 * H, "update.stage", "local", "staging an update into slot A", { slot: "A" });
   event(board, now - 2.1 * H, "update.cancelled", "local", "cancelled the update", { stopped: "1" });
@@ -285,7 +285,7 @@ export function boardAction(key: DeviceKey, action: string): void {
       }, 400);
       break;
     case "set-clock":
-      event(board, now, "clock.set", "atlas", "clock set from Atlas's computer", { old: String(sec(now) + board.clockOffset), new: String(sec(now)) });
+      event(board, now, "clock.set", "atlas", "clock set from a computer over SSH", { old: String(sec(now) + board.clockOffset), new: String(sec(now)) });
       board.clockOffset = 0;
       break;
     case "locate":

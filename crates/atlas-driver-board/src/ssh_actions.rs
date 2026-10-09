@@ -225,7 +225,7 @@ async fn set_clock(ssh: &SshUpdate) -> Result<(), DriverError> {
 
 fn set_clock_script(stamp: &str) -> String {
     format!(
-        "old=$(date +%s); date -u -s '{stamp}' >/dev/null && {{ {EVENT} clock.set \"clock set from Atlas's computer\" \"old=$old\" \"new=$(date +%s)\"; true; }}"
+        "old=$(date +%s); date -u -s '{stamp}' >/dev/null && {{ {EVENT} clock.set \"clock set from a computer over SSH\" \"old=$old\" \"new=$(date +%s)\"; true; }}"
     )
 }
 

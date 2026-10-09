@@ -325,7 +325,7 @@ async fn run_device(
         // A cancelled driver that has gone silent is let go, so Cancel
         // always ends the job. One still reporting (mid-write) is waited on.
         () = silent_after_cancel(&inner, job, &key, &cancel) => Err(DriverError::Other(
-            "stopped responding after Cancel, so Atlas let it go; replug the device before trying again"
+            "stopped responding after Cancel, so the job was let go; replug the device before trying again"
                 .into(),
         )),
     };

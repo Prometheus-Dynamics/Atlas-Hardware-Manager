@@ -52,7 +52,7 @@
       {#snippet heading()}<RobotMenu />{/snippet}
       {#snippet actions()}
         <DiscoveryStatus />
-        <Button icon="layout-grid" onclick={() => goto("/devices")}>All devices</Button>
+        <Button icon="layout-grid" onclick={() => goto("/devices")}>Device list</Button>
       {/snippet}
     </PageHeader>
   {/snippet}

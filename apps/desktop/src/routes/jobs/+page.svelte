@@ -37,28 +37,30 @@
   {/snippet}
 
   {#if jobs.sorted.length === 0}
-    <EmptyState icon="activity" title="No jobs yet" class="flex-1 justify-center">
-      <p>
-        A job is one update or flash: Atlas downloads the image, writes it, and checks the device comes back on the new
-        version. Each one shows up here with its stages and log while it runs, and stays for this session.
-      </p>
-      <div class="mt-5 flex flex-wrap justify-center gap-2">
-        {#if waiting.length > 0}
-          <Button variant="primary" icon="bolt" onclick={() => ui.openDevice(keyString(waiting[0].key), "software")}>
-            Flash {waiting.length === 1 ? "the board" : `${waiting.length} boards`} in USB boot
-          </Button>
-        {/if}
-        {#if outdated > 0}
-          <Button variant={waiting.length > 0 ? "glass" : "primary"} icon="arrow-up" onclick={updateAll}>
-            Update {outdated} device{outdated === 1 ? "" : "s"}
-          </Button>
-        {/if}
-        <Button icon="layout-grid" onclick={() => goto("/devices")}>Choose devices</Button>
-        {#if robots.profiles.length > 0}
-          <Button icon="robot" onclick={() => goto("/robots")}>Make a robot ready</Button>
-        {/if}
-      </div>
-    </EmptyState>
+    <div class="flex flex-1 items-center justify-center">
+      <EmptyState icon="activity" title="No jobs yet" class="w-full max-w-xl">
+        <p>
+          A job is one update or flash: the image is downloaded, written, and checked once the device comes back on the new
+          version. Each one shows up here with its stages and log while it runs, and stays for this session.
+        </p>
+        <div class="mt-5 flex flex-wrap justify-center gap-2">
+          {#if waiting.length > 0}
+            <Button variant="primary" icon="bolt" onclick={() => ui.openDevice(keyString(waiting[0].key), "software")}>
+              Flash {waiting.length === 1 ? "the board" : `${waiting.length} boards`} in USB boot
+            </Button>
+          {/if}
+          {#if outdated > 0}
+            <Button variant={waiting.length > 0 ? "glass" : "primary"} icon="arrow-up" onclick={updateAll}>
+              Update {outdated} device{outdated === 1 ? "" : "s"}
+            </Button>
+          {/if}
+          <Button icon="layout-grid" onclick={() => goto("/devices")}>Choose devices</Button>
+          {#if robots.profiles.length > 0}
+            <Button icon="robot" onclick={() => goto("/robots")}>Make a robot ready</Button>
+          {/if}
+        </div>
+      </EmptyState>
+    </div>
   {:else}
     <!-- The list on the left scrolls; the chosen job fills the right. -->
     <div class="split">

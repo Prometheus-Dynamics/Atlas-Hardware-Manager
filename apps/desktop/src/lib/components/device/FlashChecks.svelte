@@ -13,7 +13,7 @@
       const by = entry.origin.kind === "remote" ? ` by ${entry.origin.source}` : "";
       list.push({ icon: "shield-check", tone: "ok", text: `Signed${by}` });
     } else {
-      list.push({ icon: "alert-triangle", tone: "warn", text: "Unsigned — Atlas will warn but won't stop you" });
+      list.push({ icon: "alert-triangle", tone: "warn", text: "Unsigned: you'll be warned, not stopped" });
     }
     if (!entry.path) list.push({ icon: "cloud-download", tone: "info", text: `Downloads first (${bytes(entry.size_bytes)})` });
     list.push({ icon: "checks", tone: "ok", text: "Read back and checked after writing" });

@@ -44,7 +44,7 @@
         tone: "accent",
         title: `${aDevice(record)} is waiting in USB boot`,
         short: `${deviceName(record)} in USB boot`,
-        text: "Pick an image and Atlas will flash it and check every byte.",
+        text: "Pick an image to flash; every byte is checked afterwards.",
         action: "Flash",
         run: () => ui.openDevice(id, "software"),
         dismissable: false,

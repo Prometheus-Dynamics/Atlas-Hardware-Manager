@@ -34,7 +34,7 @@ export function updateBusy(update: UpdateState | null | undefined): boolean {
 export function sourceLabel(source: EventSource | null | undefined): string {
   switch (source) {
     case "atlas":
-      return "you via Atlas";
+      return "you";
     case "orion":
       return "Orion";
     case "local":

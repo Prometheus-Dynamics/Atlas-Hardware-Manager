@@ -57,7 +57,7 @@
 
 <GlassCard
   title={compact ? "Where releases come from" : "Sources"}
-  subtitle={compact ? `${count} source${count === 1 ? "" : "s"} · signed manifests Atlas checks for new releases` : "Signed manifests Atlas checks"}
+  subtitle={compact ? `${count} source${count === 1 ? "" : "s"} · signed manifests checked for new releases` : "Signed manifests checked for new releases"}
   icon="world-www"
   large
   fill={!compact || shown}

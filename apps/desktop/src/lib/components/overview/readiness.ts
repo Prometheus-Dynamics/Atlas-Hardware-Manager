@@ -64,7 +64,7 @@ export function verdict({ records, robot, failed, outdated }: Facts): Verdict {
   }
 
   if (records.length === 0) {
-    return { tone: "neutral", icon: "radar-2", title: "Nothing connected yet", detail: "Plug in a device or join its network; Atlas finds it on its own.", next: "scan" };
+    return { tone: "neutral", icon: "radar-2", title: "Nothing connected yet", detail: "Plug in a device or join its network; it shows up on its own.", next: "scan" };
   }
   if (waiting.length > 0) {
     return { tone: "accent", icon: "usb", title: "Ready to flash", detail: `${aDevice(waiting[0])} is in USB boot, waiting for an image.`, next: "flash" };

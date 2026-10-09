@@ -192,7 +192,7 @@ impl RemoteTransport {
         if error.is_not_enrolled() {
             let command = self.connection().enroll_command;
             return DriverError::Unsupported(format!(
-                "Atlas isn't enrolled with Orion yet; on the device run: {command}"
+                "This computer isn't enrolled with Orion yet; on the device run: {command}"
             ));
         }
         DriverError::Unreachable(format!("Orion: {error}"))

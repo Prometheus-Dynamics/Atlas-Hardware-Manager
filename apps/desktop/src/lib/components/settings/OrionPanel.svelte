@@ -95,7 +95,7 @@
   {:else if connection === null}
     <p class="flex items-start gap-2 text-[13px] text-fg-muted">
       <Icon name="info-circle" size={15} class="mt-0.5 shrink-0" />
-      Orion is off while Atlas uses simulated devices.
+      Orion is off while simulated devices are on.
     </p>
   {:else}
     <div class="flex flex-col gap-4">
@@ -117,7 +117,7 @@
       {/if}
 
       <div class="flex flex-col gap-1.5">
-        <span class="text-[13px] font-medium text-fg">Atlas's identity</span>
+        <span class="text-[13px] font-medium text-fg">This computer's identity</span>
         <p class="mono break-all text-[12px] text-fg-muted">{connection.operator_id}<br />{connection.fingerprint}</p>
         {#if connection.node_fingerprint}
           <span class="hint">The node's key is pinned: <span class="mono">{connection.node_fingerprint}</span></span>
@@ -126,7 +126,7 @@
 
       {#if connection.url && !connection.enrolled}
         <div class="flex flex-col gap-2">
-          <span class="text-[13px] font-medium text-fg">Let Atlas in</span>
+          <span class="text-[13px] font-medium text-fg">Let this computer in</span>
           <span class="hint">Run this on the device (check the fingerprint matches the one above), then press Check.</span>
           <div class="command">
             <code class="mono">{connection.enroll_command}</code>
@@ -148,7 +148,7 @@
         <Disclosure title="Image server">
           <div class="flex flex-col gap-3">
             <p class="text-[12.5px] {images.error ? 'text-err-fg' : 'text-fg-muted'}">
-              Boards download updates from Atlas over HTTP. {imagesLine}
+              Boards download updates from this computer over HTTP. {imagesLine}
             </p>
             <div class="flex flex-wrap items-end gap-2">
               <Field label="Port" class="w-24">
@@ -160,7 +160,7 @@
               <Button action={saveImages}>Save</Button>
             </div>
             <span class="hint">
-              The host is used only when Atlas can't tell which of its addresses reaches a board. If downloads fail, allow
+              The host is used only when it isn't clear which of this computer's addresses reaches a board. If downloads fail, allow
               this TCP port through the computer's firewall.
             </span>
           </div>

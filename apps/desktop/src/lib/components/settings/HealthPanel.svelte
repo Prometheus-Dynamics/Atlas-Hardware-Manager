@@ -33,7 +33,7 @@
 
 <GlassCard
   title={system.healthProblems === 0 ? "This computer is ready" : `${system.healthProblems} thing${system.healthProblems === 1 ? "" : "s"} to fix`}
-  subtitle="Checks Atlas runs on this computer"
+  subtitle="Checks on this computer"
   icon="shield-check"
   large
   fill

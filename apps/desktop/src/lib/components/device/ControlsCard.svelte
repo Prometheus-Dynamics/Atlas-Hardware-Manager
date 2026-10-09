@@ -1,12 +1,14 @@
 <script lang="ts">
-  // The board's general controls in one place, however Atlas reaches it
-  // (SSH, the identity endpoint or Orion: the driver offers the ids it can
-  // run). Destructive ones confirm inline.
+  // The board's controls that aren't already on screen: the header has the
+  // everyday ones (quick.ts) and, when the board reports its update, Now has
+  // Cancel and Roll back. Whichever transport offers an id (SSH, the
+  // identity endpoint or Orion) runs it. Destructive ones confirm inline.
   import type { DeviceAction, UpdateState } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
   import { updateBusy } from "#lib/stores/status.svelte.ts";
   import type { IconName } from "#lib/ui/icons.ts";
+  import { quickActions } from "./quick.ts";
 
   let {
     actions,
@@ -37,10 +39,14 @@
     { id: "usb-boot", icon: "usb", prompt: "Restart into USB boot? It waits there until it's flashed or power-cycled." },
   ];
 
+  const inHeader = $derived(new Set(quickActions(actions).map((a) => a.id)));
   const shown = $derived(
     CONTROLS.flatMap((control) => {
       const action = actions.find((a) => a.id === control.id);
-      return action && applies(control.id) ? [{ ...control, action }] : [];
+      if (!action || inHeader.has(control.id) || !applies(control.id)) return [];
+      // Now shows the update's own controls when the board reports its update.
+      if (update !== undefined && control.id.startsWith("update.")) return [];
+      return [{ ...control, action }];
     }),
   );
 </script>

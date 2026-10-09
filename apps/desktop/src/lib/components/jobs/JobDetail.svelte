@@ -73,7 +73,7 @@
         <div class="min-w-0 flex-1">
           <p class="text-[14px] font-semibold text-fg">Next: power-cycle {single.name}</p>
           <p class="mt-0.5 text-[13px] leading-relaxed text-fg-muted">
-            {#if notEjected}Atlas couldn't eject the eMMC, so unmount it from your file manager first. Then unplug{:else}The eMMC is ejected and safe to unplug. Unplug{/if}
+            {#if notEjected}The eMMC couldn't be ejected, so unmount it from your file manager first. Then unplug{:else}The eMMC is ejected and safe to unplug. Unplug{/if}
             the board's power and plug it back in <strong class="text-fg">without</strong> holding the boot button. The first start can take a minute
             or two.
           </p>

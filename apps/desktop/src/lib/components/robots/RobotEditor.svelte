@@ -81,7 +81,7 @@
       <Button size="sm" icon="plus" onclick={addRole} disabled={knownFamilies.length === 0}>Add role</Button>
     </div>
     {#if knownFamilies.length === 0}
-      <p class="text-[13px] text-fg-muted">Connect a device or add a release first so Atlas knows which families exist.</p>
+      <p class="text-[13px] text-fg-muted">Connect a device or add a release first, so there are device families to pick from.</p>
     {/if}
     <div class="flex flex-col gap-2">
       {#each draft.roles as _, i (i)}

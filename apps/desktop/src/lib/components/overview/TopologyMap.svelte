@@ -16,6 +16,8 @@
   let { records }: { records: DeviceRecord[] } = $props();
 
   const PAD = 8;
+  // Room between columns for the wire and its link label ("USB boot").
+  const GAP = 72;
 
   // The map fits the box it is given: rows spread out when there is height
   // to spare and tighten (down to a floor, then scroll) when there isn't.
@@ -23,10 +25,12 @@
   let boxHeight = $state(360);
   // Nodes widen on big screens so names and readings have room.
   const map = $derived(layoutMap(records));
-  const NODE_W = $derived(Math.round(Math.min(280, Math.max(140, (width - PAD * 2) / (map.depth + 1) - 64))));
+  const NODE_W = $derived(Math.round(Math.min(220, Math.max(132, (width - PAD * 2 - map.depth * GAP) / (map.depth + 1)))));
   const ROW_H = $derived(Math.floor(Math.min(92, Math.max(44, (boxHeight - PAD * 2) / Math.max(1, map.rows)))));
   const NODE_H = $derived(Math.min(54, Math.max(36, ROW_H - 12)));
-  const colW = $derived(map.depth === 0 ? 0 : Math.max(NODE_W + 40, (width - NODE_W - PAD * 2) / map.depth));
+  // Narrow nodes drop the icon tile so the name keeps the room.
+  const compact = $derived(NODE_W < 170);
+  const colW = $derived(map.depth === 0 ? 0 : Math.max(NODE_W + GAP, (width - NODE_W - PAD * 2) / map.depth));
   const height = $derived(map.rows * ROW_H + PAD * 2);
   const byId = $derived(new Map(map.nodes.map((n) => [n.id, n])));
 
@@ -72,16 +76,22 @@
         {@const to = byId.get(edge.to)}
         {#if from && to}
           <path d={path(from, to)} class="wire" class:on={edge.online} />
-          {#if edge.label}
-            <text x={(x(from) + NODE_W + x(to)) / 2} y={(y(from) + y(to)) / 2 - 6} class="tag">{edge.label}</text>
-          {/if}
+        {/if}
+      {/each}
+      <!-- Labels over every wire, at the end of theirs, just before the
+           device: wires that fan out of one node share their middle, not
+           their ends. -->
+      {#each map.edges as edge (edge.from + edge.to)}
+        {@const to = byId.get(edge.to)}
+        {#if to && edge.label && byId.has(edge.from)}
+          <text x={x(to) - 8} y={y(to) - 5} class="tag">{edge.label}</text>
         {/if}
       {/each}
     </svg>
 
     {#each map.nodes as node (node.id)}
       {#if node.id === HOST}
-        <div class="node host" style="left: {x(node)}px; top: {y(node) - NODE_H / 2}px; width: {NODE_W}px; height: {NODE_H}px">
+        <div class="node host" class:compact style="left: {x(node)}px; top: {y(node) - NODE_H / 2}px; width: {NODE_W}px; height: {NODE_H}px">
           <span class="ico"><Icon name="device-laptop" size={17} stroke={1.7} /></span>
           <span class="min-w-0">
             <span class="name" title="This computer">This computer</span>
@@ -93,6 +103,7 @@
         <button
           type="button"
           class="node"
+          class:compact
           class:offline={record.presence !== "online"}
           class:attention={dotState(record) === "failed" || isRecovery(record)}
           style="left: {x(node)}px; top: {y(node) - NODE_H / 2}px; width: {NODE_W}px; height: {NODE_H}px"
@@ -134,8 +145,13 @@
     font-size: 10.5px;
     font-weight: 500;
     fill: var(--fg-faint);
-    text-anchor: middle;
+    text-anchor: end;
     letter-spacing: 0.02em;
+    /* A halo in the card's colour keeps it readable where wires converge. */
+    paint-order: stroke;
+    stroke: var(--layer-solid);
+    stroke-width: 4px;
+    stroke-linejoin: round;
   }
   .node {
     position: absolute;
@@ -167,6 +183,12 @@
   .node.attention {
     border-color: color-mix(in srgb, var(--accent) 55%, transparent);
     box-shadow: 0 0 0 3px var(--accent-tint);
+  }
+  .node.compact {
+    padding-left: 12px;
+  }
+  .node.compact .ico {
+    display: none;
   }
   .node.host {
     background: var(--glass-strong);

@@ -43,13 +43,15 @@
         {#each [0, 1] as i (i)}<div class="glass flex flex-col gap-3 p-5"><Skeleton width="40%" height={14} /><Skeleton height={60} /></div>{/each}
       </div>
     {:else if robots.profiles.length === 0}
-      <EmptyState icon="robot" title="No robots yet" class="flex-1 justify-center">
-        A robot groups devices into roles and sets the version each family should run. Then "Make ready" brings every
-        device to its target in one job.
-        <div class="mt-4 flex justify-center">
-          <Button variant="primary" icon="plus" onclick={() => ui.openRobot(null)}>New robot</Button>
-        </div>
-      </EmptyState>
+      <div class="flex flex-1 items-center justify-center">
+        <EmptyState icon="robot" title="No robots yet" class="w-full max-w-xl">
+          A robot groups devices into roles and sets the version each family should run. Then "Make ready" brings every
+          device to its target in one job.
+          <div class="mt-4 flex justify-center">
+            <Button variant="primary" icon="plus" onclick={() => ui.openRobot(null)}>New robot</Button>
+          </div>
+        </EmptyState>
+      </div>
     {:else}
       <Region class="-mx-1" inner={wide ? "flex flex-col gap-3 p-1" : "auto-grid p-1"} label="Robots">
         {#each robots.profiles as profile, i (profile.name)}

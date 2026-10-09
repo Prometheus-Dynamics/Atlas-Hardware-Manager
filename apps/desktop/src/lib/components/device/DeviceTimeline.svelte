@@ -57,7 +57,7 @@
         <span class="mark {TONE[entry.level]}"><Icon name={icon(entry)} size={13} stroke={2} /></span>
         <span class="min-w-0 flex-1 text-[13px] leading-snug text-fg">
           {entry.message}
-          <span class="source" title={entry.origin === "board" ? "From the board's event log" : "Atlas's record"}>
+          <span class="source" title={entry.origin === "board" ? "From the board's event log" : "Recorded on this computer"}>
             <Icon name={SOURCE_ICON[entry.source] ?? "info-circle"} size={11} />{sourceLabel(entry.source)}
           </span>
         </span>

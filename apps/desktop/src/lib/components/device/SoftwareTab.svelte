@@ -209,11 +209,11 @@
               {#if fresh === "flash"}
                 {exposed ? "Its storage is showing as a disk and gets written directly." : "It's in USB boot and ready."}
               {:else if checkingActions}
-                Checking whether Atlas can restart it into USB boot…
+                Checking whether it can be restarted into USB boot…
               {:else if fresh === "restart"}
-                Atlas restarts it into USB boot, then installs.
+                It restarts into USB boot, then the install starts.
               {:else}
-                Put it into USB boot by hand; Atlas carries on when it shows up.
+                Put it into USB boot by hand; the install starts when it shows up.
               {/if}
             </span>
           </MethodCard>

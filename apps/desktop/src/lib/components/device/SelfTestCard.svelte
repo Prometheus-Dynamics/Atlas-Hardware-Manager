@@ -73,7 +73,7 @@
     {#if !last}
       <p class="text-[13px] text-fg-muted">
         Not run yet. It checks the LED ring, fan, camera, sensors, watchdog and USB link, and puts the fan and LEDs back
-        as they were. Atlas also runs it when the board comes back from a flash or an update.
+        as they were. It also runs on its own when the board comes back from a flash or an update.
       </p>
     {:else}
       <div class="glass flex flex-col gap-3 px-4 py-3.5">

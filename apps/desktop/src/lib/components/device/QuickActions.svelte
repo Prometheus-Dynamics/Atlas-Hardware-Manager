@@ -6,6 +6,7 @@
   import { deviceName } from "#lib/format.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
   import type { IconName } from "#lib/ui/icons.ts";
+  import { quickActions } from "./quick.ts";
 
   let { record }: { record: DeviceRecord } = $props();
 
@@ -27,8 +28,7 @@
   };
 
   let actions = $state<DeviceAction[]>([]);
-  // Update controls belong with the update (Overview's Now, Software).
-  const quick = $derived(actions.filter((a) => !a.destructive && !a.id.startsWith("update.")).slice(0, 3));
+  const quick = $derived(quickActions(actions));
   const webUi = $derived(record.presence === "online" ? (record.identity.attributes?.manage_url ?? null) : null);
 
   $effect(() => {

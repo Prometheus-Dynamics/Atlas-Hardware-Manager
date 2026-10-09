@@ -305,7 +305,7 @@ impl ImageServer {
             .filter(|host| !host.is_empty())
             .ok_or_else(|| {
                 DriverError::Other(
-                    "Atlas can't tell which of its addresses the board reaches; set the image host in Settings › Orion".into(),
+                    "It isn't clear which of this computer's addresses the board reaches; set the image host in Settings › Orion".into(),
                 )
             })
     }

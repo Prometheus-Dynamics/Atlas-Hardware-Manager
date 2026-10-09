@@ -86,7 +86,7 @@ async fn cancel_ends_a_job_whose_driver_stopped_responding() {
 
     assert_eq!(record.state, JobState::Cancelled);
     match &record.devices[0].status {
-        DeviceJobStatus::Failed { error } => assert!(error.contains("let it go"), "{error}"),
+        DeviceJobStatus::Failed { error } => assert!(error.contains("was let go"), "{error}"),
         other => panic!("expected the device to be let go, got {other:?}"),
     }
 }

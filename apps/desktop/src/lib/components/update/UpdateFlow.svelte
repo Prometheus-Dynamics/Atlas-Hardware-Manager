@@ -108,7 +108,7 @@
     {/if}
     {#if draft.unsigned.length > 0}
       <p class="flex items-center gap-1.5 text-[12px] text-warn-fg">
-        <Icon name="alert-triangle" size={14} />Unsigned: Atlas can't tell where it came from.
+        <Icon name="alert-triangle" size={14} />Unsigned: where it came from can't be verified.
       </p>
     {/if}
   </section>
