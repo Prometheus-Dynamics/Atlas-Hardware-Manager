@@ -305,6 +305,33 @@ dest = "/usr/lib/board/selftest"
 origin = "static-asset"
 mode = 493
 
+[[stage.files]]
+id = "raze-board-hw-sysfs-sh"
+src = "@self/assets/rootfs/usr/lib/board/hw-sysfs.sh"
+dest = "/usr/lib/board/hw-sysfs.sh"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-board-hw-lemnosd-sh"
+src = "@self/assets/rootfs/usr/lib/board/hw-lemnosd.sh"
+dest = "/usr/lib/board/hw-lemnosd.sh"
+origin = "static-asset"
+
+# lemnosd's board definition, generated from manifest.json (gen-raze.py).
+[[stage.files]]
+id = "raze-lemnos-board"
+src = "@self/assets/rootfs/etc/lemnos/board.toml"
+dest = "/etc/lemnos/board.toml"
+mode = 420
+origin = "static-asset"
+
+# Write access for lemnosd (the `lemnos` user) to the fan and the device nodes.
+[[stage.files]]
+id = "raze-udev-rules-d-60-board-lemnosd-rules"
+src = "@self/assets/rootfs/usr/lib/udev/rules.d/60-board-lemnosd.rules"
+dest = "/usr/lib/udev/rules.d/60-board-lemnosd.rules"
+origin = "static-asset"
+
 [image]
 kind = "buildroot"
 config_overrides = [
@@ -377,4 +404,8 @@ stage_files = [
   "raze-board-hardware-env",
   "raze-board-hw-sh",
   "raze-board-selftest",
+  "raze-board-hw-sysfs-sh",
+  "raze-board-hw-lemnosd-sh",
+  "raze-lemnos-board",
+  "raze-udev-rules-d-60-board-lemnosd-rules",
 ]

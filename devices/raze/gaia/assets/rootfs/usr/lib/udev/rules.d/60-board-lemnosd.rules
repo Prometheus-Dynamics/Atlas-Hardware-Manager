@@ -1,0 +1,19 @@
+# Raze: access for lemnosd, which runs as the unprivileged `lemnos` user
+# (Lemnos packaging/README.md, "What the image provides"). Override with
+# /etc/udev/rules.d/60-board-lemnosd.rules.
+#
+# The fan: its hwmon duty and mode, the pwm-fan cooling device's cur_state and
+# the thermal zones' policy, which lemnosd writes when a client sets a duty and
+# when it hands the fan back to the governor. (Its ExecStopPost hand-back runs
+# as root and needs none of this.) pwmfan is the Linux pwm-fan driver's hwmon
+# name.
+SUBSYSTEM=="hwmon", ATTR{name}=="pwmfan", RUN+="/bin/chgrp lemnos /sys%p/pwm1 /sys%p/pwm1_enable", RUN+="/bin/chmod g+w /sys%p/pwm1 /sys%p/pwm1_enable"
+SUBSYSTEM=="thermal", KERNEL=="cooling_device*", ATTR{type}=="pwm-fan", RUN+="/bin/chgrp lemnos /sys%p/cur_state", RUN+="/bin/chmod g+w /sys%p/cur_state"
+SUBSYSTEM=="thermal", KERNEL=="thermal_zone*", RUN+="/bin/chgrp lemnos /sys%p/policy", RUN+="/bin/chmod g+w /sys%p/policy"
+
+# The device nodes, owned by the groups lemnos.sysusers puts the `lemnos`
+# user in (lemnosd.service's SupplementaryGroups): the I2C buses, the GPIO
+# chips (the USB-A power line) and the ws2812-pio LED ring.
+SUBSYSTEM=="i2c-dev", KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0660"
+SUBSYSTEM=="gpio", KERNEL=="gpiochip[0-9]*", GROUP="gpio", MODE="0660"
+KERNEL=="leds[0-9]*", GROUP="video", MODE="0660"

@@ -17,7 +17,12 @@ Whole generated files start with a "generated" header; generated regions inside
 hand-written files sit between `>>> gen-raze: <name>` and `<<< gen-raze` marker
 comments. Edit the manifest, not those parts.
 
-Python 3 standard library only.
+It also renders lemnosd's board definition (gaia/assets/rootfs/etc/lemnos/
+board.toml, see raze_lemnos.py) and validates it against Lemnos's JSON Schema
+and driver rules; with a lemnos-ctl (--lemnos-ctl, $LEMNOS_CTL or PATH) it runs
+`lemnos-ctl validate` on it as well.
+
+Python 3.11+ standard library only.
 """
 
 from __future__ import annotations
@@ -25,9 +30,16 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import os
 import re
+import shutil
 import sys
+import tempfile
 from pathlib import Path
+
+sys.dont_write_bytecode = True  # no __pycache__ next to the tool
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import raze_lemnos  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 PKG = ROOT / "devices" / "raze"
@@ -36,6 +48,8 @@ GAIA = PKG / "gaia"
 BOOT = GAIA / "assets" / "boot"
 ROOTFS = GAIA / "assets" / "rootfs"
 LIBDIR = ROOTFS / "usr" / "lib" / "board"
+
+LEMNOS_SCHEMA = ROOT / "devices" / "schema" / "lemnos-board.schema.json"
 
 SOURCE = "devices/raze/manifest.json"
 TOOL = "devices/tools/gen-raze.py"
@@ -74,6 +88,9 @@ def hexaddr(value: int) -> str:
 def lookup(section: dict, path: str):
     node = section
     for part in path.split("."):
+        if isinstance(node, list) and part.isdigit() and int(part) < len(node):
+            node = node[int(part)]
+            continue
         if not isinstance(node, dict) or part not in node:
             raise KeyError(path)
         node = node[part]
@@ -215,6 +232,26 @@ def lint(manifest: dict) -> None:
         for key in ("sda_gpio", "scl_gpio", "overlay"):
             if key not in bus:
                 raise LintError(f"capabilities.i2c.buses[{bus['bus']}].{key} is missing")
+        select = {k: v for k, v in bus.get("select", {}).items() if k in raze_lemnos.SELECTOR_KEYS}
+        if "select" in bus and (
+            not select or any(not isinstance(v, str) or not v or ";" in v or " " in v for v in select.values())
+        ):
+            raise LintError(
+                f"capabilities.i2c.buses[{bus['bus']}].select needs name, compatible, of or node (no spaces or ;)"
+            )
+    for device in i2c.get("devices", []):
+        where = f"capabilities.i2c.devices[{device['id']}]"
+        chip = device.get("chip_id")
+        if chip is not None:
+            if chip.get("width") not in (8, 16) or not is_int(chip.get("register")) or not is_int(chip.get("value")):
+                raise LintError(f"{where}.chip_id needs register, width (8 or 16) and value")
+            if chip["width"] == 16 and chip.get("smbus_word") != ((chip["value"] & 0xFF) << 8 | chip["value"] >> 8):
+                raise LintError(f"{where}.chip_id.smbus_word must be the value byte-swapped (SMBus words are little-endian)")
+        ld = device.get("lemnosd")
+        if ld is not None and ("device" not in ld or ("driver" in ld) == ("config" in ld)):
+            raise LintError(f"{where}.lemnosd needs device and either driver (with poll_ms) or config")
+        if ld and ld.get("driver") in ("ina226", "ina238") and not ("shunt_ohm" in device and "max_current_a" in device):
+            raise LintError(f"{where}: an INA power monitor needs shunt_ohm and max_current_a for lemnosd")
     lint_verified("i2c", i2c, ["buses", "devices"])
 
     wd = caps["watchdog"]
@@ -222,6 +259,37 @@ def lint(manifest: dict) -> None:
         if key not in wd:
             raise LintError(f"capabilities.watchdog.{key} is missing")
     lint_verified("watchdog", wd, ["device"])
+
+    for name, keys in (
+        ("leds", ["device"]),
+        ("fan", ["device", "thermal_device", "poll_ms", "writers"]),
+        ("usb-power", ["device", "port"]),
+    ):
+        block = caps.get(name, {}).get("lemnosd")
+        if not isinstance(block, dict) or any(k not in block for k in keys):
+            raise LintError(f"capabilities.{name}.lemnosd needs {', '.join(keys)}")
+    if "board-selftest" not in caps["fan"]["lemnosd"]["writers"]:
+        raise LintError("capabilities.fan.lemnosd.writers must include board-selftest, the self-test's lemnosd client")
+    lint_hardware_service(caps.get("hardware-service"))
+
+
+def lint_hardware_service(service: dict | None) -> None:
+    """The Lemnos pin agrees with the layer that imports it and with the docs."""
+    if not isinstance(service, dict):
+        raise LintError("capabilities.hardware-service is missing")
+    imp = service.get("gaia_import", {})
+    rev = imp.get("rev", "")
+    if not re.fullmatch(r"[0-9a-f]{40}", rev):
+        raise LintError("capabilities.hardware-service.gaia_import.rev must be a full commit sha")
+    layer = (GAIA / "lemnos.toml").read_text()
+    if f'{{ source = "{imp.get("source")}", path = "{imp.get("path")}" }}' not in layer:
+        raise LintError("gaia/lemnos.toml must import the manifest's gaia_import source and path")
+    for doc in (GAIA / "lemnos.toml", GAIA / "device.toml", ROOT / "devices" / "README.md"):
+        if f'rev = "{rev}"' not in doc.read_text():
+            raise LintError(f'{doc.relative_to(ROOT)} must show the Lemnos pin rev = "{rev}"')
+    env = (GAIA / "assets" / "lemnos" / "lemnosd.env").read_text()
+    if f"LEMNOSD_UPDATE_STATUS={service.get('update_status')}\n" not in env:
+        raise LintError("gaia/assets/lemnos/lemnosd.env must set LEMNOSD_UPDATE_STATUS to hardware-service.update_status")
 
 
 # ---------------------------------------------------------------------------
@@ -316,6 +384,22 @@ def render_hardware_env(manifest: dict) -> str:
     caps = manifest["capabilities"]
     leds, fan, cam, i2c, wd = (caps[k] for k in ("leds", "fan", "camera", "i2c", "watchdog"))
     devices = " ".join(f"{d['id']}:{d['bus']}:{hexaddr(d['address'])}:{d['part']}" for d in i2c["devices"])
+    buses = " ".join(
+        f"{b['bus']}:{raze_lemnos.bus_ref(caps, b['bus'])[4:]}" for b in i2c["buses"] if b.get("select")
+    )
+    chip_ids = []
+    for d in i2c["devices"]:
+        chip = d.get("chip_id")
+        if not chip:
+            continue
+        wide = chip["width"] == 16
+        value = chip["smbus_word"] if wide else chip["value"]
+        entry = f"{d['id']}:{hexaddr(chip['register'])}:{'w' if wide else 'b'}:0x{value:0{chip['width'] // 4}x}"
+        if "power_control" in chip:
+            entry += f":{hexaddr(chip['power_control']['register'])}.{chip['power_control']['bit']}"
+        chip_ids.append(entry)
+    ids = " ".join(chip_ids)
+    lemnos = " ".join(f"{d['id']}:{d['lemnosd']['device']}" for d in i2c["devices"] if d.get("lemnosd"))
     values = [
         ("HW_MODEL", manifest["model"]),
         ("HW_LEDS_DEVICE", leds["device"]),
@@ -332,14 +416,24 @@ def render_hardware_env(manifest: dict) -> str:
         ("HW_CAMERA_ADDRESS", hexaddr(cam["i2c"]["address"])),
         ("HW_CAMERA_RECEIVER", cam["csi"]["receiver_driver"]),
         ("HW_I2C_DEVICES", devices),
+        ("HW_I2C_BUSES", buses),
+        ("HW_I2C_IDS", ids),
+        ("HW_LEMNOS_DEVICES", lemnos),
+        ("HW_LEMNOS_RING", leds["lemnosd"]["device"]),
+        ("HW_LEMNOS_FAN", fan["lemnosd"]["device"]),
+        ("HW_LEMNOS_THERMAL", fan["lemnosd"]["thermal_device"]),
         ("HW_WATCHDOG_DEVICE", wd["device"]),
         ("HW_WATCHDOG_RUNTIME_SEC", wd["runtime_sec"]),
     ]
     body = "".join(f"{name}={sh_quote(value)}\n" for name, value in values)
     return (
         header("#")
-        + "#\n# Hardware facts for /usr/lib/board/selftest. HW_I2C_DEVICES is\n"
-        + "# id:bus:address:part per device.\n"
+        + "#\n# Hardware facts for /usr/lib/board/selftest and hw.sh. HW_I2C_DEVICES is\n"
+        + "# id:bus:address:part per device (bus: its number on the 7.2.9 image, a hint).\n"
+        + "# HW_I2C_BUSES is bus:selector, the Lemnos i2c: selector that finds a bus\n"
+        + "# whatever its number. HW_I2C_IDS is id:register:b|w:value[:register.bit], the\n"
+        + "# chip id as i2cget reads it (w: an SMBus word, so byte-swapped) and the power\n"
+        + "# control bit to set first. HW_LEMNOS_* are device ids in board.toml.\n"
         + body
     )
 
@@ -389,6 +483,20 @@ def replace_regions(text: str, regions: dict[str, str], comment: tuple[str, str]
     return text
 
 
+BOARD_TOML = ROOTFS / "etc" / "lemnos" / "board.toml"
+
+
+def render_board_toml(manifest: dict) -> str:
+    """lemnosd's board definition, checked against Lemnos's schema and drivers."""
+    board, notes = raze_lemnos.board_definition(manifest, manifest["package_version"])
+    text = raze_lemnos.to_toml(board, notes, header("#"))
+    try:
+        raze_lemnos.check(board, text, LEMNOS_SCHEMA)
+    except raze_lemnos.BoardError as error:
+        raise LintError(str(error))
+    return text
+
+
 def outputs(manifest: dict) -> dict[Path, str]:
     device_txt = BOOT / "raze-device.txt"
     fan_dts = BOOT / "overlays" / "raze-fan-overlay.dts"
@@ -399,6 +507,7 @@ def outputs(manifest: dict) -> dict[Path, str]:
         LIBDIR / "hardware.env": render_hardware_env(manifest),
         ROOTFS / "usr" / "share" / "board" / "raze" / "sensors.toml": render_sensors_toml(manifest),
         ROOTFS / "usr" / "lib" / "systemd" / "system.conf.d" / "60-board-watchdog.conf": render_watchdog_conf(manifest),
+        BOARD_TOML: render_board_toml(manifest),
     }
 
 
@@ -419,6 +528,11 @@ def staged_in_runtime(paths: list[Path]) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--check", action="store_true", help="print a diff and exit 1 instead of writing")
+    parser.add_argument(
+        "--lemnos-ctl",
+        default=os.environ.get("LEMNOS_CTL") or shutil.which("lemnos-ctl"),
+        help="a lemnos-ctl to run `validate` on board.toml with (default $LEMNOS_CTL, else one on PATH)",
+    )
     args = parser.parse_args()
 
     try:
@@ -446,6 +560,15 @@ def main() -> int:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
             print(f"gen-raze: wrote {rel}")
+
+    if args.lemnos_ctl:
+        with tempfile.TemporaryDirectory() as tmp:
+            board = Path(tmp) / "board.toml"
+            board.write_text(files[BOARD_TOML])
+            ok, said = raze_lemnos.lemnos_ctl_validate(args.lemnos_ctl, board)
+        print(f"gen-raze: lemnos-ctl validate: {said.replace(str(board), 'board.toml')}", file=sys.stderr)
+        if not ok:
+            return 1
 
     unstaged = staged_in_runtime(list(files))
     for rel in unstaged:

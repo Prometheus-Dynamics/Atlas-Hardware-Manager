@@ -1,12 +1,22 @@
 # Raze device package, Gaia v2 layer (device package contract 1).
 #
-# An OS build imports this file; it is the package's only entry point:
+# An OS build imports this file; it is the package's only entry point. The
+# build declares two git sources: Atlas (this package) and Lemnos (lemnosd, the
+# hardware service the package depends on; see lemnos.toml). Gaia lets only
+# local files declare import sources, so the Lemnos pin lives in the OS build,
+# at the commit the package is tested with:
 #
 #   [[sources]]
 #   id = "atlas"
 #   kind = "git"
 #   repo = "https://github.com/Prometheus-Dynamics/Atlas-Hardware-Manager.git"
 #   rev = "<pinned commit>"
+#
+#   [[sources]]
+#   id = "lemnos"
+#   kind = "git"
+#   repo = "https://github.com/Prometheus-Dynamics/Lemnos.git"
+#   rev = "8a126d36d23df5b1882113cfaabab895f3dc8d16"
 #
 #   imports = [
 #     ...OS base layers...,
@@ -19,11 +29,12 @@
 # --set sources.atlas.path=<checkout>). Later imports override earlier ones, so
 # an OS changes any device default by setting it in a layer imported after this
 # one. See devices/README.md for what the OS still has to provide.
-description = "Raze (CM5 + OV9782) device support: kernel, camera, boot configuration and overlays, identity endpoint, USB gadget."
+description = "Raze (CM5 + OV9782) device support: kernel, camera, boot configuration and overlays, identity endpoint, USB gadget, lemnosd hardware service."
 
 imports = [
   "./kernel.toml",
   "./camera.toml",
   "./boot.toml",
   "./runtime.toml",
+  "./lemnos.toml",
 ]

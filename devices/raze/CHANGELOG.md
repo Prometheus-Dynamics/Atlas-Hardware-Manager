@@ -60,6 +60,74 @@ commit; the commits are listed per area.
   `USB_GADGET_ADDRESS=172.31.250.1/24` in `/etc/board/usb-gadget.env`.
   Atlas needs this commit or later to reach new images over the gadget link
   without mDNS (`e6afcf3`).
+- **lemnosd is required for LEDs and fan control by default.** The layer
+  imports Lemnos's lemnosd layer (`gaia/lemnos.toml`), so an OS build must
+  declare a second git source, `lemnos` at
+  `8a126d36d23df5b1882113cfaabab895f3dc8d16` (see `gaia/device.toml`; Gaia
+  refuses import sources declared inside a source-imported layer), and needs
+  Docker on the build host (Lemnos builds its static binaries in a container)
+  and systemd-sysusers (the `lemnos` user). lemnosd owns `/dev/leds0`, the
+  sensors and the fan's sysfs controls; `raze-leds`, `board-locate.service`
+  and the self-test are its clients when `/usr/bin/lemnos-ctl` exists. Other
+  programs that write `/dev/leds0` or the fan directly now race lemnosd: use
+  `lemnos-ctl` (or `raze-leds`), and put non-root clients such as
+  PhotonVision in the `lemnos` group. `BOARD_HW_BACKEND=sysfs` in
+  `/etc/board/hw.env` keeps the old direct access as a fallback; images
+  without lemnos-ctl get it automatically (`d5302db`).
+- **hw.sh backends:** `BOARD_HW_BACKEND` now names a backend (`lemnosd`,
+  `sysfs`, `auto`); a path still names a replacement file. Self-test JSON
+  stays version 1 with added fields (`backend` at the top; `backend`,
+  `status`, `handed_back`, per I2C device `bus_hint`, `bus_found_by`,
+  `chip_id`, `lemnosd`); under lemnosd the fan check's `cooling_device` is
+  the board.toml id `fan` (`d5302db`).
+
+### lemnosd, the hardware service
+
+- **Gaia import:** `gaia/lemnos.toml` imports Lemnos's
+  `packaging/gaia/lemnosd.toml` (static aarch64 musl `lemnosd` and
+  `lemnos-ctl`, `lemnosd.service`, sysusers, preset) pinned at Lemnos dev
+  `8a126d3`, and redeclares `lemnosd-env` with
+  `LEMNOSD_UPDATE_STATUS=/run/board/update.json`, so the updating animation
+  follows the package's update writer (`d5302db`).
+- **Board definition:** `/etc/lemnos/board.toml` is generated from the
+  manifest by `gen-raze.py`: the status ring (16, `wire = "rgb"`, offset 5,
+  direction from the manifest, still unverified; fade 250 ms ease-in-out,
+  status effect breathe), the fan (match `name = "pwmfan"`, no
+  `restore_mode`), `cpu-thermal`, the BMI088 (accel 0x18, gyro 0x68) on
+  `i2c:compatible=i2c-gpio`, the BMM150 (0x10) and INA238 (0x40) on
+  `i2c:of=/axi/pcie@1000120000/rp1/i2c@74000`, and the USB-A power line
+  (`pinctrl-rp1` 20). The INA238's maximum current is its full scale over
+  the shunt (16.384 A), derived; the shunt itself is unverified. The lint
+  validates the file against Lemnos's JSON Schema (vendored in
+  `devices/schema/`), its driver rules and, with a `lemnos-ctl`,
+  `lemnos-ctl validate` (`d5302db`).
+- **udev:** `60-board-lemnosd.rules` gives the `lemnos` group the fan's
+  `pwm1`/`pwm1_enable`, the pwm-fan `cur_state` and the zones' `policy`, and
+  the device nodes to `i2c`, `gpio` and `video` (`d5302db`).
+- **Clients:** `raze-leds` keeps its commands and becomes a wrapper over
+  `lemnos-ctl --client raze-leds led ...`; locate uses lemnosd's locate
+  effect; the self-test sets the fan's duties through lemnosd and ends with
+  its hand-back (`lemnos-ctl fan restore`) instead of pausing the thermal
+  zone, and draws its interactive frames as `board-selftest` at priority
+  100 (`d5302db`).
+- **Verified on a Raze with lemnosd cd72ad0** (the coordinator, 2026-10-07):
+  the pwmfan fan, cpu-thermal and the ring on `/dev/leds0` (wire rgb,
+  offset 5) bind; readings, the progress, updating, breathe and locate
+  effects, and the fan hand-back work. Not yet on hardware: the 8a126d3 bus
+  selectors, the sensors through lemnosd, the package's udev rules and
+  client scripts, the USB-A line (hogged by default).
+
+### I2C facts (verified on a board)
+
+- BMI088 on the i2c-gpio bus (`/dev/i2c-4` there): accel 0x18 (chip id 0x1E),
+  gyro 0x68 (0x0F). BMM150 on i2c1-pi5 (`/dev/i2c-1`) at 0x10 (0x32 at
+  register 0x40, readable once power control 0x4B bit 0 is set). INA238 at
+  0x40 (manufacturer 0x5449, die 0x2381; SMBus words read byte-swapped).
+  Checked by chip-id register reads on the PhotonVision image (HeliOS
+  coordinator, 2026-10-07). Buses carry a `select` (Lemnos `i2c:` keys)
+  besides their number, which follows probe order. The self-test finds buses
+  by it and reads the chip ids, waking the BMM150 for the read and putting
+  its power control back when lemnosd isn't the owner (`d5302db`).
 
 ### USB gadget addressing
 

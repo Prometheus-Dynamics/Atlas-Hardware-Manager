@@ -1,5 +1,8 @@
 [Unit]
-Description=Locate: blink the LED ring so someone can find the board
+Description=Locate: show the locate look on the LED ring so someone can find the board
+# With lemnosd, raze-leds sends lemnosd's locate intent (above every other
+# look, timed by lemnosd) and waits it out; without, it blinks the ring itself.
+After=lemnosd.service
 Documentation=file:/usr/lib/board/raze-leds
 
 [Service]

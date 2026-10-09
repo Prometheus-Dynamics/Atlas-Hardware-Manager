@@ -1,11 +1,24 @@
 # shellcheck shell=sh
-# Hardware backend for raze-leds and the selftest (device package contract 1).
+# Hardware layer for raze-leds and the selftest (device package contract 1).
 # POSIX sh; also runs under busybox ash. Sourced after lib.sh, never executed.
 #
-# Every hardware access of those scripts goes through the hw_* functions here,
-# implemented on sysfs and /dev. Another backend (a hardware daemon) can
-# replace this file with the same functions, and the callers and their output
-# stay as they are.
+# Every hardware access of those scripts goes through the hw_* functions.
+# This file has what all backends share (I2C probes and chip ids, the camera,
+# the watchdog, the USB gadget) and loads the backend for the LED ring and the
+# fan:
+#
+#   lemnosd  hw-lemnosd.sh: through lemnosd, the board's hardware service
+#            (lemnos-ctl). The ring and the fan are lemnosd's; the fan goes
+#            back to the thermal governor through lemnosd's hand-back.
+#   sysfs    hw-sysfs.sh: frames written to /dev/leds0, the pwm-fan cooling
+#            device driven directly with its thermal zone paused. The
+#            fallback for images without lemnosd.
+#
+# BOARD_HW_BACKEND (environment, else /etc/board/hw.env or /data/board/hw.env)
+# names one; unset or "auto" means lemnosd when lemnos-ctl is installed, else
+# sysfs. HW_BACKEND holds the one loaded. A BOARD_HW_BACKEND that is a path is
+# a replacement backend file the callers source instead of this one (it may
+# source this file and override functions; here it counts as "auto").
 #
 # Settings: leds.env and hardware.env, both generated from the package's
 # manifest.json (devices/tools/gen-raze.py). Paths, overridable for tests:
@@ -19,6 +32,9 @@ BOARD_DEV_DIR=${BOARD_DEV_DIR:-/dev}
 BOARD_CONFIGFS=${BOARD_CONFIGFS:-/sys/kernel/config}
 board_load_env leds.env
 board_load_env hardware.env
+_hw_backend=${BOARD_HW_BACKEND:-}
+board_load_env hw.env
+[ -z "$_hw_backend" ] || BOARD_HW_BACKEND=$_hw_backend
 
 # Whether a tool is installed.
 hw_have() {
@@ -36,179 +52,96 @@ hw_dev_path() {
 	esac
 }
 
-# ---------------------------------------------------------------------------
-# LED ring. Colours are "r,g,b,w", 0-255 each. Logical LED i sits in driver
-# slot (RAZE_LEDS_OFFSET + RAZE_LEDS_DIRECTION * i) mod RAZE_LEDS_COUNT, and
-# every slot takes 4 bytes in RAZE_LEDS_ORDER (the driver drops W on a 24-bit
-# ring).
-
-hw_leds_device() {
-	hw_dev_path "${RAZE_LEDS_DEVICE:-/dev/leds0}"
-}
-
 hw_leds_count() {
-	printf '%s\n' "${RAZE_LEDS_COUNT:-16}"
+	printf '%s\n' "${RAZE_LEDS_COUNT:-${HW_LEDS_COUNT:-16}}"
 }
 
-# The driver bytes for one colour, as printf octal escapes.
-_hw_leds_pixel() {
-	_hw_r=${1%%,*}
-	_hw_rest=${1#*,}
-	_hw_g=${_hw_rest%%,*}
-	_hw_rest=${_hw_rest#*,}
-	_hw_b=${_hw_rest%%,*}
-	case "$_hw_rest" in
-	*,*) _hw_w=${_hw_rest#*,} ;;
-	*) _hw_w=0 ;;
-	esac
-	_hw_px=''
-	for _hw_ch in $(printf '%s' "${RAZE_LEDS_ORDER:-rgbw}" | sed 's/./& /g'); do
-		case "$_hw_ch" in
-		r) _hw_v=$_hw_r ;;
-		g) _hw_v=$_hw_g ;;
-		b) _hw_v=$_hw_b ;;
-		w) _hw_v=$_hw_w ;;
-		*) continue ;;
-		esac
-		_hw_px="$_hw_px\\$(printf '%03o' "$_hw_v")"
-	done
-	printf '%s' "$_hw_px"
-}
-
-_hw_leds_writable() {
-	_hw_dev=$(hw_leds_device)
-	if [ ! -w "$_hw_dev" ]; then
-		board_log "$_hw_dev is missing or not writable (is the LED ring driver loaded?)"
-		return 1
-	fi
-}
-
-# hw_leds_fill <r,g,b,w>: one colour on every LED.
-hw_leds_fill() {
-	_hw_leds_writable || return 1
-	_hw_px=$(_hw_leds_pixel "$1")
-	_hw_all=''
-	_hw_i=0
-	while [ "$_hw_i" -lt "${RAZE_LEDS_COUNT:-16}" ]; do
-		_hw_all="$_hw_all$_hw_px"
-		_hw_i=$((_hw_i + 1))
-	done
-	# shellcheck disable=SC2059
-	printf "$_hw_all" > "$_hw_dev"
-}
-
-# hw_leds_write_frame <colour>...: one frame; argument i (from 0) is logical
-# LED i. LEDs without an argument are off.
-hw_leds_write_frame() {
-	_hw_leds_writable || return 1
-	_hw_n=${RAZE_LEDS_COUNT:-16}
-	_hw_off=${RAZE_LEDS_OFFSET:-0}
-	_hw_dir=${RAZE_LEDS_DIRECTION:-1}
-	_hw_all=''
-	_hw_last=''
-	_hw_lastpx=''
-	_hw_slot=0
-	while [ "$_hw_slot" -lt "$_hw_n" ]; do
-		# The direction is +1 or -1, so it is its own inverse.
-		_hw_l=$(((((_hw_slot - _hw_off) * _hw_dir) % _hw_n + _hw_n) % _hw_n))
-		_hw_c=0,0,0,0
-		if [ "$_hw_l" -lt "$#" ]; then
-			eval "_hw_c=\${$((_hw_l + 1))}"
-		fi
-		if [ "$_hw_c" != "$_hw_last" ]; then
-			_hw_last=$_hw_c
-			_hw_lastpx=$(_hw_leds_pixel "$_hw_c")
-		fi
-		_hw_all="$_hw_all$_hw_lastpx"
-		_hw_slot=$((_hw_slot + 1))
-	done
-	# shellcheck disable=SC2059
-	printf "$_hw_all" > "$_hw_dev"
-}
-
-# Whether the ring device can be opened for writing, without writing to it.
-hw_leds_open() {
-	_hw_dev=$(hw_leds_device)
-	[ -e "$_hw_dev" ] && (: >> "$_hw_dev") 2>/dev/null
+# Item <n> (from 1) of the remaining arguments.
+_hw_nth() {
+	_hw_n=$1
+	[ "$_hw_n" -lt "$#" ] || return 0
+	shift "$_hw_n"
+	printf '%s' "${1:-}"
 }
 
 # ---------------------------------------------------------------------------
-# Fan: the pwm-fan cooling device of the thermal framework, and its hwmon.
+# I2C.
 
-# The fan's cooling device directory.
-hw_fan_cdev() {
-	for _hw_d in "$BOARD_SYS_DIR"/class/thermal/cooling_device*; do
-		[ -r "$_hw_d/type" ] || continue
-		if [ "$(cat "$_hw_d/type")" = "${HW_FAN_COOLING_TYPE:-pwm-fan}" ]; then
-			printf '%s\n' "$_hw_d"
+# The device-tree path of an I2C adapter's node (its own of_node, else its
+# parent device's), as Lemnos's i2c: selectors see it. Empty without one.
+_hw_i2c_of_node() {
+	for _hw_cand in "$1/of_node" "$(dirname "$(readlink -f "$1")")/of_node"; do
+		_hw_node=$(readlink -f "$_hw_cand" 2>/dev/null) || continue
+		if [ -d "$_hw_node" ]; then
+			printf '%s\n' "$_hw_node"
 			return 0
 		fi
 	done
 	return 1
 }
 
-hw_fan_max_state() {
-	cat "$(hw_fan_cdev)/max_state"
-}
-
-hw_fan_get_state() {
-	cat "$(hw_fan_cdev)/cur_state"
-}
-
-hw_fan_set_state() {
-	printf '%s\n' "$1" > "$(hw_fan_cdev)/cur_state"
-}
-
-# "<pwm> <rpm>": the duty (0-255) and the tachometer, "-" for what the fan
-# doesn't report.
-hw_fan_read() {
-	_hw_pwm=-
-	_hw_rpm=-
-	for _hw_h in "$BOARD_SYS_DIR"/class/hwmon/hwmon*; do
-		[ "$(cat "$_hw_h/name" 2>/dev/null)" = "${HW_FAN_HWMON:-pwmfan}" ] || continue
-		[ -r "$_hw_h/pwm1" ] && _hw_pwm=$(cat "$_hw_h/pwm1")
-		[ -r "$_hw_h/fan1_input" ] && _hw_rpm=$(cat "$_hw_h/fan1_input")
-		break
+# hw_i2c_select_matches <adapter dir> <selector>: the selector is Lemnos's
+# (key=value[;key=value...], keys name, compatible, of, node); every key must
+# match.
+hw_i2c_select_matches() {
+	_hw_adapter=$1
+	_hw_rest=$2
+	while [ -n "$_hw_rest" ]; do
+		_hw_kv=${_hw_rest%%;*}
+		case "$_hw_rest" in *";"*) _hw_rest=${_hw_rest#*;} ;; *) _hw_rest='' ;; esac
+		_hw_k=${_hw_kv%%=*}
+		_hw_v=${_hw_kv#*=}
+		case "$_hw_k" in
+		name)
+			[ "$(cat "$_hw_adapter/name" 2>/dev/null)" = "$_hw_v" ] || return 1
+			;;
+		compatible)
+			_hw_node=$(_hw_i2c_of_node "$_hw_adapter") || return 1
+			tr '\000' '\n' < "$_hw_node/compatible" 2>/dev/null | grep -qxF -- "$_hw_v" || return 1
+			;;
+		of | node)
+			_hw_node=$(_hw_i2c_of_node "$_hw_adapter") || return 1
+			_hw_path=${_hw_node#*/firmware/devicetree/base}
+			[ "$_hw_path" != "$_hw_node" ] || return 1
+			if [ "$_hw_k" = of ]; then
+				[ "$_hw_path" = "${_hw_v%/}" ] || return 1
+			else
+				[ "${_hw_path##*/}" = "$_hw_v" ] || return 1
+			fi
+			;;
+		*) return 1 ;;
+		esac
 	done
-	printf '%s %s\n' "$_hw_pwm" "$_hw_rpm"
 }
 
-# Pause the thermal governor on the zones that drive the fan, so a state set
-# by hand stays while it is read back. hw_fan_release undoes it.
-HW_FAN_HELD=''
-hw_fan_hold() {
-	_hw_cdev=$(hw_fan_cdev) || return 1
-	_hw_target=$(readlink -f "$_hw_cdev")
-	for _hw_z in "$BOARD_SYS_DIR"/class/thermal/thermal_zone*; do
-		[ -w "$_hw_z/mode" ] || continue
-		[ "$(cat "$_hw_z/mode" 2>/dev/null)" = enabled ] || continue
-		for _hw_link in "$_hw_z"/cdev[0-9]*; do
-			case "$_hw_link" in *_*) continue ;; esac
-			if [ "$(readlink -f "$_hw_link")" = "$_hw_target" ]; then
-				echo disabled > "$_hw_z/mode" && HW_FAN_HELD="$HW_FAN_HELD $_hw_z"
-				break
+# hw_i2c_bus <number on the reference image>: "<bus number now> <how>". The
+# bus's selector (HW_I2C_BUSES) finds it whatever probe order numbered it
+# (how: selector); when no adapter matches (number), several do (ambiguous)
+# or the bus has no selector (number), the number given.
+hw_i2c_bus() {
+	_hw_how=number
+	_hw_sel=''
+	for _hw_e in ${HW_I2C_BUSES:-}; do
+		[ "${_hw_e%%:*}" = "$1" ] && _hw_sel=${_hw_e#*:}
+	done
+	if [ -n "$_hw_sel" ]; then
+		_hw_found=''
+		_hw_count=0
+		for _hw_a in "$BOARD_SYS_DIR"/bus/i2c/devices/i2c-*; do
+			[ -e "$_hw_a" ] || continue
+			if hw_i2c_select_matches "$_hw_a" "$_hw_sel"; then
+				_hw_found=${_hw_a##*/i2c-}
+				_hw_count=$((_hw_count + 1))
 			fi
 		done
-	done
-}
-
-hw_fan_release() {
-	for _hw_z in $HW_FAN_HELD; do
-		echo enabled > "$_hw_z/mode" 2>/dev/null || true
-		# The Raze's step_wise zone doesn't poll: it only re-evaluates on a
-		# trip crossing, so the fan would stay at the last stepped level.
-		# Writing the zone's own policy back makes the governor run now
-		# (verified on a Raze, 2026-10-07).
-		if [ -w "$_hw_z/policy" ]; then
-			_hw_policy=$(cat "$_hw_z/policy" 2>/dev/null) &&
-				echo "$_hw_policy" > "$_hw_z/policy" 2>/dev/null || true
+		if [ "$_hw_count" = 1 ]; then
+			printf '%s selector\n' "$_hw_found"
+			return 0
 		fi
-	done
-	HW_FAN_HELD=''
+		[ "$_hw_count" = 0 ] || _hw_how=ambiguous
+	fi
+	printf '%s %s\n' "$1" "$_hw_how"
 }
-
-# ---------------------------------------------------------------------------
-# I2C.
 
 # hw_i2c_probe <bus> <address, 0xNN>: prints one of
 #   bound     a kernel driver owns the address
@@ -241,6 +174,73 @@ hw_i2c_probe() {
 	[0-9a-f][0-9a-f]) echo present ;;
 	*) echo unknown ;;
 	esac
+}
+
+# hw_i2c_chip_id <id> <bus> <address>: reads the chip id register the
+# manifest names for device <id> (HW_I2C_IDS) and prints one of
+#   ok <value>          it reads what the manifest says
+#   mismatch <value>    it reads something else
+#   suspended           it needs its power control bit set first, and the
+#                       backend leaves that to the chip's owner (lemnosd)
+#   failed              the read failed
+#   none                the manifest gives no chip id for it
+#   unknown             there is no way to read it (no i2cget/i2cset)
+# Reads are SMBus byte or word reads of a register (an SMBus word comes back
+# byte-swapped from a big-endian register; HW_I2C_IDS holds that form). A
+# chip that boots suspended (the BMM150) gets its power control bit set for
+# the read and the register put back as it was, unless a kernel driver owns
+# it or HW_I2C_POWER_DANCE=0 (the lemnosd backend: lemnosd owns the chip).
+hw_i2c_chip_id() {
+	_hw_spec=''
+	for _hw_e in ${HW_I2C_IDS:-}; do
+		[ "${_hw_e%%:*}" = "$1" ] && _hw_spec=${_hw_e#*:}
+	done
+	if [ -z "$_hw_spec" ]; then
+		echo none
+		return 0
+	fi
+	if ! hw_have i2cget; then
+		echo unknown
+		return 0
+	fi
+	_hw_reg=${_hw_spec%%:*}
+	_hw_rest=${_hw_spec#*:}
+	_hw_mode=${_hw_rest%%:*}
+	_hw_rest=${_hw_rest#*:}
+	_hw_want=${_hw_rest%%:*}
+	_hw_power=''
+	case "$_hw_rest" in *:*) _hw_power=${_hw_rest#*:} ;; esac
+	_hw_restore=''
+	if [ -n "$_hw_power" ]; then
+		_hw_preg=${_hw_power%.*}
+		_hw_bit=$((1 << ${_hw_power#*.}))
+		_hw_pval=$(i2cget -y "$2" "$3" "$_hw_preg" b 2>/dev/null) || {
+			echo failed
+			return 0
+		}
+		if [ $((_hw_pval & _hw_bit)) = 0 ]; then
+			if [ "${HW_I2C_POWER_DANCE:-1}" != 1 ] || ! hw_have i2cset ||
+				[ -e "$BOARD_SYS_DIR/bus/i2c/devices/$2-$(printf '%04x' $(($3)))/driver" ]; then
+				echo suspended
+				return 0
+			fi
+			i2cset -y "$2" "$3" "$_hw_preg" $((_hw_pval | _hw_bit)) b 2>/dev/null || {
+				echo failed
+				return 0
+			}
+			_hw_restore=$_hw_pval
+			sleep 0.01 2>/dev/null || sleep 1
+		fi
+	fi
+	_hw_got=$(i2cget -y "$2" "$3" "$_hw_reg" "$_hw_mode" 2>/dev/null) || _hw_got=''
+	[ -z "$_hw_restore" ] || i2cset -y "$2" "$3" "$_hw_preg" "$_hw_restore" b 2>/dev/null || true
+	if [ -z "$_hw_got" ]; then
+		echo failed
+	elif [ $((_hw_got)) = $((_hw_want)) ]; then
+		echo "ok $_hw_got"
+	else
+		echo "mismatch $_hw_got"
+	fi
 }
 
 # ---------------------------------------------------------------------------
@@ -329,3 +329,19 @@ hw_net_ipv4() {
 	fi
 	ip -4 -o addr show dev "$1" 2>/dev/null | awk '{ for (i = 1; i < NF; i++) if ($i == "inet") print $(i + 1) }'
 }
+
+# ---------------------------------------------------------------------------
+# The backend for the LED ring and the fan.
+
+case "${BOARD_HW_BACKEND:-auto}" in
+lemnosd | sysfs) HW_BACKEND=$BOARD_HW_BACKEND ;;
+auto | */*)
+	if hw_have lemnos-ctl; then HW_BACKEND=lemnosd; else HW_BACKEND=sysfs; fi
+	;;
+*)
+	board_log "BOARD_HW_BACKEND=$BOARD_HW_BACKEND is not lemnosd, sysfs or auto; using sysfs"
+	HW_BACKEND=sysfs
+	;;
+esac
+# shellcheck source=hw-sysfs.sh
+. "$BOARD_LIB_DIR/hw-$HW_BACKEND.sh"
