@@ -467,6 +467,16 @@ commit; the commits are listed per area.
 
 ### Faster image builds
 
+- **libcamera no longer pulls in libyuv, jpeg or bzip2.** The package's
+  rpi/pisp selection carried them since its first commit, but libcamera
+  0.7.2 uses libyuv only for its Android layer and virtual pipeline, libjpeg
+  only for the `cam` app's optional JPEG output, and bzip2 not at all. An OS
+  that needs any of them for its own software (for example libjpeg) must now
+  select it (`BR2_PACKAGE_JPEG`, `BR2_PACKAGE_LIBYUV`, `BR2_PACKAGE_BZIP2`).
+- **Kernel modules are no longer compressed** (`MODULE_COMPRESS` off): the
+  EROFS root compresses them anyway, and xz-compressing ~1400 modules was
+  most of the kernel's install time. Modules are plain `.ko` files.
+- **No virtualization (KVM)** in the kernel.
 - libpisp no longer depends on Boost. It used Boost only for logging, and
   Buildroot's boost package has no Boost.Log unless an OS turns it on, so
   logging was always off and Boost was extracted, installed and copied into

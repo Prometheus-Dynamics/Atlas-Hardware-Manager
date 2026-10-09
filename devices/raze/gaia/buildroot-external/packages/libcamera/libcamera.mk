@@ -72,12 +72,11 @@ else
 LIBCAMERA_CONF_OPTS += -Dv4l2=disabled
 endif
 
+# libpisp only. libyuv (libcamera's Android layer and virtual pipeline),
+# libjpeg (the cam app's optional JPEG output) and bzip2 (unused) are not
+# needed by rpi/pisp; an OS that wants them for its own use selects them.
 ifeq ($(BR2_PACKAGE_LIBCAMERA_PIPELINE_RPI_PISP),y)
-LIBCAMERA_DEPENDENCIES += \
-	libpisp \
-	libyuv \
-	bzip2 \
-	jpeg
+LIBCAMERA_DEPENDENCIES += libpisp
 endif
 
 LIBCAMERA_PIPELINES-$(BR2_PACKAGE_LIBCAMERA_PIPELINE_IMX8_ISI) += imx8-isi
