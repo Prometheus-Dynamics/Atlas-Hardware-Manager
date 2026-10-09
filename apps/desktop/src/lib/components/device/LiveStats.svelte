@@ -3,7 +3,7 @@
   import { keyString, type DeviceRecord } from "#lib/api/client.ts";
   import Icon from "#lib/components/common/Icon.svelte";
   import Skeleton from "#lib/components/common/Skeleton.svelte";
-  import { sortMetrics } from "#lib/metrics.ts";
+  import { coreMetrics, isCore, sortMetrics } from "#lib/metrics.ts";
   import { live, watchLive } from "#lib/stores/live.svelte.ts";
   import { rise, stagger } from "#lib/ui/motion.ts";
   import MetricTile from "./MetricTile.svelte";
@@ -11,7 +11,10 @@
   let { record }: { record: DeviceRecord } = $props();
 
   const id = $derived(keyString(record.key));
-  const metrics = $derived(sortMetrics(live.metrics.get(id) ?? []));
+  const all = $derived(live.metrics.get(id) ?? []);
+  // Each core shows inside the CPU tile, not as a tile of its own.
+  const metrics = $derived(sortMetrics(all.filter((m) => !isCore(m))));
+  const cores = $derived(coreMetrics(all));
   const error = $derived(live.errors.get(id));
 
   $effect(() => watchLive([record]));
@@ -31,7 +34,7 @@
     <div class="tiles">
       {#each metrics as metric, i (metric.id)}
         <div in:rise={{ delay: stagger(i) }}>
-          <MetricTile {metric} series={live.series(id, metric.id)} />
+          <MetricTile {metric} series={live.series(id, metric.id)} cores={metric.id === "cpu" ? cores : []} />
         </div>
       {/each}
     </div>

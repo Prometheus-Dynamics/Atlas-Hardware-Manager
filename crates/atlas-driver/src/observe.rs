@@ -67,6 +67,8 @@ pub mod attributes {
 /// them in robot summaries; any other id is still shown, as a plain value.
 pub mod metric_ids {
     pub const CPU: &str = "cpu";
+    /// One core's busy share, `cpu.core.<n>` (kernel CPU order).
+    pub const CPU_CORE_PREFIX: &str = "cpu.core.";
     pub const TEMPERATURE: &str = "temp";
     pub const FAN: &str = "fan";
     pub const UPTIME: &str = "uptime";
@@ -90,6 +92,10 @@ pub struct Metric {
     /// Above this the UI shows a warning.
     #[serde(default)]
     pub warn_above: Option<f64>,
+    /// The raw numbers behind the value, as one line: `1.2 of 4.0 GiB`,
+    /// `load 0.42 · 0.38 · 0.30`.
+    #[serde(default)]
+    pub detail: Option<String>,
 }
 
 impl Metric {
@@ -101,7 +107,13 @@ impl Metric {
             unit: unit.map(Into::into),
             max: None,
             warn_above: None,
+            detail: None,
         }
+    }
+
+    pub fn detail(mut self, detail: impl Into<String>) -> Self {
+        self.detail = Some(detail.into());
+        self
     }
 
     pub fn range(mut self, max: f64, warn_above: Option<f64>) -> Self {

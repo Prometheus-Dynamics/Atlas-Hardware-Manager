@@ -47,11 +47,14 @@ export function metrics(device: SimDevice): Metric[] {
     const hot = device.key.serial === "H-1003" ? 9 : 0;
     const cpu = wave(device, 23, 18, 71);
     const temp = 42 + cpu * 0.32 + wave(device, 61, 0, 3) + hot;
+    const cores = [0, 1, 2, 3].map((n) => Math.min(100, Math.max(0, cpu + wave(device, 5 + n * 3, -25, 25))));
+    const memory = round(wave(device, 90, 31, 44));
     return [
-      metric("cpu", "CPU", round(cpu), "%", 100, 90),
+      { ...metric("cpu", "CPU", round(cpu), "%", 100, 90), detail: `4 cores · load ${[1, 0.9, 0.8].map((f) => ((cpu / 25) * f).toFixed(2)).join(" · ")}` },
+      ...cores.map((value, n) => metric(`cpu.core.${n}`, `Core ${n}`, round(value), "%", 100, 90)),
       metric("temp", "Temperature", round(temp, 1), "°C", 85, 75),
       metric("fan", "Fan", round(1800 + (temp - 40) * 95, -1), "rpm", 6000),
-      metric("memory", "Memory", round(wave(device, 90, 31, 44)), "%", 100, 90),
+      { ...metric("memory", "Memory", memory, "%", 100, 90), detail: `${((memory / 100) * 4).toFixed(1)} GiB of 4.0 GiB` },
       metric("fps", "Vision", round(wave(device, 9, 52, 60)), "fps", 60),
       metric("uptime", "Uptime", uptime, "s"),
     ];

@@ -75,6 +75,16 @@ export function metricValue(metric: Metric): { value: string; unit: string } {
   return { value: text, unit: metric.unit ?? "" };
 }
 
+/** Per-core CPU readings (`cpu.core.<n>`), shown inside the CPU tile. */
+export const CORE_PREFIX = "cpu.core.";
+export const isCore = (metric: Metric) => metric.id.startsWith(CORE_PREFIX);
+
+/** The cores in kernel order. */
+export function coreMetrics(metrics: Metric[]): Metric[] {
+  const index = (m: Metric) => Number(m.id.slice(CORE_PREFIX.length));
+  return metrics.filter(isCore).sort((a, b) => index(a) - index(b));
+}
+
 export function sortMetrics(metrics: Metric[]): Metric[] {
   const rank = (m: Metric) => {
     const i = ORDER.indexOf(m.id);

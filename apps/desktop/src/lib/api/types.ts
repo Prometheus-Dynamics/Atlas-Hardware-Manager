@@ -86,6 +86,8 @@ export interface Metric {
   max: number | null;
   /** Above this the reading is a warning. */
   warn_above: number | null;
+  /** The raw numbers behind the value: "1.2 GiB of 4.0 GiB", "load 0.42 · 0.38 · 0.30". */
+  detail?: string | null;
 }
 
 export type LogLevel = "debug" | "info" | "warning" | "error";
