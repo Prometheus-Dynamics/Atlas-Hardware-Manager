@@ -1,0 +1,68 @@
+#!/bin/sh
+# The boot record (board-boot.service):
+#
+#   boot-record             at boot: count it, write /run/board/boot.json and
+#                           log a `boot` event
+#   boot-record --shutdown  at a clean shutdown (the unit's ExecStop): log a
+#                           `shutdown` event
+#
+# A boot whose previous boot ended without a `shutdown` event (power cut,
+# watchdog reset, kernel panic) has "previous_clean": false; with no earlier
+# events at all it is null. boot.json:
+#   {"id":..,"count":<n>,"slot":"A|B|unknown","kernel":..,
+#    "previous_clean":true|false|null,"at":<unix s>}
+# The count is kept in /data/board/boot-count (/run/board without /data).
+# Test hooks: BOARD_BOOT_ID, BOARD_UNAME_R, UPDATE_CMDLINE_ROOT.
+set -u
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+
+case "${1:-}" in
+--shutdown)
+	up=$(cut -d. -f1 /proc/uptime 2>/dev/null) || up=''
+	board_event shutdown "shutting down cleanly" "uptime_s=$up"
+	exit 0
+	;;
+'') ;;
+*)
+	sed -n '4,7p' "$0" | sed 's/^# \{0,1\}//' >&2
+	exit 2
+	;;
+esac
+
+mkdir -p "$BOARD_RUN_DIR"
+id=$(board_boot_id)
+# Once per boot: a restarted unit doesn't count again.
+if [ -n "$id" ] && grep -q "\"id\":\"$id\"" "$BOARD_RUN_DIR/boot.json" 2>/dev/null; then
+	exit 0
+fi
+
+# The last event of an earlier boot says how that boot ended.
+last=$(cat "$BOARD_RUN_DIR/events.jsonl" "$BOARD_DATA_DIR/events.jsonl" 2>/dev/null |
+	awk -v id="\"boot_id\":\"$id\"" '/^\{"t":[0-9]+,"boot_id":.*\}$/ && index($0, id) == 0 { last = $0 } END { print last }')
+case "$last" in
+'') clean=null ;;
+*'"kind":"shutdown"'*) clean=true ;;
+*) clean=false ;;
+esac
+
+count_file=$BOARD_DATA_DIR/boot-count
+mkdir -p "$BOARD_DATA_DIR" 2>/dev/null && [ -w "$BOARD_DATA_DIR" ] || count_file=$BOARD_RUN_DIR/boot-count
+count=$(cat "$count_file" 2>/dev/null | tr -cd '0-9')
+count=$((${count:-0} + 1))
+printf '%s\n' "$count" > "$count_file.tmp.$$" && mv -f "$count_file.tmp.$$" "$count_file"
+
+slot=$(board_active_slot)
+kernel=${BOARD_UNAME_R:-$(uname -r)}
+printf '{"id":%s,"count":%s,"slot":%s,"kernel":%s,"previous_clean":%s,"at":%s}\n' \
+	"$(board_json_str "$id")" "$count" "$(board_json_str "$slot")" "$(board_json_str "$kernel")" \
+	"$clean" "$(date +%s)" > "$BOARD_RUN_DIR/boot.json.tmp.$$"
+chmod 0644 "$BOARD_RUN_DIR/boot.json.tmp.$$"
+mv -f "$BOARD_RUN_DIR/boot.json.tmp.$$" "$BOARD_RUN_DIR/boot.json"
+
+message="boot $count, slot $slot, kernel $kernel"
+[ "$clean" != false ] || message="$message; the previous boot didn't shut down cleanly"
+board_event boot "$message" "count=$count" "slot=$slot" "kernel=$kernel" "previous_clean=$clean"
+exit 0

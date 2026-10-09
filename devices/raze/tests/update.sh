@@ -175,6 +175,16 @@ grep -q "root=$T/disk/p6 " "$T/disk/p3.d/cmdline.txt" || fail "cmdline B should 
 grep -q "^VERSION_STAGED='2.0'" "$T/disk/p1.d/board-update.env" || fail "the version comes from the image"
 [ "$(cat "$T/post-stage.ran")" = "B 2.0" ] || fail "post-stage hook: $(cat "$T/post-stage.ran" 2>/dev/null)"
 rm "$T/etc/update.d/post-stage"
+events() { cat "$T/data/events.jsonl" 2>/dev/null; }
+events | grep -q '"kind":"update.stage","source":"local","message":"staging an update into slot B"' ||
+	fail "the stage should log who started it: $(events)"
+events | grep -q '"kind":"update.staged","source":"local","message":"staged 2.0 in slot B","data":{"version":"2.0","slot":"B"}' ||
+	fail "the staged event: $(events)"
+grep -q '"started_by":"local"' "$T/run/update.json" || fail "update.json should say who started it: $(cat "$T/run/update.json")"
+grep -q "^[0-9a-f]\{64\}  cmdline.txt\$" "$T/disk/p1.d/board-boot.B.sha256" ||
+	fail "the stage should record slot B's boot hashes: $(cat "$T/disk/p1.d/board-boot.B.sha256" 2>/dev/null)"
+[ "$(cut -c1-64 "$T/disk/p1.d/board-boot.B.sha256" | head -n 1)" = "$(sha256sum < "$T/disk/p3.d/cmdline.txt" | cut -c1-64)" ] ||
+	fail "the recorded hash is of the fixed cmdline.txt"
 
 echo "a failing pre-reboot hook keeps it staged"
 printf '#!/bin/sh\nexit 1\n' > "$T/etc/update.d/pre-reboot"
@@ -209,7 +219,8 @@ update status | grep -q '"state":"trying"' || fail "status on the trial boot: $(
 echo "the bootloader fell back: rolled-back"
 update confirm
 [ "$(state)" = rolled-back ] || fail "state should be rolled-back, is $(state)"
-update cancel >/dev/null
+events | grep -q '"kind":"update.rolled-back","source":"local"' || fail "a rolled-back event: $(events | tail -n 2)"
+BOARD_EVENT_SOURCE=atlas update cancel >/dev/null
 
 echo "stdin works too (zstd), checked at the end"
 : > "$T/disk/p6"
@@ -236,10 +247,15 @@ grep -q '^plain$' "$REBOOTS" || fail "a failed check should reboot plainly"
 grep -q 'boot_partition=2' "$T/disk/p1.d/autoboot.txt" || fail "default should still be slot A"
 [ -e "$T/post-boot.ran" ] || fail "the post-boot hook should run on the trial boot"
 
+events | grep -q '"kind":"update.trial-failed".*"reason":"the health check failed"' ||
+	fail "a failed trial says why: $(events | tail -n 2)"
+
 echo "a healthy trial is kept"
 printf '#!/bin/sh\nexit 0\n' > "$T/etc/update-health"
 UPDATE_CMDLINE_ROOT=6 update confirm
 [ "$(state)" = confirmed ] || fail "state should be confirmed, is $(state)"
+events | tail -n 1 | grep -q '"kind":"update.confirmed","source":"local","message":"kept 2.0 in slot B"' ||
+	fail "a confirmed event: $(events | tail -n 1)"
 [ "$(autoboot)" = "[all] tryboot_a_b=1 boot_partition=3 " ] || fail "autoboot.txt: $(autoboot)"
 UPDATE_CMDLINE_ROOT=6 update status | grep -q '"slot_active":"B","slot_staged":"B","version_active":"2.0"' ||
 	fail "status after confirm: $(cat "$T/run/update.json")"
@@ -271,7 +287,10 @@ if UPDATE_CMDLINE_ROOT=6 UPDATE_REBOOT_PLAIN=false update rollback 2>/dev/null; 
 [ "$(autoboot)" = "[all] tryboot_a_b=1 boot_partition=3 " ] || fail "autoboot.txt: $(autoboot)"
 
 echo "rollback boots the previous confirmed slot"
-UPDATE_CMDLINE_ROOT=6 update rollback
+UPDATE_CMDLINE_ROOT=6 update status | grep -q '"version_previous":"1.0"' || fail "status should name the version to go back to"
+UPDATE_CMDLINE_ROOT=6 BOARD_EVENT_SOURCE=orion update rollback
+events | tail -n 1 | grep -q '"kind":"update.rollback","source":"orion","message":"going back to 1.0 in slot A"' ||
+	fail "a rollback event from Orion: $(events | tail -n 1)"
 [ "$(state)" = rolled-back ] || fail "state should be rolled-back, is $(state)"
 [ "$(autoboot)" = "[all] tryboot_a_b=1 boot_partition=2 " ] || fail "autoboot.txt: $(autoboot)"
 grep -q '^plain$' "$REBOOTS" || fail "rollback should restart plainly"

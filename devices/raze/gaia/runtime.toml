@@ -344,6 +344,45 @@ src = "@self/assets/rootfs/usr/lib/systemd/system/orion-node.service.d/50-board-
 dest = "/usr/lib/systemd/system/orion-node.service.d/50-board-agent.conf"
 origin = "static-asset"
 
+[[stage.files]]
+id = "raze-board-event"
+src = "@self/assets/rootfs/usr/lib/board/event"
+dest = "/usr/lib/board/event"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
+id = "raze-board-boot-record"
+src = "@self/assets/rootfs/usr/lib/board/boot-record"
+dest = "/usr/lib/board/boot-record"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
+id = "raze-board-status"
+src = "@self/assets/rootfs/usr/lib/board/status"
+dest = "/usr/lib/board/status"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
+id = "raze-systemd-system-board-boot-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-boot.service"
+dest = "/usr/lib/systemd/system/board-boot.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-drift-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-drift.service"
+dest = "/usr/lib/systemd/system/board-drift.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-drift-timer"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-drift.timer"
+dest = "/usr/lib/systemd/system/board-drift.timer"
+origin = "static-asset"
+
 [image]
 kind = "buildroot"
 config_overrides = [
@@ -427,4 +466,10 @@ stage_files = [
   "raze-udev-rules-d-60-board-lemnosd-rules",
   "raze-systemd-system-board-agent-service",
   "raze-systemd-system-orion-node-board-agent-dropin",
+  "raze-board-event",
+  "raze-board-boot-record",
+  "raze-board-status",
+  "raze-systemd-system-board-boot-service",
+  "raze-systemd-system-board-drift-service",
+  "raze-systemd-system-board-drift-timer",
 ]

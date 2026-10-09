@@ -45,5 +45,6 @@ set -- $reply
 }
 
 board_log "restarting into USB boot"
+board_event usb-boot "restarting into USB boot (RPIBOOT) for a fresh install"
 $SYNC
 eval "$REBOOT"

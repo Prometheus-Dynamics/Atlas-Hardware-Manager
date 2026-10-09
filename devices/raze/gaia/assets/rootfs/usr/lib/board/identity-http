@@ -2,6 +2,14 @@
 # One HTTP/1.0 exchange on stdin/stdout, started per connection by
 # board-http.socket (Accept=yes). Unauthenticated:
 #   GET|HEAD /.well-known/pd-device  -> 200, the identity JSON
+#   GET|HEAD /status                 -> 200, `status --json` (read-only: the
+#                                       drift part is root's kept result)
+#   GET|HEAD /events?since=<t>&limit=<n>
+#                                    -> 200, the event log (lib.sh
+#                                       board_events_json): events with
+#                                       t >= since (default 0), the newest
+#                                       limit (default 200, at most 2000);
+#                                       400 unless both are whole numbers
 #   POST /actions/<id>               -> 202 when <id> is in BOARD_ACTIONS: drops
 #                                       /run/board/requests/<id>, which a
 #                                       root path unit acts on; 404 otherwise
@@ -52,7 +60,73 @@ done
 
 board_load_env identity.env
 
+query=''
+case "$target" in
+*\?*) query=${target#*\?} ;;
+esac
+
+# The read-only paths answer GET and HEAD only.
+read_only() {
+	case "$method" in
+	GET | HEAD) return 0 ;;
+	esac
+	respond '405 Method Not Allowed' 'text/plain' "method not allowed
+" 'Allow: GET, HEAD'
+	return 1
+}
+
+# Sets since and limit from the query. Only those two keys count, and only
+# as plain decimal numbers; nothing from the query is ever evaluated.
+parse_events_query() {
+	since=0
+	limit=200
+	set -f
+	_ifs=$IFS
+	IFS='&'
+	# shellcheck disable=SC2086
+	set -- $query
+	IFS=$_ifs
+	set +f
+	for kv in "$@"; do
+		k=${kv%%=*}
+		v=${kv#*=}
+		[ "$k" != "$kv" ] || v=''
+		case "$k" in
+		since | limit) ;;
+		*) continue ;;
+		esac
+		case "$v" in
+		'' | *[!0-9]*) return 1 ;;
+		esac
+		[ "${#v}" -le 12 ] || return 1
+		if [ "$k" = since ]; then since=$v; else limit=$v; fi
+	done
+	[ "$limit" -le 2000 ] || limit=2000
+}
+
 case "$path" in
+/status)
+	read_only || exit 0
+	if [ -x "$BOARD_LIB_DIR/status" ] && body=$("$BOARD_LIB_DIR/status" --json) && [ -n "$body" ]; then
+		respond '200 OK' 'application/json' "$body
+"
+	else
+		respond '503 Service Unavailable' 'text/plain' "status unavailable
+"
+	fi
+	exit 0
+	;;
+/events)
+	read_only || exit 0
+	if ! parse_events_query; then
+		respond '400 Bad Request' 'text/plain' "since and limit must be whole numbers
+"
+		exit 0
+	fi
+	respond '200 OK' 'application/json' "$(board_events_json "$since" "$limit")
+"
+	exit 0
+	;;
 /actions/*)
 	action=${path#/actions/}
 	case "$action" in
