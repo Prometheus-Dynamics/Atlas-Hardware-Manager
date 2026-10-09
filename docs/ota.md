@@ -1,11 +1,13 @@
 # Updating running devices (OTA): design draft
 
-Status: draft, revised after Orion's review (its counterpart is Orion's
-`docs/update-recovery.md`). atlas-driver-orion is built against
-Orion v4 (`3cc974e`) and tested with a fake Orion; it waits for Orion's
-operator client as its transport. The device-side writer and agent aren't
-built yet. It covers devices that run a full OS on eMMC
-(Raze today) and leaves microcontrollers (STM32) for their own driver.
+Status: draft, revised after Orion's review (its counterparts are Orion's
+`docs/update-recovery.md` and `docs/device-agent.md`). atlas-driver-orion is
+built against Orion `c22fa42` (control protocol 4) and tested with a fake
+Orion. The device-side writer (`/usr/lib/board/update`) is tested
+off-device, and `board-agent` (crates/board-agent) against a real
+orion-node with a fake writer; neither has run on a board with Orion yet.
+It covers devices that run a full OS on eMMC (Raze today) and leaves
+microcontrollers (STM32) for their own driver.
 
 ## Principles
 
@@ -68,10 +70,38 @@ Settings: `update.env`.
 update status                                # JSON, also /run/board/update.json
 update stage <image> --sha256 <hex>          # check, then copy slot A into the inactive slot
 update stage - --sha256 <hex> [--format xz]  # the same from stdin, checked at the end
+update stage-url <url> --sha256 <hex> --size <bytes>
+                                             # download to /data/board/update/, check, stage
 update apply                                 # set [tryboot] to the staged slot, reboot "0 tryboot"
 update confirm                               # on the trial boot, once healthy: keep it
-update rollback                              # discard a staged update
+update cancel                                # stop a running stage, or forget a staged update
+update rollback [--no-reboot]                # boot the previous confirmed slot again
 ```
+
+Exit status 3 means "refused, nothing changed" (wrong state, or another
+command holds the lock); other failures after staging began are recorded as
+`error`.
+
+- `stage-url` downloads with curl or wget, whichever the image has
+  (`UPDATE_DOWNLOADER` picks one), into `/data/board/update/<sha256>.img`.
+  An interrupted download resumes from its `.part` file; a server that
+  can't resume starts over once. It checks the size (`--size`) and the
+  SHA-256 before staging, removes a download that fails either, and removes
+  the file once staged. An image already staged (same SHA-256) is done.
+  Progress: the download is 0-500 per mille, the stage 500-1000.
+- `update.json` stays current while a stage downloads or copies (every
+  `UPDATE_POLL` seconds), so a reader needs no lock.
+- `cancel`: a running stage records its PID in `/run/board/update.pid`.
+  `cancel` freezes that process tree, ends it, takes the lock, and records
+  `cancelled`; it does the same for a staged update (the inactive slot keeps
+  what was written, unused). It prints `cancelled`, or `idle` when there was
+  nothing to cancel, and refuses once the update is past staging.
+- `rollback` makes `PREVIOUS_SLOT` (the slot the last confirmed update came
+  from) the default again, records `rolled-back`, and restarts plainly. It
+  is refused while staging, on a trial boot, or without a previous slot (a
+  stage overwrites the previous slot, so it is forgotten then). The slot it
+  leaves becomes the previous one, so a second rollback goes forward again.
+  `--no-reboot` only switches (board-agent reports first, then restarts).
 
 - A file (copy it to `/data`; `/run` is RAM) is checked against `--sha256`
   (of the file as given) before anything is written. From stdin, the hash is
@@ -98,22 +128,49 @@ OS hooks, executables in `/etc/board/update.d/`, given `BOARD_UPDATE_SLOT`,
 | `post-boot` | on the trial boot, before the health check | logged |
 | `update-health` (in `/etc/board/`) | on the trial boot | restart into the old slot |
 
-Besides the CLI, the package ships **`board-agent`**, a small daemon in
-the `orion` group that connects to orion-node's local IPC socket and claims
-the node-level actions `update`, `reboot`, and `locate` for Node targets (the
-claim drops on disconnect, and pending actions then fail with "handler
-disconnected"). It runs the same writer and `raze-leds` as the CLI and the
-identity endpoint, and after every boot republishes `status` on Orion's
-status lane. Without orion-node it simply isn't connected; nothing else
-depends on it.
+Besides the CLI, the package ships **`board-agent`** (crates/board-agent,
+`/usr/bin/board-agent`, `board-agent.service`), the device agent of Orion's
+`docs/device-agent.md`. It connects to orion-node's local IPC
+(`/run/orion/control.sock`, `/run/orion/control-stream.sock`; root is let in
+by the drop-in `orion-node.service.d/50-board-agent.conf`) and claims the
+node actions `update`, `update.cancel`, `update.rollback`, `reboot` and
+`locate`:
+
+| Action | What board-agent does |
+|---|---|
+| `update {image_url, sha256, size}` | starts `update stage-url` in the background and succeeds with `phase = "staging"` once the writer holds its lock (a writer refusal rejects it). The same SHA-256 again succeeds again; another image is rejected until cancelled. When the stage ends well it runs `update apply`. |
+| `update.cancel` | `update cancel`: `phase = "cancelled"`, or `"idle"` with nothing to cancel |
+| `update.rollback` | rejected while staging; `update rollback --no-reboot` (rejected without a previous slot), reports `phase = "rebooting"`, then `systemctl reboot` |
+| `reboot` | reports `phase = "rebooting"`, then `systemctl reboot` after `delay_ms` |
+| `locate` | drops the package's request (`/run/board/requests/locate`, which `board-locate.path` turns into the LED ring's locate pattern); `enabled = false` stops `board-locate.service` |
+
+It publishes the writer's state as the `update.*` keys of its node
+(`state`, `version_active`, `version_staged`, `slot_active`, `slot_staged`,
+`progress`, `error`, plus `boot_id` from `/proc/sys/kernel/random/boot_id`)
+after connecting, whenever `update.json` changes, and every 30 s. Without
+orion-node it waits and retries; nothing else depends on it. Stopping it
+stops a stage it started (the stage is in its cgroup); `status` then records
+the interrupted stage as an error. Settings: `BOARD_AGENT_*` in
+`/etc/board/agent.env` or `/data/board/agent.env`. An OS without Orion sets
+`BR2_PACKAGE_BOARD_AGENT=n`.
 
 States, reported in `status` (`state`, `slot_active`, `slot_staged`,
-`version_active`, `version_staged`, `progress` 0..1000, `error`):
+`version_active`, `version_staged`, `progress` 0..1000, `error`), the same
+values as Orion's `update_action::STATE_*`:
 
 ```
-idle -> staging (verify, write inactive slot) -> staged -> trying (rebooted into it)
+idle -> staging (download, verify, write inactive slot) -> staged
+     -> rebooting (apply's restart accepted) -> trying (the trial boot)
      -> confirmed (autoboot.txt now points at it)  |  rolled-back (trial not confirmed)
+staging | staged -> cancelled (update cancel)
+staging -> error (download, checksum or write failed; `error`)
+confirmed -> rebooting -> rolled-back (update rollback)
 ```
+
+`apply` and `rollback` record the boot they were made in: `rebooting` read
+in a later boot is reported as `trying` until `confirm` runs (and `confirm`
+treats it like `trying`), and a rollback reads `rebooting` until the board
+has restarted.
 
 `confirm` runs from `board-update-confirm.service`, after
 `multi-user.target` and an OS-provided health check (`/etc/board/update-health`;
@@ -305,21 +362,26 @@ They map onto the existing steps:
 
 | Atlas step | Writer |
 |------------|--------|
-| Preflight | `status`: compatible model/revision, enough space, not mid-update |
-| Transfer | the device pulls `image_url` from Atlas (Orion), or Atlas copies it over SSH and runs `update stage <file> --sha256` |
-| Apply | `stage` verify + slot write, then `apply` |
-| Reboot | wait for the device to drop and come back (identity endpoint, board_serial) |
-| Confirm | durable state after boot: `update.state` = `confirmed` with the new version → `Verified`; `rolled-back` → `RolledBack` |
+| Preflight | `status`: compatible model/revision, enough space, not mid-update (`staging`, `rebooting`, `trying`) |
+| Transfer | the device pulls `image_url` from Atlas (Orion: `update.state = staging`, progress 0-500), or Atlas copies it over SSH and runs `update stage <file> --sha256` |
+| Apply | `stage` verify + slot write (Orion: progress 500-1000, then `staged`), then `apply` |
+| Reboot | wait for the device to drop and come back (Orion: `rebooting`, then a new `boot_id` in the node's host facts) |
+| Confirm | durable state after boot: `update.state` = `confirmed` with the new version → `Verified`; `rolled-back` → `RolledBack` (Orion: only keys whose `update.boot_id` is the new boot count) |
 
-The outcome is never taken from an action result. The `update` action ends
-`Succeeded` with `{phase: "rebooting", version_staged}` just before the
-reboot, meaning only "staged and apply issued", because action records live
-in orion-node's memory and don't survive it. Reboot and Confirm read durable
-state: the node's host facts (OS/image version, `board_serial`) and the
-status keys board-agent republishes after boot. Atlas keeps its Orion
-capability behind one interface, so moving from actions to Orion's later
-durable UpdateIntent/UpdateStatus records (milestone U3) changes nothing in
-these steps.
+The outcome is never taken from an action result. The `update` action is
+asynchronous: it ends `Succeeded` with `phase = "staging"` once the board has
+started the download and stage, because a large image can outlast any action
+deadline, and action records live in orion-node's memory and don't survive
+the reboot. Everything after that is read from durable state: the `update.*`
+keys board-agent keeps published and the node's host facts (boot id, OS
+version, `board_serial`). A stage that fails ends the job with the board's
+`update.error`; cancelling the job while the board stages sends
+`update.cancel`. When a node's agent publishes `update.state`, Atlas also
+offers the device actions `update.cancel` ("Cancel update") and
+`update.rollback` ("Go back to the previous version", confirmed first).
+Atlas keeps its Orion capability behind one interface, so moving from
+actions to Orion's later durable UpdateIntent/UpdateStatus records
+(milestone U3) changes nothing in these steps.
 
 Concurrency is `Parallel`: each board updates itself, so staged rollout
 (one board first) and bulk updates work as they do today.
@@ -348,13 +410,17 @@ gadget, and puts the fan and ring back as they were (devices/README.md).
 
 Atlas does not need Orion to understand partitions; it needs:
 
-- **Intent:** `ActionRequest { target: Node, action: "update", args: { image_url, sha256, size } }`.
-- **Progress while it runs:** status-lane keys `action.<action_id>.state|progress|error`
-  under the action's target subject (names to be confirmed with v4).
+- **Intent:** `ActionRequest { target: Node, action: "update", args: { image_url, sha256, size } }`,
+  plus `update.cancel` and `update.rollback` (no args).
+- **Progress while it runs:** `update.state` and `update.progress` under the
+  Node subject; board-agent also mirrors each action into
+  `action.<action_id>.state|error`.
 - **Durable status across reboots:** stable keys under the Node subject,
-  republished by board-agent after boot: `update.state`,
-  `update.version_active`, `update.slot_active`, `update.error`.
-- **Action result:** "staged and apply issued" only (see above).
+  republished by board-agent after every boot, on change and every 30 s:
+  `update.state`, `update.version_active`, `update.version_staged`,
+  `update.slot_active`, `update.slot_staged`, `update.progress`,
+  `update.error`, `update.boot_id`.
+- **Action result:** "staging started" only (see above).
 - **Facts:** `board_serial` raw from `/proc/device-tree/serial-number`
   (DMI as a fallback), `board_model`, and `machine_id`. Atlas normalizes
   `board_serial` to its matching rule (the last 8 hex digits, lowercase) to

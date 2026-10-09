@@ -83,7 +83,7 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
 
 ## Next
 
-- [x] atlas-driver-orion against Orion v4 (3cc974e): Orion adds readings,
+- [x] atlas-driver-orion against Orion v4 (c22fa42): Orion adds readings,
       locate/reboot, and A/B updates to the device with the same board
       serial (capability sources in the core); tested against a fake Orion.
 - [ ] Orion transport: Orion's embeddable operator client (signed
@@ -98,7 +98,10 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
 - [x] SSH update transport for boards listing `ab-tryboot`.
 - [ ] Verify A/B on a real Raze with HeliOS's PhotonVision image (they test
       stage/apply/confirm/rollback first).
-- [ ] `board-agent` for Orion-driven updates.
+- [x] `board-agent` for Orion-driven updates (crates/board-agent, Orion
+      c22fa42; tested against a real orion-node with a fake writer).
+- [ ] Run board-agent on a Raze with orion-node: a full Orion update,
+      cancel and rollback, and the Buildroot package in a Gaia build.
 - [ ] HeliOS secured mode (helios-api `docs/docs/api/http.md`): when
       `/v1/identity` reports `helios.auth.mode = secured`, send
       `Authorization: Bearer helios_<64 hex>` on everything but health,
