@@ -8,7 +8,10 @@
 # `lemnosd-env`), so lemnosd's updating animation follows the package's update
 # writer (/run/board/update.json). The board definition
 # (/etc/lemnos/board.toml) and the udev rules lemnosd needs are staged by
-# runtime.toml; both are generated or kept with the package.
+# runtime.toml; both are generated or kept with the package. Lemnos's
+# optional lemnos-orion layer adds the Orion bridge (/usr/bin/lemnos-orion,
+# lemnos-orion.service as the `lemnos` user); runtime.toml stages its drop-in
+# and enables it in 70-board.preset.
 #
 # The Lemnos source. Gaia lets only local config files (the OS build, or a
 # layer it imports by plain path) declare an import source, so the OS build
@@ -19,7 +22,7 @@
 #   id = "lemnos"
 #   kind = "git"
 #   repo = "https://github.com/Prometheus-Dynamics/Lemnos.git"
-#   rev = "cca50f73950f66c5606f1573a5c4b0d429bb963b"
+#   rev = "e5d5b3b42837d2c7b537d0a24dd16a909a9110b5"
 #
 # Without it, resolving this layer fails and names the source `lemnos`. For
 # local development: --set sources.lemnos.path=/path/to/Lemnos.
@@ -27,6 +30,10 @@ description = "Raze hardware service: Lemnos's lemnosd layer, with the package's
 
 imports = [
   { source = "lemnos", path = "packaging/gaia/lemnosd.toml" },
+  # The bridge: lemnosd's devices as Orion resources (Lemnos docs/orion.md),
+  # so Atlas reads them live and sets their controls through Orion. It
+  # retries without orion-node; the drop-in below lets it in.
+  { source = "lemnos", path = "packaging/gaia/lemnos-orion.toml" },
 ]
 
 # The `lemnos` user, from Lemnos's own Buildroot users table (the same user
@@ -41,6 +48,12 @@ kind = "buildroot"
 config_overrides = [
   ["BR2_RAZE_LEMNOS_USERS_TABLE", "\"${source.lemnos.path}/packaging/buildroot/lemnos-users.table\""],
 ]
+
+# The image is fed by id (board-agent.toml lists ids), so the bridge's items
+# are named here; lemnosd.toml names its own.
+[image.feed]
+install_entries = ["install-lemnos-orion"]
+stage_services = ["lemnos-orion-service"]
 
 # Replaces Lemnos's item of the same id (a later layer replaces the whole
 # item; this file's own items come after its imports).

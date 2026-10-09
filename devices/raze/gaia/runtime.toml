@@ -345,6 +345,12 @@ dest = "/usr/lib/systemd/system/orion-node.service.d/50-board-agent.conf"
 origin = "static-asset"
 
 [[stage.files]]
+id = "raze-systemd-system-lemnos-orion-board-dropin"
+src = "@self/assets/rootfs/usr/lib/systemd/system/lemnos-orion.service.d/50-board.conf"
+dest = "/usr/lib/systemd/system/lemnos-orion.service.d/50-board.conf"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-board-event"
 src = "@self/assets/rootfs/usr/lib/board/event"
 dest = "/usr/lib/board/event"
@@ -475,6 +481,7 @@ stage_files = [
   "raze-udev-rules-d-60-board-lemnosd-rules",
   "raze-systemd-system-board-agent-service",
   "raze-systemd-system-orion-node-board-agent-dropin",
+  "raze-systemd-system-lemnos-orion-board-dropin",
   "raze-board-event",
   "raze-board-boot-record",
   "raze-board-status",

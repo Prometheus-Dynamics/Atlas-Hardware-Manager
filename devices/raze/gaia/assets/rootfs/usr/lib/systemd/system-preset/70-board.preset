@@ -14,6 +14,7 @@ enable serial-getty@.service ttyGS0 ttyGS1
 enable board-update-confirm.service
 enable board-update-link.service
 enable board-agent.service
+enable lemnos-orion.service
 enable board-boot.service
 enable board-drift.timer
 enable board-health.timer
