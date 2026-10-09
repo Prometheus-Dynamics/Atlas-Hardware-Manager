@@ -1,4 +1,7 @@
-//! Actions the on-device agent claims through Orion: `locate` and `reboot`.
+//! Actions the on-device agent claims through Orion: `locate` and `reboot`,
+//! and, when the node's agent handles updates, `update.cancel` (stop a
+//! download or stage, or forget a staged update) and `update.rollback`
+//! (restart into the previous confirmed version).
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -8,7 +11,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use atlas_driver::{ActionsCapability, DeviceAction, DriverError, Identity};
 use orion_control_plane::{
-    ActionRequest, ActionResult, ActionState, ActionTarget, TypedConfigValue,
+    ActionRequest, ActionResult, ActionState, ActionTarget, TypedConfigValue, action_names,
 };
 use orion_core::NodeId;
 
@@ -89,18 +92,25 @@ pub(crate) async fn run_and_wait(
 pub(crate) struct OrionActions {
     transport: Arc<dyn OrionTransport>,
     node: NodeId,
+    /// The node's agent publishes the update keys, so it also claims
+    /// `update.cancel` and `update.rollback`.
+    updates: bool,
 }
 
 impl OrionActions {
-    pub(crate) fn new(transport: Arc<dyn OrionTransport>, node: NodeId) -> Self {
-        Self { transport, node }
+    pub(crate) fn new(transport: Arc<dyn OrionTransport>, node: NodeId, updates: bool) -> Self {
+        Self {
+            transport,
+            node,
+            updates,
+        }
     }
 }
 
 #[async_trait]
 impl ActionsCapability for OrionActions {
     fn actions(&self, _device: &Identity) -> Vec<DeviceAction> {
-        vec![
+        let mut actions = vec![
             DeviceAction {
                 id: "locate".into(),
                 label: "Find it".into(),
@@ -111,11 +121,32 @@ impl ActionsCapability for OrionActions {
                 label: "Restart".into(),
                 destructive: false,
             },
-        ]
+        ];
+        if self.updates {
+            actions.extend([
+                DeviceAction {
+                    id: action_names::UPDATE_CANCEL.into(),
+                    label: "Cancel update".into(),
+                    destructive: false,
+                },
+                DeviceAction {
+                    id: action_names::UPDATE_ROLLBACK.into(),
+                    label: "Go back to the previous version".into(),
+                    destructive: true,
+                },
+            ]);
+        }
+        actions
     }
 
     async fn run_action(&self, _device: &Identity, action_id: &str) -> Result<(), DriverError> {
-        if !matches!(action_id, "locate" | "reboot") {
+        let known = matches!(action_id, "locate" | "reboot")
+            || (self.updates
+                && matches!(
+                    action_id,
+                    action_names::UPDATE_CANCEL | action_names::UPDATE_ROLLBACK
+                ));
+        if !known {
             return Err(DriverError::Unsupported(format!("no action {action_id}")));
         }
         let request = request(&self.node, action_id, BTreeMap::new());

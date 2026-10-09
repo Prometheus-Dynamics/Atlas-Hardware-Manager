@@ -64,7 +64,7 @@ const orion: OrionConnection = {
   operator_id: "operator:atlas-workstation",
   fingerprint: "sha256:9c41b7e2d0f8a3c65e1b2d4f7a8c9e01",
   enroll_command:
-    "orionctl operators enroll operator:atlas-workstation --fingerprint sha256:9c41b7e2d0f8a3c65e1b2d4f7a8c9e01 --action 'update' --action 'reboot' --action 'locate'",
+    "orionctl operators enroll operator:atlas-workstation --fingerprint sha256:9c41b7e2d0f8a3c65e1b2d4f7a8c9e01 --action 'update' --action 'update.cancel' --action 'update.rollback' --action 'reboot' --action 'locate'",
   connected: false,
   enrolled: false,
   node_id: null,
