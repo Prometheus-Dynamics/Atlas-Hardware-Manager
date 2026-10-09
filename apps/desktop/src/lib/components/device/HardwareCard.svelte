@@ -15,7 +15,7 @@
     deviceKey,
   }: {
     device: HardwareDevice;
-    seriesOf: (reading: string) => number[];
+    seriesOf: (reading: string) => { values: number[]; times: number[] };
     /** The board, when its devices take commands; null shows the controls' values only. */
     deviceKey: DeviceKey | null;
   } = $props();

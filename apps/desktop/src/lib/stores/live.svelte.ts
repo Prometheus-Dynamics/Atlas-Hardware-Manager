@@ -20,6 +20,8 @@ class LiveStore {
   metrics = new SvelteMap<string, Metric[]>();
   /** Recent values per device key, then metric id, oldest first. */
   history = new SvelteMap<string, Record<string, number[]>>();
+  /** When each poll answered, per device key (ms), oldest first; a series lines up with its end. */
+  times = new SvelteMap<string, number[]>();
   errors = new SvelteMap<string, string>();
 
   private watchers = new Map<string, number>();
@@ -64,6 +66,11 @@ class LiveStore {
     return this.history.get(id)?.[metricId] ?? [];
   }
 
+  /** When the device's recent readings were taken; a series' values line up with its end. */
+  seriesTimes(id: string): number[] {
+    return this.times.get(id) ?? [];
+  }
+
   private ensureTimer() {
     if (this.timer || typeof window === "undefined") return;
     this.timer = setInterval(() => void this.poll([...this.watchers.keys()]), POLL_MS);
@@ -86,6 +93,7 @@ class LiveStore {
           const next: Record<string, number[]> = {};
           for (const m of readings) next[m.id] = [...(past[m.id] ?? []), m.value].slice(-HISTORY);
           this.history.set(id, next);
+          this.times.set(id, [...(this.times.get(id) ?? []), Date.now()].slice(-HISTORY));
         } catch (error) {
           this.errors.set(id, errorText(error));
         } finally {

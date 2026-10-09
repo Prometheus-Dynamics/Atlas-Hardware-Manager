@@ -8,9 +8,9 @@
   let {
     label,
     reading,
-    series = [],
+    series = { values: [], times: [] },
     bare = false,
-  }: { label: string; reading: HardwareReading; series?: number[]; bare?: boolean } = $props();
+  }: { label: string; reading: HardwareReading; series?: { values: number[]; times: number[] }; bare?: boolean } = $props();
 
   const shown = $derived(formatValue(reading.value));
 </script>
@@ -20,7 +20,12 @@
   <p class="value">
     {shown}{#if reading.value !== null && reading.unit}<span class="unit">{reading.unit}</span>{/if}
   </p>
-  <div class="mt-1.5"><Sparkline values={series} height={22} /></div>
+  <div class="mt-1.5"><Sparkline
+      values={series.values}
+      times={series.times}
+      format={(value) => (reading.unit ? `${formatValue(value)} ${reading.unit}` : formatValue(value))}
+      height={22}
+    /></div>
 </div>
 
 <style>

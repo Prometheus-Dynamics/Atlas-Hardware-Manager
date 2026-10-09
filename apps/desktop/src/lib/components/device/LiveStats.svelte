@@ -34,7 +34,7 @@
     <div class="tiles">
       {#each metrics as metric, i (metric.id)}
         <div in:rise={{ delay: stagger(i) }}>
-          <MetricTile {metric} series={live.series(id, metric.id)} cores={metric.id === "cpu" ? cores : []} />
+          <MetricTile {metric} series={live.series(id, metric.id)} times={live.seriesTimes(id)} cores={metric.id === "cpu" ? cores : []} />
         </div>
       {/each}
     </div>

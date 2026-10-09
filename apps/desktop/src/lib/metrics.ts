@@ -75,6 +75,19 @@ export function metricValue(metric: Metric): { value: string; unit: string } {
   return { value: text, unit: metric.unit ?? "" };
 }
 
+/** Milliseconds per frame at `fps`: "16.9 ms". */
+export const frameTime = (fps: number) => `${(1000 / fps).toFixed(1)} ms`;
+
+/**
+ * The line under a reading: the device's own raw numbers, or for a frame
+ * rate the time per frame it means.
+ */
+export function metricDetail(metric: Metric): string | null {
+  if (metric.detail) return metric.detail;
+  if (metric.id === "fps" && metric.value > 0) return `${frameTime(metric.value)} per frame`;
+  return null;
+}
+
 /** Per-core CPU readings (`cpu.core.<n>`), shown inside the CPU tile. */
 export const CORE_PREFIX = "cpu.core.";
 export const isCore = (metric: Metric) => metric.id.startsWith(CORE_PREFIX);

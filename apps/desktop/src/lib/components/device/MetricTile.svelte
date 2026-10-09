@@ -10,14 +10,38 @@
   import Ring from "#lib/components/common/Ring.svelte";
   import Sparkline from "#lib/components/common/Sparkline.svelte";
   import { coreView } from "#lib/stores/coreView.svelte.ts";
-  import { isTextMetric, metricDecimals, metricFraction, metricIcon, metricTone, metricValue, toneColor } from "#lib/metrics.ts";
+  import {
+    frameTime,
+    isTextMetric,
+    metricDecimals,
+    metricDetail,
+    metricFraction,
+    metricIcon,
+    metricTone,
+    metricValue,
+    toneColor,
+  } from "#lib/metrics.ts";
 
-  let { metric, series = [], cores = [] }: { metric: Metric; series?: number[]; cores?: Metric[] } = $props();
+  let {
+    metric,
+    series = [],
+    times = [],
+    cores = [],
+  }: { metric: Metric; series?: number[]; times?: number[]; cores?: Metric[] } = $props();
+
+  /** A past reading exactly (up to 2 decimals), for the trend's hover label. */
+  const format = (value: number) => {
+    if (isTextMetric(metric)) return metricValue({ ...metric, value }).value;
+    const text = value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const shown = metric.unit ? `${text} ${metric.unit}` : text;
+    return metric.id === "fps" && value > 0 ? `${shown} · ${frameTime(value)}` : shown;
+  };
 
   const tone = $derived(metricTone(metric));
   const color = $derived(toneColor(tone));
   const fraction = $derived(metricFraction(metric));
   const shown = $derived(metricValue(metric));
+  const detail = $derived(metricDetail(metric));
   const trend = $derived(metric.id !== "uptime" && series.length > 1);
 </script>
 
@@ -49,8 +73,8 @@
       </button>
     {/if}
   </div>
-  {#if metric.detail}
-    <p class="detail mt-1.5 truncate" title={metric.detail}>{metric.detail}</p>
+  {#if detail}
+    <p class="detail mt-1.5 truncate" title={detail}>{detail}</p>
   {/if}
   {#if cores.length > 0 && coreView.perCore}
     <div class="cores mt-auto pt-2" role="list" aria-label="Each core">
@@ -61,7 +85,7 @@
       {/each}
     </div>
   {:else if trend}
-    <div class="mt-auto pt-2"><Sparkline values={series} {color} height={26} /></div>
+    <div class="mt-auto pt-2"><Sparkline values={series} {times} {format} {color} height={26} /></div>
   {/if}
 </div>
 

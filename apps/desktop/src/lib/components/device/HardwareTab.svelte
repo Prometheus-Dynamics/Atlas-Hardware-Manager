@@ -19,6 +19,8 @@
   } = $props();
 
   const history = new SvelteMap<string, number[]>();
+  /** When each sample was read (the snapshot's `at`, ms), per reading. */
+  const times = new SvelteMap<string, number[]>();
   /** The `at` of the last snapshot sampled. */
   let sampled = 0;
 
@@ -32,6 +34,7 @@
           if (reading.value === null) continue;
           const key = sampleKey(device.id, reading.name);
           history.set(key, appendSample(history.get(key), reading.value));
+          times.set(key, appendSample(times.get(key), snap.at * 1000));
         }
       }
     });
@@ -42,7 +45,10 @@
 
 <div class="flex flex-col gap-4">
   {#each hardware.devices as device (device.id)}
-    <HardwareCard {device} {deviceKey} seriesOf={(reading) => history.get(sampleKey(device.id, reading)) ?? []} />
+    <HardwareCard {device} {deviceKey} seriesOf={(reading) => ({
+        values: history.get(sampleKey(device.id, reading)) ?? [],
+        times: times.get(sampleKey(device.id, reading)) ?? [],
+      })} />
   {/each}
   <p class="text-[12px] text-fg-faint">Read {ago} s ago</p>
 </div>

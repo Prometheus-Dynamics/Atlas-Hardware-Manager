@@ -1,6 +1,7 @@
 <script lang="ts">
   // A trend line. Points sit at fixed spacing (`capacity` across), newest at
-  // the right; each reading redraws it once, with no animation.
+  // the right; each reading redraws it once, with no animation. Hovering
+  // shows the nearest point's exact value and, with `times`, when it was read.
 
   let {
     values,
@@ -9,8 +10,14 @@
     capacity = 60,
     min,
     max,
+    times = [],
+    format = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 3 }),
   }: {
     values: number[];
+    /** When each value was read (ms since the epoch), oldest first, aligned to the newest value. */
+    times?: number[];
+    /** A value as text with its unit, for the hover label. */
+    format?: (value: number) => string;
     color?: string;
     height?: number;
     /** Samples across the full width. */
@@ -53,9 +60,32 @@
   });
   const area = $derived(line ? `${line} L${W},${height} L${points[0][0]},${height} Z` : "");
   const last = $derived(points.at(-1));
+
+  let wrap = $state<HTMLDivElement>();
+  /** The hovered point: its index and where it is on screen. */
+  let hover = $state<{ index: number; x: number; left: number; top: number } | null>(null);
+
+  function move(event: PointerEvent) {
+    if (!wrap || values.length === 0) return;
+    const box = wrap.getBoundingClientRect();
+    const x = ((event.clientX - box.left) / box.width) * W;
+    const index = Math.min(values.length - 1, Math.round(values.length - 1 - (W - x) / step));
+    if (index < 0) {
+      hover = null;
+      return;
+    }
+    const [px, py] = points[index];
+    hover = { index, x: px, left: box.left + (px / W) * box.width, top: box.top + py };
+  }
+
+  const hoverTime = $derived.by(() => {
+    if (!hover) return null;
+    const t = times[times.length - (values.length - hover.index)];
+    return t === undefined ? null : new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  });
 </script>
 
-<div class="wrap" style="height: {height}px">
+<div class="wrap" style="height: {height}px" bind:this={wrap} onpointermove={move} onpointerleave={() => (hover = null)} role="presentation">
   <!-- A faint baseline, so a fresh trend reads as "filling in", not broken. -->
   <span class="base" style="background: {color}"></span>
   <div>
@@ -72,7 +102,13 @@
       {/if}
     </svg>
   </div>
-  {#if last}
+  {#if hover}
+    <span class="guide" style="left: {(hover.x / W) * 100}%; background: {color}"></span>
+    <span class="dot hover-dot" style="left: {(hover.x / W) * 100}%; top: {points[hover.index][1]}px; background: {color}"></span>
+    <div class="tip glass-layer" style="left: {hover.left}px; top: {hover.top}px" role="tooltip">
+      <span class="tip-value">{format(values[hover.index])}</span>{#if hoverTime}<span class="tip-time">{hoverTime}</span>{/if}
+    </div>
+  {:else if last}
     <span class="dot" style="top: {last[1]}px; background: {color}; box-shadow: 0 0 0 3px color-mix(in srgb, {color} 25%, transparent)"></span>
   {/if}
 </div>
@@ -90,6 +126,42 @@
     bottom: 0;
     height: 1px;
     opacity: 0.18;
+  }
+  .guide {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    opacity: 0.45;
+    pointer-events: none;
+  }
+  .hover-dot {
+    right: auto !important;
+    margin: -2.5px 0 0 -2.5px !important;
+    pointer-events: none;
+  }
+  /* Fixed, so the tile's clipping doesn't cut it off. */
+  .tip {
+    position: fixed;
+    z-index: 60;
+    transform: translate(-50%, calc(-100% - 10px));
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 4px 8px;
+    border-radius: 7px;
+    white-space: nowrap;
+    pointer-events: none;
+    font-variant-numeric: tabular-nums;
+  }
+  .tip-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .tip-time {
+    font-size: 11px;
+    color: var(--fg-faint);
   }
   .dot {
     position: absolute;
