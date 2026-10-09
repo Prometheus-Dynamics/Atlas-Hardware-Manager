@@ -4,32 +4,39 @@
 #   selftest [--interactive] [--json]
 #
 # Checks, each ok, skip or fail with a message:
-#   leds      /dev/leds0 takes frames. --interactive also sweeps red, green,
+#   leds      the ring is there: lemnosd has it available, or (sysfs backend)
+#             /dev/leds0 takes frames. --interactive also sweeps red, green,
 #             blue and the W byte (dropped by this 24-bit ring), walks one LED
 #             round the ring by index (the manifest's offset applied), and asks
 #             on the terminal what was seen.
-#   fan       steps the pwm-fan cooling device through its states, reads the
-#             duty (and rpm, with a tachometer) back, then hands the fan back
-#             to the thermal governor.
+#   fan       steps the fan through its cooling states' duties, reads the duty
+#             (and rpm, with a tachometer) back, then hands the fan back to the
+#             thermal governor (lemnosd's hand-back, or the sysfs backend's).
 #   camera    the sensor's I2C client is bound to its driver (which checked the
 #             chip id), and rp1-cfe, media-ctl or libcamera's `cam -l` see it.
-#   i2c       the manifest's I2C devices answer (i2cdetect; skipped without it
-#             unless a kernel driver owns the address).
+#   i2c       the manifest's I2C devices answer on their bus (found by its
+#             device-tree selector, else its number), and their chip id
+#             registers read what the manifest says (i2cget). With lemnosd,
+#             a device its driver has available counts as checked (the driver
+#             reads the chip id), and the BMM150, which boots suspended, is
+#             left to it; without lemnosd its power bit is set for the read
+#             and put back.
 #   watchdog  /dev/watchdog0 exists and systemd's RuntimeWatchdogUSec is set.
 #   gadget    the USB gadget is bound to its controller and usbbr0 is up with
 #             an address.
 #
 # --json prints one JSON object (format 1):
 #   {"version":1,"board_serial":..,"model":..,"package_version":..,"at":<unix s>,
-#    "interactive":false,"ok":true,"checks":[{"id":..,"status":"ok|skip|fail",
-#    "message":..,"data":{..}}]}
+#    "interactive":false,"backend":"lemnosd|sysfs","ok":true,"checks":[{"id":..,
+#    "status":"ok|skip|fail","message":..,"data":{..}}]}
 # The report is also written to /run/board/selftest.json. With --json the
 # exit status is 0 whenever a report was made (read "ok"); without it, 1 when a
 # check failed. Root only. The fan and the LED ring are put back as they were
 # on exit, also when interrupted.
 #
-# Hardware access goes through hw.sh (BOARD_HW_BACKEND names another backend
-# with the same hw_* functions). Facts come from hardware.env and
+# Hardware access goes through hw.sh and its backend (BOARD_HW_BACKEND:
+# lemnosd, the default when lemnos-ctl is installed, or sysfs; a path names a
+# replacement backend file). Facts come from hardware.env and
 # leds.env, generated from the package manifest. Test hooks: the paths in
 # lib.sh and hw.sh, BOARD_SELFTEST_ALLOW_USER=1, SELFTEST_TTY_IN/SELFTEST_TTY_OUT
 # (the operator's terminal), SELFTEST_FAN_SETTLE, SELFTEST_LED_STEP and
@@ -39,8 +46,15 @@ set -u
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 # shellcheck source=lib.sh
 . "$BOARD_LIB_DIR/lib.sh"
+case "${BOARD_HW_BACKEND:-}" in
+*/*) . "$BOARD_HW_BACKEND" ;;
 # shellcheck source=hw.sh
-. "${BOARD_HW_BACKEND:-$BOARD_LIB_DIR/hw.sh}"
+*) . "$BOARD_LIB_DIR/hw.sh" ;;
+esac
+# lemnosd client for the fan and the test frames: board.toml lets it set the
+# fan's duty, and its LED frames go above other applications'.
+HW_LEMNOS_CLIENT=board-selftest
+HW_LEMNOS_PRIORITY=100
 board_load_env board-package.env
 # The USB gadget's settings, read only: which gadget and bridge to look at.
 board_load_env usb-gadget.env
@@ -57,7 +71,7 @@ for arg in "$@"; do
 	--json) json=1 ;;
 	--interactive) interactive=1 ;;
 	-h | --help)
-		sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
+		sed -n '2,43p' "$0" | sed 's/^# \{0,1\}//'
 		exit 0
 		;;
 	*)
@@ -83,21 +97,13 @@ LEDS_TOUCHED=0
 FAN_TOUCHED=0
 FAN_ORIG=''
 
-restore_leds() {
-	if [ -r "$BOARD_RUN_DIR/leds.state" ] && [ -x "$BOARD_LIB_DIR/raze-leds" ]; then
-		"$BOARD_LIB_DIR/raze-leds" refresh 2>/dev/null && return 0
-	fi
-	hw_leds_fill 0,0,0,0 2>/dev/null || true
-}
-
 cleanup() {
 	if [ "$FAN_TOUCHED" = 1 ]; then
-		[ -z "$FAN_ORIG" ] || hw_fan_set_state "$FAN_ORIG" 2>/dev/null || true
-		hw_fan_release
+		hw_fan_release "$FAN_ORIG" || true
 		FAN_TOUCHED=0
 	fi
 	if [ "$LEDS_TOUCHED" = 1 ]; then
-		restore_leds
+		hw_leds_release
 		LEDS_TOUCHED=0
 	fi
 	rmdir "$LOCK" 2>/dev/null || true
@@ -134,12 +140,8 @@ ask() {
 	done
 }
 
-# Item <n> (from 1) of the remaining arguments.
 nth() {
-	_n=$1
-	[ "$_n" -lt "$#" ] || return 0
-	shift "$_n"
-	printf '%s' "${1:-}"
+	_hw_nth "$@"
 }
 
 js() {
@@ -169,21 +171,38 @@ result() {
 # ---------------------------------------------------------------------------
 
 check_leds() {
-	dev=$(hw_leds_device)
 	count=$(hw_leds_count)
-	data="{\"device\":$(js "${RAZE_LEDS_DEVICE:-/dev/leds0}"),\"count\":$count,\"offset\":${RAZE_LEDS_OFFSET:-0},\"direction\":${RAZE_LEDS_DIRECTION:-1},\"wire_format\":$(js "${HW_LEDS_WIRE:-}"),\"interactive\":$([ "$interactive" = 1 ] && echo true || echo false)"
-	if [ ! -e "$dev" ]; then
+	status=$(hw_leds_status)
+	data="{\"device\":$(js "${RAZE_LEDS_DEVICE:-/dev/leds0}"),\"count\":$count,\"offset\":${RAZE_LEDS_OFFSET:-0},\"direction\":${RAZE_LEDS_DIRECTION:-1},\"wire_format\":$(js "${HW_LEDS_WIRE:-}"),\"interactive\":$([ "$interactive" = 1 ] && echo true || echo false),\"backend\":$(js "$HW_BACKEND"),\"status\":$(js "$status")"
+	if [ "$HW_BACKEND" = lemnosd ]; then
+		data="$data,\"lemnosd_device\":$(js "$HW_LEMNOS_RING")"
+		case "$status" in
+		available) ;;
+		no-service)
+			result leds fail "lemnosd doesn't answer, so the ring can't be driven (is lemnosd.service running?)" "$data}"
+			return
+			;;
+		*)
+			result leds fail "lemnosd reports the ring ($HW_LEMNOS_RING) $status: is ${RAZE_LEDS_DEVICE:-/dev/leds0} there (the ws2812-pio overlay; raze-leds-reprobe.service retries it) and in board.toml?" "$data}"
+			return
+			;;
+		esac
+		if [ "$interactive" = 0 ]; then
+			result leds ok "lemnosd has the ring ($HW_LEMNOS_RING on ${RAZE_LEDS_DEVICE:-/dev/leds0}) available; no frame sent (--interactive tests it)" "$data,\"frame\":\"service\"}"
+			return
+		fi
+	elif [ "$status" = missing ]; then
 		result leds fail "${RAZE_LEDS_DEVICE:-/dev/leds0} is missing: the ws2812-pio overlay or its driver didn't load (raze-leds-reprobe.service retries it)" "$data}"
 		return
 	fi
 	if [ "$interactive" = 0 ]; then
-		if [ -r "$BOARD_RUN_DIR/leds.state" ] && [ -w "$dev" ]; then
+		if [ -r "$BOARD_RUN_DIR/leds.state" ] && [ "$status" = available ]; then
 			if "$BOARD_LIB_DIR/raze-leds" refresh 2>/dev/null; then
 				result leds ok "${RAZE_LEDS_DEVICE:-/dev/leds0} takes frames (redrew the ring's current state)" "$data,\"frame\":\"redrawn\"}"
 			else
 				result leds fail "writing a frame to ${RAZE_LEDS_DEVICE:-/dev/leds0} failed" "$data,\"frame\":\"failed\"}"
 			fi
-		elif hw_leds_open; then
+		elif [ "$status" = available ]; then
 			result leds ok "${RAZE_LEDS_DEVICE:-/dev/leds0} opens for writing; no frame sent, since raze-leds has no state and another program may own the ring (--interactive tests it)" "$data,\"frame\":\"opened\"}"
 		else
 			result leds fail "${RAZE_LEDS_DEVICE:-/dev/leds0} can't be opened for writing" "$data,\"frame\":\"failed\"}"
@@ -197,8 +216,8 @@ check_leds() {
 	for step in red:255,0,0,0 green:0,255,0,0 blue:0,0,255,0 w:0,0,0,255; do
 		name=${step%%:*}
 		if ! hw_leds_fill "${step#*:}"; then
-			result leds fail "writing a frame to ${RAZE_LEDS_DEVICE:-/dev/leds0} failed" "$data,\"frame\":\"failed\"}"
-			restore_leds
+			result leds fail "writing a frame to $(hw_leds_name) failed" "$data,\"frame\":\"failed\"}"
+			hw_leds_release
 			LEDS_TOUCHED=0
 			return
 		fi
@@ -224,7 +243,7 @@ check_leds() {
 	ask "LED 0 lit green, then a blue LED walked once round the ring from beside it. Did it pass every LED once, in order, with no gaps?"
 	answers="$answers,\"walk\":\"$ANSWER\""
 	[ "$ANSWER" != no ] || bad="$bad walk"
-	restore_leds
+	hw_leds_release
 	LEDS_TOUCHED=0
 	data="$data,\"frame\":\"swept\",\"answers\":{$answers}}"
 	if [ -n "$bad" ]; then
@@ -238,13 +257,13 @@ check_leds() {
 
 check_fan() {
 	if ! cdev=$(hw_fan_cdev); then
-		result fan fail "no ${HW_FAN_COOLING_TYPE:-pwm-fan} cooling device: the raze-fan overlay didn't load" '{}'
+		result fan fail "$(hw_fan_missing)" "{\"backend\":$(js "$HW_BACKEND")}"
 		return
 	fi
 	max=$(hw_fan_max_state 2>/dev/null)
 	FAN_ORIG=$(hw_fan_get_state 2>/dev/null)
 	levels=${HW_FAN_LEVELS:-}
-	data="{\"cooling_device\":$(js "${cdev##*/}"),\"max_state\":$(jn "$max"),\"state_before\":$(jn "$FAN_ORIG")"
+	data="{\"backend\":$(js "$HW_BACKEND"),\"cooling_device\":$(js "${cdev##*/}"),\"max_state\":$(jn "$max"),\"state_before\":$(jn "$FAN_ORIG")"
 	case "$max" in
 	'' | *[!0-9]*)
 		result fan fail "can't read the fan's cooling states" "$data}"
@@ -279,10 +298,11 @@ check_fan() {
 		fi
 		s=$((s + 1))
 	done
-	hw_fan_set_state "$FAN_ORIG" 2>/dev/null || true
-	hw_fan_release
+	released=true
+	hw_fan_release "$FAN_ORIG" || released=false
 	FAN_TOUCHED=0
-	data="$data,\"levels\":[$(printf '%s' "$levels" | tr ' ' ',')],\"steps\":[$steps],\"tachometer\":$tach}"
+	data="$data,\"levels\":[$(printf '%s' "$levels" | tr ' ' ',')],\"steps\":[$steps],\"tachometer\":$tach,\"handed_back\":$released}"
+	[ "$released" = true ] || mismatch="$mismatch the hand-back to the thermal governor failed;"
 	nlevels=$(set -- $levels; echo $#)
 	if [ "$((max + 1))" != "$nlevels" ]; then
 		mismatch="$mismatch $((max + 1)) states but the package has $nlevels levels;"
@@ -338,26 +358,41 @@ check_i2c() {
 	for entry in ${HW_I2C_DEVICES:-}; do
 		id=${entry%%:*}
 		rest=${entry#*:}
-		bus=${rest%%:*}
+		hint=${rest%%:*}
 		rest=${rest#*:}
 		addr=${rest%%:*}
 		part=${rest#*:}
-		state=$(hw_i2c_probe "$bus" "$addr")
+		read -r bus how <<-EOF
+			$(hw_i2c_bus "$hint")
+		EOF
+		service=$(hw_i2c_service "$id")
 		total=$((total + 1))
-		case "$state" in
-		bound | present) found=$((found + 1)) ;;
-		unknown) unknown=$((unknown + 1)) ;;
+		if [ "$service" = available ]; then
+			# lemnosd's driver bound it, which checks the chip id.
+			state=service
+			chip=service
+		else
+			state=$(hw_i2c_probe "$bus" "$addr")
+			chip=none
+			case "$state" in
+			bound | present) chip=$(hw_i2c_chip_id "$id" "$bus" "$addr") ;;
+			esac
+		fi
+		case "$state:$chip" in
+		*:mismatch*) missing="$missing $part ($id) at $bus/$addr: chip id ${chip#mismatch }, not the manifest's;" ;;
+		service:* | bound:* | present:*) found=$((found + 1)) ;;
+		unknown:*) unknown=$((unknown + 1)) ;;
 		*) missing="$missing $part ($id) at $bus/$addr: $state;" ;;
 		esac
-		devices="$devices${devices:+,}{\"id\":$(js "$id"),\"part\":$(js "$part"),\"bus\":$bus,\"address\":$(($addr)),\"result\":\"$state\"}"
+		devices="$devices${devices:+,}{\"id\":$(js "$id"),\"part\":$(js "$part"),\"bus\":$bus,\"bus_hint\":$hint,\"bus_found_by\":\"$how\",\"address\":$(($addr)),\"result\":\"$state\",\"chip_id\":$(js "$chip"),\"lemnosd\":$(js "$service")}"
 	done
-	data="{\"probe\":\"$(hw_have i2cdetect && echo i2cdetect || echo sysfs)\",\"devices\":[$devices]}"
+	data="{\"probe\":\"$(hw_have i2cdetect && echo i2cdetect || echo sysfs)\",\"backend\":$(js "$HW_BACKEND"),\"devices\":[$devices]}"
 	if [ "$total" = 0 ]; then
 		result i2c skip "the package lists no I2C devices" "$data"
 	elif [ -n "$missing" ]; then
 		result i2c fail "missing:${missing%;}" "$data"
 	elif [ "$unknown" = "$total" ]; then
-		result i2c skip "no i2cdetect, and no kernel driver owns these addresses, so they can't be probed" "$data"
+		result i2c skip "no i2cdetect, and no kernel driver or lemnosd owns these devices, so they can't be probed" "$data"
 	elif [ "$unknown" -gt 0 ]; then
 		result i2c ok "$found of $total devices answer; $unknown can't be probed without i2cdetect" "$data"
 	else
@@ -432,7 +467,7 @@ check_gadget
 
 ok=true
 [ "$FAILED" = 0 ] || ok=false
-report="{\"version\":$FORMAT_VERSION,\"board_serial\":$(js "$(board_serial)"),\"model\":$(js "${BOARD_DEVICE_MODEL:-${HW_MODEL:-}}"),\"package_version\":$(js "${BOARD_PACKAGE_VERSION:-}"),\"at\":$(date +%s),\"interactive\":$([ "$interactive" = 1 ] && echo true || echo false),\"ok\":$ok,\"checks\":[$CHECKS]}"
+report="{\"version\":$FORMAT_VERSION,\"board_serial\":$(js "$(board_serial)"),\"model\":$(js "${BOARD_DEVICE_MODEL:-${HW_MODEL:-}}"),\"package_version\":$(js "${BOARD_PACKAGE_VERSION:-}"),\"at\":$(date +%s),\"interactive\":$([ "$interactive" = 1 ] && echo true || echo false),\"backend\":$(js "$HW_BACKEND"),\"ok\":$ok,\"checks\":[$CHECKS]}"
 printf '%s\n' "$report" > "$BOARD_RUN_DIR/selftest.json.tmp" &&
 	mv -f "$BOARD_RUN_DIR/selftest.json.tmp" "$BOARD_RUN_DIR/selftest.json"
 

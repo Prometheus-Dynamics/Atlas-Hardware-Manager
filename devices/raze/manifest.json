@@ -208,7 +208,7 @@
       }
     },
     "fan": {
-      "control": "kernel thermal governor (pwm-fan); no daemon",
+      "control": "kernel thermal governor (pwm-fan); lemnosd clients may set a duty, and lemnosd hands the fan back to the governor when it stops",
       "overlay": "raze-fan",
       "pwm": {
         "controller": "rp1_pwm1",
@@ -240,7 +240,14 @@
         "period_ns",
         "polarity"
       ],
+      "lemnosd": {
+        "device": "fan",
+        "thermal_device": "cpu-thermal",
+        "poll_ms": 1000,
+        "writers": ["lemnosd.fan", "helios", "board-selftest"]
+      },
       "verified": {
+        "lemnosd.device": { "by": "Atlas coordinator", "date": "2026-10-07", "method": "lemnosd cd72ad0 on a Raze: the pwmfan hwmon fan and cpu-thermal bind and read, and the fan is handed back to the governor when lemnosd stops" },
         "pwm.controller": { "by": "Mathias (user)", "date": "2026-10-06", "method": "fan spins and follows the cooling state on a Raze Gen 1 (image 1.0.10)" },
         "pwm.channel": { "by": "Mathias (user)", "date": "2026-10-06", "method": "fan spins and follows the cooling state on a Raze Gen 1 (image 1.0.10)" },
         "pwm.period_ns": { "by": "Mathias (user)", "date": "2026-10-06", "method": "fan spins and follows the cooling state on a Raze Gen 1 (image 1.0.10); value from the old helios fan blobs" },
@@ -275,11 +282,17 @@
         "offset": 5,
         "direction": 1
       },
+      "lemnosd": {
+        "device": "status-ring",
+        "look": { "fade_ms": 250, "easing": "ease-in-out", "status_effect": "breathe" },
+        "notes": "board.toml takes count, offset, gpio and the look from here; wire is rgb for a 24-bit wire_format and rgbw for a 32-bit one, direction 1 is cw and -1 ccw."
+      },
       "notes": "SK6812-EC20, 24-bit GRB on the wire. The overlay must not pass rgbw; the ws2812-pio-rp1 driver always reads 4 bytes per LED (R, G, B, W) from userspace and drops W. Logical LED i is driver slot (offset + direction * i) mod count, as in HeliOS main.",
       "helper": {
         "path": "/usr/lib/board/raze-leds",
         "commands": ["on", "off", "set <0|1>", "dim <0-100>", "color <r> <g> <b> [<w>]", "status <ok|warn|error|busy|off>", "blink [<hz>]", "locate [<seconds>]", "pixel <index|all> <r> <g> <b> [<w>]", "refresh", "show"],
-        "byte_order": "rgbw (driver layout, W ignored), RAZE_LEDS_ORDER in /etc/board/raze-leds.env; always four letters",
+        "backend": "lemnosd (lemnos-ctl led ..., client raze-leds) when /usr/bin/lemnos-ctl exists, else frames written to the device; BOARD_HW_BACKEND=lemnosd|sysfs chooses",
+        "byte_order": "rgbw (driver layout, W ignored), RAZE_LEDS_ORDER in /etc/board/raze-leds.env; always four letters (sysfs backend)",
         "defaults": "/usr/lib/board/leds.env (generated from this section)",
         "state": "/run/board/leds.state"
       },
@@ -289,6 +302,7 @@
         "userspace.layout": { "by": "Mathias (user) and the HeliOS coordinator", "date": "2026-10-06", "method": "raze-leds writing 4 bytes per LED (R, G, B, W) gave correct colours; matches the ws2812-pio-rp1 driver source" },
         "gpio": { "by": "Mathias (user)", "date": "2026-10-06", "method": "the ring lights on a Raze Gen 1 (image 1.0.10)" },
         "count": "unverified",
+        "lemnosd.device": { "by": "Atlas coordinator", "date": "2026-10-07", "method": "lemnosd cd72ad0 on a Raze: the ws2812 ring binds on /dev/leds0 with wire rgb and offset 5, and the progress, updating, breathe and locate effects show correctly" },
         "index.offset": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); all 16 LEDs show correct colours with offset 5, the 4-byte rgbw userspace layout and no rgbw overlay flag; HeliOS main uses the same offset" },
         "index.direction": "unverified"
       }
@@ -323,7 +337,32 @@
         "usbc=off",
         "hog=off (runtime control by the OS)"
       ],
-      "power_policy": "udev 60-raze-usb-power.rules: power/control=on and USB2 hardware LPM off for every USB device"
+      "power_policy": "udev 60-raze-usb-power.rules: power/control=on and USB2 hardware LPM off for every USB device",
+      "gpio_chip": "pinctrl-rp1",
+      "lemnosd": {
+        "device": "usb-a-power",
+        "port": "usb-a",
+        "notes": "A gpio-output that lemnosd can switch. While the overlay's hog holds GPIO20 (the default), lemnosd cannot request the line and reports the device missing; an OS that wants runtime control loads the overlay with hog=off."
+      },
+      "verified": {
+        "gpio_chip": "unverified"
+      }
+    },
+    "hardware-service": {
+      "daemon": "lemnosd",
+      "client": "/usr/bin/lemnos-ctl",
+      "board_definition": "/etc/lemnos/board.toml",
+      "board_definition_source": "gaia/assets/rootfs/etc/lemnos/board.toml (generated from this manifest)",
+      "socket": "/run/lemnos/lemnosd.sock",
+      "update_status": "/run/board/update.json",
+      "backends": ["lemnosd", "sysfs"],
+      "default_backend": "lemnosd when lemnos-ctl is installed, else sysfs (BOARD_HW_BACKEND in /etc/board/hw.env overrides)",
+      "gaia_import": {
+        "source": "lemnos",
+        "repo": "https://github.com/Prometheus-Dynamics/Lemnos.git",
+        "rev": "8a126d36d23df5b1882113cfaabab895f3dc8d16",
+        "path": "packaging/gaia/lemnosd.toml"
+      }
     },
     "gadget-net": {
       "functions": [
@@ -360,7 +399,11 @@
           "sda_gpio": 10,
           "scl_gpio": 11,
           "pins": "GPIO10 SDA, GPIO11 SCL",
-          "overlay": "i2c1-pi5,pins_10_11"
+          "overlay": "i2c1-pi5,pins_10_11",
+          "select": {
+            "of": "/axi/pcie@1000120000/rp1/i2c@74000",
+            "source": "kernel DT, rpi-7.2.y 53679a5: the i2c1-pi5 overlay enables &i2c1, which rp1.dtsi defines as rp1_i2c1: i2c@74000 (snps,designware-i2c) inside rp1 under pcie@1000120000 (rp1_target, bcm2712.dtsi) under /axi"
+          }
         },
         {
           "bus": 4,
@@ -368,30 +411,47 @@
           "sda_gpio": 8,
           "scl_gpio": 7,
           "pins": "GPIO8 SDA, GPIO7 SCL",
-          "overlay": "i2c-gpio,bus=4,i2c_gpio_sda=8,i2c_gpio_scl=7"
+          "overlay": "i2c-gpio,bus=4,i2c_gpio_sda=8,i2c_gpio_scl=7",
+          "select": {
+            "compatible": "i2c-gpio",
+            "source": "the i2c-gpio overlay's node /i2c@0 is the board's only i2c-gpio adapter"
+          }
         }
       ],
+      "bus_numbers": "Linux numbers buses in probe order: \"bus\" is the number on the 7.2.9 image, a hint only. Find a bus by its \"select\" (the keys of a Lemnos i2c: selector: name, compatible, of, node). Other buses on that image: i2c-10, the camera (ov9782 at 0x60); i2c-13 and i2c-14, the HDMI DDC buses (107d508200.i2c, 107d508280.i2c). Nothing else answers on buses 1 and 4.",
       "devices": [
         {
           "id": "imu-accel",
           "part": "BMI088",
           "function": "accelerometer",
           "bus": 4,
-          "address": 24
+          "address": 24,
+          "chip_id": { "register": 0, "width": 8, "value": 30 },
+          "lemnosd": { "device": "imu", "driver": "bmi088", "label": "IMU", "poll_ms": 10 }
         },
         {
           "id": "imu-gyro",
           "part": "BMI088",
           "function": "gyroscope",
           "bus": 4,
-          "address": 104
+          "address": 104,
+          "chip_id": { "register": 0, "width": 8, "value": 15 },
+          "lemnosd": { "device": "imu", "config": "gyro_address" }
         },
         {
           "id": "magnetometer",
           "part": "BMM150",
           "function": "magnetometer",
           "bus": 1,
-          "address": 16
+          "address": 16,
+          "chip_id": {
+            "register": 64,
+            "width": 8,
+            "value": 50,
+            "power_control": { "register": 75, "bit": 0 },
+            "notes": "The BMM150 boots suspended (0x4B = 0x00) and reads 0x00 for its id until power control bit 0 is set."
+          },
+          "lemnosd": { "device": "magnetometer", "driver": "bmm150", "poll_ms": 100 }
         },
         {
           "id": "power-monitor",
@@ -401,13 +461,27 @@
           "bus": 1,
           "address": 64,
           "shunt_ohm": 0.01,
-          "current_scale": 1.0
+          "current_scale": 1.0,
+          "max_current_a": 16.384,
+          "max_current_source": "derived, not a board rating: the INA238's full-scale shunt voltage (163.84 mV) over shunt_ohm, the largest current it can measure (a 0.5 mA current LSB)",
+          "chip_id": {
+            "register": 254,
+            "width": 16,
+            "value": 21577,
+            "smbus_word": 18772,
+            "notes": "Manufacturer id \"TI\" (0x5449). The registers are big-endian, so an SMBus word read (i2cget ... w) returns it byte-swapped (0x4954). Die id: register 0xFF = 0x2381."
+          },
+          "lemnosd": { "device": "power", "driver": "ina238", "label": "Board power", "poll_ms": 100 }
         }
       ],
       "description_file": "/usr/share/board/raze/sensors.toml",
       "verified": {
-        "buses": "unverified",
-        "devices": "unverified"
+        "buses": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "chip-id register reads on the device (PhotonVision image, package c881c60): the BMI088 answers on the i2c-gpio bus (/dev/i2c-4), the BMM150 and INA238 on the i2c1-pi5 bus (/dev/i2c-1)" },
+        "devices": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "chip-id register reads on the device (PhotonVision image, package c881c60): accel 0x18 reg 0x00 = 0x1E, gyro 0x68 reg 0x00 = 0x0F, BMM150 0x10 reg 0x40 = 0x32 with 0x4B bit 0 set, INA238 0x40 reg 0xFE = 0x5449 and reg 0xFF = 0x2381" },
+        "buses.0.select": "unverified",
+        "buses.1.select": "unverified",
+        "devices.3.shunt_ohm": "unverified",
+        "devices.3.max_current_a": "unverified"
       }
     },
     "watchdog": {

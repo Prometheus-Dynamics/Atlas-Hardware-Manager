@@ -1,0 +1,39 @@
+# Raze: lemnosd, the board's hardware service (LEDs, fan, sensors, GPIO).
+#
+# Imports Lemnos's own Gaia layer, which builds lemnosd and lemnos-ctl as
+# static aarch64 musl binaries (in Docker), installs them in /usr/bin and
+# stages lemnosd.service, its sysusers entry (the `lemnos` user, in groups
+# i2c, gpio and video), a preset that enables it and /etc/default/lemnosd.env.
+# This file then replaces that env file with the package's (the item
+# `lemnosd-env`), so lemnosd's updating animation follows the package's update
+# writer (/run/board/update.json). The board definition
+# (/etc/lemnos/board.toml) and the udev rules lemnosd needs are staged by
+# runtime.toml; both are generated or kept with the package.
+#
+# The Lemnos source. Gaia lets only local config files (the OS build, or a
+# layer it imports by plain path) declare an import source, so the OS build
+# declares it, next to its `atlas` source, pinned at the commit this package is
+# tested with (capabilities.hardware-service.gaia_import in manifest.json):
+#
+#   [[sources]]
+#   id = "lemnos"
+#   kind = "git"
+#   repo = "https://github.com/Prometheus-Dynamics/Lemnos.git"
+#   rev = "8a126d36d23df5b1882113cfaabab895f3dc8d16"
+#
+# Without it, resolving this layer fails and names the source `lemnos`. For
+# local development: --set sources.lemnos.path=/path/to/Lemnos.
+description = "Raze hardware service: Lemnos's lemnosd layer, with the package's lemnosd settings."
+
+imports = [
+  { source = "lemnos", path = "packaging/gaia/lemnosd.toml" },
+]
+
+# Replaces Lemnos's item of the same id (a later layer replaces the whole
+# item; this file's own items come after its imports).
+[[stage.files]]
+id = "lemnosd-env"
+src = "@self/assets/lemnos/lemnosd.env"
+dest = "/etc/default/lemnosd.env"
+mode = 420
+origin = "static-asset"

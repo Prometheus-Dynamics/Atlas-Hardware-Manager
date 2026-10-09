@@ -18,8 +18,10 @@ devices/
     manifest.schema.json
     compat.schema.json
     identity.schema.json     the document served by the identity endpoint
+    lemnos-board.schema.json Lemnos's board definition (vendored from the pinned Lemnos)
   tools/sync-device.sh       vendor a package into an OS repo, and check it
   tools/gen-raze.py          render the Raze config from its manifest; --check lints
+  tools/raze_lemnos.py       its lemnosd board.toml renderer and validator
   <model>/
     manifest.json            read by Atlas (and people)
     compat.json              which OS images are known to work (informational)
@@ -63,8 +65,7 @@ Contract 1 is:
 ## Hardware facts: the manifest is the source
 
 `manifest.json` holds every hardware fact of the board, precise enough to
-generate the package's config from (and, later, a hardware daemon's board
-definition). Values are numbers and enums with units in the key names, never
+generate the package's config and lemnosd's board definition from. Values are numbers and enums with units in the key names, never
 prose:
 
 | Section | Facts |
@@ -73,7 +74,9 @@ prose:
 | `capabilities.leds` | `part`, `gpio`, `count`, `device`, `brightness`, overlay `name`/`dev_name`, `wire_format` (`grb24`: bits on the data line), `userspace` (`layout` `rgbw`, `bytes_per_led` 4, `ignored_channels`), `index` (`offset`, `direction`: logical LED i is driver slot (offset + direction * i) mod count) |
 | `capabilities.fan` | `pwm` (`controller`, `channel`, `period_ns`, `polarity`), `cooling_levels`, `min_level` (the duty floor), `trips_c`, `thermal_zone`, `cooling_device_type`, `hwmon_name` |
 | `capabilities.camera` | `part`, `csi` (port, receiver), `i2c` (Linux `bus` 10 from the kernel DT, `bus_dt_label`, `controller`, `address`), `chip_id`, kernel driver and compatible, tuning files |
-| `capabilities.i2c` | `buses` (Linux `bus`, kind, `sda_gpio`/`scl_gpio`, overlay) and `devices` (`id`, `part`, `bus`, 7-bit `address` as a number) |
+| `capabilities.i2c` | `buses` (Linux `bus` on the 7.2.9 image as a hint, kind, `sda_gpio`/`scl_gpio`, overlay, and `select`: what finds the bus whatever probe order numbered it, in the keys of a Lemnos `i2c:` selector, `compatible`, `of` (device-tree path), `node` or `name`) and `devices` (`id`, `part`, `bus`, 7-bit `address` as a number, `chip_id` register, width, value and power-control bit, and `lemnosd`: the board.toml device that drives it) |
+| `capabilities.*.lemnosd` | the board.toml device for the ring (`device`, the `look` defaults), the fan (`device`, `thermal_device`, `poll_ms`, `writers`) and the USB-A power line |
+| `capabilities.hardware-service` | lemnosd: its board definition, socket, update status file, the backends, and the pinned Lemnos Gaia import (`gaia_import.rev`) |
 | `capabilities.watchdog` | `device`, `driver`, `runtime_sec`, `reboot_sec` |
 | `capabilities.selftest` | where the self-test is, its report format and checks |
 
@@ -96,15 +99,89 @@ manifest:
   `pwms`, polarity included);
 - whole files with a "Generated" header: `usr/lib/board/leds.env`
   (raze-leds defaults), `usr/lib/board/hardware.env` (selftest facts),
-  `usr/share/board/raze/sensors.toml` and the systemd watchdog drop-in.
+  `usr/share/board/raze/sensors.toml`, the systemd watchdog drop-in and
+  `etc/lemnos/board.toml`, lemnosd's board definition (see below).
 
 Edit the manifest and run the tool; never edit generated parts by hand.
 `gen-raze.py --check` changes nothing: it prints a diff and exits 1 when a
 file disagrees, when the manifest breaks a rule (levels, offsets, addresses,
 missing `verified` notes, rgbw vs wire format) or when the kernel facts
-disagree with `gaia/kernel.toml` and the fragment, which it only reads. The
-output is committed (Gaia has no build-time script step);
+disagree with `gaia/kernel.toml` and the fragment, which it only reads. It
+also checks the generated board.toml against Lemnos's JSON Schema
+(`schema/lemnos-board.schema.json`, with a small built-in validator) and
+against what Lemnos's driver registry accepts per driver, parses it back, and
+runs `lemnos-ctl validate` on it when it finds a `lemnos-ctl`
+(`--lemnos-ctl`, `$LEMNOS_CTL` or `PATH`; a host build is
+`cargo build -p lemnosd --bin lemnos-ctl` in a Lemnos checkout). The Lemnos
+pin must agree between the manifest, `gaia/lemnos.toml`, `gaia/device.toml`
+and this file. The output is committed (Gaia has no build-time script step);
 `devices/raze/tests/manifest-lint.sh` runs the check in CI.
+
+## lemnosd: the hardware service
+
+The package ships [Lemnos](https://github.com/Prometheus-Dynamics/Lemnos)'s
+`lemnosd`, the one service that owns the board's LED ring, fan, sensors and
+GPIO, and its client `lemnos-ctl`. HeliOS, PhotonVision, the package's own
+scripts and anything else talk to it over `/run/lemnos/lemnosd.sock` (group
+`lemnos`; a non-root client joins that group) instead of opening
+`/dev/leds0`, `/dev/i2c-*` or the fan's sysfs files.
+
+- **Gaia.** `gaia/lemnos.toml`, imported by `device.toml`, imports Lemnos's
+  own layer `packaging/gaia/lemnosd.toml` from the `lemnos` source: it builds
+  static aarch64 musl `lemnosd` and `lemnos-ctl` (in Docker), installs them in
+  `/usr/bin` and stages `lemnosd.service`, the `lemnos` sysusers entry, a preset
+  that enables the service and `/etc/default/lemnosd.env`. The package
+  redeclares that env file (`gaia/assets/lemnos/lemnosd.env`) with
+  `LEMNOSD_UPDATE_STATUS=/run/board/update.json`, so lemnosd shows the update
+  writer's states and copy progress on the ring. The OS declares the `lemnos`
+  source (see "Consuming a package").
+- **Board definition.** `/etc/lemnos/board.toml`, generated from the manifest:
+  the status ring (`ws2812` on `/dev/leds0`, 16 LEDs, `wire = "rgb"`, offset
+  5, direction from the manifest, fade 250 ms ease-in-out, status effect
+  breathe), the fan (`hwmon-fan` matched by hwmon name `pwmfan`, no
+  `restore_mode`: pwm-fan goes back through its cooling device), the CPU
+  thermal zone, the BMI088 (`bmi088`, accel 0x18 and gyro 0x68 on
+  `i2c:compatible=i2c-gpio`), the BMM150 and the INA238 (on
+  `i2c:of=/axi/pcie@1000120000/rp1/i2c@74000`, the RP1 DesignWare controller
+  i2c1-pi5 enables) and the USB-A power line (`gpio-output`, `pinctrl-rp1`
+  line 20). Comments in the file mark what is unverified on hardware. An OS
+  replaces the file by staging its own `/etc/lemnos/board.toml` in a later
+  layer (item `raze-lemnos-board`).
+- **Access.** `/usr/lib/udev/rules.d/60-board-lemnosd.rules` gives the `lemnos`
+  group write access to the fan's `pwm1`/`pwm1_enable`, the pwm-fan cooling
+  device's `cur_state` and the thermal zones' `policy` (Lemnos's
+  `packaging/README.md`), and the device nodes to the groups lemnosd runs
+  with (`i2c-*` to `i2c`, `gpiochip*` to `gpio`, `leds*` to `video`).
+- **The fan** stays the kernel governor's (`cooling_levels`, trips). A client
+  may set a duty; lemnosd records the governor's state before the first write
+  and, when it stops (or crashes: `ExecStopPost=+lemnos-ctl fan restore
+  --all`), puts it back and makes the thermal zone re-evaluate. The self-test
+  ends its fan steps the same way with `lemnos-ctl fan restore`.
+- **USB-A power.** The raze-usb-power overlay hogs GPIO20 by default, so
+  lemnosd lists `usb-a-power` as missing; an OS that wants to switch the port
+  at runtime loads the overlay with `hog=off`.
+
+### Hardware backends
+
+The package's scripts reach the hardware through `/usr/lib/board/hw.sh`,
+which has the parts every backend shares (I2C probes and chip ids, the
+camera, the watchdog, the gadget) and loads one backend for the ring and the
+fan:
+
+| `BOARD_HW_BACKEND` | Backend |
+| --- | --- |
+| `lemnosd` (the default when `lemnos-ctl` is installed) | `hw-lemnosd.sh`: LED fills and frames are `lemnos-ctl led color`/`led frame` intents of the caller's client, fan duties `lemnos-ctl set fan duty`, readings `lemnos-ctl read fan`, the hand-back `lemnos-ctl fan restore`, sensors lemnosd's device status |
+| `sysfs` (the default without `lemnos-ctl`) | `hw-sysfs.sh`: 4-byte frames written to `/dev/leds0`, the pwm-fan cooling device set directly with its thermal zone paused, I2C probes only |
+
+Set it in the environment or in `/etc/board/hw.env`. A path instead names a
+replacement backend file that defines the same `hw_*` functions.
+
+`raze-leds` keeps its commands (`on`, `off`, `set`, `dim`, `color`, `status`,
+`blink`, `locate`, `pixel`, `refresh`, `show`) and its state file; with
+lemnosd it is a thin wrapper over `lemnos-ctl --client raze-leds led ...`
+(`status` uses lemnosd's status look, `blink` its blink effect, `locate` its
+locate effect, `off` drops raze-leds' intents so other clients' looks show).
+`board-locate.service` runs `raze-leds locate 10`.
 
 ## Self-test
 
@@ -113,10 +190,10 @@ a time. Each check is `ok`, `skip` or `fail` with a message and data:
 
 | Check | What it does |
 | --- | --- |
-| `leds` | `/dev/leds0` takes a frame (redraws raze-leds' state, or only opens the device when another program owns the ring). `--interactive`: red, green, blue, a W-only frame a 24-bit ring must drop, and a walk round the ring by index with the offset applied; the operator answers on the terminal. |
-| `fan` | steps the pwm-fan cooling device through its states with the thermal zone paused, reads the duty (and rpm with a tachometer) back against `cooling_levels`, then restores the state and the governor |
+| `leds` | lemnosd has the ring available (lemnosd backend), or `/dev/leds0` takes a frame (sysfs: redraws raze-leds' state, or only opens the device when another program owns the ring). `--interactive`: red, green, blue, a W-only frame a 24-bit ring must drop, and a walk round the ring by index with the offset applied (as `board-selftest` frames at priority 100 through lemnosd); the operator answers on the terminal. |
+| `fan` | sets the duty of each cooling state in turn (lemnosd: `set fan duty`; sysfs: the cooling device, with the thermal zone paused), reads the duty (and rpm with a tachometer) back against `cooling_levels`, then hands the fan back to the governor (lemnosd's hand-back, or the state and governor restored) |
 | `camera` | the sensor's I2C client is bound to its driver (which checked the chip id), and rp1-cfe video nodes, `media-ctl` or `cam -l` see it |
-| `i2c` | the manifest's devices answer (`i2cdetect -r`, in the image; skipped without it unless a kernel driver owns the address) |
+| `i2c` | the manifest's devices answer on their bus, found by its `select` (else its number): a device lemnosd has available counts as checked (its driver read the chip id); otherwise `i2cdetect -r` probes it and `i2cget` reads its chip id against the manifest. The BMM150 boots suspended: without lemnosd its power bit is set for the read and put back; with lemnosd it is left alone. |
 | `watchdog` | `/dev/watchdog0` exists and systemd's `RuntimeWatchdogUSec` is set |
 | `gadget` | the configfs gadget is bound to a UDC and `usbbr0` is up with an address |
 
@@ -128,12 +205,14 @@ a time. Each check is `ok`, `skip` or `fail` with a message and data:
  "checks":[{"id":"fan","status":"ok","message":"...","data":{"steps":[...]}}]}
 ```
 
-With `--json` the exit status is 0 whenever a report was made; without it,
+The report also names the backend (`"backend": "lemnosd"`); checks add
+their own data (`backend`, `status`, and per I2C device `bus_found_by`,
+`chip_id`, `lemnosd`). With `--json` the exit status is 0 whenever a report was made; without it,
 1 when a check failed. The fan and the LED ring are restored on exit and on
-interrupt. All hardware access goes through `hw.sh` (`hw_leds_write_frame`,
-`hw_fan_set_state`, `hw_fan_read`, `hw_i2c_probe`, `hw_camera_list`, ...),
-so another backend can replace it (`BOARD_HW_BACKEND`) without changing the
-checks or the JSON. The identity lists `"diagnostics": ["selftest"]`; Atlas
+interrupt. All hardware access goes through `hw.sh` and its backend
+(`hw_leds_write_frame`, `hw_fan_set_state`, `hw_fan_read`, `hw_i2c_probe`,
+`hw_camera_list`, ...; see "Hardware backends"), so the checks and the JSON
+are the same with lemnosd or without. The identity lists `"diagnostics": ["selftest"]`; Atlas
 runs it over SSH after a flash or update and on request (docs/ota.md).
 `devices/raze/tests/selftest.sh` tests it off-device with a fake sysfs.
 
@@ -142,7 +221,10 @@ runs it over SSH after a flash or update and on request (docs/ota.md).
 ### Gaia import from the Atlas git source (preferred)
 
 Declare Atlas as a pinned git source in the OS build (never inside the layer)
-and import the layer's entry file. Requires Gaia >= 2.1.0.
+and import the layer's entry file. The layer imports Lemnos's lemnosd layer
+from a second source, `lemnos`; Gaia lets only local files declare import
+sources, so the OS build declares that one too, at the commit the package is
+tested with (`capabilities.hardware-service.gaia_import.rev`). Requires Gaia >= 2.1.0.
 
 ```toml
 gaia_version = ">=2.1.0"
@@ -159,10 +241,17 @@ id = "atlas"
 kind = "git"
 repo = "https://github.com/Prometheus-Dynamics/Atlas-Hardware-Manager.git"
 rev = "<pinned commit>"
+
+[[sources]]
+id = "lemnos"
+kind = "git"
+repo = "https://github.com/Prometheus-Dynamics/Lemnos.git"
+rev = "8a126d36d23df5b1882113cfaabab895f3dc8d16"
 ```
 
 For local development against an Atlas checkout:
-`gaia run build.toml --set sources.atlas.path=/path/to/Atlas-Hardware-Manager`.
+`gaia run build.toml --set sources.atlas.path=/path/to/Atlas-Hardware-Manager`
+(and `--set sources.lemnos.path=/path/to/Lemnos`).
 
 Inside the layer, paths are written `@self/...` (the directory of the TOML file
 that contains them), so the layer works wherever it is mounted. An OS refers to
@@ -224,6 +313,11 @@ The Raze layer (`devices/raze/gaia/device.toml`) needs from the OS:
    PhotonVision's libcamera GL driver does. For Vulkan (Mesa's v3dv, the
    loader and vulkaninfo; wgpu needs it), also import
    `devices/raze/gaia/gpu-vulkan.toml` after `gpu.toml`.
+6. **What lemnosd needs** (Lemnos `packaging/README.md`): Docker on the build
+   host (Lemnos's layer builds the binaries in a small Rust image),
+   `systemd-sysusers` (or a `lemnos` user created at build time on a
+   read-only root), and its own clients (HeliOS, PhotonVision) in the
+   `lemnos` group.
 
 The device units are installed in `/usr/lib/systemd/system` and enabled by
 `/usr/lib/systemd/system-preset/70-board.preset` when Buildroot runs
@@ -237,9 +331,12 @@ The device units are installed in `/usr/lib/systemd/system` and enabled by
 | `board-usb-gadget.service` | USB gadget (ECM/RNDIS/ACM) with the board serial as its USB serial, gadget-only bridge `usbbr0` on a per-board /29 (see "USB gadget network") |
 | `board-usb-gadget-dhcp.service` | dnsmasq DHCP on `usbbr0` only, DNS off, no default route |
 | `raze-leds-reprobe.service` | re-probes the WS2812 PIO driver if `/dev/leds0` is missing |
+| `lemnosd.service` (Lemnos's unit and `80-lemnosd.preset`) | the hardware service: LED ring, fan, sensors, GPIO; `/etc/lemnos/board.toml` |
+| `board-locate.service` (+ `.path`) | the identity endpoint's locate action: `raze-leds locate 10` |
 
-Fan, port power and LEDs need no service: they are device tree overlays in
-`raze-device.txt`, plus `/usr/lib/udev/rules.d/60-raze-usb-power.rules`.
+Fan, port power and LEDs work without a service: they are device tree
+overlays in `raze-device.txt`, plus `/usr/lib/udev/rules.d/60-raze-usb-power.rules`;
+lemnosd adds control over them on top.
 
 ## USB gadget network
 
@@ -315,7 +412,9 @@ a VPN that routes `172.31.0.0/16`, shadows the gadget subnets. Changing
 | Identity endpoint | `disable board-http.socket` in an OS preset, or mask it. |
 | Update methods / manage URL | One id per line in `/etc/board/update-methods.d/<file>` (added after `image-write`); the URL in `/etc/board/manage-url` (an empty file means `null`). |
 | Board revision | The revision id in `/etc/board/rev`. |
-| LED byte order, index offset and direction | `RAZE_LEDS_ORDER`, `RAZE_LEDS_OFFSET`, `RAZE_LEDS_DIRECTION` in `/etc/board/raze-leds.env` (defaults from the generated `leds.env`). |
+| LED byte order, index offset and direction | With lemnosd: `offset`/`direction` in `/etc/lemnos/board.toml`. Sysfs backend: `RAZE_LEDS_ORDER`, `RAZE_LEDS_OFFSET`, `RAZE_LEDS_DIRECTION` in `/etc/board/raze-leds.env` (defaults from the generated `leds.env`). |
+| Hardware backend | `BOARD_HW_BACKEND=sysfs` (or `lemnosd`) in `/etc/board/hw.env`. |
+| lemnosd | Its board definition: stage your own `/etc/lemnos/board.toml` (item `raze-lemnos-board`); its settings: redeclare `lemnosd-env` (`/etc/default/lemnosd.env`) in a later layer; the unit: drop-ins in `/etc/systemd/system/lemnosd.service.d/`, or `disable lemnosd.service` in a preset. |
 | Fan, port power, LEDs, camera | Copy the lines you want from `raze-device.txt` into your `config.txt` instead of including it, and change their parameters (`raze-fan`: `level0`..`level4`, `period_ns`, `polarity`; `raze-usb-power`: `usba=off`, `usbc=off`, `hog=off`). |
 | Any unit | A preset file that sorts before `70-board.preset`, a drop-in, or a mask. |
 | Any Buildroot option or default in the layer | Set it in a Gaia layer imported after the device layer. |

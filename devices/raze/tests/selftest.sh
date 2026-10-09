@@ -1,7 +1,9 @@
 #!/bin/sh
-# Off-device test of the self-test and the LED index offset: a fake sysfs,
-# /dev and configfs, fake i2cdetect/systemctl/ip/media-ctl, and a backend that
-# acts like the pwm-fan driver (a cooling state sets the duty).
+# Off-device test of the self-test and the LED index offset with the sysfs
+# backend: the fake board of fake-board.inc (sysfs, /dev, configfs, the
+# device tree, fake i2cdetect/i2cget/i2cset/systemctl/ip/media-ctl) and a
+# backend that acts like the pwm-fan driver (a cooling state sets the duty).
+# lemnosd.sh tests the lemnosd backend.
 # Run: sh devices/raze/tests/selftest.sh
 set -eu
 
@@ -9,76 +11,13 @@ here=$(cd "$(dirname "$0")" && pwd)
 lib=$here/../gaia/assets/rootfs/usr/lib/board
 T=$(mktemp -d "${TMPDIR:-/tmp}/board-selftest-test.XXXXXX")
 trap 'rm -rf "$T"' EXIT
+. "$here/fake-board.inc"
 
-fail() {
-	echo "FAIL: $*" >&2
-	exit 1
-}
-
-S=$T/sys
-mkdir -p "$T/dev" "$T/run" "$T/etc" "$T/data" "$T/dt" "$T/bin" "$T/net/usbbr0" "$T/cfg/usb_gadget/g1"
-printf '10000000a317bcbe\000' > "$T/dt/serial-number"
-: > "$T/dev/leds0"
-: > "$T/dev/watchdog0"
-: > "$T/dev/media0"
-echo 1000480000.usb > "$T/cfg/usb_gadget/g1/UDC"
-echo 0x1003 > "$T/net/usbbr0/flags"
-echo up > "$T/net/usbbr0/operstate"
-
-# Thermal: the fan's cooling device in state 1, a CPU zone driving it.
-mkdir -p "$S/class/thermal/cooling_device0" "$S/class/thermal/cooling_device1" \
-	"$S/class/thermal/thermal_zone0" "$S/class/hwmon/hwmon1" "$S/class/hwmon/hwmon2"
-echo cpufreq-cpu0 > "$S/class/thermal/cooling_device0/type"
-echo pwm-fan > "$S/class/thermal/cooling_device1/type"
-echo 4 > "$S/class/thermal/cooling_device1/max_state"
-echo 1 > "$S/class/thermal/cooling_device1/cur_state"
-echo enabled > "$S/class/thermal/thermal_zone0/mode"
-ln -s ../cooling_device1 "$S/class/thermal/thermal_zone0/cdev0"
-echo 0 > "$S/class/thermal/thermal_zone0/cdev0_trip_point"
-echo cpu_thermal > "$S/class/hwmon/hwmon1/name"
-echo pwmfan > "$S/class/hwmon/hwmon2/name"
-echo 212 > "$S/class/hwmon/hwmon2/pwm1"
-mkdir -p "$S/class/watchdog/watchdog0"
-echo bcm2835-wdt > "$S/class/watchdog/watchdog0/identity"
-
-# I2C: buses 1 and 4, the camera bound on bus 10.
-mkdir -p "$S/bus/i2c/devices/i2c-1" "$S/bus/i2c/devices/i2c-4" "$S/bus/i2c/devices/i2c-10" \
-	"$S/bus/i2c/drivers/ov9282" "$S/bus/i2c/devices/10-0060" "$S/class/video4linux/video0"
-echo ov9782 > "$S/bus/i2c/devices/10-0060/name"
-ln -s ../../drivers/ov9282 "$S/bus/i2c/devices/10-0060/driver"
-echo rp1-cfe-csi2_ch0 > "$S/class/video4linux/video0/name"
-
-# Tools. i2cdetect answers for the addresses listed in $T/i2c ("bus addr").
-printf '4 0x18\n4 0x68\n1 0x10\n1 0x40\n' > "$T/i2c"
-cat > "$T/bin/i2cdetect" <<'EOF'
-#!/bin/sh
-# i2cdetect -y -r <bus> <first> <last>
-bus=$3 addr=$(($4))
-cell=--
-grep -qx "$bus $(printf '0x%02x' "$addr")" "$I2C_TABLE" && cell=$(printf '%02x' "$addr")
-printf '     0  1  2  3  4  5  6  7  8  9  a  b  c  d  e  f\n'
-printf '%02x: %s\n' $((addr & 0xf0)) "$cell"
-EOF
-cat > "$T/bin/systemctl" <<'EOF'
-#!/bin/sh
-echo "${FAKE_WATCHDOG:-15s}"
-EOF
-cat > "$T/bin/ip" <<'EOF'
-#!/bin/sh
-echo "5: usbbr0    inet 172.31.250.1/24 brd 172.31.250.255 scope global usbbr0"
-EOF
-cat > "$T/bin/media-ctl" <<'EOF'
-#!/bin/sh
-printf 'Media controller API version 7.2.9\n\nMedia device information\n------------------------\ndriver          rp1-cfe\nmodel           rp1-cfe\n\n'
-printf -- '- entity 1: csi2 (4 pads, 8 links)\n'
-printf -- '- entity 20: ov9282 10-0060 (1 pad, 1 link)\n'
-EOF
-chmod +x "$T/bin/"*
-
-# The backend: the real hw.sh, plus what the pwm-fan driver does when a
-# cooling state is set (the duty follows; FAKE_FAN_LEVELS can break it), and
-# a hook that interrupts the self-test mid-way.
+# The backend: the real hw.sh with the sysfs backend, plus what the pwm-fan
+# driver does when a cooling state is set (the duty follows; FAKE_FAN_LEVELS
+# can break it), and a hook that interrupts the self-test mid-way.
 cat > "$T/backend.sh" <<'EOF'
+BOARD_HW_BACKEND=sysfs
 . "$BOARD_LIB_DIR/hw.sh"
 hw_fan_set_state() {
 	printf '%s\n' "$1" > "$(hw_fan_cdev)/cur_state"
@@ -90,25 +29,8 @@ hw_fan_set_state() {
 	fi
 }
 EOF
+export BOARD_HW_BACKEND=$T/backend.sh
 
-export PATH="$T/bin:$PATH"
-export BOARD_LIB_DIR=$lib BOARD_ETC_DIR=$T/etc BOARD_DATA_DIR=$T/data BOARD_RUN_DIR=$T/run BOARD_DT_DIR=$T/dt
-export BOARD_SYS_DIR=$S BOARD_DEV_DIR=$T/dev BOARD_CONFIGFS=$T/cfg BOARD_NET_DIR=$T/net
-export BOARD_HW_BACKEND=$T/backend.sh BOARD_SELFTEST_ALLOW_USER=1 I2C_TABLE=$T/i2c
-export SELFTEST_FAN_SETTLE=0 SELFTEST_LED_STEP=0 SELFTEST_LED_HOLD=0 BOARD_HW_MISSING=cam
-
-selftest() { sh "$lib/selftest" "$@"; }
-# check_status <report> <id> <ok|skip|fail>
-check_status() {
-	printf '%s' "$1" | grep -q "{\"id\":\"$2\",\"status\":\"$3\"" ||
-		fail "$2 should be $3: $(printf '%s' "$1" | tr '{' '\n' | grep "\"id\":\"$2\"")"
-}
-valid_json() {
-	if command -v python3 >/dev/null 2>&1; then
-		printf '%s' "$1" | python3 -c 'import json, sys; r = json.load(sys.stdin); assert r["version"] == 1 and isinstance(r["checks"], list)' ||
-			fail "not a valid report: $1"
-	fi
-}
 leds_hex() { od -An -tx1 -v "$T/dev/leds0" | tr -d ' \n'; }
 zeros() { i=0; while [ "$i" -lt "$1" ]; do printf 00; i=$((i + 1)); done; }
 
@@ -121,6 +43,34 @@ for id in leds fan camera i2c watchdog gadget; do check_status "$out" "$id" ok; 
 [ "$(cat "$T/run/selftest.json")" = "$out" ] || fail "the report should be written to /run/board/selftest.json"
 printf '%s' "$out" | grep -q '"steps":\[{"state":0,"pwm":179,"expected":179' || fail "fan steps: $out"
 [ ! -s "$T/dev/leds0" ] || fail "with no raze-leds state, no LED frame may be written"
+printf '%s' "$out" | grep -q '"backend":"sysfs"' || fail "the report names the backend: $out"
+
+echo "I2C: buses found by their selectors, chip ids read, the BMM150 woken and put back"
+i2c=$(check_data "$out" i2c)
+printf '%s' "$i2c" | python3 -c '
+import json, sys
+d = {x["id"]: x for x in json.load(sys.stdin)["devices"]}
+assert all(x["bus_found_by"] == "selector" for x in d.values()), d
+assert d["imu-accel"]["chip_id"] == "ok 0x1e" and d["imu-gyro"]["chip_id"] == "ok 0x0f", d
+assert d["magnetometer"]["chip_id"] == "ok 0x32", d
+assert d["power-monitor"]["chip_id"] == "ok 0x4954", d
+' || fail "i2c data: $i2c"
+grep -q '^i2cset -y 1 0x10 0x4b 1 b$' "$T/i2c.log" || fail "the BMM150 power bit should be set for the read: $(cat "$T/i2c.log")"
+grep -q '^1 0x10 0x4b 0x00$' "$T/regs" || fail "the BMM150 power control should be put back: $(cat "$T/regs")"
+
+echo "I2C: a renumbered bus is found by its selector, a wrong chip id fails"
+mv "$S/bus/i2c/devices/i2c-4" "$S/bus/i2c/devices/i2c-5"
+sed -i.bak 's/^4 /5 /' "$T/i2c" "$T/regs"
+out=$(selftest --json)
+check_status "$out" i2c ok
+check_data "$out" i2c | grep -q '"id": "imu-accel", "part": "BMI088", "bus": 5, "bus_hint": 4, "bus_found_by": "selector"' ||
+	fail "the i2c-gpio bus should be found as i2c-5: $(check_data "$out" i2c)"
+sed -i.bak 's/^5 0x18 0x00 0x1e$/5 0x18 0x00 0x1f/' "$T/regs"
+out=$(selftest --json)
+check_status "$out" i2c fail
+printf '%s' "$out" | grep -q 'BMI088 (imu-accel) at 5/0x18: chip id 0x1f' || fail "the wrong chip id should be named: $out"
+mv "$S/bus/i2c/devices/i2c-5" "$S/bus/i2c/devices/i2c-4"
+sed -i.bak 's/^5 /4 /; s/^4 0x18 0x00 0x1f$/4 0x18 0x00 0x1e/' "$T/i2c" "$T/regs"
 
 echo "the fan is handed back: state and governor as before"
 [ "$(cat "$S/class/thermal/cooling_device1/cur_state")" = 1 ] || fail "cur_state not restored"
