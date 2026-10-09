@@ -78,7 +78,7 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
 - [ ] Open as USB disk / Browse / Eject / Add my SSH key on hardware.
 - [ ] Raze 1.0.7 on hardware: LED colour order, locate, SSH keys, serial
       console. Fan polarity (`dtoverlay=raze-fan,polarity=0`) still to test.
-- [ ] Raze with lemnosd (Lemnos b4d6cfe, `d5302db`) on hardware: an OS build
+- [ ] Raze with lemnosd (Lemnos 62c3caf, `d5302db`) on hardware: an OS build
       with the `lemnos` source; the sensors binding through the bus
       selectors (`i2c:compatible=i2c-gpio`,
       `i2c:of=/axi/pcie@1000120000/rp1/i2c@74000`) and their readings; the

@@ -63,7 +63,7 @@ commit; the commits are listed per area.
 - **lemnosd is required for LEDs and fan control by default.** The layer
   imports Lemnos's lemnosd layer (`gaia/lemnos.toml`), so an OS build must
   declare a second git source, `lemnos` at
-  `b4d6cfee3afe77fc649e55db4ab592d0ab94cb0e` (see `gaia/device.toml`; Gaia
+  `62c3caf677c4bf9cef47fcb02b36d0e98f3248ef` (see `gaia/device.toml`; Gaia
   refuses import sources declared inside a source-imported layer), and needs
   Docker on the build host (Lemnos builds its static binaries in a container)
   and systemd-sysusers (the `lemnos` user). lemnosd owns `/dev/leds0`, the
@@ -83,6 +83,12 @@ commit; the commits are listed per area.
 
 ### lemnosd, the hardware service
 
+- **Lemnos 62c3caf** (from b4d6cfe, no API changes): its Gaia layer asks
+  for `gaia_version >= 2.0.0` (b4d6cfe asked for 2.1.0, which doesn't
+  exist, so every OS build importing it failed), and both binaries build in
+  one cargo invocation (`build_group`). An OS can import Lemnos's optional
+  `packaging/gaia/lemnosd-host.toml` after the package to build them on the
+  host instead of in Docker. `gaia/board-agent.toml` asks for 2.0.0 too.
 - **Lemnos b4d6cfe** (from 8a126d3): the self-test's LED frames go on
   lemnosd's test layer (`led ... --test --seconds 60`, above every client's
   status; `led off --test` clears only it), and the fan check hands the fan
@@ -92,7 +98,7 @@ commit; the commits are listed per area.
 - **Gaia import:** `gaia/lemnos.toml` imports Lemnos's
   `packaging/gaia/lemnosd.toml` (static aarch64 musl `lemnosd` and
   `lemnos-ctl`, `lemnosd.service`, sysusers, preset) pinned at Lemnos dev
-  `b4d6cfe`, and redeclares `lemnosd-env` with
+  `62c3caf`, and redeclares `lemnosd-env` with
   `LEMNOSD_UPDATE_STATUS=/run/board/update.json`, so the updating animation
   follows the package's update writer (`d5302db`).
 - **Board definition:** `/etc/lemnos/board.toml` is generated from the

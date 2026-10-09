@@ -224,10 +224,11 @@ Declare Atlas as a pinned git source in the OS build (never inside the layer)
 and import the layer's entry file. The layer imports Lemnos's lemnosd layer
 from a second source, `lemnos`; Gaia lets only local files declare import
 sources, so the OS build declares that one too, at the commit the package is
-tested with (`capabilities.hardware-service.gaia_import.rev`). Requires Gaia >= 2.1.0.
+tested with (`capabilities.hardware-service.gaia_import.rev`). Requires Gaia >= 2.0.0
+with Rust build groups.
 
 ```toml
-gaia_version = ">=2.1.0"
+gaia_version = ">=2.0.0"
 
 imports = [
   "layers/base-os.toml",
@@ -246,7 +247,7 @@ rev = "<pinned commit>"
 id = "lemnos"
 kind = "git"
 repo = "https://github.com/Prometheus-Dynamics/Lemnos.git"
-rev = "b4d6cfee3afe77fc649e55db4ab592d0ab94cb0e"
+rev = "62c3caf677c4bf9cef47fcb02b36d0e98f3248ef"
 ```
 
 For local development against an Atlas checkout:
