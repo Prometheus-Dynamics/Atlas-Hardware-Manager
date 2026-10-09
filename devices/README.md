@@ -341,6 +341,14 @@ The device units are installed in `/usr/lib/systemd/system` and enabled by
 | `board-locate.service` (+ `.path`) | the identity endpoint's locate action: `raze-leds locate 10` |
 | `board-agent.service` | Orion device agent (`BR2_PACKAGE_BOARD_AGENT`, on by default): claims `update`, `update.cancel`, `update.rollback`, `reboot` and `locate` on orion-node's local IPC and runs them with `/usr/lib/board/update` (docs/ota.md). Waits when the OS has no orion-node |
 
+**orion-node local auth.** The package ships
+`orion-node.service.d/50-board-agent.conf`, setting
+`ORION_NODE_LOCAL_AUTH_ALLOW=root` so board-agent (root) may use the node's
+local IPC. It is an allow-list on top of the node's local auth mode, and
+gives root nothing it lacks on the board. systemd can't merge it with
+another value: an OS that sets its own `ORION_NODE_LOCAL_AUTH_ALLOW` replaces
+it and must list `root` too (e.g. `root,photonvision`).
+
 Fan, port power and LEDs work without a service: they are device tree
 overlays in `raze-device.txt`, plus `/usr/lib/udev/rules.d/60-raze-usb-power.rules`;
 lemnosd adds control over them on top.
