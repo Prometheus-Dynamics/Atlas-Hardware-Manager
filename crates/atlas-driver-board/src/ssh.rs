@@ -139,11 +139,12 @@ impl SshUpdate {
         command
     }
 
-    /// Runs `script` on the board and returns its stdout.
+    /// Runs `script` on the board and returns its stdout. The board's event
+    /// log records what it does as Atlas's.
     pub(crate) async fn run(&self, script: &str) -> Result<String, DriverError> {
         let output = self
             .command()
-            .arg(script)
+            .arg(as_atlas(script))
             .output()
             .await
             .map_err(|error| DriverError::Unreachable(format!("could not run ssh: {error}")))?;
@@ -238,6 +239,12 @@ impl SshUpdate {
         }
         Ok(())
     }
+}
+
+/// `script` with `BOARD_EVENT_SOURCE=atlas` exported first: everything it
+/// runs (the writer, `event`, the self-test) logs Atlas as the source.
+pub(crate) fn as_atlas(script: &str) -> String {
+    format!("export BOARD_EVENT_SOURCE=atlas; {script}")
 }
 
 /// A readable reason for a failed ssh run.
@@ -475,6 +482,14 @@ mod tests {
         assert_eq!(status.state, "staged");
         assert_eq!(status.version_staged, "2.0");
         assert_eq!(status.progress, 1000);
+    }
+
+    #[test]
+    fn commands_run_as_atlas() {
+        assert_eq!(
+            as_atlas("/usr/lib/board/update status"),
+            "export BOARD_EVENT_SOURCE=atlas; /usr/lib/board/update status"
+        );
     }
 
     #[test]

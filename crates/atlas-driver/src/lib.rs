@@ -13,6 +13,7 @@ mod health;
 mod observe;
 mod registry;
 mod selftest;
+mod status;
 mod types;
 
 pub use augment::CapabilitySource;
@@ -30,6 +31,10 @@ pub use observe::{
 pub use registry::DriverRegistry;
 pub use selftest::{
     CheckStatus, SELFTEST_FORMAT, SelfTestCapability, SelfTestCheck, SelfTestReport,
+};
+pub use status::{
+    BootInfo, DeviceEvent, DeviceStatus, Drift, DriftItem, EventSource, FanState, StatusCapability,
+    Temperature, UpdateState,
 };
 pub use types::{
     Candidate, DeviceKey, DeviceMode, Family, Identity, Link, LinkId, LinkKind, Serial,

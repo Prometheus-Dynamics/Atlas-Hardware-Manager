@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     DeviceMode, DriverError, Family, Identity, LogsCapability, SelfTestCapability,
-    TelemetryCapability,
+    StatusCapability, TelemetryCapability,
 };
 
 /// Everything a device can offer. The UI shows a tab or action only for the
@@ -27,6 +27,9 @@ pub enum CapabilityKind {
     OpenUi,
     /// The device can check its own hardware.
     SelfTest,
+    /// The device reports its state (boot, health, update, drift) and,
+    /// usually, an event log.
+    Status,
 }
 
 /// The capabilities a driver grants one device. Absent means unsupported.
@@ -37,6 +40,7 @@ pub struct Capabilities {
     pub telemetry: Option<Arc<dyn TelemetryCapability>>,
     pub logs: Option<Arc<dyn LogsCapability>>,
     pub selftest: Option<Arc<dyn SelfTestCapability>>,
+    pub status: Option<Arc<dyn StatusCapability>>,
 }
 
 impl Capabilities {
@@ -66,6 +70,9 @@ impl Capabilities {
         }
         if self.selftest.is_some() && mode == DeviceMode::Normal {
             kinds.push(CapabilityKind::SelfTest);
+        }
+        if self.status.is_some() && mode == DeviceMode::Normal {
+            kinds.push(CapabilityKind::Status);
         }
         kinds
     }

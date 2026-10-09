@@ -36,6 +36,9 @@ impl Capabilities {
         if self.selftest.is_none() {
             self.selftest = extra.selftest;
         }
+        if self.status.is_none() {
+            self.status = extra.status;
+        }
         self.actions = match (self.actions.take(), extra.actions) {
             (Some(own), Some(more)) => Some(Arc::new(CombinedActions { own, more })),
             (own, more) => own.or(more),

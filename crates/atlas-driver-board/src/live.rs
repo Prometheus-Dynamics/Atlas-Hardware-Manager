@@ -137,7 +137,7 @@ pub(crate) fn parse_logs(value: Value) -> Vec<LogLine> {
         .collect()
 }
 
-async fn get_json(http: &reqwest::Client, url: &str) -> Result<Value, DriverError> {
+pub(crate) async fn get_json(http: &reqwest::Client, url: &str) -> Result<Value, DriverError> {
     http.get(url)
         .send()
         .await
