@@ -13,7 +13,11 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use atlas_driver::DriverError;
 use orion_client::remote::{NodeTrust, OperatorIdentity, RemoteError, RemoteOperator};
-use orion_control_plane::{ActionRequest, ActionResult, NodeRecord, StatusEntry, StatusQuery};
+use orion_control_plane::{
+    ActionRequest, ActionResult, NodeRecord, ResourceRecord, StateSnapshot, StatusEntry,
+    StatusQuery,
+};
+use orion_core::NodeId;
 use serde::Serialize;
 
 use crate::transport::OrionTransport;
@@ -224,6 +228,25 @@ impl RemoteTransport {
     }
 }
 
+/// Every resource in the snapshot, merged as `nodes()` merges nodes: the
+/// desired records, with the observed ones over them. Each comes with the node
+/// its provider is registered on (providers are only in desired state).
+fn effective_resources(snapshot: StateSnapshot) -> Vec<(ResourceRecord, Option<NodeId>)> {
+    let state = snapshot.state;
+    let mut resources = state.desired.resources;
+    resources.extend(state.observed.resources);
+    let providers = state.desired.providers;
+    resources
+        .into_values()
+        .map(|resource| {
+            let node = providers
+                .get(&resource.provider_id)
+                .map(|provider| provider.node_id.clone());
+            (resource, node)
+        })
+        .collect()
+}
+
 #[async_trait]
 impl OrionTransport for RemoteTransport {
     fn configured(&self) -> bool {
@@ -236,6 +259,12 @@ impl OrionTransport for RemoteTransport {
     async fn nodes(&self) -> Result<Vec<NodeRecord>, DriverError> {
         self.call(|session| async move { session.nodes().await })
             .await
+    }
+
+    async fn resources(&self) -> Result<Vec<(ResourceRecord, Option<NodeId>)>, DriverError> {
+        self.call(|session| async move { session.state_snapshot().await })
+            .await
+            .map(effective_resources)
     }
 
     async fn status(&self, query: StatusQuery) -> Result<Vec<StatusEntry>, DriverError> {
@@ -252,5 +281,76 @@ impl OrionTransport for RemoteTransport {
         let id = action_id.to_string();
         self.call(|session| async move { session.query_action(&id).await })
             .await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use orion_control_plane::{
+        ClusterStateEnvelope, DesiredClusterState, ObservedClusterState, ProviderRecord,
+        ResourceRecord, StateSnapshot,
+    };
+    use orion_core::{ProviderId, ResourceId, ResourceType};
+
+    use super::*;
+
+    fn resource(id: &str, provider: &str) -> ResourceRecord {
+        ResourceRecord::builder(
+            ResourceId::new(id),
+            ResourceType::new("lemnos.device"),
+            ProviderId::new(provider),
+        )
+        .build()
+    }
+
+    #[test]
+    fn each_resource_comes_with_its_providers_node() {
+        let mut desired = DesiredClusterState::default();
+        desired.resources.insert(
+            ResourceId::new("lemnos.raze.imu"),
+            resource("lemnos.raze.imu", "lemnos"),
+        );
+        desired.resources.insert(
+            ResourceId::new("lemnos.other.gps"),
+            resource("lemnos.other.gps", "lemnos-other"),
+        );
+        desired.resources.insert(
+            ResourceId::new("lemnos.raze.orphan"),
+            resource("lemnos.raze.orphan", "gone"),
+        );
+        desired.providers.insert(
+            ProviderId::new("lemnos"),
+            ProviderRecord::builder(ProviderId::new("lemnos"), NodeId::new("raze-node")).build(),
+        );
+        desired.providers.insert(
+            ProviderId::new("lemnos-other"),
+            ProviderRecord::builder(ProviderId::new("lemnos-other"), NodeId::new("other-node"))
+                .build(),
+        );
+        let snapshot = StateSnapshot {
+            state: ClusterStateEnvelope::new(
+                desired,
+                ObservedClusterState::default(),
+                Default::default(),
+            ),
+        };
+
+        let nodes: Vec<(String, Option<String>)> = effective_resources(snapshot)
+            .into_iter()
+            .map(|(record, node)| {
+                (
+                    record.resource_id.as_str().to_string(),
+                    node.map(|node| node.as_str().to_string()),
+                )
+            })
+            .collect();
+        assert_eq!(
+            nodes,
+            vec![
+                ("lemnos.other.gps".into(), Some("other-node".into())),
+                ("lemnos.raze.imu".into(), Some("raze-node".into())),
+                ("lemnos.raze.orphan".into(), None),
+            ]
+        );
     }
 }

@@ -3,6 +3,7 @@
   // alone: a status pill, its readings (axis trios in a row), and its controls.
   import type { HardwareDevice } from "#lib/api/client.ts";
   import GlassCard from "#lib/components/common/GlassCard.svelte";
+  import Icon from "#lib/components/common/Icon.svelte";
   import Pill from "#lib/components/common/Pill.svelte";
   import HardwareReadingTile from "./HardwareReadingTile.svelte";
   import { groupReadings, label, pillFor } from "./hardware.ts";
@@ -18,6 +19,13 @@
   {#snippet actions()}
     <Pill tone={pill.tone} label={pill.label} />
   {/snippet}
+
+  {#if device.reason}
+    <p class="mb-3 flex items-start gap-2 text-[13px] {device.status === 'faulted' ? 'text-err-fg' : 'text-fg-muted'}">
+      {#if device.status === "faulted"}<Icon name="alert-circle" size={15} class="mt-0.5 shrink-0" />{/if}
+      <span class="min-w-0">{device.reason}</span>
+    </p>
+  {/if}
 
   {#if entries.length === 0}
     <p class="text-[13px] text-fg-muted">No readings.</p>

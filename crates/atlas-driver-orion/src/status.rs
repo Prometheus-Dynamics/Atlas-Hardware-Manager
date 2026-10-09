@@ -6,20 +6,24 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use atlas_driver::{
-    BootInfo, DeviceStatus, DriverError, Identity, StatusCapability, Temperature, UpdateState,
+    BootInfo, DeviceStatus, DriverError, HardwareDevice, HardwareSnapshot, Identity,
+    StatusCapability, Temperature, UpdateState,
 };
+use futures::future::join_all;
 use orion_control_plane::{
     NodeHostFacts, StatusEntry, StatusQuery, StatusSubject, TypedConfigValue, update_action,
 };
 use orion_core::NodeId;
 
+use crate::hardware;
 use crate::metrics::number;
 use crate::transport::OrionTransport;
 
-fn text(value: &TypedConfigValue) -> Option<String> {
+pub(crate) fn text(value: &TypedConfigValue) -> Option<String> {
     match value {
         TypedConfigValue::String(text) => Some(text.clone()),
         TypedConfigValue::UInt(n) => Some(n.to_string()),
@@ -112,7 +116,38 @@ impl StatusCapability for OrionStatus {
                     .await?,
             );
         }
-        Ok(status_from(host.as_ref(), &entries))
+        let mut status = status_from(host.as_ref(), &entries);
+        status.hardware = self.hardware().await;
+        Ok(status)
+    }
+}
+
+impl OrionStatus {
+    /// The board's devices: the `lemnos.device` resources whose provider is
+    /// on this node, each with its own status lane. `None` when there are
+    /// none, or when Orion can't say (a device whose status fails is left out).
+    async fn hardware(&self) -> Option<HardwareSnapshot> {
+        let resources = self.transport.resources().await.ok()?;
+        let transport = self.transport.as_ref();
+        let queries = resources
+            .into_iter()
+            .filter(|(record, node)| {
+                record.resource_type.as_str() == hardware::DEVICE_TYPE
+                    && node.as_ref() == Some(&self.node)
+            })
+            .map(|(record, _)| async move {
+                let query = StatusQuery {
+                    subject: Some(StatusSubject::Resource(record.resource_id.clone())),
+                    key_prefix: None,
+                };
+                let entries = transport.status(query).await.ok()?;
+                Some(hardware::device(&record, &entries))
+            });
+        let devices: Vec<HardwareDevice> = join_all(queries).await.into_iter().flatten().collect();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| i64::try_from(since.as_secs()).unwrap_or(0));
+        hardware::snapshot(devices, now)
     }
 }
 

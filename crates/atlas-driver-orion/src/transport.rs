@@ -4,7 +4,10 @@ use async_trait::async_trait;
 use std::net::IpAddr;
 
 use atlas_driver::{Artifact, DriverError, HealthCheck};
-use orion_control_plane::{ActionRequest, ActionResult, NodeRecord, StatusEntry, StatusQuery};
+use orion_control_plane::{
+    ActionRequest, ActionResult, NodeRecord, ResourceRecord, StatusEntry, StatusQuery,
+};
+use orion_core::NodeId;
 
 /// One connection to an Orion cluster, as an operator. Every call may fail
 /// with `DriverError::Unreachable` when Orion can't be reached.
@@ -20,6 +23,13 @@ pub trait OrionTransport: Send + Sync {
     /// node's new `boot_id` shows up here (not on the status lane) once it
     /// is back and has synced; until then the old record may still appear.
     async fn nodes(&self) -> Result<Vec<NodeRecord>, DriverError>;
+
+    /// Every resource Orion knows, each with the node its provider is
+    /// registered on (`None` when that provider isn't known). Resources are
+    /// cluster state, so any node can answer. Empty by default.
+    async fn resources(&self) -> Result<Vec<(ResourceRecord, Option<NodeId>)>, DriverError> {
+        Ok(Vec::new())
+    }
 
     /// Status-lane entries (volatile metrics and durable `update.*` keys).
     /// The status lane is per node and not replicated, so an implementation

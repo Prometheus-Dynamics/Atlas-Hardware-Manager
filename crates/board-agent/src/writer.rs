@@ -124,9 +124,13 @@ impl Writer {
                 let mut lines = BufReader::new(stderr).lines();
                 while let Ok(Some(line)) = lines.next_line().await {
                     crate::log(&line);
-                    *tail.0.lock().unwrap_or_else(|p| p.into_inner()) = Some(line);
+                    *tail.last.lock().unwrap_or_else(|p| p.into_inner()) = Some(line);
                 }
+                tail.read.store(true, std::sync::atomic::Ordering::Release);
+                tail.done.notify_waiters();
             });
+        } else {
+            tail.read.store(true, std::sync::atomic::Ordering::Release);
         }
         Ok((child, tail))
     }
@@ -134,12 +138,39 @@ impl Writer {
 
 /// The last line a running writer printed on stderr.
 #[derive(Clone, Default)]
-pub struct StderrTail(std::sync::Arc<std::sync::Mutex<Option<String>>>);
+pub struct StderrTail {
+    last: std::sync::Arc<std::sync::Mutex<Option<String>>>,
+    /// Set once stderr reached its end (the writer and anything it started
+    /// closed it).
+    read: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    done: std::sync::Arc<tokio::sync::Notify>,
+}
 
 impl StderrTail {
     pub fn reason(&self) -> Option<String> {
-        let line = self.0.lock().unwrap_or_else(|p| p.into_inner()).clone()?;
+        let line = self
+            .last
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone()?;
         reason(&line)
+    }
+
+    /// Waits until stderr is read to its end, at most `limit`: the writer
+    /// may have exited before its last line was read, and that line is the
+    /// reason it gives.
+    pub async fn finished(&self, limit: std::time::Duration) {
+        let read = || self.read.load(std::sync::atomic::Ordering::Acquire);
+        let _ = tokio::time::timeout(limit, async {
+            while !read() {
+                let notified = self.done.notified();
+                if read() {
+                    break;
+                }
+                notified.await;
+            }
+        })
+        .await;
     }
 }
 

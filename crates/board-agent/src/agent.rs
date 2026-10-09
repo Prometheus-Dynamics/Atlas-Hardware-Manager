@@ -357,6 +357,7 @@ impl Agent {
             }
         };
         let ok = exit.as_ref().is_ok_and(|status| status.success());
+        tail.finished(Duration::from_secs(1)).await;
         let reason = || {
             tail.reason().unwrap_or_else(|| match &exit {
                 Ok(status) => format!("the writer failed ({status})"),

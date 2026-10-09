@@ -15,6 +15,7 @@
 
 mod actions;
 mod directory;
+mod hardware;
 mod metrics;
 mod remote;
 mod status;

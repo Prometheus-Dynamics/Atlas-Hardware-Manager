@@ -364,6 +364,11 @@ commit; the commits are listed per area.
 
 ### Orion device agent
 
+- **board-agent: the writer's own refusal text, also under load.** When the
+  writer exited before its last stderr line was read, the action failed
+  with "the writer failed (exit status: 3)" instead of the writer's reason
+  ("the last update is still on trial ..."). The agent now waits (up to
+  1 s) for stderr to end before answering.
 - **`clock.set`** (board-agent): sets the board's clock from `unix` or an
   ISO `time` (UTC), refusing times before 2024 or from 2100, and logs a
   `clock.set` event as Orion's. board-agent publishes what it claims as

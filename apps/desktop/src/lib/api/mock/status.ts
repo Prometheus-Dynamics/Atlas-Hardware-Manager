@@ -210,6 +210,7 @@ function hardwareFor(device: SimDevice, now: number, celsius: number): HardwareS
         class: "magnetometer",
         model: "bmm150",
         status: "faulted",
+        reason: "chip id read failed",
         readings: [],
         controls: [],
       },

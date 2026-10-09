@@ -8,11 +8,17 @@
 //! fills in what the owning driver left empty. Without the source, the
 //! device keeps exactly what its driver gives it.
 
+use std::future::{Future, poll_fn};
+use std::pin::pin;
 use std::sync::Arc;
+use std::task::Poll;
 
 use async_trait::async_trait;
 
-use crate::{ActionsCapability, Capabilities, DeviceAction, DriverError, Identity};
+use crate::{
+    ActionsCapability, Capabilities, DeviceAction, DeviceEvent, DeviceStatus, DriverError,
+    Identity, StatusCapability,
+};
 
 /// Extra capabilities for devices other drivers own.
 pub trait CapabilitySource: Send + Sync {
@@ -38,9 +44,10 @@ impl Capabilities {
         if self.selftest.is_none() {
             self.selftest = extra.selftest;
         }
-        if self.status.is_none() {
-            self.status = extra.status;
-        }
+        self.status = match (self.status.take(), extra.status) {
+            (Some(own), Some(more)) => Some(Arc::new(CombinedStatus { own, more })),
+            (own, more) => own.or(more),
+        };
         self.actions = match (self.actions.take(), extra.actions) {
             (Some(own), Some(more)) => Some(Arc::new(CombinedActions { own, more })),
             (own, more) => own.or(more),
@@ -87,13 +94,81 @@ impl ActionsCapability for CombinedActions {
     }
 }
 
+/// Runs two futures to completion, interleaved on the current task.
+async fn both<A: Future, B: Future>(a: A, b: B) -> (A::Output, B::Output) {
+    let (mut a, mut b) = (pin!(a), pin!(b));
+    let (mut ra, mut rb) = (None, None);
+    poll_fn(|cx| {
+        if ra.is_none()
+            && let Poll::Ready(value) = a.as_mut().poll(cx)
+        {
+            ra = Some(value);
+        }
+        if rb.is_none()
+            && let Poll::Ready(value) = b.as_mut().poll(cx)
+        {
+            rb = Some(value);
+        }
+        match (ra.take(), rb.take()) {
+            (Some(x), Some(y)) => Poll::Ready((x, y)),
+            (x, y) => {
+                ra = x;
+                rb = y;
+                Poll::Pending
+            }
+        }
+    })
+    .await
+}
+
+/// The owner's status, with the hardware readings of the extra source when it
+/// has any. Events come from the owner, or from the extra source when the
+/// owner can't answer.
+struct CombinedStatus {
+    own: Arc<dyn StatusCapability>,
+    more: Arc<dyn StatusCapability>,
+}
+
+#[async_trait]
+impl StatusCapability for CombinedStatus {
+    async fn status(&self, device: &Identity) -> Result<DeviceStatus, DriverError> {
+        match both(self.own.status(device), self.more.status(device)).await {
+            (Ok(mut status), Ok(extra)) => {
+                if extra.hardware.is_some() {
+                    status.hardware = extra.hardware;
+                }
+                Ok(status)
+            }
+            (Ok(status), Err(_)) => Ok(status),
+            (Err(_), Ok(extra)) => Ok(extra),
+            (Err(err), Err(_)) => Err(err),
+        }
+    }
+
+    async fn events(
+        &self,
+        device: &Identity,
+        since: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<DeviceEvent>, DriverError> {
+        match self.own.events(device, since, limit).await {
+            Ok(events) => Ok(events),
+            Err(err) => self
+                .more
+                .events(device, since, limit)
+                .await
+                .map_err(|_| err),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
     use std::sync::Mutex;
 
     use super::*;
-    use crate::{DeviceKey, DeviceMode, LinkId};
+    use crate::{DeviceKey, DeviceMode, EventSource, HardwareDevice, HardwareSnapshot, LinkId};
 
     struct Named(&'static [&'static str], Mutex<Vec<String>>);
 
@@ -242,5 +317,171 @@ mod tests {
         let mut caps = Capabilities::default();
         caps.fill_from(Capabilities::default());
         assert!(caps.kinds().len() == 1);
+    }
+
+    /// A status source that answers with what it was given, or fails when
+    /// it was given nothing.
+    #[derive(Default)]
+    struct Reports {
+        status: Option<DeviceStatus>,
+        events: Option<Vec<DeviceEvent>>,
+        asked: Mutex<u32>,
+    }
+
+    fn down() -> DriverError {
+        DriverError::Unreachable("no answer".into())
+    }
+
+    #[async_trait]
+    impl StatusCapability for Reports {
+        async fn status(&self, _device: &Identity) -> Result<DeviceStatus, DriverError> {
+            *self.asked.lock().unwrap() += 1;
+            self.status.clone().ok_or_else(down)
+        }
+
+        async fn events(
+            &self,
+            _device: &Identity,
+            _since: Option<i64>,
+            _limit: usize,
+        ) -> Result<Vec<DeviceEvent>, DriverError> {
+            self.events.clone().ok_or_else(down)
+        }
+    }
+
+    fn at(time: i64) -> DeviceStatus {
+        DeviceStatus {
+            time: Some(time),
+            ..DeviceStatus::default()
+        }
+    }
+
+    fn snapshot(id: &str) -> HardwareSnapshot {
+        HardwareSnapshot {
+            at: 1,
+            devices: vec![HardwareDevice {
+                id: id.into(),
+                status: "available".into(),
+                ..HardwareDevice::default()
+            }],
+        }
+    }
+
+    fn event(t: i64) -> DeviceEvent {
+        DeviceEvent {
+            t,
+            boot_id: String::new(),
+            kind: "boot".into(),
+            source: EventSource::Local,
+            message: String::new(),
+            data: Default::default(),
+        }
+    }
+
+    fn merged(own: Arc<Reports>, more: Arc<Reports>) -> Arc<dyn StatusCapability> {
+        let mut caps = Capabilities {
+            status: Some(own),
+            ..Capabilities::default()
+        };
+        caps.fill_from(Capabilities {
+            status: Some(more),
+            ..Capabilities::default()
+        });
+        caps.status.unwrap()
+    }
+
+    #[tokio::test]
+    async fn status_takes_the_hardware_of_the_extra_source() {
+        let own = Arc::new(Reports {
+            status: Some(at(7)),
+            ..Reports::default()
+        });
+        let more = Arc::new(Reports {
+            status: Some(DeviceStatus {
+                hardware: Some(snapshot("imu")),
+                ..at(9)
+            }),
+            ..Reports::default()
+        });
+        let status = merged(own.clone(), more.clone())
+            .status(&device())
+            .await
+            .unwrap();
+        // The owner's status, with the extra source's hardware.
+        assert_eq!(status.time, Some(7));
+        assert_eq!(status.hardware, Some(snapshot("imu")));
+        assert_eq!(
+            (*own.asked.lock().unwrap(), *more.asked.lock().unwrap()),
+            (1, 1)
+        );
+
+        // Without hardware from the extra source, the owner's own stays.
+        let own = Arc::new(Reports {
+            status: Some(DeviceStatus {
+                hardware: Some(snapshot("fan")),
+                ..at(7)
+            }),
+            ..Reports::default()
+        });
+        let more = Arc::new(Reports {
+            status: Some(at(9)),
+            ..Reports::default()
+        });
+        let status = merged(own, more).status(&device()).await.unwrap();
+        assert_eq!(status.hardware, Some(snapshot("fan")));
+    }
+
+    #[tokio::test]
+    async fn status_survives_a_failing_source() {
+        // The extra source fails: the owner's status, unchanged.
+        let owner = at(7);
+        let own = Arc::new(Reports {
+            status: Some(owner.clone()),
+            ..Reports::default()
+        });
+        let status = merged(own, Arc::new(Reports::default()))
+            .status(&device())
+            .await
+            .unwrap();
+        assert_eq!(status, owner);
+
+        // The owner fails: the extra source's status.
+        let own = Arc::new(Reports::default());
+        let more = Arc::new(Reports {
+            status: Some(at(9)),
+            ..Reports::default()
+        });
+        let status = merged(own, more).status(&device()).await.unwrap();
+        assert_eq!(status.time, Some(9));
+
+        // Both fail.
+        let failing = merged(Arc::new(Reports::default()), Arc::new(Reports::default()));
+        assert!(failing.status(&device()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn events_come_from_the_owner_and_fall_back_to_the_extra_source() {
+        let own = Arc::new(Reports {
+            events: Some(vec![event(1)]),
+            ..Reports::default()
+        });
+        let more = Arc::new(Reports {
+            events: Some(vec![event(2)]),
+            ..Reports::default()
+        });
+        let caps = merged(own, more.clone());
+        assert_eq!(
+            caps.events(&device(), None, 10).await.unwrap(),
+            vec![event(1)]
+        );
+
+        let caps = merged(Arc::new(Reports::default()), more);
+        assert_eq!(
+            caps.events(&device(), None, 10).await.unwrap(),
+            vec![event(2)]
+        );
+
+        let caps = merged(Arc::new(Reports::default()), Arc::new(Reports::default()));
+        assert!(caps.events(&device(), None, 10).await.is_err());
     }
 }

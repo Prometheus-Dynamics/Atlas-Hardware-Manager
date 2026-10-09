@@ -3,14 +3,14 @@ mod support;
 use std::sync::{Arc, Mutex};
 
 use atlas_driver::{
-    Artifact, CancellationToken, CapabilitySource, DriverError, LinkSource, ProgressSink,
-    ReleaseRef, UpdateOutcome,
+    Artifact, CancellationToken, CapabilitySource, DriverError, HardwareDevice, HardwareReading,
+    LinkSource, ProgressSink, ReleaseRef, UpdateOutcome,
 };
 use atlas_driver_orion::OrionDirectory;
 use atlas_image_server::{ImageServer, ImageServerConfig};
-use orion_control_plane::{ActionRequest, TypedConfigValue};
+use orion_control_plane::{ActionRequest, AvailabilityState, HealthState, TypedConfigValue};
 use sha2::{Digest, Sha256};
-use support::{Ending, FakeOrion, LocalBundles, raze, release, text};
+use support::{Ending, FakeOrion, LocalBundles, NODE, device_resource, raze, release, text};
 
 #[tokio::test]
 async fn orion_adds_to_the_device_with_the_same_board_serial() {
@@ -388,4 +388,140 @@ async fn the_board_downloads_and_checks_the_image_atlas_serves() {
             .any(|check| check.id == "orion.image-server")
     );
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn the_board_hardware_comes_from_the_devices_on_this_node() {
+    let fake = FakeOrion::new();
+    let labels = |device: &str, class: &str, model: &str| {
+        vec![
+            "lemnos.board=raze".to_string(),
+            format!("lemnos.class={class}"),
+            format!("lemnos.model={model}"),
+            format!("lemnos.driver={device}"),
+        ]
+    };
+    let mut imu = labels("imu", "imu", "bmi088");
+    imu.extend([
+        "lemnos.unit.accel_x=m/s²".into(),
+        "lemnos.unit.gyro_z=rad/s".into(),
+    ]);
+    let imu: Vec<&str> = imu.iter().map(String::as_str).collect();
+    fake.add_resource(
+        device_resource(
+            "imu",
+            AvailabilityState::Available,
+            HealthState::Healthy,
+            &imu,
+        ),
+        NODE,
+        &[
+            ("status", text("available")),
+            ("accel_x", TypedConfigValue::F64(0.12)),
+            ("gyro_z", TypedConfigValue::F64(-0.5)),
+            ("read_us", TypedConfigValue::UInt(950)),
+        ],
+    );
+    fake.add_resource(
+        device_resource(
+            "magnetometer",
+            AvailabilityState::Unavailable,
+            HealthState::Failed,
+            &[
+                "lemnos.board=raze",
+                "lemnos.class=magnetometer",
+                "lemnos.model=qmc5883l",
+            ],
+        ),
+        NODE,
+        &[
+            ("status", text("faulted")),
+            ("reason", text("no response on 0x0d")),
+        ],
+    );
+    let mut fan = labels("fan", "fan", "pwmfan");
+    fan.extend([
+        "lemnos.unit.rpm=rpm".into(),
+        "lemnos.control.duty=0..1".into(),
+    ]);
+    let fan: Vec<&str> = fan.iter().map(String::as_str).collect();
+    fake.add_resource(
+        device_resource(
+            "fan",
+            AvailabilityState::Available,
+            HealthState::Healthy,
+            &fan,
+        ),
+        NODE,
+        &[
+            ("status", text("available")),
+            ("rpm", TypedConfigValue::UInt(4200)),
+            ("control.duty", TypedConfigValue::F64(0.83)),
+        ],
+    );
+    // Another board's device: its provider is on another node.
+    fake.add_resource(
+        device_resource(
+            "gps",
+            AvailabilityState::Available,
+            HealthState::Healthy,
+            &["lemnos.board=raze", "lemnos.class=gps"],
+        ),
+        "other-node",
+        &[("status", text("available"))],
+    );
+
+    let directory = OrionDirectory::new(Arc::new(fake), None);
+    directory.refresh().await.unwrap();
+    let device = raze(Some("e5226d57"));
+    let status = directory
+        .capabilities_for(&device)
+        .status
+        .unwrap()
+        .status(&device)
+        .await
+        .unwrap();
+
+    let hardware = status.hardware.expect("the board has hardware");
+    assert!(hardware.at > 0);
+    let reading = |name: &str, value: f64, unit: &str| HardwareReading {
+        name: name.into(),
+        value: Some(value),
+        unit: unit.into(),
+    };
+    assert_eq!(
+        hardware.devices,
+        vec![
+            HardwareDevice {
+                id: "fan".into(),
+                class: "fan".into(),
+                model: "pwmfan".into(),
+                status: "available".into(),
+                reason: None,
+                readings: vec![reading("rpm", 4200.0, "rpm")],
+                controls: vec!["duty".into()],
+            },
+            HardwareDevice {
+                id: "imu".into(),
+                class: "imu".into(),
+                model: "bmi088".into(),
+                status: "available".into(),
+                reason: None,
+                readings: vec![
+                    reading("accel_x", 0.12, "m/s²"),
+                    reading("gyro_z", -0.5, "rad/s"),
+                ],
+                controls: vec![],
+            },
+            HardwareDevice {
+                id: "magnetometer".into(),
+                class: "magnetometer".into(),
+                model: "qmc5883l".into(),
+                status: "faulted".into(),
+                reason: Some("no response on 0x0d".into()),
+                readings: vec![],
+                controls: vec![],
+            },
+        ]
+    );
 }

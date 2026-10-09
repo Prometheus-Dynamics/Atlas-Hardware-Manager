@@ -505,6 +505,8 @@ export interface HardwareDevice {
   model: string;
   /** available, degraded, faulted or missing. */
   status: string;
+  /** Why it isn't available, when the source says. */
+  reason?: string | null;
   readings: HardwareReading[];
   /** Controls the device offers (not operable from Atlas yet). */
   controls: string[];

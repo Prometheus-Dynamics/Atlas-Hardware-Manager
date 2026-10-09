@@ -12,10 +12,10 @@ use atlas_driver::{
 };
 use atlas_driver_orion::{BundleHost, OrionTransport};
 use orion_control_plane::{
-    ActionRequest, ActionResult, ActionState, NodeHostFacts, NodeRecord, StatusEntry, StatusQuery,
-    StatusSubject, TypedConfigValue,
+    ActionRequest, ActionResult, ActionState, AvailabilityState, HealthState, NodeHostFacts,
+    NodeRecord, ResourceRecord, StatusEntry, StatusQuery, StatusSubject, TypedConfigValue,
 };
-use orion_core::NodeId;
+use orion_core::{NodeId, ProviderId, ResourceId, ResourceType};
 
 /// How the fake board's update goes.
 #[derive(Clone, Copy, PartialEq)]
@@ -119,6 +119,9 @@ pub fn script(ending: Ending) -> VecDeque<Step> {
 #[derive(Default)]
 pub struct State {
     pub nodes: Vec<NodeRecord>,
+    /// Every resource, with the node its provider is registered on.
+    pub resources: Vec<(ResourceRecord, Option<NodeId>)>,
+    /// Status-lane entries, of nodes and of resources.
     pub status: Vec<StatusEntry>,
     pub actions: HashMap<String, ActionResult>,
     pub reject: bool,
@@ -167,6 +170,23 @@ impl FakeOrion {
         self.0.lock().unwrap().set(key, value);
     }
 
+    /// Adds a resource whose provider is on `node`, with its status lane.
+    pub fn add_resource(
+        &self,
+        record: ResourceRecord,
+        node: &str,
+        lane: &[(&str, TypedConfigValue)],
+    ) {
+        let mut state = self.0.lock().unwrap();
+        let subject = StatusSubject::Resource(record.resource_id.clone());
+        for (key, value) in lane {
+            state
+                .status
+                .push(StatusEntry::new(subject.clone(), *key, value.clone()));
+        }
+        state.resources.push((record, Some(NodeId::new(node))));
+    }
+
     pub fn received(&self) -> Vec<String> {
         self.0.lock().unwrap().received.clone()
     }
@@ -174,7 +194,9 @@ impl FakeOrion {
 
 impl State {
     pub fn set(&mut self, key: &str, value: TypedConfigValue) {
-        self.status.retain(|entry| entry.key != key);
+        let node = StatusSubject::Node(NodeId::new(NODE));
+        self.status
+            .retain(|entry| entry.key != key || entry.subject != node);
         self.status.push(status(key, value));
     }
 
@@ -214,6 +236,10 @@ impl OrionTransport for FakeOrion {
         Ok(self.0.lock().unwrap().nodes.clone())
     }
 
+    async fn resources(&self) -> Result<Vec<(ResourceRecord, Option<NodeId>)>, DriverError> {
+        Ok(self.0.lock().unwrap().resources.clone())
+    }
+
     async fn status(&self, query: StatusQuery) -> Result<Vec<StatusEntry>, DriverError> {
         let prefix = query.key_prefix.unwrap_or_default();
         let mut state = self.0.lock().unwrap();
@@ -224,6 +250,12 @@ impl OrionTransport for FakeOrion {
             .status
             .iter()
             .filter(|entry| entry.key.starts_with(&prefix))
+            .filter(|entry| {
+                query
+                    .subject
+                    .as_ref()
+                    .is_none_or(|subject| *subject == entry.subject)
+            })
             .cloned()
             .collect())
     }
@@ -314,4 +346,27 @@ pub fn release() -> ReleaseRef {
             size_bytes: 400_000_000,
         }),
     }
+}
+
+/// A `lemnos.device` resource `lemnos.raze.<device>` (the bridge's shape),
+/// with the given availability and health and labels.
+pub fn device_resource(
+    device: &str,
+    availability: AvailabilityState,
+    health: HealthState,
+    labels: &[&str],
+) -> ResourceRecord {
+    labels
+        .iter()
+        .fold(
+            ResourceRecord::builder(
+                ResourceId::new(format!("lemnos.raze.{device}")),
+                ResourceType::new("lemnos.device"),
+                ProviderId::new("lemnos"),
+            )
+            .availability(availability)
+            .health(health),
+            |builder, label| builder.label(*label),
+        )
+        .build()
 }

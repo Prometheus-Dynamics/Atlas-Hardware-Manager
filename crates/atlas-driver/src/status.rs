@@ -249,6 +249,9 @@ pub struct HardwareDevice {
     /// `available`, `degraded`, `faulted` or `missing`.
     #[serde(default)]
     pub status: String,
+    /// Why it isn't available, when the source says (Orion's `reason`).
+    #[serde(default)]
+    pub reason: Option<String>,
     #[serde(default)]
     pub readings: Vec<HardwareReading>,
     /// Names of the controls the device accepts.
