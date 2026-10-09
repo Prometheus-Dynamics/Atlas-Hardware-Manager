@@ -7,11 +7,22 @@
 #                              inactive slot, fix its cmdline
 #   update stage - --sha256 <hex> [--format xz|zst|gz|raw]
 #                              the same from stdin (checked at the end)
+#   update stage-url <url> --sha256 <hex> --size <bytes> [--format ...]
+#                              download to /data/board/update/ (resumed when
+#                              interrupted), check size and SHA-256, stage
 #   update apply               boot the staged slot once on trial ("0 tryboot")
 #   update confirm             on the trial boot, once healthy: keep it
-#   update rollback            forget a staged update
+#   update cancel              stop a running stage, or forget a staged update
+#   update rollback [--no-reboot]
+#                              boot the previous confirmed slot again
 #   update check-link          after boot: fall back to the previous slot when
 #                              the board's management services stay down
+#
+# States (STATE in board-update.env, "state" in the JSON): idle, staging,
+# staged, rebooting (apply's or rollback's restart was accepted), trying (the
+# trial boot), confirmed, rolled-back, cancelled, error. Exit status: 0 done,
+# 3 refused with nothing changed (wrong state, another command running),
+# anything else failed (recorded as `error` once staging began).
 #
 # Layout (MBR on the eMMC): p1 holds autoboot.txt only; boot A/B are p2/p3
 # (FAT), root A/B are p5/p6. autoboot.txt's [all] boot_partition is the
@@ -59,9 +70,24 @@ SYNC=${UPDATE_SYNC:-sync}
 CMDLINE_ROOT=${UPDATE_CMDLINE_ROOT:-}
 WORK=${BOARD_RUN_DIR}/update
 STATUS_JSON=${BOARD_RUN_DIR}/update.json
+# The running stage's PID (stage, stage-url), for `cancel`.
+PID_FILE=${BOARD_RUN_DIR}/update.pid
+# Where stage-url keeps its download: persistent (/run is RAM), so an
+# interrupted download resumes.
+DOWNLOAD_DIR=${UPDATE_DOWNLOAD_DIR:-$BOARD_DATA_DIR/update}
+# curl or wget; empty takes whichever the image has.
+DOWNLOADER=${UPDATE_DOWNLOADER:-}
+# Seconds between progress updates of update.json while downloading or
+# copying.
+POLL=${UPDATE_POLL:-1}
+# Where the stage's progress starts, per mille: stage-url's download takes
+# 0-500 and its stage 500-1000.
+STAGE_FROM=0
+PUMP=''
 
 die() {
 	board_log "$*"
+	stop_pump
 	# Inside with_autoboot, p1 is already mounted: record the failure there.
 	if [ -n "${AB:-}" ] && [ -d "$AB" ]; then
 		STATE=error
@@ -71,6 +97,29 @@ die() {
 		$UMOUNT "$AB" >/dev/null 2>&1 || true
 	fi
 	exit 1
+}
+
+# Refuses a command without touching the recorded state (inside
+# with_autoboot: its status is the command's). Exit status 3 always means
+# "refused, nothing changed" (also when another command holds the lock), so
+# a caller such as board-agent can tell a refusal from a failed stage.
+REFUSED=3
+refuse() {
+	board_log "$*"
+	return "$REFUSED"
+}
+
+# Records a failure outside with_autoboot (stage-url's download), then exits.
+fail() {
+	FAILURE="$*"
+	board_log "$FAILURE"
+	with_autoboot _record_failure || true
+	exit 1
+}
+_record_failure() {
+	load_state
+	STATE=error ERROR=$FAILURE
+	save_state
 }
 
 # The disk's partition prefix, e.g. /dev/mmcblk0p or /dev/sda.
@@ -130,21 +179,25 @@ mount_part_ro() {
 
 with_autoboot() {
 	# with_autoboot <function>: runs it with $AB pointing at mounted p1.
+	mkdir -p "$WORK"
 	AB=$(mount_part "$AUTOBOOT_PART")
 	rc=0
 	"$1" || rc=$?
 	$SYNC
 	$UMOUNT "$AB" >/dev/null 2>&1 || true
+	AB=''
 	return "$rc"
 }
 
 load_state() {
 	STATE=idle SLOT_STAGED= VERSION_ACTIVE= VERSION_STAGED= ERROR= PROGRESS=0
-	PREVIOUS_SLOT= PREVIOUS_VERSION= BAD_BOOTS=0
+	PREVIOUS_SLOT= PREVIOUS_VERSION= BAD_BOOTS=0 SWITCH_BOOT= SHA256_STAGED=
 	if [ -r "$AB/board-update.env" ]; then
 		# shellcheck disable=SC1091
 		. "$AB/board-update.env"
 	fi
+	# Before the first update, the running image says what it is.
+	[ -n "$VERSION_ACTIVE" ] || VERSION_ACTIVE=$(board_os_field VERSION_ID)
 }
 
 save_state() {
@@ -158,6 +211,8 @@ save_state() {
 		printf 'PREVIOUS_SLOT=%s\n' "$PREVIOUS_SLOT"
 		printf 'PREVIOUS_VERSION=%s\n' "$(quote "$PREVIOUS_VERSION")"
 		printf 'BAD_BOOTS=%s\n' "${BAD_BOOTS:-0}"
+		printf 'SWITCH_BOOT=%s\n' "$(quote "${SWITCH_BOOT:-}")"
+		printf 'SHA256_STAGED=%s\n' "${SHA256_STAGED:-}"
 	} > "$AB/board-update.env.tmp"
 	mv "$AB/board-update.env.tmp" "$AB/board-update.env"
 	write_status_json
@@ -165,13 +220,69 @@ save_state() {
 
 quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
+# The kernel's id of this boot; empty when unknown.
+boot_id() {
+	if [ -n "${UPDATE_BOOT_ID:-}" ]; then
+		echo "$UPDATE_BOOT_ID"
+		return
+	fi
+	cat /proc/sys/kernel/random/boot_id 2>/dev/null || true
+}
+
+# The state as reported. A switch (apply, rollback) records the boot it was
+# made in (SWITCH_BOOT): `rebooting` seen in a later boot is the trial boot
+# before `confirm` ran, so it reports `trying`; a rollback reports
+# `rebooting` until the board has restarted, then `rolled-back`.
+reported_state() {
+	now=$(boot_id)
+	case "$STATE" in
+	rebooting)
+		if [ -n "${SWITCH_BOOT:-}" ] && [ -n "$now" ] && [ "$SWITCH_BOOT" != "$now" ]; then
+			echo trying
+			return
+		fi
+		;;
+	rolled-back)
+		if [ -n "${SWITCH_BOOT:-}" ] && [ "$SWITCH_BOOT" = "$now" ]; then
+			echo rebooting
+			return
+		fi
+		;;
+	esac
+	echo "$STATE"
+}
+
 write_status_json() {
 	mkdir -p "$BOARD_RUN_DIR"
 	printf '{"state":%s,"slot_active":%s,"slot_staged":%s,"version_active":%s,"version_staged":%s,"progress":%s,"error":%s}\n' \
-		"$(board_json_str "$STATE")" "$(board_json_str "$(slot_of_root)")" "$(board_json_str "$SLOT_STAGED")" \
+		"$(board_json_str "$(reported_state)")" "$(board_json_str "$(slot_of_root)")" "$(board_json_str "$SLOT_STAGED")" \
 		"$(board_json_str "$VERSION_ACTIVE")" "$(board_json_str "$VERSION_STAGED")" "${PROGRESS:-0}" \
-		"$(board_json_str "$ERROR")" > "$STATUS_JSON.tmp"
-	mv "$STATUS_JSON.tmp" "$STATUS_JSON"
+		"$(board_json_str "$ERROR")" > "$STATUS_JSON.tmp.$$"
+	mv "$STATUS_JSON.tmp.$$" "$STATUS_JSON"
+}
+
+# The stage's own progress (0-1000) as reported, after STAGE_FROM.
+stage_progress() { echo $((STAGE_FROM + $1 * (1000 - STAGE_FROM) / 1000)); }
+
+# Keeps update.json's progress current while board-image-slots copies (it
+# writes its own 0-1000 to $WORK/progress). Runs in the background; the copy
+# maps to 100-950 of the stage.
+pump_progress() {
+	while sleep "$POLL"; do
+		pm=$(cat "$WORK/progress" 2>/dev/null || true)
+		case "$pm" in
+		'' | *[!0-9]*) continue ;;
+		esac
+		PROGRESS=$(stage_progress $((100 + pm * 85 / 100)))
+		write_status_json
+	done
+}
+
+stop_pump() {
+	[ -n "${PUMP:-}" ] || return 0
+	kill "$PUMP" 2>/dev/null || true
+	wait "$PUMP" 2>/dev/null || true
+	PUMP=''
 }
 
 # autoboot.txt for "<default boot> [<tryboot boot>]".
@@ -197,6 +308,13 @@ _status() {
 	load_state
 	if [ -z "$VERSION_ACTIVE" ]; then
 		VERSION_ACTIVE=$(board_os_field VERSION_ID)
+	fi
+	# Holding the lock, nothing else is staging: a `staging` state is left
+	# over from a stage that was interrupted (power loss, a killed process).
+	if [ "$STATE" = staging ] && [ "$HAVE_FLOCK" = 1 ]; then
+		STATE=error PROGRESS=0
+		ERROR="the update was interrupted while staging; stage it again"
+		save_state
 	fi
 	write_status_json
 	cat "$STATUS_JSON"
@@ -310,6 +428,21 @@ slots_error() {
 # Reads a key from an os-release style file.
 field() { sed -n "s/^$1=//p" "$2" 2>/dev/null | head -n 1 | tr -d "\"'"; }
 
+# Checks and lower-cases $SHA256.
+check_sha256() {
+	case "$SHA256" in
+	*[!0-9a-fA-F]* | '') die "give the image's SHA-256 with --sha256" ;;
+	esac
+	[ ${#SHA256} -eq 64 ] || die "--sha256 must be 64 hex digits"
+	SHA256=$(echo "$SHA256" | tr 'A-F' 'a-f')
+}
+
+# The stage commands record their PID for `cancel` while they hold the lock.
+begin_stage() {
+	echo "$$" > "$PID_FILE"
+	trap 'stop_pump; rm -f "$PID_FILE"' EXIT
+}
+
 cmd_stage() {
 	IMAGE='' SHA256='' FORMAT=''
 	while [ $# -gt 0 ]; do
@@ -322,18 +455,17 @@ cmd_stage() {
 	done
 	[ -n "$IMAGE" ] || die "usage: update stage <image|-> --sha256 <hex>"
 	[ "$IMAGE" = - ] || [ -r "$IMAGE" ] || die "no image at '$IMAGE'"
-	case "$SHA256" in
-	*[!0-9a-fA-F]* | '') die "give the image's SHA-256 with --sha256" ;;
-	esac
-	[ ${#SHA256} -eq 64 ] || die "--sha256 must be 64 hex digits"
-	SHA256=$(echo "$SHA256" | tr 'A-F' 'a-f')
+	check_sha256
 	[ "$IMAGE" != - ] || FORMAT=${FORMAT:-xz}
 	mkdir -p "$WORK"
+	begin_stage
 	with_autoboot _stage
 }
 _stage() {
 	load_state
-	[ "$STATE" != trying ] || die "the last update is still on trial; reboot or confirm it first"
+	case "$STATE" in
+	trying | rebooting) refuse "the last update is still on trial; reboot or confirm it first" || return ;;
+	esac
 	active=$(slot_of_root)
 	[ "$active" != unknown ] || die "this system is not on an A/B layout (root partition $(active_root))"
 	target=$(other "$active")
@@ -341,19 +473,32 @@ _stage() {
 	root=$(slot_root "$target")
 	unzip=$(decompressor "$(image_format)")
 
-	STATE=staging SLOT_STAGED=$target VERSION_STAGED='' ERROR='' PROGRESS=0
+	STATE=staging SLOT_STAGED=$target VERSION_STAGED='' ERROR='' SWITCH_BOOT='' SHA256_STAGED=''
+	PROGRESS=$(stage_progress 0)
+	# The target slot is about to be overwritten: it is no longer a slot to
+	# go back to.
+	if [ "$PREVIOUS_SLOT" = "$target" ]; then
+		PREVIOUS_SLOT='' PREVIOUS_VERSION=''
+	fi
 	save_state
 
-	# A file is checked before anything is written.
+	# A file is checked before anything is written (stage-url checked its
+	# download already).
 	if [ "$IMAGE" != - ]; then
-		[ "$(sha256sum < "$IMAGE" | cut -d' ' -f1)" = "$SHA256" ] ||
-			die "the image failed its SHA-256 check (damaged or incomplete copy)"
-		PROGRESS=100
+		if [ "${VERIFIED:-0}" != 1 ]; then
+			[ "$(sha256sum < "$IMAGE" | cut -d' ' -f1)" = "$SHA256" ] ||
+				die "the image failed its SHA-256 check (damaged or incomplete copy)"
+		fi
+		PROGRESS=$(stage_progress 100)
 		save_state
 	fi
 	run_hook pre-stage || die "the pre-stage hook stopped the update"
 
 	rm -f "$WORK/progress" "$WORK/sum"
+	# Without the lock's descriptor: a sleep it leaves behind must not hold
+	# the lock after the stage.
+	pump_progress 9>&- &
+	PUMP=$!
 	if [ "$IMAGE" = - ]; then
 		rm -f "$WORK/hash.fifo"
 		mkfifo "$WORK/hash.fifo"
@@ -371,7 +516,8 @@ _stage() {
 			--boot-out "$(part "$boot")" --root-out "$(part "$root")" > "$WORK/slots.env" 2> "$WORK/slots.err" ||
 			die "$(slots_error "$target")"
 	fi
-	PROGRESS=950
+	stop_pump
+	PROGRESS=$(stage_progress 950)
 	save_state
 
 	# The new root says what it is.
@@ -410,10 +556,156 @@ _stage() {
 	$SYNC
 	$UMOUNT "$mnt" >/dev/null 2>&1 || true
 
-	STATE=staged PROGRESS=1000
+	STATE=staged PROGRESS=1000 SHA256_STAGED=$SHA256
 	save_state
 	run_hook post-stage || board_log "the post-stage hook failed"
 	board_log "staged $VERSION_STAGED in slot $target"
+}
+
+# A file's size in bytes, 0 when it doesn't exist (ls works everywhere and
+# doesn't read the file).
+size_of() {
+	n=$(ls -ln "$1" 2>/dev/null | awk '{ print $5 }')
+	echo "${n:-0}"
+}
+
+# curl or wget, whichever is installed (UPDATE_DOWNLOADER picks one).
+downloader() {
+	if [ -n "$DOWNLOADER" ]; then
+		command -v "$DOWNLOADER" >/dev/null 2>&1 || return 1
+		echo "$DOWNLOADER"
+	elif command -v curl >/dev/null 2>&1; then
+		echo curl
+	elif command -v wget >/dev/null 2>&1; then
+		echo wget
+	else
+		return 1
+	fi
+}
+
+# fetch <tool> <url> <file>: downloads, continuing a partial file.
+fetch() {
+	case "$1" in
+	curl) curl -fsSL --retry 3 --connect-timeout 30 -C - -o "$3" "$2" ;;
+	wget) wget -q -c -O "$3" "$2" ;;
+	*) return 1 ;;
+	esac
+}
+
+# Runs fetch in the background, publishing the download's share (0-500)
+# of the progress, and returns its status.
+fetch_with_progress() {
+	fetch "$TOOL" "$URL" "$PART" &
+	dl=$!
+	while kill -0 "$dl" 2>/dev/null; do
+		got=$(size_of "$PART")
+		PROGRESS=$((got * 500 / SIZE))
+		[ "$PROGRESS" -le 500 ] || PROGRESS=500
+		write_status_json
+		sleep "$POLL"
+	done
+	wait "$dl"
+}
+
+# A download that ended without error and isn't larger than the image.
+download_fits() {
+	fetch_with_progress && [ "$(size_of "$PART")" -le "$SIZE" ]
+}
+
+fail_download() {
+	got=$(size_of "$PART")
+	if [ "$got" -gt "$SIZE" ]; then
+		rm -f "$PART"
+		fail "the download has $got bytes, the image $SIZE"
+	fi
+	fail "downloading $URL failed"
+}
+
+cmd_stage_url() {
+	URL='' SHA256='' SIZE='' FORMAT=''
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--sha256) SHA256=${2:-}; shift 2 ;;
+		--size) SIZE=${2:-}; shift 2 ;;
+		--format) FORMAT=${2:-}; shift 2 ;;
+		-*) die "unknown option '$1'" ;;
+		*) URL=$1; shift ;;
+		esac
+	done
+	[ -n "$URL" ] || die "usage: update stage-url <url> --sha256 <hex> --size <bytes>"
+	check_sha256
+	case "$SIZE" in
+	'' | *[!0-9]* | 0) die "give the image's size in bytes with --size" ;;
+	esac
+	mkdir -p "$WORK"
+	begin_stage
+	ALREADY=0
+	with_autoboot _stage_url_begin
+	if [ "$ALREADY" = 1 ]; then
+		board_log "$VERSION_STAGED (this image) is already staged"
+		return 0
+	fi
+
+	mkdir -p "$DOWNLOAD_DIR" || fail "can't create $DOWNLOAD_DIR"
+	FILE=$DOWNLOAD_DIR/$SHA256.img
+	PART=$FILE.part
+	# Downloads of other images only take space.
+	for old in "$DOWNLOAD_DIR"/*; do
+		case "$old" in
+		"$FILE" | "$PART" | "$DOWNLOAD_DIR/*") ;;
+		*) rm -f "$old" ;;
+		esac
+	done
+	if [ -f "$FILE" ]; then
+		mv "$FILE" "$PART"
+	fi
+	[ "$(size_of "$PART")" -le "$SIZE" ] || rm -f "$PART"
+	if [ "$(size_of "$PART")" -lt "$SIZE" ]; then
+		TOOL=$(downloader) || fail "neither curl nor wget is installed: can't download the image"
+		board_log "downloading $URL with $TOOL"
+		resumed=0
+		[ ! -s "$PART" ] || resumed=1
+		if ! download_fits; then
+			# A server that can't resume (an error, or the whole file
+			# appended to the part): start over once.
+			if [ "$resumed" = 1 ]; then
+				board_log "the download didn't continue; starting it again"
+				rm -f "$PART"
+				download_fits || fail_download
+			else
+				fail_download
+			fi
+		fi
+	fi
+	got=$(size_of "$PART")
+	if [ "$got" -ne "$SIZE" ]; then
+		[ "$got" -lt "$SIZE" ] || rm -f "$PART"
+		fail "the download has $got bytes, the image $SIZE"
+	fi
+	PROGRESS=500
+	write_status_json
+	if [ "$(sha256sum < "$PART" | cut -d' ' -f1)" != "$SHA256" ]; then
+		rm -f "$PART"
+		fail "the downloaded image failed its SHA-256 check (damaged in transit, or a different file)"
+	fi
+	mv "$PART" "$FILE"
+
+	IMAGE=$FILE STAGE_FROM=500 VERIFIED=1
+	with_autoboot _stage
+	rm -f "$FILE"
+}
+_stage_url_begin() {
+	load_state
+	case "$STATE" in
+	trying | rebooting) refuse "the last update is still on trial; reboot or confirm it first" || return ;;
+	esac
+	if [ "$STATE" = staged ] && [ "$SHA256_STAGED" = "$SHA256" ]; then
+		ALREADY=1
+		write_status_json
+		return 0
+	fi
+	STATE=staging SLOT_STAGED='' VERSION_STAGED='' ERROR='' PROGRESS=0 SWITCH_BOOT='' SHA256_STAGED=''
+	save_state
 }
 
 cmd_apply() {
@@ -429,21 +721,24 @@ cmd_apply() {
 _apply_failed() {
 	load_state
 	write_autoboot "$(slot_boot "$(slot_of_root)")"
-	STATE=staged ERROR="the restart into the new version didn't happen; it is still staged"
+	STATE=staged SWITCH_BOOT='' ERROR="the restart into the new version didn't happen; it is still staged"
 	save_state
 	board_log "$ERROR"
 }
 _apply() {
 	load_state
-	[ "$STATE" = staged ] || die "nothing is staged (state: $STATE)"
+	[ "$STATE" = staged ] || refuse "nothing is staged (state: $STATE)" || return
 	# A refusal keeps the update staged, to apply later.
-	run_hook pre-reboot || {
-		board_log "the pre-reboot hook stopped the restart; still staged"
-		exit 1
-	}
+	if ! run_hook pre-reboot; then
+		ERROR="the pre-reboot hook stopped the restart; the update is still staged"
+		save_state
+		refuse "$ERROR" || return
+	fi
 	active=$(slot_of_root)
 	write_autoboot "$(slot_boot "$active")" "$(slot_boot "$SLOT_STAGED")"
-	STATE=trying
+	# Recorded before the restart, which may not leave time afterwards; if
+	# the restart isn't accepted, _apply_failed puts it back to staged.
+	STATE=rebooting SWITCH_BOOT=$(boot_id) ERROR=''
 	save_state
 }
 
@@ -452,7 +747,21 @@ cmd_confirm() {
 }
 _confirm() {
 	load_state
-	[ "$STATE" = trying ] || { write_status_json; return 0; }
+	case "$STATE" in
+	trying) ;;
+	rebooting)
+		# Still the boot that asked for the restart: nothing to judge yet.
+		if [ -n "$SWITCH_BOOT" ] && [ "$SWITCH_BOOT" = "$(boot_id)" ]; then
+			write_status_json
+			return 0
+		fi
+		;;
+	*)
+		write_status_json
+		return 0
+		;;
+	esac
+	STATE=trying SWITCH_BOOT=''
 	active=$(slot_of_root)
 	if [ "$active" != "$SLOT_STAGED" ]; then
 		# The trial boot didn't stick; the bootloader went back by itself.
@@ -461,6 +770,7 @@ _confirm() {
 		save_state
 		return 0
 	fi
+	save_state
 	run_hook post-boot || board_log "the post-boot hook failed"
 	# Give the services a moment to come up before judging them.
 	sleep "${UPDATE_CONFIRM_DELAY:-0}"
@@ -518,7 +828,9 @@ _link_ok() {
 }
 _link_bad() {
 	load_state
-	[ "$STATE" != trying ] || return 0
+	case "$STATE" in
+	trying | rebooting) return 0 ;;
+	esac
 	BAD_BOOTS=$((${BAD_BOOTS:-0} + 1))
 	board_log "$REASON (bad boot $BAD_BOOTS of ${UPDATE_LINK_MAX_BAD:-2})"
 	active=$(slot_of_root)
@@ -530,7 +842,7 @@ _link_bad() {
 	write_autoboot "$(slot_boot "$PREVIOUS_SLOT")"
 	ERROR="$REASON on $VERSION_ACTIVE after $BAD_BOOTS boots; went back to ${PREVIOUS_VERSION:-the previous version}"
 	STATE=rolled-back VERSION_STAGED=$VERSION_ACTIVE VERSION_ACTIVE=$PREVIOUS_VERSION
-	SLOT_STAGED=$active PREVIOUS_SLOT='' PREVIOUS_VERSION='' BAD_BOOTS=0
+	SLOT_STAGED=$active PREVIOUS_SLOT='' PREVIOUS_VERSION='' BAD_BOOTS=0 SWITCH_BOOT=''
 	save_state
 	board_log "$ERROR"
 	$SYNC
@@ -538,49 +850,192 @@ _link_bad() {
 	plain_reboot
 }
 
+# The PIDs of process $1 and all its descendants, from /proc.
+process_tree() {
+	cat /proc/[0-9]*/stat 2>/dev/null |
+		sed -n 's/^\([0-9][0-9]*\) (.*) [A-Za-z] \([0-9][0-9]*\) .*/\1 \2/p' |
+		awk -v root="$1" '
+			{ parent[$1] = $2 }
+			END {
+				keep[root] = 1
+				for (changed = 1; changed; ) {
+					changed = 0
+					for (p in parent)
+						if (!(p in keep) && (parent[p] in keep)) { keep[p] = 1; changed = 1 }
+				}
+				for (p in keep) print p
+			}'
+}
+
+alive() {
+	for p in "$@"; do
+		kill -0 "$p" 2>/dev/null && return 0
+	done
+	return 1
+}
+
+# With the lock held by another command: stops it when it is a stage (its
+# PID is in update.pid). Freezes the process tree first so nothing new
+# starts, then ends it; the lock is free once every process holding it is
+# gone. Exits when there's no stage to stop.
+stop_stage() {
+	pid=$(cat "$PID_FILE" 2>/dev/null || true)
+	case "$pid" in
+	'' | *[!0-9]*) pid='' ;;
+	esac
+	if [ -z "$pid" ] || ! tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q ' stage'; then
+		board_log "another update command is running (not a stage; nothing to cancel)"
+		exit "$REFUSED"
+	fi
+	board_log "stopping the stage (process $pid)"
+	kill -STOP "$pid" 2>/dev/null || true
+	tree=$(process_tree "$pid")
+	# shellcheck disable=SC2086
+	kill -STOP $tree 2>/dev/null || true
+	tree=$(process_tree "$pid")
+	# shellcheck disable=SC2086
+	kill -TERM $tree 2>/dev/null || true
+	# shellcheck disable=SC2086
+	kill -CONT $tree 2>/dev/null || true
+	tries=0
+	# shellcheck disable=SC2086
+	while alive $tree && [ "$tries" -lt 50 ]; do
+		sleep 0.2 2>/dev/null || sleep 1
+		tries=$((tries + 1))
+	done
+	# shellcheck disable=SC2086
+	kill -KILL $tree 2>/dev/null || true
+	rm -f "$PID_FILE"
+	# The stage may have left partitions mounted.
+	for mnt in "$WORK"/mnt-*; do
+		[ -e "$mnt" ] || [ -L "$mnt" ] || continue
+		$UMOUNT "$mnt" >/dev/null 2>&1 || true
+	done
+	rm -f "$WORK/hash.fifo"
+	STOPPED=1
+}
+
+# Cancel: a stage that was running (stopped above), an interrupted one, or a
+# staged update. The inactive slot keeps what was written, unused. Prints
+# `cancelled`, or `idle` when there was nothing to cancel.
+cmd_cancel() {
+	with_autoboot _cancel
+}
+_cancel() {
+	load_state
+	case "$(reported_state)" in
+	staging | staged) ;;
+	trying | rebooting) refuse "the update is past staging (state: $(reported_state)); it can't be cancelled" || return ;;
+	*)
+		if [ "${STOPPED:-0}" != 1 ]; then
+			write_status_json
+			echo idle
+			return 0
+		fi
+		;;
+	esac
+	active=$(slot_of_root)
+	[ "$active" = unknown ] || write_autoboot "$(slot_boot "$active")"
+	board_log "cancelled ${VERSION_STAGED:-the update}"
+	STATE=cancelled SLOT_STAGED='' VERSION_STAGED='' ERROR='' PROGRESS=0 SWITCH_BOOT='' SHA256_STAGED=''
+	save_state
+	echo cancelled
+}
+
+# Rollback: make the previous confirmed slot the default again and restart
+# into it. It stays the previous slot's partner: a second rollback goes
+# forward again.
 cmd_rollback() {
+	reboot=1
+	case "${1:-}" in
+	--no-reboot) reboot=0 ;;
+	'') ;;
+	*) die "usage: update rollback [--no-reboot]" ;;
+	esac
 	with_autoboot _rollback
+	[ "$reboot" = 1 ] || return 0
+	$SYNC
+	if ! plain_reboot; then
+		with_autoboot _rollback_undo
+		exit 1
+	fi
 }
 _rollback() {
 	load_state
-	case "$STATE" in
-	staged | error | rolled-back) ;;
-	trying) die "the trial boot is running; reboot to go back" ;;
-	*) ;;
+	case "$(reported_state)" in
+	staging) refuse "an update is staging; cancel it first (update cancel)" || return ;;
+	trying | rebooting) refuse "the board is restarting or on a trial boot (state: $(reported_state))" || return ;;
 	esac
-	write_autoboot "$(slot_boot "$(slot_of_root)")"
-	STATE=idle SLOT_STAGED='' VERSION_STAGED='' ERROR='' PROGRESS=0
+	active=$(slot_of_root)
+	if [ -z "$PREVIOUS_SLOT" ] || [ "$PREVIOUS_SLOT" = "$active" ] || [ "$active" = unknown ]; then
+		refuse "there is no previous confirmed slot to go back to" || return
+	fi
+	cp "$AB/board-update.env" "$AB/board-update.env.undo"
+	write_autoboot "$(slot_boot "$PREVIOUS_SLOT")"
+	board_log "going back to ${PREVIOUS_VERSION:-the previous version} in slot $PREVIOUS_SLOT"
+	left=$VERSION_ACTIVE
+	STATE=rolled-back VERSION_ACTIVE=$PREVIOUS_VERSION PREVIOUS_VERSION=$left
+	PREVIOUS_SLOT=$active SLOT_STAGED='' VERSION_STAGED='' SHA256_STAGED=''
+	ERROR='' PROGRESS=0 BAD_BOOTS=0 SWITCH_BOOT=$(boot_id)
 	save_state
+}
+_rollback_undo() {
+	write_autoboot "$(slot_boot "$(slot_of_root)")"
+	mv "$AB/board-update.env.undo" "$AB/board-update.env"
+	load_state
+	ERROR="the restart into the previous version didn't happen"
+	save_state
+	board_log "$ERROR"
 }
 
 # One writer at a time: a state of `staging` seen under the lock is left over
-# from an interrupted stage and may be redone.
+# from an interrupted stage and may be redone. `cancel` stops a running stage
+# to take the lock.
 mkdir -p "$BOARD_RUN_DIR"
 exec 9> "$BOARD_RUN_DIR/update.lock"
-if command -v flock >/dev/null 2>&1 && ! flock -n 9; then
-	# Busy: status answers from what the running command last wrote.
-	if [ "${1:-}" = status ] && [ -r "$STATUS_JSON" ]; then
-		# While staging, the copy's own progress (0-1000) maps to 100-950.
-		pm=$(cat "$WORK/progress" 2>/dev/null || echo)
-		case "$pm" in
-		'' | *[!0-9]*) cat "$STATUS_JSON" ;;
-		*) sed "s/\"progress\":[0-9]*/\"progress\":$((100 + pm * 85 / 100))/" "$STATUS_JSON" ;;
-		esac
-		exit 0
+HAVE_FLOCK=0
+command -v flock >/dev/null 2>&1 && HAVE_FLOCK=1
+if [ "$HAVE_FLOCK" = 1 ] && ! flock -n 9; then
+	case "${1:-}" in
+	status)
+		# Busy: answer from what the running command last wrote (a stage
+		# keeps its progress current).
+		if [ -r "$STATUS_JSON" ]; then
+			cat "$STATUS_JSON"
+			exit 0
+		fi
+		;;
+	cancel)
+		stop_stage
+		# busybox flock has no -w.
+		tries=0
+		until flock -n 9; do
+			tries=$((tries + 1))
+			if [ "$tries" -ge 30 ]; then
+				board_log "the stage didn't stop"
+				exit 1
+			fi
+			sleep 1
+		done
+		;;
+	esac
+	if [ "${1:-}" != cancel ]; then
+		board_log "another update command is running"
+		exit "$REFUSED"
 	fi
-	board_log "another update command is running"
-	exit 1
 fi
 
 case "${1:-}" in
 status) cmd_status ;;
 stage) shift; cmd_stage "$@" ;;
+stage-url) shift; cmd_stage_url "$@" ;;
 apply) cmd_apply ;;
 confirm) cmd_confirm ;;
-rollback) cmd_rollback ;;
+cancel) cmd_cancel ;;
+rollback) shift; cmd_rollback "$@" ;;
 check-link) cmd_check_link ;;
 *)
-	sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 	;;
 esac
