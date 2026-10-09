@@ -6,6 +6,8 @@
 # Device ids are board.toml's (HW_LEMNOS_* in hardware.env). Callers name
 # their lemnosd client in HW_LEMNOS_CLIENT (default "board") and, for LED
 # intents, a priority in HW_LEMNOS_PRIORITY (unset: lemnos-ctl's 50).
+# HW_LEMNOS_TEST=1 (the self-test) puts LED intents on lemnosd's test layer,
+# above every client's status, leased for HW_LEMNOS_TEST_SECONDS (60).
 # lemnos-ctl keeps a client's LED intents after it exits, one per layer, until
 # the same client replaces them or sends `led off`.
 
@@ -52,6 +54,14 @@ _hw_leds_hex() {
 }
 
 _hw_led() {
+	if [ "${HW_LEMNOS_TEST:-0}" = 1 ]; then
+		# `led off --test` clears only the test layer.
+		if [ "$1" = off ]; then
+			set -- "$@" --test
+		else
+			set -- "$@" --test --seconds "${HW_LEMNOS_TEST_SECONDS:-60}"
+		fi
+	fi
 	_hw_ctl ${HW_LEMNOS_PRIORITY:+--priority "$HW_LEMNOS_PRIORITY"} led "$@" --device "$HW_LEMNOS_RING" >/dev/null
 }
 
@@ -84,9 +94,9 @@ hw_leds_release() {
 
 # ---------------------------------------------------------------------------
 # Fan: lemnosd's hwmon fan. A duty a client sets moves the pwm-fan cooling
-# state with it; lemnosd records the governor's state before the first write,
-# and `lemnos-ctl fan restore` (root) puts it back and makes the thermal zone
-# re-evaluate, as lemnosd does itself when it stops. Nothing is paused.
+# state with it; `lemnos-ctl fan release <fan>` hands it back to the kernel
+# governor while lemnosd keeps running (the zone re-evaluates at once). The
+# next client write takes it back. Nothing is paused.
 
 HW_FAN_STATUS=''
 # The fan's lemnosd device id, when lemnosd has the fan.
@@ -165,8 +175,8 @@ hw_fan_hold() {
 hw_fan_release() {
 	[ -n "$HW_FAN_HELD" ] || return 0
 	HW_FAN_HELD=''
-	if ! _hw_out=$(_hw_ctl fan restore 2>&1); then
-		board_log "lemnos-ctl fan restore: $_hw_out"
+	if ! _hw_out=$(_hw_ctl fan release "$HW_LEMNOS_FAN" 2>&1); then
+		board_log "lemnos-ctl fan release: $_hw_out"
 		return 1
 	fi
 }

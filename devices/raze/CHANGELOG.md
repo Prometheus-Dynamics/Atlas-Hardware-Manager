@@ -63,7 +63,7 @@ commit; the commits are listed per area.
 - **lemnosd is required for LEDs and fan control by default.** The layer
   imports Lemnos's lemnosd layer (`gaia/lemnos.toml`), so an OS build must
   declare a second git source, `lemnos` at
-  `8a126d36d23df5b1882113cfaabab895f3dc8d16` (see `gaia/device.toml`; Gaia
+  `b4d6cfee3afe77fc649e55db4ab592d0ab94cb0e` (see `gaia/device.toml`; Gaia
   refuses import sources declared inside a source-imported layer), and needs
   Docker on the build host (Lemnos builds its static binaries in a container)
   and systemd-sysusers (the `lemnos` user). lemnosd owns `/dev/leds0`, the
@@ -83,10 +83,16 @@ commit; the commits are listed per area.
 
 ### lemnosd, the hardware service
 
+- **Lemnos b4d6cfe** (from 8a126d3): the self-test's LED frames go on
+  lemnosd's test layer (`led ... --test --seconds 60`, above every client's
+  status; `led off --test` clears only it), and the fan check hands the fan
+  back with `lemnos-ctl fan release fan` while lemnosd keeps running,
+  instead of the root `fan restore`.
+
 - **Gaia import:** `gaia/lemnos.toml` imports Lemnos's
   `packaging/gaia/lemnosd.toml` (static aarch64 musl `lemnosd` and
   `lemnos-ctl`, `lemnosd.service`, sysusers, preset) pinned at Lemnos dev
-  `8a126d3`, and redeclares `lemnosd-env` with
+  `b4d6cfe`, and redeclares `lemnosd-env` with
   `LEMNOSD_UPDATE_STATUS=/run/board/update.json`, so the updating animation
   follows the package's update writer (`d5302db`).
 - **Board definition:** `/etc/lemnos/board.toml` is generated from the
@@ -113,7 +119,7 @@ commit; the commits are listed per area.
 - **Verified on a Raze with lemnosd cd72ad0** (the coordinator, 2026-10-07):
   the pwmfan fan, cpu-thermal and the ring on `/dev/leds0` (wire rgb,
   offset 5) bind; readings, the progress, updating, breathe and locate
-  effects, and the fan hand-back work. Not yet on hardware: the 8a126d3 bus
+  effects, and the fan hand-back work. Not yet on hardware: the b4d6cfe bus
   selectors, the sensors through lemnosd, the package's udev rules and
   client scripts, the USB-A line (hogged by default).
 

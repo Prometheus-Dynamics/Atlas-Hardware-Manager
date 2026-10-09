@@ -40,6 +40,13 @@ echo "$client$args" >> "$CTL_LOG"
 set -- $args
 [ "$1" != --priority ] || shift 2
 case "$1:${2:-}" in
+fan:release)
+	[ ! -e "$FAKE/lemnosd-down" ] || { echo "lemnos-ctl: connect /run/lemnos/lemnosd.sock: No such file or directory" >&2; exit 1; }
+	[ ! -e "$FAKE/restore-fails" ] || { echo "lemnos-ctl: release fan: not permitted" >&2; exit 1; }
+	echo released > "$FAKE/fan-released"
+	echo "$3 released to the kernel governor"
+	exit 0
+	;;
 fan:restore)
 	[ ! -e "$FAKE/restore-fails" ] || { echo "lemnos-ctl: cur_state: Permission denied" >&2; exit 1; }
 	echo restored > "$FAKE/fan-restored"
@@ -145,9 +152,9 @@ printf '%s' "$out" | grep -q '"steps":\[{"state":0,"pwm":179,"expected":179,"rpm
 printf '%s' "$out" | grep -q '"handed_back":true' || fail "the fan should be handed back: $out"
 grep -q '^board-selftest set fan duty 0.7020$' "$CTL_LOG" || fail "duties go through lemnosd: $(cat "$CTL_LOG")"
 grep -q '^board-selftest set fan duty 1.0000$' "$CTL_LOG" || fail "the top state is full duty: $(cat "$CTL_LOG")"
-grep -e ' set fan ' -e ' fan restore$' "$CTL_LOG" | tail -n 1 | grep -q '^board-selftest fan restore$' ||
+grep -e ' set fan ' -e ' fan release ' "$CTL_LOG" | tail -n 1 | grep -q '^board-selftest fan release fan$' ||
 	fail "the hand-back ends the fan check: $(cat "$CTL_LOG")"
-[ -e "$T/fan-restored" ] || fail "lemnos-ctl fan restore should have run"
+[ -e "$T/fan-released" ] || fail "lemnos-ctl fan release should have run"
 [ "$(cat "$S/class/thermal/thermal_zone0/mode")" = enabled ] || fail "nothing is paused with lemnosd"
 [ ! -s "$T/dev/leds0" ] || fail "no frame may be written to /dev/leds0"
 check_data "$out" i2c | grep -q '"result": "service", "chip_id": "service", "lemnosd": "available"' ||
@@ -169,11 +176,11 @@ echo "interactive: test frames as board-selftest above other clients, then dropp
 printf 'y\ny\ny\ny\ny\ny\n' > "$T/answers"
 out=$(SELFTEST_TTY_IN=$T/answers SELFTEST_TTY_OUT=$T/prompts selftest --interactive --json)
 check_status "$out" leds ok
-grep -q '^board-selftest --priority 100 led color ff0000 --fade 0 --device status-ring$' "$CTL_LOG" || fail "red: $(cat "$CTL_LOG")"
-grep -q '^board-selftest --priority 100 led color 000000 --fade 0 --device status-ring$' "$CTL_LOG" || fail "the W step is dark: $(cat "$CTL_LOG")"
-grep -q '^board-selftest --priority 100 led frame 00ff00,000000,' "$CTL_LOG" || fail "LED 0 green: $(cat "$CTL_LOG")"
-grep '^board-selftest --priority 100 led ' "$CTL_LOG" | tail -n 1 | grep -q ' led off --device status-ring$' ||
-	fail "the self-test's intents should be dropped at the end: $(cat "$CTL_LOG")"
+grep -q '^board-selftest --priority 100 led color ff0000 --fade 0 --test --seconds 60 --device status-ring$' "$CTL_LOG" || fail "red on the test layer: $(cat "$CTL_LOG")"
+grep -q '^board-selftest --priority 100 led color 000000 --fade 0 --test --seconds 60 --device status-ring$' "$CTL_LOG" || fail "the W step is dark: $(cat "$CTL_LOG")"
+grep -q '^board-selftest --priority 100 led frame 00ff00,000000,.* --test --seconds 60 --device status-ring$' "$CTL_LOG" || fail "LED 0 green: $(cat "$CTL_LOG")"
+grep '^board-selftest --priority 100 led ' "$CTL_LOG" | tail -n 1 | grep -q ' led off --test --device status-ring$' ||
+	fail "the self-test's test layer should be cleared at the end: $(cat "$CTL_LOG")"
 : > "$CTL_LOG"
 
 echo "lemnosd down: the ring and the fan fail and say why; raze-leds fails"

@@ -55,6 +55,7 @@ esac
 # fan's duty, and its LED frames go above other applications'.
 HW_LEMNOS_CLIENT=board-selftest
 HW_LEMNOS_PRIORITY=100
+HW_LEMNOS_TEST=1
 board_load_env board-package.env
 # The USB gadget's settings, read only: which gadget and bridge to look at.
 board_load_env usb-gadget.env
