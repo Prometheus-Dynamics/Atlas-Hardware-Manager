@@ -7,8 +7,12 @@
 # Raze override of Buildroot 2026.08's rpi-firmware (staged by Gaia over
 # package/rpi-firmware). Identical to upstream except for the version:
 # Buildroot 2026.08 pins 063bcab6c8a90efb0d19f69d88cbbc7ec79cab68
-# (2025-12-08); Raze uses the tagged release 1.20260915. Drop this override
-# once Buildroot pins this firmware or newer.
+# (2025-12-08); Raze uses the tagged release 1.20260915. Also installs
+# overlays/hat_map.dtb (when the release has it), as Raspberry Pi OS does:
+# the firmware reads it only for a HAT+ ID EEPROM, which a bare Raze doesn't
+# have, so it matters only with such a HAT; OS images list it in their boot
+# partition. Drop this override once Buildroot pins this firmware or newer
+# and installs hat_map.dtb.
 RPI_FIRMWARE_VERSION = 1.20260915
 RPI_FIRMWARE_SITE = $(call github,raspberrypi,firmware,$(RPI_FIRMWARE_VERSION))
 RPI_FIRMWARE_LICENSE = BSD-3-Clause
@@ -62,6 +66,8 @@ define RPI_FIRMWARE_INSTALL_DTB_OVERLAYS
 		$(INSTALL) -D -m 0644 $(ovldtb) $(BINARIES_DIR)/rpi-firmware/overlays/$(notdir $(ovldtb))
 	)
 	$(INSTALL) -D -m 0644 $(@D)/boot/overlays/overlay_map.dtb $(BINARIES_DIR)/rpi-firmware/overlays/
+	$(if $(wildcard $(@D)/boot/overlays/hat_map.dtb), \
+		$(INSTALL) -D -m 0644 $(@D)/boot/overlays/hat_map.dtb $(BINARIES_DIR)/rpi-firmware/overlays/)
 	touch $(BINARIES_DIR)/rpi-firmware/overlays/README
 endef
 endif

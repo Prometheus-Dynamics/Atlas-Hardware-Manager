@@ -11,7 +11,9 @@ commit; the commits are listed per area.
 - **Platform:** Buildroot 2026.08, kernel `rpi-7.2.y` (7.2.9, bcm2712, 16K
   pages) and rpi-firmware 1.20260915 (`fd52491`). Buildroot 2026.08 removed
   rpi-userland, so `BR2_PACKAGE_RPI_USERLAND` must go from OS overrides.
-  OpenJDK's default became 25.
+  OpenJDK's default became 25. The firmware override also installs
+  `overlays/hat_map.dtb` next to `overlay_map.dtb`, as Raspberry Pi OS does
+  (the firmware uses it only for a HAT+ ID EEPROM; a bare Raze has none).
 - **Toolchain:** Bootlin aarch64 glibc bleeding-edge 2025.08-1 (gcc 15,
   kernel headers 5.15) replaces the defconfig's stable one, which has 5.4
   headers. libpisp needs `linux/dma-heap.h` (5.6); libpisp and libcamera's
