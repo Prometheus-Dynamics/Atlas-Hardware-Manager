@@ -18,6 +18,7 @@ import * as runner from "./mock/runner";
 import { activity, logLines, metrics, online, record, restart, seedHistory } from "./mock/observe";
 import { listRecords, robotStatuses, robotUpdateRequest, scan, touch } from "./mock/scan";
 import { lastSelftest, runSelftest, seedSelftests } from "./mock/selftest";
+import { boardAction, deviceHistory, deviceStatus } from "./mock/status";
 
 seedHistory();
 seedSelftests();
@@ -163,7 +164,9 @@ export const mockApi: Api = {
     reply(() => {
       const found = (simDevice(key)?.actions ?? ACTIONS).find((a) => a.id === action);
       if (!found) throw `${keyString(key)} has no action named \`${action}\``;
+      boardAction(key, action);
       if (action === "reboot") restart(key);
+      if (action === "power-off") setTimeout(() => void scan(), 600);
       if (action === "usb-boot") intoUsbBoot(key.serial);
       const entry = stored(key);
       const name = entry.label ?? entry.record?.identity.name ?? keyString(key);
@@ -180,6 +183,8 @@ export const mockApi: Api = {
   deviceSelftest: (key) => reply(() => lastSelftest(key)),
   deviceTelemetry: (key) => reply(() => metrics(online(key))),
   deviceLogs: (key, lines) => reply(() => logLines(online(key), Math.max(1, Math.min(lines, 2000)))),
+  deviceStatus: (key) => reply(() => deviceStatus(key)),
+  deviceHistory: (key, limit) => reply(() => deviceHistory(key, Math.max(1, Math.min(limit, 2000)))),
   listActivity: (limit) => reply(() => activity.slice(-limit).reverse()),
   saveSupportBundle: (key) =>
     reply(() => {

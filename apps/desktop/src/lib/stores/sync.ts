@@ -8,6 +8,7 @@ import { jobs } from "./jobs.svelte";
 import { releases } from "./releases.svelte";
 import { robots } from "./robots.svelte";
 import { selftests } from "./selftests.svelte";
+import { deviceStatus } from "./status.svelte";
 import { system } from "./system.svelte";
 import { ui } from "./ui.svelte";
 
@@ -48,6 +49,10 @@ function dispatch(event: AtlasEvent) {
       break;
     case "activity":
       activity.push(event.entry);
+      deviceStatus.onActivity(event.entry.device);
+      break;
+    case "device-history":
+      deviceStatus.onHistory(event.key);
       break;
     case "self-test":
       selftests.apply(event.record);

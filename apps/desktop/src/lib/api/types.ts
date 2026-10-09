@@ -41,7 +41,9 @@ export type CapabilityKind =
   | "gateway"
   | "open-ui"
   /** The device can check its own hardware (see SelfTestRecord). */
-  | "self-test";
+  | "self-test"
+  /** The device reports its state and an event log (see DeviceStatus). */
+  | "status";
 
 export type Presence = "online" | "offline";
 
@@ -99,7 +101,9 @@ export type ActivityKind =
   | "mode-changed"
   | "update-result"
   | "action-run"
-  | "self-test";
+  | "self-test"
+  /** The board's event log reported something Orion or a person on it did. */
+  | "device-event";
 
 export type ActivityLevel = "info" | "success" | "warning" | "error";
 
@@ -417,7 +421,114 @@ export type AtlasEvent =
   | { type: "job-finished"; job: JobId; state: JobState; summary: JobSummary }
   | { type: "activity"; entry: ActivityEntry }
   /** A self-test finished or couldn't run: the board's latest result. */
-  | { type: "self-test"; record: SelfTestRecord };
+  | { type: "self-test"; record: SelfTestRecord }
+  /** New events from the device's board: re-read its history. */
+  | { type: "device-history"; key: DeviceKey };
+
+// Device status and history (atlas-driver status.rs, atlas-core history.rs).
+
+/** Who asked: Atlas over SSH, Orion through the board's agent, or someone on the board. */
+export type EventSource = "atlas" | "orion" | "local" | "unknown";
+
+export interface BootInfo {
+  id: string | null;
+  /** Boots since the board's data was made. */
+  count: number | null;
+  slot: string | null;
+  kernel: string | null;
+  uptime_s: number | null;
+  /** Whether the boot before this one shut down cleanly; null when unknown. */
+  previous_clean: boolean | null;
+}
+
+export interface Temperature {
+  id: string;
+  celsius: number;
+}
+
+export interface FanState {
+  state: number | null;
+  max_state: number | null;
+  /** Duty, 0-255. */
+  pwm: number | null;
+  rpm: number | null;
+}
+
+/** The board's own A/B update state (the writer's `update status`). */
+export interface UpdateState {
+  /** idle, staging, staged, rebooting, trying, confirmed, rolled-back, cancelled, error */
+  state: string;
+  slot_active: string | null;
+  slot_staged: string | null;
+  version_active: string | null;
+  version_staged: string | null;
+  /** What a rollback goes back to, when there is something. */
+  version_previous: string | null;
+  /** Per mille of the current step. */
+  progress: number;
+  error: string | null;
+  started_by: EventSource | null;
+}
+
+export interface DriftItem {
+  /** boot (the running boot slot), root, etc or data (overrides). */
+  area: string;
+  path: string;
+  /** changed, added, missing, or present (an override). */
+  change: string;
+  sha256: string | null;
+}
+
+export interface Drift {
+  checked_at: number | null;
+  slot: string | null;
+  root_read_only: boolean | null;
+  /** What the boot files were compared with: stage, first-seen, none. */
+  baseline: string | null;
+  count: number;
+  /** cmdline, config, sshd_config, update_env */
+  flags: string[];
+  items: DriftItem[];
+}
+
+/** What a device is doing now and how it is; absent parts are unknown. */
+export interface DeviceStatus {
+  time: number | null;
+  boot: BootInfo | null;
+  failed_units: string[];
+  temperatures: Temperature[];
+  fan: FanState | null;
+  update: UpdateState | null;
+  /** Seconds the device's clock is off from this computer's (negative: behind). */
+  clock_offset_s: number | null;
+  ntp_synchronized: boolean | null;
+  drift: Drift | null;
+}
+
+/** One line of a board's event log. */
+export interface DeviceEvent {
+  /** The board's clock, Unix seconds. */
+  t: number;
+  boot_id: string;
+  /** Dotted: update.staged, boot, clock.set, … */
+  kind: string;
+  source: EventSource;
+  message: string;
+  data: Record<string, string>;
+}
+
+/** One line of a device's history: Atlas's record or the board's event log. */
+export interface HistoryEntry {
+  at_ms: number;
+  level: ActivityLevel;
+  /** An activity kind (update-result, …) or a board event kind (update.staged, boot, …). */
+  kind: string;
+  source: EventSource;
+  origin: "atlas" | "board";
+  message: string;
+  boot_id: string | null;
+  data: Record<string, string>;
+}
 
 /** How Atlas keeps the inventory current. */
 export interface DiscoveryStatus {

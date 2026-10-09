@@ -27,7 +27,8 @@
   };
 
   let actions = $state<DeviceAction[]>([]);
-  const quick = $derived(actions.filter((a) => !a.destructive).slice(0, 3));
+  // Update controls belong with the update (Overview's Now, Software).
+  const quick = $derived(actions.filter((a) => !a.destructive && !a.id.startsWith("update.")).slice(0, 3));
   const webUi = $derived(record.presence === "online" ? (record.identity.attributes?.manage_url ?? null) : null);
 
   $effect(() => {

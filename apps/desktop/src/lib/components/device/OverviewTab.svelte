@@ -1,17 +1,22 @@
 <script lang="ts">
-  import { api, errorText, openExternal, type DeviceRecord } from "#lib/api/client.ts";
+  import { api, errorText, keyString, openExternal, type DeviceAction, type DeviceRecord } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
   import Field from "#lib/components/common/Field.svelte";
-  import { clockTime, linkText, primaryVersion, timeAgo } from "#lib/format.ts";
+  import Skeleton from "#lib/components/common/Skeleton.svelte";
+  import { clockTime, deviceName, linkText, primaryVersion, timeAgo } from "#lib/format.ts";
   import { clock } from "#lib/stores/clock.svelte.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { robots } from "#lib/stores/robots.svelte.ts";
+  import { deviceStatus, hasStatus } from "#lib/stores/status.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
   import CameraPreview from "./CameraPreview.svelte";
+  import ControlsCard from "./ControlsCard.svelte";
   import Disclosure from "./Disclosure.svelte";
   import FactGrid from "./FactGrid.svelte";
+  import HealthCard from "./HealthCard.svelte";
   import LiveStats from "./LiveStats.svelte";
+  import NowCard from "./NowCard.svelte";
   import SelfTestCard from "./SelfTestCard.svelte";
 
   let { record }: { record: DeviceRecord } = $props();
@@ -24,6 +29,46 @@
   const online = $derived(record.presence === "online");
   const stream = $derived(online ? (attrs.camera_stream ?? null) : null);
   const telemetry = $derived(online && record.capabilities.includes("telemetry"));
+  const reports = $derived(hasStatus(record));
+  const id = $derived(keyString(record.key));
+  const status = $derived(deviceStatus.byDevice.get(id));
+  const statusError = $derived(deviceStatus.errors.get(id));
+
+  // The board's status and history while it is shown.
+  $effect(() => deviceStatus.watch(record));
+
+  // The controls: whatever actions the device offers, by whichever way it is reached.
+  let actions = $state<DeviceAction[]>([]);
+  $effect(() => {
+    const key = record.key;
+    if (!online || !record.capabilities.includes("actions")) {
+      actions = [];
+      return;
+    }
+    let stale = false;
+    api
+      .deviceActions(key)
+      .then((list) => !stale && (actions = list))
+      .catch(() => !stale && (actions = []));
+    return () => (stale = true);
+  });
+
+  const DONE: Record<string, string> = {
+    locate: "is signalling. Look for it.",
+    reboot: "is restarting.",
+    "power-off": "is shutting down. It stays off until its power is cycled.",
+    "usb-boot": "is restarting into USB boot; install an image from Software.",
+    "set-clock": "has this computer's time.",
+    "update.cancel": "cancelled its update.",
+    "update.rollback": "is restarting into its previous version.",
+  };
+
+  async function run(action: DeviceAction) {
+    await api.runDeviceAction(record.key, action.id);
+    const done = DONE[action.id];
+    toasts.success(done ? `${deviceName(record)} ${done}` : `${action.label}: sent to ${deviceName(record)}.`);
+    void deviceStatus.refresh(record.key);
+  }
   const shown = new Set(["os", "os_version", "revision", "hostname", "manage_url", "recovery_steps", "storage", "model", "camera_stream"]);
   const macs = $derived(Object.entries(attrs).filter(([name]) => name.startsWith("mac.")));
   const extra = $derived(Object.entries(attrs).filter(([name]) => !shown.has(name) && !name.startsWith("mac.")));
@@ -85,6 +130,24 @@
 </script>
 
 <div class="flex flex-col gap-6">
+  {#if reports}
+    <section class="flex flex-col gap-2.5">
+      <h3 class="text-[12px] font-medium uppercase tracking-[0.06em] text-fg-faint">Now</h3>
+      {#if status}
+        <NowCard {status} {actions} {run} />
+      {:else if statusError}
+        <p class="text-[13px] text-warn-fg">{statusError}</p>
+      {:else}
+        <Skeleton height={58} />
+      {/if}
+    </section>
+    {#if status}<HealthCard {status} readAt={deviceStatus.readAt.get(id)} />{/if}
+  {/if}
+
+  {#if online && actions.length > 0}
+    <ControlsCard {actions} {run} update={reports ? (status?.update ?? null) : undefined} />
+  {/if}
+
   {#if stream}
     <CameraPreview src={stream} name={record.label ?? record.identity.name ?? record.key.serial} />
   {/if}
