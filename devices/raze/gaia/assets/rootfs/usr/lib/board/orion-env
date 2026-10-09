@@ -1,0 +1,38 @@
+#!/bin/sh
+# Orion's node id for this board, in one place (board-orion-env.service, at
+# boot, before orion-node and lemnos-orion): writes /run/board/orion.env as
+#   ORION_NODE_ID=<id>
+# which both units read (drop-ins), so lemnosd's devices are registered on
+# the node they run on. The id is the OS's own ORION_NODE_ID from
+# /etc/default/orion-node.env when it sets one (orion-node reads that file
+# too, so the two agree), else raze-<serial8>: the name Atlas shows.
+# Settings: ORION_NODE_ENV (the OS's file).
+set -u
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+
+ORION_NODE_ENV=${ORION_NODE_ENV:-/etc/default/orion-node.env}
+
+# The last ORION_NODE_ID= the OS's env file assigns, without quotes.
+os_id=''
+if [ -r "$ORION_NODE_ENV" ]; then
+	os_id=$(sed -n 's/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}ORION_NODE_ID=//p' "$ORION_NODE_ENV" |
+		tail -n 1 | sed "s/^[\"']//; s/[\"'][[:space:]]*\$//; s/[[:space:]]*\$//")
+fi
+
+if [ -n "$os_id" ]; then
+	id=$os_id
+else
+	serial8=$(board_serial8)
+	if [ -z "$serial8" ]; then
+		board_log "no board serial or machine id; orion-node keeps its own id"
+		exit 0
+	fi
+	id=raze-$serial8
+fi
+
+mkdir -p "$BOARD_RUN_DIR"
+tmp=$BOARD_RUN_DIR/.orion.env.$$
+printf 'ORION_NODE_ID=%s\n' "$id" > "$tmp" && mv -f "$tmp" "$BOARD_RUN_DIR/orion.env"

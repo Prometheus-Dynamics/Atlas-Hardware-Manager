@@ -29,7 +29,7 @@ id = "fan"
 driver = "hwmon-fan"
 match = { name = "pwmfan" }
 poll_ms = 1000
-writers = ["lemnosd.fan", "helios", "board-selftest"]
+writers = ["lemnosd.fan", "helios", "board-selftest", "orion:*"]
 
 [[devices]]
 id = "cpu-thermal"

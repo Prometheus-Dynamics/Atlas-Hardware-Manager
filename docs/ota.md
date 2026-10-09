@@ -321,8 +321,9 @@ through board-agent, or someone typing on the board.
   actions (`set`, `restore`, `release` on the device's resource): the node
   holds its answer until the bridge has one. Lemnos applies the device's
   `writers` to the caller `orion:<requested_by>`, which for Atlas is
-  `orion:operator:atlas-<host>`; a device whose list doesn't name it refuses
-  the write, and the card says so.
+  `orion:operator:atlas-<host>`. The Raze's fan lists `orion:*` (a prefix
+  match), usb-a-power lists no writers (anyone); a device whose list doesn't
+  match refuses the write, and the card says so.
 - **Endpoints.** `GET /status` and `GET /events?since=<t>&limit=<n>` on the
   identity endpoint (port 5899), read-only and listed in the identity's
   `endpoints`.

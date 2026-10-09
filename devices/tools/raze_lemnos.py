@@ -27,7 +27,7 @@ from pathlib import Path
 
 SELECTOR_KEYS = ("name", "compatible", "of", "node")
 
-# What lemnos-board's DriverRegistry (Lemnos e5d5b3b, crates/lemnos-board/src
+# What lemnos-board's DriverRegistry (Lemnos 8915ee0, crates/lemnos-board/src
 # registry.rs and light.rs) accepts: placement, config keys, match keys.
 LIGHT_KEYS = (
     "count", "wire", "offset", "direction", "brightness", "gpio", "fade_ms", "easing",

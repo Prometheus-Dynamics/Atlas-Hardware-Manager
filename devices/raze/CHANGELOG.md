@@ -153,18 +153,28 @@ commit; the commits are listed per area.
 
 ### lemnosd, the hardware service
 
-- **Lemnos e5d5b3b** (from cca50f7): the fault reasons (`lemnos-ctl list`
+- **Lemnos 8915ee0** (from cca50f7): the fault reasons (`lemnos-ctl list`
   shows a `why:` line for a device that isn't available; the BMI088 IMU
-  tolerates unacknowledged soft resets) and the Orion bridge. The board
-  schema and the driver registry are unchanged.
+  tolerates unacknowledged soft resets), the Orion bridge, and trailing `*`
+  wildcards in `writers` and `raw_clients`. The board schema and the driver
+  registry are unchanged.
+- **Who may set what through Orion:** the fan's writers add `orion:*`, so
+  Atlas (the bridge writes as `orion:<requested_by>`) can set its duty and
+  hand it back. usb-a-power lists no writers, so any client may already;
+  the LED ring and the sensors stay out of reach (the ring is the board's
+  status display).
 - **The Orion bridge:** gaia/lemnos.toml imports Lemnos's optional
   `lemnos-orion.toml` (`/usr/bin/lemnos-orion`, `lemnos-orion.service` as the
   `lemnos` user, on Orion 4fadba9 like board-agent and Atlas), enabled in
   70-board.preset. Its drop-in adds the `orion` group (for /run/orion) and
   starts it only when /run/orion exists; orion-node's drop-in now admits
-  `root,user:lemnos`. The bridge registers on ORION_NODE_ID (default
-  `node.local`); an OS with another node id sets it in
-  /etc/default/lemnos-orion.env.
+  `root,user:lemnos`.
+- **One Orion node id:** `board-orion-env.service` writes
+  /run/board/orion.env (`ORION_NODE_ID=raze-<serial8>`, the name Atlas shows,
+  or the OS's own ORION_NODE_ID from /etc/default/orion-node.env) before
+  orion-node and lemnos-orion start, and both read it, so the bridge's
+  devices land on the node they run on. A board that ran orion-node as
+  `node.local` comes up under its new id.
 - **Eased blink:** `raze-leds blink [<hz>]` (PhotonVision's blinking
   statuses) is now lemnosd's breathe effect at full depth, ease-in-out, with
   the same period (1000/hz ms): it fades to off and back, so it still reads

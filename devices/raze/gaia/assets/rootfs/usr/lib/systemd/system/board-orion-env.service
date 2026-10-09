@@ -1,0 +1,15 @@
+[Unit]
+Description=Board Orion node id (/run/board/orion.env)
+Documentation=file:/usr/lib/board/orion-env
+# Before both readers of the file: orion-node and the Lemnos bridge.
+DefaultDependencies=no
+After=local-fs.target
+Before=orion-node.service lemnos-orion.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/board/orion-env
+
+[Install]
+WantedBy=multi-user.target
