@@ -320,10 +320,13 @@ impl UpdateCapability for SshUpdate {
 
         progress.step_started(UpdateStep::Preflight);
         let status = self.status().await?;
-        if status.state == "trying" {
-            return Err(DriverError::Incompatible(
-                "the board is still trying its last update; wait for it to finish".into(),
-            ));
+        // `rebooting` from an earlier boot reads as `trying`; a stage left
+        // over from a power loss reads as `error`.
+        if matches!(status.state.as_str(), "trying" | "rebooting" | "staging") {
+            return Err(DriverError::Incompatible(format!(
+                "the board is still busy with its last update ({}); wait for it to finish",
+                status.state
+            )));
         }
         let free_kib: u64 = self
             .run(&format!(
