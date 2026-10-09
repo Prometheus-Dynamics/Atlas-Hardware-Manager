@@ -133,6 +133,12 @@ jobs:
         with:
           bun-version: 1.4.2
 
+      # A prebuilt binary, seconds to install.
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: nextest
+
       # Only dev saves the cache (the branch every push goes to); other
       # branches and PRs restore it.
       - name: Cache Rust artifacts
@@ -158,8 +164,12 @@ jobs:
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+      # nextest runs every binary's tests at once (cargo test runs the
+      # binaries one after another); doc tests are cargo test's alone.
       - name: Run tests
-        run: cargo test --workspace
+        run: |
+          cargo nextest run --workspace
+          cargo test --workspace --doc
 
       # Phase 0 gate: the CLI lists devices and runs update jobs on every OS.
       - name: Smoke test the CLI against simulated devices

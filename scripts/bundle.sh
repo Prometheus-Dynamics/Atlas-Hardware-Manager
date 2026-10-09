@@ -20,4 +20,4 @@ fi
 
 cd "$root_dir/apps/desktop"
 bun run tauri build --target "$target" "${configs[@]}"
-echo "Installers are in target/$target/release/bundle/"
+echo "Installers are in ${CARGO_TARGET_DIR:-$root_dir/target}/$target/release/bundle/"

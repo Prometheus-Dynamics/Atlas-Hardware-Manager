@@ -145,6 +145,28 @@ when it is missing.
 ./scripts/ci.sh
 ```
 
-That runs `cargo fmt --check`, the 600-line file-size check, clippy with
-`-D warnings`, and the tests. In `apps/desktop`, `bun run check` type-checks
-the UI. CI runs all of it, plus CLI smoke tests, on Linux, Windows, and macOS.
+That runs `cargo fmt --check`, the 600-line file-size check, the device
+package tests (in parallel), clippy with `-D warnings`, and the tests. In
+`apps/desktop`, `bun run check` type-checks the UI. CI runs all of it, plus
+CLI smoke tests, on Linux, and on Windows and macOS when a change touches more
+than the device package and docs.
+
+Keeping it quick:
+
+- Install `cargo-nextest` (`cargo install cargo-nextest --locked`): `ci.sh` uses
+  it, and it runs every test binary's tests at once (6 s instead of 24 s).
+- Put `target/` on a fast internal disk. On a slow or busy drive a build can sit
+  for an hour waiting on I/O; on an NVMe the whole workspace's tests build cold in
+  about 80 s, and a change to a core crate rebuilds in about 3 s. Either export
+  `CARGO_TARGET_DIR`, or give the checkout a git-ignored `.cargo/config.toml`:
+
+  ```toml
+  [build]
+  target-dir = "/path/on/a/fast/disk/atlas-target"
+  ```
+
+  The scripts (`ci.sh`, `bundle.sh`) follow it; installers then land under that
+  directory instead of `target/`.
+- Dev builds carry line tables only (and no debug info for dependencies), so
+  `target/` stays about 3.4 GB instead of 8. For a debugger session, build with
+  `CARGO_PROFILE_DEV_DEBUG=true`.

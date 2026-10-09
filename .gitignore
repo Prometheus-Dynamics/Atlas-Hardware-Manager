@@ -30,3 +30,6 @@ src-tauri/.cargo/
 
 # Gaia (a checkout used as an OS build source: --set sources.atlas.path=...)
 .gaia/
+
+# A machine-local Cargo config (for example a target-dir on a faster disk)
+/.cargo/config.toml

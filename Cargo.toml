@@ -82,6 +82,16 @@ print_stdout = "deny"
 todo = "deny"
 unimplemented = "deny"
 
+# Dev builds and tests: line tables for our own crates (file and line in
+# backtraces and panics, enough for tests) and no debug info for
+# dependencies. Full debug info made target/ several GB larger and every
+# link slower; set CARGO_PROFILE_DEV_DEBUG=true for a debugger session.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 # Decompression and hashing run on multi-gigabyte images; keep them fast in
 # dev builds and tests too.
 [profile.dev.package.lzma-rs]

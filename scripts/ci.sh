@@ -17,4 +17,12 @@ echo "==> Running clippy"
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 echo "==> Running tests"
-cargo test --workspace
+# cargo-nextest runs every test binary's tests at once (cargo test runs the
+# binaries one after another): 8 s instead of 24 s here. Doc tests are
+# cargo test's alone.
+if cargo nextest --version >/dev/null 2>&1; then
+  cargo nextest run --workspace
+  cargo test --workspace --doc
+else
+  cargo test --workspace
+fi

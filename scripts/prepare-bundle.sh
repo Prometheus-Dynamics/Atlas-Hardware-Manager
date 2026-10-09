@@ -14,12 +14,15 @@ target="${1:-$(rustc -vV | sed -n 's/^host: //p')}"
 "$root_dir/scripts/fetch-usbboot-files.sh"
 
 cargo build --release -p atlas-helper -p atlas-cli --target "$target"
+# Cargo's output directory: CARGO_TARGET_DIR when set (for example on a
+# faster disk than the checkout's), else target/ here.
+target_dir="${CARGO_TARGET_DIR:-$root_dir/target}"
 extension=""
 if [[ "$target" == *windows* ]]; then
   extension=".exe"
 fi
 bin_dir="$root_dir/apps/desktop/src-tauri/binaries"
 mkdir -p "$bin_dir"
-cp "target/$target/release/atlas-helper$extension" "$bin_dir/atlas-helper-$target$extension"
-cp "target/$target/release/atlas$extension" "$bin_dir/atlas-$target$extension"
+cp "$target_dir/$target/release/atlas-helper$extension" "$bin_dir/atlas-helper-$target$extension"
+cp "$target_dir/$target/release/atlas$extension" "$bin_dir/atlas-$target$extension"
 echo "Bundle inputs ready for $target"

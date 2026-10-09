@@ -2,7 +2,8 @@
 # Off-device test of board-update: the board's partitions are plain
 # files, a "mount" is a directory next to its file (so what a mounted new root
 # contains is set up by hand in p6.d/p5.d), and reboots are recorded. The
-# image is a real A/B disk layout made with sfdisk, compressed with xz and
+# image is a real A/B disk layout made with sfdisk, compressed with xz (preset
+# 0: a real .xz stream in a fraction of the time) and
 # zstd, and board-image-slots is compiled from source.
 # With erofs-utils (mkfs.erofs, fsck.erofs) it also installs an image whose
 # root slot is a real EROFS filesystem, read back through the writer's
@@ -121,13 +122,13 @@ head -c $((4096 * 512)) /dev/urandom > "$T/boot.ref"
 head -c $((20480 * 512)) /dev/urandom > "$T/root.ref"
 dd if="$T/boot.ref" of="$img" bs=512 seek=4096 conv=notrunc 2>/dev/null
 dd if="$T/root.ref" of="$img" bs=512 seek=14336 conv=notrunc 2>/dev/null
-xz -T0 -k "$img"
+xz -0 -T0 -k "$img"
 zstd -q -k "$img" -o "$img.zst"
 # The old two-partition layout.
 old=$T/old.img
 truncate -s 8M "$old"
 printf 'label: dos\nstart=2048, size=4096, type=c\nstart=6144, size=8192, type=83\n' | sfdisk -q "$old"
-xz -k "$old"
+xz -0 -k "$old"
 # The board's slot B starts as the image's partition sizes allow.
 printf 'console=tty1 root=/dev/mmcblk0p5 rootwait\n' > "$T/disk/p3.d/cmdline.txt"
 
@@ -392,7 +393,7 @@ if command -v mkfs.erofs >/dev/null 2>&1 && fsck.erofs --help 2>&1 | grep -q -- 
 		truncate -s $((20480 * 512)) "$T/root.erofs"
 		cp "$img" "$T/erofs.img"
 		dd if="$T/root.erofs" of="$T/erofs.img" bs=512 seek=14336 conv=notrunc 2>/dev/null
-		xz -T0 -c "$T/erofs.img" > "$3"
+		xz -0 -T0 -c "$T/erofs.img" > "$3"
 	}
 	rm -rf "$T/disk/p5.d" "$T/disk/p6.d"
 	mkdir -p "$T/disk/p5.d" "$T/disk/p6.d"
