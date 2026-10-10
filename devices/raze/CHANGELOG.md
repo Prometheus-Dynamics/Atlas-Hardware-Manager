@@ -155,11 +155,12 @@ commit; the commits are listed per area.
 
 ### lemnosd, the hardware service
 
-- **Lemnos b2634fc** (from cca50f7): the fault reasons (`lemnos-ctl list`
+- **Lemnos ae59665** (from cca50f7): the fault reasons (`lemnos-ctl list`
   shows a `why:` line for a device that isn't available; the BMI088 IMU
   tolerates unacknowledged soft resets), the Orion bridge, and trailing `*`
   wildcards in `writers` and `raw_clients`, and a bridge that builds without
-  a C cross compiler (no `ring`). The board schema and the driver
+  a C cross compiler (no `ring`) and finds orion-node's sockets in
+  /run/orion. The board schema and the driver
   registry are unchanged.
 - **Who may set what through Orion:** the fan's writers add `orion:*`, so
   Atlas (the bridge writes as `orion:<requested_by>`) can set its duty and
