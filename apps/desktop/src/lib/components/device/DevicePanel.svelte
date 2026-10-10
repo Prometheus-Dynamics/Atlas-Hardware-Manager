@@ -127,7 +127,7 @@
   <div class="flex min-h-0 flex-1 flex-col border-t border-hairline" role="tabpanel">
     <Region inner="device-tab px-4 pb-4 pt-3">
     {#key current}
-      <div in:softFade>
+      <div class="tab-body" in:softFade>
         {#if current === "overview"}
           <OverviewTab {record} />
         {:else if current === "software" && active && !handoff}
@@ -148,8 +148,18 @@
 {/if}
 
 <style>
+  /* At least the view's height, so a tab can fill it (the log does). */
   :global(.device-tab) {
     container-type: inline-size;
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+  }
+  .tab-body {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
   }
   .head {
     padding: 10px 16px;

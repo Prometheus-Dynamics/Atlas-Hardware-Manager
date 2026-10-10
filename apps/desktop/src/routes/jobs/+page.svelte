@@ -2,7 +2,9 @@
   import { goto } from "$app/navigation";
   import { keyString } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
-  import EmptyState from "#lib/components/common/EmptyState.svelte";
+  import GlassCard from "#lib/components/common/GlassCard.svelte";
+  import ActivityFeed from "#lib/components/overview/ActivityFeed.svelte";
+  import { activity } from "#lib/stores/activity.svelte.ts";
   import PageHeader from "#lib/components/common/PageHeader.svelte";
   import JobDetail from "#lib/components/jobs/JobDetail.svelte";
   import JobList from "#lib/components/jobs/JobList.svelte";
@@ -19,6 +21,9 @@
   // What could start a job right now, for the empty state.
   const waiting = $derived(insights.waiting);
   const outdated = $derived(insights.outdated.length);
+
+  // Before this session's jobs: the fleet's updates and flashes so far.
+  const earlier = $derived(activity.entries.filter((e) => e.kind === "version-changed" || e.kind === "update-result" || e.kind === "mode-changed"));
 
   function updateAll() {
     const request = insights.updateAllRequest();
@@ -37,13 +42,16 @@
   {/snippet}
 
   {#if jobs.sorted.length === 0}
-    <div class="flex flex-1 items-center justify-center">
-      <EmptyState icon="activity" title="No jobs yet" class="w-full max-w-xl">
-        <p>
+    <!-- No jobs yet: what would start one on the left, the fleet's earlier
+         updates and flashes filling the right (the same split as with jobs). -->
+    <div class="split">
+      <section class="glass flex flex-col gap-3 self-start px-4 py-4" style="border-radius: var(--r-panel)" aria-label="No jobs yet">
+        <h2 class="text-[13px] font-semibold text-fg">No jobs this session</h2>
+        <p class="text-[12.5px] text-fg-muted">
           A job is one update or flash: the image is downloaded, written, and checked once the device comes back on the new
-          version. Each one shows up here with its stages and log while it runs, and stays for this session.
+          version. Each shows here with its stages and log while it runs.
         </p>
-        <div class="mt-5 flex flex-wrap justify-center gap-2">
+        <div class="flex flex-col gap-1.5">
           {#if waiting.length > 0}
             <Button variant="primary" icon="bolt" onclick={() => ui.openDevice(keyString(waiting[0].key), "software")}>
               Flash {waiting.length === 1 ? "the board" : `${waiting.length} boards`} in USB boot
@@ -59,7 +67,12 @@
             <Button icon="robot" onclick={() => goto("/robots")}>Make a robot ready</Button>
           {/if}
         </div>
-      </EmptyState>
+      </section>
+      <GlassCard large title="Earlier updates and flashes" icon="history" pad={false} class="self-start">
+        <div class="flex flex-col px-3 pb-3 pt-2">
+          <ActivityFeed entries={earlier} limit={80} empty="No device has been updated or flashed yet." />
+        </div>
+      </GlassCard>
     </div>
   {:else}
     <!-- The list on the left scrolls; the chosen job fills the right. -->

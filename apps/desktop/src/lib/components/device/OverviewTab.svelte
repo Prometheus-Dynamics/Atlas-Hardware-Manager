@@ -215,7 +215,7 @@
   </div>
 
   {#if Object.keys(record.identity.versions).length > 1}
-    <Disclosure title="Versions" count={Object.keys(record.identity.versions).length} open>
+    <Disclosure title="Versions" count={Object.keys(record.identity.versions).length}>
       <FactGrid facts={Object.entries(record.identity.versions).map(([k, v]) => ({ label: nice(k), value: v, mono: true }))} plain />
     </Disclosure>
   {/if}

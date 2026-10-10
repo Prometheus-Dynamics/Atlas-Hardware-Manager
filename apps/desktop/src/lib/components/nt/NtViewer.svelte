@@ -11,6 +11,9 @@
   import LiveChart from "#lib/components/device/LiveChart.svelte";
   import { LiveSeries, WINDOWS } from "#lib/components/device/live.ts";
   import { clock } from "#lib/stores/clock.svelte.ts";
+  import { devices } from "#lib/stores/devices.svelte.ts";
+  import { deviceName } from "#lib/format.ts";
+  import { cameraStreams, deviceIcon } from "#lib/present.ts";
   import { onDestroy } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { formatNt, isNumberType, numberOf, treeRows } from "./nt.ts";
@@ -23,6 +26,17 @@
       return [];
     }
   };
+
+  // Before connecting: every online camera's own NT server, one click away.
+  const cameras = $derived(
+    devices.all
+      .filter((d) => d.presence === "online" && cameraStreams(d).length > 0)
+      .map((d) => {
+        const host = d.identity.attributes?.hostname;
+        // A bare host name is reached by mDNS (.local); a full one as it is.
+        return { record: d, to: host ? (host.includes(".") ? host : `${host}.local`) : d.identity.address };
+      }),
+  );
 
   let target = $state("");
   let port = $state(5810);
@@ -168,6 +182,28 @@
     </div>
   </GlassCard>
 
+  {#if !open}
+    <section class="flex flex-col gap-2.5" aria-label="Cameras on the network">
+      <h3 class="text-[12px] font-medium uppercase tracking-[0.06em] text-fg-faint">Cameras on the network</h3>
+      {#if cameras.length}
+        <div class="targets">
+          {#each cameras as camera (camera.to)}
+            <button type="button" class="target glass" onclick={() => ((target = camera.to), (port = 5810), void connect())}>
+              <Icon name={deviceIcon(camera.record)} size={18} />
+              <span class="min-w-0 flex-1 text-left">
+                <span class="block truncate text-[13px] font-semibold text-fg">{deviceName(camera.record)}</span>
+                <span class="mono block truncate text-[11.5px] text-fg-faint">{camera.to}</span>
+              </span>
+              <span class="go"><Icon name="plug-connected" size={14} />Connect</span>
+            </button>
+          {/each}
+        </div>
+      {:else}
+        <p class="text-[13px] text-fg-muted">No camera is online. Enter a team number for its robot, or any NT4 server's address.</p>
+      {/if}
+    </section>
+  {/if}
+
   {#if open}
     <div class="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
       <GlassCard title="Topics" subtitle="{count} live" fill>
@@ -306,6 +342,32 @@
     font-size: 12px;
     color: var(--fg-muted);
     background: var(--glass-strong);
+  }
+  .targets {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 8px;
+  }
+  .target {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    color: var(--fg-muted);
+    border-radius: var(--r-card);
+  }
+  .target:hover {
+    background: var(--glass-hover);
+  }
+  .go {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--fg-faint);
+  }
+  .target:hover .go {
+    color: var(--accent);
   }
   .chip:hover {
     color: var(--fg);

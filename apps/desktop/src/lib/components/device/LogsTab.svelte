@@ -71,7 +71,8 @@
   }
 </script>
 
-<div class="flex flex-col gap-3">
+<!-- Fills the tab; only the log scrolls. -->
+<div class="flex min-h-0 flex-1 basis-0 flex-col gap-3">
   <div class="flex flex-wrap items-center gap-2">
     <SegmentedControl
       options={[
@@ -113,7 +114,7 @@
 
 <style>
   .log {
-    max-height: calc(100vh - 330px);
+    flex: 1 1 0;
     min-height: 220px;
     overflow: auto;
     padding: 8px 0;
