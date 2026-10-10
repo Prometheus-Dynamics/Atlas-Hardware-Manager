@@ -30,6 +30,13 @@ pub const LINUX_UDEV_RULES_FILE: &str = concat!(
     "# into its new image after a flash.\n",
     "SUBSYSTEM==\"tty\", ATTRS{idVendor}==\"0a5c\", ATTRS{idProduct}==\"0104\", ",
     "TAG+=\"uaccess\"\n",
+    "# Atlas's raze-flasher (a USB-booted Raze): its console and its bulk\n",
+    "# interface, by product name, since 1d6b:0104 alone is any Linux gadget\n",
+    "# (a running Raze's own console among them).\n",
+    "SUBSYSTEM==\"tty\", ATTRS{idVendor}==\"1d6b\", ATTRS{idProduct}==\"0104\", ",
+    "ATTRS{product}==\"Raze flasher\", TAG+=\"uaccess\"\n",
+    "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"1d6b\", ATTR{idProduct}==\"0104\", ",
+    "ATTR{product}==\"Raze flasher\", MODE=\"0660\", TAG+=\"uaccess\"\n",
 );
 
 /// The Windows USB product ids that need WinUSB bound for USB boot.
