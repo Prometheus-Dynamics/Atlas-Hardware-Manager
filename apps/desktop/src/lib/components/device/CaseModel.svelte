@@ -1,6 +1,7 @@
 <script lang="ts">
   // The Raze, as its case: the case model (static/models/raze-case.glb, built
-  // by devices/tools/case_model.py from the CAD, in the IMU's frame) turned
+  // by devices/tools/case_model.py from the CAD: the case, a simplified board
+  // and the connectors at its edges, in the IMU's frame) turned
   // by the IMU's orientation, with the lens added and the axes drawn. three.js
   // loads only when this shows. `onfail` says WebGL or the model isn't there,
   // so the caller can draw something simpler.
@@ -62,7 +63,9 @@
         const gltf = await new GLTFLoader().loadAsync("/models/raze-case.glb");
         gltf.scene.traverse((node) => {
           const mesh = node as InstanceType<typeof THREE.Mesh>;
-          if (mesh.isMesh) mesh.material = MATERIALS[mesh.name] ?? MATERIALS[mesh.parent?.name ?? ""] ?? MATERIALS.TOP;
+          // The case's parts get these; the board's (PCB, IO_n) keep their own colours.
+          const own = MATERIALS[mesh.name] ?? MATERIALS[mesh.parent?.name ?? ""];
+          if (mesh.isMesh && own) mesh.material = own;
         });
         board.add(gltf.scene);
         // The lens, which the case model leaves out: dark glass in the ring's
