@@ -46,6 +46,14 @@
 
   let running = $state(false);
   const busy = $derived(busyProp || running);
+  /** After an action: a check for a moment when it worked, a red edge when it didn't. */
+  let outcome = $state<"done" | "failed" | null>(null);
+  let outcomeTimer: ReturnType<typeof setTimeout> | null = null;
+  function show(next: "done" | "failed") {
+    outcome = next;
+    if (outcomeTimer) clearTimeout(outcomeTimer);
+    outcomeTimer = setTimeout(() => (outcome = null), next === "done" ? 1300 : 1800);
+  }
 
   async function click(event: MouseEvent) {
     onclick?.(event);
@@ -53,7 +61,9 @@
     running = true;
     try {
       await action();
+      show("done");
     } catch (error) {
+      show("failed");
       toasts.error(errorText(error));
     } finally {
       running = false;
@@ -66,6 +76,8 @@
   class="btn {variant} {size} {extra}"
   class:full
   class:icon-only={!children}
+  class:done={outcome === "done"}
+  class:failed={outcome === "failed"}
   disabled={disabled || busy}
   aria-busy={busy}
   aria-label={label}
@@ -74,6 +86,8 @@
 >
   {#if busy}
     <Icon name="loader-2" class="spin" size={size === "sm" ? 14 : 16} />
+  {:else if outcome === "done" && (icon || !children)}
+    <Icon name="check" size={size === "sm" ? 14 : 16} />
   {:else if icon}
     <Icon name={icon} size={size === "sm" ? 14 : 16} />
   {/if}
@@ -129,6 +143,14 @@
   /* No lift on hover: a button stays in line with its neighbours. */
   .btn:not(:disabled):active {
     transform: scale(0.98);
+  }
+  /* What just happened, for a moment (see `show`). */
+  .btn.done {
+    border-color: color-mix(in srgb, var(--ok) 55%, transparent);
+    color: var(--ok-fg);
+  }
+  .btn.failed {
+    border-color: color-mix(in srgb, var(--err) 65%, transparent);
   }
   .btn:disabled {
     cursor: default;

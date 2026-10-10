@@ -122,6 +122,7 @@
     savingRobot = true;
     try {
       await api.setDeviceRobot(record.key, value || null);
+      toasts.success(value ? `${deviceName(record)} is on ${value}.` : `${deviceName(record)} is on no robot.`);
     } catch (error) {
       toasts.error(errorText(error));
     } finally {

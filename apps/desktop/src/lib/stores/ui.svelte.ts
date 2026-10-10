@@ -1,4 +1,4 @@
-// View state: side panel, the device page, pinned and monitored devices,
+// View state: side panel, the device page, monitored devices,
 // inventory selection and filters, help.
 
 import { goto } from "$app/navigation";
@@ -19,7 +19,6 @@ export const NO_ROBOT = "\u0000none";
 export type InventoryView = "cards" | "list";
 
 const VIEW_KEY = "atlas.inventory.view";
-const PINNED_KEY = "atlas.device.pinned";
 const MONITOR_KEY = "atlas.monitor.devices";
 
 /** A remembered set of device keys (per machine; this session without storage). */
@@ -63,8 +62,6 @@ class UiStore {
   helpOpen = $state(false);
   /** The device the device page shows, for highlighting it elsewhere. */
   viewing = $state<string | null>(null);
-  /** Devices shown beside whichever device is open, to compare. */
-  pinned = savedSet(PINNED_KEY);
   /** Devices on the Monitor page. */
   monitored = savedSet(MONITOR_KEY);
 
@@ -146,12 +143,6 @@ class UiStore {
     this.panel = null;
     this.focused = key;
     void goto(devicePath(key, tab));
-  }
-
-  togglePinned(key: string) {
-    if (this.pinned.has(key)) this.pinned.delete(key);
-    else this.pinned.add(key);
-    saveSet(PINNED_KEY, this.pinned);
   }
 
   toggleMonitored(key: string) {

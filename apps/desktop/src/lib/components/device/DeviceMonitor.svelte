@@ -1,6 +1,5 @@
 <script lang="ts">
-  // One device, compact, beside others (pinned on a device page, or on the
-  // Monitor page): its status, every live reading as a row with a trend,
+  // One device, compact, beside others on the Monitor page: its status, every live reading as a row with a trend,
   // and its board's streaming sensors as charts.
   import { keyString, type DeviceRecord } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";

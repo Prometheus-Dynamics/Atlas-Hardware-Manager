@@ -30,7 +30,7 @@
     /** Its live readings, when the board streams them. */
     live?: LiveSeries | null;
     windowS?: number;
-    /** Beside other devices (pinned, Monitor): the charts only, no tiles or controls. */
+    /** Beside other devices (the Monitor page): the charts only, no tiles or controls. */
     compact?: boolean;
     /** Changes while live, to re-read the newest values. */
     tick?: number;

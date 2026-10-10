@@ -77,7 +77,7 @@
         <div><dt>|a|</dt><dd>{fmt(accelG, 2)} g</dd></div>
         <div><dt>|ω|</dt><dd>{fmt(rateDps)} °/s</dd></div>
       </dl>
-      <Button size="sm" variant="ghost" icon="refresh" onclick={() => orientation?.zero()}>Zero heading</Button>
+      <Button size="sm" variant="ghost" icon="refresh" action={async () => orientation?.zero()}>Zero heading</Button>
       <p class="note">Tilt from gravity; heading from the gyro alone, so it drifts slowly.</p>
     </div>
   </div>

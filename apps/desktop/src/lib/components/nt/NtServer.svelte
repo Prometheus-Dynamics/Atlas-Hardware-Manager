@@ -82,12 +82,28 @@
     writes = [];
   }
 
+  async function copy(text: string) {
+    if (!navigator.clipboard) throw "This window can't reach the clipboard.";
+    await navigator.clipboard.writeText(text);
+    toasts.success(`Copied ${text}.`);
+  }
+
+  /** Topics just set, for a moment: their box shows it took. */
+  let saved = $state<Record<string, number>>({});
+  function flash(name: string) {
+    saved[name] = Date.now();
+    setTimeout(() => {
+      if (Date.now() - (saved[name] ?? 0) >= 1200) delete saved[name];
+    }, 1300);
+  }
+
   async function setValue(topic: NtServerTopic) {
     const text = editing[topic.name];
     if (text === undefined) return;
     try {
       await api.ntServerSet(topic.name, null, parseNt(topic.type, text));
       delete editing[topic.name];
+      flash(topic.name);
       await load();
     } catch (error) {
       toasts.error(errorText(error));
@@ -155,7 +171,7 @@
               <span class="font-medium text-fg">{camera.name}</span>
               <span class="text-[12px] text-fg-faint">at {camera.device_ip}: set its server to</span>
               <span class="mono address">{camera.address}</span>
-              <Button size="sm" variant="ghost" icon="copy" label="Copy {camera.address}" onclick={() => void navigator.clipboard?.writeText(camera.address)} />
+              <Button size="sm" variant="ghost" icon="copy" label="Copy {camera.address}" action={() => copy(camera.address)} />
             </li>
           {/each}
         </ul>
@@ -194,6 +210,7 @@
                 {:else}
                   <input
                     class="input mono value-input"
+                    class:saved={!!saved[topic.name]}
                     value={editing[topic.name] ?? editText(topic.value)}
                     oninput={(event) => (editing[topic.name] = event.currentTarget.value)}
                     onkeydown={(event) => event.key === "Enter" && void setValue(topic)}
@@ -205,9 +222,14 @@
                 <Checkbox
                   checked={topic.persistent}
                   label="Keep {topic.name} across restarts"
-                  onclick={() => void api.ntServerPersistent(topic.name, !topic.persistent).then(load)}
+                  onclick={() =>
+                    void api
+                      .ntServerPersistent(topic.name, !topic.persistent)
+                      .then(() => toasts.success(topic.persistent ? `${topic.name} won't be kept across restarts.` : `${topic.name} is kept across restarts.`))
+                      .then(load)
+                      .catch((error) => toasts.error(errorText(error)))}
                 />
-                <Button size="sm" variant="ghost" icon="trash" label="Delete {topic.name}" action={() => api.ntServerDelete(topic.name).then(load)} />
+                <Button size="sm" variant="ghost" icon="trash" label="Delete {topic.name}" action={() => api.ntServerDelete(topic.name).then(() => toasts.success(`Deleted ${topic.name}.`)).then(load)} />
               </div>
             {/each}
           </div>
@@ -326,6 +348,9 @@
   .value-input {
     height: 28px;
     font-size: 12.5px;
+  }
+  .value-input.saved {
+    border-color: color-mix(in srgb, var(--ok) 60%, transparent);
   }
   .sync {
     display: flex;

@@ -1,6 +1,6 @@
 <script lang="ts">
   // A device's page: a compact header (back, name, status, quick actions,
-  // pin and monitor toggles, the tabs) over the tab, which takes the rest of
+  // the Monitor toggle, the tabs) over the tab, which takes the rest of
   // the window and lays out in columns as it widens.
   import Button from "#lib/components/common/Button.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
@@ -18,6 +18,7 @@
   import type { IconName } from "#lib/ui/icons.ts";
   import { softFade } from "#lib/ui/motion.ts";
   import { jobs } from "#lib/stores/jobs.svelte.ts";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
   import Region from "#lib/components/layout/Region.svelte";
   import ActiveJob from "./ActiveJob.svelte";
@@ -104,14 +105,12 @@
         <span class="sep" aria-hidden="true"></span>
         <Button
           size="sm"
-          icon={ui.pinned.has(key) ? "pinned" : "pin"}
-          onclick={() => ui.togglePinned(key)}
-          title={ui.pinned.has(key) ? "Unpin: stop showing it beside other devices" : "Pin: show it beside whichever device you open"}
-        >{ui.pinned.has(key) ? "Pinned" : "Pin"}</Button>
-        <Button
-          size="sm"
           icon="layout-dashboard"
-          onclick={() => ui.toggleMonitored(key)}
+          onclick={() => {
+            ui.toggleMonitored(key);
+            if (ui.monitored.has(key)) toasts.success(`${record ? deviceName(record) : "It"} is on the Monitor page.`);
+            else toasts.info(`${record ? deviceName(record) : "It"} is off the Monitor page.`);
+          }}
           title={ui.monitored.has(key) ? "Take it off the Monitor page" : "Add it to the Monitor page"}
         >{ui.monitored.has(key) ? "On Monitor" : "Monitor"}</Button>
       </div>
