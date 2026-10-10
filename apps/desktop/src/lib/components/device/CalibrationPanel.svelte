@@ -108,6 +108,8 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    /* Bars at a readable length on a wide card. */
+    max-width: 720px;
     margin-top: 12px;
     padding-top: 10px;
     border-top: 1px solid var(--hairline);

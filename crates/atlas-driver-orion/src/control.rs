@@ -104,6 +104,25 @@ impl HardwareCapability for OrionHardware {
         })
     }
 
+    async fn device_action(
+        &self,
+        _device: &Identity,
+        hardware: &str,
+        name: &str,
+        args: BTreeMap<String, serde_json::Value>,
+    ) -> Result<BTreeMap<String, serde_json::Value>, DriverError> {
+        let mut request = ActionRequest::new(action_id(name), self.resource(hardware).await?, name);
+        for (key, value) in args {
+            request = request.with_arg(&key, to_typed(hardware, &key, value)?);
+        }
+        Ok(self
+            .call(hardware, request)
+            .await?
+            .into_iter()
+            .map(|(key, value)| (key, from_typed(value)))
+            .collect())
+    }
+
     async fn calibration_status(
         &self,
         _device: &Identity,
@@ -135,6 +154,41 @@ impl OrionHardware {
                 format!("{hardware} is still working on it; check its value in a moment"),
             )),
         }
+    }
+}
+
+/// An action argument from JSON: numbers as F64 (Lemnos reads them as
+/// numbers), text, booleans; nothing nested.
+fn to_typed(
+    hardware: &str,
+    key: &str,
+    value: serde_json::Value,
+) -> Result<TypedConfigValue, DriverError> {
+    Ok(match value {
+        serde_json::Value::Bool(b) => TypedConfigValue::Bool(b),
+        serde_json::Value::Number(n) => TypedConfigValue::F64(n.as_f64().unwrap_or(0.0)),
+        serde_json::Value::String(s) => TypedConfigValue::String(s),
+        other => {
+            return Err(DriverError::Other(format!(
+                "{hardware}: argument {key} can't be {other}"
+            )));
+        }
+    })
+}
+
+/// An action's output value as JSON (bytes as a byte list).
+fn from_typed(value: TypedConfigValue) -> serde_json::Value {
+    match value {
+        TypedConfigValue::Bool(b) => b.into(),
+        TypedConfigValue::Int(i) => i.into(),
+        TypedConfigValue::UInt(u) => u.into(),
+        TypedConfigValue::F64(f) => {
+            serde_json::Number::from_f64(f).map_or(serde_json::Value::Null, Into::into)
+        }
+        TypedConfigValue::String(s) => s.into(),
+        TypedConfigValue::Bytes(b) => b.into(),
+        #[allow(unreachable_patterns)]
+        _ => serde_json::Value::Null,
     }
 }
 
@@ -185,6 +239,39 @@ fn calibration_status(output: &BTreeMap<String, TypedConfigValue>) -> Calibratio
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn action_arguments_and_outputs_cross_as_lemnos_reads_them() {
+        assert_eq!(
+            to_typed("ring", "value", serde_json::json!(0.4)).unwrap(),
+            TypedConfigValue::F64(0.4)
+        );
+        assert_eq!(
+            to_typed("ring", "seconds", serde_json::json!(10)).unwrap(),
+            TypedConfigValue::F64(10.0),
+            "numbers as F64"
+        );
+        assert_eq!(
+            to_typed("ring", "name", serde_json::json!("scheme-a")).unwrap(),
+            TypedConfigValue::String("scheme-a".into())
+        );
+        assert_eq!(
+            to_typed("ring", "persist", serde_json::json!(true)).unwrap(),
+            TypedConfigValue::Bool(true)
+        );
+        assert!(
+            to_typed("ring", "body", serde_json::json!({"a": 1})).is_err(),
+            "nothing nested"
+        );
+        assert_eq!(
+            from_typed(TypedConfigValue::String("* scheme-b".into())),
+            serde_json::json!("* scheme-b")
+        );
+        assert_eq!(
+            from_typed(TypedConfigValue::F64(0.5)),
+            serde_json::json!(0.5)
+        );
+    }
 
     #[test]
     fn calibration_status_reads_lemnos_output() {

@@ -49,7 +49,7 @@ pub struct RemoteTransport {
 }
 
 /// The actions Atlas runs through Orion; the enroll command grants these.
-const ACTIONS: [&str; 16] = [
+const ACTIONS: [&str; 27] = [
     "update",
     "update.cancel",
     "update.rollback",
@@ -68,6 +68,18 @@ const ACTIONS: [&str; 16] = [
     "calibration.discard",
     "calibration.reset",
     "calibration.status",
+    // A power switch's reset, and the status ring's looks and brightness.
+    "power.reset",
+    "looks.preset.list",
+    "looks.preset.show",
+    "looks.preset.apply",
+    "looks.preset.save",
+    "looks.preset.delete",
+    "looks.show_inline",
+    "looks.look",
+    "looks.off",
+    "looks.locate",
+    "light.brightness",
 ];
 
 impl RemoteTransport {

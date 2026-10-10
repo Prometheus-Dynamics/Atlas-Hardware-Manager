@@ -44,6 +44,46 @@ impl Atlas {
             .await?)
     }
 
+    /// Runs the board device `hardware`'s action `name` (a light's looks, a
+    /// power switch's reset) and answers its output. Logged, except the
+    /// read-only ones (`looks.preset.list`, `looks.preset.show`).
+    pub async fn hardware_action(
+        &self,
+        key: &DeviceKey,
+        hardware: &str,
+        name: &str,
+        args: std::collections::BTreeMap<String, serde_json::Value>,
+    ) -> Result<std::collections::BTreeMap<String, serde_json::Value>, CoreError> {
+        let (live, record) = self.live_device(key)?;
+        let control = live.capabilities.hardware.ok_or(CoreError::Unsupported {
+            device: key.clone(),
+            what: "hardware controls",
+        })?;
+        let result = control
+            .device_action(&record.identity, hardware, name, args)
+            .await;
+        if !matches!(name, "looks.preset.list" | "looks.preset.show") {
+            let what = format!("{hardware}: {name}");
+            let display = record.display_name();
+            self.inner.record_activity(vec![match &result {
+                Ok(_) => ActivityEntry::about(
+                    &record,
+                    ActivityKind::ActionRun,
+                    ActivityLevel::Info,
+                    format!("{what} on {display}"),
+                ),
+                Err(error) => ActivityEntry::about(
+                    &record,
+                    ActivityKind::ActionRun,
+                    ActivityLevel::Error,
+                    format!("{what} on {display} failed: {error}"),
+                ),
+            }]);
+            self.inner.persist();
+        }
+        Ok(result?)
+    }
+
     /// The calibration state of the board device `hardware` (read only, not
     /// logged).
     pub async fn calibration_status(

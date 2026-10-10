@@ -74,6 +74,23 @@ pub async fn control_hardware(
         .map_err(text)
 }
 
+/// Runs one of the board device's own actions (a light's looks and
+/// brightness, a power switch's reset); answers its output.
+#[tauri::command]
+pub async fn hardware_action(
+    state: State<'_, AppState>,
+    key: DeviceKey,
+    hardware: String,
+    name: String,
+    args: std::collections::BTreeMap<String, serde_json::Value>,
+) -> CmdResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    state
+        .atlas
+        .hardware_action(&key, &hardware, &name, args)
+        .await
+        .map_err(text)
+}
+
 /// The calibration state of one of the board's devices (an IMU, a
 /// magnetometer).
 #[tauri::command]

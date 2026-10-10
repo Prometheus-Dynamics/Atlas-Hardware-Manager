@@ -12,6 +12,7 @@
   import LiveChart from "./LiveChart.svelte";
   import ImuView from "./ImuView.svelte";
   import CalibrationPanel from "./CalibrationPanel.svelte";
+  import RingPanel from "./RingPanel.svelte";
   import { groupReadings, label, pillFor } from "./hardware.ts";
   import type { LiveSeries } from "./live.ts";
 
@@ -91,7 +92,7 @@
   {#if streaming}
     <!-- Every live reading is charted; the legends carry the newest values. -->
   {:else if entries.length === 0}
-    {#if device.controls.length === 0 && !device.reason}<p class="text-[13px] text-fg-muted">No readings.</p>{/if}
+    {#if device.controls.length === 0 && !device.reason && device.class !== "light"}<p class="text-[13px] text-fg-muted">No readings.</p>{/if}
   {:else}
     <div class="auto-grid" style="--min: 150px; --gap: 8px">
       {#each entries as entry (entry.key)}
@@ -112,6 +113,9 @@
   {/if}
 
   {#if !compact}<HardwareControls {device} {deviceKey} />{/if}
+  {#if !compact && deviceKey && device.class === "light" && device.status === "available"}
+    <RingPanel {device} {deviceKey} />
+  {/if}
   {#if !compact && deviceKey && (device.class === "imu" || device.class === "magnetometer") && device.status !== "missing" && device.status !== "faulted"}
     <CalibrationPanel {device} {deviceKey} />
   {/if}

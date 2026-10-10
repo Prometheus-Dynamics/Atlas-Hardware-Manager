@@ -11,6 +11,7 @@ publish.workspace = true
 description = "Orion as a capability source for Atlas: live readings, actions, and A/B updates for boards other drivers find."
 
 [dependencies]
+serde_json.workspace = true
 async-trait.workspace = true
 atlas-driver.workspace = true
 futures.workspace = true

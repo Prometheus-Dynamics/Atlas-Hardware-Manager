@@ -123,6 +123,22 @@ pub trait HardwareCapability: Send + Sync {
         command: HardwareCommand,
     ) -> Result<Option<f64>, DriverError>;
 
+    /// Runs the board device `hardware`'s action `name` with `args`, and
+    /// answers its output: the actions that aren't a control (Lemnos's
+    /// `looks.*` and `light.brightness` on a light, `power.reset` on a power
+    /// switch). Numbers go as numbers, text as text.
+    async fn device_action(
+        &self,
+        _device: &Identity,
+        hardware: &str,
+        name: &str,
+        _args: BTreeMap<String, serde_json::Value>,
+    ) -> Result<BTreeMap<String, serde_json::Value>, DriverError> {
+        Err(DriverError::Unsupported(format!(
+            "{hardware}: {name} isn't reachable on this board"
+        )))
+    }
+
     /// The calibration state of the board device `hardware`.
     async fn calibration_status(
         &self,

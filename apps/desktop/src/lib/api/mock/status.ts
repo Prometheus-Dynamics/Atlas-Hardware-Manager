@@ -259,6 +259,71 @@ function calibrate(kind: string, hardware: string, step: CalibrationStep, routin
   }
 }
 
+/** The A/B Raze's ring presets: Lemnos's built-ins, and any saved here. */
+const BUILTIN_PRESETS = ["scheme-a", "scheme-b", "scheme-c"];
+const ring = {
+  presets: new Map<string, string>(BUILTIN_PRESETS.map((name) => [name, `# ${name}: a built-in look preset\n[looks."status.ok"]\nlayers = [{ block = "solid", color = "00ff40" }]\n`])),
+  active: "scheme-b",
+  brightness: 1,
+};
+
+/** A board device's own action (Lemnos over Orion): the ring's looks and brightness, a power switch's reset. */
+export function hardwareAction(key: DeviceKey, hardware: string, name: string, args: Record<string, string | number | boolean>): Record<string, unknown> {
+  const device = online(key);
+  const target = device ? hardwareFor(device, Date.now(), 50)?.devices.find((d) => d.id === hardware) : null;
+  if (!target) throw `Orion doesn't list the board's ${hardware}`;
+  const unsupported = () => `${hardware}: unsupported action \`${name}\``;
+  const text = () => [...ring.presets.keys()].map((n) => `${n === ring.active ? "* " : "  "}${n}`).join("\n");
+  if (target.class === "power-switch") {
+    if (name !== "power.reset") throw unsupported();
+    const offMs = Number(args.off_ms ?? 1000);
+    writes.set(writeKey(key, hardware, "power.on"), 0);
+    setTimeout(() => writes.set(writeKey(key, hardware, "power.on"), 1), offMs);
+    return { control: "power.reset", applied: offMs };
+  }
+  if (target.class !== "light") throw unsupported();
+  const named = () => {
+    const n = String(args.name ?? "");
+    if (!n) throw "`name` (string) is required";
+    return n;
+  };
+  switch (name) {
+    case "looks.preset.list":
+      return { text: text() };
+    case "looks.preset.show": {
+      const body = ring.presets.get(named());
+      if (body === undefined) throw `no preset ${args.name}`;
+      return { text: body };
+    }
+    case "looks.preset.apply": {
+      const n = named();
+      if (!ring.presets.has(n)) throw `no preset ${n}`;
+      ring.active = n;
+      return { text: text() };
+    }
+    case "looks.preset.save":
+      ring.presets.set(named(), String(args.body ?? ""));
+      return { text: text() };
+    case "looks.preset.delete": {
+      const n = named();
+      if (BUILTIN_PRESETS.includes(n)) throw `${n} is built in`;
+      ring.presets.delete(n);
+      if (ring.active === n) ring.active = "scheme-b";
+      return { text: text() };
+    }
+    case "light.brightness":
+      ring.brightness = Math.max(0, Math.min(1, Number(args.value)));
+      return { brightness: ring.brightness };
+    case "looks.locate":
+    case "looks.look":
+    case "looks.off":
+    case "looks.show_inline":
+      return {};
+    default:
+      throw unsupported();
+  }
+}
+
 /** A board device's calibration, as Lemnos's calibration.status answers it. */
 export function calibrationStatus(key: DeviceKey, hardware: string): CalibrationStatus {
   const device = online(key);
@@ -319,6 +384,14 @@ function hardwareFor(device: SimDevice, now: number, celsius: number): HardwareS
           { name: "magnetic_field.y", value: (-3.2 + jitter(0.4)) * 1e-6, unit: "T" },
           { name: "magnetic_field.z", value: (-44.8 + jitter(0.4)) * 1e-6, unit: "T" },
         ],
+        controls: [],
+      },
+      {
+        id: "status-ring",
+        class: "light",
+        model: "ws2812",
+        status: "available",
+        readings: [],
         controls: [],
       },
       {

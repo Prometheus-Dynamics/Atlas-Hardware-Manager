@@ -7,6 +7,7 @@
   // Otherwise the values only.
   import { api, errorText, type DeviceKey, type HardwareCommand, type HardwareDevice } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
+  import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
   import { formatValue, label } from "./hardware.ts";
 
@@ -57,12 +58,18 @@
     toasts.success(`${device.id}: back to the board's values.`);
   }
 
+  /** A power switch off for a second and back on (Lemnos power.reset). */
+  async function restartPort() {
+    await api.hardwareAction(deviceKey!, device.id, "power.reset", { off_ms: 1000 });
+    toasts.success(`${device.id}: off for a second, then back on.`);
+  }
+
   async function release() {
     await send({ command: "release" });
     toasts.success(`${device.id}: the board's cooling has it again.`);
   }
 
-  // power.reset (off for N ms) blocks lemnosd for now: not offered.
+  // power.reset is the Restart button, not a slider.
   const HIDDEN = new Set(["power.reset"]);
   const visible = $derived(device.controls.filter((c) => !HIDDEN.has(c.name)));
   // On/off by name (power.on, a power switch's), not by range: a fan's duty is 0..1 too.
@@ -131,6 +138,11 @@
     {#if anySettable}
       <div class="flex flex-wrap gap-2">
         <Button size="sm" variant="ghost" icon="refresh" action={restore}>Restore</Button>
+        {#if device.class === "power-switch" && device.controls.some((c) => c.name === "power.reset")}
+          <ConfirmButton size="sm" variant="ghost" icon="refresh" prompt="Cut {device.id} for a second?" confirmLabel="Restart port" action={restartPort}>
+            Restart port
+          </ConfirmButton>
+        {/if}
         {#if device.class === "fan"}
           <Button size="sm" variant="ghost" icon="propeller" action={release}>Hand back to the board</Button>
         {/if}

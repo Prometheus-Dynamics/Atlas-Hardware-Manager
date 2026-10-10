@@ -58,6 +58,9 @@ export const api = {
    */
   controlHardware: (key: DeviceKey, hardware: string, command: HardwareCommand) =>
     invoke<number | null>("control_hardware", { key, hardware, command }),
+  /** One of a board device's own actions (a light's looks.* and light.brightness, a power switch's power.reset); answers its output. */
+  hardwareAction: (key: DeviceKey, hardware: string, name: string, args: Record<string, string | number | boolean> = {}) =>
+    invoke<Record<string, unknown>>("hardware_action", { key, hardware, name, args }),
   /** The calibration state of a board device (an IMU, a magnetometer). */
   calibrationStatus: (key: DeviceKey, hardware: string) => invoke<CalibrationStatus>("calibration_status", { key, hardware }),
   /** Connects a NetworkTables viewer to a team number (its robot) or host; resolves with a function that disconnects it. */
