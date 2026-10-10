@@ -69,6 +69,12 @@ fn attributes(device: &MockDevice) -> BTreeMap<String, String> {
     if device.mode == DeviceMode::Recovery {
         return attributes;
     }
+    if let Some(offset) = device.clock_offset_s {
+        attributes.insert(
+            atlas_driver::attributes::CLOCK_OFFSET_S.into(),
+            offset.to_string(),
+        );
+    }
     if device.key.family.as_str() == SIM_HELIOS {
         let host = device
             .name
@@ -348,8 +354,8 @@ struct MockActions {
 
 #[async_trait]
 impl ActionsCapability for MockActions {
-    fn actions(&self, _device: &Identity) -> Vec<DeviceAction> {
-        vec![
+    fn actions(&self, device: &Identity) -> Vec<DeviceAction> {
+        let mut actions = vec![
             DeviceAction {
                 id: "locate".into(),
                 label: "Find it".into(),
@@ -365,7 +371,19 @@ impl ActionsCapability for MockActions {
                 label: "Factory reset".into(),
                 destructive: true,
             },
-        ]
+        ];
+        // As a board offers it: only while its clock is off.
+        if device
+            .attributes
+            .contains_key(atlas_driver::attributes::CLOCK_OFFSET_S)
+        {
+            actions.push(DeviceAction {
+                id: "set-clock".into(),
+                label: "Set clock from this computer".into(),
+                destructive: false,
+            });
+        }
+        actions
     }
 
     async fn run_action(&self, device: &Identity, action_id: &str) -> Result<(), DriverError> {
@@ -378,6 +396,12 @@ impl ActionsCapability for MockActions {
             && let Some(mock) = state.devices.get_mut(&device.key)
         {
             mock.booted_ms = crate::observe::now_ms();
+        }
+        if action_id == "set-clock"
+            && let Some(mock) = state.devices.get_mut(&device.key)
+            && mock.clock_settable
+        {
+            mock.clock_offset_s = None;
         }
         state
             .actions

@@ -80,6 +80,9 @@ pub(crate) struct State {
     pub(crate) clock_offsets: HashMap<String, i64>,
     /// Devices whose push channel is being followed (push.rs).
     pub(crate) followed: HashSet<DeviceKey>,
+    /// When each board's clock was last set automatically (ms), by board
+    /// serial (clock.rs).
+    pub(crate) clock_set_at: HashMap<String, u64>,
 }
 
 pub(crate) struct Inner {

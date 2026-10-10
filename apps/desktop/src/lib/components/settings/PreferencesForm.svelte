@@ -1,6 +1,6 @@
 <script lang="ts">
   import { devices } from "#lib/stores/devices.svelte.ts";
-  import { api, errorText, type AppSettings, type SimScenario, type StagedRollout } from "#lib/api/client.ts";
+  import { api, errorText, type AppSettings, type ClockSync, type SimScenario, type StagedRollout } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import Field from "#lib/components/common/Field.svelte";
   import GlassCard from "#lib/components/common/GlassCard.svelte";
@@ -27,6 +27,11 @@
     { value: "auto", label: "Auto" },
     { value: "on", label: "One first" },
     { value: "off", label: "All at once" },
+  ];
+  const clockOptions: { value: ClockSync; label: string }[] = [
+    { value: "usb", label: "USB boards" },
+    { value: "all", label: "All boards" },
+    { value: "off", label: "Off" },
   ];
   const simOptions: { value: "off" | SimScenario; label: string }[] = [
     { value: "off", label: "Off" },
@@ -110,6 +115,14 @@
       <span class="text-[13px] font-medium text-fg">Staged rollout</span>
       <span class="text-[12px] text-fg-faint">Auto updates one device first when a family has three or more.</span>
       <div class="mt-1"><SegmentedControl options={stagedOptions} bind:value={draft.staged_default} label="Staged rollout default" size="sm" /></div>
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <span class="text-[13px] font-medium text-fg">Keep board clocks synced</span>
+      <span class="text-[12px] text-fg-faint">
+        A board with no clock battery can be hours off, which makes its event times misleading. When one is more than 2 s off, it gets this computer's time.
+      </span>
+      <div class="mt-1"><SegmentedControl options={clockOptions} bind:value={draft.clock_sync} label="Keep board clocks synced" size="sm" /></div>
     </div>
 
     <div class="flex flex-col gap-1.5">

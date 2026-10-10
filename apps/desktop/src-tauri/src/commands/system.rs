@@ -79,6 +79,7 @@ pub async fn save_settings(state: State<'_, AppState>, settings: AppSettings) ->
     );
     if previous.auto_scan != settings.auto_scan
         || previous.scan_interval_ms != settings.scan_interval_ms
+        || previous.clock_sync != settings.clock_sync
     {
         state.apply_watch();
     }

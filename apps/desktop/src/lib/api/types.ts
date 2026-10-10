@@ -304,11 +304,16 @@ export interface HealthCheck {
 
 export type SimScenario = "demo" | "flaky";
 
+/** usb: boards on USB (the default); all: every board; off: offered as a control only. */
+export type ClockSync = "usb" | "all" | "off";
+
 export interface AppSettings {
   simulated: SimScenario | null;
   auto_scan: boolean;
   scan_interval_ms: number;
   staged_default: StagedRollout;
+  /** Which boards get this computer's time when their clock is off, while watching. */
+  clock_sync: ClockSync;
   /** Public key file put on boards Atlas flashes (SSH as root); null is off. */
   ssh_key_file: string | null;
   /** The Orion node Atlas connects to (orion+tcp://host:port); null is off. */

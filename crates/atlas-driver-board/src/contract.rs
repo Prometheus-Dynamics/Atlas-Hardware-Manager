@@ -8,8 +8,9 @@ use serde::Deserialize;
 
 pub const IDENTITY_PATH: &str = "/.well-known/pd-device";
 
-/// A board clock this far off (seconds) is reported, and can be set.
-pub const CLOCK_TOLERANCE_S: i64 = 5;
+/// A board clock more than this far off (seconds) is reported, and can be
+/// set (Atlas sets it while watching; clock.rs in atlas-core).
+pub const CLOCK_TOLERANCE_S: i64 = 2;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct NameVersion {
@@ -165,9 +166,14 @@ impl BoardIdentity {
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH),
         ) {
             let offset = time - now.as_secs() as i64;
-            // Only when it's off, rounded so it stays put between scans.
-            if offset.abs() >= CLOCK_TOLERANCE_S {
-                let rounded = (offset as f64 / 10.0).round() as i64 * 10;
+            // Only when it's off; beyond a minute, rounded to 10 s so it
+            // stays put between scans.
+            if offset.abs() > CLOCK_TOLERANCE_S {
+                let rounded = if offset.abs() < 60 {
+                    offset
+                } else {
+                    (offset as f64 / 10.0).round() as i64 * 10
+                };
                 put(
                     atlas_driver::attributes::CLOCK_OFFSET_S,
                     &Some(rounded.to_string()),

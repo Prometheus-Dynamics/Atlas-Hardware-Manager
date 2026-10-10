@@ -95,6 +95,11 @@ commit; the commits are listed per area.
 
 ### Board awareness: events, status, drift
 
+- **Atlas keeps board clocks synced:** a board more than 2 s off (was 5 s)
+  shows its offset, and while Atlas watches it sets the clock itself
+  (Orion's `clock.set` or SSH), by the "Keep board clocks synced" preference
+  (USB boards by default, all, or off), at most once per board every 10
+  minutes.
 - **A push channel, board-stream** (TCP 5898, `GET /stream`, Server-Sent
   Events, read-only; `board-stream.socket`, enabled by 70-board.preset; the
   binary from crates/board-stream via gaia/board-stream.toml). It sends each

@@ -51,6 +51,11 @@ pub struct MockDevice {
     /// The physical board's serial, shared across the identities one board
     /// has (see `atlas_driver::attributes::BOARD_SERIAL`).
     pub board_serial: Option<String>,
+    /// How far its clock is off (seconds), as a board with no RTC reports it
+    /// (`clock_offset_s`); it offers `set-clock` then.
+    pub clock_offset_s: Option<i64>,
+    /// Whether `set-clock` takes (a board that won't keeps its offset).
+    pub clock_settable: bool,
 }
 
 impl MockDevice {
@@ -68,7 +73,21 @@ impl MockDevice {
             // Simulated devices have been up a while when Atlas starts.
             booted_ms: crate::observe::now_ms().saturating_sub((3 * 3600 + 17 * 60) * 1000),
             board_serial: None,
+            clock_offset_s: None,
+            clock_settable: true,
         }
+    }
+
+    /// Its clock is `seconds` off (negative: behind).
+    pub fn clock_off(mut self, seconds: i64) -> Self {
+        self.clock_offset_s = Some(seconds);
+        self
+    }
+
+    /// `set-clock` doesn't take: the clock stays off.
+    pub fn clock_stuck(mut self) -> Self {
+        self.clock_settable = false;
+        self
     }
 
     pub fn board(mut self, serial: &str) -> Self {

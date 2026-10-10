@@ -35,6 +35,9 @@ pub struct AppSettings {
     pub scan_interval_ms: u64,
     /// Default for the staged rollout switch in the update dialog.
     pub staged_default: StagedRollout,
+    /// Which boards get this computer's time when their clock is off (a
+    /// Raze has no RTC battery), while watching.
+    pub clock_sync: atlas_core::ClockSync,
     /// A public key file (like `~/.ssh/id_ed25519.pub`) to put on boards
     /// Atlas flashes, for SSH as root. Off when unset.
     #[serde(default)]
@@ -58,6 +61,7 @@ impl Default for AppSettings {
             auto_scan: true,
             scan_interval_ms: DEFAULT_FALLBACK_MS,
             staged_default: StagedRollout::Auto,
+            clock_sync: atlas_core::ClockSync::default(),
             ssh_key_file: None,
             orion_url: None,
             image_server_port: atlas_image_server::DEFAULT_PORT,

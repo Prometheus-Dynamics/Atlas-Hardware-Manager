@@ -98,7 +98,7 @@
       });
     }
     if (status.clock_offset_s != null) {
-      const off = Math.abs(status.clock_offset_s) >= 5;
+      const off = Math.abs(status.clock_offset_s) > 2;
       list.push({
         id: "clock",
         icon: "clock",

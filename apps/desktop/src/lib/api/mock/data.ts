@@ -367,6 +367,7 @@ export const settings: AppSettings = {
   auto_scan: true,
   scan_interval_ms: 20000,
   staged_default: "auto",
+  clock_sync: "usb",
   ssh_key_file: null,
   orion_url: null,
   image_server_port: 7700,

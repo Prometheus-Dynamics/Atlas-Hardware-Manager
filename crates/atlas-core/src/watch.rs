@@ -18,6 +18,8 @@ pub struct WatchOptions {
     pub debounce: Duration,
     /// Rescan this often even without notices.
     pub fallback: Duration,
+    /// Which boards get this computer's time when their clock is off.
+    pub clock_sync: crate::ClockSync,
 }
 
 impl Default for WatchOptions {
@@ -25,6 +27,7 @@ impl Default for WatchOptions {
         Self {
             debounce: Duration::from_millis(300),
             fallback: Duration::from_secs(20),
+            clock_sync: crate::ClockSync::default(),
         }
     }
 }
@@ -87,6 +90,7 @@ impl Atlas {
             loop {
                 atlas.scan().await;
                 atlas.follow_push_channels();
+                atlas.sync_clocks(options.clock_sync);
                 tokio::select! {
                     () = stop.cancelled() => break,
                     () = notify.notified() => {

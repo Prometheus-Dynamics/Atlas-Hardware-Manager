@@ -154,6 +154,7 @@ impl AppState {
                 .atlas
                 .watch(WatchOptions {
                     fallback: Duration::from_millis(settings.scan_interval_ms),
+                    clock_sync: settings.clock_sync,
                     ..WatchOptions::default()
                 })
                 .ok();

@@ -3,6 +3,7 @@
 //! ones cost seven links per test run.
 
 mod board_seq;
+mod clock_sync;
 mod core_flows;
 mod history;
 mod observe;

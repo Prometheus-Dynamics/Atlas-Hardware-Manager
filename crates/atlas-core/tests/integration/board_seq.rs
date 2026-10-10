@@ -267,6 +267,7 @@ async fn a_pushed_event_is_in_the_history_at_once() {
         .watch(WatchOptions {
             debounce: std::time::Duration::from_millis(10),
             fallback: std::time::Duration::from_secs(3600),
+            ..WatchOptions::default()
         })
         .unwrap();
     eventually("the channel opens", || board.sink.lock().unwrap().is_some()).await;
@@ -307,6 +308,7 @@ async fn a_device_without_a_channel_is_polled_as_before() {
         .watch(WatchOptions {
             debounce: std::time::Duration::from_millis(10),
             fallback: std::time::Duration::from_secs(3600),
+            ..WatchOptions::default()
         })
         .unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;

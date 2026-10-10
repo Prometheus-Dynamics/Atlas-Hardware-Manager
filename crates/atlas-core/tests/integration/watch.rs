@@ -34,6 +34,7 @@ async fn unplugging_is_noticed_without_polling() {
         .watch(WatchOptions {
             debounce: Duration::from_millis(10),
             fallback: Duration::from_secs(3600),
+            ..WatchOptions::default()
         })
         .unwrap();
 

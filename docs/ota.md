@@ -293,8 +293,13 @@ A Raze has no RTC battery, and over the USB gadget there is usually no NTP:
 the host is the board's DHCP client, not a time server, and desktops rarely
 run one. So the board can boot with a date months old (systemd's build
 epoch). The identity reports `"time"` (Unix seconds); when it differs from
-the computer's by 5 s or more, Atlas shows the offset and offers "Set clock
-from this computer" (`set-clock`, over SSH: `date -u -s`).
+the computer's by more than 2 s, Atlas shows the offset and offers "Set clock
+from this computer" (`set-clock`: Orion's `clock.set`, else over SSH
+`date -u -s`). While it watches, Atlas also sets it by itself, per the
+"Keep board clocks synced" preference: boards on USB (the default), all
+boards, or off; at most once per board every 10 minutes, logged in the fleet
+history. A 3 h offset (seen on hardware) makes every board-side time
+misleading, even with events ordered by seq.
 
 OS images: keep systemd-timesyncd's clock file on /data
 (`/var/lib/systemd/timesync/clock`, e.g. a symlink or bind into
