@@ -34,6 +34,8 @@ pub struct AppState {
     /// Live hardware streams the UI has open, by id.
     pub hardware_streams: Mutex<HashMap<u64, tokio::task::JoinHandle<()>>>,
     pub next_hardware_stream: std::sync::atomic::AtomicU64,
+    /// NetworkTables viewers and the local NT server.
+    pub nt: crate::nt::Nt,
 }
 
 impl AppState {
@@ -140,6 +142,7 @@ impl AppState {
             ssh_access,
             hardware_streams: Mutex::new(HashMap::new()),
             next_hardware_stream: std::sync::atomic::AtomicU64::new(1),
+            nt: crate::nt::Nt::default(),
             orion,
         })
     }

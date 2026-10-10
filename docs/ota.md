@@ -2,7 +2,7 @@
 
 Status: draft, revised after Orion's review (its counterparts are Orion's
 `docs/update-recovery.md` and `docs/device-agent.md`). atlas-driver-orion is
-built against Orion `4fadba9` (control protocol 4, request/response
+built against Orion `f3efb26` (control protocol 4, request/response
 actions) and tested with a fake
 Orion. The device-side writer (`/usr/lib/board/update`) is tested
 off-device, and `board-agent` (crates/board-agent) against a real

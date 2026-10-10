@@ -1,0 +1,464 @@
+//! The NetworkTables page: viewers (NT4 clients of a robot's or a camera's
+//! server) and one local NT4 server, so a PhotonVision or HeliOS camera can
+//! be tested without a roboRIO. Both run on orion-nt4. A viewer subscribes
+//! to everything and sends what arrives to the UI in batches; the server's
+//! topics are the user's, created and edited from the page.
+
+use std::collections::HashMap;
+use std::net::{IpAddr, SocketAddr};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Duration;
+
+use orion_nt4::{
+    Client, ClientConfig, ClientEvent, Properties, Server, ServerConfig, ServerEvent, ServerHandle,
+    SubscribeOptions, TopicEvent, TopicOwner, Value,
+};
+use serde::Serialize;
+use tauri::ipc::Channel;
+use tokio::task::JoinHandle;
+
+/// How often a viewer sends what arrived (about 20 times a second).
+const BATCH: Duration = Duration::from_millis(50);
+/// The name Atlas connects to NT servers with (`/nt/<name>`).
+const CLIENT_NAME: &str = "atlas";
+
+/// A topic as a viewer sees it.
+#[derive(Clone, Debug, Serialize)]
+pub struct NtTopic {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub type_name: String,
+    pub properties: Properties,
+}
+
+/// One value: the server's clock (µs) and the value (`{type, value}`).
+#[derive(Clone, Debug, Serialize)]
+pub struct NtValue {
+    pub name: String,
+    pub t_us: i64,
+    pub value: Value,
+}
+
+/// What a viewer sends the UI.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "kebab-case", tag = "type")]
+pub enum NtFrame {
+    /// Connected (again), or not: why, and where it is trying.
+    Status {
+        connected: bool,
+        host: String,
+        port: u16,
+        reason: Option<String>,
+    },
+    /// Topics that appeared, and ones that are gone.
+    Topics {
+        announced: Vec<NtTopic>,
+        gone: Vec<String>,
+    },
+    /// Every value since the last batch, oldest first.
+    Values { values: Vec<NtValue> },
+}
+
+/// `5338` means team 5338's robot (10.53.38.2); anything else is a host.
+pub fn resolve_target(target: &str) -> String {
+    let target = target.trim();
+    match target.parse::<u32>() {
+        Ok(team) if (1..=25_599).contains(&team) && !target.contains('.') => {
+            format!("10.{}.{}.2", team / 100, team % 100)
+        }
+        _ => target.to_string(),
+    }
+}
+
+/// A local server's state for the page.
+#[derive(Clone, Debug, Serialize)]
+pub struct NtServerInfo {
+    pub port: u16,
+    /// This computer's addresses the server answers on.
+    pub addresses: Vec<IpAddr>,
+    pub topics: Vec<NtServerTopic>,
+    pub clients: Vec<NtServerClient>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct NtServerTopic {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub type_name: String,
+    pub value: Option<Value>,
+    pub t_us: Option<i64>,
+    /// `local` (made here), `client` (published by `publisher`), or
+    /// `unpublished` (kept with no publisher).
+    pub owner: &'static str,
+    pub publisher: Option<String>,
+    pub persistent: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct NtServerClient {
+    pub id: u64,
+    pub name: String,
+    pub subscriptions: usize,
+    pub publications: usize,
+}
+
+/// What the local server tells the page.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "kebab-case", tag = "type")]
+pub enum NtServerFrame {
+    /// Topics or clients changed: re-read the server's state.
+    Changed,
+    /// A client wrote a value.
+    Wrote {
+        client: String,
+        name: String,
+        value: Value,
+    },
+    Warning {
+        message: String,
+    },
+}
+
+struct LocalServer {
+    _server: Server,
+    handle: ServerHandle,
+    port: u16,
+    bind: SocketAddr,
+    watchers: Vec<JoinHandle<()>>,
+}
+
+#[derive(Default)]
+pub struct Nt {
+    viewers: Mutex<HashMap<u64, JoinHandle<()>>>,
+    next: AtomicU64,
+    server: tokio::sync::Mutex<Option<LocalServer>>,
+}
+
+impl Nt {
+    /// Connects a viewer to `target` (a team number or a host) and sends
+    /// what it sees to `frames` until [`disconnect`](Self::disconnect).
+    pub fn connect(&self, target: &str, port: Option<u16>, frames: Channel<NtFrame>) -> u64 {
+        let host = resolve_target(target);
+        let port = port.unwrap_or(orion_nt4::DEFAULT_PORT);
+        let mut config = ClientConfig::new(host.clone(), CLIENT_NAME);
+        config.port = port;
+        let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        let task = tokio::spawn(async move {
+            let mut client = Client::start(config);
+            let handle = client.handle();
+            let options = SubscribeOptions {
+                prefix: true,
+                ..SubscribeOptions::default()
+            };
+            let Ok(mut topics) = handle.subscribe(&["/"], options) else {
+                return;
+            };
+            let _ = frames.send(NtFrame::Status {
+                connected: false,
+                host: host.clone(),
+                port,
+                reason: Some("connecting".into()),
+            });
+            let mut announced = Vec::new();
+            let mut gone = Vec::new();
+            let mut values = Vec::new();
+            let mut tick = tokio::time::interval(BATCH);
+            loop {
+                tokio::select! {
+                    Some(event) = client.next_event() => {
+                        let status = match event {
+                            ClientEvent::Connected => Some((true, None)),
+                            ClientEvent::Disconnected { reason } => Some((false, Some(reason))),
+                            _ => None,
+                        };
+                        if let Some((connected, reason)) = status {
+                            let _ = frames.send(NtFrame::Status { connected, host: host.clone(), port, reason });
+                        }
+                    }
+                    Some(event) = topics.next() => match event {
+                        TopicEvent::Announced(info) => announced.push(NtTopic {
+                            name: info.name,
+                            type_name: info.type_name,
+                            properties: info.properties,
+                        }),
+                        TopicEvent::Unannounced { name, .. } => gone.push(name),
+                        TopicEvent::PropertiesChanged { .. } => {}
+                        TopicEvent::Value { name, timestamp_us, value, .. } => {
+                            values.push(NtValue { name, t_us: timestamp_us, value });
+                        }
+                    },
+                    _ = tick.tick() => {
+                        if !announced.is_empty() || !gone.is_empty() {
+                            let frame = NtFrame::Topics {
+                                announced: std::mem::take(&mut announced),
+                                gone: std::mem::take(&mut gone),
+                            };
+                            if frames.send(frame).is_err() {
+                                return;
+                            }
+                        }
+                        if !values.is_empty() {
+                            let frame = NtFrame::Values { values: std::mem::take(&mut values) };
+                            if frames.send(frame).is_err() {
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        self.viewers
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(id, task);
+        id
+    }
+
+    pub fn disconnect(&self, id: u64) {
+        if let Some(task) = self
+            .viewers
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(&id)
+        {
+            task.abort();
+        }
+    }
+
+    /// Starts the local server on `port` (5810 by default), on every
+    /// interface, so cameras on any of this computer's networks reach it.
+    pub async fn start_server(&self, port: Option<u16>) -> Result<NtServerInfo, String> {
+        let mut slot = self.server.lock().await;
+        if slot.is_none() {
+            let bind = SocketAddr::from(([0, 0, 0, 0], port.unwrap_or(orion_nt4::DEFAULT_PORT)));
+            let server = Server::start(ServerConfig {
+                bind,
+                ..ServerConfig::default()
+            })
+            .await
+            .map_err(|error| format!("couldn't start a NetworkTables server on {bind}: {error}"))?;
+            let handle = server.handle();
+            let port = server.local_addr().port();
+            *slot = Some(LocalServer {
+                _server: server,
+                handle,
+                port,
+                bind,
+                watchers: Vec::new(),
+            });
+        }
+        Ok(info(slot.as_ref().expect("started")))
+    }
+
+    pub async fn stop_server(&self) {
+        if let Some(server) = self.server.lock().await.take() {
+            for watcher in server.watchers {
+                watcher.abort();
+            }
+        }
+    }
+
+    pub async fn server_info(&self) -> Option<NtServerInfo> {
+        self.server.lock().await.as_ref().map(info)
+    }
+
+    /// Runs `work` on the running server's local API.
+    pub async fn with_server<T>(
+        &self,
+        work: impl FnOnce(&ServerHandle) -> orion_nt4::Result<T>,
+    ) -> Result<T, String> {
+        let slot = self.server.lock().await;
+        let server = slot
+            .as_ref()
+            .ok_or_else(|| "the local NetworkTables server isn't running".to_string())?;
+        work(&server.handle).map_err(|error| error.to_string())
+    }
+
+    /// Sends the server's changes to `frames` until it stops.
+    pub async fn watch_server(&self, frames: Channel<NtServerFrame>) -> Result<(), String> {
+        let mut slot = self.server.lock().await;
+        let server = slot
+            .as_mut()
+            .ok_or_else(|| "the local NetworkTables server isn't running".to_string())?;
+        let mut events = server.handle.events();
+        let handle = server.handle.clone();
+        server.watchers.push(tokio::spawn(async move {
+            while let Ok(event) = events.recv().await {
+                let frame = match event {
+                    ServerEvent::ValueChanged {
+                        name,
+                        value,
+                        client: Some(client),
+                        ..
+                    } => NtServerFrame::Wrote {
+                        client: client_name(&handle, client),
+                        name,
+                        value,
+                    },
+                    ServerEvent::ValueChanged { client: None, .. } => continue,
+                    ServerEvent::ProtocolWarning { message, .. }
+                    | ServerEvent::PersistFailed { message } => NtServerFrame::Warning { message },
+                    _ => NtServerFrame::Changed,
+                };
+                if frames.send(frame).is_err() {
+                    return;
+                }
+            }
+        }));
+        Ok(())
+    }
+}
+
+fn client_name(handle: &ServerHandle, id: u64) -> String {
+    handle
+        .clients()
+        .into_iter()
+        .find(|client| client.id == id)
+        .map_or_else(|| format!("client {id}"), |client| client.name)
+}
+
+fn info(server: &LocalServer) -> NtServerInfo {
+    let clients = server.handle.clients();
+    let name_of = |id: u64| {
+        clients
+            .iter()
+            .find(|client| client.id == id)
+            .map(|client| client.name.clone())
+    };
+    let mut topics: Vec<NtServerTopic> = server
+        .handle
+        .topics()
+        .into_iter()
+        .map(|topic| {
+            let (owner, publisher) = match topic.owner {
+                TopicOwner::Local => ("local", None),
+                TopicOwner::Client(id) => ("client", name_of(id)),
+                TopicOwner::Unpublished => ("unpublished", None),
+            };
+            NtServerTopic {
+                persistent: topic
+                    .properties
+                    .get("persistent")
+                    .and_then(serde_json::Value::as_bool)
+                    .unwrap_or(false),
+                name: topic.name,
+                type_name: topic.type_name,
+                value: topic.value,
+                t_us: topic.timestamp_us,
+                owner,
+                publisher,
+            }
+        })
+        .collect();
+    topics.sort_by(|a, b| a.name.cmp(&b.name));
+    NtServerInfo {
+        port: server.port,
+        addresses: atlas_image_server::listening_addresses(server.bind),
+        topics,
+        clients: clients
+            .into_iter()
+            .map(|client| NtServerClient {
+                id: client.id,
+                name: client.name,
+                subscriptions: client.subscriptions,
+                publications: client.publications,
+            })
+            .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use tauri::ipc::InvokeResponseBody;
+
+    use super::*;
+
+    /// A channel that keeps what is sent to it, as JSON text.
+    fn collecting<T: tauri::ipc::IpcResponse>() -> (Channel<T>, Arc<Mutex<Vec<String>>>) {
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let into = seen.clone();
+        let channel = Channel::new(move |body| {
+            if let InvokeResponseBody::Json(json) = body {
+                into.lock().unwrap().push(json);
+            }
+            Ok(())
+        });
+        (channel, seen)
+    }
+
+    async fn eventually(what: &str, done: impl Fn() -> bool) {
+        for _ in 0..250 {
+            if done() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("{what} didn't happen");
+    }
+
+    #[tokio::test]
+    async fn a_viewer_sees_the_local_servers_topics_and_values() {
+        let nt = Nt::default();
+        let started = nt.start_server(Some(0)).await.unwrap();
+        assert!(started.port > 0);
+        nt.with_server(|server| server.set_value("/Camera/exposure", Value::Double(20.0)))
+            .await
+            .unwrap();
+        let (server_frames, wrote) = collecting::<NtServerFrame>();
+        nt.watch_server(server_frames).await.unwrap();
+
+        let (frames, seen) = collecting::<NtFrame>();
+        let id = nt.connect("127.0.0.1", Some(started.port), frames);
+        eventually("the viewer connects and sees the topic", || {
+            let seen = seen.lock().unwrap();
+            seen.iter().any(|f| f.contains(r#""connected":true"#))
+                && seen
+                    .iter()
+                    .any(|f| f.contains(r#""name":"/Camera/exposure","type":"double""#))
+                && seen
+                    .iter()
+                    .any(|f| f.contains(r#""value":{"type":"double","value":20.0}"#))
+        })
+        .await;
+        nt.with_server(|server| server.set_value("/Camera/exposure", Value::Double(33.5)))
+            .await
+            .unwrap();
+        eventually("a new value arrives", || {
+            seen.lock().unwrap().iter().any(|f| f.contains("33.5"))
+        })
+        .await;
+        let info = nt.server_info().await.unwrap();
+        assert_eq!(
+            info.clients.len(),
+            1,
+            "the viewer is a client: {:?}",
+            info.clients
+        );
+        assert_eq!(info.clients[0].name, CLIENT_NAME);
+        assert_eq!(info.topics[0].owner, "local");
+        assert!(
+            wrote
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|f| f.contains(r#""type":"changed""#)),
+            "the page hears of the client"
+        );
+        nt.disconnect(id);
+        nt.stop_server().await;
+        assert!(nt.server_info().await.is_none());
+    }
+
+    #[test]
+    fn a_team_number_is_its_robot() {
+        assert_eq!(resolve_target("5338"), "10.53.38.2");
+        assert_eq!(resolve_target(" 254 "), "10.2.54.2");
+        assert_eq!(resolve_target("1"), "10.0.1.2");
+        assert_eq!(resolve_target("10.0.0.5"), "10.0.0.5");
+        assert_eq!(resolve_target("photonvision.local"), "photonvision.local");
+        assert_eq!(resolve_target("99999"), "99999", "not a team number");
+    }
+}

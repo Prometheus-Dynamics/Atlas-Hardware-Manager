@@ -7,6 +7,7 @@
 mod commands;
 mod drivers;
 mod logfile;
+mod nt;
 mod orion;
 mod settings;
 mod state;
@@ -114,6 +115,16 @@ pub fn run() {
             commands::releases::remove_release_source,
             commands::system::app_info,
             commands::system::health_checks,
+            commands::nt::nt_connect,
+            commands::nt::nt_disconnect,
+            commands::nt::nt_server_start,
+            commands::nt::nt_server_stop,
+            commands::nt::nt_server_info,
+            commands::nt::nt_server_watch,
+            commands::nt::nt_server_set,
+            commands::nt::nt_server_persistent,
+            commands::nt::nt_server_delete,
+            commands::nt::nt_camera_addresses,
             commands::orion::orion_connection,
             commands::orion::set_orion_url,
             commands::orion::check_orion,

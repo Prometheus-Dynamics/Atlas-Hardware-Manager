@@ -50,16 +50,19 @@ futures = "0.3"
 lzma-rs = "0.3"
 mdns-sd = "0.21"
 nusb = { version = "0.2.7", features = ["tokio"] }
-# Orion (control protocol 4, layout of 4fadba9) and its remote operator client, pinned together.
+# Orion (control protocol 4, layout of f3efb26) and its remote operator client, pinned together.
 # Features per crate: the remote operator client (Atlas), IPC (board-agent).
-orion-client = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "4fadba9fd81d376375dbe9a3c7a6ccc6416685ae", default-features = false }
-orion-control-plane = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "4fadba9fd81d376375dbe9a3c7a6ccc6416685ae", default-features = false, features = ["std"] }
-orion-core = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "4fadba9fd81d376375dbe9a3c7a6ccc6416685ae", default-features = false, features = ["std"] }
+orion-client = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "f3efb261151f21b54743cd599d5c2216c5783737", default-features = false }
+orion-control-plane = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "f3efb261151f21b54743cd599d5c2216c5783737", default-features = false, features = ["std"] }
+orion-core = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "f3efb261151f21b54743cd599d5c2216c5783737", default-features = false, features = ["std"] }
 # lemnosd's client (board-stream's live readings), at the commit the Raze
 # package pins (devices/raze/manifest.json, capabilities.hardware-service).
 lemnos-ipc = { git = "https://github.com/Prometheus-Dynamics/Lemnos", rev = "8e5903954668ad0b77d211e8cdb75747368f7daa" }
+# NetworkTables 4 client and server (the desktop app's NetworkTables page);
+# independent of orion-node.
+orion-nt4 = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "f3efb261151f21b54743cd599d5c2216c5783737" }
 # Tests only: a real node in-process (board-agent).
-orion-node = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "4fadba9fd81d376375dbe9a3c7a6ccc6416685ae", default-features = false }
+orion-node = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "f3efb261151f21b54743cd599d5c2216c5783737", default-features = false }
 nix = { version = "0.31", default-features = false }
 plist = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "json"] }

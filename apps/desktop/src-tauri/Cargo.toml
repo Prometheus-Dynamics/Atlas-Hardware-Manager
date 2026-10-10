@@ -27,6 +27,7 @@ atlas-image-server.workspace = true
 atlas-driver-board.workspace = true
 atlas-driver-rpi.workspace = true
 atlas-release.workspace = true
+orion-nt4.workspace = true
 dirs.workspace = true
 serde.workspace = true
 serde_json.workspace = true
