@@ -362,7 +362,7 @@
       "gaia_import": {
         "source": "lemnos",
         "repo": "https://github.com/Prometheus-Dynamics/Lemnos.git",
-        "rev": "2ab3d938c3aa2430be10837916d6f7edcd119aa6",
+        "rev": "068427e473c939e1c0c4742008173fb85805ec91",
         "path": "packaging/gaia/lemnosd.toml"
       }
     },
@@ -409,18 +409,16 @@
         },
         {
           "bus": 4,
-          "kind": "i2c-gpio",
+          "kind": "pio",
+          "controller": "RP1 PIO (lemnosd's pio-i2c bus)",
           "sda_gpio": 8,
           "scl_gpio": 7,
           "pins": "GPIO8 SDA, GPIO7 SCL",
-          "overlay": "i2c-gpio,bus=4,i2c_gpio_sda=8,i2c_gpio_scl=7",
-          "select": {
-            "compatible": "i2c-gpio",
-            "source": "the i2c-gpio overlay's node /i2c@0 is the board's only i2c-gpio adapter"
-          }
+          "hz": 400000,
+          "notes": "GPIO8/GPIO7 are not one hardware controller's pair. lemnosd runs this bus on the RP1 PIO block (Lemnos pio-i2c: a 27-instruction program beside ws2812-pio-rp1's 4; DMA per transaction), so there is no kernel adapter and no /dev/i2c node: 4 is the manifest's own number for it. It replaced the kernel i2c-gpio bus (i2c-4), which bit-banged every bit over PCIe: lemnosd at 100 Hz took 28.5 % CPU there, 1.9 % on PIO. No overlay may claim these pins."
         }
       ],
-      "bus_numbers": "Linux numbers buses in probe order: \"bus\" is the number on the 7.2.9 image, a hint only. Find a bus by its \"select\" (the keys of a Lemnos i2c: selector: name, compatible, of, node). Other buses on that image: i2c-10, the camera (ov9782 at 0x60); i2c-13 and i2c-14, the HDMI DDC buses (107d508200.i2c, 107d508280.i2c). Nothing else answers on buses 1 and 4.",
+      "bus_numbers": "Linux numbers buses in probe order: \"bus\" is the number on the 7.2.9 image, a hint only (a pio bus has no Linux number; its \"bus\" only names it here). Find a bus by its \"select\" (the keys of a Lemnos i2c: selector: name, compatible, of, node). Other buses on that image: i2c-10, the camera (ov9782 at 0x60); i2c-13 and i2c-14, the HDMI DDC buses (107d508200.i2c, 107d508280.i2c). Nothing else answers on buses 1 and 4.",
       "devices": [
         {
           "id": "imu-accel",
@@ -479,10 +477,9 @@
       ],
       "description_file": "/usr/share/board/raze/sensors.toml",
       "verified": {
-        "buses": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "chip-id register reads on the device (PhotonVision image, package c881c60): the BMI088 answers on the i2c-gpio bus (/dev/i2c-4), the BMM150 and INA238 on the i2c1-pi5 bus (/dev/i2c-1)" },
+        "buses": { "by": "HeliOS coordinator", "date": "2026-10-09", "method": "chip-id register reads on the device: the BMI088 answers on the PIO bus (lemnosd pio-i2c:sda=8,scl=7 at 400 kHz, Lemnos 068427e; 100000 of 100000 reads on each die), the BMM150 and INA238 on the i2c1-pi5 bus (/dev/i2c-1, PhotonVision image, package c881c60)" },
         "devices": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "chip-id register reads on the device (PhotonVision image, package c881c60): accel 0x18 reg 0x00 = 0x1E, gyro 0x68 reg 0x00 = 0x0F, BMM150 0x10 reg 0x40 = 0x32 with 0x4B bit 0 set, INA238 0x40 reg 0xFE = 0x5449 and reg 0xFF = 0x2381" },
         "buses.0.select": "unverified",
-        "buses.1.select": "unverified",
         "devices.3.shunt_ohm": "unverified",
         "devices.3.max_current_a": "unverified"
       }

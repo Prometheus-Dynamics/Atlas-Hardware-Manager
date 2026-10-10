@@ -22,7 +22,9 @@
 #             when lemnosd refuses the read; the BMM150, which boots
 #             suspended, is left to lemnosd's driver. Without lemnosd they are
 #             i2cget reads, and the BMM150's power bit is set for the read and
-#             put back.
+#             put back. A bus lemnosd runs on RP1 PIO (the IMU's) has no
+#             kernel adapter: its devices count only through lemnosd
+#             (no-service when lemnosd doesn't have them).
 #   watchdog  /dev/watchdog0 exists and systemd's RuntimeWatchdogUSec is set.
 #   gadget    the USB gadget is bound to its controller and usbbr0 is up with
 #             an address.
@@ -376,12 +378,22 @@ check_i2c() {
 			state=service
 			chip=service
 			if [ "${HW_I2C_BROKERED:-0}" = 1 ]; then
-				chip=$(hw_i2c_chip_id "$id" "$bus" "$addr")
+				# lemnosd names a PIO bus by its pins, not a number.
+				rbus=$bus
+				[ "$how" != pio ] || rbus=$(hw_i2c_pio_ref "$hint")
+				chip=$(hw_i2c_chip_id "$id" "$rbus" "$addr")
 				case "$chip" in
 				ok* | mismatch*) ;;
 				*) chip=service ;;
 				esac
 			fi
+		elif [ "$how" = pio ]; then
+			# Only lemnosd reaches a PIO bus (no kernel adapter, so no
+			# i2cdetect or i2cget): without lemnosd it can't be probed; with
+			# it, lemnosd doesn't have this device.
+			state=no-service
+			[ "$service" != none ] || state=unknown
+			chip=none
 		else
 			state=$(hw_i2c_probe "$bus" "$addr")
 			chip=none
@@ -405,7 +417,7 @@ check_i2c() {
 	elif [ "$unknown" = "$total" ]; then
 		result i2c skip "no i2cdetect, and no kernel driver or lemnosd owns these devices, so they can't be probed" "$data"
 	elif [ "$unknown" -gt 0 ]; then
-		result i2c ok "$found of $total devices answer; $unknown can't be probed without i2cdetect" "$data"
+		result i2c ok "$found of $total devices answer; $unknown can't be probed (no i2cdetect, or a PIO bus without lemnosd)" "$data"
 	else
 		result i2c ok "all $total devices answer" "$data"
 	fi

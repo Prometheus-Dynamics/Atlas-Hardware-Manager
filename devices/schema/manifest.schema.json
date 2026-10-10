@@ -312,13 +312,15 @@
                 "type": "object",
                 "required": ["bus", "kind"],
                 "properties": {
-                  "bus": { "type": "integer", "minimum": 0, "description": "Linux bus number (/dev/i2c-N)." },
-                  "kind": { "enum": ["hardware", "i2c-gpio"] },
+                  "bus": { "type": "integer", "minimum": 0, "description": "Linux bus number (/dev/i2c-N); for a pio bus, which has no kernel adapter, the manifest's own number for it." },
+                  "kind": { "enum": ["hardware", "i2c-gpio", "pio"], "description": "pio: lemnosd runs the bus on the RP1 PIO block (Lemnos pio-i2c), with no overlay." },
                   "controller": { "type": "string" },
                   "sda_gpio": { "type": "integer", "minimum": 0 },
                   "scl_gpio": { "type": "integer", "minimum": 0 },
                   "pins": { "type": "string" },
-                  "overlay": { "type": "string" }
+                  "overlay": { "type": "string" },
+                  "hz": { "type": "integer", "minimum": 1, "description": "A pio bus's clock (Lemnos's default: 400000)." },
+                  "notes": { "type": "string" }
                 }
               }
             },

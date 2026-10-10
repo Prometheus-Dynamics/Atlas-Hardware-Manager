@@ -36,11 +36,6 @@ dest = "overlays/i2c1-pi5.dtbo"
 
 [[image.assembly.files]]
 tree = "boot"
-src = "$provider.buildroot_output/images/raze-overlays/i2c-gpio.dtbo"
-dest = "overlays/i2c-gpio.dtbo"
-
-[[image.assembly.files]]
-tree = "boot"
 src = "$provider.buildroot_output/images/raze-overlays/ws2812-pio.dtbo"
 dest = "overlays/ws2812-pio.dtbo"
 

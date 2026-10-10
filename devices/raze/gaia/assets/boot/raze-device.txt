@@ -12,8 +12,8 @@
 # >>> gen-raze: i2c (generated from manifest.json by devices/tools/gen-raze.py; do not edit)
 # Hardware I2C bus 1 (/dev/i2c-1): SDA GPIO10, SCL GPIO11; BMM150, INA238.
 dtoverlay=i2c1-pi5,pins_10_11
-# Software (i2c-gpio) I2C bus 4 (/dev/i2c-4): SDA GPIO8, SCL GPIO7; BMI088.
-dtoverlay=i2c-gpio,bus=4,i2c_gpio_sda=8,i2c_gpio_scl=7
+# No overlay for GPIO8 SDA / GPIO7 SCL (BMI088): lemnosd runs
+# that bus on RP1 PIO (pio-i2c), so nothing else may claim the pins.
 # <<< gen-raze
 
 # >>> gen-raze: leds (generated from manifest.json by devices/tools/gen-raze.py; do not edit)

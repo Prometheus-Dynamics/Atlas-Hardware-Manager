@@ -141,7 +141,9 @@ scripts and anything else talk to it over `/run/lemnos/lemnosd.sock` (group
   breathe), the fan (`hwmon-fan` matched by hwmon name `pwmfan`, no
   `restore_mode`: pwm-fan goes back through its cooling device), the CPU
   thermal zone, the BMI088 (`bmi088`, accel 0x18 and gyro 0x68 on
-  `i2c:compatible=i2c-gpio`), the BMM150 and the INA238 (on
+  `pio-i2c:sda=8,scl=7`: lemnosd runs that bus on the RP1 PIO block at
+  400 kHz, so no overlay claims GPIO8/GPIO7 and there is no `/dev/i2c` node for
+  it), the BMM150 and the INA238 (on
   `i2c:of=/axi/pcie@1000120000/rp1/i2c@74000`, the RP1 DesignWare controller
   i2c1-pi5 enables) and the USB-A power line (`gpio-output`, `pinctrl-rp1`
   line 20). Comments in the file mark what is unverified on hardware. An OS
@@ -151,7 +153,9 @@ scripts and anything else talk to it over `/run/lemnos/lemnosd.sock` (group
   group write access to the fan's `pwm1`/`pwm1_enable`, the pwm-fan cooling
   device's `cur_state` and the thermal zones' `policy` (Lemnos's
   `packaging/README.md`), and the device nodes to the groups lemnosd runs
-  with (`i2c-*` to `i2c`, `gpiochip*` to `gpio`, `leds*` to `video`).
+  with (`i2c-*` to `i2c`, `gpiochip*` to `gpio`, `leds*` to `video`), and
+  `/dev/pio0` (the RP1 PIO block, for the IMU's bus) to the `lemnos` user
+  alone, mode 0600.
 - **The fan** stays the kernel governor's (`cooling_levels`, trips). A client
   may set a duty; lemnosd records the governor's state before the first write
   and, when it stops (or crashes: `ExecStopPost=+lemnos-ctl fan restore
@@ -247,7 +251,7 @@ rev = "<pinned commit>"
 id = "lemnos"
 kind = "git"
 repo = "https://github.com/Prometheus-Dynamics/Lemnos.git"
-rev = "2ab3d938c3aa2430be10837916d6f7edcd119aa6"
+rev = "068427e473c939e1c0c4742008173fb85805ec91"
 ```
 
 For local development against an Atlas checkout:

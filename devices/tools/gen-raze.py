@@ -229,9 +229,16 @@ def lint(manifest: dict) -> None:
         if not is_int(address) or not 0x03 <= address <= 0x77:
             raise LintError(f"{where}: address must be a 7-bit number (0x03..0x77)")
     for bus in buses.values():
-        for key in ("sda_gpio", "scl_gpio", "overlay"):
+        pio = bus.get("kind") == "pio"
+        for key in ("sda_gpio", "scl_gpio") + (() if pio else ("overlay",)):
             if key not in bus:
                 raise LintError(f"capabilities.i2c.buses[{bus['bus']}].{key} is missing")
+        if pio and ("overlay" in bus or "select" in bus):
+            raise LintError(
+                f"capabilities.i2c.buses[{bus['bus']}]: a pio bus has no kernel adapter, so no overlay or select"
+            )
+        if pio and not (isinstance(bus.get("hz", 400_000), int) and 0 < bus.get("hz", 400_000) <= 1_000_000):
+            raise LintError(f"capabilities.i2c.buses[{bus['bus']}].hz must be 1..1000000")
         select = {k: v for k, v in bus.get("select", {}).items() if k in raze_lemnos.SELECTOR_KEYS}
         if "select" in bus and (
             not select or any(not isinstance(v, str) or not v or ";" in v or " " in v for v in select.values())
@@ -314,8 +321,14 @@ def region_device_txt(manifest: dict) -> dict[str, str]:
     leds = caps["leds"]
     i2c_lines = []
     for bus in caps["i2c"]["buses"]:
-        kind = "Hardware" if bus["kind"] == "hardware" else "Software (i2c-gpio)"
         parts = sorted({d["part"] for d in caps["i2c"]["devices"] if d["bus"] == bus["bus"]})
+        if bus["kind"] == "pio":
+            i2c_lines.append(
+                f"# No overlay for GPIO{bus['sda_gpio']} SDA / GPIO{bus['scl_gpio']} SCL ({', '.join(parts)}): lemnosd runs\n"
+                "# that bus on RP1 PIO (pio-i2c), so nothing else may claim the pins.\n"
+            )
+            continue
+        kind = "Hardware" if bus["kind"] == "hardware" else "Software (i2c-gpio)"
         i2c_lines.append(
             f"# {kind} I2C bus {bus['bus']} (/dev/i2c-{bus['bus']}): SDA GPIO{bus['sda_gpio']}, "
             f"SCL GPIO{bus['scl_gpio']}; {', '.join(parts)}.\n"
@@ -417,6 +430,9 @@ def render_hardware_env(manifest: dict) -> str:
         ("HW_CAMERA_RECEIVER", cam["csi"]["receiver_driver"]),
         ("HW_I2C_DEVICES", devices),
         ("HW_I2C_BUSES", buses),
+        ("HW_I2C_PIO_BUSES", " ".join(
+            f"{b['bus']}:{raze_lemnos.bus_ref(caps, b['bus'])}" for b in i2c["buses"] if b["kind"] == "pio"
+        )),
         ("HW_I2C_IDS", ids),
         ("HW_LEMNOS_DEVICES", lemnos),
         ("HW_LEMNOS_RING", leds["lemnosd"]["device"]),
@@ -431,7 +447,8 @@ def render_hardware_env(manifest: dict) -> str:
         + "#\n# Hardware facts for /usr/lib/board/selftest and hw.sh. HW_I2C_DEVICES is\n"
         + "# id:bus:address:part per device (bus: its number on the 7.2.9 image, a hint).\n"
         + "# HW_I2C_BUSES is bus:selector, the Lemnos i2c: selector that finds a bus\n"
-        + "# whatever its number. HW_I2C_IDS is id:register:b|w:value[:register.bit], the\n"
+        + "# whatever its number; HW_I2C_PIO_BUSES is bus:lemnos-bus for the buses lemnosd\n"
+        + "# runs on RP1 PIO, which have no kernel adapter. HW_I2C_IDS is id:register:b|w:value[:register.bit], the\n"
         + "# chip id as i2cget reads it (w: an SMBus word, so byte-swapped) and the power\n"
         + "# control bit to set first. HW_LEMNOS_* are device ids in board.toml.\n"
         + body

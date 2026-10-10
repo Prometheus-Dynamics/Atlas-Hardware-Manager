@@ -17,3 +17,10 @@ SUBSYSTEM=="thermal", KERNEL=="thermal_zone*", RUN+="/bin/chgrp lemnos /sys%p/po
 SUBSYSTEM=="i2c-dev", KERNEL=="i2c-[0-9]*", GROUP="i2c", MODE="0660"
 SUBSYSTEM=="gpio", KERNEL=="gpiochip[0-9]*", GROUP="gpio", MODE="0660"
 KERNEL=="leds[0-9]*", GROUP="video", MODE="0660"
+
+# The RP1 PIO block (rp1-pio), where lemnosd runs the IMU's I2C bus
+# (pio-i2c:sda=8,scl=7, board.toml). The `lemnos` user alone: a group would
+# also let in board-stream@ (in group lemnos for lemnosd's socket), which never
+# needs PIO. lemnosd loads its program beside ws2812-pio-rp1's (the kernel's,
+# 4 instructions); either loads first, the block's 32 slots hold both.
+SUBSYSTEM=="rp1-pio", KERNEL=="pio[0-9]*", OWNER="lemnos", MODE="0600"

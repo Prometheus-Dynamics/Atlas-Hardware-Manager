@@ -183,7 +183,7 @@ for want in '"id": "imu-accel", .*"result": "service", "chip_id": "ok 0x1e", "le
 	'"reads": "lemnosd"'; do
 	printf '%s' "$i2c" | tr '}' '\n' | grep -q "$want" || fail "chip ids read through lemnosd ($want): $i2c"
 done
-grep -q '^board-selftest i2c read 4 0x18 0x00 1$' "$CTL_LOG" || fail "the BMI088's id through lemnosd: $(cat "$CTL_LOG")"
+grep -q '^board-selftest i2c read pio-i2c:sda=8,scl=7 0x18 0x00 1$' "$CTL_LOG" || fail "the BMI088's id through lemnosd: $(cat "$CTL_LOG")"
 grep -q '^board-selftest i2c read 1 0x40 0xfe 2$' "$CTL_LOG" || fail "the INA238's id is a word: $(cat "$CTL_LOG")"
 [ ! -s "$T/i2c.log" ] || fail "no i2c-tools reads while lemnosd has the sensors: $(cat "$T/i2c.log")"
 : > "$CTL_LOG"
@@ -198,7 +198,7 @@ rm "$T/raw-refused"
 : > "$CTL_LOG"
 
 echo "a chip id that reads wrong through lemnosd fails the check"
-sed -i.bak 's/^4 0x68 0x00 0x0f$/4 0x68 0x00 0x0e/' "$T/regs"
+sed -i.bak 's/^pio-i2c:sda=8,scl=7 0x68 0x00 0x0f$/pio-i2c:sda=8,scl=7 0x68 0x00 0x0e/' "$T/regs"
 out=$(selftest --json)
 check_status "$out" i2c fail
 printf '%s' "$out" | grep -q "imu-gyro) at 4/0x68: chip id 0x0e, not the manifest's" || fail "the reason: $out"

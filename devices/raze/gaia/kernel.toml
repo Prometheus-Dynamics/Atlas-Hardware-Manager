@@ -35,7 +35,7 @@ config_overrides = [
   ["BR2_LINUX_KERNEL_EXT_OV9782", "y"],
   ["BR2_PACKAGE_RPI_FIRMWARE", "y"],
   # The firmware's overlay set, for OS-level overlays. The ones raze-device.txt
-  # loads (dwc2, i2c1-pi5, i2c-gpio, ws2812-pio, vc4-kms-v3d-pi5) are built from
+  # loads (dwc2, i2c1-pi5, ws2812-pio, vc4-kms-v3d-pi5, ramoops-pi5) are built from
   # this kernel instead (external.mk, RAZE_KERNEL_OVERLAYS): the firmware's come
   # from its own kernel series.
   ["BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS", "y"],

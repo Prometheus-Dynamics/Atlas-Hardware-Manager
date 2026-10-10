@@ -31,21 +31,20 @@ echo 212 > "$S/class/hwmon/hwmon2/pwm1"
 mkdir -p "$S/class/watchdog/watchdog0"
 echo bcm2835-wdt > "$S/class/watchdog/watchdog0/identity"
 
-# I2C: the hardware bus i2c-1 (RP1 i2c@74000), the i2c-gpio bus i2c-4 and the
-# camera bound on i2c-10. Adapters point at their device-tree nodes, as the
+# I2C: the hardware bus i2c-1 (RP1 i2c@74000) and the camera bound on i2c-10.
+# The IMU's bus has no adapter: lemnosd runs it on RP1 PIO, and its registers
+# below are keyed by lemnosd's name for it. Adapters point at their device-tree nodes, as the
 # kernel's of_node links do, so the buses' selectors find them.
 base=$S/firmware/devicetree/base
-mkdir -p "$base/axi/pcie@1000120000/rp1/i2c@74000" "$base/axi/pcie@1000120000/rp1/i2c@88000" "$base/i2c@0"
+mkdir -p "$base/axi/pcie@1000120000/rp1/i2c@74000" "$base/axi/pcie@1000120000/rp1/i2c@88000"
 printf 'snps,designware-i2c\000' > "$base/axi/pcie@1000120000/rp1/i2c@74000/compatible"
 printf 'snps,designware-i2c\000' > "$base/axi/pcie@1000120000/rp1/i2c@88000/compatible"
-printf 'i2c-gpio\000' > "$base/i2c@0/compatible"
 # fake_adapter <bus> <device-tree node under base>
 fake_adapter() {
 	mkdir -p "$S/bus/i2c/devices/i2c-$1"
 	ln -sfn "$base/$2" "$S/bus/i2c/devices/i2c-$1/of_node"
 }
 fake_adapter 1 axi/pcie@1000120000/rp1/i2c@74000
-fake_adapter 4 i2c@0
 fake_adapter 10 axi/pcie@1000120000/rp1/i2c@88000
 mkdir -p "$S/bus/i2c/drivers/ov9282" "$S/bus/i2c/devices/10-0060" "$S/class/video4linux/video0"
 echo ov9782 > "$S/bus/i2c/devices/10-0060/name"
@@ -55,8 +54,8 @@ echo rp1-cfe-csi2_ch0 > "$S/class/video4linux/video0/name"
 # Tools. i2cdetect answers for the addresses listed in $T/i2c ("bus addr");
 # i2cget and i2cset read and write registers in $T/regs ("bus addr reg
 # value", words as an SMBus word read returns them) and log to $T/i2c.log.
-printf '4 0x18\n4 0x68\n1 0x10\n1 0x40\n' > "$T/i2c"
-printf '4 0x18 0x00 0x1e\n4 0x68 0x00 0x0f\n1 0x10 0x40 0x32\n1 0x10 0x4b 0x00\n1 0x40 0xfe 0x4954\n' > "$T/regs"
+printf 'pio-i2c:sda=8,scl=7 0x18\npio-i2c:sda=8,scl=7 0x68\n1 0x10\n1 0x40\n' > "$T/i2c"
+printf 'pio-i2c:sda=8,scl=7 0x18 0x00 0x1e\npio-i2c:sda=8,scl=7 0x68 0x00 0x0f\n1 0x10 0x40 0x32\n1 0x10 0x4b 0x00\n1 0x40 0xfe 0x4954\n' > "$T/regs"
 cat > "$T/bin/i2cdetect" <<'EOF'
 #!/bin/sh
 # i2cdetect -y -r <bus> <first> <last>
@@ -129,4 +128,8 @@ valid_json() {
 # The data of check <id> in a report, as JSON.
 check_data() {
 	printf '%s' "$1" | python3 -c 'import json, sys; print(json.dumps(next(c["data"] for c in json.load(sys.stdin)["checks"] if c["id"] == sys.argv[1])))' "$2"
+}
+# The message of check <id> in a report.
+check_message() {
+	printf '%s' "$1" | python3 -c 'import json, sys; print(next(c["message"] for c in json.load(sys.stdin)["checks"] if c["id"] == sys.argv[1]))' "$2"
 }

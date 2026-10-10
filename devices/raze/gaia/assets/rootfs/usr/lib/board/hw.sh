@@ -117,8 +117,15 @@ hw_i2c_select_matches() {
 # hw_i2c_bus <number on the reference image>: "<bus number now> <how>". The
 # bus's selector (HW_I2C_BUSES) finds it whatever probe order numbered it
 # (how: selector); when no adapter matches (number), several do (ambiguous)
-# or the bus has no selector (number), the number given.
+# or the bus has no selector (number), the number given. A bus lemnosd runs
+# on RP1 PIO (HW_I2C_PIO_BUSES) has no kernel adapter: "<number> pio".
 hw_i2c_bus() {
+	for _hw_e in ${HW_I2C_PIO_BUSES:-}; do
+		if [ "${_hw_e%%:*}" = "$1" ]; then
+			printf '%s pio\n' "$1"
+			return 0
+		fi
+	done
 	_hw_how=number
 	_hw_sel=''
 	for _hw_e in ${HW_I2C_BUSES:-}; do
@@ -141,6 +148,18 @@ hw_i2c_bus() {
 		[ "$_hw_count" = 0 ] || _hw_how=ambiguous
 	fi
 	printf '%s %s\n' "$1" "$_hw_how"
+}
+
+# hw_i2c_pio_ref <number>: the Lemnos bus string of a PIO bus
+# (pio-i2c:sda=..,scl=..), which lemnosd's raw reads take; fails for others.
+hw_i2c_pio_ref() {
+	for _hw_e in ${HW_I2C_PIO_BUSES:-}; do
+		if [ "${_hw_e%%:*}" = "$1" ]; then
+			printf '%s\n' "${_hw_e#*:}"
+			return 0
+		fi
+	done
+	return 1
 }
 
 # hw_i2c_probe <bus> <address, 0xNN>: prints one of

@@ -65,7 +65,7 @@ assert (ring["count"], ring["wire"], ring["offset"], ring["direction"]) == (16, 
 assert (ring["fade_ms"], ring["easing"], ring["status_effect"]) == (250, "ease-in-out", "breathe"), ring
 assert d["fan"]["match"] == {"name": "pwmfan"} and "config" not in d["fan"], d["fan"]
 assert d["cpu-thermal"]["match"] == {"type": "cpu-thermal"}
-assert (d["imu"]["bus"], d["imu"]["address"], d["imu"]["config"]["gyro_address"]) == ("i2c:compatible=i2c-gpio", 0x18, 0x68)
+assert (d["imu"]["bus"], d["imu"]["address"], d["imu"]["config"]["gyro_address"]) == ("pio-i2c:sda=8,scl=7", 0x18, 0x68)
 for s, a in (("magnetometer", 0x10), ("power", 0x40)):
     assert (d[s]["bus"], d[s]["address"]) == ("i2c:of=/axi/pcie@1000120000/rp1/i2c@74000", a), d[s]
 assert d["power"]["config"] == {"shunt_micro_ohms": 10000, "max_current_micro_amps": 16384000}
@@ -74,12 +74,18 @@ EOF
 edit 'c["leds"]["index"]["direction"] = -1'
 gen > /dev/null
 grep -q 'direction = "ccw"' "$board" || fail "direction -1 should be ccw"
-edit 'c["leds"]["index"]["direction"] = 1; c["i2c"]["buses"][1]["select"] = {"name": "i2c-gpio-1"}'
+edit 'c["leds"]["index"]["direction"] = 1; c["i2c"]["buses"][0]["select"] = {"name": "i2c-hw-1"}'
 gen > /dev/null
-grep -q 'bus = "i2c:name=i2c-gpio-1"' "$board" || fail "the bus selector should follow the manifest"
-edit 'del c["i2c"]["buses"][1]["select"]; del c["i2c"]["verified"]["buses.1.select"]'
+grep -q 'bus = "i2c:name=i2c-hw-1"' "$board" || fail "the bus selector should follow the manifest"
+edit 'del c["i2c"]["buses"][0]["select"]; del c["i2c"]["verified"]["buses.0.select"]'
 gen > /dev/null
-grep -q 'bus = "i2c-4"' "$board" || fail "without a selector the bus is i2c-<n>"
+grep -q 'bus = "i2c-1"' "$board" || fail "without a selector the bus is i2c-<n>"
+edit 'c["i2c"]["buses"][1]["hz"] = 100000'
+gen > /dev/null
+grep -q 'bus = "pio-i2c:sda=8,scl=7,hz=100000"' "$board" || fail "a PIO bus's clock other than 400 kHz is named"
+grep -q 'dtoverlay=i2c-gpio' "$T/devices/raze/gaia/assets/boot/raze-device.txt" && fail "no overlay claims a PIO bus's pins"
+grep -q "^HW_I2C_PIO_BUSES='4:pio-i2c:sda=8,scl=7,hz=100000'$" "$T/devices/raze/gaia/assets/rootfs/usr/lib/board/hardware.env" ||
+	fail "the self-test learns the PIO bus: $(grep PIO "$T/devices/raze/gaia/assets/rootfs/usr/lib/board/hardware.env")"
 cp "$root/devices/raze/manifest.json" "$T/devices/raze/manifest.json"
 gen > /dev/null
 
@@ -90,7 +96,8 @@ sys.path.insert(0, sys.argv[1])
 import raze_lemnos as rl
 schema = json.load(open(sys.argv[2]))
 good = {"format": "lemnos.board", "schema_version": 1, "board": {"id": "raze"}, "devices": [
-    {"id": "imu", "driver": "bmi088", "bus": "i2c:compatible=i2c-gpio", "address": 24},
+    {"id": "imu", "driver": "bmi088", "bus": "pio-i2c:sda=8,scl=7", "address": 24},
+    {"id": "imu2", "driver": "bmi088", "bus": "i2c:compatible=i2c-gpio", "address": 25},
     {"id": "fan", "driver": "hwmon-fan", "match": {"name": "pwmfan"}}]}
 assert not rl.schema_errors(good, schema, schema) and not rl.driver_errors(good)
 for bad in (
@@ -139,6 +146,8 @@ for change in \
 	'c["fan"]["verified"]["no.such.fact"] = "unverified"' \
 	'c["i2c"]["buses"][0]["select"] = {"of": "/a b"}' \
 	'c["i2c"]["buses"][0]["select"] = {"path": "/axi"}' \
+	'c["i2c"]["buses"][1]["overlay"] = "i2c-gpio,bus=4,i2c_gpio_sda=8,i2c_gpio_scl=7"' \
+	'c["i2c"]["buses"][1]["hz"] = 0' \
 	'c["i2c"]["devices"][3]["chip_id"]["smbus_word"] = 0x5449' \
 	'c["i2c"]["devices"][1]["lemnosd"]["driver"] = "bmi088"' \
 	'del c["i2c"]["devices"][3]["max_current_a"]' \

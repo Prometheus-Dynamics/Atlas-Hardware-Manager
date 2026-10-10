@@ -27,13 +27,13 @@ from pathlib import Path
 
 SELECTOR_KEYS = ("name", "compatible", "of", "node")
 
-# What lemnos-board's DriverRegistry (Lemnos 2ab3d93, crates/lemnos-board/src
+# What lemnos-board's DriverRegistry (Lemnos 068427e, crates/lemnos-board/src
 # registry.rs and light.rs) accepts: placement, config keys, match keys.
 LIGHT_KEYS = (
     "count", "wire", "offset", "direction", "brightness", "gpio", "fade_ms", "easing",
     "status_effect", "error_effect", "breathe_period_ms", "breathe_depth", "blink_period_ms",
     "blink_duty", "ok", "warn", "error", "busy", "locate", "locate_effect",
-    "spinner_period_ms", "spinner_tail", "idle", "progress", "progress_background",
+    "spinner_period_ms", "spinner_tail", "spinner_base", "idle", "progress", "progress_background",
     "updating", "verifying", "writing", "staged", "booting", "rebooting", "failed",
     "gravity_device", "gravity_plane", "gravity_led0_deg", "default_down",
 )
@@ -182,7 +182,15 @@ def driver_errors(board: dict) -> list[str]:
 
 
 def bus_ref(caps: dict, number: int) -> str:
-    """A Lemnos bus string: the bus's selector from the manifest, else i2c-<n>."""
+    """A Lemnos bus string: pio-i2c:sda=..,scl=.. for a PIO bus (with hz when
+    it isn't Lemnos's 400 kHz default), the bus's selector from the manifest,
+    else i2c-<n>."""
+    for bus in caps["i2c"]["buses"]:
+        if bus["bus"] == number and bus["kind"] == "pio":
+            ref = f"pio-i2c:sda={bus['sda_gpio']},scl={bus['scl_gpio']}"
+            if bus.get("hz", 400_000) != 400_000:
+                ref += f",hz={bus['hz']}"
+            return ref
     for bus in caps["i2c"]["buses"]:
         if bus["bus"] == number and bus.get("select"):
             keys = [k for k in SELECTOR_KEYS if k in bus["select"]]
@@ -272,11 +280,15 @@ def board_definition(manifest: dict, version: str) -> tuple[dict, dict[str, list
             sensors[ld["device"]] = device
             note = notes.setdefault(ld["device"], [])
             bus = next(b for b in i2c["buses"] if b["bus"] == part["bus"])
-            note.append(f"{part['part']} {part['function']} at 0x{part['address']:02x} on the {bus['kind']} bus"
-                        f" (i2c-{part['bus']} on the 7.2.9 image).")
+            if bus["kind"] == "pio":
+                note.append(f"{part['part']} {part['function']} at 0x{part['address']:02x} on the RP1 PIO bus"
+                            f" (GPIO{bus['sda_gpio']} SDA, GPIO{bus['scl_gpio']} SCL; no kernel adapter).")
+            else:
+                note.append(f"{part['part']} {part['function']} at 0x{part['address']:02x} on the {bus['kind']} bus"
+                            f" (i2c-{part['bus']} on the 7.2.9 image).")
             if not unverified(i2c, "devices"):
                 note.append("Address and chip id verified on a board by chip-id register reads.")
-            if unverified(i2c, f"buses.{i2c['buses'].index(bus)}.select"):
+            if bus.get("select") and unverified(i2c, f"buses.{i2c['buses'].index(bus)}.select"):
                 note.append("Bus selector from the device tree, unverified on hardware.")
             if "shunt_ohm" in part and unverified(i2c, f"devices.{index}.shunt_ohm"):
                 note.append(f"Shunt {part['shunt_ohm']} ohm: from the manifest, unverified against the schematic.")

@@ -78,7 +78,7 @@ endif
 # from its own kernel series (1.20260915: 6.18), and 7.2 changed some of
 # them (ws2812-pio no longer sets the pin function). boot.toml copies them
 # from images/raze-overlays/.
-RAZE_KERNEL_OVERLAYS = dwc2 i2c1-pi5 i2c-gpio ws2812-pio vc4-kms-v3d-pi5 ramoops-pi5
+RAZE_KERNEL_OVERLAYS = dwc2 i2c1-pi5 ws2812-pio vc4-kms-v3d-pi5 ramoops-pi5
 
 ifeq ($(BR2_LINUX_KERNEL_EXT_OV9782),y)
 define RAZE_BUILD_KERNEL_OVERLAYS

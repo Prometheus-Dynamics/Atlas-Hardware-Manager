@@ -37,9 +37,8 @@ driver = "thermal-zone"
 match = { type = "cpu-thermal" }
 poll_ms = 1000
 
-# BMI088 accelerometer at 0x18 on the i2c-gpio bus (i2c-4 on the 7.2.9 image).
+# BMI088 accelerometer at 0x18 on the RP1 PIO bus (GPIO8 SDA, GPIO7 SCL; no kernel adapter).
 # Address and chip id verified on a board by chip-id register reads.
-# Bus selector from the device tree, unverified on hardware.
 # Raw reads (chip id) through lemnosd for: board-selftest.
 # Settings: accel_rate = 100hz, gyro_rate = 100hz-32.
 # BMI088 gyroscope at 0x68.
@@ -47,7 +46,7 @@ poll_ms = 1000
 id = "imu"
 driver = "bmi088"
 label = "IMU"
-bus = "i2c:compatible=i2c-gpio"
+bus = "pio-i2c:sda=8,scl=7"
 address = 0x18
 poll_ms = 10
 raw = ["board-selftest"]

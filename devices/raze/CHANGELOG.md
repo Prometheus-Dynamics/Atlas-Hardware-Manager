@@ -379,6 +379,22 @@ commit; the commits are listed per area.
   (gaia/data.toml: util-linux's basic set and partition utilities,
   e2fsprogs with resize2fs). Slot B's root (p6) is only read after `stage`
   writes it, so an unwritten p6 needs nothing.
+- **The IMU on a PIO I2C bus:** the BMI088 moves from the kernel's
+  i2c-gpio bus (i2c-4, every bit bit-banged over PCIe) to lemnosd's RP1 PIO
+  bus, `pio-i2c:sda=8,scl=7` at 400 kHz (Lemnos 068427e: a 27-instruction
+  program beside ws2812-pio-rp1's 4, transactions by DMA). lemnosd at 100 Hz:
+  28.5 % CPU for the whole IMU on i2c-gpio, 1.9 % on PIO (14.9 / 1.3 % gyro
+  only, 9.7 / 1.3 % yaw only); 100000 of 100000 chip-id reads on each die.
+  The `i2c-gpio` overlay line is gone (GPIO7/8 must stay free) and the
+  package no longer builds that overlay; `/dev/pio0` belongs to the `lemnos`
+  user (60-board-lemnosd.rules). The manifest's bus 4 is `kind: "pio"` (no
+  overlay, no selector; `hz`), gen-raze writes the `pio-i2c:` bus and
+  hardware.env's `HW_I2C_PIO_BUSES`, and the self-test reads the IMU's chip
+  ids through lemnosd by that bus name (without lemnosd it can't be probed).
+  The vendored Lemnos board schema also takes `pio-i2c:` buses, which
+  lemnos-board accepts but its schema file doesn't yet.
+- **Lemnos 068427e:** the PIO I2C bus, the drain looks, the trial-boot
+  ember, the chase glow (`spinner_base`) and channel-selective reads.
 - **The trial's phase:** while an update is `trying`, update.json's
   `phase` (and board-agent's `update.phase`) is null until
   board-update-confirm starts judging the trial, `checking` from then (its

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Prometheus-Dynamics/Lemnos/docs/schemas/lemnos-board.schema.json",
-  "$comment": "Vendored unchanged (apart from this comment) from Lemnos 2ab3d938c3aa docs/schemas/lemnos-board.schema.json. devices/tools/gen-raze.py validates the generated /etc/lemnos/board.toml against it. Update it together with the Lemnos pin (capabilities.hardware-service.gaia_import.rev).",
+  "$comment": "Vendored from Lemnos 068427e473c9 docs/schemas/lemnos-board.schema.json, unchanged apart from this comment and the bus pattern, which also takes Lemnos's pio-i2c:sda=<gpio>,scl=<gpio>[,hz=<hertz>] buses (lemnos-board schema.rs accepts them; the schema file does not yet). devices/tools/gen-raze.py validates the generated /etc/lemnos/board.toml against it. Update it together with the Lemnos pin (capabilities.hardware-service.gaia_import.rev).",
   "title": "Lemnos board definition",
   "description": "A board's devices, each built from a generic Lemnos driver. TOML or JSON; see docs/board-definition.md. Driver-specific checks (config keys, values) are done by lemnos-board's DriverRegistry::validate.",
   "type": "object",
@@ -150,8 +150,8 @@
         },
         "bus": {
           "type": "string",
-          "description": "\"i2c-<n>\", \"i2c:<key>=<value>[;<key>=<value>...]\" (keys: name, compatible, of, node) or \"spi-<bus>.<cs>\".",
-          "pattern": "^(i2c-[0-9]+|i2c:(name|compatible|of|node)=[^;]+(;(name|compatible|of|node)=[^;]+)*|spi-[0-9]+\\.[0-9]+)$"
+          "description": "\"i2c-<n>\", \"i2c:<key>=<value>[;<key>=<value>...]\" (keys: name, compatible, of, node) or \"pio-i2c:sda=<gpio>,scl=<gpio>[,hz=<hertz>]\" or \"spi-<bus>.<cs>\".",
+          "pattern": "^(i2c-[0-9]+|i2c:(name|compatible|of|node)=[^;]+(;(name|compatible|of|node)=[^;]+)*|pio-i2c:[a-z]+=[0-9]+(,[a-z]+=[0-9]+)*|spi-[0-9]+\\.[0-9]+)$"
         },
         "address": {
           "type": "integer",

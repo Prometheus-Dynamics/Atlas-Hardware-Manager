@@ -46,31 +46,35 @@ printf '%s' "$out" | grep -q '"steps":\[{"state":0,"pwm":179,"expected":179' || 
 printf '%s' "$out" | grep -q '"backend":"sysfs"' || fail "the report names the backend: $out"
 
 echo "I2C: buses found by their selectors, chip ids read, the BMM150 woken and put back"
+echo "    (the IMU's PIO bus only through lemnosd: here it can't be probed)"
 i2c=$(check_data "$out" i2c)
 printf '%s' "$i2c" | python3 -c '
 import json, sys
 d = {x["id"]: x for x in json.load(sys.stdin)["devices"]}
-assert all(x["bus_found_by"] == "selector" for x in d.values()), d
-assert d["imu-accel"]["chip_id"] == "ok 0x1e" and d["imu-gyro"]["chip_id"] == "ok 0x0f", d
+assert all(x["bus_found_by"] == "selector" for k, x in d.items() if not k.startswith("imu")), d
+assert all(d[k]["bus_found_by"] == "pio" and d[k]["result"] == "unknown" for k in ("imu-accel", "imu-gyro")), d
 assert d["magnetometer"]["chip_id"] == "ok 0x32", d
 assert d["power-monitor"]["chip_id"] == "ok 0x4954", d
 ' || fail "i2c data: $i2c"
 grep -q '^i2cset -y 1 0x10 0x4b 1 b$' "$T/i2c.log" || fail "the BMM150 power bit should be set for the read: $(cat "$T/i2c.log")"
+grep -q 'pio-i2c\| 4 0x' "$T/i2c.log" && fail "no i2c-tools reads on the PIO bus: $(cat "$T/i2c.log")"
+check_message "$out" i2c | grep -q "2 can't be probed (no i2cdetect, or a PIO bus without lemnosd)" ||
+	fail "the message says why: $(check_message "$out" i2c)"
 grep -q '^1 0x10 0x4b 0x00$' "$T/regs" || fail "the BMM150 power control should be put back: $(cat "$T/regs")"
 
 echo "I2C: a renumbered bus is found by its selector, a wrong chip id fails"
-mv "$S/bus/i2c/devices/i2c-4" "$S/bus/i2c/devices/i2c-5"
-sed -i.bak 's/^4 /5 /' "$T/i2c" "$T/regs"
+mv "$S/bus/i2c/devices/i2c-1" "$S/bus/i2c/devices/i2c-3"
+sed -i.bak 's/^1 /3 /' "$T/i2c" "$T/regs"
 out=$(selftest --json)
 check_status "$out" i2c ok
-check_data "$out" i2c | grep -q '"id": "imu-accel", "part": "BMI088", "bus": 5, "bus_hint": 4, "bus_found_by": "selector"' ||
-	fail "the i2c-gpio bus should be found as i2c-5: $(check_data "$out" i2c)"
-sed -i.bak 's/^5 0x18 0x00 0x1e$/5 0x18 0x00 0x1f/' "$T/regs"
+check_data "$out" i2c | grep -q '"id": "power-monitor", "part": "INA238", "bus": 3, "bus_hint": 1, "bus_found_by": "selector"' ||
+	fail "the hardware bus should be found as i2c-3: $(check_data "$out" i2c)"
+sed -i.bak 's/^3 0x40 0xfe 0x4954$/3 0x40 0xfe 0x4955/' "$T/regs"
 out=$(selftest --json)
 check_status "$out" i2c fail
-printf '%s' "$out" | grep -q 'BMI088 (imu-accel) at 5/0x18: chip id 0x1f' || fail "the wrong chip id should be named: $out"
-mv "$S/bus/i2c/devices/i2c-5" "$S/bus/i2c/devices/i2c-4"
-sed -i.bak 's/^5 /4 /; s/^4 0x18 0x00 0x1f$/4 0x18 0x00 0x1e/' "$T/i2c" "$T/regs"
+printf '%s' "$out" | grep -q 'INA238 (power-monitor) at 3/0x40: chip id 0x4955' || fail "the wrong chip id should be named: $out"
+mv "$S/bus/i2c/devices/i2c-3" "$S/bus/i2c/devices/i2c-1"
+sed -i.bak 's/^3 /1 /; s/^1 0x40 0xfe 0x4955$/1 0x40 0xfe 0x4954/' "$T/i2c" "$T/regs"
 
 echo "the fan is handed back: state and governor as before"
 [ "$(cat "$S/class/thermal/cooling_device1/cur_state")" = 1 ] || fail "cur_state not restored"
@@ -114,13 +118,13 @@ check_status "$out" leds fail
 
 echo "broken hardware fails, and the text report exits 1"
 rm "$S/bus/i2c/devices/10-0060/driver"
-printf '4 0x18\n1 0x10\n1 0x40\n' > "$T/i2c"
+printf '1 0x10\n' > "$T/i2c"
 : > "$T/cfg/usb_gadget/g1/UDC"
 out=$(FAKE_WATCHDOG=0 FAKE_FAN_LEVELS='76 43 10 0 0' selftest --json)
 valid_json "$out"
 printf '%s' "$out" | grep -q '"ok":false' || fail "should fail: $out"
 for id in fan camera i2c watchdog gadget; do check_status "$out" "$id" fail; done
-printf '%s' "$out" | grep -q 'BMI088 (imu-gyro) at 4/0x68: absent' || fail "the missing gyro should be named: $out"
+printf '%s' "$out" | grep -q 'INA238 (power-monitor) at 1/0x40: absent' || fail "the missing power monitor should be named: $out"
 if FAKE_WATCHDOG=0 selftest > "$T/text"; then fail "a failed check should exit 1"; fi
 grep -q '^fail  camera' "$T/text" || fail "text report: $(cat "$T/text")"
 [ "$(cat "$S/class/thermal/cooling_device1/cur_state")" = 1 ] || fail "cur_state not restored after failures"
