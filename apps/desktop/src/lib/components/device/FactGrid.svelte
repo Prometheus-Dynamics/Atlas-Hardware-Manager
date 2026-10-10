@@ -1,5 +1,6 @@
 <script lang="ts">
-  // Label/value facts: glass tiles, or a plain two-column list.
+  // Label/value facts: one panel of compact rows (two or three across as
+  // there is room), or a plain two-column list.
   let {
     facts,
     plain = false,
@@ -14,14 +15,45 @@
     {/each}
   </dl>
 {:else}
-  <dl class="auto-grid" style="--min: 170px; --gap: 8px">
+  <dl class="facts">
     {#each facts as fact (fact.label)}
-      <div class="glass min-w-0 px-3.5 py-2.5">
-        <dt class="text-[12px] text-fg-faint">{fact.label}</dt>
-        <dd class="mt-0.5 truncate text-[13.5px] font-medium text-fg" class:mono={fact.mono} title={fact.value ?? undefined}>
-          {fact.value}
-        </dd>
+      <div class="fact">
+        <dt>{fact.label}</dt>
+        <dd class:mono={fact.mono} title={fact.value ?? undefined}>{fact.value}</dd>
       </div>
     {/each}
   </dl>
 {/if}
+
+<style>
+  .facts {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--r-card);
+    overflow: hidden;
+  }
+  .fact {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 0;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--hairline);
+    font-size: 12.5px;
+  }
+  dt {
+    flex-shrink: 0;
+    width: 6.5rem;
+    color: var(--fg-faint);
+  }
+  dd {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+    color: var(--fg);
+  }
+</style>
