@@ -2,7 +2,7 @@
 // Argument names are camelCase: Tauri maps them to the Rust snake_case
 // parameters. Rejected promises carry a user-facing sentence (a string).
 
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import type {
   ActivityEntry,
   AppInfo,
@@ -14,6 +14,7 @@ import type {
   DeviceRecord,
   DeviceStatus,
   HardwareCommand,
+  HardwareFrame,
   HealthCheck,
   HistoryEntry,
   ImageServerStatus,
@@ -51,6 +52,25 @@ export const api = {
    */
   controlHardware: (key: DeviceKey, hardware: string, command: HardwareCommand) =>
     invoke<number | null>("control_hardware", { key, hardware, command }),
+  /**
+   * Streams the board devices `devices` ([id, period ms]) live into `onFrame`.
+   * Resolves with a function that stops it, or null when the board has no live
+   * stream (its status snapshot is all there is). A stream that ends sends a
+   * `gone` frame.
+   */
+  streamHardware: async (
+    key: DeviceKey,
+    devices: [string, number][],
+    onFrame: (frame: HardwareFrame) => void,
+  ): Promise<(() => void) | null> => {
+    const channel = new Channel<HardwareFrame>();
+    channel.onmessage = onFrame;
+    const id = await invoke<number | null>("start_hardware_stream", { key, devices, onFrame: channel });
+    if (id === null) return null;
+    return () => {
+      void invoke<void>("stop_hardware_stream", { id });
+    };
+  },
   /**
    * Runs the device's self-test (devices with `self-test`). Resolves with the
    * kept result, also when a check failed or the run couldn't finish.

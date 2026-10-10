@@ -164,6 +164,19 @@ impl StatusCapability for CombinedStatus {
         }
     }
 
+    /// The owner's live stream, else the extra source's.
+    async fn stream_hardware(
+        &self,
+        device: &Identity,
+        wanted: &[(String, u32)],
+        sink: crate::FrameSink,
+    ) -> Result<bool, DriverError> {
+        match self.own.stream_hardware(device, wanted, sink.clone()).await {
+            Ok(false) => self.more.stream_hardware(device, wanted, sink).await,
+            other => other,
+        }
+    }
+
     /// The owner's push channel, else the extra source's.
     async fn watch(&self, device: &Identity, sink: PushSink) -> Result<bool, DriverError> {
         match self.own.watch(device, sink.clone()).await {

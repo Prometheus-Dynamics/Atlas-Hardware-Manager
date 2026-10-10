@@ -1,6 +1,9 @@
 //! Commands to a board's devices: set a control, undo Atlas's writes, hand a
 //! fan back to the board. What the devices read comes with the status
-//! ([`HardwareSnapshot`](crate::HardwareSnapshot)).
+//! ([`HardwareSnapshot`](crate::HardwareSnapshot)), and live, at device rate,
+//! from a board that streams it ([`HardwareFrame`]).
+
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -49,3 +52,50 @@ pub trait HardwareCapability: Send + Sync {
         command: HardwareCommand,
     ) -> Result<Option<f64>, DriverError>;
 }
+
+/// One channel of a live device: its name and unit (empty: none).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct LiveChannel {
+    pub name: String,
+    #[serde(default)]
+    pub unit: String,
+}
+
+/// A device of a live stream, as the board describes it; `missing` when the
+/// board has no such device.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct LiveDevice {
+    pub id: String,
+    #[serde(default)]
+    pub class: String,
+    #[serde(default)]
+    pub model: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub period_ms: u32,
+    #[serde(default)]
+    pub channels: Vec<LiveChannel>,
+    #[serde(default)]
+    pub missing: bool,
+}
+
+/// What a live hardware stream delivers.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case", tag = "type")]
+pub enum HardwareFrame {
+    /// The devices asked for, first.
+    Devices { devices: Vec<LiveDevice> },
+    /// Readings of one device since the last batch: each row is the board's
+    /// monotonic time (µs) and a value per channel, in `Devices` order
+    /// (`None`: not read).
+    Samples {
+        device: String,
+        samples: Vec<(u64, Vec<Option<f64>>)>,
+    },
+    /// The stream ended: why.
+    Gone { reason: String },
+}
+
+/// Where a live hardware stream's frames go.
+pub type FrameSink = Arc<dyn Fn(HardwareFrame) + Send + Sync>;

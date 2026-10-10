@@ -83,6 +83,8 @@ pub fn run() {
             commands::devices::device_actions,
             commands::devices::run_device_action,
             commands::devices::control_hardware,
+            commands::devices::start_hardware_stream,
+            commands::devices::stop_hardware_stream,
             commands::devices::run_selftest,
             commands::devices::device_selftest,
             commands::devices::device_telemetry,

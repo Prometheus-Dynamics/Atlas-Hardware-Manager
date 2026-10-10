@@ -95,6 +95,12 @@ commit; the commits are listed per area.
 
 ### Board awareness: events, status, drift
 
+- **Live sensor readings:** board-stream's `hardware` topic streams lemnosd's
+  readings at device rate (the IMU at 100 Hz) only while a viewer asks, and
+  Atlas's Hardware tab draws them as live charts (a ring buffer, canvas,
+  about 60 frames a second; hover for exact values and times). The status
+  snapshot (every 10 s) and Orion's status lane (at most 2 Hz) were never
+  meant for live viewing.
 - **Atlas keeps board clocks synced:** a board more than 2 s off (was 5 s)
   shows its offset, and while Atlas watches it sets the clock itself
   (Orion's `clock.set` or SSH), by the "Keep board clocks synced" preference

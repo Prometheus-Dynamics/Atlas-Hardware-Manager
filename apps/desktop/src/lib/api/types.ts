@@ -504,7 +504,16 @@ export interface Drift {
   items: DriftItem[];
 }
 
-export type { HardwareCommand, HardwareControl, HardwareDevice, HardwareReading, HardwareSnapshot } from "./hardware-types";
+export type {
+  HardwareCommand,
+  HardwareControl,
+  HardwareDevice,
+  HardwareFrame,
+  HardwareReading,
+  HardwareSnapshot,
+  LiveChannel,
+  LiveDevice,
+} from "./hardware-types";
 
 /** What a device is doing now and how it is; absent parts are unknown. */
 export interface DeviceStatus {

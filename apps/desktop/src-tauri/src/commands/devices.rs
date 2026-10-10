@@ -2,7 +2,10 @@ use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use atlas_core::{ActivityEntry, DeviceRecord, HistoryEntry, ScanReport, SelfTestRecord};
-use atlas_driver::{DeviceAction, DeviceKey, DeviceStatus, HardwareCommand, LogLine, Metric};
+use atlas_driver::{
+    DeviceAction, DeviceKey, DeviceStatus, FrameSink, HardwareCommand, HardwareFrame, LogLine,
+    Metric,
+};
 use tauri::State;
 
 use super::{CmdResult, text};
@@ -69,6 +72,74 @@ pub async fn control_hardware(
         .control_hardware(&key, &hardware, command)
         .await
         .map_err(text)
+}
+
+/// Starts a live stream of the board devices `devices` (id, period ms) into
+/// `on_frame`; returns its id for [`stop_hardware_stream`], or `None` when
+/// the board has no live stream (its status snapshot is all there is). A
+/// stream that ends sends a `gone` frame.
+#[tauri::command]
+pub async fn start_hardware_stream(
+    state: State<'_, AppState>,
+    key: DeviceKey,
+    devices: Vec<(String, u32)>,
+    on_frame: tauri::ipc::Channel<HardwareFrame>,
+) -> CmdResult<Option<u64>> {
+    if state.atlas.device(&key).is_none() {
+        return Err(format!("no device {key}"));
+    }
+    let id = state
+        .next_hardware_stream
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let atlas = state.atlas.clone();
+    let channel = on_frame.clone();
+    let sink: FrameSink = std::sync::Arc::new(move |frame| {
+        let _ = channel.send(frame);
+    });
+    // The board answers at once when it has no stream: tell before
+    // spawning, so the UI keeps its snapshot.
+    let (tell, told) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(async move {
+        let result = atlas.stream_hardware(&key, &devices, sink).await;
+        let reason = match result {
+            Ok(false) => {
+                let _ = tell.send(false);
+                return;
+            }
+            Ok(true) => "the board ended the stream".to_string(),
+            Err(error) => error.to_string(),
+        };
+        let _ = tell.send(true);
+        let _ = on_frame.send(HardwareFrame::Gone { reason });
+    });
+    // Streaming from the start, or no stream: whichever comes first.
+    let streams = tokio::select! {
+        told = told => told.unwrap_or(false),
+        () = tokio::time::sleep(std::time::Duration::from_millis(300)) => true,
+    };
+    if !streams {
+        return Ok(None);
+    }
+    state
+        .hardware_streams
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(id, task);
+    Ok(Some(id))
+}
+
+/// Stops a live hardware stream (closing the board's connection, which
+/// ends its lemnosd subscriptions).
+#[tauri::command]
+pub fn stop_hardware_stream(state: State<'_, AppState>, id: u64) {
+    if let Some(task) = state
+        .hardware_streams
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .remove(&id)
+    {
+        task.abort();
+    }
 }
 
 /// Runs the device's self-test and returns the kept result, also when a

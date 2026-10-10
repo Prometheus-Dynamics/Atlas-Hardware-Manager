@@ -382,7 +382,13 @@ through board-agent, or someone typing on the board.
   board `poll_ms`; the Raze's IMU is 10 ms). It sends `hardware` (each
   device's channels and units), then `samples` every 16 ms
   (`[[t_us, v, ..], ..]`, lemnosd's monotonic µs), and `hardware-gone` if
-  lemnosd goes. Orion's status lane stays the low-rate summary (at most
+  lemnosd goes. In Atlas, the Hardware tab opens this stream while it is
+  shown (motion sensors at 10 ms, the rest at 100 ms) and draws a canvas
+  chart per unit for each device at the display's rate from a ring buffer
+  (40 s at 100 Hz), with a 2, 10 or 30 s window; hovering pauses it and
+  shows the nearest sample's values and when it was read. A board without
+  the stream shows the 10 s snapshot as before. Orion's status lane stays
+  the low-rate summary (at most
   `LEMNOS_ORION_RATE_HZ`, deadbanded): it isn't meant for live viewing, and
   a remote operator can only poll it.
 - **Atlas.** atlas-driver-board reads both (a `status` capability; without a

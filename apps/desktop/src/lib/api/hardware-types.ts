@@ -48,3 +48,31 @@ export interface HardwareSnapshot {
   at: number;
   devices: HardwareDevice[];
 }
+
+/** One channel of a live device: its name and unit. */
+export interface LiveChannel {
+  name: string;
+  unit: string;
+}
+
+/** A device of a live stream, as the board describes it. */
+export interface LiveDevice {
+  id: string;
+  class?: string;
+  model?: string;
+  status?: string;
+  period_ms?: number;
+  channels: LiveChannel[];
+  /** The board has no such device. */
+  missing?: boolean;
+}
+
+/**
+ * What a live hardware stream delivers. Samples rows are the board's
+ * monotonic time (µs) and a value per channel, in the device's channel
+ * order (null: not read).
+ */
+export type HardwareFrame =
+  | { type: "devices"; devices: LiveDevice[] }
+  | { type: "samples"; device: string; samples: [number, (number | null)[]][] }
+  | { type: "gone"; reason: string };

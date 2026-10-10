@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use std::time::Duration;
@@ -30,6 +31,9 @@ pub struct AppState {
     pub ssh_access: SshAccess,
     /// Orion, when this build supports it (not with simulated devices).
     pub orion: Option<crate::orion::Orion>,
+    /// Live hardware streams the UI has open, by id.
+    pub hardware_streams: Mutex<HashMap<u64, tokio::task::JoinHandle<()>>>,
+    pub next_hardware_stream: std::sync::atomic::AtomicU64,
 }
 
 impl AppState {
@@ -134,6 +138,8 @@ impl AppState {
             watch: Mutex::new(None),
             ssh_keys,
             ssh_access,
+            hardware_streams: Mutex::new(HashMap::new()),
+            next_hardware_stream: std::sync::atomic::AtomicU64::new(1),
             orion,
         })
     }

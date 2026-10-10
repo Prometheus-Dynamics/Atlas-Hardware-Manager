@@ -19,8 +19,8 @@
 use async_trait::async_trait;
 use atlas_driver::{
     BootInfo, DeviceEvent, DeviceStatus, Drift, DriverError, EventPage, EventQuery, EventSource,
-    FanState, HardwareSnapshot, Identity, Metric, PushSink, StatusCapability, TelemetryCapability,
-    Temperature, UpdateState, metric_ids,
+    FanState, FrameSink, HardwareSnapshot, Identity, Metric, PushSink, StatusCapability,
+    TelemetryCapability, Temperature, UpdateState, metric_ids,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -218,6 +218,18 @@ impl BoardStatus {
 impl StatusCapability for BoardStatus {
     async fn status(&self, _device: &Identity) -> Result<DeviceStatus, DriverError> {
         self.read().await
+    }
+
+    async fn stream_hardware(
+        &self,
+        _device: &Identity,
+        wanted: &[(String, u32)],
+        sink: FrameSink,
+    ) -> Result<bool, DriverError> {
+        match &self.stream_url {
+            Some(url) => crate::stream::follow_hardware(&self.http, url, wanted, sink).await,
+            None => Ok(false),
+        }
     }
 
     async fn watch(&self, _device: &Identity, sink: PushSink) -> Result<bool, DriverError> {

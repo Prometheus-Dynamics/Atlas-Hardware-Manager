@@ -1,34 +1,71 @@
 <script lang="ts">
   // One hardware device from the board's snapshot, rendered from its data
   // alone: a status pill, its readings (axis trios in a row), and its controls.
+  // With live readings: a chart per unit at device rate, and the tiles show
+  // the newest live values.
   import type { DeviceKey, HardwareDevice } from "#lib/api/client.ts";
   import GlassCard from "#lib/components/common/GlassCard.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
   import Pill from "#lib/components/common/Pill.svelte";
   import HardwareControls from "./HardwareControls.svelte";
   import HardwareReadingTile from "./HardwareReadingTile.svelte";
+  import LiveChart from "./LiveChart.svelte";
   import { groupReadings, label, pillFor } from "./hardware.ts";
+  import type { LiveSeries } from "./live.ts";
 
   let {
     device,
     seriesOf,
     deviceKey,
+    live = null,
+    windowS = 10,
+    tick = 0,
   }: {
     device: HardwareDevice;
     seriesOf: (reading: string) => { values: number[]; times: number[] };
     /** The board, when its devices take commands; null shows the controls' values only. */
     deviceKey: DeviceKey | null;
+    /** Its live readings, when the board streams them. */
+    live?: LiveSeries | null;
+    windowS?: number;
+    /** Changes while live, to re-read the newest values. */
+    tick?: number;
   } = $props();
 
   const pill = $derived(pillFor(device.status));
-  const entries = $derived(groupReadings(device.readings));
+  // Live: the newest streamed values (re-read on each tick), no trend tiles.
+  const readings = $derived.by(() => {
+    void tick;
+    return live && live.count > 0 ? live.latest() : device.readings;
+  });
+  const entries = $derived(groupReadings(readings));
+  const noSeries = { values: [], times: [] };
+  const seriesFor = (name: string) => (live ? noSeries : seriesOf(name));
+  const rate = $derived.by(() => {
+    void tick;
+    return live ? live.rate() : 0;
+  });
+  // The ring buffer isn't reactive: the tick says when to look again.
+  const streaming = $derived.by(() => {
+    void tick;
+    return !!live && live.count > 0;
+  });
   const subtitle = $derived([device.class, device.model].filter(Boolean).join(" · "));
 </script>
 
 <GlassCard title={device.id} {subtitle}>
   {#snippet actions()}
+    {#if live && rate > 0}<span class="rate text-[11.5px] text-fg-faint">{rate} Hz</span>{/if}
     <Pill tone={pill.tone} label={pill.label} />
   {/snippet}
+
+  {#if live && streaming}
+    <div class="mb-3 flex flex-col gap-3">
+      {#each live.groups() as group (group.unit)}
+        <LiveChart series={live} channels={group.channels} unit={group.unit} {windowS} />
+      {/each}
+    </div>
+  {/if}
 
   {#if device.reason}
     <p class="mb-3 flex items-start gap-2 text-[13px] {device.status === 'faulted' ? 'text-err-fg' : 'text-fg-muted'}">
@@ -47,12 +84,12 @@
             <p class="text-[12px] text-fg-faint">{entry.label}</p>
             <div class="mt-1 grid grid-cols-3 gap-3">
               {#each entry.axes as axis (axis.axis)}
-                <HardwareReadingTile label={axis.axis} reading={axis.reading} series={seriesOf(axis.reading.name)} bare />
+                <HardwareReadingTile label={axis.axis} reading={axis.reading} series={seriesFor(axis.reading.name)} bare />
               {/each}
             </div>
           </div>
         {:else}
-          <HardwareReadingTile label={label(entry.reading.name)} reading={entry.reading} series={seriesOf(entry.reading.name)} />
+          <HardwareReadingTile label={label(entry.reading.name)} reading={entry.reading} series={seriesFor(entry.reading.name)} />
         {/if}
       {/each}
     </div>
@@ -62,6 +99,9 @@
 </GlassCard>
 
 <style>
+  .rate {
+    font-variant-numeric: tabular-nums;
+  }
   .axes {
     grid-column: 1 / -1;
   }

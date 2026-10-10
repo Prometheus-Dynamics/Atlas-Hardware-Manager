@@ -434,6 +434,19 @@ pub trait StatusCapability: Send + Sync {
         Ok(false)
     }
 
+    /// Streams `wanted` (board device ids with periods in ms) live into
+    /// `sink` until the stream ends (`Ok(true)`) or the caller drops this;
+    /// `Ok(false)` at once: no live stream (the snapshot in the status is
+    /// all there is).
+    async fn stream_hardware(
+        &self,
+        _device: &Identity,
+        _wanted: &[(String, u32)],
+        _sink: crate::FrameSink,
+    ) -> Result<bool, DriverError> {
+        Ok(false)
+    }
+
     async fn status(&self, device: &Identity) -> Result<DeviceStatus, DriverError>;
 
     /// A page of the event log. By default, [`events`](Self::events) by

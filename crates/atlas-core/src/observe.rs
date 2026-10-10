@@ -1,7 +1,7 @@
 //! Live views of a device, commands to its board's devices, and the fleet
 //! history.
 
-use atlas_driver::{DeviceKey, HardwareCommand, LogLine, Metric};
+use atlas_driver::{DeviceKey, FrameSink, HardwareCommand, LogLine, Metric};
 
 use crate::{ActivityEntry, ActivityKind, ActivityLevel, Atlas, CoreError};
 
@@ -24,6 +24,24 @@ impl Atlas {
             what: "logs",
         })?;
         Ok(logs.tail(&record.identity, lines.clamp(1, 2000)).await?)
+    }
+
+    /// Streams the board devices `wanted` (id, period ms) live into `sink`
+    /// until the board ends the stream (`Ok(true)`) or the caller drops
+    /// this; `Ok(false)` when the board has no live stream.
+    pub async fn stream_hardware(
+        &self,
+        key: &DeviceKey,
+        wanted: &[(String, u32)],
+        sink: FrameSink,
+    ) -> Result<bool, CoreError> {
+        let (live, record) = self.live_device(key)?;
+        let Some(status) = live.capabilities.status else {
+            return Ok(false);
+        };
+        Ok(status
+            .stream_hardware(&record.identity, wanted, sink)
+            .await?)
     }
 
     /// Runs `command` on the board device `hardware` (its id in the device's
