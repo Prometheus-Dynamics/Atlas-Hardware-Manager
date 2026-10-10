@@ -2,7 +2,8 @@
 # Off-device test of data-setup, on a real MBR layout made with sfdisk (p1-p3
 # primary, p4 extended with logical p5-p7, free space after p7): the data
 # partition grows to the end of the disk, a partition with no signature gets
-# ext4, an existing filesystem is kept, a small ext4 is grown. Files stand in
+# ext4, an existing filesystem is kept, a small ext4 is grown, a flash id
+# resets a /data from another flash and keeps its own. Files stand in
 # for the disk and the partition. Needs sfdisk, mkfs.ext4, e2fsck,
 # resize2fs, dumpe2fs, blkid. Run: sh devices/raze/tests/data-setup.sh
 set -eu
@@ -118,5 +119,47 @@ case "$(table)" in
 *) fail "after growing p7: $(table)" ;;
 esac
 [ "$(blkid -p -o value -s TYPE "$T/p7")" = ext4 ] || fail "p7 should be ext4"
+
+echo "a flash id: the filesystem it makes carries it, the next boot keeps it"
+disk
+rm -f "$T/run/events.jsonl" "$T/run/nodata/events.jsonl"
+head -c 8M /dev/urandom > "$T/p7"
+printf 'build-1\n' > "$T/flash-id"
+export BOARD_DATA_FLASH_ID_FILE=$T/flash-id
+run
+uuid1=$(blkid -p -o value -s UUID "$T/p7")
+want=$(printf build-1 | sha256sum | cut -c1-32 | sed 's/^\(.\{8\}\)\(.\{4\}\)\(.\{4\}\)\(.\{4\}\)/\1-\2-\3-\4-/')
+[ "$uuid1" = "$want" ] || fail "the UUID should come from the flash id: $uuid1, not $want"
+cp "$T/p7" "$T/p7.ref"
+run
+cmp -s "$T/p7" "$T/p7.ref" || fail "the same flash must keep its /data"
+events | grep -q '"kind":"data.reset"' && fail "no reset on the same flash: $(events)"
+
+echo "a new flash over a used /data makes it new"
+printf 'build-2\n' > "$T/flash-id"
+run
+[ "$(blkid -p -o value -s UUID "$T/p7")" != "$uuid1" ] || fail "a new flash should make a new filesystem"
+[ "$(blkid -p -o value -s LABEL "$T/p7")" = data ] || fail "the label"
+events | grep -q '"kind":"data.reset"' || fail "a data.reset event: $(events)"
+
+echo "a flash id over an old /data from an image without one, or another filesystem"
+truncate -s 8M "$T/p7"
+mkfs.ext4 -q -F -L old "$T/p7"
+run
+[ "$(blkid -p -o value -s LABEL "$T/p7")" = data ] || fail "an old /data should be made new"
+head -c 8M /dev/zero > "$T/p7"
+mkfs.vfat "$T/p7" >/dev/null 2>&1 || mkswap "$T/p7" >/dev/null 2>&1 || true
+if blkid -p "$T/p7" >/dev/null 2>&1; then
+	run
+	[ "$(blkid -p -o value -s TYPE "$T/p7")" = ext4 ] || fail "another filesystem should be made ext4"
+fi
+
+echo "an empty flash id file is no flash id"
+: > "$T/flash-id"
+truncate -s 8M "$T/p7"
+mkfs.ext4 -q -F -L old "$T/p7"
+run
+[ "$(blkid -p -o value -s LABEL "$T/p7")" = old ] || fail "without an id, /data is kept"
+unset BOARD_DATA_FLASH_ID_FILE
 
 echo "ok"

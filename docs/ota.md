@@ -286,7 +286,9 @@ Nothing in the device package writes to `/` at runtime:
 
 The OS provides: `/data` mounted early (from the data partition, p7, which
 the package grows to the end of the eMMC and formats on a fresh flash:
-`board-data-setup.service`), `/var/log/journal` on `/data` (the package
+`board-data-setup.service`; the image's build writes a flash id, any line
+new for each build, to `board/flash-id` on p1, and a reflash then resets
+`/data` while updates keep it), `/var/log/journal` on `/data` (the package
 keeps the journal there, bounded, under a stable machine id:
 `board-machine-id.service`), SSH host keys on `/data`, and its own writable
 paths.

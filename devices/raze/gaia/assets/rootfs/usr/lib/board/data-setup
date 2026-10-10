@@ -6,13 +6,20 @@
 #      partition it sits in, to the end of the disk when more than 1 MiB is
 #      left, and the kernel is told the new sizes;
 #   2. a partition with no signature at all gets a new ext4 filesystem;
-#      anything blkid recognizes is left as it is, and an ext4 smaller than
-#      its partition is checked and grown.
-# A reflash that keeps whatever was on the eMMC therefore keeps an old /data
-# (Atlas's flash clears it, as a flash promises). Logs data.grown,
-# data.created and data.resized events.
+#      so does one made by an earlier flash (below); anything else blkid
+#      recognizes is left as it is, and an ext4 smaller than its partition
+#      is checked and grown.
+# A flash resets /data, an update keeps it. The image's build writes a flash
+# id (any line, new for each build) to board/flash-id on the boot partition
+# (BOARD_DATA_FLASH_ID_PART, 1), which an A/B update never writes. The data
+# filesystem's UUID is made from it (sha256), so a filesystem whose UUID
+# doesn't match came from another flash and is made new; nothing has to be
+# mounted to tell. Without a flash id, any existing filesystem is kept (and
+# Atlas's flash clears the partition, as a flash promises). Logs data.grown,
+# data.created, data.reset and data.resized events.
 # Settings: data.env. Test hooks: BOARD_DATA_DISK, BOARD_DATA_DEV (files
-# stand in for the disk and the partition).
+# stand in for the disk and the partition), BOARD_DATA_FLASH_ID_FILE (read
+# instead of the boot partition's).
 set -u
 
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
@@ -89,15 +96,56 @@ if [ "${BOARD_DATA_GROW:-1}" = 1 ] && line=$(entry "$part") && [ -n "$line" ]; t
 	fi
 fi
 
-# 2. A filesystem.
-if ! blkid -p "$dev" >/dev/null 2>&1; then
-	# Nothing recognizable: a fresh flash that ended before this partition.
-	if mkfs.ext4 -q -F -L "${BOARD_DATA_LABEL:-data}" -E lazy_itable_init=1,lazy_journal_init=1 "$dev" >/dev/null 2>&1; then
-		board_event data.created "a new data filesystem on $dev" "dev=$dev"
+# The flash id's first line: from the test hook, or board/flash-id on the
+# boot partition, mounted read-only for the moment (nothing else has it yet).
+flash_id() {
+	if [ -n "${BOARD_DATA_FLASH_ID_FILE:-}" ]; then
+		head -n 1 "$BOARD_DATA_FLASH_ID_FILE" 2>/dev/null
+		return 0
+	fi
+	_boot=$(board_sibling_partition "$root" "${BOARD_DATA_FLASH_ID_PART:-1}" 2>/dev/null) || return 0
+	[ -b "$_boot" ] || return 0
+	_mnt=$(mktemp -d /run/board-data-setup.XXXXXX) || return 0
+	if mount -o ro "$_boot" "$_mnt" 2>/dev/null; then
+		head -n 1 "$_mnt/board/flash-id" 2>/dev/null
+		umount "$_mnt" 2>/dev/null
+	fi
+	rmdir "$_mnt" 2>/dev/null
+	return 0
+}
+
+# The UUID a flash id gives the data filesystem (lower case).
+flash_uuid() {
+	printf '%s' "$1" | sha256sum | sed -n 's/^\(.\{8\}\)\(.\{4\}\)\(.\{4\}\)\(.\{4\}\)\(.\{12\}\).*/\1-\2-\3-\4-\5/p'
+}
+
+# new_fs <event> <message>: a new ext4 on the data partition.
+new_fs() {
+	if mkfs.ext4 -q -F -L "${BOARD_DATA_LABEL:-data}" ${uuid:+-U "$uuid"} \
+		-E lazy_itable_init=1,lazy_journal_init=1 "$dev" >/dev/null 2>&1; then
+		board_event "$1" "$2" "dev=$dev"
 	else
 		board_log "couldn't make a filesystem on $dev"
 	fi
+}
+
+# 2. A filesystem.
+id=$(flash_id | tr -d '\r')
+uuid=''
+[ -z "$id" ] || uuid=$(flash_uuid "$id")
+if ! blkid -p "$dev" >/dev/null 2>&1; then
+	# Nothing recognizable: a fresh flash that ended before this partition.
+	new_fs data.created "a new data filesystem on $dev"
 	exit 0
+fi
+if [ -n "$uuid" ]; then
+	have=$(blkid -p -o value -s UUID "$dev" 2>/dev/null | tr 'A-F' 'a-f')
+	if [ "$(blkid -p -o value -s TYPE "$dev" 2>/dev/null)" != ext4 ] || [ "$have" != "$uuid" ]; then
+		# Left by an earlier flash (or an image without a flash id): this
+		# flash starts with an empty /data.
+		new_fs data.reset "a new data filesystem on $dev: the board was flashed"
+		exit 0
+	fi
 fi
 [ "$(blkid -p -o value -s TYPE "$dev" 2>/dev/null)" = ext4 ] || exit 0
 # An ext4 smaller than its (grown) partition grows to fill it.

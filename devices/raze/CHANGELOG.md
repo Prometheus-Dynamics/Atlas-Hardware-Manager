@@ -379,6 +379,13 @@ commit; the commits are listed per area.
   (gaia/data.toml: util-linux's basic set and partition utilities,
   e2fsprogs with resize2fs). Slot B's root (p6) is only read after `stage`
   writes it, so an unwritten p6 needs nothing.
+- **A flash resets /data, an update keeps it:** an image whose build writes
+  a flash id (one line, new each build) to `board/flash-id` on the boot
+  partition gets a data filesystem whose UUID is made from it; on boot, a
+  filesystem with another UUID (an earlier flash, an image without an id)
+  is made new (`data.reset` event). The A/B updater never writes p1, so
+  updates keep /data. Without a flash id, an existing filesystem is kept as
+  before.
 - **An apply cut short is still staged, not rolled back:** twice on a board
   the reset came during the old slot's shutdown (the `shutdown` line torn
   into NULs), before the restart into the trial, so the firmware booted the
