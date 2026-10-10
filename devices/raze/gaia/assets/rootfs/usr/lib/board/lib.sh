@@ -434,14 +434,18 @@ board_action_label() {
 
 # The identity's optional endpoints and the actions this device offers
 # (BOARD_ACTIONS):
-# ,"endpoints":{"status":"/status","events":"/events","actions":"/actions"},
-#  "actions":[{"id":..,"label":..}]
-# status and events are read-only; they are listed when the package has
-# them.
+# ,"endpoints":{"status":"/status","events":"/events","stream":":5898/stream",
+#  "actions":"/actions"},"actions":[{"id":..,"label":..}]
+# status, events and stream are read-only; they are listed when the package
+# has them. stream is on its own port of the same host (board-stream.socket).
+#   BOARD_STREAM_BIN  board-stream (tests)
 board_actions_json() {
 	_board_eps=''
 	if [ -x "$BOARD_LIB_DIR/status" ]; then
 		_board_eps='"status":"/status","events":"/events"'
+	fi
+	if [ -x "${BOARD_STREAM_BIN:-/usr/bin/board-stream}" ]; then
+		_board_eps="$_board_eps${_board_eps:+,}\"stream\":\":5898/stream\""
 	fi
 	if [ -n "${BOARD_ACTIONS:-}" ]; then
 		_board_eps="$_board_eps${_board_eps:+,}\"actions\":\"/actions\""

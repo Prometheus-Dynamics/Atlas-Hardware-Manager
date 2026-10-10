@@ -54,6 +54,9 @@ function dispatch(event: AtlasEvent) {
     case "device-history":
       deviceStatus.onHistory(event.key);
       break;
+    case "device-status":
+      deviceStatus.onPushed(event.key);
+      break;
     case "self-test":
       selftests.apply(event.record);
       break;

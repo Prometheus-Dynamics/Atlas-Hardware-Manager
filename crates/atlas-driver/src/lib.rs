@@ -36,8 +36,8 @@ pub use selftest::{
 };
 pub use status::{
     BootInfo, DeviceEvent, DeviceStatus, Drift, DriftItem, EventPage, EventQuery, EventSource,
-    FanState, HardwareControl, HardwareDevice, HardwareReading, HardwareSnapshot, StatusCapability,
-    Temperature, UpdateState,
+    FanState, HardwareControl, HardwareDevice, HardwareReading, HardwareSnapshot, PushSink,
+    StatusCapability, StatusPush, Temperature, UpdateState,
 };
 pub use types::{
     Candidate, DeviceKey, DeviceMode, Family, Identity, Link, LinkId, LinkKind, Serial,

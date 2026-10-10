@@ -86,6 +86,7 @@ impl Atlas {
         runtime.spawn(async move {
             loop {
                 atlas.scan().await;
+                atlas.follow_push_channels();
                 tokio::select! {
                     () = stop.cancelled() => break,
                     () = notify.notified() => {

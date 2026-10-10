@@ -95,6 +95,13 @@ commit; the commits are listed per area.
 
 ### Board awareness: events, status, drift
 
+- **A push channel, board-stream** (TCP 5898, `GET /stream`, Server-Sent
+  Events, read-only; `board-stream.socket`, enabled by 70-board.preset; the
+  binary from crates/board-stream via gaia/board-stream.toml). It sends each
+  new event and update-state change as it is written, and what a viewer
+  missed after its seq, so Atlas shows an update, a reboot or a rollback
+  whoever started it within a second instead of on its next poll (up to
+  about 80 s before). The identity lists it as `"stream":":5898/stream"`.
 - **Events are numbered** (`seq`, with `uptime_s`): the board has no RTC,
   and in the first A/B update on hardware its clock was 3 h 17 min behind in
   one boot, so Atlas (which fetched by time) missed events after the clock

@@ -5,6 +5,7 @@
 enable board-hostname.service
 enable board-identity.service
 enable board-http.socket
+enable board-stream.socket
 enable board-usb-gadget.service
 enable board-usb-gadget-dhcp.service
 enable raze-leds-reprobe.service

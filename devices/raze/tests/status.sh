@@ -351,5 +351,11 @@ request 'GET /.well-known/pd-device HTTP/1.0' | body |
 printf 'BOARD_ACTIONS=\n' > "$T/etc/identity.env"
 request 'GET /.well-known/pd-device HTTP/1.0' | body | is "{'status': '/status', 'events': '/events'} False" \
 	'str(d["endpoints"]) + " " + str("actions" in d)' "endpoints without actions"
+# Any executable stands in for /usr/bin/board-stream.
+BOARD_STREAM_BIN=$lib/event
+export BOARD_STREAM_BIN
+request 'GET /.well-known/pd-device HTTP/1.0' | body |
+	is ":5898/stream" 'd["endpoints"]["stream"]' "the stream, on its own port, once board-stream is installed"
+unset BOARD_STREAM_BIN
 
 echo "ok"

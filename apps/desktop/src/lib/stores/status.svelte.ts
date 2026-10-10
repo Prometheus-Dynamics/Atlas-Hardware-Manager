@@ -122,6 +122,11 @@ class StatusStore {
     }
   }
 
+  /** The board pushed a change: read a watched device's status now. */
+  onPushed(key: DeviceKey) {
+    if (this.watched.has(keyString(key))) void this.poll(keyString(key));
+  }
+
   /** Atlas says the board has new events. */
   onHistory(key: DeviceKey) {
     if (this.watched.has(keyString(key))) void this.loadHistory(key);

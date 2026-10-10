@@ -17,6 +17,7 @@ mod jobs;
 mod lineage;
 mod manage;
 mod observe;
+mod push;
 mod robots;
 mod scan;
 mod selftest;

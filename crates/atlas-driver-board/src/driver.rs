@@ -312,6 +312,7 @@ impl Driver for BoardDriver {
                 http: http.clone(),
                 status_url,
                 events_url: endpoint("events"),
+                stream_url: endpoint("stream"),
             })
         });
         // A board with the device package's writer, self-test or status is

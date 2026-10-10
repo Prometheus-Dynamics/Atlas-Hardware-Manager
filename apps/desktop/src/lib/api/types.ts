@@ -429,7 +429,9 @@ export type AtlasEvent =
   /** A self-test finished or couldn't run: the board's latest result. */
   | { type: "self-test"; record: SelfTestRecord }
   /** New events from the device's board: re-read its history. */
-  | { type: "device-history"; key: DeviceKey };
+  | { type: "device-history"; key: DeviceKey }
+  /** The board's push channel said its state changed: re-read its status now. */
+  | { type: "device-status"; key: DeviceKey };
 
 // Device status and history (atlas-driver status.rs, atlas-core history.rs).
 

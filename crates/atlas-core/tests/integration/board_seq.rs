@@ -6,10 +6,10 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use atlas_core::{Atlas, HistoryOrigin, MemoryStore};
+use atlas_core::{Atlas, Event, HistoryOrigin, MemoryStore, WatchOptions};
 use atlas_driver::{
     DeviceEvent, DeviceKey, DeviceStatus, DriverError, EventPage, EventQuery, EventSource,
-    Identity, StatusCapability,
+    Identity, PushSink, StatusCapability, StatusPush,
 };
 use atlas_driver_mock::{MockFleet, SIM_HELIOS};
 
@@ -27,11 +27,26 @@ struct SeqBoard {
     log: Mutex<Vec<DeviceEvent>>,
     boot: Mutex<(String, i64)>,
     asked: Mutex<Vec<EventQuery>>,
+    /// With a push channel: the viewer's sink while one is connected.
+    pushes: bool,
+    sink: Mutex<Option<PushSink>>,
+    /// Ends the open channel (the board restarted).
+    drop_channel: tokio::sync::Notify,
+    connects: Mutex<usize>,
 }
 
 impl SeqBoard {
     fn boot(&self, id: &str, offset: i64) {
         *self.boot.lock().unwrap() = (id.into(), offset);
+    }
+
+    /// Writes an event and pushes it, as board-stream would.
+    fn write_and_push(&self, kind: &str) {
+        self.write(kind);
+        let event = self.log.lock().unwrap().last().cloned().unwrap();
+        if let Some(sink) = self.sink.lock().unwrap().clone() {
+            sink(StatusPush::Event(Box::new(event)));
+        }
     }
 
     /// Writes an event now, by the board's clock, with the next seq.
@@ -57,6 +72,23 @@ impl SeqBoard {
 impl StatusCapability for SeqBoard {
     async fn status(&self, _device: &Identity) -> Result<DeviceStatus, DriverError> {
         Ok(DeviceStatus::default())
+    }
+
+    async fn watch(&self, _device: &Identity, sink: PushSink) -> Result<bool, DriverError> {
+        if !self.pushes {
+            return Ok(false);
+        }
+        *self.connects.lock().unwrap() += 1;
+        let (boot, _) = self.boot.lock().unwrap().clone();
+        let newest_seq = self.log.lock().unwrap().last().and_then(|e| e.seq);
+        sink(StatusPush::Hello {
+            boot_id: boot,
+            newest_seq,
+        });
+        *self.sink.lock().unwrap() = Some(sink);
+        self.drop_channel.notified().await;
+        *self.sink.lock().unwrap() = None;
+        Ok(true)
     }
 
     async fn event_page(
@@ -207,4 +239,77 @@ async fn a_counter_that_started_over_is_fetched_from_its_start() {
     board.write("boot");
     assert_eq!(atlas.sync_device_events(&camera).await.unwrap(), 1);
     assert_eq!(atlas.sync_device_events(&camera).await.unwrap(), 0);
+}
+
+/// Waits up to 5 s for `done`.
+async fn eventually(what: &str, done: impl Fn() -> bool) {
+    for _ in 0..250 {
+        if done() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    panic!("{what} didn't happen");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_pushed_event_is_in_the_history_at_once() {
+    let board = Arc::new(SeqBoard {
+        pushes: true,
+        ..SeqBoard::default()
+    });
+    board.boot("b1", 0);
+    board.write("boot");
+    let (atlas, camera) = atlas_with(board.clone()).await;
+    let mut events = atlas.subscribe();
+    // A long fallback: only the push can make this quick.
+    let watching = atlas
+        .watch(WatchOptions {
+            debounce: std::time::Duration::from_millis(10),
+            fallback: std::time::Duration::from_secs(3600),
+        })
+        .unwrap();
+    eventually("the channel opens", || board.sink.lock().unwrap().is_some()).await;
+    eventually("the hello catches up", || {
+        board_kinds(&atlas, &camera).len() == 1
+    })
+    .await;
+
+    board.write_and_push("update.apply");
+    eventually("the pushed event is kept", || {
+        board_kinds(&atlas, &camera).first().map(String::as_str) == Some("update.apply 2")
+    })
+    .await;
+    let mut told = false;
+    while let Ok(event) = events.try_recv() {
+        told |= matches!(event, Event::DeviceStatus { ref key } if *key == camera);
+    }
+    assert!(told, "hosts are told to re-read the status");
+
+    // The board restarts: the channel drops, Atlas looks again and reconnects.
+    board.boot("b2", -3600);
+    board.drop_channel.notify_waiters();
+    eventually("it reconnects", || *board.connects.lock().unwrap() >= 2).await;
+    board.write_and_push("boot");
+    eventually("the new boot's event arrives", || {
+        board_kinds(&atlas, &camera).first().map(String::as_str) == Some("boot 3")
+    })
+    .await;
+    watching.cancel();
+}
+
+#[tokio::test]
+async fn a_device_without_a_channel_is_polled_as_before() {
+    let board = Arc::new(SeqBoard::default());
+    board.boot("b1", 0);
+    let (atlas, _camera) = atlas_with(board.clone()).await;
+    let watching = atlas
+        .watch(WatchOptions {
+            debounce: std::time::Duration::from_millis(10),
+            fallback: std::time::Duration::from_secs(3600),
+        })
+        .unwrap();
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(*board.connects.lock().unwrap(), 0);
+    watching.cancel();
 }

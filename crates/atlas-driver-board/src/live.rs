@@ -33,6 +33,20 @@ pub(crate) fn resolve(identity_url: &str, path: &str) -> Option<String> {
         .find('/')
         .map_or(identity_url.len(), |index| scheme_end + index);
     let origin = &identity_url[..origin_end];
+    // `:<port>/path`: the same host, another port (the board's stream).
+    if let Some(rest) = path.strip_prefix(':') {
+        let (port, tail) = rest.split_at(rest.find('/').unwrap_or(rest.len()));
+        if port.is_empty() || !port.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let authority = &origin[scheme_end..];
+        // The host without its port; an IPv6 host keeps its brackets.
+        let host = match authority.rfind(':') {
+            Some(colon) if !authority[colon..].contains(']') => &authority[..colon],
+            _ => authority,
+        };
+        return Some(format!("{}{host}:{port}{tail}", &origin[..scheme_end]));
+    }
     Some(if path.starts_with('/') {
         format!("{origin}{path}")
     } else {
@@ -223,6 +237,23 @@ mod tests {
             resolve(base, "https://cam.local/x").as_deref(),
             Some("https://cam.local/x")
         );
+        assert_eq!(
+            resolve(base, ":5898/stream").as_deref(),
+            Some("http://10.0.0.5:5898/stream")
+        );
+        assert_eq!(
+            resolve(
+                "http://[fe80::1%25usb0]:5899/.well-known/pd-device",
+                ":5898/stream"
+            )
+            .as_deref(),
+            Some("http://[fe80::1%25usb0]:5898/stream")
+        );
+        assert_eq!(
+            resolve("http://board.local/.well-known/pd-device", ":5898/stream").as_deref(),
+            Some("http://board.local:5898/stream")
+        );
+        assert_eq!(resolve(base, ":x/stream"), None);
         assert_eq!(resolve(base, " "), None);
         assert_eq!(resolve("not a url", "/x"), None);
     }

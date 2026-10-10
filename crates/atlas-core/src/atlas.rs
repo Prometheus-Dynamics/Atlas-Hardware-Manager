@@ -78,6 +78,8 @@ pub(crate) struct State {
     /// How far each boot's clock was from this computer's (board minus
     /// here, seconds), by boot id, as seen while that boot answered.
     pub(crate) clock_offsets: HashMap<String, i64>,
+    /// Devices whose push channel is being followed (push.rs).
+    pub(crate) followed: HashSet<DeviceKey>,
 }
 
 pub(crate) struct Inner {

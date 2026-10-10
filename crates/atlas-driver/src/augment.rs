@@ -17,7 +17,7 @@ use async_trait::async_trait;
 
 use crate::{
     ActionsCapability, Capabilities, DeviceAction, DeviceEvent, DeviceStatus, DriverError,
-    EventPage, EventQuery, Identity, StatusCapability,
+    EventPage, EventQuery, Identity, PushSink, StatusCapability,
 };
 
 /// Extra capabilities for devices other drivers own.
@@ -161,6 +161,14 @@ impl StatusCapability for CombinedStatus {
                 .events(device, since, limit)
                 .await
                 .map_err(|_| err),
+        }
+    }
+
+    /// The owner's push channel, else the extra source's.
+    async fn watch(&self, device: &Identity, sink: PushSink) -> Result<bool, DriverError> {
+        match self.own.watch(device, sink.clone()).await {
+            Ok(false) => self.more.watch(device, sink).await,
+            other => other,
         }
     }
 

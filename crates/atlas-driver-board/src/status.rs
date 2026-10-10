@@ -19,7 +19,7 @@
 use async_trait::async_trait;
 use atlas_driver::{
     BootInfo, DeviceEvent, DeviceStatus, Drift, DriverError, EventPage, EventQuery, EventSource,
-    FanState, HardwareSnapshot, Identity, Metric, StatusCapability, TelemetryCapability,
+    FanState, HardwareSnapshot, Identity, Metric, PushSink, StatusCapability, TelemetryCapability,
     Temperature, UpdateState, metric_ids,
 };
 use serde::Deserialize;
@@ -201,6 +201,8 @@ pub(crate) struct BoardStatus {
     pub(crate) http: reqwest::Client,
     pub(crate) status_url: String,
     pub(crate) events_url: Option<String>,
+    /// The push channel (board-stream), when the board has one.
+    pub(crate) stream_url: Option<String>,
 }
 
 impl BoardStatus {
@@ -216,6 +218,13 @@ impl BoardStatus {
 impl StatusCapability for BoardStatus {
     async fn status(&self, _device: &Identity) -> Result<DeviceStatus, DriverError> {
         self.read().await
+    }
+
+    async fn watch(&self, _device: &Identity, sink: PushSink) -> Result<bool, DriverError> {
+        match &self.stream_url {
+            Some(url) => crate::stream::follow(&self.http, url, sink).await,
+            None => Ok(false),
+        }
     }
 
     async fn events(

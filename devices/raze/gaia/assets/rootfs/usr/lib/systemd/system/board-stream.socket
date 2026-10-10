@@ -1,0 +1,15 @@
+[Unit]
+Description=Board push channel (TCP 5898, GET /stream: events and update state as they happen)
+Documentation=file:/usr/bin/board-stream https://github.com/Prometheus-Dynamics/Atlas-Hardware-Manager/blob/main/docs/ota.md
+ConditionPathExists=/usr/bin/board-stream
+
+[Socket]
+ListenStream=5898
+Accept=yes
+# Viewers hold their connection: a few Atlas windows per computer.
+MaxConnections=8
+MaxConnectionsPerSource=4
+NoDelay=yes
+
+[Install]
+WantedBy=sockets.target

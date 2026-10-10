@@ -133,6 +133,18 @@ dest = "/usr/lib/systemd/system/board-hostname.service"
 origin = "static-asset"
 
 [[stage.files]]
+id = "raze-systemd-system-board-stream-socket"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-stream.socket"
+dest = "/usr/lib/systemd/system/board-stream.socket"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-stream-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-stream@.service"
+dest = "/usr/lib/systemd/system/board-stream@.service"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-systemd-system-board-http-socket"
 src = "@self/assets/rootfs/usr/lib/systemd/system/board-http.socket"
 dest = "/usr/lib/systemd/system/board-http.socket"
@@ -461,6 +473,8 @@ stage_files = [
   "raze-systemd-system-preset-70-board-preset",
   "raze-systemd-system-board-hostname-service",
   "raze-systemd-system-board-http-socket",
+  "raze-systemd-system-board-stream-socket",
+  "raze-systemd-system-board-stream-service",
   "raze-systemd-system-board-http-service",
   "raze-systemd-system-board-identity-service",
   "raze-systemd-system-board-usb-gadget-dhcp-service",

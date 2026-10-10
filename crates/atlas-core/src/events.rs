@@ -77,6 +77,11 @@ pub enum Event {
     DeviceHistory {
         key: DeviceKey,
     },
+    /// The device said its state changed (its push channel): re-read its
+    /// status now.
+    DeviceStatus {
+        key: DeviceKey,
+    },
 }
 
 pub(crate) struct EventBus {

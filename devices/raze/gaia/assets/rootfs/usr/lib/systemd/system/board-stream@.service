@@ -1,0 +1,27 @@
+[Unit]
+Description=Board push channel viewer
+CollectMode=inactive-or-failed
+
+[Service]
+ExecStart=/usr/bin/board-stream
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+# Read-only: it reads /data/board/events.jsonl and /run/board/update.json.
+# It runs while its viewer is connected (no RuntimeMaxSec) and ends when a
+# write to it fails (a keepalive every 10 s).
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+MemoryMax=16M
+TasksMax=4

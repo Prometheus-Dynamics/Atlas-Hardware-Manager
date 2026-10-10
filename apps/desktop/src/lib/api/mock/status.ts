@@ -125,6 +125,8 @@ function boardFor(device: SimDevice): Board {
 
 function changed(device: SimDevice) {
   emit({ type: "device-history", key: device.key });
+  // As board-stream does: the board says its state changed.
+  emit({ type: "device-status", key: device.key });
 }
 
 /** Moves the simulated update along: stage, restart, trial, kept. */

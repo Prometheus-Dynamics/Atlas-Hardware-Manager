@@ -38,4 +38,5 @@ imports = [
   "./runtime.toml",
   "./lemnos.toml",
   "./board-agent.toml",
+  "./board-stream.toml",
 ]

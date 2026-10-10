@@ -406,9 +406,34 @@ pub struct EventPage {
     pub newest_seq: Option<u64>,
 }
 
+/// What a device's push channel said: something changed, so re-read it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum StatusPush {
+    /// Connected (again): the device's boot and newest event seq.
+    Hello {
+        boot_id: String,
+        newest_seq: Option<u64>,
+    },
+    /// A new event in its log.
+    Event(Box<DeviceEvent>),
+    /// Its update state changed; the new state (`staging`, `trying`, …).
+    Update { state: String },
+}
+
+/// Where a push channel's messages go.
+pub type PushSink = std::sync::Arc<dyn Fn(StatusPush) + Send + Sync>;
+
 /// A device that reports its state and, optionally, an event log.
 #[async_trait]
 pub trait StatusCapability: Send + Sync {
+    /// Holds the device's push channel open, passing each message to `sink`,
+    /// until it ends (`Ok(true)`: the device went or closed it; reconnect
+    /// later) or can't be opened (an error). `Ok(false)` at once: no push
+    /// channel; the caller polls.
+    async fn watch(&self, _device: &Identity, _sink: PushSink) -> Result<bool, DriverError> {
+        Ok(false)
+    }
+
     async fn status(&self, device: &Identity) -> Result<DeviceStatus, DriverError>;
 
     /// A page of the event log. By default, [`events`](Self::events) by

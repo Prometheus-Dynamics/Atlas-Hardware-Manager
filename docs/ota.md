@@ -349,6 +349,20 @@ through board-agent, or someone typing on the board.
   oldest events after a seq, to page forward; both give the board's clock,
   boot and newest seq) on the identity endpoint (port 5899), read-only and
   listed in the identity's `endpoints`.
+- **Push channel.** `board-stream` (crates/board-stream, socket-activated per
+  connection on TCP 5898, read-only, listed as `"stream":":5898/stream"` in
+  the identity's `endpoints`): `GET /stream[?topics=events,update][&after_seq=<n>]`
+  answers with Server-Sent Events: a `hello` (boot id, newest seq, time),
+  the events after `after_seq` (or `Last-Event-ID`), the update state, then
+  every new event (`id: <seq>`) and update-state change as it is written,
+  and a keepalive every 10 s. It looks at the files every 200 ms (size and
+  mtime), so nothing depends on inotify. While Atlas watches, it follows
+  each board's stream: a pushed event or reconnect fetches the board's new
+  events (by seq) and tells the UI to re-read its status at once; an
+  update-state change also re-scans, so the identity is current. A stream
+  that drops (a reboot) re-scans at once and then every 2 s for 2 minutes,
+  so the board is seen going and coming back; boards without the stream are
+  polled as before.
 - **Atlas.** atlas-driver-board reads both (a `status` capability; without a
   metrics endpoint the temperatures and fan are its telemetry). atlas-core
   keeps each board's events (by board serial, at most 500, saved with the

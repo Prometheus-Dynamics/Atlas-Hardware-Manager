@@ -1,0 +1,46 @@
+# Raze: board-stream, the board's push channel (crates/board-stream in this
+# Atlas repository; docs/ota.md, "Board awareness"): one Server-Sent Events
+# stream per connection on TCP 5898 with the board's new events and update
+# state, so Atlas learns of an update, a reboot or a rollback as it happens.
+# A static aarch64 musl binary built like board-agent (the same Docker
+# image), installed as /usr/bin/board-stream; its socket and service units
+# are staged by runtime.toml and enabled by 70-board.preset. Read-only.
+gaia_version = ">=2.0.0"
+
+[providers.rust]
+allow_nested_build = true
+
+[[artifacts]]
+id = "board-stream"
+kind = "rust"
+source = "atlas"
+package = "board-stream"
+target = "aarch64-unknown-linux-musl"
+# Cargo.toml: release, stripped.
+profile = "device"
+target_name = "board-stream"
+install_name = "board-stream"
+install_class = "binary"
+install_dest_hint = "/usr/bin/board-stream"
+output_path = "${workspace.out_dir}/artifacts/board-stream/board-stream"
+
+[artifacts.execution]
+backend = "docker"
+
+[artifacts.execution.docker]
+image = "board-aarch64-musl"
+dockerfile = "@self/docker/aarch64-musl.Dockerfile"
+context = "@self/docker"
+
+[[install]]
+id = "install-board-stream"
+artifact = "board-stream"
+dest = "/usr/bin/board-stream"
+replace = true
+mode = 493 # 0755
+
+[image]
+kind = "buildroot"
+
+[image.feed]
+install_entries = ["install-board-stream"]

@@ -8,6 +8,7 @@ members = [
     "crates/atlas-driver-board",
     "crates/atlas-driver-orion",
     "crates/board-agent",
+    "crates/board-stream",
     "crates/atlas-image-server",
     "crates/atlas-release",
     "crates/atlas-usbboot",
