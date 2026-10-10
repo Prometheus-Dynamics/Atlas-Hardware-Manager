@@ -265,14 +265,20 @@ function hardwareFor(device: SimDevice, now: number, celsius: number): HardwareS
         readings: [{ name: "temperature", value: celsius, unit: "°C" }],
         controls: [],
       },
-      {
-        id: "usb-a-power",
-        class: "power",
-        model: "tps2553",
-        status: "missing",
-        readings: [],
-        controls: [],
-      },
+      ...(["usb-a-power", "usb-c-power"] as const).map((id) => {
+        const on = writes.get(writeKey(device.key, id, "power.on")) ?? 1;
+        return {
+          id,
+          class: "power-switch",
+          model: "gpio-power-switch",
+          status: "available" as const,
+          readings: [{ name: "power.on", value: on, unit: "" }],
+          controls: [
+            { name: "power.on", value: on, min: 0, max: 1, unit: "" },
+            { name: "power.reset", value: 0, min: 0, max: 10000, unit: "ms" },
+          ],
+        };
+      }),
     ],
   };
 }

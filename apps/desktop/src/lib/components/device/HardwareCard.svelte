@@ -43,7 +43,8 @@
     // A reading with no value (a fan without a tachometer) isn't shown.
     return live && live.count > 0 ? live.latest() : device.readings.filter((reading) => reading.value !== null);
   });
-  const entries = $derived(groupReadings(readings));
+  // A reading its control row already shows (a power switch's power.on) isn't repeated.
+  const entries = $derived(groupReadings(readings.filter((r) => !device.controls.some((c) => c.name === r.name))));
   const noSeries = { values: [], times: [] };
   const seriesFor = (name: string) => (live ? noSeries : seriesOf(name));
   const rate = $derived.by(() => {
