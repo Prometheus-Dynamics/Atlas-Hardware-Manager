@@ -2,8 +2,9 @@
 // hardware.rs): samples of `offset`, `clockwise`, `brightness` and then
 // `led.0`..`led.<n>`, each logical LED's colour as 0xWWRRGGBB, exactly as
 // lemnosd wrote it. Logical LED 0 is the ring's top, physical LED `offset`;
-// clockwise means logical LEDs run with the physical indices (assumed: how
-// lemnosd maps them).
+// "clockwise" (Lemnos `cw`) means logical LEDs run with increasing physical
+// (wire) indices, whatever that looks like from the front: physical =
+// (offset ± logical) mod n, as lemnos-board's gravity.rs maps them.
 import type { LiveSeries } from "./live.ts";
 
 /** One frame in physical order, as 0xRRGGBB (white folded in). */

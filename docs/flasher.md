@@ -99,6 +99,12 @@ firmware things it needs itself (below).
 
 (The ring's overlay line comes from gen-raze, like raze-device.txt.)
 
+boot.img must also carry `overlays/bcm2712d0.dtbo`, as the OS's boot
+partition does: the firmware applies it by itself on D0-stepping BCM2712s,
+and without it the kernel takes an SError in `brcmstb_pull_config_set`
+(`pinctrl_bind_pins`) 0.1 s into boot (raze-flasher 0.1.0 to 0.1.2, found
+through pstore).
+
 ### cmdline.txt
 
     console=serial0,115200 console=tty1 rdinit=/init loglevel=4 quiet

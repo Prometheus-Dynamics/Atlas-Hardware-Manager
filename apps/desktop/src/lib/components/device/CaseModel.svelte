@@ -146,7 +146,10 @@
         // takes the colour of the LEDs nearest its angle around the lens
         // (blended between the two), over the plastic's own dim white.
         // Physical LED 0 sits at RING_LED0_DEG from +x toward +y, the rest
-        // following that way (as the manifest's gravity note has it).
+        // following that way, one step per 360/n degrees: the Raze's gravity
+        // settings (gravity_plane ["x", "y"], gravity_led0_deg 112.5) as
+        // lemnos-board's gravity.rs reads them, checked live on a board. A
+        // board with other gravity axes would need them here.
         const RING_LED0_DEG = 112.5;
         const diffusers: InstanceType<typeof THREE.Mesh>[] = [];
         gltf.scene.traverse((node) => {
