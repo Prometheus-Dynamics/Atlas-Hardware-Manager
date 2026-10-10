@@ -3,10 +3,12 @@
 //! Accept=yes): it reads one `GET /stream` request on stdin and streams
 //! Server-Sent Events on stdout until the viewer goes. Read-only.
 
+pub mod changes;
 #[cfg(unix)]
 pub mod hardware;
 pub mod request;
 pub mod stream;
 
+pub use changes::Changes;
 pub use request::{Refusal, StreamRequest, read_request};
 pub use stream::{Paths, Stream, boot_id, numbered_events};

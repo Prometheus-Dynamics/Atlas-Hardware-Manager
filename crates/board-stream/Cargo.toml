@@ -22,5 +22,9 @@ serde_json.workspace = true
 [target.'cfg(unix)'.dependencies]
 lemnos-ipc.workspace = true
 
+# inotify, so an idle stream sleeps instead of looking at the files.
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { workspace = true, features = ["inotify", "poll"] }
+
 [lints]
 workspace = true

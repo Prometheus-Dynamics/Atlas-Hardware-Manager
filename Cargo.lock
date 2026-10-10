@@ -598,6 +598,7 @@ name = "board-stream"
 version = "0.1.0"
 dependencies = [
  "lemnos-ipc",
+ "nix",
  "serde_json",
 ]
 
