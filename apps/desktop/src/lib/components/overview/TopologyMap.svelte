@@ -30,11 +30,14 @@
   const NODE_H = $derived(Math.min(54, Math.max(36, ROW_H - 12)));
   // Narrow nodes drop the icon tile so the name keeps the room.
   const compact = $derived(NODE_W < 170);
-  const colW = $derived(map.depth === 0 ? 0 : Math.max(NODE_W + GAP, (width - NODE_W - PAD * 2) / map.depth));
+  // Columns spread with the width, up to a point; a wide window centres the
+  // tree rather than stretching its wires across the screen.
+  const colW = $derived(map.depth === 0 ? 0 : Math.min(NODE_W + 260, Math.max(NODE_W + GAP, (width - NODE_W - PAD * 2) / map.depth)));
+  const left = $derived(Math.max(PAD, (width - (map.depth * colW + NODE_W)) / 2));
   const height = $derived(map.rows * ROW_H + PAD * 2);
   const byId = $derived(new Map(map.nodes.map((n) => [n.id, n])));
 
-  const x = (n: MapNode) => PAD + n.depth * colW;
+  const x = (n: MapNode) => left + n.depth * colW;
   const y = (n: MapNode) => PAD + n.row * ROW_H + ROW_H / 2;
 
   function path(from: MapNode, to: MapNode): string {
