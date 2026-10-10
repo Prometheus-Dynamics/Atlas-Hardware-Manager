@@ -53,6 +53,35 @@ fn partitions(disk: &Disk) -> Vec<String> {
     parts
 }
 
+/// Unmounts everything on the disk, keeping it attached (a Pi gadget disk
+/// stays reachable for its console). Best effort: what the desktop mounted
+/// is unmounted, what fails is left.
+pub fn unmount_all(disk: &Disk) -> Result<(), BlockError> {
+    #[cfg(target_os = "linux")]
+    {
+        for part in partitions(disk) {
+            let _ = run(
+                "udisksctl",
+                &["unmount", "--no-user-interaction", "-b", &part],
+            );
+        }
+        Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let node = disk
+            .path
+            .to_string_lossy()
+            .replace("/dev/rdisk", "/dev/disk");
+        run("diskutil", &["unmountDisk", &node]).map(|_| ())
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = disk;
+        Ok(())
+    }
+}
+
 /// Unmounts everything on the disk and powers it off, so nothing can mount
 /// it again until it is replugged. Best effort per partition; fails only
 /// when the disk could not be powered off.

@@ -74,6 +74,29 @@ fn udev_check() -> Option<HealthCheck> {
                     .is_ok_and(|text| text.contains("0a5c") && text.contains("2711"))
             })
     });
+    // Rules from before the gadget console line still USB-boot, but Atlas
+    // can't restart the board after a flash without it (unless in dialout).
+    let console = dirs.iter().any(|dir| {
+        std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|entry| {
+                std::fs::read_to_string(entry.path())
+                    .is_ok_and(|text| text.contains("0a5c") && text.contains("0104"))
+            })
+    });
+    if found && !console {
+        return Some(
+            HealthCheck::warning(
+                "usbboot.udev",
+                "USB boot permissions",
+                "The udev rule predates the flash restart, so a flashed board needs a power cycle.",
+                "Press Fix to update it (one password prompt).",
+            )
+            .with_fix_action(INSTALL_USB_ACCESS),
+        );
+    }
     Some(if found {
         HealthCheck::ok(
             "usbboot.udev",

@@ -371,6 +371,14 @@ async fn refresh_identity(
                 });
             }
         }
+        // A board flashed in USB boot has left it (restarted into the new
+        // image, or waiting for a power cycle): nothing to re-read here.
+        Ok(Err(_)) if was_in_recovery(inner, key) => log_line(
+            inner,
+            job,
+            key,
+            "the board left USB boot; it shows up again once the new image starts".into(),
+        ),
         Ok(Err(error)) => log_line(
             inner,
             job,
@@ -384,6 +392,14 @@ async fn refresh_identity(
             "device did not answer after the update".into(),
         ),
     }
+}
+
+fn was_in_recovery(inner: &Inner, key: &DeviceKey) -> bool {
+    inner
+        .state()
+        .inventory
+        .get(key)
+        .is_some_and(|record| record.identity.mode == atlas_driver::DeviceMode::Recovery)
 }
 
 /// How long a cancelled device may stay silent before Atlas lets it go.

@@ -21,6 +21,10 @@ use crate::boot_files::find_boot_files;
 pub(crate) const NEXT_STEP: &str =
     "next: power-cycle the board without holding its boot button to start the new image";
 
+/// The last log line when Atlas restarted the board itself.
+pub(crate) const RESTARTED: &str = "next: the board is starting the new image; if it comes back in USB \
+     boot, release its boot button and power-cycle it";
+
 /// How long the eMMC may take to appear as a disk after USB boot.
 const DISK_APPEAR_TIMEOUT: Duration = Duration::from_secs(90);
 const DISK_POLL: Duration = Duration::from_secs(1);
@@ -392,6 +396,31 @@ impl UpdateCapability for RpiRecovery {
                 Ok(Err(error)) => progress.log(format!("could not add your SSH key: {error}")),
                 Err(error) => progress.log(format!("could not add your SSH key: {error}")),
             }
+        }
+        // Restart the board into the new image through the gadget's serial
+        // console: first unmount what the desktop may have mounted, then
+        // the board syncs the eMMC and reboots. The one-time USB boot order
+        // has cleared itself, so it boots the eMMC (unless the boot button
+        // is still held).
+        let target = disk.clone();
+        let restarted = tokio::task::spawn_blocking(move || {
+            let _ = atlas_blockdev::unmount_all(&target);
+            crate::console::restart(&target.name)
+        })
+        .await
+        .map_err(|error| error.to_string())
+        .and_then(|result| result);
+        match restarted {
+            Ok(tty) => {
+                progress.log(format!(
+                    "restarted the board into the new image (through its USB console, {tty})"
+                ));
+                progress.log(RESTARTED);
+                return Ok(UpdateOutcome::Verified {
+                    version: release.version.clone(),
+                });
+            }
+            Err(reason) => progress.log(format!("could not restart the board itself: {reason}")),
         }
         // Eject before the desktop auto-mounts the fresh partitions: a
         // mount that is still there when the board loses power leaves the

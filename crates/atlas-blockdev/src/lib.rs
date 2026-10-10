@@ -23,5 +23,7 @@ pub use error::BlockError;
 pub use image::{ImageFormat, detect_format};
 pub use messages::HelperMessage;
 pub use platform::list_disks;
-pub use session::{eject, mount_read_only, open_folder, read_boot_file, write_boot_file};
+pub use session::{
+    eject, mount_read_only, open_folder, read_boot_file, unmount_all, write_boot_file,
+};
 pub use writer::{WriteOptions, WriteProgress, WriteReport, write_image};

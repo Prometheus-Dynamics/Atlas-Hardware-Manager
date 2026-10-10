@@ -1,3 +1,6 @@
 # Installed by Atlas Hardware Manager: lets the logged-in user USB-boot
 # Raspberry Pi boards (BCM2835/2837/2711/2712 boot ROMs) without root.
 SUBSYSTEM=="usb", ATTR{idVendor}=="0a5c", ATTR{idProduct}=="2711|2712|2763|2764", MODE="0660", TAG+="uaccess"
+# The mass-storage gadget's serial console, so Atlas can restart a board
+# into its new image after a flash.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0a5c", ATTRS{idProduct}=="0104", TAG+="uaccess"

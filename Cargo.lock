@@ -396,6 +396,7 @@ dependencies = [
  "atlas-devices",
  "atlas-driver",
  "atlas-usbboot",
+ "nix",
  "serde_json",
  "sha2 0.11.0",
  "tokio",
