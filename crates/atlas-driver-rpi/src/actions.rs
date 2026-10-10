@@ -204,6 +204,7 @@ mod tests {
             boot_file_dirs: Vec::new(),
             catalog: Arc::new(DeviceCatalog::default()),
             ssh_keys: Default::default(),
+            known_hosts: None,
         });
         let with_eeprom = RpiActions::new(config.clone(), true);
         assert_eq!(

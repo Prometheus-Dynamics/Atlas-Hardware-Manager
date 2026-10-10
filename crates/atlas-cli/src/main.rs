@@ -178,6 +178,8 @@ fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
                     boot_file_dirs,
                     catalog: catalog.clone(),
                     ssh_keys,
+                    known_hosts: dirs::data_dir()
+                        .map(|data| data.join("atlas").join("known_hosts")),
                 })))
                 .link_source(Arc::new(UsbBootLinks))
                 .link_source(Arc::new(NetworkLinks))

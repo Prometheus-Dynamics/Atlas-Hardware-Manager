@@ -76,6 +76,19 @@ printf '%s' "$out" | grep -q 'INA238 (power-monitor) at 3/0x40: chip id 0x4955' 
 mv "$S/bus/i2c/devices/i2c-3" "$S/bus/i2c/devices/i2c-1"
 sed -i.bak 's/^3 /1 /; s/^1 0x40 0xfe 0x4955$/1 0x40 0xfe 0x4954/' "$T/i2c" "$T/regs"
 
+echo "the fan's tach: none on this revision (a counter reading 0 is ignored), read where it's wired"
+echo 0 > "$S/class/hwmon/hwmon2/fan1_input"
+out=$(selftest --json)
+check_status "$out" fan ok
+check_message "$out" fan | grep -q "no speed sensor on this revision" || fail "an unwired tach: $(check_message "$out" fan)"
+check_data "$out" fan | grep -q '"tachometer": false, "tachometer_wired": false' || fail "no speed: $(check_data "$out" fan)"
+mkdir -p "$T/etc"
+echo HW_FAN_TACH=1 > "$T/etc/hardware.env"
+echo 1500 > "$S/class/hwmon/hwmon2/fan1_input"
+out=$(selftest --json)
+check_message "$out" fan | grep -q " 1500 1500 1500 1500 1500 rpm" || fail "a wired tach is read: $(check_message "$out" fan)"
+rm -f "$T/etc/hardware.env" "$S/class/hwmon/hwmon2/fan1_input"
+
 echo "the fan is handed back: state and governor as before"
 [ "$(cat "$S/class/thermal/cooling_device1/cur_state")" = 1 ] || fail "cur_state not restored"
 [ "$(cat "$S/class/thermal/thermal_zone0/mode")" = enabled ] || fail "thermal zone left disabled"

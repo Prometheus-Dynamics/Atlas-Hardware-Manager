@@ -35,6 +35,7 @@ pub fn register_hardware(
             boot_file_dirs,
             catalog: catalog.clone(),
             ssh_keys: ssh_keys.clone(),
+            known_hosts: ssh_access.get().known_hosts,
         })))
         .link_source(Arc::new(UsbBootLinks))
         .link_source(Arc::new(NetworkLinks))

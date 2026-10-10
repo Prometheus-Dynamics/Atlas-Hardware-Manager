@@ -87,6 +87,9 @@ pub struct RpiConfig {
     pub catalog: Arc<DeviceCatalog>,
     /// Keys written to the boot partition after a flash, when set.
     pub ssh_keys: SshKeys,
+    /// Atlas's SSH known_hosts: a flash drops the board's pinned host key
+    /// (`board-<family>-<serial>`), since the new image makes a new one.
+    pub known_hosts: Option<PathBuf>,
 }
 
 /// The single link for every Pi in USB boot mode on this computer.
@@ -408,6 +411,7 @@ mod tests {
             boot_file_dirs: Vec::new(),
             catalog: Arc::new(catalog),
             ssh_keys: Default::default(),
+            known_hosts: None,
         });
         let gadget = StorageGadget {
             location: "001-4".into(),

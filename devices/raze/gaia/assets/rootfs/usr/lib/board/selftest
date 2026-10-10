@@ -297,6 +297,9 @@ check_fan() {
 		if [ "$pwm" != - ] && [ -n "$expected" ] && [ "$pwm" != "$expected" ]; then
 			mismatch="$mismatch state $s gave $pwm, not $expected;"
 		fi
+		# A revision without a wired tach (HW_FAN_TACH=0) has no speed to
+		# read; an older image may still show its counter's 0.
+		[ "${HW_FAN_TACH:-1}" = 1 ] || rpm=-
 		if [ "$rpm" != - ]; then
 			tach=true
 			rpms="$rpms $rpm"
@@ -306,7 +309,7 @@ check_fan() {
 	released=true
 	hw_fan_release "$FAN_ORIG" || released=false
 	FAN_TOUCHED=0
-	data="$data,\"levels\":[$(printf '%s' "$levels" | tr ' ' ',')],\"steps\":[$steps],\"tachometer\":$tach,\"handed_back\":$released}"
+	data="$data,\"levels\":[$(printf '%s' "$levels" | tr ' ' ',')],\"steps\":[$steps],\"tachometer\":$tach,\"tachometer_wired\":$([ "${HW_FAN_TACH:-1}" = 1 ] && echo true || echo false),\"handed_back\":$released}"
 	[ "$released" = true ] || mismatch="$mismatch the hand-back to the thermal governor failed;"
 	nlevels=$(set -- $levels; echo $#)
 	if [ "$((max + 1))" != "$nlevels" ]; then
@@ -323,7 +326,12 @@ check_fan() {
 	elif [ "$tach" = true ]; then
 		result fan ok "states 0-$max set duty ${levels} as the package says;$rpms rpm; back to automatic" "$data"
 	else
-		result fan ok "states 0-$max set duty ${levels} as the package says; no tachometer${answer:+, the operator heard it}; back to automatic" "$data"
+		if [ "${HW_FAN_TACH:-1}" = 1 ]; then
+			nospeed="no tachometer"
+		else
+			nospeed="no speed sensor on this revision"
+		fi
+		result fan ok "states 0-$max set duty ${levels} as the package says; $nospeed${answer:+, the operator heard it}; back to automatic" "$data"
 	fi
 }
 

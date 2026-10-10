@@ -393,6 +393,14 @@ commit; the commits are listed per area.
   ids through lemnosd by that bus name (without lemnosd it can't be probed).
   The vendored Lemnos board schema also takes `pio-i2c:` buses, which
   lemnos-board accepts but its schema file doesn't yet.
+- **No fan speed on Gen 1:** its tach line isn't hooked up properly, so the
+  RP1 PWM's counter read 0 rpm while the fan spun. The manifest records the
+  tachometer per revision (`fan.tachometer.by_revision`, gen1 false); the
+  image follows the default revision and loads `raze-fan,notach`, a dormant
+  fragment that sets the fan's `rpm-regmap` to 0, so pwm-fan offers no
+  `fan1_input`: lemnosd's fan has no speed value, and the self-test says
+  "no speed sensor on this revision" (ignoring a counter's 0 on an older
+  image). A revision with a wired tach drops `notach`.
 - **Lemnos 5b1d38c:** lemnosd holds the trial ember until update.json's
   `phase` is `checking`, and its board schema takes `pio-i2c:` buses, so
   the vendored copy is upstream's again.

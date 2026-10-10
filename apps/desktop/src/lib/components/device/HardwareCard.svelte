@@ -36,7 +36,8 @@
   // Live: the newest streamed values (re-read on each tick), no trend tiles.
   const readings = $derived.by(() => {
     void tick;
-    return live && live.count > 0 ? live.latest() : device.readings;
+    // A reading with no value (a fan without a tachometer) isn't shown.
+    return live && live.count > 0 ? live.latest() : device.readings.filter((reading) => reading.value !== null);
   });
   const entries = $derived(groupReadings(readings));
   const noSeries = { values: [], times: [] };

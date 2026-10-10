@@ -25,6 +25,41 @@ pub(crate) const NEXT_STEP: &str =
 pub(crate) const RESTARTED: &str = "next: the board is starting the new image; if it comes back in USB \
      boot, release its boot button and power-cycle it";
 
+/// Drops the known_hosts lines Atlas pinned for the board with `serial`
+/// (its `HostKeyAlias`, `board-<family>-<serial>`, holds the serial).
+/// Returns how many went. A missing file has nothing to forget.
+pub(crate) fn forget_host_keys(path: &std::path::Path, serial: &str) -> std::io::Result<usize> {
+    let serial = serial.trim().to_ascii_lowercase();
+    // Too short a serial could match another board's.
+    if serial.len() < 8 || !serial.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Ok(0);
+    }
+    let text = match std::fs::read_to_string(path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(error),
+    };
+    let ours = |line: &str| {
+        line.split_whitespace().next().is_some_and(|hosts| {
+            hosts.split(',').any(|host| {
+                host.starts_with("board-") && host.to_ascii_lowercase().contains(&serial)
+            })
+        })
+    };
+    let kept: Vec<&str> = text.lines().filter(|line| !ours(line)).collect();
+    let gone = text.lines().count() - kept.len();
+    if gone > 0 {
+        let tmp = path.with_extension("tmp");
+        let mut out = kept.join("\n");
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        std::fs::write(&tmp, out)?;
+        std::fs::rename(&tmp, path)?;
+    }
+    Ok(gone)
+}
+
 /// How long the eMMC may take to appear as a disk after USB boot.
 const DISK_APPEAR_TIMEOUT: Duration = Duration::from_secs(90);
 const DISK_POLL: Duration = Duration::from_secs(1);
@@ -247,6 +282,8 @@ impl UpdateCapability for RpiRecovery {
         let before: BTreeSet<PathBuf> = disks().await?.into_iter().map(|disk| disk.path).collect();
         progress.log(format!("boot files: {}", files.dir().display()));
 
+        // The board's serial (the boot ROM's), to forget its old host key.
+        let mut board_serial = storage_port(device).map(|_| device.key.serial.to_string());
         let disk = if let Some(port) = storage_port(device) {
             // A previous USB boot already exposed the eMMC; write it directly.
             progress.step_started(UpdateStep::Transfer);
@@ -296,6 +333,7 @@ impl UpdateCapability for RpiRecovery {
             })?;
             if let Some(serial) = &booted.serial {
                 progress.log(format!("board serial {serial}"));
+                board_serial = Some(serial.clone());
             }
             if let Some(package) = device
                 .attributes
@@ -397,6 +435,16 @@ impl UpdateCapability for RpiRecovery {
                 Err(error) => progress.log(format!("could not add your SSH key: {error}")),
             }
         }
+        // The new image makes a new SSH host key on its first boot: forget
+        // the old one, or the next SSH to the board is refused.
+        if let (Some(path), Some(serial)) = (&self.config.known_hosts, &board_serial) {
+            match forget_host_keys(path, serial) {
+                Ok(0) => {}
+                Ok(_) => progress
+                    .log("forgot the board's old SSH host key (the new image makes its own)"),
+                Err(error) => progress.log(format!("could not update {}: {error}", path.display())),
+            }
+        }
         // Restart the board into the new image through the gadget's serial
         // console: first unmount what the desktop may have mounted, then
         // the board syncs the eMMC and reboots. The one-time USB boot order
@@ -492,6 +540,31 @@ mod tests {
         assert_eq!(plan.concurrency, Concurrency::Exclusive("usb-boot".into()));
         assert!(plan.summary.contains("1.5 GB"));
         assert_eq!(plan.steps.len(), 4);
+    }
+
+    #[test]
+    fn a_flash_forgets_only_that_boards_host_key() {
+        let dir = std::env::temp_dir().join(format!("atlas-known-hosts-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("known_hosts");
+        std::fs::write(
+            &path,
+            "board-raze-a317bcbee5226d57 ssh-ed25519 AAAA1\nboard-raze-0011223344556677 ssh-ed25519 AAAA2\n10.0.0.2 ssh-ed25519 AAAA3\n",
+        )
+        .unwrap();
+        assert_eq!(forget_host_keys(&path, "e5226d57").unwrap(), 1);
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "board-raze-0011223344556677 ssh-ed25519 AAAA2\n10.0.0.2 ssh-ed25519 AAAA3\n"
+        );
+        assert_eq!(forget_host_keys(&path, "e5226d57").unwrap(), 0, "once");
+        assert_eq!(
+            forget_host_keys(&path, "beef").unwrap(),
+            0,
+            "too short to be sure"
+        );
+        assert_eq!(forget_host_keys(&dir.join("none"), "e5226d57").unwrap(), 0);
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     #[test]

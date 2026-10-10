@@ -3,7 +3,7 @@
  * Raze: CM5 fan on RP1 PWM1 channel 3, driven by the kernel thermal governor
  * (pwm-fan + the CM5 cpu thermal trips). No userspace daemon is needed.
  *
- * Load:   dtoverlay=raze-fan[,<param>=<val>]
+ * Load:   dtoverlay=raze-fan[,<param>=<val>][,notach]
  *
  * Replaces the old helios-fan-overlays.sh, which wrote four base64 .dtbo blobs
  * into configfs at runtime and hard-coded the RP1 PWM phandle (0x62). Values
@@ -27,6 +27,13 @@
  * 83 %, 245 = 96 %, then 100 %. The trip temperatures are the base DT's and can
  * be tuned with the base dtparams fan_temp0..3 (put them before any
  * dtoverlay= line).
+ *
+ * Tachometer: pwm-fan reads the speed from the RP1 PWM's pulse counter
+ * (rpm-regmap, from the base DT) as hwmon fan1_input. notach enables a
+ * fragment that sets rpm-regmap to 0 (a literal, not a phandle the firmware
+ * would resolve), so pwm-fan finds no counter and offers no speed: for a
+ * revision whose tach line isn't wired (Gen 1, where it reads 0 rpm while
+ * the fan spins).
  */
 /dts-v1/;
 /plugin/;
@@ -53,6 +60,13 @@
 		};
 	};
 
+	fragment@2 {
+		target = <&fan>;
+		__dormant__ {
+			rpm-regmap = <0>;
+		};
+	};
+
 	__overrides__ {
 		level0 = <&fan_props>, "cooling-levels:0";
 		level1 = <&fan_props>, "cooling-levels:4";
@@ -61,5 +75,6 @@
 		level4 = <&fan_props>, "cooling-levels:16";
 		period_ns = <&fan_props>, "pwms:8";
 		polarity = <&fan_props>, "pwms:12";
+		notach = <0>, "+2";
 	};
 };

@@ -23,17 +23,24 @@ export class LiveSeries {
   count = 0;
   /** This computer's clock (ms) when the newest sample arrived, to tell when one was read. */
   arrivedMs = 0;
+  /** Channels that have had a value: one that never has (a fan without a tachometer) isn't shown. */
+  readonly seen: boolean[];
 
   constructor(device: LiveDevice) {
     this.id = device.id;
     this.channels = device.channels;
     this.period_ms = device.period_ms ?? 0;
     this.v = device.channels.map(() => new Float64Array(CAPACITY).fill(Number.NaN));
+    this.seen = device.channels.map(() => false);
   }
 
   push(t_us: number, values: (number | null)[]) {
     this.t[this.head] = t_us;
-    for (let c = 0; c < this.v.length; c++) this.v[c][this.head] = values[c] ?? Number.NaN;
+    for (let c = 0; c < this.v.length; c++) {
+      const value = values[c] ?? Number.NaN;
+      this.v[c][this.head] = value;
+      if (!Number.isNaN(value)) this.seen[c] = true;
+    }
     this.head = (this.head + 1) % CAPACITY;
     this.count = Math.min(this.count + 1, CAPACITY);
     this.arrivedMs = Date.now();
@@ -68,17 +75,20 @@ export class LiveSeries {
   /** The newest value of each channel, as readings. */
   latest(): HardwareReading[] {
     const at = this.count ? this.index(this.count - 1) : -1;
-    return this.channels.map((channel, c) => ({
-      name: channel.name,
-      unit: channel.unit,
-      value: at >= 0 && !Number.isNaN(this.v[c][at]) ? this.v[c][at] : null,
-    }));
+    return this.channels
+      .map((channel, c) => ({
+        name: channel.name,
+        unit: channel.unit,
+        value: at >= 0 && !Number.isNaN(this.v[c][at]) ? this.v[c][at] : null,
+      }))
+      .filter((_, c) => this.seen[c]);
   }
 
   /** The channels grouped by unit (one chart each), in order. */
   groups(): { unit: string; channels: number[] }[] {
     const groups: { unit: string; channels: number[] }[] = [];
     this.channels.forEach((channel, c) => {
+      if (!this.seen[c]) return;
       const group = groups.find((g) => g.unit === channel.unit);
       if (group) group.channels.push(c);
       else groups.push({ unit: channel.unit, channels: [c] });

@@ -26,8 +26,12 @@ dtoverlay=ws2812-pio,gpio=13,num_leds=16,brightness=255,dev_name=leds%d
 # External USB-A and USB-C port power, held on by the kernel.
 dtoverlay=raze-usb-power
 
-# Fan, driven by the kernel thermal governor.
-dtoverlay=raze-fan
+# >>> gen-raze: fan (generated from manifest.json by devices/tools/gen-raze.py; do not edit)
+# Fan, driven by the kernel thermal governor. No tachometer: gen1's isn't
+# wired, so the fan offers no speed rather than 0 rpm (the image follows the
+# default revision; boards carry no revision marker yet).
+dtoverlay=raze-fan,notach
+# <<< gen-raze
 
 # GPU (V3D) and display (KMS) drivers.
 dtoverlay=vc4-kms-v3d-pi5

@@ -235,6 +235,11 @@
       "thermal_zone": "cpu-thermal",
       "cooling_device_type": "pwm-fan",
       "hwmon_name": "pwmfan",
+      "tachometer": {
+        "source": "the RP1 PWM's pulse counter (the base device tree's rpm-regmap on the fan node)",
+        "by_revision": { "gen1": false },
+        "notes": "Per hardware revision: true reads the fan's speed, false leaves the fan without a speed channel (the raze-fan overlay's notach), so nothing reports 0 rpm for a spinning fan. Gen 1's tach line isn't hooked up properly (a known issue). A revision not listed reads it. One image serves every revision and boards carry no revision marker yet, so the image follows the default revision (gen1)."
+      },
       "overlay_params": [
         "level0..level4",
         "period_ns",
@@ -255,6 +260,7 @@
         "cooling_levels": { "by": "Mathias (user)", "date": "2026-10-06", "method": "cooling state 1 at 58 C read back 83 % (212/255) on a Raze Gen 1 (image 1.0.10)" },
         "min_level": { "by": "Mathias (user)", "date": "2026-10-06", "method": "chosen by the user: a 70 % floor keeps air moving" },
         "trips_c": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); step_wise governor without polling; trips 50/60/67.5/75 C plus a 110 C critical trip" },
+        "tachometer.by_revision": { "by": "Mathias (user) and the HeliOS coordinator", "date": "2026-10-10", "method": "self-test on a Raze Gen 1 (r20): 0 rpm at every fan state while the fan spun; the user confirmed the Gen 1 tach isn't hooked up properly" },
         "cooling_device_type": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); the cooling device type is pwm-fan" },
         "hwmon_name": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); hwmon name pwmfan, driver pwm-fan; no tachometer (fan1_input reads 0)" }
       }

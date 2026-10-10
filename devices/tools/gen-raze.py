@@ -206,6 +206,11 @@ def lint(manifest: dict) -> None:
         raise LintError("capabilities.fan.trips_c must be one rising trip per level after the first")
     if fan.get("min_level") != min(levels):
         raise LintError("capabilities.fan.min_level must equal the lowest cooling level")
+    tach = fan.get("tachometer", {}).get("by_revision", {})
+    revisions = {r.get("id") for r in manifest.get("revisions", [])}
+    for rev, wired in tach.items():
+        if rev not in revisions or not isinstance(wired, bool):
+            raise LintError(f"capabilities.fan.tachometer.by_revision.{rev}: a revision id (of revisions) and true or false")
     lint_verified("fan", fan, ["pwm.controller", "pwm.channel", "pwm.period_ns", "pwm.polarity", "cooling_levels", "trips_c"])
 
     cam = caps["camera"]
@@ -354,7 +359,28 @@ def region_device_txt(manifest: dict) -> dict[str, str]:
         "camera_auto_detect=0\n"
         f"dtoverlay={cam['overlay']}\n"
     )
-    return {"i2c": "".join(i2c_lines), "leds": leds_text, "camera": cam_text}
+    rev = default_revision(manifest)
+    if fan_tachometer(manifest):
+        fan_text = "# Fan, driven by the kernel thermal governor; its speed from the RP1 PWM counter.\ndtoverlay=raze-fan\n"
+    else:
+        fan_text = (
+            f"# Fan, driven by the kernel thermal governor. No tachometer: {rev}'s isn't\n"
+            "# wired, so the fan offers no speed rather than 0 rpm (the image follows the\n"
+            "# default revision; boards carry no revision marker yet).\n"
+            "dtoverlay=raze-fan,notach\n"
+        )
+    return {"i2c": "".join(i2c_lines), "leds": leds_text, "camera": cam_text, "fan": fan_text}
+
+
+def default_revision(manifest: dict) -> str:
+    """The revision a board without a marker is (match.default)."""
+    return next(r["id"] for r in manifest["revisions"] if r.get("match", {}).get("default"))
+
+
+def fan_tachometer(manifest: dict) -> bool:
+    """Whether the image reads the fan's speed: the default revision's."""
+    tach = manifest["capabilities"]["fan"].get("tachometer", {}).get("by_revision", {})
+    return tach.get(default_revision(manifest), True)
 
 
 def region_fan_dts(manifest: dict) -> dict[str, str]:
@@ -423,6 +449,7 @@ def render_hardware_env(manifest: dict) -> str:
         ("HW_FAN_HWMON", fan["hwmon_name"]),
         ("HW_FAN_LEVELS", " ".join(str(v) for v in fan["cooling_levels"])),
         ("HW_FAN_TRIPS_C", " ".join(str(v) for v in fan["trips_c"])),
+        ("HW_FAN_TACH", 1 if fan_tachometer(manifest) else 0),
         ("HW_CAMERA_PART", cam["part"]),
         ("HW_CAMERA_SENSOR", cam["sensor"]),
         ("HW_CAMERA_DRIVER", cam["kernel_driver"]),
