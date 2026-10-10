@@ -72,6 +72,12 @@ pub(crate) struct State {
     pub(crate) board_events: HashMap<String, VecDeque<atlas_driver::DeviceEvent>>,
     /// When each board's events were last fetched (ms).
     pub(crate) events_synced: HashMap<String, u64>,
+    /// The seq each board's events were fetched up to, for boards that number
+    /// them (from the kept log when Atlas starts).
+    pub(crate) event_cursor: HashMap<String, u64>,
+    /// How far each boot's clock was from this computer's (board minus
+    /// here, seconds), by boot id, as seen while that boot answered.
+    pub(crate) clock_offsets: HashMap<String, i64>,
 }
 
 pub(crate) struct Inner {

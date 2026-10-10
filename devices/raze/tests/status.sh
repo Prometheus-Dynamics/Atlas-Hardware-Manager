@@ -130,6 +130,35 @@ event --json | is boot-1 'd["boot_id"]' "the current boot"
 if event --json --since abc 2>/dev/null; then fail "--since must be a number"; fi
 if event --json --limit -1 2>/dev/null; then fail "--limit must be a number"; fi
 
+echo "events are numbered in the order written, whatever the clock does"
+mkdir -p "$T/seq/bin"
+printf '#!/bin/sh\nif [ "${1:-}" = +%%s ]; then cat "%s"; else exec /bin/date "$@"; fi\n' "$T/seq/clock" > "$T/seq/bin/date"
+chmod +x "$T/seq/bin/date"
+seqev() { PATH=$T/seq/bin:$PATH BOARD_DATA_DIR=$T/seq/data event "$@"; }
+seqjson() { BOARD_DATA_DIR=$T/seq/data BOARD_RUN_DIR=$T/seq/run event --json "$@"; }
+echo 5000 > "$T/seq/clock"; seqev boot "boot 1"
+echo 6000 > "$T/seq/clock"; seqev update.stage "staging"
+# The next boot's clock is three hours behind.
+echo 1200 > "$T/seq/clock"; BOARD_BOOT_ID=boot-2 seqev boot "boot 2"
+echo 1300 > "$T/seq/clock"; BOARD_BOOT_ID=boot-2 seqev update.confirmed "kept"
+seqjson --after-seq 0 | is "[1, 2, 3, 4]" '[e["seq"] for e in d["events"]]' "seq order"
+seqjson --after-seq 0 | is 4 'd["seq"]' "the newest seq"
+seqjson --after-seq 2 | is "['boot 2', 'kept']" '[e["message"] for e in d["events"]]' "after the second, with an older clock"
+seqjson --after-seq 1 --limit 2 | is "[2, 3]" '[e["seq"] for e in d["events"]]' "the oldest first, to page forward"
+seqjson --since 5500 | is "['staging']" '[e["message"] for e in d["events"]]' "since misses what the clock put earlier"
+seqjson | is True 'all(isinstance(e["uptime_s"], int) for e in d["events"])' "each event has the uptime"
+echo "a lost event-seq continues from the log; an unnumbered log starts at 1"
+rm "$T/seq/data/event-seq"
+seqev x "after the counter was lost"
+seqjson --after-seq 4 | is "[5]" '[e["seq"] for e in d["events"]]' "continues from the last line"
+mkdir -p "$T/seq/old"
+printf '{"t":1,"boot_id":"b","kind":"boot","source":"local","message":"old","data":{}}\n' > "$T/seq/old/events.jsonl"
+PATH=$T/seq/bin:$PATH BOARD_DATA_DIR=$T/seq/old event x "first numbered"
+BOARD_DATA_DIR=$T/seq/old BOARD_RUN_DIR=$T/seq/run event --json --after-seq 0 |
+	is "[1]" '[e["seq"] for e in d["events"]]' "old lines have no seq; the first new one is 1"
+BOARD_DATA_DIR=$T/seq/old BOARD_RUN_DIR=$T/seq/run event --json | is 2 'len(d["events"])' "since still lists both"
+if event --json --after-seq x 2>/dev/null; then fail "--after-seq must be a number"; fi
+
 echo "boot-record counts boots and tells a clean shutdown"
 sh "$lib/boot-record"
 is 1 'd["count"]' "first boot" < "$T/run/boot.json"
@@ -304,9 +333,11 @@ printf '%s' "$r" | grep -q 'Allow: GET, HEAD' || fail "405 names the methods"
 request 'GET /events?limit=2 HTTP/1.0' | body | is 2 'len(d["events"])' "limit"
 request 'GET /events?since=9999999999&limit=5 HTTP/1.0' | body | is 0 'len(d["events"])' "since"
 request 'GET /events?foo=bar&limit=1 HTTP/1.0' | body | is 1 'len(d["events"])' "other keys are ignored"
+request 'GET /events?after_seq=0&limit=1 HTTP/1.0' | body | is "[1]" '[e["seq"] for e in d["events"]]' "after_seq pages from the oldest"
+request 'GET /events?after_seq=1&limit=1 HTTP/1.0' | body | is True 'd["seq"] >= 2 and d["events"][0]["seq"] == 2' "and gives the newest seq"
 request 'GET /events?limit=0099 HTTP/1.0' | body | is True 'len(d["events"]) > 2' "leading zeros are decimal"
 request 'GET /events?limit=999999999 HTTP/1.0' | status_line | grep -q ' 200 ' || fail "a large limit is capped"
-for bad in 'since=1;touch%20pwned' 'since=$(touch%20pwned)' 'limit=*' 'limit=`id`' 'since=' 'since=-1' 'limit=1e3' 'since=1234567890123'; do
+for bad in 'since=1;touch%20pwned' 'since=$(touch%20pwned)' 'limit=*' 'limit=`id`' 'since=' 'since=-1' 'limit=1e3' 'since=1234567890123' 'after_seq=-1' 'after_seq=1;id'; do
 	r=$(cd "$T" && request "GET /events?$bad HTTP/1.0")
 	printf '%s' "$r" | status_line | grep -q '^HTTP/1.0 400' || fail "$bad: $(printf '%s' "$r" | status_line)"
 done

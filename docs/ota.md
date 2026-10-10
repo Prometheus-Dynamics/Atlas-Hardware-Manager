@@ -304,7 +304,11 @@ through board-agent, or someone typing on the board.
 
 - **Event log.** The package's scripts append to
   `/data/board/events.jsonl`, one line per event:
-  `{"t":<unix s>,"boot_id":..,"kind":"update.staged","source":"atlas|orion|local","message":..,"data":{..}}`.
+  `{"t":<unix s>,"boot_id":..,"seq":<n>,"uptime_s":<s>,"kind":"update.staged","source":"atlas|orion|local","message":..,"data":{..}}`.
+  `t` is the board's clock, which can be hours off or step back (no RTC);
+  `seq` numbers the events in the order they were written, across boots
+  (`/data/board/event-seq`, allocated with the append under one lock), so
+  a reader catches up by seq whatever the clock did.
   The source is `BOARD_EVENT_SOURCE`: Atlas exports `atlas` on every SSH
   command, board-agent sets `orion`, anything else is `local`. The writer
   records who started an update as `started_by` in `update.json`, and a
@@ -340,15 +344,22 @@ through board-agent, or someone typing on the board.
   `orion:operator:atlas-<host>`. The Raze's fan lists `orion:*` (a prefix
   match), usb-a-power lists no writers (anyone); a device whose list doesn't
   match refuses the write, and the card says so.
-- **Endpoints.** `GET /status` and `GET /events?since=<t>&limit=<n>` on the
-  identity endpoint (port 5899), read-only and listed in the identity's
-  `endpoints`.
+- **Endpoints.** `GET /status`, `GET /events?since=<t>&limit=<n>` (the
+  newest events by time) and `GET /events?after_seq=<n>&limit=<n>` (the
+  oldest events after a seq, to page forward; both give the board's clock,
+  boot and newest seq) on the identity endpoint (port 5899), read-only and
+  listed in the identity's `endpoints`.
 - **Atlas.** atlas-driver-board reads both (a `status` capability; without a
   metrics endpoint the temperatures and fan are its telemetry). atlas-core
   keeps each board's events (by board serial, at most 500, saved with the
   inventory), fetches new ones when the device's status is read and at most
-  every minute after a scan, dedupes by boot, time, kind and message, and
-  merges them with its own entries into the device's history. New events
+  every minute after a scan: after the last seq fetched (paging until caught
+  up; from the start again when the board's counter started over), or by
+  time from a board that doesn't number its events. It dedupes by boot and
+  seq (boot, time, kind and message without a seq), orders by seq, places
+  each event in this computer's time by its boot's clock offset when that
+  boot answered, and merges them with its own entries into the device's
+  history. New events
   someone other than Atlas caused that matter (an update's outcome, an
   unclean boot, new SSH keys) also get a fleet-history line. For a board
   without the endpoints, Orion's `update.*` keys and host facts fill the

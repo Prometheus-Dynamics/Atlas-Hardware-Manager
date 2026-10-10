@@ -25,6 +25,9 @@ fn event(t: i64, kind: &str, source: EventSource) -> DeviceEvent {
         kind: kind.into(),
         source,
         message: format!("{kind} at {t}"),
+        seq: None,
+        uptime_s: None,
+        at_ms: None,
         data: BTreeMap::new(),
     }
 }

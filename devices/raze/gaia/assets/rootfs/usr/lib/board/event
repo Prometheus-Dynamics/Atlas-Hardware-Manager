@@ -2,8 +2,9 @@
 # The board's event log (lib.sh board_event) from the command line.
 #
 #   event <kind> <message> [key=value ...]   append an event
-#   event --json [--since <unix s>] [--limit <n>]
+#   event --json [--since <unix s> | --after-seq <n>] [--limit <n>]
 #                                            print events as JSON, oldest first
+#                                            (--after-seq: the oldest after n)
 #
 # The source is $BOARD_EVENT_SOURCE (atlas, orion), else local: Atlas sets it
 # on its SSH commands and board-agent on what it runs, so a command typed on
@@ -15,7 +16,7 @@ BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 . "$BOARD_LIB_DIR/lib.sh"
 
 usage() {
-	sed -n '4,6p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '4,7p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 }
 
@@ -30,16 +31,18 @@ case "${1:-}" in
 --json)
 	shift
 	since=0
+	after=''
 	limit=200
 	while [ $# -gt 0 ]; do
 		case "$1" in
 		--since) since=${2:-}; number "$since"; shift 2 ;;
+		--after-seq) after=${2:-}; number "$after"; shift 2 ;;
 		--limit) limit=${2:-}; number "$limit"; shift 2 ;;
 		*) usage ;;
 		esac
 	done
 	[ "$limit" -le "$BOARD_EVENT_MAX" ] || limit=$BOARD_EVENT_MAX
-	board_events_json "$since" "$limit"
+	board_events_json "$since" "$limit" "$after"
 	;;
 '' | -*) usage ;;
 *)

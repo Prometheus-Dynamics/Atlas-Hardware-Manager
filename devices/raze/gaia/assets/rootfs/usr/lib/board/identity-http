@@ -9,7 +9,13 @@
 #                                       board_events_json): events with
 #                                       t >= since (default 0), the newest
 #                                       limit (default 200, at most 2000);
-#                                       400 unless both are whole numbers
+#   GET|HEAD /events?after_seq=<n>&limit=<n>
+#                                    -> 200, the oldest limit events whose
+#                                       seq is above n, in seq order (to
+#                                       catch up whatever the clock did);
+#                                       both forms give the newest seq;
+#                                       400 unless the values are whole
+#                                       numbers
 #   POST /actions/<id>               -> 202 when <id> is in BOARD_ACTIONS: drops
 #                                       /run/board/requests/<id>, which a
 #                                       root path unit acts on; 404 otherwise
@@ -75,10 +81,11 @@ read_only() {
 	return 1
 }
 
-# Sets since and limit from the query. Only those two keys count, and only
-# as plain decimal numbers; nothing from the query is ever evaluated.
+# Sets since, after_seq and limit from the query. Only those keys count, and
+# only as plain decimal numbers; nothing from the query is ever evaluated.
 parse_events_query() {
 	since=0
+	after_seq=''
 	limit=200
 	set -f
 	_ifs=$IFS
@@ -92,14 +99,18 @@ parse_events_query() {
 		v=${kv#*=}
 		[ "$k" != "$kv" ] || v=''
 		case "$k" in
-		since | limit) ;;
+		since | limit | after_seq) ;;
 		*) continue ;;
 		esac
 		case "$v" in
 		'' | *[!0-9]*) return 1 ;;
 		esac
 		[ "${#v}" -le 12 ] || return 1
-		if [ "$k" = since ]; then since=$v; else limit=$v; fi
+		case "$k" in
+		since) since=$v ;;
+		after_seq) after_seq=$v ;;
+		*) limit=$v ;;
+		esac
 	done
 	[ "$limit" -le 2000 ] || limit=2000
 }
@@ -119,11 +130,11 @@ case "$path" in
 /events)
 	read_only || exit 0
 	if ! parse_events_query; then
-		respond '400 Bad Request' 'text/plain' "since and limit must be whole numbers
+		respond '400 Bad Request' 'text/plain' "since, after_seq and limit must be whole numbers
 "
 		exit 0
 	fi
-	respond '200 OK' 'application/json' "$(board_events_json "$since" "$limit")
+	respond '200 OK' 'application/json' "$(board_events_json "$since" "$limit" "$after_seq")
 "
 	exit 0
 	;;

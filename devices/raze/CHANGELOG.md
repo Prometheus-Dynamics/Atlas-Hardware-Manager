@@ -95,6 +95,14 @@ commit; the commits are listed per area.
 
 ### Board awareness: events, status, drift
 
+- **Events are numbered** (`seq`, with `uptime_s`): the board has no RTC,
+  and in the first A/B update on hardware its clock was 3 h 17 min behind in
+  one boot, so Atlas (which fetched by time) missed events after the clock
+  stepped and ordered them wrongly. `seq` counts events in write order
+  across boots (`/data/board/event-seq`), `GET /events?after_seq=<n>` pages
+  forward by it and every answer gives the newest seq; `since` still works.
+  Atlas syncs by seq, dedupes by boot and seq, and places each event in its
+  own time by the boot's clock offset.
 - **Hardware in the status:** `GET /status` gains `hardware`: lemnosd's
   devices (id, class, model, status, controls) with one reading each (name,
   value, unit), kept by root's `board-health.timer`, now every 10 s, via

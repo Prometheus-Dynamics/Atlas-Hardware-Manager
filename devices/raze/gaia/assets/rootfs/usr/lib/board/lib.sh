@@ -537,7 +537,11 @@ board_identity_json() {
 # ---------------------------------------------------------------------------
 # Event log: what happened to the board, whoever did it (docs/ota.md, "Board
 # awareness"). One JSON object per line:
-#   {"t":<unix s>,"boot_id":..,"kind":..,"source":..,"message":..,"data":{..}}
+#   {"t":<unix s>,"boot_id":..,"seq":<n>,"uptime_s":<s>,"kind":..,
+#    "source":..,"message":..,"data":{..}}
+# t is the board's clock, which can be far off or step back (no RTC); seq
+# numbers the events in the order they were written, across boots, so a
+# reader catches up by seq (/events?after_seq=) whatever the clock did.
 # in $BOARD_DATA_DIR/events.jsonl (persistent), or $BOARD_RUN_DIR/events.jsonl
 # when /data isn't writable. The last BOARD_EVENT_MAX lines are kept.
 #   BOARD_EVENT_SOURCE  who asked: atlas (Atlas over SSH), orion (board-agent),
@@ -591,14 +595,35 @@ board_event() {
 		_board_ed="$_board_ed${_board_ed:+,}\"$_board_dk\":$_board_dv"
 	done
 	_board_ef=$(board_events_file)
-	_board_line=$(printf '{"t":%s,"boot_id":%s,"kind":"%s","source":"%s","message":%s,"data":{%s}}' \
-		"$(date +%s)" "$(board_json_str "$(board_boot_id)")" "$_board_ek" "$(board_event_source)" \
-		"$(board_json_str "$_board_em")" "$_board_ed")
-	{
-		mkdir -p "${_board_ef%/*}" && printf '%s\n' "$_board_line" >> "$_board_ef" && chmod 0644 "$_board_ef"
-	} 2>/dev/null || return 0
+	mkdir -p "${_board_ef%/*}" 2>/dev/null || return 0
+	_board_up=$(cut -d. -f1 /proc/uptime 2>/dev/null) || _board_up=''
+	case "$_board_up" in '' | *[!0-9]*) _board_up=null ;; esac
+	# The seq and the append under one lock (the rotation's), so lines are
+	# in seq order.
+	(
+		if command -v flock >/dev/null 2>&1; then
+			flock -w 2 7 || exit 1
+		fi
+		_board_seq=$(($(board_events_last_seq "$_board_ef") + 1))
+		printf '{"t":%s,"boot_id":%s,"seq":%s,"uptime_s":%s,"kind":"%s","source":"%s","message":%s,"data":{%s}}\n' \
+			"$(date +%s)" "$(board_json_str "$(board_boot_id)")" "$_board_seq" "$_board_up" "$_board_ek" \
+			"$(board_event_source)" "$(board_json_str "$_board_em")" "$_board_ed" >> "$_board_ef" &&
+			chmod 0644 "$_board_ef" &&
+			printf '%s\n' "$_board_seq" > "${_board_ef%/*}/event-seq"
+	) 7>> "$_board_ef.lock" 2>/dev/null || return 0
 	board_events_rotate "$_board_ef"
 	return 0
+}
+
+# The newest seq written: event-seq next to the log, or the log's last line
+# when that is newer (a write cut off before event-seq); 0 for none.
+board_events_last_seq() {
+	_board_c=$(cat "${1%/*}/event-seq" 2>/dev/null) || _board_c=''
+	case "$_board_c" in '' | *[!0-9]*) _board_c=0 ;; esac
+	_board_l=$(tail -n 1 "$1" 2>/dev/null | sed -n 's/^{"t":[0-9]*,"boot_id":[^,]*,"seq":\([0-9]*\),.*/\1/p')
+	case "$_board_l" in '' | *[!0-9]*) _board_l=0 ;; esac
+	[ "$_board_l" -gt "$_board_c" ] && _board_c=$_board_l
+	printf '%s\n' "$_board_c"
 }
 
 # Keeps the last BOARD_EVENT_MAX lines once the file is 10 % over, under a
@@ -616,20 +641,33 @@ board_events_rotate() {
 	return 0
 }
 
-# board_events_json <since> <limit>: {"time":..,"boot_id":..,"events":[..]}
-# with the newest <limit> events whose t >= <since>, oldest first, from both
-# event files. Both arguments must be decimal numbers (callers check them).
-# A line that isn't a whole event (a write cut off by power loss) is skipped.
+# board_events_json <since> <limit> [<after_seq>]:
+#   {"time":..,"boot_id":..,"seq":<newest>|null,"events":[..]}
+# from both event files. With <after_seq>, the oldest <limit> events whose
+# seq is above it, in seq order (a reader pages forward with the last seq it
+# got); else the newest <limit> whose t >= <since>, oldest first. Arguments
+# must be decimal numbers (callers check them). A line that isn't a whole
+# event (a write cut off by power loss) is skipped.
 board_events_json() {
-	printf '{"time":%s,"boot_id":%s,"events":[' "$(date +%s)" "$(board_json_str "$(board_boot_id)")"
-	cat "$BOARD_RUN_DIR/events.jsonl" "$BOARD_DATA_DIR/events.jsonl" 2>/dev/null |
-		awk -v since="$1" '
-			/^\{"t":[0-9]+,"boot_id":.*\}$/ {
-				t = substr($0, 6); sub(/,.*/, "", t)
-				if (t + 0 >= since + 0) print t "\t" $0
-			}' |
-		sort -s -n -k1,1 | tail -n "$2" | cut -f2- |
-		awk 'NR > 1 { printf "," } { printf "%s", $0 }'
+	_board_all=$(cat "$BOARD_RUN_DIR/events.jsonl" "$BOARD_DATA_DIR/events.jsonl" 2>/dev/null |
+		awk '/^\{"t":[0-9]+,"boot_id":.*\}$/ {
+			t = substr($0, 6); sub(/,.*/, "", t)
+			s = -1
+			if (match($0, /^\{"t":[0-9]+,"boot_id":[^,]*,"seq":[0-9]+,/)) {
+				s = substr($0, 1, RLENGTH - 1); sub(/.*"seq":/, "", s)
+			}
+			print t "\t" s "\t" $0
+		}')
+	_board_newest=$(printf '%s\n' "$_board_all" | cut -f2 | sort -n | tail -n 1)
+	case "$_board_newest" in '' | -1) _board_newest=null ;; esac
+	printf '{"time":%s,"boot_id":%s,"seq":%s,"events":[' "$(date +%s)" "$(board_json_str "$(board_boot_id)")" "$_board_newest"
+	if [ -n "${3:-}" ]; then
+		printf '%s\n' "$_board_all" | awk -F '\t' -v after="$3" '$2 + 0 > after + 0' |
+			sort -s -n -k2,2 | head -n "$2"
+	else
+		printf '%s\n' "$_board_all" | awk -F '\t' -v since="$1" 'NF >= 3 && $1 + 0 >= since + 0' |
+			sort -s -n -k1,1 | tail -n "$2"
+	fi | cut -f3- | awk 'NF { if (n++) printf ","; printf "%s", $0 }'
 	printf ']}\n'
 }
 

@@ -64,15 +64,37 @@ pub struct DeviceEvent {
     pub message: String,
     #[serde(default, deserialize_with = "lenient_map")]
     pub data: BTreeMap<String, String>,
+    /// The device's number for it: events in the order they were written,
+    /// across boots, whatever its clock did. `None` from a device that
+    /// doesn't number its events.
+    #[serde(default)]
+    pub seq: Option<u64>,
+    /// The device's uptime when it happened (seconds).
+    #[serde(default)]
+    pub uptime_s: Option<u64>,
+    /// When it happened by this computer's clock (Unix ms), when Atlas knew
+    /// how far the device's clock was off in that boot; `t` otherwise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at_ms: Option<u64>,
 }
 
 impl DeviceEvent {
-    /// Events are the same when their boot, time, kind and message are.
+    /// Events are the same when their boot and seq are, or for events
+    /// without a seq, their boot, time, kind and message.
     pub fn same_as(&self, other: &Self) -> bool {
+        if let (Some(a), Some(b)) = (self.seq, other.seq) {
+            return a == b && self.boot_id == other.boot_id;
+        }
         self.t == other.t
             && self.boot_id == other.boot_id
             && self.kind == other.kind
             && self.message == other.message
+    }
+
+    /// When it happened by this computer's clock, as well as Atlas knows.
+    pub fn when_ms(&self) -> u64 {
+        self.at_ms
+            .unwrap_or_else(|| u64::try_from(self.t).unwrap_or(0).saturating_mul(1000))
     }
 
     /// How it reads: `"error"`, `"warning"`, `"success"` or `"info"`.
@@ -360,10 +382,47 @@ pub struct DeviceStatus {
     pub hardware: Option<HardwareSnapshot>,
 }
 
+/// Which events to fetch: those after a seq (from a device that numbers its
+/// events), else those at or after a time; at most `limit`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct EventQuery {
+    pub since: Option<i64>,
+    pub after_seq: Option<u64>,
+    pub limit: usize,
+}
+
+/// A page of a device's event log, with what the device said about itself
+/// when it answered.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EventPage {
+    /// Oldest first: by seq after a seq, else by time.
+    pub events: Vec<DeviceEvent>,
+    /// The device's clock (Unix s) and boot when it answered, to place this
+    /// boot's events in time.
+    pub time: Option<i64>,
+    pub boot_id: Option<String>,
+    /// The newest seq the device has written; `None` when it doesn't number
+    /// its events.
+    pub newest_seq: Option<u64>,
+}
+
 /// A device that reports its state and, optionally, an event log.
 #[async_trait]
 pub trait StatusCapability: Send + Sync {
     async fn status(&self, device: &Identity) -> Result<DeviceStatus, DriverError>;
+
+    /// A page of the event log. By default, [`events`](Self::events) by
+    /// time: a device that numbers its events answers `after_seq` itself.
+    async fn event_page(
+        &self,
+        device: &Identity,
+        query: EventQuery,
+    ) -> Result<EventPage, DriverError> {
+        Ok(EventPage {
+            events: self.events(device, query.since, query.limit).await?,
+            ..EventPage::default()
+        })
+    }
 
     /// Events with `t >= since` (device clock), at most `limit`, oldest
     /// first. A device without an event log has none.
@@ -408,6 +467,32 @@ mod tests {
     }
 
     #[test]
+    fn numbered_events_are_the_same_by_boot_and_seq() {
+        let event: DeviceEvent = serde_json::from_str(
+            r#"{"t":5,"boot_id":"b","seq":7,"uptime_s":3,"kind":"boot","message":"boot 2"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            (event.seq, event.uptime_s, event.at_ms),
+            (Some(7), Some(3), None)
+        );
+        assert_eq!(event.when_ms(), 5_000);
+        // Same boot and seq: the same event, whatever the clock said.
+        let mut again = event.clone();
+        again.t = 9;
+        assert!(event.same_as(&again));
+        let mut next = event.clone();
+        next.seq = Some(8);
+        assert!(
+            !event.same_as(&next),
+            "the same second and words, another seq"
+        );
+        let mut corrected = event.clone();
+        corrected.at_ms = Some(42_000);
+        assert_eq!(corrected.when_ms(), 42_000);
+    }
+
+    #[test]
     fn severity_follows_the_kind() {
         let event = |kind: &str, data: &[(&str, &str)]| DeviceEvent {
             t: 0,
@@ -419,6 +504,9 @@ mod tests {
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
+            seq: None,
+            uptime_s: None,
+            at_ms: None,
         };
         assert_eq!(event("update.trial-failed", &[]).severity(), "error");
         assert_eq!(event("update.confirmed", &[]).severity(), "success");

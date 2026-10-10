@@ -526,6 +526,11 @@ export interface DeviceEvent {
   source: EventSource;
   message: string;
   data: Record<string, string>;
+  /** The board's number for it, in write order across boots (null from older boards). */
+  seq?: number | null;
+  uptime_s?: number | null;
+  /** By this computer's clock (Unix ms), when the boot's clock offset was known. */
+  at_ms?: number;
 }
 
 /** One line of a device's history: Atlas's record or the board's event log. */

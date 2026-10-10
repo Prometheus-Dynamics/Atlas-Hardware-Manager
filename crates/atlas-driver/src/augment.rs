@@ -17,7 +17,7 @@ use async_trait::async_trait;
 
 use crate::{
     ActionsCapability, Capabilities, DeviceAction, DeviceEvent, DeviceStatus, DriverError,
-    Identity, StatusCapability,
+    EventPage, EventQuery, Identity, StatusCapability,
 };
 
 /// Extra capabilities for devices other drivers own.
@@ -161,6 +161,17 @@ impl StatusCapability for CombinedStatus {
                 .events(device, since, limit)
                 .await
                 .map_err(|_| err),
+        }
+    }
+
+    async fn event_page(
+        &self,
+        device: &Identity,
+        query: EventQuery,
+    ) -> Result<EventPage, DriverError> {
+        match self.own.event_page(device, query).await {
+            Ok(page) => Ok(page),
+            Err(err) => self.more.event_page(device, query).await.map_err(|_| err),
         }
     }
 }
@@ -377,6 +388,9 @@ mod tests {
             kind: "boot".into(),
             source: EventSource::Local,
             message: String::new(),
+            seq: None,
+            uptime_s: None,
+            at_ms: None,
             data: Default::default(),
         }
     }

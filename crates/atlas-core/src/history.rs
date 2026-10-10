@@ -5,15 +5,17 @@
 //! Board events are kept per physical board (its board serial, like
 //! self-tests), at most [`BOARD_EVENTS_LIMIT`], and saved with the
 //! inventory. They are fetched when a device's status is read and, at most
-//! every [`SYNC_EVERY`], after a scan; an event already kept (same boot,
-//! time, kind and message) is not added again. New events that someone other
+//! every [`SYNC_EVERY`], after a scan: by seq from a board that numbers its
+//! events (whatever its clock did), else by time. An event already kept
+//! (same boot and seq, or without a seq the same boot, time, kind and
+//! message) is not added again. New events that someone other
 //! than Atlas caused, and that matter (an update's outcome, an unclean boot,
 //! new SSH keys), also get a line in the fleet history.
 
 use std::collections::{BTreeMap, VecDeque};
 use std::time::Duration;
 
-use atlas_driver::{DeviceEvent, DeviceKey, DeviceStatus, EventSource};
+use atlas_driver::{DeviceEvent, DeviceKey, DeviceStatus, EventPage, EventQuery, EventSource};
 use serde::{Deserialize, Serialize};
 
 use crate::activity::{ActivityEntry, ActivityKind, ActivityLevel};
@@ -23,6 +25,11 @@ use crate::{Atlas, CoreError, DeviceRecord, Event};
 
 /// Board events kept per board.
 pub const BOARD_EVENTS_LIMIT: usize = 500;
+/// Events asked for at a time, and the pages one sync may fetch.
+const PAGE: usize = 200;
+const MAX_PAGES: usize = 5;
+/// A boot's clock this close to this computer's counts as right.
+const CLOCK_SLACK_S: i64 = 2;
 /// How often a scan fetches a board's new events.
 pub(crate) const SYNC_EVERY: Duration = Duration::from_secs(60);
 
@@ -46,7 +53,8 @@ pub enum HistoryOrigin {
 /// One line of a device's history.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HistoryEntry {
-    /// Atlas's clock for its own entries; the board's for board events.
+    /// Atlas's clock for its own entries; for board events, the board's
+    /// clock corrected by that boot's offset when Atlas knew it.
     pub at_ms: u64,
     pub level: ActivityLevel,
     /// Atlas's activity kind (`update-result`, …) or the board event's kind
@@ -74,7 +82,7 @@ fn level_of(event: &DeviceEvent) -> ActivityLevel {
 impl HistoryEntry {
     fn from_event(event: &DeviceEvent) -> Self {
         Self {
-            at_ms: u64::try_from(event.t).unwrap_or(0).saturating_mul(1000),
+            at_ms: event.when_ms(),
             level: level_of(event),
             kind: event.kind.clone(),
             source: event.source,
@@ -102,8 +110,36 @@ impl HistoryEntry {
     }
 }
 
-/// Adds the events `log` doesn't have yet, keeps it ordered by time and
-/// bounded, and returns the ones added.
+/// Places the page's events in this computer's time: the answering boot's
+/// clock offset is measured (and kept by boot id); an event of a boot whose
+/// offset is known, and off by more than [`CLOCK_SLACK_S`], gets `at_ms`.
+fn place_in_time(page: &mut EventPage, offsets: &mut std::collections::HashMap<String, i64>) {
+    if let (Some(time), Some(boot)) = (page.time, &page.boot_id) {
+        let here = i64::try_from(now_ms() / 1000).unwrap_or(i64::MAX);
+        offsets.insert(boot.clone(), time - here);
+    }
+    for event in &mut page.events {
+        if let Some(offset) = offsets.get(&event.boot_id)
+            && offset.abs() > CLOCK_SLACK_S
+        {
+            event.at_ms = u64::try_from(event.t - offset)
+                .ok()
+                .map(|s| s.saturating_mul(1000));
+        }
+    }
+}
+
+/// The order of a board's events: by seq once the board numbers them (its
+/// earlier, unnumbered events first, by time).
+fn order(event: &DeviceEvent) -> (u8, i64) {
+    match event.seq {
+        Some(seq) => (1, i64::try_from(seq).unwrap_or(i64::MAX)),
+        None => (0, event.t),
+    }
+}
+
+/// Adds the events `log` doesn't have yet, keeps it ordered (see [`order`])
+/// and bounded, and returns the ones added.
 pub(crate) fn merge(
     log: &mut VecDeque<DeviceEvent>,
     incoming: Vec<DeviceEvent>,
@@ -121,8 +157,9 @@ pub(crate) fn merge(
         return added;
     }
     let mut all: Vec<DeviceEvent> = log.drain(..).chain(added.iter().cloned()).collect();
-    // Stable: events of one second keep the order the board wrote them in.
-    all.sort_by_key(|event| event.t);
+    // Stable: unnumbered events of one second keep the order the board
+    // wrote them in.
+    all.sort_by_key(order);
     let excess = all.len().saturating_sub(BOARD_EVENTS_LIMIT);
     log.extend(all.into_iter().skip(excess));
     added
@@ -139,6 +176,9 @@ pub(crate) fn timeline(
         .map(HistoryEntry::from_activity)
         .chain(events.iter().map(HistoryEntry::from_event))
         .collect();
+    // Both lists are oldest first: reversed, a stable sort keeps the newer of
+    // two entries at the same time first.
+    all.reverse();
     all.sort_by_key(|entry| std::cmp::Reverse(entry.at_ms));
     all.truncate(limit);
     all
@@ -207,35 +247,73 @@ impl Atlas {
         Ok(current)
     }
 
-    /// Fetches the board's events since the newest one kept and merges them.
-    /// Returns how many were new.
+    /// Fetches the board's new events and merges them: after the last seq
+    /// fetched when the board numbers its events (pages until caught up),
+    /// else since the newest kept time. Returns how many were new.
     pub async fn sync_device_events(&self, key: &DeviceKey) -> Result<usize, CoreError> {
         let (live, record) = self.live_device(key)?;
         let Some(status) = live.capabilities.status else {
             return Ok(0);
         };
         let board = board_of(&record);
-        let since = {
+        let (cursor, since, first) = {
             let mut state = self.inner.state();
             state.events_synced.insert(board.clone(), now_ms());
-            state
-                .board_events
-                .get(&board)
-                .and_then(|log| log.back())
-                .map(|event| event.t)
+            let log = state.board_events.get(&board);
+            let kept_seq = log.and_then(|log| log.iter().filter_map(|event| event.seq).max());
+            let since = log.and_then(|log| log.back()).map(|event| event.t);
+            let first = log.is_none_or(VecDeque::is_empty);
+            let cursor = state.event_cursor.get(&board).copied().or(kept_seq);
+            (cursor, since, first)
         };
-        let limit = if since.is_some() {
-            200
-        } else {
-            BOARD_EVENTS_LIMIT
+        let mut query = match cursor {
+            Some(after) => EventQuery {
+                since: None,
+                after_seq: Some(after),
+                limit: PAGE,
+            },
+            None => EventQuery {
+                since,
+                after_seq: None,
+                limit: if since.is_some() {
+                    PAGE
+                } else {
+                    BOARD_EVENTS_LIMIT
+                },
+            },
         };
-        let events = status.events(&record.identity, since, limit).await?;
-        let (added, first) = {
-            let mut state = self.inner.state();
-            let log = state.board_events.entry(board).or_default();
-            let first = log.is_empty();
-            (merge(log, events), first)
-        };
+        let mut added = Vec::new();
+        for _ in 0..MAX_PAGES {
+            let mut page = status.event_page(&record.identity, query).await?;
+            // A board whose counter started over (its /data was replaced)
+            // numbers from 1 again: start from there.
+            if let (Some(after), Some(newest)) = (query.after_seq, page.newest_seq)
+                && newest < after
+                && after > 0
+            {
+                query.after_seq = Some(0);
+                continue;
+            }
+            let fetched = page.events.len();
+            let newest_seen = page.events.iter().filter_map(|event| event.seq).max();
+            {
+                let mut state = self.inner.state();
+                place_in_time(&mut page, &mut state.clock_offsets);
+                let log = state.board_events.entry(board.clone()).or_default();
+                added.extend(merge(log, page.events));
+                if let Some(seq) = newest_seen.or(page.newest_seq) {
+                    let cursor = state.event_cursor.entry(board.clone()).or_insert(seq);
+                    *cursor = (*cursor).max(seq);
+                    if query.after_seq == Some(0) {
+                        *cursor = seq;
+                    }
+                }
+            }
+            match (query.after_seq, newest_seen) {
+                (Some(_), Some(last)) if fetched >= query.limit => query.after_seq = Some(last),
+                _ => break,
+            }
+        }
         if added.is_empty() {
             return Ok(0);
         }
@@ -318,6 +396,9 @@ mod tests {
             source,
             message: format!("{kind} at {t}"),
             data: BTreeMap::new(),
+            seq: None,
+            uptime_s: None,
+            at_ms: None,
         }
     }
 

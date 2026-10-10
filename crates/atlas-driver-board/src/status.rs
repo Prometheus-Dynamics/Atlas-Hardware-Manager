@@ -18,9 +18,9 @@
 
 use async_trait::async_trait;
 use atlas_driver::{
-    BootInfo, DeviceEvent, DeviceStatus, Drift, DriverError, EventSource, FanState,
-    HardwareSnapshot, Identity, Metric, StatusCapability, TelemetryCapability, Temperature,
-    UpdateState, metric_ids,
+    BootInfo, DeviceEvent, DeviceStatus, Drift, DriverError, EventPage, EventQuery, EventSource,
+    FanState, HardwareSnapshot, Identity, Metric, StatusCapability, TelemetryCapability,
+    Temperature, UpdateState, metric_ids,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -119,6 +119,24 @@ pub(crate) fn parse_status(value: &Value, now: i64) -> DeviceStatus {
 }
 
 /// `{"events":[..]}` or a bare list; events that don't parse are skipped.
+/// The `/events` answer: its events, and the board's clock, boot and newest
+/// seq when it says them.
+pub(crate) fn parse_event_page(value: Value) -> EventPage {
+    let time = value.get("time").and_then(Value::as_i64);
+    let boot_id = value
+        .get("boot_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string);
+    let newest_seq = value.get("seq").and_then(Value::as_u64);
+    EventPage {
+        events: parse_events(value),
+        time,
+        boot_id,
+        newest_seq,
+    }
+}
+
 pub(crate) fn parse_events(value: Value) -> Vec<DeviceEvent> {
     let items = match value {
         Value::Object(mut map) => map.remove("events").unwrap_or(Value::Null),
@@ -202,20 +220,38 @@ impl StatusCapability for BoardStatus {
 
     async fn events(
         &self,
-        _device: &Identity,
+        device: &Identity,
         since: Option<i64>,
         limit: usize,
     ) -> Result<Vec<DeviceEvent>, DriverError> {
+        let query = EventQuery {
+            since,
+            after_seq: None,
+            limit,
+        };
+        Ok(self.event_page(device, query).await?.events)
+    }
+
+    async fn event_page(
+        &self,
+        _device: &Identity,
+        query: EventQuery,
+    ) -> Result<EventPage, DriverError> {
         let Some(url) = &self.events_url else {
-            return Ok(Vec::new());
+            return Ok(EventPage::default());
         };
         let separator = if url.contains('?') { '&' } else { '?' };
-        let url = format!(
-            "{url}{separator}since={}&limit={}",
-            since.unwrap_or(0).max(0),
-            limit.clamp(1, 2000)
-        );
-        Ok(parse_events(get_json(&self.http, &url).await?))
+        let limit = query.limit.clamp(1, 2000);
+        // A board from before seq ignores after_seq and answers by time,
+        // without `seq`: the caller then keeps asking by time.
+        let url = match query.after_seq {
+            Some(after) => format!("{url}{separator}after_seq={after}&limit={limit}"),
+            None => format!(
+                "{url}{separator}since={}&limit={limit}",
+                query.since.unwrap_or(0).max(0)
+            ),
+        };
+        Ok(parse_event_page(get_json(&self.http, &url).await?))
     }
 }
 
@@ -357,5 +393,23 @@ mod tests {
         assert_eq!(events[0].source, EventSource::Atlas);
         assert_eq!(events[0].data["slot"], "B");
         assert_eq!(parse_events(json!("nope")), Vec::new());
+    }
+
+    #[test]
+    fn a_page_has_the_boards_clock_boot_and_newest_seq() {
+        let page = parse_event_page(json!({ "time": 1200, "boot_id": "b2", "seq": 4, "events": [
+            { "t": 1300, "boot_id": "b2", "seq": 4, "uptime_s": 9, "kind": "update.confirmed", "source": "local", "message": "kept" }
+        ]}));
+        assert_eq!(
+            (page.time, page.boot_id.as_deref(), page.newest_seq),
+            (Some(1200), Some("b2"), Some(4))
+        );
+        assert_eq!(
+            (page.events[0].seq, page.events[0].uptime_s),
+            (Some(4), Some(9))
+        );
+        // A board from before seq.
+        let old = parse_event_page(json!({ "time": 1, "boot_id": "", "events": [] }));
+        assert_eq!((old.boot_id, old.newest_seq), (None, None));
     }
 }
