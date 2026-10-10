@@ -11,6 +11,7 @@ mod nt;
 mod orion;
 mod settings;
 mod state;
+mod timesync;
 
 use tauri::{Emitter, Manager};
 use tokio::sync::broadcast::error::RecvError;

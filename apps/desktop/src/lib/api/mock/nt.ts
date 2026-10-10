@@ -61,6 +61,15 @@ function info(): NtServerInfo | null {
     addresses: ["192.168.1.40", "172.31.209.218"],
     topics: [...running.topics.values()].sort((a, b) => a.name.localeCompare(b.name)),
     clients: connected ? [{ id: 1, name: "photonvision", subscriptions: 2, publications: 6 }] : [],
+    time_sync: {
+      port: 5810,
+      listening: true,
+      error: null,
+      peers: connected ? [{ address: "172.31.209.217", pongs: Math.floor((performance.now() - running.started) / 1000), last_ms: Date.now() }] : [],
+      cameras: connected
+        ? [{ name: "photonvision", offset_us: 1_734_512_908, rtt2_us: 912, pings: 41, pongs: 41, last_pong_us: 88_120_455 }]
+        : [],
+    },
   };
 }
 

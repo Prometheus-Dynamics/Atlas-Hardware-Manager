@@ -10,6 +10,7 @@ export type {
   NtServerFrame,
   NtServerInfo,
   NtServerTopic,
+  NtTimeSync,
   NtTopic,
   NtValue,
 } from "./nt-types";

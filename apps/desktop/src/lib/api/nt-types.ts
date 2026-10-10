@@ -46,6 +46,26 @@ export interface NtServerInfo {
   addresses: string[];
   topics: NtServerTopic[];
   clients: NtServerClient[];
+  time_sync: NtTimeSync;
+}
+
+/** PhotonVision time sync: Atlas answering the cameras' pings (UDP 5810), and what each camera publishes about it. */
+export interface NtTimeSync {
+  port: number;
+  /** Answering pings; false when the port couldn't be bound (`error`). */
+  listening: boolean;
+  error: string | null;
+  /** Addresses that pinged, with the pongs sent (last_ms: this computer's clock). */
+  peers: { address: string; pongs: number; last_ms: number }[];
+  /** Each camera's own view (µs), from /photonvision/.timesync/<host>/. */
+  cameras: {
+    name: string;
+    offset_us: number | null;
+    rtt2_us: number | null;
+    pings: number | null;
+    pongs: number | null;
+    last_pong_us: number | null;
+  }[];
 }
 
 export type NtServerFrame =

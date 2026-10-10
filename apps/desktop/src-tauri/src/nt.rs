@@ -2,7 +2,9 @@
 //! server) and one local NT4 server, so a PhotonVision or HeliOS camera can
 //! be tested without a roboRIO. Both run on orion-nt4. A viewer subscribes
 //! to everything and sends what arrives to the UI in batches; the server's
-//! topics are the user's, created and edited from the page.
+//! topics are the user's, created and edited from the page. While it runs,
+//! it also answers PhotonVision's time-sync pings (timesync.rs), as a
+//! robot program would.
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
@@ -17,6 +19,8 @@ use orion_nt4::{
 use serde::Serialize;
 use tauri::ipc::Channel;
 use tokio::task::JoinHandle;
+
+use crate::timesync;
 
 /// How often a viewer sends what arrived (about 20 times a second).
 const BATCH: Duration = Duration::from_millis(50);
@@ -79,6 +83,70 @@ pub struct NtServerInfo {
     pub addresses: Vec<IpAddr>,
     pub topics: Vec<NtServerTopic>,
     pub clients: Vec<NtServerClient>,
+    pub time_sync: TimeSyncInfo,
+}
+
+/// PhotonVision time sync: our responder, and what each camera publishes
+/// about it (`/photonvision/.timesync/<host>/...`).
+#[derive(Clone, Debug, Serialize)]
+pub struct TimeSyncInfo {
+    #[serde(flatten)]
+    pub responder: timesync::Status,
+    pub cameras: Vec<TimeSyncCamera>,
+}
+
+/// A camera's own view of its sync (all µs; `None` until it publishes).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct TimeSyncCamera {
+    pub name: String,
+    /// Server time minus the camera's, filtered.
+    pub offset_us: Option<i64>,
+    /// The last round trip.
+    pub rtt2_us: Option<i64>,
+    pub pings: Option<i64>,
+    pub pongs: Option<i64>,
+    /// When it last got a pong, on its own clock.
+    pub last_pong_us: Option<i64>,
+}
+
+const TIMESYNC_PREFIX: &str = "/photonvision/.timesync/";
+
+/// The cameras' time-sync topics, by host.
+fn time_sync_cameras(topics: &[NtServerTopic]) -> Vec<TimeSyncCamera> {
+    let mut cameras: Vec<TimeSyncCamera> = Vec::new();
+    for topic in topics {
+        let Some((host, field)) = topic
+            .name
+            .strip_prefix(TIMESYNC_PREFIX)
+            .and_then(|rest| rest.split_once('/'))
+        else {
+            continue;
+        };
+        let number = match &topic.value {
+            Some(Value::Int(v)) => Some(*v),
+            Some(Value::Double(v)) => Some(*v as i64),
+            _ => None,
+        };
+        let camera = match cameras.iter().position(|c| c.name == host) {
+            Some(i) => &mut cameras[i],
+            None => {
+                cameras.push(TimeSyncCamera {
+                    name: host.to_string(),
+                    ..TimeSyncCamera::default()
+                });
+                cameras.last_mut().expect("pushed")
+            }
+        };
+        match field {
+            "offset_us" => camera.offset_us = number,
+            "rtt2_us" => camera.rtt2_us = number,
+            "ping_tx_count" => camera.pings = number,
+            "pong_rx_count" => camera.pongs = number,
+            "pong_rx_time_us" => camera.last_pong_us = number,
+            _ => {}
+        }
+    }
+    cameras
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -126,6 +194,7 @@ struct LocalServer {
     port: u16,
     bind: SocketAddr,
     watchers: Vec<JoinHandle<()>>,
+    timesync: timesync::Responder,
 }
 
 #[derive(Default)]
@@ -245,12 +314,18 @@ impl Nt {
             .map_err(|error| format!("couldn't start a NetworkTables server on {bind}: {error}"))?;
             let handle = server.handle();
             let port = server.local_addr().port();
+            // PhotonVision pings 5810 whatever the NT port; a test server on
+            // port 0 gets a free one too.
+            let sync_port = if bind.port() == 0 { 0 } else { timesync::PORT };
+            let timesync =
+                timesync::Responder::start(SocketAddr::from(([0, 0, 0, 0], sync_port))).await;
             *slot = Some(LocalServer {
                 _server: server,
                 handle,
                 port,
                 bind,
                 watchers: Vec::new(),
+                timesync,
             });
         }
         Ok(info(slot.as_ref().expect("started")))
@@ -357,7 +432,12 @@ fn info(server: &LocalServer) -> NtServerInfo {
         })
         .collect();
     topics.sort_by(|a, b| a.name.cmp(&b.name));
+    let time_sync = TimeSyncInfo {
+        responder: server.timesync.status(),
+        cameras: time_sync_cameras(&topics),
+    };
     NtServerInfo {
+        time_sync,
         port: server.port,
         addresses: atlas_image_server::listening_addresses(server.bind),
         topics,
@@ -455,6 +535,80 @@ mod tests {
         nt.disconnect(id);
         nt.stop_server().await;
         assert!(nt.server_info().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn the_server_answers_time_sync_and_shows_what_cameras_publish() {
+        let nt = Nt::default();
+        let started = nt.start_server(Some(0), None).await.unwrap();
+        assert!(
+            started.time_sync.responder.listening,
+            "{:?}",
+            started.time_sync
+        );
+        assert!(started.time_sync.cameras.is_empty());
+        // What PhotonVision's TimeSyncManager publishes, by host.
+        nt.with_server(|server| {
+            for (field, value) in [
+                ("offset_us", 1234),
+                ("rtt2_us", 800),
+                ("ping_tx_count", 5),
+                ("pong_rx_count", 4),
+            ] {
+                let name = format!("/photonvision/.timesync/photonvision/{field}");
+                server.publish(&name, "int", Properties::new())?;
+                server.set_value(&name, Value::Int(value))?;
+            }
+            Ok(())
+        })
+        .await
+        .unwrap();
+        let info = nt.server_info().await.unwrap();
+        let camera = &info.time_sync.cameras[0];
+        assert_eq!(
+            (
+                camera.name.as_str(),
+                camera.offset_us,
+                camera.rtt2_us,
+                camera.pings,
+                camera.pongs,
+                camera.last_pong_us
+            ),
+            (
+                "photonvision",
+                Some(1234),
+                Some(800),
+                Some(5),
+                Some(4),
+                None
+            )
+        );
+        // A ping to the responder gets a pong.
+        let client = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let mut ping = vec![1u8, 1];
+        ping.extend_from_slice(&9u64.to_le_bytes());
+        client
+            .send_to(&ping, ("127.0.0.1", info.time_sync.responder.port))
+            .await
+            .unwrap();
+        let mut buf = [0u8; 32];
+        let (n, _) = tokio::time::timeout(Duration::from_secs(2), client.recv_from(&mut buf))
+            .await
+            .expect("a pong")
+            .unwrap();
+        assert_eq!((n, buf[1]), (18, 2));
+        nt.stop_server().await;
+        // Stopped with the server: no more pongs.
+        client
+            .send_to(&ping, ("127.0.0.1", info.time_sync.responder.port))
+            .await
+            .unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(300), client.recv_from(&mut buf))
+                .await
+                .is_err(),
+            "no responder without the server"
+        );
     }
 
     #[test]

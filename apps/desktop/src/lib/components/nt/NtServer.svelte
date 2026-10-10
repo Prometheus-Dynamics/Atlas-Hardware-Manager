@@ -111,6 +111,19 @@
   const owner = (topic: NtServerTopic) =>
     topic.owner === "local" ? "Made here" : topic.owner === "client" ? `From ${topic.publisher ?? "a client"}` : "Kept, no publisher";
   const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+  /** µs as ms, or s past 10 s (a fresh camera's offset is its uptime gap). */
+  function us(value: number | null, signed = false): string {
+    if (value === null) return "—";
+    const sign = signed && value > 0 ? "+" : "";
+    const ms = value / 1000;
+    return Math.abs(ms) >= 10_000 ? `${sign}${(ms / 1000).toFixed(1)} s` : `${sign}${ms.toFixed(ms < 10 && ms > -10 ? 2 : 1)} ms`;
+  }
+  /** A camera is in sync once it has pongs; behind when it pings without them. */
+  function syncTone(camera: NtServerInfo["time_sync"]["cameras"][number]): "success" | "warning" | "neutral" {
+    if (!camera.pongs) return camera.pings ? "warning" : "neutral";
+    return camera.pings !== null && camera.pings - camera.pongs > 3 ? "warning" : "success";
+  }
 </script>
 
 <div class="flex flex-col gap-4">
@@ -216,6 +229,37 @@
             </ul>
           {/if}
         </GlassCard>
+        <GlassCard
+          title="Time sync"
+          subtitle={info.time_sync.listening ? `Answering PhotonVision's pings on UDP ${info.time_sync.port}, as a robot program does` : "Not answering pings"}
+        >
+          {#if !info.time_sync.listening}
+            <p class="text-[13px] text-warn-fg">{info.time_sync.error ?? "The time-sync port couldn't be opened."} Cameras still connect, but their timestamps won't match this server's clock.</p>
+          {:else if info.time_sync.cameras.length === 0}
+            <p class="text-[13px] text-fg-muted">
+              {info.time_sync.peers.length
+                ? `Answered ${info.time_sync.peers.map((p) => `${p.address} (${p.pongs})`).join(", ")}; waiting for its sync topics.`
+                : "No camera has pinged yet. A PhotonVision camera starts once it connects."}
+            </p>
+          {:else}
+            <ul class="flex flex-col gap-2 text-[13px]">
+              {#each info.time_sync.cameras as camera (camera.name)}
+                <li class="flex flex-col gap-1">
+                  <div class="flex items-center gap-2">
+                    <Icon name="clock" size={14} />
+                    <span class="font-medium text-fg">{camera.name}</span>
+                    <span class="ml-auto"><Pill tone={syncTone(camera)} label={camera.pongs ? "In sync" : camera.pings ? "No pongs" : "Waiting"} /></span>
+                  </div>
+                  <div class="sync mono">
+                    <span title="This server's clock minus the camera's, filtered">offset {us(camera.offset_us, true)}</span>
+                    <span title="The last ping's round trip">RTT {us(camera.rtt2_us)}</span>
+                    <span title="Pongs the camera got, of the pings it sent">{camera.pongs ?? 0}/{camera.pings ?? 0} pongs</span>
+                  </div>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </GlassCard>
         <GlassCard title="What clients wrote" subtitle="The latest 15">
           {#if writes.length === 0}
             <p class="text-[13px] text-fg-muted">Nothing yet.</p>
@@ -282,6 +326,14 @@
   .value-input {
     height: 28px;
     font-size: 12.5px;
+  }
+  .sync {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    padding-left: 22px;
+    font-size: 12px;
+    color: var(--fg-muted);
   }
   .dot {
     width: 7px;
