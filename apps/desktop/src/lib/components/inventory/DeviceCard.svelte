@@ -3,8 +3,11 @@
   import Checkbox from "#lib/components/common/Checkbox.svelte";
   import IconTile from "#lib/components/common/IconTile.svelte";
   import StatusDot, { type DotState } from "#lib/components/common/StatusDot.svelte";
-  import { deviceName } from "#lib/format.ts";
-  import { metricTone, metricValue } from "#lib/metrics.ts";
+  import { deviceName, linkText } from "#lib/format.ts";
+  import Icon from "#lib/components/common/Icon.svelte";
+  import Sparkline from "#lib/components/common/Sparkline.svelte";
+  import { metricFraction, metricIcon, metricTone, metricValue } from "#lib/metrics.ts";
+  import type { IconName } from "#lib/ui/icons.ts";
   import { deviceIcon, deviceSubline, isRecovery, viaName } from "#lib/present.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { insights } from "#lib/stores/insights.svelte.ts";
@@ -26,15 +29,24 @@
   const via = $derived(viaName(record, devices.nameOf));
   const fresh = $derived(devices.fresh.has(id));
 
-  /** Up to two live readings, when the device reports them. */
+  /** Up to four live readings, each with a meter and its recent trend. */
   const glance = $derived(
     online
-      ? ["temp", "fps", "voltage", "cpu"]
+      ? ["temp", "cpu", "fps", "fan", "voltage", "memory"]
           .map((m) => live.metric(id, m))
           .filter((m) => !!m)
-          .slice(0, 2)
+          .slice(0, 4)
       : [],
   );
+  const LINK_ICON: Record<string, IconName> = {
+    "usb-network": "usb",
+    "usb-serial": "usb",
+    "usb-boot": "usb",
+    ethernet: "router",
+    simulated: "flask",
+    gateway: "sitemap",
+  };
+  const TONE_COLOR = { ok: "var(--ok)", warn: "var(--warn)", err: "var(--err)", neutral: "var(--info)" } as const;
 
   const dot = $derived.by((): { state: DotState; label: string } => {
     if (!online) return { state: "offline", label: "Offline" };
@@ -66,22 +78,37 @@
     <Checkbox checked={selected} label="Select {name}" onclick={(e) => clickCheck(e, id)} />
   </div>
 
-  <div class="flex items-start justify-between gap-3">
-    <IconTile icon={deviceIcon(record)} tone={waiting ? "accent" : online ? "neutral" : "muted"} />
-    <StatusDot state={dot.state} label={dot.label} />
-  </div>
-
   <!-- Every slot is kept, filled or not, so cards side by side line up. -->
-  <div class="mt-2.5 min-w-0">
-    <h3 class="truncate text-[13.5px] font-semibold text-fg" title={name}>{name}</h3>
-    <p class="truncate text-[12px] text-fg-muted">{deviceSubline(record)}</p>
-    <p class="via truncate text-[11.5px] text-fg-faint">{via ? `via ${via}` : ""}</p>
+  <div class="top">
+    <IconTile icon={deviceIcon(record)} size={32} tone={waiting ? "accent" : online ? "neutral" : "muted"} />
+    <div class="min-w-0 flex-1">
+      <h3 class="truncate text-[13.5px] font-semibold leading-tight text-fg" title={name}>{name}</h3>
+      <p class="truncate text-[11.5px] text-fg-muted">{deviceSubline(record)}</p>
+    </div>
+    <div class="flex shrink-0 flex-col items-end gap-1">
+      <StatusDot state={dot.state} label={dot.label} />
+      <span class="link" title={linkText(record.link_kind, devices.nameOf)}>
+        <Icon name={LINK_ICON[record.link_kind.kind] ?? "plug-connected"} size={12} />{via ? via : linkText(record.link_kind, devices.nameOf)}
+      </span>
+    </div>
   </div>
 
-  <div class="glance">
+  <div class="glance" class:empty={glance.length === 0}>
     {#each glance as metric (metric.id)}
       {@const shown = metricValue(metric)}
-      <span class="reading {metricTone(metric)}">{shown.value}<small>{shown.unit}</small></span>
+      {@const tone = metricTone(metric)}
+      {@const fraction = metricFraction(metric)}
+      <div class="reading {tone}" title="{metric.label}: {shown.value} {shown.unit}">
+        <span class="r-label"><Icon name={metricIcon(metric)} size={11} />{metric.label}</span>
+        <span class="r-value">{shown.value}<small>{shown.unit}</small></span>
+        {#if fraction !== null}
+          <span class="meter"><span style="width: {fraction * 100}%; background: {TONE_COLOR[tone]}"></span></span>
+        {:else}
+          <span class="trend"><Sparkline values={live.series(id, metric.id)} height={10} color={TONE_COLOR[tone]} /></span>
+        {/if}
+      </div>
+    {:else}
+      <span class="none">{online ? (waiting ? "In USB boot: no readings" : "No live readings") : "Offline"}</span>
     {/each}
   </div>
 
@@ -91,30 +118,93 @@
 </article>
 
 <style>
-  .via {
-    height: 16px;
-    line-height: 16px;
-  }
-  .glance {
+  .top {
     display: flex;
+    align-items: flex-start;
     gap: 10px;
-    min-height: 18px;
-    margin-top: 4px;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--fg-muted);
-    font-variant-numeric: tabular-nums;
   }
-  .reading small {
-    margin-left: 2px;
-    font-size: 11px;
+  .link {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    max-width: 9rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10.5px;
     color: var(--fg-faint);
   }
-  .reading.warn {
+  /* The readings: a 2 × 2 grid of label, value and a meter (or trend). */
+  .glance {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    min-height: 72px;
+    margin-top: 10px;
+    align-content: start;
+  }
+  .glance.empty {
+    display: flex;
+    align-items: center;
+  }
+  .reading {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    padding: 5px 7px 6px;
+    background: var(--inset);
+    border-radius: var(--r-sm);
+    font-variant-numeric: tabular-nums;
+  }
+  .r-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10.5px;
+    color: var(--fg-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .r-value {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--fg);
+    line-height: 1.15;
+  }
+  .r-value small {
+    margin-left: 2px;
+    font-size: 10.5px;
+    font-weight: 400;
+    color: var(--fg-faint);
+  }
+  .reading.warn .r-value {
     color: var(--warn-fg);
   }
-  .reading.err {
+  .reading.err .r-value {
     color: var(--err-fg);
+  }
+  .meter {
+    display: block;
+    height: 3px;
+    margin-top: 3px;
+    background: color-mix(in srgb, var(--fg) 8%, transparent);
+    border-radius: 1px;
+    overflow: hidden;
+  }
+  .meter span {
+    display: block;
+    height: 100%;
+    border-radius: 1px;
+  }
+  .trend {
+    display: block;
+    margin-top: 1px;
+  }
+  .none {
+    font-size: 12px;
+    color: var(--fg-faint);
   }
   .card {
     position: relative;

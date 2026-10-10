@@ -55,9 +55,9 @@
   /* Cards grow with the page (cqw/cqh: the page body), so a big window
      gets bigger, roomier cards rather than a sliver of small ones. */
   .grid-cards {
-    --card-h: clamp(168px, 21cqh, 250px);
+    --card-h: 176px;
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(clamp(240px, 16cqw, 340px), 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(clamp(250px, 17cqw, 400px), 1fr));
     gap: 12px;
   }
   .grid-cards > :global(div) {
