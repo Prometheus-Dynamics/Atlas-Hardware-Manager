@@ -1,6 +1,7 @@
 // The single subscription to backend events. Lists are loaded once, then
 // every event is dispatched to the store that owns that state.
 
+import { goto } from "$app/navigation";
 import { onAtlasEvent, onDownloadProgress, onResync, keyString, type AtlasEvent } from "#lib/api/client.ts";
 import { activity } from "./activity.svelte";
 import { devices } from "./devices.svelte";
@@ -40,7 +41,7 @@ function dispatch(event: AtlasEvent) {
       devices.remove(event.key);
       const id = keyString(event.key);
       ui.selection.delete(id);
-      if (ui.panel?.kind === "device" && ui.panel.key === id) ui.close();
+      if (ui.viewing === id) void goto("/devices");
       robots.refreshStatusesSoon();
       break;
     }

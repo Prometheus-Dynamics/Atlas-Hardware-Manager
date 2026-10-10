@@ -4,6 +4,7 @@
 import IActivity from "@tabler/icons-svelte-runes/icons/activity";
 import IAlertCircle from "@tabler/icons-svelte-runes/icons/alert-circle";
 import IAlertTriangle from "@tabler/icons-svelte-runes/icons/alert-triangle";
+import IArrowLeft from "@tabler/icons-svelte-runes/icons/arrow-left";
 import IArrowRight from "@tabler/icons-svelte-runes/icons/arrow-right";
 import IArrowUp from "@tabler/icons-svelte-runes/icons/arrow-up";
 import IArrowsMaximize from "@tabler/icons-svelte-runes/icons/arrows-maximize";
@@ -46,6 +47,7 @@ import IHistory from "@tabler/icons-svelte-runes/icons/history";
 import IInfoCircle from "@tabler/icons-svelte-runes/icons/info-circle";
 import IKey from "@tabler/icons-svelte-runes/icons/key";
 import IKeyboard from "@tabler/icons-svelte-runes/icons/keyboard";
+import ILayoutDashboard from "@tabler/icons-svelte-runes/icons/layout-dashboard";
 import ILayoutGrid from "@tabler/icons-svelte-runes/icons/layout-grid";
 import ILayoutList from "@tabler/icons-svelte-runes/icons/layout-list";
 import IListCheck from "@tabler/icons-svelte-runes/icons/list-check";
@@ -89,6 +91,7 @@ export const ICONS = {
   "activity": IActivity,
   "alert-circle": IAlertCircle,
   "alert-triangle": IAlertTriangle,
+  "arrow-left": IArrowLeft,
   "arrow-right": IArrowRight,
   "arrow-up": IArrowUp,
   "arrows-maximize": IArrowsMaximize,
@@ -131,6 +134,7 @@ export const ICONS = {
   "info-circle": IInfoCircle,
   "key": IKey,
   "keyboard": IKeyboard,
+  "layout-dashboard": ILayoutDashboard,
   "layout-grid": ILayoutGrid,
   "layout-list": ILayoutList,
   "list-check": IListCheck,

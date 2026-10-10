@@ -20,7 +20,7 @@
   const name = $derived(deviceName(record));
   const selected = $derived(ui.selection.has(id));
   const focused = $derived(ui.focused === id);
-  const open = $derived(ui.panel?.kind === "device" && ui.panel.key === id);
+  const open = $derived(ui.viewing === id);
   const online = $derived(record.presence === "online");
   const waiting = $derived(online && isRecovery(record));
   const via = $derived(viaName(record, devices.nameOf));

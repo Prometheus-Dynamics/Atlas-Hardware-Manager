@@ -21,6 +21,7 @@
     live = null,
     windowS = 10,
     tick = 0,
+    compact = false,
   }: {
     device: HardwareDevice;
     seriesOf: (reading: string) => { values: number[]; times: number[] };
@@ -29,6 +30,8 @@
     /** Its live readings, when the board streams them. */
     live?: LiveSeries | null;
     windowS?: number;
+    /** Beside other devices (pinned, Monitor): the charts only, no tiles or controls. */
+    compact?: boolean;
     /** Changes while live, to re-read the newest values. */
     tick?: number;
   } = $props();
@@ -62,11 +65,14 @@
   {/snippet}
 
   {#if live && streaming}
-    <div class="mb-3 flex flex-col gap-3">
-      {#if device.class === "imu"}<ImuView series={live} />{/if}
-      {#each live.groups() as group (group.unit)}
-        <LiveChart series={live} channels={group.channels} unit={group.unit} {windowS} />
-      {/each}
+    <!-- Wide: the 3D view beside the charts; narrow: above them. -->
+    <div class="live mb-3" class:imu={device.class === "imu"}>
+      {#if device.class === "imu"}<div class="view"><ImuView series={live} /></div>{/if}
+      <div class="charts">
+        {#each live.groups() as group (group.unit)}
+          <LiveChart series={live} channels={group.channels} unit={group.unit} {windowS} />
+        {/each}
+      </div>
     </div>
   {/if}
 
@@ -77,7 +83,9 @@
     </p>
   {/if}
 
-  {#if entries.length === 0}
+  {#if compact && streaming}
+    <!-- Beside other devices the charts say it all. -->
+  {:else if entries.length === 0}
     {#if device.controls.length === 0}<p class="text-[13px] text-fg-muted">No readings.</p>{/if}
   {:else}
     <div class="auto-grid" style="--min: 150px; --gap: 8px">
@@ -98,7 +106,7 @@
     </div>
   {/if}
 
-  <HardwareControls {device} {deviceKey} />
+  {#if !compact}<HardwareControls {device} {deviceKey} />{/if}
 </GlassCard>
 
 <style>
@@ -107,5 +115,21 @@
   }
   .axes {
     grid-column: 1 / -1;
+  }
+  .live {
+    display: grid;
+    gap: 12px;
+  }
+  .charts {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+  }
+  @container (min-width: 880px) {
+    .live.imu {
+      grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+      align-items: start;
+    }
   }
 </style>

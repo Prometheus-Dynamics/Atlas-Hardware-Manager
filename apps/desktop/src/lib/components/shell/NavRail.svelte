@@ -14,16 +14,19 @@
   const items: { href: string; label: string; icon: IconName; key: string; badge: () => number; accent?: boolean }[] = [
     { href: "/", label: "Overview", icon: "heartbeat", key: "1", badge: () => 0 },
     { href: "/devices", label: "Devices", icon: "layout-grid", key: "2", badge: () => insights.needYou, accent: true },
-    { href: "/robots", label: "Robots", icon: "robot", key: "3", badge: () => notReady },
-    { href: "/jobs", label: "Jobs", icon: "activity", key: "4", badge: () => jobs.running.length, accent: true },
-    { href: "/releases", label: "Releases", icon: "package", key: "5", badge: () => 0 },
-    { href: "/networktables", label: "NetworkTables", icon: "sitemap", key: "6", badge: () => 0 },
-    { href: "/settings", label: "Settings", icon: "settings", key: "7", badge: () => system.healthProblems },
+    { href: "/monitor", label: "Monitor", icon: "layout-dashboard", key: "3", badge: () => 0 },
+    { href: "/robots", label: "Robots", icon: "robot", key: "4", badge: () => notReady },
+    { href: "/jobs", label: "Jobs", icon: "activity", key: "5", badge: () => jobs.running.length, accent: true },
+    { href: "/releases", label: "Releases", icon: "package", key: "6", badge: () => 0 },
+    { href: "/networktables", label: "NetworkTables", icon: "sitemap", key: "7", badge: () => 0 },
+    { href: "/settings", label: "Settings", icon: "settings", key: "8", badge: () => system.healthProblems },
   ];
 
   function active(href: string) {
     const path = page.url.pathname;
-    return href === "/" ? path === "/" : path.startsWith(href);
+    // A device's page belongs to Devices.
+    if (href === "/devices" && path === "/device") return true;
+    return href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`);
   }
 </script>
 

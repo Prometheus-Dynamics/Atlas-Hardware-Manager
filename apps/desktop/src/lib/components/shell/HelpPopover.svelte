@@ -7,7 +7,7 @@
     {
       title: "Anywhere",
       keys: [
-        ["1 – 7", "Overview, Devices, Robots, Jobs, Releases, NetworkTables, Settings"],
+        ["1 – 8", "Overview, Devices, Monitor, Robots, Jobs, Releases, NetworkTables, Settings"],
         ["S", "Scan now"],
         ["Esc", "Close the panel"],
         ["?", "Show or hide this list"],

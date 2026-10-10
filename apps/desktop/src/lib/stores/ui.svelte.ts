@@ -1,5 +1,7 @@
-// View state: side panel, inventory selection and filters, help.
+// View state: side panel, the device page, pinned and monitored devices,
+// inventory selection and filters, help.
 
+import { goto } from "$app/navigation";
 import { SvelteSet } from "svelte/reactivity";
 import { keyString, type DeviceRecord, type JobId, type UpdateRequestInput } from "#lib/api/client.ts";
 import { deviceName } from "#lib/format.ts";
@@ -17,6 +19,30 @@ export const NO_ROBOT = "\u0000none";
 export type InventoryView = "cards" | "list";
 
 const VIEW_KEY = "atlas.inventory.view";
+const PINNED_KEY = "atlas.device.pinned";
+const MONITOR_KEY = "atlas.monitor.devices";
+
+/** A remembered set of device keys (per machine; this session without storage). */
+function savedSet(key: string): SvelteSet<string> {
+  try {
+    const list = JSON.parse(localStorage.getItem(key) ?? "[]");
+    return new SvelteSet(Array.isArray(list) ? list.filter((k) => typeof k === "string") : []);
+  } catch {
+    return new SvelteSet();
+  }
+}
+function saveSet(key: string, set: Set<string>) {
+  try {
+    localStorage.setItem(key, JSON.stringify([...set]));
+  } catch {
+    // Private mode or blocked storage: it lasts this session.
+  }
+}
+
+/** The device page for `key`, on `tab` when given. */
+export function devicePath(key: string, tab?: string): string {
+  return `/device?key=${encodeURIComponent(key)}${tab ? `&tab=${encodeURIComponent(tab)}` : ""}`;
+}
 
 function savedView(): InventoryView {
   try {
@@ -35,6 +61,12 @@ export function canUpdate(record: DeviceRecord): boolean {
 class UiStore {
   panel = $state<Panel>(null);
   helpOpen = $state(false);
+  /** The device the device page shows, for highlighting it elsewhere. */
+  viewing = $state<string | null>(null);
+  /** Devices shown beside whichever device is open, to compare. */
+  pinned = savedSet(PINNED_KEY);
+  /** Devices on the Monitor page. */
+  monitored = savedSet(MONITOR_KEY);
 
   selection = new SvelteSet<string>();
   anchor = $state<string | null>(null);
@@ -109,9 +141,29 @@ class UiStore {
     this.showOffline = true;
   }
 
+  /** Opens the device's page (the whole window). */
   openDevice(key: string, tab?: string) {
-    this.panel = { kind: "device", key, tab };
+    this.panel = null;
     this.focused = key;
+    void goto(devicePath(key, tab));
+  }
+
+  togglePinned(key: string) {
+    if (this.pinned.has(key)) this.pinned.delete(key);
+    else this.pinned.add(key);
+    saveSet(PINNED_KEY, this.pinned);
+  }
+
+  toggleMonitored(key: string) {
+    if (this.monitored.has(key)) this.monitored.delete(key);
+    else this.monitored.add(key);
+    saveSet(MONITOR_KEY, this.monitored);
+  }
+
+  setMonitored(keys: string[]) {
+    this.monitored.clear();
+    for (const key of keys) this.monitored.add(key);
+    saveSet(MONITOR_KEY, this.monitored);
   }
 
   openRobot(name: string | null) {

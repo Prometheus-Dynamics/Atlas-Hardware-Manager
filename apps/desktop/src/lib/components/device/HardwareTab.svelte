@@ -16,12 +16,15 @@
     hardware,
     boardKey,
     deviceKey = null,
+    compact = false,
   }: {
     hardware: HardwareSnapshot;
     /** The board, for its live stream. */
     boardKey: DeviceKey;
     /** The board, when its devices take commands (`hardware-control`). */
     deviceKey?: DeviceKey | null;
+    /** Beside other devices: charts only, for the devices that stream. */
+    compact?: boolean;
   } = $props();
 
   const history = new SvelteMap<string, number[]>();
@@ -127,6 +130,8 @@
     };
   });
 
+  // Compact (beside other devices): only what streams.
+  const cards = $derived(compact ? hardware.devices.filter((d) => live.has(d.id)) : hardware.devices);
   const ago = $derived(Math.max(0, Math.round(clock.now / 1000 - hardware.at)));
   const windowOptions = WINDOWS.map((s) => ({ value: String(s), label: `${s} s` }));
 </script>
@@ -148,8 +153,9 @@
       <SegmentedControl options={windowOptions} bind:value={windowKey} label="Chart window" size="sm" />
     {/if}
   </div>
-  {#each hardware.devices as device (device.id)}
+  {#each cards as device (device.id)}
     <HardwareCard
+      {compact}
       {device}
       {deviceKey}
       live={live.get(device.id) ?? null}

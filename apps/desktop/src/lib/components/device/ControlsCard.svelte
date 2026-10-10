@@ -1,8 +1,11 @@
 <script lang="ts">
-  // The board's controls that aren't already on screen: the header has the
-  // everyday ones (quick.ts) and, when the board reports its update, Now has
-  // Cancel and Roll back. Whichever transport offers an id (SSH, the
-  // identity endpoint or Orion) runs it. Destructive ones confirm inline.
+  // The board's controls that aren't already on screen, and only those that
+  // apply now: the header has the everyday ones (quick.ts); when the board
+  // reports its update, Now has Cancel and Roll back, and without a report
+  // they don't show (nothing says an update is there to cancel). Any other
+  // action the device offers follows the known ones. Whichever transport
+  // offers an id (SSH, the identity endpoint or Orion) runs it. Destructive
+  // ones confirm inline.
   import type { DeviceAction, UpdateState } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
@@ -22,13 +25,13 @@
   } = $props();
 
   function applies(id: string): boolean {
-    if (update === undefined) return true;
+    if (update === undefined) return !id.startsWith("update.");
     if (id === "update.cancel") return !!update && ["staging", "staged"].includes(update.state);
     if (id === "update.rollback") return !!update?.version_previous && !updateBusy(update);
     return true;
   }
 
-  /** The general controls, in this order; anything else stays on the Actions tab. */
+  /** The general controls, in this order; the device's other actions follow. */
   const CONTROLS: { id: string; icon: IconName; prompt?: string }[] = [
     { id: "locate", icon: "focus-2" },
     { id: "reboot", icon: "refresh" },
@@ -40,15 +43,20 @@
   ];
 
   const inHeader = $derived(new Set(quickActions(actions).map((a) => a.id)));
-  const shown = $derived(
-    CONTROLS.flatMap((control) => {
+  // Restarting into USB boot belongs to Software, which continues into the install.
+  const elsewhere = new Set(["usb-boot"]);
+  const shown = $derived([
+    ...CONTROLS.flatMap((control) => {
       const action = actions.find((a) => a.id === control.id);
-      if (!action || inHeader.has(control.id) || !applies(control.id)) return [];
+      if (!action || inHeader.has(control.id) || elsewhere.has(control.id) || !applies(control.id)) return [];
       // Now shows the update's own controls when the board reports its update.
       if (update !== undefined && control.id.startsWith("update.")) return [];
       return [{ ...control, action }];
     }),
-  );
+    ...actions
+      .filter((a) => !CONTROLS.some((c) => c.id === a.id) && !inHeader.has(a.id) && !elsewhere.has(a.id) && applies(a.id))
+      .map((action) => ({ id: action.id, icon: "player-play" as IconName, prompt: undefined, action })),
+  ]);
 </script>
 
 {#if shown.length > 0}

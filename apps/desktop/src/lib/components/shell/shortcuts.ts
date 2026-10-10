@@ -6,7 +6,7 @@ import { devices } from "#lib/stores/devices.svelte.ts";
 import { system } from "#lib/stores/system.svelte.ts";
 import { ui } from "#lib/stores/ui.svelte.ts";
 
-const ROUTES = ["/", "/devices", "/robots", "/jobs", "/releases", "/networktables", "/settings"];
+const ROUTES = ["/", "/devices", "/monitor", "/robots", "/jobs", "/releases", "/networktables", "/settings"];
 
 function typing(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
@@ -32,7 +32,7 @@ export function handleShortcut(event: KeyboardEvent) {
     return;
   }
 
-  const index = ["1", "2", "3", "4", "5", "6", "7"].indexOf(event.key);
+  const index = ["1", "2", "3", "4", "5", "6", "7", "8"].indexOf(event.key);
   if (index >= 0) {
     event.preventDefault();
     void goto(ROUTES[index]);

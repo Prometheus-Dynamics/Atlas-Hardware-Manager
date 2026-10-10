@@ -82,6 +82,7 @@
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 12px;
     align-items: center;
+    container-type: inline-size;
   }
   @media (max-width: 560px) {
     .imu {
