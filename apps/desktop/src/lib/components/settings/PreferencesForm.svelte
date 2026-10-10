@@ -9,6 +9,7 @@
   import SegmentedControl from "#lib/components/common/SegmentedControl.svelte";
   import Toggle from "#lib/components/common/Toggle.svelte";
   import { sentence } from "#lib/format.ts";
+  import { scale, type ScaleChoice } from "#lib/stores/scale.svelte.ts";
   import { system } from "#lib/stores/system.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
   import { rise } from "#lib/ui/motion.ts";
@@ -38,6 +39,19 @@
     { value: "demo", label: "Demo robot" },
     { value: "flaky", label: "Flaky robot" },
   ];
+  const scaleOptions: { value: ScaleChoice; label: string }[] = [
+    { value: "auto", label: "Auto" },
+    { value: "1", label: "100%" },
+    { value: "1.1", label: "110%" },
+    { value: "1.25", label: "125%" },
+    { value: "1.5", label: "150%" },
+  ];
+  // Applies at once, on this computer only (not part of Save).
+  let scaleChoice = $state<ScaleChoice>(scale.choice);
+  $effect(() => {
+    if (scaleChoice !== scale.choice) scale.set(scaleChoice);
+  });
+
   const DEFAULT_KEY = "~/.ssh/id_ed25519.pub";
   // svelte-ignore state_referenced_locally
   let keyOn = $state(!!settings.ssh_key_file);
@@ -115,6 +129,14 @@
       <span class="text-[13px] font-medium text-fg">Staged rollout</span>
       <span class="text-[12px] text-fg-faint">Auto updates one device first when a family has three or more.</span>
       <div class="mt-1"><SegmentedControl options={stagedOptions} bind:value={draft.staged_default} label="Staged rollout default" size="sm" /></div>
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <span class="text-[13px] font-medium text-fg">Interface size</span>
+      <span class="text-[12px] text-fg-faint">
+        Auto makes everything larger on a big window, so full screen isn't half empty{scale.choice === "auto" ? ` (now ${Math.round(scale.factor * 100)}%)` : ""}. Applies at once, on this computer.
+      </span>
+      <div class="mt-1"><SegmentedControl options={scaleOptions} bind:value={scaleChoice} label="Interface size" size="sm" /></div>
     </div>
 
     <div class="flex flex-col gap-1.5">

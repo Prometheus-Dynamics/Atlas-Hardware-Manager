@@ -6,12 +6,14 @@
   import SidePanel from "#lib/components/shell/SidePanel.svelte";
   import Toasts from "#lib/components/shell/Toasts.svelte";
   import { handleShortcut } from "#lib/components/shell/shortcuts.ts";
+  import { scale } from "#lib/stores/scale.svelte.ts";
   import { startSync } from "#lib/stores/sync.ts";
 
   let { children } = $props();
 
   // One event subscription for the whole app.
   $effect(() => startSync());
+  $effect(() => scale.start());
 </script>
 
 <svelte:window onkeydown={handleShortcut} />

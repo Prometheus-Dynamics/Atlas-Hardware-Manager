@@ -3,7 +3,7 @@
   // (readings with trends, streaming sensors as charts), or their cameras as
   // a wall of views. Which devices, the view and the columns are remembered;
   // pick devices here, from a device's page (Monitor), or a whole robot.
-  // With none picked, the camera wall shows every online camera.
+  // With none picked, every online device (and camera) shows.
   import { keyString } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import PageHeader from "#lib/components/common/PageHeader.svelte";
@@ -17,6 +17,7 @@
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { robots } from "#lib/stores/robots.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
+  import { masonry } from "#lib/ui/masonry.ts";
 
   const shown = $derived([...ui.monitored].map((k) => devices.get(k)).filter((r) => !!r));
   const known = $derived(
@@ -57,9 +58,11 @@
   ];
   // The camera wall: the chosen devices, or every online camera.
   const cameraRecords = $derived(shown.length ? shown : devices.all.filter((d) => d.presence === "online" && cameraStreams(d).length > 0));
-  // The grid: as many columns as fit at about 360 px each.
+  // The data panels: the chosen devices, or every online one.
+  const dataRecords = $derived(shown.length ? shown : devices.all.filter((d) => d.presence === "online"));
+  // Packed in as many columns as fit at about 360 px each.
   let width = $state(1200);
-  const columns = $derived(Math.max(1, Math.min(shown.length || 1, Math.floor(width / 360))));
+  const columns = $derived(Math.max(1, Math.min(dataRecords.length || 1, Math.floor(width / 360))));
 
   function addOnline() {
     ui.setMonitored([...new Set([...ui.monitored, ...devices.all.filter((d) => d.presence === "online").map((d) => keyString(d.key))])]);
@@ -106,20 +109,25 @@
         <CameraWall records={cameraRecords} columns={Number(cols)} />
       </Region>
     </div>
-  {:else if shown.length === 0}
+  {:else if dataRecords.length === 0}
     <div class="empty">
-      <p class="text-[13px] text-fg-muted">No devices on the Monitor yet.</p>
-      <div class="flex gap-2">
-        <Button size="sm" variant="primary" onclick={addOnline}>Show every online device</Button>
-        <Button size="sm" onclick={() => (picking = true)}>Choose devices</Button>
-      </div>
+      <p class="text-[13px] text-fg-muted">No device is online.</p>
     </div>
   {:else}
     <div class="min-h-0 flex-1" bind:clientWidth={width}>
       <Region class="h-full" inner="grid gap-2.5 pb-1" label="Monitored devices">
-        <div class="grid" style="grid-template-columns: repeat({columns}, minmax(0, 1fr))">
-          {#each shown as record (keyString(record.key))}
-            <DeviceMonitor {record} removeLabel="Take off the Monitor" onremove={() => ui.toggleMonitored(keyString(record.key))} />
+        {#if shown.length === 0}
+          <p class="text-[12px] text-fg-faint">Every online device. Choose devices to show only some.</p>
+        {/if}
+        <div class="packed" style="grid-template-columns: repeat({columns}, minmax(0, 1fr))">
+          {#each dataRecords as record (keyString(record.key))}
+            <div use:masonry={10}>
+              <DeviceMonitor
+                {record}
+                removeLabel="Take off the Monitor"
+                onremove={shown.length ? () => ui.toggleMonitored(keyString(record.key)) : undefined}
+              />
+            </div>
           {/each}
         </div>
       </Region>
@@ -128,10 +136,13 @@
 </Page>
 
 <style>
-  .grid {
+  /* Panels of different heights packed under each other, in order
+     (masonry: each spans rows by its height). */
+  .packed {
     display: grid;
-    gap: 10px;
-    align-items: start;
+    grid-auto-rows: 4px;
+    column-gap: 10px;
+    row-gap: 0;
   }
   .picker {
     display: flex;

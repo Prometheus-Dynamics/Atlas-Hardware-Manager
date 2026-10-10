@@ -171,7 +171,7 @@
     </div>
   {/if}
 
-  {#if online && reports}<OrientationCard {record} />{/if}
+  {#if online && reports}<OrientationCard {record} fill={wide} />{/if}
   </div>
 
   <div class="col">
@@ -277,7 +277,8 @@
     .side {
       display: grid;
       grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-      align-items: start;
+      /* The camera column as tall as the other; its 3D view takes the rest. */
+      align-items: stretch;
     }
     .camera,
     .camera.several {

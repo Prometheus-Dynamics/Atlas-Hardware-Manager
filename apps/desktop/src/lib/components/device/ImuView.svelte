@@ -9,7 +9,8 @@
   import { Orientation, cssMatrix, euler } from "./imu.ts";
   import type { LiveSeries } from "./live.ts";
 
-  let { series }: { series: LiveSeries } = $props();
+  /** fill: as tall as its container (a column with room to spare). */
+  let { series, fill = false }: { series: LiveSeries; fill?: boolean } = $props();
 
   const NAMES = ["acceleration.x", "acceleration.y", "acceleration.z", "angular_rate.x", "angular_rate.y", "angular_rate.z"];
   const indices = $derived(NAMES.map((name) => series.channels.findIndex((c) => c.name === name)));
@@ -48,7 +49,7 @@
 </script>
 
 {#if usable}
-  <div class="imu">
+  <div class="imu" class:fill>
     <div class="stage" aria-label="The IMU's orientation in 3D" role="img">
       {#if !plain}
         <CaseModel orientation={() => orientation?.q ?? [1, 0, 0, 0]} onfail={() => (plain = true)} />
@@ -96,6 +97,13 @@
       grid-template-columns: 1fr;
     }
   }
+  .imu.fill {
+    height: 100%;
+    align-items: stretch;
+  }
+  .imu.fill .readout {
+    align-self: center;
+  }
   .stage {
     height: 230px;
     perspective: 800px;
@@ -105,6 +113,10 @@
     overflow: hidden;
     border-radius: var(--r-md);
     background: color-mix(in srgb, var(--fg) 4%, transparent);
+  }
+  .imu.fill .stage {
+    height: auto;
+    min-height: 230px;
   }
   /* Looking down at the floor from the front, a little above. */
   .scene {

@@ -35,9 +35,11 @@
         scene.environment = environment;
         scene.environmentIntensity = 0.55;
         const camera = new THREE.PerspectiveCamera(32, 1, 0.005, 1);
-        // From the front, a little above and to the side.
-        camera.position.set(0.075, 0.07, 0.11);
-        camera.lookAt(0, 0, 0);
+        // From the front, a little above and to the side, as far off as the
+        // case needs to fit the view's shape (set on resize).
+        const VIEW_FROM = new THREE.Vector3(0.075, 0.07, 0.11).normalize();
+        /** About the case's half size (m): it fits however it is turned. */
+        const FIT_RADIUS = 0.04;
         scene.add(new THREE.HemisphereLight(0xdfe6f2, 0x20242c, 0.5));
         const key = new THREE.DirectionalLight(0xffffff, 1.8);
         key.position.set(0.3, 0.6, 0.5);
@@ -149,6 +151,11 @@
           const { clientWidth: w, clientHeight: h } = host;
           renderer.setSize(w, h, false);
           camera.aspect = w / Math.max(1, h);
+          const vertical = (camera.fov * Math.PI) / 180;
+          const horizontal = 2 * Math.atan(Math.tan(vertical / 2) * camera.aspect);
+          const distance = FIT_RADIUS / Math.sin(Math.min(vertical, horizontal) / 2);
+          camera.position.copy(VIEW_FROM).multiplyScalar(distance);
+          camera.lookAt(0, 0, 0);
           camera.updateProjectionMatrix();
         };
         const observer = new ResizeObserver(resize);

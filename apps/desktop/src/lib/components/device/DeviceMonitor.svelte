@@ -95,6 +95,8 @@
 
 <style>
   .monitor {
+    /* Its contents (the hardware cards) lay out by the panel's width. */
+    container-type: inline-size;
     display: flex;
     flex-direction: column;
     min-width: 0;

@@ -7,7 +7,8 @@
   import ImuView from "./ImuView.svelte";
   import { LiveSeries } from "./live.ts";
 
-  let { record }: { record: DeviceRecord } = $props();
+  /** fill: grows to the height its column leaves (full screen). */
+  let { record, fill = false }: { record: DeviceRecord; fill?: boolean } = $props();
 
   const imu = $derived(
     (deviceStatus.byDevice.get(keyString(record.key))?.hardware?.devices ?? []).find(
@@ -46,8 +47,15 @@
 </script>
 
 {#if imu && series}
-  <section class="flex flex-col gap-2.5">
+  <section class="flex flex-col gap-2.5" class:grow={fill}>
     <h3 class="text-[12px] font-medium uppercase tracking-[0.06em] text-fg-faint">Orientation</h3>
-    <div class="glass px-3 py-3"><ImuView {series} /></div>
+    <div class="glass px-3 py-3" class:grow={fill}><ImuView {series} {fill} /></div>
   </section>
 {/if}
+
+<style>
+  .grow {
+    flex: 1;
+    min-height: 0;
+  }
+</style>
