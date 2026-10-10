@@ -5,6 +5,7 @@
   // magnetometer, so "Zero heading" makes the current one straight ahead.
   import Button from "#lib/components/common/Button.svelte";
   import { onMount } from "svelte";
+  import CaseModel from "./CaseModel.svelte";
   import { Orientation, cssMatrix, euler } from "./imu.ts";
   import type { LiveSeries } from "./live.ts";
 
@@ -15,6 +16,8 @@
   const usable = $derived(indices.every((i) => i >= 0));
 
   let orientation: Orientation | null = null;
+  /** The case model didn't load (no WebGL, no model): the plain block instead. */
+  let plain = $state(false);
   let matrix = $state("none");
   let angles = $state({ roll: 0, pitch: 0, yaw: 0 });
   let accelG = $state(0);
@@ -47,6 +50,9 @@
 {#if usable}
   <div class="imu">
     <div class="stage" aria-label="The IMU's orientation in 3D" role="img">
+      {#if !plain}
+        <CaseModel orientation={() => orientation?.q ?? [1, 0, 0, 0]} onfail={() => (plain = true)} />
+      {:else}
       <div class="scene">
         <div class="floor"></div>
         <div class="body" style="transform: {matrix}">
@@ -61,6 +67,7 @@
           <div class="axis z"><span>z</span></div>
         </div>
       </div>
+      {/if}
     </div>
     <div class="readout">
       <dl>
