@@ -159,7 +159,7 @@
     align-items: center;
     gap: 10px;
     padding: 0 12px 0 8px;
-    border-radius: 12px;
+    border-radius: var(--r-card);
     background: var(--layer-solid);
     border: 1px solid var(--glass-border);
     text-align: left;
@@ -200,7 +200,7 @@
     width: 32px;
     height: 32px;
     flex-shrink: 0;
-    border-radius: 9px;
+    border-radius: var(--r-md);
     background: var(--glass);
     color: var(--fg);
   }

@@ -31,16 +31,16 @@
     class?: string;
   } = $props();
 
-  const body = $derived(pad ? "px-5 pb-[18px] pt-4" : "");
+  const body = $derived(pad ? "px-4 py-3" : "");
 </script>
 
 <section class="glass card {extra}" class:large class:fill>
   {#if title || actions}
-    <header class="head flex shrink-0 items-center gap-3 px-5 py-3">
-      {#if icon}<IconTile {icon} size={28} />{/if}
+    <header class="head flex shrink-0 items-center gap-2.5 px-4 py-2">
+      {#if icon}<IconTile {icon} size={24} />{/if}
       <div class="min-w-0 flex-1">
-        {#if title}<h2 class="truncate text-[14px] font-semibold text-fg" {title}>{title}</h2>{/if}
-        {#if subtitle}<p class="truncate text-[12.5px] text-fg-muted" title={subtitle}>{subtitle}</p>{/if}
+        {#if title}<h2 class="truncate text-[13px] font-semibold text-fg" {title}>{title}</h2>{/if}
+        {#if subtitle}<p class="truncate text-[12px] text-fg-muted" title={subtitle}>{subtitle}</p>{/if}
       </div>
       {#if actions}<div class="flex shrink-0 items-center gap-2">{@render actions()}</div>{/if}
     </header>

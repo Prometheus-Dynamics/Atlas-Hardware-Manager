@@ -124,7 +124,7 @@
     align-items: center;
     gap: 10px;
     padding: 7px 8px;
-    border-radius: 10px;
+    border-radius: var(--r-md);
   }
   .role:hover {
     background: var(--glass);

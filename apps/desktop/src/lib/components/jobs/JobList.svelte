@@ -61,7 +61,7 @@
     gap: 12px;
     width: 100%;
     padding: 10px 12px;
-    border-radius: 12px;
+    border-radius: var(--r-card);
     text-align: left;
     border: 1px solid transparent;
     transition:

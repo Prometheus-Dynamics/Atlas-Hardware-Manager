@@ -243,7 +243,7 @@
     gap: 8px;
     width: 100%;
     padding: 4px 8px 4px calc(8px + var(--depth) * 16px);
-    border-radius: 6px;
+    border-radius: var(--r-md);
     text-align: left;
   }
   .row:hover {
@@ -292,7 +292,7 @@
   .graph {
     display: grid;
     place-items: center;
-    border-radius: 6px;
+    border-radius: var(--r-md);
     color: var(--fg-faint);
   }
   .graph:hover,
@@ -302,7 +302,7 @@
   }
   .chip {
     padding: 2px 9px;
-    border-radius: 999px;
+    border-radius: var(--r-round);
     font-size: 12px;
     color: var(--fg-muted);
     background: var(--glass-strong);

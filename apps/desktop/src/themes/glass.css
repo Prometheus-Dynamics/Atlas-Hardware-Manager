@@ -20,8 +20,9 @@
   --layer-solid: #1a1d24;
   --inset: rgba(0, 0, 0, 0.22);
   --scrim: rgba(8, 9, 12, 0.35);
-  --shadow-layer: 0 24px 60px -12px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.25);
-  --shadow-lift: 0 6px 18px -6px rgba(0, 0, 0, 0.5);
+  /* Grounded: layers sit on the page with a short shadow, nothing floats far. */
+  --shadow-layer: 0 8px 22px -10px rgba(0, 0, 0, 0.6), 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-lift: 0 2px 6px -3px rgba(0, 0, 0, 0.45);
   /* The shade at the edge of a scrolled region: more above or below. */
   --scroll-edge: rgba(0, 0, 0, 0.3);
 
@@ -60,12 +61,15 @@
   --neutral-bg: rgba(255, 255, 255, 0.06);
   --offline: #5d6372;
 
-  /* Shape */
-  --r-sm: 8px;
-  --r-md: 10px;
-  --r-card: 12px;
-  --r-panel: 14px;
-  --r-pill: 99px;
+  /* Shape: sharp, slightly rounded, like an instrument panel. --r-pill is
+     the tag and button shape (no longer a capsule); --r-round is for the
+     few things that are really round (status dots, a toggle's knob). */
+  --r-sm: 3px;
+  --r-md: 4px;
+  --r-card: 5px;
+  --r-panel: 6px;
+  --r-pill: 4px;
+  --r-round: 999px;
 
   /* Type */
   --font-ui: "Inter Variable", "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;

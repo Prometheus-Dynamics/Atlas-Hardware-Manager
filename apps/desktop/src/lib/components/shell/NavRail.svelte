@@ -94,7 +94,7 @@
     justify-content: center;
     width: 36px;
     height: 36px;
-    border-radius: 10px;
+    border-radius: var(--r-md);
     color: var(--fg-faint);
     transition:
       background var(--t-fast),
@@ -143,7 +143,7 @@
     left: calc(100% + 10px);
     top: 50%;
     padding: 5px 9px;
-    border-radius: 8px;
+    border-radius: var(--r-md);
     background: var(--layer-solid);
     border: 1px solid var(--glass-border);
     box-shadow: var(--shadow-lift);

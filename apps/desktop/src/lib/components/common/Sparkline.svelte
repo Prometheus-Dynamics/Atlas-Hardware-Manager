@@ -151,7 +151,7 @@
     align-items: baseline;
     gap: 8px;
     padding: 4px 8px;
-    border-radius: 7px;
+    border-radius: var(--r-md);
     white-space: nowrap;
     pointer-events: none;
     font-variant-numeric: tabular-nums;

@@ -5,6 +5,6 @@
 
 <span
   class="shimmer block"
-  style="width: {width}; height: {height}px; {round ? 'border-radius: 999px;' : ''}"
+  style="width: {width}; height: {height}px; {round ? 'border-radius: var(--r-round);' : ''}"
   aria-hidden="true"
 ></span>

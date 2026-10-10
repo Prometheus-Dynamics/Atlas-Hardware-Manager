@@ -85,7 +85,7 @@
     align-items: center;
     gap: 16px;
     padding: 10px 14px;
-    border-radius: 12px;
+    border-radius: var(--r-card);
     transition: background var(--t-fast);
   }
   .row:hover {

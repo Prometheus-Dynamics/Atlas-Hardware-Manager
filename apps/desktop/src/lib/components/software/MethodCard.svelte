@@ -74,7 +74,7 @@
     justify-content: center;
     width: 24px;
     height: 24px;
-    border-radius: 7px;
+    border-radius: var(--r-md);
     background: var(--glass-strong);
     color: var(--fg-muted);
     transition:

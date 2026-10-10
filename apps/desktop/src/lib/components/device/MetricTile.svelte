@@ -147,7 +147,7 @@
     place-items: center;
     width: 26px;
     height: 26px;
-    border-radius: 7px;
+    border-radius: var(--r-md);
     color: var(--fg-faint);
     transition:
       color var(--t-fast),

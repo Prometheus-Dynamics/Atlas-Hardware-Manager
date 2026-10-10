@@ -56,7 +56,7 @@
     max-width: 100%;
     margin-left: -8px;
     padding: 2px 8px;
-    border-radius: 10px;
+    border-radius: var(--r-md);
     font-size: 22px;
     font-weight: 600;
     letter-spacing: -0.01em;
@@ -81,7 +81,7 @@
     z-index: 35;
     min-width: 220px;
     padding: 6px;
-    border-radius: 14px;
+    border-radius: var(--r-panel);
     transform-origin: top left;
   }
   .menu button {
@@ -90,7 +90,7 @@
     gap: 10px;
     width: 100%;
     padding: 8px 10px;
-    border-radius: 9px;
+    border-radius: var(--r-md);
     font-size: 13px;
     color: var(--fg);
   }

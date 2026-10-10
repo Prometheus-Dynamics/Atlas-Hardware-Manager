@@ -105,7 +105,7 @@
   .row.idle {
     width: 100%;
     text-align: left;
-    border-radius: 10px;
+    border-radius: var(--r-md);
     transition: background var(--t-fast);
   }
   .row.idle:hover {

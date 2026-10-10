@@ -71,7 +71,7 @@
   .close {
     display: inline-flex;
     padding: 2px;
-    border-radius: 6px;
+    border-radius: var(--r-md);
     color: var(--fg-faint);
   }
   .close:hover {

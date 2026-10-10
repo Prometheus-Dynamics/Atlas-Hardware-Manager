@@ -113,7 +113,7 @@
     justify-content: center;
     width: 32px;
     height: 32px;
-    border-radius: 9px;
+    border-radius: var(--r-md);
     background: var(--accent-tint);
     color: var(--accent-text-strong);
   }

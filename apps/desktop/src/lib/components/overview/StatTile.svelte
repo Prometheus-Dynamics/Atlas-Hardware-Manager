@@ -86,7 +86,7 @@
     justify-content: center;
     width: 22px;
     height: 22px;
-    border-radius: 7px;
+    border-radius: var(--r-md);
     color: var(--tone);
     background: color-mix(in srgb, var(--tone) 14%, transparent);
   }

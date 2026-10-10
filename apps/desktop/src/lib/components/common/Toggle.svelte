@@ -29,7 +29,7 @@
     left: 2px;
     width: 15px;
     height: 15px;
-    border-radius: 50%;
+    border-radius: var(--r-sm);
     background: var(--fg);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
     transition: transform var(--t-med) var(--ease-out);

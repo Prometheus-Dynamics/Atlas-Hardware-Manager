@@ -95,7 +95,7 @@
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    border-radius: 10px;
+    border-radius: var(--r-md);
     background: color-mix(in srgb, var(--fg) 4%, transparent);
   }
   /* Looking down at the floor from the front, a little above. */

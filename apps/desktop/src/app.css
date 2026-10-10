@@ -186,7 +186,7 @@ body {
     color: var(--fg-muted);
     background: var(--glass);
     border: 1px solid var(--glass-border);
-    border-radius: 6px;
+    border-radius: var(--r-md);
   }
 }
 
@@ -202,7 +202,7 @@ body {
 .shimmer {
   background: linear-gradient(90deg, var(--glass) 0%, var(--glass-strong) 40%, var(--glass) 80%) 0 0 / 640px 100%;
   animation: shimmer 1.4s linear infinite;
-  border-radius: 6px;
+  border-radius: var(--r-md);
 }
 
 @keyframes spin {

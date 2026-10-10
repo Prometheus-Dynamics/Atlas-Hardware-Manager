@@ -261,7 +261,7 @@
     z-index: 60;
     transform: translate(-50%, calc(-100% - 8px));
     padding: 6px 9px;
-    border-radius: 8px;
+    border-radius: var(--r-md);
     pointer-events: none;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
