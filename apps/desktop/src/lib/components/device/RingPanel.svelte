@@ -7,8 +7,20 @@
   import Button from "#lib/components/common/Button.svelte";
   import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
+  import type { LiveSeries } from "./live.ts";
 
-  let { device, deviceKey }: { device: HardwareDevice; deviceKey: DeviceKey } = $props();
+  let {
+    device,
+    deviceKey,
+    live = null,
+    tick = 0,
+  }: {
+    device: HardwareDevice;
+    deviceKey: DeviceKey;
+    /** The ring's frames, when the board streams them: its brightness comes with them. */
+    live?: LiveSeries | null;
+    tick?: number;
+  } = $props();
 
   const BUILTIN = new Set(["scheme-a", "scheme-b", "scheme-c"]);
 
@@ -17,8 +29,16 @@
   let error = $state<string | null>(null);
   /** The preset open in the editor: its name and its look file. */
   let editing = $state<{ name: string; body: string; saveAs: string } | null>(null);
-  /** The brightness set here (the board's own isn't read yet). */
+  /** The brightness set here; until then, the board's from its frames. */
   let brightness = $state<number | null>(null);
+  const streamed = $derived.by(() => {
+    void tick;
+    if (!live?.count) return null;
+    const c = live.channels.findIndex((ch) => ch.name === "brightness");
+    const v = c >= 0 ? live.v[c][live.index(live.count - 1)] : NaN;
+    return Number.isFinite(v) ? v : null;
+  });
+  const shownBrightness = $derived(brightness ?? streamed);
   let keepBrightness = $state(false);
 
   const call = (name: string, args: Record<string, string | number | boolean> = {}) => api.hardwareAction(deviceKey, device.id, name, args);
@@ -72,7 +92,8 @@
   async function setBrightness(value: number) {
     try {
       const out = await call("light.brightness", { value, persist: keepBrightness });
-      brightness = typeof out.brightness === "number" ? out.brightness : value;
+      // A streaming ring reports its own from now on; otherwise keep what was set.
+      brightness = live ? null : typeof out.brightness === "number" ? out.brightness : value;
     } catch (e) {
       toasts.error(errorText(e));
     }
@@ -103,11 +124,11 @@
         min="0"
         max="1"
         step="0.01"
-        value={brightness ?? 1}
+        value={shownBrightness ?? 1}
         aria-label="Ring brightness"
         onchange={(e) => setBrightness(Number(e.currentTarget.value))}
       />
-      <span class="val">{brightness === null ? "not read" : `${Math.round(brightness * 100)}%`}</span>
+      <span class="val">{shownBrightness === null ? "not read" : `${Math.round(shownBrightness * 100)}%`}</span>
       <label class="keep" title="Keep this brightness after the board restarts"><input type="checkbox" bind:checked={keepBrightness} /> Keep</label>
     </div>
 

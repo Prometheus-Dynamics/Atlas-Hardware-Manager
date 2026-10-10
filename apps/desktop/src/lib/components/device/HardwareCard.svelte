@@ -22,6 +22,7 @@
     deviceKey,
     live = null,
     fused = null,
+    light = null,
     windowS = 10,
     tick = 0,
     compact = false,
@@ -34,6 +35,8 @@
     live?: LiveSeries | null;
     /** The board's fused orientation stream, for an IMU's 3D view. */
     fused?: LiveSeries | null;
+    /** The status ring's frames, for the 3D view's LEDs. */
+    light?: LiveSeries | null;
     windowS?: number;
     /** Beside other devices (the Monitor page): the charts only, no tiles or controls. */
     compact?: boolean;
@@ -70,10 +73,11 @@
     <Pill tone={pill.tone} label={pill.label} />
   {/snippet}
 
-  {#if live && streaming}
-    <!-- Wide: the 3D view beside the charts; narrow: above them. -->
+  {#if live && streaming && device.class !== "light"}
+    <!-- Wide: the 3D view beside the charts; narrow: above them. A light's
+         frames aren't charted: they colour the 3D view's ring. -->
     <div class="live" class:imu={device.class === "imu"}>
-      {#if device.class === "imu"}<div class="view"><ImuView series={live} {fused} /></div>{/if}
+      {#if device.class === "imu"}<div class="view"><ImuView series={live} {fused} {light} /></div>{/if}
       <div class="charts">
         {#each live.groups() as group (group.unit)}
           <LiveChart series={live} channels={group.channels} unit={group.unit} {windowS} />
@@ -114,7 +118,7 @@
 
   {#if !compact}<HardwareControls {device} {deviceKey} />{/if}
   {#if !compact && deviceKey && device.class === "light" && device.status === "available"}
-    <RingPanel {device} {deviceKey} />
+    <RingPanel {device} {deviceKey} {live} {tick} />
   {/if}
   {#if !compact && deviceKey && (device.class === "imu" || device.class === "magnetometer") && device.status !== "missing" && device.status !== "faulted"}
     <CalibrationPanel {device} {deviceKey} />

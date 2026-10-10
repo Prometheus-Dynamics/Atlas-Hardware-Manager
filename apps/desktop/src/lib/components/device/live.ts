@@ -107,6 +107,8 @@ export class LiveSeries {
 /** How often to ask for a device: motion sensors at 100 Hz, the rest at 10 Hz. */
 export function periodFor(className: string): number {
   if (className === "orientation") return 20;
+  // A light's frames, 20 a second (sent only when they change).
+  if (className === "light") return 50;
   return ["imu", "accelerometer", "gyroscope", "magnetometer"].includes(className) ? 10 : 100;
 }
 

@@ -4,11 +4,17 @@
   // and the connectors at its edges, in the IMU's frame) turned
   // by the IMU's orientation, with the lens added and the axes drawn. three.js
   // loads only when this shows. `onfail` says WebGL or the model isn't there,
-  // so the caller can draw something simpler.
+  // so the caller can draw something simpler. With `ring`, the status ring's
+  // LEDs glow as the board's do (lemnosd's frames, see ring.ts).
   import { onMount } from "svelte";
   import type { Quat } from "./imu.ts";
+  import type { RingFrame } from "./ring.ts";
 
-  let { orientation, onfail }: { orientation: () => Quat; onfail: () => void } = $props();
+  let {
+    orientation,
+    onfail,
+    ring = () => null,
+  }: { orientation: () => Quat; onfail: () => void; ring?: () => RingFrame | null } = $props();
 
   let host = $state<HTMLDivElement>();
 
@@ -136,6 +142,58 @@
         lens.rotation.x = Math.PI / 2;
         lens.position.set(0, 0, front - 0.0021);
         board.add(lens);
+        // The ring's LEDs light the diffuser itself: each of its vertices
+        // takes the colour of the LEDs nearest its angle around the lens
+        // (blended between the two), over the plastic's own dim white.
+        // Physical LED 0 sits at RING_LED0_DEG from +x toward +y, the rest
+        // following that way (as the manifest's gravity note has it).
+        const RING_LED0_DEG = 112.5;
+        const diffusers: InstanceType<typeof THREE.Mesh>[] = [];
+        gltf.scene.traverse((node) => {
+          const mesh = node as InstanceType<typeof THREE.Mesh>;
+          if (mesh.isMesh && (mesh.name === "DIFFUSER" || mesh.parent?.name === "DIFFUSER")) diffusers.push(mesh);
+        });
+        const BASE = 0.16;
+        /** Per diffuser vertex: its position on the ring, 0..1 from LED 0. */
+        let around: Float32Array[] = [];
+        let lit = false;
+        const paint = (frame: RingFrame) => {
+          const n = frame.colors.length;
+          if (!n || !diffusers.length) return;
+          if (!lit) {
+            lit = true;
+            around = diffusers.map((mesh) => {
+              const position = mesh.geometry.getAttribute("position");
+              const at = new Float32Array(position.count);
+              for (let v = 0; v < position.count; v++) {
+                const deg = (Math.atan2(position.getY(v), position.getX(v)) * 180) / Math.PI;
+                at[v] = (((deg - RING_LED0_DEG) % 360) + 360) % 360 / 360;
+              }
+              mesh.geometry.setAttribute("color", new THREE.BufferAttribute(new Float32Array(position.count * 3), 3));
+              mesh.material = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.95 });
+              return at;
+            });
+          }
+          const rgb = frame.colors.map((c) => [((c >> 16) & 0xff) / 255, ((c >> 8) & 0xff) / 255, (c & 0xff) / 255]);
+          diffusers.forEach((mesh, m) => {
+            const colors = mesh.geometry.getAttribute("color") as InstanceType<typeof THREE.BufferAttribute>;
+            const at = around[m];
+            for (let v = 0; v < at.length; v++) {
+              const x = at[v] * n;
+              const i0 = Math.floor(x) % n;
+              const i1 = (i0 + 1) % n;
+              const t = x - Math.floor(x);
+              for (let k = 0; k < 3; k++) {
+                // Lifted a little: a ring at low brightness still reads on screen.
+                const led = rgb[i0][k] * (1 - t) + rgb[i1][k] * t;
+                colors.array[v * 3 + k] = Math.min(1, BASE + led * 1.4);
+              }
+            }
+            colors.needsUpdate = true;
+          });
+        };
+        let lastFrame: RingFrame | null = null;
+
         // The IMU's axes: x red, y green, z blue (out of the front).
         const axes = [
           [new THREE.Vector3(1, 0, 0), css("--err", "#fb7185")],
@@ -168,6 +226,11 @@
           const [w, x, y, z] = orientation();
           q.set(x, y, z, w);
           board.quaternion.copy(q);
+          const now = ring();
+          if (now && now !== lastFrame) {
+            lastFrame = now;
+            paint(now);
+          }
           renderer.render(scene, camera);
           frame = requestAnimationFrame(draw);
         };

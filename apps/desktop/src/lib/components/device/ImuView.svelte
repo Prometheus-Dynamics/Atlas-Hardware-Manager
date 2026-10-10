@@ -9,15 +9,19 @@
   import { onMount } from "svelte";
   import CaseModel from "./CaseModel.svelte";
   import { FusedOrientation, Orientation, cssMatrix, euler } from "./imu.ts";
+  import { ringFrame, type RingFrame } from "./ring.ts";
   import type { LiveSeries } from "./live.ts";
 
   /** fill: as tall as its container (a column with room to spare). */
   let {
     series,
     fused = null,
+    light = null,
     fill = false,
   }: {
     series: LiveSeries;
+    /** The status ring's frames, for the model's LEDs. */
+    light?: LiveSeries | null;
     /** The board's orientation device's stream, when it has one. */
     fused?: LiveSeries | null;
     fill?: boolean;
@@ -35,6 +39,8 @@
   let disturbed = $state(false);
   let confidence = $state<number | null>(null);
   const current = () => (source === "board" ? board : orientation);
+  let ringCache: RingFrame | null = null;
+  const ring = () => (light ? (ringCache = ringFrame(light, ringCache)) : null);
   /** The case model didn't load (no WebGL, no model): the plain block instead. */
   let plain = $state(false);
   let matrix = $state("none");
@@ -78,7 +84,7 @@
   <div class="imu" class:fill>
     <div class="stage" aria-label="The IMU's orientation in 3D" role="img">
       {#if !plain}
-        <CaseModel orientation={() => current()?.q ?? [1, 0, 0, 0]} onfail={() => (plain = true)} />
+        <CaseModel orientation={() => current()?.q ?? [1, 0, 0, 0]} {ring} onfail={() => (plain = true)} />
       {:else}
       <div class="scene">
         <div class="floor"></div>

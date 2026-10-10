@@ -51,6 +51,28 @@ const MODELS: Record<string, Model> = {
       return [...q, roll, pitch, yaw, 0.94, 0.88, 0][i];
     },
   },
+  // The status ring as board-stream sends a light: geometry, then each
+  // logical LED's colour (0xWWRRGGBB). A green spinner over a dim base.
+  "status-ring": {
+    class: "light",
+    model: "ws2812",
+    channels: [
+      { name: "offset", unit: "" },
+      { name: "clockwise", unit: "" },
+      { name: "brightness", unit: "" },
+      ...Array.from({ length: 16 }, (_, i) => ({ name: `led.${i}`, unit: "" })),
+    ],
+    value: (t, i) => {
+      if (i < 3) return [5, 1, 1][i];
+      const led = i - 3;
+      const head = (t * 8) % 16;
+      const d = (led - head + 16) % 16;
+      const level = Math.max(0.06, 1 - d / 6);
+      const g = Math.round(200 * level);
+      const r = Math.round(30 * level);
+      return (r << 16) | (g << 8) | Math.round(60 * level);
+    },
+  },
   power: {
     class: "power",
     model: "ina238",

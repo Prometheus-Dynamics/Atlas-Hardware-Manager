@@ -57,7 +57,7 @@
   // computes only while someone subscribes, so it's asked for here.
   const wanted = $derived(
     hardware.devices
-      .filter((d) => (d.readings.length > 0 || d.class === "orientation") && d.status !== "missing")
+      .filter((d) => (d.readings.length > 0 || d.class === "orientation" || d.class === "light") && d.status !== "missing")
       .map((d) => [d.id, periodFor(d.class)] as [string, number]),
   );
   const wantedKey = $derived(`${keyString(boardKey)} ${wanted.map((w) => w.join(":")).join(",")}`);
@@ -135,6 +135,7 @@
   // Compact (beside other devices): only what streams. The orientation is
   // drawn in the IMU's card, not a card of its own.
   const fusion = $derived(hardware.devices.find((d) => d.class === "orientation" && d.status !== "missing") ?? null);
+  const ring = $derived(hardware.devices.find((d) => d.class === "light" && d.status !== "missing") ?? null);
   const cards = $derived(
     (compact ? hardware.devices.filter((d) => live.has(d.id)) : hardware.devices).filter((d) => d.class !== "orientation"),
   );
@@ -167,6 +168,7 @@
       {deviceKey}
       live={live.get(device.id) ?? null}
       fused={device.class === "imu" && fusion ? (live.get(fusion.id) ?? null) : null}
+      light={device.class === "imu" && ring ? (live.get(ring.id) ?? null) : null}
       {windowS}
       {tick}
       seriesOf={(reading) => ({
