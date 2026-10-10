@@ -113,6 +113,11 @@ commit; the commits are listed per area.
   missed after its seq, so Atlas shows an update, a reboot or a rollback
   whoever started it within a second instead of on its next poll (up to
   about 80 s before). The identity lists it as `"stream":":5898/stream"`.
+- **A power cut mid-write doesn't restart the event count:** a torn last line
+  (NULs) and a lost `event-seq` made the next event seq 1 again, below what
+  Atlas had, so it would never have been fetched (seen on hardware after a
+  PSU reset). The next seq is now above the highest anywhere in the log, and
+  `event-seq` is written atomically.
 - **Events are numbered** (`seq`, with `uptime_s`): the board has no RTC,
   and in the first A/B update on hardware its clock was 3 h 17 min behind in
   one boot, so Atlas (which fetched by time) missed events after the clock
@@ -181,12 +186,13 @@ commit; the commits are listed per area.
 
 ### lemnosd, the hardware service
 
-- **Lemnos ae59665** (from cca50f7): the fault reasons (`lemnos-ctl list`
+- **Lemnos 8e59039** (from cca50f7): the fault reasons (`lemnos-ctl list`
   shows a `why:` line for a device that isn't available; the BMI088 IMU
   tolerates unacknowledged soft resets), the Orion bridge, and trailing `*`
   wildcards in `writers` and `raw_clients`, and a bridge that builds without
   a C cross compiler (no `ring`) and finds orion-node's sockets in
-  /run/orion. The board schema and the driver
+  /run/orion, subscriptions that answer (a granted period, or a refusal),
+  boot-clock timestamps and a deadline scheduler. The board schema and the driver
   registry are unchanged.
 - **Who may set what through Orion:** the fan's writers add `orion:*`, so
   Atlas (the bridge writes as `orion:<requested_by>`) can set its duty and

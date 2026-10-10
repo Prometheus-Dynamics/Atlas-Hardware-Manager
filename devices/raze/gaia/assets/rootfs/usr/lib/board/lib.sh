@@ -613,18 +613,22 @@ board_event() {
 			"$(date +%s)" "$(board_json_str "$(board_boot_id)")" "$_board_seq" "$_board_up" "$_board_ek" \
 			"$(board_event_source)" "$(board_json_str "$_board_em")" "$_board_ed" >> "$_board_ef" &&
 			chmod 0644 "$_board_ef" &&
-			printf '%s\n' "$_board_seq" > "${_board_ef%/*}/event-seq"
+			printf '%s\n' "$_board_seq" > "${_board_ef%/*}/event-seq.tmp" &&
+			mv -f "${_board_ef%/*}/event-seq.tmp" "${_board_ef%/*}/event-seq"
 	) 7>> "$_board_ef.lock" 2>/dev/null || return 0
 	board_events_rotate "$_board_ef"
 	return 0
 }
 
-# The newest seq written: event-seq next to the log, or the log's last line
-# when that is newer (a write cut off before event-seq); 0 for none.
+# The newest seq written: the larger of event-seq next to the log and the
+# highest seq in the log, so neither a lost or torn event-seq nor a torn
+# last line (a power cut mid-write leaves NULs) starts the count over; 0 for
+# none.
 board_events_last_seq() {
 	_board_c=$(cat "${1%/*}/event-seq" 2>/dev/null) || _board_c=''
 	case "$_board_c" in '' | *[!0-9]*) _board_c=0 ;; esac
-	_board_l=$(tail -n 1 "$1" 2>/dev/null | sed -n 's/^{"t":[0-9]*,"boot_id":[^,]*,"seq":\([0-9]*\),.*/\1/p')
+	_board_l=$(tr -d '\000' < "$1" 2>/dev/null |
+		sed -n 's/^{"t":[0-9]*,"boot_id":[^,]*,"seq":\([0-9][0-9]*\),.*/\1/p' | sort -n | tail -n 1)
 	case "$_board_l" in '' | *[!0-9]*) _board_l=0 ;; esac
 	[ "$_board_l" -gt "$_board_c" ] && _board_c=$_board_l
 	printf '%s\n' "$_board_c"

@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use lemnos_ipc::{
     Axis, ChannelDesc, DeviceClass, DeviceDesc, DeviceStatus, Message, Quantity, RawReading,
-    Request, VERSION, decode_request,
+    Refusal, Request, VERSION, decode_request,
 };
 
 fn imu() -> DeviceDesc {
@@ -67,12 +67,31 @@ fn fake_lemnosd(path: PathBuf, readings: u64, every: Duration) -> Arc<Mutex<Vec<
                         socket.write_all(&welcome.encode()).unwrap();
                     }
                     Request::List => {
+                        let mut fan = imu();
+                        fan.id = "fan".into();
+                        fan.class = DeviceClass::Fan;
                         socket
-                            .write_all(&Message::Devices(vec![imu()]).encode())
+                            .write_all(&Message::Devices(vec![imu(), fan]).encode())
                             .unwrap();
                     }
-                    Request::Subscribe { device, period_ms } => {
+                    Request::Subscribe {
+                        id,
+                        device,
+                        period_ms,
+                    } => {
                         record.lock().unwrap().push((device.clone(), period_ms));
+                        // A fan produces no readings: refused. Else granted.
+                        let result = if device == "fan" {
+                            Err(Refusal::Unsupported)
+                        } else {
+                            Ok(f64::from(period_ms))
+                        };
+                        socket
+                            .write_all(&Message::Reply { id, result }.encode())
+                            .unwrap();
+                        if device == "fan" {
+                            continue;
+                        }
                         for n in 0..readings {
                             let reading = Message::Reading(RawReading {
                                 device: device.clone(),
@@ -129,7 +148,7 @@ fn readings_arrive_in_batches_with_the_devices_channels() {
         .stdin
         .take()
         .unwrap()
-        .write_all(b"GET /stream?topics=hardware&hardware=imu:10,gps HTTP/1.1\r\n\r\n")
+        .write_all(b"GET /stream?topics=hardware&hardware=fan:100,imu:10,gps HTTP/1.1\r\n\r\n")
         .unwrap();
     let rx = lines_of(&mut child);
     let mut seen = Vec::new();
@@ -141,7 +160,7 @@ fn readings_arrive_in_batches_with_the_devices_channels() {
         {
             samples += rows.len();
         }
-        let done = line == "event: hardware-gone";
+        let done = line.starts_with("data: {\"reason\"");
         seen.push(line);
         if done {
             break;
@@ -153,8 +172,8 @@ fn readings_arrive_in_batches_with_the_devices_channels() {
 
     assert_eq!(
         *subscribed.lock().unwrap(),
-        [("imu".to_string(), 10)],
-        "only the known device"
+        [("fan".to_string(), 100), ("imu".to_string(), 10)],
+        "only the known devices: {seen:#?}"
     );
     let devices = seen
         .iter()

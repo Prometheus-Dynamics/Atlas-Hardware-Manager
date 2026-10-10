@@ -360,7 +360,7 @@
       "gaia_import": {
         "source": "lemnos",
         "repo": "https://github.com/Prometheus-Dynamics/Lemnos.git",
-        "rev": "ae59665800dfc554f09c2d9842512f32e196f077",
+        "rev": "8e5903954668ad0b77d211e8cdb75747368f7daa",
         "path": "packaging/gaia/lemnosd.toml"
       }
     },

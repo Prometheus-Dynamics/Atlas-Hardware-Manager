@@ -78,6 +78,9 @@ pub struct LiveDevice {
     pub channels: Vec<LiveChannel>,
     #[serde(default)]
     pub missing: bool,
+    /// Why the board won't stream it (a fan or a light has no readings).
+    #[serde(default)]
+    pub refused: Option<String>,
 }
 
 /// What a live hardware stream delivers.

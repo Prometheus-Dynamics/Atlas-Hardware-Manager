@@ -69,7 +69,7 @@
   function onFrame(frame: HardwareFrame) {
     if (frame.type === "devices") {
       live.clear();
-      for (const device of frame.devices) if (!device.missing) live.set(device.id, new LiveSeries(device));
+      for (const device of frame.devices) if (!device.missing && !device.refused) live.set(device.id, new LiveSeries(device));
       liveState = "live";
     } else if (frame.type === "samples") {
       const series = live.get(frame.device);

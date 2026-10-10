@@ -65,6 +65,8 @@ export interface LiveDevice {
   channels: LiveChannel[];
   /** The board has no such device. */
   missing?: boolean;
+  /** Why the board won't stream it (a fan or a light has no readings). */
+  refused?: string | null;
 }
 
 /**

@@ -157,6 +157,24 @@ fn a_log_that_started_over_is_streamed_from_its_start() {
 }
 
 #[test]
+fn a_torn_line_of_nuls_is_skipped() {
+    let board = Board::new("torn");
+    board.event(1, "boot");
+    let (child, rx) = board.connect("GET /stream?topics=events&after_seq=0 HTTP/1.1\r\n\r\n");
+    until(&rx, |line| line.contains("boot 1"));
+    // A power cut mid-write, then the next event.
+    let mut file = OpenOptions::new()
+        .append(true)
+        .open(board.dir.join("data/events.jsonl"))
+        .unwrap();
+    file.write_all(&[0u8; 32]).unwrap();
+    file.write_all(b"\n").unwrap();
+    board.event(2, "boot");
+    until(&rx, |line| line.contains("boot 2"));
+    stop(child);
+}
+
+#[test]
 fn a_bad_request_gets_an_error_and_ends() {
     let board = Board::new("bad");
     let (mut child, rx) = board.connect("GET /nope HTTP/1.1\r\n\r\n");

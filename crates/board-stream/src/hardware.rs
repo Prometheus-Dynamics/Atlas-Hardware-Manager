@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use lemnos_ipc::{ClientEvent, DeviceClient, DeviceDesc, Update};
+use lemnos_ipc::{ClientError, ClientEvent, DeviceClient, DeviceDesc, Update};
 use serde_json::{Value, json};
 
 /// The client name lemnosd sees (its logs; reads need no write policy).
@@ -18,9 +18,10 @@ const CLIENT: &str = "board-stream";
 /// What the reader thread hands to the stream.
 #[derive(Debug, PartialEq)]
 pub enum Live {
-    /// The requested devices: id, class, model, status, the period asked
-    /// for, and their channels (name, unit) in the order samples have them;
-    /// `"missing": true` for an id lemnosd doesn't have.
+    /// The requested devices: id, class, model, status, the period lemnosd
+    /// granted, and their channels (name, unit) in the order samples have
+    /// them; `"missing": true` for an id lemnosd doesn't have, `"refused"`
+    /// with lemnosd's reason for one it won't stream (a fan, a light).
     Devices(Value),
     /// One reading: the device, lemnosd's monotonic time (µs) and a value
     /// per channel (`None`: not read).
@@ -63,27 +64,31 @@ pub fn start(socket: PathBuf, wanted: Vec<(String, u32)>) -> mpsc::Receiver<Live
             Err(error) => return gone(error.to_string()),
         };
         let known: Vec<DeviceDesc> = client.devices().cloned().collect();
-        let devices: Vec<Value> = wanted
-            .iter()
-            .map(|(id, period)| {
-                known.iter().find(|desc| &desc.id == id).map_or_else(
-                    || json!({ "id": id, "missing": true }),
-                    |desc| describe(desc, *period),
-                )
-            })
-            .collect();
+        let mut devices: Vec<Value> = Vec::new();
+        for (id, period) in &wanted {
+            let Some(desc) = known.iter().find(|desc| &desc.id == id) else {
+                devices.push(json!({ "id": id, "missing": true }));
+                continue;
+            };
+            // lemnosd grants a period (no faster than it can read the
+            // device), or says why nothing will come.
+            match client.subscribe(id, *period) {
+                Ok(granted) => devices.push(describe(desc, granted.max(1))),
+                Err(ClientError::Refused(refusal)) => {
+                    let mut device = describe(desc, *period);
+                    device["refused"] = Value::from(refusal.to_string());
+                    devices.push(device);
+                }
+                // An older lemnosd doesn't answer, but the subscription stands.
+                Err(ClientError::Timeout) => devices.push(describe(desc, *period)),
+                Err(error) => return gone(error.to_string()),
+            }
+        }
         if tx
             .send(Live::Devices(json!({ "devices": devices })))
             .is_err()
         {
             return;
-        }
-        for (id, period) in &wanted {
-            if known.iter().any(|desc| &desc.id == id)
-                && let Err(error) = client.subscribe(id, *period)
-            {
-                return gone(error.to_string());
-            }
         }
         loop {
             match client.next_event_timeout(Duration::from_secs(1)) {

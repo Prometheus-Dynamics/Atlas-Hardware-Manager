@@ -367,7 +367,7 @@ overrides() {
 	[ -d "$dir" ] || return 0
 	find "$dir" -type f 2>/dev/null | sort | while IFS= read -r f; do
 		case "${f#"$dir"/}" in
-		events.jsonl* | event-seq | boot-count* | ssh-keys.sum | drift/* | update/*) continue ;;
+		events.jsonl* | event-seq* | boot-count* | ssh-keys.sum | drift/* | update/*) continue ;;
 		esac
 		printf '{"area":"%s","path":%s,"change":"present","sha256":"%s"}\n' "$area" \
 			"$(board_json_str "$f")" "$(sha256sum < "$f" | cut -d' ' -f1)"
