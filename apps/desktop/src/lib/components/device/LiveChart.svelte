@@ -9,6 +9,7 @@
   import { onMount } from "svelte";
   import { clockText, type LiveSeries } from "./live.ts";
   import { formatValue, label } from "./hardware.ts";
+  import { portal } from "#lib/ui/portal.ts";
 
   let {
     series,
@@ -203,7 +204,7 @@
     {#if unit}<span class="unit">{unit}</span>{/if}
   </div>
   {#if hover && picked}
-    <div class="tip glass-layer" style="left: {hover.left}px; top: {hover.top}px" role="tooltip">
+    <div class="tip glass-layer" style="left: {hover.left}px; top: {hover.top}px" role="tooltip" use:portal>
       <p class="when">{picked.when}</p>
       {#each picked.values as value, n (value.name)}
         <p class="row">
@@ -258,7 +259,8 @@
   }
   .tip {
     position: fixed;
-    z-index: 60;
+    /* Above everything: it lives on <body> (portal.ts). */
+    z-index: 80;
     transform: translate(-50%, calc(-100% - 8px));
     padding: 6px 9px;
     border-radius: var(--r-md);

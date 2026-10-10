@@ -129,7 +129,10 @@
   }
 </script>
 
-<div class="flex flex-col gap-6">
+<!-- Wide: the board's state on the left (Now, health, live, self-test), the
+     camera, controls and details on the right; narrow: one column. -->
+<div class="overview">
+  <div class="col">
   {#if reports}
     <section class="flex flex-col gap-2.5">
       <h3 class="text-[12px] font-medium uppercase tracking-[0.06em] text-fg-faint">Now</h3>
@@ -144,19 +147,23 @@
     {#if status}<HealthCard {status} readAt={deviceStatus.readAt.get(id)} />{/if}
   {/if}
 
-  {#if online && actions.length > 0}
-    <ControlsCard {actions} {run} update={reports ? (status?.update ?? null) : undefined} />
-  {/if}
-
-  {#if stream}
-    <CameraPreview src={stream} name={record.label ?? record.identity.name ?? record.key.serial} />
-  {/if}
-
   {#if telemetry}
     <LiveStats {record} />
   {/if}
 
   <SelfTestCard {record} />
+  </div>
+
+  <div class="col">
+  {#if stream}
+    <div class="camera">
+      <CameraPreview src={stream} name={record.label ?? record.identity.name ?? record.key.serial} />
+    </div>
+  {/if}
+
+  {#if online && actions.length > 0}
+    <ControlsCard {actions} {run} update={reports ? (status?.update ?? null) : undefined} />
+  {/if}
 
   <FactGrid {facts} />
 
@@ -225,4 +232,28 @@
       </div>
     </div>
   {/if}
+  </div>
 </div>
+
+<style>
+  .overview {
+    display: grid;
+    gap: 16px;
+    align-items: start;
+  }
+  .col {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    min-width: 0;
+  }
+  @container (min-width: 1000px) {
+    .overview {
+      grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    }
+  }
+  /* The camera at a useful size, not the whole width. */
+  .camera {
+    max-width: 640px;
+  }
+</style>

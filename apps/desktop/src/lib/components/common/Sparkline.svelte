@@ -4,6 +4,8 @@
   // scrolls. Each reading redraws it once, with no animation. Hovering
   // shows the nearest point's exact value and, with `times`, when it was read.
 
+  import { portal } from "#lib/ui/portal.ts";
+
   let {
     values,
     color = "var(--accent)",
@@ -107,7 +109,7 @@
   {#if hover}
     <span class="guide" style="left: {(hover.x / W) * 100}%; background: {color}"></span>
     <span class="dot hover-dot" style="left: {(hover.x / W) * 100}%; top: {points[hover.index][1]}px; background: {color}"></span>
-    <div class="tip glass-layer" style="left: {hover.left}px; top: {hover.top}px" role="tooltip">
+    <div class="tip glass-layer" style="left: {hover.left}px; top: {hover.top}px" role="tooltip" use:portal>
       <span class="tip-value">{format(values[hover.index])}</span>{#if hoverTime}<span class="tip-time">{hoverTime}</span>{/if}
     </div>
   {:else if last}
@@ -145,7 +147,8 @@
   /* Fixed, so the tile's clipping doesn't cut it off. */
   .tip {
     position: fixed;
-    z-index: 60;
+    /* Above everything: it lives on <body> (portal.ts). */
+    z-index: 80;
     transform: translate(-50%, calc(-100% - 10px));
     display: flex;
     align-items: baseline;
