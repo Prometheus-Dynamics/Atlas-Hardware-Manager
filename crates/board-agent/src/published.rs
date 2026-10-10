@@ -11,6 +11,10 @@ use crate::writer::WriterStatus;
 /// rollback would go back to (both from update.json).
 pub const KEY_STARTED_BY: &str = "update.started_by";
 pub const KEY_VERSION_PREVIOUS: &str = "update.version_previous";
+/// While the state is `trying`: empty before the trial's checks start,
+/// `checking` while they run, `failed` once they failed (update.json
+/// `phase`).
+pub const KEY_PHASE: &str = "update.phase";
 /// The newest event in the board's log (any kind): its seq, kind and time
 /// (the board's clock), so an Orion-only observer sees something happened.
 /// Under `update.`: Orion lets an agent publish only `action.*` and the keys
@@ -78,6 +82,7 @@ pub fn update_status_entries(
         reporter.node_status_entry(update_action::KEY_BOOT_ID, text(boot_id)),
         reporter.node_status_entry(KEY_STARTED_BY, text(&status.started_by)),
         reporter.node_status_entry(KEY_VERSION_PREVIOUS, text(&status.version_previous)),
+        reporter.node_status_entry(KEY_PHASE, text(&status.phase)),
         reporter.node_status_entry(CLAIMED_KEY, text(&CLAIMED_ACTIONS.join(","))),
     ];
     if let Some(event) = last_event {

@@ -162,4 +162,21 @@ run
 [ "$(blkid -p -o value -s LABEL "$T/p7")" = old ] || fail "without an id, /data is kept"
 unset BOARD_DATA_FLASH_ID_FILE
 
+echo "before /data is mounted, its events wait and are logged with the first one after"
+disk
+rm -f "$T/run/events.jsonl" "$T/run/events.pending"
+rm -rf "$T/run/nodata"
+head -c 8M /dev/urandom > "$T/p7"
+: > "$T/not-a-dir"
+BOARD_DATA_DIR=$T/not-a-dir/data run
+[ ! -s "$T/run/events.jsonl" ] || fail "nothing in the /run log: $(cat "$T/run/events.jsonl")"
+grep -q 'data.created' "$T/run/events.pending" || fail "the events wait: $(cat "$T/run/events.pending" 2>/dev/null)"
+sh "$lib/event" boot "boot" 2>/dev/null
+[ ! -e "$T/run/events.pending" ] || fail "the queue is emptied"
+kinds=$(sed -n 's/.*"kind":"\([^"]*\)".*/\1/p' "$T/run/nodata/events.jsonl" | tr '\n' ' ')
+[ "$kinds" = "data.grown data.created boot " ] || fail "the deferred events first, in order: $kinds"
+grep '"kind":"data.grown"' "$T/run/nodata/events.jsonl" | grep -q '"from_mib":"8"' || fail "their data kept: $(cat "$T/run/nodata/events.jsonl")"
+sh "$lib/event" later "later" 2>/dev/null
+[ "$(grep -c 'data.created' "$T/run/nodata/events.jsonl")" = 1 ] || fail "logged once"
+
 echo "ok"

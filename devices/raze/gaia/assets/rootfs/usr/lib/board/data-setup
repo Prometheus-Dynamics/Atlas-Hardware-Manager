@@ -26,6 +26,8 @@ BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 # shellcheck source=lib.sh
 . "$BOARD_LIB_DIR/lib.sh"
 board_load_env data.env
+# Before /data is mounted: the events wait for it (lib.sh BOARD_EVENT_DEFER).
+BOARD_EVENT_DEFER=1
 
 part=${BOARD_DATA_PART:-7}
 root=$(board_root_device)

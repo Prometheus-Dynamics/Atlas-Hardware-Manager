@@ -25,6 +25,11 @@
 # after UPDATE_LOCK_WAIT seconds, a read-only p1), anything else failed
 # (recorded as `error` once staging began; a failed write to p1 is in
 # update.json). `status` answers from update.json without the lock.
+# While the state is trying, "phase" in the JSON says how far the trial's
+# judgement is: null before `confirm` starts it (the new image is still
+# coming up), "checking" while its checks run, "failed" once they failed
+# (restarting into the old version). Kept for this boot only
+# ($BOARD_RUN_DIR/update.phase); null in every other state.
 #
 # Layout (MBR on the eMMC): p1 holds autoboot.txt only; boot A/B are p2/p3
 # (FAT), root A/B are p5/p6. autoboot.txt's [all] boot_partition is the
@@ -72,6 +77,7 @@ SYNC=${UPDATE_SYNC:-sync}
 CMDLINE_ROOT=${UPDATE_CMDLINE_ROOT:-}
 WORK=${BOARD_RUN_DIR}/update
 STATUS_JSON=${BOARD_RUN_DIR}/update.json
+PHASE_FILE=${BOARD_RUN_DIR}/update.phase
 # The running stage's PID (stage, stage-url), for `cancel`.
 PID_FILE=${BOARD_RUN_DIR}/update.pid
 # Where stage-url keeps its download: persistent (/run is RAM), so an
@@ -314,13 +320,22 @@ reported_state() {
 	echo "$STATE"
 }
 
+# set_phase <checking|failed>: the trial's phase, for this boot (see the top).
+set_phase() {
+	mkdir -p "$BOARD_RUN_DIR"
+	printf '%s\n' "$1" > "$PHASE_FILE.tmp.$$" && mv -f "$PHASE_FILE.tmp.$$" "$PHASE_FILE"
+}
+
 write_status_json() {
 	mkdir -p "$BOARD_RUN_DIR"
-	printf '{"state":%s,"slot_active":%s,"slot_staged":%s,"version_active":%s,"version_staged":%s,"progress":%s,"error":%s,"version_previous":%s,"started_by":%s}\n' \
-		"$(board_json_str "$(reported_state)")" "$(board_json_str "$(slot_of_root)")" "$(board_json_str "$SLOT_STAGED")" \
+	_state=$(reported_state)
+	_phase=''
+	[ "$_state" != trying ] || _phase=$(head -n 1 "$PHASE_FILE" 2>/dev/null | tr -cd 'a-z')
+	printf '{"state":%s,"slot_active":%s,"slot_staged":%s,"version_active":%s,"version_staged":%s,"progress":%s,"error":%s,"version_previous":%s,"started_by":%s,"phase":%s}\n' \
+		"$(board_json_str "$_state")" "$(board_json_str "$(slot_of_root)")" "$(board_json_str "$SLOT_STAGED")" \
 		"$(board_json_str "$VERSION_ACTIVE")" "$(board_json_str "$VERSION_STAGED")" "${PROGRESS:-0}" \
 		"$(board_json_str "$ERROR")" "$(board_json_str "${PREVIOUS_SLOT:+$PREVIOUS_VERSION}")" \
-		"$(board_json_str "${STARTED_BY:-}")" > "$STATUS_JSON.tmp.$$"
+		"$(board_json_str "${STARTED_BY:-}")" "$(board_json_str "$_phase")" > "$STATUS_JSON.tmp.$$"
 	chmod 0644 "$STATUS_JSON.tmp.$$" 2>/dev/null || true
 	# The boot it describes: `status` trusts update.json only in that boot.
 	boot_id > "$STATUS_JSON.boot"
@@ -871,6 +886,8 @@ _confirm() {
 		board_event update.rolled-back "$ERROR" "version=$VERSION_ACTIVE" "slot=$active"
 		return 0
 	fi
+	# The trial's checks start now (the new image is up to this unit).
+	set_phase checking
 	save_state
 	run_hook post-boot || board_log "the post-boot hook failed"
 	# Give the services a moment to come up before judging them.
@@ -900,6 +917,7 @@ _confirm() {
 # Leaves the trial unconfirmed: the next reset returns to the old slot.
 fail_trial() {
 	ERROR="$1 on $VERSION_STAGED"
+	set_phase failed
 	save_state
 	board_event update.trial-failed "$ERROR" "reason=$1" "version=$VERSION_STAGED"
 	if [ "${UPDATE_REBOOT_ON_FAIL:-1}" = 1 ]; then

@@ -171,7 +171,7 @@ was sent). Power off, USB boot and the self-test stay SSH only.
 
 It publishes the writer's state as the `update.*` keys of its node
 (`state`, `version_active`, `version_staged`, `slot_active`, `slot_staged`,
-`progress`, `error`, `started_by`, `version_previous`, plus `boot_id` from
+`progress`, `error`, `started_by`, `version_previous`, `phase`, plus `boot_id` from
 `/proc/sys/kernel/random/boot_id`) and the newest board event
 (`update.event_seq`, `update.event_kind`, `update.event_t`: under `update.`
 because Orion lets an agent publish only `action.*` and its claimed actions'

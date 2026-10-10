@@ -27,8 +27,8 @@ use orion_core::{NodeId, ProviderId};
 pub use agent::{Agent, CLAIMED_ACTIONS, StageRequest};
 pub use config::Config;
 pub use published::{
-    KEY_EVENT_KIND, KEY_EVENT_SEQ, KEY_EVENT_T, KEY_STARTED_BY, KEY_VERSION_PREVIOUS, LastEvent,
-    update_status_entries,
+    KEY_EVENT_KIND, KEY_EVENT_SEQ, KEY_EVENT_T, KEY_PHASE, KEY_STARTED_BY, KEY_VERSION_PREVIOUS,
+    LastEvent, update_status_entries,
 };
 pub use writer::{Writer, WriterStatus};
 

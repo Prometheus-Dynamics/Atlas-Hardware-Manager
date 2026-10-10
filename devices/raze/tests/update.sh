@@ -237,6 +237,7 @@ update confirm
 echo "the next boot reports trying before confirm runs"
 next_boot
 update status | grep -q '"state":"trying"' || fail "status on the trial boot: $(cat "$T/run/update.json")"
+grep -q '"phase":null' "$T/run/update.json" || fail "no phase before confirm starts: $(cat "$T/run/update.json")"
 
 echo "the bootloader fell back: rolled-back"
 update confirm
@@ -293,7 +294,7 @@ echo "a failed health check restarts into the old slot"
 update stage "$img.xz" --sha256 "$(sha "$img.xz")"
 update apply
 next_boot
-printf '#!/bin/sh\nexit 1\n' > "$T/etc/update-health"
+printf '#!/bin/sh\ncp "%s" "%s"\nexit 1\n' "$T/run/update.json" "$T/during.json" > "$T/etc/update-health"
 chmod +x "$T/etc/update-health"
 printf '#!/bin/sh\ntouch "%s"\n' "$T/post-boot.ran" > "$T/etc/update.d/post-boot"
 chmod +x "$T/etc/update.d/post-boot"
@@ -303,6 +304,8 @@ if UPDATE_CMDLINE_ROOT=6 update confirm 2>/dev/null; then fail "a failed health 
 grep -q '^plain$' "$REBOOTS" || fail "a failed check should reboot plainly"
 grep -q 'boot_partition=2' "$T/disk/p1.d/autoboot.txt" || fail "default should still be slot A"
 [ -e "$T/post-boot.ran" ] || fail "the post-boot hook should run on the trial boot"
+grep -q '"state":"trying".*"phase":"checking"' "$T/during.json" || fail "checking while the checks run: $(cat "$T/during.json")"
+grep -q '"phase":"failed"' "$T/run/update.json" || fail "failed once they failed: $(cat "$T/run/update.json")"
 
 events | grep -q '"kind":"update.trial-failed".*"reason":"the health check failed"' ||
 	fail "a failed trial says why: $(events | tail -n 2)"
@@ -311,6 +314,7 @@ echo "a healthy trial is kept"
 printf '#!/bin/sh\nexit 0\n' > "$T/etc/update-health"
 UPDATE_CMDLINE_ROOT=6 update confirm
 [ "$(state)" = confirmed ] || fail "state should be confirmed, is $(state)"
+grep -q '"phase":null' "$T/run/update.json" || fail "no phase once confirmed: $(cat "$T/run/update.json")"
 events | tail -n 1 | grep -q '"kind":"update.confirmed","source":"local","message":"kept 2.0 in slot B"' ||
 	fail "a confirmed event: $(events | tail -n 1)"
 [ "$(autoboot)" = "[all] tryboot_a_b=1 boot_partition=3 " ] || fail "autoboot.txt: $(autoboot)"

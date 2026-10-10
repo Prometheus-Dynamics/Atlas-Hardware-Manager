@@ -379,6 +379,17 @@ commit; the commits are listed per area.
   (gaia/data.toml: util-linux's basic set and partition utilities,
   e2fsprogs with resize2fs). Slot B's root (p6) is only read after `stage`
   writes it, so an unwritten p6 needs nothing.
+- **The trial's phase:** while an update is `trying`, update.json's
+  `phase` (and board-agent's `update.phase`) is null until
+  board-update-confirm starts judging the trial, `checking` from then (its
+  settle delay, the slot and health checks), and `failed` once they failed;
+  null in every other state. lemnosd holds the reboot ember until
+  `checking`, then fades to the trial look.
+- **/data's first-boot events persist:** data-setup runs before /data is
+  mounted, so its `data.created`/`data.grown`/`data.reset` went to the /run
+  log and were gone after a restart. They now wait in
+  /run/board/events.pending (lib.sh `BOARD_EVENT_DEFER`) and the first event
+  written to /data afterwards (the boot record's) logs them first.
 - **The ring keeps the reboot ember through a restart:** ws2812-pio-rp1
   sent an all-off frame at probe, so the ring went dark from the driver
   load until lemnosd wrote again, between the shutdown ember and the boot

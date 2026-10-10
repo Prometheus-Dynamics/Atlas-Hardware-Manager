@@ -551,6 +551,11 @@ board_identity_json() {
 #   BOARD_EVENT_SOURCE  who asked: atlas (Atlas over SSH), orion (board-agent),
 #                       local (the default: someone on the board)
 #   BOARD_BOOT_ID       this boot's id (/proc/sys/kernel/random/boot_id)
+#   BOARD_EVENT_DEFER   1: a writer that runs before /data is mounted (data
+#                       setup) queues its events in
+#                       $BOARD_RUN_DIR/events.pending instead of the /run log,
+#                       and the first event written to /data afterwards logs
+#                       them first, so they persist with the boot's others
 BOARD_EVENT_MAX=${BOARD_EVENT_MAX:-2000}
 
 # The kernel's id of this boot; empty when unknown.
@@ -579,9 +584,52 @@ board_event_source() {
 	esac
 }
 
+# The deferred events (BOARD_EVENT_DEFER), one a line: the arguments of
+# board_event, separated by the unit separator (\037), which is taken out of
+# them (as are newlines).
+board_event_defer() {
+	mkdir -p "$BOARD_RUN_DIR" 2>/dev/null || return 0
+	_board_us=$(printf '\037')
+	_board_line=''
+	for _board_arg in "$@"; do
+		_board_arg=$(printf '%s' "$_board_arg" | tr -d '\037\n')
+		_board_line="$_board_line${_board_line:+$_board_us}$_board_arg"
+	done
+	printf '%s\n' "$_board_line" >> "$BOARD_RUN_DIR/events.pending" 2>/dev/null || true
+}
+
+# Logs the deferred events, once /data takes events. Taken away first, so a
+# second writer (or the events below) doesn't log them again.
+board_events_replay() {
+	[ -s "$BOARD_RUN_DIR/events.pending" ] || return 0
+	mv -f "$BOARD_RUN_DIR/events.pending" "$BOARD_RUN_DIR/events.replay" 2>/dev/null || return 0
+	_board_us=$(printf '\037')
+	while IFS= read -r _board_line || [ -n "$_board_line" ]; do
+		[ -n "$_board_line" ] || continue
+		_board_ifs=$IFS
+		IFS=$_board_us
+		set -f
+		# shellcheck disable=SC2086
+		set -- $_board_line
+		set +f
+		IFS=$_board_ifs
+		BOARD_EVENT_DEFER=0 board_event "$@"
+	done < "$BOARD_RUN_DIR/events.replay"
+	rm -f "$BOARD_RUN_DIR/events.replay"
+}
+
 # board_event <kind> <message> [key=value ...]: appends one event. Never
 # fails the caller: an event that can't be written is only lost.
 board_event() {
+	case "$(board_events_file)" in
+	"$BOARD_DATA_DIR"/*) board_events_replay ;;
+	*)
+		if [ "${BOARD_EVENT_DEFER:-0}" = 1 ]; then
+			board_event_defer "$@"
+			return 0
+		fi
+		;;
+	esac
 	_board_ek=$(printf '%s' "${1:-}" | tr -cd 'A-Za-z0-9._-')
 	[ -n "$_board_ek" ] || return 0
 	_board_em=${2:-}

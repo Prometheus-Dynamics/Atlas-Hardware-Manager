@@ -37,6 +37,10 @@ pub struct WriterStatus {
     /// local).
     #[serde(deserialize_with = "text")]
     pub started_by: String,
+    /// While trying: how far the trial's judgement is (empty: not started,
+    /// `checking`, `failed`). Older writers don't write it.
+    #[serde(default, deserialize_with = "text")]
+    pub phase: String,
 }
 
 fn text<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
@@ -238,6 +242,11 @@ mod tests {
             ("", "r5")
         );
         assert_eq!(status.started_by, "local");
+        assert_eq!(status.phase, "", "older writers have no phase");
+        let trying: WriterStatus =
+            serde_json::from_str(r#"{"state":"trying","progress":1000,"phase":"checking"}"#)
+                .unwrap();
+        assert_eq!(trying.phase, "checking");
     }
 
     #[test]
