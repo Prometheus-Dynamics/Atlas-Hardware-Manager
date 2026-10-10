@@ -15,6 +15,11 @@ import type {
   DeviceStatus,
   HardwareCommand,
   HardwareFrame,
+  NtCameraAddress,
+  NtFrame,
+  NtServerFrame,
+  NtServerInfo,
+  NtValue,
   HealthCheck,
   HistoryEntry,
   ImageServerStatus,
@@ -52,6 +57,30 @@ export const api = {
    */
   controlHardware: (key: DeviceKey, hardware: string, command: HardwareCommand) =>
     invoke<number | null>("control_hardware", { key, hardware, command }),
+  /** Connects a NetworkTables viewer to a team number (its robot) or host; resolves with a function that disconnects it. */
+  ntConnect: async (target: string, port: number | null, onFrame: (frame: NtFrame) => void): Promise<() => void> => {
+    const channel = new Channel<NtFrame>();
+    channel.onmessage = onFrame;
+    const id = await invoke<number>("nt_connect", { target, port, onFrame: channel });
+    return () => {
+      void invoke<void>("nt_disconnect", { id });
+    };
+  },
+  ntServerStart: (port: number | null) => invoke<NtServerInfo>("nt_server_start", { port }),
+  ntServerStop: () => invoke<void>("nt_server_stop"),
+  ntServerInfo: () => invoke<NtServerInfo | null>("nt_server_info"),
+  /** Follows the local server's changes until it stops. */
+  ntServerWatch: async (onFrame: (frame: NtServerFrame) => void) => {
+    const channel = new Channel<NtServerFrame>();
+    channel.onmessage = onFrame;
+    await invoke<void>("nt_server_watch", { onFrame: channel });
+  },
+  /** Creates a topic of `typeName` and/or sets its value. */
+  ntServerSet: (name: string, typeName: string | null, value: NtValue | null) =>
+    invoke<void>("nt_server_set", { name, typeName, value }),
+  ntServerPersistent: (name: string, persistent: boolean) => invoke<void>("nt_server_persistent", { name, persistent }),
+  ntServerDelete: (name: string) => invoke<void>("nt_server_delete", { name }),
+  ntCameraAddresses: () => invoke<NtCameraAddress[]>("nt_camera_addresses"),
   /**
    * Streams the board devices `devices` ([id, period ms]) live into `onFrame`.
    * Resolves with a function that stops it, or null when the board has no live

@@ -3,6 +3,16 @@
 // Rust side serializes. Keep in sync with those crates.
 
 import type { HardwareSnapshot } from "./hardware-types";
+export type {
+  NtCameraAddress,
+  NtFrame,
+  NtServerClient,
+  NtServerFrame,
+  NtServerInfo,
+  NtServerTopic,
+  NtTopic,
+  NtValue,
+} from "./nt-types";
 
 export interface DeviceKey {
   family: string;

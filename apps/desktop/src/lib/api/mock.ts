@@ -19,6 +19,7 @@ import { activity, logLines, metrics, online, record, restart, seedHistory } fro
 import { listRecords, robotStatuses, robotUpdateRequest, scan, touch } from "./mock/scan";
 import { lastSelftest, runSelftest, seedSelftests } from "./mock/selftest";
 import { streamHardware } from "./mock/live";
+import { ntCameraAddresses, ntConnect, ntServer } from "./mock/nt";
 import { boardAction, controlHardware, deviceHistory, deviceStatus } from "./mock/status";
 
 seedHistory();
@@ -187,6 +188,15 @@ export const mockApi: Api = {
   deviceStatus: (key) => reply(() => deviceStatus(key)),
   controlHardware: (key, hardware, command) => reply(() => controlHardware(key, hardware, command)),
   streamHardware,
+  ntConnect,
+  ntServerStart: (port) => ntServer.start(port),
+  ntServerStop: () => ntServer.stop(),
+  ntServerInfo: () => ntServer.info(),
+  ntServerWatch: (onFrame) => ntServer.watch(onFrame),
+  ntServerSet: (name, typeName, value) => ntServer.set(name, typeName, value),
+  ntServerPersistent: (name, persistent) => ntServer.persistent(name, persistent),
+  ntServerDelete: (name) => ntServer.delete(name),
+  ntCameraAddresses,
   deviceHistory: (key, limit) => reply(() => deviceHistory(key, Math.max(1, Math.min(limit, 2000)))),
   listActivity: (limit) => reply(() => activity.slice(-limit).reverse()),
   saveSupportBundle: (key) =>

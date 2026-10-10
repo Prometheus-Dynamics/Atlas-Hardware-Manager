@@ -17,7 +17,8 @@
     { href: "/robots", label: "Robots", icon: "robot", key: "3", badge: () => notReady },
     { href: "/jobs", label: "Jobs", icon: "activity", key: "4", badge: () => jobs.running.length, accent: true },
     { href: "/releases", label: "Releases", icon: "package", key: "5", badge: () => 0 },
-    { href: "/settings", label: "Settings", icon: "settings", key: "6", badge: () => system.healthProblems },
+    { href: "/networktables", label: "NetworkTables", icon: "sitemap", key: "6", badge: () => 0 },
+    { href: "/settings", label: "Settings", icon: "settings", key: "7", badge: () => system.healthProblems },
   ];
 
   function active(href: string) {

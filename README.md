@@ -24,7 +24,16 @@ This branch is a ground-up rebuild. The previous app lives on `dev` and
   `actions`, and `camera_stream` in its identity document; responses are read
   leniently (see `crates/atlas-driver-board/src/live.rs`). Nothing is required.
 - **Fleet history**: devices found, lost, updated, and acted on, kept
-  between sessions.
+  between sessions; a board's own event log (by seq, so a board clock that is
+  off can't hide events), pushed as it happens by boards with `board-stream`.
+- **Live hardware**: a board's sensors at device rate (the Raze's IMU at
+  100 Hz) as live charts on its Hardware tab, while the tab is open.
+- **NetworkTables**: view any NT4 server live (a team's robot by its number,
+  or a camera's own server by address): the topic tree with values, search,
+  and graphs of number topics. Or start a plain NT4 server on this computer,
+  with topics you create and edit, to test a PhotonVision or HeliOS camera
+  without a roboRIO; the page says which address to give each camera. On
+  Orion's `orion-nt4`.
 - **Raspberry Pi flashing, no rpiboot binary**: a compute module in USB boot
   mode appears as a recovery device. Recovering it boots it over USB with a
   pure-Rust port of the rpiboot protocol, waits for its eMMC to appear as a
