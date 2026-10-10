@@ -484,6 +484,19 @@ board_gadget_json() {
 		"$(board_json_str "${BOARD_GADGET_CIDR%/*}")" "$_board_gpre" "$(board_json_str "$BOARD_GADGET_ADDRESSING")"
 }
 
+# The camera views, as the image writes them (PhotonVision:
+# /usr/lib/photonvision-os/camera-streams, at boot and on every settings
+# change): ,"camera_streams":[{"name":..,"url":":1182/stream.mjpg"},..].
+# Left out unless the file holds a JSON array.
+board_camera_streams_json() {
+	_board_cs="$BOARD_RUN_DIR/camera-streams.json"
+	[ -s "$_board_cs" ] || return 0
+	_board_cs=$(tr -d '\n\r' <"$_board_cs")
+	case "$_board_cs" in
+	'['*']') printf ',"camera_streams":%s' "$_board_cs" ;;
+	esac
+}
+
 board_identity_json() {
 	board_load_env board-package.env
 	board_load_env identity.env
@@ -515,15 +528,22 @@ board_identity_json() {
 		_board_sep=','
 	done
 	printf ']'
-	# Root-only diagnostics, run over SSH.
+	# Root-only diagnostics, run over SSH: the self-test, and PhotonVision's
+	# nt-server (point its NetworkTables server elsewhere and back).
+	_board_diag=''
 	if [ -x "$BOARD_LIB_DIR/selftest" ]; then
-		printf ',"diagnostics":["selftest"]'
+		_board_diag='"selftest"'
 	fi
+	if [ -x "${BOARD_NT_SERVER_BIN:-/usr/lib/photonvision-os/nt-server}" ]; then
+		_board_diag="$_board_diag${_board_diag:+,}\"nt-server\""
+	fi
+	[ -z "$_board_diag" ] || printf ',"diagnostics":[%s]' "$_board_diag"
 	# The A/B updater's state, as board-update last wrote it.
 	if [ -s "$BOARD_RUN_DIR/update.json" ]; then
 		printf ',"update":%s' "$(head -n 1 "$BOARD_RUN_DIR/update.json")"
 	fi
 	printf ',"manage_url":%s' "$(board_json_str "$(board_first_line "$BOARD_ETC_DIR/manage-url" "$BOARD_LIB_DIR/manage-url")")"
+	board_camera_streams_json
 	# The board's clock, so a host can tell it is wrong: a Raze has no RTC
 	# battery and often no NTP over the USB link.
 	printf ',"time":%s' "$(date +%s)"

@@ -95,6 +95,12 @@ commit; the commits are listed per area.
 
 ### Board awareness: events, status, drift
 
+- **Camera views and nt-server in the identity:** `camera_streams` is
+  `/run/board/camera-streams.json` as the image writes it (PhotonVision
+  `b9d520e`: processed then raw per camera, at boot and on every settings
+  change), left out unless it holds a JSON array; `diagnostics` lists
+  `nt-server` when `/usr/lib/photonvision-os/nt-server` is there (point the
+  camera's NetworkTables server at a host and back).
 - **Live sensor readings:** board-stream's `hardware` topic streams lemnosd's
   readings at device rate (the IMU at 100 Hz) only while a viewer asks, and
   Atlas's Hardware tab draws them as live charts (a ring buffer, canvas,

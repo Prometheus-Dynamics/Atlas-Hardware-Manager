@@ -137,12 +137,17 @@ fn time_sync_cameras(topics: &[NtServerTopic]) -> Vec<TimeSyncCamera> {
                 cameras.last_mut().expect("pushed")
             }
         };
+        // PhotonVision builds publish µs (`_us`) or ns (`_ns`); kept in µs.
+        let ns = number.map(|v| v / 1000);
         match field {
             "offset_us" => camera.offset_us = number,
+            "offset_ns" => camera.offset_us = ns,
             "rtt2_us" => camera.rtt2_us = number,
+            "rtt2_ns" => camera.rtt2_us = ns,
             "ping_tx_count" => camera.pings = number,
             "pong_rx_count" => camera.pongs = number,
             "pong_rx_time_us" => camera.last_pong_us = number,
+            "pong_rx_time_ns" => camera.last_pong_us = ns,
             _ => {}
         }
     }
@@ -535,6 +540,29 @@ mod tests {
         nt.disconnect(id);
         nt.stop_server().await;
         assert!(nt.server_info().await.is_none());
+    }
+
+    #[test]
+    fn time_sync_topics_in_nanoseconds_are_kept_in_microseconds() {
+        let topic = |field: &str, value: i64| NtServerTopic {
+            name: format!("/photonvision/.timesync/pv/{field}"),
+            type_name: "int".into(),
+            value: Some(Value::Int(value)),
+            t_us: None,
+            owner: "client",
+            publisher: None,
+            persistent: false,
+        };
+        let cameras = time_sync_cameras(&[
+            topic("offset_ns", -7_157_847_513_440),
+            topic("rtt2_ns", 381_000),
+            topic("pong_rx_time_ns", 7_171_590_000_000),
+        ]);
+        let camera = &cameras[0];
+        assert_eq!(
+            (camera.offset_us, camera.rtt2_us, camera.last_pong_us),
+            (Some(-7_157_847_513), Some(381), Some(7_171_590_000))
+        );
     }
 
     #[tokio::test]

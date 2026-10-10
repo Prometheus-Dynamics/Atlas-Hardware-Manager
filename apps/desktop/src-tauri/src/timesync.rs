@@ -225,6 +225,38 @@ mod tests {
         assert_eq!((peers.len(), peers[0].pongs), (1, 1), "{peers:?}");
     }
 
+    /// The server's time is read for each pong: two pongs 100 ms apart are
+    /// about 100 ms apart on the server's clock too.
+    #[tokio::test]
+    async fn each_pong_reads_the_clock_anew() {
+        let responder = Responder::start(SocketAddr::from(([127, 0, 0, 1], 0))).await;
+        let port = responder.status().port;
+        let client = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let server_time = || {
+            let client = &client;
+            async move {
+                client.send_to(&ping(1), ("127.0.0.1", port)).await.unwrap();
+                let mut buf = [0u8; 64];
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(2),
+                    client.recv_from(&mut buf),
+                )
+                .await
+                .expect("a pong")
+                .unwrap();
+                u64::from_le_bytes(buf[10..18].try_into().unwrap())
+            }
+        };
+        let first = server_time().await;
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let second = server_time().await;
+        let apart = second.saturating_sub(first);
+        assert!(
+            (90_000..=200_000).contains(&apart),
+            "pongs 100 ms apart are {apart} µs apart on the server's clock"
+        );
+    }
+
     #[tokio::test]
     async fn a_port_in_use_is_reported_not_fatal() {
         let taken = UdpSocket::bind("127.0.0.1:0").await.unwrap();

@@ -368,4 +368,20 @@ request 'GET /.well-known/pd-device HTTP/1.0' | body |
 	is ":5898/stream" 'd["endpoints"]["stream"]' "the stream, on its own port, once board-stream is installed"
 unset BOARD_STREAM_BIN
 
+echo "the identity carries the image's camera views"
+mkdir -p "$T/run"
+printf '[{"name":"OV9782","url":":1182/stream.mjpg"},\n{"name":"OV9782-raw","url":":1181/stream.mjpg"}]\n' > "$T/run/camera-streams.json"
+request 'GET /.well-known/pd-device HTTP/1.0' | body |
+	is "OV9782 :1182/stream.mjpg 2" 'd["camera_streams"][0]["name"] + " " + d["camera_streams"][0]["url"] + " " + str(len(d["camera_streams"]))' "camera_streams"
+printf 'not json\n' > "$T/run/camera-streams.json"
+request 'GET /.well-known/pd-device HTTP/1.0' | body | is False '"camera_streams" in d' "a file that isn't an array is left out"
+rm "$T/run/camera-streams.json"
+
+echo "nt-server is a diagnostic once the image has it"
+request 'GET /.well-known/pd-device HTTP/1.0' | body | is False '"nt-server" in d.get("diagnostics", [])' "no nt-server"
+BOARD_NT_SERVER_BIN=$lib/event
+export BOARD_NT_SERVER_BIN
+request 'GET /.well-known/pd-device HTTP/1.0' | body | is True '"nt-server" in d["diagnostics"]' "nt-server"
+unset BOARD_NT_SERVER_BIN
+
 echo "ok"
