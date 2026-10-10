@@ -70,6 +70,7 @@ impl Board {
             stream_socket: stream,
             writer,
             run_dir: run.clone(),
+            data_dir: dir.join("data"),
             boot_id_file: dir.join("boot_id"),
             reboot_command: vec![record.display().to_string(), "reboot".into()],
             locate_stop_command: vec![record.display().to_string(), "locate-stop".into()],
@@ -470,4 +471,48 @@ async fn rollback_reboot_and_locate() {
     );
 
     board.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn nulls_who_started_it_and_the_last_event_are_published() {
+    let board = Board::start("keys").await;
+    board
+        .wait_value(update_action::KEY_STATE, text("idle"))
+        .await;
+    // As the writer prints it: an empty value is null.
+    std::fs::write(
+        board.run.join("update.json"),
+        r#"{"state":"confirmed","slot_active":"B","slot_staged":null,"version_active":"2.0","version_staged":null,"progress":0,"error":null,"version_previous":"1.0","started_by":"local"}"#,
+    )
+    .unwrap();
+    board
+        .wait_value(update_action::KEY_STATE, text("confirmed"))
+        .await;
+    assert_eq!(
+        board.value(board_agent::KEY_STARTED_BY),
+        Some(text("local"))
+    );
+    assert_eq!(
+        board.value(board_agent::KEY_VERSION_PREVIOUS),
+        Some(text("1.0"))
+    );
+    assert_eq!(board.value(update_action::KEY_ERROR), Some(text("")));
+
+    std::fs::create_dir_all(board.dir.join("data")).unwrap();
+    std::fs::write(
+        board.dir.join("data/events.jsonl"),
+        "{\"t\":100,\"boot_id\":\"boot-1\",\"seq\":7,\"uptime_s\":3,\"kind\":\"update.confirmed\",\"source\":\"local\",\"message\":\"kept\",\"data\":{}}\n",
+    )
+    .unwrap();
+    board
+        .wait_value(board_agent::KEY_EVENT_SEQ, TypedConfigValue::UInt(7))
+        .await;
+    assert_eq!(
+        board.value(board_agent::KEY_EVENT_KIND),
+        Some(text("update.confirmed"))
+    );
+    assert_eq!(
+        board.value(board_agent::KEY_EVENT_T),
+        Some(TypedConfigValue::Int(100))
+    );
 }

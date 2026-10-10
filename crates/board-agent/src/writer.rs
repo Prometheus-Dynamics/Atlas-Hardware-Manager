@@ -10,18 +10,41 @@ use serde::Deserialize;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 
-/// `update status` / `update.json`.
+/// `update status` / `update.json`. The writer prints an empty value as
+/// `null` (board_json_str), which reads as an empty string here.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct WriterStatus {
+    #[serde(deserialize_with = "text")]
     pub state: String,
+    #[serde(deserialize_with = "text")]
     pub slot_active: String,
+    #[serde(deserialize_with = "text")]
     pub slot_staged: String,
+    #[serde(deserialize_with = "text")]
     pub version_active: String,
+    #[serde(deserialize_with = "text")]
     pub version_staged: String,
     /// Per mille.
+    #[serde(deserialize_with = "count")]
     pub progress: u64,
+    #[serde(deserialize_with = "text")]
     pub error: String,
+    /// What a rollback would go back to (empty: nothing).
+    #[serde(deserialize_with = "text")]
+    pub version_previous: String,
+    /// Who started the update in progress or last finished (atlas, orion,
+    /// local).
+    #[serde(deserialize_with = "text")]
+    pub started_by: String,
+}
+
+fn text<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+fn count<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<u64, D::Error> {
+    Ok(Option::<u64>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 #[derive(Clone, Debug)]
@@ -196,6 +219,25 @@ mod tests {
             Some("nothing is staged (state: idle)".into())
         );
         assert_eq!(reason("\n"), None);
+    }
+
+    #[test]
+    fn status_json_parses_with_null_fields() {
+        // What the writer prints with nothing staged (board_json_str: null
+        // for an empty value).
+        let status: WriterStatus = serde_json::from_str(
+            r#"{"state":"confirmed","slot_active":"B","slot_staged":null,"version_active":"r7","version_staged":null,"progress":0,"error":null,"version_previous":"r5","started_by":"local"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            (status.state.as_str(), status.slot_staged.as_str()),
+            ("confirmed", "")
+        );
+        assert_eq!(
+            (status.error.as_str(), status.version_previous.as_str()),
+            ("", "r5")
+        );
+        assert_eq!(status.started_by, "local");
     }
 
     #[test]

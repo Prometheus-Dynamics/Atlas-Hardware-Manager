@@ -171,8 +171,13 @@ was sent). Power off, USB boot and the self-test stay SSH only.
 
 It publishes the writer's state as the `update.*` keys of its node
 (`state`, `version_active`, `version_staged`, `slot_active`, `slot_staged`,
-`progress`, `error`, plus `boot_id` from `/proc/sys/kernel/random/boot_id`)
-after connecting, whenever `update.json` changes, and every 30 s. Without
+`progress`, `error`, `started_by`, `version_previous`, plus `boot_id` from
+`/proc/sys/kernel/random/boot_id`) and the newest board event
+(`update.event_seq`, `update.event_kind`, `update.event_t`: under `update.`
+because Orion lets an agent publish only `action.*` and its claimed actions'
+keys) after connecting, within a second of a change to `update.json` or the
+event log, and every 5 s (so the keys are back soon after orion-node
+restarts). The writer prints an empty value as `null`, which reads as empty. Without
 orion-node it waits and retries; nothing else depends on it. Stopping it
 stops a stage it started (the stage is in its cgroup); `status` then records
 the interrupted stage as an error. Settings: `BOARD_AGENT_*` in
@@ -528,10 +533,11 @@ Atlas does not need Orion to understand partitions; it needs:
   Node subject; board-agent also mirrors each action into
   `action.<action_id>.state|error`.
 - **Durable status across reboots:** stable keys under the Node subject,
-  republished by board-agent after every boot, on change and every 30 s:
+  republished by board-agent after every boot, on change and every 5 s:
   `update.state`, `update.version_active`, `update.version_staged`,
   `update.slot_active`, `update.slot_staged`, `update.progress`,
-  `update.error`, `update.boot_id`.
+  `update.error`, `update.boot_id`, `update.started_by`,
+  `update.version_previous` (and the newest event's `update.event_*`).
 - **Action result:** "staging started" only (see above).
 - **Facts:** `board_serial` raw from `/proc/device-tree/serial-number`
   (DMI as a fallback), `board_model`, and `machine_id`. Atlas normalizes

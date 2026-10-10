@@ -427,6 +427,22 @@ commit; the commits are listed per area.
 
 ### Orion device agent
 
+- **board-agent read `null` as an error (fixed):** the writer prints an empty
+  value (nothing staged, no error) as `null`, which board-agent couldn't
+  parse. It then ran `update status` every second (taking the writer's
+  lock, behind the boot-time "another update command is running") and
+  published `idle` with a parse error, so Orion's `update.*` keys were
+  wrong. Nulls now read as empty.
+- **board-agent publishes more, and sooner:** `update.started_by`,
+  `update.version_previous`, and the newest event as `update.event_seq`,
+  `update.event_kind` and `update.event_t` (Orion allows an agent only its
+  claimed actions' keys); the heartbeat is every 5 s instead of 30, so the
+  keys are back soon after orion-node restarts. A failed publish is logged.
+- **Atlas:** reads `update.started_by` and `update.version_previous` from
+  Orion; the fleet activity now has every step of an update, every boot and
+  restart, and every failure, whoever caused it; a staged update is
+  followed as closely as a running one; a rollback someone asked for reads
+  "Switched to <version> on slot <x>", not as a failure.
 - **Orion 4fadba9** (request/response actions; `ActionRequest.wait_ms`
   changed the wire layout): board-agent and Atlas move together, with every
   orion-node they talk to. Handlers are unchanged. Atlas's own actions wait

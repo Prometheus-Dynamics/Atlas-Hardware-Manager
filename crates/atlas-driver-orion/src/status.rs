@@ -10,7 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use atlas_driver::{
-    BootInfo, DeviceStatus, DriverError, HardwareDevice, HardwareSnapshot, Identity,
+    BootInfo, DeviceStatus, DriverError, EventSource, HardwareDevice, HardwareSnapshot, Identity,
     StatusCapability, Temperature, UpdateState,
 };
 use futures::future::join_all;
@@ -62,13 +62,14 @@ pub(crate) fn status_from(host: Option<&NodeHostFacts>, entries: &[StatusEntry])
         slot_staged: get(update_action::KEY_SLOT_STAGED),
         version_active: get(update_action::KEY_VERSION_ACTIVE),
         version_staged: get(update_action::KEY_VERSION_STAGED),
-        version_previous: None,
+        // board-agent's own keys (crates/board-agent, agent.rs).
+        version_previous: get("update.version_previous"),
         progress: keys
             .get(update_action::KEY_PROGRESS)
             .and_then(|value| number(value))
             .map_or(0, |permille| permille.clamp(0.0, 1000.0) as u32),
         error: get(update_action::KEY_ERROR),
-        started_by: None,
+        started_by: get("update.started_by").map(|who| EventSource::parse(&who)),
     });
     DeviceStatus {
         boot: host.map(|host| BootInfo {

@@ -14,6 +14,7 @@
 mod agent;
 mod clock;
 mod config;
+mod published;
 mod stage;
 mod writer;
 
@@ -23,8 +24,12 @@ use orion_client::{ClientError, LocalNodeRuntime, LocalProviderService, LocalSer
 use orion_control_plane::ProviderRecord;
 use orion_core::{NodeId, ProviderId};
 
-pub use agent::{Agent, CLAIMED_ACTIONS, StageRequest, update_status_entries};
+pub use agent::{Agent, CLAIMED_ACTIONS, StageRequest};
 pub use config::Config;
+pub use published::{
+    KEY_EVENT_KIND, KEY_EVENT_SEQ, KEY_EVENT_T, KEY_STARTED_BY, KEY_VERSION_PREVIOUS, LastEvent,
+    update_status_entries,
+};
 pub use writer::{Writer, WriterStatus};
 
 /// The client name on the node.

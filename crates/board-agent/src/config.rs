@@ -15,6 +15,9 @@ pub struct Config {
     /// The package's runtime directory, with update.json, update.pid and
     /// requests/ (`BOARD_RUN_DIR`).
     pub run_dir: PathBuf,
+    /// The package's persistent directory, with the event log
+    /// (`BOARD_DATA_DIR`).
+    pub data_dir: PathBuf,
     /// The kernel's boot id (`BOARD_AGENT_BOOT_ID_FILE`).
     pub boot_id_file: PathBuf,
     /// Restarts the board (`BOARD_AGENT_REBOOT`, split on spaces).
@@ -42,13 +45,16 @@ impl Default for Config {
             stream_socket: "/run/orion/control-stream.sock".into(),
             writer: "/usr/lib/board/update".into(),
             run_dir: "/run/board".into(),
+            data_dir: "/data/board".into(),
             boot_id_file: "/proc/sys/kernel/random/boot_id".into(),
             reboot_command: words("systemctl reboot"),
             locate_stop_command: words("systemctl stop board-locate.service"),
             event_command: words("/usr/lib/board/event"),
             set_clock_command: words("date -u -s"),
             poll: Duration::from_secs(1),
-            republish: Duration::from_secs(30),
+            // Short: after orion-node restarts (its status lane is in memory),
+            // the keys are back within this.
+            republish: Duration::from_secs(5),
             retry: Duration::from_secs(1),
         }
     }
@@ -74,6 +80,9 @@ impl Config {
         }
         if let Some(value) = get("BOARD_RUN_DIR") {
             config.run_dir = value.into();
+        }
+        if let Some(value) = get("BOARD_DATA_DIR") {
+            config.data_dir = value.into();
         }
         if let Some(value) = get("BOARD_AGENT_BOOT_ID_FILE") {
             config.boot_id_file = value.into();

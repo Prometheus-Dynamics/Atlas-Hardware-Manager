@@ -201,21 +201,30 @@ pub(crate) fn notable(record: &DeviceRecord, event: &DeviceEvent) -> Option<Acti
         return None;
     }
     let kind = event.kind.as_str();
+    // Every step of an update, every restart and every failure, whoever
+    // caused it.
     let matters = matches!(
         kind,
-        "update.staged"
+        "update.stage"
+            | "update.download"
+            | "update.staged"
+            | "update.apply"
+            | "update.apply-failed"
             | "update.confirmed"
             | "update.rolled-back"
             | "update.trial-failed"
+            | "update.link-bad"
             | "update.link-fallback"
             | "update.cancelled"
             | "update.rollback"
+            | "update.rollback-failed"
             | "update.failed"
+            | "boot"
+            | "reboot"
             | "ssh.keys"
             | "usb-boot"
             | "power-off"
-    ) || (kind == "boot"
-        && event.data.get("previous_clean").map(String::as_str) == Some("false"));
+    );
     if !matters {
         return None;
     }

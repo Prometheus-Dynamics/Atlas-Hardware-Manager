@@ -50,6 +50,16 @@
           detail: "The board keeps it once its services are healthy, or goes back by itself.",
         };
       case "rolled-back":
+        // Asked for (a rollback, or going forward again): no error. A trial
+        // that failed or a link that stayed down leaves its reason.
+        if (!u.error) {
+          return {
+            tone: "neutral",
+            icon: "history",
+            title: `Switched to ${u.version_active ?? "the previous version"}${u.slot_active ? ` on slot ${u.slot_active}` : ""}`,
+            detail: u.version_previous ? `${u.version_previous} is the one to go back to.` : null,
+          };
+        }
         return { tone: "warning", icon: "history", title: `Went back to ${u.version_active ?? "the previous version"}`, detail: u.error };
       case "error":
         return { tone: "error", icon: "alert-circle", title: "The last update failed", detail: u.error };

@@ -14,11 +14,12 @@ use std::time::Duration;
 
 use orion_client::ActionReporter;
 use orion_control_plane::{
-    ActionRequest, StatusEntry, TypedConfigValue, action_names, action_status_keys, update_action,
+    ActionRequest, TypedConfigValue, action_names, action_status_keys, update_action,
 };
 use tokio::process::Child;
 
 use crate::config::Config;
+use crate::published::{LastEvent, update_status_entries};
 pub use crate::stage::StageRequest;
 use crate::writer::{StderrTail, Writer, WriterStatus};
 
@@ -41,41 +42,6 @@ const WRITER_REFUSED: i32 = 3;
 
 /// How long `update` waits for the writer to take its lock.
 const START_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// The `update.*` entries for `status` under `node/<id>` (TTL 0: the node's
-/// maximum).
-pub fn update_status_entries(
-    reporter: &ActionReporter,
-    status: &WriterStatus,
-    boot_id: &str,
-) -> Vec<StatusEntry> {
-    let text = |value: &str| TypedConfigValue::String(value.to_owned());
-    let state = if status.state.is_empty() {
-        update_action::STATE_IDLE
-    } else {
-        status.state.as_str()
-    };
-    vec![
-        reporter.node_status_entry(update_action::KEY_STATE, text(state)),
-        reporter.node_status_entry(update_action::KEY_SLOT_ACTIVE, text(&status.slot_active)),
-        reporter.node_status_entry(update_action::KEY_SLOT_STAGED, text(&status.slot_staged)),
-        reporter.node_status_entry(
-            update_action::KEY_VERSION_ACTIVE,
-            text(&status.version_active),
-        ),
-        reporter.node_status_entry(
-            update_action::KEY_VERSION_STAGED,
-            text(&status.version_staged),
-        ),
-        reporter.node_status_entry(
-            update_action::KEY_PROGRESS,
-            TypedConfigValue::UInt(status.progress.min(1000)),
-        ),
-        reporter.node_status_entry(update_action::KEY_ERROR, text(&status.error)),
-        reporter.node_status_entry(update_action::KEY_BOOT_ID, text(boot_id)),
-        reporter.node_status_entry(CLAIMED_KEY, text(&CLAIMED_ACTIONS.join(","))),
-    ]
-}
 
 fn phase(value: &str) -> BTreeMap<String, TypedConfigValue> {
     BTreeMap::from([(
@@ -103,8 +69,8 @@ pub struct Agent {
     /// Held while deciding to apply a finished stage, and by `update.cancel`,
     /// so a cancel never races the restart.
     apply_gate: tokio::sync::Mutex<()>,
-    /// The status last published, to publish only changes between ticks.
-    published: tokio::sync::Mutex<Option<WriterStatus>>,
+    /// What was last published, to publish only changes between ticks.
+    published: tokio::sync::Mutex<Option<(WriterStatus, Option<LastEvent>)>>,
 }
 
 impl Agent {
@@ -151,14 +117,23 @@ impl Agent {
     /// reconnect, the node restarting) is retried by the next one.
     pub async fn publish(&self, force: bool) {
         let mut published = self.published.lock().await;
-        let status = self.current().await;
-        if !force && published.as_ref() == Some(&status) {
+        let now = (
+            self.current().await,
+            LastEvent::read(&self.config.data_dir.join("events.jsonl")),
+        );
+        if !force && published.as_ref() == Some(&now) {
             return;
         }
-        let entries = update_status_entries(&self.reporter, &status, &self.boot_id);
+        let entries = update_status_entries(&self.reporter, &now.0, &self.boot_id, now.1.as_ref());
         match self.reporter.publish_status(entries).await {
-            Ok(()) => *published = Some(status),
-            Err(_) => *published = None,
+            Ok(()) => *published = Some(now),
+            Err(error) => {
+                // Logged once per run of failures, then retried every tick.
+                if published.is_some() {
+                    crate::log(&format!("publishing the update state: {error}"));
+                }
+                *published = None;
+            }
         }
     }
 

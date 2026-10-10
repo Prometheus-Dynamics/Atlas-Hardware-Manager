@@ -106,7 +106,9 @@ class StatusStore {
       this.inFlight.delete(id);
     }
     if (!this.watched.has(id)) return;
-    const every = updateBusy(this.byDevice.get(id)?.update) ? BUSY_MS : IDLE_MS;
+    // A staged update is likely to be applied soon: follow it closely too.
+    const update = this.byDevice.get(id)?.update;
+    const every = updateBusy(update) || update?.state === "staged" ? BUSY_MS : IDLE_MS;
     this.timers.set(
       id,
       setTimeout(() => void this.poll(id), every),
