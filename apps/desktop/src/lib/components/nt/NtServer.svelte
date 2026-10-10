@@ -157,8 +157,17 @@
       {:else}
         <Button variant="primary" icon="player-play" action={start}>Start the server</Button>
       {/if}
-      {#if port !== 5810}<span class="text-[12px] text-warn-fg">Cameras expect 5810 unless you change theirs too.</span>{/if}
+      {#if !info && port !== 5810}<span class="text-[12px] text-warn-fg">PhotonVision always connects on port 5810: cameras can't reach a server on another port.</span>{/if}
     </div>
+    {#if info && info.port !== 5810}
+      <p class="mt-3 flex items-start gap-2 text-[12.5px] text-warn-fg" role="alert">
+        <Icon name="alert-triangle" size={15} class="mt-0.5 shrink-0" />
+        <span>
+          Running on {info.port}, not 5810 (when 5810 is taken, it's often by a robot simulator). PhotonVision always connects on
+          5810, so cameras can't reach this server. Free 5810, then stop and start the server.
+        </span>
+      </p>
+    {/if}
   </GlassCard>
 
   {#if info}
