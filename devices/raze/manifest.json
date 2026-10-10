@@ -360,7 +360,7 @@
       "gaia_import": {
         "source": "lemnos",
         "repo": "https://github.com/Prometheus-Dynamics/Lemnos.git",
-        "rev": "8e5903954668ad0b77d211e8cdb75747368f7daa",
+        "rev": "b17b5a5918ae1280c9fb29231e92ac0351bf6061",
         "path": "packaging/gaia/lemnosd.toml"
       }
     },
@@ -427,7 +427,7 @@
           "bus": 4,
           "address": 24,
           "chip_id": { "register": 0, "width": 8, "value": 30 },
-          "lemnosd": { "device": "imu", "driver": "bmi088", "label": "IMU", "poll_ms": 10, "raw": ["board-selftest"] }
+          "lemnosd": { "device": "imu", "driver": "bmi088", "label": "IMU", "poll_ms": 10, "raw": ["board-selftest"], "settings": { "accel_rate": "100hz", "gyro_rate": "100hz-32" } }
         },
         {
           "id": "imu-gyro",

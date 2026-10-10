@@ -113,6 +113,15 @@ commit; the commits are listed per area.
   missed after its seq, so Atlas shows an update, a reboot or a rollback
   whoever started it within a second instead of on its next poll (up to
   about 80 s before). The identity lists it as `"stream":":5898/stream"`.
+- **The IMU costs nothing while nobody watches:** lemnosd read the BMI088
+  every 10 ms on the bit-banged i2c-gpio bus whether or not anyone listened
+  (about a third of a core, all kernel time). Lemnos b17b5a5 reads it only
+  while a client subscribes: idle drops to about 1%. The board file now sets
+  the BMI088's output rates explicitly and matched (accel `100hz`, gyro
+  `100hz-32`, was the driver default of a 2 kHz gyro), the precondition for
+  its FIFO (still off) ever helping. The real fix for the cost while
+  streaming is the next board revision putting the IMU on a hardware I2C
+  pair (GPIO6/7, I2C3) or the existing hardware bus.
 - **A power cut mid-write doesn't restart the event count:** a torn last line
   (NULs) and a lost `event-seq` made the next event seq 1 again, below what
   Atlas had, so it would never have been fetched (seen on hardware after a
@@ -186,13 +195,14 @@ commit; the commits are listed per area.
 
 ### lemnosd, the hardware service
 
-- **Lemnos 8e59039** (from cca50f7): the fault reasons (`lemnos-ctl list`
+- **Lemnos b17b5a5** (from cca50f7): the fault reasons (`lemnos-ctl list`
   shows a `why:` line for a device that isn't available; the BMI088 IMU
   tolerates unacknowledged soft resets), the Orion bridge, and trailing `*`
   wildcards in `writers` and `raw_clients`, and a bridge that builds without
   a C cross compiler (no `ring`) and finds orion-node's sockets in
   /run/orion, subscriptions that answer (a granted period, or a refusal),
-  boot-clock timestamps and a deadline scheduler. The board schema and the driver
+  boot-clock timestamps, a deadline scheduler, and sensors read only
+  while someone subscribes (one thread per bus; `poll_ms` is a cap). The board schema and the driver
   registry are unchanged.
 - **Who may set what through Orion:** the fan's writers add `orion:*`, so
   Atlas (the bridge writes as `orion:<requested_by>`) can set its duty and

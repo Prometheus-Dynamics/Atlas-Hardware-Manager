@@ -41,6 +41,7 @@ poll_ms = 1000
 # Address and chip id verified on a board by chip-id register reads.
 # Bus selector from the device tree, unverified on hardware.
 # Raw reads (chip id) through lemnosd for: board-selftest.
+# Settings: accel_rate = 100hz, gyro_rate = 100hz-32.
 # BMI088 gyroscope at 0x68.
 [[devices]]
 id = "imu"
@@ -50,7 +51,7 @@ bus = "i2c:compatible=i2c-gpio"
 address = 0x18
 poll_ms = 10
 raw = ["board-selftest"]
-config = { gyro_address = 0x68 }
+config = { accel_rate = "100hz", gyro_rate = "100hz-32", gyro_address = 0x68 }
 
 # BMM150 magnetometer at 0x10 on the hardware bus (i2c-1 on the 7.2.9 image).
 # Address and chip id verified on a board by chip-id register reads.

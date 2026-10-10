@@ -27,7 +27,7 @@ from pathlib import Path
 
 SELECTOR_KEYS = ("name", "compatible", "of", "node")
 
-# What lemnos-board's DriverRegistry (Lemnos 8e59039, crates/lemnos-board/src
+# What lemnos-board's DriverRegistry (Lemnos b17b5a5, crates/lemnos-board/src
 # registry.rs and light.rs) accepts: placement, config keys, match keys.
 LIGHT_KEYS = (
     "count", "wire", "offset", "direction", "brightness", "gpio", "fade_ms", "easing",
@@ -245,6 +245,9 @@ def board_definition(manifest: dict, version: str) -> tuple[dict, dict[str, list
                 # Brokered raw reads for these clients (the self-test's chip-id check).
                 device["raw"] = ld["raw"]
             device["config"] = {}
+            # Driver settings as the board file takes them (the BMI088's
+            # output rates, matched: the accel's is at most 100 Hz here).
+            device["config"].update(ld.get("settings", {}))
             if "shunt_ohm" in part:
                 device["config"]["shunt_micro_ohms"] = round(part["shunt_ohm"] * 1e6)
                 device["config"]["max_current_micro_amps"] = round(part["max_current_a"] * 1e6)
@@ -261,6 +264,8 @@ def board_definition(manifest: dict, version: str) -> tuple[dict, dict[str, list
                 note.append(f"Shunt {part['shunt_ohm']} ohm: from the manifest, unverified against the schematic.")
             if "raw" in ld:
                 note.append(f"Raw reads (chip id) through lemnosd for: {', '.join(ld['raw'])}.")
+            if ld.get("settings"):
+                note.append("Settings: " + ", ".join(f"{k} = {v}" for k, v in ld["settings"].items()) + ".")
             if "max_current_a" in part:
                 note.append(f"Maximum current {part['max_current_a']} A: the INA238's 163.84 mV full scale over the")
                 note.append("shunt (a 0.5 mA LSB), derived, not a board rating.")
