@@ -28,14 +28,17 @@ pub fn nt_disconnect(state: State<'_, AppState>, id: u64) {
     state.nt.disconnect(id);
 }
 
-/// Starts the local NT4 server (port 5810 by default); already running: its
-/// state.
+/// Starts the local NT4 server (port 5810 by default), restoring the topics
+/// kept from last time (nt-server.json in the data directory); already
+/// running: its state.
 #[tauri::command]
 pub async fn nt_server_start(
     state: State<'_, AppState>,
     port: Option<u16>,
 ) -> CmdResult<NtServerInfo> {
-    state.nt.start_server(port).await
+    // Topics marked "keep" come back the next time it starts.
+    let persist = state.paths.data_dir.join("nt-server.json");
+    state.nt.start_server(port, Some(persist)).await
 }
 
 #[tauri::command]

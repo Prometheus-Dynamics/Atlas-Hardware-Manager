@@ -228,13 +228,18 @@ impl Nt {
 
     /// Starts the local server on `port` (5810 by default), on every
     /// interface, so cameras on any of this computer's networks reach it.
-    pub async fn start_server(&self, port: Option<u16>) -> Result<NtServerInfo, String> {
+    /// Topics kept across restarts (`persistent`) live in `persist`.
+    pub async fn start_server(
+        &self,
+        port: Option<u16>,
+        persist: Option<std::path::PathBuf>,
+    ) -> Result<NtServerInfo, String> {
         let mut slot = self.server.lock().await;
         if slot.is_none() {
             let bind = SocketAddr::from(([0, 0, 0, 0], port.unwrap_or(orion_nt4::DEFAULT_PORT)));
             let server = Server::start(ServerConfig {
                 bind,
-                ..ServerConfig::default()
+                persist_path: persist,
             })
             .await
             .map_err(|error| format!("couldn't start a NetworkTables server on {bind}: {error}"))?;
@@ -402,7 +407,7 @@ mod tests {
     #[tokio::test]
     async fn a_viewer_sees_the_local_servers_topics_and_values() {
         let nt = Nt::default();
-        let started = nt.start_server(Some(0)).await.unwrap();
+        let started = nt.start_server(Some(0), None).await.unwrap();
         assert!(started.port > 0);
         nt.with_server(|server| server.set_value("/Camera/exposure", Value::Double(20.0)))
             .await
