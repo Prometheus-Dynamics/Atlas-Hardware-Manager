@@ -1,0 +1,21 @@
+[all]
+kernel=kernel8.img
+initramfs initramfs.cpio.zst followkernel
+arm_64bit=1
+enable_uart=1
+uart_2ndstage=1
+dtoverlay=dwc2,dr_mode=peripheral
+dtoverlay=ws2812-pio,gpio=13,num_leds=16,brightness=255,dev_name=leds%d
+dtparam=watchdog=on
+# Kernel logs kept in RAM across a warm reset (pstore), the same region the
+# Raze OS uses: the next eMMC boot's board-pstore saves them to
+# /data/board/pstore/.
+dtoverlay=ramoops-pi5,total-size=0x40000,record-size=0x10000,console-size=0x20000
+
+[pi5]
+# As Raspberry Pi's mass-storage-gadget64: the board is likely powered from
+# the host's USB port while USB-booting, so keep the clocks low.
+arm_freq=500
+gpu_freq=500
+
+[all]

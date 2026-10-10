@@ -1,0 +1,162 @@
+# raze-flasher: the USB-boot flasher built from this Raze Buildroot build, as
+# extra assembly outputs next to the OS image. It boots the OS's own kernel
+# (gzip'd) with an external initramfs, so nothing is built for it.
+#
+# Outputs (in the image output dir):
+#   raze-flasher-boot.img           FAT16 boot.img (kernel, dtbs, overlays,
+#                                   config.txt, cmdline.txt, initramfs)
+#   raze-flasher-<version>.tar      what atlas-usbboot serves:
+#                                   bootfiles/2712/*, config.txt (outer,
+#                                   boot_ramdisk=1), boot.img
+#
+# Proven on a Raze CM5 (prototype 0.1.6): USB boot in <1 s, gadget
+# 1d6b:0104 "Raze flasher" ~3 s later, ACM root shell, ring stages.
+# Requirements found on the way:
+#   - bcm2712d0.dtbo (the firmware auto-applies it on D0 BCM2712; without it
+#     the kernel faults in pinctrl at 0.1 s): ship every stock overlay;
+#   - FAT16, not FAT12 (Gaia >= 4a820ce formats small vfat as FAT16);
+#   - rp1-mailbox before rp1-fw/rp1-pio (bound through DT, not in
+#     modules.dep), so the module list is explicit.
+# `@self/assets/flasher/...`: the files next to this layer (devices/raze/gaia/assets/flasher).
+
+[[image.assembly.trees]]
+id = "flasher-initramfs"
+path = "$assembly.work/flasher/initramfs"
+
+[[image.assembly.trees]]
+id = "flasher-boot"
+path = "$assembly.work/flasher/boot"
+
+# The OS's own BusyBox with its glibc closure from the target tree.
+[[image.assembly.busybox_initramfs]]
+tree = "flasher-initramfs"
+busybox = "$provider.buildroot_output/target/bin/busybox"
+include_runtime_libs = true
+applets = ["sh"]
+
+# The ring chain (rp1-mailbox -> rp1-fw -> rp1-pio -> ws2812-pio-rp1) and the
+# ACM gadget, as the OS loads them (lsmod); add usb_f_fs once Atlas's daemon
+# uses FunctionFS (needs USB_FUNCTIONFS=m in the Raze kernel config).
+[[image.assembly.kernel_modules]]
+tree = "flasher-initramfs"
+from = "$provider.buildroot_output/target/lib/modules"
+depmod = "$provider.buildroot_output/host/sbin/depmod"
+modules = ["libcomposite", "u_serial", "usb_f_acm",
+           "rp1-mailbox", "rp1-fw", "rp1-pio", "ws2812-pio-rp1",
+           "nls_iso8859-1", "crc32c-cryptoapi"]
+
+[[image.assembly.files]]
+tree = "flasher-initramfs"
+src = "@self/assets/flasher/init"
+dest = "init"
+mode = "0755"
+
+[[image.assembly.filesystems]]
+id = "flasher-initramfs"
+kind = "cpio-zstd"
+source_tree = "flasher-initramfs"
+output = "$assembly.work/flasher/initramfs.cpio.zst"
+
+[[image.assembly.transforms]]
+kind = "gzip"
+src = "$provider.buildroot_output/images/Image"
+dest = "$assembly.tree.flasher-boot/kernel8.img"
+deterministic = true
+
+[[image.assembly.files]]
+tree = "flasher-boot"
+src_glob = "$provider.buildroot_output/images/bcm2712-rpi-cm5*.dtb"
+dest = "./"
+
+# Every stock overlay (the firmware applies bcm2712d0 on its own through
+# overlay_map.dtb), then the Raze build's own, which replace stock ones of
+# the same name.
+[[image.assembly.files]]
+tree = "flasher-boot"
+src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtbo"
+dest = "overlays/"
+
+[[image.assembly.files]]
+tree = "flasher-boot"
+src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtb"
+dest = "overlays/"
+
+[[image.assembly.files]]
+tree = "flasher-boot"
+src_glob = "$provider.buildroot_output/images/raze-overlays/*.dtbo"
+dest = "overlays/"
+
+[[image.assembly.files]]
+tree = "flasher-boot"
+src = "@self/assets/flasher/config.txt"
+dest = "config.txt"
+
+[[image.assembly.files]]
+tree = "flasher-boot"
+src = "@self/assets/flasher/cmdline.txt"
+dest = "cmdline.txt"
+
+[[image.assembly.files]]
+tree = "flasher-boot"
+src = "$assembly.work/flasher/initramfs.cpio.zst"
+dest = "initramfs.cpio.zst"
+
+[[image.assembly.filesystems]]
+id = "flasher-boot"
+kind = "vfat"
+source_tree = "flasher-boot"
+output = "$assembly.work/flasher/raze-flasher-boot.img"
+size = "auto"
+publish = true
+
+[[image.assembly.archives]]
+id = "flasher"
+output = "$assembly.out/raze-flasher-${build.version}.tar"
+
+[[image.assembly.archives.members]]
+name = "bootfiles/2712/bootcode5.bin"
+src = "@self/assets/flasher/bootfiles/2712/bootcode5.bin"
+
+[[image.assembly.archives.members]]
+name = "bootfiles/2712/bootmain"
+src = "@self/assets/flasher/bootfiles/2712/bootmain"
+
+[[image.assembly.archives.members]]
+name = "bootfiles/2712/font.bin"
+src = "@self/assets/flasher/bootfiles/2712/font.bin"
+
+[[image.assembly.archives.members]]
+name = "bootfiles/2712/logo.bin"
+src = "@self/assets/flasher/bootfiles/2712/logo.bin"
+
+[[image.assembly.archives.members]]
+name = "bootfiles/2712/mcb.bin"
+src = "@self/assets/flasher/bootfiles/2712/mcb.bin"
+
+[[image.assembly.archives.members]]
+name = "bootfiles/2712/memsys00.bin"
+src = "@self/assets/flasher/bootfiles/2712/memsys00.bin"
+
+[[image.assembly.archives.members]]
+name = "bootfiles/2712/memsys01.bin"
+src = "@self/assets/flasher/bootfiles/2712/memsys01.bin"
+
+[[image.assembly.archives.members]]
+name = "bootfiles/2712/memsys02.bin"
+src = "@self/assets/flasher/bootfiles/2712/memsys02.bin"
+
+[[image.assembly.archives.members]]
+name = "bootfiles/2712/memsys03.bin"
+src = "@self/assets/flasher/bootfiles/2712/memsys03.bin"
+
+[[image.assembly.archives.members]]
+name = "config.txt"
+src = "@self/assets/flasher/outer-config.txt"
+
+[[image.assembly.archives.members]]
+name = "boot.img"
+src = "$assembly.work/flasher/raze-flasher-boot.img"
+
+# Assembly items belong to the Buildroot image, as in boot.toml.
+[image]
+kind = "buildroot"

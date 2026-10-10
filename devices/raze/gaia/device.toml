@@ -29,7 +29,7 @@
 # --set sources.atlas.path=<checkout>). Later imports override earlier ones, so
 # an OS changes any device default by setting it in a layer imported after this
 # one. See devices/README.md for what the OS still has to provide.
-description = "Raze (CM5 + OV9782) device support: kernel, camera, boot configuration and overlays, identity endpoint, USB gadget, lemnosd hardware service."
+description = "Raze (CM5 + OV9782) device support: kernel, camera, boot configuration and overlays, identity endpoint, USB gadget, lemnosd hardware service, and the raze-flasher USB-boot flasher."
 
 imports = [
   "./kernel.toml",
@@ -40,4 +40,6 @@ imports = [
   "./board-agent.toml",
   "./board-stream.toml",
   "./data.toml",
+  # The USB-boot flasher (docs/flasher.md): extra outputs from the same build.
+  "./flasher.toml",
 ]

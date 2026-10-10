@@ -95,6 +95,16 @@ commit; the commits are listed per area.
 
 ### Board awareness: events, status, drift
 
+- **raze-flasher outputs (flasher.toml):** the same build also makes
+  `raze-flasher-boot.img` and `raze-flasher-<version>.tar` (what
+  atlas-usbboot serves: `bootfiles/2712/*`, the outer config.txt,
+  boot.img), Gaia's production fragment from the prototype that passed on
+  a board (USB boot, ring green, ACM shell, back to the eMMC). boot.img
+  carries the OS's kernel, cm5 dtbs, every stock overlay (bcm2712d0 is
+  required) and an initramfs with BusyBox, the ring and gadget modules
+  (rp1-mailbox loaded first) and the debug /init; the 2712 boot files are
+  usbboot f905f2f's, as Atlas pins (assets/flasher/bootfiles/README.md).
+  Validated in the PhotonVision Raze build (gaia 2.0.0, 04:47 build).
 - **FunctionFS for the flasher:** raze.config turns on `USB_CONFIGFS_F_FS`
   and `USB_F_FS` (=m), the raze-flasher daemon's bulk interface
   (docs/flasher.md); one more module in the shared kernel, loaded by no

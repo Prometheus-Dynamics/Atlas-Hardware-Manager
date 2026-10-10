@@ -1,0 +1,116 @@
+#!/bin/sh
+# raze-flasher (ACM root shell milestone): mount the API filesystems, load
+# the gadget and ring modules, expose a serial console over USB (ttyGS0) and
+# keep a shell on it. Atlas's /init replaces this.
+#
+# The status ring shows how far it got (no UART needed):
+#   blue    /init started (shown once the ring driver is loaded)
+#   cyan    modules loaded
+#   green   USB gadget bound to the device controller
+#   red     a step failed (the kernel log says which; it is also in pstore)
+/bin/busybox --install -s /bin
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+mkdir -p /proc /sys /dev /tmp /run
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t devtmpfs devtmpfs /dev 2>/dev/null
+
+# The hardware watchdog (bcm2835-wdt, built in), armed first: if anything
+# below hangs, the board resets WARM about 15 s later (back to the eMMC,
+# USB boot is one-shot) and ramoops keeps this boot's kernel log for
+# board-pstore. Fed only once the shell is up.
+# (`command exec`: a plain exec whose redirection fails ends the shell, and
+# with it PID 1.)
+if command exec 3>/dev/watchdog; then
+	echo "raze-flasher: watchdog armed" > /dev/kmsg
+else
+	echo "raze-flasher: no /dev/watchdog" > /dev/kmsg
+fi
+mkdir -p /sys/kernel/config
+mount -t configfs configfs /sys/kernel/config
+
+log() { echo "raze-flasher: $*" > /dev/kmsg; }
+
+# ring R G B: every LED one colour, 16 LEDs x 4 bytes (R G B W, as raze-leds).
+ring() {
+	[ -w /dev/leds0 ] || return 0
+	px=$(printf '\\%03o\\%03o\\%03o\\000' "$1" "$2" "$3")
+	all=""
+	i=0
+	while [ $i -lt 16 ]; do all="$all$px"; i=$((i + 1)); done
+	printf "$all" > /dev/leds0 2>/dev/null
+}
+# A failed step: red ring, the reason in the kernel log (and so in pstore),
+# then a warm reset after 20 s (the watchdog would reset anyway).
+fail() {
+	log "FAILED: $*"
+	ring 64 0 0
+	sleep 20
+	reboot -f
+}
+
+log "$(uname -r) /init started"
+# The ring only shows progress: if its modules fail, carry on without it.
+# rp1-pio needs the RP1 firmware driver, which needs the RP1 mailbox; the
+# mailbox binds through the device tree, so modules.dep does not name it.
+modprobe rp1-mailbox && modprobe rp1-fw && modprobe rp1-pio && modprobe ws2812-pio-rp1 ||
+	log "ring modules failed to load"
+for i in $(seq 1 20); do [ -e /dev/leds0 ] && break; sleep 0.1; done
+ring 0 0 64
+
+ok=1
+for m in libcomposite u_serial usb_f_acm; do
+	modprobe "$m" || { fail "modprobe $m"; ok=0; }
+done
+ring 0 48 48 && log "modules loaded"
+
+g=/sys/kernel/config/usb_gadget/flasher
+mkdir -p $g/strings/0x409 $g/configs/c.1/strings/0x409 $g/functions/acm.usb0
+echo 0x1d6b > $g/idVendor
+echo 0x0104 > $g/idProduct
+serial=$(sed -n 's/^Serial[[:space:]]*:[[:space:]]*//p' /proc/cpuinfo)
+echo "${serial:-unknown}" > $g/strings/0x409/serialnumber
+echo "Prometheus Dynamics" > $g/strings/0x409/manufacturer
+echo "Raze flasher" > $g/strings/0x409/product
+echo "ACM shell" > $g/configs/c.1/strings/0x409/configuration
+ln -s $g/functions/acm.usb0 $g/configs/c.1/
+udc=""
+for i in $(seq 1 50); do
+	udc=$(ls /sys/class/udc 2>/dev/null | head -n 1)
+	[ -n "$udc" ] && break
+	sleep 0.1
+done
+if [ -n "$udc" ] && echo "$udc" > $g/UDC; then
+	log "gadget bound to $udc"
+	[ $ok = 1 ] && ring 0 64 0
+else
+	fail "no USB device controller (udc: '${udc}'; /sys/class/udc: $(ls /sys/class/udc 2>/dev/null))"
+fi
+
+# Up: hand the watchdog to a feeder (closing fd 3 leaves it running).
+exec 3>&-
+watchdog -T 15 -t 5 /dev/watchdog
+log "shell up, watchdog fed"
+
+# A root shell on the USB console, respawned; another on the UART console.
+# `setsid -c` makes the terminal the shell's controlling tty (this BusyBox
+# has no cttyhack). Each respawn waits a second, so a shell that cannot
+# start never spins. `reboot -f` from either shell goes back to the eMMC.
+shell_on() {
+	while true; do
+		if [ -c "$1" ]; then
+			# No echo on the USB console: a host terminal that echoes too
+			# (cooked mode) would otherwise loop with the prompt.
+			[ "$1" = /dev/ttyGS0 ] && stty -F "$1" -echo 2>/dev/null
+			setsid -c sh -l <"$1" >"$1" 2>&1
+		fi
+		sleep 1
+	done
+}
+
+# Back to the eMMC after 30 minutes, so a wedged debug session never needs a
+# power cycle. `touch /tmp/stay` keeps the flasher up.
+(sleep 1800; [ -e /tmp/stay ] || { log "30 min up, rebooting to eMMC"; reboot -f; }) &
+
+shell_on /dev/ttyGS0 &
+shell_on /dev/console
