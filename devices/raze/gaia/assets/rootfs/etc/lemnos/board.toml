@@ -81,6 +81,15 @@ poll_ms = 100
 raw = ["board-selftest"]
 config = { shunt_micro_ohms = 10000, max_current_micro_amps = 16384000 }
 
+# Orientation fused by lemnosd from the IMU and the magnetometer: quaternion, roll/pitch/yaw,
+# gravity, linear acceleration, confidence. It runs only while a client subscribes.
+# Declination is site-specific (0 here).
+# Mount angles (the IMU's axes against the case): unverified on hardware.
+[[devices]]
+id = "orientation"
+driver = "fusion"
+config = { imu = "imu", mag = "magnetometer", mode = "9axis", algorithm = "mahony", kp = 1.0, ki = 0.05, mount_roll_deg = 0.0, mount_pitch_deg = 0.0, mount_yaw_deg = 0.0, declination_deg = 0.0 }
+
 # The usb-a port's power switch (RP1 GPIO20). The firmware drives it high from
 # power-on (raze-device.txt gpio=), and lemnosd requests it already on (default_on), so
 # its start doesn't toggle the port. Every boot starts on (persist off: the root is

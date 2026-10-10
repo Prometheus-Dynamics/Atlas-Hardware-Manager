@@ -326,8 +326,26 @@
       "login": "root, no password (autologin)",
       "notes": "The USB gadget's ACM ports (ttyACM* on the host) give a recovery console that works without networking. Physical access to the port already allows a reflash. An OS turns it off by masking serial-getty@ttyGS0/1.service."
     },
+    "orientation": {
+      "lemnosd": {
+        "device": "orientation",
+        "driver": "fusion",
+        "imu": "imu",
+        "mag": "magnetometer",
+        "mode": "9axis",
+        "algorithm": "mahony",
+        "kp": 1.0,
+        "ki": 0.05,
+        "mount_deg": { "roll": 0, "pitch": 0, "yaw": 0 },
+        "declination_deg": 0,
+        "notes": "lemnosd's fusion of the BMI088 and BMM150 (Lemnos c43d207): quaternion, roll/pitch/yaw, gravity, linear acceleration, confidence and magnetic disturbance. It runs only while a client subscribes (no always), so it costs nothing idle; at 100 Hz it took 8% of a core on a Raze as of c43d207, being optimised. Calibration (accel-six, mag-rotate, gyro-hold) is per device on imu and magnetometer, kept in /var/lib/lemnos/calibration (on /data on the PhotonVision image). Declination is site-specific: an OS or user sets it. mount_deg is the BMI088's axes against the case, unchecked (Atlas's 3D view assumes z out of the front face)."
+      },
+      "verified": {
+        "lemnosd.mount_deg": "unverified"
+      }
+    },
     "usb-power": {
-      "control": "lemnosd's gpio-power-switch devices (usb-a-power, usb-c-power), on from its start; before it, the firmware drives both enables high from power-on (raze-device.txt: gpio=16,20=op,dh), so the ports never pass through off",
+      "control": "lemnosd's gpio-power-switch devices (usb-a-power, usb-c-power), on from its start; before it, the firmware drives both enables high from power-on (raze-device.txt: gpio=16,20=op,dh), so the ports never pass through off (to check on a board: a device on each port stays enumerated through boot)",
       "ports": [
         {
           "name": "usb-a",
@@ -361,7 +379,7 @@
       },
       "verified": {
         "gpio_chip": "unverified",
-        "firmware_gpio_high": "unverified: config.txt gpio= must hold the RP1 lines high until lemnosd takes them; check on a board that a device on each port stays enumerated through boot"
+        "control": "unverified"
       }
     },
     "hardware-service": {
@@ -376,7 +394,7 @@
       "gaia_import": {
         "source": "lemnos",
         "repo": "https://github.com/Prometheus-Dynamics/Lemnos.git",
-        "rev": "be8321a28be79d51b27abf8dd86ef3bdb4488b1c",
+        "rev": "c43d207b06ea4a7a42dabd51065746154207125a",
         "path": "packaging/gaia/lemnosd.toml"
       }
     },

@@ -27,7 +27,7 @@ from pathlib import Path
 
 SELECTOR_KEYS = ("name", "compatible", "of", "node")
 
-# What lemnos-board's DriverRegistry (Lemnos be8321a, crates/lemnos-board/src
+# What lemnos-board's DriverRegistry (Lemnos c43d207, crates/lemnos-board/src
 # registry.rs and light.rs) accepts: placement, config keys, match keys.
 LIGHT_KEYS = (
     "count", "wire", "offset", "direction", "brightness", "gpio", "fade_ms", "easing",
@@ -48,6 +48,9 @@ DRIVERS = {
     "thermal-zone": ("platform", (), ("type",)),
     "ws2812": ("platform", LIGHT_KEYS, ()),
     "gpio-output": ("platform", ("chip", "line", "active_low", "initial"), ()),
+    "fusion": ("composite", (
+        "imu", "mag", "mode", "algorithm", "kp", "ki", "beta", "mount_roll_deg", "mount_pitch_deg",
+        "mount_yaw_deg", "declination_deg", "dip_deg", "always"), ()),
     "gpio-power-switch": ("platform", (
         "chip", "line", "active_low", "default_on", "enable_delay_ms", "fault_chip", "fault_line",
         "fault_active_low", "persist", "on_exit"), ()),
@@ -140,6 +143,8 @@ def driver_errors(board: dict) -> list[str]:
             errors.append(f"{where}: {device['driver']} needs a bus")
         if placement == "platform" and ("bus" in device or "address" in device):
             errors.append(f"{where}: {device['driver']} takes path or match, not a bus")
+        if placement == "composite" and {"bus", "address", "path", "match"} & set(device):
+            errors.append(f"{where}: {device['driver']} is built from other devices: no bus, address, path or match")
         for key in device.get("config", {}):
             if key not in config_keys:
                 errors.append(f"{where}: unknown config key {key}")
@@ -177,6 +182,18 @@ def driver_errors(board: dict) -> list[str]:
                 errors.append(f"{where}: default_down must be an LED below count")
         if device["driver"] in ("gpio-output", "gpio-power-switch") and not {"chip", "line"} <= set(config):
             errors.append(f"{where}: needs chip and line")
+        if device["driver"] == "fusion":
+            for ref in ("imu", "mag"):
+                if ref in config and config[ref] not in ids:
+                    errors.append(f"{where}: {ref} {config[ref]} is not a device here")
+            if "imu" not in config:
+                errors.append(f"{where}: fusion needs imu")
+            if config.get("mode", "6axis") not in ("6axis", "9axis"):
+                errors.append(f"{where}: mode must be 6axis or 9axis")
+            if config.get("mode") == "9axis" and "mag" not in config:
+                errors.append(f"{where}: 9axis needs mag")
+            if config.get("algorithm", "mahony") not in ("mahony", "madgwick"):
+                errors.append(f"{where}: algorithm must be mahony or madgwick")
         if device["driver"] == "gpio-power-switch" and config.get("on_exit", "keep") not in ("keep", "on", "off"):
             errors.append(f"{where}: on_exit must be keep, on or off")
     return errors
@@ -313,6 +330,27 @@ def board_definition(manifest: dict, version: str) -> tuple[dict, dict[str, list
         if not device["config"]:
             del device["config"]
         devices.append(device)
+
+    fusion = caps["orientation"]["lemnosd"]
+    mount = fusion["mount_deg"]
+    devices.append({
+        "id": fusion["device"],
+        "driver": "fusion",
+        "config": {
+            "imu": fusion["imu"], "mag": fusion["mag"], "mode": fusion["mode"], "algorithm": fusion["algorithm"],
+            # Floats: Lemnos reads these as numbers (as_f64).
+            "kp": float(fusion["kp"]), "ki": float(fusion["ki"]), "mount_roll_deg": float(mount["roll"]),
+            "mount_pitch_deg": float(mount["pitch"]), "mount_yaw_deg": float(mount["yaw"]),
+            "declination_deg": float(fusion["declination_deg"]),
+        },
+    })
+    notes[fusion["device"]] = [
+        "Orientation fused by lemnosd from the IMU and the magnetometer: quaternion, roll/pitch/yaw,",
+        "gravity, linear acceleration, confidence. It runs only while a client subscribes.",
+        "Declination is site-specific (0 here).",
+    ]
+    if unverified(caps["orientation"], "lemnosd.mount_deg"):
+        notes[fusion["device"]].append("Mount angles (the IMU's axes against the case): unverified on hardware.")
 
     ul = usb["lemnosd"]
     for port in ul["devices"]:

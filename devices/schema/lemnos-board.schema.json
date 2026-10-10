@@ -1,5 +1,5 @@
 {
-  "$comment": "Vendored unchanged (apart from this comment) from Lemnos be8321a28be7 docs/schemas/lemnos-board.schema.json. devices/tools/gen-raze.py validates the generated /etc/lemnos/board.toml against it. Update it together with the Lemnos pin (capabilities.hardware-service.gaia_import.rev).",
+  "$comment": "Vendored unchanged (apart from this comment) from Lemnos c43d207b06ea docs/schemas/lemnos-board.schema.json. devices/tools/gen-raze.py validates the generated /etc/lemnos/board.toml against it. Update it together with the Lemnos pin (capabilities.hardware-service.gaia_import.rev).",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Prometheus-Dynamics/Lemnos/docs/schemas/lemnos-board.schema.json",
   "title": "Lemnos board definition",

@@ -69,6 +69,10 @@ assert (d["imu"]["bus"], d["imu"]["address"], d["imu"]["config"]["gyro_address"]
 for s, a in (("magnetometer", 0x10), ("power", 0x40)):
     assert (d[s]["bus"], d[s]["address"]) == ("i2c:of=/axi/pcie@1000120000/rp1/i2c@74000", a), d[s]
 assert d["power"]["config"] == {"shunt_micro_ohms": 10000, "max_current_micro_amps": 16384000}
+o = d["orientation"]
+assert o["driver"] == "fusion" and "bus" not in o, o
+assert {k: o["config"][k] for k in ("imu", "mag", "mode", "algorithm")} == {"imu": "imu", "mag": "magnetometer", "mode": "9axis", "algorithm": "mahony"}, o
+assert isinstance(o["config"]["mount_roll_deg"], float) and isinstance(o["config"]["kp"], float), o
 for port, line in (("usb-a-power", 20), ("usb-c-power", 16)):
     sw = d[port]
     assert sw["driver"] == "gpio-power-switch" and sw["writers"] == ["orion:*", "atlas"], sw

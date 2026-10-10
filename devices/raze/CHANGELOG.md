@@ -201,6 +201,14 @@ commit; the commits are listed per area.
 
 ### lemnosd, the hardware service
 
+- **Lemnos c43d207; orientation:** board.toml gains `orientation`, lemnosd's
+  `fusion` device (9-axis Mahony from `imu` and `magnetometer`, kp 1.0, ki
+  0.05): quaternion, roll/pitch/yaw, gravity, linear acceleration,
+  confidence, magnetic disturbance, computed only while a client subscribes.
+  The IMU and magnetometer gain calibrated channels and calibration
+  routines (`lemnos-ctl calibration`, Orion `calibration.*`), kept in
+  `/var/lib/lemnos/calibration`. Unverified: the mount angles (0) and the
+  declination (0, site-specific).
 - **Lemnos be8321a; USB port power is lemnosd's:** `usb-a-power` (GPIO20)
   and `usb-c-power` (GPIO16) are `gpio-power-switch` devices (`default_on`,
   writers `orion:*` and `atlas`, `persist` off, `on_exit` keep). The kernel

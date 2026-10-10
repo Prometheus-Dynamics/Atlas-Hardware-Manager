@@ -287,6 +287,12 @@ def lint(manifest: dict) -> None:
             raise LintError("capabilities.usb-power.lemnosd.devices: each needs device and a port from ports")
     if "board-selftest" not in caps["fan"]["lemnosd"]["writers"]:
         raise LintError("capabilities.fan.lemnosd.writers must include board-selftest, the self-test's lemnosd client")
+    lint_verified("usb-power", caps["usb-power"], [])
+    orientation = caps.get("orientation", {})
+    ol = orientation.get("lemnosd")
+    if not isinstance(ol, dict) or any(k not in ol for k in ("device", "driver", "imu", "mode", "mount_deg", "declination_deg")):
+        raise LintError("capabilities.orientation.lemnosd needs device, driver, imu, mode, mount_deg and declination_deg")
+    lint_verified("orientation", orientation, [])
     lint_hardware_service(caps.get("hardware-service"))
 
 
