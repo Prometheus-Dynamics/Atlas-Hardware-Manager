@@ -126,11 +126,9 @@
   .btn.full {
     width: 100%;
   }
-  .btn:not(:disabled):hover {
-    transform: translateY(-1px);
-  }
+  /* No lift on hover: a button stays in line with its neighbours. */
   .btn:not(:disabled):active {
-    transform: translateY(0) scale(0.98);
+    transform: scale(0.98);
   }
   .btn:disabled {
     cursor: default;

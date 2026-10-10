@@ -171,8 +171,7 @@
   }
   button.node:hover {
     border-color: var(--glass-border-strong);
-    box-shadow: var(--shadow-lift);
-    transform: translateY(-1px);
+    background: var(--glass-hover);
   }
   button.node:active {
     transform: scale(0.98);

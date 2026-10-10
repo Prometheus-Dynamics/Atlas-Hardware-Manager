@@ -71,31 +71,35 @@
     <StatusDot state={dot.state} label={dot.label} />
   </div>
 
-  <div class="mt-3 min-w-0">
-    <h3 class="truncate text-[14px] font-semibold text-fg" title={name}>{name}</h3>
-    <p class="truncate text-[12.5px] text-fg-muted">{deviceSubline(record)}</p>
-    {#if via}<p class="truncate text-[12px] text-fg-faint">via {via}</p>{/if}
+  <!-- Every slot is kept, filled or not, so cards side by side line up. -->
+  <div class="mt-2.5 min-w-0">
+    <h3 class="truncate text-[13.5px] font-semibold text-fg" title={name}>{name}</h3>
+    <p class="truncate text-[12px] text-fg-muted">{deviceSubline(record)}</p>
+    <p class="via truncate text-[11.5px] text-fg-faint">{via ? `via ${via}` : ""}</p>
   </div>
 
-  {#if glance.length > 0}
-    <div class="glance">
-      {#each glance as metric (metric.id)}
-        {@const shown = metricValue(metric)}
-        <span class="reading {metricTone(metric)}">{shown.value}<small>{shown.unit}</small></span>
-      {/each}
-    </div>
-  {/if}
+  <div class="glance">
+    {#each glance as metric (metric.id)}
+      {@const shown = metricValue(metric)}
+      <span class="reading {metricTone(metric)}">{shown.value}<small>{shown.unit}</small></span>
+    {/each}
+  </div>
 
-  <div class="mt-auto flex min-h-[26px] items-end pt-3">
+  <div class="mt-auto flex min-h-[24px] items-end pt-2">
     <DeviceStatus {record} />
   </div>
 </article>
 
 <style>
+  .via {
+    height: 16px;
+    line-height: 16px;
+  }
   .glance {
     display: flex;
     gap: 10px;
-    margin-top: 8px;
+    min-height: 18px;
+    margin-top: 4px;
     font-size: 12px;
     font-weight: 500;
     color: var(--fg-muted);
@@ -116,8 +120,8 @@
     position: relative;
     display: flex;
     flex-direction: column;
-    min-height: var(--card-h, 168px);
-    padding: 16px;
+    min-height: var(--card-h, 150px);
+    padding: 12px;
     border-radius: var(--r-card);
     background: var(--glass);
     border: 1px solid var(--glass-border);
@@ -131,13 +135,13 @@
     pointer-events: none;
     position: relative;
   }
+  /* Grounded: hover lightens it and firms the edge; nothing lifts. */
   .card:hover {
     background: var(--glass-hover);
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-lift);
+    border-color: var(--glass-border-strong);
   }
   .card:active {
-    transform: translateY(0) scale(0.99);
+    background: var(--glass-strong);
   }
   .card.open {
     border-color: var(--glass-border-strong);
@@ -148,9 +152,7 @@
   }
   .card.selected {
     border-color: var(--accent-ring);
-    box-shadow:
-      0 0 0 1px var(--accent-ring),
-      0 8px 24px -10px var(--accent-glow);
+    box-shadow: 0 0 0 1px var(--accent-ring);
   }
   .card.waiting {
     background: linear-gradient(160deg, var(--accent-tint), var(--glass) 60%);
