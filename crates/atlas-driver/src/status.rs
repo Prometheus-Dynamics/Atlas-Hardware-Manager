@@ -103,6 +103,7 @@ impl DeviceEvent {
         if kind.ends_with("failed") || kind == "update.link-fallback" {
             "error"
         } else if kind == "update.rolled-back"
+            || kind == "update.apply-interrupted"
             || kind == "update.link-bad"
             || kind == "usb-boot"
             || (kind == "boot"

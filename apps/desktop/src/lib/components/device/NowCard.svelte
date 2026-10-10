@@ -39,7 +39,13 @@
           spin: false,
         };
       case "staged":
-        return { tone: "primary", icon: "package", title: `${next} is staged`, detail: "It runs after the next restart into it." };
+        // An apply whose restart was cut short says so, and is still staged.
+        return {
+          tone: u.error ? "warning" : "primary",
+          icon: "package",
+          title: `${next} is staged`,
+          detail: u.error ?? "It runs after the next restart into it.",
+        };
       case "rebooting":
         return { tone: "info", icon: "refresh", title: `Restarting into ${next}`, detail: null, spin: true };
       case "trying":

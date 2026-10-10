@@ -363,6 +363,16 @@ commit; the commits are listed per area.
 
 ### Updates (A/B with tryboot)
 
+- **An apply cut short is still staged, not rolled back:** twice on a board
+  the reset came during the old slot's shutdown (the `shutdown` line torn
+  into NULs), before the restart into the trial, so the firmware booted the
+  default slot and the updater said "rolled-back, the new version didn't
+  start". `apply` now records the boot count (`SWITCH_COUNT`); when the very
+  next boot is on the old slot after an unclean shutdown, the trial never
+  ran: the update stays `staged` with that reason and an
+  `update.apply-interrupted` event, to apply again. A trial that ran and
+  then fell back (another boot in between), or a clean restart that came
+  back, is `rolled-back` as before.
 - **Found on hardware (fixed):** the first A/B update from an image (PV r5
   to r7, a rollback and a roll-forward) needed manual workarounds:
   - The drift check leaked read-only mounts of p1, p2 and p3 (made in a

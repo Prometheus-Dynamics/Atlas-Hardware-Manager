@@ -233,6 +233,41 @@ if update stage - --sha256 "$(sha "$img.zst")" < "$img.xz" 2>/dev/null; then fai
 [ "$(state)" = error ] || fail "a stdin mismatch should leave state error"
 update cancel >/dev/null
 
+echo "a reset during the restart's shutdown: still staged, not rolled back"
+# boot-record's view of each boot: count and how the boot before ended.
+boot_json() { printf '{"id":"%s","count":%s,"slot":"A","kernel":"k","previous_clean":%s,"at":1}\n' "$UPDATE_BOOT_ID" "$1" "$2" > "$T/run/boot.json"; }
+update stage "$img.xz" --sha256 "$(sha "$img.xz")"
+boot_json 5 true
+update apply
+grep -q '^SWITCH_COUNT=5$' "$T/disk/p1.d/board-update.env" || fail "apply records the boot it restarts from"
+next_boot
+boot_json 6 false
+update confirm
+[ "$(state)" = staged ] || fail "an interrupted restart leaves it staged, is $(state)"
+grep -q "cut short" "$T/disk/p1.d/board-update.env" || fail "the error says why"
+events | tail -n 1 | grep -q '"kind":"update.apply-interrupted"' || fail "an apply-interrupted event: $(events | tail -n 1)"
+grep -q '\[tryboot\]' "$T/disk/p1.d/autoboot.txt" && fail "the tryboot section is undone"
+update status | grep -q '"state":"staged"' || fail "status: $(cat "$T/run/update.json")"
+echo "applying again runs the trial"
+update apply
+[ "$(state)" = rebooting ] || fail "apply again, state $(state)"
+echo "a boot in between (the trial ran, then a reset): rolled-back as before"
+next_boot
+boot_json 8 false
+update confirm
+[ "$(state)" = rolled-back ] || fail "a trial that ran and fell back is rolled-back, is $(state)"
+echo "a clean shutdown into the old slot: rolled-back as before"
+update cancel >/dev/null
+update stage "$img.xz" --sha256 "$(sha "$img.xz")"
+boot_json 9 true
+update apply
+next_boot
+boot_json 10 true
+update confirm
+[ "$(state)" = rolled-back ] || fail "a clean restart that came back is rolled-back, is $(state)"
+rm -f "$T/run/boot.json"
+update cancel >/dev/null
+
 echo "a failed health check restarts into the old slot"
 update stage "$img.xz" --sha256 "$(sha "$img.xz")"
 update apply

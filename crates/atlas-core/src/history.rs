@@ -210,6 +210,7 @@ pub(crate) fn notable(record: &DeviceRecord, event: &DeviceEvent) -> Option<Acti
             | "update.staged"
             | "update.apply"
             | "update.apply-failed"
+            | "update.apply-interrupted"
             | "update.confirmed"
             | "update.rolled-back"
             | "update.trial-failed"

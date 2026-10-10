@@ -213,7 +213,7 @@ with_autoboot() {
 
 load_state() {
 	STATE=idle SLOT_STAGED= VERSION_ACTIVE= VERSION_STAGED= ERROR= PROGRESS=0
-	PREVIOUS_SLOT= PREVIOUS_VERSION= BAD_BOOTS=0 SWITCH_BOOT= SHA256_STAGED= STARTED_BY=
+	PREVIOUS_SLOT= PREVIOUS_VERSION= BAD_BOOTS=0 SWITCH_BOOT= SWITCH_COUNT= SHA256_STAGED= STARTED_BY=
 	if [ -r "$AB/board-update.env" ]; then
 		# shellcheck disable=SC1091
 		. "$AB/board-update.env"
@@ -266,6 +266,7 @@ save_state() {
 		printf 'PREVIOUS_VERSION=%s\n' "$(quote "$PREVIOUS_VERSION")"
 		printf 'BAD_BOOTS=%s\n' "${BAD_BOOTS:-0}"
 		printf 'SWITCH_BOOT=%s\n' "$(quote "${SWITCH_BOOT:-}")"
+		printf 'SWITCH_COUNT=%s\n' "${SWITCH_COUNT:-}"
 		printf 'SHA256_STAGED=%s\n' "${SHA256_STAGED:-}"
 		printf 'STARTED_BY=%s\n' "${STARTED_BY:-}"
 	} > "$AB/board-update.env.tmp" || write_failed board-update.env
@@ -274,6 +275,12 @@ save_state() {
 }
 
 quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+# This boot's count and whether the boot before it shut down cleanly
+# (boot-record's boot.json): "<count> <true|false|null>", empty when unknown.
+boot_record() {
+	sed -n 's/.*"count":\([0-9]*\),.*"previous_clean":\([a-z]*\),.*/\1 \2/p' "$BOARD_RUN_DIR/boot.json" 2>/dev/null | head -n 1
+}
 
 # The kernel's id of this boot; empty when unknown.
 boot_id() {
@@ -811,6 +818,9 @@ _apply() {
 	# Recorded before the restart, which may not leave time afterwards; if
 	# the restart isn't accepted, _apply_failed puts it back to staged.
 	STATE=rebooting SWITCH_BOOT=$(boot_id) ERROR=''
+	# The boot the trial follows: the next one, unless the restart is cut
+	# short (see _confirm).
+	SWITCH_COUNT=$(boot_record | cut -d' ' -f1)
 	save_state
 	board_event update.apply "restarting into $VERSION_STAGED on trial" "version=$VERSION_STAGED" "slot=$SLOT_STAGED"
 }
@@ -838,6 +848,21 @@ _confirm() {
 	# The trial's outcome belongs to whoever started the update.
 	BOARD_EVENT_SOURCE=${BOARD_EVENT_SOURCE:-$STARTED_BY}
 	active=$(slot_of_root)
+	if [ "$active" != "$SLOT_STAGED" ] && [ -n "${SWITCH_COUNT:-}" ] &&
+		[ "$(boot_record)" = "$((SWITCH_COUNT + 1)) false" ]; then
+		# The very next boot, still on the old slot, after a boot that didn't
+		# shut down cleanly: the reset came during the shutdown, before the
+		# restart into the trial (the firmware boots the default then). The
+		# trial never ran: still staged, to apply again.
+		STATE=staged SWITCH_COUNT=''
+		ERROR="the restart into $VERSION_STAGED was cut short (the board reset before it finished shutting down), so its trial never started; it is still staged: apply it again"
+		write_autoboot "$(slot_boot "$active")"
+		save_state
+		board_log "$ERROR"
+		board_event update.apply-interrupted "$ERROR" "version=$VERSION_STAGED" "slot=$SLOT_STAGED"
+		return 0
+	fi
+	SWITCH_COUNT=''
 	if [ "$active" != "$SLOT_STAGED" ]; then
 		# The trial boot didn't stick; the bootloader went back by itself.
 		STATE=rolled-back ERROR=${ERROR:-"the new version didn't start; back on $VERSION_ACTIVE"}
