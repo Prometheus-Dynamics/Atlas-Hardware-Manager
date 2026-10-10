@@ -95,6 +95,10 @@ commit; the commits are listed per area.
 
 ### Board awareness: events, status, drift
 
+- **FunctionFS for the flasher:** raze.config turns on `USB_CONFIGFS_F_FS`
+  and `USB_F_FS` (=m), the raze-flasher daemon's bulk interface
+  (docs/flasher.md); one more module in the shared kernel, loaded by no
+  one else.
 - **Camera views and nt-server in the identity:** `camera_streams` is
   `/run/board/camera-streams.json` as the image writes it (PhotonVision
   `b9d520e`: processed then raw per camera, at boot and on every settings

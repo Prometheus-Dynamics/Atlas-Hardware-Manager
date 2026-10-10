@@ -62,13 +62,14 @@ package or release, newest compatible wins.
     dwc2                                        # if not built in
     rp1-pio ws2812-pio-rp1                      # the status ring
     vfat nls_cp437 nls_iso8859_1                # p1/p2/p3 (if not built in)
-    ext4 crc32c_generic                         # /data, read and UUID (if not built in)
+    ext4 crc32c-cryptoapi                       # /data, read and UUID (ext4 built in on Raze)
 
 EROFS, MMC and SDHCI are built in on Raze. Anything above that is built in
 is skipped by Gaia, which is fine.
 
-Shared-config needs (raze.config): nothing new beyond `USB_FUNCTIONFS`
-(=m) and `USB_CONFIGFS_F_FS`; both are expected on but must be checked.
+Shared-config needs (raze.config): `USB_CONFIGFS_F_FS=y` and `USB_F_FS=m`
+(usb_f_fs), on since Gaia's first flasher build found them off; ext4, vfat,
+nls_cp437 and dwc2 are built in.
 
 ### Initramfs files
 
