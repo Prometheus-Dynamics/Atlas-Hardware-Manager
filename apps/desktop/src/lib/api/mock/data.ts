@@ -14,7 +14,7 @@ import type {
   RobotProfile,
 } from "../types";
 import { keyString } from "../types";
-import { TEST_PATTERN } from "./pattern";
+import { TEST_PATTERN, pattern } from "./pattern";
 
 export interface SimDevice {
   key: DeviceKey;
@@ -146,6 +146,15 @@ const razeRunning = (serial: string, version: string, ab: boolean): SimDevice =>
     board_serial: serial,
     contract: "1",
     camera_stream: TEST_PATTERN,
+    // The A/B board runs two cameras, each with its raw and processed view.
+    ...(ab
+      ? {
+          "camera_stream.front": TEST_PATTERN,
+          "camera_stream.front-raw": pattern("front · raw · 60 fps", 40),
+          "camera_stream.rear": pattern("rear · object detection · 31 fps", 160),
+          "camera_stream.rear-raw": pattern("rear · raw · 60 fps", 200),
+        }
+      : {}),
     ...(ab ? { slot_active: "A", update_state: "committed" } : {}),
   },
   link: { kind: "usb-network" },

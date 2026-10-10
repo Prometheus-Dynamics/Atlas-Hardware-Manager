@@ -12,6 +12,14 @@ pub const IDENTITY_PATH: &str = "/.well-known/pd-device";
 /// set (Atlas sets it while watching; clock.rs in atlas-core).
 pub const CLOCK_TOLERANCE_S: i64 = 2;
 
+/// One camera view a device lists: a name (`front`, `front-processed`) and
+/// the MJPEG stream's path or URL.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct ReportedStream {
+    pub name: String,
+    pub url: String,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct NameVersion {
     #[serde(default)]
@@ -54,6 +62,10 @@ pub struct BoardIdentity {
     /// A camera view: an MJPEG stream or a still image, path or URL.
     #[serde(default)]
     pub camera_stream: Option<String>,
+    /// Every camera view, when the device has several (a PhotonVision board
+    /// with two cameras, each with its raw and processed stream).
+    #[serde(default)]
+    pub camera_streams: Vec<ReportedStream>,
     /// The A/B updater's state (`update status`), when the board has one.
     #[serde(default)]
     pub update: Option<UpdateReport>,
@@ -204,6 +216,35 @@ impl BoardIdentity {
         {
             attributes.insert(atlas_driver::attributes::CAMERA_STREAM.into(), stream);
         }
+        // `camera_stream.<name>`, one per stream; the first is also the
+        // device's `camera_stream` when it names none of its own.
+        for stream in &self.camera_streams {
+            let Some(url) = crate::live::resolve(&address, &stream.url) else {
+                continue;
+            };
+            let name: String = stream
+                .name
+                .trim()
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                        c
+                    } else {
+                        '-'
+                    }
+                })
+                .collect();
+            if name.is_empty() {
+                continue;
+            }
+            attributes
+                .entry(atlas_driver::attributes::CAMERA_STREAM.into())
+                .or_insert_with(|| url.clone());
+            attributes.insert(
+                format!("{}.{name}", atlas_driver::attributes::CAMERA_STREAM),
+                url,
+            );
+        }
 
         Identity {
             key: DeviceKey::new(
@@ -264,6 +305,44 @@ mod tests {
         assert_eq!(identity.attributes["update_state"], "confirmed");
         assert_eq!(identity.attributes["slot_active"], "B");
         assert!(!identity.attributes.contains_key("update_error"));
+    }
+
+    #[test]
+    fn every_camera_stream_is_an_attribute() {
+        let reported: BoardIdentity = serde_json::from_str(
+            r#"{ "contract": 1, "model": "raze", "serial": "5",
+                 "camera_streams": [
+                   { "name": "front", "url": ":1181/stream.mjpg" },
+                   { "name": "front processed", "url": ":1182/stream.mjpg" },
+                   { "name": "", "url": ":1183/stream.mjpg" } ] }"#,
+        )
+        .unwrap();
+        let identity = reported.to_identity(
+            None,
+            LinkId("mdns".into()),
+            "http://10.0.0.5:5899/.well-known/pd-device".into(),
+        );
+        assert_eq!(
+            identity.attributes["camera_stream.front"],
+            "http://10.0.0.5:1181/stream.mjpg"
+        );
+        assert_eq!(
+            identity.attributes["camera_stream.front-processed"],
+            "http://10.0.0.5:1182/stream.mjpg"
+        );
+        assert_eq!(
+            identity.attributes["camera_stream"], "http://10.0.0.5:1181/stream.mjpg",
+            "the first is the device's view"
+        );
+        assert_eq!(
+            identity
+                .attributes
+                .keys()
+                .filter(|k| k.starts_with("camera_stream."))
+                .count(),
+            2,
+            "a stream needs a name"
+        );
     }
 
     #[test]

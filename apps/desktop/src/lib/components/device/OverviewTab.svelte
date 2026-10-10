@@ -10,7 +10,8 @@
   import { robots } from "#lib/stores/robots.svelte.ts";
   import { deviceStatus, hasStatus } from "#lib/stores/status.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
-  import CameraPreview from "./CameraPreview.svelte";
+  import { cameraStreams } from "#lib/present.ts";
+  import CameraStreams from "./CameraStreams.svelte";
   import ControlsCard from "./ControlsCard.svelte";
   import Disclosure from "./Disclosure.svelte";
   import FactGrid from "./FactGrid.svelte";
@@ -27,7 +28,7 @@
   const attrs = $derived(record.identity.attributes ?? {});
   const manageUrl = $derived(attrs.manage_url ?? null);
   const online = $derived(record.presence === "online");
-  const stream = $derived(online ? (attrs.camera_stream ?? null) : null);
+  const streams = $derived(online ? cameraStreams(record) : []);
   const telemetry = $derived(online && record.capabilities.includes("telemetry"));
   const reports = $derived(hasStatus(record));
   const id = $derived(keyString(record.key));
@@ -155,9 +156,9 @@
   </div>
 
   <div class="col">
-  {#if stream}
-    <div class="camera">
-      <CameraPreview src={stream} name={record.label ?? record.identity.name ?? record.key.serial} />
+  {#if streams.length}
+    <div class="camera" class:several={streams.length > 1}>
+      <CameraStreams {streams} device={deviceName(record)} />
     </div>
   {/if}
 
@@ -255,5 +256,8 @@
   /* The camera at a useful size, not the whole width. */
   .camera {
     max-width: 640px;
+  }
+  .camera.several {
+    max-width: 900px;
   }
 </style>

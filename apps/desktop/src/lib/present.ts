@@ -161,3 +161,26 @@ export function aDevice(record: DeviceRecord): string {
   if (model && (name === model || name === keyString(record.key))) return `A ${model}`;
   return name;
 }
+
+/** One camera view a device offers: its name and the stream (MJPEG or a still image). */
+export type CameraStream = { name: string; url: string };
+
+/**
+ * The device's camera views: every `camera_stream.<name>` it lists, or its
+ * single `camera_stream`. Raw views sort after the processed one they belong to.
+ */
+export function cameraStreams(record: DeviceRecord): CameraStream[] {
+  const attrs = record.identity.attributes ?? {};
+  const named = Object.entries(attrs)
+    .filter(([key, url]) => key.startsWith("camera_stream.") && !!url)
+    .map(([key, url]) => ({ name: key.slice("camera_stream.".length), url }))
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+  if (named.length) return named;
+  return attrs.camera_stream ? [{ name: "camera", url: attrs.camera_stream }] : [];
+}
+
+/** "front-raw" as "Front · raw". */
+export function streamLabel(name: string): string {
+  const [first, ...rest] = name.split(/[-_]/);
+  return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" · ");
+}

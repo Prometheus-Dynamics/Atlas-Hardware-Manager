@@ -1,11 +1,16 @@
 <script lang="ts">
-  // Several devices' live data at once: a grid of compact panels (readings
-  // with trends, streaming sensors as charts). Which devices is remembered;
-  // pick them here, from a device's page (Monitor), or a whole robot.
+  // Several devices at once: their live data as a grid of compact panels
+  // (readings with trends, streaming sensors as charts), or their cameras as
+  // a wall of views. Which devices, the view and the columns are remembered;
+  // pick devices here, from a device's page (Monitor), or a whole robot.
+  // With none picked, the camera wall shows every online camera.
   import { keyString } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import PageHeader from "#lib/components/common/PageHeader.svelte";
+  import SegmentedControl from "#lib/components/common/SegmentedControl.svelte";
+  import CameraWall from "#lib/components/device/CameraWall.svelte";
   import DeviceMonitor from "#lib/components/device/DeviceMonitor.svelte";
+  import { cameraStreams } from "#lib/present.ts";
   import Page from "#lib/components/layout/Page.svelte";
   import Region from "#lib/components/layout/Region.svelte";
   import { deviceName } from "#lib/format.ts";
@@ -20,6 +25,38 @@
     ),
   );
   let picking = $state(false);
+  const VIEW_KEY = "atlas.monitor.view";
+  const COLS_KEY = "atlas.monitor.columns";
+  const remembered = (key: string, fallback: string) => {
+    try {
+      return localStorage.getItem(key) ?? fallback;
+    } catch {
+      return fallback;
+    }
+  };
+  let view = $state(remembered(VIEW_KEY, "data"));
+  let cols = $state(remembered(COLS_KEY, "0"));
+  $effect(() => {
+    try {
+      localStorage.setItem(VIEW_KEY, view);
+      localStorage.setItem(COLS_KEY, cols);
+    } catch {
+      // Private mode: it lasts this session.
+    }
+  });
+  const views = [
+    { value: "data", label: "Data", icon: "chart-line" as const },
+    { value: "cameras", label: "Cameras", icon: "camera" as const },
+  ];
+  const colOptions = [
+    { value: "0", label: "Auto" },
+    { value: "1", label: "1" },
+    { value: "2", label: "2" },
+    { value: "3", label: "3" },
+    { value: "4", label: "4" },
+  ];
+  // The camera wall: the chosen devices, or every online camera.
+  const cameraRecords = $derived(shown.length ? shown : devices.all.filter((d) => d.presence === "online" && cameraStreams(d).length > 0));
   // The grid: as many columns as fit at about 360 px each.
   let width = $state(1200);
   const columns = $derived(Math.max(1, Math.min(shown.length || 1, Math.floor(width / 360))));
@@ -38,6 +75,8 @@
   {#snippet header()}
     <PageHeader title="Monitor" subtitle="Live data from several devices side by side.">
       {#snippet actions()}
+        <SegmentedControl options={views} bind:value={view} label="Monitor view" size="sm" />
+        {#if view === "cameras"}<SegmentedControl options={colOptions} bind:value={cols} label="Columns" size="sm" />{/if}
         {#each robots.names as name (name)}
           <Button size="sm" variant="ghost" icon="robot" onclick={() => showRobot(name)} title="Show the devices of {name}">{name}</Button>
         {/each}
@@ -61,7 +100,13 @@
     </div>
   {/if}
 
-  {#if shown.length === 0}
+  {#if view === "cameras"}
+    <div class="min-h-0 flex-1">
+      <Region class="h-full" inner="pb-1" label="Camera views">
+        <CameraWall records={cameraRecords} columns={Number(cols)} />
+      </Region>
+    </div>
+  {:else if shown.length === 0}
     <div class="empty">
       <p class="text-[13px] text-fg-muted">No devices on the Monitor yet.</p>
       <div class="flex gap-2">
