@@ -49,17 +49,25 @@ pub struct RemoteTransport {
 }
 
 /// The actions Atlas runs through Orion; the enroll command grants these.
-const ACTIONS: [&str; 9] = [
+const ACTIONS: [&str; 16] = [
     "update",
     "update.cancel",
     "update.rollback",
     "reboot",
     "locate",
     "clock.set",
-    // The board's devices (Lemnos): set, restore and release controls.
+    // The board's devices (Lemnos): set, restore and release controls,
+    // switch a power switch, and calibrate the IMU and magnetometer.
     "set",
     "restore",
     "release",
+    "power.set",
+    "calibration.start",
+    "calibration.stop",
+    "calibration.apply",
+    "calibration.discard",
+    "calibration.reset",
+    "calibration.status",
 ];
 
 impl RemoteTransport {

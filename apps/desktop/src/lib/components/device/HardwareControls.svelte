@@ -39,7 +39,10 @@
     sending = control;
     drafts[control] = value;
     try {
-      const applied = await send({ command: "set", control, value });
+      // A power switch takes power.set (Lemnos's own action for it).
+      const command: HardwareCommand =
+        device.class === "power-switch" && control === "power.on" ? { command: "power", on: value >= 0.5 } : { command: "set", control, value };
+      const applied = await send(command);
       if (applied !== null) drafts[control] = applied;
     } catch (error) {
       delete drafts[control];

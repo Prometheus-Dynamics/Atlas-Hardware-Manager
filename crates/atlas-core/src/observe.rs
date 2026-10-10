@@ -1,7 +1,7 @@
 //! Live views of a device, commands to its board's devices, and the fleet
 //! history.
 
-use atlas_driver::{DeviceKey, FrameSink, HardwareCommand, LogLine, Metric};
+use atlas_driver::{CalibrationStatus, DeviceKey, FrameSink, HardwareCommand, LogLine, Metric};
 
 use crate::{ActivityEntry, ActivityKind, ActivityLevel, Atlas, CoreError};
 
@@ -41,6 +41,23 @@ impl Atlas {
         };
         Ok(status
             .stream_hardware(&record.identity, wanted, sink)
+            .await?)
+    }
+
+    /// The calibration state of the board device `hardware` (read only, not
+    /// logged).
+    pub async fn calibration_status(
+        &self,
+        key: &DeviceKey,
+        hardware: &str,
+    ) -> Result<CalibrationStatus, CoreError> {
+        let (live, record) = self.live_device(key)?;
+        let control = live.capabilities.hardware.ok_or(CoreError::Unsupported {
+            device: key.clone(),
+            what: "hardware controls",
+        })?;
+        Ok(control
+            .calibration_status(&record.identity, hardware)
             .await?)
     }
 

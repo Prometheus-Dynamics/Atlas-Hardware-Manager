@@ -26,7 +26,8 @@ pub use capability::{
 pub use driver::{ChangeNotifier, Driver, DriverManifest, LinkSource};
 pub use error::DriverError;
 pub use hardware::{
-    FrameSink, HardwareCapability, HardwareCommand, HardwareFrame, LiveChannel, LiveDevice,
+    CalibrationPart, CalibrationStatus, CalibrationStep, FrameSink, HardwareCapability,
+    HardwareCommand, HardwareFrame, LiveChannel, LiveDevice,
 };
 pub use health::{HealthCheck, HealthStatus};
 pub use observe::{

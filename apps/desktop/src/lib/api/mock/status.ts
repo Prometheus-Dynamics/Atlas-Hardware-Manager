@@ -5,6 +5,9 @@
 // watch (staging, restart, trial boot, kept).
 
 import type {
+  CalibrationRoutine,
+  CalibrationStatus,
+  CalibrationStep,
   DeviceEvent,
   DeviceKey,
   DeviceStatus,
@@ -198,7 +201,73 @@ export function controlHardware(key: DeviceKey, hardware: string, command: Hardw
       if (target.class !== "fan") throw `${hardware}: device error: unsupported`;
       for (const k of [...writes.keys()]) if (k.startsWith(prefix)) writes.delete(k);
       return null;
+    case "power":
+      if (target.class !== "power-switch") throw `${hardware}: unsupported action \`power.set\``;
+      writes.set(writeKey(key, hardware, "power.on"), command.on ? 1 : 0);
+      return command.on ? 1 : 0;
+    case "calibrate":
+      calibrate(target.class, hardware, command.step, command.routine);
+      return null;
   }
+}
+
+/** Simulated calibration by board device: a routine runs ~8 s to a candidate. */
+type SimCalibration = { running: CalibrationRoutine | null; started: number; candidate: boolean; revision: number; parts: CalibrationStatus["parts"] };
+const calibrations = new Map<string, SimCalibration>();
+const ROUTINE_MS = 8000;
+const PARTS: Record<string, ("accel" | "gyro" | "mag")[]> = { imu: ["accel", "gyro"], magnetometer: ["mag"] };
+
+function calibrationOf(hardware: string, kind: string): SimCalibration {
+  let c = calibrations.get(hardware);
+  if (!c) {
+    const parts: CalibrationStatus["parts"] = {};
+    for (const part of PARTS[kind] ?? []) parts[part] = { samples: 0, confidence: 0, coverage: 0, residual: 0, active: false };
+    c = { running: null, started: 0, candidate: false, revision: 0, parts };
+    calibrations.set(hardware, c);
+  }
+  // A routine that has run its time leaves a candidate.
+  if (c.running && Date.now() - c.started >= ROUTINE_MS) {
+    c.running = null;
+    c.candidate = true;
+  }
+  return c;
+}
+
+function calibrate(kind: string, hardware: string, step: CalibrationStep, routine?: CalibrationRoutine) {
+  if (!PARTS[kind]) throw `${hardware}: unsupported action \`calibration.${step}\``;
+  const c = calibrationOf(hardware, kind);
+  switch (step) {
+    case "start":
+      if (!routine) throw "`routine` (accel-six, mag-rotate or gyro-hold) is required";
+      Object.assign(c, { running: routine, started: Date.now(), candidate: false });
+      break;
+    case "stop":
+      c.running = null;
+      break;
+    case "apply":
+      if (!c.candidate) throw `${hardware}: no candidate to apply`;
+      for (const part of Object.values(c.parts)) Object.assign(part!, { samples: 600, confidence: 0.92, coverage: 0.88, residual: 0.03, active: true });
+      Object.assign(c, { candidate: false, revision: c.revision + 1 });
+      break;
+    case "discard":
+      c.candidate = false;
+      break;
+    case "reset":
+      for (const part of Object.values(c.parts)) Object.assign(part!, { samples: 0, confidence: 0, coverage: 0, residual: 0, active: false });
+      Object.assign(c, { running: null, candidate: false, revision: c.revision + 1 });
+      break;
+  }
+}
+
+/** A board device's calibration, as Lemnos's calibration.status answers it. */
+export function calibrationStatus(key: DeviceKey, hardware: string): CalibrationStatus {
+  const device = online(key);
+  const target = device ? hardwareFor(device, Date.now(), 50)?.devices.find((d) => d.id === hardware) : null;
+  if (!target) throw `Orion doesn't list the board's ${hardware}`;
+  const c = calibrationOf(hardware, target.class);
+  if (!PARTS[target.class]) throw `${hardware}: unsupported action \`calibration.status\``;
+  const progress = c.running ? Math.min(1, (Date.now() - c.started) / ROUTINE_MS) : c.candidate ? 1 : 0;
+  return { revision: c.revision, running: c.running, progress, candidate: c.candidate, failed: false, parts: structuredClone(c.parts) };
 }
 
 /** The A/B Raze's hardware as lemnosd reports it; the readings drift a little on every read. */
@@ -244,8 +313,19 @@ function hardwareFor(device: SimDevice, now: number, celsius: number): HardwareS
         id: "magnetometer",
         class: "magnetometer",
         model: "bmm150",
-        status: "faulted",
-        reason: "chip id read failed",
+        status: "available",
+        readings: [
+          { name: "magnetic_field.x", value: (21.4 + jitter(0.4)) * 1e-6, unit: "T" },
+          { name: "magnetic_field.y", value: (-3.2 + jitter(0.4)) * 1e-6, unit: "T" },
+          { name: "magnetic_field.z", value: (-44.8 + jitter(0.4)) * 1e-6, unit: "T" },
+        ],
+        controls: [],
+      },
+      {
+        id: "orientation",
+        class: "orientation",
+        model: "fusion",
+        status: "available",
         readings: [],
         controls: [],
       },

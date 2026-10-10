@@ -21,6 +21,36 @@ const MODELS: Record<string, Model> = {
       return [0.2 * Math.cos(t * 1.3), -0.15 * Math.sin(t * 0.9), 0.05 * Math.sin(t * 3)][i - 3] + bump * 1.2 + noise(0.01);
     },
   },
+  magnetometer: {
+    class: "magnetometer",
+    model: "bmm150",
+    // Tesla, as lemnosd reports it (about 50 µT here).
+    channels: axes("magnetic_field", "T"),
+    value: (t, i) => [21.4e-6, -3.2e-6, -44.8e-6][i] + 1e-6 * Math.sin(t / 5 + i) + noise(0.3e-6),
+  },
+  // lemnosd's fusion: the same slow tilt as the IMU above, and a heading drifting a little.
+  orientation: {
+    class: "orientation",
+    model: "fusion",
+    channels: [
+      ...["w", "x", "y", "z"].map((axis) => ({ name: `quaternion.${axis}`, unit: "" })),
+      { name: "roll", unit: "rad" },
+      { name: "pitch", unit: "rad" },
+      { name: "yaw", unit: "rad" },
+      { name: "confidence.imu", unit: "" },
+      { name: "confidence.magnetometer", unit: "" },
+      { name: "magnetic_disturbance", unit: "" },
+    ],
+    value: (t, i) => {
+      const roll = 0.04 * Math.sin(t * 1.3);
+      const pitch = 0.03 * Math.cos(t * 0.9);
+      const yaw = 0.6 + 0.2 * Math.sin(t / 7);
+      // Hamilton, scalar first, from intrinsic ZYX (yaw, pitch, roll).
+      const [cr, sr, cp, sp, cy, sy] = [Math.cos(roll / 2), Math.sin(roll / 2), Math.cos(pitch / 2), Math.sin(pitch / 2), Math.cos(yaw / 2), Math.sin(yaw / 2)];
+      const q = [cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy, cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy];
+      return [...q, roll, pitch, yaw, 0.94, 0.88, 0][i];
+    },
+  },
   power: {
     class: "power",
     model: "ina238",

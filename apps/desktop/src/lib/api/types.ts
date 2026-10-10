@@ -524,6 +524,10 @@ export interface Drift {
 }
 
 export type {
+  CalibrationPart,
+  CalibrationRoutine,
+  CalibrationStatus,
+  CalibrationStep,
   HardwareCommand,
   HardwareControl,
   HardwareDevice,

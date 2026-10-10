@@ -3,8 +3,8 @@ use std::path::PathBuf;
 
 use atlas_core::{ActivityEntry, DeviceRecord, HistoryEntry, ScanReport, SelfTestRecord};
 use atlas_driver::{
-    DeviceAction, DeviceKey, DeviceStatus, FrameSink, HardwareCommand, HardwareFrame, LogLine,
-    Metric,
+    CalibrationStatus, DeviceAction, DeviceKey, DeviceStatus, FrameSink, HardwareCommand,
+    HardwareFrame, LogLine, Metric,
 };
 use tauri::State;
 
@@ -70,6 +70,21 @@ pub async fn control_hardware(
     state
         .atlas
         .control_hardware(&key, &hardware, command)
+        .await
+        .map_err(text)
+}
+
+/// The calibration state of one of the board's devices (an IMU, a
+/// magnetometer).
+#[tauri::command]
+pub async fn calibration_status(
+    state: State<'_, AppState>,
+    key: DeviceKey,
+    hardware: String,
+) -> CmdResult<CalibrationStatus> {
+    state
+        .atlas
+        .calibration_status(&key, &hardware)
         .await
         .map_err(text)
 }

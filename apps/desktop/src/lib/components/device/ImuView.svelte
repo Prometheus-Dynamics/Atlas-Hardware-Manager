@@ -1,22 +1,40 @@
 <script lang="ts">
-  // The IMU's orientation in 3D, live: the board as a slab with its axes
-  // (x red, y green, z blue), turned by a filter of the accelerometer and
-  // gyro (imu.ts). Tilt is absolute (gravity); heading drifts slowly with no
-  // magnetometer, so "Zero heading" makes the current one straight ahead.
+  // The IMU's orientation in 3D, live: the board's case with its axes
+  // (x red, y green, z blue). With the board's own fusion (`fused`, lemnosd's
+  // orientation device: the IMU and the magnetometer, calibrated) it shows
+  // that; otherwise a filter of the accelerometer and gyro here (imu.ts),
+  // whose heading drifts slowly. "Zero heading" makes the current heading
+  // straight ahead either way.
   import Button from "#lib/components/common/Button.svelte";
   import { onMount } from "svelte";
   import CaseModel from "./CaseModel.svelte";
-  import { Orientation, cssMatrix, euler } from "./imu.ts";
+  import { FusedOrientation, Orientation, cssMatrix, euler } from "./imu.ts";
   import type { LiveSeries } from "./live.ts";
 
   /** fill: as tall as its container (a column with room to spare). */
-  let { series, fill = false }: { series: LiveSeries; fill?: boolean } = $props();
+  let {
+    series,
+    fused = null,
+    fill = false,
+  }: {
+    series: LiveSeries;
+    /** The board's orientation device's stream, when it has one. */
+    fused?: LiveSeries | null;
+    fill?: boolean;
+  } = $props();
 
   const NAMES = ["acceleration.x", "acceleration.y", "acceleration.z", "angular_rate.x", "angular_rate.y", "angular_rate.z"];
   const indices = $derived(NAMES.map((name) => series.channels.findIndex((c) => c.name === name)));
   const usable = $derived(indices.every((i) => i >= 0));
 
   let orientation: Orientation | null = null;
+  let board: FusedOrientation | null = null;
+  const fusedChannels = $derived(fused ? FusedOrientation.channelsOf(fused.channels.map((c) => c.name)) : null);
+  /** What the view shows now: the board's fusion once it streams. */
+  let source = $state<"board" | "here">("here");
+  let disturbed = $state(false);
+  let confidence = $state<number | null>(null);
+  const current = () => (source === "board" ? board : orientation);
   /** The case model didn't load (no WebGL, no model): the plain block instead. */
   let plain = $state(false);
   let matrix = $state("none");
@@ -30,8 +48,16 @@
       if (usable) {
         orientation ??= new Orientation(indices);
         orientation.update(series);
-        matrix = cssMatrix(orientation.q);
-        angles = euler(orientation.q);
+        if (fused && fusedChannels && fused.count > 0) {
+          board ??= new FusedOrientation(fusedChannels);
+          board.update(fused);
+          source = "board";
+          disturbed = board.disturbed;
+          confidence = board.confidence;
+        } else source = "here";
+        const q = current()?.q ?? orientation.q;
+        matrix = cssMatrix(q);
+        angles = euler(q);
         const at = series.count ? series.index(series.count - 1) : -1;
         if (at >= 0) {
           const [ax, ay, az, gx, gy, gz] = indices.map((c) => series.v[c][at]);
@@ -52,7 +78,7 @@
   <div class="imu" class:fill>
     <div class="stage" aria-label="The IMU's orientation in 3D" role="img">
       {#if !plain}
-        <CaseModel orientation={() => orientation?.q ?? [1, 0, 0, 0]} onfail={() => (plain = true)} />
+        <CaseModel orientation={() => current()?.q ?? [1, 0, 0, 0]} onfail={() => (plain = true)} />
       {:else}
       <div class="scene">
         <div class="floor"></div>
@@ -78,8 +104,15 @@
         <div><dt>|a|</dt><dd>{fmt(accelG, 2)} g</dd></div>
         <div><dt>|ω|</dt><dd>{fmt(rateDps)} °/s</dd></div>
       </dl>
-      <Button size="sm" variant="ghost" icon="refresh" action={async () => orientation?.zero()}>Zero heading</Button>
-      <p class="note">Tilt from gravity; heading from the gyro alone, so it drifts slowly.</p>
+      <Button size="sm" variant="ghost" icon="refresh" action={async () => current()?.zero()}>Zero heading</Button>
+      <p class="note">
+        {#if source === "board"}
+          Fused on the board{confidence !== null ? ` (IMU confidence ${Math.round(confidence * 100)}%)` : ""};
+          {disturbed ? "heading from the gyro: the magnetometer isn't trusted now (calibrate it, or a magnet is near)" : "heading from the magnetometer"}.
+        {:else}
+          Tilt from gravity; heading from the gyro alone, so it drifts slowly.
+        {/if}
+      </p>
     </div>
   </div>
 {/if}

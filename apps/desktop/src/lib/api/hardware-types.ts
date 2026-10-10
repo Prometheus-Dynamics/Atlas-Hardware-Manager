@@ -41,7 +41,36 @@ export type HardwareCommand =
   /** Undoes this computer's writes: to `control`, or to every control. */
   | { command: "restore"; control: string | null }
   /** Hands a fan back to the board's own cooling. */
-  | { command: "release" };
+  | { command: "release" }
+  /** Switches a power switch (a USB port's power) on or off. */
+  | { command: "power"; on: boolean }
+  /** A calibration step; `routine` is what `start` runs. */
+  | { command: "calibrate"; step: CalibrationStep; routine?: CalibrationRoutine };
+
+export type CalibrationStep = "start" | "stop" | "apply" | "discard" | "reset";
+/** Lemnos's routines: the IMU takes accel-six and gyro-hold, a magnetometer mag-rotate. */
+export type CalibrationRoutine = "accel-six" | "gyro-hold" | "mag-rotate";
+
+/** One part of a device's calibration (accel, gyro, mag); ratios 0..1. */
+export interface CalibrationPart {
+  samples: number;
+  confidence: number;
+  coverage: number;
+  residual: number;
+  /** Calibrated values are in use. */
+  active: boolean;
+}
+
+/** A device's calibration state, read now. */
+export interface CalibrationStatus {
+  revision: number;
+  running: CalibrationRoutine | null;
+  progress: number;
+  /** A finished result waits to be applied or discarded. */
+  candidate: boolean;
+  failed: boolean;
+  parts: Partial<Record<"accel" | "gyro" | "mag", CalibrationPart>>;
+}
 
 /** The board's hardware at one moment (Unix seconds). */
 export interface HardwareSnapshot {

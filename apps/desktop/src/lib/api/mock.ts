@@ -20,7 +20,7 @@ import { listRecords, robotStatuses, robotUpdateRequest, scan, touch } from "./m
 import { lastSelftest, runSelftest, seedSelftests } from "./mock/selftest";
 import { streamHardware } from "./mock/live";
 import { ntCameraAddresses, ntConnect, ntServer } from "./mock/nt";
-import { boardAction, controlHardware, deviceHistory, deviceStatus } from "./mock/status";
+import { boardAction, calibrationStatus, controlHardware, deviceHistory, deviceStatus } from "./mock/status";
 
 seedHistory();
 seedSelftests();
@@ -187,6 +187,7 @@ export const mockApi: Api = {
   deviceLogs: (key, lines) => reply(() => logLines(online(key), Math.max(1, Math.min(lines, 2000)))),
   deviceStatus: (key) => reply(() => deviceStatus(key)),
   controlHardware: (key, hardware, command) => reply(() => controlHardware(key, hardware, command)),
+  calibrationStatus: (key, hardware) => reply(() => calibrationStatus(key, hardware)),
   streamHardware,
   ntConnect,
   ntServerStart: (port) => ntServer.start(port),

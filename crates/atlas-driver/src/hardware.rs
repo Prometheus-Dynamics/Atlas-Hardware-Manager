@@ -3,6 +3,7 @@
 //! ([`HardwareSnapshot`](crate::HardwareSnapshot)), and live, at device rate,
 //! from a board that streams it ([`HardwareFrame`]).
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -23,6 +24,70 @@ pub enum HardwareCommand {
     },
     /// Hands a fan back to the board's own cooling.
     Release,
+    /// Switches a power switch (a USB port's power) on or off.
+    Power { on: bool },
+    /// A step of the device's calibration; `routine` names what `start` runs
+    /// (Lemnos: `accel-six`, `gyro-hold`, `mag-rotate`).
+    Calibrate {
+        step: CalibrationStep,
+        #[serde(default)]
+        routine: Option<String>,
+    },
+}
+
+/// What a calibration command does (Lemnos's `calibration.<step>`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CalibrationStep {
+    /// Starts a routine.
+    Start,
+    /// Ends the running routine; a finished result is kept as a candidate.
+    Stop,
+    /// Makes the candidate the device's calibration (the board keeps it).
+    Apply,
+    /// Drops the candidate.
+    Discard,
+    /// Back to the factory calibration.
+    Reset,
+}
+
+impl CalibrationStep {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::Stop => "stop",
+            Self::Apply => "apply",
+            Self::Discard => "discard",
+            Self::Reset => "reset",
+        }
+    }
+}
+
+/// One part of a device's calibration (`accel`, `gyro`, `mag`); ratios 0..1.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CalibrationPart {
+    pub samples: u64,
+    pub confidence: f64,
+    pub coverage: f64,
+    pub residual: f64,
+    /// Calibrated values are in use for it.
+    pub active: bool,
+}
+
+/// A device's calibration state, read now.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct CalibrationStatus {
+    pub revision: u64,
+    /// The routine running, if any.
+    pub running: Option<String>,
+    /// Its progress, 0..1.
+    pub progress: f64,
+    /// A finished result waits to be applied or discarded.
+    pub candidate: bool,
+    /// The last routine failed.
+    pub failed: bool,
+    /// By part; a part the device doesn't have isn't listed.
+    pub parts: BTreeMap<String, CalibrationPart>,
 }
 
 impl HardwareCommand {
@@ -35,6 +100,12 @@ impl HardwareCommand {
             } => format!("restore {control}"),
             Self::Restore { control: None } => "restore its controls".into(),
             Self::Release => "hand it back to the board".into(),
+            Self::Power { on } => format!("switch it {}", if *on { "on" } else { "off" }),
+            Self::Calibrate {
+                step: CalibrationStep::Start,
+                routine,
+            } => format!("start calibrating ({})", routine.as_deref().unwrap_or("?")),
+            Self::Calibrate { step, .. } => format!("calibration: {}", step.name()),
         }
     }
 }
@@ -51,6 +122,17 @@ pub trait HardwareCapability: Send + Sync {
         hardware: &str,
         command: HardwareCommand,
     ) -> Result<Option<f64>, DriverError>;
+
+    /// The calibration state of the board device `hardware`.
+    async fn calibration_status(
+        &self,
+        _device: &Identity,
+        hardware: &str,
+    ) -> Result<CalibrationStatus, DriverError> {
+        Err(DriverError::Unsupported(format!(
+            "{hardware}: calibration isn't reachable on this board"
+        )))
+    }
 }
 
 /// One channel of a live device: its name and unit (empty: none).

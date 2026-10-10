@@ -13,6 +13,7 @@ import type {
   DeviceKey,
   DeviceRecord,
   DeviceStatus,
+  CalibrationStatus,
   HardwareCommand,
   HardwareFrame,
   NtCameraAddress,
@@ -57,6 +58,8 @@ export const api = {
    */
   controlHardware: (key: DeviceKey, hardware: string, command: HardwareCommand) =>
     invoke<number | null>("control_hardware", { key, hardware, command }),
+  /** The calibration state of a board device (an IMU, a magnetometer). */
+  calibrationStatus: (key: DeviceKey, hardware: string) => invoke<CalibrationStatus>("calibration_status", { key, hardware }),
   /** Connects a NetworkTables viewer to a team number (its robot) or host; resolves with a function that disconnects it. */
   ntConnect: async (target: string, port: number | null, onFrame: (frame: NtFrame) => void): Promise<() => void> => {
     const channel = new Channel<NtFrame>();

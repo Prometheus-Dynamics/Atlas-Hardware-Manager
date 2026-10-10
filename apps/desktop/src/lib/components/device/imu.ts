@@ -129,3 +129,53 @@ export class Orientation {
     this.q = zeroYaw(this.q);
   }
 }
+
+/** The board's fused orientation (lemnosd's `fusion` device): its quaternion as it streams, with "Zero heading" as a turn about world z kept here. */
+export class FusedOrientation {
+  q: Quat = [1, 0, 0, 0];
+  /** The board's own quaternion, before the heading offset. */
+  private raw: Quat = [1, 0, 0, 0];
+  /** Applied as offset ⊗ raw. */
+  private offset: Quat = [1, 0, 0, 0];
+  /** 1 while the board ignores the magnetometer (heading from the gyro only). */
+  disturbed = false;
+  confidence: number | null = null;
+
+  constructor(private readonly channels: { q: number[]; disturbed: number; confidence: number }) {}
+
+  update(series: { count: number; v: Float64Array[]; index(i: number): number }) {
+    if (!series.count) return;
+    const at = series.index(series.count - 1);
+    const q = this.channels.q.map((c) => series.v[c][at]) as Quat;
+    if (q.some((v) => !Number.isFinite(v))) return;
+    this.raw = normalize(q);
+    this.q = multiply(this.offset, this.raw);
+    const d = this.channels.disturbed >= 0 ? series.v[this.channels.disturbed][at] : NaN;
+    this.disturbed = d >= 0.5;
+    const c = this.channels.confidence >= 0 ? series.v[this.channels.confidence][at] : NaN;
+    this.confidence = Number.isFinite(c) ? c : null;
+  }
+
+  zero() {
+    const half = (-euler(this.raw).yaw * Math.PI) / 360;
+    this.offset = [Math.cos(half), 0, 0, Math.sin(half)];
+    this.q = multiply(this.offset, this.raw);
+  }
+
+  /** The channel indices in a fusion device's series, or null when it isn't one. */
+  static channelsOf(names: string[]): { q: number[]; disturbed: number; confidence: number } | null {
+    const q = ["quaternion.w", "quaternion.x", "quaternion.y", "quaternion.z"].map((n) => names.indexOf(n));
+    if (q.some((i) => i < 0)) return null;
+    return { q, disturbed: names.indexOf("magnetic_disturbance"), confidence: names.indexOf("confidence.imu") };
+  }
+}
+
+/** a ⊗ b (Hamilton, scalar first). */
+function multiply(a: Quat, b: Quat): Quat {
+  return [
+    a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+    a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+    a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+    a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
+  ];
+}

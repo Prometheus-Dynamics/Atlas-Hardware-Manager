@@ -53,9 +53,11 @@
   // that list changes: not on every snapshot, and not when a device's status
   // flips (available, degraded), which used to clear every chart. The board
   // refuses what it can't stream.
+  // The board's orientation (lemnosd's fusion) has no snapshot readings: it
+  // computes only while someone subscribes, so it's asked for here.
   const wanted = $derived(
     hardware.devices
-      .filter((d) => d.readings.length > 0 && d.status !== "missing")
+      .filter((d) => (d.readings.length > 0 || d.class === "orientation") && d.status !== "missing")
       .map((d) => [d.id, periodFor(d.class)] as [string, number]),
   );
   const wantedKey = $derived(`${keyString(boardKey)} ${wanted.map((w) => w.join(":")).join(",")}`);
@@ -130,8 +132,12 @@
     };
   });
 
-  // Compact (beside other devices): only what streams.
-  const cards = $derived(compact ? hardware.devices.filter((d) => live.has(d.id)) : hardware.devices);
+  // Compact (beside other devices): only what streams. The orientation is
+  // drawn in the IMU's card, not a card of its own.
+  const fusion = $derived(hardware.devices.find((d) => d.class === "orientation" && d.status !== "missing") ?? null);
+  const cards = $derived(
+    (compact ? hardware.devices.filter((d) => live.has(d.id)) : hardware.devices).filter((d) => d.class !== "orientation"),
+  );
   const ago = $derived(Math.max(0, Math.round(clock.now / 1000 - hardware.at)));
   const windowOptions = WINDOWS.map((s) => ({ value: String(s), label: `${s} s` }));
 </script>
@@ -160,6 +166,7 @@
       {device}
       {deviceKey}
       live={live.get(device.id) ?? null}
+      fused={device.class === "imu" && fusion ? (live.get(fusion.id) ?? null) : null}
       {windowS}
       {tick}
       seriesOf={(reading) => ({

@@ -11,6 +11,7 @@
   import HardwareReadingTile from "./HardwareReadingTile.svelte";
   import LiveChart from "./LiveChart.svelte";
   import ImuView from "./ImuView.svelte";
+  import CalibrationPanel from "./CalibrationPanel.svelte";
   import { groupReadings, label, pillFor } from "./hardware.ts";
   import type { LiveSeries } from "./live.ts";
 
@@ -19,6 +20,7 @@
     seriesOf,
     deviceKey,
     live = null,
+    fused = null,
     windowS = 10,
     tick = 0,
     compact = false,
@@ -29,6 +31,8 @@
     deviceKey: DeviceKey | null;
     /** Its live readings, when the board streams them. */
     live?: LiveSeries | null;
+    /** The board's fused orientation stream, for an IMU's 3D view. */
+    fused?: LiveSeries | null;
     windowS?: number;
     /** Beside other devices (the Monitor page): the charts only, no tiles or controls. */
     compact?: boolean;
@@ -68,7 +72,7 @@
   {#if live && streaming}
     <!-- Wide: the 3D view beside the charts; narrow: above them. -->
     <div class="live" class:imu={device.class === "imu"}>
-      {#if device.class === "imu"}<div class="view"><ImuView series={live} /></div>{/if}
+      {#if device.class === "imu"}<div class="view"><ImuView series={live} {fused} /></div>{/if}
       <div class="charts">
         {#each live.groups() as group (group.unit)}
           <LiveChart series={live} channels={group.channels} unit={group.unit} {windowS} />
@@ -108,6 +112,9 @@
   {/if}
 
   {#if !compact}<HardwareControls {device} {deviceKey} />{/if}
+  {#if !compact && deviceKey && (device.class === "imu" || device.class === "magnetometer") && device.status !== "missing" && device.status !== "faulted"}
+    <CalibrationPanel {device} {deviceKey} />
+  {/if}
 </GlassCard>
 
 <style>
