@@ -98,4 +98,25 @@ run
 [ "$(p7_size)" = 16384 ] || fail "the table changed: $(p7_size)"
 [ "$(blkid -p -o value -s TYPE "$T/p7")" = ext4 ] || fail "it still gets a filesystem"
 
+echo "an EBR chain at the extended start, the image cut after p5, stale EBRs left over"
+# Gaia can place every EBR before p5 so the image ends early: the table must
+# come from that chain (not from what an old flash left), and growing p7
+# rewrites its EBR there.
+rm -f "$T/etc/data.env"
+python3 "$here/data/ebr-chain.py" "$T/disk" cut
+table() { sfdisk -d "$T/disk" | sed -n 's/.*[^0-9]\([0-9]\) *: *start= *\([0-9]*\), *size= *\([0-9]*\),.*/\1 \2 \3/p' | tr '\n' ' '; }
+[ "$(table)" = "1 2048 16384 2 18432 32768 3 51200 32768 4 83968 88064 5 86016 32768 6 120832 32768 7 155648 16384 " ] ||
+	fail "the chain's table: $(table)"
+if command -v partx >/dev/null 2>&1; then
+	[ "$(partx -g -o START,SECTORS "$T/disk" | tr -s ' \n' ' ')" = " 2048 16384 18432 32768 51200 32768 83968 88064 86016 32768 120832 32768 155648 16384 " ] ||
+		fail "libblkid's view: $(partx -g -o START,SECTORS "$T/disk" | tr -s ' \n' ' ')"
+fi
+head -c 8M /dev/urandom > "$T/p7"
+run
+case "$(table)" in
+"1 2048 16384 2 18432 32768 3 51200 32768 4 83968 178176 5 86016 32768 6 120832 32768 7 155648 106496 ") ;;
+*) fail "after growing p7: $(table)" ;;
+esac
+[ "$(blkid -p -o value -s TYPE "$T/p7")" = ext4 ] || fail "p7 should be ext4"
+
 echo "ok"
