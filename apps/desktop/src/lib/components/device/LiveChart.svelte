@@ -5,7 +5,7 @@
   // `windowS` seconds, then scrolls. The value range follows the data,
   // widening at once and narrowing gently, so lines don't jump. Hovering
   // shows the values under the pointer and keeps drawing; a click pauses
-  // (and resumes).
+  // (and resumes). The legend carries each channel's newest value.
   import { onMount } from "svelte";
   import { clockText, type LiveSeries } from "./live.ts";
   import { formatValue, label } from "./hardware.ts";
@@ -18,7 +18,8 @@
     windowS,
   }: { series: LiveSeries; channels: number[]; unit: string; windowS: number } = $props();
 
-  const HEIGHT = 120;
+  // One line needs less height than several crossing.
+  const HEIGHT = $derived(channels.length > 1 ? 120 : 84);
   const PALETTE = ["--info", "--ok", "--warn", "--accent", "--err", "--fg-muted"];
 
   let canvas = $state<HTMLCanvasElement>();
@@ -34,6 +35,9 @@
   let shown = $state({ newest: 0, span: 1 });
   /** The value range drawn, eased toward the data's. */
   let range: { low: number; high: number } | null = null;
+  /** Each channel's newest value, for the legend (a few times a second). */
+  let current = $state<(number | null)[]>([]);
+  let currentAt = 0;
   /** The shortest time axis (s), so the first samples don't stretch across. */
   const MIN_SPAN_S = 1;
 
@@ -48,6 +52,12 @@
     let painted = "";
     const draw = () => {
       const newest = paused ?? series.newestUs();
+      const ms = performance.now();
+      if (paused === null && series.count > 0 && ms - currentAt > 250) {
+        currentAt = ms;
+        const at = series.index(series.count - 1);
+        current = channels.map((c) => (Number.isNaN(series.v[c][at]) ? null : series.v[c][at]));
+      }
       const now = `${newest} ${width} ${windowS} ${hover?.x ?? -1}`;
       if (now !== painted || easing) {
         painted = now;
@@ -198,7 +208,7 @@
   ></canvas>
   <div class="legend">
     {#each channels as c, n (c)}
-      <span class="item"><span class="swatch" style="background: {colors[n % colors.length]}"></span>{label(series.channels[c].name)}</span>
+      <span class="item"><span class="swatch" style="background: {colors[n % colors.length]}"></span>{label(series.channels[c].name)}{#if current[n] !== undefined}<span class="now">{formatValue(current[n])}</span>{/if}</span>
     {/each}
     {#if paused !== null}<span class="paused">Paused</span>{/if}
     {#if unit}<span class="unit">{unit}</span>{/if}
@@ -238,6 +248,12 @@
     display: inline-flex;
     align-items: center;
     gap: 5px;
+  }
+  .now {
+    min-width: 4.5ch;
+    font-weight: 600;
+    color: var(--fg);
+    font-variant-numeric: tabular-nums;
   }
   .swatch {
     width: 8px;

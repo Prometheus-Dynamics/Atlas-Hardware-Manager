@@ -1,8 +1,8 @@
 <script lang="ts">
   // One hardware device from the board's snapshot, rendered from its data
   // alone: a status pill, its readings (axis trios in a row), and its controls.
-  // With live readings: a chart per unit at device rate, and the tiles show
-  // the newest live values.
+  // With live readings: a chart per unit at device rate, whose legend shows
+  // the newest values (no tiles then).
   import type { DeviceKey, HardwareDevice } from "#lib/api/client.ts";
   import GlassCard from "#lib/components/common/GlassCard.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
@@ -58,7 +58,7 @@
   const subtitle = $derived([device.class, device.model].filter(Boolean).join(" · "));
 </script>
 
-<GlassCard title={device.id} {subtitle}>
+<GlassCard title={device.id} {subtitle} class={live && streaming && device.class === "imu" ? "wide" : ""}>
   {#snippet actions()}
     {#if live && rate > 0}<span class="rate text-[11.5px] text-fg-faint">{rate} Hz</span>{/if}
     <Pill tone={pill.tone} label={pill.label} />
@@ -66,7 +66,7 @@
 
   {#if live && streaming}
     <!-- Wide: the 3D view beside the charts; narrow: above them. -->
-    <div class="live mb-3" class:imu={device.class === "imu"}>
+    <div class="live" class:imu={device.class === "imu"}>
       {#if device.class === "imu"}<div class="view"><ImuView series={live} /></div>{/if}
       <div class="charts">
         {#each live.groups() as group (group.unit)}
@@ -83,10 +83,10 @@
     </p>
   {/if}
 
-  {#if compact && streaming}
-    <!-- Beside other devices the charts say it all. -->
+  {#if streaming}
+    <!-- Every live reading is charted; the legends carry the newest values. -->
   {:else if entries.length === 0}
-    {#if device.controls.length === 0}<p class="text-[13px] text-fg-muted">No readings.</p>{/if}
+    {#if device.controls.length === 0 && !device.reason}<p class="text-[13px] text-fg-muted">No readings.</p>{/if}
   {:else}
     <div class="auto-grid" style="--min: 150px; --gap: 8px">
       {#each entries as entry (entry.key)}

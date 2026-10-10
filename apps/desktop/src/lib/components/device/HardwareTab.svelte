@@ -136,7 +136,7 @@
   const windowOptions = WINDOWS.map((s) => ({ value: String(s), label: `${s} s` }));
 </script>
 
-<div class="flex flex-col gap-4">
+<div class="flex flex-col gap-3">
   <div class="flex flex-wrap items-center justify-between gap-2">
     <p class="flex items-center gap-2 text-[12px] text-fg-faint">
       {#if liveState === "live"}
@@ -153,6 +153,7 @@
       <SegmentedControl options={windowOptions} bind:value={windowKey} label="Chart window" size="sm" />
     {/if}
   </div>
+  <div class="cards" class:compact>
   {#each cards as device (device.id)}
     <HardwareCard
       {compact}
@@ -167,9 +168,28 @@
       })}
     />
   {/each}
+  </div>
 </div>
 
 <style>
+  /* Packed in columns as there is room (full screen), each card whole, the
+     IMU with its 3D view across them all. */
+  .cards {
+    columns: 3 520px;
+    column-gap: 12px;
+    /* The last card's margin isn't space under the tab. */
+    margin-bottom: -12px;
+  }
+  .cards > :global(*) {
+    break-inside: avoid;
+    margin-bottom: 12px;
+  }
+  .cards > :global(.wide) {
+    column-span: all;
+  }
+  .cards.compact {
+    columns: auto;
+  }
   .live-dot {
     width: 7px;
     height: 7px;

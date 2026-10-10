@@ -19,17 +19,27 @@
       try {
         const THREE = await import("three");
         const { GLTFLoader } = await import("three/examples/jsm/loaders/GLTFLoader.js");
+        const { RoomEnvironment } = await import("three/examples/jsm/environments/RoomEnvironment.js");
+        const { toCreasedNormals } = await import("three/examples/jsm/utils/BufferGeometryUtils.js");
         if (gone || !host) return;
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
         renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.1;
         host.appendChild(renderer.domElement);
         const scene = new THREE.Scene();
+        // A soft room to reflect: the metal and the glass read as such, and
+        // the dark plastic keeps its shape in the shadows.
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        const environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+        scene.environment = environment;
+        scene.environmentIntensity = 0.55;
         const camera = new THREE.PerspectiveCamera(32, 1, 0.005, 1);
         // From the front, a little above and to the side.
         camera.position.set(0.075, 0.07, 0.11);
         camera.lookAt(0, 0, 0);
-        scene.add(new THREE.HemisphereLight(0xdfe6f2, 0x20242c, 1.6));
-        const key = new THREE.DirectionalLight(0xffffff, 2.2);
+        scene.add(new THREE.HemisphereLight(0xdfe6f2, 0x20242c, 0.5));
+        const key = new THREE.DirectionalLight(0xffffff, 1.8);
         key.position.set(0.3, 0.6, 0.5);
         scene.add(key);
         const rim = new THREE.DirectionalLight(0x9ab4ff, 0.8);
@@ -47,9 +57,9 @@
         const style = getComputedStyle(document.documentElement);
         const css = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
         const MATERIALS: Record<string, InstanceType<typeof THREE.MeshStandardMaterial>> = {
-          TOP: new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.75, metalness: 0.05, flatShading: true }),
-          BOTTOM: new THREE.MeshStandardMaterial({ color: 0x23262c, roughness: 0.8, metalness: 0.05, flatShading: true }),
-          HEATSINK: new THREE.MeshStandardMaterial({ color: 0x9aa3ad, roughness: 0.35, metalness: 0.8, flatShading: true }),
+          TOP: new THREE.MeshStandardMaterial({ color: 0x33373e, roughness: 0.62, metalness: 0 }),
+          BOTTOM: new THREE.MeshStandardMaterial({ color: 0x2a2d33, roughness: 0.68, metalness: 0 }),
+          HEATSINK: new THREE.MeshStandardMaterial({ color: 0xa4acb6, roughness: 0.32, metalness: 0.9 }),
           DIFFUSER: new THREE.MeshStandardMaterial({
             color: 0xf2f4f7,
             roughness: 0.4,
@@ -58,36 +68,71 @@
             emissive: new THREE.Color(css("--accent", "#ff6b6b")),
             emissiveIntensity: 0.35,
           }),
-          BUTTON: new THREE.MeshStandardMaterial({ color: 0x4a505a, roughness: 0.6, flatShading: true }),
+          BUTTON: new THREE.MeshStandardMaterial({ color: 0x4a505a, roughness: 0.55 }),
         };
         const gltf = await new GLTFLoader().loadAsync("/models/raze-case.glb");
         gltf.scene.traverse((node) => {
           const mesh = node as InstanceType<typeof THREE.Mesh>;
+          // CAD meshes are welded across hard edges: smooth normals only
+          // where the surface really curves, sharp at the edges.
+          if (mesh.isMesh) mesh.geometry = toCreasedNormals(mesh.geometry, Math.PI / 6);
           // The case's parts get these; the board's (PCB, IO_n) keep their own colours.
           const own = MATERIALS[mesh.name] ?? MATERIALS[mesh.parent?.name ?? ""];
           if (mesh.isMesh && own) mesh.material = own;
           else if (mesh.isMesh) {
-            // The board's parts: their materials from the model (each
-            // connector coloured by what it is, see case_model.py), flat shaded.
+            // The board's parts keep their materials from the model (each
+            // connector coloured by what it is, see case_model.py).
             const loaded = mesh.material as InstanceType<typeof THREE.MeshStandardMaterial>;
-            mesh.material = new THREE.MeshStandardMaterial({
-              color: loaded.color,
-              metalness: loaded.metalness,
-              roughness: loaded.roughness,
-              flatShading: true,
-            });
+            loaded.flatShading = false;
           }
         });
         board.add(gltf.scene);
-        // The lens, which the case model leaves out: dark glass in the ring's
-        // centre on the front face.
+        // The lens, which the case model leaves out, in the ring's centre on
+        // the front face: a metal barrel, coated glass that catches the room,
+        // and the tinted iris behind it.
         const front = new THREE.Box3().setFromObject(gltf.scene).max.z;
-        const lens = new THREE.Mesh(
-          new THREE.CylinderGeometry(0.0045, 0.0048, 0.004, 40),
-          new THREE.MeshStandardMaterial({ color: 0x07090c, roughness: 0.08, metalness: 0.6 }),
+        const lens = new THREE.Group();
+        const barrel = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.0047, 0.0049, 0.004, 48, 1, true),
+          new THREE.MeshStandardMaterial({ color: 0x5b616b, roughness: 0.35, metalness: 0.9, side: THREE.DoubleSide }),
         );
+        const bezel = new THREE.Mesh(
+          new THREE.TorusGeometry(0.0043, 0.00055, 12, 48),
+          new THREE.MeshStandardMaterial({ color: 0x8b929c, roughness: 0.25, metalness: 0.95 }),
+        );
+        bezel.rotation.x = Math.PI / 2;
+        bezel.position.y = 0.002;
+        const iris = new THREE.Mesh(
+          new THREE.CircleGeometry(0.0039, 48),
+          new THREE.MeshStandardMaterial({ color: 0x1b2a48, roughness: 0.3, metalness: 0.5, emissive: 0x0a1430, emissiveIntensity: 0.6 }),
+        );
+        iris.rotation.x = -Math.PI / 2;
+        iris.position.y = 0.0008;
+        const pupil = new THREE.Mesh(
+          new THREE.CircleGeometry(0.0017, 32),
+          new THREE.MeshStandardMaterial({ color: 0x050608, roughness: 0.2 }),
+        );
+        pupil.rotation.x = -Math.PI / 2;
+        pupil.position.y = 0.00085;
+        const glass = new THREE.Mesh(
+          new THREE.SphereGeometry(0.0042, 48, 12, 0, Math.PI * 2, 0, Math.PI / 5),
+          new THREE.MeshPhysicalMaterial({
+            color: 0x9fb4d8,
+            roughness: 0.04,
+            metalness: 0,
+            transmission: 0,
+            transparent: true,
+            opacity: 0.28,
+            clearcoat: 1,
+            clearcoatRoughness: 0.03,
+            envMapIntensity: 2.2,
+          }),
+        );
+        glass.scale.y = 0.35;
+        glass.position.y = 0.0006;
+        lens.add(barrel, bezel, iris, pupil, glass);
         lens.rotation.x = Math.PI / 2;
-        lens.position.set(0, 0, front - 0.0015);
+        lens.position.set(0, 0, front - 0.0021);
         board.add(lens);
         // The IMU's axes: x red, y green, z blue (out of the front).
         const axes = [
@@ -123,6 +168,8 @@
         stop = () => {
           cancelAnimationFrame(frame);
           observer.disconnect();
+          environment.dispose();
+          pmrem.dispose();
           renderer.dispose();
           renderer.domElement.remove();
         };

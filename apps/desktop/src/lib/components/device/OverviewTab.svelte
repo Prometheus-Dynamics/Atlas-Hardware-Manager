@@ -36,6 +36,10 @@
   const status = $derived(deviceStatus.byDevice.get(id));
   const statusError = $derived(deviceStatus.errors.get(id));
 
+  // Full screen: three columns, the self-test moves over to the right one.
+  let width = $state(0);
+  const wide = $derived(width >= 1500);
+
   // The board's status and history while it is shown.
   $effect(() => deviceStatus.watch(record));
 
@@ -133,8 +137,10 @@
 </script>
 
 <!-- Wide: the board's state on the left (Now, health, live, self-test), the
-     camera, controls and details on the right; narrow: one column. -->
-<div class="overview">
+     camera, controls and details on the right; very wide (full screen), the
+     camera and orientation get a column of their own, so nothing scrolls;
+     narrow: one column. -->
+<div class="overview" bind:clientWidth={width}>
   <div class="col">
   {#if reports}
     <section class="flex flex-col gap-2.5">
@@ -154,9 +160,10 @@
     <LiveStats {record} />
   {/if}
 
-  <SelfTestCard {record} />
+  {#if !wide}<SelfTestCard {record} />{/if}
   </div>
 
+  <div class="side">
   <div class="col">
   {#if streams.length}
     <div class="camera" class:several={streams.length > 1}>
@@ -165,6 +172,10 @@
   {/if}
 
   {#if online && reports}<OrientationCard {record} />{/if}
+  </div>
+
+  <div class="col">
+  {#if wide}<SelfTestCard {record} />{/if}
 
   {#if online && actions.length > 0}
     <ControlsCard {actions} {run} update={reports ? (status?.update ?? null) : undefined} />
@@ -238,6 +249,7 @@
     </div>
   {/if}
   </div>
+  </div>
 </div>
 
 <style>
@@ -246,7 +258,8 @@
     gap: 16px;
     align-items: start;
   }
-  .col {
+  .col,
+  .side {
     display: flex;
     flex-direction: column;
     gap: 16px;
@@ -255,6 +268,20 @@
   @container (min-width: 1000px) {
     .overview {
       grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    }
+  }
+  @container (min-width: 1500px) {
+    .overview {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    }
+    .side {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+      align-items: start;
+    }
+    .camera,
+    .camera.several {
+      max-width: none;
     }
   }
   /* The camera at a useful size, not the whole width. */
