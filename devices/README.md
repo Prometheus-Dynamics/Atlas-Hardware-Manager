@@ -145,8 +145,8 @@ scripts and anything else talk to it over `/run/lemnos/lemnosd.sock` (group
   400 kHz, so no overlay claims GPIO8/GPIO7 and there is no `/dev/i2c` node for
   it), the BMM150 and the INA238 (on
   `i2c:of=/axi/pcie@1000120000/rp1/i2c@74000`, the RP1 DesignWare controller
-  i2c1-pi5 enables) and the USB-A power line (`gpio-output`, `pinctrl-rp1`
-  line 20). Comments in the file mark what is unverified on hardware. An OS
+  i2c1-pi5 enables) and the USB-A and USB-C power switches
+  (`gpio-power-switch`, `pinctrl-rp1` lines 20 and 16). Comments in the file mark what is unverified on hardware. An OS
   replaces the file by staging its own `/etc/lemnos/board.toml` in a later
   layer (item `raze-lemnos-board`).
 - **Access.** `/usr/lib/udev/rules.d/60-board-lemnosd.rules` gives the `lemnos`
@@ -161,9 +161,15 @@ scripts and anything else talk to it over `/run/lemnos/lemnosd.sock` (group
   and, when it stops (or crashes: `ExecStopPost=+lemnos-ctl fan restore
   --all`), puts it back and makes the thermal zone re-evaluate. The self-test
   ends its fan steps the same way with `lemnos-ctl fan restore`.
-- **USB-A power.** The raze-usb-power overlay hogs GPIO20 by default, so
-  lemnosd lists `usb-a-power` as missing; an OS that wants to switch the port
-  at runtime loads the overlay with `hog=off`.
+- **USB port power.** `raze-device.txt` drives both enables (GPIO20 USB-A,
+  GPIO16 USB-C) high from the firmware (`gpio=16,20=op,dh`), and lemnosd's
+  `usb-a-power` and `usb-c-power` (`gpio-power-switch`, `default_on`) take
+  the lines already on, so the ports never pass through off at boot. Orion
+  callers and Atlas may switch them (`power.set`); every boot starts on
+  (`persist` off: the root is read-only), and they stay as they are when
+  lemnosd stops. The firmware's hold on RP1 lines until lemnosd is
+  unverified on hardware. An OS without lemnosd loads
+  `dtoverlay=raze-usb-power` instead (kernel hogs), never both.
 
 ### Hardware backends
 
@@ -251,7 +257,7 @@ rev = "<pinned commit>"
 id = "lemnos"
 kind = "git"
 repo = "https://github.com/Prometheus-Dynamics/Lemnos.git"
-rev = "5b1d38c2db8354bdb518d1003bec8893d6408580"
+rev = "be8321a28be79d51b27abf8dd86ef3bdb4488b1c"
 ```
 
 For local development against an Atlas checkout:
@@ -436,6 +442,6 @@ a VPN that routes `172.31.0.0/16`, shadows the gadget subnets. Changing
 | LED byte order, index offset and direction | With lemnosd: `offset`/`direction` in `/etc/lemnos/board.toml`. Sysfs backend: `RAZE_LEDS_ORDER`, `RAZE_LEDS_OFFSET`, `RAZE_LEDS_DIRECTION` in `/etc/board/raze-leds.env` (defaults from the generated `leds.env`). |
 | Hardware backend | `BOARD_HW_BACKEND=sysfs` (or `lemnosd`) in `/etc/board/hw.env`. |
 | lemnosd | Its board definition: stage your own `/etc/lemnos/board.toml` (item `raze-lemnos-board`); its settings: redeclare `lemnosd-env` (`/etc/default/lemnosd.env`) in a later layer; the unit: drop-ins in `/etc/systemd/system/lemnosd.service.d/`, or `disable lemnosd.service` in a preset. |
-| Fan, port power, LEDs, camera | Copy the lines you want from `raze-device.txt` into your `config.txt` instead of including it, and change their parameters (`raze-fan`: `level0`..`level4`, `period_ns`, `polarity`; `raze-usb-power`: `usba=off`, `usbc=off`, `hog=off`). |
+| Fan, port power, LEDs, camera | Copy the lines you want from `raze-device.txt` into your `config.txt` instead of including it, and change their parameters (`raze-fan`: `level0`..`level4`, `period_ns`, `polarity`; port power: the `gpio=16,20=op,dh` line, or `dtoverlay=raze-usb-power` with `usba=off`, `usbc=off` when lemnosd doesn't run). |
 | Any unit | A preset file that sorts before `70-board.preset`, a drop-in, or a mask. |
 | Any Buildroot option or default in the layer | Set it in a Gaia layer imported after the device layer. |

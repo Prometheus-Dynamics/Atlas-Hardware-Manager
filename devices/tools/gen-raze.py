@@ -275,11 +275,16 @@ def lint(manifest: dict) -> None:
     for name, keys in (
         ("leds", ["device"]),
         ("fan", ["device", "thermal_device", "poll_ms", "writers"]),
-        ("usb-power", ["device", "port"]),
+        ("usb-power", ["devices", "writers", "default_on", "persist", "on_exit"]),
     ):
         block = caps.get(name, {}).get("lemnosd")
         if not isinstance(block, dict) or any(k not in block for k in keys):
             raise LintError(f"capabilities.{name}.lemnosd needs {', '.join(keys)}")
+    usb = caps["usb-power"]
+    ports = {p["name"] for p in usb["ports"]}
+    for switch in usb["lemnosd"]["devices"]:
+        if not {"device", "port"} <= set(switch) or switch["port"] not in ports:
+            raise LintError("capabilities.usb-power.lemnosd.devices: each needs device and a port from ports")
     if "board-selftest" not in caps["fan"]["lemnosd"]["writers"]:
         raise LintError("capabilities.fan.lemnosd.writers must include board-selftest, the self-test's lemnosd client")
     lint_hardware_service(caps.get("hardware-service"))

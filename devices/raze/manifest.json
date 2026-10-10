@@ -327,7 +327,7 @@
       "notes": "The USB gadget's ACM ports (ttyACM* on the host) give a recovery console that works without networking. Physical access to the port already allows a reflash. An OS turns it off by masking serial-getty@ttyGS0/1.service."
     },
     "usb-power": {
-      "control": "kernel gpio hogs (raze-usb-power overlay), on at boot",
+      "control": "lemnosd's gpio-power-switch devices (usb-a-power, usb-c-power), on from its start; before it, the firmware drives both enables high from power-on (raze-device.txt: gpio=16,20=op,dh), so the ports never pass through off",
       "ports": [
         {
           "name": "usb-a",
@@ -340,20 +340,28 @@
           "active_high": true
         }
       ],
+      "overlay": "raze-usb-power (kernel gpio hogs) is no longer loaded by default: its hogs would hold the lines lemnosd switches. An OS without lemnosd loads it to keep the ports on from the kernel.",
       "overlay_params": [
         "usba=off",
         "usbc=off",
-        "hog=off (runtime control by the OS)"
+        "hog=off"
       ],
       "power_policy": "udev 60-raze-usb-power.rules: power/control=on and USB2 hardware LPM off for every USB device",
       "gpio_chip": "pinctrl-rp1",
       "lemnosd": {
-        "device": "usb-a-power",
-        "port": "usb-a",
-        "notes": "A gpio-output that lemnosd can switch. While the overlay's hog holds GPIO20 (the default), lemnosd cannot request the line and reports the device missing; an OS that wants runtime control loads the overlay with hog=off."
+        "devices": [
+          { "device": "usb-a-power", "port": "usb-a" },
+          { "device": "usb-c-power", "port": "usb-c" }
+        ],
+        "writers": ["orion:*", "atlas"],
+        "default_on": true,
+        "persist": false,
+        "on_exit": "keep",
+        "notes": "gpio-power-switch requests each line at default_on, so lemnosd's start doesn't toggle it. persist is off: the Raze root is read-only and /var/lib/lemnos isn't on /data, so a saved setting wouldn't last a reboot; every boot starts with both ports on. power.reset (off for N ms) blocks lemnosd until Lemnos makes it asynchronous, so Atlas doesn't offer it yet."
       },
       "verified": {
-        "gpio_chip": "unverified"
+        "gpio_chip": "unverified",
+        "firmware_gpio_high": "unverified: config.txt gpio= must hold the RP1 lines high until lemnosd takes them; check on a board that a device on each port stays enumerated through boot"
       }
     },
     "hardware-service": {
@@ -368,7 +376,7 @@
       "gaia_import": {
         "source": "lemnos",
         "repo": "https://github.com/Prometheus-Dynamics/Lemnos.git",
-        "rev": "5b1d38c2db8354bdb518d1003bec8893d6408580",
+        "rev": "be8321a28be79d51b27abf8dd86ef3bdb4488b1c",
         "path": "packaging/gaia/lemnosd.toml"
       }
     },

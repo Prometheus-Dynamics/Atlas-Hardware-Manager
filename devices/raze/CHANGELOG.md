@@ -201,6 +201,16 @@ commit; the commits are listed per area.
 
 ### lemnosd, the hardware service
 
+- **Lemnos be8321a; USB port power is lemnosd's:** `usb-a-power` (GPIO20)
+  and `usb-c-power` (GPIO16) are `gpio-power-switch` devices (`default_on`,
+  writers `orion:*` and `atlas`, `persist` off, `on_exit` keep). The kernel
+  hogs are gone from `raze-device.txt` (`raze-usb-power` stays for an OS
+  without lemnosd); the firmware drives both lines high from power-on
+  (`gpio=16,20=op,dh`) and lemnosd requests them already on, so no
+  off-glitch. Unverified on hardware: that the firmware's level holds on the
+  RP1 lines until lemnosd. Check that a device on each port stays enumerated
+  through boot, without toggling the ports.
+
 - **Lemnos b17b5a5** (from cca50f7): the fault reasons (`lemnos-ctl list`
   shows a `why:` line for a device that isn't available; the BMI088 IMU
   tolerates unacknowledged soft resets), the Orion bridge, and trailing `*`

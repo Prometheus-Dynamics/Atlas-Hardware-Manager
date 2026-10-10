@@ -27,7 +27,7 @@ from pathlib import Path
 
 SELECTOR_KEYS = ("name", "compatible", "of", "node")
 
-# What lemnos-board's DriverRegistry (Lemnos 5b1d38c, crates/lemnos-board/src
+# What lemnos-board's DriverRegistry (Lemnos be8321a, crates/lemnos-board/src
 # registry.rs and light.rs) accepts: placement, config keys, match keys.
 LIGHT_KEYS = (
     "count", "wire", "offset", "direction", "brightness", "gpio", "fade_ms", "easing",
@@ -48,6 +48,9 @@ DRIVERS = {
     "thermal-zone": ("platform", (), ("type",)),
     "ws2812": ("platform", LIGHT_KEYS, ()),
     "gpio-output": ("platform", ("chip", "line", "active_low", "initial"), ()),
+    "gpio-power-switch": ("platform", (
+        "chip", "line", "active_low", "default_on", "enable_delay_ms", "fault_chip", "fault_line",
+        "fault_active_low", "persist", "on_exit"), ()),
 }
 EASINGS = {"linear", "ease-in", "ease-out", "ease-in-out", "sine"}
 EFFECTS = {"solid", "blink", "breathe", "chase"}
@@ -172,8 +175,10 @@ def driver_errors(board: dict) -> list[str]:
                 errors.append(f"{where}: gravity_plane must be two different axes, such as [\"-y\", \"x\"]")
             if not 0 <= config.get("default_down", 0) < config.get("count", 1):
                 errors.append(f"{where}: default_down must be an LED below count")
-        if device["driver"] == "gpio-output" and not {"chip", "line"} <= set(config):
+        if device["driver"] in ("gpio-output", "gpio-power-switch") and not {"chip", "line"} <= set(config):
             errors.append(f"{where}: needs chip and line")
+        if device["driver"] == "gpio-power-switch" and config.get("on_exit", "keep") not in ("keep", "on", "off"):
+            errors.append(f"{where}: on_exit must be keep, on or off")
     return errors
 
 
@@ -309,23 +314,22 @@ def board_definition(manifest: dict, version: str) -> tuple[dict, dict[str, list
             del device["config"]
         devices.append(device)
 
-    port = usb["lemnosd"]
-    line = next(p for p in usb["ports"] if p["name"] == port["port"])
-    gpio = {"chip": usb["gpio_chip"], "line": line["gpio"]}
-    if not line.get("active_high", True):
-        gpio["active_low"] = True
-    gpio["initial"] = True
-    devices.append({"id": port["device"], "driver": "gpio-output", "config": gpio})
-    notes[port["device"]] = [
-        f"The {port['port']} port's power enable. The raze-usb-power overlay hogs this line by",
-        "default, so lemnosd reports it missing until the OS loads the overlay with hog=off.",
-        "Its safe state is on: lemnosd drives it high at start (initial), and a client's",
-        "write is undone when its connection ends (`lemnos-ctl set` writes persist until",
-        "`lemnos-ctl restore usb-a-power`). A device's line is never handed out raw, so",
-        "it needs no [[lines]] entry.",
-    ]
-    if unverified(usb, "gpio_chip"):
-        notes[port["device"]].append("gpio chip label: unverified on hardware.")
+    ul = usb["lemnosd"]
+    for port in ul["devices"]:
+        line = next(p for p in usb["ports"] if p["name"] == port["port"])
+        gpio = {"chip": usb["gpio_chip"], "line": line["gpio"]}
+        if not line.get("active_high", True):
+            gpio["active_low"] = True
+        gpio |= {"default_on": ul["default_on"], "persist": ul["persist"], "on_exit": ul["on_exit"]}
+        devices.append({"id": port["device"], "driver": "gpio-power-switch", "writers": ul["writers"], "config": gpio})
+        notes[port["device"]] = [
+            f"The {port['port']} port's power switch (RP1 GPIO{line['gpio']}). The firmware drives it high from",
+            "power-on (raze-device.txt gpio=), and lemnosd requests it already on (default_on), so",
+            "its start doesn't toggle the port. Every boot starts on (persist off: the root is",
+            "read-only); on_exit keep leaves it as it is when lemnosd stops.",
+        ]
+        if unverified(usb, "gpio_chip"):
+            notes[port["device"]].append("gpio chip label: unverified on hardware.")
 
     board = {
         "format": "lemnos.board",

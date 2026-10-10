@@ -4,6 +4,10 @@
  * GPIO16) ports, both active-high. The kernel drives them at boot through
  * gpio hogs, so the ports are powered without any userspace service.
  *
+ * Not loaded by default: raze-device.txt drives the lines from the firmware
+ * (gpio=16,20=op,dh) and lemnosd switches them (gpio-power-switch). This is
+ * for an OS without lemnosd; never with it, the hogs hold the lines.
+ *
  * Load:   dtoverlay=raze-usb-power[,<param>=<val>]
  * Params: usba      Power the USB-A port (default on; usba=off holds it off)
  *         usbc      Power the USB-C port (default on; usbc=off holds it off)

@@ -69,8 +69,16 @@ assert (d["imu"]["bus"], d["imu"]["address"], d["imu"]["config"]["gyro_address"]
 for s, a in (("magnetometer", 0x10), ("power", 0x40)):
     assert (d[s]["bus"], d[s]["address"]) == ("i2c:of=/axi/pcie@1000120000/rp1/i2c@74000", a), d[s]
 assert d["power"]["config"] == {"shunt_micro_ohms": 10000, "max_current_micro_amps": 16384000}
-assert d["usb-a-power"]["config"] == {"chip": "pinctrl-rp1", "line": 20, "initial": True}
+for port, line in (("usb-a-power", 20), ("usb-c-power", 16)):
+    sw = d[port]
+    assert sw["driver"] == "gpio-power-switch" and sw["writers"] == ["orion:*", "atlas"], sw
+    assert sw["config"] == {"chip": "pinctrl-rp1", "line": line, "default_on": True, "persist": False, "on_exit": "keep"}, sw
 EOF
+
+echo "the USB power lines: firmware-driven high, no kernel hog holding them from lemnosd"
+txt=$T/devices/raze/gaia/assets/boot/raze-device.txt
+grep -qx 'gpio=16,20=op,dh' "$txt" || fail "raze-device.txt should drive GPIO16/20 high from the firmware"
+! grep -q '^dtoverlay=raze-usb-power' "$txt" || fail "the raze-usb-power hogs would hold the lines lemnosd switches"
 edit 'c["leds"]["index"]["direction"] = -1'
 gen > /dev/null
 grep -q 'direction = "ccw"' "$board" || fail "direction -1 should be ccw"

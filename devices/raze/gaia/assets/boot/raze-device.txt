@@ -23,8 +23,11 @@ dtoverlay=i2c1-pi5,pins_10_11
 dtoverlay=ws2812-pio,gpio=13,num_leds=16,brightness=255,dev_name=leds%d
 # <<< gen-raze
 
-# External USB-A and USB-C port power, held on by the kernel.
-dtoverlay=raze-usb-power
+# External USB-A (GPIO20) and USB-C (GPIO16) port power: driven high by the
+# firmware from power-on, then switched by lemnosd (gpio-power-switch takes
+# the lines already on, so the ports never pass through off). An OS without
+# lemnosd loads dtoverlay=raze-usb-power instead (kernel hogs), not both.
+gpio=16,20=op,dh
 
 # >>> gen-raze: fan (generated from manifest.json by devices/tools/gen-raze.py; do not edit)
 # Fan, driven by the kernel thermal governor. No tachometer: gen1's isn't
