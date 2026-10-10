@@ -6,6 +6,12 @@
 //! - `event: hello`, `data: {"boot_id":..,"seq":<newest>|null,"time":<unix s>}`
 //! - `id: <seq>`, `event: event`, `data: <the events.jsonl line>`
 //! - `event: update`, `data: <update.json>`
+//! - `event: hardware`, `data: {"devices":[{id, class, model, status,
+//!   period_ms, channels: [{name, unit}]} | {id, missing: true}]}`
+//! - `event: samples`, `data: {"device":..,"samples":[[t_us, v, ..], ..]}`:
+//!   the readings since the last batch (every 16 ms), lemnosd's monotonic
+//!   time in µs, one value per channel in `hardware`'s order (null: unread)
+//! - `event: hardware-gone`, `data: {"reason":..}`: lemnosd went
 //! - `: keepalive`
 //!
 //! The files are looked at every poll (their size and mtime), so nothing
@@ -27,6 +33,8 @@ use crate::request::StreamRequest;
 pub struct Paths {
     pub run_dir: PathBuf,
     pub data_dir: PathBuf,
+    /// lemnosd's socket (LEMNOSD_SOCKET), for the `hardware` topic.
+    pub lemnosd_socket: PathBuf,
 }
 
 impl Paths {
@@ -37,6 +45,7 @@ impl Paths {
         Self {
             run_dir: dir("BOARD_RUN_DIR", "/run/board"),
             data_dir: dir("BOARD_DATA_DIR", "/data/board"),
+            lemnosd_socket: dir("LEMNOSD_SOCKET", "/run/lemnos/lemnosd.sock"),
         }
     }
 
@@ -113,6 +122,10 @@ pub struct Stream<W: Write> {
     last_update: Option<String>,
     marks: Vec<Option<(u64, SystemTime)>>,
     last_write: Instant,
+    #[cfg(unix)]
+    live: Option<std::sync::mpsc::Receiver<crate::hardware::Live>>,
+    /// Readings not sent yet, per device.
+    batch: std::collections::BTreeMap<String, Vec<Value>>,
 }
 
 impl<W: Write> Stream<W> {
@@ -126,7 +139,15 @@ impl<W: Write> Stream<W> {
             last_update: None,
             marks: Vec::new(),
             last_write: Instant::now(),
+            #[cfg(unix)]
+            live: None,
+            batch: std::collections::BTreeMap::new(),
         }
+    }
+
+    /// Whether this viewer asked for live readings.
+    pub fn wants_hardware(&self) -> bool {
+        !self.request.hardware.is_empty()
     }
 
     fn send(&mut self, message: &str) -> io::Result<()> {
@@ -165,6 +186,79 @@ impl<W: Write> Stream<W> {
                 self.send(&format!("event: update\ndata: {state}\n\n"))?;
             }
         }
+        if self.wants_hardware() {
+            #[cfg(unix)]
+            {
+                self.live = Some(crate::hardware::start(
+                    self.paths.lemnosd_socket.clone(),
+                    self.request.hardware.clone(),
+                ));
+            }
+            #[cfg(not(unix))]
+            self.send("event: hardware-gone\ndata: {\"reason\":\"no lemnosd here\"}\n\n")?;
+        }
+        Ok(())
+    }
+
+    /// Waits up to `window` for readings, then sends what arrived, one
+    /// `samples` message per device. Without live readings it only waits.
+    pub fn pump(&mut self, window: Duration) -> io::Result<()> {
+        #[cfg(unix)]
+        if let Some(live) = self.live.take() {
+            use crate::hardware::Live;
+            use std::sync::mpsc::RecvTimeoutError;
+            let deadline = Instant::now() + window;
+            let mut keep = true;
+            let mut gone = None;
+            loop {
+                let left = deadline.saturating_duration_since(Instant::now());
+                match live.recv_timeout(left) {
+                    Ok(Live::Devices(devices)) => {
+                        self.send(&format!("event: hardware\ndata: {devices}\n\n"))?;
+                    }
+                    Ok(Live::Sample {
+                        device,
+                        t_us,
+                        values,
+                    }) => {
+                        let mut row = vec![Value::from(t_us)];
+                        row.extend(
+                            values
+                                .into_iter()
+                                .map(|value| value.map_or(Value::Null, Value::from)),
+                        );
+                        self.batch
+                            .entry(device)
+                            .or_default()
+                            .push(Value::Array(row));
+                    }
+                    Ok(Live::Gone(reason)) => {
+                        gone = Some(reason);
+                        keep = false;
+                        break;
+                    }
+                    Err(RecvTimeoutError::Timeout) => break,
+                    Err(RecvTimeoutError::Disconnected) => {
+                        keep = false;
+                        break;
+                    }
+                }
+            }
+            for (device, samples) in std::mem::take(&mut self.batch) {
+                let message = serde_json::json!({ "device": device, "samples": samples });
+                self.send(&format!("event: samples\ndata: {message}\n\n"))?;
+            }
+            // After what it read before it went.
+            if let Some(reason) = gone {
+                let gone = serde_json::json!({ "reason": reason });
+                self.send(&format!("event: hardware-gone\ndata: {gone}\n\n"))?;
+            }
+            if keep {
+                self.live = Some(live);
+            }
+            return Ok(());
+        }
+        std::thread::sleep(window);
         Ok(())
     }
 

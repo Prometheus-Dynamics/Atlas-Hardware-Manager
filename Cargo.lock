@@ -596,6 +596,7 @@ dependencies = [
 name = "board-stream"
 version = "0.1.0"
 dependencies = [
+ "lemnos-ipc",
  "serde_json",
 ]
 
@@ -1390,6 +1391,21 @@ name = "embed_plist"
 version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ef6b89e5b37196644d8796de5268852ff179b44e96276cf4290264843743bb7"
+
+[[package]]
+name = "embedded-hal"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "361a90feb7004eca4019fb28352a9465666b24f840f5c3cddf0ff13920590b89"
+
+[[package]]
+name = "embedded-hal-async"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c4c685bbef7fe13c3c6dd4da26841ed3980ef33e841cddfa15ce8a8fb3f1884"
+dependencies = [
+ "embedded-hal",
+]
 
 [[package]]
 name = "endi"
@@ -2586,6 +2602,43 @@ name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
+
+[[package]]
+name = "lemnos-device"
+version = "2.0.0"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=ae59665800dfc554f09c2d9842512f32e196f077#ae59665800dfc554f09c2d9842512f32e196f077"
+dependencies = [
+ "embedded-hal",
+ "embedded-hal-async",
+ "lemnos-hal",
+]
+
+[[package]]
+name = "lemnos-hal"
+version = "2.0.0"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=ae59665800dfc554f09c2d9842512f32e196f077#ae59665800dfc554f09c2d9842512f32e196f077"
+dependencies = [
+ "embedded-hal",
+ "embedded-hal-async",
+]
+
+[[package]]
+name = "lemnos-ipc"
+version = "2.0.0"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=ae59665800dfc554f09c2d9842512f32e196f077#ae59665800dfc554f09c2d9842512f32e196f077"
+dependencies = [
+ "lemnos-device",
+ "lemnos-hal",
+ "lemnos-light",
+]
+
+[[package]]
+name = "lemnos-light"
+version = "2.0.0"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=ae59665800dfc554f09c2d9842512f32e196f077#ae59665800dfc554f09c2d9842512f32e196f077"
+dependencies = [
+ "lemnos-device",
+]
 
 [[package]]
 name = "libappindicator"

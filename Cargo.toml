@@ -55,6 +55,9 @@ nusb = { version = "0.2.7", features = ["tokio"] }
 orion-client = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "4fadba9fd81d376375dbe9a3c7a6ccc6416685ae", default-features = false }
 orion-control-plane = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "4fadba9fd81d376375dbe9a3c7a6ccc6416685ae", default-features = false, features = ["std"] }
 orion-core = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "4fadba9fd81d376375dbe9a3c7a6ccc6416685ae", default-features = false, features = ["std"] }
+# lemnosd's client (board-stream's live readings), at the commit the Raze
+# package pins (devices/raze/manifest.json, capabilities.hardware-service).
+lemnos-ipc = { git = "https://github.com/Prometheus-Dynamics/Lemnos", rev = "ae59665800dfc554f09c2d9842512f32e196f077" }
 # Tests only: a real node in-process (board-agent).
 orion-node = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "4fadba9fd81d376375dbe9a3c7a6ccc6416685ae", default-features = false }
 nix = { version = "0.31", default-features = false }

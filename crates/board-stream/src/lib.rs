@@ -3,6 +3,8 @@
 //! Accept=yes): it reads one `GET /stream` request on stdin and streams
 //! Server-Sent Events on stdout until the viewer goes. Read-only.
 
+#[cfg(unix)]
+pub mod hardware;
 pub mod request;
 pub mod stream;
 

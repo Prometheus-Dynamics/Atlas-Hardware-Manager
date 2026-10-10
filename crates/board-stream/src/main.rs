@@ -35,11 +35,24 @@ fn main() -> ExitCode {
     if stream.start(&boot_id()).is_err() {
         return ExitCode::SUCCESS;
     }
+    // Live readings go out in batches this often (about 60 per second);
+    // the files are looked at every `poll`.
+    let window = if stream.wants_hardware() {
+        millis("BOARD_STREAM_BATCH_MS", 16)
+    } else {
+        poll
+    };
+    let mut looked = std::time::Instant::now();
     // Until a write fails: the viewer went.
     loop {
-        std::thread::sleep(poll);
-        if stream.tick().is_err() {
+        if stream.pump(window).is_err() {
             return ExitCode::SUCCESS;
+        }
+        if looked.elapsed() >= poll {
+            looked = std::time::Instant::now();
+            if stream.tick().is_err() {
+                return ExitCode::SUCCESS;
+            }
         }
     }
 }

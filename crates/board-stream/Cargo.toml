@@ -8,7 +8,7 @@ homepage.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 publish.workspace = true
-description = "The board's push channel: one Server-Sent Events stream per connection (board-stream.socket, TCP 5898) with the board's new events and update-state changes, so Atlas learns of them as they happen."
+description = "The board's push channel: one Server-Sent Events stream per connection (board-stream.socket, TCP 5898) with the board's new events and update-state changes as they happen, and lemnosd's readings at device rate while a viewer asks for them."
 
 [[bin]]
 name = "board-stream"
@@ -16,6 +16,11 @@ path = "src/main.rs"
 
 [dependencies]
 serde_json.workspace = true
+
+# lemnosd is a Unix socket: live readings (the `hardware` topic) are Unix
+# only; elsewhere the topic is refused.
+[target.'cfg(unix)'.dependencies]
+lemnos-ipc.workspace = true
 
 [lints]
 workspace = true

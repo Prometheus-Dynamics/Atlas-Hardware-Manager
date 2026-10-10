@@ -7,10 +7,13 @@ ExecStart=/usr/bin/board-stream
 StandardInput=socket
 StandardOutput=socket
 StandardError=journal
-# Read-only: it reads /data/board/events.jsonl and /run/board/update.json.
-# It runs while its viewer is connected (no RuntimeMaxSec) and ends when a
-# write to it fails (a keepalive every 10 s).
+# Read-only: it reads /data/board/events.jsonl and /run/board/update.json,
+# and for the hardware topic lemnosd's readings (its socket is 0770, group
+# lemnos; reads need no write policy). It runs while its viewer is connected
+# (no RuntimeMaxSec) and ends when a write to it fails (a keepalive every
+# 10 s); its lemnosd subscriptions end with it.
 DynamicUser=yes
+SupplementaryGroups=lemnos
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes

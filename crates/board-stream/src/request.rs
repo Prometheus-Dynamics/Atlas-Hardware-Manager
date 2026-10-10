@@ -1,4 +1,5 @@
-//! The one request a connection makes: `GET /stream?topics=..&after_seq=..`.
+//! The one request a connection makes:
+//! `GET /stream?topics=..&after_seq=..&hardware=<device>[:<ms>],..`.
 
 use std::io::BufRead;
 
@@ -11,6 +12,45 @@ pub struct StreamRequest {
     /// Replay events after this seq first (`after_seq=`, or the SSE
     /// `Last-Event-ID` header when it reconnects).
     pub after_seq: Option<u64>,
+    /// Live readings (`hardware` topic): lemnosd devices and how often, ms.
+    pub hardware: Vec<(String, u32)>,
+}
+
+/// At most this many devices per viewer, and no faster than this.
+pub const MAX_DEVICES: usize = 8;
+pub const MIN_PERIOD_MS: u32 = 5;
+const DEFAULT_PERIOD_MS: u32 = 20;
+
+/// `imu:10,power-monitor`: device ids (as the board file names them) with
+/// an optional period in ms.
+fn devices(value: &str) -> Result<Vec<(String, u32)>, Refusal> {
+    let bad = || refuse("400 Bad Request", "hardware is <device>[:<ms>],...");
+    let mut devices = Vec::new();
+    for item in value.split(',').filter(|item| !item.is_empty()) {
+        let (id, period) = item.split_once(':').unwrap_or((item, ""));
+        if id.is_empty()
+            || id.len() > 64
+            || !id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+        {
+            return Err(bad());
+        }
+        let period = if period.is_empty() {
+            DEFAULT_PERIOD_MS
+        } else if period.len() <= 6 && period.bytes().all(|b| b.is_ascii_digit()) {
+            period.parse::<u32>().map_err(|_| bad())?.max(MIN_PERIOD_MS)
+        } else {
+            return Err(bad());
+        };
+        if !devices.iter().any(|(known, _)| known == id) {
+            devices.push((id.to_string(), period));
+        }
+    }
+    if devices.len() > MAX_DEVICES {
+        return Err(refuse("400 Bad Request", "at most 8 devices"));
+    }
+    Ok(devices)
 }
 
 /// Why a request isn't served, as an HTTP status line and a reason.
@@ -77,6 +117,7 @@ pub fn read_request(input: &mut impl BufRead) -> Result<StreamRequest, Refusal> 
         match key {
             "topics" => topics = Some(value.to_string()),
             "after_seq" => request.after_seq = Some(number(value)?),
+            "hardware" => request.hardware = devices(value)?,
             _ => {}
         }
     }
@@ -89,17 +130,28 @@ pub fn read_request(input: &mut impl BufRead) -> Result<StreamRequest, Refusal> 
     }
     // No topics: everything there is (today, events and the update state).
     let topics = topics.unwrap_or_else(|| "events,update".to_string());
+    let mut hardware = false;
     for topic in topics.split(',') {
         match topic {
             "events" => request.events = true,
             "update" => request.update = true,
+            "hardware" => hardware = true,
             _ => {}
         }
     }
-    if !request.events && !request.update {
+    if hardware && request.hardware.is_empty() {
         return Err(refuse(
             "400 Bad Request",
-            "no topic this board has (events, update)",
+            "the hardware topic needs hardware=<device>[:<ms>],...",
+        ));
+    }
+    if !hardware {
+        request.hardware.clear();
+    }
+    if !request.events && !request.update && request.hardware.is_empty() {
+        return Err(refuse(
+            "400 Bad Request",
+            "no topic this board has (events, update, hardware)",
         ));
     }
     Ok(request)
@@ -122,12 +174,43 @@ mod tests {
             StreamRequest {
                 events: true,
                 update: false,
-                after_seq: Some(12)
+                after_seq: Some(12),
+                hardware: Vec::new(),
             }
         );
         let request = parse("GET /stream HTTP/1.1\r\nLast-Event-ID: 40\r\n\r\n").unwrap();
         assert!(request.events && request.update);
         assert_eq!(request.after_seq, Some(40), "a reconnecting viewer resumes");
+    }
+
+    #[test]
+    fn hardware_names_devices_and_their_periods() {
+        let request = parse(
+            "GET /stream?topics=hardware&hardware=imu:10,power-monitor,fan:1,imu:50 HTTP/1.1\r\n\r\n",
+        )
+        .unwrap();
+        assert!(!request.events && !request.update);
+        assert_eq!(
+            request.hardware,
+            [
+                ("imu".to_string(), 10),
+                ("power-monitor".to_string(), DEFAULT_PERIOD_MS),
+                ("fan".to_string(), MIN_PERIOD_MS),
+            ],
+            "the default, the floor, and a device named twice keeps the first"
+        );
+        // Without the topic, the list is ignored.
+        let request = parse("GET /stream?hardware=imu HTTP/1.1\r\n\r\n").unwrap();
+        assert!(request.hardware.is_empty() && request.events);
+        for bad in [
+            "topics=hardware",
+            "topics=hardware&hardware=im%20u",
+            "topics=hardware&hardware=imu:x",
+            "topics=hardware&hardware=a,b,c,d,e,f,g,h,i",
+        ] {
+            let text = format!("GET /stream?{bad} HTTP/1.1\r\n\r\n");
+            assert_eq!(parse(&text).unwrap_err().status, "400 Bad Request", "{bad}");
+        }
     }
 
     #[test]

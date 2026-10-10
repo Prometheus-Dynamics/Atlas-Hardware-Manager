@@ -373,6 +373,18 @@ through board-agent, or someone typing on the board.
   that drops (a reboot) re-scans at once and then every 2 s for 2 minutes,
   so the board is seen going and coming back; boards without the stream are
   polled as before.
+- **Live readings.** The same stream's `hardware` topic:
+  `GET /stream?topics=hardware&hardware=imu:10,power-monitor:100`
+  (device:period ms, at least 5 ms, at most 8 devices) opens one lemnosd
+  connection (`board-stream`) for that viewer and subscribes those devices
+  only while it is connected, so nothing is read for nobody. lemnosd reads
+  a device at the fastest period any client asked for (and at least its
+  board `poll_ms`; the Raze's IMU is 10 ms). It sends `hardware` (each
+  device's channels and units), then `samples` every 16 ms
+  (`[[t_us, v, ..], ..]`, lemnosd's monotonic µs), and `hardware-gone` if
+  lemnosd goes. Orion's status lane stays the low-rate summary (at most
+  `LEMNOS_ORION_RATE_HZ`, deadbanded): it isn't meant for live viewing, and
+  a remote operator can only poll it.
 - **Atlas.** atlas-driver-board reads both (a `status` capability; without a
   metrics endpoint the temperatures and fan are its telemetry). atlas-core
   keeps each board's events (by board serial, at most 500, saved with the
