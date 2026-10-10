@@ -67,15 +67,13 @@
           const own = MATERIALS[mesh.name] ?? MATERIALS[mesh.parent?.name ?? ""];
           if (mesh.isMesh && own) mesh.material = own;
           else if (mesh.isMesh) {
-            // The board's parts, in their colours from the CAD: greys are the
-            // connectors' metal shells, the rest plastic.
-            const base = (mesh.material as InstanceType<typeof THREE.MeshStandardMaterial>).color ?? new THREE.Color(0x888888);
-            const { s, l } = base.getHSL({ h: 0, s: 0, l: 0 });
-            const metal = s < 0.12 && l > 0.3 && l < 0.75;
+            // The board's parts: their materials from the model (each
+            // connector coloured by what it is, see case_model.py), flat shaded.
+            const loaded = mesh.material as InstanceType<typeof THREE.MeshStandardMaterial>;
             mesh.material = new THREE.MeshStandardMaterial({
-              color: base,
-              metalness: metal ? 0.85 : 0.05,
-              roughness: metal ? 0.3 : 0.65,
+              color: loaded.color,
+              metalness: loaded.metalness,
+              roughness: loaded.roughness,
               flatShading: true,
             });
           }

@@ -12,12 +12,15 @@ and LED ring), so the app turns it by the IMU's orientation as it is.
 That mapping (from the CAD's x, z, -y) is the one assumed for Gen 1 until
 it is checked on a board.
 
-    devices/tools/case_model.py <assembly.obj> <button.obj> <board.wrl> <out.glb>
+    devices/tools/case_model.py <assembly.obj> <button.obj> <board.wrl> <board.kicad_pcb> <out.glb>
 
 The board comes from the assembly's VRML export (FreeCAD, gzip or not): not
 the whole PCB, a simplified slab of it (PCB) and the parts at its edges, the
-connectors and the side switch (IO_n), each in its own colour, so the case's
-openings show what plugs in there.
+connectors and the side switch, so the case's openings show what plugs in
+there. The VRML's colours are the 3D models' and some are wrong (a beige
+USB-C), so each edge part is matched to its footprint on the KiCad board
+(the nearest, placed by the CM5 connectors' fit below) and coloured by what
+it is (PART_LOOKS); a part with no footprint near it keeps the VRML colour.
 """
 
 import gzip
@@ -147,9 +150,11 @@ class Vrml:
         return None
 
 
-def board_parts(path: str) -> list[tuple[str, np.ndarray, np.ndarray, tuple[float, float, float]]]:
+def board_parts(path: str, pcb_path: str) -> list[tuple[str, np.ndarray, np.ndarray, tuple[float, float, float]]]:
     """The PCB (the largest flat face set) and the parts reaching its edges."""
     shapes = Vrml(path).shapes
+    known = footprints(pcb_path)
+    used: dict[str, int] = {}
     size = lambda p: p.max(axis=0) - p.min(axis=0)
     flat = [s for s in shapes if size(s[0])[1] < 2.5 and size(s[0])[0] > 40]
     pcb = max(flat, key=lambda s: size(s[0])[0] * size(s[0])[2])
@@ -167,8 +172,56 @@ def board_parts(path: str) -> list[tuple[str, np.ndarray, np.ndarray, tuple[floa
             continue
         if plo[0] <= lo[0] + 1 or phi[0] >= hi[0] - 1 or plo[2] <= lo[2] + 1 or phi[2] >= hi[2] - 1:
             n += 1
-            parts.append((f"IO_{n}", points, faces, color))
+            name, look = f"IO_{n}", color
+            centre = (plo + phi) / 2
+            near = min(known, key=lambda f: (f[1] - centre[0]) ** 2 + (f[2] - centre[2]) ** 2, default=None)
+            # A connector-sized part only: thin strips and pins keep their colour.
+            sized = size(points).max() >= 5 and np.sort(size(points))[1] >= 2
+            if sized and near and ((near[1] - centre[0]) ** 2 + (near[2] - centre[2]) ** 2) ** 0.5 < 9:
+                for pattern, kind, rgb, metal in PART_LOOKS:
+                    if re.search(pattern, near[0]):
+                        used[kind] = used.get(kind, 0) + 1
+                        name = kind if used[kind] == 1 else f"{kind}_{used[kind]}"
+                        look = (*rgb, 1.0 if metal else 0.0)
+                        break
+            print(f"  {name:8s} at x={centre[0]:.1f} z={centre[2]:.1f} <- {near[0][:40] if near else '-'}", file=sys.stderr)
+            parts.append((name, points, faces, look))
     return parts
+
+
+# What a connector looks like, by its footprint's value or name: name in the
+# model, colour (sRGB 0-1), metal.
+PART_LOOKS = [
+    (r"U-A-|USB_A", "USB_A", (0.80, 0.82, 0.85), True),  # HRO U-A-39DS: USB 3 A, steel shell
+    (r"TYPE-C|UC23|USB_C|USB-C", "USB_C", (0.80, 0.82, 0.85), True),  # steel shell
+    (r"MJ88|RJ45", "RJ45", (0.78, 0.80, 0.82), True),  # shielded RJ45, steel
+    (r"JL212", "POWER", (0.09, 0.09, 0.10), False),  # JILN JL212R-50002B01: 2-pin 5 mm terminal block, black (B01)
+    (r"BM04B|JST", "JST", (0.92, 0.89, 0.80), False),  # JST SH, natural nylon
+    (r"TS24|^SW", "SWITCH", (0.70, 0.72, 0.75), True),  # tactile switch, metal frame
+]
+
+# KiCad (mm, y down) to the case CAD (mm): fitted from the CM5 connectors
+# CN1/CN2 and the side switch SW1 against the assembly.
+def kicad_to_cad(kx: float, ky: float) -> tuple[float, float]:
+    return ky - 82.56, 129.1 - kx
+
+
+def footprints(path: str) -> list[tuple[str, float, float]]:
+    """(value or footprint name, CAD x, CAD z) of the board's connectors and switches."""
+    text = open(path, encoding="utf-8").read()
+    out = []
+    for block in text.split("\n\t(footprint ")[1:]:
+        name = block.split("\n", 1)[0].strip().strip('"')
+        at = re.search(r"\(at ([-\d.]+) ([-\d.]+)", block)
+        ref = re.search(r'\(property "Reference" "([^"]+)"', block)
+        value = re.search(r'\(property "Value" "([^"]+)"', block)
+        if not at or not ref or not re.match(r"(USB|RJ|J|U|SW)\d", ref.group(1)):
+            continue
+        label = f"{value.group(1) if value else ''} {name}"
+        if any(re.search(pattern, label) for pattern, *_ in PART_LOOKS):
+            x, z = kicad_to_cad(float(at.group(1)), float(at.group(2)))
+            out.append((label, x, z))
+    return out
 
 
 def read_obj(path: str) -> tuple[np.ndarray, dict[str, list[list[int]]]]:
@@ -229,7 +282,7 @@ def to_imu(points: np.ndarray, centre: np.ndarray) -> np.ndarray:
 
 
 def main() -> None:
-    assembly, button, board, out = sys.argv[1:5]
+    assembly, button, board, pcb, out = sys.argv[1:6]
     verts, groups = read_obj(assembly)
     bverts, bgroups = read_obj(button)
     parts: list[tuple[str, np.ndarray, np.ndarray, tuple[float, float, float] | None]] = []
@@ -243,7 +296,7 @@ def main() -> None:
     parts.append(("BUTTON", bverts, bfaces, None))
     # The case alone sets the centre, so the board sits where it is in it.
     every = np.concatenate([p for _, p, _, _ in parts])
-    parts += board_parts(board)
+    parts += board_parts(board, pcb)
     centre = (every.min(axis=0) + every.max(axis=0)) / 2
 
     buffer = bytearray()
@@ -275,7 +328,12 @@ def main() -> None:
         a = len(accessors) - 3
         primitive = {"attributes": {"POSITION": a, "NORMAL": a + 1}, "indices": a + 2}
         if color is not None:
-            materials.append({"name": name, "pbrMetallicRoughness": {"baseColorFactor": [*color, 1.0], "metallicFactor": 0.3, "roughnessFactor": 0.6}})
+            # A fourth component is the metal flag PART_LOOKS gives; the VRML's
+            # own colours are plastic.
+            metal = color[3] if len(color) > 3 else 0.0
+            materials.append({"name": name, "pbrMetallicRoughness": {
+                "baseColorFactor": [*color[:3], 1.0], "metallicFactor": 0.85 if metal else 0.05,
+                "roughnessFactor": 0.3 if metal else 0.6}})
             primitive["material"] = len(materials) - 1
         meshes.append({"name": name, "primitives": [primitive]})
         nodes.append({"name": name, "mesh": len(meshes) - 1})
