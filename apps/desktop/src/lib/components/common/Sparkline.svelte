@@ -1,6 +1,7 @@
 <script lang="ts">
-  // A trend line. Points sit at fixed spacing (`capacity` across), newest at
-  // the right; each reading redraws it once, with no animation. Hovering
+  // A trend line, newest at the right. Its points spread across the whole
+  // width as they come in, until there are `capacity`; from then on it
+  // scrolls. Each reading redraws it once, with no animation. Hovering
   // shows the nearest point's exact value and, with `times`, when it was read.
 
   let {
@@ -28,7 +29,8 @@
 
   const W = 100;
   const id = `spark-${Math.random().toString(36).slice(2, 9)}`;
-  const step = $derived(W / (capacity - 1));
+  // Fill the width while there are fewer points than the capacity.
+  const step = $derived(W / (Math.max(2, Math.min(values.length, capacity)) - 1));
 
   // Range with a little headroom so the line never touches the edges.
   const range = $derived.by(() => {

@@ -10,6 +10,7 @@
   import HardwareControls from "./HardwareControls.svelte";
   import HardwareReadingTile from "./HardwareReadingTile.svelte";
   import LiveChart from "./LiveChart.svelte";
+  import ImuView from "./ImuView.svelte";
   import { groupReadings, label, pillFor } from "./hardware.ts";
   import type { LiveSeries } from "./live.ts";
 
@@ -62,6 +63,7 @@
 
   {#if live && streaming}
     <div class="mb-3 flex flex-col gap-3">
+      {#if device.class === "imu"}<ImuView series={live} />{/if}
       {#each live.groups() as group (group.unit)}
         <LiveChart series={live} channels={group.channels} unit={group.unit} {windowS} />
       {/each}

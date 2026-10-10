@@ -46,11 +46,13 @@
     });
   });
 
-  // Live: the devices that read, at their rate. Restarted only when that
-  // list changes, not on every snapshot.
+  // Live: the devices that have readings, at their rate. Restarted only when
+  // that list changes: not on every snapshot, and not when a device's status
+  // flips (available, degraded), which used to clear every chart. The board
+  // refuses what it can't stream.
   const wanted = $derived(
     hardware.devices
-      .filter((d) => d.status === "available" || d.status === "degraded")
+      .filter((d) => d.readings.length > 0 && d.status !== "missing")
       .map((d) => [d.id, periodFor(d.class)] as [string, number]),
   );
   const wantedKey = $derived(`${keyString(boardKey)} ${wanted.map((w) => w.join(":")).join(",")}`);
@@ -68,8 +70,17 @@
 
   function onFrame(frame: HardwareFrame) {
     if (frame.type === "devices") {
+      // Sent again after a reconnect: keep a device's samples when its
+      // channels are the same, so its charts carry on.
+      const next = new Map<string, LiveSeries>();
+      for (const device of frame.devices) {
+        if (device.missing || device.refused) continue;
+        const had = live.get(device.id);
+        const same = had && had.channels.map((c) => c.name).join() === device.channels.map((c) => c.name).join();
+        next.set(device.id, same ? had : new LiveSeries(device));
+      }
       live.clear();
-      for (const device of frame.devices) if (!device.missing && !device.refused) live.set(device.id, new LiveSeries(device));
+      for (const [id, series] of next) live.set(id, series);
       liveState = "live";
     } else if (frame.type === "samples") {
       const series = live.get(frame.device);
@@ -80,10 +91,17 @@
     }
   }
 
+  /** The board the buffers belong to: another board starts them afresh. */
+  let liveBoard = "";
+
   $effect(() => {
     void wantedKey;
     const key = boardKey;
     const devices = untrack(() => wanted);
+    if (keyString(key) !== liveBoard) {
+      liveBoard = keyString(key);
+      live.clear();
+    }
     if (devices.length === 0) {
       liveState = "none";
       return;
@@ -106,7 +124,6 @@
     return () => {
       gone = true;
       stop?.();
-      live.clear();
     };
   });
 

@@ -1,8 +1,11 @@
 <script lang="ts">
   // A live chart of some of a device's channels (one unit), drawn on a
-  // canvas at the display's frame rate from the device's ring buffer: the
-  // last `windowS` seconds, newest at the right. Hovering pauses it and shows
-  // the nearest sample's values and when it was read.
+  // canvas at the display's frame rate from the device's ring buffer, newest
+  // at the right. The time axis grows with the data until it spans
+  // `windowS` seconds, then scrolls. The value range follows the data,
+  // widening at once and narrowing gently, so lines don't jump. Hovering
+  // shows the values under the pointer and keeps drawing; a click pauses
+  // (and resumes).
   import { onMount } from "svelte";
   import { clockText, type LiveSeries } from "./live.ts";
   import { formatValue, label } from "./hardware.ts";
@@ -22,8 +25,16 @@
   let colors = $state<string[]>([]);
   let grid = "rgba(128,128,128,0.18)";
   let text = "rgba(128,128,128,0.8)";
-  /** While hovered: where, and the frozen time range drawn. */
-  let hover = $state<{ x: number; newest: number; left: number; top: number } | null>(null);
+  /** While hovered: where (x on the canvas, and on screen). */
+  let hover = $state<{ x: number; left: number; top: number } | null>(null);
+  /** Paused: the newest time drawn, frozen until a click resumes. */
+  let paused = $state<number | null>(null);
+  /** The newest time and span (µs) of the last paint, for the hover lookup. */
+  let shown = $state({ newest: 0, span: 1 });
+  /** The value range drawn, eased toward the data's. */
+  let range: { low: number; high: number } | null = null;
+  /** The shortest time axis (s), so the first samples don't stretch across. */
+  const MIN_SPAN_S = 1;
 
   onMount(() => {
     const style = getComputedStyle(document.documentElement);
@@ -31,13 +42,15 @@
     grid = style.getPropertyValue("--glass-strong").trim() || grid;
     text = style.getPropertyValue("--fg-faint").trim() || text;
     let frame = 0;
-    // Repaint only when something changed: a new sample, the size, the window.
+    // Repaint when something changed: a new sample, the size, the window,
+    // the pointer, or while the value range is still easing.
     let painted = "";
     const draw = () => {
-      const now = `${series.newestUs()} ${width} ${windowS}`;
-      if (!hover && now !== painted) {
+      const newest = paused ?? series.newestUs();
+      const now = `${newest} ${width} ${windowS} ${hover?.x ?? -1}`;
+      if (now !== painted || easing) {
         painted = now;
-        paint(series.newestUs());
+        paint(newest, hover?.x);
       }
       frame = requestAnimationFrame(draw);
     };
@@ -45,9 +58,14 @@
     return () => cancelAnimationFrame(frame);
   });
 
-  /** The samples in view and the value range they span. */
+  let easing = false;
+
+  /** The samples in view, the time span drawn and the value range. */
   function view(newest: number) {
-    const from = newest - windowS * 1_000_000;
+    const oldest = series.count ? series.t[series.index(0)] : newest;
+    // Grow with the data until the window is full.
+    const span = Math.max(MIN_SPAN_S * 1_000_000, Math.min(windowS * 1_000_000, newest - oldest));
+    const from = newest - span;
     const first = series.firstFrom(from);
     let low = Infinity;
     let high = -Infinity;
@@ -65,7 +83,16 @@
       high = 1;
     }
     const pad = (high - low || Math.abs(high) || 1) * 0.12;
-    return { from, first, low: low - pad, high: high + pad };
+    const want = { low: low - pad, high: high + pad };
+    // Widen at once (nothing drawn off the chart); narrow a little each frame.
+    if (!range) range = want;
+    const next = {
+      low: want.low < range.low ? want.low : range.low + (want.low - range.low) * 0.08,
+      high: want.high > range.high ? want.high : range.high + (want.high - range.high) * 0.08,
+    };
+    easing = Math.abs(next.low - want.low) + Math.abs(next.high - want.high) > (want.high - want.low) * 0.005;
+    range = easing ? next : want;
+    return { from, first, span, low: range.low, high: range.high };
   }
 
   function paint(newest: number, crosshair?: number) {
@@ -78,10 +105,10 @@
     }
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, width, HEIGHT);
-    const { from, first, low, high } = view(newest);
-    const span = windowS * 1_000_000;
+    const { from, first, span, low, high } = view(newest);
+    shown = { newest, span };
     const x = (t: number) => ((t - from) / span) * width;
-    const y = (value: number) => HEIGHT - 4 - ((value - low) / (high - low)) * (HEIGHT - 8);
+    const y = (value: number) => HEIGHT - 14 - ((value - low) / (high - low)) * (HEIGHT - 18);
     // Three gridlines with their values.
     ctx.font = "10px ui-sans-serif, system-ui";
     ctx.fillStyle = text;
@@ -96,6 +123,15 @@
       ctx.stroke();
       ctx.fillText(formatValue(value), 4, gy - 3);
     }
+    // Time: how long ago, at a round step that fits.
+    const spanS = span / 1_000_000;
+    const step = [0.5, 1, 2, 5, 10, 15, 30].find((s) => spanS / s <= 6) ?? 60;
+    ctx.textAlign = "center";
+    for (let ago = step; ago < spanS; ago += step) {
+      const tx = width - (ago / spanS) * width;
+      ctx.fillText(`-${ago % 1 ? ago.toFixed(1) : ago}s`, tx, HEIGHT - 2);
+    }
+    ctx.textAlign = "start";
     ctx.lineWidth = 1.5;
     ctx.lineJoin = "round";
     channels.forEach((c, n) => {
@@ -127,10 +163,10 @@
     }
   }
 
-  /** The sample nearest the hovered x. */
+  /** The sample nearest the hovered x, in what is drawn now. */
   const picked = $derived.by(() => {
     if (!hover || series.count === 0) return null;
-    const t = hover.newest - windowS * 1_000_000 + (hover.x / width) * windowS * 1_000_000;
+    const t = shown.newest - shown.span + (hover.x / width) * shown.span;
     let i = series.firstFrom(t);
     if (i >= series.count) i = series.count - 1;
     if (i > 0 && Math.abs(series.t[series.index(i - 1)] - t) < Math.abs(series.t[series.index(i)] - t)) i -= 1;
@@ -145,9 +181,7 @@
     if (!canvas) return;
     const box = canvas.getBoundingClientRect();
     const x = Math.max(0, Math.min(box.width, event.clientX - box.left));
-    const newest = hover?.newest ?? series.newestUs();
-    hover = { x, newest, left: box.left + x, top: box.top };
-    paint(newest, x);
+    hover = { x, left: box.left + x, top: box.top };
   }
 </script>
 
@@ -156,16 +190,16 @@
     bind:this={canvas}
     style="width: 100%; height: {HEIGHT}px"
     onpointermove={move}
-    onpointerleave={() => {
-      hover = null;
-      paint(series.newestUs());
-    }}
+    onpointerleave={() => (hover = null)}
+    onclick={() => (paused = paused === null ? series.newestUs() : null)}
+    title={paused === null ? "Click to pause" : "Paused: click to resume"}
     aria-label="{series.id}: {channels.map((c) => label(series.channels[c].name)).join(', ')}, live"
   ></canvas>
   <div class="legend">
     {#each channels as c, n (c)}
       <span class="item"><span class="swatch" style="background: {colors[n % colors.length]}"></span>{label(series.channels[c].name)}</span>
     {/each}
+    {#if paused !== null}<span class="paused">Paused</span>{/if}
     {#if unit}<span class="unit">{unit}</span>{/if}
   </div>
   {#if hover && picked}
@@ -209,6 +243,14 @@
     height: 8px;
     border-radius: 2px;
     flex-shrink: 0;
+  }
+  .paused {
+    margin-left: auto;
+    color: var(--warn-fg);
+    font-weight: 600;
+  }
+  .paused + .unit {
+    margin-left: 8px;
   }
   .unit {
     margin-left: auto;
