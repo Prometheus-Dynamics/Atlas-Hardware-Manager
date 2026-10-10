@@ -21,8 +21,10 @@
 # States (STATE in board-update.env, "state" in the JSON): idle, staging,
 # staged, rebooting (apply's or rollback's restart was accepted), trying (the
 # trial boot), confirmed, rolled-back, cancelled, error. Exit status: 0 done,
-# 3 refused with nothing changed (wrong state, another command running),
-# anything else failed (recorded as `error` once staging began).
+# 3 refused with nothing changed (wrong state, another command still running
+# after UPDATE_LOCK_WAIT seconds, a read-only p1), anything else failed
+# (recorded as `error` once staging began; a failed write to p1 is in
+# update.json). `status` answers from update.json without the lock.
 #
 # Layout (MBR on the eMMC): p1 holds autoboot.txt only; boot A/B are p2/p3
 # (FAT), root A/B are p5/p6. autoboot.txt's [all] boot_partition is the
@@ -167,7 +169,7 @@ slot_root() { if [ "$1" = A ]; then echo "$SLOT_A" | cut -d' ' -f2; else echo "$
 mount_part() {
 	dir="$WORK/mnt-$1"
 	mkdir -p "$dir"
-	$MOUNT "$(part "$1")" "$dir" >/dev/null
+	$MOUNT "$(part "$1")" "$dir" >/dev/null || return 1
 	echo "$dir"
 }
 
@@ -181,8 +183,26 @@ mount_part_ro() {
 
 with_autoboot() {
 	# with_autoboot <function>: runs it with $AB pointing at mounted p1.
+	# p1 that can't be mounted, or mounts read-only (it shares the
+	# superblock of a read-only mount elsewhere), stops the command first.
 	mkdir -p "$WORK"
-	AB=$(mount_part "$AUTOBOOT_PART")
+	if ! AB=$(mount_part "$AUTOBOOT_PART"); then
+		AB=''
+		board_log "couldn't mount the boot partition (p$AUTOBOOT_PART); nothing changed"
+		exit 1
+	fi
+	# (In a subshell: a failed redirection of a special built-in such as `:`
+	# ends the whole shell.)
+	if [ "$1" != _status ] && ! (: > "$AB/.board-update.probe") 2>/dev/null; then
+		$UMOUNT "$AB" >/dev/null 2>&1 || true
+		AB=''
+		ERROR="the boot partition (p$AUTOBOOT_PART) is read-only$(ro_note); nothing changed"
+		board_log "$ERROR"
+		write_status_json 2>/dev/null || true
+		exit "$REFUSED"
+	fi
+	rm -f "$AB/.board-update.probe"
+	cp "$AB/autoboot.txt" "$WORK/autoboot.before" 2>/dev/null || rm -f "$WORK/autoboot.before"
 	rc=0
 	"$1" || rc=$?
 	$SYNC
@@ -202,6 +222,38 @@ load_state() {
 	[ -n "$VERSION_ACTIVE" ] || VERSION_ACTIVE=$(board_os_field VERSION_ID)
 }
 
+# A write to p1 that didn't happen ends the command (status 1): nothing it
+# would do or print after it is true. p1 can't take the error, so it goes to
+# update.json; the state on p1 is what it was.
+write_failed() {
+	ERROR="couldn't write $1 on the boot partition (p$AUTOBOOT_PART)$(ro_note)"
+	# A switch writes autoboot.txt before the state: put it back, so the
+	# board boots what the state on p1 says.
+	if [ -n "${AB:-}" ] && [ -r "$WORK/autoboot.before" ] && ! cmp -s "$WORK/autoboot.before" "$AB/autoboot.txt"; then
+		if cp "$WORK/autoboot.before" "$AB/autoboot.txt" 2>/dev/null; then
+			ERROR="$ERROR; autoboot.txt is back as it was"
+		else
+			ERROR="$ERROR; autoboot.txt couldn't be put back"
+		fi
+	fi
+	board_log "$ERROR"
+	write_status_json 2>/dev/null || true
+	stop_pump
+	if [ -n "${AB:-}" ]; then
+		$UMOUNT "$AB" >/dev/null 2>&1 || true
+		AB=''
+	fi
+	exit 1
+}
+
+# ": it is mounted read-only at <dir>" when p1 is, else nothing.
+ro_note() {
+	dev=$(part "$AUTOBOOT_PART")
+	where=$(awk -v d="$dev" '$1 == d && $4 ~ /^ro(,|$)/ { print $2; exit }' /proc/mounts 2>/dev/null) || where=''
+	[ -n "$where" ] && printf ': it is mounted read-only at %s' "$where"
+	return 0
+}
+
 save_state() {
 	{
 		printf 'STATE=%s\n' "$STATE"
@@ -216,8 +268,8 @@ save_state() {
 		printf 'SWITCH_BOOT=%s\n' "$(quote "${SWITCH_BOOT:-}")"
 		printf 'SHA256_STAGED=%s\n' "${SHA256_STAGED:-}"
 		printf 'STARTED_BY=%s\n' "${STARTED_BY:-}"
-	} > "$AB/board-update.env.tmp"
-	mv "$AB/board-update.env.tmp" "$AB/board-update.env"
+	} > "$AB/board-update.env.tmp" || write_failed board-update.env
+	mv "$AB/board-update.env.tmp" "$AB/board-update.env" || write_failed board-update.env
 	write_status_json
 }
 
@@ -263,6 +315,8 @@ write_status_json() {
 		"$(board_json_str "$ERROR")" "$(board_json_str "${PREVIOUS_SLOT:+$PREVIOUS_VERSION}")" \
 		"$(board_json_str "${STARTED_BY:-}")" > "$STATUS_JSON.tmp.$$"
 	chmod 0644 "$STATUS_JSON.tmp.$$" 2>/dev/null || true
+	# The boot it describes: `status` trusts update.json only in that boot.
+	boot_id > "$STATUS_JSON.boot"
 	mv "$STATUS_JSON.tmp.$$" "$STATUS_JSON"
 }
 
@@ -300,8 +354,8 @@ write_autoboot() {
 			echo "[tryboot]"
 			echo "boot_partition=$2"
 		fi
-	} > "$AB/autoboot.txt.tmp"
-	mv "$AB/autoboot.txt.tmp" "$AB/autoboot.txt"
+	} > "$AB/autoboot.txt.tmp" || write_failed autoboot.txt
+	mv "$AB/autoboot.txt.tmp" "$AB/autoboot.txt" || write_failed autoboot.txt
 }
 
 default_boot() { sed -n '/^\[all\]/,/^\[/{s/^boot_partition=\([0-9]*\).*/\1/p}' "$AB/autoboot.txt" | head -n 1; }
@@ -386,7 +440,10 @@ kernel_release() {
 		case "$(od -An -tx1 -N2 "$1/$name" | tr -d ' \n')" in
 		1f8b) gzip -dc < "$1/$name" ;;
 		*) cat "$1/$name" ;;
-		esac 2>/dev/null | tr -c '[:print:]' '\n' | sed -n 's/^Linux version \([^ ]*\).*/\1/p' | head -n 1
+		esac 2>/dev/null | LC_ALL=C tr '\000' '\n' |
+			LC_ALL=C sed -n 's/.*Linux version \([^ ]*\).*/\1/p' | head -n 1
+		# (NULs to lines, not `tr -c '[:print:]'`: busybox tr has no
+		# classes. tests/update.sh runs this with busybox's tools.)
 		return
 	done
 }
@@ -833,11 +890,11 @@ fail_trial() {
 # previous slot was good, go back to it. This recovers a board whose
 # management link died without anyone needing USB boot.
 cmd_check_link() {
-	sleep "${UPDATE_LINK_DELAY:-0}"
-	if reason=$(slot_sanity); then
+	# The delay and the check ran before the lock (see the end of the file).
+	if [ "$LINK_OK" = 1 ]; then
 		with_autoboot _link_ok
 	else
-		REASON=$reason
+		REASON=$LINK_REASON
 		with_autoboot _link_bad
 	fi
 }
@@ -1019,37 +1076,72 @@ _rollback_undo() {
 # from an interrupted stage and may be redone. `cancel` stops a running stage
 # to take the lock.
 mkdir -p "$BOARD_RUN_DIR"
-exec 9> "$BOARD_RUN_DIR/update.lock"
 HAVE_FLOCK=0
 command -v flock >/dev/null 2>&1 && HAVE_FLOCK=1
+# How long a command that changes something waits for another to finish
+# (seconds): at boot, confirm, check-link and board-agent's first calls start
+# together.
+LOCK_WAIT=${UPDATE_LOCK_WAIT:-60}
+
+# status answers from update.json, which every command keeps current, without
+# the lock or p1, so it never holds up a command that changes something. It
+# reads p1 (under the lock) only when update.json is from another boot or
+# missing, or says a stage runs (a stage left over from a power loss becomes
+# an error there).
+if [ "${1:-}" = status ] && [ -r "$STATUS_JSON" ] &&
+	[ "$(cat "$STATUS_JSON.boot" 2>/dev/null)" = "$(boot_id)" ] &&
+	! grep -q '"state":"staging"' "$STATUS_JSON"; then
+	cat "$STATUS_JSON"
+	exit 0
+fi
+
+# check-link waits for the services before taking the lock, so nothing waits
+# on it meanwhile.
+if [ "${1:-}" = check-link ]; then
+	sleep "${UPDATE_LINK_DELAY:-0}"
+	LINK_OK=1
+	LINK_REASON=$(slot_sanity) || LINK_OK=0
+fi
+
+# take_lock <seconds>: the lock, waiting at most that long (busybox flock
+# has no -w).
+take_lock() {
+	waited=0
+	until flock -n 9; do
+		[ "$waited" -lt "$1" ] || return 1
+		sleep 1
+		waited=$((waited + 1))
+	done
+}
+
+exec 9> "$BOARD_RUN_DIR/update.lock"
 if [ "$HAVE_FLOCK" = 1 ] && ! flock -n 9; then
 	case "${1:-}" in
 	status)
-		# Busy: answer from what the running command last wrote (a stage
-		# keeps its progress current).
+		# Busy: a stage keeps update.json's progress current.
 		if [ -r "$STATUS_JSON" ]; then
 			cat "$STATUS_JSON"
 			exit 0
 		fi
+		take_lock "$LOCK_WAIT" || {
+			board_log "another update command is running"
+			exit "$REFUSED"
+		}
 		;;
 	cancel)
 		stop_stage
-		# busybox flock has no -w.
-		tries=0
-		until flock -n 9; do
-			tries=$((tries + 1))
-			if [ "$tries" -ge 30 ]; then
-				board_log "the stage didn't stop"
-				exit 1
-			fi
-			sleep 1
-		done
+		if ! take_lock 30; then
+			board_log "the stage didn't stop"
+			exit 1
+		fi
+		;;
+	*)
+		if ! take_lock "$LOCK_WAIT"; then
+			board_log "another update command is still running after ${LOCK_WAIT} s; nothing changed"
+			exit "$REFUSED"
+		fi
 		;;
 	esac
-	if [ "${1:-}" != cancel ]; then
-		board_log "another update command is running"
-		exit "$REFUSED"
-	fi
 fi
 
 case "${1:-}" in

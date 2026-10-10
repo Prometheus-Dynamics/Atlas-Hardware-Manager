@@ -225,6 +225,22 @@ is "['sshd_config']" 'd["flags"]' "sshd_config changed" < "$T/run/drift.json"
 sh "$lib/status" --refresh-drift --quiet
 is "True []" '" ".join(str(x) for x in (d["root_read_only"], d["flags"]))' "a read-only root can't drift" < "$T/run/drift.json"
 
+echo "drift waits out an update command: no mounts while one holds the lock"
+if command -v flock >/dev/null 2>&1; then
+	cp "$T/run/drift.json" "$T/drift.before"
+	printf 'kernel=kernel_2712.img\ndtparam=audio=off\n' > "$T/boot/config.txt"
+	exec 8> "$T/run/update.lock"
+	flock -n 8
+	sh "$lib/status" --refresh-drift --quiet
+	cmp -s "$T/run/drift.json" "$T/drift.before" || fail "drift was checked while an update command held the lock"
+	exec 8>&-
+	sh "$lib/status" --refresh-drift --quiet
+	cmp -s "$T/run/drift.json" "$T/drift.before" && fail "drift should be checked once the lock is free"
+fi
+# A mount made in $(...) never reached MOUNTED, so cleanup left it mounted
+# (on hardware: p1 stayed mounted read-only and every update failed).
+if grep -q '\$(part_dir' "$lib/status"; then fail "part_dir must not run in a subshell"; fi
+
 echo "an unprivileged caller reads the kept result and checks nothing"
 if [ "$(id -u)" != 0 ]; then
 	at=$(py 'd["checked_at"]' < "$T/run/drift.json")

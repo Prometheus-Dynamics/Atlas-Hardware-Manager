@@ -79,9 +79,25 @@ update cancel                                # stop a running stage, or forget a
 update rollback [--no-reboot]                # boot the previous confirmed slot again
 ```
 
-Exit status 3 means "refused, nothing changed" (wrong state, or another
-command holds the lock); other failures after staging began are recorded as
-`error`.
+Exit status 3 means "refused, nothing changed": the wrong state, another
+command still holding the lock after `UPDATE_LOCK_WAIT` seconds (60), or a
+boot partition that is read-only (the refusal says where it is mounted so).
+Other failures after staging began are recorded as `error`. A write to p1
+that fails (state or `autoboot.txt`) ends the command with status 1 and the
+error in `update.json`; `autoboot.txt` is put back if the state couldn't
+follow it.
+
+- One command changes things at a time. A command that changes state waits
+  for the lock; `status` doesn't take it: it answers from `update.json`
+  (written by every command, with the boot it describes in
+  `update.json.boot`) and reads p1 only in a new boot or while a stage
+  runs. `check-link` waits for the services before it takes the lock, and
+  `board-update-link.service` runs after `board-update-confirm.service`.
+- The drift check (`status --refresh-drift`) mounts the boot slot and p1
+  read-only only while it holds the lock shared, and unmounts them before it
+  lets go. A read-only mount of p1 makes any other mount of it read-only
+  (they share the superblock), so while an update command runs the drift
+  check skips its round.
 
 - `stage-url` downloads with curl or wget, whichever the image has
   (`UPDATE_DOWNLOADER` picks one), into `/data/board/update/<sha256>.img`.

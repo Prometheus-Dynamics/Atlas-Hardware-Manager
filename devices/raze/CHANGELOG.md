@@ -320,7 +320,29 @@ commit; the commits are listed per area.
 
 ### Updates (A/B with tryboot)
 
-- **Found on hardware (fixed):**
+- **Found on hardware (fixed):** the first A/B update from an image (PV r5
+  to r7, a rollback and a roll-forward) needed manual workarounds:
+  - The drift check leaked read-only mounts of p1, p2 and p3 (made in a
+    subshell, so its cleanup never saw them; board-health.timer made them
+    every 10 s). The updater's own mount of p1 then came up read-only and
+    every write to it failed. The drift check now mounts in its own shell
+    and unmounts, and only while it holds the update lock shared (it skips a
+    round while an update command runs); the updater refuses a read-only p1
+    up front (status 3, saying where it is mounted so).
+  - `confirm` printed "confirmed" and `stage` "staged" while every write
+    failed (a function run in `cmd || rc=$?` has no `set -e`). A failed
+    write of the state or `autoboot.txt` now fails the command (status 1,
+    the error in `update.json`), and `autoboot.txt` is put back if the state
+    couldn't follow it.
+  - At boot, `confirm` and `check-link` failed with "another update command
+    is running" (board-agent's `status` calls held the lock), and
+    `check-link` held the lock through its 25 s delay, so a manual
+    `rollback` was refused. Commands that change state now wait for the lock
+    (`UPDATE_LOCK_WAIT`, 60 s), `status` answers from `update.json` without
+    it, and `check-link` waits before taking it.
+  - The kernel probe used `tr -c '[:print:]'`, which busybox doesn't
+    support, so `stage` said it couldn't compare the kernel. It now splits
+    on NULs (`tr '\000' '\n'`), tested with busybox's tools in CI.
   - `apply` used `systemctl reboot "0 tryboot"`, which systemd 258 rejects;
     it now passes `--reboot-argument='0 tryboot'`.
   - `apply` marked the update `trying` even when no restart happened. It now

@@ -295,8 +295,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# A partition's files, read-only: where the OS mounted it, else here.
+# part_dir <dev>: sets PART_DIR to the partition's files, read-only: where
+# the OS mounted it, else a mount here that cleanup removes. Not called in
+# $(...): a mount made in a subshell would never reach MOUNTED, and stayed.
 part_dir() {
+	PART_DIR=''
 	dev=$1
 	[ -b "$dev" ] || return 1
 	mnt=$(findmnt -n -o TARGET --source "$dev" 2>/dev/null | head -n 1) || mnt=''
@@ -305,7 +308,7 @@ part_dir() {
 		mkdir -p "$mnt" && mount -o ro "$dev" "$mnt" >/dev/null 2>&1 || return 1
 		MOUNTED="$MOUNTED $mnt"
 	fi
-	printf '%s\n' "$mnt"
+	PART_DIR=$mnt
 }
 
 # The running slot's boot files and p1, as directories.
@@ -325,8 +328,10 @@ slot_dirs() {
 	B) bootnum=${b%% *} ;;
 	*) return 0 ;;
 	esac
-	BOOT_DIR=$(part_dir "$(board_sibling_partition "$root" "$bootnum")") || BOOT_DIR=''
-	AB_DIR=$(part_dir "$(board_sibling_partition "$root" "$ab")") || AB_DIR=''
+	part_dir "$(board_sibling_partition "$root" "$bootnum")" || true
+	BOOT_DIR=$PART_DIR
+	part_dir "$(board_sibling_partition "$root" "$ab")" || true
+	AB_DIR=$PART_DIR
 }
 
 # compare <area> <baseline file> <current file>: drift items, one JSON
@@ -370,6 +375,18 @@ overrides() {
 }
 
 check_drift() {
+	# A read-only mount of p1 makes the updater's own mount of it read-only
+	# too (they share the superblock), so the mounts here exist only under
+	# the update lock, shared: while an update command runs, this round is
+	# skipped (drift.json keeps the last check), and the updater waits for
+	# these to go.
+	if command -v flock >/dev/null 2>&1; then
+		exec 7> "$BOARD_RUN_DIR/update.lock"
+		if ! flock -n -s 7; then
+			exec 7>&-
+			return 0
+		fi
+	fi
 	SLOT=$(board_active_slot)
 	work=$BOARD_RUN_DIR/drift.$$
 	mkdir -p "$work" "$DRIFT_DIR" 2>/dev/null || mkdir -p "$work"
@@ -424,6 +441,7 @@ check_drift() {
 	mv -f "$work/drift.json" "$DRIFT_JSON"
 	rm -rf "$work"
 	cleanup
+	exec 7>&-
 }
 
 drift_json() {

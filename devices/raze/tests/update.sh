@@ -261,15 +261,80 @@ events | tail -n 1 | grep -q '"kind":"update.confirmed","source":"local","messag
 UPDATE_CMDLINE_ROOT=6 update status | grep -q '"slot_active":"B","slot_staged":"B","version_active":"2.0"' ||
 	fail "status after confirm: $(cat "$T/run/update.json")"
 
-echo "status answers while another command holds the lock"
+echo "status answers while another command holds the lock; a writer waits, then gives up"
 if command -v flock >/dev/null 2>&1; then
 	exec 8> "$T/run/update.lock"
 	flock -n 8
 	update status | grep -q '"state":"confirmed"' || fail "busy status should print the last state"
-	if update apply 2>/dev/null; then fail "a second writer should be refused"; fi
+	rc=0
+	UPDATE_LOCK_WAIT=1 update apply 2> "$T/log" || rc=$?
+	[ "$rc" = 3 ] || fail "a writer still waiting for the lock should be refused with 3, got $rc"
+	grep -q "still running after 1 s; nothing changed" "$T/log" || fail "the refusal: $(cat "$T/log")"
 	if update cancel 2>/dev/null; then fail "cancel should refuse to stop a command that isn't a stage"; fi
 	exec 8>&-
+
+	echo "a writer waits for the lock (boot: confirm while board-agent asks)"
+	rm -f "$T/held"
+	(
+		flock -n 9 || exit 1
+		: > "$T/held"
+		sleep 2
+	) 9> "$T/run/update.lock" &
+	holder=$!
+	until [ -e "$T/held" ]; do sleep 0.1; done
+	UPDATE_CMDLINE_ROOT=6 UPDATE_LOCK_WAIT=10 update confirm || fail "confirm should wait for the lock, then run"
+	wait "$holder"
+
+	echo "check-link waits for the services without holding the lock"
+	UPDATE_CMDLINE_ROOT=6 UPDATE_LINK_DELAY=3 update check-link &
+	linker=$!
+	sleep 1
+	UPDATE_CMDLINE_ROOT=6 UPDATE_LOCK_WAIT=0 update confirm 2> "$T/log" || fail "check-link held the lock during its delay: $(cat "$T/log")"
+	wait "$linker" || fail "check-link failed"
 fi
+
+echo "status reads p1 again in a new boot (update.json is from the last one)"
+cp "$T/run/update.json" "$T/update.json.saved"
+sed -i 's/^ERROR=.*/ERROR='"'"'from p1'"'"'/' "$T/disk/p1.d/board-update.env"
+UPDATE_CMDLINE_ROOT=6 update status | grep -q '"error":"from p1"' && fail "the same boot should answer from update.json"
+next_boot
+UPDATE_CMDLINE_ROOT=6 update status | grep -q '"error":"from p1"' || fail "a new boot should read p1: $(cat "$T/run/update.json")"
+sed -i "s/^ERROR=.*/ERROR=''/" "$T/disk/p1.d/board-update.env"
+
+if [ "$(id -u)" != 0 ]; then
+	echo "a read-only p1 is refused before anything changes"
+	cp "$T/disk/p1.d/autoboot.txt" "$T/autoboot.saved"
+	chmod a-w "$T/disk/p1.d"
+	rc=0
+	UPDATE_CMDLINE_ROOT=6 update rollback --no-reboot 2> "$T/log" || rc=$?
+	chmod u+w "$T/disk/p1.d"
+	[ "$rc" = 3 ] || fail "a read-only p1 should be refused with 3, got $rc: $(cat "$T/log")"
+	grep -q "the boot partition (p1) is read-only; nothing changed" "$T/log" || fail "the refusal: $(cat "$T/log")"
+	grep -q '"error":"the boot partition (p1) is read-only' "$T/run/update.json" || fail "update.json: $(cat "$T/run/update.json")"
+	[ "$(state)" = confirmed ] || fail "nothing changed, state is $(state)"
+	cmp -s "$T/disk/p1.d/autoboot.txt" "$T/autoboot.saved" || fail "autoboot.txt changed"
+fi
+
+echo "a write that fails fails the command (and says nothing worked)"
+mkdir "$T/disk/p1.d/autoboot.txt.tmp"
+rc=0
+out=$(UPDATE_CMDLINE_ROOT=6 update rollback --no-reboot 2> "$T/log") || rc=$?
+rmdir "$T/disk/p1.d/autoboot.txt.tmp"
+[ "$rc" = 1 ] || fail "a failed autoboot.txt write should fail with 1, got $rc"
+grep -q "couldn't write autoboot.txt on the boot partition (p1)" "$T/log" || fail "the error: $(cat "$T/log")"
+grep -q "couldn't write autoboot.txt" "$T/run/update.json" || fail "update.json: $(cat "$T/run/update.json")"
+[ "$(state)" = confirmed ] || fail "state should stay confirmed, is $(state)"
+[ "$(autoboot)" = "[all] tryboot_a_b=1 boot_partition=3 " ] || fail "autoboot.txt: $(autoboot)"
+mkdir "$T/disk/p1.d/board-update.env.tmp"
+rc=0
+UPDATE_CMDLINE_ROOT=6 update rollback --no-reboot 2> "$T/log" || rc=$?
+rmdir "$T/disk/p1.d/board-update.env.tmp"
+[ "$rc" = 1 ] || fail "a failed state write should fail with 1, got $rc"
+grep -q "couldn't write board-update.env on the boot partition (p1); autoboot.txt is back as it was" "$T/log" ||
+	fail "the error: $(cat "$T/log")"
+[ "$(state)" = confirmed ] || fail "state should stay confirmed, is $(state)"
+[ "$(autoboot)" = "[all] tryboot_a_b=1 boot_partition=3 " ] || fail "autoboot.txt should be put back: $(autoboot)"
+rm -f "$T/disk/p1.d/board-update.env.undo"
 
 echo "rollback needs a previous confirmed slot"
 cp "$T/disk/p1.d/board-update.env" "$T/state.saved"
@@ -323,6 +388,26 @@ UPDATE_CMDLINE_ROOT=6 update stage "$img.xz" --sha256 "$(sha "$img.xz")"
 [ "$(state)" = staged ] || fail "state should be staged, is $(state)"
 cmp -s "$T/root.ref" "$T/disk/p5" || fail "root A should now hold the image"
 UPDATE_CMDLINE_ROOT=6 update cancel >/dev/null
+
+echo "the kernel probe reads a raw and a gzip kernel, with GNU's tools and busybox's"
+mkdir -p "$T/kboot"
+sed -n '/^kernel_release() {/,/^}/p' "$lib/update" > "$T/kprobe.sh"
+probe() { sh -c ". '$T/kprobe.sh'; kernel_release '$T/kboot'"; }
+kernel() { printf 'junk\000\001\377Linux version %s (builder@host) #1 SMP PREEMPT\000more\n' "$1"; }
+printf 'kernel=kernel_2712.img\n' > "$T/kboot/config.txt"
+kernel 7.2.9-v8-16k > "$T/kboot/kernel_2712.img"
+[ "$(probe)" = 7.2.9-v8-16k ] || fail "raw kernel: $(probe)"
+kernel 7.2.9-v8-16k | gzip > "$T/kboot/kernel_2712.img"
+[ "$(probe)" = 7.2.9-v8-16k ] || fail "gzip kernel: $(probe)"
+if command -v busybox >/dev/null 2>&1; then
+	mkdir -p "$T/bb"
+	for applet in sh sed tr head od gzip cat; do ln -sf "$(command -v busybox)" "$T/bb/$applet"; done
+	[ "$(PATH=$T/bb probe)" = 7.2.9-v8-16k ] || fail "gzip kernel with busybox: $(PATH=$T/bb probe)"
+	kernel 7.2.9-v8-16k > "$T/kboot/kernel_2712.img"
+	[ "$(PATH=$T/bb probe)" = 7.2.9-v8-16k ] || fail "raw kernel with busybox: $(PATH=$T/bb probe)"
+else
+	echo "  (no busybox here: skipped; CI installs it)"
+fi
 
 echo "an image whose kernel doesn't match its root's modules is refused"
 UPDATE_CMDLINE_ROOT=6 update cancel >/dev/null
