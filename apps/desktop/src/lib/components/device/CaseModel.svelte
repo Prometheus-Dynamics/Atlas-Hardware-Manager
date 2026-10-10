@@ -47,9 +47,9 @@
         const style = getComputedStyle(document.documentElement);
         const css = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
         const MATERIALS: Record<string, InstanceType<typeof THREE.MeshStandardMaterial>> = {
-          TOP: new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.75, metalness: 0.05 }),
-          BOTTOM: new THREE.MeshStandardMaterial({ color: 0x23262c, roughness: 0.8, metalness: 0.05 }),
-          HEATSINK: new THREE.MeshStandardMaterial({ color: 0x9aa3ad, roughness: 0.35, metalness: 0.8 }),
+          TOP: new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.75, metalness: 0.05, flatShading: true }),
+          BOTTOM: new THREE.MeshStandardMaterial({ color: 0x23262c, roughness: 0.8, metalness: 0.05, flatShading: true }),
+          HEATSINK: new THREE.MeshStandardMaterial({ color: 0x9aa3ad, roughness: 0.35, metalness: 0.8, flatShading: true }),
           DIFFUSER: new THREE.MeshStandardMaterial({
             color: 0xf2f4f7,
             roughness: 0.4,
@@ -58,7 +58,7 @@
             emissive: new THREE.Color(css("--accent", "#ff6b6b")),
             emissiveIntensity: 0.35,
           }),
-          BUTTON: new THREE.MeshStandardMaterial({ color: 0x4a505a, roughness: 0.6 }),
+          BUTTON: new THREE.MeshStandardMaterial({ color: 0x4a505a, roughness: 0.6, flatShading: true }),
         };
         const gltf = await new GLTFLoader().loadAsync("/models/raze-case.glb");
         gltf.scene.traverse((node) => {
@@ -66,6 +66,19 @@
           // The case's parts get these; the board's (PCB, IO_n) keep their own colours.
           const own = MATERIALS[mesh.name] ?? MATERIALS[mesh.parent?.name ?? ""];
           if (mesh.isMesh && own) mesh.material = own;
+          else if (mesh.isMesh) {
+            // The board's parts, in their colours from the CAD: greys are the
+            // connectors' metal shells, the rest plastic.
+            const base = (mesh.material as InstanceType<typeof THREE.MeshStandardMaterial>).color ?? new THREE.Color(0x888888);
+            const { s, l } = base.getHSL({ h: 0, s: 0, l: 0 });
+            const metal = s < 0.12 && l > 0.3 && l < 0.75;
+            mesh.material = new THREE.MeshStandardMaterial({
+              color: base,
+              metalness: metal ? 0.85 : 0.05,
+              roughness: metal ? 0.3 : 0.65,
+              flatShading: true,
+            });
+          }
         });
         board.add(gltf.scene);
         // The lens, which the case model leaves out: dark glass in the ring's

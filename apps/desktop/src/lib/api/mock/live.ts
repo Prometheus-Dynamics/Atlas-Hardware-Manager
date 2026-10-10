@@ -60,10 +60,11 @@ export function streamHardware(
       ? { id, class: model.class, model: model.model, status: "available", period_ms: period, channels: model.channels }
       : { id, missing: true, channels: [] };
   });
-  const start = performance.now();
-  // The board's monotonic clock: it has been up a while.
+  // The board's monotonic clock: it has been up a while, and it keeps
+  // counting across streams (a new stream mustn't step back in time).
+  const start = 0;
   const boot_us = 3_600_000_000;
-  const next = new Map(devices.map(([id]) => [id, 0]));
+  const next = new Map(devices.map(([id]) => [id, performance.now()]));
   setTimeout(() => onFrame({ type: "devices", devices: described }), 0);
   const timer = setInterval(() => {
     const now = performance.now() - start;

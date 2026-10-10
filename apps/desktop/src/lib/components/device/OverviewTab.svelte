@@ -12,6 +12,7 @@
   import { toasts } from "#lib/stores/toasts.svelte.ts";
   import { cameraStreams } from "#lib/present.ts";
   import CameraStreams from "./CameraStreams.svelte";
+  import OrientationCard from "./OrientationCard.svelte";
   import ControlsCard from "./ControlsCard.svelte";
   import Disclosure from "./Disclosure.svelte";
   import FactGrid from "./FactGrid.svelte";
@@ -162,6 +163,8 @@
       <CameraStreams {streams} device={deviceName(record)} />
     </div>
   {/if}
+
+  {#if online && reports}<OrientationCard {record} />{/if}
 
   {#if online && actions.length > 0}
     <ControlsCard {actions} {run} update={reports ? (status?.update ?? null) : undefined} />
