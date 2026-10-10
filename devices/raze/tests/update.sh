@@ -148,6 +148,27 @@ if update stage "$old.xz" --sha256 "$(sha "$old.xz")" 2>/dev/null; then fail "th
 grep -q "A/B layout" "$T/disk/p1.d/board-update.env" || fail "the error should name the layout"
 update cancel >/dev/null
 
+echo "an image cut inside root slot A copies what it has; cut earlier, it is refused"
+# A builder may end the image after the root's last data (Gaia's
+# truncate = "last-data"): the root's filesystem knows its own size.
+slots=$T/bin/board-image-slots
+cut=$((14336 * 512 + 5000 * 512 + 100))
+head -c "$cut" "$img" > "$T/cut.img"
+"$slots" --boot-out "$T/cut.boot" --root-out "$T/cut.root" < "$T/cut.img" > "$T/cut.env" ||
+	fail "a cut inside root A should be copied"
+grep -qx "ROOT_BYTES=$((5000 * 512 + 100))" "$T/cut.env" || fail "the bytes copied: $(cat "$T/cut.env")"
+head -c $((5000 * 512 + 100)) "$T/root.ref" | cmp -s - "$T/cut.root" || fail "root A's start differs"
+cmp -s "$T/boot.ref" "$T/cut.boot" || fail "boot A should be whole"
+head -c $((14336 * 512)) "$img" > "$T/cut.img"
+"$slots" --boot-out "$T/cut.boot" --root-out "$T/cut.root" < "$T/cut.img" > /dev/null 2> "$T/cut.err" &&
+	fail "an image that ends where root A starts should be refused"
+grep -q "ends before root slot A" "$T/cut.err" || fail "the reason: $(cat "$T/cut.err")"
+head -c $((6000 * 512)) "$img" > "$T/cut.img"
+"$slots" --boot-out "$T/cut.boot" --root-out "$T/cut.root" < "$T/cut.img" > /dev/null 2> "$T/cut.err" &&
+	fail "an image that ends inside boot A should be refused"
+grep -q "ends before boot slot A" "$T/cut.err" || fail "the reason: $(cat "$T/cut.err")"
+rm -f "$T"/cut.*
+
 echo "an image for another model is refused"
 new_root 6 2.0 orion-cam
 if update stage "$img.xz" --sha256 "$(sha "$img.xz")" 2>/dev/null; then fail "a wrong model should fail"; fi

@@ -17,6 +17,14 @@
  * thousandths (estimated until the root partition's end is known). On
  * success, prints BOOT_BYTES= and ROOT_BYTES= lines.
  *
+ * An image may end inside root slot A, the last partition it carries: a
+ * builder cuts it after the root's last data, since a root filesystem
+ * (EROFS, ext4) knows its own size from its superblock. The copy then stops
+ * where the image does and leaves the rest of the slot as it was;
+ * ROOT_BYTES says how much was written. An image that ends before root slot
+ * A starts, or inside the boot partition or the partition table, is still
+ * refused.
+ *
  * Exit codes: 0 ok, 1 I/O error, 2 usage, 3 not the A/B layout, 4 too big.
  */
 #define _FILE_OFFSET_BITS 64
@@ -152,11 +160,14 @@ static uint64_t capacity(int fd, const char *path)
 	return max ? strtoull(max, NULL, 10) : UINT64_MAX;
 }
 
-/* Copies `sectors` from the stream (at `start`) to `path`. */
-static uint64_t copy_out(uint64_t start, uint64_t sectors, const char *path, const char *what)
+/* Copies `sectors` from the stream (at `start`) to `path`. With `may_end`,
+ * the stream may end once the partition has begun: the bytes copied are
+ * returned. */
+static uint64_t copy_out(uint64_t start, uint64_t sectors, const char *path, const char *what,
+			 int may_end)
 {
 	int fd;
-	uint64_t left = sectors, bytes = sectors * SECTOR;
+	uint64_t left = sectors, bytes = sectors * SECTOR, copied = 0;
 	struct stat st;
 
 	skip_to(start, what);
@@ -168,7 +179,15 @@ static uint64_t copy_out(uint64_t start, uint64_t sectors, const char *path, con
 	while (left > 0) {
 		uint64_t n = left > CHUNK / SECTOR ? CHUNK / SECTOR : left;
 		size_t off = 0, len = n * SECTOR;
-		need(buf, n, what);
+		if (may_end) {
+			len = read_full(buf, len);
+			if (copied + len == 0)
+				die(3, "the image ends before %s", what);
+			pos += (len + SECTOR - 1) / SECTOR;
+			report();
+		} else {
+			need(buf, n, what);
+		}
 		while (off < len) {
 			ssize_t w = write(fd, buf + off, len - off);
 			if (w < 0 && errno == EINTR)
@@ -177,8 +196,12 @@ static uint64_t copy_out(uint64_t start, uint64_t sectors, const char *path, con
 				die(1, "writing %s: %s", path, strerror(errno));
 			off += (size_t)w;
 		}
+		copied += len;
+		if (len < n * SECTOR)
+			break; /* the image ends here */
 		left -= n;
 	}
+	bytes = copied;
 	if (fstat(fd, &st) == 0 && S_ISREG(st.st_mode) && ftruncate(fd, (off_t)bytes) != 0)
 		die(1, "%s: %s", path, strerror(errno));
 	if (fsync(fd) != 0 || close(fd) != 0)
@@ -244,7 +267,7 @@ int main(int argc, char **argv)
 	for (logical = 5; !root_done; logical++) {
 		struct entry part, next;
 		if (!boot_done && boot.start < ebr_at) {
-			boot_bytes = copy_out(boot.start, boot.sectors, boot_out, "boot slot A");
+			boot_bytes = copy_out(boot.start, boot.sectors, boot_out, "boot slot A", 0);
 			boot_done = 1;
 		}
 		skip_to(ebr_at, "an extended boot record");
@@ -257,10 +280,10 @@ int main(int argc, char **argv)
 				die(3, "partition %d isn't a Linux root partition", root_part);
 			total = ebr_at + part.start + part.sectors;
 			if (!boot_done && boot.start < ebr_at + part.start) {
-				boot_bytes = copy_out(boot.start, boot.sectors, boot_out, "boot slot A");
+				boot_bytes = copy_out(boot.start, boot.sectors, boot_out, "boot slot A", 0);
 				boot_done = 1;
 			}
-			root_bytes = copy_out(ebr_at + part.start, part.sectors, root_out, "root slot A");
+			root_bytes = copy_out(ebr_at + part.start, part.sectors, root_out, "root slot A", 1);
 			root_done = 1;
 			continue;
 		}
@@ -271,7 +294,7 @@ int main(int argc, char **argv)
 		ebr_at = ext.start + next.start;
 	}
 	if (!boot_done)
-		boot_bytes = copy_out(boot.start, boot.sectors, boot_out, "boot slot A");
+		boot_bytes = copy_out(boot.start, boot.sectors, boot_out, "boot slot A", 0);
 
 	if (drain)
 		while (read_full(buf, CHUNK) > 0)

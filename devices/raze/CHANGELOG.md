@@ -379,6 +379,12 @@ commit; the commits are listed per area.
   (gaia/data.toml: util-linux's basic set and partition utilities,
   e2fsprogs with resize2fs). Slot B's root (p6) is only read after `stage`
   writes it, so an unwritten p6 needs nothing.
+- **Updates from a truncated image:** `board-image-slots` accepts an image
+  that ends inside root slot A (Gaia's `truncate = "last-data"`): it copies
+  what the image has and leaves the rest of the slot, since the root
+  filesystem knows its own size. An image that ends before root slot A
+  starts, or inside the boot partition, is still refused. The updater that
+  installs the first truncated image must already have this.
 - **A flash resets /data, an update keeps it:** an image whose build writes
   a flash id (one line, new each build) to `board/flash-id` on the boot
   partition gets a data filesystem whose UUID is made from it; on boot, a
