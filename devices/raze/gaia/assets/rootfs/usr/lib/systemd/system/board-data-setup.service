@@ -1,0 +1,20 @@
+[Unit]
+Description=Board data partition (grow it, and make its filesystem on a fresh flash)
+Documentation=file:/usr/lib/board/data-setup
+# Before /data is mounted: early, without the default dependencies.
+DefaultDependencies=no
+After=systemd-udev-trigger.service systemd-udevd.service
+Before=local-fs-pre.target shutdown.target
+Wants=local-fs-pre.target
+Conflicts=shutdown.target
+ConditionPathIsMountPoint=!/data
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/board/data-setup
+# A first boot makes the filesystem (lazily: seconds, even on 64 GB).
+TimeoutStartSec=5min
+
+[Install]
+WantedBy=local-fs.target

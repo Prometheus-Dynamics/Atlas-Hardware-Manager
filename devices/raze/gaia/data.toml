@@ -1,0 +1,16 @@
+# Raze: /data on first boot (/usr/lib/board/data-setup, staged by
+# runtime.toml): an image needn't carry a data filesystem or end where the
+# eMMC ends. The tools it uses: sfdisk, blkid, blockdev (util-linux's basic
+# set), partx (its partition utilities), mkfs.ext4, e2fsck, dumpe2fs and
+# resize2fs (e2fsprogs).
+gaia_version = ">=2.0.0"
+
+[image]
+kind = "buildroot"
+config_overrides = [
+  ["BR2_PACKAGE_UTIL_LINUX", "y"],
+  ["BR2_PACKAGE_UTIL_LINUX_BINARIES", "y"],
+  ["BR2_PACKAGE_UTIL_LINUX_PARTX", "y"],
+  ["BR2_PACKAGE_E2FSPROGS", "y"],
+  ["BR2_PACKAGE_E2FSPROGS_RESIZE2FS", "y"],
+]

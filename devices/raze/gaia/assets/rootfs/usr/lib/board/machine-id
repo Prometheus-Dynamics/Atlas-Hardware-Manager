@@ -1,0 +1,51 @@
+#!/bin/sh
+# A stable /etc/machine-id on a read-only root (board-machine-id.service,
+# early). systemd makes up a new one every boot when /etc/machine-id can't
+# be written, so the persistent journal (/var/log/journal/<machine-id>)
+# started a new directory per boot that journald never bounded or rotated.
+# This binds the board's own id over it: /data/board/machine-id when one is
+# kept there, else one derived from the board serial (so it stays the same
+# after a reflash too), and restarts journald if the id changed, before the
+# journal is flushed to disk.
+# Settings: BOARD_MACHINE_ID_FILE (/etc/machine-id), BOARD_MOUNT (mount),
+# BOARD_SYSTEMCTL (systemctl).
+set -u
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+
+ETC_ID=${BOARD_MACHINE_ID_FILE:-/etc/machine-id}
+MOUNT=${BOARD_MOUNT:-mount}
+SYSTEMCTL=${BOARD_SYSTEMCTL:-systemctl}
+
+valid() { printf '%s' "$1" | grep -q '^[0-9a-f]\{32\}$'; }
+
+current=$(tr -d '\n' < "$ETC_ID" 2>/dev/null) || current=''
+kept=$(tr -d '\n' < "$BOARD_DATA_DIR/machine-id" 2>/dev/null) || kept=''
+if valid "$kept"; then
+	id=$kept
+else
+	serial=$(board_serial)
+	if [ -z "$serial" ]; then
+		board_log "no board serial and no kept machine id; keeping $ETC_ID as it is"
+		exit 0
+	fi
+	# 128 bits from the serial, as systemd formats a machine id.
+	id=$(printf 'raze-machine-id:%s' "$serial" | sha256sum | cut -c1-32)
+fi
+[ "$id" != "$current" ] || exit 0
+
+mkdir -p "$BOARD_RUN_DIR"
+printf '%s\n' "$id" > "$BOARD_RUN_DIR/machine-id.tmp.$$" &&
+	chmod 0444 "$BOARD_RUN_DIR/machine-id.tmp.$$" &&
+	mv -f "$BOARD_RUN_DIR/machine-id.tmp.$$" "$BOARD_RUN_DIR/machine-id"
+if ! $MOUNT --bind "$BOARD_RUN_DIR/machine-id" "$ETC_ID"; then
+	board_log "couldn't bind the machine id over $ETC_ID"
+	exit 0
+fi
+# journald took the old id when it started: it opens its directory by the
+# new one from here on.
+$SYSTEMCTL restart systemd-journald.service 2>/dev/null || true
+board_log "machine id $id (was ${current:-unset})"
+exit 0

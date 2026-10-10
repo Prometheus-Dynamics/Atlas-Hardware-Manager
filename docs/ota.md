@@ -284,8 +284,12 @@ Nothing in the device package writes to `/` at runtime:
 | user overrides of the package's `*.env` settings | `/data/board/` (read after `/etc/board/`) |
 | hostname | the kernel's transient hostname; `/etc` is never written |
 
-The OS provides: `/data` mounted early, a persistent or transient
-`/etc/machine-id`, SSH host keys on `/data`, and its own writable paths.
+The OS provides: `/data` mounted early (from the data partition, p7, which
+the package grows to the end of the eMMC and formats on a fresh flash:
+`board-data-setup.service`), `/var/log/journal` on `/data` (the package
+keeps the journal there, bounded, under a stable machine id:
+`board-machine-id.service`), SSH host keys on `/data`, and its own writable
+paths.
 
 ## Board clock
 

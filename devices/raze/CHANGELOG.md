@@ -363,6 +363,22 @@ commit; the commits are listed per area.
 
 ### Updates (A/B with tryboot)
 
+- **Logs survive a reboot:** a journald drop-in keeps the journal on disk
+  (`Storage=persistent`, `SystemMaxUse=64M`, `SystemKeepFree=256M`; the OS
+  keeps `/var/log/journal` on /data), and `board-machine-id.service` binds a
+  stable machine id over `/etc/machine-id` early (a kept
+  `/data/board/machine-id`, else one derived from the board serial, so it
+  survives a reflash), restarting journald when it changed. systemd made up
+  a new id every boot on the read-only root, so each boot's journal went to
+  a new directory and was never bounded.
+- **/data on first boot:** `board-data-setup.service` grows the data
+  partition (p7, with its extended partition) to the end of the eMMC and
+  makes an ext4 filesystem on it when it has no signature at all; an
+  existing filesystem is kept, a smaller ext4 is checked and grown. Images
+  no longer need to carry a data filesystem. The layer selects the tools
+  (gaia/data.toml: util-linux's basic set and partition utilities,
+  e2fsprogs with resize2fs). Slot B's root (p6) is only read after `stage`
+  writes it, so an unwritten p6 needs nothing.
 - **An apply cut short is still staged, not rolled back:** twice on a board
   the reset came during the old slot's shutdown (the `shutdown` line torn
   into NULs), before the restart into the trial, so the firmware booted the

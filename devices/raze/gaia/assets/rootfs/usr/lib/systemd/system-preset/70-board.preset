@@ -18,5 +18,7 @@ enable board-agent.service
 enable lemnos-orion.service
 enable board-orion-env.service
 enable board-boot.service
+enable board-machine-id.service
+enable board-data-setup.service
 enable board-drift.timer
 enable board-health.timer

@@ -1,0 +1,121 @@
+#!/bin/sh
+# /data on first boot (board-data-setup.service, before the local
+# filesystems are mounted). An image no longer has to carry a data
+# filesystem or end where the disk ends:
+#   1. the data partition (BOARD_DATA_PART, 7) grows, with the extended
+#      partition it sits in, to the end of the disk when more than 1 MiB is
+#      left, and the kernel is told the new sizes;
+#   2. a partition with no signature at all gets a new ext4 filesystem;
+#      anything blkid recognizes is left as it is, and an ext4 smaller than
+#      its partition is checked and grown.
+# A reflash that keeps whatever was on the eMMC therefore keeps an old /data
+# (Atlas's flash clears it, as a flash promises). Logs data.grown,
+# data.created and data.resized events.
+# Settings: data.env. Test hooks: BOARD_DATA_DISK, BOARD_DATA_DEV (files
+# stand in for the disk and the partition).
+set -u
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+board_load_env data.env
+
+part=${BOARD_DATA_PART:-7}
+root=$(board_root_device)
+dev=${BOARD_DATA_DEV:-$(board_sibling_partition "$root" "$part" 2>/dev/null || true)}
+case "${BOARD_DATA_DISK:-}" in
+'')
+	case "$dev" in
+	*[0-9]p[0-9]*) disk=${dev%p[0-9]*} ;;
+	*) disk=${dev%%[0-9]*} ;;
+	esac
+	;;
+*) disk=$BOARD_DATA_DISK ;;
+esac
+if [ -z "$dev" ] || [ -z "$disk" ]; then
+	board_log "no data partition next to the root (${root:-unknown}); nothing to set up"
+	exit 0
+fi
+
+# The partition may show up a moment after the disk.
+waited=0
+until [ -e "$dev" ] || [ "$waited" -ge 10 ]; do
+	sleep 1
+	waited=$((waited + 1))
+done
+[ -e "$dev" ] || {
+	board_log "$dev isn't there; nothing to set up"
+	exit 0
+}
+
+# <number> <start> <size> <type> for each partition of the disk (sectors).
+table() {
+	sfdisk -d "$disk" 2>/dev/null | sed -n 's/^[^ ]*[^0-9]\([0-9][0-9]*\) *: *start= *\([0-9]*\), *size= *\([0-9]*\), *type= *\([0-9a-fA-F]*\).*/\1 \2 \3 \4/p'
+}
+entry() { table | awk -v n="$1" '$1 == n'; }
+
+# The disk's size in 512-byte sectors.
+sectors() {
+	if [ -b "$disk" ]; then
+		blockdev --getsz "$disk"
+	else
+		echo $(($(wc -c < "$disk") / 512))
+	fi
+}
+
+# 1. Grow.
+if [ "${BOARD_DATA_GROW:-1}" = 1 ] && line=$(entry "$part") && [ -n "$line" ]; then
+	set -- $line
+	start=$2 size=$3
+	total=$(sectors)
+	if [ $((start + size)) -lt $((total - 2048)) ]; then
+		grown=''
+		# A logical partition grows its extended partition first.
+		ext=$(table | awk '$4 == "5" || $4 == "f" || $4 == "F" || $4 == "85" { print $1; exit }')
+		if [ "$part" -ge 5 ] && [ -n "$ext" ]; then
+			echo ', +' | sfdisk --no-reread --no-tell-kernel -q -N "$ext" "$disk" >/dev/null 2>&1 &&
+				[ -b "$disk" ] && partx -u --nr "$ext" "$disk" 2>/dev/null
+		fi
+		if echo ', +' | sfdisk --no-reread --no-tell-kernel -q -N "$part" "$disk" >/dev/null 2>&1; then
+			[ -b "$disk" ] && partx -u --nr "$part" "$disk" 2>/dev/null
+			grown=$(entry "$part" | awk '{ print $3 }')
+		fi
+		if [ -n "$grown" ] && [ "$grown" -gt "$size" ]; then
+			board_event data.grown "the data partition grew to the end of the disk" \
+				"from_mib=$((size / 2048))" "to_mib=$((grown / 2048))"
+		else
+			board_log "couldn't grow $dev to the end of $disk"
+		fi
+	fi
+fi
+
+# 2. A filesystem.
+if ! blkid -p "$dev" >/dev/null 2>&1; then
+	# Nothing recognizable: a fresh flash that ended before this partition.
+	if mkfs.ext4 -q -F -L "${BOARD_DATA_LABEL:-data}" -E lazy_itable_init=1,lazy_journal_init=1 "$dev" >/dev/null 2>&1; then
+		board_event data.created "a new data filesystem on $dev" "dev=$dev"
+	else
+		board_log "couldn't make a filesystem on $dev"
+	fi
+	exit 0
+fi
+[ "$(blkid -p -o value -s TYPE "$dev" 2>/dev/null)" = ext4 ] || exit 0
+# An ext4 smaller than its (grown) partition grows to fill it.
+blocks=$(dumpe2fs -h "$dev" 2>/dev/null | sed -n 's/^Block count: *//p')
+bsize=$(dumpe2fs -h "$dev" 2>/dev/null | sed -n 's/^Block size: *//p')
+# The partition's size as the kernel has it (after a grow, partx told it).
+if [ -b "$dev" ]; then
+	bytes=$(blockdev --getsize64 "$dev" 2>/dev/null)
+else
+	bytes=$(wc -c < "$dev")
+fi
+if [ -n "$blocks" ] && [ -n "$bsize" ] && [ -n "$bytes" ] &&
+	[ $((bytes - blocks * bsize)) -gt 1048576 ]; then
+	e2fsck -f -p "$dev" >/dev/null 2>&1
+	if [ $? -lt 4 ] && resize2fs "$dev" >/dev/null 2>&1; then
+		board_event data.resized "the data filesystem grew to fill its partition" "dev=$dev"
+	else
+		board_log "couldn't grow the filesystem on $dev"
+	fi
+fi
+exit 0

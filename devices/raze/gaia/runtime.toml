@@ -133,6 +133,44 @@ dest = "/usr/lib/systemd/system/board-hostname.service"
 origin = "static-asset"
 
 [[stage.files]]
+id = "raze-systemd-system-board-data-setup-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-data-setup.service"
+dest = "/usr/lib/systemd/system/board-data-setup.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-board-data-setup"
+src = "@self/assets/rootfs/usr/lib/board/data-setup"
+dest = "/usr/lib/board/data-setup"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
+id = "raze-board-data-env"
+src = "@self/assets/rootfs/usr/lib/board/data.env"
+dest = "/usr/lib/board/data.env"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-machine-id-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-machine-id.service"
+dest = "/usr/lib/systemd/system/board-machine-id.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-board-machine-id"
+src = "@self/assets/rootfs/usr/lib/board/machine-id"
+dest = "/usr/lib/board/machine-id"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
+id = "raze-systemd-journald-conf-d-60-board"
+src = "@self/assets/rootfs/usr/lib/systemd/journald.conf.d/60-board.conf"
+dest = "/usr/lib/systemd/journald.conf.d/60-board.conf"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-systemd-system-board-stream-socket"
 src = "@self/assets/rootfs/usr/lib/systemd/system/board-stream.socket"
 dest = "/usr/lib/systemd/system/board-stream.socket"
@@ -474,6 +512,12 @@ stage_files = [
   "raze-systemd-system-board-hostname-service",
   "raze-systemd-system-board-http-socket",
   "raze-systemd-system-board-stream-socket",
+  "raze-systemd-system-board-data-setup-service",
+  "raze-board-data-setup",
+  "raze-board-data-env",
+  "raze-systemd-system-board-machine-id-service",
+  "raze-board-machine-id",
+  "raze-systemd-journald-conf-d-60-board",
   "raze-systemd-system-board-stream-service",
   "raze-systemd-system-board-http-service",
   "raze-systemd-system-board-identity-service",

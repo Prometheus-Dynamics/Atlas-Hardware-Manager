@@ -39,4 +39,5 @@ imports = [
   "./lemnos.toml",
   "./board-agent.toml",
   "./board-stream.toml",
+  "./data.toml",
 ]
