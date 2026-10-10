@@ -71,7 +71,7 @@
 <div class="box" bind:clientWidth={width} bind:clientHeight={boxHeight}>
   <div class="relative my-auto shrink-0" style="height: {height}px; min-width: {map.depth * colW + NODE_W + PAD * 2}px">
     <svg class="absolute inset-0 h-full w-full" aria-hidden="true">
-      {#each map.edges as edge (edge.from + edge.to)}
+      {#each map.edges as edge (`${edge.from}>${edge.to}`)}
         {@const from = byId.get(edge.from)}
         {@const to = byId.get(edge.to)}
         {#if from && to}
@@ -81,7 +81,7 @@
       <!-- Labels over every wire, at the end of theirs, just before the
            device: wires that fan out of one node share their middle, not
            their ends. -->
-      {#each map.edges as edge (edge.from + edge.to)}
+      {#each map.edges as edge (`${edge.from}>${edge.to}`)}
         {@const to = byId.get(edge.to)}
         {#if to && edge.label && byId.has(edge.from)}
           <text x={x(to) - 8} y={y(to) - 5} class="tag">{edge.label}</text>

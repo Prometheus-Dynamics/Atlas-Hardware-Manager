@@ -16,7 +16,9 @@
   let info = $state<NtServerInfo | null>(null);
   let cameras = $state<NtCameraAddress[]>([]);
   let port = $state(5810);
-  let writes = $state<{ at: number; client: string; name: string; value: string }[]>([]);
+  // id: writes to one topic can land in the same millisecond.
+  let writes = $state<{ id: number; at: number; client: string; name: string; value: string }[]>([]);
+  let writeSeq = 0;
   let newName = $state("/");
   let newType = $state<string>("double");
   let newValue = $state("");
@@ -41,7 +43,7 @@
   async function watch() {
     await api.ntServerWatch((frame) => {
       if (frame.type === "wrote") {
-        writes = [{ at: Date.now(), client: frame.client, name: frame.name, value: formatNt(frame.value) }, ...writes].slice(0, 15);
+        writes = [{ id: ++writeSeq, at: Date.now(), client: frame.client, name: frame.name, value: formatNt(frame.value) }, ...writes].slice(0, 15);
         soon();
       } else if (frame.type === "warning") {
         toasts.error(frame.message);
@@ -219,7 +221,7 @@
             <p class="text-[13px] text-fg-muted">Nothing yet.</p>
           {:else}
             <ul class="flex flex-col gap-1 text-[12.5px]">
-              {#each writes as write (write.at + write.name)}
+              {#each writes as write (write.id)}
                 <li class="flex gap-2">
                   <span class="text-fg-faint">{time(write.at)}</span>
                   <span class="text-fg-muted">{write.client}</span>

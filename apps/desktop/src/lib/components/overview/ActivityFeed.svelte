@@ -15,7 +15,7 @@
   let expanded = $state(false);
 
   /** A row: one entry, or a burst of the same thing (a scan finding eight devices). */
-  type Row = { entry: ActivityEntry; count: number; names: string[] };
+  type Row = { entry: ActivityEntry; count: number; names: string[]; key: string };
 
   const GROUPABLE = new Set<ActivityKind>(["device-found", "device-online", "device-offline"]);
   const BURST_MS = 30_000;
@@ -26,6 +26,9 @@
 
   const rows = $derived.by(() => {
     const out: Row[] = [];
+    // Two entries can match in time and text (a board that staged the same
+    // version twice, caught up in one batch): the nth such gets #n.
+    const seen = new Map<string, number>();
     for (const entry of entries) {
       const last = out.at(-1);
       if (
@@ -37,7 +40,10 @@
         last.count++;
         last.names.push(subject(entry));
       } else {
-        out.push({ entry, count: 1, names: [subject(entry)] });
+        const base = `${entry.at_ms}|${entry.kind}|${entry.message}`;
+        const n = seen.get(base) ?? 0;
+        seen.set(base, n + 1);
+        out.push({ entry, count: 1, names: [subject(entry)], key: n ? `${base}#${n}` : base });
       }
     }
     return out;
@@ -85,7 +91,7 @@
   <p class="py-6 text-center text-[13px] text-fg-faint">{empty}</p>
 {:else}
   <ol class="feed">
-    {#each shown as row, i (row.entry.at_ms + row.entry.message)}
+    {#each shown as row, i (row.key)}
       {@const entry = row.entry}
       {@const clickable = row.count === 1 && !!entry.device && !!devices.get(entry.device)}
       <li in:rise={{ delay: stagger(i) }}>
