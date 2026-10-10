@@ -393,6 +393,9 @@ commit; the commits are listed per area.
   ids through lemnosd by that bus name (without lemnosd it can't be probed).
   The vendored Lemnos board schema also takes `pio-i2c:` buses, which
   lemnos-board accepts but its schema file doesn't yet.
+- **Lemnos 5b1d38c:** lemnosd holds the trial ember until update.json's
+  `phase` is `checking`, and its board schema takes `pio-i2c:` buses, so
+  the vendored copy is upstream's again.
 - **Lemnos 068427e:** the PIO I2C bus, the drain looks, the trial-boot
   ember, the chase glow (`spinner_base`) and channel-selective reads.
 - **The trial's phase:** while an update is `trying`, update.json's
