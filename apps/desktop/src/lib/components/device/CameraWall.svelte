@@ -18,8 +18,28 @@
       .flatMap((record) => cameraStreams(record).map((stream, index) => ({ record, stream, index }))),
   );
   let width = $state(1200);
-  // Auto: as many columns as fit at about 420 px.
-  const cols = $derived(columns || Math.max(1, Math.min(tiles.length || 1, Math.floor(width / 420))));
+  let wall = $state<HTMLDivElement>();
+  let windowHeight = $state(900);
+  // Auto: the columns that make the tiles largest with all of them on the
+  // screen (16:9 views, a caption under each), the wall centred; a set
+  // number of columns fills the width.
+  const GAP = 8;
+  const CAPTION = 22;
+  const layout = $derived.by(() => {
+    const n = tiles.length || 1;
+    if (columns) return { cols: columns, tile: 0 };
+    const room = Math.max(240, windowHeight - (wall?.getBoundingClientRect().top ?? 160) - 24);
+    let best = { cols: 1, tile: 0 };
+    for (let c = 1; c <= n; c++) {
+      const rows = Math.ceil(n / c);
+      const byWidth = (width - GAP * (c - 1)) / c;
+      const byHeight = (((room - GAP * (rows - 1)) / rows - CAPTION) * 16) / 9;
+      const tile = Math.floor(Math.min(byWidth, byHeight));
+      if (tile > best.tile) best = { cols: c, tile };
+    }
+    // Never tiny: below about 280 px, scroll instead.
+    return best.tile >= 280 ? best : { cols: Math.max(1, Math.min(n, Math.floor(width / 360))), tile: 0 };
+  });
   let open = $state<{ streams: CameraStream[]; index: number; device: string } | null>(null);
 
   $effect(() => watchLive(records));
@@ -36,7 +56,9 @@
   }
 </script>
 
-<div class="wall" bind:clientWidth={width} style="grid-template-columns: repeat({cols}, minmax(0, 1fr))">
+<svelte:window bind:innerHeight={windowHeight} />
+
+<div class="wall" bind:this={wall} bind:clientWidth={width} style="grid-template-columns: repeat({layout.cols}, {layout.tile ? `${layout.tile}px` : 'minmax(0, 1fr)'})">
   {#each tiles as tile (keyString(tile.record.key) + tile.stream.name)}
     <figure class="tile">
       <CameraPreview
@@ -65,6 +87,7 @@
     display: grid;
     gap: 8px;
     align-content: start;
+    justify-content: center;
   }
   .tile {
     display: flex;

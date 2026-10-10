@@ -37,18 +37,15 @@
             <DeviceCard {record} />
           </div>
         {/each}
-        {#if group === groups[groups.length - 1]}
-          <div class="hint-card">
-            <Icon name="plug-connected" size={20} />
-            <p>Plug in a device or join the robot network</p>
-            <span class="text-[12px] text-fg-faint">
-              It shows up here the moment it's connected
-            </span>
-          </div>
-        {/if}
       </div>
     </section>
   {/each}
+  <!-- One line, not a card: it never takes a row of its own. -->
+  <p class="hint">
+    <Icon name="plug-connected" size={15} />
+    <span>Plug in a device or join the robot network:</span>
+    <span class="text-fg-faint">it shows up here the moment it's connected.</span>
+  </p>
 {/if}
 
 <style>
@@ -63,22 +60,15 @@
   .grid-cards > :global(div) {
     min-width: 0;
   }
-  .hint-card {
+  .hint {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 6px;
-    min-height: var(--card-h);
-    padding: 16px;
-    text-align: center;
-    border-radius: var(--r-card);
+    gap: 8px;
+    margin-top: -12px;
+    padding: 8px 12px;
     border: 1px dashed var(--glass-border-strong);
-    color: var(--fg-faint);
-  }
-  .hint-card p {
-    font-size: 13px;
+    border-radius: var(--r-card);
+    font-size: 12.5px;
     color: var(--fg-muted);
-    max-width: 180px;
   }
 </style>
