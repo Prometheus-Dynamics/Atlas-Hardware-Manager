@@ -374,7 +374,7 @@ through board-agent, or someone typing on the board.
   so the board is seen going and coming back; boards without the stream are
   polled as before.
 - **Live readings.** The same stream's `hardware` topic:
-  `GET /stream?topics=hardware&hardware=imu:10,power-monitor:100`
+  `GET /stream?topics=hardware&hardware=imu:10,power:100`
   (device:period ms, at least 5 ms, at most 8 devices) opens one lemnosd
   connection (`board-stream`) for that viewer and subscribes those devices
   only while it is connected, so nothing is read for nobody. lemnosd reads

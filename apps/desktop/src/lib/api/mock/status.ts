@@ -229,7 +229,7 @@ function hardwareFor(device: SimDevice, now: number, celsius: number): HardwareS
         controls: [],
       },
       {
-        id: "power-monitor",
+        id: "power",
         class: "power",
         model: "ina238",
         status: "available",

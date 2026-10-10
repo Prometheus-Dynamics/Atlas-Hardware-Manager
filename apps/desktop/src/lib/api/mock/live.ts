@@ -21,7 +21,7 @@ const MODELS: Record<string, Model> = {
       return [0.2 * Math.cos(t * 1.3), -0.15 * Math.sin(t * 0.9), 0.05 * Math.sin(t * 3)][i - 3] + bump * 1.2 + noise(0.01);
     },
   },
-  "power-monitor": {
+  power: {
     class: "power",
     model: "ina238",
     channels: [

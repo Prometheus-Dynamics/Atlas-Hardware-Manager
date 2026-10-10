@@ -21,7 +21,7 @@ pub const MAX_DEVICES: usize = 8;
 pub const MIN_PERIOD_MS: u32 = 5;
 const DEFAULT_PERIOD_MS: u32 = 20;
 
-/// `imu:10,power-monitor`: device ids (as the board file names them) with
+/// `imu:10,power`: device ids (as the board file names them) with
 /// an optional period in ms.
 fn devices(value: &str) -> Result<Vec<(String, u32)>, Refusal> {
     let bad = || refuse("400 Bad Request", "hardware is <device>[:<ms>],...");
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn hardware_names_devices_and_their_periods() {
         let request = parse(
-            "GET /stream?topics=hardware&hardware=imu:10,power-monitor,fan:1,imu:50 HTTP/1.1\r\n\r\n",
+            "GET /stream?topics=hardware&hardware=imu:10,power,fan:1,imu:50 HTTP/1.1\r\n\r\n",
         )
         .unwrap();
         assert!(!request.events && !request.update);
@@ -194,7 +194,7 @@ mod tests {
             request.hardware,
             [
                 ("imu".to_string(), 10),
-                ("power-monitor".to_string(), DEFAULT_PERIOD_MS),
+                ("power".to_string(), DEFAULT_PERIOD_MS),
                 ("fan".to_string(), MIN_PERIOD_MS),
             ],
             "the default, the floor, and a device named twice keeps the first"
