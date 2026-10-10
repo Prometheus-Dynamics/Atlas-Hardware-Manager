@@ -9,7 +9,9 @@ const BLOCK: usize = 512;
 /// `mass-storage-gadget64` directory from `raspberrypi/usbboot`.
 ///
 /// Lookup follows `rpiboot`: a loose file in `<dir>/<chip folder>/` wins,
-/// then the entry in `bootfiles.bin`, then `<dir>/<name>`.
+/// then the entry in `bootfiles.bin` (or the same tree unpacked, as
+/// `<dir>/bootfiles/<chip folder>/`, the raze-flasher bundle's layout), then
+/// `<dir>/<name>`.
 pub struct BootFiles {
     dir: PathBuf,
     /// `bootfiles.bin`, a tar archive with one folder per chip.
@@ -61,8 +63,14 @@ impl BootFiles {
         &self.dir
     }
 
-    fn loose_candidates(&self, chip: Chip, name: &str) -> [PathBuf; 2] {
-        [self.dir.join(chip.folder()).join(name), self.dir.join(name)]
+    /// The loose files that can hold `name`, in order: the chip override,
+    /// the unpacked `bootfiles/` tree, the top level.
+    fn loose_candidates(&self, chip: Chip, name: &str) -> [PathBuf; 3] {
+        [
+            self.dir.join(chip.folder()).join(name),
+            self.dir.join("bootfiles").join(chip.folder()).join(name),
+            self.dir.join(name),
+        ]
     }
 
     fn contains(&self, chip: Chip, name: &str) -> bool {
@@ -86,7 +94,7 @@ impl BootFiles {
         if name.is_empty() || name.contains("..") || name.contains('\\') || name.contains(':') {
             return Ok(None);
         }
-        let [chip_override, top_level] = self.loose_candidates(chip, name);
+        let [chip_override, unpacked, top_level] = self.loose_candidates(chip, name);
         let read = |path: &Path| {
             std::fs::read(path).map_err(|error| UsbBootError::Io {
                 path: path.to_path_buf(),
@@ -95,6 +103,9 @@ impl BootFiles {
         };
         if chip_override.is_file() {
             return read(&chip_override).map(Some);
+        }
+        if unpacked.is_file() {
+            return read(&unpacked).map(Some);
         }
         if let Some(data) = self.archive_entry(chip, name) {
             return Ok(Some(data.to_vec()));
@@ -227,6 +238,30 @@ pub(crate) mod tests {
         assert_eq!(
             files.read(Chip::Bcm2711, "boot.img").unwrap().unwrap(),
             b"ramdisk"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// raze-flasher's bundle: bootfiles/2712/bootcode5.bin unpacked, the
+    /// outer config.txt and boot.img at the top.
+    #[test]
+    fn an_unpacked_bootfiles_tree_works_like_the_archive() {
+        let dir = temp_dir("unpacked");
+        std::fs::create_dir_all(dir.join("bootfiles/2712")).unwrap();
+        std::fs::write(dir.join("bootfiles/2712/bootcode5.bin"), b"cm5-stage2").unwrap();
+        std::fs::write(dir.join("config.txt"), b"boot_ramdisk=1").unwrap();
+        std::fs::write(dir.join("boot.img"), b"flasher").unwrap();
+
+        let files = BootFiles::open(&dir).unwrap();
+
+        assert_eq!(files.second_stage(Chip::Bcm2712).unwrap(), b"cm5-stage2");
+        assert_eq!(
+            files.read(Chip::Bcm2712, "config.txt").unwrap().unwrap(),
+            b"boot_ramdisk=1"
+        );
+        assert_eq!(
+            files.read(Chip::Bcm2712, "boot.img").unwrap().unwrap(),
+            b"flasher"
         );
         let _ = std::fs::remove_dir_all(dir);
     }
