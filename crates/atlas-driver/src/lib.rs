@@ -34,7 +34,7 @@ pub use observe::{
 };
 pub use registry::DriverRegistry;
 pub use selftest::{
-    CheckStatus, SELFTEST_FORMAT, SelfTestCapability, SelfTestCheck, SelfTestReport,
+    CheckStatus, SELFTEST_FORMAT, SelfTestCapability, SelfTestCheck, SelfTestReport, SelfTestStep,
 };
 pub use status::{
     BootInfo, DeviceEvent, DeviceStatus, Drift, DriftItem, EventPage, EventQuery, EventSource,

@@ -6,7 +6,7 @@
 use std::time::Duration;
 
 use atlas_driver::{
-    DeviceKey, DeviceMode, DriverError, SelfTestReport,
+    DeviceKey, DeviceMode, DriverError, SelfTestReport, SelfTestStep,
     attributes::{BOARD_SERIAL, normalize_board_serial},
 };
 use serde::{Deserialize, Serialize};
@@ -158,7 +158,17 @@ impl Atlas {
         if !self.inner.state().selftest_running.insert(board.clone()) {
             return Err(CoreError::SelfTestRunning(key.clone()));
         }
-        let result = selftest.run_selftest(&record.identity).await;
+        let events = self.inner.events.clone();
+        let progress_key = key.clone();
+        let progress = move |step: SelfTestStep| {
+            events.emit(Event::SelfTestProgress {
+                key: progress_key.clone(),
+                step,
+            });
+        };
+        let result = selftest
+            .run_selftest_live(&record.identity, &progress)
+            .await;
         self.inner.state().selftest_running.remove(&board);
         let unreachable = matches!(result, Err(DriverError::Unreachable(_)));
         let run = SelfTestRecord {

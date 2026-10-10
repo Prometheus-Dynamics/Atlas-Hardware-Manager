@@ -157,6 +157,49 @@ impl SshUpdate {
         ))
     }
 
+    /// Like [`run`](Self::run), handing each line the command writes to
+    /// stderr to `on_line` as it comes (stdout is returned at the end).
+    pub(crate) async fn run_watching(
+        &self,
+        script: &str,
+        on_line: &(dyn Fn(&str) + Send + Sync),
+    ) -> Result<String, DriverError> {
+        use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+
+        let mut child = self
+            .command()
+            .arg(as_atlas(script))
+            .spawn()
+            .map_err(|error| DriverError::Unreachable(format!("could not run ssh: {error}")))?;
+        let mut stdout = child.stdout.take().expect("piped");
+        let stderr = child.stderr.take().expect("piped");
+        let read_out = async {
+            let mut text = String::new();
+            let _ = stdout.read_to_string(&mut text).await;
+            text
+        };
+        let read_err = async {
+            let mut kept = String::new();
+            let mut lines = BufReader::new(stderr).lines();
+            while let Ok(Some(line)) = lines.next_line().await {
+                on_line(&line);
+                kept.push_str(&line);
+                kept.push('\n');
+            }
+            kept
+        };
+        let (out, err) = tokio::join!(read_out, read_err);
+        let status = child
+            .wait()
+            .await
+            .map_err(|error| DriverError::Unreachable(format!("ssh: {error}")))?;
+        if status.success() {
+            Ok(out)
+        } else {
+            Err(ssh_error(status.code(), &err))
+        }
+    }
+
     async fn status(&self) -> Result<Status, DriverError> {
         let text = self.run(&format!("{WRITER} status")).await?;
         serde_json::from_str(text.trim())

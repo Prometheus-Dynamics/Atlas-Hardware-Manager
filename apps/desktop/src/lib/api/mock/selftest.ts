@@ -108,13 +108,21 @@ export async function runSelftest(key: DeviceKey, trigger: SelfTestTrigger = "ma
   const stored = inventory.get(keyString(key));
   if (!device || stored?.presence !== "online") throw `${keyString(key)} is offline; reconnect it or run a scan`;
   if (!device.caps?.includes("self-test")) throw `${keyString(key)} does not report a self-test`;
-  await sleep(4000);
+  const result = report(device);
+  // Each check as the board would tell it: the plan, then one at a time.
+  const checks = result?.checks ?? [];
+  emit({ type: "self-test-progress", key, step: "planned", checks: checks.map((c) => c.id) });
+  for (const check of checks) {
+    emit({ type: "self-test-progress", key, step: "started", check: check.id });
+    await sleep(check.id === "fan" ? 1800 : 450);
+    emit({ type: "self-test-progress", key, step: "finished", check: check.id, status: check.status, message: check.message });
+  }
   const run: SelfTestRecord = {
     board_serial: boardOf(device),
     device: key,
     at_ms: Date.now(),
     trigger,
-    report: report(device),
+    report: result,
     error: null,
   };
   keep(device, run);

@@ -76,6 +76,17 @@ printf '%s' "$out" | grep -q 'INA238 (power-monitor) at 3/0x40: chip id 0x4955' 
 mv "$S/bus/i2c/devices/i2c-3" "$S/bus/i2c/devices/i2c-1"
 sed -i.bak 's/^3 /1 /; s/^1 0x40 0xfe 0x4955$/1 0x40 0xfe 0x4954/' "$T/i2c" "$T/regs"
 
+echo "--progress tells each check as it starts and ends, on stderr, the report unchanged on stdout"
+out=$(selftest --json --progress 2> "$T/progress")
+valid_json "$out"
+[ "$(head -n 1 "$T/progress")" = "@checks leds fan camera i2c watchdog gadget" ] || fail "the plan first: $(cat "$T/progress")"
+grep -q '^@start fan$' "$T/progress" || fail "a start line: $(cat "$T/progress")"
+grep -q '^@done fan ok states 0-4 set duty' "$T/progress" || fail "a done line with the message: $(cat "$T/progress")"
+[ "$(grep -c '^@start ' "$T/progress")" = 6 ] && [ "$(grep -c '^@done ' "$T/progress")" = 6 ] || fail "one start and one done each: $(cat "$T/progress")"
+awk '/^@start /{s=$2} /^@done /{ if ($2 != s) exit 1 }' "$T/progress" || fail "each ends before the next starts: $(cat "$T/progress")"
+selftest --json 2> "$T/progress" > /dev/null
+grep -q '^@' "$T/progress" && fail "nothing without --progress"
+
 echo "the fan's tach: none on this revision (a counter reading 0 is ignored), read where it's wired"
 echo 0 > "$S/class/hwmon/hwmon2/fan1_input"
 out=$(selftest --json)

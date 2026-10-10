@@ -1,4 +1,4 @@
-use atlas_driver::{DeviceKey, UpdateStep};
+use atlas_driver::{DeviceKey, SelfTestStep, UpdateStep};
 use serde::Serialize;
 use tokio::sync::broadcast;
 
@@ -73,6 +73,12 @@ pub enum Event {
     SelfTest {
         record: Box<SelfTestRecord>,
     },
+    /// A running self-test's progress: which checks, one starting, one done.
+    SelfTestProgress {
+        key: DeviceKey,
+        #[serde(flatten)]
+        step: SelfTestStep,
+    },
     /// New events from the device's board: re-read its history.
     DeviceHistory {
         key: DeviceKey,
@@ -84,6 +90,7 @@ pub enum Event {
     },
 }
 
+#[derive(Clone)]
 pub(crate) struct EventBus {
     sender: broadcast::Sender<Event>,
 }

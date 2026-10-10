@@ -398,6 +398,12 @@ export interface SelfTestCheck {
   data: Record<string, unknown> | null;
 }
 
+/** How a running self-test is going (atlas-driver SelfTestStep). */
+export type SelfTestStep =
+  | { step: "planned"; checks: string[] }
+  | { step: "started"; check: string }
+  | { step: "finished"; check: string; status: CheckStatus; message: string };
+
 /** The device's `selftest --json` report (format 1). */
 export interface SelfTestReport {
   version: number;
@@ -444,6 +450,8 @@ export type AtlasEvent =
   | { type: "activity"; entry: ActivityEntry }
   /** A self-test finished or couldn't run: the board's latest result. */
   | { type: "self-test"; record: SelfTestRecord }
+  /** A running self-test's progress: the checks it will run, one starting, one done. */
+  | ({ type: "self-test-progress"; key: DeviceKey } & SelfTestStep)
   /** New events from the device's board: re-read its history. */
   | { type: "device-history"; key: DeviceKey }
   /** The board's push channel said its state changed: re-read its status now. */

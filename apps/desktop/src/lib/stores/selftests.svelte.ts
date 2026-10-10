@@ -3,7 +3,10 @@
 // or the one Atlas starts when a board comes back from a flash or update).
 
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
-import { api, keyString, type DeviceRecord, type SelfTestRecord } from "#lib/api/client.ts";
+import { api, keyString, type CheckStatus, type DeviceKey, type DeviceRecord, type SelfTestRecord, type SelfTestStep } from "#lib/api/client.ts";
+
+/** A check of a run in progress: waiting, running, or how it ended. */
+export type LiveCheck = { id: string; state: "waiting" | "running" | CheckStatus; message: string };
 
 /** Atlas's board serial for a device: the same in USB boot and running. */
 export function boardOf(record: DeviceRecord): string {
@@ -22,6 +25,8 @@ class SelfTestStore {
   byBoard = new SvelteMap<string, SelfTestRecord>();
   /** Device keys with a run in progress from this window. */
   running = new SvelteSet<string>();
+  /** The checks of a run in progress, by device key, as the board tells them. */
+  live = new SvelteMap<string, LiveCheck[]>();
   private loaded = new Set<string>();
 
   forDevice(record: DeviceRecord): SelfTestRecord | undefined {
@@ -42,7 +47,22 @@ class SelfTestStore {
     }
   }
 
+  /** One progress step of a running test. */
+  progress(key: DeviceKey, step: SelfTestStep) {
+    const id = keyString(key);
+    if (step.step === "planned") {
+      this.live.set(id, step.checks.map((check) => ({ id: check, state: "waiting", message: "" })));
+      return;
+    }
+    const checks = this.live.get(id) ?? [];
+    const at = checks.findIndex((c) => c.id === step.check);
+    const next: LiveCheck =
+      step.step === "started" ? { id: step.check, state: "running", message: "" } : { id: step.check, state: step.status, message: step.message };
+    this.live.set(id, at >= 0 ? checks.with(at, next) : [...checks, next]);
+  }
+
   apply(run: SelfTestRecord) {
+    this.live.delete(keyString(run.device));
     const known = this.byBoard.get(run.board_serial);
     if (!known || known.at_ms <= run.at_ms) this.byBoard.set(run.board_serial, run);
   }
@@ -51,12 +71,14 @@ class SelfTestStore {
   async run(record: DeviceRecord): Promise<SelfTestRecord> {
     const id = keyString(record.key);
     this.running.add(id);
+    this.live.delete(id);
     try {
       const run = await api.runSelftest(record.key);
       this.apply(run);
       return run;
     } finally {
       this.running.delete(id);
+      this.live.delete(id);
     }
   }
 }

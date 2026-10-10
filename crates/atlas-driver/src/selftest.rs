@@ -106,17 +106,105 @@ impl SelfTestReport {
     }
 }
 
+/// How a running self-test is going, as the device tells it.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case", tag = "step")]
+pub enum SelfTestStep {
+    /// The checks it will run, in order.
+    Planned { checks: Vec<String> },
+    /// One check started.
+    Started { check: String },
+    /// One check ended, with its status and message.
+    Finished {
+        check: String,
+        status: CheckStatus,
+        message: String,
+    },
+}
+
+impl SelfTestStep {
+    /// Reads one progress line (`@checks a b`, `@start a`, `@done a ok text`).
+    pub fn parse(line: &str) -> Option<Self> {
+        let rest = line.trim().strip_prefix('@')?;
+        let (word, rest) = rest.split_once(' ').unwrap_or((rest, ""));
+        match word {
+            "checks" => Some(Self::Planned {
+                checks: rest.split_whitespace().map(str::to_string).collect(),
+            }),
+            "start" if !rest.trim().is_empty() => Some(Self::Started {
+                check: rest.trim().to_string(),
+            }),
+            "done" => {
+                let mut parts = rest.splitn(3, ' ');
+                let check = parts.next().filter(|c| !c.is_empty())?.to_string();
+                let status = match parts.next()? {
+                    "ok" => CheckStatus::Ok,
+                    "skip" => CheckStatus::Skip,
+                    "fail" => CheckStatus::Fail,
+                    _ => CheckStatus::Unknown,
+                };
+                Some(Self::Finished {
+                    check,
+                    status,
+                    message: parts.next().unwrap_or("").trim().to_string(),
+                })
+            }
+            _ => None,
+        }
+    }
+}
+
 /// Runs a device's self-test. Granted only to devices that have one.
 #[async_trait]
 pub trait SelfTestCapability: Send + Sync {
     /// Runs every non-interactive check and returns the report. The device
     /// puts anything it changed (fan, LEDs) back before it answers.
     async fn run_selftest(&self, device: &Identity) -> Result<SelfTestReport, DriverError>;
+
+    /// The same, telling each check as it starts and ends, when the device
+    /// can; by default it just runs.
+    async fn run_selftest_live(
+        &self,
+        device: &Identity,
+        progress: &(dyn Fn(SelfTestStep) + Send + Sync),
+    ) -> Result<SelfTestReport, DriverError> {
+        let _ = progress;
+        self.run_selftest(device).await
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn progress_lines_read_as_steps() {
+        assert_eq!(
+            SelfTestStep::parse("@checks leds fan"),
+            Some(SelfTestStep::Planned {
+                checks: vec!["leds".into(), "fan".into()]
+            })
+        );
+        assert_eq!(
+            SelfTestStep::parse("@start fan"),
+            Some(SelfTestStep::Started {
+                check: "fan".into()
+            })
+        );
+        assert_eq!(
+            SelfTestStep::parse("@done fan fail state 2 gave 0, not 245"),
+            Some(SelfTestStep::Finished {
+                check: "fan".into(),
+                status: CheckStatus::Fail,
+                message: "state 2 gave 0, not 245".into(),
+            })
+        );
+        assert_eq!(
+            SelfTestStep::parse("selftest: lemnos-ctl fan release failed"),
+            None
+        );
+        assert_eq!(SelfTestStep::parse("@start "), None);
+    }
 
     const REPORT: &str = r#"{"version":1,"board_serial":"10000000a317bcbe","model":"raze","package_version":"1.0.7","at":1791347363,"interactive":false,"ok":false,"checks":[{"id":"leds","status":"ok","message":"takes frames","data":{"count":16}},{"id":"camera","status":"fail","message":"no ov9782","data":{}},{"id":"i2c","status":"skip","message":"no i2cdetect","data":{}},{"id":"future","status":"maybe","message":""}]}"#;
 

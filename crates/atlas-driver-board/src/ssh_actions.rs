@@ -21,6 +21,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use atlas_driver::{
     ActionsCapability, DeviceAction, DriverError, Identity, SelfTestCapability, SelfTestReport,
+    SelfTestStep,
 };
 
 use crate::live::BoardActions;
@@ -49,6 +50,8 @@ const EVENT: &str = "e=/usr/lib/board/event; [ ! -x \"$e\" ] || \"$e\"";
 /// What a board lists in `diagnostics` when it has the self-test.
 pub const SELFTEST_DIAGNOSTIC: &str = "selftest";
 const SELFTEST: &str = "/usr/lib/board/selftest --json";
+/// The same, telling each check as it goes (package 1.0.7's later builds).
+const SELFTEST_LIVE: &str = "/usr/lib/board/selftest --json --progress";
 /// Stepping the fan through its states takes the longest, about 10 s.
 const SELFTEST_TIMEOUT: Duration = Duration::from_secs(3 * 60);
 
@@ -264,6 +267,32 @@ impl SelfTestCapability for BoardSelfTest {
             .await
             .map_err(|_| DriverError::Other("the self-test took too long".into()))??;
         SelfTestReport::parse(&output).map_err(DriverError::Other)
+    }
+
+    async fn run_selftest_live(
+        &self,
+        device: &Identity,
+        progress: &(dyn Fn(SelfTestStep) + Send + Sync),
+    ) -> Result<SelfTestReport, DriverError> {
+        let on_line = |line: &str| {
+            if let Some(step) = SelfTestStep::parse(line) {
+                progress(step);
+            }
+        };
+        let run = tokio::time::timeout(
+            SELFTEST_TIMEOUT,
+            self.ssh.run_watching(SELFTEST_LIVE, &on_line),
+        )
+        .await
+        .map_err(|_| DriverError::Other("the self-test took too long".into()))?;
+        match run {
+            Ok(output) => SelfTestReport::parse(&output).map_err(DriverError::Other),
+            // An older board doesn't know --progress (exit 2): run it plain.
+            Err(error) if error.to_string().contains("unknown argument") => {
+                self.run_selftest(device).await
+            }
+            Err(error) => Err(error),
+        }
     }
 }
 

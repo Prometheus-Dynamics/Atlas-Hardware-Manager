@@ -1,6 +1,7 @@
 <script lang="ts">
   // The board's last self-test: each check with what it found, and a button
-  // to run it again. Atlas also runs it by itself when a board comes back
+  // to run it again. While it runs, each check shows as the board tells it:
+  // waiting, running, then passed or failed. Atlas also runs it by itself when a board comes back
   // from a flash or an update; a failure is shown here, never blocking.
   import { keyString, type CheckStatus, type DeviceRecord } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
@@ -32,6 +33,9 @@
   const last = $derived(selftests.forDevice(record));
   const can = $derived(canSelftest(record));
   const running = $derived(selftests.running.has(keyString(record.key)));
+  /** The checks of the run in progress, when the board tells them. */
+  const live = $derived(selftests.live.get(keyString(record.key)) ?? null);
+  const liveDone = $derived(live ? live.filter((c) => c.state !== "waiting" && c.state !== "running").length : 0);
 
   const verdict = $derived.by((): { tone: Tone; icon: IconName; label: string } | null => {
     if (!last) return null;
@@ -70,7 +74,29 @@
       {/if}
     </div>
 
-    {#if !last}
+    {#if live}
+      <div class="glass flex flex-col gap-3 px-4 py-3.5">
+        <div class="flex flex-wrap items-center gap-2">
+          <Pill tone="info" icon="loader-2" spin label="Running · {liveDone} of {live.length}" />
+          {#if live.some((c) => c.state === "fail")}<Pill tone="error" icon="alert-circle" label="{live.filter((c) => c.state === 'fail').length} failed so far" />{/if}
+        </div>
+        <ul class="flex flex-col gap-2">
+          {#each live as check (check.id)}
+            {@const look =
+              check.state === "waiting"
+                ? { icon: "circle-dashed" as IconName, color: "text-fg-disabled", label: "Waiting" }
+                : check.state === "running"
+                  ? { icon: "loader-2" as IconName, color: "text-info-fg spin", label: "Running" }
+                  : (ICONS[check.state] ?? ICONS.unknown)}
+            <li class="flex items-start gap-2.5 text-[13px]" class:waiting={check.state === "waiting"}>
+              <span class="mt-0.5 shrink-0 {look.color}" title={look.label}><Icon name={look.icon} size={16} /></span>
+              <span class="w-20 shrink-0 font-medium text-fg">{NAMES[check.id] ?? check.id}</span>
+              <span class="min-w-0 text-fg-muted">{check.state === "running" ? "Checking…" : check.message}</span>
+            </li>
+          {/each}
+        </ul>
+      </div>
+    {:else if !last}
       <p class="text-[13px] text-fg-muted">
         Not run yet. It checks the LED ring, fan, camera, sensors, watchdog and USB link, and puts the fan and LEDs back
         as they were. It also runs on its own when the board comes back from a flash or an update.
@@ -106,3 +132,17 @@
     {/if}
   </section>
 {/if}
+
+<style>
+  .waiting {
+    opacity: 0.55;
+  }
+  :global(.spin svg) {
+    animation: selftest-spin 0.9s linear infinite;
+  }
+  @keyframes selftest-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+</style>

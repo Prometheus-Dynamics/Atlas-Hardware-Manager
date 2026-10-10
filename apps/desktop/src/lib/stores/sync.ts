@@ -61,6 +61,9 @@ function dispatch(event: AtlasEvent) {
     case "self-test":
       selftests.apply(event.record);
       break;
+    case "self-test-progress":
+      selftests.progress(event.key, event);
+      break;
     default:
       // The jobs page follows the newest job.
       if (event.type === "job-started") ui.selectedJob = event.job;
