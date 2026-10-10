@@ -285,7 +285,8 @@
       "lemnosd": {
         "device": "status-ring",
         "look": { "fade_ms": 250, "easing": "ease-in-out", "status_effect": "breathe" },
-        "notes": "board.toml takes count, offset, gpio and the look from here; wire is rgb for a 24-bit wire_format and rgbw for a 32-bit one, direction 1 is cw and -1 ccw."
+        "gravity": { "device": "imu", "plane": ["x", "y"], "led0_deg": 112.5, "default_down": 8 },
+        "notes": "board.toml takes count, offset, gpio, the look and the gravity from here; wire is rgb for a 24-bit wire_format and rgbw for a 32-bit one, direction 1 is cw and -1 ccw. The gravity gives falling sparkles their bottom (Lemnos gravity_device, gravity_plane, gravity_led0_deg, default_down): the IMU's x and y span the ring's plane, and physical LED 0 sits at 112.5 degrees from +x toward +y, so logical LED = round(atan2(-ay, -ax) / 22.5 deg + 6) mod 16."
       },
       "notes": "SK6812-EC20, 24-bit GRB on the wire. The overlay must not pass rgbw; the ws2812-pio-rp1 driver always reads 4 bytes per LED (R, G, B, W) from userspace and drops W. Logical LED i is driver slot (offset + direction * i) mod count, as in HeliOS main.",
       "helper": {
@@ -303,6 +304,7 @@
         "gpio": { "by": "Mathias (user)", "date": "2026-10-06", "method": "the ring lights on a Raze Gen 1 (image 1.0.10)" },
         "count": "unverified",
         "lemnosd.device": { "by": "Atlas coordinator", "date": "2026-10-07", "method": "lemnosd cd72ad0 on a Raze: the ws2812 ring binds on /dev/leds0 with wire rgb and offset 5, and the progress, updating, breathe and locate effects show correctly" },
+        "lemnosd.gravity": { "by": "Mathias (user) and the HeliOS coordinator", "date": "2026-10-09", "method": "a live test on a Raze (PV r17, Lemnos 2ab3d93) lit the computed bottom LED at 20 Hz while the camera was turned around; the user confirmed it stayed at the real bottom. lemnos-ctl light gravity with these keys gives the same mapping" },
         "index.offset": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); all 16 LEDs show correct colours with offset 5, the 4-byte rgbw userspace layout and no rgbw overlay flag; HeliOS main uses the same offset" },
         "index.direction": "unverified"
       }
@@ -360,7 +362,7 @@
       "gaia_import": {
         "source": "lemnos",
         "repo": "https://github.com/Prometheus-Dynamics/Lemnos.git",
-        "rev": "b17b5a5918ae1280c9fb29231e92ac0351bf6061",
+        "rev": "2ab3d938c3aa2430be10837916d6f7edcd119aa6",
         "path": "packaging/gaia/lemnosd.toml"
       }
     },

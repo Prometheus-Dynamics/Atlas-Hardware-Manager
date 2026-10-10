@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Prometheus-Dynamics/Lemnos/docs/schemas/lemnos-board.schema.json",
-  "$comment": "Vendored unchanged (apart from this comment) from Lemnos b17b5a5918ae docs/schemas/lemnos-board.schema.json. devices/tools/gen-raze.py validates the generated /etc/lemnos/board.toml against it. Update it together with the Lemnos pin (capabilities.hardware-service.gaia_import.rev).",
+  "$comment": "Vendored unchanged (apart from this comment) from Lemnos 2ab3d938c3aa docs/schemas/lemnos-board.schema.json. devices/tools/gen-raze.py validates the generated /etc/lemnos/board.toml against it. Update it together with the Lemnos pin (capabilities.hardware-service.gaia_import.rev).",
   "title": "Lemnos board definition",
   "description": "A board's devices, each built from a generic Lemnos driver. TOML or JSON; see docs/board-definition.md. Driver-specific checks (config keys, values) are done by lemnos-board's DriverRegistry::validate.",
   "type": "object",

@@ -27,7 +27,7 @@ from pathlib import Path
 
 SELECTOR_KEYS = ("name", "compatible", "of", "node")
 
-# What lemnos-board's DriverRegistry (Lemnos b17b5a5, crates/lemnos-board/src
+# What lemnos-board's DriverRegistry (Lemnos 2ab3d93, crates/lemnos-board/src
 # registry.rs and light.rs) accepts: placement, config keys, match keys.
 LIGHT_KEYS = (
     "count", "wire", "offset", "direction", "brightness", "gpio", "fade_ms", "easing",
@@ -35,6 +35,7 @@ LIGHT_KEYS = (
     "blink_duty", "ok", "warn", "error", "busy", "locate", "locate_effect",
     "spinner_period_ms", "spinner_tail", "idle", "progress", "progress_background",
     "updating", "verifying", "writing", "staged", "booting", "rebooting", "failed",
+    "gravity_device", "gravity_plane", "gravity_led0_deg", "default_down",
 )
 INA_KEYS = ("shunt_micro_ohms", "shunt_ohms", "max_current_micro_amps", "max_current_amps")
 DRIVERS = {
@@ -49,7 +50,7 @@ DRIVERS = {
     "gpio-output": ("platform", ("chip", "line", "active_low", "initial"), ()),
 }
 EASINGS = {"linear", "ease-in", "ease-out", "ease-in-out", "sine"}
-EFFECTS = {"solid", "blink", "breathe"}
+EFFECTS = {"solid", "blink", "breathe", "chase"}
 
 
 class BoardError(Exception):
@@ -162,6 +163,15 @@ def driver_errors(board: dict) -> list[str]:
                 errors.append(f"{where}: unknown easing {config['easing']}")
             if config.get("status_effect", "solid") not in EFFECTS:
                 errors.append(f"{where}: unknown status_effect {config['status_effect']}")
+            if ("gravity_device" in config) != ("gravity_plane" in config):
+                errors.append(f"{where}: gravity_device and gravity_plane go together")
+            if "gravity_device" in config and config["gravity_device"] not in ids:
+                errors.append(f"{where}: gravity_device {config['gravity_device']} is not a device here")
+            plane = config.get("gravity_plane", ["x", "y"])
+            if len(plane) != 2 or any(a.lstrip("-") not in ("x", "y", "z") for a in plane) or plane[0].lstrip("-") == plane[1].lstrip("-"):
+                errors.append(f"{where}: gravity_plane must be two different axes, such as [\"-y\", \"x\"]")
+            if not 0 <= config.get("default_down", 0) < config.get("count", 1):
+                errors.append(f"{where}: default_down must be an LED below count")
         if device["driver"] == "gpio-output" and not {"chip", "line"} <= set(config):
             errors.append(f"{where}: needs chip and line")
     return errors
@@ -202,6 +212,14 @@ def board_definition(manifest: dict, version: str) -> tuple[dict, dict[str, list
         "gpio": leds["gpio"],
         **look,
     }
+    gravity = ring.get("gravity")
+    if gravity:
+        config.update({
+            "gravity_device": gravity["device"],
+            "gravity_plane": gravity["plane"],
+            "gravity_led0_deg": gravity["led0_deg"],
+            "default_down": gravity["default_down"],
+        })
     devices.append({"id": ring["device"], "driver": "ws2812", "path": leds["device"], "config": config})
     notes[ring["device"]] = [
         f"{leds['count']} {leds['part']} LEDs on GPIO{leds['gpio']} (ws2812-pio), {leds['wire_format']} on the wire;",

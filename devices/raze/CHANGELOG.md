@@ -379,6 +379,14 @@ commit; the commits are listed per area.
   (gaia/data.toml: util-linux's basic set and partition utilities,
   e2fsprogs with resize2fs). Slot B's root (p6) is only read after `stage`
   writes it, so an unwritten p6 needs nothing.
+- **Lemnos 2ab3d93 and the ring's gravity:** the pin moves to 2ab3d93
+  (sparkle and wash looks, the new trial boot and confirmed looks, IMU
+  channel selection, config choices checked by `lemnos-ctl validate`), and
+  the status ring gets `gravity_device = "imu"`, `gravity_plane = ["x",
+  "y"]`, `gravity_led0_deg = 112.5` and `default_down = 8` (manifest
+  `leds.lemnosd.gravity`), so falling sparkles fall toward the real bottom:
+  logical LED = round(atan2(-ay, -ax) / 22.5 deg + 6) mod 16, confirmed on a
+  board by turning the camera around a live test. gen-raze checks the keys.
 - **Updates from a truncated image:** `board-image-slots` accepts an image
   that ends inside root slot A (Gaia's `truncate = "last-data"`): it copies
   what the image has and leaves the rest of the slot, since the root

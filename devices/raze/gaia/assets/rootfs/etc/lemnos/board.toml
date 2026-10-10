@@ -19,7 +19,7 @@ generated_by = "atlas devices/tools/gen-raze.py, raze package 1.0.7"
 id = "status-ring"
 driver = "ws2812"
 path = "/dev/leds0"
-config = { count = 16, wire = "rgb", offset = 5, direction = "cw", gpio = 13, fade_ms = 250, easing = "ease-in-out", status_effect = "breathe" }
+config = { count = 16, wire = "rgb", offset = 5, direction = "cw", gpio = 13, fade_ms = 250, easing = "ease-in-out", status_effect = "breathe", gravity_device = "imu", gravity_plane = ["x", "y"], gravity_led0_deg = 112.5, default_down = 8 }
 
 # The pwm-fan fan (hwmon name pwmfan). pwm-fan has no automatic mode,
 # so no restore_mode: when lemnosd stops, the fan gets back the governor's
