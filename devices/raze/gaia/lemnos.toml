@@ -22,7 +22,7 @@
 #   id = "lemnos"
 #   kind = "git"
 #   repo = "https://github.com/Prometheus-Dynamics/Lemnos.git"
-#   rev = "c43d207b06ea4a7a42dabd51065746154207125a"
+#   rev = "fc879eb17f48fec5e0cec88c2adf5edeb918abe6"
 #
 # Without it, resolving this layer fails and names the source `lemnos`. For
 # local development: --set sources.lemnos.path=/path/to/Lemnos.

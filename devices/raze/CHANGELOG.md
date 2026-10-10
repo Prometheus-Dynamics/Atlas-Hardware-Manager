@@ -205,6 +205,9 @@ commit; the commits are listed per area.
 
 ### lemnosd, the hardware service
 
+- **Lemnos fc879eb:** the status ring takes Orion's `looks.*` and
+  `light.brightness` (presets, inline and named looks, locate, brightness)
+  and a port's `power.reset` no longer blocks lemnosd. No board.toml change.
 - **Lemnos c43d207; orientation:** board.toml gains `orientation`, lemnosd's
   `fusion` device (9-axis Mahony from `imu` and `magnetometer`, kp 1.0, ki
   0.05): quaternion, roll/pitch/yaw, gravity, linear acceleration,
