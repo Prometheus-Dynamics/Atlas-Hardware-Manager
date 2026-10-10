@@ -84,19 +84,31 @@ pub fn private_key_for(public: &Path) -> Option<PathBuf> {
     private.is_file().then_some(private)
 }
 
-/// What `update status` prints.
+/// What `update status` prints. Every field may be missing or `null` (a
+/// freshly flashed board has no staged version, no error), which reads as
+/// empty or 0; fields Atlas doesn't use here (`version_previous`,
+/// `started_by`, `phase`, ...) are ignored whatever they hold.
 #[derive(Clone, Debug, Default, Deserialize)]
 struct Status {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     state: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     version_active: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     version_staged: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     progress: u32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_as_default")]
     error: String,
+}
+
+/// `null` as the type's default, for the update writer's optional fields.
+fn null_as_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Default + Deserialize<'de>,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 pub(crate) struct SshUpdate {
@@ -515,6 +527,33 @@ impl UpdateCapability for SshUpdate {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A freshly flashed r20 board's /run/board/update.json, as HeliOS read it.
+    #[test]
+    fn status_reads_nulls_as_empty() {
+        let status: Status = serde_json::from_str(
+            r#"{"state":"idle","slot_active":"A","slot_staged":null,"version_active":"dev-v2027.0.0-alpha-2-94-gc9548d91+Dev-102-gb899b87","version_staged":null,"progress":0,"error":null,"version_previous":null,"started_by":null,"phase":null}"#,
+        )
+        .unwrap();
+        assert_eq!(status.state, "idle");
+        assert_eq!(
+            status.version_active,
+            "dev-v2027.0.0-alpha-2-94-gc9548d91+Dev-102-gb899b87"
+        );
+        assert_eq!(
+            (
+                status.version_staged.as_str(),
+                status.progress,
+                status.error.as_str()
+            ),
+            ("", 0, "")
+        );
+        let all_null: Status = serde_json::from_str(
+            r#"{"state":null,"version_active":null,"version_staged":null,"progress":null,"error":null}"#,
+        )
+        .unwrap();
+        assert_eq!(all_null.state, "");
+    }
 
     #[test]
     fn status_parses_the_writer_output() {
