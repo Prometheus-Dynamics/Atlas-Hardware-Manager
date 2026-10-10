@@ -290,7 +290,8 @@ the package grows to the end of the eMMC and formats on a fresh flash:
 new for each build, to `board/flash-id` on p1, and a reflash then resets
 `/data` while updates keep it), `/var/log/journal` on `/data` (the package
 keeps the journal there, bounded, under a stable machine id:
-`board-machine-id.service`), SSH host keys on `/data`, and its own writable
+`board-machine-id.service`; the kernel log a reset left in RAM goes to
+`/data/board/pstore/`: `board-pstore.service`), SSH host keys on `/data`, and its own writable
 paths.
 
 ## Board clock

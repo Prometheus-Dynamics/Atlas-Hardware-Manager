@@ -1,0 +1,75 @@
+#!/bin/sh
+# Kernel logs the last boot left in RAM (pstore, ramoops: raze-device.txt),
+# moved to /data at boot by board-pstore.service:
+#   /data/board/pstore/<boot id>/   the files from /sys/fs/pstore, found by
+#                                   the boot with that id (they are the
+#                                   previous boot's); the newest
+#                                   BOARD_PSTORE_KEEP (5) are kept
+# Each file is removed from pstore once copied, which frees its record. The
+# console log (console-ramoops-0, what the kernel printed until the reset)
+# is there after every warm restart, so a `kernel.pstore` event is logged
+# only when it matters: a panic or oops record (dmesg-ramoops-*), or a
+# previous boot that didn't shut down cleanly.
+# Test hooks: BOARD_PSTORE_DIR (the pstore filesystem), BOARD_BOOT_ID.
+set -u
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+
+src=${BOARD_PSTORE_DIR:-/sys/fs/pstore}
+keep=${BOARD_PSTORE_KEEP:-5}
+[ -d "$src" ] || exit 0
+set -- "$src"/*
+[ -e "$1" ] || exit 0
+
+id=$(board_boot_id)
+root=$BOARD_DATA_DIR/pstore
+dest=$root/${id:-unknown}
+if ! mkdir -p "$dest" 2>/dev/null; then
+	board_log "couldn't make $dest; the kernel logs stay in pstore"
+	exit 0
+fi
+names=''
+panics=0
+for file in "$@"; do
+	name=${file##*/}
+	if cp "$file" "$dest/$name" 2>/dev/null; then
+		rm -f "$file" 2>/dev/null
+		names="$names${names:+,}$name"
+		case "$name" in
+		dmesg-*) panics=$((panics + 1)) ;;
+		esac
+	else
+		board_log "couldn't copy $name"
+	fi
+done
+sync "$dest" 2>/dev/null || sync
+
+# The last event of an earlier boot says how that boot ended (as
+# boot-record reads it; this runs before it).
+last=$(cat "$BOARD_RUN_DIR/events.jsonl" "$BOARD_DATA_DIR/events.jsonl" 2>/dev/null |
+	awk -v id="\"boot_id\":\"$id\"" '/^\{"t":[0-9]+,"boot_id":.*\}$/ && index($0, id) == 0 { last = $0 } END { print last }')
+case "$last" in
+*'"kind":"shutdown"'*) clean=true ;;
+'') clean=unknown ;;
+*) clean=false ;;
+esac
+# The console log's last line with text, for the message.
+tail=''
+if [ -r "$dest/console-ramoops-0" ]; then
+	tail=$(tr -d '\000' < "$dest/console-ramoops-0" | tr -cd '\11\12\40-\176' | sed '/^[[:space:]]*$/d' | tail -n 1 | cut -c1-160)
+fi
+if [ "$panics" -gt 0 ]; then
+	board_event kernel.pstore "the last boot ended in a kernel panic or oops; its kernel log is in $dest" \
+		"dir=$dest" "files=$names" "panics=$panics" "previous_clean=$clean" "last_line=$tail"
+elif [ "$clean" = false ]; then
+	board_event kernel.pstore "the last boot ended without a clean shutdown; its kernel log is in $dest" \
+		"dir=$dest" "files=$names" "panics=0" "previous_clean=false" "last_line=$tail"
+fi
+
+# Only the newest few.
+ls -1t "$root" 2>/dev/null | tail -n +$((keep + 1)) | while IFS= read -r old; do
+	rm -rf "${root:?}/$old"
+done
+exit 0

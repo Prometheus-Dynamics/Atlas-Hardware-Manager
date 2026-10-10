@@ -379,6 +379,20 @@ commit; the commits are listed per area.
   (gaia/data.toml: util-linux's basic set and partition utilities,
   e2fsprogs with resize2fs). Slot B's root (p6) is only read after `stage`
   writes it, so an unwritten p6 needs nothing.
+- **Kernel logs that survive a reset:** pstore in RAM (the `ramoops-pi5`
+  overlay in raze-device.txt: 256 KiB at 0x0b000000, a 128 KiB console log
+  and two 64 KiB panic/oops records; kernel PSTORE, PSTORE_RAM,
+  PSTORE_CONSOLE, PSTORE_PMSG and PRINTK_TIME, guarded by raze.config).
+  `board-pstore.service` moves what the last boot left to
+  `/data/board/pstore/<boot id>/` (the newest five kept) and logs a
+  `kernel.pstore` event for a panic or oops record, or when the last boot
+  didn't shut down cleanly, with the console log's last line; Atlas shows it
+  as a warning in the history. A warm reset (watchdog, reboot) keeps the RAM;
+  a power loss doesn't, so a bad shutdown with nothing kept points at power.
+  The soft (20 s) and hard (10 s, buddy) lockup detectors now panic, so a
+  kernel hang leaves a panic record. `board-netconsole.service` loads
+  netconsole when `BOARD_NETCONSOLE` (netconsole.env) names a target, for
+  live captures; off by default.
 - **Lemnos 2ab3d93 and the ring's gravity:** the pin moves to 2ab3d93
   (sparkle and wash looks, the new trial boot and confirmed looks, IMU
   channel selection, config choices checked by `lemnos-ctl validate`), and

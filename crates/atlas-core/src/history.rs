@@ -225,6 +225,7 @@ pub(crate) fn notable(record: &DeviceRecord, event: &DeviceEvent) -> Option<Acti
             | "ssh.keys"
             | "usb-boot"
             | "power-off"
+            | "kernel.pstore"
     );
     if !matters {
         return None;

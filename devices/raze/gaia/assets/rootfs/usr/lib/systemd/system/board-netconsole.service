@@ -1,0 +1,16 @@
+[Unit]
+Description=Kernel log over the network (netconsole), when netconsole.env sets a target
+Documentation=file:/usr/lib/board/netconsole.env
+After=network-online.target board-usb-gadget.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/board/netconsole
+# The interface may come up a little later (the gadget waits for a host).
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

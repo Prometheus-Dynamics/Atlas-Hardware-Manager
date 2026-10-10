@@ -1,0 +1,17 @@
+[Unit]
+Description=Kernel logs the last boot left in RAM (pstore), moved to /data/board/pstore
+Documentation=file:/usr/lib/board/pstore
+# Once /data is mounted, before the boot record (it reads the same "how did
+# the last boot end"), and before systemd's own pstore copier, which would
+# otherwise take the files to /var/lib/systemd/pstore.
+After=local-fs.target
+Before=board-boot.service systemd-pstore.service
+ConditionDirectoryNotEmpty=/sys/fs/pstore
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/board/pstore
+
+[Install]
+WantedBy=multi-user.target

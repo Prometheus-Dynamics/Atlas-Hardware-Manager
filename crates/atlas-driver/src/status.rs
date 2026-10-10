@@ -106,6 +106,7 @@ impl DeviceEvent {
             || kind == "update.apply-interrupted"
             || kind == "update.link-bad"
             || kind == "usb-boot"
+            || kind == "kernel.pstore"
             || (kind == "boot"
                 && self.data.get("previous_clean").map(String::as_str) == Some("false"))
             || (kind == "selftest" && self.data.get("ok").map(String::as_str) == Some("false"))

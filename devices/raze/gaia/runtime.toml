@@ -146,6 +146,38 @@ origin = "static-asset"
 mode = 493
 
 [[stage.files]]
+id = "raze-systemd-system-board-pstore-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-pstore.service"
+dest = "/usr/lib/systemd/system/board-pstore.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-board-pstore"
+src = "@self/assets/rootfs/usr/lib/board/pstore"
+dest = "/usr/lib/board/pstore"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
+id = "raze-systemd-system-board-netconsole-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-netconsole.service"
+dest = "/usr/lib/systemd/system/board-netconsole.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-board-netconsole"
+src = "@self/assets/rootfs/usr/lib/board/netconsole"
+dest = "/usr/lib/board/netconsole"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
+id = "raze-board-netconsole-env"
+src = "@self/assets/rootfs/usr/lib/board/netconsole.env"
+dest = "/usr/lib/board/netconsole.env"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-board-data-env"
 src = "@self/assets/rootfs/usr/lib/board/data.env"
 dest = "/usr/lib/board/data.env"
@@ -515,6 +547,11 @@ stage_files = [
   "raze-systemd-system-board-data-setup-service",
   "raze-board-data-setup",
   "raze-board-data-env",
+  "raze-systemd-system-board-pstore-service",
+  "raze-board-pstore",
+  "raze-systemd-system-board-netconsole-service",
+  "raze-board-netconsole",
+  "raze-board-netconsole-env",
   "raze-systemd-system-board-machine-id-service",
   "raze-board-machine-id",
   "raze-systemd-journald-conf-d-60-board",

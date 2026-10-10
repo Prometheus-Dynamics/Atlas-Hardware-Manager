@@ -32,6 +32,13 @@ dtoverlay=raze-fan
 # GPU (V3D) and display (KMS) drivers.
 dtoverlay=vc4-kms-v3d-pi5
 
+# Kernel logs kept in RAM across a reset (pstore, ramoops): 256 KiB at
+# 0x0b000000, 128 KiB of it the console log (what the kernel printed until
+# the reset) and two 64 KiB panic/oops records. A warm reset (the watchdog,
+# a reboot) keeps them; a power loss doesn't. board-pstore.service moves them
+# to /data/board/pstore/ on the next boot.
+dtoverlay=ramoops-pi5,total-size=0x40000,record-size=0x10000,console-size=0x20000
+
 # CM5 USB 2.0 OTG controller (dwc2) as a USB peripheral, for the USB gadget
 # (network + serial). Which Raze connector it is wired to is not recorded yet.
 dtoverlay=dwc2,dr_mode=peripheral

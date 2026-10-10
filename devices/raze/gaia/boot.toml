@@ -49,5 +49,10 @@ tree = "boot"
 src = "$provider.buildroot_output/images/raze-overlays/vc4-kms-v3d-pi5.dtbo"
 dest = "overlays/vc4-kms-v3d-pi5.dtbo"
 
+[[image.assembly.files]]
+tree = "boot"
+src = "$provider.buildroot_output/images/raze-overlays/ramoops-pi5.dtbo"
+dest = "overlays/ramoops-pi5.dtbo"
+
 [image]
 kind = "buildroot"

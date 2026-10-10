@@ -20,5 +20,7 @@ enable board-orion-env.service
 enable board-boot.service
 enable board-machine-id.service
 enable board-data-setup.service
+enable board-pstore.service
+enable board-netconsole.service
 enable board-drift.timer
 enable board-health.timer

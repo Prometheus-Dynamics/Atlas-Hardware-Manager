@@ -1,0 +1,30 @@
+#!/bin/sh
+# Loads netconsole with BOARD_NETCONSOLE (netconsole.env) when it is set,
+# and raises the console log level, so the kernel's messages up to a reset
+# reach the host. Does nothing when it is empty.
+set -u
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+board_load_env netconsole.env
+
+target=${BOARD_NETCONSOLE:-}
+[ -n "$target" ] || exit 0
+case "$target" in
+*[!0-9A-Za-z@/,:.+_-]*)
+	board_log "BOARD_NETCONSOLE has characters a netconsole= value doesn't: $target"
+	exit 1
+	;;
+esac
+level=${BOARD_NETCONSOLE_LEVEL:-8}
+case "$level" in '' | *[!0-9]*) level=8 ;; esac
+modprobe -r netconsole 2>/dev/null
+if modprobe netconsole "netconsole=$target"; then
+	read -r _cur _rest < /proc/sys/kernel/printk 2>/dev/null &&
+		printf '%s %s\n' "$level" "$_rest" > /proc/sys/kernel/printk 2>/dev/null
+	board_log "netconsole to $target"
+else
+	board_log "netconsole didn't load for $target (is the interface up?)"
+	exit 1
+fi
