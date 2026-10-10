@@ -379,6 +379,13 @@ commit; the commits are listed per area.
   (gaia/data.toml: util-linux's basic set and partition utilities,
   e2fsprogs with resize2fs). Slot B's root (p6) is only read after `stage`
   writes it, so an unwritten p6 needs nothing.
+- **The ring keeps the reboot ember through a restart:** ws2812-pio-rp1
+  sent an all-off frame at probe, so the ring went dark from the driver
+  load until lemnosd wrote again, between the shutdown ember and the boot
+  look. The package's kernel patch (linux/patches, applied by external.mk
+  after Buildroot's own) adds `clear_on_probe` (default on, the old
+  behaviour) and modprobe.d turns it off: the LEDs keep the frame they
+  latched, lemnosd's ember, until lemnosd takes over.
 - **Kernel logs that survive a reset:** pstore in RAM (the `ramoops-pi5`
   overlay in raze-device.txt: 256 KiB at 0x0b000000, a 128 KiB console log
   and two 64 KiB panic/oops records; kernel PSTORE, PSTORE_RAM,

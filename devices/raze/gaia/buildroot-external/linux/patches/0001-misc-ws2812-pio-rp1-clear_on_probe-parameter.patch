@@ -1,0 +1,38 @@
+From: Raze device package (Atlas)
+Subject: [PATCH] misc: ws2812-pio-rp1: clear_on_probe parameter
+
+The probe sends an all-off frame. The LEDs keep their last frame while
+they are powered, through a reboot, so a board that shows a frame across a
+restart (the Raze ring's reboot ember) went dark until userspace wrote
+again. clear_on_probe (default true, the old behaviour) lets it keep the
+frame.
+---
+--- a/drivers/misc/ws2812-pio-rp1.c
++++ b/drivers/misc/ws2812-pio-rp1.c
+@@ -27,6 +27,16 @@
+ #define RESET_US	50
+ #define PIXEL_BYTES	4
+ 
++/*
++ * The LEDs latch the last frame they were sent and keep it while they are
++ * powered, through a reboot of the SoC. Clearing them at probe blanks
++ * whatever userspace left on them until it writes again; a board that shows
++ * a frame across a restart turns this off.
++ */
++static bool clear_on_probe = true;
++module_param(clear_on_probe, bool, 0444);
++MODULE_PARM_DESC(clear_on_probe, "Turn the LEDs off when the device is probed (default: true)");
++
+ struct ws2812_pio_rp1_state {
+ 	struct device	*dev;
+ 	struct gpio_desc *gpiod;
+@@ -437,7 +447,8 @@
+ 
+ 	INIT_DELAYED_WORK(&state->deferred_work, ws2812_pio_rp1_deferred_work);
+ 
+-	ws2812_clear_leds(state);
++	if (clear_on_probe)
++		ws2812_clear_leds(state);
+ 
+ 	dev_info(&pdev->dev, "Instantiated %d LEDs on GPIO %d as /dev/%s\n",
+ 		 state->num_leds, state->gpio, state->dev_name);

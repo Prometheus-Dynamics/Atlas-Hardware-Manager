@@ -15,6 +15,23 @@ LINUX_HASH_FILES += $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/linux.hash
 # recursive variable that linux.mk defines before this file is read.
 LINUX_KCONFIG_FRAGMENT_FILES += $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/raze.config
 
+# The package's kernel patches (linux/patches/*.patch, in order), after
+# Buildroot's own: ws2812-pio-rp1's clear_on_probe, which the package turns
+# off (modprobe.d/raze-ws2812-pio.conf) so the ring keeps lemnosd's reboot
+# ember through a restart instead of going dark when the driver loads. Each
+# applies once: one already in the tree (a rebuild) is skipped.
+define RAZE_APPLY_KERNEL_PATCHES
+	@for p in $(sort $(wildcard $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/patches/*.patch)); do \
+		if patch -d $(LINUX_DIR) -p1 -R --dry-run -s -f < $$p >/dev/null 2>&1; then \
+			echo "[raze] $$(basename $$p): already applied"; \
+		else \
+			echo "[raze] applying $$(basename $$p)"; \
+			patch -d $(LINUX_DIR) -p1 -s < $$p || exit 1; \
+		fi; \
+	done
+endef
+LINUX_POST_PATCH_HOOKS += RAZE_APPLY_KERNEL_PATCHES
+
 # Fail rather than ship a kernel whose core configuration drifted: the page
 # size (4 KiB) and a built-in EROFS are package decisions (raze.config,
 # kernel.toml), and every other option raze.config sets or turns off must
