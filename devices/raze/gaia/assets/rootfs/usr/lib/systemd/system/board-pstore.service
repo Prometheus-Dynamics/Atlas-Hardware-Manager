@@ -4,8 +4,14 @@ Documentation=file:/usr/lib/board/pstore
 # Once /data is mounted, before the boot record (it reads the same "how did
 # the last boot end"), and before systemd's own pstore copier, which would
 # otherwise take the files to /var/lib/systemd/pstore.
+# An early unit: systemd-pstore.service is part of sysinit.target, so with
+# default dependencies (After=sysinit.target) "Before=systemd-pstore.service"
+# made an ordering cycle, and systemd broke it by dropping systemd-pstore's
+# start on every boot.
+DefaultDependencies=no
 After=local-fs.target
-Before=board-boot.service systemd-pstore.service
+Before=sysinit.target board-boot.service systemd-pstore.service shutdown.target
+Conflicts=shutdown.target
 ConditionDirectoryNotEmpty=/sys/fs/pstore
 
 [Service]
