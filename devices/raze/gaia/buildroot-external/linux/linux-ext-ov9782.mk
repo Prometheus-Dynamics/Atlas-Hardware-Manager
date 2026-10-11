@@ -14,6 +14,9 @@ define OV9782_PREPARE_KERNEL
 	else \
 		echo "[ov9782] OV9282 driver already has OV9782 variant support"; \
 	fi
+	@if ! grep -q 'exposure_max = ov9282->vblank' $(LINUX_DIR)/drivers/media/i2c/ov9282.c; then \
+		patch -d $(LINUX_DIR) -p1 < $(OV9782_EXT_DIR)/ov9782/0002-media-i2c-ov9282-keep-control-defaults-inside-ranges.patch; \
+	fi
 endef
 
 LINUX_PRE_PATCH_HOOKS += OV9782_PREPARE_KERNEL
