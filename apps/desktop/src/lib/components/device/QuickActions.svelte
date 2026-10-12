@@ -1,12 +1,13 @@
 <script lang="ts">
   // The everyday controls in the device header: the device's non-destructive
   // actions (Find it, Restart, …) and its web page. Only what it offers.
-  import { api, openExternal, type DeviceAction, type DeviceRecord } from "#lib/api/client.ts";
+  import { api, type DeviceAction, type DeviceRecord } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import { deviceName } from "#lib/format.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
   import type { IconName } from "#lib/ui/icons.ts";
   import { quickActions } from "./quick.ts";
+  import WebUiButton from "./WebUiButton.svelte";
 
   let { record }: { record: DeviceRecord } = $props();
 
@@ -29,7 +30,7 @@
 
   let actions = $state<DeviceAction[]>([]);
   const quick = $derived(quickActions(actions));
-  const webUi = $derived(record.presence === "online" ? (record.identity.attributes?.manage_url ?? null) : null);
+  const webUi = $derived(record.presence === "online" && !!record.identity.attributes?.manage_url);
 
   $effect(() => {
     const key = record.key;
@@ -64,7 +65,7 @@
       <Button size="sm" icon={ICON[action.id] ?? "player-play"} action={() => run(action)}>{action.label}</Button>
     {/each}
     {#if webUi}
-      <Button size="sm" icon="world-www" iconRight="external-link" onclick={() => openExternal(webUi)} title={webUi}>Web UI</Button>
+      <WebUiButton {record} />
     {/if}
   </div>
 {/if}

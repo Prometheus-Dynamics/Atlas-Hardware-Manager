@@ -13,6 +13,10 @@ pub const SERVICE_TYPE: &str = "_pd-device._tcp.local.";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Advertisement {
     pub address: IpAddr,
+    /// Every IPv4 address advertised, `address` first: a board on Ethernet
+    /// and Wi-Fi has several, and a browser that can't resolve `.local`
+    /// needs one of them.
+    pub addresses: Vec<IpAddr>,
     pub port: u16,
     pub txt: BTreeMap<String, String>,
 }
@@ -110,10 +114,17 @@ impl Browser {
                                 .into_iter()
                                 .map(|(key, value)| (key.to_ascii_lowercase(), value))
                                 .collect();
+                            let mut ipv4: Vec<IpAddr> = addresses
+                                .iter()
+                                .filter(|ip| ip.is_ipv4())
+                                .copied()
+                                .collect();
+                            ipv4.sort_by_key(|ip| *ip != address);
                             map.insert(
                                 service.fullname.clone(),
                                 Advertisement {
                                     address,
+                                    addresses: ipv4,
                                     port: service.port,
                                     txt,
                                 },
@@ -188,6 +199,7 @@ mod tests {
     fn identity_urls_use_the_srv_port_and_txt_path() {
         let mut ad = Advertisement {
             address: "10.0.0.5".parse().unwrap(),
+            addresses: Vec::new(),
             port: 5899,
             txt: BTreeMap::new(),
         };

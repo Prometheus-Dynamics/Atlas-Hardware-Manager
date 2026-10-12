@@ -18,6 +18,9 @@ pub mod attributes {
     pub const CAMERA_STREAM: &str = "camera_stream";
     /// The device's network hostname.
     pub const HOSTNAME: &str = "hostname";
+    /// The device's IP addresses, comma-separated, the one Atlas reaches it
+    /// on first. Lets the UI open the web page where `.local` won't resolve.
+    pub const ADDRESSES: &str = "addresses";
     /// The physical board's own serial, the same whichever way a driver
     /// sees it (boot ROM, recovery gadget, running OS). Lets Atlas tell that
     /// a recovery device and a running device are one board.

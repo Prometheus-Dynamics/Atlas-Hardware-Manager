@@ -259,6 +259,18 @@ impl Driver for BoardDriver {
         }
         let mut identity =
             reported.to_identity(Some(&self.package), candidate.link.clone(), address.clone());
+        if let Some(ad) = Browser::shared()
+            .advertisements()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|ad| ad.identity_url() == address)
+            .filter(|ad| !ad.addresses.is_empty())
+        {
+            let ips: Vec<String> = ad.addresses.iter().map(ToString::to_string).collect();
+            identity
+                .attributes
+                .insert(atlas_driver::attributes::ADDRESSES.into(), ips.join(","));
+        }
         if let Some(tty) = crate::serial::serial_console(&reported.serial) {
             identity.attributes.insert("serial_console".into(), tty);
         }

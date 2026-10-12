@@ -141,6 +141,7 @@ const razeRunning = (serial: string, version: string, ab: boolean): SimDevice =>
     revision: "gen1",
     hostname: `raze-${serial}`,
     manage_url: `http://raze-${serial}.local:5800`,
+    addresses: `10.84.30.${parseInt(serial.slice(-2), 16) % 200 + 20},192.168.1.${parseInt(serial.slice(-2), 16) % 200 + 20}`,
     "mac.eth0": `d8:3a:dd:${serial.slice(0, 2)}:${serial.slice(2, 4)}:${serial.slice(4, 6)}`,
     update_methods: ab ? AB_METHODS : "image-write",
     board_serial: serial,

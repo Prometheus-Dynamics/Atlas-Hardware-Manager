@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { api, errorText, keyString, openExternal, type DeviceAction, type DeviceRecord } from "#lib/api/client.ts";
+  import { api, errorText, keyString, type DeviceAction, type DeviceRecord } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
   import Field from "#lib/components/common/Field.svelte";
@@ -20,6 +20,7 @@
   import LiveStats from "./LiveStats.svelte";
   import NowCard from "./NowCard.svelte";
   import SelfTestCard from "./SelfTestCard.svelte";
+  import WebUiButton from "./WebUiButton.svelte";
 
   let { record }: { record: DeviceRecord } = $props();
 
@@ -185,7 +186,7 @@
 
   {#if manageUrl && !online}
     <div class="flex items-center gap-3">
-      <Button icon="world-www" iconRight="external-link" onclick={() => openExternal(manageUrl)}>Open web UI</Button>
+      <WebUiButton {record} size="md" label="Open web UI" />
       <span class="mono truncate text-[12px] text-fg-faint">{manageUrl}</span>
     </div>
   {/if}
