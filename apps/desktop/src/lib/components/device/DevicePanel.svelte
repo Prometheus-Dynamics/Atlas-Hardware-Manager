@@ -72,6 +72,22 @@
   let tab = $state(asked ?? (recovery ? "software" : "overview"));
   const current = $derived(tabs.some((t) => t.value === tab) ? tab : "overview");
 
+  /** When this device's data was last read: its status, else the last scan. */
+  const readAt = $derived(record ? (deviceStatus.readAt.get(keyString(record.key)) ?? devices.lastScanAt) : null);
+  let refreshing = $state(false);
+  /** Looks for it again on every link, then re-reads its status and history. */
+  async function refresh() {
+    if (!record || refreshing) return;
+    refreshing = true;
+    try {
+      await devices.scanNow();
+      const now = devices.get(key);
+      if (now) await Promise.all([deviceStatus.refresh(now.key), deviceStatus.loadHistory(now.key)]);
+    } finally {
+      refreshing = false;
+    }
+  }
+
   const subline = $derived.by(() => {
     if (!record) return "";
     const storage = storageName(record.identity.attributes?.storage);
@@ -107,6 +123,14 @@
       <div class="ml-auto flex flex-wrap items-center gap-1.5">
         <QuickActions {record} />
         <span class="sep" aria-hidden="true"></span>
+        <Button
+          size="sm"
+          icon="refresh"
+          busy={refreshing || devices.scanning}
+          onclick={() => void refresh()}
+          title="Look for it on every link and re-read what it reports"
+          >Refresh <span class="when">{refreshing || devices.scanning ? "reading" : readAt === null ? "not read" : timeAgo(readAt, clock.now)}</span></Button
+        >
         <Button
           size="sm"
           icon="layout-dashboard"
@@ -167,6 +191,10 @@
   }
   .head {
     padding: 10px 16px;
+  }
+  .when {
+    color: var(--fg-muted);
+    font-variant-numeric: tabular-nums;
   }
   .sep {
     width: 1px;
