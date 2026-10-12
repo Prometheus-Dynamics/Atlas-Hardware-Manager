@@ -37,6 +37,11 @@ pub const LINUX_UDEV_RULES_FILE: &str = concat!(
     "ATTRS{product}==\"Raze flasher\", TAG+=\"uaccess\"\n",
     "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"1d6b\", ATTR{idProduct}==\"0104\", ",
     "ATTR{product}==\"Raze flasher\", MODE=\"0660\", TAG+=\"uaccess\"\n",
+    "# A running board's own console (device package 1.0.7+), by its\n",
+    "# manufacturer: Atlas manages a board plugged in here through it, with no\n",
+    "# SSH key (holding the cable is the access).\n",
+    "SUBSYSTEM==\"tty\", ATTRS{idVendor}==\"1d6b\", ATTRS{idProduct}==\"0104\", ",
+    "ATTRS{manufacturer}==\"Prometheus Dynamics\", TAG+=\"uaccess\"\n",
 );
 
 /// The Windows USB product ids that need WinUSB bound for USB boot.

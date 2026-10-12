@@ -23,8 +23,9 @@ const EVERY: Duration = Duration::from_secs(60);
 const TIMEOUT: Duration = Duration::from_millis(600);
 /// Addresses asked at once.
 const AT_ONCE: usize = 48;
-/// The port and path every board serves its identity on.
-pub(crate) const PORT: u16 = 80;
+/// The port every board serves its identity on (board-http.socket), as the
+/// USB gadget's links assume too.
+pub(crate) const PORT: u16 = 5899;
 
 /// An IPv4 network to sweep.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -87,7 +88,8 @@ pub(crate) fn own_robot_nets() -> Vec<Net> {
 }
 
 /// The identity URL of the board at `ip`, as its mDNS advertisement gives it.
-pub(crate) fn identity_url(ip: Ipv4Addr) -> String {
+#[cfg(test)]
+fn identity_url(ip: Ipv4Addr) -> String {
     identity_url_at(ip, PORT)
 }
 
@@ -229,7 +231,7 @@ mod tests {
     fn a_swept_url_is_the_same_as_the_advertised_one() {
         assert_eq!(
             identity_url(Ipv4Addr::new(10, 53, 38, 11)),
-            "http://10.53.38.11:80/.well-known/pd-device"
+            "http://10.53.38.11:5899/.well-known/pd-device"
         );
     }
 

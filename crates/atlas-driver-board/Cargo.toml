@@ -21,7 +21,11 @@ nusb.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["process", "io-util", "fs", "time", "macros"] }
+tokio = { workspace = true, features = ["process", "io-util", "fs", "time", "macros", "rt", "sync"] }
+
+[target.'cfg(unix)'.dependencies]
+# The USB console (console.rs): raw tty and flock.
+nix = { workspace = true, features = ["term", "fs"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "net", "io-util"] }

@@ -68,6 +68,9 @@ pub(crate) struct State {
     pub(crate) selftests: BTreeMap<String, crate::SelfTestRecord>,
     /// Boards to self-test when they come back, with a deadline (ms).
     pub(crate) selftest_pending: HashMap<String, u64>,
+    /// Boards to add this computer's SSH key to when they run, with a
+    /// deadline (ms).
+    pub(crate) key_pending: HashMap<String, u64>,
     /// Boards whose self-test is running now.
     pub(crate) selftest_running: HashSet<String>,
     /// Each board's recent events, by board serial, oldest first.
@@ -285,6 +288,8 @@ impl Atlas {
         let report = scan::run(&self.inner).await;
         // Boards back from a flash or an update get their self-test.
         self.start_due_selftests();
+        // Boards fresh from a flash get this computer's SSH key.
+        self.start_due_key_installs();
         // Boards with an event log: fetch what happened since.
         self.start_due_event_syncs();
         report

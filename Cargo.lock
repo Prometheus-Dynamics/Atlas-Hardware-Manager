@@ -355,6 +355,7 @@ dependencies = [
  "atlas-driver",
  "if-addrs",
  "mdns-sd",
+ "nix",
  "nusb",
  "reqwest",
  "serde",

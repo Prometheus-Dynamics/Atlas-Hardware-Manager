@@ -38,6 +38,13 @@ struct Cli {
     #[arg(long, global = true)]
     json: bool,
 
+    /// Your OpenSSH public key (.pub): `flash` puts it on the board, the
+    /// `ssh-key.add` action adds it to a running board (over its USB console
+    /// when plugged in here, no key needed), and SSH uses the private key
+    /// next to it.
+    #[arg(long, global = true, value_name = "PUB")]
+    ssh_key: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -98,16 +105,13 @@ enum Command {
         /// The image: .img, .img.xz or .img.zst.
         #[arg(long)]
         image: PathBuf,
-        /// OpenSSH public keys (.pub) to put on the boot partition; the
-        /// device package installs them for root on first start.
-        #[arg(long, value_name = "PUB")]
-        ssh_key: Option<PathBuf>,
         /// The board in USB boot (name, `family:serial` or serial), when
         /// there is more than one.
         #[arg(long, conflicts_with = "usb_boot")]
         device: Option<String>,
         /// A running board to restart into USB boot first (its `usb-boot`
-        /// action, over SSH), then flash.
+        /// action: through Orion, its USB console when plugged in here, or
+        /// SSH), then flash.
         #[arg(long, value_name = "DEVICE")]
         usb_boot: Option<String>,
         /// Seconds to wait for a --usb-boot board to show up in USB boot.
@@ -177,7 +181,7 @@ fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
                 .driver(Arc::new(RpiDriver::new(RpiConfig {
                     boot_file_dirs,
                     catalog: catalog.clone(),
-                    ssh_keys,
+                    ssh_keys: ssh_keys.clone(),
                     known_hosts: dirs::data_dir()
                         .map(|data| data.join("atlas").join("known_hosts")),
                 })))
@@ -185,8 +189,17 @@ fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
                 .link_source(Arc::new(NetworkLinks))
                 .link_source(Arc::new(UsbGadgetLinks));
             let ssh = SshAccess::new(SshConfig {
-                identity_file: None,
+                identity_file: cli
+                    .ssh_key
+                    .as_deref()
+                    .and_then(atlas_driver_board::private_key_for),
                 known_hosts: dirs::data_dir().map(|data| data.join("atlas").join("known_hosts")),
+                public_key: ssh_keys.get().and_then(|keys| {
+                    keys.lines()
+                        .map(str::trim)
+                        .find(|line| !line.is_empty())
+                        .map(str::to_owned)
+                }),
             });
             for driver in drivers_for_catalog(&catalog, &ssh) {
                 builder = builder.driver(driver);
@@ -200,11 +213,7 @@ fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
 async fn main() -> ExitCode {
     let cli = Cli::parse();
     let ssh_keys = SshKeys::default();
-    if let Command::Flash {
-        ssh_key: Some(path),
-        ..
-    } = &cli.command
-    {
+    if let Some(path) = &cli.ssh_key {
         match SshKeys::read_public(path) {
             Ok(keys) => ssh_keys.set(Some(keys)),
             Err(error) => {
@@ -251,13 +260,13 @@ async fn main() -> ExitCode {
             device,
             usb_boot,
             wait,
-            ..
         } => {
             let options = flash::FlashOptions {
                 image,
                 device,
                 usb_boot,
                 wait: Duration::from_secs(wait),
+                add_key: cli.ssh_key.is_some(),
                 json: cli.json,
             };
             flash::flash(&atlas, options).await

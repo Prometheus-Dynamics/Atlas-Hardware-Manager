@@ -2,7 +2,9 @@
 //! the same job the desktop's Flash runs (the rpi driver's recovery): boot the
 //! board's mass-storage gadget, wait for exactly one new USB disk, write the
 //! image with atlas-helper, read it back, put the SSH keys on the boot
-//! partition, eject.
+//! partition, eject. (A board running the raze-flasher writes the image over
+//! its own USB interface instead; its SSH key is added once the new image
+//! runs, through the board's USB console.)
 //!
 //! Only a board this command can boot itself counts: one in USB boot (or put
 //! there with --usb-boot over SSH). A board whose eMMC already shows as a
@@ -25,8 +27,13 @@ pub(crate) struct FlashOptions {
     pub(crate) device: Option<String>,
     pub(crate) usb_boot: Option<String>,
     pub(crate) wait: Duration,
+    /// `--ssh-key` was given: add it to the board once the new image runs.
+    pub(crate) add_key: bool,
     pub(crate) json: bool,
 }
+
+/// How long the fresh image has to come up running with `ssh-key.add`.
+const KEY_WAIT: Duration = Duration::from_secs(4 * 60);
 
 /// A board in USB boot that the recovery job boots itself.
 fn bootable(device: &DeviceRecord) -> bool {
@@ -101,7 +108,18 @@ pub(crate) async fn flash(atlas: &Atlas, options: FlashOptions) -> CommandResult
             options.image.display()
         ));
     }
-    commands::update(
+    let board_serial = atlas
+        .devices()
+        .into_iter()
+        .find(|device| device.key == key)
+        .and_then(|device| {
+            device
+                .identity
+                .attributes
+                .get(atlas_driver::attributes::BOARD_SERIAL)
+                .cloned()
+        });
+    let flashed = commands::update(
         atlas,
         UpdateOptions {
             selectors: vec![key.to_string()],
@@ -114,7 +132,71 @@ pub(crate) async fn flash(atlas: &Atlas, options: FlashOptions) -> CommandResult
             json: options.json,
         },
     )
-    .await
+    .await;
+    if flashed.is_ok()
+        && options.add_key
+        && let Some(board_serial) = board_serial
+    {
+        add_key_when_running(atlas, &board_serial, options.json).await;
+    }
+    flashed
+}
+
+/// Waits for the freshly flashed board to run and adds the SSH key with its
+/// `ssh-key.add` action (idempotent: a key the flash already put there stays
+/// one line). Says what happened; never fails the flash.
+async fn add_key_when_running(atlas: &Atlas, board_serial: &str, json: bool) {
+    let say = |text: &str| {
+        if !json {
+            output::line(text);
+        }
+    };
+    say("Waiting for the board to start the new image, to add your SSH key.");
+    let deadline = Instant::now() + KEY_WAIT;
+    loop {
+        tokio::time::sleep(Duration::from_secs(3)).await;
+        atlas.scan().await;
+        let running = atlas.devices().into_iter().find(|device| {
+            device.identity.mode == DeviceMode::Normal
+                && device.presence == Presence::Online
+                && device
+                    .identity
+                    .attributes
+                    .get(atlas_driver::attributes::BOARD_SERIAL)
+                    .map(String::as_str)
+                    == Some(board_serial)
+        });
+        if let Some(device) = running {
+            let offered = atlas
+                .actions(&device.key)
+                .is_ok_and(|actions| actions.iter().any(|a| a.id == "ssh-key.add"));
+            if offered {
+                match atlas.run_action(&device.key, "ssh-key.add").await {
+                    Ok(()) => {
+                        say(&format!("Added your SSH key to {}.", device.display_name()));
+                        return;
+                    }
+                    Err(error) if Instant::now() < deadline => {
+                        say(&format!("Adding the SSH key: {error}; trying again."));
+                    }
+                    Err(error) => {
+                        say(&format!(
+                            "Couldn't add your SSH key: {error}. Run `atlas --ssh-key <PUB> action {} ssh-key.add` with the board on this computer's USB.",
+                            device.key
+                        ));
+                        return;
+                    }
+                }
+            }
+        }
+        if Instant::now() >= deadline {
+            say(&format!(
+                "The board didn't come up running within {} s to add your SSH key; once it runs, use `atlas --ssh-key <PUB> action <board> ssh-key.add`.",
+                KEY_WAIT.as_secs()
+            ));
+            return;
+        }
+    }
 }
 
 /// Runs the running board's `usb-boot` action (over SSH: the board restarts

@@ -158,6 +158,8 @@ pub fn ssh_config(paths: &AppPaths, file: Option<&str>) -> atlas_driver_board::S
     atlas_driver_board::SshConfig {
         identity_file,
         known_hosts: Some(paths.data_dir.join("known_hosts")),
+        // The key next to the private one (`ssh-key.add`).
+        public_key: None,
     }
 }
 

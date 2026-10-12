@@ -353,6 +353,7 @@ impl Driver for BoardDriver {
                 access: self.ssh.clone(),
                 host,
                 key: device.key.clone(),
+                usb_serial: Some(reported.serial.clone()).filter(|serial| !serial.is_empty()),
             })
         };
         let update = has(AB_METHOD)
@@ -384,6 +385,7 @@ impl Driver for BoardDriver {
                 .contains_key(atlas_driver::attributes::CLOCK_OFFSET_S),
             power: package_board,
             updates: has(AB_METHOD),
+            ssh_key: self.ssh.public_key(),
         };
         let ssh_actions = (offer.usb_boot || offer.set_clock || offer.power)
             .then(ssh)

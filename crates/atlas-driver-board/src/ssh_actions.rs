@@ -12,6 +12,13 @@
 //!   way the board is reached.
 //! - the self-test (`/usr/lib/board/selftest --json`), for boards whose
 //!   identity lists `selftest` in `diagnostics`.
+//! - `ssh-key.add`: put this computer's public key where the board installs
+//!   keys from (the boot partition's `board/authorized_keys`, kept across
+//!   updates) and install it now.
+//!
+//! Despite the module's name, a board plugged into this computer runs all of
+//! these on its USB console first (console.rs), with no SSH key; SSH is the
+//! way over the network.
 //!
 //! Every command runs with `BOARD_EVENT_SOURCE=atlas` (`ssh`), so the
 //! board's event log says Atlas asked.
@@ -41,6 +48,8 @@ pub const POWER_OFF_ACTION: &str = "power-off";
 pub const UPDATE_CANCEL_ACTION: &str = "update.cancel";
 /// Restarts into the previous confirmed version (Orion's `update.rollback`).
 pub const UPDATE_ROLLBACK_ACTION: &str = "update.rollback";
+/// Adds this computer's SSH key to the board, for SSH over the network.
+pub const SSH_KEY_ADD_ACTION: &str = "ssh-key.add";
 
 const USB_BOOT: &str = "/usr/lib/board/usb-boot";
 const WRITER: &str = "/usr/lib/board/update";
@@ -68,7 +77,7 @@ pub(crate) fn usb_boot_action() -> DeviceAction {
 }
 
 /// The SSH actions a board gets, by what it supports.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct SshOffer {
     /// Restart into USB boot (the board supports it).
     pub(crate) usb_boot: bool,
@@ -78,10 +87,12 @@ pub(crate) struct SshOffer {
     pub(crate) power: bool,
     /// Cancel and roll back updates (the A/B writer).
     pub(crate) updates: bool,
+    /// Add this public key (Atlas has one).
+    pub(crate) ssh_key: Option<String>,
 }
 
 impl SshOffer {
-    fn actions(self) -> Vec<DeviceAction> {
+    fn actions(&self) -> Vec<DeviceAction> {
         let mut list = Vec::new();
         if self.power {
             list.push(action(REBOOT_ACTION, "Restart", false));
@@ -100,6 +111,9 @@ impl SshOffer {
                 "Go back to the previous version",
                 true,
             ));
+        }
+        if self.power && self.ssh_key.is_some() {
+            list.push(action(SSH_KEY_ADD_ACTION, "Add my SSH key", false));
         }
         if self.power {
             list.push(action(POWER_OFF_ACTION, "Power off", true));
@@ -138,7 +152,7 @@ impl ActionsCapability for BoardDeviceActions {
     async fn run_action(&self, device: &Identity, action_id: &str) -> Result<(), DriverError> {
         let ours = self.offer.actions().iter().any(|a| a.id == action_id);
         match (&self.ssh, &self.http) {
-            (Some(ssh), _) if ours => run_ssh_action(ssh, action_id).await,
+            (Some(ssh), _) if ours => run_ssh_action(ssh, &self.offer, action_id).await,
             (_, Some(http)) => http.run_action(device, action_id).await,
             _ => Err(DriverError::Incompatible(format!(
                 "this board doesn't offer {action_id}"
@@ -147,8 +161,19 @@ impl ActionsCapability for BoardDeviceActions {
     }
 }
 
-async fn run_ssh_action(ssh: &SshUpdate, action_id: &str) -> Result<(), DriverError> {
+async fn run_ssh_action(
+    ssh: &SshUpdate,
+    offer: &SshOffer,
+    action_id: &str,
+) -> Result<(), DriverError> {
     match action_id {
+        SSH_KEY_ADD_ACTION => {
+            let key = offer
+                .ssh_key
+                .as_deref()
+                .ok_or_else(|| DriverError::Incompatible("Atlas has no SSH key set".into()))?;
+            ssh.run(&add_key_script(key)?).await.map(|_| ())
+        }
         USB_BOOT_ACTION => restart_into_usb_boot(ssh).await,
         SET_CLOCK_ACTION => set_clock(ssh).await,
         REBOOT_ACTION => {
@@ -213,6 +238,43 @@ async fn restart_into_usb_boot(ssh: &SshUpdate) -> Result<(), DriverError> {
         Ok(_) | Err(DriverError::Unreachable(_)) => Ok(()),
         Err(error) => Err(error),
     }
+}
+
+/// Writes `key` to the boot partition's `board/authorized_keys` (where
+/// `ssh-keys` installs keys from at every boot, so it survives updates) and
+/// runs `ssh-keys` now. Uses only what 1.0.7 boards have (lib.sh, findmnt,
+/// mount). The partition is left mounted as it was.
+fn add_key_script(key: &str) -> Result<String, DriverError> {
+    let key = key.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or("");
+    let looks_like_key = ["ssh-", "ecdsa-", "sk-ssh-", "sk-ecdsa-"]
+        .iter()
+        .any(|prefix| key.starts_with(prefix));
+    if !looks_like_key || key.contains('\'') {
+        return Err(DriverError::Incompatible(
+            "Atlas's SSH key isn't an OpenSSH public key".into(),
+        ));
+    }
+    Ok(format!(
+        r#"key='{key}'
+. /usr/lib/board/lib.sh
+p=$(board_sibling_partition "$(board_root_device)" 1) || {{ echo "can't tell which partition is the boot partition" >&2; exit 1; }}
+m=$(findmnt -n -o TARGET --source "$p" | head -n 1)
+was=$(findmnt -n -o OPTIONS --source "$p" | head -n 1)
+own=
+if [ -n "$m" ]; then
+	case ",$was," in *,ro,*) mount -o remount,rw "$m" || exit 1 ;; esac
+else
+	m=$BOARD_RUN_DIR/keyboot; mkdir -p "$m"; mount "$p" "$m" || exit 1; own=1
+fi
+mkdir -p "$m/board"
+grep -qxF "$key" "$m/board/authorized_keys" 2>/dev/null || printf '%s
+' "$key" >> "$m/board/authorized_keys"
+sync
+if [ -n "$own" ]; then umount "$m"; else case ",$was," in *,ro,*) mount -o remount,ro "$m" ;; esac; fi
+/usr/lib/board/ssh-keys
+{EVENT} ssh.keys 'SSH key added from Atlas' || true
+grep -qxF "$key" "$BOARD_RUN_DIR/ssh/authorized_keys" || {{ echo "the key didn't install" >&2; exit 1; }}"#
+    ))
 }
 
 /// Sets the board's clock to this computer's, in UTC, a form both busybox
@@ -330,12 +392,14 @@ mod tests {
             set_clock: true,
             power: true,
             updates: true,
+            ssh_key: Some("ssh-ed25519 AAAA me".into()),
         });
         let expect = [
             ("reboot", false),
             ("set-clock", false),
             ("update.cancel", false),
             ("update.rollback", true),
+            ("ssh-key.add", false),
             ("power-off", true),
             ("usb-boot", true),
         ];
@@ -346,6 +410,14 @@ mod tests {
                 .map(|(id, d)| (id.to_string(), *d))
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn only_a_public_key_is_added() {
+        let script = add_key_script("ssh-ed25519 AAAAC3Nz me@host\n").unwrap();
+        assert!(script.starts_with("key='ssh-ed25519 AAAAC3Nz me@host'\n"));
+        assert!(add_key_script("-----BEGIN OPENSSH PRIVATE KEY-----").is_err());
+        assert!(add_key_script("ssh-ed25519 AAAA it's").is_err());
     }
 
     #[test]

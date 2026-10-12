@@ -220,7 +220,7 @@ pub(crate) async fn run(
         &sha256[..12.min(sha256.len())]
     ));
     if config.ssh_keys.get().is_some() {
-        progress.log("your SSH key isn't added on the flasher path yet; add it from the device's actions once it runs");
+        progress.log("your SSH key is added once the new image runs, over the board's USB console");
     }
     if let (Some(path), Some(serial)) = (&config.known_hosts, &serial) {
         match forget_host_keys(path, serial) {

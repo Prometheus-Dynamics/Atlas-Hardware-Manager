@@ -26,6 +26,8 @@ use serde::Deserialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
+use crate::console::{Console, ConsoleError, SharedOnLine};
+
 /// The update method a board lists when it has the A/B layout and writer.
 pub const AB_METHOD: &str = "ab-tryboot";
 
@@ -54,6 +56,9 @@ pub struct SshConfig {
     pub identity_file: Option<PathBuf>,
     /// Atlas's own known_hosts; `None` uses the user's.
     pub known_hosts: Option<PathBuf>,
+    /// The public key `ssh-key.add` puts on boards; `None`: the one next to
+    /// `identity_file` (`<key>.pub`), if any.
+    pub public_key: Option<String>,
 }
 
 impl SshAccess {
@@ -73,6 +78,21 @@ impl SshAccess {
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
+    }
+
+    /// The public key next to the private one (`<key>.pub`), when Atlas has
+    /// one: what `ssh-key.add` installs.
+    pub fn public_key(&self) -> Option<String> {
+        let config = self.get();
+        if let Some(key) = config.public_key {
+            return Some(key);
+        }
+        let private = config.identity_file?;
+        let mut name = private.file_name()?.to_os_string();
+        name.push(".pub");
+        let text = std::fs::read_to_string(private.with_file_name(name)).ok()?;
+        let line = text.lines().map(str::trim).find(|line| !line.is_empty())?;
+        Some(line.to_owned())
     }
 }
 
@@ -115,7 +135,14 @@ pub(crate) struct SshUpdate {
     pub(crate) access: SshAccess,
     pub(crate) host: String,
     pub(crate) key: DeviceKey,
+    /// The board's USB serial: when it is plugged into this computer, its
+    /// console runs commands first (console.rs), so no SSH key is needed.
+    pub(crate) usb_serial: Option<String>,
 }
+
+/// The longest a command may take on the console (the self-test's own limit
+/// is shorter).
+const CONSOLE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 
 impl SshUpdate {
     fn command(&self) -> Command {
@@ -151,9 +178,33 @@ impl SshUpdate {
         command
     }
 
-    /// Runs `script` on the board and returns its stdout. The board's event
-    /// log records what it does as Atlas's.
+    /// The board's console, when it is plugged into this computer.
+    fn console(&self) -> Option<Console> {
+        self.usb_serial.as_deref().and_then(Console::find)
+    }
+
+    /// Runs `script` on the console when there is one that answers. `None`:
+    /// nothing ran there, so SSH may.
+    async fn on_console(
+        &self,
+        script: &str,
+        on_line: Option<SharedOnLine>,
+    ) -> Option<Result<String, DriverError>> {
+        let console = self.console()?;
+        match console.run(&as_atlas(script), CONSOLE_TIMEOUT, on_line).await {
+            Ok(out) => Some(Ok(out)),
+            Err(ConsoleError::Failed(error)) => Some(Err(error)),
+            Err(ConsoleError::NotThere(_)) => None,
+        }
+    }
+
+    /// Runs `script` on the board as root and returns its stdout: on its
+    /// USB console when it is plugged in here, else over SSH. The board's
+    /// event log records what it does as Atlas's.
     pub(crate) async fn run(&self, script: &str) -> Result<String, DriverError> {
+        if let Some(result) = self.on_console(script, None).await {
+            return result;
+        }
         let output = self
             .command()
             .arg(as_atlas(script))
@@ -178,6 +229,28 @@ impl SshUpdate {
     ) -> Result<String, DriverError> {
         use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 
+        // The console hands lines over from its own thread: pass them on
+        // through a channel, polled while it runs.
+        if self.console().is_some() {
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+            let send: SharedOnLine = Arc::new(move |line: &str| {
+                let _ = tx.send(line.to_owned());
+            });
+            let run = self.on_console(script, Some(send));
+            tokio::pin!(run);
+            let result = loop {
+                tokio::select! {
+                    result = &mut run => break result,
+                    Some(line) = rx.recv() => on_line(&line),
+                }
+            };
+            while let Ok(line) = rx.try_recv() {
+                on_line(&line);
+            }
+            if let Some(result) = result {
+                return result;
+            }
+        }
         let mut child = self
             .command()
             .arg(as_atlas(script))
@@ -307,7 +380,7 @@ fn ssh_error(code: Option<i32>, stderr: &str) -> DriverError {
     let stderr = stderr.trim();
     if stderr.contains("Permission denied") {
         return DriverError::Incompatible(
-            "the board doesn't accept your SSH key: reflash it with \"Add my SSH key\" ticked on the Flash tab".into(),
+            "the board doesn't accept your SSH key, and it isn't on this computer's USB: plug it in here (Atlas then uses its USB console, no key needed, and can add yours with \"Add my SSH key\")".into(),
         );
     }
     if stderr.contains("REMOTE HOST IDENTIFICATION HAS CHANGED") {

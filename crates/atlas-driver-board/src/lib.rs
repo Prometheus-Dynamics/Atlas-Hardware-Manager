@@ -16,6 +16,7 @@
 //! the device catalog and they share one mDNS browser.
 
 mod browse;
+mod console;
 mod contract;
 mod driver;
 mod gadget;
@@ -34,6 +35,7 @@ pub use gadget::UsbGadgetLinks;
 pub use serial::serial_console;
 pub use ssh::{AB_METHOD, SshAccess, SshConfig, private_key_for};
 pub use ssh_actions::{
-    POWER_OFF_ACTION, REBOOT_ACTION, SELFTEST_DIAGNOSTIC, SET_CLOCK_ACTION, UPDATE_CANCEL_ACTION,
+    POWER_OFF_ACTION, REBOOT_ACTION, SELFTEST_DIAGNOSTIC, SET_CLOCK_ACTION, SSH_KEY_ADD_ACTION,
+    UPDATE_CANCEL_ACTION,
     UPDATE_ROLLBACK_ACTION, USB_BOOT_ACTION, USB_BOOT_METHOD,
 };

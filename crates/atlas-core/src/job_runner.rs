@@ -511,6 +511,10 @@ fn finish_device(
     {
         // Self-test the board once it is back and running.
         inner.queue_selftest(record);
+        // A fresh install (from USB boot): add the SSH key once it runs.
+        if record.identity.mode == atlas_driver::DeviceMode::Recovery {
+            inner.queue_key_install(record);
+        }
     }
     if let Some(entry) = record.and_then(|record| crate::activity::for_update(&record, &status)) {
         inner.record_activity(vec![entry]);

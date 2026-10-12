@@ -15,6 +15,7 @@ pub mod install;
 mod inventory;
 mod job_runner;
 mod jobs;
+mod keys;
 mod lineage;
 mod links;
 mod manage;
