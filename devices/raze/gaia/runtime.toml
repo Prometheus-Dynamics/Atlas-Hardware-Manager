@@ -240,6 +240,13 @@ origin = "static-asset"
 mode = 493
 
 [[stage.files]]
+id = "raze-board-support-bundle"
+src = "@self/assets/rootfs/usr/lib/board/support-bundle"
+dest = "/usr/lib/board/support-bundle"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
 id = "raze-systemd-system-board-usb-route-service"
 src = "@self/assets/rootfs/usr/lib/systemd/system/board-usb-route.service"
 dest = "/usr/lib/systemd/system/board-usb-route.service"
@@ -552,6 +559,7 @@ stage_files = [
   "raze-board-raze-leds-reprobe",
   "raze-board-usb-gadget-dhcp",
   "raze-board-usb-route",
+  "raze-board-support-bundle",
   "raze-board-usb-gadget-setup",
   "raze-board-usb-gadget-env",
   "raze-systemd-network-05-board-usb-gadget-bridge-network",

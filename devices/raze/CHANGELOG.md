@@ -123,6 +123,12 @@ commit; the commits are listed per area.
   and `USB_F_FS` (=m), the raze-flasher daemon's bulk interface
   (docs/flasher.md); one more module in the shared kernel, loaded by no
   one else.
+- **Support bundle on the board:** `/usr/lib/board/support-bundle` packs
+  the journals of the last 3 boots (each capped), pstore (kept and live),
+  dmesg, versions, identity, status, update, self-test, hardware, the event
+  log, network and system state into one .tar.gz under /run/board/support
+  (or `--stdout`), with secrets redacted; README.txt in it lists the rules.
+  tests/support-bundle.sh. Atlas fetching it comes next.
 - **Flasher progress on the ring, safe return to the eMMC:** with the
   atlas-flasher daemon up, the ring is its own: dim green waiting, an amber
   arc while writing, a blue arc while verifying, bright green when verified,

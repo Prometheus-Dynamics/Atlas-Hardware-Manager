@@ -1,0 +1,243 @@
+#!/bin/sh
+# A support bundle: what someone needs to tell what happened on this board,
+# in one .tar.gz, with secrets taken out (README.txt in it lists how).
+#
+#   support-bundle             write it under $BOARD_RUN_DIR/support/ and
+#                              print its path (the newest 2 are kept)
+#   support-bundle --stdout    write it to stdout instead (over SSH)
+#
+# In it (each file says so when its source wasn't there):
+#   README.txt                what this is, the redaction rules
+#   journal-boots.txt         `journalctl --list-boots`
+#   journal-boot0.txt         this boot's journal, then the boots before it
+#   journal-boot-1.txt ..     (up to BOARD_SUPPORT_BOOTS, 3, in all; the
+#                             last BOARD_SUPPORT_LINES lines, 30000, of each),
+#                             so a boot that failed or hung is in it
+#   pstore/                   the kernel logs earlier boots left in RAM
+#                             (/data/board/pstore, newest 3) and any still in
+#                             /sys/fs/pstore
+#   dmesg.txt                 this boot's kernel log
+#   versions.txt              os-release, the package, kernel, cmdline,
+#                             bootloader, board revision
+#   identity.json status.json update.json selftest.json hardware.json
+#   events.jsonl              the board's event log (/data's and /run's)
+#   network.txt               links, addresses, routes, nft rules, the USB
+#                             route, resolv.conf, NetworkManager's devices
+#   system.txt                failed and running units, disks, mounts,
+#                             memory, time
+#
+# Never in it: /etc/shadow, SSH host or user keys, Orion's and
+# NetworkManager's connection files, /data/board/*.env.
+#
+# Test hooks: the paths in lib.sh, BOARD_PSTORE_DIR, BOARD_SUPPORT_BOOTS,
+# BOARD_SUPPORT_LINES, BOARD_SUPPORT_STAMP (the file name's time).
+set -u
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+
+boots=${BOARD_SUPPORT_BOOTS:-3}
+lines=${BOARD_SUPPORT_LINES:-30000}
+pstore_live=${BOARD_PSTORE_DIR:-/sys/fs/pstore}
+
+to_stdout=0
+case "${1:-}" in
+--stdout) to_stdout=1 ;;
+'') ;;
+*)
+	echo "usage: support-bundle [--stdout]" >&2
+	exit 2
+	;;
+esac
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/support-bundle.XXXXXX") || exit 1
+trap 'rm -rf "$work"' EXIT
+serial=$(board_serial 2>/dev/null)
+stamp=${BOARD_SUPPORT_STAMP:-$(date -u +%Y%m%d-%H%M%S)}
+name=raze-${serial:-unknown}-$stamp
+dir=$work/$name
+mkdir -p "$dir/pstore"
+
+# section <file> <title> <command...>: appends the command's output (and
+# errors) under a title; a missing command says so.
+section() {
+	_file=$1
+	_title=$2
+	shift 2
+	{
+		printf '== %s\n' "$_title"
+		if command -v "$1" > /dev/null 2>&1; then
+			"$@" 2>&1 || printf '(exit %s)\n' "$?"
+		else
+			printf '(not available: %s)\n' "$1"
+		fi
+		printf '\n'
+	} >> "$dir/$_file"
+}
+
+# copy <source> <name>: the file, or a note that it wasn't there.
+copy() {
+	if [ -r "$1" ]; then
+		cat "$1" > "$dir/$2"
+	else
+		printf '(not there: %s)\n' "$1" > "$dir/$2"
+	fi
+}
+
+# The journal: the list of boots, then each of the newest $boots.
+section journal-boots.txt "journalctl --list-boots" journalctl --list-boots --no-pager
+if command -v journalctl > /dev/null 2>&1; then
+	i=0
+	while [ "$i" -lt "$boots" ]; do
+		offset=$((0 - i))
+		out=$dir/journal-boot$offset.txt
+		if journalctl -b "$offset" --no-pager -q -o short-iso-precise > "$out.all" 2>/dev/null &&
+			[ -s "$out.all" ]; then
+			total=$(wc -l < "$out.all" | tr -d ' ')
+			{
+				printf '== journalctl -b %s (%s lines' "$offset" "$total"
+				[ "$total" -gt "$lines" ] && printf ', the last %s' "$lines"
+				printf ')\n'
+				tail -n "$lines" "$out.all"
+			} > "$out"
+		fi
+		rm -f "$out.all"
+		i=$((i + 1))
+	done
+fi
+
+# pstore: the newest 3 boots' kept records, and what is still in RAM.
+if [ -d "$BOARD_DATA_DIR/pstore" ]; then
+	# shellcheck disable=SC2012 # boot ids: no odd names
+	for kept in $(ls -1t "$BOARD_DATA_DIR/pstore" 2>/dev/null | head -n 3); do
+		[ -d "$BOARD_DATA_DIR/pstore/$kept" ] && cp -R "$BOARD_DATA_DIR/pstore/$kept" "$dir/pstore/$kept"
+	done
+fi
+if [ -d "$pstore_live" ]; then
+	for file in "$pstore_live"/*; do
+		[ -f "$file" ] || continue
+		mkdir -p "$dir/pstore/live"
+		cp "$file" "$dir/pstore/live/" 2>/dev/null
+	done
+fi
+[ -n "$(ls -A "$dir/pstore")" ] || printf 'No pstore records.\n' > "$dir/pstore/none.txt"
+
+section dmesg.txt "dmesg" dmesg
+
+copy /etc/os-release versions.txt.os
+{
+	printf '== os-release\n'
+	cat "$dir/versions.txt.os"
+	printf '\n== device package\n'
+	cat "$BOARD_LIB_DIR/board-package.env" 2>/dev/null || printf '(not there)\n'
+	printf '\n== serial\n%s\n' "${serial:-unknown}"
+	printf '\n== board revision\n%s\n' "$(board_rev 2>/dev/null)"
+	board_bootloader 2>/dev/null
+	printf '\n== bootloader\nversion %s, built %s\n' "${BOARD_BL_VERSION:-unknown}" "${BOARD_BL_TIMESTAMP:-unknown}"
+	printf '\n== kernel\n%s\n' "$(uname -a 2>/dev/null)"
+	printf '\n== cmdline\n%s\n' "$(cat /proc/cmdline 2>/dev/null)"
+} > "$dir/versions.txt"
+rm -f "$dir/versions.txt.os"
+
+"$BOARD_LIB_DIR/identity" > "$dir/identity.json" 2>&1 || true
+"$BOARD_LIB_DIR/status" --json > "$dir/status.json" 2>&1 || true
+copy "$BOARD_RUN_DIR/update.json" update.json
+copy "$BOARD_RUN_DIR/selftest.json" selftest.json
+copy "$BOARD_RUN_DIR/hardware.json" hardware.json
+: > "$dir/events.jsonl"
+for log in "$BOARD_DATA_DIR/events.jsonl" "$BOARD_RUN_DIR/events.jsonl"; do
+	[ -r "$log" ] && cat "$log" >> "$dir/events.jsonl"
+done
+
+section network.txt "ip addr" ip addr
+section network.txt "ip route" ip route
+section network.txt "ip -6 route" ip -6 route
+section network.txt "ip -s link" ip -s link
+section network.txt "nft list ruleset" nft list ruleset
+section network.txt "usb-route status" "$BOARD_LIB_DIR/usb-route" status
+section network.txt "resolv.conf" cat /etc/resolv.conf
+section network.txt "NetworkManager devices" nmcli -t device
+section network.txt "networkctl" networkctl --no-pager
+
+section system.txt "failed units" systemctl --failed --no-pager
+section system.txt "services" systemctl list-units --type=service --all --no-pager
+section system.txt "disks" df -h
+section system.txt "block devices" lsblk
+section system.txt "mounts" cat /proc/mounts
+section system.txt "memory" free
+section system.txt "uptime" uptime
+section system.txt "time" date -u
+
+# Secrets out of every text file. Matched without regard to case:
+redact_keys='password passwd passphrase psk secret token api_key apikey api-key authorization client_secret private_key'
+# ci <word>: a pattern matching it in any case (busybox sed has no I flag).
+ci() {
+	printf '%s' "$1" | awk '{
+		for (i = 1; i <= length($0); i++) {
+			c = substr($0, i, 1); u = toupper(c); l = tolower(c)
+			printf "%s", (u != l ? "[" l u "]" : c)
+		}
+	}'
+}
+alt=''
+for key in $redact_keys; do
+	alt="$alt${alt:+|}$(ci "$key")"
+done
+cat > "$work/redact.sed" <<EOF
+/-----BEGIN[A-Z ]*PRIVATE KEY-----/,/-----END[A-Z ]*PRIVATE KEY-----/{
+/-----/!d
+}
+s/([Bb][Ee][Aa][Rr][Ee][Rr])[[:space:]]+[A-Za-z0-9._~+\/=-]+/\1 <redacted>/g
+s/(($alt)[A-Za-z0-9_.-]*"[[:space:]]*:[[:space:]]*")[^"]*"/\1<redacted>"/g
+s/(($alt)[A-Za-z0-9_.-]*["']?[[:space:]]*[:=][[:space:]]*["']?)[^<[:space:]"',;&][^[:space:]"',;&]*/\1<redacted>/g
+s/(ssh-(ed25519|rsa|dss)|ecdsa-sha2-[a-z0-9]+|sk-ssh-[a-z0-9@.-]+)[[:space:]]+AAAA[A-Za-z0-9+\/=]+/\1 <redacted>/g
+s#://[^/@[:space:]"']+:[^/@[:space:]"']+@#://<redacted>@#g
+s#/(images|uploads)/[0-9a-fA-F]{32,}#/\1/<redacted>#g
+EOF
+find "$dir" -type f ! -name '*.z' | while IFS= read -r file; do
+	if sed -E -f "$work/redact.sed" "$file" > "$file.r" 2>/dev/null; then
+		mv -f "$file.r" "$file"
+	else
+		rm -f "$file.r"
+	fi
+done
+
+cat > "$dir/README.txt" <<EOF
+Support bundle for raze ${serial:-unknown}, written $(date -u '+%Y-%m-%d %H:%M:%S') UTC
+by /usr/lib/board/support-bundle.
+
+What each file is: the top of /usr/lib/board/support-bundle on the board.
+journal-boot0.txt is this boot; journal-boot-1.txt and -2 the boots before
+it (a boot that failed or hung is one of them). pstore/ holds what the kernel
+printed until earlier resets.
+
+Taken out before packing (every text file, case ignored):
+- the value after any of these words followed by = or : (as in KEY=value,
+  "key": "value"):
+  $redact_keys
+  (and longer names starting with one, such as token_file)
+- the body of PEM private keys (the BEGIN and END lines stay)
+- the token after "Bearer" (first, so "Authorization: Bearer x" loses x)
+- SSH key material (the key type stays)
+- user:password@ in URLs
+- the tokens in Atlas's /images/ and /uploads/ URLs
+
+Never collected: /etc/shadow, SSH host and user keys, Orion's and
+NetworkManager's connection files, /data/board/*.env.
+EOF
+
+if [ "$to_stdout" = 1 ]; then
+	tar -C "$work" -czf - "$name"
+	exit
+fi
+out=$BOARD_RUN_DIR/support
+mkdir -p "$out" || exit 1
+tar -C "$work" -czf "$out/$name.tar.gz.tmp" "$name" || {
+	rm -f "$out/$name.tar.gz.tmp"
+	exit 1
+}
+mv -f "$out/$name.tar.gz.tmp" "$out/$name.tar.gz"
+# shellcheck disable=SC2012 # our own names
+ls -1t "$out"/*.tar.gz 2>/dev/null | tail -n +3 | while IFS= read -r old; do rm -f "$old"; done
+printf '%s\n' "$out/$name.tar.gz"
