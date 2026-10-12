@@ -684,7 +684,10 @@ mod tests {
         assert!(status.fan.is_some(), "what Orion lacks, from the board");
         assert_eq!(status.hardware, Some(snapshot("imu")));
         // Orion has no events here: the board's.
-        assert_eq!(merged.events(&device(), None, 10).await.unwrap(), vec![event(1)]);
+        assert_eq!(
+            merged.events(&device(), None, 10).await.unwrap(),
+            vec![event(1)]
+        );
     }
 
     #[tokio::test]

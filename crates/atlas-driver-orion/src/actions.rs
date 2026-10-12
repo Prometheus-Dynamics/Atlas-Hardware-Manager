@@ -109,6 +109,13 @@ async fn wait_for(
 pub(crate) const CLOCK_SET: &str = "clock.set";
 const SET_CLOCK_ID: &str = "set-clock";
 
+/// The Orion action that turns a board's USB route onto the robot network on
+/// or off (board-agent's `usb-route.set`, `on`), offered as Atlas's
+/// `usb-route-on` and `usb-route-off`.
+pub(crate) const USB_ROUTE_SET: &str = "usb-route.set";
+const USB_ROUTE_ON_ID: &str = "usb-route-on";
+const USB_ROUTE_OFF_ID: &str = "usb-route-off";
+
 /// The node actions a node's agent claims: from its `action.claimed` list,
 /// or, for an agent from before that list, what holding `update` implied.
 pub(crate) fn legacy_claims() -> BTreeSet<String> {
@@ -159,6 +166,9 @@ impl OrionActions {
                 })
             }
             SET_CLOCK_ID if self.claimed.contains(CLOCK_SET) => Some(CLOCK_SET),
+            USB_ROUTE_ON_ID | USB_ROUTE_OFF_ID if self.claimed.contains(USB_ROUTE_SET) => {
+                Some(USB_ROUTE_SET)
+            }
             _ => None,
         }
     }
@@ -200,6 +210,20 @@ impl ActionsCapability for OrionActions {
                 destructive: false,
             });
         }
+        if self.claimed.contains(USB_ROUTE_SET) {
+            actions.extend([
+                DeviceAction {
+                    id: USB_ROUTE_ON_ID.into(),
+                    label: "Route USB to the robot network".into(),
+                    destructive: false,
+                },
+                DeviceAction {
+                    id: USB_ROUTE_OFF_ID.into(),
+                    label: "Keep USB to this camera only".into(),
+                    destructive: false,
+                },
+            ]);
+        }
         actions
     }
 
@@ -214,6 +238,12 @@ impl ActionsCapability for OrionActions {
             return Err(DriverError::Unsupported(format!("no action {action_id}")));
         };
         let mut args = BTreeMap::new();
+        if name == USB_ROUTE_SET {
+            args.insert(
+                "on".to_owned(),
+                TypedConfigValue::Bool(action_id == USB_ROUTE_ON_ID),
+            );
+        }
         if name == CLOCK_SET {
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

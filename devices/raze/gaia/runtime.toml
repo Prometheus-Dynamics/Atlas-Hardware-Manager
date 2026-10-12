@@ -233,6 +233,19 @@ dest = "/usr/lib/systemd/system/board-identity.service"
 origin = "static-asset"
 
 [[stage.files]]
+id = "raze-board-usb-route"
+src = "@self/assets/rootfs/usr/lib/board/usb-route"
+dest = "/usr/lib/board/usb-route"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
+id = "raze-systemd-system-board-usb-route-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-usb-route.service"
+dest = "/usr/lib/systemd/system/board-usb-route.service"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-systemd-system-board-usb-gadget-dhcp-service"
 src = "@self/assets/rootfs/usr/lib/systemd/system/board-usb-gadget-dhcp.service"
 dest = "/usr/lib/systemd/system/board-usb-gadget-dhcp.service"
@@ -502,6 +515,9 @@ config_overrides = [
   # DHCP server for the USB gadget link (board-usb-gadget-dhcp.service).
   # Buildroot installs no dnsmasq systemd unit, so nothing else starts it.
   ["BR2_PACKAGE_DNSMASQ", "y"],
+  # nft, for usb-route's NAT from the USB link onto the board's other
+  # networks (the kernel's nf_tables and masquerade are modules already).
+  ["BR2_PACKAGE_NFTABLES", "y"],
   # board-update: the image it installs may be .img.xz (busybox xzcat
   # works too; xz-utils is faster) or .img.zst, and board-image-slots copies the
   # slot partitions out of the stream (buildroot-external/packages).
@@ -535,6 +551,7 @@ stage_files = [
   "raze-board-lib-sh",
   "raze-board-raze-leds-reprobe",
   "raze-board-usb-gadget-dhcp",
+  "raze-board-usb-route",
   "raze-board-usb-gadget-setup",
   "raze-board-usb-gadget-env",
   "raze-systemd-network-05-board-usb-gadget-bridge-network",
@@ -559,6 +576,7 @@ stage_files = [
   "raze-systemd-system-board-http-service",
   "raze-systemd-system-board-identity-service",
   "raze-systemd-system-board-usb-gadget-dhcp-service",
+  "raze-systemd-system-board-usb-route-service",
   "raze-systemd-system-board-usb-gadget-service",
   "raze-systemd-system-raze-leds-reprobe-service",
   "raze-udev-rules-d-60-raze-usb-power-rules",

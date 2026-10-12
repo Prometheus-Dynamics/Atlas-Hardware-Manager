@@ -76,6 +76,7 @@ impl Board {
             locate_stop_command: vec![record.display().to_string(), "locate-stop".into()],
             event_command: vec![record.display().to_string(), "event".into()],
             set_clock_command: vec![record.display().to_string(), "date".into()],
+            usb_route_command: vec![record.display().to_string(), "usb-route".into()],
             poll: Duration::from_millis(50),
             republish: Duration::from_millis(500),
             retry: Duration::from_millis(20),
@@ -413,7 +414,7 @@ async fn rollback_reboot_and_locate() {
     assert_eq!(
         board.value("action.claimed"),
         Some(text(
-            "update,update.cancel,update.rollback,reboot,locate,clock.set"
+            "update,update.cancel,update.rollback,reboot,locate,clock.set,usb-route.set"
         ))
     );
     let set = run(
@@ -450,6 +451,20 @@ async fn rollback_reboot_and_locate() {
         "{:?}",
         board.calls()
     );
+    // usb-route.set: the package's usb-route, on or off; `on` is required.
+    let off = run(
+        &operator,
+        node_action("u1", "usb-route.set").with_arg("on", TypedConfigValue::Bool(false)),
+    )
+    .await;
+    assert_eq!(off.state, ActionState::Succeeded, "{off:?}");
+    assert!(
+        board.calls().iter().any(|c| c == "usb-route set off"),
+        "{:?}",
+        board.calls()
+    );
+    let bare = run(&operator, node_action("u2", "usb-route.set")).await;
+    assert!(rejected(&bare, "`on` (bool) is required"), "{bare:?}");
     let wrong = run(
         &operator,
         node_action("c3", "clock.set").with_arg("unix", TypedConfigValue::Int(0)),

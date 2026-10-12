@@ -75,6 +75,21 @@ pub struct BoardIdentity {
     /// Root-only diagnostics run over SSH, such as `selftest`.
     #[serde(default)]
     pub diagnostics: Vec<String>,
+    /// The USB link's route onto the robot network (`usb-route status`).
+    #[serde(default)]
+    pub usb_route: Option<UsbRoute>,
+}
+
+/// `usb-route status`: whether the USB link routes onto the board's other
+/// networks, and to which.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct UsbRoute {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub active: bool,
+    #[serde(default)]
+    pub subnets: Vec<String>,
 }
 
 /// `update status` as the identity carries it; every field is optional.
@@ -227,6 +242,20 @@ impl BoardIdentity {
         {
             attributes.insert(atlas_driver::attributes::CAMERA_STREAM.into(), stream);
         }
+        if let Some(route) = &self.usb_route {
+            let state = match (route.enabled, route.active) {
+                (true, true) => "active",
+                (true, false) => "on",
+                (false, _) => "off",
+            };
+            attributes.insert(atlas_driver::attributes::USB_ROUTE.into(), state.into());
+            if !route.subnets.is_empty() {
+                attributes.insert(
+                    atlas_driver::attributes::USB_ROUTE_SUBNETS.into(),
+                    route.subnets.join(","),
+                );
+            }
+        }
         // `camera_stream.<name>`, one per stream; the first is also the
         // device's `camera_stream` when it names none of its own.
         for stream in &self.camera_streams {
@@ -325,6 +354,35 @@ mod tests {
         assert_eq!(identity.attributes["update_state"], "confirmed");
         assert_eq!(identity.attributes["slot_active"], "B");
         assert!(!identity.attributes.contains_key("update_error"));
+    }
+
+    #[test]
+    fn the_usb_route_is_an_attribute() {
+        let route = |json: &str| {
+            let mut value: serde_json::Value = serde_json::from_str(SAMPLE).unwrap();
+            value["usb_route"] = serde_json::from_str(json).unwrap();
+            let reported: BoardIdentity = serde_json::from_value(value).unwrap();
+            reported
+                .to_identity(None, LinkId("mdns".into()), "x".into())
+                .attributes
+        };
+        let active =
+            route(r#"{"enabled":true,"active":true,"subnets":["10.53.38.0/24","192.168.4.0/22"]}"#);
+        assert_eq!(active["usb_route"], "active");
+        assert_eq!(active["usb_route.subnets"], "10.53.38.0/24,192.168.4.0/22");
+        assert_eq!(
+            route(r#"{"enabled":true,"active":false,"subnets":[]}"#)["usb_route"],
+            "on"
+        );
+        let off = route(r#"{"enabled":false,"active":false,"subnets":[]}"#);
+        assert_eq!(off["usb_route"], "off");
+        assert!(!off.contains_key("usb_route.subnets"));
+        let reported: BoardIdentity = serde_json::from_str(SAMPLE).unwrap();
+        let none = reported.to_identity(None, LinkId("mdns".into()), "x".into());
+        assert!(
+            !none.attributes.contains_key("usb_route"),
+            "an older board has none"
+        );
     }
 
     #[test]

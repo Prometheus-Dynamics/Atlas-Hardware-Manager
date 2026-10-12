@@ -49,7 +49,7 @@ pub struct RemoteTransport {
 }
 
 /// The actions Atlas runs through Orion; the enroll command grants these.
-const ACTIONS: [&str; 27] = [
+const ACTIONS: [&str; 28] = [
     "update",
     "update.cancel",
     "update.rollback",
@@ -68,6 +68,8 @@ const ACTIONS: [&str; 27] = [
     "calibration.discard",
     "calibration.reset",
     "calibration.status",
+    // The board's USB route onto the robot network (board-agent).
+    "usb-route.set",
     // A power switch's reset, and the status ring's looks and brightness.
     "power.reset",
     "looks.preset.list",

@@ -184,3 +184,12 @@ export function streamLabel(name: string): string {
   const [first, ...rest] = name.split(/[-_]/);
   return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" · ");
 }
+
+/** A board's USB route onto the robot network (a Raze's usb-route), from its identity; null when it has none. */
+export function usbRoute(record: DeviceRecord): { state: "active" | "on" | "off"; subnets: string[] } | null {
+  const attrs = record.identity.attributes ?? {};
+  const state = attrs.usb_route;
+  if (state !== "active" && state !== "on" && state !== "off") return null;
+  const subnets = (attrs["usb_route.subnets"] ?? "").split(",").filter(Boolean);
+  return { state, subnets };
+}

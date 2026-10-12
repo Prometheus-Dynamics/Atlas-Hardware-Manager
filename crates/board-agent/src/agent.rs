@@ -25,14 +25,19 @@ use crate::writer::{StderrTail, Writer, WriterStatus};
 
 /// The node actions the agent claims. Published as `action.claimed` (a
 /// comma-separated list), so operators can tell what this node offers.
-pub const CLAIMED_ACTIONS: [&str; 6] = [
+pub const CLAIMED_ACTIONS: [&str; 7] = [
     action_names::UPDATE,
     action_names::UPDATE_CANCEL,
     action_names::UPDATE_ROLLBACK,
     action_names::REBOOT,
     action_names::LOCATE,
     crate::clock::CLOCK_SET,
+    USB_ROUTE_SET,
 ];
+
+/// Turns the USB link's route onto the robot network on or off (`on`, a
+/// bool): the package's `usb-route set on|off`, kept across restarts.
+pub const USB_ROUTE_SET: &str = "usb-route.set";
 
 /// The status key listing [`CLAIMED_ACTIONS`].
 pub const CLAIMED_KEY: &str = "action.claimed";
@@ -226,6 +231,21 @@ impl Agent {
                 }
             }
             crate::clock::CLOCK_SET => self.set_clock(&id, &request.args).await,
+            USB_ROUTE_SET => {
+                let Some(TypedConfigValue::Bool(on)) = request.args.get("on") else {
+                    return self.reject(&id, "`on` (bool) is required".into()).await;
+                };
+                let mut command = self.config.usb_route_command.clone();
+                command.extend(["set".to_owned(), if *on { "on" } else { "off" }.to_owned()]);
+                match run_command(&command).await {
+                    Ok(()) => {
+                        let output =
+                            BTreeMap::from([("on".to_owned(), TypedConfigValue::Bool(*on))]);
+                        self.succeed(&id, output).await;
+                    }
+                    Err(error) => self.fail(&id, format!("usb-route: {error}")).await,
+                }
+            }
             other => {
                 self.reject(&id, format!("unsupported action `{other}`"))
                     .await;

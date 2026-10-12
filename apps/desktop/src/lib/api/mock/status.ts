@@ -544,6 +544,14 @@ export function boardAction(key: DeviceKey, action: string): void {
       reboot(device, board, now);
       break;
     }
+    case "usb-route-on":
+    case "usb-route-off": {
+      const on = action === "usb-route-on";
+      if (device.attributes) device.attributes.usb_route = on ? "active" : "off";
+      event(board, now, "usb-route", "orion", `USB route ${on ? "on" : "off"}`);
+      changed(device);
+      break;
+    }
     case "reboot":
       event(board, now, "reboot", "atlas", "restart requested from Atlas");
       reboot(device, board, now);

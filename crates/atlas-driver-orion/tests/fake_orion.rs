@@ -169,6 +169,33 @@ async fn the_clock_is_set_through_orion_when_the_agent_claims_it() {
     }
 }
 
+/// The USB route's switch: offered when board-agent claims usb-route.set,
+/// sent with `on`.
+#[tokio::test(start_paused = true)]
+async fn the_usb_route_is_switched_through_orion_when_the_agent_claims_it() {
+    let fake = FakeOrion::new();
+    fake.set_status("update.state", text("idle"));
+    fake.set_status(
+        "action.claimed",
+        text("update,update.cancel,update.rollback,reboot,locate,clock.set,usb-route.set"),
+    );
+    let directory = OrionDirectory::new(Arc::new(fake.clone()), None);
+    directory.refresh().await.unwrap();
+    let device = raze(Some("e5226d57"));
+    let actions = directory.capabilities_for(&device).actions.unwrap();
+    let ids: Vec<String> = actions.actions(&device).into_iter().map(|a| a.id).collect();
+    assert!(
+        ids.ends_with(&["usb-route-on".to_owned(), "usb-route-off".to_owned()]),
+        "{ids:?}"
+    );
+    actions.run_action(&device, "usb-route-off").await.unwrap();
+    actions.run_action(&device, "usb-route-on").await.unwrap();
+    assert_eq!(fake.received(), ["usb-route.set", "usb-route.set"]);
+    let sent = fake.0.lock().unwrap().received_args.clone();
+    assert_eq!(sent[0].get("on"), Some(&TypedConfigValue::Bool(false)));
+    assert_eq!(sent[1].get("on"), Some(&TypedConfigValue::Bool(true)));
+}
+
 async fn update_with(
     ending: Ending,
     cancel: CancellationToken,

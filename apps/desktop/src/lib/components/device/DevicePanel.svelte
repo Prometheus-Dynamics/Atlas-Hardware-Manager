@@ -10,7 +10,7 @@
   import { handoffs } from "#lib/components/software/handoff.svelte.ts";
   import { updateMethods } from "#lib/components/software/software.ts";
   import { deviceName, timeAgo } from "#lib/format.ts";
-  import { deviceIcon, isRecovery, modelName, storageName } from "#lib/present.ts";
+  import { deviceIcon, isRecovery, modelName, storageName, usbRoute } from "#lib/present.ts";
   import { clock } from "#lib/stores/clock.svelte.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { deviceStatus } from "#lib/stores/status.svelte.ts";
@@ -33,6 +33,7 @@
 
   const record = $derived(devices.get(key));
   const recovery = $derived(record ? isRecovery(record) : false);
+  const route = $derived(record ? usbRoute(record) : null);
   /** A job already running on this device: Software shows it instead. */
   const active = $derived(jobs.active.get(key) ?? null);
   /** A fresh install waiting for this board to reach USB boot. */
@@ -98,6 +99,9 @@
           <Pill tone="neutral" icon="plug-connected-x" label="Offline · seen {timeAgo(record.last_seen_ms, clock.now)}" />
         {/if}
         {#if recovery && record.presence === "online"}<Pill tone="primary" icon="usb" label="Waiting for an image" />{/if}
+        {#if route?.state === "active" && record.presence === "online"}
+          <Pill tone="success" icon="router" label="USB → robot network" title="A computer on its USB port reaches {route.subnets.join(', ')} through it" />
+        {/if}
         <Pill tone="neutral" mono label={record.key.serial} title={key} />
       </div>
       <div class="ml-auto flex flex-wrap items-center gap-1.5">

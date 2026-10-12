@@ -124,6 +124,12 @@ export const AB_ACTIONS: DeviceAction[] = [
   { id: "usb-boot", label: "Restart into USB boot", destructive: true },
 ];
 
+/** The USB route's switch, as Atlas's Orion driver offers it. */
+export const USB_ROUTE_ACTIONS: DeviceAction[] = [
+  { id: "usb-route-on", label: "Route USB to the robot network", destructive: false },
+  { id: "usb-route-off", label: "Keep USB to this camera only", destructive: false },
+];
+
 /** A running Raze on the robot network, as atlas-driver-board reports one. */
 const razeRunning = (serial: string, version: string, ab: boolean): SimDevice => ({
   key: { family: RAZE, serial },
@@ -157,10 +163,12 @@ const razeRunning = (serial: string, version: string, ab: boolean): SimDevice =>
         }
       : {}),
     ...(ab ? { slot_active: "A", update_state: "committed" } : {}),
+    // Its USB port leads onto the robot network (usb-route).
+    ...(ab ? { usb_route: "active", "usb_route.subnets": "10.84.30.0/24" } : {}),
   },
   link: { kind: "usb-network" },
   caps: razeCaps(ab),
-  actions: ab ? AB_ACTIONS : AB_ACTIONS.slice(0, 2),
+  actions: ab ? [...AB_ACTIONS, ...USB_ROUTE_ACTIONS] : AB_ACTIONS.slice(0, 2),
 });
 
 export const fleet: SimDevice[] = [

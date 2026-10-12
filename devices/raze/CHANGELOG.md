@@ -95,6 +95,20 @@ commit; the commits are listed per area.
 
 ### Board awareness: events, status, drift
 
+- **USB onto the robot network (usb-route):** a computer on the board's USB
+  port reaches the board's other networks (the robot's, through Ethernet)
+  as if plugged into the radio. Routed, not bridged: nftables masquerades
+  the USB link out of the other interfaces (table `board_usb_route`; nothing
+  on the robot network can open a connection to the computer), forwarding
+  is turned on, and dnsmasq gives the computer a route to each of those
+  networks (DHCP option 121, and 249 for Windows), never a default route.
+  board-usb-route.service follows address changes; gadget leases are now
+  10 minutes so a route reaches the host soon. On by default
+  (`USB_GADGET_ROUTE=1` in usb-gadget.env; an OS sets 0 to ship it off);
+  `usb-route set on|off` keeps a choice on /data, which board-agent runs
+  for Orion's `usb-route.set {on}` (Atlas's switch). The identity reports
+  `usb_route` {enabled, active, subnets}. Adds the nftables package.
+
 - **raze-flasher outputs (flasher.toml):** the same build also makes
   `raze-flasher-boot.img` and `raze-flasher-<version>.tar` (what
   atlas-usbboot serves: `bootfiles/2712/*`, the outer config.txt,

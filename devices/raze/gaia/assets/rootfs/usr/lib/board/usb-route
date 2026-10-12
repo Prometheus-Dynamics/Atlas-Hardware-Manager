@@ -1,0 +1,208 @@
+#!/bin/sh
+# The USB link as a way onto the robot network: a computer on the board's USB
+# port reaches the networks the board is on (the robot's, through its
+# Ethernet), as if it were plugged into the radio. Routed, not bridged: the
+# board NATs what comes in on the USB link out of its other interfaces, and
+# its DHCP server gives the computer a route to each of those networks
+# (classless static routes, DHCP option 121, and 249 for Windows), never a
+# default route, so the computer keeps its own internet. Nothing on the robot
+# network can start a connection to the computer.
+#
+#   usb-route apply     set the NAT, forwarding and DHCP routes as configured
+#   usb-route status    one line of JSON: {"enabled":..,"active":..,"subnets":[..]}
+#   usb-route set on|off   choose (kept on /data), then apply
+#   usb-route watch     apply, then again whenever an address changes
+#                       (board-usb-route.service)
+#
+# On unless USB_GADGET_ROUTE=0 (usb-gadget.env, /etc/board/usb-gadget.env); a
+# choice made with `set` ($BOARD_DATA_DIR/usb-route) wins over that.
+#   BOARD_NFT          nft (tests)
+#   BOARD_IP_FORWARD   the ip_forward sysctl file (tests)
+set -u
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+
+board_load_env usb-gadget.env
+
+NFT=${BOARD_NFT:-nft}
+IP_FORWARD=${BOARD_IP_FORWARD:-/proc/sys/net/ipv4/ip_forward}
+TABLE=board_usb_route
+BRIDGE=${USB_GADGET_BRIDGE:-usbbr0}
+CHOICE="$BOARD_DATA_DIR/usb-route"
+OPTS="$BOARD_RUN_DIR/usb-gadget-dhcp-routes"
+# What `apply` set up, for `status` and to undo only its own forwarding.
+STATE="$BOARD_RUN_DIR/usb-route.state"
+
+# Whether the route is wanted: the kept choice, else the package default.
+route_enabled() {
+	_c=$(head -n 1 "$CHOICE" 2>/dev/null) || _c=''
+	case "$_c" in
+	on) return 0 ;;
+	off) return 1 ;;
+	esac
+	[ "${USB_GADGET_ROUTE:-1}" = 1 ]
+}
+
+# The IPv4 networks (a.b.c.d/n) on the board's other interfaces: global
+# addresses only, not the USB link's, nor link-local.
+other_subnets() {
+	ip -4 -o addr show scope global 2>/dev/null | while read -r _ ifname _ cidr _; do
+		case "$ifname" in
+		"$BRIDGE" | usb* | lo) continue ;;
+		esac
+		case "$cidr" in
+		169.254.*) continue ;;
+		esac
+		_pre=${cidr#*/}
+		_a=$(board_ip4_int "${cidr%/*}") || continue
+		_size=$((1 << (32 - _pre)))
+		printf '%s/%s\n' "$(board_int_ip4 $((_a - _a % _size)))" "$_pre"
+	done | sort -u
+}
+
+# DHCP options for the USB link: a route to each network via the board's
+# USB address (dnsmasq dhcp-optsfile; empty when off).
+write_routes() {
+	mkdir -p "$BOARD_RUN_DIR"
+	: >"$OPTS.tmp"
+	if [ -n "$1" ]; then
+		board_gadget_address
+		_via=${BOARD_GADGET_CIDR%/*}
+		_routes=''
+		for _net in $1; do
+			_routes="$_routes${_routes:+,}$_net,$_via"
+		done
+		{
+			echo "option:classless-static-route,$_routes"
+			echo "249,$_routes"
+		} >"$OPTS.tmp"
+	fi
+	if ! cmp -s "$OPTS.tmp" "$OPTS" 2>/dev/null; then
+		mv -f "$OPTS.tmp" "$OPTS"
+		# dnsmasq rereads its options file on SIGHUP.
+		systemctl kill -s HUP board-usb-gadget-dhcp.service 2>/dev/null || true
+	else
+		rm -f "$OPTS.tmp"
+	fi
+}
+
+nat_on() {
+	board_gadget_address
+	"$NFT" -f - <<EOF
+table ip $TABLE
+delete table ip $TABLE
+table ip $TABLE {
+	chain postrouting {
+		type nat hook postrouting priority srcnat; policy accept;
+		iifname "$BRIDGE" oifname != "$BRIDGE" masquerade
+	}
+	chain forward {
+		type filter hook forward priority filter; policy accept;
+		iifname "$BRIDGE" accept
+		oifname "$BRIDGE" ct state established,related accept
+		oifname "$BRIDGE" drop
+	}
+}
+EOF
+}
+
+nat_off() {
+	"$NFT" delete table ip "$TABLE" 2>/dev/null || true
+}
+
+apply() {
+	if ! ip link show dev "$BRIDGE" >/dev/null 2>&1; then
+		write_routes ''
+		printf 'enabled=%s active=0 subnets=\n' "$(route_enabled && echo 1 || echo 0)" >"$STATE"
+		return 0
+	fi
+	if route_enabled; then
+		_subnets=$(other_subnets | tr '\n' ' ')
+		_subnets=${_subnets% }
+		# The table is rewritten only when it isn't there already: apply runs
+		# on every address change.
+		if grep -q 'active=1' "$STATE" 2>/dev/null && "$NFT" list table ip "$TABLE" >/dev/null 2>&1; then
+			:
+		elif ! nat_on; then
+			board_log "couldn't set the NAT (nft); the USB link stays local"
+			write_routes ''
+			printf 'enabled=1 active=0 subnets=\n' >"$STATE"
+			return 1
+		fi
+		if [ "$(cat "$IP_FORWARD" 2>/dev/null)" != 1 ]; then
+			echo 1 >"$IP_FORWARD"
+			touch "$STATE.forward"
+		fi
+		write_routes "$_subnets"
+		_was=$(sed -n 's/^.* subnets=//p' "$STATE" 2>/dev/null)
+		[ "$_was" = "$_subnets" ] || board_log "on, to ${_subnets:-no network yet}"
+		printf 'enabled=1 active=1 subnets=%s\n' "$_subnets" >"$STATE"
+	else
+		nat_off
+		write_routes ''
+		# Forwarding off again only if this turned it on.
+		if [ -e "$STATE.forward" ]; then
+			echo 0 >"$IP_FORWARD"
+			rm -f "$STATE.forward"
+		fi
+		grep -q 'active=1' "$STATE" 2>/dev/null && board_log "off"
+		printf 'enabled=0 active=0 subnets=\n' >"$STATE"
+	fi
+}
+
+status_json() {
+	_line=$(head -n 1 "$STATE" 2>/dev/null) || _line=''
+	# What apply last saw (readable without root), else the setting.
+	case "$_line" in
+	*enabled=1*) _enabled=1 ;;
+	*enabled=0*) _enabled=0 ;;
+	*) _enabled=0 && route_enabled && _enabled=1 ;;
+	esac
+	_active=0
+	case "$_line" in *active=1*) _active=1 ;; esac
+	_subnets=$(printf '%s' "$_line" | sed -n 's/^.* subnets=//p')
+	printf '{"enabled":%s,"active":%s,"subnets":[' \
+		"$([ "$_enabled" = 1 ] && echo true || echo false)" "$([ "$_active" = 1 ] && echo true || echo false)"
+	_sep=''
+	for _net in $_subnets; do
+		printf '%s%s' "$_sep" "$(board_json_str "$_net")"
+		_sep=','
+	done
+	printf ']}\n'
+}
+
+case "${1:-}" in
+apply)
+	apply
+	;;
+status)
+	status_json
+	;;
+set)
+	case "${2:-}" in
+	on | off) ;;
+	*)
+		echo "usage: usb-route set on|off" >&2
+		exit 2
+		;;
+	esac
+	mkdir -p "$BOARD_DATA_DIR"
+	echo "$2" >"$CHOICE.tmp" && mv -f "$CHOICE.tmp" "$CHOICE"
+	board_event usb-route "USB route $2"
+	apply
+	;;
+watch)
+	apply
+	# Addresses and links come and go (eth0's DHCP, a cable): apply again
+	# on each change (cheap when nothing it uses changed).
+	ip -o monitor address link 2>/dev/null | while read -r _; do
+		apply
+	done
+	;;
+*)
+	echo "usage: usb-route apply|status|set on|off|watch" >&2
+	exit 2
+	;;
+esac

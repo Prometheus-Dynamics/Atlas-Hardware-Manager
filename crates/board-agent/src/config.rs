@@ -30,6 +30,9 @@ pub struct Config {
     /// Sets the clock (`BOARD_AGENT_SET_CLOCK`); `@<unix seconds>` is
     /// appended, a form busybox and coreutils `date -s` both take.
     pub set_clock_command: Vec<String>,
+    /// The USB link's route onto the robot network (`BOARD_AGENT_USB_ROUTE`);
+    /// `set on|off` is appended.
+    pub usb_route_command: Vec<String>,
     /// How often update.json is read for changes.
     pub poll: Duration,
     /// How often the `update.*` keys are published even without a change.
@@ -51,6 +54,7 @@ impl Default for Config {
             locate_stop_command: words("systemctl stop board-locate.service"),
             event_command: words("/usr/lib/board/event"),
             set_clock_command: words("date -u -s"),
+            usb_route_command: words("/usr/lib/board/usb-route"),
             poll: Duration::from_secs(1),
             // Short: after orion-node restarts (its status lane is in memory),
             // the keys are back within this.
@@ -95,6 +99,9 @@ impl Config {
         }
         if let Some(value) = get("BOARD_AGENT_EVENT") {
             config.event_command = words(&value);
+        }
+        if let Some(value) = get("BOARD_AGENT_USB_ROUTE") {
+            config.usb_route_command = words(&value);
         }
         if let Some(value) = get("BOARD_AGENT_SET_CLOCK") {
             config.set_clock_command = words(&value);

@@ -290,7 +290,8 @@ board_gadget_address() {
 
 # board_gadget_dhcp_range <address>/<prefix>: dnsmasq's dhcp-range for the host
 # end of the link: the addresses after the device's, up to 19 of them and the
-# subnet's last host address, with the netmask and a 1h lease. Fails when the
+# subnet's last host address, with the netmask and a 10 minute lease (the host
+# renews within 5, so a route usb-route adds reaches it soon). Fails when the
 # subnet has no room.
 board_gadget_dhcp_range() {
 	_board_pre=${1#*/}
@@ -304,7 +305,7 @@ board_gadget_dhcp_range() {
 	_board_end=$((_board_a + 19))
 	[ "$_board_end" -le "$_board_last" ] || _board_end=$_board_last
 	[ "$_board_a" -lt "$_board_end" ] || return 1
-	printf '%s,%s,%s,1h\n' "$(board_int_ip4 $((_board_a + 1)))" "$(board_int_ip4 "$_board_end")" \
+	printf '%s,%s,%s,10m\n' "$(board_int_ip4 $((_board_a + 1)))" "$(board_int_ip4 "$_board_end")" \
 		"$(board_int_ip4 $((0xffffffff - _board_size + 1)))"
 }
 
@@ -544,6 +545,12 @@ board_identity_json() {
 	fi
 	printf ',"manage_url":%s' "$(board_json_str "$(board_first_line "$BOARD_ETC_DIR/manage-url" "$BOARD_LIB_DIR/manage-url")")"
 	board_camera_streams_json
+	# The USB link's route onto the robot network (usb-route), for Atlas's
+	# badge and switch.
+	if [ -x "${BOARD_USB_ROUTE_BIN:-$BOARD_LIB_DIR/usb-route}" ]; then
+		_board_ur=$("${BOARD_USB_ROUTE_BIN:-$BOARD_LIB_DIR/usb-route}" status 2>/dev/null) &&
+			case "$_board_ur" in '{'*'}') printf ',"usb_route":%s' "$_board_ur" ;; esac
+	fi
 	# The board's clock, so a host can tell it is wrong: a Raze has no RTC
 	# battery and often no NTP over the USB link.
 	printf ',"time":%s' "$(date +%s)"

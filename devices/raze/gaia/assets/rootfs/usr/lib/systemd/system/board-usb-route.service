@@ -1,0 +1,13 @@
+[Unit]
+Description=USB link onto the robot network (NAT and DHCP routes)
+Documentation=file:/usr/lib/board/usb-route
+Requires=board-usb-gadget.service
+After=board-usb-gadget.service board-usb-gadget-dhcp.service local-fs.target
+
+[Service]
+ExecStart=/usr/lib/board/usb-route watch
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

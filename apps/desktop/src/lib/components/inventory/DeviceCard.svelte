@@ -8,7 +8,7 @@
   import Sparkline from "#lib/components/common/Sparkline.svelte";
   import { metricFraction, metricIcon, metricTone, metricValue } from "#lib/metrics.ts";
   import type { IconName } from "#lib/ui/icons.ts";
-  import { deviceIcon, deviceSubline, isRecovery, viaName } from "#lib/present.ts";
+  import { deviceIcon, deviceSubline, isRecovery, usbRoute, viaName } from "#lib/present.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { insights } from "#lib/stores/insights.svelte.ts";
   import { jobs } from "#lib/stores/jobs.svelte.ts";
@@ -27,6 +27,8 @@
   const online = $derived(record.presence === "online");
   const waiting = $derived(online && isRecovery(record));
   const via = $derived(viaName(record, devices.nameOf));
+  // Its USB port leads onto the robot network (usb-route).
+  const routing = $derived(record.presence === "online" && usbRoute(record)?.state === "active");
   const fresh = $derived(devices.fresh.has(id));
   const twin = $derived(devices.runningTwin(record));
 
@@ -93,6 +95,11 @@
       <span class="link" title={linkText(record.link_kind, devices.nameOf)}>
         <Icon name={LINK_ICON[record.link_kind.kind] ?? "plug-connected"} size={12} />{via ? via : linkText(record.link_kind, devices.nameOf)}
       </span>
+      {#if routing}
+        <span class="link routing" title="USB → robot network: a computer on its USB port reaches {usbRoute(record)?.subnets.join(', ')} through it">
+          <Icon name="router" size={12} />routes USB
+        </span>
+      {/if}
     </div>
   </div>
 
@@ -125,6 +132,9 @@
     display: flex;
     align-items: flex-start;
     gap: 10px;
+  }
+  .link.routing {
+    color: var(--ok);
   }
   .link {
     display: inline-flex;

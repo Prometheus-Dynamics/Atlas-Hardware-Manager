@@ -44,7 +44,8 @@
 
   const inHeader = $derived(new Set(quickActions(actions).map((a) => a.id)));
   // Restarting into USB boot belongs to Software, which continues into the install.
-  const elsewhere = new Set(["usb-boot"]);
+  // Shown elsewhere: USB boot (Software), the USB route (its own card).
+  const elsewhere = new Set(["usb-boot", "usb-route-on", "usb-route-off"]);
   const shown = $derived([
     ...CONTROLS.flatMap((control) => {
       const action = actions.find((a) => a.id === control.id);

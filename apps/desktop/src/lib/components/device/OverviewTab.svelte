@@ -14,6 +14,7 @@
   import CameraStreams from "./CameraStreams.svelte";
   import OrientationCard from "./OrientationCard.svelte";
   import ControlsCard from "./ControlsCard.svelte";
+  import UsbRouteCard from "./UsbRouteCard.svelte";
   import Disclosure from "./Disclosure.svelte";
   import FactGrid from "./FactGrid.svelte";
   import HealthCard from "./HealthCard.svelte";
@@ -180,6 +181,9 @@
 
   {#if online && actions.length > 0}
     <ControlsCard {actions} {run} update={reports ? (status?.update ?? null) : undefined} />
+  {/if}
+  {#if online}
+    <UsbRouteCard {record} {actions} {run} />
   {/if}
 
   <FactGrid {facts} />

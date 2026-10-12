@@ -18,9 +18,17 @@ pub mod attributes {
     pub const CAMERA_STREAM: &str = "camera_stream";
     /// The device's network hostname.
     pub const HOSTNAME: &str = "hostname";
-    /// The device's IP addresses, comma-separated, the one Atlas reaches it
-    /// on first. Lets the UI open the web page where `.local` won't resolve.
+    /// The device's IP addresses on every link Atlas sees it on lately,
+    /// comma-separated, in a stable order (IPv4 numerically, then IPv6; the
+    /// one Atlas reaches it on is the identity's address). Lets the UI open
+    /// the web page where `.local` won't resolve, and copy them.
     pub const ADDRESSES: &str = "addresses";
+    /// The USB link's route onto the robot network (a Raze's `usb-route`):
+    /// `active` (on and routing), `on` (on, nothing to route to yet) or
+    /// `off`. Absent when the board has no such thing.
+    pub const USB_ROUTE: &str = "usb_route";
+    /// The networks the USB link routes to, comma-separated (`a.b.c.d/n`).
+    pub const USB_ROUTE_SUBNETS: &str = "usb_route.subnets";
     /// The physical board's own serial, the same whichever way a driver
     /// sees it (boot ROM, recovery gadget, running OS). Lets Atlas tell that
     /// a recovery device and a running device are one board.
