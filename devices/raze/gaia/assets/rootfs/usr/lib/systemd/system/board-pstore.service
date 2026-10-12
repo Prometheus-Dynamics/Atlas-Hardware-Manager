@@ -3,9 +3,15 @@ Description=Kernel logs the last boot left in RAM (pstore), moved to /data/board
 Documentation=file:/usr/lib/board/pstore
 # Once /data is mounted, before the boot record (it reads the same "how did
 # the last boot end"), and before systemd's own pstore copier, which would
-# otherwise take the files to /var/lib/systemd/pstore.
+# otherwise take the files to /var/lib/systemd/pstore. systemd-pstore runs
+# before sysinit.target, so this one is an early-boot unit too: with the
+# default dependencies (after basic.target) it closed an ordering loop
+# through sysinit, sockets and basic, and systemd broke it by dropping
+# dbus.socket (no D-Bus, no NetworkManager) or systemd-pstore.
+DefaultDependencies=no
 After=local-fs.target
-Before=board-boot.service systemd-pstore.service
+Before=board-boot.service systemd-pstore.service sysinit.target shutdown.target
+Conflicts=shutdown.target
 ConditionDirectoryNotEmpty=/sys/fs/pstore
 
 [Service]

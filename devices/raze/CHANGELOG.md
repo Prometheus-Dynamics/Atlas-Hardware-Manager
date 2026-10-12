@@ -123,6 +123,13 @@ commit; the commits are listed per area.
   and `USB_F_FS` (=m), the raze-flasher daemon's bulk interface
   (docs/flasher.md); one more module in the shared kernel, loaded by no
   one else.
+- **Boot ordering cycle fixed (no D-Bus, no NetworkManager):**
+  board-pstore.service had the default dependencies (after basic.target)
+  but ran before systemd-pstore.service, which is before sysinit.target: a
+  loop systemd broke by dropping dbus.socket (r22: NetworkManager never
+  started, PhotonVision found no interfaces) or systemd-pstore. It is an
+  early-boot unit now (DefaultDependencies=no, after local-fs, before
+  sysinit). tests/unit-order.sh checks every unit for ordering cycles.
 - **Recovery from the USB cable without SSH, and a security switch:**
   `security.env` (`BOARD_SECURITY`, 0 by default as FRC robots run; an OS
   sets 1 in /etc/board/security.env, a board in /data/board). While it is
