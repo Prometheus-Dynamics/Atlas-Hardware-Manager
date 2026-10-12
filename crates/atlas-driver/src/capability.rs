@@ -231,6 +231,13 @@ impl fmt::Debug for ProgressSink {
 /// Moves a device to a release, from a normal or a recovery state.
 #[async_trait]
 pub trait UpdateCapability: Send + Sync {
+    /// Whether this source updates the device ahead of its own driver (a
+    /// management agent such as Orion), with the driver's update as the
+    /// fallback when it can't start. Default: the driver's runs first.
+    fn preferred(&self) -> bool {
+        false
+    }
+
     /// Describes the update without touching the device.
     fn plan(&self, device: &Identity, release: &ReleaseRef) -> Result<UpdatePlan, DriverError>;
 

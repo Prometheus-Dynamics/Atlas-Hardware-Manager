@@ -241,6 +241,12 @@ async fn peer_address(address: &str) -> Option<IpAddr> {
 
 #[async_trait]
 impl UpdateCapability for OrionUpdate {
+    /// Orion updates first; the board's own update (SSH) is the fallback
+    /// when Orion can't start one (docs/ota.md).
+    fn preferred(&self) -> bool {
+        true
+    }
+
     fn plan(&self, _device: &Identity, release: &ReleaseRef) -> Result<UpdatePlan, DriverError> {
         let artifact = release
             .artifact
