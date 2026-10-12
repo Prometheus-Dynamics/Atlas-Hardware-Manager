@@ -1,7 +1,9 @@
 #!/bin/sh
-# raze-flasher (ACM root shell milestone): mount the API filesystems, load
-# the gadget and ring modules, expose a serial console over USB (ttyGS0) and
-# keep a shell on it. Atlas's /init replaces this.
+# raze-flasher: mount the API filesystems, load the gadget and ring modules,
+# start Atlas's daemon (atlas-flasher) on a FunctionFS bulk interface, expose
+# a serial console over USB (ttyGS0) and keep a shell on it. Atlas finds the
+# gadget (1d6b:0104 "Raze flasher") and streams the image to the daemon,
+# which writes and verifies the eMMC and reboots the board (docs/flasher.md).
 #
 # The status ring shows how far it got (no UART needed):
 #   blue    /init started (shown once the ring driver is loaded)
@@ -62,18 +64,44 @@ ok=1
 for m in libcomposite u_serial usb_f_acm; do
 	modprobe "$m" || { fail "modprobe $m"; ok=0; }
 done
+# Without FunctionFS there's no daemon, but the ACM shell still works.
+modprobe usb_f_fs || log "modprobe usb_f_fs failed"
 ring 0 48 48 && log "modules loaded"
 
 g=/sys/kernel/config/usb_gadget/flasher
-mkdir -p $g/strings/0x409 $g/configs/c.1/strings/0x409 $g/functions/acm.usb0
+mkdir -p $g/strings/0x409 $g/configs/c.1/strings/0x409 $g/functions/acm.usb0 $g/functions/ffs.flasher
 echo 0x1d6b > $g/idVendor
 echo 0x0104 > $g/idProduct
 serial=$(sed -n 's/^Serial[[:space:]]*:[[:space:]]*//p' /proc/cpuinfo)
 echo "${serial:-unknown}" > $g/strings/0x409/serialnumber
 echo "Prometheus Dynamics" > $g/strings/0x409/manufacturer
 echo "Raze flasher" > $g/strings/0x409/product
-echo "ACM shell" > $g/configs/c.1/strings/0x409/configuration
+echo "Atlas flasher" > $g/configs/c.1/strings/0x409/configuration
+ln -s $g/functions/ffs.flasher $g/configs/c.1/
 ln -s $g/functions/acm.usb0 $g/configs/c.1/
+
+# The daemon's interface: FunctionFS, mounted here. The daemon writes its
+# descriptors to ep0, which brings up ep1/ep2; the gadget can only bind once
+# it has. Respawned if it exits; without it, the ACM shell still comes up.
+mkdir -p /dev/ffs-flasher
+mount -t functionfs flasher /dev/ffs-flasher || log "functionfs mount failed"
+# (`exec 3>&-`: the watchdog stays this shell's alone, or the feeder below
+# can't open it and the board resets.)
+(
+	exec 3>&-
+	while true; do
+		/usr/bin/atlas-flasher /dev/ffs-flasher /dev/mmcblk0
+		log "atlas-flasher exited ($?), restarting"
+		sleep 1
+	done
+) &
+for i in $(seq 1 50); do [ -e /dev/ffs-flasher/ep1 ] && break; sleep 0.1; done
+if [ -e /dev/ffs-flasher/ep1 ]; then
+	log "atlas-flasher is up"
+else
+	log "atlas-flasher did not start; ACM shell only"
+	rm -f $g/configs/c.1/ffs.flasher
+fi
 udc=""
 for i in $(seq 1 50); do
 	udc=$(ls /sys/class/udc 2>/dev/null | head -n 1)

@@ -12,6 +12,9 @@ members = [
     "crates/atlas-image-server",
     "crates/atlas-release",
     "crates/atlas-usbboot",
+    "crates/atlas-flasher-proto",
+    "crates/atlas-flasher",
+    "crates/flasher",
     "crates/atlas-blockdev",
     "crates/atlas-helper",
     "crates/atlas-cli",
@@ -40,6 +43,8 @@ atlas-driver-orion = { path = "crates/atlas-driver-orion" }
 atlas-image-server = { path = "crates/atlas-image-server" }
 atlas-release = { path = "crates/atlas-release" }
 atlas-usbboot = { path = "crates/atlas-usbboot" }
+atlas-flasher-proto = { path = "crates/atlas-flasher-proto" }
+atlas-flasher = { path = "crates/atlas-flasher" }
 atlas-blockdev = { path = "crates/atlas-blockdev" }
 async-trait = "0.1"
 clap = { version = "4.6", features = ["derive"] }

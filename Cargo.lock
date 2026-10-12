@@ -396,11 +396,37 @@ dependencies = [
  "atlas-blockdev",
  "atlas-devices",
  "atlas-driver",
+ "atlas-flasher",
  "atlas-usbboot",
  "nix",
  "serde_json",
  "sha2 0.11.0",
  "tokio",
+]
+
+[[package]]
+name = "atlas-flasher"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "atlas-flasher-proto",
+ "flasher",
+ "lzma-rs",
+ "nusb",
+ "ruzstd",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+]
+
+[[package]]
+name = "atlas-flasher-proto"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1527,6 +1553,19 @@ name = "find-msvc-tools"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
+
+[[package]]
+name = "flasher"
+version = "0.1.0"
+dependencies = [
+ "atlas-flasher-proto",
+ "lzma-rs",
+ "nix",
+ "ruzstd",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+]
 
 [[package]]
 name = "flate2"

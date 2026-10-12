@@ -1,0 +1,30 @@
+[package]
+name = "atlas-flasher"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Atlas's side of the raze-flasher (docs/flasher.md): finds a USB-booted board's flasher and streams it an image, with progress, verify and reboot."
+
+[dependencies]
+async-trait.workspace = true
+atlas-flasher-proto.workspace = true
+nusb.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util", "rt", "sync", "time", "macros"] }
+
+[dev-dependencies]
+flasher = { path = "../flasher" }
+lzma-rs.workspace = true
+ruzstd.workspace = true
+sha2.workspace = true
+tempfile = "3"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "fs"] }
+
+[lints]
+workspace = true

@@ -18,8 +18,9 @@ mod boot_files;
 mod console;
 mod driver;
 mod eeprom;
+mod flash;
 mod health;
 mod recover;
 
-pub use boot_files::find_boot_files;
+pub use boot_files::{find_boot_files, find_flasher_files};
 pub use driver::{RPI_FAMILY, RpiConfig, RpiDriver, SshKeys, UsbBootLinks};

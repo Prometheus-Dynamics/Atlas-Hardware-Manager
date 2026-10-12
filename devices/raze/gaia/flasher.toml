@@ -34,14 +34,14 @@ busybox = "$provider.buildroot_output/target/bin/busybox"
 include_runtime_libs = true
 applets = ["sh"]
 
-# The ring chain (rp1-mailbox -> rp1-fw -> rp1-pio -> ws2812-pio-rp1) and the
-# ACM gadget, as the OS loads them (lsmod); add usb_f_fs once Atlas's daemon
-# uses FunctionFS (needs USB_FUNCTIONFS=m in the Raze kernel config).
+# The ring chain (rp1-mailbox -> rp1-fw -> rp1-pio -> ws2812-pio-rp1), the
+# ACM gadget, as the OS loads them (lsmod), and FunctionFS (usb_f_fs) for
+# the daemon's bulk interface.
 [[image.assembly.kernel_modules]]
 tree = "flasher-initramfs"
 from = "$provider.buildroot_output/target/lib/modules"
 depmod = "$provider.buildroot_output/host/sbin/depmod"
-modules = ["libcomposite", "u_serial", "usb_f_acm",
+modules = ["libcomposite", "u_serial", "usb_f_acm", "usb_f_fs",
            "rp1-mailbox", "rp1-fw", "rp1-pio", "ws2812-pio-rp1",
            "nls_iso8859-1", "crc32c-cryptoapi"]
 
@@ -49,6 +49,14 @@ modules = ["libcomposite", "u_serial", "usb_f_acm",
 tree = "flasher-initramfs"
 src = "@self/assets/flasher/init"
 dest = "init"
+mode = "0755"
+
+# The daemon (crates/flasher in this Atlas repository), built as the
+# artifact below: Atlas talks to it over the gadget's bulk interface.
+[[image.assembly.files]]
+tree = "flasher-initramfs"
+src = "${workspace.out_dir}/artifacts/atlas-flasher/atlas-flasher"
+dest = "usr/bin/atlas-flasher"
 mode = "0755"
 
 [[image.assembly.filesystems]]
@@ -156,6 +164,27 @@ src = "@self/assets/flasher/outer-config.txt"
 [[image.assembly.archives.members]]
 name = "boot.img"
 src = "$assembly.work/flasher/raze-flasher-boot.img"
+
+# atlas-flasher, the daemon, as board-agent is built (board-agent.toml): a
+# static aarch64 musl binary from the OS build's `atlas` source. Not
+# installed in the OS; only the flasher's initramfs takes it (above).
+[[artifacts]]
+id = "atlas-flasher"
+kind = "rust"
+source = "atlas"
+package = "flasher"
+target = "aarch64-unknown-linux-musl"
+profile = "device"
+target_name = "atlas-flasher"
+output_path = "${workspace.out_dir}/artifacts/atlas-flasher/atlas-flasher"
+
+[artifacts.execution]
+backend = "docker"
+
+[artifacts.execution.docker]
+image = "board-aarch64-musl"
+dockerfile = "@self/docker/aarch64-musl.Dockerfile"
+context = "@self/docker"
 
 # Assembly items belong to the Buildroot image, as in boot.toml.
 [image]

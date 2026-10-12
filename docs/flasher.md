@@ -1,6 +1,19 @@
 # raze-flasher: USB-boot flashing Atlas controls end to end
 
-Status: design, for review (HeliOS, Gaia, Lemnos). Nothing here is built yet.
+Status: the write path is built, not yet run on hardware. Gaia builds the
+flasher (`flasher.toml`) with Atlas's daemon (`crates/flasher`) in its
+initramfs; Atlas (`crates/atlas-flasher`, `atlas-driver-rpi/src/flash.rs`)
+uses it for a Raze in USB boot when it finds the bundle and the image is
+`.zst` or raw. Built: `hello`, `info`, `write`, `verify`, `reboot`. Not yet:
+`keep_data`, `logs`, `backup-data`/`restore-data`, `eeprom`, `ring` (the
+ring shows /init's stages only), MS OS 2.0 descriptors (Windows), the SSH
+key on the boot partition after a flash, and a setting in the app.
+
+Where Atlas looks for the bundle (Gaia's `raze-flasher-<version>.tar`,
+unpacked): `ATLAS_FLASHER_DIR`, then `raze-flasher/` next to the
+mass-storage files (the app's `usbboot/` resources, or `usbboot/` in its
+data folder, `~/.local/share/atlas/usbboot/raze-flasher/` on Linux).
+`ATLAS_FLASHER=off` keeps the mass-storage path.
 
 Today a USB-boot flash goes: Atlas boots the board over USB (its own Rust
 port of rpiboot, `crates/atlas-usbboot`), using Raspberry Pi's
@@ -140,9 +153,18 @@ matches the board it booted).
 
 ### Framing
 
-Each message: a 4-byte little-endian length, then a JSON object (control),
-or for data an 8-byte header (`'D'`, stream id, length) and raw bytes.
-Version 1; the first exchange is `hello`.
+Every frame: an 8-byte header, the kind (`'J'` JSON, `'D'` data), three
+zero bytes and a little-endian `u32` length, then that many bytes (at most
+1 MiB). JSON frames carry one request (`op`) or reply (`type`); after
+`write` is answered `ready`, data frames carry the image and an empty one
+ends it. Version 1; the first exchange is `hello`. Code:
+`crates/atlas-flasher-proto`.
+
+USB has no message boundaries, so each side ends a message with a short
+packet: Atlas with a short or zero-length packet, the daemon (FunctionFS
+writes can't add a ZLP) by padding a reply's JSON with a space when it
+would fill whole packets. Replies are read on their own task, so progress
+never waits behind image data.
 
 ### Trust
 
@@ -159,7 +181,7 @@ image).
 |---|---|---|
 | `hello` | `{protocol: 1, atlas}` | `{protocol, daemon, serial, model, revision}` |
 | `info` | — | serial, eMMC (size, `life_time`, `pre_eol_info`, name, manfid), partition table, per slot the OS version (os-release from p5/p6 EROFS, read only), the active slot (p1 `autoboot.txt`), `board/flash-id`, /data present (p7 ext4 UUID, size), EEPROM bootloader version and config (below) |
-| `write` | `{size, sha256, format: "zst" \| "raw", keep_data}` then data | progress `{written, of}`; the daemon decompresses on the board (zstd in Rust), writes `/dev/mmcblk0` sequentially with O_DIRECT, computes sha256 of the image bytes it wrote |
+| `write` | `{size, sha256, format: "zst" \| "raw", keep_data}`, `ready`, then data | progress `{phase, received, of, written}`, then `written {bytes, sha256}`; the daemon decompresses on the board (zstd in Rust), writes `/dev/mmcblk0` sequentially with O_DIRECT, computes sha256 of the image bytes it wrote |
 | `verify` | — | re-reads what was written; `{ok, sha256}` against the stream's |
 | `reboot` | `{into: "emmc" \| "usb-boot"}` | then the link goes |
 | `logs` | `{what: ["pstore", "journal", "events"]}` | a tar stream: p7's `/board/pstore`, `/board/events.jsonl`, `/var/log/journal` (mounted read only) |

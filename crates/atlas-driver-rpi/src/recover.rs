@@ -15,7 +15,7 @@ use atlas_driver::{
 use atlas_usbboot::{BootEvent, BootOptions, boot_device};
 
 use crate::RpiConfig;
-use crate::boot_files::find_boot_files;
+use crate::boot_files::{find_boot_files, find_flasher_files};
 
 /// The last log line of a flash. The UI shows it as the next step, too.
 pub(crate) const NEXT_STEP: &str =
@@ -263,6 +263,25 @@ impl UpdateCapability for RpiRecovery {
                 UpdateStep::Preflight,
                 format!("the image {} is missing", artifact.path.display()),
             ));
+        }
+        // A Raze in USB boot with a raze-flasher bundle at hand: the board
+        // takes the image itself (crate::flash). Else the mass-storage way.
+        if storage_port(device).is_none()
+            && crate::flash::has_flasher(device)
+            && let Some(format) = crate::flash::image_format(&artifact.path)
+            && let Some(files) = find_flasher_files(&self.config.boot_file_dirs)
+        {
+            return crate::flash::run(
+                &self.config,
+                device,
+                release,
+                &artifact,
+                files,
+                format,
+                progress,
+                cancel,
+            )
+            .await;
         }
         let files = find_boot_files(&self.config.boot_file_dirs).map_err(|tried| {
             failed(

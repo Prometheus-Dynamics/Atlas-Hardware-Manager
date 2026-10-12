@@ -16,6 +16,7 @@ atlas-blockdev.workspace = true
 atlas-devices.workspace = true
 atlas-driver.workspace = true
 atlas-usbboot.workspace = true
+atlas-flasher.workspace = true
 sha2.workspace = true
 tokio = { workspace = true, features = ["rt", "time", "sync", "macros"] }
 
