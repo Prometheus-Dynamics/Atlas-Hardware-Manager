@@ -16,7 +16,15 @@
 //!    as base64 at the end, then its exit status.
 //!
 //! Markers are printed with `printf '@X%s' <tag>`, so the echo of the
-//! command line (when echo is on) never contains them.
+//! command line (when echo is on) never contains them. Terminal escapes (a
+//! readline shell's bracketed paste, colour prompts) are stripped before
+//! markers are looked for, anywhere in a line.
+//!
+//! A board has two consoles (ttyGS0 and ttyGS1). Atlas tries the last one
+//! first, leaving the first to people, and the others when it doesn't
+//! answer: one wedged console doesn't lock Atlas out. A login prompt (no
+//! autologin) counts as not there: Atlas never logs in with a password.
+//! On the board, a command runs under `timeout` when it has one.
 
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
@@ -31,10 +39,10 @@ const PROBE: Duration = Duration::from_secs(3);
 /// Base64 characters per line sent.
 const CHUNK: usize = 384;
 
-/// The board's console at `path` (`/dev/ttyACM0`).
+/// The board's consoles, in the order Atlas tries them.
 #[derive(Clone, Debug)]
 pub(crate) struct Console {
-    path: PathBuf,
+    paths: Vec<PathBuf>,
 }
 
 /// A line handler for stderr, as it comes.
@@ -56,25 +64,43 @@ impl Console {
     /// The console of the board whose USB serial is `serial`, when it is
     /// plugged into this computer.
     pub(crate) fn find(serial: &str) -> Option<Self> {
-        crate::serial::serial_console(serial).map(|path| Self { path: path.into() })
+        let mut paths: Vec<PathBuf> = crate::serial::serial_consoles(serial)
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        paths.reverse();
+        (!paths.is_empty()).then_some(Self { paths })
     }
 
-    /// Runs `script` as root on the board; its stdout.
+    /// Runs `script` as root on the board; its stdout, as bytes.
     pub(crate) async fn run(
         &self,
         script: &str,
         timeout: Duration,
         on_line: Option<SharedOnLine>,
-    ) -> Result<String, ConsoleError> {
-        let path = self.path.clone();
+    ) -> Result<Vec<u8>, ConsoleError> {
+        let paths = self.paths.clone();
         let script = script.to_owned();
         tokio::task::spawn_blocking(move || {
-            let lock = port_lock(&path);
-            let _held = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-            let mut port = Tty::open(&path, Instant::now() + PROBE)
-                .map_err(|error| ConsoleError::NotThere(format!("{}: {error}", path.display())))?;
-            let sink = on_line.as_deref();
-            exchange(&mut port, &script, &tag(), timeout, sink)
+            let mut why = Vec::new();
+            for path in &paths {
+                let lock = port_lock(path);
+                let _held = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+                let mut port = match Tty::open(path, Instant::now() + PROBE) {
+                    Ok(port) => port,
+                    Err(error) => {
+                        why.push(format!("{}: {error}", path.display()));
+                        continue;
+                    }
+                };
+                match exchange(&mut port, &script, &tag(), timeout, on_line.as_deref()) {
+                    Err(ConsoleError::NotThere(reason)) => {
+                        why.push(format!("{}: {reason}", path.display()));
+                    }
+                    other => return other,
+                }
+            }
+            Err(ConsoleError::NotThere(why.join("; ")))
         })
         .await
         .map_err(|error| ConsoleError::Failed(DriverError::Other(error.to_string())))?
@@ -115,7 +141,7 @@ pub(crate) trait Port {
 }
 
 /// The lines to send for `script` (after the probe answered).
-fn command_lines(script: &str, tag: &str) -> Vec<String> {
+fn command_lines(script: &str, tag: &str, timeout: Duration) -> Vec<String> {
     // /run on the board (root's tmpfs); /tmp where /run isn't writable.
     let file = "$f";
     let mut lines = vec![format!(
@@ -128,9 +154,11 @@ fn command_lines(script: &str, tag: &str) -> Vec<String> {
             std::str::from_utf8(chunk).unwrap_or_default()
         ));
     }
+    let seconds = timeout.as_secs().max(1);
     lines.push(format!(
         "d={file}.d; mkdir -p $d; base64 -d {file} > $d/s; \
-         {{ sh $d/s 2>&1 >$d/o </dev/null; echo $? > $d/rc; }} | \
+         t=; command -v timeout >/dev/null 2>&1 && t=\"timeout {seconds}\"; \
+         {{ $t sh $d/s 2>&1 >$d/o </dev/null; echo $? > $d/rc; }} | \
          while IFS= read -r l; do printf '@E%s %s\\n' {tag} \"$l\"; done; \
          printf '@B%s\\n' {tag}; base64 $d/o; printf '@R%s %s\\n' {tag} \"$(cat $d/rc)\"; \
          rm -rf {file} $d; stty echo 2>/dev/null"
@@ -145,7 +173,7 @@ pub(crate) fn exchange(
     tag: &str,
     timeout: Duration,
     on_line: Option<OnLine<'_>>,
-) -> Result<String, ConsoleError> {
+) -> Result<Vec<u8>, ConsoleError> {
     let mut reader = Lines::default();
     // Stop whatever runs, turn echo off, and ask for the probe's marker.
     let probe = format!("\x03\nstty -echo 2>/dev/null; printf '@P%s\\n' {tag}\n");
@@ -157,8 +185,13 @@ pub(crate) fn exchange(
         let bytes = port
             .read_some(until)
             .map_err(|error| ConsoleError::NotThere(error.to_string()))?;
-        if reader.push(&bytes).iter().any(|line| line == &probe_marker) {
+        if reader.push(&bytes).iter().any(|line| line.contains(&probe_marker)) {
             break;
+        }
+        if reader.at_login() {
+            return Err(ConsoleError::NotThere(
+                "it shows a login prompt (no autologin)".into(),
+            ));
         }
         if Instant::now() >= until {
             return Err(ConsoleError::NotThere(
@@ -167,7 +200,7 @@ pub(crate) fn exchange(
         }
     }
 
-    for line in command_lines(script, tag) {
+    for line in command_lines(script, tag, timeout) {
         port.send(format!("{line}\n").as_bytes())
             .map_err(|error| ConsoleError::Failed(gone(&error)))?;
     }
@@ -182,21 +215,20 @@ pub(crate) fn exchange(
             .read_some(until)
             .map_err(|error| ConsoleError::Failed(gone(&error)))?;
         for line in reader.push(&bytes) {
-            if let Some(text) = line.strip_prefix(&err_marker) {
+            if let Some(text) = line.find(&err_marker).map(|at| &line[at + err_marker.len()..]) {
                 if let Some(on_line) = on_line {
                     on_line(text);
                 }
                 stderr.push_str(text);
                 stderr.push('\n');
-            } else if line == out_marker {
+            } else if line.ends_with(&out_marker) {
                 in_stdout = true;
-            } else if let Some(code) = line.strip_prefix(&rc_marker) {
+            } else if let Some(code) = line.find(&rc_marker).map(|at| &line[at + rc_marker.len()..]) {
                 let stdout = base64_decode(&stdout_b64).ok_or_else(|| {
                     ConsoleError::Failed(DriverError::Other(
                         "the board's console garbled the output".into(),
                     ))
                 })?;
-                let stdout = String::from_utf8_lossy(&stdout).into_owned();
                 return match code.trim().parse::<i32>() {
                     Ok(0) => Ok(stdout),
                     code => Err(ConsoleError::Failed(DriverError::Other({
@@ -216,6 +248,8 @@ pub(crate) fn exchange(
             }
         }
         if Instant::now() >= until {
+            // Stop it, so the console is free for the next one.
+            let _ = port.send(b"\x03\n");
             return Err(ConsoleError::Failed(DriverError::Other(
                 "the board's console stopped answering".into(),
             )));
@@ -228,26 +262,56 @@ fn gone(error: &std::io::Error) -> DriverError {
     DriverError::Unreachable(format!("the board's console went away: {error}"))
 }
 
-/// Splits what comes into lines, without `\r`.
+/// Splits what comes into lines, without `\r` or terminal escapes.
 #[derive(Default)]
 struct Lines {
     partial: Vec<u8>,
+    escape: Escape,
+}
+
+/// Where in a terminal escape the stream is.
+#[derive(Default, Clone, Copy, PartialEq)]
+enum Escape {
+    #[default]
+    None,
+    /// After ESC.
+    Start,
+    /// In `ESC [ ...` up to its final byte.
+    Csi,
+    /// In `ESC ] ...` up to BEL or ESC \.
+    Osc,
 }
 
 impl Lines {
     fn push(&mut self, bytes: &[u8]) -> Vec<String> {
         let mut lines = Vec::new();
         for &byte in bytes {
-            match byte {
-                b'\n' => {
+            match (self.escape, byte) {
+                (Escape::None, 0x1b) => self.escape = Escape::Start,
+                (Escape::Start, b'[') => self.escape = Escape::Csi,
+                (Escape::Start, b']') => self.escape = Escape::Osc,
+                (Escape::Start, _) => self.escape = Escape::None,
+                (Escape::Csi, 0x40..=0x7e) => self.escape = Escape::None,
+                (Escape::Csi, _) => {}
+                (Escape::Osc, 0x07) => self.escape = Escape::None,
+                (Escape::Osc, 0x1b) => self.escape = Escape::Start,
+                (Escape::Osc, _) => {}
+                (Escape::None, b'\n') => {
                     lines.push(String::from_utf8_lossy(&self.partial).into_owned());
                     self.partial.clear();
                 }
-                b'\r' => {}
-                other => self.partial.push(other),
+                (Escape::None, b'\r' | 0x07) => {}
+                (Escape::None, other) => self.partial.push(other),
             }
         }
         lines
+    }
+
+    /// The line so far ends in a login prompt.
+    fn at_login(&self) -> bool {
+        String::from_utf8_lossy(&self.partial)
+            .trim_end()
+            .ends_with("login:")
     }
 }
 
@@ -438,9 +502,19 @@ mod tests {
     }
 
     #[test]
+    fn escapes_are_stripped_and_a_login_prompt_is_seen() {
+        let mut lines = Lines::default();
+        let got = lines.push(b"\x1b[?2004h\x1b[0m# \x1b[?2004l\r@Pab\r\nnext\x1b]0;title\x07 ok\n");
+        assert_eq!(got, vec!["# @Pab".to_owned(), "next ok".to_owned()]);
+        assert!(!lines.at_login());
+        lines.push(b"\r\nraze login: ");
+        assert!(lines.at_login());
+    }
+
+    #[test]
     fn markers_never_appear_in_what_is_sent() {
         let tag = "t1";
-        for line in command_lines("echo '@Et1 x'; printf hi", tag) {
+        for line in command_lines("echo '@Et1 x'; printf hi", tag, Duration::from_secs(60)) {
             for marker in ["@Et1", "@Bt1", "@Rt1", "@Pt1"] {
                 assert!(!line.contains(marker), "{line}");
             }
@@ -459,6 +533,7 @@ mod tests {
         let seen = Mutex::new(Vec::new());
         let on_line = |line: &str| seen.lock().unwrap().push(line.to_owned());
         let out = exchange(&mut shell, script, "a1", Duration::from_secs(10), Some(&on_line)).unwrap();
+        let out = String::from_utf8(out).unwrap();
         assert!(out.starts_with("it's here\nline 0\n"));
         assert!(out.ends_with("line 499\n"));
         assert_eq!(*seen.lock().unwrap(), vec!["step".to_owned()]);
@@ -470,6 +545,16 @@ mod tests {
             ConsoleError::Failed(DriverError::Other(reason)) => assert_eq!(reason, "nope"),
             other => panic!("{other:?}"),
         }
+    }
+
+    #[test]
+    fn binary_output_comes_back_whole() {
+        if !has_base64() {
+            return;
+        }
+        let mut shell = Shell::new();
+        let out = exchange(&mut shell, "printf '\\000\\377\\n\\001'", "b1", Duration::from_secs(10), None).unwrap();
+        assert_eq!(out, [0, 255, b'\n', 1]);
     }
 
     #[test]

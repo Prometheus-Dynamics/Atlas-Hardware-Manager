@@ -189,7 +189,7 @@ impl SshUpdate {
         &self,
         script: &str,
         on_line: Option<SharedOnLine>,
-    ) -> Option<Result<String, DriverError>> {
+    ) -> Option<Result<Vec<u8>, DriverError>> {
         let console = self.console()?;
         match console.run(&as_atlas(script), CONSOLE_TIMEOUT, on_line).await {
             Ok(out) => Some(Ok(out)),
@@ -202,6 +202,13 @@ impl SshUpdate {
     /// USB console when it is plugged in here, else over SSH. The board's
     /// event log records what it does as Atlas's.
     pub(crate) async fn run(&self, script: &str) -> Result<String, DriverError> {
+        self.run_bytes(script)
+            .await
+            .map(|out| String::from_utf8_lossy(&out).into_owned())
+    }
+
+    /// [`run`](Self::run), with stdout as bytes (a tarball).
+    pub(crate) async fn run_bytes(&self, script: &str) -> Result<Vec<u8>, DriverError> {
         if let Some(result) = self.on_console(script, None).await {
             return result;
         }
@@ -212,7 +219,7 @@ impl SshUpdate {
             .await
             .map_err(|error| DriverError::Unreachable(format!("could not run ssh: {error}")))?;
         if output.status.success() {
-            return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
+            return Ok(output.stdout);
         }
         Err(ssh_error(
             output.status.code(),
@@ -248,7 +255,7 @@ impl SshUpdate {
                 on_line(&line);
             }
             if let Some(result) = result {
-                return result;
+                return result.map(|out| String::from_utf8_lossy(&out).into_owned());
             }
         }
         let mut child = self

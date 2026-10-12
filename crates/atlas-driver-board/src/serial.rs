@@ -6,16 +6,22 @@
 //! whose USB serial matches the serial the identity endpoint reported.
 
 /// The host's tty for the board with this USB serial, such as
-/// `/dev/ttyACM0`. Linux only for now.
+/// `/dev/ttyACM0`: its first console, the one for people. Linux only for now.
 pub fn serial_console(serial: &str) -> Option<String> {
+    serial_consoles(serial).into_iter().next()
+}
+
+/// Every console tty of the board with this USB serial, by USB interface
+/// (ttyGS0's first). Linux only for now.
+pub(crate) fn serial_consoles(serial: &str) -> Vec<String> {
     #[cfg(target_os = "linux")]
     {
-        linux::find(std::path::Path::new("/sys/class/tty"), serial)
+        linux::find_all(std::path::Path::new("/sys/class/tty"), serial)
     }
     #[cfg(not(target_os = "linux"))]
     {
         let _ = serial;
-        None
+        Vec::new()
     }
 }
 
@@ -23,28 +29,37 @@ pub fn serial_console(serial: &str) -> Option<String> {
 mod linux {
     use std::path::Path;
 
-    /// The first ttyACM* under `class_dir` whose USB device has `serial`.
-    pub(super) fn find(class_dir: &Path, serial: &str) -> Option<String> {
+    /// The ttyACM* under `class_dir` whose USB device has `serial`, by
+    /// interface number.
+    pub(super) fn find_all(class_dir: &Path, serial: &str) -> Vec<String> {
         let serial = serial.trim();
         if serial.is_empty() {
-            return None;
+            return Vec::new();
         }
-        let mut names: Vec<String> = std::fs::read_dir(class_dir)
-            .ok()?
+        let Ok(entries) = std::fs::read_dir(class_dir) else {
+            return Vec::new();
+        };
+        let mut found: Vec<(u32, String)> = entries
             .flatten()
             .map(|entry| entry.file_name().to_string_lossy().into_owned())
             .filter(|name| name.starts_with("ttyACM"))
+            .filter_map(|name| {
+                // device -> the USB interface; its parent is the USB device.
+                let interface =
+                    std::fs::canonicalize(class_dir.join(&name).join("device")).ok()?;
+                let usb_serial = std::fs::read_to_string(interface.parent()?.join("serial")).ok()?;
+                if !usb_serial.trim().eq_ignore_ascii_case(serial) {
+                    return None;
+                }
+                let number = std::fs::read_to_string(interface.join("bInterfaceNumber"))
+                    .ok()
+                    .and_then(|text| u32::from_str_radix(text.trim(), 16).ok())
+                    .unwrap_or(u32::MAX);
+                Some((number, format!("/dev/{name}")))
+            })
             .collect();
-        names.sort();
-        names.into_iter().find_map(|name| {
-            // device -> the USB interface; its parent is the USB device.
-            let interface = std::fs::canonicalize(class_dir.join(&name).join("device")).ok()?;
-            let usb_serial = std::fs::read_to_string(interface.parent()?.join("serial")).ok()?;
-            usb_serial
-                .trim()
-                .eq_ignore_ascii_case(serial)
-                .then(|| format!("/dev/{name}"))
-        })
+        found.sort();
+        found.into_iter().map(|(_, path)| path).collect()
     }
 
     #[cfg(test)]
@@ -61,11 +76,18 @@ mod linux {
             std::fs::create_dir_all(class.join("ttyACM0")).unwrap();
             std::os::unix::fs::symlink(usb.join("1-4:1.2"), class.join("ttyACM0/device")).unwrap();
 
+            std::fs::write(usb.join("1-4:1.2/bInterfaceNumber"), "04\n").unwrap();
+            std::fs::create_dir_all(usb.join("1-4:1.0")).unwrap();
+            std::fs::write(usb.join("1-4:1.0/bInterfaceNumber"), "02\n").unwrap();
+            std::fs::create_dir_all(class.join("ttyACM7")).unwrap();
+            std::os::unix::fs::symlink(usb.join("1-4:1.0"), class.join("ttyACM7/device")).unwrap();
+
             assert_eq!(
-                find(&class, "A317BCBEE5226D57").as_deref(),
-                Some("/dev/ttyACM0")
+                find_all(&class, "A317BCBEE5226D57"),
+                vec!["/dev/ttyACM7".to_owned(), "/dev/ttyACM0".to_owned()],
+                "by interface: ttyGS0's first"
             );
-            assert_eq!(find(&class, "someone-else"), None);
+            assert!(find_all(&class, "someone-else").is_empty());
             let _ = std::fs::remove_dir_all(root);
         }
     }
