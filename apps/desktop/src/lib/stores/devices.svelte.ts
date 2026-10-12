@@ -7,6 +7,11 @@ import { toasts } from "./toasts.svelte";
 
 const FRESH_MS = 2500;
 
+function boardSerial(record: DeviceRecord): string | null {
+  const raw = (record.identity.attributes?.board_serial ?? record.key.serial).trim().toLowerCase();
+  return /^[0-9a-f]{8,}$/.test(raw) ? raw.slice(-8) : null;
+}
+
 class DeviceStore {
   map = new SvelteMap<string, DeviceRecord>();
   /** Keys that just appeared, for a brief highlight. */
@@ -31,6 +36,16 @@ class DeviceStore {
     const record = this.get(key);
     return record ? deviceName(record) : typeof key === "string" ? key : keyString(key);
   };
+
+  /** For a board in USB boot: the camera Atlas knows it as, running.
+   *  Matched on the board serial (the boot ROM's is the last 8 hex digits
+   *  of the full one). */
+  runningTwin(record: DeviceRecord): DeviceRecord | undefined {
+    if (record.identity.mode !== "recovery") return undefined;
+    const board = boardSerial(record);
+    if (!board) return undefined;
+    return this.all.find((other) => other.identity.mode === "normal" && boardSerial(other) === board);
+  }
 
   async loadDiscovery() {
     try {

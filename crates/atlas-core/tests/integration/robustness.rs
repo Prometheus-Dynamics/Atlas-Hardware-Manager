@@ -129,3 +129,43 @@ async fn a_flashed_board_replaces_its_recovery_record() {
         "the history says what happened"
     );
 }
+
+#[tokio::test]
+async fn a_recovery_record_joins_its_board_even_while_the_board_is_away() {
+    // Flashed on this computer, but the board came up somewhere else.
+    let recovery = DeviceKey::new("sim-boot", "e5226d57");
+    let running = DeviceKey::new(SIM_HELIOS, "a317bcbee5226d57");
+    let fleet = MockFleet::new()
+        .with(MockDevice::new(SIM_HELIOS, "a317bcbee5226d57").board("e5226d57"))
+        .with(
+            MockDevice::new("sim-boot", "e5226d57")
+                .recovery()
+                .board("e5226d57"),
+        );
+    fleet.set_online(&recovery, false);
+    let atlas = atlas_for(&fleet);
+    atlas.scan().await;
+
+    fleet.set_online(&running, false);
+    fleet.set_online(&recovery, true);
+    atlas.scan().await;
+    assert!(atlas.device(&recovery).is_some(), "in USB boot now");
+
+    fleet.set_online(&recovery, false);
+    atlas.scan().await;
+    assert!(atlas.device(&recovery).is_none(), "folded into the camera");
+    assert_eq!(atlas.devices().len(), 1);
+}
+
+#[tokio::test]
+async fn a_board_known_only_by_its_usb_port_is_dropped_once_gone() {
+    let port = DeviceKey::new("sim-boot", "port-1-2.3");
+    let fleet = MockFleet::new().with(MockDevice::new("sim-boot", "port-1-2.3").recovery());
+    let atlas = atlas_for(&fleet);
+    atlas.scan().await;
+    assert!(atlas.device(&port).is_some());
+
+    fleet.set_online(&port, false);
+    atlas.scan().await;
+    assert!(atlas.device(&port).is_none());
+}
