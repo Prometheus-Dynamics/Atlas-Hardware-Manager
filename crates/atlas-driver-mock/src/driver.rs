@@ -33,7 +33,8 @@ impl MockDriver {
                 name: format!("Simulated {family}"),
                 family,
                 version: env!("CARGO_PKG_VERSION").into(),
-                link_kinds: vec![LinkKind::Simulated],
+                // Ethernet: devices made `on_ethernet` are there too.
+                link_kinds: vec![LinkKind::Simulated, LinkKind::Ethernet],
                 priority: 0,
             },
             fleet,
@@ -120,7 +121,8 @@ impl Driver for MockDriver {
     }
 
     async fn discover(&self, link: &Link) -> Result<Vec<Candidate>, DriverError> {
-        if link.kind != LinkKind::Simulated {
+        let ethernet = link.kind == LinkKind::Ethernet && link.id.0 == crate::fleet::ETH_LINK_ID;
+        if link.kind != LinkKind::Simulated && !ethernet {
             return Ok(Vec::new());
         }
         Ok(self
@@ -132,19 +134,31 @@ impl Driver for MockDriver {
                 device.online
                     && device.parent.is_none()
                     && device.key.family == self.manifest.family
+                    && (!ethernet || device.on_ethernet)
             })
             .map(|device| Candidate {
                 link: link.id.clone(),
                 family: device.key.family.clone(),
-                address: device.key.serial.0.clone(),
+                address: if ethernet {
+                    format!("{}{}", crate::fleet::ETH_PREFIX, device.key.serial.0)
+                } else {
+                    device.key.serial.0.clone()
+                },
             })
             .collect())
     }
 
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
-        let key = DeviceKey::new(candidate.family.as_str(), candidate.address.as_str());
+        let ethernet = candidate.address.strip_prefix(crate::fleet::ETH_PREFIX);
+        let serial = ethernet.unwrap_or(candidate.address.as_str());
+        let key = DeviceKey::new(candidate.family.as_str(), serial);
         let device = self.device(&key)?;
-        if !device.answering {
+        let answers = if ethernet.is_some() {
+            device.answering_on_ethernet
+        } else {
+            device.answering
+        };
+        if !answers {
             return Err(DriverError::Unreachable(format!("{key} did not answer")));
         }
         Ok(Identity {

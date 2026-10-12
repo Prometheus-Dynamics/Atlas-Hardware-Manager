@@ -3,6 +3,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use atlas_driver::{Candidate, DeviceKey, Driver, Identity, Link, LinkKind};
+
+use crate::links::host_ip;
 use serde::Serialize;
 use tokio::task::JoinSet;
 
@@ -35,8 +37,13 @@ struct Pending {
 
 struct Scan<'a> {
     inner: &'a Inner,
-    /// Best link rank per device seen so far in this scan.
+    /// Best link rank so far this scan, for devices new to this scan (the
+    /// ones Atlas already follows change link only as links.rs says).
     best: BTreeMap<DeviceKey, u8>,
+    /// Devices not followed when this scan first saw them.
+    fresh: BTreeSet<DeviceKey>,
+    /// Devices that answered on any link this scan.
+    seen: BTreeSet<DeviceKey>,
     warnings: Vec<String>,
     /// Whether any device was new or changed, so robot statuses may too.
     changed: bool,
@@ -53,18 +60,59 @@ impl Scan<'_> {
         self.warnings.push(message);
     }
 
-    /// Records a sighting unless this device was already seen on a better
-    /// link in this scan. Returns whether the sighting was kept.
-    fn accept(&mut self, pending: &Pending, identity: Identity) -> bool {
+    /// Records a sighting. The device's record follows it if it is the link
+    /// the record follows, or takes over as links.rs decides (for a device
+    /// new to this scan: the best link of the scan). Any sighting keeps the
+    /// device online. Returns whether the record follows this sighting.
+    fn accept(&mut self, pending: &Pending, mut identity: Identity) -> bool {
         let rank = link_rank(&pending.link_kind);
-        if self
-            .best
-            .get(&identity.key)
-            .is_some_and(|best| *best <= rank)
-        {
-            return false;
+        let key = identity.key.clone();
+        self.seen.insert(key.clone());
+        // The IPs it has on this link: the address reached, and the ones it
+        // advertised there.
+        let mut ips: Vec<std::net::IpAddr> =
+            host_ip(&pending.candidate.address).into_iter().collect();
+        if let Some(listed) = identity.attributes.get(atlas_driver::attributes::ADDRESSES) {
+            ips.extend(
+                listed
+                    .split(',')
+                    .filter_map(|ip| ip.trim().parse::<std::net::IpAddr>().ok()),
+            );
         }
-        self.best.insert(identity.key.clone(), rank);
+        let merged = {
+            let mut state = self.inner.state();
+            let current = state
+                .live
+                .get(&key)
+                .map(|live| live.candidate.address.clone());
+            if current.is_none() {
+                self.fresh.insert(key.clone());
+            }
+            let links = state.links.entry(key.clone()).or_default();
+            links.answered(&pending.candidate.address, &pending.link_kind, ips);
+            let follows = if self.fresh.contains(&key) {
+                !self.best.get(&key).is_some_and(|best| *best <= rank)
+            } else {
+                links.takes_over(current.as_deref(), &pending.candidate.address)
+            };
+            if !follows {
+                state.inventory.touch(&key, now_ms());
+                return false;
+            }
+            links.addresses()
+        };
+        self.best.insert(key.clone(), rank);
+        // Every IP it has on any link, in one stable order.
+        if !merged.is_empty() {
+            identity.attributes.insert(
+                atlas_driver::attributes::ADDRESSES.into(),
+                merged
+                    .iter()
+                    .map(ToString::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+        }
 
         let capabilities = self.inner.capabilities(pending.driver.as_ref(), &identity);
         let kinds = capabilities.kinds_for(identity.mode);
@@ -236,6 +284,8 @@ pub(crate) async fn run(inner: &Inner) -> ScanReport {
     let mut scan = Scan {
         inner,
         best: BTreeMap::new(),
+        fresh: BTreeSet::new(),
+        seen: BTreeSet::new(),
         warnings: Vec::new(),
         changed: false,
         unanswered: BTreeSet::new(),
@@ -253,9 +303,12 @@ pub(crate) async fn run(inner: &Inner) -> ScanReport {
         };
     }
 
-    let seen: BTreeSet<DeviceKey> = scan.best.keys().cloned().collect();
+    let seen: BTreeSet<DeviceKey> = scan.seen.clone();
     let went_offline = {
         let mut state = inner.state();
+        for links in state.links.values_mut() {
+            links.end_scan();
+        }
         // A device found again at its address that just didn't answer in
         // time stays online for a while; one that's gone goes offline now.
         let now = now_ms();

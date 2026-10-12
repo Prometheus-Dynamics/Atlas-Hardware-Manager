@@ -112,6 +112,17 @@ impl ReportedAction {
     }
 }
 
+/// A board's serial as its key uses it, however it was reported (the
+/// identity JSON or the mDNS TXT record): lowercase, without padding, NULs
+/// or whitespace, so one board is one record.
+pub(crate) fn key_serial(serial: &str) -> String {
+    serial
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '\0')
+        .collect::<String>()
+        .to_ascii_lowercase()
+}
+
 impl BoardIdentity {
     /// Builds an identity from the mDNS TXT record alone, for when the
     /// identity endpoint does not answer.
@@ -248,8 +259,8 @@ impl BoardIdentity {
 
         Identity {
             key: DeviceKey::new(
-                self.model.to_ascii_lowercase(),
-                self.serial.to_ascii_lowercase(),
+                self.model.trim().to_ascii_lowercase(),
+                key_serial(&self.serial),
             ),
             model: match &self.rev {
                 Some(rev) => {
@@ -288,6 +299,15 @@ mod tests {
                     "progress": 1000, "error": "" },
         "something_new": 42
     }"#;
+
+    /// The JSON and the TXT record can pad the serial differently; the key
+    /// is the same.
+    #[test]
+    fn the_key_serial_is_the_same_however_it_was_reported() {
+        assert_eq!(key_serial("10000000ABCDEF01"), "10000000abcdef01");
+        assert_eq!(key_serial(" 10000000abcdef01\0\n"), "10000000abcdef01");
+        assert_eq!(key_serial("10000000 abcdef01"), "10000000abcdef01");
+    }
 
     #[test]
     fn identity_json_maps_to_model_serial_and_attributes() {

@@ -138,6 +138,15 @@ impl Inventory {
         gone
     }
 
+    /// A device answered, but on a link its record doesn't follow: it is
+    /// online and seen now; its details stay the followed link's.
+    pub(crate) fn touch(&mut self, key: &DeviceKey, now_ms: u64) {
+        if let Some(record) = self.records.get_mut(key) {
+            record.presence = Presence::Online;
+            record.last_seen_ms = now_ms;
+        }
+    }
+
     pub(crate) fn get(&self, key: &DeviceKey) -> Option<&DeviceRecord> {
         self.records.get(key)
     }

@@ -169,3 +169,88 @@ async fn a_board_known_only_by_its_usb_port_is_dropped_once_gone() {
     atlas.scan().await;
     assert!(atlas.device(&port).is_none());
 }
+
+/// A board whose key changed form (say, a serial reported differently after
+/// a reflash) is one device: its old running record folds into the new one.
+#[tokio::test]
+async fn an_old_running_record_of_an_online_board_folds_into_it() {
+    let old = DeviceKey::new(SIM_HELIOS, "10000000abcdef01 ");
+    let new = DeviceKey::new(SIM_HELIOS, "10000000abcdef01");
+    let fleet = MockFleet::new()
+        .with(
+            MockDevice::new(SIM_HELIOS, "10000000abcdef01 ")
+                .board("abcdef01")
+                .name("cam-front"),
+        )
+        .with(MockDevice::new(SIM_HELIOS, "10000000abcdef01").board("abcdef01"));
+    fleet.set_online(&new, false);
+    let atlas = atlas_for(&fleet);
+    atlas.scan().await;
+    atlas.set_label(&old, Some("front".into())).unwrap();
+
+    fleet.set_online(&old, false);
+    fleet.set_online(&new, true);
+    atlas.scan().await;
+    assert!(atlas.device(&old).is_none(), "folded");
+    assert_eq!(atlas.devices().len(), 1);
+    assert_eq!(
+        atlas.device(&new).unwrap().label.as_deref(),
+        Some("front"),
+        "the user's name carries over"
+    );
+}
+
+/// Devices nobody named or put on a robot are let go a week after they were
+/// last seen; named ones stay.
+#[tokio::test]
+async fn unclaimed_devices_gone_a_week_are_let_go() {
+    let store = Arc::new(MemoryStore::default());
+    let fleet = MockFleet::new()
+        .with(MockDevice::new(SIM_HELIOS, "old-test-board"))
+        .with(MockDevice::new(SIM_HELIOS, "named-board"));
+    let build = |store: Arc<MemoryStore>| {
+        let mut builder = Atlas::builder()
+            .link_source(fleet.link_source())
+            .store(store);
+        for driver in fleet.drivers() {
+            builder = builder.driver(driver);
+        }
+        builder.build().unwrap()
+    };
+    let atlas = build(store.clone());
+    atlas.scan().await;
+    atlas
+        .set_label(
+            &DeviceKey::new(SIM_HELIOS, "named-board"),
+            Some("keep me".into()),
+        )
+        .unwrap();
+    drop(atlas);
+
+    // Both were last seen eight days ago and are gone now.
+    let mut snapshot = atlas_core::InventoryStore::load(store.as_ref()).unwrap();
+    let eight_days_ago = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as u64
+        - 8 * 24 * 3600 * 1000;
+    for record in &mut snapshot.devices {
+        record.last_seen_ms = eight_days_ago;
+    }
+    atlas_core::InventoryStore::save(store.as_ref(), &snapshot).unwrap();
+    fleet.set_online(&DeviceKey::new(SIM_HELIOS, "old-test-board"), false);
+    fleet.set_online(&DeviceKey::new(SIM_HELIOS, "named-board"), false);
+
+    let atlas = build(store);
+    atlas.scan().await;
+    assert!(
+        atlas
+            .device(&DeviceKey::new(SIM_HELIOS, "old-test-board"))
+            .is_none()
+    );
+    assert!(
+        atlas
+            .device(&DeviceKey::new(SIM_HELIOS, "named-board"))
+            .is_some()
+    );
+}

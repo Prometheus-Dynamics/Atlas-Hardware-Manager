@@ -336,3 +336,50 @@ async fn actions_run_on_online_devices_only() {
     assert!(matches!(unknown, Err(CoreError::UnknownAction { .. })));
     assert!(matches!(recovering, Err(CoreError::NoActionsCapability(_))));
 }
+
+/// A camera on two links (USB-like and the robot network): its record
+/// follows the better one and doesn't flicker when that misses a scan; it
+/// moves only once the link has missed two scans, and moves back only once
+/// the better link has answered two scans in a row.
+#[tokio::test]
+async fn a_device_on_two_links_follows_one_without_flicker() {
+    let fleet = MockFleet::demo();
+    let key = helios("H-1002");
+    fleet.set_on_ethernet(&key, true);
+    let atlas = atlas_for(&fleet);
+    let address = |atlas: &Atlas| atlas.device(&key).unwrap().identity.address;
+
+    atlas.scan().await;
+    assert_eq!(
+        atlas.device(&key).unwrap().link_kind,
+        LinkKind::Ethernet,
+        "the better link, first scan"
+    );
+    assert_eq!(address(&atlas), "eth/H-1002");
+
+    // Ethernet misses: the record stays on it (and online) for two scans.
+    fleet.set_answering_on_ethernet(&key, false);
+    for scan in 1..=2 {
+        atlas.scan().await;
+        assert_eq!(address(&atlas), "eth/H-1002", "missed scan {scan}");
+        assert_eq!(atlas.device(&key).unwrap().presence, Presence::Online);
+    }
+    atlas.scan().await;
+    assert_eq!(
+        address(&atlas),
+        "H-1002",
+        "gone two scans: the other link takes over"
+    );
+    assert_eq!(atlas.device(&key).unwrap().link_kind, LinkKind::Simulated);
+
+    // Ethernet is back: one answer isn't enough to move the record back.
+    fleet.set_answering_on_ethernet(&key, true);
+    atlas.scan().await;
+    assert_eq!(address(&atlas), "H-1002");
+    atlas.scan().await;
+    assert_eq!(
+        address(&atlas),
+        "eth/H-1002",
+        "two answers in a row: back on the better link"
+    );
+}

@@ -56,6 +56,8 @@ pub(crate) struct LiveDevice {
 pub(crate) struct State {
     pub(crate) inventory: Inventory,
     pub(crate) live: HashMap<DeviceKey, LiveDevice>,
+    /// Every link each device answered on lately, and which to follow.
+    pub(crate) links: HashMap<DeviceKey, crate::links::DeviceLinks>,
     pub(crate) jobs: BTreeMap<JobId, JobRecord>,
     pub(crate) job_done: HashMap<JobId, watch::Receiver<bool>>,
     pub(crate) job_cancel: HashMap<JobId, CancellationToken>,

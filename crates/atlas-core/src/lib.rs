@@ -16,6 +16,7 @@ mod inventory;
 mod job_runner;
 mod jobs;
 mod lineage;
+mod links;
 mod manage;
 mod observe;
 mod push;

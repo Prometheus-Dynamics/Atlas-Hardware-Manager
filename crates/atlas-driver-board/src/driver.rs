@@ -74,8 +74,11 @@ pub struct BoardDriver {
     manifest: DriverManifest,
     package: Arc<DevicePackage>,
     http: reqwest::Client,
-    /// What each device last reported, for the optional live endpoints.
-    reported: Mutex<HashMap<DeviceKey, (String, BoardIdentity)>>,
+    /// What each device last reported, by the identity URL it answered on
+    /// (a board on USB and Ethernet reports on both), for the optional live
+    /// endpoints: a device's capabilities use the report from the link its
+    /// record chose, never whichever answered last.
+    reported: Mutex<HashMap<String, (DeviceKey, BoardIdentity)>>,
     /// The last discovery's USB gadget probes, by candidate address.
     probes: Mutex<HashMap<String, GadgetProbe>>,
     ssh: SshAccess,
@@ -168,12 +171,24 @@ impl BoardDriver {
         }
     }
 
-    fn reported(&self, key: &DeviceKey) -> Option<(String, BoardIdentity)> {
-        self.reported
+    /// The report from `device`'s own address, or, if that one is gone,
+    /// any report of the same device.
+    fn reported(&self, device: &Identity) -> Option<(String, BoardIdentity)> {
+        let reported = self
+            .reported
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .get(key)
-            .cloned()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        reported
+            .get(&device.address)
+            .filter(|(key, _)| *key == device.key)
+            .map(|(_, report)| (device.address.clone(), report.clone()))
+            .or_else(|| {
+                reported
+                    .iter()
+                    .filter(|(_, (key, _))| *key == device.key)
+                    .min_by(|a, b| a.0.cmp(b.0))
+                    .map(|(address, (_, report))| (address.clone(), report.clone()))
+            })
     }
 
     async fn fetch(&self, url: &str) -> Result<BoardIdentity, String> {
@@ -277,7 +292,7 @@ impl Driver for BoardDriver {
         self.reported
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .insert(identity.key.clone(), (address, reported));
+            .insert(address, (identity.key.clone(), reported));
         Ok(identity)
     }
 
@@ -286,7 +301,7 @@ impl Driver for BoardDriver {
     /// offered when the device lists them; without a metrics endpoint, the
     /// status's temperatures and fan are the telemetry.
     fn capabilities(&self, device: &Identity) -> Capabilities {
-        let Some((identity_url, reported)) = self.reported(&device.key) else {
+        let Some((identity_url, reported)) = self.reported(device) else {
             return Capabilities::default();
         };
         let endpoint = |name: &str| {

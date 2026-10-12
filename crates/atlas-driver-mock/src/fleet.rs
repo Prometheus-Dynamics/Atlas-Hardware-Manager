@@ -12,6 +12,12 @@ use crate::{MockDriver, SIM_HELIOS, SIM_MCU};
 
 /// The id of the one simulated link every top-level mock device sits on.
 pub const SIM_LINK_ID: &str = "sim0";
+/// The id of the simulated Ethernet link devices made `on_ethernet` are also
+/// on, like a camera reached over both USB and the robot network. Their
+/// address there is `eth/<serial>`.
+pub const ETH_LINK_ID: &str = "eth-sim";
+/// The address prefix of a device's sighting on the Ethernet link.
+pub(crate) const ETH_PREFIX: &str = "eth/";
 
 /// How a simulated device behaves when updated.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -45,6 +51,11 @@ pub struct MockDevice {
     /// Whether it answers when asked who it is. Still found when it
     /// doesn't, like a board on a busy network that misses a reply.
     pub answering: bool,
+    /// Also reachable on the simulated Ethernet link.
+    pub on_ethernet: bool,
+    /// Whether it answers there (apart from `answering`, which is its
+    /// simulated link).
+    pub answering_on_ethernet: bool,
     /// Simulated time per update step.
     pub step_time: Duration,
     /// When the device last started; uptime and logs count from here. A
@@ -73,6 +84,8 @@ impl MockDevice {
             parent: None,
             online: true,
             answering: true,
+            on_ethernet: false,
+            answering_on_ethernet: true,
             step_time: Duration::from_millis(40),
             // Simulated devices have been up a while when Atlas starts.
             booted_ms: crate::observe::now_ms().saturating_sub((3 * 3600 + 17 * 60) * 1000),
@@ -230,6 +243,21 @@ impl MockFleet {
         }
     }
 
+    /// Puts a device on the simulated Ethernet link too (or takes it off).
+    pub fn set_on_ethernet(&self, key: &DeviceKey, on: bool) {
+        if let Some(device) = self.lock().devices.get_mut(key) {
+            device.on_ethernet = on;
+            device.answering_on_ethernet = true;
+        }
+    }
+
+    /// Makes a device stop or start answering on the Ethernet link only.
+    pub fn set_answering_on_ethernet(&self, key: &DeviceKey, answering: bool) {
+        if let Some(device) = self.lock().devices.get_mut(key) {
+            device.answering_on_ethernet = answering;
+        }
+    }
+
     /// Makes a device stop or start answering identify, while still found.
     pub fn set_answering(&self, key: &DeviceKey, answering: bool) {
         if let Some(device) = self.lock().devices.get_mut(key) {
@@ -300,10 +328,24 @@ impl LinkSource for MockLinks {
     }
 
     async fn links(&self) -> Vec<Link> {
-        vec![Link {
+        let mut links = vec![Link {
             id: LinkId(SIM_LINK_ID.into()),
             kind: LinkKind::Simulated,
             label: "Simulated robot".into(),
-        }]
+        }];
+        if self
+            .fleet
+            .lock()
+            .devices
+            .values()
+            .any(|device| device.on_ethernet)
+        {
+            links.push(Link {
+                id: LinkId(ETH_LINK_ID.into()),
+                kind: LinkKind::Ethernet,
+                label: "Simulated robot network".into(),
+            });
+        }
+        links
     }
 }

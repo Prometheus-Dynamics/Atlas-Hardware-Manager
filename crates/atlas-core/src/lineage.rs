@@ -3,7 +3,10 @@
 //! runs. Drivers that know the board's own serial report it as the
 //! `board_serial` attribute; when a board comes up running, the offline
 //! recovery record of the same board is folded into it, so a flash does not
-//! leave a device behind that "never comes back".
+//! leave a device behind that "never comes back". An offline running record
+//! of a board that is online under another key (a key that changed form) is
+//! folded the same way, and devices nobody named or put on a robot that
+//! haven't been seen for a week are let go.
 
 use std::collections::BTreeSet;
 
@@ -12,7 +15,11 @@ use atlas_driver::{DeviceKey, DeviceMode};
 
 use crate::activity::{ActivityEntry, ActivityKind, ActivityLevel};
 use crate::atlas::Inner;
+use crate::time::now_ms;
 use crate::{DeviceRecord, Event, Presence};
+
+/// How long an unnamed device on no robot is kept once it is gone.
+pub(crate) const FORGET_AFTER_MS: u64 = 7 * 24 * 3600 * 1000;
 
 /// The physical board a record is: its `board_serial`, else (records saved
 /// before drivers reported one) its own serial by the same rule.
@@ -38,6 +45,8 @@ pub(crate) fn fold_recovery_records(inner: &Inner, seen: &BTreeSet<DeviceKey>) -
         old: DeviceRecord,
         into: Option<DeviceKey>,
     }
+    let now = now_ms();
+    let unclaimed = |record: &DeviceRecord| record.label.is_none() && record.robot.is_none();
     let (folds, updated) = {
         let mut state = inner.state();
         let in_jobs: BTreeSet<DeviceKey> = state
@@ -49,6 +58,35 @@ pub(crate) fn fold_recovery_records(inner: &Inner, seen: &BTreeSet<DeviceKey>) -
             .collect();
         let records = state.inventory.all();
         let mut folds = Vec::new();
+        // A running record that is offline while the same board is online
+        // under another key; and anything unclaimed, gone for a week.
+        for old in records.iter().filter(|record| {
+            record.presence == Presence::Offline
+                && record.identity.mode == DeviceMode::Normal
+                && !in_jobs.contains(&record.key)
+        }) {
+            let into = board_of(old).and_then(|board| {
+                records
+                    .iter()
+                    .filter(|other| {
+                        other.key != old.key && board_of(other).as_deref() == Some(&board)
+                    })
+                    .filter(|other| {
+                        other.identity.mode == DeviceMode::Normal
+                            && other.presence == Presence::Online
+                    })
+                    .max_by_key(|other| other.last_seen_ms)
+                    .map(|other| other.key.clone())
+            });
+            if into.is_some()
+                || (unclaimed(old) && now.saturating_sub(old.last_seen_ms) > FORGET_AFTER_MS)
+            {
+                folds.push(Fold {
+                    old: old.clone(),
+                    into,
+                });
+            }
+        }
         for old in records.iter().filter(|record| {
             record.presence == Presence::Offline
                 && record.identity.mode == DeviceMode::Recovery
@@ -84,6 +122,11 @@ pub(crate) fn fold_recovery_records(inner: &Inner, seen: &BTreeSet<DeviceKey>) -
                     old: old.clone(),
                     into: Some(target.key.clone()),
                 });
+            } else if unclaimed(old) && now.saturating_sub(old.last_seen_ms) > FORGET_AFTER_MS {
+                folds.push(Fold {
+                    old: old.clone(),
+                    into: None,
+                });
             }
         }
         if folds.is_empty() {
@@ -113,10 +156,18 @@ pub(crate) fn fold_recovery_records(inner: &Inner, seen: &BTreeSet<DeviceKey>) -
             key: fold.old.key.clone(),
         });
     }
+    let left_recovery: BTreeSet<&DeviceKey> = folds
+        .iter()
+        .filter(|fold| fold.old.identity.mode == DeviceMode::Recovery)
+        .filter_map(|fold| fold.into.as_ref())
+        .collect();
     let mut history = Vec::new();
     for record in &updated {
         // Said once, when the board shows up running after a flash.
-        if record.identity.mode == DeviceMode::Normal && seen.contains(&record.key) {
+        if record.identity.mode == DeviceMode::Normal
+            && seen.contains(&record.key)
+            && left_recovery.contains(&record.key)
+        {
             let running = record
                 .identity
                 .primary_version()
