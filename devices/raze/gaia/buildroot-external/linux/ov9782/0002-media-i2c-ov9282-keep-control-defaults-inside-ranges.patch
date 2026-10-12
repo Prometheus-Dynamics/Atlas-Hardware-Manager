@@ -1,0 +1,81 @@
+From: Mathias <mathias@pepservices.com>
+Subject: [PATCH] media: i2c: ov9282: keep control defaults inside updated ranges
+
+__v4l2_ctrl_modify_range() rejects a default outside [min, max] with
+-ERANGE before changing anything. Two range updates use fixed defaults
+that short exposures and short frames push out of range:
+
+- ov9282_update_exp_gain() narrows FLASH_DURATION to [0, exposure_us]
+  with default OV9282_STROBE_FRAME_SPAN_DEFAULT (26). Any exposure under
+  26 us (1-2 rows) makes the EXPOSURE s_ctrl fail with -ERANGE although
+  the exposure registers were already written: every exposure update
+  from userspace fails ("Unable to set control 0x00980911 (exposure):
+  Numerical result out of range"), and an exposure set while the sensor
+  is runtime-suspended (no s_ctrl, so it is committed) makes the
+  __v4l2_ctrl_handler_setup() in enable_streams fail, so STREAMON
+  returns -ERANGE.
+
+- The VBLANK handler narrows EXPOSURE to [1, vblank + height - offset]
+  with default OV9282_EXPOSURE_DEFAULT (642). Frames shorter than 667
+  lines (640x400 at its minimum vblank) fail, the error is overwritten
+  by the LPFR write, and the exposure limit stays at the previous frame
+  length.
+
+Clamp both defaults to the new maximum, and return the VBLANK range
+error instead of dropping it.
+
+---
+--- a/drivers/media/i2c/ov9282.c
++++ b/drivers/media/i2c/ov9282.c
+@@ -609,9 +609,16 @@
+ 	if (ret)
+ 		goto error_release_group_hold;
+ 
++	/*
++	 * The strobe can't outlast the exposure. Short exposures (a few rows,
++	 * under OV9282_STROBE_FRAME_SPAN_DEFAULT us) must not move the default
++	 * outside the new range: that fails with -ERANGE, so the exposure
++	 * control was never committed and stream start failed.
++	 */
+ 	ret = __v4l2_ctrl_modify_range(ov9282->flash_duration,
+ 				       0, exposure_us, 1,
+-				       OV9282_STROBE_FRAME_SPAN_DEFAULT);
++				       min_t(u32, exposure_us,
++					     OV9282_STROBE_FRAME_SPAN_DEFAULT));
+ 
+ error_release_group_hold:
+ 	ret_hold = cci_write(ov9282->regmap, OV9282_REG_HOLD, 0, NULL);
+@@ -653,6 +660,7 @@
+ 		container_of(ctrl->handler, struct ov9282, ctrl_handler);
+ 	u32 analog_gain;
+ 	u32 exposure;
++	u32 exposure_max;
+ 	u32 lpfr;
+ 	int ret;
+ 
+@@ -664,12 +672,21 @@
+ 			ov9282->vblank,
+ 			ov9282->vblank + ov9282->cur_mode->height);
+ 
++		/*
++		 * Short frames (640x400 with a small vblank) give a maximum
++		 * below OV9282_EXPOSURE_DEFAULT; keep the default inside the
++		 * range, or the update fails with -ERANGE and the exposure
++		 * limit silently stays at the previous frame length.
++		 */
++		exposure_max = ov9282->vblank + ov9282->cur_mode->height -
++			       ov9282->variant->exposure_offset;
+ 		ret = __v4l2_ctrl_modify_range(ov9282->exp_ctrl,
+ 					       OV9282_EXPOSURE_MIN,
+-					       ov9282->vblank +
+-					       ov9282->cur_mode->height -
+-					       ov9282->variant->exposure_offset,
+-					       1, OV9282_EXPOSURE_DEFAULT);
++					       exposure_max, 1,
++					       min_t(u32, exposure_max,
++						     OV9282_EXPOSURE_DEFAULT));
++		if (ret)
++			return ret;
+ 		break;
+ 	}
+ 
