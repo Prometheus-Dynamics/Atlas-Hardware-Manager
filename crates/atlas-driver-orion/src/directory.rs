@@ -213,6 +213,13 @@ impl LinkSource for OrionDirectory {
 }
 
 impl CapabilitySource for OrionDirectory {
+    /// Orion reaches a board the same way whatever link Atlas found it on
+    /// (USB, Ethernet), so its data comes first; the board's own endpoints
+    /// fill in and stand in.
+    fn data_first(&self) -> bool {
+        true
+    }
+
     fn capabilities_for(&self, device: &Identity) -> Capabilities {
         let Some(node) = device
             .attributes

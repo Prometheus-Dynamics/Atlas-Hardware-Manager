@@ -7,6 +7,13 @@
 //! does that: Atlas asks every source about each device it identifies and
 //! fills in what the owning driver left empty. Without the source, the
 //! device keeps exactly what its driver gives it.
+//!
+//! A source can ask to come first for a device's data ([`CapabilitySource::data_first`]:
+//! Orion, which reaches a board the same way whatever link Atlas found it
+//! on): its status, telemetry, logs and events are then read first, the
+//! owner's filling what it lacks and standing in when it fails. The live
+//! hardware stream and push channel stay the owner's first: the board's own
+//! stream runs at device rate.
 
 use std::future::{Future, poll_fn};
 use std::pin::pin;
@@ -17,14 +24,21 @@ use async_trait::async_trait;
 
 use crate::{
     ActionsCapability, CancellationToken, Capabilities, DeviceAction, DeviceEvent, DeviceStatus,
-    DriverError, EventPage, EventQuery, Identity, ProgressSink, PushSink, ReleaseRef,
-    StatusCapability, UpdateCapability, UpdateOutcome, UpdatePlan, UpdateStep,
+    DriverError, EventPage, EventQuery, Identity, LogLine, LogsCapability, Metric, ProgressSink,
+    PushSink, ReleaseRef, StatusCapability, TelemetryCapability, UpdateCapability, UpdateOutcome,
+    UpdatePlan, UpdateStep,
 };
 
 /// Extra capabilities for devices other drivers own.
 pub trait CapabilitySource: Send + Sync {
     /// What this source adds for `device`; empty when it doesn't know it.
     fn capabilities_for(&self, device: &Identity) -> Capabilities;
+
+    /// Whether this source's data comes before the owning driver's (see the
+    /// module notes).
+    fn data_first(&self) -> bool {
+        false
+    }
 }
 
 impl Capabilities {
@@ -33,6 +47,12 @@ impl Capabilities {
     /// `extra`'s are [`preferred`](ActionsCapability::preferred): then those
     /// run, and the driver's only when they can't reach the device.
     pub fn fill_from(&mut self, extra: Capabilities) {
+        self.fill_from_source(extra, false);
+    }
+
+    /// [`fill_from`](Self::fill_from), with `extra`'s data first when
+    /// `data_first` (status, telemetry, logs, events).
+    pub fn fill_from_source(&mut self, extra: Capabilities, data_first: bool) {
         self.update = match (self.update.take(), extra.update) {
             (Some(own), Some(more)) => Some(Arc::new(if more.preferred() {
                 FallbackUpdate {
@@ -47,12 +67,20 @@ impl Capabilities {
             })),
             (own, more) => own.or(more),
         };
-        if self.telemetry.is_none() {
-            self.telemetry = extra.telemetry;
-        }
-        if self.logs.is_none() {
-            self.logs = extra.logs;
-        }
+        self.telemetry = match (self.telemetry.take(), extra.telemetry) {
+            (Some(own), Some(more)) if data_first => Some(Arc::new(FallbackTelemetry {
+                first: more,
+                then: own,
+            })),
+            (own, more) => own.or(more),
+        };
+        self.logs = match (self.logs.take(), extra.logs) {
+            (Some(own), Some(more)) if data_first => Some(Arc::new(FallbackLogs {
+                first: more,
+                then: own,
+            })),
+            (own, more) => own.or(more),
+        };
         if self.selftest.is_none() {
             self.selftest = extra.selftest;
         }
@@ -60,7 +88,11 @@ impl Capabilities {
             self.hardware = extra.hardware;
         }
         self.status = match (self.status.take(), extra.status) {
-            (Some(own), Some(more)) => Some(Arc::new(CombinedStatus { own, more })),
+            (Some(own), Some(more)) => Some(Arc::new(CombinedStatus {
+                own,
+                more,
+                data_first,
+            })),
             (own, more) => own.or(more),
         };
         self.actions = match (self.actions.take(), extra.actions) {
@@ -203,19 +235,87 @@ async fn both<A: Future, B: Future>(a: A, b: B) -> (A::Output, B::Output) {
     .await
 }
 
-/// The owner's status, with the hardware readings of the extra source when it
-/// has any. Events come from the owner, or from the extra source when the
-/// owner can't answer.
+/// Telemetry from `first`, else `then`.
+struct FallbackTelemetry {
+    first: Arc<dyn TelemetryCapability>,
+    then: Arc<dyn TelemetryCapability>,
+}
+
+#[async_trait]
+impl TelemetryCapability for FallbackTelemetry {
+    async fn read(&self, device: &Identity) -> Result<Vec<Metric>, DriverError> {
+        match self.first.read(device).await {
+            Ok(metrics) if !metrics.is_empty() => Ok(metrics),
+            first => match self.then.read(device).await {
+                Ok(metrics) => Ok(metrics),
+                Err(err) => first.and(Err(err)),
+            },
+        }
+    }
+}
+
+/// Logs from `first`, else `then`.
+struct FallbackLogs {
+    first: Arc<dyn LogsCapability>,
+    then: Arc<dyn LogsCapability>,
+}
+
+#[async_trait]
+impl LogsCapability for FallbackLogs {
+    async fn tail(&self, device: &Identity, lines: usize) -> Result<Vec<LogLine>, DriverError> {
+        match self.first.tail(device, lines).await {
+            Ok(tail) => Ok(tail),
+            Err(err) => self.then.tail(device, lines).await.map_err(|_| err),
+        }
+    }
+}
+
+/// What `status` lacks, from `other`.
+fn fill_missing(status: &mut DeviceStatus, other: DeviceStatus) {
+    status.time = status.time.or(other.time);
+    status.boot = status.boot.take().or(other.boot);
+    status.failed_units = status.failed_units.take().or(other.failed_units);
+    if status.temperatures.is_empty() {
+        status.temperatures = other.temperatures;
+    }
+    status.fan = status.fan.take().or(other.fan);
+    status.update = status.update.take().or(other.update);
+    status.clock_offset_s = status.clock_offset_s.or(other.clock_offset_s);
+    status.ntp_synchronized = status.ntp_synchronized.or(other.ntp_synchronized);
+    status.drift = status.drift.take().or(other.drift);
+    status.hardware = status.hardware.take().or(other.hardware);
+}
+
+/// The status of both sources: the extra source's hardware readings when it
+/// has any; with `data_first`, the extra source's status filled from the
+/// owner's, else the owner's. Events come from the first, or from the other
+/// when it can't answer.
 struct CombinedStatus {
     own: Arc<dyn StatusCapability>,
     more: Arc<dyn StatusCapability>,
+    data_first: bool,
+}
+
+impl CombinedStatus {
+    /// The source asked first, and the other, for events.
+    fn order(&self) -> (&Arc<dyn StatusCapability>, &Arc<dyn StatusCapability>) {
+        if self.data_first {
+            (&self.more, &self.own)
+        } else {
+            (&self.own, &self.more)
+        }
+    }
 }
 
 #[async_trait]
 impl StatusCapability for CombinedStatus {
     async fn status(&self, device: &Identity) -> Result<DeviceStatus, DriverError> {
         match both(self.own.status(device), self.more.status(device)).await {
-            (Ok(mut status), Ok(extra)) => {
+            (Ok(mut status), Ok(mut extra)) => {
+                if self.data_first {
+                    fill_missing(&mut extra, status);
+                    return Ok(extra);
+                }
                 if extra.hardware.is_some() {
                     status.hardware = extra.hardware;
                 }
@@ -233,13 +333,10 @@ impl StatusCapability for CombinedStatus {
         since: Option<i64>,
         limit: usize,
     ) -> Result<Vec<DeviceEvent>, DriverError> {
-        match self.own.events(device, since, limit).await {
+        let (first, then) = self.order();
+        match first.events(device, since, limit).await {
             Ok(events) => Ok(events),
-            Err(err) => self
-                .more
-                .events(device, since, limit)
-                .await
-                .map_err(|_| err),
+            Err(err) => then.events(device, since, limit).await.map_err(|_| err),
         }
     }
 
@@ -269,9 +366,10 @@ impl StatusCapability for CombinedStatus {
         device: &Identity,
         query: EventQuery,
     ) -> Result<EventPage, DriverError> {
-        match self.own.event_page(device, query).await {
+        let (first, then) = self.order();
+        match first.event_page(device, query).await {
             Ok(page) => Ok(page),
-            Err(err) => self.more.event_page(device, query).await.map_err(|_| err),
+            Err(err) => then.event_page(device, query).await.map_err(|_| err),
         }
     }
 }
@@ -546,6 +644,47 @@ mod tests {
         });
         let status = merged(own, more).status(&device()).await.unwrap();
         assert_eq!(status.hardware, Some(snapshot("fan")));
+    }
+
+    /// Orion first (data_first): its status, filled from the board's; its
+    /// events, the board's when it can't answer.
+    #[tokio::test]
+    async fn a_data_first_source_is_read_first_and_filled_from_the_owner() {
+        let own = Arc::new(Reports {
+            status: Some(DeviceStatus {
+                fan: Some(crate::FanState::default()),
+                drift: None,
+                ..at(7)
+            }),
+            events: Some(vec![event(1)]),
+            ..Reports::default()
+        });
+        let more = Arc::new(Reports {
+            status: Some(DeviceStatus {
+                hardware: Some(snapshot("imu")),
+                ..at(9)
+            }),
+            events: None,
+            ..Reports::default()
+        });
+        let mut caps = Capabilities {
+            status: Some(own),
+            ..Capabilities::default()
+        };
+        caps.fill_from_source(
+            Capabilities {
+                status: Some(more),
+                ..Capabilities::default()
+            },
+            true,
+        );
+        let merged = caps.status.unwrap();
+        let status = merged.status(&device()).await.unwrap();
+        assert_eq!(status.time, Some(9), "Orion's own");
+        assert!(status.fan.is_some(), "what Orion lacks, from the board");
+        assert_eq!(status.hardware, Some(snapshot("imu")));
+        // Orion has no events here: the board's.
+        assert_eq!(merged.events(&device(), None, 10).await.unwrap(), vec![event(1)]);
     }
 
     #[tokio::test]

@@ -126,7 +126,7 @@ impl Inner {
     pub(crate) fn capabilities(&self, driver: &dyn Driver, identity: &Identity) -> Capabilities {
         let mut capabilities = driver.capabilities(identity);
         for source in &self.capability_sources {
-            capabilities.fill_from(source.capabilities_for(identity));
+            capabilities.fill_from_source(source.capabilities_for(identity), source.data_first());
         }
         capabilities
     }
