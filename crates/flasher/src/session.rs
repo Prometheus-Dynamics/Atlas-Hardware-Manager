@@ -9,9 +9,9 @@
 use std::fs::{File, OpenOptions};
 use std::io::{self, BufWriter, Read, Write};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -22,6 +22,7 @@ use sha2::{Digest, Sha256};
 
 use crate::board::{self, Board};
 use crate::hex;
+use crate::ring::{Emmc, Look, Show};
 
 /// How often progress is reported.
 const PROGRESS_EVERY: Duration = Duration::from_millis(250);
@@ -36,6 +37,19 @@ pub struct Context {
     /// Drop the page cache before verifying, so it reads the eMMC and not
     /// what was just written (on the board; tests write to a file).
     pub drop_caches: bool,
+    /// The status ring, showing each phase.
+    pub ring: Arc<dyn Show>,
+    /// What the eMMC holds now, for whether rebooting to it is safe.
+    pub emmc: Arc<Mutex<Emmc>>,
+}
+
+impl Context {
+    fn set_emmc(&self, state: Emmc) {
+        *self
+            .emmc
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = state;
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -231,6 +245,8 @@ impl Session<'_> {
             }
         };
         self.last = None;
+        self.context.set_emmc(Emmc::Partial);
+        self.context.ring.show(Look::Writing(0.0));
         self.reply(Reply::Ready);
 
         let received = Arc::new(AtomicU64::new(0));
@@ -242,8 +258,13 @@ impl Session<'_> {
                 at: 0,
                 received: received.clone(),
             };
-            let progress =
-                Progress::new(self.replies.clone(), Phase::Writing, size, received.clone());
+            let progress = Progress::new(
+                self.replies.clone(),
+                Phase::Writing,
+                size,
+                received.clone(),
+                self.context.ring.clone(),
+            );
             thread::spawn(move || write_image(reader, format, disk, progress))
         };
 
@@ -291,6 +312,7 @@ impl Session<'_> {
             .join()
             .unwrap_or_else(|_| Err(io::Error::other("the write job panicked")));
         if closed {
+            self.context.ring.show(Look::Failed);
             return Some(Outcome::Closed);
         }
         let stream_sha = hex(&hasher.finalize());
@@ -313,6 +335,11 @@ impl Session<'_> {
                 Reply::Written { bytes, sha256 }
             }
         };
+        if matches!(reply, Reply::Written { .. }) {
+            self.context.set_emmc(Emmc::Written);
+        } else {
+            self.context.ring.show(Look::Failed);
+        }
         self.reply(reply);
         None
     }
@@ -326,8 +353,13 @@ impl Session<'_> {
         }
         let mut disk = File::open(&self.context.disk)?;
         let done = Arc::new(AtomicU64::new(0));
-        let mut progress =
-            Progress::new(self.replies.clone(), Phase::Verifying, bytes, done.clone());
+        let mut progress = Progress::new(
+            self.replies.clone(),
+            Phase::Verifying,
+            bytes,
+            done.clone(),
+            self.context.ring.clone(),
+        );
         let mut hasher = Sha256::new();
         let mut buffer = vec![0u8; IO_CHUNK];
         let mut left = bytes;
@@ -341,10 +373,15 @@ impl Session<'_> {
         }
         progress.tick(bytes, true);
         let sha256 = hex(&hasher.finalize());
-        Ok(Reply::Verified {
-            ok: sha256 == want,
-            sha256,
-        })
+        let ok = sha256 == want;
+        if ok {
+            self.context.set_emmc(Emmc::Verified);
+            self.context.ring.show(Look::Done);
+        } else {
+            self.context.set_emmc(Emmc::Partial);
+            self.context.ring.show(Look::Failed);
+        }
+        Ok(Reply::Verified { ok, sha256 })
     }
 }
 
@@ -392,16 +429,24 @@ struct Progress {
     of: u64,
     received: Arc<AtomicU64>,
     last: Instant,
+    ring: Arc<dyn Show>,
 }
 
 impl Progress {
-    fn new(replies: Sender<Reply>, phase: Phase, of: u64, received: Arc<AtomicU64>) -> Self {
+    fn new(
+        replies: Sender<Reply>,
+        phase: Phase,
+        of: u64,
+        received: Arc<AtomicU64>,
+        ring: Arc<dyn Show>,
+    ) -> Self {
         Self {
             replies,
             phase,
             of,
             received,
             last: Instant::now(),
+            ring,
         }
     }
 
@@ -410,6 +455,19 @@ impl Progress {
             return;
         }
         self.last = Instant::now();
+        // The ring's arc: how much of the image has come in (writing: the
+        // size is the stream's, compressed or not) or been read back.
+        let share = |done: u64| {
+            if self.of == 0 {
+                1.0
+            } else {
+                done as f32 / self.of as f32
+            }
+        };
+        self.ring.show(match self.phase {
+            Phase::Writing => Look::Writing(share(self.received.load(Ordering::Relaxed))),
+            Phase::Verifying => Look::Verifying(share(written)),
+        });
         let _ = self.replies.send(Reply::Progress {
             phase: self.phase,
             received: self.received.load(Ordering::Relaxed),

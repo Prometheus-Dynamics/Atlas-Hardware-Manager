@@ -123,6 +123,13 @@ commit; the commits are listed per area.
   and `USB_F_FS` (=m), the raze-flasher daemon's bulk interface
   (docs/flasher.md); one more module in the shared kernel, loaded by no
   one else.
+- **Flasher progress on the ring, safe return to the eMMC:** with the
+  atlas-flasher daemon up, the ring is its own: dim green waiting, an amber
+  arc while writing, a blue arc while verifying, bright green when verified,
+  red on a failure. It reboots to the eMMC when nothing was written and no
+  Atlas came for 5 minutes, or 5 s after Atlas leaves a verified write; after
+  a failed or unverified write it stays in the flasher. /init's 30-minute
+  reboot now applies only without the daemon (the debug path).
 - **Camera views and nt-server in the identity:** `camera_streams` is
   `/run/board/camera-streams.json` as the image writes it (PhotonVision
   `b9d520e`: processed then raw per camera, at boot and on every settings

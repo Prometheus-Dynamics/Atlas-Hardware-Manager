@@ -96,8 +96,10 @@ mount -t functionfs flasher /dev/ffs-flasher || log "functionfs mount failed"
 	done
 ) &
 for i in $(seq 1 50); do [ -e /dev/ffs-flasher/ep1 ] && break; sleep 0.1; done
+daemon=0
 if [ -e /dev/ffs-flasher/ep1 ]; then
 	log "atlas-flasher is up"
+	daemon=1
 else
 	log "atlas-flasher did not start; ACM shell only"
 	rm -f $g/configs/c.1/ffs.flasher
@@ -110,7 +112,8 @@ for i in $(seq 1 50); do
 done
 if [ -n "$udc" ] && echo "$udc" > $g/UDC; then
 	log "gadget bound to $udc"
-	[ $ok = 1 ] && ring 0 64 0
+	# With the daemon up, the ring is its own (waiting, writing, verifying).
+	[ $ok = 1 ] && [ $daemon = 0 ] && ring 0 64 0
 else
 	fail "no USB device controller (udc: '${udc}'; /sys/class/udc: $(ls /sys/class/udc 2>/dev/null))"
 fi
@@ -136,9 +139,14 @@ shell_on() {
 	done
 }
 
-# Back to the eMMC after 30 minutes, so a wedged debug session never needs a
-# power cycle. `touch /tmp/stay` keeps the flasher up.
-(sleep 1800; [ -e /tmp/stay ] || { log "30 min up, rebooting to eMMC"; reboot -f; }) &
+# Without the daemon (a debug session): back to the eMMC after 30 minutes, so
+# it never needs a power cycle; `touch /tmp/stay` keeps the flasher up. With
+# the daemon, it decides: it goes back to the eMMC when that is safe (nothing
+# written and no Atlas for 5 minutes, or written and verified), never after a
+# failed write, whose eMMC may not boot.
+if [ $daemon = 0 ]; then
+	(sleep 1800; [ -e /tmp/stay ] || { log "30 min up, rebooting to eMMC"; reboot -f; }) &
+fi
 
 shell_on /dev/ttyGS0 &
 shell_on /dev/console

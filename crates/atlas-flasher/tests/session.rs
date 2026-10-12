@@ -3,11 +3,13 @@
 
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::thread;
 
 use atlas_flasher::{Flasher, FlasherError, ImageFormat, Progress, StreamTransport};
 use atlas_flasher_proto::{Phase, RebootInto};
 use flasher::board::Board;
+use flasher::ring::{Emmc, Look, Show};
 use flasher::session::{self, Context, Outcome};
 use sha2::{Digest, Sha256};
 
@@ -26,7 +28,30 @@ struct Rig {
     flasher: Flasher,
     board: thread::JoinHandle<Outcome>,
     disk: PathBuf,
+    /// What the daemon says the eMMC holds.
+    emmc: Arc<Mutex<Emmc>>,
+    /// Every look the ring was asked to show.
+    looks: Arc<Mutex<Vec<Look>>>,
     _dir: tempfile::TempDir,
+}
+
+/// A ring that remembers what it showed.
+struct Recorded(Arc<Mutex<Vec<Look>>>);
+
+impl Show for Recorded {
+    fn show(&self, look: Look) {
+        self.0.lock().unwrap().push(look);
+    }
+}
+
+impl Rig {
+    fn emmc(&self) -> Emmc {
+        *self.emmc.lock().unwrap()
+    }
+
+    fn looks(&self) -> Vec<Look> {
+        self.looks.lock().unwrap().clone()
+    }
 }
 
 fn rig() -> Rig {
@@ -35,6 +60,8 @@ fn rig() -> Rig {
     std::fs::write(&disk, vec![0xee; EMMC as usize]).unwrap();
     let (host_out, board_in) = UnixStream::pair().unwrap();
     let (board_out, host_in) = UnixStream::pair().unwrap();
+    let looks = Arc::new(Mutex::new(Vec::new()));
+    let emmc = Arc::new(Mutex::new(Emmc::Untouched));
     let context = Context {
         disk: disk.clone(),
         board: Board {
@@ -44,6 +71,8 @@ fn rig() -> Rig {
         },
         version: "test".into(),
         drop_caches: false,
+        ring: Arc::new(Recorded(looks.clone())),
+        emmc: emmc.clone(),
     };
     let board = thread::spawn(move || session::serve(board_in, board_out, &context));
     host_out.set_nonblocking(true).unwrap();
@@ -54,6 +83,8 @@ fn rig() -> Rig {
         flasher: Flasher::new(StreamTransport(to_board), from_board),
         board,
         disk,
+        emmc,
+        looks,
         _dir: dir,
     }
 }
@@ -99,6 +130,21 @@ async fn a_zstd_image_is_written_verified_and_the_board_reboots() {
         .await
         .unwrap();
     assert!(verifying.last().is_some_and(|p| p.fraction() == 1.0));
+    // The board knows it may boot its eMMC now, and the ring said so: an
+    // amber arc while writing, a blue one while verifying, then green.
+    assert_eq!(rig.emmc(), Emmc::Verified);
+    let looks = rig.looks();
+    assert!(
+        looks
+            .iter()
+            .any(|l| matches!(l, Look::Writing(f) if *f > 0.0)),
+        "{looks:?}"
+    );
+    assert!(
+        looks.iter().any(|l| matches!(l, Look::Verifying(_))),
+        "{looks:?}"
+    );
+    assert_eq!(looks.last(), Some(&Look::Done));
 
     rig.flasher.reboot().await.unwrap();
     assert_eq!(rig.board.join().unwrap(), Outcome::Reboot(RebootInto::Emmc));
@@ -131,6 +177,9 @@ async fn a_corrupted_image_is_caught_and_the_link_stays_usable() {
         .await
         .unwrap_err();
     assert!(error.to_string().contains("SHA-256"), "{error}");
+    // The eMMC may not boot now: the board stays in the flasher, red.
+    assert_eq!(rig.emmc(), Emmc::Partial);
+    assert_eq!(rig.looks().last(), Some(&Look::Failed));
     // Nothing verified after a failed write; the session goes on.
     assert!(rig.flasher.verify(&mut |_| {}).await.is_err());
     rig.flasher.hello("atlas-test", None).await.unwrap();

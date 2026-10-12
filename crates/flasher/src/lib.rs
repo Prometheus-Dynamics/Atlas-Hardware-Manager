@@ -5,6 +5,7 @@
 pub mod board;
 #[cfg(target_os = "linux")]
 pub mod ffs;
+pub mod ring;
 pub mod session;
 
 pub(crate) fn hex(bytes: &[u8]) -> String {
