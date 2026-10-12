@@ -42,6 +42,9 @@ pub struct MockDevice {
     /// The gateway this device sits behind, if any.
     pub parent: Option<DeviceKey>,
     pub online: bool,
+    /// Whether it answers when asked who it is. Still found when it
+    /// doesn't, like a board on a busy network that misses a reply.
+    pub answering: bool,
     /// Simulated time per update step.
     pub step_time: Duration,
     /// When the device last started; uptime and logs count from here. A
@@ -69,6 +72,7 @@ impl MockDevice {
             behavior: MockBehavior::Succeeds,
             parent: None,
             online: true,
+            answering: true,
             step_time: Duration::from_millis(40),
             // Simulated devices have been up a while when Atlas starts.
             booted_ms: crate::observe::now_ms().saturating_sub((3 * 3600 + 17 * 60) * 1000),
@@ -223,6 +227,13 @@ impl MockFleet {
         };
         for watcher in watchers {
             watcher.notify();
+        }
+    }
+
+    /// Makes a device stop or start answering identify, while still found.
+    pub fn set_answering(&self, key: &DeviceKey, answering: bool) {
+        if let Some(device) = self.lock().devices.get_mut(key) {
+            device.answering = answering;
         }
     }
 

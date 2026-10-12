@@ -12,6 +12,11 @@ use crate::inventory::{Upsert, link_rank};
 use crate::time::now_ms;
 use crate::{DeviceRecord, Event};
 
+/// How long an online device that is still found but doesn't answer stays
+/// online. A camera on a busy robot network misses an identify now and then;
+/// marking it offline each time makes its views come and go.
+const MISSED_ANSWER_GRACE_MS: u64 = 30_000;
+
 /// What one scan found.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct ScanReport {
@@ -35,6 +40,9 @@ struct Scan<'a> {
     warnings: Vec<String>,
     /// Whether any device was new or changed, so robot statuses may too.
     changed: bool,
+    /// Candidates found this scan that didn't identify: still there, just
+    /// not answering.
+    unanswered: BTreeSet<String>,
 }
 
 impl Scan<'_> {
@@ -146,17 +154,23 @@ impl Scan<'_> {
                         accepted.push((driver, identity));
                     }
                 }
-                Ok((pending, Ok(Err(error)))) => self.warn(format!(
-                    "{} at {} did not identify: {error}",
-                    pending.driver.manifest().name,
-                    pending.candidate.address
-                )),
-                Ok((pending, Err(_elapsed))) => self.warn(format!(
-                    "{} at {} did not answer within {} ms",
-                    pending.driver.manifest().name,
-                    pending.candidate.address,
-                    timeout.as_millis()
-                )),
+                Ok((pending, Ok(Err(error)))) => {
+                    self.unanswered.insert(pending.candidate.address.clone());
+                    self.warn(format!(
+                        "{} at {} did not identify: {error}",
+                        pending.driver.manifest().name,
+                        pending.candidate.address
+                    ))
+                }
+                Ok((pending, Err(_elapsed))) => {
+                    self.unanswered.insert(pending.candidate.address.clone());
+                    self.warn(format!(
+                        "{} at {} did not answer within {} ms",
+                        pending.driver.manifest().name,
+                        pending.candidate.address,
+                        timeout.as_millis()
+                    ))
+                }
                 Err(error) => self.warn(format!("An identify task stopped: {error}")),
             }
         }
@@ -224,6 +238,7 @@ pub(crate) async fn run(inner: &Inner) -> ScanReport {
         best: BTreeMap::new(),
         warnings: Vec::new(),
         changed: false,
+        unanswered: BTreeSet::new(),
     };
     let mut frontier = scan.discover(links).await;
     for depth in 0..=inner.options.max_gateway_depth {
@@ -241,7 +256,25 @@ pub(crate) async fn run(inner: &Inner) -> ScanReport {
     let seen: BTreeSet<DeviceKey> = scan.best.keys().cloned().collect();
     let went_offline = {
         let mut state = inner.state();
-        let gone = state.inventory.mark_offline_except(&seen);
+        // A device found again at its address that just didn't answer in
+        // time stays online for a while; one that's gone goes offline now.
+        let now = now_ms();
+        let mut keep = seen.clone();
+        keep.extend(
+            state
+                .live
+                .iter()
+                .filter(|(key, live)| {
+                    !seen.contains(*key) && scan.unanswered.contains(&live.candidate.address)
+                })
+                .filter(|(key, _)| {
+                    state.inventory.get(key).is_some_and(|record| {
+                        now.saturating_sub(record.last_seen_ms) < MISSED_ANSWER_GRACE_MS
+                    })
+                })
+                .map(|(key, _)| key.clone()),
+        );
+        let gone = state.inventory.mark_offline_except(&keep);
         for key in &gone {
             state.live.remove(key);
         }
@@ -268,16 +301,8 @@ pub(crate) async fn run(inner: &Inner) -> ScanReport {
     inner.record_activity(offline_entries);
     // Only now are records that left this scan offline, so a board that
     // went from recovery to running can take its old record's place.
-    let running: Vec<DeviceRecord> = {
-        let state = inner.state();
-        seen.iter()
-            .filter_map(|key| state.inventory.get(key).cloned())
-            .collect()
-    };
-    for record in &running {
-        if crate::lineage::absorb_recovery_records(inner, record).is_some() {
-            scan.changed = true;
-        }
+    if crate::lineage::fold_recovery_records(inner, &seen) {
+        scan.changed = true;
     }
     if (scan.changed || !went_offline.is_empty()) && !inner.state().robots.is_empty() {
         inner.events.emit(Event::RobotsChanged);

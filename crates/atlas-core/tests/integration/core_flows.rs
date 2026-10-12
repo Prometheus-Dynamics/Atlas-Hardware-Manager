@@ -81,6 +81,26 @@ async fn devices_that_disappear_go_offline_and_stay_listed() {
 }
 
 #[tokio::test]
+async fn a_device_still_found_that_misses_a_reply_stays_online() {
+    let fleet = MockFleet::demo();
+    let atlas = atlas_for(&fleet);
+    atlas.scan().await;
+
+    fleet.set_answering(&helios("H-1002"), false);
+    let report = atlas.scan().await;
+
+    assert!(report.went_offline.is_empty(), "{:?}", report.went_offline);
+    assert_eq!(
+        atlas.device(&helios("H-1002")).unwrap().presence,
+        Presence::Online
+    );
+
+    fleet.set_online(&helios("H-1002"), false);
+    let report = atlas.scan().await;
+    assert_eq!(report.went_offline, vec![helios("H-1002")]);
+}
+
+#[tokio::test]
 async fn first_sighting_is_new_and_unchanged_rescans_are_quiet() {
     let fleet = MockFleet::demo();
     let atlas = atlas_for(&fleet);

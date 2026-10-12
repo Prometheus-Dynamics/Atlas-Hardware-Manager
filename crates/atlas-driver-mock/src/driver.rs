@@ -144,6 +144,9 @@ impl Driver for MockDriver {
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
         let key = DeviceKey::new(candidate.family.as_str(), candidate.address.as_str());
         let device = self.device(&key)?;
+        if !device.answering {
+            return Err(DriverError::Unreachable(format!("{key} did not answer")));
+        }
         Ok(Identity {
             model: device.model.clone(),
             mode: device.mode,
