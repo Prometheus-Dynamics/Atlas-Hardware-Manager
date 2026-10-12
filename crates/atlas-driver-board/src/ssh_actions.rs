@@ -151,6 +151,17 @@ impl ActionsCapability for BoardDeviceActions {
 
     async fn run_action(&self, device: &Identity, action_id: &str) -> Result<(), DriverError> {
         let ours = self.offer.actions().iter().any(|a| a.id == action_id);
+        // The board offers it over HTTP only to the computer on its USB link
+        // (reboot, usb-boot): no key needed. The console still goes first.
+        let http_offers = self
+            .http
+            .as_ref()
+            .is_some_and(|http| http.actions(device).iter().any(|a| a.id == action_id));
+        if http_offers
+            && let (Some(http), false) = (&self.http, self.ssh.as_ref().is_some_and(SshUpdate::has_console))
+        {
+            return http.run_action(device, action_id).await;
+        }
         match (&self.ssh, &self.http) {
             (Some(ssh), _) if ours => run_ssh_action(ssh, &self.offer, action_id).await,
             (_, Some(http)) => http.run_action(device, action_id).await,

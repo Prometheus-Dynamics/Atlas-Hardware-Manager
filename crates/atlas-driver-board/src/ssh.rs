@@ -178,6 +178,11 @@ impl SshUpdate {
         command
     }
 
+    /// Whether the board is plugged into this computer (it has a console).
+    pub(crate) fn has_console(&self) -> bool {
+        self.console().is_some()
+    }
+
     /// The board's console, when it is plugged into this computer.
     fn console(&self) -> Option<Console> {
         self.usb_serial.as_deref().and_then(Console::find)

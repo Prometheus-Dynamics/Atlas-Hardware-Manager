@@ -8,8 +8,10 @@
 # The firmware's set_reboot_order (Pi 5/CM5, mailbox tag 0x0003808b) applies
 # to the next boot only and clears itself, so the bootloader's own BOOT_ORDER
 # is never changed. RPIBOOT has no timeout: the board waits for a USB host
-# until it is flashed or power-cycled. Root only; offered over SSH (and
-# Orion), never on the unauthenticated identity endpoint.
+# until it is flashed or power-cycled. Root only; offered over SSH, the USB
+# console, and on the identity endpoint only to the computer on the board's
+# USB link with the security switch off (BOARD_USB_ACTIONS,
+# board-usb-boot.path): it could flash the board anyway.
 set -eu
 
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}

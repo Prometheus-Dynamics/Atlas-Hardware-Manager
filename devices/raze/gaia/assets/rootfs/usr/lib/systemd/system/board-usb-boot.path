@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch for "usb-boot" requests from the identity endpoint (USB link only)
+Documentation=file:/usr/lib/board/identity.env
+
+[Path]
+PathExists=/run/board/requests/usb-boot
+Unit=board-usb-boot.service
+
+[Install]
+WantedBy=paths.target

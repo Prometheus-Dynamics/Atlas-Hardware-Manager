@@ -429,6 +429,8 @@ board_macs() {
 board_action_label() {
 	case "$1" in
 	locate) printf 'Find it' ;;
+	reboot) printf 'Restart' ;;
+	usb-boot) printf 'Restart into USB boot' ;;
 	*) printf '%s' "$1" ;;
 	esac
 }
@@ -448,23 +450,57 @@ board_actions_json() {
 	if [ -x "${BOARD_STREAM_BIN:-/usr/bin/board-stream}" ]; then
 		_board_eps="$_board_eps${_board_eps:+,}\"stream\":\":5898/stream\""
 	fi
-	if [ -n "${BOARD_ACTIONS:-}" ]; then
+	# BOARD_ACTIONS_EXTRA: more for this caller (identity-http: the USB link's).
+	_board_all="${BOARD_ACTIONS:-} ${BOARD_ACTIONS_EXTRA:-}"
+	if [ -n "${_board_all# }" ]; then
 		_board_eps="$_board_eps${_board_eps:+,}\"actions\":\"/actions\""
 	fi
 	[ -z "$_board_eps" ] || printf ',"endpoints":{%s}' "$_board_eps"
-	[ -n "${BOARD_ACTIONS:-}" ] || return 0
+	[ -n "${_board_all# }" ] || return 0
 	printf ',"actions":['
 	_board_sep=''
-	for _board_a in $BOARD_ACTIONS; do
+	for _board_a in $_board_all; do
 		printf '%s{"id":%s,"label":%s}' "$_board_sep" "$(board_json_str "$_board_a")" "$(board_json_str "$(board_action_label "$_board_a")")"
 		_board_sep=','
 	done
 	printf ']'
 }
 
+# Whether the security switch is on (security.env; /data's choice wins over
+# /etc's, which wins over the package's 0). Anything but 1 is off.
+board_security_on() {
+	(
+		BOARD_SECURITY=0
+		board_load_env security.env
+		[ -r "$BOARD_DATA_DIR/security.env" ] && . "$BOARD_DATA_DIR/security.env"
+		[ "${BOARD_SECURITY:-0}" = 1 ]
+	)
+}
+
+# Whether the address <ip> (IPv4, or IPv4-mapped IPv6) is on the USB gadget's
+# network: the computer at the other end of the board's USB cable.
+board_on_usb_link() {
+	_board_ip=${1#::ffff:}
+	case "$_board_ip" in
+	*.*.*.*) ;;
+	*) return 1 ;;
+	esac
+	board_load_env usb-gadget.env
+	board_gadget_address 2>/dev/null || return 1
+	[ -n "${BOARD_GADGET_CIDR:-}" ] || return 1
+	awk -v ip="$_board_ip" -v cidr="$BOARD_GADGET_CIDR" '
+		function num(a,   p) { split(a, p, "."); return ((p[1] * 256 + p[2]) * 256 + p[3]) * 256 + p[4] }
+		BEGIN {
+			split(cidr, c, "/"); bits = c[2] + 0
+			if (bits < 1 || bits > 32) exit 1
+			size = 2 ^ (32 - bits)
+			exit (int(num(ip) / size) == int(num(c[1]) / size)) ? 0 : 1
+		}'
+}
+
 # Whether <action> is one this device offers.
 board_action_offered() {
-	for _board_a in ${BOARD_ACTIONS:-}; do
+	for _board_a in ${BOARD_ACTIONS:-} ${BOARD_ACTIONS_EXTRA:-}; do
 		[ "$_board_a" = "$1" ] && return 0
 	done
 	return 1

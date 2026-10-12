@@ -123,6 +123,15 @@ commit; the commits are listed per area.
   and `USB_F_FS` (=m), the raze-flasher daemon's bulk interface
   (docs/flasher.md); one more module in the shared kernel, loaded by no
   one else.
+- **Recovery from the USB cable without SSH, and a security switch:**
+  `security.env` (`BOARD_SECURITY`, 0 by default as FRC robots run; an OS
+  sets 1 in /etc/board/security.env, a board in /data/board). While it is
+  off: the computer on the board's USB link (REMOTE_ADDR on the gadget
+  network) gets `reboot` and `usb-boot` on the identity endpoint
+  (BOARD_USB_ACTIONS, board-reboot/board-usb-boot path units, listed in the
+  identity only for that caller), and ttyGS1 is Atlas's console: a raw,
+  non-interactive root shell that restarts whenever it ends. ttyGS0 stays
+  the login console for people. With it on, neither exists.
 - **Support bundle on the board:** `/usr/lib/board/support-bundle` packs
   the journals of the last 3 boots (each capped), pstore (kept and live),
   dmesg, versions, identity, status, update, self-test, hardware, the event

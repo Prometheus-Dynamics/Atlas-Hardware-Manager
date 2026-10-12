@@ -291,6 +291,36 @@ dest = "/usr/lib/tmpfiles.d/board.conf"
 origin = "static-asset"
 
 [[stage.files]]
+id = "raze-systemd-system-board-reboot-path"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-reboot.path"
+dest = "/usr/lib/systemd/system/board-reboot.path"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-reboot-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-reboot.service"
+dest = "/usr/lib/systemd/system/board-reboot.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-usb-boot-path"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-usb-boot.path"
+dest = "/usr/lib/systemd/system/board-usb-boot.path"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-usb-boot-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-usb-boot.service"
+dest = "/usr/lib/systemd/system/board-usb-boot.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-board-security-env"
+src = "@self/assets/rootfs/usr/lib/board/security.env"
+dest = "/usr/lib/board/security.env"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-systemd-system-board-locate-path"
 src = "@self/assets/rootfs/usr/lib/systemd/system/board-locate.path"
 dest = "/usr/lib/systemd/system/board-locate.path"
@@ -593,6 +623,11 @@ stage_files = [
   "raze-board-ssh-keys",
   "raze-board-ssh-keys-env",
   "raze-tmpfiles-d-board-conf",
+  "raze-systemd-system-board-reboot-path",
+  "raze-systemd-system-board-reboot-service",
+  "raze-systemd-system-board-usb-boot-path",
+  "raze-systemd-system-board-usb-boot-service",
+  "raze-board-security-env",
   "raze-systemd-system-board-locate-path",
   "raze-systemd-system-board-locate-service",
   "raze-systemd-system-board-ssh-keys-service",

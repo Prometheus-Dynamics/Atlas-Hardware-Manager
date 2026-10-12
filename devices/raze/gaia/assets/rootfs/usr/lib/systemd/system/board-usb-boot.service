@@ -1,0 +1,12 @@
+[Unit]
+Description=Restart into USB boot, asked by the computer on the board's USB link
+Documentation=file:/usr/lib/board/identity.env
+
+[Service]
+Type=oneshot
+# Consume the request first, so the path unit doesn't fire again for it.
+ExecStartPre=/bin/rm -f /run/board/requests/usb-boot
+# The identity endpoint checks it too; with the switch on, nothing happens.
+ExecCondition=/bin/sh -c '. /usr/lib/board/lib.sh; ! board_security_on'
+Environment=BOARD_EVENT_SOURCE=atlas
+ExecStart=/usr/lib/board/usb-boot

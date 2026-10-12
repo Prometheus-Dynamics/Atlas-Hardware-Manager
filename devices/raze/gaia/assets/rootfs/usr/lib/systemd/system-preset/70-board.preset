@@ -11,6 +11,8 @@ enable board-usb-gadget-dhcp.service
 enable board-usb-route.service
 enable raze-leds-reprobe.service
 enable board-locate.path
+enable board-reboot.path
+enable board-usb-boot.path
 enable board-ssh-keys.service
 enable serial-getty@.service ttyGS0 ttyGS1
 enable board-update-confirm.service

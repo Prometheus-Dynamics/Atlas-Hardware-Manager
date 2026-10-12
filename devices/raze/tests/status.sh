@@ -384,4 +384,23 @@ export BOARD_NT_SERVER_BIN
 request 'GET /.well-known/pd-device HTTP/1.0' | body | is True '"nt-server" in d["diagnostics"]' "nt-server"
 unset BOARD_NT_SERVER_BIN
 
+echo "the computer on the USB cable can restart the board; others can't; nobody with security on"
+usb_ip=$(sh -c ". '$lib/lib.sh'; board_load_env usb-gadget.env; board_gadget_address; printf '%s' \"\${BOARD_GADGET_CIDR%/*}\"" | awk -F. '{ printf "%d.%d.%d.%d", $1, $2, $3, $4 + 1 }')
+[ -n "$usb_ip" ] || fail "no gadget address"
+mkdir -p "$T/run/requests"
+REMOTE_ADDR=$usb_ip request 'GET /.well-known/pd-device HTTP/1.0' | body |
+	is "['reboot', 'usb-boot']" '[a["id"] for a in d["actions"]]' "the USB link sees reboot and usb-boot"
+REMOTE_ADDR=10.53.38.40 request 'GET /.well-known/pd-device HTTP/1.0' | body | is False '"actions" in d' "the robot network doesn't"
+REMOTE_ADDR=10.53.38.40 request 'POST /actions/reboot HTTP/1.0' | status_line | grep -q ' 404 ' || fail "reboot from the network"
+[ ! -e "$T/run/requests/reboot" ] || fail "a request from the network was dropped"
+REMOTE_ADDR=::ffff:$usb_ip request 'POST /actions/usb-boot HTTP/1.0' | status_line | grep -q ' 202 ' || fail "usb-boot from the USB link"
+[ -e "$T/run/requests/usb-boot" ] || fail "the usb-boot request"
+rm -f "$T/run/requests/usb-boot"
+printf 'BOARD_SECURITY=1\n' > "$T/etc/security.env"
+REMOTE_ADDR=$usb_ip request 'POST /actions/reboot HTTP/1.0' | status_line | grep -q ' 404 ' || fail "security on: no reboot over HTTP"
+REMOTE_ADDR=$usb_ip request 'GET /.well-known/pd-device HTTP/1.0' | body | is False '"actions" in d' "security on: none listed"
+printf 'BOARD_SECURITY=0\n' > "$T/data/security.env"
+REMOTE_ADDR=$usb_ip request 'GET /.well-known/pd-device HTTP/1.0' | body | is True '"actions" in d' "the board's own choice wins over the OS's"
+rm -f "$T/etc/security.env" "$T/data/security.env"
+
 echo "ok"

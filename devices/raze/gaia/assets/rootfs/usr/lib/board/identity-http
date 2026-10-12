@@ -18,7 +18,12 @@
 #                                       numbers
 #   POST /actions/<id>               -> 202 when <id> is in BOARD_ACTIONS: drops
 #                                       /run/board/requests/<id>, which a
-#                                       root path unit acts on; 404 otherwise
+#                                       root path unit acts on; 404 otherwise.
+#                                       From the USB link (REMOTE_ADDR on the
+#                                       gadget network, set by systemd for
+#                                       Accept=yes) with the security switch
+#                                       off, BOARD_USB_ACTIONS count too, and
+#                                       the identity lists them
 #   other methods on those paths     -> 405
 #   anything else                    -> 404
 set -u
@@ -65,6 +70,12 @@ while [ "$n" -lt 100 ] && IFS= read -r header; do
 done
 
 board_load_env identity.env
+# The computer on the board's USB cable also gets BOARD_USB_ACTIONS, while
+# the security switch is off (lib.sh's action helpers add BOARD_ACTIONS_EXTRA).
+BOARD_ACTIONS_EXTRA=
+if [ -n "${BOARD_USB_ACTIONS:-}" ] && board_on_usb_link "${REMOTE_ADDR:-}" && ! board_security_on; then
+	BOARD_ACTIONS_EXTRA=$BOARD_USB_ACTIONS
+fi
 
 query=''
 case "$target" in
