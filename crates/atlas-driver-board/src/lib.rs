@@ -25,6 +25,7 @@ mod ssh;
 mod ssh_actions;
 mod status;
 mod stream;
+mod sweep;
 
 pub use browse::{Browser, SERVICE_TYPE};
 pub use contract::{BoardIdentity, CLOCK_TOLERANCE_S, IDENTITY_PATH};

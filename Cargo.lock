@@ -353,6 +353,7 @@ dependencies = [
  "async-trait",
  "atlas-devices",
  "atlas-driver",
+ "if-addrs",
  "mdns-sd",
  "nusb",
  "reqwest",

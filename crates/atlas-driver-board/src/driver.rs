@@ -79,6 +79,8 @@ pub struct BoardDriver {
     /// endpoints: a device's capabilities use the report from the link its
     /// record chose, never whichever answered last.
     reported: Mutex<HashMap<String, (DeviceKey, BoardIdentity)>>,
+    /// Boards found without mDNS (sweep.rs).
+    sweeper: crate::sweep::Sweeper,
     /// The last discovery's USB gadget probes, by candidate address.
     probes: Mutex<HashMap<String, GadgetProbe>>,
     ssh: SshAccess,
@@ -106,6 +108,7 @@ impl BoardDriver {
                 .unwrap_or_default(),
             reported: Mutex::new(HashMap::new()),
             probes: Mutex::new(HashMap::new()),
+            sweeper: crate::sweep::Sweeper::default(),
             ssh,
         }
     }
@@ -171,6 +174,24 @@ impl BoardDriver {
         }
     }
 
+    /// The networks this computer reaches through a board's USB route: what
+    /// the boards it found report routing (`usb_route`, active).
+    fn routed_nets(&self) -> Vec<crate::sweep::Net> {
+        self.reported
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .values()
+            .filter_map(|(_, report)| report.usb_route.as_ref())
+            .filter(|route| route.active)
+            .flat_map(|route| {
+                route
+                    .subnets
+                    .iter()
+                    .filter_map(|net| crate::sweep::Net::parse(net))
+            })
+            .collect()
+    }
+
     /// The report from `device`'s own address, or, if that one is gone,
     /// any report of the same device.
     fn reported(&self, device: &Identity) -> Option<(String, BoardIdentity)> {
@@ -229,19 +250,30 @@ impl Driver for BoardDriver {
         if link.id.0 != LINK_ID {
             return Ok(Vec::new());
         }
-        let advertisements = Browser::shared()
-            .advertisements()
-            .map_err(DriverError::Unreachable)?;
-        Ok(advertisements
+        // mDNS when it works; the sweep (this computer's robot networks and
+        // those a board routes its USB link onto) whatever mDNS does.
+        let advertisements = Browser::shared().advertisements().unwrap_or_default();
+        let mut addresses: Vec<String> = advertisements
             .into_iter()
             .filter(|ad| {
                 ad.model()
                     .is_some_and(|model| model.eq_ignore_ascii_case(self.manifest.family.as_str()))
             })
-            .map(|ad| Candidate {
+            .map(|ad| ad.identity_url())
+            .collect();
+        let mut nets = crate::sweep::own_robot_nets();
+        nets.extend(self.routed_nets());
+        for found in self.sweeper.found(&self.http, nets) {
+            if !addresses.contains(&found) {
+                addresses.push(found);
+            }
+        }
+        Ok(addresses
+            .into_iter()
+            .map(|address| Candidate {
                 link: link.id.clone(),
                 family: self.manifest.family.clone(),
-                address: ad.identity_url(),
+                address,
             })
             .collect())
     }

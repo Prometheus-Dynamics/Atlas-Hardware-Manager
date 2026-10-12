@@ -14,6 +14,8 @@ description = "Atlas driver for running boards that follow device contract v1 (m
 async-trait.workspace = true
 atlas-devices.workspace = true
 atlas-driver.workspace = true
+# This computer's networks, for the sweep (sweep.rs), on every OS.
+if-addrs = "0.15"
 mdns-sd.workspace = true
 nusb.workspace = true
 reqwest.workspace = true
