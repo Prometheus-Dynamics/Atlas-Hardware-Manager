@@ -1,8 +1,10 @@
 <script lang="ts">
-  // What the camera sees, when the device offers a stream. MJPEG streams
-  // and still images both work in an <img>. A click opens it full screen
-  // (`onexpand`), with the device's other views beside it.
+  // What the camera sees, when the device offers a stream (MJPEG or a
+  // still image), healing itself when the stream breaks (CameraFeed). A
+  // click opens it full screen (`onexpand`), with the device's other views
+  // beside it.
   import Icon from "#lib/components/common/Icon.svelte";
+  import CameraFeed from "./CameraFeed.svelte";
 
   let {
     src,
@@ -12,26 +14,16 @@
     onexpand,
   }: { src: string; name: string; label?: string; caption?: boolean; onexpand?: () => void } = $props();
 
-  let failed = $state(false);
-  let loaded = $state(false);
+  let phase = $state<"connecting" | "live" | "reconnecting">("connecting");
 </script>
 
 <figure class="frame">
-  {#if failed}
-    <div class="flex h-full flex-col items-center justify-center gap-2 text-[12.5px] text-fg-faint">
-      <Icon name="photo-off" size={22} />
-      The camera stream isn't answering.
-      <button type="button" class="link text-[12.5px]" onclick={() => ((failed = false), (loaded = false))}>Try again</button>
-    </div>
-  {:else}
-    <img {src} alt="Live view from {name}" class:loaded onload={() => (loaded = true)} onerror={() => (failed = true)} />
-    {#if !loaded}<div class="shimmer absolute inset-0"></div>{/if}
-    {#if caption}<figcaption><span class="rec"></span>{label}</figcaption>{/if}
-    {#if onexpand}
-      <button type="button" class="expand" aria-label="Open {label} full screen" title="Full screen" onclick={onexpand}>
-        <Icon name="arrows-maximize" size={15} />
-      </button>
-    {/if}
+  <CameraFeed {src} alt="Live view from {name}" bind:phase />
+  {#if caption}<figcaption><span class="rec" class:lost={phase !== "live"}></span>{label}</figcaption>{/if}
+  {#if onexpand}
+    <button type="button" class="expand" aria-label="Open {label} full screen" title="Full screen" onclick={onexpand}>
+      <Icon name="arrows-maximize" size={15} />
+    </button>
   {/if}
 </figure>
 
@@ -43,16 +35,6 @@
     border-radius: var(--r-card);
     background: var(--inset);
     border: 1px solid var(--glass-border);
-  }
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    opacity: 0;
-    transition: opacity var(--t-med);
-  }
-  img.loaded {
-    opacity: 1;
   }
   /* The whole preview opens it; the corner icon says so. */
   .expand {
@@ -97,5 +79,8 @@
     height: 6px;
     border-radius: 50%;
     background: var(--ok);
+  }
+  .rec.lost {
+    background: var(--warn);
   }
 </style>

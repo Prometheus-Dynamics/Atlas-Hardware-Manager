@@ -17,6 +17,7 @@ import type {
   HardwareCommand,
   HardwareFrame,
   LiveFrame,
+  CameraState,
   NtCameraAddress,
   NtFrame,
   NtServerFrame,
@@ -105,6 +106,26 @@ export const api = {
     if (id === null) return null;
     return () => {
       void invoke<void>("stop_hardware_stream", { id });
+    };
+  },
+  /**
+   * Follows a camera's MJPEG stream (or still image) at an http(s) URL:
+   * `onFrame` gets each JPEG, `onState` each change (it reconnects by itself,
+   * one connection at a time). Resolves with a function that stops it, or
+   * null for a URL it doesn't stream (show that one directly).
+   */
+  streamCamera: async (url: string, onFrame: (jpeg: Blob) => void, onState: (state: CameraState) => void): Promise<(() => void) | null> => {
+    if (!/^https?:\/\//.test(url)) return null;
+    const channel = new Channel<unknown>();
+    channel.onmessage = (message) => {
+      if (message instanceof ArrayBuffer) onFrame(new Blob([message], { type: "image/jpeg" }));
+      else if (ArrayBuffer.isView(message)) onFrame(new Blob([message as Uint8Array<ArrayBuffer>], { type: "image/jpeg" }));
+      else if (Array.isArray(message)) onFrame(new Blob([new Uint8Array(message as number[])], { type: "image/jpeg" }));
+      else onState(message as CameraState);
+    };
+    const id = await invoke<number>("start_camera_stream", { url, onEvent: channel });
+    return () => {
+      void invoke<void>("stop_camera_stream", { id });
     };
   },
   /**

@@ -250,6 +250,52 @@ pub fn stop_live_stream(state: State<'_, AppState>, id: u64) {
     stop_hardware_stream(state, id);
 }
 
+/// Follows a camera's MJPEG stream (or still image) at `url` into
+/// `on_event`: each frame as raw JPEG bytes, each change of state
+/// (`connecting`, `live`, `reconnecting`) as JSON. It reconnects with
+/// backoff on its own until [`stop_camera_stream`]; never more than one
+/// connection at a time.
+#[tauri::command]
+pub async fn start_camera_stream(
+    state: State<'_, AppState>,
+    url: String,
+    on_event: tauri::ipc::Channel,
+) -> CmdResult<u64> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(format!("not a camera URL: {url}"));
+    }
+    let id = state
+        .next_hardware_stream
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let task = tokio::spawn(async move {
+        use atlas_driver_board::camera::{CameraEvent, follow};
+        use tauri::ipc::InvokeResponseBody;
+        follow(&url, |event| {
+            let body = match event {
+                CameraEvent::Frame(jpeg) => InvokeResponseBody::Raw(jpeg),
+                CameraEvent::State(state) => match serde_json::to_string(&state) {
+                    Ok(json) => InvokeResponseBody::Json(json),
+                    Err(_) => return true,
+                },
+            };
+            on_event.send(body).is_ok()
+        })
+        .await;
+    });
+    state
+        .hardware_streams
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(id, task);
+    Ok(id)
+}
+
+/// Stops following a camera (its connection closes).
+#[tauri::command]
+pub fn stop_camera_stream(state: State<'_, AppState>, id: u64) {
+    stop_hardware_stream(state, id);
+}
+
 /// Runs the device's self-test and returns the kept result, also when a
 /// check failed or the run couldn't finish.
 #[tauri::command]

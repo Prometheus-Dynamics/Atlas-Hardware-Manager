@@ -337,6 +337,12 @@ export interface AppSettings {
   image_host: string | null;
 }
 
+/** A camera stream's state, as Atlas follows it (it reconnects by itself). */
+export type CameraState =
+  | { state: "connecting"; attempt: number }
+  | { state: "live" }
+  | { state: "reconnecting"; reason: string; retry_ms: number };
+
 /** One row of a device's readings (its board's Orion stream): this computer's time (ms). */
 export interface LiveRow {
   t: number;

@@ -3,9 +3,9 @@
   // its device and view named, the device's other views to switch to.
   // Esc, the close button or a click outside closes it.
   import Button from "#lib/components/common/Button.svelte";
-  import Icon from "#lib/components/common/Icon.svelte";
   import { streamLabel, type CameraStream } from "#lib/present.ts";
   import { portal } from "#lib/ui/portal.ts";
+  import CameraFeed from "./CameraFeed.svelte";
 
   let {
     streams,
@@ -15,7 +15,6 @@
   }: { streams: CameraStream[]; index?: number; device: string; onclose: () => void } = $props();
 
   const stream = $derived(streams[Math.min(index, streams.length - 1)]);
-  let failed = $state(false);
 
   function key(event: KeyboardEvent) {
     if (event.key === "Escape") {
@@ -23,10 +22,8 @@
       onclose();
     } else if (event.key === "ArrowRight" && streams.length > 1) {
       index = (index + 1) % streams.length;
-      failed = false;
     } else if (event.key === "ArrowLeft" && streams.length > 1) {
       index = (index - 1 + streams.length) % streams.length;
-      failed = false;
     }
   }
 </script>
@@ -36,18 +33,16 @@
 <div class="viewer" use:portal role="dialog" aria-modal="true" aria-label="{device}: {streamLabel(stream.name)}">
   <button type="button" class="backdrop" aria-label="Close" onclick={onclose}></button>
   <div class="frame">
-    {#if failed}
-      <div class="fail"><Icon name="photo-off" size={28} />The stream isn't answering.</div>
-    {:else}
-      <img src={stream.url} alt="{device}: {streamLabel(stream.name)}" onerror={() => (failed = true)} />
-    {/if}
+    {#key stream.url}
+      <CameraFeed src={stream.url} alt="{device}: {streamLabel(stream.name)}" fit="contain" />
+    {/key}
   </div>
   <header class="bar">
     <span class="title"><span class="rec"></span>{device} · {streamLabel(stream.name)}</span>
     {#if streams.length > 1}
       <div class="views" role="tablist" aria-label="Camera views">
         {#each streams as other, i (other.name)}
-          <button type="button" role="tab" class="view" class:on={i === index} aria-selected={i === index} onclick={() => ((index = i), (failed = false))}>
+          <button type="button" role="tab" class="view" class:on={i === index} aria-selected={i === index} onclick={() => (index = i)}>
             {streamLabel(other.name)}
           </button>
         {/each}
@@ -83,24 +78,7 @@
   .frame {
     position: relative;
     grid-row: 2;
-    display: grid;
-    place-items: center;
     min-height: 0;
-  }
-  img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-    border-radius: var(--r-md);
-    background: #000;
-  }
-  .fail {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 8px;
-    color: var(--fg-faint);
-    font-size: 13px;
   }
   .title {
     display: inline-flex;

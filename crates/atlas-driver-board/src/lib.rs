@@ -16,6 +16,7 @@
 //! the device catalog and they share one mDNS browser.
 
 mod browse;
+pub mod camera;
 mod console;
 mod contract;
 mod driver;

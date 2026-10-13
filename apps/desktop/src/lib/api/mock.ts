@@ -191,6 +191,8 @@ export const mockApi: Api = {
   hardwareAction: (key, hardware, name, args = {}) => reply(() => hardwareAction(key, hardware, name, args)),
   streamHardware,
   streamLive,
+  // The browser can't read a board's stream: views show the URL directly.
+  streamCamera: () => Promise.resolve(null),
   ntConnect,
   ntServerStart: (port) => ntServer.start(port),
   ntServerStop: () => ntServer.stop(),
