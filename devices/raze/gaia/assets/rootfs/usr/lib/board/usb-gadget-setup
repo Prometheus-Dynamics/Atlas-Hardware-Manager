@@ -227,11 +227,8 @@ ip addr replace "$BOARD_GADGET_CIDR" dev "$bridge"
 ip link set dev "$bridge" up
 board_log "$bridge: $BOARD_GADGET_CIDR ($BOARD_GADGET_ADDRESSING)"
 
-# mDNS on the USB link, so the host can find the device by name. Ethernet mDNS
-# is the OS's network configuration (see devices/README.md).
-if command -v resolvectl >/dev/null 2>&1; then
-	resolvectl mdns "$bridge" yes 2>/dev/null || true
-fi
+# mDNS on the USB link, so the host finds the device by name, is avahi's: it
+# answers on every interface but the bridge's members (avahi-daemon.conf).
 
 dhcp_range=${USB_GADGET_DHCP_RANGE:-AUTO}
 if [ "$dhcp_range" = AUTO ]; then

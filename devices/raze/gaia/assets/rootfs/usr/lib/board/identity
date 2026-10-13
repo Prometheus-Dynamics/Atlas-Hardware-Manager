@@ -3,17 +3,21 @@
 #
 #   identity            print the identity JSON
 #   identity --write    also write $BOARD_RUN_DIR/identity.json
-#   identity --dnssd    also write the mDNS advertisement for systemd-resolved
+#   identity --dnssd    also write the mDNS advertisement: an avahi service
+#                       file, $BOARD_AVAHI_DIR/pd-device.service
 #
-# board-identity.service runs `identity --write --dnssd` at boot, before
-# systemd-resolved starts. The HTTP endpoint builds the document per request.
+# board-identity.service runs `identity --write --dnssd` at boot.
+# etc-avahi-services.mount binds $BOARD_AVAHI_DIR over /etc/avahi/services
+# (the root is read-only; avahi reads services only from there and follows
+# changes), before avahi-daemon starts. The HTTP endpoint builds the
+# document per request.
 set -eu
 
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 # shellcheck source=lib.sh
 . "$BOARD_LIB_DIR/lib.sh"
 
-BOARD_DNSSD_DIR=${BOARD_DNSSD_DIR:-/run/systemd/dnssd}
+BOARD_AVAHI_DIR=${BOARD_AVAHI_DIR:-/run/board/avahi-services}
 BOARD_HTTP_PORT=5899
 BOARD_HTTP_PATH=/.well-known/pd-device
 
@@ -42,7 +46,7 @@ write_file() {
 	mv -f "$_tmp" "$1"
 }
 
-# TXT values: no quotes, backslashes or '%' (resolved expands specifiers).
+# TXT values: letters, digits and ._:+- only (no XML to escape).
 txt_value() {
 	printf '%s' "$1" | tr -c 'A-Za-z0-9._:+-' '_' | cut -c1-200
 }
@@ -56,24 +60,33 @@ fi
 if [ "$dnssd" = 1 ]; then
 	board_load_env board-package.env
 	board_load_env identity.env
-	target="$BOARD_DNSSD_DIR/board.dnssd"
+	target="$BOARD_AVAHI_DIR/pd-device.service"
+	# The directory always exists: it is the bind mount's source.
+	mkdir -p "$BOARD_AVAHI_DIR"
 	if [ "${BOARD_MDNS:-1}" = 1 ]; then
 		os_ver=$(board_os_field VERSION_ID)
 		[ -n "$os_ver" ] || os_ver=$(board_os_field VERSION)
 		{
-			printf '# Generated at boot by board-identity.service; edits are lost.\n'
-			printf '# Turn the advertisement off with BOARD_MDNS=0 in /etc/board/identity.env.\n'
-			printf '[Service]\n'
-			printf 'Name=%%H\n'
-			printf 'Type=_pd-device._tcp\n'
-			printf 'Port=%s\n' "$BOARD_HTTP_PORT"
-			printf 'TxtText="contract=1" "model=%s" "rev=%s" "serial=%s" "os=%s" "os_ver=%s" "path=%s"\n' \
-				"$(txt_value "${BOARD_DEVICE_MODEL:-}")" \
-				"$(txt_value "$(board_rev)")" \
-				"$(txt_value "$(board_serial)")" \
-				"$(txt_value "$(board_os_field ID)")" \
-				"$(txt_value "$os_ver")" \
-				"$BOARD_HTTP_PATH"
+			printf '<?xml version="1.0" standalone="no"?>\n'
+			printf '<!DOCTYPE service-group SYSTEM "avahi-service.dtd">\n'
+			printf '<!-- Generated at boot by board-identity.service; edits are lost. Turn the\n'
+			printf '     advertisement off with BOARD_MDNS=0 in /etc/board/identity.env. -->\n'
+			printf '<service-group>\n'
+			printf '  <name replace-wildcards="yes">%%h</name>\n'
+			printf '  <service>\n'
+			printf '    <type>_pd-device._tcp</type>\n'
+			printf '    <port>%s</port>\n' "$BOARD_HTTP_PORT"
+			for txt in "contract=1" \
+				"model=$(txt_value "${BOARD_DEVICE_MODEL:-}")" \
+				"rev=$(txt_value "$(board_rev)")" \
+				"serial=$(txt_value "$(board_serial)")" \
+				"os=$(txt_value "$(board_os_field ID)")" \
+				"os_ver=$(txt_value "$os_ver")" \
+				"path=$BOARD_HTTP_PATH"; do
+				printf '    <txt-record>%s</txt-record>\n' "$txt"
+			done
+			printf '  </service>\n'
+			printf '</service-group>\n'
 		} | write_file "$target"
 	else
 		rm -f "$target"

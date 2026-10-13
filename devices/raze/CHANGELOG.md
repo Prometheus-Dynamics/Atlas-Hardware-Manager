@@ -123,6 +123,15 @@ commit; the commits are listed per area.
   and `USB_F_FS` (=m), the raze-flasher daemon's bulk interface
   (docs/flasher.md); one more module in the shared kernel, loaded by no
   one else.
+- **mDNS through avahi:** avahi-daemon (with libavahi-client over D-Bus)
+  answers for `<hostname>.local` and the `_pd-device._tcp` identity on every
+  link but the USB bridge's members, and is what WPILib's NetworkTables on
+  the board browses with (`_SystemCore._tcp`, the 2027 robot controller: on
+  PV 2027 it logged "mDNS service resolver not available"). resolved's and
+  NetworkManager's mDNS are off, so only avahi uses 5353. The identity's
+  service file is written at boot to /run/board/avahi-services and bound over
+  /etc/avahi/services (etc-avahi-services.mount); BOARD_MDNS=0 still turns
+  it off. tests/avahi.sh.
 - **Boot ordering cycle fixed (no D-Bus, no NetworkManager):**
   board-pstore.service had the default dependencies (after basic.target)
   but ran before systemd-pstore.service, which is before sysinit.target: a

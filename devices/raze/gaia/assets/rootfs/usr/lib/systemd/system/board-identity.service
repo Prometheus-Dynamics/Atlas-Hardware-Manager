@@ -1,8 +1,8 @@
 [Unit]
 Description=Device identity (/run/board/identity.json) and mDNS advertisement
 Documentation=file:/usr/lib/board/identity.env
-# Runs before systemd-resolved so the generated DNS-SD file in
-# /run/systemd/dnssd/ is read when resolved starts.
+# Early: the identity and the avahi service file (bound into /etc/avahi/services
+# by etc-avahi-services.mount) are there before anything reads them.
 DefaultDependencies=no
 After=local-fs.target board-hostname.service
 Before=sysinit.target shutdown.target systemd-resolved.service

@@ -295,28 +295,27 @@ revision into the image.
 
 The Raze layer (`devices/raze/gaia/device.toml`) needs from the OS:
 
-1. **systemd as init** (`BR2_INIT_SYSTEMD=y`) and **systemd-resolved** (on by
-   default in Buildroot) for the mDNS advertisement. Both HeliOS and the
-   PhotonVision image already have both.
+1. **systemd as init** (`BR2_INIT_SYSTEMD=y`) and **D-Bus** (for avahi). Both
+   HeliOS and the PhotonVision image have both. The package adds avahi-daemon
+   (`BR2_PACKAGE_AVAHI_DAEMON`) for mDNS.
 2. **A boot partition assembly tree with id `boot`**, and `include
    raze-device.txt` at top level of its `config.txt`. The layer puts
    `raze-device.txt`, the device overlays and the stock overlays it loads into
    that tree. The OS keeps its own `config.txt`, `cmdline.txt`, kernel and DTB
    copying, partition layout and root filesystem.
-3. **mDNS on Ethernet.** The package turns on the resolved mDNS responder
-   (`/usr/lib/systemd/resolved.conf.d/60-board-mdns.conf`) and mDNS on the
-   USB link; mDNS must also be enabled per Ethernet link:
-   - systemd-networkd (HeliOS): add `MulticastDNS=yes` to the `[Network]`
-     section of the Ethernet `.network` file;
-   - NetworkManager (PhotonVision): the package ships
-     `/usr/lib/NetworkManager/conf.d/60-board.conf` with
-     `connection.mdns=2`; NetworkManager hands per-link mDNS to
-     systemd-resolved as long as resolved is running (`[main]
-     systemd-resolved=true`, the default). Do not also run avahi-daemon on
-     port 5353.
-     Also clear `BR2_SYSTEM_DHCP` (the CM5 defconfig sets it to `eth0`), or
-     systemd-networkd runs a second DHCP client on the link NetworkManager
-     manages.
+3. **mDNS is avahi's, on every link.** avahi-daemon answers for
+   `<hostname>.local` and the `_pd-device._tcp` identity on every interface
+   but the USB bridge's members (`/etc/avahi/avahi-daemon.conf`), and
+   programs on the board browse through libavahi-client (WPILib's
+   NetworkTables finds the 2027 robot controller, `_SystemCore._tcp`, that
+   way). The package turns resolved's mDNS off
+   (`/usr/lib/systemd/resolved.conf.d/60-board-mdns.conf`, `MulticastDNS=no`)
+   and NetworkManager's (`connection.mdns=0`), so only avahi uses port 5353.
+   The OS must not turn them back on: a systemd-networkd `.network` with
+   `MulticastDNS=yes` (HeliOS) should drop it.
+   With NetworkManager (PhotonVision), also clear `BR2_SYSTEM_DHCP` (the CM5
+   defconfig sets it to `eth0`), or systemd-networkd runs a second DHCP
+   client on the link NetworkManager manages.
 4. **Its own Buildroot external tree, if it has one, combined with the
    device's.** Gaia takes one `external_tree` and the last import wins, so an
    OS with its own tree sets both, device tree first so the `@source:` token
@@ -344,7 +343,7 @@ The device units are installed in `/usr/lib/systemd/system` and enabled by
 | Unit | What it does |
 | --- | --- |
 | `board-hostname.service` | default hostname `raze-{serial8}`, only over an unset or stock hostname |
-| `board-identity.service` | writes `/run/board/identity.json` and `/run/systemd/dnssd/board.dnssd` before resolved starts |
+| `board-identity.service` | writes `/run/board/identity.json` and the avahi service `/run/board/avahi-services/pd-device.service` (bound over `/etc/avahi/services` by `etc-avahi-services.mount`) |
 | `board-http.socket` (+ `board-http@.service`) | identity endpoint on TCP 5899 |
 | `board-usb-gadget.service` | USB gadget (ECM/RNDIS/ACM) with the board serial as its USB serial, gadget-only bridge `usbbr0` on a per-board /29 (see "USB gadget network") |
 | `board-usb-gadget-dhcp.service` | dnsmasq DHCP on `usbbr0` only, DNS off, no default route |

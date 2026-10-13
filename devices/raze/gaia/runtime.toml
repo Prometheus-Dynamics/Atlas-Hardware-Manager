@@ -321,6 +321,24 @@ dest = "/usr/lib/board/security.env"
 origin = "static-asset"
 
 [[stage.files]]
+id = "raze-etc-avahi-daemon-conf"
+src = "@self/assets/rootfs/etc/avahi/avahi-daemon.conf"
+dest = "/etc/avahi/avahi-daemon.conf"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-etc-avahi-services-mount"
+src = "@self/assets/rootfs/usr/lib/systemd/system/etc-avahi-services.mount"
+dest = "/usr/lib/systemd/system/etc-avahi-services.mount"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-avahi-daemon-service-d-50-board"
+src = "@self/assets/rootfs/usr/lib/systemd/system/avahi-daemon.service.d/50-board.conf"
+dest = "/usr/lib/systemd/system/avahi-daemon.service.d/50-board.conf"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-systemd-system-board-locate-path"
 src = "@self/assets/rootfs/usr/lib/systemd/system/board-locate.path"
 dest = "/usr/lib/systemd/system/board-locate.path"
@@ -552,6 +570,12 @@ config_overrides = [
   # DHCP server for the USB gadget link (board-usb-gadget-dhcp.service).
   # Buildroot installs no dnsmasq systemd unit, so nothing else starts it.
   ["BR2_PACKAGE_DNSMASQ", "y"],
+  # mDNS: avahi-daemon, and libavahi-client (built with D-Bus) for what
+  # browses on the board: WPILib's NetworkTables finds the 2027 robot
+  # controller (_SystemCore._tcp) through it, PhotonVision announces with
+  # it. systemd-resolved's mDNS is off (60-board-mdns.conf).
+  ["BR2_PACKAGE_AVAHI", "y"],
+  ["BR2_PACKAGE_AVAHI_DAEMON", "y"],
   # nft, for usb-route's NAT from the USB link onto the board's other
   # networks (the kernel's nf_tables and masquerade are modules already).
   ["BR2_PACKAGE_NFTABLES", "y"],
@@ -628,6 +652,9 @@ stage_files = [
   "raze-systemd-system-board-usb-boot-path",
   "raze-systemd-system-board-usb-boot-service",
   "raze-board-security-env",
+  "raze-etc-avahi-daemon-conf",
+  "raze-systemd-system-etc-avahi-services-mount",
+  "raze-systemd-system-avahi-daemon-service-d-50-board",
   "raze-systemd-system-board-locate-path",
   "raze-systemd-system-board-locate-service",
   "raze-systemd-system-board-ssh-keys-service",

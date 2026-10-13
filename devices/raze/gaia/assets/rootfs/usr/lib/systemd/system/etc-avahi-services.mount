@@ -1,0 +1,17 @@
+[Unit]
+Description=The board's avahi services (/run/board/avahi-services) as /etc/avahi/services
+Documentation=file:/usr/lib/board/identity
+# The root is read-only and the identity's TXT is made at boot, so the
+# directory avahi reads is a bind of the one board-identity writes.
+DefaultDependencies=no
+After=board-identity.service
+Requires=board-identity.service
+Before=avahi-daemon.service umount.target
+Conflicts=umount.target
+ConditionPathIsDirectory=/etc/avahi/services
+
+[Mount]
+What=/run/board/avahi-services
+Where=/etc/avahi/services
+Type=none
+Options=bind,ro
