@@ -29,6 +29,11 @@ case "${1:-}" in
 --shutdown)
 	up=$(cut -d. -f1 /proc/uptime 2>/dev/null) || up=''
 	board_event shutdown "shutting down cleanly" "uptime_s=$up"
+	# On the disk before the restart: an appended line still in the page
+	# cache is a hole of NULs on the next boot (raze:0708c973, r27), which
+	# reads as a shutdown that never happened. BOARD_SYNC (tests).
+	sync=${BOARD_SYNC:-sync}
+	$sync "$(board_events_file)" 2>/dev/null || $sync
 	exit 0
 	;;
 '') ;;

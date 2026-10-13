@@ -136,6 +136,10 @@ commit; the commits are listed per area.
   `apply` also sets the firmware's tryboot flag itself through vcmailbox
   (SET_REBOOT_FLAGS) and reads it back, recorded in the update.apply event
   (`tryboot_flag`), and clears it when the restart doesn't happen.
+  Why the boot before read as unclean: its `shutdown` event was appended but
+  never reached the disk (a hole of NULs in events.jsonl). boot-record
+  syncs the event log after writing it, and board-boot.service has
+  RequiresMountsFor=/data, so it stops before /data is unmounted.
 - **mDNS through avahi:** avahi-daemon (with libavahi-client over D-Bus)
   answers for `<hostname>.local` and the `_pd-device._tcp` identity on every
   link but the USB bridge's members, and is what WPILib's NetworkTables on

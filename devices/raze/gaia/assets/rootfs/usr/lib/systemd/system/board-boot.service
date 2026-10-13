@@ -6,6 +6,8 @@ Documentation=file:/usr/lib/board/boot-record
 # shutdown, while /data is still mounted: its ExecStop logs the clean
 # shutdown that the next boot looks for.
 After=local-fs.target time-set.target
+# Stopped before /data is unmounted, so the shutdown event lands on it.
+RequiresMountsFor=/data
 Before=shutdown.target
 Conflicts=shutdown.target
 
