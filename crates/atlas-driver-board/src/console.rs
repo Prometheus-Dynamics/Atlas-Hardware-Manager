@@ -248,9 +248,12 @@ pub(crate) fn exchange(
             }
         }
         if Instant::now() >= until {
-            // Stop it, so the console is free for the next one.
+            // Stop it, so the console is free for the next one. A board
+            // that went quiet mid-command (it restarted, say) is
+            // unreachable, not a command that failed: an update's `apply`
+            // ends that way.
             let _ = port.send(b"\x03\n");
-            return Err(ConsoleError::Failed(DriverError::Other(
+            return Err(ConsoleError::Failed(DriverError::Unreachable(
                 "the board's console stopped answering".into(),
             )));
         }
@@ -365,6 +368,8 @@ struct Tty {
     file: nix::fcntl::Flock<std::fs::File>,
     #[cfg(not(unix))]
     file: std::fs::File,
+    /// The tty's path: when it is gone, the board left (a restart).
+    path: PathBuf,
 }
 
 impl Tty {
@@ -398,7 +403,10 @@ impl Tty {
         attrs.control_chars[SpecialCharacterIndices::VMIN as usize] = 0;
         attrs.control_chars[SpecialCharacterIndices::VTIME as usize] = 1;
         termios::tcsetattr(&*file, SetArg::TCSANOW, &attrs).map_err(std::io::Error::from)?;
-        Ok(Self { file })
+        Ok(Self {
+            file,
+            path: path.to_path_buf(),
+        })
     }
 
     #[cfg(not(unix))]
@@ -416,8 +424,19 @@ impl Port for Tty {
         loop {
             // VTIME: a read returns after 100 ms with nothing.
             let n = (&*self.file).read(&mut buf)?;
-            if n > 0 || Instant::now() >= until {
+            if n > 0 {
                 return Ok(buf[..n].to_vec());
+            }
+            // A hung-up tty reads nothing at once, forever: the board's USB
+            // gadget went away (it restarted).
+            if !self.path.exists() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotConnected,
+                    "the board's console went away",
+                ));
+            }
+            if Instant::now() >= until {
+                return Ok(Vec::new());
             }
         }
     }
