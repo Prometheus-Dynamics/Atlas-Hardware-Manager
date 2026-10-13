@@ -2,15 +2,21 @@
 # Device identity (contract 1).
 #
 #   identity            print the identity JSON
-#   identity --write    also write $BOARD_RUN_DIR/identity.json
+#   identity --write    also write $BOARD_RUN_DIR/identity.json, and what
+#                       identity-http serves from: identity.part (the
+#                       fixed fields, lib.sh board_identity_fixed_json) and
+#                       gadget-cidr (the USB link's network)
 #   identity --dnssd    also write the mDNS advertisement: an avahi service
 #                       file, $BOARD_AVAHI_DIR/pd-device.service
 #
-# board-identity.service runs `identity --write --dnssd` at boot.
+# board-identity.service runs `identity --write --dnssd` at boot, and
+# board-identity-refresh.service `identity --write` whenever update.json,
+# usb-route.state or camera-streams.json change (board-identity-refresh.path;
+# its timer catches a change the path unit missed while the service ran).
 # etc-avahi-services.mount binds $BOARD_AVAHI_DIR over /etc/avahi/services
 # (the root is read-only; avahi reads services only from there and follows
-# changes), before avahi-daemon starts. The HTTP endpoint builds the
-# document per request.
+# changes), before avahi-daemon starts. The HTTP endpoint adds the live
+# fields (hostname, time, actions) to identity.part per request.
 set -eu
 
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
@@ -51,10 +57,34 @@ txt_value() {
 	printf '%s' "$1" | tr -c 'A-Za-z0-9._:+-' '_' | cut -c1-200
 }
 
-json=$(board_identity_json)
+# Whether a file the fixed fields come from changed since the stamp, taken
+# before they were read.
+inputs_newer() {
+	for _f in update.json usb-route.state camera-streams.json; do
+		[ "$BOARD_RUN_DIR/$_f" -nt "$BOARD_RUN_DIR/identity.stamp" ] && return 0
+	done
+	return 1
+}
 
 if [ "$write" = 1 ]; then
+	mkdir -p "$BOARD_RUN_DIR"
+	board_load_env usb-gadget.env
+	if board_gadget_address 2>/dev/null && [ -n "${BOARD_GADGET_CIDR:-}" ]; then
+		printf '%s\n' "$BOARD_GADGET_CIDR" | write_file "$BOARD_RUN_DIR/gadget-cidr"
+	fi
+	# Again (a few times at most) when an input changed while this ran.
+	n=0
+	while :; do
+		: > "$BOARD_RUN_DIR/identity.stamp"
+		part=$(board_identity_fixed_json)
+		printf '%s\n' "$part" | write_file "$BOARD_RUN_DIR/identity.part"
+		n=$((n + 1))
+		[ "$n" -lt 3 ] && inputs_newer || break
+	done
+	json=$(printf '{%s' "$part"; board_identity_live_json; printf '}')
 	printf '%s\n' "$json" | write_file "$BOARD_RUN_DIR/identity.json"
+else
+	json=$(board_identity_json)
 fi
 
 if [ "$dnssd" = 1 ]; then

@@ -26,7 +26,14 @@
 #                                       the identity lists them
 #   other methods on those paths     -> 405
 #   anything else                    -> 404
+#
+# One runs per request, so the common answers fork as little as they can:
+# the identity is identity.part (`identity --write` keeps it) plus a few
+# live fields, and /status is one `status` (tests/status.sh counts them).
 set -u
+# Byte lengths: ${#var} counts characters in a UTF-8 locale.
+LC_ALL=C
+export LC_ALL
 
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 # shellcheck source=lib.sh
@@ -36,10 +43,9 @@ CR=$(printf '\r')
 
 respond() {
 	# respond <status line> <content type> <body> [extra header line]
-	_len=$(printf '%s' "$3" | wc -c | tr -d ' ')
 	printf 'HTTP/1.0 %s\r\n' "$1"
 	printf 'Content-Type: %s\r\n' "$2"
-	printf 'Content-Length: %s\r\n' "$_len"
+	printf 'Content-Length: %s\r\n' "${#3}"
 	printf 'Cache-Control: no-store\r\n'
 	printf 'Access-Control-Allow-Origin: *\r\n'
 	if [ -n "${4:-}" ]; then
@@ -190,8 +196,15 @@ GET | HEAD) ;;
 	;;
 esac
 
-if body=$(board_identity_json) && [ -n "$body" ]; then
-	respond '200 OK' 'application/json' "$body
+# The fixed fields as kept, else built here (before the first `identity
+# --write`, or off the board).
+if board_read "$BOARD_RUN_DIR/identity.part" && [ -n "$BOARD_LINE" ]; then
+	part=$BOARD_LINE
+else
+	part=$(board_identity_fixed_json)
+fi
+if [ -n "$part" ] && live=$(board_identity_live_json); then
+	respond '200 OK' 'application/json' "{$part$live}
 "
 else
 	respond '500 Internal Server Error' 'text/plain' "identity unavailable

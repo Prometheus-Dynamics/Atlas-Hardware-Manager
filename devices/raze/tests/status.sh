@@ -441,4 +441,76 @@ printf 'BOARD_SECURITY=0\n' > "$T/data/security.env"
 REMOTE_ADDR=$usb_ip request 'GET /.well-known/pd-device HTTP/1.0' | body | is True '"actions" in d' "the board's own choice wins over the OS's"
 rm -f "$T/etc/security.env" "$T/data/security.env"
 
+echo "identity --write keeps the fixed fields and the USB link's network, and the endpoint serves them"
+sh "$lib/identity" --write --quiet || fail "identity --write"
+[ -s "$T/run/identity.part" ] && [ -s "$T/run/gadget-cidr" ] || fail "identity.part and gadget-cidr"
+is "$(sh "$lib/identity" | py 'sorted(k for k in d if k != "time")')" 'sorted(k for k in d if k != "time")' \
+	"the served identity has the built one's fields" <<EOF
+$(request 'GET /.well-known/pd-device HTTP/1.0' | body)
+EOF
+is True 'set(("hostname", "time", "endpoints", "contract")) <= set(d)' "with the live fields" < "$T/run/identity.json"
+# What is served is the kept part, until the next --write.
+sed 's/"contract":1/"contract":1,"kept":true/' "$T/run/identity.part" > "$T/part" && mv "$T/part" "$T/run/identity.part"
+request 'GET /.well-known/pd-device HTTP/1.0' | body | is True 'd.get("kept")' "served from identity.part"
+printf '{"state":"staging","slot_active":"A","progress":7}\n' > "$T/run/update.json"
+sh "$lib/identity" --write --quiet
+request 'GET /.well-known/pd-device HTTP/1.0' | body | is "False staging" 'str(d.get("kept", False)) + " " + d["update"]["state"]' \
+	"--write (board-identity-refresh.path, on update.json) brings the change"
+echo 10.9.9.17/29 > "$T/run/gadget-cidr"
+REMOTE_ADDR=10.9.9.22 request 'GET /.well-known/pd-device HTTP/1.0' | body | is True '"actions" in d' "the USB link is gadget-cidr's network"
+REMOTE_ADDR=$usb_ip request 'GET /.well-known/pd-device HTTP/1.0' | body | is False '"actions" in d' "not the one worked out"
+REMOTE_ADDR=10.9.9.24 request 'GET /.well-known/pd-device HTTP/1.0' | body | is False '"actions" in d' "outside its /29"
+REMOTE_ADDR=10.9.9.017 request 'GET /.well-known/pd-device HTTP/1.0' | body | is True '"actions" in d' "leading zeros are decimal, not octal"
+REMOTE_ADDR=10.9.9.256 request 'GET /.well-known/pd-device HTTP/1.0' | body | is False '"actions" in d' "an octet over 255"
+sh "$lib/identity" --write --quiet
+
+echo "HTTP: Content-Length counts bytes (units such as m/s²)"
+sh "$lib/status" --refresh-hardware --quiet || fail "refresh hardware"
+r=$(request 'GET /status HTTP/1.0')
+grep -q 'm/s²' "$T/run/hardware.json" || fail "the hardware has a non-ASCII unit"
+len=$(printf '%s\n' "$r" | sed -n 's/^Content-Length: \([0-9]*\)\r$/\1/p')
+[ "$len" = "$(printf '%s\n' "$r" | body | wc -c | tr -d ' ')" ] || fail "Content-Length $len"
+
+echo "per request, the identity and /status fork a handful of times, not a hundred (board-http@ runs one each)"
+# As on the board: root's kept results fresh, timesyncd's directory, a boot
+# record, and no drift check (the endpoint's user can't).
+sh "$lib/status" --refresh-drift --refresh-failed --refresh-hardware --quiet || fail "refresh"
+printf '{"id":"b-1","count":3,"slot":"A","kernel":"7.2.9","previous_clean":true,"at":900}\n' > "$T/run/boot.json"
+mkdir -p "$T/timesync"
+BOARD_TIMESYNC_DIR=$T/timesync
+export BOARD_TIMESYNC_DIR
+unset BOARD_DRIFT_BOOT_DIR BOARD_DRIFT_AB_DIR
+request 'GET /status HTTP/1.0' | body | is "False 3 True" \
+	'" ".join(str(x) for x in (d["clock"]["ntp_synchronized"], d["boot"]["count"], d["drift"] is not None and isinstance(d["boot"]["uptime_s"], int)))' \
+	"the board-like status"
+: > "$T/timesync/synchronized"
+request 'GET /status HTTP/1.0' | body | is True 'd["clock"]["ntp_synchronized"]' "timesyncd's flag"
+# forks <request line> [REMOTE_ADDR]: the processes one exchange starts, in
+# a PID namespace of its own (whose last PID counts them), less those of the
+# same pipeline into a script that only reads.
+echo 'while read -r _; do :; done' > "$T/drain"
+forks() {
+	unshare -Urpf --mount-proc sh -c '
+		count() {
+			a=$(cat /proc/sys/kernel/ns_last_pid)
+			printf "%s\r\nHost: b\r\n\r\n" "$1" | REMOTE_ADDR=$3 sh "$2" > /dev/null
+			b=$(cat /proc/sys/kernel/ns_last_pid)
+			echo $((b - a - 1))
+		}
+		echo "$(($(count "$1" "$2/identity-http" "$3") - $(count "$1" "$4" "$3")))"' _ "$1" "$lib" "${2:-}" "$T/drain"
+}
+if unshare -Urpf --mount-proc true 2>/dev/null; then
+	for case in 'GET /.well-known/pd-device HTTP/1.0|4|' "GET /.well-known/pd-device HTTP/1.0|4|$usb_ip" \
+		'GET /status HTTP/1.0|4|' 'GET /nope HTTP/1.0|1|10.0.0.9'; do
+		IFS='|' read -r line most from <<EOF
+$case
+EOF
+		n=$(forks "$line" "$from")
+		echo "  $n forks: $line${from:+ from $from}"
+		[ "$n" -le "$most" ] || fail "$line${from:+ from $from}: $n forks, at most $most"
+	done
+else
+	echo "  skipped: no unprivileged PID namespace here to count in"
+fi
+
 echo "ok"

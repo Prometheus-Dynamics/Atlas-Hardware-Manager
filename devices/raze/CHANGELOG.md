@@ -95,6 +95,21 @@ commit; the commits are listed per area.
 
 ### Board awareness: events, status, drift
 
+- **The identity endpoint forks 3 times a request, not 130:** board-http@
+  starts a process per request, and Atlas's polling (about 9 a second) cost
+  some 1,100 forks a second and 38% CPU. The identity's fixed fields are
+  built once by root into /run/board/identity.part (`identity --write`: at
+  boot, whenever update.json, usb-route.state or camera-streams.json change
+  through board-identity-refresh.path, and every 30 s by its timer for a
+  change missed while it ran), and identity-http adds hostname, time and
+  actions with builtins. `status` reads root's kept results and /proc and
+  /sys with builtins too, takes ntp_synchronized from timesyncd's flag file
+  instead of timedatectl (D-Bus), and the USB-link check reads the gadget
+  network from /run/board/gadget-cidr with shell arithmetic. Identity and
+  /status: 3 forks each (were 133 and 115); a 404: 1. Content-Length is the
+  body's byte length (LC_ALL=C on board-http@). tests/status.sh counts the
+  forks per request in a PID namespace, so it can't creep back.
+
 - **USB onto the robot network (usb-route):** a computer on the board's USB
   port reaches the board's other networks (the robot's, through Ethernet)
   as if plugged into the radio. Routed, not bridged: nftables masquerades

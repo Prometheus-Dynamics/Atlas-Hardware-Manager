@@ -4,6 +4,8 @@ CollectMode=inactive-or-failed
 
 [Service]
 ExecStart=/usr/lib/board/identity-http
+# Content-Length is the body's ${#} length: bytes only in the C locale.
+Environment=LC_ALL=C
 StandardInput=socket
 StandardOutput=socket
 StandardError=journal

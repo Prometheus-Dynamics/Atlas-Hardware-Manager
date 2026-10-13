@@ -233,6 +233,24 @@ dest = "/usr/lib/systemd/system/board-identity.service"
 origin = "static-asset"
 
 [[stage.files]]
+id = "raze-systemd-system-board-identity-refresh-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-identity-refresh.service"
+dest = "/usr/lib/systemd/system/board-identity-refresh.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-identity-refresh-path"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-identity-refresh.path"
+dest = "/usr/lib/systemd/system/board-identity-refresh.path"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-identity-refresh-timer"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-identity-refresh.timer"
+dest = "/usr/lib/systemd/system/board-identity-refresh.timer"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-board-usb-route"
 src = "@self/assets/rootfs/usr/lib/board/usb-route"
 dest = "/usr/lib/board/usb-route"
@@ -643,6 +661,9 @@ stage_files = [
   "raze-systemd-system-board-stream-service",
   "raze-systemd-system-board-http-service",
   "raze-systemd-system-board-identity-service",
+  "raze-systemd-system-board-identity-refresh-service",
+  "raze-systemd-system-board-identity-refresh-path",
+  "raze-systemd-system-board-identity-refresh-timer",
   "raze-systemd-system-board-usb-gadget-dhcp-service",
   "raze-systemd-system-board-usb-route-service",
   "raze-systemd-system-board-usb-gadget-service",

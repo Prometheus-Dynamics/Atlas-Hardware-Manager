@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh the identity when the update state, USB route or camera views change
+Documentation=file:/usr/lib/board/identity
+After=board-identity.service
+
+[Path]
+PathChanged=/run/board/update.json
+PathChanged=/run/board/usb-route.state
+PathChanged=/run/board/camera-streams.json
+Unit=board-identity-refresh.service
+
+[Install]
+WantedBy=paths.target

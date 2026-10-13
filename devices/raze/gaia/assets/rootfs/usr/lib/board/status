@@ -53,7 +53,15 @@
 # BOARD_DRIFT_MAX_AGE seconds (3600), and never by an unprivileged caller,
 # which reads the kept result.
 #
+# Clock: ntp_synchronized from systemd-timesyncd's flag file
+# (/run/systemd/timesync/synchronized; its directory without it: false),
+# else timedatectl.
+#
+# The identity endpoint runs this per GET /status, so the reading of what
+# root keeps and of /proc and /sys is done without forks (date aside).
+#
 # Test hooks: the paths in lib.sh and hw.sh, BOARD_SYSTEMCTL, BOARD_PROC_UPTIME,
+# BOARD_TIMESYNC_DIR,
 # BOARD_ROOT_RO (1|0), BOARD_SSHD_DIR, BOARD_DRIFT_BOOT_DIR and
 # BOARD_DRIFT_AB_DIR (the running boot slot's and p1's files; with them no
 # partition is mounted and no root is needed).
@@ -73,6 +81,8 @@ FAILED_MAX_AGE=${BOARD_FAILED_MAX_AGE:-120}
 HARDWARE_JSON=$BOARD_RUN_DIR/hardware.json
 HARDWARE_MAX_AGE=${BOARD_HARDWARE_MAX_AGE:-60}
 LEMNOS_CTL=${BOARD_LEMNOS_CTL:-lemnos-ctl}
+TIMESYNC_DIR=${BOARD_TIMESYNC_DIR:-/run/systemd/timesync}
+NOW=$(date +%s)
 
 quiet=0
 refresh=0
@@ -92,7 +102,15 @@ for arg in "$@"; do
 	esac
 done
 
-is_root() { [ "$(id -u 2>/dev/null)" = 0 ]; }
+# Root, from /proc/self/status (no fork), else id.
+IS_ROOT=''
+if [ -r /proc/self/status ]; then
+	while read -r _k _uid _; do
+		[ "$_k" = Uid: ] && IS_ROOT=$_uid && break
+	done < /proc/self/status
+fi
+[ -n "$IS_ROOT" ] || IS_ROOT=$(id -u 2>/dev/null)
+is_root() { [ "$IS_ROOT" = 0 ]; }
 # Drift can be checked: as root, or with the test directories given.
 can_check() { is_root || { [ -n "${BOARD_DRIFT_BOOT_DIR:-}" ] && [ -n "${BOARD_DRIFT_AB_DIR:-}" ]; }; }
 
@@ -118,12 +136,24 @@ bounded() {
 	if command -v timeout >/dev/null 2>&1; then timeout 5 "$@"; else "$@"; fi
 }
 
-uptime_s() { cut -d. -f1 "${BOARD_PROC_UPTIME:-/proc/uptime}" 2>/dev/null; }
-
 boot_json() {
-	up=$(num_or_null "$(uptime_s)")
-	if [ -s "$BOARD_RUN_DIR/boot.json" ]; then
-		head -n 1 "$BOARD_RUN_DIR/boot.json" | sed "s/}[[:space:]]*\$/,\"uptime_s\":$up}/"
+	up=null
+	if board_read "${BOARD_PROC_UPTIME:-/proc/uptime}"; then
+		up=${BOARD_LINE%%[. ]*}
+		case "$up" in '' | *[!0-9]*) up=null ;; esac
+	fi
+	if board_read "$BOARD_RUN_DIR/boot.json" && [ -n "$BOARD_LINE" ]; then
+		_line=$BOARD_LINE
+		while :; do
+			case "$_line" in
+			*' ' | *'	') _line=${_line%?} ;;
+			*) break ;;
+			esac
+		done
+		case "$_line" in
+		*'}') printf '%s,"uptime_s":%s}' "${_line%?}" "$up" ;;
+		*) printf '%s' "$_line" ;;
+		esac
 	else
 		printf '{"id":%s,"count":null,"slot":%s,"kernel":%s,"previous_clean":null,"at":null,"uptime_s":%s}\n' \
 			"$(board_json_str "$(board_boot_id)")" "$(board_json_str "$(board_active_slot)")" \
@@ -142,15 +172,33 @@ ask_failed_units() {
 
 # Root's kept answer when it is fresh, else systemctl's own, else null.
 failed_units_json() {
-	if [ -s "$FAILED_JSON" ]; then
-		_line=$(head -n 1 "$FAILED_JSON")
-		_at=$(printf '%s' "$_line" | sed -n 's/^{"at":\([0-9]*\),"units":.*/\1/p')
-		if [ -n "$_at" ] && [ $(($(date +%s) - _at)) -lt "$FAILED_MAX_AGE" ]; then
-			printf '%s' "$_line" | sed 's/^{"at":[0-9]*,"units":\(.*\)}$/\1/'
+	if board_read "$FAILED_JSON" && kept_at '{"at":' ',"units":' && [ $((NOW - KEPT_AT)) -lt "$FAILED_MAX_AGE" ]; then
+		case "$BOARD_LINE" in
+		*'}')
+			_units=${BOARD_LINE#*,\"units\":}
+			printf '%s' "${_units%?}"
 			return
-		fi
+			;;
+		esac
 	fi
 	ask_failed_units || printf 'null'
+}
+
+# kept_at <prefix> <after>: KEPT_AT from BOARD_LINE when it is <prefix><n><after>..
+# (a file root keeps), else fails.
+kept_at() {
+	case "$BOARD_LINE" in
+	"$1"*) ;;
+	*) return 1 ;;
+	esac
+	KEPT_AT=${BOARD_LINE#"$1"}
+	case "$KEPT_AT" in
+	*"$2"*) KEPT_AT=${KEPT_AT%%"$2"*} ;;
+	*) return 1 ;;
+	esac
+	case "$KEPT_AT" in
+	'' | *[!0-9]*) return 1 ;;
+	esac
 }
 
 # --refresh-failed: keeps the failed units for unprivileged callers.
@@ -222,13 +270,9 @@ refresh_hardware() {
 
 # Root's kept snapshot while fresh, else null.
 hardware_json() {
-	if [ -s "$HARDWARE_JSON" ]; then
-		_line=$(head -n 1 "$HARDWARE_JSON")
-		_at=$(printf '%s' "$_line" | sed -n 's/^{"at":\([0-9]*\),.*/\1/p')
-		if [ -n "$_at" ] && [ $(($(date +%s) - _at)) -lt "$HARDWARE_MAX_AGE" ]; then
-			printf '%s' "$_line"
-			return
-		fi
+	if board_read "$HARDWARE_JSON" && kept_at '{"at":' ',' && [ $((NOW - KEPT_AT)) -lt "$HARDWARE_MAX_AGE" ]; then
+		printf '%s' "$BOARD_LINE"
+		return
 	fi
 	printf 'null'
 }
@@ -237,17 +281,59 @@ temperatures_json() {
 	printf '['
 	sep=''
 	for zone in "$BOARD_SYS_DIR"/class/thermal/thermal_zone*; do
-		temp=$(cat "$zone/temp" 2>/dev/null) || continue
-		case "$temp" in '' | *[!0-9-]*) continue ;; esac
-		type=$(cat "$zone/type" 2>/dev/null) || type=${zone##*/}
-		printf '%s{"id":%s,"celsius":%s}' "$sep" "$(board_json_str "$type")" \
-			"$(awk -v t="$temp" 'BEGIN { printf "%.1f", t / 1000 }')"
+		board_read "$zone/temp" || continue
+		temp=$BOARD_LINE
+		case "$temp" in '' | *[!0-9-]* | ?*-*) continue ;; esac
+		board_read "$zone/type" && [ -n "$BOARD_LINE" ] || BOARD_LINE=${zone##*/}
+		board_json_var "$BOARD_LINE"
+		# Millidegrees to tenths, rounded half away from zero.
+		sign=''
+		milli=$temp
+		case "$temp" in -*) sign=- milli=${temp#-} ;; esac
+		while :; do
+			case "$milli" in
+			0?*) milli=${milli#0} ;;
+			*) break ;;
+			esac
+		done
+		tenths=$(((milli + 50) / 100))
+		printf '%s{"id":%s,"celsius":%s%s.%s}' "$sep" "$BOARD_JSON" "$sign" $((tenths / 10)) $((tenths % 10))
 		sep=','
 	done
 	printf ']'
 }
 
+# The fan from sysfs without forks: the cooling device and its hwmon.
+fan_json_sysfs() {
+	cdev=''
+	for _d in "$BOARD_SYS_DIR"/class/thermal/cooling_device*; do
+		board_read "$_d/type" && [ "$BOARD_LINE" = "${HW_FAN_COOLING_TYPE:-pwm-fan}" ] && cdev=$_d && break
+	done
+	if [ -z "$cdev" ]; then
+		printf 'null'
+		return
+	fi
+	state=null max=null pwm=null rpm=null
+	board_read "$cdev/cur_state" && state=$BOARD_LINE
+	board_read "$cdev/max_state" && max=$BOARD_LINE
+	for _h in "$BOARD_SYS_DIR"/class/hwmon/hwmon*; do
+		board_read "$_h/name" && [ "$BOARD_LINE" = "${HW_FAN_HWMON:-pwmfan}" ] || continue
+		board_read "$_h/pwm1" && pwm=$BOARD_LINE
+		board_read "$_h/fan1_input" && rpm=$BOARD_LINE
+		break
+	done
+	for _v in state max pwm rpm; do
+		eval "_x=\$$_v"
+		case "$_x" in '' | *[!0-9]*) eval "$_v=null" ;; esac
+	done
+	printf '{"state":%s,"max_state":%s,"pwm":%s,"rpm":%s}' "$state" "$max" "$pwm" "$rpm"
+}
+
 fan_json() {
+	if [ "${BOARD_HW_BACKEND:-}" = sysfs ]; then
+		fan_json_sysfs
+		return
+	fi
 	if ! hw_fan_cdev >/dev/null 2>&1; then
 		printf 'null'
 		return
@@ -259,22 +345,26 @@ fan_json() {
 }
 
 update_json() {
-	line=$(head -n 1 "$BOARD_RUN_DIR/update.json" 2>/dev/null) || line=''
-	case "$line" in
-	'{'*'}') printf '%s' "$line" ;;
+	board_read "$BOARD_RUN_DIR/update.json" || BOARD_LINE=''
+	case "$BOARD_LINE" in
+	'{'*'}') printf '%s' "$BOARD_LINE" ;;
 	*) printf 'null' ;;
 	esac
 }
 
 clock_json() {
 	ntp=null
-	if command -v timedatectl >/dev/null 2>&1; then
+	if [ -e "$TIMESYNC_DIR/synchronized" ]; then
+		ntp=true
+	elif [ -d "$TIMESYNC_DIR" ]; then
+		ntp=false
+	elif command -v timedatectl >/dev/null 2>&1; then
 		case "$(bounded timedatectl show -p NTPSynchronized --value 2>/dev/null)" in
 		yes) ntp=true ;;
 		no) ntp=false ;;
 		esac
 	fi
-	printf '{"time":%s,"ntp_synchronized":%s}' "$(date +%s)" "$ntp"
+	printf '{"time":%s,"ntp_synchronized":%s}' "$NOW" "$ntp"
 }
 
 # ---------------------------------------------------------------------------
@@ -446,16 +536,13 @@ check_drift() {
 
 drift_json() {
 	stale=1
-	if [ -s "$DRIFT_JSON" ]; then
-		at=$(sed -n 's/^{"checked_at":\([0-9]*\),.*/\1/p' "$DRIFT_JSON")
-		[ -n "$at" ] && [ $(($(date +%s) - at)) -lt "$MAX_AGE" ] && stale=0
-	fi
+	board_read "$DRIFT_JSON" && kept_at '{"checked_at":' ',' && [ $((NOW - KEPT_AT)) -lt "$MAX_AGE" ] && stale=0
 	if [ "$stale" = 1 ] && can_check; then
 		check_drift
 	fi
-	line=$(head -n 1 "$DRIFT_JSON" 2>/dev/null) || line=''
-	case "$line" in
-	'{'*'}') printf '%s' "$line" ;;
+	board_read "$DRIFT_JSON" || BOARD_LINE=''
+	case "$BOARD_LINE" in
+	'{'*'}') printf '%s' "$BOARD_LINE" ;;
 	*) printf 'null' ;;
 	esac
 }
@@ -472,8 +559,29 @@ if [ "$refresh_failed" = 1 ] || [ "$refresh_hardware" = 1 ]; then
 	[ "$refresh" = 1 ] || exit "$rc"
 fi
 
-json=$(printf '{"version":1,"time":%s,"boot":%s,"failed_units":%s,"temperatures":%s,"fan":%s,"update":%s,"clock":%s,"hardware":%s,"drift":%s}' \
-	"$(date +%s)" "$(boot_json)" "$(failed_units_json)" "$(temperatures_json)" "$(fan_json)" \
-	"$(update_json)" "$(clock_json)" "$(hardware_json)" "$(drift_json)")
-[ "$quiet" = 1 ] || printf '%s\n' "$json"
+# Written as it goes (no $(...) per part: each would fork).
+emit() {
+	printf '{"version":1,"time":%s,"boot":' "$NOW"
+	boot_json
+	printf ',"failed_units":'
+	failed_units_json
+	printf ',"temperatures":'
+	temperatures_json
+	printf ',"fan":'
+	fan_json
+	printf ',"update":'
+	update_json
+	printf ',"clock":'
+	clock_json
+	printf ',"hardware":'
+	hardware_json
+	printf ',"drift":'
+	drift_json
+	printf '}\n'
+}
+if [ "$quiet" = 1 ]; then
+	emit > /dev/null
+else
+	emit
+fi
 exit 0

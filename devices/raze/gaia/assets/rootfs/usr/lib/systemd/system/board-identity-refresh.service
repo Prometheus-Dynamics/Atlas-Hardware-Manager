@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh the identity's kept fields (/run/board/identity.part)
+Documentation=file:/usr/lib/board/identity
+After=board-identity.service
+
+[Service]
+Type=oneshot
+# Root, so the endpoint's sandboxed user only reads the result.
+ExecStart=/usr/lib/board/identity --write --quiet
+Nice=10

@@ -325,8 +325,8 @@ board_os_field() {
 }
 
 board_hostname() {
-	if [ -r "$BOARD_HOSTNAME_PROC" ]; then
-		tr -d '\n' < "$BOARD_HOSTNAME_PROC"
+	if board_read "$BOARD_HOSTNAME_PROC"; then
+		printf '%s' "$BOARD_LINE"
 	else
 		uname -n
 	fi
@@ -374,6 +374,24 @@ board_json_str() {
 		return 0
 	fi
 	printf '"%s"' "$(printf '%s' "$1" | tr -d '\000-\037' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
+}
+
+# Without a fork (the per-request paths, see identity-http): board_read sets
+# BOARD_LINE to the first line of <file> and fails when it is unreadable;
+# board_json_var sets BOARD_JSON to board_json_str's answer for $1, forking
+# only for a value with characters that need escaping.
+board_read() {
+	BOARD_LINE=''
+	[ -r "$1" ] || return 1
+	IFS= read -r BOARD_LINE < "$1" || [ -n "$BOARD_LINE" ]
+}
+
+board_json_var() {
+	case "$1" in
+	'') BOARD_JSON=null ;;
+	*[!A-Za-z0-9\ ._:/@+,=-]*) BOARD_JSON=$(board_json_str "$1") ;;
+	*) BOARD_JSON="\"$1\"" ;;
+	esac
 }
 
 # Update method ids: "image-write" always, then one id per line from
@@ -424,14 +442,13 @@ board_macs() {
 	done
 }
 
-# The identity document (contract 1), one line of JSON.
-# The label Atlas shows for an action id.
+# The label Atlas shows for an action id, in BOARD_LABEL.
 board_action_label() {
 	case "$1" in
-	locate) printf 'Find it' ;;
-	reboot) printf 'Restart' ;;
-	usb-boot) printf 'Restart into USB boot' ;;
-	*) printf '%s' "$1" ;;
+	locate) BOARD_LABEL='Find it' ;;
+	reboot) BOARD_LABEL='Restart' ;;
+	usb-boot) BOARD_LABEL='Restart into USB boot' ;;
+	*) BOARD_LABEL=$1 ;;
 	esac
 }
 
@@ -460,7 +477,11 @@ board_actions_json() {
 	printf ',"actions":['
 	_board_sep=''
 	for _board_a in $_board_all; do
-		printf '%s{"id":%s,"label":%s}' "$_board_sep" "$(board_json_str "$_board_a")" "$(board_json_str "$(board_action_label "$_board_a")")"
+		board_json_var "$_board_a"
+		_board_id=$BOARD_JSON
+		board_action_label "$_board_a"
+		board_json_var "$BOARD_LABEL"
+		printf '%s{"id":%s,"label":%s}' "$_board_sep" "$_board_id" "$BOARD_JSON"
 		_board_sep=','
 	done
 	printf ']'
@@ -469,37 +490,65 @@ board_actions_json() {
 # Whether the security switch is on (security.env; /data's choice wins over
 # /etc's, which wins over the package's 0). Anything but 1 is off.
 board_security_on() {
-	(
-		BOARD_SECURITY=0
-		board_load_env security.env
-		[ -r "$BOARD_DATA_DIR/security.env" ] && . "$BOARD_DATA_DIR/security.env"
-		[ "${BOARD_SECURITY:-0}" = 1 ]
-	)
+	_board_was=${BOARD_SECURITY-unset}
+	BOARD_SECURITY=0
+	board_load_env security.env
+	[ -r "$BOARD_DATA_DIR/security.env" ] && . "$BOARD_DATA_DIR/security.env"
+	_board_on=$BOARD_SECURITY
+	if [ "$_board_was" = unset ]; then unset BOARD_SECURITY; else BOARD_SECURITY=$_board_was; fi
+	[ "${_board_on:-0}" = 1 ]
 }
 
 # Whether the address <ip> (IPv4, or IPv4-mapped IPv6) is on the USB gadget's
-# network: the computer at the other end of the board's USB cable.
+# network: the computer at the other end of the board's USB cable. Asked on
+# every request, so without a fork: the network from
+# $BOARD_RUN_DIR/gadget-cidr (`identity --write` keeps it), else worked out.
 board_on_usb_link() {
 	_board_ip=${1#::ffff:}
-	case "$_board_ip" in
-	*.*.*.*) ;;
-	*) return 1 ;;
+	board_ip4_var "$_board_ip" || return 1
+	_board_n=$BOARD_IP4
+	if board_read "$BOARD_RUN_DIR/gadget-cidr" && [ -n "$BOARD_LINE" ]; then
+		_board_cidr=$BOARD_LINE
+	else
+		board_load_env usb-gadget.env
+		board_gadget_address 2>/dev/null || return 1
+		_board_cidr=${BOARD_GADGET_CIDR:-}
+	fi
+	_board_bits=${_board_cidr#*/}
+	case "$_board_bits" in
+	'' | *[!0-9]* | ???*) return 1 ;;
 	esac
-	board_load_env usb-gadget.env
-	board_gadget_address 2>/dev/null || return 1
-	[ -n "${BOARD_GADGET_CIDR:-}" ] || return 1
-	awk -v ip="$_board_ip" -v cidr="$BOARD_GADGET_CIDR" '
-		function num(a,   p) { split(a, p, "."); return ((p[1] * 256 + p[2]) * 256 + p[3]) * 256 + p[4] }
-		BEGIN {
-			split(cidr, c, "/"); bits = c[2] + 0
-			if (bits < 1 || bits > 32) exit 1
-			# No ^ here: BusyBox awk on the image has no math support.
-			size = 1
-			for (i = bits; i < 32; i++) size *= 2
-			same = int(num(ip) / size) == int(num(c[1]) / size)
-			if (same) exit 0
-			exit 1
-		}'
+	[ "$_board_bits" -ge 1 ] && [ "$_board_bits" -le 32 ] || return 1
+	board_ip4_var "${_board_cidr%/*}" || return 1
+	_board_size=$((1 << (32 - _board_bits)))
+	[ $((_board_n / _board_size)) -eq $((BOARD_IP4 / _board_size)) ]
+}
+
+# board_ip4_var <a.b.c.d>: the address as a number in BOARD_IP4, without a
+# fork; fails unless it is four numbers of 0-255.
+board_ip4_var() {
+	case "$1" in
+	*[!0-9.]* | *..* | .* | *.) return 1 ;;
+	esac
+	_board_ifs=$IFS
+	IFS=.
+	# shellcheck disable=SC2086
+	set -- $1
+	IFS=$_board_ifs
+	[ "$#" -eq 4 ] || return 1
+	BOARD_IP4=0
+	for _board_o in "$@"; do
+		# Leading zeros off: $((010)) is octal.
+		while :; do
+			case "$_board_o" in
+			0?*) _board_o=${_board_o#0} ;;
+			*) break ;;
+			esac
+		done
+		case "$_board_o" in '' | ????*) return 1 ;; esac
+		[ "$_board_o" -le 255 ] || return 1
+		BOARD_IP4=$((BOARD_IP4 * 256 + _board_o))
+	done
 }
 
 # Whether <action> is one this device offers.
@@ -538,7 +587,21 @@ board_camera_streams_json() {
 	esac
 }
 
+# The identity document (contract 1), one line of JSON: the fixed fields,
+# then the live ones.
 board_identity_json() {
+	printf '{'
+	board_identity_fixed_json
+	board_identity_live_json
+	printf '}\n'
+}
+
+# The identity's fields that change only with the update state, the USB
+# route or the camera streams, without the braces. `identity --write` keeps
+# them in $BOARD_RUN_DIR/identity.part, at boot and on each of those changes
+# (board-identity-refresh.path), and identity-http serves that: building
+# them takes over a hundred forks.
+board_identity_fixed_json() {
 	board_load_env board-package.env
 	board_load_env identity.env
 	board_bootloader
@@ -547,11 +610,10 @@ board_identity_json() {
 	_board_os_ver=$(board_os_field VERSION_ID)
 	[ -n "$_board_os_ver" ] || _board_os_ver=$(board_os_field VERSION)
 
-	printf '{"contract":1'
+	printf '"contract":1'
 	printf ',"model":%s' "$(board_json_str "${BOARD_DEVICE_MODEL:-}")"
 	printf ',"rev":%s' "$(board_json_str "$(board_rev)")"
 	printf ',"serial":%s' "$(board_json_str "$(board_serial)")"
-	printf ',"hostname":%s' "$(board_json_str "$(board_hostname)")"
 	printf ',"os":{"name":%s,"version":%s}' "$(board_json_str "$_board_os_name")" "$(board_json_str "$_board_os_ver")"
 	printf ',"device_package":{"version":%s,"commit":%s}' \
 		"$(board_json_str "${BOARD_PACKAGE_VERSION:-}")" "$(board_json_str "${BOARD_PACKAGE_COMMIT:-}")"
@@ -591,10 +653,6 @@ board_identity_json() {
 		_board_ur=$("${BOARD_USB_ROUTE_BIN:-$BOARD_LIB_DIR/usb-route}" status 2>/dev/null) &&
 			case "$_board_ur" in '{'*'}') printf ',"usb_route":%s' "$_board_ur" ;; esac
 	fi
-	# The board's clock, so a host can tell it is wrong: a Raze has no RTC
-	# battery and often no NTP over the USB link.
-	printf ',"time":%s' "$(date +%s)"
-	board_actions_json
 	board_gadget_json
 	printf ',"macs":{'
 	_board_sep=''
@@ -602,7 +660,23 @@ board_identity_json() {
 		printf '%s%s:"%s"' "$_board_sep" "$(board_json_str "$_board_name")" "$_board_mac"
 		_board_sep=','
 	done
-	printf '}}\n'
+	printf '}'
+}
+
+# The identity's fields worked out per request, with one fork (date):
+# ,"hostname":..,"time":..,"endpoints":{..},"actions":[..]
+board_identity_live_json() {
+	board_load_env identity.env
+	if board_read "$BOARD_HOSTNAME_PROC"; then
+		board_json_var "$BOARD_LINE"
+	else
+		board_json_var "$(uname -n)"
+	fi
+	printf ',"hostname":%s' "$BOARD_JSON"
+	# The board's clock, so a host can tell it is wrong: a Raze has no RTC
+	# battery and often no NTP over the USB link.
+	printf ',"time":%s' "$(date +%s)"
+	board_actions_json
 }
 
 # ---------------------------------------------------------------------------

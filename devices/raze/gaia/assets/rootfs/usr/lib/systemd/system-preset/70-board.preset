@@ -4,6 +4,8 @@
 #   disable board-http.socket
 enable board-hostname.service
 enable board-identity.service
+enable board-identity-refresh.path
+enable board-identity-refresh.timer
 enable board-http.socket
 enable board-stream.socket
 enable board-usb-gadget.service

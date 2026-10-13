@@ -344,6 +344,7 @@ The device units are installed in `/usr/lib/systemd/system` and enabled by
 | --- | --- |
 | `board-hostname.service` | default hostname `raze-{serial8}`, only over an unset or stock hostname |
 | `board-identity.service` | writes `/run/board/identity.json` and the avahi service `/run/board/avahi-services/pd-device.service` (bound over `/etc/avahi/services` by `etc-avahi-services.mount`) |
+| `board-identity-refresh.path`, `.timer` | rewrite `/run/board/identity.part` (the identity's fixed fields, which the endpoint serves) when `update.json`, `usb-route.state` or `camera-streams.json` change, and every 30 s |
 | `board-http.socket` (+ `board-http@.service`) | identity endpoint on TCP 5899 |
 | `board-usb-gadget.service` | USB gadget (ECM/RNDIS/ACM) with the board serial as its USB serial, gadget-only bridge `usbbr0` on a per-board /29 (see "USB gadget network") |
 | `board-usb-gadget-dhcp.service` | dnsmasq DHCP on `usbbr0` only, DNS off, no default route |
