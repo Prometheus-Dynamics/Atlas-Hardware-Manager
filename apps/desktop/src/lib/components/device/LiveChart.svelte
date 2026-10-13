@@ -27,6 +27,7 @@
   let colors = $state<string[]>([]);
   let grid = "rgba(128,128,128,0.18)";
   let text = "rgba(128,128,128,0.8)";
+  let plate = "rgba(20,24,30,0.85)";
   /** While hovered: where (x on the canvas, and on screen). */
   let hover = $state<{ x: number; left: number; top: number } | null>(null);
   /** Paused: the newest time drawn, frozen until a click resumes. */
@@ -46,6 +47,7 @@
     colors = PALETTE.map((name) => style.getPropertyValue(name).trim() || "#888");
     grid = style.getPropertyValue("--glass-strong").trim() || grid;
     text = style.getPropertyValue("--fg-faint").trim() || text;
+    plate = style.getPropertyValue("--layer-solid").trim() || plate;
     let frame = 0;
     // Repaint when something changed: a new sample, the size, the window,
     // the pointer, or while the value range is still easing.
@@ -125,6 +127,7 @@
     ctx.fillStyle = text;
     ctx.strokeStyle = grid;
     ctx.lineWidth = 1;
+    const labels: { label: string; gy: number }[] = [];
     for (const f of [0.25, 0.5, 0.75]) {
       const value = low + (high - low) * f;
       const gy = Math.round(y(value)) + 0.5;
@@ -132,7 +135,7 @@
       ctx.moveTo(0, gy);
       ctx.lineTo(width, gy);
       ctx.stroke();
-      ctx.fillText(formatValue(value), 4, gy - 3);
+      labels.push({ label: formatValue(value), gy });
     }
     // Time: how long ago, at a round step that fits.
     const spanS = span / 1_000_000;
@@ -164,6 +167,13 @@
       }
       ctx.stroke();
     });
+    // The values last, on a plate, so a trace running through them doesn't hide them.
+    for (const { label, gy } of labels) {
+      ctx.fillStyle = plate;
+      ctx.fillRect(2, gy - 13, ctx.measureText(label).width + 5, 12);
+      ctx.fillStyle = text;
+      ctx.fillText(label, 4, gy - 3);
+    }
     if (crosshair !== undefined) {
       ctx.strokeStyle = text;
       ctx.lineWidth = 1;

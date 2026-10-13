@@ -14,7 +14,8 @@
   import { handoffs } from "#lib/components/software/handoff.svelte.ts";
   import { imagesFor, preferredImage, updateMethods, usbBootSteps, USB_BOOT_ACTION, versionPart } from "#lib/components/software/software.ts";
   import { UpdateDraft } from "#lib/components/update/updateDraft.svelte.ts";
-  import { deviceName, primaryVersion, sentence } from "#lib/format.ts";
+  import { bytes, deviceName, primaryVersion, sentence } from "#lib/format.ts";
+  import { deviceStatus } from "#lib/stores/status.svelte.ts";
   import { isRecovery } from "#lib/present.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { releases } from "#lib/stores/releases.svelte.ts";
@@ -115,6 +116,32 @@
 
   /** The plan's error matters only where the plan is what runs. */
   const problem = $derived(method === "update" || fresh === "flash" ? draft.planError : null);
+
+  // What the chosen install does, step by step, for the panel under the button.
+  const update = $derived(deviceStatus.get(record)?.update ?? null);
+  const active = $derived(update?.slot_active ?? record.identity.attributes?.slot_active ?? null);
+  const spare = $derived(active === "A" ? "B" : active === "B" ? "A" : null);
+  const plan = $derived.by(() => {
+    if (!version) return [];
+    const get = entry ? (entry.path ? "Already on this computer" : `Download ${bytes(entry.size_bytes)}`) : "Read the file you chose";
+    if (method === "update" && ab) {
+      return [
+        { title: get, note: entry?.signed ? "Its signature is checked" : "" },
+        { title: `Write it to slot ${spare ?? "the spare"}`, note: `Slot ${active ?? "the running one"} keeps running ${primaryVersion(record.identity) ?? "what it runs"} meanwhile` },
+        { title: `Restart into slot ${spare ?? "the spare"} on trial`, note: "Settings and data stay" },
+        { title: "Check it came up", note: "It has to confirm its boot, or the board goes back by itself" },
+        { title: "Keep it", note: `Slot ${active ?? "the old one"} stays as the way back` },
+      ];
+    }
+    if (method === "update") return [{ title: get, note: "" }, { title: "Install and restart", note: "Settings stay" }];
+    return [
+      { title: fresh === "flash" ? "It's in USB boot" : "Restart into USB boot", note: "" },
+      { title: get, note: "" },
+      { title: "Write the whole storage", note: "Everything on it is erased" },
+      { title: "Read it back to verify", note: "" },
+      { title: "Restart into it", note: "" },
+    ];
+  });
 
   const label = $derived.by(() => {
     if (!version) return "Choose an image";
@@ -275,6 +302,28 @@
       {#if entries.length === 0 && !version}
         <p class="hint text-center">No images for this model yet. Choose a file, or add one on the Releases page.</p>
       {/if}
+      {#if plan.length && !confirming}
+        <section class="panel plan" aria-label="What happens">
+          <div class="panel-head">
+            <h2 class="panel-title">What happens</h2>
+            {#if spare && method === "update" && ab}<span class="panel-note">A/B: the running version is never touched</span>{/if}
+          </div>
+          {#if spare && method === "update" && ab}
+            <div class="slots" aria-hidden="true">
+              <span class="slot running"><b>Slot {active}</b>{primaryVersion(record.identity) ?? "—"} · keeps running</span>
+              <span class="slot next"><b>Slot {spare}</b>{version} · written</span>
+            </div>
+          {/if}
+          <ol>
+            {#each plan as step, i (i)}
+              <li>
+                <span class="num">{i + 1}</span>
+                <span class="min-w-0"><span class="block text-[12.5px] text-fg">{step.title}</span>{#if step.note}<span class="block text-[11.5px] text-fg-muted">{step.note}</span>{/if}</span>
+              </li>
+            {/each}
+          </ol>
+        </section>
+      {/if}
     </div>
   </div>
 {/if}
@@ -313,8 +362,64 @@
     }
     .act {
       grid-area: act;
-      margin-top: -4px;
+      /* Side by side the button needn't stick: the column holds it and the plan. */
+      position: static;
+      margin: -4px 0 0;
+      padding: 0;
+      background: none;
     }
+  }
+  .plan ol {
+    display: flex;
+    flex-direction: column;
+  }
+  .plan li {
+    display: flex;
+    gap: 10px;
+    padding: 6px 0;
+    border-top: 1px solid var(--hairline);
+  }
+  .plan li:first-child {
+    border-top: 0;
+  }
+  .num {
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--r-sm);
+    background: var(--inset);
+    font-size: 11px;
+    color: var(--fg-muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .slots {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .slot {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    padding: 6px 10px;
+    border-radius: var(--r-sm);
+    font-family: var(--font-code);
+    font-size: 11.5px;
+    color: var(--fg-muted);
+    border: 1px solid var(--glass-border);
+  }
+  .slot b {
+    font-family: var(--font-ui, inherit);
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .slot.next {
+    border-color: var(--accent-ring);
+    background: var(--accent-tint);
   }
   .problem {
     display: flex;
