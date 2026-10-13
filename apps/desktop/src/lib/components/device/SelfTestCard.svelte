@@ -66,16 +66,16 @@
 </script>
 
 {#if can || last}
-  <section class="flex flex-col gap-2.5">
-    <div class="flex items-center justify-between gap-3">
-      <h3 class="text-[12px] font-medium uppercase tracking-[0.06em] text-fg-faint">Self-test</h3>
+  <section class="panel" aria-label="Self-test">
+    <div class="panel-head">
+      <h2 class="panel-title">Self-test</h2>
       {#if can}
         <Button size="sm" icon="list-check" action={run} busy={running}>{last ? "Run again" : "Run self-test"}</Button>
       {/if}
     </div>
 
     {#if live}
-      <div class="glass flex flex-col gap-3 px-4 py-3.5">
+      <div class="flex flex-col gap-3">
         <div class="flex flex-wrap items-center gap-2">
           <Pill tone="info" icon="loader-2" spin label="Running · {liveDone} of {live.length}" />
           {#if live.some((c) => c.state === "fail")}<Pill tone="error" icon="alert-circle" label="{live.filter((c) => c.state === 'fail').length} failed so far" />{/if}
@@ -102,7 +102,7 @@
         as they were. It also runs on its own when the board comes back from a flash or an update.
       </p>
     {:else}
-      <div class="glass flex flex-col gap-3 px-4 py-3.5">
+      <div class="flex flex-col gap-3">
         <div class="flex flex-wrap items-center gap-2">
           {#if running}
             <Pill tone="info" icon="refresh" spin label="Running on the board" />
@@ -117,16 +117,31 @@
           </p>
         {/if}
         {#if last.report}
-          <ul class="flex flex-col gap-2">
-            {#each last.report.checks as check (check.id)}
-              {@const look = ICONS[check.status] ?? ICONS.unknown}
-              <li class="flex items-start gap-2.5 text-[13px]">
-                <span class="mt-0.5 shrink-0 {look.color}" title={look.label}><Icon name={look.icon} size={16} /></span>
-                <span class="w-20 shrink-0 font-medium text-fg">{NAMES[check.id] ?? check.id}</span>
-                <span class="min-w-0 text-fg-muted">{check.message}</span>
-              </li>
-            {/each}
-          </ul>
+          <!-- Passed checks in a compact grid (what each found on hover);
+               the rest with what they found, since that's what to act on. -->
+          {@const passed = last.report.checks.filter((c) => c.status === "ok")}
+          {@const others = last.report.checks.filter((c) => c.status !== "ok")}
+          {#if passed.length > 0}
+            <ul class="passed">
+              {#each passed as check (check.id)}
+                <li title={check.message}>
+                  <span class="text-ok-fg"><Icon name="circle-check" size={14} /></span>{NAMES[check.id] ?? check.id}
+                </li>
+              {/each}
+            </ul>
+          {/if}
+          {#if others.length > 0}
+            <ul class="flex flex-col gap-2">
+              {#each others as check (check.id)}
+                {@const look = ICONS[check.status] ?? ICONS.unknown}
+                <li class="flex items-start gap-2.5 text-[13px]">
+                  <span class="mt-0.5 shrink-0 {look.color}" title={look.label}><Icon name={look.icon} size={16} /></span>
+                  <span class="w-20 shrink-0 font-medium text-fg">{NAMES[check.id] ?? check.id}</span>
+                  <span class="min-w-0 text-fg-muted">{check.message}</span>
+                </li>
+              {/each}
+            </ul>
+          {/if}
         {/if}
       </div>
     {/if}
@@ -134,6 +149,18 @@
 {/if}
 
 <style>
+  .passed {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 6px 10px;
+    font-size: 12.5px;
+  }
+  .passed li {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    cursor: default;
+  }
   .waiting {
     opacity: 0.55;
   }

@@ -19,12 +19,15 @@
   import FactGrid from "./FactGrid.svelte";
   import HealthCard from "./HealthCard.svelte";
   import DeviceCharts from "./DeviceCharts.svelte";
-  import LiveStats from "./LiveStats.svelte";
+  import BootsCard from "./BootsCard.svelte";
+  import EventsCard from "./EventsCard.svelte";
+  import NetworkCard from "./NetworkCard.svelte";
   import NowCard from "./NowCard.svelte";
   import SelfTestCard from "./SelfTestCard.svelte";
   import WebUiButton from "./WebUiButton.svelte";
 
-  let { record }: { record: DeviceRecord } = $props();
+  /** onhistory: opens the History tab (Recent events' link). */
+  let { record, onhistory }: { record: DeviceRecord; onhistory?: () => void } = $props();
 
   const NAMES: Record<string, string> = { os: "OS", os_version: "OS version", device_package: "Device package", contract: "Contract" };
   const nice = (name: string) => NAMES[name] ?? name.replaceAll("_", " ");
@@ -39,9 +42,9 @@
   const status = $derived(deviceStatus.byDevice.get(id));
   const statusError = $derived(deviceStatus.errors.get(id));
 
-  // Full screen: three columns, the self-test moves over to the right one.
   let width = $state(0);
-  const wide = $derived(width >= 1500);
+  /** Something under way or gone wrong with an update: Now shows it. */
+  const happening = $derived(!!status?.update && !["idle", "confirmed", "cancelled"].includes(status.update.state));
 
   // The board's status and history while it is shown.
   $effect(() => deviceStatus.watch(record));
@@ -82,16 +85,15 @@
   const macs = $derived(Object.entries(attrs).filter(([name]) => name.startsWith("mac.")));
   const extra = $derived(Object.entries(attrs).filter(([name]) => !shown.has(name) && !name.startsWith("mac.")));
 
+  // What the header (model, version, storage, serial) and Network
+  // (addresses, hostname, link) don't already say.
   const facts = $derived(
     [
       { label: "OS", value: attrs.os ? `${attrs.os}${attrs.os_version ? ` ${attrs.os_version}` : ""}` : null },
-      { label: "Version", value: primaryVersion(record.identity), mono: true },
       { label: "Revision", value: attrs.revision ?? null },
-      { label: "Hostname", value: attrs.hostname ?? null, mono: true },
-      { label: "Storage", value: attrs.storage ?? null },
       { label: "Chip", value: attrs.chip ?? null },
-      { label: "Connected by", value: linkText(record.link_kind, devices.nameOf) },
-      { label: "Last seen", value: record.presence === "online" ? "Now" : timeAgo(record.last_seen_ms, clock.now) },
+      { label: "Connected by", value: online ? null : linkText(record.link_kind, devices.nameOf) },
+      { label: "Last seen", value: online ? null : timeAgo(record.last_seen_ms, clock.now) },
     ].filter((f) => f.value),
   );
 
@@ -139,166 +141,151 @@
   }
 </script>
 
-<!-- Wide: the board's state on the left (Now, health, live, self-test), the
-     camera, controls and details on the right; very wide (full screen), the
-     camera and orientation get a column of their own, so nothing scrolls;
-     narrow: one column. -->
-<div class="overview" bind:clientWidth={width}>
+<!-- Three columns as the v2 design: what it sees and how it is (camera,
+     status, details); its readings, network and recent events; its body
+     (orientation, boots, self-test, controls). Each reading shows once.
+     Narrower windows fold to two columns, then one. -->
+{#snippet detailsCard()}
+    <section class="panel" aria-label="Details">
+      <div class="panel-head"><h2 class="panel-title">Details</h2></div>
+      {#if facts.length > 0}<FactGrid {facts} plain />{/if}
+
+      {#if manageUrl && !online}
+        <div class="flex items-center gap-3">
+          <WebUiButton {record} size="md" label="Open web UI" />
+          <span class="mono truncate text-[12px] text-fg-faint">{manageUrl}</span>
+        </div>
+      {/if}
+
+      <div class="grid grid-cols-2 gap-3">
+        <Field label="Name in Atlas">
+          <input
+            class="input"
+            title="Enter or leaving the field saves it."
+            bind:value={label}
+            placeholder={record.identity.name ?? "Give this device a name"}
+            onkeydown={(e) => {
+              if (e.key === "Enter") void saveLabel();
+              if (e.key === "Escape") label = record.label ?? "";
+            }}
+            onblur={saveLabel}
+            disabled={savingLabel}
+          />
+        </Field>
+        <Field label="Robot">
+          <select class="select" value={record.robot ?? ""} onchange={(e) => setRobot(e.currentTarget.value)} disabled={savingRobot}>
+            <option value="">No robot</option>
+            {#each robots.names as name (name)}
+              <option value={name}>{name}</option>
+            {/each}
+          </select>
+        </Field>
+      </div>
+
+      <Disclosure title="Identity, versions and addresses">
+        <div class="flex flex-col gap-3">
+          <FactGrid facts={identity} plain />
+          {#if Object.keys(record.identity.versions).length > 1}
+            <FactGrid facts={Object.entries(record.identity.versions).map(([k, v]) => ({ label: nice(k), value: v, mono: true }))} plain />
+          {/if}
+          {#if macs.length > 0}
+            <FactGrid facts={macs.map(([k, v]) => ({ label: k.slice(4), value: v, mono: true }))} plain />
+          {/if}
+          {#if extra.length > 0}
+            <FactGrid facts={extra.map(([k, v]) => ({ label: nice(k), value: v }))} plain />
+          {/if}
+        </div>
+      </Disclosure>
+
+      {#if record.presence === "offline"}
+        <div class="glass flex flex-col gap-3 px-4 py-3.5">
+          <p class="text-[13px] text-fg-muted">
+            Forgetting removes this device, its name, and its robot assignment. It comes back as new if it's seen again.
+          </p>
+          <div>
+            <ConfirmButton action={() => api.forgetDevice(record.key)} icon="trash" prompt="Forget this device?" confirmLabel="Forget">
+              Forget device
+            </ConfirmButton>
+          </div>
+        </div>
+      {/if}
+    </section>
+{/snippet}
+
+<div class="overview" class:two={!reports} bind:clientWidth={width}>
   <div class="col">
-  {#if reports}
-    <section class="flex flex-col gap-2.5">
-      <h3 class="text-[12px] font-medium uppercase tracking-[0.06em] text-fg-faint">Now</h3>
+    {#if streams.length}
+      <div class="camera" class:several={streams.length > 1}>
+        <CameraStreams {streams} device={deviceName(record)} single />
+      </div>
+    {/if}
+
+    {#if reports}
       {#if status}
-        <NowCard {status} {actions} {run} />
+        {#if happening}<NowCard {status} {actions} {run} />{/if}
+        <HealthCard {status} readAt={deviceStatus.readAt.get(id)} thermal={!telemetry} />
       {:else if statusError}
         <p class="text-[13px] text-warn-fg">{statusError}</p>
       {:else}
         <Skeleton height={58} />
       {/if}
-    </section>
-    {#if status}<HealthCard {status} readAt={deviceStatus.readAt.get(id)} />{/if}
-  {/if}
+    {/if}
+    {#if online && actions.length > 0}
+      <ControlsCard {actions} {run} update={reports ? (status?.update ?? null) : undefined} />
+    {/if}
+    {#if !reports}<SelfTestCard {record} />{@render detailsCard()}{/if}
 
-  {#if telemetry}
-    <LiveStats {record} />
-    <DeviceCharts {record} />
-  {/if}
-
-  {#if !wide}<SelfTestCard {record} />{/if}
-  </div>
-
-  <div class="side">
-  <div class="col">
-  {#if streams.length}
-    <div class="camera" class:several={streams.length > 1}>
-      <CameraStreams {streams} device={deviceName(record)} />
-    </div>
-  {/if}
-
-  {#if online && reports}<OrientationCard {record} fill={wide} />{/if}
   </div>
 
   <div class="col">
-  {#if wide}<SelfTestCard {record} />{/if}
-
-  {#if online && actions.length > 0}
-    <ControlsCard {actions} {run} update={reports ? (status?.update ?? null) : undefined} />
-  {/if}
-  {#if online}
-    <UsbRouteCard {record} {actions} {run} />
-  {/if}
-
-  <FactGrid {facts} />
-
-  {#if manageUrl && !online}
-    <div class="flex items-center gap-3">
-      <WebUiButton {record} size="md" label="Open web UI" />
-      <span class="mono truncate text-[12px] text-fg-faint">{manageUrl}</span>
-    </div>
-  {/if}
-
-  <div class="grid grid-cols-2 gap-3">
-    <Field label="Name in Atlas" hint="Enter or leaving the field saves it.">
-      <input
-        class="input"
-        bind:value={label}
-        placeholder={record.identity.name ?? "Give this device a name"}
-        onkeydown={(e) => {
-          if (e.key === "Enter") void saveLabel();
-          if (e.key === "Escape") label = record.label ?? "";
-        }}
-        onblur={saveLabel}
-        disabled={savingLabel}
-      />
-    </Field>
-    <Field label="Robot">
-      <select class="select" value={record.robot ?? ""} onchange={(e) => setRobot(e.currentTarget.value)} disabled={savingRobot}>
-        <option value="">No robot</option>
-        {#each robots.names as name (name)}
-          <option value={name}>{name}</option>
-        {/each}
-      </select>
-    </Field>
+    {#if telemetry}<DeviceCharts {record} />{/if}
+    {#if online}
+      <NetworkCard {record} />
+      <UsbRouteCard {record} {actions} {run} />
+    {/if}
+    {#if reports}
+      <div class="events"><EventsCard {record} onmore={onhistory} /></div>
+    {/if}
   </div>
 
-  {#if Object.keys(record.identity.versions).length > 1}
-    <Disclosure title="Versions" count={Object.keys(record.identity.versions).length}>
-      <FactGrid facts={Object.entries(record.identity.versions).map(([k, v]) => ({ label: nice(k), value: v, mono: true }))} plain />
-    </Disclosure>
-  {/if}
-
-  {#if macs.length > 0}
-    <Disclosure title="Network addresses" count={macs.length}>
-      <FactGrid facts={macs.map(([k, v]) => ({ label: k.slice(4), value: v, mono: true }))} plain />
-    </Disclosure>
-  {/if}
-
-  {#if extra.length > 0}
-    <Disclosure title="More details" count={extra.length}>
-      <FactGrid facts={extra.map(([k, v]) => ({ label: nice(k), value: v }))} plain />
-    </Disclosure>
-  {/if}
-
-  <Disclosure title="Identity">
-    <FactGrid facts={identity} plain />
-  </Disclosure>
-
-  {#if record.presence === "offline"}
-    <div class="glass flex flex-col gap-3 px-4 py-3.5">
-      <p class="text-[13px] text-fg-muted">
-        Forgetting removes this device, its name, and its robot assignment. It comes back as new if it's seen again.
-      </p>
-      <div>
-        <ConfirmButton action={() => api.forgetDevice(record.key)} icon="trash" prompt="Forget this device?" confirmLabel="Forget">
-          Forget device
-        </ConfirmButton>
-      </div>
-    </div>
-  {/if}
+  {#if reports}
+  <div class="col">
+    {#if online}<OrientationCard {record} fill />{/if}
+    <BootsCard {record} {status} />
+    <SelfTestCard {record} />
+    {@render detailsCard()}
   </div>
-  </div>
+  {/if}
 </div>
 
 <style>
-  /* Columns as tall as the tallest, so the charts fill the first. */
   .overview {
     display: grid;
-    gap: 16px;
+    gap: 12px;
     align-items: stretch;
     flex: 1 1 auto;
   }
-  .col,
-  .side {
+  .col {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
     min-width: 0;
+    min-height: 0;
   }
-  @container (min-width: 1000px) {
+  .events {
+    flex: 1;
+    min-height: 160px;
+    display: flex;
+    flex-direction: column;
+  }
+  @container (min-width: 760px) {
     .overview {
-      grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
   }
-  @container (min-width: 1500px) {
-    .overview {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  @container (min-width: 980px) {
+    .overview:not(.two) {
+      grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr);
     }
-    .side {
-      display: grid;
-      grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
-      /* The camera column as tall as the other; its 3D view takes the rest. */
-      align-items: stretch;
-    }
-    .camera,
-    .camera.several {
-      max-width: none;
-    }
-  }
-  /* The camera at a useful size, not the whole width. */
-  .camera {
-    max-width: 640px;
-  }
-  .camera.several {
-    max-width: 900px;
   }
 </style>

@@ -9,6 +9,20 @@ type Model = { class: string; model: string; channels: LiveChannel[]; value: (t:
 const axes = (prefix: string, unit: string) => ["x", "y", "z"].map((axis) => ({ name: `${prefix}.${axis}`, unit }));
 const noise = (scale: number) => (Math.random() - 0.5) * 2 * scale;
 
+// A Raze's IMU is mounted turned from its case (imu.ts CASE_IN_IMU, a half
+// turn about the case's (1, -1, 0)): readings are made in the case's frame
+// (lying flat, lens up) and handed out in the IMU's, as a real board does.
+const toImu = ([x, y, z]: number[]): number[] => [-y, -x, -z];
+const CASE_IN_IMU_CONJ = [0, -Math.SQRT1_2, Math.SQRT1_2, 0];
+function quatMul(a: number[], b: number[]): number[] {
+  return [
+    a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
+    a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
+    a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
+    a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
+  ];
+}
+
 const MODELS: Record<string, Model> = {
   imu: {
     class: "imu",
@@ -17,8 +31,8 @@ const MODELS: Record<string, Model> = {
     // A board being handled: slow tilt, a bump every few seconds, sensor noise.
     value: (t, i) => {
       const bump = Math.exp(-(((t % 4) - 2) ** 2) * 20);
-      if (i < 3) return [0.4 * Math.sin(t * 1.3), 0.3 * Math.cos(t * 0.9), 9.81][i] + bump * [2, -1.5, 3][i] + noise(0.05);
-      return [0.2 * Math.cos(t * 1.3), -0.15 * Math.sin(t * 0.9), 0.05 * Math.sin(t * 3)][i - 3] + bump * 1.2 + noise(0.01);
+      if (i < 3) return toImu([0.4 * Math.sin(t * 1.3), 0.3 * Math.cos(t * 0.9), 9.81])[i] + bump * [2, -1.5, 3][i] + noise(0.05);
+      return toImu([0.2 * Math.cos(t * 1.3), -0.15 * Math.sin(t * 0.9), 0.05 * Math.sin(t * 3)])[i - 3] + bump * 1.2 + noise(0.01);
     },
   },
   magnetometer: {
@@ -47,7 +61,9 @@ const MODELS: Record<string, Model> = {
       const yaw = 0.6 + 0.2 * Math.sin(t / 7);
       // Hamilton, scalar first, from intrinsic ZYX (yaw, pitch, roll).
       const [cr, sr, cp, sp, cy, sy] = [Math.cos(roll / 2), Math.sin(roll / 2), Math.cos(pitch / 2), Math.sin(pitch / 2), Math.cos(yaw / 2), Math.sin(yaw / 2)];
-      const q = [cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy, cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy];
+      const caseQ = [cr * cp * cy + sr * sp * sy, sr * cp * cy - cr * sp * sy, cr * sp * cy + sr * cp * sy, cr * cp * sy - sr * sp * cy];
+      // The board fuses in the IMU's frame.
+      const q = quatMul(caseQ, CASE_IN_IMU_CONJ);
       return [...q, roll, pitch, yaw, 0.94, 0.88, 0][i];
     },
   },

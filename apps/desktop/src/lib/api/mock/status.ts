@@ -355,7 +355,8 @@ function hardwareFor(device: SimDevice, now: number, celsius: number): HardwareS
         readings: [
           { name: "accel_x", value: round(0.04 * Math.sin(t / 7) + jitter(0.02), 3), unit: "m/s²" },
           { name: "accel_y", value: round(-0.03 * Math.cos(t / 9) + jitter(0.02), 3), unit: "m/s²" },
-          { name: "accel_z", value: round(9.81 + jitter(0.03), 3), unit: "m/s²" },
+          // Lying flat, lens up: the IMU (mounted lens-side down) reads -g on z.
+          { name: "accel_z", value: round(-9.81 + jitter(0.03), 3), unit: "m/s²" },
           { name: "gyro_x", value: round(jitter(0.01), 4), unit: "rad/s" },
           { name: "gyro_y", value: round(jitter(0.01), 4), unit: "rad/s" },
           { name: "gyro_z", value: round(jitter(0.01), 4), unit: "rad/s" },

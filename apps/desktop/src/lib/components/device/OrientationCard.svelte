@@ -68,9 +68,9 @@
 </script>
 
 {#if imu && series}
-  <section class="flex flex-col gap-2.5" class:grow={fill}>
-    <h3 class="text-[12px] font-medium uppercase tracking-[0.06em] text-fg-faint">Orientation</h3>
-    <div class="glass px-3 py-3" class:grow={fill}><ImuView {series} {fused} {light} {fill} /></div>
+  <section class="panel orientation" class:grow={fill} aria-label="Orientation">
+    <div class="panel-head"><h2 class="panel-title">Orientation</h2></div>
+    <div class="view" class:grow={fill}><ImuView {series} {fused} {light} {fill} /></div>
   </section>
 {/if}
 
@@ -78,5 +78,13 @@
   .grow {
     flex: 1;
     min-height: 0;
+  }
+  /* ImuView stacks its readout under the model when the card is narrow. */
+  .orientation {
+    container-type: inline-size;
+  }
+  .view {
+    display: flex;
+    flex-direction: column;
   }
 </style>

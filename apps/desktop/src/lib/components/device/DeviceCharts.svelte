@@ -1,29 +1,51 @@
 <script lang="ts">
-  // The device's main readings as charts, filling the space under the live
-  // tiles: temperature, CPU, vision rate, memory (whichever it reports), each
-  // with its current value, its range since the page opened and the warning
-  // level when there is one. Fed by the same live polling as the tiles.
+  // The device's live readings, each once, as a chart with its current
+  // value: temperature (with the fan under it), CPU, vision rate, memory,
+  // then whatever else it reports (voltage, current, …). Uptime is in the
+  // header, CPU cores in the CPU's detail. Polled while shown.
   import { keyString, type DeviceRecord, type Metric } from "#lib/api/client.ts";
-  import { metricTone, metricValue } from "#lib/metrics.ts";
-  import { live } from "#lib/stores/live.svelte.ts";
+  import Skeleton from "#lib/components/common/Skeleton.svelte";
+  import { isCore, isTextMetric, metricTone, metricValue } from "#lib/metrics.ts";
+  import { live, watchLive } from "#lib/stores/live.svelte.ts";
 
   let { record }: { record: DeviceRecord } = $props();
 
-  const ORDER: [string, string][] = [
-    ["temp", "var(--series-3)"],
-    ["cpu", "var(--series-1)"],
-    ["fps", "var(--series-2)"],
-    ["memory", "var(--series-4)"],
-  ];
+  $effect(() => watchLive([record]));
+
+  const FIRST = ["temp", "cpu", "fps", "memory"];
+  const COLORS = ["var(--series-3)", "var(--series-1)", "var(--series-2)", "var(--series-4)", "var(--series-5)"];
+  /** Shown elsewhere: the fan under the temperature, uptime in the header. */
+  const ELSEWHERE = new Set(["fan", "uptime"]);
   const W = 400;
   const H = 100;
 
   const id = $derived(keyString(record.key));
+  const all = $derived(live.metrics.get(id) ?? []);
+  const fan = $derived(all.find((m) => m.id === "fan") ?? null);
   const charts = $derived(
-    ORDER.map(([metricId, color]) => ({ metric: live.metric(id, metricId), values: live.series(id, metricId), color })).filter(
-      (c): c is { metric: Metric; values: number[]; color: string } => !!c.metric && c.values.length > 1,
-    ),
+    all
+      .filter((m) => !isCore(m) && !ELSEWHERE.has(m.id) && !isTextMetric(m))
+      .sort((a, b) => rank(a.id) - rank(b.id))
+      .slice(0, 6)
+      .map((metric) => ({ metric, values: live.series(id, metric.id), color: COLORS[Math.min(rank(metric.id), 4)] }))
+      .filter((c) => c.values.length > 0),
   );
+  const error = $derived(live.errors.get(id));
+
+  function rank(metricId: string): number {
+    const i = FIRST.indexOf(metricId);
+    return i < 0 ? FIRST.length : i;
+  }
+
+  function detail(c: { metric: Metric; values: number[] }): string {
+    if (c.metric.id === "temp" && fan) {
+      const v = metricValue(fan);
+      return `fan ${v.value} ${v.unit}${c.metric.warn_above != null ? ` · warns above ${c.metric.warn_above}` : ""}`;
+    }
+    if (c.metric.detail) return c.metric.detail;
+    const d = c.metric.id === "temp" ? 1 : 0;
+    return `low ${Math.min(...c.values).toFixed(d)} · high ${Math.max(...c.values).toFixed(d)}`;
+  }
 
   function scale(c: { metric: Metric; values: number[] }) {
     // Temperatures float well above 0; the rest are counts and shares from 0.
@@ -40,7 +62,13 @@
   }
 </script>
 
-{#if charts.length > 0}
+{#if charts.length === 0 && error}
+  <p class="text-[13px] text-warn-fg">{error}</p>
+{:else if charts.length === 0}
+  <div class="charts">
+    {#each [0, 1, 2, 3] as i (i)}<Skeleton height={130} />{/each}
+  </div>
+{:else}
   <div class="charts" class:one={charts.length === 1}>
     {#each charts as c (c.metric.id)}
       {@const v = metricValue(c.metric)}
@@ -52,10 +80,7 @@
           <span class="value" class:hot={tone === "warn" || tone === "err"}>{v.value}</span>
           <span class="unit">{v.unit}</span>
         </div>
-        <div class="range">
-          low {Math.min(...c.values).toFixed(c.metric.id === "temp" ? 1 : 0)} · high {Math.max(...c.values).toFixed(c.metric.id === "temp" ? 1 : 0)}
-          {#if c.metric.warn_above != null}· warns above {c.metric.warn_above}{/if}
-        </div>
+        <div class="range" title={detail(c)}>{detail(c)}</div>
         <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" aria-hidden="true">
           {#if c.metric.warn_above != null}
             <line x1="0" x2={W} y1={scale(c)(c.metric.warn_above)} y2={scale(c)(c.metric.warn_above)} class="limit" />
@@ -113,6 +138,9 @@
     color: var(--fg-muted);
   }
   .range {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 11px;
     color: var(--fg-faint);
     font-variant-numeric: tabular-nums;

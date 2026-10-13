@@ -171,11 +171,26 @@ export class FusedOrientation {
 }
 
 /** a ⊗ b (Hamilton, scalar first). */
-function multiply(a: Quat, b: Quat): Quat {
+export function multiply(a: Quat, b: Quat): Quat {
   return [
     a[0] * b[0] - a[1] * b[1] - a[2] * b[2] - a[3] * b[3],
     a[0] * b[1] + a[1] * b[0] + a[2] * b[3] - a[3] * b[2],
     a[0] * b[2] - a[1] * b[3] + a[2] * b[0] + a[3] * b[1],
     a[0] * b[3] + a[1] * b[2] - a[2] * b[1] + a[3] * b[0],
   ];
+}
+
+/**
+ * The case's frame from the IMU's, as the Raze Gen 1 mounts it. The case
+ * (the 3D model, case_model.py) has z out of the lens and the power terminal
+ * on its -y edge; measured on raze:0708c973 (r22): lens up reads accel z =
+ * -g, power terminal up reads x = +g. So the IMU's -z is the lens, its +x the
+ * terminal, its +y the case's -x: a half turn about the case's (1, -1, 0).
+ * The quaternion takes case vectors to IMU vectors.
+ */
+export const CASE_IN_IMU: Quat = [0, Math.SQRT1_2, -Math.SQRT1_2, 0];
+
+/** The case's orientation (case frame to world) from the IMU's. */
+export function caseOrientation(q: Quat): Quat {
+  return multiply(q, CASE_IN_IMU);
 }

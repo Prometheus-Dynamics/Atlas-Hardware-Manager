@@ -8,7 +8,7 @@
   import Button from "#lib/components/common/Button.svelte";
   import { onMount } from "svelte";
   import CaseModel from "./CaseModel.svelte";
-  import { FusedOrientation, Orientation, cssMatrix, euler } from "./imu.ts";
+  import { FusedOrientation, Orientation, caseOrientation, cssMatrix, euler } from "./imu.ts";
   import { ringFrame, type RingFrame } from "./ring.ts";
   import type { LiveSeries } from "./live.ts";
 
@@ -61,7 +61,8 @@
           disturbed = board.disturbed;
           confidence = board.confidence;
         } else source = "here";
-        const q = current()?.q ?? orientation.q;
+        // Shown and read out in the case's frame (lens out of z), not the IMU's.
+        const q = caseOrientation(current()?.q ?? orientation.q);
         matrix = cssMatrix(q);
         angles = euler(q);
         const at = series.count ? series.index(series.count - 1) : -1;
@@ -77,14 +78,19 @@
     return () => cancelAnimationFrame(frame);
   });
 
+  const sourceNote = $derived(
+    source === "board"
+      ? `Fused on the board${confidence !== null ? ` (IMU confidence ${Math.round(confidence * 100)}%)` : ""}; ${disturbed ? "heading from the gyro (the magnetometer isn't trusted now)" : "heading from the magnetometer"}.`
+      : "Tilt from gravity; heading from the gyro alone, so it drifts slowly.",
+  );
   const fmt = (value: number, digits = 1) => (Number.isFinite(value) ? value.toFixed(digits) : "–");
 </script>
 
 {#if usable}
   <div class="imu" class:fill>
-    <div class="stage" aria-label="The IMU's orientation in 3D" role="img">
+    <div class="stage" aria-label="The board's orientation in 3D" role="img" title="Drag to look around it, scroll to zoom, double-click to reset the view. {sourceNote}">
       {#if !plain}
-        <CaseModel orientation={() => current()?.q ?? [1, 0, 0, 0]} {ring} onfail={() => (plain = true)} />
+        <CaseModel orientation={() => caseOrientation(current()?.q ?? [1, 0, 0, 0])} {ring} onfail={() => (plain = true)} />
       {:else}
       <div class="scene">
         <div class="floor"></div>
@@ -111,6 +117,7 @@
         <div><dt>|ω|</dt><dd>{fmt(rateDps)} °/s</dd></div>
       </dl>
       <Button size="sm" variant="ghost" icon="refresh" action={async () => current()?.zero()}>Zero heading</Button>
+      {#if !plain}<p class="note">Drag to look around it, scroll to zoom, double-click to reset the view.</p>{/if}
       <p class="note">
         {#if source === "board"}
           Fused on the board{confidence !== null ? ` (IMU confidence ${Math.round(confidence * 100)}%)` : ""};
@@ -134,6 +141,33 @@
   @media (max-width: 560px) {
     .imu {
       grid-template-columns: 1fr;
+    }
+  }
+  /* In a narrow card: the model across, the readout in a row under it. */
+  @container (max-width: 520px) {
+    .imu,
+    .imu.fill {
+      grid-template-columns: 1fr;
+      grid-template-rows: minmax(0, 1fr) auto;
+    }
+    .readout {
+      min-width: 0;
+    }
+    dl {
+      grid-template-columns: repeat(5, auto);
+      grid-auto-flow: column;
+      grid-template-rows: auto auto;
+      justify-content: space-between;
+    }
+    dd {
+      text-align: left;
+    }
+    /* Said on hover instead (the stage's title): room for the rest. */
+    .note {
+      display: none;
+    }
+    .imu.fill .stage.stage {
+      min-height: 160px;
     }
   }
   .imu.fill {

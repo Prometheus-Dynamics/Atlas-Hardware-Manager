@@ -9,7 +9,8 @@
   import type { IconName } from "#lib/ui/icons.ts";
   import Disclosure from "./Disclosure.svelte";
 
-  let { status, readAt }: { status: DeviceStatus; readAt: number | undefined } = $props();
+  /** thermal: false where the temperature is charted already (the Overview). */
+  let { status, readAt, thermal = true }: { status: DeviceStatus; readAt: number | undefined; thermal?: boolean } = $props();
 
   type Look = "ok" | "warn" | "err" | "plain";
   interface Tile {
@@ -68,7 +69,7 @@
     const temp = status.temperatures.find((t) => t.id.includes("cpu")) ?? status.temperatures[0];
     const fan = status.fan;
     const fanText = fan?.rpm != null ? `fan ${fan.rpm} rpm` : fan?.pwm != null ? `fan ${Math.round((fan.pwm * 100) / 255)}%` : null;
-    if (temp || fanText) {
+    if (thermal && (temp || fanText)) {
       list.push({
         id: "thermal",
         icon: "temperature",
@@ -126,14 +127,14 @@
   const shortPath = (item: DriftItem) => (item.area === "boot" ? `boot/${item.path}` : item.path);
 </script>
 
-<section class="flex flex-col gap-2.5">
-  <h3 class="flex items-center justify-between text-[12px] font-medium uppercase tracking-[0.06em] text-fg-faint">
-    <span>Health</span>
-    {#if readAt}<span class="normal-case tracking-normal">{timeAgo(readAt, clock.now)}</span>{/if}
-  </h3>
-  <ul class="auto-grid" style="--min: 160px; --gap: 8px">
+<section class="panel" aria-label="Health">
+  <div class="panel-head">
+    <h2 class="panel-title">Health</h2>
+    {#if readAt}<span class="panel-note">read {timeAgo(readAt, clock.now)}</span>{/if}
+  </div>
+  <ul class="auto-grid" style="--min: 118px; --gap: 8px">
     {#each tiles as tile (tile.id)}
-      <li class="glass min-w-0 px-3.5 py-2.5" title={tile.title}>
+      <li class="cell min-w-0 px-3 py-2" title={tile.title}>
         <p class="flex items-center gap-1.5 text-[12px] text-fg-faint">
           <Icon name={tile.icon} size={13} />{tile.label}
         </p>
@@ -164,6 +165,10 @@
 </section>
 
 <style>
+  .cell {
+    border-radius: var(--r-sm);
+    background: var(--glass-strong);
+  }
   .ok {
     color: var(--ok-fg);
   }

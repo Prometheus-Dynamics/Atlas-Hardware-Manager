@@ -61,8 +61,8 @@
 </script>
 
 {#if shown.length > 0}
-  <section class="flex flex-col gap-2.5">
-    <h3 class="text-[12px] font-medium uppercase tracking-[0.06em] text-fg-faint">Controls</h3>
+  <section class="panel" aria-label="Controls">
+    <div class="panel-head"><h2 class="panel-title">Controls</h2></div>
     <div class="flex flex-wrap gap-1.5">
       {#each shown as { action, icon, prompt } (action.id)}
         {#if action.destructive}

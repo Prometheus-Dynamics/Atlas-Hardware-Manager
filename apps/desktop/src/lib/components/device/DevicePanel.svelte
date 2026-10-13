@@ -9,7 +9,9 @@
   import SegmentedControl from "#lib/components/common/SegmentedControl.svelte";
   import { handoffs } from "#lib/components/software/handoff.svelte.ts";
   import { updateMethods } from "#lib/components/software/software.ts";
-  import { deviceName, timeAgo } from "#lib/format.ts";
+  import { deviceName, primaryVersion, timeAgo } from "#lib/format.ts";
+  import { uptimeText } from "#lib/metrics.ts";
+  import { live } from "#lib/stores/live.svelte.ts";
   import { deviceIcon, isRecovery, modelName, storageName, usbRoute } from "#lib/present.ts";
   import { clock } from "#lib/stores/clock.svelte.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
@@ -91,7 +93,14 @@
   const subline = $derived.by(() => {
     if (!record) return "";
     const storage = storageName(record.identity.attributes?.storage);
-    return [modelName(record), recovery ? "USB boot" : record.presence === "online" ? "Running" : "Offline", storage]
+    const up = live.metric(keyString(record.key), "uptime");
+    return [
+      modelName(record),
+      recovery ? "USB boot" : record.presence === "online" ? (up ? `up ${uptimeText(up.value)}` : "Running") : "Offline",
+      primaryVersion(record.identity),
+      storage,
+      record.key.serial,
+    ]
       .filter(Boolean)
       .join(" · ");
   });
@@ -118,7 +127,6 @@
         {#if route?.state === "active" && record.presence === "online"}
           <Pill tone="success" icon="router" label="USB → robot network" title="A computer on its USB port reaches {route.subnets.join(', ')} through it" />
         {/if}
-        <Pill tone="neutral" mono label={record.key.serial} title={key} />
       </div>
       <div class="ml-auto flex flex-wrap items-center gap-1.5">
         <QuickActions {record} />
@@ -139,8 +147,9 @@
             if (ui.monitored.has(key)) toasts.success(`${record ? deviceName(record) : "It"} is on the Monitor page.`);
             else toasts.info(`${record ? deviceName(record) : "It"} is off the Monitor page.`);
           }}
-          title={ui.monitored.has(key) ? "Take it off the Monitor page" : "Add it to the Monitor page"}
-        >{ui.monitored.has(key) ? "On Monitor" : "Monitor"}</Button>
+          title={ui.monitored.has(key) ? "On the Monitor page: click to take it off" : "Add it to the Monitor page"}
+          label={ui.monitored.has(key) ? "On the Monitor page" : "Add to the Monitor page"}
+        />
       </div>
     </div>
     {#if tabs.length > 1}
@@ -157,7 +166,7 @@
     {#key current}
       <div class="tab-body" in:softFade>
         {#if current === "overview"}
-          <OverviewTab {record} />
+          <OverviewTab {record} onhistory={() => (tab = "history")} />
         {:else if current === "software" && active && !handoff}
           <ActiveJob job={active.job} state={active.state} />
         {:else if current === "software"}
@@ -182,6 +191,8 @@
     display: flex;
     flex-direction: column;
     min-height: 100%;
+    /* Its padding inside that height, or a tab that fits overflows by it. */
+    box-sizing: border-box;
   }
   .tab-body {
     display: flex;

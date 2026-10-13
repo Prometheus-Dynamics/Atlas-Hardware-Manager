@@ -66,6 +66,34 @@ body {
     border: 1px solid var(--glass-border);
     border-radius: var(--r-card);
   }
+  /* A card with its title inside (v2): the device page's blocks. */
+  .panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+    padding: 12px 14px;
+    background: var(--glass);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--r-card);
+  }
+  .panel-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 24px;
+  }
+  .panel-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg);
+  }
+  .panel-note {
+    font-size: 11.5px;
+    color: var(--fg-muted);
+  }
   /* A floating glass layer: sheets, popovers, trays, toasts. */
   .glass-layer {
     background: var(--layer);
