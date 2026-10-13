@@ -10,6 +10,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 self=$(basename "$0")
 T=$(mktemp -d "${TMPDIR:-/tmp}/board-tests.XXXXXX")
 trap 'rm -rf "$T"' EXIT
+# TEST_SH may be a command with arguments, e.g. TEST_SH='busybox sh'.
 sh=${TEST_SH:-sh}
 
 tests=
@@ -17,7 +18,8 @@ for t in "$here"/*.sh; do
 	name=$(basename "$t" .sh)
 	[ "$name.sh" = "$self" ] && continue
 	tests="$tests $name"
-	( "$sh" "$t" > "$T/$name.log" 2>&1; echo $? > "$T/$name.rc" ) &
+	# shellcheck disable=SC2086
+	( $sh "$t" > "$T/$name.log" 2>&1; echo $? > "$T/$name.rc" ) &
 done
 wait
 
