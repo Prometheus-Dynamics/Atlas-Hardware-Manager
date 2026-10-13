@@ -141,7 +141,11 @@ commit; the commits are listed per area.
   power-level reset) and how its journal ended (`previous_journal`, its last
   3 lines), and board-power-log.service logs a `power` event with the
   INA238's bus voltage and current at the start of every shutdown, while
-  lemnosd still runs.
+  lemnosd still runs. Both carry the firmware's throttling flags
+  (`vcgencmd get_throttled`; the power event adds undervoltage=yes|no and
+  says UNDERVOLTAGE in its message), so a bench supply that sags (a Raze on a
+  PC's USB port: 4.2 V at shutdown, RAM lost on 15 of 20 restarts) reads as
+  that, not as a software fault.
   Why the boot before read as unclean: its `shutdown` event was appended but
   never reached the disk (a hole of NULs in events.jsonl). boot-record
   syncs the event log after writing it, and board-boot.service has

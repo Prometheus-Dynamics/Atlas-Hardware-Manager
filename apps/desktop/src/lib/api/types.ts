@@ -477,6 +477,8 @@ export interface BootInfo {
   pstore_saved?: boolean | null;
   /** The previous boot's last journal lines, " | " between them. */
   previous_journal?: string | null;
+  /** The firmware's throttling flags early in this boot ("0x50005"): bit 0 undervoltage now, 16 since start. */
+  throttled?: string | null;
 }
 
 export interface Temperature {

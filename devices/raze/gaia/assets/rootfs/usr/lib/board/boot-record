@@ -26,6 +26,9 @@
 # always leave its console; none means RAM was lost, a power-level reset).
 # previous_journal: the previous boot's last journal lines (3, " | "
 # between), to see where a boot that didn't shut down cleanly stopped.
+# throttled: the firmware's flags early in this boot ("0x50005"; null without
+# vcgencmd); the power event at shutdown start carries them again, with
+# undervoltage=yes|no.
 # The count is kept in /data/board/boot-count (/run/board without /data).
 # Test hooks: BOARD_BOOT_ID, BOARD_UNAME_R, UPDATE_CMDLINE_ROOT.
 set -u
@@ -33,6 +36,23 @@ set -u
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 # shellcheck source=lib.sh
 . "$BOARD_LIB_DIR/lib.sh"
+
+# The firmware's throttling flags (`vcgencmd get_throttled`): "0x50005", empty
+# without vcgencmd. Bit 0 is undervoltage now, bit 16 undervoltage since the
+# firmware started: a bench supply that sags shows here, not as a software
+# fault. BOARD_VCGENCMD (tests).
+throttled() {
+	_vc=${BOARD_VCGENCMD:-vcgencmd}
+	command -v "$_vc" >/dev/null 2>&1 || return 0
+	"$_vc" get_throttled 2>/dev/null | sed -n 's/^throttled=\(0x[0-9a-fA-F]*\)$/\1/p' | head -n 1
+}
+# "yes" when the flags say undervoltage now or since the firmware started.
+undervoltage() {
+	case "$1" in
+	0x*) [ $(($1 & 0x10001)) -ne 0 ] && echo yes || echo no ;;
+	*) echo unknown ;;
+	esac
+}
 
 case "${1:-}" in
 --shutdown)
@@ -60,11 +80,17 @@ case "${1:-}" in
 	stage=$1
 	# The readings as event data, name=value with the unit.
 	data=$(printf '%s\n' "$line" | tr ' ' '\n' | grep -E '^[a-z_]+=[-0-9.]' | head -n 8)
+	flags=$(throttled)
+	low=$(undervoltage "$flags")
+	note=''
+	[ "$low" != yes ] || note=' (UNDERVOLTAGE this boot)'
 	if [ -z "$data" ]; then
-		board_event power "board supply at $stage: no reading (lemnosd or its power device isn't there)" "stage=$stage"
+		board_event power "board supply at $stage: no reading (lemnosd or its power device isn't there)$note" "stage=$stage" \
+			"throttled=${flags:-unknown}" "undervoltage=$low"
 	else
 		# shellcheck disable=SC2086 # one argument per reading
-		board_event power "board supply at $stage: $(printf '%s' "$data" | tr '\n' ' ')" "stage=$stage" $data
+		board_event power "board supply at $stage: $(printf '%s' "$data" | tr '\n' ' ')$note" "stage=$stage" $data \
+			"throttled=${flags:-unknown}" "undervoltage=$low"
 	fi
 	sync=${BOARD_SYNC:-sync}
 	$sync "$(board_events_file)" 2>/dev/null || $sync
@@ -131,9 +157,10 @@ printf '%s\n' "$count" > "$count_file.tmp.$$" && mv -f "$count_file.tmp.$$" "$co
 
 slot=$(board_active_slot)
 kernel=${BOARD_UNAME_R:-$(uname -r)}
-printf '{"id":%s,"count":%s,"slot":%s,"kernel":%s,"previous_clean":%s,"previous_reboot":%s,"pstore_saved":%s,"previous_journal":%s,"at":%s}\n' \
+flags=$(throttled)
+printf '{"id":%s,"count":%s,"slot":%s,"kernel":%s,"previous_clean":%s,"previous_reboot":%s,"pstore_saved":%s,"previous_journal":%s,"throttled":%s,"at":%s}\n' \
 	"$(board_json_str "$id")" "$count" "$(board_json_str "$slot")" "$(board_json_str "$kernel")" \
-	"$clean" "$reboot" "$pstore_saved" "$journal" "$(date +%s)" > "$BOARD_RUN_DIR/boot.json.tmp.$$"
+	"$clean" "$reboot" "$pstore_saved" "$journal" "$(board_json_str "$flags")" "$(date +%s)" > "$BOARD_RUN_DIR/boot.json.tmp.$$"
 chmod 0644 "$BOARD_RUN_DIR/boot.json.tmp.$$"
 mv -f "$BOARD_RUN_DIR/boot.json.tmp.$$" "$BOARD_RUN_DIR/boot.json"
 

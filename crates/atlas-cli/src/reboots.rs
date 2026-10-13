@@ -160,6 +160,7 @@ pub(crate) async fn reboot_test(atlas: &Atlas, options: RebootOptions) -> Comman
                 "CLEAN",
                 "RESTARTED WITH",
                 "PSTORE",
+                "UNDERVOLT",
                 "SUPPLY AT SHUTDOWN",
                 "LAST JOURNAL LINE",
             ],
@@ -207,6 +208,7 @@ fn table_row(row: &Row) -> Vec<String> {
             "—".into(),
             "—".into(),
             "—".into(),
+            "—".into(),
             row.error.clone().unwrap_or_default(),
         ];
     };
@@ -219,14 +221,32 @@ fn table_row(row: &Row) -> Vec<String> {
             _ => "?".into(),
         },
         yes_no(boot.previous_clean),
-        boot.previous_reboot
-            .clone()
-            .map(|r| if r.is_empty() { "restart".into() } else { r })
-            .unwrap_or_else(|| "?".into()),
+        match (&boot.previous_reboot, boot.pstore_saved) {
+            (Some(r), _) if r.is_empty() => "restart".into(),
+            (Some(r), _) => r.clone(),
+            (None, Some(false)) => "(RAM lost)".into(),
+            (None, _) => "?".into(),
+        },
         yes_no(boot.pstore_saved),
+        undervolt(boot.throttled.as_deref(), row.power.as_deref()),
         row.power.clone().unwrap_or_else(|| "—".into()),
         last_line(boot.previous_journal.as_deref()),
     ]
+}
+
+/// Undervoltage as the firmware flagged it: at the previous boot's shutdown
+/// (its power event says so) or early in this one (boot.json's flags).
+fn undervolt(throttled: Option<&str>, power: Option<&str>) -> String {
+    let early = throttled
+        .and_then(|flags| u32::from_str_radix(flags.trim_start_matches("0x"), 16).ok())
+        .map(|bits| bits & 0x1_0001 != 0);
+    let at_shutdown = power.map(|text| text.contains("UNDERVOLTAGE"));
+    match (at_shutdown, early) {
+        (Some(true), _) => "YES at shutdown".into(),
+        (_, Some(true)) => "YES at boot".into(),
+        (_, Some(false)) => "no".into(),
+        _ => "?".into(),
+    }
 }
 
 fn summary(row: &Row) -> String {

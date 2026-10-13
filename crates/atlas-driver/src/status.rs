@@ -170,6 +170,10 @@ pub struct BootInfo {
     /// The previous boot's last journal lines (" | " between them).
     #[serde(default)]
     pub previous_journal: Option<String>,
+    /// The firmware's throttling flags early in this boot (`0x50005`): bit
+    /// 0 undervoltage now, bit 16 undervoltage since the firmware started.
+    #[serde(default)]
+    pub throttled: Option<String>,
 }
 
 impl BootInfo {
@@ -184,6 +188,7 @@ impl BootInfo {
         self.previous_reboot = self.previous_reboot.take().or(other.previous_reboot);
         self.pstore_saved = self.pstore_saved.or(other.pstore_saved);
         self.previous_journal = self.previous_journal.take().or(other.previous_journal);
+        self.throttled = self.throttled.take().or(other.throttled);
     }
 }
 

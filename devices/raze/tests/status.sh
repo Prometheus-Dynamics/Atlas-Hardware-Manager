@@ -212,6 +212,11 @@ printf '#!/bin/sh\necho "power 123us available bus_voltage=11.96V current=1.48A 
 chmod +x "$T/bin/lemnos-ctl-fake"
 BOARD_LEMNOS_CTL="$T/bin/lemnos-ctl-fake" BOARD_SYNC=true sh "$lib/boot-record" --power "shutdown start"
 events | tail -n 1 | is "power shutdown start 11.96V 1.48A" 'd["kind"] + " " + d["data"]["stage"] + " " + d["data"]["bus_voltage"] + " " + d["data"]["current"]' "power event"
+printf '#!/bin/sh\necho throttled=0x50005\n' > "$T/bin/vcgencmd-fake"
+chmod +x "$T/bin/vcgencmd-fake"
+BOARD_VCGENCMD="$T/bin/vcgencmd-fake" BOARD_LEMNOS_CTL="$T/bin/lemnos-ctl-fake" BOARD_SYNC=true sh "$lib/boot-record" --power "shutdown start"
+events | tail -n 1 | is "0x50005 yes" 'd["data"]["throttled"] + " " + d["data"]["undervoltage"]' "the firmware's undervoltage flags"
+events | tail -n 1 | grep -q "UNDERVOLTAGE this boot" || fail "the message says so"
 BOARD_LEMNOS_CTL=false BOARD_SYNC=true sh "$lib/boot-record" --power later
 events | tail -n 1 | grep -q "no reading" || fail "without lemnosd it says so"
 cp "$T/boot3.json" "$T/run/boot.json"
