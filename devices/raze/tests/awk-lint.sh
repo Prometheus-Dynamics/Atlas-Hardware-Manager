@@ -1,5 +1,6 @@
 #!/bin/sh
-# Off-device test: the package's awk programs use nothing BusyBox awk lacks
+# Off-device test: every shell script in the package parses, and its awk
+# programs use nothing BusyBox awk lacks
 # without FEATURE_AWK_LIBM (the image's build): no ^ or ** and no math
 # functions. GNU awk on a test host runs them fine, so the tests that run
 # the scripts don't catch it; r24's USB-link check died on `2 ^ n`.
@@ -40,4 +41,11 @@ if problems:
     sys.exit(1)
 print("%d awk programs checked" % seen)
 PY
+# Every shell script parses: a stray quote (an apostrophe in a comment inside
+# a single-quoted awk program, say) breaks everything that sources it.
+find "$here/../gaia/assets" -type f | while IFS= read -r f; do
+	case "$(head -c 32 "$f" 2>/dev/null | tr -d "\000")" in
+	'#!/bin/sh'* | '# shellcheck shell=sh'*) sh -n "$f" || { echo "FAIL: $f does not parse" >&2; exit 1; } ;;
+	esac
+done
 echo "awk-lint ok"

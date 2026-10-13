@@ -493,7 +493,7 @@ board_on_usb_link() {
 		BEGIN {
 			split(cidr, c, "/"); bits = c[2] + 0
 			if (bits < 1 || bits > 32) exit 1
-			# No ^: the image's BusyBox awk has no math support.
+			# No ^ here: BusyBox awk on the image has no math support.
 			size = 1
 			for (i = bits; i < 32; i++) size *= 2
 			same = int(num(ip) / size) == int(num(c[1]) / size)
