@@ -155,9 +155,18 @@ boot_json() {
 		*) printf '%s' "$_line" ;;
 		esac
 	else
-		printf '{"id":%s,"count":null,"slot":%s,"kernel":%s,"previous_clean":null,"at":null,"uptime_s":%s}\n' \
-			"$(board_json_str "$(board_boot_id)")" "$(board_json_str "$(board_active_slot)")" \
-			"$(board_json_str "${BOARD_UNAME_R:-$(uname -r)}")" "$up"
+		# No boot record (boot-record hasn't run): what can be read here.
+		_bid=${BOARD_BOOT_ID:-${UPDATE_BOOT_ID:-}}
+		[ -n "$_bid" ] || ! board_read /proc/sys/kernel/random/boot_id || _bid=$BOARD_LINE
+		board_json_var "$_bid"
+		_bid=$BOARD_JSON
+		board_json_var "$(board_active_slot)"
+		_slot=$BOARD_JSON
+		_kernel=${BOARD_UNAME_R:-}
+		[ -n "$_kernel" ] || ! board_read /proc/sys/kernel/osrelease || _kernel=$BOARD_LINE
+		board_json_var "$_kernel"
+		printf '{"id":%s,"count":null,"slot":%s,"kernel":%s,"previous_clean":null,"at":null,"uptime_s":%s}' \
+			"$_bid" "$_slot" "$BOARD_JSON" "$up"
 	fi
 }
 
@@ -303,16 +312,14 @@ temperatures_json() {
 	printf ']'
 }
 
-# The fan from sysfs without forks: the cooling device and its hwmon.
+# The fan from sysfs without forks: the cooling device and its hwmon. Fails
+# (printing nothing) without the cooling device.
 fan_json_sysfs() {
 	cdev=''
 	for _d in "$BOARD_SYS_DIR"/class/thermal/cooling_device*; do
 		board_read "$_d/type" && [ "$BOARD_LINE" = "${HW_FAN_COOLING_TYPE:-pwm-fan}" ] && cdev=$_d && break
 	done
-	if [ -z "$cdev" ]; then
-		printf 'null'
-		return
-	fi
+	[ -n "$cdev" ] || return 1
 	state=null max=null pwm=null rpm=null
 	board_read "$cdev/cur_state" && state=$BOARD_LINE
 	board_read "$cdev/max_state" && max=$BOARD_LINE
@@ -329,12 +336,11 @@ fan_json_sysfs() {
 	printf '{"state":%s,"max_state":%s,"pwm":%s,"rpm":%s}' "$state" "$max" "$pwm" "$rpm"
 }
 
+# sysfs whoever asks (root too: the same kernel state, without forks), else
+# the hardware backend's view.
 fan_json() {
-	if [ "${BOARD_HW_BACKEND:-}" = sysfs ]; then
-		fan_json_sysfs
-		return
-	fi
-	if ! hw_fan_cdev >/dev/null 2>&1; then
+	fan_json_sysfs && return
+	if [ "${BOARD_HW_BACKEND:-}" = sysfs ] || ! hw_fan_cdev >/dev/null 2>&1; then
 		printf 'null'
 		return
 	fi

@@ -487,19 +487,34 @@ request 'GET /status HTTP/1.0' | body | is "False 3 True" \
 request 'GET /status HTTP/1.0' | body | is True 'd["clock"]["ntp_synchronized"]' "timesyncd's flag"
 # forks <request line> [REMOTE_ADDR]: the processes one exchange starts, in
 # a PID namespace of its own (whose last PID counts them), less those of the
-# same pipeline into a script that only reads.
+# same pipeline into a script that only reads. Under the board's shell when
+# this computer has it (BusyBox ash), else dash, else sh: each forks for
+# every $(...), even of a shell function.
 echo 'while read -r _; do :; done' > "$T/drain"
+fork_sh=sh
+if command -v busybox > /dev/null 2>&1; then
+	fork_sh='busybox sh'
+elif command -v dash > /dev/null 2>&1; then
+	fork_sh=dash
+fi
 forks() {
-	unshare -Urpf --mount-proc sh -c '
+	unshare -Urpf --mount-proc $fork_sh -c '
+		S=$5
 		count() {
 			a=$(cat /proc/sys/kernel/ns_last_pid)
-			printf "%s\r\nHost: b\r\n\r\n" "$1" | REMOTE_ADDR=$3 sh "$2" > /dev/null
+			printf "%s\r\nHost: b\r\n\r\n" "$1" | REMOTE_ADDR=$3 $S "$2" > /dev/null
 			b=$(cat /proc/sys/kernel/ns_last_pid)
 			echo $((b - a - 1))
 		}
-		echo "$(($(count "$1" "$2/identity-http" "$3") - $(count "$1" "$4" "$3")))"' _ "$1" "$lib" "${2:-}" "$T/drain"
+		echo "$(($(count "$1" "$2/identity-http" "$3") - $(count "$1" "$4" "$3")))"' _ "$1" "$lib" "${2:-}" "$T/drain" "$fork_sh"
 }
 if unshare -Urpf --mount-proc true 2>/dev/null; then
+	echo "  (counted under $fork_sh)"
+	mv "$T/run/boot.json" "$T/boot.json"
+	n=$(forks 'GET /status HTTP/1.0')
+	echo "  $n forks: GET /status HTTP/1.0, before the boot record"
+	[ "$n" -le 6 ] || fail "GET /status without boot.json: $n forks, at most 6"
+	mv "$T/boot.json" "$T/run/boot.json"
 	for case in 'GET /.well-known/pd-device HTTP/1.0|4|' "GET /.well-known/pd-device HTTP/1.0|4|$usb_ip" \
 		'GET /status HTTP/1.0|4|' 'GET /nope HTTP/1.0|1|10.0.0.9'; do
 		IFS='|' read -r line most from <<EOF

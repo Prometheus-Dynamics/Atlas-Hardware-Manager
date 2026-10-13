@@ -107,8 +107,11 @@ commit; the commits are listed per area.
   instead of timedatectl (D-Bus), and the USB-link check reads the gadget
   network from /run/board/gadget-cidr with shell arithmetic. Identity and
   /status: 3 forks each (were 133 and 115); a 404: 1. Content-Length is the
-  body's byte length (LC_ALL=C on board-http@). tests/status.sh counts the
-  forks per request in a PID namespace, so it can't creep back.
+  body's byte length (LC_ALL=C on board-http@). The fan is read from sysfs
+  whoever asks (root's hardware backend only without the cooling device),
+  and a status before the boot record forks twice more, not a dozen.
+  tests/status.sh counts the forks per request in a PID namespace, under
+  BusyBox or dash when the computer has one, so it can't creep back.
 
 - **USB onto the robot network (usb-route):** a computer on the board's USB
   port reaches the board's other networks (the robot's, through Ethernet)
