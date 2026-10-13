@@ -175,9 +175,19 @@ if [ "${USB_GADGET_ACM:-1}" = 1 ]; then
 	mkdir -p "$G/functions/acm.usb0" "$G/functions/acm.usb1"
 	ln -s "$G/functions/acm.usb0" "$C1/acm.usb0"
 	ln -s "$G/functions/acm.usb1" "$C2/acm.usb1"
+	# Atlas's console (ttyGS1) in the config Linux and macOS choose too. A
+	# controller without the endpoints for a second ACM there refuses the
+	# bind; then the gadget binds as before, ttyGS1 on RNDIS only.
+	ln -s "$G/functions/acm.usb1" "$C1/acm.usb1"
 fi
 
-echo "$udc" > "$G/UDC"
+if ! echo "$udc" > "$G/UDC" 2>/dev/null; then
+	if [ -L "$C1/acm.usb1" ]; then
+		board_log "binding with a second console in config 1 failed; binding without it"
+		rm -f "$C1/acm.usb1"
+	fi
+	echo "$udc" > "$G/UDC"
+fi
 # The ACM ports exist now: start their consoles if the OS wants them.
 if [ "${USB_GADGET_ACM:-1}" = 1 ] && command -v systemctl >/dev/null 2>&1; then
 	systemctl --no-block start serial-getty@ttyGS0.service serial-getty@ttyGS1.service 2>/dev/null || true

@@ -155,6 +155,10 @@ case "$path" in
 	'' | *[!a-z0-9-]*) action='' ;;
 	esac
 	if [ -z "$action" ] || ! board_action_offered "$action"; then
+		# A USB-link action asked for from elsewhere: say who, for the journal.
+		case " ${BOARD_USB_ACTIONS:-} " in
+		*" $action "*) echo "identity-http: $action refused for ${REMOTE_ADDR:-no address} (not on the USB link ${BOARD_GADGET_CIDR:-?}, or security on)" >&2 ;;
+		esac
 		respond '404 Not Found' 'text/plain' "no such action
 "
 	elif [ "$method" != POST ]; then

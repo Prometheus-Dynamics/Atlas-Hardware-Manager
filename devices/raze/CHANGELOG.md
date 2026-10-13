@@ -139,6 +139,14 @@ commit; the commits are listed per area.
   identity only for that caller), and ttyGS1 is Atlas's console: a raw,
   non-interactive root shell that restarts whenever it ends. ttyGS0 stays
   the login console for people. With it on, neither exists.
+  First board test (r24) fixes: the USB-link check's awk ended in
+  `exit (a == b) ? 0 : 1`, which BusyBox awk may read as `exit (a == b)`
+  (so a match failed): now an explicit if; a refused USB-link action logs the
+  caller's address. ttyGS1 was in the RNDIS configuration only, so Linux and
+  macOS hosts saw one console: it is linked into the ECM configuration too
+  when the controller has the endpoints (the bind is retried without it
+  otherwise). Its shell no longer restarts every second while nothing holds
+  the port: it loops in place.
 - **Support bundle on the board:** `/usr/lib/board/support-bundle` packs
   the journals of the last 3 boots (each capped), pstore (kept and live),
   dmesg, versions, identity, status, update, self-test, hardware, the event

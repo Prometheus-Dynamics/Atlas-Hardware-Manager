@@ -494,7 +494,10 @@ board_on_usb_link() {
 			split(cidr, c, "/"); bits = c[2] + 0
 			if (bits < 1 || bits > 32) exit 1
 			size = 2 ^ (32 - bits)
-			exit (int(num(ip) / size) == int(num(c[1]) / size)) ? 0 : 1
+			# Not `exit (a == b) ? 0 : 1`: BusyBox awk reads that as exit (a == b).
+			same = int(num(ip) / size) == int(num(c[1]) / size)
+			if (same) exit 0
+			exit 1
 		}'
 }
 
