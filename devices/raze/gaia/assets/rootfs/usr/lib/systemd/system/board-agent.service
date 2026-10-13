@@ -1,5 +1,5 @@
 [Unit]
-Description=Board agent: updates, restart and locate through Orion
+Description=Board agent: updates, restart, locate and live readings through Orion
 Documentation=file:/usr/lib/board/update https://github.com/Prometheus-Dynamics/Atlas-Hardware-Manager/blob/main/docs/ota.md
 # Ordered after orion-node when the OS has it, but never bound to it: the
 # agent waits for the node's sockets and reconnects when the node restarts,
@@ -14,7 +14,7 @@ Type=simple
 # Root: the writer it runs writes the eMMC's slots and p1. orion-node admits
 # root through 50-board-agent.conf (ORION_NODE_LOCAL_AUTH_ALLOW=root).
 ExecStart=/usr/bin/board-agent
-# BOARD_AGENT_* settings (sockets, writer, reboot command).
+# BOARD_AGENT_* settings (sockets, writer, reboot command, live sampling).
 EnvironmentFile=-/etc/board/agent.env
 EnvironmentFile=-/data/board/agent.env
 Restart=on-failure

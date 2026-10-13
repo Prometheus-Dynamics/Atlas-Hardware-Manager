@@ -39,6 +39,17 @@ pub struct Config {
     pub republish: Duration,
     /// Delay between attempts to reach orion-node.
     pub retry: Duration,
+    /// Publishes the live streams (`BOARD_AGENT_LIVE`, `0` turns it off).
+    pub live: bool,
+    /// When each series is sampled (`BOARD_AGENT_LIVE_SAMPLING`:
+    /// `always`, `cheap` or `subscribed`; `BOARD_AGENT_LIVE_SAMPLING_SERIES`:
+    /// `pattern=mode,...`).
+    pub live_sampling: crate::live::sampling::Rules,
+    /// lemnosd's socket (`LEMNOSD_SOCKET`).
+    pub lemnosd_socket: PathBuf,
+    /// /proc and /sys (`BOARD_PROC_DIR`, `BOARD_SYS_DIR`; tests).
+    pub proc_dir: PathBuf,
+    pub sys_dir: PathBuf,
 }
 
 impl Default for Config {
@@ -60,6 +71,11 @@ impl Default for Config {
             // the keys are back within this.
             republish: Duration::from_secs(5),
             retry: Duration::from_secs(1),
+            live: true,
+            live_sampling: crate::live::sampling::Rules::default(),
+            lemnosd_socket: "/run/lemnos/lemnosd.sock".into(),
+            proc_dir: "/proc".into(),
+            sys_dir: "/sys".into(),
         }
     }
 }
@@ -106,6 +122,34 @@ impl Config {
         if let Some(value) = get("BOARD_AGENT_SET_CLOCK") {
             config.set_clock_command = words(&value);
         }
+        if let Some(value) = get("BOARD_AGENT_LIVE") {
+            config.live = !matches!(value.trim(), "0" | "off" | "no" | "false");
+        }
+        if let Some(value) = get("BOARD_AGENT_LIVE_SAMPLING") {
+            match crate::live::sampling::Mode::parse(&value) {
+                Some(mode) => config.live_sampling.board = mode,
+                None => crate::log(&format!(
+                    "BOARD_AGENT_LIVE_SAMPLING: `{value}` is not always, cheap or subscribed; using cheap"
+                )),
+            }
+        }
+        if let Some(value) = get("BOARD_AGENT_LIVE_SAMPLING_SERIES") {
+            match crate::live::sampling::Rules::parse_series(&value) {
+                Ok(series) => config.live_sampling.series = series,
+                Err(error) => crate::log(&format!(
+                    "BOARD_AGENT_LIVE_SAMPLING_SERIES: {error}; ignored"
+                )),
+            }
+        }
+        if let Some(value) = get("LEMNOSD_SOCKET") {
+            config.lemnosd_socket = value.into();
+        }
+        if let Some(value) = get("BOARD_PROC_DIR") {
+            config.proc_dir = value.into();
+        }
+        if let Some(value) = get("BOARD_SYS_DIR") {
+            config.sys_dir = value.into();
+        }
         config
     }
 }
@@ -120,11 +164,19 @@ mod tests {
             "BOARD_RUN_DIR" => Some("/tmp/run".into()),
             "BOARD_AGENT_REBOOT" => Some("/bin/echo  reboot".into()),
             "BOARD_AGENT_WRITER" => Some(" ".into()),
+            "BOARD_AGENT_LIVE_SAMPLING" => Some("subscribed".into()),
+            "BOARD_AGENT_LIVE_SAMPLING_SERIES" => Some("cpu=always".into()),
             _ => None,
         });
         assert_eq!(config.run_dir, PathBuf::from("/tmp/run"));
         assert_eq!(config.reboot_command, ["/bin/echo", "reboot"]);
         assert_eq!(config.writer, PathBuf::from("/usr/lib/board/update"));
+        assert_eq!(
+            config.live_sampling.board,
+            crate::live::sampling::Mode::Subscribed
+        );
+        assert!(config.live_sampling.always("board.live", "cpu", true));
+        assert!(!config.live_sampling.always("board.live", "memory", true));
         assert_eq!(
             config.control_socket,
             PathBuf::from("/run/orion/control.sock")

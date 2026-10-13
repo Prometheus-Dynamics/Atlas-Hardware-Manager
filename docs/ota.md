@@ -185,6 +185,38 @@ the interrupted stage as an error. Settings: `BOARD_AGENT_*` in
 (`devices/raze/gaia/board-agent.toml`) as a static aarch64 musl binary from
 the OS build's `atlas` source; on an OS without Orion it stays idle.
 
+board-agent also publishes the board's **live readings as Orion streams**
+(Orion `docs/streams.md`; Orion f8d767a, control protocol 5) on a second
+connection (client `board-agent.live`), read in Rust with no process started:
+
+- `board.live`, from /proc and /sys at 10 Hz: `cpu` and `cpu.core<n>` (%),
+  `memory` (% used), `memory.available` (MiB), `<zone>.temp` per thermal
+  zone (°C), `fan.rpm` and `fan.pwm` (%) from the first hwmon with a fan,
+  and `uptime` (s, 1 Hz). Five minutes at full rate.
+- `board.hardware`, lemnosd's devices at device rate, a series per channel
+  (`<device>.<channel>`, lemnosd's units; IMUs at 100 Hz keep 30 s at full
+  rate and 5 minutes at 10 Hz). A light streams `offset`, `clockwise`,
+  `brightness` and `led.<n>` (`0xWWRRGGBB`). Declared once lemnosd answers
+  (looked for every 10 s).
+
+orion-node keeps the history and pushes it to subscribers: a backfill, then
+a batch every 50 ms. When a series is sampled is set by
+`BOARD_AGENT_LIVE_SAMPLING`:
+
+| Mode | Sampled |
+|---|---|
+| `always` | everything, always: a page opened later gets the history |
+| `cheap` (default) | /proc and /sys always; lemnosd's devices only while someone watches them |
+| `subscribed` | only while someone watches; with nobody watching the agent sleeps |
+
+`BOARD_AGENT_LIVE_SAMPLING_SERIES` overrides per series or stream, first match
+wins: `pattern=mode,...`, where a pattern is a name or a prefix ending in `*`,
+matched against the series name and `<stream>/<series>` (for example
+`imu.*=always,board.live/cpu.core*=subscribed`). `BOARD_AGENT_LIVE=0` turns
+the streams off. On a desktop (debug build, 30 series) the node, the agent
+and one subscriber of everything cost about 1% of a core together; with
+`subscribed` and nobody watching, nothing.
+
 States, reported in `status` (`state`, `slot_active`, `slot_staged`,
 `version_active`, `version_staged`, `progress` 0..1000, `error`), the same
 values as Orion's `update_action::STATE_*`:

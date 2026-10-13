@@ -8,12 +8,16 @@
 //! node. Without orion-node it waits and retries; nothing on the board
 //! depends on it.
 //!
+//! It also publishes the board's live readings as Orion streams ([`live`]),
+//! on a connection of their own.
+//!
 //! Linux only: on other systems the crate is empty.
 #![cfg(target_os = "linux")]
 
 mod agent;
 mod clock;
 mod config;
+pub mod live;
 mod published;
 mod stage;
 mod writer;

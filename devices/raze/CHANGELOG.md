@@ -707,6 +707,16 @@ commit; the commits are listed per area.
 
 ### Orion device agent
 
+- **Live readings as Orion streams** (Orion f8d767a, control protocol 5;
+  board-agent and Atlas move together): board-agent publishes `board.live`
+  (CPU and cores, memory, thermal zones, fan, uptime from /proc and /sys at
+  10 Hz, no process started) and `board.hardware` (lemnosd's devices at
+  device rate, with board-stream's reader) through `StreamPublisher`.
+  orion-node keeps the history and pushes a backfill, then 50 ms batches, to
+  subscribers. `BOARD_AGENT_LIVE_SAMPLING=always|cheap|subscribed` (default
+  `cheap`: lemnosd only while watched), `BOARD_AGENT_LIVE_SAMPLING_SERIES`
+  per series or stream, `BOARD_AGENT_LIVE=0` to turn it off. See "live
+  readings" in `docs/ota.md`. Not yet measured on a board.
 - **board-agent read `null` as an error (fixed):** the writer prints an empty
   value (nothing staged, no error) as `null`, which board-agent couldn't
   parse. It then ran `update status` every second (taking the writer's

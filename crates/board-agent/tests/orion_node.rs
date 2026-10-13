@@ -80,6 +80,7 @@ impl Board {
             poll: Duration::from_millis(50),
             republish: Duration::from_millis(500),
             retry: Duration::from_millis(20),
+            ..Config::default()
         };
         let agent = tokio::spawn(async move {
             let _ = board_agent::run(config).await;

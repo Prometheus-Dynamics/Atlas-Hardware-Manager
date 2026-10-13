@@ -32,6 +32,9 @@ fn main() {
         }
     };
     runtime.block_on(async {
+        if config.live {
+            tokio::spawn(board_agent::live::run(std::sync::Arc::new(config.clone())));
+        }
         loop {
             // Returns only when the node refused the claim or the
             // connection failed past the retry policy; start over.
