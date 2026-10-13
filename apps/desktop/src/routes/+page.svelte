@@ -8,9 +8,9 @@
   import Skeleton from "#lib/components/common/Skeleton.svelte";
   import PageHeader from "#lib/components/common/PageHeader.svelte";
   import Page from "#lib/components/layout/Page.svelte";
-  import RobotMenu from "#lib/components/inventory/RobotMenu.svelte";
-  import DiscoveryStatus from "#lib/components/shell/DiscoveryStatus.svelte";
   import ActivityFeed from "#lib/components/overview/ActivityFeed.svelte";
+  import DeviceTable from "#lib/components/overview/DeviceTable.svelte";
+  import FleetChart from "#lib/components/overview/FleetChart.svelte";
   import Readiness from "#lib/components/overview/Readiness.svelte";
   import SummaryTiles from "#lib/components/overview/SummaryTiles.svelte";
   import TopologyMap from "#lib/components/overview/TopologyMap.svelte";
@@ -49,9 +49,8 @@
 <Page>
   {#snippet header()}
     <PageHeader>
-      {#snippet heading()}<RobotMenu />{/snippet}
+      {#snippet heading()}<h1 class="text-[19px] font-semibold">Overview</h1>{/snippet}
       {#snippet actions()}
-        <DiscoveryStatus />
         <Button icon="layout-grid" onclick={() => goto("/devices")}>Device list</Button>
       {/snippet}
     </PageHeader>
@@ -78,27 +77,47 @@
       <SummaryTiles {records} />
 
       <div class="split">
-        <GlassCard fill scroll={false} pad={false} large title="How it's connected" subtitle="Click a device to open it" icon="sitemap">
-          <TopologyMap {records} />
-        </GlassCard>
-        <GlassCard fill large title="Recent activity" icon="history" pad={false}>
-          <div class="flex flex-col px-3 pb-3 pt-2">
-            <ActivityFeed entries={feed} limit={60} empty="Nothing has happened here yet." />
+        <div class="col">
+          <FleetChart {records} metric="temp" title="Temperature" unit="°C" />
+          <DeviceTable {records} />
+        </div>
+        <div class="col">
+          <GlassCard fill scroll={false} pad={false} title="How it's connected" subtitle="Click a device to open it" icon="sitemap">
+            <TopologyMap {records} />
+          </GlassCard>
+          <div class="activity">
+            <GlassCard fill title="Recent activity" icon="history" pad={false}>
+              <div class="flex flex-col px-3 pb-3 pt-2">
+                <ActivityFeed entries={feed} limit={60} empty="Nothing has happened here yet." />
+              </div>
+            </GlassCard>
           </div>
-        </GlassCard>
+        </div>
       </div>
     {/if}
   {/if}
 </Page>
 
 <style>
-  /* Topology and activity share whatever height is left. */
+  /* Left: the temperature chart over the device table; right: the map over
+     the activity. They share whatever height is left. */
   .split {
     flex: 1 1 0;
     min-height: 0;
     display: grid;
     gap: 12px;
     grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr);
+  }
+  .col {
+    min-height: 0;
+    display: grid;
+    gap: 12px;
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .activity {
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
   @container page (min-width: 1600px) {
     .split {
@@ -109,7 +128,7 @@
   @container page (max-width: 720px) {
     .split {
       grid-template-columns: minmax(0, 1fr);
-      grid-template-rows: minmax(0, 1.4fr) minmax(0, 1fr);
+      grid-template-rows: auto auto;
     }
   }
 </style>

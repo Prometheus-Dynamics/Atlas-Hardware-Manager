@@ -10,7 +10,6 @@
   import InventoryEmpty from "#lib/components/inventory/InventoryEmpty.svelte";
   import InventoryToolbar from "#lib/components/inventory/InventoryToolbar.svelte";
   import NeedsYou from "#lib/components/inventory/NeedsYou.svelte";
-  import RobotMenu from "#lib/components/inventory/RobotMenu.svelte";
   import SearchPill from "#lib/components/inventory/SearchPill.svelte";
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { insights } from "#lib/stores/insights.svelte.ts";
@@ -48,7 +47,7 @@
 <Page>
   {#snippet header()}
     <PageHeader subtitle={subline}>
-      {#snippet heading()}<RobotMenu />{/snippet}
+      {#snippet heading()}<h1 class="text-[19px] font-semibold">Devices</h1>{/snippet}
       {#snippet actions()}
         <SearchPill />
         {#if selecting}

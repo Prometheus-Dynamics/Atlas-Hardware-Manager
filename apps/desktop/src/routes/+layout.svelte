@@ -2,7 +2,7 @@
   import "../app.css";
   import HelpPopover from "#lib/components/shell/HelpPopover.svelte";
   import JobsTray from "#lib/components/shell/JobsTray.svelte";
-  import NavRail from "#lib/components/shell/NavRail.svelte";
+  import Sidebar from "#lib/components/shell/Sidebar.svelte";
   import SidePanel from "#lib/components/shell/SidePanel.svelte";
   import Toasts from "#lib/components/shell/Toasts.svelte";
   import { handleShortcut } from "#lib/components/shell/shortcuts.ts";
@@ -19,7 +19,7 @@
 <svelte:window onkeydown={handleShortcut} />
 
 <div class="app flex h-full">
-  <NavRail />
+  <Sidebar />
   <div class="relative flex min-w-0 flex-1 flex-col">
     <div class="relative min-h-0 flex-1">
       <!-- Pages fill this box (Page.svelte); it only scrolls when the window

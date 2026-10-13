@@ -31,9 +31,8 @@
     height: 100%;
     min-height: 440px;
     min-width: 0;
-    background: var(--glass);
-    border: 1px solid var(--glass-border);
-    border-radius: var(--r-panel);
+    /* On the page itself, as the other pages are: no frame around it. */
+    margin: -4px -4px 0;
     overflow: hidden;
   }
 </style>

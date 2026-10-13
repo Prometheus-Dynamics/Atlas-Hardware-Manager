@@ -18,6 +18,7 @@
   import Disclosure from "./Disclosure.svelte";
   import FactGrid from "./FactGrid.svelte";
   import HealthCard from "./HealthCard.svelte";
+  import DeviceCharts from "./DeviceCharts.svelte";
   import LiveStats from "./LiveStats.svelte";
   import NowCard from "./NowCard.svelte";
   import SelfTestCard from "./SelfTestCard.svelte";
@@ -160,6 +161,7 @@
 
   {#if telemetry}
     <LiveStats {record} />
+    <DeviceCharts {record} />
   {/if}
 
   {#if !wide}<SelfTestCard {record} />{/if}
@@ -258,10 +260,12 @@
 </div>
 
 <style>
+  /* Columns as tall as the tallest, so the charts fill the first. */
   .overview {
     display: grid;
     gap: 16px;
-    align-items: start;
+    align-items: stretch;
+    flex: 1 1 auto;
   }
   .col,
   .side {

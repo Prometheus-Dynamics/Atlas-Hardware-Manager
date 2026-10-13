@@ -8,6 +8,7 @@
   import PageHeader from "#lib/components/common/PageHeader.svelte";
   import JobDetail from "#lib/components/jobs/JobDetail.svelte";
   import JobList from "#lib/components/jobs/JobList.svelte";
+  import VersionsBoard from "#lib/components/jobs/VersionsBoard.svelte";
   import Page from "#lib/components/layout/Page.svelte";
   import Region from "#lib/components/layout/Region.svelte";
   import { insights } from "#lib/stores/insights.svelte.ts";
@@ -31,12 +32,12 @@
   }
 </script>
 
-<svelte:head><title>Jobs · Atlas</title></svelte:head>
+<svelte:head><title>Updates and flashes · Atlas</title></svelte:head>
 
 <Page>
   {#snippet header()}
     <PageHeader
-      title="Jobs"
+      title="Updates and flashes"
       subtitle={jobs.running.length > 0 ? `${jobs.running.length} running now` : "Every update and flash from this session, newest first."}
     />
   {/snippet}
@@ -45,7 +46,8 @@
     <!-- No jobs yet: what would start one on the left, the fleet's earlier
          updates and flashes filling the right (the same split as with jobs). -->
     <div class="split">
-      <section class="glass flex flex-col gap-3 self-start px-4 py-4" style="border-radius: var(--r-panel)" aria-label="No jobs yet">
+      <div class="flex min-h-0 flex-col gap-3">
+      <section class="glass flex flex-col gap-3 px-4 py-4" style="border-radius: var(--r-panel)" aria-label="No jobs yet">
         <h2 class="text-[13px] font-semibold text-fg">No jobs this session</h2>
         <p class="text-[12.5px] text-fg-muted">
           A job is one update or flash: the image is downloaded, written, and checked once the device comes back on the new
@@ -68,11 +70,13 @@
           {/if}
         </div>
       </section>
-      <GlassCard large title="Earlier updates and flashes" icon="history" pad={false} class="self-start">
+      <GlassCard fill title="Earlier updates and flashes" icon="history" pad={false}>
         <div class="flex flex-col px-3 pb-3 pt-2">
           <ActivityFeed entries={earlier} limit={80} empty="No device has been updated or flashed yet." />
         </div>
       </GlassCard>
+      </div>
+      <VersionsBoard />
     </div>
   {:else}
     <!-- The list on the left scrolls; the chosen job fills the right. -->
@@ -97,7 +101,7 @@
     flex: 1 1 0;
     min-height: 0;
     display: grid;
-    grid-template-columns: clamp(16rem, 24%, 24rem) minmax(0, 1fr);
+    grid-template-columns: clamp(18rem, 28%, 26rem) minmax(0, 1fr);
     gap: 12px;
   }
   @container page (max-width: 620px) {

@@ -1,6 +1,5 @@
 <script lang="ts">
   import Button from "#lib/components/common/Button.svelte";
-  import DiscoveryStatus from "#lib/components/shell/DiscoveryStatus.svelte";
   import SegmentedControl from "#lib/components/common/SegmentedControl.svelte";
   import Toggle from "#lib/components/common/Toggle.svelte";
   import { devices } from "#lib/stores/devices.svelte.ts";
@@ -45,7 +44,6 @@
       <Button variant="ghost" size="sm" onclick={() => ui.selection.clear()}>Clear</Button>
       <span class="text-fg-faint">·</span>
     {/if}
-    <DiscoveryStatus />
   </div>
 </div>
 
