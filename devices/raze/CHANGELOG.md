@@ -720,8 +720,18 @@ commit; the commits are listed per area.
 - **Atlas follows the stream** on the board's own orion-node (port 9200,
   key pinned on first use) when "Live readings from Orion" is on (the
   default): charts get five minutes of history at once, then a row every
-  500 ms; polling stays the fallback. Needs `ORION_NODE_PEER_ADDR` and
-  `ORION_NODE_OPERATOR_OPEN_READ=status,streams` on the image.
+  500 ms; polling stays the fallback.
+- **orion-node's access follows the security switch** (`orion-env` writes
+  `/run/board/orion-node.env`, read by the `50-board-agent.conf` drop-in
+  after the OS's files). Off (the default): listening on `0.0.0.0:9200`
+  (the OS's own `ORION_NODE_PEER_ADDR` is kept), peer auth optional, status
+  and streams open to read, and operators on the USB gadget's network
+  enrolled on their hello for `reboot`, `usb-boot` and `locate`. On: peer
+  auth required, nothing open, no auto-enrollment. `board-security.path`
+  reruns it when `security.env` changes and restarts orion-node if the
+  access changed. board-agent defaults to `BOARD_AGENT_LIVE_SAMPLING=cheap`
+  (unit `Environment=`, overridden by `agent.env`). Tested in
+  `tests/orion-env.sh`.
 - **board-agent read `null` as an error (fixed):** the writer prints an empty
   value (nothing staged, no error) as `null`, which board-agent couldn't
   parse. It then ran `update status` every second (taking the writer's

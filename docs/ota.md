@@ -220,9 +220,15 @@ and one subscriber of everything cost about 1% of a core together; with
 **Atlas** follows `board.live` on the board's own orion-node
 (`orion+tcp://<the address Atlas reached it at>:9200`, the node's key pinned
 on first use under `orion-live-pins/` in Atlas's data directory): streams
-stay on the node that keeps them. It needs the board's node listening
-(`ORION_NODE_PEER_ADDR`) and, for an operator nobody enrolled, open to read
-(`ORION_NODE_OPERATOR_OPEN_READ=status,streams`). A device's charts then get
+stay on the node that keeps them. The Raze package sets orion-node's access
+from the security switch (`orion-env`, `/run/board/orion-node.env`):
+
+| Switch | orion-node |
+|---|---|
+| off (default) | `ORION_NODE_PEER_ADDR=0.0.0.0:9200` (unless the OS sets its own), `ORION_NODE_PEER_AUTH=optional`, `ORION_NODE_OPERATOR_OPEN_READ=status,streams`, `ORION_NODE_OPERATOR_AUTO_ENROLL=<USB gadget network>=reboot,usb-boot,locate` |
+| on | `ORION_NODE_PEER_AUTH=required`, nothing open, no auto-enrollment |
+
+Changing `security.env` restarts orion-node (`board-security.path`). A device's charts then get
 the last five minutes at once and a row every 500 ms (averaged), with a
 poll every 5 s for what the stream doesn't carry. Boards without it, and
 everything with "Live readings from Orion" off in Settings, are polled as

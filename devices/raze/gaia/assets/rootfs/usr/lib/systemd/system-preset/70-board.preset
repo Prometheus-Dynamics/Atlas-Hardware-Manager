@@ -25,6 +25,7 @@ enable board-update-link.service
 enable board-agent.service
 enable lemnos-orion.service
 enable board-orion-env.service
+enable board-security.path
 enable board-boot.service
 enable board-machine-id.service
 enable board-data-setup.service

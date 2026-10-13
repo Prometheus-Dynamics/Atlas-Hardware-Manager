@@ -525,6 +525,18 @@ dest = "/usr/lib/systemd/system/board-orion-env.service"
 origin = "static-asset"
 
 [[stage.files]]
+id = "raze-systemd-system-board-security-path"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-security.path"
+dest = "/usr/lib/systemd/system/board-security.path"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-security-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-security.service"
+dest = "/usr/lib/systemd/system/board-security.service"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-board-orion-env"
 src = "@self/assets/rootfs/usr/lib/board/orion-env"
 dest = "/usr/lib/board/orion-env"
@@ -707,6 +719,8 @@ stage_files = [
   "raze-systemd-system-orion-node-board-agent-dropin",
   "raze-systemd-system-lemnos-orion-board-dropin",
   "raze-systemd-system-board-orion-env-service",
+  "raze-systemd-system-board-security-path",
+  "raze-systemd-system-board-security-service",
   "raze-board-orion-env",
   "raze-board-event",
   "raze-board-boot-record",

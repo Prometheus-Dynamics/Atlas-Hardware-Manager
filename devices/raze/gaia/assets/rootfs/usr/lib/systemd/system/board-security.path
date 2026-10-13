@@ -1,0 +1,12 @@
+[Unit]
+Description=Apply the security switch to orion-node when security.env changes
+Documentation=file:/usr/lib/board/security.env file:/usr/lib/board/orion-env
+After=board-orion-env.service
+
+[Path]
+PathChanged=/etc/board/security.env
+PathChanged=/data/board/security.env
+Unit=board-security.service
+
+[Install]
+WantedBy=paths.target

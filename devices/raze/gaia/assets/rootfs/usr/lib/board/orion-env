@@ -1,12 +1,25 @@
 #!/bin/sh
-# Orion's node id for this board, in one place (board-orion-env.service, at
-# boot, before orion-node and lemnos-orion): writes /run/board/orion.env as
-#   ORION_NODE_ID=<id>
-# which both units read (drop-ins), so lemnosd's devices are registered on
-# the node they run on. The id is the OS's own ORION_NODE_ID from
-# /etc/default/orion-node.env when it sets one (orion-node reads that file
-# too, so the two agree), else raze-<serial8>: the name Atlas shows.
-# Settings: ORION_NODE_ENV (the OS's file).
+# Orion's settings for this board, in one place (board-orion-env.service, at
+# boot, before orion-node and lemnos-orion; board-security.path again when
+# the security switch changes).
+#
+# /run/board/orion.env: ORION_NODE_ID=<id>, read by both units (drop-ins),
+# so lemnosd's devices are registered on the node they run on. The id is the
+# OS's own ORION_NODE_ID from /etc/default/orion-node.env when it sets one
+# (orion-node reads that file too, so the two agree), else raze-<serial8>:
+# the name Atlas shows.
+#
+# /run/board/orion-node.env: orion-node's access, from the security switch
+# (security.env), read by orion-node only:
+#   off (FRC's default)  listen on 0.0.0.0:9200, peer auth optional, status
+#                        and live streams open to read without enrollment,
+#                        and operators on the USB cable's network enrolled on
+#                        their hello for reboot, usb-boot and locate
+#   on                   peer auth required, nothing open, no auto-enroll
+# The OS's own ORION_NODE_PEER_ADDR wins; the rest follow the switch.
+#
+# --restart (board-security.service): restarts orion-node when its access
+# changed. Settings: ORION_NODE_ENV (the OS's file), ORION_NODE_PORT.
 set -u
 
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
@@ -14,13 +27,44 @@ BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 . "$BOARD_LIB_DIR/lib.sh"
 
 ORION_NODE_ENV=${ORION_NODE_ENV:-/etc/default/orion-node.env}
+ORION_NODE_PORT=${ORION_NODE_PORT:-9200}
 
-# The last ORION_NODE_ID= the OS's env file assigns, without quotes.
-os_id=''
-if [ -r "$ORION_NODE_ENV" ]; then
-	os_id=$(sed -n 's/^[[:space:]]*\(export[[:space:]]\{1,\}\)\{0,1\}ORION_NODE_ID=//p' "$ORION_NODE_ENV" |
-		tail -n 1 | sed "s/^[\"']//; s/[\"'][[:space:]]*\$//; s/[[:space:]]*\$//")
+# The last <name>= the OS's env file assigns, without quotes.
+os_value() {
+	[ -r "$ORION_NODE_ENV" ] || return 0
+	sed -n "s/^[[:space:]]*\\(export[[:space:]]\\{1,\\}\\)\\{0,1\\}$1=//p" "$ORION_NODE_ENV" |
+		tail -n 1 | sed "s/^[\"']//; s/[\"'][[:space:]]*\$//; s/[[:space:]]*\$//"
+}
+
+mkdir -p "$BOARD_RUN_DIR"
+
+# orion-node's access, from the switch.
+access=$BOARD_RUN_DIR/orion-node.env
+before=$(cat "$access" 2>/dev/null || true)
+{
+	echo '# From /usr/lib/board/orion-env and the security switch (security.env).'
+	[ -n "$(os_value ORION_NODE_PEER_ADDR)" ] || echo "ORION_NODE_PEER_ADDR=0.0.0.0:$ORION_NODE_PORT"
+	if board_security_on; then
+		echo 'ORION_NODE_PEER_AUTH=required'
+		echo 'ORION_NODE_OPERATOR_OPEN_READ='
+		echo 'ORION_NODE_OPERATOR_AUTO_ENROLL='
+	else
+		echo 'ORION_NODE_PEER_AUTH=optional'
+		echo 'ORION_NODE_OPERATOR_OPEN_READ=status,streams'
+		board_load_env usb-gadget.env
+		if board_gadget_address 2>/dev/null && [ -n "${BOARD_GADGET_CIDR:-}" ]; then
+			echo "ORION_NODE_OPERATOR_AUTO_ENROLL=$BOARD_GADGET_CIDR=reboot,usb-boot,locate"
+		else
+			echo 'ORION_NODE_OPERATOR_AUTO_ENROLL='
+		fi
+	fi
+} > "$access.$$" && mv -f "$access.$$" "$access"
+if [ "${1:-}" = --restart ] && [ "$(cat "$access")" != "$before" ]; then
+	board_log "security switch changed orion-node's access; restarting it"
+	systemctl try-restart orion-node.service || board_log "orion-node didn't restart"
 fi
+
+os_id=$(os_value ORION_NODE_ID)
 
 if [ -n "$os_id" ]; then
 	id=$os_id
@@ -33,6 +77,5 @@ else
 	id=raze-$serial8
 fi
 
-mkdir -p "$BOARD_RUN_DIR"
 tmp=$BOARD_RUN_DIR/.orion.env.$$
 printf 'ORION_NODE_ID=%s\n' "$id" > "$tmp" && mv -f "$tmp" "$BOARD_RUN_DIR/orion.env"

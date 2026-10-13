@@ -14,6 +14,9 @@ Type=simple
 # Root: the writer it runs writes the eMMC's slots and p1. orion-node admits
 # root through 50-board-agent.conf (ORION_NODE_LOCAL_AUTH_ALLOW=root).
 ExecStart=/usr/bin/board-agent
+# Live readings: /proc and /sys always, lemnosd's devices while watched
+# (always|cheap|subscribed; the env files below override it).
+Environment=BOARD_AGENT_LIVE_SAMPLING=cheap
 # BOARD_AGENT_* settings (sockets, writer, reboot command, live sampling).
 EnvironmentFile=-/etc/board/agent.env
 EnvironmentFile=-/data/board/agent.env

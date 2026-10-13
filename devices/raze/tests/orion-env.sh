@@ -1,6 +1,7 @@
 #!/bin/sh
 # Off-device test of orion-env: the board's Orion node id, from the serial
-# or the OS's own orion-node.env. Run: sh devices/raze/tests/orion-env.sh
+# or the OS's own orion-node.env, and orion-node's access from the security
+# switch. Run: sh devices/raze/tests/orion-env.sh
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -38,5 +39,38 @@ env_is 'ORION_NODE_ID=raze-a317bcbe'
 rm -f "$T/dt/serial-number" "$T/run/orion.env"
 run
 [ ! -e "$T/run/orion.env" ] || fail "wrote an id without a serial"
+
+# orion-node's access, switch off (the default): listening, open to read,
+# the USB cable's network enrolled for the USB actions.
+printf '10000000a317bcbe\000' > "$T/dt/serial-number"
+: > "$T/orion-node.env"
+access() { grep -v '^#' "$T/run/orion-node.env"; }
+run
+access | grep -qx 'ORION_NODE_PEER_ADDR=0.0.0.0:9200' || fail "no listener: $(access)"
+access | grep -qx 'ORION_NODE_PEER_AUTH=optional' || fail "auth: $(access)"
+access | grep -qx 'ORION_NODE_OPERATOR_OPEN_READ=status,streams' || fail "open read: $(access)"
+access | grep -Eqx 'ORION_NODE_OPERATOR_AUTO_ENROLL=[0-9.]+/[0-9]+=reboot,usb-boot,locate' ||
+	fail "auto-enroll: $(access)"
+
+# The OS's own listener address is kept.
+printf 'ORION_NODE_PEER_ADDR=10.0.0.2:9300\n' > "$T/orion-node.env"
+run
+! access | grep -q PEER_ADDR || fail "overrode the OS's address: $(access)"
+: > "$T/orion-node.env"
+
+# Switch on: auth required, nothing open, nobody enrolled by network.
+mkdir -p "$T/data" "$T/bin"
+echo BOARD_SECURITY=1 > "$T/data/security.env"
+printf '#!/bin/sh\necho "$*" >> %s/systemctl.calls\n' "$T" > "$T/bin/systemctl"
+chmod +x "$T/bin/systemctl"
+PATH=$T/bin:$PATH sh "$lib/orion-env" --restart 2> "$T/log" || fail "orion-env --restart: $(cat "$T/log")"
+access | grep -qx 'ORION_NODE_PEER_AUTH=required' || fail "auth on: $(access)"
+access | grep -qx 'ORION_NODE_OPERATOR_OPEN_READ=' || fail "open read on: $(access)"
+access | grep -qx 'ORION_NODE_OPERATOR_AUTO_ENROLL=' || fail "auto-enroll on: $(access)"
+[ "$(cat "$T/systemctl.calls")" = 'try-restart orion-node.service' ] || fail "no restart on a change"
+
+# Nothing changed: no restart.
+PATH=$T/bin:$PATH sh "$lib/orion-env" --restart 2> "$T/log" || fail "orion-env --restart: $(cat "$T/log")"
+[ "$(wc -l < "$T/systemctl.calls")" -eq 1 ] || fail "restarted without a change"
 
 echo "orion-env: ok"

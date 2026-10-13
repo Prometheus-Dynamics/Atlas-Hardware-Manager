@@ -1,0 +1,9 @@
+[Unit]
+Description=Apply the security switch to orion-node (/run/board/orion-node.env)
+Documentation=file:/usr/lib/board/security.env file:/usr/lib/board/orion-env
+After=board-orion-env.service
+
+[Service]
+Type=oneshot
+# Rewrites orion-node's access and restarts it when that changed.
+ExecStart=/usr/lib/board/orion-env --restart
