@@ -26,6 +26,8 @@ use serde::Deserialize;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::process::Command;
 
+use atlas_driver::{TrialStop, trial_stopped};
+
 use crate::console::{Console, ConsoleError, SharedOnLine};
 
 /// The update method a board lists when it has the A/B layout and writer.
@@ -196,7 +198,10 @@ impl SshUpdate {
         on_line: Option<SharedOnLine>,
     ) -> Option<Result<Vec<u8>, DriverError>> {
         let console = self.console()?;
-        match console.run(&as_atlas(script), CONSOLE_TIMEOUT, on_line).await {
+        match console
+            .run(&as_atlas(script), CONSOLE_TIMEOUT, on_line)
+            .await
+        {
             Ok(out) => Some(Ok(out)),
             Err(ConsoleError::Failed(error)) => Some(Err(error)),
             Err(ConsoleError::NotThere(_)) => None,
@@ -491,7 +496,7 @@ impl UpdateCapability for SshUpdate {
                 artifact.size_bytes / (1024 * 1024) + 16
             )));
         }
-        let boot_before = self.boot_id().await?;
+        let mut boot_before = self.boot_id().await?;
         progress.log(format!("running {}", status.version_active));
 
         progress.step_started(UpdateStep::Transfer);
@@ -551,60 +556,78 @@ impl UpdateCapability for SshUpdate {
         if let Err(error @ DriverError::Other(_)) = self.run(&format!("{WRITER} apply")).await {
             return Err(error);
         }
-        let deadline = tokio::time::Instant::now() + REBOOT_TIMEOUT;
-        loop {
-            tokio::time::sleep(POLL).await;
-            if let Ok(boot) = self.boot_id().await
-                && !boot.is_empty()
-                && boot != boot_before
-            {
-                break;
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Ok(UpdateOutcome::NeedsRecovery {
-                    reason: "the board didn't come back after restarting into the update".into(),
-                });
-            }
-        }
-
-        progress.step_started(UpdateStep::Confirm);
-        let deadline = tokio::time::Instant::now() + CONFIRM_TIMEOUT;
-        loop {
-            // A failed health check restarts the board; keep polling through it.
-            if let Ok(status) = self.status().await {
-                match status.state.as_str() {
-                    "confirmed" => {
-                        return Ok(if status.version_active == staged.version_staged {
-                            UpdateOutcome::Verified {
-                                version: status.version_active,
-                            }
-                        } else {
-                            UpdateOutcome::RolledBack {
-                                reason: format!(
-                                    "the board runs {} instead of {}",
-                                    status.version_active, staged.version_staged
-                                ),
-                            }
-                        });
-                    }
-                    "rolled-back" => {
-                        return Ok(UpdateOutcome::RolledBack {
-                            reason: if status.error.is_empty() {
-                                "the new version didn't confirm itself".into()
-                            } else {
-                                status.error
-                            },
-                        });
-                    }
-                    _ => {}
+        // Once per restart into the trial: the board restarts again by itself
+        // when the firmware ignored the first (see trial_stopped).
+        'restart: loop {
+            let deadline = tokio::time::Instant::now() + REBOOT_TIMEOUT;
+            let boot_after = loop {
+                tokio::time::sleep(POLL).await;
+                if let Ok(boot) = self.boot_id().await
+                    && !boot.is_empty()
+                    && boot != boot_before
+                {
+                    break boot;
                 }
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Ok(UpdateOutcome::RolledBack {
+                if tokio::time::Instant::now() >= deadline {
+                    return Ok(UpdateOutcome::NeedsRecovery {
+                        reason: "the board didn't come back after restarting into the update"
+                            .into(),
+                    });
+                }
+            };
+
+            progress.step_started(UpdateStep::Confirm);
+            let deadline = tokio::time::Instant::now() + CONFIRM_TIMEOUT;
+            loop {
+                // A failed health check restarts the board; keep polling through it.
+                if let Ok(status) = self.status().await {
+                    match trial_stopped(&status.state, &status.error) {
+                        Some(TrialStop::Retrying) => {
+                            progress.log(status.error.clone());
+                            boot_before = boot_after;
+                            continue 'restart;
+                        }
+                        Some(TrialStop::Stopped) => {
+                            return Ok(UpdateOutcome::RolledBack {
+                                reason: status.error,
+                            });
+                        }
+                        None => {}
+                    }
+                    match status.state.as_str() {
+                        "confirmed" => {
+                            return Ok(if status.version_active == staged.version_staged {
+                                UpdateOutcome::Verified {
+                                    version: status.version_active,
+                                }
+                            } else {
+                                UpdateOutcome::RolledBack {
+                                    reason: format!(
+                                        "the board runs {} instead of {}",
+                                        status.version_active, staged.version_staged
+                                    ),
+                                }
+                            });
+                        }
+                        "rolled-back" => {
+                            return Ok(UpdateOutcome::RolledBack {
+                                reason: if status.error.is_empty() {
+                                    "the new version didn't confirm itself".into()
+                                } else {
+                                    status.error
+                                },
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+                if tokio::time::Instant::now() >= deadline {
+                    return Ok(UpdateOutcome::RolledBack {
                     reason: "the board never confirmed the new version; it returns to the old one on its next restart".into(),
                 });
+                }
+                tokio::time::sleep(POLL).await;
             }
-            tokio::time::sleep(POLL).await;
         }
     }
 }

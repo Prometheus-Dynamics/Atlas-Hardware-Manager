@@ -45,9 +45,9 @@ mod linux {
             .filter(|name| name.starts_with("ttyACM"))
             .filter_map(|name| {
                 // device -> the USB interface; its parent is the USB device.
-                let interface =
-                    std::fs::canonicalize(class_dir.join(&name).join("device")).ok()?;
-                let usb_serial = std::fs::read_to_string(interface.parent()?.join("serial")).ok()?;
+                let interface = std::fs::canonicalize(class_dir.join(&name).join("device")).ok()?;
+                let usb_serial =
+                    std::fs::read_to_string(interface.parent()?.join("serial")).ok()?;
                 if !usb_serial.trim().eq_ignore_ascii_case(serial) {
                     return None;
                 }

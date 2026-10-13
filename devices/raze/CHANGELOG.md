@@ -123,6 +123,19 @@ commit; the commits are listed per area.
   and `USB_F_FS` (=m), the raze-flasher daemon's bulk interface
   (docs/flasher.md); one more module in the shared kernel, loaded by no
   one else.
+- **"Cut short" that wasn't: tryboot ignored, told apart and retried:** on
+  raze:0708c973 (r27) the previous boot's console (pstore) ended with
+  `reboot: Restarting system with command '0 tryboot'` after an orderly
+  shutdown, yet the firmware booted the old slot and the writer reported a
+  reset mid-shutdown. boot-record now reads that console (board-pstore runs
+  first): a kernel that finished restarting or powering off means a clean
+  shutdown whatever the event log says, and boot.json carries
+  `previous_reboot` (the restart's command). `update confirm` reports "the
+  firmware ignored the tryboot restart" when the kernel asked for it, and
+  restarts into the trial once more by itself (UPDATE_TRYBOOT_RETRIES, 1);
+  `apply` also sets the firmware's tryboot flag itself through vcmailbox
+  (SET_REBOOT_FLAGS) and reads it back, recorded in the update.apply event
+  (`tryboot_flag`), and clears it when the restart doesn't happen.
 - **mDNS through avahi:** avahi-daemon (with libavahi-client over D-Bus)
   answers for `<hostname>.local` and the `_pd-device._tcp` identity on every
   link but the USB bridge's members, and is what WPILib's NetworkTables on

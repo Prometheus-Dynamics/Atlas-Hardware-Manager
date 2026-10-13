@@ -220,6 +220,7 @@ with_autoboot() {
 load_state() {
 	STATE=idle SLOT_STAGED= VERSION_ACTIVE= VERSION_STAGED= ERROR= PROGRESS=0
 	PREVIOUS_SLOT= PREVIOUS_VERSION= BAD_BOOTS=0 SWITCH_BOOT= SWITCH_COUNT= SHA256_STAGED= STARTED_BY=
+	TRYBOOT_RETRIES=0
 	if [ -r "$AB/board-update.env" ]; then
 		# shellcheck disable=SC1091
 		. "$AB/board-update.env"
@@ -275,6 +276,7 @@ save_state() {
 		printf 'SWITCH_COUNT=%s\n' "${SWITCH_COUNT:-}"
 		printf 'SHA256_STAGED=%s\n' "${SHA256_STAGED:-}"
 		printf 'STARTED_BY=%s\n' "${STARTED_BY:-}"
+		printf 'TRYBOOT_RETRIES=%s\n' "${TRYBOOT_RETRIES:-0}"
 	} > "$AB/board-update.env.tmp" || write_failed board-update.env
 	mv "$AB/board-update.env.tmp" "$AB/board-update.env" || write_failed board-update.env
 	write_status_json
@@ -286,6 +288,48 @@ quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 # (boot-record's boot.json): "<count> <true|false|null>", empty when unknown.
 boot_record() {
 	sed -n 's/.*"count":\([0-9]*\),.*"previous_clean":\([a-z]*\),.*/\1 \2/p' "$BOARD_RUN_DIR/boot.json" 2>/dev/null | head -n 1
+}
+
+# The command the previous boot's kernel restarted with, from its console in
+# pstore (boot.json's previous_reboot): "0 tryboot", empty for a plain
+# restart or when unknown.
+previous_reboot() {
+	sed -n 's/.*"previous_reboot":"\([^"]*\)".*/\1/p' "$BOARD_RUN_DIR/boot.json" 2>/dev/null | head -n 1
+}
+
+# The firmware's reboot flags (mailbox tags GET 0x00030064, SET 0x00038064;
+# bit 0 is tryboot). The kernel's raspberrypi firmware driver sets them from
+# the restart command "tryboot" in a reboot notifier; on raze:0708c973 (r27)
+# the kernel logged "Restarting system with command '0 tryboot'" and the
+# firmware still booted the default slot. Setting the flag here first, and
+# reading it back, makes that case visible before the restart.
+#   VCMAILBOX (tests)
+tryboot_flag() {
+	_vc=${VCMAILBOX:-vcmailbox}
+	command -v "$_vc" >/dev/null 2>&1 || {
+		echo "no-vcmailbox"
+		return 0
+	}
+	_set=$("$_vc" 0x00038064 4 4 "$1" 2>/dev/null) || {
+		echo "set-failed"
+		return 0
+	}
+	set -- $_set
+	[ "${2:-}" = 0x80000000 ] || {
+		echo "set-refused"
+		return 0
+	}
+	_get=$("$_vc" 0x00030064 4 4 0 2>/dev/null) || {
+		echo "read-failed"
+		return 0
+	}
+	set -- $_get
+	# The reply: size, code, tag, value size, response size, value, end.
+	case "${6:-}" in
+	0x00000001 | 1) echo "set" ;;
+	0x00000000 | 0) echo "reads-0" ;;
+	*) echo "reads-${6:-?}" ;;
+	esac
 }
 
 # The kernel's id of this boot; empty when unknown.
@@ -795,7 +839,7 @@ _stage_url_begin() {
 		write_status_json
 		return 0
 	fi
-	STATE=staging SLOT_STAGED='' VERSION_STAGED='' ERROR='' PROGRESS=0 SWITCH_BOOT='' SHA256_STAGED=''
+	STATE=staging SLOT_STAGED='' VERSION_STAGED='' ERROR='' PROGRESS=0 SWITCH_BOOT='' SHA256_STAGED='' TRYBOOT_RETRIES=0
 	STARTED_BY=$(board_event_source)
 	save_state
 	board_event update.download "downloading an update" "url=$URL" "size=$SIZE" "sha256=$SHA256"
@@ -815,6 +859,8 @@ _apply_failed() {
 	load_state
 	write_autoboot "$(slot_boot "$(slot_of_root)")"
 	STATE=staged SWITCH_BOOT='' ERROR="the restart into the new version didn't happen; it is still staged"
+	# Set for this restart: not for whichever comes next.
+	tryboot_flag 0 >/dev/null
 	save_state
 	board_log "$ERROR"
 	board_event update.apply-failed "$ERROR"
@@ -837,11 +883,20 @@ _apply() {
 	# short (see _confirm).
 	SWITCH_COUNT=$(boot_record | cut -d' ' -f1)
 	save_state
-	board_event update.apply "restarting into $VERSION_STAGED on trial" "version=$VERSION_STAGED" "slot=$SLOT_STAGED"
+	flag=$(tryboot_flag 1)
+	[ "$flag" = set ] || [ "$flag" = no-vcmailbox ] || board_log "the firmware's tryboot flag: $flag (the kernel sets it again at the restart)"
+	board_event update.apply "restarting into $VERSION_STAGED on trial" "version=$VERSION_STAGED" "slot=$SLOT_STAGED" "tryboot_flag=$flag"
 }
 
 cmd_confirm() {
+	RETRY_APPLY=0
 	with_autoboot _confirm
+	# The firmware ignored the tryboot restart: once, the restart is tried
+	# again by itself (the state is staged again; apply takes it from there).
+	if [ "$RETRY_APPLY" = 1 ]; then
+		board_log "restarting into the staged slot again"
+		cmd_apply
+	fi
 }
 _confirm() {
 	load_state
@@ -863,6 +918,27 @@ _confirm() {
 	# The trial's outcome belongs to whoever started the update.
 	BOARD_EVENT_SOURCE=${BOARD_EVENT_SOURCE:-$STARTED_BY}
 	active=$(slot_of_root)
+	if [ "$active" != "$SLOT_STAGED" ] && [ -n "${SWITCH_COUNT:-}" ] &&
+		[ "$(boot_record | cut -d' ' -f1)" = "$((SWITCH_COUNT + 1))" ] &&
+		case "$(previous_reboot)" in *tryboot*) true ;; *) false ;; esac; then
+		# The very next boot, still on the old slot, although the kernel
+		# finished the shutdown and restarted with "tryboot" (its console in
+		# pstore says so): the firmware didn't take the request. Not a reset:
+		# the trial never started, and the restart is tried again, once.
+		STATE=staged SWITCH_COUNT=''
+		write_autoboot "$(slot_boot "$active")"
+		if [ "${TRYBOOT_RETRIES:-0}" -lt "${UPDATE_TRYBOOT_RETRIES:-1}" ]; then
+			TRYBOOT_RETRIES=$((${TRYBOOT_RETRIES:-0} + 1))
+			ERROR="the firmware ignored the tryboot restart into $VERSION_STAGED (the kernel asked for it); trying again"
+			RETRY_APPLY=1
+		else
+			ERROR="the firmware ignored the tryboot restart into $VERSION_STAGED again (the kernel asked for it both times); it is still staged"
+		fi
+		save_state
+		board_log "$ERROR"
+		board_event update.tryboot-ignored "$ERROR" "version=$VERSION_STAGED" "slot=$SLOT_STAGED" "retries=$TRYBOOT_RETRIES"
+		return 0
+	fi
 	if [ "$active" != "$SLOT_STAGED" ] && [ -n "${SWITCH_COUNT:-}" ] &&
 		[ "$(boot_record)" = "$((SWITCH_COUNT + 1)) false" ]; then
 		# The very next boot, still on the old slot, after a boot that didn't
@@ -908,7 +984,7 @@ _confirm() {
 	fi
 	write_autoboot "$(slot_boot "$active")"
 	PREVIOUS_SLOT=$(other "$active") PREVIOUS_VERSION=$VERSION_ACTIVE BAD_BOOTS=0
-	STATE=confirmed VERSION_ACTIVE=$VERSION_STAGED ERROR=''
+	STATE=confirmed VERSION_ACTIVE=$VERSION_STAGED ERROR='' TRYBOOT_RETRIES=0
 	save_state
 	board_log "confirmed $VERSION_ACTIVE in slot $active"
 	board_event update.confirmed "kept $VERSION_ACTIVE in slot $active" "version=$VERSION_ACTIVE" "slot=$active"

@@ -158,7 +158,10 @@ impl ActionsCapability for BoardDeviceActions {
             .as_ref()
             .is_some_and(|http| http.actions(device).iter().any(|a| a.id == action_id));
         if http_offers
-            && let (Some(http), false) = (&self.http, self.ssh.as_ref().is_some_and(SshUpdate::has_console))
+            && let (Some(http), false) = (
+                &self.http,
+                self.ssh.as_ref().is_some_and(SshUpdate::has_console),
+            )
         {
             return http.run_action(device, action_id).await;
         }
@@ -256,7 +259,11 @@ async fn restart_into_usb_boot(ssh: &SshUpdate) -> Result<(), DriverError> {
 /// runs `ssh-keys` now. Uses only what 1.0.7 boards have (lib.sh, findmnt,
 /// mount). The partition is left mounted as it was.
 fn add_key_script(key: &str) -> Result<String, DriverError> {
-    let key = key.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or("");
+    let key = key
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("");
     let looks_like_key = ["ssh-", "ecdsa-", "sk-ssh-", "sk-ecdsa-"]
         .iter()
         .any(|prefix| key.starts_with(prefix));

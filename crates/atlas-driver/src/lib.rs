@@ -15,6 +15,7 @@ mod observe;
 mod registry;
 mod selftest;
 mod status;
+mod trial;
 mod types;
 
 pub use augment::CapabilitySource;
@@ -42,6 +43,7 @@ pub use status::{
     FanState, HardwareControl, HardwareDevice, HardwareReading, HardwareSnapshot, PushSink,
     StatusCapability, StatusPush, Temperature, UpdateState,
 };
+pub use trial::{TrialStop, trial_stopped};
 pub use types::{
     Candidate, DeviceKey, DeviceMode, Family, Identity, Link, LinkId, LinkKind, Serial,
 };

@@ -17,8 +17,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use atlas_driver::attributes::normalize_board_serial;
 use atlas_driver::{
-    CancellationToken, Concurrency, DriverError, Identity, ProgressSink, ReleaseRef,
-    UpdateCapability, UpdateOutcome, UpdatePlan, UpdateStep,
+    CancellationToken, Concurrency, DriverError, Identity, ProgressSink, ReleaseRef, TrialStop,
+    UpdateCapability, UpdateOutcome, UpdatePlan, UpdateStep, trial_stopped,
 };
 use orion_control_plane::{StatusQuery, StatusSubject, TypedConfigValue, update_action};
 use orion_core::NodeId;
@@ -292,7 +292,7 @@ impl UpdateCapability for OrionUpdate {
                 "the board is already updating ({state}); wait for it to finish"
             )));
         }
-        let (_, boot_before) = self
+        let (_, mut boot_before) = self
             .boot_id()
             .await?
             .ok_or_else(|| DriverError::Unreachable("the board isn't reporting to Orion".into()))?;
@@ -341,63 +341,89 @@ impl UpdateCapability for OrionUpdate {
 
         // Past this point the board is restarting: no cancelling.
         progress.step_started(UpdateStep::Reboot);
-        let deadline = tokio::time::Instant::now() + REBOOT_TIMEOUT;
-        let (node, boot_after) = loop {
-            if let Ok(Some((node, boot))) = self.boot_id().await
-                && boot != boot_before
-            {
-                break (node, boot);
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Ok(UpdateOutcome::NeedsRecovery {
-                    reason: "the board didn't come back after restarting into the update".into(),
-                });
-            }
-            tokio::time::sleep(self.poll).await;
-        };
+        // Once per restart into the trial: the board restarts again by itself
+        // when the firmware ignored the first (atlas_driver::trial_stopped).
+        'restart: loop {
+            let deadline = tokio::time::Instant::now() + REBOOT_TIMEOUT;
+            let (node, boot_after) = loop {
+                if let Ok(Some((node, boot))) = self.boot_id().await
+                    && boot != boot_before
+                {
+                    break (node, boot);
+                }
+                if tokio::time::Instant::now() >= deadline {
+                    return Ok(UpdateOutcome::NeedsRecovery {
+                        reason: "the board didn't come back after restarting into the update"
+                            .into(),
+                    });
+                }
+                tokio::time::sleep(self.poll).await;
+            };
 
-        progress.step_started(UpdateStep::Confirm);
-        let deadline = tokio::time::Instant::now() + CONFIRM_TIMEOUT;
-        loop {
-            let status = self.update_status(&node).await.unwrap_or_default();
-            // Keys left from the boot before the restart don't count.
-            let this_boot = status
-                .get(update_action::KEY_BOOT_ID)
-                .is_none_or(|boot| boot.is_empty() || *boot == boot_after);
-            match status.get(update_action::KEY_STATE).map(String::as_str) {
-                Some(update_action::STATE_CONFIRMED) if this_boot => {
-                    let active = status
-                        .get(update_action::KEY_VERSION_ACTIVE)
-                        .cloned()
-                        .unwrap_or_default();
-                    return Ok(if active == release.version {
-                        UpdateOutcome::Verified { version: active }
-                    } else {
-                        UpdateOutcome::RolledBack {
-                            reason: format!(
-                                "the board runs {active} instead of {}",
-                                release.version
-                            ),
+            progress.step_started(UpdateStep::Confirm);
+            let deadline = tokio::time::Instant::now() + CONFIRM_TIMEOUT;
+            loop {
+                let status = self.update_status(&node).await.unwrap_or_default();
+                // Keys left from the boot before the restart don't count.
+                let this_boot = status
+                    .get(update_action::KEY_BOOT_ID)
+                    .is_none_or(|boot| boot.is_empty() || *boot == boot_after);
+                let state = status
+                    .get(update_action::KEY_STATE)
+                    .map(String::as_str)
+                    .unwrap_or("");
+                let error = status
+                    .get(update_action::KEY_ERROR)
+                    .cloned()
+                    .unwrap_or_default();
+                if this_boot {
+                    match trial_stopped(state, &error) {
+                        Some(TrialStop::Retrying) => {
+                            progress.log(error);
+                            boot_before = boot_after;
+                            continue 'restart;
                         }
-                    });
+                        Some(TrialStop::Stopped) => {
+                            return Ok(UpdateOutcome::RolledBack { reason: error });
+                        }
+                        None => {}
+                    }
                 }
-                Some(update_action::STATE_ROLLED_BACK) if this_boot => {
-                    return Ok(UpdateOutcome::RolledBack {
-                        reason: status
-                            .get(update_action::KEY_ERROR)
-                            .filter(|error| !error.is_empty())
+                match status.get(update_action::KEY_STATE).map(String::as_str) {
+                    Some(update_action::STATE_CONFIRMED) if this_boot => {
+                        let active = status
+                            .get(update_action::KEY_VERSION_ACTIVE)
                             .cloned()
-                            .unwrap_or_else(|| "the new version didn't confirm itself".into()),
-                    });
+                            .unwrap_or_default();
+                        return Ok(if active == release.version {
+                            UpdateOutcome::Verified { version: active }
+                        } else {
+                            UpdateOutcome::RolledBack {
+                                reason: format!(
+                                    "the board runs {active} instead of {}",
+                                    release.version
+                                ),
+                            }
+                        });
+                    }
+                    Some(update_action::STATE_ROLLED_BACK) if this_boot => {
+                        return Ok(UpdateOutcome::RolledBack {
+                            reason: status
+                                .get(update_action::KEY_ERROR)
+                                .filter(|error| !error.is_empty())
+                                .cloned()
+                                .unwrap_or_else(|| "the new version didn't confirm itself".into()),
+                        });
+                    }
+                    _ => {}
                 }
-                _ => {}
-            }
-            if tokio::time::Instant::now() >= deadline {
-                return Ok(UpdateOutcome::RolledBack {
+                if tokio::time::Instant::now() >= deadline {
+                    return Ok(UpdateOutcome::RolledBack {
                     reason: "the board never confirmed the new version; it returns to the old one on its next restart".into(),
                 });
+                }
+                tokio::time::sleep(self.poll).await;
             }
-            tokio::time::sleep(self.poll).await;
         }
     }
 }

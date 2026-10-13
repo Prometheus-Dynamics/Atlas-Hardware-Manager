@@ -185,7 +185,11 @@ pub(crate) fn exchange(
         let bytes = port
             .read_some(until)
             .map_err(|error| ConsoleError::NotThere(error.to_string()))?;
-        if reader.push(&bytes).iter().any(|line| line.contains(&probe_marker)) {
+        if reader
+            .push(&bytes)
+            .iter()
+            .any(|line| line.contains(&probe_marker))
+        {
             break;
         }
         if reader.at_login() {
@@ -215,7 +219,10 @@ pub(crate) fn exchange(
             .read_some(until)
             .map_err(|error| ConsoleError::Failed(gone(&error)))?;
         for line in reader.push(&bytes) {
-            if let Some(text) = line.find(&err_marker).map(|at| &line[at + err_marker.len()..]) {
+            if let Some(text) = line
+                .find(&err_marker)
+                .map(|at| &line[at + err_marker.len()..])
+            {
                 if let Some(on_line) = on_line {
                     on_line(text);
                 }
@@ -223,7 +230,10 @@ pub(crate) fn exchange(
                 stderr.push('\n');
             } else if line.ends_with(&out_marker) {
                 in_stdout = true;
-            } else if let Some(code) = line.find(&rc_marker).map(|at| &line[at + rc_marker.len()..]) {
+            } else if let Some(code) = line
+                .find(&rc_marker)
+                .map(|at| &line[at + rc_marker.len()..])
+            {
                 let stdout = base64_decode(&stdout_b64).ok_or_else(|| {
                     ConsoleError::Failed(DriverError::Other(
                         "the board's console garbled the output".into(),
@@ -513,7 +523,11 @@ mod tests {
     fn base64_round_trips() {
         for text in ["", "a", "ab", "abc", "abcd", "héllo\n\0\u{7f}"] {
             let encoded = base64_encode(text.as_bytes());
-            assert_eq!(base64_decode(&encoded).unwrap(), text.as_bytes(), "{text:?}");
+            assert_eq!(
+                base64_decode(&encoded).unwrap(),
+                text.as_bytes(),
+                "{text:?}"
+            );
         }
         assert_eq!(base64_encode(b"Man"), "TWFu");
         assert_eq!(base64_encode(b"Ma"), "TWE=");
@@ -551,15 +565,28 @@ mod tests {
         let script = "echo \"it's here\"; echo step >&2; i=0; while [ $i -lt 500 ]; do echo line $i; i=$((i+1)); done";
         let seen = Mutex::new(Vec::new());
         let on_line = |line: &str| seen.lock().unwrap().push(line.to_owned());
-        let out = exchange(&mut shell, script, "a1", Duration::from_secs(10), Some(&on_line)).unwrap();
+        let out = exchange(
+            &mut shell,
+            script,
+            "a1",
+            Duration::from_secs(10),
+            Some(&on_line),
+        )
+        .unwrap();
         let out = String::from_utf8(out).unwrap();
         assert!(out.starts_with("it's here\nline 0\n"));
         assert!(out.ends_with("line 499\n"));
         assert_eq!(*seen.lock().unwrap(), vec!["step".to_owned()]);
 
         // The same shell, the next command: a failure and its reason.
-        let error = exchange(&mut shell, "echo nope >&2; exit 3", "a2", Duration::from_secs(10), None)
-            .unwrap_err();
+        let error = exchange(
+            &mut shell,
+            "echo nope >&2; exit 3",
+            "a2",
+            Duration::from_secs(10),
+            None,
+        )
+        .unwrap_err();
         match error {
             ConsoleError::Failed(DriverError::Other(reason)) => assert_eq!(reason, "nope"),
             other => panic!("{other:?}"),
@@ -572,7 +599,14 @@ mod tests {
             return;
         }
         let mut shell = Shell::new();
-        let out = exchange(&mut shell, "printf '\\000\\377\\n\\001'", "b1", Duration::from_secs(10), None).unwrap();
+        let out = exchange(
+            &mut shell,
+            "printf '\\000\\377\\n\\001'",
+            "b1",
+            Duration::from_secs(10),
+            None,
+        )
+        .unwrap();
         assert_eq!(out, [0, 255, b'\n', 1]);
     }
 
@@ -581,7 +615,11 @@ mod tests {
         struct Silent(Vec<u8>);
         impl Port for Silent {
             fn read_some(&mut self, until: Instant) -> std::io::Result<Vec<u8>> {
-                std::thread::sleep(until.saturating_duration_since(Instant::now()).min(Duration::from_millis(50)));
+                std::thread::sleep(
+                    until
+                        .saturating_duration_since(Instant::now())
+                        .min(Duration::from_millis(50)),
+                );
                 Ok(Vec::new())
             }
             fn send(&mut self, bytes: &[u8]) -> std::io::Result<()> {
@@ -595,6 +633,9 @@ mod tests {
         assert!(matches!(error, ConsoleError::NotThere(_)), "{error:?}");
         assert!(started.elapsed() < PROBE + Duration::from_secs(1));
         let sent = String::from_utf8_lossy(&port.0);
-        assert!(!sent.contains("atlas-s1"), "only the probe was sent: {sent}");
+        assert!(
+            !sent.contains("atlas-s1"),
+            "only the probe was sent: {sent}"
+        );
     }
 }

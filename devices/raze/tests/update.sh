@@ -257,7 +257,7 @@ update cancel >/dev/null
 
 echo "a reset during the restart's shutdown: still staged, not rolled back"
 # boot-record's view of each boot: count and how the boot before ended.
-boot_json() { printf '{"id":"%s","count":%s,"slot":"A","kernel":"k","previous_clean":%s,"at":1}\n' "$UPDATE_BOOT_ID" "$1" "$2" > "$T/run/boot.json"; }
+boot_json() { printf '{"id":"%s","count":%s,"slot":"A","kernel":"k","previous_clean":%s,"previous_reboot":%s,"at":1}\n' "$UPDATE_BOOT_ID" "$1" "$2" "${3:-null}" > "$T/run/boot.json"; }
 update stage "$img.xz" --sha256 "$(sha "$img.xz")"
 boot_json 5 true
 update apply
@@ -287,6 +287,39 @@ next_boot
 boot_json 10 true
 update confirm
 [ "$(state)" = rolled-back ] || fail "a clean restart that came back is rolled-back, is $(state)"
+update cancel >/dev/null
+
+echo "the kernel restarted with tryboot and the firmware booted the old slot: tried again once, then staged"
+# A firmware mailbox that takes the reboot flags and reads back what was set.
+cat > "$T/vcmailbox" <<EOF
+#!/bin/sh
+echo "vcmailbox \$*" >> "$T/vcmailbox.log"
+case "\$1" in
+0x00038064) echo "\$4" > "$T/vcflags"; echo "0x0000001c 0x80000000 0x00038064 0x00000004 0x80000004 \$4 0x00000000" ;;
+0x00030064) echo "0x0000001c 0x80000000 0x00030064 0x00000004 0x80000004 0x0000000\$(cat "$T/vcflags" 2>/dev/null || echo 0) 0x00000000" ;;
+esac
+EOF
+chmod +x "$T/vcmailbox"
+export VCMAILBOX="$T/vcmailbox"
+update stage "$img.xz" --sha256 "$(sha "$img.xz")"
+boot_json 11 true
+update apply
+[ "$(cat "$T/vcflags")" = 1 ] || fail "apply sets the firmware's tryboot flag"
+events | grep '"kind":"update.apply"' | tail -n 1 | grep -q '"tryboot_flag":"set"' || fail "the apply event says the flag read back: $(events | grep update.apply | tail -n 1)"
+next_boot
+boot_json 12 true '"0 tryboot"'
+update confirm
+events | grep -q '"kind":"update.tryboot-ignored"' || fail "a tryboot-ignored event"
+events | grep '"kind":"update.tryboot-ignored"' | grep -q 'trying again' || fail "the event says it tries again"
+[ "$(state)" = rebooting ] || fail "it restarts into the trial again by itself, state $(state)"
+grep -q '^TRYBOOT_RETRIES=1$' "$T/disk/p1.d/board-update.env" || fail "one retry counted"
+next_boot
+boot_json 13 true '"0 tryboot"'
+update confirm
+[ "$(state)" = staged ] || fail "after the retry it stays staged, is $(state)"
+grep -q 'ignored the tryboot restart .* again' "$T/disk/p1.d/board-update.env" || fail "the second error says so"
+grep -q '\[tryboot\]' "$T/disk/p1.d/autoboot.txt" && fail "the tryboot section is undone"
+unset VCMAILBOX
 rm -f "$T/run/boot.json"
 update cancel >/dev/null
 

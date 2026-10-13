@@ -8,9 +8,15 @@
 #
 # A boot whose previous boot ended without a `shutdown` event (power cut,
 # watchdog reset, kernel panic) has "previous_clean": false; with no earlier
-# events at all it is null. boot.json:
+# events at all it is null. The kernel's own last words count too: when the
+# previous boot's console (pstore, moved to /data/board/pstore/<this boot>/ by
+# board-pstore.service, which runs first) ends with the kernel restarting or
+# powering off, that boot finished its shutdown, whatever the event log says,
+# and "previous_reboot" is the restart's command ("0 tryboot", "" for a plain
+# restart; null when the console doesn't say). boot.json:
 #   {"id":..,"count":<n>,"slot":"A|B|unknown","kernel":..,
-#    "previous_clean":true|false|null,"at":<unix s>}
+#    "previous_clean":true|false|null,"previous_reboot":<string|null>,
+#    "at":<unix s>}
 # The count is kept in /data/board/boot-count (/run/board without /data).
 # Test hooks: BOARD_BOOT_ID, BOARD_UNAME_R, UPDATE_CMDLINE_ROOT.
 set -u
@@ -48,6 +54,25 @@ case "$last" in
 *) clean=false ;;
 esac
 
+# The previous boot's console, as pstore kept it: its last restart or
+# power-off line.
+reboot=null
+console=$BOARD_DATA_DIR/pstore/${id:-unknown}/console-ramoops-0
+if [ -r "$console" ]; then
+	line=$(grep -a -E 'reboot: (Restarting system|Power down)' "$console" 2>/dev/null | tail -n 1)
+	case "$line" in
+	*"Restarting system with command '"*)
+		command=${line#*with command \'}
+		command=${command%\'*}
+		reboot=$(board_json_str "$command")
+		;;
+	*"Restarting system"*) reboot='""' ;;
+	*"Power down"*) reboot='"power-off"' ;;
+	esac
+	# The kernel got to the end of the shutdown: not a reset mid-way.
+	[ "$reboot" = null ] || [ "$clean" != false ] || clean=true
+fi
+
 count_file=$BOARD_DATA_DIR/boot-count
 mkdir -p "$BOARD_DATA_DIR" 2>/dev/null && [ -w "$BOARD_DATA_DIR" ] || count_file=$BOARD_RUN_DIR/boot-count
 count=$(cat "$count_file" 2>/dev/null | tr -cd '0-9')
@@ -56,13 +81,18 @@ printf '%s\n' "$count" > "$count_file.tmp.$$" && mv -f "$count_file.tmp.$$" "$co
 
 slot=$(board_active_slot)
 kernel=${BOARD_UNAME_R:-$(uname -r)}
-printf '{"id":%s,"count":%s,"slot":%s,"kernel":%s,"previous_clean":%s,"at":%s}\n' \
+printf '{"id":%s,"count":%s,"slot":%s,"kernel":%s,"previous_clean":%s,"previous_reboot":%s,"at":%s}\n' \
 	"$(board_json_str "$id")" "$count" "$(board_json_str "$slot")" "$(board_json_str "$kernel")" \
-	"$clean" "$(date +%s)" > "$BOARD_RUN_DIR/boot.json.tmp.$$"
+	"$clean" "$reboot" "$(date +%s)" > "$BOARD_RUN_DIR/boot.json.tmp.$$"
 chmod 0644 "$BOARD_RUN_DIR/boot.json.tmp.$$"
 mv -f "$BOARD_RUN_DIR/boot.json.tmp.$$" "$BOARD_RUN_DIR/boot.json"
 
 message="boot $count, slot $slot, kernel $kernel"
 [ "$clean" != false ] || message="$message; the previous boot didn't shut down cleanly"
-board_event boot "$message" "count=$count" "slot=$slot" "kernel=$kernel" "previous_clean=$clean"
+if [ "$reboot" = null ]; then
+	board_event boot "$message" "count=$count" "slot=$slot" "kernel=$kernel" "previous_clean=$clean"
+else
+	board_event boot "$message" "count=$count" "slot=$slot" "kernel=$kernel" "previous_clean=$clean" \
+		"previous_reboot=$(printf '%s' "$reboot" | tr -d '"')"
+fi
 exit 0
