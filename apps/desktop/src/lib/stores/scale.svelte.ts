@@ -31,12 +31,24 @@ class Scale {
   /** The factor in effect. */
   factor = $state(1);
 
+  /** Each apply's turn; a later one makes an earlier, still running one stale. */
+  private turn = 0;
+  private timer: ReturnType<typeof setTimeout> | null = null;
+
   /** Applies the choice and follows the window's size; returns the stop. */
   start(): () => void {
-    const update = () => void this.apply();
+    // Once the size settles: going full screen sends a burst of resizes, and
+    // the zoom itself sends more.
+    const update = () => {
+      if (this.timer) clearTimeout(this.timer);
+      this.timer = setTimeout(() => void this.apply(), 120);
+    };
     window.addEventListener("resize", update);
-    update();
-    return () => window.removeEventListener("resize", update);
+    void this.apply();
+    return () => {
+      window.removeEventListener("resize", update);
+      if (this.timer) clearTimeout(this.timer);
+    };
   }
 
   set(choice: ScaleChoice) {
@@ -49,14 +61,30 @@ class Scale {
     void this.apply();
   }
 
+  /** The window's size at 100% (CSS px), whatever the zoom. */
+  private async windowSize(): Promise<{ width: number; height: number }> {
+    if (isTauri) {
+      // The window's own size, not the CSS viewport: the webview's zoom
+      // shrinks the viewport, and reading it while a zoom is still being
+      // applied gave a size from one zoom times the other, so full screen
+      // flipped between two factors.
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      const win = getCurrentWindow();
+      const [size, ratio] = await Promise.all([win.innerSize(), win.scaleFactor()]);
+      return { width: size.width / ratio, height: size.height / ratio };
+    }
+    // CSS zoom (the browser preview) leaves the viewport as it is.
+    return { width: window.innerWidth, height: window.innerHeight };
+  }
+
   private async apply() {
-    // The webview's zoom shrinks the CSS viewport, so the window's own size
-    // is the viewport times the zoom in effect; CSS zoom (the browser
-    // preview) leaves the viewport as it is.
-    const zoomed = isTauri ? this.factor : 1;
-    const next =
-      this.choice === "auto" ? autoScale(window.innerWidth * zoomed, window.innerHeight * zoomed) : Number(this.choice);
-    if (Math.abs(next - this.factor) < 0.001) return;
+    const turn = ++this.turn;
+    let next = Number(this.choice);
+    if (this.choice === "auto") {
+      const { width, height } = await this.windowSize();
+      next = autoScale(width, height);
+    }
+    if (turn !== this.turn || Math.abs(next - this.factor) < 0.001) return;
     this.factor = next;
     if (isTauri) {
       const { getCurrentWebview } = await import("@tauri-apps/api/webview");
