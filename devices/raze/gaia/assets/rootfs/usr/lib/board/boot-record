@@ -5,6 +5,11 @@
 #                           log a `boot` event
 #   boot-record --shutdown  at a clean shutdown (the unit's ExecStop): log a
 #                           `shutdown` event
+#   boot-record --power <stage>
+#                           log a `power` event: the board supply as lemnosd's
+#                           `power` device (INA238) reads it now
+#                           (board-power-log.service, at the start of a
+#                           shutdown), to see whether it sags as things stop
 #
 # A boot whose previous boot ended without a `shutdown` event (power cut,
 # watchdog reset, kernel panic) has "previous_clean": false; with no earlier
@@ -16,7 +21,11 @@
 # restart; null when the console doesn't say). boot.json:
 #   {"id":..,"count":<n>,"slot":"A|B|unknown","kernel":..,
 #    "previous_clean":true|false|null,"previous_reboot":<string|null>,
-#    "at":<unix s>}
+#    "pstore_saved":true|false,"previous_journal":<string|null>,"at":<unix s>}
+# pstore_saved: pstore had something of the previous boot (warm restarts
+# always leave its console; none means RAM was lost, a power-level reset).
+# previous_journal: the previous boot's last journal lines (3, " | "
+# between), to see where a boot that didn't shut down cleanly stopped.
 # The count is kept in /data/board/boot-count (/run/board without /data).
 # Test hooks: BOARD_BOOT_ID, BOARD_UNAME_R, UPDATE_CMDLINE_ROOT.
 set -u
@@ -32,6 +41,31 @@ case "${1:-}" in
 	# On the disk before the restart: an appended line still in the page
 	# cache is a hole of NULs on the next boot (raze:0708c973, r27), which
 	# reads as a shutdown that never happened. BOARD_SYNC (tests).
+	sync=${BOARD_SYNC:-sync}
+	$sync "$(board_events_file)" 2>/dev/null || $sync
+	exit 0
+	;;
+--power)
+	# "power <t>us <status> bus_voltage=12.01V current=1.52A power=18.3W .."
+	ctl=${BOARD_LEMNOS_CTL:-lemnos-ctl}
+	line=''
+	if command -v "$ctl" >/dev/null 2>&1; then
+		if command -v timeout >/dev/null 2>&1; then
+			line=$(timeout 3 "$ctl" --client board-boot read power 2>/dev/null | head -n 1)
+		else
+			line=$("$ctl" --client board-boot read power 2>/dev/null | head -n 1)
+		fi
+	fi
+	set -- "${2:-now}"
+	stage=$1
+	# The readings as event data, name=value with the unit.
+	data=$(printf '%s\n' "$line" | tr ' ' '\n' | grep -E '^[a-z_]+=[-0-9.]' | head -n 8)
+	if [ -z "$data" ]; then
+		board_event power "board supply at $stage: no reading (lemnosd or its power device isn't there)" "stage=$stage"
+	else
+		# shellcheck disable=SC2086 # one argument per reading
+		board_event power "board supply at $stage: $(printf '%s' "$data" | tr '\n' ' ')" "stage=$stage" $data
+	fi
 	sync=${BOARD_SYNC:-sync}
 	$sync "$(board_events_file)" 2>/dev/null || $sync
 	exit 0
@@ -78,6 +112,17 @@ if [ -r "$console" ]; then
 	[ "$reboot" = null ] || [ "$clean" != false ] || clean=true
 fi
 
+# Whether pstore had anything of the previous boot, and how its journal ended.
+pstore_saved=false
+[ -n "$id" ] && [ -d "$BOARD_DATA_DIR/pstore/$id" ] && pstore_saved=true
+journal=null
+jctl=${BOARD_JOURNALCTL:-journalctl}
+if command -v "$jctl" >/dev/null 2>&1; then
+	tail3=$("$jctl" -b -1 -n 3 -o short-monotonic --no-pager -q 2>/dev/null |
+		awk 'NR > 1 { printf " | " } { printf "%s", $0 }')
+	[ -z "$tail3" ] || journal=$(board_json_str "$(printf '%s' "$tail3" | cut -c1-600)")
+fi
+
 count_file=$BOARD_DATA_DIR/boot-count
 mkdir -p "$BOARD_DATA_DIR" 2>/dev/null && [ -w "$BOARD_DATA_DIR" ] || count_file=$BOARD_RUN_DIR/boot-count
 count=$(cat "$count_file" 2>/dev/null | tr -cd '0-9')
@@ -86,9 +131,9 @@ printf '%s\n' "$count" > "$count_file.tmp.$$" && mv -f "$count_file.tmp.$$" "$co
 
 slot=$(board_active_slot)
 kernel=${BOARD_UNAME_R:-$(uname -r)}
-printf '{"id":%s,"count":%s,"slot":%s,"kernel":%s,"previous_clean":%s,"previous_reboot":%s,"at":%s}\n' \
+printf '{"id":%s,"count":%s,"slot":%s,"kernel":%s,"previous_clean":%s,"previous_reboot":%s,"pstore_saved":%s,"previous_journal":%s,"at":%s}\n' \
 	"$(board_json_str "$id")" "$count" "$(board_json_str "$slot")" "$(board_json_str "$kernel")" \
-	"$clean" "$reboot" "$(date +%s)" > "$BOARD_RUN_DIR/boot.json.tmp.$$"
+	"$clean" "$reboot" "$pstore_saved" "$journal" "$(date +%s)" > "$BOARD_RUN_DIR/boot.json.tmp.$$"
 chmod 0644 "$BOARD_RUN_DIR/boot.json.tmp.$$"
 mv -f "$BOARD_RUN_DIR/boot.json.tmp.$$" "$BOARD_RUN_DIR/boot.json"
 

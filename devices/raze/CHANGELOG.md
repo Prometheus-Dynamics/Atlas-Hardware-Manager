@@ -136,6 +136,12 @@ commit; the commits are listed per area.
   `apply` also sets the firmware's tryboot flag itself through vcmailbox
   (SET_REBOOT_FLAGS) and reads it back, recorded in the update.apply event
   (`tryboot_flag`), and clears it when the restart doesn't happen.
+  For the reboot statistics: boot.json also says whether pstore had the
+  previous boot at all (`pstore_saved`; none means RAM was lost, a
+  power-level reset) and how its journal ended (`previous_journal`, its last
+  3 lines), and board-power-log.service logs a `power` event with the
+  INA238's bus voltage and current at the start of every shutdown, while
+  lemnosd still runs.
   Why the boot before read as unclean: its `shutdown` event was appended but
   never reached the disk (a hole of NULs in events.jsonl). boot-record
   syncs the event log after writing it, and board-boot.service has

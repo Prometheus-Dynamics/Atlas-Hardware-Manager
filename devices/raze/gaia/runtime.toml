@@ -339,6 +339,12 @@ dest = "/usr/lib/systemd/system/avahi-daemon.service.d/50-board.conf"
 origin = "static-asset"
 
 [[stage.files]]
+id = "raze-systemd-system-board-power-log-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-power-log.service"
+dest = "/usr/lib/systemd/system/board-power-log.service"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-systemd-system-board-locate-path"
 src = "@self/assets/rootfs/usr/lib/systemd/system/board-locate.path"
 dest = "/usr/lib/systemd/system/board-locate.path"
@@ -655,6 +661,7 @@ stage_files = [
   "raze-etc-avahi-daemon-conf",
   "raze-systemd-system-etc-avahi-services-mount",
   "raze-systemd-system-avahi-daemon-service-d-50-board",
+  "raze-systemd-system-board-power-log-service",
   "raze-systemd-system-board-locate-path",
   "raze-systemd-system-board-locate-service",
   "raze-systemd-system-board-ssh-keys-service",

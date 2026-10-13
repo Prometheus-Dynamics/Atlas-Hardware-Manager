@@ -169,6 +169,10 @@ BOARD_DATA_DIR=$T/seq/old BOARD_RUN_DIR=$T/seq/run event --json --after-seq 0 |
 BOARD_DATA_DIR=$T/seq/old BOARD_RUN_DIR=$T/seq/run event --json | is 2 'len(d["events"])' "since still lists both"
 if event --json --after-seq x 2>/dev/null; then fail "--after-seq must be a number"; fi
 
+# The previous boot's journal, as journalctl -b -1 gives it.
+printf '#!/bin/sh\nprintf "[ 1355.580] photonvision.service: Failed with result signal.\\n[ 1355.590] run-board-update-mnt-1.mount: Deactivated successfully.\\n"\n' > "$T/bin/journalctl-fake"
+chmod +x "$T/bin/journalctl-fake"
+export BOARD_JOURNALCTL="$T/bin/journalctl-fake"
 echo "boot-record counts boots and tells a clean shutdown"
 sh "$lib/boot-record"
 is 1 'd["count"]' "first boot" < "$T/run/boot.json"
@@ -195,10 +199,21 @@ mkdir -p "$T/data/pstore/boot-4"
 printf '[  681.43] systemd-shutdown[1]: Rebooting.\n[  681.44] reboot: Restarting system with command '"'"'0 tryboot'"'"'\n' > "$T/data/pstore/boot-4/console-ramoops-0"
 BOARD_BOOT_ID=boot-4 sh "$lib/boot-record"
 is True 'd["previous_clean"]' "no shutdown event, but the kernel restarted" < "$T/run/boot.json"
+is True 'd["pstore_saved"]' "pstore had the previous boot's console" < "$T/run/boot.json"
+is "[ 1355.580] photonvision.service: Failed with result signal. | [ 1355.590] run-board-update-mnt-1.mount: Deactivated successfully." 'd["previous_journal"]' "the previous boot's last journal lines" < "$T/run/boot.json"
 is "0 tryboot" 'd["previous_reboot"]' "the restart's command" < "$T/run/boot.json"
 events | tail -n 1 | is "0 tryboot" 'd["data"]["previous_reboot"]' "in the boot event"
 BOARD_BOOT_ID=boot-5 sh "$lib/boot-record"
 is None 'd["previous_reboot"]' "no console kept: unknown" < "$T/run/boot.json"
+is False 'd["pstore_saved"]' "no pstore folder: RAM was lost" < "$T/run/boot.json"
+
+echo "boot-record --power: the supply as lemnosd reads it, as an event"
+printf '#!/bin/sh\necho "power 123us available bus_voltage=11.96V current=1.48A power=17.7W"\n' > "$T/bin/lemnos-ctl-fake"
+chmod +x "$T/bin/lemnos-ctl-fake"
+BOARD_LEMNOS_CTL="$T/bin/lemnos-ctl-fake" BOARD_SYNC=true sh "$lib/boot-record" --power "shutdown start"
+events | tail -n 1 | is "power shutdown start 11.96V 1.48A" 'd["kind"] + " " + d["data"]["stage"] + " " + d["data"]["bus_voltage"] + " " + d["data"]["current"]' "power event"
+BOARD_LEMNOS_CTL=false BOARD_SYNC=true sh "$lib/boot-record" --power later
+events | tail -n 1 | grep -q "no reading" || fail "without lemnosd it says so"
 cp "$T/boot3.json" "$T/run/boot.json"
 cp "$T/boot3.count" "$T/data/boot-count"
 cp "$T/boot3.events" "$T/data/events.jsonl"

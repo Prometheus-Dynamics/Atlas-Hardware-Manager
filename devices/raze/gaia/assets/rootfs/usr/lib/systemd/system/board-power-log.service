@@ -1,0 +1,19 @@
+[Unit]
+Description=The board supply's reading at the start of a shutdown (power event)
+Documentation=file:/usr/lib/board/boot-record
+# Stopped first in a shutdown, while lemnosd (which reads the INA238) is
+# still up: started after it, so stopped before it.
+After=lemnosd.service local-fs.target
+Wants=lemnosd.service
+RequiresMountsFor=/data
+Before=shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/true
+ExecStop=/usr/lib/board/boot-record --power "shutdown start"
+
+[Install]
+WantedBy=multi-user.target
