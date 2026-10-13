@@ -11,7 +11,7 @@
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { insights } from "#lib/stores/insights.svelte.ts";
   import { jobs } from "#lib/stores/jobs.svelte.ts";
-  import { live, watchLive } from "#lib/stores/live.svelte.ts";
+  import { live, SLOW_MS, watchLive } from "#lib/stores/live.svelte.ts";
   import { robots } from "#lib/stores/robots.svelte.ts";
   import { system } from "#lib/stores/system.svelte.ts";
   import { devicePath, NO_ROBOT, ui } from "#lib/stores/ui.svelte.ts";
@@ -52,7 +52,7 @@
       .sort((a, b) => rank(a) - rank(b) || deviceName(a).localeCompare(deviceName(b), undefined, { numeric: true })),
   );
   const online = $derived(mine.filter((d) => d.presence === "online").length);
-  $effect(() => watchLive(mine.filter((d) => d.presence === "online")));
+  $effect(() => watchLive(mine.filter((d) => d.presence === "online"), SLOW_MS));
 
   function rank(d: DeviceRecord): number {
     if (d.presence !== "online") return 3;

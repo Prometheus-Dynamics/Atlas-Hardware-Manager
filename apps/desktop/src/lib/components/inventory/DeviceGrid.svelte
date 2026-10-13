@@ -4,7 +4,7 @@
   import Icon from "#lib/components/common/Icon.svelte";
   import Skeleton from "#lib/components/common/Skeleton.svelte";
   import { devices } from "#lib/stores/devices.svelte.ts";
-  import { watchLive } from "#lib/stores/live.svelte.ts";
+  import { SLOW_MS, watchLive } from "#lib/stores/live.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
   import { DUR, ease, ms, rise, softFade } from "#lib/ui/motion.ts";
   import DeviceCard from "./DeviceCard.svelte";
@@ -13,7 +13,7 @@
 
   const groups = $derived(groupByRobot(ui.visible, ui.grouped));
 
-  $effect(() => watchLive(ui.visible));
+  $effect(() => watchLive(ui.visible, SLOW_MS));
 </script>
 
 {#if !devices.loaded}

@@ -2,13 +2,23 @@
 // they show; while anything watches a device that reports telemetry, it is
 // polled and a short history is kept for sparklines. Devices without the
 // capability are never asked.
+//
+// Each reading is a request the board answers with a process of its own, so
+// a device is read only as often as the most eager view showing it asks
+// (FAST for its own page, SLOW for lists and the sidebar), never twice for
+// two views, not again when a view re-subscribes, and not while the window
+// is hidden.
 
 import { SvelteMap } from "svelte/reactivity";
 import { api, errorText, keyString, type DeviceRecord, type Metric } from "#lib/api/client.ts";
 import { devices } from "./devices.svelte";
 
-const POLL_MS = 2000;
-/** Samples kept per metric: about two minutes at the poll rate. */
+/** For a device's own page. */
+export const FAST_MS = 3000;
+/** For lists, tiles and the sidebar. */
+export const SLOW_MS = 10_000;
+const TICK_MS = 1000;
+/** Samples kept per metric: three minutes at the fast rate. */
 const HISTORY = 60;
 
 export function hasTelemetry(record: DeviceRecord | undefined): boolean {
@@ -24,20 +34,24 @@ class LiveStore {
   times = new SvelteMap<string, number[]>();
   errors = new SvelteMap<string, string>();
 
-  private watchers = new Map<string, number>();
+  /** The intervals the views showing each device ask for. */
+  private watchers = new Map<string, number[]>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private inFlight = new Set<string>();
+  /** When each device was last asked (ms). */
+  private askedAt = new Map<string, number>();
 
-  /** Starts polling these devices; returns a function that stops. */
-  watch(ids: string[]): () => void {
-    for (const id of ids) this.watchers.set(id, (this.watchers.get(id) ?? 0) + 1);
+  /** Polls these devices every `every` ms while watched; returns a function that stops. */
+  watch(ids: string[], every = FAST_MS): () => void {
+    for (const id of ids) this.watchers.set(id, [...(this.watchers.get(id) ?? []), every]);
     this.ensureTimer();
-    void this.poll(ids);
+    this.tick();
     return () => {
       for (const id of ids) {
-        const left = (this.watchers.get(id) ?? 1) - 1;
-        if (left <= 0) this.watchers.delete(id);
-        else this.watchers.set(id, left);
+        const left = this.watchers.get(id) ?? [];
+        const at = left.indexOf(every);
+        if (at >= 0) left.splice(at, 1);
+        if (left.length === 0) this.watchers.delete(id);
       }
       if (this.watchers.size === 0 && this.timer) {
         clearInterval(this.timer);
@@ -73,7 +87,15 @@ class LiveStore {
 
   private ensureTimer() {
     if (this.timer || typeof window === "undefined") return;
-    this.timer = setInterval(() => void this.poll([...this.watchers.keys()]), POLL_MS);
+    this.timer = setInterval(() => this.tick(), TICK_MS);
+  }
+
+  /** Reads the watched devices that are due. */
+  private tick() {
+    if (typeof document !== "undefined" && document.hidden) return;
+    const now = Date.now();
+    const due = [...this.watchers].filter(([id, asks]) => now - (this.askedAt.get(id) ?? 0) >= Math.min(...asks) - TICK_MS / 2);
+    if (due.length > 0) void this.poll(due.map(([id]) => id));
   }
 
   private async poll(ids: string[]) {
@@ -85,6 +107,7 @@ class LiveStore {
           return;
         }
         this.inFlight.add(id);
+        this.askedAt.set(id, Date.now());
         try {
           const readings = await api.deviceTelemetry(record!.key);
           this.metrics.set(id, readings);
@@ -106,7 +129,10 @@ class LiveStore {
 
 export const live = new LiveStore();
 
-/** Watches the given records' telemetry for the life of the calling effect. */
-export function watchLive(records: DeviceRecord[]): () => void {
-  return live.watch(records.filter(hasTelemetry).map((r) => keyString(r.key)));
+/**
+ * Watches the given records' telemetry for the life of the calling effect,
+ * every `every` ms (FAST_MS for a device's own page, SLOW_MS for lists).
+ */
+export function watchLive(records: DeviceRecord[], every = FAST_MS): () => void {
+  return live.watch(records.filter(hasTelemetry).map((r) => keyString(r.key)), every);
 }

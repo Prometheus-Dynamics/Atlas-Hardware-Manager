@@ -6,7 +6,7 @@
   import { deviceName } from "#lib/format.ts";
   import { metricValue } from "#lib/metrics.ts";
   import { cameraStreams, streamLabel, type CameraStream } from "#lib/present.ts";
-  import { live, watchLive } from "#lib/stores/live.svelte.ts";
+  import { live, SLOW_MS, watchLive } from "#lib/stores/live.svelte.ts";
   import CameraPreview from "./CameraPreview.svelte";
   import CameraViewer from "./CameraViewer.svelte";
 
@@ -42,7 +42,7 @@
   });
   let open = $state<{ streams: CameraStream[]; index: number; device: string } | null>(null);
 
-  $effect(() => watchLive(records));
+  $effect(() => watchLive(records, SLOW_MS));
 
   function readings(record: DeviceRecord): string[] {
     const id = keyString(record.key);

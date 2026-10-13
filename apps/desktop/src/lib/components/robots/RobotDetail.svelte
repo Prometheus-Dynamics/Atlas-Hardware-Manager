@@ -8,7 +8,7 @@
   import Pill from "#lib/components/common/Pill.svelte";
   import DeviceCard from "#lib/components/inventory/DeviceCard.svelte";
   import { devices } from "#lib/stores/devices.svelte.ts";
-  import { watchLive } from "#lib/stores/live.svelte.ts";
+  import { SLOW_MS, watchLive } from "#lib/stores/live.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
   import { makeReady, showDevices } from "./robotActions";
   import { ROBOT_STATE } from "./robotState";
@@ -20,7 +20,7 @@
   const loose = $derived((status?.unassigned_devices ?? []).map((key) => devices.get(key)).filter((r) => !!r));
   const members = $derived([...roles.map((r) => (r.device ? devices.get(r.device) : undefined)).filter((r) => !!r), ...loose]);
 
-  $effect(() => watchLive(members));
+  $effect(() => watchLive(members, SLOW_MS));
 
   const title = (role: string) => role[0]?.toUpperCase() + role.slice(1);
 </script>

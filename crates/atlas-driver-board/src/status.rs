@@ -197,20 +197,48 @@ pub(crate) fn status_metrics(status: &DeviceStatus) -> Vec<Metric> {
     metrics
 }
 
+/// How long an answer to GET /status is reused: the telemetry and the
+/// status views ask for the same document, often together, and the board
+/// starts a process for each request.
+const STATUS_FRESH: std::time::Duration = std::time::Duration::from_secs(1);
+
 pub(crate) struct BoardStatus {
     pub(crate) http: reqwest::Client,
     pub(crate) status_url: String,
     pub(crate) events_url: Option<String>,
     /// The push channel (board-stream), when the board has one.
     pub(crate) stream_url: Option<String>,
+    /// The last answer and when it came. Held across a request, so callers
+    /// at the same moment share one.
+    pub(crate) last: tokio::sync::Mutex<Option<(std::time::Instant, DeviceStatus)>>,
 }
 
 impl BoardStatus {
+    pub(crate) fn new(
+        http: reqwest::Client,
+        status_url: String,
+        events_url: Option<String>,
+        stream_url: Option<String>,
+    ) -> Self {
+        Self {
+            http,
+            status_url,
+            events_url,
+            stream_url,
+            last: tokio::sync::Mutex::default(),
+        }
+    }
+
     pub(crate) async fn read(&self) -> Result<DeviceStatus, DriverError> {
-        Ok(parse_status(
-            &get_json(&self.http, &self.status_url).await?,
-            now_s(),
-        ))
+        let mut last = self.last.lock().await;
+        if let Some((at, status)) = last.as_ref()
+            && at.elapsed() < STATUS_FRESH
+        {
+            return Ok(status.clone());
+        }
+        let status = parse_status(&get_json(&self.http, &self.status_url).await?, now_s());
+        *last = Some((std::time::Instant::now(), status.clone()));
+        Ok(status)
     }
 }
 
@@ -432,5 +460,46 @@ mod tests {
         // A board from before seq.
         let old = parse_event_page(json!({ "time": 1, "boot_id": "", "events": [] }));
         assert_eq!((old.boot_id, old.newest_seq), (None, None));
+    }
+
+    /// Reads at the same moment, or within a second, share one GET /status;
+    /// a later one asks again.
+    #[tokio::test]
+    async fn status_reads_close_together_share_one_request() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let asked = Arc::new(AtomicUsize::new(0));
+        let counter = asked.clone();
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                counter.fetch_add(1, Ordering::SeqCst);
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                let body =
+                    r#"{"version":1,"time":1000,"temperatures":[{"id":"cpu","celsius":50.0}]}"#;
+                let reply = format!(
+                    "HTTP/1.0 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = socket.write_all(reply.as_bytes()).await;
+            }
+        });
+        let status = Arc::new(BoardStatus::new(
+            reqwest::Client::new(),
+            format!("http://127.0.0.1:{port}/status"),
+            None,
+            None,
+        ));
+        let (a, b) = tokio::join!(status.read(), status.read());
+        assert_eq!(a.unwrap(), b.unwrap());
+        status.read().await.unwrap();
+        assert_eq!(asked.load(Ordering::SeqCst), 1);
+        tokio::time::sleep(STATUS_FRESH + std::time::Duration::from_millis(100)).await;
+        status.read().await.unwrap();
+        assert_eq!(asked.load(Ordering::SeqCst), 2);
     }
 }

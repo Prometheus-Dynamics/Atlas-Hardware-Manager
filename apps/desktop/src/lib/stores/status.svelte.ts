@@ -54,6 +54,8 @@ class StatusStore {
   private watched = new Map<string, { key: DeviceKey; status: boolean; count: number }>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private inFlight = new Set<string>();
+  /** Devices no view shows any more, dropped shortly unless one comes back. */
+  private leaving = new Map<string, ReturnType<typeof setTimeout>>();
 
   get(record: DeviceRecord): DeviceStatus | undefined {
     return this.byDevice.get(keyString(record.key));
@@ -63,6 +65,8 @@ class StatusStore {
   watch(record: DeviceRecord): () => void {
     const id = keyString(record.key);
     const status = hasStatus(record);
+    clearTimeout(this.leaving.get(id));
+    this.leaving.delete(id);
     const entry = this.watched.get(id);
     if (entry) {
       entry.count += 1;
@@ -70,17 +74,28 @@ class StatusStore {
     } else {
       this.watched.set(id, { key: record.key, status, count: 1 });
     }
-    void this.loadHistory(record.key);
-    if (status) void this.poll(id);
+    // A view re-subscribing (its record changed) or a second view of the
+    // same device asks nothing new: the board answers each request with a
+    // process of its own.
+    if (!entry) void this.loadHistory(record.key);
+    if (status && !this.timers.has(id) && Date.now() - (this.readAt.get(id) ?? 0) >= BUSY_MS) void this.poll(id);
     return () => {
       const left = this.watched.get(id);
       if (!left) return;
       left.count -= 1;
       if (left.count > 0) return;
-      this.watched.delete(id);
-      const timer = this.timers.get(id);
-      if (timer) clearTimeout(timer);
-      this.timers.delete(id);
+      // A view whose record changed watches again at once: keep the entry
+      // (and its timer) for that.
+      this.leaving.set(
+        id,
+        setTimeout(() => {
+          this.leaving.delete(id);
+          if ((this.watched.get(id)?.count ?? 0) > 0) return;
+          this.watched.delete(id);
+          clearTimeout(this.timers.get(id));
+          this.timers.delete(id);
+        }, 1000),
+      );
     };
   }
 

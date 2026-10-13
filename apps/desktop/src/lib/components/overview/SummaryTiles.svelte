@@ -8,14 +8,14 @@
   import { metricTone, metricValue, toneColor } from "#lib/metrics.ts";
   import { insights } from "#lib/stores/insights.svelte.ts";
   import Skeleton from "#lib/components/common/Skeleton.svelte";
-  import { hasTelemetry, live, watchLive } from "#lib/stores/live.svelte.ts";
+  import { hasTelemetry, live, SLOW_MS, watchLive } from "#lib/stores/live.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
   import { rise, stagger } from "#lib/ui/motion.ts";
   import StatTile from "./StatTile.svelte";
 
   let { records }: { records: DeviceRecord[] } = $props();
 
-  $effect(() => watchLive(records));
+  $effect(() => watchLive(records, SLOW_MS));
 
   // Readings arrive device by device; hold the row until all have answered
   // (or a moment has passed) so the tiles land together instead of popping
