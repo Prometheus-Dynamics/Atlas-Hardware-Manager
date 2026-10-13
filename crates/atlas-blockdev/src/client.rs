@@ -49,7 +49,10 @@ impl HelperClient {
             .filter(|path| path.is_file())
             .ok_or_else(|| BlockError::Elevation {
                 message: "The disk writer (atlas-helper) is missing from this installation.".into(),
-                fix: "Reinstall Atlas, or set ATLAS_HELPER to the helper's path.".into(),
+                fix: "Reinstall Atlas, or set ATLAS_HELPER to the helper's path. In a \
+                      checkout, build it next to the CLI: cargo build -p atlas-helper \
+                      (--release for a release CLI)."
+                    .into(),
             })?;
         Ok(Self { helper: candidate })
     }

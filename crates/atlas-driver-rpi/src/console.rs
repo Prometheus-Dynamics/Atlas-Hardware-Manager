@@ -18,6 +18,10 @@ const GADGET_PRODUCT: &str = "0104";
 const GONE_TIMEOUT: Duration = Duration::from_secs(20);
 const GONE_POLL: Duration = Duration::from_millis(250);
 
+/// How long typing the restart may wait for the console to take it.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+const WRITE_POLL: Duration = Duration::from_millis(100);
+
 /// The USB device directory a sysfs node hangs off: the nearest ancestor
 /// with an `idVendor` file.
 fn usb_device_dir(node: &Path) -> Option<PathBuf> {
@@ -85,9 +89,34 @@ fn type_restart(tty: &str) -> Result<(), String> {
             ),
             _ => format!("{}: {error}", path.display()),
         })?;
-    // A fresh line first, in case anything was half typed.
-    port.write_all(b"\r\nsync && reboot\r\n")
-        .and_then(|()| port.flush())
+    // A fresh line first, in case anything was half typed. The port is
+    // non-blocking: a write the line can't take yet (the gadget just came
+    // up, or another program reading the console holds it back) says
+    // EAGAIN, so try again for a while rather than give up.
+    let mut line: &[u8] = b"\r\nsync && reboot\r\n";
+    let deadline = std::time::Instant::now() + WRITE_TIMEOUT;
+    while !line.is_empty() {
+        match port.write(line) {
+            Ok(0) => {}
+            Ok(written) => {
+                line = &line[written..];
+                continue;
+            }
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock
+                    || error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) => return Err(format!("{}: {error}", path.display())),
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(format!(
+                "{}: the console took no input for {} s (is another program holding it?)",
+                path.display(),
+                WRITE_TIMEOUT.as_secs()
+            ));
+        }
+        std::thread::sleep(WRITE_POLL);
+    }
+    port.flush()
         .map_err(|error| format!("{}: {error}", path.display()))
 }
 

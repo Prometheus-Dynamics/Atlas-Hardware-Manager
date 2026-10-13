@@ -18,7 +18,7 @@ atlas-driver.workspace = true
 atlas-usbboot.workspace = true
 atlas-flasher.workspace = true
 sha2.workspace = true
-tokio = { workspace = true, features = ["rt", "time", "sync", "macros"] }
+tokio = { workspace = true, features = ["rt", "time", "sync", "macros", "fs", "io-util"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 nix = { workspace = true, features = ["fs"] }
