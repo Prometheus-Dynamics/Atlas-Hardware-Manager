@@ -383,6 +383,7 @@ dependencies = [
  "orion-client",
  "orion-control-plane",
  "orion-core",
+ "orion-node",
  "reqwest",
  "serde",
  "serde_json",

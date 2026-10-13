@@ -6,13 +6,17 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::path::Path;
 use std::sync::Arc;
 
-use atlas_driver_orion::{BundleHost, OperatorIdentity, OrionDirectory, RemoteTransport};
+use atlas_driver_orion::{
+    BundleHost, LiveStreams, OperatorIdentity, OrionDirectory, RemoteTransport,
+};
 use atlas_image_server::{ImageServer, ImageServerConfig};
 
 use crate::settings::{AppPaths, AppSettings};
 
 const KEY_FILE: &str = "orion-operator.key";
 const PIN_FILE: &str = "orion-node.pin";
+/// The keys of the boards' own nodes, for their live streams.
+const LIVE_PINS: &str = "orion-live-pins";
 
 /// `atlas-<hostname>`, lowercase, safe for an operator name.
 fn operator_name() -> String {
@@ -89,11 +93,17 @@ pub struct Orion {
     pub directory: Arc<OrionDirectory>,
     /// Serves update images to boards; Orion carries only the URL.
     pub images: ImageServer,
+    /// Boards' live readings, from each board's own node.
+    pub live: Arc<LiveStreams>,
 }
 
 impl Orion {
     pub fn new(paths: &AppPaths, settings: &AppSettings) -> Result<Self, String> {
         let identity = identity(&paths.data_dir)?;
+        let live = Arc::new(LiveStreams::new(
+            identity.clone(),
+            Some(paths.data_dir.join(LIVE_PINS)),
+        ));
         let transport = Arc::new(RemoteTransport::new(
             identity,
             settings.orion_url.clone(),
@@ -107,6 +117,7 @@ impl Orion {
             transport,
             directory,
             images,
+            live,
         })
     }
 

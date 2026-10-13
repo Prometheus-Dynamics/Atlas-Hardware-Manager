@@ -18,7 +18,7 @@ import * as runner from "./mock/runner";
 import { activity, logLines, metrics, online, record, restart, seedHistory } from "./mock/observe";
 import { listRecords, robotStatuses, robotUpdateRequest, scan, touch } from "./mock/scan";
 import { lastSelftest, runSelftest, seedSelftests } from "./mock/selftest";
-import { streamHardware } from "./mock/live";
+import { streamHardware, streamLive } from "./mock/live";
 import { ntCameraAddresses, ntConnect, ntServer } from "./mock/nt";
 import { boardAction, calibrationStatus, controlHardware, deviceHistory, deviceStatus, hardwareAction } from "./mock/status";
 
@@ -190,6 +190,7 @@ export const mockApi: Api = {
   calibrationStatus: (key, hardware) => reply(() => calibrationStatus(key, hardware)),
   hardwareAction: (key, hardware, name, args = {}) => reply(() => hardwareAction(key, hardware, name, args)),
   streamHardware,
+  streamLive,
   ntConnect,
   ntServerStart: (port) => ntServer.start(port),
   ntServerStop: () => ntServer.stop(),

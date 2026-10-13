@@ -6,6 +6,7 @@ use atlas_driver::{
     CalibrationStatus, DeviceAction, DeviceKey, DeviceStatus, FrameSink, HardwareCommand,
     HardwareFrame, LogLine, Metric,
 };
+use atlas_driver_orion::LiveFrame;
 use tauri::State;
 
 use super::{CmdResult, text};
@@ -172,6 +173,81 @@ pub fn stop_hardware_stream(state: State<'_, AppState>, id: u64) {
     {
         task.abort();
     }
+}
+
+/// Starts following the device's live readings, pushed by its board's own
+/// Orion node, into `on_frame`; returns its id for [`stop_live_stream`], or
+/// `None` when the board has no stream (or the setting is off): the UI then
+/// polls `device_telemetry`. A stream that ends sends a `gone` frame.
+#[tauri::command]
+pub async fn start_live_stream(
+    state: State<'_, AppState>,
+    key: DeviceKey,
+    on_frame: tauri::ipc::Channel<LiveFrame>,
+) -> CmdResult<Option<u64>> {
+    let enabled = state
+        .settings
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .live_streams;
+    let (Some(orion), true) = (&state.orion, enabled) else {
+        return Ok(None);
+    };
+    let record = state
+        .atlas
+        .device(&key)
+        .ok_or_else(|| format!("no device {key}"))?;
+    let address = record.identity.address.trim().to_owned();
+    if address.is_empty() {
+        return Ok(None);
+    }
+    let live = orion.live.clone();
+    let (tell, told) = tokio::sync::oneshot::channel();
+    let task = tokio::spawn(async move {
+        let tell = std::sync::Mutex::new(Some(tell));
+        let started = |ok: bool| {
+            if let Some(tell) = tell
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take()
+            {
+                let _ = tell.send(ok);
+            }
+        };
+        let result = live
+            .follow(&address, |frame| {
+                started(true);
+                on_frame.send(frame).is_ok()
+            })
+            .await;
+        if result.is_err() {
+            started(false);
+        }
+    });
+    // The first frame (the backfill) or the refusal, whichever comes first.
+    let streams = matches!(
+        tokio::time::timeout(std::time::Duration::from_secs(3), told).await,
+        Ok(Ok(true))
+    );
+    if !streams {
+        task.abort();
+        return Ok(None);
+    }
+    let id = state
+        .next_hardware_stream
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    state
+        .hardware_streams
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(id, task);
+    Ok(Some(id))
+}
+
+/// Stops following a device's live readings.
+#[tauri::command]
+pub fn stop_live_stream(state: State<'_, AppState>, id: u64) {
+    stop_hardware_stream(state, id);
 }
 
 /// Runs the device's self-test and returns the kept result, also when a

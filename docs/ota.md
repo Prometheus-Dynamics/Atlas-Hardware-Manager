@@ -217,6 +217,18 @@ the streams off. On a desktop (debug build, 30 series) the node, the agent
 and one subscriber of everything cost about 1% of a core together; with
 `subscribed` and nobody watching, nothing.
 
+**Atlas** follows `board.live` on the board's own orion-node
+(`orion+tcp://<the address Atlas reached it at>:9200`, the node's key pinned
+on first use under `orion-live-pins/` in Atlas's data directory): streams
+stay on the node that keeps them. It needs the board's node listening
+(`ORION_NODE_PEER_ADDR`) and, for an operator nobody enrolled, open to read
+(`ORION_NODE_OPERATOR_OPEN_READ=status,streams`). A device's charts then get
+the last five minutes at once and a row every 500 ms (averaged), with a
+poll every 5 s for what the stream doesn't carry. Boards without it, and
+everything with "Live readings from Orion" off in Settings, are polled as
+before (every second on a device's page, every 2 s in lists); a stream that
+ends falls back to polling, and the stream is tried again after 30 s.
+
 States, reported in `status` (`state`, `slot_active`, `slot_staged`,
 `version_active`, `version_staged`, `progress` 0..1000, `error`), the same
 values as Orion's `update_action::STATE_*`:

@@ -16,6 +16,7 @@ import type {
   CalibrationStatus,
   HardwareCommand,
   HardwareFrame,
+  LiveFrame,
   NtCameraAddress,
   NtFrame,
   NtServerFrame,
@@ -104,6 +105,20 @@ export const api = {
     if (id === null) return null;
     return () => {
       void invoke<void>("stop_hardware_stream", { id });
+    };
+  },
+  /**
+   * Follows the device's readings, pushed by its board's own Orion node, into
+   * `onFrame`. Resolves with a function that stops it, or null when the board
+   * has no stream (or the setting is off): poll `deviceTelemetry` then.
+   */
+  streamLive: async (key: DeviceKey, onFrame: (frame: LiveFrame) => void): Promise<(() => void) | null> => {
+    const channel = new Channel<LiveFrame>();
+    channel.onmessage = onFrame;
+    const id = await invoke<number | null>("start_live_stream", { key, onFrame: channel });
+    if (id === null) return null;
+    return () => {
+      void invoke<void>("stop_live_stream", { id });
     };
   },
   /**

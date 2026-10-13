@@ -2,7 +2,7 @@
 // them: a `devices` frame, then batches of samples every 16 ms at each
 // device's period (the IMU at 100 Hz), on the board's monotonic clock.
 
-import type { DeviceKey, HardwareFrame, LiveChannel, LiveDevice } from "../types";
+import type { DeviceKey, HardwareFrame, LiveChannel, LiveDevice, LiveFrame, LiveRow, Metric } from "../types";
 
 type Model = { class: string; model: string; channels: LiveChannel[]; value: (t: number, i: number) => number };
 
@@ -150,5 +150,33 @@ export function streamHardware(
       if (samples.length) onFrame({ type: "samples", device: id, samples });
     }
   }, 16);
+  return Promise.resolve(() => clearInterval(timer));
+}
+
+/** A simulated board's Orion stream: five minutes of rows at once, then a row every 500 ms. */
+export function streamLive(key: DeviceKey, onFrame: (frame: LiveFrame) => void): Promise<(() => void) | null> {
+  if (key.serial !== "8f3a1c2d") return Promise.resolve(null);
+  const ROW_MS = 500;
+  const row = (t: number): LiveRow => {
+    const s = t / 1000;
+    const cpu = Math.max(0, Math.min(100, 30 + Math.sin(s / 7) * 18 + noise(4)));
+    const values: Record<string, number> = { cpu, temp: 50 + cpu * 0.12 + Math.sin(s / 40) * 1.5, memory: 38 + Math.sin(s / 90) * 3, fan: 45 + Math.sin(s / 30) * 10 };
+    for (let n = 0; n < 4; n++) values[`cpu.core.${n}`] = Math.max(0, Math.min(100, cpu + Math.sin(s / (3 + n)) * 20 + noise(5)));
+    return { t, values };
+  };
+  const latest = (r: LiveRow): Metric[] => [
+    { id: "cpu", label: "CPU", value: Math.round(r.values.cpu), unit: "%", max: 100, warn_above: 90, detail: "4 cores" },
+    { id: "temp", label: "Temperature", value: Math.round(r.values.temp * 10) / 10, unit: "°C", max: 85, warn_above: 75, detail: null },
+    { id: "memory", label: "Memory", value: Math.round(r.values.memory), unit: "%", max: 100, warn_above: 90, detail: null },
+    { id: "fan", label: "Fan", value: Math.round(r.values.fan), unit: "%", max: 100, warn_above: null, detail: null },
+    ...[0, 1, 2, 3].map((n) => ({ id: `cpu.core.${n}`, label: `Core ${n}`, value: Math.round(r.values[`cpu.core.${n}`]), unit: "%", max: 100, warn_above: 90, detail: null })),
+  ];
+  const now = Math.floor(Date.now() / ROW_MS) * ROW_MS;
+  const rows = Array.from({ length: 600 }, (_, i) => row(now - (600 - i) * ROW_MS));
+  setTimeout(() => onFrame({ kind: "rows", backfill: true, rows, latest: latest(rows[rows.length - 1]) }), 30);
+  const timer = setInterval(() => {
+    const r = row(Math.floor(Date.now() / ROW_MS) * ROW_MS);
+    onFrame({ kind: "rows", backfill: false, rows: [r], latest: latest(r) });
+  }, ROW_MS);
   return Promise.resolve(() => clearInterval(timer));
 }

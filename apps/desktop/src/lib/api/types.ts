@@ -329,11 +329,28 @@ export interface AppSettings {
   ssh_key_file: string | null;
   /** The Orion node Atlas connects to (orion+tcp://host:port); null is off. */
   orion_url: string | null;
+  /** Board readings pushed by the board's own Orion node where it streams them; else polled. */
+  live_streams: boolean;
   /** TCP port boards download update images from (Orion updates). */
   image_server_port: number;
   /** Host put in image URLs when the route to a board can't be told; null is automatic. */
   image_host: string | null;
 }
+
+/** One row of a device's readings (its board's Orion stream): this computer's time (ms). */
+export interface LiveRow {
+  t: number;
+  values: Record<string, number>;
+}
+
+/**
+ * A device's live readings, pushed: rows oldest first (`backfill`: the kept
+ * history, replacing what was shown) with the newest row as metrics; or the
+ * stream ended.
+ */
+export type LiveFrame =
+  | { kind: "rows"; backfill: boolean; rows: LiveRow[]; latest: Metric[] }
+  | { kind: "gone"; reason: string };
 
 /** The HTTP server boards download update images from. */
 export interface ImageServerStatus {

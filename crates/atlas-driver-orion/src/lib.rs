@@ -1,6 +1,6 @@
 //! Orion as a capability source.
 //!
-//! Orion is the management agent on running devices (control protocol v4).
+//! Orion is the management agent on running devices (control protocol v5).
 //! Atlas doesn't treat an Orion node as a device of its own: the board is
 //! found and keyed by its identity driver (for a Raze, the board driver over
 //! mDNS), and when an Orion node reports the same board serial, this crate
@@ -11,6 +11,9 @@
 //! resources: readings, and commands to their controls) for boards that don't report it themselves. Without Orion, devices keep everything
 //! else; Orion is never the only way in.
 //!
+//! [`LiveStreams`] follows a board's live readings, pushed by the board's
+//! own orion-node (board-agent's `board.live` stream).
+//!
 //! The transport is a trait. [`RemoteTransport`] implements it with Orion's
 //! remote operator client (signed orion+tcp).
 
@@ -18,6 +21,7 @@ mod actions;
 mod control;
 mod directory;
 mod hardware;
+mod live;
 mod metrics;
 mod remote;
 mod status;
@@ -25,6 +29,7 @@ mod transport;
 mod update;
 
 pub use directory::OrionDirectory;
+pub use live::{LiveFrame, LiveRow, LiveStreams};
 pub use orion_client::remote::OperatorIdentity;
 pub use remote::{OrionConnection, RemoteTransport};
 pub use transport::{BundleHost, OrionTransport};

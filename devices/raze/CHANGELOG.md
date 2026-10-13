@@ -717,6 +717,11 @@ commit; the commits are listed per area.
   `cheap`: lemnosd only while watched), `BOARD_AGENT_LIVE_SAMPLING_SERIES`
   per series or stream, `BOARD_AGENT_LIVE=0` to turn it off. See "live
   readings" in `docs/ota.md`. Not yet measured on a board.
+- **Atlas follows the stream** on the board's own orion-node (port 9200,
+  key pinned on first use) when "Live readings from Orion" is on (the
+  default): charts get five minutes of history at once, then a row every
+  500 ms; polling stays the fallback. Needs `ORION_NODE_PEER_ADDR` and
+  `ORION_NODE_OPERATOR_OPEN_READ=status,streams` on the image.
 - **board-agent read `null` as an error (fixed):** the writer prints an empty
   value (nothing staged, no error) as `null`, which board-agent couldn't
   parse. It then ran `update status` every second (taking the writer's

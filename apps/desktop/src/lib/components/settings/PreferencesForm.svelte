@@ -111,6 +111,10 @@
       />
     </Field>
 
+    <Field inline label="Live readings from Orion" hint="Boards whose Orion node streams their readings push them as they happen, with the last five minutes at once. Other boards are asked every second or two.">
+      <Toggle bind:checked={draft.live_streams} label="Live readings from Orion" />
+    </Field>
+
     <Field
       inline
       label="Add my SSH key to boards I flash"

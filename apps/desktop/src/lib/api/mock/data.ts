@@ -383,6 +383,7 @@ export const sources: RemoteSource[] = [
 export const settings: AppSettings = {
   simulated: "demo",
   auto_scan: true,
+  live_streams: true,
   scan_interval_ms: 20000,
   staged_default: "auto",
   clock_sync: "usb",

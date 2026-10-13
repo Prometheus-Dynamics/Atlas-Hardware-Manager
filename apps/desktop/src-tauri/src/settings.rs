@@ -46,6 +46,9 @@ pub struct AppSettings {
     /// (`orion+tcp://host:port`). Off when unset.
     #[serde(default)]
     pub orion_url: Option<String>,
+    /// Board readings pushed by the board's own Orion node (its live
+    /// streams) where it offers them; otherwise, and when off, polled.
+    pub live_streams: bool,
     /// The TCP port boards download update images from (Orion updates).
     pub image_server_port: u16,
     /// The host put in image URLs when Atlas can't tell which of its
@@ -64,6 +67,7 @@ impl Default for AppSettings {
             clock_sync: atlas_core::ClockSync::default(),
             ssh_key_file: None,
             orion_url: None,
+            live_streams: true,
             image_server_port: atlas_image_server::DEFAULT_PORT,
             image_host: None,
         }
