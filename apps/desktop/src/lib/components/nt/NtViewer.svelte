@@ -13,8 +13,8 @@
   import { clock } from "#lib/stores/clock.svelte.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { deviceName } from "#lib/format.ts";
-  import { cameraStreams, deviceIcon } from "#lib/present.ts";
-  import { onDestroy } from "svelte";
+  import { cameraStreams } from "#lib/present.ts";
+  import { onDestroy, untrack } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
   import { formatNt, isNumberType, numberOf, treeRows } from "./nt.ts";
 
@@ -106,6 +106,35 @@
   }
   onDestroy(disconnect);
 
+  // A viewer shows something at once: the last server used, else the first
+  // online camera's own. The others are a click away above.
+  // Once, as soon as there is something (the cameras come with the device list).
+  let tried = false;
+  $effect(() => {
+    const first = recent[0] ?? cameras[0]?.to;
+    if (tried || !first) return;
+    tried = true;
+    untrack(() => {
+      if (open) return;
+      target = first;
+      void connect().catch((error) => (status = { connected: false, host: first, port, reason: errorText(error) }));
+    });
+  });
+
+  /** Number topics not yet graphed, for the empty Graphs panel. */
+  const suggestions = $derived.by(() => {
+    void version;
+    return [...topics]
+      .filter(([name, t]) => (isNumberType(t.type) || t.type === "boolean") && !graphs.has(name))
+      .slice(0, 12)
+      .map(([name]) => name);
+  });
+  /** Cameras and recent servers, one row of chips: what to switch to. */
+  const quick = $derived([
+    ...cameras.map((c) => ({ to: c.to, label: deviceName(c.record), camera: true })),
+    ...recent.filter((r) => !cameras.some((c) => c.to === r)).map((r) => ({ to: r, label: r, camera: false })),
+  ]);
+
   function toggleGraph(name: string) {
     if (graphs.has(name)) {
       graphs.delete(name);
@@ -168,40 +197,32 @@
       {#if open}
         <Button icon="x" onclick={disconnect}>Disconnect</Button>
       {/if}
-      <Button variant="primary" icon="plug-connected" type="submit" disabled={!target.trim()}>Connect</Button>
+      {#if !open || target.trim() !== status?.host}
+        <Button variant="primary" icon="plug-connected" type="submit" disabled={!target.trim()}>Connect</Button>
+      {/if}
     </form>
     <div class="mt-3 flex flex-wrap items-center gap-2">
       {#if statusPill}<Pill tone={statusPill.tone} label={statusPill.label} />{/if}
       {#if status && !status.connected && status.reason && status.reason !== "connecting"}
         <span class="text-[12px] text-fg-faint">{status.reason}</span>
       {/if}
-      {#each recent as item (item)}
-        <button type="button" class="chip" onclick={() => ((target = item), void connect())}>{item}</button>
+      {#each quick as item (item.to)}
+        <button
+          type="button"
+          class="chip"
+          class:on={open && status?.host === item.to}
+          title={item.camera ? `${item.label}'s own NetworkTables (${item.to})` : item.to}
+          onclick={() => ((target = item.to), (port = 5810), void connect())}
+        >
+          {#if item.camera}<Icon name="camera" size={12} />{:else}<Icon name="history" size={12} />{/if}{item.label}
+        </button>
       {/each}
       <span class="ml-auto text-[12px] text-fg-faint">A team number means its robot (10.TE.AM.2).</span>
     </div>
   </GlassCard>
 
-  {#if !open}
-    <section class="flex flex-col gap-2.5" aria-label="Cameras on the network">
-      <h3 class="text-[12px] font-medium uppercase tracking-[0.06em] text-fg-faint">Cameras on the network</h3>
-      {#if cameras.length}
-        <div class="targets">
-          {#each cameras as camera (camera.to)}
-            <button type="button" class="target glass" onclick={() => ((target = camera.to), (port = 5810), void connect())}>
-              <Icon name={deviceIcon(camera.record)} size={18} />
-              <span class="min-w-0 flex-1 text-left">
-                <span class="block truncate text-[13px] font-semibold text-fg">{deviceName(camera.record)}</span>
-                <span class="mono block truncate text-[11.5px] text-fg-faint">{camera.to}</span>
-              </span>
-              <span class="go"><Icon name="plug-connected" size={14} />Connect</span>
-            </button>
-          {/each}
-        </div>
-      {:else}
-        <p class="text-[13px] text-fg-muted">No camera is online. Enter a team number for its robot, or any NT4 server's address.</p>
-      {/if}
-    </section>
+  {#if !open && cameras.length === 0}
+    <p class="text-[13px] text-fg-muted">No camera is online. Enter a team number for its robot, or any NT4 server's address.</p>
   {/if}
 
   {#if open}
@@ -229,7 +250,7 @@
                 <span class="value mono">{topic.text}</span>
                 <span class="age">{topic.age}</span>
                 {#if graphable}
-                  <button type="button" class="graph" class:on={graphs.has(row.path)} onclick={() => toggleGraph(row.path)} aria-label="{graphs.has(row.path) ? 'Stop graphing' : 'Graph'} {row.path}" title={graphs.has(row.path) ? "Stop graphing" : "Graph"}>
+                  <button type="button" class="graph" class:on={graphs.has(row.path)} disabled={!graphs.has(row.path) && graphs.size >= 8} onclick={() => toggleGraph(row.path)} aria-label="{graphs.has(row.path) ? 'Stop graphing' : 'Graph'} {row.path}" title={graphs.has(row.path) ? "Stop graphing" : "Graph"}>
                     <Icon name="chart-line" size={14} />
                   </button>
                 {:else}
@@ -241,11 +262,29 @@
         </div>
       </GlassCard>
 
-      <GlassCard title="Graphs" subtitle={graphs.size ? `${graphs.size} of 8` : "Pick number topics with their graph button"} fill>
+      <GlassCard title="Graphs" subtitle={graphs.size ? `${graphs.size} of 8` : "Pick a number topic to graph it"} fill>
         {#snippet actions()}
           {#if graphs.size}<SegmentedControl options={windowOptions} bind:value={windowKey} label="Graph window" size="sm" />{/if}
         {/snippet}
         <div class="flex flex-col gap-4 overflow-y-auto">
+          {#if graphs.size === 0}
+            {#if suggestions.length}
+              <ul class="suggest">
+                {#each suggestions as name (name)}
+                  {@const topic = shown(name, version, clock.now)}
+                  <li>
+                    <button type="button" onclick={() => toggleGraph(name)} title="Graph {name}">
+                      <Icon name="chart-line" size={14} />
+                      <span class="mono min-w-0 flex-1 truncate text-left">{name}</span>
+                      <span class="mono text-fg">{topic.text}</span>
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+            {:else}
+              <p class="text-[12.5px] text-fg-muted">{status?.connected ? "No number topics yet." : "Waiting for the server…"}</p>
+            {/if}
+          {/if}
           {#each [...graphs] as [name, series] (name)}
             <div>
               <p class="mb-1 flex items-center gap-2 text-[12.5px] text-fg-muted">
@@ -262,6 +301,33 @@
 </div>
 
 <style>
+  .suggest {
+    display: flex;
+    flex-direction: column;
+  }
+  .suggest button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    height: 28px;
+    padding: 0 8px;
+    font-size: 12px;
+    color: var(--fg-muted);
+    border-top: 1px solid var(--hairline);
+  }
+  .suggest li:first-child button {
+    border-top: 0;
+  }
+  .suggest button:hover {
+    color: var(--fg);
+    background: var(--glass-hover);
+  }
+  .chip.on {
+    color: var(--fg);
+    border-color: var(--accent-ring);
+    background: var(--accent-tint);
+  }
   .search {
     width: 12rem;
     height: 30px;
@@ -337,37 +403,19 @@
     background: var(--glass-strong);
   }
   .chip {
-    padding: 2px 9px;
-    border-radius: var(--r-round);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding: 0 8px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--r-pill);
     font-size: 12px;
     color: var(--fg-muted);
     background: var(--glass-strong);
   }
-  .targets {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-    gap: 8px;
-  }
-  .target {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    color: var(--fg-muted);
-    border-radius: var(--r-card);
-  }
-  .target:hover {
-    background: var(--glass-hover);
-  }
-  .go {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 12px;
-    color: var(--fg-faint);
-  }
-  .target:hover .go {
-    color: var(--accent);
+  .chip:hover {
+    color: var(--fg);
   }
   .chip:hover {
     color: var(--fg);

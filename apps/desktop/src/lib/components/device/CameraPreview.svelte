@@ -8,8 +8,9 @@
     src,
     name,
     label = "Live view",
+    caption = true,
     onexpand,
-  }: { src: string; name: string; label?: string; onexpand?: () => void } = $props();
+  }: { src: string; name: string; label?: string; caption?: boolean; onexpand?: () => void } = $props();
 
   let failed = $state(false);
   let loaded = $state(false);
@@ -25,7 +26,7 @@
   {:else}
     <img {src} alt="Live view from {name}" class:loaded onload={() => (loaded = true)} onerror={() => (failed = true)} />
     {#if !loaded}<div class="shimmer absolute inset-0"></div>{/if}
-    <figcaption><span class="rec"></span>{label}</figcaption>
+    {#if caption}<figcaption><span class="rec"></span>{label}</figcaption>{/if}
     {#if onexpand}
       <button type="button" class="expand" aria-label="Open {label} full screen" title="Full screen" onclick={onexpand}>
         <Icon name="arrows-maximize" size={15} />
@@ -95,6 +96,6 @@
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--err);
+    background: var(--ok);
   }
 </style>

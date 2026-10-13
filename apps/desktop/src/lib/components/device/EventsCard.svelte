@@ -14,9 +14,9 @@
   const tone = (level: string) => (level === "error" ? "err" : level === "warning" ? "warn" : level === "success" ? "ok" : "");
 </script>
 
-<section class="card" aria-label="Recent events">
-  <div class="head">
-    <h2>Recent events</h2>
+<section class="panel" aria-label="Recent events">
+  <div class="panel-head">
+    <h2 class="panel-title">Recent events</h2>
     {#if onmore}<button type="button" class="more" onclick={onmore}>History</button>{/if}
   </div>
   {#if entries.length === 0}
@@ -35,24 +35,8 @@
 </section>
 
 <style>
-  .card {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+  .panel {
     min-height: 0;
-    padding: 12px 14px;
-    border-radius: var(--r-card);
-    background: var(--glass);
-    border: 1px solid var(--glass-border);
-  }
-  .head {
-    display: flex;
-    align-items: center;
-  }
-  h2 {
-    flex: 1;
-    font-size: 13px;
-    font-weight: 600;
   }
   .more {
     font-size: 12px;

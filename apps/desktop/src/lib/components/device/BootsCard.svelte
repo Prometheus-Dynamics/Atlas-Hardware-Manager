@@ -31,10 +31,10 @@
 </script>
 
 {#if update || boots.length > 0}
-  <section class="card" aria-label="Storage and boots">
-    <div class="head">
-      <h2>{storage} and boots</h2>
-      {#if boots.length > 0}<span class="sub">{unclean} unclean of the last {boots.length}</span>{/if}
+  <section class="panel" aria-label="Storage and boots">
+    <div class="panel-head">
+      <h2 class="panel-title">{storage} and boots</h2>
+      {#if boots.length > 0}<span class="panel-note" class:warn={unclean > 0}>{unclean} unclean of the last {boots.length}</span>{/if}
     </div>
     {#if update?.slot_active}
       <dl class="slots">
@@ -68,26 +68,9 @@
 {/if}
 
 <style>
-  .card {
-    display: flex;
-    flex-direction: column;
-    gap: 9px;
-    padding: 12px 14px;
-    border-radius: var(--r-card);
-    background: var(--glass);
-    border: 1px solid var(--glass-border);
+  .panel-note.warn {
+    color: var(--warn-fg);
   }
-  .head {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-  }
-  h2 {
-    flex: 1;
-    font-size: 13px;
-    font-weight: 600;
-  }
-  .sub,
   .legend {
     font-size: 11.5px;
     color: var(--fg-muted);
@@ -139,10 +122,10 @@
     background: var(--series-1);
   }
   .kept {
-    background: #3d5f86;
+    background: color-mix(in srgb, var(--series-1) 45%, var(--glass));
   }
   .clean {
-    background: #2f6b4f;
+    background: color-mix(in srgb, var(--ok) 55%, var(--glass));
   }
   .unclean {
     background: var(--warn);

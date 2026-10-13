@@ -40,6 +40,7 @@
     const request = insights.updateAllRequest();
     if (request) ui.openUpdate(request, "Update all");
   }
+  let regionH = $state(0);
 </script>
 
 <svelte:head><title>Devices · Atlas</title></svelte:head>
@@ -74,6 +75,7 @@
     <InventoryToolbar />
 
     <!-- The devices take the rest of the height and scroll inside it. -->
+    <div class="flex min-h-0 flex-1 flex-col" bind:clientHeight={regionH}>
     <Region class="-mx-1" inner="p-1" label="Devices">
       {#if devices.loaded && shown.length === 0}
         <p class="py-10 text-center text-[13px] text-fg-muted" in:softFade>
@@ -81,11 +83,12 @@
           <button type="button" class="link" onclick={() => ui.clearFilters()}>Clear filters</button>
         </p>
       {:else if ui.view === "cards"}
-        <DeviceGrid />
+        <DeviceGrid fit={regionH} />
       {:else}
         <DeviceList />
       {/if}
     </Region>
+    </div>
 
     {#if devices.scanWarnings.length > 0}
       <ul class="flex shrink-0 flex-col gap-1 text-[12.5px] text-warn-fg">

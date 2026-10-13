@@ -60,9 +60,11 @@
   ]);
 </script>
 
+<!-- A row inside Details: a panel of its own for one or two buttons was
+     mostly frame. -->
 {#if shown.length > 0}
-  <section class="panel" aria-label="Controls">
-    <div class="panel-head"><h2 class="panel-title">Controls</h2></div>
+  <section class="controls" aria-label="Controls">
+    <span class="label">Controls</span>
     <div class="flex flex-wrap gap-1.5">
       {#each shown as { action, icon, prompt } (action.id)}
         {#if action.destructive}
@@ -83,3 +85,19 @@
     </div>
   </section>
 {/if}
+
+<style>
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding-top: 8px;
+    border-top: 1px solid var(--hairline);
+  }
+  .label {
+    width: 88px;
+    flex-shrink: 0;
+    font-size: 11.5px;
+    color: var(--fg-muted);
+  }
+</style>

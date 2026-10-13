@@ -37,7 +37,7 @@
 
   <!-- Wide: the robots on the left, the chosen one's devices filling the
        right. Narrow: just the cards, as many across as fit. -->
-  <div class="layout" class:wide bind:clientWidth={width}>
+  <div class="layout" class:wide={wide && robots.profiles.length > 1} bind:clientWidth={width}>
     {#if !robots.loaded}
       <div class="auto-grid" style="--min: 22rem">
         {#each [0, 1] as i (i)}<div class="glass flex flex-col gap-3 p-5"><Skeleton width="40%" height={14} /><Skeleton height={60} /></div>{/each}
@@ -52,6 +52,9 @@
           </div>
         </EmptyState>
       </div>
+    {:else if robots.profiles.length === 1}
+      <!-- One robot: its detail is the page (a list of one repeats it). -->
+      <div class="min-h-0 flex-1" in:softFade><RobotDetail profile={robots.profiles[0]} status={robots.status(robots.profiles[0].name)} /></div>
     {:else}
       <Region class="-mx-1" inner={wide ? "flex flex-col gap-3 p-1" : "auto-grid p-1"} label="Robots">
         {#each robots.profiles as profile, i (profile.name)}

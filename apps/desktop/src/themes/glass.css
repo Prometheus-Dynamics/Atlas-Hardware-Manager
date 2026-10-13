@@ -29,7 +29,7 @@
   /* Text */
   --fg: #e7eaee;
   --fg-muted: #9098a3;
-  --fg-faint: #6f7782;
+  --fg-faint: #858d98;
   --fg-disabled: #4d5260;
 
   /* Accent: primary actions, progress, and "needs you" only */
@@ -90,5 +90,8 @@
   --series-3: #e8a93c;
   --series-4: #a78bfa;
   --series-5: #8a929d;
+  --series-6: #f07a8c;
+  --series-7: #9bcf5f;
+  --series-8: #58c7e0;
   --stagger: 20ms;
 }

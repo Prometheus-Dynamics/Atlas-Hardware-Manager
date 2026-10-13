@@ -5,6 +5,7 @@
   import IconTile from "#lib/components/common/IconTile.svelte";
   import { primaryVersion } from "#lib/format.ts";
   import { isRecovery, storageName } from "#lib/present.ts";
+  import { deviceStatus } from "#lib/stores/status.svelte.ts";
   import { slotFacts } from "./software";
 
   let { record }: { record: DeviceRecord } = $props();
@@ -20,7 +21,7 @@
   const facts = $derived(
     [
       { label: "Device package", value: record.identity.versions.device_package ?? null },
-      ...(recovery ? [] : slotFacts(record)),
+      ...(recovery ? [] : slotFacts(record, deviceStatus.get(record)?.update)),
       { label: "Storage", value: recovery ? storageName(attrs.storage) : null },
     ].filter((f): f is { label: string; value: string } => !!f.value),
   );

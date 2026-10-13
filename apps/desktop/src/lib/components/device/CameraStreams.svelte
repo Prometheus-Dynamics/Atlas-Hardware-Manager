@@ -21,6 +21,7 @@
         src={current.url}
         name={device}
         label={streams.length > 1 ? streamLabel(current.name) : "Live view"}
+        caption={streams.length === 1}
         onexpand={() => (open = Math.min(shown, streams.length - 1))}
       />
     {/key}

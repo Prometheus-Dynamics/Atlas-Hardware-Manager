@@ -28,7 +28,8 @@
       .map((l, i) => ({ ...l, color: COLORS[i % COLORS.length] })),
   );
   const warn = $derived(lines.find((l) => l.now?.warn_above != null)?.now?.warn_above ?? null);
-  const capacity = $derived(Math.max(30, ...lines.map((l) => l.values.length)));
+  // Across the whole width from the first readings, not a sliver at the right.
+  const capacity = $derived(Math.max(2, ...lines.map((l) => l.values.length)));
 
   // A range with room above the warning level, rounded to whole tens.
   const range = $derived.by(() => {

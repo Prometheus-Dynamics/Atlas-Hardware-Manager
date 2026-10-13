@@ -48,16 +48,19 @@
   }
 
   function scale(c: { metric: Metric; values: number[] }) {
-    // Temperatures float well above 0; the rest are counts and shares from 0.
-    const low = c.metric.id === "temp" ? Math.floor(Math.min(...c.values) - 5) : 0;
-    const high = Math.max(c.metric.max ?? -Infinity, ...c.values, c.metric.warn_above ?? -Infinity);
+    // Temperatures and voltages float well above 0; the rest are counts and shares from 0.
+    const floats = c.metric.id === "temp" || c.metric.unit === "V";
+    const spread = Math.max(...c.values) - Math.min(...c.values);
+    const low = c.metric.id === "temp" ? Math.floor(Math.min(...c.values) - 5) : floats ? Math.min(...c.values) - Math.max(spread, 0.5) : 0;
+    const high = floats && c.metric.id !== "temp" ? Math.max(...c.values) + Math.max(spread, 0.5) : Math.max(c.metric.max ?? -Infinity, ...c.values, c.metric.warn_above ?? -Infinity);
     const span = high - low || 1;
     return (v: number) => H - ((v - low) / span) * (H - 6) - 3;
   }
 
   function line(c: { metric: Metric; values: number[] }): string {
     const y = scale(c);
-    const step = W / (Math.max(30, c.values.length) - 1);
+    // Across the whole width from the first readings (a sliver otherwise).
+    const step = W / (Math.max(2, c.values.length) - 1);
     return c.values.map((v, i) => `${i ? "L" : "M"}${(W - (c.values.length - 1 - i) * step).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
   }
 </script>
@@ -85,7 +88,7 @@
           {#if c.metric.warn_above != null}
             <line x1="0" x2={W} y1={scale(c)(c.metric.warn_above)} y2={scale(c)(c.metric.warn_above)} class="limit" />
           {/if}
-          <path d="{d} L{W} {H} L{W - (c.values.length - 1) * (W / (Math.max(30, c.values.length) - 1))} {H} Z" fill={c.color} class="area" />
+          <path d="{d} L{W} {H} L{W - (c.values.length - 1) * (W / (Math.max(2, c.values.length) - 1))} {H} Z" fill={c.color} class="area" />
           <path {d} stroke={c.color} class="line" />
         </svg>
       </section>
@@ -104,6 +107,10 @@
   }
   .charts.one {
     grid-template-columns: minmax(0, 1fr);
+  }
+  /* An odd one out takes the whole last row rather than leaving a hole. */
+  .chart:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
   .chart {
     display: flex;

@@ -5,7 +5,6 @@
   import Field from "#lib/components/common/Field.svelte";
   import GlassCard from "#lib/components/common/GlassCard.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
-  import Pill from "#lib/components/common/Pill.svelte";
   import SegmentedControl from "#lib/components/common/SegmentedControl.svelte";
   import Toggle from "#lib/components/common/Toggle.svelte";
   import { sentence } from "#lib/format.ts";
@@ -94,7 +93,7 @@
 </script>
 
 <GlassCard title="Preferences" subtitle="Finding devices and rolling out updates" icon="settings" large fill>
-  <form class="flex flex-col gap-5" onsubmit={save}>
+  <form class="flex flex-col gap-3" onsubmit={save}>
     <Field inline label="Watch for devices" hint="Devices appear and disappear as they're plugged in, unplugged, or announce themselves on the network.">
       <Toggle bind:checked={draft.auto_scan} label="Watch for devices" />
     </Field>
@@ -125,33 +124,30 @@
       </Field>
     {/if}
 
-    <div class="flex flex-col gap-1.5">
-      <span class="text-[13px] font-medium text-fg">Staged rollout</span>
-      <span class="text-[12px] text-fg-faint">Auto updates one device first when a family has three or more.</span>
-      <div class="mt-1"><SegmentedControl options={stagedOptions} bind:value={draft.staged_default} label="Staged rollout default" size="sm" /></div>
-    </div>
+    <!-- One row each, the choice at the right, like the switches above. -->
+    <Field inline label="Staged rollout" hint="Auto updates one device first when a family has three or more.">
+      <SegmentedControl options={stagedOptions} bind:value={draft.staged_default} label="Staged rollout default" size="sm" />
+    </Field>
 
-    <div class="flex flex-col gap-1.5">
-      <span class="text-[13px] font-medium text-fg">Interface size</span>
-      <span class="text-[12px] text-fg-faint">
-        Auto makes everything larger on a big window, so full screen isn't half empty{scale.choice === "auto" ? ` (now ${Math.round(scale.factor * 100)}%)` : ""}. Applies at once, on this computer.
-      </span>
-      <div class="mt-1"><SegmentedControl options={scaleOptions} bind:value={scaleChoice} label="Interface size" size="sm" /></div>
-    </div>
+    <Field
+      inline
+      label="Interface size"
+      hint="Auto makes everything larger on a big window{scale.choice === 'auto' ? ` (now ${Math.round(scale.factor * 100)}%)` : ''}. Applies at once, on this computer."
+    >
+      <SegmentedControl options={scaleOptions} bind:value={scaleChoice} label="Interface size" size="sm" />
+    </Field>
 
-    <div class="flex flex-col gap-1.5">
-      <span class="text-[13px] font-medium text-fg">Keep board clocks synced</span>
-      <span class="text-[12px] text-fg-faint">
-        A board with no clock battery can be hours off, which makes its event times misleading. When one is more than 2 s off, it gets this computer's time.
-      </span>
-      <div class="mt-1"><SegmentedControl options={clockOptions} bind:value={draft.clock_sync} label="Keep board clocks synced" size="sm" /></div>
-    </div>
+    <Field
+      inline
+      label="Keep board clocks synced"
+      hint="A board with no clock battery can be hours off; one more than 2 s off gets this computer's time."
+    >
+      <SegmentedControl options={clockOptions} bind:value={draft.clock_sync} label="Keep board clocks synced" size="sm" />
+    </Field>
 
-    <div class="flex flex-col gap-1.5">
-      <span class="flex items-center gap-2 text-[13px] font-medium text-fg">Simulated devices <Pill tone="warning" label="Needs a restart" /></span>
-      <span class="text-[12px] text-fg-faint">Replace real hardware with a simulated robot for demos and training.</span>
-      <div class="mt-1"><SegmentedControl options={simOptions} bind:value={sim} label="Simulated devices" size="sm" /></div>
-    </div>
+    <Field inline label="Simulated devices" hint="A simulated robot instead of real hardware, for demos and training. Needs a restart.">
+      <SegmentedControl options={simOptions} bind:value={sim} label="Simulated devices" size="sm" />
+    </Field>
 
     {#if error}<p class="flex items-center gap-2 text-[13px] text-err-fg" role="alert"><Icon name="alert-circle" size={15} />{error}</p>{/if}
 

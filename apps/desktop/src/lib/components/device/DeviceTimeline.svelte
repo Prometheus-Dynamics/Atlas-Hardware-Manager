@@ -54,6 +54,8 @@
   <ol class="feed">
     {#each shown as entry, i (key(entry, i))}
       <li in:rise={{ delay: stagger(Math.min(i, 12)) }} class="item">
+        <!-- The time beside the line it belongs to, not across the row. -->
+        <span class="when" title={new Date(entry.at_ms).toLocaleString()}>{timeAgo(entry.at_ms, clock.now)}</span>
         <span class="mark {TONE[entry.level]}"><Icon name={icon(entry)} size={13} stroke={2} /></span>
         <span class="min-w-0 flex-1 text-[13px] leading-snug text-fg">
           {entry.message}
@@ -61,7 +63,6 @@
             <Icon name={SOURCE_ICON[entry.source] ?? "info-circle"} size={11} />{sourceLabel(entry.source)}
           </span>
         </span>
-        <span class="shrink-0 text-[11.5px] text-fg-faint" title={new Date(entry.at_ms).toLocaleString()}>{timeAgo(entry.at_ms, clock.now)}</span>
       </li>
     {/each}
   </ol>
@@ -81,11 +82,20 @@
   .feed::before {
     content: "";
     position: absolute;
-    left: 19px;
+    left: 95px;
     top: 14px;
     bottom: 14px;
     width: 1px;
     background: var(--hairline);
+  }
+  .when {
+    width: 64px;
+    flex-shrink: 0;
+    text-align: right;
+    font-size: 11.5px;
+    color: var(--fg-faint);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
   .item {
     position: relative;

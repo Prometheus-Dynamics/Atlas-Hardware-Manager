@@ -115,7 +115,14 @@
         id: "drift",
         icon: "shield-check",
         label: "Drift",
-        value: drift.count ? `${drift.count} change${drift.count === 1 ? "" : "s"}` : "None",
+        // The board's count leaves out what is merely present in /etc/board;
+        // the list below has both, so name both.
+        value: [
+          drift.count ? `${drift.count} change${drift.count === 1 ? "" : "s"}` : "",
+          drift.items.length > drift.count ? `${drift.items.length - drift.count} override${drift.items.length - drift.count === 1 ? "" : "s"}` : "",
+        ]
+          .filter(Boolean)
+          .join(" · ") || "None",
         detail: drift.flags.length ? drift.flags.map((f) => FLAGS[f] ?? f).join(", ") : drift.root_read_only ? "read-only root" : null,
         look: drift.flags.length ? "warn" : drift.count ? "plain" : "ok",
       });

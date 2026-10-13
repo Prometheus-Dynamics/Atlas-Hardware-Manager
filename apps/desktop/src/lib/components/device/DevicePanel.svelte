@@ -107,7 +107,10 @@
 </script>
 
 {#if !record}
-  <p class="p-6 text-[13px] text-fg-muted">This device is no longer in the inventory.</p>
+  <div class="flex items-center gap-3 p-6 text-[13px] text-fg-muted">
+    <a href="/devices" class="back" aria-label="Back to devices" title="Back to devices"><Icon name="arrow-left" size={16} /></a>
+    This device is no longer in the inventory.
+  </div>
 {:else}
   <header class="head shrink-0" in:softFade>
     <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -124,9 +127,6 @@
           <Pill tone="neutral" icon="plug-connected-x" label="Offline · seen {timeAgo(record.last_seen_ms, clock.now)}" />
         {/if}
         {#if recovery && record.presence === "online"}<Pill tone="primary" icon="usb" label="Waiting for an image" />{/if}
-        {#if route?.state === "active" && record.presence === "online"}
-          <Pill tone="success" icon="router" label="USB → robot network" title="A computer on its USB port reaches {route.subnets.join(', ')} through it" />
-        {/if}
       </div>
       <div class="ml-auto flex flex-wrap items-center gap-1.5">
         <QuickActions {record} />

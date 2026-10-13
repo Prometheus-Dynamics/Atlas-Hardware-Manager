@@ -1,9 +1,7 @@
 <script lang="ts">
   // Home: the robot (or everything) at a glance. Readiness first, then live
   // numbers, how it's all connected, and what happened lately.
-  import { goto } from "$app/navigation";
   import { sameKey } from "#lib/api/client.ts";
-  import Button from "#lib/components/common/Button.svelte";
   import GlassCard from "#lib/components/common/GlassCard.svelte";
   import Skeleton from "#lib/components/common/Skeleton.svelte";
   import PageHeader from "#lib/components/common/PageHeader.svelte";
@@ -50,9 +48,6 @@
   {#snippet header()}
     <PageHeader>
       {#snippet heading()}<h1 class="text-[19px] font-semibold">Overview</h1>{/snippet}
-      {#snippet actions()}
-        <Button icon="layout-grid" onclick={() => goto("/devices")}>Device list</Button>
-      {/snippet}
     </PageHeader>
   {/snippet}
 

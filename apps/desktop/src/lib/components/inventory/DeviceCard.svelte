@@ -17,7 +17,8 @@
   import DeviceStatus from "./DeviceStatus.svelte";
   import { clickCheck, clickDevice } from "./select";
 
-  let { record }: { record: DeviceRecord } = $props();
+  /** trend: the height of each reading's trend line (px); 0 for none (the grid grows cards to fill the page). */
+  let { record, trend = 0 }: { record: DeviceRecord; trend?: number } = $props();
 
   const id = $derived(keyString(record.key));
   const name = $derived(deviceName(record));
@@ -92,12 +93,14 @@
     </div>
     <div class="flex shrink-0 flex-col items-end gap-1">
       <StatusDot state={dot.state} label={dot.label} />
-      <span class="link" title={linkText(record.link_kind, devices.nameOf)}>
-        <Icon name={LINK_ICON[record.link_kind.kind] ?? "plug-connected"} size={12} />{via ? via : linkText(record.link_kind, devices.nameOf)}
-      </span>
       {#if routing}
-        <span class="link routing" title="USB → robot network: a computer on its USB port reaches {usbRoute(record)?.subnets.join(', ')} through it">
-          <Icon name="router" size={12} />routes USB
+        <!-- One line either way, so cards side by side stay the same height. -->
+        <span class="link routing" title="{linkText(record.link_kind, devices.nameOf)}. USB → robot network: a computer on its USB port reaches {usbRoute(record)?.subnets.join(', ')} through it">
+          <Icon name="router" size={12} />USB → robot
+        </span>
+      {:else}
+        <span class="link" title={linkText(record.link_kind, devices.nameOf)}>
+          <Icon name={LINK_ICON[record.link_kind.kind] ?? "plug-connected"} size={12} />{via ? via : linkText(record.link_kind, devices.nameOf)}
         </span>
       {/if}
     </div>
@@ -113,12 +116,13 @@
         <span class="r-value">{shown.value}<small>{shown.unit}</small></span>
         {#if fraction !== null}
           <span class="meter"><span style="width: {fraction * 100}%; background: {TONE_COLOR[tone]}"></span></span>
-        {:else}
-          <span class="trend"><Sparkline values={live.series(id, metric.id)} height={10} color={TONE_COLOR[tone]} /></span>
+        {/if}
+        {#if fraction === null || trend > 0}
+          <span class="trend"><Sparkline values={live.series(id, metric.id)} height={Math.max(10, trend)} color={TONE_COLOR[tone]} /></span>
         {/if}
       </div>
     {:else}
-      <span class="none">{online ? (waiting ? "In USB boot: no readings" : "No live readings") : "Offline"}</span>
+      <span class="none">{online ? (waiting ? "No OS running" : "No live readings") : "Offline"}</span>
     {/each}
   </div>
 
@@ -154,7 +158,9 @@
     gap: 6px;
     min-height: 72px;
     margin-top: 10px;
-    align-content: start;
+    /* Rows share the card's height, so two readings fill it like four. */
+    grid-auto-rows: minmax(0, 1fr);
+    flex: 1;
   }
   .glance.empty {
     display: flex;
@@ -213,7 +219,8 @@
   }
   .trend {
     display: block;
-    margin-top: 1px;
+    margin-top: auto;
+    padding-top: 2px;
   }
   .none {
     font-size: 12px;

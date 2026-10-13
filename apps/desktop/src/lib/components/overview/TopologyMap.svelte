@@ -16,8 +16,6 @@
   let { records }: { records: DeviceRecord[] } = $props();
 
   const PAD = 8;
-  // Room between columns for the wire and its link label ("USB boot").
-  const GAP = 72;
 
   // The map fits the box it is given: rows spread out when there is height
   // to spare and tighten (down to a floor, then scroll) when there isn't.
@@ -25,9 +23,14 @@
   let boxHeight = $state(360);
   // Nodes widen on big screens so names and readings have room.
   const map = $derived(layoutMap(records));
-  const NODE_W = $derived(Math.round(Math.min(220, Math.max(132, (width - PAD * 2 - map.depth * GAP) / (map.depth + 1)))));
-  const ROW_H = $derived(Math.floor(Math.min(92, Math.max(44, (boxHeight - PAD * 2) / Math.max(1, map.rows)))));
-  const NODE_H = $derived(Math.min(54, Math.max(36, ROW_H - 12)));
+  // Room between columns for the wire and its link label ("USB boot"),
+  // less when the box is narrow: the whole tree always fits its width.
+  const GAP = $derived(Math.max(40, Math.min(72, (width - PAD * 2) / (map.depth + 1) / 3)));
+  const NODE_W = $derived(Math.floor(Math.min(220, Math.max(84, (width - PAD * 2 - map.depth * GAP) / (map.depth + 1)))));
+  const ROW_H = $derived(Math.floor(Math.min(92, Math.max(28, (boxHeight - PAD * 2) / Math.max(1, map.rows)))));
+  const NODE_H = $derived(Math.min(54, Math.max(24, ROW_H - 8)));
+  // Short rows show the name only.
+  const oneLine = $derived(NODE_H < 34);
   // Narrow nodes drop the icon tile so the name keeps the room.
   const compact = $derived(NODE_W < 170);
   // Columns spread with the width, up to a point; a wide window centres the
@@ -59,15 +62,14 @@
 
   /** A short live fact for the node: temperature, else version. */
   function detail(record: DeviceRecord): string {
-    if (isRecovery(record)) return "Waiting for an image";
+    if (isRecovery(record)) return "USB boot";
     if (record.presence !== "online") return "Offline";
     const temp = live.metric(keyString(record.key), "temp");
-    const version = primaryVersion(record.identity);
     if (temp) {
       const t = metricValue(temp);
-      return [version, `${t.value}${t.unit}`].filter(Boolean).join(" · ");
+      return `${t.value} ${t.unit}`;
     }
-    return version ?? record.identity.model;
+    return primaryVersion(record.identity) ?? record.identity.model;
   }
 </script>
 
@@ -94,7 +96,7 @@
 
     {#each map.nodes as node (node.id)}
       {#if node.id === HOST}
-        <div class="node host" class:compact style="left: {x(node)}px; top: {y(node) - NODE_H / 2}px; width: {NODE_W}px; height: {NODE_H}px">
+        <div class="node host" class:compact class:one-line={oneLine} style="left: {x(node)}px; top: {y(node) - NODE_H / 2}px; width: {NODE_W}px; height: {NODE_H}px">
           <span class="ico"><Icon name="device-laptop" size={17} stroke={1.7} /></span>
           <span class="min-w-0">
             <span class="name" title="This computer">This computer</span>
@@ -107,6 +109,8 @@
           type="button"
           class="node"
           class:compact
+          class:one-line={oneLine}
+          title="{deviceName(record)} · {primaryVersion(record.identity) ?? record.identity.model}"
           class:offline={record.presence !== "online"}
           class:attention={dotState(record) === "failed" || isRecovery(record)}
           style="left: {x(node)}px; top: {y(node) - NODE_H / 2}px; width: {NODE_W}px; height: {NODE_H}px"
@@ -114,8 +118,8 @@
         >
           <span class="ico"><Icon name={deviceIcon(record)} size={17} stroke={1.7} /></span>
           <span class="min-w-0 flex-1">
-            <span class="name" title={deviceName(record)}>{deviceName(record)}</span>
-            <span class="sub" title={detail(record)}>{detail(record)}</span>
+            <span class="name">{deviceName(record)}</span>
+            <span class="sub">{detail(record)}</span>
           </span>
           <StatusDot state={dotState(record)} />
         </button>
@@ -191,6 +195,25 @@
   }
   .node.compact .ico {
     display: none;
+  }
+  /* Short rows: name and reading on one line. */
+  .node.one-line > .min-w-0 {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .node.one-line .name {
+    flex: 1 0 auto;
+    min-width: 0;
+    max-width: 68%;
+  }
+  .node.one-line .sub {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+  .node.one-line .ico {
+    width: 22px;
+    height: 22px;
   }
   .node.host {
     background: var(--glass-strong);

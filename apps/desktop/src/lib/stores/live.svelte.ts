@@ -18,8 +18,12 @@ export const FAST_MS = 3000;
 /** For lists, tiles and the sidebar. */
 export const SLOW_MS = 10_000;
 const TICK_MS = 1000;
-/** Samples kept per metric: three minutes at the fast rate. */
-const HISTORY = 60;
+/** Readings taken at FAST_MS before a device drops to the rate its views ask. */
+const WARM_UP = 3;
+/** Samples kept per metric: 15 minutes at the fast rate (the Monitor's longest view). */
+const HISTORY = 300;
+/** What series() gives by default: about three minutes at the fast rate. */
+const SHOWN = 60;
 
 export function hasTelemetry(record: DeviceRecord | undefined): boolean {
   return !!record && record.presence === "online" && record.capabilities.includes("telemetry");
@@ -76,13 +80,27 @@ class LiveStore {
     return this.metrics.get(id)?.find((m) => m.id === metricId);
   }
 
-  series(id: string, metricId: string): number[] {
-    return this.history.get(id)?.[metricId] ?? [];
+  /** The last `last` values (SHOWN: what sparklines and device charts draw). */
+  series(id: string, metricId: string, last = SHOWN): number[] {
+    return (this.history.get(id)?.[metricId] ?? []).slice(-last);
   }
 
   /** When the device's recent readings were taken; a series' values line up with its end. */
-  seriesTimes(id: string): number[] {
-    return this.times.get(id) ?? [];
+  seriesTimes(id: string, last = SHOWN): number[] {
+    return (this.times.get(id) ?? []).slice(-last);
+  }
+
+  /** The readings taken since `since` (ms), each with its time. */
+  window(id: string, metricId: string, since: number): { t: number; v: number }[] {
+    const values = this.history.get(id)?.[metricId] ?? [];
+    const times = this.times.get(id) ?? [];
+    const offset = times.length - values.length;
+    const out: { t: number; v: number }[] = [];
+    for (let i = 0; i < values.length; i++) {
+      const t = times[i + offset];
+      if (t !== undefined && t >= since) out.push({ t, v: values[i] });
+    }
+    return out;
   }
 
   private ensureTimer() {
@@ -94,7 +112,10 @@ class LiveStore {
   private tick() {
     if (typeof document !== "undefined" && document.hidden) return;
     const now = Date.now();
-    const due = [...this.watchers].filter(([id, asks]) => now - (this.askedAt.get(id) ?? 0) >= Math.min(...asks) - TICK_MS / 2);
+    // The first few readings come fast whatever the view asks, so its
+    // charts have a line at once.
+    const every = (id: string, asks: number[]) => ((this.times.get(id)?.length ?? 0) < WARM_UP ? FAST_MS : Math.min(...asks));
+    const due = [...this.watchers].filter(([id, asks]) => now - (this.askedAt.get(id) ?? 0) >= every(id, asks) - TICK_MS / 2);
     if (due.length > 0) void this.poll(due.map(([id]) => id));
   }
 

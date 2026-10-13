@@ -17,6 +17,12 @@
   let adding = $state(false);
   let width = $state(1200);
   const wide = $derived(width >= 1100);
+  // Families in rows of as many as fit at 360 px (beside the sources on a
+  // wide window); a short last row stretches across instead of leaving a hole.
+  const cols = $derived(Math.max(1, Math.min(releases.families.length, 4, Math.floor((wide ? width * 0.76 : width) / 360))));
+  const rows = $derived(
+    Array.from({ length: Math.ceil(releases.families.length / cols) }, (_, r) => releases.families.slice(r * cols, r * cols + cols)),
+  );
 
   async function refresh() {
     releases.warnings = await api.refreshReleases();
@@ -59,9 +65,13 @@
         Add a source {wide ? "on the right" : "below"} and check for new releases, or add an image or firmware file from this computer.
       </EmptyState></Region>
     {:else}
-      <Region class="-mx-1" inner="families auto-grid fit p-1" label="Release families">
-        {#each releases.families as family, i (family)}
-          <div class="min-h-0" in:rise={{ delay: stagger(i) }}><ReleaseGroup {family} /></div>
+      <Region class="-mx-1" inner="families p-1" label="Release families">
+        {#each rows as row, r (r)}
+          <div class="family-row">
+            {#each row as family, i (family)}
+              <div class="min-h-0 min-w-0 flex-1" in:rise={{ delay: stagger(r * cols + i) }}><ReleaseGroup {family} /></div>
+            {/each}
+          </div>
         {/each}
       </Region>
     {/if}
@@ -83,9 +93,14 @@
   }
   /* Rows share the height: few families get tall cards, many scroll. */
   .layout :global(.families) {
-    --min: 400px;
-    --max: 4;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
     min-height: 100%;
-    grid-auto-rows: minmax(240px, 1fr);
+  }
+  .family-row {
+    flex: 1 0 240px;
+    display: flex;
+    gap: 12px;
   }
 </style>

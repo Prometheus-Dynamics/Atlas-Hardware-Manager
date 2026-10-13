@@ -6,9 +6,11 @@
   import GlassCard from "#lib/components/common/GlassCard.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
   import Pill from "#lib/components/common/Pill.svelte";
+  import MonitorChart from "#lib/components/device/MonitorChart.svelte";
   import DeviceCard from "#lib/components/inventory/DeviceCard.svelte";
+  import { isCore, isTextMetric, sortMetrics } from "#lib/metrics.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
-  import { SLOW_MS, watchLive } from "#lib/stores/live.svelte.ts";
+  import { live, SLOW_MS, watchLive } from "#lib/stores/live.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
   import { makeReady, showDevices } from "./robotActions";
   import { ROBOT_STATE } from "./robotState";
@@ -23,9 +25,21 @@
   $effect(() => watchLive(members, SLOW_MS));
 
   const title = (role: string) => role[0]?.toUpperCase() + role.slice(1);
+
+  // The robot's readings side by side, a line per device: the first three
+  // any of them reports (temperature, CPU, vision…).
+  const COLORS = Array.from({ length: 8 }, (_, i) => `var(--series-${i + 1})`);
+  const charted = $derived(members.filter((d) => d.presence === "online").map((record, i) => ({ record, color: COLORS[i % COLORS.length] })));
+  const metrics = $derived.by(() => {
+    const seen = new Map<string, import("#lib/api/client.ts").Metric>();
+    for (const { record } of charted) {
+      for (const m of live.metrics.get(keyString(record.key)) ?? []) if (!isCore(m) && !isTextMetric(m) && !seen.has(m.id)) seen.set(m.id, m);
+    }
+    return sortMetrics([...seen.values()]).slice(0, 3);
+  });
 </script>
 
-<GlassCard fill large icon="robot" title={profile.name} subtitle={profile.notes ?? `${roles.length} role${roles.length === 1 ? "" : "s"}`} class="h-full">
+<GlassCard fill large icon="robot" title={profile.name} subtitle={profile.notes ?? `${roles.length} role${roles.length === 1 ? "" : "s"}`} scroll={false} class="h-full">
   {#snippet actions()}
     {#if badge}<Pill tone={badge.tone} icon={badge.icon} label={badge.label} />{/if}
     {#if status && status.state !== "ready"}
@@ -35,13 +49,14 @@
     <Button variant="ghost" size="sm" icon="pencil" onclick={() => ui.openRobot(profile.name)}>Edit</Button>
   {/snippet}
 
-  <div class="flex flex-col gap-5">
+  <!-- Scrolls itself, so the live charts can take the height that's left. -->
+  <div class="absolute inset-0 flex flex-col gap-5 overflow-y-auto px-4 pb-3 pt-3">
     <section class="flex flex-col gap-2.5">
       <h3 class="section-title">Roles</h3>
       {#if roles.length === 0}
         <p class="text-[13px] text-fg-faint">No roles yet. Edit the robot to add some.</p>
       {:else}
-        <ul class="auto-grid" style="--min: 230px">
+        <ul class="auto-grid fit" style="--min: 230px; --max: 6">
           {#each roles as role, i (i)}
             {@const record = role.device ? devices.get(role.device) : undefined}
             <li class="flex min-w-0 flex-col gap-1.5">
@@ -86,10 +101,28 @@
         </ul>
       </section>
     {/if}
+
+    {#if metrics.length > 0}
+      <section class="live" aria-label="Live readings">
+        {#each metrics as m (m.id)}
+          <MonitorChart metric={m.id} title={m.label} unit={m.unit ?? ""} devices={charted} windowMs={600_000} />
+        {/each}
+      </section>
+    {/if}
   </div>
 </GlassCard>
 
 <style>
+  /* The rest of the height: its readings over the last ten minutes. */
+  .live {
+    flex: 1 1 220px;
+    min-height: 220px;
+    display: flex;
+    gap: 10px;
+  }
+  .live > :global(*) {
+    flex: 1 1 0;
+  }
   .slot {
     display: flex;
     flex: 1;

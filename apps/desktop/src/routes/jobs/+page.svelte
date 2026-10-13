@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
   import { keyString } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import GlassCard from "#lib/components/common/GlassCard.svelte";
@@ -13,7 +12,6 @@
   import Region from "#lib/components/layout/Region.svelte";
   import { insights } from "#lib/stores/insights.svelte.ts";
   import { jobs } from "#lib/stores/jobs.svelte.ts";
-  import { robots } from "#lib/stores/robots.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
   import { softFade } from "#lib/ui/motion.ts";
 
@@ -38,45 +36,37 @@
   {#snippet header()}
     <PageHeader
       title="Updates and flashes"
-      subtitle={jobs.running.length > 0 ? `${jobs.running.length} running now` : "Every update and flash from this session, newest first."}
+      subtitle={jobs.running.length > 0
+        ? `${jobs.running.length} running now`
+        : jobs.sorted.length > 0
+          ? "Every update and flash from this session, newest first."
+          : "Nothing running. A job downloads the image, writes it, and checks the device once it's back; each shows here with its stages and log."}
     />
   {/snippet}
 
   {#if jobs.sorted.length === 0}
-    <!-- No jobs yet: what would start one on the left, the fleet's earlier
-         updates and flashes filling the right (the same split as with jobs). -->
-    <div class="split">
-      <div class="flex min-h-0 flex-col gap-3">
-      <section class="glass flex flex-col gap-3 px-4 py-4" style="border-radius: var(--r-panel)" aria-label="No jobs yet">
-        <h2 class="text-[13px] font-semibold text-fg">No jobs this session</h2>
-        <p class="text-[12.5px] text-fg-muted">
-          A job is one update or flash: the image is downloaded, written, and checked once the device comes back on the new
-          version. Each shows here with its stages and log while it runs.
-        </p>
-        <div class="flex flex-col gap-1.5">
+    <!-- No jobs yet: where the software stands, with what can start now,
+         and the fleet's earlier updates and flashes beside it. -->
+    <div class="split none">
+      <VersionsBoard>
+        {#snippet actions()}
           {#if waiting.length > 0}
-            <Button variant="primary" icon="bolt" onclick={() => ui.openDevice(keyString(waiting[0].key), "software")}>
+            <Button size="sm" variant="primary" icon="bolt" onclick={() => ui.openDevice(keyString(waiting[0].key), "software")}>
               Flash {waiting.length === 1 ? "the board" : `${waiting.length} boards`} in USB boot
             </Button>
           {/if}
           {#if outdated > 0}
-            <Button variant={waiting.length > 0 ? "glass" : "primary"} icon="arrow-up" onclick={updateAll}>
+            <Button size="sm" variant={waiting.length > 0 ? "glass" : "primary"} icon="arrow-up" onclick={updateAll}>
               Update {outdated} device{outdated === 1 ? "" : "s"}
             </Button>
           {/if}
-          <Button icon="layout-grid" onclick={() => goto("/devices")}>Choose devices</Button>
-          {#if robots.profiles.length > 0}
-            <Button icon="robot" onclick={() => goto("/robots")}>Make a robot ready</Button>
-          {/if}
-        </div>
-      </section>
+        {/snippet}
+      </VersionsBoard>
       <GlassCard fill title="Earlier updates and flashes" icon="history" pad={false}>
         <div class="flex flex-col px-3 pb-3 pt-2">
           <ActivityFeed entries={earlier} limit={80} empty="No device has been updated or flashed yet." />
         </div>
       </GlassCard>
-      </div>
-      <VersionsBoard />
     </div>
   {:else}
     <!-- The list on the left scrolls; the chosen job fills the right. -->
@@ -103,6 +93,9 @@
     display: grid;
     grid-template-columns: clamp(18rem, 28%, 26rem) minmax(0, 1fr);
     gap: 12px;
+  }
+  .split.none {
+    grid-template-columns: minmax(0, 1fr) clamp(20rem, 32%, 30rem);
   }
   @container page (max-width: 620px) {
     .split {

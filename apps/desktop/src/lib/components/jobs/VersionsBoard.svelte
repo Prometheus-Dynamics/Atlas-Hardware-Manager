@@ -3,15 +3,33 @@
   // waiting in USB boot, last job failed), then every device that takes
   // updates with the version it runs, the one it should, and how its last
   // update or flash ended. A row opens the device's Software tab.
-  import { keyString, type DeviceRecord } from "#lib/api/client.ts";
-  import { deviceName, primaryVersion } from "#lib/format.ts";
+  import type { Snippet } from "svelte";
+  import { keyString, type ActivityEntry, type DeviceRecord } from "#lib/api/client.ts";
+  import { deviceName, primaryVersion, timeAgo } from "#lib/format.ts";
+  import { activity } from "#lib/stores/activity.svelte.ts";
+  import { clock } from "#lib/stores/clock.svelte.ts";
   import { displayModel, isRecovery } from "#lib/present.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { insights } from "#lib/stores/insights.svelte.ts";
   import { canUpdate, NO_ROBOT, ui } from "#lib/stores/ui.svelte.ts";
 
+  /** actions: what can start now (Flash, Update), in the header. */
+  let { actions }: { actions?: Snippet } = $props();
+
   type State = "current" | "behind" | "usb-boot" | "failed" | "offline" | "unknown";
 
+  // Each device's newest logged update or flash, for the devices this
+  // session's jobs haven't touched.
+  const logged = $derived.by(() => {
+    const map = new Map<string, ActivityEntry>();
+    for (const e of activity.entries) {
+      if (!e.device || !(e.kind === "version-changed" || e.kind === "update-result" || e.kind === "mode-changed")) continue;
+      const id = keyString(e.device);
+      const known = map.get(id);
+      if (!known || e.at_ms > known.at_ms) map.set(id, e);
+    }
+    return map;
+  });
   const rows = $derived(
     devices.all
       .filter((d) => ui.robot === null || (ui.robot === NO_ROBOT ? !d.robot : d.robot === ui.robot))
@@ -45,8 +63,11 @@
     return "current";
   }
 
+  // Every state there is, so the counts add up to the devices listed.
   const counts = $derived(
-    (["current", "behind", "usb-boot", "failed"] as State[]).map((s) => ({ state: s, label: LABEL[s], n: rows.filter((r) => r.state === s).length })),
+    (["current", "behind", "usb-boot", "failed", "unknown", "offline"] as State[])
+      .map((s) => ({ state: s, label: LABEL[s], n: rows.filter((r) => r.state === s).length }))
+      .filter((c) => c.n > 0 || c.state === "current" || c.state === "behind"),
   );
   const total = $derived(Math.max(1, rows.length));
 </script>
@@ -55,6 +76,8 @@
   <div class="head">
     <h2>Versions on the robot</h2>
     <span class="sub">{rows.length} devices that take updates</span>
+    <span class="flex-1"></span>
+    {#if actions}<div class="flex items-center gap-1.5">{@render actions()}</div>{/if}
   </div>
 
   <div class="summary">
@@ -62,7 +85,6 @@
       {#each counts as c (c.state)}
         {#if c.n > 0}<span class="seg {c.state}" style:flex={c.n}></span>{/if}
       {/each}
-      {#if rows.length - counts.reduce((a, c) => a + c.n, 0) > 0}<span class="seg rest" style:flex={rows.length - counts.reduce((a, c) => a + c.n, 0)}></span>{/if}
     </div>
     <dl class="counts">
       {#each counts as c (c.state)}
@@ -91,7 +113,13 @@
             <td class="mono" class:behind={r.state === "behind"}>{r.target ?? "—"}</td>
             <td><span class="chip {r.state}">{LABEL[r.state]}</span></td>
             <td class="muted">
-              {#if r.outcome}{r.outcome.state.status.status.replaceAll("-", " ")}{:else}—{/if}
+              {#if r.outcome}{r.outcome.state.status.status.replaceAll("-", " ")}
+              {:else if logged.get(r.id)}
+                {@const e = logged.get(r.id)!}
+                <span class="logged {e.level}" title={e.message}
+                  >{e.kind === "mode-changed" ? "mode changed" : e.level === "error" ? "failed" : e.level === "warning" ? "rolled back" : "updated"}</span
+                ><span class="when">{timeAgo(e.at_ms, clock.now)}</span>
+              {:else}—{/if}
             </td>
           </tr>
         {/each}
@@ -119,6 +147,18 @@
   h2 {
     font-size: 13px;
     font-weight: 600;
+  }
+  .logged {
+    color: var(--fg-muted);
+  }
+  .logged.error,
+  .logged.warning {
+    color: var(--warn-fg);
+  }
+  .when {
+    margin-left: 6px;
+    color: var(--fg-faint);
+    white-space: nowrap;
   }
   .sub,
   .muted {
@@ -177,8 +217,13 @@
   .failed {
     background: var(--err);
   }
-  .rest {
+  .seg.unknown,
+  .swatch.unknown {
     background: var(--glass-border-strong);
+  }
+  .seg.offline,
+  .swatch.offline {
+    background: var(--offline);
   }
   .list {
     flex: 1;
@@ -206,6 +251,12 @@
     padding: 6px 8px;
     border-bottom: 1px solid var(--hairline);
     white-space: nowrap;
+  }
+  /* Long image names ("photonvision-raze-2026.1.0") don't push the table wide. */
+  td.mono {
+    max-width: 13rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   th:first-child,
   td:first-child {

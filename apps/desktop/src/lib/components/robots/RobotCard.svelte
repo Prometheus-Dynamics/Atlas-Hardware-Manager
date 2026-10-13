@@ -1,6 +1,5 @@
 <script lang="ts">
   import { api, keyString, type RobotProfile, type RobotStatus } from "#lib/api/client.ts";
-  import Button from "#lib/components/common/Button.svelte";
   import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
   import IconTile from "#lib/components/common/IconTile.svelte";
@@ -9,7 +8,6 @@
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
-  import { makeReady, showDevices } from "./robotActions";
   import { ROBOT_STATE } from "./robotState";
 
   let {
@@ -92,11 +90,7 @@
   {/if}
 
   <footer class="flex flex-wrap items-center gap-2 border-t border-hairline px-4 py-3">
-    {#if status && status.state !== "ready"}
-      <Button variant="tint" size="sm" icon="wand" action={() => makeReady(profile.name)}>Make ready</Button>
-    {/if}
-    <Button size="sm" icon="layout-grid" onclick={() => showDevices(profile.name)}>Devices</Button>
-    <Button variant="ghost" size="sm" icon="pencil" onclick={() => ui.openRobot(profile.name)}>Edit</Button>
+    <!-- Make ready, Devices and Edit are in the robot's detail beside. -->
     <span class="ml-auto">
       <ConfirmButton action={remove} size="sm" variant="ghost" icon="trash" label="Delete {profile.name}" prompt="Delete {profile.name}?" confirmLabel="Delete" />
     </span>

@@ -24,10 +24,14 @@
   {/snippet}
 
   <div class="sections" class:wide bind:clientWidth={width}>
-    <Region class="col" inner="stack" label="Checks and files"><HealthPanel /><AboutPanel /></Region>
-    <Region class="col" inner="stack" label={wide ? "Preferences" : "Preferences and Orion"}>
-      {#if system.settings}<PreferencesForm settings={system.settings} />{/if}
+    <!-- Two columns: checks and Orion | preferences and files. -->
+    <Region class="col" inner="stack" label={wide ? "Checks" : "Checks and Orion"}>
+      <HealthPanel />
       {#if !wide}<OrionPanel />{/if}
+    </Region>
+    <Region class="col" inner="stack" label="Preferences and files">
+      {#if system.settings}<PreferencesForm settings={system.settings} />{/if}
+      <AboutPanel />
     </Region>
     {#if wide}<Region class="col" inner="stack" label="Orion"><OrionPanel /></Region>{/if}
   </div>

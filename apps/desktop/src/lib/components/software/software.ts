@@ -1,7 +1,7 @@
 // What a device's Software tab can offer: which images fit it, how it can
 // get into USB boot, and the words for its update state.
 
-import type { DeviceRecord, ReleaseEntry } from "#lib/api/client.ts";
+import type { DeviceRecord, ReleaseEntry, UpdateState } from "#lib/api/client.ts";
 import { compareVersionsDesc } from "#lib/format.ts";
 
 /** The `usb-boot` device action: restarts a running board into USB boot. */
@@ -70,12 +70,16 @@ export function usbBootSteps(record: DeviceRecord, all: DeviceRecord[]): string[
     .filter(Boolean);
 }
 
-/** The A/B updater's state, when the board reports it. Only what exists. */
-export function slotFacts(record: DeviceRecord): { label: string; value: string }[] {
+/**
+ * The A/B updater's state, when the board reports it. Only what exists. The
+ * live status (`update`) wins over the identity, which Atlas read at its
+ * last scan.
+ */
+export function slotFacts(record: DeviceRecord, update?: UpdateState | null): { label: string; value: string }[] {
   const a = record.identity.attributes ?? {};
   const pick = (...keys: string[]) => keys.map((k) => a[k]).find((v) => v && v.trim());
   const facts: { label: string; value: string }[] = [];
-  const slot = pick("slot_active", "update.slot_active", "update_slot_active");
+  const slot = update?.slot_active || pick("slot_active", "update.slot_active", "update_slot_active");
   if (slot) facts.push({ label: "Active slot", value: slot });
   const state = pick("update_state", "update.state");
   const error = pick("update_error", "update.error");

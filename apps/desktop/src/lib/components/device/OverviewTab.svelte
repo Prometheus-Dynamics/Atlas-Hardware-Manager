@@ -182,6 +182,10 @@
         </Field>
       </div>
 
+      {#if online && actions.length > 0}
+        <ControlsCard {actions} {run} update={reports ? (status?.update ?? null) : undefined} />
+      {/if}
+
       <Disclosure title="Identity, versions and addresses">
         <div class="flex flex-col gap-3">
           <FactGrid facts={identity} plain />
@@ -230,18 +234,21 @@
         <Skeleton height={58} />
       {/if}
     {/if}
-    {#if online && actions.length > 0}
-      <ControlsCard {actions} {run} update={reports ? (status?.update ?? null) : undefined} />
-    {/if}
-    {#if !reports}<SelfTestCard {record} />{@render detailsCard()}{/if}
+    <!-- A device without a board status (an MCU): its charts here, the rest beside. -->
+    {#if !reports && telemetry}<DeviceCharts {record} />{/if}
 
   </div>
 
   <div class="col">
-    {#if telemetry}<DeviceCharts {record} />{/if}
+    {#if telemetry && reports}<DeviceCharts {record} />{/if}
     {#if online}
       <NetworkCard {record} />
       <UsbRouteCard {record} {actions} {run} />
+    {/if}
+    {#if !reports}
+      <SelfTestCard {record} />
+      {@render detailsCard()}
+      <div class="events"><EventsCard {record} onmore={onhistory} /></div>
     {/if}
     {#if reports}
       <div class="events"><EventsCard {record} onmore={onhistory} /></div>

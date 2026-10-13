@@ -163,9 +163,15 @@
 
 {#if items.length > 0}
   <div class="bar {tone}" bind:this={root} aria-label="Needs you" role="group" transition:softFade>
+    <!-- The same count as the sidebar's badge: devices, not tasks. -->
     <span class="count">
-      <span class="num">{items.length}</span>
-      need{items.length === 1 ? "s" : ""} you
+      {#if insights.needYou > 0}
+        <span class="num">{insights.needYou}</span>
+        need{insights.needYou === 1 ? "s" : ""} you
+      {:else}
+        <span class="num">{items.length}</span>
+        to do
+      {/if}
     </span>
     <ul class="chips" bind:this={row}>
       {#each items as item (item.key)}

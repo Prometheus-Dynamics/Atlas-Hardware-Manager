@@ -10,6 +10,7 @@
   import { deviceStatus } from "#lib/stores/status.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
   import { rise } from "#lib/ui/motion.ts";
+  import BootsCard from "./BootsCard.svelte";
   import DeviceTimeline from "./DeviceTimeline.svelte";
 
   let { record }: { record: DeviceRecord } = $props();
@@ -37,6 +38,30 @@
           data: {},
         })),
   );
+
+  // The last 14 days, a bar each: how much happened, and how much of it
+  // was a warning or an error.
+  const DAYS = 14;
+  const days = $derived.by(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const start = today.getTime() - (DAYS - 1) * 86_400_000;
+    const out = Array.from({ length: DAYS }, (_, i) => ({ at: start + i * 86_400_000, ok: 0, bad: 0 }));
+    for (const e of timeline) {
+      const i = Math.floor((e.at_ms - start) / 86_400_000);
+      if (i < 0 || i >= DAYS) continue;
+      if (e.level === "warning" || e.level === "error") out[i].bad += 1;
+      else out[i].ok += 1;
+    }
+    return out;
+  });
+  const warnings = $derived(days.reduce((n, d) => n + d.bad, 0));
+  const peak = $derived(Math.max(1, ...days.map((d) => d.ok + d.bad)));
+  const bySource = $derived(
+    (["atlas", "orion", "local"] as const).map((s) => ({ source: s, n: timeline.filter((e) => e.source === s).length })).filter((s) => s.n > 0),
+  );
+  const LABEL = { atlas: "you, through Atlas", orion: "Orion", local: "on the board" } as const;
+  const status = $derived(deviceStatus.get(record));
 
   function open(id: number) {
     ui.selectedJob = id;
@@ -72,13 +97,104 @@
 {/if}
 
 {#if timeline.length > 0}
-  <section class="mt-6 flex flex-col gap-2">
-    <h3 class="text-[12px] font-medium uppercase tracking-[0.06em] text-fg-faint">Timeline</h3>
-    <DeviceTimeline entries={timeline} />
-  </section>
+  <div class="history" class:mt-4={entries.length > 0}>
+    <section class="panel min-h-0" aria-label="Timeline">
+      <div class="panel-head">
+        <h2 class="panel-title">Timeline</h2>
+        <span class="panel-note">{timeline.length} events, newest first</span>
+      </div>
+      <div class="min-h-0 flex-1 overflow-y-auto"><DeviceTimeline entries={timeline} limit={Infinity} /></div>
+    </section>
+    <div class="side">
+      <section class="panel" aria-label="Last 14 days">
+        <div class="panel-head">
+          <h2 class="panel-title">Last 14 days</h2>
+          <span class="panel-note">{days.reduce((n, d) => n + d.ok + d.bad, 0)} events · {warnings} warning{warnings === 1 ? "" : "s"}</span>
+        </div>
+        <div class="bars" role="img" aria-label="Events per day over the last 14 days">
+          {#each days as d (d.at)}
+            <span class="day" title="{new Date(d.at).toLocaleDateString()}: {d.ok + d.bad} events, {d.bad} warnings or errors">
+              <span class="bad" style:height="{(d.bad / peak) * 100}%"></span>
+              <span class="ok" style:height="{(d.ok / peak) * 100}%"></span>
+            </span>
+          {/each}
+        </div>
+        <div class="axis"><span>{new Date(days[0].at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span><span>today</span></div>
+        {#if bySource.length}
+          <dl class="sources">
+            {#each bySource as s (s.source)}
+              <div><dt>{LABEL[s.source]}</dt><dd>{s.n}</dd></div>
+            {/each}
+          </dl>
+        {/if}
+      </section>
+      <BootsCard {record} {status} />
+    </div>
+  </div>
 {/if}
 
 <style>
+  .history {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  @container (min-width: 900px) {
+    .history {
+      grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    }
+  }
+  .side {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+  }
+  .bars {
+    display: flex;
+    align-items: stretch;
+    gap: 3px;
+    height: 90px;
+  }
+  .day {
+    flex: 1;
+    display: flex;
+    flex-direction: column-reverse;
+    background: var(--inset);
+    border-radius: 1px;
+  }
+  .day .ok {
+    background: var(--series-1);
+  }
+  .day .bad {
+    background: var(--warn);
+  }
+  .axis {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10.5px;
+    color: var(--fg-faint);
+  }
+  .sources {
+    display: flex;
+    flex-direction: column;
+    border-top: 1px solid var(--hairline);
+    padding-top: 6px;
+    font-size: 12px;
+  }
+  .sources div {
+    display: flex;
+    justify-content: space-between;
+    padding: 2px 0;
+  }
+  .sources dt {
+    color: var(--fg-muted);
+  }
+  .sources dd {
+    font-variant-numeric: tabular-nums;
+  }
   .row {
     transition:
       background var(--t-fast),

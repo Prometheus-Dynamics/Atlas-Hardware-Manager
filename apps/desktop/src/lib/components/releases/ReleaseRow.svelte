@@ -5,13 +5,16 @@
   import Icon from "#lib/components/common/Icon.svelte";
   import Pill from "#lib/components/common/Pill.svelte";
   import ProgressBar from "#lib/components/common/ProgressBar.svelte";
-  import { bytes, type Tone } from "#lib/format.ts";
+  import { bytes, deviceName, primaryVersion, type Tone } from "#lib/format.ts";
+  import { devices } from "#lib/stores/devices.svelte.ts";
   import { releases } from "#lib/stores/releases.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
 
   let { entry }: { entry: ReleaseEntry } = $props();
 
   const progress = $derived(releases.downloads.get(entry.id));
+  // The devices of its family that run it now.
+  const running = $derived(devices.all.filter((d) => d.key.family === entry.family && primaryVersion(d.identity) === entry.version));
   const channel: Record<ReleaseEntry["channel"], { label: string; tone: Tone }> = {
     stable: { label: "Stable", tone: "success" },
     beta: { label: "Beta", tone: "info" },
@@ -36,6 +39,11 @@
     <p class="truncate text-[12px] text-fg-faint" title={entry.path ?? entry.artifact_name}>
       <span class="mono">{entry.artifact_name}</span> · {entry.origin.kind === "remote" ? `from ${entry.origin.source}` : "added by you"}{entry.boards.length ? ` · ${entry.boards.join(", ")}` : ""}
     </p>
+    {#if running.length}
+      <p class="truncate text-[12px] text-ok-fg" title={running.map(deviceName).join(", ")}>
+        <Icon name="circle-check" size={12} class="mr-1 inline align-[-1px]" />Runs on {running.map(deviceName).join(", ")}
+      </p>
+    {/if}
   </div>
   <div class="pills flex flex-wrap items-center gap-1.5">
     <Pill tone={channel[entry.channel].tone} label={channel[entry.channel].label} />
