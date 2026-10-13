@@ -158,6 +158,33 @@ pub struct BootInfo {
     /// board can't tell.
     #[serde(default)]
     pub previous_clean: Option<bool>,
+    /// The command the previous boot's kernel restarted with ("0 tryboot",
+    /// "" for a plain restart, "power-off"), from its console in pstore.
+    #[serde(default)]
+    pub previous_reboot: Option<String>,
+    /// Whether pstore had anything of the previous boot: a warm restart
+    /// always leaves its console, so `false` means RAM was lost (a
+    /// power-level reset).
+    #[serde(default)]
+    pub pstore_saved: Option<bool>,
+    /// The previous boot's last journal lines (" | " between them).
+    #[serde(default)]
+    pub previous_journal: Option<String>,
+}
+
+impl BootInfo {
+    /// Each field it lacks, from `other`.
+    pub fn fill_from(&mut self, other: BootInfo) {
+        self.id = self.id.take().or(other.id);
+        self.count = self.count.or(other.count);
+        self.slot = self.slot.take().or(other.slot);
+        self.kernel = self.kernel.take().or(other.kernel);
+        self.uptime_s = self.uptime_s.or(other.uptime_s);
+        self.previous_clean = self.previous_clean.or(other.previous_clean);
+        self.previous_reboot = self.previous_reboot.take().or(other.previous_reboot);
+        self.pstore_saved = self.pstore_saved.or(other.pstore_saved);
+        self.previous_journal = self.previous_journal.take().or(other.previous_journal);
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

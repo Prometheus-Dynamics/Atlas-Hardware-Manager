@@ -273,7 +273,15 @@ impl LogsCapability for FallbackLogs {
 /// What `status` lacks, from `other`.
 fn fill_missing(status: &mut DeviceStatus, other: DeviceStatus) {
     status.time = status.time.or(other.time);
-    status.boot = status.boot.take().or(other.boot);
+    // Field by field: Orion's host facts lack the board's boot record
+    // (count, how the boot before ended).
+    status.boot = match (status.boot.take(), other.boot) {
+        (Some(mut boot), Some(more)) => {
+            boot.fill_from(more);
+            Some(boot)
+        }
+        (boot, more) => boot.or(more),
+    };
     status.failed_units = status.failed_units.take().or(other.failed_units);
     if status.temperatures.is_empty() {
         status.temperatures = other.temperatures;

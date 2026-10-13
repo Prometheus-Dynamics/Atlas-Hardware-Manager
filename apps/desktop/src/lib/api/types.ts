@@ -471,6 +471,12 @@ export interface BootInfo {
   uptime_s: number | null;
   /** Whether the boot before this one shut down cleanly; null when unknown. */
   previous_clean: boolean | null;
+  /** What the previous boot's kernel restarted with ("0 tryboot", "" plain, "power-off"); from pstore. */
+  previous_reboot?: string | null;
+  /** Whether pstore had the previous boot; false means RAM was lost (a power-level reset). */
+  pstore_saved?: boolean | null;
+  /** The previous boot's last journal lines, " | " between them. */
+  previous_journal?: string | null;
 }
 
 export interface Temperature {

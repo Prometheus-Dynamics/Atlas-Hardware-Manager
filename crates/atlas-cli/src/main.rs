@@ -4,6 +4,7 @@
 mod commands;
 mod flash;
 mod output;
+mod reboots;
 mod system;
 
 use std::path::PathBuf;
@@ -97,6 +98,22 @@ enum Command {
         device: String,
         /// Omit to list the device's actions.
         action: Option<String>,
+    },
+    /// Restart a board N times and tell how each boot before ended: clean or
+    /// not, what the kernel restarted with, whether pstore kept anything
+    /// (none: RAM was lost), the supply at the start of the shutdown, the
+    /// last journal line. Exits 1 when any restart wasn't clean.
+    RebootTest {
+        device: String,
+        /// How many restarts.
+        #[arg(long, default_value_t = 10)]
+        count: u32,
+        /// Seconds one restart may take to come back.
+        #[arg(long, default_value_t = 300)]
+        wait: u64,
+        /// Seconds on each new boot before the next restart.
+        #[arg(long, default_value_t = 20)]
+        settle: u64,
     },
     /// Fresh install: write an image to a Raspberry Pi board in USB boot
     /// (boot its mass-storage gadget, write the one new USB disk, read it
@@ -270,6 +287,24 @@ async fn main() -> ExitCode {
                 json: cli.json,
             };
             flash::flash(&atlas, options).await
+        }
+        Command::RebootTest {
+            device,
+            count,
+            wait,
+            settle,
+        } => {
+            reboots::reboot_test(
+                &atlas,
+                reboots::RebootOptions {
+                    device,
+                    count,
+                    wait: Duration::from_secs(wait),
+                    settle: Duration::from_secs(settle),
+                    json: cli.json,
+                },
+            )
+            .await
         }
         Command::Doctor => system::doctor(&atlas, cli.json).await,
         Command::Fix { action } => system::fix(&atlas, &action).await,
