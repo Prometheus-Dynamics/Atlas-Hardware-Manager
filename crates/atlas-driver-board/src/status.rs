@@ -200,7 +200,7 @@ pub(crate) fn status_metrics(status: &DeviceStatus) -> Vec<Metric> {
 /// How long an answer to GET /status is reused: the telemetry and the
 /// status views ask for the same document, often together, and the board
 /// starts a process for each request.
-const STATUS_FRESH: std::time::Duration = std::time::Duration::from_secs(1);
+const STATUS_FRESH: std::time::Duration = std::time::Duration::from_millis(500);
 
 pub(crate) struct BoardStatus {
     pub(crate) http: reqwest::Client,
@@ -462,7 +462,7 @@ mod tests {
         assert_eq!((old.boot_id, old.newest_seq), (None, None));
     }
 
-    /// Reads at the same moment, or within a second, share one GET /status;
+    /// Reads at the same moment, or within half a second, share one GET /status;
     /// a later one asks again.
     #[tokio::test]
     async fn status_reads_close_together_share_one_request() {

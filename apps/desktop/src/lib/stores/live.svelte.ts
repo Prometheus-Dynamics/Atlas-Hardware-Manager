@@ -13,17 +13,17 @@ import { SvelteMap } from "svelte/reactivity";
 import { api, errorText, keyString, type DeviceRecord, type Metric } from "#lib/api/client.ts";
 import { devices } from "./devices.svelte";
 
-/** For a device's own page. */
-export const FAST_MS = 3000;
+/** For a device's own page and the Monitor: the old app's feel (until Orion streams). */
+export const FAST_MS = 1000;
 /** For lists, tiles and the sidebar. */
-export const SLOW_MS = 10_000;
-const TICK_MS = 1000;
+export const SLOW_MS = 2000;
+const TICK_MS = 250;
 /** Readings taken at FAST_MS before a device drops to the rate its views ask. */
 const WARM_UP = 3;
 /** Samples kept per metric: 15 minutes at the fast rate (the Monitor's longest view). */
-const HISTORY = 300;
-/** What series() gives by default: about three minutes at the fast rate. */
-const SHOWN = 60;
+const HISTORY = 900;
+/** What series() gives by default: two minutes at the fast rate. */
+const SHOWN = 120;
 
 export function hasTelemetry(record: DeviceRecord | undefined): boolean {
   return !!record && record.presence === "online" && record.capabilities.includes("telemetry");
