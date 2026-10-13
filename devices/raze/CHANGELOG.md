@@ -139,10 +139,11 @@ commit; the commits are listed per area.
   identity only for that caller), and ttyGS1 is Atlas's console: a raw,
   non-interactive root shell that restarts whenever it ends. ttyGS0 stays
   the login console for people. With it on, neither exists.
-  First board test (r24) fixes: the USB-link check's awk ended in
-  `exit (a == b) ? 0 : 1`, which BusyBox awk may read as `exit (a == b)`
-  (so a match failed): now an explicit if; a refused USB-link action logs the
-  caller's address. ttyGS1 was in the RNDIS configuration only, so Linux and
+  First board test (r24) fixes: the USB-link check's awk used `2 ^ n`, and
+  the image's BusyBox awk has no math support (FEATURE_AWK_LIBM off), so it
+  died and every caller was refused: it doubles in a loop now, and
+  tests/awk-lint.sh fails on ^, ** or a math function in any awk program of
+  the package; a refused USB-link action logs the caller's address. ttyGS1 was in the RNDIS configuration only, so Linux and
   macOS hosts saw one console: it is linked into the ECM configuration too
   when the controller has the endpoints (the bind is retried without it
   otherwise). Its shell no longer restarts every second while nothing holds
