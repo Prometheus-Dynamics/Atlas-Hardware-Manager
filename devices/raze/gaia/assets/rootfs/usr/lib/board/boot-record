@@ -110,9 +110,11 @@ if [ -n "$id" ] && grep -q "\"id\":\"$id\"" "$BOARD_RUN_DIR/boot.json" 2>/dev/nu
 	exit 0
 fi
 
-# The last event of an earlier boot says how that boot ended.
+# The last event of an earlier boot says how that boot ended (the `power`
+# reading board-power-log takes as the shutdown starts may come after the
+# `shutdown` event, so it doesn't count).
 last=$(cat "$BOARD_RUN_DIR/events.jsonl" "$BOARD_DATA_DIR/events.jsonl" 2>/dev/null |
-	awk -v id="\"boot_id\":\"$id\"" '/^\{"t":[0-9]+,"boot_id":.*\}$/ && index($0, id) == 0 { last = $0 } END { print last }')
+	awk -v id="\"boot_id\":\"$id\"" '/^\{"t":[0-9]+,"boot_id":.*\}$/ && index($0, id) == 0 && index($0, "\"kind\":\"power\"") == 0 { last = $0 } END { print last }')
 case "$last" in
 '') clean=null ;;
 *'"kind":"shutdown"'*) clean=true ;;

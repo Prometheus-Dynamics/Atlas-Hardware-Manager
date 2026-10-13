@@ -46,10 +46,12 @@ for file in "$@"; do
 done
 sync "$dest" 2>/dev/null || sync
 
-# The last event of an earlier boot says how that boot ended (as
+# The last event of an earlier boot says how that boot ended (the `power`
+# reading board-power-log takes as the shutdown starts may come after the
+# `shutdown` event, so it doesn't count) (as
 # boot-record reads it; this runs before it).
 last=$(cat "$BOARD_RUN_DIR/events.jsonl" "$BOARD_DATA_DIR/events.jsonl" 2>/dev/null |
-	awk -v id="\"boot_id\":\"$id\"" '/^\{"t":[0-9]+,"boot_id":.*\}$/ && index($0, id) == 0 { last = $0 } END { print last }')
+	awk -v id="\"boot_id\":\"$id\"" '/^\{"t":[0-9]+,"boot_id":.*\}$/ && index($0, id) == 0 && index($0, "\"kind\":\"power\"") == 0 { last = $0 } END { print last }')
 case "$last" in
 *'"kind":"shutdown"'*) clean=true ;;
 '') clean=unknown ;;
@@ -59,6 +61,12 @@ esac
 tail=''
 if [ -r "$dest/console-ramoops-0" ]; then
 	tail=$(tr -d '\000' < "$dest/console-ramoops-0" | tr -cd '\11\12\40-\176' | sed '/^[[:space:]]*$/d' | tail -n 1 | cut -c1-160)
+fi
+# The kernel got to the end of a shutdown ("reboot: Restarting system",
+# "reboot: Power down"): not a reset mid-way, whatever the event log says.
+if [ "$clean" = false ] && [ -r "$dest/console-ramoops-0" ] &&
+	grep -a -q -E 'reboot: (Restarting system|Power down)' "$dest/console-ramoops-0"; then
+	clean=true
 fi
 if [ "$panics" -gt 0 ]; then
 	board_event kernel.pstore "the last boot ended in a kernel panic or oops; its kernel log is in $dest" \

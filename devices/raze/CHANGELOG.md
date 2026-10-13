@@ -95,6 +95,14 @@ commit; the commits are listed per area.
 
 ### Board awareness: events, status, drift
 
+- **A clean restart no longer reads as a crash.** board-power-log logs its
+  `power` reading as the shutdown starts, sometimes after the `shutdown`
+  event, so `pstore` took the next boot's previous boot as unclean and logged
+  a `kernel.pstore` "ended without a clean shutdown" event after an update's
+  ordinary `0 tryboot` restart. `pstore` and `boot-record` now skip `power`
+  events when reading how a boot ended, and `pstore` also counts the
+  console's own "reboot: Restarting system" / "Power down" line as clean,
+  as `boot-record` already did. Tested in `tests/pstore.sh`.
 - **The identity endpoint forks 3 times a request, not 130:** board-http@
   starts a process per request, and Atlas's polling (about 9 a second) cost
   some 1,100 forks a second and 38% CPU. The identity's fixed fields are

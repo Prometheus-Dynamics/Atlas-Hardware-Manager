@@ -41,6 +41,19 @@ run b2
 [ ! -e "$T/pstore/console-ramoops-0" ] || fail "and freed from pstore"
 [ "$(pstore_events)" = 0 ] || fail "no event for a clean restart: $(events)"
 
+echo "a power reading after the shutdown event, then an update's tryboot: still clean"
+boot c1 clean
+BOARD_BOOT_ID=c1 sh "$lib/event" power "board supply at shutdown start" >/dev/null 2>&1 || true
+printf "[   1.0] booting\n[2542.5] reboot: Restarting system with command '0 tryboot'\n" > "$T/pstore/console-ramoops-0"
+run c2
+[ "$(pstore_events)" = 0 ] || fail "no event after a clean tryboot restart: $(events)"
+
+echo "the kernel's own restart line counts as clean without a shutdown event"
+boot d1
+printf '[   1.0] booting\n[  90.0] reboot: Power down\n' > "$T/pstore/console-ramoops-0"
+run d2
+[ "$(pstore_events)" = 0 ] || fail "no event when the console shows the end of a shutdown: $(events)"
+
 echo "after an unclean end: an event, with the console's last line"
 boot b2
 printf '[   1.0] booting\n[  74.5] dwc2 1000480000.usb: something\000\000\000' > "$T/pstore/console-ramoops-0"
