@@ -52,6 +52,13 @@ access | grep -qx 'ORION_NODE_OPERATOR_OPEN_READ=status,streams' || fail "open r
 access | grep -Eqx 'ORION_NODE_OPERATOR_AUTO_ENROLL=[0-9.]+/[0-9]+=reboot,usb-boot,locate' ||
 	fail "auto-enroll: $(access)"
 
+# The network, not the board's own address in it.
+echo 'USB_GADGET_ADDRESS=172.31.12.81/29' > "$T/etc/usb-gadget.env"
+run
+access | grep -qx 'ORION_NODE_OPERATOR_AUTO_ENROLL=172.31.12.80/29=reboot,usb-boot,locate' ||
+	fail "auto-enroll network: $(access)"
+rm -f "$T/etc/usb-gadget.env"
+
 # The OS's own listener address is kept.
 printf 'ORION_NODE_PEER_ADDR=10.0.0.2:9300\n' > "$T/orion-node.env"
 run

@@ -510,6 +510,15 @@ commit; the commits are listed per area.
 
 ### Updates (A/B with tryboot)
 
+- **Updates and USB boot wait for another tool's run on the board.** While
+  the device lock Styx's and Eidos's `with-device-lock.sh` take is held
+  (`/tmp/styx-device-lock`, a directory with an owner file), `update stage`,
+  `stage-url`, `apply` and `rollback`, and `usb-boot`, refuse with exit 3
+  and nothing changed, naming the owner. Every path goes through them:
+  Atlas over SSH, Orion's `update` and `update.rollback` (board-agent), and
+  the identity endpoint's USB boot. `BOARD_DEVICE_LOCK` names another lock
+  (empty: none), and `BOARD_IGNORE_DEVICE_LOCK=1` goes ahead anyway. Tested
+  in `tests/update.sh` and `tests/usb-boot.sh`.
 - **Logs survive a reboot:** a journald drop-in keeps the journal on disk
   (`Storage=persistent`, `SystemMaxUse=64M`, `SystemKeepFree=256M`; the OS
   keeps `/var/log/journal` on /data), and `board-machine-id.service` binds a
@@ -726,7 +735,8 @@ commit; the commits are listed per area.
   after the OS's files). Off (the default): listening on `0.0.0.0:9200`
   (the OS's own `ORION_NODE_PEER_ADDR` is kept), peer auth optional, status
   and streams open to read, and operators on the USB gadget's network
-  enrolled on their hello for `reboot`, `usb-boot` and `locate`. On: peer
+  enrolled on their hello for `reboot`, `usb-boot` and `locate` (the
+  network address, e.g. `172.31.12.80/29`, not the board's own). On: peer
   auth required, nothing open, no auto-enrollment. `board-security.path`
   reruns it when `security.env` changes and restarts orion-node if the
   access changed. board-agent defaults to `BOARD_AGENT_LIVE_SAMPLING=cheap`

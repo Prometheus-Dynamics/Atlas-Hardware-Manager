@@ -71,7 +71,7 @@ EOF
 chmod +x "$T/bin/mount" "$T/bin/mount-ro" "$T/bin/umount" "$T/bin/reboot" "$T/bin/systemctl"
 
 export BOARD_LIB_DIR=$lib BOARD_ETC_DIR=$T/etc BOARD_RUN_DIR=$T/run BOARD_OS_RELEASE=$T/os-release
-export BOARD_DEVICE_MODEL=raze
+export BOARD_DEVICE_MODEL=raze BOARD_DEVICE_LOCK=$T/device-lock
 export UPDATE_PART_PREFIX=$T/disk/p UPDATE_MOUNT=$T/bin/mount UPDATE_MOUNT_RO=$T/bin/mount-ro
 export UPDATE_UMOUNT=$T/bin/umount UPDATE_SLOTS_TOOL=$T/bin/board-image-slots
 export UPDATE_REBOOT="$T/bin/reboot tryboot" UPDATE_REBOOT_PLAIN="$T/bin/reboot plain"
@@ -613,6 +613,19 @@ update apply 2>/dev/null || rc=$?
 [ "$rc" = 3 ] || fail "apply after cancel should be refused with status 3, got $rc"
 [ "$(state)" = cancelled ] || fail "a refused apply changes nothing, is $(state)"
 [ "$(update cancel)" = idle ] || fail "a second cancel should print idle"
+
+echo "another tool's device lock refuses stage and apply, and leaves the state"
+mkdir "$T/device-lock" && echo 'styx 1700000000-1-ab' > "$T/device-lock/owner"
+was=$(state)
+rc=0
+update stage "$img.xz" --sha256 "$(sha "$img.xz")" 2> "$T/log" || rc=$?
+[ "$rc" = 3 ] || fail "a stage under the device lock should be refused with 3, got $rc"
+grep -q 'held for a run by styx' "$T/log" || fail "the refusal should name the owner: $(cat "$T/log")"
+[ "$(state)" = "$was" ] || fail "a refused stage changes nothing, is $(state), was $was"
+rc=0
+BOARD_IGNORE_DEVICE_LOCK=1 update status >/dev/null || rc=$?
+[ "$rc" = 0 ] || fail "status ignores the lock"
+rm -rf "$T/device-lock"
 
 if command -v flock >/dev/null 2>&1; then
 	echo "cancel stops a running stage; its progress shows while it copies"

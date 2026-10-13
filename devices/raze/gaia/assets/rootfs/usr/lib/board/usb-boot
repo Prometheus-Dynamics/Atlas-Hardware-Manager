@@ -28,6 +28,8 @@ if [ "${1:-}" = --check ]; then
 	exit
 fi
 [ $# -eq 0 ] || { sed -n '5,6p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
+# Not in the middle of another tool's run (exit 3).
+board_refuse_if_locked "USB boot"
 
 board_usb_boot_supported || {
 	board_log "this board can't restart into USB boot by itself (needs a BCM2712 and vcmailbox)"

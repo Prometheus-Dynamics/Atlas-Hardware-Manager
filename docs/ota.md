@@ -235,6 +235,14 @@ everything with "Live readings from Orion" off in Settings, are polled as
 before (every second on a device's page, every 2 s in lists); a stream that
 ends falls back to polling, and the stream is tried again after 30 s.
 
+**Another tool's run comes first.** While the board's device lock is held
+(`/tmp/styx-device-lock`, taken by Styx's and Eidos's `with-device-lock.sh`),
+`update stage`, `stage-url`, `apply`, `rollback` and `usb-boot` refuse with
+exit 3 and change nothing; the message names who holds it. That covers every
+way in (SSH, Orion through board-agent, the identity endpoint).
+`BOARD_DEVICE_LOCK` names another lock, `BOARD_IGNORE_DEVICE_LOCK=1`
+overrides.
+
 States, reported in `status` (`state`, `slot_active`, `slot_staged`,
 `version_active`, `version_staged`, `progress` 0..1000, `error`), the same
 values as Orion's `update_action::STATE_*`:

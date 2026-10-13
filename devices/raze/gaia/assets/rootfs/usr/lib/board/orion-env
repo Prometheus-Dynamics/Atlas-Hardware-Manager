@@ -52,8 +52,14 @@ before=$(cat "$access" 2>/dev/null || true)
 		echo 'ORION_NODE_PEER_AUTH=optional'
 		echo 'ORION_NODE_OPERATOR_OPEN_READ=status,streams'
 		board_load_env usb-gadget.env
-		if board_gadget_address 2>/dev/null && [ -n "${BOARD_GADGET_CIDR:-}" ]; then
-			echo "ORION_NODE_OPERATOR_AUTO_ENROLL=$BOARD_GADGET_CIDR=reboot,usb-boot,locate"
+		if board_gadget_address 2>/dev/null && [ -n "${BOARD_GADGET_CIDR:-}" ] &&
+			board_ip4_var "${BOARD_GADGET_CIDR%/*}"; then
+			# The network, not the board's own address in it.
+			bits=${BOARD_GADGET_CIDR#*/}
+			size=$((1 << (32 - bits)))
+			n=$((BOARD_IP4 / size * size))
+			net=$((n >> 24 & 255)).$((n >> 16 & 255)).$((n >> 8 & 255)).$((n & 255))
+			echo "ORION_NODE_OPERATOR_AUTO_ENROLL=$net/$bits=reboot,usb-boot,locate"
 		else
 			echo 'ORION_NODE_OPERATOR_AUTO_ENROLL='
 		fi

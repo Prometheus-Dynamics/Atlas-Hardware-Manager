@@ -22,7 +22,8 @@
 # staged, rebooting (apply's or rollback's restart was accepted), trying (the
 # trial boot), confirmed, rolled-back, cancelled, error. Exit status: 0 done,
 # 3 refused with nothing changed (wrong state, another command still running
-# after UPDATE_LOCK_WAIT seconds, a read-only p1), anything else failed
+# after UPDATE_LOCK_WAIT seconds, a read-only p1, another tool's device lock
+# held: lib.sh's board_device_locked), anything else failed
 # (recorded as `error` once staging began; a failed write to p1 is in
 # update.json). `status` answers from update.json without the lock.
 # While the state is trying, "phase" in the JSON says how far the trial's
@@ -1232,6 +1233,11 @@ take_lock() {
 		waited=$((waited + 1))
 	done
 }
+
+# Writing a slot or restarting waits for another tool's run on the board.
+case "${1:-}" in
+stage | stage-url | apply | rollback) board_refuse_if_locked "update $1" ;;
+esac
 
 exec 9> "$BOARD_RUN_DIR/update.lock"
 if [ "$HAVE_FLOCK" = 1 ] && ! flock -n 9; then

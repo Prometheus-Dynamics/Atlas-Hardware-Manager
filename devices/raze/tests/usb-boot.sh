@@ -24,7 +24,7 @@ MB
 chmod +x "$T/vcmailbox"
 
 export BOARD_LIB_DIR=$lib BOARD_DT_DIR=$T/dt BOARD_RUN_DIR=$T/run BOARD_VCMAILBOX=$T/vcmailbox
-export CALLS=$T/calls USB_BOOT_REBOOT="echo reboot >> $T/reboots" USB_BOOT_SYNC=true
+export BOARD_DEVICE_LOCK=$T/device-lock CALLS=$T/calls USB_BOOT_REBOOT="echo reboot >> $T/reboots" USB_BOOT_SYNC=true
 run() { sh "$lib/usb-boot" "$@"; }
 
 echo "a CM5 with vcmailbox supports it"
@@ -36,6 +36,16 @@ echo "it sets RPIBOOT for one boot, then reboots"
 run 2>/dev/null
 grep -qx '0x0003808b 4 4 0x3' "$T/calls" || fail "mailbox call: $(cat "$T/calls")"
 grep -qx reboot "$T/reboots" || fail "it should reboot"
+
+echo "another tool's device lock refuses it (3) without a reboot"
+rm -f "$T/reboots"
+mkdir "$T/device-lock"
+rc=0
+run 2>/dev/null || rc=$?
+[ "$rc" = 3 ] || fail "under the device lock it should exit 3, got $rc"
+[ ! -e "$T/reboots" ] || fail "it rebooted under the device lock"
+BOARD_IGNORE_DEVICE_LOCK=1 run 2>/dev/null || fail "BOARD_IGNORE_DEVICE_LOCK=1 should go ahead"
+rmdir "$T/device-lock"
 
 echo "a refused request doesn't reboot"
 rm -f "$T/reboots"

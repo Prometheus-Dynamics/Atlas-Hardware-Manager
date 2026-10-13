@@ -380,6 +380,30 @@ board_json_str() {
 # BOARD_LINE to the first line of <file> and fails when it is unreadable;
 # board_json_var sets BOARD_JSON to board_json_str's answer for $1, forking
 # only for a value with characters that need escaping.
+# Whether another tool holds the board for a run: the device lock Styx's and
+# Eidos's with-device-lock.sh take (a directory, created atomically, with an
+# owner file "<owner> <token>"). Updates and USB boot refuse while it is
+# held, so a reflash never lands in the middle of someone's run.
+# BOARD_DEVICE_LOCK names it (empty: no lock); BOARD_IGNORE_DEVICE_LOCK=1
+# goes ahead anyway. Sets BOARD_LOCK_OWNER. No fork.
+board_device_locked() {
+	[ "${BOARD_IGNORE_DEVICE_LOCK:-0}" != 1 ] || return 1
+	_board_lock=${BOARD_DEVICE_LOCK-/tmp/styx-device-lock}
+	[ -n "$_board_lock" ] && [ -d "$_board_lock" ] || return 1
+	BOARD_LOCK_OWNER=unknown
+	if board_read "$_board_lock/owner" && [ -n "$BOARD_LINE" ]; then
+		BOARD_LOCK_OWNER=${BOARD_LINE%% *}
+	fi
+	return 0
+}
+
+# Refuses (exit 3, nothing changed) while the device lock is held.
+board_refuse_if_locked() {
+	board_device_locked || return 0
+	board_log "the board is held for a run by $BOARD_LOCK_OWNER ($_board_lock); $1 waits until it is released (BOARD_IGNORE_DEVICE_LOCK=1 overrides)"
+	exit 3
+}
+
 board_read() {
 	BOARD_LINE=''
 	[ -r "$1" ] || return 1
