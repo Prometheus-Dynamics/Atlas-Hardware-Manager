@@ -38,13 +38,14 @@ src = "@self/assets/initramfs/init"
 dest = "init"
 mode = "0755"
 
-# e2fsck, with its shared libraries from the target tree (Gaia's library
-# closure for listed binaries, being added; spell it as that lands).
-[[image.assembly.files]]
+# e2fsck with its interpreter and shared libraries (libext2fs, libcom_err,
+# libblkid, libuuid, libe2p), resolved from the target root; the build fails
+# if one is missing. A plain file copy took the binary alone, and it exited
+# 127 at boot.
+[[image.assembly.binaries]]
 tree = "slot-initramfs"
 src = "$provider.buildroot_output/target/usr/sbin/e2fsck"
 dest = "usr/sbin/e2fsck"
-mode = "0755"
 
 [[image.assembly.files]]
 tree = "slot-initramfs"
