@@ -1,8 +1,8 @@
 //! `slot-init`: the slot initramfs's /init (as `/init`, PID 1: boot.rs),
 //! and the slots writer's helper in the OS:
 //!
-//!   slot-init check-initramfs <file>          whether the kernel can unpack it (its format; xz:
-//!                                             a dictionary of at most 1 MiB)
+//!   slot-init check-initramfs <file>          whether the kernel can unpack it (cpio, zstd or
+//!                                             gzip; not xz)
 //!   slot-init boot                            /init's steps with recording ops, for
 //!                                             tests/slot-init.sh: SLOT_ROOT (the prefix),
 //!                                             SLOT_CALLS (the record), SLOT_FAIL (steps

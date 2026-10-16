@@ -11,7 +11,7 @@
 # filesystem marked as having errors is mounted read-only), so it is
 # ~0.3 MB instead of 2 MB per slot.
 #
-# Output: $assembly.work/slots/initramfs.cpio.xz, for the slot bundle and
+# Output: $assembly.work/slots/initramfs.cpio.zst, for the slot bundle and
 # the boot directory (the recipes that assemble those take it from there).
 # The kernel needs BLK_DEV_INITRD, BLK_DEV_LOOP, EROFS_FS, EXT4_FS, VFAT_FS
 # built in (they are); dm-mod, dm-bufio and dm-verity come as modules, below.
@@ -37,17 +37,15 @@ src = "${workspace.out_dir}/artifacts/slot-init/slot-init"
 dest = "init"
 mode = "0755"
 
-# xz, smaller than zstd -19 on this tree; the kernel has RD_XZ. The
-# kernel's initramfs decoder takes a dictionary of at most 1 MiB: Gaia >=
-# 82d24d1 caps cpio-xz's at that for every level (before it, level 9 used
-# 64 MiB and r54's trial never got to /init). The slots writer refuses an
-# initramfs the kernel can't unpack anyway (slot-init check-initramfs).
+# zstd -19 (Gaia's default level). Not xz, though smaller (~90 KB): three xz
+# encodings stopped the kernel before /init (r54, r55, r56), and zstd booted
+# from the first try. The slots writer refuses an xz initramfs (slot-init
+# check-initramfs).
 [[image.assembly.filesystems]]
 id = "slot-initramfs"
-kind = "cpio-xz"
-compression_level = 9
+kind = "cpio-zstd"
 source_tree = "slot-initramfs"
-output = "$assembly.work/slots/initramfs.cpio.xz"
+output = "$assembly.work/slots/initramfs.cpio.zst"
 
 # slot-init, as board-agent is built (board-agent.toml): a static aarch64
 # musl binary from the OS build's `atlas` source. Only the initramfs takes it.
