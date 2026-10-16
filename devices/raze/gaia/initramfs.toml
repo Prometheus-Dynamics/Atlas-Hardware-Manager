@@ -37,12 +37,15 @@ src = "${workspace.out_dir}/artifacts/slot-init/slot-init"
 dest = "init"
 mode = "0755"
 
-# xz: on this tree 12% smaller than zstd -19 (257 against 295 KB); the
-# kernel has RD_XZ, and it unpacks well under a second.
+# xz, smaller than zstd -19 on this tree; the kernel has RD_XZ. Level 1:
+# its dictionary is 1 MiB, which the kernel's initramfs decoder takes;
+# level 9's 64 MiB isn't (r54's trial didn't get to /init). The slots
+# writer refuses an initramfs the kernel can't unpack (slot-init
+# check-initramfs).
 [[image.assembly.filesystems]]
 id = "slot-initramfs"
 kind = "cpio-xz"
-compression_level = 9
+compression_level = 1
 source_tree = "slot-initramfs"
 output = "$assembly.work/slots/initramfs.cpio.xz"
 

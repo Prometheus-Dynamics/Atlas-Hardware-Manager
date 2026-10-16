@@ -249,6 +249,11 @@ install_bundle() {
 	PROGRESS=600 && write_status
 	$INIT boot-files "$_work/slot.json" > "$_work/boot.sha256" || die "slot.json's boot files"
 	(cd "$_work/boot" && sha256sum -c ../boot.sha256 > /dev/null 2>&1) || die "a boot file doesn't match slot.json"
+	# An initramfs the kernel can't unpack never gets to /init (r54: xz with
+	# a 64 MiB dictionary): refuse it here, not on the trial.
+	if [ -f "$_work/boot/initramfs" ]; then
+		_why=$($INIT check-initramfs "$_work/boot/initramfs" 2>&1) || refuse "the bundle's initramfs won't boot: ${_why#slot-init: }"
+	fi
 	# The boot side: slots/<id>/ on the FAT, its cmdline naming the slot.
 	mount_boot
 	_dev=${SLOTS_PARTUUID:-$(findmnt -n -o PARTUUID "$DATA" 2>/dev/null || true)}

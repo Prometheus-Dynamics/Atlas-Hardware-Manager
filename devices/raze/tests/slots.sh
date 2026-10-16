@@ -29,6 +29,7 @@ for k in sys.argv[2].split("."):
     if not isinstance(v,dict) or k not in v: sys.exit(1)
     v=v[k]
 print(str(v).lower() if isinstance(v,bool) else v)' "$2" "$3" ;;
+check-initramfs) ! grep -q BIGDICT "$2" || { echo "slot-init: $2: xz with a 64 MiB dictionary" >&2; exit 1; }; echo xz ;;
 boot-files) exec python3 -c 'import json,sys
 for n,h in json.load(open(sys.argv[1]))["boot"]["files"].items(): print(h+"  "+n)' "$2" ;;
 esac
@@ -108,6 +109,18 @@ tar -cf "$T/pv-c.slot.tar" -C "$T/build/pv-c" slot.json boot rootfs.erofs
 mkdir "$T/device-lock"
 [ "$(rc stage "$T/pv-b.slot.tar")" = 3 ] || fail "the device lock didn't hold"
 rmdir "$T/device-lock"
+
+echo "a bundle whose initramfs the kernel can't unpack is refused before anything is written"
+bundle pv-d 2026.4.2
+echo BIGDICT > "$T/build/pv-d/boot/initramfs"
+python3 -c 'import json,hashlib,sys
+p=sys.argv[1]; m=json.load(open(p+"/slot.json"))
+m["boot"]["files"]["initramfs"]=hashlib.sha256(open(p+"/boot/initramfs","rb").read()).hexdigest()
+json.dump(m,open(p+"/slot.json","w"))' "$T/build/pv-d"
+tar -cf "$T/pv-d.slot.tar" -C "$T/build/pv-d" slot.json boot rootfs.erofs
+[ "$(rc stage "$T/pv-d.slot.tar")" = 3 ] || fail "an unbootable initramfs was installed: $(cat "$T/err")"
+grep -q "initramfs won't boot: .*64 MiB" "$T/err" || fail "the reason: $(cat "$T/err")"
+[ ! -e "$T/data/slots/pv-d.erofs" ] && [ ! -d "$T/boot/slots/pv-d" ] || fail "pv-d left behind"
 
 echo "boot once writes trial.txt and restarts with tryboot"
 up apply 2>/dev/null

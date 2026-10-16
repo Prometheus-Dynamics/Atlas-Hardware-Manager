@@ -1,6 +1,8 @@
 //! `slot-init`: the slot initramfs's /init (as `/init`, PID 1: boot.rs),
 //! and the slots writer's helper in the OS:
 //!
+//!   slot-init check-initramfs <file>          whether the kernel can unpack it (its format; xz:
+//!                                             a dictionary of at most 1 MiB)
 //!   slot-init boot                            /init's steps with recording ops, for
 //!                                             tests/slot-init.sh: SLOT_ROOT (the prefix),
 //!                                             SLOT_CALLS (the record), SLOT_FAIL (steps
@@ -45,6 +47,15 @@ fn run(args: &[String]) -> Result<String, String> {
             cmdline_arg(&cmdline, key)
                 .map(str::to_owned)
                 .ok_or_else(|| format!("no {key}= on the kernel command line"))
+        }
+        ["check-initramfs", file] => {
+            use std::io::Read;
+            let mut head = vec![0u8; 4096];
+            let n = std::fs::File::open(file)
+                .and_then(|mut f| f.read(&mut head))
+                .map_err(|e| format!("{file}: {e}"))?;
+            head.truncate(n);
+            slot_init::initramfs::check(&head).map_err(|why| format!("{file}: {why}"))
         }
         ["find-partition", spec] => {
             let sys = std::env::var("SLOT_SYS").unwrap_or_else(|_| "/sys".into());
