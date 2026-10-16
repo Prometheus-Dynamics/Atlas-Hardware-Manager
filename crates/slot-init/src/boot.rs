@@ -275,6 +275,14 @@ impl Boot<'_> {
                 data_dev.display()
             ));
         }
+        // A trial this far: /init ran (the writer tells "didn't reach /init"
+        // from "/init stopped" by it).
+        if self.tryboot {
+            let _ = write_atomic(
+                &data_dir.join("board/slots/trial-init"),
+                &format!("{slot}\n"),
+            );
+        }
 
         let image = data_dir.join("slots").join(format!("{slot}.erofs"));
         let manifest_path = data_dir.join("slots").join(format!("{slot}.json"));

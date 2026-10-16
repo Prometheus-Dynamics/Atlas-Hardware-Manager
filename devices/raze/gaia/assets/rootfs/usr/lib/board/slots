@@ -373,12 +373,14 @@ cmd_confirm() {
 		board_event update.confirmed "kept slot $_run ($(mf "$_run" version))" "slot=$_run"
 	elif [ -n "$TRIAL" ]; then
 		meta_set "$TRIAL" GOOD no
-		# The initramfs writes trial-started once it has started a trial:
-		# then the slot's own system failed, else the initramfs stopped.
+		# The initramfs writes trial-init once it has /data on a trial, and
+		# trial-started once it has started the slot.
 		if [ "$(cat "$STATE_DIR/trial-started" 2>/dev/null)" = "$TRIAL" ]; then
 			ERROR="slot $TRIAL started but its system didn't confirm the boot; back on $_run"
+		elif [ "$(cat "$STATE_DIR/trial-init" 2>/dev/null)" = "$TRIAL" ]; then
+			ERROR="slot $TRIAL didn't start (its initramfs stopped; the reason is in slot-init.log on the boot partition); back on $_run"
 		else
-			ERROR="slot $TRIAL didn't start (the initramfs stopped; its reason is in slot-init.log on the boot partition); back on $_run"
+			ERROR="slot $TRIAL didn't reach its initramfs's /init (the kernel couldn't start it, or crashed before it); back on $_run"
 		fi
 		board_event update.rolled-back "$ERROR" "slot=$TRIAL"
 		TRIAL='' STATE=rolled-back
@@ -387,7 +389,7 @@ cmd_confirm() {
 	meta_set "$_run" GOOD yes
 	meta_set "$_run" LAST_BOOT "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	echo 0 > "$STATE_DIR/fallbacks"
-	rm -f "$STATE_DIR/trial-started"
+	rm -f "$STATE_DIR/trial-started" "$STATE_DIR/trial-init"
 	save_state
 }
 

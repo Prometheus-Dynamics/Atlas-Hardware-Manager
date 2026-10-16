@@ -104,6 +104,7 @@ printf '\000\000\000\001' > "$R/proc/device-tree/chosen/bootloader/tryboot"
 run
 called "switch_root $R/newroot /sbin/init" || fail "didn't start: $(cat "$T/calls")"
 [ "$(cat "$R/data/board/slots/trial-started")" = pv-a ] || fail "no trial-started"
+[ "$(cat "$R/data/board/slots/trial-init")" = pv-a ] || fail "no trial-init"
 said "starting slot pv-a (photonvision, trial 1)" || fail "log: $(cat "$R/dev/kmsg")"
 
 echo "a cut-short image on a trial is refused with the reason, logged, and the board restarts into the default"

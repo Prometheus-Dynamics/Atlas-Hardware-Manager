@@ -145,7 +145,16 @@ up confirm 2>/dev/null # still running pv-b: pv-c never started
 status | grep -q '"state":"rolled-back"' || fail "rolled-back: $(status)"
 grep -q '^GOOD=no' "$T/data/board/slots/pv-c.meta" || fail "pv-c marked bad"
 [ "$(rc set-default pv-c)" = 3 ] || fail "set-default on a slot that never booted"
-status | grep -q "the initramfs stopped" || fail "the reason for a trial /init didn't start: $(status)"
+status | grep -q "didn't reach its initramfs" || fail "the reason for a trial that never got to /init: $(status)"
+
+echo "a trial whose /init ran but stopped says so"
+up apply 2>/dev/null || true
+up stage "$T/pv-c.slot.tar" 2>/dev/null || true
+up apply 2>/dev/null
+echo pv-c > "$T/data/board/slots/trial-init"
+up confirm 2>/dev/null # still on pv-b
+status | grep -q "its initramfs stopped" || fail "the reason: $(status)"
+[ ! -e "$T/data/board/slots/trial-init" ] || fail "trial-init kept"
 
 echo "a trial whose initramfs started it but whose system didn't confirm says so"
 up apply 2>/dev/null || true
