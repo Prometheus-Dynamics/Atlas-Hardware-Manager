@@ -6,10 +6,11 @@
 //! its own USB interface instead; its SSH key is added once the new image
 //! runs, through the board's USB console.)
 //!
-//! Only a board this command can boot itself counts: one in USB boot (or put
-//! there with --usb-boot over SSH). A board whose eMMC already shows as a
-//! disk is refused, so the disk written is always the one that appeared after
-//! the gadget booted.
+//! A board this command boots itself counts when none is named: one in USB
+//! boot (or put there with --usb-boot over SSH). A board whose eMMC already
+//! shows as a disk (an earlier flash that stopped after the gadget booted)
+//! is written only when named with --device: its disk is the USB disk on
+//! its port, and nothing is written by a guess.
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;
@@ -43,6 +44,14 @@ fn bootable(device: &DeviceRecord) -> bool {
         && device.identity.attributes.get("stage").map(String::as_str) != Some("storage")
 }
 
+/// A board whose eMMC already shows as a disk: written directly.
+fn exposed(device: &DeviceRecord) -> bool {
+    device.key.family.0 == RPI_FAMILY
+        && device.identity.mode == DeviceMode::Recovery
+        && device.presence == Presence::Online
+        && device.identity.attributes.get("stage").map(String::as_str) == Some("storage")
+}
+
 fn in_usb_boot(atlas: &Atlas) -> Vec<DeviceRecord> {
     atlas.devices().into_iter().filter(bootable).collect()
 }
@@ -68,7 +77,20 @@ pub(crate) async fn flash(atlas: &Atlas, options: FlashOptions) -> CommandResult
             );
         }
         (None, Some(running)) => {
-            restart_into_usb_boot(atlas, running, options.wait, options.json).await?
+            // Already in USB boot (or exposed): nothing to restart.
+            let key = resolve(atlas, running)?;
+            match atlas.devices().into_iter().find(|device| device.key == key) {
+                Some(device) if bootable(&device) || exposed(&device) => {
+                    if !options.json {
+                        output::line(&format!(
+                            "{} is already in USB boot; flashing it as it is.",
+                            device.display_name()
+                        ));
+                    }
+                    key
+                }
+                _ => restart_into_usb_boot(atlas, running, options.wait, options.json).await?,
+            }
         }
         (Some(selector), None) => {
             let key = resolve(atlas, selector)?;
@@ -77,21 +99,39 @@ pub(crate) async fn flash(atlas: &Atlas, options: FlashOptions) -> CommandResult
                 .into_iter()
                 .find(|device| device.key == key)
                 .ok_or_else(|| format!("{selector}: not in the inventory"))?;
-            if !bootable(&device) {
-                return Err(format!(
-                    "{} is not a Raspberry Pi board waiting in USB boot; for a running board use --usb-boot {selector}",
-                    device.display_name()
-                ));
+            if !bootable(&device) && !exposed(&device) {
+                return Err(if device.identity.mode == DeviceMode::Normal {
+                    format!(
+                        "{} is running; restart it into USB boot and flash it with --usb-boot {selector}",
+                        device.display_name()
+                    )
+                } else {
+                    format!(
+                        "{} isn't a Raspberry Pi board in USB boot (`atlas ls` lists the ones that are)",
+                        device.display_name()
+                    )
+                });
             }
             key
         }
         (None, None) => match in_usb_boot(atlas).as_slice() {
             [device] => device.key.clone(),
             [] => {
-                return Err(
-                    "no board is waiting in USB boot; put one there, or pass --usb-boot <running board>"
-                        .into(),
-                );
+                let waiting: Vec<DeviceRecord> =
+                    atlas.devices().into_iter().filter(exposed).collect();
+                return Err(match waiting.as_slice() {
+                    [device] => format!(
+                        "{} already shows its eMMC as a disk (an earlier flash stopped there); write it with --device {}",
+                        device.display_name(),
+                        device.key
+                    ),
+                    [] => "no board is waiting in USB boot; put one there, or pass --usb-boot <running board>".into(),
+                    several => format!(
+                        "no board is in USB boot, but {} show their eMMC as a disk ({}); choose one with --device",
+                        several.len(),
+                        names(several)
+                    ),
+                });
             }
             several => {
                 return Err(format!(

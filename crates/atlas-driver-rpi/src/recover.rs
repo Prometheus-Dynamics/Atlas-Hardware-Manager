@@ -391,6 +391,12 @@ impl UpdateCapability for RpiRecovery {
             expected_size: disk.size_bytes,
             verify: true,
         };
+        // The helper is elevated (pkexec, a UAC prompt, an administrator
+        // password): nothing moves until someone answers it.
+        progress.log(format!(
+            "waiting for permission to write {} (approve the password prompt)",
+            disk.path.display()
+        ));
         let sink = progress.clone();
         let written = tokio::task::spawn_blocking(move || {
             let mut confirming = false;
