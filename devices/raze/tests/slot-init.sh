@@ -56,7 +56,7 @@ setup() {
 	: > "$T/calls"
 }
 run() {
-	SLOT_ROOT=$R CALLS=$T/calls SLOT_INIT=$T/bin/slot-init SLOT_MOUNT=$T/bin/mount SLOT_E2FSCK=$T/bin/e2fsck \
+	SLOT_ROOT=$R CALLS=$T/calls SLOT_INIT=$T/bin/slot-init SLOT_MOUNT=$T/bin/mount SLOT_E2FSCK=${E2:-$T/bin/e2fsck} \
 		SLOT_MODPROBE=$T/bin/modprobe SLOT_SWITCH_ROOT=$T/bin/switch_root SLOT_REBOOT="$T/bin/reboot -f" \
 		SLOT_SHELL=$T/bin/shell SLOT_FINDFS=$T/bin/findfs SLOT_UNAME="echo ${UNAME:-7.2.9-v8-16k}" SLOT_WAIT=1 \
 		sh "$init" 2> "$T/log" || true
@@ -105,6 +105,14 @@ setup
 NO_PARTUUID=1 run
 called "findfs LABEL=data" || fail "no label lookup: $(cat "$T/calls")"
 called "switch_root $R/newroot /sbin/init" || fail "didn't start: $(cat "$T/calls")"
+
+echo "an e2fsck that can't run doesn't make /data read-only"
+setup
+printf '#!/bin/sh\nexit 127\n' > "$T/bin/e2fsck-missing"
+chmod +x "$T/bin/e2fsck-missing"
+E2=$T/bin/e2fsck-missing run
+called "mount -t ext4 -o noatime,errors=remount-ro /dev/mmcblk0p2 $R/data" || fail "data mount: $(cat "$T/calls")"
+grep -q "e2fsck couldn't run" "$R/dev/kmsg" || fail "no note: $(cat "$R/dev/kmsg" 2>/dev/null)"
 
 echo "an image built for another kernel isn't started"
 setup

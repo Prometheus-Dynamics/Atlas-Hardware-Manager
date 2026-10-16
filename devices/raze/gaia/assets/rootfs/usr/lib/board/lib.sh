@@ -30,7 +30,32 @@ BOARD_HOSTNAME_PROC=${BOARD_HOSTNAME_PROC:-/proc/sys/kernel/hostname}
 # fallback, since it says /dev/root on a Pi and overlay on an overlay root.
 # Empty when there is no block device behind / (overlay on tmpfs, ramdisk).
 #   BOARD_PROC_CMDLINE  kernel command line   (/proc/cmdline)
+# board_cmdline_arg <name>: the last <name>= on the kernel command line, in
+# BOARD_ARG (empty when absent). Shell builtins only: /status runs this on
+# every request.
+board_cmdline_arg() {
+	BOARD_ARG=''
+	_board_line=''
+	read -r _board_line < "${BOARD_PROC_CMDLINE:-/proc/cmdline}" 2>/dev/null || true
+	for _board_w in $_board_line; do
+		case "$_board_w" in "$1="*) BOARD_ARG=${_board_w#"$1="} ;; esac
+	done
+}
+
 board_root_device() {
+	# A slots board's root is a dm-verity device, on no partition: the
+	# eMMC is the disk /data (atlas.data=, p2) is on, so that partition
+	# stands in (its siblings are the disk's p1 and the rest).
+	board_cmdline_arg atlas.data
+	_board_src=$BOARD_ARG
+	if [ -n "$_board_src" ]; then
+		_board_src=$(findfs "$_board_src" 2>/dev/null || blkid -l -o device -t "$_board_src" 2>/dev/null ||
+			findfs LABEL=data 2>/dev/null || true)
+		case "$_board_src" in
+		/dev/*[0-9]) echo "$_board_src" ;;
+		esac
+		return 0
+	fi
 	_board_src=$(tr ' ' '\n' < "${BOARD_PROC_CMDLINE:-/proc/cmdline}" 2>/dev/null | sed -n 's/^root=//p' | tail -n 1)
 	case "$_board_src" in
 	PARTUUID=* | UUID=* | LABEL=*)
@@ -899,9 +924,15 @@ board_events_json() {
 }
 
 # The slot the root filesystem is in (A or B) by update.env's partition
-# numbers; "unknown" off the A/B layout.
+# numbers; on a slots board the slot's id (atlas.slot=); "unknown" off both
+# layouts.
 #   UPDATE_CMDLINE_ROOT  the root partition number (tests)
 board_active_slot() {
+	board_cmdline_arg atlas.slot
+	if [ -n "$BOARD_ARG" ]; then
+		echo "$BOARD_ARG"
+		return 0
+	fi
 	(
 		board_load_env update.env
 		_board_root=${UPDATE_CMDLINE_ROOT:-}

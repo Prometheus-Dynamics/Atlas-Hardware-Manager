@@ -36,7 +36,7 @@ MAX_FALLBACKS=${SLOT_MAX_FALLBACKS:-3}
 export PATH=/sbin:/bin:/usr/sbin:/usr/bin
 
 log() {
-	echo "slot-init: $*" > "$R/dev/kmsg" 2>/dev/null || echo "slot-init: $*" >&2
+	echo "slot-init: $*" >> "$R/dev/kmsg" 2>/dev/null || echo "slot-init: $*" >&2
 }
 
 if [ -z "$R" ]; then
@@ -116,7 +116,11 @@ done
 opts=noatime,errors=remount-ro
 $E2FSCK -p "$data_dev" > /dev/null 2>&1
 rc=$?
-if [ "$rc" -ge 4 ]; then
+if [ "$rc" -eq 126 ] || [ "$rc" -eq 127 ]; then
+	# e2fsck itself couldn't run (missing, or a library it needs): that
+	# says nothing about /data, so don't take it read-only for it.
+	log "e2fsck couldn't run (exit $rc); /data mounted without a check"
+elif [ "$rc" -ge 4 ]; then
 	log "/data needs repair (e2fsck exit $rc); mounting it read-only"
 	opts=ro,noatime
 fi
