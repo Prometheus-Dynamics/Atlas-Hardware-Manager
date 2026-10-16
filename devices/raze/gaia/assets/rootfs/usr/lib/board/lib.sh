@@ -436,6 +436,10 @@ board_update_methods() {
 		if grep -q '"slot_active":"[AB]"' "$BOARD_RUN_DIR/update.json" 2>/dev/null; then
 			printf '%s\n' ab-tryboot
 		fi
+		# The slots writer's status (dynamic slots: any number of OS images).
+		if grep -q '"layout":"slots"' "$BOARD_RUN_DIR/update.json" 2>/dev/null; then
+			printf '%s\n' slots-tryboot
+		fi
 		# Atlas can restart it into USB boot for a fresh install (usb-boot).
 		if board_usb_boot_supported; then
 			printf '%s\n' usb-boot-reboot

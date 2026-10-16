@@ -70,27 +70,7 @@ impl OrionUpdate {
 
     /// The durable `update.*` keys the device's agent republishes.
     async fn update_status(&self, node: &NodeId) -> Result<HashMap<String, String>, DriverError> {
-        let entries = self
-            .transport
-            .status(StatusQuery {
-                subject: Some(StatusSubject::Node(node.clone())),
-                key_prefix: Some("update.".into()),
-            })
-            .await?;
-        Ok(entries
-            .into_iter()
-            .filter_map(|entry| {
-                let value = match entry.value {
-                    TypedConfigValue::String(text) => text,
-                    TypedConfigValue::UInt(n) => n.to_string(),
-                    TypedConfigValue::Int(n) => n.to_string(),
-                    TypedConfigValue::Bool(b) => b.to_string(),
-                    TypedConfigValue::F64(x) => x.to_string(),
-                    TypedConfigValue::Bytes(_) => return None,
-                };
-                Some((entry.key, value))
-            })
-            .collect())
+        update_status(self.transport.as_ref(), node).await
     }
 
     /// The node's current boot id, found by board serial: after a reboot the
@@ -206,10 +186,37 @@ impl OrionUpdate {
     }
 }
 
+/// The node's `update.*` keys, as text.
+pub(crate) async fn update_status(
+    transport: &dyn OrionTransport,
+    node: &NodeId,
+) -> Result<HashMap<String, String>, DriverError> {
+    let entries = transport
+        .status(StatusQuery {
+            subject: Some(StatusSubject::Node(node.clone())),
+            key_prefix: Some("update.".into()),
+        })
+        .await?;
+    Ok(entries
+        .into_iter()
+        .filter_map(|entry| {
+            let value = match entry.value {
+                TypedConfigValue::String(text) => text,
+                TypedConfigValue::UInt(n) => n.to_string(),
+                TypedConfigValue::Int(n) => n.to_string(),
+                TypedConfigValue::Bool(b) => b.to_string(),
+                TypedConfigValue::F64(x) => x.to_string(),
+                TypedConfigValue::Bytes(_) => return None,
+            };
+            Some((entry.key, value))
+        })
+        .collect())
+}
+
 /// The board's IP address from its identity address (a URL such as
 /// `http://172.31.250.1:5899/...`, or `host:port`), resolving a name. The
 /// bundle host uses it to pick the local address that routes to the board.
-async fn peer_address(address: &str) -> Option<IpAddr> {
+pub(crate) async fn peer_address(address: &str) -> Option<IpAddr> {
     let rest = address.split_once("://").map_or(address, |(_, rest)| rest);
     let authority = rest.split(['/', '?', '#']).next()?;
     let authority = authority

@@ -245,7 +245,7 @@ impl CapabilitySource for OrionDirectory {
             actions: Some(Arc::new(OrionActions::new(
                 self.transport.clone(),
                 id.clone(),
-                claimed,
+                claimed.clone(),
             )) as Arc<dyn ActionsCapability>),
             hardware: Some(Arc::new(OrionHardware {
                 transport: self.transport.clone(),
@@ -255,6 +255,14 @@ impl CapabilitySource for OrionDirectory {
                 transport: self.transport.clone(),
                 node: id.clone(),
             }) as Arc<dyn StatusCapability>),
+            slots: claimed.contains(crate::slots::SLOT_SET_DEFAULT).then(|| {
+                Arc::new(crate::slots::OrionSlots {
+                    transport: self.transport.clone(),
+                    bundles: self.bundles.clone(),
+                    node: id.clone(),
+                    poll: Duration::from_millis(self.update_poll_ms.load(Ordering::Relaxed)),
+                }) as Arc<dyn atlas_driver::SlotsCapability>
+            }),
             update: self.bundles.clone().and_then(|bundles| {
                 device.attributes.get(BOARD_SERIAL).map(|serial| {
                     Arc::new(OrionUpdate::new(

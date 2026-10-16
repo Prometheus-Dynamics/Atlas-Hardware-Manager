@@ -1,0 +1,161 @@
+//! A slots board over SSH (or its USB console): the slots writer's status
+//! (`update status`, `layout: slots`), its commands (`update boot-once |
+//! set-default | remove | pin | unpin <id>`), and installing a bundle by
+//! streaming it into `update stage -`, which checks it against its manifest
+//! before anything is replaced. Boards list `slots-tryboot` in
+//! `update_methods` (lib.sh). Orion's `slot.*` actions come first when the
+//! board's agent claims them.
+
+use async_trait::async_trait;
+use atlas_driver::{
+    CancellationToken, DriverError, Identity, ProgressSink, SlotCommand, SlotInstall, SlotSet,
+    SlotsCapability, UpdateStep,
+};
+
+use crate::ssh::{SshUpdate, WRITER, as_atlas};
+use crate::ssh_actions::writer;
+
+/// The update method a slots board lists.
+pub const SLOTS_METHOD: &str = "slots-tryboot";
+
+pub(crate) struct BoardSlots {
+    pub(crate) ssh: SshUpdate,
+}
+
+/// Slot ids go into the board's command line: the writer's charset only.
+fn checked(id: &str) -> Result<&str, DriverError> {
+    let ok = !id.is_empty()
+        && id.len() <= 64
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"._-".contains(&b))
+        && !id.starts_with(['.', '-']);
+    if ok {
+        Ok(id)
+    } else {
+        Err(DriverError::Incompatible(format!("`{id}` isn't a slot id")))
+    }
+}
+
+/// The writer's status, or `None` when it isn't the slots writer.
+pub(crate) fn parse_status(text: &str) -> Result<Option<SlotSet>, DriverError> {
+    let value: serde_json::Value = serde_json::from_str(text.trim())
+        .map_err(|error| DriverError::Other(format!("unreadable update status: {error}")))?;
+    if value.get("layout").and_then(|v| v.as_str()) != Some("slots") {
+        return Ok(None);
+    }
+    serde_json::from_value(value)
+        .map(Some)
+        .map_err(|error| DriverError::Other(format!("unreadable slot list: {error}")))
+}
+
+#[async_trait]
+impl SlotsCapability for BoardSlots {
+    async fn slots(&self, _device: &Identity) -> Result<Option<SlotSet>, DriverError> {
+        parse_status(&self.ssh.run(&format!("{WRITER} status")).await?)
+    }
+
+    async fn command(&self, _device: &Identity, command: &SlotCommand) -> Result<(), DriverError> {
+        let script = format!(
+            "{WRITER} {} {}",
+            command.writer_command(),
+            checked(command.id())?
+        );
+        match (command, writer(&self.ssh, &script).await) {
+            // The restart drops the connection.
+            (SlotCommand::BootOnce { .. }, Err(DriverError::Unreachable(_))) => Ok(()),
+            (_, result) => result,
+        }
+    }
+
+    async fn install(
+        &self,
+        _device: &Identity,
+        install: &SlotInstall,
+        progress: &ProgressSink,
+    ) -> Result<(), DriverError> {
+        let bundle = &install.bundle;
+        if bundle.sha256.len() != 64 || !bundle.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(DriverError::Other(format!(
+                "{} has no usable SHA-256, which the board needs to check its copy",
+                bundle.name
+            )));
+        }
+        progress.step_started(UpdateStep::Preflight);
+        let set = self
+            .slots(_device)
+            .await?
+            .ok_or_else(|| DriverError::Incompatible("this board has no slots".into()))?;
+        if bundle.size_bytes > set.room() {
+            return Err(DriverError::Incompatible(format!(
+                "the board has {} MiB of room; the slot needs {} MiB (remove one first)",
+                set.room() >> 20,
+                bundle.size_bytes >> 20
+            )));
+        }
+        // The writer reads the bundle from stdin as it arrives and installs
+        // nothing until every file matches the manifest.
+        progress.step_started(UpdateStep::Transfer);
+        let script = as_atlas(&format!(
+            "{WRITER} stage - --sha256 {}{}",
+            bundle.sha256.to_ascii_lowercase(),
+            if install.pin { " --pin" } else { "" }
+        ));
+        self.ssh
+            .upload_to(
+                &bundle.path,
+                bundle.size_bytes,
+                &script,
+                "true",
+                progress,
+                &CancellationToken::new(),
+            )
+            .await
+            .map_err(|error| match error {
+                DriverError::Other(reason) => DriverError::StepFailed {
+                    step: "Installing the slot".into(),
+                    message: reason.trim_start_matches("slots: ").to_string(),
+                },
+                other => other,
+            })?;
+        progress.step_progress(UpdateStep::Transfer, 1.0);
+        if install.boot {
+            progress.log("installed; restarting into it once".to_string());
+            match writer(&self.ssh, &format!("{WRITER} apply")).await {
+                Ok(()) | Err(DriverError::Unreachable(_)) => {}
+                Err(error) => return Err(error),
+            }
+        } else {
+            progress.log("installed".to_string());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_the_slots_writer_has_a_slot_set() {
+        assert_eq!(
+            parse_status(r#"{"state":"idle","slot_active":"A"}"#).unwrap(),
+            None
+        );
+        let set = parse_status(
+            r#"{"state":"idle","layout":"slots","slot_active":"pv-a","slot_default":"pv-a","slot_previous":null,"free_bytes":10,"reserve_bytes":2,"slots":[{"id":"pv-a","flags":["running"]}]}"#,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(set.running, "pv-a");
+        assert_eq!(set.slots[0].id, "pv-a");
+    }
+
+    #[test]
+    fn slot_ids_are_checked_before_the_shell_sees_them() {
+        assert!(checked("photonvision-2026.3.0-styx-1a2b3c4d").is_ok());
+        for bad in ["", "a b", "a;reboot", "-rf", "../x", "A"] {
+            assert!(checked(bad).is_err(), "{bad}");
+        }
+    }
+}

@@ -225,7 +225,7 @@ async fn restart(ssh: &SshUpdate, script: &str) -> Result<(), DriverError> {
 }
 
 /// The writer's refusal (exit 3, "nothing changed") reads as its reason.
-async fn writer(ssh: &SshUpdate, script: &str) -> Result<(), DriverError> {
+pub(crate) async fn writer(ssh: &SshUpdate, script: &str) -> Result<(), DriverError> {
     ssh.run(script)
         .await
         .map(|_| ())

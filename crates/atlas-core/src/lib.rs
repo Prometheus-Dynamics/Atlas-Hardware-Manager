@@ -24,6 +24,7 @@ mod push;
 mod robots;
 mod scan;
 mod selftest;
+mod slots;
 mod store;
 mod time;
 mod watch;

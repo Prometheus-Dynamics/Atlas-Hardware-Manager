@@ -5,6 +5,7 @@ mod commands;
 mod flash;
 mod output;
 mod reboots;
+mod slots;
 mod system;
 
 use std::path::PathBuf;
@@ -98,6 +99,13 @@ enum Command {
         device: String,
         /// Omit to list the device's actions.
         action: Option<String>,
+    },
+    /// A slots board's installed OS images: list (the default), install,
+    /// boot-once, set-default, remove, pin, unpin.
+    Slots {
+        device: String,
+        #[command(subcommand)]
+        command: Option<slots::SlotsCommand>,
     },
     /// Restart a board N times and tell how each boot before ended: clean or
     /// not, what the kernel restarted with, whether pstore kept anything
@@ -271,6 +279,9 @@ async fn main() -> ExitCode {
         }
         Command::Action { device, action } => {
             commands::action(&atlas, &device, action.as_deref(), cli.json).await
+        }
+        Command::Slots { device, command } => {
+            slots::slots(&atlas, &device, command, cli.json).await
         }
         Command::Flash {
             image,

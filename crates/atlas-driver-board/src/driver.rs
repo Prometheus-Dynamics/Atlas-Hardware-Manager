@@ -7,7 +7,7 @@ use atlas_devices::{DeviceCatalog, DevicePackage};
 use atlas_driver::{
     ActionsCapability, Candidate, Capabilities, DeviceKey, Driver, DriverError, DriverManifest,
     Family, HealthCheck, Identity, Link, LinkId, LinkKind, LinkSource, LogsCapability,
-    SelfTestCapability, StatusCapability, TelemetryCapability, UpdateCapability,
+    SelfTestCapability, SlotsCapability, StatusCapability, TelemetryCapability, UpdateCapability,
 };
 
 use crate::browse::Browser;
@@ -356,6 +356,10 @@ impl Driver for BoardDriver {
                 usb_serial: Some(reported.serial.clone()).filter(|serial| !serial.is_empty()),
             })
         };
+        let slots = has(crate::slots::SLOTS_METHOD)
+            .then(ssh)
+            .flatten()
+            .map(|ssh| Arc::new(crate::slots::BoardSlots { ssh }) as Arc<dyn SlotsCapability>);
         let update = has(AB_METHOD)
             .then(ssh)
             .flatten()
@@ -377,7 +381,10 @@ impl Driver for BoardDriver {
         });
         // A board with the device package's writer, self-test or status is
         // one Atlas reaches as root over SSH (the Flash tab's key).
-        let package_board = has(AB_METHOD) || !reported.diagnostics.is_empty() || status.is_some();
+        let package_board = has(AB_METHOD)
+            || slots.is_some()
+            || !reported.diagnostics.is_empty()
+            || status.is_some();
         let offer = SshOffer {
             usb_boot: has(USB_BOOT_METHOD),
             set_clock: device
@@ -428,6 +435,7 @@ impl Driver for BoardDriver {
             selftest,
             status: status.map(|status| status as Arc<dyn StatusCapability>),
             hardware: None,
+            slots,
         }
     }
 }

@@ -82,6 +82,7 @@ rc() {
 echo "status lists the installed slot"
 status | grep -q '"layout":"slots"' || fail "status: $(status)"
 status | grep -q '"id":"pv-a"' || fail "pv-a listed: $(status)"
+(. "$lib/lib.sh" && board_update_methods) | grep -qx slots-tryboot || fail "the identity doesn't list slots-tryboot"
 
 echo "a bundle installs as a slot: the boot dir on the FAT, the image on /data"
 bundle pv-b 2026.4.0

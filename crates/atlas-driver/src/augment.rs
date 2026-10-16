@@ -25,8 +25,8 @@ use async_trait::async_trait;
 use crate::{
     ActionsCapability, CancellationToken, Capabilities, DeviceAction, DeviceEvent, DeviceStatus,
     DriverError, EventPage, EventQuery, Identity, LogLine, LogsCapability, Metric, ProgressSink,
-    PushSink, ReleaseRef, StatusCapability, TelemetryCapability, UpdateCapability, UpdateOutcome,
-    UpdatePlan, UpdateStep,
+    PushSink, ReleaseRef, SlotCommand, SlotInstall, SlotSet, SlotsCapability, StatusCapability,
+    TelemetryCapability, UpdateCapability, UpdateOutcome, UpdatePlan, UpdateStep,
 };
 
 /// Extra capabilities for devices other drivers own.
@@ -87,6 +87,20 @@ impl Capabilities {
         if self.hardware.is_none() {
             self.hardware = extra.hardware;
         }
+        self.slots = match (self.slots.take(), extra.slots) {
+            (Some(own), Some(more)) => Some(Arc::new(if more.preferred() {
+                FallbackSlots {
+                    first: more,
+                    then: own,
+                }
+            } else {
+                FallbackSlots {
+                    first: own,
+                    then: more,
+                }
+            })),
+            (own, more) => own.or(more),
+        };
         self.status = match (self.status.take(), extra.status) {
             (Some(own), Some(more)) => Some(Arc::new(CombinedStatus {
                 own,
@@ -137,6 +151,55 @@ impl ActionsCapability for CombinedActions {
             }
         } else {
             self.own.run_action(device, action_id).await
+        }
+    }
+}
+
+/// Two ways to a board's slots: `first`, and `then` when `first` can't
+/// reach the board (or doesn't know its slots), so nothing runs twice.
+struct FallbackSlots {
+    first: Arc<dyn SlotsCapability>,
+    then: Arc<dyn SlotsCapability>,
+}
+
+#[async_trait]
+impl SlotsCapability for FallbackSlots {
+    fn preferred(&self) -> bool {
+        self.first.preferred()
+    }
+
+    async fn slots(&self, device: &Identity) -> Result<Option<SlotSet>, DriverError> {
+        match self.first.slots(device).await {
+            Ok(Some(set)) => Ok(Some(set)),
+            Ok(None) => self.then.slots(device).await.or(Ok(None)),
+            Err(error @ DriverError::Unreachable(_)) => {
+                self.then.slots(device).await.map_err(|_| error)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    async fn command(&self, device: &Identity, command: &SlotCommand) -> Result<(), DriverError> {
+        match self.first.command(device, command).await {
+            Err(DriverError::Unreachable(_) | DriverError::Unsupported(_)) => {
+                self.then.command(device, command).await
+            }
+            result => result,
+        }
+    }
+
+    async fn install(
+        &self,
+        device: &Identity,
+        install: &SlotInstall,
+        progress: &ProgressSink,
+    ) -> Result<(), DriverError> {
+        match self.first.install(device, install, progress).await {
+            Err(error @ (DriverError::Unreachable(_) | DriverError::Unsupported(_))) => {
+                progress.log(format!("{error}; trying the other way in"));
+                self.then.install(device, install, progress).await
+            }
+            result => result,
         }
     }
 }

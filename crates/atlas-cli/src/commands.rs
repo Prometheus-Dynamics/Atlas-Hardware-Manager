@@ -103,7 +103,7 @@ pub(crate) struct UpdateOptions {
 }
 
 /// Hashes a local image once so the driver can check it again before use.
-async fn local_artifact(path: &Path) -> Result<Artifact, String> {
+pub(crate) async fn local_artifact(path: &Path) -> Result<Artifact, String> {
     let size_bytes = std::fs::metadata(path)
         .map_err(|error| format!("{}: {error}", path.display()))?
         .len();

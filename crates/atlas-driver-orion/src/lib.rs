@@ -24,6 +24,7 @@ mod hardware;
 mod live;
 mod metrics;
 mod remote;
+mod slots;
 mod status;
 mod transport;
 mod update;

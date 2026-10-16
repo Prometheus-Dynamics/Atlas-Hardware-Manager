@@ -33,7 +33,7 @@ use crate::console::{Console, ConsoleError, SharedOnLine};
 /// The update method a board lists when it has the A/B layout and writer.
 pub const AB_METHOD: &str = "ab-tryboot";
 
-const WRITER: &str = "/usr/lib/board/update";
+pub(crate) const WRITER: &str = "/usr/lib/board/update";
 const REMOTE_DIR: &str = "/data/board/update";
 /// The writer detects the compression from the file's first bytes.
 const REMOTE_IMAGE: &str = "/data/board/update/image";
@@ -324,14 +324,31 @@ impl SshUpdate {
         progress: &ProgressSink,
         cancel: &CancellationToken,
     ) -> Result<(), DriverError> {
+        let script = format!(
+            "mkdir -p {REMOTE_DIR} && cat > {REMOTE_IMAGE}.part && mv {REMOTE_IMAGE}.part {REMOTE_IMAGE}"
+        );
+        let cleanup = format!("rm -f {REMOTE_IMAGE}.part");
+        self.upload_to(path, size, &script, &cleanup, progress, cancel)
+            .await
+    }
+
+    /// Streams `path` into `script`'s stdin over SSH, reporting the share
+    /// sent; on a cancel, runs `cleanup`.
+    pub(crate) async fn upload_to(
+        &self,
+        path: &Path,
+        size: u64,
+        script: &str,
+        cleanup: &str,
+        progress: &ProgressSink,
+        cancel: &CancellationToken,
+    ) -> Result<(), DriverError> {
         let mut file = tokio::fs::File::open(path)
             .await
             .map_err(|error| DriverError::Other(format!("{}: {error}", path.display())))?;
         let mut child = self
             .command()
-            .arg(format!(
-                "mkdir -p {REMOTE_DIR} && cat > {REMOTE_IMAGE}.part && mv {REMOTE_IMAGE}.part {REMOTE_IMAGE}"
-            ))
+            .arg(script)
             .stdin(Stdio::piped())
             .spawn()
             .map_err(|error| DriverError::Unreachable(format!("could not run ssh: {error}")))?;
@@ -344,7 +361,7 @@ impl SshUpdate {
         loop {
             if cancel.is_cancelled() {
                 let _ = child.kill().await;
-                let _ = self.run(&format!("rm -f {REMOTE_IMAGE}.part")).await;
+                let _ = self.run(cleanup).await;
                 return Err(DriverError::Cancelled);
             }
             let read = file

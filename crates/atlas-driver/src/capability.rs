@@ -8,7 +8,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     DeviceMode, DriverError, Family, HardwareCapability, Identity, LogsCapability,
-    SelfTestCapability, StatusCapability, TelemetryCapability,
+    SelfTestCapability, SlotsCapability, StatusCapability, TelemetryCapability,
 };
 
 /// Everything a device can offer. The UI shows a tab or action only for the
@@ -32,6 +32,8 @@ pub enum CapabilityKind {
     Status,
     /// The board's devices take commands (set, restore and release controls).
     HardwareControl,
+    /// The board keeps several OS images (dynamic slots).
+    Slots,
 }
 
 /// The capabilities a driver grants one device. Absent means unsupported.
@@ -44,6 +46,7 @@ pub struct Capabilities {
     pub selftest: Option<Arc<dyn SelfTestCapability>>,
     pub status: Option<Arc<dyn StatusCapability>>,
     pub hardware: Option<Arc<dyn HardwareCapability>>,
+    pub slots: Option<Arc<dyn SlotsCapability>>,
 }
 
 impl Capabilities {
@@ -79,6 +82,9 @@ impl Capabilities {
         }
         if self.hardware.is_some() && mode == DeviceMode::Normal {
             kinds.push(CapabilityKind::HardwareControl);
+        }
+        if self.slots.is_some() && mode == DeviceMode::Normal {
+            kinds.push(CapabilityKind::Slots);
         }
         kinds
     }

@@ -8,6 +8,8 @@
 //! - Optionally, `endpoints` for metrics, logs, and actions, and a camera
 //!   stream. Atlas offers each only when the device lists it; see `live`.
 //! - `ab-tryboot` in `update_methods`: A/B updates over SSH; see `ssh`.
+//! - `slots-tryboot`: a board with dynamic slots, managed over SSH; see
+//!   `slots`.
 //! - `endpoints.status` and `endpoints.events`: what the board is doing,
 //!   its health and drift, and its event log; see `status`.
 //!
@@ -23,6 +25,7 @@ mod driver;
 mod gadget;
 mod live;
 mod serial;
+mod slots;
 mod ssh;
 mod ssh_actions;
 mod status;
