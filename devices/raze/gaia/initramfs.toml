@@ -11,7 +11,7 @@
 # filesystem marked as having errors is mounted read-only), so it is
 # ~0.3 MB instead of 2 MB per slot.
 #
-# Output: $assembly.work/slots/initramfs.cpio.zst, for the slot bundle and
+# Output: $assembly.work/slots/initramfs.cpio.xz, for the slot bundle and
 # the boot directory (the recipes that assemble those take it from there).
 # The kernel needs BLK_DEV_INITRD, BLK_DEV_LOOP, EROFS_FS, EXT4_FS, VFAT_FS
 # built in (they are); dm-mod, dm-bufio and dm-verity come as modules, below.
@@ -19,6 +19,8 @@
 [[image.assembly.trees]]
 id = "slot-initramfs"
 path = "$assembly.work/slots/initramfs"
+# Every ELF in it stripped before it is packed (the modules --strip-debug).
+strip = true
 
 # Device-mapper and verity (modules in the Raze kernel), with their deps.
 # /init reads modules.dep and nothing else of the module metadata.
@@ -27,6 +29,7 @@ tree = "slot-initramfs"
 from = "$provider.buildroot_output/target/lib/modules"
 depmod = "$provider.buildroot_output/host/sbin/depmod"
 modules = ["dm-mod", "dm-bufio", "dm-verity"]
+metadata = ["modules.dep"]
 
 [[image.assembly.files]]
 tree = "slot-initramfs"
@@ -34,11 +37,14 @@ src = "${workspace.out_dir}/artifacts/slot-init/slot-init"
 dest = "init"
 mode = "0755"
 
+# xz: on this tree 12% smaller than zstd -19 (257 against 295 KB); the
+# kernel has RD_XZ, and it unpacks well under a second.
 [[image.assembly.filesystems]]
 id = "slot-initramfs"
-kind = "cpio-zstd"
+kind = "cpio-xz"
+compression_level = 9
 source_tree = "slot-initramfs"
-output = "$assembly.work/slots/initramfs.cpio.zst"
+output = "$assembly.work/slots/initramfs.cpio.xz"
 
 # slot-init, as board-agent is built (board-agent.toml): a static aarch64
 # musl binary from the OS build's `atlas` source. Only the initramfs takes it.
