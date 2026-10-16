@@ -1,5 +1,10 @@
-//! `slot-init`, for the slot initramfs's /init:
+//! `slot-init`: the slot initramfs's /init (as `/init`, PID 1: boot.rs),
+//! and the slots writer's helper in the OS:
 //!
+//!   slot-init boot                            /init's steps with recording ops, for
+//!                                             tests/slot-init.sh: SLOT_ROOT (the prefix),
+//!                                             SLOT_CALLS (the record), SLOT_FAIL (steps
+//!                                             that fail), SLOT_SYS, SLOT_DEV
 //!   slot-init arg <key>                       a kernel command line value (atlas.slot)
 //!   slot-init find-partition PARTUUID=<id>|LABEL=<name>
 //!                                             the partition's /dev node (MBR/GPT ids and ext labels
@@ -101,8 +106,61 @@ fn open(_: &str, _: &str, _: &str, _: &str) -> Result<String, String> {
     Err("Linux only".into())
 }
 
+/// /init's steps under a prefix, recorded: for tests/slot-init.sh.
+fn boot_recorded() -> String {
+    let var = |name: &str| std::env::var(name).unwrap_or_default();
+    let root = std::path::PathBuf::from(var("SLOT_ROOT"));
+    let env = slot_init::boot::Env {
+        sys: std::path::PathBuf::from(var("SLOT_SYS")),
+        dev: std::path::PathBuf::from(var("SLOT_DEV")),
+        root,
+        wait: std::time::Duration::from_millis(300),
+        rescue_wait: std::time::Duration::ZERO,
+    };
+    let ops = slot_init::record::Record {
+        calls: var("SLOT_CALLS").into(),
+        fail: var("SLOT_FAIL").split(',').map(str::to_owned).collect(),
+    };
+    slot_init::boot::boot(&ops, &env)
+}
+
+/// As the initramfs's /init: boot the slot.
+#[cfg(target_os = "linux")]
+fn init() -> ExitCode {
+    slot_init::sys::early();
+    let env = slot_init::boot::Env {
+        root: "/".into(),
+        sys: "/sys".into(),
+        dev: "/dev".into(),
+        wait: std::time::Duration::from_secs(10),
+        rescue_wait: std::time::Duration::from_secs(30),
+    };
+    let why = slot_init::boot::boot(&slot_init::sys::System, &env);
+    // Every restart failed: PID 1 exiting panics the kernel, and panic=5
+    // restarts it.
+    eprintln!("slot-init: {why}");
+    ExitCode::from(1)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn init() -> ExitCode {
+    ExitCode::from(2)
+}
+
 fn main() -> ExitCode {
+    let argv0 = std::env::args().next().unwrap_or_default();
+    if argv0.rsplit('/').next() == Some("init") {
+        return init();
+    }
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args == ["boot"] {
+        let why = boot_recorded();
+        if why.is_empty() {
+            return ExitCode::SUCCESS;
+        }
+        eprintln!("slot-init: {why}");
+        return ExitCode::from(1);
+    }
     match run(&args) {
         Ok(out) => {
             println!("{out}");

@@ -202,9 +202,285 @@ pub fn reboot_tryboot() -> Result<(), String> {
     Ok(())
 }
 
+// --- /init on a board ------------------------------------------------------
+
+use std::ffi::CString;
+use std::time::Duration;
+
+use crate::Manifest;
+use crate::boot::Ops;
+
+fn c(path: &Path) -> Result<CString, String> {
+    CString::new(path.as_os_str().as_encoded_bytes()).map_err(|e| e.to_string())
+}
+
+fn c_str(text: &str) -> Result<CString, String> {
+    CString::new(text).map_err(|e| e.to_string())
+}
+
+fn sys_mount(
+    source: &Path,
+    target: &Path,
+    fstype: Option<&str>,
+    flags: libc::c_ulong,
+    data: &str,
+) -> Result<(), String> {
+    let (src, dst, data) = (c(source)?, c(target)?, c_str(data)?);
+    let fstype = fstype.map(c_str).transpose()?;
+    // SAFETY: NUL-terminated strings that outlive the call; a null fstype
+    // is what bind and move mounts take.
+    let rc = unsafe {
+        libc::mount(
+            src.as_ptr(),
+            dst.as_ptr(),
+            fstype.as_ref().map_or(std::ptr::null(), |f| f.as_ptr()),
+            flags,
+            data.as_ptr().cast(),
+        )
+    };
+    if rc < 0 {
+        return Err(last_error(&format!(
+            "mount {} on {}",
+            source.display(),
+            target.display()
+        )));
+    }
+    Ok(())
+}
+
+/// The kernel's own mounts, and the console as stdin, stdout and stderr:
+/// the archive may hold no /proc, /sys or /dev, and no /dev/console, so
+/// the kernel started this with no stdio.
+pub fn early() {
+    for dir in ["/proc", "/sys", "/dev", "/run", "/tmp"] {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let _ = sys_mount(Path::new("proc"), Path::new("/proc"), Some("proc"), 0, "");
+    let _ = sys_mount(Path::new("sysfs"), Path::new("/sys"), Some("sysfs"), 0, "");
+    let _ = sys_mount(
+        Path::new("devtmpfs"),
+        Path::new("/dev"),
+        Some("devtmpfs"),
+        0,
+        "",
+    );
+    if let Ok(console) = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open("/dev/console")
+    {
+        for fd in 0..3 {
+            // SAFETY: dup2 onto the standard descriptors; `console` stays
+            // open until they are set.
+            unsafe { libc::dup2(console.as_raw_fd(), fd) };
+        }
+    }
+}
+
+/// The real system, for /init on a board.
+pub struct System;
+
+/// The module's file and what it needs first, from modules.dep.
+fn module_deps(dep: &str, name: &str) -> Option<(String, Vec<String>)> {
+    let want = name.replace('_', "-");
+    dep.lines().find_map(|line| {
+        let (path, deps) = line.split_once(':')?;
+        let base = path.rsplit('/').next()?;
+        let stem = base.split(".ko").next()?.replace('_', "-");
+        (stem == want).then(|| {
+            (
+                path.to_owned(),
+                deps.split_whitespace().map(str::to_owned).collect(),
+            )
+        })
+    })
+}
+
+fn insmod(path: &Path) -> Result<(), String> {
+    let file = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let params = c_str("")?;
+    let name = path.to_string_lossy();
+    // MODULE_INIT_COMPRESSED_FILE: the kernel decompresses .ko.xz/.zst/.gz.
+    let flags = if name.ends_with(".ko") { 0 } else { 4 };
+    // SAFETY: finit_module(2) with an open module file and empty params.
+    let rc = unsafe {
+        libc::syscall(
+            libc::SYS_finit_module,
+            file.as_raw_fd(),
+            params.as_ptr(),
+            flags,
+        )
+    };
+    if rc < 0 && std::io::Error::last_os_error().raw_os_error() != Some(libc::EEXIST) {
+        return Err(last_error(&format!("loading {}", path.display())));
+    }
+    Ok(())
+}
+
+impl Ops for System {
+    fn mount(&self, fstype: &str, opts: &str, source: &Path, target: &Path) -> Result<(), String> {
+        let mut flags = 0;
+        let mut data = Vec::new();
+        for opt in opts.split(',').filter(|o| !o.is_empty()) {
+            match opt {
+                "ro" => flags |= libc::MS_RDONLY,
+                "rw" => {}
+                "noatime" => flags |= libc::MS_NOATIME,
+                other => data.push(other),
+            }
+        }
+        sys_mount(source, target, Some(fstype), flags, &data.join(","))
+    }
+
+    fn bind(&self, source: &Path, target: &Path) -> Result<(), String> {
+        sys_mount(source, target, None, libc::MS_BIND, "")
+    }
+
+    fn move_mount(&self, source: &Path, target: &Path) -> Result<(), String> {
+        sys_mount(source, target, None, libc::MS_MOVE, "")
+    }
+
+    fn umount(&self, target: &Path) {
+        if let Ok(path) = c(target) {
+            // SAFETY: a NUL-terminated path.
+            unsafe { libc::umount2(path.as_ptr(), 0) };
+        }
+    }
+
+    fn load_module(&self, name: &str, release: &str) -> Result<(), String> {
+        // /lib may be a link to /usr/lib, or not there at all.
+        let base = ["/lib/modules", "/usr/lib/modules"]
+            .iter()
+            .map(|dir| Path::new(dir).join(release))
+            .find(|dir| dir.join("modules.dep").is_file())
+            .ok_or_else(|| {
+                format!("no modules.dep for {release} under /lib/modules or /usr/lib/modules")
+            })?;
+        let dep = std::fs::read_to_string(base.join("modules.dep"))
+            .map_err(|e| format!("{}/modules.dep: {e}", base.display()))?;
+        let (path, deps) = module_deps(&dep, name)
+            .ok_or_else(|| format!("not in {}/modules.dep (built in?)", base.display()))?;
+        // modules.dep lists the deepest dependency last.
+        for d in deps.iter().rev() {
+            insmod(&base.join(d))?;
+        }
+        insmod(&base.join(path))
+    }
+
+    fn open_slot(&self, image: &Path, manifest: &Manifest, root: &str) -> Result<String, String> {
+        let root = crate::root_hash(root)?;
+        let (_, dev) = open_loop(image)?;
+        open_verity("slot", &dev, &manifest.verity, &root)
+    }
+
+    fn kernel_log(&self) -> String {
+        // SAFETY: SYSLOG_ACTION_SIZE_BUFFER takes no buffer.
+        let size = unsafe { libc::klogctl(10, std::ptr::null_mut(), 0) }.max(16384);
+        let mut buf = vec![0u8; size as usize];
+        // SAFETY: SYSLOG_ACTION_READ_ALL into a buffer of `size` bytes.
+        let read = unsafe { libc::klogctl(3, buf.as_mut_ptr().cast(), size) };
+        buf.truncate(read.max(0) as usize);
+        String::from_utf8_lossy(&buf).into_owned()
+    }
+
+    fn sync(&self) {
+        // SAFETY: sync(2) takes nothing.
+        unsafe { libc::sync() };
+    }
+
+    fn reboot(&self) {
+        self.sync();
+        // SAFETY: reboot(2) as PID 1, the filesystems synced.
+        unsafe { libc::reboot(libc::RB_AUTOBOOT) };
+    }
+
+    fn reboot_tryboot(&self) {
+        self.sync();
+        let _ = reboot_tryboot();
+    }
+
+    fn switch_root(&self, new_root: &Path) -> Result<(), String> {
+        Err(self.switch_root_inner(new_root))
+    }
+
+    fn sleep(&self, time: Duration) {
+        std::thread::sleep(time);
+    }
+}
+
+impl System {
+    fn switch_root_inner(&self, new_root: &Path) -> String {
+        use std::os::unix::process::CommandExt;
+        self.umount(Path::new("/sys"));
+        self.umount(Path::new("/proc"));
+        if let Err(error) = self.move_mount(Path::new("/dev"), &new_root.join("dev")) {
+            return error;
+        }
+        if let Err(error) = std::env::set_current_dir(new_root) {
+            return format!("{}: {error}", new_root.display());
+        }
+        // Free the initramfs (its files are in RAM): everything on "/"
+        // but the new root, which is another filesystem.
+        if let Ok(meta) = std::fs::metadata("/") {
+            remove_on_device(Path::new("/"), meta.dev());
+        }
+        if let Err(error) = sys_mount(Path::new("."), Path::new("/"), None, libc::MS_MOVE, "") {
+            return error;
+        }
+        if let Err(error) = std::os::unix::fs::chroot(".") {
+            return format!("chroot: {error}");
+        }
+        let _ = std::env::set_current_dir("/");
+        let error = std::process::Command::new("/sbin/init").exec();
+        format!("/sbin/init: {error}")
+    }
+}
+
+/// Removes what is under `dir` on the device `dev`, never crossing into
+/// another filesystem or following a link.
+fn remove_on_device(dir: &Path, dev: u64) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if meta.dev() != dev {
+            continue;
+        }
+        if meta.is_dir() {
+            remove_on_device(&path, dev);
+            let _ = std::fs::remove_dir(&path);
+        } else {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn modules_dep_lists_the_dependencies() {
+        let dep = "kernel/drivers/md/dm-mod.ko:\nkernel/drivers/md/dm-bufio.ko:\nkernel/drivers/md/dm-verity.ko: kernel/drivers/md/dm-bufio.ko kernel/drivers/md/dm-mod.ko\n";
+        let (path, deps) = module_deps(dep, "dm-verity").unwrap();
+        assert_eq!(path, "kernel/drivers/md/dm-verity.ko");
+        assert_eq!(
+            deps,
+            [
+                "kernel/drivers/md/dm-bufio.ko",
+                "kernel/drivers/md/dm-mod.ko"
+            ]
+        );
+        assert_eq!(
+            module_deps(dep, "dm_mod").unwrap().0,
+            "kernel/drivers/md/dm-mod.ko"
+        );
+        assert!(module_deps(dep, "nope").is_none());
+    }
 
     #[test]
     fn the_structs_have_the_kernels_sizes() {

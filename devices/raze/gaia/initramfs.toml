@@ -2,30 +2,26 @@
 # ext4 /data, each with its dm-verity tree appended). One per OS variant,
 # from the same Buildroot base and kernel as the slot, beside its kernel in
 # the slot's boot directory (slots/<id>/initramfs, `initramfs initramfs
-# followkernel`). Its /init (assets/initramfs/init, tested by
-# tests/slot-init.sh) mounts /data, opens the slot's image through
-# dm-verity with the root hash on the kernel command line (slot-init,
-# crates/slot-init, below), mounts it and switch_roots; on a failure it
-# falls back to the default or the previous slot.
+# followkernel`). Its /init is slot-init itself (crates/slot-init, boot.rs;
+# tested by tests/slot-init.sh), a static binary: it mounts /data, opens the
+# slot's image through dm-verity with the root hash on the kernel command
+# line, mounts it and switch_roots; on a failure it falls back to the
+# default or the previous slot. Nothing else is in it but the dm modules:
+# no shell, no libc, no e2fsck (the kernel replays /data's journal; a
+# filesystem marked as having errors is mounted read-only), so it is
+# ~0.3 MB instead of 2 MB per slot.
 #
 # Output: $assembly.work/slots/initramfs.cpio.zst, for the slot bundle and
 # the boot directory (the recipes that assemble those take it from there).
-# The kernel needs BLK_DEV_INITRD, BLK_DEV_LOOP, EROFS_FS, EXT4_FS built in
-# (they are); dm-mod, dm-bufio and dm-verity come as modules, below.
+# The kernel needs BLK_DEV_INITRD, BLK_DEV_LOOP, EROFS_FS, EXT4_FS, VFAT_FS
+# built in (they are); dm-mod, dm-bufio and dm-verity come as modules, below.
 
 [[image.assembly.trees]]
 id = "slot-initramfs"
 path = "$assembly.work/slots/initramfs"
 
-# The OS's own BusyBox with its glibc closure: the applets /init uses.
-[[image.assembly.busybox_initramfs]]
-tree = "slot-initramfs"
-busybox = "$provider.buildroot_output/target/bin/busybox"
-include_runtime_libs = true
-applets = ["sh", "mount", "umount", "findfs", "od", "tr", "mkdir", "mv", "sleep", "sync",
-           "switch_root", "modprobe", "reboot", "cat", "echo", "dmesg", "uname"]
-
 # Device-mapper and verity (modules in the Raze kernel), with their deps.
+# /init reads modules.dep and nothing else of the module metadata.
 [[image.assembly.kernel_modules]]
 tree = "slot-initramfs"
 from = "$provider.buildroot_output/target/lib/modules"
@@ -34,23 +30,8 @@ modules = ["dm-mod", "dm-bufio", "dm-verity"]
 
 [[image.assembly.files]]
 tree = "slot-initramfs"
-src = "@self/assets/initramfs/init"
-dest = "init"
-mode = "0755"
-
-# e2fsck with its interpreter and shared libraries (libext2fs, libcom_err,
-# libblkid, libuuid, libe2p), resolved from the target root; the build fails
-# if one is missing. A plain file copy took the binary alone, and it exited
-# 127 at boot.
-[[image.assembly.binaries]]
-tree = "slot-initramfs"
-src = "$provider.buildroot_output/target/usr/sbin/e2fsck"
-dest = "usr/sbin/e2fsck"
-
-[[image.assembly.files]]
-tree = "slot-initramfs"
 src = "${workspace.out_dir}/artifacts/slot-init/slot-init"
-dest = "usr/bin/slot-init"
+dest = "init"
 mode = "0755"
 
 [[image.assembly.filesystems]]

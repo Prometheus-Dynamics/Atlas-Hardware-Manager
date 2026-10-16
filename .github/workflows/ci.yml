@@ -95,6 +95,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends erofs-utils zstd xz-utils busybox
 
+      # slot-init.sh builds slot-init (the slot initramfs's /init) for the host.
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.99.0
+
       # Every devices/raze/tests/*.sh, in parallel.
       - name: Run the tests
         run: sh devices/raze/tests/all.sh

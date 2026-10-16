@@ -526,14 +526,19 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
 (p1); the firmware picks one through `os_prefix` (`default.txt`, or
 `trial.txt` on a tryboot). Reflash-only: no A/B board converts.
 
-- **Slot initramfs** (`initramfs.toml`, `assets/initramfs/init`,
-  `crates/slot-init`): mounts `/data` (e2fsck first; read-only when it needs
-  repair), opens the slot's image through dm-verity with the root hash on
-  the command line, binds the OS family's data dirs, switch_roots. A slot
-  that can't start falls back: a trial restarts plainly; the default goes to
-  the previous slot on trial, at most 3 times, then a rescue shell. Finds
-  `/data` by `PARTUUID=`, or by the label `data` when findfs can't.
-  `tests/slot-init.sh`.
+- **Slot initramfs** (`initramfs.toml`): its /init is slot-init itself
+  (`crates/slot-init`, a static binary; nothing else in it but dm-mod,
+  dm-bufio and dm-verity, ~0.3 MB per slot instead of 2 MB). It mounts
+  `/data` (the kernel replays the journal; a filesystem marked as having
+  errors is mounted read-only, with a note), opens the slot's image through
+  dm-verity with the root hash on the command line, binds the OS family's
+  data dirs, switch_roots. A slot that can't start falls back: a trial
+  restarts plainly; the default goes to the previous slot on trial, at most
+  3 times, then a restart after 30 s. Every failure leaves the kernel log on
+  p1 (`slot-init.log`) and `/data/board/slots/last-failure.log`. Finds
+  `/data` by `PARTUUID=` (read from the partition table), or by the label
+  `data`. First booted on hardware with the earlier shell /init (r51).
+  `tests/slot-init.sh` runs the real code with recorded system calls.
 - **Slots writer** (`usr/lib/board/slots`; `update` hands over to it on a
   slots board): install a bundle (`<id>.slot.tar`, every file checked
   against `slot.json` before anything is replaced), boot once, confirm,

@@ -206,8 +206,10 @@ pub fn cmdline_arg<'a>(cmdline: &'a str, key: &str) -> Option<&'a str> {
         .find_map(|word| word.strip_prefix(key)?.strip_prefix('='))
 }
 
-#[cfg(target_os = "linux")]
+pub mod boot;
 pub mod partition;
+pub mod record;
+#[cfg(target_os = "linux")]
 #[allow(unsafe_code)]
 pub mod sys;
 
