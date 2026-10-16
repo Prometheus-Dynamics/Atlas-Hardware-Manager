@@ -13,12 +13,16 @@
 # slot; on the default slot it restarts into the previous slot on trial
 # (trial.txt), at most SLOT_MAX_FALLBACKS times in a row
 # (board/slots/fallbacks, which the writer clears on a confirmed boot);
-# then a shell on the console.
+# then a shell on the console for whoever is at it (Enter within
+# SLOT_RESCUE_WAIT s), else a plain restart: a board with nobody on its
+# serial console must not sit dark. Before any restart or the shell, the
+# kernel log goes to p1 (slot-init.log) and, when /data is mounted, to
+# /data/board/slots/last-failure.log, so the reason survives a power cut.
 #
 # Test hooks (tests/slot-init.sh): SLOT_ROOT (a prefix for every path),
 # SLOT_INIT, SLOT_MOUNT, SLOT_E2FSCK, SLOT_MODPROBE, SLOT_SWITCH_ROOT,
 # SLOT_REBOOT, SLOT_SHELL, SLOT_FINDFS, SLOT_UNAME, SLOT_WAIT (s for the
-# data device).
+# data device), SLOT_DMESG, SLOT_CONSOLE, SLOT_RESCUE_WAIT.
 set -u
 
 R=${SLOT_ROOT:-}
@@ -33,6 +37,9 @@ FINDFS=${SLOT_FINDFS:-findfs}
 UNAME=${SLOT_UNAME:-uname -r}
 WAIT=${SLOT_WAIT:-10}
 MAX_FALLBACKS=${SLOT_MAX_FALLBACKS:-3}
+DMESG=${SLOT_DMESG:-dmesg}
+CONSOLE=${SLOT_CONSOLE:-/dev/console}
+RESCUE_WAIT=${SLOT_RESCUE_WAIT:-30}
 export PATH=/sbin:/bin:/usr/sbin:/usr/bin
 
 log() {
@@ -53,15 +60,37 @@ if [ -r "$R/proc/device-tree/chosen/bootloader/tryboot" ] &&
 	tryboot=1
 fi
 
+# The kernel log (this boot's slot-init lines with it) to p1 and /data.
+save_log() {
+	if [ -d "$R/data/board/slots" ]; then
+		$DMESG > "$R/data/board/slots/last-failure.log" 2>/dev/null
+	fi
+	boot=$R/dev/mmcblk0p1
+	[ -z "${data_dev:-}" ] || boot=${data_dev%2}1
+	if $MOUNT -t vfat "$boot" "$R/boot" 2>/dev/null; then
+		$DMESG > "$R/boot/slot-init.log" 2>/dev/null
+		sync
+		umount "$R/boot" 2>/dev/null
+	fi
+	sync
+}
+
 rescue() {
-	log "no slot can start: $*; a shell on the console (the board's data is under /data)"
-	exec $SHELL_CMD
+	log "no slot can start: $*"
+	save_log
+	log "press Enter within $RESCUE_WAIT s for a shell (the board's data is under /data); else it restarts"
+	if read -r -t "$RESCUE_WAIT" _ < "$CONSOLE" 2>/dev/null; then
+		exec $SHELL_CMD
+	fi
+	eval "$REBOOT"
+	exit 1
 }
 
 # The slot didn't come up. Trial: back to the default. Default: the
 # previous slot on trial, unless that has already been tried too often.
 fail() {
 	log "slot ${slot:-?} can't start: $*"
+	save_log
 	if [ "$tryboot" = 1 ]; then
 		log "it was a trial boot; restarting into the default slot"
 		sync

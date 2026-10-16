@@ -35,6 +35,8 @@ echo "$(basename "$0") $*" >> "$CALLS"
 STUB
 chmod +x "$T/bin/slot-init" "$T/bin/stub"
 for c in mount e2fsck modprobe switch_root reboot shell; do ln -s stub "$T/bin/$c"; done
+printf '#!/bin/sh\necho "kernel log"\n' > "$T/bin/dmesg"
+chmod +x "$T/bin/dmesg"
 cat > "$T/bin/findfs" <<'STUB'
 #!/bin/sh
 echo "findfs $*" >> "$CALLS"
@@ -58,7 +60,7 @@ setup() {
 run() {
 	SLOT_ROOT=$R CALLS=$T/calls SLOT_INIT=$T/bin/slot-init SLOT_MOUNT=$T/bin/mount SLOT_E2FSCK=${E2:-$T/bin/e2fsck} \
 		SLOT_MODPROBE=$T/bin/modprobe SLOT_SWITCH_ROOT=$T/bin/switch_root SLOT_REBOOT="$T/bin/reboot -f" \
-		SLOT_SHELL=$T/bin/shell SLOT_FINDFS=$T/bin/findfs SLOT_UNAME="echo ${UNAME:-7.2.9-v8-16k}" SLOT_WAIT=1 \
+		SLOT_SHELL=$T/bin/shell SLOT_FINDFS=$T/bin/findfs SLOT_DMESG=$T/bin/dmesg SLOT_CONSOLE=${CONSOLE_IN:-/dev/null} SLOT_RESCUE_WAIT=1 SLOT_UNAME="echo ${UNAME:-7.2.9-v8-16k}" SLOT_WAIT=1 \
 		sh "$init" 2> "$T/log" || true
 }
 called() { grep -q -- "$1" "$T/calls"; }
@@ -92,13 +94,23 @@ called "mount -t vfat /dev/mmcblk0p1 $R/boot" || fail "FAT mount: $(cat "$T/call
 called "slot-init reboot-tryboot" || fail "no tryboot restart"
 [ "$(cat "$R/data/board/slots/fallbacks")" = 1 ] || fail "fallback count"
 
-echo "after three fallbacks in a row: a shell, not a fourth"
+echo "after three fallbacks in a row: no fourth; nobody at the console, so a plain restart, the log kept"
 setup
 rm "$R/data/slots/pv-a.erofs"
 echo 3 > "$R/data/board/slots/fallbacks"
 run
-called "shell" || fail "no rescue shell: $(cat "$T/calls")"
 called "reboot-tryboot" && fail "a fourth fallback"
+called "shell" && fail "a shell with nobody at the console: $(cat "$T/calls")"
+called "reboot -f" || fail "no restart: $(cat "$T/calls")"
+grep -q "kernel log" "$R/data/board/slots/last-failure.log" || fail "no last-failure.log on /data"
+
+echo "someone at the console gets the shell"
+setup
+rm "$R/data/slots/pv-a.erofs"
+echo 3 > "$R/data/board/slots/fallbacks"
+echo > "$T/enter"
+CONSOLE_IN=$T/enter run
+called "shell" || fail "no shell: $(cat "$T/calls")"
 
 echo "a findfs without PARTUUID finds /data by its label"
 setup

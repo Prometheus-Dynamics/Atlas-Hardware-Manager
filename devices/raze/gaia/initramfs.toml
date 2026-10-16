@@ -23,7 +23,7 @@ tree = "slot-initramfs"
 busybox = "$provider.buildroot_output/target/bin/busybox"
 include_runtime_libs = true
 applets = ["sh", "mount", "umount", "findfs", "od", "tr", "mkdir", "mv", "sleep", "sync",
-           "switch_root", "modprobe", "reboot", "cat", "echo"]
+           "switch_root", "modprobe", "reboot", "cat", "echo", "dmesg"]
 
 # Device-mapper and verity (modules in the Raze kernel), with their deps.
 [[image.assembly.kernel_modules]]
