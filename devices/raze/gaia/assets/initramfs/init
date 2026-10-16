@@ -21,7 +21,8 @@
 #
 # Test hooks (tests/slot-init.sh): SLOT_ROOT (a prefix for every path),
 # SLOT_INIT, SLOT_MOUNT, SLOT_E2FSCK, SLOT_MODPROBE, SLOT_SWITCH_ROOT,
-# SLOT_REBOOT, SLOT_SHELL, SLOT_UNAME, SLOT_WAIT (s for the
+# SLOT_REBOOT, SLOT_SHELL, SLOT_UNAME (a command printing the running kernel's
+# release; else /proc/sys/kernel/osrelease), SLOT_PATH, SLOT_WAIT (s for the
 # data device), SLOT_DMESG, SLOT_CONSOLE, SLOT_RESCUE_WAIT.
 set -u
 
@@ -33,13 +34,13 @@ MODPROBE=${SLOT_MODPROBE:-modprobe}
 SWITCH_ROOT=${SLOT_SWITCH_ROOT:-switch_root}
 REBOOT=${SLOT_REBOOT:-reboot -f}
 SHELL_CMD=${SLOT_SHELL:-sh}
-UNAME=${SLOT_UNAME:-uname -r}
+UNAME=${SLOT_UNAME:-}
 WAIT=${SLOT_WAIT:-10}
 MAX_FALLBACKS=${SLOT_MAX_FALLBACKS:-3}
 DMESG=${SLOT_DMESG:-dmesg}
 CONSOLE=${SLOT_CONSOLE:-/dev/console}
 RESCUE_WAIT=${SLOT_RESCUE_WAIT:-30}
-export PATH=/sbin:/bin:/usr/sbin:/usr/bin
+export PATH=${SLOT_PATH:-/sbin:/bin:/usr/sbin:/usr/bin}
 
 log() {
 	echo "slot-init: $*" >> "$R/dev/kmsg" 2>/dev/null || echo "slot-init: $*" >&2
@@ -170,7 +171,14 @@ manifest=$R/data/slots/$slot.json
 [ -r "$image" ] || fail "no image $image"
 [ -r "$manifest" ] || fail "no manifest $manifest"
 want=$($INIT kernel "$manifest") || fail "unreadable manifest"
-running=$($UNAME)
+# The running kernel's release from /proc (no uname needed), else uname.
+running=''
+if [ -n "$UNAME" ]; then
+	running=$($UNAME)
+else
+	read -r running < "$R/proc/sys/kernel/osrelease" 2>/dev/null || running=$(uname -r 2>/dev/null)
+fi
+[ -n "$running" ] || fail "couldn't read the running kernel's release (/proc/sys/kernel/osrelease)"
 [ "$want" = "$running" ] || fail "built for kernel $want, this is $running"
 
 for module in dm-mod dm-bufio dm-verity; do

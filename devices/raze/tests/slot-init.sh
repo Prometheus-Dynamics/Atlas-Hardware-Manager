@@ -18,6 +18,8 @@ fail() {
 mkdir -p "$T/bin"
 cat > "$T/bin/slot-init" <<'STUB'
 #!/bin/sh
+# A test double: the host's tools, whatever PATH /init runs with.
+PATH=/usr/bin:/bin:$PATH
 echo "slot-init $*" >> "$CALLS"
 case "$1" in
 arg) sed -n "s/.*[[:space:]]$2=\([^[:space:]]*\).*/\1/p" "$SLOT_ROOT/proc/cmdline" | grep . ;;
@@ -37,6 +39,8 @@ esac
 STUB
 cat > "$T/bin/stub" <<'STUB'
 #!/bin/sh
+# A test double: the host's tools, whatever PATH /init runs with.
+PATH=/usr/bin:/bin:$PATH
 echo "$(basename "$0") $*" >> "$CALLS"
 STUB
 chmod +x "$T/bin/slot-init" "$T/bin/stub"
@@ -122,6 +126,40 @@ chmod +x "$T/bin/e2fsck-missing"
 E2=$T/bin/e2fsck-missing run
 called "mount -t ext4 -o noatime,errors=remount-ro /dev/mmcblk0p2 $R/data" || fail "data mount: $(cat "$T/calls")"
 grep -q "e2fsck couldn't run" "$R/dev/kmsg" || fail "no note: $(cat "$R/dev/kmsg" 2>/dev/null)"
+
+echo "only the initramfs's own commands: its applets (initramfs.toml), slot-init and e2fsck"
+# PATH holds just those (the test's stubs, else the host's command of that
+# name), nothing is overridden but the slot-init stub's location, and the
+# kernel release comes from /proc: a command /init needs that the image
+# doesn't ship fails here, not on a board.
+toml=$here/../gaia/initramfs.toml
+mkdir -p "$T/applets"
+for a in $(sed -n '/^applets = \[/,/\]/p' "$toml" | tr -d '[],"' | sed 's/applets =//'); do
+	if [ -e "$T/bin/$a" ]; then ln -sf "$T/bin/$a" "$T/applets/$a"
+	elif command -v "$a" >/dev/null 2>&1; then ln -sf "$(command -v "$a")" "$T/applets/$a"
+	else fail "the host has no $a to stand in for the applet"
+	fi
+done
+ln -sf "$T/bin/slot-init" "$T/applets/slot-init"
+ln -sf "$T/bin/e2fsck" "$T/applets/e2fsck"
+setup
+mkdir -p "$R/proc/sys/kernel"
+echo 7.2.9-v8-16k > "$R/proc/sys/kernel/osrelease"
+env -i CALLS="$T/calls" SLOT_ROOT="$R" SLOT_PATH="$T/applets" SLOT_CONSOLE=/dev/null SLOT_RESCUE_WAIT=1 SLOT_WAIT=1 \
+	"$(command -v sh)" "$init" > "$T/log" 2>&1 || true
+grep -i "not found" "$T/log" && fail "/init needs a command the initramfs lacks"
+called "switch_root $R/newroot /sbin/init" || fail "didn't start with only the image's commands: $(cat "$T/calls"; cat "$R/dev/kmsg" 2>/dev/null)"
+
+echo "no kernel release to read is its own failure, not a mismatch"
+setup
+# As r50: no osrelease to read and a uname that answers nothing.
+rm -f "$T/applets/uname"
+printf '#!/bin/sh\nexit 1\n' > "$T/applets/uname"
+chmod +x "$T/applets/uname"
+env -i CALLS="$T/calls" SLOT_ROOT="$R" SLOT_PATH="$T/applets" SLOT_CONSOLE=/dev/null SLOT_RESCUE_WAIT=1 SLOT_WAIT=1 \
+	"$(command -v sh)" "$init" > "$T/log" 2>&1 || true
+called switch_root && fail "started without knowing the kernel"
+grep -q "couldn't read the running kernel's release" "$R/dev/kmsg" || fail "the reason: $(cat "$R/dev/kmsg")"
 
 echo "an image built for another kernel isn't started"
 setup
