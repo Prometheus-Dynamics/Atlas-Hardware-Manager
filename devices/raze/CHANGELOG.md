@@ -8,15 +8,17 @@ commit; the commits are listed per area.
 
 ### Breaking and ABI notes
 
-- **Kernel, install-size trim (opt-in, on trial):** `linux/raze-trim.config`,
-  applied after raze.config only with `BR2_RAZE_KERNEL_TRIM=y`: no 32-bit
+- **Kernel, install-size trim (on by default):** `linux/raze-trim.config`,
+  applied after raze.config with `BR2_RAZE_KERNEL_TRIM` (default y; an OS
+  that needs what it drops turns it off): no 32-bit
   userspace (COMPAT), no HID (keyboards, mice, gamepads), virtual
   terminals, 8250 UARTs, NVMe, io_uring, AppArmor/audit, MPTCP, CAN, USB
   serial, USB Ethernet other than cdc_ether/cdc_ncm/r8152/ax88179/asix, USB
   audio, exfat/fuse/overlayfs, zswap. Measured on the board's config:
   kernel8.img 8.04 -> 6.65 MB, modules 15.8 -> 12.3 MB. Built with -Os
-  (5.60 MB) it didn't boot (r57); the -O2 version is on trial as a slot.
-  Without the option the kernel is unchanged.
+  (5.60 MB) it didn't boot (r57); at -O2 it passed the board test (r58:
+  all Raze devices, camera stack, dm-verity, nft NAT, USB gadget; PV
+  pipeline timing unchanged).
 - **Platform:** Buildroot 2026.08, kernel `rpi-7.2.y` (7.2.9, bcm2712, 16K
   pages) and rpi-firmware 1.20260915 (`fd52491`). Buildroot 2026.08 removed
   rpi-userland, so `BR2_PACKAGE_RPI_USERLAND` must go from OS overrides.
