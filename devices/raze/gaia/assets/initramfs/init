@@ -47,9 +47,15 @@ log() {
 }
 
 if [ -z "$R" ]; then
+	# The archive may hold no directories but its files' (Gaia's cpio
+	# doesn't add /proc, /sys or /dev) and no /dev/console, so the kernel
+	# started this with no stdin, stdout or stderr: make the mount points,
+	# then take the console once devtmpfs has it.
+	mkdir -p /proc /sys /dev /run /tmp
 	mount -t proc proc /proc
 	mount -t sysfs sysfs /sys
 	mount -t devtmpfs devtmpfs /dev
+	[ -c /dev/console ] && exec < /dev/console > /dev/console 2>&1
 fi
 mkdir -p "$R/data" "$R/newroot" "$R/boot"
 
