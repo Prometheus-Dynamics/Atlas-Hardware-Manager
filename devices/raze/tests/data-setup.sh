@@ -179,4 +179,23 @@ grep '"kind":"data.grown"' "$T/run/nodata/events.jsonl" | grep -q '"from_mib":"8
 sh "$lib/event" later "later" 2>/dev/null
 [ "$(grep -c 'data.created' "$T/run/nodata/events.jsonl")" = 1 ] || fail "logged once"
 
+echo "slot mode: p2 grows and its ext4 grows, never made new (the running slot is on it)"
+truncate -s 128M "$T/disk"
+sfdisk -q "$T/disk" >/dev/null <<'LAYOUT'
+label: dos
+unit: sectors
+start=2048, size=16384, type=c
+start=18432, size=32768, type=83
+LAYOUT
+truncate -s 40M "$T/p2"
+mkfs.ext4 -q -F -L data "$T/p2" 16M
+before=$(dumpe2fs -h "$T/p2" 2>/dev/null | sed -n 's/^Block count: *//p')
+uuid_before=$(blkid -p -o value -s UUID "$T/p2")
+echo "a different flash" > "$T/flash-id"
+BOARD_DATA_SLOTS=1 BOARD_DATA_PART=2 BOARD_DATA_DEV=$T/p2 BOARD_DATA_FLASH_ID_FILE=$T/flash-id run
+p2=$(sfdisk -d "$T/disk" | sed -n 's/.*[^0-9]2 *: *start=.*size= *\([0-9]*\),.*/\1/p')
+[ "$p2" -gt 32768 ] || fail "p2 should grow: $p2"
+[ "$(blkid -p -o value -s UUID "$T/p2")" = "$uuid_before" ] || fail "slot mode must never make /data new"
+[ "$(dumpe2fs -h "$T/p2" 2>/dev/null | sed -n 's/^Block count: *//p')" -gt "$before" ] || fail "the filesystem should grow"
+
 echo "ok"

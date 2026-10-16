@@ -78,5 +78,17 @@ image = "board-aarch64-musl"
 dockerfile = "@self/docker/aarch64-musl.Dockerfile"
 context = "@self/docker"
 
+# The OS takes slot-init too: the slots writer (/usr/lib/board/slots) reads
+# slot.json and state.json with it.
+[[install]]
+id = "install-slot-init"
+artifact = "slot-init"
+dest = "/usr/lib/board/slot-init"
+replace = true
+mode = 493 # 0755
+
 [image]
 kind = "buildroot"
+
+[image.feed]
+install_entries = ["install-slot-init"]

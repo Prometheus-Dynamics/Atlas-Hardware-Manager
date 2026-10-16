@@ -1223,6 +1223,13 @@ if [ "${1:-}" = check-link ]; then
 	LINK_REASON=$(slot_sanity) || LINK_OK=0
 fi
 
+# A board with dynamic slots (slot images on /data): the slots writer does
+# every command (it takes the lock and the device lock itself).
+if [ -r "${UPDATE_SLOTS_STATE:-/data/board/slots/state.json}" ]; then
+	export LINK_OK="${LINK_OK:-1}" LINK_REASON="${LINK_REASON:-}"
+	exec "$BOARD_LIB_DIR/slots" "$@"
+fi
+
 # take_lock <seconds>: the lock, waiting at most that long (busybox flock
 # has no -w).
 take_lock() {

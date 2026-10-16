@@ -17,9 +17,14 @@
 # mounted to tell. Without a flash id, any existing filesystem is kept (and
 # Atlas's flash clears the partition, as a flash promises). Logs data.grown,
 # data.created, data.reset and data.resized events.
+# On a board with dynamic slots (the kernel command line has atlas.data=,
+# set by the slot's cmdline.txt) the initramfs has already mounted /data
+# from p2, and the running slot's image lives on it: then the partition
+# grows and ext4 grows online, and nothing else happens (no new filesystem,
+# no flash-id reset, no e2fsck while mounted).
 # Settings: data.env. Test hooks: BOARD_DATA_DISK, BOARD_DATA_DEV (files
 # stand in for the disk and the partition), BOARD_DATA_FLASH_ID_FILE (read
-# instead of the boot partition's).
+# instead of the boot partition's), BOARD_DATA_SLOTS=1 (slot mode).
 set -u
 
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
@@ -31,7 +36,19 @@ BOARD_EVENT_DEFER=1
 
 part=${BOARD_DATA_PART:-7}
 root=$(board_root_device)
-dev=${BOARD_DATA_DEV:-$(board_sibling_partition "$root" "$part" 2>/dev/null || true)}
+slots=${BOARD_DATA_SLOTS:-0}
+slot_data=$(tr ' ' '\n' < "${BOARD_PROC_CMDLINE:-/proc/cmdline}" 2>/dev/null | sed -n 's/^atlas\.data=//p' | tail -n 1)
+if [ -n "$slot_data" ]; then
+	slots=1
+	root=$(findfs "$slot_data" 2>/dev/null || true)
+fi
+# Slots: /data is always p2.
+[ "$slots" != 1 ] || part=2
+if [ "$slots" = 1 ] && [ -z "${BOARD_DATA_DEV:-}" ]; then
+	dev=$root
+else
+	dev=${BOARD_DATA_DEV:-$(board_sibling_partition "$root" "$part" 2>/dev/null || true)}
+fi
 case "${BOARD_DATA_DISK:-}" in
 '')
 	case "$dev" in
@@ -96,6 +113,21 @@ if [ "${BOARD_DATA_GROW:-1}" = 1 ] && line=$(entry "$part") && [ -n "$line" ]; t
 			board_log "couldn't grow $dev to the end of $disk"
 		fi
 	fi
+fi
+
+# Slot mode: /data is mounted and holds the running slot. Grow it online.
+if [ "$slots" = 1 ]; then
+	blocks=$(dumpe2fs -h "$dev" 2>/dev/null | sed -n 's/^Block count: *//p')
+	bsize=$(dumpe2fs -h "$dev" 2>/dev/null | sed -n 's/^Block size: *//p')
+	if [ -b "$dev" ]; then bytes=$(blockdev --getsize64 "$dev" 2>/dev/null); else bytes=$(wc -c < "$dev"); fi
+	if [ -n "$blocks" ] && [ -n "$bsize" ] && [ -n "$bytes" ] && [ $((bytes - blocks * bsize)) -gt 1048576 ]; then
+		if resize2fs "$dev" >/dev/null 2>&1; then
+			board_event data.resized "the data filesystem grew to fill its partition (online)" "dev=$dev"
+		else
+			board_log "couldn't grow the filesystem on $dev"
+		fi
+	fi
+	exit 0
 fi
 
 # The flash id's first line: from the test hook, or board/flash-id on the

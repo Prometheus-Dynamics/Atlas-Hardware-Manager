@@ -117,6 +117,53 @@ pub fn valid_data_dir(path: &str) -> bool {
         && path.bytes().all(|b| b.is_ascii_graphic())
 }
 
+/// A dotted field of a JSON document (`verity.root_hash`) as text: strings
+/// as they are, numbers and booleans as JSON; None when missing or not a
+/// scalar.
+pub fn field(text: &str, path: &str) -> Result<Option<String>, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("not JSON: {e}"))?;
+    let mut at = &value;
+    for key in path.split('.') {
+        match at.get(key) {
+            Some(next) => at = next,
+            None => return Ok(None),
+        }
+    }
+    Ok(match at {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    })
+}
+
+/// `boot.files` of a slot.json as "<sha256> <name>" lines (sha256sum's
+/// format), names checked to stay inside the boot directory.
+pub fn boot_files(text: &str) -> Result<Vec<(String, String)>, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("not JSON: {e}"))?;
+    let files = value
+        .pointer("/boot/files")
+        .and_then(|f| f.as_object())
+        .ok_or("slot.json: no boot.files")?;
+    files
+        .iter()
+        .map(|(name, sha)| {
+            let sha = sha.as_str().unwrap_or_default();
+            if !valid_data_dir(name) {
+                return Err(format!(
+                    "slot.json: boot file `{name}` isn't a relative path"
+                ));
+            }
+            if sha.len() != 64 || !hex(sha) {
+                return Err(format!("slot.json: boot file `{name}` has no sha256"));
+            }
+            Ok((sha.to_ascii_lowercase(), name.clone()))
+        })
+        .collect()
+}
+
 fn hex(s: &str) -> bool {
     s.len().is_multiple_of(2) && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
@@ -131,10 +178,12 @@ pub fn root_hash(s: &str) -> Result<String, String> {
 }
 
 /// The dm table line for the slot: one verity target over the loop device
-/// (`major:minor`), data and hash tree in the same file.
+/// (`major:minor`), data and hash tree in the same file. As `veritysetup
+/// format --hash-offset` lays it out (Gaia's verity transform): a verity
+/// superblock at `hash_offset`, the hash tree one hash block after it.
 pub fn verity_table(v: &Verity, device: &str, root: &str) -> (u64, String) {
     let sectors = v.data_blocks * u64::from(v.data_block_size) / 512;
-    let hash_start = v.hash_offset / u64::from(v.hash_block_size);
+    let hash_start = v.hash_offset / u64::from(v.hash_block_size) + 1;
     let salt = if v.salt.is_empty() { "-" } else { &v.salt };
     let params = format!(
         "1 {device} {device} {} {} {} {hash_start} sha256 {root} {salt}",
@@ -180,7 +229,7 @@ mod tests {
         assert_eq!(sectors, 114176 * 8);
         assert_eq!(
             params,
-            format!("1 7:0 7:0 4096 4096 114176 114176 sha256 {root} 5eed")
+            format!("1 7:0 7:0 4096 4096 114176 114177 sha256 {root} 5eed")
         );
     }
 
@@ -219,6 +268,18 @@ mod tests {
             State::parse(r#"{"schema":1,"default":"a","previous":"b","trial":null,"slots":{}}"#)
                 .unwrap();
         assert_eq!(state.previous.as_deref(), Some("b"));
+    }
+
+    #[test]
+    fn fields_and_boot_files() {
+        let text = r#"{"id":"x","image":{"size":12,"sha256":"aa"},"pinned":true,"boot":{"files":{"kernel8.img":"0000000000000000000000000000000000000000000000000000000000000000","overlays/a.dtbo":"1111111111111111111111111111111111111111111111111111111111111111"}}}"#;
+        assert_eq!(field(text, "image.size").unwrap().as_deref(), Some("12"));
+        assert_eq!(field(text, "image.sha256").unwrap().as_deref(), Some("aa"));
+        assert_eq!(field(text, "pinned").unwrap().as_deref(), Some("true"));
+        assert_eq!(field(text, "nope.x").unwrap(), None);
+        let files = boot_files(text).unwrap();
+        assert_eq!(files.len(), 2);
+        assert!(boot_files(&text.replace("overlays/a.dtbo", "../a.dtbo")).is_err());
     }
 
     #[test]

@@ -1,0 +1,508 @@
+#!/bin/sh
+# board-slots: the update writer on a board with dynamic slots (slot images
+# as EROFS files on /data, docs/slots.md). `update` hands over to it when the
+# board has /data/board/slots/state.json; the commands `update` has keep
+# their meaning, and slots adds its own:
+#
+#   slots status | list           JSON: the update state, every slot, free space
+#   slots stage <bundle.tar|-> [--sha256 <hex>] [--pin]
+#                                 install a slot bundle (never over the
+#                                 running or default slot)
+#   slots stage-url <url> --sha256 <hex> --size <bytes> [--pin]
+#   slots apply [<id>]            boot it once (trial.txt, "0 tryboot");
+#                                 default: the slot just staged
+#   slots boot-once <id>          the same, for any installed slot
+#   slots confirm                 after a boot: keep a healthy trial as the
+#                                 default; note a failed one
+#   slots check-link              a trial whose management link stays down
+#                                 goes back to the default
+#   slots set-default <id>        a slot that has booted well before
+#   slots rollback [--no-reboot]  the previous slot becomes the default
+#   slots remove <id>             not the running, default or a pinned slot
+#   slots pin|unpin <id>
+#   slots cancel                  stop a running install
+#
+# Exit status as `update`: 0 done, 3 refused with nothing changed (another
+# command running, the device lock held, no room, a slot that can't be
+# touched), anything else failed. The firmware's choice is two one-line
+# files on the boot FAT (default.txt, trial.txt: os_prefix=slots/<id>/); the
+# rest is in /data/board/slots/: state.env (DEFAULT, PREVIOUS, TRIAL, STAGED
+# and the update's STATE), state.json (generated from it, for the
+# initramfs), <id>.meta per slot, booted (the initramfs's), fallbacks.
+#
+# Test hooks: SLOTS_DATA (/data), SLOTS_BOOT_MOUNT (a mounted FAT instead of
+# mounting p1), SLOT_INIT, UPDATE_REBOOT, UPDATE_REBOOT_PLAIN, UPDATE_SYNC,
+# SLOTS_RESERVE_KB, SLOTS_RUNNING, SLOTS_PARTUUID.
+set -eu
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+board_load_env update.env
+
+DATA=${SLOTS_DATA:-/data}
+IMAGES=$DATA/slots
+STATE_DIR=$DATA/board/slots
+INIT=${SLOT_INIT:-$BOARD_LIB_DIR/slot-init}
+SYNC=${UPDATE_SYNC:-sync}
+SYSTEMCTL=${UPDATE_SYSTEMCTL:-systemctl}
+# Free space kept for logs, settings and PhotonVision's snapshots.
+RESERVE_KB=${SLOTS_RESERVE_KB:-2097152}
+STATUS_JSON=${BOARD_RUN_DIR}/update.json
+DOWNLOAD_DIR=${UPDATE_DOWNLOAD_DIR:-$DATA/board/update}
+REFUSED=3
+BOOT=''
+WORK_DIR=''
+# One exit handler: the install's work dir, the boot FAT if mounted here.
+cleanup() {
+	[ -z "$WORK_DIR" ] || rm -rf "$WORK_DIR"
+	if [ -n "$BOOT" ] && [ -z "${SLOTS_BOOT_MOUNT:-}" ]; then
+		umount "$BOOT" 2>/dev/null || true
+	fi
+}
+trap cleanup EXIT
+
+refuse() {
+	board_log "$*"
+	exit "$REFUSED"
+}
+die() {
+	board_log "$*"
+	[ -n "${STATE:-}" ] && STATE=error ERROR="$*" && save_state 2>/dev/null
+	exit 1
+}
+
+# --- state ------------------------------------------------------------------
+
+DEFAULT='' PREVIOUS='' TRIAL='' STAGED='' STATE=idle ERROR='' PROGRESS=0 STARTED_BY=''
+load_state() {
+	[ -r "$STATE_DIR/state.env" ] && . "$STATE_DIR/state.env"
+	# A first boot from the image: state.json alone (built by Gaia).
+	if [ -z "$DEFAULT" ] && [ -r "$STATE_DIR/state.json" ]; then
+		DEFAULT=$($INIT field "$STATE_DIR/state.json" default 2>/dev/null || true)
+	fi
+	return 0
+}
+q() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+save_state() {
+	mkdir -p "$STATE_DIR"
+	{
+		echo "DEFAULT=$(q "$DEFAULT")"
+		echo "PREVIOUS=$(q "$PREVIOUS")"
+		echo "TRIAL=$(q "$TRIAL")"
+		echo "STAGED=$(q "$STAGED")"
+		echo "STATE=$(q "$STATE")"
+		echo "ERROR=$(q "$ERROR")"
+		echo "PROGRESS=$(q "$PROGRESS")"
+		echo "STARTED_BY=$(q "$STARTED_BY")"
+	} > "$STATE_DIR/state.env.tmp"
+	mv -f "$STATE_DIR/state.env.tmp" "$STATE_DIR/state.env"
+	js() { if [ -n "$1" ]; then board_json_str "$1"; else printf null; fi; }
+	printf '{"schema":1,"default":%s,"previous":%s,"trial":%s}\n' \
+		"$(js "$DEFAULT")" "$(js "$PREVIOUS")" "$(js "$TRIAL")" > "$STATE_DIR/state.json.tmp"
+	$SYNC
+	mv -f "$STATE_DIR/state.json.tmp" "$STATE_DIR/state.json"
+	$SYNC
+	write_status
+}
+
+# <id>.meta: PINNED, GOOD (yes, no, untried), INSTALLED, LAST_BOOT.
+meta_get() { sed -n "s/^$2=//p" "$STATE_DIR/$1.meta" 2>/dev/null | head -n 1 | tr -d "'"; }
+meta_set() {
+	_m=$STATE_DIR/$1.meta
+	{ grep -v "^$2=" "$_m" 2>/dev/null || true; echo "$2=$3"; } > "$_m.tmp"
+	mv -f "$_m.tmp" "$_m"
+}
+
+running() {
+	if [ -n "${SLOTS_RUNNING:-}" ]; then echo "$SLOTS_RUNNING"; return; fi
+	cat "$STATE_DIR/booted" 2>/dev/null || true
+}
+installed() { [ -r "$IMAGES/$1.erofs" ] && [ -r "$IMAGES/$1.json" ]; }
+valid_id() {
+	case "$1" in '' | .* | *[!a-z0-9._-]*) return 1 ;; esac
+	[ "${#1}" -le 64 ]
+}
+mf() { $INIT field "$IMAGES/$1.json" "$2" 2>/dev/null || true; }
+
+# --- the boot FAT -----------------------------------------------------------
+
+# p1 of the disk /data is on (p2), mounted on $BOOT.
+mount_boot() {
+	[ -z "$BOOT" ] || return 0
+	if [ -n "${SLOTS_BOOT_MOUNT:-}" ]; then
+		BOOT=$SLOTS_BOOT_MOUNT
+		return 0
+	fi
+	_dev=$(findmnt -n -o SOURCE "$DATA" 2>/dev/null) || die "can't tell which device /data is on"
+	_boot=${_dev%2}1
+	BOOT=$BOARD_RUN_DIR/slots-boot
+	mkdir -p "$BOOT"
+	mount -t vfat "$_boot" "$BOOT" || { BOOT=''; die "can't mount the boot partition $_boot"; }
+}
+# write_line <file> <line>: a one-line file on the FAT, replaced in one rename.
+write_line() {
+	printf '%s\n' "$2" > "$BOOT/$1.new" || die "can't write $1 on the boot partition"
+	$SYNC
+	mv -f "$BOOT/$1.new" "$BOOT/$1" || die "can't write $1 on the boot partition"
+	$SYNC
+}
+# The default slot's boot files at the FAT's root too: what the firmware
+# boots when config.txt (or default.txt) can't be read.
+root_copy() {
+	_src=$BOOT/slots/$1
+	[ -d "$_src" ] || return 0
+	for _f in "$_src"/*; do
+		_n=${_f##*/}
+		[ -f "$_f" ] || continue
+		cp "$_f" "$BOOT/.$_n.new" && mv -f "$BOOT/.$_n.new" "$BOOT/$_n"
+	done
+	if [ -d "$_src/overlays" ]; then
+		rm -rf "$BOOT/.overlays.new"
+		cp -r "$_src/overlays" "$BOOT/.overlays.new" && rm -rf "$BOOT/overlays" && mv "$BOOT/.overlays.new" "$BOOT/overlays"
+	fi
+	$SYNC
+}
+
+tryboot_reboot() {
+	if [ -n "${UPDATE_REBOOT:-}" ]; then eval "$UPDATE_REBOOT"; return; fi
+	"$SYSTEMCTL" reboot --reboot-argument='0 tryboot'
+}
+plain_reboot() { eval "${UPDATE_REBOOT_PLAIN:-$SYSTEMCTL reboot}"; }
+
+# --- status -----------------------------------------------------------------
+
+slots_json() {
+	_first=1
+	printf '['
+	for _img in "$IMAGES"/*.erofs; do
+		[ -e "$_img" ] || continue
+		_id=${_img##*/}
+		_id=${_id%.erofs}
+		valid_id "$_id" || continue
+		[ "$_first" = 1 ] || printf ','
+		_first=0
+		_size=$(wc -c < "$_img" | tr -d ' ')
+		_flags=''
+		[ "$_id" = "$(running)" ] && _flags="$_flags\"running\","
+		[ "$_id" = "$DEFAULT" ] && _flags="$_flags\"default\","
+		[ "$_id" = "$PREVIOUS" ] && _flags="$_flags\"previous\","
+		[ "$_id" = "$TRIAL" ] && _flags="$_flags\"trial\","
+		[ "$_id" = "$STAGED" ] && _flags="$_flags\"staged\","
+		printf '{"id":%s,"family":%s,"version":%s,"variant":%s,"kernel":%s,"size":%s,"verity":%s,"flags":[%s],"pinned":%s,"good":%s,"installed":%s,"last_boot":%s}' \
+			"$(board_json_str "$_id")" "$(board_json_str "$(mf "$_id" family)")" "$(board_json_str "$(mf "$_id" version)")" \
+			"$(board_json_str "$(mf "$_id" variant)")" "$(board_json_str "$(mf "$_id" kernel)")" "$_size" \
+			"$([ -n "$(mf "$_id" verity.root_hash)" ] && echo true || echo false)" "${_flags%,}" \
+			"$([ "$(meta_get "$_id" PINNED)" = yes ] && echo true || echo false)" \
+			"$(board_json_str "$(meta_get "$_id" GOOD)")" "$(board_json_str "$(meta_get "$_id" INSTALLED)")" \
+			"$(board_json_str "$(meta_get "$_id" LAST_BOOT)")"
+	done
+	printf ']'
+}
+free_kb() { df -kP "$DATA" 2>/dev/null | awk 'NR == 2 { print $4 }'; }
+write_status() {
+	mkdir -p "$BOARD_RUN_DIR"
+	_run=$(running)
+	_free=$(free_kb)
+	printf '{"state":%s,"layout":"slots","slot_active":%s,"slot_staged":%s,"slot_default":%s,"slot_previous":%s,"slot_trial":%s,"version_active":%s,"version_staged":%s,"progress":%s,"error":%s,"version_previous":%s,"started_by":%s,"phase":null,"free_bytes":%s,"reserve_bytes":%s,"slots":%s}\n' \
+		"$(board_json_str "$STATE")" "$(board_json_str "$_run")" "$(board_json_str "$STAGED")" "$(board_json_str "$DEFAULT")" \
+		"$(board_json_str "$PREVIOUS")" "$(board_json_str "$TRIAL")" "$(board_json_str "$([ -n "$_run" ] && mf "$_run" version)")" \
+		"$(board_json_str "$([ -n "$STAGED" ] && mf "$STAGED" version)")" "${PROGRESS:-0}" "$(board_json_str "$ERROR")" \
+		"$(board_json_str "$([ -n "$PREVIOUS" ] && mf "$PREVIOUS" version)")" "$(board_json_str "$STARTED_BY")" \
+		"$((${_free:-0} * 1024))" "$((RESERVE_KB * 1024))" "$(slots_json)" > "$STATUS_JSON.tmp.$$"
+	chmod 0644 "$STATUS_JSON.tmp.$$" 2>/dev/null || true
+	# The boot it describes, as `update status` checks before answering from it.
+	cat "${UPDATE_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}" > "$STATUS_JSON.boot" 2>/dev/null || true
+	mv -f "$STATUS_JSON.tmp.$$" "$STATUS_JSON"
+}
+
+# --- install ----------------------------------------------------------------
+
+# install_bundle <tar> <pin yes|no>: unpack into /data/slots/.install.<pid>,
+# check everything against slot.json, then put each part in place by rename.
+install_bundle() {
+	_tar=$1
+	_work=$IMAGES/.install.$$
+	rm -rf "$IMAGES"/.install.* 2>/dev/null || true
+	mkdir -p "$_work"
+	WORK_DIR=$_work
+	_need=$(( $(wc -c < "$_tar") / 1024 + RESERVE_KB ))
+	[ "$(free_kb)" -ge "$_need" ] || refuse "no room for this slot: it needs $((_need / 1024)) MiB with the reserve, /data has $(( $(free_kb) / 1024 )) MiB free; remove a slot first"
+	STATE=staging PROGRESS=100 ERROR=''
+	save_state
+	tar -xf "$_tar" -C "$_work" || die "the bundle doesn't unpack"
+	[ -r "$_work/slot.json" ] && [ -r "$_work/rootfs.erofs" ] && [ -d "$_work/boot" ] || die "not a slot bundle (slot.json, rootfs.erofs, boot/)"
+	_id=$($INIT field "$_work/slot.json" id) || die "slot.json has no id"
+	valid_id "$_id" || die "slot.json: \`$_id\` isn't a slot id"
+	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
+	[ "$_id" != "$DEFAULT" ] || refuse "$_id is the default slot"
+	_root=$($INIT field "$_work/slot.json" verity.root_hash) || die "slot.json has no verity root hash"
+	_size=$($INIT field "$_work/slot.json" image.size) || die "slot.json has no image size"
+	_sha=$($INIT field "$_work/slot.json" image.sha256) || die "slot.json has no image sha256"
+	[ "$(wc -c < "$_work/rootfs.erofs" | tr -d ' ')" = "$_size" ] || die "rootfs.erofs isn't the size slot.json says"
+	PROGRESS=300 && write_status
+	[ "$(sha256sum "$_work/rootfs.erofs" | cut -d' ' -f1)" = "$_sha" ] || die "rootfs.erofs doesn't match slot.json's sha256"
+	PROGRESS=600 && write_status
+	$INIT boot-files "$_work/slot.json" > "$_work/boot.sha256" || die "slot.json's boot files"
+	(cd "$_work/boot" && sha256sum -c ../boot.sha256 > /dev/null 2>&1) || die "a boot file doesn't match slot.json"
+	# The boot side: slots/<id>/ on the FAT, its cmdline naming the slot.
+	mount_boot
+	_dev=${SLOTS_PARTUUID:-$(findmnt -n -o PARTUUID "$DATA" 2>/dev/null || true)}
+	_base=$(tr '\n' ' ' < "$_work/boot/cmdline.txt" 2>/dev/null | sed 's/ *$//')
+	rm -rf "$BOOT/slots/.$_id.new"
+	mkdir -p "$BOOT/slots"
+	cp -r "$_work/boot" "$BOOT/slots/.$_id.new" || die "can't write the slot's boot files"
+	cp "$_work/slot.json" "$BOOT/slots/.$_id.new/slot.json"
+	printf '%s atlas.slot=%s atlas.roothash=%s atlas.data=PARTUUID=%s panic=5\n' \
+		"$_base" "$_id" "$_root" "$_dev" > "$BOOT/slots/.$_id.new/cmdline.txt"
+	$SYNC
+	rm -rf "$BOOT/slots/$_id"
+	mv "$BOOT/slots/.$_id.new" "$BOOT/slots/$_id" || die "can't put the slot's boot files in place"
+	$SYNC
+	PROGRESS=900 && write_status
+	# The data side: the image and its manifest, each by rename.
+	mv -f "$_work/slot.json" "$IMAGES/.$_id.json.tmp"
+	mv -f "$_work/rootfs.erofs" "$IMAGES/.$_id.erofs.tmp"
+	$SYNC
+	mv -f "$IMAGES/.$_id.erofs.tmp" "$IMAGES/$_id.erofs"
+	mv -f "$IMAGES/.$_id.json.tmp" "$IMAGES/$_id.json"
+	$SYNC
+	rm -f "$STATE_DIR/$_id.meta"
+	meta_set "$_id" PINNED "$2"
+	meta_set "$_id" GOOD untried
+	meta_set "$_id" INSTALLED "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	STAGED=$_id STATE=staged PROGRESS=1000 STARTED_BY=${BOARD_EVENT_SOURCE:-local}
+	save_state
+	board_event update.staged "installed slot $_id ($(mf "$_id" family) $(mf "$_id" version))" "slot=$_id" "sha256=$_sha"
+}
+
+cmd_stage() {
+	_file='' _want='' _pin=no
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--sha256) _want=${2:-}; shift 2 ;;
+		--pin) _pin=yes; shift ;;
+		-) _file=-; shift ;;
+		-*) die "unknown option '$1'" ;;
+		*) _file=$1; shift ;;
+		esac
+	done
+	[ -n "$_file" ] || die "usage: slots stage <bundle.tar|-> [--sha256 <hex>] [--pin]"
+	if [ "$_file" = - ]; then
+		mkdir -p "$DOWNLOAD_DIR"
+		_file=$DOWNLOAD_DIR/stdin.slot.tar
+		cat > "$_file"
+	fi
+	[ -r "$_file" ] || die "no bundle at $_file"
+	[ -z "$_want" ] || [ "$(sha256sum "$_file" | cut -d' ' -f1)" = "$_want" ] || refuse "the bundle doesn't match --sha256; nothing changed"
+	board_event update.stage "installing a slot from $(basename "$_file")"
+	install_bundle "$_file" "$_pin"
+}
+
+cmd_stage_url() {
+	_url='' _want='' _size='' _pin=no
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--sha256) _want=${2:-}; shift 2 ;;
+		--size) _size=${2:-}; shift 2 ;;
+		--pin) _pin=yes; shift ;;
+		-*) die "unknown option '$1'" ;;
+		*) _url=$1; shift ;;
+		esac
+	done
+	[ -n "$_url" ] && [ -n "$_want" ] || die "usage: slots stage-url <url> --sha256 <hex> --size <bytes> [--pin]"
+	mkdir -p "$DOWNLOAD_DIR"
+	_file=$DOWNLOAD_DIR/$_want.slot.tar
+	STATE=staging PROGRESS=0 ERROR=''
+	save_state
+	if command -v curl >/dev/null 2>&1; then
+		curl -fsSL --retry 3 --connect-timeout 30 -C - -o "$_file" "$_url" || die "the download failed"
+	else
+		wget -q -c -O "$_file" "$_url" || die "the download failed"
+	fi
+	[ -z "$_size" ] || [ "$(wc -c < "$_file" | tr -d ' ')" = "$_size" ] || die "the download isn't --size bytes"
+	[ "$(sha256sum "$_file" | cut -d' ' -f1)" = "$_want" ] || { rm -f "$_file"; die "the download doesn't match --sha256"; }
+	install_bundle "$_file" "$_pin"
+	rm -f "$_file"
+}
+
+# --- booting ----------------------------------------------------------------
+
+cmd_boot_once() {
+	_id=${1:-$STAGED}
+	[ -n "$_id" ] || refuse "nothing is staged"
+	installed "$_id" || refuse "no slot $_id"
+	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
+	mount_boot
+	[ -d "$BOOT/slots/$_id" ] || refuse "slot $_id has no boot files"
+	write_line trial.txt "os_prefix=slots/$_id/"
+	TRIAL=$_id STATE=rebooting
+	save_state
+	board_event update.apply "restarting into slot $_id ($(mf "$_id" version)) on trial" "slot=$_id"
+	tryboot_reboot
+}
+
+# After every boot (board-update-confirm): a healthy trial becomes the
+# default; a trial that didn't come up is noted.
+cmd_confirm() {
+	_run=$(running)
+	[ -n "$_run" ] || refuse "the initramfs didn't say which slot is running"
+	if [ -n "$TRIAL" ] && [ "$_run" = "$TRIAL" ]; then
+		if [ -x /etc/board/update-health ] && ! /etc/board/update-health; then
+			meta_set "$_run" GOOD no
+			ERROR="slot $_run failed its health check"
+			board_event update.trial-failed "$ERROR" "slot=$_run"
+			save_state
+			plain_reboot
+			return
+		fi
+		mount_boot
+		root_copy "$_run"
+		write_line default.txt "os_prefix=slots/$_run/"
+		[ "$DEFAULT" = "$_run" ] || PREVIOUS=$DEFAULT
+		DEFAULT=$_run TRIAL='' STAGED='' STATE=confirmed ERROR=''
+		board_event update.confirmed "kept slot $_run ($(mf "$_run" version))" "slot=$_run"
+	elif [ -n "$TRIAL" ]; then
+		meta_set "$TRIAL" GOOD no
+		ERROR="slot $TRIAL didn't start; back on $_run"
+		board_event update.rolled-back "$ERROR" "slot=$TRIAL"
+		TRIAL='' STATE=rolled-back
+	fi
+	[ -n "$DEFAULT" ] || DEFAULT=$_run
+	meta_set "$_run" GOOD yes
+	meta_set "$_run" LAST_BOOT "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	echo 0 > "$STATE_DIR/fallbacks"
+	save_state
+}
+
+cmd_check_link() {
+	_run=$(running)
+	[ -n "$TRIAL" ] && [ "$_run" = "$TRIAL" ] || return 0
+	[ "${LINK_OK:-1}" = 1 ] && return 0
+	meta_set "$_run" GOOD no
+	ERROR="slot $_run came up without its management link (${LINK_REASON:-}); back to $DEFAULT"
+	board_event update.link-bad "$ERROR" "slot=$_run"
+	TRIAL='' STATE=rolled-back
+	save_state
+	plain_reboot
+}
+
+cmd_set_default() {
+	_id=${1:-}
+	installed "$_id" || refuse "no slot $_id"
+	[ "$(meta_get "$_id" GOOD)" = yes ] || refuse "slot $_id hasn't booted well here yet: boot it once first"
+	mount_boot
+	write_line default.txt "os_prefix=slots/$_id/"
+	root_copy "$_id"
+	[ "$DEFAULT" = "$_id" ] || PREVIOUS=$DEFAULT
+	DEFAULT=$_id
+	save_state
+	board_event update.default "slot $_id is the default from the next boot" "slot=$_id"
+}
+
+cmd_rollback() {
+	[ -n "$PREVIOUS" ] && installed "$PREVIOUS" || refuse "there is no previous slot to go back to"
+	_back=$PREVIOUS
+	_from=$DEFAULT
+	mount_boot
+	write_line default.txt "os_prefix=slots/$_back/"
+	root_copy "$_back"
+	DEFAULT=$_back PREVIOUS=$_from STATE=rebooting
+	save_state
+	board_event update.rollback "going back to slot $_back" "slot=$_back"
+	[ "${1:-}" = --no-reboot ] || plain_reboot
+}
+
+# --- slots ------------------------------------------------------------------
+
+cmd_remove() {
+	_id=${1:-}
+	valid_id "$_id" || refuse "\`$_id\` isn't a slot id"
+	installed "$_id" || [ -d "${SLOTS_BOOT_MOUNT:-/nonexistent}/slots/$_id" ] || refuse "no slot $_id"
+	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
+	[ "$_id" != "$DEFAULT" ] || refuse "$_id is the default slot"
+	[ "$_id" != "$TRIAL" ] || refuse "$_id is about to be tried"
+	[ "$(meta_get "$_id" PINNED)" != yes ] || refuse "$_id is pinned; unpin it first"
+	mount_boot
+	rm -rf "$BOOT/slots/$_id"
+	$SYNC
+	rm -f "$IMAGES/$_id.erofs" "$IMAGES/$_id.json" "$STATE_DIR/$_id.meta"
+	$SYNC
+	[ "$PREVIOUS" != "$_id" ] || PREVIOUS=''
+	[ "$STAGED" != "$_id" ] || STAGED=''
+	save_state
+	board_event slot.removed "removed slot $_id" "slot=$_id"
+}
+
+cmd_pin() {
+	installed "$2" || refuse "no slot $2"
+	meta_set "$2" PINNED "$1"
+	write_status
+}
+
+cmd_cancel() {
+	if [ "$STATE" = staging ]; then
+		rm -rf "$IMAGES"/.install.* "$IMAGES"/.*.tmp 2>/dev/null || true
+		STATE=cancelled ERROR=''
+		save_state
+		echo cancelled
+		return
+	fi
+	if [ -n "$STAGED" ] && [ "$STAGED" != "$(running)" ] && [ "$STAGED" != "$DEFAULT" ] &&
+		[ "$(meta_get "$STAGED" GOOD)" = untried ]; then
+		_id=$STAGED
+		cmd_remove "$_id"
+		STATE=cancelled
+		save_state
+		echo cancelled
+		return
+	fi
+	echo idle
+}
+
+# --- main -------------------------------------------------------------------
+
+mkdir -p "$BOARD_RUN_DIR" "$STATE_DIR" "$IMAGES"
+case "${1:-}" in
+stage | stage-url | apply | boot-once | rollback | remove | set-default) board_refuse_if_locked "update ${1}" ;;
+esac
+exec 9> "$BOARD_RUN_DIR/update.lock"
+if command -v flock >/dev/null 2>&1; then
+	waited=0
+	until flock -n 9; do
+		[ "${1:-}" != status ] && [ "${1:-}" != list ] || { cat "$STATUS_JSON" 2>/dev/null && exit 0; }
+		[ "$waited" -lt "${UPDATE_LOCK_WAIT:-60}" ] || refuse "another update command is still running; nothing changed"
+		sleep 1
+		waited=$((waited + 1))
+	done
+fi
+load_state
+
+cmd=${1:-}
+[ $# -eq 0 ] || shift
+case "$cmd" in
+status | list)
+	# An install that died (power loss, a kill) under the lock: an error.
+	if [ "$STATE" = staging ]; then
+		STATE=error PROGRESS=0 ERROR="the install was interrupted; install it again"
+		save_state
+	fi
+	write_status
+	cat "$STATUS_JSON"
+	;;
+stage) cmd_stage "$@" ;;
+stage-url) cmd_stage_url "$@" ;;
+apply | boot-once) cmd_boot_once "$@" ;;
+confirm) cmd_confirm ;;
+check-link) cmd_check_link ;;
+set-default) cmd_set_default "$@" ;;
+rollback) cmd_rollback "$@" ;;
+remove) cmd_remove "$@" ;;
+pin) cmd_pin yes "${1:-}" ;;
+unpin) cmd_pin no "${1:-}" ;;
+cancel) cmd_cancel ;;
+*)
+	sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//' >&2
+	exit 2
+	;;
+esac
