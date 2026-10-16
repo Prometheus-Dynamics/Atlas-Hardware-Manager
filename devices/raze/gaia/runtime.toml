@@ -146,6 +146,25 @@ origin = "static-asset"
 mode = 493
 
 [[stage.files]]
+id = "raze-systemd-system-board-data-owners-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-data-owners.service"
+dest = "/usr/lib/systemd/system/board-data-owners.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-board-data-owners"
+src = "@self/assets/rootfs/usr/lib/board/data-owners"
+dest = "/usr/lib/board/data-owners"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
+id = "raze-board-data-owners-board-conf"
+src = "@self/assets/rootfs/usr/lib/board/data-owners.d/board.conf"
+dest = "/usr/lib/board/data-owners.d/board.conf"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-systemd-system-board-pstore-service"
 src = "@self/assets/rootfs/usr/lib/systemd/system/board-pstore.service"
 dest = "/usr/lib/systemd/system/board-pstore.service"
@@ -668,6 +687,9 @@ stage_files = [
   "raze-systemd-system-board-stream-socket",
   "raze-systemd-system-board-data-setup-service",
   "raze-board-data-setup",
+  "raze-systemd-system-board-data-owners-service",
+  "raze-board-data-owners",
+  "raze-board-data-owners-board-conf",
   "raze-board-data-env",
   "raze-systemd-system-board-pstore-service",
   "raze-board-pstore",

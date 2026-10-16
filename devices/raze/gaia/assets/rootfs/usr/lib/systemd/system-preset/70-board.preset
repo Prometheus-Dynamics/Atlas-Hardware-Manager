@@ -29,6 +29,7 @@ enable board-security.path
 enable board-boot.service
 enable board-machine-id.service
 enable board-data-setup.service
+enable board-data-owners.service
 enable board-pstore.service
 enable board-netconsole.service
 enable board-drift.timer

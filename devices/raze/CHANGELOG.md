@@ -519,6 +519,40 @@ commit; the commits are listed per area.
   self-test's I2C scan (`c4bbf6e`).
 - **Identity:** an optional `diagnostics` array (`["selftest"]`) (`c4bbf6e`).
 
+### Dynamic slots (not yet on hardware)
+
+Any number of OS images on one board, each an EROFS file with its dm-verity
+tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
+(p1); the firmware picks one through `os_prefix` (`default.txt`, or
+`trial.txt` on a tryboot). Reflash-only: no A/B board converts.
+
+- **Slot initramfs** (`initramfs.toml`, `assets/initramfs/init`,
+  `crates/slot-init`): mounts `/data` (e2fsck first; read-only when it needs
+  repair), opens the slot's image through dm-verity with the root hash on
+  the command line, binds the OS family's data dirs, switch_roots. A slot
+  that can't start falls back: a trial restarts plainly; the default goes to
+  the previous slot on trial, at most 3 times, then a rescue shell. Finds
+  `/data` by `PARTUUID=`, or by the label `data` when findfs can't.
+  `tests/slot-init.sh`.
+- **Slots writer** (`usr/lib/board/slots`; `update` hands over to it on a
+  slots board): install a bundle (`<id>.slot.tar`, every file checked
+  against `slot.json` before anything is replaced), boot once, confirm,
+  set-default, rollback, remove (not the running, default, trial or a pinned
+  slot), pin, and status with every slot and the free space (2 GiB kept
+  free). `tests/slots.sh`.
+- **data-setup** in slot mode (`atlas.data=` on the command line): grows p2
+  and its ext4 online; never makes a filesystem.
+- The identity lists `slots-tryboot` in `update_methods` on a slots board.
+  board-agent claims `slot.boot-once`, `slot.set-default`, `slot.remove` and
+  `slot.pin`, and publishes the slots as `update.*` keys.
+- **Service users on /data:** every image on a board shares `/data`, so a
+  service user owning files there needs a fixed uid/gid, the same in every
+  image: lemnos 900, orion 901, the next 902. `board-data-owners.service`
+  (`usr/lib/board/data-owners`, every boot once `/data` is mounted, before
+  sysinit.target) gives back state an earlier image left under another uid:
+  an OS lists `<user> <path under /data>` in `data-owners.d/*.conf`.
+  `tests/data-owners.sh`.
+
 ### Updates (A/B with tryboot)
 
 - **Updates and USB boot wait for another tool's run on the board.** While

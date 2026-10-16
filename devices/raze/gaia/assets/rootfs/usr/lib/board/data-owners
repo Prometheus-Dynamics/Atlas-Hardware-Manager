@@ -1,0 +1,53 @@
+#!/bin/sh
+# Owners of service state on /data (board-data-owners.service, at every boot
+# once /data is mounted, before the services start). Every OS image on a
+# board shares /data (each slot on a slots board, the other slot after an
+# A/B update), and a service user's numeric id is the image's: a user an
+# image's build numbers itself (Buildroot's -1) can get another id in the
+# next image, and its files on /data then belong to nobody it knows. Service
+# users that own files on /data get fixed ids, the same in every image
+# (lemnos 900, orion 901, the next 902...); this repairs what an image from
+# before that, or one that got it wrong, left behind.
+#
+# Each line of $BOARD_LIB_DIR/data-owners.d/*.conf and
+# $BOARD_ETC_DIR/data-owners.d/*.conf is `<user> <path>`, the path under
+# /data (an OS lists its own services' state there). When the path exists,
+# the user exists in this image, and the path's owner or group isn't that
+# user's here, the path is chowned to them, recursively (symlinks are not
+# followed), and a data.owners event says so. A path whose owner is right
+# is left alone: one stat per line on a normal boot.
+# Test hooks: BOARD_DATA_ROOT (the /data the paths must be under),
+# BOARD_DATA_OWNERS_CHOWN (the chown command).
+set -u
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+DATA_ROOT=${BOARD_DATA_ROOT:-/data}
+CHOWN=${BOARD_DATA_OWNERS_CHOWN:-chown}
+
+for conf in "$BOARD_LIB_DIR"/data-owners.d/*.conf "$BOARD_ETC_DIR"/data-owners.d/*.conf; do
+	[ -r "$conf" ] || continue
+	sed -e 's/#.*//' "$conf" | while read -r user path rest; do
+		[ -n "$user" ] && [ -n "$path" ] || continue
+		case "$path" in
+		"$DATA_ROOT"/*) ;;
+		*)
+			board_log "data-owners: $conf: $path isn't under $DATA_ROOT; skipped"
+			continue
+			;;
+		esac
+		case "$path" in *..*) continue ;; esac
+		[ -e "$path" ] || continue
+		uid=$(id -u "$user" 2>/dev/null) || continue
+		gid=$(id -g "$user" 2>/dev/null) || continue
+		have=$(stat -c '%u:%g' "$path" 2>/dev/null) || continue
+		[ "$have" != "$uid:$gid" ] || continue
+		if $CHOWN -R -P "$uid:$gid" "$path"; then
+			board_event data.owners "$path belonged to $have; now $user ($uid:$gid)" "path=$path" "user=$user" "was=$have"
+		else
+			board_log "data-owners: couldn't give $path to $user"
+		fi
+	done
+done
+exit 0

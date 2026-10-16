@@ -1,0 +1,18 @@
+[Unit]
+Description=Owners of service state on /data (the same users in every OS image)
+Documentation=file:/usr/lib/board/data-owners
+# Once /data is mounted and the image's users exist, before any service
+# that keeps state there starts (they start after sysinit.target).
+DefaultDependencies=no
+After=local-fs.target systemd-sysusers.service
+Before=sysinit.target shutdown.target
+Conflicts=shutdown.target
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/board/data-owners
+
+[Install]
+WantedBy=sysinit.target
