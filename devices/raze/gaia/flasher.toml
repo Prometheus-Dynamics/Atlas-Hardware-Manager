@@ -13,7 +13,8 @@
 # 1d6b:0104 "Raze flasher" ~3 s later, ACM root shell, ring stages.
 # Requirements found on the way:
 #   - bcm2712d0.dtbo (the firmware auto-applies it on D0 BCM2712; without it
-#     the kernel faults in pinctrl at 0.1 s): ship every stock overlay;
+#     the kernel faults in pinctrl at 0.1 s): the firmware overlays the build
+#     installs (kernel.toml keeps it in the list);
 #   - FAT16, not FAT12 (Gaia >= 4a820ce formats small vfat as FAT16);
 #   - rp1-mailbox before rp1-fw/rp1-pio (bound through DT, not in
 #     modules.dep), so the module list is explicit.
@@ -76,9 +77,9 @@ tree = "flasher-boot"
 src_glob = "$provider.buildroot_output/images/bcm2712-rpi-cm5*.dtb"
 dest = "./"
 
-# Every stock overlay (the firmware applies bcm2712d0 on its own through
-# overlay_map.dtb), then the Raze build's own, which replace stock ones of
-# the same name.
+# The firmware overlays the build installs (bcm2712d0, which the firmware
+# applies on its own through overlay_map.dtb; kernel.toml), then the Raze
+# build's own.
 [[image.assembly.files]]
 tree = "flasher-boot"
 src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtbo"

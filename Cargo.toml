@@ -125,3 +125,12 @@ opt-level = 3
 [profile.device]
 inherits = "release"
 strip = "symbols"
+
+# slot-init, which every slot's initramfs carries: built for size (567 KB
+# -> 422 KB for aarch64 musl). It's small, so LTO costs the build little.
+[profile.device-small]
+inherits = "device"
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

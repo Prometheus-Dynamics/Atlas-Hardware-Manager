@@ -39,6 +39,13 @@ config_overrides = [
   # this kernel instead (external.mk, RAZE_KERNEL_OVERLAYS): the firmware's come
   # from its own kernel series.
   ["BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS", "y"],
+  # Only the firmware overlays a Raze loads, not its ~390 (each boot
+  # partition and every slot carries them): bcm2712d0, which the firmware
+  # applies by itself on D0 silicon (through overlay_map.dtb, always
+  # installed). The rest raze-device.txt loads are this kernel's own
+  # (RAZE_KERNEL_OVERLAYS) or the package's (boot.toml). An OS that loads
+  # another stock overlay sets this list in its own config, keeping bcm2712d0.
+  ["BR2_PACKAGE_RPI_FIRMWARE_DTB_OVERLAYS", "\"bcm2712d0\""],
   # vcgencmd (buildroot-external/packages/rpi-utils; Buildroot 2026.08
   # removed rpi-userland).
   ["BR2_PACKAGE_RPI_UTILS", "y"],

@@ -100,6 +100,15 @@ config BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS
 	  overlays, to support HATs (Hardware Attached on Top, add-on
 	  modules).
 
+config BR2_PACKAGE_RPI_FIRMWARE_DTB_OVERLAYS
+	string "Only these DTB overlays (names; empty: all of them)"
+	depends on BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS
+	help
+	  Space-separated overlay names (bcm2712d0 for bcm2712d0.dtbo)
+	  to install instead of the firmware's whole set (~390 files).
+	  overlay_map.dtb and hat_map.dtb are always installed. A name
+	  the firmware release doesn't have fails the build.
+
 config BR2_PACKAGE_RPI_FIRMWARE_EXTRA_FILES
 	string "List of path(s) to additional file(s) in boot partition"
 	help

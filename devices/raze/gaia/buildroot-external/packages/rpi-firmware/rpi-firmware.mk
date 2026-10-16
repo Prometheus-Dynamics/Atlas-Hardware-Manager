@@ -60,11 +60,16 @@ define RPI_FIRMWARE_INSTALL_DTB
 endef
 endif
 
+RPI_FIRMWARE_DTB_OVERLAYS = $(call qstrip,$(BR2_PACKAGE_RPI_FIRMWARE_DTB_OVERLAYS))
 ifeq ($(BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS),y)
 define RPI_FIRMWARE_INSTALL_DTB_OVERLAYS
-	$(foreach ovldtb,$(wildcard $(@D)/boot/overlays/*.dtbo), \
-		$(INSTALL) -D -m 0644 $(ovldtb) $(BINARIES_DIR)/rpi-firmware/overlays/$(notdir $(ovldtb))
-	)
+	$(if $(RPI_FIRMWARE_DTB_OVERLAYS), \
+		$(foreach o,$(RPI_FIRMWARE_DTB_OVERLAYS), \
+			$(INSTALL) -D -m 0644 $(@D)/boot/overlays/$(o).dtbo $(BINARIES_DIR)/rpi-firmware/overlays/$(o).dtbo
+		), \
+		$(foreach ovldtb,$(wildcard $(@D)/boot/overlays/*.dtbo), \
+			$(INSTALL) -D -m 0644 $(ovldtb) $(BINARIES_DIR)/rpi-firmware/overlays/$(notdir $(ovldtb))
+		))
 	$(INSTALL) -D -m 0644 $(@D)/boot/overlays/overlay_map.dtb $(BINARIES_DIR)/rpi-firmware/overlays/
 	$(if $(wildcard $(@D)/boot/overlays/hat_map.dtb), \
 		$(INSTALL) -D -m 0644 $(@D)/boot/overlays/hat_map.dtb $(BINARIES_DIR)/rpi-firmware/overlays/)

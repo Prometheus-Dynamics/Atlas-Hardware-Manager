@@ -67,7 +67,8 @@ kind = "rust"
 source = "atlas"
 package = "slot-init"
 target = "aarch64-unknown-linux-musl"
-profile = "device"
+# Built for size: every slot's initramfs carries it (Cargo.toml).
+profile = "device-small"
 target_name = "slot-init"
 output_path = "${workspace.out_dir}/artifacts/slot-init/slot-init"
 
