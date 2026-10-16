@@ -35,7 +35,13 @@ echo "$(basename "$0") $*" >> "$CALLS"
 STUB
 chmod +x "$T/bin/slot-init" "$T/bin/stub"
 for c in mount e2fsck modprobe switch_root reboot shell; do ln -s stub "$T/bin/$c"; done
-printf '#!/bin/sh\necho "findfs $*" >> "$CALLS"\necho /dev/mmcblk0p2\n' > "$T/bin/findfs"
+cat > "$T/bin/findfs" <<'STUB'
+#!/bin/sh
+echo "findfs $*" >> "$CALLS"
+# NO_PARTUUID: a findfs that only knows labels.
+case "$1" in PARTUUID=*) [ -z "${NO_PARTUUID:-}" ] || exit 1 ;; esac
+echo /dev/mmcblk0p2
+STUB
 chmod +x "$T/bin/findfs"
 
 setup() {
@@ -93,6 +99,12 @@ echo 3 > "$R/data/board/slots/fallbacks"
 run
 called "shell" || fail "no rescue shell: $(cat "$T/calls")"
 called "reboot-tryboot" && fail "a fourth fallback"
+
+echo "a findfs without PARTUUID finds /data by its label"
+setup
+NO_PARTUUID=1 run
+called "findfs LABEL=data" || fail "no label lookup: $(cat "$T/calls")"
+called "switch_root $R/newroot /sbin/init" || fail "didn't start: $(cat "$T/calls")"
 
 echo "an image built for another kernel isn't started"
 setup

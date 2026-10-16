@@ -95,11 +95,16 @@ slot=$($INIT arg atlas.slot) || rescue "no atlas.slot on the kernel command line
 root=$($INIT arg atlas.roothash) || fail "no atlas.roothash"
 data=$($INIT arg atlas.data) || fail "no atlas.data"
 
-# The data partition, by PARTUUID (devtmpfs has no by-partuuid links).
+# The data partition, by PARTUUID (devtmpfs has no by-partuuid links); by
+# its label (the image names it `data`) when this findfs can't look up a
+# PARTUUID.
 data_dev=''
 i=0
 while [ -z "$data_dev" ]; do
 	data_dev=$($FINDFS "$data" 2>/dev/null) || data_dev=''
+	if [ -z "$data_dev" ] && data_dev=$($FINDFS LABEL=data 2>/dev/null) && [ -n "$data_dev" ]; then
+		log "no partition answers to $data; using the one labelled data ($data_dev)"
+	fi
 	[ -n "$data_dev" ] && break
 	i=$((i + 1))
 	[ "$i" -le "$((WAIT * 10))" ] || rescue "no data partition $data"
