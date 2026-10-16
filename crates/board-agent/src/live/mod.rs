@@ -123,14 +123,38 @@ impl Published {
     }
 }
 
-/// Publishes until the connection fails, then starts over after
-/// [`Config::retry`]; orion-node restarting starts new epochs.
+/// The longest wait between attempts while publishing keeps failing.
+const RETRY_MAX: Duration = Duration::from_secs(60);
+/// A session that lasted this long was working: the next failure waits from
+/// the start again.
+const HEALTHY: Duration = Duration::from_secs(30);
+
+/// Publishes until the connection fails, then starts over; orion-node
+/// restarting starts new epochs. While it keeps failing, the wait doubles
+/// (from [`Config::retry`], at least 1 s, up to [`RETRY_MAX`]) and the error
+/// is logged when it changes: each attempt is a stream session on the node,
+/// so a steady failure mustn't open one a second.
 pub async fn run(config: Arc<Config>) {
+    let first = config.retry.max(Duration::from_secs(1));
+    let mut wait = first;
+    let mut said = String::new();
     loop {
-        if let Err(error) = publish(&config).await {
-            crate::log(&format!("live: {error}; trying again"));
+        let started = Instant::now();
+        let result = publish(&config).await;
+        if started.elapsed() >= HEALTHY {
+            wait = first;
         }
-        tokio::time::sleep(config.retry.max(Duration::from_secs(1))).await;
+        if let Err(error) = result
+            && error != said
+        {
+            crate::log(&format!(
+                "live: {error}; trying again (waiting up to {} s between tries)",
+                RETRY_MAX.as_secs()
+            ));
+            said = error;
+        }
+        tokio::time::sleep(wait).await;
+        wait = (wait * 2).min(RETRY_MAX);
     }
 }
 

@@ -199,8 +199,11 @@ pub(crate) fn status_metrics(status: &DeviceStatus) -> Vec<Metric> {
 
 /// How long an answer to GET /status is reused: the telemetry and the
 /// status views ask for the same document, often together, and the board
-/// starts a process for each request.
-const STATUS_FRESH: std::time::Duration = std::time::Duration::from_millis(500);
+/// starts a process (a socket-activated unit) for each request. A push from
+/// the board's channel (an event, an update-state change) makes the next
+/// read fetch at once, so what changes still shows without waiting; what
+/// only drifts (temperatures, the fan) is at most this old.
+const STATUS_FRESH: std::time::Duration = std::time::Duration::from_secs(5);
 
 pub(crate) struct BoardStatus {
     pub(crate) http: reqwest::Client,
@@ -211,6 +214,8 @@ pub(crate) struct BoardStatus {
     /// The last answer and when it came. Held across a request, so callers
     /// at the same moment share one.
     pub(crate) last: tokio::sync::Mutex<Option<(std::time::Instant, DeviceStatus)>>,
+    /// Set by a push: the next read fetches whatever its age.
+    pub(crate) stale: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl BoardStatus {
@@ -226,12 +231,15 @@ impl BoardStatus {
             events_url,
             stream_url,
             last: tokio::sync::Mutex::default(),
+            stale: std::sync::Arc::default(),
         }
     }
 
     pub(crate) async fn read(&self) -> Result<DeviceStatus, DriverError> {
         let mut last = self.last.lock().await;
+        let pushed = self.stale.swap(false, std::sync::atomic::Ordering::AcqRel);
         if let Some((at, status)) = last.as_ref()
+            && !pushed
             && at.elapsed() < STATUS_FRESH
         {
             return Ok(status.clone());
@@ -262,7 +270,15 @@ impl StatusCapability for BoardStatus {
 
     async fn watch(&self, _device: &Identity, sink: PushSink) -> Result<bool, DriverError> {
         match &self.stream_url {
-            Some(url) => crate::stream::follow(&self.http, url, sink).await,
+            Some(url) => {
+                // Whatever the board pushes, the cached status may be old.
+                let stale = self.stale.clone();
+                let sink: PushSink = std::sync::Arc::new(move |push| {
+                    stale.store(true, std::sync::atomic::Ordering::Release);
+                    sink(push);
+                });
+                crate::stream::follow(&self.http, url, sink).await
+            }
             None => Ok(false),
         }
     }
