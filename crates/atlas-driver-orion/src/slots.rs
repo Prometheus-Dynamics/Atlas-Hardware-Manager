@@ -38,6 +38,13 @@ pub(crate) struct OrionSlots {
 
 /// The slot set the keys tell, or `None` on an A/B board.
 pub(crate) fn slot_set(keys: &HashMap<String, String>) -> Result<Option<SlotSet>, DriverError> {
+    // Nothing published yet: the board is still starting, not an A/B board.
+    if !keys.contains_key(update_action::KEY_STATE) {
+        return Err(DriverError::Unreachable(
+            "the board hasn't reported its slots yet (still starting?); try again in a moment"
+                .into(),
+        ));
+    }
     if keys.get("update.layout").map(String::as_str) != Some("slots") {
         return Ok(None);
     }
@@ -92,6 +99,10 @@ impl SlotsCapability for OrionSlots {
         )
         .await
         .map(|_| ())
+        .map_err(|error| match error {
+            DriverError::Other(reason) => DriverError::Other(atlas_driver::refusal(&reason)),
+            other => other,
+        })
     }
 
     async fn install(
@@ -209,11 +220,17 @@ mod tests {
     fn an_ab_board_has_no_slot_set() {
         let keys = HashMap::from([("update.state".to_string(), "idle".to_string())]);
         assert_eq!(slot_set(&keys).unwrap(), None);
+        // Nothing published yet is "still starting", not "no slots".
+        assert!(matches!(
+            slot_set(&HashMap::new()),
+            Err(DriverError::Unreachable(_))
+        ));
     }
 
     #[test]
     fn reads_the_published_keys() {
         let keys: HashMap<String, String> = [
+            ("update.state", "idle"),
             ("update.layout", "slots"),
             ("update.slot_active", "pv-a"),
             ("update.slot_default", "pv-a"),

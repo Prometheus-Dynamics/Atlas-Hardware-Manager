@@ -119,7 +119,7 @@ pub(crate) async fn slots(
     atlas
         .slot_command(&key, &command)
         .await
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| format!("can't {}: {error}", command.describe()))?;
     if as_json {
         output::json(&json!({ "device": key, "command": command, "ok": true }));
     } else {
@@ -146,7 +146,14 @@ fn print(set: &SlotSet) {
                 slot.version.clone(),
                 slot.variant.clone(),
                 mib(slot.size),
-                if slot.verity { "yes" } else { "no" }.into(),
+                if !slot.intact {
+                    "DAMAGED"
+                } else if slot.verity {
+                    "yes"
+                } else {
+                    "no"
+                }
+                .into(),
                 flags.join(","),
             ]
         })

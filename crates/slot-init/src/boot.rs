@@ -278,9 +278,9 @@ impl Boot<'_> {
 
         let image = data_dir.join("slots").join(format!("{slot}.erofs"));
         let manifest_path = data_dir.join("slots").join(format!("{slot}.json"));
-        if !image.is_file() {
+        let Ok(meta) = std::fs::metadata(&image) else {
             return self.fail(&format!("no image {}", image.display()));
-        }
+        };
         let manifest = match std::fs::read_to_string(&manifest_path)
             .map_err(|e| format!("{}: {e}", manifest_path.display()))
             .and_then(|text| Manifest::parse(&text))
@@ -288,6 +288,24 @@ impl Boot<'_> {
             Ok(manifest) => manifest,
             Err(error) => return self.fail(&format!("unreadable manifest: {error}")),
         };
+        // A cut-short image would open (verity checks blocks as they're
+        // read) and fail later, in the slot's own system: refuse it here,
+        // with a reason in the log.
+        let size = meta.len();
+        let tree_start = manifest.verity.hash_offset + u64::from(manifest.verity.hash_block_size);
+        if let Some(want) = manifest.image.as_ref().map(|i| i.size)
+            && want != size
+        {
+            return self.fail(&format!(
+                "the image is {size} bytes, slot.json says {want}: damaged or cut short"
+            ));
+        }
+        if size <= tree_start {
+            return self.fail(&format!(
+                "the image is {size} bytes, too short for its hash tree at {}: damaged or cut short",
+                manifest.verity.hash_offset
+            ));
+        }
         let running = std::fs::read_to_string(self.env.at("proc/sys/kernel/osrelease"))
             .map(|s| s.trim().to_owned())
             .unwrap_or_default();
@@ -329,6 +347,14 @@ impl Boot<'_> {
             }
         }
         let _ = write_atomic(&data_dir.join("board/slots/booted"), &format!("{slot}\n"));
+        // A trial that got this far: if it doesn't confirm, the next boot's
+        // writer can tell its system failed, not this.
+        if self.tryboot {
+            let _ = write_atomic(
+                &data_dir.join("board/slots/trial-started"),
+                &format!("{slot}\n"),
+            );
+        }
         if let Err(error) = self.ops.move_mount(&data_dir, &new_root.join("data")) {
             return self.fail(&format!(
                 "can't move /data into the slot (no /data in the image?): {error}"

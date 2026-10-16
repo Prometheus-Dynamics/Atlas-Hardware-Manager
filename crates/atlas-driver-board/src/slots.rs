@@ -64,6 +64,10 @@ impl SlotsCapability for BoardSlots {
         match (command, writer(&self.ssh, &script).await) {
             // The restart drops the connection.
             (SlotCommand::BootOnce { .. }, Err(DriverError::Unreachable(_))) => Ok(()),
+            // The writer's refusal is the reason, not an incompatibility.
+            (_, Err(DriverError::Incompatible(reason) | DriverError::Other(reason))) => {
+                Err(DriverError::Other(atlas_driver::refusal(&reason)))
+            }
             (_, result) => result,
         }
     }

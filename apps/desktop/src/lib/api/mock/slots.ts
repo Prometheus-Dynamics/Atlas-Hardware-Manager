@@ -68,10 +68,10 @@ export function slotCommand(key: DeviceKey, command: SlotCommand) {
   const set = setOf(key);
   if (!set) throw `${keyString(key)} has no slots`;
   const s = set.slots.find((x) => x.id === command.id);
-  if (!s) throw `slots: no slot ${command.id}`;
+  if (!s) throw `no slot ${command.id}`;
   switch (command.command) {
     case "boot-once":
-      if (s.id === set.slot_active) throw `slots: ${s.id} is already running`;
+      if (s.id === set.slot_active) throw `${s.id} is already running`;
       // The mock comes back on it and it confirms.
       set.slot_previous = set.slot_default;
       set.slot_default = s.id;
@@ -80,14 +80,14 @@ export function slotCommand(key: DeviceKey, command: SlotCommand) {
       s.last_boot = new Date().toISOString();
       break;
     case "set-default":
-      if (s.good !== "yes") throw `slots: ${s.id} hasn't booted well yet; boot it once first`;
+      if (s.good !== "yes") throw `${s.id} hasn't booted well yet; boot it once first`;
       set.slot_previous = set.slot_default;
       set.slot_default = s.id;
       break;
     case "remove":
-      if (s.id === set.slot_active) throw `slots: ${s.id} is the running slot`;
-      if (s.id === set.slot_default) throw `slots: ${s.id} is the default slot`;
-      if (s.pinned) throw `slots: ${s.id} is pinned`;
+      if (s.id === set.slot_active) throw `${s.id} is the running slot`;
+      if (s.id === set.slot_default) throw `${s.id} is the default slot`;
+      if (s.pinned) throw `${s.id} is pinned`;
       set.slots = set.slots.filter((x) => x !== s);
       set.free_bytes += s.size;
       if (set.slot_previous === s.id) set.slot_previous = "";
@@ -103,10 +103,10 @@ export async function installSlot(key: DeviceKey, path: string, pin: boolean, bo
   const set = setOf(key);
   if (!set) throw `${keyString(key)} has no slots`;
   const name = path.split(/[\\/]/).pop() ?? path;
-  if (!name.endsWith(".slot.tar")) throw "slots: that isn't a slot bundle (.slot.tar)";
+  if (!name.endsWith(".slot.tar")) throw "that isn't a slot bundle (.slot.tar)";
   const id = name.replace(/\.slot\.tar$/, "").replace(/[^a-z0-9._-]/g, "-").slice(0, 64);
   const size = Math.round(0.55 * GiB);
-  if (size > set.free_bytes - set.reserve_bytes) throw "slots: not enough room on /data; remove a slot first";
+  if (size > set.free_bytes - set.reserve_bytes) throw "not enough room on /data; remove a slot first";
   onProgress({ type: "step-started", step: "transfer" });
   for (let i = 1; i <= 10; i++) {
     await sleep(180);

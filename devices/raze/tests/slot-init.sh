@@ -70,8 +70,9 @@ setup() {
 	echo "console=ttyAMA10 atlas.slot=pv-a atlas.roothash=$hash atlas.data=PARTUUID=5056525a-02 panic=5" > "$R/proc/cmdline"
 	echo 7.2.9-v8-16k > "$R/proc/sys/kernel/osrelease"
 	printf '\000\000\000\000' > "$R/proc/device-tree/chosen/bootloader/tryboot"
-	echo x > "$R/data/slots/pv-a.erofs"
-	echo '{"schema":1,"id":"pv-a","family":"photonvision","kernel":"7.2.9-v8-16k","data_dirs":["photonvision_config"],"verity":{"salt":"00","hash_offset":4096,"data_blocks":1}}' > "$R/data/slots/pv-a.json"
+	# One data block, the verity superblock and one hash block.
+	dd if=/dev/zero of="$R/data/slots/pv-a.erofs" bs=4096 count=3 status=none
+	echo '{"schema":1,"id":"pv-a","family":"photonvision","kernel":"7.2.9-v8-16k","data_dirs":["photonvision_config"],"image":{"size":12288},"verity":{"salt":"00","hash_offset":4096,"data_blocks":1}}' > "$R/data/slots/pv-a.json"
 	echo '{"schema":1,"default":"pv-a","previous":"pv-b","trial":null}' > "$R/data/board/slots/state.json"
 	: > "$R/dev/kmsg"
 	: > "$T/calls"
@@ -96,6 +97,26 @@ called "mount --move $R/data $R/newroot/data" || fail "move: $(cat "$T/calls")"
 called "switch_root $R/newroot /sbin/init" || fail "switch_root: $(cat "$T/calls")"
 [ "$(cat "$R/data/board/slots/booted")" = pv-a ] || fail "booted marker"
 said "starting slot pv-a (photonvision, trial 0)" || fail "log: $(cat "$R/dev/kmsg")"
+
+echo "a trial that starts leaves trial-started (so a failure later is the slot's own system's)"
+setup
+printf '\000\000\000\001' > "$R/proc/device-tree/chosen/bootloader/tryboot"
+run
+called "switch_root $R/newroot /sbin/init" || fail "didn't start: $(cat "$T/calls")"
+[ "$(cat "$R/data/board/slots/trial-started")" = pv-a ] || fail "no trial-started"
+said "starting slot pv-a (photonvision, trial 1)" || fail "log: $(cat "$R/dev/kmsg")"
+
+echo "a cut-short image on a trial is refused with the reason, logged, and the board restarts into the default"
+setup
+printf '\000\000\000\001' > "$R/proc/device-tree/chosen/bootloader/tryboot"
+truncate -s 8192 "$R/data/slots/pv-a.erofs"
+run
+called "open " && fail "opened a cut-short image"
+said "the image is 8192 bytes, slot.json says 12288: damaged or cut short" || fail "the reason: $(cat "$R/dev/kmsg")"
+called "reboot" || fail "no restart: $(cat "$T/calls")"
+grep -q "kernel log" "$R/data/board/slots/last-failure.log" || fail "no last-failure.log after a trial failure"
+grep -q "kernel log" "$R/boot/slot-init.log" || fail "no slot-init.log on p1 after a trial failure"
+[ ! -e "$R/data/board/slots/trial-started" ] || fail "trial-started for a slot that didn't start"
 
 echo "a missing image on a trial boot restarts plainly (into the default)"
 setup

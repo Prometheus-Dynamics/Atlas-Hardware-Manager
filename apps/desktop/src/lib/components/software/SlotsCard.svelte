@@ -64,6 +64,13 @@
   const room = $derived(set ? Math.max(0, set.free_bytes - set.reserve_bytes) : 0);
   const total = $derived(used + (set?.free_bytes ?? 0));
 
+  const VERB: Record<SlotCommand["command"], string> = {
+    "boot-once": "boot",
+    "set-default": "make the default",
+    remove: "remove",
+    pin: "change the pin of",
+  };
+
   async function run(command: SlotCommand, done: string) {
     busy = `${command.command}:${command.id}`;
     try {
@@ -71,7 +78,8 @@
       toasts.success(done);
       void deviceStatus.refresh(record.key);
     } catch (e) {
-      toasts.error(sentence(errorText(e)));
+      const slot = set?.slots.find((s) => s.id === command.id);
+      toasts.error(`Can't ${VERB[command.command]} ${slot ? name(slot) : command.id}: ${errorText(e)}`);
     } finally {
       busy = null;
       asking = null;
@@ -118,13 +126,14 @@
           <p class="line">
             <span class="truncate text-[13px] font-medium text-fg">{name(slot)}</span>
             {#if slot.variant}<span class="text-[12px] text-fg-faint">{slot.variant}</span>{/if}
-            {#if slot.verity}<span title="Checked block by block as it's read (dm-verity)" class="flex text-fg-faint"><Icon name="shield-check" size={13} /></span>{/if}
+            {#if slot.verity && slot.intact !== false}<span title="Checked block by block as it's read (dm-verity)" class="flex text-fg-faint"><Icon name="shield-check" size={13} /></span>{/if}
             <span class="flags">
               {#if has(slot, "running")}<Pill tone="success" label="Running" />{/if}
               {#if has(slot, "default")}<Pill tone="primary" label="Default" />{/if}
               {#if has(slot, "trial")}<Pill tone="warning" label="On trial" />{/if}
               {#if has(slot, "previous")}<Pill label="Way back" title="The default before this one: where the board goes if the default can't start" />{/if}
-              {#if slot.good === "no"}<Pill tone="error" label="Didn't come up" title="Its last trial boot failed; the board went back" />{/if}
+              {#if slot.intact === false}<Pill tone="error" label="Damaged" title="Its image isn't the size it was built at: it won't start. Remove it and install it again" />{/if}
+              {#if slot.good === "no" && slot.intact !== false}<Pill tone="error" label="Didn't come up" title="Its last trial boot failed; the board went back" />{/if}
             </span>
           </p>
           <div class="line">

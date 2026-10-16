@@ -132,6 +132,21 @@ up confirm 2>/dev/null # still running pv-b: pv-c never started
 status | grep -q '"state":"rolled-back"' || fail "rolled-back: $(status)"
 grep -q '^GOOD=no' "$T/data/board/slots/pv-c.meta" || fail "pv-c marked bad"
 [ "$(rc set-default pv-c)" = 3 ] || fail "set-default on a slot that never booted"
+status | grep -q "the initramfs stopped" || fail "the reason for a trial /init didn't start: $(status)"
+
+echo "a trial whose initramfs started it but whose system didn't confirm says so"
+up apply 2>/dev/null || true
+up stage "$T/pv-c.slot.tar" 2>/dev/null || true
+up apply 2>/dev/null
+echo pv-c > "$T/data/board/slots/trial-started"
+up confirm 2>/dev/null # still on pv-b
+status | grep -q "started but its system didn't confirm" || fail "the reason: $(status)"
+[ ! -e "$T/data/board/slots/trial-started" ] || fail "trial-started kept"
+
+echo "an image that isn't the size it was built at is listed as not intact"
+status | grep -q '"id":"pv-c"[^}]*"intact":true' || fail "pv-c intact: $(status)"
+truncate -s 3 "$T/data/slots/pv-c.erofs"
+status | grep -q '"id":"pv-c"[^}]*"intact":false' || fail "pv-c damaged: $(status)"
 
 echo "remove: not the running or default slot, not a pinned one"
 [ "$(rc remove pv-b)" = 3 ] || fail "removed the running slot"

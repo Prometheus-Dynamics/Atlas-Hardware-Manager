@@ -28,6 +28,9 @@ pub struct Slot {
     /// The image is opened through dm-verity (it has a root hash).
     #[serde(default)]
     pub verity: bool,
+    /// The image is the size it was built at (a cut-short one won't start).
+    #[serde(default = "yes")]
+    pub intact: bool,
     /// Any of `running`, `default`, `previous`, `trial`, `staged`.
     #[serde(default)]
     pub flags: Vec<String>,
@@ -187,6 +190,29 @@ pub trait SlotsCapability: Send + Sync {
     ) -> Result<(), DriverError>;
 }
 
+const fn yes() -> bool {
+    true
+}
+
+/// A refusal from the board's slots writer as a reason: without the
+/// writer's and the action's prefixes (`slots: `, `slot.remove: `).
+pub fn refusal(text: &str) -> String {
+    let mut text = text.trim();
+    loop {
+        let stripped = ["slots: ", "update: "]
+            .iter()
+            .find_map(|p| text.strip_prefix(p))
+            .or_else(|| {
+                text.strip_prefix("slot.")
+                    .and_then(|rest| rest.split_once(": ").map(|(_, r)| r))
+            });
+        match stripped {
+            Some(rest) => text = rest.trim(),
+            None => return text.to_owned(),
+        }
+    }
+}
+
 fn text<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
     Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }
@@ -210,6 +236,16 @@ mod tests {
         assert!(set.slots[0].has("default"));
         assert!(set.remove_refusal("pv-a").unwrap().contains("running"));
         assert!(set.remove_refusal("pv-b").unwrap().contains("pinned"));
+    }
+
+    #[test]
+    fn refusals_lose_their_prefixes() {
+        assert_eq!(
+            refusal("slot.remove: slots: pv-a is the running slot"),
+            "pv-a is the running slot"
+        );
+        assert_eq!(refusal("slots: no slot pv-x"), "no slot pv-x");
+        assert_eq!(refusal("pv-a is pinned"), "pv-a is pinned");
     }
 
     #[test]

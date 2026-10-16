@@ -725,6 +725,8 @@ export interface Slot {
   size: number;
   /** Opened through dm-verity. */
   verity: boolean;
+  /** The image is the size it was built at (false: cut short, it won't start). */
+  intact?: boolean;
   /** Any of running, default, previous, trial, staged. */
   flags: string[];
   pinned: boolean;

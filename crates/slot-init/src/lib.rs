@@ -26,6 +26,14 @@ pub struct Manifest {
     #[serde(default)]
     pub data_dirs: Vec<String>,
     pub verity: Verity,
+    /// The image file as built (its size), when slot.json says.
+    #[serde(default)]
+    pub image: Option<Image>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Image {
+    pub size: u64,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
