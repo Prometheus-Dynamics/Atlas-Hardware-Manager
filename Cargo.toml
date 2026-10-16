@@ -9,6 +9,7 @@ members = [
     "crates/atlas-driver-orion",
     "crates/board-agent",
     "crates/board-stream",
+    "crates/slot-init",
     "crates/atlas-image-server",
     "crates/atlas-release",
     "crates/atlas-usbboot",
@@ -71,6 +72,7 @@ orion-node = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "f8d7
 nix = { version = "0.31", default-features = false }
 # PhotonVision's UI socket (the device page's vision panel): the versions orion-nt4 uses.
 rmpv = "1.3.1"
+libc = "0.2.190"
 tokio-tungstenite = { version = "0.29", default-features = false, features = ["connect", "handshake"] }
 plist = "1"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "json"] }

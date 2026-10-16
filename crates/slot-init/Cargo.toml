@@ -1,0 +1,39 @@
+[package]
+name = "slot-init"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "The Raze slot initramfs's helper: opens a slot image read-only on a loop device and as a dm-verity device from its root hash, by ioctl (no cryptsetup)."
+
+[[bin]]
+name = "slot-init"
+path = "src/main.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc.workspace = true
+
+# The workspace's lints, except unsafe code is denied rather than forbidden:
+# this crate's job is two kernel ioctls (loop, device-mapper), and only its
+# sys module allows unsafe, each call with its SAFETY note.
+[lints.rust]
+unsafe_code = "deny"
+unsafe_op_in_unsafe_fn = "deny"
+unused_lifetimes = "deny"
+unused_attributes = "deny"
+
+[lints.clippy]
+dbg_macro = "deny"
+print_stderr = "deny"
+print_stdout = "deny"
+todo = "deny"
+unimplemented = "deny"
+

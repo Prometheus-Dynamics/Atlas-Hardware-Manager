@@ -1,0 +1,82 @@
+# The Raze slot initramfs (dynamic slots: slot images as EROFS files on the
+# ext4 /data, each with its dm-verity tree appended). One per OS variant,
+# from the same Buildroot base and kernel as the slot, beside its kernel in
+# the slot's boot directory (slots/<id>/initramfs, `initramfs initramfs
+# followkernel`). Its /init (assets/initramfs/init, tested by
+# tests/slot-init.sh) mounts /data, opens the slot's image through
+# dm-verity with the root hash on the kernel command line (slot-init,
+# crates/slot-init, below), mounts it and switch_roots; on a failure it
+# falls back to the default or the previous slot.
+#
+# Output: $assembly.work/slots/initramfs.cpio.zst, for the slot bundle and
+# the boot directory (the recipes that assemble those take it from there).
+# The kernel needs BLK_DEV_INITRD, BLK_DEV_LOOP, EROFS_FS, EXT4_FS built in
+# (they are); dm-mod, dm-bufio and dm-verity come as modules, below.
+
+[[image.assembly.trees]]
+id = "slot-initramfs"
+path = "$assembly.work/slots/initramfs"
+
+# The OS's own BusyBox with its glibc closure: the applets /init uses.
+[[image.assembly.busybox_initramfs]]
+tree = "slot-initramfs"
+busybox = "$provider.buildroot_output/target/bin/busybox"
+include_runtime_libs = true
+applets = ["sh", "mount", "umount", "findfs", "od", "tr", "mkdir", "mv", "sleep", "sync",
+           "switch_root", "modprobe", "reboot", "cat", "echo"]
+
+# Device-mapper and verity (modules in the Raze kernel), with their deps.
+[[image.assembly.kernel_modules]]
+tree = "slot-initramfs"
+from = "$provider.buildroot_output/target/lib/modules"
+depmod = "$provider.buildroot_output/host/sbin/depmod"
+modules = ["dm-mod", "dm-bufio", "dm-verity"]
+
+[[image.assembly.files]]
+tree = "slot-initramfs"
+src = "@self/assets/initramfs/init"
+dest = "init"
+mode = "0755"
+
+# e2fsck, with its shared libraries from the target tree (Gaia's library
+# closure for listed binaries, being added; spell it as that lands).
+[[image.assembly.files]]
+tree = "slot-initramfs"
+src = "$provider.buildroot_output/target/usr/sbin/e2fsck"
+dest = "usr/sbin/e2fsck"
+mode = "0755"
+
+[[image.assembly.files]]
+tree = "slot-initramfs"
+src = "${workspace.out_dir}/artifacts/slot-init/slot-init"
+dest = "usr/bin/slot-init"
+mode = "0755"
+
+[[image.assembly.filesystems]]
+id = "slot-initramfs"
+kind = "cpio-zstd"
+source_tree = "slot-initramfs"
+output = "$assembly.work/slots/initramfs.cpio.zst"
+
+# slot-init, as board-agent is built (board-agent.toml): a static aarch64
+# musl binary from the OS build's `atlas` source. Only the initramfs takes it.
+[[artifacts]]
+id = "slot-init"
+kind = "rust"
+source = "atlas"
+package = "slot-init"
+target = "aarch64-unknown-linux-musl"
+profile = "device"
+target_name = "slot-init"
+output_path = "${workspace.out_dir}/artifacts/slot-init/slot-init"
+
+[artifacts.execution]
+backend = "docker"
+
+[artifacts.execution.docker]
+image = "board-aarch64-musl"
+dockerfile = "@self/docker/aarch64-musl.Dockerfile"
+context = "@self/docker"
+
+[image]
+kind = "buildroot"

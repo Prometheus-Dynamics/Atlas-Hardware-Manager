@@ -1,0 +1,151 @@
+#!/bin/sh
+# The Raze slot initramfs's /init (dynamic slots: docs/slots.md). The
+# firmware already chose the slot (config.txt's include default.txt, or on a
+# "0 tryboot" restart tryboot.txt's trial.txt: os_prefix=slots/<id>/); its
+# cmdline.txt names it:
+#   atlas.slot=<id> atlas.roothash=<sha256 hex> atlas.data=PARTUUID=<disk>-02
+# This mounts /data (ext4), opens /data/slots/<id>.erofs read-only through
+# dm-verity with that root hash (slot-init), mounts it, binds the OS
+# family's data dirs, and switch_roots into it.
+#
+# When it can't (no image, a kernel the image wasn't built for, verity
+# refusing): on a trial boot it restarts plainly, which boots the default
+# slot; on the default slot it restarts into the previous slot on trial
+# (trial.txt), at most SLOT_MAX_FALLBACKS times in a row
+# (board/slots/fallbacks, which the writer clears on a confirmed boot);
+# then a shell on the console.
+#
+# Test hooks (tests/slot-init.sh): SLOT_ROOT (a prefix for every path),
+# SLOT_INIT, SLOT_MOUNT, SLOT_E2FSCK, SLOT_MODPROBE, SLOT_SWITCH_ROOT,
+# SLOT_REBOOT, SLOT_SHELL, SLOT_FINDFS, SLOT_UNAME, SLOT_WAIT (s for the
+# data device).
+set -u
+
+R=${SLOT_ROOT:-}
+INIT=${SLOT_INIT:-slot-init}
+MOUNT=${SLOT_MOUNT:-mount}
+E2FSCK=${SLOT_E2FSCK:-e2fsck}
+MODPROBE=${SLOT_MODPROBE:-modprobe}
+SWITCH_ROOT=${SLOT_SWITCH_ROOT:-switch_root}
+REBOOT=${SLOT_REBOOT:-reboot -f}
+SHELL_CMD=${SLOT_SHELL:-sh}
+FINDFS=${SLOT_FINDFS:-findfs}
+UNAME=${SLOT_UNAME:-uname -r}
+WAIT=${SLOT_WAIT:-10}
+MAX_FALLBACKS=${SLOT_MAX_FALLBACKS:-3}
+export PATH=/sbin:/bin:/usr/sbin:/usr/bin
+
+log() {
+	echo "slot-init: $*" > "$R/dev/kmsg" 2>/dev/null || echo "slot-init: $*" >&2
+}
+
+if [ -z "$R" ]; then
+	mount -t proc proc /proc
+	mount -t sysfs sysfs /sys
+	mount -t devtmpfs devtmpfs /dev
+fi
+mkdir -p "$R/data" "$R/newroot" "$R/boot"
+
+# A trial boot: the firmware's chosen/bootloader/tryboot is a big-endian 1.
+tryboot=0
+if [ -r "$R/proc/device-tree/chosen/bootloader/tryboot" ] &&
+	[ "$(od -An -tx1 "$R/proc/device-tree/chosen/bootloader/tryboot" | tr -d ' \n')" = 00000001 ]; then
+	tryboot=1
+fi
+
+rescue() {
+	log "no slot can start: $*; a shell on the console (the board's data is under /data)"
+	exec $SHELL_CMD
+}
+
+# The slot didn't come up. Trial: back to the default. Default: the
+# previous slot on trial, unless that has already been tried too often.
+fail() {
+	log "slot ${slot:-?} can't start: $*"
+	if [ "$tryboot" = 1 ]; then
+		log "it was a trial boot; restarting into the default slot"
+		sync
+		eval "$REBOOT"
+		exit 1
+	fi
+	state=$R/data/board/slots
+	[ -d "$state" ] || rescue "$*"
+	count=0
+	[ -r "$state/fallbacks" ] && read -r count < "$state/fallbacks"
+	case "$count" in '' | *[!0-9]*) count=0 ;; esac
+	[ "$count" -lt "$MAX_FALLBACKS" ] || rescue "$*; fell back $count times in a row"
+	previous=$($INIT previous "$state/state.json" 2>/dev/null) || rescue "$*; no previous slot"
+	[ "$previous" != "$slot" ] || rescue "$*; the previous slot is this one"
+	echo $((count + 1)) > "$state/fallbacks.tmp" && mv -f "$state/fallbacks.tmp" "$state/fallbacks"
+	# The FAT (p1, the disk's first partition) gets trial.txt -> previous.
+	boot=${data_dev%2}1
+	if $MOUNT -t vfat "$boot" "$R/boot" 2>/dev/null; then
+		printf 'os_prefix=slots/%s/\n' "$previous" > "$R/boot/trial.txt.new" &&
+			mv -f "$R/boot/trial.txt.new" "$R/boot/trial.txt"
+		sync
+		umount "$R/boot" 2>/dev/null
+		log "restarting into the previous slot ($previous) on trial"
+		sync
+		$INIT reboot-tryboot
+	fi
+	rescue "$*; couldn't write trial.txt"
+}
+
+slot=$($INIT arg atlas.slot) || rescue "no atlas.slot on the kernel command line"
+root=$($INIT arg atlas.roothash) || fail "no atlas.roothash"
+data=$($INIT arg atlas.data) || fail "no atlas.data"
+
+# The data partition, by PARTUUID (devtmpfs has no by-partuuid links).
+data_dev=''
+i=0
+while [ -z "$data_dev" ]; do
+	data_dev=$($FINDFS "$data" 2>/dev/null) || data_dev=''
+	[ -n "$data_dev" ] && break
+	i=$((i + 1))
+	[ "$i" -le "$((WAIT * 10))" ] || rescue "no data partition $data"
+	sleep 0.1
+done
+
+# A brown-out leaves the journal to replay: let e2fsck fix what it can
+# alone; worse than that, mount it read-only and say so.
+opts=noatime,errors=remount-ro
+$E2FSCK -p "$data_dev" > /dev/null 2>&1
+rc=$?
+if [ "$rc" -ge 4 ]; then
+	log "/data needs repair (e2fsck exit $rc); mounting it read-only"
+	opts=ro,noatime
+fi
+$MOUNT -t ext4 -o "$opts" "$data_dev" "$R/data" || rescue "can't mount /data ($data_dev)"
+
+image=$R/data/slots/$slot.erofs
+manifest=$R/data/slots/$slot.json
+[ -r "$image" ] || fail "no image $image"
+[ -r "$manifest" ] || fail "no manifest $manifest"
+want=$($INIT kernel "$manifest") || fail "unreadable manifest"
+running=$($UNAME)
+[ "$want" = "$running" ] || fail "built for kernel $want, this is $running"
+
+for module in dm-mod dm-bufio dm-verity; do
+	$MODPROBE "$module" 2>/dev/null
+done
+dm=$($INIT open "$image" "$manifest" "$root" slot) || fail "dm-verity refused it"
+$MOUNT -t erofs -o ro "$dm" "$R/newroot" || fail "can't mount the image ($dm)"
+
+# The OS family's own data dirs over /data (os/<family>/<dir> on /data/<dir>).
+family=$($INIT family "$manifest" 2>/dev/null)
+if [ -n "$family" ]; then
+	$INIT data-dirs "$manifest" 2>/dev/null | while IFS= read -r dir; do
+		[ -n "$dir" ] || continue
+		mkdir -p "$R/data/os/$family/$dir" "$R/data/$dir"
+		$MOUNT --bind "$R/data/os/$family/$dir" "$R/data/$dir" || log "couldn't bind $dir"
+	done
+fi
+echo "$slot" > "$R/data/board/slots/booted.tmp" 2>/dev/null && mv -f "$R/data/board/slots/booted.tmp" "$R/data/board/slots/booted"
+
+$MOUNT --move "$R/data" "$R/newroot/data" || fail "can't move /data into the slot (no /data in the image?)"
+log "starting slot $slot (${family:-no family}, trial $tryboot)"
+if [ -z "$R" ]; then
+	umount /sys /proc 2>/dev/null
+	mount --move /dev /newroot/dev 2>/dev/null
+fi
+exec $SWITCH_ROOT "$R/newroot" /sbin/init
