@@ -10,6 +10,11 @@ pub struct StageRequest {
     pub image_url: String,
     pub sha256: String,
     pub size: u64,
+    /// On a slots board: install only (`apply = false`), or boot it once
+    /// after (the default, as on an A/B board).
+    pub apply: bool,
+    /// On a slots board: keep the new slot from removal (`pin = true`).
+    pub pin: bool,
 }
 
 impl StageRequest {
@@ -31,10 +36,16 @@ impl StageRequest {
             Some(TypedConfigValue::Int(size)) if *size > 0 => size.unsigned_abs(),
             _ => return Err("`size` (uint, bytes) is required".into()),
         };
+        let flag = |key: &str, default: bool| match args.get(key) {
+            Some(TypedConfigValue::Bool(value)) => *value,
+            _ => default,
+        };
         Ok(Self {
             image_url,
             sha256,
             size,
+            apply: flag("apply", true),
+            pin: flag("pin", false),
         })
     }
 }

@@ -41,6 +41,22 @@ pub struct WriterStatus {
     /// `checking`, `failed`). Older writers don't write it.
     #[serde(default, deserialize_with = "text")]
     pub phase: String,
+    /// `slots` on a board with dynamic slots (the slots writer); empty on A/B.
+    #[serde(default, deserialize_with = "text")]
+    pub layout: String,
+    #[serde(default, deserialize_with = "text")]
+    pub slot_default: String,
+    #[serde(default, deserialize_with = "text")]
+    pub slot_previous: String,
+    #[serde(default, deserialize_with = "text")]
+    pub slot_trial: String,
+    #[serde(default, deserialize_with = "count")]
+    pub free_bytes: u64,
+    #[serde(default, deserialize_with = "count")]
+    pub reserve_bytes: u64,
+    /// Every installed slot, as the writer lists them.
+    #[serde(default)]
+    pub slots: serde_json::Value,
 }
 
 fn text<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
@@ -130,16 +146,15 @@ impl Writer {
         url: &str,
         sha256: &str,
         size: u64,
+        pin: bool,
     ) -> Result<(Child, StderrTail), String> {
+        let size = size.to_string();
+        let mut args = vec!["stage-url", url, "--sha256", sha256, "--size", &size];
+        if pin {
+            args.push("--pin");
+        }
         let mut child = self
-            .command(&[
-                "stage-url",
-                url,
-                "--sha256",
-                sha256,
-                "--size",
-                &size.to_string(),
-            ])
+            .command(&args)
             .stdout(Stdio::null())
             .stderr(Stdio::piped())
             .spawn()

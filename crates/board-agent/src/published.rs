@@ -22,6 +22,17 @@ pub const KEY_PHASE: &str = "update.phase";
 pub const KEY_EVENT_SEQ: &str = "update.event_seq";
 pub const KEY_EVENT_KIND: &str = "update.event_kind";
 pub const KEY_EVENT_T: &str = "update.event_t";
+/// A slots board: `slots`; its default, previous and trial slot ids, the
+/// free space on /data and the reserve kept, and every slot as JSON text
+/// (the writer's list: id, family, version, variant, size, flags, pinned,
+/// good, installed, last_boot).
+pub const KEY_LAYOUT: &str = "update.layout";
+pub const KEY_SLOT_DEFAULT: &str = "update.slot_default";
+pub const KEY_SLOT_PREVIOUS: &str = "update.slot_previous";
+pub const KEY_SLOT_TRIAL: &str = "update.slot_trial";
+pub const KEY_FREE_BYTES: &str = "update.free_bytes";
+pub const KEY_RESERVE_BYTES: &str = "update.reserve_bytes";
+pub const KEY_SLOTS: &str = "update.slots";
 
 /// The newest numbered event in the board's log.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -85,6 +96,20 @@ pub fn update_status_entries(
         reporter.node_status_entry(KEY_PHASE, text(&status.phase)),
         reporter.node_status_entry(CLAIMED_KEY, text(&CLAIMED_ACTIONS.join(","))),
     ];
+    if status.layout == "slots" {
+        entries.extend([
+            reporter.node_status_entry(KEY_LAYOUT, text(&status.layout)),
+            reporter.node_status_entry(KEY_SLOT_DEFAULT, text(&status.slot_default)),
+            reporter.node_status_entry(KEY_SLOT_PREVIOUS, text(&status.slot_previous)),
+            reporter.node_status_entry(KEY_SLOT_TRIAL, text(&status.slot_trial)),
+            reporter.node_status_entry(KEY_FREE_BYTES, TypedConfigValue::UInt(status.free_bytes)),
+            reporter.node_status_entry(
+                KEY_RESERVE_BYTES,
+                TypedConfigValue::UInt(status.reserve_bytes),
+            ),
+            reporter.node_status_entry(KEY_SLOTS, text(&status.slots.to_string())),
+        ]);
+    }
     if let Some(event) = last_event {
         entries.extend([
             reporter.node_status_entry(KEY_EVENT_SEQ, TypedConfigValue::UInt(event.seq)),

@@ -31,8 +31,9 @@ use orion_core::{NodeId, ProviderId};
 pub use agent::{Agent, CLAIMED_ACTIONS, StageRequest};
 pub use config::Config;
 pub use published::{
-    KEY_EVENT_KIND, KEY_EVENT_SEQ, KEY_EVENT_T, KEY_PHASE, KEY_STARTED_BY, KEY_VERSION_PREVIOUS,
-    LastEvent, update_status_entries,
+    KEY_EVENT_KIND, KEY_EVENT_SEQ, KEY_EVENT_T, KEY_FREE_BYTES, KEY_LAYOUT, KEY_PHASE,
+    KEY_RESERVE_BYTES, KEY_SLOT_DEFAULT, KEY_SLOT_PREVIOUS, KEY_SLOT_TRIAL, KEY_SLOTS,
+    KEY_STARTED_BY, KEY_VERSION_PREVIOUS, LastEvent, update_status_entries,
 };
 pub use writer::{Writer, WriterStatus};
 

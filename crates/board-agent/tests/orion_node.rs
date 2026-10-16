@@ -415,7 +415,7 @@ async fn rollback_reboot_and_locate() {
     assert_eq!(
         board.value("action.claimed"),
         Some(text(
-            "update,update.cancel,update.rollback,reboot,locate,clock.set,usb-route.set"
+            "update,update.cancel,update.rollback,reboot,locate,clock.set,usb-route.set,slot.boot-once,slot.set-default,slot.remove,slot.pin"
         ))
     );
     let set = run(
@@ -485,6 +485,137 @@ async fn rollback_reboot_and_locate() {
         "{:?}",
         board.calls()
     );
+
+    board.stop().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn slot_actions_run_the_slots_writer_and_slots_are_published() {
+    let board = Board::start("slots").await;
+    let operator = board.operator();
+    board
+        .wait_value(update_action::KEY_STATE, text("idle"))
+        .await;
+    // An A/B board refuses them before the writer runs.
+    let refused = run(
+        &operator,
+        node_action("s0", "slot.set-default").with_arg("id", text("pv-b")),
+    )
+    .await;
+    assert!(rejected(&refused, "no slots"), "{refused:?}");
+    assert!(!board.calls().iter().any(|c| c.starts_with("set-default")));
+
+    // Now a slots board: its writer's update.json lists the slots.
+    std::fs::write(board.run.join("slots-layout"), "").unwrap();
+    let status = std::process::Command::new(board.dir.join("update"))
+        .arg("status")
+        .env("BOARD_RUN_DIR", &board.run)
+        .env("BOARD_EVENT_SOURCE", "orion")
+        .output()
+        .unwrap();
+    assert!(status.status.success());
+    board
+        .wait_value(board_agent::KEY_LAYOUT, text("slots"))
+        .await;
+    let pin = run(
+        &operator,
+        node_action("s1", "slot.pin").with_arg("id", text("pv-b")),
+    )
+    .await;
+    assert_eq!(pin.state, ActionState::Succeeded, "{pin:?}");
+    assert!(
+        board.calls().iter().any(|c| c == "pin pv-b"),
+        "{:?}",
+        board.calls()
+    );
+    assert_eq!(
+        board.value(board_agent::KEY_SLOT_DEFAULT),
+        Some(text("running"))
+    );
+    assert_eq!(
+        board.value(board_agent::KEY_FREE_BYTES),
+        Some(TypedConfigValue::UInt(5_000_000_000))
+    );
+    let Some(TypedConfigValue::String(slots)) = board.value(board_agent::KEY_SLOTS) else {
+        panic!("no update.slots");
+    };
+    let slots: serde_json::Value = serde_json::from_str(&slots).unwrap();
+    assert_eq!(slots[1]["id"], "pv-b");
+
+    let unpin = run(
+        &operator,
+        node_action("s2", "slot.pin")
+            .with_arg("id", text("pv-b"))
+            .with_arg("pinned", TypedConfigValue::Bool(false)),
+    )
+    .await;
+    assert_eq!(unpin.state, ActionState::Succeeded, "{unpin:?}");
+    assert!(board.calls().iter().any(|c| c == "unpin pv-b"));
+
+    // The writer's refusal is the action's.
+    let remove = run(
+        &operator,
+        node_action("s3", "slot.remove").with_arg("id", text("running")),
+    )
+    .await;
+    assert!(rejected(&remove, "running slot"), "{remove:?}");
+    let missing = run(&operator, node_action("s4", "slot.remove")).await;
+    assert!(rejected(&missing, "`id`"), "{missing:?}");
+
+    let default = run(
+        &operator,
+        node_action("s5", "slot.set-default").with_arg("id", text("pv-b")),
+    )
+    .await;
+    assert_eq!(default.state, ActionState::Succeeded, "{default:?}");
+    assert!(board.calls().iter().any(|c| c == "set-default pv-b"));
+
+    // Boot once answers before the restart.
+    let once = run(
+        &operator,
+        node_action("s6", "slot.boot-once").with_arg("id", text("pv-b")),
+    )
+    .await;
+    assert_eq!(once.state, ActionState::Succeeded, "{once:?}");
+    assert_eq!(phase(&once), Some(&text(update_action::PHASE_REBOOTING)));
+    for _ in 0..100 {
+        if board.calls().iter().any(|c| c == "boot-once pv-b") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert!(
+        board.calls().iter().any(|c| c == "boot-once pv-b"),
+        "{:?}",
+        board.calls()
+    );
+
+    // Install only: staged with --pin, no apply after.
+    std::fs::write(board.run.join("fake.env"), "STATE=idle\n").unwrap();
+    let install = run(
+        &operator,
+        update(
+            "s7",
+            "http://example.invalid/image-3.0.img.xz",
+            &"ab".repeat(32),
+        )
+        .with_arg("apply", TypedConfigValue::Bool(false))
+        .with_arg("pin", TypedConfigValue::Bool(true)),
+    )
+    .await;
+    assert_eq!(install.state, ActionState::Succeeded, "{install:?}");
+    board
+        .wait_value(update_action::KEY_STATE, text("staged"))
+        .await;
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    let calls = board.calls();
+    assert!(
+        calls
+            .iter()
+            .any(|c| c.starts_with("stage-url") && c.ends_with("--pin")),
+        "{calls:?}"
+    );
+    assert!(!calls.iter().any(|c| c == "apply"), "{calls:?}");
 
     board.stop().await;
 }

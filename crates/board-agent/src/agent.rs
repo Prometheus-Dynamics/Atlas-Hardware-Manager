@@ -25,7 +25,7 @@ use crate::writer::{StderrTail, Writer, WriterStatus};
 
 /// The node actions the agent claims. Published as `action.claimed` (a
 /// comma-separated list), so operators can tell what this node offers.
-pub const CLAIMED_ACTIONS: [&str; 7] = [
+pub const CLAIMED_ACTIONS: [&str; 11] = [
     action_names::UPDATE,
     action_names::UPDATE_CANCEL,
     action_names::UPDATE_ROLLBACK,
@@ -33,7 +33,21 @@ pub const CLAIMED_ACTIONS: [&str; 7] = [
     action_names::LOCATE,
     crate::clock::CLOCK_SET,
     USB_ROUTE_SET,
+    SLOT_BOOT_ONCE,
+    SLOT_SET_DEFAULT,
+    SLOT_REMOVE,
+    SLOT_PIN,
 ];
+
+/// Slots boards (the slots writer): boot an installed slot once (`id`),
+/// make one that booted well the default (`id`), remove one (`id`), pin or
+/// unpin one (`id`, `pinned`). Installing is `update` (with `apply: false`
+/// to install only, `pin`). The slots and the free space are published
+/// as `update.slots` (JSON) and `update.free_bytes`.
+pub const SLOT_BOOT_ONCE: &str = "slot.boot-once";
+pub const SLOT_SET_DEFAULT: &str = "slot.set-default";
+pub const SLOT_REMOVE: &str = "slot.remove";
+pub const SLOT_PIN: &str = "slot.pin";
 
 /// Turns the USB link's route onto the robot network on or off (`on`, a
 /// bool): the package's `usb-route set on|off`, kept across restarts.
@@ -246,10 +260,63 @@ impl Agent {
                     Err(error) => self.fail(&id, format!("usb-route: {error}")).await,
                 }
             }
+            SLOT_BOOT_ONCE | SLOT_SET_DEFAULT | SLOT_REMOVE | SLOT_PIN => {
+                self.slot_action(&id, &request).await;
+            }
             other => {
                 self.reject(&id, format!("unsupported action `{other}`"))
                     .await;
             }
+        }
+    }
+
+    /// The slot actions, through the slots writer (`update <command> <id>`).
+    async fn slot_action(self: &Arc<Self>, id: &str, request: &ActionRequest) {
+        let Some(TypedConfigValue::String(slot)) = request.args.get("id") else {
+            return self
+                .reject(id, "`id` (string, the slot) is required".into())
+                .await;
+        };
+        let slot = slot.clone();
+        if self
+            .writer
+            .read_status()
+            .is_some_and(|s| s.layout != "slots")
+        {
+            return self
+                .reject(id, "this board has no slots (an A/B board)".into())
+                .await;
+        }
+        let command = match request.name.as_str() {
+            SLOT_BOOT_ONCE => "boot-once",
+            SLOT_SET_DEFAULT => "set-default",
+            SLOT_REMOVE => "remove",
+            _ => match request.args.get("pinned") {
+                Some(TypedConfigValue::Bool(false)) => "unpin",
+                _ => "pin",
+            },
+        };
+        if command == "boot-once" {
+            // Report first: the restart ends this process and the action's record.
+            self.succeed(id, phase(update_action::PHASE_REBOOTING))
+                .await;
+            let agent = self.clone();
+            tokio::spawn(async move {
+                if let Err(error) = agent.writer.run(&["boot-once", &slot]).await {
+                    crate::log(&format!("boot-once {slot}: {error}"));
+                }
+                agent.publish(false).await;
+            });
+            return;
+        }
+        let result = {
+            let _gate = self.apply_gate.lock().await;
+            self.writer.run(&[command, &slot]).await
+        };
+        self.publish(false).await;
+        match result {
+            Ok(_) => self.succeed(id, BTreeMap::new()).await,
+            Err(error) => self.reject(id, error).await,
         }
     }
 
@@ -293,14 +360,15 @@ impl Agent {
                 )
                 .await;
         }
-        let (child, tail) =
-            match self
-                .writer
-                .spawn_stage(&request.image_url, &request.sha256, request.size)
-            {
-                Ok(spawned) => spawned,
-                Err(error) => return self.fail(id, error).await,
-            };
+        let (child, tail) = match self.writer.spawn_stage(
+            &request.image_url,
+            &request.sha256,
+            request.size,
+            request.pin,
+        ) {
+            Ok(spawned) => spawned,
+            Err(error) => return self.fail(id, error).await,
+        };
         let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
         let cancelled = Arc::new(AtomicBool::new(false));
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
@@ -310,6 +378,7 @@ impl Agent {
             tail,
             started_tx,
             cancelled.clone(),
+            request.apply,
         ));
         *self.staging() = Some(Staging {
             generation,
@@ -336,6 +405,7 @@ impl Agent {
         tail: StderrTail,
         started: tokio::sync::oneshot::Sender<Result<(), String>>,
         cancelled: Arc<AtomicBool>,
+        apply: bool,
     ) {
         let pid = child.id();
         let mut started = Some(started);
@@ -388,8 +458,12 @@ impl Agent {
             return;
         }
         // `staged`, then `rebooting` (or `staged` with the reason when the
-        // restart was refused).
+        // restart was refused). An install only (a slots board) stops at
+        // `staged`.
         self.publish(false).await;
+        if !apply {
+            return;
+        }
         if let Err(error) = self.writer.run(&["apply"]).await {
             crate::log(&format!("apply: {error}"));
         }

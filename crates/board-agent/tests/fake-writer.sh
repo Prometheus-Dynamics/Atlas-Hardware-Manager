@@ -4,7 +4,9 @@
 # Its state is in $BOARD_RUN_DIR/fake.env; each call is logged to
 # $BOARD_RUN_DIR/calls. Image URLs steer it: "corrupt" fails the checksum,
 # "hold" waits until $BOARD_RUN_DIR/release exists, and image-<v>.img.xz
-# stages version <v>.
+# stages version <v>. With $BOARD_RUN_DIR/slots-layout it is the slots
+# writer: its status lists slots, and boot-once/set-default/remove/pin/unpin
+# work (a slot named "running" can't be removed).
 set -eu
 RUN=$BOARD_RUN_DIR
 STATE=idle SLOT_ACTIVE=A SLOT_STAGED='' VERSION_ACTIVE=1.0 VERSION_STAGED='' PROGRESS=0 ERROR='' PREVIOUS=''
@@ -16,8 +18,11 @@ STATE='$STATE' SLOT_ACTIVE='$SLOT_ACTIVE' SLOT_STAGED='$SLOT_STAGED' VERSION_ACT
 VERSION_STAGED='$VERSION_STAGED' PROGRESS='$PROGRESS' ERROR='$ERROR' PREVIOUS='$PREVIOUS'
 EOF
 	mv "$RUN/fake.env.tmp" "$RUN/fake.env"
-	printf '{"state":"%s","slot_active":"%s","slot_staged":"%s","version_active":"%s","version_staged":"%s","progress":%s,"error":"%s"}\n' \
-		"$STATE" "$SLOT_ACTIVE" "$SLOT_STAGED" "$VERSION_ACTIVE" "$VERSION_STAGED" "$PROGRESS" "$ERROR" > "$RUN/update.json.tmp"
+	slots=''
+	[ ! -e "$RUN/slots-layout" ] ||
+		slots=',"layout":"slots","slot_default":"running","slot_previous":null,"slot_trial":null,"free_bytes":5000000000,"reserve_bytes":536870912,"slots":[{"id":"running","pinned":false},{"id":"pv-b","pinned":false}]'
+	printf '{"state":"%s","slot_active":"%s","slot_staged":"%s","version_active":"%s","version_staged":"%s","progress":%s,"error":"%s"%s}\n' \
+		"$STATE" "$SLOT_ACTIVE" "$SLOT_STAGED" "$VERSION_ACTIVE" "$VERSION_STAGED" "$PROGRESS" "$ERROR" "$slots" > "$RUN/update.json.tmp"
 	mv "$RUN/update.json.tmp" "$RUN/update.json"
 }
 
@@ -91,6 +96,15 @@ rollback)
 		exit 1
 	fi
 	STATE=rebooting VERSION_ACTIVE=$PREVIOUS PREVIOUS=''
+	save
+	;;
+boot-once | set-default | remove | pin | unpin)
+	[ -e "$RUN/slots-layout" ] || exit 2
+	if [ "$1 $2" = "remove running" ]; then
+		echo "slots: running is the running slot" >&2
+		exit 3
+	fi
+	[ "$1" != boot-once ] || STATE=rebooting
 	save
 	;;
 *)
