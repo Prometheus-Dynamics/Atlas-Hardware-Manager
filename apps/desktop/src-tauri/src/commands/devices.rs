@@ -129,20 +129,60 @@ pub async fn start_hardware_stream(
     let sink: FrameSink = std::sync::Arc::new(move |frame| {
         let _ = channel.send(frame);
     });
+    // Orion's board.hardware stream first (board-agent, on the board's own
+    // node), when Live readings from Orion is on; the board's own stream
+    // when Orion doesn't answer.
+    let orion = state
+        .settings
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .live_streams
+        .then(|| state.orion.as_ref().map(|orion| orion.live.clone()))
+        .flatten();
+    let address = state
+        .atlas
+        .device(&key)
+        .map(|record| record.identity.address.trim().to_owned())
+        .unwrap_or_default();
     // The board answers at once when it has no stream: tell before
     // spawning, so the UI keeps its snapshot.
     let (tell, told) = tokio::sync::oneshot::channel();
     let task = tokio::spawn(async move {
+        let tell = std::sync::Mutex::new(Some(tell));
+        let started = |ok: bool| {
+            if let Some(tell) = tell
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .take()
+            {
+                let _ = tell.send(ok);
+            }
+        };
+        if let Some(live) = orion.filter(|_| !address.is_empty()) {
+            let channel = on_frame.clone();
+            let followed = live
+                .follow_hardware(&address, &devices, |frame| {
+                    started(true);
+                    channel.send(frame).is_ok()
+                })
+                .await;
+            if followed.is_ok() {
+                let _ = on_frame.send(HardwareFrame::Gone {
+                    reason: "the board's Orion stream ended".into(),
+                });
+                return;
+            }
+        }
         let result = atlas.stream_hardware(&key, &devices, sink).await;
         let reason = match result {
             Ok(false) => {
-                let _ = tell.send(false);
+                started(false);
                 return;
             }
             Ok(true) => "the board ended the stream".to_string(),
             Err(error) => error.to_string(),
         };
-        let _ = tell.send(true);
+        started(true);
         let _ = on_frame.send(HardwareFrame::Gone { reason });
     });
     // Streaming from the start, or no stream: whichever comes first.
@@ -293,6 +333,53 @@ pub async fn start_camera_stream(
 /// Stops following a camera (its connection closes).
 #[tauri::command]
 pub fn stop_camera_stream(state: State<'_, AppState>, id: u64) {
+    stop_hardware_stream(state, id);
+}
+
+/// Follows what the device's PhotonVision sees (each camera's fps,
+/// latency and its stages, the tags) into `on_frame`, from PhotonVision's
+/// UI socket on the board; reconnects by itself until
+/// [`stop_vision_stream`]. `None` for a device that runs no PhotonVision.
+#[tauri::command]
+pub async fn start_vision_stream(
+    state: State<'_, AppState>,
+    key: DeviceKey,
+    on_frame: tauri::ipc::Channel<atlas_driver_board::vision::VisionFrame>,
+) -> CmdResult<Option<u64>> {
+    let record = state
+        .atlas
+        .device(&key)
+        .ok_or_else(|| format!("no device {key}"))?;
+    let attrs = &record.identity.attributes;
+    let photonvision = attrs
+        .get("os")
+        .is_some_and(|os| os.to_ascii_lowercase().contains("photon"))
+        || attrs.keys().any(|k| k.starts_with("camera_stream"));
+    let address = attrs
+        .get("manage_url")
+        .cloned()
+        .unwrap_or_else(|| record.identity.address.clone());
+    if !photonvision || address.trim().is_empty() {
+        return Ok(None);
+    }
+    let url = atlas_driver_board::vision::url_for(address.trim());
+    let id = state
+        .next_hardware_stream
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let task = tokio::spawn(async move {
+        atlas_driver_board::vision::follow(&url, |frame| on_frame.send(frame).is_ok()).await;
+    });
+    state
+        .hardware_streams
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .insert(id, task);
+    Ok(Some(id))
+}
+
+/// Stops following a device's PhotonVision.
+#[tauri::command]
+pub fn stop_vision_stream(state: State<'_, AppState>, id: u64) {
     stop_hardware_stream(state, id);
 }
 

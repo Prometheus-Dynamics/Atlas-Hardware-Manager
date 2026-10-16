@@ -24,12 +24,14 @@
   import { ui } from "#lib/stores/ui.svelte.ts";
   import Region from "#lib/components/layout/Region.svelte";
   import ActiveJob from "./ActiveJob.svelte";
-  import HardwareTab from "./HardwareTab.svelte";
   import HistoryTab from "./HistoryTab.svelte";
   import LogsTab from "./LogsTab.svelte";
   import OverviewTab from "./OverviewTab.svelte";
   import QuickActions from "./QuickActions.svelte";
+  import DeviceMenu from "./DeviceMenu.svelte";
+  import SettingsTab from "./SettingsTab.svelte";
   import SoftwareTab from "./SoftwareTab.svelte";
+  import { canUpdate } from "#lib/stores/ui.svelte.ts";
 
   let { key, initialTab }: { key: string; initialTab?: string } = $props();
 
@@ -50,29 +52,44 @@
   // The Hardware tab can open first, so this panel keeps the status read too.
   $effect(() => (record ? deviceStatus.watch(record) : undefined));
 
-  // Tabs come from what the device can do right now.
+  // Four tabs: Overview, Settings, Logs, History. Software joins them for
+  // a board in USB boot, a running install, or an update started here.
+  let wantsSoftware = $state(false);
   const tabs = $derived.by(() => {
     const caps = record?.capabilities ?? [];
     const list: { value: string; label: string; icon: IconName }[] = [{ value: "overview", label: "Overview", icon: "info-circle" }];
-    const software =
-      caps.includes("update") ||
-      caps.includes("recover") ||
-      (recovery && record?.presence === "online") ||
-      (record ? updateMethods(record).length > 0 : false) ||
-      !!handoff;
+    list.push({ value: "settings", label: "Settings", icon: "settings" });
+    const software = (recovery && record?.presence === "online") || !!handoff || !!active || wantsSoftware;
     if (software) list.push({ value: "software", label: "Software", icon: "package" });
     if (caps.includes("logs")) list.push({ value: "logs", label: "Logs", icon: "file-text" });
-    if (hardware) list.push({ value: "hardware", label: "Hardware", icon: "cpu" });
     list.push({ value: "history", label: "History", icon: "history" });
     return list;
   });
 
-  // Older links name the tabs Software replaced.
+  // Older links name the tabs Software and Settings replaced.
   // svelte-ignore state_referenced_locally
-  const asked = initialTab === "flash" || initialTab === "update" ? "software" : initialTab;
+  const asked =
+    initialTab === "flash" || initialTab === "update" ? "software" : initialTab === "hardware" ? "settings" : initialTab;
+  // svelte-ignore state_referenced_locally
+  if (asked === "software") wantsSoftware = true;
   // svelte-ignore state_referenced_locally
   let tab = $state(asked ?? (recovery ? "software" : "overview"));
   const current = $derived(tabs.some((t) => t.value === tab) ? tab : "overview");
+  const updatable = $derived(!!record && canUpdate(record) && !recovery && (updateMethods(record).length > 0 || record.capabilities.includes("update")));
+  const ssh = $derived(
+    record && record.presence === "online" && record.capabilities.includes("status") && record.identity.address
+      ? `ssh root@${record.identity.address}`
+      : null,
+  );
+  async function copySsh() {
+    if (!ssh) return;
+    try {
+      await navigator.clipboard.writeText(ssh);
+      toasts.success(`Copied: ${ssh}`);
+    } catch {
+      toasts.info(ssh);
+    }
+  }
 
   /** When this device's data was last read: its status, else the last scan. */
   const readAt = $derived(record ? (deviceStatus.readAt.get(keyString(record.key)) ?? devices.lastScanAt) : null);
@@ -113,14 +130,14 @@
   </div>
 {:else}
   <header class="head shrink-0" in:softFade>
-    <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+    <div class="flex items-center gap-x-3">
       <a href="/devices" class="back" aria-label="Back to devices" title="Back to devices"><Icon name="arrow-left" size={16} /></a>
       <IconTile icon={deviceIcon(record)} size={34} tone={recovery && record.presence === "online" ? "accent" : "neutral"} />
-      <div class="min-w-0">
+      <div class="min-w-0 shrink">
         <h1 class="truncate text-[16px] font-semibold leading-tight text-fg" title={deviceName(record)}>{deviceName(record)}</h1>
         <p class="truncate text-[12px] text-fg-muted" title={subline}>{subline}</p>
       </div>
-      <div class="flex flex-wrap items-center gap-1.5">
+      <div class="flex shrink-0 items-center gap-1.5">
         {#if record.presence === "online"}
           <Pill tone="success" icon="circle-check" label="Online" />
         {:else}
@@ -128,9 +145,21 @@
         {/if}
         {#if recovery && record.presence === "online"}<Pill tone="primary" icon="usb" label="Waiting for an image" />{/if}
       </div>
-      <div class="ml-auto flex flex-wrap items-center gap-1.5">
+      {#if record.presence === "online" && !recovery}
+        <button
+          type="button"
+          class="mode"
+          class:pit={ui.mode === "pit"}
+          title={ui.mode === "robot" ? "ROBOT mode: network, team and security are locked. Click for PIT." : "PIT mode: the bench; updates and checks first. Click for ROBOT."}
+          onclick={() => ui.setMode(ui.mode === "robot" ? "pit" : "robot")}>{ui.mode === "robot" ? "ROBOT" : "PIT"}</button
+        >
+      {/if}
+      <div class="ml-auto flex shrink-0 items-center gap-1.5">
+        {#if ui.mode === "pit" && updatable}
+          <Button size="sm" variant="primary" icon="download" onclick={() => ((wantsSoftware = true), (tab = "software"))}>Update…</Button>
+        {/if}
         <QuickActions {record} />
-        <span class="sep" aria-hidden="true"></span>
+        {#if ssh}<Button size="sm" icon="terminal-2" title="Copy {ssh}" onclick={() => void copySsh()}>SSH</Button>{/if}
         <Button
           size="sm"
           icon="refresh"
@@ -139,17 +168,7 @@
           title="Look for it on every link and re-read what it reports"
           >Refresh <span class="when">{refreshing || devices.scanning ? "reading" : readAt === null ? "not read" : timeAgo(readAt, clock.now)}</span></Button
         >
-        <Button
-          size="sm"
-          icon="layout-dashboard"
-          onclick={() => {
-            ui.toggleMonitored(key);
-            if (ui.monitored.has(key)) toasts.success(`${record ? deviceName(record) : "It"} is on the Monitor page.`);
-            else toasts.info(`${record ? deviceName(record) : "It"} is off the Monitor page.`);
-          }}
-          title={ui.monitored.has(key) ? "On the Monitor page: click to take it off" : "Add it to the Monitor page"}
-          label={ui.monitored.has(key) ? "On the Monitor page" : "Add to the Monitor page"}
-        />
+        <DeviceMenu {record} />
       </div>
     </div>
     {#if tabs.length > 1}
@@ -166,13 +185,13 @@
     {#key current}
       <div class="tab-body" in:softFade>
         {#if current === "overview"}
-          <OverviewTab {record} onhistory={() => (tab = "history")} />
+          <OverviewTab {record} onhistory={() => (tab = "history")} onsettings={() => (tab = "settings")} />
         {:else if current === "software" && active && !handoff}
           <ActiveJob job={active.job} state={active.state} />
         {:else if current === "software"}
           <SoftwareTab {record} />
-        {:else if current === "hardware" && hardware}
-          <HardwareTab {hardware} boardKey={record.key} deviceKey={record.capabilities.includes("hardware-control") ? record.key : null} />
+        {:else if current === "settings"}
+          <SettingsTab {record} {hardware} />
         {:else if current === "logs"}
           <LogsTab {record} />
         {:else}
@@ -207,11 +226,21 @@
     color: var(--fg-muted);
     font-variant-numeric: tabular-nums;
   }
-  .sep {
-    width: 1px;
-    height: 18px;
-    margin: 0 2px;
-    background: var(--glass-border);
+  .mode {
+    height: 20px;
+    padding: 0 7px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--r-sm);
+    background: var(--glass);
+    color: var(--fg-muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+  }
+  .mode.pit {
+    border-color: #5a4a22;
+    background: #231d12;
+    color: var(--warn-fg);
   }
   .back {
     display: grid;

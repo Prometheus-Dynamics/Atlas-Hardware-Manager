@@ -173,3 +173,119 @@ async fn a_board_without_a_listener_is_an_error_at_once() {
     assert!(result.is_err());
     assert!(started.elapsed() < Duration::from_secs(5));
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hardware_frames_come_from_board_hardware() {
+    let dir = std::env::temp_dir().join(format!("atlas-live-hw-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let socket = dir.join("control.sock");
+    let stream_socket = dir.join("control-stream.sock");
+    let config = NodeConfig::for_local_node(NodeId::new("raze-2"))
+        .with_ipc_socket_path(socket.clone())
+        .with_runtime_tuning_mut(|mut tuning| {
+            tuning.actions = tuning.actions.with_operator_open_read(OperatorOpenRead {
+                status: true,
+                streams: true,
+                state: false,
+            });
+            tuning
+        });
+    let app = NodeApp::try_new(config).unwrap();
+    let (_, unary) = app.start_ipc_server_graceful(&socket).await.unwrap();
+    let (_, streams) = app
+        .start_ipc_stream_server_graceful(&stream_socket)
+        .await
+        .unwrap();
+    let (addr, peer) = app
+        .start_peer_tcp_server("127.0.0.1:0".parse().unwrap())
+        .await
+        .unwrap();
+    let stream = StreamRef {
+        owner: StatusSubject::Node(NodeId::new("raze-2")),
+        id: "board.hardware".into(),
+    };
+    let mut publisher = StreamPublisher::connect_at(&stream_socket, "board-agent.live")
+        .await
+        .unwrap();
+    let series = |name: &str, kind| {
+        SeriesDecl::new(name, kind, 10_000)
+            .with_unit("m/s²")
+            .with_history(HistoryPolicy::full(30_000))
+    };
+    publisher
+        .declare(StreamDecl {
+            owner: stream.owner.clone(),
+            id: stream.id.clone(),
+            series: vec![
+                series("imu.acceleration.x", SeriesKind::F32),
+                series("imu.acceleration.y", SeriesKind::F32),
+                series("status-ring.led.0", SeriesKind::U32),
+            ],
+        })
+        .await
+        .unwrap();
+
+    let frames = Arc::new(Mutex::new(Vec::new()));
+    let seen = frames.clone();
+    let live = LiveStreams::new(OperatorIdentity::generate("atlas-test").unwrap(), None);
+    let follow = tokio::spawn(async move {
+        live.follow_hardware(
+            &format!("orion+tcp://{addr}"),
+            &[("imu".to_owned(), 10), ("lens".to_owned(), 100)],
+            move |frame| {
+                seen.lock().unwrap().push(frame);
+                true
+            },
+        )
+        .await
+    });
+    tokio::time::sleep(Duration::from_millis(400)).await;
+    let t = now_us();
+    let mut x = SampleChunkBuilder::new(0, SeriesKind::F32);
+    let mut y = SampleChunkBuilder::new(1, SeriesKind::F32);
+    let mut led = SampleChunkBuilder::new(2, SeriesKind::U32);
+    for n in 0..5u64 {
+        x.push(t + n * 10_000, 0.5);
+        y.push(t + n * 10_000, -9.8);
+        led.push(t + n * 10_000, 255.0);
+    }
+    publisher
+        .publish(&stream, vec![x.take(), y.take(), led.take()])
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    let frames = frames.lock().unwrap().clone();
+    let atlas_driver::HardwareFrame::Devices { devices } = &frames[0] else {
+        panic!("devices first: {frames:?}");
+    };
+    assert_eq!(devices[0].id, "imu");
+    let names: Vec<_> = devices[0]
+        .channels
+        .iter()
+        .map(|c| c.name.as_str())
+        .collect();
+    assert_eq!(
+        names,
+        ["acceleration.x", "acceleration.y"],
+        "only the imu's"
+    );
+    assert!(devices[1].missing, "the board has no lens");
+    let rows: Vec<_> = frames
+        .iter()
+        .filter_map(|frame| match frame {
+            atlas_driver::HardwareFrame::Samples { device, samples } if device == "imu" => {
+                Some(samples.clone())
+            }
+            _ => None,
+        })
+        .flatten()
+        .collect();
+    assert_eq!(rows.len(), 5);
+    assert_eq!(rows[0].1, vec![Some(0.5), Some(-9.800000190734863)]);
+
+    follow.abort();
+    drop((unary, streams, peer));
+    let _ = std::fs::remove_dir_all(&dir);
+}

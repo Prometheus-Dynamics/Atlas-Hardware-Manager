@@ -26,7 +26,7 @@
       {#each entries as e, i (i)}
         <li>
           <span class="when">{timeAgo(e.at_ms, clock.now)}</span>
-          <span class="kind {tone(e.level)}">{e.kind}</span>
+          <span class="kind {tone(e.level)}" title={e.kind}>{e.kind}</span>
           <span class="text" title={e.message}>{e.message}</span>
         </li>
       {/each}
@@ -54,7 +54,7 @@
   }
   li {
     display: grid;
-    grid-template-columns: 58px 104px minmax(0, 1fr);
+    grid-template-columns: 58px 112px minmax(0, 1fr);
     gap: 8px;
     padding: 3px 0;
     border-top: 1px solid var(--hairline);

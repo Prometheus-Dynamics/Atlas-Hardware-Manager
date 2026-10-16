@@ -359,9 +359,11 @@ dependencies = [
  "nix",
  "nusb",
  "reqwest",
+ "rmpv",
  "serde",
  "serde_json",
  "tokio",
+ "tokio-tungstenite",
 ]
 
 [[package]]

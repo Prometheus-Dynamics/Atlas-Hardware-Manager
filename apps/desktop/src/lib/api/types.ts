@@ -337,6 +337,34 @@ export interface AppSettings {
   image_host: string | null;
 }
 
+/** PhotonVision's latency stages, ms (Styx builds). */
+export interface VisionStages {
+  exposure_half: number;
+  readout: number;
+  isp: number;
+  detection: number;
+  pv_nt: number;
+  sof_to_nt: number;
+}
+export interface VisionTarget {
+  id: number | null;
+  yaw: number | null;
+  pitch: number | null;
+  area: number | null;
+  ambiguity: number | null;
+  distance: number | null;
+}
+export interface VisionCamera {
+  camera: string;
+  fps: number | null;
+  latency_ms: number | null;
+  detect_ms: number | null;
+  stages: VisionStages | null;
+  targets: VisionTarget[];
+}
+/** What a board's PhotonVision sees, from its UI socket. */
+export type VisionFrame = { kind: "results"; cameras: VisionCamera[] } | { kind: "waiting"; reason: string };
+
 /** A camera stream's state, as Atlas follows it (it reconnects by itself). */
 export type CameraState =
   | { state: "connecting"; attempt: number }

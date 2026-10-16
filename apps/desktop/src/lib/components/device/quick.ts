@@ -1,9 +1,11 @@
 import type { DeviceAction } from "#lib/api/client.ts";
 
-/** The actions the device header shows as quick buttons: the first three
- * everyday ones. Update controls belong with the update (Overview's Now,
- * Software), destructive ones with Controls. */
+/** The device's actions shown as header buttons: finding it, and what a
+ * board in USB boot offers (open as disk, browse, eject, add a key).
+ * Everything else is in the ⋯ menu (DeviceMenu), and what takes the
+ * device offline is asked first there. */
+const HEADER = ["locate", "identify", "open-as-disk", "browse-files", "eject", "add-ssh-key"];
+
 export function quickActions(actions: DeviceAction[]): DeviceAction[] {
-  // The USB route has its own switch (UsbRouteCard), not header buttons.
-  return actions.filter((a) => !a.destructive && !a.id.startsWith("update.") && !a.id.startsWith("usb-route-")).slice(0, 3);
+  return HEADER.flatMap((id) => actions.filter((a) => a.id === id && !a.destructive)).slice(0, 3);
 }

@@ -2,7 +2,7 @@
 // them: a `devices` frame, then batches of samples every 16 ms at each
 // device's period (the IMU at 100 Hz), on the board's monotonic clock.
 
-import type { DeviceKey, HardwareFrame, LiveChannel, LiveDevice, LiveFrame, LiveRow, Metric } from "../types";
+import type { DeviceKey, HardwareFrame, LiveChannel, LiveDevice, LiveFrame, LiveRow, Metric, VisionFrame } from "../types";
 
 type Model = { class: string; model: string; channels: LiveChannel[]; value: (t: number, i: number) => number };
 
@@ -178,5 +178,35 @@ export function streamLive(key: DeviceKey, onFrame: (frame: LiveFrame) => void):
     const r = row(Math.floor(Date.now() / ROW_MS) * ROW_MS);
     onFrame({ kind: "rows", backfill: false, rows: [r], latest: latest(r) });
   }, ROW_MS);
+  return Promise.resolve(() => clearInterval(timer));
+}
+
+/** A simulated PhotonVision: the front camera at ~58 fps with its stages and two tags, ten results a second. */
+export function streamVision(key: DeviceKey, onFrame: (frame: VisionFrame) => void): Promise<(() => void) | null> {
+  if (key.serial !== "8f3a1c2d") return Promise.resolve(null);
+  const timer = setInterval(() => {
+    const t = Date.now() / 1000;
+    const exposure = 4.0 + noise(0.1);
+    const readout = 3.1 + noise(0.05);
+    const detection = 0.27 + noise(0.02);
+    const pv = 0.33 + noise(0.03);
+    const sof = readout + 0.4 + detection + pv + 3.4;
+    onFrame({
+      kind: "results",
+      cameras: [
+        {
+          camera: "front",
+          fps: 58 + noise(0.6),
+          latency_ms: sof + exposure,
+          detect_ms: detection,
+          stages: { exposure_half: exposure, readout, isp: 0, detection, pv_nt: pv, sof_to_nt: sof },
+          targets: [
+            { id: 7, yaw: -3.2 + Math.sin(t) * 0.3, pitch: 1.1, area: 2.4, ambiguity: 0.04, distance: 2.41 + Math.sin(t / 3) * 0.02 },
+            { id: 8, yaw: 11.8 + Math.sin(t) * 0.3, pitch: 0.6, area: 0.9, ambiguity: 0.11, distance: 3.95 },
+          ],
+        },
+      ],
+    });
+  }, 100);
   return Promise.resolve(() => clearInterval(timer));
 }

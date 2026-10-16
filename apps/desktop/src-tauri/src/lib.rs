@@ -93,6 +93,8 @@ pub fn run() {
             commands::devices::stop_live_stream,
             commands::devices::start_camera_stream,
             commands::devices::stop_camera_stream,
+            commands::devices::start_vision_stream,
+            commands::devices::stop_vision_stream,
             commands::devices::run_selftest,
             commands::devices::device_selftest,
             commands::devices::device_telemetry,

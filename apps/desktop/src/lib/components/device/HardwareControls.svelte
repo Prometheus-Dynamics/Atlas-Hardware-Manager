@@ -80,7 +80,9 @@
 
   function flip(c: HardwareDevice["controls"][number]) {
     const on = isOn(c);
-    if (on && device.class === "power-switch" && confirming !== c.name) {
+    // A power switch asks both ways: off cuts what's plugged in, on can
+    // brown out a board on a computer's USB power. Never by itself.
+    if (device.class === "power-switch" && confirming !== c.name) {
       confirming = c.name;
       return;
     }
@@ -99,8 +101,13 @@
         <span class="w-20 shrink-0 text-[12px] text-fg-faint">{label(control.name)}</span>
         {#if settable(control) && isSwitch(control)}
           {#if confirming === control.name}
-            <span class="min-w-0 flex-1 text-[12.5px] text-warn-fg">Turn off {device.id}? Anything plugged in loses power.</span>
-            <Button size="sm" variant="danger" onclick={() => flip(control)}>Turn off</Button>
+            {#if isOn(control)}
+              <span class="min-w-0 flex-1 text-[12.5px] text-warn-fg">Turn off {device.id}? Anything plugged in loses power.</span>
+              <Button size="sm" variant="danger" onclick={() => flip(control)}>Turn off</Button>
+            {:else}
+              <span class="min-w-0 flex-1 text-[12.5px] text-warn-fg">Turn on {device.id}? A device that starts up here can brown out a board on a computer's USB power.</span>
+              <Button size="sm" variant="primary" onclick={() => flip(control)}>Turn on</Button>
+            {/if}
             <Button size="sm" variant="ghost" onclick={() => (confirming = null)}>Cancel</Button>
           {:else}
             <span class="flex-1"></span>

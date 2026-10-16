@@ -18,8 +18,11 @@
     fused = null,
     light = null,
     fill = false,
+    compact = false,
   }: {
     series: LiveSeries;
+    /** The device Overview: a smaller model, the readout in a row under it, no notes. */
+    compact?: boolean;
     /** The status ring's frames, for the model's LEDs. */
     light?: LiveSeries | null;
     /** The board's orientation device's stream, when it has one. */
@@ -87,7 +90,7 @@
 </script>
 
 {#if usable}
-  <div class="imu" class:fill>
+  <div class="imu" class:fill class:compact>
     <div class="stage" aria-label="The board's orientation in 3D" role="img" title="Drag to look around it, scroll to zoom, double-click to reset the view. {sourceNote}">
       {#if !plain}
         <CaseModel orientation={() => caseOrientation(current()?.q ?? [1, 0, 0, 0])} {ring} onfail={() => (plain = true)} />
@@ -116,9 +119,9 @@
         <div><dt>|a|</dt><dd>{fmt(accelG, 2)} g</dd></div>
         <div><dt>|ω|</dt><dd>{fmt(rateDps)} °/s</dd></div>
       </dl>
-      <Button size="sm" variant="ghost" icon="refresh" action={async () => current()?.zero()}>Zero heading</Button>
-      {#if !plain}<p class="note">Drag to look around it, scroll to zoom, double-click to reset the view.</p>{/if}
-      <p class="note">
+      <Button size="sm" variant="ghost" icon="refresh" title="Zero heading: make the current heading straight ahead" action={async () => current()?.zero()}>{compact ? "Zero" : "Zero heading"}</Button>
+      {#if !plain && !compact}<p class="note">Drag to look around it, scroll to zoom, double-click to reset the view.</p>{/if}
+      <p class="note" class:hidden={compact}>
         {#if source === "board"}
           Fused on the board{confidence !== null ? ` (IMU confidence ${Math.round(confidence * 100)}%)` : ""};
           {disturbed ? "heading from the gyro: the magnetometer isn't trusted now (calibrate it, or a magnet is near)" : "heading from the magnetometer"}.
@@ -169,6 +172,31 @@
     .imu.fill .stage.stage {
       min-height: 160px;
     }
+  }
+  .imu.compact {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .imu.compact .stage {
+    height: clamp(96px, 14vh, 140px);
+  }
+  /* Roll, pitch, heading in a row with Zero heading; the axes are under it (ImuCard). */
+  .imu.compact dl {
+    grid-template-columns: repeat(3, auto);
+    grid-auto-flow: column;
+    grid-template-rows: auto auto;
+    gap: 0 14px;
+    flex: 1;
+  }
+  .imu.compact dl > div:nth-child(n + 4) {
+    display: none;
+  }
+  .imu.compact .readout {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
   }
   .imu.fill {
     height: 100%;

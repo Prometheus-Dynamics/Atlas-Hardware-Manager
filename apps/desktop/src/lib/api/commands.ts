@@ -18,6 +18,7 @@ import type {
   HardwareFrame,
   LiveFrame,
   CameraState,
+  VisionFrame,
   NtCameraAddress,
   NtFrame,
   NtServerFrame,
@@ -106,6 +107,16 @@ export const api = {
     if (id === null) return null;
     return () => {
       void invoke<void>("stop_hardware_stream", { id });
+    };
+  },
+  /** Follows what the device's PhotonVision sees; null when it runs none. */
+  streamVision: async (key: DeviceKey, onFrame: (frame: VisionFrame) => void): Promise<(() => void) | null> => {
+    const channel = new Channel<VisionFrame>();
+    channel.onmessage = onFrame;
+    const id = await invoke<number | null>("start_vision_stream", { key, onFrame: channel });
+    if (id === null) return null;
+    return () => {
+      void invoke<void>("stop_vision_stream", { id });
     };
   },
   /**

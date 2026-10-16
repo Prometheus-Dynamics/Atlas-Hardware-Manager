@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use atlas_driver::{DriverError, Metric, metric_ids};
+use atlas_driver::{DriverError, HardwareFrame, LiveChannel, LiveDevice, Metric, metric_ids};
 use orion_client::remote::{NodeTrust, OperatorIdentity, RemoteError, RemoteOperator};
 use orion_control_plane::{
     Backfill, ClientEventKind, SeriesDecl, StatusSubject, StreamCursor, StreamRef,
@@ -26,6 +26,10 @@ use serde::Serialize;
 pub const DEFAULT_PORT: u16 = 9200;
 /// board-agent's /proc and /sys stream.
 pub const STREAM: &str = "board.live";
+/// board-agent's lemnosd stream.
+pub const HARDWARE_STREAM: &str = "board.hardware";
+/// How much of a device's readings a hardware view starts with.
+const HARDWARE_BACKFILL_MS: u64 = 10_000;
 /// One row of readings per this many ms.
 pub const ROW_MS: u64 = 500;
 /// How much history the first subscription asks for.
@@ -391,18 +395,170 @@ impl LiveStreams {
         url: &str,
         backfill: Backfill,
     ) -> Result<orion_client::remote::RemoteSession, DriverError> {
+        self.subscribe_to(url, STREAM, Vec::new(), backfill).await
+    }
+
+    async fn subscribe_to(
+        &self,
+        url: &str,
+        stream: &str,
+        series: Vec<String>,
+        backfill: Backfill,
+    ) -> Result<orion_client::remote::RemoteSession, DriverError> {
         let operator = self.connect(url).await?;
         let unreachable =
             |error: RemoteError| DriverError::Unreachable(format!("Orion at {url}: {error}"));
         let session = operator.open_session("atlas").await.map_err(unreachable)?;
         let stream = StreamRef {
             owner: StatusSubject::Node(operator.node_id().clone()),
-            id: STREAM.into(),
+            id: stream.into(),
         };
+        let mut subscription = StreamSubscription::all(stream).with_backfill(backfill);
+        if !series.is_empty() {
+            subscription = subscription.with_series(series);
+        }
         session
-            .subscribe_stream(StreamSubscription::all(stream).with_backfill(backfill))
+            .subscribe_stream(subscription)
             .await
             .map_err(unreachable)?;
         Ok(session)
+    }
+
+    /// Follows board-agent's `board.hardware` stream (lemnosd's devices) for
+    /// the devices `wanted` (id, period ms) into `sink`, as the board's own
+    /// hardware stream frames them: `Devices` from the catalog, then
+    /// `Samples` per device (Unix µs). Subscribing is what makes the board
+    /// read a device it reads only while watched. `Err` when the first
+    /// connection fails (the caller falls back to the board's stream).
+    pub async fn follow_hardware(
+        &self,
+        address: &str,
+        wanted: &[(String, u32)],
+        sink: impl Fn(HardwareFrame) -> bool + Send,
+    ) -> Result<(), DriverError> {
+        let url = Self::url_for(address);
+        let patterns: Vec<String> = wanted.iter().map(|(id, _)| format!("{id}.*")).collect();
+        let mut session = self
+            .subscribe_to(
+                &url,
+                HARDWARE_STREAM,
+                patterns.clone(),
+                Backfill::LastMs(HARDWARE_BACKFILL_MS),
+            )
+            .await?;
+        // Per series index: (device index, channel index); per device, its channel count.
+        let mut layout: Vec<Option<(usize, usize)>> = Vec::new();
+        let mut kinds = Vec::new();
+        let mut widths: Vec<usize> = Vec::new();
+        let mut cursor: Option<StreamCursor> = None;
+        loop {
+            let Some(event) = session.next_event().await else {
+                let since = cursor.map_or(Backfill::LastMs(HARDWARE_BACKFILL_MS), Backfill::Since);
+                let started = tokio::time::Instant::now();
+                session = loop {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    match self
+                        .subscribe_to(&url, HARDWARE_STREAM, patterns.clone(), since)
+                        .await
+                    {
+                        Ok(session) => break session,
+                        Err(error) if started.elapsed() > GIVE_UP => {
+                            sink(HardwareFrame::Gone {
+                                reason: error.to_string(),
+                            });
+                            return Ok(());
+                        }
+                        Err(_) => {}
+                    }
+                };
+                continue;
+            };
+            match event.event {
+                ClientEventKind::StreamCatalog(catalog) => {
+                    kinds = catalog.series.iter().map(|s| s.kind).collect();
+                    let mut devices = Vec::new();
+                    layout = vec![None; catalog.series.len()];
+                    widths.clear();
+                    for (d, (id, period)) in wanted.iter().enumerate() {
+                        let prefix = format!("{id}.");
+                        let mut channels = Vec::new();
+                        for (i, series) in catalog.series.iter().enumerate() {
+                            if let Some(name) = series.name.strip_prefix(&prefix) {
+                                layout[i] = Some((d, channels.len()));
+                                channels.push(LiveChannel {
+                                    name: name.to_owned(),
+                                    unit: series.unit.clone().unwrap_or_default(),
+                                });
+                            }
+                        }
+                        widths.push(channels.len());
+                        devices.push(LiveDevice {
+                            id: id.clone(),
+                            status: if channels.is_empty() {
+                                String::new()
+                            } else {
+                                "available".into()
+                            },
+                            period_ms: *period,
+                            missing: channels.is_empty(),
+                            channels,
+                            ..LiveDevice::default()
+                        });
+                    }
+                    if !sink(HardwareFrame::Devices { devices }) {
+                        return Ok(());
+                    }
+                }
+                ClientEventKind::StreamData(data) => {
+                    if !data.backfill
+                        && let Some(seen) = cursor
+                        && seen.epoch == data.cursor.epoch
+                        && data.prev_seq != seen.seq
+                    {
+                        let _ = session
+                            .subscribe_stream(
+                                StreamSubscription::all(data.stream.clone())
+                                    .with_series(patterns.clone())
+                                    .with_backfill(Backfill::Since(seen)),
+                            )
+                            .await;
+                        continue;
+                    }
+                    cursor = Some(data.cursor);
+                    // Per device: time -> a value per channel.
+                    let mut rows: Vec<BTreeMap<u64, Vec<Option<f64>>>> =
+                        vec![BTreeMap::new(); widths.len()];
+                    for chunk in &data.chunks {
+                        let index = usize::from(chunk.series);
+                        let (Some(Some((device, channel))), Some(kind)) =
+                            (layout.get(index), kinds.get(index))
+                        else {
+                            continue;
+                        };
+                        let Ok(samples) = chunk.samples(*kind) else {
+                            continue;
+                        };
+                        for (t_us, value) in samples {
+                            let row = rows[*device]
+                                .entry(t_us)
+                                .or_insert_with(|| vec![None; widths[*device]]);
+                            row[*channel] = Some(value);
+                        }
+                    }
+                    for (device, samples) in rows.into_iter().enumerate() {
+                        if samples.is_empty() {
+                            continue;
+                        }
+                        if !sink(HardwareFrame::Samples {
+                            device: wanted[device].0.clone(),
+                            samples: samples.into_iter().collect(),
+                        }) {
+                            return Ok(());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 }

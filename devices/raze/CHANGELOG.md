@@ -95,6 +95,9 @@ commit; the commits are listed per area.
 
 ### Board awareness: events, status, drift
 
+- **The identity says where the security switch is:** `"security":"on"|"off"`
+  in the live part of `/.well-known/pd-device` (read without a fork), so
+  Atlas's device page shows it in Setup and Settings.
 - **A clean restart no longer reads as a crash.** board-power-log logs its
   `power` reading as the shutdown starts, sometimes after the `shutdown`
   event, so `pstore` took the next boot's previous boot as unclean and logged

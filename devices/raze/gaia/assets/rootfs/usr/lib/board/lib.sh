@@ -697,6 +697,8 @@ board_identity_live_json() {
 		board_json_var "$(uname -n)"
 	fi
 	printf ',"hostname":%s' "$BOARD_JSON"
+	# The security switch (security.env), for the host's settings view.
+	if board_security_on; then printf ',"security":"on"'; else printf ',"security":"off"'; fi
 	# The board's clock, so a host can tell it is wrong: a Raze has no RTC
 	# battery and often no NTP over the USB link.
 	printf ',"time":%s' "$(date +%s)"

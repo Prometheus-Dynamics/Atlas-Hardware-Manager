@@ -41,6 +41,9 @@ pub struct BoardIdentity {
     pub serial: String,
     #[serde(default)]
     pub hostname: Option<String>,
+    /// The board's security switch, "on" or "off" (older packages: absent).
+    #[serde(default)]
+    pub security: Option<String>,
     #[serde(default)]
     pub os: NameVersion,
     #[serde(default)]
@@ -195,6 +198,7 @@ impl BoardIdentity {
         put("os_version", &self.os.version);
         put("revision", &self.rev);
         put("hostname", &self.hostname);
+        put("security", &self.security);
         put("manage_url", &self.manage_url);
         put("device_package_commit", &self.device_package.commit);
         // How far the board's clock is from this computer's, in seconds
