@@ -86,7 +86,14 @@ impl Ops for Record {
         "kernel log\n".into()
     }
 
-    fn sync(&self) {}
+    fn persist(&self, path: &Path, text: &str) -> Result<(), String> {
+        self.note(&format!("persist {}", path.display()));
+        crate::boot::persist_file(path, text).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    fn sync(&self) {
+        self.note("sync");
+    }
 
     fn reboot(&self) {
         self.note("reboot");

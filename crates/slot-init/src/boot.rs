@@ -46,6 +46,9 @@ pub trait Ops {
     /// A read-only loop + dm-verity device over the image: its node.
     fn open_slot(&self, image: &Path, manifest: &Manifest, root: &str) -> Result<String, String>;
     fn kernel_log(&self) -> String;
+    /// Writes `text` to `path` and makes it durable (the file and its
+    /// directory flushed), so a restart right after keeps it.
+    fn persist(&self, path: &Path, text: &str) -> Result<(), String>;
     fn sync(&self);
     /// A plain restart. Returns only when it couldn't.
     fn reboot(&self);
@@ -80,6 +83,8 @@ struct Boot<'a> {
     tryboot: bool,
     slot: String,
     data_dev: Option<PathBuf>,
+    /// /data is mounted where it was (not yet moved into the new root).
+    data_mounted: std::cell::Cell<bool>,
 }
 
 /// Logs to the kernel log (and stderr).
@@ -96,10 +101,21 @@ pub fn log(env: &Env, message: &str) {
     }
 }
 
-fn write_atomic(path: &Path, text: &str) -> std::io::Result<()> {
+/// Writes `text` to `path` by way of `<path>.tmp` and a rename, each step
+/// flushed (the file, then its directory): what the real ops' `persist`
+/// does, and the recorded ones' too (they write the same files).
+pub fn persist_file(path: &Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
     let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, text)?;
-    std::fs::rename(&tmp, path)
+    let mut file = std::fs::File::create(&tmp)?;
+    file.write_all(text.as_bytes())?;
+    file.sync_all()?;
+    drop(file);
+    std::fs::rename(&tmp, path)?;
+    if let Some(dir) = path.parent() {
+        std::fs::File::open(dir)?.sync_all()?;
+    }
+    Ok(())
 }
 
 impl Boot<'_> {
@@ -120,22 +136,56 @@ impl Boot<'_> {
 
     /// The kernel log to p1 and /data.
     fn save_log(&self) {
+        // What is kept, and where, goes to the kernel log too (and with it to
+        // the console and pstore), so a save that fails is seen.
         let text = self.ops.kernel_log();
         let slots = self.env.at("data/board/slots");
         if slots.is_dir() {
-            let _ = std::fs::write(slots.join("last-failure.log"), &text);
+            let path = slots.join("last-failure.log");
+            match self.ops.persist(&path, &text) {
+                Ok(()) => self.log(&format!("kept the kernel log in {}", path.display())),
+                Err(error) => self.log(&format!(
+                    "couldn't keep the kernel log in {}: {error}",
+                    path.display()
+                )),
+            }
         }
         let boot = self.env.at("boot");
-        if self
-            .ops
-            .mount("vfat", "rw", &self.boot_dev(), &boot)
-            .is_ok()
-        {
-            let _ = std::fs::write(boot.join("slot-init.log"), &text);
-            self.ops.sync();
-            self.ops.umount(&boot);
+        match self.ops.mount("vfat", "rw", &self.boot_dev(), &boot) {
+            Ok(()) => {
+                let path = boot.join("slot-init.log");
+                match self.ops.persist(&path, &text) {
+                    Ok(()) => {
+                        self.log("kept the kernel log in slot-init.log on the boot partition")
+                    }
+                    Err(error) => self.log(&format!(
+                        "couldn't keep the kernel log on the boot partition: {error}"
+                    )),
+                }
+                self.ops.sync();
+                self.ops.umount(&boot);
+            }
+            Err(error) => self.log(&format!(
+                "couldn't mount the boot partition ({}) for the log: {error}",
+                self.boot_dev().display()
+            )),
         }
         self.ops.sync();
+    }
+
+    /// Restarts (`tryboot`: into tryboot.txt's slot) with /data unmounted
+    /// and everything synced first.
+    fn restart(&self, tryboot: bool) {
+        self.ops.sync();
+        if self.data_mounted.get() {
+            self.ops.umount(&self.env.at("data"));
+        }
+        self.ops.sync();
+        if tryboot {
+            self.ops.reboot_tryboot();
+        } else {
+            self.ops.reboot();
+        }
     }
 
     /// No slot can start: say why, keep the log, restart.
@@ -147,7 +197,7 @@ impl Boot<'_> {
             self.env.rescue_wait.as_secs()
         ));
         self.ops.sleep(self.env.rescue_wait);
-        self.ops.reboot();
+        self.restart(false);
         format!("no slot can start: {why}")
     }
 
@@ -163,8 +213,7 @@ impl Boot<'_> {
         self.save_log();
         if self.tryboot {
             self.log("it was a trial boot; restarting into the default slot");
-            self.ops.sync();
-            self.ops.reboot();
+            self.restart(false);
             return why.to_owned();
         }
         let state = self.env.at("data/board/slots");
@@ -189,14 +238,16 @@ impl Boot<'_> {
         if previous == self.slot {
             return self.rescue(&format!("{why}; the previous slot is this one"));
         }
-        let _ = write_atomic(&state.join("fallbacks"), &format!("{}\n", count + 1));
+        let _ = self
+            .ops
+            .persist(&state.join("fallbacks"), &format!("{}\n", count + 1));
         let boot = self.env.at("boot");
         if self
             .ops
             .mount("vfat", "rw", &self.boot_dev(), &boot)
             .is_ok()
         {
-            let written = write_atomic(
+            let written = self.ops.persist(
                 &boot.join("trial.txt"),
                 &format!("os_prefix=slots/{previous}/\n"),
             );
@@ -206,8 +257,7 @@ impl Boot<'_> {
                 self.log(&format!(
                     "restarting into the previous slot ({previous}) on trial"
                 ));
-                self.ops.sync();
-                self.ops.reboot_tryboot();
+                self.restart(true);
             }
         }
         self.rescue(&format!("{why}; couldn't write trial.txt"))
@@ -275,10 +325,11 @@ impl Boot<'_> {
                 data_dev.display()
             ));
         }
+        self.data_mounted.set(true);
         // A trial this far: /init ran (the writer tells "didn't reach /init"
         // from "/init stopped" by it).
         if self.tryboot {
-            let _ = write_atomic(
+            let _ = self.ops.persist(
                 &data_dir.join("board/slots/trial-init"),
                 &format!("{slot}\n"),
             );
@@ -354,16 +405,22 @@ impl Boot<'_> {
                 }
             }
         }
-        let _ = write_atomic(&data_dir.join("board/slots/booted"), &format!("{slot}\n"));
+        let _ = self
+            .ops
+            .persist(&data_dir.join("board/slots/booted"), &format!("{slot}\n"));
         // A trial that got this far: if it doesn't confirm, the next boot's
         // writer can tell its system failed, not this.
         if self.tryboot {
-            let _ = write_atomic(
+            let _ = self.ops.persist(
                 &data_dir.join("board/slots/trial-started"),
                 &format!("{slot}\n"),
             );
         }
-        if let Err(error) = self.ops.move_mount(&data_dir, &new_root.join("data")) {
+        let moved = self.ops.move_mount(&data_dir, &new_root.join("data"));
+        if moved.is_ok() {
+            self.data_mounted.set(false);
+        }
+        if let Err(error) = moved {
             return self.fail(&format!(
                 "can't move /data into the slot (no /data in the image?): {error}"
             ));
@@ -418,6 +475,7 @@ pub fn boot(ops: &dyn Ops, env: &Env) -> String {
         tryboot: is_tryboot(env),
         slot: String::new(),
         data_dev: None,
+        data_mounted: std::cell::Cell::new(false),
     };
     boot.run(&cmdline)
 }

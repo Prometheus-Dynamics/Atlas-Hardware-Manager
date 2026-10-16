@@ -383,6 +383,10 @@ impl Ops for System {
         String::from_utf8_lossy(&buf).into_owned()
     }
 
+    fn persist(&self, path: &Path, text: &str) -> Result<(), String> {
+        crate::boot::persist_file(path, text).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
     fn sync(&self) {
         // SAFETY: sync(2) takes nothing.
         unsafe { libc::sync() };

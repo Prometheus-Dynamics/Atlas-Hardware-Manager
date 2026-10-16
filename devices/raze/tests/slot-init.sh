@@ -83,6 +83,15 @@ run() {
 		"$B" boot 2> "$T/err" || true
 }
 called() { grep -qF -- "$1" "$T/calls"; }
+# in_order <line>...: each recorded call is there, after the one before it.
+in_order() {
+	at=0
+	for want in "$@"; do
+		n=$(grep -nxF -- "$want" "$T/calls" | cut -d: -f1 | awk -v a="$at" '$1 > a { print; exit }')
+		[ -n "$n" ] || fail "\"$want\" not after line $at: $(cat -n "$T/calls")"
+		at=$n
+	done
+}
 said() { grep -qF -- "$1" "$R/dev/kmsg"; }
 
 echo "a slot starts: data by PARTUUID, the kernel check, verity, erofs, its data dirs, switch_root"
@@ -117,6 +126,15 @@ said "the image is 8192 bytes, slot.json says 12288: damaged or cut short" || fa
 called "reboot" || fail "no restart: $(cat "$T/calls")"
 grep -q "kernel log" "$R/data/board/slots/last-failure.log" || fail "no last-failure.log after a trial failure"
 grep -q "kernel log" "$R/boot/slot-init.log" || fail "no slot-init.log on p1 after a trial failure"
+# Durable before the restart: each log written and flushed, p1 unmounted,
+# /data unmounted, synced, then the restart.
+in_order "persist $R/data/board/slots/last-failure.log" \
+	"mount -t vfat -o rw $T/dev/mmcblk0p1 $R/boot" \
+	"persist $R/boot/slot-init.log" "sync" "umount $R/boot" \
+	"umount $R/data" "sync" "reboot"
+said "kept the kernel log in $R/data/board/slots/last-failure.log" || fail "no note of the /data log: $(cat "$R/dev/kmsg")"
+said "kept the kernel log in slot-init.log on the boot partition" || fail "no note of the p1 log: $(cat "$R/dev/kmsg")"
+[ ! -e "$R/boot/slot-init.tmp" ] && [ ! -e "$R/data/board/slots/last-failure.tmp" ] || fail "a .tmp left behind"
 [ ! -e "$R/data/board/slots/trial-started" ] || fail "trial-started for a slot that didn't start"
 
 echo "a missing image on a trial boot restarts plainly (into the default)"
@@ -134,7 +152,7 @@ rm "$R/data/slots/pv-a.erofs"
 run
 [ "$(cat "$R/boot/trial.txt")" = "os_prefix=slots/pv-b/" ] || fail "trial.txt: $(cat "$R/boot/trial.txt" 2>/dev/null)"
 called "mount -t vfat -o rw $T/dev/mmcblk0p1 $R/boot" || fail "FAT mount: $(cat "$T/calls")"
-called "reboot-tryboot" || fail "no tryboot restart"
+in_order "persist $R/boot/trial.txt" "umount $R/boot" "umount $R/data" "sync" "reboot-tryboot"
 [ "$(cat "$R/data/board/slots/fallbacks")" = 1 ] || fail "fallback count"
 grep -q "kernel log" "$R/data/board/slots/last-failure.log" || fail "no last-failure.log"
 grep -q "kernel log" "$R/boot/slot-init.log" || fail "no slot-init.log on p1"
