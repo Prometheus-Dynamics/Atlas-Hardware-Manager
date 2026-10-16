@@ -337,6 +337,46 @@ export interface AppSettings {
   image_server_port: number;
   /** Host put in image URLs when the route to a board can't be told; null is automatic. */
   image_host: string | null;
+  /** Atlas's own updates from its GitHub releases. */
+  app_updates: AppUpdateSettings;
+}
+
+export interface AppUpdateSettings {
+  /** Look for a new Atlas on start and every few hours. */
+  auto_check: boolean;
+  /** Offer pre-releases too. */
+  prereleases: boolean;
+  /** owner/name of the GitHub repository. */
+  repo: string;
+}
+
+/** How Atlas is installed here: which installer replaces it. */
+export type InstallKind = "rpm" | "deb" | "app-image" | "nsis" | "msi" | "dmg" | "source";
+
+export interface AppRelease {
+  version: string;
+  tag: string;
+  prerelease: boolean;
+  published_at: string | null;
+  url: string;
+  /** Markdown, shortened. */
+  notes: string;
+  installer: { name: string; url: string; size: number; manifest_url: string | null; digest: string | null } | null;
+}
+
+export interface AppUpdateStatus {
+  current: string;
+  /** False for a build from a checkout (it reports the workspace version). */
+  release_build: boolean;
+  kind: InstallKind | null;
+  phase: "idle" | "checking" | "downloading" | "installing" | "restarting";
+  /** 0..1 while downloading. */
+  progress: number | null;
+  last_checked_ms: number | null;
+  available: AppRelease | null;
+  /** Release manifests are checked against a key built into Atlas. */
+  signing: boolean;
+  error: string | null;
 }
 
 /** PhotonVision's latency stages, ms (Styx builds). */

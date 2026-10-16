@@ -15,6 +15,7 @@ export const api: typeof tauriApi = isTauri ? tauriApi : mockApi;
 export const onAtlasEvent = isTauri ? tauriEvents.onAtlasEvent : mockEvents.onAtlasEvent;
 export const onResync = isTauri ? tauriEvents.onResync : mockEvents.onResync;
 export const onDownloadProgress = isTauri ? tauriEvents.onDownloadProgress : mockEvents.onDownloadProgress;
+export const onAppUpdate = isTauri ? tauriEvents.onAppUpdate : mockEvents.onAppUpdate;
 
 const RELEASE_FILTERS = [
   { name: "Images and firmware", extensions: ["img", "xz", "zst", "gz", "bin", "hex", "zip"] },

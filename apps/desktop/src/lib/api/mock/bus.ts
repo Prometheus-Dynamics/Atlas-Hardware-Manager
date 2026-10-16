@@ -1,6 +1,6 @@
 // In-memory stand-in for the Tauri event channels used by the browser mock.
 
-import type { AtlasEvent, DownloadEvent } from "../types";
+import type { AppUpdateStatus, AtlasEvent, DownloadEvent } from "../types";
 
 type Unlisten = () => void;
 
@@ -21,6 +21,7 @@ function channel<T>() {
 export const atlasChannel = channel<AtlasEvent>();
 export const resyncChannel = channel<void>();
 export const downloadChannel = channel<DownloadEvent>();
+export const appUpdateChannel = channel<AppUpdateStatus>();
 
 export const emit = (event: AtlasEvent) => atlasChannel.emit(event);
 

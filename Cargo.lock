@@ -267,6 +267,7 @@ dependencies = [
  "atlas-usbboot",
  "dirs",
  "orion-nt4",
+ "reqwest",
  "serde",
  "serde_json",
  "tauri",

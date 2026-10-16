@@ -226,6 +226,9 @@ jobs:
       - name: Build installers
         working-directory: apps/desktop
         run: |
+          # A tag's build carries its version (the app compares it with
+          # newer releases); a manual run keeps the workspace's.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then export ATLAS_VERSION="${GITHUB_REF_NAME#v}"; fi
           bun install --frozen-lockfile
           bun run bundle
 
@@ -241,3 +244,60 @@ jobs:
             target/*/release/bundle/**/*.exe
             target/*/release/bundle/**/*.dmg
           if-no-files-found: error
+
+  # A tag's installers become its GitHub release, each with a signed
+  # manifest (<installer>.manifest.json, atlas-release's sign-app-release
+  # example) when the ATLAS_RELEASE_KEY secret is set: what Atlas checks
+  # an update against before it installs it. A pre-release tag (v…-rc.1)
+  # makes a pre-release.
+  publish:
+    name: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: bundle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.99.0
+
+      - name: Fetch installers
+        uses: actions/download-artifact@v7
+        with:
+          pattern: atlas-*
+          path: dist-raw
+
+      - name: Collect installers
+        run: |
+          mkdir -p dist
+          # The bundle tree nests them; only the installers go out.
+          find dist-raw -type f \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
+            -o -name '*.msi' -o -name '*-setup.exe' -o -name '*.dmg' \) -exec cp {} dist/ \;
+          ls -l dist
+
+      - name: Sign manifests
+        env:
+          ATLAS_RELEASE_KEY: ${{ secrets.ATLAS_RELEASE_KEY }}
+        run: |
+          if [[ -z "$ATLAS_RELEASE_KEY" ]]; then
+            echo "::warning::ATLAS_RELEASE_KEY isn't set: the release has no signed manifests, so Atlas checks updates against GitHub's checksums only"
+            exit 0
+          fi
+          base="https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
+          cargo run -q -p atlas-release --example sign-app-release -- sign "$GITHUB_REF_NAME" "$base" dist/*
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pre=()
+          [[ "$GITHUB_REF_NAME" == *-* ]] && pre=(--prerelease)
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* --title "Atlas ${GITHUB_REF_NAME#v}" --generate-notes "${pre[@]}"
+          fi

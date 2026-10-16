@@ -55,6 +55,8 @@ pub struct AppSettings {
     /// addresses routes to a board. Automatic when unset.
     #[serde(default)]
     pub image_host: Option<String>,
+    /// Atlas's own updates from GitHub.
+    pub app_updates: crate::app_update::AppUpdateSettings,
 }
 
 impl Default for AppSettings {
@@ -70,6 +72,7 @@ impl Default for AppSettings {
             live_streams: true,
             image_server_port: atlas_image_server::DEFAULT_PORT,
             image_host: None,
+            app_updates: crate::app_update::AppUpdateSettings::default(),
         }
     }
 }

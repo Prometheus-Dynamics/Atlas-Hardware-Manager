@@ -16,7 +16,7 @@
   let { settings }: { settings: AppSettings } = $props();
 
   // svelte-ignore state_referenced_locally
-  let draft = $state<AppSettings>({ ...settings });
+  let draft = $state<AppSettings>({ ...settings, app_updates: { ...settings.app_updates } });
   let saving = $state(false);
   let error = $state<string | null>(null);
 
@@ -74,7 +74,7 @@
     try {
       const restart = await api.saveSettings($state.snapshot(draft));
       void devices.loadDiscovery();
-      system.settings = { ...draft };
+      system.settings = $state.snapshot(draft);
       if (restart) system.restartNeeded = true;
       toasts.success(restart ? "Saved. Restart Atlas to apply every change." : "Settings saved.");
     } catch (e) {
@@ -85,7 +85,7 @@
   }
 
   function revert() {
-    draft = { ...settings };
+    draft = { ...settings, app_updates: { ...settings.app_updates } };
     sim = settings.simulated ?? "off";
     keyOn = !!settings.ssh_key_file;
     keyFile = settings.ssh_key_file ?? DEFAULT_KEY;
@@ -147,6 +147,13 @@
       hint="A board with no clock battery can be hours off; one more than 2 s off gets this computer's time."
     >
       <SegmentedControl options={clockOptions} bind:value={draft.clock_sync} label="Keep board clocks synced" size="sm" />
+    </Field>
+
+    <Field inline label="Look for Atlas updates" hint="On start and every few hours, from its GitHub releases. You choose when to install.">
+      <Toggle bind:checked={draft.app_updates.auto_check} label="Look for Atlas updates" />
+    </Field>
+    <Field inline label="Include pre-releases" hint="Release candidates too, before they're stable.">
+      <Toggle bind:checked={draft.app_updates.prereleases} label="Include pre-releases" />
     </Field>
 
     <Field inline label="Simulated devices" hint="A simulated robot instead of real hardware, for demos and training. Needs a restart.">

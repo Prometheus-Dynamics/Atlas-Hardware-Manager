@@ -36,6 +36,8 @@ pub struct AppState {
     pub next_hardware_stream: std::sync::atomic::AtomicU64,
     /// NetworkTables viewers and the local NT server.
     pub nt: crate::nt::Nt,
+    /// Atlas's own updates from its GitHub releases.
+    pub app_update: crate::app_update::AppUpdater,
 }
 
 impl AppState {
@@ -143,6 +145,7 @@ impl AppState {
             hardware_streams: Mutex::new(HashMap::new()),
             next_hardware_stream: std::sync::atomic::AtomicU64::new(1),
             nt: crate::nt::Nt::default(),
+            app_update: crate::app_update::AppUpdater::new(),
             orion,
         })
     }

@@ -1,0 +1,5 @@
+# Keys Atlas's own release manifests must be signed with (app updates),
+# one `ed25519:<64 hex>` per line. While this lists none, an update is
+# checked against the SHA-256 its release publishes, and Atlas says it
+# wasn't signed. Make a key with:
+#   cargo run -p atlas-release --example sign-app-release -- keygen

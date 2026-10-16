@@ -40,6 +40,7 @@ import type {
   SelfTestRecord,
   SlotCommand,
   SlotSet,
+  AppUpdateStatus,
   ProgressUpdate,
   StagedRollout,
   UpdateRequestInput,
@@ -248,6 +249,11 @@ export const api = {
   /** Resolves true when a change applies only after restartApp(). */
   saveSettings: (settings: AppSettings) => invoke<boolean>("save_settings", { settings }),
   restartApp: () => invoke<void>("restart_app"),
+  /** Atlas's own update: this version, a newer release, progress. */
+  appUpdateStatus: () => invoke<AppUpdateStatus>("app_update_status"),
+  checkAppUpdate: () => invoke<AppUpdateStatus>("check_app_update"),
+  /** Downloads, checks and installs the newer Atlas, then restarts it. */
+  installAppUpdate: () => invoke<void>("install_app_update"),
 };
 
 /** Normalizes a rejected command into a displayable sentence. */

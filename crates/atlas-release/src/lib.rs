@@ -5,11 +5,16 @@
 //! ed25519 signature from a pinned key. A local file is marked unsigned and
 //! the UI asks the user to opt in before installing it.
 
+mod app_update;
 mod catalog;
 mod error;
 mod hash;
 mod manifest;
 
+pub use app_update::{
+    APP_FAMILY, AppInstaller, AppRelease, AppUpdateQuery, InstallKind, VerifiedInstaller,
+    download_app_installer, latest_app_release, version_cmp,
+};
 pub use catalog::{
     Channel, DownloadProgress, KEEP_LOCAL, ReleaseCatalog, ReleaseEntry, ReleaseOrigin,
     RemoteSource, local_artifact,

@@ -12,7 +12,7 @@ import type {
   RobotProfile,
 } from "./types";
 import { keyString } from "./types";
-import { atlasChannel, downloadChannel, emit, latency, resyncChannel, sleep } from "./mock/bus";
+import { appUpdateChannel, atlasChannel, downloadChannel, emit, latency, resyncChannel, sleep } from "./mock/bus";
 import { fleet, inventory, jobs, razeUsbBoot, releases, robots, settings, simDevice, sources } from "./mock/data";
 import * as runner from "./mock/runner";
 import { activity, logLines, metrics, online, record, restart, seedHistory } from "./mock/observe";
@@ -21,6 +21,7 @@ import { lastSelftest, runSelftest, seedSelftests } from "./mock/selftest";
 import { streamHardware, streamLive, streamVision } from "./mock/live";
 import { ntCameraAddresses, ntConnect, ntServer } from "./mock/nt";
 import { deviceSlots, installSlot, slotCommand } from "./mock/slots";
+import { appUpdateStatus, checkAppUpdate, installAppUpdate } from "./mock/appUpdate";
 import { boardAction, calibrationStatus, controlHardware, deviceHistory, deviceStatus, hardwareAction } from "./mock/status";
 
 seedHistory();
@@ -389,6 +390,15 @@ export const mockApi: Api = {
       Object.assign(settings, next);
       return restart;
     }),
+  appUpdateStatus: () => reply(appUpdateStatus),
+  checkAppUpdate: () => checkAppUpdate(),
+  installAppUpdate: async () => {
+    try {
+      await installAppUpdate();
+    } catch (error) {
+      throw typeof error === "string" ? error : String(error);
+    }
+  },
   restartApp: async () => {
     await latency();
     location.reload();
@@ -402,6 +412,7 @@ export const mockEvents = {
   },
   onResync: (handler: () => void) => resyncChannel.listen(handler),
   onDownloadProgress: (handler: Parameters<typeof downloadChannel.listen>[0]) => downloadChannel.listen(handler),
+  onAppUpdate: (handler: Parameters<typeof appUpdateChannel.listen>[0]) => appUpdateChannel.listen(handler),
 };
 
 // Console hook for trying offline flows in the preview:

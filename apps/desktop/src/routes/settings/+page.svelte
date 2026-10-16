@@ -3,6 +3,7 @@
   import Page from "#lib/components/layout/Page.svelte";
   import Region from "#lib/components/layout/Region.svelte";
   import AboutPanel from "#lib/components/settings/AboutPanel.svelte";
+  import AppUpdatePanel from "#lib/components/settings/AppUpdatePanel.svelte";
   import HealthPanel from "#lib/components/settings/HealthPanel.svelte";
   import OrionPanel from "#lib/components/settings/OrionPanel.svelte";
   import PreferencesForm from "#lib/components/settings/PreferencesForm.svelte";
@@ -31,6 +32,7 @@
     </Region>
     <Region class="col" inner="stack" label="Preferences and files">
       {#if system.settings}<PreferencesForm settings={system.settings} />{/if}
+      <AppUpdatePanel />
       <AboutPanel />
     </Region>
     {#if wide}<Region class="col" inner="stack" label="Orion"><OrionPanel /></Region>{/if}

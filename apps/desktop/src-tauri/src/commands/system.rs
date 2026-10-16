@@ -20,7 +20,7 @@ pub struct AppInfo {
 #[tauri::command]
 pub fn app_info(state: State<'_, AppState>) -> AppInfo {
     AppInfo {
-        version: env!("CARGO_PKG_VERSION").into(),
+        version: crate::app_update::version().into(),
         platform: std::env::consts::OS.into(),
         arch: std::env::consts::ARCH.into(),
         simulated: state.simulated,
@@ -84,6 +84,28 @@ pub async fn save_settings(state: State<'_, AppState>, settings: AppSettings) ->
         state.apply_watch();
     }
     Ok(needs_restart)
+}
+
+/// Where Atlas's own update stands: this version, a newer release, progress.
+#[tauri::command]
+pub fn app_update_status(state: State<'_, AppState>) -> crate::app_update::AppUpdateStatus {
+    state.app_update.status()
+}
+
+/// Looks for a newer Atlas now.
+#[tauri::command]
+pub async fn check_app_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> CmdResult<crate::app_update::AppUpdateStatus> {
+    let settings = state.settings().app_updates;
+    Ok(state.app_update.check(&app, &settings).await)
+}
+
+/// Downloads, checks and installs the newer Atlas, then restarts.
+#[tauri::command]
+pub async fn install_app_update(app: AppHandle, state: State<'_, AppState>) -> CmdResult<()> {
+    state.app_update.install(&app, &state.paths.cache_dir).await
 }
 
 #[tauri::command]

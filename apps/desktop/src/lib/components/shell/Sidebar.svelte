@@ -13,6 +13,7 @@
   import { jobs } from "#lib/stores/jobs.svelte.ts";
   import { live, SLOW_MS, watchLive } from "#lib/stores/live.svelte.ts";
   import { robots } from "#lib/stores/robots.svelte.ts";
+  import { appUpdate } from "#lib/stores/appUpdate.svelte.ts";
   import { system } from "#lib/stores/system.svelte.ts";
   import { devicePath, NO_ROBOT, ui } from "#lib/stores/ui.svelte.ts";
   import type { IconName } from "#lib/ui/icons.ts";
@@ -164,6 +165,18 @@
   </div>
 
   <div class="foot">
+    {#if appUpdate.available && appUpdate.status?.phase === "idle"}
+      <a href="/settings" class="item update" title="Atlas {appUpdate.available.version} is out: install it from Settings">
+        <Icon name="arrow-up" size={16} stroke={1.9} />
+        <span class="flex-1 truncate">Atlas {appUpdate.available.version}</span>
+        <span class="badge accent">Update</span>
+      </a>
+    {:else if appUpdate.busy && appUpdate.status?.phase !== "checking"}
+      <a href="/settings" class="item update" title="Atlas is updating">
+        <Icon name="loader-2" size={16} class="spin" />
+        <span class="flex-1 truncate">Updating Atlas…</span>
+      </a>
+    {/if}
     <DiscoveryStatus />
     <div class="flex gap-1">
       <a href="/settings" class="item flex-1" class:active={active("/settings")} aria-current={active("/settings") ? "page" : undefined} title="Settings · 8">
@@ -179,6 +192,9 @@
 </nav>
 
 <style>
+  .item.update {
+    color: var(--accent-text);
+  }
   .side {
     position: relative;
     z-index: 40;

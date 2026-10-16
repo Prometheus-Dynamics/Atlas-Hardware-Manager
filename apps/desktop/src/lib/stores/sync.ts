@@ -3,6 +3,7 @@
 
 import { goto } from "$app/navigation";
 import { onAtlasEvent, onDownloadProgress, onResync, keyString, type AtlasEvent } from "#lib/api/client.ts";
+import { appUpdate } from "./appUpdate.svelte";
 import { activity } from "./activity.svelte";
 import { devices } from "./devices.svelte";
 import { jobs } from "./jobs.svelte";
@@ -79,9 +80,11 @@ export function startSync(): () => void {
     onResync(() => void loadAll()),
     onDownloadProgress((event) => releases.onDownload(event)),
   ];
+  const stopAppUpdate = appUpdate.start();
   // Subscribe first so nothing that happens during the load is missed.
   void Promise.all(pending).then(loadAll, loadAll);
   return () => {
     for (const unlisten of pending) void unlisten.then((fn) => fn());
+    stopAppUpdate();
   };
 }

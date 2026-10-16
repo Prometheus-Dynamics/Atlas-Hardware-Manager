@@ -1,7 +1,7 @@
 // Subscriptions to the events the shell forwards from atlas-core.
 
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { AtlasEvent, DownloadEvent } from "./types";
+import type { AppUpdateStatus, AtlasEvent, DownloadEvent } from "./types";
 
 /** Every core state change. The UI is a projection of this stream. */
 export function onAtlasEvent(handler: (event: AtlasEvent) => void): Promise<UnlistenFn> {
@@ -15,4 +15,9 @@ export function onResync(handler: () => void): Promise<UnlistenFn> {
 
 export function onDownloadProgress(handler: (event: DownloadEvent) => void): Promise<UnlistenFn> {
   return listen<DownloadEvent>("atlas://download", (message) => handler(message.payload));
+}
+
+/** Atlas's own update changed: checked, downloading, installing. */
+export function onAppUpdate(handler: (status: AppUpdateStatus) => void): Promise<UnlistenFn> {
+  return listen<AppUpdateStatus>("atlas://app-update", (message) => handler(message.payload));
 }

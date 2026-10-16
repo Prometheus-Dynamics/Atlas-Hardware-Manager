@@ -4,6 +4,7 @@
 //! to the window as `atlas://event`, so the UI is a projection of the event
 //! stream and never polls.
 
+mod app_update;
 mod commands;
 mod drivers;
 mod logfile;
@@ -74,6 +75,7 @@ pub fn run() {
             let handle = app.handle();
             forward_events(handle, &app.state::<AppState>());
             start_watch(handle);
+            app_update::start(handle);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -84,6 +86,9 @@ pub fn run() {
             commands::devices::forget_device,
             commands::devices::device_actions,
             commands::devices::run_device_action,
+            commands::system::app_update_status,
+            commands::system::check_app_update,
+            commands::system::install_app_update,
             commands::slots::device_slots,
             commands::slots::slot_command,
             commands::slots::install_slot,

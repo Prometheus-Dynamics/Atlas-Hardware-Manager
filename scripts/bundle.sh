@@ -5,6 +5,10 @@
 # packages, and the USB access setup (udev rule or WinUSB driver).
 #
 # Usage: scripts/bundle.sh [target-triple]
+# ATLAS_VERSION (CI sets it from the tag, v2026.1.0 -> 2026.1.0) is the
+# version the app reports and its installers carry; without it the build
+# reports the workspace version, which the app treats as a development
+# build when it looks for updates.
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -13,6 +17,10 @@ target="${1:-$(rustc -vV | sed -n 's/^host: //p')}"
 "$root_dir/scripts/prepare-bundle.sh" "$target"
 
 configs=(--config src-tauri/tauri.bundle.conf.json)
+if [[ -n "${ATLAS_VERSION:-}" ]]; then
+  export ATLAS_VERSION
+  configs+=(--config "{\"version\":\"$ATLAS_VERSION\"}")
+fi
 if [[ "$target" == *windows* ]]; then
   "$root_dir/scripts/fetch-windows-driver-tool.sh"
   configs+=(--config src-tauri/tauri.windows-bundle.conf.json)
