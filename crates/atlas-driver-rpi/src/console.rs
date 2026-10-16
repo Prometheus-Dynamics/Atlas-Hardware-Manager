@@ -14,8 +14,12 @@ use std::time::Duration;
 const GADGET_VENDOR: &str = "0a5c";
 const GADGET_PRODUCT: &str = "0104";
 
-/// How long the gadget may take to go after the reboot is typed.
-const GONE_TIMEOUT: Duration = Duration::from_secs(20);
+/// How long the gadget may take to go after the reboot is typed. The
+/// gadget writes through its page cache: after a whole image, `sync` can
+/// spend minutes putting what it still holds on the eMMC.
+const GONE_TIMEOUT: Duration = Duration::from_secs(180);
+/// How long to listen for the console echoing the typed line.
+const ECHO_TIMEOUT: Duration = Duration::from_secs(3);
 const GONE_POLL: Duration = Duration::from_millis(250);
 
 /// How long typing the restart may wait for the console to take it.
@@ -67,9 +71,11 @@ pub(crate) fn find_console(sys: &Path, disk_name: &str) -> Result<String, String
         .ok_or_else(|| "the gadget has no serial console (an older boot image?)".to_string())
 }
 
-/// Types the restart into the console at `/dev/<tty>`.
+/// Types the restart into the console at `/dev/<tty>`; answers whether the
+/// console echoed it (its shell took it).
 #[cfg(target_os = "linux")]
-fn type_restart(tty: &str) -> Result<(), String> {
+fn type_restart(tty: &str) -> Result<bool, String> {
+    use std::io::Read;
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
 
@@ -78,6 +84,7 @@ fn type_restart(tty: &str) -> Result<(), String> {
     let path = Path::new("/dev").join(tty);
     // No carrier to wait for, and not this process's controlling terminal.
     let mut port = std::fs::OpenOptions::new()
+        .read(true)
         .write(true)
         .custom_flags((OFlag::O_NOCTTY | OFlag::O_NONBLOCK).bits())
         .open(&path)
@@ -117,7 +124,36 @@ fn type_restart(tty: &str) -> Result<(), String> {
         std::thread::sleep(WRITE_POLL);
     }
     port.flush()
-        .map_err(|error| format!("{}: {error}", path.display()))
+        .map_err(|error| format!("{}: {error}", path.display()))?;
+    // The shell echoes what it gets: seeing the line back means it ran.
+    let mut seen = Vec::new();
+    let mut buffer = [0u8; 256];
+    let deadline = std::time::Instant::now() + ECHO_TIMEOUT;
+    while std::time::Instant::now() < deadline {
+        match port.read(&mut buffer) {
+            Ok(0) => {}
+            Ok(read) => {
+                seen.extend_from_slice(&buffer[..read]);
+                if echoed(&seen) {
+                    return Ok(true);
+                }
+                continue;
+            }
+            Err(error)
+                if error.kind() == std::io::ErrorKind::WouldBlock
+                    || error.kind() == std::io::ErrorKind::Interrupted => {}
+            // The gadget went already: it took it.
+            Err(_) => return Ok(true),
+        }
+        std::thread::sleep(WRITE_POLL);
+    }
+    Ok(echoed(&seen))
+}
+
+/// Whether the console's output holds the typed restart.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+fn echoed(output: &[u8]) -> bool {
+    String::from_utf8_lossy(output).contains("sync && reboot")
 }
 
 /// Restarts the board behind the gadget disk `disk_name` through its serial
@@ -126,15 +162,28 @@ fn type_restart(tty: &str) -> Result<(), String> {
 pub(crate) fn restart(disk_name: &str) -> Result<String, String> {
     let sys = Path::new("/sys");
     let tty = find_console(sys, disk_name)?;
-    type_restart(&tty)?;
+    let took = type_restart(&tty)?;
     let entry = sys.join("class").join("tty").join(&tty);
-    let deadline = std::time::Instant::now() + GONE_TIMEOUT;
+    // A console that didn't echo didn't run it: no point waiting minutes.
+    let wait = if took {
+        GONE_TIMEOUT
+    } else {
+        Duration::from_secs(20)
+    };
+    let deadline = std::time::Instant::now() + wait;
     while entry.exists() {
         if std::time::Instant::now() >= deadline {
-            return Err(format!(
-                "typed the restart into {tty}, but the board is still in USB boot after {} s",
-                GONE_TIMEOUT.as_secs()
-            ));
+            return Err(if took {
+                format!(
+                    "the board took the restart on {tty} but is still writing its eMMC after {} s; leave it powered until it restarts by itself (a power-cycle now can leave the image incomplete)",
+                    wait.as_secs()
+                )
+            } else {
+                format!(
+                    "typed the restart into {tty}, but its console didn't answer and the board is still in USB boot after {} s; power-cycle it without holding its boot button",
+                    wait.as_secs()
+                )
+            });
         }
         std::thread::sleep(GONE_POLL);
     }
@@ -189,6 +238,13 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn the_echo_tells_the_console_took_the_restart() {
+        assert!(echoed(b"\r\nroot@gadget:~# sync && reboot\r\n"));
+        assert!(!echoed(b"login: "));
+        assert!(!echoed(b""));
     }
 
     #[test]

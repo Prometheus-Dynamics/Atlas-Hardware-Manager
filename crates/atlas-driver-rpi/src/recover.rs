@@ -475,6 +475,9 @@ impl UpdateCapability for RpiRecovery {
         // the board syncs the eMMC and reboots. The one-time USB boot order
         // has cleared itself, so it boots the eMMC (unless the boot button
         // is still held).
+        progress.log(
+            "restarting the board: it first puts what it still holds on the eMMC, which can take a few minutes; leave it powered",
+        );
         let target = disk.clone();
         let restarted = tokio::task::spawn_blocking(move || {
             let _ = atlas_blockdev::unmount_all(&target);
