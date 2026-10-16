@@ -12,10 +12,11 @@ commit; the commits are listed per area.
   (COMPAT), no HID (keyboards, mice, gamepads), virtual terminals, 8250
   UARTs, NVMe, io_uring, AppArmor/audit, MPTCP, CAN, USB serial, USB
   Ethernet other than cdc_ether/cdc_ncm/r8152/ax88179/asix, USB audio,
-  exfat/fuse/overlayfs, zswap; built with -Os. An OS that needs one of these
-  sets it back in its own kernel fragment (it then shows in check-config's
-  report). Measured on the board's config: kernel8.img 8.04 -> 5.60 MB,
-  modules 15.8 -> 12.3 MB. Needs a hardware test before an OS release.
+  exfat/fuse/overlayfs, zswap. An OS that needs one of these sets it back
+  in its own kernel fragment (it then shows in check-config's report).
+  Measured on the board's config: kernel8.img 8.04 -> 6.65 MB, modules
+  15.8 -> 12.3 MB. Built with -Os (5.60 MB) it didn't boot (r57); -O2 is
+  being tried on the board.
 - **Platform:** Buildroot 2026.08, kernel `rpi-7.2.y` (7.2.9, bcm2712, 16K
   pages) and rpi-firmware 1.20260915 (`fd52491`). Buildroot 2026.08 removed
   rpi-userland, so `BR2_PACKAGE_RPI_USERLAND` must go from OS overrides.
