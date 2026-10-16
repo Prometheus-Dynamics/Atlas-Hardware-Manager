@@ -207,6 +207,7 @@ pub fn cmdline_arg<'a>(cmdline: &'a str, key: &str) -> Option<&'a str> {
 }
 
 #[cfg(target_os = "linux")]
+pub mod partition;
 #[allow(unsafe_code)]
 pub mod sys;
 

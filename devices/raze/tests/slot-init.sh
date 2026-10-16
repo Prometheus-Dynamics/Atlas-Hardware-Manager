@@ -26,6 +26,12 @@ family) sed -n 's/.*"family":"\([^"]*\)".*/\1/p' "$2" ;;
 data-dirs) sed -n 's/.*"data_dirs":\["\([^"]*\)"\].*/\1/p' "$2" ;;
 previous) v=$(sed -n 's/.*"previous":"\([^"]*\)".*/\1/p' "$2"); [ -n "$v" ] && echo "$v" ;;
 open) echo /dev/dm-0 ;;
+# NO_PARTUUID: nothing answers to the PARTUUID (the label still does).
+find-partition)
+	case "$2" in
+	PARTUUID=*) [ -z "${NO_PARTUUID:-}" ] || { echo "slot-init: no partition matches; saw mmcblk0p2 (...)" >&2; exit 1; } ;;
+	esac
+	echo /dev/mmcblk0p2 ;;
 reboot-tryboot) exit 0 ;;
 esac
 STUB
@@ -37,15 +43,6 @@ chmod +x "$T/bin/slot-init" "$T/bin/stub"
 for c in mount e2fsck modprobe switch_root reboot shell; do ln -s stub "$T/bin/$c"; done
 printf '#!/bin/sh\necho "kernel log"\n' > "$T/bin/dmesg"
 chmod +x "$T/bin/dmesg"
-cat > "$T/bin/findfs" <<'STUB'
-#!/bin/sh
-echo "findfs $*" >> "$CALLS"
-# NO_PARTUUID: a findfs that only knows labels.
-case "$1" in PARTUUID=*) [ -z "${NO_PARTUUID:-}" ] || exit 1 ;; esac
-echo /dev/mmcblk0p2
-STUB
-chmod +x "$T/bin/findfs"
-
 setup() {
 	R=$T/root
 	rm -rf "$R"
@@ -60,7 +57,7 @@ setup() {
 run() {
 	SLOT_ROOT=$R CALLS=$T/calls SLOT_INIT=$T/bin/slot-init SLOT_MOUNT=$T/bin/mount SLOT_E2FSCK=${E2:-$T/bin/e2fsck} \
 		SLOT_MODPROBE=$T/bin/modprobe SLOT_SWITCH_ROOT=$T/bin/switch_root SLOT_REBOOT="$T/bin/reboot -f" \
-		SLOT_SHELL=$T/bin/shell SLOT_FINDFS=$T/bin/findfs SLOT_DMESG=$T/bin/dmesg SLOT_CONSOLE=${CONSOLE_IN:-/dev/null} SLOT_RESCUE_WAIT=1 SLOT_UNAME="echo ${UNAME:-7.2.9-v8-16k}" SLOT_WAIT=1 \
+		SLOT_SHELL=$T/bin/shell SLOT_DMESG=$T/bin/dmesg SLOT_CONSOLE=${CONSOLE_IN:-/dev/null} SLOT_RESCUE_WAIT=1 SLOT_UNAME="echo ${UNAME:-7.2.9-v8-16k}" SLOT_WAIT=1 \
 		sh "$init" 2> "$T/log" || true
 }
 called() { grep -q -- "$1" "$T/calls"; }
@@ -112,10 +109,10 @@ echo > "$T/enter"
 CONSOLE_IN=$T/enter run
 called "shell" || fail "no shell: $(cat "$T/calls")"
 
-echo "a findfs without PARTUUID finds /data by its label"
+echo "with nothing answering to the PARTUUID, /data is found by its label"
 setup
 NO_PARTUUID=1 run
-called "findfs LABEL=data" || fail "no label lookup: $(cat "$T/calls")"
+called "slot-init find-partition LABEL=data" || fail "no label lookup: $(cat "$T/calls")"
 called "switch_root $R/newroot /sbin/init" || fail "didn't start: $(cat "$T/calls")"
 
 echo "an e2fsck that can't run doesn't make /data read-only"

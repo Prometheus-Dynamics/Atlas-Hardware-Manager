@@ -21,7 +21,7 @@
 #
 # Test hooks (tests/slot-init.sh): SLOT_ROOT (a prefix for every path),
 # SLOT_INIT, SLOT_MOUNT, SLOT_E2FSCK, SLOT_MODPROBE, SLOT_SWITCH_ROOT,
-# SLOT_REBOOT, SLOT_SHELL, SLOT_FINDFS, SLOT_UNAME, SLOT_WAIT (s for the
+# SLOT_REBOOT, SLOT_SHELL, SLOT_UNAME, SLOT_WAIT (s for the
 # data device), SLOT_DMESG, SLOT_CONSOLE, SLOT_RESCUE_WAIT.
 set -u
 
@@ -33,7 +33,6 @@ MODPROBE=${SLOT_MODPROBE:-modprobe}
 SWITCH_ROOT=${SLOT_SWITCH_ROOT:-switch_root}
 REBOOT=${SLOT_REBOOT:-reboot -f}
 SHELL_CMD=${SLOT_SHELL:-sh}
-FINDFS=${SLOT_FINDFS:-findfs}
 UNAME=${SLOT_UNAME:-uname -r}
 WAIT=${SLOT_WAIT:-10}
 MAX_FALLBACKS=${SLOT_MAX_FALLBACKS:-3}
@@ -57,7 +56,7 @@ if [ -z "$R" ]; then
 	mount -t devtmpfs devtmpfs /dev
 	[ -c /dev/console ] && exec < /dev/console > /dev/console 2>&1
 fi
-mkdir -p "$R/data" "$R/newroot" "$R/boot"
+mkdir -p "$R/data" "$R/newroot" "$R/boot" "$R/run"
 
 # A trial boot: the firmware's chosen/bootloader/tryboot is a big-endian 1.
 tryboot=0
@@ -130,19 +129,24 @@ slot=$($INIT arg atlas.slot) || rescue "no atlas.slot on the kernel command line
 root=$($INIT arg atlas.roothash) || fail "no atlas.roothash"
 data=$($INIT arg atlas.data) || fail "no atlas.data"
 
-# The data partition, by PARTUUID (devtmpfs has no by-partuuid links); by
-# its label (the image names it `data`) when this findfs can't look up a
-# PARTUUID.
+# The data partition, by PARTUUID (slot-init reads the partition tables
+# and ext labels itself: BusyBox's findfs has no PARTUUID, and on the board
+# it didn't find the label either); by its label (the image names it
+# `data`) when nothing answers to the PARTUUID. The eMMC can take a moment
+# to show up.
 data_dev=''
 i=0
 while [ -z "$data_dev" ]; do
-	data_dev=$($FINDFS "$data" 2>/dev/null) || data_dev=''
-	if [ -z "$data_dev" ] && data_dev=$($FINDFS LABEL=data 2>/dev/null) && [ -n "$data_dev" ]; then
+	data_dev=$($INIT find-partition "$data" 2>"$R/run/find.err") || data_dev=''
+	if [ -z "$data_dev" ] && data_dev=$($INIT find-partition LABEL=data 2>/dev/null) && [ -n "$data_dev" ]; then
 		log "no partition answers to $data; using the one labelled data ($data_dev)"
 	fi
 	[ -n "$data_dev" ] && break
 	i=$((i + 1))
-	[ "$i" -le "$((WAIT * 10))" ] || rescue "no data partition $data"
+	if [ "$i" -gt "$((WAIT * 10))" ]; then
+		log "$(cat "$R/run/find.err" 2>/dev/null)"
+		rescue "no data partition $data"
+	fi
 	sleep 0.1
 done
 

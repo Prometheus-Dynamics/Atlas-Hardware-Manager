@@ -40,7 +40,7 @@ slots=${BOARD_DATA_SLOTS:-0}
 slot_data=$(tr ' ' '\n' < "${BOARD_PROC_CMDLINE:-/proc/cmdline}" 2>/dev/null | sed -n 's/^atlas\.data=//p' | tail -n 1)
 if [ -n "$slot_data" ]; then
 	slots=1
-	root=$(findfs "$slot_data" 2>/dev/null || true)
+	root=$(board_find_partition "$slot_data" || board_find_partition LABEL=data || true)
 fi
 # Slots: /data is always p2.
 [ "$slots" != 1 ] || part=2

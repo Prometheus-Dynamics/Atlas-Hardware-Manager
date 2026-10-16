@@ -1,6 +1,10 @@
 //! `slot-init`, for the slot initramfs's /init:
 //!
 //!   slot-init arg <key>                       a kernel command line value (atlas.slot)
+//!   slot-init find-partition PARTUUID=<id>|LABEL=<name>
+//!                                             the partition's /dev node (MBR/GPT ids and ext labels
+//!                                             read here; BusyBox's findfs has no PARTUUID). Test
+//!                                             hooks: SLOT_SYS, SLOT_DEV (sysfs and /dev)
 //!   slot-init kernel <slot.json>              the kernel release the slot was built for
 //!   slot-init family <slot.json>              its OS family
 //!   slot-init data-dirs <slot.json>           its per-family data dirs, one a line
@@ -36,6 +40,16 @@ fn run(args: &[String]) -> Result<String, String> {
             cmdline_arg(&cmdline, key)
                 .map(str::to_owned)
                 .ok_or_else(|| format!("no {key}= on the kernel command line"))
+        }
+        ["find-partition", spec] => {
+            let sys = std::env::var("SLOT_SYS").unwrap_or_else(|_| "/sys".into());
+            let dev = std::env::var("SLOT_DEV").unwrap_or_else(|_| "/dev".into());
+            slot_init::partition::find(
+                &slot_init::partition::Spec::parse(spec)?,
+                std::path::Path::new(&sys),
+                std::path::Path::new(&dev),
+            )
+            .map(|path| path.display().to_string())
         }
         ["kernel", manifest] => Ok(Manifest::parse(&read(manifest)?)?.kernel),
         ["family", manifest] => Ok(Manifest::parse(&read(manifest)?)?.family),

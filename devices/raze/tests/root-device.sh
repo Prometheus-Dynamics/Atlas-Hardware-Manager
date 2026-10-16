@@ -42,5 +42,9 @@ PATH=$T/bin:$PATH
 slots="root=/dev/mmcblk0p5 ro atlas.slot=pv-a atlas.roothash=ab atlas.data=PARTUUID=5056525a-02 panic=5"
 check "$slots" /dev/mmcblk0p2 /dev/mmcblk0p1
 NO_PARTUUID=1 check "$slots" /dev/mmcblk0p2 /dev/mmcblk0p1
+# slot-init's find-partition comes first (it knows PARTUUIDs; BusyBox's findfs doesn't).
+printf '#!/bin/sh\n[ "$1 $2" = "find-partition PARTUUID=5056525a-02" ] && echo /dev/mmcblk1p2\n' > "$T/bin/slot-init"
+chmod +x "$T/bin/slot-init"
+BOARD_SLOT_INIT=$T/bin/slot-init check "$slots" /dev/mmcblk1p2 /dev/mmcblk1p1
 [ "$(board_active_slot)" = pv-a ] || { echo "FAIL: active slot '$(board_active_slot)', want pv-a" >&2; exit 1; }
 echo ok

@@ -42,6 +42,16 @@ board_cmdline_arg() {
 	done
 }
 
+# board_find_partition PARTUUID=<id>|LABEL=<name>: its /dev node. slot-init
+# reads partition tables and ext labels itself (BusyBox's findfs has no
+# PARTUUID); findfs and blkid where the image has them.
+#   BOARD_SLOT_INIT  the slot-init binary   ($BOARD_LIB_DIR/slot-init)
+board_find_partition() {
+	_board_si=${BOARD_SLOT_INIT:-${BOARD_LIB_DIR:-/usr/lib/board}/slot-init}
+	{ [ -x "$_board_si" ] && "$_board_si" find-partition "$1" 2>/dev/null; } ||
+		findfs "$1" 2>/dev/null || blkid -l -o device -t "$1" 2>/dev/null
+}
+
 board_root_device() {
 	# A slots board's root is a dm-verity device, on no partition: the
 	# eMMC is the disk /data (atlas.data=, p2) is on, so that partition
@@ -49,8 +59,7 @@ board_root_device() {
 	board_cmdline_arg atlas.data
 	_board_src=$BOARD_ARG
 	if [ -n "$_board_src" ]; then
-		_board_src=$(findfs "$_board_src" 2>/dev/null || blkid -l -o device -t "$_board_src" 2>/dev/null ||
-			findfs LABEL=data 2>/dev/null || true)
+		_board_src=$(board_find_partition "$_board_src" || board_find_partition LABEL=data || true)
 		case "$_board_src" in
 		/dev/*[0-9]) echo "$_board_src" ;;
 		esac
