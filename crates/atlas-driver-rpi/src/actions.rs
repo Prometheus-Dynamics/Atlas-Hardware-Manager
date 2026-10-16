@@ -85,7 +85,7 @@ impl ActionsCapability for RpiActions {
             if self.config.ssh_keys.get().is_some() {
                 list.push(action(ADD_KEY, "Add my SSH key", false));
             }
-            list.push(action(EJECT, "Eject safely", false));
+            list.push(action(EJECT, "Eject and restart", false));
             return list;
         }
         let mut list = vec![action(EXPOSE, "Open as USB disk", false)];
@@ -115,7 +115,19 @@ impl ActionsCapability for RpiActions {
                     .ok_or_else(|| unavailable("this board's eMMC is not exposed as a disk"))?;
                 let disk = exposed_disk(&port).await?;
                 if action_id == EJECT {
-                    return blocking(move || atlas_blockdev::eject(&disk)).await;
+                    // Unmount, then restart the board through its gadget's
+                    // console (it syncs first). Never power the port off:
+                    // a board powered from it would go dark, not restart.
+                    return blocking(move || {
+                        let _ = atlas_blockdev::unmount_all(&disk);
+                        crate::console::restart(&disk.name).map(|_| ()).map_err(|reason| {
+                            atlas_blockdev::BlockError::Desktop(format!(
+                                "unmounted {}, but couldn't restart the board ({reason}); power-cycle it without holding its boot button",
+                                disk.name
+                            ))
+                        })
+                    })
+                    .await;
                 }
                 if action_id == ADD_KEY {
                     let keys =

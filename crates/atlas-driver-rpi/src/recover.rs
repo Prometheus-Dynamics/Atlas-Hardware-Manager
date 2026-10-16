@@ -495,17 +495,18 @@ impl UpdateCapability for RpiRecovery {
             }
             Err(reason) => progress.log(format!("could not restart the board itself: {reason}")),
         }
-        // Eject before the desktop auto-mounts the fresh partitions: a
-        // mount that is still there when the board loses power leaves the
-        // new filesystems dirty.
-        let ejected = disk.clone();
-        match tokio::task::spawn_blocking(move || atlas_blockdev::eject(&ejected)).await {
-            Ok(Ok(())) => progress.log(format!("ejected {} safely", disk.name)),
+        // Unmount what the desktop may have mounted of the fresh
+        // partitions: a mount still there when the board loses power leaves
+        // them dirty. Not a power-off of the port: a board powered from it
+        // would go dark.
+        let unmounted = disk.clone();
+        match tokio::task::spawn_blocking(move || atlas_blockdev::unmount_all(&unmounted)).await {
+            Ok(Ok(())) => progress.log(format!("unmounted {}", disk.name)),
             Ok(Err(error)) => progress.log(format!(
-                "could not eject {} ({error}); unmount it before unplugging the board",
+                "could not unmount {} ({error}); unmount it before unplugging the board",
                 disk.name
             )),
-            Err(error) => progress.log(format!("could not eject {}: {error}", disk.name)),
+            Err(error) => progress.log(format!("could not unmount {}: {error}", disk.name)),
         }
         progress.log(NEXT_STEP);
         Ok(UpdateOutcome::Verified {
