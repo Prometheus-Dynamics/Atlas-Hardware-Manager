@@ -37,15 +37,15 @@ src = "${workspace.out_dir}/artifacts/slot-init/slot-init"
 dest = "init"
 mode = "0755"
 
-# xz, smaller than zstd -19 on this tree; the kernel has RD_XZ. Level 1:
-# its dictionary is 1 MiB, which the kernel's initramfs decoder takes;
-# level 9's 64 MiB isn't (r54's trial didn't get to /init). The slots
-# writer refuses an initramfs the kernel can't unpack (slot-init
-# check-initramfs).
+# xz, smaller than zstd -19 on this tree; the kernel has RD_XZ. The
+# kernel's initramfs decoder takes a dictionary of at most 1 MiB: Gaia >=
+# 82d24d1 caps cpio-xz's at that for every level (before it, level 9 used
+# 64 MiB and r54's trial never got to /init). The slots writer refuses an
+# initramfs the kernel can't unpack anyway (slot-init check-initramfs).
 [[image.assembly.filesystems]]
 id = "slot-initramfs"
 kind = "cpio-xz"
-compression_level = 1
+compression_level = 9
 source_tree = "slot-initramfs"
 output = "$assembly.work/slots/initramfs.cpio.xz"
 
