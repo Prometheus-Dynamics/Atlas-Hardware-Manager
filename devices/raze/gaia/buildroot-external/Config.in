@@ -1,7 +1,8 @@
 # The Raze device tree only provides Linux extensions (linux/Config.ext.in,
 # sourced by Buildroot itself) and Gaia package overrides (packages/, which
 # Gaia stages into Buildroot). There are no Buildroot packages of its own;
-# the one option below is how lemnos.toml hands Lemnos's users table in.
+# the options below are how lemnos.toml hands Lemnos's users table in, and
+# how an OS tries the kernel's install-size trim.
 
 config BR2_RAZE_LEMNOS_USERS_TABLE
 	string "Lemnos users table"
@@ -12,3 +13,12 @@ config BR2_RAZE_LEMNOS_USERS_TABLE
 	  it to Lemnos's packaging/buildroot/lemnos-users.table: the
 	  `lemnos` user lemnosd.service runs as, created at build time
 	  because systemd-sysusers can't add it on a read-only root.
+
+config BR2_RAZE_KERNEL_TRIM
+	bool "Raze kernel install-size trim (on trial)"
+	help
+	  Apply linux/raze-trim.config after raze.config: no HID, VT,
+	  8250, 32-bit userspace, NVMe, io_uring, AppArmor/audit, MPTCP,
+	  CAN, USB serial, most USB NICs, USB audio, exfat/fuse/overlayfs
+	  (kernel8.img 8.04 -> 6.65 MB, modules 15.8 -> 12.3 MB). Off
+	  until a board boots it: build a trial slot with it on.

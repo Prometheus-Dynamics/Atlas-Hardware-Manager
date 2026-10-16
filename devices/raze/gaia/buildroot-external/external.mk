@@ -14,6 +14,13 @@ LINUX_HASH_FILES += $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/linux.hash
 # (later fragments override earlier ones). LINUX_KCONFIG_FRAGMENT_FILES is a
 # recursive variable that linux.mk defines before this file is read.
 LINUX_KCONFIG_FRAGMENT_FILES += $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/raze.config
+# The install-size trim, only when the OS asks for it (BR2_RAZE_KERNEL_TRIM,
+# on trial until a board boots it): after raze.config, so it wins.
+RAZE_KERNEL_FRAGMENTS = $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/raze.config
+ifeq ($(BR2_RAZE_KERNEL_TRIM),y)
+LINUX_KCONFIG_FRAGMENT_FILES += $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/raze-trim.config
+RAZE_KERNEL_FRAGMENTS += $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/raze-trim.config
+endif
 
 # The package's kernel patches (linux/patches/*.patch, in order), after
 # Buildroot's own: ws2812-pio-rp1's clear_on_probe, which the package turns
@@ -43,8 +50,9 @@ define RAZE_CHECK_KERNEL_CONFIG
 	@grep -qx 'CONFIG_EROFS_FS=y' $(LINUX_DIR)/.config || \
 		{ echo "Raze: EROFS must be built in (CONFIG_EROFS_FS=y)" >&2; exit 1; }
 	@printf '%s\n' $(RAZE_PACKAGE_KERNEL_FIXUPS) > $(LINUX_DIR)/.raze-package-fixups
+	@cat $(RAZE_KERNEL_FRAGMENTS) > $(LINUX_DIR)/.raze-fragments
 	@sh $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/check-config.sh \
-		$(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/raze.config $(LINUX_DIR)/.config \
+		$(LINUX_DIR)/.raze-fragments $(LINUX_DIR)/.config \
 		$(LINUX_DIR)/.raze-package-fixups
 endef
 
