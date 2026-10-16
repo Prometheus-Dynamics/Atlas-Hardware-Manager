@@ -1,0 +1,401 @@
+# Raze dynamic slots: the slot bundle (<id>.slot.tar), the first-flash disk
+# (MBR: p1 FAT32 boot, p2 ext4 data) and the slot manifest, for any OS on a
+# Raze (PhotonVision, HeliOS). An OS imports this and initramfs.toml (the
+# slot initramfs, slot-init) after the Raze layers, and sets the inputs
+# below; everything here is additive (its own trees, filesystems, disks and
+# outputs, all prefixed slots-/slot-), so the OS's own image output and main
+# disk stay as they are.
+#
+# The slot id is <family>-<version>-<variant>-<commit> ([a-z0-9._-], at most
+# 64). Gaia expands input tokens once and source tokens after them, so an
+# input's value may be a source token (slot_commit =
+# "${source.<id>.commit_short}") but not another input's token: set
+# slot_variant per variant or preset, not as "${input.backend}".
+# Outputs (in the image output dir): <id>.slot.tar and <id>.img.xz.
+
+[inputs.slot_family]
+description = "OS family in the slot id and slot.json (photonvision, helios): whose data dir the initramfs binds"
+kind = "string"
+required = true
+
+[inputs.slot_version]
+description = "OS version in the slot id (e.g. PhotonVision's Raze jar version, without its describe)"
+kind = "string"
+required = true
+
+[inputs.slot_variant]
+description = "Build variant in the slot id (PhotonVision: its backend, libcamera or styx; HeliOS: e.g. styx). A literal value: not an input token"
+kind = "string"
+required = true
+
+[inputs.slot_commit]
+description = "Short commit in the slot id (8 characters), e.g. \"${source.photonvision-source.commit_short}\""
+kind = "string"
+required = true
+
+[inputs.slot_source]
+description = "The full commit the OS was built from, for slot.json's source (e.g. \"${source.photonvision-source.commit}\")"
+kind = "string"
+required = true
+
+[inputs.slot_data_dir]
+description = "The OS family's directory under /data, bound from /data/os/<family>/<dir> (PhotonVision: photonvision_config; HeliOS: helios)"
+kind = "string"
+required = true
+
+[inputs.slot_kernel]
+description = "Kernel release (uname -r) of the Raze kernel the slots boot; the initramfs refuses a slot built for another"
+kind = "string"
+default = "7.2.9-v8-16k"
+
+[inputs.slot_cmdline]
+description = "The slot's kernel command line before the slot arguments (atlas.slot, atlas.roothash, atlas.data, panic) are added"
+kind = "string"
+default = "console=serial0,115200 console=tty1 rootwait quiet splash systemd.unified_cgroup_hierarchy=1"
+
+# /etc/slot.json, reduced (no verity values: they come from the image, which
+# contains this file). Stage env set: rendered to /etc/default/slot.env in
+# the rootfs before the erofs is made; the OS's post-image script writes
+# /etc/slot.json from it (Gaia can't generate stage files yet).
+[[stage.env_sets]]
+id = "slot-identity"
+name = "slot"
+entries = [
+  ["SLOT_SCHEMA", "1"],
+  ["SLOT_ID", "${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}"],
+  ["SLOT_FAMILY", "${input.slot_family}"],
+  ["SLOT_VERSION", "${input.slot_version}"],
+  ["SLOT_VARIANT", "${input.slot_variant}"],
+  ["SLOT_KERNEL", "${input.slot_kernel}"],
+  ["SLOT_BUILT", "${build.date}"],
+  ["SLOT_SOURCE", "${input.slot_source}"],
+  ["SLOT_DATA_DIRS", "${input.slot_data_dir}"],
+]
+
+# The feed takes the slot identity env set above. It is listed here, not in
+# raze/build.toml, so a profile without this fragment does not name an env set
+# that is not declared.
+[image.feed]
+stage_env_sets = ["slot-identity"]
+
+[[image.assembly.trees]]
+id = "slots-fat"
+path = "$assembly.work/slots/fat"
+
+[[image.assembly.trees]]
+id = "slots-manifest"
+path = "$assembly.work/slots/manifest"
+
+[[image.assembly.trees]]
+id = "slots-data"
+path = "$assembly.work/slots/data"
+
+# The boot payload of a slot (kernel, initramfs, both CM5 DTBs, the overlays,
+# the base cmdline). It is filled once, here, and the first-flash FAT copies
+# and the bundle read it. The overlays are the stock set minus the names the
+# Raze build overrides (its boot tree, Atlas devices/raze/gaia/boot.toml and
+# buildroot-external/external.mk RAZE_KERNEL_OVERLAYS), then the overrides and
+# the three Atlas-built overlays, so the result does not depend on copy order.
+[[image.assembly.trees]]
+id = "slots-payload"
+path = "$assembly.work/slots/payload"
+
+# dm-verity over the read-only root (appended tree; superblock at hash_offset).
+[[image.assembly.transforms]]
+kind = "verity"
+src = "$provider.images/rootfs.erofs"
+dest = "$assembly.work/slots/rootfs.erofs"
+
+[[image.assembly.files]]
+tree = "slots-payload"
+src = "$assembly.tree.boot/kernel8.img"
+dest = "kernel8.img"
+
+[[image.assembly.files]]
+tree = "slots-payload"
+src = "$assembly.work/slots/initramfs.cpio.zst"
+dest = "initramfs"
+
+# The base cmdline (input.slot_cmdline, no slot arguments): the bundle's boot/cmdline.txt. The
+# first-flash cmdline.txt is the slot's, built in the slots-fat tree below.
+[[image.assembly.files]]
+tree = "slots-payload"
+content = "${input.slot_cmdline}\n"
+dest = "cmdline.txt"
+
+[[image.assembly.files]]
+tree = "slots-payload"
+src_glob = "$provider.buildroot_output/images/bcm*.dtb"
+dest = "."
+
+# Stock overlays, minus the five names the Raze build overrides.
+[[image.assembly.files]]
+tree = "slots-payload"
+src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtbo"
+exclude = ["dwc2.dtbo", "i2c1-pi5.dtbo", "ws2812-pio.dtbo", "vc4-kms-v3d-pi5.dtbo", "ramoops-pi5.dtbo"]
+dest = "overlays/"
+
+# overlay_map.dtb and hat_map.dtb.
+[[image.assembly.files]]
+tree = "slots-payload"
+src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtb"
+dest = "overlays/"
+
+# The Raze overrides (raze-overlays, from the Raze kernel build).
+[[image.assembly.files]]
+tree = "slots-payload"
+src = "$provider.buildroot_output/images/raze-overlays/dwc2.dtbo"
+dest = "overlays/dwc2.dtbo"
+
+[[image.assembly.files]]
+tree = "slots-payload"
+src = "$provider.buildroot_output/images/raze-overlays/i2c1-pi5.dtbo"
+dest = "overlays/i2c1-pi5.dtbo"
+
+[[image.assembly.files]]
+tree = "slots-payload"
+src = "$provider.buildroot_output/images/raze-overlays/ws2812-pio.dtbo"
+dest = "overlays/ws2812-pio.dtbo"
+
+[[image.assembly.files]]
+tree = "slots-payload"
+src = "$provider.buildroot_output/images/raze-overlays/vc4-kms-v3d-pi5.dtbo"
+dest = "overlays/vc4-kms-v3d-pi5.dtbo"
+
+[[image.assembly.files]]
+tree = "slots-payload"
+src = "$provider.buildroot_output/images/raze-overlays/ramoops-pi5.dtbo"
+dest = "overlays/ramoops-pi5.dtbo"
+
+# The Atlas-built overlays (boot tree, from Atlas devices/raze/gaia/boot.toml).
+[[image.assembly.files]]
+tree = "slots-payload"
+src = "$assembly.tree.boot/overlays/ov9782.dtbo"
+dest = "overlays/ov9782.dtbo"
+
+[[image.assembly.files]]
+tree = "slots-payload"
+src = "$assembly.tree.boot/overlays/raze-fan.dtbo"
+dest = "overlays/raze-fan.dtbo"
+
+[[image.assembly.files]]
+tree = "slots-payload"
+src = "$assembly.tree.boot/overlays/raze-usb-power.dtbo"
+dest = "overlays/raze-usb-power.dtbo"
+
+# The slot manifest: slot.json (the bundle's, the FAT's and /data's copy).
+[[image.assembly.files]]
+tree = "slots-manifest"
+dest = "slot.json"
+
+[image.assembly.files.json]
+schema = 1
+id = "${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}"
+family = "${input.slot_family}"
+version = "${input.slot_version}"
+variant = "${input.slot_variant}"
+kernel = "${input.slot_kernel}"
+built = "${build.date}"
+source = "${input.slot_source}"
+data_dirs = ["${input.slot_data_dir}"]
+
+# The boot payload's digests: every regular file of the payload tree, keyed by
+# its path in the tree. The tree is the one the bundle and the first-flash FAT
+# are filled from, so the map names exactly the files that ship.
+boot = { files = "${assembly.sha256_tree:slots-payload}" }
+
+[image.assembly.files.json.image]
+size = "${assembly.size:$assembly.work/slots/rootfs.erofs}"
+sha256 = "${assembly.sha256:$assembly.work/slots/rootfs.erofs}"
+
+[image.assembly.files.json.verity]
+root_hash = "${assembly.verity:$assembly.work/slots/rootfs.erofs:root_hash}"
+salt = "${assembly.verity:$assembly.work/slots/rootfs.erofs:salt}"
+hash_offset = "${assembly.verity:$assembly.work/slots/rootfs.erofs:hash_offset}"
+data_blocks = "${assembly.verity:$assembly.work/slots/rootfs.erofs:data_blocks}"
+data_block_size = "${assembly.verity:$assembly.work/slots/rootfs.erofs:data_block_size}"
+hash_block_size = "${assembly.verity:$assembly.work/slots/rootfs.erofs:hash_block_size}"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src = "@self/assets/slots/config.txt"
+dest = "config.txt"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src = "@self/assets/slots/tryboot.txt"
+dest = "tryboot.txt"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src = "$assembly.tree.boot/raze-device.txt"
+dest = "raze-device.txt"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+content = "os_prefix=slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/\n"
+dest = "default.txt"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+content = "os_prefix=slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/\n"
+dest = "trial.txt"
+
+# The root copy of the payload (the default slot's): the boot files, the
+# overlays, and the slot cmdline. The FAT tree cannot copy a directory, so each
+# file group is a glob of the payload tree.
+[[image.assembly.files]]
+tree = "slots-fat"
+src = "$assembly.tree.slots-payload/kernel8.img"
+dest = "kernel8.img"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src = "$assembly.tree.slots-payload/initramfs"
+dest = "initramfs"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src_glob = "$assembly.tree.slots-payload/bcm*.dtb"
+dest = "."
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src_glob = "$assembly.tree.slots-payload/overlays/*.dtb"
+dest = "overlays/"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src_glob = "$assembly.tree.slots-payload/overlays/*.dtbo"
+dest = "overlays/"
+
+# The slot's cmdline: the base (input.slot_cmdline) plus the slot
+# arguments. It is written once, into slots/<id>/, and the root copy is the
+# same file, so the two cannot differ.
+[[image.assembly.files]]
+tree = "slots-fat"
+content = "${input.slot_cmdline} atlas.slot=${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit} atlas.roothash=${assembly.verity:$assembly.work/slots/rootfs.erofs:root_hash} atlas.data=PARTUUID=5056525a-02 panic=5\n"
+dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/cmdline.txt"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src = "$assembly.tree.slots-fat/slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/cmdline.txt"
+dest = "cmdline.txt"
+
+# slots/<id>/: the same payload, the slot's cmdline and slot.json.
+[[image.assembly.files]]
+tree = "slots-fat"
+src = "$assembly.tree.slots-manifest/slot.json"
+dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/slot.json"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src = "$assembly.tree.slots-payload/kernel8.img"
+dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/kernel8.img"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src = "$assembly.tree.slots-payload/initramfs"
+dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/initramfs"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src_glob = "$assembly.tree.slots-payload/bcm*.dtb"
+dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src_glob = "$assembly.tree.slots-payload/overlays/*.dtb"
+dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src_glob = "$assembly.tree.slots-payload/overlays/*.dtbo"
+dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/"
+
+# Second partition, p2 (ext4, label data): the slot images and manifests and
+# the slot state. The partition is sized from its content plus 256 MiB free,
+# so the root can grow by that much before the disk needs a change.
+[[image.assembly.files]]
+tree = "slots-data"
+src = "$assembly.work/slots/rootfs.erofs"
+dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}.erofs"
+
+[[image.assembly.files]]
+tree = "slots-data"
+src = "$assembly.tree.slots-manifest/slot.json"
+dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}.json"
+
+# json null is not a TOML value, so state.json is written as text.
+[[image.assembly.files]]
+tree = "slots-data"
+content = '''{"schema":1,"default":"${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}","previous":null,"trial":null}
+'''
+dest = "board/slots/state.json"
+
+[[image.assembly.filesystems]]
+id = "slots-boot"
+kind = "vfat"
+source_tree = "slots-fat"
+output = "$assembly.work/slots/boot.vfat"
+size = "1G"
+
+[[image.assembly.filesystems]]
+id = "slots-data"
+kind = "ext4"
+source_tree = "slots-data"
+output = "$assembly.work/slots/data.ext4"
+size = "auto"
+free = "256M"
+label = "data"
+
+# The first-flash disk is built in the work dir: only its xz image (below) is
+# an output of the run, so the raw disk is not published or copied out.
+[[image.assembly.disks]]
+id = "slots-sdcard"
+output = "$assembly.work/slots/slots-sdcard.img"
+partition_table = "mbr"
+signature = "0x5056525a"
+first_lba = 2048
+alignment_lba = 2048
+truncate = "last-data"
+
+[[image.assembly.disks.partitions]]
+name = "slots-boot"
+type_alias = "fat32-lba"
+bootable = true
+image = "$assembly.work/slots/boot.vfat"
+size = "1G"
+
+[[image.assembly.disks.partitions]]
+name = "data"
+type_alias = "linux"
+image = "$assembly.work/slots/data.ext4"
+
+# The first-flash disk, compressed into the image output dir under the slot
+# id (xz, default level). Gaia publishes it with the run: it is listed in the
+# summary and copied by --export next to the primary image.
+[[image.assembly.transforms]]
+kind = "xz"
+src = "$assembly.work/slots/slots-sdcard.img"
+dest = "$assembly.out/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}.img.xz"
+
+# The slot bundle: <id>.slot.tar, uncompressed, in the image output dir (a
+# published output of the run, like the xz image above). The boot files are one tree
+# member under boot/ (the payload tree, so the bundle and its digests name the
+# same files); the overlays are its glob, minus the Raze names, as above.
+[[image.assembly.archives]]
+id = "slots-bundle"
+output = "$assembly.out/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}.slot.tar"
+
+[[image.assembly.archives.members]]
+name = "slot.json"
+src = "$assembly.tree.slots-manifest/slot.json"
+
+[[image.assembly.archives.members]]
+name = "rootfs.erofs"
+src = "$assembly.work/slots/rootfs.erofs"
+
+[[image.assembly.archives.members]]
+tree = "slots-payload"
+prefix = "boot/"

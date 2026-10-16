@@ -1,0 +1,13 @@
+# A Raze on dynamic slots (devices/raze/gaia/slots.toml). The firmware reads
+# this first: the stock lines, the device's own (raze-device.txt), then
+# `include default.txt`, which names the default slot
+# (os_prefix=slots/<id>/). On a "0 tryboot" restart it reads tryboot.txt.
+arm_64bit=1
+disable_splash=1
+enable_uart=1
+
+include raze-device.txt
+
+[all]
+initramfs initramfs followkernel
+include default.txt

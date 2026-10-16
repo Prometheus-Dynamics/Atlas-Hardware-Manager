@@ -1,0 +1,12 @@
+# A Raze on dynamic slots, the trial boot (the firmware reads this instead
+# of config.txt after a `reboot '0 tryboot'`): config.txt with the trial
+# slot (trial.txt) in place of the default.
+arm_64bit=1
+disable_splash=1
+enable_uart=1
+
+include raze-device.txt
+
+[all]
+initramfs initramfs followkernel
+include trial.txt
