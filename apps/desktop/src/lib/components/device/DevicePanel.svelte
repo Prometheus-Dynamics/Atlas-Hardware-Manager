@@ -59,7 +59,7 @@
     const caps = record?.capabilities ?? [];
     const list: { value: string; label: string; icon: IconName }[] = [{ value: "overview", label: "Overview", icon: "info-circle" }];
     list.push({ value: "settings", label: "Settings", icon: "settings" });
-    const software = (recovery && record?.presence === "online") || !!handoff || !!active || wantsSoftware;
+    const software = (recovery && record?.presence === "online") || !!handoff || !!active || wantsSoftware || !!record?.capabilities.includes("slots");
     if (software) list.push({ value: "software", label: "Software", icon: "package" });
     if (caps.includes("logs")) list.push({ value: "logs", label: "Logs", icon: "file-text" });
     list.push({ value: "history", label: "History", icon: "history" });

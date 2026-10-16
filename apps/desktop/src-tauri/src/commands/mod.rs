@@ -8,6 +8,7 @@ pub mod nt;
 pub mod orion;
 pub mod releases;
 pub mod robots;
+pub mod slots;
 pub mod system;
 
 pub type CmdResult<T> = Result<T, String>;

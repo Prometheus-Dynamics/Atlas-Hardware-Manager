@@ -20,6 +20,7 @@ import { listRecords, robotStatuses, robotUpdateRequest, scan, touch } from "./m
 import { lastSelftest, runSelftest, seedSelftests } from "./mock/selftest";
 import { streamHardware, streamLive, streamVision } from "./mock/live";
 import { ntCameraAddresses, ntConnect, ntServer } from "./mock/nt";
+import { deviceSlots, installSlot, slotCommand } from "./mock/slots";
 import { boardAction, calibrationStatus, controlHardware, deviceHistory, deviceStatus, hardwareAction } from "./mock/status";
 
 seedHistory();
@@ -174,6 +175,16 @@ export const mockApi: Api = {
       const name = entry.label ?? entry.record?.identity.name ?? keyString(key);
       record("action-run", "info", key, `${found.label} on ${name}`);
     }),
+  deviceSlots: (key) => reply(() => deviceSlots(key)),
+  slotCommand: (key, command) => reply(() => slotCommand(key, command)),
+  installSlot: async (key, path, pin, boot, onProgress) => {
+    await latency();
+    try {
+      await installSlot(key, path, pin, boot, onProgress);
+    } catch (error) {
+      throw typeof error === "string" ? error : String(error);
+    }
+  },
   runSelftest: async (key) => {
     await latency();
     try {

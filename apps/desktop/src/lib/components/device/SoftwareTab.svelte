@@ -3,12 +3,15 @@
   // image to install, and how: in place (keeps settings) or fresh (erases
   // it, through USB boot). One button that says what will happen.
   import { goto } from "$app/navigation";
-  import { api, errorText, keyString, type DeviceAction, type DeviceRecord } from "#lib/api/client.ts";
+  import { api, errorText, keyString, type DeviceAction, type DeviceRecord, type SlotSet } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
   import HandoffView from "#lib/components/software/HandoffView.svelte";
   import ImageList from "#lib/components/software/ImageList.svelte";
   import InstalledCard from "#lib/components/software/InstalledCard.svelte";
+  import SlotsCard from "#lib/components/software/SlotsCard.svelte";
+  import Checkbox from "#lib/components/common/Checkbox.svelte";
+  import ProgressBar from "#lib/components/common/ProgressBar.svelte";
   import MethodCard from "#lib/components/software/MethodCard.svelte";
   import UsbBootSteps from "#lib/components/software/UsbBootSteps.svelte";
   import { handoffs } from "#lib/components/software/handoff.svelte.ts";
@@ -43,6 +46,13 @@
   const online = $derived(record.presence === "online");
   const methods = $derived(updateMethods(record));
   const ab = $derived(methods.includes("ab-tryboot"));
+  /** Dynamic slots: an update installs the image beside the others. */
+  const slotted = $derived(record.capabilities.includes("slots"));
+  let slotSet = $state<SlotSet | null>(null);
+  let slotsReload = $state(0);
+  let bootAfter = $state(true);
+  let pinIt = $state(false);
+  let installing = $state<number | null>(null);
   const entries = $derived(imagesFor(record, releases.entries));
   const choice = $derived(draft.choices[family]);
   const version = $derived(choice?.version.trim() ?? "");
@@ -83,6 +93,7 @@
   const updateBlocked = $derived.by((): string | null => {
     if (recovery) return "The board is in USB boot, so it can only be installed fresh.";
     if (!online) return "The board isn't reachable. Connect it to update in place.";
+    if (slotted) return null;
     if (record.capabilities.includes("update")) return null;
     if (methods.length > 0 && !ab) return "This board needs one fresh install to get the A/B layout.";
     return "This device can't update in place.";
@@ -124,6 +135,18 @@
   const plan = $derived.by(() => {
     if (!version) return [];
     const get = entry ? (entry.path ? "Already on this computer" : `Download ${bytes(entry.size_bytes)}`) : "Read the file you chose";
+    if (method === "update" && slotted) {
+      return [
+        { title: entry && !entry.path ? "Download it on the Releases page first" : get, note: "" },
+        { title: "Copy it to the board beside the other slots", note: "Every file is checked against its manifest before anything is replaced" },
+        ...(bootAfter
+          ? [
+              { title: "Restart into it once, on trial", note: "If it doesn't come up, the board goes back to the default by itself" },
+              { title: "Keep it as the default", note: "Only once it confirms its boot; the old default stays as the way back" },
+            ]
+          : [{ title: "Leave it installed", note: "Boot it once from Slots when you're ready" }]),
+      ];
+    }
     if (method === "update" && ab) {
       return [
         { title: get, note: entry?.signed ? "Its signature is checked" : "" },
@@ -143,14 +166,20 @@
     ];
   });
 
+  /** The bundle file for a slot install: chosen, or a release already here. */
+  const bundlePath = $derived(choice?.path ?? entry?.path ?? null);
+  /** Slots take slot bundles; a whole-disk image is for a fresh install. */
+  const notBundle = $derived(!!version && !(entry?.artifact_name ?? bundlePath ?? "").endsWith(".slot.tar"));
   const label = $derived.by(() => {
     if (!version) return "Choose an image";
+    if (method === "update" && slotted) return bootAfter ? `Install ${version} and boot it once` : `Install ${version} as a slot`;
     if (method === "update") return `Update to ${version} · keeps settings`;
     if (method === "fresh") return `Erase and install ${version}`;
     return "Not available";
   });
   const disabled = $derived.by(() => {
     if (!version || !method) return true;
+    if (method === "update" && slotted) return !bundlePath || notBundle || installing !== null;
     if (method === "update") return !draft.plan || draft.planning;
     if (fresh === "flash") return !draft.plan || draft.planning || hostBlocked;
     return hostBlocked;
@@ -176,7 +205,24 @@
     }
   }
 
+  async function installSlot() {
+    if (!bundlePath) return;
+    installing = 0;
+    try {
+      await api.installSlot(record.key, bundlePath, pinIt, bootAfter, (u) => {
+        if (u.type === "step-progress") installing = u.fraction;
+      });
+      toasts.success(bootAfter ? `${version} is installed; ${deviceName(record)} is restarting into it once.` : `${version} is installed on ${deviceName(record)}.`);
+    } catch (error) {
+      toasts.error(sentence(errorText(error)));
+    } finally {
+      installing = null;
+      slotsReload++;
+    }
+  }
+
   function go() {
+    if (method === "update" && slotted) return void installSlot();
     if (method === "fresh" && fresh === "restart") confirming = true;
     else if (method === "fresh" && fresh === "manual") void handOff();
     else void flash(false);
@@ -193,7 +239,11 @@
     <div class="pick flex min-w-0 flex-col gap-6">
     <section class="flex flex-col gap-2">
       <h3 class="section-title">Installed</h3>
-      <InstalledCard {record} />
+      {#if slotted && !recovery}
+        <SlotsCard {record} bind:set={slotSet} reload={slotsReload} />
+      {:else}
+        <InstalledCard {record} />
+      {/if}
     </section>
 
     <section class="flex flex-col gap-2">
@@ -211,16 +261,20 @@
       <h3 class="section-title">How</h3>
       <div class="auto-grid" style="--min: 220px; --gap: 8px; --max: {fresh ? 2 : 1}">
         <MethodCard
-          title="Update in place"
+          title={slotted ? "Install as a slot" : "Update in place"}
           icon="arrow-up"
           selected={method === "update"}
           disabled={updateBlocked}
           onselect={() => ((picked = "update"), (confirming = false))}
         >
           <span>
-            Keeps settings and data.{ab ? " If the new version doesn't start, the board goes back to this one by itself." : ""}
+            {#if slotted}
+              Goes beside the installed ones; settings and data stay.{slotSet ? ` ${bytes(Math.max(0, slotSet.free_bytes - slotSet.reserve_bytes))} free.` : ""}
+            {:else}
+              Keeps settings and data.{ab ? " If the new version doesn't start, the board goes back to this one by itself." : ""}
+            {/if}
           </span>
-          {#if method === "update" && summary}<span class="text-fg-faint">{summary}</span>{/if}
+          {#if method === "update" && summary && !slotted}<span class="text-fg-faint">{summary}</span>{/if}
         </MethodCard>
         {#if fresh}
           <MethodCard
@@ -247,6 +301,16 @@
         {/if}
       </div>
 
+      {#if method === "update" && slotted}
+        <div class="flex flex-wrap gap-x-5 gap-y-2" in:rise>
+          <span class="flex items-center gap-2 text-[12.5px] text-fg">
+            <Checkbox checked={bootAfter} label="Boot it once when it's in" onclick={() => (bootAfter = !bootAfter)} />Boot it once when it's in
+          </span>
+          <span class="flex items-center gap-2 text-[12.5px] text-fg">
+            <Checkbox checked={pinIt} label="Pin it" onclick={() => (pinIt = !pinIt)} />Pin it <span class="text-fg-faint">(kept from removal)</span>
+          </span>
+        </div>
+      {/if}
       {#if method === "fresh"}
         <div class="flex flex-col gap-3" in:rise>
           {#if fresh === "manual"}
@@ -292,12 +356,18 @@
           size="lg"
           full
           icon={method === "fresh" ? "bolt" : "arrow-up"}
-          busy={draft.starting || handing}
+          busy={draft.starting || handing || installing !== null}
           {disabled}
           onclick={go}
         >
           {label}
         </Button>
+      {/if}
+      {#if method === "update" && slotted && notBundle}
+        <p class="hint">That's a whole-disk image, for a fresh install. A slot installs from a slot bundle (.slot.tar).</p>
+      {/if}
+      {#if installing !== null}
+        <ProgressBar value={installing} label="Copying to the board" />
       {/if}
       {#if entries.length === 0 && !version}
         <p class="hint text-center">No images for this model yet. Choose a file, or add one on the Releases page.</p>

@@ -38,6 +38,9 @@ import type {
   RobotStatus,
   ScanReport,
   SelfTestRecord,
+  SlotCommand,
+  SlotSet,
+  ProgressUpdate,
   StagedRollout,
   UpdateRequestInput,
 } from "./types";
@@ -55,6 +58,15 @@ export const api = {
   deviceActions: (key: DeviceKey) => invoke<DeviceAction[]>("device_actions", { key }),
   runDeviceAction: (key: DeviceKey, action: string) =>
     invoke<void>("run_device_action", { key, action }),
+  /** A slots board's installed images; null when it has none (A/B). */
+  deviceSlots: (key: DeviceKey) => invoke<SlotSet | null>("device_slots", { key }),
+  slotCommand: (key: DeviceKey, command: SlotCommand) => invoke<void>("slot_command", { key, command }),
+  /** Installs the slot bundle at `path`; boot runs it once on trial when it is in. */
+  installSlot: (key: DeviceKey, path: string, pin: boolean, boot: boolean, onProgress: (update: ProgressUpdate) => void) => {
+    const channel = new Channel<ProgressUpdate>();
+    channel.onmessage = onProgress;
+    return invoke<void>("install_slot", { key, path, pin, boot, onProgress: channel });
+  },
   /**
    * Runs a command on one of the board's devices (`hardware` is its id in the
    * hardware snapshot). A set resolves with the value the device applied.

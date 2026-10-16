@@ -11,7 +11,7 @@
   import { toasts } from "#lib/stores/toasts.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
   import { keyString } from "#lib/api/client.ts";
-  import { portal } from "#lib/ui/portal.ts";
+  import GuardedDialog from "./GuardedDialog.svelte";
   import { quickActions } from "./quick.ts";
   import { saveSupportBundle } from "./supportBundle.ts";
 
@@ -40,7 +40,6 @@
   let actions = $state<DeviceAction[]>([]);
   let open = $state(false);
   let asking = $state<DeviceAction | null>(null);
-  let typed = $state("");
   let running = $state(false);
 
   $effect(() => {
@@ -68,9 +67,6 @@
   const everyday = $derived(offered.filter((a) => !a.destructive && !(a.id in GUARDED)));
   const guarded = $derived(offered.filter((a) => a.destructive || a.id in GUARDED));
   const bundle = $derived(record.capabilities.includes("status"));
-  const tail = $derived(record.key.serial.slice(-4));
-  const robot = $derived(ui.mode === "robot");
-  const confirmed = $derived(!robot || typed.trim().toLowerCase() === tail.toLowerCase());
 
   async function run(action: DeviceAction) {
     open = false;
@@ -86,12 +82,11 @@
 
   function ask(action: DeviceAction) {
     open = false;
-    typed = "";
     asking = action;
   }
 
   async function confirm() {
-    if (!asking || !confirmed || running) return;
+    if (!asking || running) return;
     running = true;
     try {
       await run(asking);
@@ -109,7 +104,7 @@
   }
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && ((open = false), (asking = null))} />
+<svelte:window onkeydown={(e) => e.key === "Escape" && (open = false)} />
 
 <div class="relative">
   <Button size="sm" icon="dots" label="More" title="More actions" onclick={() => (open = !open)} />
@@ -137,24 +132,15 @@
 </div>
 
 {#if asking}
-  <div class="modal" use:portal>
-    <button type="button" class="backdrop" aria-label="Cancel" onclick={() => (asking = null)}></button>
-    <div class="dialog panel" role="dialog" aria-modal="true" aria-label="{asking.label} {deviceName(record)}">
-      <h2 class="text-[14px] font-semibold text-fg">{asking.label} {deviceName(record)}?</h2>
-      <p class="text-[12.5px] text-fg-muted">{GUARDED[asking.id] ?? "It may go offline."}</p>
-      {#if robot}
-        <label class="flex flex-col gap-1 text-[12px] text-warn-fg">
-          ROBOT mode: type {tail} to confirm.
-          <!-- svelte-ignore a11y_autofocus -->
-          <input class="input mono" bind:value={typed} placeholder={tail} autofocus onkeydown={(e) => e.key === "Enter" && void confirm()} />
-        </label>
-      {/if}
-      <div class="flex justify-end gap-2">
-        <Button size="sm" variant="ghost" onclick={() => (asking = null)}>Cancel</Button>
-        <Button size="sm" variant="danger" disabled={!confirmed} busy={running} onclick={() => void confirm()}>{asking.label}</Button>
-      </div>
-    </div>
-  </div>
+  <GuardedDialog
+    {record}
+    title="{asking.label} {deviceName(record)}?"
+    body={GUARDED[asking.id] ?? "It may go offline."}
+    label={asking.label}
+    busy={running}
+    onconfirm={() => void confirm()}
+    oncancel={() => (asking = null)}
+  />
 {/if}
 
 <style>
@@ -206,26 +192,5 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--fg-faint);
-  }
-  .modal {
-    position: fixed;
-    inset: 0;
-    z-index: 95;
-    display: grid;
-    place-items: center;
-  }
-  .backdrop {
-    position: absolute;
-    inset: 0;
-    background: rgba(5, 6, 8, 0.65);
-    cursor: default;
-  }
-  .dialog {
-    position: relative;
-    width: min(400px, calc(100vw - 32px));
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 14px;
   }
 </style>

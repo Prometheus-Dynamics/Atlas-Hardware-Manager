@@ -58,7 +58,9 @@ export type CapabilityKind =
   /** The device reports its state and an event log (see DeviceStatus). */
   | "status"
   /** The board's devices take commands (see HardwareCommand). */
-  | "hardware-control";
+  | "hardware-control"
+  /** The board keeps several OS images (dynamic slots; see SlotSet). */
+  | "slots";
 
 export type Presence = "online" | "offline";
 
@@ -670,3 +672,48 @@ export function keyString(key: DeviceKey): string {
 export function sameKey(a: DeviceKey | null | undefined, b: DeviceKey | null | undefined): boolean {
   return !!a && !!b && a.family === b.family && a.serial === b.serial;
 }
+
+/** One installed OS image on a slots board, as its slots writer lists it. */
+export interface Slot {
+  /** `<family>-<version>-<variant>-<sha8>`. */
+  id: string;
+  family: string;
+  version: string;
+  variant: string;
+  kernel: string;
+  /** Bytes on /data. */
+  size: number;
+  /** Opened through dm-verity. */
+  verity: boolean;
+  /** Any of running, default, previous, trial, staged. */
+  flags: string[];
+  pinned: boolean;
+  /** "yes" once it booted well, "no" when its trial failed, "" before it ran. */
+  good: string;
+  installed: string;
+  last_boot: string;
+}
+
+/** A slots board's images and its room for more. */
+export interface SlotSet {
+  slot_active: string;
+  slot_default: string;
+  slot_previous: string;
+  slot_trial: string;
+  free_bytes: number;
+  /** Kept free by the writer: a new slot may take free_bytes - reserve_bytes. */
+  reserve_bytes: number;
+  slots: Slot[];
+}
+
+export type SlotCommand =
+  | { command: "boot-once"; id: string }
+  | { command: "set-default"; id: string }
+  | { command: "remove"; id: string }
+  | { command: "pin"; id: string; pinned: boolean };
+
+/** Progress from a running install (atlas-driver's ProgressUpdate). */
+export type ProgressUpdate =
+  | { type: "step-started"; step: string }
+  | { type: "step-progress"; step: string; fraction: number }
+  | { type: "log"; message: string };

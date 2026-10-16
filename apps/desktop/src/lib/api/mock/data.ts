@@ -171,6 +171,23 @@ const razeRunning = (serial: string, version: string, ab: boolean): SimDevice =>
   actions: ab ? [...AB_ACTIONS, ...USB_ROUTE_ACTIONS] : AB_ACTIONS.slice(0, 2),
 });
 
+/** A Raze on dynamic slots (several OS images, Orion's slot.* actions). */
+const razeSlots = (serial: string): SimDevice => {
+  const base = razeRunning(serial, "2026.3.0", true);
+  return {
+    ...base,
+    name: `raze-${serial}`,
+    attributes: {
+      ...base.attributes,
+      os: "PhotonVision",
+      update_methods: "image-write, slots-tryboot, usb-boot-reboot",
+      slot_active: "photonvision-2026.3.0-styx-1a2b3c4d",
+    },
+    caps: [...razeCaps(true), "slots"],
+    actions: AB_ACTIONS.filter((a) => a.id !== "update.cancel" && a.id !== "update.rollback"),
+  };
+};
+
 export const fleet: SimDevice[] = [
   camera("H-1001", "cam-front"),
   camera("H-1002", "cam-left"),
@@ -180,6 +197,7 @@ export const fleet: SimDevice[] = [
   { ...board("M-2003", "arm-mcu", null), version: "bootloader-2.1", mode: "recovery" },
   razeRunning("8f3a1c2d", "2026.3.0", true),
   razeRunning("5c0ffee1", "2025.4.2", false),
+  razeSlots("a7c41e90"),
   razeUsbBoot("port-3-2", "e5226d57"),
 ];
 
@@ -347,6 +365,22 @@ export const releases: ReleaseEntry[] = [
     boards: ["raze"],
     notes_url: null,
     added_ms: now - 12 * day,
+    pinned: false,
+  },
+  {
+    id: "pd-stable/rpi/photonvision-2026.4.0-styx-77c0d2e1",
+    family: RPI,
+    version: "photonvision-2026.4.0-styx",
+    channel: "stable",
+    origin: { kind: "remote", source: "pd-stable", url: "https://releases.example/photonvision-2026.4.0-styx-77c0d2e1.slot.tar" },
+    artifact_name: "photonvision-2026.4.0-styx-77c0d2e1.slot.tar",
+    sha256: "c0de".padEnd(64, "0"),
+    size_bytes: 690_000_000,
+    path: "/home/atlas/.cache/atlas/releases/photonvision-2026.4.0-styx-77c0d2e1.slot.tar",
+    signed: true,
+    boards: ["raze"],
+    notes_url: null,
+    added_ms: now - 1 * day,
     pinned: false,
   },
   {
