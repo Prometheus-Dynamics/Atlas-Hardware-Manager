@@ -4,7 +4,10 @@
 #   /data/board/pstore/<boot id>/   the files from /sys/fs/pstore, found by
 #                                   the boot with that id (they are the
 #                                   previous boot's); the newest
-#                                   BOARD_PSTORE_KEEP (5) are kept
+#                                   BOARD_PSTORE_KEEP (10) are kept, newest
+#                                   by arrival (.order, one boot id a line),
+#                                   not by date: the board has no RTC, and
+#                                   every boot starts at the same clock
 # Each file is removed from pstore once copied, which frees its record. The
 # console log (console-ramoops-0, what the kernel printed until the reset)
 # is there after every warm restart, so a `kernel.pstore` event is logged
@@ -18,7 +21,7 @@ BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 . "$BOARD_LIB_DIR/lib.sh"
 
 src=${BOARD_PSTORE_DIR:-/sys/fs/pstore}
-keep=${BOARD_PSTORE_KEEP:-5}
+keep=${BOARD_PSTORE_KEEP:-10}
 [ -d "$src" ] || exit 0
 set -- "$src"/*
 [ -e "$1" ] || exit 0
@@ -76,8 +79,18 @@ elif [ "$clean" = false ]; then
 		"dir=$dest" "files=$names" "panics=0" "previous_clean=false" "last_line=$tail"
 fi
 
-# Only the newest few.
-ls -1t "$root" 2>/dev/null | tail -n +$((keep + 1)) | while IFS= read -r old; do
-	rm -rf "${root:?}/$old"
+# Only the newest few, by arrival. Dates can't say which: the clock starts
+# each boot at the same floor until something sets it, so a new dir could
+# look older than the ones kept and was pruned at once (2026-10-17, every
+# HeliOS boot). Dirs from before .order go first, oldest by date.
+order=$root/.order
+if [ ! -f "$order" ]; then
+	ls -1tr "$root" 2>/dev/null | grep -vx "${id:-unknown}" > "$order.tmp" || true
+	mv -f "$order.tmp" "$order"
+fi
+{ grep -vx "${id:-unknown}" "$order" 2>/dev/null || true; echo "${id:-unknown}"; } | tail -n "$keep" > "$order.tmp"
+mv -f "$order.tmp" "$order"
+for old in $(ls -1 "$root" 2>/dev/null); do
+	grep -qx "$old" "$order" || rm -rf "${root:?}/$old"
 done
 exit 0

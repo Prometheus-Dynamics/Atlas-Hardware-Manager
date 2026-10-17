@@ -74,13 +74,24 @@ events | grep '"kind":"kernel.pstore"' | tail -n 1 | grep -q '"panics":"1"' || f
 events | grep -q 'ended in a kernel panic or oops' || fail "the panic message: $(events)"
 [ -z "$(ls -A "$T/pstore")" ] || fail "pstore should be empty: $(ls -A "$T/pstore")"
 
-echo "only the newest five are kept"
-for n in 5 6 7 8 9; do
-	sleep 1
+echo "only the newest few are kept, newest by arrival, not by date (no RTC)"
+# The dirs so far came before .order: they go first, oldest by date.
+for n in 5 6 7; do
 	printf 'x\n' > "$T/pstore/console-ramoops-0"
-	run "b$n"
+	BOARD_PSTORE_KEEP=3 run "b$n"
 done
-[ "$(ls -1 "$T/data/pstore" | wc -l | tr -d ' ')" = 5 ] || fail "five kept: $(ls "$T/data/pstore")"
-[ ! -d "$T/data/pstore/b2" ] && [ -d "$T/data/pstore/b9" ] || fail "the oldest go: $(ls "$T/data/pstore")"
+[ "$(ls -1 "$T/data/pstore" | wc -l | tr -d ' ')" = 3 ] || fail "three kept: $(ls "$T/data/pstore")"
+[ -d "$T/data/pstore/b5" ] && [ -d "$T/data/pstore/b7" ] || fail "the newest three: $(ls "$T/data/pstore")"
+# Every boot starts at the same clock: a new dir dated before the kept ones
+# is still the newest, and stays.
+touch -d '2026-01-01 00:00' "$T/data/pstore/b5" "$T/data/pstore/b6" "$T/data/pstore/b7"
+printf 'x\n' > "$T/pstore/console-ramoops-0"
+BOARD_PSTORE_KEEP=3 run b8
+touch -d '2025-01-01 00:00' "$T/data/pstore/b8"
+printf 'x\n' > "$T/pstore/console-ramoops-0"
+BOARD_PSTORE_KEEP=3 run b9
+[ -f "$T/data/pstore/b9/console-ramoops-0" ] || fail "the dir just written was pruned: $(ls "$T/data/pstore")"
+[ -d "$T/data/pstore/b8" ] && [ ! -d "$T/data/pstore/b6" ] || fail "kept by arrival: $(ls "$T/data/pstore")"
+[ "$(ls -1 "$T/data/pstore" | wc -l | tr -d ' ')" = 3 ] || fail "three kept: $(ls "$T/data/pstore")"
 
 echo "ok"

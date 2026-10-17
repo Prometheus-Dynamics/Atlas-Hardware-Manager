@@ -558,9 +558,17 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
   the firmware did the trial but started another slot, and then says so
   (`tryboot=yes`). Bench board, 2026-10-17: 3 of 7 first trials after
   `install --boot` didn't reach /init; a later boot-once of the same slot
-  always worked. Why is still open: the trimmed kernel can't read pstore
-  records (being bisected), so a trial kernel that crashed early left
-  nothing.
+  always worked. Why is still open: board-pstore pruned each boot's record
+  as soon as it saved it (next entry), so a trial kernel that crashed early
+  left nothing.
+- **board-pstore keeps each boot's kernel log:** it kept "the newest 5" by
+  date, but the board has no RTC and every boot starts at the same clock
+  until Atlas or NTP sets it, so the dir it had just written often looked
+  oldest and was removed at once. On the bench board that was every HeliOS
+  boot (found by HeliOS, 2026-10-17; the kernel and ramoops were fine). It
+  now keeps the newest 10 by arrival (`/data/board/pstore/.order`, one boot
+  id a line), never the dir just written; dirs from before go first, oldest
+  by date.
 - **A slot's overlays are only the ones a Raze loads, on every build
   tree:** rpi-firmware's install replaces `images/rpi-firmware/overlays/`
   instead of adding to it. An output dir that had once installed the whole
