@@ -400,6 +400,19 @@ dest = "/usr/lib/systemd/system/board-ssh-keys.service"
 origin = "static-asset"
 
 [[stage.files]]
+id = "raze-systemd-system-board-ssh-hostkeys-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-ssh-hostkeys.service"
+dest = "/usr/lib/systemd/system/board-ssh-hostkeys.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-board-ssh-hostkeys"
+src = "@self/assets/rootfs/usr/lib/board/ssh-hostkeys"
+dest = "/usr/lib/board/ssh-hostkeys"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
 id = "raze-systemd-system-serial-getty-ttygs0-dropin"
 src = "@self/assets/rootfs/usr/lib/systemd/system/serial-getty@ttyGS0.service.d/50-board.conf"
 dest = "/usr/lib/systemd/system/serial-getty@ttyGS0.service.d/50-board.conf"
@@ -727,6 +740,8 @@ stage_files = [
   "raze-systemd-system-board-locate-path",
   "raze-systemd-system-board-locate-service",
   "raze-systemd-system-board-ssh-keys-service",
+  "raze-systemd-system-board-ssh-hostkeys-service",
+  "raze-board-ssh-hostkeys",
   "raze-systemd-system-serial-getty-ttygs0-dropin",
   "raze-systemd-system-serial-getty-ttygs1-dropin",
   "raze-board-update",

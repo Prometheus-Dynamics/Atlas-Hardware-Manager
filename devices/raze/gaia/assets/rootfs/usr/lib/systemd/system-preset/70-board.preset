@@ -19,6 +19,7 @@ enable avahi-daemon.socket
 enable board-reboot.path
 enable board-usb-boot.path
 enable board-ssh-keys.service
+enable board-ssh-hostkeys.service
 enable serial-getty@.service ttyGS0 ttyGS1
 enable board-update-confirm.service
 enable board-update-link.service

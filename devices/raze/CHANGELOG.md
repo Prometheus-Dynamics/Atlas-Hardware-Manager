@@ -537,6 +537,16 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
 (p1); the firmware picks one through `os_prefix` (`default.txt`, or
 `trial.txt` on a tryboot). Reflash-only: no A/B board converts.
 
+- **One SSH identity per board** (`board-ssh-hostkeys.service`,
+  `usr/lib/board/ssh-hostkeys`): the host keys live on `/data/ssh` (0700,
+  keys 0600), so switching slots or installing another OS keeps the
+  fingerprint clients already trust. The first OS's own keys seed the
+  store; a missing type is made (ed25519, ecdsa, rsa 3072). Each boot copies
+  them to `/run/board/ssh/hostkeys`, which the `50-board.conf` drop-in names
+  as sshd's `HostKey`s, before sshd starts. If `/data` can't hold them, sshd
+  gets the OS's own keys (or keys for this boot) and the event log says why.
+  Nothing per OS: an sshd_config whose `Include sshd_config.d/*.conf` comes
+  before any `HostKey` line (the stock one) picks it up.
 - **Slot initramfs** (`initramfs.toml`): its /init is slot-init itself
   (`crates/slot-init`, a static binary; nothing else in it but dm-mod,
   dm-bufio and dm-verity, ~0.3 MB per slot instead of 2 MB). It mounts

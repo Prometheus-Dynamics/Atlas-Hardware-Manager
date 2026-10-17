@@ -1,0 +1,79 @@
+#!/bin/sh
+# The board's SSH host keys: one identity per board, the same in every OS
+# image it runs (each slot on a slots board, both A/B slots), so switching
+# slots doesn't look like a different host (a "REMOTE HOST IDENTIFICATION
+# HAS CHANGED" on every slot switch) and host-key checking stays useful.
+#
+# The keys live on /data (/data/ssh/ssh_host_<type>_key and .pub, root,
+# 0600), made once: from this OS's own keys in /etc/ssh when it has them (so
+# a board keeps the identity its clients already know), else new. Each boot
+# they are copied to /run/board/ssh/hostkeys, where sshd reads them
+# (/etc/ssh/sshd_config.d/50-board.conf), so sshd always has keys: when
+# /data can't be used, this OS's own keys go there, or keys made for this
+# boot only, and it says so. A reflash makes a new /data, hence new keys
+# (Atlas forgets the old ones when it flashes). Settings: ssh-keys.env.
+# Test hooks: BOARD_DATA_ROOT (/data), SSH_HOSTKEYS_ETC (/etc/ssh),
+# SSH_HOSTKEYS_RUN (/run/board/ssh/hostkeys), SSH_KEYGEN (ssh-keygen).
+set -u
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+board_load_env ssh-keys.env
+
+STORE=${BOARD_DATA_ROOT:-/data}/ssh
+ETC=${SSH_HOSTKEYS_ETC:-/etc/ssh}
+RUN=${SSH_HOSTKEYS_RUN:-$BOARD_RUN_DIR/ssh/hostkeys}
+KEYGEN=${SSH_KEYGEN:-ssh-keygen}
+TYPES=${SSH_HOSTKEY_TYPES:-ed25519 ecdsa rsa}
+
+umask 077
+mkdir -p "$RUN"
+chmod 0700 "$RUN"
+
+# make <file> <type>: a new key pair at <file>(.pub).
+make() {
+	rm -f "$1" "$1.pub"
+	case "$2" in
+	rsa) $KEYGEN -q -t rsa -b 3072 -N '' -C "" -f "$1" >/dev/null 2>&1 ;;
+	*) $KEYGEN -q -t "$2" -N '' -C "" -f "$1" >/dev/null 2>&1 ;;
+	esac
+}
+
+# The store, when /data can hold it.
+store=1
+if ! mkdir -p "$STORE" 2>/dev/null || ! chmod 0700 "$STORE" 2>/dev/null || [ ! -w "$STORE" ]; then
+	store=0
+	board_log "can't keep host keys in $STORE; sshd gets this OS's own (or new ones for this boot)"
+fi
+
+for type in $TYPES; do
+	name=ssh_host_${type}_key
+	if [ "$store" = 1 ] && [ ! -s "$STORE/$name" ]; then
+		if [ -s "$ETC/$name" ] && [ -s "$ETC/$name.pub" ]; then
+			cp "$ETC/$name" "$STORE/.$name.new" && cp "$ETC/$name.pub" "$STORE/.$name.pub.new" &&
+				mv -f "$STORE/.$name.pub.new" "$STORE/$name.pub" && mv -f "$STORE/.$name.new" "$STORE/$name" &&
+				board_event ssh.hostkey "kept this OS's $type host key as the board's" "type=$type"
+		elif make "$STORE/.$name.new" "$type"; then
+			mv -f "$STORE/.$name.new.pub" "$STORE/$name.pub" && mv -f "$STORE/.$name.new" "$STORE/$name" &&
+				board_event ssh.hostkey "made the board's $type host key" "type=$type"
+		else
+			board_log "couldn't make a $type host key"
+		fi
+		sync
+	fi
+	if [ "$store" = 1 ] && [ -s "$STORE/$name" ] && [ -s "$STORE/$name.pub" ]; then
+		src=$STORE/$name
+	elif [ -s "$ETC/$name" ] && [ -s "$ETC/$name.pub" ]; then
+		src=$ETC/$name
+	elif make "$RUN/$name" "$type"; then
+		board_log "a $type host key for this boot only (none kept)"
+		continue
+	else
+		continue
+	fi
+	cp "$src" "$RUN/.$name" && cp "$src.pub" "$RUN/.$name.pub" &&
+		chmod 0600 "$RUN/.$name" && chmod 0644 "$RUN/.$name.pub" &&
+		mv -f "$RUN/.$name.pub" "$RUN/$name.pub" && mv -f "$RUN/.$name" "$RUN/$name"
+done
+exit 0

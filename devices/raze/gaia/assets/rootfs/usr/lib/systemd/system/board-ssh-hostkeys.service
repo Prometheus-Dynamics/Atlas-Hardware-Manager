@@ -1,0 +1,14 @@
+[Unit]
+Description=The board's SSH host keys (the same in every OS image the board runs)
+Documentation=file:/usr/lib/board/ssh-hostkeys
+DefaultDependencies=no
+After=local-fs.target
+Before=sshd.service ssh.service sshd.socket ssh.socket multi-user.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/board/ssh-hostkeys
+
+[Install]
+WantedBy=multi-user.target
