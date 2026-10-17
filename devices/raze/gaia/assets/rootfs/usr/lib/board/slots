@@ -31,7 +31,8 @@
 # initramfs), <id>.meta per slot, booted (the initramfs's), fallbacks.
 #
 # Test hooks: SLOTS_DATA (/data), SLOTS_BOOT_MOUNT (a mounted FAT instead of
-# mounting p1), SLOT_INIT, UPDATE_REBOOT, UPDATE_REBOOT_PLAIN, UPDATE_SYNC,
+# mounting p1), SLOTS_BOOT_DEV (the device flushed after FAT writes with
+# SLOTS_BOOT_MOUNT), SLOT_INIT, UPDATE_REBOOT, UPDATE_REBOOT_PLAIN, UPDATE_SYNC,
 # SLOTS_RESERVE_KB, SLOTS_RUNNING, SLOTS_PARTUUID.
 set -eu
 
@@ -51,7 +52,7 @@ RESERVE_KB=${SLOTS_RESERVE_KB:-2097152}
 STATUS_JSON=${BOARD_RUN_DIR}/update.json
 DOWNLOAD_DIR=${UPDATE_DOWNLOAD_DIR:-$DATA/board/update}
 REFUSED=3
-BOOT=''
+BOOT='' BOOT_DEV=''
 WORK_DIR='' STREAMED=''
 # One exit handler: the install's work dir, a bundle that came on stdin (it
 # can't resume, so it never stays on /data), the boot FAT if mounted here.
@@ -133,7 +134,7 @@ mf() { $INIT field "$IMAGES/$1.json" "$2" 2>/dev/null || true; }
 mount_boot() {
 	[ -z "$BOOT" ] || return 0
 	if [ -n "${SLOTS_BOOT_MOUNT:-}" ]; then
-		BOOT=$SLOTS_BOOT_MOUNT
+		BOOT=$SLOTS_BOOT_MOUNT BOOT_DEV=${SLOTS_BOOT_DEV:-}
 		return 0
 	fi
 	_dev=$(findmnt -n -o SOURCE "$DATA" 2>/dev/null) || die "can't tell which device /data is on"
@@ -141,13 +142,32 @@ mount_boot() {
 	BOOT=$BOARD_RUN_DIR/slots-boot
 	mkdir -p "$BOOT"
 	mount -t vfat "$_boot" "$BOOT" || { BOOT=''; die "can't mount the boot partition $_boot"; }
+	BOOT_DEV=$_boot
+}
+# The FAT's writes on the media, not just sent to the device: sync writes
+# them back, and the flush empties the eMMC's write-back cache, which vfat
+# never asks for (ext4 does, at each commit). What the firmware reads at the
+# next boot (a trial.txt, a slot's kernel) has to be there before a restart.
+boot_sync() {
+	$SYNC
+	[ -z "$BOOT_DEV" ] || $INIT flush "$BOOT_DEV" > /dev/null || board_log "couldn't flush $BOOT_DEV's write cache"
+}
+# Done with the FAT before a restart: unmounted (its dirty flag cleared),
+# flushed.
+umount_boot() {
+	[ -n "$BOOT" ] || return 0
+	boot_sync
+	if [ -z "${SLOTS_BOOT_MOUNT:-}" ]; then
+		umount "$BOOT" || board_log "couldn't unmount the boot partition before restarting"
+	fi
+	BOOT=''
 }
 # write_line <file> <line>: a one-line file on the FAT, replaced in one rename.
 write_line() {
 	printf '%s\n' "$2" > "$BOOT/$1.new" || die "can't write $1 on the boot partition"
-	$SYNC
+	boot_sync
 	mv -f "$BOOT/$1.new" "$BOOT/$1" || die "can't write $1 on the boot partition"
-	$SYNC
+	boot_sync
 }
 # The default slot's boot files at the FAT's root too: what the firmware
 # boots when config.txt (or default.txt) can't be read.
@@ -163,7 +183,7 @@ root_copy() {
 		rm -rf "$BOOT/.overlays.new"
 		cp -r "$_src/overlays" "$BOOT/.overlays.new" && rm -rf "$BOOT/overlays" && mv "$BOOT/.overlays.new" "$BOOT/overlays"
 	fi
-	$SYNC
+	boot_sync
 }
 
 tryboot_reboot() {
@@ -268,10 +288,10 @@ install_bundle() {
 	cp "$_work/slot.json" "$BOOT/slots/.$_id.new/slot.json"
 	printf '%s atlas.slot=%s atlas.roothash=%s atlas.data=PARTUUID=%s panic=5\n' \
 		"$_base" "$_id" "$_root" "$_dev" > "$BOOT/slots/.$_id.new/cmdline.txt"
-	$SYNC
+	boot_sync
 	rm -rf "$BOOT/slots/$_id"
 	mv "$BOOT/slots/.$_id.new" "$BOOT/slots/$_id" || die "can't put the slot's boot files in place"
-	$SYNC
+	boot_sync
 	PROGRESS=900 && write_status
 	# The data side: the image and its manifest, each by rename.
 	mv -f "$_work/slot.json" "$IMAGES/.$_id.json.tmp"
@@ -353,6 +373,7 @@ cmd_boot_once() {
 	TRIAL=$_id STATE=rebooting
 	save_state
 	board_event update.apply "restarting into slot $_id ($(mf "$_id" version)) on trial" "slot=$_id"
+	umount_boot
 	tryboot_reboot
 }
 
@@ -385,13 +406,30 @@ cmd_confirm() {
 		elif [ "$(cat "$STATE_DIR/trial-init" 2>/dev/null)" = "$TRIAL" ]; then
 			ERROR="slot $TRIAL didn't start (its initramfs stopped; the reason is in slot-init.log on the boot partition); back on $_run"
 		else
-			ERROR="slot $TRIAL didn't reach its initramfs's /init (the kernel couldn't start it, or crashed before it); back on $_run"
+			# Whether the firmware was asked for the trial at all: its flag
+			# for this boot. Not asked, the slot wasn't tried (the restart
+			# lost the flag) and isn't held against it.
+			case $(board_tryboot) in
+			0)
+				_tried=no
+				meta_set "$TRIAL" GOOD untried
+				ERROR="slot $TRIAL wasn't tried: the firmware started normally (the restart lost its tryboot flag); back on $_run"
+				;;
+			1)
+				_tried=yes
+				ERROR="slot $TRIAL didn't reach its initramfs's /init: the firmware did the trial boot but started $_run (it read another trial.txt, or couldn't load the slot's files), or the slot's kernel stopped before /init; back on $_run"
+				;;
+			*)
+				_tried=unknown
+				ERROR="slot $TRIAL didn't reach its initramfs's /init (the kernel couldn't start it, or crashed before it); back on $_run"
+				;;
+			esac
 		fi
 		# A boot that began at power-on: the board lost power on the way (a
 		# bench brown-out loses the tryboot flag), not necessarily the slot.
 		_reset=$(board_reset_cause)
 		[ "$_reset" != power-on ] || ERROR="$ERROR; this boot began at power-on (the board lost power), so the trial may never have run: try it again"
-		board_event update.rolled-back "$ERROR" "slot=$TRIAL" "reset=${_reset:-unknown}"
+		board_event update.rolled-back "$ERROR" "slot=$TRIAL" "reset=${_reset:-unknown}" "tryboot=${_tried:-yes}"
 		TRIAL='' STATE=rolled-back
 	fi
 	[ -n "$DEFAULT" ] || DEFAULT=$_run
@@ -437,6 +475,7 @@ cmd_rollback() {
 	DEFAULT=$_back PREVIOUS=$_from STATE=rebooting
 	save_state
 	board_event update.rollback "going back to slot $_back" "slot=$_back"
+	umount_boot
 	[ "${1:-}" = --no-reboot ] || plain_reboot
 }
 

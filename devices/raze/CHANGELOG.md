@@ -537,6 +537,23 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
 (p1); the firmware picks one through `os_prefix` (`default.txt`, or
 `trial.txt` on a tryboot). Reflash-only: no A/B board converts.
 
+- **The boot partition's writes reach the eMMC before a restart:** the
+  CM5's eMMC (AJTD4R) has a write-back cache, and vfat never asks the device
+  to flush it (ext4 does at each commit; BusyBox's sync can't fsync a
+  device). The writer now flushes the FAT's device (`slot-init flush`, an
+  fsync on the block device; seen as a flush request in diskstats on the
+  bench board) after each boot-side write (a slot's boot files, trial.txt,
+  default.txt, the root copy), and unmounts the FAT before a tryboot or
+  rollback restart. An OS whose slot-init predates it logs "couldn't flush"
+  and carries on. Reported: two first trials right after an install fell
+  back without reaching /init (no pstore, reset 0x20, a clean shutdown); the
+  same slot booted on the next boot-once.
+- **A trial that never reached /init says whether the firmware tried it**
+  (`board_tryboot`, chosen/bootloader/tryboot): flag 0 is "wasn't tried: the
+  firmware started normally (the restart lost its tryboot flag)", and the
+  slot stays untried rather than bad; flag 1 is "the firmware did the trial
+  boot but started <slot>" (an old trial.txt, or files it couldn't load).
+  `update.rolled-back` gains `tryboot=yes|no|unknown`.
 - **A slot's overlays are only the ones a Raze loads, on every build
   tree:** rpi-firmware's install replaces `images/rpi-firmware/overlays/`
   instead of adding to it. An output dir that had once installed the whole

@@ -394,6 +394,13 @@ board_rsts() {
 		awk 'NF == 4 { printf "%d", $1 * 16777216 + $2 * 65536 + $3 * 256 + $4 }'
 }
 
+# Whether the firmware booted this time as a tryboot (chosen/bootloader/
+# tryboot): 1 or 0; empty off a Pi.
+board_tryboot() {
+	[ -r "$BOARD_DT_DIR/chosen/bootloader/tryboot" ] || return 0
+	od -An -tu1 -N4 "$BOARD_DT_DIR/chosen/bootloader/tryboot" | awk 'NF == 4 { print ($4 || $3 || $2 || $1) ? 1 : 0 }'
+}
+
 # How this boot began: "power-on" (PM_RSTS bit 12: the board had lost power,
 # which also forgets a pending tryboot: a bench brown-out), "reset" (bit 5:
 # the watchdog, which a reboot and a panic restart use too), else empty.

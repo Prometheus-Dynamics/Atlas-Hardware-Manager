@@ -29,6 +29,7 @@ for k in sys.argv[2].split("."):
     if not isinstance(v,dict) or k not in v: sys.exit(1)
     v=v[k]
 print(str(v).lower() if isinstance(v,bool) else v)' "$2" "$3" ;;
+flush) echo "$2" >> "$FLUSH_LOG" ;;
 check-initramfs) ! grep -q XZ "$2" || { echo "slot-init: $2: an xz initramfs isn't supported on the Raze" >&2; exit 1; }; echo zstd ;;
 boot-files) exec python3 -c 'import json,sys
 for n,h in json.load(open(sys.argv[1]))["boot"]["files"].items(): print(h+"  "+n)' "$2" ;;
@@ -39,6 +40,7 @@ chmod +x "$T/bin/slot-init"
 
 export BOARD_LIB_DIR=$lib BOARD_ETC_DIR=$T/etc BOARD_RUN_DIR=$T/run BOARD_DATA_DIR=$T/data/board BOARD_DT_DIR=$T/dt
 export SLOTS_DATA=$T/data SLOTS_BOOT_MOUNT=$T/boot SLOT_INIT=$T/bin/slot-init UPDATE_SYNC=true
+export SLOTS_BOOT_DEV=/dev/fake-p1 FLUSH_LOG=$T/flushes
 export UPDATE_SLOTS_STATE=$T/data/board/slots/state.json SLOTS_PARTUUID=abcd1234-02 SLOTS_RESERVE_KB=0
 export UPDATE_REBOOT="echo tryboot >> $T/reboots" UPDATE_REBOOT_PLAIN="echo plain >> $T/reboots"
 export BOARD_DEVICE_LOCK=$T/device-lock UPDATE_BOOT_ID_FILE=$T/boot_id
@@ -94,6 +96,7 @@ grep -q "atlas.data=PARTUUID=abcd1234-02" "$T/boot/slots/pv-b/cmdline.txt" || fa
 [ -f "$T/boot/slots/pv-b/overlays/bcm2712d0.dtbo" ] || fail "overlays not copied"
 status | grep -q '"slot_staged":"pv-b"' || fail "staged: $(status)"
 ls "$T/data/slots" | grep -q install && fail "the work dir was left behind"
+grep -qx /dev/fake-p1 "$T/flushes" || fail "the FAT's device wasn't flushed after the slot's boot files"
 status | grep -q '"id":"pv-a"[^}]*"size":2,' || fail "pv-a's size isn't its file's: $(status)"
 
 echo "a bundle on stdin installs the same, and its tar never stays on /data"
@@ -154,6 +157,24 @@ grep -q '^GOOD=no' "$T/data/board/slots/pv-c.meta" || fail "pv-c marked bad"
 [ "$(rc set-default pv-c)" = 3 ] || fail "set-default on a slot that never booted"
 status | grep -q "didn't reach its initramfs" || fail "the reason for a trial that never got to /init: $(status)"
 status | grep -q "power-on" && fail "a power-on blamed without a reset register: $(status)"
+
+echo "a trial the firmware wasn't asked for (tryboot 0) isn't held against the slot; asked (1), it says so"
+: > "$T/flushes"
+up apply 2>/dev/null || true
+up stage "$T/pv-c.slot.tar" 2>/dev/null || true
+up apply 2>/dev/null
+grep -qx /dev/fake-p1 "$T/flushes" || fail "trial.txt wasn't flushed before the restart"
+mkdir -p "$T/dt/chosen/bootloader"
+printf '\000\000\000\000' > "$T/dt/chosen/bootloader/tryboot"
+up confirm 2>/dev/null
+status | grep -q "wasn't tried: the firmware started normally" || fail "a lost tryboot flag: $(status)"
+grep -q '^GOOD=untried' "$T/data/board/slots/pv-c.meta" || fail "an untried slot was marked bad: $(cat "$T/data/board/slots/pv-c.meta")"
+up apply 2>/dev/null
+printf '\000\000\000\001' > "$T/dt/chosen/bootloader/tryboot"
+up confirm 2>/dev/null
+status | grep -q "the firmware did the trial boot but started pv-b" || fail "a tryboot that started another slot: $(status)"
+grep -q '^GOOD=no' "$T/data/board/slots/pv-c.meta" || fail "pv-c marked bad after a real trial"
+rm -rf "$T/dt"
 
 echo "a trial noticed on a boot that began at power-on says the board lost power"
 up apply 2>/dev/null || true

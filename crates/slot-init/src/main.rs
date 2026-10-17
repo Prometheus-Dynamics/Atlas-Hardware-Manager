@@ -17,6 +17,9 @@
 //!   slot-init data-dirs <slot.json>           its per-family data dirs, one a line
 //!   slot-init previous <state.json>           the slot to fall back to (none: exit 1)
 //!   slot-init reboot-tryboot                  restart once into tryboot.txt's slot
+//!   slot-init flush <block device>            write the device's cache to its media (fsync on the
+//!                                             device: the eMMC's write-back cache; vfat never
+//!                                             asks for it, and BusyBox's sync takes no files)
 //!   slot-init field <file.json> <a.b.c>       one field (missing: exit 1)
 //!   slot-init boot-files <slot.json>          "<sha256>  <name>" per boot file (sha256sum -c's format)
 //!   slot-init open <image> <slot.json> <root hash> [name]
@@ -70,6 +73,10 @@ fn run(args: &[String]) -> Result<String, String> {
             .filter(|id| valid_id(id))
             .ok_or_else(|| "no previous slot".to_owned()),
         ["reboot-tryboot"] => reboot().map(|()| String::new()),
+        ["flush", device] => std::fs::File::open(device)
+            .and_then(|file| file.sync_all())
+            .map(|()| String::new())
+            .map_err(|e| format!("{device}: {e}")),
         ["field", file, path] => {
             field(&read(file)?, path)?.ok_or_else(|| format!("no {path} in {file}"))
         }
