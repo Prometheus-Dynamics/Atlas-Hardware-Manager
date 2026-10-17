@@ -387,7 +387,11 @@ cmd_confirm() {
 		else
 			ERROR="slot $TRIAL didn't reach its initramfs's /init (the kernel couldn't start it, or crashed before it); back on $_run"
 		fi
-		board_event update.rolled-back "$ERROR" "slot=$TRIAL"
+		# A boot that began at power-on: the board lost power on the way (a
+		# bench brown-out loses the tryboot flag), not necessarily the slot.
+		_reset=$(board_reset_cause)
+		[ "$_reset" != power-on ] || ERROR="$ERROR; this boot began at power-on (the board lost power), so the trial may never have run: try it again"
+		board_event update.rolled-back "$ERROR" "slot=$TRIAL" "reset=${_reset:-unknown}"
 		TRIAL='' STATE=rolled-back
 	fi
 	[ -n "$DEFAULT" ] || DEFAULT=$_run

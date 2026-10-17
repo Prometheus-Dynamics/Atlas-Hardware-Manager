@@ -62,7 +62,11 @@ endif
 
 RPI_FIRMWARE_DTB_OVERLAYS = $(call qstrip,$(BR2_PACKAGE_RPI_FIRMWARE_DTB_OVERLAYS))
 ifeq ($(BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS),y)
+# The overlays dir is replaced, not added to: an output dir that once had
+# the whole set (388 files) kept it, and every slot and boot partition
+# copied it.
 define RPI_FIRMWARE_INSTALL_DTB_OVERLAYS
+	rm -rf $(BINARIES_DIR)/rpi-firmware/overlays
 	$(if $(RPI_FIRMWARE_DTB_OVERLAYS), \
 		$(foreach o,$(RPI_FIRMWARE_DTB_OVERLAYS), \
 			$(INSTALL) -D -m 0644 $(@D)/boot/overlays/$(o).dtbo $(BINARIES_DIR)/rpi-firmware/overlays/$(o).dtbo

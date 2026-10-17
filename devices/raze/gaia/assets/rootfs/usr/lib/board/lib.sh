@@ -386,6 +386,27 @@ board_rev() {
 	printf '%s' "$_board_rev" | tr -cd 'A-Za-z0-9._-'
 }
 
+# The reset register (PM_RSTS) as the bootloader saw it at this boot
+# (chosen/bootloader/rsts), as a number; empty off a Pi.
+board_rsts() {
+	[ -r "$BOARD_DT_DIR/chosen/bootloader/rsts" ] || return 0
+	od -An -tu1 -N4 "$BOARD_DT_DIR/chosen/bootloader/rsts" |
+		awk 'NF == 4 { printf "%d", $1 * 16777216 + $2 * 65536 + $3 * 256 + $4 }'
+}
+
+# How this boot began: "power-on" (PM_RSTS bit 12: the board had lost power,
+# which also forgets a pending tryboot: a bench brown-out), "reset" (bit 5:
+# the watchdog, which a reboot and a panic restart use too), else empty.
+board_reset_cause() {
+	_board_rsts=$(board_rsts)
+	[ -n "$_board_rsts" ] || return 0
+	if [ $((_board_rsts & 4096)) -ne 0 ]; then
+		echo power-on
+	elif [ $((_board_rsts & 32)) -ne 0 ]; then
+		echo reset
+	fi
+}
+
 # Sets BOARD_BL_VERSION and BOARD_BL_TIMESTAMP (empty when unknown). Reads the device
 # tree first (no VideoCore access needed), then `vcgencmd bootloader_version`.
 board_bootloader() {

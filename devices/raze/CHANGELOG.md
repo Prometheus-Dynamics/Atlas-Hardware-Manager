@@ -537,6 +537,22 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
 (p1); the firmware picks one through `os_prefix` (`default.txt`, or
 `trial.txt` on a tryboot). Reflash-only: no A/B board converts.
 
+- **A slot's overlays are only the ones a Raze loads, on every build
+  tree:** rpi-firmware's install replaces `images/rpi-firmware/overlays/`
+  instead of adding to it. An output dir that had once installed the whole
+  firmware set kept all 388 `.dtbo`s (6.4 MB on the FAT per slot, measured
+  on HeliOS's slots on the bench board; PV's fresh trees had the lean 11,
+  192 KB). A build tree from before needs `make rpi-firmware-reinstall`
+  once (Buildroot doesn't redo an install for a changed .mk).
+- **How a boot began** (`board_reset_cause`, from the bootloader's copy of
+  the reset register, `chosen/bootloader/rsts`): `boot.json` has `"reset"`
+  (`power-on` | `reset` | null) and `"rsts"` ("0x20"), the `boot` event
+  `reset=` and "it began at power-on". A failed trial noticed on a boot that
+  began at power-on says so: the board lost power on the way (a bench
+  brown-out loses the tryboot flag), so the trial may never have run.
+  `reset` (0x20, a reboot or the watchdog) checked on the bench board; the
+  power-on bit (0x1000, HADPOR) is from the BCM2835 PM register layout, not
+  yet seen on a board.
 - **Slot installs 5x faster, `slots status` 30x** (measured on the CM5
   bench board, 7 slots): the writer read every image whole to learn its
   size (busybox `wc -c` reads; 1.2 s for a 127 MB image), on each status

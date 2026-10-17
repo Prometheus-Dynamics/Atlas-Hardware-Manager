@@ -37,7 +37,7 @@ exit 1
 STUB
 chmod +x "$T/bin/slot-init"
 
-export BOARD_LIB_DIR=$lib BOARD_ETC_DIR=$T/etc BOARD_RUN_DIR=$T/run BOARD_DATA_DIR=$T/data/board
+export BOARD_LIB_DIR=$lib BOARD_ETC_DIR=$T/etc BOARD_RUN_DIR=$T/run BOARD_DATA_DIR=$T/data/board BOARD_DT_DIR=$T/dt
 export SLOTS_DATA=$T/data SLOTS_BOOT_MOUNT=$T/boot SLOT_INIT=$T/bin/slot-init UPDATE_SYNC=true
 export UPDATE_SLOTS_STATE=$T/data/board/slots/state.json SLOTS_PARTUUID=abcd1234-02 SLOTS_RESERVE_KB=0
 export UPDATE_REBOOT="echo tryboot >> $T/reboots" UPDATE_REBOOT_PLAIN="echo plain >> $T/reboots"
@@ -153,6 +153,19 @@ status | grep -q '"state":"rolled-back"' || fail "rolled-back: $(status)"
 grep -q '^GOOD=no' "$T/data/board/slots/pv-c.meta" || fail "pv-c marked bad"
 [ "$(rc set-default pv-c)" = 3 ] || fail "set-default on a slot that never booted"
 status | grep -q "didn't reach its initramfs" || fail "the reason for a trial that never got to /init: $(status)"
+status | grep -q "power-on" && fail "a power-on blamed without a reset register: $(status)"
+
+echo "a trial noticed on a boot that began at power-on says the board lost power"
+up apply 2>/dev/null || true
+up stage "$T/pv-c.slot.tar" 2>/dev/null || true
+up apply 2>/dev/null
+mkdir -p "$T/dt/chosen/bootloader"
+printf '\000\000\020\000' > "$T/dt/chosen/bootloader/rsts" # PM_RSTS 0x1000
+up confirm 2>/dev/null
+status | grep -q "began at power-on (the board lost power)" || fail "the power-on wasn't said: $(status)"
+printf '\000\000\000\040' > "$T/dt/chosen/bootloader/rsts" # 0x20, a reset
+(. "$lib/lib.sh" && [ "$(board_reset_cause)" = reset ]) || fail "0x20 isn't a reset"
+rm -rf "$T/dt"
 
 echo "a trial whose /init ran but stopped says so"
 up apply 2>/dev/null || true

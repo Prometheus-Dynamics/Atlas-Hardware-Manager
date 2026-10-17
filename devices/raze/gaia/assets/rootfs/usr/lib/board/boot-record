@@ -29,6 +29,9 @@
 # throttled: the firmware's flags early in this boot ("0x50005"; null without
 # vcgencmd); the power event at shutdown start carries them again, with
 # undervoltage=yes|no.
+# reset: how this boot began, "power-on" (power was lost: a cut or a
+# brown-out) or "reset" (a reboot, a panic restart, the watchdog); null off a
+# Pi. rsts: the reset register behind it ("0x1000"; null off a Pi).
 # The count is kept in /data/board/boot-count (/run/board without /data).
 # Test hooks: BOARD_BOOT_ID, BOARD_UNAME_R, UPDATE_CMDLINE_ROOT.
 set -u
@@ -160,18 +163,23 @@ printf '%s\n' "$count" > "$count_file.tmp.$$" && mv -f "$count_file.tmp.$$" "$co
 slot=$(board_active_slot)
 kernel=${BOARD_UNAME_R:-$(uname -r)}
 flags=$(throttled)
-printf '{"id":%s,"count":%s,"slot":%s,"kernel":%s,"previous_clean":%s,"previous_reboot":%s,"pstore_saved":%s,"previous_journal":%s,"throttled":%s,"at":%s}\n' \
+reset=$(board_reset_cause)
+rsts=$(board_rsts)
+[ -z "$rsts" ] || rsts=$(printf '0x%x' "$rsts")
+printf '{"id":%s,"count":%s,"slot":%s,"kernel":%s,"previous_clean":%s,"previous_reboot":%s,"pstore_saved":%s,"previous_journal":%s,"throttled":%s,"reset":%s,"rsts":%s,"at":%s}\n' \
 	"$(board_json_str "$id")" "$count" "$(board_json_str "$slot")" "$(board_json_str "$kernel")" \
-	"$clean" "$reboot" "$pstore_saved" "$journal" "$(board_json_str "$flags")" "$(date +%s)" > "$BOARD_RUN_DIR/boot.json.tmp.$$"
+	"$clean" "$reboot" "$pstore_saved" "$journal" "$(board_json_str "$flags")" \
+	"$(board_json_str "$reset")" "$(board_json_str "$rsts")" "$(date +%s)" > "$BOARD_RUN_DIR/boot.json.tmp.$$"
 chmod 0644 "$BOARD_RUN_DIR/boot.json.tmp.$$"
 mv -f "$BOARD_RUN_DIR/boot.json.tmp.$$" "$BOARD_RUN_DIR/boot.json"
 
 message="boot $count, slot $slot, kernel $kernel"
 [ "$clean" != false ] || message="$message; the previous boot didn't shut down cleanly"
+[ "$reset" != power-on ] || message="$message; it began at power-on"
 if [ "$reboot" = null ]; then
-	board_event boot "$message" "count=$count" "slot=$slot" "kernel=$kernel" "previous_clean=$clean"
+	board_event boot "$message" "count=$count" "slot=$slot" "kernel=$kernel" "previous_clean=$clean" "reset=${reset:-unknown}"
 else
-	board_event boot "$message" "count=$count" "slot=$slot" "kernel=$kernel" "previous_clean=$clean" \
+	board_event boot "$message" "count=$count" "slot=$slot" "kernel=$kernel" "previous_clean=$clean" "reset=${reset:-unknown}" \
 		"previous_reboot=$(printf '%s' "$reboot" | tr -d '"')"
 fi
 exit 0
