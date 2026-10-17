@@ -110,6 +110,13 @@ board_load_env() {
 	done
 }
 
+# A file's size in bytes, from its inode. Not `wc -c`: busybox's reads the
+# whole file (1.2 s for a 127 MB slot image), and not stat(1), which some
+# OSes' busybox leaves out.
+board_file_size() {
+	ls -ln -- "$1" 2>/dev/null | awk 'NR == 1 { print $5 }'
+}
+
 # First non-empty, non-comment line of the first readable file given.
 board_first_line() {
 	for _board_f in "$@"; do

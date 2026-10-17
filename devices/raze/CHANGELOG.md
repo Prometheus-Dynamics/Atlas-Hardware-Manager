@@ -537,6 +537,16 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
 (p1); the firmware picks one through `os_prefix` (`default.txt`, or
 `trial.txt` on a tryboot). Reflash-only: no A/B board converts.
 
+- **Slot installs 5x faster, `slots status` 30x** (measured on the CM5
+  bench board, 7 slots): the writer read every image whole to learn its
+  size (busybox `wc -c` reads; 1.2 s for a 127 MB image), on each status
+  and several times per install. Sizes now come from the inode
+  (`board_file_size`, `ls -ln`; HeliOS's busybox has no stat). `slots
+  status` 6.68 s -> 0.22 s, the same JSON; a 75 MB `atlas slots install`
+  39.6 s -> 8.1 s (the transfer itself is 2.3 s). A bundle streamed on
+  stdin no longer stays on `/data` afterwards (it left 78 MB in
+  `/data/board/update/stdin.slot.tar`): its tar goes once unpacked, or on
+  any failure.
 - **One SSH identity per board** (`board-ssh-hostkeys.service`,
   `usr/lib/board/ssh-hostkeys`): the host keys live on `/data/ssh` (0700,
   keys 0600), so switching slots or installing another OS keeps the

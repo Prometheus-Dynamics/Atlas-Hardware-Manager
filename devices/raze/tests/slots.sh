@@ -94,6 +94,13 @@ grep -q "atlas.data=PARTUUID=abcd1234-02" "$T/boot/slots/pv-b/cmdline.txt" || fa
 [ -f "$T/boot/slots/pv-b/overlays/bcm2712d0.dtbo" ] || fail "overlays not copied"
 status | grep -q '"slot_staged":"pv-b"' || fail "staged: $(status)"
 ls "$T/data/slots" | grep -q install && fail "the work dir was left behind"
+status | grep -q '"id":"pv-a"[^}]*"size":2,' || fail "pv-a's size isn't its file's: $(status)"
+
+echo "a bundle on stdin installs the same, and its tar never stays on /data"
+up stage - --sha256 "$(sha256sum "$T/pv-b.slot.tar" | cut -d' ' -f1)" < "$T/pv-b.slot.tar" 2>/dev/null || fail "stdin stage failed"
+[ -z "$(ls "$T/data/board/update" 2>/dev/null)" ] || fail "the streamed tar was left: $(ls "$T/data/board/update")"
+[ "$(rc stage - --sha256 0000 < "$T/pv-b.slot.tar")" = 3 ] || fail "stdin: wrong sha accepted"
+[ -z "$(ls "$T/data/board/update" 2>/dev/null)" ] || fail "a refused streamed tar was left"
 
 echo "refusals change nothing: wrong --sha256, the running slot, a broken file, no room, the device lock"
 [ "$(rc stage "$T/pv-b.slot.tar" --sha256 0000)" = 3 ] || fail "wrong sha accepted"

@@ -52,10 +52,12 @@ STATUS_JSON=${BOARD_RUN_DIR}/update.json
 DOWNLOAD_DIR=${UPDATE_DOWNLOAD_DIR:-$DATA/board/update}
 REFUSED=3
 BOOT=''
-WORK_DIR=''
-# One exit handler: the install's work dir, the boot FAT if mounted here.
+WORK_DIR='' STREAMED=''
+# One exit handler: the install's work dir, a bundle that came on stdin (it
+# can't resume, so it never stays on /data), the boot FAT if mounted here.
 cleanup() {
 	[ -z "$WORK_DIR" ] || rm -rf "$WORK_DIR"
+	[ -z "$STREAMED" ] || rm -f "$STREAMED"
 	if [ -n "$BOOT" ] && [ -z "${SLOTS_BOOT_MOUNT:-}" ]; then
 		umount "$BOOT" 2>/dev/null || true
 	fi
@@ -182,7 +184,7 @@ slots_json() {
 		valid_id "$_id" || continue
 		[ "$_first" = 1 ] || printf ','
 		_first=0
-		_size=$(wc -c < "$_img" | tr -d ' ')
+		_size=$(board_file_size "$_img")
 		# Damaged when the file isn't the size it was built at.
 		_want=$(mf "$_id" image.size)
 		_intact=true
@@ -230,11 +232,13 @@ install_bundle() {
 	rm -rf "$IMAGES"/.install.* 2>/dev/null || true
 	mkdir -p "$_work"
 	WORK_DIR=$_work
-	_need=$(( $(wc -c < "$_tar") / 1024 + RESERVE_KB ))
+	_need=$(( $(board_file_size "$_tar") / 1024 + RESERVE_KB ))
 	[ "$(free_kb)" -ge "$_need" ] || refuse "no room for this slot: it needs $((_need / 1024)) MiB with the reserve, /data has $(( $(free_kb) / 1024 )) MiB free; remove a slot first"
 	STATE=staging PROGRESS=100 ERROR=''
 	save_state
 	tar -xf "$_tar" -C "$_work" || die "the bundle doesn't unpack"
+	# Unpacked: a streamed bundle's tar goes now, not after the install.
+	[ -z "$STREAMED" ] || { rm -f "$STREAMED"; STREAMED=''; }
 	[ -r "$_work/slot.json" ] && [ -r "$_work/rootfs.erofs" ] && [ -d "$_work/boot" ] || die "not a slot bundle (slot.json, rootfs.erofs, boot/)"
 	_id=$($INIT field "$_work/slot.json" id) || die "slot.json has no id"
 	valid_id "$_id" || die "slot.json: \`$_id\` isn't a slot id"
@@ -243,7 +247,7 @@ install_bundle() {
 	_root=$($INIT field "$_work/slot.json" verity.root_hash) || die "slot.json has no verity root hash"
 	_size=$($INIT field "$_work/slot.json" image.size) || die "slot.json has no image size"
 	_sha=$($INIT field "$_work/slot.json" image.sha256) || die "slot.json has no image sha256"
-	[ "$(wc -c < "$_work/rootfs.erofs" | tr -d ' ')" = "$_size" ] || die "rootfs.erofs isn't the size slot.json says"
+	[ "$(board_file_size "$_work/rootfs.erofs")" = "$_size" ] || die "rootfs.erofs isn't the size slot.json says"
 	PROGRESS=300 && write_status
 	[ "$(sha256sum "$_work/rootfs.erofs" | cut -d' ' -f1)" = "$_sha" ] || die "rootfs.erofs doesn't match slot.json's sha256"
 	PROGRESS=600 && write_status
@@ -300,6 +304,7 @@ cmd_stage() {
 	if [ "$_file" = - ]; then
 		mkdir -p "$DOWNLOAD_DIR"
 		_file=$DOWNLOAD_DIR/stdin.slot.tar
+		STREAMED=$_file
 		cat > "$_file"
 	fi
 	[ -r "$_file" ] || die "no bundle at $_file"
@@ -329,7 +334,7 @@ cmd_stage_url() {
 	else
 		wget -q -c -O "$_file" "$_url" || die "the download failed"
 	fi
-	[ -z "$_size" ] || [ "$(wc -c < "$_file" | tr -d ' ')" = "$_size" ] || die "the download isn't --size bytes"
+	[ -z "$_size" ] || [ "$(board_file_size "$_file")" = "$_size" ] || die "the download isn't --size bytes"
 	[ "$(sha256sum "$_file" | cut -d' ' -f1)" = "$_want" ] || { rm -f "$_file"; die "the download doesn't match --sha256"; }
 	install_bundle "$_file" "$_pin"
 	rm -f "$_file"
