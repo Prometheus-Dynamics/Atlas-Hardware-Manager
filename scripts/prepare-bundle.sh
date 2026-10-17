@@ -14,9 +14,13 @@ target="${1:-$(rustc -vV | sed -n 's/^host: //p')}"
 "$root_dir/scripts/fetch-usbboot-files.sh"
 
 cargo build --release -p atlas-helper -p atlas-cli --target "$target"
-# Cargo's output directory: CARGO_TARGET_DIR when set (for example on a
-# faster disk than the checkout's), else target/ here.
-target_dir="${CARGO_TARGET_DIR:-$root_dir/target}"
+# Cargo's output directory, as cargo resolves it: CARGO_TARGET_DIR, or a
+# build.target-dir in a .cargo/config.toml (for example on a faster disk
+# than the checkout's), else target/ here. Guessing missed the config file
+# and bundled a stale CLI from an old target/.
+target_dir="$(cargo metadata --format-version 1 --no-deps \
+  | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p' | sed 's/\\\\/\\/g')"
+[[ -n "$target_dir" ]] || { echo "can't find cargo's target directory" >&2; exit 1; }
 extension=""
 if [[ "$target" == *windows* ]]; then
   extension=".exe"
