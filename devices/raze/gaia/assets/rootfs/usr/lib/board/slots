@@ -409,26 +409,20 @@ cmd_confirm() {
 		elif [ "$(cat "$STATE_DIR/trial-init" 2>/dev/null)" = "$TRIAL" ]; then
 			ERROR="slot $TRIAL didn't start (its initramfs stopped; the reason is in slot-init.log on the boot partition); back on $_run"
 		else
-			# Whether the firmware was asked for the trial at all: its flag
-			# for this boot. Not asked, the slot wasn't tried (the restart
-			# lost the flag) and isn't held against it.
+			# This boot's tryboot flag: 1 is the firmware doing the trial but
+			# starting another slot. 0 can't tell a restart that lost the
+			# flag from a trial kernel that stopped before /init (the boot
+			# after either is a normal one); either way it is tried once
+			# more, which costs at most one more failed boot.
 			case $(board_tryboot) in
-			0)
-				_tried=no
-				meta_set "$TRIAL" GOOD untried
-				ERROR="slot $TRIAL wasn't tried: the firmware started normally (the restart lost its tryboot flag); back on $_run"
-				# Once per trial, it is tried again (3 of 7 restarts right
-				# after an install lost the flag on the bench board; a
-				# second boot-once has always kept it).
-				[ "$(meta_get "$TRIAL" RETRIED)" = yes ] || ! installed "$TRIAL" || _retry=$TRIAL
-				;;
 			1)
 				_tried=yes
-				ERROR="slot $TRIAL didn't reach its initramfs's /init: the firmware did the trial boot but started $_run (it read another trial.txt, or couldn't load the slot's files), or the slot's kernel stopped before /init; back on $_run"
+				ERROR="slot $TRIAL didn't reach its initramfs's /init: the firmware did the trial boot but started $_run (it read another trial.txt, or couldn't load the slot's files); back on $_run"
 				;;
 			*)
 				_tried=unknown
-				ERROR="slot $TRIAL didn't reach its initramfs's /init (the kernel couldn't start it, or crashed before it); back on $_run"
+				ERROR="slot $TRIAL didn't reach its initramfs's /init (its kernel stopped before it, or the restart lost the tryboot flag); back on $_run"
+				[ "$(meta_get "$TRIAL" RETRIED)" = yes ] || ! installed "$TRIAL" || _retry=$TRIAL
 				;;
 			esac
 		fi
@@ -439,7 +433,7 @@ cmd_confirm() {
 		if [ -n "$_retry" ]; then
 			meta_set "$_retry" RETRIED yes
 			ERROR=''
-			board_event update.retry "slot $_retry wasn't tried (the restart lost its tryboot flag); restarting into it once more" "slot=$_retry" "reset=${_reset:-unknown}" "tryboot=no"
+			board_event update.retry "slot $_retry didn't reach its initramfs's /init (its kernel stopped before it, or the restart lost the tryboot flag); restarting into it once more" "slot=$_retry" "reset=${_reset:-unknown}"
 		else
 			board_event update.rolled-back "$ERROR" "slot=$TRIAL" "reset=${_reset:-unknown}" "tryboot=${_tried:-yes}"
 			TRIAL='' STATE=rolled-back

@@ -548,21 +548,19 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
   and carries on. Reported: two first trials right after an install fell
   back without reaching /init (no pstore, reset 0x20, a clean shutdown); the
   same slot booted on the next boot-once.
-- **A trial whose restart lost the tryboot flag is tried once more**: when
-  the firmware started normally (tryboot 0) and the slot's /init never ran,
-  confirm logs `update.retry` and restarts into the trial again, once per
-  trial (`RETRIED` in the slot's meta; boot-once starts a new count); lost
-  again, it rolls back as before, the slot still untried. Bench board,
-  2026-10-17: 3 of 7 `install --boot` restarts lost the flag (each such
-  shutdown's journal stops within a second of its start, rsts 0x20: a reset
-  before the kernel's reboot, cause not yet known; pstore has kept nothing
-  since 10-16), and every later boot-once kept it.
-- **A trial that never reached /init says whether the firmware tried it**
-  (`board_tryboot`, chosen/bootloader/tryboot): flag 0 is "wasn't tried: the
-  firmware started normally (the restart lost its tryboot flag)", and the
-  slot stays untried rather than bad; flag 1 is "the firmware did the trial
-  boot but started <slot>" (an old trial.txt, or files it couldn't load).
-  `update.rolled-back` gains `tryboot=yes|no|unknown`.
+- **A trial that didn't reach /init is tried once more** (`update.retry`,
+  once per trial: `RETRIED` in the slot's meta, a boot-once starts a new
+  count; then it rolls back as before). The boot that notices it can't tell
+  a restart that lost the tryboot flag from a trial kernel that stopped
+  before /init: the firmware's tryboot is one-shot, so that boot reads 0
+  either way (an earlier version of this entry, 5bb0982 and 933e678, read
+  the 0 as "the restart lost its tryboot flag": wrong). It reads 1 only when
+  the firmware did the trial but started another slot, and then says so
+  (`tryboot=yes`). Bench board, 2026-10-17: 3 of 7 first trials after
+  `install --boot` didn't reach /init; a later boot-once of the same slot
+  always worked. Why is still open: the trimmed kernel can't read pstore
+  records (being bisected), so a trial kernel that crashed early left
+  nothing.
 - **A slot's overlays are only the ones a Raze loads, on every build
   tree:** rpi-firmware's install replaces `images/rpi-firmware/overlays/`
   instead of adding to it. An output dir that had once installed the whole

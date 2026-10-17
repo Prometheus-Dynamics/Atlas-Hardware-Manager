@@ -151,14 +151,15 @@ up stage "$T/pv-c.slot.tar" 2>/dev/null || true
 bundle pv-c 2026.4.1
 up stage "$T/pv-c.slot.tar" 2>/dev/null
 up apply 2>/dev/null
-up confirm 2>/dev/null # still running pv-b: pv-c never started
+up confirm 2>/dev/null # still running pv-b: pv-c never started (tried once more)
+up confirm 2>/dev/null # and again: rolled back
 status | grep -q '"state":"rolled-back"' || fail "rolled-back: $(status)"
 grep -q '^GOOD=no' "$T/data/board/slots/pv-c.meta" || fail "pv-c marked bad"
 [ "$(rc set-default pv-c)" = 3 ] || fail "set-default on a slot that never booted"
 status | grep -q "didn't reach its initramfs" || fail "the reason for a trial that never got to /init: $(status)"
 status | grep -q "power-on" && fail "a power-on blamed without a reset register: $(status)"
 
-echo "a trial the firmware wasn't asked for (tryboot 0) isn't held against the slot; asked (1), it says so"
+echo "a trial that didn't reach /init is tried once more, then rolled back; tryboot 1 says the firmware started another slot"
 : > "$T/flushes"
 up apply 2>/dev/null || true
 up stage "$T/pv-c.slot.tar" 2>/dev/null || true
@@ -176,8 +177,8 @@ grep -q "os_prefix=slots/pv-c/" "$T/boot/trial.txt" || fail "trial.txt for the r
 grep -qx /dev/fake-p1 "$T/flushes" || fail "the retry's trial.txt wasn't flushed"
 up confirm 2>/dev/null # lost again: no third try
 [ "$(cat "$T/reboots")" = tryboot ] || fail "tried a third time: $(cat "$T/reboots")"
-status | grep -q "wasn't tried: the firmware started normally" || fail "a lost tryboot flag: $(status)"
-grep -q '^GOOD=untried' "$T/data/board/slots/pv-c.meta" || fail "an untried slot was marked bad: $(cat "$T/data/board/slots/pv-c.meta")"
+status | grep -q "didn't reach its initramfs's /init (its kernel stopped before it, or the restart lost the tryboot flag)" || fail "a trial that didn't reach /init: $(status)"
+grep -q '^GOOD=no' "$T/data/board/slots/pv-c.meta" || fail "a slot that didn't start isn't marked bad: $(cat "$T/data/board/slots/pv-c.meta")"
 up apply 2>/dev/null
 printf '\000\000\000\001' > "$T/dt/chosen/bootloader/tryboot"
 up confirm 2>/dev/null
@@ -191,6 +192,7 @@ up stage "$T/pv-c.slot.tar" 2>/dev/null || true
 up apply 2>/dev/null
 mkdir -p "$T/dt/chosen/bootloader"
 printf '\000\000\020\000' > "$T/dt/chosen/bootloader/rsts" # PM_RSTS 0x1000
+up confirm 2>/dev/null # tried once more
 up confirm 2>/dev/null
 status | grep -q "began at power-on (the board lost power)" || fail "the power-on wasn't said: $(status)"
 printf '\000\000\000\040' > "$T/dt/chosen/bootloader/rsts" # 0x20, a reset
