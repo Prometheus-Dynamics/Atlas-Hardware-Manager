@@ -6,6 +6,9 @@
 import type { NtCameraAddress, NtFrame, NtServerFrame, NtServerInfo, NtServerTopic, NtTopic, NtValue } from "../types";
 
 const t = () => performance.now() / 1000;
+/** The simulated server's clock (µs since the viewer connected), as values' t_us. */
+let connectedAt = performance.now();
+const serverUs = () => Math.round((performance.now() - connectedAt) * 1000);
 const num = (type: "double" | "int" | "float", value: number): NtValue => ({ type, value });
 
 const ROBOT: Record<string, { type: string; value: () => NtValue }> = {
@@ -25,6 +28,33 @@ const ROBOT: Record<string, { type: string; value: () => NtValue }> = {
   "/photonvision/cam-front/latencyMillis": { type: "double", value: () => num("double", 18 + Math.random() * 6) },
   "/photonvision/cam-front/pipelineIndex": { type: "int", value: () => num("int", 0) },
   "/photonvision/cam-front/rawBytes": { type: "raw", value: () => ({ type: "raw", value: [1, 2, 3, 4] }) },
+  // A HeliOS camera's pipelines (its NT4 schema v1): fps, latency and the
+  // capture time (on the server's clock) next to outputs that are JSON
+  // strings, each wrapped in one key.
+  "/helios/default/fps": { type: "double", value: () => num("double", 29.5 + Math.random()) },
+  "/helios/default/latency_ms": { type: "double", value: () => num("double", 14 + Math.random() * 3) },
+  "/helios/default/capture_time_us": { type: "int", value: () => num("int", serverUs() - 18000 - Math.round(Math.random() * 3000)) },
+  "/helios/default/detections": {
+    type: "string",
+    value: () => ({
+      type: "string",
+      value: JSON.stringify({
+        detections: [3, 7, 8].slice(0, Math.sin(t() * 0.4) > 0 ? 3 : 1).map((id, i) => {
+          const x = 612 + i * 140 + Math.sin(t()) * 20;
+          return { id, corners: [{ x, y: 233 }, { x: x + 43, y: 232 }, { x: x + 44, y: 275 }, { x: x + 1, y: 276 }] };
+        }),
+      }),
+    }),
+  },
+  "/helios/default/rejected": { type: "string", value: () => ({ type: "string", value: '{"value":[]}' }) },
+  "/helios/default/multi_tag_pose": { type: "string", value: () => ({ type: "string", value: '{"value":null,"status":"uncalibrated"}' }) },
+  "/helios/objects/fps": { type: "double", value: () => num("double", 29 + Math.random()) },
+  "/helios/objects/latency_ms": { type: "double", value: () => num("double", 31 + Math.random() * 6) },
+  "/helios/objects/capture_time_us": { type: "int", value: () => num("int", serverUs() - 40000) },
+  "/helios/objects/detections": {
+    type: "string",
+    value: () => ({ type: "string", value: JSON.stringify({ detections: [{ class: "note", confidence: 0.91, yaw: +(Math.sin(t()) * 20).toFixed(2) }] }) }),
+  },
 };
 
 export function ntConnect(target: string, port: number | null, onFrame: (frame: NtFrame) => void): Promise<() => void> {
@@ -36,10 +66,10 @@ export function ntConnect(target: string, port: number | null, onFrame: (frame: 
       onFrame({ type: "status", connected: true, host, port: port ?? 5810, reason: null });
       const announced: NtTopic[] = Object.entries(ROBOT).map(([name, topic]) => ({ name, type: topic.type, properties: {} }));
       onFrame({ type: "topics", announced, gone: [] });
-      const start = performance.now();
+      connectedAt = performance.now();
       timers.push(
         setInterval(() => {
-          const now = Math.round((performance.now() - start) * 1000);
+          const now = serverUs();
           onFrame({ type: "values", values: Object.entries(ROBOT).map(([name, topic]) => ({ name, t_us: now, value: topic.value() })) });
         }, 20),
       );

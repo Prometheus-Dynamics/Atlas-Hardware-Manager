@@ -28,8 +28,12 @@ export function formatNt(value: NtValue | null | undefined, limit = 6): string {
     case "float":
     case "int":
       return short(value.value);
-    case "string":
-      return JSON.stringify(value.value);
+    case "string": {
+      // A JSON object or list (HeliOS's pipeline outputs) reads as JSON, not
+      // as an escaped string.
+      const json = jsonOf(value.value);
+      return json === undefined ? JSON.stringify(value.value) : JSON.stringify(json);
+    }
     case "raw":
       return `${value.value.length} bytes`;
     default: {
@@ -40,6 +44,98 @@ export function formatNt(value: NtValue | null | undefined, limit = 6): string {
       return `[${shown}${items.length > limit ? `, … ${items.length - limit} more` : ""}]`;
     }
   }
+}
+
+/** A string's JSON when it holds an object or a list, else undefined. */
+export function jsonOf(text: string): unknown {
+  const head = text.trimStart()[0];
+  if (head !== "{" && head !== "[") return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+const scalar = (v: unknown) =>
+  typeof v === "number" ? short(v) : typeof v === "string" ? v : typeof v === "boolean" ? String(v) : v === null ? "null" : null;
+
+/** JSON in one short line: `3 · ids 1, 3, 5`, `x 1.2, y 0.4, theta 12`, `none`. */
+export function summarizeJson(json: unknown, keys = 3): string {
+  if (json === null || json === undefined) return "none";
+  if (Array.isArray(json)) {
+    if (json.length === 0) return "none";
+    // What names each item: an id (tags), else a class or label (objects).
+    const pick = (keys: string[]) =>
+      json
+        .map((item) => (item && typeof item === "object" ? keys.map((k) => (item as Record<string, unknown>)[k]).find((v) => v !== undefined) : undefined))
+        .filter((v) => v !== undefined && v !== null && scalar(v) !== null);
+    const ids = pick(["id", "fiducial_id", "fiducialId"]);
+    const names = ids.length ? ids : pick(["class", "label", "name"]);
+    if (names.length === 0) return `${json.length} ${json.length === 1 ? "item" : "items"}`;
+    const shown = names.slice(0, 5).map(scalar).join(", ");
+    return `${json.length} · ${ids.length ? "ids " : ""}${shown}${names.length > 5 ? ", …" : ""}`;
+  }
+  if (typeof json === "object") {
+    const entries = Object.entries(json);
+    // HeliOS wraps an output in one key ({"detections": [...]}, {"value": []}): the inside says it.
+    if (entries.length === 1 && entries[0][1] !== null && typeof entries[0][1] === "object") return summarizeJson(entries[0][1], keys);
+    const parts: string[] = [];
+    for (const [key, v] of entries) {
+      // An empty field (`"value": null` beside a status) says nothing.
+      const text = v === null ? null : Array.isArray(v) ? `${v.length}` : scalar(v);
+      if (text === null) continue;
+      parts.push(`${key} ${text}`);
+      if (parts.length >= keys) break;
+    }
+    return parts.join(", ") || `${entries.length} fields`;
+  }
+  return scalar(json) ?? "";
+}
+
+/** The numbers HeliOS publishes next to each pipeline's outputs. */
+const PIPELINE_STATS = new Set(["latency_ms", "fps", "capture_time_us"]);
+
+/** A HeliOS pipeline: <prefix>/<name>/{fps,latency_ms,capture_time_us} and its outputs. */
+export interface Pipeline {
+  /** Its folder, e.g. `/helios/default/`. */
+  path: string;
+  name: string;
+  fps: number | null;
+  latencyMs: number | null;
+  /** The frame's age when its outputs were published (ms, on the server's clock), from capture_time_us. */
+  ageMs: number | null;
+  /** Its outputs' topics (every other topic directly in its folder). */
+  outputs: string[];
+}
+
+/**
+ * The pipelines among `topics`: each folder holding an `fps` and a
+ * `latency_ms` (HeliOS's prefix is a setting, "/helios" by default).
+ * `t_us` is when the server got each value, on its clock.
+ */
+export function pipelinesOf(topics: Map<string, { value: NtValue | null; t_us?: number }>): Pipeline[] {
+  const folders = new Map<string, Pipeline>();
+  const folderOf = (name: string) => name.slice(0, name.lastIndexOf("/") + 1);
+  for (const name of topics.keys()) {
+    if (!name.endsWith("/fps")) continue;
+    const path = folderOf(name);
+    if (!topics.has(`${path}latency_ms`)) continue;
+    folders.set(path, { path, name: path.split("/").filter(Boolean).at(-1) ?? path, fps: null, latencyMs: null, ageMs: null, outputs: [] });
+  }
+  if (folders.size === 0) return [];
+  for (const [name, topic] of topics) {
+    const pipeline = folders.get(folderOf(name));
+    if (!pipeline) continue;
+    const leaf = name.slice(pipeline.path.length);
+    if (leaf === "fps") pipeline.fps = numberOf(topic.value);
+    else if (leaf === "latency_ms") pipeline.latencyMs = numberOf(topic.value);
+    else if (leaf === "capture_time_us") {
+      const captured = numberOf(topic.value);
+      if (captured !== null && topic.t_us) pipeline.ageMs = Math.max(0, (topic.t_us - captured) / 1000);
+    } else if (!PIPELINE_STATS.has(leaf)) pipeline.outputs.push(name);
+  }
+  return [...folders.values()].map((p) => ({ ...p, outputs: p.outputs.sort() })).sort((a, b) => a.path.localeCompare(b.path));
 }
 
 /** Text as a value of `type`: numbers, true/false, a string, or a comma list (or JSON) for arrays. */

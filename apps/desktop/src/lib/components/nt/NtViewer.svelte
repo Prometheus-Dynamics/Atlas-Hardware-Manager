@@ -16,7 +16,7 @@
   import { cameraStreams } from "#lib/present.ts";
   import { onDestroy, untrack } from "svelte";
   import { SvelteMap, SvelteSet } from "svelte/reactivity";
-  import { formatNt, isNumberType, numberOf, treeRows } from "./nt.ts";
+  import { formatNt, isNumberType, jsonOf, numberOf, pipelinesOf, summarizeJson, treeRows } from "./nt.ts";
 
   const RECENT_KEY = "atlas.nt.recent";
   const loadRecent = (): string[] => {
@@ -49,7 +49,7 @@
   const collapsed = new SvelteSet<string>();
 
   /** Each topic's type, newest value and when it arrived (this computer's ms); not reactive per value. */
-  const topics = new Map<string, { type: string; value: NtValue | null; at: number }>();
+  const topics = new Map<string, { type: string; value: NtValue | null; at: number; t_us?: number }>();
   /** Bumped once per frame, so the tree re-reads the values. */
   let version = $state(0);
   const graphs = new SvelteMap<string, LiveSeries>();
@@ -74,6 +74,7 @@
         const topic = topics.get(name) ?? { type: value.type, value: null, at: 0 };
         topic.value = value;
         topic.at = now;
+        topic.t_us = t_us;
         topics.set(name, topic);
         const series = graphs.get(name);
         if (series) series.push(t_us, [numberOf(value)]);
@@ -153,6 +154,20 @@
     void version;
     return treeRows([...topics.keys()], collapsed, search);
   });
+  /** HeliOS's pipelines (<prefix>/<name>/fps, latency_ms and outputs), when the server has any. */
+  const pipelines = $derived.by(() => {
+    void version;
+    return pipelinesOf(topics);
+  });
+  /** An output as its pipeline row shows it: a one-line summary, and the whole JSON on hover. */
+  function output(name: string, _version: number) {
+    const value = topics.get(name)?.value;
+    const json = value?.type === "string" ? jsonOf(value.value) : undefined;
+    return json === undefined
+      ? { text: formatNt(value), full: formatNt(value, 64) }
+      : { text: summarizeJson(json), full: JSON.stringify(json, null, 2) };
+  }
+  const stat = (n: number | null, digits: number) => (n === null ? "—" : n.toFixed(digits));
   const count = $derived.by(() => {
     void version;
     return topics.size;
@@ -223,6 +238,37 @@
 
   {#if !open && cameras.length === 0}
     <p class="text-[13px] text-fg-muted">No camera is online. Enter a team number for its robot, or any NT4 server's address.</p>
+  {/if}
+
+  {#if open && pipelines.length}
+    <GlassCard title="Pipelines" subtitle="HeliOS · {pipelines.length}">
+      <div class="pipelines" aria-label="HeliOS pipelines">
+        {#each pipelines as pipeline (pipeline.name)}
+          <div class="pipeline">
+            <span class="name mono" title={pipeline.path}>{pipeline.name}</span>
+            {#each [{ key: "fps", label: "fps", value: stat(pipeline.fps, 1) }, { key: "latency_ms", label: "ms", value: stat(pipeline.latencyMs, 1) }] as s (s.key)}
+              {@const topic = `${pipeline.path}${s.key}`}
+              <button type="button" class="stat" class:on={graphs.has(topic)} disabled={!graphs.has(topic) && graphs.size >= 8} onclick={() => toggleGraph(topic)} title="{graphs.has(topic) ? 'Stop graphing' : 'Graph'} {topic}">
+                <span class="mono">{s.value}</span><span class="unit">{s.label}</span>
+              </button>
+            {/each}
+            <span class="stat age" title="The frame's age when its outputs reached the server (capture_time_us, on the server's clock)">
+              <span class="mono">{stat(pipeline.ageMs, 0)}</span><span class="unit">ms old</span>
+            </span>
+            <span class="outputs">
+              {#each pipeline.outputs as name (name)}
+                {@const out = output(name, version)}
+                <button type="button" class="output" title={out.full} onclick={() => (search = name)}>
+                  <span class="key">{name.split("/").at(-1)}</span><span class="mono">{out.text}</span>
+                </button>
+              {:else}
+                <span class="text-fg-faint">no outputs</span>
+              {/each}
+            </span>
+          </div>
+        {/each}
+      </div>
+    </GlassCard>
   {/if}
 
   {#if open}
@@ -301,6 +347,93 @@
 </div>
 
 <style>
+  .pipelines {
+    display: flex;
+    flex-direction: column;
+    font-size: 12.5px;
+  }
+  .pipeline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 30px;
+    border-top: 1px solid var(--hairline);
+  }
+  .pipeline:first-child {
+    border-top: 0;
+  }
+  .pipeline .name {
+    width: 9rem;
+    flex-shrink: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--fg);
+  }
+  .stat {
+    display: inline-flex;
+    align-items: baseline;
+    justify-content: flex-end;
+    gap: 3px;
+    width: 4.75rem;
+    flex-shrink: 0;
+    height: 24px;
+    padding: 0 6px;
+    border-radius: var(--r-md);
+    font-variant-numeric: tabular-nums;
+    color: var(--fg);
+  }
+  .stat .unit {
+    font-size: 11px;
+    color: var(--fg-faint);
+  }
+  .stat.age {
+    width: 6rem;
+  }
+  button.stat:hover,
+  .stat.on {
+    background: var(--glass-strong);
+  }
+  .stat.on {
+    box-shadow: inset 0 0 0 1px var(--accent-ring);
+  }
+  /* One line per pipeline, so a row never changes height as values change
+     (30 times a second): long outputs shrink, the hover has them whole. */
+  .outputs {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    gap: 6px;
+    overflow: hidden;
+  }
+  .output {
+    display: inline-flex;
+    min-width: 3.5rem;
+    flex: 0 1 auto;
+    align-items: center;
+    gap: 6px;
+    height: 22px;
+    padding: 0 7px;
+    border: 1px solid var(--glass-border);
+    border-radius: var(--r-md);
+    color: var(--fg);
+    background: var(--glass-strong);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .output .key {
+    flex-shrink: 0;
+    color: var(--fg-faint);
+  }
+  .output .mono {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .output:hover {
+    border-color: var(--accent-ring);
+  }
   .suggest {
     display: flex;
     flex-direction: column;
@@ -413,9 +546,6 @@
     font-size: 12px;
     color: var(--fg-muted);
     background: var(--glass-strong);
-  }
-  .chip:hover {
-    color: var(--fg);
   }
   .chip:hover {
     color: var(--fg);
