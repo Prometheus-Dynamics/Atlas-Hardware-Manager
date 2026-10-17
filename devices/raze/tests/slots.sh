@@ -166,7 +166,16 @@ up apply 2>/dev/null
 grep -qx /dev/fake-p1 "$T/flushes" || fail "trial.txt wasn't flushed before the restart"
 mkdir -p "$T/dt/chosen/bootloader"
 printf '\000\000\000\000' > "$T/dt/chosen/bootloader/tryboot"
+: > "$T/reboots"
+: > "$T/flushes"
 up confirm 2>/dev/null
+[ "$(cat "$T/reboots")" = tryboot ] || fail "a lost tryboot flag isn't tried once more: $(cat "$T/reboots")"
+status | grep -q '"slot_trial":"pv-c"' || fail "the retry's trial: $(status)"
+grep -q 'update.retry' "$T/data/board/events.jsonl" || fail "no update.retry event"
+grep -q "os_prefix=slots/pv-c/" "$T/boot/trial.txt" || fail "trial.txt for the retry"
+grep -qx /dev/fake-p1 "$T/flushes" || fail "the retry's trial.txt wasn't flushed"
+up confirm 2>/dev/null # lost again: no third try
+[ "$(cat "$T/reboots")" = tryboot ] || fail "tried a third time: $(cat "$T/reboots")"
 status | grep -q "wasn't tried: the firmware started normally" || fail "a lost tryboot flag: $(status)"
 grep -q '^GOOD=untried' "$T/data/board/slots/pv-c.meta" || fail "an untried slot was marked bad: $(cat "$T/data/board/slots/pv-c.meta")"
 up apply 2>/dev/null

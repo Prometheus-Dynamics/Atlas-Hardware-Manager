@@ -370,6 +370,8 @@ cmd_boot_once() {
 	mount_boot
 	[ -d "$BOOT/slots/$_id" ] || refuse "slot $_id has no boot files"
 	write_line trial.txt "os_prefix=slots/$_id/"
+	# A new trial: confirm may try it once more if the restart loses its flag.
+	meta_set "$_id" RETRIED no
 	TRIAL=$_id STATE=rebooting
 	save_state
 	board_event update.apply "restarting into slot $_id ($(mf "$_id" version)) on trial" "slot=$_id"
@@ -398,6 +400,7 @@ cmd_confirm() {
 		DEFAULT=$_run TRIAL='' STAGED='' STATE=confirmed ERROR=''
 		board_event update.confirmed "kept slot $_run ($(mf "$_run" version))" "slot=$_run"
 	elif [ -n "$TRIAL" ]; then
+		_retry=''
 		meta_set "$TRIAL" GOOD no
 		# The initramfs writes trial-init once it has /data on a trial, and
 		# trial-started once it has started the slot.
@@ -414,6 +417,10 @@ cmd_confirm() {
 				_tried=no
 				meta_set "$TRIAL" GOOD untried
 				ERROR="slot $TRIAL wasn't tried: the firmware started normally (the restart lost its tryboot flag); back on $_run"
+				# Once per trial, it is tried again (3 of 7 restarts right
+				# after an install lost the flag on the bench board; a
+				# second boot-once has always kept it).
+				[ "$(meta_get "$TRIAL" RETRIED)" = yes ] || ! installed "$TRIAL" || _retry=$TRIAL
 				;;
 			1)
 				_tried=yes
@@ -429,8 +436,14 @@ cmd_confirm() {
 		# bench brown-out loses the tryboot flag), not necessarily the slot.
 		_reset=$(board_reset_cause)
 		[ "$_reset" != power-on ] || ERROR="$ERROR; this boot began at power-on (the board lost power), so the trial may never have run: try it again"
-		board_event update.rolled-back "$ERROR" "slot=$TRIAL" "reset=${_reset:-unknown}" "tryboot=${_tried:-yes}"
-		TRIAL='' STATE=rolled-back
+		if [ -n "$_retry" ]; then
+			meta_set "$_retry" RETRIED yes
+			ERROR=''
+			board_event update.retry "slot $_retry wasn't tried (the restart lost its tryboot flag); restarting into it once more" "slot=$_retry" "reset=${_reset:-unknown}" "tryboot=no"
+		else
+			board_event update.rolled-back "$ERROR" "slot=$TRIAL" "reset=${_reset:-unknown}" "tryboot=${_tried:-yes}"
+			TRIAL='' STATE=rolled-back
+		fi
 	fi
 	[ -n "$DEFAULT" ] || DEFAULT=$_run
 	meta_set "$_run" GOOD yes
@@ -438,6 +451,14 @@ cmd_confirm() {
 	echo 0 > "$STATE_DIR/fallbacks"
 	rm -f "$STATE_DIR/trial-started" "$STATE_DIR/trial-init"
 	save_state
+	if [ -n "${_retry:-}" ]; then
+		mount_boot
+		write_line trial.txt "os_prefix=slots/$_retry/"
+		STATE=rebooting
+		save_state
+		umount_boot
+		tryboot_reboot
+	fi
 }
 
 cmd_check_link() {

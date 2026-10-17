@@ -548,6 +548,15 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
   and carries on. Reported: two first trials right after an install fell
   back without reaching /init (no pstore, reset 0x20, a clean shutdown); the
   same slot booted on the next boot-once.
+- **A trial whose restart lost the tryboot flag is tried once more**: when
+  the firmware started normally (tryboot 0) and the slot's /init never ran,
+  confirm logs `update.retry` and restarts into the trial again, once per
+  trial (`RETRIED` in the slot's meta; boot-once starts a new count); lost
+  again, it rolls back as before, the slot still untried. Bench board,
+  2026-10-17: 3 of 7 `install --boot` restarts lost the flag (each such
+  shutdown's journal stops within a second of its start, rsts 0x20: a reset
+  before the kernel's reboot, cause not yet known; pstore has kept nothing
+  since 10-16), and every later boot-once kept it.
 - **A trial that never reached /init says whether the firmware tried it**
   (`board_tryboot`, chosen/bootloader/tryboot): flag 0 is "wasn't tried: the
   firmware started normally (the restart lost its tryboot flag)", and the
