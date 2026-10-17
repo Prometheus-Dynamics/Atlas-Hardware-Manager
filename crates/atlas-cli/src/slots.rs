@@ -41,9 +41,11 @@ pub(crate) enum SlotsCommand {
         #[arg(long)]
         yes: bool,
     },
+    /// Keep a slot: `remove` refuses it until it is unpinned
     Pin {
         id: String,
     },
+    /// Let a pinned slot be removed again
     Unpin {
         id: String,
     },
