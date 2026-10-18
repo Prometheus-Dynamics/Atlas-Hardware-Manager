@@ -16,8 +16,8 @@ kind = "rust"
 source = "atlas"
 package = "board-stream"
 target = "aarch64-unknown-linux-musl"
-# Cargo.toml: release, stripped.
-profile = "device"
+# Cargo.toml: device-lean (release, stripped, full LTO, one codegen unit).
+profile = "device-lean"
 target_name = "board-stream"
 install_name = "board-stream"
 install_class = "binary"

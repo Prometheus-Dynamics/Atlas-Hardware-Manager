@@ -22,8 +22,8 @@ kind = "rust"
 source = "atlas"
 package = "board-agent"
 target = "aarch64-unknown-linux-musl"
-# Cargo.toml: release, stripped.
-profile = "device"
+# Cargo.toml: device-lean (release, stripped, full LTO, one codegen unit).
+profile = "device-lean"
 target_name = "board-agent"
 install_name = "board-agent"
 install_class = "binary"

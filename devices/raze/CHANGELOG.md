@@ -104,6 +104,19 @@ commit; the commits are listed per area.
   exact `update.json` field set must accept the new fields (`019b215`,
   `01d5290`).
 
+### Install size: board-agent and board-stream
+
+- Both binaries now build with profile `device-lean` (release, stripped,
+  `lto = true`, `codegen-units = 1`, opt-level 3) instead of `device`.
+  Stripped aarch64 musl sizes, from the same tree:
+  - board-agent: 2,905,096 -> 1,802,216 bytes (-38%)
+  - board-stream: 749,368 -> 644,288 bytes (-14%)
+  The opt-level z profile (`device-small`) would be smaller still
+  (board-agent 1,165,848, board-stream 510,032) but was not used: opt-level z
+  can slow board-agent, which serves live data, and that was not measured.
+  Thin LTO gives 1,936,312 and 678,104. Build time is about the same for all
+  of these (cold builds of both crates ~1.5 min with `device-lean`).
+
 ### Board awareness: events, status, drift
 
 - **The identity says where the security switch is:** `"security":"on"|"off"`

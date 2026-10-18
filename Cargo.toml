@@ -134,3 +134,11 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 panic = "abort"
+
+# board-agent and board-stream (the device package's Gaia recipes): size with
+# speed kept (opt-level 3). Full LTO and one codegen unit cut the stripped
+# binaries by about a third at the same build time; see the CHANGELOG entry.
+[profile.device-lean]
+inherits = "device"
+lto = true
+codegen-units = 1
