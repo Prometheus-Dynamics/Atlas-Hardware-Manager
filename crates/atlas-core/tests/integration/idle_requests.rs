@@ -13,7 +13,8 @@ use async_trait::async_trait;
 use atlas_core::{Atlas, MemoryStore, WatchOptions};
 use atlas_driver::{
     Candidate, Capabilities, CapabilitySource, DeviceKey, DeviceStatus, Driver, DriverError,
-    DriverManifest, EventPage, EventQuery, Identity, Link, PushSink, StatusCapability, StatusPush,
+    DriverManifest, EventPage, EventQuery, Identity, Link, LinkSource, PushSink, StatusCapability,
+    StatusPush,
 };
 use atlas_driver_mock::{MockDevice, MockFleet, SIM_HELIOS};
 
@@ -103,6 +104,20 @@ impl CapabilitySource for Source {
     }
 }
 
+/// A source that can only be polled, as a real install has (the USB
+/// gadget network, Orion's directory): the fallback must not hinge on it.
+struct Polled;
+
+#[async_trait]
+impl LinkSource for Polled {
+    async fn links(&self) -> Vec<Link> {
+        Vec::new()
+    }
+    fn name(&self) -> &str {
+        "Polled"
+    }
+}
+
 /// Counts identity requests, the one request a scan makes of a board.
 struct Counted(Arc<dyn Driver>, Arc<Counts>);
 
@@ -151,6 +166,7 @@ async fn idle(channel: Channel) -> PerMinute {
     };
     let mut builder = Atlas::builder()
         .link_source(fleet.link_source())
+        .link_source(Arc::new(Polled))
         .capability_source(Arc::new(Source(key.clone(), board(channel), false)))
         .store(Arc::new(MemoryStore::default()));
     if channel == Channel::OrionOnly {

@@ -6,7 +6,9 @@
 // Where the board's own Orion node streams its readings, they are pushed:
 // the last five minutes at once (a full chart on open), then a row every
 // 500 ms. A poll every STREAM_POLL_MS fills in what the stream doesn't carry
-// (voltage, fps). Elsewhere the device is polled, only as often as the most
+// (voltage, fps); once a poll brings nothing the stream lacks (a board whose
+// readings come from its status: temperature and fan, which it streams), only
+// every STREAM_IDLE_MS. Elsewhere the device is polled, only as often as the most
 // eager view showing it asks (FAST for its own page, SLOW for lists and the
 // sidebar), never twice for two views, not again when a view re-subscribes,
 // and not while the window is hidden.
@@ -28,6 +30,8 @@ const HISTORY = 1800;
 const SHOWN = 120;
 /** While streamed, how often a device is polled for the rest. */
 const STREAM_POLL_MS = 5000;
+/** While streamed and the last poll had nothing the stream lacks: in case that changes. */
+const STREAM_IDLE_MS = 60_000;
 /** How long before a board without a stream is asked again. */
 const STREAM_RETRY_MS = 30_000;
 /** A stream outlives its last view this long, so a view re-subscribing keeps it. */
@@ -58,6 +62,8 @@ class LiveStore {
   /** When a stream was last tried per device (ms). */
   private streamTried = new Map<string, number>();
   private lingering = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Streamed devices whose last poll had nothing the stream doesn't carry. */
+  private covered = new Set<string>();
 
   /** Polls these devices every `every` ms while watched; returns a function that stops. */
   watch(ids: string[], every = FAST_MS): () => void {
@@ -157,6 +163,7 @@ class LiveStore {
   private unstream(id: string) {
     this.streams.get(id)?.stop();
     this.streams.delete(id);
+    this.covered.delete(id);
   }
 
   /** Pushed rows: replace (backfill) or extend the history, and refresh the readings. */
@@ -211,7 +218,7 @@ class LiveStore {
     // The first few readings come fast whatever the view asks, so its
     // charts have a line at once.
     const every = (id: string, asks: number[]) => {
-      if (this.streams.has(id)) return STREAM_POLL_MS;
+      if (this.streams.has(id)) return this.covered.has(id) ? STREAM_IDLE_MS : STREAM_POLL_MS;
       return (this.times.get(id)?.length ?? 0) < WARM_UP ? FAST_MS : Math.min(...asks);
     };
     for (const id of this.watchers.keys()) this.stream(id);
@@ -235,6 +242,8 @@ class LiveStore {
           if (streamed) {
             // The stream has its own readings and rows: take only the rest.
             const rest = readings.filter((m) => !streamed.carries.has(m.id));
+            if (rest.length === 0 && streamed.carries.size > 0) this.covered.add(id);
+            else this.covered.delete(id);
             const pushed = (this.metrics.get(id) ?? []).filter((m) => streamed.carries.has(m.id));
             this.metrics.set(id, [...pushed, ...rest]);
             this.errors.delete(id);

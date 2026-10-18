@@ -2,8 +2,10 @@
 //! something changed (USB hotplug, an mDNS announcement), plus a slow
 //! fallback rescan for sources that cannot watch and for devices that leave
 //! without saying so. While every live device has its push channel open
-//! (push.rs: one that drops re-scans at once) and every source watches, the
-//! fallback waits at least [`PUSHED_FALLBACK`].
+//! (push.rs: one that drops re-scans at once), the fallback waits at least
+//! [`PUSHED_FALLBACK`], whichever sources only poll: none of those devices
+//! can leave unnoticed, and a new one still shows up on a notice (a USB
+//! gadget board on its hotplug) or within that minute.
 
 use std::time::Duration;
 
@@ -13,7 +15,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{Atlas, CoreError};
 
-/// The fallback while every live device pushes and every source watches.
+/// The fallback while every live device pushes.
 pub(crate) const PUSHED_FALLBACK: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Debug)]
@@ -82,7 +84,6 @@ impl Atlas {
                 (watching, polled)
             })
             .clone();
-        let all_watch = polled.is_empty();
         *self.inner.discovery() = DiscoveryStatus {
             live: true,
             watching,
@@ -97,7 +98,7 @@ impl Atlas {
                 atlas.scan().await;
                 atlas.follow_push_channels();
                 atlas.sync_clocks(options.clock_sync);
-                let fallback = if all_watch && atlas.all_pushing() {
+                let fallback = if atlas.all_pushing() {
                     options.fallback.max(PUSHED_FALLBACK)
                 } else {
                     options.fallback
