@@ -2,6 +2,10 @@
   "$schema": "https://schema.tauri.app/config/2",
   "bundle": {
     "targets": ["nsis"],
+    "externalBin": [
+      "binaries/atlas-helper",
+      "binaries/atlas"
+    ],
     "resources": {
       "../../../tools/windows/wdi-simple.exe": "drivers/wdi-simple.exe"
     },

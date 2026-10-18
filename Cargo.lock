@@ -255,6 +255,7 @@ dependencies = [
 name = "atlas-app"
 version = "0.1.0"
 dependencies = [
+ "atlas-cli",
  "atlas-core",
  "atlas-devices",
  "atlas-driver",

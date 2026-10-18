@@ -32,7 +32,7 @@ pub struct HelperClient {
 
 impl HelperClient {
     /// Uses `ATLAS_HELPER` if set, else `atlas-helper` next to the running
-    /// executable (where the installers put it).
+    /// executable, symlinks resolved (where the installers put it).
     pub fn locate() -> Result<Self, BlockError> {
         let name = if cfg!(windows) {
             "atlas-helper.exe"
@@ -43,6 +43,7 @@ impl HelperClient {
             .map(PathBuf::from)
             .or_else(|| {
                 std::env::current_exe()
+                    .and_then(std::fs::canonicalize)
                     .ok()
                     .and_then(|exe| exe.parent().map(|dir| dir.join(name)))
             })

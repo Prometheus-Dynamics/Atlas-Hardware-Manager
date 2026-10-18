@@ -27,13 +27,9 @@ pub(crate) enum SlotsCommand {
         boot: bool,
     },
     /// Restart into a slot once, on trial.
-    BootOnce {
-        id: String,
-    },
+    BootOnce { id: String },
     /// Make a slot that booted well the default.
-    SetDefault {
-        id: String,
-    },
+    SetDefault { id: String },
     /// Remove a slot (not the running, default, trial or a pinned one).
     Remove {
         id: String,
@@ -42,13 +38,9 @@ pub(crate) enum SlotsCommand {
         yes: bool,
     },
     /// Keep a slot: `remove` refuses it until it is unpinned
-    Pin {
-        id: String,
-    },
+    Pin { id: String },
     /// Let a pinned slot be removed again
-    Unpin {
-        id: String,
-    },
+    Unpin { id: String },
 }
 
 pub(crate) async fn slots(

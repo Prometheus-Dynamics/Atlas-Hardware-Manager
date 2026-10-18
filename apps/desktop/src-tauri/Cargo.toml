@@ -37,6 +37,10 @@ tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
 tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
 
+# The atlas command, run by this binary on Linux and macOS (src/main.rs).
+[target.'cfg(not(windows))'.dependencies]
+atlas-cli.workspace = true
+
 [dev-dependencies]
 atlas-usbboot.workspace = true
 

@@ -10,6 +10,10 @@ authors.workspace = true
 publish.workspace = true
 description = "The atlas command: manage boards from a terminal."
 
+[lib]
+name = "atlas_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "atlas"
 path = "src/main.rs"

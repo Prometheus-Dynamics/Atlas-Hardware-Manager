@@ -114,9 +114,22 @@ cargo run -p atlas-cli -- update rpi:port-1-2 --image helios-cm5.img.xz
 cargo run -p atlas-cli -- --sim demo update --all --release sim-helios=2026.3.1 --release sim-mcu=1.5.0
 ```
 
-The installers put the CLI next to the app (`/usr/bin/atlas` on Linux), where
-it finds `atlas-helper`, the Pi boot files and the device packages the way the
-app does. A fresh install from a terminal, the same job as the app's Flash:
+The installed app is the CLI too, so the drivers ship once. It runs the CLI
+instead of opening its window when invoked as `atlas`, with `--cli` first, or
+with a CLI command (`atlas-app doctor`, `./Atlas*.AppImage ls`), and it never
+touches GTK or WebKit then, so it works over SSH without a display. Per
+installer:
+
+- Linux `.deb`/`.rpm`: `/usr/bin/atlas` is a two-line script that runs
+  `/usr/bin/atlas-app --cli "$@"`.
+- macOS: link it onto your PATH:
+  `ln -s "/Applications/Atlas Hardware Manager.app/Contents/MacOS/atlas-app" /usr/local/bin/atlas`.
+- Windows: the app is a GUI program there, which can't use the console, so
+  the installer keeps a separate `atlas.exe` next to it.
+
+Either way it finds `atlas-helper`, the Pi boot files and the device packages
+the way the app does. A fresh install from a terminal, the same job as the
+app's Flash:
 
 ```bash
 # A board already in USB boot (boot button, or a blank eMMC):
@@ -139,8 +152,8 @@ cd apps/desktop
 bun run bundle
 ```
 
-This fetches the boot files, builds `atlas-helper` and the `atlas` CLI as
-sidecars, and runs
+This fetches the boot files, builds `atlas-helper` (and on Windows the
+`atlas` CLI) as sidecars, and runs
 `tauri build` with `src-tauri/tauri.bundle.conf.json`. CI does the same on
 Linux, Windows, and macOS for tags and manual runs.
 

@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Prepares everything a release bundle carries besides the app itself:
-# the USB boot files and the atlas-helper and atlas (the CLI) sidecars for
-# the target triple. Installed next to the app, the CLI finds the helper and
-# the bundled boot files and device packages the same way the app does.
+# the USB boot files and the atlas-helper sidecar for the target triple,
+# plus the atlas CLI sidecar on Windows. Elsewhere the app is the CLI too
+# (invoked as `atlas`, or `atlas-app --cli`; the Linux packages install
+# bundle/linux/atlas, which runs that), so it isn't built twice. Installed
+# next to the app, the CLI finds the helper and the bundled boot files and
+# device packages the same way the app does.
 #
 # Usage: scripts/prepare-bundle.sh [target-triple]
 set -euo pipefail
@@ -13,7 +16,12 @@ target="${1:-$(rustc -vV | sed -n 's/^host: //p')}"
 
 "$root_dir/scripts/fetch-usbboot-files.sh"
 
-cargo build --release -p atlas-helper -p atlas-cli --target "$target"
+packages=(-p atlas-helper)
+if [[ "$target" == *windows* ]]; then
+  # The app is a GUI-subsystem program there and can't use the console.
+  packages+=(-p atlas-cli)
+fi
+cargo build --release "${packages[@]}" --target "$target"
 # Cargo's output directory, as cargo resolves it: CARGO_TARGET_DIR, or a
 # build.target-dir in a .cargo/config.toml (for example on a faster disk
 # than the checkout's), else target/ here. Guessing missed the config file
@@ -28,5 +36,7 @@ fi
 bin_dir="$root_dir/apps/desktop/src-tauri/binaries"
 mkdir -p "$bin_dir"
 cp "$target_dir/$target/release/atlas-helper$extension" "$bin_dir/atlas-helper-$target$extension"
-cp "$target_dir/$target/release/atlas$extension" "$bin_dir/atlas-$target$extension"
+if [[ "$target" == *windows* ]]; then
+  cp "$target_dir/$target/release/atlas$extension" "$bin_dir/atlas-$target$extension"
+fi
 echo "Bundle inputs ready for $target"

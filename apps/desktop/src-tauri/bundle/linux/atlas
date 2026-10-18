@@ -1,0 +1,4 @@
+#!/bin/sh
+# The atlas command. The CLI is built into the desktop app, so the packages
+# ship this instead of a second copy of the drivers.
+exec /usr/bin/atlas-app --cli "$@"

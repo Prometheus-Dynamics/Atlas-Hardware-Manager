@@ -6,9 +6,11 @@ use std::path::PathBuf;
 /// Folders that may hold the bundled USB boot files, relative to the running
 /// executable: next to it (Windows, dev), `../Resources` (macOS),
 /// `../lib/<app>` (Linux packages, which install the app and the CLI in
-/// `/usr/bin`).
+/// `/usr/bin`). A symlink to the program (an `atlas` on the PATH) counts
+/// from where it points.
 pub fn bundled_usbboot_dirs() -> Vec<PathBuf> {
     let Some(exe_dir) = std::env::current_exe()
+        .and_then(std::fs::canonicalize)
         .ok()
         .and_then(|exe| exe.parent().map(PathBuf::from))
     else {
