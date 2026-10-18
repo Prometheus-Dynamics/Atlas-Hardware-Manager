@@ -1,0 +1,13 @@
+[Unit]
+Description=Rebind the USB gadget when its link stops sending
+Documentation=file:/usr/lib/board/usb-gadget-watch
+Requires=board-usb-gadget.service
+After=board-usb-gadget.service
+
+[Service]
+ExecStart=/usr/lib/board/usb-gadget-watch
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -10,6 +10,7 @@ enable board-http.socket
 enable board-stream.socket
 enable board-usb-gadget.service
 enable board-usb-gadget-dhcp.service
+enable board-usb-gadget-watch.service
 enable board-usb-route.service
 enable raze-leds-reprobe.service
 enable board-locate.path

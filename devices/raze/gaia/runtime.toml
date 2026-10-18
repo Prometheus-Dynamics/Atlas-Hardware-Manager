@@ -90,6 +90,13 @@ origin = "static-asset"
 mode = 493
 
 [[stage.files]]
+id = "raze-board-usb-gadget-watch"
+src = "@self/assets/rootfs/usr/lib/board/usb-gadget-watch"
+dest = "/usr/lib/board/usb-gadget-watch"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
 id = "raze-board-usb-gadget-setup"
 src = "@self/assets/rootfs/usr/lib/board/usb-gadget-setup"
 dest = "/usr/lib/board/usb-gadget-setup"
@@ -293,6 +300,12 @@ origin = "static-asset"
 id = "raze-systemd-system-board-usb-gadget-dhcp-service"
 src = "@self/assets/rootfs/usr/lib/systemd/system/board-usb-gadget-dhcp.service"
 dest = "/usr/lib/systemd/system/board-usb-gadget-dhcp.service"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-board-usb-gadget-watch-service"
+src = "@self/assets/rootfs/usr/lib/systemd/system/board-usb-gadget-watch.service"
+dest = "/usr/lib/systemd/system/board-usb-gadget-watch.service"
 origin = "static-asset"
 
 [[stage.files]]
@@ -687,6 +700,7 @@ stage_files = [
   "raze-board-lib-sh",
   "raze-board-raze-leds-reprobe",
   "raze-board-usb-gadget-dhcp",
+  "raze-board-usb-gadget-watch",
   "raze-board-usb-route",
   "raze-board-support-bundle",
   "raze-board-usb-gadget-setup",
@@ -719,6 +733,7 @@ stage_files = [
   "raze-systemd-system-board-identity-refresh-path",
   "raze-systemd-system-board-identity-refresh-timer",
   "raze-systemd-system-board-usb-gadget-dhcp-service",
+  "raze-systemd-system-board-usb-gadget-watch-service",
   "raze-systemd-system-board-usb-route-service",
   "raze-systemd-system-board-usb-gadget-service",
   "raze-systemd-system-raze-leds-reprobe-service",

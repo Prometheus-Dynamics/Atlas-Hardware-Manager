@@ -614,6 +614,17 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
   (old and new writers diffed on those 7 and on odd manifests: missing keys,
   objects, bools, a newline in a value, a bad manifest; those still read
   field by field). slot-init device-small 471,624 -> 472,648 bytes (+1 KB).
+- **The USB link recovers when it stops sending** (`board-usb-gadget-watch`,
+  `usr/lib/board/usb-gadget-watch`): every 20 s it pings out of the gadget
+  bridge and checks that each member with carrier sent a frame; three failed
+  probes in a row rebind the gadget's UDC (the host re-enumerates it) and log
+  `usb-gadget.rebound`, at most once in 5 minutes and three times a boot
+  (`USB_GADGET_WATCH=0` turns it off). Seen on the bench board 2026-10-17:
+  the host's enumeration hit "device descriptor read/64, error -71" at boot,
+  and usb0 then sent 84 frames in 2.4 hours while receiving 2,993; dnsmasq's
+  offers failed with "Resource temporarily unavailable", the host got no
+  address, and nothing on the board noticed (carrier up, the UDC configured,
+  no transmit timeout).
 - **One SSH identity per board** (`board-ssh-hostkeys.service`,
   `usr/lib/board/ssh-hostkeys`): the host keys live on `/data/ssh` (0700,
   keys 0600), so switching slots or installing another OS keeps the

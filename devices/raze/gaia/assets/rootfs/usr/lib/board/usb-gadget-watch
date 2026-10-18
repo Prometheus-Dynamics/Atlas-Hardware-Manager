@@ -1,0 +1,138 @@
+#!/bin/sh
+# Watches the USB gadget link for a stalled transmit path and rebinds the
+# gadget when it finds one (board-usb-gadget-watch.service).
+#
+# A gadget can come up with its network function receiving but never
+# sending: the host enumerated it with an error (seen 2026-10-17: "device
+# descriptor read/64, error -71"), usb0 kept carrier, the controller said
+# configured, and the kernel saw no transmit timeout. dnsmasq's offers then
+# fail with "Resource temporarily unavailable", the host gets no address, and
+# the board is unreachable over USB until the gadget is rebound.
+#
+# Every USB_GADGET_WATCH_SEC (20) it probes each bridge member with carrier:
+# one ping out of the bridge (to the first DHCP address on the link; with no
+# reply, the ARP request still has to leave), then whether the member's
+# tx_packets moved. USB_GADGET_WATCH_STRIKES (3) failed probes in a row on a
+# member rebind the gadget's UDC (the host re-enumerates it) and log a
+# usb-gadget.rebound event; at most once per USB_GADGET_WATCH_GAP_SEC (300) and
+# USB_GADGET_WATCH_MAX (3) times a boot, so a link that stays broken can't flap.
+#
+#   usb-gadget-watch           the loop
+#   usb-gadget-watch --check   one check (the state is in $BOARD_RUN_DIR)
+# Settings: usb-gadget.env. Test hooks: BOARD_NET_DIR, BOARD_CONFIGFS,
+# USB_GADGET_WATCH_PROBE (the probe command), USB_GADGET_WATCH_NOW (seconds).
+set -u
+
+BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
+# shellcheck source=lib.sh
+. "$BOARD_LIB_DIR/lib.sh"
+
+board_load_env usb-gadget.env
+
+if [ "${USB_GADGET_ENABLED:-1}" != 1 ] || [ "${USB_GADGET_NET:-bridge}" != bridge ] || [ "${USB_GADGET_WATCH:-1}" != 1 ]; then
+	exit 0
+fi
+
+CONFIGFS=${BOARD_CONFIGFS:-/sys/kernel/config}
+G="$CONFIGFS/usb_gadget/${USB_GADGET_NAME:-g1}"
+bridge=${USB_GADGET_BRIDGE:-usbbr0}
+state=$BOARD_RUN_DIR/usb-gadget-watch.state
+strikes_needed=${USB_GADGET_WATCH_STRIKES:-3}
+gap=${USB_GADGET_WATCH_GAP_SEC:-300}
+max=${USB_GADGET_WATCH_MAX:-3}
+
+now() { echo "${USB_GADGET_WATCH_NOW:-$(cut -d. -f1 /proc/uptime)}"; }
+counter() { cat "$BOARD_NET_DIR/$1/statistics/tx_packets" 2>/dev/null || echo 0; }
+
+# The probe's target: the first address after the board's on the link.
+probe_target() {
+	board_gadget_address
+	_ip=${BOARD_GADGET_CIDR%/*}
+	_n=$(board_ip4_int "$_ip") || return 1
+	board_int_ip4 $((_n + 1))
+}
+probe() {
+	if [ -n "${USB_GADGET_WATCH_PROBE:-}" ]; then
+		eval "$USB_GADGET_WATCH_PROBE"
+	else
+		ping -c 1 -W 1 -I "$bridge" "$1" >/dev/null 2>&1
+	fi
+	return 0
+}
+
+# state: STRIKES_<member>=n, REBOUND_AT=s, REBOUNDS=n
+STRIKES='' REBOUND_AT='' REBOUNDS=0
+# shellcheck disable=SC1090
+[ -r "$state" ] && . "$state"
+
+check() {
+	target=$(probe_target) || return 0
+	stalled=''
+	new_strikes=''
+	for path in "$BOARD_NET_DIR/$bridge/brif"/*; do
+		[ -e "$path" ] || continue
+		member=${path##*/}
+		# A member without a host on the other end has nothing to send to.
+		[ "$(cat "$BOARD_NET_DIR/$member/carrier" 2>/dev/null)" = 1 ] || continue
+		before=$(counter "$member")
+		probe "$target"
+		sleep "${USB_GADGET_WATCH_SETTLE:-1}"
+		after=$(counter "$member")
+		n=0
+		for kv in $STRIKES; do
+			[ "${kv%%=*}" = "$member" ] && n=${kv#*=}
+		done
+		if [ "$after" = "$before" ]; then
+			n=$((n + 1))
+			[ "$n" -lt "$strikes_needed" ] || stalled="$stalled $member"
+		else
+			n=0
+		fi
+		new_strikes="$new_strikes $member=$n"
+	done
+	STRIKES=${new_strikes# }
+	if [ -n "$stalled" ]; then
+		t=$(now)
+		if [ "$REBOUNDS" -ge "$max" ]; then
+			:
+		elif [ -n "$REBOUND_AT" ] && [ $((t - REBOUND_AT)) -lt "$gap" ]; then
+			:
+		else
+			rebind "${stalled# }"
+			REBOUND_AT=$t REBOUNDS=$((REBOUNDS + 1)) STRIKES=''
+		fi
+	fi
+	{
+		echo "STRIKES='$STRIKES'"
+		echo "REBOUND_AT='$REBOUND_AT'"
+		echo "REBOUNDS='$REBOUNDS'"
+	} > "$state.tmp" && mv -f "$state.tmp" "$state"
+}
+
+rebind() {
+	udc=$(cat "$G/UDC" 2>/dev/null)
+	if [ -z "$udc" ]; then
+		board_log "$1 isn't sending, but the gadget isn't bound; leaving it"
+		return 0
+	fi
+	echo '' > "$G/UDC" 2>/dev/null || true
+	sleep "${USB_GADGET_WATCH_SETTLE:-1}"
+	if echo "$udc" > "$G/UDC" 2>/dev/null; then
+		board_event usb-gadget.rebound "the USB link stopped sending ($1 sent nothing for $strikes_needed probes); the gadget was rebound to $udc" \
+			"members=$1" "udc=$udc" "rebound=$((REBOUNDS + 1))"
+	else
+		board_event usb-gadget.rebound "the USB link stopped sending ($1); rebinding the gadget to $udc failed" \
+			"members=$1" "udc=$udc" "failed=yes"
+	fi
+}
+
+if [ "${1:-}" = --check ]; then
+	check
+	exit 0
+fi
+while :; do
+	check
+	sleep "${USB_GADGET_WATCH_SEC:-20}"
+	# shellcheck disable=SC1090
+	[ -r "$state" ] && . "$state"
+done
