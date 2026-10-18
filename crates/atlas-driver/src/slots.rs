@@ -45,6 +45,11 @@ pub struct Slot {
     pub installed: String,
     #[serde(default, deserialize_with = "text")]
     pub last_boot: String,
+    /// The name the UI shows for the OS (the build recipe's display name);
+    /// `None` when the slot was built without one, or by a board whose
+    /// writer doesn't report it.
+    #[serde(default)]
+    pub display_name: Option<String>,
 }
 
 impl Slot {
@@ -225,8 +230,8 @@ mod tests {
     fn reads_the_writer_status() {
         let set: SlotSet = serde_json::from_str(
             r#"{"state":"idle","layout":"slots","slot_active":"pv-a","slot_staged":null,"slot_default":"pv-a","slot_previous":null,"slot_trial":null,"free_bytes":9000,"reserve_bytes":1000,
-            "slots":[{"id":"pv-a","family":"photonvision","version":"2026.3.0","variant":"styx","kernel":"7.2.9","size":400,"verity":true,"flags":["running","default"],"pinned":false,"good":"yes","installed":"2026-10-15","last_boot":null},
-                     {"id":"pv-b","family":"photonvision","version":"2026.4.0","variant":"styx","kernel":"7.2.9","size":410,"verity":true,"flags":[],"pinned":true,"good":null,"installed":null,"last_boot":null}]}"#,
+            "slots":[{"id":"pv-a","family":"photonvision","version":"2026.3.0","variant":"styx","kernel":"7.2.9","size":400,"verity":true,"flags":["running","default"],"pinned":false,"good":"yes","installed":"2026-10-15","last_boot":null,"display_name":null},
+                     {"id":"pv-b","family":"photonvision","version":"2026.4.0","variant":"styx","kernel":"7.2.9","size":410,"verity":true,"flags":[],"pinned":true,"good":null,"installed":null,"last_boot":null,"display_name":"PhotonVision Lab"}]}"#,
         )
         .unwrap();
         assert_eq!(set.running, "pv-a");
@@ -236,6 +241,11 @@ mod tests {
         assert!(set.slots[0].has("default"));
         assert!(set.remove_refusal("pv-a").unwrap().contains("running"));
         assert!(set.remove_refusal("pv-b").unwrap().contains("pinned"));
+        assert_eq!(set.slots[0].display_name, None);
+        assert_eq!(
+            set.slots[1].display_name.as_deref(),
+            Some("PhotonVision Lab")
+        );
     }
 
     #[test]

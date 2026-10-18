@@ -25,7 +25,7 @@ pub const KEY_EVENT_T: &str = "update.event_t";
 /// A slots board: `slots`; its default, previous and trial slot ids, the
 /// free space on /data and the reserve kept, and every slot as JSON text
 /// (the writer's list: id, family, version, variant, size, flags, pinned,
-/// good, installed, last_boot).
+/// good, installed, last_boot, display_name).
 pub const KEY_LAYOUT: &str = "update.layout";
 pub const KEY_SLOT_DEFAULT: &str = "update.slot_default";
 pub const KEY_SLOT_PREVIOUS: &str = "update.slot_previous";

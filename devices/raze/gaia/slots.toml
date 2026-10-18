@@ -43,6 +43,11 @@ description = "The OS family's directory under /data, bound from /data/os/<famil
 kind = "string"
 required = true
 
+[inputs.slot_display_name]
+description = "Name the UI shows for the OS in slot.json's display_name (e.g. \"HeliOS\", \"PhotonVision\"). Empty by default: an input default can't read slot_family, so the UI falls back to its own name for the family"
+kind = "string"
+default = ""
+
 [inputs.slot_kernel]
 description = "Kernel release (uname -r) of the Raze kernel the slots boot; the initramfs refuses a slot built for another"
 kind = "string"
@@ -198,6 +203,7 @@ kernel = "${input.slot_kernel}"
 built = "${build.date}"
 source = "${input.slot_source}"
 data_dirs = ["${input.slot_data_dir}"]
+display_name = "${input.slot_display_name}"
 
 # The boot payload's digests: every regular file of the payload tree, keyed by
 # its path in the tree. The tree is the one the bundle and the first-flash FAT

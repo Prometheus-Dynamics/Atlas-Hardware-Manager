@@ -654,6 +654,13 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
   set-default, rollback, remove (not the running, default, trial or a pinned
   slot), pin, and status with every slot and the free space (2 GiB kept
   free). `tests/slots.sh`.
+- **Slot display name:** `slots.toml` takes an input `slot_display_name` (default
+  empty: an input default can't read `slot_family`, so an OS that doesn't set it
+  keeps the UI's own name for its family). It goes to `slot.json` as
+  `display_name`, null when empty. The writer's status lists it on every slot
+  (`display_name`, null when the manifest has none), board-agent publishes it in
+  `update.slots`, and Atlas's slot list shows it in place of the family name.
+  `tests/slots.sh` checks a slot with a name and one without.
 - **data-setup** in slot mode (`atlas.data=` on the command line): grows p2
   and its ext4 online; never makes a filesystem.
 - The identity lists `slots-tryboot` in `update_methods` on a slots board.

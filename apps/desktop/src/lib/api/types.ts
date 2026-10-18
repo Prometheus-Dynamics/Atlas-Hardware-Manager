@@ -734,6 +734,8 @@ export interface Slot {
   good: string;
   installed: string;
   last_boot: string;
+  /** The OS's name from its build recipe ("HeliOS"); absent or null when it has none. */
+  display_name?: string | null;
 }
 
 /** A slots board's images and its room for more. */

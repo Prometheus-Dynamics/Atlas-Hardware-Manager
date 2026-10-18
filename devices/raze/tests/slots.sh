@@ -67,7 +67,7 @@ echo '{"schema":1,"id":"pv-a","family":"photonvision","version":"2026.3.0","vari
 echo '{"schema":1,"default":"pv-a","previous":null,"trial":null}' > "$T/data/board/slots/state.json"
 echo pv-a > "$T/data/board/slots/booted"
 
-# bundle <id> <version>: a slot bundle in $T/<id>.slot.tar.
+# bundle <id> <version> [display_name]: a slot bundle in $T/<id>.slot.tar.
 bundle() {
 	b=$T/build/$1
 	rm -rf "$b"
@@ -83,6 +83,10 @@ bundle() {
 	c=$(sha256sum "$b/boot/cmdline.txt" | cut -d' ' -f1)
 	printf '{"schema":1,"id":"%s","family":"photonvision","version":"%s","variant":"styx","kernel":"7.2.9","image":{"size":%s,"sha256":"%s"},"verity":{"root_hash":"%s","salt":"00","hash_offset":4096,"data_blocks":1},"boot":{"files":{"kernel8.img":"%s","overlays/bcm2712d0.dtbo":"%s","cmdline.txt":"%s"}}}\n' \
 		"$1" "$2" "$size" "$sha" "$(printf 'cd%.0s' $(seq 32))" "$k" "$d" "$c" > "$b/slot.json"
+	if [ -n "${3:-}" ]; then
+		python3 -c 'import json,sys
+p=sys.argv[1]; m=json.load(open(p)); m["display_name"]=sys.argv[2]; json.dump(m,open(p,"w"))' "$b/slot.json" "$3"
+	fi
 	tar -cf "$T/$1.slot.tar" -C "$b" slot.json boot rootfs.erofs
 }
 up() { sh "$lib/update" "$@"; }
@@ -106,13 +110,15 @@ status | grep -q '"id":"pv-a"' || fail "pv-a listed: $(status)"
 (. "$lib/lib.sh" && board_update_methods) | grep -qx slots-tryboot || fail "the identity doesn't list slots-tryboot"
 
 echo "a bundle installs as a slot: the boot dir on the FAT, the image on /data"
-bundle pv-b 2026.4.0
+bundle pv-b 2026.4.0 "PhotonVision Lab"
 up stage "$T/pv-b.slot.tar" --sha256 "$(sha256sum "$T/pv-b.slot.tar" | cut -d' ' -f1)" 2>/dev/null
 [ -f "$T/data/slots/pv-b.erofs" ] && [ -f "$T/data/slots/pv-b.json" ] || fail "image or manifest missing"
 grep -q "atlas.slot=pv-b atlas.roothash=cdcd" "$T/boot/slots/pv-b/cmdline.txt" || fail "cmdline: $(cat "$T/boot/slots/pv-b/cmdline.txt")"
 grep -q "atlas.data=PARTUUID=abcd1234-02" "$T/boot/slots/pv-b/cmdline.txt" || fail "PARTUUID"
 [ -f "$T/boot/slots/pv-b/overlays/bcm2712d0.dtbo" ] || fail "overlays not copied"
 status | grep -q '"slot_staged":"pv-b"' || fail "staged: $(status)"
+status | grep -q '"id":"pv-b"[^}]*"display_name":"PhotonVision Lab"' || fail "pv-b display_name: $(status)"
+status | grep -q '"id":"pv-a"[^}]*"display_name":null' || fail "pv-a without display_name isn't null: $(status)"
 ls "$T/data/slots" | grep -q install && fail "the work dir was left behind"
 grep -qx /dev/fake-p1 "$T/flushes" || fail "the FAT's device wasn't flushed after the slot's boot files"
 status | grep -q '"id":"pv-a"[^}]*"size":2,' || fail "pv-a's size isn't its file's: $(status)"

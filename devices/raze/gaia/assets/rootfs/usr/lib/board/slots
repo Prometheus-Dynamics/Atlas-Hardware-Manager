@@ -208,7 +208,7 @@ slots_json() {
 		# The manifest's fields in one helper run, a line each. The sentinel
 		# keeps $(...) from dropping trailing empty lines. A helper that can't
 		# give them as lines (exit 1) leaves them to mf, one by one.
-		if _fields=$($INIT fields "$IMAGES/$_id.json" image.size family version variant kernel verity.root_hash 2>/dev/null && echo .); then
+		if _fields=$($INIT fields "$IMAGES/$_id.json" image.size family version variant kernel verity.root_hash display_name 2>/dev/null && echo .); then
 			_fields=${_fields%.}
 			{
 				IFS= read -r _want
@@ -217,6 +217,7 @@ slots_json() {
 				IFS= read -r _variant
 				IFS= read -r _kernel
 				IFS= read -r _root
+				IFS= read -r _display
 			} <<EOF
 $_fields
 EOF
@@ -227,6 +228,7 @@ EOF
 			_variant=$(mf "$_id" variant)
 			_kernel=$(mf "$_id" kernel)
 			_root=$(mf "$_id" verity.root_hash)
+			_display=$(mf "$_id" display_name)
 		fi
 		# Damaged when the file isn't the size it was built at.
 		_intact=true
@@ -237,13 +239,14 @@ EOF
 		[ "$_id" = "$PREVIOUS" ] && _flags="$_flags\"previous\","
 		[ "$_id" = "$TRIAL" ] && _flags="$_flags\"trial\","
 		[ "$_id" = "$STAGED" ] && _flags="$_flags\"staged\","
-		printf '{"id":%s,"family":%s,"version":%s,"variant":%s,"kernel":%s,"size":%s,"verity":%s,"intact":%s,"flags":[%s],"pinned":%s,"good":%s,"installed":%s,"last_boot":%s}' \
+		printf '{"id":%s,"family":%s,"version":%s,"variant":%s,"kernel":%s,"size":%s,"verity":%s,"intact":%s,"flags":[%s],"pinned":%s,"good":%s,"installed":%s,"last_boot":%s,"display_name":%s}' \
 			"$(board_json_str "$_id")" "$(board_json_str "$_family")" "$(board_json_str "$_version")" \
 			"$(board_json_str "$_variant")" "$(board_json_str "$_kernel")" "$_size" \
 			"$([ -n "$_root" ] && echo true || echo false)" "$_intact" "${_flags%,}" \
 			"$([ "$(meta_get "$_id" PINNED)" = yes ] && echo true || echo false)" \
 			"$(board_json_str "$(meta_get "$_id" GOOD)")" "$(board_json_str "$(meta_get "$_id" INSTALLED)")" \
-			"$(board_json_str "$(meta_get "$_id" LAST_BOOT)")"
+			"$(board_json_str "$(meta_get "$_id" LAST_BOOT)")" \
+				"$(if [ -n "$_display" ]; then board_json_str "$_display"; else printf null; fi)"
 	done
 	printf ']'
 }

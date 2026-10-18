@@ -43,7 +43,7 @@
     return () => clearInterval(timer);
   });
 
-  const name = (slot: Slot) => [pretty(slot.family), slot.version].filter(Boolean).join(" ") || slot.id;
+  const name = (slot: Slot) => [slot.display_name || pretty(slot.family), slot.version].filter(Boolean).join(" ") || slot.id;
   function pretty(family: string): string {
     if (family === "photonvision") return "PhotonVision";
     if (family === "helios") return "HeliOS";

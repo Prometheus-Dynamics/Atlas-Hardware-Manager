@@ -238,7 +238,7 @@ mod tests {
             ("update.reserve_bytes", "1000"),
             (
                 "update.slots",
-                r#"[{"id":"pv-a","flags":["running","default"],"good":"yes"},{"id":"pv-b","pinned":true}]"#,
+                r#"[{"id":"pv-a","flags":["running","default"],"good":"yes","display_name":"HeliOS"},{"id":"pv-b","pinned":true}]"#,
             ),
         ]
         .into_iter()
@@ -249,5 +249,7 @@ mod tests {
         assert_eq!(set.room(), 4000);
         assert_eq!(set.slots.len(), 2);
         assert!(set.slots[1].pinned);
+        assert_eq!(set.slots[0].display_name.as_deref(), Some("HeliOS"));
+        assert_eq!(set.slots[1].display_name, None);
     }
 }

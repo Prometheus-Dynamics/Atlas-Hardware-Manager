@@ -20,6 +20,7 @@ const slot = (id: string, version: string, variant: string, flags: string[], ext
   good: flags.includes("running") ? "yes" : "",
   installed: "2026-10-12T18:04:00Z",
   last_boot: flags.includes("running") ? "2026-10-15T07:31:00Z" : "",
+  display_name: null,
   ...extra,
 });
 
@@ -36,7 +37,7 @@ function seed(): SlotSet {
     slots: [
       slot("photonvision-2026.3.0-styx-1a2b3c4d", "2026.3.0", "styx", ["running", "default"]),
       slot("photonvision-2026.2.1-styx-9e8f7a6b", "2026.2.1", "styx", ["previous"], { good: "yes", pinned: true, last_boot: "2026-10-11T22:10:00Z" }),
-      slot("helios-2026.4.0-base-55aa01ff", "2026.4.0", "base", [], { good: "no", last_boot: "2026-10-14T16:45:00Z" }),
+      slot("helios-2026.4.0-base-55aa01ff", "2026.4.0", "base", [], { good: "no", last_boot: "2026-10-14T16:45:00Z", display_name: "HeliOS Lab" }),
     ],
   };
 }
