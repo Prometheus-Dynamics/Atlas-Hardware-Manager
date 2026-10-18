@@ -619,7 +619,10 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
   bridge and checks that each member with carrier sent a frame; three failed
   probes in a row rebind the gadget's UDC (the host re-enumerates it) and log
   `usb-gadget.rebound`, at most once in 5 minutes and three times a boot
-  (`USB_GADGET_WATCH=0` turns it off). Seen on the bench board 2026-10-17:
+  (`USB_GADGET_WATCH=0` turns it off). Before each rebind it keeps the
+  evidence in `/data/board/usb-gadget-watch/<n>-<boot>/` (the members'
+  counters, the controller's debugfs: regdump, fifo, state, the IN
+  endpoints; the newest 5), and the event carries tx/rx_packets and the dir. Seen on the bench board 2026-10-17:
   the host's enumeration hit "device descriptor read/64, error -71" at boot,
   and usb0 then sent 84 frames in 2.4 hours while receiving 2,993; dnsmasq's
   offers failed with "Resource temporarily unavailable", the host got no

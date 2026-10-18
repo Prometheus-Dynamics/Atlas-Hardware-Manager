@@ -16,11 +16,15 @@
 # member rebind the gadget's UDC (the host re-enumerates it) and log a
 # usb-gadget.rebound event; at most once per USB_GADGET_WATCH_GAP_SEC (300) and
 # USB_GADGET_WATCH_MAX (3) times a boot, so a link that stays broken can't flap.
+# Before a rebind it keeps the evidence in /data/board/usb-gadget-watch/<n>-<boot>/:
+# the members' counters and the controller's debugfs (regdump, fifo, state,
+# the IN endpoints), the newest 5 by number (no RTC: not by date).
 #
 #   usb-gadget-watch           the loop
 #   usb-gadget-watch --check   one check (the state is in $BOARD_RUN_DIR)
 # Settings: usb-gadget.env. Test hooks: BOARD_NET_DIR, BOARD_CONFIGFS,
-# USB_GADGET_WATCH_PROBE (the probe command), USB_GADGET_WATCH_NOW (seconds).
+# USB_GADGET_WATCH_PROBE (the probe command), USB_GADGET_WATCH_NOW (seconds),
+# BOARD_DEBUGFS (/sys/kernel/debug).
 set -u
 
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
@@ -109,17 +113,45 @@ check() {
 	} > "$state.tmp" && mv -f "$state.tmp" "$state"
 }
 
+# keep_evidence <udc> <members>: what the stall looked like, before the rebind
+# changes it. Prints the dir.
+keep_evidence() {
+	_root=$BOARD_DATA_DIR/usb-gadget-watch
+	mkdir -p "$_root" 2>/dev/null || return 0
+	_seq=$(( $(cat "$_root/.seq" 2>/dev/null || echo 0) + 1 ))
+	echo "$_seq" > "$_root/.seq"
+	_dir=$_root/$(printf '%06d' "$_seq")-$(board_boot_id | cut -c1-8)
+	mkdir -p "$_dir" || return 0
+	for _m in $2; do
+		for _c in tx_packets rx_packets tx_errors tx_dropped tx_carrier_errors; do
+			echo "$_m $_c $(cat "$BOARD_NET_DIR/$_m/statistics/$_c" 2>/dev/null)"
+		done
+	done > "$_dir/counters"
+	_dbg=${BOARD_DEBUGFS:-/sys/kernel/debug}/usb/$1
+	for _f in regdump fifo state params hw_params "$_dbg"/ep*in; do
+		_f=${_f##*/}
+		cat "$_dbg/$_f" > "$_dir/$_f" 2>/dev/null || rm -f "$_dir/$_f"
+	done
+	# The newest 5.
+	_n=$(ls -1 "$_root" | wc -l)
+	[ "$_n" -le 5 ] || ls -1 "$_root" | sort | head -n $((_n - 5)) | while IFS= read -r _old; do rm -rf "${_root:?}/$_old"; done
+	echo "$_dir"
+}
+
 rebind() {
 	udc=$(cat "$G/UDC" 2>/dev/null)
 	if [ -z "$udc" ]; then
 		board_log "$1 isn't sending, but the gadget isn't bound; leaving it"
 		return 0
 	fi
+	evidence=$(keep_evidence "$udc" "$1")
+	tx=$(cat "$BOARD_NET_DIR/${1%% *}/statistics/tx_packets" 2>/dev/null)
+	rx=$(cat "$BOARD_NET_DIR/${1%% *}/statistics/rx_packets" 2>/dev/null)
 	echo '' > "$G/UDC" 2>/dev/null || true
 	sleep "${USB_GADGET_WATCH_SETTLE:-1}"
 	if echo "$udc" > "$G/UDC" 2>/dev/null; then
 		board_event usb-gadget.rebound "the USB link stopped sending ($1 sent nothing for $strikes_needed probes); the gadget was rebound to $udc" \
-			"members=$1" "udc=$udc" "rebound=$((REBOUNDS + 1))"
+			"members=$1" "udc=$udc" "rebound=$((REBOUNDS + 1))" "tx_packets=$tx" "rx_packets=$rx" "evidence=$evidence"
 	else
 		board_event usb-gadget.rebound "the USB link stopped sending ($1); rebinding the gadget to $udc failed" \
 			"members=$1" "udc=$udc" "failed=yes"
