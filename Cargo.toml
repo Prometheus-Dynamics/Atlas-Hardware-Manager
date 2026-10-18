@@ -121,11 +121,26 @@ opt-level = 3
 [profile.dev.package.sha2]
 opt-level = 3
 
+# Desktop release (atlas-app, which carries the CLI, and the atlas-helper
+# sidecar the installers ship): stripped, full LTO, one codegen unit. About
+# half the size of the plain release build for about twice its clean build
+# time (fat LTO's single-threaded link); thin LTO saved nothing over strip.
+# Panic locations (file:line) are string constants, so they survive the
+# strip and still reach the app log. opt-level stays 3: "s" on atlas-helper
+# made it bigger under LTO. [profile.device] inherits this, so it pins its
+# own (no LTO) values.
+[profile.release]
+strip = "symbols"
+lto = true
+codegen-units = 1
+
 # Binaries built for the boards (board-agent, by the device package's Gaia
 # layer): release, stripped. No LTO, to keep image builds quick.
 [profile.device]
 inherits = "release"
 strip = "symbols"
+lto = false
+codegen-units = 16
 
 # slot-init, which every slot's initramfs carries: built for size (567 KB
 # -> 422 KB for aarch64 musl). It's small, so LTO costs the build little.
