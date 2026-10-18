@@ -7,7 +7,11 @@
     ],
     "resources": {
       "../../../tools/usbboot/mass-storage-gadget64/": "usbboot/mass-storage-gadget64/",
-      "../../../devices/": "devices/"
+      "../../../devices/raze/manifest.json": "devices/raze/manifest.json",
+      "../../../devices/raze/compat.json": "devices/raze/compat.json",
+      "../../../devices/raze/eeprom/pieeprom-2025-12-08.upd": "devices/raze/eeprom/pieeprom-2025-12-08.upd",
+      "../../../devices/raze/eeprom/pieeprom-2025-12-08.sig": "devices/raze/eeprom/pieeprom-2025-12-08.sig",
+      "../../../devices/raze/eeprom/recovery.bin": "devices/raze/eeprom/recovery.bin"
     },
     "linux": {
       "deb": {

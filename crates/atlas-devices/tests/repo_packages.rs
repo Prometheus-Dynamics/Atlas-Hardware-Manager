@@ -136,3 +136,51 @@ fn raze_names_its_gadget_address() {
         Some("172.31.209.217/29".into())
     );
 }
+
+/// The desktop bundle carries only the package files the app reads (see the
+/// `resources` map in `apps/desktop/src-tauri/tauri.bundle.conf.json`). This
+/// keeps that list in step with the code: an EEPROM file or role the app
+/// stages must also be bundled, or the installed app cannot flash it.
+#[test]
+fn the_desktop_bundle_carries_every_package_file_the_app_reads() {
+    let config = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../apps/desktop/src-tauri/tauri.bundle.conf.json");
+    let text = std::fs::read_to_string(&config).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let resources = json["bundle"]["resources"]
+        .as_object()
+        .expect("bundle.resources is a map");
+    assert!(
+        !resources.contains_key("../../../devices/"),
+        "the whole devices/ tree must not be bundled; list the files the app reads"
+    );
+
+    for package in repo_catalog().packages() {
+        let folder = package
+            .dir
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        // manifest.json is required for discovery; compat.json is read when present.
+        let mut needed = vec!["manifest.json".to_string()];
+        if package.dir.join("compat.json").is_file() {
+            needed.push("compat.json".to_string());
+        }
+        // The roles stage_role() reads in atlas-driver-rpi/src/eeprom.rs.
+        for role in ["recovery", "pieeprom", "pieeprom-sig"] {
+            if let Some(file) = package.manifest.eeprom_file(role) {
+                needed.push(file.path.clone());
+            }
+        }
+        for rel in needed {
+            let source = format!("../../../devices/{folder}/{rel}");
+            let target = format!("devices/{folder}/{rel}");
+            assert_eq!(
+                resources.get(&source).and_then(|value| value.as_str()),
+                Some(target.as_str()),
+                "{source} is read by the app but not bundled"
+            );
+        }
+    }
+}
