@@ -129,21 +129,43 @@ pub fn valid_data_dir(path: &str) -> bool {
 /// as they are, numbers and booleans as JSON; None when missing or not a
 /// scalar.
 pub fn field(text: &str, path: &str) -> Result<Option<String>, String> {
-    let value: serde_json::Value =
-        serde_json::from_str(text).map_err(|e| format!("not JSON: {e}"))?;
-    let mut at = &value;
+    Ok(scalar(&json(text)?, path))
+}
+
+/// Several fields at once, as `field` gives them, in `paths` order: a
+/// missing one (or one that isn't a scalar) is "". Err when a value
+/// wouldn't fit on its line (a newline or NUL), so the caller reads that
+/// one with `field`.
+pub fn fields(text: &str, paths: &[&str]) -> Result<Vec<String>, String> {
+    let value = json(text)?;
+    paths
+        .iter()
+        .map(|path| {
+            let text = scalar(&value, path).unwrap_or_default();
+            if text.contains(['\n', '\0']) {
+                Err(format!("{path} has a newline or NUL"))
+            } else {
+                Ok(text)
+            }
+        })
+        .collect()
+}
+
+fn json(text: &str) -> Result<serde_json::Value, String> {
+    serde_json::from_str(text).map_err(|e| format!("not JSON: {e}"))
+}
+
+fn scalar(value: &serde_json::Value, path: &str) -> Option<String> {
+    let mut at = value;
     for key in path.split('.') {
-        match at.get(key) {
-            Some(next) => at = next,
-            None => return Ok(None),
-        }
+        at = at.get(key)?;
     }
-    Ok(match at {
+    match at {
         serde_json::Value::String(s) => Some(s.clone()),
         serde_json::Value::Number(n) => Some(n.to_string()),
         serde_json::Value::Bool(b) => Some(b.to_string()),
         _ => None,
-    })
+    }
 }
 
 /// `boot.files` of a slot.json as "<sha256> <name>" lines (sha256sum's
@@ -292,6 +314,20 @@ mod tests {
         let files = boot_files(text).unwrap();
         assert_eq!(files.len(), 2);
         assert!(boot_files(&text.replace("overlays/a.dtbo", "../a.dtbo")).is_err());
+    }
+
+    #[test]
+    fn fields_are_one_line_each() {
+        let text = r#"{"image":{"size":12},"family":"helios","pinned":true,"boot":{"files":{}},"blank":""}"#;
+        // A missing field, an object and an empty string are all empty lines.
+        let got = fields(
+            text,
+            &["image.size", "nope", "family", "pinned", "boot", "blank"],
+        );
+        assert_eq!(got.unwrap(), ["12", "", "helios", "true", "", ""]);
+        // A value that wouldn't fit its line is refused, so the caller reads it alone.
+        assert!(fields(&text.replace("helios", r"a\nb"), &["family"]).is_err());
+        assert!(fields("not json", &["family"]).is_err());
     }
 
     #[test]

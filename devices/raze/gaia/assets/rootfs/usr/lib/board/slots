@@ -205,8 +205,30 @@ slots_json() {
 		[ "$_first" = 1 ] || printf ','
 		_first=0
 		_size=$(board_file_size "$_img")
+		# The manifest's fields in one helper run, a line each. The sentinel
+		# keeps $(...) from dropping trailing empty lines. A helper that can't
+		# give them as lines (exit 1) leaves them to mf, one by one.
+		if _fields=$($INIT fields "$IMAGES/$_id.json" image.size family version variant kernel verity.root_hash 2>/dev/null && echo .); then
+			_fields=${_fields%.}
+			{
+				IFS= read -r _want
+				IFS= read -r _family
+				IFS= read -r _version
+				IFS= read -r _variant
+				IFS= read -r _kernel
+				IFS= read -r _root
+			} <<EOF
+$_fields
+EOF
+		else
+			_want=$(mf "$_id" image.size)
+			_family=$(mf "$_id" family)
+			_version=$(mf "$_id" version)
+			_variant=$(mf "$_id" variant)
+			_kernel=$(mf "$_id" kernel)
+			_root=$(mf "$_id" verity.root_hash)
+		fi
 		# Damaged when the file isn't the size it was built at.
-		_want=$(mf "$_id" image.size)
 		_intact=true
 		[ -z "$_want" ] || [ "$_want" = "$_size" ] || _intact=false
 		_flags=''
@@ -216,9 +238,9 @@ slots_json() {
 		[ "$_id" = "$TRIAL" ] && _flags="$_flags\"trial\","
 		[ "$_id" = "$STAGED" ] && _flags="$_flags\"staged\","
 		printf '{"id":%s,"family":%s,"version":%s,"variant":%s,"kernel":%s,"size":%s,"verity":%s,"intact":%s,"flags":[%s],"pinned":%s,"good":%s,"installed":%s,"last_boot":%s}' \
-			"$(board_json_str "$_id")" "$(board_json_str "$(mf "$_id" family)")" "$(board_json_str "$(mf "$_id" version)")" \
-			"$(board_json_str "$(mf "$_id" variant)")" "$(board_json_str "$(mf "$_id" kernel)")" "$_size" \
-			"$([ -n "$(mf "$_id" verity.root_hash)" ] && echo true || echo false)" "$_intact" "${_flags%,}" \
+			"$(board_json_str "$_id")" "$(board_json_str "$_family")" "$(board_json_str "$_version")" \
+			"$(board_json_str "$_variant")" "$(board_json_str "$_kernel")" "$_size" \
+			"$([ -n "$_root" ] && echo true || echo false)" "$_intact" "${_flags%,}" \
 			"$([ "$(meta_get "$_id" PINNED)" = yes ] && echo true || echo false)" \
 			"$(board_json_str "$(meta_get "$_id" GOOD)")" "$(board_json_str "$(meta_get "$_id" INSTALLED)")" \
 			"$(board_json_str "$(meta_get "$_id" LAST_BOOT)")"

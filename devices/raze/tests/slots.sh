@@ -22,13 +22,26 @@ fail() {
 mkdir -p "$T/bin"
 cat > "$T/bin/slot-init" <<'STUB'
 #!/bin/sh
+[ -z "${HELPER_LOG:-}" ] || echo "$1" >> "$HELPER_LOG"
 case "$1" in
 field) exec python3 -c 'import json,sys
 v=json.load(open(sys.argv[1]))
 for k in sys.argv[2].split("."):
     if not isinstance(v,dict) or k not in v: sys.exit(1)
     v=v[k]
+if v is None or isinstance(v,(dict,list)): sys.exit(1)
 print(str(v).lower() if isinstance(v,bool) else v)' "$2" "$3" ;;
+fields) f=$2; shift 2; exec python3 -c 'import json,sys
+v=json.load(open(sys.argv[1]))
+out=[]
+for p in sys.argv[2:]:
+    x=v
+    for k in p.split("."):
+        x=x.get(k) if isinstance(x,dict) else None
+    s="" if x is None or isinstance(x,(dict,list)) else str(x).lower() if isinstance(x,bool) else str(x)
+    if "\n" in s or "\0" in s: sys.exit(1)
+    out.append(s)
+print("\n".join(out))' "$f" "$@" ;;
 flush) echo "$2" >> "$FLUSH_LOG" ;;
 check-initramfs) ! grep -q XZ "$2" || { echo "slot-init: $2: an xz initramfs isn't supported on the Raze" >&2; exit 1; }; echo zstd ;;
 boot-files) exec python3 -c 'import json,sys
@@ -40,7 +53,7 @@ chmod +x "$T/bin/slot-init"
 
 export BOARD_LIB_DIR=$lib BOARD_ETC_DIR=$T/etc BOARD_RUN_DIR=$T/run BOARD_DATA_DIR=$T/data/board BOARD_DT_DIR=$T/dt
 export SLOTS_DATA=$T/data SLOTS_BOOT_MOUNT=$T/boot SLOT_INIT=$T/bin/slot-init UPDATE_SYNC=true
-export SLOTS_BOOT_DEV=/dev/fake-p1 FLUSH_LOG=$T/flushes
+export SLOTS_BOOT_DEV=/dev/fake-p1 FLUSH_LOG=$T/flushes HELPER_LOG=$T/helper-calls
 export UPDATE_SLOTS_STATE=$T/data/board/slots/state.json SLOTS_PARTUUID=abcd1234-02 SLOTS_RESERVE_KB=0
 export UPDATE_REBOOT="echo tryboot >> $T/reboots" UPDATE_REBOOT_PLAIN="echo plain >> $T/reboots"
 export BOARD_DEVICE_LOCK=$T/device-lock UPDATE_BOOT_ID_FILE=$T/boot_id
@@ -81,6 +94,11 @@ rc() {
 	set -e
 	echo "$r"
 }
+
+echo "status reads each slot's manifest in one helper run"
+: > "$T/helper-calls"
+status > /dev/null
+[ "$(grep -c '^fields$' "$T/helper-calls")" = 1 ] || fail "helper runs for pv-a's fields: $(cat "$T/helper-calls")"
 
 echo "status lists the installed slot"
 status | grep -q '"layout":"slots"' || fail "status: $(status)"

@@ -608,6 +608,12 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
   stdin no longer stays on `/data` afterwards (it left 78 MB in
   `/data/board/update/stdin.slot.tar`): its tar goes once unpacked, or on
   any failure.
+- **`slots status` reads each slot in one helper run** (`slot-init fields`,
+  one run per slot for its manifest's six fields, not one per field):
+  helper processes per status with 7 healthy slots 44 -> 9, the same JSON
+  (old and new writers diffed on those 7 and on odd manifests: missing keys,
+  objects, bools, a newline in a value, a bad manifest; those still read
+  field by field). slot-init device-small 471,624 -> 472,648 bytes (+1 KB).
 - **One SSH identity per board** (`board-ssh-hostkeys.service`,
   `usr/lib/board/ssh-hostkeys`): the host keys live on `/data/ssh` (0700,
   keys 0600), so switching slots or installing another OS keeps the

@@ -21,6 +21,9 @@
 //!                                             device: the eMMC's write-back cache; vfat never
 //!                                             asks for it, and BusyBox's sync takes no files)
 //!   slot-init field <file.json> <a.b.c>       one field (missing: exit 1)
+//!   slot-init fields <file.json> <a.b.c>...   those fields, one a line in order (missing or not a
+//!                                             scalar: an empty line; a value with a newline: exit 1,
+//!                                             so read it with field)
 //!   slot-init boot-files <slot.json>          "<sha256>  <name>" per boot file (sha256sum -c's format)
 //!   slot-init open <image> <slot.json> <root hash> [name]
 //!                                             a read-only loop + dm-verity device; prints /dev/dm-N
@@ -32,7 +35,7 @@
 
 use std::process::ExitCode;
 
-use slot_init::{Manifest, State, boot_files, cmdline_arg, field, root_hash, valid_id};
+use slot_init::{Manifest, State, boot_files, cmdline_arg, field, fields, root_hash, valid_id};
 
 fn read(path: &str) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))
@@ -79,6 +82,9 @@ fn run(args: &[String]) -> Result<String, String> {
             .map_err(|e| format!("{device}: {e}")),
         ["field", file, path] => {
             field(&read(file)?, path)?.ok_or_else(|| format!("no {path} in {file}"))
+        }
+        ["fields", file, paths @ ..] if !paths.is_empty() => {
+            fields(&read(file)?, paths).map(|lines| lines.join("\n"))
         }
         ["boot-files", manifest] => Ok(boot_files(&read(manifest)?)?
             .into_iter()
