@@ -75,8 +75,9 @@ pub(crate) struct State {
     pub(crate) selftest_running: HashSet<String>,
     /// Each board's recent events, by board serial, oldest first.
     pub(crate) board_events: HashMap<String, VecDeque<atlas_driver::DeviceEvent>>,
-    /// When each board's events were last fetched (ms).
-    pub(crate) events_synced: HashMap<String, u64>,
+    /// When each board's events were last fetched (Tokio's clock, so a
+    /// board clock or this computer's stepping doesn't matter).
+    pub(crate) events_synced: HashMap<String, tokio::time::Instant>,
     /// The seq each board's events were fetched up to, for boards that number
     /// them (from the kept log when Atlas starts).
     pub(crate) event_cursor: HashMap<String, u64>,
@@ -85,6 +86,9 @@ pub(crate) struct State {
     pub(crate) clock_offsets: HashMap<String, i64>,
     /// Devices whose push channel is being followed (push.rs).
     pub(crate) followed: HashSet<DeviceKey>,
+    /// Followed devices whose channel is open now: their events and update
+    /// state arrive as pushes, so they are polled only as a safety net.
+    pub(crate) pushing: HashSet<DeviceKey>,
     /// When each board's clock was last set automatically (ms), by board
     /// serial (clock.rs).
     pub(crate) clock_set_at: HashMap<String, u64>,

@@ -668,6 +668,8 @@ export interface DeviceStatus {
   hardware: HardwareSnapshot | null;
   /** Kernel logs the board kept, newest first; null/absent when unknown. */
   pstore?: KernelRecord[] | null;
+  /** Atlas follows the device's push channel: its events and update state arrive as they happen. */
+  pushed?: boolean;
 }
 
 /** One line of a board's event log. */

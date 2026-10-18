@@ -4,8 +4,10 @@
 //!
 //! Board events are kept per physical board (its board serial, like
 //! self-tests), at most [`BOARD_EVENTS_LIMIT`], and saved with the
-//! inventory. They are fetched when a device's status is read and, at most
-//! every [`SYNC_EVERY`], after a scan: by seq from a board that numbers its
+//! inventory. They are fetched when the board pushes one (push.rs), when a
+//! device's status is read from a board that doesn't push, and, at most
+//! every [`SYNC_EVERY`] ([`PUSHED_SYNC_EVERY`] for a board that pushes),
+//! after a scan: by seq from a board that numbers its
 //! events (whatever its clock did), else by time. An event already kept
 //! (same boot and seq, or without a seq the same boot, time, kind and
 //! message) is not added again. New events that someone other
@@ -32,6 +34,8 @@ const MAX_PAGES: usize = 5;
 const CLOCK_SLACK_S: i64 = 2;
 /// How often a scan fetches a board's new events.
 pub(crate) const SYNC_EVERY: Duration = Duration::from_secs(60);
+/// How often for a board that pushes its events: a safety net only.
+pub(crate) const PUSHED_SYNC_EVERY: Duration = Duration::from_secs(600);
 
 /// One board's kept events, oldest first (for the saved inventory).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -246,15 +250,18 @@ pub(crate) fn notable(record: &DeviceRecord, event: &DeviceEvent) -> Option<Acti
 
 impl Atlas {
     /// What the device is doing now and how it is. Also fetches its new
-    /// events, so its history is current.
+    /// events, so its history is current, unless the device pushes them.
     pub async fn device_status(&self, key: &DeviceKey) -> Result<DeviceStatus, CoreError> {
         let (live, record) = self.live_device(key)?;
         let status = live.capabilities.status.ok_or(CoreError::Unsupported {
             device: key.clone(),
             what: "status",
         })?;
-        let current = status.status(&record.identity).await?;
-        let _ = self.sync_device_events(key).await;
+        let mut current = status.status(&record.identity).await?;
+        current.pushed = self.pushing(key);
+        if !current.pushed {
+            let _ = self.sync_device_events(key).await;
+        }
         Ok(current)
     }
 
@@ -284,7 +291,9 @@ impl Atlas {
         let board = board_of(&record);
         let (cursor, since, first) = {
             let mut state = self.inner.state();
-            state.events_synced.insert(board.clone(), now_ms());
+            state
+                .events_synced
+                .insert(board.clone(), tokio::time::Instant::now());
             let log = state.board_events.get(&board);
             let kept_seq = log.and_then(|log| log.iter().filter_map(|event| event.seq).max());
             let since = log.and_then(|log| log.back()).map(|event| event.t);
@@ -380,7 +389,6 @@ impl Atlas {
 
     /// After a scan: fetch new events from boards not synced for a while.
     pub(crate) fn start_due_event_syncs(&self) {
-        let now = now_ms();
         let due: Vec<DeviceKey> = {
             let state = self.inner.state();
             state
@@ -389,12 +397,16 @@ impl Atlas {
                 .filter(|(_, live)| live.capabilities.status.is_some())
                 .filter_map(|(key, _)| {
                     let record = state.inventory.get(key)?;
-                    let last = state
+                    let every = if state.pushing.contains(key) {
+                        PUSHED_SYNC_EVERY
+                    } else {
+                        SYNC_EVERY
+                    };
+                    let due = state
                         .events_synced
                         .get(&board_of(record))
-                        .copied()
-                        .unwrap_or(0);
-                    (now.saturating_sub(last) >= SYNC_EVERY.as_millis() as u64).then(|| key.clone())
+                        .is_none_or(|last| last.elapsed() >= every);
+                    due.then(|| key.clone())
                 })
                 .collect()
         };

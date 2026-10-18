@@ -116,6 +116,7 @@ pub(crate) fn parse_status(value: &Value, now: i64) -> DeviceStatus {
         drift: part::<Drift>(value, "drift"),
         hardware: part::<HardwareSnapshot>(value, "hardware"),
         pstore: part::<Vec<KernelRecord>>(value, "pstore"),
+        pushed: false,
     }
 }
 

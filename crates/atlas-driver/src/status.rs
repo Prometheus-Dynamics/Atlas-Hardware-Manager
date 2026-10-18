@@ -440,6 +440,11 @@ pub struct DeviceStatus {
     /// The kernel logs the board kept, newest first; `None` when unknown.
     #[serde(default)]
     pub pstore: Option<Vec<KernelRecord>>,
+    /// Set by Atlas: it follows the device's push channel, so the device's
+    /// events and update state arrive as they happen and what's left (its
+    /// temperatures, say) needs reading only now and then.
+    #[serde(default)]
+    pub pushed: bool,
 }
 
 /// Which events to fetch: those after a seq (from a device that numbers its

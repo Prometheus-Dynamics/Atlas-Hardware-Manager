@@ -7,8 +7,14 @@
 //!
 //! A channel that drops (a reboot, a cable) re-scans at once and then every
 //! [`LOOK_EVERY`] for [`LOOK_FOR`], so a board that restarts is seen going
-//! and coming back within seconds; after that the follower only reconnects,
-//! every [`RETRY_EVERY`], while the device stays live.
+//! and coming back within seconds; after that the follower only reconnects
+//! while the device stays live: after [`RETRY_EVERY`], twice as long after
+//! each try that fails, up to [`RETRY_MAX`] (a board whose board-stream is
+//! down isn't asked every few seconds for as long as Atlas runs).
+//!
+//! While a device's channel is open, Atlas polls it only as a safety net:
+//! its event syncs (history.rs), the fallback scan (watch.rs) and the
+//! desktop's status reads ([`DeviceStatus::pushed`](atlas_driver::DeviceStatus::pushed)).
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -21,6 +27,7 @@ use crate::{Atlas, Event};
 pub(crate) const LOOK_EVERY: Duration = Duration::from_secs(2);
 pub(crate) const LOOK_FOR: Duration = Duration::from_secs(120);
 pub(crate) const RETRY_EVERY: Duration = Duration::from_secs(10);
+pub(crate) const RETRY_MAX: Duration = Duration::from_secs(300);
 
 impl Atlas {
     /// After a scan, while watching: follows each live device's push
@@ -47,11 +54,17 @@ impl Atlas {
         }
     }
 
+    /// Whether the device's push channel is open now.
+    pub fn pushing(&self, key: &DeviceKey) -> bool {
+        self.inner.state().pushing.contains(key)
+    }
+
     /// Follows one device's push channel until it has none or is gone.
     async fn follow(self, key: DeviceKey) {
         // Since the channel dropped: while recent, look for the device often.
         let mut lost: Option<Instant> = None;
         let mut last_state: Option<String> = None;
+        let mut retry = RETRY_EVERY;
         loop {
             let found = self
                 .live_device(&key)
@@ -82,12 +95,15 @@ impl Atlas {
                         if batch.iter().any(|push| matches!(push, StatusPush::Hello { .. })) {
                             lost = None;
                             connected = true;
+                            retry = RETRY_EVERY;
+                            self.inner.state().pushing.insert(key.clone());
                         }
                         self.on_pushes(&key, &batch, &mut last_state).await;
                     }
                     result = &mut watching => break result.unwrap_or(Ok(true)),
                 }
             };
+            self.inner.state().pushing.remove(&key);
             match ended {
                 // No push channel: the device is polled as before.
                 Ok(false) => break,
@@ -102,7 +118,8 @@ impl Atlas {
                         self.inner.changes.notify_one();
                         tokio::time::sleep(LOOK_EVERY).await;
                     } else {
-                        tokio::time::sleep(RETRY_EVERY).await;
+                        tokio::time::sleep(retry).await;
+                        retry = (retry * 2).min(RETRY_MAX);
                     }
                 }
             }

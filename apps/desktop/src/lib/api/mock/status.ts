@@ -510,6 +510,8 @@ export function deviceStatus(key: DeviceKey): DeviceStatus {
     update: { ...board.update },
     clock_offset_s: board.clockOffset,
     ntp_synchronized: false,
+    // Its changes are pushed (see `changed`), as board-stream's are.
+    pushed: true,
     hardware: hardwareFor(device, now, Math.round(temp * 10) / 10),
     drift: {
       checked_at: sec(now - 14 * 60 * S),

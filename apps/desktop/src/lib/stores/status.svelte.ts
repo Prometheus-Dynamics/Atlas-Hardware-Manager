@@ -1,8 +1,9 @@
 // What a board is doing and how it is (`status`), and its merged history,
 // for the device panel. A view calls `watch` while it shows a device: the
-// status is polled (every few seconds while an update runs, slower
-// otherwise), and the history is re-read when Atlas says the board has new
-// events. Devices without the capability are never asked.
+// status is read when the board pushes a change and polled (every few
+// seconds while an update runs; otherwise slowly, and only now and then
+// for a board that pushes), and the history is re-read when Atlas says the
+// board has new events. Devices without the capability are never asked.
 
 import { SvelteMap } from "svelte/reactivity";
 import {
@@ -19,6 +20,8 @@ import {
 
 const BUSY_MS = 3000;
 const IDLE_MS = 15000;
+/** Idle, for a board that pushes its events and update state: only for what it doesn't push (temperatures, fan). */
+const PUSHED_MS = 60_000;
 const HISTORY_LIMIT = 300;
 
 export function hasStatus(record: DeviceRecord | undefined): boolean {
@@ -50,6 +53,8 @@ class StatusStore {
   /** When each device's status last answered (ms, this computer). */
   readAt = new SvelteMap<string, number>();
   history = new SvelteMap<string, HistoryEntry[]>();
+  /** Bumped when a watched board pushes a change, so views of what it changes (its slots) re-read. */
+  pushes = new SvelteMap<string, number>();
 
   private watched = new Map<string, { key: DeviceKey; status: boolean; count: number }>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -122,8 +127,9 @@ class StatusStore {
     }
     if (!this.watched.has(id)) return;
     // A staged update is likely to be applied soon: follow it closely too.
-    const update = this.byDevice.get(id)?.update;
-    const every = updateBusy(update) || update?.state === "staged" ? BUSY_MS : IDLE_MS;
+    const status = this.byDevice.get(id);
+    const update = status?.update;
+    const every = updateBusy(update) || update?.state === "staged" ? BUSY_MS : status?.pushed ? PUSHED_MS : IDLE_MS;
     this.timers.set(
       id,
       setTimeout(() => void this.poll(id), every),
@@ -141,7 +147,15 @@ class StatusStore {
 
   /** The board pushed a change: read a watched device's status now. */
   onPushed(key: DeviceKey) {
-    if (this.watched.has(keyString(key))) void this.poll(keyString(key));
+    const id = keyString(key);
+    if (!this.watched.has(id)) return;
+    this.pushes.set(id, (this.pushes.get(id) ?? 0) + 1);
+    void this.poll(id);
+  }
+
+  /** Whether the board's changes arrive as pushes (its last status said so). */
+  pushed(key: DeviceKey): boolean {
+    return !!this.byDevice.get(keyString(key))?.pushed;
   }
 
   /** Atlas says the board has new events. */

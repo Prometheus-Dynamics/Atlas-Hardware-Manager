@@ -3,7 +3,7 @@
   // the way back, and the room for more. Boot one once (on trial: the board
   // goes back by itself when it doesn't come up), make one that booted well
   // the default, pin one, remove one. Removing and restarting ask first.
-  import { api, errorText, type DeviceRecord, type Slot, type SlotCommand, type SlotSet } from "#lib/api/client.ts";
+  import { api, errorText, keyString, type DeviceRecord, type Slot, type SlotCommand, type SlotSet } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
   import Pill from "#lib/components/common/Pill.svelte";
@@ -35,11 +35,19 @@
     }
   }
 
+  // Read again when the board pushes a change (installing, removing or
+  // switching a slot writes an event), and on a timer: slowly for a board
+  // that pushes, in case one was missed; more often for one that doesn't.
+  const pushed = $derived(deviceStatus.pushed(record.key));
   $effect(() => {
     void record.key;
     void reload;
+    void deviceStatus.pushes.get(keyString(record.key));
     void refresh();
-    const timer = setInterval(() => void refresh(), 15_000);
+  });
+  $effect(() => {
+    void record.key;
+    const timer = setInterval(() => void refresh(), pushed ? 60_000 : 15_000);
     return () => clearInterval(timer);
   });
 

@@ -1,7 +1,9 @@
 //! Live discovery: instead of polling, Atlas scans when a link source says
 //! something changed (USB hotplug, an mDNS announcement), plus a slow
 //! fallback rescan for sources that cannot watch and for devices that leave
-//! without saying so.
+//! without saying so. While every live device has its push channel open
+//! (push.rs: one that drops re-scans at once) and every source watches, the
+//! fallback waits at least [`PUSHED_FALLBACK`].
 
 use std::time::Duration;
 
@@ -10,6 +12,9 @@ use serde::Serialize;
 use tokio_util::sync::CancellationToken;
 
 use crate::{Atlas, CoreError};
+
+/// The fallback while every live device pushes and every source watches.
+pub(crate) const PUSHED_FALLBACK: Duration = Duration::from_secs(60);
 
 #[derive(Clone, Debug)]
 pub struct WatchOptions {
@@ -55,7 +60,7 @@ impl Atlas {
         let notify = self.inner.changes.clone();
 
         // Sources are subscribed once per process; their threads live on.
-        let (watching, polled) = self
+        let (watching, polled): (Vec<String>, Vec<String>) = self
             .inner
             .subscriptions
             .get_or_init(|| {
@@ -77,6 +82,7 @@ impl Atlas {
                 (watching, polled)
             })
             .clone();
+        let all_watch = polled.is_empty();
         *self.inner.discovery() = DiscoveryStatus {
             live: true,
             watching,
@@ -91,6 +97,11 @@ impl Atlas {
                 atlas.scan().await;
                 atlas.follow_push_channels();
                 atlas.sync_clocks(options.clock_sync);
+                let fallback = if all_watch && atlas.all_pushing() {
+                    options.fallback.max(PUSHED_FALLBACK)
+                } else {
+                    options.fallback
+                };
                 tokio::select! {
                     () = stop.cancelled() => break,
                     () = notify.notified() => {
@@ -100,12 +111,18 @@ impl Atlas {
                             () = tokio::time::sleep(options.debounce) => {}
                         }
                     }
-                    () = tokio::time::sleep(options.fallback) => {}
+                    () = tokio::time::sleep(fallback) => {}
                 }
             }
             atlas.inner.discovery().live = false;
         });
         Ok(token)
+    }
+
+    /// Whether there are live devices and every one has its push channel open.
+    fn all_pushing(&self) -> bool {
+        let state = self.inner.state();
+        !state.live.is_empty() && state.live.keys().all(|key| state.pushing.contains(key))
     }
 
     pub fn discovery(&self) -> DiscoveryStatus {
