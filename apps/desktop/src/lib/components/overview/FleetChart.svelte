@@ -17,8 +17,11 @@
   }: { records: DeviceRecord[]; metric: string; title: string; unit: string; decimals?: number } = $props();
 
   const COLORS = ["var(--series-1)", "var(--series-2)", "var(--series-3)", "var(--series-4)", "var(--series-5)"];
-  const W = 600;
-  const H = 200;
+  // Drawn at the plot's own size in pixels: a stretched viewBox with
+  // non-scaling strokes made WebKit's painter keep memory on every redraw
+  // (~5 MB a minute on the Overview, measured).
+  let W = $state(600);
+  let H = $state(200);
 
   const lines = $derived(
     records
@@ -65,13 +68,15 @@
       <div class="axis" aria-hidden="true">
         {#each ticks as t, i (i)}<span>{Math.round(t)}</span>{/each}
       </div>
-      <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" role="img" aria-label="{title} of {lines.length} devices">
-        {#each ticks as t, i (i)}<line x1="0" x2={W} y1={y(t)} y2={y(t)} class="grid" />{/each}
-        {#if warn !== null}<line x1="0" x2={W} y1={y(warn)} y2={y(warn)} class="limit" />{/if}
-        {#each lines as l (l.id)}
-          <path d={path(l.values)} stroke={l.color} class="line" class:hot={l.now && metricTone(l.now) === "warn"} />
-        {/each}
-      </svg>
+      <div class="area" bind:clientWidth={W} bind:clientHeight={H}>
+        <svg viewBox="0 0 {W} {H}" role="img" aria-label="{title} of {lines.length} devices">
+          {#each ticks as t, i (i)}<line x1="0" x2={W} y1={y(t)} y2={y(t)} class="grid" />{/each}
+          {#if warn !== null}<line x1="0" x2={W} y1={y(warn)} y2={y(warn)} class="limit" />{/if}
+          {#each lines as l (l.id)}
+            <path d={path(l.values)} stroke={l.color} class="line" class:hot={l.now && metricTone(l.now) === "warn"} />
+          {/each}
+        </svg>
+      </div>
     </div>
     <ul class="legend">
       {#each lines as l (l.id)}
@@ -134,26 +139,29 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-  svg {
+  .area {
+    position: relative;
     flex: 1;
     min-width: 0;
+  }
+  svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
     height: 100%;
     overflow: visible;
   }
   .grid {
     stroke: var(--glass-border);
-    vector-effect: non-scaling-stroke;
   }
   .limit {
     stroke: var(--warn);
     stroke-dasharray: 5 4;
-    vector-effect: non-scaling-stroke;
   }
   .line {
     fill: none;
     stroke-width: 1.5;
     stroke-linejoin: round;
-    vector-effect: non-scaling-stroke;
   }
   .line.hot {
     stroke-width: 2.2;

@@ -16,8 +16,15 @@
   const COLORS = ["var(--series-3)", "var(--series-1)", "var(--series-2)", "var(--series-4)", "var(--series-5)"];
   /** Shown elsewhere: the fan under the temperature, uptime in the header. */
   const ELSEWHERE = new Set(["fan", "uptime"]);
-  const W = 400;
-  const H = 100;
+  // Each chart is drawn at its own size in pixels: a stretched viewBox with
+  // non-scaling strokes made WebKit's painter keep memory on every redraw.
+  let sizes = $state<Record<string, { w: number; h: number }>>({});
+  const sizeOf = (metricId: string) => sizes[metricId] ?? { w: 400, h: 100 };
+  function measure(node: HTMLElement, metricId: string) {
+    const observer = new ResizeObserver(() => (sizes[metricId] = { w: Math.max(1, node.clientWidth), h: Math.max(1, node.clientHeight) }));
+    observer.observe(node);
+    return { destroy: () => observer.disconnect() };
+  }
 
   const id = $derived(keyString(record.key));
   const all = $derived(live.metrics.get(id) ?? []);
@@ -47,7 +54,7 @@
     return `low ${Math.min(...c.values).toFixed(d)} · high ${Math.max(...c.values).toFixed(d)}`;
   }
 
-  function scale(c: { metric: Metric; values: number[] }) {
+  function scale(c: { metric: Metric; values: number[] }, H: number) {
     // Temperatures and voltages float well above 0; the rest are counts and shares from 0.
     const floats = c.metric.id === "temp" || c.metric.unit === "V";
     const spread = Math.max(...c.values) - Math.min(...c.values);
@@ -57,8 +64,8 @@
     return (v: number) => H - ((v - low) / span) * (H - 6) - 3;
   }
 
-  function line(c: { metric: Metric; values: number[] }): string {
-    const y = scale(c);
+  function line(c: { metric: Metric; values: number[] }, W: number, H: number): string {
+    const y = scale(c, H);
     // Across the whole width from the first readings (a sliver otherwise).
     const step = W / (Math.max(2, c.values.length) - 1);
     return c.values.map((v, i) => `${i ? "L" : "M"}${(W - (c.values.length - 1 - i) * step).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
@@ -76,7 +83,8 @@
     {#each charts as c (c.metric.id)}
       {@const v = metricValue(c.metric)}
       {@const tone = metricTone(c.metric)}
-      {@const d = line(c)}
+      {@const { w: W, h: H } = sizeOf(c.metric.id)}
+      {@const d = line(c, W, H)}
       <section class="chart" aria-label={c.metric.label}>
         <div class="head">
           <span class="label">{c.metric.label}</span>
@@ -84,13 +92,15 @@
           <span class="unit">{v.unit}</span>
         </div>
         <div class="range" title={detail(c)}>{detail(c)}</div>
-        <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" aria-hidden="true">
-          {#if c.metric.warn_above != null}
-            <line x1="0" x2={W} y1={scale(c)(c.metric.warn_above)} y2={scale(c)(c.metric.warn_above)} class="limit" />
-          {/if}
-          <path d="{d} L{W} {H} L{W - (c.values.length - 1) * (W / (Math.max(2, c.values.length) - 1))} {H} Z" fill={c.color} class="area" />
-          <path {d} stroke={c.color} class="line" />
-        </svg>
+        <div class="plot" use:measure={c.metric.id}>
+          <svg viewBox="0 0 {W} {H}" aria-hidden="true">
+            {#if c.metric.warn_above != null}
+              <line x1="0" x2={W} y1={scale(c, H)(c.metric.warn_above)} y2={scale(c, H)(c.metric.warn_above)} class="limit" />
+            {/if}
+            <path d="{d} L{W} {H} L{W - (c.values.length - 1) * (W / (Math.max(2, c.values.length) - 1))} {H} Z" fill={c.color} class="area" />
+            <path {d} stroke={c.color} class="line" />
+          </svg>
+        </div>
       </section>
     {/each}
   </div>
@@ -152,16 +162,22 @@
     color: var(--fg-faint);
     font-variant-numeric: tabular-nums;
   }
-  svg {
+  .plot {
+    position: relative;
     flex: 1;
     min-height: 50px;
     width: calc(100% + 24px);
     margin: 6px -12px 0;
   }
+  svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
   .line {
     fill: none;
     stroke-width: 1.6;
-    vector-effect: non-scaling-stroke;
   }
   .area {
     opacity: 0.14;
@@ -169,6 +185,5 @@
   .limit {
     stroke: var(--warn);
     stroke-dasharray: 5 4;
-    vector-effect: non-scaling-stroke;
   }
 </style>

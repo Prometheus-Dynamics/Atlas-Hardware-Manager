@@ -29,7 +29,10 @@
     max?: number;
   } = $props();
 
-  const W = 100;
+  // Drawn at its own width in pixels: a stretched viewBox with a
+  // non-scaling stroke made WebKit's painter keep memory on every redraw.
+  let width = $state(100);
+  const W = $derived(Math.max(1, width));
   const id = `spark-${Math.random().toString(36).slice(2, 9)}`;
   // Fill the width while there are fewer points than the capacity.
   const step = $derived(W / (Math.max(2, Math.min(values.length, capacity)) - 1));
@@ -89,11 +92,11 @@
   });
 </script>
 
-<div class="wrap" style="height: {height}px" bind:this={wrap} onpointermove={move} onpointerleave={() => (hover = null)} role="presentation">
+<div class="wrap" style="height: {height}px" bind:this={wrap} bind:clientWidth={width} onpointermove={move} onpointerleave={() => (hover = null)} role="presentation">
   <!-- A faint baseline, so a fresh trend reads as "filling in", not broken. -->
   <span class="base" style="background: {color}"></span>
   <div>
-    <svg viewBox="0 0 {W} {height}" preserveAspectRatio="none" style="height: {height}px" class="w-full overflow-visible" aria-hidden="true">
+    <svg viewBox="0 0 {W} {height}" style="height: {height}px" class="w-full overflow-visible" aria-hidden="true">
       {#if line}
         <defs>
           <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
@@ -102,7 +105,7 @@
           </linearGradient>
         </defs>
         <path d={area} fill="url(#{id})" />
-        <path d={line} fill="none" style="stroke: {color}" stroke-width="1.6" vector-effect="non-scaling-stroke" stroke-linejoin="round" />
+        <path d={line} fill="none" style="stroke: {color}" stroke-width="1.6" stroke-linejoin="round" />
       {/if}
     </svg>
   </div>

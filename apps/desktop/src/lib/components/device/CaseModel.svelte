@@ -38,10 +38,29 @@
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         host.appendChild(renderer.domElement);
         const scene = new THREE.Scene();
+        // Everything the scene holds goes with the view, and the GL context
+        // with it (WebKit keeps a context, and its buffers, until it is lost
+        // or the canvas is collected). Set now, so leaving mid-load frees it too.
+        const teardown: (() => void)[] = [];
+        let freed = false;
+        stop = () => {
+          if (freed) return;
+          freed = true;
+          for (const undo of teardown.splice(0)) undo();
+          scene.traverse((node) => {
+            const mesh = node as InstanceType<typeof THREE.Mesh>;
+            mesh.geometry?.dispose();
+            for (const material of [mesh.material ?? []].flat()) material.dispose();
+          });
+          renderer.dispose();
+          renderer.forceContextLoss();
+          renderer.domElement.remove();
+        };
         // A soft room to reflect: the metal and the glass read as such, and
         // the dark plastic keeps its shape in the shadows.
         const pmrem = new THREE.PMREMGenerator(renderer);
         const environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+        teardown.push(() => (environment.dispose(), pmrem.dispose()));
         scene.environment = environment;
         scene.environmentIntensity = 0.9;
         const camera = new THREE.PerspectiveCamera(32, 1, 0.005, 1);
@@ -104,6 +123,8 @@
           BUTTON: new THREE.MeshStandardMaterial({ color: 0x4a505a, roughness: 0.55 }),
         };
         const gltf = await new GLTFLoader().loadAsync("/models/raze-case.glb");
+        // Left while it loaded: the cleanup has freed it all already.
+        if (gone) return;
         gltf.scene.traverse((node) => {
           const mesh = node as InstanceType<typeof THREE.Mesh>;
           // CAD meshes are welded across hard edges: smooth normals only
@@ -295,6 +316,17 @@
 
         const q = new THREE.Quaternion();
         let frame = 0;
+        // Drawn only while on screen and the window shows: a card scrolled
+        // away or a hidden window costs nothing.
+        let inView = true;
+        const run = () => {
+          const want = inView && !document.hidden;
+          if (want && !frame) frame = requestAnimationFrame(draw);
+          else if (!want && frame) (cancelAnimationFrame(frame), (frame = 0));
+        };
+        const seen = new IntersectionObserver(([entry]) => ((inView = entry.isIntersecting), run()));
+        seen.observe(host);
+        document.addEventListener("visibilitychange", run);
         const draw = () => {
           const [w, x, y, z] = orientation();
           q.set(x, y, z, w);
@@ -308,17 +340,15 @@
           renderer.render(scene, camera);
           frame = requestAnimationFrame(draw);
         };
-        frame = requestAnimationFrame(draw);
-        stop = () => {
+        run();
+        teardown.push(() => {
           cancelAnimationFrame(frame);
           observer.disconnect();
+          seen.disconnect();
+          document.removeEventListener("visibilitychange", run);
           renderer.domElement.removeEventListener("dblclick", home);
           controls.dispose();
-          environment.dispose();
-          pmrem.dispose();
-          renderer.dispose();
-          renderer.domElement.remove();
-        };
+        });
       } catch (error) {
         console.warn("case model:", error);
         if (!gone) onfail();

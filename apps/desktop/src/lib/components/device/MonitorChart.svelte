@@ -24,8 +24,10 @@
     windowMs: number;
   } = $props();
 
-  const W = 400;
-  const H = 200;
+  // Drawn at the plot's own size in pixels: a stretched viewBox with
+  // non-scaling strokes made WebKit's painter keep memory on every redraw.
+  let W = $state(400);
+  let H = $state(200);
 
   const since = $derived(clock.now - windowMs);
   const lines = $derived(
@@ -86,15 +88,17 @@
     <div class="axis" aria-hidden="true">
       <span>{tick(range.high)}</span><span>{tick((range.high + range.low) / 2)}</span><span>{tick(range.low)}</span>
     </div>
-    <svg viewBox="0 0 {W} {H}" preserveAspectRatio="none" role="img" aria-label="{title} for each device over {minutes} minutes">
-      <line x1="0" x2={W} y1="0.5" y2="0.5" class="grid" />
-      <line x1="0" x2={W} y1={H / 2} y2={H / 2} class="grid" />
-      <line x1="0" x2={W} y1={H - 0.5} y2={H - 0.5} class="grid" />
-      {#if warn != null && warn < range.high}<line x1="0" x2={W} y1={y(warn)} y2={y(warn)} class="limit" />{/if}
-      {#each lines as l (l.id)}
-        <path d={path(l.points)} style:stroke={l.color} class="line" class:bold={hot(l)} />
-      {/each}
-    </svg>
+    <div class="area" bind:clientWidth={W} bind:clientHeight={H}>
+      <svg viewBox="0 0 {W} {H}" role="img" aria-label="{title} for each device over {minutes} minutes">
+        <line x1="0" x2={W} y1="0.5" y2="0.5" class="grid" />
+        <line x1="0" x2={W} y1={H / 2} y2={H / 2} class="grid" />
+        <line x1="0" x2={W} y1={H - 0.5} y2={H - 0.5} class="grid" />
+        {#if warn != null && warn < range.high}<line x1="0" x2={W} y1={y(warn)} y2={y(warn)} class="limit" />{/if}
+        {#each lines as l (l.id)}
+          <path d={path(l.points)} style:stroke={l.color} class="line" class:bold={hot(l)} />
+        {/each}
+      </svg>
+    </div>
   </div>
   <div class="times" aria-hidden="true">
     <span>{ago(span)}</span><span>{ago((span * 2) / 3)}</span><span>{ago(span / 3)}</span><span>now</span>
@@ -162,26 +166,29 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-  svg {
+  .area {
+    position: relative;
     flex: 1;
     min-width: 0;
+  }
+  svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
     height: 100%;
     overflow: visible;
   }
   .grid {
     stroke: var(--hairline);
-    vector-effect: non-scaling-stroke;
   }
   .limit {
     stroke: var(--warn);
     stroke-dasharray: 5 4;
-    vector-effect: non-scaling-stroke;
   }
   .line {
     fill: none;
     stroke-width: 1.4;
     stroke-linejoin: round;
-    vector-effect: non-scaling-stroke;
   }
   .line.bold {
     stroke-width: 2.2;
