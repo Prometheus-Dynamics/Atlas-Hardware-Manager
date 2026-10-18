@@ -152,7 +152,7 @@ fn the_desktop_bundle_carries_every_package_file_the_app_reads() {
         .expect("bundle.resources is a map");
     assert!(
         !resources.contains_key("../../../devices/"),
-        "the whole devices/ tree must not be bundled; list the files the app reads"
+        "the whole devices/ tree must not be bundled; list what the app reads"
     );
 
     for package in repo_catalog().packages() {
@@ -176,11 +176,17 @@ fn the_desktop_bundle_carries_every_package_file_the_app_reads() {
         for rel in needed {
             let source = format!("../../../devices/{folder}/{rel}");
             let target = format!("devices/{folder}/{rel}");
-            assert_eq!(
-                resources.get(&source).and_then(|value| value.as_str()),
-                Some(target.as_str()),
-                "{source} is read by the app but not bundled"
-            );
+            // The file itself, or a directory entry ("…/eeprom/") that holds
+            // it at the same place.
+            let bundled = resources.iter().any(|(from, to)| {
+                let to = to.as_str().unwrap_or_default();
+                (from == &source && to == target)
+                    || (from.ends_with('/')
+                        && to.ends_with('/')
+                        && source.strip_prefix(from.as_str()) == target.strip_prefix(to))
+                        && source.starts_with(from.as_str())
+            });
+            assert!(bundled, "{source} is read by the app but not bundled");
         }
     }
 }
