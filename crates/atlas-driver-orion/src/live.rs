@@ -260,19 +260,31 @@ impl LiveStreams {
         Self { identity, pins }
     }
 
-    /// `orion+tcp://<address>:9200` for an address Atlas reached the board
-    /// at (a URL is taken as it is).
+    /// `orion+tcp://<host>:9200` for an address Atlas reached the board at:
+    /// a host, or a URL of the board's (its identity endpoint,
+    /// `http://<host>:5899/…`). An `orion+tcp://` URL is taken as it is.
     pub fn url_for(address: &str) -> String {
-        if address.contains("://") {
+        if address.starts_with("orion+tcp://") {
             return address.to_owned();
         }
-        if address.contains(':') && !address.starts_with('[') {
-            return format!("orion+tcp://[{address}]:{DEFAULT_PORT}");
+        let rest = address.split_once("://").map_or(address, |(_, rest)| rest);
+        let authority = rest.split('/').next().unwrap_or(rest);
+        let host = match authority.strip_prefix('[') {
+            Some(bracketed) => bracketed.split(']').next().unwrap_or(bracketed),
+            // `host:port`; more colons: a bare IPv6 address.
+            None if authority.matches(':').count() == 1 => {
+                authority.split(':').next().unwrap_or(authority)
+            }
+            None => authority,
+        };
+        if host.contains(':') {
+            return format!("orion+tcp://[{host}]:{DEFAULT_PORT}");
         }
-        format!("orion+tcp://{address}:{DEFAULT_PORT}")
+        format!("orion+tcp://{host}:{DEFAULT_PORT}")
     }
 
-    async fn connect(&self, url: &str) -> Result<RemoteOperator, DriverError> {
+    /// The board's node at `url`, its key checked against the pin.
+    pub(crate) async fn connect(&self, url: &str) -> Result<RemoteOperator, DriverError> {
         let operator = RemoteOperator::connect(url, self.identity.clone(), NodeTrust::FirstUse)
             .await
             .map_err(|error| DriverError::Unreachable(format!("Orion at {url}: {error}")))?;
@@ -559,6 +571,30 @@ impl LiveStreams {
                 }
                 _ => {}
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_node_is_on_the_host_atlas_reached_the_board_at() {
+        for (address, url) in [
+            ("10.0.0.5", "orion+tcp://10.0.0.5:9200"),
+            (
+                "http://172.31.250.1:5899/.well-known/pd-device",
+                "orion+tcp://172.31.250.1:9200",
+            ),
+            ("http://raze.local/", "orion+tcp://raze.local:9200"),
+            ("10.0.0.7:22", "orion+tcp://10.0.0.7:9200"),
+            ("fe80::1", "orion+tcp://[fe80::1]:9200"),
+            ("[fe80::1]:5899", "orion+tcp://[fe80::1]:9200"),
+            ("http://[fe80::1]:5899/x", "orion+tcp://[fe80::1]:9200"),
+            ("orion+tcp://127.0.0.1:4100", "orion+tcp://127.0.0.1:4100"),
+        ] {
+            assert_eq!(LiveStreams::url_for(address), url, "{address}");
         }
     }
 }

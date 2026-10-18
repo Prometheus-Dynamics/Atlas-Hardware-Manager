@@ -3,6 +3,12 @@
 //! keys the board's agent publishes. Orion keeps no event log of the board,
 //! so there are no events; a board whose package serves `/status` reports
 //! the rest itself, and that wins (Orion only fills in what is missing).
+//!
+//! The push channel is the board's own node: a watch on its `update.*` keys
+//! over a push session on its `orion+tcp` listener (as [`LiveStreams`]
+//! connects), so a board seen only through Orion is pushed to, not polled,
+//! like one with board-stream. board-agent names its newest event there
+//! (`update.event_seq`, `_kind`, `_t`) and its update state.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -10,16 +16,19 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use async_trait::async_trait;
 use atlas_driver::{
-    BootInfo, DeviceStatus, DriverError, EventSource, HardwareDevice, HardwareSnapshot, Identity,
-    KernelRecord, StatusCapability, Temperature, UpdateState,
+    BootInfo, DeviceEvent, DeviceStatus, DriverError, EventSource, HardwareDevice,
+    HardwareSnapshot, Identity, KernelRecord, PushSink, StatusCapability, StatusPush, Temperature,
+    UpdateState,
 };
 use futures::future::join_all;
 use orion_control_plane::{
-    NodeHostFacts, StatusEntry, StatusQuery, StatusSubject, TypedConfigValue, update_action,
+    ClientEventKind, NodeHostFacts, StatusChange, StatusEntry, StatusQuery, StatusSubject,
+    TypedConfigValue, update_action,
 };
 use orion_core::NodeId;
 
 use crate::hardware;
+use crate::live::LiveStreams;
 use crate::metrics::number;
 use crate::transport::OrionTransport;
 
@@ -110,13 +119,141 @@ pub(crate) fn status_from(host: Option<&NodeHostFacts>, entries: &[StatusEntry])
     }
 }
 
+/// board-agent's newest event (crates/board-agent, published.rs).
+const KEY_EVENT_SEQ: &str = "update.event_seq";
+const KEY_EVENT_KIND: &str = "update.event_kind";
+const KEY_EVENT_T: &str = "update.event_t";
+
+/// The `update.*` keys a watch has seen, and what their changes push.
+#[derive(Default)]
+struct WatchedKeys {
+    keys: HashMap<String, TypedConfigValue>,
+}
+
+impl WatchedKeys {
+    fn text(&self, key: &str) -> Option<String> {
+        self.keys
+            .get(key)
+            .and_then(text)
+            .filter(|value| !value.is_empty())
+    }
+
+    fn seq(&self) -> Option<u64> {
+        match self.keys.get(KEY_EVENT_SEQ)? {
+            TypedConfigValue::UInt(seq) => Some(*seq),
+            TypedConfigValue::Int(seq) => u64::try_from(*seq).ok(),
+            _ => None,
+        }
+    }
+
+    /// What `change` pushes: `Hello` for the watch's first (every key), then
+    /// an `Event` when the newest event's seq moves and an `Update` when the
+    /// update state does.
+    fn apply(&mut self, change: &StatusChange) -> Vec<StatusPush> {
+        let (seq, state) = (self.seq(), self.text(update_action::KEY_STATE));
+        if change.bootstrap {
+            self.keys.clear();
+        }
+        for entry in &change.updated {
+            self.keys.insert(entry.key.clone(), entry.value.clone());
+        }
+        for key in &change.expired {
+            self.keys.remove(&key.key);
+        }
+        let boot_id = self.text(update_action::KEY_BOOT_ID).unwrap_or_default();
+        if change.bootstrap {
+            return vec![StatusPush::Hello {
+                boot_id,
+                newest_seq: self.seq(),
+            }];
+        }
+        let mut pushes = Vec::new();
+        if let Some(newest) = self.seq().filter(|newest| Some(*newest) != seq) {
+            pushes.push(StatusPush::Event(Box::new(DeviceEvent {
+                t: self
+                    .keys
+                    .get(KEY_EVENT_T)
+                    .and_then(number)
+                    .map_or(0, |t| t as i64),
+                boot_id,
+                kind: self.text(KEY_EVENT_KIND).unwrap_or_default(),
+                source: EventSource::default(),
+                message: String::new(),
+                data: Default::default(),
+                seq: Some(newest),
+                uptime_s: None,
+                at_ms: None,
+            })));
+        }
+        if let Some(now) = self
+            .text(update_action::KEY_STATE)
+            .filter(|now| Some(now) != state.as_ref())
+        {
+            pushes.push(StatusPush::Update { state: now });
+        }
+        pushes
+    }
+}
+
 pub(crate) struct OrionStatus {
     pub(crate) transport: Arc<dyn OrionTransport>,
     pub(crate) node: NodeId,
+    /// Connects to boards' own nodes for the push channel; `None`: polled.
+    pub(crate) live: Option<Arc<LiveStreams>>,
 }
 
 #[async_trait]
 impl StatusCapability for OrionStatus {
+    /// Watches the board's `update.*` keys on its own node. `Ok(false)`
+    /// without a way to reach it (no address); an error when its node can't
+    /// be reached, isn't this board's, refuses the watch or has no agent
+    /// publishing (Atlas polls, and tries again less and less often).
+    async fn watch(&self, device: &Identity, sink: PushSink) -> Result<bool, DriverError> {
+        let address = device.address.trim();
+        let Some(live) = &self.live else {
+            return Ok(false);
+        };
+        if address.is_empty() || address.starts_with('/') {
+            return Ok(false);
+        }
+        let url = LiveStreams::url_for(address);
+        let operator = live.connect(&url).await?;
+        if operator.node_id() != &self.node {
+            return Err(DriverError::Unreachable(format!(
+                "Orion at {url} is node {}, not {}",
+                operator.node_id(),
+                self.node
+            )));
+        }
+        let unreachable = |error: orion_client::remote::RemoteError| {
+            DriverError::Unreachable(format!("Orion at {url}: {error}"))
+        };
+        let mut session = operator.open_session("atlas").await.map_err(unreachable)?;
+        session
+            .watch_status(StatusQuery {
+                subject: Some(StatusSubject::Node(self.node.clone())),
+                key_prefix: Some("update.".into()),
+            })
+            .await
+            .map_err(unreachable)?;
+        let mut keys = WatchedKeys::default();
+        while let Some(event) = session.next_event().await {
+            let ClientEventKind::Status(change) = event.event else {
+                continue;
+            };
+            if change.bootstrap && change.updated.is_empty() {
+                return Err(DriverError::Unsupported(format!(
+                    "no device agent publishes on node {}",
+                    self.node
+                )));
+            }
+            for push in keys.apply(&change) {
+                sink(push);
+            }
+        }
+        Ok(true)
+    }
+
     async fn status(&self, _device: &Identity) -> Result<DeviceStatus, DriverError> {
         let host = self
             .transport
@@ -251,6 +388,52 @@ mod tests {
         );
         assert_eq!(quiet.pstore, None);
         assert_eq!(quiet.boot.unwrap().previous_clean, None);
+    }
+
+    fn change(bootstrap: bool, keys: &[(&str, TypedConfigValue)]) -> StatusChange {
+        StatusChange {
+            bootstrap,
+            updated: keys
+                .iter()
+                .map(|(key, value)| entry(key, value.clone()))
+                .collect(),
+            expired: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn a_new_event_seq_or_update_state_is_pushed() {
+        let mut keys = WatchedKeys::default();
+        let state = |s: &str| TypedConfigValue::String(s.into());
+        assert_eq!(
+            keys.apply(&change(true, &[("update.state", state("idle"))])),
+            vec![StatusPush::Hello {
+                boot_id: String::new(),
+                newest_seq: None,
+            }]
+        );
+        assert!(
+            keys.apply(&change(false, &[("update.state", state("idle"))]))
+                .is_empty(),
+            "the same state again"
+        );
+        let pushes = keys.apply(&change(
+            false,
+            &[
+                ("update.event_seq", TypedConfigValue::UInt(1)),
+                ("update.event_kind", state("clock.set")),
+            ],
+        ));
+        let [StatusPush::Event(event)] = pushes.as_slice() else {
+            panic!("{pushes:?}");
+        };
+        assert_eq!((event.seq, event.kind.as_str()), (Some(1), "clock.set"));
+        assert_eq!(
+            keys.apply(&change(false, &[("update.state", state("trying"))])),
+            vec![StatusPush::Update {
+                state: "trying".into()
+            }]
+        );
     }
 
     #[test]

@@ -12,7 +12,8 @@
 //! else; Orion is never the only way in.
 //!
 //! [`LiveStreams`] follows a board's live readings, pushed by the board's
-//! own orion-node (board-agent's `board.live` stream).
+//! own orion-node (board-agent's `board.live` stream); given to the
+//! directory, it also opens the board's status push channel there.
 //!
 //! The transport is a trait. [`RemoteTransport`] implements it with Orion's
 //! remote operator client (signed orion+tcp).

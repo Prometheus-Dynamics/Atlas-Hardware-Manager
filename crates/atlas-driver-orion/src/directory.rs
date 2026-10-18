@@ -20,6 +20,7 @@ const CLAIMED_KEY: &str = "action.claimed";
 
 use crate::actions::{OrionActions, legacy_claims};
 use crate::control::OrionHardware;
+use crate::live::LiveStreams;
 use crate::metrics::OrionTelemetry;
 use crate::status::OrionStatus;
 use crate::transport::{BundleHost, OrionTransport};
@@ -36,6 +37,8 @@ pub struct OrionDirectory {
     /// list, or for an older agent that publishes only `update.state`, the
     /// actions that implied. Nodes without an agent are absent.
     agents: RwLock<HashMap<String, BTreeSet<String>>>,
+    /// Connects to boards' own nodes: their status's push channel.
+    live: RwLock<Option<Arc<LiveStreams>>>,
     /// How often an update polls the board's state, in milliseconds.
     update_poll_ms: AtomicU64,
     last_error: Mutex<Option<String>>,
@@ -52,6 +55,7 @@ impl OrionDirectory {
             bundles,
             nodes: RwLock::new(HashMap::new()),
             agents: RwLock::new(HashMap::new()),
+            live: RwLock::new(None),
             update_poll_ms: AtomicU64::new(3_000),
             last_error: Mutex::new(None),
         })
@@ -97,6 +101,15 @@ impl OrionDirectory {
                 Err(failure)
             }
         }
+    }
+
+    /// Boards' statuses push through their own nodes, connected with
+    /// `live` (without it, Orion's status of a board is polled).
+    pub fn set_live_streams(&self, live: Arc<LiveStreams>) {
+        *self
+            .live
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(live);
     }
 
     /// How often updates poll the board's `update.*` keys and boot id (3 s
@@ -254,6 +267,11 @@ impl CapabilitySource for OrionDirectory {
             status: Some(Arc::new(OrionStatus {
                 transport: self.transport.clone(),
                 node: id.clone(),
+                live: self
+                    .live
+                    .read()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .clone(),
             }) as Arc<dyn StatusCapability>),
             slots: claimed.contains(crate::slots::SLOT_SET_DEFAULT).then(|| {
                 Arc::new(crate::slots::OrionSlots {

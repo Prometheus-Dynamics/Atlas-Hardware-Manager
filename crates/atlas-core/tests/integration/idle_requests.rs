@@ -1,7 +1,8 @@
 //! What an idle board is asked while Atlas watches it, per minute, on
 //! Tokio's paused clock: scans (identity), event syncs, status reads and
 //! push-channel connects, for a board that pushes, one without a push
-//! channel, and one whose channel won't open. The device's page is open the
+//! channel, one whose channel won't open, and one whose own status has no
+//! channel while Orion's does. The device's page is open the
 //! whole time, reading the status as the desktop's status store does.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -26,6 +27,9 @@ enum Channel {
     None,
     /// It has one that won't open (board-stream down).
     Refused,
+    /// Its own status has none; Orion's (a source whose data comes first)
+    /// pushes.
+    OrionOnly,
 }
 
 #[derive(Default)]
@@ -51,7 +55,7 @@ impl StatusCapability for Board {
 
     async fn watch(&self, _device: &Identity, sink: PushSink) -> Result<bool, DriverError> {
         match self.channel {
-            Channel::None => Ok(false),
+            Channel::None | Channel::OrionOnly => Ok(false),
             Channel::Refused => {
                 self.counts.connects.fetch_add(1, Ordering::Relaxed);
                 Err(DriverError::Unreachable("connection refused".into()))
@@ -83,9 +87,14 @@ impl StatusCapability for Board {
     }
 }
 
-struct Source(DeviceKey, Arc<Board>);
+/// The board's status; `data_first` for Orion's.
+struct Source(DeviceKey, Arc<Board>, bool);
 
 impl CapabilitySource for Source {
+    fn data_first(&self) -> bool {
+        self.2
+    }
+
     fn capabilities_for(&self, device: &Identity) -> Capabilities {
         Capabilities {
             status: (device.key == self.0).then(|| self.1.clone() as Arc<dyn StatusCapability>),
@@ -133,15 +142,21 @@ async fn idle(channel: Channel) -> PerMinute {
     let key = DeviceKey::new(SIM_HELIOS, "H-1001");
     let fleet = MockFleet::new().with(MockDevice::new(SIM_HELIOS, "H-1001"));
     let counts = Arc::new(Counts::default());
-    let board = Arc::new(Board {
-        channel,
-        counts: counts.clone(),
-        sink: Mutex::new(None),
-    });
+    let board = |channel| {
+        Arc::new(Board {
+            channel,
+            counts: counts.clone(),
+            sink: Mutex::new(None),
+        })
+    };
     let mut builder = Atlas::builder()
         .link_source(fleet.link_source())
-        .capability_source(Arc::new(Source(key.clone(), board)))
+        .capability_source(Arc::new(Source(key.clone(), board(channel), false)))
         .store(Arc::new(MemoryStore::default()));
+    if channel == Channel::OrionOnly {
+        builder =
+            builder.capability_source(Arc::new(Source(key.clone(), board(Channel::Open), true)));
+    }
     for driver in fleet.drivers() {
         builder = builder.driver(Arc::new(Counted(driver, counts.clone())));
     }
@@ -193,7 +208,12 @@ fn snapshot(counts: &Counts) -> [usize; 4] {
 #[tokio::test(start_paused = true)]
 #[allow(clippy::print_stdout, reason = "the rates are the measurement")]
 async fn an_idle_board_is_asked_little() {
-    for channel in [Channel::Open, Channel::None, Channel::Refused] {
+    for channel in [
+        Channel::Open,
+        Channel::None,
+        Channel::Refused,
+        Channel::OrionOnly,
+    ] {
         let rate = idle(channel).await;
         println!(
             "{channel:?}: {:.1}/min (identity {:.1}, status {:.1}, events {:.1}, connects {:.1})",
@@ -216,6 +236,14 @@ async fn an_idle_board_is_asked_little() {
             Channel::None => assert!(rate.total() <= 11.0, "{rate:?}"),
             // A channel that won't open is tried less and less often.
             Channel::Refused => assert!(rate.connects <= 0.5, "{rate:?}"),
+            // Orion's channel stands in for the board's own: as Open, with
+            // each status read asking both sources.
+            Channel::OrionOnly => {
+                assert!(rate.identify <= 1.0, "{rate:?}");
+                assert!(rate.status <= 2.0, "{rate:?}");
+                assert!(rate.events <= 0.2, "{rate:?}");
+                assert!(rate.connects == 0.0, "{rate:?}");
+            }
         }
     }
 }

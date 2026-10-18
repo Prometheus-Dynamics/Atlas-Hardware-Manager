@@ -113,6 +113,7 @@ impl Orion {
             .with_logger(Arc::new(|line| crate::logfile::line("IMAGES", line)));
         let bundles: Arc<dyn BundleHost> = Arc::new(images.clone());
         let directory = OrionDirectory::new(transport.clone(), Some(bundles));
+        directory.set_live_streams(live.clone());
         Ok(Self {
             transport,
             directory,
