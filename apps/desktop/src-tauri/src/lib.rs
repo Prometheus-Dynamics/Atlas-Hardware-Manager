@@ -72,6 +72,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(state)
         .setup(|app| {
+            // The window is made here rather than from the config: on Linux
+            // GTK hands a second launch to this process as an activation,
+            // which re-runs Tauri's own setup, and a config window would be
+            // built twice (a panic). This closure only ever runs once.
+            if let Some(config) = app.config().app.windows.first() {
+                tauri::WebviewWindowBuilder::from_config(app.handle(), config)?.build()?;
+            }
             let handle = app.handle();
             forward_events(handle, &app.state::<AppState>());
             start_watch(handle);
@@ -155,7 +162,20 @@ pub fn run() {
             commands::system::save_settings,
             commands::system::restart_app,
         ])
-        .run(tauri::generate_context!());
+        .build(tauri::generate_context!())
+        .map(|app| {
+            app.run(|handle, event| {
+                // Ready again means Atlas was launched while running:
+                // bring the existing window forward.
+                if let tauri::RunEvent::Ready = event {
+                    if let Some(window) = handle.get_webview_window("main") {
+                        let _ = window.unminimize();
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                }
+            })
+        });
     if let Err(error) = result {
         let _ = std::io::Write::write_all(
             &mut std::io::stderr(),

@@ -13,6 +13,8 @@
     "enableGTKAppId": true,
     "windows": [
       {
+        "label": "main",
+        "create": false,
         "title": "Atlas Hardware Manager",
         "width": 1320,
         "height": 860,
