@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use atlas_driver::{
     BootInfo, DeviceStatus, DriverError, EventSource, HardwareDevice, HardwareSnapshot, Identity,
-    StatusCapability, Temperature, UpdateState,
+    KernelRecord, StatusCapability, Temperature, UpdateState,
 };
 use futures::future::join_all;
 use orion_control_plane::{
@@ -82,8 +82,27 @@ pub(crate) fn status_from(host: Option<&NodeHostFacts>, entries: &[StatusEntry])
             slot: update
                 .as_ref()
                 .and_then(|update| update.slot_active.clone()),
+            // board-agent's boot record (published.rs).
+            count: keys
+                .get("update.boot_count")
+                .and_then(|value| number(value))
+                .map(|count| count as u64)
+                .filter(|count| *count > 0),
+            reset: get("update.boot_reset"),
+            previous_clean: get("update.boot_previous_clean").and_then(|clean| clean.parse().ok()),
             ..BootInfo::default()
         }),
+        // Only this boot's: what it found of the boot before.
+        pstore: host
+            .and_then(|host| host.boot_id.clone())
+            .zip(get("update.boot_kernel_log"))
+            .map(|(boot, log)| {
+                vec![KernelRecord {
+                    boot,
+                    panic: log == "panic",
+                    files: Vec::new(),
+                }]
+            }),
         temperatures,
         update,
         hardware: None,
@@ -191,6 +210,47 @@ mod tests {
         assert_eq!((update.state.as_str(), update.progress), ("staging", 420));
         assert_eq!(update.version_staged, None);
         assert!(status.drift.is_none());
+    }
+
+    #[test]
+    fn the_boot_record_maps_to_the_boot() {
+        let host = NodeHostFacts {
+            boot_id: Some("b-2".into()),
+            ..NodeHostFacts::default()
+        };
+        let status = status_from(
+            Some(&host),
+            &[
+                entry("update.boot_count", TypedConfigValue::UInt(7)),
+                entry(
+                    "update.boot_reset",
+                    TypedConfigValue::String("power-on".into()),
+                ),
+                entry(
+                    "update.boot_previous_clean",
+                    TypedConfigValue::String("false".into()),
+                ),
+                entry(
+                    "update.boot_kernel_log",
+                    TypedConfigValue::String("panic".into()),
+                ),
+            ],
+        );
+        let boot = status.boot.unwrap();
+        assert_eq!(boot.count, Some(7));
+        assert_eq!(boot.reset.as_deref(), Some("power-on"));
+        assert_eq!(boot.previous_clean, Some(false));
+        let pstore = status.pstore.unwrap();
+        assert_eq!((pstore[0].boot.as_str(), pstore[0].panic), ("b-2", true));
+        let quiet = status_from(
+            Some(&host),
+            &[entry(
+                "update.boot_kernel_log",
+                TypedConfigValue::String(String::new()),
+            )],
+        );
+        assert_eq!(quiet.pstore, None);
+        assert_eq!(quiet.boot.unwrap().previous_clean, None);
     }
 
     #[test]

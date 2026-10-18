@@ -111,6 +111,7 @@ pub fn run() {
             commands::devices::device_history,
             commands::devices::list_activity,
             commands::devices::save_support_bundle,
+            commands::devices::device_kernel_record,
             commands::jobs::plan_update,
             commands::jobs::start_update,
             commands::jobs::cancel_job,

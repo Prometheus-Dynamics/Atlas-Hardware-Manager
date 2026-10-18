@@ -19,7 +19,7 @@ use orion_control_plane::{
 use tokio::process::Child;
 
 use crate::config::Config;
-use crate::published::{LastEvent, update_status_entries};
+use crate::published::{BootRecord, LastEvent, update_status_entries};
 pub use crate::stage::StageRequest;
 use crate::writer::{StderrTail, Writer, WriterStatus};
 
@@ -77,6 +77,10 @@ struct Staging {
     task: tokio::task::JoinHandle<()>,
 }
 
+/// What was last published: the writer's state, the newest event and the
+/// boot record.
+type Published = (WriterStatus, Option<LastEvent>, Option<BootRecord>);
+
 /// The agent: one per connection to the node.
 pub struct Agent {
     config: Arc<Config>,
@@ -89,7 +93,7 @@ pub struct Agent {
     /// so a cancel never races the restart.
     apply_gate: tokio::sync::Mutex<()>,
     /// What was last published, to publish only changes between ticks.
-    published: tokio::sync::Mutex<Option<(WriterStatus, Option<LastEvent>)>>,
+    published: tokio::sync::Mutex<Option<Published>>,
 }
 
 impl Agent {
@@ -139,11 +143,18 @@ impl Agent {
         let now = (
             self.current().await,
             LastEvent::read(&self.config.data_dir.join("events.jsonl")),
+            BootRecord::read(&self.config.run_dir, &self.config.data_dir, &self.boot_id),
         );
         if !force && published.as_ref() == Some(&now) {
             return;
         }
-        let entries = update_status_entries(&self.reporter, &now.0, &self.boot_id, now.1.as_ref());
+        let entries = update_status_entries(
+            &self.reporter,
+            &now.0,
+            &self.boot_id,
+            now.1.as_ref(),
+            now.2.as_ref(),
+        );
         match self.reporter.publish_status(entries).await {
             Ok(()) => *published = Some(now),
             Err(error) => {

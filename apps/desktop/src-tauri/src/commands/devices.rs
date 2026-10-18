@@ -422,6 +422,20 @@ pub async fn device_status(state: State<'_, AppState>, key: DeviceKey) -> CmdRes
     state.atlas.device_status(&key).await.map_err(text)
 }
 
+/// The text of a kernel log the board kept, by the boot that found it.
+#[tauri::command]
+pub async fn device_kernel_record(
+    state: State<'_, AppState>,
+    key: DeviceKey,
+    boot: String,
+) -> CmdResult<String> {
+    state
+        .atlas
+        .device_kernel_record(&key, &boot)
+        .await
+        .map_err(text)
+}
+
 /// The device's history, newest first: what Atlas did and what its board's
 /// event log says (Orion, someone on the board).
 #[tauri::command]

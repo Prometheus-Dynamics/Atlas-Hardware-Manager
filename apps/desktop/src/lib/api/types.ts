@@ -572,6 +572,18 @@ export interface BootInfo {
   previous_journal?: string | null;
   /** The firmware's throttling flags early in this boot ("0x50005"): bit 0 undervoltage now, 16 since start. */
   throttled?: string | null;
+  /** How this boot began: "power-on" (power was lost) or "reset" (a reboot, a panic restart, the watchdog). */
+  reset?: string | null;
+  /** The reset register behind it ("0x1000"). */
+  rsts?: string | null;
+}
+
+/** A kernel log the board kept (pstore): filed under the boot that found it, so the boot before's. */
+export interface KernelRecord {
+  boot: string;
+  /** A panic or oops record is among its files. */
+  panic: boolean;
+  files: string[];
 }
 
 export interface Temperature {
@@ -654,6 +666,8 @@ export interface DeviceStatus {
   drift: Drift | null;
   /** null: no fresh reading from the board's hardware service. */
   hardware: HardwareSnapshot | null;
+  /** Kernel logs the board kept, newest first; null/absent when unknown. */
+  pstore?: KernelRecord[] | null;
 }
 
 /** One line of a board's event log. */

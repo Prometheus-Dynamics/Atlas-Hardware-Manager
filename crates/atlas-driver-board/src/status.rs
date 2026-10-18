@@ -19,8 +19,8 @@
 use async_trait::async_trait;
 use atlas_driver::{
     BootInfo, DeviceEvent, DeviceStatus, Drift, DriverError, EventPage, EventQuery, EventSource,
-    FanState, FrameSink, HardwareSnapshot, Identity, Metric, PushSink, StatusCapability,
-    TelemetryCapability, Temperature, UpdateState, metric_ids,
+    FanState, FrameSink, HardwareSnapshot, Identity, KernelRecord, Metric, PushSink,
+    StatusCapability, TelemetryCapability, Temperature, UpdateState, metric_ids,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -115,7 +115,19 @@ pub(crate) fn parse_status(value: &Value, now: i64) -> DeviceStatus {
             .and_then(Value::as_bool),
         drift: part::<Drift>(value, "drift"),
         hardware: part::<HardwareSnapshot>(value, "hardware"),
+        pstore: part::<Vec<KernelRecord>>(value, "pstore"),
     }
+}
+
+/// A boot id as the board files its kernel logs under (pstore --show takes
+/// the same): safe to put in a command.
+fn kernel_record_id(boot: &str) -> bool {
+    !boot.is_empty()
+        && !boot.starts_with('.')
+        && boot.len() <= 64
+        && boot
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
 /// `{"events":[..]}` or a bare list; events that don't parse are skipped.
@@ -216,6 +228,9 @@ pub(crate) struct BoardStatus {
     pub(crate) last: tokio::sync::Mutex<Option<(std::time::Instant, DeviceStatus)>>,
     /// Set by a push: the next read fetches whatever its age.
     pub(crate) stale: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Root on the board, for what the endpoint doesn't serve (the kernel
+    /// logs it kept are root's).
+    pub(crate) ssh: Option<crate::ssh::SshUpdate>,
 }
 
 impl BoardStatus {
@@ -232,7 +247,13 @@ impl BoardStatus {
             stream_url,
             last: tokio::sync::Mutex::default(),
             stale: std::sync::Arc::default(),
+            ssh: None,
         }
+    }
+
+    pub(crate) fn with_ssh(mut self, ssh: Option<crate::ssh::SshUpdate>) -> Self {
+        self.ssh = ssh;
+        self
     }
 
     pub(crate) async fn read(&self) -> Result<DeviceStatus, DriverError> {
@@ -281,6 +302,18 @@ impl StatusCapability for BoardStatus {
             }
             None => Ok(false),
         }
+    }
+
+    /// `pstore --show <boot>` (device package) as root.
+    async fn kernel_record(&self, _device: &Identity, boot: &str) -> Result<String, DriverError> {
+        if !kernel_record_id(boot) {
+            return Err(DriverError::Other(format!("not a boot id: {boot:?}")));
+        }
+        let Some(ssh) = &self.ssh else {
+            return Err(DriverError::Unsupported("kernel logs without SSH".into()));
+        };
+        ssh.run(&format!("/usr/lib/board/pstore --show {boot}"))
+            .await
     }
 
     async fn events(
@@ -340,7 +373,9 @@ mod tests {
         json!({
             "version": 1, "time": 1_000,
             "boot": { "id": "b-1", "count": 12, "slot": "A", "kernel": "7.2.9", "previous_clean": false,
-                      "at": 900, "uptime_s": 100 },
+                      "reset": "power-on", "rsts": "0x1000", "at": 900, "uptime_s": 100 },
+            "pstore": [{ "boot": "b-1", "panic": true, "files": ["console-ramoops-0", "dmesg-ramoops-0"] },
+                       { "boot": "b-0", "panic": false, "files": ["console-ramoops-0"] }],
             "failed_units": ["foo.service", 3],
             "temperatures": [{ "id": "gpu", "celsius": 40.0 }, { "id": "cpu-thermal", "celsius": 54.3 }, { "id": 1 }],
             "fan": { "state": 2, "max_state": 4, "pwm": 212, "rpm": null },
@@ -361,6 +396,11 @@ mod tests {
         assert_eq!(status.ntp_synchronized, Some(false));
         let boot = status.boot.unwrap();
         assert_eq!((boot.count, boot.previous_clean), (Some(12), Some(false)));
+        assert_eq!(boot.reset.as_deref(), Some("power-on"));
+        assert_eq!(boot.rsts.as_deref(), Some("0x1000"));
+        let pstore = status.pstore.unwrap();
+        assert_eq!((pstore[0].boot.as_str(), pstore[0].panic), ("b-1", true));
+        assert_eq!(pstore[1].files, ["console-ramoops-0"]);
         // A list with a bad entry is unreadable as a whole: unknown.
         assert_eq!(status.failed_units, None);
         assert_eq!(status.temperatures.len(), 2);
@@ -374,6 +414,15 @@ mod tests {
         assert_eq!(drift.count, 1);
         assert_eq!(drift.items[0].path, "cmdline.txt");
         assert_eq!(status.fan.unwrap().pwm, Some(212));
+    }
+
+    #[test]
+    fn only_plain_boot_ids_reach_the_command() {
+        assert!(kernel_record_id("0b6a1c2e-6f1d-4d3e-9b1a-2c3d4e5f6a7b"));
+        assert!(kernel_record_id("unknown"));
+        for bad in ["", "..", ".x", "a b", "a;reboot", "a/b", "$(x)"] {
+            assert!(!kernel_record_id(bad), "{bad:?}");
+        }
     }
 
     #[test]

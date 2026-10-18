@@ -29,6 +29,10 @@ interface Board {
   bootId: string;
   bootedAt: number;
   previousClean: boolean | null;
+  /** How this boot began: "power-on" or "reset". */
+  reset: string;
+  /** Kernel logs kept (pstore), oldest first, under the boot that found them. */
+  kernelLogs: { boot: string; panic: boolean; text: string }[];
   clockOffset: number;
   /** When the simulated update's stage started (ms), while one runs. */
   stageStart: number | null;
@@ -68,36 +72,68 @@ function seed(device: SimDevice): Board {
     bootId: bootId(),
     bootedAt: now - 3 * 24 * H,
     previousClean: true,
+    reset: "reset",
+    kernelLogs: [],
     clockOffset: -2,
     stageStart: null,
   };
-  const boot = (at: number, clean: boolean) => {
+  /** A boot; `log`: the kernel log it found of the boot before (a warm restart always leaves its console). */
+  const boot = (at: number, clean: boolean, reset = "reset", slot = "B", log?: { panic: boolean; text: string }) => {
     board.bootId = bootId();
     board.bootCount += 1;
     board.bootedAt = at;
     board.previousClean = clean;
-    event(board, at, "boot", "local", `boot ${board.bootCount}, slot B, kernel 7.2.9-v8${clean ? "" : "; the previous boot didn't shut down cleanly"}`, {
+    board.reset = reset;
+    if (log) board.kernelLogs.push({ boot: board.bootId, ...log });
+    let message = `boot ${board.bootCount}, slot ${slot}, kernel 7.2.9-v8`;
+    if (!clean) message += "; the previous boot didn't shut down cleanly";
+    if (reset === "power-on") message += "; it began at power-on";
+    event(board, at, "boot", "local", message, {
       count: String(board.bootCount),
-      slot: "B",
+      slot,
       kernel: "7.2.9-v8",
       previous_clean: String(clean),
+      reset,
     });
+    if (log?.panic || (log && !clean)) {
+      event(board, at + 2 * S, "kernel.pstore", "local", `the last boot ended ${log.panic ? "in a kernel panic or oops" : "without a clean shutdown"}; its kernel log is in /data/board/pstore/${board.bootId}`, {
+        dir: `/data/board/pstore/${board.bootId}`,
+        panics: log.panic ? "1" : "0",
+        previous_clean: String(clean),
+      });
+    }
   };
+  const restartConsole = (up: number, command = "") =>
+    `[    0.000000] Booting Linux on physical CPU 0x0000000000 [0x414fd0b1]\n[    0.000000] Linux version 7.2.9-v8 (helios@build) #1 SMP PREEMPT\n[${up.toFixed(6).padStart(12)}] systemd-shutdown[1]: Rebooting.\n[${(up + 0.01).toFixed(6).padStart(12)}] reboot: Restarting system${command ? ` with command '${command}'` : ""}\n`;
   event(board, now - 50 * H, "update.stage", "atlas", "staging an update into slot B", { slot: "B" });
   event(board, now - 50 * H + 140 * S, "update.staged", "atlas", `staged ${device.version} in slot B`, { version: device.version, slot: "B" });
   event(board, now - 50 * H + 150 * S, "update.apply", "atlas", `restarting into ${device.version} on trial`, { version: device.version, slot: "B" });
   event(board, now - 50 * H + 160 * S, "shutdown", "local", "shutting down cleanly");
-  boot(now - 50 * H + 190 * S, true);
+  boot(now - 50 * H + 190 * S, true, "reset", "B", { panic: false, text: `== console-ramoops-0\n${restartConsole(8123.4, "0 tryboot")}` });
   event(board, now - 50 * H + 230 * S, "update.confirmed", "atlas", `kept ${device.version} in slot B`, { version: device.version, slot: "B" });
   event(board, now - 26 * H, "ssh.keys", "local", "installed 2 SSH key(s) from the boot partition", { count: "2", added: "1" });
-  // A power cut: no shutdown event before the next boot.
-  boot(now - 5 * H, false);
+  // An update that failed its trial and rolled back.
+  event(board, now - 12 * H, "update.apply", "atlas", "restarting into 2026.3.0-rc2 on trial", { version: "2026.3.0-rc2", slot: "A" });
+  event(board, now - 12 * H + 10 * S, "shutdown", "local", "shutting down cleanly");
+  boot(now - 12 * H + 40 * S, true, "reset", "A", { panic: false, text: `== console-ramoops-0\n${restartConsole(32760.2, "0 tryboot")}` });
+  event(board, now - 12 * H + 160 * S, "update.trial-failed", "local", "photonvision.service didn't start in the trial", { slot: "A", reason: "photonvision.service failed" });
+  event(board, now - 12 * H + 165 * S, "update.rolled-back", "local", "rolled back to slot B: photonvision.service failed in the trial", { slot: "B", from: "A", reason: "photonvision.service failed" });
+  event(board, now - 12 * H + 170 * S, "shutdown", "local", "shutting down cleanly");
+  boot(now - 12 * H + 200 * S, true, "reset", "B", { panic: false, text: `== console-ramoops-0\n${restartConsole(160.9)}` });
+  // A hard lockup: the kernel panicked and the watchdog restarted it.
+  boot(now - 8 * H, false, "reset", "B", {
+    panic: true,
+    text:
+      "== dmesg-ramoops-0\nPanic#1 Part1\n<0>[17702.418211] watchdog: Watchdog detected hard LOCKUP on cpu 2\n<4>[17702.418230] CPU: 2 PID: 1834 Comm: photonvision Tainted: G         C         7.2.9-v8 #1\n<4>[17702.418236] Hardware name: Raspberry Pi Compute Module 5 Rev 1.0 (DT)\n<4>[17702.418240] pc : rp1_cfe_isr+0x1a4/0x2f0 [rp1_cfe]\n<4>[17702.418252] lr : __handle_irq_event_percpu+0x5c/0x1e0\n<4>[17702.418260] Call trace:\n<4>[17702.418262]  rp1_cfe_isr+0x1a4/0x2f0 [rp1_cfe]\n<4>[17702.418270]  __handle_irq_event_percpu+0x5c/0x1e0\n<4>[17702.418276]  handle_irq_event+0x4c/0xb0\n<0>[17702.418290] Kernel panic - not syncing: Hard LOCKUP\n<2>[17702.418295] SMP: stopping secondary CPUs\n<0>[17702.418310] Kernel Offset: disabled\n<0>[17702.418312] ---[ end Kernel panic - not syncing: Hard LOCKUP ]---\n\n== console-ramoops-0\n[17690.104512] rp1-cfe 1f00110000.csi: Frame wait timed out\n[17702.418211] watchdog: Watchdog detected hard LOCKUP on cpu 2\n[17702.418290] Kernel panic - not syncing: Hard LOCKUP\n",
+  });
+  // A power cut: no shutdown event before the next boot, and RAM (pstore) lost.
+  boot(now - 5 * H, false, "power-on");
   event(board, now - 4.8 * H, "clock.set", "atlas", "clock set from a computer over SSH", { old: String(sec(now - 400 * 24 * H)), new: String(sec(now - 4.8 * H)) });
   // Someone on the board staged an image by hand, then thought better of it.
   event(board, now - 2.2 * H, "update.stage", "local", "staging an update into slot A", { slot: "A" });
   event(board, now - 2.1 * H, "update.cancelled", "local", "cancelled the update", { stopped: "1" });
   event(board, now - 70 * 60 * S, "shutdown", "local", "shutting down cleanly");
-  boot(now - 68 * 60 * S, true);
+  boot(now - 68 * 60 * S, true, "reset", "B", { panic: false, text: `== console-ramoops-0\n${restartConsole(13790.5)}` });
   // Orion's update, running now.
   board.stageStart = now - 0.35 * STAGE_MS;
   board.update = {
@@ -154,10 +190,12 @@ function advance(device: SimDevice, board: Board) {
     board.bootCount += 1;
     board.bootedAt = start + STAGE_MS + REBOOT_MS;
     board.previousClean = true;
+    board.reset = "reset";
     event(board, board.bootedAt, "boot", "local", `boot ${board.bootCount}, slot A, kernel 7.2.9-v8`, {
       count: String(board.bootCount),
       slot: "A",
       previous_clean: "true",
+      reset: "reset",
     });
     Object.assign(u, { state: "trying", slot_active: "A" });
     restart(device.key);
@@ -458,7 +496,14 @@ export function deviceStatus(key: DeviceKey): DeviceStatus {
       kernel: "7.2.9-v8",
       uptime_s: sec(now - board.bootedAt),
       previous_clean: board.previousClean,
+      pstore_saved: board.kernelLogs.some((log) => log.boot === board.bootId),
+      reset: board.reset,
+      rsts: board.reset === "power-on" ? "0x1000" : "0x20",
     },
+    pstore: board.kernelLogs
+      .slice(-10)
+      .reverse()
+      .map((log) => ({ boot: log.boot, panic: log.panic, files: log.panic ? ["console-ramoops-0", "dmesg-ramoops-0"] : ["console-ramoops-0"] })),
     failed_units: board.update.state === "trying" ? ["photonvision.service"] : [],
     temperatures: [{ id: "cpu-thermal", celsius: Math.round(temp * 10) / 10 }],
     fan: { state: busy ? 2 : 1, max_state: 4, pwm: busy ? 212 : 179, rpm: null },
@@ -480,6 +525,15 @@ export function deviceStatus(key: DeviceKey): DeviceStatus {
       ],
     },
   };
+}
+
+/** `pstore --show <boot>`: a kept kernel log's text. */
+export function kernelRecord(key: DeviceKey, boot: string): string {
+  const device = online(key);
+  if (!hasStatus(device)) throw `${keyString(key)} does not report its status`;
+  const log = boardFor(device).kernelLogs.find((l) => l.boot === boot);
+  if (!log) throw `no kernel log kept for boot ${boot}`;
+  return log.text;
 }
 
 /** Atlas's entries for the device and its board's events, newest first. */
@@ -514,7 +568,7 @@ export function deviceHistory(key: DeviceKey, limit: number): HistoryEntry[] {
 
 function level(e: DeviceEvent): HistoryEntry["level"] {
   if (e.kind.endsWith("failed") || e.kind === "update.link-fallback") return "error";
-  if (e.kind === "update.rolled-back" || (e.kind === "boot" && e.data.previous_clean === "false")) return "warning";
+  if (e.kind === "update.rolled-back" || e.kind === "kernel.pstore" || (e.kind === "boot" && e.data.previous_clean === "false")) return "warning";
   if (e.kind === "update.confirmed" || e.kind === "update.staged") return "success";
   return "info";
 }
@@ -582,10 +636,12 @@ function reboot(device: SimDevice, board: Board, now: number) {
   board.bootCount += 1;
   board.bootedAt = now + 8 * S;
   board.previousClean = true;
+  board.reset = "reset";
   event(board, board.bootedAt, "boot", "local", `boot ${board.bootCount}, slot ${board.update.slot_active}, kernel 7.2.9-v8`, {
     count: String(board.bootCount),
     slot: board.update.slot_active ?? "",
     previous_clean: "true",
+    reset: "reset",
   });
   restart(device.key);
 }

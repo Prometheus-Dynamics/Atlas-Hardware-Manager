@@ -372,12 +372,15 @@ impl Driver for BoardDriver {
                 actions: reported.actions.iter().map(|a| a.to_action()).collect(),
             });
         let status = endpoint("status").map(|status_url| {
-            Arc::new(BoardStatus::new(
-                http.clone(),
-                status_url,
-                endpoint("events"),
-                endpoint("stream"),
-            ))
+            Arc::new(
+                BoardStatus::new(
+                    http.clone(),
+                    status_url,
+                    endpoint("events"),
+                    endpoint("stream"),
+                )
+                .with_ssh(ssh()),
+            )
         });
         // A board with the device package's writer, self-test or status is
         // one Atlas reaches as root over SSH (the Flash tab's key).

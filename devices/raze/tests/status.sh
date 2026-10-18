@@ -273,6 +273,18 @@ is "3 A 1234 False" '" ".join(str(d["boot"][k]) for k in ("count", "slot", "upti
 is "staging 420 orion" '" ".join(str(d["update"][k]) for k in ("state", "progress", "started_by"))' update < "$T/status.json"
 is True 'isinstance(d["clock"]["time"], int)' clock < "$T/status.json"
 
+echo "status: the kept kernel logs, newest first, panic when a panic record is among them"
+sh "$lib/status" | is "[]" 'd["pstore"]' "none kept"
+mkdir -p "$T/data/pstore/k1" "$T/data/pstore/k2" "$T/data/pstore/stray"
+: > "$T/data/pstore/k1/console-ramoops-0"
+: > "$T/data/pstore/k2/console-ramoops-0"
+: > "$T/data/pstore/k2/dmesg-ramoops-0"
+printf 'k1\nk2\ngone\n../x\n' > "$T/data/pstore/.order"
+sh "$lib/status" | is "k2 True console-ramoops-0,dmesg-ramoops-0; k1 False console-ramoops-0" \
+	'"; ".join("%s %s %s" % (r["boot"], r["panic"], ",".join(r["files"])) for r in d["pstore"])' \
+	"two kept, in arrival order, newest first"
+rm -rf "$T/data/pstore/k1" "$T/data/pstore/k2" "$T/data/pstore/stray" "$T/data/pstore/.order"
+
 echo "drift: the stage's hashes match; overrides are listed"
 is "stage 0 True []" '" ".join(str(x) for x in (d["drift"]["baseline"], d["drift"]["count"], d["drift"]["root_read_only"], d["drift"]["flags"]))' \
 	"no drift" < "$T/status.json"

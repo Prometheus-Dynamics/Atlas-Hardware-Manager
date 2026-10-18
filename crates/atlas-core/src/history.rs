@@ -258,6 +258,21 @@ impl Atlas {
         Ok(current)
     }
 
+    /// The text of a kernel log the board kept (a `KernelRecord` in its
+    /// status), by the boot that found it.
+    pub async fn device_kernel_record(
+        &self,
+        key: &DeviceKey,
+        boot: &str,
+    ) -> Result<String, CoreError> {
+        let (live, record) = self.live_device(key)?;
+        let status = live.capabilities.status.ok_or(CoreError::Unsupported {
+            device: key.clone(),
+            what: "status",
+        })?;
+        Ok(status.kernel_record(&record.identity, boot).await?)
+    }
+
     /// Fetches the board's new events and merges them: after the last seq
     /// fetched when the board numbers its events (pages until caught up),
     /// else since the newest kept time. Returns how many were new.

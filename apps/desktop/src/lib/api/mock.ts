@@ -22,7 +22,7 @@ import { streamHardware, streamLive, streamVision } from "./mock/live";
 import { ntCameraAddresses, ntConnect, ntServer } from "./mock/nt";
 import { deviceSlots, installSlot, slotCommand } from "./mock/slots";
 import { appUpdateStatus, checkAppUpdate, installAppUpdate } from "./mock/appUpdate";
-import { boardAction, calibrationStatus, controlHardware, deviceHistory, deviceStatus, hardwareAction } from "./mock/status";
+import { boardAction, calibrationStatus, controlHardware, deviceHistory, deviceStatus, hardwareAction, kernelRecord } from "./mock/status";
 
 seedHistory();
 seedSelftests();
@@ -217,6 +217,7 @@ export const mockApi: Api = {
   ntCameraAddresses,
   deviceHistory: (key, limit) => reply(() => deviceHistory(key, Math.max(1, Math.min(limit, 2000)))),
   listActivity: (limit) => reply(() => activity.slice(-limit).reverse()),
+  deviceKernelRecord: (key, boot) => reply(() => kernelRecord(key, boot)),
   saveSupportBundle: (key) =>
     reply(() => {
       stored(key);

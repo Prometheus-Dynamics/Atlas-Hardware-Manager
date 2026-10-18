@@ -186,6 +186,8 @@ export const api = {
   deviceHistory: (key: DeviceKey, limit: number) => invoke<HistoryEntry[]>("device_history", { key, limit }),
   /** Fleet history, newest first. */
   listActivity: (limit: number) => invoke<ActivityEntry[]>("list_activity", { limit }),
+  /** The text of a kernel log the board kept, by the boot that found it (over SSH). */
+  deviceKernelRecord: (key: DeviceKey, boot: string) => invoke<string>("device_kernel_record", { key, boot }),
   /** Writes identity, readings, logs, and history to a text file. */
   saveSupportBundle: (key: DeviceKey, path: string) => invoke<void>("save_support_bundle", { key, path }),
 

@@ -174,6 +174,14 @@ pub struct BootInfo {
     /// 0 undervoltage now, bit 16 undervoltage since the firmware started.
     #[serde(default)]
     pub throttled: Option<String>,
+    /// How this boot began: `power-on` (power was lost: a cut or a
+    /// brown-out) or `reset` (a reboot, a panic restart, the watchdog);
+    /// `None` when the board can't tell.
+    #[serde(default)]
+    pub reset: Option<String>,
+    /// The reset register behind `reset` (`0x1000`).
+    #[serde(default)]
+    pub rsts: Option<String>,
 }
 
 impl BootInfo {
@@ -189,6 +197,8 @@ impl BootInfo {
         self.pstore_saved = self.pstore_saved.or(other.pstore_saved);
         self.previous_journal = self.previous_journal.take().or(other.previous_journal);
         self.throttled = self.throttled.take().or(other.throttled);
+        self.reset = self.reset.take().or(other.reset);
+        self.rsts = self.rsts.take().or(other.rsts);
     }
 }
 
@@ -384,6 +394,19 @@ pub struct HardwareSnapshot {
     pub devices: Vec<HardwareDevice>,
 }
 
+/// A kernel log a boot left in RAM (pstore) that the board kept: filed
+/// under the boot that found it, so it is the log of the boot before.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct KernelRecord {
+    /// The id of the boot that found it.
+    pub boot: String,
+    /// A panic or oops record is among its files (not only the console).
+    #[serde(default)]
+    pub panic: bool,
+    #[serde(default)]
+    pub files: Vec<String>,
+}
+
 /// A device's state now. Absent parts are unknown.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct DeviceStatus {
@@ -414,6 +437,9 @@ pub struct DeviceStatus {
     /// service, or a stale snapshot).
     #[serde(default)]
     pub hardware: Option<HardwareSnapshot>,
+    /// The kernel logs the board kept, newest first; `None` when unknown.
+    #[serde(default)]
+    pub pstore: Option<Vec<KernelRecord>>,
 }
 
 /// Which events to fetch: those after a seq (from a device that numbers its
@@ -494,6 +520,11 @@ pub trait StatusCapability: Send + Sync {
             events: self.events(device, query.since, query.limit).await?,
             ..EventPage::default()
         })
+    }
+
+    /// The text of the kernel log `boot` found (a [`KernelRecord`]).
+    async fn kernel_record(&self, _device: &Identity, _boot: &str) -> Result<String, DriverError> {
+        Err(DriverError::Unsupported("kernel logs".into()))
     }
 
     /// Events with `t >= since` (device clock), at most `limit`, oldest

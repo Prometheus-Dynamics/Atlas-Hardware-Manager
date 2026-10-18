@@ -42,8 +42,8 @@ pub use selftest::{
 pub use slots::{Slot, SlotCommand, SlotInstall, SlotSet, SlotsCapability, refusal};
 pub use status::{
     BootInfo, DeviceEvent, DeviceStatus, Drift, DriftItem, EventPage, EventQuery, EventSource,
-    FanState, HardwareControl, HardwareDevice, HardwareReading, HardwareSnapshot, PushSink,
-    StatusCapability, StatusPush, Temperature, UpdateState,
+    FanState, HardwareControl, HardwareDevice, HardwareReading, HardwareSnapshot, KernelRecord,
+    PushSink, StatusCapability, StatusPush, Temperature, UpdateState,
 };
 pub use trial::{TrialStop, trial_stopped};
 pub use types::{

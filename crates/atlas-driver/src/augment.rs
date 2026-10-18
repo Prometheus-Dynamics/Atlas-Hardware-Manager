@@ -355,6 +355,7 @@ fn fill_missing(status: &mut DeviceStatus, other: DeviceStatus) {
     status.ntp_synchronized = status.ntp_synchronized.or(other.ntp_synchronized);
     status.drift = status.drift.take().or(other.drift);
     status.hardware = status.hardware.take().or(other.hardware);
+    status.pstore = status.pstore.take().or(other.pstore);
 }
 
 /// The status of both sources: the extra source's hardware readings when it
@@ -441,6 +442,14 @@ impl StatusCapability for CombinedStatus {
         match first.event_page(device, query).await {
             Ok(page) => Ok(page),
             Err(err) => then.event_page(device, query).await.map_err(|_| err),
+        }
+    }
+
+    async fn kernel_record(&self, device: &Identity, boot: &str) -> Result<String, DriverError> {
+        let (first, then) = self.order();
+        match first.kernel_record(device, boot).await {
+            Ok(text) => Ok(text),
+            Err(err) => then.kernel_record(device, boot).await.map_err(|_| err),
         }
     }
 }

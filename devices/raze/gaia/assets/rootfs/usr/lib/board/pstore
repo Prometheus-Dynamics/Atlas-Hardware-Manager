@@ -13,12 +13,45 @@
 # is there after every warm restart, so a `kernel.pstore` event is logged
 # only when it matters: a panic or oops record (dmesg-ramoops-*), or a
 # previous boot that didn't shut down cleanly.
+#   pstore --show <boot id>   print the record that boot found, as text:
+#                             each file under "== <name>", panic and oops
+#                             records first, the last BOARD_PSTORE_SHOW
+#                             bytes (256 KiB) of each; exit 1 without one
+#                             (Atlas opens a record with it, over SSH: the
+#                             files are root's)
+# status lists the records (its "pstore").
 # Test hooks: BOARD_PSTORE_DIR (the pstore filesystem), BOARD_BOOT_ID.
 set -u
 
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 # shellcheck source=lib.sh
 . "$BOARD_LIB_DIR/lib.sh"
+
+if [ "${1:-}" = --show ]; then
+	boot=${2:-}
+	case "$boot" in
+	'' | .* | *[!A-Za-z0-9._-]*)
+		echo "usage: pstore --show <boot id>" >&2
+		exit 2
+		;;
+	esac
+	dir=$BOARD_DATA_DIR/pstore/$boot
+	set -- "$dir"/dmesg-* "$dir"/*
+	shown=''
+	for file in "$@"; do
+		[ -f "$file" ] || continue
+		case " $shown " in *" $file "*) continue ;; esac
+		shown="$shown $file"
+		printf '== %s\n' "${file##*/}"
+		tail -c "${BOARD_PSTORE_SHOW:-262144}" "$file" | tr -d '\000' | tr -cd '\11\12\40-\176'
+		printf '\n'
+	done
+	if [ -z "$shown" ]; then
+		echo "no kernel log kept for boot $boot" >&2
+		exit 1
+	fi
+	exit 0
+fi
 
 src=${BOARD_PSTORE_DIR:-/sys/fs/pstore}
 keep=${BOARD_PSTORE_KEEP:-10}

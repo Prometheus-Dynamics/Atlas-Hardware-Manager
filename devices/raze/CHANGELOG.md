@@ -119,6 +119,16 @@ commit; the commits are listed per area.
 
 ### Board awareness: events, status, drift
 
+- **Last boots in Atlas:** `status` lists the kept kernel logs as
+  `"pstore":[{"boot":..,"panic":..,"files":[..]}]`, newest first by arrival
+  (`.order`; no fork, so GET /status still costs the same), and
+  `pstore --show <boot id>` prints one as text (panic records first, 256 KiB
+  of each file at most) for Atlas to fetch over SSH, since the files are
+  root's. boot.json's `reset`/`rsts` already reached `/status`. The device
+  page's "Last boots" panel shows each boot's number, whether it began at
+  power-on or a restart, how the boot before ended (clean, unclean, a
+  kernel panic), rollbacks, and opens a kept kernel log. Tested in
+  `tests/pstore.sh` and `tests/status.sh`.
 - **The identity says where the security switch is:** `"security":"on"|"off"`
   in the live part of `/.well-known/pd-device` (read without a fork), so
   Atlas's device page shows it in Setup and Settings.
@@ -885,6 +895,12 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
 
 ### Orion device agent
 
+- **How this boot began, over Orion:** board-agent also publishes
+  `update.boot_count`, `update.boot_reset` (`power-on`/`reset`),
+  `update.boot_previous_clean` and `update.boot_kernel_log` (`panic`,
+  `console` or empty: the kernel log this boot found of the one before),
+  from `/run/board/boot.json` and `/data/board/pstore/<boot id>/`, so an
+  Orion-only view sees a crash or power cut without the board's `/status`.
 - **Live readings as Orion streams** (Orion f8d767a, control protocol 5;
   board-agent and Atlas move together): board-agent publishes `board.live`
   (CPU and cores, memory, thermal zones, fan, uptime from /proc and /sys at

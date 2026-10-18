@@ -22,6 +22,7 @@
 #                "status":"available|degraded|faulted|missing",
 #                "readings":[{"name":"accel_x","value":<n>|null,"unit":"m/s²"}],
 #                "controls":["duty",..]}]},     (null: no lemnosd, or stale)
+#    "pstore":[{"boot":..,"panic":true|false,"files":["console-ramoops-0",..]}],
 #    "drift":{"checked_at":..,"slot":..,"root_read_only":..,"baseline":
 #             "stage|first-seen|none","count":<n>,"flags":[..],
 #             "items":[{"area":"boot|root|etc|data","path":..,
@@ -52,6 +53,11 @@
 # in /run/board/drift.json; it is redone when older than
 # BOARD_DRIFT_MAX_AGE seconds (3600), and never by an unprivileged caller,
 # which reads the kept result.
+#
+# pstore: the kernel logs kept in /data/board/pstore (board-pstore), newest
+# first: each under the boot that found it (so the boot before that one's),
+# panic when a panic or oops record is among them. [] with none; null when
+# the directory can't be read.
 #
 # Clock: ntp_synchronized from systemd-timesyncd's flag file
 # (/run/systemd/timesync/synchronized; its directory without it: false),
@@ -565,6 +571,39 @@ if [ "$refresh_failed" = 1 ] || [ "$refresh_hardware" = 1 ]; then
 	[ "$refresh" = 1 ] || exit "$rc"
 fi
 
+# The kept kernel logs, newest first (.order lists them oldest first; a
+# directory from before .order is left out). No fork.
+pstore_json() {
+	_root=$BOARD_DATA_DIR/pstore
+	if [ ! -d "$_root" ]; then
+		printf '[]'
+		return
+	fi
+	if [ ! -r "$_root" ] || [ ! -x "$_root" ]; then
+		printf 'null'
+		return
+	fi
+	if [ ! -f "$_root/.order" ]; then
+		printf '[]'
+		return
+	fi
+	_list=''
+	while IFS= read -r _b; do
+		case "$_b" in '' | .* | *[!A-Za-z0-9._-]*) continue ;; esac
+		[ -d "$_root/$_b" ] || continue
+		_files=''
+		_panic=false
+		for _f in "$_root/$_b"/*; do
+			[ -f "$_f" ] || continue
+			_f=${_f##*/}
+			case "$_f" in *[!A-Za-z0-9._-]*) continue ;; dmesg-*) _panic=true ;; esac
+			_files="$_files${_files:+,}\"$_f\""
+		done
+		_list="{\"boot\":\"$_b\",\"panic\":$_panic,\"files\":[$_files]}${_list:+,}$_list"
+	done < "$_root/.order"
+	printf '[%s]' "$_list"
+}
+
 # Written as it goes (no $(...) per part: each would fork).
 emit() {
 	printf '{"version":1,"time":%s,"boot":' "$NOW"
@@ -581,6 +620,8 @@ emit() {
 	clock_json
 	printf ',"hardware":'
 	hardware_json
+	printf ',"pstore":'
+	pstore_json
 	printf ',"drift":'
 	drift_json
 	printf '}\n'

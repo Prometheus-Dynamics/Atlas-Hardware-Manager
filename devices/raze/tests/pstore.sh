@@ -74,6 +74,21 @@ events | grep '"kind":"kernel.pstore"' | tail -n 1 | grep -q '"panics":"1"' || f
 events | grep -q 'ended in a kernel panic or oops' || fail "the panic message: $(events)"
 [ -z "$(ls -A "$T/pstore")" ] || fail "pstore should be empty: $(ls -A "$T/pstore")"
 
+echo "--show prints a record as text, the panic record first; refuses odd ids"
+out=$(sh "$lib/pstore" --show b4) || fail "--show b4"
+first=$(printf '%s\n' "$out" | head -n 1)
+[ "$first" = "== dmesg-ramoops-0" ] || fail "the panic record first: $out"
+printf '%s\n' "$out" | grep -q 'Kernel panic - not syncing: Hard LOCKUP' || fail "its text: $out"
+printf '%s\n' "$out" | grep -qx '== console-ramoops-0' || fail "then the console: $out"
+[ "$(printf '%s\n' "$out" | grep -c '^== ')" = 2 ] || fail "each file once: $out"
+sh "$lib/pstore" --show b3 | grep -q 'dwc2 1000480000.usb: something' || fail "the console's NULs dropped"
+if sh "$lib/pstore" --show nope 2>/dev/null; then fail "--show without a record must fail"; fi
+set +e
+sh "$lib/pstore" --show ../b4 >/dev/null 2>&1
+rc=$?
+set -e
+[ "$rc" = 2 ] || fail "--show ../b4: exit 2, got $rc"
+
 echo "only the newest few are kept, newest by arrival, not by date (no RTC)"
 # The dirs so far came before .order: they go first, oldest by date.
 for n in 5 6 7; do
