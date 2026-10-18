@@ -4,6 +4,8 @@ import { keyString, type DeviceJobState, type DeviceRecord, type JobRecord, type
 import { deviceName } from "#lib/format.ts";
 import type { IconName } from "#lib/ui/icons.ts";
 
+// By name only for a device that doesn't say: one that publishes camera
+// streams is a camera whatever it's called.
 const VISION = /raze|helios|cam|vision|photon|ov\d/i;
 const BOARD = /mcu|stm32|esp32|rp2040|board|teensy|arduino/i;
 
@@ -15,6 +17,7 @@ export function isRecovery(record: DeviceRecord): boolean {
 export function deviceIcon(record: DeviceRecord): IconName {
   if (isRecovery(record)) return "usb";
   if (record.capabilities.includes("gateway")) return "router";
+  if (cameraStreams(record).length > 0) return "camera";
   const text = `${record.key.family} ${record.identity.model} ${record.identity.attributes?.model ?? ""}`;
   if (VISION.test(text)) return "camera";
   if (BOARD.test(text)) return "cpu";
