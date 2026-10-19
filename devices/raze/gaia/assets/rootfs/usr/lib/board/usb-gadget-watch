@@ -17,14 +17,15 @@
 # usb-gadget.rebound event; at most once per USB_GADGET_WATCH_GAP_SEC (300) and
 # USB_GADGET_WATCH_MAX (3) times a boot, so a link that stays broken can't flap.
 # Before a rebind it keeps the evidence in /data/board/usb-gadget-watch/<n>-<boot>/:
-# the members' counters and the controller's debugfs (regdump, fifo, state,
-# the IN endpoints), the newest 5 by number (no RTC: not by date).
+# the members' counters, /proc/interrupts twice a second apart, and the
+# controller's debugfs (regdump, fifo, state, the IN endpoints: DIEPCTL,
+# DIEPTSIZ, DIEPINT, the request list), the newest 5 by number (no RTC).
 #
 #   usb-gadget-watch           the loop
 #   usb-gadget-watch --check   one check (the state is in $BOARD_RUN_DIR)
 # Settings: usb-gadget.env. Test hooks: BOARD_NET_DIR, BOARD_CONFIGFS,
 # USB_GADGET_WATCH_PROBE (the probe command), USB_GADGET_WATCH_NOW (seconds),
-# BOARD_DEBUGFS (/sys/kernel/debug).
+# BOARD_DEBUGFS (/sys/kernel/debug), BOARD_PROC_DIR (/proc).
 set -u
 
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
@@ -127,6 +128,11 @@ keep_evidence() {
 			echo "$_m $_c $(cat "$BOARD_NET_DIR/$_m/statistics/$_c" 2>/dev/null)"
 		done
 	done > "$_dir/counters"
+	# The controller's interrupt count twice, a second apart: a stalled IN
+	# endpoint that NAKs every token shows as an interrupt storm.
+	cat "${BOARD_PROC_DIR:-/proc}/interrupts" > "$_dir/interrupts.0" 2>/dev/null
+	sleep "${USB_GADGET_WATCH_IRQ_GAP:-1}"
+	cat "${BOARD_PROC_DIR:-/proc}/interrupts" > "$_dir/interrupts.1" 2>/dev/null
 	_dbg=${BOARD_DEBUGFS:-/sys/kernel/debug}/usb/$1
 	for _f in regdump fifo state params hw_params "$_dbg"/ep*in; do
 		_f=${_f##*/}
