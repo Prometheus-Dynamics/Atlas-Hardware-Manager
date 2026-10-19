@@ -217,26 +217,39 @@ pub fn stop_hardware_stream(state: State<'_, AppState>, id: u64) {
 
 /// Starts following the device's live readings, pushed by its board's own
 /// Orion node, into `on_frame`; returns its id for [`stop_live_stream`], or
-/// `None` when the board has no stream (or the setting is off): the UI then
-/// polls `device_telemetry`. A stream that ends sends a `gone` frame.
+/// What [`start_live_stream`] started: the stream's id, or why there is none.
+#[derive(serde::Serialize)]
+pub struct LiveStart {
+    id: Option<u64>,
+    reason: Option<String>,
+}
+
+/// No stream (`id` absent, with the `reason` the UI shows) when the board
+/// has none or the setting is off: the UI then polls `device_telemetry`. A
+/// stream that ends sends a `gone` frame.
 #[tauri::command]
 pub async fn start_live_stream(
     state: State<'_, AppState>,
     key: DeviceKey,
     on_frame: tauri::ipc::Channel<LiveFrame>,
-) -> CmdResult<Option<u64>> {
+) -> CmdResult<LiveStart> {
+    let polling = |reason: String| {
+        crate::logfile::trace(&format!("live-stream {key}: none ({reason})"));
+        Ok(LiveStart {
+            id: None,
+            reason: Some(reason),
+        })
+    };
     let enabled = state
         .settings
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .live_streams;
     let Some(orion) = &state.orion else {
-        crate::logfile::trace(&format!("live-stream {key}: none (no Orion)"));
-        return Ok(None);
+        return polling("Orion isn't set up".into());
     };
     if !enabled {
-        crate::logfile::trace(&format!("live-stream {key}: none (setting off)"));
-        return Ok(None);
+        return polling("live streams are off in Settings".into());
     }
     let record = state
         .atlas
@@ -244,51 +257,44 @@ pub async fn start_live_stream(
         .ok_or_else(|| format!("no device {key}"))?;
     let address = record.identity.address.trim().to_owned();
     if address.is_empty() {
-        crate::logfile::trace(&format!("live-stream {key}: none (no address)"));
-        return Ok(None);
+        return polling("no address for the board".into());
     }
     let live = orion.live.clone();
     let (tell, told) = tokio::sync::oneshot::channel();
     let at = address.clone();
     let task = tokio::spawn(async move {
         let tell = std::sync::Mutex::new(Some(tell));
-        let started = |ok: bool| {
+        let started = |outcome: Result<(), String>| {
             if let Some(tell) = tell
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner())
                 .take()
             {
-                let _ = tell.send(ok);
+                let _ = tell.send(outcome);
             }
         };
         let result = live
             .follow(&address, |frame| {
-                started(true);
+                started(Ok(()));
                 on_frame.send(frame).is_ok()
             })
             .await;
         if let Err(error) = &result {
             crate::logfile::trace(&format!("live-stream {address}: ended ({error})"));
-            started(false);
+            started(Err(format!("the board's stream refused: {error}")));
         }
     });
     // The first frame (the backfill) or the refusal, whichever comes first.
-    let streams = matches!(
-        tokio::time::timeout(std::time::Duration::from_secs(3), told).await,
-        Ok(Ok(true))
-    );
-    crate::logfile::trace(&format!(
-        "live-stream {key} at {at}: {}",
-        if streams {
-            "streaming"
-        } else {
-            "none (refused or no frame in 3 s)"
-        }
-    ));
-    if !streams {
+    let outcome = match tokio::time::timeout(std::time::Duration::from_secs(3), told).await {
+        Ok(Ok(outcome)) => outcome,
+        Ok(Err(_)) => Err("the board's stream ended".into()),
+        Err(_) => Err("no readings from the board's stream in 3 s".into()),
+    };
+    if let Err(reason) = outcome {
         task.abort();
-        return Ok(None);
+        return polling(format!("{reason} (at {at})"));
     }
+    crate::logfile::trace(&format!("live-stream {key} at {at}: streaming"));
     let id = state
         .next_hardware_stream
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -297,7 +303,10 @@ pub async fn start_live_stream(
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .insert(id, task);
-    Ok(Some(id))
+    Ok(LiveStart {
+        id: Some(id),
+        reason: None,
+    })
 }
 
 /// Stops following a device's live readings.

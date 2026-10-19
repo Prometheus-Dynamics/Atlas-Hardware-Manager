@@ -2,7 +2,7 @@
 // them: a `devices` frame, then batches of samples every 16 ms at each
 // device's period (the IMU at 100 Hz), on the board's monotonic clock.
 
-import type { DeviceKey, HardwareFrame, LiveChannel, LiveDevice, LiveFrame, LiveRow, Metric, VisionFrame } from "../types";
+import type { DeviceKey, HardwareFrame, LiveChannel, LiveDevice, LiveFrame, LiveRow, LiveStart, Metric, VisionFrame } from "../types";
 
 type Model = { class: string; model: string; channels: LiveChannel[]; value: (t: number, i: number) => number };
 
@@ -154,8 +154,8 @@ export function streamHardware(
 }
 
 /** A simulated board's Orion stream: five minutes of rows at once, then a row every 500 ms. */
-export function streamLive(key: DeviceKey, onFrame: (frame: LiveFrame) => void): Promise<(() => void) | null> {
-  if (key.serial !== "8f3a1c2d") return Promise.resolve(null);
+export function streamLive(key: DeviceKey, onFrame: (frame: LiveFrame) => void): Promise<LiveStart> {
+  if (key.serial !== "8f3a1c2d") return Promise.resolve({ stop: null, reason: "this simulated board has no stream" });
   const ROW_MS = 500;
   const row = (t: number): LiveRow => {
     const s = t / 1000;
@@ -178,7 +178,7 @@ export function streamLive(key: DeviceKey, onFrame: (frame: LiveFrame) => void):
     const r = row(Math.floor(Date.now() / ROW_MS) * ROW_MS);
     onFrame({ kind: "rows", backfill: false, rows: [r], latest: latest(r) });
   }, ROW_MS);
-  return Promise.resolve(() => clearInterval(timer));
+  return Promise.resolve({ stop: () => clearInterval(timer), reason: null });
 }
 
 /** A simulated PhotonVision: the front camera at ~58 fps with its stages and two tags, ten results a second. */

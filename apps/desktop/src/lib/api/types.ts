@@ -424,6 +424,12 @@ export interface LiveRow {
  * history, replacing what was shown) with the newest row as metrics; or the
  * stream ended.
  */
+/** A live stream started (`stop` ends it), or why the device's readings are polled instead. */
+export interface LiveStart {
+  stop: (() => void) | null;
+  reason: string | null;
+}
+
 export type LiveFrame =
   | { kind: "rows"; backfill: boolean; rows: LiveRow[]; latest: Metric[] }
   | { kind: "gone"; reason: string };

@@ -59,6 +59,8 @@ class LiveStore {
   /** When each poll answered, per device key (ms), oldest first; a series lines up with its end. */
   times = new SvelteMap<string, number[]>();
   errors = new SvelteMap<string, string>();
+  /** Why a device's readings are polled, not streamed (its stream didn't start or ended), for the page to say. */
+  pollingWhy = new SvelteMap<string, string>();
 
   /** The intervals the views showing each device ask for. */
   private watchers = new Map<string, number[]>();
@@ -161,8 +163,12 @@ class LiveStore {
     this.starting.add(id);
     api
       .streamLive(record!.key, (frame) => this.frame(id, frame))
-      .then((stop) => {
-        if (!stop) return;
+      .then(({ stop, reason }) => {
+        if (!stop) {
+          this.pollingWhy.set(id, reason ?? "no stream");
+          return;
+        }
+        this.pollingWhy.delete(id);
         if (this.watchers.has(id)) this.streams.set(id, { stop, carries: this.streams.get(id)?.carries ?? new Set() });
         else stop();
       })
@@ -181,8 +187,10 @@ class LiveStore {
     if (frame.kind === "gone") {
       this.unstream(id);
       this.streamTried.set(id, Date.now());
+      this.pollingWhy.set(id, `the board's stream ended: ${frame.reason}`);
       return;
     }
+    this.pollingWhy.delete(id);
     const entry = this.streams.get(id);
     const carries = entry?.carries ?? new Set<string>();
     for (const m of frame.latest) carries.add(m.id);

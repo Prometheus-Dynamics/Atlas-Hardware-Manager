@@ -100,7 +100,7 @@
       key: "link",
       label: "Link",
       value: linkText(record.link_kind, devices.nameOf),
-      detail: streamed ? "pushed live" : "polled",
+      detail: streamed ? "pushed live" : live.pollingWhy.has(id) ? `polled: ${live.pollingWhy.get(id)}` : "polled",
       tone: record.presence === "online" ? "ok" : "err",
       series: [],
       color: "",
