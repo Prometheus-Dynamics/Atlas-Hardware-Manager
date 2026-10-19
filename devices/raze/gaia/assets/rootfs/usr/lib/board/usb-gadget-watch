@@ -9,13 +9,16 @@
 # fail with "Resource temporarily unavailable", the host gets no address, and
 # the board is unreachable over USB until the gadget is rebound.
 #
-# Every USB_GADGET_WATCH_SEC (20) it probes each bridge member with carrier:
+# Every USB_GADGET_WATCH_SEC (5) it probes each bridge member with carrier:
 # one ping out of the bridge (to the first DHCP address on the link; with no
 # reply, the ARP request still has to leave), then whether the member's
 # tx_packets moved. USB_GADGET_WATCH_STRIKES (3) failed probes in a row on a
-# member rebind the gadget's UDC (the host re-enumerates it) and log a
+# member (a stall costs the link ~15 s) rebind the gadget's UDC (the host
+# re-enumerates it) and log a
 # usb-gadget.rebound event; at most once per USB_GADGET_WATCH_GAP_SEC (300) and
 # USB_GADGET_WATCH_MAX (3) times a boot, so a link that stays broken can't flap.
+# Nothing is probed while the controller isn't "configured" (a host that
+# suspended the bus, a sleeping laptop, holds the frames without a stall).
 # Before a rebind it keeps the evidence in /data/board/usb-gadget-watch/<n>-<boot>/:
 # the members' counters, /proc/interrupts twice a second apart, and the
 # controller's debugfs (regdump, fifo, state, the IN endpoints: DIEPCTL,
@@ -25,7 +28,8 @@
 #   usb-gadget-watch --check   one check (the state is in $BOARD_RUN_DIR)
 # Settings: usb-gadget.env. Test hooks: BOARD_NET_DIR, BOARD_CONFIGFS,
 # USB_GADGET_WATCH_PROBE (the probe command), USB_GADGET_WATCH_NOW (seconds),
-# BOARD_DEBUGFS (/sys/kernel/debug), BOARD_PROC_DIR (/proc).
+# BOARD_DEBUGFS (/sys/kernel/debug), BOARD_PROC_DIR (/proc), BOARD_UDC_CLASS
+# (/sys/class/udc).
 set -u
 
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
@@ -72,6 +76,14 @@ STRIKES='' REBOUND_AT='' REBOUNDS=0
 
 check() {
 	target=$(probe_target) || return 0
+	# Suspended or not enumerated: the host isn't polling, by its choice.
+	_udc=$(cat "$G/UDC" 2>/dev/null)
+	_st=$(cat "${BOARD_UDC_CLASS:-/sys/class/udc}/$_udc/state" 2>/dev/null)
+	if [ -n "$_udc" ] && [ -n "$_st" ] && [ "$_st" != configured ]; then
+		STRIKES=''
+		save_watch_state
+		return 0
+	fi
 	stalled=''
 	new_strikes=''
 	for path in "$BOARD_NET_DIR/$bridge/brif"/*; do
@@ -107,6 +119,10 @@ check() {
 			REBOUND_AT=$t REBOUNDS=$((REBOUNDS + 1)) STRIKES=''
 		fi
 	fi
+	save_watch_state
+}
+
+save_watch_state() {
 	{
 		echo "STRIKES='$STRIKES'"
 		echo "REBOUND_AT='$REBOUND_AT'"
@@ -170,7 +186,7 @@ if [ "${1:-}" = --check ]; then
 fi
 while :; do
 	check
-	sleep "${USB_GADGET_WATCH_SEC:-20}"
+	sleep "${USB_GADGET_WATCH_SEC:-5}"
 	# shellcheck disable=SC1090
 	[ -r "$state" ] && . "$state"
 done

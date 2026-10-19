@@ -2,7 +2,7 @@
 # Off-device test of usb-gadget-watch: a USB link that keeps sending is left
 # alone; one whose member stops sending for three probes in a row gets its
 # gadget rebound (once per gap, a few times a boot) with an event; a member
-# without carrier isn't probed. Fake sysfs and configfs directories stand in.
+# without carrier isn't probed, nor a link the host suspended. Fake sysfs and configfs directories stand in.
 # Run: sh devices/raze/tests/usb-gadget-watch.sh
 set -eu
 
@@ -23,14 +23,15 @@ echo 84 > "$T/net/usb0/statistics/tx_packets"
 echo 5 > "$T/net/usb1/statistics/tx_packets"
 echo 1000480000.usb > "$T/cfg/usb_gadget/g1/UDC"
 mkdir -p "$T/debug/usb/1000480000.usb"
-mkdir -p "$T/proc"
+mkdir -p "$T/proc" "$T/udc/1000480000.usb"
+echo configured > "$T/udc/1000480000.usb/state"
 echo " 32:  390045  0  0  0  GICv2  105 Level  1000480000.usb" > "$T/proc/interrupts"
 echo "GOTGCTL = 0x000d0000" > "$T/debug/usb/1000480000.usb/regdump"
 echo "Endpoint index 1, named ep1in" > "$T/debug/usb/1000480000.usb/ep1in"
 # The board's settings file, as an OS or a user would pin the address.
 echo 'USB_GADGET_ADDRESS=172.31.12.81/29' > "$T/etc/usb-gadget.env"
 export BOARD_LIB_DIR=$lib BOARD_RUN_DIR=$T/run BOARD_DATA_DIR=$T/data BOARD_ETC_DIR=$T/etc \
-	BOARD_NET_DIR=$T/net BOARD_CONFIGFS=$T/cfg BOARD_DEBUGFS=$T/debug BOARD_PROC_DIR=$T/proc USB_GADGET_WATCH_IRQ_GAP=0 \
+	BOARD_NET_DIR=$T/net BOARD_CONFIGFS=$T/cfg BOARD_DEBUGFS=$T/debug BOARD_PROC_DIR=$T/proc BOARD_UDC_CLASS=$T/udc USB_GADGET_WATCH_IRQ_GAP=0 \
 	USB_GADGET_WATCH_SETTLE=0
 # The probe: what a healthy link does (a frame leaves usb0), and where it was sent.
 healthy="echo \"\$1\" >> $T/probes; echo \$((\$(cat $T/net/usb0/statistics/tx_packets) + 1)) > $T/net/usb0/statistics/tx_packets"
@@ -45,6 +46,16 @@ for t in 10 30 50 70; do check "$healthy" $t; done
 [ "$(rebounds)" = 0 ] || fail "a healthy link was rebound"
 [ "$(sort -u "$T/probes")" = 172.31.12.82 ] || fail "the probe's target: $(sort -u "$T/probes")"
 [ "$(wc -l < "$T/probes" | tr -d ' ')" = 4 ] || fail "usb1 has no carrier and shouldn't be probed: $(wc -l < "$T/probes")"
+
+echo "a suspended link isn't probed, and its strikes start over"
+check "$stalled" 80
+check "$stalled" 82
+echo suspended > "$T/udc/1000480000.usb/state"
+n=$(wc -l < "$T/probes")
+for t in 84 86 88; do check "$stalled" $t; done
+[ "$(wc -l < "$T/probes")" = "$n" ] || fail "a suspended link was probed"
+[ "$(rebounds)" = 0 ] || fail "a suspended link was rebound"
+echo configured > "$T/udc/1000480000.usb/state"
 
 echo "three failed probes in a row rebind the gadget, with an event"
 check "$stalled" 90
@@ -75,5 +86,8 @@ rm -f "$T/run/usb-gadget-watch.state" "$T/data/events.jsonl"
 : > "$T/cfg/usb_gadget/g1/UDC"
 for t in 10 30 50; do check "$stalled" $t; done
 [ "$(rebounds)" = 0 ] || fail "rebound an unbound gadget"
+
+echo "the loop probes every 5 s by default (a stall costs ~15 s of link)"
+grep -q 'sleep "${USB_GADGET_WATCH_SEC:-5}"' "$lib/usb-gadget-watch" || fail "the default interval isn't 5 s"
 
 echo "ok"

@@ -649,9 +649,10 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
   `overlays/README` in the payload, and the slots writer adds it at install
   to bundles built before.
 - **The USB link recovers when it stops sending** (`board-usb-gadget-watch`,
-  `usr/lib/board/usb-gadget-watch`): every 20 s it pings out of the gadget
+  `usr/lib/board/usb-gadget-watch`): every 5 s it pings out of the gadget
   bridge and checks that each member with carrier sent a frame; three failed
-  probes in a row rebind the gadget's UDC (the host re-enumerates it) and log
+  probes in a row (a stall costs ~15 s of link) rebind the gadget's UDC (the
+  host re-enumerates it; skipped while the host has the bus suspended) and log
   `usb-gadget.rebound`, at most once in 5 minutes and three times a boot
   (`USB_GADGET_WATCH=0` turns it off). Before each rebind it keeps the
   evidence in `/data/board/usb-gadget-watch/<n>-<boot>/` (the members'
