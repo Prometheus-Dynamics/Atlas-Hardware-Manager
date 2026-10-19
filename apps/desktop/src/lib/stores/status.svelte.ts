@@ -83,7 +83,14 @@ class StatusStore {
     // same device asks nothing new: the board answers each request with a
     // process of its own.
     if (!entry) void this.loadHistory(record.key);
-    if (status && !this.timers.has(id) && Date.now() - (this.readAt.get(id) ?? 0) >= BUSY_MS) void this.poll(id, "watch");
+    // Read now, unless it was read a moment ago (a view that left and came
+    // back): then at BUSY_MS after that read. Either way a read is due, or
+    // the store would wait for a push that an idle board never sends.
+    if (status && !this.timers.has(id)) {
+      const since = Date.now() - (this.readAt.get(id) ?? 0);
+      if (since >= BUSY_MS) void this.poll(id, "watch");
+      else this.timers.set(id, setTimeout(() => void this.poll(id, "watch, after a recent read"), BUSY_MS - since));
+    }
     return () => {
       const left = this.watched.get(id);
       if (!left) return;
