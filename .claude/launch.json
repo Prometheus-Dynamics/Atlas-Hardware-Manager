@@ -1,0 +1,31 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "atlas-ui-mock",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "run",
+        "--cwd",
+        "apps/desktop",
+        "dev"
+      ],
+      "port": 1422
+    },
+    {
+      "name": "atlas-ui-mock-nvme",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": [
+        "run",
+        "--cwd",
+        "/run/media/sozo/25dc9f42-24e2-41ff-893a-14479e852b8d/atlas-ui/apps/desktop",
+        "dev",
+        "--",
+        "--port",
+        "1423",
+        "--strictPort"
+      ],
+      "port": 1423
+    }
+  ]
+}

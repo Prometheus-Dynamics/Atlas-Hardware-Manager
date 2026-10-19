@@ -33,3 +33,6 @@ src-tauri/.cargo/
 
 # A machine-local Cargo config (for example a target-dir on a faster disk)
 /.cargo/config.toml
+
+# Claude Code worktrees (each is its own checkout)
+.claude/worktrees/
