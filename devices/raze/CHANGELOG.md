@@ -662,7 +662,8 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
   and usb0 then sent 84 frames in 2.4 hours while receiving 2,993; dnsmasq's
   offers failed with "Resource temporarily unavailable", the host got no
   address, and nothing on the board noticed (carrier up, the UDC configured,
-  no transmit timeout).
+  no transmit timeout). What the stalls looked like and what was ruled out:
+  `docs/raze-usb-link-stall.md`.
 - **One SSH identity per board** (`board-ssh-hostkeys.service`,
   `usr/lib/board/ssh-hostkeys`): the host keys live on `/data/ssh` (0700,
   keys 0600), so switching slots or installing another OS keeps the
