@@ -116,6 +116,7 @@ up stage "$T/pv-b.slot.tar" --sha256 "$(sha256sum "$T/pv-b.slot.tar" | cut -d' '
 grep -q "atlas.slot=pv-b atlas.roothash=cdcd" "$T/boot/slots/pv-b/cmdline.txt" || fail "cmdline: $(cat "$T/boot/slots/pv-b/cmdline.txt")"
 grep -q "atlas.data=PARTUUID=abcd1234-02" "$T/boot/slots/pv-b/cmdline.txt" || fail "PARTUUID"
 [ -f "$T/boot/slots/pv-b/overlays/bcm2712d0.dtbo" ] || fail "overlays not copied"
+[ -f "$T/boot/slots/pv-b/overlays/README" ] || fail "no overlays/README: the firmware would ignore the slot's overlays"
 status | grep -q '"slot_staged":"pv-b"' || fail "staged: $(status)"
 status | grep -q '"id":"pv-b"[^}]*"display_name":"PhotonVision Lab"' || fail "pv-b display_name: $(status)"
 status | grep -q '"id":"pv-a"[^}]*"display_name":null' || fail "pv-a without display_name isn't null: $(status)"

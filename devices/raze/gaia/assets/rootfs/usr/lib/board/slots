@@ -303,6 +303,12 @@ install_bundle() {
 	if [ -f "$_work/boot/initramfs" ]; then
 		_why=$($INIT check-initramfs "$_work/boot/initramfs" 2>&1) || refuse "the bundle's initramfs won't boot: ${_why#slot-init: }"
 	fi
+	# The firmware reads overlays from os_prefix only when overlays/README
+	# exists; without it the slot gets the root overlays (the default slot's).
+	# Bundles from before slots.toml shipped one get it here.
+	if [ -d "$_work/boot/overlays" ] && [ ! -e "$_work/boot/overlays/README" ]; then
+		printf 'Overlays for this slot. The firmware reads them from os_prefix only when this file exists.\n' > "$_work/boot/overlays/README"
+	fi
 	# The boot side: slots/<id>/ on the FAT, its cmdline naming the slot.
 	mount_boot
 	_dev=${SLOTS_PARTUUID:-$(findmnt -n -o PARTUUID "$DATA" 2>/dev/null || true)}

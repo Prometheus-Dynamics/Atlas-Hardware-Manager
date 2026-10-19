@@ -624,6 +624,14 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
   (old and new writers diffed on those 7 and on odd manifests: missing keys,
   objects, bools, a newline in a value, a bad manifest; those still read
   field by field). slot-init device-small 471,624 -> 472,648 bytes (+1 KB).
+- **A slot's own overlays apply:** the firmware reads overlays from
+  `${os_prefix}overlays/` only when that directory holds a `README`; no slot
+  had one (slots.toml copied only `*.dtbo`/`*.dtb`), so every slot, trials
+  too, booted the root `overlays/`, the default slot's copy. Unnoticed while
+  every slot shipped the same overlays; found on the bench board 2026-10-19 when
+  a test `dwc2.dtbo` in a slot dir didn't apply. slots.toml ships
+  `overlays/README` in the payload, and the slots writer adds it at install
+  to bundles built before.
 - **The USB link recovers when it stops sending** (`board-usb-gadget-watch`,
   `usr/lib/board/usb-gadget-watch`): every 20 s it pings out of the gadget
   bridge and checks that each member with carrier sent a frame; three failed

@@ -146,6 +146,16 @@ tree = "slots-payload"
 src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtb"
 dest = "overlays/"
 
+# overlays/README: the firmware loads overlays from ${os_prefix}overlays/ only
+# when that directory has a README; without it every slot booted the root
+# overlays/ (the default slot's copy), so a slot's own overlays were ignored,
+# a trial's too (found on the bench board 2026-10-19: a test dwc2.dtbo in a
+# slot dir didn't apply until a README was added).
+[[image.assembly.files]]
+tree = "slots-payload"
+content = "Overlays for this slot. The firmware reads them from os_prefix only when this file exists.\n"
+dest = "overlays/README"
+
 # The Raze overrides (raze-overlays, from the Raze kernel build).
 [[image.assembly.files]]
 tree = "slots-payload"
