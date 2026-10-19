@@ -624,6 +624,22 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
   (old and new writers diffed on those 7 and on odd manifests: missing keys,
   objects, bools, a newline in a value, a bad manifest; those still read
   field by field). slot-init device-small 471,624 -> 472,648 bytes (+1 KB).
+- **Restarts after the first minute no longer reset the board mid-shutdown**
+  (the ttyGS0/ttyGS1 getty drop-ins: `TTYReset=no`, `TTYVHangup=no`,
+  `TTYVTDisallocate=no`). Stopping a getty, systemd's PID 1 writes reset and
+  size-probe sequences to its tty; on the USB gadget's serial ports, which the
+  computer doesn't read unless a program holds /dev/ttyACM*, those writes
+  block once unread output (the autologin shell's prompt) fills the port.
+  PID 1 then stops feeding the hardware watchdog, and the board resets
+  (0x20) with nothing logged, losing a tryboot's flag. Every shutdown from
+  about 50 s of uptime did this on the bench board; the 933e678 retry hid it
+  for slot trials (its restart comes 9 s into a boot). Found 2026-10-19 with
+  netconsole: the stream always stopped where the ttyAMA0 and ttyGS0 gettys
+  stop, and stopping just those two together hung a running board; with the
+  host draining /dev/ttyACM0, or with these settings, it didn't. With the
+  settings, a plain reboot and `slots boot-once` restarts from ~140–200 s
+  uptime ended cleanly ("Restarting system with command '0 tryboot'") and
+  landed on the trial at once. `tests/gadget-getty.sh` checks the settings.
 - **A slot's own overlays apply:** the firmware reads overlays from
   `${os_prefix}overlays/` only when that directory holds a `README`; no slot
   had one (slots.toml copied only `*.dtbo`/`*.dtb`), so every slot, trials
