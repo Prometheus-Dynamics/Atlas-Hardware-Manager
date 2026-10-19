@@ -6,9 +6,10 @@
 // Where the board's own Orion node streams its readings, they are pushed:
 // the last five minutes at once (a full chart on open), then a row every
 // 500 ms. A poll every STREAM_POLL_MS fills in what the stream doesn't carry
-// (voltage, fps); once a poll brings nothing the stream lacks (a board whose
-// readings come from its status: temperature and fan, which it streams), only
-// every STREAM_IDLE_MS. Elsewhere the device is polled, only as often as the most
+// (voltage, fps); when all it brings besides the stream is readings that
+// only drift (temperatures, the fan, uptime: a board whose readings come from
+// its status, which the board's status view reads anyway), only every
+// STREAM_IDLE_MS. Elsewhere the device is polled, only as often as the most
 // eager view showing it asks (FAST for its own page, SLOW for lists and the
 // sidebar), never twice for two views, not again when a view re-subscribes,
 // and not while the window is hidden.
@@ -30,8 +31,13 @@ const HISTORY = 1800;
 const SHOWN = 120;
 /** While streamed, how often a device is polled for the rest. */
 const STREAM_POLL_MS = 5000;
-/** While streamed and the last poll had nothing the stream lacks: in case that changes. */
+/** While streamed and the last poll brought only readings that drift. */
 const STREAM_IDLE_MS = 60_000;
+
+/** Readings that change slowly enough to read once a minute. */
+function drifts(metricId: string): boolean {
+  return metricId === "temp" || metricId.startsWith("temp.") || metricId === "fan" || metricId === "fan.rpm" || metricId === "uptime";
+}
 /** How long before a board without a stream is asked again. */
 const STREAM_RETRY_MS = 30_000;
 /** A stream outlives its last view this long, so a view re-subscribing keeps it. */
@@ -62,7 +68,7 @@ class LiveStore {
   /** When a stream was last tried per device (ms). */
   private streamTried = new Map<string, number>();
   private lingering = new Map<string, ReturnType<typeof setTimeout>>();
-  /** Streamed devices whose last poll had nothing the stream doesn't carry. */
+  /** Streamed devices whose last poll brought, besides the stream, only readings that drift. */
   private covered = new Set<string>();
 
   /** Polls these devices every `every` ms while watched; returns a function that stops. */
@@ -242,7 +248,9 @@ class LiveStore {
           if (streamed) {
             // The stream has its own readings and rows: take only the rest.
             const rest = readings.filter((m) => !streamed.carries.has(m.id));
-            if (rest.length === 0 && streamed.carries.size > 0) this.covered.add(id);
+            // Matching ids isn't enough: a board's status names its fan
+            // `fan` in rpm where the stream may say `fan.rpm`.
+            if (rest.every((m) => drifts(m.id))) this.covered.add(id);
             else this.covered.delete(id);
             const pushed = (this.metrics.get(id) ?? []).filter((m) => streamed.carries.has(m.id));
             this.metrics.set(id, [...pushed, ...rest]);
