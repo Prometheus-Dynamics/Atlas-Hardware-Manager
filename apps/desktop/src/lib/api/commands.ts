@@ -174,14 +174,14 @@ export const api = {
   /** The last self-test of this device's board, or null. */
   deviceSelftest: (key: DeviceKey) => invoke<SelfTestRecord | null>("device_selftest", { key }),
   /** Live readings; only for devices with the `telemetry` capability. */
-  deviceTelemetry: (key: DeviceKey) => invoke<Metric[]>("device_telemetry", { key }),
+  deviceTelemetry: (key: DeviceKey, caller?: string) => invoke<Metric[]>("device_telemetry", { key, caller }),
   /** Recent log lines, oldest first; only for devices with `logs`. */
   deviceLogs: (key: DeviceKey, lines: number) => invoke<LogLine[]>("device_logs", { key, lines }),
   /**
    * What the device is doing now and how it is; only for devices with
    * `status`. Also brings its history up to date.
    */
-  deviceStatus: (key: DeviceKey) => invoke<DeviceStatus>("device_status", { key }),
+  deviceStatus: (key: DeviceKey, caller?: string) => invoke<DeviceStatus>("device_status", { key, caller }),
   /** The device's history, newest first: Atlas's record merged with its board's event log. */
   deviceHistory: (key: DeviceKey, limit: number) => invoke<HistoryEntry[]>("device_history", { key, limit }),
   /** Fleet history, newest first. */

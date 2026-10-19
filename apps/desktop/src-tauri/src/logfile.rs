@@ -66,6 +66,20 @@ fn timestamp() -> String {
     format!("{ms}")
 }
 
+/// Whether to log every device read and live-stream start with who asked
+/// (`ATLAS_TRACE_REQUESTS=1`), to find what keeps asking a board.
+pub fn tracing_requests() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("ATLAS_TRACE_REQUESTS").is_some_and(|v| v == "1"))
+}
+
+/// A request trace line, when [`tracing_requests`].
+pub fn trace(message: &str) {
+    if tracing_requests() {
+        line("REQ", message);
+    }
+}
+
 /// Appends one line. Never fails the caller: logging is best effort.
 pub fn line(kind: &str, message: &str) {
     let Some(log) = LOG.get() else {

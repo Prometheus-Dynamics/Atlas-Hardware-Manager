@@ -83,7 +83,7 @@ class StatusStore {
     // same device asks nothing new: the board answers each request with a
     // process of its own.
     if (!entry) void this.loadHistory(record.key);
-    if (status && !this.timers.has(id) && Date.now() - (this.readAt.get(id) ?? 0) >= BUSY_MS) void this.poll(id);
+    if (status && !this.timers.has(id) && Date.now() - (this.readAt.get(id) ?? 0) >= BUSY_MS) void this.poll(id, "watch");
     return () => {
       const left = this.watched.get(id);
       if (!left) return;
@@ -106,17 +106,18 @@ class StatusStore {
 
   /** Reads the status now (after an action, say), then keeps polling. */
   async refresh(key: DeviceKey) {
-    await this.poll(keyString(key));
+    await this.poll(keyString(key), "refresh");
   }
 
-  private async poll(id: string) {
+  /** `why` names the caller in the app's request trace (ATLAS_TRACE_REQUESTS=1). */
+  private async poll(id: string, why: string) {
     const entry = this.watched.get(id);
     if (!entry?.status || this.inFlight.has(id)) return;
     const timer = this.timers.get(id);
     if (timer) clearTimeout(timer);
     this.inFlight.add(id);
     try {
-      const status = await api.deviceStatus(entry.key);
+      const status = await api.deviceStatus(entry.key, `status-store ${why}`);
       this.byDevice.set(id, status);
       this.readAt.set(id, Date.now());
       this.errors.delete(id);
@@ -132,7 +133,7 @@ class StatusStore {
     const every = updateBusy(update) || update?.state === "staged" ? BUSY_MS : status?.pushed ? PUSHED_MS : IDLE_MS;
     this.timers.set(
       id,
-      setTimeout(() => void this.poll(id), every),
+      setTimeout(() => void this.poll(id, `timer ${every / 1000} s`), every),
     );
   }
 
@@ -150,7 +151,7 @@ class StatusStore {
     const id = keyString(key);
     if (!this.watched.has(id)) return;
     this.pushes.set(id, (this.pushes.get(id) ?? 0) + 1);
-    void this.poll(id);
+    void this.poll(id, "push");
   }
 
   /** Whether the board's changes arrive as pushes (its last status said so). */

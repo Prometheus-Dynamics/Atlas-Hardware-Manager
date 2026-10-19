@@ -11,8 +11,9 @@
 // its status, which the board's status view reads anyway), only every
 // STREAM_IDLE_MS. Elsewhere the device is polled, only as often as the most
 // eager view showing it asks (FAST for its own page, SLOW for lists and the
-// sidebar), never twice for two views, not again when a view re-subscribes,
-// and not while the window is hidden.
+// sidebar), and no more often than POLLED_DRIFT_MS while all it reads is
+// readings that drift; never twice for two views, not again when a view
+// re-subscribes, and not while the window is hidden.
 
 import { SvelteMap } from "svelte/reactivity";
 import { api, errorText, keyString, type DeviceRecord, type LiveFrame, type Metric } from "#lib/api/client.ts";
@@ -33,6 +34,9 @@ const SHOWN = 120;
 const STREAM_POLL_MS = 5000;
 /** While streamed and the last poll brought only readings that drift. */
 const STREAM_IDLE_MS = 60_000;
+
+/** Polled, not streamed, and all the readings only drift (a board whose readings come from its status). */
+const POLLED_DRIFT_MS = 15_000;
 
 /** Readings that change slowly enough to read once a minute. */
 function drifts(metricId: string): boolean {
@@ -68,7 +72,7 @@ class LiveStore {
   /** When a stream was last tried per device (ms). */
   private streamTried = new Map<string, number>();
   private lingering = new Map<string, ReturnType<typeof setTimeout>>();
-  /** Streamed devices whose last poll brought, besides the stream, only readings that drift. */
+  /** Devices whose last poll brought only readings that drift, besides the stream's when streamed. */
   private covered = new Set<string>();
 
   /** Polls these devices every `every` ms while watched; returns a function that stops. */
@@ -225,14 +229,17 @@ class LiveStore {
     // charts have a line at once.
     const every = (id: string, asks: number[]) => {
       if (this.streams.has(id)) return this.covered.has(id) ? STREAM_IDLE_MS : STREAM_POLL_MS;
-      return (this.times.get(id)?.length ?? 0) < WARM_UP ? FAST_MS : Math.min(...asks);
+      if ((this.times.get(id)?.length ?? 0) < WARM_UP) return FAST_MS;
+      return this.covered.has(id) ? Math.max(Math.min(...asks), POLLED_DRIFT_MS) : Math.min(...asks);
     };
     for (const id of this.watchers.keys()) this.stream(id);
     const due = [...this.watchers].filter(([id, asks]) => now - (this.askedAt.get(id) ?? 0) >= every(id, asks) - TICK_MS / 2);
-    if (due.length > 0) void this.poll(due.map(([id]) => id));
+    // Who asks, for the app's request trace (ATLAS_TRACE_REQUESTS=1).
+    const why = new Map(due.map(([id, asks]) => [id, `live-store ${this.streams.has(id) ? "streamed" : "polled"} every ${every(id, asks) / 1000} s`]));
+    if (due.length > 0) void this.poll(due.map(([id]) => id), why);
   }
 
-  private async poll(ids: string[]) {
+  private async poll(ids: string[], why: Map<string, string>) {
     await Promise.all(
       ids.map(async (id) => {
         const record = devices.get(id);
@@ -243,7 +250,7 @@ class LiveStore {
         this.inFlight.add(id);
         this.askedAt.set(id, Date.now());
         try {
-          const readings = await api.deviceTelemetry(record!.key);
+          const readings = await api.deviceTelemetry(record!.key, why.get(id));
           const streamed = this.streams.get(id);
           if (streamed) {
             // The stream has its own readings and rows: take only the rest.
@@ -257,6 +264,8 @@ class LiveStore {
             this.errors.delete(id);
             return;
           }
+          if (readings.length > 0 && readings.every((m) => drifts(m.id))) this.covered.add(id);
+          else this.covered.delete(id);
           this.metrics.set(id, readings);
           this.errors.delete(id);
           const past = this.history.get(id) ?? {};

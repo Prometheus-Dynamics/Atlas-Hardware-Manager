@@ -230,19 +230,26 @@ pub async fn start_live_stream(
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .live_streams;
-    let (Some(orion), true) = (&state.orion, enabled) else {
+    let Some(orion) = &state.orion else {
+        crate::logfile::trace(&format!("live-stream {key}: none (no Orion)"));
         return Ok(None);
     };
+    if !enabled {
+        crate::logfile::trace(&format!("live-stream {key}: none (setting off)"));
+        return Ok(None);
+    }
     let record = state
         .atlas
         .device(&key)
         .ok_or_else(|| format!("no device {key}"))?;
     let address = record.identity.address.trim().to_owned();
     if address.is_empty() {
+        crate::logfile::trace(&format!("live-stream {key}: none (no address)"));
         return Ok(None);
     }
     let live = orion.live.clone();
     let (tell, told) = tokio::sync::oneshot::channel();
+    let at = address.clone();
     let task = tokio::spawn(async move {
         let tell = std::sync::Mutex::new(Some(tell));
         let started = |ok: bool| {
@@ -260,7 +267,8 @@ pub async fn start_live_stream(
                 on_frame.send(frame).is_ok()
             })
             .await;
-        if result.is_err() {
+        if let Err(error) = &result {
+            crate::logfile::trace(&format!("live-stream {address}: ended ({error})"));
             started(false);
         }
     });
@@ -269,6 +277,14 @@ pub async fn start_live_stream(
         tokio::time::timeout(std::time::Duration::from_secs(3), told).await,
         Ok(Ok(true))
     );
+    crate::logfile::trace(&format!(
+        "live-stream {key} at {at}: {}",
+        if streams {
+            "streaming"
+        } else {
+            "none (refused or no frame in 3 s)"
+        }
+    ));
     if !streams {
         task.abort();
         return Ok(None);
@@ -401,7 +417,12 @@ pub fn device_selftest(state: State<'_, AppState>, key: DeviceKey) -> Option<Sel
 pub async fn device_telemetry(
     state: State<'_, AppState>,
     key: DeviceKey,
+    caller: Option<String>,
 ) -> CmdResult<Vec<Metric>> {
+    crate::logfile::trace(&format!(
+        "device_telemetry {key} by {}",
+        caller.as_deref().unwrap_or("?")
+    ));
     state.atlas.telemetry(&key).await.map_err(text)
 }
 
@@ -418,7 +439,15 @@ pub async fn device_logs(
 /// What the device is doing now and how it is, for devices that report
 /// `status`. Also brings its history up to date.
 #[tauri::command]
-pub async fn device_status(state: State<'_, AppState>, key: DeviceKey) -> CmdResult<DeviceStatus> {
+pub async fn device_status(
+    state: State<'_, AppState>,
+    key: DeviceKey,
+    caller: Option<String>,
+) -> CmdResult<DeviceStatus> {
+    crate::logfile::trace(&format!(
+        "device_status {key} by {}",
+        caller.as_deref().unwrap_or("?")
+    ));
     state.atlas.device_status(&key).await.map_err(text)
 }
 
