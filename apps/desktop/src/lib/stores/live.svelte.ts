@@ -42,8 +42,10 @@ const POLLED_DRIFT_MS = 15_000;
 function drifts(metricId: string): boolean {
   return metricId === "temp" || metricId.startsWith("temp.") || metricId === "fan" || metricId === "fan.rpm" || metricId === "uptime";
 }
-/** How long before a board without a stream is asked again. */
+/** How long before a board without a stream is asked again: doubling from this after each refusal… */
 const STREAM_RETRY_MS = 30_000;
+/** …up to this, until its link changes (another cable, another address) or the user retries. */
+const STREAM_RETRY_MAX_MS = 300_000;
 /** A stream outlives its last view this long, so a view re-subscribing keeps it. */
 const STREAM_LINGER_MS = 2000;
 
@@ -71,8 +73,10 @@ class LiveStore {
   /** Devices whose readings are pushed: how to stop, and the metric ids the stream carries. */
   private streams = new Map<string, { stop: () => void; carries: Set<string> }>();
   private starting = new Set<string>();
-  /** When a stream was last tried per device (ms). */
+  /** When a stream was last tried per device (ms), how long to wait after that, and on which link. */
   private streamTried = new Map<string, number>();
+  private streamWait = new Map<string, number>();
+  private streamLink = new Map<string, string>();
   private lingering = new Map<string, ReturnType<typeof setTimeout>>();
   /** Devices whose last poll brought only readings that drift, besides the stream's when streamed. */
   private covered = new Set<string>();
@@ -149,6 +153,22 @@ class LiveStore {
     return out;
   }
 
+  /** Whether the device's stream was refused because the board's Orion doesn't know this PC's key. */
+  pairing(id: string): "other-key" | "unenrolled" | null {
+    const why = this.streams.has(id) ? undefined : this.pollingWhy.get(id);
+    if (!why) return null;
+    if (/not its enrolled key/.test(why)) return "other-key";
+    if (/isn't enrolled|not enrolled/.test(why)) return "unenrolled";
+    return null;
+  }
+
+  /** Tries the device's stream again now (after re-pairing, say), whatever the wait. */
+  retryStream(id: string) {
+    this.streamTried.delete(id);
+    this.streamWait.delete(id);
+    this.stream(id);
+  }
+
   /** Whether the device's readings are pushed right now. */
   streamed(id: string): boolean {
     return this.streams.has(id);
@@ -158,7 +178,14 @@ class LiveStore {
   private stream(id: string) {
     const record = devices.get(id);
     if (!hasTelemetry(record) || this.streams.has(id) || this.starting.has(id)) return;
-    if (Date.now() - (this.streamTried.get(id) ?? -Infinity) < STREAM_RETRY_MS) return;
+    // A new link may stream where the old one was refused: ask at once.
+    const link = `${record!.link_kind} ${record!.identity.address}`;
+    if (this.streamLink.get(id) !== link) {
+      this.streamLink.set(id, link);
+      this.streamTried.delete(id);
+      this.streamWait.delete(id);
+    }
+    if (Date.now() - (this.streamTried.get(id) ?? -Infinity) < (this.streamWait.get(id) ?? STREAM_RETRY_MS)) return;
     this.streamTried.set(id, Date.now());
     this.starting.add(id);
     api
@@ -166,8 +193,12 @@ class LiveStore {
       .then(({ stop, reason }) => {
         if (!stop) {
           this.pollingWhy.set(id, reason ?? "no stream");
+          // The first wait is STREAM_RETRY_MS; each refusal after doubles it.
+          const waited = this.streamWait.get(id);
+          this.streamWait.set(id, waited === undefined ? STREAM_RETRY_MS : Math.min(waited * 2, STREAM_RETRY_MAX_MS));
           return;
         }
+        this.streamWait.delete(id);
         this.pollingWhy.delete(id);
         if (this.watchers.has(id)) this.streams.set(id, { stop, carries: this.streams.get(id)?.carries ?? new Set() });
         else stop();

@@ -2,7 +2,6 @@
   // Live readings for one device, polled while shown.
   import { keyString, type DeviceRecord } from "#lib/api/client.ts";
   import Icon from "#lib/components/common/Icon.svelte";
-  import Pill from "#lib/components/common/Pill.svelte";
   import Skeleton from "#lib/components/common/Skeleton.svelte";
   import { coreMetrics, isCore, sortMetrics } from "#lib/metrics.ts";
   import { live, watchLive } from "#lib/stores/live.svelte.ts";
@@ -17,8 +16,6 @@
   const metrics = $derived(sortMetrics(all.filter((m) => !isCore(m))));
   const cores = $derived(coreMetrics(all));
   const error = $derived(live.errors.get(id));
-  // Polled instead of streamed: say so, and why, rather than fall back unseen.
-  const polling = $derived(live.streamed(id) ? null : (live.pollingWhy.get(id) ?? null));
 
   $effect(() => watchLive([record]));
 </script>
@@ -26,9 +23,6 @@
 <section class="flex flex-col gap-2.5">
   <h3 class="flex items-center gap-2 text-[12px] font-medium uppercase tracking-[0.06em] text-fg-faint">
     <span class="live-dot"></span>Live
-    {#if polling}
-      <span class="normal-case tracking-normal"><Pill tone="neutral" icon="refresh" label={`polling — ${polling}`} title="Atlas reads this device now and then instead of following its stream" /></span>
-    {/if}
   </h3>
   {#if metrics.length === 0 && error}
     <p class="flex items-center gap-2 text-[13px] text-warn-fg"><Icon name="alert-triangle" size={15} />{error}</p>

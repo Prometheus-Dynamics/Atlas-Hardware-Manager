@@ -10,6 +10,7 @@
   import { clock } from "#lib/stores/clock.svelte.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { live } from "#lib/stores/live.svelte.ts";
+  import OrionRepair from "./OrionRepair.svelte";
 
   let {
     record,
@@ -27,6 +28,7 @@
   } = $props();
 
   const id = $derived(keyString(record.key));
+  const pairing = $derived(live.pairing(id));
   type Tone = "ok" | "warn" | "err" | "none";
   interface Row {
     key: string;
@@ -100,7 +102,7 @@
       key: "link",
       label: "Link",
       value: linkText(record.link_kind, devices.nameOf),
-      detail: streamed ? "pushed live" : live.pollingWhy.has(id) ? `polled: ${live.pollingWhy.get(id)}` : "polled",
+      detail: streamed ? "pushed live" : pairing ? "polled: not paired with the board's Orion" : live.pollingWhy.has(id) ? `polled: ${live.pollingWhy.get(id)}` : "polled",
       tone: record.presence === "online" ? "ok" : "err",
       series: [],
       color: "",
@@ -154,6 +156,7 @@
       {/if}
     </button>
   {/each}
+  {#if pairing}<OrionRepair {id} kind={pairing} />{/if}
   {#if opened}
     <div class="pop" role="dialog" aria-label="{opened.label}, last five minutes">
       <div class="flex items-center justify-between text-[12px]">
