@@ -1,6 +1,8 @@
 {
   "extends": "$app/tsconfig",
   "include": ["src", "*"],
+  // Tests run under `bun test` (bun:test), whose types the app doesn't ship.
+  "exclude": ["src/**/*.test.ts"],
   "compilerOptions": {
     "sourceMap": true,
     "strict": true

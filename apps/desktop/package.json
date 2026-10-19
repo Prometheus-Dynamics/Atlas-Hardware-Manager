@@ -12,6 +12,7 @@
     "build": "svelte-kit sync && vite build",
     "preview": "vite preview",
     "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "bun test src",
     "tauri": "tauri",
     "app": "cargo build -p atlas-helper && ATLAS_HELPER=$PWD/../../target/debug/atlas-helper ATLAS_USBBOOT_DIR=$PWD/../../tools/usbboot/mass-storage-gadget64 tauri dev",
     "app:sim": "ATLAS_SIM=demo tauri dev",
