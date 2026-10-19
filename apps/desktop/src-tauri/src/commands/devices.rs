@@ -428,11 +428,12 @@ pub async fn device_telemetry(
     key: DeviceKey,
     caller: Option<String>,
 ) -> CmdResult<Vec<Metric>> {
-    crate::logfile::trace(&format!(
-        "device_telemetry {key} by {}",
-        caller.as_deref().unwrap_or("?")
-    ));
-    state.atlas.telemetry(&key).await.map_err(text)
+    let by = caller.as_deref().unwrap_or("?");
+    crate::logfile::trace(&format!("device_telemetry {key} by {by}"));
+    let started = std::time::Instant::now();
+    let result = state.atlas.telemetry(&key).await.map_err(text);
+    traced_end("device_telemetry", &key, by, started, &result);
+    result
 }
 
 /// The last `lines` log lines, oldest first, for devices that report logs.
@@ -453,11 +454,33 @@ pub async fn device_status(
     key: DeviceKey,
     caller: Option<String>,
 ) -> CmdResult<DeviceStatus> {
-    crate::logfile::trace(&format!(
-        "device_status {key} by {}",
-        caller.as_deref().unwrap_or("?")
-    ));
-    state.atlas.device_status(&key).await.map_err(text)
+    let by = caller.as_deref().unwrap_or("?");
+    crate::logfile::trace(&format!("device_status {key} by {by}"));
+    let started = std::time::Instant::now();
+    let result = state.atlas.device_status(&key).await.map_err(text);
+    traced_end("device_status", &key, by, started, &result);
+    result
+}
+
+/// The request trace's line for a read that finished: how long it took and
+/// whether it worked, so a read that never returns shows as a start alone.
+fn traced_end<T>(
+    what: &str,
+    key: &DeviceKey,
+    by: &str,
+    started: std::time::Instant,
+    result: &Result<T, String>,
+) {
+    if crate::logfile::tracing_requests() {
+        let outcome = match result {
+            Ok(_) => "ok".to_string(),
+            Err(error) => format!("error: {error}"),
+        };
+        crate::logfile::trace(&format!(
+            "{what} {key} by {by}: {outcome} in {} ms",
+            started.elapsed().as_millis()
+        ));
+    }
 }
 
 /// The text of a kernel log the board kept, by the boot that found it.
