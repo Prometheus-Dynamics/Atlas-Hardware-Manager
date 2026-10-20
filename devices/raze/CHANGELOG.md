@@ -170,7 +170,10 @@ commit; the commits are listed per area.
   (`USB_GADGET_ROUTE=1` in usb-gadget.env; an OS sets 0 to ship it off);
   `usb-route set on|off` keeps a choice on /data, which board-agent runs
   for Orion's `usb-route.set {on}` (Atlas's switch). The identity reports
-  `usb_route` {enabled, active, subnets}. Adds the nftables package.
+  `usb_route` {enabled, active, subnets, addresses}. Adds the nftables package.
+  `addresses` are the board's own `a.b.c.d/n` on those networks: with a
+  static `10.63.90.12/8` the route is all of `10.0.0.0/8`, and the address
+  is what tells Atlas the robot network (`10.63.90.0/24`) to look on.
 
 - **raze-flasher outputs (flasher.toml):** the same build also makes
   `raze-flasher-boot.img` and `raze-flasher-<version>.tar` (what

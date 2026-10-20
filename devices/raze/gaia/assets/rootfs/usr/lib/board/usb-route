@@ -9,7 +9,8 @@
 # network can start a connection to the computer.
 #
 #   usb-route apply     set the NAT, forwarding and DHCP routes as configured
-#   usb-route status    one line of JSON: {"enabled":..,"active":..,"subnets":[..]}
+#   usb-route status    one line of JSON: {"enabled":..,"active":..,"subnets":[..],
+#                       "addresses":[..]} (the board's own a.b.c.d/n on them)
 #   usb-route set on|off   choose (kept on /data), then apply
 #   usb-route watch     apply, then again whenever an address changes
 #                       (board-usb-route.service)
@@ -45,9 +46,9 @@ route_enabled() {
 	[ "${USB_GADGET_ROUTE:-1}" = 1 ]
 }
 
-# The IPv4 networks (a.b.c.d/n) on the board's other interfaces: global
+# The board's IPv4 addresses (a.b.c.d/n) on its other interfaces: global
 # addresses only, not the USB link's, nor link-local.
-other_subnets() {
+other_addresses() {
 	ip -4 -o addr show scope global 2>/dev/null | while read -r _ ifname _ cidr _; do
 		case "$ifname" in
 		"$BRIDGE" | usb* | lo) continue ;;
@@ -55,6 +56,15 @@ other_subnets() {
 		case "$cidr" in
 		169.254.*) continue ;;
 		esac
+		printf '%s\n' "$cidr"
+	done | sort -u
+}
+
+# Their networks (a.b.c.d/n). A computer on the USB link told only a wide
+# one (a static 10.63.90.12/8 routes 10.0.0.0/8) learns which robot
+# network the board is on from the addresses (status).
+other_subnets() {
+	other_addresses | while read -r cidr; do
 		_pre=${cidr#*/}
 		_a=$(board_ip4_int "${cidr%/*}") || continue
 		_size=$((1 << (32 - _pre)))
@@ -135,10 +145,12 @@ apply() {
 			echo 1 >"$IP_FORWARD"
 			touch "$STATE.forward"
 		fi
+		_addresses=$(other_addresses | tr '\n' ' ')
+		_addresses=${_addresses% }
 		write_routes "$_subnets"
 		_was=$(sed -n 's/^.* subnets=//p' "$STATE" 2>/dev/null)
 		[ "$_was" = "$_subnets" ] || board_log "on, to ${_subnets:-no network yet}"
-		printf 'enabled=1 active=1 subnets=%s\n' "$_subnets" >"$STATE"
+		printf 'enabled=1 active=1 addresses=%s subnets=%s\n' "$_addresses" "$_subnets" >"$STATE"
 	else
 		nat_off
 		write_routes ''
@@ -163,11 +175,18 @@ status_json() {
 	_active=0
 	case "$_line" in *active=1*) _active=1 ;; esac
 	_subnets=$(printf '%s' "$_line" | sed -n 's/^.* subnets=//p')
+	_addresses=$(printf '%s' "$_line" | sed -n 's/^.* addresses=\(.*\) subnets=.*$/\1/p')
 	printf '{"enabled":%s,"active":%s,"subnets":[' \
 		"$([ "$_enabled" = 1 ] && echo true || echo false)" "$([ "$_active" = 1 ] && echo true || echo false)"
 	_sep=''
 	for _net in $_subnets; do
 		printf '%s%s' "$_sep" "$(board_json_str "$_net")"
+		_sep=','
+	done
+	printf '],"addresses":['
+	_sep=''
+	for _address in $_addresses; do
+		printf '%s%s' "$_sep" "$(board_json_str "$_address")"
 		_sep=','
 	done
 	printf ']}\n'

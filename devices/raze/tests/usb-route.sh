@@ -74,6 +74,7 @@ grep -qx "option:classless-static-route,10.53.38.0/24,$via" "$T/run/usb-gadget-d
 grep -qx "249,10.53.38.0/24,$via" "$T/run/usb-gadget-dhcp-routes" || fail "no option 249 for Windows"
 grep -q 'kill -s HUP board-usb-gadget-dhcp.service' "$T/systemctl.log" || fail "dnsmasq should reread its routes"
 is "True True ['10.53.38.0/24']" 'd["enabled"], d["active"], d["subnets"]' "status"
+is "['10.53.38.11/24']" 'd["addresses"]' "the board's own address on it"
 
 echo "applying again with nothing changed rewrites nothing"
 before=$(grep -c -- '-f' "$T/nft.log")
@@ -91,6 +92,17 @@ route apply
 grep -qx "option:classless-static-route,10.53.38.0/24,$via,192.168.4.0/22,$via" "$T/run/usb-gadget-dhcp-routes" ||
 	fail "routes: $(cat "$T/run/usb-gadget-dhcp-routes")"
 is "['10.53.38.0/24', '192.168.4.0/22']" 'd["subnets"]' "subnets"
+is "['10.53.38.11/24', '192.168.4.7/22']" 'd["addresses"]' "addresses"
+
+echo "a static address on a wide network: the route is wide, the address names the robot network"
+cp "$T/addrs" "$T/addrs.keep"
+cat > "$T/addrs" <<'EOF'
+2: eth0    inet 10.63.90.12/8 brd 10.255.255.255 scope global eth0\       valid_lft forever preferred_lft forever
+EOF
+route apply
+is "['10.0.0.0/8'] ['10.63.90.12/8']" 'd["subnets"], d["addresses"]' "wide route"
+mv "$T/addrs.keep" "$T/addrs"
+route apply
 
 echo "set off: no NAT, forwarding back off, no routes, and the choice is kept"
 route set off
@@ -127,7 +139,7 @@ is "True False" 'd["enabled"], d["active"]' "no bridge"
 
 echo "the identity carries it"
 json=$(BOARD_NET_DIR=$T/net BOARD_OS_RELEASE=/dev/null sh "$lib/identity")
-printf '%s' "$json" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["usb_route"] == {"enabled": True, "active": False, "subnets": []}, d.get("usb_route")' ||
+printf '%s' "$json" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["usb_route"] == {"enabled": True, "active": False, "subnets": [], "addresses": []}, d.get("usb_route")' ||
 	fail "identity: $json"
 
 echo "ok"
