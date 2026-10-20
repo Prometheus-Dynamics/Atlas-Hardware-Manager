@@ -79,6 +79,7 @@ impl Scan<'_> {
                     .filter_map(|ip| ip.trim().parse::<std::net::IpAddr>().ok()),
             );
         }
+        crate::robot_teams::note(&ips);
         let merged = {
             let mut state = self.inner.state();
             let current = state

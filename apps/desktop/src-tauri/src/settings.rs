@@ -57,6 +57,11 @@ pub struct AppSettings {
     pub image_host: Option<String>,
     /// Atlas's own updates from GitHub.
     pub app_updates: crate::app_update::AppUpdateSettings,
+    /// FRC team numbers whose robot networks (10.TE.AM.0/24) Atlas looks on
+    /// behind a board's USB route, when the route is wider than one robot
+    /// network. Teams devices were seen on are looked on anyway.
+    #[serde(default)]
+    pub teams: Vec<u16>,
 }
 
 impl Default for AppSettings {
@@ -73,6 +78,7 @@ impl Default for AppSettings {
             image_server_port: atlas_image_server::DEFAULT_PORT,
             image_host: None,
             app_updates: crate::app_update::AppUpdateSettings::default(),
+            teams: Vec::new(),
         }
     }
 }
@@ -94,7 +100,17 @@ impl AppSettings {
         if settings.image_server_port == 0 {
             settings.image_server_port = atlas_image_server::DEFAULT_PORT;
         }
+        settings.note_teams();
         settings
+    }
+
+    /// Tells the drivers about the user's teams (they are only ever added
+    /// to: a team removed here is forgotten at the next start).
+    pub fn note_teams(&self) {
+        let teams = atlas_driver::robot_net::RobotTeams::shared();
+        for team in &self.teams {
+            teams.add(*team);
+        }
     }
 
     pub fn save(&self, path: &Path) -> Result<(), String> {

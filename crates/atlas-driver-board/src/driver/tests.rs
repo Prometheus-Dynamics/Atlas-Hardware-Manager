@@ -398,3 +398,70 @@ async fn a_board_with_status_and_events_reports_them() {
         assert!(ids.iter().any(|have| have == id), "{id} in {ids:?}");
     }
 }
+
+async fn identified(body: &'static str) -> (BoardDriver, Identity) {
+    let url = serve_once(body).await;
+    let driver = BoardDriver::new(package());
+    let identity = driver
+        .identify(&Candidate {
+            link: LinkId("mdns".into()),
+            family: Family::new("raze"),
+            address: url,
+        })
+        .await
+        .unwrap();
+    (driver, identity)
+}
+
+fn nets(nets: &[crate::sweep::Net]) -> Vec<String> {
+    nets.iter().map(ToString::to_string).collect()
+}
+
+/// A board on this computer's USB that routes 10.0.0.0/8 (its static
+/// 10.63.90.12/8): its children are on 10.63.90.0/24, the robot network its
+/// own address names, not on all of 10/8.
+#[tokio::test]
+async fn a_wide_usb_route_narrows_to_the_boards_robot_network() {
+    let (driver, identity) = identified(
+        r#"{ "contract": 1, "model": "raze", "serial": "80cf24535f30fd87",
+             "gadget": { "address": "127.0.0.1", "prefix": 29 },
+             "usb_route": { "enabled": true, "active": true, "subnets": ["10.0.0.0/8"],
+                            "addresses": ["10.63.90.12/8"] } }"#,
+    )
+    .await;
+    assert_eq!(nets(&driver.routed_nets(&identity)), ["10.63.90.0/24"]);
+}
+
+/// A /24 route is the robot network as it is.
+#[tokio::test]
+async fn a_robot_network_route_is_swept_as_it_is() {
+    let (driver, identity) = identified(
+        r#"{ "contract": 1, "model": "raze", "serial": "1",
+             "gadget": { "address": "127.0.0.1", "prefix": 29 },
+             "usb_route": { "enabled": true, "active": true, "subnets": ["10.53.38.0/24"] } }"#,
+    )
+    .await;
+    assert_eq!(nets(&driver.routed_nets(&identity)), ["10.53.38.0/24"]);
+}
+
+/// Only the board this computer reaches over USB leads anywhere: one found
+/// at another address (on the robot network itself), or not routing, has no
+/// children.
+#[tokio::test]
+async fn only_a_routing_board_on_usb_has_children() {
+    let (driver, identity) = identified(
+        r#"{ "contract": 1, "model": "raze", "serial": "2",
+             "gadget": { "address": "172.31.167.9", "prefix": 29 },
+             "usb_route": { "enabled": true, "active": true, "subnets": ["10.63.90.0/24"] } }"#,
+    )
+    .await;
+    assert!(driver.routed_nets(&identity).is_empty());
+    let (driver, identity) = identified(
+        r#"{ "contract": 1, "model": "raze", "serial": "3",
+             "gadget": { "address": "127.0.0.1", "prefix": 29 },
+             "usb_route": { "enabled": true, "active": false, "subnets": [] } }"#,
+    )
+    .await;
+    assert!(driver.routed_nets(&identity).is_empty());
+    assert!(driver.children(&identity).await.unwrap().is_empty());
+}

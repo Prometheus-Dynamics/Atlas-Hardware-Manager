@@ -43,6 +43,11 @@ pub fn register_hardware(
     for driver in drivers_for_catalog(&catalog, ssh_access) {
         builder = builder.driver(driver);
     }
+    // The robot network's controller and radio (behind a board's USB route
+    // they are its children).
+    for driver in atlas_driver_robot::drivers() {
+        builder = builder.driver(driver);
+    }
     builder
 }
 

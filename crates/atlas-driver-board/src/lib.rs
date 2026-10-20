@@ -12,6 +12,10 @@
 //!   `slots`.
 //! - `endpoints.status` and `endpoints.events`: what the board is doing,
 //!   its health and drift, and its event log; see `status`.
+//! - `usb_route` active, reached over USB: the board is the way onto the
+//!   robot network, and what is on it (boards, the robot controller, the
+//!   radio) are its children; see `BoardDriver::children`, `sweep` and
+//!   docs/robot-network.md.
 //!
 //! The device family is the hardware model from its device package
 //! (`raze`); the OS is an attribute. One [`BoardDriver`] serves each model in

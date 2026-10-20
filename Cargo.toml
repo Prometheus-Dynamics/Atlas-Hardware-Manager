@@ -7,6 +7,7 @@ members = [
     "crates/atlas-driver-rpi",
     "crates/atlas-driver-board",
     "crates/atlas-driver-orion",
+    "crates/atlas-driver-robot",
     "crates/board-agent",
     "crates/board-stream",
     "crates/slot-init",
@@ -41,6 +42,7 @@ atlas-driver-mock = { path = "crates/atlas-driver-mock" }
 atlas-driver-rpi = { path = "crates/atlas-driver-rpi" }
 atlas-driver-board = { path = "crates/atlas-driver-board" }
 atlas-driver-orion = { path = "crates/atlas-driver-orion" }
+atlas-driver-robot = { path = "crates/atlas-driver-robot" }
 atlas-image-server = { path = "crates/atlas-image-server" }
 atlas-release = { path = "crates/atlas-release" }
 atlas-usbboot = { path = "crates/atlas-usbboot" }

@@ -21,6 +21,9 @@ use crate::ssh_actions::{
 use crate::status::{BoardStatus, StatusTelemetry};
 
 const LINK_ID: &str = "mdns";
+/// The link a board's children are found on: the robot network behind its
+/// USB route.
+pub const ROUTED_LINK_ID: &str = "robot-net";
 const FETCH_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// The network link: every `_pd-device._tcp` advertisement on any interface,
@@ -79,8 +82,10 @@ pub struct BoardDriver {
     /// endpoints: a device's capabilities use the report from the link its
     /// record chose, never whichever answered last.
     reported: Mutex<HashMap<String, (DeviceKey, BoardIdentity)>>,
-    /// Boards found without mDNS (sweep.rs).
+    /// Boards found without mDNS on this computer's own networks (sweep.rs).
     sweeper: crate::sweep::Sweeper,
+    /// Boards found behind a board's USB route, by robot network.
+    routed: Mutex<HashMap<crate::sweep::Net, crate::sweep::Sweeper>>,
     /// The last discovery's USB gadget probes, by candidate address.
     probes: Mutex<HashMap<String, GadgetProbe>>,
     ssh: SshAccess,
@@ -109,6 +114,7 @@ impl BoardDriver {
             reported: Mutex::new(HashMap::new()),
             probes: Mutex::new(HashMap::new()),
             sweeper: crate::sweep::Sweeper::default(),
+            routed: Mutex::new(HashMap::new()),
             ssh,
         }
     }
@@ -174,22 +180,53 @@ impl BoardDriver {
         }
     }
 
-    /// The networks this computer reaches through a board's USB route: what
-    /// the boards it found report routing (`usb_route`, active).
-    fn routed_nets(&self) -> Vec<crate::sweep::Net> {
-        self.reported
+    /// The robot networks this computer reaches through `device`'s USB
+    /// route: none unless it was reached at its USB gadget address and
+    /// routes (`usb_route` active); a route wider than a /24 narrows to the
+    /// robot networks Atlas can name in it (the board's own addresses on it,
+    /// the teams it knows).
+    fn routed_nets(&self, device: &Identity) -> Vec<crate::sweep::Net> {
+        let Some((address, report)) = self.reported(device) else {
+            return Vec::new();
+        };
+        let Some(route) = report.usb_route.as_ref().filter(|route| route.active) else {
+            return Vec::new();
+        };
+        let host = reqwest::Url::parse(&address)
+            .ok()
+            .and_then(|url| url.host_str().map(str::to_string));
+        let on_usb = match &report.gadget {
+            Some(gadget) => host.as_deref() == Some(gadget.address.as_str()),
+            None => device.link.0 == crate::gadget::LINK_ID,
+        };
+        if !on_usb {
+            return Vec::new();
+        }
+        let own: Vec<std::net::Ipv4Addr> = route
+            .addresses
+            .iter()
+            .filter_map(|cidr| cidr.split('/').next()?.trim().parse().ok())
+            .collect();
+        let teams = atlas_driver::robot_net::RobotTeams::shared().all();
+        let mut nets: Vec<crate::sweep::Net> = route
+            .subnets
+            .iter()
+            .filter_map(|net| crate::sweep::Net::parse(net))
+            .flat_map(|net| atlas_driver::robot_net::robot_nets_in(net, &own, &teams))
+            .collect();
+        nets.sort_unstable();
+        nets.dedup();
+        nets
+    }
+
+    /// The sweeper for one routed robot network.
+    fn routed_sweeper(&self, net: crate::sweep::Net) -> crate::sweep::Sweeper {
+        self.routed
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .values()
-            .filter_map(|(_, report)| report.usb_route.as_ref())
-            .filter(|route| route.active)
-            .flat_map(|route| {
-                route
-                    .subnets
-                    .iter()
-                    .filter_map(|net| crate::sweep::Net::parse(net))
-            })
-            .collect()
+            .entry(net)
+            .or_default()
+            .clone()
     }
 
     /// The report from `device`'s own address, or, if that one is gone,
@@ -250,8 +287,8 @@ impl Driver for BoardDriver {
         if link.id.0 != LINK_ID {
             return Ok(Vec::new());
         }
-        // mDNS when it works; the sweep (this computer's robot networks and
-        // those a board routes its USB link onto) whatever mDNS does.
+        // mDNS when it works; the sweep of this computer's robot networks
+        // whatever mDNS does.
         let advertisements = Browser::shared().advertisements().unwrap_or_default();
         let mut addresses: Vec<String> = advertisements
             .into_iter()
@@ -261,8 +298,8 @@ impl Driver for BoardDriver {
             })
             .map(|ad| ad.identity_url())
             .collect();
-        let mut nets = crate::sweep::own_robot_nets();
-        nets.extend(self.routed_nets());
+        // Networks behind a board's USB route are that board's children.
+        let nets = crate::sweep::own_robot_nets();
         for found in self.sweeper.found(&self.http, nets) {
             if !addresses.contains(&found) {
                 addresses.push(found);
@@ -326,6 +363,46 @@ impl Driver for BoardDriver {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .insert(address, (identity.key.clone(), reported));
         Ok(identity)
+    }
+
+    /// A board routing its USB link onto the robot network (`usb_route`)
+    /// is the way to everything on it: the boards that answer a sweep of
+    /// each robot network it routes to, and the robot's controller and
+    /// radio (`atlas-driver-robot`), all on its gateway link; each board to
+    /// its own model's driver. Only from the
+    /// board this computer reaches over USB; the board itself (on the robot
+    /// network too) isn't its own child.
+    async fn children(&self, device: &Identity) -> Result<Vec<Candidate>, DriverError> {
+        let nets = self.routed_nets(device);
+        if nets.is_empty() {
+            return Ok(Vec::new());
+        }
+        let link = LinkId(ROUTED_LINK_ID.into());
+        let own_serial = &device.key.serial.0;
+        let mut candidates = Vec::new();
+        for net in &nets {
+            let found = self
+                .routed_sweeper(*net)
+                .found_now(&self.http, vec![*net])
+                .await;
+            candidates.extend(
+                found
+                    .into_iter()
+                    .filter(|(_, swept)| !swept.serial.eq_ignore_ascii_case(own_serial))
+                    .filter(|(_, swept)| !swept.model.is_empty())
+                    .map(|(address, swept)| Candidate {
+                        link: link.clone(),
+                        family: Family::new(swept.model),
+                        address,
+                    }),
+            );
+        }
+        candidates.extend(
+            atlas_driver_robot::RobotProbe::shared()
+                .candidates(&nets, &link)
+                .await,
+        );
+        Ok(candidates)
     }
 
     /// Boards listing `ab-tryboot` update over SSH; reflashing goes through

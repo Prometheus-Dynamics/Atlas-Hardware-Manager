@@ -66,6 +66,14 @@
     draft.simulated = sim === "off" ? null : sim;
   });
 
+  // Team numbers as typed: "6390, 5338".
+  const teamText = (teams: number[] | undefined) => (teams ?? []).join(", ");
+  // svelte-ignore state_referenced_locally
+  let teams = $state(teamText(settings.teams));
+  $effect(() => {
+    draft.teams = [...new Set(teams.split(/[\s,]+/).map(Number).filter((t) => Number.isInteger(t) && t >= 1 && t <= 25599))];
+  });
+
   async function save(event: SubmitEvent) {
     event.preventDefault();
     if (saving) return;
@@ -89,6 +97,7 @@
     sim = settings.simulated ?? "off";
     keyOn = !!settings.ssh_key_file;
     keyFile = settings.ssh_key_file ?? DEFAULT_KEY;
+    teams = teamText(settings.teams);
   }
 </script>
 
@@ -113,6 +122,13 @@
 
     <Field inline label="Live readings from Orion" hint="Boards whose Orion node streams their readings push them as they happen, with the last five minutes at once. Other boards are asked every second or two.">
       <Toggle bind:checked={draft.live_streams} label="Live readings from Orion" />
+    </Field>
+
+    <Field
+      label="Robot teams"
+      hint="FRC team numbers. Behind a board's USB route Atlas looks on each team's robot network (10.TE.AM.0/24) for boards, the robot controller and the radio. Teams devices were seen on are looked on anyway."
+    >
+      <input class="input mono" bind:value={teams} placeholder="6390" inputmode="numeric" aria-label="Robot team numbers" />
     </Field>
 
     <Field

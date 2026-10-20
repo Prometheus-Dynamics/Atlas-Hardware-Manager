@@ -219,6 +219,7 @@ impl AtlasBuilder {
             Some(store) => store.load()?,
             None => Snapshot::default(),
         };
+        crate::robot_teams::note_records(&snapshot.devices);
         let state = State {
             inventory: Inventory::from_records(snapshot.devices),
             robots: snapshot

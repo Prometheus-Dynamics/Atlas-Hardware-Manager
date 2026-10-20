@@ -68,7 +68,8 @@ self-update.
 | `crates/atlas-helper` | The only privileged binary: writes one image to one removable disk |
 | `crates/atlas-devices` | Device package manifests and compatibility lists |
 | `crates/atlas-driver-rpi` | Pi compute modules in USB boot mode, EEPROM updates |
-| `crates/atlas-driver-board` | Running boards via mDNS and the identity endpoint |
+| `crates/atlas-driver-board` | Running boards via mDNS and the identity endpoint, and what is behind their USB route |
+| `crates/atlas-driver-robot` | The robot network's roboRIO and radio, read-only ([docs/robot-network.md](docs/robot-network.md)) |
 | `devices/` | Device packages, shared with the OS builds |
 | `crates/atlas-driver-mock` | Simulated robot with gateways, recovery mode, and failure injection |
 | `crates/atlas-cli` | The `atlas` command |

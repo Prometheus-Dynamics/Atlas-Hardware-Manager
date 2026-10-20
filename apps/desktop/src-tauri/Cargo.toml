@@ -26,6 +26,7 @@ atlas-driver-orion.workspace = true
 atlas-image-server.workspace = true
 atlas-driver-board.workspace = true
 atlas-driver-rpi.workspace = true
+atlas-driver-robot.workspace = true
 atlas-release.workspace = true
 reqwest.workspace = true
 orion-nt4.workspace = true

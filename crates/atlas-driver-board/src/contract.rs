@@ -81,6 +81,18 @@ pub struct BoardIdentity {
     /// The USB link's route onto the robot network (`usb-route status`).
     #[serde(default)]
     pub usb_route: Option<UsbRoute>,
+    /// The USB gadget network's address, when the board runs one.
+    #[serde(default)]
+    pub gadget: Option<GadgetNet>,
+}
+
+/// The identity's `gadget`: the board's address on its USB link.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+pub struct GadgetNet {
+    #[serde(default)]
+    pub address: String,
+    #[serde(default)]
+    pub prefix: u8,
 }
 
 /// `usb-route status`: whether the USB link routes onto the board's other
@@ -93,6 +105,11 @@ pub struct UsbRoute {
     pub active: bool,
     #[serde(default)]
     pub subnets: Vec<String>,
+    /// The board's own addresses on those networks (`a.b.c.d/n`), from
+    /// packages that report them: on a route wider than one robot network
+    /// (a static `10.63.90.12/8`) they say which robot network it is.
+    #[serde(default)]
+    pub addresses: Vec<String>,
 }
 
 /// `update status` as the identity carries it; every field is optional.

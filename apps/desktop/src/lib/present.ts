@@ -16,6 +16,9 @@ export function isRecovery(record: DeviceRecord): boolean {
 
 export function deviceIcon(record: DeviceRecord): IconName {
   if (isRecovery(record)) return "usb";
+  // The robot network's own: the radio and the robot controller.
+  if (record.key.family === "frc-radio") return "router";
+  if (record.key.family === "roborio") return "robot";
   if (record.capabilities.includes("gateway")) return "router";
   if (cameraStreams(record).length > 0) return "camera";
   const text = `${record.key.family} ${record.identity.model} ${record.identity.attributes?.model ?? ""}`;

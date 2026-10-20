@@ -13,6 +13,7 @@ mod hardware;
 mod health;
 mod observe;
 mod registry;
+pub mod robot_net;
 mod selftest;
 mod slots;
 mod status;

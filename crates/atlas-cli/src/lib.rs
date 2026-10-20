@@ -10,6 +10,7 @@ mod commands;
 mod flash;
 mod output;
 mod reboots;
+mod robot;
 mod slots;
 mod system;
 
@@ -53,6 +54,12 @@ struct Cli {
     #[arg(long, global = true, value_name = "PUB")]
     ssh_key: Option<PathBuf>,
 
+    /// An FRC team number whose robot network (10.TE.AM.0/24) Atlas looks
+    /// on behind a board's USB route, when the route is wider than one
+    /// robot network. Repeatable; `ATLAS_TEAM` works too.
+    #[arg(long = "team", global = true, value_name = "TEAM")]
+    teams: Vec<u16>,
+
     #[command(subcommand)]
     command: Command,
 }
@@ -93,6 +100,12 @@ enum Command {
         /// the selection.
         #[arg(long, value_name = "FILE")]
         image: Option<PathBuf>,
+    },
+    /// The robot network's controller (roboRIO) and radio: info, CAN
+    /// devices, console, logs, web page. Read-only, no login.
+    Robot {
+        #[command(subcommand)]
+        command: robot::RobotCommand,
     },
     /// Check USB access, boot files, and the disk writer on this computer.
     Doctor,
@@ -235,9 +248,21 @@ fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
             for driver in drivers_for_catalog(&catalog, &ssh) {
                 builder = builder.driver(driver);
             }
+            for driver in atlas_driver_robot::drivers() {
+                builder = builder.driver(driver);
+            }
         }
     }
     builder.build().map_err(|error| error.to_string())
+}
+
+/// `ATLAS_TEAM`: team numbers, separated by commas or spaces.
+fn env_teams() -> Vec<u16> {
+    std::env::var("ATLAS_TEAM")
+        .unwrap_or_default()
+        .split([',', ' '])
+        .filter_map(|team| team.trim().parse().ok())
+        .collect()
 }
 
 /// The program name the CLI reports in usage and errors, whatever file
@@ -317,6 +342,10 @@ async fn run_cli(cli: Cli) -> ExitCode {
             }
         }
     }
+    let teams = atlas_driver::robot_net::RobotTeams::shared();
+    for team in cli.teams.iter().copied().chain(env_teams()) {
+        teams.add(team);
+    }
     let atlas = match build_atlas(&cli, ssh_keys) {
         Ok(atlas) => atlas,
         Err(error) => {
@@ -387,6 +416,7 @@ async fn run_cli(cli: Cli) -> ExitCode {
             )
             .await
         }
+        Command::Robot { command } => robot::robot(&atlas, command, cli.json).await,
         Command::Doctor => system::doctor(&atlas, cli.json).await,
         Command::Fix { action } => system::fix(&atlas, &action).await,
         Command::Disks => system::disks(cli.json).await,

@@ -339,6 +339,8 @@ export interface AppSettings {
   image_host: string | null;
   /** Atlas's own updates from its GitHub releases. */
   app_updates: AppUpdateSettings;
+  /** FRC team numbers whose robot networks (10.TE.AM.0/24) Atlas looks on behind a board's USB route. */
+  teams: number[];
 }
 
 export interface AppUpdateSettings {

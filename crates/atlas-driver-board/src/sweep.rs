@@ -4,15 +4,20 @@
 //! resolve or browse it at all, so the board driver also sweeps:
 //!
 //! - this computer's own robot-style networks: an IPv4 `10.x.y.0/24` (or
-//!   narrower) it has an address on, as FRC's 10.TE.AM.x robot network is;
-//! - the networks a board says it routes its USB link onto (`usb_route`), so
-//!   a laptop on one camera's USB finds every device behind it.
+//!   narrower) it has an address on, as FRC's 10.TE.AM.x robot network is
+//!   (the network link's discovery);
+//! - the robot networks a board routes its USB link onto (`usb_route`), so
+//!   a laptop on one camera's USB finds every device behind it. Those are
+//!   the board's children (its gateway link), one sweeper per network: see
+//!   `BoardDriver::children`. A route wider than a /24 is narrowed to the
+//!   robot networks Atlas can name in it (`atlas_driver::robot_net`).
 //!
 //! A sweep runs at most once a minute, in the background: discovery hands
-//! out what the last one found and never waits for it. Wider networks than a
-//! /24 are not swept (too many addresses to ask).
+//! out what the last one found. Only a network's first sweep is waited for
+//! (children, `found_now`). Wider networks than a /24 are not swept (too
+//! many addresses to ask).
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -27,47 +32,16 @@ const AT_ONCE: usize = 48;
 /// USB gadget's links assume too.
 pub(crate) const PORT: u16 = 5899;
 
+/// What a board answering a sweep said it is.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct Swept {
+    pub(crate) serial: String,
+    /// The model, lowercase: the family of its driver.
+    pub(crate) model: String,
+}
+
 /// An IPv4 network to sweep.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct Net {
-    pub(crate) base: Ipv4Addr,
-    pub(crate) prefix: u8,
-}
-
-impl Net {
-    /// `a.b.c.d/n`, normalized to its network; `None` for anything else.
-    pub(crate) fn parse(text: &str) -> Option<Self> {
-        let (ip, prefix) = text.trim().split_once('/')?;
-        Self::of(ip.parse().ok()?, prefix.parse().ok()?)
-    }
-
-    fn of(ip: Ipv4Addr, prefix: u8) -> Option<Self> {
-        if prefix > 32 {
-            return None;
-        }
-        let mask = if prefix == 0 {
-            0
-        } else {
-            u32::MAX << (32 - prefix)
-        };
-        Some(Self {
-            base: Ipv4Addr::from(u32::from(ip) & mask),
-            prefix,
-        })
-    }
-
-    /// Its host addresses, if it is small enough to sweep (a /24 or less).
-    fn hosts(self) -> Vec<Ipv4Addr> {
-        if self.prefix < 24 || self.prefix > 30 {
-            return Vec::new();
-        }
-        let base = u32::from(self.base);
-        let size = 1u32 << (32 - self.prefix);
-        (1..size - 1)
-            .map(|offset| Ipv4Addr::from(base + offset))
-            .collect()
-    }
-}
+pub(crate) use atlas_driver::robot_net::Net;
 
 /// This computer's robot-style networks: its IPv4 addresses in 10.0.0.0/8
 /// on a /24 or narrower.
@@ -99,8 +73,9 @@ fn identity_url_at(ip: Ipv4Addr, port: u16) -> String {
 
 #[derive(Default)]
 struct State {
-    /// The identity URLs the last sweep found answering.
-    found: BTreeSet<String>,
+    /// The identity URLs the last sweep found answering, with what each
+    /// reported.
+    found: BTreeMap<String, Swept>,
     last: Option<Instant>,
     running: bool,
 }
@@ -136,7 +111,38 @@ impl Sweeper {
             let http = http.clone();
             tokio::spawn(async move { sweeper.sweep(&http, nets).await });
         }
-        state.found.iter().cloned().collect()
+        state.found.keys().cloned().collect()
+    }
+
+    /// Like [`found`](Self::found), with each URL's serial, but the first
+    /// sweep is waited for (a few seconds at most: [`TIMEOUT`] per round of
+    /// [`AT_ONCE`]) so a one-off scan (`atlas ls`) sees what's there.
+    pub(crate) async fn found_now(
+        &self,
+        http: &reqwest::Client,
+        nets: Vec<Net>,
+    ) -> BTreeMap<String, Swept> {
+        let first = {
+            let mut state = self
+                .state
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let first = state.last.is_none() && !state.running && !nets.is_empty();
+            if first {
+                state.running = true;
+            }
+            first
+        };
+        if first {
+            self.sweep(http, nets).await;
+        } else {
+            self.found(http, nets);
+        }
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .found
+            .clone()
     }
 
     async fn sweep(&self, http: &reqwest::Client, nets: Vec<Net>) {
@@ -146,7 +152,7 @@ impl Sweeper {
             .into_iter()
             .flat_map(Net::hosts)
             .collect();
-        let mut found = BTreeSet::new();
+        let mut found = BTreeMap::new();
         for chunk in hosts.chunks(AT_ONCE) {
             let asks = chunk.iter().map(|ip| {
                 let url = identity_url_at(*ip, self.port);
@@ -164,7 +170,20 @@ impl Sweeper {
                         .filter(|value| {
                             value.get("model").is_some() && value.get("contract").is_some()
                         })
-                        .map(|_| url)
+                        .map(|value| {
+                            let text = |name: &str| {
+                                value
+                                    .get(name)
+                                    .and_then(serde_json::Value::as_str)
+                                    .unwrap_or_default()
+                                    .to_string()
+                            };
+                            let swept = Swept {
+                                serial: text("serial"),
+                                model: text("model").to_ascii_lowercase(),
+                            };
+                            (url, swept)
+                        })
                 }
             });
             found.extend(futures_join(asks).await.into_iter().flatten());

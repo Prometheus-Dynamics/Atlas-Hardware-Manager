@@ -69,6 +69,12 @@ pub async fn save_settings(state: State<'_, AppState>, settings: AppSettings) ->
     let (low, high) = FALLBACK_RANGE_MS;
     settings.scan_interval_ms = settings.scan_interval_ms.clamp(low, high);
     let needs_restart = settings.simulated != state.simulated;
+    settings
+        .teams
+        .retain(|team| (1..=atlas_driver::robot_net::MAX_TEAM).contains(team));
+    settings.teams.sort_unstable();
+    settings.teams.dedup();
+    settings.note_teams();
     settings.save(&AppPaths::resolve(false).settings_file)?;
     let previous = std::mem::replace(
         &mut *state

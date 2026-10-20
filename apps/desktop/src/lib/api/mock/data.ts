@@ -426,6 +426,7 @@ export const settings: AppSettings = {
   image_server_port: 7700,
   image_host: null,
   app_updates: { auto_check: true, prereleases: false, repo: "Prometheus-Dynamics/Atlas-Hardware-Manager" },
+  teams: [],
 };
 
 export const jobs: JobRecord[] = [];

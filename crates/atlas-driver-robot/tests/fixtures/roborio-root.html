@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta charset="utf-8" />
+	<title>HTML Device Configuration</title>
+	<link href="HUFF/style.css" rel="stylesheet" type="text/css" />
+	<script type="text/javascript" src="HUFF/framework.js" charset="utf-8"></script>
+	<script type="text/javascript" src="HUFF/pages/SystemConfig.js" charset="utf-8"></script>
+	<script type="text/javascript" src="HUFF/pages/NetworkConfig.js" charset="utf-8"></script>
+</head>
+<body>
+
+<div id="header">
+	<h1 id="pagetitle"></h1>
+	<img src="/HUFF/vendor.png" />
+
+	<div id="targetactions">
+		<a id="restart" href="#">Restart</a>
+		<a id="login" href="#">Login</a>
+		<a id="help" href="#">Help</a>
+	</div>
+
+	<div id="loginblock">
+		<div id="loginarrow"></div>
+		<div id="loginbase">
+			<label>User name: <input id="username" type="text"></input></label>
+			<label>Password: <input id="password" type="password"></input></label>
+			<button id="loginbutton">Log In</button>
+		</div>
+	</div>
+</div>
+
+<div id="sidebar"></div>
+<div id="content"></div>
+
+<script type="text/javascript"><!--
+	window.HUFF.init();
+--></script>
+
+</body>
+</html>
