@@ -9,6 +9,9 @@
 #                                 install a slot bundle (never over the
 #                                 running or default slot)
 #   slots stage-url <url> --sha256 <hex> --size <bytes> [--pin]
+#   slots check <bundle.tar>      JSON: whether `stage` would install it (the
+#                                 same checks, nothing written to /data or
+#                                 the boot FAT); exit status as stage's
 #   slots apply [<id>]            boot it once (trial.txt, "0 tryboot");
 #                                 default: the slot just staged
 #   slots boot-once <id>          the same, for any installed slot
@@ -53,6 +56,7 @@ STATUS_JSON=${BOARD_RUN_DIR}/update.json
 DOWNLOAD_DIR=${UPDATE_DOWNLOAD_DIR:-$DATA/board/update}
 REFUSED=3
 BOOT='' BOOT_DEV=''
+CHECKING=''
 WORK_DIR='' STREAMED=''
 # One exit handler: the install's work dir, a bundle that came on stdin (it
 # can't resume, so it never stays on /data), the boot FAT if mounted here.
@@ -66,10 +70,12 @@ cleanup() {
 trap cleanup EXIT
 
 refuse() {
+	[ -z "$CHECKING" ] || check_answer "$REFUSED" "$*"
 	board_log "$*"
 	exit "$REFUSED"
 }
 die() {
+	[ -z "$CHECKING" ] || check_answer 1 "$*"
 	board_log "$*"
 	[ -n "${STATE:-}" ] && STATE=error ERROR="$*" && save_state 2>/dev/null
 	exit 1
@@ -364,6 +370,67 @@ cmd_stage() {
 	install_bundle "$_file" "$_pin"
 }
 
+# --- check ------------------------------------------------------------------
+
+# check_answer <status> <message>: `slots check`'s refusal or failure, as
+# JSON on stdout, and that exit status.
+check_answer() {
+	printf '{"ok":false,"refused":%s,"error":%s}\n' \
+		"$([ "$1" = "$REFUSED" ] && echo true || echo false)" "$(board_json_str "$2")"
+	exit "$1"
+}
+
+# A bundle's member <name>'s size, from the listing (-tv: size is field 3).
+member_size() { awk -v n="$2" '$NF == n || $NF == "./" n { print $3; exit }' "$1"; }
+
+# slots check <bundle.tar>: every check install_bundle makes, reading the
+# bundle where it is: slot.json and boot/ unpacked to a temporary dir (a few
+# MiB, tmpfs), rootfs.erofs hashed straight out of the tar. Nothing on /data
+# or the boot FAT changes, no state, no event.
+cmd_check() {
+	CHECKING=1
+	_tar=${1:-}
+	[ -n "$_tar" ] || die "usage: slots check <bundle.tar>"
+	[ -r "$_tar" ] || die "no bundle at $_tar"
+	_work=$(mktemp -d "${TMPDIR:-/tmp}/slots-check.XXXXXX") || die "no temporary dir"
+	WORK_DIR=$_work
+	tar -tvf "$_tar" > "$_work/.list" 2>/dev/null || die "the bundle doesn't unpack"
+	_pre=''
+	grep -q ' \./slot\.json$' "$_work/.list" && _pre=./
+	# slot.json and boot/'s files by name (busybox tar may lack --exclude).
+	awk '$1 !~ /^d/ { n = $NF; sub(/^\.\//, "", n); if (n == "slot.json" || n ~ /^boot\//) print $NF }' "$_work/.list" > "$_work/.want"
+	set --
+	while IFS= read -r _n; do set -- "$@" "$_n"; done < "$_work/.want"
+	[ $# -gt 0 ] || die "not a slot bundle (slot.json, rootfs.erofs, boot/)"
+	tar -xf "$_tar" -C "$_work" "$@" 2>/dev/null || die "the bundle doesn't unpack"
+	[ -r "$_work/slot.json" ] && [ -d "$_work/boot" ] && [ -n "$(member_size "$_work/.list" rootfs.erofs)" ] ||
+		die "not a slot bundle (slot.json, rootfs.erofs, boot/)"
+	_id=$($INIT field "$_work/slot.json" id) || die "slot.json has no id"
+	valid_id "$_id" || die "slot.json: \`$_id\` isn't a slot id"
+	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
+	[ "$_id" != "$DEFAULT" ] || refuse "$_id is the default slot"
+	$INIT field "$_work/slot.json" verity.root_hash > /dev/null || die "slot.json has no verity root hash"
+	_size=$($INIT field "$_work/slot.json" image.size) || die "slot.json has no image size"
+	_sha=$($INIT field "$_work/slot.json" image.sha256) || die "slot.json has no image sha256"
+	[ "$(member_size "$_work/.list" rootfs.erofs)" = "$_size" ] || die "rootfs.erofs isn't the size slot.json says"
+	[ "$(tar -xOf "$_tar" "${_pre}rootfs.erofs" | sha256sum | cut -d' ' -f1)" = "$_sha" ] || die "rootfs.erofs doesn't match slot.json's sha256"
+	$INIT boot-files "$_work/slot.json" > "$_work/.boot.sha256" || die "slot.json's boot files"
+	(cd "$_work/boot" && sha256sum -c ../.boot.sha256 > /dev/null 2>&1) || die "a boot file doesn't match slot.json"
+	if [ -f "$_work/boot/initramfs" ]; then
+		_why=$($INIT check-initramfs "$_work/boot/initramfs" 2>&1) || refuse "the bundle's initramfs won't boot: ${_why#slot-init: }"
+	fi
+	# Room last, as install_bundle: the tar's size plus the reserve.
+	_need=$(( $(board_file_size "$_tar") / 1024 + RESERVE_KB ))
+	_free=$(free_kb)
+	[ "$_free" -ge "$_need" ] || refuse "no room for this slot: it needs $((_need / 1024)) MiB with the reserve, /data has $((_free / 1024)) MiB free; remove a slot first"
+	printf '{"ok":true,"id":%s,"family":%s,"version":%s,"variant":%s,"image_size":%s,"need_bytes":%s,"free_bytes":%s,"replaces":%s}\n' \
+		"$(board_json_str "$_id")" "$(board_json_str "$($INIT field "$_work/slot.json" family || true)")" \
+		"$(board_json_str "$($INIT field "$_work/slot.json" version || true)")" \
+		"$(board_json_str "$($INIT field "$_work/slot.json" variant || true)")" \
+		"$_size" "$((_need * 1024))" "$((_free * 1024))" \
+		"$(installed "$_id" && echo true || echo false)"
+}
+
 cmd_stage_url() {
 	_url='' _want='' _size='' _pin=no
 	while [ $# -gt 0 ]; do
@@ -578,6 +645,13 @@ mkdir -p "$BOARD_RUN_DIR" "$STATE_DIR" "$IMAGES"
 case "${1:-}" in
 stage | stage-url | apply | boot-once | rollback | remove | set-default) board_refuse_if_locked "update ${1}" ;;
 esac
+# A check changes nothing: no lock, so it never waits behind an install.
+if [ "${1:-}" = check ]; then
+	shift
+	load_state
+	cmd_check "$@"
+	exit 0
+fi
 exec 9> "$BOARD_RUN_DIR/update.lock"
 if command -v flock >/dev/null 2>&1; then
 	waited=0
@@ -614,7 +688,7 @@ pin) cmd_pin yes "${1:-}" ;;
 unpin) cmd_pin no "${1:-}" ;;
 cancel) cmd_cancel ;;
 *)
-	sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 	;;
 esac

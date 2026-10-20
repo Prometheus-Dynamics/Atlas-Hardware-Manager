@@ -563,6 +563,16 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
 (p1); the firmware picks one through `os_prefix` (`default.txt`, or
 `trial.txt` on a tryboot). Reflash-only: no A/B board converts.
 
+- **`slots check <bundle.tar>` (also `update check`): a dry run of an
+  install.** It runs every check `stage` makes (the manifest, the image's size
+  and sha256, the boot files, the initramfs, the running/default slot, room
+  with the reserve) and prints JSON: `{"ok":true,"id",...,"need_bytes",
+  "free_bytes","replaces"}`, or `{"ok":false,"refused",...,"error"}`, with
+  stage's exit status (0, 3 refused, 1 broken). It writes nothing to /data or
+  the boot FAT: slot.json and boot/ unpack to a temporary dir on tmpfs, and the
+  image is hashed straight out of the tar. It takes no lock, so it works
+  under the device lock and next to a running install. Bundle on a file only
+  (not stdin).
 - **The boot partition's writes reach the eMMC before a restart:** the
   CM5's eMMC (AJTD4R) has a write-back cache, and vfat never asks the device
   to flush it (ext4 does at each commit; BusyBox's sync can't fsync a

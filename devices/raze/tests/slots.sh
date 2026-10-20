@@ -109,6 +109,34 @@ status | grep -q '"layout":"slots"' || fail "status: $(status)"
 status | grep -q '"id":"pv-a"' || fail "pv-a listed: $(status)"
 (. "$lib/lib.sh" && board_update_methods) | grep -qx slots-tryboot || fail "the identity doesn't list slots-tryboot"
 
+echo "check says what stage would do and changes nothing (no state, no files, no event, no lock)"
+bundle pv-b 2026.4.0 "PhotonVision Lab"
+snap() { (cd "$T" && find data boot run -type f -exec sha256sum {} + 2>/dev/null | sort); }
+snap > "$T/before"
+[ "$(rc check "$T/pv-b.slot.tar")" = 0 ] || fail "check refused a good bundle: $(cat "$T/out" "$T/err")"
+grep -q '"ok":true,"id":"pv-b","family":"photonvision","version":"2026.4.0"' "$T/out" || fail "check: $(cat "$T/out")"
+grep -q '"replaces":false' "$T/out" || fail "check: pv-b isn't installed yet: $(cat "$T/out")"
+snap > "$T/after"
+cmp -s "$T/before" "$T/after" || fail "check changed files: $(diff "$T/before" "$T/after")"
+ls "${TMPDIR:-/tmp}" | grep -q '^slots-check' && fail "check left its temporary dir"
+mkdir "$T/device-lock" && echo test > "$T/device-lock/owner"
+[ "$(rc check "$T/pv-b.slot.tar")" = 0 ] || fail "check refused under the device lock: $(cat "$T/out")"
+rm -rf "$T/device-lock"
+bundle pv-a 2026.3.1
+[ "$(rc check "$T/pv-a.slot.tar")" = 3 ] || fail "check: the running slot"
+grep -q '"ok":false,"refused":true,"error":"pv-a is the running slot"' "$T/out" || fail "check refusal: $(cat "$T/out")"
+bundle pv-c 2026.4.1
+echo tampered >> "$T/build/pv-c/rootfs.erofs"
+tar -cf "$T/pv-c.slot.tar" -C "$T/build/pv-c" slot.json boot rootfs.erofs
+[ "$(rc check "$T/pv-c.slot.tar")" = 1 ] || fail "check: a broken image passed"
+grep -q '"refused":false,"error":"rootfs.erofs isn' "$T/out" || fail "check: broken: $(cat "$T/out")"
+(cd "$T/build/pv-b" && tar -cf "$T/pv-b-dot.slot.tar" ./slot.json ./boot ./rootfs.erofs)
+[ "$(rc check "$T/pv-b-dot.slot.tar")" = 0 ] || fail "check: a tar with ./ names: $(cat "$T/out" "$T/err")"
+[ "$(SLOTS_RESERVE_KB=999999999 rc check "$T/pv-b.slot.tar")" = 3 ] || fail "check: no room"
+grep -q 'no room for this slot' "$T/out" || fail "check: no room: $(cat "$T/out")"
+snap > "$T/after"
+cmp -s "$T/before" "$T/after" || fail "failed checks changed files: $(diff "$T/before" "$T/after")"
+
 echo "a bundle installs as a slot: the boot dir on the FAT, the image on /data"
 bundle pv-b 2026.4.0 "PhotonVision Lab"
 up stage "$T/pv-b.slot.tar" --sha256 "$(sha256sum "$T/pv-b.slot.tar" | cut -d' ' -f1)" 2>/dev/null
