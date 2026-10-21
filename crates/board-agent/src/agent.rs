@@ -281,56 +281,6 @@ impl Agent {
         }
     }
 
-    /// The slot actions, through the slots writer (`update <command> <id>`).
-    async fn slot_action(self: &Arc<Self>, id: &str, request: &ActionRequest) {
-        let Some(TypedConfigValue::String(slot)) = request.args.get("id") else {
-            return self
-                .reject(id, "`id` (string, the slot) is required".into())
-                .await;
-        };
-        let slot = slot.clone();
-        if self
-            .writer
-            .read_status()
-            .is_some_and(|s| s.layout != "slots")
-        {
-            return self
-                .reject(id, "this board has no slots (an A/B board)".into())
-                .await;
-        }
-        let command = match request.name.as_str() {
-            SLOT_BOOT_ONCE => "boot-once",
-            SLOT_SET_DEFAULT => "set-default",
-            SLOT_REMOVE => "remove",
-            _ => match request.args.get("pinned") {
-                Some(TypedConfigValue::Bool(false)) => "unpin",
-                _ => "pin",
-            },
-        };
-        if command == "boot-once" {
-            // Report first: the restart ends this process and the action's record.
-            self.succeed(id, phase(update_action::PHASE_REBOOTING))
-                .await;
-            let agent = self.clone();
-            tokio::spawn(async move {
-                if let Err(error) = agent.writer.run(&["boot-once", &slot]).await {
-                    crate::log(&format!("boot-once {slot}: {error}"));
-                }
-                agent.publish(false).await;
-            });
-            return;
-        }
-        let result = {
-            let _gate = self.apply_gate.lock().await;
-            self.writer.run(&[command, &slot]).await
-        };
-        self.publish(false).await;
-        match result {
-            Ok(_) => self.succeed(id, BTreeMap::new()).await,
-            Err(error) => self.reject(id, error).await,
-        }
-    }
-
     /// `update`: starts the stage and succeeds with `phase = "staging"` once
     /// the writer runs it.
     async fn start_update(self: &Arc<Self>, id: &str, args: &BTreeMap<String, TypedConfigValue>) {
@@ -628,41 +578,6 @@ async fn run_command(command: &[String]) -> Result<(), String> {
     }
 }
 
+mod slots;
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn args(pairs: &[(&str, TypedConfigValue)]) -> BTreeMap<String, TypedConfigValue> {
-        pairs
-            .iter()
-            .map(|(key, value)| ((*key).to_owned(), value.clone()))
-            .collect()
-    }
-
-    #[test]
-    fn update_arguments_are_checked() {
-        let text = |value: &str| TypedConfigValue::String(value.into());
-        let good = args(&[
-            ("image_url", text("http://10.0.0.5:7700/images/t/x.img.xz")),
-            ("sha256", text(&"AB".repeat(32))),
-            ("size", TypedConfigValue::UInt(42)),
-        ]);
-        let request = StageRequest::from_args(&good).unwrap();
-        assert_eq!(request.sha256, "ab".repeat(32));
-        assert_eq!(request.size, 42);
-
-        let mut bad = good.clone();
-        bad.insert("image_url".into(), text("file:///etc/shadow"));
-        assert!(StageRequest::from_args(&bad).unwrap_err().contains("http"));
-        let mut bad = good.clone();
-        bad.insert("sha256".into(), text("abc"));
-        assert!(
-            StageRequest::from_args(&bad)
-                .unwrap_err()
-                .contains("sha256")
-        );
-        let mut bad = good;
-        bad.remove("size");
-        assert!(StageRequest::from_args(&bad).unwrap_err().contains("size"));
-    }
-}
+mod tests;

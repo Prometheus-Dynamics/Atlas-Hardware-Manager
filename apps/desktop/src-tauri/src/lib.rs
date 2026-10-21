@@ -167,12 +167,12 @@ pub fn run() {
             app.run(|handle, event| {
                 // Ready again means Atlas was launched while running:
                 // bring the existing window forward.
-                if let tauri::RunEvent::Ready = event {
-                    if let Some(window) = handle.get_webview_window("main") {
-                        let _ = window.unminimize();
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
+                if let tauri::RunEvent::Ready = event
+                    && let Some(window) = handle.get_webview_window("main")
+                {
+                    let _ = window.unminimize();
+                    let _ = window.show();
+                    let _ = window.set_focus();
                 }
             })
         });

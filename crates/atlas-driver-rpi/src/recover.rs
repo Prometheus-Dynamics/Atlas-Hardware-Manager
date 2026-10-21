@@ -16,6 +16,7 @@ use atlas_usbboot::{BootEvent, BootOptions, boot_device};
 
 use crate::RpiConfig;
 use crate::boot_files::{find_boot_files, find_flasher_files};
+pub(crate) use crate::host_keys::forget_host_keys;
 
 /// The last log line of a flash. The UI shows it as the next step, too.
 pub(crate) const NEXT_STEP: &str =
@@ -24,41 +25,6 @@ pub(crate) const NEXT_STEP: &str =
 /// The last log line when Atlas restarted the board itself.
 pub(crate) const RESTARTED: &str = "next: the board is starting the new image; if it comes back in USB \
      boot, release its boot button and power-cycle it";
-
-/// Drops the known_hosts lines Atlas pinned for the board with `serial`
-/// (its `HostKeyAlias`, `board-<family>-<serial>`, holds the serial).
-/// Returns how many went. A missing file has nothing to forget.
-pub(crate) fn forget_host_keys(path: &std::path::Path, serial: &str) -> std::io::Result<usize> {
-    let serial = serial.trim().to_ascii_lowercase();
-    // Too short a serial could match another board's.
-    if serial.len() < 8 || !serial.chars().all(|c| c.is_ascii_hexdigit()) {
-        return Ok(0);
-    }
-    let text = match std::fs::read_to_string(path) {
-        Ok(text) => text,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
-        Err(error) => return Err(error),
-    };
-    let ours = |line: &str| {
-        line.split_whitespace().next().is_some_and(|hosts| {
-            hosts.split(',').any(|host| {
-                host.starts_with("board-") && host.to_ascii_lowercase().contains(&serial)
-            })
-        })
-    };
-    let kept: Vec<&str> = text.lines().filter(|line| !ours(line)).collect();
-    let gone = text.lines().count() - kept.len();
-    if gone > 0 {
-        let tmp = path.with_extension("tmp");
-        let mut out = kept.join("\n");
-        if !out.is_empty() {
-            out.push('\n');
-        }
-        std::fs::write(&tmp, out)?;
-        std::fs::rename(&tmp, path)?;
-    }
-    Ok(gone)
-}
 
 /// How long the eMMC may take to appear as a disk after USB boot.
 const DISK_APPEAR_TIMEOUT: Duration = Duration::from_secs(90);

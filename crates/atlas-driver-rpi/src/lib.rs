@@ -20,6 +20,7 @@ mod driver;
 mod eeprom;
 mod flash;
 mod health;
+mod host_keys;
 mod recover;
 
 pub use boot_files::{find_boot_files, find_flasher_files};
