@@ -23,13 +23,16 @@ tokio = { workspace = true, features = ["time", "sync", "net"] }
 
 [dev-dependencies]
 atlas-image-server.workspace = true
-# tests/live_stream.rs: a real node with its orion+tcp listener, and a
-# publisher on its IPC (unix only).
-orion-node = { workspace = true, features = ["peer-tcp"] }
-orion-client = { workspace = true, features = ["remote", "ipc"] }
 reqwest.workspace = true
 sha2.workspace = true
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "time", "test-util"] }
+
+# tests/live_stream.rs and status_push.rs: a real node with its orion+tcp
+# listener, and a publisher on its IPC. Unix only: Orion's IPC (and so the
+# node) doesn't build on Windows, and these tests are #![cfg(unix)].
+[target.'cfg(unix)'.dev-dependencies]
+orion-node = { workspace = true, features = ["peer-tcp"] }
+orion-client = { workspace = true, features = ["remote", "ipc"] }
 
 [lints]
 workspace = true

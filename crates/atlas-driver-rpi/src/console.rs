@@ -5,7 +5,9 @@
 //! there, so the board flushes the eMMC and starts the new image without
 //! anyone power-cycling it. The one-time USB boot order (the board's
 //! `usb-boot`) has cleared itself, so the restart boots the eMMC, unless the
-//! boot button is still held. Linux only for now (sysfs finds the port).
+//! boot button is still held. Linux only for now (sysfs finds the port), so
+//! elsewhere only the stub `restart` is used.
+#![cfg_attr(not(target_os = "linux"), allow(dead_code))]
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -151,7 +153,6 @@ fn type_restart(tty: &str) -> Result<bool, String> {
 }
 
 /// Whether the console's output holds the typed restart.
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 fn echoed(output: &[u8]) -> bool {
     String::from_utf8_lossy(output).contains("sync && reboot")
 }
