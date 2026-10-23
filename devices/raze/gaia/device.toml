@@ -40,6 +40,9 @@ imports = [
   "./board-agent.toml",
   "./board-stream.toml",
   "./data.toml",
+  # What the image must carry per device, for Gaia's image check (Gaia
+  # without that check warns about the unknown `image.hardware` and goes on).
+  "./hardware.toml",
   # The USB-boot flasher (docs/flasher.md): extra outputs from the same build.
   "./flasher.toml",
 ]

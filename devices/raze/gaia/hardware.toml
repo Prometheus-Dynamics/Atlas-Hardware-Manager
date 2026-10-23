@@ -1,0 +1,108 @@
+description = "Raze supported hardware: what an image must carry for each device, for Gaia's image check (image:check, design docs/design/fast-test-pipeline.md 1.2)."
+
+# One entry per device the board supports. An entry passes only when its whole
+# chain is in the image: the modules (shipped and loadable against the shipped
+# kernel, or built in), the driver that loads claiming each compatible, each
+# overlay in the boot partition's overlays/, and each file in the rootfs.
+#
+# `modules` are kernel module names (dashes or underscores); built-in drivers
+# (dwc2, ramoops) are listed too. Empty means any shipped or built-in driver may
+# claim the compatible: the CSI receiver and the ISP, whose drivers an OS picks
+# (the kernel's, or Styx's out-of-tree copies in updates/).
+#
+# A compatible is named either by an overlay's fragments or by the board's own
+# DTB: some overlays only enable or configure existing nodes by label
+# (raze-fan: &fan, pwm-fan; i2c1-pi5: &i2c1; vc4-kms-v3d-pi5: the GPU).
+#
+# Taken from a Raze build (Linux 7.2.9-v8-16k, 2026-10-23); keep in sync with
+# assets/boot/raze-device.txt (tests/hardware-list.sh checks the overlays and
+# the files).
+
+[[image.hardware]]
+id = "ov9782"
+kind = "camera-sensor"
+modules = ["ov9282"]
+compatible = ["ovti,ov9782"]
+overlays = ["ov9782"]
+files = [
+  "/usr/share/libcamera/ipa/rpi/pisp/ov9782.json",
+  "/usr/share/libcamera/tuning/ov9782.overrides.json",
+]
+firmware = []
+
+[[image.hardware]]
+id = "csi-receiver"
+kind = "camera-receiver"
+modules = []
+compatible = ["raspberrypi,rp1-cfe"]
+overlays = []
+files = []
+firmware = []
+
+[[image.hardware]]
+id = "isp"
+kind = "camera-isp"
+modules = []
+compatible = ["raspberrypi,pispbe"]
+overlays = []
+files = []
+firmware = []
+
+# I2C1 on GPIO 10/11: the IMU (BMI088), magnetometer (BMM150) and power
+# monitor, which lemnosd drives from userspace through /dev/i2c-*.
+[[image.hardware]]
+id = "sensor-bus"
+kind = "i2c-bus"
+modules = ["i2c-designware-platform", "i2c-dev"]
+compatible = ["snps,designware-i2c"]
+overlays = ["i2c1-pi5"]
+files = [
+  "/etc/lemnos/board.toml",
+  "/usr/lib/modules-load.d/raze-i2c-dev.conf",
+]
+firmware = []
+
+[[image.hardware]]
+id = "led-ring"
+kind = "leds"
+modules = ["ws2812-pio-rp1"]
+compatible = ["raspberrypi,ws2812-pio-rp1"]
+overlays = ["ws2812-pio"]
+files = ["/usr/lib/modprobe.d/raze-ws2812-pio.conf"]
+firmware = []
+
+[[image.hardware]]
+id = "fan"
+kind = "fan"
+modules = ["pwm-fan"]
+compatible = ["pwm-fan"]
+overlays = ["raze-fan"]
+files = []
+firmware = []
+
+[[image.hardware]]
+id = "usb-gadget"
+kind = "usb-device"
+modules = ["dwc2", "libcomposite", "usb_f_ecm", "usb_f_rndis", "usb_f_acm"]
+compatible = ["brcm,bcm2835-usb"]
+overlays = ["dwc2"]
+files = ["/usr/lib/modules-load.d/board-usb-gadget.conf"]
+firmware = []
+
+[[image.hardware]]
+id = "pstore"
+kind = "crash-log"
+modules = ["ramoops"]
+compatible = ["ramoops"]
+overlays = ["ramoops-pi5"]
+files = []
+firmware = []
+
+[[image.hardware]]
+id = "gpu"
+kind = "gpu"
+modules = ["vc4", "v3d"]
+compatible = ["brcm,bcm2712-vc6", "brcm,2712-v3d"]
+overlays = ["vc4-kms-v3d-pi5"]
+files = []
+firmware = []

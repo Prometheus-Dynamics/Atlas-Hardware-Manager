@@ -104,6 +104,18 @@ commit; the commits are listed per area.
   exact `update.json` field set must accept the new fields (`019b215`,
   `01d5290`).
 
+### Fast test pipeline: image checks and layers
+
+- **The hardware list (`gaia/hardware.toml`, imported by device.toml):**
+  `[[image.hardware]]` entries for Gaia's image check (Gaia
+  docs/design/fast-test-pipeline.md 1.2): the OV9782 sensor, the CSI
+  receiver, the ISP, the sensor I2C bus, the LED ring, the fan, the USB
+  gadget, pstore and the GPU. Each lists its modules, compatibles, overlays,
+  files and firmware, taken from a Raze build (7.2.9-v8-16k). A Gaia without
+  the check warns about the unknown key and goes on. `tests/hardware-list.sh`
+  keeps it in step with raze-device.txt's overlays, boot.toml's overlays and
+  the staged files.
+
 ### Install size: board-agent and board-stream
 
 - Both binaries now build with profile `device-lean` (release, stripped,
