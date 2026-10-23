@@ -190,6 +190,17 @@ endef
 
 LIBCAMERA_POST_INSTALL_TARGET_HOOKS += LIBCAMERA_SIGN_TARGET_IPA_SO
 
+# The OV9782 tuning (Raze): the PiSP IPA's sensor file and the tuning
+# overrides, with libcamera itself, so an image without libcamera (HeliOS's,
+# with Styx) carries neither. Kept next to this file.
+define LIBCAMERA_INSTALL_RAZE_OV9782_TUNING
+	$(INSTALL) -D -m 0644 $(LIBCAMERA_PKGDIR)/ov9782.json \
+		$(TARGET_DIR)/usr/share/libcamera/ipa/rpi/pisp/ov9782.json
+	$(INSTALL) -D -m 0644 $(LIBCAMERA_PKGDIR)/ov9782.overrides.json \
+		$(TARGET_DIR)/usr/share/libcamera/tuning/ov9782.overrides.json
+endef
+LIBCAMERA_POST_INSTALL_TARGET_HOOKS += LIBCAMERA_INSTALL_RAZE_OV9782_TUNING
+
 # Ensure pipeline modules land in the target filesystem (RP1 needs rpi/pisp).
 # Meson sometimes skips installing pipeline/IPA data (notably rpi/pisp); force copy from build tree to staging/target.
 define LIBCAMERA_INSTALL_TARGET_CMDS

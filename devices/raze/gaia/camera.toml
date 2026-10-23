@@ -1,37 +1,21 @@
 description = "Raze camera: libcamera with the Raspberry Pi PiSP pipeline (CM5) and the OV9782 tuning."
 
 # For OSes that use libcamera: PhotonVision does (its camera path is
-# libcamera's PiSP pipeline with this OV9782 tuning). device.toml imports it
+# libcamera's PiSP pipeline with the OV9782 tuning). device.toml imports it
 # for every OS, so a PhotonVision build needs nothing extra. An OS with its
 # own camera stack turns libcamera back off in a layer imported after the
 # device package, as HeliOS does (Styx: gaia/configs/hardware/vision-media.toml,
-# BR2_PACKAGE_LIBCAMERA = n); the two tuning files below still ship (about
-# 180 KB) and are what hardware.toml's ov9782 entry checks.
-
-[[stage.files]]
-id = "raze-libcamera-pisp-ov9782"
-src = "@self/assets/rootfs/usr/share/libcamera/ipa/rpi/pisp/ov9782.json"
-dest = "/usr/share/libcamera/ipa/rpi/pisp/ov9782.json"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-libcamera-tuning-ov9782"
-src = "@self/assets/rootfs/usr/share/libcamera/tuning/ov9782.overrides.json"
-dest = "/usr/share/libcamera/tuning/ov9782.overrides.json"
-origin = "static-asset"
+# BR2_PACKAGE_LIBCAMERA = n), and then carries none of it: the OV9782 tuning
+# files (/usr/share/libcamera/ipa/rpi/pisp/ov9782.json and
+# /usr/share/libcamera/tuning/ov9782.overrides.json) are installed by the
+# libcamera package override itself (buildroot-external/packages/libcamera).
 
 [image]
 kind = "buildroot"
 # libcamera and libpisp themselves come from the package overrides in
-# buildroot-external/packages/ (OV9782 patches, IPA signing, opt-in LTTng
-# tracing with BR2_PACKAGE_LIBCAMERA_TRACING).
+# buildroot-external/packages/ (OV9782 patches, IPA signing, the tuning,
+# opt-in LTTng tracing with BR2_PACKAGE_LIBCAMERA_TRACING).
 config_overrides = [
   ["BR2_PACKAGE_LIBCAMERA", "y"],
   ["BR2_PACKAGE_LIBCAMERA_PIPELINE_RPI_PISP", "y"],
-]
-
-[image.feed]
-stage_files = [
-  "raze-libcamera-pisp-ov9782",
-  "raze-libcamera-tuning-ov9782",
 ]

@@ -18,16 +18,20 @@ description = "Raze supported hardware: what an image must carry for each device
 # assets/boot/raze-device.txt (tests/hardware-list.sh checks the overlays and
 # the files).
 
+# The sensor's driver chain, which every OS needs. Its tuning is the camera
+# stack's, so the OS lists it in an entry of its own (a new id: ids are
+# unique), for example:
+#   PhotonVision (libcamera): id = "ov9782-libcamera", files =
+#     ["/usr/share/libcamera/ipa/rpi/pisp/ov9782.json",
+#      "/usr/share/libcamera/tuning/ov9782.overrides.json"]
+#   HeliOS (Styx): id = "ov9782-styx", files = ["/usr/share/styx/sensors/ov9782.toml", ...]
 [[image.hardware]]
 id = "ov9782"
 kind = "camera-sensor"
 modules = ["ov9282"]
 compatible = ["ovti,ov9782"]
 overlays = ["ov9782"]
-files = [
-  "/usr/share/libcamera/ipa/rpi/pisp/ov9782.json",
-  "/usr/share/libcamera/tuning/ov9782.overrides.json",
-]
+files = []
 firmware = []
 
 [[image.hardware]]

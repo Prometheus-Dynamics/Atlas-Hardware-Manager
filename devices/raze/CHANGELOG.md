@@ -115,6 +115,14 @@ commit; the commits are listed per area.
   the check warns about the unknown key and goes on. `tests/hardware-list.sh`
   keeps it in step with raze-device.txt's overlays, boot.toml's overlays and
   the staged files.
+- **The OV9782 libcamera tuning comes with libcamera:** the two files
+  (`/usr/share/libcamera/ipa/rpi/pisp/ov9782.json`,
+  `/usr/share/libcamera/tuning/ov9782.overrides.json`) move from camera.toml's
+  stage files into the libcamera package override, which installs them, so
+  an image without libcamera (HeliOS, Styx) carries neither. The paths are
+  unchanged for PhotonVision. hardware.toml's ov9782 entry keeps the driver
+  chain only (module, compatible, overlay); the camera stack's own files go
+  in an entry of the OS's (ids are unique: `ov9782-libcamera`, `ov9782-styx`).
 - **Layered slots, the initramfs side (slot-init):** a slot.json may list
   `layers` (lowest first: base, platform, app; each a name, a 64-hex id, the
   file's size and its own verity geometry) instead of one `verity`. Each
