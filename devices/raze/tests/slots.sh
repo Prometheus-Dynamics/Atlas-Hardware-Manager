@@ -47,7 +47,12 @@ check-initramfs) ! grep -q XZ "$2" || { echo "slot-init: $2: an xz initramfs isn
 layers) exec python3 -c 'import json,sys
 m=json.load(open(sys.argv[1]))
 if not m.get("layers"): sys.exit(1)
-for l in m["layers"]: print(l["name"], l["id"], l["size"], l["sha256"], l["verity"]["root_hash"])' "$2" ;;
+for l in m["layers"]: print(l["name"], l["id"], l.get("size", l.get("erofs_size")), l.get("sha256", l.get("erofs_sha256")), l["verity"]["root_hash"])' "$2" ;;
+merge-layers) exec python3 -c 'import json,sys
+m=json.load(open(sys.argv[1])); g=json.load(open(sys.argv[2]))
+if any(l.get("verity") is None for l in g["layers"]): sys.exit(1)
+m.pop("image",None); m.pop("verity",None); m["layers"]=g["layers"]; m["schema"]=2
+print(json.dumps(m))' "$2" "$3" ;;
 set-layer) exec python3 -c 'import json,sys
 m=json.load(open(sys.argv[1])); l=json.load(open(sys.argv[2]))
 if not m.get("layers"): sys.exit(1)
@@ -364,6 +369,36 @@ tar -cf "$T/hx-c.slot.tar" -C "$T/build/hx-c" slot.json boot "layers/$(lid app-3
 [ "$(rc stage "$T/hx-c.slot.tar")" = 1 ] || fail "a tampered layer was accepted"
 [ ! -e "$T/data/slots/hx-c.json" ] && [ ! -e "$T/data/slots/layers/$(lid app-3).erofs" ] || fail "a refused layer was kept"
 [ "$(ls "$T/data/slots/layers" | wc -l | tr -d ' ')" = 4 ] || fail "layers after refusals: $(ls "$T/data/slots/layers")"
+
+echo "a bundle as the build makes it (Gaia's layers/layers.json and layers/<name>.erofs) checks and installs the same"
+g=$T/build/gx-a
+rm -rf "$g"
+mkdir -p "$g/boot" "$g/layers"
+echo "kernel of gx-a" > "$g/boot/kernel8.img"
+echo "console=ttyAMA10" > "$g/boot/cmdline.txt"
+recs=''
+for n in base platform app; do
+	printf 'gaia %s\n' "$n" > "$g/layers/$n.erofs"
+	gid=$(sha256sum "$g/layers/$n.erofs" | cut -d' ' -f1)
+	gsz=$(wc -c < "$g/layers/$n.erofs" | tr -d ' ')
+	recs="$recs${recs:+,}{\"name\":\"$n\",\"id\":\"$gid\",\"tar\":\"layers/$n.tar\",\"tar_sha256\":\"$gid\",\"tar_size\":1,\"erofs\":\"layers/$n.erofs\",\"erofs_sha256\":\"$gid\",\"erofs_size\":$gsz,\"inputs\":\"x\",\"verity\":{\"root_hash\":\"$(rh "g$n")\",\"salt\":\"00\",\"hash_offset\":4096,\"data_blocks\":1,\"data_block_size\":4096,\"hash_block_size\":4096}}"
+done
+echo "{\"order\":[\"base\",\"platform\",\"app\"],\"layers\":[$recs]}" > "$g/layers/layers.json"
+printf '{"schema":2,"id":"gx-a","family":"helios","version":"2026.2.0","variant":"styx","kernel":"7.2.9","boot":{"files":{"kernel8.img":"%s","cmdline.txt":"%s"}}}\n' \
+	"$(sha256sum "$g/boot/kernel8.img" | cut -d' ' -f1)" "$(sha256sum "$g/boot/cmdline.txt" | cut -d' ' -f1)" > "$g/slot.json"
+tar -cf "$T/gx-a.slot.tar" -C "$g" slot.json boot layers
+[ "$(rc check "$T/gx-a.slot.tar")" = 0 ] || fail "check a Gaia bundle: $(cat "$T/out" "$T/err")"
+grep -q '"layers_reused":0' "$T/out" || fail "check: $(cat "$T/out")"
+up stage "$T/gx-a.slot.tar" 2>/dev/null || fail "stage a Gaia bundle: $(cat "$T/err")"
+for n in base platform app; do
+	[ -f "$T/data/slots/layers/$(printf 'gaia %s\n' "$n" | sha256sum | cut -d' ' -f1).erofs" ] || fail "layer $n not stored by id: $(ls "$T/data/slots/layers")"
+done
+grep -q '"layers"' "$T/data/slots/gx-a.json" || fail "the installed manifest has no layers: $(cat "$T/data/slots/gx-a.json")"
+grep -q "atlas.roothash=$(rh gbase),$(rh gplatform),$(rh gapp) " "$T/boot/slots/gx-a/cmdline.txt" || fail "cmdline: $(cat "$T/boot/slots/gx-a/cmdline.txt")"
+up remove gx-a 2>/dev/null || fail "remove gx-a"
+sed -i 's/"verity":{[^}]*}/"verity":null/' "$g/layers/layers.json"
+tar -cf "$T/gx-b.slot.tar" -C "$g" slot.json boot layers
+[ "$(rc stage "$T/gx-b.slot.tar")" = 1 ] || fail "a bundle without verity was installed"
 
 echo "removing a layered slot keeps the layers another slot has, drops its own"
 up remove hx-a 2>/dev/null || fail "remove hx-a: $(cat "$T/err")"

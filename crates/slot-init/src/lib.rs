@@ -50,7 +50,9 @@ pub struct Layer {
     pub name: String,
     /// Its content id (sha256, 64 hex digits): the file is `layers/<id>.erofs`.
     pub id: String,
-    /// The file's size as built (data and hash tree).
+    /// The file's size as built (data and hash tree); Gaia's layers.json
+    /// calls it `erofs_size`.
+    #[serde(alias = "erofs_size")]
     pub size: u64,
     pub verity: Verity,
 }
@@ -261,7 +263,11 @@ pub fn layer_lines(text: &str) -> Result<Vec<String>, String> {
                     .unwrap_or_default()
                     .to_ascii_lowercase()
             };
-            let sha = at("sha256");
+            // slot.json's own name for it, or Gaia's layers.json's.
+            let sha = match at("sha256") {
+                s if s.is_empty() => at("erofs_sha256"),
+                s => s,
+            };
             if sha.len() != 64 || !hex(&sha) {
                 return Err(format!("slot.json layer {}: no sha256", layer.name));
             }
@@ -273,6 +279,27 @@ pub fn layer_lines(text: &str) -> Result<Vec<String>, String> {
             ))
         })
         .collect()
+}
+
+/// A bundle's slot.json (no `layers`, `image` or `verity` of its own) with
+/// the layers of the build's layers.json (Gaia's `{"layers":[...]}`, lowest
+/// first) as its `layers`: what the writer installs. Checked as the
+/// initramfs and the writer check it.
+pub fn merge_layers(slot: &str, layers: &str) -> Result<String, String> {
+    let mut value = json(slot)?;
+    let list = json(layers)?
+        .get("layers")
+        .cloned()
+        .filter(|l| l.is_array())
+        .ok_or("layers.json: no layers")?;
+    let map = value.as_object_mut().ok_or("slot.json: not an object")?;
+    map.remove("image");
+    map.remove("verity");
+    map.insert("layers".into(), list);
+    map.insert("schema".into(), serde_json::Value::from(2));
+    let text = serde_json::to_string(&value).map_err(|e| format!("slot.json: {e}"))?;
+    layer_lines(&text)?;
+    Ok(text)
 }
 
 /// A layered slot.json with one layer replaced by `layer` (a layers entry:
@@ -494,6 +521,39 @@ mod tests {
         assert!(set_layer(&slot, &with("platform", 'e')).is_err());
         assert!(set_layer(SLOT, &with("app", 'e')).is_err());
         assert!(set_layer(&slot, &layer("app", 'e')).is_err());
+    }
+
+    #[test]
+    fn a_bundle_takes_its_layers_from_gaias_layers_json() {
+        // Gaia's record: erofs_size and erofs_sha256, and more besides.
+        let gaia = |n: &str, c: char| {
+            format!(
+                r#"{{"name":"{n}","id":"{0}","tar":"layers/{n}.tar","tar_sha256":"{1}","tar_size":10,"erofs":"layers/{n}.erofs","erofs_sha256":"{0}","erofs_size":8192,"inputs":"x","verity":{{"root_hash":"{2}","salt":"00","hash_offset":4096,"data_blocks":1,"data_block_size":4096,"hash_block_size":4096}}}}"#,
+                c.to_string().repeat(64),
+                "9".repeat(64),
+                "d".repeat(64)
+            )
+        };
+        let layers = format!(
+            r#"{{"order":["base","app"],"layers":[{},{}]}}"#,
+            gaia("base", 'a'),
+            gaia("app", 'c')
+        );
+        let slot = SLOT.replace("\"schema\":1", "\"schema\":2");
+        let merged = merge_layers(&slot, &layers).unwrap();
+        let m = Manifest::parse(&merged).unwrap();
+        assert!(m.verity.is_none() && m.image.is_none());
+        assert_eq!(m.layers.len(), 2);
+        assert_eq!(m.layers[1].size, 8192);
+        let lines = layer_lines(&merged).unwrap();
+        assert_eq!(
+            lines[1],
+            format!("app {0} 8192 {0} {1}", "c".repeat(64), "d".repeat(64))
+        );
+        // A layer built without verity can't boot.
+        let bare = layers.replacen(&format!(r#""verity":{{"root_hash":"{}","salt":"00","hash_offset":4096,"data_blocks":1,"data_block_size":4096,"hash_block_size":4096}}"#, "d".repeat(64)), r#""verity":null"#, 1);
+        assert!(merge_layers(&slot, &bare).is_err());
+        assert!(merge_layers(&slot, "{}").is_err());
     }
 
     #[test]

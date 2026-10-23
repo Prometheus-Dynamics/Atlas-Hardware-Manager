@@ -163,6 +163,17 @@ commit; the commits are listed per area.
   two-member archive and streams it into `update push -` over the board's SSH
   or USB link. It prints what's live now, what was restarted and what waits
   for the next boot. Slot listings carry each layered slot's `layers`.
+- **Gaia's layer output as it is (`gaia/slots-layered.toml`):** an OS whose
+  build sets Gaia's `[image.layers]` (with `verity = true`) imports it after
+  slots.toml and gets `<id>.layered.slot.tar` next to the usual bundle:
+  slot.json (the slot's fields, schema 2, no layers of its own), boot/, and
+  the build's `layers/layers.json` and `layers/<name>.erofs`. The writer
+  (install and `check`) takes a bundle's layers from its layers.json when
+  slot.json lists none (`slot-init merge-layers`) and finds each layer by its
+  id or its name. Layer records may use Gaia's `erofs_size` and
+  `erofs_sha256`. A layer without verity is refused. `atlas slots push
+  --manifest` reads Gaia's layers.json directly. The first-flash disk stays
+  one image.
 - **Kernel: overlayfs built in** (`CONFIG_OVERLAY_FS=y`, raze.config 6; the
   install-size trim had it off): the layered slot root and the app-layer
   push need it.

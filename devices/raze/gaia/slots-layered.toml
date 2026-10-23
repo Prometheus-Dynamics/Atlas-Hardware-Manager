@@ -1,0 +1,67 @@
+# Raze layered slot bundle: <id>.layered.slot.tar, for an OS whose build
+# splits its root into layers (Gaia [image.layers], with verity = true:
+# Gaia docs/configuration.md, "Image Layers"). Opt-in: the OS imports this
+# after slots.toml, which it needs for the inputs, the boot payload and the
+# first-flash disk (that stays one image). Additive like slots.toml: its own
+# tree and archive, prefixed slots-layered-.
+#
+# The bundle is slot.json (the slot's fields, no layers of its own), boot/
+# (slots.toml's payload), and the build's layers as Gaia writes them:
+# layers/layers.json and layers/<name>.erofs. The board's slots writer takes
+# the layers from layers.json, stores each by its id
+# (/data/slots/layers/<id>.erofs) and reuses the ones it already has, so
+# `atlas slots <board> push` can replace the app layer alone later.
+
+[[image.assembly.trees]]
+id = "slots-layered-manifest"
+path = "$assembly.work/slots/layered-manifest"
+
+[[image.assembly.trees]]
+id = "slots-layered-layers"
+path = "$assembly.work/slots/layered-layers"
+
+# The slot's fields, as slots.toml's slot.json, without image and verity:
+# a layered slot's come from its layers.
+[[image.assembly.files]]
+tree = "slots-layered-manifest"
+dest = "slot.json"
+
+[image.assembly.files.json]
+schema = 2
+id = "${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}"
+family = "${input.slot_family}"
+version = "${input.slot_version}"
+variant = "${input.slot_variant}"
+kernel = "${input.slot_kernel}"
+built = "${build.date}"
+source = "${input.slot_source}"
+data_dirs = ["${input.slot_data_dir}"]
+display_name = "${input.slot_display_name}"
+boot = { files = "${assembly.sha256_tree:slots-payload}" }
+
+# The build's layers, by name, and their records.
+[[image.assembly.files]]
+tree = "slots-layered-layers"
+src_glob = "$provider.images/layers/*.erofs"
+dest = "."
+
+[[image.assembly.files]]
+tree = "slots-layered-layers"
+src = "$provider.images/layers/layers.json"
+dest = "layers.json"
+
+[[image.assembly.archives]]
+id = "slots-layered-bundle"
+output = "$assembly.out/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}.layered.slot.tar"
+
+[[image.assembly.archives.members]]
+name = "slot.json"
+src = "$assembly.tree.slots-layered-manifest/slot.json"
+
+[[image.assembly.archives.members]]
+tree = "slots-payload"
+prefix = "boot/"
+
+[[image.assembly.archives.members]]
+tree = "slots-layered-layers"
+prefix = "layers/"

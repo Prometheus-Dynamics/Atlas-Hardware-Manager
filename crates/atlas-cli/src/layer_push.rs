@@ -17,13 +17,29 @@ pub(crate) fn entry(text: &str, name: &str) -> Result<Value, String> {
         Value::Object(_) => Value::Array(vec![value.clone()]),
         _ => return Err("not a layers list or a layer".into()),
     };
-    let found = list
+    let mut found = list
         .as_array()
         .into_iter()
         .flatten()
         .find(|layer| layer.get("name").and_then(Value::as_str) == Some(name))
         .cloned()
         .ok_or_else(|| format!("no layer named {name}"))?;
+    // Gaia's layers.json calls the file's size and sha256 erofs_size and
+    // erofs_sha256; the board's layer.json has them as size and sha256.
+    if let Some(map) = found.as_object_mut() {
+        for (want, gaia) in [("size", "erofs_size"), ("sha256", "erofs_sha256")] {
+            if !map.contains_key(want)
+                && let Some(value) = map.get(gaia).cloned()
+            {
+                map.insert(want.into(), value);
+            }
+        }
+    }
+    if found.get("verity").is_none_or(Value::is_null) {
+        return Err(format!(
+            "layer {name} was built without verity, which the board needs ([image.layers] verity = true)"
+        ));
+    }
     let hex64 = |path: &str| {
         found
             .pointer(path)
@@ -156,6 +172,27 @@ mod tests {
         assert!(entry(&layer("app").replace(r#""size":5,"#, ""), "app").is_err());
         let (id, size) = id_and_size(&entry(&layer("app"), "app").unwrap());
         assert_eq!((id.as_str(), size), ("a".repeat(64).as_str(), 5));
+    }
+
+    #[test]
+    fn gaias_record_is_taken_as_it_is() {
+        let gaia = format!(
+            r#"{{"layers":[{{"name":"app","id":"{0}","tar":"layers/app.tar","tar_sha256":"{1}","erofs":"layers/app.erofs","erofs_sha256":"{0}","erofs_size":5,"verity":{{"root_hash":"{2}","salt":"00","hash_offset":4096,"data_blocks":1}}}}]}}"#,
+            "a".repeat(64),
+            "9".repeat(64),
+            "c".repeat(64)
+        );
+        let got = entry(&gaia, "app").unwrap();
+        assert_eq!(got["size"], 5);
+        assert_eq!(got["sha256"], "a".repeat(64));
+        let bare = gaia.replace(
+            &format!(
+                r#"{{"root_hash":"{}","salt":"00","hash_offset":4096,"data_blocks":1}}"#,
+                "c".repeat(64)
+            ),
+            "null",
+        );
+        assert!(entry(&bare, "app").unwrap_err().contains("without verity"));
     }
 
     #[test]

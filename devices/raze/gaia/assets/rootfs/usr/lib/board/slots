@@ -322,6 +322,16 @@ write_status() {
 
 # --- install ----------------------------------------------------------------
 
+# bundle_layers <dir>: a slot.json without layers of its own, next to the
+# build's layers/layers.json (Gaia), takes its layers from it.
+bundle_layers() {
+	[ -r "$1/layers/layers.json" ] || return 0
+	layered "$1/slot.json" > /dev/null && return 0
+	$INIT merge-layers "$1/slot.json" "$1/layers/layers.json" > "$1/slot.json.new" ||
+		die "the bundle's layers/layers.json doesn't make a bootable slot (each layer needs its verity)"
+	mv -f "$1/slot.json.new" "$1/slot.json"
+}
+
 # install_bundle <tar> <pin yes|no>: unpack into /data/slots/.install.<pid>,
 # check everything against slot.json, then put each part in place by rename.
 install_bundle() {
@@ -343,7 +353,11 @@ install_bundle() {
 	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
 	[ "$_id" != "$DEFAULT" ] || refuse "$_id is the default slot"
 	# A layered slot: each layer the board already has is kept as it is;
-	# the others come from the bundle's layers/<id>.erofs, checked here.
+	# the others come from the bundle's layers/<id>.erofs (or the build's
+	# own name for it, layers/<name>.erofs), checked here. A bundle whose
+	# slot.json lists no layers but carries the build's layers/layers.json
+	# gets them from it.
+	bundle_layers "$_work"
 	_new_layers=''
 	if _lines=$(layered "$_work/slot.json"); then
 		_root='' _sha=layered
@@ -352,6 +366,7 @@ install_bundle() {
 			if [ "$(board_file_size "$LAYERS/$_lid.erofs" 2>/dev/null)" = "$_lsz" ]; then
 				continue
 			fi
+			[ -r "$_work/layers/$_lid.erofs" ] || [ ! -r "$_work/layers/$_ln.erofs" ] || mv -f "$_work/layers/$_ln.erofs" "$_work/layers/$_lid.erofs"
 			[ -r "$_work/layers/$_lid.erofs" ] || die "layer $_ln ($_lid) is neither in the bundle nor on the board"
 			[ "$(board_file_size "$_work/layers/$_lid.erofs")" = "$_lsz" ] || die "layer $_ln isn't the size slot.json says"
 			[ "$(sha256sum "$_work/layers/$_lid.erofs" | cut -d' ' -f1)" = "$_lsha" ] || die "layer $_ln doesn't match slot.json's sha256"
@@ -482,7 +497,7 @@ cmd_check() {
 	_pre=''
 	grep -q ' \./slot\.json$' "$_work/.list" && _pre=./
 	# slot.json and boot/'s files by name (busybox tar may lack --exclude).
-	awk '$1 !~ /^d/ { n = $NF; sub(/^\.\//, "", n); if (n == "slot.json" || n ~ /^boot\//) print $NF }' "$_work/.list" > "$_work/.want"
+	awk '$1 !~ /^d/ { n = $NF; sub(/^\.\//, "", n); if (n == "slot.json" || n == "layers/layers.json" || n ~ /^boot\//) print $NF }' "$_work/.list" > "$_work/.want"
 	set --
 	while IFS= read -r _n; do set -- "$@" "$_n"; done < "$_work/.want"
 	[ $# -gt 0 ] || die "not a slot bundle (slot.json, rootfs.erofs, boot/)"
@@ -493,6 +508,7 @@ cmd_check() {
 	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
 	[ "$_id" != "$DEFAULT" ] || refuse "$_id is the default slot"
 	_reuse=0
+	bundle_layers "$_work"
 	if _lines=$(layered "$_work/slot.json"); then
 		# Each layer the board has is reused; the others must be in the bundle.
 		_size=0
@@ -502,9 +518,11 @@ cmd_check() {
 				_reuse=$((_reuse + 1))
 				continue
 			fi
-			[ -n "$(member_size "$_work/.list" "layers/$_lid.erofs")" ] || die "layer $_ln ($_lid) is neither in the bundle nor on the board"
-			[ "$(member_size "$_work/.list" "layers/$_lid.erofs")" = "$_lsz" ] || die "layer $_ln isn't the size slot.json says"
-			[ "$(tar -xOf "$_tar" "${_pre}layers/$_lid.erofs" | sha256sum | cut -d' ' -f1)" = "$_lsha" ] || die "layer $_ln doesn't match slot.json's sha256"
+			_member=layers/$_lid.erofs
+			[ -n "$(member_size "$_work/.list" "$_member")" ] || _member=layers/$_ln.erofs
+			[ -n "$(member_size "$_work/.list" "$_member")" ] || die "layer $_ln ($_lid) is neither in the bundle nor on the board"
+			[ "$(member_size "$_work/.list" "$_member")" = "$_lsz" ] || die "layer $_ln isn't the size slot.json says"
+			[ "$(tar -xOf "$_tar" "${_pre}$_member" | sha256sum | cut -d' ' -f1)" = "$_lsha" ] || die "layer $_ln doesn't match slot.json's sha256"
 		done <<EOF
 $_lines
 EOF

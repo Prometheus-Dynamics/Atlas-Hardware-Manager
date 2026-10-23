@@ -29,6 +29,9 @@
 //!                                             "<name> <id> <size> <sha256> <root hash>" (one-image: exit 1)
 //!   slot-init set-layer <slot.json> <layer.json>
 //!                                             the slot.json with its layer of that name replaced
+//!   slot-init merge-layers <slot.json> <layers.json>
+//!                                             a bundle's slot.json with the build's layers (Gaia's
+//!                                             layers.json) as its own
 //!   slot-init open <image> <slot.json> <root hash> [name]
 //!                                             a read-only loop + dm-verity device; prints /dev/dm-N
 //!
