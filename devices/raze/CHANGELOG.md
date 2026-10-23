@@ -139,6 +139,23 @@ commit; the commits are listed per area.
   more. `slots check` handles layered bundles too and reports
   `layers_reused`. `slot-init layers <slot.json>` gives the writer the
   layers, one a line. One-image bundles install as before.
+- **Pushing a layer to a running board (`slots push <layer.tar|->`, also
+  `update push`):** a tar with `layer.json` (one layers entry: name, id,
+  size, sha256, verity) and `<id>.erofs` replaces the layer of that name in
+  the running layered slot. It's checked (size, sha256, the manifest as the
+  initramfs reads it), kept (the layer store, the slot's manifest, its
+  cmdline's root hashes, the FAT root's cmdline for the default slot), and
+  applied now: the layer opens through dm-verity and an overlayfs lays its
+  `/usr` and `/opt` over the booted root (a bind of `/`, so pushes don't stack;
+  a dir with something mounted under it is left to the next boot). After a
+  daemon-reload, its running units restart (not templates, not inactive
+  units). The JSON answer lists what's `live`, what waits for the `next_boot`
+  (`/etc`, the others) and what was `restarted`. `--reboot` restarts instead,
+  `--no-restart` only keeps it, and `push --revert <name>` puts back the
+  layer the last push replaced (its manifest is kept as
+  `/data/board/slots/<id>.prev.json`, and layer cleanup keeps what it lists).
+  The device lock applies. A file the new layer drops stays visible until
+  the next boot. `slot-init set-layer` gives the writer the new manifest.
 - **Kernel: overlayfs built in** (`CONFIG_OVERLAY_FS=y`, raze.config 6; the
   install-size trim had it off): the layered slot root and the app-layer
   push need it.

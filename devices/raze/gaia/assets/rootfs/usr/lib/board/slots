@@ -24,6 +24,12 @@
 #   slots remove <id>             not the running, default or a pinned slot
 #   slots pin|unpin <id>
 #   slots cancel                  stop a running install
+#   slots push <layer.tar|-> [--reboot|--no-restart]
+#                                 replace one layer of the running (layered)
+#                                 slot: kept for the next boot, laid over
+#                                 /usr and /opt now, the layer's units
+#                                 restarted (docs/slots.md, layered slots)
+#   slots push --revert <name>    put back the layer the last push replaced
 #
 # Exit status as `update`: 0 done, 3 refused with nothing changed (another
 # command running, the device lock held, no room, a slot that can't be
@@ -138,12 +144,13 @@ layered() { $INIT layers "$1" 2>/dev/null; }
 # that replaced a slot's layers).
 gc_layers() {
 	[ -d "$LAYERS" ] || return 0
-	_keep=$(for _j in "$IMAGES"/*.json; do [ -e "$_j" ] && layered "$_j"; done | awk '{ print $2 }')
+	# The slots' layers, and those a push --revert would put back.
+	_keep=$(for _j in "$IMAGES"/*.json "$STATE_DIR"/*.prev.json; do [ -e "$_j" ] && layered "$_j" || true; done | awk '{ print $2 }')
 	for _f in "$LAYERS"/*.erofs; do
 		[ -e "$_f" ] || continue
-		_lid=${_f##*/}
-		_lid=${_lid%.erofs}
-		printf '%s\n' "$_keep" | grep -qx "$_lid" || rm -f "$_f"
+		_gid=${_f##*/}
+		_gid=${_gid%.erofs}
+		printf '%s\n' "$_keep" | grep -qx "$_gid" || rm -f "$_f"
 	done
 	rm -f "$LAYERS"/.*.tmp 2>/dev/null || true
 }
@@ -735,11 +742,179 @@ cmd_cancel() {
 	echo idle
 }
 
+# --- push: one layer of the running slot --------------------------------------
+
+# Test hooks: SLOTS_MOUNT, SLOTS_UMOUNT (mount and umount), SLOTS_MOUNTINFO
+# (/proc/self/mountinfo), SLOTS_LIVE_ROOT (where the live dirs are, /).
+MOUNT=${SLOTS_MOUNT:-mount}
+UMOUNT=${SLOTS_UMOUNT:-umount}
+LIVE=$BOARD_RUN_DIR/layers
+LIVE_ROOT=${SLOTS_LIVE_ROOT:-}
+# The dirs a pushed layer is laid over while the board runs. Its files
+# elsewhere (/etc) take effect at the next boot.
+LIVE_DIRS=${SLOTS_LIVE_DIRS:-usr opt}
+
+# json_list <words...>: a JSON array of strings.
+json_list() {
+	_out=''
+	for _w in "$@"; do _out="$_out${_out:+,}$(board_json_str "$_w")"; done
+	printf '[%s]' "$_out"
+}
+
+# The running slot's manifest becomes <new slot.json>: the layer in the
+# store, the cmdline's root hashes, the manifest by rename (the old one kept
+# as <id>.prev.json for push --revert).
+push_persist() {
+	_run=$1 _man=$2
+	_roots=$(layered "$_man" | awk '{ printf "%s%s", (NR > 1 ? "," : ""), $5 }')
+	[ -n "$_roots" ] || die "the new manifest lists no layers"
+	mount_boot
+	_cmd=$BOOT/slots/$_run/cmdline.txt
+	[ -r "$_cmd" ] || die "slot $_run has no cmdline.txt on the boot partition"
+	sed "s/atlas\.roothash=[^ ]*/atlas.roothash=$_roots/" "$_cmd" > "$_cmd.new" || die "can't write $_run's cmdline.txt"
+	grep -q "atlas.roothash=$_roots" "$_cmd.new" || die "$_run's cmdline.txt has no atlas.roothash"
+	boot_sync
+	mv -f "$_cmd.new" "$_cmd" || die "can't write $_run's cmdline.txt"
+	if [ "$_run" = "$DEFAULT" ] && [ -f "$BOOT/cmdline.txt" ]; then
+		cp "$_cmd" "$BOOT/.cmdline.txt.new" && mv -f "$BOOT/.cmdline.txt.new" "$BOOT/cmdline.txt"
+	fi
+	boot_sync
+	cp "$IMAGES/$_run.json" "$STATE_DIR/$_run.prev.json.tmp" && mv -f "$STATE_DIR/$_run.prev.json.tmp" "$STATE_DIR/$_run.prev.json"
+	cp "$_man" "$IMAGES/.$_run.json.tmp" && mv -f "$IMAGES/.$_run.json.tmp" "$IMAGES/$_run.json"
+	$SYNC
+}
+
+# push_live <slot> <name> <id> <root hash>: the layer now, over LIVE_DIRS,
+# its units restarted. Sets LIVE_DONE, LIVE_LATER, RESTARTED.
+push_live() {
+	_run=$1 _name=$2 _lid=$3 _root=$4
+	LIVE_DONE='' LIVE_LATER='' RESTARTED=''
+	_short=$(printf '%s' "$_lid" | cut -c1-12)
+	_dm=$($INIT open "$LAYERS/$_lid.erofs" "$IMAGES/$_run.json" "$_root" "push-$_name-$_short" 2>/dev/null) ||
+		die "dm-verity refused the pushed layer (it's kept for the next boot)"
+	_mnt=$LIVE/$_name-$_short
+	mkdir -p "$_mnt"
+	$MOUNT -t erofs -o ro "$_dm" "$_mnt" || die "can't mount the pushed layer ($_dm)"
+	# The root as it booted, without what earlier pushes laid over it.
+	_orig=$LIVE/root
+	if [ ! -e "$LIVE/.root-bound" ]; then
+		mkdir -p "$_orig"
+		$MOUNT --bind "$LIVE_ROOT/" "$_orig" || die "can't bind the booted root"
+		: > "$LIVE/.root-bound"
+	fi
+	for _d in $LIVE_DIRS; do
+		[ -d "$_mnt/$_d" ] || continue
+		_at=$LIVE_ROOT/$_d
+		# Something else mounted under it would be hidden: leave it to the
+		# next boot.
+		if awk -v p="$_at/" 'index($5, p) == 1 { found = 1 } END { exit !found }' "${SLOTS_MOUNTINFO:-/proc/self/mountinfo}"; then
+			LIVE_LATER="$LIVE_LATER /$_d"
+			continue
+		fi
+		if grep -qx "$_d" "$LIVE/.dirs" 2>/dev/null; then
+			$UMOUNT -l "$_at" 2>/dev/null || true
+		fi
+		$MOUNT -t overlay overlay -o "ro,lowerdir=$_mnt/$_d:$_orig/$_d" "$_at" || die "can't lay the layer over /$_d"
+		grep -qx "$_d" "$LIVE/.dirs" 2>/dev/null || echo "$_d" >> "$LIVE/.dirs"
+		LIVE_DONE="$LIVE_DONE /$_d"
+	done
+	for _e in "$_mnt"/*; do
+		[ -e "$_e" ] || continue
+		_d=${_e##*/}
+		case " $LIVE_DIRS " in *" $_d "*) ;; *) LIVE_LATER="$LIVE_LATER /$_d" ;; esac
+	done
+	# The layer's units: reloaded, and the running ones restarted.
+	$SYSTEMCTL daemon-reload 2>/dev/null || true
+	for _u in "$_mnt"/usr/lib/systemd/system/*.service "$_mnt"/etc/systemd/system/*.service; do
+		[ -e "$_u" ] || continue
+		_u=${_u##*/}
+		case $_u in *@.service) continue ;; esac
+		if $SYSTEMCTL is-active -q "$_u" 2>/dev/null; then
+			$SYSTEMCTL restart "$_u" 2>/dev/null || board_log "restarting $_u failed"
+			RESTARTED="$RESTARTED $_u"
+		fi
+	done
+}
+
+cmd_push() {
+	_file='' _mode=live _revert=''
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--reboot) _mode=reboot; shift ;;
+		--no-restart) _mode=keep; shift ;;
+		--revert) _revert=${2:-}; shift 2 || die "usage: slots push --revert <layer name>" ;;
+		-) _file=-; shift ;;
+		-*) die "unknown option '$1'" ;;
+		*) _file=$1; shift ;;
+		esac
+	done
+	_run=$(running)
+	[ -n "$_run" ] || refuse "the initramfs didn't say which slot is running"
+	[ -r "$IMAGES/$_run.json" ] && layered "$IMAGES/$_run.json" > /dev/null ||
+		refuse "the running slot $_run isn't layered; push needs a layered slot"
+	_work=$(mktemp -d "$IMAGES/.push.XXXXXX") || die "no work dir on /data"
+	WORK_DIR=$_work
+	if [ -n "$_revert" ]; then
+		[ -r "$STATE_DIR/$_run.prev.json" ] || refuse "no push to revert on $_run"
+		_name=$_revert
+		_lid=$(layered "$STATE_DIR/$_run.prev.json" | awk -v n="$_name" '$1 == n { print $2 }')
+		[ -n "$_lid" ] || refuse "the slot before the last push has no layer $_name"
+		[ -r "$LAYERS/$_lid.erofs" ] || die "layer $_name ($_lid) is no longer on the board"
+		cp "$STATE_DIR/$_run.prev.json" "$_work/slot.json"
+	else
+		[ -n "$_file" ] || die "usage: slots push <layer.tar|-> [--reboot|--no-restart]"
+		if [ "$_file" = - ]; then
+			tar -xf - -C "$_work" || die "the layer doesn't unpack"
+		else
+			[ -r "$_file" ] || die "no layer at $_file"
+			tar -xf "$_file" -C "$_work" || die "the layer doesn't unpack"
+		fi
+		[ -r "$_work/layer.json" ] || die "not a layer push (layer.json, <id>.erofs)"
+		$INIT set-layer "$IMAGES/$_run.json" "$_work/layer.json" > "$_work/slot.json" || die "the layer doesn't fit slot $_run"
+		_name=$($INIT field "$_work/layer.json" name) || die "layer.json has no name"
+		_lid=$($INIT field "$_work/layer.json" id) || die "layer.json has no id"
+		_lsz=$($INIT field "$_work/layer.json" size) || die "layer.json has no size"
+		_lsha=$($INIT field "$_work/layer.json" sha256) || die "layer.json has no sha256"
+		if [ "$(board_file_size "$LAYERS/$_lid.erofs" 2>/dev/null)" != "$_lsz" ]; then
+			[ -r "$_work/$_lid.erofs" ] || die "the push has no $_lid.erofs and the board doesn't have it"
+			[ "$(board_file_size "$_work/$_lid.erofs")" = "$_lsz" ] || die "the layer isn't the size layer.json says"
+			[ "$(sha256sum "$_work/$_lid.erofs" | cut -d' ' -f1)" = "$_lsha" ] || die "the layer doesn't match layer.json's sha256"
+			mkdir -p "$LAYERS"
+			mv -f "$_work/$_lid.erofs" "$LAYERS/.$_lid.erofs.tmp"
+			$SYNC
+			mv -f "$LAYERS/.$_lid.erofs.tmp" "$LAYERS/$_lid.erofs"
+		fi
+	fi
+	_old=$(layered "$IMAGES/$_run.json" | awk -v n="$_name" '$1 == n { print $2 }')
+	_root=$(layered "$_work/slot.json" | awk -v n="$_name" '$1 == n { print $5 }')
+	if [ "$_old" = "$_lid" ]; then
+		printf '{"ok":true,"slot":%s,"layer":%s,"id":"%s","changed":false}\n' "$(board_json_str "$_run")" "$(board_json_str "$_name")" "$_lid"
+		return 0
+	fi
+	push_persist "$_run" "$_work/slot.json"
+	gc_layers
+	board_event slot.layer-pushed "slot $_run: layer $_name is now $(printf '%s' "$_lid" | cut -c1-12)$([ -z "$_revert" ] || echo ' (reverted)')" \
+		"slot=$_run" "layer=$_name" "id=$_lid" "previous=$_old" "mode=$_mode"
+	LIVE_DONE='' LIVE_LATER='' RESTARTED=''
+	case $_mode in
+	reboot)
+		plain_reboot
+		;;
+	live)
+		push_live "$_run" "$_name" "$_lid" "$_root"
+		;;
+	esac
+	# shellcheck disable=SC2086
+	printf '{"ok":true,"slot":%s,"layer":%s,"id":"%s","previous":"%s","changed":true,"mode":"%s","live":%s,"next_boot":%s,"restarted":%s}\n' \
+		"$(board_json_str "$_run")" "$(board_json_str "$_name")" "$_lid" "$_old" "$_mode" \
+		"$(json_list $LIVE_DONE)" "$(json_list $LIVE_LATER)" "$(json_list $RESTARTED)"
+}
+
 # --- main -------------------------------------------------------------------
 
 mkdir -p "$BOARD_RUN_DIR" "$STATE_DIR" "$IMAGES"
 case "${1:-}" in
-stage | stage-url | apply | boot-once | rollback | remove | set-default) board_refuse_if_locked "update ${1}" ;;
+stage | stage-url | apply | boot-once | rollback | remove | set-default | push) board_refuse_if_locked "update ${1}" ;;
 esac
 # A check changes nothing: no lock, so it never waits behind an install.
 if [ "${1:-}" = check ]; then
@@ -783,8 +958,9 @@ remove) cmd_remove "$@" ;;
 pin) cmd_pin yes "${1:-}" ;;
 unpin) cmd_pin no "${1:-}" ;;
 cancel) cmd_cancel ;;
+push) cmd_push "$@" ;;
 *)
-	sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 	;;
 esac

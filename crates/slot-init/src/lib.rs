@@ -275,6 +275,32 @@ pub fn layer_lines(text: &str) -> Result<Vec<String>, String> {
         .collect()
 }
 
+/// A layered slot.json with one layer replaced by `layer` (a layers entry:
+/// name, id, size, sha256, verity), the one of the same name: what a pushed
+/// layer makes of the running slot's manifest. The result is checked as the
+/// initramfs and the writer check it.
+pub fn set_layer(slot: &str, layer: &str) -> Result<String, String> {
+    let mut value = json(slot)?;
+    let new = json(layer)?;
+    let name = new
+        .get("name")
+        .and_then(|n| n.as_str())
+        .ok_or("layer.json: no name")?
+        .to_owned();
+    let layers = value
+        .get_mut("layers")
+        .and_then(|l| l.as_array_mut())
+        .ok_or("slot.json: not a layered slot")?;
+    let at = layers
+        .iter()
+        .position(|l| l.get("name").and_then(|n| n.as_str()) == Some(name.as_str()))
+        .ok_or_else(|| format!("the slot has no layer {name}"))?;
+    layers[at] = new;
+    let text = serde_json::to_string(&value).map_err(|e| format!("slot.json: {e}"))?;
+    layer_lines(&text)?;
+    Ok(text)
+}
+
 /// `boot.files` of a slot.json as "<sha256> <name>" lines (sha256sum's
 /// format), names checked to stay inside the boot directory.
 pub fn boot_files(text: &str) -> Result<Vec<(String, String)>, String> {
@@ -445,6 +471,29 @@ mod tests {
         // A layer without its file's sha256 or its root hash can't be installed.
         assert!(layer_lines(&layered(&layer("base", 'a'))).is_err());
         assert!(layer_lines(SLOT).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_pushed_layer_replaces_the_one_of_its_name() {
+        let with = |n: &str, c: char| {
+            layer(n, c).replace(
+                r#""verity":{"#,
+                &format!(
+                    r#""sha256":"{}","verity":{{"root_hash":"{}","#,
+                    c.to_string().repeat(64),
+                    "d".repeat(64)
+                ),
+            )
+        };
+        let slot = layered(&format!("{},{}", with("base", 'a'), with("app", 'c')));
+        let pushed = set_layer(&slot, &with("app", 'e')).unwrap();
+        let lines = layer_lines(&pushed).unwrap();
+        assert!(lines[0].starts_with(&format!("base {}", "a".repeat(64))));
+        assert!(lines[1].starts_with(&format!("app {}", "e".repeat(64))));
+        // No layer of that name, a one-image slot, a layer missing its sha256.
+        assert!(set_layer(&slot, &with("platform", 'e')).is_err());
+        assert!(set_layer(SLOT, &with("app", 'e')).is_err());
+        assert!(set_layer(&slot, &layer("app", 'e')).is_err());
     }
 
     #[test]

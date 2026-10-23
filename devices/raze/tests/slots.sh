@@ -42,12 +42,20 @@ for p in sys.argv[2:]:
     if "\n" in s or "\0" in s: sys.exit(1)
     out.append(s)
 print("\n".join(out))' "$f" "$@" ;;
-flush) echo "$2" >> "$FLUSH_LOG" ;;
+flush) echo "$2" >> "$FLUSH_LOG"; exit 0 ;;
 check-initramfs) ! grep -q XZ "$2" || { echo "slot-init: $2: an xz initramfs isn't supported on the Raze" >&2; exit 1; }; echo zstd ;;
 layers) exec python3 -c 'import json,sys
 m=json.load(open(sys.argv[1]))
 if not m.get("layers"): sys.exit(1)
 for l in m["layers"]: print(l["name"], l["id"], l["size"], l["sha256"], l["verity"]["root_hash"])' "$2" ;;
+set-layer) exec python3 -c 'import json,sys
+m=json.load(open(sys.argv[1])); l=json.load(open(sys.argv[2]))
+if not m.get("layers"): sys.exit(1)
+names=[x["name"] for x in m["layers"]]
+if l["name"] not in names: sys.exit(1)
+m["layers"][names.index(l["name"])]=l
+print(json.dumps(m))' "$2" "$3" ;;
+open) echo "open $2 $4 $5" >> "$LIVE_CALLS"; echo /dev/dm-9; exit 0 ;;
 boot-files) exec python3 -c 'import json,sys
 for n,h in json.load(open(sys.argv[1]))["boot"]["files"].items(): print(h+"  "+n)' "$2" ;;
 esac
@@ -366,5 +374,118 @@ truncate -s 1 "$T/data/slots/layers/$(lid app-2).erofs"
 status | grep -q '"id":"hx-b"[^]]*"intact":false' || fail "a short layer isn't listed as damaged: $(status)"
 up remove hx-b 2>/dev/null
 [ -z "$(ls "$T/data/slots/layers")" ] || fail "layers left with no slot: $(ls "$T/data/slots/layers")"
+
+# A layered slot to push to: hx-p, "running".
+lbundle hx-p "$T/hx-p.slot.tar" base:base-p platform:raze-p app:app-p
+up stage "$T/hx-p.slot.tar" 2>/dev/null || fail "stage hx-p: $(cat "$T/err")"
+# The live side's hooks: mounts are recorded, and an erofs "mount" unpacks
+# the layer (a tar of its tree here) where it would show.
+mkdir -p "$T/live/usr" "$T/live/opt" "$T/live/etc"
+cat > "$T/bin/mount" <<'HOOK'
+#!/bin/sh
+echo "mount $*" >> "$LIVE_CALLS"
+[ "$1 $2" = "-t erofs" ] || exit 0
+eval "dir=\${$#}"
+tar -xf "$PUSH_TREE" -C "$dir"
+HOOK
+cat > "$T/bin/umount" <<'HOOK'
+#!/bin/sh
+echo "umount $*" >> "$LIVE_CALLS"
+HOOK
+cat > "$T/bin/systemctl" <<'HOOK'
+#!/bin/sh
+echo "systemctl $*" >> "$LIVE_CALLS"
+[ "$1 $2 $3" != "is-active -q helios-idle.service" ]
+HOOK
+chmod +x "$T/bin/mount" "$T/bin/umount" "$T/bin/systemctl"
+: > "$T/mountinfo"
+# ptree <dir> <tar> <name> <tree...>: a layer push: layer.json and <id>.erofs.
+ptree() {
+	d=$T/build/push-$1
+	rm -rf "$d"
+	mkdir -p "$d/tree/usr/lib/systemd/system" "$d/tree/usr/bin" "$d/tree/etc" "$d/out"
+	echo "helios $1" > "$d/tree/usr/bin/helios"
+	echo "[Service]" > "$d/tree/usr/lib/systemd/system/helios-api.service"
+	echo "[Service]" > "$d/tree/usr/lib/systemd/system/helios-idle.service"
+	echo "[Service]" > "$d/tree/usr/lib/systemd/system/helios-diag@.service"
+	echo "conf $1" > "$d/tree/etc/helios.conf"
+	tar -cf "$d/layer.img" -C "$d/tree" usr etc
+	plid=$(sha256sum "$d/layer.img" | cut -d' ' -f1)
+	cp "$d/layer.img" "$d/out/$plid.erofs"
+	psize=$(wc -c < "$d/layer.img" | tr -d ' ')
+	printf '{"name":"app","id":"%s","size":%s,"sha256":"%s","verity":{"root_hash":"%s","salt":"00","hash_offset":4096,"data_blocks":1}}\n' \
+		"$plid" "$psize" "$plid" "$(rh "push-$1")" > "$d/out/layer.json"
+	tar -cf "$2" -C "$d/out" layer.json "$plid.erofs"
+	PUSH_TREE=$d/layer.img
+}
+push() {
+	set +e
+	SLOTS_RUNNING=hx-p SLOTS_MOUNT=$T/bin/mount SLOTS_UMOUNT=$T/bin/umount UPDATE_SYSTEMCTL=$T/bin/systemctl \
+		SLOTS_MOUNTINFO=$T/mountinfo SLOTS_LIVE_ROOT=$T/live LIVE_CALLS=$T/live-calls PUSH_TREE=$PUSH_TREE \
+		sh "$lib/update" push "$@" > "$T/out" 2> "$T/err"
+	r=$?
+	set -e
+	echo "$r"
+}
+
+echo "push: an app layer replaces the running slot's, kept for the next boot and laid over /usr now"
+ptree v2 "$T/push-v2.tar"
+v2=$plid
+: > "$T/live-calls"
+[ "$(push "$T/push-v2.tar")" = 0 ] || fail "push: $(cat "$T/out" "$T/err")"
+[ -f "$T/data/slots/layers/$v2.erofs" ] || fail "the pushed layer isn't in the store"
+grep -q "\"id\": *\"$v2\"" "$T/data/slots/hx-p.json" || fail "the manifest doesn't list it: $(cat "$T/data/slots/hx-p.json")"
+grep -q "atlas.roothash=$(rh base),$(rh platform),$(rh push-v2) " "$T/boot/slots/hx-p/cmdline.txt" || fail "cmdline: $(cat "$T/boot/slots/hx-p/cmdline.txt")"
+[ ! -e "$T/data/slots/layers/$(lid app-p).erofs" ] || [ -e "$T/data/board/slots/hx-p.prev.json" ] || fail "the replaced layer went without a revert record"
+[ -f "$T/data/slots/layers/$(lid app-p).erofs" ] || fail "the replaced layer went (push --revert needs it): $(ls "$T/data/slots/layers" "$T/data/board/slots"; cat "$T/data/board/slots/hx-p.prev.json")"
+grep -qx "open $T/data/slots/layers/$v2.erofs $(rh push-v2) push-app-$(printf '%s' "$v2" | cut -c1-12)" "$T/live-calls" || fail "verity open: $(cat "$T/live-calls")"
+grep -q "^mount --bind $T/live/ $T/run/layers/root$" "$T/live-calls" || fail "booted root bind: $(cat "$T/live-calls")"
+grep -q "^mount -t overlay overlay -o ro,lowerdir=$T/run/layers/app-[0-9a-f]*/usr:$T/run/layers/root/usr $T/live/usr$" "$T/live-calls" || fail "usr overlay: $(cat "$T/live-calls")"
+grep -q "overlay.*$T/live/etc" "$T/live-calls" && fail "/etc was laid over live"
+grep -q "^systemctl restart helios-api.service$" "$T/live-calls" || fail "the running unit wasn't restarted: $(cat "$T/live-calls")"
+grep -q "restart helios-idle.service" "$T/live-calls" && fail "an inactive unit was started"
+grep -q "helios-diag@" "$T/live-calls" && fail "a template unit was touched"
+grep -q '"live":\["/usr"\],"next_boot":\["/etc"\],"restarted":\["helios-api.service"\]' "$T/out" || fail "result: $(cat "$T/out")"
+grep -q '"kind":"slot.layer-pushed"' "$T/data/board/events.jsonl" || fail "no event"
+
+echo "a second push swaps the live overlay (not stacked on the first) and drops the layer nothing needs"
+ptree v3 "$T/push-v3.tar"
+v3=$plid
+: > "$T/live-calls"
+[ "$(push "$T/push-v3.tar")" = 0 ] || fail "push v3: $(cat "$T/out" "$T/err")"
+grep -q "^umount -l $T/live/usr$" "$T/live-calls" || fail "the old overlay stayed: $(cat "$T/live-calls")"
+grep -q -- "--bind" "$T/live-calls" && fail "the booted root was bound again"
+grep -q "lowerdir=$T/run/layers/app-[0-9a-f]*/usr:$T/run/layers/root/usr" "$T/live-calls" || fail "v3 overlay: $(cat "$T/live-calls")"
+[ ! -e "$T/data/slots/layers/$(lid app-p).erofs" ] || fail "the layer two pushes back stayed"
+[ -f "$T/data/slots/layers/$v2.erofs" ] || fail "the layer a revert needs went"
+
+echo "pushing what's already there changes nothing; --revert puts back the previous layer"
+[ "$(push "$T/push-v3.tar")" = 0 ] && grep -q '"changed":false' "$T/out" || fail "same layer: $(cat "$T/out")"
+[ "$(push --revert app --no-restart)" = 0 ] || fail "revert: $(cat "$T/out" "$T/err")"
+grep -q "atlas.roothash=$(rh base),$(rh platform),$(rh push-v2) " "$T/boot/slots/hx-p/cmdline.txt" || fail "revert cmdline: $(cat "$T/boot/slots/hx-p/cmdline.txt")"
+
+echo "a push is refused on a one-image slot, under the device lock, and when it doesn't match"
+set +e
+SLOTS_RUNNING=pv-a sh "$lib/update" push "$T/push-v2.tar" > /dev/null 2>&1
+r=$?
+set -e
+[ "$r" = 3 ] || fail "pushed to a one-image slot ($r)"
+mkdir "$T/device-lock" && echo test > "$T/device-lock/owner"
+[ "$(push "$T/push-v3.tar")" = 3 ] || fail "pushed under the device lock"
+rm -rf "$T/device-lock"
+ptree v4 "$T/push-v4.tar"
+echo tampered >> "$T/build/push-v4/out/$plid.erofs"
+tar -cf "$T/push-v4.tar" -C "$T/build/push-v4/out" layer.json "$plid.erofs"
+[ "$(push "$T/push-v4.tar")" = 1 ] || fail "a tampered layer was pushed"
+[ ! -e "$T/data/slots/layers/$plid.erofs" ] || fail "a refused layer was kept"
+grep -q "atlas.roothash=$(rh base),$(rh platform),$(rh push-v2) " "$T/boot/slots/hx-p/cmdline.txt" || fail "a refused push changed the cmdline"
+
+echo "a dir with something mounted under it is left to the next boot"
+ptree v5 "$T/push-v5.tar"
+echo "36 25 0:31 / $T/live/usr/local rw - tmpfs tmpfs rw" > "$T/mountinfo"
+: > "$T/live-calls"
+[ "$(push "$T/push-v5.tar")" = 0 ] || fail "push v5: $(cat "$T/out" "$T/err")"
+grep -q "overlay.*$T/live/usr$" "$T/live-calls" && fail "/usr was laid over a submount"
+grep -q '"next_boot":\["/usr","/etc"\]' "$T/out" || fail "result: $(cat "$T/out")"
 
 echo "ok"

@@ -27,6 +27,8 @@
 //!   slot-init boot-files <slot.json>          "<sha256>  <name>" per boot file (sha256sum -c's format)
 //!   slot-init layers <slot.json>              a layered slot's layers, lowest first, one a line:
 //!                                             "<name> <id> <size> <sha256> <root hash>" (one-image: exit 1)
+//!   slot-init set-layer <slot.json> <layer.json>
+//!                                             the slot.json with its layer of that name replaced
 //!   slot-init open <image> <slot.json> <root hash> [name]
 //!                                             a read-only loop + dm-verity device; prints /dev/dm-N
 //!
@@ -96,6 +98,7 @@ fn run(args: &[String]) -> Result<String, String> {
             }
             Ok(lines.join("\n"))
         }
+        ["set-layer", manifest, layer] => slot_init::set_layer(&read(manifest)?, &read(layer)?),
         ["boot-files", manifest] => Ok(boot_files(&read(manifest)?)?
             .into_iter()
             .map(|(sha, name)| format!("{sha}  {name}"))
