@@ -171,9 +171,8 @@ in `~/.cache/atlas-deb/`, and the UI rebuilt only when it changed. The first
 run builds the container image and every crate (about 5 minutes at 8 jobs);
 after that a one-line change is about 20 s in the app crate and 26 s in
 atlas-core. The package lands in `dist/deb/atlas-<commit>-<distro>.deb`.
-The binaries are larger than a tagged release's (no LTO). Every push to
-`dev` also builds both in CI (the `dev .deb` job's artifacts), whatever the
-checks say.
+The binaries are larger than a tagged release's (no LTO). A manual CI run
+(workflow_dispatch) builds both too (the `dev .deb` job's artifacts).
 
 Windows needs the WinUSB driver bound to the Pi boot device (the Raspberry Pi
 rpiboot installer provides it); `atlas doctor` and the Settings screen say so

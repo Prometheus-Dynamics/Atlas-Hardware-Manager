@@ -192,13 +192,13 @@ jobs:
           cargo run -q -p atlas-cli -- disks
           cargo run -q -p atlas-cli -- doctor || true
 
-  # A .deb of every dev push, quickly, whatever the checks say: the release
+  # A .deb quickly, on a manual run only (never per push): the release
   # profile without LTO (16 codegen units), built in the distro it installs
-  # on (scripts/deb-fast.sh does the same locally). Tagged releases still
-  # come from `bundle` (full LTO).
+  # on (scripts/deb-fast.sh does the same locally), whatever the checks say.
+  # Tagged releases still come from `bundle` (full LTO).
   dev-deb:
     name: dev .deb (${{ matrix.name }})
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev') || github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     container: ${{ matrix.image }}
     timeout-minutes: 45
