@@ -40,7 +40,10 @@ pub use registry::DriverRegistry;
 pub use selftest::{
     CheckStatus, SELFTEST_FORMAT, SelfTestCapability, SelfTestCheck, SelfTestReport, SelfTestStep,
 };
-pub use slots::{Slot, SlotCommand, SlotInstall, SlotSet, SlotsCapability, refusal};
+pub use slots::{
+    LayerPush, LayerPushed, PushMode, Slot, SlotCommand, SlotInstall, SlotLayer, SlotSet,
+    SlotsCapability, refusal,
+};
 pub use status::{
     BootInfo, DeviceEvent, DeviceStatus, Drift, DriftItem, EventPage, EventQuery, EventSource,
     FanState, HardwareControl, HardwareDevice, HardwareReading, HardwareSnapshot, KernelRecord,

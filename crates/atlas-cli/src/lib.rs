@@ -8,6 +8,7 @@
 
 mod commands;
 mod flash;
+mod layer_push;
 mod output;
 mod reboots;
 mod robot;

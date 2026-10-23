@@ -4,7 +4,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use atlas_core::Atlas;
-use atlas_driver::{ProgressSink, ProgressUpdate, SlotCommand, SlotInstall, SlotSet};
+use atlas_driver::{
+    LayerPush, LayerPushed, ProgressSink, ProgressUpdate, PushMode, SlotCommand, SlotInstall,
+    SlotSet,
+};
 use clap::Subcommand;
 use serde_json::json;
 
@@ -41,6 +44,29 @@ pub(crate) enum SlotsCommand {
     Pin { id: String },
     /// Let a pinned slot be removed again
     Unpin { id: String },
+    /// Replace one layer of the running layered slot (the app layer, in
+    /// seconds): laid over the running system and its units restarted, and
+    /// kept for the next boot.
+    Push {
+        /// The layer image (<id>.erofs), or a ready push archive (.tar with
+        /// layer.json and <id>.erofs).
+        layer: Option<PathBuf>,
+        /// The build's layers.json (or the layer's own entry), for an image.
+        #[arg(long)]
+        manifest: Option<PathBuf>,
+        /// Which layer of the slot.
+        #[arg(long, default_value = "app")]
+        name: String,
+        /// Restart the board into it instead of laying it over now.
+        #[arg(long, conflicts_with = "no_restart")]
+        reboot: bool,
+        /// Only keep it for the next boot.
+        #[arg(long)]
+        no_restart: bool,
+        /// Put back the layer the last push replaced.
+        #[arg(long, conflicts_with_all = ["layer", "manifest"])]
+        revert: bool,
+    },
 }
 
 pub(crate) async fn slots(
@@ -97,6 +123,29 @@ pub(crate) async fn slots(
             }
             return Ok(ExitCode::SUCCESS);
         }
+        SlotsCommand::Push {
+            layer,
+            manifest,
+            name,
+            reboot,
+            no_restart,
+            revert,
+        } => {
+            let mode = if reboot {
+                PushMode::Reboot
+            } else if no_restart {
+                PushMode::Keep
+            } else {
+                PushMode::Live
+            };
+            let pushed = push(atlas, &key, layer, manifest, name, mode, revert, as_json).await?;
+            if as_json {
+                output::json(&json!({ "device": key, "pushed": pushed, "ok": true }));
+            } else {
+                print_pushed(&pushed);
+            }
+            return Ok(ExitCode::SUCCESS);
+        }
         SlotsCommand::BootOnce { id } => SlotCommand::BootOnce { id },
         SlotsCommand::SetDefault { id } => SlotCommand::SetDefault { id },
         SlotsCommand::Remove { id, yes } => {
@@ -120,6 +169,111 @@ pub(crate) async fn slots(
         output::line(&format!("{} on {key}: done", command.describe()));
     }
     Ok(ExitCode::SUCCESS)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn push(
+    atlas: &Atlas,
+    key: &atlas_driver::DeviceKey,
+    layer: Option<PathBuf>,
+    manifest: Option<PathBuf>,
+    name: String,
+    mode: PushMode,
+    revert: bool,
+    quiet: bool,
+) -> Result<LayerPushed, String> {
+    use crate::layer_push;
+    let progress = ProgressSink::new(move |update| {
+        if !quiet && let ProgressUpdate::Log { message } = update {
+            output::line(&message);
+        }
+    });
+    if revert {
+        let push = LayerPush {
+            layer: name,
+            archive: PathBuf::new(),
+            size_bytes: 0,
+            mode,
+            revert: true,
+        };
+        return atlas
+            .push_layer(key, &push, &progress)
+            .await
+            .map_err(|error| error.to_string());
+    }
+    let layer = layer.ok_or("a layer image (or a push archive) to push")?;
+    let is_archive = layer.extension().is_some_and(|ext| ext == "tar");
+    let temp = layer_push::temp_archive();
+    let archive = if is_archive {
+        layer.clone()
+    } else {
+        let manifest = manifest
+            .ok_or("--manifest: the build's layers.json (or the layer's entry) for the image")?;
+        let text = std::fs::read_to_string(&manifest)
+            .map_err(|error| format!("{}: {error}", manifest.display()))?;
+        let entry =
+            layer_push::entry(&text, &name).map_err(|e| format!("{}: {e}", manifest.display()))?;
+        // The board checks it too; checking here saves sending a wrong one.
+        let local = local_artifact(&layer).await?;
+        let want = entry["sha256"]
+            .as_str()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if local.sha256.to_ascii_lowercase() != want {
+            return Err(format!(
+                "{} doesn't match the {name} layer's sha256 in {}",
+                layer.display(),
+                manifest.display()
+            ));
+        }
+        layer_push::write_archive(&entry, &layer, &temp)?;
+        temp.clone()
+    };
+    let size_bytes = std::fs::metadata(&archive)
+        .map_err(|error| format!("{}: {error}", archive.display()))?
+        .len();
+    let push = LayerPush {
+        layer: name,
+        archive,
+        size_bytes,
+        mode,
+        revert: false,
+    };
+    let result = atlas.push_layer(key, &push, &progress).await;
+    if !is_archive {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result.map_err(|error| error.to_string())
+}
+
+fn print_pushed(pushed: &LayerPushed) {
+    if !pushed.changed {
+        output::line(&format!(
+            "{} already runs that {} layer",
+            pushed.slot, pushed.layer
+        ));
+        return;
+    }
+    let short = |id: &str| id.chars().take(12).collect::<String>();
+    output::line(&format!(
+        "{}: {} layer {} (was {})",
+        pushed.slot,
+        pushed.layer,
+        short(&pushed.id),
+        short(&pushed.previous)
+    ));
+    if !pushed.live.is_empty() {
+        output::line(&format!("  live now: {}", pushed.live.join(" ")));
+    }
+    if !pushed.restarted.is_empty() {
+        output::line(&format!("  restarted: {}", pushed.restarted.join(" ")));
+    }
+    if !pushed.next_boot.is_empty() {
+        output::line(&format!(
+            "  at the next boot: {}",
+            pushed.next_boot.join(" ")
+        ));
+    }
 }
 
 fn print(set: &SlotSet) {

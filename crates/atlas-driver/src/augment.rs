@@ -20,8 +20,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::{
-    ActionsCapability, Capabilities, DeviceAction, DriverError, Identity, LogLine, LogsCapability,
-    Metric, ProgressSink, SlotCommand, SlotInstall, SlotSet, SlotsCapability, TelemetryCapability,
+    ActionsCapability, Capabilities, DeviceAction, DriverError, Identity, LayerPush, LayerPushed,
+    LogLine, LogsCapability, Metric, ProgressSink, SlotCommand, SlotInstall, SlotSet,
+    SlotsCapability, TelemetryCapability,
 };
 
 mod status;
@@ -196,6 +197,20 @@ impl SlotsCapability for FallbackSlots {
             Err(error @ (DriverError::Unreachable(_) | DriverError::Unsupported(_))) => {
                 progress.log(format!("{error}; trying the other way in"));
                 self.then.install(device, install, progress).await
+            }
+            result => result,
+        }
+    }
+
+    async fn push_layer(
+        &self,
+        device: &Identity,
+        push: &LayerPush,
+        progress: &ProgressSink,
+    ) -> Result<LayerPushed, DriverError> {
+        match self.first.push_layer(device, push, progress).await {
+            Err(DriverError::Unreachable(_) | DriverError::Unsupported(_)) => {
+                self.then.push_layer(device, push, progress).await
             }
             result => result,
         }

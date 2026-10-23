@@ -8,8 +8,8 @@
 
 use async_trait::async_trait;
 use atlas_driver::{
-    CancellationToken, DriverError, Identity, ProgressSink, SlotCommand, SlotInstall, SlotSet,
-    SlotsCapability, UpdateStep,
+    CancellationToken, DriverError, Identity, LayerPush, LayerPushed, ProgressSink, PushMode,
+    SlotCommand, SlotInstall, SlotSet, SlotsCapability, UpdateStep,
 };
 
 use crate::ssh::{SshUpdate, WRITER, as_atlas};
@@ -17,6 +17,31 @@ use crate::ssh_actions::writer;
 
 /// The update method a slots board lists.
 pub const SLOTS_METHOD: &str = "slots-tryboot";
+
+/// Where `update push` leaves its answer when its stdin is the layer.
+const PUSH_ANSWER: &str = "/run/board/layer-push.json";
+
+/// The writer's flags for a push mode.
+fn mode_flag(mode: PushMode) -> &'static str {
+    match mode {
+        PushMode::Live => "",
+        PushMode::Reboot => " --reboot",
+        PushMode::Keep => " --no-restart",
+    }
+}
+
+/// The writer's answer to a push (its last JSON line).
+fn parse_pushed(text: &str) -> Result<LayerPushed, DriverError> {
+    let line = text
+        .lines()
+        .rev()
+        .find(|line| line.trim_start().starts_with('{'))
+        .ok_or_else(|| {
+            DriverError::Other("the board didn't say what it did with the layer".into())
+        })?;
+    serde_json::from_str(line)
+        .map_err(|error| DriverError::Other(format!("unreadable push answer: {error}")))
+}
 
 pub(crate) struct BoardSlots {
     pub(crate) ssh: SshUpdate,
@@ -134,6 +159,59 @@ impl SlotsCapability for BoardSlots {
         }
         Ok(())
     }
+
+    async fn push_layer(
+        &self,
+        _device: &Identity,
+        push: &LayerPush,
+        progress: &ProgressSink,
+    ) -> Result<LayerPushed, DriverError> {
+        let name = checked(&push.layer)?;
+        let flag = mode_flag(push.mode);
+        let refused = |error: DriverError| match error {
+            DriverError::Other(reason) | DriverError::Incompatible(reason) => {
+                DriverError::StepFailed {
+                    step: "Pushing the layer".into(),
+                    message: atlas_driver::refusal(&reason),
+                }
+            }
+            other => other,
+        };
+        if push.revert {
+            let answer = self
+                .ssh
+                .run(&as_atlas(&format!("{WRITER} push --revert {name}{flag}")))
+                .await
+                .map_err(refused)?;
+            return parse_pushed(&answer);
+        }
+        progress.step_started(UpdateStep::Transfer);
+        let script = as_atlas(&format!("{WRITER} push -{flag} > {PUSH_ANSWER}"));
+        let sent = self
+            .ssh
+            .upload_to(
+                &push.archive,
+                push.size_bytes,
+                &script,
+                "true",
+                progress,
+                &CancellationToken::new(),
+            )
+            .await;
+        // --reboot: the restart may drop the connection after the answer.
+        match (push.mode, sent) {
+            (PushMode::Reboot, Err(DriverError::Unreachable(_))) => {
+                return Ok(LayerPushed {
+                    layer: name.to_owned(),
+                    changed: true,
+                    ..LayerPushed::default()
+                });
+            }
+            (_, sent) => sent.map_err(refused)?,
+        }
+        progress.step_progress(UpdateStep::Transfer, 1.0);
+        parse_pushed(&self.ssh.run(&format!("cat {PUSH_ANSWER}")).await?)
+    }
 }
 
 #[cfg(test)]
@@ -153,6 +231,23 @@ mod tests {
         .unwrap();
         assert_eq!(set.running, "pv-a");
         assert_eq!(set.slots[0].id, "pv-a");
+    }
+
+    #[test]
+    fn the_push_answer_is_its_last_json_line() {
+        let pushed = parse_pushed(
+            "slots: note\n{\"ok\":true,\"slot\":\"hx-p\",\"layer\":\"app\",\"id\":\"ab\",\"previous\":\"cd\",\"changed\":true,\"mode\":\"live\",\"live\":[\"/usr\"],\"next_boot\":[\"/etc\"],\"restarted\":[\"helios-api.service\"]}\n",
+        )
+        .unwrap();
+        assert_eq!(pushed.slot, "hx-p");
+        assert_eq!(pushed.live, ["/usr"]);
+        assert_eq!(pushed.restarted, ["helios-api.service"]);
+        let same =
+            parse_pushed(r#"{"ok":true,"slot":"hx-p","layer":"app","id":"ab","changed":false}"#)
+                .unwrap();
+        assert!(!same.changed && same.previous.is_empty());
+        assert!(parse_pushed("nothing").is_err());
+        assert_eq!(mode_flag(PushMode::Keep), " --no-restart");
     }
 
     #[test]

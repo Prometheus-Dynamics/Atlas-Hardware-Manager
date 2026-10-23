@@ -50,6 +50,20 @@ pub struct Slot {
     /// writer doesn't report it.
     #[serde(default)]
     pub display_name: Option<String>,
+    /// A layered slot's layers, lowest first; `None` for a one-image slot.
+    #[serde(default)]
+    pub layers: Option<Vec<SlotLayer>>,
+}
+
+/// One layer of a layered slot, as the writer lists it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlotLayer {
+    /// `base`, `platform`, `app`.
+    pub name: String,
+    /// Its content id (sha256).
+    pub id: String,
+    #[serde(default)]
+    pub size: u64,
 }
 
 impl Slot {
@@ -172,6 +186,59 @@ pub struct SlotInstall {
     pub boot: bool,
 }
 
+/// How a layer pushed to a running slot takes effect.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PushMode {
+    /// Laid over the running system now, its running units restarted (and
+    /// kept for the next boot).
+    #[default]
+    Live,
+    /// Kept, then the board restarts into it.
+    Reboot,
+    /// Kept for the next boot only.
+    Keep,
+}
+
+/// A layer to push into the board's running (layered) slot: an archive with
+/// `layer.json` and `<id>.erofs` (empty `archive` with `revert`: put back the
+/// layer the last push replaced).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LayerPush {
+    /// The layer's name in the slot (`app`).
+    pub layer: String,
+    pub archive: std::path::PathBuf,
+    #[serde(default)]
+    pub size_bytes: u64,
+    #[serde(default)]
+    pub mode: PushMode,
+    #[serde(default)]
+    pub revert: bool,
+}
+
+/// What the board did with a pushed layer (the writer's answer).
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LayerPushed {
+    pub slot: String,
+    pub layer: String,
+    pub id: String,
+    /// The layer it replaced (empty when nothing changed).
+    #[serde(default)]
+    pub previous: String,
+    /// False when the slot already had this layer.
+    #[serde(default)]
+    pub changed: bool,
+    /// Dirs it was laid over now (`/usr`).
+    #[serde(default)]
+    pub live: Vec<String>,
+    /// Dirs whose files wait for the next boot (`/etc`).
+    #[serde(default)]
+    pub next_boot: Vec<String>,
+    /// Units restarted.
+    #[serde(default)]
+    pub restarted: Vec<String>,
+}
+
 #[async_trait]
 pub trait SlotsCapability: Send + Sync {
     /// Whether this source comes before the board's own driver (Orion), the
@@ -193,6 +260,19 @@ pub trait SlotsCapability: Send + Sync {
         install: &SlotInstall,
         progress: &ProgressSink,
     ) -> Result<(), DriverError>;
+
+    /// Replaces one layer of the running layered slot (the app layer, in
+    /// seconds, without a slot install).
+    async fn push_layer(
+        &self,
+        _device: &Identity,
+        _push: &LayerPush,
+        _progress: &ProgressSink,
+    ) -> Result<LayerPushed, DriverError> {
+        Err(DriverError::Unsupported(
+            "this way to the board can't push a layer (its SSH or USB link can)".into(),
+        ))
+    }
 }
 
 const fn yes() -> bool {

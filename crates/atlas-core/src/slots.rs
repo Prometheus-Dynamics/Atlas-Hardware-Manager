@@ -1,8 +1,10 @@
 //! A slots board's installed OS images (dynamic slots): list them, boot one
-//! once, make one the default, remove or pin one, install a bundle. Each
-//! change is logged.
+//! once, make one the default, remove or pin one, install a bundle, push a
+//! layer into the running one. Each change is logged.
 
-use atlas_driver::{DeviceKey, ProgressSink, SlotCommand, SlotInstall, SlotSet};
+use atlas_driver::{
+    DeviceKey, LayerPush, LayerPushed, ProgressSink, SlotCommand, SlotInstall, SlotSet,
+};
 
 use crate::{ActivityEntry, ActivityKind, ActivityLevel, Atlas, CoreError};
 
@@ -51,6 +53,29 @@ impl Atlas {
             format!("install {}", install.bundle.name)
         };
         self.log_slot_change(&record, &what, &result);
+        Ok(result?)
+    }
+
+    /// Replaces one layer of the board's running layered slot (an app
+    /// layer, in seconds); the board's answer says what took effect now.
+    pub async fn push_layer(
+        &self,
+        key: &DeviceKey,
+        push: &LayerPush,
+        progress: &ProgressSink,
+    ) -> Result<LayerPushed, CoreError> {
+        let (live, record) = self.live_device(key)?;
+        let slots = live.capabilities.slots.ok_or(CoreError::Unsupported {
+            device: key.clone(),
+            what: "slots",
+        })?;
+        let result = slots.push_layer(&record.identity, push, progress).await;
+        let what = if push.revert {
+            format!("put back the previous {} layer", push.layer)
+        } else {
+            format!("push a new {} layer", push.layer)
+        };
+        self.log_slot_change(&record, &what, &result.as_ref().map(|_| ()).map_err(Clone::clone));
         Ok(result?)
     }
 

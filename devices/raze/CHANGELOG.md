@@ -156,6 +156,13 @@ commit; the commits are listed per area.
   `/data/board/slots/<id>.prev.json`, and layer cleanup keeps what it lists).
   The device lock applies. A file the new layer drops stays visible until
   the next boot. `slot-init set-layer` gives the writer the new manifest.
+  From a computer: `atlas slots <board> push <layer>.erofs --manifest
+  layers.json [--name app] [--reboot|--no-restart]` (or a ready push `.tar`;
+  `--revert` puts the previous one back). It picks the layer's entry from
+  the build's layers.json, checks the image's sha256 against it, writes the
+  two-member archive and streams it into `update push -` over the board's SSH
+  or USB link. It prints what's live now, what was restarted and what waits
+  for the next boot. Slot listings carry each layered slot's `layers`.
 - **Kernel: overlayfs built in** (`CONFIG_OVERLAY_FS=y`, raze.config 6; the
   install-size trim had it off): the layered slot root and the app-layer
   push need it.
