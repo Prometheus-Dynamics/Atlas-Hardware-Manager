@@ -180,6 +180,18 @@ commit; the commits are listed per area.
 
 ### Install size: board-agent and board-stream
 
+- **Two things a Raze image carried for nothing (buildroot-external
+  external.mk):** Vulkan's registry (`/usr/share/vulkan/registry`, 14.2 MB of
+  generator XML and Python that vulkan-headers installs; images with
+  gpu-vulkan.toml only), dropped after vulkan-headers installs; and the
+  Bootlin toolchain's Fortran runtime (`libgfortran.so.5`, 1.7 MB, which
+  Buildroot copies into every target), dropped at target-finalize when no
+  ELF in the rootfs has it as DT_NEEDED (`scripts/drop-unneeded-libs.sh`,
+  which drops nothing when it can't read the ELF files;
+  `tests/drop-unneeded-libs.sh`). 15.8 MB less uncompressed; about 0.9 MB
+  less at lzma-6 (measured on HeliOS's Raze tree; the erofs delta comes with
+  the next build).
+
 - Both binaries now build with profile `device-lean` (release, stripped,
   `lto = true`, `codegen-units = 1`, opt-level 3) instead of `device`.
   Stripped aarch64 musl sizes, from the same tree:

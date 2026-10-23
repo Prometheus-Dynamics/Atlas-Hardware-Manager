@@ -114,3 +114,20 @@ RAZE_LEMNOS_USERS_TABLE = $(call qstrip,$(BR2_RAZE_LEMNOS_USERS_TABLE))
 ifneq ($(RAZE_LEMNOS_USERS_TABLE),)
 PACKAGES_USERS += $(file <$(RAZE_LEMNOS_USERS_TABLE))$(sep)
 endif
+
+# Install size: what Raze images carry and nothing uses.
+# - Vulkan's registry (/usr/share/vulkan/registry, ~14 MB of XML and Python
+#   generator files vulkan-headers installs; gpu-vulkan.toml): build-time
+#   only.
+define RAZE_VULKAN_HEADERS_DROP_REGISTRY
+	rm -rf $(TARGET_DIR)/usr/share/vulkan/registry
+endef
+VULKAN_HEADERS_POST_INSTALL_TARGET_HOOKS += RAZE_VULKAN_HEADERS_DROP_REGISTRY
+# - The Bootlin toolchain's Fortran runtime (libgfortran.so.5, 1.6 MB),
+#   which Buildroot copies into every target: dropped when nothing in the
+#   final rootfs needs it (DT_NEEDED; the script stops, dropping nothing,
+#   when it can't read the ELF files).
+define RAZE_DROP_UNNEEDED_LIBS
+	sh $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/scripts/drop-unneeded-libs.sh $(TARGET_DIR) $(TARGET_READELF) libgfortran.so.5
+endef
+TARGET_FINALIZE_HOOKS += RAZE_DROP_UNNEEDED_LIBS
