@@ -25,6 +25,8 @@
 //!                                             scalar: an empty line; a value with a newline: exit 1,
 //!                                             so read it with field)
 //!   slot-init boot-files <slot.json>          "<sha256>  <name>" per boot file (sha256sum -c's format)
+//!   slot-init layers <slot.json>              a layered slot's layers, lowest first, one a line:
+//!                                             "<name> <id> <size> <sha256> <root hash>" (one-image: exit 1)
 //!   slot-init open <image> <slot.json> <root hash> [name]
 //!                                             a read-only loop + dm-verity device; prints /dev/dm-N
 //!
@@ -85,6 +87,14 @@ fn run(args: &[String]) -> Result<String, String> {
         }
         ["fields", file, paths @ ..] if !paths.is_empty() => {
             fields(&read(file)?, paths).map(|lines| lines.join("\n"))
+        }
+        ["layers", manifest] => {
+            let text = read(manifest)?;
+            let lines = slot_init::layer_lines(&text)?;
+            if lines.is_empty() {
+                return Err(format!("{manifest}: not a layered slot"));
+            }
+            Ok(lines.join("\n"))
         }
         ["boot-files", manifest] => Ok(boot_files(&read(manifest)?)?
             .into_iter()

@@ -126,6 +126,19 @@ commit; the commits are listed per area.
   slot-init refuses a layered slot (the hash list isn't one root hash)
   rather than misreading it. Refusals name the layer (missing, cut short,
   verity, the overlay mount). The slots writer and the bundle format follow.
+- **Layered slots, the writer side (slots):** a bundle whose slot.json lists
+  `layers` (each with its file's `sha256` and `verity.root_hash`) installs
+  into a shared layer store, `/data/slots/layers/<id>.erofs`. A layer the
+  board already has is reused, so a bundle may ship only what's new (an app
+  layer); the others are checked for size and sha256 before anything moves,
+  and a layer that's in neither place refuses the install. The slot's
+  cmdline gets the root hashes, comma-separated, lowest first. `status` lists
+  layered slots with `"layers":[{name,id,size}]` (`null` for one-image
+  slots), their size as the layers' sum, and `intact` from each layer file's
+  size. Removing a slot, or replacing one, drops the layers no slot lists any
+  more. `slots check` handles layered bundles too and reports
+  `layers_reused`. `slot-init layers <slot.json>` gives the writer the
+  layers, one a line. One-image bundles install as before.
 - **Kernel: overlayfs built in** (`CONFIG_OVERLAY_FS=y`, raze.config 6; the
   install-size trim had it off): the layered slot root and the app-layer
   push need it.

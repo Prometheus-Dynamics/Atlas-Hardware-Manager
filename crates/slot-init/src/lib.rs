@@ -241,6 +241,40 @@ fn scalar(value: &serde_json::Value, path: &str) -> Option<String> {
     }
 }
 
+/// A layered slot.json's layers as "<name> <id> <size> <sha256> <root hash>"
+/// lines, lowest first (the writer's view: what to install and what goes on
+/// the command line). The manifest is checked as the initramfs checks it,
+/// and each layer must carry its file's sha256 and its verity root hash.
+/// Empty for a one-image slot.
+pub fn layer_lines(text: &str) -> Result<Vec<String>, String> {
+    let manifest = Manifest::parse(text)?;
+    let value = json(text)?;
+    manifest
+        .layers
+        .iter()
+        .enumerate()
+        .map(|(n, layer)| {
+            let at = |key: &str| {
+                value
+                    .pointer(&format!("/layers/{n}/{key}"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_ascii_lowercase()
+            };
+            let sha = at("sha256");
+            if sha.len() != 64 || !hex(&sha) {
+                return Err(format!("slot.json layer {}: no sha256", layer.name));
+            }
+            let root = root_hash(&at("verity/root_hash"))
+                .map_err(|e| format!("slot.json layer {}: {e}", layer.name))?;
+            Ok(format!(
+                "{} {} {} {sha} {root}",
+                layer.name, layer.id, layer.size
+            ))
+        })
+        .collect()
+}
+
 /// `boot.files` of a slot.json as "<sha256> <name>" lines (sha256sum's
 /// format), names checked to stay inside the boot directory.
 pub fn boot_files(text: &str) -> Result<Vec<(String, String)>, String> {
@@ -375,6 +409,42 @@ mod tests {
         let roots = root_hashes(&format!("{},{}", "A".repeat(64), "b".repeat(64))).unwrap();
         assert_eq!(roots, ["a".repeat(64), "b".repeat(64)]);
         assert!(root_hashes(&format!("{},", "a".repeat(64))).is_err());
+    }
+
+    #[test]
+    fn layer_lines_for_the_writer() {
+        let with = |n: &str, c: char| {
+            layer(n, c).replace(
+                r#""verity":{"#,
+                &format!(
+                    r#""sha256":"{}","verity":{{"root_hash":"{}","#,
+                    "5".repeat(64),
+                    "D".repeat(64)
+                ),
+            )
+        };
+        let text = layered(&format!("{},{}", with("base", 'a'), with("app", 'c')));
+        let lines = layer_lines(&text).unwrap();
+        assert_eq!(
+            lines,
+            [
+                format!(
+                    "base {} 8192 {} {}",
+                    "a".repeat(64),
+                    "5".repeat(64),
+                    "d".repeat(64)
+                ),
+                format!(
+                    "app {} 8192 {} {}",
+                    "c".repeat(64),
+                    "5".repeat(64),
+                    "d".repeat(64)
+                ),
+            ]
+        );
+        // A layer without its file's sha256 or its root hash can't be installed.
+        assert!(layer_lines(&layered(&layer("base", 'a'))).is_err());
+        assert!(layer_lines(SLOT).unwrap().is_empty());
     }
 
     #[test]

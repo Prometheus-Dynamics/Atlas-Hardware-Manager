@@ -44,6 +44,10 @@ for p in sys.argv[2:]:
 print("\n".join(out))' "$f" "$@" ;;
 flush) echo "$2" >> "$FLUSH_LOG" ;;
 check-initramfs) ! grep -q XZ "$2" || { echo "slot-init: $2: an xz initramfs isn't supported on the Raze" >&2; exit 1; }; echo zstd ;;
+layers) exec python3 -c 'import json,sys
+m=json.load(open(sys.argv[1]))
+if not m.get("layers"): sys.exit(1)
+for l in m["layers"]: print(l["name"], l["id"], l["size"], l["sha256"], l["verity"]["root_hash"])' "$2" ;;
 boot-files) exec python3 -c 'import json,sys
 for n,h in json.load(open(sys.argv[1]))["boot"]["files"].items(): print(h+"  "+n)' "$2" ;;
 esac
@@ -287,5 +291,80 @@ echo "rollback makes the previous slot the default"
 up rollback --no-reboot 2>/dev/null
 [ "$(cat "$T/boot/default.txt")" = "os_prefix=slots/pv-a/" ] || fail "rollback default.txt"
 status | grep -q '"slot_default":"pv-a","slot_previous":"pv-b"' || fail "rollback state: $(status)"
+
+# lbundle <id> <out.tar> <name:content>...: a layered slot bundle; each
+# layer's file is its content, its id the sha256 of it (as Gaia names them),
+# its root hash a fixed one per name. Layers named with a leading "-" are
+# listed in slot.json but left out of the tar (the board should have them).
+lbundle() {
+	id=$1 out=$2
+	shift 2
+	b=$T/build/$id
+	rm -rf "$b"
+	mkdir -p "$b/boot/overlays" "$b/layers"
+	echo "kernel of $id" > "$b/boot/kernel8.img"
+	echo "console=ttyAMA10" > "$b/boot/cmdline.txt"
+	k=$(sha256sum "$b/boot/kernel8.img" | cut -d' ' -f1)
+	c=$(sha256sum "$b/boot/cmdline.txt" | cut -d' ' -f1)
+	layers='' members='slot.json boot'
+	for spec in "$@"; do
+		skip=''
+		case $spec in -*) skip=1 spec=${spec#-} ;; esac
+		name=${spec%%:*}
+		printf '%s\n' "${spec#*:}" > "$b/l"
+		lid=$(sha256sum "$b/l" | cut -d' ' -f1)
+		mv "$b/l" "$b/layers/$lid.erofs"
+		size=$(wc -c < "$b/layers/$lid.erofs" | tr -d ' ')
+		root=$(printf '%s' "$name" | sha256sum | cut -d' ' -f1)
+		layers="$layers${layers:+,}{\"name\":\"$name\",\"id\":\"$lid\",\"size\":$size,\"sha256\":\"$lid\",\"verity\":{\"root_hash\":\"$root\",\"salt\":\"00\",\"hash_offset\":4096,\"data_blocks\":1}}"
+		if [ -n "$skip" ]; then rm "$b/layers/$lid.erofs"; else members="$members layers/$lid.erofs"; fi
+	done
+	printf '{"schema":2,"id":"%s","family":"helios","version":"2026.2.0","variant":"styx","kernel":"7.2.9","layers":[%s],"boot":{"files":{"kernel8.img":"%s","cmdline.txt":"%s"}}}\n' "$id" "$layers" "$k" "$c" > "$b/slot.json"
+	# shellcheck disable=SC2086
+	tar -cf "$out" -C "$b" $members
+}
+lid() { printf '%s\n' "$1" | sha256sum | cut -d' ' -f1; }
+rh() { printf '%s' "$1" | sha256sum | cut -d' ' -f1; }
+
+echo "a layered bundle installs its layers into the shared layer store, and the cmdline lists their root hashes"
+lbundle hx-a "$T/hx-a.slot.tar" base:base-1 platform:raze-1 app:app-1
+up stage "$T/hx-a.slot.tar" 2>/dev/null || fail "layered stage: $(rc stage "$T/hx-a.slot.tar"; cat "$T/err")"
+for c in base-1 raze-1 app-1; do
+	[ -f "$T/data/slots/layers/$(lid $c).erofs" ] || fail "layer $c not in the store: $(ls "$T/data/slots/layers")"
+done
+[ ! -e "$T/data/slots/hx-a.erofs" ] || fail "a layered slot got a one-image file"
+grep -q "atlas.slot=hx-a atlas.roothash=$(rh base),$(rh platform),$(rh app) " "$T/boot/slots/hx-a/cmdline.txt" || fail "cmdline: $(cat "$T/boot/slots/hx-a/cmdline.txt")"
+status | grep -q '"id":"hx-a"[^]]*"intact":true' || fail "hx-a intact: $(status)"
+status | grep -q '"id":"hx-a",[^{]*"display_name":null,"layers":\[{"name":"base"' || fail "hx-a layers listed: $(status)"
+status | grep -q '"id":"pv-a"[^}]*"layers":null' || fail "a one-image slot's layers aren't null: $(status)"
+
+echo "a second slot sharing base and platform ships only its app layer; check says what it reuses"
+lbundle hx-b "$T/hx-b.slot.tar" -base:base-1 -platform:raze-1 app:app-2
+[ "$(rc check "$T/hx-b.slot.tar")" = 0 ] || fail "check: $(cat "$T/out" "$T/err")"
+grep -q '"layers_reused":2' "$T/out" || fail "check reuse: $(cat "$T/out")"
+up stage "$T/hx-b.slot.tar" 2>/dev/null || fail "app-only stage: $(cat "$T/err")"
+[ "$(ls "$T/data/slots/layers" | wc -l | tr -d ' ')" = 4 ] || fail "layers: $(ls "$T/data/slots/layers")"
+
+echo "a layer that's neither in the bundle nor on the board, or doesn't match, is refused; nothing changes"
+lbundle hx-c "$T/hx-c.slot.tar" -base:base-9 platform:raze-1 app:app-3
+[ "$(rc stage "$T/hx-c.slot.tar")" = 1 ] || fail "a missing layer was accepted"
+grep -q "layer base ($(lid base-9)) is neither in the bundle nor on the board" "$T/err" || fail "reason: $(cat "$T/err")"
+[ "$(rc check "$T/hx-c.slot.tar")" = 1 ] || fail "check: a missing layer passed"
+lbundle hx-c "$T/hx-c.slot.tar" base:base-1 platform:raze-1 app:app-3
+echo tampered >> "$T/build/hx-c/layers/$(lid app-3).erofs"
+tar -cf "$T/hx-c.slot.tar" -C "$T/build/hx-c" slot.json boot "layers/$(lid app-3).erofs"
+[ "$(rc stage "$T/hx-c.slot.tar")" = 1 ] || fail "a tampered layer was accepted"
+[ ! -e "$T/data/slots/hx-c.json" ] && [ ! -e "$T/data/slots/layers/$(lid app-3).erofs" ] || fail "a refused layer was kept"
+[ "$(ls "$T/data/slots/layers" | wc -l | tr -d ' ')" = 4 ] || fail "layers after refusals: $(ls "$T/data/slots/layers")"
+
+echo "removing a layered slot keeps the layers another slot has, drops its own"
+up remove hx-a 2>/dev/null || fail "remove hx-a: $(cat "$T/err")"
+[ -f "$T/data/slots/layers/$(lid base-1).erofs" ] && [ -f "$T/data/slots/layers/$(lid raze-1).erofs" ] || fail "shared layers went"
+[ ! -e "$T/data/slots/layers/$(lid app-1).erofs" ] || fail "hx-a's own app layer stayed"
+[ -f "$T/data/slots/layers/$(lid app-2).erofs" ] || fail "hx-b's app layer went"
+truncate -s 1 "$T/data/slots/layers/$(lid app-2).erofs"
+status | grep -q '"id":"hx-b"[^]]*"intact":false' || fail "a short layer isn't listed as damaged: $(status)"
+up remove hx-b 2>/dev/null
+[ -z "$(ls "$T/data/slots/layers")" ] || fail "layers left with no slot: $(ls "$T/data/slots/layers")"
 
 echo "ok"

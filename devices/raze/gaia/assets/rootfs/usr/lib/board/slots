@@ -46,6 +46,8 @@ board_load_env update.env
 
 DATA=${SLOTS_DATA:-/data}
 IMAGES=$DATA/slots
+# A layered slot's layers, shared by every slot that has them (by id).
+LAYERS=$IMAGES/layers
 STATE_DIR=$DATA/board/slots
 INIT=${SLOT_INIT:-$BOARD_LIB_DIR/slot-init}
 SYNC=${UPDATE_SYNC:-sync}
@@ -127,7 +129,24 @@ running() {
 	if [ -n "${SLOTS_RUNNING:-}" ]; then echo "$SLOTS_RUNNING"; return; fi
 	cat "$STATE_DIR/booted" 2>/dev/null || true
 }
-installed() { [ -r "$IMAGES/$1.erofs" ] && [ -r "$IMAGES/$1.json" ]; }
+# A slot is its manifest and its one image, or its manifest and its layers.
+installed() { [ -r "$IMAGES/$1.json" ] && { [ -r "$IMAGES/$1.erofs" ] || layered "$IMAGES/$1.json" > /dev/null; }; }
+# layered <slot.json>: whether it lists layers (its layer lines on stdout).
+layered() { $INIT layers "$1" 2>/dev/null; }
+
+# Layers no installed slot lists any more go (after a remove, or an install
+# that replaced a slot's layers).
+gc_layers() {
+	[ -d "$LAYERS" ] || return 0
+	_keep=$(for _j in "$IMAGES"/*.json; do [ -e "$_j" ] && layered "$_j"; done | awk '{ print $2 }')
+	for _f in "$LAYERS"/*.erofs; do
+		[ -e "$_f" ] || continue
+		_lid=${_f##*/}
+		_lid=${_lid%.erofs}
+		printf '%s\n' "$_keep" | grep -qx "$_lid" || rm -f "$_f"
+	done
+	rm -f "$LAYERS"/.*.tmp 2>/dev/null || true
+}
 valid_id() {
 	case "$1" in '' | .* | *[!a-z0-9._-]*) return 1 ;; esac
 	[ "${#1}" -le 64 ]
@@ -203,14 +222,29 @@ plain_reboot() { eval "${UPDATE_REBOOT_PLAIN:-$SYSTEMCTL reboot}"; }
 slots_json() {
 	_first=1
 	printf '['
-	for _img in "$IMAGES"/*.erofs; do
-		[ -e "$_img" ] || continue
-		_id=${_img##*/}
-		_id=${_id%.erofs}
+	for _man in "$IMAGES"/*.json; do
+		[ -e "$_man" ] || continue
+		_id=${_man##*/}
+		_id=${_id%.json}
 		valid_id "$_id" || continue
+		_img=$IMAGES/$_id.erofs
+		# A layered slot: its size is its layers', and it's intact when each
+		# layer file is there at its size.
+		_layers='' _lsize=0 _lok=true
+		if [ ! -e "$_img" ]; then
+			_lines=$(layered "$_man") || continue
+			while read -r _ln _lid _lsz _lsha _lroot; do
+				_have=$(board_file_size "$LAYERS/$_lid.erofs" 2>/dev/null || echo)
+				[ "$_have" = "$_lsz" ] || _lok=false
+				_lsize=$((_lsize + _lsz))
+				_layers="$_layers{\"name\":$(board_json_str "$_ln"),\"id\":\"$_lid\",\"size\":$_lsz},"
+			done <<EOF
+$_lines
+EOF
+		fi
 		[ "$_first" = 1 ] || printf ','
 		_first=0
-		_size=$(board_file_size "$_img")
+		if [ -e "$_img" ]; then _size=$(board_file_size "$_img"); else _size=$_lsize; fi
 		# The manifest's fields in one helper run, a line each. The sentinel
 		# keeps $(...) from dropping trailing empty lines. A helper that can't
 		# give them as lines (exit 1) leaves them to mf, one by one.
@@ -238,21 +272,27 @@ EOF
 		fi
 		# Damaged when the file isn't the size it was built at.
 		_intact=true
-		[ -z "$_want" ] || [ "$_want" = "$_size" ] || _intact=false
+		if [ -e "$_img" ]; then
+			[ -z "$_want" ] || [ "$_want" = "$_size" ] || _intact=false
+		else
+			_intact=$_lok
+			_root=layered
+		fi
 		_flags=''
 		[ "$_id" = "$(running)" ] && _flags="$_flags\"running\","
 		[ "$_id" = "$DEFAULT" ] && _flags="$_flags\"default\","
 		[ "$_id" = "$PREVIOUS" ] && _flags="$_flags\"previous\","
 		[ "$_id" = "$TRIAL" ] && _flags="$_flags\"trial\","
 		[ "$_id" = "$STAGED" ] && _flags="$_flags\"staged\","
-		printf '{"id":%s,"family":%s,"version":%s,"variant":%s,"kernel":%s,"size":%s,"verity":%s,"intact":%s,"flags":[%s],"pinned":%s,"good":%s,"installed":%s,"last_boot":%s,"display_name":%s}' \
+		printf '{"id":%s,"family":%s,"version":%s,"variant":%s,"kernel":%s,"size":%s,"verity":%s,"intact":%s,"flags":[%s],"pinned":%s,"good":%s,"installed":%s,"last_boot":%s,"display_name":%s,"layers":%s}' \
 			"$(board_json_str "$_id")" "$(board_json_str "$_family")" "$(board_json_str "$_version")" \
 			"$(board_json_str "$_variant")" "$(board_json_str "$_kernel")" "$_size" \
 			"$([ -n "$_root" ] && echo true || echo false)" "$_intact" "${_flags%,}" \
 			"$([ "$(meta_get "$_id" PINNED)" = yes ] && echo true || echo false)" \
 			"$(board_json_str "$(meta_get "$_id" GOOD)")" "$(board_json_str "$(meta_get "$_id" INSTALLED)")" \
 			"$(board_json_str "$(meta_get "$_id" LAST_BOOT)")" \
-				"$(if [ -n "$_display" ]; then board_json_str "$_display"; else printf null; fi)"
+				"$(if [ -n "$_display" ]; then board_json_str "$_display"; else printf null; fi)" \
+			"$(if [ -n "$_layers" ]; then printf '[%s]' "${_layers%,}"; else printf null; fi)"
 	done
 	printf ']'
 }
@@ -290,18 +330,39 @@ install_bundle() {
 	tar -xf "$_tar" -C "$_work" || die "the bundle doesn't unpack"
 	# Unpacked: a streamed bundle's tar goes now, not after the install.
 	[ -z "$STREAMED" ] || { rm -f "$STREAMED"; STREAMED=''; }
-	[ -r "$_work/slot.json" ] && [ -r "$_work/rootfs.erofs" ] && [ -d "$_work/boot" ] || die "not a slot bundle (slot.json, rootfs.erofs, boot/)"
+	[ -r "$_work/slot.json" ] && [ -d "$_work/boot" ] || die "not a slot bundle (slot.json, rootfs.erofs or layers/, boot/)"
 	_id=$($INIT field "$_work/slot.json" id) || die "slot.json has no id"
 	valid_id "$_id" || die "slot.json: \`$_id\` isn't a slot id"
 	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
 	[ "$_id" != "$DEFAULT" ] || refuse "$_id is the default slot"
-	_root=$($INIT field "$_work/slot.json" verity.root_hash) || die "slot.json has no verity root hash"
-	_size=$($INIT field "$_work/slot.json" image.size) || die "slot.json has no image size"
-	_sha=$($INIT field "$_work/slot.json" image.sha256) || die "slot.json has no image sha256"
-	[ "$(board_file_size "$_work/rootfs.erofs")" = "$_size" ] || die "rootfs.erofs isn't the size slot.json says"
-	PROGRESS=300 && write_status
-	[ "$(sha256sum "$_work/rootfs.erofs" | cut -d' ' -f1)" = "$_sha" ] || die "rootfs.erofs doesn't match slot.json's sha256"
-	PROGRESS=600 && write_status
+	# A layered slot: each layer the board already has is kept as it is;
+	# the others come from the bundle's layers/<id>.erofs, checked here.
+	_new_layers=''
+	if _lines=$(layered "$_work/slot.json"); then
+		_root='' _sha=layered
+		while read -r _ln _lid _lsz _lsha _lroot; do
+			_root="$_root${_root:+,}$_lroot"
+			if [ "$(board_file_size "$LAYERS/$_lid.erofs" 2>/dev/null)" = "$_lsz" ]; then
+				continue
+			fi
+			[ -r "$_work/layers/$_lid.erofs" ] || die "layer $_ln ($_lid) is neither in the bundle nor on the board"
+			[ "$(board_file_size "$_work/layers/$_lid.erofs")" = "$_lsz" ] || die "layer $_ln isn't the size slot.json says"
+			[ "$(sha256sum "$_work/layers/$_lid.erofs" | cut -d' ' -f1)" = "$_lsha" ] || die "layer $_ln doesn't match slot.json's sha256"
+			_new_layers="$_new_layers $_lid"
+		done <<EOF
+$_lines
+EOF
+		PROGRESS=600 && write_status
+	else
+		[ -r "$_work/rootfs.erofs" ] || die "not a slot bundle (slot.json, rootfs.erofs or layers/, boot/)"
+		_root=$($INIT field "$_work/slot.json" verity.root_hash) || die "slot.json has no verity root hash"
+		_size=$($INIT field "$_work/slot.json" image.size) || die "slot.json has no image size"
+		_sha=$($INIT field "$_work/slot.json" image.sha256) || die "slot.json has no image sha256"
+		[ "$(board_file_size "$_work/rootfs.erofs")" = "$_size" ] || die "rootfs.erofs isn't the size slot.json says"
+		PROGRESS=300 && write_status
+		[ "$(sha256sum "$_work/rootfs.erofs" | cut -d' ' -f1)" = "$_sha" ] || die "rootfs.erofs doesn't match slot.json's sha256"
+		PROGRESS=600 && write_status
+	fi
 	$INIT boot-files "$_work/slot.json" > "$_work/boot.sha256" || die "slot.json's boot files"
 	(cd "$_work/boot" && sha256sum -c ../boot.sha256 > /dev/null 2>&1) || die "a boot file doesn't match slot.json"
 	# An initramfs the kernel can't unpack never gets to /init (r54: xz with
@@ -330,13 +391,29 @@ install_bundle() {
 	mv "$BOOT/slots/.$_id.new" "$BOOT/slots/$_id" || die "can't put the slot's boot files in place"
 	boot_sync
 	PROGRESS=900 && write_status
-	# The data side: the image and its manifest, each by rename.
+	# The data side: the image (or the new layers) and the manifest, each
+	# by rename, the manifest last.
 	mv -f "$_work/slot.json" "$IMAGES/.$_id.json.tmp"
-	mv -f "$_work/rootfs.erofs" "$IMAGES/.$_id.erofs.tmp"
-	$SYNC
-	mv -f "$IMAGES/.$_id.erofs.tmp" "$IMAGES/$_id.erofs"
+	if [ "$_sha" = layered ]; then
+		mkdir -p "$LAYERS"
+		for _lid in $_new_layers; do
+			mv -f "$_work/layers/$_lid.erofs" "$LAYERS/.$_lid.erofs.tmp"
+		done
+		$SYNC
+		for _lid in $_new_layers; do
+			mv -f "$LAYERS/.$_lid.erofs.tmp" "$LAYERS/$_lid.erofs"
+		done
+		# Replacing a one-image slot of the same id: its image goes.
+		rm -f "$IMAGES/$_id.erofs"
+	else
+		mv -f "$_work/rootfs.erofs" "$IMAGES/.$_id.erofs.tmp"
+		$SYNC
+		mv -f "$IMAGES/.$_id.erofs.tmp" "$IMAGES/$_id.erofs"
+	fi
 	mv -f "$IMAGES/.$_id.json.tmp" "$IMAGES/$_id.json"
 	$SYNC
+	# Layers a replaced slot had and nothing has now.
+	gc_layers
 	rm -f "$STATE_DIR/$_id.meta"
 	meta_set "$_id" PINNED "$2"
 	meta_set "$_id" GOOD untried
@@ -403,17 +480,35 @@ cmd_check() {
 	while IFS= read -r _n; do set -- "$@" "$_n"; done < "$_work/.want"
 	[ $# -gt 0 ] || die "not a slot bundle (slot.json, rootfs.erofs, boot/)"
 	tar -xf "$_tar" -C "$_work" "$@" 2>/dev/null || die "the bundle doesn't unpack"
-	[ -r "$_work/slot.json" ] && [ -d "$_work/boot" ] && [ -n "$(member_size "$_work/.list" rootfs.erofs)" ] ||
-		die "not a slot bundle (slot.json, rootfs.erofs, boot/)"
+	[ -r "$_work/slot.json" ] && [ -d "$_work/boot" ] || die "not a slot bundle (slot.json, rootfs.erofs or layers/, boot/)"
 	_id=$($INIT field "$_work/slot.json" id) || die "slot.json has no id"
 	valid_id "$_id" || die "slot.json: \`$_id\` isn't a slot id"
 	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
 	[ "$_id" != "$DEFAULT" ] || refuse "$_id is the default slot"
-	$INIT field "$_work/slot.json" verity.root_hash > /dev/null || die "slot.json has no verity root hash"
-	_size=$($INIT field "$_work/slot.json" image.size) || die "slot.json has no image size"
-	_sha=$($INIT field "$_work/slot.json" image.sha256) || die "slot.json has no image sha256"
-	[ "$(member_size "$_work/.list" rootfs.erofs)" = "$_size" ] || die "rootfs.erofs isn't the size slot.json says"
-	[ "$(tar -xOf "$_tar" "${_pre}rootfs.erofs" | sha256sum | cut -d' ' -f1)" = "$_sha" ] || die "rootfs.erofs doesn't match slot.json's sha256"
+	_reuse=0
+	if _lines=$(layered "$_work/slot.json"); then
+		# Each layer the board has is reused; the others must be in the bundle.
+		_size=0
+		while read -r _ln _lid _lsz _lsha _lroot; do
+			_size=$((_size + _lsz))
+			if [ "$(board_file_size "$LAYERS/$_lid.erofs" 2>/dev/null)" = "$_lsz" ]; then
+				_reuse=$((_reuse + 1))
+				continue
+			fi
+			[ -n "$(member_size "$_work/.list" "layers/$_lid.erofs")" ] || die "layer $_ln ($_lid) is neither in the bundle nor on the board"
+			[ "$(member_size "$_work/.list" "layers/$_lid.erofs")" = "$_lsz" ] || die "layer $_ln isn't the size slot.json says"
+			[ "$(tar -xOf "$_tar" "${_pre}layers/$_lid.erofs" | sha256sum | cut -d' ' -f1)" = "$_lsha" ] || die "layer $_ln doesn't match slot.json's sha256"
+		done <<EOF
+$_lines
+EOF
+	else
+		[ -n "$(member_size "$_work/.list" rootfs.erofs)" ] || die "not a slot bundle (slot.json, rootfs.erofs or layers/, boot/)"
+		$INIT field "$_work/slot.json" verity.root_hash > /dev/null || die "slot.json has no verity root hash"
+		_size=$($INIT field "$_work/slot.json" image.size) || die "slot.json has no image size"
+		_sha=$($INIT field "$_work/slot.json" image.sha256) || die "slot.json has no image sha256"
+		[ "$(member_size "$_work/.list" rootfs.erofs)" = "$_size" ] || die "rootfs.erofs isn't the size slot.json says"
+		[ "$(tar -xOf "$_tar" "${_pre}rootfs.erofs" | sha256sum | cut -d' ' -f1)" = "$_sha" ] || die "rootfs.erofs doesn't match slot.json's sha256"
+	fi
 	$INIT boot-files "$_work/slot.json" > "$_work/.boot.sha256" || die "slot.json's boot files"
 	(cd "$_work/boot" && sha256sum -c ../.boot.sha256 > /dev/null 2>&1) || die "a boot file doesn't match slot.json"
 	if [ -f "$_work/boot/initramfs" ]; then
@@ -423,12 +518,12 @@ cmd_check() {
 	_need=$(( $(board_file_size "$_tar") / 1024 + RESERVE_KB ))
 	_free=$(free_kb)
 	[ "$_free" -ge "$_need" ] || refuse "no room for this slot: it needs $((_need / 1024)) MiB with the reserve, /data has $((_free / 1024)) MiB free; remove a slot first"
-	printf '{"ok":true,"id":%s,"family":%s,"version":%s,"variant":%s,"image_size":%s,"need_bytes":%s,"free_bytes":%s,"replaces":%s}\n' \
+	printf '{"ok":true,"id":%s,"family":%s,"version":%s,"variant":%s,"image_size":%s,"need_bytes":%s,"free_bytes":%s,"replaces":%s,"layers_reused":%s}\n' \
 		"$(board_json_str "$_id")" "$(board_json_str "$($INIT field "$_work/slot.json" family || true)")" \
 		"$(board_json_str "$($INIT field "$_work/slot.json" version || true)")" \
 		"$(board_json_str "$($INIT field "$_work/slot.json" variant || true)")" \
 		"$_size" "$((_need * 1024))" "$((_free * 1024))" \
-		"$(installed "$_id" && echo true || echo false)"
+		"$(installed "$_id" && echo true || echo false)" "$_reuse"
 }
 
 cmd_stage_url() {
@@ -606,6 +701,7 @@ cmd_remove() {
 	rm -rf "$BOOT/slots/$_id"
 	$SYNC
 	rm -f "$IMAGES/$_id.erofs" "$IMAGES/$_id.json" "$STATE_DIR/$_id.meta"
+	gc_layers
 	$SYNC
 	[ "$PREVIOUS" != "$_id" ] || PREVIOUS=''
 	[ "$STAGED" != "$_id" ] || STAGED=''
