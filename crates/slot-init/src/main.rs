@@ -105,9 +105,25 @@ fn run(args: &[String]) -> Result<String, String> {
 fn open(image: &str, manifest: &str, root: &str, name: &str) -> Result<String, String> {
     let manifest = Manifest::parse(&read(manifest)?)?;
     let root = root_hash(root)?;
+    // A one-image slot's verity, or the layer this image is (by its id).
+    let verity = match &manifest.verity {
+        Some(v) => v.clone(),
+        None => {
+            let file = std::path::Path::new(image)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or_default();
+            manifest
+                .layers
+                .iter()
+                .find(|l| l.id == file)
+                .map(|l| l.verity.clone())
+                .ok_or_else(|| format!("{image} isn't one of the slot's layers"))?
+        }
+    };
     let (path, dev) = slot_init::sys::open_loop(std::path::Path::new(image))?;
     eprintln!("slot-init: {image} on {path} ({dev})");
-    slot_init::sys::open_verity(name, &dev, &manifest.verity, &root)
+    slot_init::sys::open_verity(name, &dev, &verity, &root)
 }
 
 #[cfg(target_os = "linux")]
@@ -139,6 +155,7 @@ fn boot_recorded() -> String {
     let ops = slot_init::record::Record {
         calls: var("SLOT_CALLS").into(),
         fail: var("SLOT_FAIL").split(',').map(str::to_owned).collect(),
+        opened: std::cell::Cell::new(0),
     };
     slot_init::boot::boot(&ops, &env)
 }

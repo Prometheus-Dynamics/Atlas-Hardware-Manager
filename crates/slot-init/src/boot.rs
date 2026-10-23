@@ -9,7 +9,11 @@
 //! says it has errors: there's no e2fsck here, and the kernel replays the
 //! journal itself), opens /data/slots/<id>.erofs read-only through
 //! dm-verity with that root hash, mounts it, binds the OS family's data
-//! dirs, and switch_roots into it.
+//! dirs, and switch_roots into it. A layered slot (slot.json `layers`) is
+//! /data/slots/layers/<layer id>.erofs per layer, each through its own
+//! dm-verity (`atlas.roothash` lists their root hashes, comma-separated,
+//! lowest first), mounted at /layers/<n> and stacked read-only as an
+//! overlayfs root.
 //!
 //! When it can't (no image, a kernel the image wasn't built for, verity
 //! refusing): on a trial boot it restarts plainly, which boots the default
@@ -28,7 +32,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::partition::{Spec, find};
-use crate::{Manifest, State, cmdline_arg, valid_id};
+use crate::{Manifest, State, Verity, cmdline_arg, valid_id};
 
 const MAX_FALLBACKS: u32 = 3;
 /// ext4's s_state bit for "errors detected".
@@ -43,8 +47,15 @@ pub trait Ops {
     fn umount(&self, target: &Path);
     /// Loads a module and what it depends on (modules.dep).
     fn load_module(&self, name: &str, release: &str) -> Result<(), String>;
-    /// A read-only loop + dm-verity device over the image: its node.
-    fn open_slot(&self, image: &Path, manifest: &Manifest, root: &str) -> Result<String, String>;
+    /// A read-only loop + dm-verity device (named `name`) over the image:
+    /// its node.
+    fn open_verity(
+        &self,
+        image: &Path,
+        name: &str,
+        verity: &Verity,
+        root: &str,
+    ) -> Result<String, String>;
     fn kernel_log(&self) -> String;
     /// Writes `text` to `path` and makes it durable (the file and its
     /// directory flushed), so a restart right after keeps it.
@@ -335,35 +346,83 @@ impl Boot<'_> {
             );
         }
 
-        let image = data_dir.join("slots").join(format!("{slot}.erofs"));
         let manifest_path = data_dir.join("slots").join(format!("{slot}.json"));
-        let Ok(meta) = std::fs::metadata(&image) else {
-            return self.fail(&format!("no image {}", image.display()));
-        };
         let manifest = match std::fs::read_to_string(&manifest_path)
             .map_err(|e| format!("{}: {e}", manifest_path.display()))
             .and_then(|text| Manifest::parse(&text))
         {
             Ok(manifest) => manifest,
-            Err(error) => return self.fail(&format!("unreadable manifest: {error}")),
+            Err(error) => {
+                if manifest_path.exists() || manifest_path.with_extension("erofs").exists() {
+                    return self.fail(&format!("unreadable manifest: {error}"));
+                }
+                return self.fail(&format!(
+                    "no image {}",
+                    data_dir
+                        .join("slots")
+                        .join(format!("{slot}.erofs"))
+                        .display()
+                ));
+            }
         };
-        // A cut-short image would open (verity checks blocks as they're
-        // read) and fail later, in the slot's own system: refuse it here,
-        // with a reason in the log.
-        let size = meta.len();
-        let tree_start = manifest.verity.hash_offset + u64::from(manifest.verity.hash_block_size);
-        if let Some(want) = manifest.image.as_ref().map(|i| i.size)
-            && want != size
+        // What to open: the one image, or each layer, lowest first. A
+        // cut-short file would open (verity checks blocks as they're read)
+        // and fail later, in the slot's own system: refuse it here, with a
+        // reason in the log.
+        let parts: Vec<(String, std::path::PathBuf, Option<u64>, &Verity)> = match &manifest.verity
         {
+            Some(verity) => vec![(
+                "slot".to_owned(),
+                data_dir.join("slots").join(format!("{slot}.erofs")),
+                manifest.image.as_ref().map(|i| i.size),
+                verity,
+            )],
+            None => manifest
+                .layers
+                .iter()
+                .map(|l| {
+                    (
+                        format!("slot-{}", l.name),
+                        data_dir
+                            .join("slots/layers")
+                            .join(format!("{}.erofs", l.id)),
+                        Some(l.size),
+                        &l.verity,
+                    )
+                })
+                .collect(),
+        };
+        let roots: Vec<String> = root.split(',').map(str::to_owned).collect();
+        if roots.len() != parts.len() {
             return self.fail(&format!(
-                "the image is {size} bytes, slot.json says {want}: damaged or cut short"
+                "the command line has {} root hash(es), slot.json {} image(s)",
+                roots.len(),
+                parts.len()
             ));
         }
-        if size <= tree_start {
-            return self.fail(&format!(
-                "the image is {size} bytes, too short for its hash tree at {}: damaged or cut short",
-                manifest.verity.hash_offset
-            ));
+        for (name, image, want, verity) in &parts {
+            // What the log calls it: "the image", or "layer <name>".
+            let what = match name.strip_prefix("slot-") {
+                Some(layer) => format!("layer {layer}"),
+                None => "the image".to_owned(),
+            };
+            let Ok(meta) = std::fs::metadata(image) else {
+                return self.fail(&format!("no image {}", image.display()));
+            };
+            let size = meta.len();
+            if let Some(want) = want
+                && *want != size
+            {
+                return self.fail(&format!(
+                    "{what} is {size} bytes, slot.json says {want}: damaged or cut short"
+                ));
+            }
+            if size <= verity.tree_start() {
+                return self.fail(&format!(
+                    "{what} is {size} bytes, too short for its hash tree at {}: damaged or cut short",
+                    verity.hash_offset
+                ));
+            }
         }
         let running = std::fs::read_to_string(self.env.at("proc/sys/kernel/osrelease"))
             .map(|s| s.trim().to_owned())
@@ -384,13 +443,42 @@ impl Boot<'_> {
                 self.log(&format!("{module}: {error}"));
             }
         }
-        let dm = match self.ops.open_slot(&image, &manifest, root) {
-            Ok(dm) => dm,
-            Err(error) => return self.fail(&format!("dm-verity refused it: {error}")),
-        };
         let new_root = self.env.at("newroot");
-        if let Err(error) = self.ops.mount("erofs", "ro", Path::new(&dm), &new_root) {
-            return self.fail(&format!("can't mount the image ({dm}): {error}"));
+        if manifest.layers.is_empty() {
+            let (name, image, _, verity) = &parts[0];
+            let dm = match self.ops.open_verity(image, name, verity, &roots[0]) {
+                Ok(dm) => dm,
+                Err(error) => return self.fail(&format!("dm-verity refused it: {error}")),
+            };
+            if let Err(error) = self.ops.mount("erofs", "ro", Path::new(&dm), &new_root) {
+                return self.fail(&format!("can't mount the image ({dm}): {error}"));
+            }
+        } else {
+            let mut lowers = Vec::new();
+            for (n, ((name, image, _, verity), root)) in parts.iter().zip(&roots).enumerate() {
+                let layer = &manifest.layers[n].name;
+                let dm = match self.ops.open_verity(image, name, verity, root) {
+                    Ok(dm) => dm,
+                    Err(error) => {
+                        return self.fail(&format!("dm-verity refused layer {layer}: {error}"));
+                    }
+                };
+                let at = self.env.at(&format!("layers/{n}"));
+                let _ = std::fs::create_dir_all(&at);
+                if let Err(error) = self.ops.mount("erofs", "ro", Path::new(&dm), &at) {
+                    return self.fail(&format!("can't mount layer {layer} ({dm}): {error}"));
+                }
+                lowers.push(at.display().to_string());
+            }
+            // overlayfs lists the top layer first.
+            lowers.reverse();
+            let opts = format!("ro,lowerdir={}", lowers.join(":"));
+            if let Err(error) = self
+                .ops
+                .mount("overlay", &opts, Path::new("overlay"), &new_root)
+            {
+                return self.fail(&format!("can't stack the layers: {error}"));
+            }
         }
 
         // The OS family's own data dirs over /data (os/<family>/<dir>).

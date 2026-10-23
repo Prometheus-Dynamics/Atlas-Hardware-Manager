@@ -99,7 +99,7 @@ setup
 run
 called "mount -t ext4 -o noatime,errors=remount-ro $T/dev/mmcblk0p2 $R/data" || fail "data mount: $(cat "$T/calls")"
 called "modprobe dm-verity (7.2.9-v8-16k)" || fail "modules: $(cat "$T/calls")"
-called "open $R/data/slots/pv-a.erofs pv-a $hash" || fail "verity: $(cat "$T/calls")"
+called "open $R/data/slots/pv-a.erofs slot $hash" || fail "verity: $(cat "$T/calls")"
 called "mount -t erofs -o ro /dev/dm-0 $R/newroot" || fail "erofs: $(cat "$T/calls")"
 called "mount --bind $R/data/os/photonvision/photonvision_config $R/data/photonvision_config" || fail "data dirs: $(cat "$T/calls")"
 called "mount --move $R/data $R/newroot/data" || fail "move: $(cat "$T/calls")"
@@ -216,5 +216,61 @@ echo "console=ttyAMA10" > "$R/proc/cmdline"
 run
 said "no slot can start: no atlas.slot on the kernel command line" || fail "the reason: $(cat "$R/dev/kmsg")"
 called "reboot" || fail "no restart"
+
+# layered <ids...>: pv-a as a layered slot (base, platform, app), each
+# layer one data block, its verity superblock and one hash block.
+layered() {
+	setup
+	rm -f "$R/data/slots/pv-a.erofs"
+	mkdir -p "$R/data/slots/layers"
+	layers='' roots=''
+	for pair in base:aa platform:bb app:cc; do
+		name=${pair%%:*} id=$(printf "${pair#*:}%.0s" $(seq 32))
+		dd if=/dev/zero of="$R/data/slots/layers/$id.erofs" bs=4096 count=3 status=none
+		layers="$layers${layers:+,}{\"name\":\"$name\",\"id\":\"$id\",\"size\":12288,\"verity\":{\"salt\":\"00\",\"hash_offset\":4096,\"data_blocks\":1}}"
+		roots="$roots${roots:+,}$(printf "${pair#*:}%.0s" $(seq 32))"
+	done
+	echo "{\"schema\":2,\"id\":\"pv-a\",\"family\":\"photonvision\",\"kernel\":\"7.2.9-v8-16k\",\"layers\":[$layers]}" > "$R/data/slots/pv-a.json"
+	echo "console=ttyAMA10 atlas.slot=pv-a atlas.roothash=$roots atlas.data=PARTUUID=5056525a-02 panic=5" > "$R/proc/cmdline"
+}
+L=$(printf 'aa%.0s' $(seq 32)) P=$(printf 'bb%.0s' $(seq 32)) A=$(printf 'cc%.0s' $(seq 32))
+
+echo "a layered slot: each layer through its own verity, stacked lowest first as an overlayfs root"
+layered
+run
+in_order "open $R/data/slots/layers/$L.erofs slot-base $L" \
+	"mount -t erofs -o ro /dev/dm-0 $R/layers/0" \
+	"open $R/data/slots/layers/$P.erofs slot-platform $P" \
+	"mount -t erofs -o ro /dev/dm-1 $R/layers/1" \
+	"open $R/data/slots/layers/$A.erofs slot-app $A" \
+	"mount -t erofs -o ro /dev/dm-2 $R/layers/2" \
+	"mount -t overlay -o ro,lowerdir=$R/layers/2:$R/layers/1:$R/layers/0 overlay $R/newroot" \
+	"mount --move $R/data $R/newroot/data" \
+	"switch_root $R/newroot /sbin/init"
+
+echo "a layered slot whose command line lists another number of root hashes isn't started"
+layered
+sed -i "s/atlas.roothash=[^ ]*/atlas.roothash=$L,$P/" "$R/proc/cmdline"
+run
+called "switch_root" && fail "started with two root hashes for three layers"
+said "the command line has 2 root hash(es), slot.json 3 image(s)" || fail "no reason: $(cat "$R/dev/kmsg")"
+
+echo "a missing or cut-short layer, or one verity refuses, isn't started, and says which"
+layered
+rm "$R/data/slots/layers/$P.erofs"
+run
+called "switch_root" && fail "started without its platform layer"
+said "no image $R/data/slots/layers/$P.erofs" || fail "no reason: $(cat "$R/dev/kmsg")"
+layered
+truncate -s 8192 "$R/data/slots/layers/$A.erofs"
+run
+said "layer app is 8192 bytes, slot.json says 12288: damaged or cut short" || fail "a short app layer: $(cat "$R/dev/kmsg")"
+layered
+FAIL_AT=verity:slot-app run
+called "switch_root" && fail "started with a refused app layer"
+said "dm-verity refused layer app" || fail "no reason: $(cat "$R/dev/kmsg")"
+layered
+FAIL_AT=overlay run
+said "can't stack the layers" || fail "no reason: $(cat "$R/dev/kmsg")"
 
 echo "ok"

@@ -207,7 +207,6 @@ pub fn reboot_tryboot() -> Result<(), String> {
 use std::ffi::CString;
 use std::time::Duration;
 
-use crate::Manifest;
 use crate::boot::Ops;
 
 fn c(path: &Path) -> Result<CString, String> {
@@ -367,10 +366,16 @@ impl Ops for System {
         insmod(&base.join(path))
     }
 
-    fn open_slot(&self, image: &Path, manifest: &Manifest, root: &str) -> Result<String, String> {
+    fn open_verity(
+        &self,
+        image: &Path,
+        name: &str,
+        verity: &Verity,
+        root: &str,
+    ) -> Result<String, String> {
         let root = crate::root_hash(root)?;
         let (_, dev) = open_loop(image)?;
-        open_verity("slot", &dev, &manifest.verity, &root)
+        open_verity(name, &dev, verity, &root)
     }
 
     fn kernel_log(&self) -> String {

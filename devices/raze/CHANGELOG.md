@@ -115,6 +115,20 @@ commit; the commits are listed per area.
   the check warns about the unknown key and goes on. `tests/hardware-list.sh`
   keeps it in step with raze-device.txt's overlays, boot.toml's overlays and
   the staged files.
+- **Layered slots, the initramfs side (slot-init):** a slot.json may list
+  `layers` (lowest first: base, platform, app; each a name, a 64-hex id, the
+  file's size and its own verity geometry) instead of one `verity`. Each
+  layer is `/data/slots/layers/<id>.erofs`, opened through its own dm-verity
+  device (`slot-<name>`) with its root hash from the command line
+  (`atlas.roothash` lists them comma-separated, in the same order; a count
+  that doesn't match is refused), mounted at `/layers/<n>` and stacked
+  read-only as an overlayfs root. One-image slots boot as before. An older
+  slot-init refuses a layered slot (the hash list isn't one root hash)
+  rather than misreading it. Refusals name the layer (missing, cut short,
+  verity, the overlay mount). The slots writer and the bundle format follow.
+- **Kernel: overlayfs built in** (`CONFIG_OVERLAY_FS=y`, raze.config 6; the
+  install-size trim had it off): the layered slot root and the app-layer
+  push need it.
 
 ### Install size: board-agent and board-stream
 

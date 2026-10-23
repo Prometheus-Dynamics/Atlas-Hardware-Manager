@@ -1,18 +1,21 @@
 //! Recording [`Ops`] for tests/slot-init.sh: each step /init takes is a
 //! line in `calls` (as the commands the shell /init used to run), and
 //! nothing is mounted: the test prepares the directories the mounts would
-//! show. `fail` names steps that fail: `verity`, `erofs`, `move`.
+//! show. `fail` names steps that fail: `verity` (or `verity:<dm name>`),
+//! a filesystem type (`erofs`, `overlay`), `move`.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use crate::Manifest;
+use crate::Verity;
 use crate::boot::Ops;
 
 pub struct Record {
     pub calls: PathBuf,
     pub fail: Vec<String>,
+    /// dm devices handed out so far (dm-0, dm-1, ...).
+    pub opened: std::cell::Cell<u32>,
 }
 
 impl Record {
@@ -74,12 +77,20 @@ impl Ops for Record {
         Ok(())
     }
 
-    fn open_slot(&self, image: &Path, manifest: &Manifest, root: &str) -> Result<String, String> {
-        self.note(&format!("open {} {} {root}", image.display(), manifest.id));
-        if self.fails("verity") {
+    fn open_verity(
+        &self,
+        image: &Path,
+        name: &str,
+        _verity: &Verity,
+        root: &str,
+    ) -> Result<String, String> {
+        self.note(&format!("open {} {name} {root}", image.display()));
+        if self.fails("verity") || self.fails(&format!("verity:{name}")) {
             return Err("DM_TABLE_LOAD: Invalid argument".into());
         }
-        Ok("/dev/dm-0".into())
+        let n = self.opened.get();
+        self.opened.set(n + 1);
+        Ok(format!("/dev/dm-{n}"))
     }
 
     fn kernel_log(&self) -> String {

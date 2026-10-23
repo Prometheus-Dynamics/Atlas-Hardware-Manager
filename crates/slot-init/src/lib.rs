@@ -10,6 +10,12 @@
 //!
 //! Done by ioctl (loop-control, device-mapper), so the initramfs needs no
 //! cryptsetup or lvm2. Linux only.
+//!
+//! A layered slot (slot.json `layers`, lowest first: base, platform, app)
+//! is several such images, `/data/slots/layers/<layer id>.erofs`, each
+//! through its own dm-verity with its own root hash (the command line's
+//! `atlas.roothash` lists them, comma-separated, in the same order), stacked
+//! read-only as an overlayfs root.
 
 use serde::Deserialize;
 
@@ -25,11 +31,32 @@ pub struct Manifest {
     /// each is bound from /data/os/<family>/<path>. None: /data as it is.
     #[serde(default)]
     pub data_dirs: Vec<String>,
-    pub verity: Verity,
+    /// A one-image slot's verity (`<id>.erofs`); None for a layered one.
+    #[serde(default)]
+    pub verity: Option<Verity>,
     /// The image file as built (its size), when slot.json says.
     #[serde(default)]
     pub image: Option<Image>,
+    /// A layered slot's layers, lowest first; empty for a one-image slot.
+    #[serde(default)]
+    pub layers: Vec<Layer>,
 }
+
+/// One layer of a layered slot: an EROFS image with its hash tree appended,
+/// shared by every slot that has it (named by its id).
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct Layer {
+    /// What it is (`base`, `platform`, `app`): names its dm device.
+    pub name: String,
+    /// Its content id (sha256, 64 hex digits): the file is `layers/<id>.erofs`.
+    pub id: String,
+    /// The file's size as built (data and hash tree).
+    pub size: u64,
+    pub verity: Verity,
+}
+
+/// At most this many layers (overlayfs takes many more; a slot needs three).
+pub const MAX_LAYERS: usize = 8;
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct Image {
@@ -52,25 +79,71 @@ const fn block() -> u32 {
     4096
 }
 
-impl Manifest {
-    pub fn parse(text: &str) -> Result<Self, String> {
-        let manifest: Self = serde_json::from_str(text).map_err(|e| format!("slot.json: {e}"))?;
-        let v = &manifest.verity;
-        for size in [v.data_block_size, v.hash_block_size] {
+impl Verity {
+    fn check(&self, what: &str) -> Result<(), String> {
+        for size in [self.data_block_size, self.hash_block_size] {
             if !size.is_power_of_two() || !(512..=65536).contains(&size) {
                 return Err(format!(
-                    "slot.json: block size {size} isn't a power of two in 512..65536"
+                    "{what}: block size {size} isn't a power of two in 512..65536"
                 ));
             }
         }
-        if !v.hash_offset.is_multiple_of(u64::from(v.hash_block_size)) {
-            return Err("slot.json: hash_offset isn't a whole hash block".into());
+        if !self
+            .hash_offset
+            .is_multiple_of(u64::from(self.hash_block_size))
+        {
+            return Err(format!("{what}: hash_offset isn't a whole hash block"));
         }
-        if v.data_blocks == 0 || v.data_blocks * u64::from(v.data_block_size) > v.hash_offset {
-            return Err("slot.json: the data runs into the hash tree".into());
+        if self.data_blocks == 0
+            || self.data_blocks * u64::from(self.data_block_size) > self.hash_offset
+        {
+            return Err(format!("{what}: the data runs into the hash tree"));
         }
-        if !hex(&v.salt) {
-            return Err("slot.json: the salt isn't hex".into());
+        if !hex(&self.salt) {
+            return Err(format!("{what}: the salt isn't hex"));
+        }
+        Ok(())
+    }
+
+    /// Where the hash tree's first block starts (after the verity superblock).
+    pub fn tree_start(&self) -> u64 {
+        self.hash_offset + u64::from(self.hash_block_size)
+    }
+}
+
+impl Manifest {
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let manifest: Self = serde_json::from_str(text).map_err(|e| format!("slot.json: {e}"))?;
+        match (&manifest.verity, manifest.layers.is_empty()) {
+            (Some(v), true) => v.check("slot.json")?,
+            (None, false) => {
+                if manifest.layers.len() > MAX_LAYERS {
+                    return Err(format!(
+                        "slot.json: {} layers, at most {MAX_LAYERS}",
+                        manifest.layers.len()
+                    ));
+                }
+                for (n, layer) in manifest.layers.iter().enumerate() {
+                    let what = format!("slot.json layer {n}");
+                    if !valid_id(&layer.name) {
+                        return Err(format!("{what}: `{}` isn't a layer name", layer.name));
+                    }
+                    if layer.id.len() != 64
+                        || !hex(&layer.id)
+                        || layer.id != layer.id.to_ascii_lowercase()
+                    {
+                        return Err(format!("{what}: the id isn't 64 lowercase hex digits"));
+                    }
+                    if manifest.layers[..n].iter().any(|l| l.name == layer.name) {
+                        return Err(format!("{what}: `{}` twice", layer.name));
+                    }
+                    layer.verity.check(&what)?;
+                }
+            }
+            (Some(_), false) => {
+                return Err("slot.json: both verity (one image) and layers".into());
+            }
+            (None, true) => return Err("slot.json: no verity and no layers".into()),
         }
         if !valid_id(&manifest.id) {
             return Err(format!("slot.json: `{}` isn't a slot id", manifest.id));
@@ -207,6 +280,12 @@ pub fn root_hash(s: &str) -> Result<String, String> {
     Ok(s)
 }
 
+/// `atlas.roothash` for a layered slot: one root hash per layer, lowest
+/// first, comma-separated.
+pub fn root_hashes(s: &str) -> Result<Vec<String>, String> {
+    s.split(',').map(root_hash).collect()
+}
+
 /// The dm table line for the slot: one verity target over the loop device
 /// (`major:minor`), data and hash tree in the same file. As `veritysetup
 /// format --hash-offset` lays it out (Gaia's verity transform): a verity
@@ -259,12 +338,72 @@ mod tests {
         let m = Manifest::parse(SLOT).unwrap();
         assert_eq!(m.kernel, "7.2.9-v8-16k");
         let root = root_hash(&"AB".repeat(32)).unwrap();
-        let (sectors, params) = verity_table(&m.verity, "7:0", &root);
+        let (sectors, params) = verity_table(m.verity.as_ref().unwrap(), "7:0", &root);
         assert_eq!(sectors, 114176 * 8);
         assert_eq!(
             params,
             format!("1 7:0 7:0 4096 4096 114176 114177 sha256 {root} 5eed")
         );
+    }
+
+    fn layered(layers: &str) -> String {
+        format!(
+            r#"{{"schema":2,"id":"helios-2026.2.0-styx-1a2b3c4d","family":"helios","kernel":"7.2.9-v8-16k","layers":[{layers}]}}"#
+        )
+    }
+
+    fn layer(name: &str, id: char) -> String {
+        format!(
+            r#"{{"name":"{name}","id":"{}","size":8192,"verity":{{"salt":"00","hash_offset":4096,"data_blocks":1}}}}"#,
+            id.to_string().repeat(64)
+        )
+    }
+
+    #[test]
+    fn a_layered_manifest_lists_its_layers_lowest_first() {
+        let m = Manifest::parse(&layered(&format!(
+            "{},{},{}",
+            layer("base", 'a'),
+            layer("platform", 'b'),
+            layer("app", 'c')
+        )))
+        .unwrap();
+        assert!(m.verity.is_none());
+        let names: Vec<_> = m.layers.iter().map(|l| l.name.as_str()).collect();
+        assert_eq!(names, ["base", "platform", "app"]);
+        assert_eq!(m.layers[0].verity.tree_start(), 8192);
+        let roots = root_hashes(&format!("{},{}", "A".repeat(64), "b".repeat(64))).unwrap();
+        assert_eq!(roots, ["a".repeat(64), "b".repeat(64)]);
+        assert!(root_hashes(&format!("{},", "a".repeat(64))).is_err());
+    }
+
+    #[test]
+    fn bad_layered_manifests_are_refused() {
+        // Both kinds at once, neither, a layer named twice, a bad id, a bad name.
+        let both = layered(&layer("base", 'a')).replace(
+            r#""layers""#,
+            r#""verity":{"salt":"00","hash_offset":4096,"data_blocks":1},"layers""#,
+        );
+        assert!(Manifest::parse(&both).is_err());
+        assert!(Manifest::parse(&layered("")).is_err());
+        assert!(
+            Manifest::parse(&layered(&format!(
+                "{},{}",
+                layer("base", 'a'),
+                layer("base", 'b')
+            )))
+            .is_err()
+        );
+        assert!(Manifest::parse(&layered(&layer("base", 'g'))).is_err());
+        assert!(Manifest::parse(&layered(&layer("base", 'A'))).is_err());
+        assert!(Manifest::parse(&layered(&layer("../x", 'a'))).is_err());
+        let overlapping =
+            layered(&layer("base", 'a')).replace("\"hash_offset\":4096", "\"hash_offset\":0");
+        assert!(Manifest::parse(&overlapping).is_err());
+        let many: Vec<String> = (0..=MAX_LAYERS)
+            .map(|n| layer(&format!("l{n}"), 'a'))
+            .collect();
+        assert!(Manifest::parse(&layered(&many.join(","))).is_err());
     }
 
     #[test]
