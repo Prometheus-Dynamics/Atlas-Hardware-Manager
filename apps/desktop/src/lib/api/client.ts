@@ -57,8 +57,8 @@ export async function openExternal(url: string): Promise<void> {
     return;
   }
   try {
-    const { openUrl } = await import("@tauri-apps/plugin-opener");
-    await openUrl(url);
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("open_url", { url });
   } catch (error) {
     const { toasts } = await import("#lib/stores/toasts.svelte.ts");
     toasts.error(`Couldn't open ${url}: ${errorText(error)}`);

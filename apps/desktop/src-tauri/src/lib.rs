@@ -69,7 +69,6 @@ pub fn run() {
 
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
         .manage(state)
         .setup(|app| {
             // The window is made here rather than from the config: on Linux
@@ -139,6 +138,7 @@ pub fn run() {
             commands::releases::set_release_source,
             commands::releases::remove_release_source,
             commands::system::app_info,
+            commands::system::open_url,
             commands::system::health_checks,
             commands::nt::nt_connect,
             commands::nt::nt_disconnect,

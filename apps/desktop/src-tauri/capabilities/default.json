@@ -7,8 +7,6 @@
     "core:default",
     "core:webview:allow-set-webview-zoom",
     "dialog:allow-open",
-    "dialog:allow-save",
-    "opener:allow-open-url",
-    "opener:allow-default-urls"
+    "dialog:allow-save"
   ]
 }

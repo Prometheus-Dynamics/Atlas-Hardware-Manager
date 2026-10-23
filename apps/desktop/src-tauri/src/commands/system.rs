@@ -118,3 +118,33 @@ pub async fn install_app_update(app: AppHandle, state: State<'_, AppState>) -> C
 pub fn restart_app(app: AppHandle) {
     app.restart();
 }
+
+/// Opens an http(s) URL in the system browser (xdg-open, open, or the
+/// Windows URL handler). Only http and https, passed as one argument with no
+/// shell, so a page can't run anything else this way.
+#[tauri::command]
+pub fn open_url(url: String) -> CmdResult<()> {
+    let ok = (url.starts_with("https://") || url.starts_with("http://"))
+        && !url.chars().any(|c| c.is_control() || c.is_whitespace());
+    if !ok {
+        return Err(format!("{url} isn't an http(s) address"));
+    }
+    #[cfg(target_os = "windows")]
+    let mut command = {
+        let mut c = std::process::Command::new("rundll32");
+        c.arg("url.dll,FileProtocolHandler");
+        c
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = std::process::Command::new("open");
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let mut command = std::process::Command::new("xdg-open");
+    command
+        .arg(&url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("couldn't start the browser: {error}"))
+}
