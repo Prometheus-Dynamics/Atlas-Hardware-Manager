@@ -130,7 +130,9 @@ opt-level = 3
 # Panic locations (file:line) are string constants, so they survive the
 # strip and still reach the app log. opt-level stays 3: "s" on atlas-helper
 # made it bigger under LTO. [profile.device] inherits this, so it pins its
-# own (no LTO) values.
+# own (no LTO) values. Fix builds and dev .debs (scripts/deb-fast.sh, CI's
+# dev .deb job) turn LTO off and use 16 codegen units through
+# CARGO_PROFILE_RELEASE_*, for a build in seconds once warm.
 [profile.release]
 strip = "symbols"
 lto = true

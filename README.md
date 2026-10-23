@@ -158,6 +158,23 @@ This fetches the boot files, builds `atlas-helper` (and on Windows the
 `tauri build` with `src-tauri/tauri.bundle.conf.json`. CI does the same on
 Linux, Windows, and macOS for tags and manual runs.
 
+### A Linux .deb in under a minute (fix builds)
+
+```bash
+scripts/deb-fast.sh                          # Debian trixie
+DEB_BASE=ubuntu:22.04 scripts/deb-fast.sh    # Ubuntu 22.04
+```
+
+It builds in a container of the target distro (podman or docker), with the
+release profile minus LTO, a build directory and cargo registry that persist
+in `~/.cache/atlas-deb/`, and the UI rebuilt only when it changed. The first
+run builds the container image and every crate (about 5 minutes at 8 jobs);
+after that a one-line change is about 20 s in the app crate and 26 s in
+atlas-core. The package lands in `dist/deb/atlas-<commit>-<distro>.deb`.
+The binaries are larger than a tagged release's (no LTO). Every push to
+`dev` also builds both in CI (the `dev .deb` job's artifacts), whatever the
+checks say.
+
 Windows needs the WinUSB driver bound to the Pi boot device (the Raspberry Pi
 rpiboot installer provides it); `atlas doctor` and the Settings screen say so
 when it is missing.

@@ -192,6 +192,74 @@ jobs:
           cargo run -q -p atlas-cli -- disks
           cargo run -q -p atlas-cli -- doctor || true
 
+  # A .deb of every dev push, quickly, whatever the checks say: the release
+  # profile without LTO (16 codegen units), built in the distro it installs
+  # on (scripts/deb-fast.sh does the same locally). Tagged releases still
+  # come from `bundle` (full LTO).
+  dev-deb:
+    name: dev .deb (${{ matrix.name }})
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/dev') || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    container: ${{ matrix.image }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: debian-trixie
+            image: debian:trixie
+          - name: ubuntu-22.04
+            image: ubuntu:22.04
+    defaults:
+      run:
+        shell: bash
+    env:
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+    steps:
+      - name: Install build dependencies
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends ca-certificates curl unzip git \
+            build-essential pkg-config file xz-utils \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.99.0
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: dev-deb-${{ matrix.name }}
+          save-if: ${{ github.ref == 'refs/heads/dev' }}
+
+      - name: Build the .deb
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          scripts/prepare-bundle.sh x86_64-unknown-linux-gnu
+          cd apps/desktop
+          bun install --frozen-lockfile
+          bun run tauri build --target x86_64-unknown-linux-gnu --bundles deb --config src-tauri/tauri.bundle.conf.json
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          cp "$GITHUB_WORKSPACE"/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb \
+            "$GITHUB_WORKSPACE/dist/atlas-${GITHUB_SHA::7}-${{ matrix.name }}.deb"
+
+      - name: Upload the .deb
+        uses: actions/upload-artifact@v7
+        with:
+          name: atlas-deb-${{ matrix.name }}
+          path: dist/*.deb
+          if-no-files-found: error
+
   bundle:
     name: bundle (${{ matrix.os }})
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'

@@ -75,7 +75,11 @@ impl Atlas {
         } else {
             format!("push a new {} layer", push.layer)
         };
-        self.log_slot_change(&record, &what, &result.as_ref().map(|_| ()).map_err(Clone::clone));
+        self.log_slot_change(
+            &record,
+            &what,
+            &result.as_ref().map(|_| ()).map_err(Clone::clone),
+        );
         Ok(result?)
     }
 
