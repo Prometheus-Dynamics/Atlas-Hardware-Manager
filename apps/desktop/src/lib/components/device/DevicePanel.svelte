@@ -76,10 +76,17 @@
   let tab = $state(asked ?? (recovery ? "software" : "overview"));
   const current = $derived(tabs.some((t) => t.value === tab) ? tab : "overview");
   const updatable = $derived(!!record && canUpdate(record) && !recovery && (updateMethods(record).length > 0 || record.capabilities.includes("update")));
+  /** The board's host: its address is the identity URL (http://host:5899/…). */
+  const sshHost = $derived.by(() => {
+    const address = record?.identity.address ?? "";
+    try {
+      return new URL(address).hostname.replace(/^\[|\]$/g, "") || null;
+    } catch {
+      return address || null;
+    }
+  });
   const ssh = $derived(
-    record && record.presence === "online" && record.capabilities.includes("status") && record.identity.address
-      ? `ssh root@${record.identity.address}`
-      : null,
+    record && record.presence === "online" && record.capabilities.includes("status") && sshHost ? `ssh root@${sshHost}` : null,
   );
   async function copySsh() {
     if (!ssh) return;

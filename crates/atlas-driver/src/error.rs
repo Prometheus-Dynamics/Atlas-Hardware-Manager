@@ -6,9 +6,13 @@ use thiserror::Error;
 pub enum DriverError {
     #[error("device did not respond: {0}")]
     Unreachable(String),
-    #[error("device is not compatible with this release: {0}")]
+    /// The device can't do this as things are: the message says why and
+    /// what would change it (it's often not the release at all: a refused
+    /// SSH key, a busy board, no room), so it stands alone.
+    #[error("{0}")]
     Incompatible(String),
-    #[error("unsupported: {0}")]
+    /// This way to the device can't do it; the message stands alone.
+    #[error("{0}")]
     Unsupported(String),
     #[error("cancelled before any change was made")]
     Cancelled,

@@ -186,12 +186,22 @@ impl SlotsCapability for OrionSlots {
                 }
                 Some(update_action::STATE_CANCELLED) => return Err(DriverError::Cancelled),
                 Some(update_action::STATE_ERROR) => {
+                    let message = keys
+                        .get(update_action::KEY_ERROR)
+                        .cloned()
+                        .unwrap_or_else(|| "the board gave no reason".into());
+                    // The board couldn't fetch the file from this computer
+                    // (a firewall, the wrong address): nothing changed on
+                    // it, so the other way in (SSH, which sends the file
+                    // itself) may still work.
+                    if download_failed(&message) {
+                        return Err(DriverError::Unreachable(format!(
+                            "the board couldn't download the slot from this computer ({message})"
+                        )));
+                    }
                     return Err(DriverError::StepFailed {
                         step: "Installing the slot".into(),
-                        message: keys
-                            .get(update_action::KEY_ERROR)
-                            .cloned()
-                            .unwrap_or_else(|| "the board gave no reason".into()),
+                        message,
                     });
                 }
                 Some(_) => {}
@@ -212,9 +222,29 @@ impl SlotsCapability for OrionSlots {
     }
 }
 
+/// The slots writer's reason for a download that failed before anything was
+/// installed: "downloading <url> failed: …", or "the download failed" from
+/// device packages before the reason was added.
+fn download_failed(message: &str) -> bool {
+    message.starts_with("the download failed")
+        || (message.starts_with("downloading ") && message.contains(" failed"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_download_is_told_from_a_failed_install() {
+        assert!(download_failed("the download failed"));
+        assert!(download_failed(
+            "downloading http://10.0.0.2:8099/i/ab.slot.tar failed: Failed to connect to 10.0.0.2 port 8099"
+        ));
+        assert!(!download_failed("the download doesn't match --sha256"));
+        assert!(!download_failed(
+            "rootfs.erofs doesn't match slot.json's sha256"
+        ));
+    }
 
     #[test]
     fn an_ab_board_has_no_slot_set() {

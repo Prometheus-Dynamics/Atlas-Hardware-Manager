@@ -270,7 +270,7 @@ async fn restart_into_usb_boot(ssh: &SshUpdate) -> Result<(), DriverError> {
 /// `ssh-keys` installs keys from at every boot, so it survives updates) and
 /// runs `ssh-keys` now. Uses only what 1.0.7 boards have (lib.sh, findmnt,
 /// mount). The partition is left mounted as it was.
-fn add_key_script(key: &str) -> Result<String, DriverError> {
+pub(crate) fn add_key_script(key: &str) -> Result<String, DriverError> {
     let key = key
         .lines()
         .map(str::trim)

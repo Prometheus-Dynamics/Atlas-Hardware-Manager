@@ -183,7 +183,9 @@ const razeSlots = (serial: string): SimDevice => {
       update_methods: "image-write, slots-tryboot, usb-boot-reboot",
       slot_active: "photonvision-2026.3.0-styx-1a2b3c4d",
     },
-    caps: [...razeCaps(true), "slots"],
+    // No "update": the board's own updater is the A/B one, and Orion's only
+    // comes with Orion set up (the field's laptops have none).
+    caps: [...razeCaps(true).filter((c) => c !== "update"), "slots"],
     actions: AB_ACTIONS.filter((a) => a.id !== "update.cancel" && a.id !== "update.rollback"),
   };
 };

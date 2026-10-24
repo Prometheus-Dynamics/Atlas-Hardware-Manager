@@ -131,8 +131,8 @@
   const installed = $derived(primaryVersion(record.identity));
   const reinstall = $derived(method === "update" && !!version && !!installed && versionPart(version) === versionPart(installed));
 
-  /** The plan's error matters only where the plan is what runs. */
-  const problem = $derived(method === "update" || fresh === "flash" ? draft.planError : null);
+  /** The plan's error matters only where the plan is what runs: a slot install doesn't use it. */
+  const problem = $derived((method === "update" && !slotted) || (method === "fresh" && fresh === "flash") ? draft.planError : null);
 
   // What the chosen install does, step by step, for the panel under the button.
   const update = $derived(deviceStatus.get(record)?.update ?? null);
@@ -396,7 +396,7 @@
         <p class="hint" title={entry?.sha256 ?? ""}>Writes {writes}</p>
       {/if}
       {#if method === "update" && slotted && notBundle}
-        <p class="hint">A slot installs from a slot bundle (.slot.tar) or a slots build's image (.img.xz).</p>
+        <p class="hint">Choose the image (.img.xz) to install as a slot.</p>
       {/if}
       {#if installing !== null}
         <ProgressBar value={installing} label="Copying to the board" />
