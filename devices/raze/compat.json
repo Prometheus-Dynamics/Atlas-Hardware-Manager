@@ -3,18 +3,32 @@
   "model": "raze",
   "entries": [
     {
+      "os": "photonvision",
+      "versions": ["2026.3.4"],
+      "revisions": ["*"],
+      "status": "known-good",
+      "notes": "Built from this package by photon-image-modifier main (Atlas e058d25 and later): the styx and libcamera variants, as slot bundles and first-flash images. Installed on Raze cameras in the field 2026-10-24; images before e058d25 booted without the camera overlay (no camera)."
+    },
+    {
+      "os": "helios",
+      "versions": ["2026.2.0"],
+      "revisions": ["*"],
+      "status": "known-good",
+      "notes": "Built from this package (HeliOS pins Atlas by commit) and run on the bench CM5 since 2026-10-19 as slots."
+    },
+    {
       "os": "helios",
       "versions": ["*"],
       "revisions": ["*"],
       "status": "untested",
-      "notes": "No HeliOS image has been built from this package yet; HeliOS still carries its own copy of the Raze support in gaia/."
+      "notes": "Other HeliOS versions: built from this package, not tested on a Raze yet."
     },
     {
       "os": "photonvision",
       "versions": ["*"],
       "revisions": ["*"],
       "status": "untested",
-      "notes": "No PhotonVision image has been built from this package yet; the helios-raze target in photon-image-modifier still carries its own copy."
+      "notes": "Other PhotonVision versions (2027 alphas): built from this package, not tested on a Raze yet."
     }
   ]
 }
