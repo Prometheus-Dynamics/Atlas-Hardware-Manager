@@ -44,11 +44,15 @@ export function newestFirst(a: ReleaseEntry, b: ReleaseEntry): number {
   return compareVersionsDesc(versionPart(a.version), versionPart(b.version)) || a.version.localeCompare(b.version);
 }
 
-/** The image to start with: a signed stable one of the OS the board runs now, if any. */
+/**
+ * The image to start with: the newest signed stable one of the OS the board
+ * runs now. Nothing when the board's OS isn't known or has none: an image
+ * of another OS is never chosen for the user.
+ */
 export function preferredImage(record: DeviceRecord, entries: ReleaseEntry[]): ReleaseEntry | undefined {
   const os = record.identity.attributes?.os?.toLowerCase();
-  const good = entries.filter((e) => e.signed && e.channel === "stable");
-  return (os ? good.find((e) => e.artifact_name.toLowerCase().includes(os)) : undefined) ?? good[0] ?? entries[0];
+  if (!os) return undefined;
+  return entries.find((e) => e.signed && e.channel === "stable" && e.artifact_name.toLowerCase().includes(os));
 }
 
 /** The manual steps into USB boot: the board's own, else the general ones. */

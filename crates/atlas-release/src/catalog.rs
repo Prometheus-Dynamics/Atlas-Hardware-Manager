@@ -107,6 +107,19 @@ fn short(sha256: &str) -> &str {
     sha256.get(..12).unwrap_or(sha256)
 }
 
+/// The cache file name for a remote release: the digest's start, or, for a
+/// release listed without one, its version, so two versions of one artifact
+/// name never share a file (and an older download never stands in for a
+/// newer one).
+fn cache_name(entry: &ReleaseEntry) -> String {
+    let tag = if entry.sha256.is_empty() {
+        format!("v{}", safe_file_name(&entry.version))
+    } else {
+        short(&entry.sha256).to_owned()
+    };
+    format!("{tag}-{}", safe_file_name(&entry.artifact_name))
+}
+
 /// Where a download that failed its checksum is kept.
 fn unverified_path(target: &Path) -> PathBuf {
     let mut name = target.file_name().unwrap_or_default().to_os_string();
@@ -438,11 +451,7 @@ impl ReleaseCatalog {
         tokio::fs::create_dir_all(&self.cache_dir)
             .await
             .map_err(|error| ReleaseError::io(&self.cache_dir, error))?;
-        let target = self.cache_dir.join(format!(
-            "{}-{}",
-            short(&entry.sha256),
-            safe_file_name(&entry.artifact_name)
-        ));
+        let target = self.cache_dir.join(cache_name(&entry));
         let partial = target.with_extension("partial");
         let download_error = |message: String| ReleaseError::Download {
             url: url.clone(),
@@ -556,13 +565,8 @@ impl ReleaseCatalog {
     }
 
     fn cached_target(&self, entry: &ReleaseEntry) -> Option<PathBuf> {
-        matches!(entry.origin, ReleaseOrigin::Remote { .. }).then(|| {
-            self.cache_dir.join(format!(
-                "{}-{}",
-                short(&entry.sha256),
-                safe_file_name(&entry.artifact_name)
-            ))
-        })
+        matches!(entry.origin, ReleaseOrigin::Remote { .. })
+            .then(|| self.cache_dir.join(cache_name(entry)))
     }
 }
 

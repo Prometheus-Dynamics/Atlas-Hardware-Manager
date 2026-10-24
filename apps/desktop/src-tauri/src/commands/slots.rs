@@ -30,20 +30,34 @@ pub async fn slot_command(
 }
 
 /// Installs the slot bundle at `path` (hashed here first), reporting the
-/// transfer on `on_progress`.
+/// transfer on `on_progress`. `expected_sha256`, the chosen release's digest
+/// when it came from the catalog, must match the file: a cached or picked
+/// file that isn't that release is refused before anything is sent.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn install_slot(
     state: State<'_, AppState>,
     key: DeviceKey,
     path: PathBuf,
     pin: bool,
     boot: bool,
+    expected_sha256: Option<String>,
     on_progress: Channel<ProgressUpdate>,
 ) -> CmdResult<()> {
     let size_bytes = std::fs::metadata(&path)
         .map_err(|error| format!("{}: {error}", path.display()))?
         .len();
     let sha256 = atlas_release::sha256_file(&path).await.map_err(text)?;
+    if let Some(want) = expected_sha256.filter(|want| !want.is_empty())
+        && !want.eq_ignore_ascii_case(&sha256)
+    {
+        return Err(format!(
+            "{} isn't the release you chose: its SHA-256 is {}…, the release's is {}…; nothing was sent",
+            path.display(),
+            sha256.get(..12).unwrap_or(&sha256),
+            want.get(..12).unwrap_or(&want)
+        ));
+    }
     let install = SlotInstall {
         bundle: Artifact {
             name: path

@@ -64,10 +64,17 @@ export const api = {
   deviceSlots: (key: DeviceKey) => invoke<SlotSet | null>("device_slots", { key }),
   slotCommand: (key: DeviceKey, command: SlotCommand) => invoke<void>("slot_command", { key, command }),
   /** Installs the slot bundle at `path`; boot runs it once on trial when it is in. */
-  installSlot: (key: DeviceKey, path: string, pin: boolean, boot: boolean, onProgress: (update: ProgressUpdate) => void) => {
+  installSlot: (
+    key: DeviceKey,
+    path: string,
+    pin: boolean,
+    boot: boolean,
+    onProgress: (update: ProgressUpdate) => void,
+    expectedSha256: string | null = null,
+  ) => {
     const channel = new Channel<ProgressUpdate>();
     channel.onmessage = onProgress;
-    return invoke<void>("install_slot", { key, path, pin, boot, onProgress: channel });
+    return invoke<void>("install_slot", { key, path, pin, boot, expectedSha256, onProgress: channel });
   },
   /**
    * Runs a command on one of the board's devices (`hardware` is its id in the

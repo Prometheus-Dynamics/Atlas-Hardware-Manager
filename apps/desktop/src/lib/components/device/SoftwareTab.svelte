@@ -166,6 +166,17 @@
     ];
   });
 
+  /** Exactly what gets written: the file, its size and digest when known. */
+  const writes = $derived.by(() => {
+    if (!version) return null;
+    const name = entry?.artifact_name ?? (choice?.path ?? "").split(/[\\/]/).pop() ?? "";
+    if (!name) return null;
+    const parts = [name];
+    if (entry?.size_bytes) parts.push(bytes(entry.size_bytes));
+    parts.push(entry?.sha256 ? `SHA-256 ${entry.sha256.slice(0, 12)}…` : "checked when it starts");
+    return parts.join(" · ");
+  });
+
   /** The bundle file for a slot install: chosen, or a release already here. */
   const bundlePath = $derived(choice?.path ?? entry?.path ?? null);
   /** Slots take slot bundles; a whole-disk image is for a fresh install. */
@@ -209,9 +220,18 @@
     if (!bundlePath) return;
     installing = 0;
     try {
-      await api.installSlot(record.key, bundlePath, pinIt, bootAfter, (u) => {
-        if (u.type === "step-progress") installing = u.fraction;
-      });
+      await api.installSlot(
+        record.key,
+        bundlePath,
+        pinIt,
+        bootAfter,
+        (u) => {
+          if (u.type === "step-progress") installing = u.fraction;
+        },
+        // A catalog release is checked against its own digest: a cached file
+        // that isn't it is refused before anything is sent.
+        entry?.sha256 || null,
+      );
       toasts.success(bootAfter ? `${version} is installed; ${deviceName(record)} is restarting into it once.` : `${version} is installed on ${deviceName(record)}.`);
     } catch (error) {
       toasts.error(sentence(errorText(error)));
@@ -362,6 +382,9 @@
         >
           {label}
         </Button>
+      {/if}
+      {#if writes && !confirming}
+        <p class="hint" title={entry?.sha256 ?? ""}>Writes {writes}</p>
       {/if}
       {#if method === "update" && slotted && notBundle}
         <p class="hint">That's a whole-disk image, for a fresh install. A slot installs from a slot bundle (.slot.tar).</p>
