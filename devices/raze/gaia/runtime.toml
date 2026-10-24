@@ -455,6 +455,14 @@ src = "@self/assets/rootfs/usr/share/board/raze/sensors.toml"
 dest = "/usr/share/board/raze/sensors.toml"
 origin = "static-asset"
 
+# The camera module (generated from manifest.json): the lens model an OS's
+# self-calibration of an uncalibrated camera starts from.
+[[stage.files]]
+id = "raze-board-raze-camera-toml"
+src = "@self/assets/rootfs/usr/share/board/raze/camera.toml"
+dest = "/usr/share/board/raze/camera.toml"
+origin = "static-asset"
+
 [[stage.files]]
 id = "raze-board-update"
 src = "@self/assets/rootfs/usr/lib/board/update"
@@ -739,6 +747,7 @@ stage_files = [
   "raze-systemd-system-raze-leds-reprobe-service",
   "raze-udev-rules-d-60-raze-usb-power-rules",
   "raze-board-raze-sensors-toml",
+  "raze-board-raze-camera-toml",
   "raze-board-raze-leds",
   "raze-board-ssh-keys",
   "raze-board-ssh-keys-env",

@@ -300,6 +300,27 @@
             "kernel_driver": { "type": "string" },
             "kernel_compatible": { "type": "string" },
             "tuning": { "type": "array", "items": { "type": "string" } },
+            "lens": {
+              "type": "object",
+              "description": "The camera module's lens: the model a self-calibration should fit, and one module's fit as a starting point.",
+              "required": ["model"],
+              "properties": {
+                "model": { "enum": ["pinhole", "fisheye"] },
+                "projection": { "type": "string", "description": "For fisheye: equidistant, equisolid, stereographic or orthographic." },
+                "notes": { "type": "string" },
+                "hint": {
+                  "type": "object",
+                  "required": ["width", "height", "fx_px"],
+                  "properties": {
+                    "width": { "type": "integer", "minimum": 1 },
+                    "height": { "type": "integer", "minimum": 1 },
+                    "fx_px": { "type": "number", "exclusiveMinimum": 0 },
+                    "rms_px": { "type": "number", "minimum": 0 }
+                  }
+                },
+                "source": { "type": "object", "properties": { "by": { "type": "string" }, "date": { "type": "string" } } }
+              }
+            },
             "verified": { "$ref": "#/$defs/verified" }
           }
         },

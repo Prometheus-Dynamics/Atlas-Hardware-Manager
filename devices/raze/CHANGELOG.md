@@ -106,6 +106,15 @@ commit; the commits are listed per area.
 
 ### Fast test pipeline: image checks and layers
 
+- **The camera module's lens, on the board (`/usr/share/board/raze/camera.toml`,
+  generated from manifest.json's `capabilities.camera.lens`):** `model =
+  "fisheye"`, `projection = "equidistant"`, and one module's fit as a starting
+  point (`[camera.lens.hint]` width 1280, height 800, fx_px 566, rms_px 0.11:
+  Eidos's offline self-calibration of a Raze recording). The lens is the
+  module's, not the sensor's. An OS self-calibrating an uncalibrated camera
+  reads the model from it; a pinhole fit to this lens comes out wildly wrong
+  (fx 1129). The manifest schema has `lens`.
+
 - **The hardware list (`gaia/hardware.toml`, imported by device.toml):**
   `[[image.hardware]]` entries for Gaia's image check (Gaia
   docs/design/fast-test-pipeline.md 1.2): the OV9782 sensor, the CSI

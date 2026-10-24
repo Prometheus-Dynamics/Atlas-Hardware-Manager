@@ -507,6 +507,29 @@ def render_sensors_toml(manifest: dict) -> str:
     return "".join(out)
 
 
+def render_camera_toml(manifest: dict) -> str:
+    """The camera module as an OS reads it on the board: which sensor, on which
+    port, and the lens model (with one module's fit as a starting point) for an
+    uncalibrated camera's self-calibration."""
+    camera = manifest["capabilities"]["camera"]
+    out = [header("#"), "schema_version = 1\n\n[camera]\n"]
+    out.append(f'sensor = "{camera["sensor"]}"\n')
+    out.append(f'port = "{camera["port"]}"\n')
+    lens = camera.get("lens")
+    if lens:
+        out.append("\n[camera.lens]\n")
+        out.append(f'model = "{lens["model"]}"\n')
+        if "projection" in lens:
+            out.append(f'projection = "{lens["projection"]}"\n')
+        hint = lens.get("hint")
+        if hint:
+            out.append("\n# One module's fit, a starting point for the self-calibration.\n[camera.lens.hint]\n")
+            out.append(f"width = {hint['width']}\nheight = {hint['height']}\nfx_px = {float(hint['fx_px'])}\n")
+            if "rms_px" in hint:
+                out.append(f"rms_px = {float(hint['rms_px'])}\n")
+    return "".join(out)
+
+
 def render_watchdog_conf(manifest: dict) -> str:
     wd = manifest["capabilities"]["watchdog"]
     reboot = wd["reboot_sec"]
@@ -561,6 +584,7 @@ def outputs(manifest: dict) -> dict[Path, str]:
         LIBDIR / "leds.env": render_leds_env(manifest),
         LIBDIR / "hardware.env": render_hardware_env(manifest),
         ROOTFS / "usr" / "share" / "board" / "raze" / "sensors.toml": render_sensors_toml(manifest),
+        ROOTFS / "usr" / "share" / "board" / "raze" / "camera.toml": render_camera_toml(manifest),
         ROOTFS / "usr" / "lib" / "systemd" / "system.conf.d" / "60-board-watchdog.conf": render_watchdog_conf(manifest),
         BOARD_TOML: render_board_toml(manifest),
     }

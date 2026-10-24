@@ -198,6 +198,13 @@
         "/usr/share/libcamera/ipa/rpi/pisp/ov9782.json",
         "/usr/share/libcamera/tuning/ov9782.overrides.json"
       ],
+      "lens": {
+        "model": "fisheye",
+        "projection": "equidistant",
+        "notes": "The camera module's optics, not the sensor's: an OV9782 behind a wide fisheye lens. Use it as the lens-model hint when self-calibrating an uncalibrated Raze camera (a pinhole fit to it comes out wildly wrong: fx 1129 against 566). The hint is one module's fit, a starting point, not a calibration.",
+        "hint": { "width": 1280, "height": 800, "fx_px": 566, "rms_px": 0.11 },
+        "source": { "by": "Eidos (offline self-calibration of a Raze recording, equidistant fisheye)", "date": "2026-10-24" }
+      },
       "verified": {
         "part": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); /sys/bus/i2c/devices/10-0060/name is ov9782" },
         "csi": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); rp1-cfe and the PiSP front end probed with the sensor" },
