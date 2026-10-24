@@ -225,7 +225,7 @@ from the security switch (`orion-env`, `/run/board/orion-node.env`):
 
 | Switch | orion-node |
 |---|---|
-| off (default) | `ORION_NODE_PEER_ADDR=0.0.0.0:9200` (unless the OS sets its own), `ORION_NODE_PEER_AUTH=optional`, `ORION_NODE_OPERATOR_OPEN_READ=status,streams`, `ORION_NODE_OPERATOR_AUTO_ENROLL=<USB gadget network>=reboot,usb-boot,locate` |
+| off (default) | `ORION_NODE_PEER_ADDR=0.0.0.0:9200` (unless the OS sets its own), `ORION_NODE_PEER_AUTH=optional`, `ORION_NODE_OPERATOR_OPEN_READ=status,streams`, `ORION_NODE_OPERATOR_AUTO_ENROLL=<USB gadget network>=update*,slot.*,reboot,usb-boot,locate,clock.set;10.0.0.0/8=update*,slot.*,reboot,locate,clock.set` (the robot networks are `ORION_NODE_ROBOT_NETS`, FRC's 10.TE.AM.x by default): updates and slots with no key while the switch is off |
 | on | `ORION_NODE_PEER_AUTH=required`, nothing open, no auto-enrollment |
 
 Changing `security.env` restarts orion-node (`board-security.path`). A device's charts then get

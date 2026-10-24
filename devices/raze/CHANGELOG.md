@@ -8,6 +8,14 @@ commit; the commits are listed per area.
 
 ### Breaking and ABI notes
 
+- **Keyless updates while security is off (orion-env):** with the security
+  switch off (FRC's default) orion-node enrolls an operator on its hello for
+  updates and slots (`update*`, `slot.*`), reboot, locate and the clock from
+  the robot network (`ORION_NODE_ROBOT_NETS`, default `10.0.0.0/8`), and for
+  those plus usb-boot from the USB cable's network (it was reboot, usb-boot
+  and locate there only). So Atlas installs a slot or an update over Orion
+  without an SSH key. With the switch on nothing is keyless, as before.
+
 - **Kernel, install-size trim (on by default):** `linux/raze-trim.config`,
   applied after raze.config with `BR2_RAZE_KERNEL_TRIM` (default y; an OS
   that needs what it drops turns it off): no 32-bit
