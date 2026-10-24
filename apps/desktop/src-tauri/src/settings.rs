@@ -177,13 +177,45 @@ pub fn ssh_config(paths: &AppPaths, file: Option<&str>) -> atlas_driver_board::S
             Some(rest) => dirs::home_dir().unwrap_or_default().join(rest),
             None => std::path::PathBuf::from(file),
         })
-        .and_then(|public| atlas_driver_board::private_key_for(&public));
+        .and_then(|public| atlas_driver_board::private_key_for(&public))
+        .or_else(|| own_key_unless_default(paths));
     atlas_driver_board::SshConfig {
         identity_file,
         known_hosts: Some(paths.data_dir.join("known_hosts")),
         // The key next to the private one (`ssh-key.add`).
         public_key: None,
     }
+}
+
+/// With no key chosen and none of ssh's defaults (`~/.ssh/id_ed25519`,
+/// `id_ecdsa`, `id_rsa`), Atlas's own key (`<data>/atlas_ed25519`, made once
+/// with ssh-keygen), so a board plugged in here can always be given a key
+/// over its USB console and then reached over SSH. `None` leaves ssh its
+/// defaults.
+fn own_key_unless_default(paths: &AppPaths) -> Option<std::path::PathBuf> {
+    let ssh = dirs::home_dir().map(|home| home.join(".ssh"));
+    let has_default = ssh.is_some_and(|ssh| {
+        ["id_ed25519", "id_ecdsa", "id_rsa"]
+            .iter()
+            .any(|name| ssh.join(name).is_file() && ssh.join(format!("{name}.pub")).is_file())
+    });
+    if has_default {
+        return None;
+    }
+    let key = paths.data_dir.join("atlas_ed25519");
+    if !key.is_file() {
+        let _ = std::fs::create_dir_all(&paths.data_dir);
+        let made = std::process::Command::new("ssh-keygen")
+            .args(["-q", "-t", "ed25519", "-N", "", "-C", "atlas", "-f"])
+            .arg(&key)
+            .stdin(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|status| status.success());
+        if !made {
+            return None;
+        }
+    }
+    Some(key)
 }
 
 pub fn read_ssh_keys(file: Option<&str>) -> Result<Option<String>, String> {
