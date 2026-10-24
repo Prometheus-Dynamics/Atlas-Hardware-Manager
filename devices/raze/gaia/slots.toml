@@ -416,3 +416,16 @@ src = "$assembly.work/slots/rootfs.erofs"
 tree = "slots-payload"
 prefix = "boot/"
 
+
+# The boot partition as the firmware will read it: every dtoverlay= that
+# config.txt and tryboot.txt load (raze-device.txt) has its .dtbo in the
+# overlays dir the firmware reads for the default and the trial slot
+# (${os_prefix}overlays/ with its README, else the root overlays/), and the
+# root fallback copy has the default slot's overlays. A build that would
+# ship a board without its camera fails here (the PhotonVision 2026 images,
+# scripts/check-boot-overlays.sh). Needs Gaia f5aa011 or later (assembly
+# checks); an older one fails validation on this table.
+[[image.assembly.checks]]
+id = "boot-overlays"
+command = ["sh", "@self/scripts/check-boot-overlays.sh", "$assembly.tree.slots-fat"]
+timeout_secs = 60
