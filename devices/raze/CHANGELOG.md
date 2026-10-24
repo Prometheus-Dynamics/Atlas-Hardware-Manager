@@ -767,10 +767,9 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
   both rebuilt with c405cbb pass. `tests/boot-overlays.sh` covers the cases
   and checks slots.toml's payload (overlays/README and every overlay
   raze-device.txt loads).
-  slots.toml runs it on every build as a Gaia assembly check
-  (`[[image.assembly.checks]] boot-overlays`, on the slots-fat tree): a build
-  whose boot partition would boot without an overlay fails. A Gaia without
-  assembly checks warns about the unknown key and builds without it.
+  Wiring it into slots.toml as a Gaia assembly check waits for a Gaia with
+  `[[image.assembly.checks]]` (an older one fails validation on the unknown
+  key); until then OS builds run the script on their image before publishing.
 - **A slot's own overlays apply:** the firmware reads overlays from
   `${os_prefix}overlays/` only when that directory holds a `README`; no slot
   had one (slots.toml copied only `*.dtbo`/`*.dtb`), so every slot, trials
