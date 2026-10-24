@@ -272,7 +272,7 @@ dest = "initramfs"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src_glob = "$assembly.tree.slots-payload/bcm*.dtb"
+src_glob = "$provider.buildroot_output/images/bcm*.dtb"
 dest = "."
 
 # The overlays, from their sources (not through slots-payload: a glob over
@@ -340,7 +340,7 @@ dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-$
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src_glob = "$assembly.tree.slots-payload/bcm*.dtb"
+src_glob = "$provider.buildroot_output/images/bcm*.dtb"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/"
 
 # The overlays, from their sources (not through slots-payload: a glob over
