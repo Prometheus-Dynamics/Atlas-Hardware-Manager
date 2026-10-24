@@ -747,6 +747,20 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
   settings, a plain reboot and `slots boot-once` restarts from ~140–200 s
   uptime ended cleanly ("Restarting system with command '0 tryboot'") and
   landed on the trial at once. `tests/gadget-getty.sh` checks the settings.
+- **A boot partition that would boot without the board's overlays fails its
+  check (`gaia/scripts/check-boot-overlays.sh <FAT dir | .img | .img.xz>`):**
+  for config.txt and tryboot.txt it follows the includes (raze-device.txt,
+  default.txt, trial.txt), takes each `dtoverlay=` and the os_prefix, and
+  needs `<name>.dtbo` where the firmware reads overlays:
+  `${os_prefix}overlays/` when it holds a README, else the root `overlays/`.
+  A slot `overlays/` without its README fails on its own (the slot's
+  overlays are ignored), and the root `overlays/`, the firmware's fallback,
+  must have every overlay the default slot has. The shipped PhotonVision
+  2026.3.4 libcamera image (Atlas 333629e) fails it: MISSING ov9782 and
+  raze-fan, the field failure (no camera); the styx one fails on the README;
+  both rebuilt with c405cbb pass. `tests/boot-overlays.sh` covers the cases
+  and checks slots.toml's payload (overlays/README and every overlay
+  raze-device.txt loads).
 - **A slot's own overlays apply:** the firmware reads overlays from
   `${os_prefix}overlays/` only when that directory holds a `README`; no slot
   had one (slots.toml copied only `*.dtbo`/`*.dtb`), so every slot, trials
