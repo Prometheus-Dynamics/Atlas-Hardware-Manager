@@ -175,6 +175,18 @@ up stage - --sha256 "$(sha256sum "$T/pv-b.slot.tar" | cut -d' ' -f1)" < "$T/pv-b
 [ "$(rc stage - --sha256 0000 < "$T/pv-b.slot.tar")" = 3 ] || fail "stdin: wrong sha accepted"
 [ -z "$(ls "$T/data/board/update" 2>/dev/null)" ] || fail "a refused streamed tar was left"
 
+echo "a bundle without an overlay the board's config loads is refused (it would boot without that device)"
+printf 'dtoverlay=bcm2712d0\ndtoverlay=ov9782,cam0,clk-continuous\n' > "$T/boot/raze-device.txt"
+bundle pv-o 2026.4.9
+[ "$(rc stage "$T/pv-o.slot.tar")" = 3 ] || fail "a bundle without ov9782.dtbo was installed"
+grep -q "no overlay for ov9782" "$T/err" || fail "reason: $(cat "$T/err")"
+[ "$(rc check "$T/pv-o.slot.tar")" = 3 ] && grep -q "no overlay for ov9782" "$T/out" || fail "check passed a bundle without ov9782: $(cat "$T/out")"
+[ ! -e "$T/data/slots/pv-o.erofs" ] && [ ! -d "$T/boot/slots/pv-o" ] || fail "a refused bundle left files"
+: > "$T/build/pv-o/boot/overlays/ov9782.dtbo"
+tar -cf "$T/pv-o.slot.tar" -C "$T/build/pv-o" slot.json boot rootfs.erofs
+[ "$(rc check "$T/pv-o.slot.tar")" = 0 ] || fail "a bundle with every overlay fails its check: $(cat "$T/out" "$T/err")"
+rm "$T/boot/raze-device.txt"
+
 echo "refusals change nothing: wrong --sha256, the running slot, a broken file, no room, the device lock"
 [ "$(rc stage "$T/pv-b.slot.tar" --sha256 0000)" = 3 ] || fail "wrong sha accepted"
 bundle pv-a 2026.3.1

@@ -322,6 +322,20 @@ write_status() {
 
 # --- install ----------------------------------------------------------------
 
+# missing_overlays <boot FAT> <slot's overlays dir>: the overlays the board's
+# config (config.txt, raze-device.txt) loads that the slot doesn't carry, one
+# a line. The firmware reads a slot's overlays from its own overlays/ (it has
+# a README), so a slot without one boots without that device (the shipped
+# PhotonVision 2026 images: no camera).
+missing_overlays() {
+	for _cfg in "$1/config.txt" "$1/raze-device.txt"; do
+		[ -f "$_cfg" ] && tr -d '\r' < "$_cfg" | sed -n 's/^[[:space:]]*dtoverlay=\([^,[:space:]]*\).*/\1/p'
+	done | sort -u | while IFS= read -r _o; do
+		[ -n "$_o" ] || continue
+		ls -1 "$2" 2>/dev/null | tr 'A-Z' 'a-z' | grep -qx "$(printf '%s' "$_o" | tr 'A-Z' 'a-z').dtbo" || echo "$_o"
+	done
+}
+
 # bundle_layers <dir>: a slot.json without layers of its own, next to the
 # build's layers/layers.json (Gaia), takes its layers from it.
 bundle_layers() {
@@ -400,6 +414,8 @@ EOF
 	fi
 	# The boot side: slots/<id>/ on the FAT, its cmdline naming the slot.
 	mount_boot
+	_missing=$(missing_overlays "$BOOT" "$_work/boot/overlays" | tr '\n' ' ')
+	[ -z "$_missing" ] || refuse "the bundle has no overlay for ${_missing% } (the board's config.txt loads it): it would boot without that device"
 	_dev=${SLOTS_PARTUUID:-$(findmnt -n -o PARTUUID "$DATA" 2>/dev/null || true)}
 	_base=$(tr '\n' ' ' < "$_work/boot/cmdline.txt" 2>/dev/null | sed 's/ *$//')
 	rm -rf "$BOOT/slots/.$_id.new"
@@ -539,6 +555,11 @@ EOF
 	if [ -f "$_work/boot/initramfs" ]; then
 		_why=$($INIT check-initramfs "$_work/boot/initramfs" 2>&1) || refuse "the bundle's initramfs won't boot: ${_why#slot-init: }"
 	fi
+	# The board's config's overlays, as install_bundle checks them (the boot
+	# FAT is mounted to read it; nothing is written).
+	mount_boot
+	_missing=$(missing_overlays "$BOOT" "$_work/boot/overlays" | tr '\n' ' ')
+	[ -z "$_missing" ] || refuse "the bundle has no overlay for ${_missing% } (the board's config.txt loads it): it would boot without that device"
 	# Room last, as install_bundle: the tar's size plus the reserve.
 	_need=$(( $(board_file_size "$_tar") / 1024 + RESERVE_KB ))
 	_free=$(free_kb)

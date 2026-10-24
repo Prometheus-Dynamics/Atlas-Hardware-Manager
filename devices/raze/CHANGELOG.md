@@ -747,6 +747,12 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
   settings, a plain reboot and `slots boot-once` restarts from ~140–200 s
   uptime ended cleanly ("Restarting system with command '0 tryboot'") and
   landed on the trial at once. `tests/gadget-getty.sh` checks the settings.
+- **The board refuses a slot bundle without an overlay its config loads**
+  (slots install and `slots check`): each `dtoverlay=` in the boot FAT's
+  config.txt and raze-device.txt needs its `.dtbo` in the bundle's
+  `boot/overlays/` (the slot's overlays dir the firmware reads), or the
+  install is refused (exit 3) with the overlay named, before anything is
+  written or any trial boot.
 - **A boot partition that would boot without the board's overlays fails its
   check (`gaia/scripts/check-boot-overlays.sh <FAT dir | .img | .img.xz>`):**
   for config.txt and tryboot.txt it follows the includes (raze-device.txt,
