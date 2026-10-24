@@ -32,7 +32,9 @@ impl Atlas {
         self.edit_device(key, |record| record.robot = robot)
     }
 
-    /// Removes an offline device from the remembered inventory.
+    /// Removes an offline device from the remembered inventory, with what
+    /// Atlas kept about it: its links and, when no other remembered record is
+    /// the same board, the board's self-test, events and pending work.
     pub fn forget_device(&self, key: &DeviceKey) -> Result<(), CoreError> {
         {
             let mut state = self.inner.state();
@@ -43,7 +45,22 @@ impl Atlas {
             if record.presence == Presence::Online {
                 return Err(CoreError::DeviceOnline(key.clone()));
             }
+            let board = crate::lineage::board_of(record);
             state.inventory.remove(key);
+            state.links.remove(key);
+            if let Some(board) = board
+                && !state
+                    .inventory
+                    .all()
+                    .iter()
+                    .any(|other| crate::lineage::board_of(other).as_deref() == Some(board.as_str()))
+            {
+                state.selftests.remove(&board);
+                state.selftest_pending.remove(&board);
+                state.key_pending.remove(&board);
+                state.board_events.remove(&board);
+                state.events_synced.remove(&board);
+            }
             for robot in state.robots.values_mut() {
                 for role in &mut robot.roles {
                     if role.device.as_ref() == Some(key) {

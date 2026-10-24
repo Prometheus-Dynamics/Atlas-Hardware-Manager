@@ -41,6 +41,8 @@
   let open = $state(false);
   let asking = $state<DeviceAction | null>(null);
   let running = $state(false);
+  /** Forgetting this (offline) device, asked first. */
+  let forgetting = $state(false);
 
   $effect(() => {
     const key = record.key;
@@ -96,6 +98,21 @@
     }
   }
 
+  async function forget() {
+    if (running) return;
+    running = true;
+    try {
+      await api.forgetDevice(record.key);
+      toasts.success(`${deviceName(record)} is forgotten. It comes back as new if it's seen again.`);
+      ui.close();
+    } catch (error) {
+      toasts.error(errorText(error));
+    } finally {
+      running = false;
+      forgetting = false;
+    }
+  }
+
   function monitor() {
     open = false;
     const key = keyString(record.key);
@@ -127,9 +144,25 @@
           <button type="button" class="item danger" role="menuitem" onclick={() => ask(action)}>{action.label}…</button>
         {/each}
       {/if}
+      {#if record.presence === "offline"}
+        <div class="sep"></div>
+        <button type="button" class="item danger" role="menuitem" onclick={() => ((open = false), (forgetting = true))}>Forget this device…</button>
+      {/if}
     </div>
   {/if}
 </div>
+
+{#if forgetting}
+  <GuardedDialog
+    {record}
+    title="Forget {deviceName(record)}?"
+    body="It leaves the list with its name and robot assignment. It comes back as new if it's seen again."
+    label="Forget"
+    busy={running}
+    onconfirm={() => void forget()}
+    oncancel={() => (forgetting = false)}
+  />
+{/if}
 
 {#if asking}
   <GuardedDialog

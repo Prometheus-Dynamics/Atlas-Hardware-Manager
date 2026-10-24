@@ -23,7 +23,7 @@ pub(crate) const FORGET_AFTER_MS: u64 = 7 * 24 * 3600 * 1000;
 
 /// The physical board a record is: its `board_serial`, else (records saved
 /// before drivers reported one) its own serial by the same rule.
-fn board_of(record: &DeviceRecord) -> Option<String> {
+pub(crate) fn board_of(record: &DeviceRecord) -> Option<String> {
     record
         .identity
         .attributes

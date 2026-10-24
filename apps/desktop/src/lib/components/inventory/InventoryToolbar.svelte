@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { api, errorText, keyString } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
+  import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
+  import { toasts } from "#lib/stores/toasts.svelte.ts";
   import SegmentedControl from "#lib/components/common/SegmentedControl.svelte";
   import Toggle from "#lib/components/common/Toggle.svelte";
   import { devices } from "#lib/stores/devices.svelte.ts";
@@ -10,6 +13,24 @@
     { value: "cards", label: "Cards", icon: "layout-grid" },
     { value: "list", label: "List", icon: "layout-list" },
   ];
+
+  /** Selected devices that are offline: the ones Atlas can forget. */
+  const forgettable = $derived(ui.selectedRecords.filter((r) => r.presence === "offline"));
+
+  async function forgetSelected() {
+    const list = forgettable;
+    let failed = 0;
+    for (const record of list) {
+      try {
+        await api.forgetDevice(record.key);
+        ui.selection.delete(keyString(record.key));
+      } catch (error) {
+        failed++;
+        toasts.error(errorText(error));
+      }
+    }
+    if (list.length > failed) toasts.success(`Forgot ${list.length - failed} offline device${list.length - failed === 1 ? "" : "s"}.`);
+  }
 
   function toggleFamily(family: string) {
     if (ui.families.has(family)) ui.families.delete(family);
@@ -41,6 +62,17 @@
   <div class="ml-auto flex shrink-0 items-center gap-2 text-[12.5px] text-fg-faint">
     {#if ui.selection.size > 0}
       <span class="text-accent-text" in:pop>{ui.selection.size} selected</span>
+      {#if forgettable.length > 0}
+        <ConfirmButton
+          size="sm"
+          icon="trash"
+          action={forgetSelected}
+          prompt="Forget {forgettable.length} offline device{forgettable.length === 1 ? '' : 's'}?"
+          confirmLabel="Forget"
+        >
+          Forget {forgettable.length} offline
+        </ConfirmButton>
+      {/if}
       <Button variant="ghost" size="sm" onclick={() => ui.selection.clear()}>Clear</Button>
       <span class="text-fg-faint">·</span>
     {/if}
