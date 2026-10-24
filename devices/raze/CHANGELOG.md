@@ -104,6 +104,14 @@ commit; the commits are listed per area.
   exact `update.json` field set must accept the new fields (`019b215`,
   `01d5290`).
 
+### The USB route reaches the robot network sooner
+
+- **A computer plugged in before the robot network is up gets its route
+  within about a minute:** the USB link's DHCP lease is 2 minutes (dnsmasq's
+  shortest), not 10, so the host renews every minute and learns the route
+  usb-route adds when the board's Ethernet gets its 10.TE.AM address (it
+  waited up to 5 minutes). tests/gadget-address.sh.
+
 ### Downloads say why they failed
 
 - **A failed download names the URL and the server's answer:** the update

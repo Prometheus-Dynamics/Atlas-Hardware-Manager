@@ -331,9 +331,10 @@ board_gadget_address() {
 
 # board_gadget_dhcp_range <address>/<prefix>: dnsmasq's dhcp-range for the host
 # end of the link: the addresses after the device's, up to 19 of them and the
-# subnet's last host address, with the netmask and a 10 minute lease (the host
-# renews within 5, so a route usb-route adds reaches it soon). Fails when the
-# subnet has no room.
+# subnet's last host address, with the netmask and a 2 minute lease, dnsmasq's
+# shortest: the host renews every minute, so a route usb-route adds when the
+# board joins the robot network (a computer plugged in before the radio is up)
+# reaches it within about a minute, not 5. Fails when the subnet has no room.
 board_gadget_dhcp_range() {
 	_board_pre=${1#*/}
 	case "$_board_pre" in
@@ -346,7 +347,7 @@ board_gadget_dhcp_range() {
 	_board_end=$((_board_a + 19))
 	[ "$_board_end" -le "$_board_last" ] || _board_end=$_board_last
 	[ "$_board_a" -lt "$_board_end" ] || return 1
-	printf '%s,%s,%s,10m\n' "$(board_int_ip4 $((_board_a + 1)))" "$(board_int_ip4 "$_board_end")" \
+	printf '%s,%s,%s,2m\n' "$(board_int_ip4 $((_board_a + 1)))" "$(board_int_ip4 "$_board_end")" \
 		"$(board_int_ip4 $((0xffffffff - _board_size + 1)))"
 }
 

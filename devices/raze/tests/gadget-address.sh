@@ -49,9 +49,9 @@ while [ "$i" -lt 64 ]; do
 done
 
 echo "the DHCP range is the rest of the subnet, at most 19 addresses"
-[ "$(board_gadget_dhcp_range 172.31.209.217/29)" = 172.31.209.218,172.31.209.222,255.255.255.248,10m ] ||
+[ "$(board_gadget_dhcp_range 172.31.209.217/29)" = 172.31.209.218,172.31.209.222,255.255.255.248,2m ] ||
 	fail "range: $(board_gadget_dhcp_range 172.31.209.217/29)"
-[ "$(board_gadget_dhcp_range 172.31.250.1/24)" = 172.31.250.2,172.31.250.20,255.255.255.0,10m ] ||
+[ "$(board_gadget_dhcp_range 172.31.250.1/24)" = 172.31.250.2,172.31.250.20,255.255.255.0,2m ] ||
 	fail "legacy range: $(board_gadget_dhcp_range 172.31.250.1/24)"
 if board_gadget_dhcp_range 172.31.0.6/29 >/dev/null; then fail "no room after the last host"; fi
 
@@ -99,7 +99,7 @@ PATH="$T/bin:$PATH" BOARD_CONFIGFS=$T/configfs BOARD_UDC_CLASS=$T/udc \
 [ "$(cat "$T/configfs/usb_gadget/g1/strings/0x409/serialnumber")" = a317bcbee5226d57 ] ||
 	fail "USB serial: $(cat "$T/configfs/usb_gadget/g1/strings/0x409/serialnumber")"
 grep -qx 'addr replace 172.31.209.217/29 dev usbbr0' "$T/ip.log" || fail "ip: $(cat "$T/ip.log")"
-grep -qx 'dhcp-range=172.31.209.218,172.31.209.222,255.255.255.248,10m' "$T/run/usb-gadget-dnsmasq.conf" ||
+grep -qx 'dhcp-range=172.31.209.218,172.31.209.222,255.255.255.248,2m' "$T/run/usb-gadget-dnsmasq.conf" ||
 	fail "dnsmasq: $(cat "$T/run/usb-gadget-dnsmasq.conf")"
 
 echo "ok"
