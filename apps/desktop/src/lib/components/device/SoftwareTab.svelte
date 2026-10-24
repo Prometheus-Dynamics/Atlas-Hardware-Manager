@@ -90,12 +90,18 @@
     return () => (stale = true);
   });
 
+  /** The chosen image is a slot bundle (.slot.tar), which only a slots board takes. */
+  const slotBundle = $derived((entry?.artifact_name ?? choice?.path ?? "").toLowerCase().endsWith(".slot.tar"));
+
   const updateBlocked = $derived.by((): string | null => {
     if (recovery) return "The board is in USB boot, so it can only be installed fresh.";
     if (!online) return "The board isn't reachable. Connect it to update in place.";
     if (slotted) return null;
+    // A board on the A/B layout (or none) gets slots from one fresh install;
+    // after that, slot images install in place.
+    if (slotBundle) return "This board needs a fresh install of a slots image first (one time). Choose that image's .img.xz and use Erase and install; slot images install in place after that.";
     if (record.capabilities.includes("update")) return null;
-    if (methods.length > 0 && !ab) return "This board needs one fresh install to get the A/B layout.";
+    if (methods.length > 0 && !ab) return "This board needs a fresh install of a slots image first (one time), then it updates in place.";
     return "This device can't update in place.";
   });
 

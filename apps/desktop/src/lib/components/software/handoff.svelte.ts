@@ -83,7 +83,11 @@ class Handoffs {
   private check() {
     for (const handoff of this.map.values()) {
       if (handoff.phase !== "waiting") continue;
-      const target = devices.all.find((r) => handoff.matches(r));
+      // The board that showed up last: a stale record of the same board
+      // (an older USB boot, another port) never wins over the live one.
+      const target = devices.all
+        .filter((r) => handoff.matches(r))
+        .sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0];
       if (target) void this.flash(handoff, target);
     }
   }
