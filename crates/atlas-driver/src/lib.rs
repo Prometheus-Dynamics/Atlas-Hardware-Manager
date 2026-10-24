@@ -6,6 +6,7 @@
 //! family is added by writing a driver, not by changing the core or the UI.
 
 mod augment;
+mod bundle;
 mod capability;
 mod driver;
 mod error;
@@ -21,6 +22,7 @@ mod trial;
 mod types;
 
 pub use augment::CapabilitySource;
+pub use bundle::{BundleHost, download_failed};
 pub use capability::{
     ActionsCapability, Artifact, Capabilities, CapabilityKind, Concurrency, DeviceAction,
     ProgressSink, ProgressUpdate, ReleaseRef, UpdateCapability, UpdateOutcome, UpdatePlan,

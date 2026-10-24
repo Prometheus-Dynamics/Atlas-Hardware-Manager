@@ -72,6 +72,11 @@ impl AppState {
             },
         };
 
+        // A board plugged in here pulls slot bundles from the image server
+        // (over its USB console: no SSH key needed for the copy).
+        if let Some(orion) = &orion {
+            atlas_driver_board::set_bundle_host(std::sync::Arc::new(orion.images.clone()));
+        }
         let mut builder = Atlas::builder();
         if let Some(orion) = &orion {
             builder = builder

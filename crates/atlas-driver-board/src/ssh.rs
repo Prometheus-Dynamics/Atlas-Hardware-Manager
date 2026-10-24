@@ -171,7 +171,7 @@ impl SshUpdate {
 
     /// Runs `script` on the console when there is one that answers. `None`:
     /// nothing ran there, so SSH may.
-    async fn on_console(
+    pub(crate) async fn on_console(
         &self,
         script: &str,
         on_line: Option<SharedOnLine>,

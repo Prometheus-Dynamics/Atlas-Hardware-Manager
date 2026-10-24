@@ -42,6 +42,7 @@ pub use contract::{BoardIdentity, CLOCK_TOLERANCE_S, IDENTITY_PATH};
 pub use driver::{BoardDriver, NetworkLinks, drivers_for_catalog};
 pub use gadget::UsbGadgetLinks;
 pub use serial::serial_console;
+pub use slots::set_bundle_host;
 pub use ssh::{AB_METHOD, SshAccess, SshConfig, host_keys, private_key_for};
 pub use ssh_actions::{
     POWER_OFF_ACTION, REBOOT_ACTION, SELFTEST_DIAGNOSTIC, SET_CLOCK_ACTION, SSH_KEY_ADD_ACTION,

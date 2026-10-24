@@ -1,15 +1,19 @@
 //! A slots board over SSH (or its USB console): the slots writer's status
 //! (`update status`, `layout: slots`), its commands (`update boot-once |
-//! set-default | remove | pin | unpin <id>`), and installing a bundle by
-//! streaming it into `update stage -`, which checks it against its manifest
-//! before anything is replaced. Boards list `slots-tryboot` in
+//! set-default | remove | pin | unpin <id>`), and installing a bundle: on a
+//! board plugged in here the board pulls it from this computer's image
+//! server (`update stage-url`, run on its USB console: no SSH key), else it
+//! is streamed into `update stage -` over SSH. Either way the writer checks
+//! it against its manifest before anything is replaced. Boards list `slots-tryboot` in
 //! `update_methods` (lib.sh). Orion's `slot.*` actions come first when the
 //! board's agent claims them.
 
+use std::sync::{Arc, RwLock};
+
 use async_trait::async_trait;
 use atlas_driver::{
-    CancellationToken, DriverError, Identity, LayerPush, LayerPushed, ProgressSink, PushMode,
-    SlotCommand, SlotInstall, SlotSet, SlotsCapability, UpdateStep,
+    BundleHost, CancellationToken, DriverError, Identity, LayerPush, LayerPushed, ProgressSink,
+    PushMode, SlotCommand, SlotInstall, SlotSet, SlotsCapability, UpdateStep,
 };
 
 use crate::ssh::{SshUpdate, WRITER, as_atlas};
@@ -17,6 +21,31 @@ use crate::ssh_actions::writer;
 
 /// The update method a slots board lists.
 pub const SLOTS_METHOD: &str = "slots-tryboot";
+
+/// Where boards pull bundles from (the app's image server).
+static BUNDLES: RwLock<Option<Arc<dyn BundleHost>>> = RwLock::new(None);
+
+/// Lets boards plugged in here pull slot bundles from `host` (the app's
+/// image server) instead of needing an SSH key for the copy.
+pub fn set_bundle_host(host: Arc<dyn BundleHost>) {
+    *BUNDLES
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(host);
+}
+
+fn bundle_host() -> Option<Arc<dyn BundleHost>> {
+    BUNDLES
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .clone()
+}
+
+/// Why a pull didn't install the slot.
+enum Pull {
+    /// Nothing changed on the board: the copy over SSH may still work.
+    NotStarted(String),
+    Failed(DriverError),
+}
 
 /// Where `update push` leaves its answer when its stdin is the layer.
 const PUSH_ANSWER: &str = "/run/board/layer-push.json";
@@ -45,6 +74,99 @@ fn parse_pushed(text: &str) -> Result<LayerPushed, DriverError> {
 
 pub(crate) struct BoardSlots {
     pub(crate) ssh: SshUpdate,
+}
+
+impl BoardSlots {
+    /// The board pulls the bundle from this computer's image server, its
+    /// writer run on the USB console: no SSH key, and the bulk data goes
+    /// over the USB network rather than the console.
+    async fn pull(
+        &self,
+        install: &SlotInstall,
+        host: &dyn BundleHost,
+        progress: &ProgressSink,
+    ) -> Result<(), Pull> {
+        let bundle = &install.bundle;
+        let peer = self.ssh.host.parse().ok();
+        let url = host
+            .url_for(bundle, peer)
+            .map_err(|error| Pull::NotStarted(error.to_string()))?;
+        if url.contains('\'') {
+            return Err(Pull::NotStarted(format!(
+                "{url} can't be passed to the board"
+            )));
+        }
+        progress.log(format!(
+            "the board is fetching {} from this computer",
+            bundle.name
+        ));
+        let script = as_atlas(&format!(
+            "{WRITER} stage-url '{url}' --sha256 {} --size {}{}",
+            bundle.sha256.to_ascii_lowercase(),
+            bundle.size_bytes,
+            if install.pin { " --pin" } else { "" }
+        ));
+        let log = progress.clone();
+        let on_line: crate::console::SharedOnLine = Arc::new(move |line: &str| {
+            let line = line.trim();
+            if !line.is_empty() {
+                log.log(line.to_string());
+            }
+        });
+        match self.ssh.on_console(&script, Some(on_line)).await {
+            None => Err(Pull::NotStarted(
+                "the board's USB console didn't answer".into(),
+            )),
+            Some(Ok(_)) => Ok(()),
+            Some(Err(DriverError::Other(reason))) => {
+                let reason = reason.trim_start_matches("slots: ").to_string();
+                if atlas_driver::download_failed(&reason) {
+                    Err(Pull::NotStarted(format!(
+                        "the board couldn't download it from this computer ({reason})"
+                    )))
+                } else {
+                    Err(Pull::Failed(DriverError::StepFailed {
+                        step: "Installing the slot".into(),
+                        message: reason,
+                    }))
+                }
+            }
+            Some(Err(error)) => Err(Pull::Failed(error)),
+        }
+    }
+
+    /// Streams the bundle into `update stage -` over SSH: the writer reads
+    /// it as it arrives and installs nothing until every file matches the
+    /// manifest.
+    async fn stream(
+        &self,
+        install: &SlotInstall,
+        progress: &ProgressSink,
+    ) -> Result<(), DriverError> {
+        let bundle = &install.bundle;
+        let script = as_atlas(&format!(
+            "{WRITER} stage - --sha256 {}{}",
+            bundle.sha256.to_ascii_lowercase(),
+            if install.pin { " --pin" } else { "" }
+        ));
+        self.ssh
+            .upload_to(
+                &bundle.path,
+                bundle.size_bytes,
+                &script,
+                "true",
+                progress,
+                &CancellationToken::new(),
+            )
+            .await
+            .map_err(|error| match error {
+                DriverError::Other(reason) => DriverError::StepFailed {
+                    step: "Installing the slot".into(),
+                    message: reason.trim_start_matches("slots: ").to_string(),
+                },
+                other => other,
+            })
+    }
 }
 
 /// Slot ids go into the board's command line: the writer's charset only.
@@ -128,31 +250,23 @@ impl SlotsCapability for BoardSlots {
                 bundle.size_bytes >> 20
             )));
         }
-        // The writer reads the bundle from stdin as it arrives and installs
-        // nothing until every file matches the manifest.
         progress.step_started(UpdateStep::Transfer);
-        let script = as_atlas(&format!(
-            "{WRITER} stage - --sha256 {}{}",
-            bundle.sha256.to_ascii_lowercase(),
-            if install.pin { " --pin" } else { "" }
-        ));
-        self.ssh
-            .upload_to(
-                &bundle.path,
-                bundle.size_bytes,
-                &script,
-                "true",
-                progress,
-                &CancellationToken::new(),
-            )
-            .await
-            .map_err(|error| match error {
-                DriverError::Other(reason) => DriverError::StepFailed {
-                    step: "Installing the slot".into(),
-                    message: reason.trim_start_matches("slots: ").to_string(),
-                },
-                other => other,
-            })?;
+        let pulled = match bundle_host() {
+            Some(host) if self.ssh.has_console() => {
+                match self.pull(install, &*host, progress).await {
+                    Ok(()) => true,
+                    Err(Pull::NotStarted(why)) => {
+                        progress.log(format!("{why}; copying it over SSH instead"));
+                        false
+                    }
+                    Err(Pull::Failed(error)) => return Err(error),
+                }
+            }
+            _ => false,
+        };
+        if !pulled {
+            self.stream(install, progress).await?;
+        }
         progress.step_progress(UpdateStep::Transfer, 1.0);
         if install.boot {
             progress.log("installed; restarting into it once".to_string());
