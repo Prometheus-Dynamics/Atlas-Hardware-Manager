@@ -108,9 +108,13 @@ commit; the commits are listed per area.
 
 - **The camera module's lens, on the board (`/usr/share/board/raze/camera.toml`,
   generated from manifest.json's `capabilities.camera.lens`):** `model =
-  "fisheye"`, `projection = "equidistant"`, and one module's fit as a starting
-  point (`[camera.lens.hint]` width 1280, height 800, fx_px 566, rms_px 0.11:
-  Eidos's offline self-calibration of a Raze recording). The lens is the
+  "fisheye"`, `projection = "equidistant"`, and one module's whole fit as a
+  prior (`[camera.lens.hint]`: 1280x800, fx_px 566.508, fy_px 565.375, cx_px
+  627.290, cy_px 351.807, rms_px 0.11, sigma 0.05 for the focal length's
+  spread across modules; `[camera.lens.hint.distortion]` OpenCV cv::fisheye
+  k1..k4), from Eidos's offline self-calibration of a 2042-frame Raze
+  recording: a starting point the fit is softly pulled toward, not a
+  calibration. The lens is the
   module's, not the sensor's. An OS self-calibrating an uncalibrated camera
   reads the model from it; a pinhole fit to this lens comes out wildly wrong
   (fx 1129). The manifest schema has `lens`.
