@@ -10,16 +10,20 @@
 use std::path::PathBuf;
 use std::sync::Mutex;
 
-/// What the ring shows.
+/// What the ring shows. The colours are the board's LED language (Lemnos's
+/// system looks, as lemnosd shows an update in the OS), at the flasher's
+/// lower brightness: writing is the updating blue, verifying the verifying
+/// violet, done the confirmed green, a failure the failed red. Waiting is a
+/// dim warm white (the booting colour), not green, which would read as done.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Look {
-    /// Up, waiting for Atlas (dim green).
+    /// Up, waiting for Atlas (dim warm white).
     Waiting,
-    /// Writing the image: an amber arc, 0..1.
+    /// Writing the image: a blue arc, 0..1.
     Writing(f32),
-    /// Reading it back: a blue arc, 0..1.
+    /// Reading it back: a violet arc, 0..1.
     Verifying(f32),
-    /// Written and verified (bright green).
+    /// Written and verified (green).
     Done,
     /// Something failed (red); the board stays in the flasher.
     Failed,
@@ -65,7 +69,8 @@ impl Ring {
 
     /// The frame for `look`, in physical order.
     pub fn frame(&self, look: Look) -> Vec<u8> {
-        const DIM: [u8; 3] = [4, 4, 6];
+        // Lemnos's progress_background (0x101012), dimmed.
+        const DIM: [u8; 3] = [4, 4, 5];
         let arc = |fraction: f32, color: [u8; 3]| -> Vec<[u8; 3]> {
             // Rounded down, but a started job shows at least one LED.
             let lit = ((fraction.clamp(0.0, 1.0) * self.count as f32) as usize)
@@ -75,11 +80,14 @@ impl Ring {
                 .collect()
         };
         let logical: Vec<[u8; 3]> = match look {
-            Look::Waiting => vec![[0, 24, 0]; self.count],
-            Look::Writing(fraction) => arc(fraction, [72, 36, 0]),
-            Look::Verifying(fraction) => arc(fraction, [0, 28, 72]),
-            Look::Done => vec![[0, 96, 0]; self.count],
-            Look::Failed => vec![[72, 0, 0]; self.count],
+            // Lemnos booting 0xfff4e6, updating 0x2f7bff, verifying 0x8a5cff,
+            // confirmed 0x00ff20, failed 0xff3b3b; scaled to the flasher's
+            // levels (72 for an arc's brightest channel, 96 for done).
+            Look::Waiting => vec![[24, 23, 22]; self.count],
+            Look::Writing(fraction) => arc(fraction, [13, 35, 72]),
+            Look::Verifying(fraction) => arc(fraction, [39, 26, 72]),
+            Look::Done => vec![[0, 96, 12]; self.count],
+            Look::Failed => vec![[72, 17, 17]; self.count],
         };
         let mut physical = vec![[0u8; 3]; self.count];
         for (i, color) in logical.into_iter().enumerate() {
@@ -147,25 +155,27 @@ mod tests {
         assert_eq!(frame.len(), 64, "16 LEDs, 4 bytes each");
         // Logical 0..4 are physical 5..9.
         for physical in 5..9 {
-            assert_eq!(led(&frame, physical), [72, 36, 0], "LED {physical}");
+            assert_eq!(led(&frame, physical), [13, 35, 72], "LED {physical}");
         }
-        assert_eq!(led(&frame, 9), [4, 4, 6]);
-        assert_eq!(led(&frame, 4), [4, 4, 6]);
+        assert_eq!(led(&frame, 9), [4, 4, 5]);
+        assert_eq!(led(&frame, 4), [4, 4, 5]);
         // Counter-clockwise: logical 1 is physical 4.
         let ccw = Ring::new("/nonexistent".into(), 16, 5, false).frame(Look::Writing(0.125));
         assert_eq!(
             (led(&ccw, 5), led(&ccw, 4), led(&ccw, 6)),
-            ([72, 36, 0], [72, 36, 0], [4, 4, 6])
+            ([13, 35, 72], [13, 35, 72], [4, 4, 5])
         );
     }
 
     #[test]
     fn a_started_job_shows_at_least_one_led_and_the_end_looks_differ() {
         let ring = Ring::new("/nonexistent".into(), 16, 0, true);
-        assert_eq!(led(&ring.frame(Look::Verifying(0.01)), 0), [0, 28, 72]);
-        assert_eq!(led(&ring.frame(Look::Verifying(0.0)), 0), [4, 4, 6]);
-        assert_eq!(led(&ring.frame(Look::Done), 7), [0, 96, 0]);
-        assert_eq!(led(&ring.frame(Look::Failed), 7), [72, 0, 0]);
+        assert_eq!(led(&ring.frame(Look::Verifying(0.01)), 0), [39, 26, 72]);
+        assert_eq!(led(&ring.frame(Look::Verifying(0.0)), 0), [4, 4, 5]);
+        assert_eq!(led(&ring.frame(Look::Done), 7), [0, 96, 12]);
+        assert_eq!(led(&ring.frame(Look::Failed), 7), [72, 17, 17]);
+        // Waiting isn't green: green is done.
+        assert_eq!(led(&ring.frame(Look::Waiting), 3), [24, 23, 22]);
     }
 
     #[test]
@@ -174,7 +184,7 @@ mod tests {
         let path = dir.path().join("leds0");
         let ring = Ring::new(path.clone(), 4, 0, true);
         ring.show(Look::Done);
-        assert_eq!(std::fs::read(&path).unwrap(), [0, 96, 0, 0].repeat(4));
+        assert_eq!(std::fs::read(&path).unwrap(), [0, 96, 12, 0].repeat(4));
         std::fs::write(&path, b"x").unwrap();
         ring.show(Look::Done);
         assert_eq!(

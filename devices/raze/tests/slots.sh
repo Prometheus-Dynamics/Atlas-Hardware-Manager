@@ -71,7 +71,7 @@ chmod +x "$T/bin/slot-init"
 export BOARD_LIB_DIR=$lib BOARD_ETC_DIR=$T/etc BOARD_RUN_DIR=$T/run BOARD_DATA_DIR=$T/data/board BOARD_DT_DIR=$T/dt
 export SLOTS_DATA=$T/data SLOTS_BOOT_MOUNT=$T/boot SLOT_INIT=$T/bin/slot-init UPDATE_SYNC=true
 export SLOTS_BOOT_DEV=/dev/fake-p1 FLUSH_LOG=$T/flushes HELPER_LOG=$T/helper-calls
-export UPDATE_SLOTS_STATE=$T/data/board/slots/state.json SLOTS_PARTUUID=abcd1234-02 SLOTS_RESERVE_KB=0
+export UPDATE_SLOTS_STATE=$T/data/board/slots/state.json SLOTS_PARTUUID=abcd1234-02 SLOTS_RESERVE_KB=0 SLOTS_TRYING_HOLD_SEC=0
 export UPDATE_REBOOT="echo tryboot >> $T/reboots" UPDATE_REBOOT_PLAIN="echo plain >> $T/reboots"
 export BOARD_DEVICE_LOCK=$T/device-lock UPDATE_BOOT_ID_FILE=$T/boot_id
 mkdir -p "$T/etc" "$T/run" "$T/boot/slots/pv-a" "$T/data/slots" "$T/data/board/slots"
@@ -158,6 +158,7 @@ echo "a bundle installs as a slot: the boot dir on the FAT, the image on /data"
 bundle pv-b 2026.4.0 "PhotonVision Lab"
 up stage "$T/pv-b.slot.tar" --sha256 "$(sha256sum "$T/pv-b.slot.tar" | cut -d' ' -f1)" 2>/dev/null
 [ -f "$T/data/slots/pv-b.erofs" ] && [ -f "$T/data/slots/pv-b.json" ] || fail "image or manifest missing"
+[ ! -e "$T/run/update/progress" ] || fail "the ring's progress file outlived the install: $(cat "$T/run/update/progress")"
 grep -q "atlas.slot=pv-b atlas.roothash=cdcd" "$T/boot/slots/pv-b/cmdline.txt" || fail "cmdline: $(cat "$T/boot/slots/pv-b/cmdline.txt")"
 grep -q "atlas.data=PARTUUID=abcd1234-02" "$T/boot/slots/pv-b/cmdline.txt" || fail "PARTUUID"
 [ -f "$T/boot/slots/pv-b/overlays/bcm2712d0.dtbo" ] || fail "overlays not copied"

@@ -318,6 +318,14 @@ write_status() {
 	# The boot it describes, as `update status` checks before answering from it.
 	cat "${UPDATE_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}" > "$STATUS_JSON.boot" 2>/dev/null || true
 	mv -f "$STATUS_JSON.tmp.$$" "$STATUS_JSON"
+	# lemnosd's ring takes an install's progress (0-1000) from
+	# update/progress next to update.json, as the A/B writer leaves it.
+	if [ "$STATE" = staging ]; then
+		mkdir -p "$BOARD_RUN_DIR/update"
+		echo "${PROGRESS:-0}" > "$BOARD_RUN_DIR/update/progress.tmp" && mv -f "$BOARD_RUN_DIR/update/progress.tmp" "$BOARD_RUN_DIR/update/progress"
+	else
+		rm -f "$BOARD_RUN_DIR/update/progress"
+	fi
 }
 
 # --- install ----------------------------------------------------------------
@@ -624,10 +632,18 @@ cmd_confirm() {
 	_run=$(running)
 	[ -n "$_run" ] || refuse "the initramfs didn't say which slot is running"
 	if [ -n "$TRIAL" ] && [ "$_run" = "$TRIAL" ]; then
+		# The ring's language (lemnosd): `trying` while the trial is judged,
+		# held long enough for lemnosd to see it (it reads the status about
+		# once a second), so `confirmed` after it plays the ripple.
+		STATE=trying ERROR=''
+		write_status
+		sleep "${SLOTS_TRYING_HOLD_SEC:-2}"
 		if [ -x /etc/board/update-health ] && ! /etc/board/update-health; then
 			meta_set "$_run" GOOD no
 			ERROR="slot $_run failed its health check"
 			board_event update.trial-failed "$ERROR" "slot=$_run"
+			# The failure on the ring before the restart back.
+			STATE=error
 			save_state
 			plain_reboot
 			return
