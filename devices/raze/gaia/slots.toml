@@ -216,8 +216,11 @@ data_dirs = ["${input.slot_data_dir}"]
 display_name = "${input.slot_display_name}"
 
 # The boot payload's digests: every regular file of the payload tree, keyed by
-# its path in the tree. The tree is the one the bundle and the first-flash FAT
-# are filled from, so the map names exactly the files that ship.
+# its path in the tree, which is the bundle's boot/. The slots writer checks a
+# bundle against them at install; nothing checks a slot dir on the FAT
+# against them. There cmdline.txt differs by design: the bundle's is the base
+# cmdline, and the slot's (written by the writer, or below for the first
+# flash) adds atlas.slot, atlas.roothash and atlas.data.
 boot = { files = "${assembly.sha256_tree:slots-payload}" }
 
 [image.assembly.files.json.image]
