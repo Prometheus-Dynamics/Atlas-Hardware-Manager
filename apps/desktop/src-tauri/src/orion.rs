@@ -7,7 +7,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use atlas_driver_orion::{
-    BundleHost, LiveStreams, OperatorIdentity, OrionDirectory, RemoteTransport,
+    BoardNodes, BundleHost, LiveStreams, OperatorIdentity, OrionDirectory, RemoteTransport,
 };
 use atlas_image_server::{ImageServer, ImageServerConfig};
 
@@ -95,6 +95,9 @@ pub struct Orion {
     pub images: ImageServer,
     /// Boards' live readings, from each board's own node.
     pub live: Arc<LiveStreams>,
+    /// Each board's own node: Orion for boards the configured Orion doesn't
+    /// know, with no key while their security switch is off.
+    pub board_nodes: Arc<BoardNodes>,
 }
 
 impl Orion {
@@ -105,20 +108,27 @@ impl Orion {
             Some(paths.data_dir.join(LIVE_PINS)),
         ));
         let transport = Arc::new(RemoteTransport::new(
-            identity,
+            identity.clone(),
             settings.orion_url.clone(),
             Some(paths.data_dir.join(PIN_FILE)),
         ));
         let images = ImageServer::new(image_config(settings))
             .with_logger(Arc::new(|line| crate::logfile::line("IMAGES", line)));
         let bundles: Arc<dyn BundleHost> = Arc::new(images.clone());
-        let directory = OrionDirectory::new(transport.clone(), Some(bundles));
+        let directory = OrionDirectory::new(transport.clone(), Some(bundles.clone()));
         directory.set_live_streams(live.clone());
+        let board_nodes = BoardNodes::new(
+            identity,
+            Some(bundles),
+            Some(live.clone()),
+            Some(directory.clone()),
+        );
         Ok(Self {
             transport,
             directory,
             images,
             live,
+            board_nodes,
         })
     }
 

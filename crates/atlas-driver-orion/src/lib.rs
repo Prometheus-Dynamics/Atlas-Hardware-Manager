@@ -19,6 +19,7 @@
 //! remote operator client (signed orion+tcp).
 
 mod actions;
+mod board_nodes;
 mod control;
 mod directory;
 mod hardware;
@@ -30,6 +31,7 @@ mod status;
 mod transport;
 mod update;
 
+pub use board_nodes::BoardNodes;
 pub use directory::OrionDirectory;
 pub use live::{LiveFrame, LiveRow, LiveStreams};
 pub use orion_client::remote::OperatorIdentity;

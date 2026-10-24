@@ -81,7 +81,9 @@ impl AppState {
         if let Some(orion) = &orion {
             builder = builder
                 .link_source(orion.directory.clone())
-                .capability_source(orion.directory.clone());
+                .capability_source(orion.directory.clone())
+                .link_source(orion.board_nodes.clone())
+                .capability_source(orion.board_nodes.clone());
         }
         let store: Arc<dyn InventoryStore> = Arc::new(JsonFileStore::new(&paths.inventory_file));
         builder = builder.store(store);
@@ -118,7 +120,9 @@ impl AppState {
                 if let Some(orion) = &orion {
                     builder = builder
                         .link_source(orion.directory.clone())
-                        .capability_source(orion.directory.clone());
+                        .capability_source(orion.directory.clone())
+                        .link_source(orion.board_nodes.clone())
+                        .capability_source(orion.board_nodes.clone());
                 }
                 if simulated.is_none() {
                     builder = drivers::register_hardware(
