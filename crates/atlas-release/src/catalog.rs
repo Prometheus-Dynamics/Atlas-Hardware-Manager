@@ -1,12 +1,12 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use atlas_driver::{Artifact, Family};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 use crate::hash::{normalize_sha256, to_hex};
 use crate::{Manifest, PublicKey, ReleaseError, sha256_file};
@@ -88,6 +88,11 @@ struct CatalogFile {
     sources: Vec<RemoteSource>,
 }
 
+/// Tries at a release download before giving up.
+const DOWNLOAD_ATTEMPTS: u32 = 4;
+/// A download with nothing arriving for this long has stalled.
+const DOWNLOAD_STALL: Duration = Duration::from_secs(60);
+
 /// The releases Atlas knows about, saved as JSON next to a download cache.
 pub struct ReleaseCatalog {
     file: PathBuf,
@@ -166,6 +171,7 @@ impl ReleaseCatalog {
         };
         let http = reqwest::Client::builder()
             .user_agent(concat!("atlas/", env!("CARGO_PKG_VERSION")))
+            .connect_timeout(Duration::from_secs(15))
             .build()
             .map_err(|error| ReleaseError::Download {
                 url: String::new(),
@@ -458,28 +464,80 @@ impl ReleaseCatalog {
             message,
         };
 
-        let response = self
-            .http
-            .get(&url)
-            .send()
-            .await
-            .and_then(reqwest::Response::error_for_status)
-            .map_err(|error| download_error(error.to_string()))?;
-        let total = response.content_length();
         let mut file = tokio::fs::File::create(&partial)
             .await
             .map_err(|error| ReleaseError::io(&partial, error))?;
         let mut hasher = Sha256::new();
         let mut downloaded = 0u64;
-        let mut stream = response.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|error| download_error(error.to_string()))?;
-            hasher.update(&chunk);
-            file.write_all(&chunk)
-                .await
-                .map_err(|error| ReleaseError::io(&partial, error))?;
-            downloaded += chunk.len() as u64;
-            progress(DownloadProgress { downloaded, total });
+        let mut last = String::new();
+        let mut done = false;
+        // A busy release host answers 5xx now and then, and a big image's
+        // connection can drop: try again, carrying on from what arrived.
+        'attempts: for attempt in 1..=DOWNLOAD_ATTEMPTS {
+            if attempt > 1 {
+                tokio::time::sleep(Duration::from_secs(1 << (attempt - 2))).await;
+            }
+            let mut request = self.http.get(&url);
+            if downloaded > 0 {
+                request = request.header(reqwest::header::RANGE, format!("bytes={downloaded}-"));
+            }
+            let response = match request.send().await {
+                Ok(response) => response,
+                Err(error) => {
+                    last = error.to_string();
+                    continue;
+                }
+            };
+            let status = response.status();
+            if status.is_server_error() || status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                last = format!("the server answered {status}");
+                continue;
+            }
+            if !status.is_success() {
+                return Err(download_error(format!("the server answered {status}")));
+            }
+            // The server sent the whole file again: start over.
+            if downloaded > 0 && status != reqwest::StatusCode::PARTIAL_CONTENT {
+                file.set_len(0)
+                    .await
+                    .map_err(|error| ReleaseError::io(&partial, error))?;
+                file.seek(std::io::SeekFrom::Start(0))
+                    .await
+                    .map_err(|error| ReleaseError::io(&partial, error))?;
+                hasher = Sha256::new();
+                downloaded = 0;
+            }
+            let total = response.content_length().map(|len| len + downloaded);
+            let mut stream = response.bytes_stream();
+            loop {
+                let chunk = match tokio::time::timeout(DOWNLOAD_STALL, stream.next()).await {
+                    Err(_) => {
+                        last = format!("nothing arrived for {} s", DOWNLOAD_STALL.as_secs());
+                        continue 'attempts;
+                    }
+                    Ok(None) => break,
+                    Ok(Some(Err(error))) => {
+                        last = error.to_string();
+                        continue 'attempts;
+                    }
+                    Ok(Some(Ok(chunk))) => chunk,
+                };
+                hasher.update(&chunk);
+                file.write_all(&chunk)
+                    .await
+                    .map_err(|error| ReleaseError::io(&partial, error))?;
+                downloaded += chunk.len() as u64;
+                progress(DownloadProgress { downloaded, total });
+            }
+            done = true;
+            break;
+        }
+        if !done {
+            drop(file);
+            let _ = tokio::fs::remove_file(&partial).await;
+            return Err(download_error(format!(
+                "{last} (tried {DOWNLOAD_ATTEMPTS} times)"
+            )));
         }
         file.sync_all()
             .await

@@ -157,3 +157,77 @@ async fn a_one_time_file_is_hashed_but_not_listed() {
     assert_eq!(artifact.sha256.len(), 64);
     let _ = std::fs::remove_dir_all(dir);
 }
+
+/// A release host that answers 500, then drops the connection partway, then
+/// sends the rest when asked for it by range.
+fn flaky_host(body: &'static [u8]) -> (String, std::thread::JoinHandle<Vec<String>>) {
+    use std::io::{BufRead, BufReader, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}/image.img.xz", listener.local_addr().unwrap());
+    let server = std::thread::spawn(move || {
+        let mut ranges = Vec::new();
+        for n in 0..3 {
+            let (stream, _) = listener.accept().unwrap();
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let mut range = String::new();
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line.trim().is_empty() {
+                    break;
+                }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("range:") {
+                    range = value.trim().to_owned();
+                }
+            }
+            ranges.push(range);
+            let mut stream = stream;
+            let _ = match n {
+                0 => stream.write_all(b"HTTP/1.1 500 Internal Server Error\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"),
+                1 => stream
+                    .write_all(format!("HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n", body.len()).as_bytes())
+                    .and_then(|()| stream.write_all(&body[..4])),
+                _ => stream
+                    .write_all(format!("HTTP/1.1 206 Partial Content\r\ncontent-length: {}\r\nconnection: close\r\n\r\n", body.len() - 4).as_bytes())
+                    .and_then(|()| stream.write_all(&body[4..])),
+            };
+        }
+        ranges
+    });
+    (url, server)
+}
+
+#[tokio::test]
+async fn a_download_survives_a_500_and_a_dropped_connection() {
+    const BODY: &[u8] = b"0123456789";
+    let dir = temp_dir("flaky");
+    let catalog = ReleaseCatalog::open(dir.join("catalog.json"), dir.join("cache")).unwrap();
+    let (url, server) = flaky_host(BODY);
+    catalog
+        .upsert(ReleaseEntry {
+            id: "pv".into(),
+            family: Family::new("raze"),
+            version: "2026.3.4".into(),
+            channel: Channel::Stable,
+            origin: ReleaseOrigin::Remote {
+                source: "helios".into(),
+                url,
+            },
+            artifact_name: "image.img.xz".into(),
+            sha256: to_hex(&Sha256::digest(BODY)),
+            size_bytes: BODY.len() as u64,
+            path: None,
+            signed: true,
+            boards: Vec::new(),
+            notes_url: None,
+            added_ms: 0,
+            pinned: false,
+        })
+        .unwrap();
+
+    let entry = catalog.download("pv", |_| {}).await.unwrap();
+
+    assert_eq!(std::fs::read(entry.path.unwrap()).unwrap(), BODY);
+    assert_eq!(server.join().unwrap(), ["", "", "bytes=4-"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
