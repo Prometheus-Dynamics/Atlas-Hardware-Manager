@@ -275,15 +275,39 @@ tree = "slots-fat"
 src_glob = "$assembly.tree.slots-payload/bcm*.dtb"
 dest = "."
 
+# The overlays, from their sources (not through slots-payload: a glob over
+# another assembly tree didn't wait for the overlays a transform makes, and
+# the FAT shipped without ov9782 and raze-fan). The same set as the payload.
 [[image.assembly.files]]
 tree = "slots-fat"
-src_glob = "$assembly.tree.slots-payload/overlays/*.dtb"
+src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtbo"
+exclude = ["dwc2.dtbo", "i2c1-pi5.dtbo", "ws2812-pio.dtbo", "vc4-kms-v3d-pi5.dtbo", "ramoops-pi5.dtbo"]
 dest = "overlays/"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src_glob = "$assembly.tree.slots-payload/overlays/*.dtbo"
+src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtb"
 dest = "overlays/"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src_glob = "$provider.buildroot_output/images/raze-overlays/*.dtbo"
+dest = "overlays/"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src = "$assembly.tree.boot/overlays/ov9782.dtbo"
+dest = "overlays/ov9782.dtbo"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src = "$assembly.tree.boot/overlays/raze-fan.dtbo"
+dest = "overlays/raze-fan.dtbo"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src = "$assembly.tree.boot/overlays/raze-usb-power.dtbo"
+dest = "overlays/raze-usb-power.dtbo"
 
 # The slot's cmdline: the base (input.slot_cmdline) plus the slot
 # arguments. It is written once, into slots/<id>/, and the root copy is the
@@ -319,15 +343,45 @@ tree = "slots-fat"
 src_glob = "$assembly.tree.slots-payload/bcm*.dtb"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/"
 
+# The overlays, from their sources (not through slots-payload: a glob over
+# another assembly tree didn't wait for the overlays a transform makes, and
+# the FAT shipped without ov9782 and raze-fan). The same set as the payload.
 [[image.assembly.files]]
 tree = "slots-fat"
-src_glob = "$assembly.tree.slots-payload/overlays/*.dtb"
+src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtbo"
+exclude = ["dwc2.dtbo", "i2c1-pi5.dtbo", "ws2812-pio.dtbo", "vc4-kms-v3d-pi5.dtbo", "ramoops-pi5.dtbo"]
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src_glob = "$assembly.tree.slots-payload/overlays/*.dtbo"
+src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtb"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src_glob = "$provider.buildroot_output/images/raze-overlays/*.dtbo"
+dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src = "$assembly.tree.boot/overlays/ov9782.dtbo"
+dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/ov9782.dtbo"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src = "$assembly.tree.boot/overlays/raze-fan.dtbo"
+dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/raze-fan.dtbo"
+
+[[image.assembly.files]]
+tree = "slots-fat"
+src = "$assembly.tree.boot/overlays/raze-usb-power.dtbo"
+dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/raze-usb-power.dtbo"
+
+# The README that makes the firmware read the slot's own overlays/.
+[[image.assembly.files]]
+tree = "slots-fat"
+content = "Overlays for this slot. The firmware reads them from os_prefix only when this file exists.\n"
+dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/README"
 
 # Second partition, p2 (ext4, label data): the slot images and manifests and
 # the slot state. The partition is sized from its content plus 256 MiB free,

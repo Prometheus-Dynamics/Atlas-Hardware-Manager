@@ -96,4 +96,49 @@ for o in want:
 if bad:
     print("\n".join(bad), file=sys.stderr); sys.exit(1)
 PY
+echo "the FAT slots.toml assembles (its own entries, over fixture build outputs) passes the check"
+# Gaia's file entries for the slots-fat tree, in a small model: src, src_glob
+# (with exclude) and content, dest a dir when it ends in /. Fixture build
+# outputs stand in for Buildroot's and the boot tree; only the config files
+# and the overlays are assembled.
+B=$T/build
+mkdir -p "$B/images/rpi-firmware/overlays" "$B/images/raze-overlays" "$B/boot/overlays"
+for o in bcm2712d0 dwc2 i2c1-pi5 ws2812-pio vc4-kms-v3d-pi5 ramoops-pi5 disable-bt-pi5; do : > "$B/images/rpi-firmware/overlays/$o.dtbo"; done
+: > "$B/images/rpi-firmware/overlays/overlay_map.dtb"
+for o in dwc2 i2c1-pi5 ws2812-pio vc4-kms-v3d-pi5 ramoops-pi5; do : > "$B/images/raze-overlays/$o.dtbo"; done
+for o in ov9782 raze-fan raze-usb-power; do : > "$B/boot/overlays/$o.dtbo"; done
+cp "$gaia/assets/boot/raze-device.txt" "$B/boot/raze-device.txt"
+python3 - "$gaia" "$B" "$T/fat" <<'PY2' || fail "assembling the FAT: see above"
+import fnmatch, glob, os, shutil, sys, tomllib
+g, b, out = sys.argv[1:]
+inputs = {"slot_family": "pv", "slot_version": "1", "slot_variant": "v", "slot_commit": "c0ffee00"}
+def expand(v):
+    for k, x in inputs.items():
+        v = v.replace("${input." + k + "}", x)
+    return (v.replace("$provider.buildroot_output", b).replace("$assembly.tree.boot", f"{b}/boot")
+             .replace("@self", g))
+for e in tomllib.load(open(f"{g}/slots.toml", "rb"))["image"]["assembly"]["files"]:
+    if e.get("tree") != "slots-fat":
+        continue
+    dest = expand(e["dest"])
+    if not ("overlays" in dest or dest.endswith(".txt")) or dest.startswith("slots/") and dest.endswith("cmdline.txt") or dest == "cmdline.txt":
+        continue
+    target = os.path.join(out, dest)
+    if "content" in e:
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        open(target, "w").write(expand(e["content"]))
+        continue
+    if "src_glob" in e:
+        srcs = [f for f in glob.glob(expand(e["src_glob"])) if not any(fnmatch.fnmatch(os.path.basename(f), x) for x in e.get("exclude", []))]
+    else:
+        srcs = [expand(e["src"])]
+    for src in srcs:
+        if not os.path.exists(src):
+            sys.exit(f"{e}: {src} doesn't exist (an entry the build would fail on)")
+        t = os.path.join(target, os.path.basename(src)) if dest.endswith("/") else target
+        os.makedirs(os.path.dirname(t), exist_ok=True)
+        shutil.copy(src, t)
+PY2
+run "$T/fat" || fail "the FAT slots.toml assembles fails the check: $(cat "$T/out")"
+[ -f "$T/fat/slots/pv-1-v-c0ffee00/overlays/README" ] || fail "no README in the FAT's slot overlays/"
 echo "ok"

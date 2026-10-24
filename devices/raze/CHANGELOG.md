@@ -753,6 +753,17 @@ tree on the ext4 `/data` (p2), its boot files in `slots/<id>/` on the FAT
   `boot/overlays/` (the slot's overlays dir the firmware reads), or the
   install is refused (exit 3) with the overlay named, before anything is
   written or any trial boot.
+- **The first-flash boot FAT gets the slot's README and every overlay:**
+  slots.toml filled the FAT's `overlays/` and `slots/<id>/overlays/` with
+  globs over the slots-payload tree, which took only `*.dtb`/`*.dtbo` (so the
+  slot dir had no README) and ran before the payload had the overlays a dts
+  transform makes (so ov9782 and raze-fan were missing from the root). The
+  FAT now copies each overlay from its source (the firmware set minus the
+  Raze's own, raze-overlays, the boot tree's ov9782/raze-fan/raze-usb-power)
+  into both, and writes the slot's README; the bundle (from the payload) was
+  right already. Caught by the boot-overlays build check on every PV build;
+  `tests/boot-overlays.sh` now assembles the FAT from slots.toml's own entries
+  and runs the check on it.
 - **A boot partition that would boot without the board's overlays fails its
   check (`gaia/scripts/check-boot-overlays.sh <FAT dir | .img | .img.xz>`):**
   for config.txt and tryboot.txt it follows the includes (raze-device.txt,
