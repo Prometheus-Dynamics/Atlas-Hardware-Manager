@@ -95,6 +95,9 @@ class JobStore {
       case "job-log": {
         const state = this.device(event.job, event.device);
         if (!state) return;
+        // A line a refresh's full record already carries can still arrive
+        // after it: not twice.
+        if (state.log[state.log.length - 1] === event.message) break;
         state.log.push(event.message);
         if (state.log.length > LOG_LIMIT) state.log.splice(0, state.log.length - LOG_LIMIT);
         break;

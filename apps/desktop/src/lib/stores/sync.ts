@@ -14,8 +14,23 @@ import { deviceStatus } from "./status.svelte";
 import { system } from "./system.svelte";
 import { ui } from "./ui.svelte";
 
-export async function loadAll() {
-  await Promise.all([devices.load(), activity.load(), jobs.load(), robots.load(), releases.load(), system.load()]);
+let loadingAll: Promise<void> | null = null;
+let again = false;
+
+/** Every list from the backend. A resync while one runs reloads once more
+ * after it, rather than racing it (an older snapshot landing last). */
+export async function loadAll(): Promise<void> {
+  if (loadingAll) {
+    again = true;
+    return loadingAll;
+  }
+  loadingAll = (async () => {
+    do {
+      again = false;
+      await Promise.all([devices.load(), activity.load(), jobs.load(), robots.load(), releases.load(), system.load()]);
+    } while (again);
+  })().finally(() => (loadingAll = null));
+  return loadingAll;
 }
 
 function dispatch(event: AtlasEvent) {

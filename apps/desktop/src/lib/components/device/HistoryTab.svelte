@@ -16,7 +16,9 @@
   let { record }: { record: DeviceRecord } = $props();
 
   const entries = $derived(
-    jobs.sorted.flatMap((job) => job.devices.filter((d) => sameKey(d.device, record.key)).map((state) => ({ job, state }))),
+    jobs.sorted.flatMap((job) =>
+      job.devices.filter((d) => sameKey(d.device, record.key)).map((state, i) => ({ job, state, row: `${job.id}:${i}` })),
+    ),
   );
 
   // The merged history (Atlas's record and the board's event log); until it
@@ -77,7 +79,7 @@
   </div>
 {:else if entries.length > 0}
   <ul class="flex flex-col gap-2">
-    {#each entries as { job, state } (job.id)}
+    {#each entries as { job, state, row } (row)}
       {@const detail = jobStatusDetail(state.status)}
       <li in:rise>
         <button type="button" class="glass row w-full px-4 py-3 text-left" onclick={() => open(job.id)}>
