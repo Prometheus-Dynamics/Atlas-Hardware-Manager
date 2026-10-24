@@ -104,6 +104,15 @@ commit; the commits are listed per area.
   exact `update.json` field set must accept the new fields (`019b215`,
   `01d5290`).
 
+### Downloads say why they failed
+
+- **A failed download names the URL and the server's answer:** the update
+  and slots writers kept only "the download failed" / "downloading <url>
+  failed"; they now add curl's error or the server's status line (wget -S),
+  e.g. `downloading http://…/x.slot.tar failed: The requested URL returned
+  error: 500`, in update.json's error and the board's event, so Atlas shows
+  it. tests/update.sh checks a 500 with curl and wget.
+
 ### LEDs: the update states in the board's language
 
 - **Slot installs and trial boots show on the ring as the A/B updater's

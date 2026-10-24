@@ -678,6 +678,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         rng = self.headers.get("Range")
         with open(log_file, "a") as log:
             log.write(f"{self.path} {rng}\n")
+        if self.path.endswith("error500"):
+            self.send_error(500)
+            return
         if not os.path.isfile(path):
             self.send_error(404)
             return
@@ -726,6 +729,13 @@ EOF
 			continue
 		}
 		export UPDATE_DOWNLOADER=$tool
+		update cancel >/dev/null
+
+		echo "a server error is in the failure's reason, with the URL ($tool)"
+		new_root 5 7.0 raze
+		update stage-url "$base/image.error500" --sha256 "$sum" --size "$size" 2>/dev/null && fail "a 500 staged"
+		grep -q "downloading $base/image.error500 failed: .*500" "$T/run/update.json" || fail "the reason: $(cat "$T/run/update.json")"
+		[ -z "$(ls "$T/data/update" 2>/dev/null | grep '\.err$')" ] || fail "the error file was left: $(ls "$T/data/update")"
 		update cancel >/dev/null
 
 		echo "stage-url downloads, checks and stages ($tool)"

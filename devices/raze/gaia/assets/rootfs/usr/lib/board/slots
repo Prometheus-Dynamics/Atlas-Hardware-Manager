@@ -70,6 +70,7 @@ WORK_DIR='' STREAMED=''
 # can't resume, so it never stays on /data), the boot FAT if mounted here.
 cleanup() {
 	[ -z "$WORK_DIR" ] || rm -rf "$WORK_DIR"
+	rm -f "$DOWNLOAD_DIR/.download.err" 2>/dev/null || true
 	[ -z "$STREAMED" ] || rm -f "$STREAMED"
 	if [ -n "$BOOT" ] && [ -z "${SLOTS_BOOT_MOUNT:-}" ]; then
 		umount "$BOOT" 2>/dev/null || true
@@ -596,11 +597,18 @@ cmd_stage_url() {
 	_file=$DOWNLOAD_DIR/$_want.slot.tar
 	STATE=staging PROGRESS=0 ERROR=''
 	save_state
+	# The tool's own reason (an HTTP status, a refused connection) goes into
+	# the error, so a failed download says why.
+	_err=$DOWNLOAD_DIR/.download.err
+	mkdir -p "$DOWNLOAD_DIR"
 	if command -v curl >/dev/null 2>&1; then
-		curl -fsSL --retry 3 --connect-timeout 30 -C - -o "$_file" "$_url" || die "the download failed"
+		curl -fsSL --retry 3 --connect-timeout 30 -C - -o "$_file" "$_url" > "$_err" 2>&1 ||
+			die "downloading $_url failed: $(grep -E '^curl: ' "$_err" | tail -n 1 | sed 's/^curl: ([0-9]*) //')"
 	else
-		wget -q -c -O "$_file" "$_url" || die "the download failed"
+		wget -S -c -O "$_file" "$_url" > "$_err" 2>&1 ||
+			die "downloading $_url failed: $(grep -E 'HTTP/[0-9.]+ [0-9]{3}|^wget: ' "$_err" | tail -n 1 | sed 's/^ *//')"
 	fi
+	rm -f "$_err"
 	[ -z "$_size" ] || [ "$(board_file_size "$_file")" = "$_size" ] || die "the download isn't --size bytes"
 	[ "$(sha256sum "$_file" | cut -d' ' -f1)" = "$_want" ] || { rm -f "$_file"; die "the download doesn't match --sha256"; }
 	install_bundle "$_file" "$_pin"

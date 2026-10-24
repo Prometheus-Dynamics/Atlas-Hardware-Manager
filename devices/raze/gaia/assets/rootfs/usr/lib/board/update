@@ -719,11 +719,21 @@ downloader() {
 	fi
 }
 
+# download_reason <stderr file>: why a download failed, from the tool's
+# output: curl's error, else the server's last status line (wget -S) or
+# wget's own error.
+download_reason() {
+	_r=$(grep -E '^curl: |HTTP/[0-9.]+ [0-9]{3}|^wget: ' "$1" 2>/dev/null | tail -n 1 | sed 's/^curl: ([0-9]*) //; s/^ *//')
+	printf '%s' "$_r"
+}
+
 # fetch <tool> <url> <file>: downloads, continuing a partial file.
 fetch() {
+	# The tool's own reason goes to $3.err, for the failure's message (both
+	# streams: Wget2 writes its headers to stdout when it continues a file).
 	case "$1" in
-	curl) curl -fsSL --retry 3 --connect-timeout 30 -C - -o "$3" "$2" ;;
-	wget) wget -q -c -O "$3" "$2" ;;
+	curl) curl -fsSL --retry 3 --connect-timeout 30 -C - -o "$3" "$2" > "$3.err" 2>&1 && rm -f "$3.err" ;;
+	wget) wget -S -c -O "$3" "$2" > "$3.err" 2>&1 && rm -f "$3.err" ;;
 	*) return 1 ;;
 	esac
 }
@@ -754,7 +764,9 @@ fail_download() {
 		rm -f "$PART"
 		fail "the download has $got bytes, the image $SIZE"
 	fi
-	fail "downloading $URL failed"
+	why=$(download_reason "$PART.err")
+	rm -f "$PART.err"
+	fail "downloading $URL failed${why:+: $why}"
 }
 
 cmd_stage_url() {
