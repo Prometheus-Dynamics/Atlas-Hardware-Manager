@@ -86,6 +86,12 @@ impl SlotsCapability for BoardSlots {
             command.writer_command(),
             checked(command.id())?
         );
+        if matches!(
+            command,
+            SlotCommand::BootOnce { .. } | SlotCommand::SetDefault { .. }
+        ) {
+            self.ssh.expect_new_host_key();
+        }
         match (command, writer(&self.ssh, &script).await) {
             // The restart drops the connection.
             (SlotCommand::BootOnce { .. }, Err(DriverError::Unreachable(_))) => Ok(()),
@@ -150,6 +156,7 @@ impl SlotsCapability for BoardSlots {
         progress.step_progress(UpdateStep::Transfer, 1.0);
         if install.boot {
             progress.log("installed; restarting into it once".to_string());
+            self.ssh.expect_new_host_key();
             match writer(&self.ssh, &format!("{WRITER} apply")).await {
                 Ok(()) | Err(DriverError::Unreachable(_)) => {}
                 Err(error) => return Err(error),

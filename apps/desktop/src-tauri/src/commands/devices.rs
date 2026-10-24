@@ -42,7 +42,12 @@ pub fn set_device_robot(
 
 #[tauri::command]
 pub fn forget_device(state: State<'_, AppState>, key: DeviceKey) -> CmdResult<()> {
-    state.atlas.forget_device(&key).map_err(text)
+    state.atlas.forget_device(&key).map_err(text)?;
+    // A board met again later is pinned afresh (it may have a new OS by then).
+    if let Some(known_hosts) = state.ssh_access.get().known_hosts {
+        atlas_driver_board::host_keys::forget_board(&known_hosts, &key.to_string());
+    }
+    Ok(())
 }
 
 #[tauri::command]

@@ -50,6 +50,9 @@ pub const UPDATE_CANCEL_ACTION: &str = "update.cancel";
 pub const UPDATE_ROLLBACK_ACTION: &str = "update.rollback";
 /// Adds this computer's SSH key to the board, for SSH over the network.
 pub const SSH_KEY_ADD_ACTION: &str = "ssh-key.add";
+/// Forgets the board's pinned SSH host key: the next connection takes the
+/// one it has now (after a new OS on it).
+pub const SSH_TRUST_NEW_KEY_ACTION: &str = "ssh.trust-new-key";
 
 const USB_BOOT: &str = "/usr/lib/board/usb-boot";
 const WRITER: &str = "/usr/lib/board/update";
@@ -116,6 +119,11 @@ impl SshOffer {
             list.push(action(SSH_KEY_ADD_ACTION, "Add my SSH key", false));
         }
         if self.power {
+            list.push(action(
+                SSH_TRUST_NEW_KEY_ACTION,
+                "Trust its new SSH key",
+                true,
+            ));
             list.push(action(POWER_OFF_ACTION, "Power off", true));
         }
         if self.usb_boot {
@@ -188,6 +196,7 @@ async fn run_ssh_action(
                 .ok_or_else(|| DriverError::Incompatible("Atlas has no SSH key set".into()))?;
             ssh.run(&add_key_script(key)?).await.map(|_| ())
         }
+        SSH_TRUST_NEW_KEY_ACTION => ssh.forget_host_key(),
         USB_BOOT_ACTION => restart_into_usb_boot(ssh).await,
         SET_CLOCK_ACTION => set_clock(ssh).await,
         REBOOT_ACTION => {
@@ -207,10 +216,13 @@ async fn run_ssh_action(
         UPDATE_CANCEL_ACTION => writer(ssh, &format!("{WRITER} cancel")).await,
         // The writer switches, then restarts the board, which drops the
         // connection.
-        UPDATE_ROLLBACK_ACTION => match writer(ssh, &format!("{WRITER} rollback")).await {
-            Err(DriverError::Unreachable(_)) => Ok(()),
-            other => other,
-        },
+        UPDATE_ROLLBACK_ACTION => {
+            ssh.expect_new_host_key();
+            match writer(ssh, &format!("{WRITER} rollback")).await {
+                Err(DriverError::Unreachable(_)) => Ok(()),
+                other => other,
+            }
+        }
         other => Err(DriverError::Unsupported(format!("no action {other}"))),
     }
 }
@@ -418,6 +430,7 @@ mod tests {
             ("update.cancel", false),
             ("update.rollback", true),
             ("ssh-key.add", false),
+            ("ssh.trust-new-key", true),
             ("power-off", true),
             ("usb-boot", true),
         ];

@@ -31,6 +31,7 @@ use atlas_driver::{TrialStop, trial_stopped};
 use crate::console::{Console, ConsoleError, SharedOnLine};
 
 mod access;
+pub mod host_keys;
 pub use access::{SshAccess, SshConfig, private_key_for};
 
 /// The update method a board lists when it has the A/B layout and writer.
@@ -99,12 +100,16 @@ impl SshUpdate {
             .args(["-o", "ConnectTimeout=8"])
             .args(["-o", "ServerAliveInterval=5", "-o", "ServerAliveCountMax=3"])
             .args(["-o", "StrictHostKeyChecking=accept-new"])
+            // Plain entries, so a board's can be found and dropped (Debian
+            // hashes them by default).
+            .args(["-o", "HashKnownHosts=no"])
             .arg("-o")
-            .arg(format!("HostKeyAlias=board-{}", self.key).replace(':', "-"));
+            .arg(format!("HostKeyAlias={}", self.alias()));
         if let Some(known_hosts) = &config.known_hosts {
             if let Some(dir) = known_hosts.parent() {
                 let _ = std::fs::create_dir_all(dir);
             }
+            host_keys::drop_hashed_once(known_hosts);
             command
                 .arg("-o")
                 .arg(format!("UserKnownHostsFile={}", known_hosts.display()));
@@ -122,6 +127,36 @@ impl SshUpdate {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
         command
+    }
+
+    /// This board's `HostKeyAlias` in Atlas's known_hosts.
+    pub(crate) fn alias(&self) -> String {
+        host_keys::alias(&self.key.to_string())
+    }
+
+    /// Atlas just changed what the board runs: a new host key from it is
+    /// expected for a while, and taken without asking.
+    pub(crate) fn expect_new_host_key(&self) {
+        host_keys::expect_new_key(&self.alias());
+    }
+
+    /// Drops the board's pinned host key from Atlas's known_hosts (the next
+    /// connection pins the one it has now).
+    pub(crate) fn forget_host_key(&self) -> Result<(), DriverError> {
+        let config = self.access.get();
+        let Some(known_hosts) = &config.known_hosts else {
+            return Err(DriverError::Incompatible(
+                "Atlas uses your own known_hosts for boards; remove the board's entry there".into(),
+            ));
+        };
+        if host_keys::forget(known_hosts, &self.alias()) {
+            Ok(())
+        } else {
+            Err(DriverError::Other(format!(
+                "couldn't update {} (is ssh-keygen installed?)",
+                known_hosts.display()
+            )))
+        }
     }
 
     /// Whether the board is plugged into this computer (it has a console).
@@ -166,19 +201,30 @@ impl SshUpdate {
         if let Some(result) = self.on_console(script, None).await {
             return result;
         }
-        let output = self
-            .command()
-            .arg(as_atlas(script))
-            .output()
-            .await
-            .map_err(|error| DriverError::Unreachable(format!("could not run ssh: {error}")))?;
-        if output.status.success() {
-            return Ok(output.stdout);
+        let mut retried = false;
+        loop {
+            let output = self
+                .command()
+                .arg(as_atlas(script))
+                .output()
+                .await
+                .map_err(|error| DriverError::Unreachable(format!("could not run ssh: {error}")))?;
+            if output.status.success() {
+                return Ok(output.stdout);
+            }
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // A new OS on the board (Atlas just put it there): its new host
+            // key replaces the old pin, once.
+            if !retried
+                && host_key_changed(&stderr)
+                && host_keys::new_key_expected(&self.alias())
+                && self.forget_host_key().is_ok()
+            {
+                retried = true;
+                continue;
+            }
+            return Err(ssh_error(output.status.code(), &stderr));
         }
-        Err(ssh_error(
-            output.status.code(),
-            &String::from_utf8_lossy(&output.stderr),
-        ))
     }
 
     /// Like [`run`](Self::run), handing each line the command writes to
@@ -353,6 +399,12 @@ pub(crate) fn as_atlas(script: &str) -> String {
     format!("export BOARD_EVENT_SOURCE=atlas; {script}")
 }
 
+/// ssh refused the board's host key: not the one Atlas pinned.
+fn host_key_changed(stderr: &str) -> bool {
+    stderr.contains("REMOTE HOST IDENTIFICATION HAS CHANGED")
+        || stderr.contains("Host key verification failed")
+}
+
 /// A readable reason for a failed ssh run.
 fn ssh_error(code: Option<i32>, stderr: &str) -> DriverError {
     let stderr = stderr.trim();
@@ -361,9 +413,9 @@ fn ssh_error(code: Option<i32>, stderr: &str) -> DriverError {
             "the board doesn't accept your SSH key, and it isn't on this computer's USB: plug it in here (Atlas then uses its USB console, no key needed, and can add yours with \"Add my SSH key\")".into(),
         );
     }
-    if stderr.contains("REMOTE HOST IDENTIFICATION HAS CHANGED") {
+    if host_key_changed(stderr) {
         return DriverError::Incompatible(
-            "the board's SSH host key changed (was it reflashed?): remove its board-… entry from Atlas's known_hosts and try again".into(),
+            "the board's SSH host key changed (a new OS on it, or a reflash): if you put it there, choose \"Trust its new SSH key\" in the board's More menu, then try again".into(),
         );
     }
     let last = stderr.lines().last().unwrap_or("").to_string();
@@ -514,6 +566,7 @@ impl UpdateCapability for SshUpdate {
         // connection may drop with the reboot; only a refusal by the writer
         // itself counts as a failure.
         progress.step_started(UpdateStep::Reboot);
+        self.expect_new_host_key();
         if let Err(error @ DriverError::Other(_)) = self.run(&format!("{WRITER} apply")).await {
             return Err(error);
         }
