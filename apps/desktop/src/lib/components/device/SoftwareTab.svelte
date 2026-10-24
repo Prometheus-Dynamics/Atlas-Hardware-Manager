@@ -144,6 +144,7 @@
     if (method === "update" && slotted) {
       return [
         { title: entry && !entry.path ? "Download it on the Releases page first" : get, note: "" },
+        ...(fromImage ? [{ title: "Make the slot from the image", note: "On this computer, about 10 s" }] : []),
         { title: "Copy it to the board beside the other slots", note: "Every file is checked against its manifest before anything is replaced" },
         ...(bootAfter
           ? [
@@ -185,8 +186,10 @@
 
   /** The bundle file for a slot install: chosen, or a release already here. */
   const bundlePath = $derived(choice?.path ?? entry?.path ?? null);
-  /** Slots take slot bundles; a whole-disk image is for a fresh install. */
-  const notBundle = $derived(!!version && !(entry?.artifact_name ?? bundlePath ?? "").endsWith(".slot.tar"));
+  /** The file a slot install starts from: a slot bundle, or a slots build's image, which Atlas makes the bundle from. */
+  const slotFile = $derived((entry?.artifact_name ?? bundlePath ?? "").toLowerCase());
+  const fromImage = $derived(/\.img(\.(xz|zst|gz))?$/.test(slotFile));
+  const notBundle = $derived(!!version && !slotFile.endsWith(".slot.tar") && !fromImage);
   const label = $derived.by(() => {
     if (!version) return "Choose an image";
     if (method === "update" && slotted) return bootAfter ? `Install ${version} and boot it once` : `Install ${version} as a slot`;
@@ -393,7 +396,7 @@
         <p class="hint" title={entry?.sha256 ?? ""}>Writes {writes}</p>
       {/if}
       {#if method === "update" && slotted && notBundle}
-        <p class="hint">That's a whole-disk image, for a fresh install. A slot installs from a slot bundle (.slot.tar).</p>
+        <p class="hint">A slot installs from a slot bundle (.slot.tar) or a slots build's image (.img.xz).</p>
       {/if}
       {#if installing !== null}
         <ProgressBar value={installing} label="Copying to the board" />

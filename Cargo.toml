@@ -57,6 +57,9 @@ ed25519-dalek = { version = "3", default-features = false }
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 futures = "0.3"
 lzma-rs = "0.3"
+fatfs = { version = "0.3.6", default-features = false, features = ["std", "alloc"] }
+ext4-view = { version = "1", default-features = false, features = ["std"] }
+tar = { version = "0.4", default-features = false }
 mdns-sd = "0.21"
 nusb = { version = "0.2.7", features = ["tokio"] }
 # Orion (control protocol 5, layout of f8d767a) and its remote operator client, pinned together.

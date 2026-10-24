@@ -32,7 +32,9 @@ pub async fn slot_command(
 /// Installs the slot bundle at `path` (hashed here first), reporting the
 /// transfer on `on_progress`. `expected_sha256`, the chosen release's digest
 /// when it came from the catalog, must match the file: a cached or picked
-/// file that isn't that release is refused before anything is sent.
+/// file that isn't that release is refused before anything is sent. A slots
+/// build's `.img.xz` (what a fresh install writes) installs too: the bundle
+/// is made from it first.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn install_slot(
@@ -44,9 +46,6 @@ pub async fn install_slot(
     expected_sha256: Option<String>,
     on_progress: Channel<ProgressUpdate>,
 ) -> CmdResult<()> {
-    let size_bytes = std::fs::metadata(&path)
-        .map_err(|error| format!("{}: {error}", path.display()))?
-        .len();
     let sha256 = atlas_release::sha256_file(&path).await.map_err(text)?;
     if let Some(want) = expected_sha256.filter(|want| !want.is_empty())
         && !want.eq_ignore_ascii_case(&sha256)
@@ -58,6 +57,30 @@ pub async fn install_slot(
             want.get(..12).unwrap_or(&want)
         ));
     }
+    let progress = ProgressSink::new(move |update| {
+        let _ = on_progress.send(update);
+    });
+    let (path, sha256) = if atlas_blockdev::is_slot_bundle(&path) {
+        (path, sha256)
+    } else {
+        progress.log(format!(
+            "making the slot bundle from {}",
+            path.file_name()
+                .map_or_else(String::new, |name| name.to_string_lossy().into_owned())
+        ));
+        let out = state.paths.cache_dir.join("slot-bundles");
+        let made = tokio::task::spawn_blocking(move || {
+            atlas_blockdev::slot_bundle_from_image(&path, &out)
+        })
+        .await
+        .map_err(text)?
+        .map_err(text)?;
+        let sha256 = atlas_release::sha256_file(&made.path).await.map_err(text)?;
+        (made.path, sha256)
+    };
+    let size_bytes = std::fs::metadata(&path)
+        .map_err(|error| format!("{}: {error}", path.display()))?
+        .len();
     let install = SlotInstall {
         bundle: Artifact {
             name: path
@@ -71,9 +94,6 @@ pub async fn install_slot(
         pin,
         boot,
     };
-    let progress = ProgressSink::new(move |update| {
-        let _ = on_progress.send(update);
-    });
     state
         .atlas
         .install_slot(&key, &install, &progress)

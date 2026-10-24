@@ -18,7 +18,8 @@ use crate::output;
 pub(crate) enum SlotsCommand {
     /// List the installed slots and the free space (the default).
     List,
-    /// Install a slot bundle (<id>.slot.tar).
+    /// Install a slot bundle (<id>.slot.tar), or a slots build's image
+    /// (<id>.img.xz): the bundle is made from it first.
     Install {
         bundle: PathBuf,
         /// Keep it from removal.
@@ -92,6 +93,24 @@ pub(crate) async fn slots(
             return Ok(ExitCode::SUCCESS);
         }
         SlotsCommand::Install { bundle, pin, boot } => {
+            let bundle = if atlas_blockdev::is_slot_bundle(&bundle) {
+                bundle
+            } else {
+                if !as_json {
+                    output::line(&format!("making the slot bundle from {}", bundle.display()));
+                }
+                let out = dirs::cache_dir()
+                    .unwrap_or_else(std::env::temp_dir)
+                    .join("atlas")
+                    .join("slot-bundles");
+                tokio::task::spawn_blocking(move || {
+                    atlas_blockdev::slot_bundle_from_image(&bundle, &out)
+                })
+                .await
+                .map_err(|error| error.to_string())?
+                .map_err(|error| error.to_string())?
+                .path
+            };
             let bundle = local_artifact(&bundle).await?;
             let install = SlotInstall { bundle, pin, boot };
             let quiet = as_json;
