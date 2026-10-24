@@ -315,7 +315,16 @@
                     "width": { "type": "integer", "minimum": 1 },
                     "height": { "type": "integer", "minimum": 1 },
                     "fx_px": { "type": "number", "exclusiveMinimum": 0 },
-                    "rms_px": { "type": "number", "minimum": 0 }
+                    "fy_px": { "type": "number", "exclusiveMinimum": 0 },
+                    "cx_px": { "type": "number" },
+                    "cy_px": { "type": "number" },
+                    "distortion": {
+                      "type": "object",
+                      "description": "For fisheye (equidistant): OpenCV cv::fisheye k1..k4.",
+                      "properties": { "k1": { "type": "number" }, "k2": { "type": "number" }, "k3": { "type": "number" }, "k4": { "type": "number" } }
+                    },
+                    "rms_px": { "type": "number", "minimum": 0 },
+                    "sigma": { "type": "number", "exclusiveMinimum": 0, "description": "The focal length's relative spread across modules: how far a fit may move from the prior." }
                   }
                 },
                 "source": { "type": "object", "properties": { "by": { "type": "string" }, "date": { "type": "string" } } }

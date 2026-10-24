@@ -523,10 +523,21 @@ def render_camera_toml(manifest: dict) -> str:
             out.append(f'projection = "{lens["projection"]}"\n')
         hint = lens.get("hint")
         if hint:
-            out.append("\n# One module's fit, a starting point for the self-calibration.\n[camera.lens.hint]\n")
-            out.append(f"width = {hint['width']}\nheight = {hint['height']}\nfx_px = {float(hint['fx_px'])}\n")
-            if "rms_px" in hint:
-                out.append(f"rms_px = {float(hint['rms_px'])}\n")
+            out.append(
+                "\n# One module's fit: a prior the self-calibration starts from and is softly\n"
+                "# pulled toward (sigma: the focal length's relative spread across modules),\n"
+                "# not a calibration. Distortion: OpenCV cv::fisheye k1..k4 (equidistant).\n"
+                "[camera.lens.hint]\n"
+            )
+            out.append(f"width = {hint['width']}\nheight = {hint['height']}\n")
+            for key in ("fx_px", "fy_px", "cx_px", "cy_px", "rms_px", "sigma"):
+                if key in hint:
+                    out.append(f"{key} = {float(hint[key])}\n")
+            distortion = hint.get("distortion")
+            if distortion:
+                out.append("\n[camera.lens.hint.distortion]\n")
+                for key in sorted(distortion):
+                    out.append(f"{key} = {float(distortion[key])}\n")
     return "".join(out)
 
 

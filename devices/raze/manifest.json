@@ -201,9 +201,19 @@
       "lens": {
         "model": "fisheye",
         "projection": "equidistant",
-        "notes": "The camera module's optics, not the sensor's: an OV9782 behind a wide fisheye lens. Use it as the lens-model hint when self-calibrating an uncalibrated Raze camera (a pinhole fit to it comes out wildly wrong: fx 1129 against 566). The hint is one module's fit, a starting point, not a calibration.",
-        "hint": { "width": 1280, "height": 800, "fx_px": 566, "rms_px": 0.11 },
-        "source": { "by": "Eidos (offline self-calibration of a Raze recording, equidistant fisheye)", "date": "2026-10-24" }
+        "notes": "The camera module's optics, not the sensor's: an OV9782 behind a wide fisheye lens. Use it as the lens-model hint when self-calibrating an uncalibrated Raze camera (a pinhole fit to it comes out wildly wrong: fx 1129 against 566). The hint is one module's fit, a prior for the fit to start from and be softly pulled toward (sigma: the focal length's relative spread across modules), not a calibration.",
+        "hint": {
+          "width": 1280,
+          "height": 800,
+          "fx_px": 566.508,
+          "fy_px": 565.375,
+          "cx_px": 627.290,
+          "cy_px": 351.807,
+          "distortion": { "k1": -0.0156148, "k2": 0.0280815, "k3": -0.0133785, "k4": 0.00147003 },
+          "rms_px": 0.11,
+          "sigma": 0.05
+        },
+        "source": { "by": "Eidos (offline tag-map self-calibration of a Raze OV9782 recording, 2042 frames; equidistant fisheye, OpenCV cv::fisheye k1..k4)", "date": "2026-10-24" }
       },
       "verified": {
         "part": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "sysfs on device: Raze running the PhotonVision image (package c881c60, kernel 7.2.9); /sys/bus/i2c/devices/10-0060/name is ov9782" },
