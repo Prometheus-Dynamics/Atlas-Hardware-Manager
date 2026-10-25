@@ -8,6 +8,7 @@
   import { api, errorText, type DeviceKey, type HardwareCommand, type HardwareDevice } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
+  import { deviceStatus } from "#lib/stores/status.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
   import { formatValue, label } from "./hardware.ts";
 
@@ -33,7 +34,10 @@
 
   async function send(command: HardwareCommand) {
     if (!deviceKey) return null;
-    return api.controlHardware(deviceKey, device.id, command);
+    const applied = await api.controlHardware(deviceKey, device.id, command);
+    // The board's values now, not at the next read.
+    void deviceStatus.refresh(deviceKey);
+    return applied;
   }
 
   async function set(control: string, value: number) {

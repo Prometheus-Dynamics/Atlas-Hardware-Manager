@@ -41,6 +41,9 @@
       .catch(() => !stale && (actions = []));
     return () => (stale = true);
   });
+  // The controls and readings below change as people set them: follow
+  // them every couple of seconds while this tab is open.
+  $effect(() => (online ? deviceStatus.closely(record.key) : undefined));
   async function run(action: DeviceAction) {
     await api.runDeviceAction(record.key, action.id);
     toasts.success(`${action.label}: sent to ${deviceName(record)}.`);

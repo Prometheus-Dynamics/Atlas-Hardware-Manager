@@ -22,6 +22,8 @@ const BUSY_MS = 3000;
 const IDLE_MS = 15000;
 /** Idle, for a board that pushes its events and update state: only for what it doesn't push (temperatures, fan). */
 const PUSHED_MS = 60_000;
+/** While a view shows the board's controls (Settings): their values change as people set them. */
+const CLOSE_MS = 2000;
 const HISTORY_LIMIT = 300;
 
 export function hasStatus(record: DeviceRecord | undefined): boolean {
@@ -57,6 +59,8 @@ class StatusStore {
   pushes = new SvelteMap<string, number>();
 
   private watched = new Map<string, { key: DeviceKey; status: boolean; count: number }>();
+  /** Views following a device's values closely (`closely`), by device. */
+  private close = new Map<string, number>();
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private inFlight = new Set<string>();
   /** Devices no view shows any more, dropped shortly unless one comes back. */
@@ -111,6 +115,23 @@ class StatusStore {
     };
   }
 
+  /**
+   * While the caller shows the board's controls and readings (the Settings
+   * tab's hardware), its status is read every CLOSE_MS instead of every
+   * 15 s or minute. Needs a `watch` of the same device. Returns a function
+   * that stops.
+   */
+  closely(key: DeviceKey): () => void {
+    const id = keyString(key);
+    this.close.set(id, (this.close.get(id) ?? 0) + 1);
+    if (this.watched.has(id) && !this.inFlight.has(id)) void this.poll(id, "closely");
+    return () => {
+      const left = (this.close.get(id) ?? 1) - 1;
+      if (left > 0) this.close.set(id, left);
+      else this.close.delete(id);
+    };
+  }
+
   /** Reads the status now (after an action, say), then keeps polling. */
   async refresh(key: DeviceKey) {
     await this.poll(keyString(key), "refresh");
@@ -137,7 +158,13 @@ class StatusStore {
     // A staged update is likely to be applied soon: follow it closely too.
     const status = this.byDevice.get(id);
     const update = status?.update;
-    const every = updateBusy(update) || update?.state === "staged" ? BUSY_MS : status?.pushed ? PUSHED_MS : IDLE_MS;
+    const every = this.close.has(id)
+      ? CLOSE_MS
+      : updateBusy(update) || update?.state === "staged"
+        ? BUSY_MS
+        : status?.pushed
+          ? PUSHED_MS
+          : IDLE_MS;
     this.timers.set(
       id,
       setTimeout(() => void this.poll(id, `timer ${every / 1000} s`), every),
