@@ -184,6 +184,7 @@
     title={asking.title}
     body={asking.body}
     label={asking.label}
+    typed={asking.command.command === "remove"}
     busy={!!busy}
     onconfirm={() => asking && void run(asking.command, asking.command.command === "remove" ? "Removed." : `${deviceName(record)} is restarting into it.`)}
     oncancel={() => (asking = null)}
@@ -209,11 +210,18 @@
     box-shadow: inset 2px 0 0 var(--success, var(--accent));
     padding-left: 8px;
   }
+  /* A narrow card wraps the badges and buttons under the name and id
+     rather than cutting them to "PhotonVision 2026.…". */
   .line {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: 4px 6px;
     min-width: 0;
+  }
+  .line > .truncate,
+  .line > p {
+    min-width: min(100%, 12em);
   }
   .flags,
   .acts {

@@ -1,6 +1,8 @@
 <script lang="ts">
   // Asks before something that takes the board offline or deletes from it,
-  // naming the device; in ROBOT mode by typing the end of its serial.
+  // naming the device. Only what can't be undone (`typed`: removing a slot's
+  // image) asks for the end of its serial too, and only in ROBOT mode; a
+  // restart, a power-off or forgetting the device is one click to confirm.
   import type { DeviceRecord } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import { ui } from "#lib/stores/ui.svelte.ts";
@@ -12,6 +14,7 @@
     body,
     label,
     busy = false,
+    typed: needsTyping = false,
     onconfirm,
     oncancel,
   }: {
@@ -21,13 +24,15 @@
     /** The confirm button's label. */
     label: string;
     busy?: boolean;
+    /** It can't be undone: in ROBOT mode, typing the serial's end confirms. */
+    typed?: boolean;
     onconfirm: () => void;
     oncancel: () => void;
   } = $props();
 
   let typed = $state("");
   const tail = $derived(record.key.serial.slice(-4));
-  const robot = $derived(ui.mode === "robot");
+  const robot = $derived(ui.mode === "robot" && needsTyping);
   const confirmed = $derived(!robot || typed.trim().toLowerCase() === tail.toLowerCase());
   function confirm() {
     if (confirmed && !busy) onconfirm();
