@@ -185,10 +185,16 @@ export function cameraStreams(record: DeviceRecord): CameraStream[] {
   return attrs.camera_stream ? [{ name: "camera", url: attrs.camera_stream }] : [];
 }
 
-/** "front-raw" as "Front · raw". */
+/**
+ * A view's name for people: "front-raw" as "Front · raw", and a camera's
+ * own name ("Front-Camera", as a HeliOS board lists "Front Camera") as
+ * "Front Camera".
+ */
 export function streamLabel(name: string): string {
-  const [first, ...rest] = name.split(/[-_]/);
-  return [first.charAt(0).toUpperCase() + first.slice(1), ...rest].join(" · ");
+  const raw = /[-_]raw$/i.test(name);
+  const base = (raw ? name.slice(0, -4) : name).replace(/[-_]+/g, " ").trim();
+  const nice = base.charAt(0).toUpperCase() + base.slice(1);
+  return raw ? `${nice} · raw` : nice;
 }
 
 /** A board's USB route onto the robot network (a Raze's usb-route), from its identity; null when it has none. */
