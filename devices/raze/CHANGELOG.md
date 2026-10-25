@@ -10,11 +10,13 @@ commit; the commits are listed per area.
 
 - **Keyless updates while security is off (orion-env):** with the security
   switch off (FRC's default) orion-node enrolls an operator on its hello for
-  updates and slots (`update*`, `slot.*`), reboot, locate and the clock from
-  the robot network (`ORION_NODE_ROBOT_NETS`, default `10.0.0.0/8`), and for
-  those plus usb-boot from the USB cable's network (it was reboot, usb-boot
-  and locate there only). So Atlas installs a slot or an update over Orion
-  without an SSH key. With the switch on nothing is keyless, as before.
+  everything Atlas does: updates and slots (`update*`, `slot.*`), reboot,
+  locate, the clock, the board's devices (Lemnos `set`, `restore`,
+  `release`, `power.*`, `calibration.*`, `looks.*`, `light.*`) and the USB
+  route, from the robot network (`ORION_NODE_ROBOT_NETS`, default
+  `10.0.0.0/8`) and, with usb-boot, from the USB cable's network (it was
+  reboot, usb-boot and locate there only, so every settings change was
+  refused). With the switch on nothing is keyless, as before.
 
 - **Kernel, install-size trim (on by default):** `linux/raze-trim.config`,
   applied after raze.config with `BR2_RAZE_KERNEL_TRIM` (default y; an OS

@@ -14,11 +14,13 @@
 #   off (FRC's default)  listen on 0.0.0.0:9200, peer auth optional, status
 #                        and live streams open to read without enrollment,
 #                        and operators enrolled on their hello, no key
-#                        needed: on the USB cable's network for updates,
-#                        slots, reboot, usb-boot, locate and the clock; on the
+#                        needed, for everything Atlas does: updates, slots,
+#                        reboot, locate, the clock, the board's devices
+#                        (Lemnos: set, restore, release, power, calibration,
+#                        the ring's looks and brightness) and the USB route;
+#                        from the USB cable's network (usb-boot too) and the
 #                        robot network (ORION_NODE_ROBOT_NETS, FRC's
-#                        10.TE.AM.x by default) for updates, slots, reboot,
-#                        locate and the clock
+#                        10.TE.AM.x by default)
 #   on                   peer auth required, nothing open, no auto-enroll
 # The OS's own ORION_NODE_PEER_ADDR wins; the rest follow the switch.
 #
@@ -36,8 +38,8 @@ ORION_NODE_ENV=${ORION_NODE_ENV:-/etc/default/orion-node.env}
 ORION_NODE_PORT=${ORION_NODE_PORT:-9200}
 ORION_NODE_ROBOT_NETS=${ORION_NODE_ROBOT_NETS-10.0.0.0/8}
 # What an operator is enrolled for by network while the switch is off.
-USB_ACTIONS=update*,slot.*,reboot,usb-boot,locate,clock.set
-ROBOT_ACTIONS=update*,slot.*,reboot,locate,clock.set
+ROBOT_ACTIONS=update*,slot.*,reboot,locate,clock.set,set,restore,release,power.*,calibration.*,looks.*,light.*,usb-route.set
+USB_ACTIONS=$ROBOT_ACTIONS,usb-boot
 
 # The last <name>= the OS's env file assigns, without quotes.
 os_value() {

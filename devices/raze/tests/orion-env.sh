@@ -49,22 +49,22 @@ run
 access | grep -qx 'ORION_NODE_PEER_ADDR=0.0.0.0:9200' || fail "no listener: $(access)"
 access | grep -qx 'ORION_NODE_PEER_AUTH=optional' || fail "auth: $(access)"
 access | grep -qx 'ORION_NODE_OPERATOR_OPEN_READ=status,streams' || fail "open read: $(access)"
-access | grep -Eqx 'ORION_NODE_OPERATOR_AUTO_ENROLL=[0-9.]+/[0-9]+=update\*,slot\.\*,reboot,usb-boot,locate,clock\.set;10\.0\.0\.0/8=update\*,slot\.\*,reboot,locate,clock\.set' ||
+access | grep -Eqx 'ORION_NODE_OPERATOR_AUTO_ENROLL=[0-9.]+/[0-9]+=update\*,slot\.\*,reboot,locate,clock\.set,set,restore,release,power\.\*,calibration\.\*,looks\.\*,light\.\*,usb-route\.set,usb-boot;10\.0\.0\.0/8=update\*,slot\.\*,reboot,locate,clock\.set,set,restore,release,power\.\*,calibration\.\*,looks\.\*,light\.\*,usb-route\.set' ||
 	fail "auto-enroll: $(access)"
 
 # The network, not the board's own address in it.
 echo 'USB_GADGET_ADDRESS=172.31.12.81/29' > "$T/etc/usb-gadget.env"
 run
-access | grep -Fqx 'ORION_NODE_OPERATOR_AUTO_ENROLL=172.31.12.80/29=update*,slot.*,reboot,usb-boot,locate,clock.set;10.0.0.0/8=update*,slot.*,reboot,locate,clock.set' ||
+access | grep -Fqx 'ORION_NODE_OPERATOR_AUTO_ENROLL=172.31.12.80/29=update*,slot.*,reboot,locate,clock.set,set,restore,release,power.*,calibration.*,looks.*,light.*,usb-route.set,usb-boot;10.0.0.0/8=update*,slot.*,reboot,locate,clock.set,set,restore,release,power.*,calibration.*,looks.*,light.*,usb-route.set' ||
 	fail "auto-enroll network: $(access)"
 rm -f "$T/etc/usb-gadget.env"
 
 # The robot networks are a setting: none, or others (a bad one is left out).
 ORION_NODE_ROBOT_NETS='' sh "$lib/orion-env" 2> "$T/log" || fail "orion-env: $(cat "$T/log")"
-access | grep -Eqx 'ORION_NODE_OPERATOR_AUTO_ENROLL=[0-9.]+/[0-9]+=update\*,slot\.\*,reboot,usb-boot,locate,clock\.set' ||
+access | grep -Eqx 'ORION_NODE_OPERATOR_AUTO_ENROLL=[0-9.]+/[0-9]+=update\*,slot\.\*,reboot,locate,clock\.set,set,restore,release,power\.\*,calibration\.\*,looks\.\*,light\.\*,usb-route\.set,usb-boot' ||
 	fail "no robot networks: $(access)"
 ORION_NODE_ROBOT_NETS='192.168.1.0/24 nonsense 10.12.34.0' sh "$lib/orion-env" 2> "$T/log" || fail "orion-env: $(cat "$T/log")"
-access | grep -Eq ';192\.168\.1\.0/24=update\*,slot\.\*,reboot,locate,clock\.set$' || fail "robot networks: $(access)"
+access | grep -Eq ';192\.168\.1\.0/24=update\*,slot\.\*,reboot,locate,clock\.set,set,restore,release,power\.\*,calibration\.\*,looks\.\*,light\.\*,usb-route\.set$' || fail "robot networks: $(access)"
 ! access | grep -q 'nonsense\|10\.12\.34' || fail "a bad robot network went in: $(access)"
 
 # The OS's own listener address is kept.
