@@ -17,12 +17,21 @@
   let adding = $state(false);
   let width = $state(1200);
   const wide = $derived(width >= 1100);
-  // Families in rows of as many as fit at 360 px (beside the sources on a
-  // wide window); a short last row stretches across instead of leaving a hole.
+  // Families in as many columns as fit at 360 px (beside the sources on a
+  // wide window), each family into the shortest column so far: no holes
+  // under a family with few releases.
   const cols = $derived(Math.max(1, Math.min(releases.families.length, 4, Math.floor((wide ? width * 0.76 : width) / 360))));
-  const rows = $derived(
-    Array.from({ length: Math.ceil(releases.families.length / cols) }, (_, r) => releases.families.slice(r * cols, r * cols + cols)),
-  );
+  const columns = $derived.by(() => {
+    const out: string[][] = Array.from({ length: cols }, () => []);
+    const heights = new Array<number>(cols).fill(0);
+    for (const family of releases.families) {
+      const shortest = heights.indexOf(Math.min(...heights));
+      out[shortest].push(family);
+      // A card's header is about two releases tall.
+      heights[shortest] += releases.forFamily(family).length + 2;
+    }
+    return out;
+  });
 
   async function refresh() {
     releases.warnings = await api.refreshReleases();
@@ -66,10 +75,10 @@
       </EmptyState></Region>
     {:else}
       <Region class="-mx-1" inner="families p-1" label="Release families">
-        {#each rows as row, r (r)}
-          <div class="family-row">
-            {#each row as family, i (family)}
-              <div class="min-h-0 min-w-0 flex-1" in:rise={{ delay: stagger(r * cols + i) }}><ReleaseGroup {family} /></div>
+        {#each columns as column, c (c)}
+          <div class="family-col">
+            {#each column as family, i (family)}
+              <div class="min-w-0" in:rise={{ delay: stagger(c + i * cols) }}><ReleaseGroup {family} /></div>
             {/each}
           </div>
         {/each}
@@ -91,16 +100,18 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) clamp(300px, 24%, 420px);
   }
-  /* Rows share the height: few families get tall cards, many scroll. */
+  /* Each family as tall as its releases (no stretched empty cards); the
+     list scrolls when they don't all fit. */
   .layout :global(.families) {
     display: flex;
-    flex-direction: column;
+    align-items: flex-start;
     gap: 12px;
-    min-height: 100%;
   }
-  .family-row {
-    flex: 1 0 240px;
+  .family-col {
+    flex: 1 1 0;
+    min-width: 0;
     display: flex;
+    flex-direction: column;
     gap: 12px;
   }
 </style>

@@ -99,20 +99,20 @@
   <div class="list">
     <table>
       <thead>
-        <tr><th scope="col">Device</th><th scope="col">Runs</th><th scope="col">Should run</th><th scope="col">State</th><th scope="col">Last update or flash</th></tr>
+        <tr><th scope="col">Device</th><th scope="col">Runs</th><th scope="col">Should run</th><th scope="col">State</th><th scope="col" class="last">Last update or flash</th></tr>
       </thead>
       <tbody>
         {#each rows as r (r.id)}
           <tr>
             <td>
               <button type="button" class="name" onclick={() => ui.openDevice(r.id, "software")}>
-                <span class="font-medium">{deviceName(r.record)}</span><span class="muted">{displayModel(r.record)}</span>
+                <span class="font-medium">{deviceName(r.record)}</span><span class="muted model">{displayModel(r.record)}</span>
               </button>
             </td>
             <td class="mono">{r.version ?? "—"}</td>
             <td class="mono" class:behind={r.state === "behind"}>{r.target ?? "—"}</td>
             <td><span class="chip {r.state}">{LABEL[r.state]}</span></td>
-            <td class="muted">
+            <td class="muted last">
               {#if r.outcome}{r.outcome.state.status.status.replaceAll("-", " ")}
               {:else if logged.get(r.id)}
                 {@const e = logged.get(r.id)!}
@@ -139,10 +139,17 @@
     background: var(--glass);
     border: 1px solid var(--glass-border);
   }
+  /* Title, count and buttons wrap onto lines of their own, never a word
+     a line. */
   .head {
     display: flex;
+    flex-wrap: wrap;
     align-items: baseline;
-    gap: 10px;
+    gap: 6px 10px;
+  }
+  .head > h2,
+  .head > .sub {
+    white-space: nowrap;
   }
   h2 {
     font-size: 13px;
@@ -226,6 +233,7 @@
     background: var(--offline);
   }
   .list {
+    container-type: inline-size;
     flex: 1;
     min-height: 0;
     overflow: auto;
@@ -257,6 +265,16 @@
     max-width: 13rem;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  /* Narrow: the state stays in view; the model and the last job go. */
+  @container (max-width: 600px) {
+    .model,
+    .last {
+      display: none;
+    }
+    td.mono {
+      max-width: 8.5rem;
+    }
   }
   th:first-child,
   td:first-child {

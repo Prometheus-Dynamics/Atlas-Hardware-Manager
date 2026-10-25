@@ -19,6 +19,14 @@
 
   const badge = $derived(status ? ROBOT_STATE[status.state] : null);
   const roles = $derived(status?.roles ?? []);
+  // Roles in as few rows as fit at 230 px a card, spread evenly over them:
+  // four roles are two by two, not three and one beside an empty space.
+  let rolesWidth = $state(0);
+  const roleCols = $derived.by(() => {
+    const fit = Math.max(1, Math.min(6, Math.floor((rolesWidth + 12) / (230 + 12))));
+    const rows = Math.ceil(roles.length / fit);
+    return Math.max(1, Math.ceil(roles.length / Math.max(1, rows)));
+  });
   const loose = $derived((status?.unassigned_devices ?? []).map((key) => devices.get(key)).filter((r) => !!r));
   const members = $derived([...roles.map((r) => (r.device ? devices.get(r.device) : undefined)).filter((r) => !!r), ...loose]);
 
@@ -56,7 +64,7 @@
       {#if roles.length === 0}
         <p class="text-[13px] text-fg-faint">No roles yet. Edit the robot to add some.</p>
       {:else}
-        <ul class="auto-grid fit" style="--min: 230px; --max: 6">
+        <ul class="grid gap-3" style="grid-template-columns: repeat({roleCols}, minmax(0, 1fr))" bind:clientWidth={rolesWidth}>
           {#each roles as role, i (i)}
             {@const record = role.device ? devices.get(role.device) : undefined}
             <li class="flex min-w-0 flex-col gap-1.5">

@@ -46,7 +46,7 @@
   }
 </script>
 
-<div class="flex flex-col gap-2">
+<div class="flex flex-col gap-1.5">
   {#each entries as option, i (option.id)}
     <div in:rise={{ delay: stagger(i) }}>
       <ReleaseOption
@@ -67,13 +67,10 @@
       <Button size="sm" variant="ghost" icon="pin" action={keepInList}>Keep in list</Button>
     </div>
   {/if}
-  <button type="button" class="choose" onclick={chooseFile} disabled={adding}>
-    <span class="tile"><Icon name={adding ? "loader-2" : "folder-open"} size={18} class={adding ? "spin" : ""} /></span>
-    <span class="min-w-0 flex-1 text-left">
-      <span class="block text-[13px] font-medium text-fg">Choose file…</span>
-      <span class="block text-[12px] text-fg-faint">An .img, .img.xz or .img.zst image; used once unless you keep it</span>
-    </span>
-    <Icon name="chevron-right" size={16} class="text-fg-faint" />
+  <button type="button" class="choose" onclick={chooseFile} disabled={adding} title="An .img, .img.xz or .img.zst image; used once unless you keep it">
+    <Icon name={adding ? "loader-2" : "folder-open"} size={16} class={adding ? "spin text-accent-text" : "text-accent-text"} />
+    <span class="text-[13px] font-medium text-fg">Choose file…</span>
+    <span class="min-w-0 flex-1 truncate text-left text-[12px] text-fg-faint">.img, .img.xz or .img.zst</span>
   </button>
 </div>
 
@@ -81,8 +78,8 @@
   .once {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 14px;
+    gap: 10px;
+    padding: 7px 12px;
     border-radius: var(--r-card);
     border: 1px solid var(--accent-ring);
     background: var(--accent-tint);
@@ -90,8 +87,8 @@
   .choose {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 14px;
+    gap: 10px;
+    padding: 8px 12px;
     border-radius: var(--r-card);
     border: 1px dashed var(--glass-border-strong);
     background: transparent;

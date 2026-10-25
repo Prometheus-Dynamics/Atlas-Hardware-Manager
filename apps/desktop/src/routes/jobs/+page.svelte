@@ -95,7 +95,7 @@
     gap: 12px;
   }
   .split.none {
-    grid-template-columns: minmax(0, 1fr) clamp(20rem, 32%, 30rem);
+    grid-template-columns: minmax(0, 1fr) clamp(16.5rem, 30%, 28rem);
   }
   @container page (max-width: 620px) {
     .split {

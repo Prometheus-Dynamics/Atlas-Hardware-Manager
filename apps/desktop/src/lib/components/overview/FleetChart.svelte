@@ -125,7 +125,7 @@
   }
   .plot {
     flex: 1;
-    min-height: 110px;
+    min-height: 80px;
     display: flex;
     gap: 8px;
   }
@@ -139,17 +139,19 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
+  /* Clipped: a reading stamped just after the chart's clock draws no
+     further than its edge. */
   .area {
     position: relative;
     flex: 1;
     min-width: 0;
+    overflow: hidden;
   }
   svg {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-    overflow: visible;
   }
   .grid {
     stroke: var(--glass-border);
@@ -166,10 +168,14 @@
   .line.hot {
     stroke-width: 2.2;
   }
+  /* Two lines at most, the rest a scroll away: the plot keeps the room. */
   .legend {
+    flex-shrink: 0;
     display: flex;
     flex-wrap: wrap;
     gap: 4px 14px;
+    max-height: 38px;
+    overflow-y: auto;
     padding-left: 34px;
     font-size: 12px;
   }

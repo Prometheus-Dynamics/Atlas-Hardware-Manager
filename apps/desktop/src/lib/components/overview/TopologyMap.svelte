@@ -24,9 +24,10 @@
   // Nodes widen on big screens so names and readings have room.
   const map = $derived(layoutMap(records));
   // Room between columns for the wire and its link label ("USB boot"),
-  // less when the box is narrow: the whole tree always fits its width.
+  // less when the box is narrow. Nodes keep room for a name (112 px); a
+  // tree that still doesn't fit scrolls sideways rather than cutting names.
   const GAP = $derived(Math.max(40, Math.min(72, (width - PAD * 2) / (map.depth + 1) / 3)));
-  const NODE_W = $derived(Math.floor(Math.min(220, Math.max(84, (width - PAD * 2 - map.depth * GAP) / (map.depth + 1)))));
+  const NODE_W = $derived(Math.floor(Math.min(220, Math.max(112, (width - PAD * 2 - map.depth * GAP) / (map.depth + 1)))));
   const ROW_H = $derived(Math.floor(Math.min(92, Math.max(28, (boxHeight - PAD * 2) / Math.max(1, map.rows)))));
   const NODE_H = $derived(Math.min(54, Math.max(24, ROW_H - 8)));
   // Short rows show the name only.
@@ -195,6 +196,14 @@
   }
   .node.compact .ico {
     display: none;
+  }
+  /* Narrow and short: the name alone (the title has the rest). */
+  .node.compact.one-line .sub {
+    display: none;
+  }
+  .node.compact.one-line .name {
+    flex: 1 1 auto;
+    max-width: 100%;
   }
   /* Short rows: name and reading on one line. */
   .node.one-line > .min-w-0 {

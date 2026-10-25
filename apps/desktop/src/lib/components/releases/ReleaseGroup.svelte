@@ -10,8 +10,8 @@
   const entries = $derived(releases.forFamily(family));
 </script>
 
-<!-- Fills its grid cell; a long list scrolls inside the card. -->
-<GlassCard title={family} subtitle="{entries.length} release{entries.length === 1 ? '' : 's'}" icon="package" large pad={false} fill class="h-full">
+<!-- As tall as its releases; the page's list scrolls when they don't fit. -->
+<GlassCard title={family} subtitle="{entries.length} release{entries.length === 1 ? '' : 's'}" icon="package" large pad={false}>
   <ul class="@container flex flex-col px-2 py-2">
     {#each entries as entry (entry.id)}
       <li animate:flip={{ duration: ms(DUR.enter), easing: ease }} in:rise out:softFade><ReleaseRow {entry} /></li>

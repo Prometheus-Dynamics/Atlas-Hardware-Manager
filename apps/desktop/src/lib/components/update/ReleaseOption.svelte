@@ -34,8 +34,8 @@
   .option {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 14px;
+    gap: 10px;
+    padding: 7px 12px;
     border-radius: var(--r-card);
     background: var(--glass);
     border: 1px solid var(--glass-border);

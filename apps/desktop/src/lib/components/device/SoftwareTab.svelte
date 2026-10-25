@@ -192,7 +192,8 @@
   const notBundle = $derived(!!version && !slotFile.endsWith(".slot.tar") && !fromImage);
   const label = $derived.by(() => {
     if (!version) return "Choose an image";
-    if (method === "update" && slotted) return bootAfter ? `Install ${version} and boot it once` : `Install ${version} as a slot`;
+    // The image's name is right above (chosen) and below (Writes …).
+    if (method === "update" && slotted) return bootAfter ? "Install and boot it once" : "Install as a slot";
     if (method === "update") return `Update to ${version} · keeps settings`;
     if (method === "fresh") return `Erase and install ${version}`;
     return "Not available";

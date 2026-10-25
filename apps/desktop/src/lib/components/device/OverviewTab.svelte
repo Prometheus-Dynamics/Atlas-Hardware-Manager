@@ -181,7 +181,7 @@
     min-height: 0;
     overflow: hidden;
   }
-  @container (min-width: 760px) {
+  @container (min-width: 600px) {
     .overview {
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }

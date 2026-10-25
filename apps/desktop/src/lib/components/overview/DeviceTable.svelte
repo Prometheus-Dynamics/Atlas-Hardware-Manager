@@ -59,7 +59,7 @@
             <a href={devicePath(row.id)} class="name">
               <span class="dot" style:background={dot(row.record)}></span>
               <span class="font-medium">{deviceName(row.record)}</span>
-              <span class="muted truncate">{displayModel(row.record)}</span>
+              <span class="muted model truncate">{displayModel(row.record)}</span>
             </a>
           </td>
           <td class="nowrap">
@@ -99,6 +99,7 @@
 
 <style>
   .rows {
+    container-type: inline-size;
     min-height: 0;
     overflow: auto;
     border-radius: var(--r-card);
@@ -137,6 +138,7 @@
     gap: 9px;
     min-width: 0;
     color: var(--fg);
+    white-space: nowrap;
   }
   .dot {
     width: 7px;
@@ -182,5 +184,22 @@
   }
   .num.hot {
     color: var(--warn-fg);
+  }
+  /* A narrow table keeps every column, as numbers: the model, the CPU
+     sparkline and the bars go first. */
+  @container (max-width: 640px) {
+    .model,
+    .spark,
+    .bar {
+      display: none;
+    }
+    .num {
+      min-width: 0;
+    }
+    th,
+    td {
+      padding-left: 6px;
+      padding-right: 6px;
+    }
   }
 </style>

@@ -399,15 +399,19 @@
   }
   /* One line per pipeline, so a row never changes height as values change
      (30 times a second): long outputs shrink, the hover has them whole. */
+  /* Every output in view: they wrap onto another line rather than being
+     cut at the card's edge. */
   .outputs {
     display: flex;
+    flex-wrap: wrap;
     flex: 1;
     min-width: 0;
-    gap: 6px;
-    overflow: hidden;
+    gap: 4px 6px;
+    padding: 4px 0;
   }
   .output {
     display: inline-flex;
+    max-width: 100%;
     min-width: 3.5rem;
     flex: 0 1 auto;
     align-items: center;

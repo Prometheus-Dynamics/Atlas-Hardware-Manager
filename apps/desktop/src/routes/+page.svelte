@@ -57,7 +57,7 @@
         <Skeleton width="34px" height={34} round />
         <div class="flex flex-1 flex-col gap-2"><Skeleton width="30%" height={14} /><Skeleton width="45%" height={10} /></div>
       </div>
-      <div class="auto-grid fit shrink-0" style="--min: 170px">
+      <div class="auto-grid fit shrink-0" style="--min: 140px">
         {#each [0, 1, 2, 3, 4] as i (i)}<Skeleton height={112} />{/each}
       </div>
       <div class="split">

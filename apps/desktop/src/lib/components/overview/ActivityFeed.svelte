@@ -98,7 +98,7 @@
         <button type="button" class="item" disabled={!clickable} onclick={() => open(entry)}>
           <span class="mark {TONE[entry.level]}"><Icon name={icon(entry)} size={13} stroke={2} /></span>
           <span class="min-w-0 flex-1 text-[13px] leading-snug text-fg">{text(row)}</span>
-          <span class="shrink-0 text-[11.5px] text-fg-faint" title={new Date(entry.at_ms).toLocaleString()}>{timeAgo(entry.at_ms, clock.now)}</span>
+          <span class="when shrink-0 text-[11.5px] text-fg-faint" title={new Date(entry.at_ms).toLocaleString()}>{timeAgo(entry.at_ms, clock.now)}</span>
         </button>
       </li>
     {/each}
@@ -112,9 +112,23 @@
 
 <style>
   .feed {
+    container-type: inline-size;
     position: relative;
     display: flex;
     flex-direction: column;
+  }
+  /* Narrow: the time goes under the text, which keeps the width. */
+  @container (max-width: 300px) {
+    .item {
+      flex-wrap: wrap;
+      gap: 2px 10px;
+    }
+    .item > .flex-1 {
+      flex-basis: calc(100% - 40px);
+    }
+    .item > .when {
+      padding-left: 34px;
+    }
   }
   /* The thread joining the markers. */
   .feed::before {

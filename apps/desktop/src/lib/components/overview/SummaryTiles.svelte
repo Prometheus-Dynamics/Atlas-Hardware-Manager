@@ -85,7 +85,7 @@
 </script>
 
 <!-- As many columns as fit: five across on a wide window, wrapping on a narrow one. -->
-<div class="auto-grid fit shrink-0" style="--min: 168px">
+<div class="auto-grid fit shrink-0" style="--min: 140px">
   {#if !ready}
     {#each Array(placeholders) as _, i (i)}
       <div class="glass flex h-[112px] flex-col gap-3 p-4" aria-hidden="true">

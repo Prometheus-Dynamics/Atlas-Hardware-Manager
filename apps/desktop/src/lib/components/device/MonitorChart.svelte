@@ -166,17 +166,19 @@
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
+  /* Clipped: a reading stamped a moment after the chart's clock (it ticks
+     once a second) would otherwise draw past the card's edge. */
   .area {
     position: relative;
     flex: 1;
     min-width: 0;
+    overflow: hidden;
   }
   svg {
     position: absolute;
     inset: 0;
     width: 100%;
     height: 100%;
-    overflow: visible;
   }
   .grid {
     stroke: var(--hairline);

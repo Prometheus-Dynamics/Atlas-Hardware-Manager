@@ -125,12 +125,13 @@
 
   <div class="scroll">
     {#each sections as section (section.title)}
-      <div>
+      {@const listsDevices = section.items.some((item) => item.href === "/devices")}
+      <div class="group" class:grows={listsDevices}>
         <div class="section">{section.title}</div>
-        <ul class="flex flex-col gap-px">
+        <ul class="flex min-h-0 flex-col gap-px">
           {#each section.items as item (item.href)}
             {@const count = item.badge?.() ?? 0}
-            <li>
+            <li class:grows={item.href === "/devices"}>
               <a href={item.href} class="item" class:active={active(item.href)} aria-current={active(item.href) ? "page" : undefined} title="{item.label} · {item.key}">
                 <Icon name={item.icon} size={16} stroke={1.7} />
                 <span class="flex-1 truncate">{item.label}</span>
@@ -344,7 +345,26 @@
     color: var(--fg-faint);
     font-variant-numeric: tabular-nums;
   }
+  /* The device list gives up rows (and scrolls) before any of the menu
+     goes out of view; the menu itself scrolls only when even that isn't
+     enough. */
+  .group {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .group.grows {
+    flex-shrink: 1;
+  }
+  li.grows {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
   .devices {
+    min-height: 82px;
+    overflow-y: auto;
     margin: 2px 0 4px 16px;
     padding-left: 9px;
     border-left: 1px solid var(--hairline);
