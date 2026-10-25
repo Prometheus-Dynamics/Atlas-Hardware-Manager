@@ -105,7 +105,7 @@
   }
 </script>
 
-<div class="settings">
+<div class="settings" class:no-hw={!hardware}>
   <div class="col">
     <section class="panel" aria-label="Name and robot">
       <div class="panel-head"><h2 class="panel-title">In Atlas</h2></div>
@@ -206,6 +206,21 @@
   @container (min-width: 980px) {
     .settings {
       grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    }
+    /* No hardware to show beside them: the settings themselves take the
+       width, in two columns, instead of a third of it. */
+    .settings.no-hw {
+      grid-template-columns: minmax(0, 1fr);
+    }
+    .settings.no-hw > .col {
+      display: block;
+      columns: 2;
+      column-gap: 12px;
+    }
+    .settings.no-hw > .col > :global(*:not(.contents)),
+    .settings.no-hw .contents > :global(*) {
+      break-inside: avoid;
+      margin-bottom: 12px;
     }
   }
 </style>

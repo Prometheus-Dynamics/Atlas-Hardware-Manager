@@ -98,6 +98,8 @@
     return out;
   });
   const controlKey = $derived(record.capabilities.includes("hardware-control") ? record.key : null);
+  /** The third column (the board's IMU, hardware and the self-test) has something to show. */
+  const bodyColumn = $derived((online && (!!imu || !!hardware)) || ui.mode === "pit");
 </script>
 
 <!-- Revision 1: one dense screen. What it sees (camera, latency, tags) and
@@ -105,7 +107,7 @@
      its body (the IMU in 3D, the ring, the supply, the USB ports). A device
      without a board status (an MCU) keeps its charts and network. -->
 {#if reports}
-  <div class="overview">
+  <div class="overview" class:bodyless={!bodyColumn}>
     <div class="col">
       {#if streams.length || online}<VisionCard {record} {streams} />{/if}
       {#if status && happening}<NowCard {status} {actions} {run} />{/if}
@@ -122,6 +124,7 @@
       {#if online}<SetupCard {record} {onsettings} />{/if}
       <BootsCard {record} {status} />
     </div>
+    {#if bodyColumn}
     <div class="col">
       {#if online && imu}
         <ImuCard
@@ -139,6 +142,7 @@
       {/if}
       {#if ui.mode === "pit"}<SelfTestCard {record} />{/if}
     </div>
+    {/if}
   </div>
 {:else}
   <div class="overview two">
@@ -194,6 +198,11 @@
       min-height: 520px;
       grid-template-rows: minmax(0, 1fr);
       grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.95fr);
+    }
+    /* Nothing for the third column (no hardware reported, ROBOT mode):
+       two wider columns rather than an empty third. */
+    .overview.bodyless:not(.two) {
+      grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
     }
   }
 </style>
