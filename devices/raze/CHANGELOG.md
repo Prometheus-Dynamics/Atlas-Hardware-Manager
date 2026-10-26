@@ -14,6 +14,12 @@ OSes pin this layer by commit; the commits are listed per area.
 
 ### Breaking and ABI notes
 
+- **The reported OS version is the running slot's (identity):** pd-device's
+  `os.version` and the mDNS `os_ver` come from the running slot's
+  /etc/slot.json `version` (`2026.2.0-dev.727`, the version slots are
+  ordered by), else os-release's IMAGE_VERSION, VERSION_ID, VERSION. A
+  HeliOS dev slot reported `v2026.2.0`, its VERSION_ID.
+
 - **Orion node id per board (orion-env):** the board's id is
   `raze-<last 4 hex of the serial>` (0708c973b00a37bc: `raze-37bc`), the
   rule HeliOS's robot env uses, instead of `raze-<serial8>`; an OS's

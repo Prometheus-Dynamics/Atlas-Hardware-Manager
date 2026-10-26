@@ -94,8 +94,7 @@ if [ "$dnssd" = 1 ]; then
 	# The directory always exists: it is the bind mount's source.
 	mkdir -p "$BOARD_AVAHI_DIR"
 	if [ "${BOARD_MDNS:-1}" = 1 ]; then
-		os_ver=$(board_os_field VERSION_ID)
-		[ -n "$os_ver" ] || os_ver=$(board_os_field VERSION)
+		os_ver=$(board_os_version)
 		{
 			printf '<?xml version="1.0" standalone="no"?>\n'
 			printf '<!DOCTYPE service-group SYSTEM "avahi-service.dtd">\n'

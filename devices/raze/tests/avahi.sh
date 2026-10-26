@@ -44,6 +44,7 @@ printf '10000000a317bcbe\000' > "$T/dt/serial-number"
 printf 'ID=helios\nVERSION_ID=2026.3.0\n' > "$T/os-release"
 export BOARD_LIB_DIR=$lib BOARD_DT_DIR=$T/dt BOARD_ETC_DIR=$T/etc BOARD_RUN_DIR=$T/run BOARD_DATA_DIR=$T/data
 export BOARD_OS_RELEASE=$T/os-release BOARD_AVAHI_DIR=$T/avahi BOARD_MACHINE_ID=$T/machine-id
+export BOARD_SLOT_JSON=$T/no-slot.json
 sh "$lib/identity" --dnssd --quiet
 python3 - "$T/avahi/pd-device.service" <<'PY'
 import sys
@@ -61,6 +62,15 @@ for key in ("contract", "model", "rev", "serial", "os", "os_ver", "path"):
 assert txt["contract"] == "1" and txt["serial"] == "10000000a317bcbe", txt
 assert txt["os"] == "helios" and txt["os_ver"] == "2026.3.0" and txt["path"] == "/.well-known/pd-device", txt
 PY
+echo "on a slots board the version is the running slot's"
+printf 'ID=helios\nVERSION_ID="v2026.2.0"\nIMAGE_VERSION="v2026.2.0"\n' > "$T/os-release"
+printf '{"schema": 1, "id": "helios-2026.2.0-dev.727-styx-756b5cda", "family": "helios",\n "version": "2026.2.0-dev.727", "variant": "styx"}\n' > "$T/slot.json"
+BOARD_SLOT_JSON=$T/slot.json sh "$lib/identity" --dnssd --quiet
+grep -q '<txt-record>os_ver=2026.2.0-dev.727</txt-record>' "$T/avahi/pd-device.service" || fail "os_ver: $(grep os_ver "$T/avahi/pd-device.service")"
+. "$lib/lib.sh"
+[ "$(BOARD_SLOT_JSON=$T/slot.json board_os_version)" = 2026.2.0-dev.727 ] || fail "board_os_version"
+[ "$(board_os_version)" = v2026.2.0 ] || fail "without a slot: $(board_os_version)"
+
 echo "BOARD_MDNS=0 takes it away (the directory stays, for the mount)"
 printf 'BOARD_MDNS=0\n' > "$T/etc/identity.env"
 sh "$lib/identity" --dnssd --quiet

@@ -352,6 +352,28 @@ board_gadget_dhcp_range() {
 }
 
 # Value of KEY in os-release, unquoted, with \" \\ \$ \` unescaped.
+# board_os_version: the running OS's version. On a slots board, the running
+# slot's (/etc/slot.json, inside the slot image: 2026.2.0-dev.727), the
+# version slots are ordered by; else os-release's IMAGE_VERSION, VERSION_ID,
+# then VERSION.
+board_os_version() {
+	_board_sj=${BOARD_SLOT_JSON:-/etc/slot.json}
+	if [ -r "$_board_sj" ]; then
+		_board_v=$(tr -d '\n' < "$_board_sj" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+		if [ -n "$_board_v" ]; then
+			printf '%s\n' "$_board_v"
+			return 0
+		fi
+	fi
+	for _board_f in IMAGE_VERSION VERSION_ID VERSION; do
+		_board_v=$(board_os_field "$_board_f")
+		if [ -n "$_board_v" ]; then
+			printf '%s\n' "$_board_v"
+			return 0
+		fi
+	done
+}
+
 board_os_field() {
 	_board_osr=$BOARD_OS_RELEASE
 	if [ -z "$_board_osr" ]; then
@@ -705,8 +727,7 @@ board_identity_fixed_json() {
 	board_bootloader
 
 	_board_os_name=$(board_os_field ID)
-	_board_os_ver=$(board_os_field VERSION_ID)
-	[ -n "$_board_os_ver" ] || _board_os_ver=$(board_os_field VERSION)
+	_board_os_ver=$(board_os_version)
 
 	printf '"contract":1'
 	printf ',"model":%s' "$(board_json_str "${BOARD_DEVICE_MODEL:-}")"
