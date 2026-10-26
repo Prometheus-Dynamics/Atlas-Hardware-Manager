@@ -165,10 +165,98 @@ impl TelemetryCapability for RadioTelemetry {
     }
 }
 
-/// Both drivers, for registering.
+/// A WPILib SystemCore, read-only (`crate::systemcore`): over its USB link
+/// when one is plugged in here, and at `.2` on a robot network this
+/// computer is on when its API answers there.
+pub struct SystemcoreDriver {
+    manifest: DriverManifest,
+    http: reqwest::Client,
+}
+
+impl Default for SystemcoreDriver {
+    fn default() -> Self {
+        let mut manifest = manifest(crate::systemcore::SYSTEMCORE_FAMILY, "SystemCore");
+        manifest.link_kinds = vec![LinkKind::Ethernet, LinkKind::UsbNetwork];
+        Self {
+            manifest,
+            http: http(),
+        }
+    }
+}
+
+#[async_trait]
+impl Driver for SystemcoreDriver {
+    fn manifest(&self) -> &DriverManifest {
+        &self.manifest
+    }
+
+    async fn discover(&self, link: &Link) -> Result<Vec<Candidate>, DriverError> {
+        use crate::systemcore::{SYSTEMCORE_FAMILY, answers, plugged_in, usb_address};
+        let candidate = |address: String| Candidate {
+            link: link.id.clone(),
+            family: Family::new(SYSTEMCORE_FAMILY),
+            address,
+        };
+        match link.kind {
+            LinkKind::UsbNetwork => {
+                if plugged_in().await.is_empty() || !answers(usb_address()).await {
+                    return Ok(Vec::new());
+                }
+                Ok(vec![candidate(usb_address().to_string())])
+            }
+            _ => {
+                let mut found = Vec::new();
+                for controller in direct_candidates(link, CONTROLLER_FAMILY).await {
+                    if let Ok(ip) = ip_of(&controller.address)
+                        && answers(ip).await
+                    {
+                        found.push(candidate(controller.address));
+                    }
+                }
+                Ok(found)
+            }
+        }
+    }
+
+    async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
+        let ip = ip_of(&candidate.address)?;
+        let usb = ip == crate::systemcore::usb_address();
+        let serial = if usb {
+            crate::systemcore::plugged_in().await.into_iter().next()
+        } else {
+            None
+        };
+        let identity =
+            crate::systemcore::read(&self.http, ip, candidate.link.clone(), serial).await?;
+        if let Some(team) = identity.attributes.get("team").and_then(|t| t.parse().ok()) {
+            RobotTeams::shared().add(team);
+        }
+        Ok(identity)
+    }
+
+    /// Read-only: its identity and web page, nothing else yet.
+    fn capabilities(&self, _device: &Identity) -> Capabilities {
+        Capabilities::default()
+    }
+
+    /// While one is plugged in here: whether its USB link has an address,
+    /// and that nothing else on this computer holds the unit's.
+    async fn health(&self) -> Vec<atlas_driver::HealthCheck> {
+        use crate::systemcore::{
+            host_addresses, plugged_in, usb_address, usb_link_checks, usb_links,
+        };
+        if plugged_in().await.is_empty() {
+            return Vec::new();
+        }
+        usb_link_checks(usb_address(), &usb_links(), &host_addresses())
+    }
+}
+
+/// The robot network's drivers, for registering.
 pub fn drivers() -> Vec<Arc<dyn Driver>> {
     vec![
         Arc::new(ControllerDriver::default()),
         Arc::new(RadioDriver::default()),
+        Arc::new(SystemcoreDriver::default()),
     ]
 }

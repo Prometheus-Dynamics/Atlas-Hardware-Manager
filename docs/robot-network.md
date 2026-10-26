@@ -190,6 +190,18 @@ atlas robot open frc-radio:6390           # the web page's address
   and which FRC ports answer). The radio's `systemcoreEnabled` flag is
   already read. Later (not built): installing and updating HeliOS on a
   SystemCore as an `.ipk`, through the same Package Manager API.
+
+  Recognised now (read-only, `systemcore` driver in atlas-driver-robot):
+  over USB when a gadget `1d6b:0104` with manufacturer `Limelight` is
+  plugged in (at `172.27.0.1`, `172.26.0.1` from Windows), and at `.2` on
+  a robot network when `:4800` answers. `GET :4800/api/team` answers
+  `{"team":"6390","team_number":6390,…}`; the key is the team
+  (`systemcore:6390`), as for the roboRIO. While one is plugged in,
+  `atlas doctor` checks its USB link: an address on it (else a
+  NetworkManager DHCP profile with `ipv4.never-default yes` to add), and
+  no other interface covering the unit's address (a Docker bridge from
+  `172.16.0.0/12`). Boards behind a SystemCore's own USB are not found
+  through it yet.
 - **Radio configuration** (team, SSID, channel, firmware). This would be
   writes (`POST /configuration`, `/firmware`) and is deliberately left out.
 - **The board side.** `usb_route.addresses` ships with the device package.

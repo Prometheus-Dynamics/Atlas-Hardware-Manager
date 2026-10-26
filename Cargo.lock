@@ -291,6 +291,7 @@ dependencies = [
  "atlas-driver",
  "futures",
  "if-addrs",
+ "nusb",
  "reqwest",
  "serde",
  "serde_json",
