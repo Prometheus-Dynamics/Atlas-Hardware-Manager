@@ -65,7 +65,8 @@ function savedView(): InventoryView {
 
 export function canUpdate(record: DeviceRecord): boolean {
   return (
-    record.presence === "online" && (record.capabilities.includes("update") || record.capabilities.includes("recover"))
+    record.presence === "online" &&
+    (record.capabilities.includes("update") || record.capabilities.includes("recover") || record.capabilities.includes("install"))
   );
 }
 

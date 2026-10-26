@@ -198,6 +198,7 @@ impl Driver for MockDriver {
             status: None,
             hardware: None,
             slots: None,
+            install: Vec::new(),
         }
     }
 

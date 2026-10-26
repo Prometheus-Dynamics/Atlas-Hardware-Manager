@@ -60,7 +60,9 @@ export type CapabilityKind =
   /** The board's devices take commands (see HardwareCommand). */
   | "hardware-control"
   /** The board keeps several OS images (dynamic slots; see SlotSet). */
-  | "slots";
+  | "slots"
+  /** It takes packages through its own package manager (a SystemCore's opkg). */
+  | "install";
 
 export type Presence = "online" | "offline";
 

@@ -120,9 +120,16 @@
   });
   const choiceFor = (method: string) => installChoices?.choices.find((c) => c.method === method) ?? null;
 
+  /** It takes software only through its own package manager (a SystemCore): an .ipk. */
+  const viaPackage = $derived(record.capabilities.includes("install") && !slotted && !record.capabilities.includes("update"));
   const updateBlocked = $derived.by((): string | null => {
     if (recovery) return "The board is in USB boot, so it can only be installed fresh.";
     if (!online) return "The board isn't reachable. Connect it to update in place.";
+    if (viaPackage) {
+      const pkg = choiceFor("package");
+      if (!installChoices) return null;
+      return pkg?.plan ? null : sentence(pkg?.why_not ?? "Choose its package (.ipk).");
+    }
     // The board's own answer for this file, once it's in.
     const inPlace = choiceFor(slotted ? "slot" : "ab-image");
     if (installChoices && inPlace) return inPlace.plan ? null : sentence(inPlace.why_not ?? "It can't take this file in place.");
@@ -175,6 +182,14 @@
   const plan = $derived.by(() => {
     if (!version) return [];
     const get = entry ? (entry.path ? "Already on this computer" : `Download ${bytes(entry.size_bytes)}`) : "Read the file you chose";
+    if (method === "update" && viaPackage) {
+      return [
+        { title: entry && !entry.path ? "Download it on the Releases page first" : get, note: "" },
+        { title: "Copy it to the SystemCore", note: "Over SSH with this computer's key; never a password" },
+        { title: "Install it with its package manager (opkg)", note: "An upgrade keeps the package's settings files" },
+        { title: "Check its services run", note: "" },
+      ];
+    }
     if (method === "update" && slotted) {
       return [
         { title: entry && !entry.path ? "Download it on the Releases page first" : get, note: "" },
@@ -228,6 +243,7 @@
   const label = $derived.by(() => {
     if (!version) return "Choose an image";
     // The image's name is right above (chosen) and below (Writes …).
+    if (method === "update" && viaPackage) return `Install ${version}`;
     if (method === "update" && slotted) return bootAfter ? "Install and boot it once" : "Install as a slot";
     if (method === "update") return `Update to ${version} · keeps settings`;
     if (method === "fresh") return `Erase and install ${version}`;
@@ -235,6 +251,7 @@
   });
   const disabled = $derived.by(() => {
     if (!version || !method) return true;
+    if (method === "update" && viaPackage) return !bundlePath || !choiceFor("package")?.plan || installing !== null;
     if (method === "update" && slotted) return !bundlePath || notBundle || installing !== null;
     if (method === "update") return !draft.plan || draft.planning;
     if (fresh === "flash") return !draft.plan || draft.planning || hostBlocked;
@@ -286,7 +303,32 @@
     }
   }
 
+  /** Through the device's own package manager (`install_artifact`, method `package`). */
+  async function installPackage() {
+    if (!bundlePath) return;
+    installing = 0;
+    try {
+      await api.installArtifact(
+        record.key,
+        "package",
+        bundlePath,
+        version,
+        { boot_after: false, pin: false },
+        (u) => {
+          if (u.type === "step-progress") installing = u.fraction;
+        },
+        entry?.sha256 || null,
+      );
+      toasts.success(`${version} is installed on ${deviceName(record)}, and its services run.`);
+    } catch (error) {
+      toasts.error(sentence(errorText(error)));
+    } finally {
+      installing = null;
+    }
+  }
+
   function go() {
+    if (method === "update" && viaPackage) return void installPackage();
     if (method === "update" && slotted) return void installSlot();
     if (method === "fresh" && fresh === "restart") confirming = true;
     else if (method === "fresh" && fresh === "manual") void handOff();
@@ -326,14 +368,16 @@
       <h3 class="section-title">How</h3>
       <div class="auto-grid" style="--min: 220px; --gap: 8px; --max: {fresh ? 2 : 1}">
         <MethodCard
-          title={slotted ? "Install as a slot" : "Update in place"}
+          title={slotted ? "Install as a slot" : viaPackage ? "Install the package" : "Update in place"}
           icon="arrow-up"
           selected={method === "update"}
           disabled={updateBlocked}
           onselect={() => ((picked = "update"), (confirming = false))}
         >
           <span>
-            {#if slotted}
+            {#if viaPackage}
+              Through its package manager (opkg), over SSH with this computer's key.
+            {:else if slotted}
               Goes beside the installed ones; settings and data stay.{slotSet ? ` ${bytes(Math.max(0, slotSet.free_bytes - slotSet.reserve_bytes))} free.` : ""}
             {:else}
               Keeps settings and data.{ab ? " If the new version doesn't start, the board goes back to this one by itself." : ""}

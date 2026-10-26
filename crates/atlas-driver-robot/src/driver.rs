@@ -234,9 +234,20 @@ impl Driver for SystemcoreDriver {
         Ok(identity)
     }
 
-    /// Read-only: its identity and web page, nothing else yet.
-    fn capabilities(&self, _device: &Identity) -> Capabilities {
-        Capabilities::default()
+    /// Its identity and web page, and installing packages (`.ipk`)
+    /// through its package manager, by SSH key (`crate::package`).
+    fn capabilities(&self, device: &Identity) -> Capabilities {
+        Capabilities {
+            install: ip_of(&device.address)
+                .ok()
+                .map(|ip| {
+                    Arc::new(crate::package::PackageMethod { ip })
+                        as Arc<dyn atlas_driver::InstallMethod>
+                })
+                .into_iter()
+                .collect(),
+            ..Capabilities::default()
+        }
     }
 
     /// While one is plugged in here: whether its USB link has an address,

@@ -4,8 +4,8 @@ use std::path::PathBuf;
 
 use atlas_core::InstallChoices;
 use atlas_driver::{
-    Artifact, DeviceKey, InstallOptions, InstallRequest, ProgressSink, ProgressUpdate, SlotCommand,
-    SlotInstall, SlotSet,
+    Artifact, CancellationToken, DeviceKey, InstallMethodId, InstallOptions, InstallRequest,
+    ProgressSink, ProgressUpdate, SlotCommand, SlotInstall, SlotSet,
 };
 use tauri::State;
 use tauri::ipc::Channel;
@@ -137,4 +137,62 @@ pub async fn install_choices(
         },
     };
     state.atlas.install_choices(&key, &request).map_err(text)
+}
+
+/// Installs the file at `path` on the device by `method` (today the
+/// device's own package manager: a SystemCore's opkg), hashed here first
+/// and checked against `expected_sha256` when the release has one.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn install_artifact(
+    state: State<'_, AppState>,
+    key: DeviceKey,
+    method: InstallMethodId,
+    path: PathBuf,
+    version: String,
+    options: InstallOptions,
+    expected_sha256: Option<String>,
+    on_progress: Channel<ProgressUpdate>,
+) -> CmdResult<()> {
+    let sha256 = atlas_release::sha256_file(&path).await.map_err(text)?;
+    if let Some(want) = expected_sha256.filter(|want| !want.is_empty())
+        && !want.eq_ignore_ascii_case(&sha256)
+    {
+        return Err(format!(
+            "{} isn't the release you chose (its SHA-256 differs); nothing was sent",
+            path.display()
+        ));
+    }
+    let size_bytes = std::fs::metadata(&path)
+        .map_err(|error| format!("{}: {error}", path.display()))?
+        .len();
+    let kind = {
+        let path = path.clone();
+        tokio::task::spawn_blocking(move || atlas_blockdev::sniff_artifact(&path))
+            .await
+            .map_err(text)?
+    };
+    let request = InstallRequest {
+        artifact: Artifact {
+            name: path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            path,
+            sha256,
+            size_bytes,
+        },
+        kind,
+        version,
+        options,
+    };
+    let progress = ProgressSink::new(move |update| {
+        let _ = on_progress.send(update);
+    });
+    state
+        .atlas
+        .install_by(&key, method, &request, &progress, &CancellationToken::new())
+        .await
+        .map(|_| ())
+        .map_err(|failure| failure.to_string())
 }

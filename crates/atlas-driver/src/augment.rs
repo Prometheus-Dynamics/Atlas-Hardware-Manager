@@ -108,6 +108,8 @@ impl Capabilities {
             })),
             (own, more) => own.or(more),
         };
+        // Install methods add up: the owner's first, then the source's.
+        self.install.extend(extra.install);
         self.actions = match (self.actions.take(), extra.actions) {
             (Some(own), Some(more)) => Some(Arc::new(CombinedActions { own, more })),
             (own, more) => own.or(more),

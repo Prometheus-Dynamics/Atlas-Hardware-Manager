@@ -34,6 +34,9 @@ pub enum CapabilityKind {
     HardwareControl,
     /// The board keeps several OS images (dynamic slots).
     Slots,
+    /// The device takes artifacts by install methods of its own (a host
+    /// package manager), beside `update` and `slots`.
+    Install,
 }
 
 /// The capabilities a driver grants one device. Absent means unsupported.
@@ -47,6 +50,10 @@ pub struct Capabilities {
     pub status: Option<Arc<dyn StatusCapability>>,
     pub hardware: Option<Arc<dyn HardwareCapability>>,
     pub slots: Option<Arc<dyn SlotsCapability>>,
+    /// Install methods of the device's own (devices-as-data): today a
+    /// SystemCore's package manager. Slot, A/B and fresh come from `slots`
+    /// and `update`.
+    pub install: Vec<Arc<dyn crate::InstallMethod>>,
 }
 
 impl Capabilities {
@@ -85,6 +92,9 @@ impl Capabilities {
         }
         if self.slots.is_some() && mode == DeviceMode::Normal {
             kinds.push(CapabilityKind::Slots);
+        }
+        if !self.install.is_empty() && mode == DeviceMode::Normal {
+            kinds.push(CapabilityKind::Install);
         }
         kinds
     }

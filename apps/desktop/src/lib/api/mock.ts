@@ -178,6 +178,12 @@ export const mockApi: Api = {
     }),
   deviceSlots: (key) => reply(() => deviceSlots(key)),
   installChoices: (key, path, name, version, bootAfter) => reply(() => installChoices(key, path, name, version, bootAfter)),
+  installArtifact: async (_key, _method, _path, _version, _options, onProgress) => {
+    for (const step of ["preflight", "transfer", "apply", "confirm"]) {
+      onProgress({ type: "step-started", step });
+      await latency();
+    }
+  },
   slotCommand: (key, command) => reply(() => slotCommand(key, command)),
   installSlot: async (key, path, pin, boot, onProgress, _expectedSha256 = null) => {
     await latency();

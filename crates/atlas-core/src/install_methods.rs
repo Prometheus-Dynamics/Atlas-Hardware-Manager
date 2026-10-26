@@ -185,11 +185,8 @@ impl InstallMethod for UpdateMethod {
 }
 
 /// The methods a device has now, in order of preference.
-fn methods(
-    identity: &Identity,
-    slots: Option<&Arc<dyn SlotsCapability>>,
-    update: Option<&Arc<dyn UpdateCapability>>,
-) -> Vec<Arc<dyn InstallMethod>> {
+fn methods(identity: &Identity, caps: &atlas_driver::Capabilities) -> Vec<Arc<dyn InstallMethod>> {
+    let (slots, update) = (caps.slots.as_ref(), caps.update.as_ref());
     let mut list: Vec<Arc<dyn InstallMethod>> = Vec::new();
     if let Some(slots) = slots {
         list.push(Arc::new(SlotMethod(slots.clone())));
@@ -205,6 +202,8 @@ fn methods(
         })),
         _ => {}
     }
+    // The device's own (a host package manager).
+    list.extend(caps.install.iter().cloned());
     list
 }
 
@@ -234,36 +233,35 @@ impl Atlas {
         let (live, record) = self.live_device(key)?;
         let identity = &record.identity;
         let caps = &live.capabilities;
-        let mut choices: Vec<InstallChoice> =
-            methods(identity, caps.slots.as_ref(), caps.update.as_ref())
-                .iter()
-                .map(|method| {
-                    let id = method.id();
-                    let label = id.label().to_string();
-                    if !method.kinds().contains(&request.kind) {
-                        return InstallChoice {
-                            method: id,
-                            label,
-                            plan: None,
-                            why_not: Some(not_this_kind(id, request.kind)),
-                        };
-                    }
-                    match method.plan(identity, request) {
-                        Ok(plan) => InstallChoice {
-                            method: id,
-                            label,
-                            plan: Some(plan),
-                            why_not: None,
-                        },
-                        Err(error) => InstallChoice {
-                            method: id,
-                            label,
-                            plan: None,
-                            why_not: Some(error.to_string()),
-                        },
-                    }
-                })
-                .collect();
+        let mut choices: Vec<InstallChoice> = methods(identity, caps)
+            .iter()
+            .map(|method| {
+                let id = method.id();
+                let label = id.label().to_string();
+                if !method.kinds().contains(&request.kind) {
+                    return InstallChoice {
+                        method: id,
+                        label,
+                        plan: None,
+                        why_not: Some(not_this_kind(id, request.kind)),
+                    };
+                }
+                match method.plan(identity, request) {
+                    Ok(plan) => InstallChoice {
+                        method: id,
+                        label,
+                        plan: Some(plan),
+                        why_not: None,
+                    },
+                    Err(error) => InstallChoice {
+                        method: id,
+                        label,
+                        plan: None,
+                        why_not: Some(error.to_string()),
+                    },
+                }
+            })
+            .collect();
         if fresh_by_hand_off(identity)
             && !choices.iter().any(|c| c.method == InstallMethodId::Fresh)
         {
@@ -311,7 +309,7 @@ impl Atlas {
             .live_device(key)
             .map_err(|error| unchanged(DriverError::Unreachable(error.to_string())))?;
         let caps = &live.capabilities;
-        let chosen = methods(&record.identity, caps.slots.as_ref(), caps.update.as_ref())
+        let chosen = methods(&record.identity, caps)
             .into_iter()
             .find(|m| m.id() == method)
             .ok_or_else(|| {
@@ -345,7 +343,7 @@ fn not_this_kind(method: InstallMethodId, kind: ArtifactKind) -> String {
         InstallMethodId::AbImage => "an A/B image",
         InstallMethodId::Fresh => "a disk image",
         InstallMethodId::Layer => "a layer",
-        InstallMethodId::Package => "a package",
+        InstallMethodId::Package => "an ipk package",
     };
     format!(
         "{} takes {takes}; this is a {}",

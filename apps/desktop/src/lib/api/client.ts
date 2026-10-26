@@ -18,7 +18,7 @@ export const onDownloadProgress = isTauri ? tauriEvents.onDownloadProgress : moc
 export const onAppUpdate = isTauri ? tauriEvents.onAppUpdate : mockEvents.onAppUpdate;
 
 const RELEASE_FILTERS = [
-  { name: "Images and firmware", extensions: ["img", "xz", "zst", "gz", "bin", "hex", "zip"] },
+  { name: "Images, packages and firmware", extensions: ["img", "xz", "zst", "gz", "tar", "ipk", "bin", "hex", "zip"] },
   { name: "Any file", extensions: ["*"] },
 ];
 

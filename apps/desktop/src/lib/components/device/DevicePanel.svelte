@@ -75,7 +75,7 @@
   // svelte-ignore state_referenced_locally
   let tab = $state(asked ?? (recovery ? "software" : "overview"));
   const current = $derived(tabs.some((t) => t.value === tab) ? tab : "overview");
-  const updatable = $derived(!!record && canUpdate(record) && !recovery && (updateMethods(record).length > 0 || record.capabilities.includes("update")));
+  const updatable = $derived(!!record && canUpdate(record) && !recovery && (updateMethods(record).length > 0 || record.capabilities.includes("update") || record.capabilities.includes("install")));
   /** The board's host: its address is the identity URL (http://host:5899/…). */
   const sshHost = $derived.by(() => {
     const address = record?.identity.address ?? "";

@@ -99,6 +99,7 @@ pub fn run() {
             commands::slots::slot_command,
             commands::slots::install_slot,
             commands::slots::install_choices,
+            commands::slots::install_artifact,
             commands::devices::control_hardware,
             commands::devices::calibration_status,
             commands::devices::hardware_action,

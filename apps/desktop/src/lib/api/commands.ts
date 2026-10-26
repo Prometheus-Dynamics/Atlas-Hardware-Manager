@@ -29,6 +29,7 @@ import type {
   HistoryEntry,
   ImageServerStatus,
   InstallChoices,
+  InstallMethodId,
   JobId,
   JobPlan,
   JobRecord,
@@ -68,6 +69,20 @@ export const api = {
   /** What the device can take this file by: `path` when it is on this computer (its content tells), else its `name`. */
   installChoices: (key: DeviceKey, path: string | null, name: string, version: string, bootAfter: boolean) =>
     invoke<InstallChoices>("install_choices", { key, path, name, version, bootAfter }),
+  /** Installs the file by one of the device's methods (`installChoices`); progress as for a slot. */
+  installArtifact: (
+    key: DeviceKey,
+    method: InstallMethodId,
+    path: string,
+    version: string,
+    options: { boot_after: boolean; pin: boolean },
+    onProgress: (update: ProgressUpdate) => void,
+    expectedSha256: string | null = null,
+  ) => {
+    const channel = new Channel<ProgressUpdate>();
+    channel.onmessage = onProgress;
+    return invoke<void>("install_artifact", { key, method, path, version, options, expectedSha256, onProgress: channel });
+  },
   installSlot: (
     key: DeviceKey,
     path: string,

@@ -107,6 +107,9 @@ export function jobTitle(job: JobRecord): string {
 /** A version guess from a file name: the stem without image extensions. */
 export function versionFromFileName(path: string): string {
   const name = path.split(/[\\/]/).pop() ?? path;
+  // An opkg package: name_version_arch.ipk.
+  const ipk = name.match(/^[^_]+_([^_]+)_[^_]+\.ipk$/i);
+  if (ipk) return ipk[1];
   let stem = name;
   for (;;) {
     const next = stem.replace(/\.(img|xz|zst|gz|bin|hex|zip|raw|iso|uf2|tar)$/i, "");

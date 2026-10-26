@@ -16,6 +16,7 @@
 
 pub mod console;
 mod driver;
+pub mod package;
 pub mod probe;
 pub mod pull;
 pub mod radio;

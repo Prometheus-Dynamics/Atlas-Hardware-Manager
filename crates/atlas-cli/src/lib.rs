@@ -8,6 +8,7 @@
 
 mod commands;
 mod flash;
+mod install_file;
 mod layer_push;
 mod output;
 mod reboots;
@@ -121,6 +122,28 @@ enum Command {
         device: String,
         /// Omit to list the device's actions.
         action: Option<String>,
+    },
+    /// Install a file on a device by the first method it takes it by: a
+    /// slot, an update in place, or its own package manager (a SystemCore's
+    /// opkg, for an .ipk, over SSH with your key). Fresh installs: `flash`.
+    Install {
+        device: String,
+        file: PathBuf,
+        /// slot, ab-image or package (the first that fits when left out).
+        #[arg(long)]
+        method: Option<String>,
+        /// The version to name it by (default: the file's name).
+        #[arg(long)]
+        version: Option<String>,
+        /// A slot: boot it once when it is in.
+        #[arg(long)]
+        boot: bool,
+        /// A slot: keep it from removal.
+        #[arg(long)]
+        pin: bool,
+        /// Say which method it would take and what it would do; run nothing.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// A slots board's installed OS images: list (the default), install,
     /// boot-once, set-default, remove, pin, unpin.
@@ -383,6 +406,30 @@ async fn run_cli(cli: Cli) -> ExitCode {
         }
         Command::Action { device, action } => {
             commands::action(&atlas, &device, action.as_deref(), cli.json).await
+        }
+        Command::Install {
+            device,
+            file,
+            method,
+            version,
+            boot,
+            pin,
+            dry_run,
+        } => {
+            install_file::install(
+                &atlas,
+                install_file::InstallArgs {
+                    device,
+                    file,
+                    method,
+                    version,
+                    boot,
+                    pin,
+                    dry_run,
+                },
+                cli.json,
+            )
+            .await
         }
         Command::Slots { device, command } => {
             slots::slots(&atlas, &device, command, cli.json).await

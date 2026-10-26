@@ -516,6 +516,7 @@ impl Driver for BoardDriver {
             status: status.map(|status| status as Arc<dyn StatusCapability>),
             hardware: None,
             slots,
+            install: Vec::new(),
         }
     }
 }
