@@ -174,10 +174,22 @@ atlas robot open frc-radio:6390           # the web page's address
   own page sends unauthenticated on load. It is a read, but it is a POST.
   Decide whether Atlas may send it. If yes, the key could become the RIO's
   serial instead of the team number.
-- **SystemCore (2027).** It is expected at `10.TE.AM.2` too. The controller
-  driver rejects anything that isn't NI's page, so SystemCore needs its own
-  identification once its web/API surface is known. The radio's
-  `systemcoreEnabled` flag is already read.
+- **SystemCore (2027).** It is expected at `10.TE.AM.2` too, at
+  `robot.local` (mDNS), at `172.27.0.1` over USB from Linux and macOS
+  (`172.26.0.1` from Windows; `.28`/`.29` on images 9 and earlier) and
+  `172.30.0.1` on its own Wi-Fi. The controller driver rejects anything that
+  isn't NI's page, so SystemCore needs its own driver. Its web UI is a
+  dashboard at `/` with `/configure` (team number, web OTA from a
+  `.llupdate`) and a Package Manager (opkg `.ipk`; a package's `X-Https` and
+  `X-Services` control fields shape the UI). Neither Limelight's
+  systemcore-os-public nor wpilibsuite/SystemcoreTesting documents an HTTP
+  API, and its SSH login is a password (`systemcore`), which Atlas doesn't
+  use. So the driver is written against what a unit serves without a login:
+  `scripts/systemcore-capture.sh [host]` saves that (GETs only: the pages,
+  their scripts, the API-like paths those name minus anything that writes,
+  and which FRC ports answer). The radio's `systemcoreEnabled` flag is
+  already read. Later (not built): installing and updating HeliOS on a
+  SystemCore as an `.ipk`, through the same Package Manager API.
 - **Radio configuration** (team, SSID, channel, firmware). This would be
   writes (`POST /configuration`, `/firmware`) and is deliberately left out.
 - **The board side.** `usb_route.addresses` ships with the device package.
