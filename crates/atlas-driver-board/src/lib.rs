@@ -39,7 +39,7 @@ pub mod vision;
 
 pub use browse::{Browser, SERVICE_TYPE};
 pub use contract::{BoardIdentity, CLOCK_TOLERANCE_S, IDENTITY_PATH};
-pub use driver::{BoardDriver, NetworkLinks, drivers_for_catalog};
+pub use driver::{BoardDriver, CatalogHealth, NetworkLinks, drivers_for_catalog};
 pub use gadget::UsbGadgetLinks;
 pub use serial::serial_console;
 pub use slots::set_bundle_host;

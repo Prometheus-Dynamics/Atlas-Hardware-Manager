@@ -17,6 +17,9 @@ pub struct DeviceRecord {
     /// The identity from the most recent sighting.
     pub identity: Identity,
     pub link_kind: LinkKind,
+    /// Kinds this build doesn't know (a newer Atlas wrote the file) are
+    /// left out rather than refusing the inventory.
+    #[serde(deserialize_with = "known_capabilities")]
     pub capabilities: Vec<CapabilityKind>,
     pub presence: Presence,
     pub first_seen_ms: u64,
@@ -27,6 +30,18 @@ pub struct DeviceRecord {
     /// The robot profile this device belongs to.
     #[serde(default)]
     pub robot: Option<String>,
+}
+
+/// The capability kinds in a saved record that this build knows.
+fn known_capabilities<'de, D>(deserializer: D) -> Result<Vec<CapabilityKind>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let names = Vec::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(names
+        .into_iter()
+        .filter_map(|name| serde_json::from_value(name).ok())
+        .collect())
 }
 
 impl DeviceRecord {
@@ -184,6 +199,27 @@ mod tests {
             address: "10.0.0.2".into(),
             attributes: BTreeMap::new(),
         }
+    }
+
+    #[test]
+    fn a_capability_from_a_newer_atlas_is_left_out_not_refused() {
+        let mut inventory = Inventory::default();
+        let (_, record) = inventory.upsert(
+            identity("a", "1"),
+            LinkKind::UsbNetwork,
+            vec![CapabilityKind::Info, CapabilityKind::Slots],
+            10,
+        );
+        let mut json = serde_json::to_value(&record).unwrap();
+        json["capabilities"]
+            .as_array_mut()
+            .unwrap()
+            .push("from-the-future".into());
+        let read: DeviceRecord = serde_json::from_value(json).unwrap();
+        assert_eq!(
+            read.capabilities,
+            vec![CapabilityKind::Info, CapabilityKind::Slots]
+        );
     }
 
     #[test]

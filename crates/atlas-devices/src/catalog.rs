@@ -27,16 +27,69 @@ pub struct DeviceCatalog {
 }
 
 /// Where device packages may live: `ATLAS_DEVICES_DIR`, the given extra
-/// dirs (app resources, data folder), then this repository's `devices/`
-/// for development builds.
+/// dirs (app resources, data folder), then, for development builds, a
+/// checkout's `devices/` found above the running program or the working
+/// directory, and the one this crate was built from when it still exists.
+/// (A build in a shared target dir can carry a worktree's path that has
+/// since gone: it found no packages and said nothing.)
 pub fn default_search_dirs(extra: &[PathBuf]) -> Vec<PathBuf> {
     let mut dirs = Vec::new();
     if let Some(dir) = std::env::var_os("ATLAS_DEVICES_DIR") {
         dirs.push(PathBuf::from(dir));
     }
     dirs.extend(extra.iter().cloned());
-    dirs.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../devices"));
+    let starts = [
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(Path::to_path_buf)),
+        std::env::current_dir().ok(),
+    ];
+    for start in starts.into_iter().flatten() {
+        if let Some(found) = checkout_devices_above(&start) {
+            dirs.push(found);
+        }
+    }
+    let built = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../devices");
+    if built.is_dir() {
+        dirs.push(built);
+    }
+    dirs.dedup();
     dirs
+}
+
+/// The nearest `devices/` above `start` that holds a device package (a
+/// `<model>/manifest.json`), as in this repository.
+fn checkout_devices_above(start: &Path) -> Option<PathBuf> {
+    start
+        .ancestors()
+        .map(|dir| dir.join("devices"))
+        .find(|devices| {
+            std::fs::read_dir(devices).is_ok_and(|entries| {
+                entries
+                    .flatten()
+                    .any(|entry| entry.path().join("manifest.json").is_file())
+            })
+        })
+}
+
+impl DeviceCatalog {
+    /// A line for a health check: how many device packages loaded, or that
+    /// none did and where Atlas looked (no packages: no boards are found).
+    pub fn summary(&self, searched: &[PathBuf]) -> Result<String, String> {
+        let models: Vec<&str> = self
+            .packages
+            .iter()
+            .map(|p| p.manifest.model.as_str())
+            .collect();
+        if models.is_empty() {
+            let looked: Vec<String> = searched.iter().map(|d| d.display().to_string()).collect();
+            return Err(format!(
+                "No device packages found, so no boards can be found. Looked in: {}",
+                looked.join(", ")
+            ));
+        }
+        Ok(format!("{} loaded: {}", models.len(), models.join(", ")))
+    }
 }
 
 impl DeviceCatalog {
@@ -159,6 +212,24 @@ mod tests {
         ));
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn a_checkouts_devices_is_found_above_the_program_and_none_is_said() {
+        let root = temp_root("above");
+        std::fs::create_dir_all(root.join("devices/raze")).unwrap();
+        std::fs::write(root.join("devices/raze/manifest.json"), RAZE).unwrap();
+        let deep = root.join("target/debug/deps");
+        std::fs::create_dir_all(&deep).unwrap();
+        assert_eq!(checkout_devices_above(&deep), Some(root.join("devices")));
+
+        let catalog = DeviceCatalog::load(&[root.join("devices")]);
+        assert_eq!(catalog.summary(&[]).unwrap(), "1 loaded: raze");
+        let empty = DeviceCatalog::load(&[root.join("nothing")]);
+        let why = empty.summary(&[root.join("nothing")]).unwrap_err();
+        assert!(why.starts_with("No device packages found"), "{why}");
+        assert!(why.contains("nothing"), "{why}");
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

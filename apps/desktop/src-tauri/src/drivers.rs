@@ -5,7 +5,9 @@ use std::sync::Arc;
 
 use atlas_core::{AtlasBuilder, install};
 use atlas_devices::DeviceCatalog;
-use atlas_driver_board::{NetworkLinks, SshAccess, UsbGadgetLinks, drivers_for_catalog};
+use atlas_driver_board::{
+    CatalogHealth, NetworkLinks, SshAccess, UsbGadgetLinks, drivers_for_catalog,
+};
 use atlas_driver_rpi::{RpiConfig, RpiDriver, SshKeys, UsbBootLinks};
 
 use crate::settings::AppPaths;
@@ -25,7 +27,8 @@ pub fn register_hardware(
     ssh_access: &SshAccess,
     warnings: &mut Vec<String>,
 ) -> AtlasBuilder {
-    let catalog = Arc::new(DeviceCatalog::load(&device_dirs(paths)));
+    let searched = device_dirs(paths);
+    let catalog = Arc::new(DeviceCatalog::load(&searched));
     warnings.extend(catalog.warnings().iter().cloned());
 
     let mut boot_file_dirs = install::bundled_usbboot_dirs();
@@ -39,7 +42,8 @@ pub fn register_hardware(
         })))
         .link_source(Arc::new(UsbBootLinks))
         .link_source(Arc::new(NetworkLinks))
-        .link_source(Arc::new(UsbGadgetLinks));
+        .link_source(Arc::new(UsbGadgetLinks))
+        .link_source(Arc::new(CatalogHealth::new(&catalog, &searched)));
     for driver in drivers_for_catalog(&catalog, ssh_access) {
         builder = builder.driver(driver);
     }

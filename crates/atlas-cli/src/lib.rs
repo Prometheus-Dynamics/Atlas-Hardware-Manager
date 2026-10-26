@@ -23,7 +23,9 @@ use std::time::Duration;
 
 use atlas_core::{Atlas, InventoryStore, JsonFileStore, StagedRollout, install};
 use atlas_devices::DeviceCatalog;
-use atlas_driver_board::{NetworkLinks, SshAccess, SshConfig, UsbGadgetLinks, drivers_for_catalog};
+use atlas_driver_board::{
+    CatalogHealth, NetworkLinks, SshAccess, SshConfig, UsbGadgetLinks, drivers_for_catalog,
+};
 use atlas_driver_mock::MockFleet;
 use atlas_driver_rpi::{RpiConfig, RpiDriver, SshKeys, UsbBootLinks};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
@@ -216,9 +218,8 @@ fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
             if let Some(data) = dirs::data_dir() {
                 device_dirs.push(data.join("atlas").join("devices"));
             }
-            let catalog = Arc::new(DeviceCatalog::load(&atlas_devices::default_search_dirs(
-                &device_dirs,
-            )));
+            let searched = atlas_devices::default_search_dirs(&device_dirs);
+            let catalog = Arc::new(DeviceCatalog::load(&searched));
             for warning in catalog.warnings() {
                 output::error(&format!("device package: {warning}"));
             }
@@ -232,7 +233,8 @@ fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
                 })))
                 .link_source(Arc::new(UsbBootLinks))
                 .link_source(Arc::new(NetworkLinks))
-                .link_source(Arc::new(UsbGadgetLinks));
+                .link_source(Arc::new(UsbGadgetLinks))
+                .link_source(Arc::new(CatalogHealth::new(&catalog, &searched)));
             let ssh = SshAccess::new(SshConfig {
                 identity_file: cli
                     .ssh_key

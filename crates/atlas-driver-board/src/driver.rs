@@ -522,3 +522,41 @@ impl Driver for BoardDriver {
 
 #[cfg(test)]
 mod tests;
+
+/// Says, on the health screen and in `atlas doctor`, whether any device
+/// package loaded: without one there is no board driver, and a scan finds
+/// no boards in a few milliseconds without a word.
+pub struct CatalogHealth {
+    summary: Result<String, String>,
+}
+
+impl CatalogHealth {
+    pub fn new(catalog: &DeviceCatalog, searched: &[std::path::PathBuf]) -> Self {
+        Self {
+            summary: catalog.summary(searched),
+        }
+    }
+}
+
+#[async_trait]
+impl LinkSource for CatalogHealth {
+    async fn links(&self) -> Vec<Link> {
+        Vec::new()
+    }
+
+    fn name(&self) -> &str {
+        "Device packages"
+    }
+
+    async fn health(&self) -> Vec<HealthCheck> {
+        vec![match &self.summary {
+            Ok(detail) => HealthCheck::ok("device-packages", "Device packages", detail.clone()),
+            Err(detail) => HealthCheck::error(
+                "device-packages",
+                "Device packages",
+                detail.clone(),
+                "Reinstall Atlas, or set ATLAS_DEVICES_DIR to a devices/ folder",
+            ),
+        }]
+    }
+}
