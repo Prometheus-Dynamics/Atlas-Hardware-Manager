@@ -333,6 +333,8 @@ async fn run_device(
         Ok(UpdateOutcome::Verified { version }) => DeviceJobStatus::Verified { version },
         Ok(UpdateOutcome::RolledBack { reason }) => DeviceJobStatus::RolledBack { reason },
         Ok(UpdateOutcome::NeedsRecovery { reason }) => DeviceJobStatus::NeedsRecovery { reason },
+        // Not from an update capability (a slot install's): as good as done.
+        Ok(UpdateOutcome::Installed { version }) => DeviceJobStatus::Verified { version },
         Err(DriverError::Cancelled) => DeviceJobStatus::Cancelled,
         Err(error) => DeviceJobStatus::Failed {
             error: error.to_string(),

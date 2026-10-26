@@ -98,6 +98,7 @@ pub fn run() {
             commands::slots::device_slots,
             commands::slots::slot_command,
             commands::slots::install_slot,
+            commands::slots::install_choices,
             commands::devices::control_hardware,
             commands::devices::calibration_status,
             commands::devices::hardware_action,

@@ -20,7 +20,7 @@ import { listRecords, robotStatuses, robotUpdateRequest, scan, touch } from "./m
 import { lastSelftest, runSelftest, seedSelftests } from "./mock/selftest";
 import { streamHardware, streamLive, streamVision } from "./mock/live";
 import { ntCameraAddresses, ntConnect, ntServer } from "./mock/nt";
-import { deviceSlots, installSlot, slotCommand } from "./mock/slots";
+import { deviceSlots, installChoices, installSlot, slotCommand } from "./mock/slots";
 import { appUpdateStatus, checkAppUpdate, installAppUpdate } from "./mock/appUpdate";
 import { boardAction, calibrationStatus, controlHardware, deviceHistory, deviceStatus, hardwareAction, kernelRecord } from "./mock/status";
 
@@ -177,6 +177,7 @@ export const mockApi: Api = {
       record("action-run", "info", key, `${found.label} on ${name}`);
     }),
   deviceSlots: (key) => reply(() => deviceSlots(key)),
+  installChoices: (key, path, name, version, bootAfter) => reply(() => installChoices(key, path, name, version, bootAfter)),
   slotCommand: (key, command) => reply(() => slotCommand(key, command)),
   installSlot: async (key, path, pin, boot, onProgress, _expectedSha256 = null) => {
     await latency();

@@ -47,3 +47,17 @@ fn a_real_slots_image_gives_the_builds_bundle() {
         }
     }
 }
+
+/// `ATLAS_SNIFF="<path>=<kind>;…"` (kinds as serialized: slots-image, …):
+/// each real file sniffs as its kind.
+#[test]
+#[ignore = "needs ATLAS_SNIFF"]
+fn real_artifacts_sniff_as_their_kind() {
+    let pairs = std::env::var("ATLAS_SNIFF").unwrap();
+    for pair in pairs.split(';').filter(|p| !p.is_empty()) {
+        let (path, want) = pair.rsplit_once('=').unwrap();
+        let got = atlas_blockdev::sniff_artifact(std::path::Path::new(path));
+        let got = serde_json::to_string(&got).unwrap();
+        assert_eq!(got.trim_matches('"'), want, "{path}");
+    }
+}

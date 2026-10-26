@@ -357,8 +357,12 @@ mod tests {
 
     #[test]
     fn only_slot_tars_are_bundles() {
-        assert!(is_slot_bundle(Path::new("/x/photonvision-2026.3.4-styx-0d286005.slot.tar")));
-        assert!(!is_slot_bundle(Path::new("/x/photonvision-2026.3.4-styx-0d286005.img.xz")));
+        assert!(is_slot_bundle(Path::new(
+            "/x/photonvision-2026.3.4-styx-0d286005.slot.tar"
+        )));
+        assert!(!is_slot_bundle(Path::new(
+            "/x/photonvision-2026.3.4-styx-0d286005.img.xz"
+        )));
     }
 
     #[test]
@@ -368,7 +372,9 @@ mod tests {
         let image = dir.join("plain.img");
         std::fs::write(&image, vec![7u8; 4096]).unwrap();
         let out = dir.join("out");
-        let error = slot_bundle_from_image(&image, &out).unwrap_err().to_string();
+        let error = slot_bundle_from_image(&image, &out)
+            .unwrap_err()
+            .to_string();
         assert!(error.contains("isn't a slots image"), "{error}");
         assert_eq!(std::fs::read_dir(&out).unwrap().count(), 0);
         std::fs::remove_dir_all(&dir).unwrap();

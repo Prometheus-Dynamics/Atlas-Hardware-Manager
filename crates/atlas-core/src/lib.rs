@@ -12,6 +12,7 @@ mod error;
 mod events;
 mod history;
 pub mod install;
+mod install_methods;
 mod inventory;
 mod job_runner;
 mod jobs;
@@ -36,6 +37,7 @@ pub use clock::ClockSync;
 pub use error::CoreError;
 pub use events::Event;
 pub use history::{BOARD_EVENTS_LIMIT, BoardEventLog, HistoryEntry, HistoryOrigin};
+pub use install_methods::{InstallChoice, InstallChoices};
 pub use inventory::{DeviceRecord, Presence};
 pub use jobs::{
     DeviceJobState, DeviceJobStatus, JobId, JobPlan, JobRecord, JobState, JobSummary,

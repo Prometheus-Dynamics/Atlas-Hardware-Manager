@@ -16,6 +16,7 @@ mod messages;
 mod platform;
 mod session;
 mod slot_bundle;
+mod sniff;
 mod writer;
 
 pub use client::{HelperClient, HelperRequest};
@@ -28,4 +29,5 @@ pub use session::{
     eject, mount_read_only, open_folder, read_boot_file, unmount_all, write_boot_file,
 };
 pub use slot_bundle::{SlotFromImage, is_slot_bundle, slot_bundle_from_image};
+pub use sniff::{kind_from_name, sniff_artifact};
 pub use writer::{WriteOptions, WriteProgress, WriteReport, write_image};

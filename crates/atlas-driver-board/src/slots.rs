@@ -268,6 +268,8 @@ impl SlotsCapability for BoardSlots {
             self.stream(install, progress).await?;
         }
         progress.step_progress(UpdateStep::Transfer, 1.0);
+        // The slot is in: from here the board has changed.
+        progress.step_started(UpdateStep::Apply);
         if install.boot {
             progress.log("installed; restarting into it once".to_string());
             self.ssh.expect_new_host_key();

@@ -28,6 +28,7 @@ import type {
   HealthCheck,
   HistoryEntry,
   ImageServerStatus,
+  InstallChoices,
   JobId,
   JobPlan,
   JobRecord,
@@ -64,6 +65,9 @@ export const api = {
   deviceSlots: (key: DeviceKey) => invoke<SlotSet | null>("device_slots", { key }),
   slotCommand: (key: DeviceKey, command: SlotCommand) => invoke<void>("slot_command", { key, command }),
   /** Installs the slot bundle at `path`; boot runs it once on trial when it is in. */
+  /** What the device can take this file by: `path` when it is on this computer (its content tells), else its `name`. */
+  installChoices: (key: DeviceKey, path: string | null, name: string, version: string, bootAfter: boolean) =>
+    invoke<InstallChoices>("install_choices", { key, path, name, version, bootAfter }),
   installSlot: (
     key: DeviceKey,
     path: string,

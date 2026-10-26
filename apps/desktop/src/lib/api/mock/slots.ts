@@ -1,6 +1,6 @@
 // A slots board's images for the browser build: what the slots writer
 // would report, and its refusals.
-import type { DeviceKey, ProgressUpdate, Slot, SlotCommand, SlotSet } from "../types";
+import type { ArtifactKind, DeviceKey, InstallChoice, InstallChoices, InstallMethodId, InstallPlan, ProgressUpdate, Slot, SlotCommand, SlotSet } from "../types";
 import { keyString } from "../types";
 import { simDevice } from "./data";
 import { sleep } from "./bus";
@@ -120,4 +120,61 @@ export async function installSlot(key: DeviceKey, path: string, pin: boolean, bo
   flagsFor(set);
   onProgress({ type: "log", message: "installed" });
   if (boot) slotCommand(key, { command: "boot-once", id });
+}
+
+/** The kind a file's name suggests (atlas-blockdev's kind_from_name), with a slots build's image told by its name here. */
+function kindOf(name: string): ArtifactKind {
+  const n = name.toLowerCase();
+  if (n.endsWith(".slot.tar")) return "slot-bundle";
+  if (/^(photonvision|helios)-\d[\w.-]*-[0-9a-f]{8}\.img(\.(xz|zst|gz))?$/.test(n)) return "slots-image";
+  if (/\.img(\.(xz|zst|gz))?$/.test(n)) return "disk-image";
+  if (n.endsWith(".ipk")) return "ipk";
+  return "unknown";
+}
+
+const LABELS: Record<ArtifactKind, string> = {
+  "slot-bundle": "slot bundle",
+  "slots-image": "slots image",
+  "ab-image": "A/B image",
+  "disk-image": "disk image",
+  layer: "layer",
+  ipk: "ipk package",
+  deb: "deb package",
+  firmware: "firmware",
+  unknown: "file",
+};
+
+/** What a simulated device can take a file by, as atlas-core's install_choices answers. */
+export function installChoices(key: DeviceKey, path: string | null, name: string, version: string, bootAfter: boolean): InstallChoices {
+  const sim = simDevice(key);
+  const kind = kindOf((path ?? name).split(/[\\/]/).pop() ?? name);
+  const caps = sim?.caps ?? [];
+  const recovery = sim?.mode === "recovery";
+  const methods = (sim?.attributes?.update_methods ?? "").split(",").map((m) => m.trim());
+  const choices: InstallChoice[] = [];
+  const offer = (method: InstallMethodId, label: string, kinds: ArtifactKind[], plan: Omit<InstallPlan, "method">, takes: string) =>
+    choices.push(
+      kinds.includes(kind)
+        ? { method, label, plan: { method, ...plan }, why_not: null }
+        : {
+            method,
+            label,
+            plan: null,
+            why_not:
+              method === "ab-image" && (kind === "slot-bundle" || kind === "slots-image")
+                ? "this board isn't on slots yet: it needs one fresh install of a slots image (its .img.xz), then slots install in place"
+                : `${label} takes ${takes}; this is a ${LABELS[kind]}`,
+          },
+    );
+  if (caps.includes("slots")) {
+    offer("slot", "Install as a slot", ["slot-bundle", "slots-image"], { steps: ["preflight", "transfer", "apply", ...(bootAfter ? (["reboot"] as const) : [])], erases: false, restarts: bootAfter, summary: `Installs ${version} beside the other slots` }, "a slot bundle or a slots image");
+  }
+  if (caps.includes("update") && !recovery) {
+    offer("ab-image", "Update in place", ["ab-image", "disk-image"], { steps: ["preflight", "transfer", "apply", "reboot", "confirm"], erases: false, restarts: true, summary: `Update to ${version}; settings stay` }, "an A/B image");
+  }
+  if (recovery || methods.some((m) => ["usb-boot-reboot", "image-write", "rpiboot-recovery"].includes(m))) {
+    offer("fresh", "Fresh install", ["ab-image", "disk-image", "slots-image"], { steps: ["preflight", "transfer", "apply", "reboot"], erases: true, restarts: true, summary: `Writes ${version} over the whole storage` }, "a disk image");
+  }
+  choices.sort((a, b) => Number(a.plan === null) - Number(b.plan === null));
+  return { kind, kind_label: LABELS[kind], choices };
 }

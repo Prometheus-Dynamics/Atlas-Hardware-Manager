@@ -7,6 +7,7 @@ mod clock_sync;
 mod core_flows;
 mod history;
 mod idle_requests;
+mod install_choices;
 mod observe;
 mod robots;
 mod robustness;

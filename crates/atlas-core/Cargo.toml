@@ -12,6 +12,7 @@ description = "Atlas product logic: inventory, scanning, jobs, events, and persi
 
 [dependencies]
 atlas-driver.workspace = true
+async-trait.workspace = true
 futures.workspace = true
 serde.workspace = true
 serde_json.workspace = true

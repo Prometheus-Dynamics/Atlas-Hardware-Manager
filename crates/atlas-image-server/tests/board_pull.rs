@@ -27,7 +27,11 @@ async fn a_board_pulls_a_real_bundle() {
         }
         hasher.update(&buf[..n]);
     }
-    let sha256: String = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    let sha256: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
     let size_bytes = std::fs::metadata(&path).unwrap().len();
     let server = ImageServer::new(ImageServerConfig {
         bind: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
@@ -44,9 +48,15 @@ async fn a_board_pulls_a_real_bundle() {
         .unwrap();
     let args = [run, url.clone(), sha256, size_bytes.to_string()];
     let status = tokio::task::spawn_blocking(move || {
-        std::process::Command::new("sh").args(&args).status().unwrap()
+        std::process::Command::new("sh")
+            .args(&args)
+            .status()
+            .unwrap()
     })
     .await
     .unwrap();
-    assert!(status.success(), "the board's stage-url from {url}: {status}");
+    assert!(
+        status.success(),
+        "the board's stage-url from {url}: {status}"
+    );
 }

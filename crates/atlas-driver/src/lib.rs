@@ -12,6 +12,7 @@ mod driver;
 mod error;
 mod hardware;
 mod health;
+mod install;
 mod observe;
 mod registry;
 pub mod robot_net;
@@ -35,6 +36,10 @@ pub use hardware::{
     HardwareCommand, HardwareFrame, LiveChannel, LiveDevice,
 };
 pub use health::{HealthCheck, HealthStatus};
+pub use install::{
+    ArtifactKind, ChangeTracker, DeviceChannel, InstallFailure, InstallMethod, InstallMethodId,
+    InstallOptions, InstallPlan, InstallRequest,
+};
 pub use observe::{
     LogLevel, LogLine, LogsCapability, Metric, TelemetryCapability, attributes, metric_ids,
 };

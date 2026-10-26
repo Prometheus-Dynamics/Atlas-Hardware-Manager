@@ -11,6 +11,7 @@ publish.workspace = true
 description = "Disk discovery, safety checks, and verified raw image writes for Atlas."
 
 [dependencies]
+atlas-driver.workspace = true
 ext4-view.workspace = true
 fatfs.workspace = true
 flate2.workspace = true

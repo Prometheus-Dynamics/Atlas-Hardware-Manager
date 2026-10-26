@@ -171,14 +171,22 @@ impl SlotsCapability for OrionSlots {
                         .unwrap_or(0.0);
                     progress.step_progress(UpdateStep::Transfer, permille / 1000.0);
                 }
-                Some(update_action::STATE_STAGED) if !install.boot => break,
-                Some(update_action::STATE_REBOOTING) => break,
+                // The slot is in: from here the board has changed.
+                Some(update_action::STATE_STAGED) if !install.boot => {
+                    progress.step_started(UpdateStep::Apply);
+                    break;
+                }
+                Some(update_action::STATE_REBOOTING) => {
+                    progress.step_started(UpdateStep::Apply);
+                    break;
+                }
                 // The restart was refused: installed, but still on the old slot.
                 Some(update_action::STATE_STAGED)
                     if keys
                         .get(update_action::KEY_ERROR)
                         .is_some_and(|e| !e.is_empty()) =>
                 {
+                    progress.step_started(UpdateStep::Apply);
                     return Err(DriverError::StepFailed {
                         step: "Restarting into the slot".into(),
                         message: keys[update_action::KEY_ERROR].clone(),

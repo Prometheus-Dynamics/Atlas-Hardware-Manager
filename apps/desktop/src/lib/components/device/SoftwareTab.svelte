@@ -3,7 +3,7 @@
   // image to install, and how: in place (keeps settings) or fresh (erases
   // it, through USB boot). One button that says what will happen.
   import { goto } from "$app/navigation";
-  import { api, errorText, keyString, type DeviceAction, type DeviceRecord, type SlotSet } from "#lib/api/client.ts";
+  import { api, errorText, keyString, type DeviceAction, type DeviceRecord, type InstallChoices, type SlotSet } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
   import HandoffView from "#lib/components/software/HandoffView.svelte";
@@ -93,9 +93,39 @@
   /** The chosen image is a slot bundle (.slot.tar), which only a slots board takes. */
   const slotBundle = $derived((entry?.artifact_name ?? choice?.path ?? "").toLowerCase().endsWith(".slot.tar"));
 
+  /**
+   * What the board can take the chosen file by (atlas-core's install
+   * methods: slot, update in place, fresh), from the file's content when it
+   * is on this computer, else its name. Until it answers, the rules below
+   * stand in.
+   */
+  let installChoices = $state<InstallChoices | null>(null);
+  const fileName = $derived(entry?.artifact_name ?? (choice?.path ?? "").split(/[\\/]/).pop() ?? "");
+  $effect(() => {
+    const key = record.key;
+    const path = choice?.path ?? entry?.path ?? null;
+    const name = fileName;
+    const v = version;
+    const boot = bootAfter;
+    if (!online || !name) {
+      installChoices = null;
+      return;
+    }
+    let stale = false;
+    api
+      .installChoices(key, path, name, v, boot)
+      .then((c) => !stale && (installChoices = c))
+      .catch(() => !stale && (installChoices = null));
+    return () => (stale = true);
+  });
+  const choiceFor = (method: string) => installChoices?.choices.find((c) => c.method === method) ?? null;
+
   const updateBlocked = $derived.by((): string | null => {
     if (recovery) return "The board is in USB boot, so it can only be installed fresh.";
     if (!online) return "The board isn't reachable. Connect it to update in place.";
+    // The board's own answer for this file, once it's in.
+    const inPlace = choiceFor(slotted ? "slot" : "ab-image");
+    if (installChoices && inPlace) return inPlace.plan ? null : sentence(inPlace.why_not ?? "It can't take this file in place.");
     if (slotted) return null;
     // A board on the A/B layout (or none) gets slots from one fresh install;
     // after that, slot images install in place.
@@ -112,7 +142,11 @@
     if (methods.some((m) => USB_METHODS.includes(m))) return "manual";
     return null;
   });
-  const freshBlocked = $derived(fresh === "flash" && !online ? "Connect the board in USB boot to install it." : null);
+  const freshBlocked = $derived.by((): string | null => {
+    if (fresh === "flash" && !online) return "Connect the board in USB boot to install it.";
+    const erase = choiceFor("fresh");
+    return erase && !erase.plan ? sentence(erase.why_not ?? "It can't be installed fresh from this file.") : null;
+  });
 
   let picked = $state<"update" | "fresh" | null>(null);
   const method = $derived.by(() => {
@@ -179,6 +213,7 @@
     const name = entry?.artifact_name ?? (choice?.path ?? "").split(/[\\/]/).pop() ?? "";
     if (!name) return null;
     const parts = [name];
+    if (installChoices && installChoices.kind !== "unknown") parts.push(installChoices.kind_label);
     if (entry?.size_bytes) parts.push(bytes(entry.size_bytes));
     parts.push(entry?.sha256 ? `SHA-256 ${entry.sha256.slice(0, 12)}…` : "checked when it starts");
     return parts.join(" · ");

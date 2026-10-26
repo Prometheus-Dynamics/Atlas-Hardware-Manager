@@ -163,6 +163,7 @@ dependencies = [
 name = "atlas-blockdev"
 version = "0.1.0"
 dependencies = [
+ "atlas-driver",
  "ext4-view",
  "fatfs",
  "flate2",

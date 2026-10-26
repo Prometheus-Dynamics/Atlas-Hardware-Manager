@@ -2,8 +2,10 @@
 
 use std::path::PathBuf;
 
+use atlas_core::InstallChoices;
 use atlas_driver::{
-    Artifact, DeviceKey, ProgressSink, ProgressUpdate, SlotCommand, SlotInstall, SlotSet,
+    Artifact, DeviceKey, InstallOptions, InstallRequest, ProgressSink, ProgressUpdate, SlotCommand,
+    SlotInstall, SlotSet,
 };
 use tauri::State;
 use tauri::ipc::Channel;
@@ -99,4 +101,40 @@ pub async fn install_slot(
         .install_slot(&key, &install, &progress)
         .await
         .map_err(text)
+}
+
+/// What the device can take a file by (slot, update in place, fresh
+/// install), the first that can run now first; each one that can't says
+/// why. The file's kind comes from its content when it is on this computer
+/// (`path`), else from its name (a release not downloaded yet).
+#[tauri::command]
+pub async fn install_choices(
+    state: State<'_, AppState>,
+    key: DeviceKey,
+    path: Option<PathBuf>,
+    name: String,
+    version: String,
+    boot_after: bool,
+) -> CmdResult<InstallChoices> {
+    let kind = match path.clone().filter(|path| path.is_file()) {
+        Some(path) => tokio::task::spawn_blocking(move || atlas_blockdev::sniff_artifact(&path))
+            .await
+            .map_err(text)?,
+        None => atlas_blockdev::kind_from_name(&name),
+    };
+    let request = InstallRequest {
+        artifact: Artifact {
+            name,
+            path: path.unwrap_or_default(),
+            sha256: String::new(),
+            size_bytes: 0,
+        },
+        kind,
+        version,
+        options: InstallOptions {
+            boot_after,
+            pin: false,
+        },
+    };
+    state.atlas.install_choices(&key, &request).map_err(text)
 }

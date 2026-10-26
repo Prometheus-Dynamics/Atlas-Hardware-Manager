@@ -177,6 +177,8 @@ pub enum UpdateOutcome {
     RolledBack { reason: String },
     /// The device is not usable and needs a recovery update.
     NeedsRecovery { reason: String },
+    /// Installed beside what runs (a slot), not booted or confirmed yet.
+    Installed { version: String },
 }
 
 /// A progress report from a running update.
@@ -208,6 +210,11 @@ impl ProgressSink {
     /// A sink that drops every report.
     pub fn discard() -> Self {
         Self::new(|_| {})
+    }
+
+    /// Passes an update on as it is.
+    pub fn report(&self, update: ProgressUpdate) {
+        (self.0)(update);
     }
 
     pub fn step_started(&self, step: UpdateStep) {

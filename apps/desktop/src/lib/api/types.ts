@@ -780,6 +780,36 @@ export type SlotCommand =
   | { command: "remove"; id: string }
   | { command: "pin"; id: string; pinned: boolean };
 
+/** What an artifact is, from its content (atlas-driver's ArtifactKind). */
+export type ArtifactKind = "slot-bundle" | "slots-image" | "ab-image" | "disk-image" | "layer" | "ipk" | "deb" | "firmware" | "unknown";
+
+/** An install method Atlas has an adapter for (atlas-driver's InstallMethodId). */
+export type InstallMethodId = "slot" | "ab-image" | "layer" | "fresh" | "package";
+
+export interface InstallPlan {
+  method: InstallMethodId;
+  steps: UpdateStep[];
+  /** Everything on the device goes. */
+  erases: boolean;
+  restarts: boolean;
+  summary: string;
+}
+
+/** One method and whether it can run now (atlas-core's InstallChoice). */
+export interface InstallChoice {
+  method: InstallMethodId;
+  label: string;
+  plan: InstallPlan | null;
+  why_not: string | null;
+}
+
+/** What a device can take a file by, the ones that can run first. */
+export interface InstallChoices {
+  kind: ArtifactKind;
+  kind_label: string;
+  choices: InstallChoice[];
+}
+
 /** Progress from a running install (atlas-driver's ProgressUpdate). */
 export type ProgressUpdate =
   | { type: "step-started"; step: string }
