@@ -9,7 +9,7 @@
   import Pill from "#lib/components/common/Pill.svelte";
   import Skeleton from "#lib/components/common/Skeleton.svelte";
   import GuardedDialog from "#lib/components/device/GuardedDialog.svelte";
-  import { bytes, deviceName, sentence, timeAgo } from "#lib/format.ts";
+  import { bytes, compareVersionsDesc, deviceName, sentence, timeAgo } from "#lib/format.ts";
   import { deviceStatus } from "#lib/stores/status.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
 
@@ -69,6 +69,11 @@
   }
 
   const used = $derived(set ? set.slots.reduce((sum, s) => sum + s.size, 0) : 0);
+  // By OS, newest version first (a dev build below its release, dev builds
+  // by their count), not by id or the board's directory order.
+  const ordered = $derived(
+    set ? [...set.slots].sort((a, b) => a.family.localeCompare(b.family) || compareVersionsDesc(a.version, b.version)) : [],
+  );
   const room = $derived(set ? Math.max(0, set.free_bytes - set.reserve_bytes) : 0);
   const total = $derived(used + (set?.free_bytes ?? 0));
 
@@ -128,7 +133,7 @@
     <p class="problem"><Icon name="alert-circle" size={15} />{error}</p>
   {:else if set}
     <ul class="rows">
-      {#each set.slots as slot (slot.id)}
+      {#each ordered as slot (slot.id)}
         {@const why = keep(slot)}
         <li class="row" class:current={has(slot, "running")}>
           <p class="line">

@@ -537,7 +537,7 @@ pub async fn save_support_bundle(
     let _ = writeln!(
         out,
         "Atlas {} on {}",
-        env!("CARGO_PKG_VERSION"),
+        crate::app_update::version(),
         std::env::consts::OS
     );
     let _ = writeln!(out, "\n== Device\n{}", pretty(&record));

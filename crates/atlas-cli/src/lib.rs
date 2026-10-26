@@ -34,7 +34,7 @@ use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 #[derive(Parser)]
 #[command(
     name = "atlas",
-    version,
+    version = env!("ATLAS_BUILD_VERSION"),
     about = "Find, update, and manage Prometheus Dynamics devices"
 )]
 struct Cli {

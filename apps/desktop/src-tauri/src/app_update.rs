@@ -24,14 +24,15 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::state::AppState;
 
 /// The version this build reports: the release's (CI sets ATLAS_VERSION
-/// from the tag), else the workspace's, which marks a development build.
+/// from the tag), else `<release>-dev.<count>+<commit>` for a build from a
+/// checkout (scripts/build-version.rs).
 pub fn version() -> &'static str {
-    option_env!("ATLAS_VERSION").unwrap_or(env!("CARGO_PKG_VERSION"))
+    env!("ATLAS_BUILD_VERSION")
 }
 
-/// Whether this is a release build rather than one from a checkout.
+/// Whether this is a release build rather than a development one.
 pub fn is_release_build() -> bool {
-    option_env!("ATLAS_VERSION").is_some()
+    !version().contains("-dev")
 }
 
 /// The keys release manifests must be signed with, one `ed25519:<hex>` per
@@ -118,7 +119,7 @@ impl AppUpdater {
                 ..AppUpdateStatus::default()
             }),
             http: reqwest::Client::builder()
-                .user_agent(concat!("atlas/", env!("CARGO_PKG_VERSION")))
+                .user_agent(concat!("atlas/", env!("ATLAS_BUILD_VERSION")))
                 .connect_timeout(Duration::from_secs(10))
                 .build()
                 .unwrap_or_default(),

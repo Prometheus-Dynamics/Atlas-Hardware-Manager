@@ -138,7 +138,9 @@ struct GhAsset {
 }
 
 /// Compares dotted versions numerically (`2026.10.0` > `2026.9.1`); a
-/// pre-release (`-rc.1`) sorts before its release.
+/// pre-release (`-rc.1`, `-dev.721`) sorts before its release, and
+/// pre-releases compare part by part as semver does (`dev.99` < `dev.100`);
+/// build metadata (`+ab12cd34`) is ignored.
 pub fn version_cmp(a: &str, b: &str) -> std::cmp::Ordering {
     fn split(v: &str) -> (Vec<u64>, Option<&str>) {
         let v = v.trim().trim_start_matches('v');
@@ -167,7 +169,25 @@ pub fn version_cmp(a: &str, b: &str) -> std::cmp::Ordering {
         (None, None) => std::cmp::Ordering::Equal,
         (None, Some(_)) => std::cmp::Ordering::Greater,
         (Some(_), None) => std::cmp::Ordering::Less,
-        (Some(a), Some(b)) => a.cmp(b),
+        (Some(a), Some(b)) => {
+            let (mut a, mut b) = (a.split('.'), b.split('.'));
+            loop {
+                let order = match (a.next(), b.next()) {
+                    (None, None) => return std::cmp::Ordering::Equal,
+                    (None, Some(_)) => return std::cmp::Ordering::Less,
+                    (Some(_), None) => return std::cmp::Ordering::Greater,
+                    (Some(a), Some(b)) => match (a.parse::<u64>(), b.parse::<u64>()) {
+                        (Ok(a), Ok(b)) => a.cmp(&b),
+                        (Ok(_), Err(_)) => std::cmp::Ordering::Less,
+                        (Err(_), Ok(_)) => std::cmp::Ordering::Greater,
+                        (Err(_), Err(_)) => a.cmp(b),
+                    },
+                };
+                if order.is_ne() {
+                    return order;
+                }
+            }
+        }
     }
 }
 
@@ -407,6 +427,16 @@ mod tests {
         assert_eq!(version_cmp("2026.1.0-rc.1", "2026.1.0"), Less);
         assert_eq!(version_cmp("2026.1", "2026.1.0"), Equal);
         assert_eq!(version_cmp("0.1.0", "2026.0.0"), Less);
+        assert_eq!(
+            version_cmp("2026.1.0-dev.99+ffffffff", "2026.1.0-dev.100+00000000"),
+            Less
+        );
+        assert_eq!(version_cmp("2026.1.0-dev.384+53464315", "2026.1.0"), Less);
+        assert_eq!(
+            version_cmp("2026.1.0-dev.384+53464315", "2026.0.0"),
+            Greater
+        );
+        assert_eq!(version_cmp("2026.1.0-dev.5+a", "2026.1.0-dev.5+b"), Equal);
     }
 
     #[test]

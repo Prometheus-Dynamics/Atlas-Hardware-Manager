@@ -48,7 +48,7 @@ pub fn init(path: &Path) {
         "START",
         &format!(
             "Atlas {} on {}",
-            env!("CARGO_PKG_VERSION"),
+            crate::app_update::version(),
             std::env::consts::OS
         ),
     );

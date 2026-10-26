@@ -9,7 +9,7 @@ schema_version = 1
 [board]
 id = "raze"
 name = "Raze"
-generated_by = "atlas devices/tools/gen-raze.py, raze package 1.0.7"
+generated_by = "atlas devices/tools/gen-raze.py, raze package 1.0.8-dev"
 
 # 16 SK6812-EC20 LEDs on GPIO13 (ws2812-pio), grb24 on the wire;
 # logical LED 0 is physical LED 5.

@@ -106,10 +106,14 @@ export function jobStatusDetail(status: DeviceJobStatus): string | null {
   }
 }
 
-/** Newest first by dotted numeric parts, falling back to string order. */
+/**
+ * Newest first by dotted numeric parts, falling back to string order. Build
+ * metadata (`+ab12cd34`) doesn't order: `2026.1.0-dev.721+ab12cd34` is just
+ * `2026.1.0-dev.721`.
+ */
 export function compareVersionsDesc(a: string, b: string): number {
-  const pa = a.split(/[.\-+]/);
-  const pb = b.split(/[.\-+]/);
+  const pa = a.split("+")[0].split(/[.-]/);
+  const pb = b.split("+")[0].split(/[.-]/);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
     const x = pa[i] ?? "";
     const y = pb[i] ?? "";

@@ -49,6 +49,8 @@ skip_ui=0
 
 commit=$(git -C "$root_dir" rev-parse --short HEAD)
 [[ -z "$(git -C "$root_dir" status --porcelain -- crates apps Cargo.toml Cargo.lock)" ]] || commit="$commit-dirty"
+# The container has no git: the version (scripts/version.sh) goes in.
+version=$("$root_dir/scripts/version.sh")
 
 "$engine" run --rm --security-opt label=disable \
   -v "$root_dir:/src" -v "$cache/target:/target" \
@@ -56,13 +58,13 @@ commit=$(git -C "$root_dir" rev-parse --short HEAD)
   -e CARGO_TARGET_DIR=/target -e CARGO_BUILD_JOBS="$jobs" \
   -e CARGO_PROFILE_RELEASE_LTO=false -e CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
   -e CARGO_PROFILE_RELEASE_INCREMENTAL=true \
-  -e SKIP_UI="$skip_ui" -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+  -e ATLAS_VERSION="$version" -e SKIP_UI="$skip_ui" -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
   -w /src "$tag" bash -euo pipefail -c '
     target=x86_64-unknown-linux-gnu
     scripts/prepare-bundle.sh "$target" >/dev/null
     cd apps/desktop
     bun install --frozen-lockfile >/dev/null
-    configs=(--config src-tauri/tauri.bundle.conf.json)
+    configs=(--config src-tauri/tauri.bundle.conf.json --config "{\"version\":\"$ATLAS_VERSION\"}")
     if [ "$SKIP_UI" = 1 ]; then
       configs+=(--config "{\"build\":{\"beforeBuildCommand\":\"\"}}")
     fi

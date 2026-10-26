@@ -227,6 +227,9 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # The version counts commits (scripts/version.sh).
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.99.0
@@ -248,7 +251,8 @@ jobs:
           scripts/prepare-bundle.sh x86_64-unknown-linux-gnu
           cd apps/desktop
           bun install --frozen-lockfile
-          bun run tauri build --target x86_64-unknown-linux-gnu --bundles deb --config src-tauri/tauri.bundle.conf.json
+          export ATLAS_VERSION="$("$GITHUB_WORKSPACE/scripts/version.sh")"
+          bun run tauri build --target x86_64-unknown-linux-gnu --bundles deb --config src-tauri/tauri.bundle.conf.json --config "{\"version\":\"$ATLAS_VERSION\"}"
           mkdir -p "$GITHUB_WORKSPACE/dist"
           cp "$GITHUB_WORKSPACE"/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb \
             "$GITHUB_WORKSPACE/dist/atlas-${GITHUB_SHA::7}-${{ matrix.name }}.deb"
@@ -276,6 +280,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # The version counts commits (scripts/version.sh).
+          fetch-depth: 0
 
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
@@ -299,7 +306,7 @@ jobs:
         working-directory: apps/desktop
         run: |
           # A tag's build carries its version (the app compares it with
-          # newer releases); a manual run keeps the workspace's.
+          # newer releases); a manual run is <release>-dev.<count>+<commit>.
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then export ATLAS_VERSION="${GITHUB_REF_NAME#v}"; fi
           bun install --frozen-lockfile
           bun run bundle

@@ -7,7 +7,12 @@
 # disk stay as they are.
 #
 # The slot id is <family>-<version>-<variant>-<commit> ([a-z0-9._-], at most
-# 64). Gaia expands input tokens once and source tokens after them, so an
+# 64), e.g. helios-2026.2.0-dev.721-styx-ab12cd34. slot_version is the
+# version without build metadata: a dev build's `2026.2.0-dev.721`, not
+# `2026.2.0-dev.721+ab12cd34` (the commit is slot_commit; `+` isn't an id
+# character, and a board's slots script refuses the id). The id only names a
+# slot: Atlas orders slots by slot.json's version (a pre-release below its
+# release, dev builds by their count), never by the id. Gaia expands input tokens once and source tokens after them, so an
 # input's value may be a source token (slot_commit =
 # "${source.<id>.commit_short}") but not another input's token: set
 # slot_variant per variant or preset, not as "${input.backend}".
@@ -19,7 +24,7 @@ kind = "string"
 required = true
 
 [inputs.slot_version]
-description = "OS version in the slot id (e.g. PhotonVision's Raze jar version, without its describe)"
+description = "OS version in the slot id and slot.json, without build metadata: a release's 2026.2.0, a dev build's 2026.2.0-dev.<count> (Gaia ${project.commit_count}); the commit goes in slot_commit"
 kind = "string"
 required = true
 

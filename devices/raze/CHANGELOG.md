@@ -3,8 +3,14 @@
 ## Unreleased
 
 Development work since 1.0.7, not yet validated on hardware as a release.
-The package version stays 1.0.7 until a real release. OSes pin this layer by
-commit; the commits are listed per area.
+The package version is 1.0.8-dev until that release (a patch bump plus -dev).
+OSes pin this layer by commit; the commits are listed per area.
+
+- **Versions (2026-10-26):** the package is 1.0.8-dev. A slot's
+  `slot_version` is the OS version without build metadata (a dev build's
+  `2026.2.0-dev.<count>`, not `…+<commit>`): `+` isn't a slot id character.
+  The id stays `<family>-<version>-<variant>-<commit>`, e.g.
+  `helios-2026.2.0-dev.721-styx-ab12cd34`; Atlas orders slots by version.
 
 ### Breaking and ABI notes
 
