@@ -12,11 +12,12 @@ use atlas_driver_rpi::{RpiConfig, RpiDriver, SshKeys, UsbBootLinks};
 
 use crate::settings::AppPaths;
 
-/// Folders that may hold device packages (`devices/<model>/`).
+/// The app's own folders for device packages (`devices/<model>/`): the
+/// bundled ones and the data folder's.
 fn device_dirs(paths: &AppPaths) -> Vec<PathBuf> {
     let mut dirs: Vec<PathBuf> = install::bundled_device_dirs();
     dirs.push(paths.data_dir.join("devices"));
-    atlas_devices::default_search_dirs(&dirs)
+    dirs
 }
 
 /// Registers every hardware driver and link source this build includes.
@@ -27,8 +28,11 @@ pub fn register_hardware(
     ssh_access: &SshAccess,
     warnings: &mut Vec<String>,
 ) -> AtlasBuilder {
-    let searched = device_dirs(paths);
-    let catalog = Arc::new(DeviceCatalog::load(&searched));
+    let own = device_dirs(paths);
+    let catalog = Arc::new(DeviceCatalog::load(&atlas_devices::default_search_dirs(
+        &own,
+    )));
+    let searched = atlas_devices::search_report(&own);
     warnings.extend(catalog.warnings().iter().cloned());
 
     let mut boot_file_dirs = install::bundled_usbboot_dirs();

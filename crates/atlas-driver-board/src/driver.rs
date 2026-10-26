@@ -531,7 +531,8 @@ pub struct CatalogHealth {
 }
 
 impl CatalogHealth {
-    pub fn new(catalog: &DeviceCatalog, searched: &[std::path::PathBuf]) -> Self {
+    /// `searched`: every place Atlas looked (`atlas_devices::search_report`).
+    pub fn new(catalog: &DeviceCatalog, searched: &[String]) -> Self {
         Self {
             summary: catalog.summary(searched),
         }

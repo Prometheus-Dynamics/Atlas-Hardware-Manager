@@ -18,7 +18,7 @@ mod gadget;
 mod hardware;
 mod manifest;
 
-pub use catalog::{DeviceCatalog, DevicePackage, default_search_dirs};
+pub use catalog::{DeviceCatalog, DevicePackage, default_search_dirs, search_report};
 pub use compat::{CompatEntry, CompatImage, CompatList, CompatStatus};
 pub use gadget::{GadgetAddressing, GadgetSubnet, SERIAL_HASH_V1};
 pub use hardware::{

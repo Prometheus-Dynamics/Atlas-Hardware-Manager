@@ -218,8 +218,10 @@ fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
             if let Some(data) = dirs::data_dir() {
                 device_dirs.push(data.join("atlas").join("devices"));
             }
-            let searched = atlas_devices::default_search_dirs(&device_dirs);
-            let catalog = Arc::new(DeviceCatalog::load(&searched));
+            let catalog = Arc::new(DeviceCatalog::load(&atlas_devices::default_search_dirs(
+                &device_dirs,
+            )));
+            let searched = atlas_devices::search_report(&device_dirs);
             for warning in catalog.warnings() {
                 output::error(&format!("device package: {warning}"));
             }
