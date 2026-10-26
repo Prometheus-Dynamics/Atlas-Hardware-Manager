@@ -69,7 +69,7 @@ impl PackageMethod {
     }
 
     /// Runs `script` as `systemcore`; its stdout, or why it failed.
-    async fn run(&self, script: &str) -> Result<String, DriverError> {
+    pub(crate) async fn run(&self, script: &str) -> Result<String, DriverError> {
         let output = self
             .ssh()
             .arg(script)
@@ -287,6 +287,7 @@ impl InstallMethod for PackageMethod {
             }
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
+        crate::systemcore_versions::forget(self.ip);
         sink.log(if units.is_empty() {
             format!("{package} installed (it has no services)")
         } else {

@@ -1,6 +1,7 @@
 //! A WPILib SystemCore (FRC 2027 controller, Limelight OS), read-only:
 //! found over its USB link or at `.2` on the robot network, and named by
-//! the team its own API reports. No login.
+//! the team its own API reports. Its versions come by SSH key
+//! (`crate::systemcore_versions`).
 //!
 //! - USB: the gadget is `1d6b:0104` with manufacturer `Limelight`; the
 //!   unit is `172.27.0.1` on its ECM link (Linux and macOS hosts) or

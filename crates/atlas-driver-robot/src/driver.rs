@@ -226,8 +226,9 @@ impl Driver for SystemcoreDriver {
         } else {
             None
         };
-        let identity =
+        let mut identity =
             crate::systemcore::read(&self.http, ip, candidate.link.clone(), serial).await?;
+        identity.versions = crate::systemcore_versions::read(ip).await;
         if let Some(team) = identity.attributes.get("team").and_then(|t| t.parse().ok()) {
             RobotTeams::shared().add(team);
         }

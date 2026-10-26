@@ -22,6 +22,7 @@ pub mod pull;
 pub mod radio;
 pub mod roborio;
 pub mod systemcore;
+pub mod systemcore_versions;
 
 pub use driver::{ControllerDriver, RadioDriver, SystemcoreDriver, drivers};
 pub use probe::{RobotHosts, RobotProbe, own_robot_nets};
