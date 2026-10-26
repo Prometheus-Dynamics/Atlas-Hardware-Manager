@@ -200,6 +200,13 @@ pub fn update_status_entries(
     entries
 }
 
+/// Whether the node refused a publish because the agent has no claims
+/// there (Orion: "clients may publish ... only `action.*` keys and ... keys
+/// of node actions they claimed").
+pub(crate) fn refused_for_claims(error: &str) -> bool {
+    error.contains("authorization failed") && error.contains("claimed")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -94,6 +94,12 @@ pub struct Agent {
     apply_gate: tokio::sync::Mutex<()>,
     /// What was last published, to publish only changes between ticks.
     published: tokio::sync::Mutex<Option<Published>>,
+    /// Whether the last publish failed (its error is logged once a run).
+    failing: AtomicBool,
+    /// Told when the node refuses the agent's keys: it no longer has the
+    /// claims (a restarted orion-node the watch hasn't noticed), so the
+    /// agent must claim again (`run` starts over).
+    pub(crate) claims_lost: tokio::sync::Notify,
 }
 
 impl Agent {
@@ -110,6 +116,8 @@ impl Agent {
             generation: AtomicU64::new(0),
             apply_gate: tokio::sync::Mutex::new(()),
             published: tokio::sync::Mutex::new(None),
+            failing: AtomicBool::new(false),
+            claims_lost: tokio::sync::Notify::new(),
         })
     }
 
@@ -156,11 +164,18 @@ impl Agent {
             now.2.as_ref(),
         );
         match self.reporter.publish_status(entries).await {
-            Ok(()) => *published = Some(now),
+            Ok(()) => {
+                *published = Some(now);
+                self.failing.store(false, Ordering::Relaxed);
+            }
             Err(error) => {
                 // Logged once per run of failures, then retried every tick.
-                if published.is_some() {
+                let error = error.to_string();
+                if !self.failing.swap(true, Ordering::Relaxed) {
                     crate::log(&format!("publishing the update state: {error}"));
+                }
+                if crate::published::refused_for_claims(&error) {
+                    self.claims_lost.notify_one();
                 }
                 *published = None;
             }

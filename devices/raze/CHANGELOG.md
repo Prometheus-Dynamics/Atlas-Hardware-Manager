@@ -14,6 +14,15 @@ OSes pin this layer by commit; the commits are listed per area.
 
 ### Breaking and ABI notes
 
+- **board-agent claims again after orion-node restarts:** the node keeps
+  claims and status in memory, and the claim watch doesn't always notice a
+  restart (the security switch restarts orion-node seconds after boot). The
+  agent then had no claims on the new node: every publish of its
+  `update.*` keys and `action.claimed` was refused, silently (only a failure
+  after a success was logged), and Orion showed no slots, updates or actions
+  for the board. Now a publish refused for missing claims ends the session
+  and the agent claims again, and the first failure of a run is logged.
+
 - **The reported OS version is the running slot's (identity):** pd-device's
   `os.version` and the mDNS `os_ver` come from the running slot's
   /etc/slot.json `version` (`2026.2.0-dev.727`, the version slots are

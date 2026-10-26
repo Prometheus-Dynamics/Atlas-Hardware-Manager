@@ -80,8 +80,12 @@ impl Board {
             retry: Duration::from_millis(20),
             ..Config::default()
         };
+        // As main does: start over whenever a run ends.
         let agent = tokio::spawn(async move {
-            let _ = board_agent::run(config).await;
+            loop {
+                let _ = board_agent::run(config.clone()).await;
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
         });
         Self {
             dir,

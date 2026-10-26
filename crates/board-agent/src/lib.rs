@@ -24,7 +24,7 @@ mod writer;
 
 use std::sync::Arc;
 
-use orion_client::{ClientError, LocalNodeRuntime, LocalProviderService, LocalServiceRetryPolicy};
+use orion_client::{LocalNodeRuntime, LocalProviderService, LocalServiceRetryPolicy};
 use orion_control_plane::ProviderRecord;
 use orion_core::{NodeId, ProviderId};
 
@@ -54,7 +54,7 @@ pub fn log(message: &str) {
 /// Claims the actions and serves them until the connection fails for good.
 /// The service retries connecting with `config.retry` without a limit, so
 /// this waits for orion-node to come up (or back).
-pub async fn run(config: Config) -> Result<(), ClientError> {
+pub async fn run(config: Config) -> Result<(), String> {
     let config = Arc::new(config);
     let runtime = LocalNodeRuntime::new(&config.control_socket, &config.stream_socket);
     // Claims need no registered provider; the record only names the client.
@@ -69,7 +69,10 @@ pub async fn run(config: Config) -> Result<(), ClientError> {
         "connecting to orion-node at {} (waiting until it accepts)",
         config.control_socket.display()
     ));
-    let mut watch = service.claim_node_actions(CLAIMED_ACTIONS).await?;
+    let mut watch = service
+        .claim_node_actions(CLAIMED_ACTIONS)
+        .await
+        .map_err(|error| error.to_string())?;
     log(&format!(
         "connected to node {}; claimed {}",
         watch.node_id(),
@@ -80,7 +83,14 @@ pub async fn run(config: Config) -> Result<(), ClientError> {
     let follower = AbortOnDrop(tokio::spawn(agent.clone().follow()));
     let mut reconnects = watch.reconnects();
     loop {
-        let request = watch.next().await?;
+        let request = tokio::select! {
+            request = watch.next() => request.map_err(|error| error.to_string())?,
+            // The node lost the claims without the watch noticing (it
+            // restarted): claim again from the start.
+            () = agent.claims_lost.notified() => {
+                return Err("the node no longer has this agent's claims (it restarted?)".into());
+            }
+        };
         if watch.reconnects() != reconnects {
             reconnects = watch.reconnects();
             agent.publish(true).await;
