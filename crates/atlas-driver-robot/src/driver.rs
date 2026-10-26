@@ -251,6 +251,13 @@ impl Driver for SystemcoreDriver {
         }
     }
 
+    /// The boards behind it, as its HeliOS lists them
+    /// (`crate::controller_peers`): reached only through the routes HeliOS
+    /// offers for them.
+    async fn children(&self, device: &Identity) -> Result<Vec<Candidate>, DriverError> {
+        crate::controller_peers::candidates(&self.http, ip_of(&device.address)?).await
+    }
+
     /// While one is plugged in here: whether its USB link has an address,
     /// and that nothing else on this computer holds the unit's.
     async fn health(&self) -> Vec<atlas_driver::HealthCheck> {

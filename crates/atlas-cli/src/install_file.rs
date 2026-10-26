@@ -36,7 +36,7 @@ pub(crate) async fn install(atlas: &Atlas, args: InstallArgs, as_json: bool) -> 
         ),
         None => None,
     };
-    atlas.scan().await;
+    crate::commands::scan_settled(atlas).await;
     let key = resolve(atlas, &args.device)?;
     let artifact = local_artifact(&args.file).await?;
     let kind = {

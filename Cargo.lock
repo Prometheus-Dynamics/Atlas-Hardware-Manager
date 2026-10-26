@@ -188,6 +188,7 @@ dependencies = [
  "atlas-driver",
  "atlas-driver-board",
  "atlas-driver-mock",
+ "atlas-driver-orion",
  "atlas-driver-robot",
  "atlas-driver-rpi",
  "atlas-release",

@@ -279,6 +279,18 @@ fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
             for driver in atlas_driver_robot::drivers() {
                 builder = builder.driver(driver);
             }
+            // Each board's own orion-node (slots, actions, status without an
+            // SSH key while its security switch is off; the only way to a
+            // board behind a robot controller), with the app's operator key.
+            if let Some(data) = dirs::data_dir() {
+                match atlas_driver_orion::operator_identity(&data.join("atlas")) {
+                    Ok(identity) => {
+                        let nodes = atlas_driver_orion::BoardNodes::new(identity, None, None, None);
+                        builder = builder.link_source(nodes.clone()).capability_source(nodes);
+                    }
+                    Err(error) => output::error(&format!("Orion operator key: {error}")),
+                }
+            }
         }
     }
     builder.build().map_err(|error| error.to_string())

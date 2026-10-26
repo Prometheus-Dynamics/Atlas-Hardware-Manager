@@ -80,6 +80,10 @@ impl BoardNodes {
     /// The node of the board at `address` (its identity URL).
     fn url_for(&self, address: &str) -> String {
         let url = LiveStreams::url_for(address);
+        if atlas_driver::controller_peer::ControllerPeer::from_address(address).is_some() {
+            // The tunnel's own loopback port.
+            return url;
+        }
         match url.rsplit_once(':') {
             Some((host, _)) => format!("{host}:{}", self.port),
             None => url,

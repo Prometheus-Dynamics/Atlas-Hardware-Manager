@@ -66,13 +66,26 @@ impl OrionDirectory {
     pub async fn refresh(&self) -> Result<usize, atlas_driver::DriverError> {
         let result = match self.transport.nodes().await {
             Ok(records) => {
-                let map: HashMap<String, NodeRecord> = records
-                    .into_iter()
-                    .filter_map(|record| {
-                        let serial = record.host.as_ref()?.board_serial.as_deref()?;
-                        Some((normalize_board_serial(serial)?, record))
-                    })
-                    .collect();
+                let mut map: HashMap<String, NodeRecord> = HashMap::new();
+                for record in records {
+                    let Some(serial) = record
+                        .host
+                        .as_ref()
+                        .and_then(|host| host.board_serial.as_deref())
+                        .and_then(normalize_board_serial)
+                    else {
+                        continue;
+                    };
+                    // One board, two records: the board's node under its
+                    // old placeholder id (`node-local`, before its own id)
+                    // is never the one to talk to.
+                    let keep_old = map
+                        .get(&serial)
+                        .is_some_and(|old| !is_placeholder(old) && is_placeholder(&record));
+                    if !keep_old {
+                        map.insert(serial, record);
+                    }
+                }
                 let agents = self.agents_among(map.values()).await;
                 Ok((map, agents))
             }
@@ -172,6 +185,11 @@ impl OrionDirectory {
             .get(&board_serial.to_ascii_lowercase())
             .cloned()
     }
+}
+
+/// Orion's default node id, which a board's node had before it had its own.
+fn is_placeholder(record: &NodeRecord) -> bool {
+    record.node_id.as_str() == "node-local"
 }
 
 #[async_trait]

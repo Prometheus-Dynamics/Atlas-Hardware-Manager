@@ -8,6 +8,7 @@
 mod augment;
 mod bundle;
 mod capability;
+pub mod controller_peer;
 mod driver;
 mod error;
 mod hardware;

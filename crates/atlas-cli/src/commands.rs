@@ -205,8 +205,17 @@ fn print_plan(plan: &JobPlan) {
     output::table(&["DEVICE", "FROM", "TO", "ORDER", "PLAN"], &rows);
 }
 
-pub(crate) async fn update(atlas: &Atlas, options: UpdateOptions) -> CommandResult {
+/// A scan for a command that acts on a device: twice, since a board's own
+/// orion-node (its slots, actions and updates without an SSH key, and the
+/// only way to a board behind a robot controller) is found from the first
+/// scan's identity and reached on the next.
+pub(crate) async fn scan_settled(atlas: &Atlas) {
     atlas.scan().await;
+    atlas.scan().await;
+}
+
+pub(crate) async fn update(atlas: &Atlas, options: UpdateOptions) -> CommandResult {
+    scan_settled(atlas).await;
     let request = build_request(atlas, &options).await?;
     let plan = atlas
         .plan_update(&request)
@@ -333,7 +342,7 @@ pub(crate) async fn action(
     action: Option<&str>,
     as_json: bool,
 ) -> CommandResult {
-    atlas.scan().await;
+    scan_settled(atlas).await;
     let key = resolve(atlas, selector)?;
     let Some(action) = action else {
         let actions = atlas.actions(&key).map_err(|error| error.to_string())?;

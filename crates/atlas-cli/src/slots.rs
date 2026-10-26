@@ -76,7 +76,7 @@ pub(crate) async fn slots(
     command: Option<SlotsCommand>,
     as_json: bool,
 ) -> CommandResult {
-    atlas.scan().await;
+    crate::commands::scan_settled(atlas).await;
     let key = resolve(atlas, selector)?;
     let command = match command.unwrap_or(SlotsCommand::List) {
         SlotsCommand::List => {

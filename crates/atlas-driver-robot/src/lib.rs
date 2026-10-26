@@ -15,6 +15,7 @@
 //!   the robot program's console as logs (`console`). [`pull`] saves them.
 
 pub mod console;
+pub mod controller_peers;
 mod driver;
 pub mod package;
 pub mod probe;
