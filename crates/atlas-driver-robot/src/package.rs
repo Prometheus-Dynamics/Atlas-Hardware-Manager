@@ -10,9 +10,12 @@
 //! 1. Preflight: a login by key works.
 //! 2. Transfer: the file streams into `/tmp/atlas-install.ipk` (whole, or
 //!    not at all: it lands under another name first).
-//! 3. Apply: `sudo -n opkg install --force-reinstall` (an upgrade keeps the
-//!    package's conffiles), and the file goes.
-//! 4. Confirm: every systemd service the package installs is active.
+//! 3. Apply: `sudo -n opkg install --force-reinstall --force-downgrade`
+//!    (the file is the exact build wanted, even when opkg orders it below
+//!    the installed one; an upgrade keeps the package's conffiles), and the
+//!    file goes. The installed version must then be the file's.
+//! 4. Confirm: every systemd service the package installs is active. One
+//!    stuck failed from before (start limit hit) is reset and started.
 //!
 //! Nothing on the unit changes before Apply ([`ChangeTracker`]).
 
@@ -42,6 +45,20 @@ pub fn package_name(file_name: &str) -> Option<String> {
             .chars()
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '+' | '-'));
     plain.then(|| name.to_string())
+}
+
+/// The package's version from its opkg file name
+/// (`helios_2026.2.0-dev.721+ab12cd34_aarch64.ipk` is
+/// `2026.2.0-dev.721+ab12cd34`), when it is a plain one.
+pub fn file_version(file_name: &str) -> Option<String> {
+    let mut parts = file_name.strip_suffix(".ipk")?.split('_');
+    parts.next()?;
+    let version = parts.next()?;
+    let plain = !version.is_empty()
+        && version
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '+' | '-' | '~' | ':'));
+    plain.then(|| version.to_string())
 }
 
 pub struct PackageMethod {
@@ -233,7 +250,7 @@ impl InstallMethod for PackageMethod {
         sink.step_started(UpdateStep::Apply);
         let installed = self
             .run(&format!(
-                "sudo -n opkg install --force-reinstall {REMOTE}; rc=$?; rm -f {REMOTE}; exit $rc"
+                "sudo -n opkg install --force-reinstall --force-downgrade {REMOTE}; rc=$?; rm -f {REMOTE}; exit $rc"
             ))
             .await;
         installed.map_err(|error| {
@@ -242,6 +259,27 @@ impl InstallMethod for PackageMethod {
                 message: error.to_string(),
             })
         })?;
+
+        let want = file_version(&request.artifact.name)
+            .or_else(|| Some(request.version.clone()).filter(|v| !v.is_empty()));
+        if let Some(want) = want {
+            let have = self
+                .run(&format!(
+                    "opkg status {package} | sed -n 's/^Version: *//p'"
+                ))
+                .await
+                .map_err(|e| tracker.failure(e))?;
+            let have = have.trim();
+            if have != want {
+                return Err(tracker.failure(DriverError::StepFailed {
+                    step: "Installing the package".into(),
+                    message: format!(
+                        "installed version is {}, expected {want}",
+                        if have.is_empty() { "none" } else { have }
+                    ),
+                }));
+            }
+        }
 
         sink.step_started(UpdateStep::Confirm);
         let units: Vec<String> = self
@@ -260,6 +298,20 @@ impl InstallMethod for PackageMethod {
             })
             .map(str::to_string)
             .collect();
+        if !units.is_empty() {
+            // A unit that hit its start limit under the old version stays
+            // failed through the upgrade: systemd refuses to start it.
+            let restart = units
+                .iter()
+                .map(|unit| {
+                    format!(
+                        "if systemctl is-failed --quiet {unit}; then sudo -n systemctl reset-failed {unit}; sudo -n systemctl start --no-block {unit}; fi"
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            self.run(&restart).await.map_err(|e| tracker.failure(e))?;
+        }
         let deadline = tokio::time::Instant::now() + SETTLE;
         loop {
             let mut down = Vec::new();
@@ -319,5 +371,11 @@ mod tests {
             "never onto a command line"
         );
         assert_eq!(package_name("helios.img.xz"), None);
+        assert_eq!(
+            file_version("helios_2026.2.0-dev.721+ab12cd34_aarch64.ipk").as_deref(),
+            Some("2026.2.0-dev.721+ab12cd34")
+        );
+        assert_eq!(file_version("helios_1;reboot_all.ipk"), None);
+        assert_eq!(file_version("helios.ipk"), None);
     }
 }
