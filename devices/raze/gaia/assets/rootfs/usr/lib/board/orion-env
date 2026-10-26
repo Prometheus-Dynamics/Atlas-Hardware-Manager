@@ -5,9 +5,12 @@
 #
 # /run/board/orion.env: ORION_NODE_ID=<id>, read by both units (drop-ins),
 # so lemnosd's devices are registered on the node they run on. The id is the
-# OS's own ORION_NODE_ID from /etc/default/orion-node.env when it sets one
-# (orion-node reads that file too, so the two agree), else raze-<serial8>:
-# the name Atlas shows.
+# OS's own ORION_NODE_ID from /etc/default/orion-node.env when it sets a
+# real one (orion-node reads that file too, so the two agree), else
+# raze-<last 4 hex of the board serial> (0708c973b00a37bc: raze-37bc), the
+# rule HeliOS's robot env uses, so the two never disagree and each board on
+# a robot has its own. Orion's placeholder `node-local` isn't a real id:
+# every board would share it.
 #
 # /run/board/orion-node.env: orion-node's access, from the security switch
 # (security.env), read by orion-node only:
@@ -91,7 +94,7 @@ fi
 
 os_id=$(os_value ORION_NODE_ID)
 
-if [ -n "$os_id" ]; then
+if [ -n "$os_id" ] && [ "$os_id" != node-local ]; then
 	id=$os_id
 else
 	serial8=$(board_serial8)
@@ -99,7 +102,7 @@ else
 		board_log "no board serial or machine id; orion-node keeps its own id"
 		exit 0
 	fi
-	id=raze-$serial8
+	id=raze-${serial8#"${serial8%????}"}
 fi
 
 tmp=$BOARD_RUN_DIR/.orion.env.$$

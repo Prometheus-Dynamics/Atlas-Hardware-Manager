@@ -14,6 +14,15 @@ OSes pin this layer by commit; the commits are listed per area.
 
 ### Breaking and ABI notes
 
+- **Orion node id per board (orion-env):** the board's id is
+  `raze-<last 4 hex of the serial>` (0708c973b00a37bc: `raze-37bc`), the
+  rule HeliOS's robot env uses, instead of `raze-<serial8>`; an OS's
+  `ORION_NODE_ID=node-local` (Orion's placeholder) no longer wins over it.
+  With HeliOS's id set by its own drop-in and `node-local` copied here after
+  it, orion-node stayed `node-local`, refused HeliOS's provider snapshot
+  ("belongs to node raze-37bc"), and every board on a robot collided. An
+  OS's own real id still wins.
+
 - **Keyless updates while security is off (orion-env):** with the security
   switch off (FRC's default) orion-node enrolls an operator on its hello for
   everything Atlas does: updates and slots (`update*`, `slot.*`), reboot,

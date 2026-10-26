@@ -23,17 +23,22 @@ env_is() { [ "$(cat "$T/run/orion.env")" = "$1" ] || fail "orion.env: $(cat "$T/
 
 # No OS setting: the board's name, as Atlas shows it.
 run
-env_is 'ORION_NODE_ID=raze-a317bcbe'
+env_is 'ORION_NODE_ID=raze-bcbe'
 
 # The OS's own id wins (the last assignment, quotes and export dropped).
 printf '# ORION_NODE_ID=commented\nORION_NODE_ID=first\nexport ORION_NODE_ID="robot-cam-1"\n' > "$T/orion-node.env"
 run
 env_is 'ORION_NODE_ID=robot-cam-1'
 
+# Orion's placeholder isn't an id: every board would share it.
+printf 'ORION_NODE_ID=node-local\n' > "$T/orion-node.env"
+run
+env_is 'ORION_NODE_ID=raze-bcbe'
+
 # A commented-out example sets nothing.
 printf '#ORION_NODE_ID=node.example\n' > "$T/orion-node.env"
 run
-env_is 'ORION_NODE_ID=raze-a317bcbe'
+env_is 'ORION_NODE_ID=raze-bcbe'
 
 # No serial and no machine id: nothing written, orion-node keeps its own.
 rm -f "$T/dt/serial-number" "$T/run/orion.env"
