@@ -92,6 +92,7 @@ pub struct BoardDriver {
 }
 
 impl BoardDriver {
+    #[cfg(test)]
     pub fn new(package: DevicePackage) -> Self {
         Self::with_ssh(package, SshAccess::default())
     }

@@ -22,7 +22,7 @@ mod writer;
 pub use client::{HelperClient, HelperRequest};
 pub use disk::{Disk, check_target};
 pub use error::BlockError;
-pub use image::{ImageFormat, detect_format};
+pub use image::ImageFormat;
 pub use messages::HelperMessage;
 pub use platform::list_disks;
 pub use session::{

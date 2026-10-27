@@ -151,7 +151,7 @@ async fn a_board_that_can_restart_into_usb_boot_offers_it() {
     let usb_boot = actions
         .actions(&identity)
         .into_iter()
-        .find(|action| action.id == crate::USB_BOOT_ACTION)
+        .find(|action| action.id == crate::ssh_actions::USB_BOOT_ACTION)
         .unwrap();
     assert!(usb_boot.destructive);
 }
@@ -235,9 +235,13 @@ async fn a_board_with_a_wrong_clock_offers_to_set_it() {
     assert!(
         actions
             .iter()
-            .any(|a| a.id == crate::SET_CLOCK_ACTION && !a.destructive)
+            .any(|a| a.id == crate::ssh_actions::SET_CLOCK_ACTION && !a.destructive)
     );
-    assert!(!actions.iter().any(|a| a.id == crate::USB_BOOT_ACTION));
+    assert!(
+        !actions
+            .iter()
+            .any(|a| a.id == crate::ssh_actions::USB_BOOT_ACTION)
+    );
 }
 
 #[tokio::test]
@@ -390,10 +394,10 @@ async fn a_board_with_status_and_events_reports_them() {
         .collect();
     for id in [
         "locate",
-        crate::REBOOT_ACTION,
-        crate::POWER_OFF_ACTION,
-        crate::UPDATE_CANCEL_ACTION,
-        crate::UPDATE_ROLLBACK_ACTION,
+        crate::ssh_actions::REBOOT_ACTION,
+        crate::ssh_actions::POWER_OFF_ACTION,
+        crate::ssh_actions::UPDATE_CANCEL_ACTION,
+        crate::ssh_actions::UPDATE_ROLLBACK_ACTION,
     ] {
         assert!(ids.iter().any(|have| have == id), "{id} in {ids:?}");
     }

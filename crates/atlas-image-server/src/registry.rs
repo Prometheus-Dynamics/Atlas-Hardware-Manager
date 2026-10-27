@@ -145,7 +145,7 @@ impl Registry {
 
     /// Drops registrations unused for longer than `expiry`, unless a
     /// download is still running.
-    pub fn prune(&mut self, expiry: Duration) {
+    pub(crate) fn prune(&mut self, expiry: Duration) {
         let now = Instant::now();
         self.entries.retain(|_, entry| {
             entry.active.load(Ordering::Relaxed) > 0

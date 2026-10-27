@@ -11,9 +11,9 @@ use atlas_driver::util::hex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::image::decode_into;
+use crate::image::{decode_into, detect_format};
 use crate::platform::{SECTOR, open_for_verify, open_for_write, prepare_for_write};
-use crate::{BlockError, Disk, detect_format};
+use crate::{BlockError, Disk};
 
 const CHUNK: usize = 4 << 20;
 const PROGRESS_EVERY: Duration = Duration::from_millis(250);

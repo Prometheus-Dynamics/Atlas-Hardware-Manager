@@ -500,8 +500,10 @@ impl ReleaseCatalog {
 mod download;
 mod local;
 
+#[cfg(test)]
+use local::KEEP_LOCAL;
+pub use local::local_artifact;
 use local::prune_local;
-pub use local::{KEEP_LOCAL, local_artifact};
 
 #[cfg(test)]
 mod tests;

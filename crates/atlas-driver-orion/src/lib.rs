@@ -36,7 +36,7 @@ mod update;
 pub use board_nodes::BoardNodes;
 pub use directory::OrionDirectory;
 pub use live::{LiveFrame, LiveRow, LiveStreams};
-pub use operator::{KEY_FILE, operator_identity};
+pub use operator::operator_identity;
 pub use orion_client::remote::OperatorIdentity;
 pub use remote::{OrionConnection, RemoteTransport};
 pub use transport::{BundleHost, OrionTransport};

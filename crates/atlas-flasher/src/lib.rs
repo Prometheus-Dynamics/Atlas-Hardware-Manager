@@ -118,7 +118,7 @@ impl Transport for UsbTransport {
 }
 
 /// Whether a USB device is a Raze flasher.
-pub fn is_flasher(info: &DeviceInfo) -> bool {
+pub(crate) fn is_flasher(info: &DeviceInfo) -> bool {
     info.vendor_id() == VENDOR_ID
         && info.product_id() == PRODUCT_ID
         && info.product_string() == Some(PRODUCT)

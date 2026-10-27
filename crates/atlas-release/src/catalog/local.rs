@@ -9,7 +9,7 @@ use crate::{ReleaseError, sha256_file};
 
 /// Unpinned local images kept in the list; older ones drop off (the files
 /// themselves are never touched).
-pub const KEEP_LOCAL: usize = 5;
+pub(crate) const KEEP_LOCAL: usize = 5;
 
 pub(crate) fn prune_local(entries: &mut Vec<ReleaseEntry>) {
     let mut unpinned: Vec<(u64, String)> = entries

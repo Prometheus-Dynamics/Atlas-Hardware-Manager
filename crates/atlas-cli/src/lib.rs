@@ -311,7 +311,7 @@ const NAME: &str = "atlas";
 
 /// Marks a command line for the CLI when the program isn't named `atlas`:
 /// the Linux packages' `/usr/bin/atlas` runs `atlas-app --cli "$@"`.
-pub const CLI_FLAG: &str = "--cli";
+pub(crate) const CLI_FLAG: &str = "--cli";
 
 /// The CLI's command line when `args` (all of them, the program first) ask
 /// for the CLI rather than the desktop app: the program is named `atlas`

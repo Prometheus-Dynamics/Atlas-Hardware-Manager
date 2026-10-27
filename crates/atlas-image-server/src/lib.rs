@@ -289,7 +289,11 @@ impl ImageServer {
     /// The host for URLs a board at `peer` fetches: the bound address when
     /// bound to one, else the local address of the route to `peer`, else
     /// the configured host.
-    pub fn host_for(&self, peer: Option<IpAddr>, local: SocketAddr) -> Result<String, DriverError> {
+    pub(crate) fn host_for(
+        &self,
+        peer: Option<IpAddr>,
+        local: SocketAddr,
+    ) -> Result<String, DriverError> {
         if !local.ip().is_unspecified() {
             return Ok(route::url_host(local.ip()));
         }

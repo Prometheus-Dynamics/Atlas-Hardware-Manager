@@ -181,10 +181,6 @@ impl Browser {
             .push(notify);
         true
     }
-
-    pub fn error(&self) -> Option<&str> {
-        self.state.as_ref().err().map(String::as_str)
-    }
 }
 
 #[cfg(test)]

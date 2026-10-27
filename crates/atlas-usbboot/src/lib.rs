@@ -26,9 +26,9 @@ mod usb;
 pub use bootfiles::BootFiles;
 pub use chip::{BROADCOM_VENDOR_ID, Chip};
 pub use error::UsbBootError;
-pub use gadget::{STORAGE_GADGET_PRODUCT_ID, StorageGadget, list_storage_gadgets};
+pub use gadget::{StorageGadget, list_storage_gadgets};
 pub use hotplug::watch_usb;
-pub use protocol::{BootEvent, BootTransport, FileServerOutcome, file_server, second_stage};
+pub use protocol::{BootEvent, BootTransport, FileServerOutcome, second_stage};
 pub use usb::{
     BOOT_PRODUCT_IDS, BootDevice, BootOptions, BootOutcome, LINUX_UDEV_RULE, LINUX_UDEV_RULES_FILE,
     UsbBootTransport, boot_device, list_boot_devices,

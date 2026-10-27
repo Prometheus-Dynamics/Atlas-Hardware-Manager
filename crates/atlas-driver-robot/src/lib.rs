@@ -4,7 +4,7 @@
 //!
 //! - Where: the robot network is `10.TE.AM.0/24` (`atlas_driver::robot_net`);
 //!   the controller is `.2`, the radio `.1` or `.4`. Atlas looks there when
-//!   this computer is on that network ([`own_robot_nets`]) and behind a
+//!   this computer is on that network (`own_robot_nets`) and behind a
 //!   board's USB route (the board driver asks [`RobotProbe`] and hands
 //!   these drivers what answers, as the board's children).
 //! - Who: the controller by NI's web page and CTRE Phoenix's diagnostics
@@ -15,15 +15,15 @@
 //!   the robot program's console as logs (`console`). [`pull`] saves them.
 
 pub mod console;
-pub mod controller_peers;
+mod controller_peers;
 mod driver;
-pub mod package;
-pub mod probe;
+mod package;
+mod probe;
 pub mod pull;
 pub mod radio;
-pub mod roborio;
-pub mod systemcore;
-pub mod systemcore_versions;
+mod roborio;
+mod systemcore;
+mod systemcore_versions;
 
-pub use driver::{ControllerDriver, RadioDriver, SystemcoreDriver, drivers};
-pub use probe::{RobotHosts, RobotProbe, own_robot_nets};
+pub use driver::drivers;
+pub use probe::RobotProbe;

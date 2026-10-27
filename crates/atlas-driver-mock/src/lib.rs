@@ -10,7 +10,7 @@ mod fleet;
 mod observe;
 
 pub use driver::MockDriver;
-pub use fleet::{MockBehavior, MockDevice, MockFleet, SIM_LINK_ID};
+pub use fleet::{MockBehavior, MockDevice, MockFleet};
 
 /// Family name used for simulated HeliOS-like gateway devices.
 pub const SIM_HELIOS: &str = "sim-helios";

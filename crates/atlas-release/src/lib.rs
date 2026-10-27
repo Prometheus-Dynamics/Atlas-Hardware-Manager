@@ -13,11 +13,11 @@ mod manifest;
 
 pub use app_update::{
     APP_FAMILY, AppInstaller, AppRelease, AppUpdateQuery, InstallKind, VerifiedInstaller,
-    download_app_installer, latest_app_release, version_cmp,
+    download_app_installer, latest_app_release,
 };
 pub use catalog::{
-    Channel, DownloadProgress, KEEP_LOCAL, ReleaseCatalog, ReleaseEntry, ReleaseOrigin,
-    RemoteSource, local_artifact,
+    Channel, DownloadProgress, ReleaseCatalog, ReleaseEntry, ReleaseOrigin, RemoteSource,
+    local_artifact,
 };
 pub use error::ReleaseError;
 pub use hash::{normalize_sha256, sha256_file};
