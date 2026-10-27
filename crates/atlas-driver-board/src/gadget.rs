@@ -68,7 +68,11 @@ impl GadgetProbe {
 }
 
 fn identity_url(address: &str) -> String {
-    format!("http://{address}:5899{}", crate::IDENTITY_PATH)
+    format!(
+        "http://{address}:{}{}",
+        crate::sweep::PORT,
+        crate::IDENTITY_PATH
+    )
 }
 
 /// One probe per plugged-in gadget of this model.

@@ -179,7 +179,7 @@ impl Sweeper {
                                     .to_string()
                             };
                             let swept = Swept {
-                                serial: text("serial"),
+                                serial: crate::contract::key_serial(&text("serial")),
                                 model: text("model").to_ascii_lowercase(),
                             };
                             (url, swept)

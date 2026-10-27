@@ -389,7 +389,7 @@ impl Driver for BoardDriver {
             candidates.extend(
                 found
                     .into_iter()
-                    .filter(|(_, swept)| !swept.serial.eq_ignore_ascii_case(own_serial))
+                    .filter(|(_, swept)| swept.serial != *own_serial)
                     .filter(|(_, swept)| !swept.model.is_empty())
                     .map(|(address, swept)| Candidate {
                         link: link.clone(),
