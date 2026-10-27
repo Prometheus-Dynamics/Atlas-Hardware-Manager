@@ -10,6 +10,9 @@ cargo fmt --all --check
 echo "==> Checking file sizes"
 "$root_dir/scripts/check-file-sizes.sh"
 
+echo "==> Testing the package versions"
+scripts/tests/package-versions.sh
+
 echo "==> Testing the device package (every devices/raze/tests/*.sh, in parallel)"
 sh devices/raze/tests/all.sh
 

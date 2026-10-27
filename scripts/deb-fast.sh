@@ -49,7 +49,8 @@ skip_ui=0
 
 commit=$(git -C "$root_dir" rev-parse --short HEAD)
 [[ -z "$(git -C "$root_dir" status --porcelain -- crates apps Cargo.toml Cargo.lock)" ]] || commit="$commit-dirty"
-# The container has no git: the version (scripts/version.sh) goes in.
+# The container has no git: the version (scripts/version.sh) goes in. The
+# .deb carries it as dpkg orders it (scripts/package-versions.sh).
 version=$("$root_dir/scripts/version.sh")
 
 "$engine" run --rm --security-opt label=disable \
@@ -69,6 +70,7 @@ version=$("$root_dir/scripts/version.sh")
       configs+=(--config "{\"build\":{\"beforeBuildCommand\":\"\"}}")
     fi
     bun run tauri build --target "$target" --bundles deb "${configs[@]}"
+    ../../scripts/package-versions.sh fix-debs "/target/$target/release/bundle/deb" "$ATLAS_VERSION"
     chown -R "$HOST_UID:$HOST_GID" /target build src-tauri/binaries 2>/dev/null || true
   '
 printf '%s\n' "$ui_key" > "$cache/ui.key"

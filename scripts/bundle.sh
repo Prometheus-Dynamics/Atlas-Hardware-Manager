@@ -8,7 +8,9 @@
 # ATLAS_VERSION (CI sets it from the tag, v2026.1.0 -> 2026.1.0) is the
 # version the app reports and its installers carry; without it they carry
 # <release>-dev.<commit count>+<commit> (scripts/version.sh), which the app
-# treats as a development build when it looks for updates.
+# treats as a development build when it looks for updates. A dev build's
+# .deb and .rpm carry it as dpkg and rpm order it, below the release
+# (scripts/package-versions.sh).
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,4 +28,13 @@ fi
 
 cd "$root_dir/apps/desktop"
 bun run tauri build --target "$target" "${configs[@]}"
-echo "Installers are in ${CARGO_TARGET_DIR:-$root_dir/target}/$target/release/bundle/"
+bundle_dir="$(cargo metadata -q --format-version 1 --no-deps |
+  sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')/$target/release/bundle"
+rpm_config=$("$root_dir/scripts/package-versions.sh" rpm-config "$ATLAS_VERSION")
+if [[ "$target" == *linux* && -n "$rpm_config" ]]; then
+  "$root_dir/scripts/package-versions.sh" fix-debs "$bundle_dir/deb" "$ATLAS_VERSION"
+  # Bundled again from the same build, nothing recompiled.
+  rm -f "$bundle_dir/rpm/"*"-$ATLAS_VERSION-"*.rpm
+  bun run tauri bundle --target "$target" --bundles rpm "${configs[@]}" --config "$rpm_config"
+fi
+echo "Installers are in $bundle_dir/"
