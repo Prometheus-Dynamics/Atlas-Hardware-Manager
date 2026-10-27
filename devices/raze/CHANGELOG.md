@@ -14,6 +14,16 @@ OSes pin this layer by commit; the commits are listed per area.
 
 ### Breaking and ABI notes
 
+- **Slots in Orion one per key (board-agent):** Orion keeps a status value
+  to 1024 bytes and refuses a whole publish over one longer one. The slot
+  list as one `update.slots` value outgrows that in a few slots (4.5 kB
+  with 13), so a board with many slots published nothing: no slots, update
+  state or claimed actions in Orion. Now `update.slot_count` and
+  `update.slots.<n>` (one slot's JSON each, without its `layers` if that
+  alone is too long); `update.slots` keeps the whole list while it fits and
+  is empty after. An entry too long for Orion is left out (and logged)
+  instead of sinking the rest. Atlas reads either form.
+
 - **board-agent claims again after orion-node restarts:** the node keeps
   claims and status in memory, and the claim watch doesn't always notice a
   restart (the security switch restarts orion-node seconds after boot). The

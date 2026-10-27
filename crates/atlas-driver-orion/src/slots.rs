@@ -50,11 +50,23 @@ pub(crate) fn slot_set(keys: &HashMap<String, String>) -> Result<Option<SlotSet>
     }
     let get = |key: &str| keys.get(key).cloned().unwrap_or_default();
     let bytes = |key: &str| get(key).parse().unwrap_or(0);
-    let slots = match keys.get("update.slots") {
-        Some(json) if !json.is_empty() => serde_json::from_str(json).map_err(|error| {
-            DriverError::Other(format!("the board's slot list is unreadable: {error}"))
-        })?,
-        _ => Vec::new(),
+    let unreadable = |error: serde_json::Error| {
+        DriverError::Other(format!("the board's slot list is unreadable: {error}"))
+    };
+    // One slot per key (`update.slot_count`, `update.slots.<n>`: a list
+    // outgrows one Orion status value), else the whole list in one.
+    let slots = match keys
+        .get("update.slot_count")
+        .and_then(|n| n.parse::<usize>().ok())
+    {
+        Some(count) => (0..count)
+            .filter_map(|index| keys.get(&format!("update.slots.{index}")))
+            .map(|json| serde_json::from_str(json).map_err(unreadable))
+            .collect::<Result<Vec<_>, _>>()?,
+        None => match keys.get("update.slots") {
+            Some(json) if !json.is_empty() => serde_json::from_str(json).map_err(unreadable)?,
+            _ => Vec::new(),
+        },
     };
     Ok(Some(SlotSet {
         running: get(update_action::KEY_SLOT_ACTIVE),
@@ -269,5 +281,19 @@ mod tests {
         assert!(set.slots[1].pinned);
         assert_eq!(set.slots[0].display_name.as_deref(), Some("HeliOS"));
         assert_eq!(set.slots[1].display_name, None);
+
+        // One slot per key wins over the whole list (which a long list
+        // leaves out).
+        let mut keys = keys;
+        keys.remove("update.slots");
+        keys.insert("update.slot_count".into(), "2".into());
+        keys.insert(
+            "update.slots.0".into(),
+            r#"{"id":"pv-a","flags":["running"]}"#.into(),
+        );
+        keys.insert("update.slots.1".into(), r#"{"id":"pv-c"}"#.into());
+        let set = slot_set(&keys).unwrap().unwrap();
+        let ids: Vec<&str> = set.slots.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids, ["pv-a", "pv-c"]);
     }
 }

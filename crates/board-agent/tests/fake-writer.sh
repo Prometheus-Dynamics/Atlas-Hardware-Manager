@@ -19,8 +19,16 @@ VERSION_STAGED='$VERSION_STAGED' PROGRESS='$PROGRESS' ERROR='$ERROR' PREVIOUS='$
 EOF
 	mv "$RUN/fake.env.tmp" "$RUN/fake.env"
 	slots=''
+	# With $RUN/slots-many, 13 slots more: a list too long for one Orion
+	# status value, as on a real board.
+	more=''
+	if [ -e "$RUN/slots-many" ]; then
+		for n in 1 2 3 4 5 6 7 8 9 10 11 12 13; do
+			more="$more,{\"id\":\"helios-2026.2.0-dev.$n-styx-0000000$n\",\"family\":\"helios\",\"version\":\"2026.2.0-dev.$n\",\"display_name\":\"HeliOS\",\"pinned\":false}"
+		done
+	fi
 	[ ! -e "$RUN/slots-layout" ] ||
-		slots=',"layout":"slots","slot_default":"running","slot_previous":null,"slot_trial":null,"free_bytes":5000000000,"reserve_bytes":536870912,"slots":[{"id":"running","pinned":false},{"id":"pv-b","pinned":false}]'
+		slots=',"layout":"slots","slot_default":"running","slot_previous":null,"slot_trial":null,"free_bytes":5000000000,"reserve_bytes":536870912,"slots":[{"id":"running","pinned":false},{"id":"pv-b","pinned":false}'"$more"']'
 	printf '{"state":"%s","slot_active":"%s","slot_staged":"%s","version_active":"%s","version_staged":"%s","progress":%s,"error":"%s"%s}\n' \
 		"$STATE" "$SLOT_ACTIVE" "$SLOT_STAGED" "$VERSION_ACTIVE" "$VERSION_STAGED" "$PROGRESS" "$ERROR" "$slots" > "$RUN/update.json.tmp"
 	mv "$RUN/update.json.tmp" "$RUN/update.json"

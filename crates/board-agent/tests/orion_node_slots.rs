@@ -135,6 +135,26 @@ async fn slot_actions_run_the_slots_writer_and_slots_are_published() {
     );
     assert!(!calls.iter().any(|c| c == "apply"), "{calls:?}");
 
+    // A long list (a real board's): one slot per key, `update.slots` empty,
+    // and the rest of the keys still published.
+    std::fs::write(board.run.join("slots-many"), "").unwrap();
+    let status = std::process::Command::new(board.dir.join("update"))
+        .arg("status")
+        .env("BOARD_RUN_DIR", &board.run)
+        .output()
+        .unwrap();
+    assert!(status.status.success());
+    board
+        .wait_value(board_agent::KEY_SLOT_COUNT, TypedConfigValue::UInt(15))
+        .await;
+    assert_eq!(board.value(board_agent::KEY_SLOTS), Some(text("")));
+    let Some(TypedConfigValue::String(last)) =
+        board.value(&format!("{}14", board_agent::KEY_SLOT_PREFIX))
+    else {
+        panic!("no update.slots.14");
+    };
+    assert!(last.contains("dev.13-styx"), "{last}");
+    assert!(board.value("action.claimed").is_some());
     board.stop().await;
 }
 

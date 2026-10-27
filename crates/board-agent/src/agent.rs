@@ -156,13 +156,14 @@ impl Agent {
         if !force && published.as_ref() == Some(&now) {
             return;
         }
-        let entries = update_status_entries(
+        let mut entries = update_status_entries(
             &self.reporter,
             &now.0,
             &self.boot_id,
             now.1.as_ref(),
             now.2.as_ref(),
         );
+        crate::published::keep_fitting(&mut entries, !self.failing.load(Ordering::Relaxed));
         match self.reporter.publish_status(entries).await {
             Ok(()) => {
                 *published = Some(now);

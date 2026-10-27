@@ -34,6 +34,17 @@ pub const KEY_SLOT_TRIAL: &str = "update.slot_trial";
 pub const KEY_FREE_BYTES: &str = "update.free_bytes";
 pub const KEY_RESERVE_BYTES: &str = "update.reserve_bytes";
 pub const KEY_SLOTS: &str = "update.slots";
+/// The slots one per key, since Orion keeps a status value to
+/// [`MAX_VALUE_BYTES`] and a board's list outgrows that in a few slots:
+/// `update.slot_count`, then `update.slots.0` … each one slot's JSON (its
+/// `layers` left out when that alone is too long). `update.slots` still
+/// carries the whole list while it fits (for Atlas before these keys), and
+/// is empty once it doesn't.
+pub const KEY_SLOT_COUNT: &str = "update.slot_count";
+pub const KEY_SLOT_PREFIX: &str = "update.slots.";
+/// Orion's limit on one status value (orion-node `MAX_STATUS_VALUE_BYTES`):
+/// it refuses a whole publish with any value longer.
+pub const MAX_VALUE_BYTES: usize = 1024;
 
 /// How this boot began, from the boot record (`/run/board/boot.json`) and
 /// the kernel logs kept for it (`/data/board/pstore/<boot id>/`): the boot
@@ -179,8 +190,26 @@ pub fn update_status_entries(
                 KEY_RESERVE_BYTES,
                 TypedConfigValue::UInt(status.reserve_bytes),
             ),
-            reporter.node_status_entry(KEY_SLOTS, text(&status.slots.to_string())),
         ]);
+        // Empty when too long: the node would keep a shorter list from
+        // before.
+        let all = status.slots.to_string();
+        let all = if all.len() <= MAX_VALUE_BYTES {
+            all
+        } else {
+            String::new()
+        };
+        entries.push(reporter.node_status_entry(KEY_SLOTS, text(&all)));
+        let slots = status.slots.as_array().cloned().unwrap_or_default();
+        entries.push(
+            reporter.node_status_entry(KEY_SLOT_COUNT, TypedConfigValue::UInt(slots.len() as u64)),
+        );
+        for (index, slot) in slots.into_iter().enumerate() {
+            entries.push(
+                reporter
+                    .node_status_entry(format!("{KEY_SLOT_PREFIX}{index}"), text(&slot_json(slot))),
+            );
+        }
     }
     if let Some(event) = last_event {
         entries.extend([
@@ -198,6 +227,40 @@ pub fn update_status_entries(
         ]);
     }
     entries
+}
+
+/// Leaves out the entries Orion won't keep (it refuses a whole publish over
+/// one value too long), saying which when `log`.
+pub(crate) fn keep_fitting(entries: &mut Vec<StatusEntry>, log: bool) {
+    entries.retain(|entry| {
+        let fits = value_fits(&entry.value);
+        if !fits && log {
+            crate::log(&format!("{} is too long for Orion; left out", entry.key));
+        }
+        fits
+    });
+}
+
+/// Whether Orion keeps `value` (strings and bytes up to [`MAX_VALUE_BYTES`]).
+pub(crate) fn value_fits(value: &TypedConfigValue) -> bool {
+    match value {
+        TypedConfigValue::String(text) => text.len() <= MAX_VALUE_BYTES,
+        TypedConfigValue::Bytes(bytes) => bytes.len() <= MAX_VALUE_BYTES,
+        _ => true,
+    }
+}
+
+/// One slot's JSON for its own key: whole when it fits in a status value,
+/// else without its `layers` (the slot itself still shows).
+fn slot_json(mut slot: serde_json::Value) -> String {
+    let whole = slot.to_string();
+    if whole.len() <= MAX_VALUE_BYTES {
+        return whole;
+    }
+    if let Some(object) = slot.as_object_mut() {
+        object.remove("layers");
+    }
+    slot.to_string()
 }
 
 /// Whether the node refused a publish because the agent has no claims
@@ -248,5 +311,30 @@ mod tests {
             ("", "")
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_slot_fits_one_status_value() {
+        let layers: Vec<serde_json::Value> = (0..20)
+            .map(|n| serde_json::json!({"name": format!("layer-{n}"), "id": "0".repeat(64), "size": 1}))
+            .collect();
+        let big =
+            serde_json::json!({"id": "helios-2026.2.0-dev.727-styx-756b5cda", "layers": layers});
+        assert!(big.to_string().len() > MAX_VALUE_BYTES);
+        let json = slot_json(big);
+        assert!(json.len() <= MAX_VALUE_BYTES, "{json}");
+        assert!(
+            json.contains("756b5cda") && !json.contains("layers"),
+            "{json}"
+        );
+        let small = serde_json::json!({"id": "a", "layers": []});
+        assert_eq!(slot_json(small.clone()), small.to_string());
+        assert!(value_fits(&TypedConfigValue::String(
+            "x".repeat(MAX_VALUE_BYTES)
+        )));
+        assert!(!value_fits(&TypedConfigValue::String(
+            "x".repeat(MAX_VALUE_BYTES + 1)
+        )));
+        assert!(value_fits(&TypedConfigValue::UInt(7)));
     }
 }
