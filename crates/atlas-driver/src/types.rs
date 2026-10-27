@@ -119,7 +119,7 @@ impl LinkKind {
     }
 
     /// Whether two kinds are the same variant, ignoring gateway details.
-    pub fn same_variant(&self, other: &Self) -> bool {
+    pub(crate) fn same_variant(&self, other: &Self) -> bool {
         std::mem::discriminant(self) == std::mem::discriminant(other)
     }
 }

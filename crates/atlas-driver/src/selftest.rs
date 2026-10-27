@@ -10,9 +10,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::{DriverError, Identity};
 
-/// The report format this Atlas reads.
-pub const SELFTEST_FORMAT: u32 = 1;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CheckStatus {
@@ -41,7 +38,7 @@ pub struct SelfTestCheck {
 /// The whole report.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SelfTestReport {
-    /// The report format, [`SELFTEST_FORMAT`] today.
+    /// The report format, 1 today.
     #[serde(default)]
     pub version: u32,
     /// The board serial as the device reads it (full hex).
@@ -211,7 +208,7 @@ mod tests {
     #[test]
     fn the_device_report_parses() {
         let report = SelfTestReport::parse(&format!("warming up\n{REPORT}\n")).unwrap();
-        assert_eq!(report.version, SELFTEST_FORMAT);
+        assert_eq!(report.version, 1);
         assert!(!report.ok);
         assert_eq!(report.checks[0].data["count"], 16);
         assert_eq!(report.checks[3].status, CheckStatus::Unknown);

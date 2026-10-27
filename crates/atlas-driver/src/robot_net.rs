@@ -100,7 +100,7 @@ pub fn team_of(ip: Ipv4Addr) -> Option<u16> {
 }
 
 /// Team `team`'s robot network, `10.TE.AM.0/24`.
-pub fn team_net(team: u16) -> Option<Net> {
+pub(crate) fn team_net(team: u16) -> Option<Net> {
     if !(1..=MAX_TEAM).contains(&team) {
         return None;
     }

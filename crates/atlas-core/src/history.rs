@@ -26,7 +26,7 @@ use crate::{Atlas, CoreError, DeviceRecord, Event};
 use atlas_driver::util::now_ms;
 
 /// Board events kept per board.
-pub const BOARD_EVENTS_LIMIT: usize = 500;
+pub(crate) const BOARD_EVENTS_LIMIT: usize = 500;
 /// Events asked for at a time, and the pages one sync may fetch.
 const PAGE: usize = 200;
 const MAX_PAGES: usize = 5;

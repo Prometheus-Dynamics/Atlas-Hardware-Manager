@@ -98,24 +98,6 @@ impl SlotSet {
     pub fn room(&self) -> u64 {
         self.free_bytes.saturating_sub(self.reserve_bytes)
     }
-
-    /// Why `id` can't be removed, if it can't (the writer checks again).
-    pub fn remove_refusal(&self, id: &str) -> Option<String> {
-        let slot = self.slots.iter().find(|slot| slot.id == id)?;
-        if slot.has("running") {
-            Some(format!("{id} is running"))
-        } else if slot.has("default") {
-            Some(format!(
-                "{id} is the default; make another the default first"
-            ))
-        } else if slot.has("trial") {
-            Some(format!("{id} is on trial"))
-        } else if slot.pinned {
-            Some(format!("{id} is pinned; unpin it first"))
-        } else {
-            None
-        }
-    }
 }
 
 /// A change to a board's slots.
@@ -319,8 +301,6 @@ mod tests {
         assert_eq!(set.room(), 8000);
         assert_eq!(set.slots[0].good, "yes");
         assert!(set.slots[0].has("default"));
-        assert!(set.remove_refusal("pv-a").unwrap().contains("running"));
-        assert!(set.remove_refusal("pv-b").unwrap().contains("pinned"));
         assert_eq!(set.slots[0].display_name, None);
         assert_eq!(
             set.slots[1].display_name.as_deref(),

@@ -132,10 +132,6 @@ impl Metric {
         self.warn_above = warn_above;
         self
     }
-
-    pub fn is_warning(&self) -> bool {
-        self.warn_above.is_some_and(|limit| self.value > limit)
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

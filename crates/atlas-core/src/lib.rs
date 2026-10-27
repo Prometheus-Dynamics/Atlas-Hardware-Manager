@@ -35,7 +35,7 @@ pub use atlas::{Atlas, AtlasBuilder, AtlasOptions};
 pub use clock::ClockSync;
 pub use error::CoreError;
 pub use events::Event;
-pub use history::{BOARD_EVENTS_LIMIT, BoardEventLog, HistoryEntry, HistoryOrigin};
+pub use history::{BoardEventLog, HistoryEntry, HistoryOrigin};
 pub use install_methods::{InstallChoice, InstallChoices};
 pub use inventory::{DeviceRecord, Presence};
 pub use jobs::{

@@ -197,11 +197,6 @@ impl ChangeTracker {
         (Self { changed }, sink)
     }
 
-    /// Marks the device as changed (a method that knows it is past the point).
-    pub fn mark_changed(&self) {
-        self.changed.store(true, Ordering::SeqCst);
-    }
-
     /// `error` as a failure, with whether the device changed.
     pub fn failure(&self, error: DriverError) -> InstallFailure {
         InstallFailure {

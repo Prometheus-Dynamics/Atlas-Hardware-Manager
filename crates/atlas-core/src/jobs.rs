@@ -99,7 +99,7 @@ impl DeviceJobStatus {
         !matches!(self, Self::Queued | Self::Running)
     }
 
-    pub fn is_verified(&self) -> bool {
+    pub(crate) fn is_verified(&self) -> bool {
         matches!(self, Self::Verified { .. })
     }
 

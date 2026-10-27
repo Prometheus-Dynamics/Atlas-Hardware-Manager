@@ -46,9 +46,7 @@ pub use observe::{
     LogLevel, LogLine, LogsCapability, Metric, TelemetryCapability, attributes, metric_ids,
 };
 pub use registry::DriverRegistry;
-pub use selftest::{
-    CheckStatus, SELFTEST_FORMAT, SelfTestCapability, SelfTestCheck, SelfTestReport, SelfTestStep,
-};
+pub use selftest::{CheckStatus, SelfTestCapability, SelfTestCheck, SelfTestReport, SelfTestStep};
 pub use slots::{
     LayerPush, LayerPushed, PushMode, Slot, SlotCommand, SlotInstall, SlotLayer, SlotSet,
     SlotsCapability, refusal,

@@ -278,11 +278,6 @@ impl Atlas {
         }
     }
 
-    /// Whether any device driver is registered.
-    pub fn has_drivers(&self) -> bool {
-        !self.inner.registry.is_empty()
-    }
-
     pub fn subscribe(&self) -> broadcast::Receiver<Event> {
         self.inner.events.subscribe()
     }
