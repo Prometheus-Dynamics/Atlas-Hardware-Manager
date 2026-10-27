@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use atlas_driver::util::round_to as round;
 use atlas_driver::{DriverError, HardwareFrame, LiveChannel, LiveDevice, Metric, metric_ids};
 use orion_client::remote::{NodeTrust, OperatorIdentity, RemoteError, RemoteOperator};
 use orion_control_plane::{
@@ -82,11 +83,6 @@ fn metric_for(series: &str) -> Option<String> {
                 .map(|zone| format!("temp.{zone}"))
         }
     }
-}
-
-fn round(value: f64, places: i32) -> f64 {
-    let scale = 10f64.powi(places);
-    (value * scale).round() / scale
 }
 
 /// A row's values as Atlas metrics, as `metrics_from` names them.
@@ -270,20 +266,11 @@ impl LiveStreams {
         if let Some(url) = crate::peer_tunnel::orion_url(address) {
             return url;
         }
-        let rest = address.split_once("://").map_or(address, |(_, rest)| rest);
-        let authority = rest.split('/').next().unwrap_or(rest);
-        let host = match authority.strip_prefix('[') {
-            Some(bracketed) => bracketed.split(']').next().unwrap_or(bracketed),
-            // `host:port`; more colons: a bare IPv6 address.
-            None if authority.matches(':').count() == 1 => {
-                authority.split(':').next().unwrap_or(authority)
-            }
-            None => authority,
-        };
-        if host.contains(':') {
-            return format!("orion+tcp://[{host}]:{DEFAULT_PORT}");
-        }
-        format!("orion+tcp://{host}:{DEFAULT_PORT}")
+        let host = atlas_driver::util::address_host(address).unwrap_or(address);
+        format!(
+            "orion+tcp://{}",
+            atlas_driver::util::host_port(host, DEFAULT_PORT)
+        )
     }
 
     /// The board's node at `url`, its key checked against the pin.

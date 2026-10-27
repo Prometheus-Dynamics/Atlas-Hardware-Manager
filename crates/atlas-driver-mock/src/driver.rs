@@ -414,7 +414,7 @@ impl ActionsCapability for MockActions {
         if action_id == "reboot"
             && let Some(mock) = state.devices.get_mut(&device.key)
         {
-            mock.booted_ms = crate::observe::now_ms();
+            mock.booted_ms = atlas_driver::util::now_ms();
         }
         if action_id == "set-clock"
             && let Some(mock) = state.devices.get_mut(&device.key)

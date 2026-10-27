@@ -9,8 +9,8 @@ use atlas_driver::{DeviceKey, DeviceMode, DriverError};
 
 use crate::atlas::Inner;
 use crate::selftest::{AFTER_UPDATE_WINDOW, board_of};
-use crate::time::now_ms;
 use crate::{Atlas, CoreError, DeviceRecord};
+use atlas_driver::util::now_ms;
 
 /// The board action that adds this computer's key.
 pub const SSH_KEY_ADD: &str = "ssh-key.add";

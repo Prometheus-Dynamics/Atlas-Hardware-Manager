@@ -180,7 +180,7 @@ mod tests {
         std::env::temp_dir().join(format!(
             "atlas-core-store-{label}-{}-{}.json",
             std::process::id(),
-            crate::time::now_ms()
+            atlas_driver::util::now_ms()
         ))
     }
 

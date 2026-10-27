@@ -393,7 +393,7 @@ impl UpdateCapability for SshUpdate {
             .as_ref()
             .ok_or_else(|| DriverError::Incompatible("no image chosen".into()))?;
         // It goes into the board's command line: hex only.
-        if artifact.sha256.len() != 64 || !artifact.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+        if !atlas_driver::util::is_sha256_hex(&artifact.sha256) {
             return Err(DriverError::Other(format!(
                 "{} has no usable SHA-256, which the board needs to check its copy",
                 artifact.name

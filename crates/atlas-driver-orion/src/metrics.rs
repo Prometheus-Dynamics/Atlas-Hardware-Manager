@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use atlas_driver::util::round_to as round;
 use atlas_driver::{DriverError, Identity, Metric, TelemetryCapability, metric_ids};
 use orion_control_plane::{NodeRecord, StatusEntry, StatusQuery, StatusSubject, TypedConfigValue};
 use orion_core::NodeId;
@@ -25,11 +26,6 @@ fn bytes(value: f64) -> String {
     } else {
         format!("{:.0} MiB", value / MIB)
     }
-}
-
-fn round(value: f64, places: i32) -> f64 {
-    let scale = 10f64.powi(places);
-    (value * scale).round() / scale
 }
 
 /// Turns `host.*` status entries into Atlas metrics. Known keys get the

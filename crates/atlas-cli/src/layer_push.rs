@@ -44,7 +44,7 @@ pub(crate) fn entry(text: &str, name: &str) -> Result<Value, String> {
         found
             .pointer(path)
             .and_then(Value::as_str)
-            .filter(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()))
+            .filter(|s| atlas_driver::util::is_sha256_hex(s))
             .map(str::to_ascii_lowercase)
             .ok_or_else(|| format!("layer {name}: {} isn't 64 hex digits", &path[1..]))
     };

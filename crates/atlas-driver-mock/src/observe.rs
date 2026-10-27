@@ -1,7 +1,7 @@
 //! Simulated telemetry and logs: smooth, plausible numbers that move a
 //! little on every read, so the UI has something live to show.
 
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use async_trait::async_trait;
 use atlas_driver::{
@@ -9,17 +9,12 @@ use atlas_driver::{
     metric_ids,
 };
 
+use atlas_driver::util::{now_ms, round_to as round};
+
 use crate::{MockDevice, MockFleet, SIM_HELIOS};
 
 /// A simulated camera view: a test pattern any `<img>` can show.
 pub(crate) const TEST_PATTERN: &str = "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 320 180'%3E%3Crect width='320' height='180' fill='%23111'/%3E%3Cg opacity='.85'%3E%3Crect x='0' width='46' height='120' fill='%23ddd'/%3E%3Crect x='46' width='46' height='120' fill='%23dd0'/%3E%3Crect x='92' width='46' height='120' fill='%230dd'/%3E%3Crect x='138' width='46' height='120' fill='%230d0'/%3E%3Crect x='184' width='46' height='120' fill='%23d0d'/%3E%3Crect x='230' width='46' height='120' fill='%23d00'/%3E%3Crect x='276' width='44' height='120' fill='%2300d'/%3E%3C/g%3E%3Ctext x='160' y='156' fill='%23aaa' font-family='sans-serif' font-size='14' text-anchor='middle'%3ESimulated camera%3C/text%3E%3C/svg%3E";
-
-pub(crate) fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
-        .unwrap_or(0)
-}
 
 /// A stable 0..1 phase per device, so devices do not move in lockstep.
 fn phase(device: &MockDevice) -> f64 {
@@ -34,11 +29,6 @@ fn wave(device: &MockDevice, period_s: f64, low: f64, high: f64) -> f64 {
     let jitter = ((t * 7.3 + phase(device) * 13.0).sin()) * 0.06;
     let unit = ((x.sin() + 1.0) / 2.0 + jitter).clamp(0.0, 1.0);
     low + (high - low) * unit
-}
-
-fn round(value: f64, places: i32) -> f64 {
-    let scale = 10f64.powi(places);
-    (value * scale).round() / scale
 }
 
 pub(crate) fn metrics(device: &MockDevice) -> Vec<Metric> {

@@ -1,6 +1,6 @@
-use std::fmt::Write as _;
 use std::path::Path;
 
+use atlas_driver::util::is_sha256_hex;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncReadExt;
 
@@ -36,17 +36,10 @@ pub fn normalize_sha256(raw: &str) -> Option<String> {
         Some(_) => return None,
         None => trimmed,
     };
-    (value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit()))
-        .then(|| value.to_ascii_lowercase())
+    is_sha256_hex(value).then(|| value.to_ascii_lowercase())
 }
 
-pub(crate) fn to_hex(bytes: &[u8]) -> String {
-    let mut out = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        let _ = write!(out, "{byte:02x}");
-    }
-    out
-}
+pub(crate) use atlas_driver::util::hex as to_hex;
 
 pub(crate) fn from_hex(text: &str) -> Option<Vec<u8>> {
     let text = text.trim();

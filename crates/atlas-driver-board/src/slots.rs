@@ -232,7 +232,7 @@ impl SlotsCapability for BoardSlots {
         progress: &ProgressSink,
     ) -> Result<(), DriverError> {
         let bundle = &install.bundle;
-        if bundle.sha256.len() != 64 || !bundle.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+        if !atlas_driver::util::is_sha256_hex(&bundle.sha256) {
             return Err(DriverError::Other(format!(
                 "{} has no usable SHA-256, which the board needs to check its copy",
                 bundle.name

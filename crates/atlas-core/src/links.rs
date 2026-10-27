@@ -114,24 +114,7 @@ impl DeviceLinks {
 
 /// The IP in a device address: a URL's host, or a bare IP.
 pub(crate) fn host_ip(address: &str) -> Option<IpAddr> {
-    if let Ok(ip) = address.trim_matches(['[', ']']).parse() {
-        return Some(ip);
-    }
-    let url = url_host(address)?;
-    url.trim_matches(['[', ']']).parse().ok()
-}
-
-/// The host part of `scheme://host[:port]/...`, without a URL parser.
-fn url_host(address: &str) -> Option<&str> {
-    let rest = address.split_once("://")?.1;
-    let authority = rest.split(['/', '?', '#']).next()?;
-    let authority = authority
-        .rsplit_once('@')
-        .map_or(authority, |(_, host)| host);
-    if let Some(v6) = authority.strip_prefix('[') {
-        return v6.split_once(']').map(|(host, _)| host);
-    }
-    Some(authority.split(':').next().unwrap_or(authority))
+    atlas_driver::util::address_host(address)?.parse().ok()
 }
 
 #[cfg(test)]

@@ -11,6 +11,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use atlas_devices::DevicePackage;
+use atlas_driver::util::hex;
 use atlas_driver::{ActionsCapability, DeviceAction, DriverError, Identity};
 use atlas_usbboot::{BootFiles, BootOptions, boot_device};
 use sha2::{Digest, Sha256};
@@ -38,10 +39,6 @@ fn failed(message: impl Into<String>) -> DriverError {
         step: "apply".into(),
         message: message.into(),
     }
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// Copies one role's file into the staging folder under each `names`,

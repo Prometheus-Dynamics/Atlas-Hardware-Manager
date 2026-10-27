@@ -217,23 +217,7 @@ pub(crate) async fn update_status(
 /// `http://172.31.250.1:5899/...`, or `host:port`), resolving a name. The
 /// bundle host uses it to pick the local address that routes to the board.
 pub(crate) async fn peer_address(address: &str) -> Option<IpAddr> {
-    let rest = address.split_once("://").map_or(address, |(_, rest)| rest);
-    let authority = rest.split(['/', '?', '#']).next()?;
-    let authority = authority
-        .rsplit_once('@')
-        .map_or(authority, |(_, host)| host);
-    if let Some(bracketed) = authority.strip_prefix('[') {
-        return bracketed.split(']').next()?.parse().ok();
-    }
-    if let Ok(ip) = authority.parse() {
-        return Some(ip);
-    }
-    let host = authority
-        .rsplit_once(':')
-        .map_or(authority, |(host, _)| host);
-    if host.is_empty() {
-        return None;
-    }
+    let host = atlas_driver::util::address_host(address)?;
     if let Ok(ip) = host.parse() {
         return Some(ip);
     }

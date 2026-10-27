@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 
+use atlas_driver::util::hex;
 use sha2::{Digest, Sha256};
 
 use crate::BlockError;
@@ -219,10 +220,6 @@ fn read_all(mut reader: impl Read) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
     reader.read_to_end(&mut bytes)?;
     Ok(bytes)
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 fn bundle_from_disk(disk_path: &Path, out_dir: &Path) -> Result<SlotFromImage, BlockError> {

@@ -1,7 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
+use atlas_driver::util::now_ms;
 use atlas_driver::{Artifact, Family};
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -99,13 +100,6 @@ pub struct ReleaseCatalog {
     cache_dir: PathBuf,
     state: Mutex<CatalogFile>,
     http: reqwest::Client,
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|elapsed| u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX))
-        .unwrap_or(0)
 }
 
 fn short(sha256: &str) -> &str {

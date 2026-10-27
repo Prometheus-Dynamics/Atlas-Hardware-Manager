@@ -7,8 +7,8 @@ use atlas_driver::DeviceKey;
 use serde::{Deserialize, Serialize};
 
 use crate::atlas::Inner;
-use crate::time::now_ms;
 use crate::{DeviceJobStatus, DeviceRecord, Event};
+use atlas_driver::util::now_ms;
 
 /// How many entries are kept; older ones drop off.
 pub(crate) const ACTIVITY_LIMIT: usize = 300;

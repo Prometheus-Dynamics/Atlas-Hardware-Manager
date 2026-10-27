@@ -152,26 +152,8 @@ pub fn results(message: &Value) -> Option<Vec<CameraResult>> {
 
 /// `ws://<host>:5800/websocket_data` for an address Atlas reached the board at.
 pub fn url_for(address: &str) -> String {
-    let host = address
-        .split("://")
-        .last()
-        .unwrap_or(address)
-        .split('/')
-        .next()
-        .unwrap_or(address);
-    let host = if host.starts_with('[') {
-        host.split(']')
-            .next()
-            .map(|h| format!("{h}]"))
-            .unwrap_or_default()
-    } else if host.matches(':').count() == 1 {
-        host.split(':').next().unwrap_or(host).to_owned()
-    } else if host.contains(':') {
-        format!("[{host}]")
-    } else {
-        host.to_owned()
-    };
-    format!("ws://{host}:{PORT}{PATH}")
+    let host = atlas_driver::util::address_host(address).unwrap_or(address);
+    format!("ws://{}{PATH}", atlas_driver::util::host_port(host, PORT))
 }
 
 /// Follows PhotonVision's results at `url` into `sink` until it returns

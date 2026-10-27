@@ -22,6 +22,7 @@ use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
 
+use atlas_driver::util::now_ms;
 use serde::Serialize;
 use tokio::net::UdpSocket;
 use tokio::task::JoinHandle;
@@ -136,12 +137,6 @@ impl Drop for Responder {
             task.abort();
         }
     }
-}
-
-fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 impl Responder {

@@ -145,12 +145,7 @@ pub fn nt_camera_addresses(state: State<'_, AppState>) -> Vec<NtCameraAddress> {
 
 /// The host of a URL like `http://172.31.209.217:5899/...`, unbracketed.
 fn reqwest_host(url: &str) -> Option<String> {
-    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
-    let authority = rest.split('/').next()?;
-    if let Some(v6) = authority.strip_prefix('[') {
-        return v6.split(']').next().map(str::to_string);
-    }
-    Some(authority.split(':').next()?.to_string())
+    atlas_driver::util::address_host(url).map(str::to_string)
 }
 
 #[cfg(test)]

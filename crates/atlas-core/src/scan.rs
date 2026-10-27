@@ -11,8 +11,8 @@ use tokio::task::JoinSet;
 use crate::activity::{self, ActivityEntry, ActivityKind, ActivityLevel};
 use crate::atlas::{Inner, LiveDevice};
 use crate::inventory::{Upsert, link_rank};
-use crate::time::now_ms;
 use crate::{DeviceRecord, Event};
+use atlas_driver::util::now_ms;
 
 /// How long an online device that is still found but doesn't answer stays
 /// online. A camera on a busy robot network misses an identify now and then;

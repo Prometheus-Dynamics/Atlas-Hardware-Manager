@@ -28,7 +28,6 @@ mod scan;
 mod selftest;
 mod slots;
 mod store;
-mod time;
 mod watch;
 
 pub use activity::{ActivityEntry, ActivityKind, ActivityLevel};

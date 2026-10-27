@@ -22,8 +22,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::activity::{ActivityEntry, ActivityKind, ActivityLevel};
 use crate::selftest::board_of;
-use crate::time::now_ms;
 use crate::{Atlas, CoreError, DeviceRecord, Event};
+use atlas_driver::util::now_ms;
 
 /// Board events kept per board.
 pub const BOARD_EVENTS_LIMIT: usize = 500;

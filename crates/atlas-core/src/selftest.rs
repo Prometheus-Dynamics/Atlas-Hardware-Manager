@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::activity::{ActivityEntry, ActivityKind, ActivityLevel};
 use crate::atlas::Inner;
-use crate::time::now_ms;
 use crate::{Atlas, CoreError, DeviceRecord, Event};
+use atlas_driver::util::now_ms;
 
 /// How long after a flash or update Atlas waits for the board to come back
 /// with its self-test before giving up on running it.

@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::Atlas;
 use crate::selftest::board_of;
-use crate::time::now_ms;
+use atlas_driver::util::now_ms;
 
 /// Which boards get this computer's time when their clock is off.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

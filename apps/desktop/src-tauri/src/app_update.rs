@@ -12,7 +12,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
+
+use atlas_driver::util::now_ms;
 
 use atlas_release::{
     AppRelease, AppUpdateQuery, InstallKind, PublicKey, VerifiedInstaller, download_app_installer,
@@ -301,12 +303,6 @@ pub fn start(app: &AppHandle) {
             tokio::time::sleep(RECHECK).await;
         }
     });
-}
-
-fn now_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_millis() as u64)
 }
 
 /// How this Atlas got here, which says which installer replaces it.

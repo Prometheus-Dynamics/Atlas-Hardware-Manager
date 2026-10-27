@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use atlas_driver::util::hex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -54,10 +55,6 @@ pub struct WriteReport {
     pub sha256: String,
     pub verified: bool,
     pub seconds: u64,
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
 /// Marks a cancelled write. Not `ErrorKind::Interrupted`: `io::copy`

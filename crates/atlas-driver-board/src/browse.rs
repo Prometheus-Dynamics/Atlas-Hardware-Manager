@@ -1,7 +1,7 @@
 //! One background mDNS browser shared by every board driver.
 
 use std::collections::BTreeMap;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use atlas_driver::ChangeNotifier;
@@ -34,11 +34,7 @@ impl Advertisement {
             .map(String::as_str)
             .filter(|path| path.starts_with('/'))
             .unwrap_or(crate::IDENTITY_PATH);
-        let host = match self.address {
-            IpAddr::V4(v4) => v4.to_string(),
-            IpAddr::V6(v6) => format!("[{v6}]"),
-        };
-        format!("http://{host}:{}{path}", self.port)
+        format!("http://{}{path}", SocketAddr::new(self.address, self.port))
     }
 }
 

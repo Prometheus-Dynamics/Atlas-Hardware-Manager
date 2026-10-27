@@ -88,7 +88,7 @@ impl MockDevice {
             answering_on_ethernet: true,
             step_time: Duration::from_millis(40),
             // Simulated devices have been up a while when Atlas starts.
-            booted_ms: crate::observe::now_ms().saturating_sub((3 * 3600 + 17 * 60) * 1000),
+            booted_ms: atlas_driver::util::now_ms().saturating_sub((3 * 3600 + 17 * 60) * 1000),
             board_serial: None,
             clock_offset_s: None,
             clock_settable: true,

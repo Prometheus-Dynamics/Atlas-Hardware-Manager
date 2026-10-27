@@ -17,8 +17,8 @@ use crate::jobs::{
     DeviceJobState, DeviceJobStatus, JobId, JobPlan, JobRecord, JobState, JobSummary,
     PlannedDevice, StagedRollout, UpdateRequest,
 };
-use crate::time::now_ms;
 use crate::{CoreError, Event};
+use atlas_driver::util::now_ms;
 
 pub(crate) fn plan(inner: &Inner, request: &UpdateRequest) -> Result<JobPlan, CoreError> {
     let mut seen = BTreeSet::new();

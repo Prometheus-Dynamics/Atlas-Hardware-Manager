@@ -15,8 +15,8 @@ use atlas_driver::{DeviceKey, DeviceMode};
 
 use crate::activity::{ActivityEntry, ActivityKind, ActivityLevel};
 use crate::atlas::Inner;
-use crate::time::now_ms;
 use crate::{DeviceRecord, Event, Presence};
+use atlas_driver::util::now_ms;
 
 /// How long an unnamed device on no robot is kept once it is gone.
 pub(crate) const FORGET_AFTER_MS: u64 = 7 * 24 * 3600 * 1000;

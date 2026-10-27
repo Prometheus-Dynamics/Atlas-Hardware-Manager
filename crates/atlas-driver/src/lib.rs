@@ -22,6 +22,7 @@ mod slots;
 mod status;
 mod trial;
 mod types;
+pub mod util;
 
 pub use augment::CapabilitySource;
 pub use bundle::{BundleHost, download_failed};
