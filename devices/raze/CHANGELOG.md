@@ -11,6 +11,14 @@ OSes pin this layer by commit; the commits are listed per area.
   `2026.2.0-dev.<count>`, not `…+<commit>`): `+` isn't a slot id character.
   The id stays `<family>-<version>-<variant>-<commit>`, e.g.
   `helios-2026.2.0-dev.721-styx-ab12cd34`; Atlas orders slots by version.
+- **A retry right after a failed stage starts it again (board-agent,
+  2026-10-27):** the agent kept a stage it had started as running until
+  it had read its writer's last stderr line (up to a second) and, before
+  that, from the writer's recorded failure until it exited. An `update`
+  of the same image sent then was answered "already started" and nothing
+  ran. Now a stage stops counting as running when its writer exits, and an
+  update sent after the writer recorded its failure waits for that exit
+  (at most 2 s) and starts anew.
 
 ### Breaking and ABI notes
 

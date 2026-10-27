@@ -12,12 +12,21 @@ RUN=$BOARD_RUN_DIR
 STATE=idle SLOT_ACTIVE=A SLOT_STAGED='' VERSION_ACTIVE=1.0 VERSION_STAGED='' PROGRESS=0 ERROR='' PREVIOUS=''
 [ ! -r "$RUN/fake.env" ] || . "$RUN/fake.env"
 
+# Under a lock: a `status` running beside a stage must not write back the
+# state it read before the stage's.
 save() {
-	cat > "$RUN/fake.env.tmp" <<EOF
+	(
+		flock 9
+		write_state
+	) 9>>"$RUN/fake.lock"
+}
+
+write_state() {
+	cat > "$RUN/fake.env.$$" <<EOF
 STATE='$STATE' SLOT_ACTIVE='$SLOT_ACTIVE' SLOT_STAGED='$SLOT_STAGED' VERSION_ACTIVE='$VERSION_ACTIVE'
 VERSION_STAGED='$VERSION_STAGED' PROGRESS='$PROGRESS' ERROR='$ERROR' PREVIOUS='$PREVIOUS'
 EOF
-	mv "$RUN/fake.env.tmp" "$RUN/fake.env"
+	mv "$RUN/fake.env.$$" "$RUN/fake.env"
 	slots=''
 	# With $RUN/slots-many, 13 slots more: a list too long for one Orion
 	# status value, as on a real board.
@@ -30,8 +39,8 @@ EOF
 	[ ! -e "$RUN/slots-layout" ] ||
 		slots=',"layout":"slots","slot_default":"running","slot_previous":null,"slot_trial":null,"free_bytes":5000000000,"reserve_bytes":536870912,"slots":[{"id":"running","pinned":false},{"id":"pv-b","pinned":false}'"$more"']'
 	printf '{"state":"%s","slot_active":"%s","slot_staged":"%s","version_active":"%s","version_staged":"%s","progress":%s,"error":"%s"%s}\n' \
-		"$STATE" "$SLOT_ACTIVE" "$SLOT_STAGED" "$VERSION_ACTIVE" "$VERSION_STAGED" "$PROGRESS" "$ERROR" "$slots" > "$RUN/update.json.tmp"
-	mv "$RUN/update.json.tmp" "$RUN/update.json"
+		"$STATE" "$SLOT_ACTIVE" "$SLOT_STAGED" "$VERSION_ACTIVE" "$VERSION_STAGED" "$PROGRESS" "$ERROR" "$slots" > "$RUN/update.json.$$"
+	mv "$RUN/update.json.$$" "$RUN/update.json"
 }
 
 echo "$*" >> "$RUN/calls"
@@ -39,7 +48,11 @@ echo "$*" >> "$RUN/calls"
 [ "${BOARD_EVENT_SOURCE:-}" = orion ] || echo "source-missing $*" >> "$RUN/calls"
 case "${1:-}" in
 status)
-	save
+	(
+		flock 9
+		[ ! -r "$RUN/fake.env" ] || . "$RUN/fake.env"
+		write_state
+	) 9>>"$RUN/fake.lock"
 	cat "$RUN/update.json"
 	;;
 stage-url)
@@ -54,9 +67,14 @@ stage-url)
 	save
 	case "$url" in
 	*corrupt*)
+		# Long enough for the agent to see it staging, as a download is.
+		sleep 0.2
 		STATE=error ERROR="the downloaded image failed its SHA-256 check"
 		save
 		echo "update: $ERROR" >&2
+		# Something it started keeps stderr open a while: a retry comes
+		# while the agent still reads it.
+		sleep 0.5 &
 		exit 1
 		;;
 	esac

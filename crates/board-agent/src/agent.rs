@@ -61,6 +61,8 @@ const WRITER_REFUSED: i32 = 3;
 
 /// How long `update` waits for the writer to take its lock.
 const START_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long a new update waits for a failed stage's writer to exit.
+const FAILED_STAGE_EXIT: Duration = Duration::from_secs(2);
 
 fn phase(value: &str) -> BTreeMap<String, TypedConfigValue> {
     BTreeMap::from([(
@@ -73,8 +75,16 @@ fn phase(value: &str) -> BTreeMap<String, TypedConfigValue> {
 struct Staging {
     generation: u64,
     sha256: String,
-    cancelled: Arc<AtomicBool>,
+    flags: Arc<StageFlags>,
     task: tokio::task::JoinHandle<()>,
+}
+
+#[derive(Default)]
+struct StageFlags {
+    cancelled: AtomicBool,
+    /// The writer exited; the agent may still be reading its last stderr
+    /// line or applying, but a retry starts a new stage.
+    exited: AtomicBool,
 }
 
 /// What was last published: the writer's state, the newest event and the
@@ -304,7 +314,12 @@ impl Agent {
             Ok(request) => request,
             Err(reason) => return self.reject(id, reason).await,
         };
-        let running = self.staging().as_ref().map(|s| s.sha256.clone());
+        self.await_failed_stage().await;
+        let running = self
+            .staging()
+            .as_ref()
+            .filter(|s| !s.flags.exited.load(Ordering::SeqCst))
+            .map(|s| s.sha256.clone());
         match running {
             // A retry of the running update: already started.
             Some(sha256) if sha256 == request.sha256 => {
@@ -347,20 +362,20 @@ impl Agent {
             Err(error) => return self.fail(id, error).await,
         };
         let generation = self.generation.fetch_add(1, Ordering::Relaxed) + 1;
-        let cancelled = Arc::new(AtomicBool::new(false));
+        let flags = Arc::new(StageFlags::default());
         let (started_tx, started_rx) = tokio::sync::oneshot::channel();
         let task = tokio::spawn(self.clone().run_stage(
             generation,
             child,
             tail,
             started_tx,
-            cancelled.clone(),
+            flags.clone(),
             request.apply,
         ));
         *self.staging() = Some(Staging {
             generation,
             sha256: request.sha256,
-            cancelled,
+            flags,
             task,
         });
         match tokio::time::timeout(START_TIMEOUT, started_rx).await {
@@ -374,6 +389,29 @@ impl Agent {
         }
     }
 
+    /// A stage whose writer already recorded its end (not `staging` any
+    /// more) but hasn't exited yet: waits a moment for it, so an update
+    /// sent right after the failure starts anew, not "already started".
+    async fn await_failed_stage(&self) {
+        let deadline = tokio::time::Instant::now() + FAILED_STAGE_EXIT;
+        loop {
+            let Some(flags) = self.staging().as_ref().map(|s| s.flags.clone()) else {
+                return;
+            };
+            let ended = self
+                .writer
+                .read_status()
+                .is_some_and(|s| s.state != "staging");
+            if flags.exited.load(Ordering::SeqCst)
+                || !ended
+                || tokio::time::Instant::now() >= deadline
+            {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
+
     /// The background stage: waits for the writer, then applies.
     async fn run_stage(
         self: Arc<Self>,
@@ -381,7 +419,7 @@ impl Agent {
         mut child: Child,
         tail: StderrTail,
         started: tokio::sync::oneshot::Sender<Result<(), String>>,
-        cancelled: Arc<AtomicBool>,
+        flags: Arc<StageFlags>,
         apply: bool,
     ) {
         let pid = child.id();
@@ -398,6 +436,7 @@ impl Agent {
                 }
             }
         };
+        flags.exited.store(true, Ordering::SeqCst);
         let ok = exit.as_ref().is_ok_and(|status| status.success());
         tail.finished(Duration::from_secs(1)).await;
         let reason = || {
@@ -424,7 +463,7 @@ impl Agent {
         }
         self.clear_staging(generation);
         let _gate = self.apply_gate.lock().await;
-        if cancelled.load(Ordering::SeqCst) {
+        if flags.cancelled.load(Ordering::SeqCst) {
             return;
         }
         if !ok {
@@ -458,7 +497,7 @@ impl Agent {
     async fn cancel_update(&self, id: &str) {
         let running = self.staging().take();
         if let Some(running) = &running {
-            running.cancelled.store(true, Ordering::SeqCst);
+            running.flags.cancelled.store(true, Ordering::SeqCst);
         }
         let result = {
             let _gate = self.apply_gate.lock().await;
