@@ -9,6 +9,9 @@
 //! - `compat.json`: which OS versions are known to work. Informational
 //!   only: Atlas warns, it never blocks.
 //!
+//! A device with no identity contract (the roboRIO) is recognised from its
+//! manifest's `fingerprints`, `info` and `key` instead (`recognize`).
+//!
 //! Parsing is lenient. Unknown fields are ignored so newer packages still
 //! load, and only `contract` and `model` are required.
 
@@ -17,6 +20,7 @@ mod compat;
 mod gadget;
 mod hardware;
 mod manifest;
+mod recognize;
 
 pub use catalog::{DeviceCatalog, DevicePackage, default_search_dirs, search_report};
 pub use compat::{CompatEntry, CompatImage, CompatList, CompatStatus};
@@ -27,6 +31,10 @@ pub use hardware::{
 pub use manifest::{
     DeviceManifest, EepromFile, EepromInfo, IdentityRules, Recovery, Revision, UsbBootId,
     UsbGadget, UsbId,
+};
+pub use recognize::{
+    Expect, Fingerprint, HttpAnswer, HttpGet, InfoValue, NamedPort, NotRecognized, Probe,
+    Recognized, Seen, Source, TextMatch, recognize,
 };
 
 /// The device contract version this Atlas understands.

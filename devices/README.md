@@ -29,6 +29,9 @@ devices/
     fetch.lock               files fetched by pinned URL instead of kept in git
     eeprom/                  bootloader images (small, versioned)
     gaia/                    the Gaia v2 layer, OS-neutral
+  roborio/manifest.json      a device without the identity contract: only
+                             how to recognise and read it (fingerprints,
+                             info, key; docs/devices-as-data.md)
 ```
 
 ## The rule: never block the user

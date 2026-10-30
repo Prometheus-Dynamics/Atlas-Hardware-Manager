@@ -1,0 +1,48 @@
+{
+  "schema": "urn:board:manifest:1",
+  "contract": 1,
+  "model": "roborio",
+  "package_version": "0.1.0",
+  "display_name": "roboRIO",
+  "description": "NI's FRC robot controller, read without credentials. Recognised by NI's web configuration page; read from it, CTRE Phoenix's diagnostics server (inside robot code that uses Phoenix) and which services accept a connection. Keyed by team: one robot controller per robot network. Atlas's code adds what this can't say: the CAN devices, whether robot code runs, the console as logs (crates/atlas-driver-robot/src/roborio.rs).",
+  "key": "team",
+  "fingerprints": [
+    {
+      "id": "ni-web-ui",
+      "get": { "port": 80, "path": "/" },
+      "expect": {
+        "header": { "server": { "starts_with": "Embedthis" } },
+        "body_contains": ["<title>HTML Device Configuration</title>"]
+      }
+    }
+  ],
+  "info": {
+    "team": { "address": "team" },
+    "model": {
+      "http_json": { "port": 1250, "path": "/?action=getversion", "pick": "$.System" },
+      "default": "roboRIO"
+    },
+    "versions.phoenix": {
+      "http_json": { "port": 1250, "path": "/?action=getversion", "pick": "$.Version" },
+      "word": 0
+    },
+    "versions.season": {
+      "http_json": { "port": 1250, "path": "/?action=getversion", "pick": "$.ReleaseInfo" },
+      "strip_prefix": "FRC"
+    },
+    "services": {
+      "tcp_open": [
+        { "name": "ssh", "port": 22 },
+        { "name": "ftp", "port": 21 },
+        { "name": "nt4", "port": 5810 },
+        { "name": "nt3", "port": 1735 },
+        { "name": "ds", "port": 1740 },
+        { "name": "console", "port": 1741 },
+        { "name": "phoenix", "port": 1250 }
+      ]
+    },
+    "hostname": { "template": "roboRIO-{team}-FRC" },
+    "name": { "template": "{hostname}" },
+    "manage_url": { "template": "http://{address}/" }
+  }
+}

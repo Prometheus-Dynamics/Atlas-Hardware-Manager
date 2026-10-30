@@ -1,7 +1,9 @@
 # Devices as data: discovery, info and install methods (design)
 
-Status: design, not built. Input for SystemCore's values: the capture from
-a real unit (`scripts/systemcore-capture.sh`).
+Status: steps 1 and 2 built (the roboRIO is data: `devices/roborio/`);
+step 3 waits on SystemCore's values from a real unit
+(`scripts/systemcore-capture.sh`). "As built" below says where the code
+differs from this design.
 
 Today a device family is mostly code: `atlas-driver-board` reads the board
 identity contract (`/.well-known/pd-device`) that a device package's boards
@@ -202,6 +204,33 @@ The board identity contract is one more source (`contract`), so Raze's
 driver is the same engine with its sources set to `contract`. The roboRIO
 moves into `devices/roborio/` the same way (fingerprint: NI's page and
 `Server: Embedthis`).
+
+## As built (step 2)
+
+- `atlas_devices::recognize` is the engine: the first fingerprint that
+  holds, then every `info` value (the GETs and port checks at once), keyed
+  by the value `key` names. It reaches the device through a `Probe` (GETs
+  and TCP connects to the found address), so it is tested on fixtures.
+- Text checks are `{ "equals" | "starts_with" | "contains" }`, all given
+  must hold, not regexes. An unknown check fails the package's parse, so a
+  fingerprint never matches more than its author meant.
+- Sources built: `http_json` (`pick` is `$.a.b`), `address` (a fact the
+  finder gives: `team`), `tcp_open` (named ports), `template`. Each value
+  may take `word`, `strip_prefix` and `default`. `http_text`, `mdns` and
+  `nt4` wait for a device that needs them; `contract` stays the board
+  driver's own path.
+- An `info` value's name says where it goes: `model`, `name`,
+  `versions.<x>`, anything else an attribute.
+- `devices/roborio/manifest.json` recognises and reads the roboRIO; the
+  driver uses the catalog's copy (so editing it needs no rebuild) or the
+  built-in one. Code still adds what data can't say: Phoenix's answer as a
+  whole for `atlas robot pull`, the CAN devices, whether robot code runs,
+  the console as logs.
+- The schema: a package with `fingerprints` needs `key` and `info` instead
+  of the board sections.
+- `discovery` isn't built: the roboRIO is still found by the robot-network
+  probe of `.2`, and a Raze by the identity contract over mDNS and its USB
+  gadget, which already come from its manifest (`identity.usb_gadget`).
 
 ## Order of work
 

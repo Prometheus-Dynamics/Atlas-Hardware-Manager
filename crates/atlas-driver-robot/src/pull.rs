@@ -40,9 +40,14 @@ async fn write(path: PathBuf, text: String, pulled: &mut Pulled) -> Result<(), S
 
 /// A fresh report from the robot controller at `ip`, with its CAN devices.
 pub async fn controller(ip: Ipv4Addr) -> Result<ControllerReport, String> {
-    crate::roborio::read(&client(), ip, true)
-        .await
-        .map_err(|error| error.to_string())
+    crate::roborio::read(
+        &client(),
+        crate::roborio::built_in().map_err(|error| error.to_string())?,
+        ip,
+        true,
+    )
+    .await
+    .map_err(|error| error.to_string())
 }
 
 /// The radio's status at `ip` (its WPA key hashes left out).

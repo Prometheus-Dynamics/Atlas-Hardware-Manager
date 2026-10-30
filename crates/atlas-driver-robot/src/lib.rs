@@ -17,6 +17,7 @@
 pub mod console;
 mod controller_peers;
 mod driver;
+mod http_probe;
 mod package;
 mod probe;
 pub mod pull;

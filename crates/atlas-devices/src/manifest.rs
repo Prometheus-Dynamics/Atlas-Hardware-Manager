@@ -4,6 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use crate::gadget::GadgetAddressing;
+use crate::recognize::{Fingerprint, InfoValue};
 
 /// A USB id written as `"0a5c"`, `"0x0a5c"`, or a number.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize)]
@@ -189,6 +190,16 @@ pub struct DeviceManifest {
     /// A list of names, or an object keyed by capability name.
     #[serde(default)]
     pub capabilities: Value,
+    /// For a device recognised by data rather than the identity contract
+    /// (`crate::recognize`): the `info` value that keys it (`team`).
+    #[serde(default)]
+    pub key: Option<String>,
+    /// How to tell it is this model; the first that holds wins.
+    #[serde(default)]
+    pub fingerprints: Vec<Fingerprint>,
+    /// What to read once recognised, by name.
+    #[serde(default)]
+    pub info: BTreeMap<String, InfoValue>,
 }
 
 impl DeviceManifest {

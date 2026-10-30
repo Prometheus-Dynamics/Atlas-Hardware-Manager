@@ -4,20 +4,24 @@
   "title": "Device package manifest (contract 1)",
   "description": "devices/<model>/manifest.json: what Atlas needs to recognise, recover and flash a device, and what an OS build gets from the package. Checksums are informational: tools may verify them and warn, but must let the user proceed.",
   "type": "object",
-  "required": [
-    "schema",
-    "contract",
-    "model",
-    "package_version",
-    "display_name",
-    "revisions",
-    "rev_source",
-    "identity",
-    "recovery",
-    "eeprom",
-    "capabilities",
-    "identity_service"
-  ],
+  "required": ["schema", "contract", "model", "package_version", "display_name"],
+  "if": { "required": ["fingerprints"] },
+  "then": {
+    "description": "A device without the identity contract (the roboRIO): recognised and read from this data.",
+    "required": ["key", "info"]
+  },
+  "else": {
+    "description": "A board package: it serves the identity contract.",
+    "required": [
+      "revisions",
+      "rev_source",
+      "identity",
+      "recovery",
+      "eeprom",
+      "capabilities",
+      "identity_service"
+    ]
+  },
   "additionalProperties": false,
   "properties": {
     "schema": { "const": "urn:board:manifest:1" },
@@ -416,6 +420,79 @@
         "layer": { "type": "string" },
         "optional_layers": { "type": "array", "items": { "type": "string" } }
       }
+    },
+    "key": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The info value that keys the device (team, serial, mac)."
+    },
+    "fingerprints": {
+      "type": "array",
+      "minItems": 1,
+      "description": "How to tell that what answers at an address is this model: the first whose checks all hold wins. GETs only, to that address.",
+      "items": {
+        "type": "object",
+        "required": ["id", "get"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "get": { "$ref": "#/$defs/httpget" },
+          "expect": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "status": { "type": "integer", "minimum": 100, "maximum": 599 },
+              "header": { "type": "object", "additionalProperties": { "$ref": "#/$defs/textmatch" } },
+              "body_contains": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+            }
+          }
+        }
+      }
+    },
+    "info": {
+      "type": "object",
+      "description": "What to read once recognised, by name: model and name name the device, versions.<x> is a version, anything else an attribute. A value that can't be read is left out or takes its default.",
+      "additionalProperties": {
+        "type": "object",
+        "minProperties": 1,
+        "maxProperties": 4,
+        "properties": {
+          "http_json": {
+            "type": "object",
+            "required": ["port", "path", "pick"],
+            "additionalProperties": false,
+            "properties": {
+              "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+              "path": { "type": "string", "pattern": "^/" },
+              "pick": { "type": "string", "pattern": "^\\$(\\.[^.]+)*$" }
+            }
+          },
+          "address": { "type": "string", "minLength": 1, "description": "A fact of the address it was found at (team)." },
+          "tcp_open": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "port"],
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+              }
+            }
+          },
+          "template": { "type": "string", "description": "{address} and other values by name." },
+          "word": { "type": "integer", "minimum": 0 },
+          "strip_prefix": { "type": "string" },
+          "default": { "type": "string" }
+        },
+        "additionalProperties": false,
+        "oneOf": [
+          { "required": ["http_json"] },
+          { "required": ["address"] },
+          { "required": ["tcp_open"] },
+          { "required": ["template"] }
+        ]
+      }
     }
   },
   "$defs": {
@@ -423,6 +500,25 @@
     "usbid": { "type": "string", "pattern": "^[0-9a-f]{4}$" },
     "hexbyte": { "type": "string", "pattern": "^0x[0-9a-f]{2}$" },
     "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "httpget": {
+      "type": "object",
+      "required": ["port", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "path": { "type": "string", "pattern": "^/" }
+      }
+    },
+    "textmatch": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "equals": { "type": "string" },
+        "starts_with": { "type": "string" },
+        "contains": { "type": "string" }
+      }
+    },
     "i2caddr": {
       "description": "A 7-bit I2C address. A number; older manifests wrote it as a \"0x..\" string, which readers still accept.",
       "oneOf": [

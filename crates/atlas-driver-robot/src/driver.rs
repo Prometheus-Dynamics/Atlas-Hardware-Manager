@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use atlas_devices::{DeviceCatalog, DeviceManifest};
 use atlas_driver::robot_net::{CONTROLLER_FAMILY, RADIO_FAMILY, RobotTeams};
 use atlas_driver::{
     Candidate, Capabilities, Driver, DriverError, DriverManifest, Family, Identity, Link, LinkKind,
@@ -56,16 +57,23 @@ async fn direct_candidates(link: &Link, family: &str) -> Vec<Candidate> {
 }
 
 /// The robot controller (roboRIO), read-only: identity, web page, console.
+/// Recognised and read by its device package's data: the catalog's when it
+/// has the roboRIO's with `fingerprints`, else the built-in one.
 pub struct ControllerDriver {
     manifest: DriverManifest,
     http: reqwest::Client,
+    package: Option<DeviceManifest>,
 }
 
-impl Default for ControllerDriver {
-    fn default() -> Self {
+impl ControllerDriver {
+    pub fn new(catalog: &DeviceCatalog) -> Self {
         Self {
             manifest: manifest(CONTROLLER_FAMILY, "roboRIO"),
             http: http(),
+            package: catalog
+                .by_model(CONTROLLER_FAMILY)
+                .map(|package| package.manifest.clone())
+                .filter(|manifest| !manifest.fingerprints.is_empty()),
         }
     }
 }
@@ -82,11 +90,15 @@ impl Driver for ControllerDriver {
 
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
         let ip = ip_of(&candidate.address)?;
-        let report = crate::roborio::read(&self.http, ip, true).await?;
+        let package = match &self.package {
+            Some(package) => package,
+            None => crate::roborio::built_in()?,
+        };
+        let report = crate::roborio::read(&self.http, package, ip, true).await?;
         if let Some(team) = report.team {
             RobotTeams::shared().add(team);
         }
-        report.to_identity(candidate.link.clone(), candidate.address.clone())
+        Ok(report.to_identity(candidate.link.clone(), candidate.address.clone()))
     }
 
     /// The console as logs, while it accepts a connection.
@@ -271,10 +283,11 @@ impl Driver for SystemcoreDriver {
     }
 }
 
-/// The robot network's drivers, for registering.
-pub fn drivers() -> Vec<Arc<dyn Driver>> {
+/// The robot network's drivers, for registering, with the device packages
+/// that describe them.
+pub fn drivers(catalog: &DeviceCatalog) -> Vec<Arc<dyn Driver>> {
     vec![
-        Arc::new(ControllerDriver::default()),
+        Arc::new(ControllerDriver::new(catalog)),
         Arc::new(RadioDriver::default()),
         Arc::new(SystemcoreDriver::default()),
     ]

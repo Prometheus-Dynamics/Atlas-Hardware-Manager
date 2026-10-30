@@ -47,7 +47,7 @@ pub fn register_hardware(
     }
     // The robot network's controller and radio (behind a board's USB route
     // they are its children).
-    for driver in atlas_driver_robot::drivers() {
+    for driver in atlas_driver_robot::drivers(&catalog) {
         builder = builder.driver(driver);
     }
     builder
