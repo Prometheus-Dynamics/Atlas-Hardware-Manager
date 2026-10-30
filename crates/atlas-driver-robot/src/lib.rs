@@ -25,5 +25,7 @@ mod roborio;
 mod systemcore;
 mod systemcore_versions;
 
+pub use controller_peers::{HELIOS_PORT, parse_peers};
 pub use driver::drivers;
 pub use probe::RobotProbe;
+pub use systemcore::SYSTEMCORE_FAMILY;

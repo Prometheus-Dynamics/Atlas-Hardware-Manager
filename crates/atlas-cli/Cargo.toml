@@ -32,7 +32,10 @@ atlas-image-server.workspace = true
 atlas-release.workspace = true
 clap.workspace = true
 dirs.workspace = true
+flate2.workspace = true
+reqwest.workspace = true
 serde_json.workspace = true
+tar.workspace = true
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "signal"] }
 
 [lints]

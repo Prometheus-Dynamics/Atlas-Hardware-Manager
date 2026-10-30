@@ -15,9 +15,11 @@ mod output;
 mod reboots;
 mod robot;
 mod slots;
+mod support;
 mod system;
 
 pub use hardware::register_hardware;
+pub use support::{BundleMember, device_bundles, write_bundle_archive};
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};

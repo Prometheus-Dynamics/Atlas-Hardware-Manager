@@ -519,9 +519,11 @@ pub fn list_activity(state: State<'_, AppState>, limit: usize) -> Vec<ActivityEn
     state.atlas.activity(limit.clamp(1, 1000))
 }
 
-/// Writes what Atlas knows about a device to a text file for a bug report:
-/// identity, readings, recent logs, and its history. Parts the device does
-/// not offer are left out.
+/// Writes a support bundle for a bug report, a .tar.gz: `atlas.txt`, what
+/// Atlas knows about the device (identity, readings, recent logs, its
+/// history), and the device's own bundles from HeliOS where it runs it (a
+/// SystemCore's and each board's behind it, a board's). Parts the device
+/// does not offer are left out, and atlas.txt says which.
 #[tauri::command]
 pub async fn save_support_bundle(
     state: State<'_, AppState>,
@@ -577,8 +579,15 @@ pub async fn save_support_bundle(
             entry.at_ms, entry.level, entry.origin, entry.source, entry.kind, entry.message
         );
     }
-    std::fs::write(&path, out)
-        .map_err(|error| format!("could not write {}: {error}", path.display()))
+    let (members, missing) = atlas_cli::device_bundles(&record.identity).await;
+    let _ = writeln!(out, "\n== HeliOS bundles");
+    for member in &members {
+        let _ = writeln!(out, "{} ({} bytes)", member.name, member.bytes.len());
+    }
+    for line in &missing {
+        let _ = writeln!(out, "not included: {line}");
+    }
+    atlas_cli::write_bundle_archive(&path, &out, &members)
 }
 
 fn pretty(value: &impl serde::Serialize) -> String {

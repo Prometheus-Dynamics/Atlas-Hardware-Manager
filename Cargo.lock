@@ -193,7 +193,10 @@ dependencies = [
  "atlas-release",
  "clap",
  "dirs",
+ "flate2",
+ "reqwest",
  "serde_json",
+ "tar",
  "tokio",
 ]
 

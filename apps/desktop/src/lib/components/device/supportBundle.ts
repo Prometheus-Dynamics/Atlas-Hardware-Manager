@@ -1,4 +1,5 @@
-// Saving a device's support bundle: ask where, then let the backend write it.
+// Saving a device's support bundle (a .tar.gz: Atlas's view, and the
+// device's own bundles from HeliOS): ask where, then let the backend write it.
 
 import { api, errorText, pickSavePath, type DeviceRecord } from "#lib/api/client.ts";
 import { deviceName } from "#lib/format.ts";
@@ -7,7 +8,7 @@ import { toasts } from "#lib/stores/toasts.svelte.ts";
 export async function saveSupportBundle(record: DeviceRecord): Promise<void> {
   const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
   const safe = deviceName(record).replace(/[^\w.-]+/g, "-");
-  const path = await pickSavePath(`atlas-${safe}-${stamp}.txt`);
+  const path = await pickSavePath(`atlas-${safe}-${stamp}.tar.gz`);
   if (!path) return;
   try {
     await api.saveSupportBundle(record.key, path);
