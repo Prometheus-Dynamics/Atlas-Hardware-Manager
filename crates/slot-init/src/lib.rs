@@ -45,16 +45,43 @@ pub struct Manifest {
 /// One layer of a layered slot: an EROFS image with its hash tree appended,
 /// shared by every slot that has it (named by its id).
 #[derive(Clone, Debug, Deserialize, PartialEq)]
+#[serde(try_from = "LayerJson")]
 pub struct Layer {
     /// What it is (`base`, `platform`, `app`): names its dm device.
     pub name: String,
     /// Its content id (sha256, 64 hex digits): the file is `layers/<id>.erofs`.
     pub id: String,
-    /// The file's size as built (data and hash tree); Gaia's layers.json
-    /// calls it `erofs_size`.
-    #[serde(alias = "erofs_size")]
+    /// The file's size as built (data and hash tree).
     pub size: u64,
     pub verity: Verity,
+}
+
+/// A layer as written: Gaia's layers.json calls the size `erofs_size`, and
+/// carries `size` too (the same number).
+#[derive(Deserialize)]
+struct LayerJson {
+    name: String,
+    id: String,
+    size: Option<u64>,
+    erofs_size: Option<u64>,
+    verity: Verity,
+}
+
+impl TryFrom<LayerJson> for Layer {
+    type Error = String;
+
+    fn try_from(raw: LayerJson) -> Result<Self, String> {
+        let size = raw
+            .size
+            .or(raw.erofs_size)
+            .ok_or_else(|| format!("layer {}: no size", raw.name))?;
+        Ok(Self {
+            name: raw.name,
+            id: raw.id,
+            size,
+            verity: raw.verity,
+        })
+    }
 }
 
 /// At most this many layers (overlayfs takes many more; a slot needs three).
@@ -292,10 +319,33 @@ pub fn merge_layers(slot: &str, layers: &str) -> Result<String, String> {
         .cloned()
         .filter(|l| l.is_array())
         .ok_or("layers.json: no layers")?;
+    // Each layer as slot.json keeps it: what the board reads, not the
+    // build's tar and input records.
+    let list: Vec<serde_json::Value> = list
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|layer| {
+            let at = |key: &str| layer.get(key).cloned();
+            let mut kept = serde_json::Map::new();
+            for key in ["name", "id", "verity"] {
+                if let Some(value) = at(key) {
+                    kept.insert(key.into(), value);
+                }
+            }
+            if let Some(size) = at("size").or_else(|| at("erofs_size")) {
+                kept.insert("size".into(), size);
+            }
+            if let Some(sha) = at("sha256").or_else(|| at("erofs_sha256")) {
+                kept.insert("sha256".into(), sha);
+            }
+            serde_json::Value::Object(kept)
+        })
+        .collect();
     let map = value.as_object_mut().ok_or("slot.json: not an object")?;
     map.remove("image");
     map.remove("verity");
-    map.insert("layers".into(), list);
+    map.insert("layers".into(), list.into());
     map.insert("schema".into(), serde_json::Value::from(2));
     let text = serde_json::to_string(&value).map_err(|e| format!("slot.json: {e}"))?;
     layer_lines(&text)?;

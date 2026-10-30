@@ -2,8 +2,9 @@
 # Off-device test of the slots writer (gaia/assets/rootfs/usr/lib/board/slots)
 # and `update` handing over to it: install a bundle, refusals that change
 # nothing, boot once, confirm, a failed trial, set-default, rollback, remove,
-# pin, the device lock and the space reserve. slot-init's JSON reading is
-# stubbed with python3. Run: sh devices/raze/tests/slots.sh
+# pin, the device lock and the space reserve. slot-init's JSON commands are
+# the real slot-init (built with cargo, or SLOT_INIT_BIN), python3 stubs
+# without one; its device commands are stubbed. Run: sh devices/raze/tests/slots.sh
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -19,9 +20,29 @@ fail() {
 	exit 1
 }
 
+# The real slot-init for what it reads and writes, as on the board (a stub
+# once hid that it didn't take `merge-layers`).
+REAL_SLOT_INIT=${SLOT_INIT_BIN:-}
+if [ -z "$REAL_SLOT_INIT" ] && command -v cargo >/dev/null 2>&1; then
+	repo=$here/../../..
+	if (cd "$repo" && cargo build -q -p slot-init); then
+		tdir=$(cd "$repo" && cargo metadata --no-deps --format-version 1 | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
+		REAL_SLOT_INIT=$tdir/debug/slot-init
+	fi
+fi
+export REAL_SLOT_INIT
+
 mkdir -p "$T/bin"
 cat > "$T/bin/slot-init" <<'STUB'
 #!/bin/sh
+case "$1" in
+field | fields | layers | merge-layers | set-layer | boot-files)
+	[ -z "$REAL_SLOT_INIT" ] || {
+		[ -z "${HELPER_LOG:-}" ] || echo "$1" >> "$HELPER_LOG"
+		exec "$REAL_SLOT_INIT" "$@"
+	}
+	;;
+esac
 [ -z "${HELPER_LOG:-}" ] || echo "$1" >> "$HELPER_LOG"
 case "$1" in
 field) exec python3 -c 'import json,sys

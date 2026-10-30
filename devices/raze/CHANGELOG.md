@@ -11,6 +11,17 @@ OSes pin this layer by commit; the commits are listed per area.
   `2026.2.0-dev.<count>`, not `…+<commit>`): `+` isn't a slot id character.
   The id stays `<family>-<version>-<variant>-<commit>`, e.g.
   `helios-2026.2.0-dev.721-styx-ab12cd34`; Atlas orders slots by version.
+- **Layered bundles install (slot-init, 2026-10-30):** `slot-init
+  merge-layers`, which the slots writer runs on a bundle that carries
+  Gaia's layers/layers.json, was documented but never dispatched (usage,
+  exit 2), so every layered bundle was refused: "the bundle's
+  layers/layers.json doesn't make a bootable slot". Found on the bench Raze
+  (HeliOS dev.788 and dev.795). Merging Gaia's real layers.json also failed
+  once it ran: it carries `size` and `erofs_size`, which slot-init read as
+  one field twice; a layer now takes either, and the merged slot.json keeps
+  only what the board reads (name, id, size, sha256, verity). Tested on the
+  real binary with dev.795's own slot.json and layers.json; tests/slots.sh
+  runs the real slot-init for its JSON commands now, not python stubs.
 - **A retry right after a failed stage starts it again (board-agent,
   2026-10-27):** the agent kept a stage it had started as running until
   it had read its writer's last stderr line (up to a second) and, before

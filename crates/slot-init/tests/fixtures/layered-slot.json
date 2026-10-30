@@ -1,0 +1,37 @@
+{
+  "schema": 2,
+  "id": "helios-2026.2.0-dev.795-styx-af5cee85",
+  "family": "helios",
+  "version": "2026.2.0-dev.795",
+  "variant": "styx",
+  "kernel": "7.2.9-v8-16k",
+  "built": "2026-10-29T16:27:04Z",
+  "source": "af5cee852b6a189883b9d6ebed07995be6763eb1",
+  "data_dirs": [
+    "helios"
+  ],
+  "display_name": "HeliOS",
+  "boot": {
+    "files": {
+      "bcm2712-rpi-cm5-cm5io.dtb": "f773b476d7bb55cd6361d778a34514e319c33cfc97605afe984fca7556fa4643",
+      "bcm2712-rpi-cm5l-cm5io.dtb": "26cccbf4a74038199cd655e6c982b0a1c97f579bb2c9c647076f86b0baa87225",
+      "cmdline.txt": "b8b1f75fe55f7498888640ba5b74d2e2890dbd822662f0bae53e008b02b24870",
+      "initramfs": "9a6efc1d1a255d5200ae852df5b1c9580415c4cb7f3a096be63d2f4f0a1e96f8",
+      "kernel8.img": "be88db04c29ff4ae46186f656c74bef96d3e89175989d813ffa39a12df3bb853",
+      "overlays/README": "24a573863b79416cae460630f51f2c74a429d6c0ced9512273dd08884a2214d0",
+      "overlays/bcm2712d0.dtbo": "b73210c9256ff4b4963365f9acc49c0f7449f17eeddf21355e23dd011da899ec",
+      "overlays/disable-bt-pi5.dtbo": "aa13a7df374e3289141c04d3e5201e0a5670400b9445107882c726417e681bfb",
+      "overlays/disable-wifi-pi5.dtbo": "a7879d76c24469384498c94e6b2284951137b271894f65264003208c681ffd21",
+      "overlays/dwc2.dtbo": "3e6f8e33e5749bcb2a5c7808b48123e65e88fc465d64ec16b74d50ffe5037e34",
+      "overlays/hat_map.dtb": "7f43c320b26a9c0d86d1a17d7ff4b4ac7aeb6e5f2eb62044f2a7a82a0e7e22ab",
+      "overlays/i2c1-pi5.dtbo": "a7e56dde4f67c994bd6134da2ef2177e6e6cc37b7383cc04c3c388a01ae1fac5",
+      "overlays/ov9782.dtbo": "02b105e79b04351f7e8e0a0d911231ea6ee886deff20803fa2b8c7bf04bd63bd",
+      "overlays/overlay_map.dtb": "2d4617de880e377a6a63ee1a642ec69b22700ed1b74d0e89bc5e7653b333121a",
+      "overlays/ramoops-pi5.dtbo": "fc04a63a094cb019fb7267032db7192e5ccdcc2fda720320243826fb0782a5f5",
+      "overlays/raze-fan.dtbo": "104b33db683baa570a0abddd2d80193d02c7e1d2b93dd6072673b14e6c091f9f",
+      "overlays/raze-usb-power.dtbo": "5618ebdfaf77df00e132df2eb4a5284248396d8a6df007e15b2ccefd479a5ed1",
+      "overlays/vc4-kms-v3d-pi5.dtbo": "10aed8569c51aeeffa7a09c51a45de8dd56c12d6b72f2b93e7f8d19594818e2d",
+      "overlays/ws2812-pio.dtbo": "d322acbd93f178423fe39f1ffb5f2e287a76970bf9f4f4a31abd426ad027f650"
+    }
+  }
+}

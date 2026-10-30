@@ -1,0 +1,73 @@
+{
+  "layers": [
+    {
+      "erofs": "base.erofs",
+      "erofs_sha256": "4f26d5be892e313282b0c8d2c018a4d9777b204d9f06723a6e073e837d74cd17",
+      "erofs_size": 26664960,
+      "id": "4f26d5be892e313282b0c8d2c018a4d9777b204d9f06723a6e073e837d74cd17",
+      "inputs": "sha256:4e6fbdaf42011641827556f771b6728ab4215a3aae859ba7c29b969c755b050f",
+      "name": "base",
+      "sha256": "4f26d5be892e313282b0c8d2c018a4d9777b204d9f06723a6e073e837d74cd17",
+      "size": 26664960,
+      "tar": "base.tar",
+      "tar_sha256": "3bd89c2288533f935da51bd419b6384ebbd22b3e248cdb7fe1ef85b9031c41fd",
+      "tar_size": 120251904,
+      "verity": {
+        "data_block_size": 4096,
+        "data_blocks": 6457,
+        "hash_block_size": 4096,
+        "hash_offset": 26447872,
+        "root_hash": "4d687b09ed0c0770a65ac15f8e8bb0b57b47b68dbc48483e0aabd58eb44fe448",
+        "salt": "844ff5c0e453f2ae10ab83500f844a4a8ff9c66670674c48fc05051dbe3ded3a"
+      }
+    },
+    {
+      "erofs": "platform.erofs",
+      "erofs_sha256": "9cb70e6a46bd2cf011c94e300f4f194f3974990869bceb05d249f3efd4bfdf52",
+      "erofs_size": 2514944,
+      "id": "9cb70e6a46bd2cf011c94e300f4f194f3974990869bceb05d249f3efd4bfdf52",
+      "inputs": "sha256:fa3bcef3aba6a75435d20f2efdd0458260b6297bc249e3a13aa8a59850ce19ab",
+      "name": "platform",
+      "sha256": "9cb70e6a46bd2cf011c94e300f4f194f3974990869bceb05d249f3efd4bfdf52",
+      "size": 2514944,
+      "tar": "platform.tar",
+      "tar_sha256": "1186b55b36d01d1fd95a30df101a55616089768dc2a23464c5fa5e7ed82db11a",
+      "tar_size": 12664832,
+      "verity": {
+        "data_block_size": 4096,
+        "data_blocks": 607,
+        "hash_block_size": 4096,
+        "hash_offset": 2486272,
+        "root_hash": "a1c65f6f2ab212701ae255cc697d916a1a77350371904b81cefabecf7ef864a6",
+        "salt": "53b8a6f4de236954f465188d4bd5e23e28c3c429b2e9e734ac530988804d98da"
+      }
+    },
+    {
+      "erofs": "app.erofs",
+      "erofs_sha256": "1d9b6c8bba8540e4a3ab616a241835f0e8c4296f6e1a8907ba65642477320653",
+      "erofs_size": 14426112,
+      "id": "1d9b6c8bba8540e4a3ab616a241835f0e8c4296f6e1a8907ba65642477320653",
+      "inputs": "sha256:0735d5a3fbd6915592bb6326eacbfb32eab22878676718b8aa9b00e1326ddc58",
+      "name": "app",
+      "sha256": "1d9b6c8bba8540e4a3ab616a241835f0e8c4296f6e1a8907ba65642477320653",
+      "size": 14426112,
+      "tar": "app.tar",
+      "tar_sha256": "73a1c811c3050dd5ca774f561adf18ca7fc7a79df85cf7706094f62cf54c4fc3",
+      "tar_size": 41306112,
+      "verity": {
+        "data_block_size": 4096,
+        "data_blocks": 3492,
+        "hash_block_size": 4096,
+        "hash_offset": 14303232,
+        "root_hash": "1dc83d08b8a5e9bd88175e7ba6741b66f26699c3a7aa9be85489cab2c7eb8c1d",
+        "salt": "8cdcf725c4e6a46bf19130cc7ddd0d465d316913107ddeeb244437ddd0028444"
+      }
+    }
+  ],
+  "order": [
+    "base",
+    "platform",
+    "app"
+  ],
+  "schema": 1
+}

@@ -102,6 +102,9 @@ fn run(args: &[String]) -> Result<String, String> {
             Ok(lines.join("\n"))
         }
         ["set-layer", manifest, layer] => slot_init::set_layer(&read(manifest)?, &read(layer)?),
+        ["merge-layers", manifest, layers] => {
+            slot_init::merge_layers(&read(manifest)?, &read(layers)?)
+        }
         ["boot-files", manifest] => Ok(boot_files(&read(manifest)?)?
             .into_iter()
             .map(|(sha, name)| format!("{sha}  {name}"))
