@@ -21,12 +21,10 @@ tauri-build = { version = "2", features = [] }
 atlas-core.workspace = true
 atlas-driver.workspace = true
 atlas-driver-mock.workspace = true
-atlas-devices.workspace = true
 atlas-driver-orion.workspace = true
 atlas-image-server.workspace = true
 atlas-driver-board.workspace = true
 atlas-driver-rpi.workspace = true
-atlas-driver-robot.workspace = true
 atlas-blockdev.workspace = true
 atlas-release.workspace = true
 reqwest.workspace = true

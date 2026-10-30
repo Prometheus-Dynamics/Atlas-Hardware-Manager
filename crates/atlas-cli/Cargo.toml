@@ -28,6 +28,7 @@ atlas-driver-board.workspace = true
 atlas-driver-rpi.workspace = true
 atlas-driver-robot.workspace = true
 atlas-driver-orion.workspace = true
+atlas-image-server.workspace = true
 atlas-release.workspace = true
 clap.workspace = true
 dirs.workspace = true

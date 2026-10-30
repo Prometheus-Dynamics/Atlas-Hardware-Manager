@@ -8,6 +8,7 @@
 
 mod commands;
 mod flash;
+mod hardware;
 mod install_file;
 mod layer_push;
 mod output;
@@ -16,19 +17,18 @@ mod robot;
 mod slots;
 mod system;
 
+pub use hardware::register_hardware;
+
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
-use atlas_core::{Atlas, InventoryStore, JsonFileStore, StagedRollout, install};
-use atlas_devices::DeviceCatalog;
-use atlas_driver_board::{
-    CatalogHealth, NetworkLinks, SshAccess, SshConfig, UsbGadgetLinks, drivers_for_catalog,
-};
+use atlas_core::{Atlas, InventoryStore, JsonFileStore, StagedRollout};
+use atlas_driver_board::{SshAccess, SshConfig};
 use atlas_driver_mock::MockFleet;
-use atlas_driver_rpi::{RpiConfig, RpiDriver, SshKeys, UsbBootLinks};
+use atlas_driver_rpi::SshKeys;
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
@@ -233,39 +233,13 @@ fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
             builder = builder.link_source(fleet.link_source());
         }
         None => {
-            let mut boot_file_dirs = install::bundled_usbboot_dirs();
-            if let Some(data) = dirs::data_dir() {
-                boot_file_dirs.push(data.join("atlas").join("usbboot"));
-            }
-            let mut device_dirs = install::bundled_device_dirs();
-            if let Some(data) = dirs::data_dir() {
-                device_dirs.push(data.join("atlas").join("devices"));
-            }
-            let catalog = Arc::new(DeviceCatalog::load(&atlas_devices::default_search_dirs(
-                &device_dirs,
-            )));
-            let searched = atlas_devices::search_report(&device_dirs);
-            for warning in catalog.warnings() {
-                output::error(&format!("device package: {warning}"));
-            }
-            builder = builder
-                .driver(Arc::new(RpiDriver::new(RpiConfig {
-                    boot_file_dirs,
-                    catalog: catalog.clone(),
-                    ssh_keys: ssh_keys.clone(),
-                    known_hosts: dirs::data_dir()
-                        .map(|data| data.join("atlas").join("known_hosts")),
-                })))
-                .link_source(Arc::new(UsbBootLinks))
-                .link_source(Arc::new(NetworkLinks))
-                .link_source(Arc::new(UsbGadgetLinks))
-                .link_source(Arc::new(CatalogHealth::new(&catalog, &searched)));
+            let data = dirs::data_dir().map(|data| data.join("atlas"));
             let ssh = SshAccess::new(SshConfig {
                 identity_file: cli
                     .ssh_key
                     .as_deref()
                     .and_then(atlas_driver_board::private_key_for),
-                known_hosts: dirs::data_dir().map(|data| data.join("atlas").join("known_hosts")),
+                known_hosts: data.as_ref().map(|data| data.join("known_hosts")),
                 public_key: ssh_keys.get().and_then(|keys| {
                     keys.lines()
                         .map(str::trim)
@@ -273,11 +247,16 @@ fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
                         .map(str::to_owned)
                 }),
             });
-            for driver in drivers_for_catalog(&catalog, &ssh) {
-                builder = builder.driver(driver);
-            }
-            for driver in atlas_driver_robot::drivers() {
-                builder = builder.driver(driver);
+            let mut warnings = Vec::new();
+            builder = hardware::register_hardware(
+                builder,
+                data.as_deref(),
+                &ssh_keys,
+                &ssh,
+                &mut warnings,
+            );
+            for warning in warnings {
+                output::error(&format!("device package: {warning}"));
             }
             // Each board's own orion-node (slots, actions, status without an
             // SSH key while its security switch is off; the only way to a
@@ -285,7 +264,12 @@ fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
             if let Some(data) = dirs::data_dir() {
                 match atlas_driver_orion::operator_identity(&data.join("atlas")) {
                     Ok(identity) => {
-                        let nodes = atlas_driver_orion::BoardNodes::new(identity, None, None, None);
+                        // Boards fetch slot bundles from this computer, as
+                        // from the app (started on the first install).
+                        let images: Arc<dyn atlas_driver_orion::BundleHost> =
+                            Arc::new(atlas_image_server::ImageServer::new(Default::default()));
+                        let nodes =
+                            atlas_driver_orion::BoardNodes::new(identity, Some(images), None, None);
                         builder = builder.link_source(nodes.clone()).capability_source(nodes);
                     }
                     Err(error) => output::error(&format!("Orion operator key: {error}")),
