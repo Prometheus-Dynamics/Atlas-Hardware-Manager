@@ -62,6 +62,9 @@ SYSTEMCTL=${UPDATE_SYSTEMCTL:-systemctl}
 RESERVE_KB=${SLOTS_RESERVE_KB:-2097152}
 STATUS_JSON=${BOARD_RUN_DIR}/update.json
 DOWNLOAD_DIR=${UPDATE_DOWNLOAD_DIR:-$DATA/board/update}
+# Bundles uploaded to the board (HeliOS's /v1/update/uploads, through a
+# robot controller's gateway): stage-url installs a file:// URL here in place.
+UPLOADS_DIR=${SLOTS_UPLOADS_DIR:-$DATA/updates}
 REFUSED=3
 BOOT='' BOOT_DEV=''
 CHECKING=''
@@ -593,6 +596,25 @@ cmd_stage_url() {
 		esac
 	done
 	[ -n "$_url" ] && [ -n "$_want" ] || die "usage: slots stage-url <url> --sha256 <hex> --size <bytes> [--pin]"
+	case $_url in
+	file://*)
+		# An upload on the board, read in place (the uploader keeps it).
+		_file=${_url#file://}
+		case $_file in
+		"$UPLOADS_DIR"/*) ;;
+		*) refuse "only an upload in $UPLOADS_DIR installs from a file:// URL; nothing changed" ;;
+		esac
+		case $_file in
+		*/../* | */..) refuse "the upload's path can't leave $UPLOADS_DIR; nothing changed" ;;
+		esac
+		[ -f "$_file" ] || refuse "no upload at $_file; nothing changed"
+		[ -z "$_size" ] || [ "$(board_file_size "$_file")" = "$_size" ] || refuse "the upload isn't --size bytes; nothing changed"
+		[ "$(sha256sum "$_file" | cut -d' ' -f1)" = "$_want" ] || refuse "the upload doesn't match --sha256; nothing changed"
+		board_event update.stage "installing a slot from the upload $(basename "$_file")"
+		install_bundle "$_file" "$_pin"
+		return
+		;;
+	esac
 	mkdir -p "$DOWNLOAD_DIR"
 	_file=$DOWNLOAD_DIR/$_want.slot.tar
 	STATE=staging PROGRESS=0 ERROR=''

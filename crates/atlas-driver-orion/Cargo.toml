@@ -18,6 +18,7 @@ futures.workspace = true
 orion-client = { workspace = true, features = ["remote"] }
 orion-control-plane.workspace = true
 orion-core.workspace = true
+reqwest.workspace = true
 serde.workspace = true
 tokio = { workspace = true, features = ["time", "sync", "net", "io-util", "rt", "rt-multi-thread"] }
 

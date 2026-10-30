@@ -43,6 +43,16 @@ impl ControllerPeer {
         )
     }
 
+    /// Where a file is uploaded to the board's own HeliOS
+    /// (`/v1/update/uploads`, through the controller): it answers with the
+    /// upload's `image_url`, a `file://` path on the board.
+    pub fn upload_url(&self) -> String {
+        format!(
+            "http://{}:{}/v1/peers/{}/update/uploads",
+            self.host, self.port, self.node
+        )
+    }
+
     /// The path of the tunnel to the board's orion-node.
     pub fn orion_path(&self) -> String {
         format!("/v1/peers/{}/orion", self.node)
@@ -78,6 +88,10 @@ mod tests {
             "http://172.27.0.1:5880/v1/peers/raze-37bc/board/identity"
         );
         assert_eq!(peer.orion_path(), "/v1/peers/raze-37bc/orion");
+        assert_eq!(
+            peer.upload_url(),
+            "http://172.27.0.1:5880/v1/peers/raze-37bc/update/uploads"
+        );
         for not in [
             "http://10.0.0.5:5899/.well-known/pd-device",
             "http://h:5880/v1/peers/../board/identity",

@@ -11,6 +11,14 @@ OSes pin this layer by commit; the commits are listed per area.
   `2026.2.0-dev.<count>`, not `…+<commit>`): `+` isn't a slot id character.
   The id stays `<family>-<version>-<variant>-<commit>`, e.g.
   `helios-2026.2.0-dev.721-styx-ab12cd34`; Atlas orders slots by version.
+- **Installing an upload on the board (2026-10-30):** a board behind a
+  robot controller can't reach Atlas to download a slot, so Atlas uploads
+  it through the controller's HeliOS (`/v1/peers/<node>/update/uploads`),
+  which keeps it in /data/updates. The `update` action and `slots
+  stage-url` take its `file:///data/updates/...` URL and install it in
+  place (size and SHA-256 checked, the upload left to HeliOS); any other
+  file:// path or one with `..` is refused, and an A/B board refuses
+  file:// (slots boards only).
 - **Layered bundles install (slot-init, 2026-10-30):** `slot-init
   merge-layers`, which the slots writer runs on a bundle that carries
   Gaia's layers/layers.json, was documented but never dispatched (usage,

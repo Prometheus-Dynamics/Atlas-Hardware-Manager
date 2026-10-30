@@ -123,9 +123,6 @@ impl SlotsCapability for OrionSlots {
         install: &SlotInstall,
         progress: &ProgressSink,
     ) -> Result<(), DriverError> {
-        let bundles = self.bundles.as_ref().ok_or_else(|| {
-            DriverError::Unsupported("Atlas isn't serving files to boards".into())
-        })?;
         progress.step_started(UpdateStep::Preflight);
         let keys = update_status(self.transport.as_ref(), &self.node).await?;
         let set = slot_set(&keys)?
@@ -144,8 +141,27 @@ impl SlotsCapability for OrionSlots {
                 install.bundle.size_bytes >> 20
             )));
         }
-        let url = bundles.url_for(&install.bundle, peer_address(&device.address).await)?;
         progress.step_started(UpdateStep::Transfer);
+        // Behind a robot controller the board can't reach this computer:
+        // the bundle goes up through the controller's HeliOS first (the
+        // first half of the transfer), else the board fetches it from here.
+        let peer = atlas_driver::controller_peer::ControllerPeer::from_address(&device.address);
+        let uploaded = peer.is_some();
+        let url = match peer {
+            Some(peer) => {
+                let sink = progress.clone();
+                crate::upload::upload(&peer, &install.bundle, move |done| {
+                    sink.step_progress(UpdateStep::Transfer, done / 2.0);
+                })
+                .await?
+            }
+            None => {
+                let bundles = self.bundles.as_ref().ok_or_else(|| {
+                    DriverError::Unsupported("Atlas isn't serving files to boards".into())
+                })?;
+                bundles.url_for(&install.bundle, peer_address(&device.address).await)?
+            }
+        };
         let args = BTreeMap::from([
             (
                 update_action::ARG_IMAGE_URL.to_string(),
@@ -181,7 +197,9 @@ impl SlotsCapability for OrionSlots {
                         .get(update_action::KEY_PROGRESS)
                         .and_then(|p| p.parse().ok())
                         .unwrap_or(0.0);
-                    progress.step_progress(UpdateStep::Transfer, permille / 1000.0);
+                    let done = permille / 1000.0;
+                    let done = if uploaded { 0.5 + done / 2.0 } else { done };
+                    progress.step_progress(UpdateStep::Transfer, done);
                 }
                 // The slot is in: from here the board has changed.
                 Some(update_action::STATE_STAGED) if !install.boot => {

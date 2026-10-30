@@ -781,6 +781,11 @@ cmd_stage_url() {
 		esac
 	done
 	[ -n "$URL" ] || die "usage: update stage-url <url> --sha256 <hex> --size <bytes>"
+	case $URL in
+	http://* | https://*) ;;
+	file://*) refuse "an upload on the board (file://) installs on a slots board only; nothing changed" ;;
+	*) die "stage-url takes an http:// or https:// URL" ;;
+	esac
 	check_sha256
 	case "$SIZE" in
 	'' | *[!0-9]* | 0) die "give the image's size in bytes with --size" ;;

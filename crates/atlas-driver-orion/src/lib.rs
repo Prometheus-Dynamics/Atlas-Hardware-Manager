@@ -32,6 +32,7 @@ mod slots;
 mod status;
 mod transport;
 mod update;
+mod upload;
 
 pub use board_nodes::BoardNodes;
 pub use directory::OrionDirectory;

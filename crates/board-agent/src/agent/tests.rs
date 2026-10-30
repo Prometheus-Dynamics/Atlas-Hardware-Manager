@@ -22,6 +22,23 @@ fn update_arguments_are_checked() {
     let mut bad = good.clone();
     bad.insert("image_url".into(), text("file:///etc/shadow"));
     assert!(StageRequest::from_args(&bad).unwrap_err().contains("http"));
+    // An upload on the board (HeliOS's /v1/update/uploads), only there.
+    let mut upload = good.clone();
+    upload.insert(
+        "image_url".into(),
+        text("file:///data/updates/42/helios.slot.tar"),
+    );
+    assert!(StageRequest::from_args(&upload).is_ok());
+    for url in [
+        "file:///data/updates/",
+        "file:///data/updates/../board/x.tar",
+        "file:///data/updates/42/../../etc/shadow",
+        "file:///data/updatesx/y.tar",
+    ] {
+        let mut bad = good.clone();
+        bad.insert("image_url".into(), text(url));
+        assert!(StageRequest::from_args(&bad).is_err(), "{url}");
+    }
     let mut bad = good.clone();
     bad.insert("sha256".into(), text("abc"));
     assert!(

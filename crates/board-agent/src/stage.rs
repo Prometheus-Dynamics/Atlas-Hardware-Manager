@@ -24,8 +24,17 @@ impl StageRequest {
             _ => Err(format!("`{key}` (string) is required")),
         };
         let image_url = text(update_action::ARG_IMAGE_URL)?;
-        if !(image_url.starts_with("http://") || image_url.starts_with("https://")) {
-            return Err("`image_url` must be an http:// or https:// URL".into());
+        // file://: a bundle uploaded to the board (HeliOS's
+        // /v1/update/uploads, through a robot controller), read in place.
+        // The writer keeps it to /data/updates/.
+        let upload = image_url
+            .strip_prefix("file:///data/updates/")
+            .is_some_and(|rest| !rest.is_empty() && !rest.split('/').any(|part| part == ".."));
+        if !(image_url.starts_with("http://") || image_url.starts_with("https://") || upload) {
+            return Err(
+                "`image_url` must be an http:// or https:// URL, or file:///data/updates/<upload>"
+                    .into(),
+            );
         }
         let sha256 = text(update_action::ARG_SHA256)?.to_ascii_lowercase();
         if sha256.len() != 64 || !sha256.bytes().all(|b| b.is_ascii_hexdigit()) {

@@ -197,6 +197,22 @@ up stage - --sha256 "$(sha256sum "$T/pv-b.slot.tar" | cut -d' ' -f1)" < "$T/pv-b
 [ "$(rc stage - --sha256 0000 < "$T/pv-b.slot.tar")" = 3 ] || fail "stdin: wrong sha accepted"
 [ -z "$(ls "$T/data/board/update" 2>/dev/null)" ] || fail "a refused streamed tar was left"
 
+echo "an upload on the board (file:// in /data/updates) installs in place; nothing else is read"
+mkdir -p "$T/data/updates/u1"
+cp "$T/pv-b.slot.tar" "$T/data/updates/u1/pv-b.slot.tar"
+sha=$(sha256sum "$T/pv-b.slot.tar" | cut -d' ' -f1)
+size=$(wc -c < "$T/pv-b.slot.tar" | tr -d ' ')
+up stage-url "file://$T/data/updates/u1/pv-b.slot.tar" --sha256 "$sha" --size "$size" 2>/dev/null || fail "the upload didn't install: $(cat "$T/err" 2>/dev/null)"
+status | grep -q '"slot_staged":"pv-b"' || fail "upload staged: $(status)"
+[ -f "$T/data/updates/u1/pv-b.slot.tar" ] || fail "the upload was removed (it is the uploader's)"
+[ -z "$(ls "$T/data/board/update" 2>/dev/null)" ] || fail "an upload was copied to the download dir"
+cp "$T/pv-b.slot.tar" "$T/elsewhere.slot.tar"
+[ "$(rc stage-url "file://$T/elsewhere.slot.tar" --sha256 "$sha" --size "$size")" = 3 ] || fail "a file outside /data/updates was read"
+grep -q "only an upload in" "$T/err" || fail "outside: $(cat "$T/err")"
+[ "$(rc stage-url "file://$T/data/updates/../../elsewhere.slot.tar" --sha256 "$sha" --size "$size")" = 3 ] || fail "a .. path left /data/updates"
+[ "$(rc stage-url "file://$T/data/updates/u1/pv-b.slot.tar" --sha256 "$(printf 0%.0s $(seq 64))" --size "$size")" = 3 ] || fail "an upload with the wrong sha256 installed"
+[ "$(rc stage-url "file://$T/data/updates/u1/none.slot.tar" --sha256 "$sha" --size "$size")" = 3 ] || fail "a missing upload wasn't refused"
+
 echo "a bundle without an overlay the board's config loads is refused (it would boot without that device)"
 printf 'dtoverlay=bcm2712d0\ndtoverlay=ov9782,cam0,clk-continuous\n' > "$T/boot/raze-device.txt"
 bundle pv-o 2026.4.9

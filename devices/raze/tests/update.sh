@@ -665,6 +665,16 @@ EOF
 	update status | grep -q '"state":"cancelled"' || fail "the lock should be free again"
 fi
 
+echo "an A/B board refuses an upload on the board (file://; slots boards only), changing nothing"
+before=$(state)
+set +e
+update stage-url "file:///data/updates/1/x.img.xz" --sha256 "$(printf a%.0s $(seq 64))" --size 10 > "$T/out" 2> "$T/err"
+r=$?
+set -e
+[ "$r" = 3 ] || fail "file:// on A/B exited $r: $(cat "$T/err")"
+grep -q "slots board only" "$T/err" || fail "file:// on A/B: $(cat "$T/err")"
+[ "$(state)" = "$before" ] || fail "file:// on A/B changed the state to $(state)"
+
 # A small HTTP server with Range support, for stage-url.
 if command -v python3 >/dev/null 2>&1; then
 	mkdir -p "$T/www"
