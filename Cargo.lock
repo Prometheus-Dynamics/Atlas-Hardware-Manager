@@ -195,6 +195,7 @@ dependencies = [
  "dirs",
  "flate2",
  "reqwest",
+ "serde",
  "serde_json",
  "tar",
  "tokio",

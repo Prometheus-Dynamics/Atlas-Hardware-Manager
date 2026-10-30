@@ -5,13 +5,15 @@
 //! controller through that gateway; any other board from its own HeliOS.
 //! No SSH key or login anywhere.
 
+use std::fmt::Write as _;
 use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
-use atlas_driver::Identity;
+use atlas_core::Atlas;
 use atlas_driver::controller_peer::ControllerPeer;
 use atlas_driver::util::{address_host, host_port};
+use atlas_driver::{DeviceKey, Identity};
 
 /// HeliOS's API on a board (the controller's is `HELIOS_PORT`).
 const BOARD_HELIOS_PORT: u16 = 5800;
@@ -21,16 +23,103 @@ const FETCH_TIMEOUT: Duration = Duration::from_secs(180);
 /// A bundle larger than this is left out (a board's is a few MB).
 const MAX_BUNDLE_BYTES: usize = 256 << 20;
 
+/// Writes a support bundle for a bug report, a .tar.gz: `atlas.txt`, what
+/// Atlas knows about the device (identity, readings, recent logs, its
+/// history, and `own_log`, the running Atlas's log), and the device's own
+/// bundles from HeliOS where it runs it. Parts the device does not offer
+/// are left out, and atlas.txt says which.
+pub async fn save_support_bundle(
+    atlas: &Atlas,
+    key: &DeviceKey,
+    path: &Path,
+    atlas_version: &str,
+    own_log: &[String],
+) -> Result<(), String> {
+    let record = atlas
+        .device(key)
+        .ok_or_else(|| format!("no device {key} in the inventory"))?;
+    let mut out = String::new();
+    let _ = writeln!(out, "Atlas support bundle for {}", record.display_name());
+    let _ = writeln!(out, "Atlas {atlas_version} on {}", std::env::consts::OS);
+    let _ = writeln!(out, "\n== Device\n{}", pretty(&record));
+    if let Ok(metrics) = atlas.telemetry(key).await {
+        let _ = writeln!(out, "\n== Readings");
+        for metric in metrics {
+            let unit = metric.unit.unwrap_or_default();
+            let _ = writeln!(out, "{}: {} {unit}", metric.label, metric.value);
+        }
+    }
+    if let Ok(lines) = atlas.logs(key, 500).await {
+        let _ = writeln!(out, "\n== Logs");
+        for line in lines {
+            let source = line.source.unwrap_or_default();
+            let at = line.at_ms.map(|ms| ms.to_string()).unwrap_or_default();
+            let _ = writeln!(out, "{at} {:?} [{source}] {}", line.level, line.message);
+        }
+    }
+    if let Some(run) = atlas.selftest(key) {
+        let _ = writeln!(out, "\n== Last self-test\n{}", pretty(&run));
+    }
+    if let Ok(status) = atlas.device_status(key).await {
+        let _ = writeln!(out, "\n== Status\n{}", pretty(&status));
+    }
+    if !own_log.is_empty() {
+        let _ = writeln!(out, "\n== Atlas log (last {} lines)", own_log.len());
+        for line in own_log {
+            let _ = writeln!(out, "{line}");
+        }
+    }
+    let _ = writeln!(out, "\n== History");
+    for entry in atlas.device_history(key, 2000) {
+        let _ = writeln!(
+            out,
+            "{} {:?} {:?}/{:?} {} {}",
+            entry.at_ms, entry.level, entry.origin, entry.source, entry.kind, entry.message
+        );
+    }
+    let (members, missing) = device_bundles(&record.identity).await;
+    let _ = writeln!(out, "\n== HeliOS bundles");
+    for member in &members {
+        let _ = writeln!(out, "{} ({} bytes)", member.name, member.bytes.len());
+    }
+    for line in &missing {
+        let _ = writeln!(out, "not included: {line}");
+    }
+    write_bundle_archive(path, &out, &members)
+}
+
+/// `atlas support <device> [path]`.
+pub(crate) async fn command(
+    atlas: &Atlas,
+    device: &str,
+    path: Option<std::path::PathBuf>,
+) -> crate::commands::CommandResult {
+    crate::commands::scan_settled(atlas).await;
+    let key = crate::commands::resolve(atlas, device)?;
+    let path = path.unwrap_or_else(|| {
+        let name = key.to_string().replace([':', '/'], "-");
+        let stamp = atlas_driver::util::now_ms() / 1000;
+        format!("atlas-{name}-{stamp}.tar.gz").into()
+    });
+    save_support_bundle(atlas, &key, &path, env!("ATLAS_BUILD_VERSION"), &[]).await?;
+    crate::output::line(&format!("saved {}", path.display()));
+    Ok(std::process::ExitCode::SUCCESS)
+}
+
+fn pretty(value: &impl serde::Serialize) -> String {
+    serde_json::to_string_pretty(value).unwrap_or_default()
+}
+
 /// One file of the saved archive.
 #[derive(Debug, PartialEq, Eq)]
-pub struct BundleMember {
-    pub name: String,
-    pub bytes: Vec<u8>,
+struct BundleMember {
+    name: String,
+    bytes: Vec<u8>,
 }
 
 /// The HeliOS bundles for `device`, and a line for each that couldn't be
 /// had (the device doesn't run HeliOS, a peer didn't answer).
-pub async fn device_bundles(device: &Identity) -> (Vec<BundleMember>, Vec<String>) {
+async fn device_bundles(device: &Identity) -> (Vec<BundleMember>, Vec<String>) {
     let http = match reqwest::Client::builder()
         .connect_timeout(CONNECT_TIMEOUT)
         .timeout(FETCH_TIMEOUT)
@@ -138,7 +227,7 @@ async fn get(http: &reqwest::Client, url: &str) -> Result<Vec<u8>, String> {
 
 /// Writes the archive: `atlas.txt` (Atlas's view of the device), then each
 /// device bundle as it came, all in one .tar.gz.
-pub fn write_bundle_archive(
+fn write_bundle_archive(
     path: &Path,
     atlas_txt: &str,
     members: &[BundleMember],

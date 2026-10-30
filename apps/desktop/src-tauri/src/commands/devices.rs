@@ -1,4 +1,3 @@
-use std::fmt::Write as _;
 use std::path::PathBuf;
 
 use atlas_core::{ActivityEntry, DeviceRecord, HistoryEntry, ScanReport, SelfTestRecord};
@@ -519,77 +518,20 @@ pub fn list_activity(state: State<'_, AppState>, limit: usize) -> Vec<ActivityEn
     state.atlas.activity(limit.clamp(1, 1000))
 }
 
-/// Writes a support bundle for a bug report, a .tar.gz: `atlas.txt`, what
-/// Atlas knows about the device (identity, readings, recent logs, its
-/// history), and the device's own bundles from HeliOS where it runs it (a
-/// SystemCore's and each board's behind it, a board's). Parts the device
-/// does not offer are left out, and atlas.txt says which.
+/// Writes a support bundle for a bug report, a .tar.gz (atlas_cli's
+/// save_support_bundle), with the app's own log in it.
 #[tauri::command]
 pub async fn save_support_bundle(
     state: State<'_, AppState>,
     key: DeviceKey,
     path: PathBuf,
 ) -> CmdResult<()> {
-    let atlas = &state.atlas;
-    let record = atlas
-        .device(&key)
-        .ok_or_else(|| format!("no device {key} in the inventory"))?;
-    let mut out = String::new();
-    let _ = writeln!(out, "Atlas support bundle for {}", record.display_name());
-    let _ = writeln!(
-        out,
-        "Atlas {} on {}",
+    atlas_cli::save_support_bundle(
+        &state.atlas,
+        &key,
+        &path,
         crate::app_update::version(),
-        std::env::consts::OS
-    );
-    let _ = writeln!(out, "\n== Device\n{}", pretty(&record));
-    if let Ok(metrics) = atlas.telemetry(&key).await {
-        let _ = writeln!(out, "\n== Readings");
-        for metric in metrics {
-            let unit = metric.unit.unwrap_or_default();
-            let _ = writeln!(out, "{}: {} {unit}", metric.label, metric.value);
-        }
-    }
-    if let Ok(lines) = atlas.logs(&key, 500).await {
-        let _ = writeln!(out, "\n== Logs");
-        for line in lines {
-            let source = line.source.unwrap_or_default();
-            let at = line.at_ms.map(|ms| ms.to_string()).unwrap_or_default();
-            let _ = writeln!(out, "{at} {:?} [{source}] {}", line.level, line.message);
-        }
-    }
-    if let Some(run) = atlas.selftest(&key) {
-        let _ = writeln!(out, "\n== Last self-test\n{}", pretty(&run));
-    }
-    if let Ok(status) = atlas.device_status(&key).await {
-        let _ = writeln!(out, "\n== Status\n{}", pretty(&status));
-    }
-    let recent = crate::logfile::tail(300);
-    if !recent.is_empty() {
-        let _ = writeln!(out, "\n== Atlas log (last {} lines)", recent.len());
-        for line in recent {
-            let _ = writeln!(out, "{line}");
-        }
-    }
-    let _ = writeln!(out, "\n== History");
-    for entry in atlas.device_history(&key, 2000) {
-        let _ = writeln!(
-            out,
-            "{} {:?} {:?}/{:?} {} {}",
-            entry.at_ms, entry.level, entry.origin, entry.source, entry.kind, entry.message
-        );
-    }
-    let (members, missing) = atlas_cli::device_bundles(&record.identity).await;
-    let _ = writeln!(out, "\n== HeliOS bundles");
-    for member in &members {
-        let _ = writeln!(out, "{} ({} bytes)", member.name, member.bytes.len());
-    }
-    for line in &missing {
-        let _ = writeln!(out, "not included: {line}");
-    }
-    atlas_cli::write_bundle_archive(&path, &out, &members)
-}
-
-fn pretty(value: &impl serde::Serialize) -> String {
-    serde_json::to_string_pretty(value).unwrap_or_default()
+        &crate::logfile::tail(300),
+    )
+    .await
 }

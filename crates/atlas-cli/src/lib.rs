@@ -19,7 +19,7 @@ mod support;
 mod system;
 
 pub use hardware::register_hardware;
-pub use support::{BundleMember, device_bundles, write_bundle_archive};
+pub use support::save_support_bundle;
 
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -153,6 +153,14 @@ enum Command {
         device: String,
         #[command(subcommand)]
         command: Option<slots::SlotsCommand>,
+    },
+    /// Save a device's support bundle for a bug report (a .tar.gz): what
+    /// Atlas knows about it, and its own bundles from HeliOS (a SystemCore's
+    /// and each board's behind it, a board's).
+    Support {
+        device: String,
+        /// Where to write it; default atlas-<device>-<time>.tar.gz here.
+        path: Option<PathBuf>,
     },
     /// Restart a board N times and tell how each boot before ended: clean or
     /// not, what the kernel restarted with, whether pstore kept anything
@@ -429,6 +437,7 @@ async fn run_cli(cli: Cli) -> ExitCode {
             )
             .await
         }
+        Command::Support { device, path } => support::command(&atlas, &device, path).await,
         Command::Slots { device, command } => {
             slots::slots(&atlas, &device, command, cli.json).await
         }
