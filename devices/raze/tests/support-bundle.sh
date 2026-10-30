@@ -68,6 +68,19 @@ EOF
 for tool in nft systemctl networkctl; do
 	printf '#!/bin/sh\necho "%s $*"\n' "$tool" > "$T/bin/$tool"
 done
+# The board's tar: BusyBox 1.38 has no -z, so creating with it fails as on
+# the board; SUPPORT_TAR_FAIL makes any create fail.
+real_tar=$(command -v tar)
+{
+	echo '#!/bin/sh'
+	echo 'for a in "$@"; do'
+	echo '	case $a in'
+	echo "	-*c*z* | -*z*c*) echo \"tar: invalid option -- 'z'\" >&2; exit 1 ;;"
+	echo '	-*c*) [ -z "${SUPPORT_TAR_FAIL:-}" ] || exit 1 ;;'
+	echo '	esac'
+	echo 'done'
+	echo "exec '$real_tar' \"\$@\""
+} > "$T/bin/tar"
 chmod +x "$T/bin"/*
 export PATH="$T/bin:$PATH"
 
@@ -124,6 +137,12 @@ grep -q "not there" "$B/hardware.json" || fail "hardware.json: $(cat "$B/hardwar
 
 echo "--stdout gives the same bundle"
 sh "$lib/support-bundle" --stdout | tar -tzf - | grep -q "raze-10000000a317bcbe-20261012-120000/README.txt" || fail "stdout"
+
+echo "a tar that fails fails the bundle, on stdout too"
+SUPPORT_TAR_FAIL=1 sh "$lib/support-bundle" --stdout > "$T/failed.out" 2>/dev/null && fail "--stdout exited 0 with a failed tar"
+[ ! -s "$T/failed.out" ] || fail "--stdout wrote something for a failed tar"
+SUPPORT_TAR_FAIL=1 BOARD_SUPPORT_STAMP=20261012-115959 sh "$lib/support-bundle" > /dev/null 2>&1 && fail "a failed tar exited 0"
+[ ! -e "$T/run/support/raze-10000000a317bcbe-20261012-115959.tar.gz" ] || fail "a failed tar left a bundle"
 
 echo "only the newest two are kept"
 sleep 1

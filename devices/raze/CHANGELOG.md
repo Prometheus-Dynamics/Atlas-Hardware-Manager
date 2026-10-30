@@ -11,6 +11,14 @@ OSes pin this layer by commit; the commits are listed per area.
   `2026.2.0-dev.<count>`, not `…+<commit>`): `+` isn't a slot id character.
   The id stays `<family>-<version>-<variant>-<commit>`, e.g.
   `helios-2026.2.0-dev.721-styx-ab12cd34`; Atlas orders slots by version.
+- **The board's support bundle on its own BusyBox (2026-10-30):**
+  `support-bundle` packed with `tar -czf`, which the image's BusyBox 1.38
+  tar doesn't take (no -z): `--stdout` printed "invalid option" and wrote
+  nothing, yet exited 0, so HeliOS's /v1/support/bundle carried
+  board-support.txt instead of the board's bundle (HeliOS found it). It
+  tars, then gzips, and a failure of either exits 1 with nothing written.
+  Run from /tmp on the bench Raze (dev.800): 120 KB, every member. The
+  test's tar now refuses -z on create as the board's does.
 - **An unhealthy trial's reason survives the restart back (2026-10-30):**
   a trial that failed its health check restarted to the default, whose
   boot then reported the generic "started but its system didn't confirm

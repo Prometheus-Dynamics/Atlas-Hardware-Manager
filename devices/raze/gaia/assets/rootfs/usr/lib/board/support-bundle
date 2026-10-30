@@ -227,13 +227,19 @@ Never collected: /etc/shadow, SSH host and user keys, Orion's and
 NetworkManager's connection files, /data/board/*.env.
 EOF
 
+# The tar, then gzip: the board's BusyBox tar has no -z. Either failing
+# fails the bundle (no empty archive with exit 0).
+tar -C "$work" -cf "$work/$name.tar" "$name" || {
+	echo "support-bundle: tar failed" >&2
+	exit 1
+}
 if [ "$to_stdout" = 1 ]; then
-	tar -C "$work" -czf - "$name"
-	exit
+	gzip -c "$work/$name.tar" || exit 1
+	exit 0
 fi
 out=$BOARD_RUN_DIR/support
 mkdir -p "$out" || exit 1
-tar -C "$work" -czf "$out/$name.tar.gz.tmp" "$name" || {
+gzip -c "$work/$name.tar" > "$out/$name.tar.gz.tmp" || {
 	rm -f "$out/$name.tar.gz.tmp"
 	exit 1
 }
