@@ -668,7 +668,7 @@ cmd_confirm() {
 		STATE=trying ERROR=''
 		write_status
 		sleep "${SLOTS_TRYING_HOLD_SEC:-2}"
-		if [ -x /etc/board/update-health ] && ! /etc/board/update-health; then
+		if [ -x "$BOARD_ETC_DIR/update-health" ] && ! "$BOARD_ETC_DIR/update-health"; then
 			meta_set "$_run" GOOD no
 			ERROR="slot $_run failed its health check"
 			board_event update.trial-failed "$ERROR" "slot=$_run"
@@ -689,7 +689,10 @@ cmd_confirm() {
 		meta_set "$TRIAL" GOOD no
 		# The initramfs writes trial-init once it has /data on a trial, and
 		# trial-started once it has started the slot.
-		if [ "$(cat "$STATE_DIR/trial-started" 2>/dev/null)" = "$TRIAL" ]; then
+		if [ "$ERROR" = "slot $TRIAL failed its health check" ]; then
+			# The trial judged itself and restarted back: its reason stands.
+			ERROR="$ERROR; back on $_run"
+		elif [ "$(cat "$STATE_DIR/trial-started" 2>/dev/null)" = "$TRIAL" ]; then
 			ERROR="slot $TRIAL started but its system didn't confirm the boot; back on $_run"
 		elif [ "$(cat "$STATE_DIR/trial-init" 2>/dev/null)" = "$TRIAL" ]; then
 			ERROR="slot $TRIAL didn't start (its initramfs stopped; the reason is in slot-init.log on the boot partition); back on $_run"

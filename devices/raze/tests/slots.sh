@@ -337,6 +337,27 @@ up confirm 2>/dev/null # still on pv-b
 status | grep -q "started but its system didn't confirm" || fail "the reason: $(status)"
 [ ! -e "$T/data/board/slots/trial-started" ] || fail "trial-started kept"
 
+echo "a trial that fails its health check restarts back, and the default's boot keeps that reason"
+up apply 2>/dev/null || true
+up stage "$T/pv-c.slot.tar" 2>/dev/null || true
+up apply 2>/dev/null
+booted=$(cat "$T/data/board/slots/booted")
+mkdir -p "$T/etc"
+printf '#!/bin/sh\necho unhealthy >&2\nexit 1\n' > "$T/etc/update-health"
+chmod +x "$T/etc/update-health"
+echo pv-c > "$T/data/board/slots/booted"
+echo pv-c > "$T/data/board/slots/trial-started"
+: > "$T/reboots"
+up confirm 2>/dev/null || true
+grep -qx plain "$T/reboots" || fail "an unhealthy trial didn't restart back: $(cat "$T/reboots")"
+grep -q '^GOOD=no' "$T/data/board/slots/pv-c.meta" || fail "the unhealthy trial isn't marked bad"
+status | grep -q "slot pv-c failed its health check" || fail "the trial's reason: $(status)"
+rm -f "$T/etc/update-health"
+echo "$booted" > "$T/data/board/slots/booted"
+up confirm 2>/dev/null
+status | grep -q '"state":"rolled-back"' || fail "not rolled back: $(status)"
+status | grep -q "slot pv-c failed its health check; back on $booted" || fail "the default's boot lost the reason: $(status)"
+
 echo "an image that isn't the size it was built at is listed as not intact"
 status | grep -q '"id":"pv-c"[^}]*"intact":true' || fail "pv-c intact: $(status)"
 truncate -s 3 "$T/data/slots/pv-c.erofs"

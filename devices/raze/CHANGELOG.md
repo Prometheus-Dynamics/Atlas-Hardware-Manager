@@ -11,6 +11,14 @@ OSes pin this layer by commit; the commits are listed per area.
   `2026.2.0-dev.<count>`, not `…+<commit>`): `+` isn't a slot id character.
   The id stays `<family>-<version>-<variant>-<commit>`, e.g.
   `helios-2026.2.0-dev.721-styx-ab12cd34`; Atlas orders slots by version.
+- **An unhealthy trial's reason survives the restart back (2026-10-30):**
+  a trial that failed its health check restarted to the default, whose
+  boot then reported the generic "started but its system didn't confirm
+  the boot". It now says "slot <id> failed its health check; back on
+  <default>". The health check is read from $BOARD_ETC_DIR (/etc/board),
+  so the test can give one. Seen on the bench Raze with HeliOS's
+  -healthfail slot, which otherwise fell back as it should (trial-failed
+  11 s into the trial, back on dev.798 about 45 s after Atlas's boot-once).
 - **Installing an upload on the board (2026-10-30):** a board behind a
   robot controller can't reach Atlas to download a slot, so Atlas uploads
   it through the controller's HeliOS (`/v1/peers/<node>/update/uploads`),
