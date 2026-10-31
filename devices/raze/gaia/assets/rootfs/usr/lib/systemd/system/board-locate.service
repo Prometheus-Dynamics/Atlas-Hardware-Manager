@@ -4,6 +4,10 @@ Description=Locate: show the locate look on the LED ring so someone can find the
 # look, timed by lemnosd) and waits it out; without, it blinks the ring itself.
 After=lemnosd.service
 Documentation=file:/usr/lib/board/raze-leds
+# Started by its .path unit: never rate-limited, or a burst of changes or
+# requests trips the start limit and leaves the path unit failed for good
+# (tests/path-units.sh).
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

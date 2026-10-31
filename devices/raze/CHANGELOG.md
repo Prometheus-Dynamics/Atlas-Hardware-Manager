@@ -11,6 +11,17 @@ OSes pin this layer by commit; the commits are listed per area.
   `2026.2.0-dev.<count>`, not `…+<commit>`): `+` isn't a slot id character.
   The id stays `<family>-<version>-<variant>-<commit>`, e.g.
   `helios-2026.2.0-dev.721-styx-ab12cd34`; Atlas orders slots by version.
+- **Path-started services are never rate-limited (2026-10-30):** on HeliOS
+  dev.820, `board-identity-refresh.path` failed with unit-start-limit-hit
+  about 7 s into boot: update.json, usb-route.state and camera-streams.json
+  change several times in a row then, the refresh service hit systemd's
+  default start limit (5 in 10 s), and the path unit stayed failed, so later
+  changes went unseen until the 30 s timer. Every service a .path unit
+  starts (identity refresh, locate, reboot, security, usb-boot) now sets
+  `StartLimitIntervalSec=0` (locate pressed six times in 10 s wedged the
+  same way), and the identity refresh waits 1 s first so a burst becomes
+  one refresh. `tests/path-units.sh` fails on a path-started service with a
+  start limit. Not yet seen on hardware.
 - **The board's support bundle on its own BusyBox (2026-10-30):**
   `support-bundle` packed with `tar -czf`, which the image's BusyBox 1.38
   tar doesn't take (no -z): `--stdout` printed "invalid option" and wrote

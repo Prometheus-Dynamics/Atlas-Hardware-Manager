@@ -2,6 +2,10 @@
 Description=Apply the security switch to orion-node (/run/board/orion-node.env)
 Documentation=file:/usr/lib/board/security.env file:/usr/lib/board/orion-env
 After=board-orion-env.service
+# Started by its .path unit: never rate-limited, or a burst of changes or
+# requests trips the start limit and leaves the path unit failed for good
+# (tests/path-units.sh).
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot

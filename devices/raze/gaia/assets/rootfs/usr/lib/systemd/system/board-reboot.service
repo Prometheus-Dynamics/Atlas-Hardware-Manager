@@ -1,6 +1,10 @@
 [Unit]
 Description=Restart, asked by the computer on the board's USB link
 Documentation=file:/usr/lib/board/identity.env
+# Started by its .path unit: never rate-limited, or a burst of changes or
+# requests trips the start limit and leaves the path unit failed for good
+# (tests/path-units.sh).
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot

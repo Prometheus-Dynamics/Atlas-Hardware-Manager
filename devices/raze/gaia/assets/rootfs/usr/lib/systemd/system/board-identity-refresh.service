@@ -2,9 +2,16 @@
 Description=Refresh the identity's kept fields (/run/board/identity.part)
 Documentation=file:/usr/lib/board/identity
 After=board-identity.service
+# Started by its .path unit: never rate-limited, or a burst of changes or
+# requests trips the start limit and leaves the path unit failed for good
+# (tests/path-units.sh).
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
+# The watched files change several times in a row at boot: let a burst
+# settle into one refresh.
+ExecStartPre=/bin/sleep 1
 # Root, so the endpoint's sandboxed user only reads the result.
 ExecStart=/usr/lib/board/identity --write --quiet
 Nice=10
