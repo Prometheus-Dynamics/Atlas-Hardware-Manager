@@ -52,9 +52,8 @@ This branch is a ground-up rebuild. The previous app lives on `dev` and
 - **`atlas` CLI**: every flow from a terminal, for scripts and CI.
 - **Simulated devices** for demos, UI work, and CI.
 
-Not yet: the HeliOS driver (waiting on the HeliOS device API), the STM32
-bootloader driver, job history across restarts, and a signed Atlas
-self-update.
+Not yet: the STM32 bootloader driver, job history across restarts, and a
+signed Atlas self-update.
 
 ## Workspace
 

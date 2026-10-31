@@ -15,8 +15,13 @@ nothing else is added. Each item: **what**, **why**, **done when**,
     boot, write, verify, SSH key, restart, then running.
   - **Why:** the path every new board takes.
   - **Done when:** a board flashed from USB boot runs the image and takes
-    `atlas ssh-key`/slots commands, with the timing written down.
+    `atlas ssh-key`/slots commands, with the timing written down; the board
+    shows up by USB hotplug without a rescan; "Open as USB disk", "Browse
+    files", "Eject and restart" and "Add my SSH key" work on its eMMC.
   - **Blocked by:** a window with a Raze on this computer's USB (user).
+  - Already done on hardware: the first flash from this computer
+    (PhotonVision image, 2026-10-04/05), before `atlas flash` (56beff2) and
+    the restart through the gadget console (c3a0241, ae07a30).
 - [ ] **Raze hardware proofs: USB gadget rebind timing.**
   - **What:** a natural link stall recovers by the watch's rebind.
   - **Why:** the ECM stall's recovery is the field fix (its root cause is cut).
@@ -33,7 +38,10 @@ nothing else is added. Each item: **what**, **why**, **done when**,
   - **What:** a slot install with security off; with security on it must
     refuse or fall back.
   - **Why:** the default FRC path when there is no SystemCore.
-  - **Done when:** both cases on hardware.
+  - **Done when:** both cases on hardware, the board pulling the bundle from
+    Atlas's image server (5da10e3, a744d40), and an Orion update cancelled
+    and one rolled back through board-agent (17c2475; until now tested only
+    against a real orion-node with a fake writer).
   - **Blocked by:** a window with the board reachable directly, and a way to
     turn board security on.
   - Already done on hardware (2026-10-30): unhealthy-trial fallback, layered
@@ -55,7 +63,8 @@ nothing else is added. Each item: **what**, **why**, **done when**,
 - [ ] **Installer proofs on Windows and macOS (HELD).**
   - **What:** NSIS and dmg installed and run, USB access working.
   - **Why:** teams use both.
-  - **Done when:** a flash or update from each.
+  - **Done when:** a flash or update from each, with USB hotplug and mDNS
+    watching finding the board on its own.
   - **Blocked by:** the user's hold.
 - **Pinned for later, not this release:** the release signing key (user
   decision 2026-10-30). Releases stay usable unsigned (signatures are
@@ -189,7 +198,7 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
       elevated helper per OS (pkexec, osascript, RunAs).
 - [x] Raspberry Pi recovery driver: USB boot, wait for the eMMC, write,
       verify; EEPROM (bootloader) update action.
-- [x] Device packages in `devices/` (Raze, now 1.0.7, owned here): catalog
+- [x] Device packages in `devices/` (Raze 1.0.8-dev, roboRIO; owned here): catalog
       naming, recovery steps, EEPROM files, the `raze-leds` LED helper, a
       locate action on the identity endpoint, opt-in SSH keys from the boot
       partition, and a serial console on the USB gadget.
@@ -228,77 +237,90 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
       update, keeps the result per board serial and shows it on a Self-test
       card with "Run again".
 
+### Updates and Orion
+- [x] atlas-driver-orion: Orion adds readings, locate/reboot and updates to
+      the device with the same board serial (capability sources in the
+      core).
+- [x] Bundle host: `atlas-image-server` serves update images over HTTP
+      (per-update tokens, ranges, ETag) for boards to pull (5da10e3); a
+      board on this computer's USB pulls slots from it with no SSH key
+      (3b999e3).
+- [x] A/B writer in the device package (`devices/raze/tests/update.sh`) and
+      the SSH update transport for boards listing `ab-tryboot`.
+- [x] `board-agent`, the Orion device agent (17c2475; tested against a real
+      orion-node with a fake writer).
+- [x] Slots: slot installs, boot-once, layered slots and push (verified on
+      hardware 2026-10-26/30); the unhealthy-trial fallback (2026-10-30,
+      b285300).
+
 ### Tooling and install
 - [x] `atlas` CLI covering every flow, with `--sim` fleets.
 - [x] Installers via `scripts/bundle.sh`: deb/rpm (udev rule included),
       AppImage, NSIS (WinUSB driver install), dmg. USB access fix button.
 - [x] CI on Linux, Windows, macOS; installers on tags or manual runs.
 
-## Not yet tested
+### Closed in the TODO audit (2026-10-31)
 
-- [x] Real Raze end to end: USB boot, eMMC write, verify, helper elevation
-      (PhotonVision image, 2026-10-04/05).
-- [ ] Open as USB disk / Browse / Eject / Add my SSH key on hardware.
-- [ ] Raze 1.0.7 on hardware: LED colour order, locate, SSH keys, serial
-      console. Fan polarity (`dtoverlay=raze-fan,polarity=0`) still to test.
-- [ ] Raze with lemnosd (Lemnos cca50f7, `d5302db`) on hardware: an OS build
-      with the `lemnos` source; the sensors binding through the bus
-      selectors (`i2c:compatible=i2c-gpio`,
-      `i2c:of=/axi/pcie@1000120000/rp1/i2c@74000`) and their readings; the
-      udev rules (lemnosd as `lemnos`, not root); `raze-leds` and locate as
-      lemnosd clients; `selftest --interactive` (frames above other
-      clients' colours, but below a status: check with HeliOS running); the
-      fan check's duties and hand-back; the LED direction; the INA238 shunt
-      against the schematic; the RP1 GPIO chip label (`pinctrl-rp1`).
-- [ ] USB hotplug and mDNS watching on real hardware (Linux, Windows, macOS).
-- [ ] Windows and macOS installers on real machines.
+Each was an open item below "Done"; the evidence is what closed it.
 
-## Next
+- [x] Raze 1.0.7 features on hardware: LED colour order and fan polarity
+      (verified on a Raze 2026-10-06, manifest `verified` notes, ff18ab8,
+      f98489f); locate through lemnosd (lemnosd cd72ad0 on a Raze,
+      2026-10-07); SSH keys from the boot partition (found and fixed on
+      hardware, used on every bench window since); the gadget serial console
+      (the rebind recovery and flash restart use ttyGS0, c3a0241, 3b999e3).
+- [x] Orion transport: the operator client (2ff0dd9), each board's own
+      node (a744d40); on hardware, live readings over Orion streams
+      (2d46378) and slots listed through the SystemCore over Orion
+      (3ac887a, 2026-10-27).
+- [x] board-agent on a Raze with orion-node, and its Gaia artifact in a full
+      image build: HeliOS images ship it, and slots over Orion read from it
+      on hardware (2026-10-27). Its update cancel and rollback moved to the
+      keyless freeze item above.
+- [x] Lemnos asks from the Raze integration: `lemnos-ctl fan release`, the
+      board-selftest layer at priority 100 (Lemnos be8321a, Raze d5302db),
+      and the RP1 path in Lemnos's docs/board-definition.md.
+- [x] HeliOS OTA for running devices: slots over SSH, Orion and the
+      controller gateway (verified 2026-10-27), keyless install through the
+      SystemCore (3e350dd, 11.5 s on hardware 2026-10-30), A/B over SSH
+      (the A/B proof stays a freeze item). The board driver
+      (`/.well-known/pd-device`) serves HeliOS boards; no separate driver is
+      needed.
+- [x] Device side endpoints in the Raze package: `/status`, `/events`,
+      `/actions` (locate offered; reboot through BOARD_ACTIONS), board-stream
+      on :5898 and the camera streams list, read by the board driver; logs
+      come in the support bundle (`atlas support`, on hardware 2026-10-30).
 
-- [x] atlas-driver-orion against Orion v4 (c22fa42): Orion adds readings,
-      locate/reboot, and A/B updates to the device with the same board
-      serial (capability sources in the core); tested against a fake Orion.
-- [ ] Orion transport: Orion's embeddable operator client (signed
-      orion+tcp, per-identity action rights). HTTP is query-only in v4, so
-      the app registers no Orion directory until it lands.
-- [x] Bundle host: `atlas-image-server` serves update images over HTTP
-      (port 7700, per-update tokens, ranges, ETag) for boards to pull; the
-      app passes it to the Orion directory, so Orion-reachable boards get
-      updates. Still to test end to end with a real board's agent.
-- [x] A/B writer in the device package (Raze 1.0.9–1.0.12, tested
-      off-device in `devices/raze/tests/update.sh`).
-- [x] SSH update transport for boards listing `ab-tryboot`.
-- [ ] Verify A/B on a real Raze with HeliOS's PhotonVision image (they test
-      stage/apply/confirm/rollback first).
-- [x] `board-agent` for Orion-driven updates (crates/board-agent, Orion
-      f3efb26; tested against a real orion-node with a fake writer).
-- [ ] Run board-agent on a Raze with orion-node: a full Orion update,
-      cancel and rollback, and the Gaia artifact (gaia/board-agent.toml) in
-      a full image build.
-- [ ] Lemnos asks from the Raze integration: a fan "release" request that
-      hands one fan back while lemnosd runs (today only `fan restore`,
-      root, via sysfs; lemnosd keeps the first write's governor state); a
-      test/diagnostic LED layer above status for the self-test; the Raze's
-      RP1 path (`/axi/pcie@1000120000/rp1/...`) in Lemnos's docs example.
-- [ ] HeliOS secured mode (helios-api `docs/docs/api/http.md`): when
-      `/v1/identity` reports `helios.auth.mode = secured`, send
-      `Authorization: Bearer helios_<64 hex>` on everything but health,
-      identity and auth/status (incl. `/v1/ota/*` and the `/v1/device/os`
-      reconnect probe). Store tokens per board; prompt to paste one on 401
-      (`WWW-Authenticate: Bearer`). Off by default; not used by PhotonVision.
+## Not yet verified on hardware
 
-- [ ] UI direction: confirm the current style fits; else compare 2-3
-      directions side by side.
-- [ ] Rebuild installers so they carry Raze 1.0.6.
+- [ ] **Raze facts the manifest still marks unverified.**
+  - **What:** LED count and index direction, the INA238 shunt (10 or
+    20 mOhm), the IMU's mount angles, the USB-A power line's GPIO chip and
+    control, the kernel's built-in list and version notes;
+    `selftest --interactive` with HeliOS running.
+  - **Why:** the generated board files and the self-test trust them.
+  - **Done when:** each has a `verified` note in `devices/raze/manifest.json`
+    and `gen-raze.py --check` passes.
+  - **Blocked by:** a bench window; the shunt needs the resistor marking or a
+    USB-C meter (user).
 
-## Later
+## Later (not in 2026.1.0)
 
-- [ ] Device side (on hold): metrics, logs, and actions endpoints (locate via
-      the LED ring, restart) and a camera stream in the Raze package.
-- [ ] HeliOS driver / OTA updates for running devices.
-- [ ] STM32 driver for the custom USB bootloader.
-- [ ] Storage capacity "fits" check before flashing.
-- [ ] Job ETA and throughput from the backend; friendlier failure reasons.
-- [ ] Job history across restarts.
-- [ ] Light theme.
-- [ ] Tagged releases, code signing, Tauri self-updater.
+- [ ] HeliOS secured mode: when `/v1/identity` reports secured, send a
+      HeliOS API token (`Authorization: Bearer`) on everything but health,
+      identity and auth status, kept per board, asked for on a 401. Blocked
+      by: the freeze; FRC robots run open.
+- [ ] STM32 driver for the custom USB bootloader. Blocked by: the freeze and
+      the bootloader's protocol.
+- [ ] Storage "fits" check before flashing. Today the writer stops with
+      "image larger than disk" when the image outgrows it (atlas-blockdev
+      writer.rs), after writing part of it. Blocked by: the freeze.
+- [ ] Job ETA and throughput in the app; friendlier failure reasons. Blocked
+      by: the freeze.
+- [ ] Job history across restarts: jobs live in memory; update results
+      already reach the fleet activity, which is kept. Blocked by: the freeze
+      (the agent re-attach item above covers flashes behind a SystemCore).
+- [ ] Light theme (the tokens allow one: themes/glass.css). Blocked by: the
+      freeze.
+- [ ] Signed installers and a Tauri self-updater. Blocked by: the release
+      signing key, pinned for later (user, 2026-10-30).
