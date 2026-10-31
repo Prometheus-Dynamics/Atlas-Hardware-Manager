@@ -1,5 +1,150 @@
 # Atlas rebuild: progress and TODO
 
+## Next release (2026.1.0)
+
+The version is the workspace's `release` (Cargo.toml
+`[workspace.metadata.atlas]`); dev builds are `2026.1.0-dev.<count>+<commit>`.
+Scope is the 2026-10-27 freeze plus the user's last additions (2026-10-30);
+nothing else is added. Each item: **what**, **why**, **done when**,
+**blocked by**.
+
+### 1. Freeze items still open
+
+- [ ] **Raze hardware proofs: fresh USB-boot install.**
+  - **What:** `atlas flash` on a Raze in USB boot plugged into this computer:
+    boot, write, verify, SSH key, restart, then running.
+  - **Why:** the path every new board takes.
+  - **Done when:** a board flashed from USB boot runs the image and takes
+    `atlas ssh-key`/slots commands, with the timing written down.
+  - **Blocked by:** a window with a Raze on this computer's USB (user).
+- [ ] **Raze hardware proofs: USB gadget rebind timing.**
+  - **What:** a natural link stall recovers by the watch's rebind.
+  - **Why:** the ECM stall's recovery is the field fix (its root cause is cut).
+  - **Done when:** `usb-gadget.rebound` lands about 15 s after TX stops, in
+    events.jsonl and the host log.
+  - **Blocked by:** the same USB window.
+- [ ] **Raze hardware proofs: A/B in place.**
+  - **What:** an A/B image installed and confirmed on a Raze.
+  - **Why:** the update path for images without slots.
+  - **Done when:** stage, apply, confirm and a rollback on hardware.
+  - **Blocked by:** a bench window and an A/B image from HeliOS.
+- [ ] **Raze hardware proofs: keyless install over robot Ethernet (Orion, no
+      controller).**
+  - **What:** a slot install with security off; with security on it must
+    refuse or fall back.
+  - **Why:** the default FRC path when there is no SystemCore.
+  - **Done when:** both cases on hardware.
+  - **Blocked by:** a window with the board reachable directly, and a way to
+    turn board security on.
+  - Already done on hardware (2026-10-30): unhealthy-trial fallback, layered
+    slot plus push, keyless install through the SystemCore, support bundles.
+- [ ] **PIT/ROBOT end to end.**
+  - **What:** the PIT/ROBOT view on a real robot: controller, radio, boards
+    behind the SystemCore, readiness.
+  - **Why:** the main screen at events.
+  - **Done when:** a robot run shows every device with its state, and one
+    install from the view.
+  - **Blocked by:** a robot (user).
+- [ ] **Devices as data, step 3: SystemCore from data.**
+  - **What:** `devices/systemcore/` (fingerprints, info) like
+    `devices/roborio/` (step 2, 2f96f61).
+  - **Why:** new controllers without new code.
+  - **Done when:** the SystemCore's recognition and info come from its
+    package and its tests pass on the captured answers.
+  - **Blocked by:** nothing (its API is known: `:4800/api/team`).
+- [ ] **Installer proofs on Windows and macOS (HELD).**
+  - **What:** NSIS and dmg installed and run, USB access working.
+  - **Why:** teams use both.
+  - **Done when:** a flash or update from each.
+  - **Blocked by:** the user's hold.
+- **Pinned for later, not this release:** the release signing key (user
+  decision 2026-10-30). Releases stay usable unsigned (signatures are
+  checked when present, never required).
+
+### 2. Additions (the user's last, 2026-10-30)
+
+- [ ] **Atlas on the SystemCore: self-install, under Orion, detached
+      flashes.**
+  - **What:** Atlas sees a SystemCore and installs or upgrades its on-robot
+    agent with one click: a SystemCore `.ipk` built by Gaia (fallback: a
+    binary in persistent storage with a systemd unit; never /tmp). The
+    agent runs as a memory-capped service and registers with the
+    SystemCore's Orion node. It lists the USB devices behind the SystemCore
+    (boards in USB boot, gadgets, serials and ports). It takes images over
+    Orion and flashes detached: the flash goes on if Atlas's link drops,
+    and Atlas re-attaches to its progress. `atlas flash` and the GUI use it
+    for any board behind a robot controller, shown in PIT/ROBOT.
+  - **Why:** boards on a robot are plugged into the SystemCore, not the PC
+    (Phoenix Tuner works the same way on the roboRIO).
+  - **Done when:** from a clean SystemCore, `atlas flash` on a board in USB
+    boot behind it installs the agent, flashes, verifies and the board
+    comes up running, with no SSH step; pulling the PC's cable mid-write
+    doesn't stop the flash.
+  - **Blocked by:** Orion: a blob or stream transfer for images and a
+    long-running job API (exact ask sent to HeliOS); Gaia: the `.ipk`
+    recipe. Today's step, `atlas-usb-agent` (b912fef), boots and writes
+    over SSH. A board behind two cascaded hubs keeps dropping off USB
+    mid-write (a hub or cable problem, user).
+- [ ] **K230D flashing.**
+  - **What:** its BootROM USB download protocol in Atlas's Rust USB stack:
+    load the loader, then write the storage.
+  - **Why:** flash a blank K230D board from scratch.
+  - **Done when:** a blank board flashed and running, from Linux, Windows
+    and macOS.
+  - **Blocked by:** a K230D board; the protocol from the vendor tool's
+    source.
+- [ ] **Rockchip flashing: RK3588S, RK3576, RK3562, RK3566 modules and Flame
+      (RV1106G2).**
+  - **What:** Rockusb in maskrom and loader modes, in Atlas's own Rust
+    flasher (no rkdeveloptool or upgrade_tool at runtime): download the
+    loader, write the storage (eMMC, or SPI NAND on Flame), verify, reset.
+    LEDs while flashing, as on Raze.
+  - **Why:** the new boards.
+  - **Done when:** each board flashed from maskrom and running.
+  - **Blocked by:** the boards; their loaders from Gaia.
+- [ ] **NAND/UBI slot writing per Gaia's G8 layout.**
+  - **What:** slot installs onto raw NAND (UBI volumes) where the board has
+    no eMMC.
+  - **Why:** Flame and other NAND boards take slot updates like Raze.
+  - **Done when:** install, boot-once, confirm and fallback on a NAND
+    board.
+  - **Blocked by:** Gaia's G8 layout; a NAND board.
+- [ ] **Board records for the new boards.**
+  - **What:** `devices/<model>/` for each (recognition, recovery ids,
+    flashing method), so they show in PIT/ROBOT like Raze.
+  - **Why:** devices as data: no per-board code beyond the flasher.
+  - **Done when:** each is recognised in recovery and running, from its
+    package.
+  - **Blocked by:** each board's USB ids and identity contract
+    (board-gated).
+
+### 3. Release mechanics
+
+- [ ] **Changelogs.**
+  - **What:** release notes from the dev history, and
+    `devices/raze/CHANGELOG.md`'s Unreleased cut to a version.
+  - **Why:** teams need to know what changed.
+  - **Done when:** both written and reviewed by the user.
+  - **Blocked by:** nothing.
+- [ ] **Versions.**
+  - **What:** crates and Raze package from `-dev` to their release
+    versions; packaging checks pass (`scripts/tests/package-versions.sh`).
+  - **Why:** a release must not report `-dev`.
+  - **Done when:** `atlas --version` says `2026.1.0` on the tagged build.
+  - **Blocked by:** the items above.
+- [ ] **dev into main.**
+  - **What:** merge.
+  - **Why:** releases come from main.
+  - **Done when:** main has the release commit and CI is green on it.
+  - **Blocked by:** the user's OK.
+- [ ] **Tag and build.**
+  - **What:** `v2026.1.0`; CI builds deb, rpm, AppImage, NSIS and dmg.
+  - **Why:** the installers people download.
+  - **Done when:** the tagged installers install and run (Linux here;
+    Windows and macOS as their proofs allow).
+  - **Blocked by:** the user (Atlas sessions never tag).
+
+
 Atlas is being rebuilt as a fleet and device manager for all Prometheus
 Dynamics gear: connect to a robot over USB, through a device, or over the
 network, and manage every device on it. Stack: Rust core, Tauri 2 shell,
