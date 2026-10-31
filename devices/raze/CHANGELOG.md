@@ -11,6 +11,11 @@ OSes pin this layer by commit; the commits are listed per area.
   `2026.2.0-dev.<count>`, not `…+<commit>`): `+` isn't a slot id character.
   The id stays `<family>-<version>-<variant>-<commit>`, e.g.
   `helios-2026.2.0-dev.721-styx-ab12cd34`; Atlas orders slots by version.
+- **Gaia config v3 (2026-10-31):** the 16 layers are `config = 3`, rewritten
+  by `gaia migrate` (Gaia cd9ad15), which resolved HeliOS's raze build against
+  them before and after and found no difference: `${self}`, `${outputs.dir}`,
+  `${provider.…}`, `${assembly.…}` in place of `@self`, `${workspace.out_dir}`,
+  `$provider.…`, `$assembly.…`. They need Gaia cd9ad15 or later.
 - **Path-started services are never rate-limited (2026-10-30):** on HeliOS
   dev.820, `board-identity-refresh.path` failed with unit-start-limit-hit
   about 7 s into boot: update.json, usb-route.state and camera-streams.json

@@ -1,3 +1,4 @@
+config = 3
 description = "Raze runtime: identity endpoint and mDNS advertisement, default hostname, USB gadget network and serial, USB port power policy, LED ring probe, hardware description and self-test."
 
 # Units are installed in /usr/lib/systemd/system (not /etc), so an OS or user
@@ -8,450 +9,450 @@ description = "Raze runtime: identity endpoint and mDNS advertisement, default h
 
 [[stage.files]]
 id = "raze-NetworkManager-conf-d-60-board-conf"
-src = "@self/assets/rootfs/usr/lib/NetworkManager/conf.d/60-board.conf"
+src = "${self}/assets/rootfs/usr/lib/NetworkManager/conf.d/60-board.conf"
 dest = "/usr/lib/NetworkManager/conf.d/60-board.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-modprobe-d-raze-ws2812-pio-conf"
-src = "@self/assets/rootfs/usr/lib/modprobe.d/raze-ws2812-pio.conf"
+src = "${self}/assets/rootfs/usr/lib/modprobe.d/raze-ws2812-pio.conf"
 dest = "/usr/lib/modprobe.d/raze-ws2812-pio.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-modules-load-d-board-usb-gadget-conf"
-src = "@self/assets/rootfs/usr/lib/modules-load.d/board-usb-gadget.conf"
+src = "${self}/assets/rootfs/usr/lib/modules-load.d/board-usb-gadget.conf"
 dest = "/usr/lib/modules-load.d/board-usb-gadget.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-modules-load-d-raze-i2c-dev-conf"
-src = "@self/assets/rootfs/usr/lib/modules-load.d/raze-i2c-dev.conf"
+src = "${self}/assets/rootfs/usr/lib/modules-load.d/raze-i2c-dev.conf"
 dest = "/usr/lib/modules-load.d/raze-i2c-dev.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-device-package-env"
-src = "@self/assets/rootfs/usr/lib/board/board-package.env"
+src = "${self}/assets/rootfs/usr/lib/board/board-package.env"
 dest = "/usr/lib/board/board-package.env"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-hostname-default"
-src = "@self/assets/rootfs/usr/lib/board/hostname-default"
+src = "${self}/assets/rootfs/usr/lib/board/hostname-default"
 dest = "/usr/lib/board/hostname-default"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-hostname-env"
-src = "@self/assets/rootfs/usr/lib/board/hostname.env"
+src = "${self}/assets/rootfs/usr/lib/board/hostname.env"
 dest = "/usr/lib/board/hostname.env"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-identity"
-src = "@self/assets/rootfs/usr/lib/board/identity"
+src = "${self}/assets/rootfs/usr/lib/board/identity"
 dest = "/usr/lib/board/identity"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-identity-http"
-src = "@self/assets/rootfs/usr/lib/board/identity-http"
+src = "${self}/assets/rootfs/usr/lib/board/identity-http"
 dest = "/usr/lib/board/identity-http"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-identity-env"
-src = "@self/assets/rootfs/usr/lib/board/identity.env"
+src = "${self}/assets/rootfs/usr/lib/board/identity.env"
 dest = "/usr/lib/board/identity.env"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-lib-sh"
-src = "@self/assets/rootfs/usr/lib/board/lib.sh"
+src = "${self}/assets/rootfs/usr/lib/board/lib.sh"
 dest = "/usr/lib/board/lib.sh"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-raze-leds-reprobe"
-src = "@self/assets/rootfs/usr/lib/board/raze-leds-reprobe"
+src = "${self}/assets/rootfs/usr/lib/board/raze-leds-reprobe"
 dest = "/usr/lib/board/raze-leds-reprobe"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-usb-gadget-dhcp"
-src = "@self/assets/rootfs/usr/lib/board/usb-gadget-dhcp"
+src = "${self}/assets/rootfs/usr/lib/board/usb-gadget-dhcp"
 dest = "/usr/lib/board/usb-gadget-dhcp"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-usb-gadget-watch"
-src = "@self/assets/rootfs/usr/lib/board/usb-gadget-watch"
+src = "${self}/assets/rootfs/usr/lib/board/usb-gadget-watch"
 dest = "/usr/lib/board/usb-gadget-watch"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-usb-gadget-setup"
-src = "@self/assets/rootfs/usr/lib/board/usb-gadget-setup"
+src = "${self}/assets/rootfs/usr/lib/board/usb-gadget-setup"
 dest = "/usr/lib/board/usb-gadget-setup"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-usb-gadget-env"
-src = "@self/assets/rootfs/usr/lib/board/usb-gadget.env"
+src = "${self}/assets/rootfs/usr/lib/board/usb-gadget.env"
 dest = "/usr/lib/board/usb-gadget.env"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-network-05-board-usb-gadget-bridge-network"
-src = "@self/assets/rootfs/usr/lib/systemd/network/05-board-usb-gadget-bridge.network"
+src = "${self}/assets/rootfs/usr/lib/systemd/network/05-board-usb-gadget-bridge.network"
 dest = "/usr/lib/systemd/network/05-board-usb-gadget-bridge.network"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-network-05-board-usb-gadget-network"
-src = "@self/assets/rootfs/usr/lib/systemd/network/05-board-usb-gadget.network"
+src = "${self}/assets/rootfs/usr/lib/systemd/network/05-board-usb-gadget.network"
 dest = "/usr/lib/systemd/network/05-board-usb-gadget.network"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-resolved-conf-d-60-board-mdns-conf"
-src = "@self/assets/rootfs/usr/lib/systemd/resolved.conf.d/60-board-mdns.conf"
+src = "${self}/assets/rootfs/usr/lib/systemd/resolved.conf.d/60-board-mdns.conf"
 dest = "/usr/lib/systemd/resolved.conf.d/60-board-mdns.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-preset-70-board-preset"
-src = "@self/assets/rootfs/usr/lib/systemd/system-preset/70-board.preset"
+src = "${self}/assets/rootfs/usr/lib/systemd/system-preset/70-board.preset"
 dest = "/usr/lib/systemd/system-preset/70-board.preset"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-hostname-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-hostname.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-hostname.service"
 dest = "/usr/lib/systemd/system/board-hostname.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-data-setup-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-data-setup.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-data-setup.service"
 dest = "/usr/lib/systemd/system/board-data-setup.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-data-setup"
-src = "@self/assets/rootfs/usr/lib/board/data-setup"
+src = "${self}/assets/rootfs/usr/lib/board/data-setup"
 dest = "/usr/lib/board/data-setup"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-systemd-system-board-data-owners-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-data-owners.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-data-owners.service"
 dest = "/usr/lib/systemd/system/board-data-owners.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-data-owners"
-src = "@self/assets/rootfs/usr/lib/board/data-owners"
+src = "${self}/assets/rootfs/usr/lib/board/data-owners"
 dest = "/usr/lib/board/data-owners"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-data-owners-board-conf"
-src = "@self/assets/rootfs/usr/lib/board/data-owners.d/board.conf"
+src = "${self}/assets/rootfs/usr/lib/board/data-owners.d/board.conf"
 dest = "/usr/lib/board/data-owners.d/board.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-pstore-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-pstore.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-pstore.service"
 dest = "/usr/lib/systemd/system/board-pstore.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-pstore"
-src = "@self/assets/rootfs/usr/lib/board/pstore"
+src = "${self}/assets/rootfs/usr/lib/board/pstore"
 dest = "/usr/lib/board/pstore"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-systemd-system-board-netconsole-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-netconsole.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-netconsole.service"
 dest = "/usr/lib/systemd/system/board-netconsole.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-netconsole"
-src = "@self/assets/rootfs/usr/lib/board/netconsole"
+src = "${self}/assets/rootfs/usr/lib/board/netconsole"
 dest = "/usr/lib/board/netconsole"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-netconsole-env"
-src = "@self/assets/rootfs/usr/lib/board/netconsole.env"
+src = "${self}/assets/rootfs/usr/lib/board/netconsole.env"
 dest = "/usr/lib/board/netconsole.env"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-data-env"
-src = "@self/assets/rootfs/usr/lib/board/data.env"
+src = "${self}/assets/rootfs/usr/lib/board/data.env"
 dest = "/usr/lib/board/data.env"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-machine-id-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-machine-id.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-machine-id.service"
 dest = "/usr/lib/systemd/system/board-machine-id.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-machine-id"
-src = "@self/assets/rootfs/usr/lib/board/machine-id"
+src = "${self}/assets/rootfs/usr/lib/board/machine-id"
 dest = "/usr/lib/board/machine-id"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-systemd-journald-conf-d-60-board"
-src = "@self/assets/rootfs/usr/lib/systemd/journald.conf.d/60-board.conf"
+src = "${self}/assets/rootfs/usr/lib/systemd/journald.conf.d/60-board.conf"
 dest = "/usr/lib/systemd/journald.conf.d/60-board.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-stream-socket"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-stream.socket"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-stream.socket"
 dest = "/usr/lib/systemd/system/board-stream.socket"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-stream-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-stream@.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-stream@.service"
 dest = "/usr/lib/systemd/system/board-stream@.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-http-socket"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-http.socket"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-http.socket"
 dest = "/usr/lib/systemd/system/board-http.socket"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-http-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-http@.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-http@.service"
 dest = "/usr/lib/systemd/system/board-http@.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-identity-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-identity.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-identity.service"
 dest = "/usr/lib/systemd/system/board-identity.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-identity-refresh-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-identity-refresh.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-identity-refresh.service"
 dest = "/usr/lib/systemd/system/board-identity-refresh.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-identity-refresh-path"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-identity-refresh.path"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-identity-refresh.path"
 dest = "/usr/lib/systemd/system/board-identity-refresh.path"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-identity-refresh-timer"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-identity-refresh.timer"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-identity-refresh.timer"
 dest = "/usr/lib/systemd/system/board-identity-refresh.timer"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-usb-route"
-src = "@self/assets/rootfs/usr/lib/board/usb-route"
+src = "${self}/assets/rootfs/usr/lib/board/usb-route"
 dest = "/usr/lib/board/usb-route"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-support-bundle"
-src = "@self/assets/rootfs/usr/lib/board/support-bundle"
+src = "${self}/assets/rootfs/usr/lib/board/support-bundle"
 dest = "/usr/lib/board/support-bundle"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-systemd-system-board-usb-route-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-usb-route.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-usb-route.service"
 dest = "/usr/lib/systemd/system/board-usb-route.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-usb-gadget-dhcp-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-usb-gadget-dhcp.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-usb-gadget-dhcp.service"
 dest = "/usr/lib/systemd/system/board-usb-gadget-dhcp.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-usb-gadget-watch-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-usb-gadget-watch.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-usb-gadget-watch.service"
 dest = "/usr/lib/systemd/system/board-usb-gadget-watch.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-usb-gadget-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-usb-gadget.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-usb-gadget.service"
 dest = "/usr/lib/systemd/system/board-usb-gadget.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-raze-leds"
-src = "@self/assets/rootfs/usr/lib/board/raze-leds"
+src = "${self}/assets/rootfs/usr/lib/board/raze-leds"
 dest = "/usr/lib/board/raze-leds"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-ssh-keys"
-src = "@self/assets/rootfs/usr/lib/board/ssh-keys"
+src = "${self}/assets/rootfs/usr/lib/board/ssh-keys"
 dest = "/usr/lib/board/ssh-keys"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-ssh-keys-env"
-src = "@self/assets/rootfs/usr/lib/board/ssh-keys.env"
+src = "${self}/assets/rootfs/usr/lib/board/ssh-keys.env"
 dest = "/usr/lib/board/ssh-keys.env"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-tmpfiles-d-board-conf"
-src = "@self/assets/rootfs/usr/lib/tmpfiles.d/board.conf"
+src = "${self}/assets/rootfs/usr/lib/tmpfiles.d/board.conf"
 dest = "/usr/lib/tmpfiles.d/board.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-reboot-path"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-reboot.path"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-reboot.path"
 dest = "/usr/lib/systemd/system/board-reboot.path"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-reboot-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-reboot.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-reboot.service"
 dest = "/usr/lib/systemd/system/board-reboot.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-usb-boot-path"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-usb-boot.path"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-usb-boot.path"
 dest = "/usr/lib/systemd/system/board-usb-boot.path"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-usb-boot-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-usb-boot.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-usb-boot.service"
 dest = "/usr/lib/systemd/system/board-usb-boot.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-security-env"
-src = "@self/assets/rootfs/usr/lib/board/security.env"
+src = "${self}/assets/rootfs/usr/lib/board/security.env"
 dest = "/usr/lib/board/security.env"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-etc-avahi-daemon-conf"
-src = "@self/assets/rootfs/etc/avahi/avahi-daemon.conf"
+src = "${self}/assets/rootfs/etc/avahi/avahi-daemon.conf"
 dest = "/etc/avahi/avahi-daemon.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-etc-avahi-services-mount"
-src = "@self/assets/rootfs/usr/lib/systemd/system/etc-avahi-services.mount"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/etc-avahi-services.mount"
 dest = "/usr/lib/systemd/system/etc-avahi-services.mount"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-avahi-daemon-service-d-50-board"
-src = "@self/assets/rootfs/usr/lib/systemd/system/avahi-daemon.service.d/50-board.conf"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/avahi-daemon.service.d/50-board.conf"
 dest = "/usr/lib/systemd/system/avahi-daemon.service.d/50-board.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-power-log-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-power-log.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-power-log.service"
 dest = "/usr/lib/systemd/system/board-power-log.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-locate-path"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-locate.path"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-locate.path"
 dest = "/usr/lib/systemd/system/board-locate.path"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-locate-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-locate.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-locate.service"
 dest = "/usr/lib/systemd/system/board-locate.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-ssh-keys-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-ssh-keys.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-ssh-keys.service"
 dest = "/usr/lib/systemd/system/board-ssh-keys.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-ssh-hostkeys-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-ssh-hostkeys.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-ssh-hostkeys.service"
 dest = "/usr/lib/systemd/system/board-ssh-hostkeys.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-ssh-hostkeys"
-src = "@self/assets/rootfs/usr/lib/board/ssh-hostkeys"
+src = "${self}/assets/rootfs/usr/lib/board/ssh-hostkeys"
 dest = "/usr/lib/board/ssh-hostkeys"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-systemd-system-serial-getty-ttygs0-dropin"
-src = "@self/assets/rootfs/usr/lib/systemd/system/serial-getty@ttyGS0.service.d/50-board.conf"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/serial-getty@ttyGS0.service.d/50-board.conf"
 dest = "/usr/lib/systemd/system/serial-getty@ttyGS0.service.d/50-board.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-serial-getty-ttygs1-dropin"
-src = "@self/assets/rootfs/usr/lib/systemd/system/serial-getty@ttyGS1.service.d/50-board.conf"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/serial-getty@ttyGS1.service.d/50-board.conf"
 dest = "/usr/lib/systemd/system/serial-getty@ttyGS1.service.d/50-board.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-raze-leds-reprobe-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/raze-leds-reprobe.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/raze-leds-reprobe.service"
 dest = "/usr/lib/systemd/system/raze-leds-reprobe.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-udev-rules-d-60-raze-usb-power-rules"
-src = "@self/assets/rootfs/usr/lib/udev/rules.d/60-raze-usb-power.rules"
+src = "${self}/assets/rootfs/usr/lib/udev/rules.d/60-raze-usb-power.rules"
 dest = "/usr/lib/udev/rules.d/60-raze-usb-power.rules"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-raze-sensors-toml"
-src = "@self/assets/rootfs/usr/share/board/raze/sensors.toml"
+src = "${self}/assets/rootfs/usr/share/board/raze/sensors.toml"
 dest = "/usr/share/board/raze/sensors.toml"
 origin = "static-asset"
 
@@ -459,102 +460,102 @@ origin = "static-asset"
 # self-calibration of an uncalibrated camera starts from.
 [[stage.files]]
 id = "raze-board-raze-camera-toml"
-src = "@self/assets/rootfs/usr/share/board/raze/camera.toml"
+src = "${self}/assets/rootfs/usr/share/board/raze/camera.toml"
 dest = "/usr/share/board/raze/camera.toml"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-update"
-src = "@self/assets/rootfs/usr/lib/board/update"
+src = "${self}/assets/rootfs/usr/lib/board/update"
 dest = "/usr/lib/board/update"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-slots"
-src = "@self/assets/rootfs/usr/lib/board/slots"
+src = "${self}/assets/rootfs/usr/lib/board/slots"
 dest = "/usr/lib/board/slots"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-update-env"
-src = "@self/assets/rootfs/usr/lib/board/update.env"
+src = "${self}/assets/rootfs/usr/lib/board/update.env"
 dest = "/usr/lib/board/update.env"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-update-confirm-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-update-confirm.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-update-confirm.service"
 dest = "/usr/lib/systemd/system/board-update-confirm.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-conf-d-60-board-watchdog-conf"
-src = "@self/assets/rootfs/usr/lib/systemd/system.conf.d/60-board-watchdog.conf"
+src = "${self}/assets/rootfs/usr/lib/systemd/system.conf.d/60-board-watchdog.conf"
 dest = "/usr/lib/systemd/system.conf.d/60-board-watchdog.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-usb-boot"
-src = "@self/assets/rootfs/usr/lib/board/usb-boot"
+src = "${self}/assets/rootfs/usr/lib/board/usb-boot"
 dest = "/usr/lib/board/usb-boot"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-ssh-sshd-config-d-50-board-conf"
-src = "@self/assets/rootfs/etc/ssh/sshd_config.d/50-board.conf"
+src = "${self}/assets/rootfs/etc/ssh/sshd_config.d/50-board.conf"
 dest = "/etc/ssh/sshd_config.d/50-board.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-update-link-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-update-link.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-update-link.service"
 dest = "/usr/lib/systemd/system/board-update-link.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-leds-env"
-src = "@self/assets/rootfs/usr/lib/board/leds.env"
+src = "${self}/assets/rootfs/usr/lib/board/leds.env"
 dest = "/usr/lib/board/leds.env"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-hardware-env"
-src = "@self/assets/rootfs/usr/lib/board/hardware.env"
+src = "${self}/assets/rootfs/usr/lib/board/hardware.env"
 dest = "/usr/lib/board/hardware.env"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-hw-sh"
-src = "@self/assets/rootfs/usr/lib/board/hw.sh"
+src = "${self}/assets/rootfs/usr/lib/board/hw.sh"
 dest = "/usr/lib/board/hw.sh"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-selftest"
-src = "@self/assets/rootfs/usr/lib/board/selftest"
+src = "${self}/assets/rootfs/usr/lib/board/selftest"
 dest = "/usr/lib/board/selftest"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-hw-sysfs-sh"
-src = "@self/assets/rootfs/usr/lib/board/hw-sysfs.sh"
+src = "${self}/assets/rootfs/usr/lib/board/hw-sysfs.sh"
 dest = "/usr/lib/board/hw-sysfs.sh"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-hw-lemnosd-sh"
-src = "@self/assets/rootfs/usr/lib/board/hw-lemnosd.sh"
+src = "${self}/assets/rootfs/usr/lib/board/hw-lemnosd.sh"
 dest = "/usr/lib/board/hw-lemnosd.sh"
 origin = "static-asset"
 
 # lemnosd's board definition, generated from manifest.json (gen-raze.py).
 [[stage.files]]
 id = "raze-lemnos-board"
-src = "@self/assets/rootfs/etc/lemnos/board.toml"
+src = "${self}/assets/rootfs/etc/lemnos/board.toml"
 dest = "/etc/lemnos/board.toml"
 mode = 420
 origin = "static-asset"
@@ -562,101 +563,101 @@ origin = "static-asset"
 # Write access for lemnosd (the `lemnos` user) to the fan and the device nodes.
 [[stage.files]]
 id = "raze-udev-rules-d-60-board-lemnosd-rules"
-src = "@self/assets/rootfs/usr/lib/udev/rules.d/60-board-lemnosd.rules"
+src = "${self}/assets/rootfs/usr/lib/udev/rules.d/60-board-lemnosd.rules"
 dest = "/usr/lib/udev/rules.d/60-board-lemnosd.rules"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-agent-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-agent.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-agent.service"
 dest = "/usr/lib/systemd/system/board-agent.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-orion-node-board-agent-dropin"
-src = "@self/assets/rootfs/usr/lib/systemd/system/orion-node.service.d/50-board-agent.conf"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/orion-node.service.d/50-board-agent.conf"
 dest = "/usr/lib/systemd/system/orion-node.service.d/50-board-agent.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-orion-env-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-orion-env.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-orion-env.service"
 dest = "/usr/lib/systemd/system/board-orion-env.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-security-path"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-security.path"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-security.path"
 dest = "/usr/lib/systemd/system/board-security.path"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-security-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-security.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-security.service"
 dest = "/usr/lib/systemd/system/board-security.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-orion-env"
-src = "@self/assets/rootfs/usr/lib/board/orion-env"
+src = "${self}/assets/rootfs/usr/lib/board/orion-env"
 dest = "/usr/lib/board/orion-env"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-systemd-system-lemnos-orion-board-dropin"
-src = "@self/assets/rootfs/usr/lib/systemd/system/lemnos-orion.service.d/50-board.conf"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/lemnos-orion.service.d/50-board.conf"
 dest = "/usr/lib/systemd/system/lemnos-orion.service.d/50-board.conf"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-board-event"
-src = "@self/assets/rootfs/usr/lib/board/event"
+src = "${self}/assets/rootfs/usr/lib/board/event"
 dest = "/usr/lib/board/event"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-boot-record"
-src = "@self/assets/rootfs/usr/lib/board/boot-record"
+src = "${self}/assets/rootfs/usr/lib/board/boot-record"
 dest = "/usr/lib/board/boot-record"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-board-status"
-src = "@self/assets/rootfs/usr/lib/board/status"
+src = "${self}/assets/rootfs/usr/lib/board/status"
 dest = "/usr/lib/board/status"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
 id = "raze-systemd-system-board-boot-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-boot.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-boot.service"
 dest = "/usr/lib/systemd/system/board-boot.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-drift-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-drift.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-drift.service"
 dest = "/usr/lib/systemd/system/board-drift.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-drift-timer"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-drift.timer"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-drift.timer"
 dest = "/usr/lib/systemd/system/board-drift.timer"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-health-service"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-health.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-health.service"
 dest = "/usr/lib/systemd/system/board-health.service"
 origin = "static-asset"
 
 [[stage.files]]
 id = "raze-systemd-system-board-health-timer"
-src = "@self/assets/rootfs/usr/lib/systemd/system/board-health.timer"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-health.timer"
 dest = "/usr/lib/systemd/system/board-health.timer"
 origin = "static-asset"
 

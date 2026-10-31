@@ -18,20 +18,22 @@
 #   - FAT16, not FAT12 (Gaia >= 4a820ce formats small vfat as FAT16);
 #   - rp1-mailbox before rp1-fw/rp1-pio (bound through DT, not in
 #     modules.dep), so the module list is explicit.
-# `@self/assets/flasher/...`: the files next to this layer (devices/raze/gaia/assets/flasher).
+# `${self}/assets/flasher/...`: the files next to this layer (devices/raze/gaia/assets/flasher).
+
+config = 3
 
 [[image.assembly.trees]]
 id = "flasher-initramfs"
-path = "$assembly.work/flasher/initramfs"
+path = "${assembly.work}/flasher/initramfs"
 
 [[image.assembly.trees]]
 id = "flasher-boot"
-path = "$assembly.work/flasher/boot"
+path = "${assembly.work}/flasher/boot"
 
 # The OS's own BusyBox with its glibc closure from the target tree.
 [[image.assembly.busybox_initramfs]]
 tree = "flasher-initramfs"
-busybox = "$provider.buildroot_output/target/bin/busybox"
+busybox = "${provider.buildroot_output}/target/bin/busybox"
 include_runtime_libs = true
 applets = ["sh"]
 
@@ -40,15 +42,15 @@ applets = ["sh"]
 # the daemon's bulk interface.
 [[image.assembly.kernel_modules]]
 tree = "flasher-initramfs"
-from = "$provider.buildroot_output/target/lib/modules"
-depmod = "$provider.buildroot_output/host/sbin/depmod"
+from = "${provider.buildroot_output}/target/lib/modules"
+depmod = "${provider.buildroot_output}/host/sbin/depmod"
 modules = ["libcomposite", "u_serial", "usb_f_acm", "usb_f_fs",
            "rp1-mailbox", "rp1-fw", "rp1-pio", "ws2812-pio-rp1",
            "nls_iso8859-1", "crc32c-cryptoapi"]
 
 [[image.assembly.files]]
 tree = "flasher-initramfs"
-src = "@self/assets/flasher/init"
+src = "${self}/assets/flasher/init"
 dest = "init"
 mode = "0755"
 
@@ -56,7 +58,7 @@ mode = "0755"
 # artifact below: Atlas talks to it over the gadget's bulk interface.
 [[image.assembly.files]]
 tree = "flasher-initramfs"
-src = "${workspace.out_dir}/artifacts/atlas-flasher/atlas-flasher"
+src = "${outputs.dir}/artifacts/atlas-flasher/atlas-flasher"
 dest = "usr/bin/atlas-flasher"
 mode = "0755"
 
@@ -64,17 +66,17 @@ mode = "0755"
 id = "flasher-initramfs"
 kind = "cpio-zstd"
 source_tree = "flasher-initramfs"
-output = "$assembly.work/flasher/initramfs.cpio.zst"
+output = "${assembly.work}/flasher/initramfs.cpio.zst"
 
 [[image.assembly.transforms]]
 kind = "gzip"
-src = "$provider.buildroot_output/images/Image"
-dest = "$assembly.tree.flasher-boot/kernel8.img"
+src = "${provider.buildroot_output}/images/Image"
+dest = "${assembly.tree.flasher-boot}/kernel8.img"
 deterministic = true
 
 [[image.assembly.files]]
 tree = "flasher-boot"
-src_glob = "$provider.buildroot_output/images/bcm2712-rpi-cm5*.dtb"
+src_glob = "${provider.buildroot_output}/images/bcm2712-rpi-cm5*.dtb"
 dest = "./"
 
 # The firmware overlays the build installs (bcm2712d0, which the firmware
@@ -82,89 +84,89 @@ dest = "./"
 # build's own.
 [[image.assembly.files]]
 tree = "flasher-boot"
-src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtbo"
+src_glob = "${provider.buildroot_output}/images/rpi-firmware/overlays/*.dtbo"
 dest = "overlays/"
 
 [[image.assembly.files]]
 tree = "flasher-boot"
-src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtb"
+src_glob = "${provider.buildroot_output}/images/rpi-firmware/overlays/*.dtb"
 dest = "overlays/"
 
 [[image.assembly.files]]
 tree = "flasher-boot"
-src_glob = "$provider.buildroot_output/images/raze-overlays/*.dtbo"
+src_glob = "${provider.buildroot_output}/images/raze-overlays/*.dtbo"
 dest = "overlays/"
 
 [[image.assembly.files]]
 tree = "flasher-boot"
-src = "@self/assets/flasher/config.txt"
+src = "${self}/assets/flasher/config.txt"
 dest = "config.txt"
 
 [[image.assembly.files]]
 tree = "flasher-boot"
-src = "@self/assets/flasher/cmdline.txt"
+src = "${self}/assets/flasher/cmdline.txt"
 dest = "cmdline.txt"
 
 [[image.assembly.files]]
 tree = "flasher-boot"
-src = "$assembly.work/flasher/initramfs.cpio.zst"
+src = "${assembly.work}/flasher/initramfs.cpio.zst"
 dest = "initramfs.cpio.zst"
 
 [[image.assembly.filesystems]]
 id = "flasher-boot"
 kind = "vfat"
 source_tree = "flasher-boot"
-output = "$assembly.work/flasher/raze-flasher-boot.img"
+output = "${assembly.work}/flasher/raze-flasher-boot.img"
 size = "auto"
 publish = true
 
 [[image.assembly.archives]]
 id = "flasher"
-output = "$assembly.out/raze-flasher-${build.version}.tar"
+output = "${assembly.out}/raze-flasher-${build.version}.tar"
 
 [[image.assembly.archives.members]]
 name = "bootfiles/2712/bootcode5.bin"
-src = "@self/assets/flasher/bootfiles/2712/bootcode5.bin"
+src = "${self}/assets/flasher/bootfiles/2712/bootcode5.bin"
 
 [[image.assembly.archives.members]]
 name = "bootfiles/2712/bootmain"
-src = "@self/assets/flasher/bootfiles/2712/bootmain"
+src = "${self}/assets/flasher/bootfiles/2712/bootmain"
 
 [[image.assembly.archives.members]]
 name = "bootfiles/2712/font.bin"
-src = "@self/assets/flasher/bootfiles/2712/font.bin"
+src = "${self}/assets/flasher/bootfiles/2712/font.bin"
 
 [[image.assembly.archives.members]]
 name = "bootfiles/2712/logo.bin"
-src = "@self/assets/flasher/bootfiles/2712/logo.bin"
+src = "${self}/assets/flasher/bootfiles/2712/logo.bin"
 
 [[image.assembly.archives.members]]
 name = "bootfiles/2712/mcb.bin"
-src = "@self/assets/flasher/bootfiles/2712/mcb.bin"
+src = "${self}/assets/flasher/bootfiles/2712/mcb.bin"
 
 [[image.assembly.archives.members]]
 name = "bootfiles/2712/memsys00.bin"
-src = "@self/assets/flasher/bootfiles/2712/memsys00.bin"
+src = "${self}/assets/flasher/bootfiles/2712/memsys00.bin"
 
 [[image.assembly.archives.members]]
 name = "bootfiles/2712/memsys01.bin"
-src = "@self/assets/flasher/bootfiles/2712/memsys01.bin"
+src = "${self}/assets/flasher/bootfiles/2712/memsys01.bin"
 
 [[image.assembly.archives.members]]
 name = "bootfiles/2712/memsys02.bin"
-src = "@self/assets/flasher/bootfiles/2712/memsys02.bin"
+src = "${self}/assets/flasher/bootfiles/2712/memsys02.bin"
 
 [[image.assembly.archives.members]]
 name = "bootfiles/2712/memsys03.bin"
-src = "@self/assets/flasher/bootfiles/2712/memsys03.bin"
+src = "${self}/assets/flasher/bootfiles/2712/memsys03.bin"
 
 [[image.assembly.archives.members]]
 name = "config.txt"
-src = "@self/assets/flasher/outer-config.txt"
+src = "${self}/assets/flasher/outer-config.txt"
 
 [[image.assembly.archives.members]]
 name = "boot.img"
-src = "$assembly.work/flasher/raze-flasher-boot.img"
+src = "${assembly.work}/flasher/raze-flasher-boot.img"
 
 # atlas-flasher, the daemon, as board-agent is built (board-agent.toml): a
 # static aarch64 musl binary from the OS build's `atlas` source. Not
@@ -177,15 +179,15 @@ package = "flasher"
 target = "aarch64-unknown-linux-musl"
 profile = "device"
 target_name = "atlas-flasher"
-output_path = "${workspace.out_dir}/artifacts/atlas-flasher/atlas-flasher"
+output_path = "${outputs.dir}/artifacts/atlas-flasher/atlas-flasher"
 
 [artifacts.execution]
 backend = "docker"
 
 [artifacts.execution.docker]
 image = "board-aarch64-musl"
-dockerfile = "@self/docker/aarch64-musl.Dockerfile"
-context = "@self/docker"
+dockerfile = "${self}/docker/aarch64-musl.Dockerfile"
+context = "${self}/docker"
 
 # Assembly items belong to the Buildroot image, as in boot.toml.
 [image]

@@ -3,6 +3,7 @@
 # eMMC ends. The tools it uses: sfdisk, blkid, blockdev (util-linux's basic
 # set), partx (its partition utilities), mkfs.ext4, e2fsck, dumpe2fs and
 # resize2fs (e2fsprogs).
+config = 3
 gaia_version = ">=2.0.0"
 
 [image]

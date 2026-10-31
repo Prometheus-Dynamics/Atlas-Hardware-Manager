@@ -18,6 +18,8 @@
 # slot_variant per variant or preset, not as "${input.backend}".
 # Outputs (in the image output dir): <id>.slot.tar and <id>.img.xz.
 
+config = 3
+
 [inputs.slot_family]
 description = "OS family in the slot id and slot.json (photonvision, helios): whose data dir the initramfs binds"
 kind = "string"
@@ -90,15 +92,15 @@ stage_env_sets = ["slot-identity"]
 
 [[image.assembly.trees]]
 id = "slots-fat"
-path = "$assembly.work/slots/fat"
+path = "${assembly.work}/slots/fat"
 
 [[image.assembly.trees]]
 id = "slots-manifest"
-path = "$assembly.work/slots/manifest"
+path = "${assembly.work}/slots/manifest"
 
 [[image.assembly.trees]]
 id = "slots-data"
-path = "$assembly.work/slots/data"
+path = "${assembly.work}/slots/data"
 
 # The boot payload of a slot (kernel, initramfs, both CM5 DTBs, the overlays,
 # the base cmdline). It is filled once, here, and the first-flash FAT copies
@@ -108,22 +110,22 @@ path = "$assembly.work/slots/data"
 # the three Atlas-built overlays, so the result does not depend on copy order.
 [[image.assembly.trees]]
 id = "slots-payload"
-path = "$assembly.work/slots/payload"
+path = "${assembly.work}/slots/payload"
 
 # dm-verity over the read-only root (appended tree; superblock at hash_offset).
 [[image.assembly.transforms]]
 kind = "verity"
-src = "$provider.images/rootfs.erofs"
-dest = "$assembly.work/slots/rootfs.erofs"
+src = "${provider.images}/rootfs.erofs"
+dest = "${assembly.work}/slots/rootfs.erofs"
 
 [[image.assembly.files]]
 tree = "slots-payload"
-src = "$assembly.tree.boot/kernel8.img"
+src = "${assembly.tree.boot}/kernel8.img"
 dest = "kernel8.img"
 
 [[image.assembly.files]]
 tree = "slots-payload"
-src = "$assembly.work/slots/initramfs.cpio.zst"
+src = "${assembly.work}/slots/initramfs.cpio.zst"
 dest = "initramfs"
 
 # The base cmdline (input.slot_cmdline, no slot arguments): the bundle's boot/cmdline.txt. The
@@ -135,20 +137,20 @@ dest = "cmdline.txt"
 
 [[image.assembly.files]]
 tree = "slots-payload"
-src_glob = "$provider.buildroot_output/images/bcm*.dtb"
+src_glob = "${provider.buildroot_output}/images/bcm*.dtb"
 dest = "."
 
 # Stock overlays, minus the five names the Raze build overrides.
 [[image.assembly.files]]
 tree = "slots-payload"
-src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtbo"
+src_glob = "${provider.buildroot_output}/images/rpi-firmware/overlays/*.dtbo"
 exclude = ["dwc2.dtbo", "i2c1-pi5.dtbo", "ws2812-pio.dtbo", "vc4-kms-v3d-pi5.dtbo", "ramoops-pi5.dtbo"]
 dest = "overlays/"
 
 # overlay_map.dtb and hat_map.dtb.
 [[image.assembly.files]]
 tree = "slots-payload"
-src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtb"
+src_glob = "${provider.buildroot_output}/images/rpi-firmware/overlays/*.dtb"
 dest = "overlays/"
 
 # overlays/README: the firmware loads overlays from ${os_prefix}overlays/ only
@@ -164,43 +166,43 @@ dest = "overlays/README"
 # The Raze overrides (raze-overlays, from the Raze kernel build).
 [[image.assembly.files]]
 tree = "slots-payload"
-src = "$provider.buildroot_output/images/raze-overlays/dwc2.dtbo"
+src = "${provider.buildroot_output}/images/raze-overlays/dwc2.dtbo"
 dest = "overlays/dwc2.dtbo"
 
 [[image.assembly.files]]
 tree = "slots-payload"
-src = "$provider.buildroot_output/images/raze-overlays/i2c1-pi5.dtbo"
+src = "${provider.buildroot_output}/images/raze-overlays/i2c1-pi5.dtbo"
 dest = "overlays/i2c1-pi5.dtbo"
 
 [[image.assembly.files]]
 tree = "slots-payload"
-src = "$provider.buildroot_output/images/raze-overlays/ws2812-pio.dtbo"
+src = "${provider.buildroot_output}/images/raze-overlays/ws2812-pio.dtbo"
 dest = "overlays/ws2812-pio.dtbo"
 
 [[image.assembly.files]]
 tree = "slots-payload"
-src = "$provider.buildroot_output/images/raze-overlays/vc4-kms-v3d-pi5.dtbo"
+src = "${provider.buildroot_output}/images/raze-overlays/vc4-kms-v3d-pi5.dtbo"
 dest = "overlays/vc4-kms-v3d-pi5.dtbo"
 
 [[image.assembly.files]]
 tree = "slots-payload"
-src = "$provider.buildroot_output/images/raze-overlays/ramoops-pi5.dtbo"
+src = "${provider.buildroot_output}/images/raze-overlays/ramoops-pi5.dtbo"
 dest = "overlays/ramoops-pi5.dtbo"
 
 # The Atlas-built overlays (boot tree, from Atlas devices/raze/gaia/boot.toml).
 [[image.assembly.files]]
 tree = "slots-payload"
-src = "$assembly.tree.boot/overlays/ov9782.dtbo"
+src = "${assembly.tree.boot}/overlays/ov9782.dtbo"
 dest = "overlays/ov9782.dtbo"
 
 [[image.assembly.files]]
 tree = "slots-payload"
-src = "$assembly.tree.boot/overlays/raze-fan.dtbo"
+src = "${assembly.tree.boot}/overlays/raze-fan.dtbo"
 dest = "overlays/raze-fan.dtbo"
 
 [[image.assembly.files]]
 tree = "slots-payload"
-src = "$assembly.tree.boot/overlays/raze-usb-power.dtbo"
+src = "${assembly.tree.boot}/overlays/raze-usb-power.dtbo"
 dest = "overlays/raze-usb-power.dtbo"
 
 # The slot manifest: slot.json (the bundle's, the FAT's and /data's copy).
@@ -229,30 +231,30 @@ display_name = "${input.slot_display_name}"
 boot = { files = "${assembly.sha256_tree:slots-payload}" }
 
 [image.assembly.files.json.image]
-size = "${assembly.size:$assembly.work/slots/rootfs.erofs}"
-sha256 = "${assembly.sha256:$assembly.work/slots/rootfs.erofs}"
+size = "${assembly.size:${assembly.work}/slots/rootfs.erofs}"
+sha256 = "${assembly.sha256:${assembly.work}/slots/rootfs.erofs}"
 
 [image.assembly.files.json.verity]
-root_hash = "${assembly.verity:$assembly.work/slots/rootfs.erofs:root_hash}"
-salt = "${assembly.verity:$assembly.work/slots/rootfs.erofs:salt}"
-hash_offset = "${assembly.verity:$assembly.work/slots/rootfs.erofs:hash_offset}"
-data_blocks = "${assembly.verity:$assembly.work/slots/rootfs.erofs:data_blocks}"
-data_block_size = "${assembly.verity:$assembly.work/slots/rootfs.erofs:data_block_size}"
-hash_block_size = "${assembly.verity:$assembly.work/slots/rootfs.erofs:hash_block_size}"
+root_hash = "${assembly.verity:${assembly.work}/slots/rootfs.erofs:root_hash}"
+salt = "${assembly.verity:${assembly.work}/slots/rootfs.erofs:salt}"
+hash_offset = "${assembly.verity:${assembly.work}/slots/rootfs.erofs:hash_offset}"
+data_blocks = "${assembly.verity:${assembly.work}/slots/rootfs.erofs:data_blocks}"
+data_block_size = "${assembly.verity:${assembly.work}/slots/rootfs.erofs:data_block_size}"
+hash_block_size = "${assembly.verity:${assembly.work}/slots/rootfs.erofs:hash_block_size}"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src = "@self/assets/slots/config.txt"
+src = "${self}/assets/slots/config.txt"
 dest = "config.txt"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src = "@self/assets/slots/tryboot.txt"
+src = "${self}/assets/slots/tryboot.txt"
 dest = "tryboot.txt"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src = "$assembly.tree.boot/raze-device.txt"
+src = "${assembly.tree.boot}/raze-device.txt"
 dest = "raze-device.txt"
 
 [[image.assembly.files]]
@@ -270,17 +272,17 @@ dest = "trial.txt"
 # file group is a glob of the payload tree.
 [[image.assembly.files]]
 tree = "slots-fat"
-src = "$assembly.tree.slots-payload/kernel8.img"
+src = "${assembly.tree.slots-payload}/kernel8.img"
 dest = "kernel8.img"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src = "$assembly.tree.slots-payload/initramfs"
+src = "${assembly.tree.slots-payload}/initramfs"
 dest = "initramfs"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src_glob = "$provider.buildroot_output/images/bcm*.dtb"
+src_glob = "${provider.buildroot_output}/images/bcm*.dtb"
 dest = "."
 
 # The overlays, from their sources (not through slots-payload: a glob over
@@ -288,33 +290,33 @@ dest = "."
 # the FAT shipped without ov9782 and raze-fan). The same set as the payload.
 [[image.assembly.files]]
 tree = "slots-fat"
-src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtbo"
+src_glob = "${provider.buildroot_output}/images/rpi-firmware/overlays/*.dtbo"
 exclude = ["dwc2.dtbo", "i2c1-pi5.dtbo", "ws2812-pio.dtbo", "vc4-kms-v3d-pi5.dtbo", "ramoops-pi5.dtbo"]
 dest = "overlays/"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtb"
+src_glob = "${provider.buildroot_output}/images/rpi-firmware/overlays/*.dtb"
 dest = "overlays/"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src_glob = "$provider.buildroot_output/images/raze-overlays/*.dtbo"
+src_glob = "${provider.buildroot_output}/images/raze-overlays/*.dtbo"
 dest = "overlays/"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src = "$assembly.tree.boot/overlays/ov9782.dtbo"
+src = "${assembly.tree.boot}/overlays/ov9782.dtbo"
 dest = "overlays/ov9782.dtbo"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src = "$assembly.tree.boot/overlays/raze-fan.dtbo"
+src = "${assembly.tree.boot}/overlays/raze-fan.dtbo"
 dest = "overlays/raze-fan.dtbo"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src = "$assembly.tree.boot/overlays/raze-usb-power.dtbo"
+src = "${assembly.tree.boot}/overlays/raze-usb-power.dtbo"
 dest = "overlays/raze-usb-power.dtbo"
 
 # The slot's cmdline: the base (input.slot_cmdline) plus the slot
@@ -322,33 +324,33 @@ dest = "overlays/raze-usb-power.dtbo"
 # same file, so the two cannot differ.
 [[image.assembly.files]]
 tree = "slots-fat"
-content = "${input.slot_cmdline} atlas.slot=${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit} atlas.roothash=${assembly.verity:$assembly.work/slots/rootfs.erofs:root_hash} atlas.data=PARTUUID=5056525a-02 panic=5\n"
+content = "${input.slot_cmdline} atlas.slot=${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit} atlas.roothash=${assembly.verity:${assembly.work}/slots/rootfs.erofs:root_hash} atlas.data=PARTUUID=5056525a-02 panic=5\n"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/cmdline.txt"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src = "$assembly.tree.slots-fat/slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/cmdline.txt"
+src = "${assembly.tree.slots-fat}/slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/cmdline.txt"
 dest = "cmdline.txt"
 
 # slots/<id>/: the same payload, the slot's cmdline and slot.json.
 [[image.assembly.files]]
 tree = "slots-fat"
-src = "$assembly.tree.slots-manifest/slot.json"
+src = "${assembly.tree.slots-manifest}/slot.json"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/slot.json"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src = "$assembly.tree.slots-payload/kernel8.img"
+src = "${assembly.tree.slots-payload}/kernel8.img"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/kernel8.img"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src = "$assembly.tree.slots-payload/initramfs"
+src = "${assembly.tree.slots-payload}/initramfs"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/initramfs"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src_glob = "$provider.buildroot_output/images/bcm*.dtb"
+src_glob = "${provider.buildroot_output}/images/bcm*.dtb"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/"
 
 # The overlays, from their sources (not through slots-payload: a glob over
@@ -356,33 +358,33 @@ dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-$
 # the FAT shipped without ov9782 and raze-fan). The same set as the payload.
 [[image.assembly.files]]
 tree = "slots-fat"
-src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtbo"
+src_glob = "${provider.buildroot_output}/images/rpi-firmware/overlays/*.dtbo"
 exclude = ["dwc2.dtbo", "i2c1-pi5.dtbo", "ws2812-pio.dtbo", "vc4-kms-v3d-pi5.dtbo", "ramoops-pi5.dtbo"]
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src_glob = "$provider.buildroot_output/images/rpi-firmware/overlays/*.dtb"
+src_glob = "${provider.buildroot_output}/images/rpi-firmware/overlays/*.dtb"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src_glob = "$provider.buildroot_output/images/raze-overlays/*.dtbo"
+src_glob = "${provider.buildroot_output}/images/raze-overlays/*.dtbo"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src = "$assembly.tree.boot/overlays/ov9782.dtbo"
+src = "${assembly.tree.boot}/overlays/ov9782.dtbo"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/ov9782.dtbo"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src = "$assembly.tree.boot/overlays/raze-fan.dtbo"
+src = "${assembly.tree.boot}/overlays/raze-fan.dtbo"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/raze-fan.dtbo"
 
 [[image.assembly.files]]
 tree = "slots-fat"
-src = "$assembly.tree.boot/overlays/raze-usb-power.dtbo"
+src = "${assembly.tree.boot}/overlays/raze-usb-power.dtbo"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/raze-usb-power.dtbo"
 
 # The README that makes the firmware read the slot's own overlays/.
@@ -396,12 +398,12 @@ dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-$
 # so the root can grow by that much before the disk needs a change.
 [[image.assembly.files]]
 tree = "slots-data"
-src = "$assembly.work/slots/rootfs.erofs"
+src = "${assembly.work}/slots/rootfs.erofs"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}.erofs"
 
 [[image.assembly.files]]
 tree = "slots-data"
-src = "$assembly.tree.slots-manifest/slot.json"
+src = "${assembly.tree.slots-manifest}/slot.json"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}.json"
 
 # json null is not a TOML value, so state.json is written as text.
@@ -415,14 +417,14 @@ dest = "board/slots/state.json"
 id = "slots-boot"
 kind = "vfat"
 source_tree = "slots-fat"
-output = "$assembly.work/slots/boot.vfat"
+output = "${assembly.work}/slots/boot.vfat"
 size = "1G"
 
 [[image.assembly.filesystems]]
 id = "slots-data"
 kind = "ext4"
 source_tree = "slots-data"
-output = "$assembly.work/slots/data.ext4"
+output = "${assembly.work}/slots/data.ext4"
 size = "auto"
 free = "256M"
 label = "data"
@@ -431,7 +433,7 @@ label = "data"
 # an output of the run, so the raw disk is not published or copied out.
 [[image.assembly.disks]]
 id = "slots-sdcard"
-output = "$assembly.work/slots/slots-sdcard.img"
+output = "${assembly.work}/slots/slots-sdcard.img"
 partition_table = "mbr"
 signature = "0x5056525a"
 first_lba = 2048
@@ -442,21 +444,21 @@ truncate = "last-data"
 name = "slots-boot"
 type_alias = "fat32-lba"
 bootable = true
-image = "$assembly.work/slots/boot.vfat"
+image = "${assembly.work}/slots/boot.vfat"
 size = "1G"
 
 [[image.assembly.disks.partitions]]
 name = "data"
 type_alias = "linux"
-image = "$assembly.work/slots/data.ext4"
+image = "${assembly.work}/slots/data.ext4"
 
 # The first-flash disk, compressed into the image output dir under the slot
 # id (xz, default level). Gaia publishes it with the run: it is listed in the
 # summary and copied by --export next to the primary image.
 [[image.assembly.transforms]]
 kind = "xz"
-src = "$assembly.work/slots/slots-sdcard.img"
-dest = "$assembly.out/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}.img.xz"
+src = "${assembly.work}/slots/slots-sdcard.img"
+dest = "${assembly.out}/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}.img.xz"
 
 # The slot bundle: <id>.slot.tar, uncompressed, in the image output dir (a
 # published output of the run, like the xz image above). The boot files are one tree
@@ -464,15 +466,15 @@ dest = "$assembly.out/${input.slot_family}-${input.slot_version}-${input.slot_va
 # same files); the overlays are its glob, minus the Raze names, as above.
 [[image.assembly.archives]]
 id = "slots-bundle"
-output = "$assembly.out/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}.slot.tar"
+output = "${assembly.out}/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}.slot.tar"
 
 [[image.assembly.archives.members]]
 name = "slot.json"
-src = "$assembly.tree.slots-manifest/slot.json"
+src = "${assembly.tree.slots-manifest}/slot.json"
 
 [[image.assembly.archives.members]]
 name = "rootfs.erofs"
-src = "$assembly.work/slots/rootfs.erofs"
+src = "${assembly.work}/slots/rootfs.erofs"
 
 [[image.assembly.archives.members]]
 tree = "slots-payload"
@@ -489,5 +491,5 @@ prefix = "boot/"
 # checks); an older one fails validation on this table.
 [[image.assembly.checks]]
 id = "boot-overlays"
-command = ["sh", "@self/scripts/check-boot-overlays.sh", "$assembly.tree.slots-fat"]
+command = ["sh", "${self}/scripts/check-boot-overlays.sh", "${assembly.tree.slots-fat}"]
 timeout_secs = 60

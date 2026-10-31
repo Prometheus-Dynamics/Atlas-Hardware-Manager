@@ -1,5 +1,5 @@
 #!/bin/sh
-# Every file the Raze Gaia modules stage (`src = "@self/..."`) must be
+# Every file the Raze Gaia modules stage (`src = "${self}/..."`) must be
 # tracked in git, so a clean checkout of a commit builds. Also every id in a
 # feed list must name a staged file. Run: sh devices/raze/tests/stage-files.sh
 set -eu
@@ -11,7 +11,7 @@ prefix=${gaia#"$repo"/}
 bad=0
 
 for toml in "$gaia"/*.toml; do
-	sed -n 's/^src = "@self\/\(.*\)"$/\1/p' "$toml" | while IFS= read -r src; do
+	sed -n 's/^src = "${self}\/\(.*\)"$/\1/p' "$toml" | while IFS= read -r src; do
 		if ! git -C "$repo" ls-files --error-unmatch "$prefix/$src" >/dev/null 2>&1; then
 			echo "FAIL: ${toml##*/} stages $src, which isn't tracked in git" >&2
 			echo x

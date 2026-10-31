@@ -11,6 +11,7 @@
 # toolchain enters the Buildroot tree.
 #
 # Without orion-node the agent waits; nothing on the board depends on it.
+config = 3
 gaia_version = ">=2.0.0"
 
 [providers.rust]
@@ -28,15 +29,15 @@ target_name = "board-agent"
 install_name = "board-agent"
 install_class = "binary"
 install_dest_hint = "/usr/bin/board-agent"
-output_path = "${workspace.out_dir}/artifacts/board-agent/board-agent"
+output_path = "${outputs.dir}/artifacts/board-agent/board-agent"
 
 [artifacts.execution]
 backend = "docker"
 
 [artifacts.execution.docker]
 image = "board-aarch64-musl"
-dockerfile = "@self/docker/aarch64-musl.Dockerfile"
-context = "@self/docker"
+dockerfile = "${self}/docker/aarch64-musl.Dockerfile"
+context = "${self}/docker"
 
 [[install]]
 id = "install-board-agent"

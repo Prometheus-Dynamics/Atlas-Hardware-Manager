@@ -26,6 +26,7 @@
 #
 # Without it, resolving this layer fails and names the source `lemnos`. For
 # local development: --set sources.lemnos.path=/path/to/Lemnos.
+config = 3
 description = "Raze hardware service: Lemnos's lemnosd layer, with the package's lemnosd settings."
 
 imports = [
@@ -59,7 +60,7 @@ stage_services = ["lemnos-orion-service"]
 # item; this file's own items come after its imports).
 [[stage.files]]
 id = "lemnosd-env"
-src = "@self/assets/lemnos/lemnosd.env"
+src = "${self}/assets/lemnos/lemnosd.env"
 dest = "/etc/default/lemnosd.env"
 mode = 420
 origin = "static-asset"

@@ -3,6 +3,7 @@
 # gpu.toml, which provides Mesa and libdrm:
 #   { source = "atlas", path = "devices/raze/gaia/gpu.toml" }
 #   { source = "atlas", path = "devices/raze/gaia/gpu-vulkan.toml" }
+config = 3
 description = "Raze Vulkan: Mesa's v3dv driver, the Vulkan loader, and vulkaninfo."
 
 [image]

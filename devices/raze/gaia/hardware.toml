@@ -1,3 +1,4 @@
+config = 3
 description = "Raze supported hardware: what an image must carry for each device, for Gaia's image check (image:check, design docs/design/fast-test-pipeline.md 1.2)."
 
 # One entry per device the board supports. An entry passes only when its whole

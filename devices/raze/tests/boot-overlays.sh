@@ -115,8 +115,8 @@ inputs = {"slot_family": "pv", "slot_version": "1", "slot_variant": "v", "slot_c
 def expand(v):
     for k, x in inputs.items():
         v = v.replace("${input." + k + "}", x)
-    return (v.replace("$provider.buildroot_output", b).replace("$assembly.tree.boot", f"{b}/boot")
-             .replace("@self", g))
+    return (v.replace("${provider.buildroot_output}", b).replace("${assembly.tree.boot}", f"{b}/boot")
+             .replace("${self}", g))
 for e in tomllib.load(open(f"{g}/slots.toml", "rb"))["image"]["assembly"]["files"]:
     if e.get("tree") != "slots-fat":
         continue

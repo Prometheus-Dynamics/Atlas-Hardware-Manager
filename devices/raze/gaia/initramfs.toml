@@ -11,14 +11,16 @@
 # filesystem marked as having errors is mounted read-only), so it is
 # ~0.3 MB instead of 2 MB per slot.
 #
-# Output: $assembly.work/slots/initramfs.cpio.zst, for the slot bundle and
+# Output: ${assembly.work}/slots/initramfs.cpio.zst, for the slot bundle and
 # the boot directory (the recipes that assemble those take it from there).
 # The kernel needs BLK_DEV_INITRD, BLK_DEV_LOOP, EROFS_FS, EXT4_FS, VFAT_FS
 # built in (they are); dm-mod, dm-bufio and dm-verity come as modules, below.
 
+config = 3
+
 [[image.assembly.trees]]
 id = "slot-initramfs"
-path = "$assembly.work/slots/initramfs"
+path = "${assembly.work}/slots/initramfs"
 # Every ELF in it stripped before it is packed (the modules --strip-debug).
 strip = true
 
@@ -26,14 +28,14 @@ strip = true
 # /init reads modules.dep and nothing else of the module metadata.
 [[image.assembly.kernel_modules]]
 tree = "slot-initramfs"
-from = "$provider.buildroot_output/target/lib/modules"
-depmod = "$provider.buildroot_output/host/sbin/depmod"
+from = "${provider.buildroot_output}/target/lib/modules"
+depmod = "${provider.buildroot_output}/host/sbin/depmod"
 modules = ["dm-mod", "dm-bufio", "dm-verity"]
 metadata = ["modules.dep"]
 
 [[image.assembly.files]]
 tree = "slot-initramfs"
-src = "${workspace.out_dir}/artifacts/slot-init/slot-init"
+src = "${outputs.dir}/artifacts/slot-init/slot-init"
 dest = "init"
 mode = "0755"
 
@@ -45,7 +47,7 @@ mode = "0755"
 id = "slot-initramfs"
 kind = "cpio-zstd"
 source_tree = "slot-initramfs"
-output = "$assembly.work/slots/initramfs.cpio.zst"
+output = "${assembly.work}/slots/initramfs.cpio.zst"
 
 # slot-init, as board-agent is built (board-agent.toml): a static aarch64
 # musl binary from the OS build's `atlas` source. Only the initramfs takes it.
@@ -58,15 +60,15 @@ target = "aarch64-unknown-linux-musl"
 # Built for size: every slot's initramfs carries it (Cargo.toml).
 profile = "device-small"
 target_name = "slot-init"
-output_path = "${workspace.out_dir}/artifacts/slot-init/slot-init"
+output_path = "${outputs.dir}/artifacts/slot-init/slot-init"
 
 [artifacts.execution]
 backend = "docker"
 
 [artifacts.execution.docker]
 image = "board-aarch64-musl"
-dockerfile = "@self/docker/aarch64-musl.Dockerfile"
-context = "@self/docker"
+dockerfile = "${self}/docker/aarch64-musl.Dockerfile"
+context = "${self}/docker"
 
 # The OS takes slot-init too: the slots writer (/usr/lib/board/slots) reads
 # slot.json and state.json with it.

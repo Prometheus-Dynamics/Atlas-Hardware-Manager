@@ -267,15 +267,16 @@ For local development against an Atlas checkout:
 `gaia run build.toml --set sources.atlas.path=/path/to/Atlas-Hardware-Manager`
 (and `--set sources.lemnos.path=/path/to/Lemnos`).
 
-Inside the layer, paths are written `@self/...` (the directory of the TOML file
+Inside the layer, paths are written `${self}/...` (the directory of the TOML file
 that contains them), so the layer works wherever it is mounted. An OS refers to
-package files as `@source:atlas/devices/raze/...`.
+package files as `${source.atlas}/devices/raze/...`. The layers are Gaia
+config v3 (`config = 3`; Gaia cd9ad15 or later reads them).
 
 ### Vendored copy (interim)
 
 Until every OS build can import from the git source, copy the package into the
 OS repo with `devices/tools/sync-device.sh` and import the vendored
-`device.toml` by its relative path; `@self` works the same there.
+`device.toml` by its relative path; `${self}` works the same there.
 
 ```sh
 # from the OS repo, with an Atlas checkout next to it

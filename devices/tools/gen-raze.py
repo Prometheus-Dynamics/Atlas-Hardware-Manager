@@ -608,7 +608,7 @@ def staged_in_runtime(paths: list[Path]) -> list[str]:
     for path in paths:
         if ROOTFS not in path.parents:
             continue
-        src = "@self/" + str(path.relative_to(GAIA))
+        src = "${self}/" + str(path.relative_to(GAIA))
         match = re.search(rf'^id = "([^"]+)"\nsrc = "{re.escape(src)}"', runtime, re.M)
         if not match or f'"{match.group(1)}"' not in runtime.split("[image.feed]", 1)[-1]:
             missing.append(str(path.relative_to(ROOT)))

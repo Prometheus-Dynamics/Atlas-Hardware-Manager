@@ -1,3 +1,4 @@
+config = 3
 description = "Raze camera: libcamera with the Raspberry Pi PiSP pipeline (CM5) and the OV9782 tuning."
 
 # For OSes that use libcamera: PhotonVision does (its camera path is

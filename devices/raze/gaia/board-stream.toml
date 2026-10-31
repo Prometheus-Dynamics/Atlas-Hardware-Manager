@@ -5,6 +5,7 @@
 # A static aarch64 musl binary built like board-agent (the same Docker
 # image), installed as /usr/bin/board-stream; its socket and service units
 # are staged by runtime.toml and enabled by 70-board.preset. Read-only.
+config = 3
 gaia_version = ">=2.0.0"
 
 [providers.rust]
@@ -22,15 +23,15 @@ target_name = "board-stream"
 install_name = "board-stream"
 install_class = "binary"
 install_dest_hint = "/usr/bin/board-stream"
-output_path = "${workspace.out_dir}/artifacts/board-stream/board-stream"
+output_path = "${outputs.dir}/artifacts/board-stream/board-stream"
 
 [artifacts.execution]
 backend = "docker"
 
 [artifacts.execution.docker]
 image = "board-aarch64-musl"
-dockerfile = "@self/docker/aarch64-musl.Dockerfile"
-context = "@self/docker"
+dockerfile = "${self}/docker/aarch64-musl.Dockerfile"
+context = "${self}/docker"
 
 [[install]]
 id = "install-board-stream"

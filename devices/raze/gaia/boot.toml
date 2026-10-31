@@ -1,3 +1,4 @@
+config = 3
 description = "Raze boot partition: device config.txt fragment, device overlays, and the stock overlays it loads."
 
 # The OS declares the boot partition as an assembly tree with id "boot" and
@@ -5,48 +6,48 @@ description = "Raze boot partition: device config.txt fragment, device overlays,
 
 [[image.assembly.files]]
 tree = "boot"
-src = "@self/assets/boot/raze-device.txt"
+src = "${self}/assets/boot/raze-device.txt"
 dest = "raze-device.txt"
 
 [[image.assembly.transforms]]
 kind = "compile-dts"
-src = "@self/assets/boot/overlays/ov9782-overlay.dts"
-dest = "$assembly.tree.boot/overlays/ov9782.dtbo"
+src = "${self}/assets/boot/overlays/ov9782-overlay.dts"
+dest = "${assembly.tree.boot}/overlays/ov9782.dtbo"
 
 [[image.assembly.transforms]]
 kind = "compile-dts"
-src = "@self/assets/boot/overlays/raze-fan-overlay.dts"
-dest = "$assembly.tree.boot/overlays/raze-fan.dtbo"
+src = "${self}/assets/boot/overlays/raze-fan-overlay.dts"
+dest = "${assembly.tree.boot}/overlays/raze-fan.dtbo"
 
 [[image.assembly.transforms]]
 kind = "compile-dts"
-src = "@self/assets/boot/overlays/raze-usb-power-overlay.dts"
-dest = "$assembly.tree.boot/overlays/raze-usb-power.dtbo"
+src = "${self}/assets/boot/overlays/raze-usb-power-overlay.dts"
+dest = "${assembly.tree.boot}/overlays/raze-usb-power.dtbo"
 
 # Stock overlays, built from the same kernel (external.mk, RAZE_KERNEL_OVERLAYS).
 [[image.assembly.files]]
 tree = "boot"
-src = "$provider.buildroot_output/images/raze-overlays/dwc2.dtbo"
+src = "${provider.buildroot_output}/images/raze-overlays/dwc2.dtbo"
 dest = "overlays/dwc2.dtbo"
 
 [[image.assembly.files]]
 tree = "boot"
-src = "$provider.buildroot_output/images/raze-overlays/i2c1-pi5.dtbo"
+src = "${provider.buildroot_output}/images/raze-overlays/i2c1-pi5.dtbo"
 dest = "overlays/i2c1-pi5.dtbo"
 
 [[image.assembly.files]]
 tree = "boot"
-src = "$provider.buildroot_output/images/raze-overlays/ws2812-pio.dtbo"
+src = "${provider.buildroot_output}/images/raze-overlays/ws2812-pio.dtbo"
 dest = "overlays/ws2812-pio.dtbo"
 
 [[image.assembly.files]]
 tree = "boot"
-src = "$provider.buildroot_output/images/raze-overlays/vc4-kms-v3d-pi5.dtbo"
+src = "${provider.buildroot_output}/images/raze-overlays/vc4-kms-v3d-pi5.dtbo"
 dest = "overlays/vc4-kms-v3d-pi5.dtbo"
 
 [[image.assembly.files]]
 tree = "boot"
-src = "$provider.buildroot_output/images/raze-overlays/ramoops-pi5.dtbo"
+src = "${provider.buildroot_output}/images/raze-overlays/ramoops-pi5.dtbo"
 dest = "overlays/ramoops-pi5.dtbo"
 
 [image]

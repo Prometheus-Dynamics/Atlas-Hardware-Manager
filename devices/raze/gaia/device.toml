@@ -24,11 +24,12 @@
 #     ...OS layers that override device defaults...,
 #   ]
 #
-# Paths in these files use @self, the directory of the TOML file that contains
+# Paths in these files use ${self}, the directory of the TOML file that contains
 # them, so they work wherever the package is mounted (git source, vendored copy,
 # --set sources.atlas.path=<checkout>). Later imports override earlier ones, so
 # an OS changes any device default by setting it in a layer imported after this
 # one. See devices/README.md for what the OS still has to provide.
+config = 3
 description = "Raze (CM5 + OV9782) device support: kernel, camera, boot configuration and overlays, identity endpoint, USB gadget, lemnosd hardware service, and the raze-flasher USB-boot flasher."
 
 imports = [

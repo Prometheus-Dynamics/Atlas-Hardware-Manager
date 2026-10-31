@@ -3,6 +3,7 @@
 # PhotonVision's libcamera GL driver. The kernel side (vc4-kms-v3d-pi5) is
 # always on in raze-device.txt. Import next to device.toml:
 #   { source = "atlas", path = "devices/raze/gaia/gpu.toml" }
+config = 3
 description = "Raze GPU userspace: Mesa V3D/VC4 with EGL, GLES and gbm."
 
 [image]

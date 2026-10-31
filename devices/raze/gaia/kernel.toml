@@ -1,3 +1,4 @@
+config = 3
 description = "Raze kernel and firmware: Raspberry Pi kernel for CM5, OV9782 sensor support, Raspberry Pi firmware and overlays."
 
 [image]
@@ -6,7 +7,7 @@ defconfig = "raspberrypicm5io_defconfig"
 # Linux extension for OV9782 (linux/) and Gaia package overrides for libcamera
 # and libpisp (packages/). Gaia takes one external_tree value and the last
 # import wins: an OS with its own tree sets a colon-separated list of both.
-external_tree = "@self/buildroot-external"
+external_tree = "${self}/buildroot-external"
 external_tree_mode = "required"
 config_overrides = [
   # Bootlin's newest aarch64 glibc toolchain (2025.08-1: gcc 15, kernel
