@@ -21,5 +21,6 @@ mod flash;
 mod health;
 mod host_keys;
 mod recover;
+mod remote;
 
 pub use driver::{RPI_FAMILY, RpiConfig, RpiDriver, SshKeys, UsbBootLinks};

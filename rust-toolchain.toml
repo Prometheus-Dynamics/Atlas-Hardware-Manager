@@ -1,3 +1,6 @@
 [toolchain]
 channel = "1.99.0"
 components = ["rustfmt", "clippy"]
+# The SystemCore's USB agent (scripts/build-usb-agent-ipk.sh), in every
+# installer.
+targets = ["aarch64-unknown-linux-musl"]

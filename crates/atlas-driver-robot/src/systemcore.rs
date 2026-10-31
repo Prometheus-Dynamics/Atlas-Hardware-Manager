@@ -92,7 +92,12 @@ pub async fn read(
     Ok(identity(team, ip, link, usb_serial))
 }
 
-fn identity(team: Option<u16>, ip: Ipv4Addr, link: LinkId, usb_serial: Option<String>) -> Identity {
+pub(crate) fn identity(
+    team: Option<u16>,
+    ip: Ipv4Addr,
+    link: LinkId,
+    usb_serial: Option<String>,
+) -> Identity {
     let mut attributes = std::collections::BTreeMap::new();
     attributes.insert("manage_url".to_string(), format!("http://{ip}/"));
     if let Some(team) = team {

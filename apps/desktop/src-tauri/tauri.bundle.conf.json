@@ -6,6 +6,7 @@
     ],
     "resources": {
       "../../../tools/usbboot/mass-storage-gadget64/": "usbboot/mass-storage-gadget64/",
+      "../../../tools/usbboot/atlas-usb-agent/": "usbboot/atlas-usb-agent/",
       "../../../devices/raze/manifest.json": "devices/raze/manifest.json",
       "../../../devices/raze/compat.json": "devices/raze/compat.json",
       "../../../devices/raze/eeprom/": "devices/raze/eeprom/",

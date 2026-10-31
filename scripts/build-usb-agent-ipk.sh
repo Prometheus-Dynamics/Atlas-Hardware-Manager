@@ -6,8 +6,10 @@
 #
 #   scripts/build-usb-agent-ipk.sh [out dir]    (default: the target dir)
 #
-# Prints the .ipk's path. Needs the aarch64-unknown-linux-musl target;
-# links with rust-lld, so no cross C toolchain.
+# Prints the .ipk's path. Needs the aarch64-unknown-linux-musl target
+# (rust-toolchain.toml); links with rust-lld, so no cross C toolchain, and
+# writes the ar archive itself, so it runs on Linux, macOS and Windows
+# (Git Bash) alike.
 set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 target_dir=$(cd "$root" && cargo metadata --format-version 1 --no-deps |
@@ -52,13 +54,28 @@ exit 0
 SCRIPT
 chmod 0755 "$work/control/postinst" "$work/control/prerm"
 echo "2.0" > "$work/debian-binary"
+# Owned by root whichever tar this is (GNU, or bsdtar on macOS).
+if tar --version 2>/dev/null | grep -q 'GNU tar'; then
+  owner=(--owner=0 --group=0 --numeric-owner)
+else
+  owner=(--uid 0 --gid 0)
+fi
 # The package's own paths only: a `./` entry makes opkg try to remove `/`
 # as an obsolete file on upgrade.
-tar --owner=0 --group=0 --numeric-owner -C "$work/control" -czf "$work/control.tar.gz" \
-  ./control ./postinst ./prerm
-tar --owner=0 --group=0 --numeric-owner -C "$work/data" -czf "$work/data.tar.gz" ./usr ./etc
+tar "${owner[@]}" -C "$work/control" -czf "$work/control.tar.gz" ./control ./postinst ./prerm
+tar "${owner[@]}" -C "$work/data" -czf "$work/data.tar.gz" ./usr ./etc
 mkdir -p "$out"
 ipk=$out/atlas-usb-agent_${package_version}_aarch64.ipk
 rm -f "$ipk"
-(cd "$work" && ar rc "$ipk" debian-binary control.tar.gz data.tar.gz)
+# The ar archive (as dpkg-deb writes it): a magic line, then each member
+# behind a 60-byte header, padded to an even length.
+{
+  printf '!<arch>\n'
+  for member in debian-binary control.tar.gz data.tar.gz; do
+    size=$(wc -c < "$work/$member" | tr -d ' ')
+    printf '%-16s%-12s%-6s%-6s%-8s%-10s`\n' "$member" 0 0 0 100644 "$size"
+    cat "$work/$member"
+    if (( size % 2 )); then printf '\n'; fi
+  done
+} > "$ipk"
 echo "$ipk"

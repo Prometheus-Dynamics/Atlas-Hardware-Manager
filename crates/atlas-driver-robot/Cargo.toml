@@ -14,6 +14,7 @@ description = "Atlas drivers for the FRC robot network's own devices: the robot 
 async-trait.workspace = true
 atlas-devices.workspace = true
 atlas-driver.workspace = true
+atlas-usb-agent.workspace = true
 futures.workspace = true
 # This computer's networks: the robot networks it is on directly.
 if-addrs = "0.15"

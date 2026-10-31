@@ -31,9 +31,10 @@ pub fn register_hardware(
     let searched = atlas_devices::search_report(&device_dirs);
     warnings.extend(catalog.warnings().iter().cloned());
 
+    let usbboot_dirs = with_data(install::bundled_usbboot_dirs(), "usbboot");
     let mut builder = builder
         .driver(Arc::new(RpiDriver::new(RpiConfig {
-            boot_file_dirs: with_data(install::bundled_usbboot_dirs(), "usbboot"),
+            boot_file_dirs: usbboot_dirs.clone(),
             catalog: catalog.clone(),
             ssh_keys: ssh_keys.clone(),
             known_hosts: ssh_access.get().known_hosts,
@@ -46,8 +47,9 @@ pub fn register_hardware(
         builder = builder.driver(driver);
     }
     // The robot network's controller and radio (behind a board's USB route
-    // they are its children).
-    for driver in atlas_driver_robot::drivers(&catalog) {
+    // they are its children). The USB agent's package for a SystemCore is
+    // among the USB boot files.
+    for driver in atlas_driver_robot::drivers(&catalog, &usbboot_dirs) {
         builder = builder.driver(driver);
     }
     builder

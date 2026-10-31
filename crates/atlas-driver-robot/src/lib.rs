@@ -25,6 +25,7 @@ pub mod radio;
 mod roborio;
 mod systemcore;
 mod systemcore_versions;
+mod usb_agent;
 
 pub use controller_peers::{HELIOS_PORT, parse_peers};
 pub use driver::drivers;

@@ -151,6 +151,21 @@ pub struct JobEvents {
     pub finished: bool,
 }
 
+/// How Atlas addresses a board behind an agent: the agent's `host:port`
+/// and the board's USB port there, `usb-agent://172.27.0.1:5809/3-1.2`.
+pub const ADDRESS_SCHEME: &str = "usb-agent://";
+
+pub fn board_address(agent: &str, usb_port: &str) -> String {
+    format!("{ADDRESS_SCHEME}{agent}/{usb_port}")
+}
+
+/// The agent's `host:port` and the board's USB port, from a
+/// [`board_address`].
+pub fn parse_board_address(address: &str) -> Option<(&str, &str)> {
+    let (agent, usb_port) = address.strip_prefix(ADDRESS_SCHEME)?.rsplit_once('/')?;
+    (!agent.is_empty() && valid_port(usb_port)).then_some((agent, usb_port))
+}
+
 /// `3-1.2`: a bus number, then dot-separated port numbers.
 pub fn valid_port(port: &str) -> bool {
     port.split_once('-').is_some_and(|(bus, ports)| {
@@ -189,6 +204,14 @@ mod tests {
         assert!(!valid_name("../x"));
         assert!(!valid_name(".hidden"));
         assert!(!valid_name("a/b"));
+        let address = board_address("172.27.0.1:5809", "3-1.1.4.1");
+        assert_eq!(address, "usb-agent://172.27.0.1:5809/3-1.1.4.1");
+        assert_eq!(
+            parse_board_address(&address),
+            Some(("172.27.0.1:5809", "3-1.1.4.1"))
+        );
+        assert_eq!(parse_board_address("usb-agent://h:1/x"), None);
+        assert_eq!(parse_board_address("001-2"), None);
     }
 
     #[test]

@@ -1,4 +1,5 @@
 use std::net::Ipv4Addr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -179,19 +180,28 @@ impl TelemetryCapability for RadioTelemetry {
 
 /// A WPILib SystemCore, read-only (`crate::systemcore`): over its USB link
 /// when one is plugged in here, and at `.2` on a robot network this
-/// computer is on when its API answers there.
+/// computer is on when its API answers there. With Atlas's USB agent on it
+/// (`crate::usb_agent`), the boards plugged into its USB too.
 pub struct SystemcoreDriver {
     manifest: DriverManifest,
     http: reqwest::Client,
+    /// The agent's package Atlas carries, and its version.
+    agent_package: Option<(PathBuf, String)>,
 }
 
-impl Default for SystemcoreDriver {
-    fn default() -> Self {
+impl SystemcoreDriver {
+    /// `agent_dirs`: where the USB agent's `.ipk` may be
+    /// (`crate::usb_agent::package`).
+    pub fn new(agent_dirs: &[PathBuf]) -> Self {
         let mut manifest = manifest(crate::systemcore::SYSTEMCORE_FAMILY, "SystemCore");
         manifest.link_kinds = vec![LinkKind::Ethernet, LinkKind::UsbNetwork];
         Self {
             manifest,
             http: http(),
+            agent_package: crate::usb_agent::package(agent_dirs).and_then(|path| {
+                let version = crate::usb_agent::package_version(&path)?;
+                Some((path, version))
+            }),
         }
     }
 }
@@ -241,33 +251,61 @@ impl Driver for SystemcoreDriver {
         let mut identity =
             crate::systemcore::read(&self.http, ip, candidate.link.clone(), serial).await?;
         identity.versions = crate::systemcore_versions::read(ip).await;
+        let running = crate::usb_agent::info(&self.http, ip)
+            .await
+            .map(|agent| agent.version);
+        if let Some(running) = &running {
+            identity
+                .attributes
+                .insert(crate::usb_agent::ATTRIBUTE.into(), running.clone());
+        }
+        if let Some((_, offered)) = &self.agent_package
+            && running.as_ref() != Some(offered)
+        {
+            identity
+                .attributes
+                .insert(crate::usb_agent::OFFERED.into(), offered.clone());
+        }
         if let Some(team) = identity.attributes.get("team").and_then(|t| t.parse().ok()) {
             RobotTeams::shared().add(team);
         }
         Ok(identity)
     }
 
-    /// Its identity and web page, and installing packages (`.ipk`)
-    /// through its package manager, by SSH key (`crate::package`).
+    /// Its identity and web page, installing packages (`.ipk`) through its
+    /// package manager, by SSH key (`crate::package`), and installing or
+    /// updating Atlas's USB agent (`crate::usb_agent`).
     fn capabilities(&self, device: &Identity) -> Capabilities {
+        let ip = ip_of(&device.address).ok();
         Capabilities {
-            install: ip_of(&device.address)
-                .ok()
+            install: ip
                 .map(|ip| {
                     Arc::new(crate::package::PackageMethod { ip })
                         as Arc<dyn atlas_driver::InstallMethod>
                 })
                 .into_iter()
                 .collect(),
+            actions: ip.map(|ip| {
+                Arc::new(crate::usb_agent::AgentActions {
+                    ip,
+                    package: self.agent_package.as_ref().map(|(path, _)| path.clone()),
+                }) as Arc<dyn atlas_driver::ActionsCapability>
+            }),
             ..Capabilities::default()
         }
     }
 
-    /// The boards behind it, as its HeliOS lists them
-    /// (`crate::controller_peers`): reached only through the routes HeliOS
-    /// offers for them.
+    /// The boards behind it: as its HeliOS lists them
+    /// (`crate::controller_peers`), reached only through the routes HeliOS
+    /// offers for them; and, with Atlas's USB agent on it, the Raspberry Pi
+    /// boards in USB boot on its USB (`crate::usb_agent`).
     async fn children(&self, device: &Identity) -> Result<Vec<Candidate>, DriverError> {
-        crate::controller_peers::candidates(&self.http, ip_of(&device.address)?).await
+        let ip = ip_of(&device.address)?;
+        let mut found = crate::controller_peers::candidates(&self.http, ip).await?;
+        if device.attributes.contains_key(crate::usb_agent::ATTRIBUTE) {
+            found.extend(crate::usb_agent::boards(&self.http, ip, &device.link).await);
+        }
+        Ok(found)
     }
 
     /// While one is plugged in here: whether its USB link has an address,
@@ -284,11 +322,12 @@ impl Driver for SystemcoreDriver {
 }
 
 /// The robot network's drivers, for registering, with the device packages
-/// that describe them.
-pub fn drivers(catalog: &DeviceCatalog) -> Vec<Arc<dyn Driver>> {
+/// that describe them and where the USB agent's package may be
+/// (`agent_dirs`, `crate::usb_agent::package`).
+pub fn drivers(catalog: &DeviceCatalog, agent_dirs: &[PathBuf]) -> Vec<Arc<dyn Driver>> {
     vec![
         Arc::new(ControllerDriver::new(catalog)),
         Arc::new(RadioDriver::default()),
-        Arc::new(SystemcoreDriver::default()),
+        Arc::new(SystemcoreDriver::new(agent_dirs)),
     ]
 }

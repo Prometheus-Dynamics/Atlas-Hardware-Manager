@@ -204,7 +204,7 @@ fn serial_for(device: &BootDevice) -> String {
 /// What the device packages say about a board in recovery: its model when
 /// exactly one package uses this chip, the candidates otherwise, and the
 /// package's recovery steps.
-fn recovery_attributes(
+pub(crate) fn recovery_attributes(
     chip: Option<Chip>,
     packages: &[&DevicePackage],
 ) -> BTreeMap<String, String> {
@@ -275,6 +275,13 @@ impl Driver for RpiDriver {
     }
 
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
+        // A board behind another host's USB agent (a SystemCore's child).
+        if candidate
+            .address
+            .starts_with(atlas_usb_agent::ADDRESS_SCHEME)
+        {
+            return crate::remote::identify(&self.config, candidate).await;
+        }
         if let Some(location) = candidate.address.strip_prefix(STORAGE_PREFIX) {
             let gadget = list_storage_gadgets()
                 .await
@@ -332,6 +339,14 @@ impl Driver for RpiDriver {
     }
 
     fn capabilities(&self, device: &Identity) -> Capabilities {
+        if device.address.starts_with(atlas_usb_agent::ADDRESS_SCHEME) {
+            return Capabilities {
+                update: Some(Arc::new(crate::remote::RemoteFlash {
+                    config: self.config.clone(),
+                })),
+                ..Capabilities::default()
+            };
+        }
         let eeprom = device
             .attributes
             .get("model")

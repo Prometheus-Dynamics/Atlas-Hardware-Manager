@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Prepares everything a release bundle carries besides the app itself:
-# the USB boot files and the atlas-helper sidecar for the target triple,
+# the USB boot files, the SystemCore's USB agent package (.ipk), and the
+# atlas-helper sidecar for the target triple,
 # plus the atlas CLI sidecar on Windows. Elsewhere the app is the CLI too
 # (invoked as `atlas`, or `atlas-app --cli`; the Linux packages install
 # bundle/linux/atlas, which runs that), so it isn't built twice. Installed
@@ -15,6 +16,10 @@ cd "$root_dir"
 target="${1:-$(rustc -vV | sed -n 's/^host: //p')}"
 
 "$root_dir/scripts/fetch-usbboot-files.sh"
+# The SystemCore's USB agent package, carried with the boot files
+# (usbboot/atlas-usb-agent/ in the app's resources).
+rm -rf "$root_dir/tools/usbboot/atlas-usb-agent"
+"$root_dir/scripts/build-usb-agent-ipk.sh" "$root_dir/tools/usbboot/atlas-usb-agent"
 
 packages=(-p atlas-helper)
 if [[ "$target" == *windows* ]]; then
