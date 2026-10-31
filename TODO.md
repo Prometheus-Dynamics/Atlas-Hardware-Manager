@@ -80,11 +80,29 @@ nothing else is added. Each item: **what**, **why**, **done when**,
     boot behind it installs the agent, flashes, verifies and the board
     comes up running, with no SSH step; pulling the PC's cable mid-write
     doesn't stop the flash.
-  - **Blocked by:** Orion: a blob or stream transfer for images and a
-    long-running job API (exact ask sent to HeliOS); Gaia: the `.ipk`
-    recipe. Today's step, `atlas-usb-agent` (b912fef), boots and writes
-    over SSH. A board behind two cascaded hubs keeps dropping off USB
-    mid-write (a hub or cable problem, user).
+  - **Blocked by:** step 2 (under Orion): Orion's blob push, job API,
+    non-HeliOS providers and large status values (asked of HeliOS). Step 1
+    is built (456e4cc, 04d7931): the agent as a service from its own
+    `.ipk` on :5809, one-click install and update, boards behind the
+    SystemCore in `atlas ls`, `atlas flash` through it. The first real
+    flash waits on the Raze moving off a faulty hub (user).
+- [ ] **Atlas re-attaches to an agent's flash after its own restart.**
+  - **What:** Atlas keeps the agent job's id with the job and, started
+    again, follows it from where it was (the agent keeps the events).
+  - **Why:** a flash outlives Atlas closing or crashing; its result must
+    still reach the job history.
+  - **Done when:** killing Atlas mid-flash and starting it again shows the
+    flash running, then its result.
+  - **Blocked by:** nothing.
+- [ ] **"Behind SystemCore" in the app.**
+  - **What:** PIT/ROBOT and the device list group the boards behind a
+    SystemCore (through HeliOS, and in USB boot through the agent) under
+    it, with the agent's state and its install or update action.
+  - **Why:** on a robot that's where the boards are; the user must see the
+    path Atlas reaches them by.
+  - **Done when:** a robot with a SystemCore shows its boards under it, and
+    a flash or update started there.
+  - **Blocked by:** nothing (a robot for the end-to-end check).
 - [ ] **K230D flashing.**
   - **What:** its BootROM USB download protocol in Atlas's Rust USB stack:
     load the loader, then write the storage.
