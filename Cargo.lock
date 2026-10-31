@@ -396,6 +396,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-socflash"
+version = "0.1.1-dev"
+dependencies = [
+ "async-trait",
+ "atlas-ubi",
+ "nusb",
+ "serde",
+ "sha2 0.11.0",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-ubi"
 version = "0.1.1-dev"
 dependencies = [

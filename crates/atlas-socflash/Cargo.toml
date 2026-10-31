@@ -1,0 +1,25 @@
+[package]
+name = "atlas-socflash"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Rockchip maskrom/loader mode and Kendryte K230 USB burning for Atlas, in Rust, with no vendor tool at run time."
+
+[dependencies]
+async-trait.workspace = true
+atlas-ubi.workspace = true
+nusb.workspace = true
+serde.workspace = true
+sha2.workspace = true
+tokio = { workspace = true, features = ["time", "rt"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt", "macros", "time", "test-util"] }
+
+[lints]
+workspace = true
