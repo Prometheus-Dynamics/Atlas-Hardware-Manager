@@ -20,6 +20,7 @@ members = [
     "crates/atlas-blockdev",
     "crates/atlas-helper",
     "crates/atlas-usb-agent",
+    "crates/atlas-ubi",
     "crates/atlas-cli",
     "apps/desktop/src-tauri",
 ]
@@ -58,6 +59,7 @@ atlas-flasher-proto = { path = "crates/atlas-flasher-proto" }
 atlas-flasher = { path = "crates/atlas-flasher" }
 atlas-blockdev = { path = "crates/atlas-blockdev" }
 atlas-usb-agent = { path = "crates/atlas-usb-agent" }
+atlas-ubi = { path = "crates/atlas-ubi" }
 atlas-cli = { path = "crates/atlas-cli" }
 async-trait = "0.1"
 clap = { version = "4.6", features = ["derive"] }

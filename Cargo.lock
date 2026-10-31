@@ -396,6 +396,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-ubi"
+version = "0.1.1-dev"
+dependencies = [
+ "libc",
+ "sha2 0.11.0",
+]
+
+[[package]]
 name = "atlas-usb-agent"
 version = "0.1.1-dev"
 dependencies = [
