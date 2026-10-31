@@ -42,6 +42,11 @@ pub const LINUX_UDEV_RULES_FILE: &str = concat!(
     "# SSH key (holding the cable is the access).\n",
     "SUBSYSTEM==\"tty\", ATTRS{idVendor}==\"1d6b\", ATTRS{idProduct}==\"0104\", ",
     "ATTRS{manufacturer}==\"Prometheus Dynamics\", TAG+=\"uaccess\"\n",
+    "# Rockchip boards in maskrom or loader mode (rockusb), and Kendryte K230\n",
+    "# boards in USB boot, which Atlas flashes from their SoC's download mode.\n",
+    "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"2207\", MODE=\"0660\", TAG+=\"uaccess\"\n",
+    "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"29f1\", ATTR{idProduct}==\"0230\", ",
+    "MODE=\"0660\", TAG+=\"uaccess\"\n",
 );
 
 /// The Windows USB product ids that need WinUSB bound for USB boot.

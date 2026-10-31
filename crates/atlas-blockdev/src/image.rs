@@ -95,6 +95,25 @@ pub(crate) fn decode_into(
     }
 }
 
+/// Decodes `path` (raw, xz, zstd or gzip, by content) into the file `dest`
+/// and returns the decoded size: for flashers that need the image's size
+/// up front and read it more than once (SoC download modes).
+pub fn decode_to_file(path: &Path, dest: &Path) -> Result<u64, BlockError> {
+    let format = detect_format(path)?;
+    let file = File::create(dest).map_err(|error| BlockError::io(dest, error))?;
+    let mut sink = io::BufWriter::with_capacity(1 << 20, file);
+    decode_into(path, format, &mut sink, Arc::new(AtomicU64::new(0)))
+        .map_err(|error| BlockError::io(path, error))?;
+    let file = sink
+        .into_inner()
+        .map_err(|error| BlockError::io(dest, error.into_error()))?;
+    file.sync_all()
+        .map_err(|error| BlockError::io(dest, error))?;
+    file.metadata()
+        .map(|meta| meta.len())
+        .map_err(|error| BlockError::io(dest, error))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,6 +128,25 @@ mod tests {
         ));
         std::fs::write(&path, bytes).unwrap();
         path
+    }
+
+    #[test]
+    fn decode_to_file_writes_the_raw_image() {
+        let raw: Vec<u8> = (0..70_000u32).map(|i| (i % 7) as u8).collect();
+        let mut compressed = Vec::new();
+        {
+            use std::io::Write as _;
+            let mut encoder =
+                flate2::write::GzEncoder::new(&mut compressed, flate2::Compression::fast());
+            encoder.write_all(&raw).unwrap();
+            encoder.finish().unwrap();
+        }
+        let source = temp("decode-to-file", &compressed);
+        let dest = source.with_extension("raw");
+        assert_eq!(decode_to_file(&source, &dest).unwrap(), raw.len() as u64);
+        assert_eq!(std::fs::read(&dest).unwrap(), raw);
+        let _ = std::fs::remove_file(source);
+        let _ = std::fs::remove_file(dest);
     }
 
     fn decode(path: &Path) -> Vec<u8> {

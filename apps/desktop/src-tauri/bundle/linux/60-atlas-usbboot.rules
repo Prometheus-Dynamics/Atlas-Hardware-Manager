@@ -13,3 +13,7 @@ SUBSYSTEM=="usb", ATTR{idVendor}=="1d6b", ATTR{idProduct}=="0104", ATTR{product}
 # manufacturer: Atlas manages a board plugged in here through it, with no
 # SSH key (holding the cable is the access).
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1d6b", ATTRS{idProduct}=="0104", ATTRS{manufacturer}=="Prometheus Dynamics", TAG+="uaccess"
+# Rockchip boards in maskrom or loader mode (rockusb), and Kendryte K230
+# boards in USB boot, which Atlas flashes from their SoC's download mode.
+SUBSYSTEM=="usb", ATTR{idVendor}=="2207", MODE="0660", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTR{idVendor}=="29f1", ATTR{idProduct}=="0230", MODE="0660", TAG+="uaccess"

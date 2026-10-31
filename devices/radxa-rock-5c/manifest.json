@@ -1,0 +1,39 @@
+{
+  "schema": "urn:board:manifest:1",
+  "contract": 1,
+  "model": "radxa-rock-5c",
+  "package_version": "0.1.0-dev",
+  "display_name": "ROCK 5C",
+  "record_only": true,
+  "vendor": "Radxa",
+  "description": "Radxa ROCK 5C (Rockchip RK3588S2) dev board, on order. A board record: Atlas flashes it from maskrom (rockusb) with Rockchip's loader file and no vendor tool. Written from rkdeveloptool, U-Boot and Radxa's docs; untested on this board.",
+  "platform": { "soc": "RK3588S2", "arch": "aarch64" },
+  "recovery": {
+    "usb_boot": { "vid": "2207", "pid": "350b" },
+    "method": "rockusb",
+    "storage_target": "emmc",
+    "storage_target_evidence": [
+      "docs.radxa.com ROCK 5C introduction: one eMMC module connector (no module fitted by default) and a microSD slot; no SPI flash.",
+      "The image is a whole disk as Gaia writes it for eMMC (idblock at sector 64, U-Boot, partitions), written from byte 0."
+    ],
+    "instructions": [
+      "Power the ROCK 5C off and take out any microSD card; fit the eMMC module.",
+      "Short the Maskrom pin hole with a DuPont wire (the ROCK 5C has no Maskrom button).",
+      "Connect the top USB 3.0 port (the OTG port) to this computer, then power the board on and remove the wire.",
+      "The board appears as 2207:350b (RK3588 maskrom). Atlas runs the loader's DDR init and usbplug, writes the image to the eMMC, reads it back and restarts the board."
+    ],
+    "status": "untested",
+    "flash": {
+      "loader": "rk3588_spl_loader_v*.bin",
+      "storage": "emmc",
+      "image_offset": 0
+    },
+    "todo": [
+      "2207:350b as RK3588 maskrom comes from secondary sources (MNT, Radxa's guides via search); confirm with lsusb on the board.",
+      "Whether the RK3588S2 takes the RK3588 loader (rk3588_spl_loader_v1.15.113.bin in Radxa's erase guide) unchanged.",
+      "The cable: Radxa's guides differ between USB-A to USB-A and USB-A to USB-C for this port.",
+      "Which polynomial the loader's trailing CRC-32 uses (0x04C10DB7 as in rkdeveloptool's table, or 0x04C11DB7): Atlas accepts either and logs which.",
+      "LEDs during maskrom and flashing."
+    ]
+  }
+}

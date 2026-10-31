@@ -6,11 +6,12 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+pub use nusb::DeviceInfo;
 use nusb::descriptors::TransferType;
 use nusb::transfer::{
     Buffer, Bulk, ControlIn, ControlOut, ControlType, Direction, In, Out, Recipient, TransferError,
 };
-use nusb::{DeviceInfo, Endpoint, ErrorKind, Interface};
+use nusb::{Endpoint, ErrorKind, Interface};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UsbError {
@@ -84,23 +85,13 @@ fn transfer_error(error: TransferError) -> UsbError {
     }
 }
 
-/// The udev rule that lets the logged-in user open the download modes Atlas
-/// flashes: Rockchip maskrom and loader (2207), Kendryte K230 (29f1:0230).
-pub const LINUX_UDEV_RULES: &str = concat!(
-    "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"2207\", MODE=\"0660\", TAG+=\"uaccess\"\n",
-    "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"29f1\", ATTR{idProduct}==\"0230\", ",
-    "MODE=\"0660\", TAG+=\"uaccess\"\n",
-);
-
 fn access_error(error: &nusb::Error, what: &str) -> UsbError {
     match error.kind() {
         ErrorKind::PermissionDenied => UsbError::Access {
             message: format!("No permission to open the {what}."),
             fix: if cfg!(target_os = "linux") {
-                format!(
-                    "Install Atlas's udev rules (Settings > Host health), or put `{}` in /etc/udev/rules.d/60-atlas-socflash.rules and replug the board.",
-                    LINUX_UDEV_RULES.lines().next().unwrap_or_default()
-                )
+                "Install Atlas's USB rules (Settings > Host health, Fix on USB access), then replug the board."
+                    .into()
             } else {
                 "Run Atlas as an administrator, or bind WinUSB to the device.".into()
             },

@@ -24,7 +24,7 @@ pub use client::{HelperClient, HelperRequest};
 pub use disk::{Disk, check_target};
 pub use error::BlockError;
 pub use gadget_console::restart_gadget;
-pub use image::ImageFormat;
+pub use image::{ImageFormat, decode_to_file};
 pub use messages::HelperMessage;
 pub use platform::list_disks;
 pub use session::{

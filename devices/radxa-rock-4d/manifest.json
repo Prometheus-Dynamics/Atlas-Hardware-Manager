@@ -1,0 +1,39 @@
+{
+  "schema": "urn:board:manifest:1",
+  "contract": 1,
+  "model": "radxa-rock-4d",
+  "package_version": "0.1.0-dev",
+  "display_name": "ROCK 4D",
+  "record_only": true,
+  "vendor": "Radxa",
+  "description": "Radxa ROCK 4D (Rockchip RK3576) dev board, on order. A board record: Atlas flashes it from maskrom (rockusb) with Rockchip's loader file and no vendor tool. Written from rkdeveloptool, U-Boot and Radxa's docs; untested on this board.",
+  "platform": { "soc": "RK3576", "arch": "aarch64" },
+  "recovery": {
+    "usb_boot": { "vid": "2207", "pid": "350e" },
+    "method": "rockusb",
+    "storage_target": "emmc",
+    "storage_target_evidence": [
+      "docs.radxa.com ROCK 4D: 16 MB SPI NOR for the boot firmware (factory-flashed), an eMMC/UFS module interface and a microSD slot.",
+      "Atlas writes the OS image to the eMMC module; the factory SPI NOR bootloader stays."
+    ],
+    "instructions": [
+      "Power the ROCK 4D off and take out any microSD card.",
+      "Hold the Maskrom button, power the board on, then release the button.",
+      "Connect the board's USB OTG port to this computer.",
+      "The board appears in maskrom (RK3576). Atlas runs the loader's DDR init and usbplug, writes the image to the eMMC, reads it back and restarts the board."
+    ],
+    "status": "untested",
+    "flash": {
+      "loader": "rk3576_spl_loader_v*.bin",
+      "storage": "emmc",
+      "image_offset": 0
+    },
+    "todo": [
+      "The maskrom PID: 2207:350e for RK3576 isn't in any source read (rkdeveloptool's table stops before it); confirm with lsusb on the board and fix it here.",
+      "The loader file's name: the ROCK 4D page points to its Resource Downloads page without naming it.",
+      "The maskrom steps: taken from the ROCK 4AB SE guide (same button, a different board); the 4D's own page didn't load.",
+      "eMMC vs UFS: which module the board gets, and the usbplug's storage id for UFS (not in rkdeveloptool's cs list).",
+      "Writing the SPI NOR bootloader (rkdeveloptool wl 0 spi.img after cs 9) when the factory one must be replaced: not wired into Atlas's flash yet."
+    ]
+  }
+}

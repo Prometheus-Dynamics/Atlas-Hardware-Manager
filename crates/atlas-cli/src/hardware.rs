@@ -52,5 +52,10 @@ pub fn register_hardware(
     for driver in atlas_driver_robot::drivers(&catalog, &usbboot_dirs) {
         builder = builder.driver(driver);
     }
+    // Boards flashed from their SoC's download mode (Rockchip maskrom, the
+    // K230's USB boot), named by the catalog's board records.
+    for driver in atlas_driver_soc::drivers(catalog.clone()) {
+        builder = builder.driver(driver);
+    }
     builder
 }

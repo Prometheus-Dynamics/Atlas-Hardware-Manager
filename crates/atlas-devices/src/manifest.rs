@@ -129,6 +129,34 @@ pub struct UsbBootId {
     pub pid: UsbId,
 }
 
+/// How a SoC download mode writes the board (`recovery.flash`): rockusb on
+/// Rockchip, the K230 burner.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FlashSpec {
+    /// The vendor loader's file name, a glob (`rk3588_spl_loader_v*.bin`).
+    #[serde(default)]
+    pub loader: Option<String>,
+    /// `emmc`, `sd`, `spi-nor` or `spi-nand`, when it must be chosen.
+    #[serde(default)]
+    pub storage: Option<String>,
+    /// Where the image's first byte goes.
+    #[serde(default)]
+    pub image_offset: u64,
+    /// K230: where the boot ROM loads and starts the burner (`0x80360000`).
+    #[serde(default)]
+    pub load_address: Option<String>,
+    #[serde(default)]
+    pub nand: Option<NandGeometry>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NandGeometry {
+    pub peb_size: u32,
+    pub page_size: u32,
+    #[serde(default)]
+    pub size: Option<u64>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Recovery {
     #[serde(default)]
@@ -142,6 +170,18 @@ pub struct Recovery {
     /// Short steps shown while Atlas waits for the board in USB boot.
     #[serde(default)]
     pub instructions: Vec<String>,
+    /// `untested`: the flashing is written and unit-tested but hasn't run
+    /// on this board; Atlas says so before it flashes.
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub flash: Option<FlashSpec>,
+}
+
+impl Recovery {
+    pub fn untested(&self) -> bool {
+        self.status.as_deref() == Some("untested")
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -177,6 +217,10 @@ pub struct DeviceManifest {
     pub package_version: Option<String>,
     #[serde(default)]
     pub display_name: Option<String>,
+    /// A board record: flashed from its SoC's download mode, no device
+    /// package (identity contract) yet.
+    #[serde(default)]
+    pub record_only: bool,
     #[serde(default)]
     pub revisions: Vec<Revision>,
     #[serde(default)]

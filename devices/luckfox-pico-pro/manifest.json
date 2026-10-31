@@ -1,0 +1,39 @@
+{
+  "schema": "urn:board:manifest:1",
+  "contract": 1,
+  "model": "luckfox-pico-pro",
+  "package_version": "0.1.0-dev",
+  "display_name": "Luckfox Pico Pro",
+  "record_only": true,
+  "vendor": "Luckfox",
+  "description": "Luckfox Pico Pro (Rockchip RV1106G2, the SoC Flame uses) dev board, on order. A board record: Atlas flashes its SPI-NAND from maskrom (rockusb), the image's UBI region written as ubiformat does. Written from rkdeveloptool, U-Boot and Luckfox's docs; untested on this board.",
+  "platform": { "soc": "RV1106G2", "arch": "armv7" },
+  "recovery": {
+    "usb_boot": { "vid": "2207", "pid": "110c" },
+    "method": "rockusb",
+    "storage_target": "spi-nand",
+    "storage_target_evidence": [
+      "The Pico Pro carries SPI-NAND flash (256 MB) and no eMMC; Luckfox's Pico Pro page returned 404 when read, so the size is from memory of the product listing.",
+      "Gaia G8 lays out its image: the loaders, then a UBI image (rootfs_a, rootfs_b, data) at an eraseblock boundary. Atlas finds the UBI region by its headers, writes what comes before it as is and the UBI region as ubiformat does (bad blocks skipped, erase counters kept, trailing erased pages never programmed)."
+    ],
+    "instructions": [
+      "Unplug the Luckfox Pico Pro.",
+      "Hold its BOOT button and connect its USB-C port to this computer, then release the button.",
+      "The board appears as 2207:110c (RV1106 maskrom). Atlas runs the loader's DDR init and usbplug, writes the image to the SPI-NAND, reads it back and restarts the board."
+    ],
+    "status": "untested",
+    "flash": {
+      "loader": "download*.bin",
+      "storage": "spi-nand",
+      "image_offset": 0,
+      "nand": { "peb_size": 131072, "page_size": 2048, "size": 268435456 }
+    },
+    "todo": [
+      "2207:110c as RV1106 maskrom comes from Luckfox's docs via search; confirm with lsusb.",
+      "The loader file: the Luckfox SDK's download.bin is assumed; check its name, and whether maskrom needs the 471/472 entries RC4'd for this chip (xrock has an --rc4-off option for RV1106).",
+      "The NAND's geometry (128 KiB eraseblocks, 2 KiB pages, 256 MB assumed): read it from the part on the board and from READ_FLASH_INFO.",
+      "How the usbplug maps LBAs onto SPI-NAND: directly (Atlas's assumption: eraseblock N at LBA N*256) or through its own bad-block handling. If it remaps, the UBI region must be written through the usbplug's raw access instead.",
+      "The usbplug's storage id for SPI-NAND (CHANGE_STORAGE): not in rkdeveloptool's cs list; Atlas assumes the usbplug starts on the NAND and doesn't switch."
+    ]
+  }
+}

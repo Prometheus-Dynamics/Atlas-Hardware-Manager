@@ -136,7 +136,14 @@ impl RpiDriver {
             .catalog
             .packages()
             .iter()
-            .filter(|package| package.manifest.recovery.storage_target.is_some())
+            .filter(|package| {
+                package.manifest.recovery.storage_target.is_some()
+                    && package
+                        .manifest
+                        .recovery
+                        .usb_boot
+                        .is_some_and(|id| id.vid.0 == BROADCOM_VENDOR_ID)
+            })
             .collect();
         let display = match packages.as_slice() {
             [package] => package.manifest.display_name().to_string(),

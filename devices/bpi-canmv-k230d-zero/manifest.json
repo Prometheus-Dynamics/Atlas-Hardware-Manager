@@ -1,0 +1,39 @@
+{
+  "schema": "urn:board:manifest:1",
+  "contract": 1,
+  "model": "bpi-canmv-k230d-zero",
+  "package_version": "0.1.0-dev",
+  "display_name": "CanMV K230D Zero",
+  "record_only": true,
+  "vendor": "Banana Pi / Canaan",
+  "description": "BPI-CanMV-K230D-Zero (Kendryte K230D, 128 MB LPDDR4 in package) dev board, on order. A board record: Atlas flashes it from the K230 boot ROM's USB mode with Canaan's burner U-Boot and no vendor tool. Written from Canaan's k230_burning_tool and docs; untested on this board.",
+  "platform": { "soc": "K230D", "arch": "riscv64" },
+  "recovery": {
+    "usb_boot": { "vid": "29f1", "pid": "0230" },
+    "method": "k230-usb",
+    "storage_target": "sd",
+    "storage_target_evidence": [
+      "Kendryte's CanMV K230D Zero page lists a TF card slot and no SPI-NAND or eMMC; Canaan's K230D burner defconfig enables SPI-NAND, eMMC/SD and SPI-NOR drivers without saying what the board fits.",
+      "The K230 boot ROM enters USB download mode when it can't boot from its storage (Canaan's burntool guide)."
+    ],
+    "instructions": [
+      "Put a blank (or erased) microSD card in the board: the boot ROM only waits for USB when it finds nothing to boot.",
+      "Connect the board's USB OTG port to this computer and power it from its other USB-C port.",
+      "The board appears as 29f1:0230 (K230 USB boot). Atlas loads Canaan's burner into it, writes the image to the card and restarts the board."
+    ],
+    "status": "untested",
+    "flash": {
+      "loader": "loader_mmc*.bin",
+      "storage": "sd",
+      "image_offset": 0,
+      "load_address": "0x80360000"
+    },
+    "todo": [
+      "Storage: the request said SPI-NAND; the board page lists only the TF slot. Check the board for a NAND part (a W25N01GW or similar); with one, storage becomes spi-nand with its geometry under flash.nand.",
+      "The burner's load address: 0x80360000 (k230_flash) vs 0x80300000 (U-Boot's burntool defconfig, Canaan's boot docs). Try the first; the record can change it.",
+      "Which of the two USB-C ports is the OTG data port, and whether a BOOT key exists (the page names a function key and a reset key only).",
+      "Whether the boot ROM wants Canaan's K230 firmware header on the burner over USB (k230_flash sends it raw).",
+      "The medium codes (SD 2, SPI-NAND 3) are the Python port's; the C tool's header wasn't read."
+    ]
+  }
+}

@@ -11,16 +11,26 @@
     "required": ["key", "info"]
   },
   "else": {
-    "description": "A board package: it serves the identity contract.",
-    "required": [
-      "revisions",
-      "rev_source",
-      "identity",
-      "recovery",
-      "eeprom",
-      "capabilities",
-      "identity_service"
-    ]
+    "if": {
+      "required": ["record_only"],
+      "properties": { "record_only": { "const": true } }
+    },
+    "then": {
+      "description": "A board record: a board Atlas flashes from its SoC's download mode before it has a device package (no identity contract yet): what it is and how to flash it.",
+      "required": ["platform", "recovery"]
+    },
+    "else": {
+      "description": "A board package: it serves the identity contract.",
+      "required": [
+        "revisions",
+        "rev_source",
+        "identity",
+        "recovery",
+        "eeprom",
+        "capabilities",
+        "identity_service"
+      ]
+    }
   },
   "additionalProperties": false,
   "properties": {
@@ -32,6 +42,10 @@
       "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
     },
     "display_name": { "type": "string", "minLength": 1 },
+    "record_only": {
+      "type": "boolean",
+      "description": "True for a board record (no device package yet): see the top-level if/then."
+    },
     "description": { "type": "string" },
     "vendor": { "type": "string" },
     "platform": {
@@ -161,10 +175,53 @@
             "pid": { "$ref": "#/$defs/usbid" }
           }
         },
-        "method": { "enum": ["mass-storage-gadget"] },
-        "storage_target": { "enum": ["emmc", "sd", "nvme", "usb"] },
+        "method": {
+          "description": "mass-storage-gadget: a Raspberry Pi boot ROM serves the eMMC as a USB disk. rockusb: a Rockchip boot ROM (maskrom) runs a loader file's DDR init and usbplug, which writes the storage. k230-usb: the K230 boot ROM runs Canaan's burner U-Boot, which writes the storage.",
+          "enum": ["mass-storage-gadget", "rockusb", "k230-usb"]
+        },
+        "storage_target": { "enum": ["emmc", "sd", "nvme", "usb", "spi-nand", "spi-nor"] },
         "storage_target_evidence": { "type": "array", "items": { "type": "string" } },
         "instructions": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "status": {
+          "description": "untested: Atlas's flashing for this board is written from the vendor's protocol and tools and unit-tested, but has not run on a board. Atlas says so before it flashes.",
+          "enum": ["verified", "untested"]
+        },
+        "flash": {
+          "type": "object",
+          "description": "How the download mode writes this board (rockusb, k230-usb).",
+          "additionalProperties": false,
+          "properties": {
+            "loader": {
+              "type": "string",
+              "description": "The vendor loader file's name, a glob (rk3588_spl_loader_v*.bin; the K230 burner U-Boot). Atlas looks next to the image, then in the package directory; it never downloads one."
+            },
+            "storage": {
+              "enum": ["emmc", "sd", "spi-nor", "spi-nand"],
+              "description": "The storage the loader writes, when it must be chosen (rockusb CHANGE_STORAGE; the K230 burner's medium)."
+            },
+            "image_offset": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Byte offset on the storage where the image's first byte goes (0: the image is the whole disk, idblock and all)."
+            },
+            "load_address": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{8}$",
+              "description": "k230-usb: where the boot ROM loads and starts the burner."
+            },
+            "nand": {
+              "type": "object",
+              "description": "spi-nand: the flash's geometry. The image's UBI region (found by its headers) is written as ubiformat does; what comes before it is written as is.",
+              "required": ["peb_size", "page_size"],
+              "additionalProperties": false,
+              "properties": {
+                "peb_size": { "type": "integer", "minimum": 4096 },
+                "page_size": { "type": "integer", "minimum": 512 },
+                "size": { "type": "integer", "minimum": 1 }
+              }
+            }
+          }
+        },
         "todo": { "type": "array", "items": { "type": "string" } }
       }
     },

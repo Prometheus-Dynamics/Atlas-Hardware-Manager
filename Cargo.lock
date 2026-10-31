@@ -189,6 +189,7 @@ dependencies = [
  "atlas-driver-orion",
  "atlas-driver-robot",
  "atlas-driver-rpi",
+ "atlas-driver-soc",
  "atlas-image-server",
  "atlas-release",
  "clap",
@@ -323,6 +324,20 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "tokio",
+]
+
+[[package]]
+name = "atlas-driver-soc"
+version = "0.1.1-dev"
+dependencies = [
+ "async-trait",
+ "atlas-blockdev",
+ "atlas-devices",
+ "atlas-driver",
+ "atlas-socflash",
+ "atlas-ubi",
+ "dirs",
  "tokio",
 ]
 

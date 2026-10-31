@@ -10,7 +10,11 @@
       "../../../devices/raze/manifest.json": "devices/raze/manifest.json",
       "../../../devices/raze/compat.json": "devices/raze/compat.json",
       "../../../devices/raze/eeprom/": "devices/raze/eeprom/",
-      "../../../devices/roborio/manifest.json": "devices/roborio/manifest.json"
+      "../../../devices/roborio/manifest.json": "devices/roborio/manifest.json",
+      "../../../devices/radxa-rock-5c/manifest.json": "devices/radxa-rock-5c/manifest.json",
+      "../../../devices/radxa-rock-4d/manifest.json": "devices/radxa-rock-4d/manifest.json",
+      "../../../devices/luckfox-pico-pro/manifest.json": "devices/luckfox-pico-pro/manifest.json",
+      "../../../devices/bpi-canmv-k230d-zero/manifest.json": "devices/bpi-canmv-k230d-zero/manifest.json"
     },
     "linux": {
       "deb": {

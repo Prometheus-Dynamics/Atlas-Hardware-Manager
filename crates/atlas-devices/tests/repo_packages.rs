@@ -50,6 +50,34 @@ fn raze_is_recognised_in_recovery_and_running() {
     assert_eq!(raze.manifest.revision_label("gen1"), "Gen 1");
 }
 
+#[test]
+fn the_board_records_say_how_to_flash_them_and_that_its_untested() {
+    let catalog = repo_catalog();
+    let records = [
+        ("radxa-rock-5c", 0x2207, 0x350b, "rockusb", "emmc"),
+        ("radxa-rock-4d", 0x2207, 0x350e, "rockusb", "emmc"),
+        ("luckfox-pico-pro", 0x2207, 0x110c, "rockusb", "spi-nand"),
+        ("bpi-canmv-k230d-zero", 0x29f1, 0x0230, "k230-usb", "sd"),
+    ];
+    for (model, vid, pid, method, storage) in records {
+        let package = catalog.by_model(model).expect(model);
+        let manifest = &package.manifest;
+        assert!(manifest.record_only, "{model}");
+        assert!(manifest.recovery.untested(), "{model}");
+        assert_eq!(manifest.recovery.method.as_deref(), Some(method), "{model}");
+        assert_eq!(
+            manifest.recovery.storage_target.as_deref(),
+            Some(storage),
+            "{model}"
+        );
+        assert_eq!(catalog.for_usb_boot(vid, pid).len(), 1, "{model}");
+        let flash = manifest.recovery.flash.as_ref().expect(model);
+        assert!(flash.loader.is_some(), "{model}");
+        assert_eq!(flash.nand.is_some(), storage == "spi-nand", "{model}");
+        assert!(!manifest.recovery.instructions.is_empty(), "{model}");
+    }
+}
+
 /// Every `board-package.env` under a package reports the manifest's
 /// `package_version`, so the identity document never claims a stale one.
 #[test]

@@ -22,6 +22,7 @@ members = [
     "crates/atlas-usb-agent",
     "crates/atlas-ubi",
     "crates/atlas-socflash",
+    "crates/atlas-driver-soc",
     "crates/atlas-cli",
     "apps/desktop/src-tauri",
 ]
@@ -62,6 +63,7 @@ atlas-blockdev = { path = "crates/atlas-blockdev" }
 atlas-usb-agent = { path = "crates/atlas-usb-agent" }
 atlas-ubi = { path = "crates/atlas-ubi" }
 atlas-socflash = { path = "crates/atlas-socflash" }
+atlas-driver-soc = { path = "crates/atlas-driver-soc" }
 atlas-cli = { path = "crates/atlas-cli" }
 async-trait = "0.1"
 clap = { version = "4.6", features = ["derive"] }

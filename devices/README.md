@@ -28,10 +28,17 @@ devices/
     CHANGELOG.md
     fetch.lock               files fetched by pinned URL instead of kept in git
     eeprom/                  bootloader images (small, versioned)
-    gaia/                    the Gaia v2 layer, OS-neutral
+    gaia/                    the Gaia layer (config v3), OS-neutral
   roborio/manifest.json      a device without the identity contract: only
                              how to recognise and read it (fingerprints,
                              info, key; docs/devices-as-data.md)
+  radxa-rock-5c/, radxa-rock-4d/, luckfox-pico-pro/, bpi-canmv-k230d-zero/
+                             board records ("record_only": true): boards
+                             Atlas flashes from their SoC's download mode
+                             (recovery.method rockusb or k230-usb,
+                             recovery.flash) before they have a package;
+                             "status": "untested" until run on the board
+                             (docs/soc-flashing.md)
 ```
 
 ## The rule: never block the user

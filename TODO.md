@@ -112,38 +112,55 @@ nothing else is added. Each item: **what**, **why**, **done when**,
   - **Done when:** a robot with a SystemCore shows its boards under it, and
     a flash or update started there.
   - **Blocked by:** nothing (a robot for the end-to-end check).
-- [ ] **K230D flashing.**
-  - **What:** its BootROM USB download protocol in Atlas's Rust USB stack:
-    load the loader, then write the storage.
+Written, untested on a board (2026-10-31; docs/soc-flashing.md). The user's
+direction: the boards being on order isn't a reason to leave the code
+unwritten. Each item below is now what the boards themselves must show.
+
+- [ ] **K230D flashing: debug on the board.**
+  - **What:** written: the boot ROM stage and Canaan's burner protocol
+    (atlas-socflash `k230`), the K230 driver (atlas-driver-soc), the
+    CanMV K230D Zero record. Left: run it.
   - **Why:** flash a blank K230D board from scratch.
   - **Done when:** a blank board flashed and running, from Linux, Windows
-    and macOS.
-  - **Blocked by:** a K230D board; the protocol from the vendor tool's
-    source.
-- [ ] **Rockchip flashing: RK3588S, RK3576, RK3562, RK3566 modules and Flame
-      (RV1106G2).**
-  - **What:** Rockusb in maskrom and loader modes, in Atlas's own Rust
-    flasher (no rkdeveloptool or upgrade_tool at runtime): download the
-    loader, write the storage (eMMC, or SPI NAND on Flame), verify, reset.
-    LEDs while flashing, as on Raze.
+    and macOS; the record's `todo` settled (load address, medium codes,
+    the verify reply, whether the board has SPI-NAND) and its status
+    `verified`.
+  - **Blocked by:** the BPI-CanMV-K230D-Zero (on order); Canaan's burner
+    loader file next to the image (from Gaia's K230 SDK fetch).
+- [ ] **Rockchip flashing: debug on the boards.**
+  - **What:** written: maskrom download, rockusb commands, image writes read
+    back, the FlashHead idblock, SPI-NAND through LBAs (atlas-socflash
+    `rockchip`), the Rockchip driver, records for ROCK 5C (RK3588S2), ROCK
+    4D (RK3576) and Luckfox Pico Pro (RV1106G2). Left: run it; LEDs while
+    flashing, as on Raze; RK3562/RK3566 records when those modules come.
   - **Why:** the new boards.
-  - **Done when:** each board flashed from maskrom and running.
-  - **Blocked by:** the boards; their loaders from Gaia.
-- [ ] **NAND/UBI slot writing per Gaia's G8 layout.**
-  - **What:** slot installs onto raw NAND (UBI volumes) where the board has
-    no eMMC.
+  - **Done when:** each board flashed from maskrom and running, its
+    record's `todo` settled (PIDs, loader names, the trailer CRC
+    polynomial, SPI-NAND LBA mapping) and its status `verified`.
+  - **Blocked by:** the boards (on order); their loader files from Gaia's
+    rkbin fetch.
+- [ ] **NAND/UBI: first kernel attach, then slots on a NAND board.**
+  - **What:** written: atlas-ubi reads Gaia's G8 images, writes them as
+    ubiformat does (used by the Rockchip flash), and writes a slot into the
+    inactive rootfs_a/rootfs_b volume on a board (`atlas-ubi slot-write`).
+    Left: a NAND board's device package using it (boot-once and confirm in
+    U-Boot's environment), and Atlas's slot install calling it.
   - **Why:** Flame and other NAND boards take slot updates like Raze.
-  - **Done when:** install, boot-once, confirm and fallback on a NAND
-    board.
-  - **Blocked by:** Gaia's G8 layout; a NAND board.
-- [ ] **Board records for the new boards.**
-  - **What:** `devices/<model>/` for each (recognition, recovery ids,
-    flashing method), so they show in PIT/ROBOT like Raze.
+  - **Done when:** the kernel attaches an image atlas-ubi wrote; install,
+    boot-once, confirm and fallback on a NAND board.
+  - **Blocked by:** a NAND board (Luckfox Pico Pro, on order), or the user's
+    yes to `sudo modprobe nandsim` for the attach; Gaia's board config
+    fixing the volume layout.
+- [ ] **Board records: the running side.**
+  - **What:** written: `devices/{radxa-rock-5c,radxa-rock-4d,
+    luckfox-pico-pro,bpi-canmv-k230d-zero}` as board records
+    (`record_only`), recognised in their download mode. Left: once an OS
+    runs on them, each becomes a device package with the identity contract,
+    so it shows running in PIT/ROBOT like Raze.
   - **Why:** devices as data: no per-board code beyond the flasher.
-  - **Done when:** each is recognised in recovery and running, from its
-    package.
-  - **Blocked by:** each board's USB ids and identity contract
-    (board-gated).
+  - **Done when:** each is recognised in recovery (on the board) and
+    running, from its package.
+  - **Blocked by:** the boards; an OS image for each (HeliOS/Gaia).
 
 ### 3. Release mechanics
 
