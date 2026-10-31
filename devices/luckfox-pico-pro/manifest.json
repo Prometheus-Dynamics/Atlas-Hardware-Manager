@@ -23,14 +23,14 @@
     ],
     "status": "untested",
     "flash": {
-      "loader": "download*.bin",
+      "loader": ["rv1106_download_v*.bin", "download*.bin"],
       "storage": "spi-nand",
       "image_offset": 0,
       "nand": { "peb_size": 131072, "page_size": 2048, "size": 268435456 }
     },
     "todo": [
       "2207:110c as RV1106 maskrom comes from Luckfox's docs via search; confirm with lsusb.",
-      "The loader file: the Luckfox SDK's download.bin is assumed; check its name, and whether maskrom needs the 471/472 entries RC4'd for this chip (xrock has an --rc4-off option for RV1106).",
+      "The loader: rkbin's rv1106_download_v1.16.108.bin (idblock rv1106_idblock_v1.16.100.img), or the Luckfox SDK's download.bin; Gaia's board build copies it next to the image. Check whether maskrom needs the 471/472 entries RC4'd for this chip (xrock has an --rc4-off option for RV1106).",
       "The NAND's geometry (128 KiB eraseblocks, 2 KiB pages, 256 MB assumed): read it from the part on the board and from READ_FLASH_INFO.",
       "How the usbplug maps LBAs onto SPI-NAND: directly (Atlas's assumption: eraseblock N at LBA N*256) or through its own bad-block handling. If it remaps, the UBI region must be written through the usbplug's raw access instead.",
       "The usbplug's storage id for SPI-NAND (CHANGE_STORAGE): not in rkdeveloptool's cs list; Atlas assumes the usbplug starts on the NAND and doesn't switch."

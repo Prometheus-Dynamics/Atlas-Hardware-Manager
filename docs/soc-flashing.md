@@ -8,7 +8,7 @@ board.** The boards are on order. Each board record says
 | Board | SoC | Mode (USB id) | Storage | Record |
 |---|---|---|---|---|
 | Radxa ROCK 5C | RK3588S2 | maskrom 2207:350b | eMMC | `devices/radxa-rock-5c` |
-| Radxa ROCK 4D | RK3576 | maskrom 2207:350e (to confirm) | eMMC | `devices/radxa-rock-4d` |
+| Radxa ROCK 4D | RK3576 | maskrom 2207:350e (a guess: `pid_unconfirmed`) | eMMC | `devices/radxa-rock-4d` |
 | Luckfox Pico Pro | RV1106G2 (Flame's SoC) | maskrom 2207:110c | SPI-NAND | `devices/luckfox-pico-pro` |
 | BPI-CanMV-K230D-Zero | K230D | USB boot 29f1:0230 | microSD (to confirm) | `devices/bpi-canmv-k230d-zero` |
 
@@ -52,6 +52,15 @@ board.** The boards are on order. Each board record says
   - K230's load address;
   - NAND geometry.
 
+## Whose board is it
+
+A record whose PID is a guess (`usb_boot.pid_unconfirmed`, RK3576's today)
+is offered for any Rockchip in a download mode whose PID no record names.
+Once the usbplug runs, Atlas reads the chip number the board reports
+(`READ_CHIP_INFO`) and checks it against the record's `platform.soc`. If it
+differs, the flash stops before anything is written. Every Rockchip flash
+runs this check, not only the guessed ones.
+
 ## The loader
 
 Atlas never downloads a vendor loader. It looks for the record's glob in two
@@ -59,10 +68,13 @@ places: next to the image, then in the record's folder. Gaia's build of the
 board fetches rkbin and the K230 SDK, so it is the natural place for the
 loader to come from. The loaders are:
 
-- `rk3588_spl_loader_v*.bin`
-- `rk3576_spl_loader_v*.bin`
-- the Luckfox SDK's `download*.bin`
-- Canaan's `loader_mmc*.bin`
+- rkbin's boot_merger names (`rk3588_loader_v*.bin`, `rk3576_loader_v*.bin`,
+  `rv1106_download_v*.bin`) and Radxa's (`rk3588_spl_loader_v*.bin`,
+  `rk3576_spl_loader_v*.bin`); a record's `loader` lists both;
+- the Luckfox SDK's `download*.bin`;
+- Canaan's `loader_mmc*.bin`.
+
+Gaia's board builds copy the matching loader next to each image.
 
 ## SPI-NAND
 

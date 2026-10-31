@@ -27,10 +27,10 @@ pub fn glob_match(pattern: &str, name: &str) -> bool {
     true
 }
 
-/// The loader matching `pattern` in the first of `dirs` that has one (the
-/// newest by name there, so `v1.16` wins over `v1.15`). Atlas never
-/// downloads one.
-pub fn find_loader(pattern: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
+/// The loader matching any of `patterns` in the first of `dirs` that has
+/// one (the newest by name there, so `v1.16` wins over `v1.15`). Atlas
+/// never downloads one.
+pub fn find_loader(patterns: &[String], dirs: &[PathBuf]) -> Option<PathBuf> {
     dirs.iter().find_map(|dir| {
         let mut found: Vec<PathBuf> = std::fs::read_dir(dir)
             .into_iter()
@@ -42,7 +42,9 @@ pub fn find_loader(pattern: &str, dirs: &[PathBuf]) -> Option<PathBuf> {
                     && path
                         .file_name()
                         .and_then(|name| name.to_str())
-                        .is_some_and(|name| glob_match(pattern, name))
+                        .is_some_and(|name| {
+                            patterns.iter().any(|pattern| glob_match(pattern, name))
+                        })
             })
             .collect();
         found.sort();
@@ -159,18 +161,29 @@ mod tests {
         let first = temp_dir("loaders-a");
         let second = temp_dir("loaders-b");
         std::fs::write(second.join("rk3588_spl_loader_v1.16.bin"), b"x").unwrap();
+        let globs = [
+            "rk3588_loader_v*.bin".to_string(),
+            "rk3588_spl_loader_v*.bin".to_string(),
+        ];
         assert_eq!(
-            find_loader("rk3588_spl_loader_v*.bin", &[first.clone(), second.clone()]),
+            find_loader(&globs, &[first.clone(), second.clone()]),
             Some(second.join("rk3588_spl_loader_v1.16.bin"))
         );
         std::fs::write(first.join("rk3588_spl_loader_v1.14.bin"), b"x").unwrap();
         std::fs::write(first.join("rk3588_spl_loader_v1.15.bin"), b"x").unwrap();
         assert_eq!(
-            find_loader("rk3588_spl_loader_v*.bin", &[first.clone(), second.clone()]),
+            find_loader(&globs, &[first.clone(), second.clone()]),
             Some(first.join("rk3588_spl_loader_v1.15.bin"))
         );
+        // rkbin's own name matches too.
+        std::fs::write(first.join("rk3588_loader_v1.24.114.bin"), b"x").unwrap();
         assert_eq!(
-            find_loader("nothing*.bin", std::slice::from_ref(&first)),
+            find_loader(&globs, std::slice::from_ref(&first)),
+            Some(first.join("rk3588_spl_loader_v1.15.bin")),
+            "the newest by name across both globs"
+        );
+        assert_eq!(
+            find_loader(&["nothing*.bin".to_string()], std::slice::from_ref(&first)),
             None
         );
         let _ = std::fs::remove_dir_all(first);

@@ -121,7 +121,13 @@ impl SocDriver {
     }
 
     pub(crate) fn identity(&self, candidate: &Candidate, found: &Found) -> Identity {
-        let packages = self.catalog.for_usb_boot(found.vendor_id, found.product_id);
+        let mut packages = self.catalog.for_usb_boot(found.vendor_id, found.product_id);
+        // A PID no record names may be a board whose PID is still a guess
+        // (RK3576's maskrom); its chip is checked before anything is written.
+        let provisional = packages.is_empty() && self.soc == Soc::Rockchip;
+        if provisional {
+            packages = self.catalog.unconfirmed_usb_boot(found.vendor_id);
+        }
         let chip = self.chip(found);
         let mut attributes = BTreeMap::from([
             ("chip".to_string(), chip.clone()),
@@ -131,6 +137,15 @@ impl SocDriver {
         let display = match packages.as_slice() {
             [package] => {
                 describe(package, &mut attributes);
+                if provisional {
+                    attributes.insert(
+                        "pid_unconfirmed".into(),
+                        format!(
+                            "its USB id {:04x}:{:04x} isn't one the record confirms; Atlas checks the chip the board reports before writing",
+                            found.vendor_id, found.product_id
+                        ),
+                    );
+                }
                 package.manifest.display_name().to_string()
             }
             [] => chip.clone(),
@@ -276,6 +291,21 @@ mod tests {
     }
 
     #[test]
+    fn a_rockchip_no_record_names_is_offered_as_the_unconfirmed_one() {
+        let driver = SocDriver::new(Soc::Rockchip, catalog());
+        let found = Found {
+            location: "2-1".into(),
+            vendor_id: 0x2207,
+            product_id: 0x350f,
+            stage: "maskrom",
+            serial: None,
+        };
+        let identity = driver.identity(&candidate("2-1"), &found);
+        assert_eq!(identity.attributes["model"], "radxa-rock-4d");
+        assert!(identity.attributes["pid_unconfirmed"].contains("2207:350f"));
+    }
+
+    #[test]
     fn an_unknown_rockchip_is_its_chip_and_a_k230_its_record() {
         let driver = SocDriver::new(Soc::Rockchip, catalog());
         let found = Found {
@@ -286,9 +316,11 @@ mod tests {
             serial: Some("ABCDEF123".into()),
         };
         let identity = driver.identity(&candidate("1-1"), &found);
-        assert_eq!(identity.model, "RK3566/RK3568");
         assert_eq!(identity.key, DeviceKey::new("rockchip", "abcdef123"));
-        assert!(!identity.attributes.contains_key("model"));
+        // No record names 350a, so the unconfirmed record is offered, with
+        // the chip the PID says.
+        assert_eq!(identity.model, "ROCK 4D (RK3566/RK3568)");
+        assert!(identity.attributes.contains_key("pid_unconfirmed"));
 
         let driver = SocDriver::new(Soc::K230, catalog());
         let found = Found {

@@ -172,7 +172,11 @@
           "required": ["vid", "pid"],
           "properties": {
             "vid": { "$ref": "#/$defs/usbid" },
-            "pid": { "$ref": "#/$defs/usbid" }
+            "pid": { "$ref": "#/$defs/usbid" },
+            "pid_unconfirmed": {
+              "type": "boolean",
+              "description": "The PID is a guess: a device of this vendor whose PID no record names may be this board, until the board says otherwise (the chip its loader reports)."
+            }
           }
         },
         "method": {
@@ -192,8 +196,11 @@
           "additionalProperties": false,
           "properties": {
             "loader": {
-              "type": "string",
-              "description": "The vendor loader file's name, a glob (rk3588_spl_loader_v*.bin; the K230 burner U-Boot). Atlas looks next to the image, then in the package directory; it never downloads one."
+              "oneOf": [
+                { "type": "string" },
+                { "type": "array", "minItems": 1, "items": { "type": "string" } }
+              ],
+              "description": "The vendor loader file's name: a glob or a list of them (rkbin's rk3588_loader_v*.bin and Radxa's rk3588_spl_loader_v*.bin; the K230 burner U-Boot). Atlas looks next to the image, then in the package directory; it never downloads one."
             },
             "storage": {
               "enum": ["emmc", "sd", "spi-nor", "spi-nand"],

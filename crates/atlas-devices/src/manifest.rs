@@ -127,15 +127,46 @@ pub struct IdentityRules {
 pub struct UsbBootId {
     pub vid: UsbId,
     pub pid: UsbId,
+    /// The PID is a guess no source confirmed (RK3576's maskrom): a device
+    /// of this vendor whose PID no record names may be this board, until the
+    /// board itself says (its chip, once its loader runs).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub pid_unconfirmed: bool,
+}
+
+/// One glob or a list of them.
+fn one_or_many<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+    Ok(match OneOrMany::deserialize(deserializer)? {
+        OneOrMany::One(one) => vec![one],
+        OneOrMany::Many(many) => many,
+    })
+}
+
+/// `platform`: the SoC and architecture.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Platform {
+    #[serde(default)]
+    pub soc: Option<String>,
+    #[serde(default)]
+    pub module: Option<String>,
+    #[serde(default)]
+    pub arch: Option<String>,
 }
 
 /// How a SoC download mode writes the board (`recovery.flash`): rockusb on
 /// Rockchip, the K230 burner.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FlashSpec {
-    /// The vendor loader's file name, a glob (`rk3588_spl_loader_v*.bin`).
-    #[serde(default)]
-    pub loader: Option<String>,
+    /// The vendor loader's file name: a glob, or several (rkbin's
+    /// `rk3588_loader_v*.bin` and Radxa's `rk3588_spl_loader_v*.bin`).
+    #[serde(default, deserialize_with = "one_or_many")]
+    pub loader: Vec<String>,
     /// `emmc`, `sd`, `spi-nor` or `spi-nand`, when it must be chosen.
     #[serde(default)]
     pub storage: Option<String>,
@@ -221,6 +252,8 @@ pub struct DeviceManifest {
     /// package (identity contract) yet.
     #[serde(default)]
     pub record_only: bool,
+    #[serde(default)]
+    pub platform: Option<Platform>,
     #[serde(default)]
     pub revisions: Vec<Revision>,
     #[serde(default)]

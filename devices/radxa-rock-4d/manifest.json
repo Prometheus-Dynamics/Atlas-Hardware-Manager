@@ -9,7 +9,7 @@
   "description": "Radxa ROCK 4D (Rockchip RK3576) dev board, on order. A board record: Atlas flashes it from maskrom (rockusb) with Rockchip's loader file and no vendor tool. Written from rkdeveloptool, U-Boot and Radxa's docs; untested on this board.",
   "platform": { "soc": "RK3576", "arch": "aarch64" },
   "recovery": {
-    "usb_boot": { "vid": "2207", "pid": "350e" },
+    "usb_boot": { "vid": "2207", "pid": "350e", "pid_unconfirmed": true },
     "method": "rockusb",
     "storage_target": "emmc",
     "storage_target_evidence": [
@@ -24,13 +24,13 @@
     ],
     "status": "untested",
     "flash": {
-      "loader": "rk3576_spl_loader_v*.bin",
+      "loader": ["rk3576_loader_v*.bin", "rk3576_spl_loader_v*.bin"],
       "storage": "emmc",
       "image_offset": 0
     },
     "todo": [
-      "The maskrom PID: 2207:350e for RK3576 isn't in any source read (rkdeveloptool's table stops before it); confirm with lsusb on the board and fix it here.",
-      "The loader file's name: the ROCK 4D page points to its Resource Downloads page without naming it.",
+      "The maskrom PID: 2207:350e for RK3576 is in no text source (rkdeveloptool's table stops before it; Gaia found none either), so it's marked pid_unconfirmed: a Rockchip in maskrom whose PID no record names is offered as this board, and the chip its loader reports must be RK3576 before anything is written. Confirm with lsusb on the board and drop pid_unconfirmed.",
+      "The loader file: rkbin's boot_merger writes rk3576_loader_v1.13.109.bin (idblock rk3576_idblock_v1.13.109.img); Radxa ships it as rk3576_spl_loader_v*.bin. Both match; Gaia's board build copies it next to the image.",
       "The maskrom steps: taken from the ROCK 4AB SE guide (same button, a different board); the 4D's own page didn't load.",
       "eMMC vs UFS: which module the board gets, and the usbplug's storage id for UFS (not in rkdeveloptool's cs list).",
       "Writing the SPI NOR bootloader (rkdeveloptool wl 0 spi.img after cs 9) when the factory one must be replaced: not wired into Atlas's flash yet."

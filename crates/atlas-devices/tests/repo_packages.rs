@@ -72,10 +72,25 @@ fn the_board_records_say_how_to_flash_them_and_that_its_untested() {
         );
         assert_eq!(catalog.for_usb_boot(vid, pid).len(), 1, "{model}");
         let flash = manifest.recovery.flash.as_ref().expect(model);
-        assert!(flash.loader.is_some(), "{model}");
+        assert!(!flash.loader.is_empty(), "{model}");
         assert_eq!(flash.nand.is_some(), storage == "spi-nand", "{model}");
         assert!(!manifest.recovery.instructions.is_empty(), "{model}");
+        assert!(
+            manifest
+                .platform
+                .as_ref()
+                .and_then(|p| p.soc.as_ref())
+                .is_some(),
+            "{model}"
+        );
     }
+    // RK3576's maskrom PID is a guess; any other unnamed Rockchip may be it.
+    let unconfirmed: Vec<&str> = catalog
+        .unconfirmed_usb_boot(0x2207)
+        .iter()
+        .map(|package| package.manifest.model.as_str())
+        .collect();
+    assert_eq!(unconfirmed, ["radxa-rock-4d"]);
 }
 
 /// Every `board-package.env` under a package reports the manifest's

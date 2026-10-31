@@ -27,7 +27,7 @@ use atlas_socflash::k230::bootrom::{self, Stage};
 use atlas_socflash::k230::kburn::{Burner, Medium};
 use atlas_socflash::rockchip::loader::Loader;
 use atlas_socflash::rockchip::maskrom;
-use atlas_socflash::rockchip::rockusb::{Reset, Rockusb, SECTOR, Storage};
+use atlas_socflash::rockchip::rockusb::{Reset, Rockusb, SECTOR, Storage, chip_number};
 use atlas_socflash::rockchip::write::{LbaNand, write_image};
 use atlas_socflash::{NusbIo, Phase, UsbError};
 use tokio::runtime::Handle;
@@ -95,19 +95,20 @@ fn loader_path(
     spec: &FlashSpec,
     image: &Path,
 ) -> Result<PathBuf, DriverError> {
-    let pattern = spec.loader.as_deref().ok_or_else(|| {
-        DriverError::Incompatible(format!(
+    if spec.loader.is_empty() {
+        return Err(DriverError::Incompatible(format!(
             "the {} record names no loader file",
             package.manifest.model
-        ))
-    })?;
+        )));
+    }
+    let pattern = spec.loader.join(" or ");
     let dirs: Vec<PathBuf> = image
         .parent()
         .map(Path::to_path_buf)
         .into_iter()
         .chain([package.dir.clone()])
         .collect();
-    find_loader(pattern, &dirs).ok_or_else(|| {
+    find_loader(&spec.loader, &dirs).ok_or_else(|| {
         failed(
             UpdateStep::Preflight,
             format!(
@@ -205,6 +206,11 @@ impl UpdateCapability for SocUpdate {
             size,
             spec: spec.clone(),
             storage_target: package.manifest.recovery.storage_target.clone(),
+            chip: package
+                .manifest
+                .platform
+                .as_ref()
+                .and_then(|platform| platform.soc.clone()),
             progress: progress.clone(),
             cancel: cancel.clone(),
         };
@@ -229,6 +235,8 @@ struct Job {
     size: u64,
     spec: FlashSpec,
     storage_target: Option<String>,
+    /// The record's SoC (`RK3576`), checked against what the board reports.
+    chip: Option<String>,
     progress: ProgressSink,
     cancel: CancellationToken,
 }
@@ -362,6 +370,23 @@ impl Job {
                 }
             }
         })?;
+        // The board must be the chip its record is for: a guessed PID
+        // (pid_unconfirmed) could name the wrong one.
+        match handle.block_on(device.read_chip_info()) {
+            Ok(info) => match (chip_number(&info), self.chip.as_deref()) {
+                (Some(number), Some(soc)) if !soc.to_ascii_uppercase().contains(&number) => {
+                    return Err(failed(
+                        UpdateStep::Transfer,
+                        format!(
+                            "the board reports chip {number}, but its record is for {soc}: nothing was written"
+                        ),
+                    ));
+                }
+                (Some(number), _) => self.progress.log(format!("chip: {number}")),
+                (None, _) => self.progress.log(format!("chip info: {info:02x?}")),
+            },
+            Err(error) => self.progress.log(format!("no chip info ({error})")),
+        }
         let storage = match self.storage() {
             Some("emmc") => Some(Storage::Emmc),
             Some("sd") => Some(Storage::Sd),

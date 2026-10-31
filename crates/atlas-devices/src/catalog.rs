@@ -208,6 +208,21 @@ impl DeviceCatalog {
             .collect()
     }
 
+    /// Models of this vendor whose download-mode PID isn't confirmed: what
+    /// a device of the vendor with a PID no record names may be.
+    pub fn unconfirmed_usb_boot(&self, vid: u16) -> Vec<&DevicePackage> {
+        self.packages
+            .iter()
+            .filter(|package| {
+                package
+                    .manifest
+                    .recovery
+                    .usb_boot
+                    .is_some_and(|id| id.vid.0 == vid && id.pid_unconfirmed)
+            })
+            .collect()
+    }
+
     /// The model whose USB gadget strings match, if any.
     pub fn for_gadget(
         &self,

@@ -257,6 +257,24 @@ impl<'a> Rockusb<'a> {
     }
 }
 
+/// The chip number in a `READ_CHIP_INFO` reply: its first four bytes, ASCII
+/// reversed ("8853" for an RK3588), as rkdeveloptool's `rci` shows them
+/// (UNCONFIRMED from source). `None` when they aren't that.
+pub fn chip_number(info: &[u8]) -> Option<String> {
+    let reversed: Vec<u8> = info.get(..4)?.iter().rev().copied().collect();
+    let number = String::from_utf8(reversed).ok()?;
+    number
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric())
+        .then(|| number.to_ascii_uppercase())
+}
+
+/// Whether a chip number fits the SoC a record names (`3588` fits
+/// `RK3588S2`). `None` when the number can't be read.
+pub fn chip_matches(info: &[u8], soc: &str) -> Option<bool> {
+    chip_number(info).map(|number| soc.to_ascii_uppercase().contains(&number))
+}
+
 fn sectors(bytes: usize) -> Result<u16, UsbError> {
     if bytes == 0
         || !bytes.is_multiple_of(SECTOR)
@@ -286,6 +304,16 @@ pub(crate) mod tests {
         csw.extend_from_slice(&tag.to_le_bytes());
         csw.extend_from_slice(&[0, 0, 0, 0, status]);
         csw
+    }
+
+    #[test]
+    fn the_chip_number_reads_reversed() {
+        let mut info = b"8853".to_vec();
+        info.resize(16, 0);
+        assert_eq!(chip_number(&info).as_deref(), Some("3588"));
+        assert_eq!(chip_matches(&info, "RK3588S2"), Some(true));
+        assert_eq!(chip_matches(&info, "RK3576"), Some(false));
+        assert_eq!(chip_matches(&[0xff, 0, 1, 2], "RK3576"), None);
     }
 
     #[test]

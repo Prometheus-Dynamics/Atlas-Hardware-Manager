@@ -24,13 +24,13 @@
     ],
     "status": "untested",
     "flash": {
-      "loader": "rk3588_spl_loader_v*.bin",
+      "loader": ["rk3588_loader_v*.bin", "rk3588_spl_loader_v*.bin"],
       "storage": "emmc",
       "image_offset": 0
     },
     "todo": [
       "2207:350b as RK3588 maskrom comes from secondary sources (MNT, Radxa's guides via search); confirm with lsusb on the board.",
-      "Whether the RK3588S2 takes the RK3588 loader (rk3588_spl_loader_v1.15.113.bin in Radxa's erase guide) unchanged.",
+      "Whether the RK3588S2 takes the RK3588 loader unchanged: rkbin's rk3588_loader_v1.24.114.bin, Radxa's rk3588_spl_loader_v1.15.113.bin (both names match); Gaia's board build copies it next to the image.",
       "The cable: Radxa's guides differ between USB-A to USB-A and USB-A to USB-C for this port.",
       "Which polynomial the loader's trailing CRC-32 uses (0x04C10DB7 as in rkdeveloptool's table, or 0x04C11DB7): Atlas accepts either and logs which.",
       "LEDs during maskrom and flashing."
