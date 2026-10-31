@@ -476,7 +476,7 @@
           "bus": 4,
           "address": 24,
           "chip_id": { "register": 0, "width": 8, "value": 30 },
-          "lemnosd": { "device": "imu", "driver": "bmi088", "label": "IMU", "poll_ms": 10, "raw": ["board-selftest"], "settings": { "accel_rate": "100hz", "gyro_rate": "100hz-32" } }
+          "lemnosd": { "device": "imu", "driver": "bmi088", "label": "IMU", "poll_ms": 5, "raw": ["board-selftest"], "settings": { "accel_rate": "200hz", "gyro_rate": "200hz-23" } }
         },
         {
           "id": "imu-gyro",

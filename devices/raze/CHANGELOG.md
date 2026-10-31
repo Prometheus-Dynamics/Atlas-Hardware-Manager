@@ -11,6 +11,11 @@ OSes pin this layer by commit; the commits are listed per area.
   `2026.2.0-dev.<count>`, not `…+<commit>`): `+` isn't a slot id character.
   The id stays `<family>-<version>-<variant>-<commit>`, e.g.
   `helios-2026.2.0-dev.721-styx-ab12cd34`; Atlas orders slots by version.
+- **The IMU at 200 Hz (2026-10-31):** board.toml's BMI088 is `accel_rate =
+  "200hz"`, `gyro_rate = "200hz-23"`, `poll_ms = 5` (was 100 Hz, `100hz-32`,
+  10 ms). Measured by HeliOS on a Raze with a full-rate subscriber
+  (`lemnos-ctl watch imu`), lemnosd CPU over 30 s on the PIO bus: 100 Hz
+  1.9 %, 200 Hz 2.9 %, 400 Hz 6.0 % of a core, every sample delivered.
 - **Gaia config v3 (2026-10-31):** the 16 layers are `config = 3`, rewritten
   by `gaia migrate` (Gaia cd9ad15), which resolved HeliOS's raze build against
   them before and after and found no difference: `${self}`, `${outputs.dir}`,

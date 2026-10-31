@@ -294,7 +294,7 @@ def board_definition(manifest: dict, version: str) -> tuple[dict, dict[str, list
                 device["raw"] = ld["raw"]
             device["config"] = {}
             # Driver settings as the board file takes them (the BMI088's
-            # output rates, matched: the accel's is at most 100 Hz here).
+            # output rates, matched: 200 Hz, read every 5 ms).
             device["config"].update(ld.get("settings", {}))
             if "shunt_ohm" in part:
                 device["config"]["shunt_micro_ohms"] = round(part["shunt_ohm"] * 1e6)

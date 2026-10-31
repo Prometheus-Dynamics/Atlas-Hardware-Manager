@@ -40,7 +40,7 @@ poll_ms = 1000
 # BMI088 accelerometer at 0x18 on the RP1 PIO bus (GPIO8 SDA, GPIO7 SCL; no kernel adapter).
 # Address and chip id verified on a board by chip-id register reads.
 # Raw reads (chip id) through lemnosd for: board-selftest.
-# Settings: accel_rate = 100hz, gyro_rate = 100hz-32.
+# Settings: accel_rate = 200hz, gyro_rate = 200hz-23.
 # BMI088 gyroscope at 0x68.
 [[devices]]
 id = "imu"
@@ -48,9 +48,9 @@ driver = "bmi088"
 label = "IMU"
 bus = "pio-i2c:sda=8,scl=7"
 address = 0x18
-poll_ms = 10
+poll_ms = 5
 raw = ["board-selftest"]
-config = { accel_rate = "100hz", gyro_rate = "100hz-32", gyro_address = 0x68 }
+config = { accel_rate = "200hz", gyro_rate = "200hz-23", gyro_address = 0x68 }
 
 # BMM150 magnetometer at 0x10 on the hardware bus (i2c-1 on the 7.2.9 image).
 # Address and chip id verified on a board by chip-id register reads.
