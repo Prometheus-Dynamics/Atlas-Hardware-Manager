@@ -19,6 +19,7 @@ members = [
     "crates/flasher",
     "crates/atlas-blockdev",
     "crates/atlas-helper",
+    "crates/atlas-usb-agent",
     "crates/atlas-cli",
     "apps/desktop/src-tauri",
 ]

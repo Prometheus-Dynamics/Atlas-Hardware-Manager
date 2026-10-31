@@ -120,7 +120,7 @@ impl ActionsCapability for RpiActions {
                     // a board powered from it would go dark, not restart.
                     return blocking(move || {
                         let _ = atlas_blockdev::unmount_all(&disk);
-                        crate::console::restart(&disk.name).map(|_| ()).map_err(|reason| {
+                        atlas_blockdev::restart_gadget(&disk.name).map(|_| ()).map_err(|reason| {
                             atlas_blockdev::BlockError::Desktop(format!(
                                 "unmounted {}, but couldn't restart the board ({reason}); power-cycle it without holding its boot button",
                                 disk.name

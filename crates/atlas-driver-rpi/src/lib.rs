@@ -15,7 +15,6 @@
 
 mod actions;
 mod boot_files;
-mod console;
 mod driver;
 mod eeprom;
 mod flash;

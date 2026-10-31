@@ -447,7 +447,7 @@ impl UpdateCapability for RpiRecovery {
         let target = disk.clone();
         let restarted = tokio::task::spawn_blocking(move || {
             let _ = atlas_blockdev::unmount_all(&target);
-            crate::console::restart(&target.name)
+            atlas_blockdev::restart_gadget(&target.name)
         })
         .await
         .map_err(|error| error.to_string())

@@ -209,7 +209,14 @@ pub(super) fn open_for_write(disk: &Disk) -> Result<File, BlockError> {
 }
 
 pub(super) fn open_for_verify(disk: &Disk) -> Result<File, BlockError> {
-    let file = File::open(&disk.path).map_err(|error| BlockError::io(&disk.path, error))?;
+    // Exclusive as the write was: an automounter that mounts the fresh
+    // partitions in between (a SystemCore's does) would change them under
+    // the read-back.
+    let file = OpenOptions::new()
+        .read(true)
+        .custom_flags(nix::libc::O_EXCL)
+        .open(&disk.path)
+        .map_err(|error| BlockError::io(&disk.path, error))?;
     // Drop cached pages so the read-back comes from the device.
     let _ = nix::fcntl::posix_fadvise(
         &file,

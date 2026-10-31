@@ -391,6 +391,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-usb-agent"
+version = "0.1.1-dev"
+dependencies = [
+ "atlas-blockdev",
+ "atlas-usbboot",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-usbboot"
 version = "0.1.1-dev"
 dependencies = [

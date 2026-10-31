@@ -11,6 +11,7 @@
 mod client;
 mod disk;
 mod error;
+mod gadget_console;
 mod image;
 mod messages;
 mod platform;
@@ -22,6 +23,7 @@ mod writer;
 pub use client::{HelperClient, HelperRequest};
 pub use disk::{Disk, check_target};
 pub use error::BlockError;
+pub use gadget_console::restart_gadget;
 pub use image::ImageFormat;
 pub use messages::HelperMessage;
 pub use platform::list_disks;

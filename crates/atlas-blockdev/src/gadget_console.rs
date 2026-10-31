@@ -45,7 +45,7 @@ fn attr(dir: &Path, name: &str) -> String {
 
 /// The console tty (its name, such as `ttyACM0`) on the same USB device as
 /// the gadget disk `disk_name` (such as `sdc`), with sysfs at `sys`.
-pub(crate) fn find_console(sys: &Path, disk_name: &str) -> Result<String, String> {
+fn find_console(sys: &Path, disk_name: &str) -> Result<String, String> {
     let device = usb_device_dir(&sys.join("block").join(disk_name))
         .ok_or_else(|| format!("{disk_name} isn't a USB disk"))?;
     if attr(&device, "idVendor") != GADGET_VENDOR || attr(&device, "idProduct") != GADGET_PRODUCT {
@@ -160,7 +160,7 @@ fn echoed(output: &[u8]) -> bool {
 /// Restarts the board behind the gadget disk `disk_name` through its serial
 /// console, and waits for the gadget to go. Returns the console used.
 #[cfg(target_os = "linux")]
-pub(crate) fn restart(disk_name: &str) -> Result<String, String> {
+pub fn restart_gadget(disk_name: &str) -> Result<String, String> {
     let sys = Path::new("/sys");
     let tty = find_console(sys, disk_name)?;
     let took = type_restart(&tty)?;
@@ -192,7 +192,7 @@ pub(crate) fn restart(disk_name: &str) -> Result<String, String> {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub(crate) fn restart(_disk_name: &str) -> Result<String, String> {
+pub fn restart_gadget(_disk_name: &str) -> Result<String, String> {
     Err("restarting the board from Atlas works on Linux only for now".into())
 }
 

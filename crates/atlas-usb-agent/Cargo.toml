@@ -1,0 +1,21 @@
+[package]
+name = "atlas-usb-agent"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+publish.workspace = true
+description = "Atlas's hands on another computer a board in USB boot is plugged into (a SystemCore): USB boot it, write and verify its eMMC, restart it. Run by Atlas over SSH; JSON lines out."
+
+[dependencies]
+atlas-blockdev.workspace = true
+atlas-usbboot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["rt", "time"] }
+
+[lints]
+workspace = true
