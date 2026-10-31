@@ -1,0 +1,21 @@
+# atlas-usb-agent: Atlas's agent on this robot controller. It lists the
+# boards in USB boot plugged in here and flashes them for Atlas, as jobs that
+# go on if Atlas's link drops (crates/atlas-usb-agent in Atlas).
+[Unit]
+Description=Atlas USB agent (flashes boards plugged into this controller)
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/atlas-usb-agent serve
+Restart=on-failure
+RestartSec=2
+StateDirectory=atlas-usb-agent
+# Never more than this, so a fault can't starve the controller's own
+# services (the agent also stops itself at 1 GiB).
+MemoryMax=768M
+MemorySwapMax=0
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target

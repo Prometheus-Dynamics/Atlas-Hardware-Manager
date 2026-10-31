@@ -8,14 +8,19 @@ homepage.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 publish.workspace = true
-description = "Atlas's hands on another computer a board in USB boot is plugged into (a SystemCore): USB boot it, write and verify its eMMC, restart it. Run by Atlas over SSH; JSON lines out."
+description = "Atlas's agent on another host boards in USB boot are plugged into (a SystemCore): lists them, takes images, flashes them as jobs that outlive Atlas's link (USB boot, write, verify, restart). Its API types are the library."
 
 [dependencies]
 atlas-blockdev.workspace = true
 atlas-usbboot.workspace = true
+bytes = "1"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
 serde.workspace = true
 serde_json.workspace = true
-tokio = { workspace = true, features = ["rt", "time"] }
+sha2.workspace = true
+tokio = { workspace = true, features = ["rt", "time", "net", "fs", "io-util"] }
 
 [lints]
 workspace = true
