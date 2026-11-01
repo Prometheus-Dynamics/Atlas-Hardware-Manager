@@ -173,11 +173,13 @@ nothing else is added. Each item: **what**, **why**, **done when**,
 ### 3. Release mechanics
 
 - [ ] **Changelogs.**
-  - **What:** release notes from the dev history, and
-    `devices/raze/CHANGELOG.md`'s Unreleased cut to a version.
+  - **What:** release notes drafted from the dev history
+    (docs/release-notes/2026.1.0.md); `devices/raze/CHANGELOG.md`'s
+    Unreleased still to cut to a version.
   - **Why:** teams need to know what changed.
   - **Done when:** both written and reviewed by the user.
-  - **Blocked by:** nothing.
+  - **Blocked by:** the user's review; the Raze package's release version
+    (with Versions).
 - [ ] **Versions.**
   - **What:** crates and Raze package from `-dev` to their release
     versions; packaging checks pass (`scripts/tests/package-versions.sh`).
@@ -193,7 +195,9 @@ nothing else is added. Each item: **what**, **why**, **done when**,
   - **What:** `v2026.1.0`; CI builds deb, rpm, AppImage, NSIS and dmg.
   - **Why:** the installers people download.
   - **Done when:** the tagged installers install and run (Linux here;
-    Windows and macOS as their proofs allow).
+    Windows and macOS as their proofs allow), and a 2026.1.0 install
+    updates itself to the next release (the first one the updater can
+    reach: 2026.0.0 predates it).
   - **Blocked by:** the user (Atlas sessions never tag).
 
 
@@ -347,5 +351,8 @@ Each was an open item below "Done"; the evidence is what closed it.
       (the agent re-attach item above covers flashes behind a SystemCore).
 - [ ] Light theme (the tokens allow one: themes/glass.css). Blocked by: the
       freeze.
-- [ ] Signed installers and a Tauri self-updater. Blocked by: the release
-      signing key, pinned for later (user, 2026-10-30).
+- [ ] Signed releases and installers. The self-updater is built (a2b94b7:
+      GitHub releases, the installer for how Atlas is installed, SHA-256
+      checked, a signed manifest verified once update-keys.txt lists a key);
+      left is signing it all. Blocked by: the release signing key, pinned
+      for later (user, 2026-10-30).
