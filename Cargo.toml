@@ -21,6 +21,7 @@ members = [
     "crates/atlas-helper",
     "crates/atlas-usb-agent",
     "crates/atlas-ubi",
+    "crates/board-lite",
     "crates/atlas-socflash",
     "crates/atlas-driver-soc",
     "crates/atlas-cli",

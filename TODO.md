@@ -158,19 +158,18 @@ nothing else is added. Each item: **what**, **why**, **done when**,
   - **Done when:** the kernel attaches an image atlas-ubi wrote; install,
     boot-once, confirm and fallback on a NAND board; `data` formats itself on
     first mount.
-  - **Blocked by:** for the rest of the code, the Luckfox serving the identity
-    contract (below). For the proof, a NAND board (Luckfox Pico Pro, on order),
+  - **Blocked by:** for the rest of the code, a way for Atlas to reach a board
+    with no SSH, Orion or USB console (the user's call: see soc-flashing.md).
+    For the proof, a NAND board (Luckfox Pico Pro, on order),
     or the user's yes to `sudo modprobe nandsim` for the attach; and Gaia's
     commit enabling the watchdog's device-tree node.
 - [ ] **Board records: the running side.**
-  - **What:** written: `devices/{radxa-rock-5c,radxa-rock-4d,
-    luckfox-pico-pro,bpi-canmv-k230d-zero}` as board records
-    (`record_only`), recognised in their download mode. Left: once an OS
-    runs on them, each becomes a device package with the identity contract,
-    so it shows running in PIT/ROBOT like Raze.
+  - **What:** written for the Luckfox: board-lite serves the identity contract
+    and its mDNS advertisement (`devices/luckfox-pico-pro/gaia/device.toml`), so
+    Atlas lists it running, its version and slot. Left: the other three.
   - **Why:** devices as data: no per-board code beyond the flasher.
-  - **Done when:** each is recognised in recovery (on the board) and
-    running, from its package.
+  - **Done when:** each is recognised in recovery (on the board) and running,
+    from its package.
   - **Blocked by:** the boards; an OS image for each (HeliOS/Gaia).
 
 ### 3. Releases

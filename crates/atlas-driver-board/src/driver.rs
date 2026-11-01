@@ -269,8 +269,10 @@ pub fn drivers_for_catalog(catalog: &DeviceCatalog, ssh: &SshAccess) -> Vec<Arc<
     catalog
         .packages()
         .iter()
-        // A board record has no identity contract to speak.
-        .filter(|package| !package.manifest.record_only)
+        // A board record speaks no identity contract, unless it says it does.
+        .filter(|package| {
+            !package.manifest.record_only || package.manifest.identity.identity_port.is_some()
+        })
         .map(|package| {
             Arc::new(BoardDriver::with_ssh(package.clone(), ssh.clone())) as Arc<dyn Driver>
         })

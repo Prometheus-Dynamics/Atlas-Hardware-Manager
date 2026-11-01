@@ -16,7 +16,7 @@
       "properties": { "record_only": { "const": true } }
     },
     "then": {
-      "description": "A board record: a board Atlas flashes from its SoC's download mode before it has a device package (no identity contract yet): what it is and how to flash it.",
+      "description": "A board record: a board Atlas flashes from its SoC's download mode before it has a full device package: what it is and how to flash it. With identity.identity_port it also serves the identity contract, so Atlas sees it running.",
       "required": ["platform", "recovery"]
     },
     "else": {

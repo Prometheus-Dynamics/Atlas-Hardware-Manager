@@ -32,6 +32,7 @@ tokio = { workspace = true, features = ["process", "io-util", "fs", "time", "mac
 nix = { workspace = true, features = ["term", "fs"] }
 
 [dev-dependencies]
+board-lite = { path = "../board-lite" }
 tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "net", "io-util", "time"] }
 
 [lints]

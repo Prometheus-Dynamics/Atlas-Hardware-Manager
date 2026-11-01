@@ -15,7 +15,11 @@ use crate::output;
 pub(crate) type CommandResult = Result<ExitCode, String>;
 
 pub(crate) async fn ls(atlas: &Atlas, as_json: bool) -> CommandResult {
-    let report = atlas.scan().await;
+    let mut report = atlas.scan().await;
+    // A board only mDNS finds answers after that scan has already looked.
+    if atlas_driver_board::first_answers().await {
+        report = atlas.scan().await;
+    }
     let devices = atlas.devices();
     if as_json {
         output::json(&json!({ "devices": devices, "scan": report }));
@@ -212,6 +216,10 @@ fn print_plan(plan: &JobPlan) {
 pub(crate) async fn scan_settled(atlas: &Atlas) {
     atlas.scan().await;
     atlas.scan().await;
+    // A board only mDNS finds answers after those have already looked.
+    if atlas_driver_board::first_answers().await {
+        atlas.scan().await;
+    }
 }
 
 pub(crate) async fn update(atlas: &Atlas, options: UpdateOptions) -> CommandResult {

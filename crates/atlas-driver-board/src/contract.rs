@@ -464,4 +464,36 @@ mod tests {
         no_serial.remove("serial");
         assert!(BoardIdentity::from_txt(&no_serial).is_none());
     }
+
+    /// A small board's own document (crates/board-lite) reads as a board, with
+    /// no revision in its model name and its package version as built.
+    #[test]
+    fn board_lites_document_reads() {
+        let options = board_lite::identity::Options {
+            model: "luckfox-pico-pro".into(),
+            rev: None,
+            package_version: "2026.1.0-dev.432+3e7cbf7c".into(),
+            root: "/".into(),
+        };
+        let facts = board_lite::identity::Facts {
+            serial: "8f3a1c2d00112233".into(),
+            hostname: "luckfox".into(),
+            os_name: Some("buildroot".into()),
+            os_version: Some("2026.02.3".into()),
+            macs: BTreeMap::from([("eth0".to_string(), "d2:aa:bb:cc:dd:ee".to_string())]),
+            slot: Some(("b".to_string(), true)),
+        };
+        let text = board_lite::identity::document(&options, &facts);
+        let reported: BoardIdentity = serde_json::from_str(&text).unwrap();
+        assert_eq!(reported.model, "luckfox-pico-pro");
+        assert_eq!(reported.serial, "8f3a1c2d00112233");
+        assert_eq!(reported.rev, None);
+        assert_eq!(
+            reported.device_package.version.as_deref(),
+            Some("2026.1.0-dev.432+3e7cbf7c")
+        );
+        assert_eq!(reported.device_package.commit.as_deref(), Some("3e7cbf7c"));
+        assert_eq!(reported.macs["eth0"], "d2:aa:bb:cc:dd:ee");
+        assert!(reported.time.is_some_and(|time| time > 0));
+    }
 }

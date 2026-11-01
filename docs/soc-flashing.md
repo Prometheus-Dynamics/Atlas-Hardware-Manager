@@ -184,6 +184,19 @@ runs `trial-check` and starts `watchdog` with a 600 s deadline. Not built yet:
 Atlas's slot install driving this over SSH or Orion, which needs the Luckfox
 serving the identity contract.
 
+## A running small board
+
+The Luckfox's image has BusyBox init, DHCP, no SSH, no web server and no mDNS
+responder. `crates/board-lite` (std only, static ARMv7, 377 KB stripped) gives
+it the identity contract: `GET :5899/.well-known/pd-device` and the
+`_pd-device._tcp` advertisement, so Atlas lists it as it does any board. It is
+read-only, and takes no commands. `devices/luckfox-pico-pro/gaia/device.toml`
+imports it with the slot layer. Atlas's real browser and client found it across
+two network namespaces; not yet on a board.
+
+How Atlas writes to such a board isn't settled: it has no SSH, Orion or USB
+console, and nothing in it takes commands from the network.
+
 ## To settle on the boards
 
 These are marked UNCONFIRMED in the code where they are used, and listed in

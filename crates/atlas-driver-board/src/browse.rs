@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use atlas_driver::ChangeNotifier;
 use mdns_sd::{ServiceDaemon, ServiceEvent};
@@ -46,12 +47,31 @@ type Listeners = Arc<Mutex<Vec<ChangeNotifier>>>;
 pub struct Browser {
     state: Result<Services, String>,
     listeners: Listeners,
+    started: Instant,
+}
+
+static BROWSER: OnceLock<Browser> = OnceLock::new();
+
+/// How long after starting the browser has usually heard what's there.
+const FIRST_ANSWERS: Duration = Duration::from_millis(1500);
+
+/// For a one-shot command: once a scan has started the browser, waits out its
+/// first moments and says whether it heard anything, which a scan run before
+/// the answers came couldn't see. No browser started (simulated devices): no
+/// wait. A long-running app needn't call this: it rescans on every change.
+pub async fn first_answers() -> bool {
+    let Some(browser) = BROWSER.get() else {
+        return false;
+    };
+    tokio::time::sleep(FIRST_ANSWERS.saturating_sub(browser.started.elapsed())).await;
+    browser
+        .advertisements()
+        .is_ok_and(|heard| !heard.is_empty())
 }
 
 impl Browser {
     /// The process-wide browser, started on first use.
     pub fn shared() -> &'static Browser {
-        static BROWSER: OnceLock<Browser> = OnceLock::new();
         BROWSER.get_or_init(Browser::start)
     }
 
@@ -62,6 +82,7 @@ impl Browser {
                 return Self {
                     state: Err(error.to_string()),
                     listeners: Listeners::default(),
+                    started: Instant::now(),
                 };
             }
         };
@@ -71,6 +92,7 @@ impl Browser {
                 return Self {
                     state: Err(error.to_string()),
                     listeners: Listeners::default(),
+                    started: Instant::now(),
                 };
             }
         };
@@ -148,10 +170,12 @@ impl Browser {
             Ok(_) => Self {
                 state: Ok(services),
                 listeners,
+                started: Instant::now(),
             },
             Err(error) => Self {
                 state: Err(error.to_string()),
                 listeners,
+                started: Instant::now(),
             },
         }
     }

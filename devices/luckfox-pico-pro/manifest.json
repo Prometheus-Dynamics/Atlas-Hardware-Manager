@@ -6,8 +6,9 @@
   "display_name": "Luckfox Pico Pro",
   "record_only": true,
   "vendor": "Luckfox",
-  "description": "Luckfox Pico Pro (Rockchip RV1106G2, the SoC Flame uses) dev board, on order. A board record: Atlas flashes its SPI-NAND from maskrom (rockusb), the image's UBI region written as ubiformat does. Written from rkdeveloptool, U-Boot and Luckfox's docs; untested on this board.",
+  "description": "Luckfox Pico Pro (Rockchip RV1106G2, the SoC Flame uses) dev board, on order. A board record: Atlas flashes its SPI-NAND from maskrom (rockusb), the image's UBI region written as ubiformat does; running, it serves the identity contract (board-lite, gaia/device.toml), read-only. Written from rkdeveloptool, U-Boot and Luckfox's docs; untested on this board.",
   "platform": { "soc": "RV1106G2", "arch": "armv7" },
+  "identity": { "identity_port": 5899 },
   "recovery": {
     "usb_boot": { "vid": "2207", "pid": "110c" },
     "method": "rockusb",

@@ -1,0 +1,11 @@
+# Luckfox Pico Pro device support from Atlas: everything an OS imports, so a
+# later addition here needs no change there. Import it from a source named
+# `atlas`:
+#
+#   imports = [
+#     { source = "atlas", path = "devices/luckfox-pico-pro/gaia/device.toml" },
+#   ]
+config = 3
+gaia_version = ">=2.0.0"
+
+imports = ["nand-slot.toml", "identity.toml"]

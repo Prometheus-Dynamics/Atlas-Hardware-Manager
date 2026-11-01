@@ -22,6 +22,7 @@
 //! the device catalog and they share one mDNS browser.
 
 mod browse;
+pub use browse::first_answers;
 pub mod camera;
 mod console;
 mod contract;
