@@ -12,7 +12,9 @@
 //! Atlas writes Gaia's prebuilt images unchanged and checks each one first.
 //! Written from Gaia's contract; untested on a board.
 
-use std::io::Read;
+use std::fs::File;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
 
 use crate::crc::crc32;
 use crate::mtd::{Mtd, write_skipping_bad};
@@ -249,6 +251,40 @@ pub fn trial_check(current: Running, env: &mut dyn Mtd) -> Result<bool, String> 
     }
     env.erase(0)?;
     Ok(true)
+}
+
+/// Keeps a slot's commit image (`env-<x>.img`) in `dir` (on `/data`, which
+/// both slots share), durably, for the trial boot that commits it. Checked
+/// first: only an image that would commit this slot is kept.
+pub fn keep_commit_image(dir: &Path, slot: Slot, image: &[u8]) -> Result<(), String> {
+    check_image(image, Running { slot, trial: false })?;
+    let fail = |error: std::io::Error| format!("{}: {error}", dir.display());
+    std::fs::create_dir_all(dir).map_err(fail)?;
+    let path = kept_path(dir, slot);
+    let temporary = path.with_extension("new");
+    let mut file = File::create(&temporary).map_err(fail)?;
+    file.write_all(image).map_err(fail)?;
+    file.sync_all().map_err(fail)?;
+    drop(file);
+    std::fs::rename(&temporary, &path).map_err(fail)?;
+    File::open(dir)
+        .and_then(|folder| folder.sync_all())
+        .map_err(fail)
+}
+
+fn kept_path(dir: &Path, slot: Slot) -> PathBuf {
+    dir.join(format!("env-{}.img", slot.letter()))
+}
+
+/// The commit image kept for `slot`, if it's there and still good.
+pub fn kept_commit_image(dir: &Path, slot: Slot) -> Option<Vec<u8>> {
+    let image = std::fs::read(kept_path(dir, slot)).ok()?;
+    check_image(&image, Running { slot, trial: false }).ok()?;
+    Some(image)
+}
+
+pub fn forget_commit_image(dir: &Path, slot: Slot) {
+    let _ = std::fs::remove_file(kept_path(dir, slot));
 }
 
 /// Commits the slot this trial boot runs: `image` to the first copy, then only
@@ -516,6 +552,28 @@ mod tests {
                 .contains("no environment")
         );
         assert!(copy_valid(&env.bytes[..COPY]));
+    }
+
+    #[test]
+    fn the_commit_image_survives_on_data_and_only_the_right_one_is_kept() {
+        let dir = std::env::temp_dir().join(format!("atlas-ubi-keep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(kept_commit_image(&dir, Slot::B), None);
+        assert!(keep_commit_image(&dir, Slot::B, &image(Slot::A, false)).is_err());
+        assert!(keep_commit_image(&dir, Slot::B, &image(Slot::B, true)).is_err());
+        assert_eq!(kept_commit_image(&dir, Slot::B), None);
+        keep_commit_image(&dir, Slot::B, &image(Slot::B, false)).unwrap();
+        assert_eq!(
+            kept_commit_image(&dir, Slot::B),
+            Some(image(Slot::B, false))
+        );
+        assert_eq!(kept_commit_image(&dir, Slot::A), None);
+        // Damaged on /data: not used; the commit asks for the image again.
+        std::fs::write(kept_path(&dir, Slot::B), [0u8; COPY]).unwrap();
+        assert_eq!(kept_commit_image(&dir, Slot::B), None);
+        forget_commit_image(&dir, Slot::B);
+        assert!(!kept_path(&dir, Slot::B).exists());
+        let _ = std::fs::remove_dir_all(dir);
     }
 
     /// Gaia's real images, when they're on this machine (skipped otherwise).

@@ -1,0 +1,31 @@
+#!/bin/sh
+# A NAND slot's trial (Gaia examples/boards/README.md#nand-slots), first thing
+# in rcS: catches a trial copy U-Boot failed to erase, and starts the watchdog
+# that resets into the committed slot if the trial hangs or nobody commits it
+# in time. On a boot that isn't a trial both do nothing.
+#
+# It never stops a boot: without a trial's watchdog the board still runs, with
+# only panic=5 and a power cycle to end a bad trial.
+
+# How long a trial has to be committed: time for the OS to start and Atlas to
+# see it healthy. Seconds.
+NAND_SLOT_DEADLINE=${NAND_SLOT_DEADLINE:-600}
+ATLAS_UBI=${ATLAS_UBI:-/usr/sbin/atlas-ubi}
+KMSG=${KMSG:-/dev/kmsg}
+
+say() {
+	echo "nand-slot: $*" >> "$KMSG" 2>/dev/null || echo "nand-slot: $*"
+}
+
+case "${1:-start}" in
+start)
+	result=$("$ATLAS_UBI" nand-slot trial-check 2>&1) || say "trial-check: $result"
+	case $result in
+	*'"erased_stale_trial":true'*)
+		say "U-Boot didn't erase the trial's copy (its mtd name?); erased it from here" ;;
+	esac
+	# It holds /dev/watchdog open and exits at once when this isn't a trial.
+	"$ATLAS_UBI" nand-slot watchdog --deadline "$NAND_SLOT_DEADLINE" >> "$KMSG" 2>&1 &
+	;;
+esac
+exit 0

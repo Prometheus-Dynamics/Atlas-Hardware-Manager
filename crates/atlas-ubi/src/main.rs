@@ -5,9 +5,9 @@
 //! atlas-ubi info <image.ubi> [--peb-size <bytes>]
 //! atlas-ubi slot-write <image|-> --size <bytes> [--volume <name> | --inactive] [--sha256 <hex>]
 //! atlas-ubi nand-slot status
-//! atlas-ubi nand-slot install --boot <boot.img> --rootfs <file> --env-trial <env-x-trial.img>
+//! atlas-ubi nand-slot install --bundle <slot-bundle.tar>
 //! atlas-ubi nand-slot trial-check
-//! atlas-ubi nand-slot commit --env <env-x.img>
+//! atlas-ubi nand-slot commit [--env <env-x.img>]
 //! atlas-ubi nand-slot watchdog --deadline <seconds> [--timeout <seconds>]
 //! ```
 //!
@@ -17,11 +17,14 @@
 //! it back.
 //!
 //! `nand-slot` runs on a board with Gaia's slot environments
-//! (`atlas_ubi::nand_slots`). `install` writes the other slot's kernel and root
-//! and arms its one trial; the caller reboots. On the trial boot, `trial-check`
-//! runs early, and `watchdog` from then on: it resets the board if the trial
-//! hangs or isn't committed by the deadline, and stands down once `commit` has
-//! run. Rejecting a trial is rebooting without committing.
+//! (`atlas_ubi::nand_slots`). `install` takes what it needs from Gaia's bundle
+//! by the target slot: it writes the other slot's kernel and root, keeps its
+//! commit image on `/data` and arms its one trial; the caller reboots. On the
+//! trial boot, `trial-check` runs early, and `watchdog` from then on: it resets
+//! the board if the trial hangs or isn't committed by the deadline, and stands
+//! down once `commit` has run. `commit` uses the kept image; if `/data` didn't
+//! keep it, it asks for one with `--env` and the trial goes on. Rejecting a
+//! trial is rebooting without committing.
 //!
 //! Output is one JSON object on stdout; errors are `{"error": "..."}` with
 //! exit status 1.
@@ -29,7 +32,7 @@
 use std::io::Write;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: atlas-ubi info <image> [--peb-size <bytes>] | slot-write <image|-> --size <bytes> [--volume <name> | --inactive] [--sha256 <hex>] | nand-slot status | nand-slot install --boot <file> --rootfs <file> --env-trial <file> | nand-slot trial-check | nand-slot commit --env <file> | nand-slot watchdog --deadline <seconds> [--timeout <seconds>]";
+const USAGE: &str = "usage: atlas-ubi info <image> [--peb-size <bytes>] | slot-write <image|-> --size <bytes> [--volume <name> | --inactive] [--sha256 <hex>] | nand-slot status | nand-slot install --bundle <file> | nand-slot trial-check | nand-slot commit [--env <file>] | nand-slot watchdog --deadline <seconds> [--timeout <seconds>]";
 
 fn json_string(text: &str) -> String {
     let mut out = String::from("\"");
@@ -186,17 +189,21 @@ mod nand {
     use std::path::Path;
     use std::time::{Duration, Instant};
 
+    use atlas_ubi::bundle::Bundle;
     use atlas_ubi::mtd::find_by_name;
     use atlas_ubi::nand_slots::{
-        self, Running, arm_trial, commit, committed_to, env_state, trial_check, write_boot,
+        self, Running, arm_trial, commit, committed_to, env_state, forget_commit_image,
+        keep_commit_image, kept_commit_image, trial_check, write_boot,
     };
     use atlas_ubi::sys::{LinuxMtd, Watchdog};
     use atlas_ubi::volume::write_volume;
 
-    use super::{USAGE, json_string};
+    use super::USAGE;
 
     const MTD: &str = "/sys/class/mtd";
     const UBI: &str = "/sys/class/ubi";
+    /// Where a trial's commit image waits: on `data`, which both slots share.
+    const KEPT: &str = "/data/atlas-ubi";
     const WATCHDOG: &str = "/dev/watchdog";
     const WATCHDOG_TIMEOUT_S: u32 = 30;
 
@@ -266,17 +273,14 @@ mod nand {
         let found = options(args)?;
         let running = current()?;
         let target = running.slot.other();
-        let trial_image = read(required(&found, "env-trial")?)?;
+        let letter = target.letter();
+        let bundle = Bundle::open(Path::new(required(&found, "bundle")?))?;
+        let trial_image = bundle.read(&format!("env-{letter}-trial.img"))?;
+        let commit_image = bundle.read(&format!("env-{letter}.img"))?;
         let mut env = partition("env")?;
 
         // 1. The other slot's kernel, checked before anything is erased.
-        let boot_path = required(&found, "boot")?;
-        let mut kernel =
-            std::fs::File::open(boot_path).map_err(|error| format!("{boot_path}: {error}"))?;
-        let kernel_bytes = kernel
-            .metadata()
-            .map_err(|error| format!("{boot_path}: {error}"))?
-            .len();
+        let (mut kernel, kernel_bytes) = bundle.reader("boot.img")?;
         let boot_sha256 = write_boot(
             running,
             &mut env,
@@ -288,13 +292,7 @@ mod nand {
         )?;
 
         // 2. Its root.
-        let rootfs_path = required(&found, "rootfs")?;
-        let mut rootfs =
-            std::fs::File::open(rootfs_path).map_err(|error| format!("{rootfs_path}: {error}"))?;
-        let rootfs_bytes = rootfs
-            .metadata()
-            .map_err(|error| format!("{rootfs_path}: {error}"))?
-            .len();
+        let (mut rootfs, rootfs_bytes) = bundle.reader("rootfs.squashfs")?;
         let root = write_volume(
             Path::new(UBI),
             Path::new("/dev"),
@@ -305,12 +303,16 @@ mod nand {
             &mut |_| {},
         )?;
 
-        // 3. The one trial; the second copy stays what it is.
+        // 3. What the trial boot commits with. A /data that can't keep it
+        // costs only sending it again at the commit.
+        let kept = keep_commit_image(Path::new(KEPT), target, &commit_image);
+
+        // 4. The one trial; the second copy stays what it is.
         arm_trial(running, &mut env, &trial_image)?;
         Ok(format!(
-            "{{\"slot\":\"{}\",\"boot_sha256\":\"{boot_sha256}\",\"rootfs_sha256\":\"{}\",\"reboot\":true}}",
-            target.letter(),
-            root.sha256
+            "{{\"slot\":\"{letter}\",\"boot_sha256\":\"{boot_sha256}\",\"rootfs_sha256\":\"{}\",\"commit_image_kept\":{},\"reboot\":true}}",
+            root.sha256,
+            kept.is_ok()
         ))
     }
 
@@ -326,12 +328,18 @@ mod nand {
     fn commit_slot(args: &[String]) -> Result<String, String> {
         let found = options(args)?;
         let running = current()?;
-        let image = read(required(&found, "env")?)?;
+        let letter = running.slot.letter();
+        let image = match found.get("env") {
+            Some(path) => read(path)?,
+            None => kept_commit_image(Path::new(KEPT), running.slot).ok_or_else(|| {
+                format!(
+                    "{KEPT} doesn't hold this slot's commit image; send env-{letter}.img with --env. Nothing was written, and the trial goes on"
+                )
+            })?,
+        };
         commit(running, &mut partition("env")?, &image)?;
-        Ok(format!(
-            "{{\"committed\":{}}}",
-            json_string(&running.slot.letter().to_string())
-        ))
+        forget_commit_image(Path::new(KEPT), running.slot);
+        Ok(format!("{{\"committed\":\"{letter}\"}}"))
     }
 
     /// A trial's watchdog: fed while this runs, so a hung kernel resets the

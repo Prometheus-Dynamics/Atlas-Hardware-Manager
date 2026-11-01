@@ -14,6 +14,7 @@
 //! Written from the kernel's UBI format and Gaia's writer; checked against
 //! images built the way Gaia builds them. Untested on a board.
 
+pub mod bundle;
 pub mod crc;
 pub mod format;
 pub mod headers;

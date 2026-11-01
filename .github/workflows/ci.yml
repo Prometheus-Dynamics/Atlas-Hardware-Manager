@@ -101,7 +101,9 @@ jobs:
 
       # Every devices/raze/tests/*.sh, in parallel.
       - name: Run the tests
-        run: sh devices/raze/tests/all.sh
+        run: |
+          sh devices/raze/tests/all.sh
+          sh devices/luckfox-pico-pro/tests/nand-slot-hook.sh
 
   workspace:
     name: checks (${{ matrix.os }})

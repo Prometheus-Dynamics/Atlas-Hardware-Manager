@@ -150,17 +150,18 @@ nothing else is added. Each item: **what**, **why**, **done when**,
 - [ ] **NAND/UBI: Atlas's slot install, then the board.**
   - **What:** written: atlas-ubi reads Gaia's G8 images, writes them as
     ubiformat does (used by the Rockchip flash), and carries out Gaia's NAND
-    slot contract on a board (Gaia 942746b; `atlas-ubi nand-slot`: install,
-    trial-check, watchdog, commit; docs/soc-flashing.md). Left: the Luckfox's
-    device package carrying the binary and starting trial-check and watchdog
-    early on a trial, and Atlas's slot install calling it.
+    slot contract on a board (Gaia 942746b; `atlas-ubi nand-slot`: install from
+    `slot-bundle.tar`, trial-check, watchdog, commit;
+    docs/soc-flashing.md). `devices/luckfox-pico-pro/gaia/nand-slot.toml` puts
+    it and its init hook in the image. Left: Atlas's slot install calling it.
   - **Why:** Flame and other NAND boards take slot updates like Raze.
   - **Done when:** the kernel attaches an image atlas-ubi wrote; install,
-    boot-once, confirm and fallback on a NAND board.
-  - **Blocked by:** for the rest of the code, the Luckfox's identity contract
-    (below) and how its images reach the board (asked of Gaia). For the proof,
-    a NAND board (Luckfox Pico Pro, on order), or the user's yes to `sudo
-    modprobe nandsim` for the attach.
+    boot-once, confirm and fallback on a NAND board; `data` formats itself on
+    first mount.
+  - **Blocked by:** for the rest of the code, the Luckfox serving the identity
+    contract (below). For the proof, a NAND board (Luckfox Pico Pro, on order),
+    or the user's yes to `sudo modprobe nandsim` for the attach; and Gaia's
+    commit enabling the watchdog's device-tree node.
 - [ ] **Board records: the running side.**
   - **What:** written: `devices/{radxa-rock-5c,radxa-rock-4d,
     luckfox-pico-pro,bpi-canmv-k230d-zero}` as board records

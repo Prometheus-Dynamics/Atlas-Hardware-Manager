@@ -1,0 +1,60 @@
+# Luckfox Pico Pro: A/B slots on NAND from the board's side. atlas-ubi
+# (crates/atlas-ubi in this Atlas repository; Atlas's docs/soc-flashing.md)
+# carries out the slot environments of Gaia's examples/boards/README.md,
+# #nand-slots: `nand-slot` install, trial-check, watchdog and commit. A static
+# ARMv7 musl binary at /usr/sbin/atlas-ubi, and /etc/init.d/S00nand-slot, which
+# rcS runs first (the trial's deadline is set there).
+#
+# Import it from a source named `atlas`, which it builds from:
+#
+#   imports = [
+#     { source = "atlas", path = "devices/luckfox-pico-pro/gaia/nand-slot.toml" },
+#   ]
+#
+# Written from Gaia's contract; untested on a board.
+config = 3
+gaia_version = ">=2.0.0"
+
+[providers.rust]
+allow_nested_build = true
+
+[[artifacts]]
+id = "atlas-ubi"
+kind = "rust"
+source = "atlas"
+package = "atlas-ubi"
+target = "armv7-unknown-linux-musleabihf"
+# Cargo.toml: device-small (built for size, LTO, panic = abort).
+profile = "device-small"
+target_name = "atlas-ubi"
+install_name = "atlas-ubi"
+install_class = "binary"
+install_dest_hint = "/usr/sbin/atlas-ubi"
+output_path = "${outputs.dir}/artifacts/atlas-ubi/atlas-ubi"
+# Rust's self-contained musl, linked by rust-lld: no C cross toolchain. The
+# target is in the workspace's rust-toolchain.toml.
+build_env = [["CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER", "rust-lld"]]
+
+[artifacts.execution]
+backend = "host"
+
+[[install]]
+id = "install-atlas-ubi"
+artifact = "atlas-ubi"
+dest = "/usr/sbin/atlas-ubi"
+replace = true
+mode = 493 # 0755
+
+[[stage.files]]
+id = "luckfox-nand-slot-init"
+src = "${self}/assets/rootfs/etc/init.d/S00nand-slot"
+dest = "/etc/init.d/S00nand-slot"
+origin = "static-asset"
+mode = 493 # 0755
+
+[image]
+kind = "buildroot"
+
+[image.feed]
+install_entries = ["install-atlas-ubi"]
+stage_files = ["luckfox-nand-slot-init"]

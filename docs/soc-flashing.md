@@ -161,10 +161,10 @@ unchanged after checking that it boots the slot its use requires.
 | Command | What it does |
 |---|---|
 | `status` | The running slot, what the next boot runs, what's committed. |
-| `install` | Writes the other slot's kernel (skipping bad blocks) and root volume, each read back, then the trial image to the first copy. The caller reboots. |
+| `install` | From Gaia's `slot-bundle.tar`, by the target slot: writes the other slot's kernel (skipping bad blocks) and root volume, each read back; keeps its commit image on `/data`; then writes the trial image to the first copy. The caller reboots. |
 | `trial-check` | On a trial boot: if U-Boot's erase failed, erases the trial copy and reports it. |
 | `watchdog` | On a trial boot: resets the board if the trial hangs or isn't committed by the deadline; stands down once committed. |
-| `commit` | The slot's image to the first copy, then only once that's read back, to the second. |
+| `commit` | The kept image to the first copy, then only once that's read back, to the second. If `/data` didn't keep it, it asks for one with `--env`, and the trial goes on. |
 
 Rejecting a trial is rebooting without committing. What it refuses, before
 writing anything:
@@ -175,9 +175,14 @@ writing anything:
 - an install during a trial.
 
 Tests cut the power at each write of a trial and a commit, on a RAM flash,
-and check U-Boot's choice each time. Not built yet: Atlas's slot install
-driving this over SSH or Orion, and the device package that carries the binary
-(473 KB stripped, static ARMv7).
+and check U-Boot's choice each time.
+
+The board's side comes from `devices/luckfox-pico-pro/gaia/nand-slot.toml`,
+which Gaia's Luckfox build imports. It holds the binary at `/usr/sbin/atlas-ubi`
+(about 473 KB, static ARMv7) and `/etc/init.d/S00nand-slot`, first in rcS, which
+runs `trial-check` and starts `watchdog` with a 600 s deadline. Not built yet:
+Atlas's slot install driving this over SSH or Orion, which needs the Luckfox
+serving the identity contract.
 
 ## To settle on the boards
 
