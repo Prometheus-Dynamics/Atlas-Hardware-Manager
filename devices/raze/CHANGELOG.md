@@ -11,6 +11,15 @@ OSes pin this layer by commit; the commits are listed per area.
   `2026.2.0-dev.<count>`, not `…+<commit>`): `+` isn't a slot id character.
   The id stays `<family>-<version>-<variant>-<commit>`, e.g.
   `helios-2026.2.0-dev.721-styx-ab12cd34`; Atlas orders slots by version.
+- **The HEVC decoder (2026-10-31):** `CONFIG_VIDEO_RPI_HEVC_DEC=m`, for
+  Styx's hardware decode: the Pi 5's decoder (1000800000.codec,
+  brcm,bcm2712-hevc-dec) was in the device tree but unbound. The module binds
+  when udev meets the node (its `of:` aliases). It adds rpi-hevc-dec.ko, 62104
+  bytes stripped (about 18 KB compressed); the kernel Image and every other
+  module are unchanged (the config differs in that line only: what it selects,
+  V4L2 mem2mem and videobuf2-dma-contig, is already here, and 7.2 has no
+  request-API option). Measured on the pinned 7.2.9 tree with HeliOS's
+  toolchain; binding untested until a slot carries it.
 - **The IMU at 200 Hz (2026-10-31):** board.toml's BMI088 is `accel_rate =
   "200hz"`, `gyro_rate = "200hz-23"`, `poll_ms = 5` (was 100 Hz, `100hz-32`,
   10 ms). Measured by HeliOS on a Raze with a full-rate subscriber
