@@ -57,5 +57,20 @@ fn real_loaders_parse() {
             "  idblock: {} bytes, laid out by its FlashHead",
             block.len()
         );
+        // The vendor's idblock built from the same loader, when it's beside
+        // it (Gaia's idblock.img), must be the same bytes.
+        if let Some(vendor) = std::path::Path::new(path)
+            .parent()
+            .map(|dir| dir.join("idblock.img"))
+            .filter(|vendor| vendor.is_file())
+        {
+            let vendor = std::fs::read(&vendor).unwrap();
+            assert_eq!(block.len(), vendor.len(), "{path}: idblock.img length");
+            assert!(
+                block == vendor,
+                "{path}: Atlas's idblock differs from idblock.img"
+            );
+            let _ = writeln!(out, "  idblock: byte for byte the vendor's idblock.img");
+        }
     }
 }

@@ -143,9 +143,12 @@ pub async fn read_hash(
 /// FlashHead entry is the RKNS header, RC4-scrambled per 512 bytes, and the
 /// header's image table says where each part goes. The idblock is that
 /// header unscrambled, as rkbin's own idblock images and Gaia's carry it.
-/// Each image of the table then sits at the sector the table gives. The
+/// Each image of the table then sits at the sector the table gives,
+/// unscrambled the same way: the loader stores every loader entry
+/// RC4-scrambled per 512 bytes, even with its header's RC4 flag off. The
 /// images are the loader's other loader entries, in order: FlashBoost
-/// (RK3576 only), FlashData, FlashBoot.
+/// (RK3576 only), FlashData, FlashBoot. For rv1106_download_v1.15.108 the
+/// result is byte for byte the vendor's rv1106_idblock_v1.15.102.img.
 ///
 /// Checked on rkbin's rk3588_spl_loader_v1.18.113, rv1106_download_v1.15.108
 /// and rk3576_loader_v1.13.109 (2026-10-31). A loader without an RKNS
@@ -195,7 +198,7 @@ pub fn idblock(loader: &Loader, file: &[u8]) -> Result<Vec<u8>, String> {
     let mut block = vec![0u8; end * 512];
     block[..header.len()].copy_from_slice(&header);
     for ((offset, sectors), part) in table.iter().zip(&parts) {
-        let data = part.data(file);
+        let data = crate::rockchip::rc4::rc4_blocks(part.data(file));
         if *offset * 512 < header.len() || data.len() > sectors * 512 {
             return Err(format!(
                 "the loader's FlashHead gives {} sectors {offset}..{} for {} bytes: the loader is inconsistent",
@@ -204,7 +207,7 @@ pub fn idblock(loader: &Loader, file: &[u8]) -> Result<Vec<u8>, String> {
                 data.len()
             ));
         }
-        block[offset * 512..offset * 512 + data.len()].copy_from_slice(data);
+        block[offset * 512..offset * 512 + data.len()].copy_from_slice(&data);
     }
     Ok(block)
 }
@@ -464,11 +467,14 @@ mod tests {
         let block = idblock(&loader, &file).unwrap();
         assert_eq!(block.len(), 24 * 512);
         assert_eq!(&block[..4], b"RKNS", "the head goes in unscrambled");
+        // The parts too: what the loader stores is scrambled per 512.
+        let data = crate::rockchip::rc4::rc4_blocks(&[4; 4000]);
+        assert_eq!(&block[2048..2048 + 4000], &data[..]);
+        assert_eq!(block[2048 + 4000], 0);
         assert_eq!(
-            (block[2048], block[2048 + 3999], block[2048 + 4000]),
-            (4, 4, 0)
+            &block[12 * 512..13 * 512],
+            &crate::rockchip::rc4::rc4(&[5; 512])[..]
         );
-        assert_eq!(block[12 * 512], 5);
 
         // RK3576-like: a 4 KiB head and a third image, FlashBoost, first.
         let file = loader_with(
@@ -482,9 +488,10 @@ mod tests {
         let loader = Loader::parse(&file).unwrap();
         let block = idblock(&loader, &file).unwrap();
         assert_eq!(block.len(), (176 + 648) * 512);
+        let first = |byte: u8| crate::rockchip::rc4::rc4(&[byte])[0];
         assert_eq!(
             (block[8 * 512], block[16 * 512], block[176 * 512]),
-            (6, 4, 5)
+            (first(6), first(4), first(5))
         );
     }
 

@@ -79,8 +79,13 @@ Gaia's builds (006284a) produced rkbin's `rk3588_spl_loader_v1.18.113.bin`
   and on RK3576 a 4 KiB head with FlashBoost first. Atlas builds the idblock
   from that table, with the head unscrambled as rkbin's idblock images and
   Gaia's carry it. It refuses a loader whose table and entries disagree.
-- Gaia's images carry their own idblocks (RKNS, unscrambled): the ROCK
-  boards' at sector 64 of sdcard.img, the Luckfox's as idblock.img.
+- The loader stores every loader entry RC4-scrambled per 512 bytes, even
+  with its header's RC4 flag off. The idblock carries them unscrambled, the
+  head included.
+- The idblock Atlas builds from rv1106_download_v1.15.108.bin is byte for
+  byte Gaia's idblock.img, which is the vendor's rv1106_idblock_v1.15.102.img.
+  Gaia's ROCK images carry their own idblock (RKNS, unscrambled) at sector 64
+  of sdcard.img.
 
 The K230D Zero's sdcard.img checks out too: valid K230 firmware heads (SPL)
 at 1 MiB and 1.5 MiB. Atlas checks both before every K230 SD or eMMC flash
@@ -149,7 +154,8 @@ each record's `todo`.
   - SPI-NAND: how the usbplug maps LBAs (Atlas assumes directly; it reads
     no block as bad itself), and its CHANGE_STORAGE id.
 - **K230:**
-  - the burner's load address (0x80360000 or 0x80300000);
+  - whether the boot ROM starts Gaia's burner (plain u-boot.bin) at
+    0x80300000, where it links;
   - whether the boot ROM wants Canaan's firmware header over USB;
   - the medium codes;
   - the VERIFY reply's layout (if the burner can't checksum, Atlas logs
