@@ -30,7 +30,7 @@
     },
     "todo": [
       "The maskrom PID: 2207:350e for RK3576 is in no text source (rkdeveloptool's table stops before it; Gaia found none either), so it's marked pid_unconfirmed: a Rockchip in maskrom whose PID no record names is offered as this board, and the chip its loader reports must be RK3576 before anything is written. Confirm with lsusb on the board and drop pid_unconfirmed.",
-      "The loader file: rkbin's boot_merger writes rk3576_loader_v1.13.109.bin (idblock rk3576_idblock_v1.13.109.img); Radxa ships it as rk3576_spl_loader_v*.bin. Both match; Gaia's board build copies it next to the image.",
+      "The loader file: rk3576_loader_v1.13.109.bin (rkbin 3e288fe; idblock rk3576_idblock_v1.13.109.img), which Gaia's ROCK 4D build copies next to the image (building 2026-10-31; not yet parsed by Atlas). Radxa ships it as rk3576_spl_loader_v*.bin; both names match.",
       "The maskrom steps: taken from the ROCK 4AB SE guide (same button, a different board); the 4D's own page didn't load.",
       "eMMC vs UFS: which module the board gets, and the usbplug's storage id for UFS (not in rkdeveloptool's cs list).",
       "Writing the SPI NOR bootloader (rkdeveloptool wl 0 spi.img after cs 9) when the factory one must be replaced: not wired into Atlas's flash yet."

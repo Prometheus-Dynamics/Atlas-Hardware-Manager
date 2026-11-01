@@ -316,7 +316,8 @@ impl Job {
         let loader = Loader::parse(&bytes)
             .map_err(|error| failed(UpdateStep::Preflight, error.to_string()))?;
         self.progress.log(format!(
-            "loader: {} DDR, {} usbplug, {} loader entries; trailer CRC polynomial {:#010x}",
+            "loader: chip {}, {} DDR, {} usbplug, {} loader entries; trailer CRC polynomial {:#010x}",
+            loader.chip_number().unwrap_or_else(|| format!("{:#010x}", loader.chip)),
             loader
                 .entries(atlas_socflash::rockchip::loader::EntryKind::Ddr)
                 .count(),
@@ -328,6 +329,19 @@ impl Job {
                 .count(),
             loader.crc_polynomial
         ));
+
+        // A loader for another chip would run the wrong DDR init.
+        if let (Some(number), Some(soc)) = (loader.chip_number(), self.chip.as_deref())
+            && !soc.to_ascii_uppercase().contains(&number)
+        {
+            return Err(failed(
+                UpdateStep::Preflight,
+                format!(
+                    "{} is a loader for chip {number}; this board is {soc}",
+                    self.loader.display()
+                ),
+            ));
+        }
 
         self.progress.step_started(UpdateStep::Transfer);
         let mut io = handle.block_on(async {

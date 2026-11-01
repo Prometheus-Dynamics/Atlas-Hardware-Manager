@@ -18,9 +18,11 @@ pub fn crc16_ccitt(bytes: &[u8]) -> u16 {
 }
 
 /// rkdeveloptool's `CRC_32`: MSB first, from 0, no final XOR, over
-/// `polynomial`. Its table comment says 0x04C10DB7, one bit off the usual
-/// 0x04C11DB7; which one real loader trailers use isn't confirmed, so the
-/// loader check tries both ([`LOADER_POLYNOMIALS`]).
+/// `polynomial`. Its table says 0x04C10DB7, one bit off the usual
+/// 0x04C11DB7, and real loaders use it: rkbin's
+/// rk3588_spl_loader_v1.18.113.bin and rv1106_download_v1.15.108.bin
+/// (Gaia's builds, 2026-10-31). The loader check still accepts the standard
+/// one second ([`LOADER_POLYNOMIALS`]), for boot_merger builds not yet seen.
 pub fn rk_crc32(bytes: &[u8], polynomial: u32) -> u32 {
     let mut crc: u32 = 0;
     for byte in bytes {

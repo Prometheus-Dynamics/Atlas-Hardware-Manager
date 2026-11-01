@@ -61,6 +61,22 @@ Once the usbplug runs, Atlas reads the chip number the board reports
 differs, the flash stops before anything is written. Every Rockchip flash
 runs this check, not only the guessed ones.
 
+## Checked against real loaders
+
+Gaia's builds produced rkbin's `rk3588_spl_loader_v1.18.113.bin` (ROCK 5C)
+and `rv1106_download_v1.15.108.bin` (Luckfox Pico Pro).
+`crates/atlas-socflash/tests/real_loaders.rs` parses any loaders named in
+`ATLAS_TEST_LOADERS`. Both pass, and they settled four points:
+
+- The header layout and entry tables are as derived. The 471 stage has two
+  entries: `UsbHead`, then the DDR init.
+- The trailer CRC-32 uses rkdeveloptool's polynomial, 0x04C10DB7.
+- The header's chip field is the chip number in reversed ASCII ("3588",
+  "1106"). Atlas refuses a loader whose chip isn't the record's SoC.
+- FlashHead is the RKNS header, RC4-scrambled. Its image table puts
+  FlashData and FlashBoot exactly where Atlas's idblock does, and Atlas
+  refuses a loader where they disagree.
+
 ## The loader
 
 Atlas never downloads a vendor loader. It looks for the record's glob in two
@@ -97,8 +113,6 @@ These are marked UNCONFIRMED in the code where they are used, and listed in
 each record's `todo`.
 
 - **Rockchip:**
-  - which polynomial the loader trailer's CRC-32 uses (both are accepted;
-    the log says which);
   - the CSW residue's byte order (Atlas ignores the residue);
   - the READ_FLASH_INFO layout beyond the size;
   - RK3576's maskrom PID;

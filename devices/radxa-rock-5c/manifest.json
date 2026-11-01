@@ -30,9 +30,8 @@
     },
     "todo": [
       "2207:350b as RK3588 maskrom comes from secondary sources (MNT, Radxa's guides via search); confirm with lsusb on the board.",
-      "Whether the RK3588S2 takes the RK3588 loader unchanged: rkbin's rk3588_loader_v1.24.114.bin, Radxa's rk3588_spl_loader_v1.15.113.bin (both names match); Gaia's board build copies it next to the image.",
+      "Whether the RK3588S2 takes the RK3588 loader unchanged. Gaia's ROCK 5C build ships rk3588_spl_loader_v1.18.113.bin (rkbin at its Buildroot 2026.02.3 pin, f43a462) next to sdcard.img; Atlas's parser reads it (chip 3588, 2 DDR entries incl. UsbHead, usbplug, FlashHead/Data/Boot, RC4 off) and its idblock agrees with its RKNS FlashHead, so only the board's run is left.",
       "The cable: Radxa's guides differ between USB-A to USB-A and USB-A to USB-C for this port.",
-      "Which polynomial the loader's trailing CRC-32 uses (0x04C10DB7 as in rkdeveloptool's table, or 0x04C11DB7): Atlas accepts either and logs which.",
       "LEDs during maskrom and flashing."
     ]
   }

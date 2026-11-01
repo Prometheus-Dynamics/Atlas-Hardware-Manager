@@ -147,6 +147,19 @@ impl Loader {
         self.entries.iter().filter(move |entry| entry.kind == kind)
     }
 
+    /// The chip the loader is for: `emSupportChip`'s bytes as reversed ASCII
+    /// ("3588" from 0x33353838), as rkbin's loaders carry it. `None` when
+    /// they aren't four letters or digits.
+    pub fn chip_number(&self) -> Option<String> {
+        let bytes = self.chip.to_le_bytes();
+        let reversed: Vec<u8> = bytes.iter().rev().copied().collect();
+        let number = String::from_utf8(reversed).ok()?;
+        number
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric())
+            .then(|| number.to_ascii_uppercase())
+    }
+
     pub fn loader_entry(&self, name: &str) -> Option<&Entry> {
         self.entries(EntryKind::Loader)
             .find(|entry| entry.name == name)
