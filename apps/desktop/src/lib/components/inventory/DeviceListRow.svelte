@@ -6,10 +6,12 @@
   import { deviceIcon, deviceSubline, isRecovery } from "#lib/present.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
+  import AgentChip from "./AgentChip.svelte";
   import DeviceStatus from "./DeviceStatus.svelte";
   import { clickCheck, clickDevice } from "./select";
 
-  let { record }: { record: DeviceRecord } = $props();
+  /** depth: how many gateways above it are listed (it's shown under them). */
+  let { record, depth = 0 }: { record: DeviceRecord; depth?: number } = $props();
 
   const id = $derived(keyString(record.key));
   const name = $derived(deviceName(record));
@@ -27,14 +29,17 @@
 <div bind:this={row} class="row" class:selected class:focused class:open class:offline={!online} aria-selected={selected} role="row">
   <button type="button" class="hit" aria-label="Open {name}" onclick={(e) => clickDevice(e, id)}></button>
   <span class="relative z-[1] flex"><Checkbox checked={selected} label="Select {name}" onclick={(e) => clickCheck(e, id)} /></span>
-  <span class="cell flex min-w-0 items-center gap-3">
+  <span class="cell flex min-w-0 items-center gap-3" style:padding-left="{depth * 22}px">
+    {#if depth > 0}<span class="branch" aria-hidden="true"></span>{/if}
     <IconTile icon={deviceIcon(record)} size={28} tone={online && isRecovery(record) ? "accent" : online ? "neutral" : "muted"} />
     <span class="min-w-0">
       <span class="block truncate text-[13px] font-medium text-fg">{name}</span>
       <span class="mono block truncate text-[11.5px] text-fg-faint">{record.key.serial}</span>
     </span>
   </span>
-  <span class="cell truncate text-[12.5px] text-fg-muted">{deviceSubline(record)}</span>
+  <span class="cell flex min-w-0 flex-col items-start gap-1 text-[12.5px] text-fg-muted"
+    ><span class="max-w-full truncate">{deviceSubline(record)}</span><AgentChip {record} /></span
+  >
   <span class="cell mono truncate text-[12px] text-fg">{primaryVersion(record.identity) ?? "—"}</span>
   <span class="cell truncate text-[12.5px] text-fg-muted">{linkText(record.link_kind, devices.nameOf)}</span>
   <span class="cell flex min-w-0 justify-end"><DeviceStatus {record} compact /></span>
@@ -69,6 +74,17 @@
   .cell {
     position: relative;
     pointer-events: none;
+  }
+  /* The tree mark of a device shown under the gateway it's reached through. */
+  .branch {
+    flex: none;
+    align-self: flex-start;
+    width: 9px;
+    height: 15px;
+    margin-right: -4px;
+    border-left: 1px solid var(--hairline);
+    border-bottom: 1px solid var(--hairline);
+    border-bottom-left-radius: 3px;
   }
   .hit {
     position: absolute;

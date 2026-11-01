@@ -111,18 +111,20 @@ nothing else is added. Each item: **what**, **why**, **done when**,
     flash running, then its result, on a board behind the SystemCore.
   - **Blocked by:** the Raze replug onto a 3-1.x port (the same window as
     the first real agent flash).
-- [ ] **"Behind SystemCore" in the app.**
-  - **What:** PIT/ROBOT and the device list group the boards behind a
-    SystemCore (through HeliOS, and in USB boot through the agent) under
-    it, with the agent's state and its install or update action.
+- [ ] **"Behind SystemCore" in the app: check on a robot.**
+  - **What:** built: the device list and cards put each device right under
+    the gateway Atlas reaches it through (a SystemCore's boards through
+    HeliOS and, in USB boot, through its agent), indented in the list with
+    a tree mark. The SystemCore's row shows its USB agent's version, with
+    Install or Update when Atlas carries another (the `usb-agent.install`
+    action). Checked in the browser mock with a SystemCore and a Raze in
+    USB boot behind it.
   - **Why:** on a robot that's where the boards are; the user must see the
     path Atlas reaches them by.
   - **Done when:** a robot with a SystemCore shows its boards under it, and
     a flash or update started there.
-  - **Blocked by:** nothing (a robot for the end-to-end check).
-Written, untested on a board (2026-10-31; docs/soc-flashing.md). The user's
-direction: the boards being on order isn't a reason to leave the code
-unwritten. Each item below is now what the boards themselves must show.
+  - **Blocked by:** a robot window with the SystemCore (the bench one, with
+    the Raze replugged).
 
 - [ ] **K230D flashing: debug on the board.**
   - **What:** written: the boot ROM stage and Canaan's burner protocol

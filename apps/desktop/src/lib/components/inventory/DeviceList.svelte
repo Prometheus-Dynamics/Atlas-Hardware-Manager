@@ -8,7 +8,7 @@
   import { DUR, ease, ms, rise, softFade } from "#lib/ui/motion.ts";
   import DeviceListRow from "./DeviceListRow.svelte";
   import GroupHeader from "./GroupHeader.svelte";
-  import { groupByRobot } from "./groups";
+  import { groupByRobot, nestBehind } from "./groups";
 
   const groups = $derived(groupByRobot(ui.visible, ui.grouped));
   const keys = $derived(ui.visible.map((d) => keyString(d.key)));
@@ -33,9 +33,9 @@
     {#each groups as group (group.robot ?? "")}
       <div class="px-1.5 pb-1" in:softFade>
         {#if ui.grouped}<div class="px-2 pt-2"><GroupHeader robot={group.robot} count={group.records.length} /></div>{/if}
-        {#each group.records as record (keyString(record.key))}
+        {#each nestBehind(group.records) as row (keyString(row.record.key))}
           <div animate:flip={{ duration: ms(DUR.enter), easing: ease }} in:rise out:softFade>
-            <DeviceListRow {record} />
+            <DeviceListRow record={row.record} depth={row.depth} />
           </div>
         {/each}
       </div>

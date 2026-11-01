@@ -9,7 +9,7 @@
   import { DUR, ease, ms, rise, softFade } from "#lib/ui/motion.ts";
   import DeviceCard from "./DeviceCard.svelte";
   import GroupHeader from "./GroupHeader.svelte";
-  import { groupByRobot } from "./groups";
+  import { groupByRobot, nestBehind } from "./groups";
 
   /** fit: the height the grid has (px); cards grow to share it, up to a point. */
   let { fit = 0 }: { fit?: number } = $props();
@@ -55,7 +55,7 @@
         {#if ui.grouped}<GroupHeader robot={group.robot} count={group.records.length} />{/if}
         {#if g === 0}
           <div class="grid-cards" bind:this={first}>
-            {#each group.records as record (keyString(record.key))}
+            {#each nestBehind(group.records).map((row) => row.record) as record (keyString(record.key))}
               <div animate:flip={{ duration: ms(DUR.enter), easing: ease }} in:rise out:softFade>
                 <DeviceCard {record} {trend} />
               </div>
@@ -63,7 +63,7 @@
           </div>
         {:else}
           <div class="grid-cards">
-            {#each group.records as record (keyString(record.key))}
+            {#each nestBehind(group.records).map((row) => row.record) as record (keyString(record.key))}
               <div animate:flip={{ duration: ms(DUR.enter), easing: ease }} in:rise out:softFade>
                 <DeviceCard {record} {trend} />
               </div>

@@ -190,7 +190,38 @@ const razeSlots = (serial: string): SimDevice => {
   };
 };
 
+/** A SystemCore on the robot network, with Atlas's USB agent an update behind. */
+const SYSTEMCORE = { family: "systemcore", serial: "6390" };
+const systemcore: SimDevice = {
+  key: SYSTEMCORE,
+  model: "SystemCore",
+  name: "SystemCore 6390",
+  version: "2027.0.0-alpha18",
+  mode: "normal",
+  parent: null,
+  online: true,
+  neverConfirms: false,
+  attributes: {
+    team: "6390",
+    os: "SystemCore OS",
+    usb_agent: "2026.1.0-dev.409+04d7931a",
+    "usb_agent.offered": "2026.1.0-dev.420+a72418a0",
+  },
+  caps: ["info", "actions", "gateway", "install"],
+  actions: [{ id: "usb-agent.install", label: "Update Atlas's USB agent (2026.1.0-dev.409+04d7931a to 2026.1.0-dev.420+a72418a0)", destructive: false }],
+};
+
+/** A Raze in USB boot on the SystemCore's USB, as its USB agent lists it. */
+const razeBehindAgent: SimDevice = {
+  ...razeUsbBoot("b17e0042", "b17e0042"),
+  name: "Raze on USB 3-1.1 behind 172.27.0.1",
+  parent: SYSTEMCORE,
+  link: { kind: "gateway", via: SYSTEMCORE },
+};
+
 export const fleet: SimDevice[] = [
+  systemcore,
+  razeBehindAgent,
   camera("H-1001", "cam-front"),
   camera("H-1002", "cam-left"),
   camera("H-1003", "cam-rear"),
