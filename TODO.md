@@ -95,14 +95,22 @@ nothing else is added. Each item: **what**, **why**, **done when**,
     `.ipk` on :5809, one-click install and update, boards behind the
     SystemCore in `atlas ls`, `atlas flash` through it. The first real
     flash waits on the Raze moving off a faulty hub (user).
-- [ ] **Atlas re-attaches to an agent's flash after its own restart.**
-  - **What:** Atlas keeps the agent job's id with the job and, started
-    again, follows it from where it was (the agent keeps the events).
+- [ ] **Atlas re-attaches to an agent's flash after its own restart: prove
+      it on the board.**
+  - **What:** built: the remote flash remembers the agent job
+    (`<data>/agent-jobs/<board>.json`) until it ends. After a scan, Atlas
+    starts a job for any update that outlived it
+    (`UpdateCapability::resumable`), and that job follows the agent's job
+    from its first event instead of flashing again. A job the agent no
+    longer has is said so and forgotten; a lost agent keeps the record for
+    the next Atlas. Tested: core with the mock fleet, the driver against a
+    loopback agent.
   - **Why:** a flash outlives Atlas closing or crashing; its result must
     still reach the job history.
   - **Done when:** killing Atlas mid-flash and starting it again shows the
-    flash running, then its result.
-  - **Blocked by:** nothing.
+    flash running, then its result, on a board behind the SystemCore.
+  - **Blocked by:** the Raze replug onto a 3-1.x port (the same window as
+    the first real agent flash).
 - [ ] **"Behind SystemCore" in the app.**
   - **What:** PIT/ROBOT and the device list group the boards behind a
     SystemCore (through HeliOS, and in USB boot through the agent) under

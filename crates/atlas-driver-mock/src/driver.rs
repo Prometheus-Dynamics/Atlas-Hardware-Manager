@@ -273,6 +273,15 @@ impl MockUpdater {
 
 #[async_trait]
 impl UpdateCapability for MockUpdater {
+    fn resumable(&self, device: &Identity) -> Option<ReleaseRef> {
+        let version = self.fleet.device(&device.key)?.outlived_update?;
+        Some(ReleaseRef {
+            family: device.key.family.clone(),
+            version,
+            artifact: None,
+        })
+    }
+
     fn plan(&self, device: &Identity, release: &ReleaseRef) -> Result<UpdatePlan, DriverError> {
         if release.version.trim().is_empty() {
             return Err(DriverError::Incompatible(
@@ -360,6 +369,7 @@ impl UpdateCapability for MockUpdater {
         let version = release.version.clone();
         self.set(&device.key, |mock| {
             mock.version = version.clone();
+            mock.outlived_update = None;
             mock.mode = DeviceMode::Normal;
         });
         progress.log(format!("now running {version}"));

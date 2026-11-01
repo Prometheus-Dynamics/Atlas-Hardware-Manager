@@ -22,6 +22,7 @@ mod links;
 mod manage;
 mod observe;
 mod push;
+mod resume;
 mod robot_teams;
 mod robots;
 mod scan;

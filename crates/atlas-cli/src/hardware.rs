@@ -38,6 +38,7 @@ pub fn register_hardware(
             catalog: catalog.clone(),
             ssh_keys: ssh_keys.clone(),
             known_hosts: ssh_access.get().known_hosts,
+            agent_jobs: data_dir.map(|data| data.join("agent-jobs")),
         })))
         .link_source(Arc::new(UsbBootLinks))
         .link_source(Arc::new(NetworkLinks))

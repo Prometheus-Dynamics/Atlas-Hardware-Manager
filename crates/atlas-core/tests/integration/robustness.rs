@@ -254,3 +254,30 @@ async fn unclaimed_devices_gone_a_week_are_let_go() {
             .is_some()
     );
 }
+
+#[tokio::test]
+async fn an_update_that_outlived_atlas_is_followed_once_after_a_scan() {
+    let key = DeviceKey::new(SIM_HELIOS, "agent-board");
+    let fleet =
+        MockFleet::new().with(MockDevice::new(SIM_HELIOS, "agent-board").outlived_update("2.1.0"));
+    let atlas = atlas_for(&fleet);
+    assert!(atlas.jobs().is_empty());
+
+    atlas.scan().await;
+    let jobs = atlas.jobs();
+    assert_eq!(jobs.len(), 1, "the outlived update became a job");
+    assert_eq!(jobs[0].devices[0].device, key);
+    assert_eq!(jobs[0].devices[0].release.version, "2.1.0");
+    let record = tokio::time::timeout(Duration::from_secs(5), atlas.wait_job(jobs[0].id))
+        .await
+        .expect("the job finished")
+        .unwrap();
+    assert!(matches!(
+        record.devices[0].status,
+        DeviceJobStatus::Verified { .. }
+    ));
+
+    // Followed once: later scans start nothing more.
+    atlas.scan().await;
+    assert_eq!(atlas.jobs().len(), 1);
+}

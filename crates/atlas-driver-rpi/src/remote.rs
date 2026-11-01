@@ -163,6 +163,61 @@ pub(crate) struct RemoteFlash {
     pub(crate) config: Arc<RpiConfig>,
 }
 
+/// An agent flash Atlas started, remembered until it ends, so an Atlas
+/// started again (after closing or crashing mid-flash) follows it.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct Remembered {
+    address: String,
+    job: String,
+    release: ReleaseRef,
+    started_ms: u64,
+}
+
+fn remembered_path(config: &RpiConfig, device: &Identity) -> Option<std::path::PathBuf> {
+    let dir = config.agent_jobs.as_ref()?;
+    let name: String = format!("{}-{}", device.key.family, device.key.serial)
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    Some(dir.join(format!("{name}.json")))
+}
+
+fn remember(config: &RpiConfig, device: &Identity, job: &str, release: &ReleaseRef) {
+    let Some(path) = remembered_path(config, device) else {
+        return;
+    };
+    let record = Remembered {
+        address: device.address.clone(),
+        job: job.to_string(),
+        release: release.clone(),
+        started_ms: atlas_driver::util::now_ms(),
+    };
+    if let (Some(dir), Ok(text)) = (path.parent(), serde_json::to_string_pretty(&record)) {
+        let _ = std::fs::create_dir_all(dir);
+        let _ = std::fs::write(path, text);
+    }
+}
+
+/// The flash remembered for this device, if it's through the same agent
+/// and port.
+fn recall(config: &RpiConfig, device: &Identity) -> Option<Remembered> {
+    let text = std::fs::read_to_string(remembered_path(config, device)?).ok()?;
+    let record: Remembered = serde_json::from_str(&text).ok()?;
+    (record.address == device.address).then_some(record)
+}
+
+fn forget(config: &RpiConfig, device: &Identity) {
+    if let Some(path) = remembered_path(config, device) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
 fn artifact(release: &ReleaseRef) -> Result<&Artifact, DriverError> {
     release.artifact.as_ref().ok_or_else(|| {
         DriverError::Incompatible(
@@ -229,6 +284,10 @@ async fn upload(
 
 #[async_trait]
 impl UpdateCapability for RemoteFlash {
+    fn resumable(&self, device: &Identity) -> Option<ReleaseRef> {
+        recall(&self.config, device).map(|record| record.release)
+    }
+
     fn plan(&self, device: &Identity, release: &ReleaseRef) -> Result<UpdatePlan, DriverError> {
         let artifact = artifact(release)?;
         let (agent, usb_port) = parse_board_address(&device.address)
@@ -262,6 +321,41 @@ impl UpdateCapability for RemoteFlash {
         let http = client();
 
         progress.step_started(UpdateStep::Preflight);
+        // A flash an earlier Atlas started here: follow it, never start another.
+        if let Some(earlier) = recall(&self.config, device) {
+            progress.log(format!(
+                "following the flash an earlier Atlas started here (agent job {}, {}), not starting another",
+                earlier.job, earlier.release.version
+            ));
+            let probe = http
+                .get(format!("http://{agent}/v1/jobs/{}?from=0", earlier.job))
+                .timeout(Duration::from_secs(20))
+                .send()
+                .await
+                .map_err(|error| unreachable(agent, error))?;
+            if probe.status() == reqwest::StatusCode::NOT_FOUND {
+                forget(&self.config, device);
+                return Err(failed(
+                    UpdateStep::Preflight,
+                    format!(
+                        "the agent no longer has job {} (it restarted since); check the board before flashing it again",
+                        earlier.job
+                    ),
+                ));
+            }
+            progress.step_started(UpdateStep::Apply);
+            return self
+                .finish(
+                    &http,
+                    agent,
+                    &earlier.job,
+                    device,
+                    release,
+                    progress,
+                    cancel,
+                )
+                .await;
+        }
         if !artifact.path.is_file() {
             return Err(failed(
                 UpdateStep::Preflight,
@@ -354,8 +448,36 @@ impl UpdateCapability for RemoteFlash {
             .await
             .map_err(|error| unreachable(agent, error))?;
         progress.log(format!("the agent is flashing (job {})", job.id));
+        remember(&self.config, device, &job.id, release);
+        self.finish(&http, agent, &job.id, device, release, progress, cancel)
+            .await
+    }
+}
 
-        let done = follow(&http, agent, &job.id, progress, cancel).await?;
+impl RemoteFlash {
+    /// Follows agent job `id` to its end, then tidies up after it: the
+    /// remembered record (unless Atlas lost the agent, so a later Atlas
+    /// still follows it) and the board's old SSH host key.
+    #[allow(clippy::too_many_arguments)]
+    async fn finish(
+        &self,
+        http: &reqwest::Client,
+        agent: &str,
+        id: &str,
+        device: &Identity,
+        release: &ReleaseRef,
+        progress: &ProgressSink,
+        cancel: &CancellationToken,
+    ) -> Result<UpdateOutcome, DriverError> {
+        let done = match follow(http, agent, id, progress, cancel).await {
+            Ok(done) => done,
+            Err(Lost(error)) => return Err(error),
+            Err(Ended(error)) => {
+                forget(&self.config, device);
+                return Err(error);
+            }
+        };
+        forget(&self.config, device);
         if let Event::Done {
             restarted,
             restart_error,
@@ -388,6 +510,15 @@ impl UpdateCapability for RemoteFlash {
     }
 }
 
+/// Why following a job stopped short of its `done`.
+enum Stopped {
+    /// The job ended badly (or was cancelled) on the agent.
+    Ended(DriverError),
+    /// The agent stayed out of reach: the flash may go on there.
+    Lost(DriverError),
+}
+use Stopped::{Ended, Lost};
+
 /// Follows the job to its end, through link drops: its `done`, or why it
 /// failed. Cancelling asks the agent to stop and waits for it to.
 async fn follow(
@@ -396,7 +527,7 @@ async fn follow(
     id: &str,
     progress: &ProgressSink,
     cancel: &CancellationToken,
-) -> Result<Event, DriverError> {
+) -> Result<Event, Stopped> {
     let mut from = 0;
     let mut last_contact = tokio::time::Instant::now();
     let mut cancelling = false;
@@ -456,11 +587,11 @@ async fn follow(
                         }
                         done @ Event::Done { .. } => return Ok(done),
                         Event::Error { message } => {
-                            return Err(if cancelling {
+                            return Err(Ended(if cancelling {
                                 DriverError::Cancelled
                             } else {
                                 failed(UpdateStep::Apply, message)
-                            });
+                            }));
                         }
                         _ => {}
                     }
@@ -468,13 +599,13 @@ async fn follow(
             }
             Err(error) => {
                 if last_contact.elapsed() >= LOST_AFTER {
-                    return Err(failed(
+                    return Err(Lost(failed(
                         UpdateStep::Apply,
                         format!(
-                            "lost Atlas's USB agent at {agent} for {} minutes ({error}); the flash goes on there, so check the board before flashing it again",
+                            "lost Atlas's USB agent at {agent} for {} minutes ({error}); the flash goes on there, and Atlas follows it again once it sees the board",
                             LOST_AFTER.as_secs() / 60
                         ),
-                    ));
+                    )));
                 }
             }
         }
@@ -485,6 +616,151 @@ async fn follow(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An agent on loopback that knows one job, `job-1`, already finished
+    /// with `done`, and answers 404 for any other.
+    async fn agent_with_a_finished_job() -> String {
+        use tokio::io::AsyncWriteExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap().to_string();
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    return;
+                };
+                let mut request = vec![0u8; 4096];
+                let read = stream.read(&mut request).await.unwrap_or(0);
+                let line = String::from_utf8_lossy(&request[..read]).to_string();
+                let (status, body) = if line.starts_with("GET /v1/jobs/job-1") {
+                    let events = JobEvents {
+                        id: "job-1".into(),
+                        events: vec![
+                            Event::Log {
+                                text: "writing".into(),
+                                rss_kib: None,
+                            },
+                            Event::Done {
+                                restarted: Some("ttyACM0".into()),
+                                restart_error: None,
+                            },
+                        ],
+                        next: 2,
+                        finished: true,
+                    };
+                    ("200 OK", serde_json::to_string(&events).unwrap())
+                } else {
+                    ("404 Not Found", "{\"error\":\"no such job\"}".to_string())
+                };
+                let reply = format!(
+                    "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(reply.as_bytes()).await;
+            }
+        });
+        address
+    }
+
+    fn board(agent: &str) -> Identity {
+        Identity {
+            key: DeviceKey::new(RPI_FAMILY, "e5226d57"),
+            model: "Raze".into(),
+            mode: DeviceMode::Recovery,
+            versions: BTreeMap::new(),
+            name: None,
+            link: atlas_driver::LinkId("usb".into()),
+            address: atlas_usb_agent::board_address(agent, "3-1.2"),
+            attributes: BTreeMap::new(),
+        }
+    }
+
+    fn release() -> ReleaseRef {
+        ReleaseRef {
+            family: atlas_driver::Family::new(RPI_FAMILY),
+            version: "2026.2.0-dev.811".into(),
+            artifact: Some(Artifact {
+                name: "helios.img.xz".into(),
+                path: "/nowhere/helios.img.xz".into(),
+                sha256: "ab".repeat(32),
+                size_bytes: 1,
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_flash_an_earlier_atlas_started_is_followed_not_started_again() {
+        let agent = agent_with_a_finished_job().await;
+        let dir = std::env::temp_dir().join(format!("atlas-agent-jobs-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let flash = RemoteFlash {
+            config: Arc::new(RpiConfig {
+                agent_jobs: Some(dir.clone()),
+                ..RpiConfig::default()
+            }),
+        };
+        let device = board(&agent);
+        assert_eq!(flash.resumable(&device), None);
+
+        // Atlas started job-1, then went away; the record stayed.
+        remember(&flash.config, &device, "job-1", &release());
+        assert_eq!(flash.resumable(&device), Some(release()));
+        // The same board on another port isn't that flash.
+        let mut elsewhere = device.clone();
+        elsewhere.address = atlas_usb_agent::board_address(&agent, "3-1.4");
+        assert_eq!(flash.resumable(&elsewhere), None);
+
+        // Started again: it follows job-1 to its end (the image, which is
+        // gone, isn't needed) and forgets it.
+        let lines = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = lines.clone();
+        let progress = ProgressSink::new(move |update| {
+            if let atlas_driver::ProgressUpdate::Log { message } = update {
+                seen.lock().unwrap().push(message);
+            }
+        });
+        let outcome = flash
+            .run(&device, &release(), &progress, &CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(
+            outcome,
+            UpdateOutcome::Verified {
+                version: "2026.2.0-dev.811".into()
+            }
+        );
+        let lines = lines.lock().unwrap().clone();
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("an earlier Atlas started here")),
+            "{lines:?}"
+        );
+        assert!(
+            lines
+                .iter()
+                .any(|line| line.contains("restarted the board")),
+            "{lines:?}"
+        );
+        assert_eq!(flash.resumable(&device), None, "forgotten once it ended");
+
+        // A job the agent no longer has: said so, forgotten, nothing started.
+        remember(&flash.config, &device, "job-9", &release());
+        let error = flash
+            .run(
+                &device,
+                &release(),
+                &ProgressSink::new(|_| {}),
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap_err();
+        assert!(
+            error.to_string().contains("no longer has job job-9"),
+            "{error}"
+        );
+        assert_eq!(flash.resumable(&device), None);
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     fn usb(port: &str, product: &str, serial: Option<&str>) -> UsbDevice {
         UsbDevice {
@@ -504,6 +780,7 @@ mod tests {
             catalog: Arc::new(atlas_devices::DeviceCatalog::default()),
             ssh_keys: Default::default(),
             known_hosts: None,
+            agent_jobs: None,
         };
         let candidate = Candidate {
             link: atlas_driver::LinkId("usb".into()),

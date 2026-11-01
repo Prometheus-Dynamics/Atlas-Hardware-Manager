@@ -261,6 +261,15 @@ pub trait UpdateCapability: Send + Sync {
         false
     }
 
+    /// An update this source started that outlived Atlas (it closed or
+    /// crashed mid-flash) and is still running where it runs, such as a
+    /// flash Atlas's USB agent goes on with: the release it was for. Atlas
+    /// starts a job for it after a scan, and `run` follows the update to its
+    /// end instead of starting another. Default: none.
+    fn resumable(&self, _device: &Identity) -> Option<ReleaseRef> {
+        None
+    }
+
     /// Describes the update without touching the device.
     fn plan(&self, device: &Identity, release: &ReleaseRef) -> Result<UpdatePlan, DriverError>;
 

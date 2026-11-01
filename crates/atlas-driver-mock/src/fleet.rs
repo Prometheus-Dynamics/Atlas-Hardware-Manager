@@ -70,6 +70,9 @@ pub struct MockDevice {
     pub clock_offset_s: Option<i64>,
     /// Whether `set-clock` takes (a board that won't keeps its offset).
     pub clock_settable: bool,
+    /// An update to this version that outlived an earlier Atlas and goes on
+    /// (`UpdateCapability::resumable`), until a run finishes it.
+    pub outlived_update: Option<String>,
 }
 
 impl MockDevice {
@@ -92,7 +95,14 @@ impl MockDevice {
             board_serial: None,
             clock_offset_s: None,
             clock_settable: true,
+            outlived_update: None,
         }
+    }
+
+    /// An update to `version` an earlier Atlas started is still running.
+    pub fn outlived_update(mut self, version: &str) -> Self {
+        self.outlived_update = Some(version.into());
+        self
     }
 
     /// Its clock is `seconds` off (negative: behind).

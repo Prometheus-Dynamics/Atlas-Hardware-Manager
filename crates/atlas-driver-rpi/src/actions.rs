@@ -217,6 +217,7 @@ mod tests {
             catalog: Arc::new(DeviceCatalog::default()),
             ssh_keys: Default::default(),
             known_hosts: None,
+            agent_jobs: None,
         });
         let with_eeprom = RpiActions::new(config.clone(), true);
         assert_eq!(

@@ -90,6 +90,10 @@ pub struct RpiConfig {
     /// Atlas's SSH known_hosts: a flash drops the board's pinned host key
     /// (`board-<family>-<serial>`), since the new image makes a new one.
     pub known_hosts: Option<PathBuf>,
+    /// Where flashes through a USB agent are remembered while they run, so
+    /// an Atlas started again follows them (`<data>/agent-jobs`). `None`
+    /// remembers nothing.
+    pub agent_jobs: Option<PathBuf>,
 }
 
 /// The single link for every Pi in USB boot mode on this computer.
@@ -434,6 +438,7 @@ mod tests {
             catalog: Arc::new(catalog),
             ssh_keys: Default::default(),
             known_hosts: None,
+            agent_jobs: None,
         });
         let gadget = StorageGadget {
             location: "001-4".into(),

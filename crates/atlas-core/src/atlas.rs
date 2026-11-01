@@ -92,6 +92,9 @@ pub(crate) struct State {
     /// When each board's clock was last set automatically (ms), by board
     /// serial (clock.rs).
     pub(crate) clock_set_at: HashMap<String, u64>,
+    /// Devices whose outlived update was picked up again this session
+    /// (resume.rs), so it's started once.
+    pub(crate) resumed: HashSet<DeviceKey>,
 }
 
 pub(crate) struct Inner {
@@ -292,6 +295,8 @@ impl Atlas {
         self.start_due_key_installs();
         // Boards with an event log: fetch what happened since.
         self.start_due_event_syncs();
+        // Updates that outlived an earlier Atlas: follow them to their end.
+        self.start_due_resumes();
         report
     }
 
