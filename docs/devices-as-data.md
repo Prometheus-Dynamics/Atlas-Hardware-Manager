@@ -1,9 +1,8 @@
 # Devices as data: discovery, info and install methods (design)
 
-Status: steps 1 and 2 built (the roboRIO is data: `devices/roborio/`);
-step 3 waits on SystemCore's values from a real unit
-(`scripts/systemcore-capture.sh`). "As built" below says where the code
-differs from this design.
+Status: steps 1 to 3 built (the roboRIO and the SystemCore are data:
+`devices/roborio/`, `devices/systemcore/`). "As built" below says where the
+code differs from this design.
 
 Today a device family is mostly code: `atlas-driver-board` reads the board
 identity contract (`/.well-known/pd-device`) that a device package's boards
@@ -231,6 +230,25 @@ moves into `devices/roborio/` the same way (fingerprint: NI's page and
 - `discovery` isn't built: the roboRIO is still found by the robot-network
   probe of `.2`, and a Raze by the identity contract over mDNS and its USB
   gadget, which already come from its manifest (`identity.usb_gadget`).
+
+## As built (step 3)
+
+- `devices/systemcore/manifest.json` recognises and reads the SystemCore:
+  - the fingerprint is a 200 from `GET :4800/api/team` with
+    `"team_number"` in it;
+  - the key is `team` (`$.team_number`);
+  - `model`, `name` (`SystemCore-{team}`) and `manage_url`
+    (`http://{address}/`) are templates.
+- Team 0, a unit not set up yet, keys `systemcore:no-team`, as before. The
+  driver uses the catalog's copy or the built-in one, as for the roboRIO.
+- The SystemCore was already found by code: its USB gadget (`1d6b:0104`,
+  manufacturer `Limelight`) and `.2` on a robot network. Code also still
+  adds what data can't say:
+  - its versions and `.ipk` installs, by SSH key (opkg, not `web_upload`:
+    the unit has no upload page);
+  - its USB link checks;
+  - Atlas's USB agent and the boards behind it.
+- Tested on its real `/api/team` answer (alpha18, 2026-10-26).
 
 ## Order of work
 

@@ -187,12 +187,15 @@ pub struct SystemcoreDriver {
     http: reqwest::Client,
     /// The agent's package Atlas carries, and its version.
     agent_package: Option<(PathBuf, String)>,
+    /// The catalog's SystemCore package, with `fingerprints`; else the
+    /// built-in one.
+    package: Option<DeviceManifest>,
 }
 
 impl SystemcoreDriver {
     /// `agent_dirs`: where the USB agent's `.ipk` may be
     /// (`crate::usb_agent::package`).
-    pub fn new(agent_dirs: &[PathBuf]) -> Self {
+    pub fn new(catalog: &DeviceCatalog, agent_dirs: &[PathBuf]) -> Self {
         let mut manifest = manifest(crate::systemcore::SYSTEMCORE_FAMILY, "SystemCore");
         manifest.link_kinds = vec![LinkKind::Ethernet, LinkKind::UsbNetwork];
         Self {
@@ -202,6 +205,10 @@ impl SystemcoreDriver {
                 let version = crate::usb_agent::package_version(&path)?;
                 Some((path, version))
             }),
+            package: catalog
+                .by_model(crate::systemcore::SYSTEMCORE_FAMILY)
+                .map(|package| package.manifest.clone())
+                .filter(|manifest| !manifest.fingerprints.is_empty()),
         }
     }
 }
@@ -248,8 +255,13 @@ impl Driver for SystemcoreDriver {
         } else {
             None
         };
+        let package = match &self.package {
+            Some(package) => package,
+            None => crate::systemcore::built_in()?,
+        };
         let mut identity =
-            crate::systemcore::read(&self.http, ip, candidate.link.clone(), serial).await?;
+            crate::systemcore::read(&self.http, package, ip, candidate.link.clone(), serial)
+                .await?;
         identity.versions = crate::systemcore_versions::read(ip).await;
         let running = crate::usb_agent::info(&self.http, ip)
             .await
@@ -328,6 +340,6 @@ pub fn drivers(catalog: &DeviceCatalog, agent_dirs: &[PathBuf]) -> Vec<Arc<dyn D
     vec![
         Arc::new(ControllerDriver::new(catalog)),
         Arc::new(RadioDriver::default()),
-        Arc::new(SystemcoreDriver::new(agent_dirs)),
+        Arc::new(SystemcoreDriver::new(catalog, agent_dirs)),
     ]
 }

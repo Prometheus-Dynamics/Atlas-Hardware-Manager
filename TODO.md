@@ -53,13 +53,11 @@ nothing else is added. Each item: **what**, **why**, **done when**,
   - **Done when:** a robot run shows every device with its state, and one
     install from the view.
   - **Blocked by:** a robot (user).
-- [ ] **Devices as data, step 3: SystemCore from data.**
-  - **What:** `devices/systemcore/` (fingerprints, info) like
-    `devices/roborio/` (step 2, 2f96f61).
-  - **Why:** new controllers without new code.
-  - **Done when:** the SystemCore's recognition and info come from its
-    package and its tests pass on the captured answers.
-  - **Blocked by:** nothing (its API is known: `:4800/api/team`).
+- [x] **Devices as data, step 3: SystemCore from data.** Built:
+  `devices/systemcore/manifest.json` (the `/api/team` fingerprint, key
+  `team`, model, name and manage URL) recognises and reads it through the
+  engine, tested on its real answer. docs/devices-as-data.md "As built
+  (step 3)".
 - [ ] **Installer proofs on Windows and macOS (HELD).**
   - **What:** NSIS and dmg installed and run, USB access working.
   - **Why:** teams use both.

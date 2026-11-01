@@ -29,8 +29,8 @@ devices/
     fetch.lock               files fetched by pinned URL instead of kept in git
     eeprom/                  bootloader images (small, versioned)
     gaia/                    the Gaia layer (config v3), OS-neutral
-  roborio/manifest.json      a device without the identity contract: only
-                             how to recognise and read it (fingerprints,
+  roborio/manifest.json,     devices without the identity contract: only
+  systemcore/manifest.json   how to recognise and read them (fingerprints,
                              info, key; docs/devices-as-data.md)
   radxa-rock-5c/, radxa-rock-4d/, luckfox-pico-pro/, bpi-canmv-k230d-zero/
                              board records ("record_only": true): boards

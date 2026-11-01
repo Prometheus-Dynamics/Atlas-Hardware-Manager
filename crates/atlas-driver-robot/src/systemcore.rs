@@ -10,12 +10,32 @@
 //!
 //! The key is the team (`systemcore:6390`), as for the roboRIO, so the same
 //! unit seen over USB and on the robot network is one device.
+//!
+//! Recognised and read by its device package's data (devices/systemcore:
+//! the `/api/team` fingerprint, the team, its name and web page), the
+//! catalog's when it has one with `fingerprints`, else the built-in copy.
 
+use std::collections::BTreeMap;
 use std::net::{Ipv4Addr, SocketAddr};
+use std::sync::LazyLock;
 use std::time::Duration;
 
+use atlas_devices::{DeviceManifest, NotRecognized, Recognized, Seen};
 use atlas_driver::{DeviceKey, DeviceMode, DriverError, Identity, LinkId};
-use serde::Deserialize;
+
+use crate::http_probe::HttpProbe;
+
+/// The SystemCore's device package as built in.
+static BUILT_IN: LazyLock<Result<DeviceManifest, String>> = LazyLock::new(|| {
+    serde_json::from_str(include_str!("../../../devices/systemcore/manifest.json"))
+        .map_err(|error| format!("devices/systemcore/manifest.json: {error}"))
+});
+
+pub(crate) fn built_in() -> Result<&'static DeviceManifest, DriverError> {
+    BUILT_IN
+        .as_ref()
+        .map_err(|error| DriverError::Other(error.clone()))
+}
 
 pub const SYSTEMCORE_FAMILY: &str = "systemcore";
 /// The SystemCore's own API (team number).
@@ -59,37 +79,52 @@ pub async fn answers(ip: Ipv4Addr) -> bool {
     .is_ok_and(|connected| connected.is_ok())
 }
 
-#[derive(Debug, Deserialize)]
-struct Team {
-    team_number: Option<u16>,
-}
-
-/// The team from `:4800/api/team`'s answer.
-pub fn parse_team(body: &str) -> Result<Option<u16>, String> {
-    serde_json::from_str::<Team>(body)
-        .map(|team| team.team_number.filter(|n| *n > 0))
-        .map_err(|error| format!("its team answer isn't what a SystemCore sends: {error}"))
-}
-
-/// Reads the unit at `ip` and names it.
+/// Reads the unit at `ip` by `package`'s data and names it.
 pub async fn read(
     http: &reqwest::Client,
+    package: &DeviceManifest,
     ip: Ipv4Addr,
     link: LinkId,
     usb_serial: Option<String>,
 ) -> Result<Identity, DriverError> {
-    let url = format!("http://{ip}:{API_PORT}/api/team");
-    let body = http
-        .get(&url)
-        .send()
+    let probe = HttpProbe { http, ip };
+    let seen = Seen {
+        address: ip.to_string(),
+        facts: BTreeMap::new(),
+    };
+    let found = atlas_devices::recognize(package, &probe, &seen)
         .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|error| DriverError::Unreachable(format!("{ip}: {error}")))?
-        .text()
-        .await
-        .map_err(|error| DriverError::Unreachable(format!("{ip}: {error}")))?;
-    let team = parse_team(&body).map_err(DriverError::Other)?;
-    Ok(identity(team, ip, link, usb_serial))
+        .map_err(|refused| match refused {
+            NotRecognized::Unreachable(why) => DriverError::Unreachable(why),
+            other => DriverError::Other(other.to_string()),
+        })?;
+    Ok(from_found(found, ip, link, usb_serial))
+}
+
+/// The identity of a recognised unit. Team 0 (not set yet) keys it
+/// `no-team`, as an unconfigured roboRIO would have none.
+pub(crate) fn from_found(
+    found: Recognized,
+    ip: Ipv4Addr,
+    link: LinkId,
+    usb_serial: Option<String>,
+) -> Identity {
+    let team = found.key.parse::<u16>().ok().filter(|team| *team > 0);
+    let mut identity = identity(team, ip, link, usb_serial);
+    if let Some(model) = found.model {
+        identity.model = model;
+    }
+    if team.is_some()
+        && let Some(name) = found.name
+    {
+        identity.name = Some(name);
+    }
+    for (name, value) in found.attributes {
+        if name != "team" || team.is_some() {
+            identity.attributes.insert(name, value);
+        }
+    }
+    identity
 }
 
 pub(crate) fn identity(
@@ -129,12 +164,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_team_comes_from_its_api() {
-        // A real answer (alpha18, 2026-10-26).
-        let body = r#"{"team":"6390","team_number":6390,"timestamp":1760399233337}"#;
-        assert_eq!(parse_team(body).unwrap(), Some(6390));
-        assert_eq!(parse_team(r#"{"team_number":0}"#).unwrap(), None);
-        assert!(parse_team("<html>").is_err());
+    fn its_identity_is_keyed_by_team() {
         let id = identity(
             Some(6390),
             usb_address(),
@@ -147,6 +177,59 @@ mod tests {
             id.attributes["manage_url"],
             format!("http://{}/", usb_address())
         );
+    }
+
+    const TEAM: &str = include_str!("../tests/fixtures/systemcore-team.json");
+
+    struct Fixture(&'static str);
+
+    impl atlas_devices::Probe for Fixture {
+        async fn get(&self, port: u16, path: &str) -> Option<atlas_devices::HttpAnswer> {
+            (port == API_PORT && path == "/api/team").then(|| atlas_devices::HttpAnswer {
+                status: 200,
+                headers: Default::default(),
+                body: self.0.to_string(),
+            })
+        }
+        async fn open(&self, ports: Vec<u16>) -> Vec<bool> {
+            vec![false; ports.len()]
+        }
+    }
+
+    async fn recognise(body: &'static str) -> Result<Identity, NotRecognized> {
+        let seen = Seen {
+            address: "10.63.90.2".into(),
+            facts: BTreeMap::new(),
+        };
+        let found = atlas_devices::recognize(built_in().unwrap(), &Fixture(body), &seen).await?;
+        Ok(from_found(
+            found,
+            Ipv4Addr::new(10, 63, 90, 2),
+            LinkId("ethernet".into()),
+            None,
+        ))
+    }
+
+    #[tokio::test]
+    async fn its_package_reads_the_real_team_answer() {
+        let id = recognise(TEAM).await.unwrap();
+        assert_eq!(id.key.to_string(), "systemcore:6390");
+        assert_eq!(id.model, "SystemCore");
+        assert_eq!(id.name.as_deref(), Some("SystemCore-6390"));
+        assert_eq!(id.attributes["team"], "6390");
+        assert_eq!(id.attributes["manage_url"], "http://10.63.90.2/");
+
+        // Team 0: not set yet.
+        let unset = recognise(r#"{"team":"0","team_number":0}"#).await.unwrap();
+        assert_eq!(unset.key.to_string(), "systemcore:no-team");
+        assert!(!unset.attributes.contains_key("team"));
+        assert_eq!(unset.name.as_deref(), Some("SystemCore"));
+
+        // Something else on port 4800 isn't a SystemCore.
+        assert!(matches!(
+            recognise("<html>a roboRIO</html>").await,
+            Err(NotRecognized::NotThisModel(_))
+        ));
     }
 
     #[test]
