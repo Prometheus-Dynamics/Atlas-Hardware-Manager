@@ -88,7 +88,7 @@ nothing else is added. Each item: **what**, **why**, **done when**,
     comes up running, with no SSH step; pulling the PC's cable mid-write
     doesn't stop the flash.
   - **Blocked by:** step 2 (under Orion): Orion's blob push, job API,
-    non-HeliOS providers and large status values (asked of HeliOS). Step 1
+    non-HeliOS providers and large status values (HeliOS has taken these). Step 1
     is built (456e4cc, 04d7931): the agent as a service from its own
     `.ipk` on :5809, one-click install and update, boards behind the
     SystemCore in `atlas ls`, `atlas flash` through it. The first real
@@ -170,35 +170,19 @@ nothing else is added. Each item: **what**, **why**, **done when**,
     running, from its package.
   - **Blocked by:** the boards; an OS image for each (HeliOS/Gaia).
 
-### 3. Release mechanics
+### 3. Releases
 
-- [ ] **Changelogs.**
-  - **What:** release notes drafted from the dev history
-    (docs/release-notes/2026.1.0.md); `devices/raze/CHANGELOG.md`'s
-    Unreleased still to cut to a version.
-  - **Why:** teams need to know what changed.
-  - **Done when:** both written and reviewed by the user.
-  - **Blocked by:** the user's review; the Raze package's release version
-    (with Versions).
-- [ ] **Versions.**
-  - **What:** crates and Raze package from `-dev` to their release
-    versions; packaging checks pass (`scripts/tests/package-versions.sh`).
-  - **Why:** a release must not report `-dev`.
-  - **Done when:** `atlas --version` says `2026.1.0` on the tagged build.
-  - **Blocked by:** the items above.
-- [ ] **dev into main.**
-  - **What:** merge.
-  - **Why:** releases come from main.
-  - **Done when:** main has the release commit and CI is green on it.
-  - **Blocked by:** the user's OK.
-- [ ] **Tag and build.**
-  - **What:** `v2026.1.0`; CI builds deb, rpm, AppImage, NSIS and dmg.
-  - **Why:** the installers people download.
-  - **Done when:** the tagged installers install and run (Linux here;
-    Windows and macOS as their proofs allow), and a 2026.1.0 install
-    updates itself to the next release (the first one the updater can
-    reach: 2026.0.0 predates it).
-  - **Blocked by:** the user (Atlas sessions never tag).
+Releases are the user's call alone: no dev into main and no tag from here,
+and they aren't asks. Everything keeps the dev scheme,
+`<year>.<major>.<minor>-dev.<count>+<commit>`, the Raze package included. The
+new boards will be tested; nothing ships until they are, or until the user
+says otherwise.
+
+- [ ] **Release notes.** Kept current as a draft
+  (docs/release-notes/2026.1.0.md) for whenever the user cuts one.
+- [ ] **The self-updater's first real run.** Built (a2b94b7); 2026.0.0 predates
+  it, so it first runs from the first release that carries it to the one after.
+  **Blocked by:** two releases (the user's).
 
 
 Atlas is being rebuilt as a fleet and device manager for all Prometheus
@@ -227,7 +211,7 @@ Svelte 5 UI. v1 targets Raze/HeliOS; other device families plug in as drivers.
       elevated helper per OS (pkexec, osascript, RunAs).
 - [x] Raspberry Pi recovery driver: USB boot, wait for the eMMC, write,
       verify; EEPROM (bootloader) update action.
-- [x] Device packages in `devices/` (Raze 1.0.8-dev, roboRIO; owned here): catalog
+- [x] Device packages in `devices/` (Raze, roboRIO, SystemCore and the board records; owned here): catalog
       naming, recovery steps, EEPROM files, the `raze-leds` LED helper, a
       locate action on the identity endpoint, opt-in SSH keys from the boot
       partition, and a serial console on the USB gadget.
@@ -351,8 +335,7 @@ Each was an open item below "Done"; the evidence is what closed it.
       (the agent re-attach item above covers flashes behind a SystemCore).
 - [ ] Light theme (the tokens allow one: themes/glass.css). Blocked by: the
       freeze.
-- [ ] Signed releases and installers. The self-updater is built (a2b94b7:
-      GitHub releases, the installer for how Atlas is installed, SHA-256
-      checked, a signed manifest verified once update-keys.txt lists a key);
-      left is signing it all. Blocked by: the release signing key, pinned
-      for later (user, 2026-10-30).
+- [ ] Signed releases and installers. The self-updater verifies a signed
+      manifest once update-keys.txt lists a key (a2b94b7). Atlas's signing key
+      follows Gaia's: minisign and cosign are approved for Gaia (user), and
+      this comes after Gaia's proof. **Blocked by:** Gaia's signing proof.

@@ -716,6 +716,21 @@ board_identity_json() {
 	printf '}\n'
 }
 
+# The package's version as a build reports it, from board-package.env: a dev
+# base (2026.1.0-dev) gets the Atlas commit count and short commit it was built
+# from, <base>.<count>+<commit>, as far as the image was told them. A release's
+# version stands as it is.
+board_package_version() {
+	_board_pv=${BOARD_PACKAGE_VERSION:-}
+	case $_board_pv in
+	*-dev)
+		[ -z "${BOARD_PACKAGE_COUNT:-}" ] || _board_pv=$_board_pv.$BOARD_PACKAGE_COUNT
+		[ -z "${BOARD_PACKAGE_COMMIT:-}" ] || _board_pv=$_board_pv+$(printf '%.8s' "$BOARD_PACKAGE_COMMIT")
+		;;
+	esac
+	printf '%s\n' "$_board_pv"
+}
+
 # The identity's fields that change only with the update state, the USB
 # route or the camera streams, without the braces. `identity --write` keeps
 # them in $BOARD_RUN_DIR/identity.part, at boot and on each of those changes
@@ -735,7 +750,7 @@ board_identity_fixed_json() {
 	printf ',"serial":%s' "$(board_json_str "$(board_serial)")"
 	printf ',"os":{"name":%s,"version":%s}' "$(board_json_str "$_board_os_name")" "$(board_json_str "$_board_os_ver")"
 	printf ',"device_package":{"version":%s,"commit":%s}' \
-		"$(board_json_str "${BOARD_PACKAGE_VERSION:-}")" "$(board_json_str "${BOARD_PACKAGE_COMMIT:-}")"
+		"$(board_json_str "$(board_package_version)")" "$(board_json_str "${BOARD_PACKAGE_COMMIT:-}")"
 	if [ -n "$BOARD_BL_VERSION" ] || [ -n "$BOARD_BL_TIMESTAMP" ]; then
 		printf ',"bootloader":{"version":%s' "$(board_json_str "$BOARD_BL_VERSION")"
 		if [ -n "$BOARD_BL_TIMESTAMP" ]; then

@@ -2,7 +2,7 @@
   "schema": "urn:board:manifest:1",
   "contract": 1,
   "model": "roborio",
-  "package_version": "0.1.0",
+  "package_version": "2026.1.0-dev",
   "display_name": "roboRIO",
   "description": "NI's FRC robot controller, read without credentials. Recognised by NI's web configuration page; read from it, CTRE Phoenix's diagnostics server (inside robot code that uses Phoenix) and which services accept a connection. Keyed by team: one robot controller per robot network. Atlas's code adds what this can't say: the CAN devices, whether robot code runs, the console as logs (crates/atlas-driver-robot/src/roborio.rs).",
   "key": "team",

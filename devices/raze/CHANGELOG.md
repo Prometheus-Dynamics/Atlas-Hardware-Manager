@@ -3,8 +3,18 @@
 ## Unreleased
 
 Development work since 1.0.7, not yet validated on hardware as a release.
-The package version is 1.0.8-dev until that release (a patch bump plus -dev).
+The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
+reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
+
+- **Versions (2026-11-01):** the package moves from 1.0.8-dev to Atlas's
+  scheme, as the user asked. `board_package_version` composes what the identity
+  document and the self-test report from `BOARD_PACKAGE_VERSION`,
+  `BOARD_PACKAGE_COUNT` and `BOARD_PACKAGE_COMMIT`. `sync-device.sh` stamps the
+  count and commit; an OS importing from git writes both to
+  /etc/board/board-package.env (the count needs Gaia's
+  `${source.<id>.commit_count}`; without it a build says
+  2026.1.0-dev+<commit>).
 
 - **Versions (2026-10-26):** the package is 1.0.8-dev. A slot's
   `slot_version` is the OS version without build metadata (a dev build's

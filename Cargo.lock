@@ -133,7 +133,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-app"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "atlas-blockdev",
  "atlas-cli",
@@ -159,7 +159,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-blockdev"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "atlas-driver",
  "ext4-view",
@@ -178,7 +178,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-cli"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "atlas-blockdev",
  "atlas-core",
@@ -204,7 +204,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-core"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "atlas-driver",
@@ -219,7 +219,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-devices"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "futures",
  "serde",
@@ -231,7 +231,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-driver"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "serde",
@@ -243,7 +243,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-driver-board"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "atlas-devices",
@@ -264,7 +264,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-driver-mock"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "atlas-driver",
@@ -273,7 +273,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-driver-orion"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "atlas-driver",
@@ -292,7 +292,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-driver-robot"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "atlas-devices",
@@ -309,7 +309,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-driver-rpi"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "atlas-blockdev",
@@ -329,7 +329,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-driver-soc"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "atlas-blockdev",
@@ -343,7 +343,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-flasher"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "atlas-flasher-proto",
@@ -360,7 +360,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-flasher-proto"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "serde",
  "serde_json",
@@ -368,7 +368,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-helper"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "atlas-blockdev",
  "atlas-usbboot",
@@ -377,7 +377,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-image-server"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "atlas-driver",
  "atlas-driver-orion",
@@ -397,7 +397,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-release"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "atlas-driver",
  "ed25519-dalek",
@@ -412,7 +412,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-socflash"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "atlas-ubi",
@@ -424,7 +424,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-ubi"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "libc",
  "sha2 0.11.0",
@@ -432,7 +432,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-usb-agent"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "atlas-blockdev",
  "atlas-usbboot",
@@ -448,7 +448,7 @@ dependencies = [
 
 [[package]]
 name = "atlas-usbboot"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "futures",
@@ -570,7 +570,7 @@ dependencies = [
 
 [[package]]
 name = "board-agent"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "board-stream",
  "lemnos-ipc",
@@ -586,7 +586,7 @@ dependencies = [
 
 [[package]]
 name = "board-stream"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "lemnos-ipc",
  "nix",
@@ -1494,7 +1494,7 @@ checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
 
 [[package]]
 name = "flasher"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "atlas-flasher-proto",
  "lzma-rs",
@@ -4493,7 +4493,7 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
 name = "slot-init"
-version = "0.1.1-dev"
+version = "2026.1.0-dev"
 dependencies = [
  "libc",
  "serde",

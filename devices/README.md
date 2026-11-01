@@ -297,10 +297,12 @@ A vendored copy still needs the `atlas` source declared in the OS build:
 `crates/board-agent` in that source.
 
 `sync-device.sh` writes `<dest>/.device-lock` with the Atlas commit and a
-content hash, and stamps the commit into the package's `board-package.env` so
-the identity document reports it. With a git-source import the commit is not
-stamped yet (`device_package.commit` is `null`) until Gaia can pass a source's
-revision into the image.
+content hash, and stamps the commit and its count into the package's
+`board-package.env`, so the identity document reports
+`<year>.<major>.<minor>-dev.<count>+<commit>`. With a git-source import the OS
+writes `BOARD_PACKAGE_COMMIT=${source.<id>.commit}` and
+`BOARD_PACKAGE_COUNT=${source.<id>.commit_count}` to
+`/etc/board/board-package.env`.
 
 ## What the OS still provides (Raze)
 

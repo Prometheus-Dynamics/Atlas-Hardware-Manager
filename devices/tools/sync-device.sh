@@ -64,14 +64,17 @@ default_atlas() {
 }
 
 # export_package <atlas> <commit> <model> <outdir>: the package as vendored
-# from <commit>, with the commit stamped in, at <outdir>/devices/<model>.
+# from <commit>, with the commit and its count stamped in, at
+# <outdir>/devices/<model>.
 export_package() {
 	git -C "$1" cat-file -e "$2:devices/$3/manifest.json" 2>/dev/null ||
 		die "devices/$3/manifest.json does not exist at $2 in $1"
 	git -C "$1" archive --format=tar "$2" "devices/$3" | tar -x -C "$4"
 	_stamp="$4/devices/$3/$STAMP_FILE"
 	if [ -f "$_stamp" ]; then
-		sed "s/^BOARD_PACKAGE_COMMIT=.*/BOARD_PACKAGE_COMMIT=$2/" "$_stamp" > "$_stamp.new"
+		_count=$(git -C "$1" rev-list --count "$2")
+		sed -e "s/^BOARD_PACKAGE_COMMIT=.*/BOARD_PACKAGE_COMMIT=$2/" \
+			-e "s/^BOARD_PACKAGE_COUNT=.*/BOARD_PACKAGE_COUNT=$_count/" "$_stamp" > "$_stamp.new"
 		cat "$_stamp.new" > "$_stamp"
 		rm -f "$_stamp.new"
 	fi

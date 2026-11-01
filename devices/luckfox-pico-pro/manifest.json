@@ -2,7 +2,7 @@
   "schema": "urn:board:manifest:1",
   "contract": 1,
   "model": "luckfox-pico-pro",
-  "package_version": "0.1.0-dev",
+  "package_version": "2026.1.0-dev",
   "display_name": "Luckfox Pico Pro",
   "record_only": true,
   "vendor": "Luckfox",

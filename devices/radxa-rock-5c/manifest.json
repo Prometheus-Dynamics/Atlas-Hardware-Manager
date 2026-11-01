@@ -2,7 +2,7 @@
   "schema": "urn:board:manifest:1",
   "contract": 1,
   "model": "radxa-rock-5c",
-  "package_version": "0.1.0-dev",
+  "package_version": "2026.1.0-dev",
   "display_name": "ROCK 5C",
   "record_only": true,
   "vendor": "Radxa",
