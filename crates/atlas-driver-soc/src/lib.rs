@@ -11,6 +11,8 @@
 mod driver;
 mod files;
 mod flash;
+mod layout;
 
 pub use driver::{K230_FAMILY, ROCKCHIP_FAMILY, SocDriver, drivers};
 pub use files::{find_loader, find_ubi_start, glob_match};
+pub use layout::{Part, Planned, mtdparts, partition_set, uboot_env};

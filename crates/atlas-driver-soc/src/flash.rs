@@ -18,7 +18,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use atlas_devices::{DeviceCatalog, DevicePackage, FlashSpec};
+use atlas_devices::{DeviceCatalog, DevicePackage, FlashSpec, NandGeometry};
 use atlas_driver::{
     Artifact, CancellationToken, Concurrency, DriverError, Identity, ProgressSink, ReleaseRef,
     UpdateCapability, UpdateOutcome, UpdatePlan, UpdateStep,
@@ -172,38 +172,94 @@ impl UpdateCapability for SocUpdate {
         let loader = loader_path(package, spec, &artifact.path)?;
         progress.log(format!("loader: {}", loader.display()));
 
-        // A raw copy of the image: its size up front, read more than once.
-        // In the user's cache, not /tmp, which is often RAM.
-        let cache = dirs::cache_dir()
-            .unwrap_or_else(std::env::temp_dir)
-            .join("atlas")
-            .join("soc-images");
-        std::fs::create_dir_all(&cache).map_err(|error| {
-            failed(
-                UpdateStep::Preflight,
-                format!("{}: {error}", cache.display()),
-            )
-        })?;
-        let raw = cache.join(format!(
-            "{}-{}.img",
-            std::process::id(),
-            artifact.sha256.get(..12).unwrap_or("image")
-        ));
-        let source = artifact.path.clone();
-        let target = raw.clone();
-        let size =
-            tokio::task::spawn_blocking(move || atlas_blockdev::decode_to_file(&source, &target))
-                .await
-                .map_err(|error| failed(UpdateStep::Preflight, error.to_string()))?
-                .map_err(|error| failed(UpdateStep::Preflight, error.to_string()))?;
-        progress.log(format!("image: {size} bytes"));
+        // A SPI-NAND board's image may be a partition set (Gaia: env.img
+        // with mtdparts, then <partition>.img beside it); else one image.
+        let nand_board =
+            spec.storage
+                .as_deref()
+                .or(package.manifest.recovery.storage_target.as_deref())
+                == Some("spi-nand");
+        let parts = if nand_board {
+            crate::layout::partition_set(&artifact.path)
+                .transpose()
+                .map_err(|error| failed(UpdateStep::Preflight, error))?
+        } else {
+            None
+        };
+        let mut temporary = None;
+        let (image, size) = if let Some(parts) = &parts {
+            for planned in parts {
+                let size = planned
+                    .part
+                    .size
+                    .map_or_else(|| "the rest".to_string(), |size| format!("{size} bytes"));
+                match &planned.image {
+                    Some(path) => progress.log(format!(
+                        "partition {} at {:#x} ({size}): {} ({} bytes)",
+                        planned.part.name,
+                        planned.part.offset,
+                        path.display(),
+                        planned.bytes
+                    )),
+                    None => progress.log(format!(
+                        "partition {} at {:#x} ({size}): no image, left as is",
+                        planned.part.name, planned.part.offset
+                    )),
+                }
+            }
+            let extent = parts
+                .iter()
+                .filter(|planned| planned.image.is_some())
+                .map(|planned| planned.part.offset + planned.bytes)
+                .max()
+                .unwrap_or(0);
+            (artifact.path.clone(), extent)
+        } else {
+            // A raw copy of the image: its size up front, read more than once.
+            // In the user's cache, not /tmp, which is often RAM.
+            let cache = dirs::cache_dir()
+                .unwrap_or_else(std::env::temp_dir)
+                .join("atlas")
+                .join("soc-images");
+            std::fs::create_dir_all(&cache).map_err(|error| {
+                failed(
+                    UpdateStep::Preflight,
+                    format!("{}: {error}", cache.display()),
+                )
+            })?;
+            let raw = cache.join(format!(
+                "{}-{}.img",
+                std::process::id(),
+                artifact.sha256.get(..12).unwrap_or("image")
+            ));
+            let source = artifact.path.clone();
+            let target = raw.clone();
+            let size = tokio::task::spawn_blocking(move || {
+                atlas_blockdev::decode_to_file(&source, &target)
+            })
+            .await
+            .map_err(|error| failed(UpdateStep::Preflight, error.to_string()))?
+            .map_err(|error| failed(UpdateStep::Preflight, error.to_string()))?;
+            progress.log(format!("image: {size} bytes"));
+            temporary = Some(raw.clone());
+            (raw, size)
+        };
+
+        // The K230 boot ROM checks the SPL's firmware head on SD and eMMC: a
+        // damaged one would never boot, so it stops the flash here.
+        if self.soc == Soc::K230 && !nand_board {
+            for line in k230_heads(&image).map_err(|error| failed(UpdateStep::Preflight, error))? {
+                progress.log(line);
+            }
+        }
 
         let job = Job {
             soc: self.soc,
             location: device.address.clone(),
             loader,
-            image: raw.clone(),
+            image,
             size,
+            parts,
             spec: spec.clone(),
             storage_target: package.manifest.recovery.storage_target.clone(),
             chip: package
@@ -218,7 +274,9 @@ impl UpdateCapability for SocUpdate {
         let outcome = tokio::task::spawn_blocking(move || job.run(&handle))
             .await
             .map_err(|error| failed(UpdateStep::Apply, error.to_string()));
-        let _ = std::fs::remove_file(&raw);
+        if let Some(raw) = temporary {
+            let _ = std::fs::remove_file(raw);
+        }
         let sha256 = outcome??;
         progress.log(format!("written and read back: sha256 {sha256}"));
         Ok(UpdateOutcome::Verified {
@@ -227,12 +285,62 @@ impl UpdateCapability for SocUpdate {
     }
 }
 
+/// The SPL firmware heads of a K230 SD/eMMC image, checked: one line each,
+/// or why the image can't boot.
+fn k230_heads(image: &Path) -> Result<Vec<String>, String> {
+    use atlas_socflash::k230::firmware::{BODY_OFFSET, Head, SPL_OFFSETS, check};
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = File::open(image).map_err(|error| format!("{}: {error}", image.display()))?;
+    let mut lines = Vec::new();
+    for offset in SPL_OFFSETS {
+        let mut head = vec![0u8; BODY_OFFSET];
+        let read = file
+            .seek(SeekFrom::Start(offset))
+            .and_then(|_| file.read_exact(&mut head));
+        if read.is_err() || &head[..4] != atlas_socflash::k230::firmware::MAGIC {
+            lines.push(format!(
+                "no K230 firmware head at {offset:#x}: the boot ROM may not boot this image"
+            ));
+            continue;
+        }
+        let length = u32::from_le_bytes([head[4], head[5], head[6], head[7]]) as usize;
+        let mut body = vec![0u8; length.min(16 << 20)];
+        file.read_exact(&mut body)
+            .map_err(|_| format!("the K230 firmware head at {offset:#x} runs past the image"))?;
+        head.extend(body);
+        match check(&head) {
+            Head::Valid { length, encryption } => lines.push(format!(
+                "K230 SPL head at {offset:#x}: {length} bytes, encryption {encryption}, SHA-256 matches"
+            )),
+            Head::Damaged(why) => {
+                return Err(format!("the K230 firmware head at {offset:#x} is damaged: {why}"));
+            }
+            Head::Missing => {}
+        }
+    }
+    Ok(lines)
+}
+
+fn sector_lba(offset: u64) -> Result<u32, DriverError> {
+    if !offset.is_multiple_of(SECTOR as u64) {
+        return Err(failed(
+            UpdateStep::Apply,
+            format!("offset {offset} isn't on a sector"),
+        ));
+    }
+    u32::try_from(offset / SECTOR as u64)
+        .map_err(|_| failed(UpdateStep::Apply, "offset past 2 TiB"))
+}
+
 struct Job {
     soc: Soc,
     location: String,
     loader: PathBuf,
     image: PathBuf,
+    /// Bytes from the image offset to the end of what's written.
     size: u64,
+    /// A partition set (SPI-NAND) instead of one image.
+    parts: Option<Vec<crate::layout::Planned>>,
     spec: FlashSpec,
     storage_target: Option<String>,
     /// The record's SoC (`RK3576`), checked against what the board reports.
@@ -453,62 +561,74 @@ impl Job {
 
         let sha256 = match (self.storage(), self.spec.nand) {
             (Some("spi-nand"), Some(nand)) => {
-                let ubi = find_ubi_start(&self.image, nand.peb_size)
-                    .map_err(|error| failed(UpdateStep::Apply, error.to_string()))?;
-                let head = ubi.unwrap_or(self.size);
-                let mut report = self.report();
-                let written = handle
-                    .block_on(write_image(
+                let flash_bytes = nand.size.unwrap_or(info.bytes());
+                if let Some(parts) = &self.parts {
+                    let mut written = Vec::new();
+                    for planned in parts {
+                        let Some(path) = &planned.image else { continue };
+                        let offset = self.spec.image_offset + planned.part.offset;
+                        let region = planned
+                            .part
+                            .size
+                            .unwrap_or_else(|| flash_bytes.saturating_sub(offset));
+                        self.progress
+                            .log(format!("writing partition {}", planned.part.name));
+                        let ubi = find_ubi_start(path, nand.peb_size)
+                            .map_err(|error| failed(UpdateStep::Apply, error.to_string()))?;
+                        if ubi == Some(0) {
+                            self.nand_ubi(
+                                handle,
+                                &mut device,
+                                path,
+                                0,
+                                planned.bytes,
+                                offset,
+                                region,
+                                nand,
+                            )?;
+                            written.push(format!("{} (UBI)", planned.part.name));
+                        } else {
+                            let sha = self.nand_raw(
+                                handle,
+                                &mut device,
+                                path,
+                                0,
+                                planned.bytes,
+                                offset,
+                                nand,
+                            )?;
+                            written.push(format!("{} {}", planned.part.name, &sha[..12]));
+                        }
+                    }
+                    written.join(", ")
+                } else {
+                    let ubi = find_ubi_start(&self.image, nand.peb_size)
+                        .map_err(|error| failed(UpdateStep::Apply, error.to_string()))?;
+                    let head = ubi.unwrap_or(self.size);
+                    let sha = self.nand_raw(
+                        handle,
                         &mut device,
-                        &mut open(0, head)?,
+                        &self.image,
+                        0,
                         head,
-                        base_lba(self.spec.image_offset)?,
-                        true,
-                        &mut report,
-                        &cancelled,
-                    ))
-                    .map_err(apply)?;
-                if let Some(start) = ubi {
-                    let mut section = open(start, self.size - start)?;
-                    let image =
-                        atlas_ubi::read_image(&mut section, nand.peb_size).map_err(|error| {
-                            failed(
-                                UpdateStep::Apply,
-                                format!("the image's UBI region: {error}"),
-                            )
-                        })?;
-                    let flash_bytes = nand.size.unwrap_or(info.bytes());
-                    let region = flash_bytes.saturating_sub(self.spec.image_offset + start);
-                    let mut nand_io = LbaNand {
-                        device: &mut device,
-                        runtime: handle.clone(),
-                        base_lba: base_lba(self.spec.image_offset + start)?,
-                        pebs: (region / u64::from(nand.peb_size)) as u32,
-                        peb_size: nand.peb_size,
-                        page_size: nand.page_size,
-                    };
-                    let progress = self.progress.clone();
-                    let formatted = atlas_ubi::format(
-                        &mut nand_io,
-                        &mut section,
-                        &image,
-                        true,
-                        &mut |done, of| {
-                            progress.step_progress(
-                                UpdateStep::Apply,
-                                0.5 + 0.5 * done as f32 / of.max(1) as f32,
-                            );
-                        },
-                    )
-                    .map_err(|error| failed(UpdateStep::Apply, error.to_string()))?;
-                    self.progress.log(format!(
-                        "UBI: {} PEBs written, {} given empty headers, {} marked bad",
-                        formatted.placed.len(),
-                        formatted.empty_pebs,
-                        formatted.marked_bad.len()
-                    ));
+                        self.spec.image_offset,
+                        nand,
+                    )?;
+                    if let Some(start) = ubi {
+                        let offset = self.spec.image_offset + start;
+                        self.nand_ubi(
+                            handle,
+                            &mut device,
+                            &self.image,
+                            start,
+                            self.size - start,
+                            offset,
+                            flash_bytes.saturating_sub(offset),
+                            nand,
+                        )?;
+                    }
+                    sha
                 }
-                written.sha256
             }
             (Some("spi-nand"), None) => {
                 return Err(failed(
@@ -539,6 +659,98 @@ impl Job {
             .map_err(usb(UpdateStep::Confirm))?;
         self.progress.log("the board restarts into the new image");
         Ok(sha256)
+    }
+
+    /// Erases whole eraseblocks over `bytes` from `offset`, then writes
+    /// them from `path` (`start`..) and reads them back.
+    #[allow(clippy::too_many_arguments)]
+    fn nand_raw(
+        &self,
+        handle: &Handle,
+        device: &mut Rockusb<'_>,
+        path: &Path,
+        start: u64,
+        bytes: u64,
+        offset: u64,
+        nand: NandGeometry,
+    ) -> Result<String, DriverError> {
+        let peb = u64::from(nand.peb_size);
+        if !offset.is_multiple_of(peb) {
+            return Err(failed(
+                UpdateStep::Apply,
+                format!("offset {offset:#x} isn't on an eraseblock ({peb} bytes)"),
+            ));
+        }
+        let lba = sector_lba(offset)?;
+        let per_block = (peb / SECTOR as u64) as u16;
+        for block in 0..bytes.div_ceil(peb) {
+            handle
+                .block_on(device.erase_lba(lba + (block * u64::from(per_block)) as u32, per_block))
+                .map_err(usb(UpdateStep::Apply))?;
+        }
+        let mut section = Section::open(path, start, bytes)
+            .map_err(|error| failed(UpdateStep::Apply, error.to_string()))?;
+        let mut report = self.report();
+        let cancelled = || self.cancel.is_cancelled();
+        handle
+            .block_on(write_image(
+                device,
+                &mut section,
+                bytes,
+                lba,
+                true,
+                &mut report,
+                &cancelled,
+            ))
+            .map(|written| written.sha256)
+            .map_err(|error| match error {
+                atlas_socflash::rockchip::write::WriteError::Cancelled => DriverError::Cancelled,
+                other => failed(UpdateStep::Apply, other.to_string()),
+            })
+    }
+
+    /// Writes the UBI image at `path` (`start`.., `bytes` long) to the
+    /// `region` bytes of flash from `offset`, as ubiformat does.
+    #[allow(clippy::too_many_arguments)]
+    fn nand_ubi(
+        &self,
+        handle: &Handle,
+        device: &mut Rockusb<'_>,
+        path: &Path,
+        start: u64,
+        bytes: u64,
+        offset: u64,
+        region: u64,
+        nand: NandGeometry,
+    ) -> Result<(), DriverError> {
+        let mut section = Section::open(path, start, bytes)
+            .map_err(|error| failed(UpdateStep::Apply, error.to_string()))?;
+        let image = atlas_ubi::read_image(&mut section, nand.peb_size)
+            .map_err(|error| failed(UpdateStep::Apply, format!("the UBI image: {error}")))?;
+        let mut nand_io = LbaNand {
+            device,
+            runtime: handle.clone(),
+            base_lba: sector_lba(offset)?,
+            pebs: (region / u64::from(nand.peb_size)) as u32,
+            peb_size: nand.peb_size,
+            page_size: nand.page_size,
+        };
+        let progress = self.progress.clone();
+        let formatted =
+            atlas_ubi::format(&mut nand_io, &mut section, &image, true, &mut |done, of| {
+                progress.step_progress(
+                    UpdateStep::Apply,
+                    0.5 + 0.5 * done as f32 / of.max(1) as f32,
+                );
+            })
+            .map_err(|error| failed(UpdateStep::Apply, error.to_string()))?;
+        self.progress.log(format!(
+            "UBI: {} PEBs written, {} given empty headers, {} marked bad",
+            formatted.placed.len(),
+            formatted.empty_pebs,
+            formatted.marked_bad.len()
+        ));
+        Ok(())
     }
 
     fn k230(&self, handle: &Handle) -> Result<String, DriverError> {
@@ -666,5 +878,65 @@ impl Job {
             .map_err(usb(UpdateStep::Confirm))?;
         self.progress.log("the board restarts into the new image");
         Ok(sent)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Gaia's real outputs, when they're on this machine (skipped otherwise).
+    const GAIA: &str = "/mnt/ssd-samsung/gaia/work/.gaia/examples";
+
+    #[test]
+    fn gaias_k230d_image_has_valid_spl_heads() {
+        let image = Path::new(GAIA).join("k230d-zero/out/images/sdcard.img");
+        if !image.is_file() {
+            return;
+        }
+        let lines = k230_heads(&image).unwrap();
+        assert_eq!(lines.len(), 2);
+        assert!(
+            lines.iter().all(|line| line.contains("SHA-256 matches")),
+            "{lines:?}"
+        );
+    }
+
+    #[test]
+    fn gaias_luckfox_output_is_a_partition_set() {
+        let dir = Path::new(GAIA).join("luckfox-pico-pro/out/images");
+        if !dir.join("env.img").is_file() {
+            return;
+        }
+        let parts = crate::layout::partition_set(&dir.join("ubi.img"))
+            .unwrap()
+            .unwrap();
+        let named: Vec<(&str, u64, bool)> = parts
+            .iter()
+            .map(|planned| {
+                (
+                    planned.part.name.as_str(),
+                    planned.part.offset,
+                    planned.image.is_some(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            named,
+            [
+                ("env", 0, true),
+                ("idblock", 256 << 10, true),
+                ("uboot", 512 << 10, true),
+                ("boot", 1 << 20, true),
+                ("boot_b", 7 << 20, false),
+                ("ubi", 13 << 20, true),
+            ]
+        );
+        // The UBI partition's image is UBI from its first byte, and reads.
+        let ubi = dir.join("ubi.img");
+        assert_eq!(find_ubi_start(&ubi, 128 << 10).unwrap(), Some(0));
+        let image = atlas_ubi::read_image(&mut File::open(&ubi).unwrap(), 128 << 10).unwrap();
+        let names: Vec<&str> = image.volumes.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(names, ["rootfs_a", "rootfs_b", "data"]);
     }
 }

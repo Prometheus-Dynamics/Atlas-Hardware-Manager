@@ -49,11 +49,12 @@ fn real_loaders_parse() {
             assert!(wire.len() >= entry.size as usize + 2);
         }
         assert!(loader.chip_number().is_some(), "{path}: chip");
-        // RK3568 on carry FlashHead (RKNS); the idblock must agree with it.
+        // RK3568 on carry FlashHead (RKNS); the idblock follows its table.
         let block = idblock(&loader, &file).unwrap_or_else(|error| panic!("{path}: {error}"));
+        assert_eq!(&block[..4], b"RKNS", "{path}");
         let _ = writeln!(
             out,
-            "  idblock: {} bytes, agrees with FlashHead",
+            "  idblock: {} bytes, laid out by its FlashHead",
             block.len()
         );
     }

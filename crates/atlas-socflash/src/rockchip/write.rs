@@ -139,54 +139,74 @@ pub async fn read_hash(
     Ok(hex(&hasher.finalize()))
 }
 
-/// The idblock of a loader with a FlashHead entry (RK3568 on: RK3588,
-/// RK3576, RV1106 loaders carry one): FlashHead, FlashData, FlashBoot one
-/// after another, each padded to 2 KiB with zeros (rkdeveloptool sizes them
-/// as `ALIGN(size, 2048) / 512` sectors). Written at LBA 64. Loaders
-/// without FlashHead need rkdeveloptool's older RC4'd layout, which no
-/// board Atlas flashes uses, so they are refused.
+/// The idblock of a loader (RK3568 on: RK3588, RK3576, RV1106). Its
+/// FlashHead entry is the RKNS header, RC4-scrambled per 512 bytes, and the
+/// header's image table says where each part goes. The idblock is that
+/// header unscrambled, as rkbin's own idblock images and Gaia's carry it.
+/// Each image of the table then sits at the sector the table gives. The
+/// images are the loader's other loader entries, in order: FlashBoost
+/// (RK3576 only), FlashData, FlashBoot.
+///
+/// Checked on rkbin's rk3588_spl_loader_v1.18.113, rv1106_download_v1.15.108
+/// and rk3576_loader_v1.13.109 (2026-10-31). A loader without an RKNS
+/// FlashHead uses rkdeveloptool's older layout, which no board Atlas
+/// flashes uses, so it is refused. Written at LBA 64 on eMMC and SD.
 pub fn idblock(loader: &Loader, file: &[u8]) -> Result<Vec<u8>, String> {
-    let entry = |name: &str| {
-        loader
-            .loader_entry(name)
-            .ok_or_else(|| format!("the loader has no {name} entry"))
-    };
     let head = loader.loader_entry("FlashHead").ok_or(
         "the loader has no FlashHead entry: its chip uses the old idblock layout, which Atlas doesn't write",
     )?;
-    let (data, boot) = (entry("FlashData")?, entry("FlashBoot")?);
-    let mut block = Vec::new();
-    let mut sectors = Vec::new();
-    for part in [head, data, boot] {
-        let start = block.len();
-        block.extend_from_slice(part.data(file));
-        block.resize(block.len().div_ceil(2048) * 2048, 0);
-        sectors.push(((start / 512) as u32, ((block.len() - start) / 512) as u32));
+    let header = crate::rockchip::rc4::rc4_blocks(head.data(file));
+    if header.len() < 512 || header[..4] != *b"RKNS" {
+        return Err(
+            "the loader's FlashHead isn't an RKNS header: an older idblock layout, which Atlas doesn't write"
+                .into(),
+        );
     }
-    check_rkns(head.data(file), &sectors[1..])?;
-    Ok(block)
-}
-
-/// When FlashHead is the RKNS header (RK3568 on), its image table must put
-/// FlashData and FlashBoot where the idblock does: (first sector, sectors)
-/// each. A head that isn't RKNS isn't checked.
-fn check_rkns(head: &[u8], parts: &[(u32, u32)]) -> Result<(), String> {
-    let header = crate::rockchip::rc4::rc4_blocks(&head[..head.len().min(512)]);
-    if header.get(..4) != Some(b"RKNS".as_slice()) {
-        return Ok(());
+    let table: Vec<(usize, usize)> = (0..4)
+        .map(|index| {
+            let at = 120 + 88 * index;
+            u32::from_le_bytes([header[at], header[at + 1], header[at + 2], header[at + 3]])
+        })
+        .filter(|field| *field != 0)
+        .map(|field| ((field & 0xffff) as usize, (field >> 16) as usize))
+        .collect();
+    let parts: Vec<_> = loader
+        .entries(crate::rockchip::loader::EntryKind::Loader)
+        .filter(|entry| entry.name != "FlashHead")
+        .collect();
+    if parts.len() != table.len() {
+        return Err(format!(
+            "the loader's FlashHead lists {} images but the loader carries {} ({}): the loader is inconsistent",
+            table.len(),
+            parts.len(),
+            parts
+                .iter()
+                .map(|part| part.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
     }
-    for (index, (start, count)) in parts.iter().enumerate() {
-        let at = 120 + 88 * index;
-        let field =
-            u32::from_le_bytes([header[at], header[at + 1], header[at + 2], header[at + 3]]);
-        let (offset, sectors) = (field & 0xffff, field >> 16);
-        if (offset, sectors) != (*start, *count) {
+    let end = table
+        .iter()
+        .map(|(offset, sectors)| offset + sectors)
+        .max()
+        .unwrap_or(0)
+        .max(header.len().div_ceil(512));
+    let mut block = vec![0u8; end * 512];
+    block[..header.len()].copy_from_slice(&header);
+    for ((offset, sectors), part) in table.iter().zip(&parts) {
+        let data = part.data(file);
+        if *offset * 512 < header.len() || data.len() > sectors * 512 {
             return Err(format!(
-                "the loader's FlashHead puts image {index} at sector {offset} for {sectors} sectors, but its entries make it sector {start} for {count}: the loader is inconsistent"
+                "the loader's FlashHead gives {} sectors {offset}..{} for {} bytes: the loader is inconsistent",
+                part.name,
+                offset + sectors,
+                data.len()
             ));
         }
+        block[offset * 512..offset * 512 + data.len()].copy_from_slice(data);
     }
-    Ok(())
+    Ok(block)
 }
 
 /// The LBA where the idblock goes on eMMC and SD.
@@ -407,65 +427,101 @@ mod tests {
         assert_eq!(error, WriteError::Cancelled);
     }
 
-    fn rkns_head(parts: &[(u32, u32)]) -> Vec<u8> {
-        let mut header = vec![0u8; 512];
+    /// A FlashHead as rkbin's loaders carry it: an RKNS header with this
+    /// image table, `size` bytes, scrambled per 512.
+    fn rkns_head(parts: &[(u32, u32)], size: usize) -> Vec<u8> {
+        let mut header = vec![0u8; size];
         header[..4].copy_from_slice(b"RKNS");
         for (index, (start, count)) in parts.iter().enumerate() {
             let at = 120 + 88 * index;
             header[at..at + 4].copy_from_slice(&((count << 16) | start).to_le_bytes());
         }
-        let mut head = crate::rockchip::rc4::rc4(&header);
-        head.resize(2048, 0);
-        head
+        crate::rockchip::rc4::rc4_blocks(&header)
+    }
+
+    fn loader_with(head: &[u8], parts: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut entries: Vec<(EntryKind, &str, &[u8], u32)> = vec![
+            (EntryKind::Ddr, "ddr", &[1; 8], 0),
+            (EntryKind::Usbplug, "usbplug", &[2; 8], 0),
+            (EntryKind::Loader, "FlashHead", head, 0),
+        ];
+        entries.extend(
+            parts
+                .iter()
+                .map(|(name, data)| (EntryKind::Loader, *name, *data, 0)),
+        );
+        build_for_test(&entries, LOADER_POLYNOMIALS[0])
     }
 
     #[test]
-    fn an_rkns_head_must_agree_with_the_idblock() {
-        let loader_with = |head: &[u8]| {
-            build_for_test(
-                &[
-                    (EntryKind::Ddr, "ddr", &[1; 8], 0),
-                    (EntryKind::Usbplug, "usbplug", &[2; 8], 0),
-                    (EntryKind::Loader, "FlashHead", head, 0),
-                    (EntryKind::Loader, "FlashData", &[4; 4096], 0),
-                    (EntryKind::Loader, "FlashBoot", &[5; 6144], 0),
-                ],
-                LOADER_POLYNOMIALS[0],
-            )
-        };
-        // FlashData at sector 4 for 8, FlashBoot at 12 for 12: as built.
-        let good = loader_with(&rkns_head(&[(4, 8), (12, 12)]));
-        let loader = Loader::parse(&good).unwrap();
-        assert_eq!(idblock(&loader, &good).unwrap().len(), 2048 + 4096 + 6144);
-        let bad = loader_with(&rkns_head(&[(4, 8), (13, 12)]));
-        let loader = Loader::parse(&bad).unwrap();
-        assert!(idblock(&loader, &bad).unwrap_err().contains("inconsistent"));
-    }
-
-    #[test]
-    fn the_idblock_is_head_data_boot_each_on_2k() {
-        let file = build_for_test(
-            &[
-                (EntryKind::Ddr, "ddr", &[1; 8], 0),
-                (EntryKind::Usbplug, "usbplug", &[2; 8], 0),
-                (EntryKind::Loader, "FlashHead", &[3; 2048], 0),
-                (EntryKind::Loader, "FlashData", &[4; 100], 0),
-                (EntryKind::Loader, "FlashBoot", &[5; 3000], 0),
-            ],
-            LOADER_POLYNOMIALS[0],
+    fn the_idblock_follows_the_rkns_table() {
+        // RK3588-like: a 2 KiB head, FlashData at 4, FlashBoot after it.
+        let file = loader_with(
+            &rkns_head(&[(4, 8), (12, 12)], 2048),
+            &[("FlashData", &[4; 4000]), ("FlashBoot", &[5; 6144])],
         );
         let loader = Loader::parse(&file).unwrap();
         let block = idblock(&loader, &file).unwrap();
-        assert_eq!(block.len(), 2048 + 2048 + 4096);
-        assert_eq!(block[2048], 4);
-        assert_eq!(block[2048 + 100], 0);
-        assert_eq!(block[4096], 5);
+        assert_eq!(block.len(), 24 * 512);
+        assert_eq!(&block[..4], b"RKNS", "the head goes in unscrambled");
+        assert_eq!(
+            (block[2048], block[2048 + 3999], block[2048 + 4000]),
+            (4, 4, 0)
+        );
+        assert_eq!(block[12 * 512], 5);
+
+        // RK3576-like: a 4 KiB head and a third image, FlashBoost, first.
+        let file = loader_with(
+            &rkns_head(&[(8, 8), (16, 160), (176, 648)], 4096),
+            &[
+                ("FlashBoost", &[6; 4096]),
+                ("FlashData", &[4; 81920]),
+                ("FlashBoot", &[5; 331_776]),
+            ],
+        );
+        let loader = Loader::parse(&file).unwrap();
+        let block = idblock(&loader, &file).unwrap();
+        assert_eq!(block.len(), (176 + 648) * 512);
+        assert_eq!(
+            (block[8 * 512], block[16 * 512], block[176 * 512]),
+            (6, 4, 5)
+        );
+    }
+
+    #[test]
+    fn an_inconsistent_or_old_loader_is_refused() {
+        let file = loader_with(
+            &rkns_head(&[(4, 8), (12, 12)], 2048),
+            &[("FlashData", &[4; 5000]), ("FlashBoot", &[5; 6144])],
+        );
+        let loader = Loader::parse(&file).unwrap();
+        assert!(
+            idblock(&loader, &file)
+                .unwrap_err()
+                .contains("inconsistent"),
+            "too big for its sectors"
+        );
+        let file = loader_with(
+            &rkns_head(&[(4, 8)], 2048),
+            &[("FlashData", &[4; 100]), ("FlashBoot", &[5; 100])],
+        );
+        let loader = Loader::parse(&file).unwrap();
+        assert!(
+            idblock(&loader, &file)
+                .unwrap_err()
+                .contains("lists 1 images")
+        );
+        let file = loader_with(
+            &[3; 2048],
+            &[("FlashData", &[4; 100]), ("FlashBoot", &[5; 300])],
+        );
+        let loader = Loader::parse(&file).unwrap();
+        assert!(idblock(&loader, &file).unwrap_err().contains("RKNS"));
         let legacy = build_for_test(
             &[
                 (EntryKind::Ddr, "ddr", &[1; 8], 0),
                 (EntryKind::Usbplug, "usbplug", &[2; 8], 0),
                 (EntryKind::Loader, "FlashData", &[4; 100], 0),
-                (EntryKind::Loader, "FlashBoot", &[5; 300], 0),
             ],
             LOADER_POLYNOMIALS[0],
         );

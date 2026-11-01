@@ -30,6 +30,7 @@
     },
     "todo": [
       "Storage: the request said SPI-NAND; the board page lists only the TF slot. Check the board for a NAND part (a W25N01GW or similar); with one, storage becomes spi-nand with its geometry under flash.nand.",
+      "The burner: Gaia's K230D build (006284a) ships sdcard.img only, no loader_mmc*.bin yet; Atlas stops in preflight until one is next to the image. Gaia's sdcard.img itself checks out: SPL firmware heads at 1 MiB and 1.5 MiB with matching SHA-256 (Atlas checks them before every K230 flash), U-Boot at 2 MiB, env at 1.875 MiB and 3.5 MiB, boot ext4 at 30 MiB, rootfs-a at 128 MiB.",
       "The burner's load address: 0x80360000 (k230_flash) vs 0x80300000 (U-Boot's burntool defconfig, Canaan's boot docs). Try the first; the record can change it.",
       "Which of the two USB-C ports is the OTG data port, and whether a BOOT key exists (the page names a function key and a reset key only).",
       "Whether the boot ROM wants Canaan's K230 firmware header on the burner over USB (k230_flash sends it raw).",

@@ -9,8 +9,8 @@ board.** The boards are on order. Each board record says
 |---|---|---|---|---|
 | Radxa ROCK 5C | RK3588S2 | maskrom 2207:350b | eMMC | `devices/radxa-rock-5c` |
 | Radxa ROCK 4D | RK3576 | maskrom 2207:350e (a guess: `pid_unconfirmed`) | eMMC | `devices/radxa-rock-4d` |
-| Luckfox Pico Pro | RV1106G2 (Flame's SoC) | maskrom 2207:110c | SPI-NAND | `devices/luckfox-pico-pro` |
-| BPI-CanMV-K230D-Zero | K230D | USB boot 29f1:0230 | microSD (to confirm) | `devices/bpi-canmv-k230d-zero` |
+| Luckfox Pico Pro | RV1106G2 (Flame's SoC) | maskrom 2207:110c | SPI-NAND, 128 MB | `devices/luckfox-pico-pro` |
+| BPI-CanMV-K230D-Zero | K230D | USB boot 29f1:0230 | microSD | `devices/bpi-canmv-k230d-zero` |
 
 ## Pieces
 
@@ -63,8 +63,9 @@ runs this check, not only the guessed ones.
 
 ## Checked against real loaders
 
-Gaia's builds produced rkbin's `rk3588_spl_loader_v1.18.113.bin` (ROCK 5C)
-and `rv1106_download_v1.15.108.bin` (Luckfox Pico Pro).
+Gaia's builds (006284a) produced rkbin's `rk3588_spl_loader_v1.18.113.bin`
+(ROCK 5C), `rk3576_loader_v1.13.109.bin` (ROCK 4D) and
+`rv1106_download_v1.15.108.bin` (Luckfox Pico Pro).
 `crates/atlas-socflash/tests/real_loaders.rs` parses any loaders named in
 `ATLAS_TEST_LOADERS`. Both pass, and they settled four points:
 
@@ -73,9 +74,37 @@ and `rv1106_download_v1.15.108.bin` (Luckfox Pico Pro).
 - The trailer CRC-32 uses rkdeveloptool's polynomial, 0x04C10DB7.
 - The header's chip field is the chip number in reversed ASCII ("3588",
   "1106"). Atlas refuses a loader whose chip isn't the record's SoC.
-- FlashHead is the RKNS header, RC4-scrambled. Its image table puts
-  FlashData and FlashBoot exactly where Atlas's idblock does, and Atlas
-  refuses a loader where they disagree.
+- FlashHead is the RKNS header, RC4-scrambled per 512 bytes. Its image
+  table lays out the idblock: FlashData then FlashBoot on RK3588 and RV1106,
+  and on RK3576 a 4 KiB head with FlashBoost first. Atlas builds the idblock
+  from that table, with the head unscrambled as rkbin's idblock images and
+  Gaia's carry it. It refuses a loader whose table and entries disagree.
+- Gaia's images carry their own idblocks (RKNS, unscrambled): the ROCK
+  boards' at sector 64 of sdcard.img, the Luckfox's as idblock.img.
+
+The K230D Zero's sdcard.img checks out too: valid K230 firmware heads (SPL)
+at 1 MiB and 1.5 MiB. Atlas checks both before every K230 SD or eMMC flash
+and refuses a damaged one.
+
+## A SPI-NAND partition set
+
+Gaia's Luckfox Pico Pro image is a set of partition images, laid out by the
+`mtdparts` in its `env.img`:
+
+| Partition | Offset | Size | Image |
+|---|---|---|---|
+| env | 0 | 256K | env.img |
+| idblock | 256K | 256K | idblock.img |
+| uboot | 512K | 512K | uboot.img |
+| boot | 1M | 6M | boot.img |
+| boot_b | 7M | 6M | none (empty slot) |
+| ubi | 13M | the rest | ubi.img |
+
+Atlas reads that table from the `env.img` next to the chosen file, so a
+layout change in Gaia needs no Atlas change. It writes each image at its
+partition's offset, erasing the eraseblocks first and reading them back. It
+writes `ubi.img` as ubiformat does over the rest of the flash. A single
+NAND image (loaders, then UBI at an eraseblock boundary) still works.
 
 ## The loader
 

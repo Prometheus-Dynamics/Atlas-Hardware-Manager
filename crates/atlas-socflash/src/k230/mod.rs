@@ -13,6 +13,7 @@
 //! untested on a board.
 
 pub mod bootrom;
+pub mod firmware;
 pub mod kburn;
 
 use crate::transport::{UsbError, location};

@@ -13,8 +13,8 @@
     "method": "rockusb",
     "storage_target": "spi-nand",
     "storage_target_evidence": [
-      "The Pico Pro carries SPI-NAND flash (256 MB) and no eMMC; Luckfox's Pico Pro page returned 404 when read, so the size is from memory of the product listing.",
-      "Gaia G8 lays out its image: the loaders, then a UBI image (rootfs_a, rootfs_b, data) at an eraseblock boundary. Atlas finds the UBI region by its headers, writes what comes before it as is and the UBI region as ubiformat does (bad blocks skipped, erase counters kept, trailing erased pages never programmed)."
+      "The Pico Pro carries 128 MB of SPI-NAND (128 KiB blocks, 2 KiB pages) and no eMMC: Gaia's board config (examples/boards/luckfox-pico-pro, Gaia 006284a), from the Luckfox SDK.",
+      "Gaia's image is a partition set laid out by the mtdparts in its env.img: env 256K @0, idblock 256K @256K, uboot 512K @512K, boot 6M @1M, boot_b 6M @7M (empty), ubi the rest @13M. Atlas reads that table, writes each <partition>.img at its offset (eraseblocks erased first, read back), and the ubi partition as ubiformat does (bad blocks skipped, erase counters kept, trailing erased pages never programmed). Choose any of the set's files (ubi.img, env.img) as the image."
     ],
     "instructions": [
       "Unplug the Luckfox Pico Pro.",
@@ -26,12 +26,13 @@
       "loader": ["rv1106_download_v*.bin", "download*.bin"],
       "storage": "spi-nand",
       "image_offset": 0,
-      "nand": { "peb_size": 131072, "page_size": 2048, "size": 268435456 }
+      "nand": { "peb_size": 131072, "page_size": 2048, "size": 134217728 }
     },
     "todo": [
       "2207:110c as RV1106 maskrom comes from Luckfox's docs via search; confirm with lsusb.",
       "The loader: Gaia's Luckfox Pico Pro build ships rv1106_download_v1.15.108.bin next to the image; Atlas's parser reads it (chip 1106, RC4 off in its header, so its 471/472 entries go as stored) and its idblock agrees with its RKNS FlashHead. Left: whether the RV1106 boot ROM takes them unscrambled (xrock has an --rc4-off option for this chip).",
-      "The NAND's geometry (128 KiB eraseblocks, 2 KiB pages, 256 MB assumed): read it from the part on the board and from READ_FLASH_INFO.",
+      "The NAND's geometry (128 KiB eraseblocks, 2 KiB pages, 128 MB, from Gaia's config): check READ_FLASH_INFO against it on the board.",
+      "Gaia's idblock.img (rkbin rv1106_idblock_v1.16.100) carries the RKNS head unscrambled at partition offset 256K; whether the RV1106 boot ROM finds it there on SPI-NAND is the board's to say.",
       "How the usbplug maps LBAs onto SPI-NAND: directly (Atlas's assumption: eraseblock N at LBA N*256) or through its own bad-block handling. If it remaps, the UBI region must be written through the usbplug's raw access instead.",
       "The usbplug's storage id for SPI-NAND (CHANGE_STORAGE): not in rkdeveloptool's cs list; Atlas assumes the usbplug starts on the NAND and doesn't switch."
     ]
