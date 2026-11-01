@@ -209,8 +209,7 @@ through a real flash.
   - **Why:** the main screen at events.
   - **Done when:** a robot run shows every device with its state, and one install
     from the view.
-  - **Blocked by:** the user: a robot with a radio (the bench has no radio or
-    roboRIO to show).
+  - **Blocked by:** the user: a robot to run it on.
 - [ ] **The USB agent under Orion, with detached flashes.**
   - **What:** step 2: the agent registers with the SystemCore's Orion node and
     takes images over Orion. The memory-capped service and the detached flash
@@ -263,7 +262,7 @@ no longer a blocker: Gaia's builds put each one beside its image (006284a,
     U-Boot names spi-nand0; a commit sticks; `data` formats itself on first mount.
   - **Blocked by:** the Luckfox Pico Pro. For the attach alone, the user's yes to
     `sudo modprobe nandsim` on this computer. Driving it from Atlas waits on the
-    write path above; serial and `atlas-ubi` on the board don't.
+    write path above.
 - [ ] **RK3562 and RK3566 records.**
   - **What:** board records for these two, in the user's additions. No record
     exists and no board is on order. The driver takes a new record as data.
@@ -281,7 +280,7 @@ no longer a blocker: Gaia's builds put each one beside its image (006284a,
     watching finding the board on its own.
   - **Blocked by:** the user's hold.
 - [ ] **The self-updater's first real run.**
-  - **What:** built (a2b94b7), tested off a release. v2026.0.0 predates it, so it
+  - **What:** built (a2b94b7). v2026.0.0 predates it, so it
     first runs from the first release that carries it to the one after.
   - **Why:** a real update is the only proof of the path.
   - **Done when:** an installed Atlas updates itself from GitHub and restarts on
@@ -300,12 +299,12 @@ no longer a blocker: Gaia's builds put each one beside its image (006284a,
   - **What:** when `/v1/identity` reports secured, send a HeliOS API token
     (`Authorization: Bearer`) on everything but health, identity and auth status,
     kept per board, asked for on a 401. Not started.
-  - **Why:** teams that lock their boards; FRC robots run open.
+  - **Why:** a secured board refuses Atlas today; FRC robots run open.
   - **Done when:** a secured board works from Atlas with its token.
   - **Blocked by:** the freeze.
 - [ ] **STM32 driver.**
   - **What:** a driver for the custom USB bootloader. Only the mock names STM32.
-  - **Why:** the family's microcontrollers belong in the fleet too.
+  - **Why:** boards on that bootloader can't be flashed from Atlas.
   - **Done when:** a board flashed through it.
   - **Blocked by:** the freeze and the bootloader's protocol.
 - [ ] **Storage "fits" check before flashing.**
@@ -329,7 +328,7 @@ no longer a blocker: Gaia's builds put each one beside its image (006284a,
   - **Blocked by:** the freeze.
 - [ ] **Light theme.**
   - **What:** a second block of tokens (themes/glass.css allows one).
-  - **Why:** bright pits.
+  - **Why:** the tokens already allow it; nobody has asked yet.
   - **Done when:** the app switches and every page reads in it.
   - **Blocked by:** the freeze.
 - [ ] **Signed releases and installers.**
