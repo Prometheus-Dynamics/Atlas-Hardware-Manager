@@ -150,6 +150,35 @@ eraseblock boundary. Atlas finds that boundary by its EC headers:
 A flash whose good blocks can't hold the volumes' reservations plus UBI's
 bad-block reserve is refused before anything is erased.
 
+## NAND slots on a running board
+
+`atlas-ubi nand-slot` carries out Gaia's contract
+(Gaia `examples/boards/README.md#nand-slots`). The board has two 128K copies
+of U-Boot's environment. U-Boot reads the first and, if its CRC fails, the
+second. A slot is a whole prebuilt environment image, which Atlas writes
+unchanged after checking that it boots the slot its use requires.
+
+| Command | What it does |
+|---|---|
+| `status` | The running slot, what the next boot runs, what's committed. |
+| `install` | Writes the other slot's kernel (skipping bad blocks) and root volume, each read back, then the trial image to the first copy. The caller reboots. |
+| `trial-check` | On a trial boot: if U-Boot's erase failed, erases the trial copy and reports it. |
+| `watchdog` | On a trial boot: resets the board if the trial hangs or isn't committed by the deadline; stands down once committed. |
+| `commit` | The slot's image to the first copy, then only once that's read back, to the second. |
+
+Rejecting a trial is rebooting without committing. What it refuses, before
+writing anything:
+
+- a bad env block;
+- a second copy that isn't valid (a torn write would leave nothing to boot);
+- an image that doesn't boot the expected slot and trial state;
+- an install during a trial.
+
+Tests cut the power at each write of a trial and a commit, on a RAM flash,
+and check U-Boot's choice each time. Not built yet: Atlas's slot install
+driving this over SSH or Orion, and the device package that carries the binary
+(473 KB stripped, static ARMv7).
+
 ## To settle on the boards
 
 These are marked UNCONFIRMED in the code where they are used, and listed in

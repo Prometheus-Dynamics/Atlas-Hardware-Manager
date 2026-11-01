@@ -1,7 +1,9 @@
 //! A raw-flash board's image as a set of partition images (Gaia's SPI-NAND
 //! boards: `env.img`, `idblock.img`, `uboot.img`, `boot.img`, `ubi.img`),
 //! laid out by the `mtdparts` in the U-Boot environment it ships (`env.img`),
-//! the same table the board's U-Boot and kernel then use.
+//! the same table the board's U-Boot and kernel then use. A flash writes the
+//! factory `env.img` (slot A, both copies); the `env-*.img` beside it are for
+//! the board's slot installs (`atlas-ubi nand-slot`).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -9,17 +11,19 @@ use std::path::{Path, PathBuf};
 /// The environment file a partition set is recognised by.
 pub const ENV_FILE: &str = "env.img";
 
-/// A U-Boot environment image's variables: a CRC-32 of the rest (little-
-/// endian), then NUL-separated `name=value` strings (non-redundant, as Gaia's
-/// `uboot-env` transform writes it; a redundant one has a flag byte first).
+/// A U-Boot environment image's variables: a CRC-32 of the rest of its copy
+/// (little-endian), then NUL-separated `name=value` strings. The image may be
+/// one copy, or two of equal size (Gaia's NAND boards: its 128K copies, read
+/// from the first); a redundant copy has a flag byte first.
 pub fn uboot_env(bytes: &[u8]) -> Result<BTreeMap<String, String>, String> {
     if bytes.len() < 8 {
         return Err("the environment is too short".into());
     }
     let stored = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-    let start = [4usize, 5]
+    let (start, bytes) = [bytes, &bytes[..bytes.len() / 2]]
         .into_iter()
-        .find(|start| atlas_ubi::crc::crc32(&bytes[*start..]) == stored)
+        .flat_map(|copy| [4usize, 5].map(|start| (start, copy)))
+        .find(|(start, copy)| atlas_ubi::crc::crc32(&copy[*start..]) == stored)
         .ok_or("the environment's CRC doesn't match its contents")?;
     Ok(bytes[start..]
         .split(|byte| *byte == 0)
@@ -182,6 +186,10 @@ mod tests {
         let env = env_image(&format!("mtdparts={TABLE}\nsys_bootargs=ubi.mtd=5\n"));
         let variables = uboot_env(&env).unwrap();
         assert_eq!(variables["sys_bootargs"], "ubi.mtd=5");
+        // Two copies, as Gaia's NAND factory image is, read from the first.
+        let mut twice = env.clone();
+        twice.extend_from_slice(&env);
+        assert_eq!(uboot_env(&twice).unwrap()["sys_bootargs"], "ubi.mtd=5");
         let mut damaged = env.clone();
         damaged[10] ^= 1;
         assert!(uboot_env(&damaged).unwrap_err().contains("CRC"));

@@ -7,7 +7,9 @@
 //!   any [`format::RawNand`] (the Rockchip loader, the K230 burner);
 //! - [`slots`] and [`volume`]: on a running board, writes a slot image into
 //!   the inactive one of the `rootfs_a`/`rootfs_b` volumes and reads it back
-//!   (the `atlas-ubi` binary a NAND board's device package carries).
+//!   (the `atlas-ubi` binary a NAND board's device package carries);
+//! - [`nand_slots`] and [`mtd`]: Gaia's slot environments on such a board, the
+//!   trial and the commit in the order that keeps it bootable.
 //!
 //! Written from the kernel's UBI format and Gaia's writer; checked against
 //! images built the way Gaia builds them. Untested on a board.
@@ -16,12 +18,14 @@ pub mod crc;
 pub mod format;
 pub mod headers;
 pub mod image;
+pub mod mtd;
+pub mod nand_slots;
 pub mod slots;
 pub mod volume;
 
 #[cfg(target_os = "linux")]
 #[allow(unsafe_code)]
-mod sys;
+pub mod sys;
 
 pub use format::{FormatReport, RawNand, format};
 pub use image::{Geometry, Image, UbiError, Volume, find_peb_size, read_image};

@@ -14,7 +14,7 @@
     "storage_target": "spi-nand",
     "storage_target_evidence": [
       "The Pico Pro carries 128 MB of SPI-NAND (128 KiB blocks, 2 KiB pages) and no eMMC: Gaia's board config (examples/boards/luckfox-pico-pro, Gaia 006284a), from the Luckfox SDK.",
-      "Gaia's image is a partition set laid out by the mtdparts in its env.img: env 256K @0, idblock 256K @256K, uboot 512K @512K, boot 6M @1M, boot_b 6M @7M (empty), ubi the rest @13M. Atlas reads that table, writes each <partition>.img at its offset (eraseblocks erased first, read back), and the ubi partition as ubiformat does (bad blocks skipped, erase counters kept, trailing erased pages never programmed). Choose any of the set's files (ubi.img, env.img) as the image."
+      "Gaia's image is a partition set laid out by the mtdparts in its env.img (two 128K copies, slot A; flash images from Gaia 942746b on, with their uboot.img): env 256K @0, idblock 256K @256K, uboot 512K @512K, boot 6M @1M, boot_b 6M @7M (empty), ubi the rest @13M. Atlas reads that table, writes each <partition>.img at its offset (eraseblocks erased first, read back), and the ubi partition as ubiformat does (bad blocks skipped, erase counters kept, trailing erased pages never programmed). Choose any of the set's files (ubi.img, env.img) as the image."
     ],
     "instructions": [
       "Unplug the Luckfox Pico Pro.",
@@ -32,6 +32,7 @@
       "2207:110c as RV1106 maskrom comes from Luckfox's docs via search; confirm with lsusb.",
       "The loader: Gaia's Luckfox Pico Pro build ships rv1106_download_v1.15.108.bin next to the image; Atlas's parser reads it (chip 1106, RC4 off in its header, so its 471/472 entries go as stored) and its idblock agrees with its RKNS FlashHead. Left: whether the RV1106 boot ROM takes them unscrambled (xrock has an --rc4-off option for this chip).",
       "The NAND's geometry (128 KiB eraseblocks, 2 KiB pages, 128 MB, from Gaia's config): check READ_FLASH_INFO against it on the board.",
+      "Check first on the board (Gaia): `mtd list` at the U-Boot prompt names spi-nand0 (if not, a trial's erase fails; atlas-ubi nand-slot trial-check catches it in Linux); a trial of each slot, killed in Linux, comes back on the committed slot; Linux shows the partition names.",
       "Gaia's idblock.img is the vendor's rv1106_idblock_v1.15.102.img, from the same RV1106MINIALL.ini as rv1106_download_v1.15.108.bin (DDR init ddr-v1.15-306b9977f5); the idblock Atlas builds from that loader is byte for byte the same. Left: whether the RV1106 boot ROM finds it at 256K on SPI-NAND.",
       "How the usbplug maps LBAs onto SPI-NAND: directly (Atlas's assumption: eraseblock N at LBA N*256) or through its own bad-block handling. If it remaps, the UBI region must be written through the usbplug's raw access instead.",
       "The usbplug's storage id for SPI-NAND (CHANGE_STORAGE): not in rkdeveloptool's cs list; Atlas assumes the usbplug starts on the NAND and doesn't switch."

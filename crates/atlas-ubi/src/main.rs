@@ -4,18 +4,32 @@
 //! ```text
 //! atlas-ubi info <image.ubi> [--peb-size <bytes>]
 //! atlas-ubi slot-write <image|-> --size <bytes> [--volume <name> | --inactive] [--sha256 <hex>]
+//! atlas-ubi nand-slot status
+//! atlas-ubi nand-slot install --boot <boot.img> --rootfs <file> --env-trial <env-x-trial.img>
+//! atlas-ubi nand-slot trial-check
+//! atlas-ubi nand-slot commit --env <env-x.img>
+//! atlas-ubi nand-slot watchdog --deadline <seconds> [--timeout <seconds>]
 //! ```
 //!
 //! `info` prints the image's geometry and volumes. `slot-write` runs on a
 //! board: it writes the image into the named volume, or into the other half
 //! of the running `_a`/`_b` pair (`ubi.block=` on /proc/cmdline), then reads
-//! it back. Output is one JSON object on stdout; errors are
-//! `{"error": "..."}` with exit status 1.
+//! it back.
+//!
+//! `nand-slot` runs on a board with Gaia's slot environments
+//! (`atlas_ubi::nand_slots`). `install` writes the other slot's kernel and root
+//! and arms its one trial; the caller reboots. On the trial boot, `trial-check`
+//! runs early, and `watchdog` from then on: it resets the board if the trial
+//! hangs or isn't committed by the deadline, and stands down once `commit` has
+//! run. Rejecting a trial is rebooting without committing.
+//!
+//! Output is one JSON object on stdout; errors are `{"error": "..."}` with
+//! exit status 1.
 
 use std::io::Write;
 use std::process::ExitCode;
 
-const USAGE: &str = "usage: atlas-ubi info <image> [--peb-size <bytes>] | slot-write <image|-> --size <bytes> [--volume <name> | --inactive] [--sha256 <hex>]";
+const USAGE: &str = "usage: atlas-ubi info <image> [--peb-size <bytes>] | slot-write <image|-> --size <bytes> [--volume <name> | --inactive] [--sha256 <hex>] | nand-slot status | nand-slot install --boot <file> --rootfs <file> --env-trial <file> | nand-slot trial-check | nand-slot commit --env <file> | nand-slot watchdog --deadline <seconds> [--timeout <seconds>]";
 
 fn json_string(text: &str) -> String {
     let mut out = String::from("\"");
@@ -166,11 +180,226 @@ fn slot_write(_: &[String]) -> Result<String, String> {
     Err("slot-write runs on a Linux board".into())
 }
 
+#[cfg(target_os = "linux")]
+mod nand {
+    use std::collections::BTreeMap;
+    use std::path::Path;
+    use std::time::{Duration, Instant};
+
+    use atlas_ubi::mtd::find_by_name;
+    use atlas_ubi::nand_slots::{
+        self, Running, arm_trial, commit, committed_to, env_state, trial_check, write_boot,
+    };
+    use atlas_ubi::sys::{LinuxMtd, Watchdog};
+    use atlas_ubi::volume::write_volume;
+
+    use super::{USAGE, json_string};
+
+    const MTD: &str = "/sys/class/mtd";
+    const UBI: &str = "/sys/class/ubi";
+    const WATCHDOG: &str = "/dev/watchdog";
+    const WATCHDOG_TIMEOUT_S: u32 = 30;
+
+    fn partition(name: &str) -> Result<LinuxMtd, String> {
+        let sysfs = Path::new(MTD);
+        let node = find_by_name(sysfs, name)
+            .ok_or_else(|| format!("no flash partition named {name} in {MTD}"))?;
+        LinuxMtd::open(sysfs, Path::new("/dev"), &node)
+    }
+
+    fn current() -> Result<Running, String> {
+        let cmdline = std::fs::read_to_string("/proc/cmdline")
+            .map_err(|error| format!("/proc/cmdline: {error}"))?;
+        nand_slots::running(&cmdline)
+            .ok_or_else(|| "this boot has no gaia.slot on its command line".to_string())
+    }
+
+    fn options(args: &[String]) -> Result<BTreeMap<String, String>, String> {
+        let mut found = BTreeMap::new();
+        let mut args = args.iter();
+        while let Some(flag) = args.next() {
+            let name = flag
+                .strip_prefix("--")
+                .ok_or_else(|| format!("unexpected {flag}"))?;
+            let value = args.next().ok_or_else(|| format!("{flag} needs a value"))?;
+            found.insert(name.to_string(), value.clone());
+        }
+        Ok(found)
+    }
+
+    fn required<'a>(found: &'a BTreeMap<String, String>, name: &str) -> Result<&'a str, String> {
+        found
+            .get(name)
+            .map(String::as_str)
+            .ok_or_else(|| format!("--{name} is required"))
+    }
+
+    fn read(path: &str) -> Result<Vec<u8>, String> {
+        std::fs::read(path).map_err(|error| format!("{path}: {error}"))
+    }
+
+    fn running_json(running: Option<Running>) -> String {
+        running.map_or_else(
+            || "null".to_string(),
+            |running| {
+                format!(
+                    "{{\"slot\":\"{}\",\"trial\":{}}}",
+                    running.slot.letter(),
+                    running.trial
+                )
+            },
+        )
+    }
+
+    fn status() -> Result<String, String> {
+        let running = current()?;
+        let state = env_state(&mut partition("env")?)?;
+        Ok(format!(
+            "{{\"running\":{},\"next\":{},\"committed\":{}}}",
+            running_json(Some(running)),
+            running_json(state.next),
+            running_json(state.committed)
+        ))
+    }
+
+    fn install(args: &[String]) -> Result<String, String> {
+        let found = options(args)?;
+        let running = current()?;
+        let target = running.slot.other();
+        let trial_image = read(required(&found, "env-trial")?)?;
+        let mut env = partition("env")?;
+
+        // 1. The other slot's kernel, checked before anything is erased.
+        let boot_path = required(&found, "boot")?;
+        let mut kernel =
+            std::fs::File::open(boot_path).map_err(|error| format!("{boot_path}: {error}"))?;
+        let kernel_bytes = kernel
+            .metadata()
+            .map_err(|error| format!("{boot_path}: {error}"))?
+            .len();
+        let boot_sha256 = write_boot(
+            running,
+            &mut env,
+            &mut partition(&target.boot_partition())?,
+            &trial_image,
+            &mut kernel,
+            kernel_bytes,
+            &mut |_| {},
+        )?;
+
+        // 2. Its root.
+        let rootfs_path = required(&found, "rootfs")?;
+        let mut rootfs =
+            std::fs::File::open(rootfs_path).map_err(|error| format!("{rootfs_path}: {error}"))?;
+        let rootfs_bytes = rootfs
+            .metadata()
+            .map_err(|error| format!("{rootfs_path}: {error}"))?
+            .len();
+        let root = write_volume(
+            Path::new(UBI),
+            Path::new("/dev"),
+            &target.volume(),
+            &mut rootfs,
+            rootfs_bytes,
+            None,
+            &mut |_| {},
+        )?;
+
+        // 3. The one trial; the second copy stays what it is.
+        arm_trial(running, &mut env, &trial_image)?;
+        Ok(format!(
+            "{{\"slot\":\"{}\",\"boot_sha256\":\"{boot_sha256}\",\"rootfs_sha256\":\"{}\",\"reboot\":true}}",
+            target.letter(),
+            root.sha256
+        ))
+    }
+
+    fn check() -> Result<String, String> {
+        let running = current()?;
+        let erased = trial_check(running, &mut partition("env")?)?;
+        Ok(format!(
+            "{{\"trial\":{},\"erased_stale_trial\":{erased}}}",
+            running.trial
+        ))
+    }
+
+    fn commit_slot(args: &[String]) -> Result<String, String> {
+        let found = options(args)?;
+        let running = current()?;
+        let image = read(required(&found, "env")?)?;
+        commit(running, &mut partition("env")?, &image)?;
+        Ok(format!(
+            "{{\"committed\":{}}}",
+            json_string(&running.slot.letter().to_string())
+        ))
+    }
+
+    /// A trial's watchdog: fed while this runs, so a hung kernel resets the
+    /// board into the committed slot; not fed past the deadline, so a trial
+    /// nobody commits does too. Stands down once the commit lands.
+    fn watchdog(args: &[String]) -> Result<String, String> {
+        let found = options(args)?;
+        let running = current()?;
+        if !running.trial {
+            return Ok("{\"watching\":false}".into());
+        }
+        let deadline: u64 = required(&found, "deadline")?
+            .parse()
+            .map_err(|_| "--deadline needs a number of seconds".to_string())?;
+        let timeout: u32 = match found.get("timeout") {
+            Some(text) => text
+                .parse()
+                .map_err(|_| "--timeout needs a number of seconds".to_string())?,
+            None => WATCHDOG_TIMEOUT_S,
+        };
+        let mut env = partition("env")?;
+        let mut dog = Watchdog::open(Path::new(WATCHDOG), timeout)?;
+        let end = Instant::now() + Duration::from_secs(deadline);
+        loop {
+            if committed_to(&mut env, running.slot)? {
+                dog.disarm()?;
+                return Ok("{\"watching\":false,\"committed\":true}".into());
+            }
+            if Instant::now() >= end {
+                // Not fed again: the board resets into the committed slot.
+                std::thread::sleep(dog.fires_within());
+                return Err(
+                    "the trial's deadline passed and the watchdog didn't reset the board".into(),
+                );
+            }
+            dog.feed()?;
+            std::thread::sleep(dog.feed_every());
+        }
+    }
+
+    pub fn run(args: &[String]) -> Result<String, String> {
+        match args.first().map(String::as_str) {
+            Some("status") => status(),
+            Some("install") => install(&args[1..]),
+            Some("trial-check") => check(),
+            Some("commit") => commit_slot(&args[1..]),
+            Some("watchdog") => watchdog(&args[1..]),
+            _ => Err(USAGE.into()),
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn nand_slot(args: &[String]) -> Result<String, String> {
+    nand::run(args)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn nand_slot(_: &[String]) -> Result<String, String> {
+    Err("nand-slot runs on a Linux board".into())
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         Some("info") => info(&args[1..]),
         Some("slot-write") => slot_write(&args[1..]),
+        Some("nand-slot") => nand_slot(&args[1..]),
         _ => Err(USAGE.into()),
     };
     match result {

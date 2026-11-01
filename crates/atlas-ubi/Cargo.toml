@@ -24,8 +24,8 @@ sha2.workspace = true
 libc.workspace = true
 
 # The workspace's lints, except unsafe code is denied rather than forbidden:
-# a slot update is one kernel ioctl (UBI_IOCVOLUP), and only the sys module
-# allows unsafe, with its SAFETY note.
+# raw flash and slot updates are kernel ioctls, and only the sys module
+# allows unsafe, each call with its SAFETY note.
 [lints.rust]
 unsafe_code = "deny"
 unsafe_op_in_unsafe_fn = "deny"

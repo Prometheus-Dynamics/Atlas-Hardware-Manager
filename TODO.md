@@ -147,20 +147,20 @@ nothing else is added. Each item: **what**, **why**, **done when**,
     polynomial, SPI-NAND LBA mapping) and its status `verified`.
   - **Blocked by:** the boards (on order); their loader files from Gaia's
     rkbin fetch.
-- [ ] **NAND/UBI: first kernel attach, then slots on a NAND board.**
+- [ ] **NAND/UBI: Atlas's slot install, then the board.**
   - **What:** written: atlas-ubi reads Gaia's G8 images, writes them as
-    ubiformat does (used by the Rockchip flash), and writes a slot into the
-    inactive rootfs_a/rootfs_b volume on a board (`atlas-ubi slot-write`).
-    Left: a NAND board's device package using it (boot-once and confirm in
-    U-Boot's environment), and Atlas's slot install calling it.
+    ubiformat does (used by the Rockchip flash), and carries out Gaia's NAND
+    slot contract on a board (Gaia 942746b; `atlas-ubi nand-slot`: install,
+    trial-check, watchdog, commit; docs/soc-flashing.md). Left: the Luckfox's
+    device package carrying the binary and starting trial-check and watchdog
+    early on a trial, and Atlas's slot install calling it.
   - **Why:** Flame and other NAND boards take slot updates like Raze.
   - **Done when:** the kernel attaches an image atlas-ubi wrote; install,
     boot-once, confirm and fallback on a NAND board.
-  - **Blocked by:** Gaia's boot flow: its Luckfox image hardwires
-    `ubi.block=0,rootfs_a` in U-Boot's environment, with no slot selection or
-    boot-once, so a written `rootfs_b` wouldn't boot (asked of Gaia through
-    HeliOS, 2026-11-01). Then a NAND board (Luckfox Pico Pro, on order), or
-    the user's yes to `sudo modprobe nandsim` for the attach.
+  - **Blocked by:** for the rest of the code, the Luckfox's identity contract
+    (below) and how its images reach the board (asked of Gaia). For the proof,
+    a NAND board (Luckfox Pico Pro, on order), or the user's yes to `sudo
+    modprobe nandsim` for the attach.
 - [ ] **Board records: the running side.**
   - **What:** written: `devices/{radxa-rock-5c,radxa-rock-4d,
     luckfox-pico-pro,bpi-canmv-k230d-zero}` as board records
