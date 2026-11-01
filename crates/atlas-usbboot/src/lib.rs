@@ -31,5 +31,5 @@ pub use hotplug::watch_usb;
 pub use protocol::{BootEvent, BootTransport, FileServerOutcome, second_stage};
 pub use usb::{
     BOOT_PRODUCT_IDS, BootDevice, BootOptions, BootOutcome, LINUX_UDEV_RULE, LINUX_UDEV_RULES_FILE,
-    UsbBootTransport, boot_device, list_boot_devices,
+    SOC_BOOT_IDS, UsbBootTransport, boot_device, list_boot_devices,
 };

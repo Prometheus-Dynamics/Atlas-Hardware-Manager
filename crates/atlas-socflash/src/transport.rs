@@ -101,6 +101,11 @@ fn access_error(error: &nusb::Error, what: &str) -> UsbError {
             fix: "Close rkdeveloptool, RKDevTool, upgrade_tool or the K230 burning tool and try again."
                 .into(),
         },
+        ErrorKind::Unsupported if cfg!(target_os = "windows") => UsbError::Access {
+            message: format!("Windows has no WinUSB driver bound to the {what}."),
+            fix: "Use Fix in Settings > Host health (or reinstall Atlas) to install the driver, then replug the board."
+                .into(),
+        },
         ErrorKind::Disconnected => UsbError::Disconnected,
         _ => UsbError::Other(error.to_string()),
     }

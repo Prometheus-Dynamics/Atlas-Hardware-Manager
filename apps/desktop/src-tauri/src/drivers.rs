@@ -28,6 +28,17 @@ pub fn register_hardware(
 mod tests {
     /// The rule the Linux packages install must be the one the helper's
     /// one-click fix writes, so both paths give the same access.
+    /// The Windows installer binds WinUSB to what the helper's fix binds.
+    #[test]
+    fn the_windows_installer_binds_every_boot_id() {
+        let hooks = include_str!("../bundle/windows/hooks.nsh");
+        let pi = atlas_usbboot::BOOT_PRODUCT_IDS.map(|pid| ("Raspberry Pi USB boot", 0x0a5c, pid));
+        for (name, vid, pid) in pi.into_iter().chain(atlas_usbboot::SOC_BOOT_IDS) {
+            let line = format!("ATLAS_BIND_WINUSB \"{name}\" 0x{vid:04x} 0x{pid:04x}");
+            assert!(hooks.contains(&line), "{line}");
+        }
+    }
+
     #[test]
     fn packaged_udev_rule_matches_the_helper() {
         assert_eq!(

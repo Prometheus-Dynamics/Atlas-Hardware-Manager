@@ -91,13 +91,15 @@ fn install() -> Result<String, String> {
     })?;
     let mut installed = Vec::new();
     let mut failed = Vec::new();
-    for pid in atlas_usbboot::BOOT_PRODUCT_IDS {
+    let pi = atlas_usbboot::BOOT_PRODUCT_IDS.map(|pid| ("Raspberry Pi USB boot", 0x0a5c_u16, pid));
+    for (name, vid, pid) in pi.into_iter().chain(atlas_usbboot::SOC_BOOT_IDS) {
+        let id = format!("{vid:04x}:{pid:04x}");
         let status = Command::new(&tool)
             .args([
                 "-n",
-                "Raspberry Pi USB boot",
+                name,
                 "-v",
-                "0x0a5c",
+                &format!("0x{vid:04x}"),
                 "-p",
                 &format!("0x{pid:04x}"),
                 "-t",
@@ -105,9 +107,9 @@ fn install() -> Result<String, String> {
             ])
             .status();
         match status {
-            Ok(status) if status.success() => installed.push(format!("{pid:04x}")),
-            Ok(status) => failed.push(format!("{pid:04x} (exit {status})")),
-            Err(error) => failed.push(format!("{pid:04x} ({error})")),
+            Ok(status) if status.success() => installed.push(id),
+            Ok(status) => failed.push(format!("{id} (exit {status})")),
+            Err(error) => failed.push(format!("{id} ({error})")),
         }
     }
     if installed.is_empty() {
@@ -117,8 +119,8 @@ fn install() -> Result<String, String> {
         ));
     }
     let mut message = format!(
-        "WinUSB is bound to the Pi boot devices 0a5c:{}.",
-        installed.join(", 0a5c:")
+        "WinUSB is bound to the boot devices {}.",
+        installed.join(", ")
     );
     if !failed.is_empty() {
         message.push_str(&format!(" Not installed: {}.", failed.join(", ")));

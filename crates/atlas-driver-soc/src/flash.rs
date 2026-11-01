@@ -267,6 +267,7 @@ impl UpdateCapability for SocUpdate {
                 .platform
                 .as_ref()
                 .and_then(|platform| platform.soc.clone()),
+            chip_required: device.attributes.contains_key("pid_unconfirmed"),
             progress: progress.clone(),
             cancel: cancel.clone(),
         };
@@ -321,6 +322,40 @@ fn k230_heads(image: &Path) -> Result<Vec<String>, String> {
     Ok(lines)
 }
 
+/// What the board's chip info says against its record's SoC: a line to log,
+/// or why nothing may be written. A different chip always stops the flash.
+/// With `required` (the record's PID is a guess), so does a chip that can't
+/// be read: a destructive write needs the board itself to say who it is.
+fn chip_verdict(
+    info: Result<Vec<u8>, String>,
+    soc: Option<&str>,
+    required: bool,
+) -> Result<String, String> {
+    let guess = "its USB id is a guess, so the board must confirm its chip";
+    let info = match info {
+        Ok(info) => info,
+        Err(error) if required => {
+            return Err(format!(
+                "no chip info ({error}); {guess}: nothing was written"
+            ));
+        }
+        Err(error) => return Ok(format!("no chip info ({error})")),
+    };
+    match (chip_number(&info), soc) {
+        (Some(number), Some(soc)) if soc.to_ascii_uppercase().contains(&number) => {
+            Ok(format!("chip: {number}"))
+        }
+        (Some(number), Some(soc)) => Err(format!(
+            "the board reports chip {number}, but its record is for {soc}: nothing was written"
+        )),
+        _ if required => Err(format!(
+            "unreadable chip info {info:02x?}; {guess}: nothing was written"
+        )),
+        (Some(number), None) => Ok(format!("chip: {number}")),
+        (None, _) => Ok(format!("chip info: {info:02x?}")),
+    }
+}
+
 fn sector_lba(offset: u64) -> Result<u32, DriverError> {
     if !offset.is_multiple_of(SECTOR as u64) {
         return Err(failed(
@@ -345,6 +380,8 @@ struct Job {
     storage_target: Option<String>,
     /// The record's SoC (`RK3576`), checked against what the board reports.
     chip: Option<String>,
+    /// The record's PID is a guess: the board must confirm the chip.
+    chip_required: bool,
     progress: ProgressSink,
     cancel: CancellationToken,
 }
@@ -492,23 +529,13 @@ impl Job {
                 }
             }
         })?;
-        // The board must be the chip its record is for: a guessed PID
-        // (pid_unconfirmed) could name the wrong one.
-        match handle.block_on(device.read_chip_info()) {
-            Ok(info) => match (chip_number(&info), self.chip.as_deref()) {
-                (Some(number), Some(soc)) if !soc.to_ascii_uppercase().contains(&number) => {
-                    return Err(failed(
-                        UpdateStep::Transfer,
-                        format!(
-                            "the board reports chip {number}, but its record is for {soc}: nothing was written"
-                        ),
-                    ));
-                }
-                (Some(number), _) => self.progress.log(format!("chip: {number}")),
-                (None, _) => self.progress.log(format!("chip info: {info:02x?}")),
-            },
-            Err(error) => self.progress.log(format!("no chip info ({error})")),
-        }
+        // The board must be the chip its record is for.
+        let chip = handle
+            .block_on(device.read_chip_info())
+            .map_err(|error| error.to_string());
+        let said = chip_verdict(chip, self.chip.as_deref(), self.chip_required)
+            .map_err(|why| failed(UpdateStep::Transfer, why))?;
+        self.progress.log(said);
         let storage = match self.storage() {
             Some("emmc") => Some(Storage::Emmc),
             Some("sd") => Some(Storage::Sd),
@@ -884,6 +911,41 @@ impl Job {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_chip_decides_before_anything_is_written() {
+        let rk3576 = || {
+            let mut info = b"6753".to_vec();
+            info.resize(16, 0);
+            Ok(info)
+        };
+        let rk3588 = || {
+            let mut info = b"8853".to_vec();
+            info.resize(16, 0);
+            Ok(info)
+        };
+        let unreadable = || Ok(vec![0xff; 16]);
+        let lost = || Err("timed out".to_string());
+        assert_eq!(
+            chip_verdict(rk3576(), Some("RK3576"), true).unwrap(),
+            "chip: 3576"
+        );
+        assert_eq!(
+            chip_verdict(rk3588(), Some("RK3588S2"), false).unwrap(),
+            "chip: 3588"
+        );
+        // Another chip stops the flash, guessed or not.
+        for required in [true, false] {
+            let why = chip_verdict(rk3588(), Some("RK3576"), required).unwrap_err();
+            assert!(why.contains("nothing was written"), "{why}");
+        }
+        // Can't tell: goes on for a confirmed PID, stops for a guessed one.
+        assert!(chip_verdict(unreadable(), Some("RK3576"), false).is_ok());
+        assert!(chip_verdict(lost(), Some("RK3576"), false).is_ok());
+        assert!(chip_verdict(unreadable(), Some("RK3576"), true).is_err());
+        assert!(chip_verdict(lost(), Some("RK3576"), true).is_err());
+        assert!(chip_verdict(rk3576(), None, true).is_err());
+    }
 
     /// Gaia's real outputs, when they're on this machine (skipped otherwise).
     const GAIA: &str = "/mnt/ssd-samsung/gaia/work/.gaia/examples";

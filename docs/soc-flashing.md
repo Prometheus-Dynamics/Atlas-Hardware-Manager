@@ -55,11 +55,20 @@ board.** The boards are on order. Each board record says
 ## Whose board is it
 
 A record whose PID is a guess (`usb_boot.pid_unconfirmed`, RK3576's today)
-is offered for any Rockchip in a download mode whose PID no record names.
-Once the usbplug runs, Atlas reads the chip number the board reports
-(`READ_CHIP_INFO`) and checks it against the record's `platform.soc`. If it
-differs, the flash stops before anything is written. Every Rockchip flash
-runs this check, not only the guessed ones.
+is offered for a Rockchip in a download mode whose PID no record names and
+no chip claims. Once the usbplug runs, Atlas reads the chip number the board
+reports (`READ_CHIP_INFO`) and checks it against the record's `platform.soc`:
+
+- Another chip stops the flash before anything is written, on every board.
+- A chip it can't read stops the flash only when the PID is a guess; on a
+  confirmed PID it's logged and the flash goes on.
+
+## Windows
+
+The installer and the helper's Fix button bind WinUSB to the boot IDs:
+Raspberry Pi's, and the download modes in `atlas_usbboot::SOC_BOOT_IDS`. A
+test keeps the installer's list and that one together. Rockchip's loader
+mode is assumed to keep its maskrom PID, as rkdeveloptool's table has it.
 
 ## Checked against real loaders
 

@@ -122,9 +122,12 @@ impl SocDriver {
 
     pub(crate) fn identity(&self, candidate: &Candidate, found: &Found) -> Identity {
         let mut packages = self.catalog.for_usb_boot(found.vendor_id, found.product_id);
-        // A PID no record names may be a board whose PID is still a guess
-        // (RK3576's maskrom); its chip is checked before anything is written.
-        let provisional = packages.is_empty() && self.soc == Soc::Rockchip;
+        // A PID no record names and no chip claims may be a board whose PID
+        // is still a guess (RK3576's maskrom); the flash stops unless the
+        // board then reports that record's chip.
+        let provisional = packages.is_empty()
+            && self.soc == Soc::Rockchip
+            && rockchip_chip(found.product_id).is_none();
         if provisional {
             packages = self.catalog.unconfirmed_usb_boot(found.vendor_id);
         }
@@ -317,10 +320,10 @@ mod tests {
         };
         let identity = driver.identity(&candidate("1-1"), &found);
         assert_eq!(identity.key, DeviceKey::new("rockchip", "abcdef123"));
-        // No record names 350a, so the unconfirmed record is offered, with
-        // the chip the PID says.
-        assert_eq!(identity.model, "ROCK 4D (RK3566/RK3568)");
-        assert!(identity.attributes.contains_key("pid_unconfirmed"));
+        // A PID known as another chip is never offered as the guessed record.
+        assert_eq!(identity.model, "RK3566/RK3568");
+        assert!(!identity.attributes.contains_key("model"));
+        assert!(!identity.attributes.contains_key("pid_unconfirmed"));
 
         let driver = SocDriver::new(Soc::K230, catalog());
         let found = Found {

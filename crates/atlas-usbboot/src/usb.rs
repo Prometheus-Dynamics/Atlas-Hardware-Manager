@@ -52,6 +52,16 @@ pub const LINUX_UDEV_RULES_FILE: &str = concat!(
 /// The Windows USB product ids that need WinUSB bound for USB boot.
 pub const BOOT_PRODUCT_IDS: [u16; 4] = [0x2763, 0x2764, 0x2711, 0x2712];
 
+/// The SoC download modes Atlas flashes (atlas-socflash) that need WinUSB
+/// bound on Windows, as (name, vendor, product): one per chip of a board
+/// record. RK3576's PID is the record's guess until a board confirms it.
+pub const SOC_BOOT_IDS: [(&str, u16, u16); 4] = [
+    ("Rockchip RK3588 maskrom", 0x2207, 0x350b),
+    ("Rockchip RK3576 maskrom", 0x2207, 0x350e),
+    ("Rockchip RV1106 maskrom", 0x2207, 0x110c),
+    ("Kendryte K230 USB boot", 0x29f1, 0x0230),
+];
+
 /// udev rule that lets the logged-in user open Pi boot devices on Linux.
 pub const LINUX_UDEV_RULE: &str = "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"0a5c\", \
 ATTR{idProduct}==\"2711|2712|2763|2764\", MODE=\"0660\", TAG+=\"uaccess\"\n";

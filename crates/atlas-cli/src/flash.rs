@@ -1,4 +1,6 @@
-//! `atlas flash`: a fresh install on a Raspberry Pi board in USB boot, with
+//! `atlas flash`: a fresh install on a board in a download mode: a Rockchip
+//! board in maskrom or a K230 in USB boot (atlas-driver-soc: its record's
+//! loader, the write, the readback), or a Raspberry Pi board in USB boot, with
 //! the same job the desktop's Flash runs (the rpi driver's recovery): boot the
 //! board's mass-storage gadget, wait for exactly one new USB disk, write the
 //! image with atlas-helper, read it back, put the SSH keys on the boot
@@ -19,6 +21,7 @@ use std::time::{Duration, Instant};
 use atlas_core::{Atlas, DeviceRecord, Presence, StagedRollout};
 use atlas_driver::{DeviceKey, DeviceMode};
 use atlas_driver_rpi::RPI_FAMILY;
+use atlas_driver_soc::{K230_FAMILY, ROCKCHIP_FAMILY};
 
 use crate::commands::{self, CommandResult, UpdateOptions, resolve};
 use crate::output;
@@ -38,7 +41,7 @@ const KEY_WAIT: Duration = Duration::from_secs(4 * 60);
 
 /// A board in USB boot that the recovery job boots itself.
 fn bootable(device: &DeviceRecord) -> bool {
-    device.key.family.0 == RPI_FAMILY
+    [RPI_FAMILY, ROCKCHIP_FAMILY, K230_FAMILY].contains(&device.key.family.0.as_str())
         && device.identity.mode == DeviceMode::Recovery
         && device.presence == Presence::Online
         && device.identity.attributes.get("stage").map(String::as_str) != Some("storage")
@@ -50,6 +53,17 @@ fn exposed(device: &DeviceRecord) -> bool {
         && device.identity.mode == DeviceMode::Recovery
         && device.presence == Presence::Online
         && device.identity.attributes.get("stage").map(String::as_str) == Some("storage")
+}
+
+/// A board record's storage target, in a sentence.
+fn storage_name(storage: Option<&str>) -> &str {
+    match storage {
+        Some("sd") => "microSD card",
+        Some("spi-nand") => "SPI-NAND",
+        Some("spi-nor") => "SPI-NOR",
+        Some("nvme") => "NVMe drive",
+        _ => "eMMC",
+    }
 }
 
 fn in_usb_boot(atlas: &Atlas) -> Vec<DeviceRecord> {
@@ -107,7 +121,7 @@ pub(crate) async fn flash(atlas: &Atlas, options: FlashOptions) -> CommandResult
                     )
                 } else {
                     format!(
-                        "{} isn't a Raspberry Pi board in USB boot (`atlas ls` lists the ones that are)",
+                        "{} isn't a board in USB boot or maskrom (`atlas ls` lists the ones that are)",
                         device.display_name()
                     )
                 });
@@ -125,7 +139,7 @@ pub(crate) async fn flash(atlas: &Atlas, options: FlashOptions) -> CommandResult
                         device.display_name(),
                         device.key
                     ),
-                    [] => "no board is waiting in USB boot; put one there, or pass --usb-boot <running board>".into(),
+                    [] => "no board is waiting in USB boot or maskrom; put one there, or pass --usb-boot <running board>".into(),
                     several => format!(
                         "no board is in USB boot, but {} show their eMMC as a disk ({}); choose one with --device",
                         several.len(),
@@ -143,9 +157,15 @@ pub(crate) async fn flash(atlas: &Atlas, options: FlashOptions) -> CommandResult
         },
     };
     if !options.json {
+        let storage = atlas
+            .devices()
+            .into_iter()
+            .find(|device| device.key == key)
+            .and_then(|device| device.identity.attributes.get("storage").cloned());
         output::line(&format!(
-            "Flashing {} onto {key}: everything on its eMMC is replaced.",
-            options.image.display()
+            "Flashing {} onto {key}: everything on its {} is replaced.",
+            options.image.display(),
+            storage_name(storage.as_deref())
         ));
     }
     let board_serial = atlas
@@ -304,5 +324,60 @@ async fn restart_into_usb_boot(
                 wait.as_secs()
             ));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn record(family: &str, mode: &str, stage: Option<&str>) -> DeviceRecord {
+        let attributes = stage.map_or_else(
+            || serde_json::json!({}),
+            |stage| serde_json::json!({ "stage": stage }),
+        );
+        serde_json::from_value(serde_json::json!({
+            "key": { "family": family, "serial": "x" },
+            "identity": {
+                "key": { "family": family, "serial": "x" },
+                "model": "m",
+                "mode": mode,
+                "versions": {},
+                "name": null,
+                "link": "usb-boot",
+                "address": "1-1",
+                "attributes": attributes,
+            },
+            "link_kind": { "kind": "usb-boot" },
+            "capabilities": [],
+            "presence": "online",
+            "first_seen_ms": 0,
+            "last_seen_ms": 0,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn the_new_boards_in_a_download_mode_can_be_flashed() {
+        for family in [RPI_FAMILY, ROCKCHIP_FAMILY, K230_FAMILY] {
+            assert!(bootable(&record(family, "recovery", None)), "{family}");
+            assert!(
+                !bootable(&record(family, "normal", None)),
+                "{family} running"
+            );
+        }
+        // A running board of another family, or a controller, is never one.
+        assert!(!bootable(&record("raze", "recovery", None)));
+        // An exposed eMMC is written only when named.
+        let shown = record(RPI_FAMILY, "recovery", Some("storage"));
+        assert!(!bootable(&shown) && exposed(&shown));
+        // A board in loader mode is stage "loader", still flashable.
+        assert!(bootable(&record(
+            ROCKCHIP_FAMILY,
+            "recovery",
+            Some("loader")
+        )));
+        assert_eq!(storage_name(Some("spi-nand")), "SPI-NAND");
+        assert_eq!(storage_name(None), "eMMC");
     }
 }
