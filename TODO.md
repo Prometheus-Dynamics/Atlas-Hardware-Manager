@@ -156,9 +156,11 @@ nothing else is added. Each item: **what**, **why**, **done when**,
   - **Why:** Flame and other NAND boards take slot updates like Raze.
   - **Done when:** the kernel attaches an image atlas-ubi wrote; install,
     boot-once, confirm and fallback on a NAND board.
-  - **Blocked by:** a NAND board (Luckfox Pico Pro, on order), or the user's
-    yes to `sudo modprobe nandsim` for the attach; Gaia's board config
-    fixing the volume layout.
+  - **Blocked by:** Gaia's boot flow: its Luckfox image hardwires
+    `ubi.block=0,rootfs_a` in U-Boot's environment, with no slot selection or
+    boot-once, so a written `rootfs_b` wouldn't boot (asked of Gaia through
+    HeliOS, 2026-11-01). Then a NAND board (Luckfox Pico Pro, on order), or
+    the user's yes to `sudo modprobe nandsim` for the attach.
 - [ ] **Board records: the running side.**
   - **What:** written: `devices/{radxa-rock-5c,radxa-rock-4d,
     luckfox-pico-pro,bpi-canmv-k230d-zero}` as board records
