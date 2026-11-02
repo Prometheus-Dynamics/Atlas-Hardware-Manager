@@ -294,18 +294,22 @@ mod tests {
     }
 
     #[test]
-    fn a_rockchip_no_record_names_is_offered_as_the_unconfirmed_one() {
+    fn a_rockchip_no_record_names_is_offered_as_the_unconfirmed_ones() {
         let driver = SocDriver::new(Soc::Rockchip, catalog());
         let found = Found {
             location: "2-1".into(),
             vendor_id: 0x2207,
-            product_id: 0x350f,
+            product_id: 0x3510,
             stage: "maskrom",
             serial: None,
         };
         let identity = driver.identity(&candidate("2-1"), &found);
-        assert_eq!(identity.attributes["model"], "radxa-rock-4d");
-        assert!(identity.attributes["pid_unconfirmed"].contains("2207:350f"));
+        // Two records guess their PID: the board is its chip until it says.
+        assert_eq!(
+            identity.attributes["possible_models"],
+            "firefly-aio-3562jq, radxa-rock-4d"
+        );
+        assert_eq!(identity.model, "Rockchip 3510");
     }
 
     #[test]
@@ -314,14 +318,14 @@ mod tests {
         let found = Found {
             location: "1-1".into(),
             vendor_id: 0x2207,
-            product_id: 0x350a,
+            product_id: 0x330c,
             stage: "loader",
             serial: Some("ABCDEF123".into()),
         };
         let identity = driver.identity(&candidate("1-1"), &found);
         assert_eq!(identity.key, DeviceKey::new("rockchip", "abcdef123"));
         // A PID known as another chip is never offered as the guessed record.
-        assert_eq!(identity.model, "RK3566/RK3568");
+        assert_eq!(identity.model, "RK3399");
         assert!(!identity.attributes.contains_key("model"));
         assert!(!identity.attributes.contains_key("pid_unconfirmed"));
 

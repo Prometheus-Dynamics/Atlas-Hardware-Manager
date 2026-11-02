@@ -1,0 +1,40 @@
+{
+  "schema": "urn:board:manifest:1",
+  "contract": 1,
+  "model": "radxa-zero-3w",
+  "package_version": "2026.1.0-dev",
+  "display_name": "ZERO 3W",
+  "record_only": true,
+  "vendor": "Radxa",
+  "description": "Radxa ZERO 3W (Rockchip RK3566) module-size board with eMMC, the user's RK3566 module family. A board record: Atlas flashes it from maskrom (rockusb) with Rockchip's loader file and no vendor tool; running, it serves the identity contract (board-lite, gaia/device.toml), read-only. Written from Radxa's docs and rkdeveloptool; untested on this board.",
+  "platform": { "soc": "RK3566", "arch": "aarch64" },
+  "identity": { "identity_port": 5899 },
+  "recovery": {
+    "usb_boot": { "vid": "2207", "pid": "350a" },
+    "method": "rockusb",
+    "storage_target": "emmc",
+    "storage_target_evidence": [
+      "docs.radxa.com ZERO 3 'Install OS on eMMC': the ZERO 3W is the variant with eMMC (the ZERO 3E has none and boots from microSD).",
+      "No SPI flash is named for the ZERO 3W, so the image (its own idblock at sector 64) goes to the eMMC from sector 0."
+    ],
+    "instructions": [
+      "Take out the microSD card and unplug the power.",
+      "Hold the Maskrom button on the back of the board.",
+      "Connect the board's USB-C OTG port (USB 2.0, the one that also powers it) to this computer with a USB-A to USB-C cable, then release the button.",
+      "The power LED stays solid green in maskrom (RK3566). Atlas runs the loader's DDR init and usbplug, writes the image to the eMMC, reads it back and restarts the board."
+    ],
+    "status": "untested",
+    "flash": {
+      "loader": ["rk356x_spl_loader_*.bin", "rk3566_loader_v*.bin"],
+      "storage": "emmc",
+      "image_offset": 0
+    },
+    "todo": [
+      "Sources: the maskrom steps, the OTG port and the green LED are from docs.radxa.com/en/zero/zero3/low-level-dev/install-os-on-emmc (fetched 2026-11-02); the PID from rkdeveloptool's table and Atlas's own (2207:350a is RK3566/RK3568 maskrom).",
+      "2207:350a is shared by RK3566 and RK3568: any RK356x board in maskrom is offered as the ZERO 3W, and its loader reports the same chip family. Confirm with lsusb on the board, and add a second RK356x record only with a way to tell them apart.",
+      "The loader file: Radxa ships rk356x_spl_loader_*.bin (the rkbin name for RK3566/RK3568); which one Gaia's ZERO 3W build copies next to its image is open: no Gaia build for it yet.",
+      "Which button side and LED wording the 3W's own page uses beyond the shared ZERO 3 guide; the eMMC sizes offered (not on the page read).",
+      "Network: no Ethernet, Wi-Fi only; board-lite answers once a Gaia image sets Wi-Fi up (as the K230D)."
+    ]
+  }
+}

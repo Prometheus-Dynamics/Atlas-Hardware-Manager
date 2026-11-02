@@ -32,7 +32,8 @@ devices/
   roborio/manifest.json,     devices without the identity contract: only
   systemcore/manifest.json   how to recognise and read them (fingerprints,
                              info, key; docs/devices-as-data.md)
-  radxa-rock-5c/, radxa-rock-4d/, luckfox-pico-pro/, bpi-canmv-k230d-zero/
+  radxa-rock-5c/, radxa-rock-4d/, radxa-zero-3w/,
+  firefly-aio-3562jq/, luckfox-pico-pro/, bpi-canmv-k230d-zero/
                              board records ("record_only": true): boards
                              Atlas flashes from their SoC's download mode
                              (recovery.method rockusb or k230-usb,

@@ -56,6 +56,8 @@ fn the_board_records_say_how_to_flash_them_and_that_its_untested() {
     let records = [
         ("radxa-rock-5c", 0x2207, 0x350b, "rockusb", "emmc"),
         ("radxa-rock-4d", 0x2207, 0x350e, "rockusb", "emmc"),
+        ("radxa-zero-3w", 0x2207, 0x350a, "rockusb", "emmc"),
+        ("firefly-aio-3562jq", 0x2207, 0x350f, "rockusb", "emmc"),
         ("luckfox-pico-pro", 0x2207, 0x110c, "rockusb", "spi-nand"),
         ("bpi-canmv-k230d-zero", 0x29f1, 0x0230, "k230-usb", "sd"),
     ];
@@ -84,13 +86,14 @@ fn the_board_records_say_how_to_flash_them_and_that_its_untested() {
             "{model}"
         );
     }
-    // RK3576's maskrom PID is a guess; any other unnamed Rockchip may be it.
+    // RK3576's and RK3562's maskrom PIDs are guesses; any other unnamed
+    // Rockchip may be one of them.
     let unconfirmed: Vec<&str> = catalog
         .unconfirmed_usb_boot(0x2207)
         .iter()
         .map(|package| package.manifest.model.as_str())
         .collect();
-    assert_eq!(unconfirmed, ["radxa-rock-4d"]);
+    assert_eq!(unconfirmed, ["firefly-aio-3562jq", "radxa-rock-4d"]);
 }
 
 /// Every `board-package.env` under a package reports the manifest's
@@ -283,9 +286,11 @@ fn board_records_with_an_identity_carry_board_lite_for_their_arch() {
         with_identity,
         [
             "bpi-canmv-k230d-zero",
+            "firefly-aio-3562jq",
             "luckfox-pico-pro",
             "radxa-rock-4d",
-            "radxa-rock-5c"
+            "radxa-rock-5c",
+            "radxa-zero-3w"
         ]
     );
 }

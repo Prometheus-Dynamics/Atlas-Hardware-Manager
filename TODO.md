@@ -148,9 +148,29 @@ through a real flash.
   - **Done when:** `atlas flash --image <dev.811 image> --device rpi:e5226d57`
     completes; the board boots, takes SSH with its key and gets a 172.31.12.8x
     address.
-  - **Blocked by:** the user: move e5226d57 from 3-1.1.4.1 (behind two Genesys
-    hubs, where it dropped off USB mid-write in 2 of 3 runs) to a TUSB8041 3-1.x
-    port on the SystemCore. HeliOS says when it's there.
+  - **Status (2026-11-02):** done at 3-1.1.4.1 itself after the driver fix
+    6f97f90 (the SystemCore and roboRIO were shadowed by board drivers): dev.811
+    written and verified in 124 s, 151 s in all, through agent dev.409; one USB
+    reset mid-write absorbed by the kernel, and the board came up on
+    172.31.209.217. Left: SSH with its key (that run wrote no
+    `board/authorized_keys`).
+  - **Blocked by:** nothing; the SSH check goes with the re-pin proof below.
+- [ ] **Flashing through a dropping USB link.**
+  - **What:** written (5f28070): the agent writes in 16 MiB segments, each
+    flushed and read back before it counts, with a journal beside the image. On
+    a drop it finds the board again by its gadget's USB serial, sends the
+    bootloader again if the board fell back to its ROM, and writes that segment
+    again; a later run re-reads the proven part instead of writing it. It gives
+    up after 25 drops, 45 minutes, or 3 minutes without the board, saying why.
+    The engine sits behind a small `Target` trait in atlas-blockdev;
+    fault-injection tests run it on an in-memory disk that drops.
+  - **Why:** e5226d57's port (3-1.1.4.1, behind two Genesys hubs next to a C270
+    that resets every ~4 s) drops mid-write; robots have ports like it.
+  - **Done when:** 10 flashes in a row succeed on 3-1.1.4.1, with drops,
+    resumes and time per flash recorded against a clean port. Then: the agent
+    path (detached flash, re-attach), then updates, `atlas ssh` and slot
+    commands over a dropping link.
+  - **Blocked by:** nothing; the run is going.
 - [ ] **Re-attach after Atlas restarts.**
   - **What:** built (a72418a): the remote flash remembers the agent job
     (`<data>/agent-jobs/<board>.json`) until it ends. After a scan, Atlas starts
@@ -248,11 +268,15 @@ no longer a blocker: Gaia's builds put each one beside its image (006284a,
     no Ethernet and Gaia's image sets up no Wi-Fi, so it has nothing to answer
     on until one of them does.
 - [ ] **RK3562 and RK3566 records.**
-  - **What:** board records for these two, in the user's additions. No record
-    exists and no board is on order. The driver takes a new record as data.
+  - **What:** written (2026-11-02) from the vendors' docs, every field marked
+    untested with its source: `devices/radxa-zero-3w` (RK3566, maskrom
+    2207:350a, eMMC) and `devices/firefly-aio-3562jq` (RK3562J, maskrom
+    2207:350f, a guess marked `pid_unconfirmed`, eMMC), each with board-lite.
+    With two guessed PIDs, an unnamed Rockchip now shows as its chip with both
+    as possible models. No board is on order.
   - **Why:** the module families the user named.
-  - **Done when:** a record for each, flashed from maskrom on a board.
-  - **Blocked by:** which modules: the user names them when they come.
+  - **Done when:** each flashed from maskrom on a board, and its PID confirmed.
+  - **Blocked by:** the boards.
 
 ## Open: other computers
 
@@ -325,6 +349,17 @@ no longer a blocker: Gaia's builds put each one beside its image (006284a,
   - **Blocked by:** Gaia's signing proof: minisign and cosign are approved for
     Gaia (user), and Atlas's key follows it.
 
+## After the release
+
+- [ ] **Atlas's USB code onto Lemnos's transport.**
+  - **What:** usbboot, socflash, the flasher and the USB agent use nusb
+    directly today; they move onto Lemnos's single USB transport. Not started.
+  - **Why:** one USB stack across the projects, with one place for per-OS
+    quirks.
+  - **Done when:** the four run on Lemnos on Linux, Windows and macOS, and
+    nusb is gone from Atlas's dependencies.
+  - **Blocked by:** the release; Lemnos's transport.
+
 ## Done
 
 ### Board flashing and NAND, written and untested on a board
@@ -362,6 +397,10 @@ again 2026-11-01); the board proofs are the open items above.
 
 ### CI green on all three OSes (2026-11-02)
 
+- [x] Robot drivers found again (6f97f90): since 2f96f61 the board driver's
+      catalog took the SystemCore and roboRIO (recognised by data, no identity
+      port) and shadowed their own drivers, so `atlas flash` refused boards
+      behind the SystemCore.
 - [x] The three files over the 600-line gate split (e05452b). With the gate
       passing, clippy and the tests reached macOS and Windows again and found
       what had built up behind it: Linux-only imports, tests and fields

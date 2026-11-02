@@ -1,0 +1,40 @@
+{
+  "schema": "urn:board:manifest:1",
+  "contract": 1,
+  "model": "firefly-aio-3562jq",
+  "package_version": "2026.1.0-dev",
+  "display_name": "AIO-3562JQ",
+  "record_only": true,
+  "vendor": "Firefly",
+  "description": "Firefly AIO-3562JQ (Rockchip RK3562J) industrial board: the iCore-3562JQ module on the MB-Q-RK3562 carrier, the user's RK3562 module family. A board record: Atlas flashes it from maskrom (rockusb) with Rockchip's loader file and no vendor tool; running, it serves the identity contract (board-lite, gaia/device.toml), read-only. Written from Firefly's specification and wiki; untested on this board.",
+  "platform": { "soc": "RK3562", "arch": "aarch64" },
+  "identity": { "identity_port": 5899 },
+  "recovery": {
+    "usb_boot": { "vid": "2207", "pid": "350f", "pid_unconfirmed": true },
+    "method": "rockusb",
+    "storage_target": "emmc",
+    "storage_target_evidence": [
+      "Firefly iCore-3562JQ specification: storage eMMC, 16, 32 or 64 GB; no SPI flash listed.",
+      "Atlas writes the OS image to the eMMC from sector 0."
+    ],
+    "instructions": [
+      "Unplug the AIO-3562JQ's 12 V power.",
+      "Connect its USB 3.0 OTG port to this computer.",
+      "Hold the MaskRom button, plug in the power (or press Reset), and release the button after about two seconds.",
+      "The board appears in maskrom (RK3562). Atlas checks the chip the loader reports, runs its DDR init and usbplug, writes the image to the eMMC, reads it back and restarts the board."
+    ],
+    "status": "untested",
+    "flash": {
+      "loader": ["rk3562_spl_loader_v*.bin", "rk3562_loader_v*.bin"],
+      "storage": "emmc",
+      "image_offset": 0
+    },
+    "todo": [
+      "Sources: SoC, eMMC sizes, the USB 3.0/2.0 OTG port (shared with PCIe 2.1), the Recovery, MaskRom and Reset buttons, 12 V DC and two RJ45 are from Firefly's iCore-3562JQ_Specification.pdf (download.t-firefly.com, fetched 2026-11-02). The button sequence is Firefly's general one (hold the button, power on, release after one or two seconds): its 'Upgrade the firmware via USB cable' wiki page (wiki.t-firefly.com/en/iCore-3562JQ/03-upgrade_firmware.html) answered 404 here.",
+      "The maskrom PID: 2207:350f is a guess (the next free one after RK3576's 350e); no text source names RK3562's, so it's marked pid_unconfirmed, and the loader must report chip RK3562 before anything is written. Confirm with lsusb on the board and drop pid_unconfirmed.",
+      "The loader file: the rkbin name (RKBOOT/RK3562MINIALL.ini makes rk3562_spl_loader_v*.bin) is assumed; Firefly's firmware ships MiniLoaderAll.bin inside update.img. Which one Gaia's build copies is open: no Gaia build for it yet.",
+      "Whether the OTG port is a Type-A or Type-C connector on the carrier: the specification's drawing doesn't say.",
+      "Network: DHCP on the first RJ45 is assumed; which of the two (RGMII gigabit or RMII 100M) is eth0 is open."
+    ]
+  }
+}

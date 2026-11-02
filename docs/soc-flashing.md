@@ -9,6 +9,8 @@ board.** The boards are on order. Each board record says
 |---|---|---|---|---|
 | Radxa ROCK 5C | RK3588S2 | maskrom 2207:350b | eMMC | `devices/radxa-rock-5c` |
 | Radxa ROCK 4D | RK3576 | maskrom 2207:350e (a guess: `pid_unconfirmed`) | eMMC | `devices/radxa-rock-4d` |
+| Radxa ZERO 3W | RK3566 | maskrom 2207:350a (shared with RK3568) | eMMC | `devices/radxa-zero-3w` |
+| Firefly AIO-3562JQ | RK3562J | maskrom 2207:350f (a guess: `pid_unconfirmed`) | eMMC | `devices/firefly-aio-3562jq` |
 | Luckfox Pico Pro | RV1106G2 (Flame's SoC) | maskrom 2207:110c | SPI-NAND, 128 MB | `devices/luckfox-pico-pro` |
 | BPI-CanMV-K230D-Zero | K230D | USB boot 29f1:0230 | microSD | `devices/bpi-canmv-k230d-zero` |
 
