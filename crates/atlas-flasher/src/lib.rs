@@ -189,9 +189,12 @@ impl Transport for UsbTransport {
 fn usb_replies(device: UsbDevice, endpoint: u8, packet: usize) -> tokio::io::DuplexStream {
     let (mut to_flasher, replies) = tokio::io::duplex(64 * 1024);
     tokio::spawn(async move {
-        let mut buffer = vec![0u8; (16 * 1024usize).div_ceil(packet) * packet];
+        // One buffer, reused: on Linux a usbdevfs mapping when there is one.
+        let size = (16 * 1024usize).div_ceil(packet) * packet;
+        let mut buffer = device.allocate_buffer(size);
         loop {
-            let Ok(transfer) = device.submit_bulk_in(endpoint, buffer) else {
+            buffer.set_len(size);
+            let Ok(transfer) = device.submit_bulk_in_buffer(endpoint, buffer) else {
                 return;
             };
             let Ok(outcome) = transfer.await else {

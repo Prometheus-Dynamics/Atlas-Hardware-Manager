@@ -259,7 +259,7 @@ impl UsbIo for DeviceIo {
         };
         let outcome = outcome.map_err(transfer_error)?;
         let length = outcome.actual_length.min(max);
-        let mut data = outcome.into_buffer();
+        let mut data = outcome.into_buffer().into_vec();
         data.truncate(length);
         Ok(data)
     }
