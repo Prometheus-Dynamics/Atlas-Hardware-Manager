@@ -263,10 +263,13 @@ no longer a blocker: Gaia's builds put each one beside its image (006284a,
   - **Why:** devices as data: no per-board code beyond the flasher, and Atlas
     lists a running board the same way as a flashed one.
   - **Done when:** each board is listed by `atlas ls` running, from its package.
-  - **Blocked by:** the boards. Before that: Gaia importing the ROCK and K230D
-    packages into its examples (the Luckfox's is in, 17c20df). The K230D has
-    no Ethernet and Gaia's image sets up no Wi-Fi, so it has nothing to answer
-    on until one of them does.
+  - **Status:** all four Gaia images import their packages (Gaia b580d11, at
+    Atlas d53912e) and carry board-lite 2026.1.0-dev.442+d53912e6 in /usr/sbin:
+    +420 KB rootfs on each ROCK, +399 KB on the K230D, 378 KB on the Luckfox.
+  - **Blocked by:** the boards. The K230D's image has no network at all (no
+    Wi-Fi driver or firmware, no USB gadget networking, lo only): board-lite
+    runs but can't be reached, serial console only. Adding Wi-Fi or gadget
+    networking is the user's call.
 - [ ] **RK3562 and RK3566 records.**
   - **What:** written (2026-11-02) from the vendors' docs, every field marked
     untested with its source: `devices/radxa-zero-3w` (RK3566, maskrom
