@@ -167,10 +167,11 @@ mod tests {
         assert_eq!(p2.len(), 2 * 1024 * 1024);
         assert_eq!(p2[..1_048_576], disk[2_097_152..]);
         assert!(p2[1_048_576..].iter().all(|&b| b == 0));
-        #[cfg(unix)]
+        // Holes: a few 64 KiB blocks hold data. Checked on Linux, which the
+        // board runs; APFS doesn't report holes the same way.
+        #[cfg(target_os = "linux")]
         {
             use std::os::unix::fs::MetadataExt;
-            // Holes: a few 64 KiB blocks hold data.
             let used = |path: &Path| std::fs::metadata(path).unwrap().blocks() * 512;
             assert!(used(&files[0]) + used(&files[1]) < 512 * 1024);
         }

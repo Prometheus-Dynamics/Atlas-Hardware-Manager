@@ -292,7 +292,14 @@ MOUNT
 	grep -q "rootfs.erofs isn't the size slot.json says\|doesn't match slot.json's sha256" "$T/err" || fail "tampered: $(cat "$T/err")"
 	[ ! -e "$T/data/slots/pv-k.erofs" ] || fail "a tampered root was kept"
 	image pv-a "$T/pv-a.img.xz"
+	before=$(status | sed 's/"free_bytes":[0-9]*//; s/"updated":"[^"]*"//')
 	[ "$(stage_image "$T/pv-a.img.xz")" = 3 ] || fail "the running slot's image installed"
+	# Refused after the unpack: the state is as it was, not an interrupted install.
+	status | grep -q "interrupted" && fail "a refusal left the install looking interrupted: $(status)"
+	[ "$(status | sed 's/"free_bytes":[0-9]*//; s/"updated":"[^"]*"//')" = "$before" ] || fail "a refusal changed the state: $(status)"
+	mkdir "$T/device-lock" && echo test > "$T/device-lock/owner"
+	[ "$(stage_image "$T/pv-j.img.xz")" = 3 ] || fail "stage-image ran under the device lock"
+	rm -rf "$T/device-lock"
 	head -c 4194304 /dev/zero | xz -T1 -c > "$T/zero.img.xz"
 	[ "$(stage_image "$T/zero.img.xz")" = 1 ] || fail "a disk without an MBR installed"
 	grep -q "no MBR" "$T/err" || fail "no MBR: $(cat "$T/err")"

@@ -92,6 +92,13 @@ trap cleanup EXIT
 refuse() {
 	[ -z "$CHECKING" ] || check_answer "$REFUSED" "$*"
 	board_log "$*"
+	# Refused means nothing changed: an install refused part way (its slot is
+	# the running one, no room) leaves the state as it found it, not
+	# `staging`, which the next status would call an interrupted install.
+	if [ -n "$STAGING_FROM" ] && [ "${STATE:-}" = staging ]; then
+		STATE=$STAGING_FROM ERROR=$STAGING_ERROR PROGRESS=$STAGING_PROGRESS
+		save_state 2>/dev/null || true
+	fi
 	exit "$REFUSED"
 }
 die() {
@@ -103,7 +110,16 @@ die() {
 
 # --- state ------------------------------------------------------------------
 
+# staging <progress>: an install starts. The state before it is kept, for a
+# refusal to put back.
+staging() {
+	[ "$STATE" = staging ] || STAGING_FROM=$STATE STAGING_ERROR=$ERROR STAGING_PROGRESS=$PROGRESS
+	STATE=staging PROGRESS=$1 ERROR=''
+	save_state
+}
+
 DEFAULT='' PREVIOUS='' TRIAL='' STAGED='' STATE=idle ERROR='' PROGRESS=0 STARTED_BY=''
+STAGING_FROM='' STAGING_ERROR='' STAGING_PROGRESS=0
 load_state() {
 	[ -r "$STATE_DIR/state.env" ] && . "$STATE_DIR/state.env"
 	# A first boot from the image: state.json alone (built by Gaia).
@@ -398,8 +414,7 @@ install_bundle() {
 	new_work
 	_need=$(( $(board_file_size "$_tar") / 1024 + RESERVE_KB ))
 	[ "$(free_kb)" -ge "$_need" ] || refuse "no room for this slot: it needs $((_need / 1024)) MiB with the reserve, /data has $(( $(free_kb) / 1024 )) MiB free; remove a slot first"
-	STATE=staging PROGRESS=100 ERROR=''
-	save_state
+	staging 100
 	tar -xf "$_tar" -C "$_work" || die "the bundle doesn't unpack"
 	# Unpacked: a streamed bundle's tar goes now, not after the install.
 	[ -z "$STREAMED" ] || { rm -f "$STREAMED"; STREAMED=''; }
@@ -576,8 +591,7 @@ cmd_stage_image() {
 	board_event update.stage "installing a slot from the image $(basename "$_file")"
 	new_work
 	[ "$(free_kb)" -ge "$RESERVE_KB" ] || refuse "no room to unpack the image: /data has $(( $(free_kb) / 1024 )) MiB free, the reserve is $((RESERVE_KB / 1024)) MiB; remove a slot first"
-	STATE=staging PROGRESS=0 ERROR=''
-	save_state
+	staging 0
 	mkdir -p "$_work/disk"
 	if [ "$_file" = - ]; then
 		# Hashed on the way through: stdin is read once.
@@ -743,8 +757,7 @@ cmd_stage_url() {
 	esac
 	mkdir -p "$DOWNLOAD_DIR"
 	_file=$DOWNLOAD_DIR/$_want.slot.tar
-	STATE=staging PROGRESS=0 ERROR=''
-	save_state
+	staging 0
 	# The tool's own reason (an HTTP status, a refused connection) goes into
 	# the error, so a failed download says why.
 	_err=$DOWNLOAD_DIR/.download.err
@@ -1133,7 +1146,7 @@ cmd_push() {
 
 mkdir -p "$BOARD_RUN_DIR" "$STATE_DIR" "$IMAGES"
 case "${1:-}" in
-stage | stage-url | apply | boot-once | rollback | remove | set-default | push) board_refuse_if_locked "update ${1}" ;;
+stage | stage-image | stage-url | apply | boot-once | rollback | remove | set-default | push) board_refuse_if_locked "update ${1}" ;;
 esac
 # A check changes nothing: no lock, so it never waits behind an install.
 if [ "${1:-}" = check ]; then
