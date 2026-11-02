@@ -7,6 +7,18 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **The simulated board: QEMU -M virt (2026-11-02, untested on a build):**
+  `BR2_RAZE_KERNEL_QEMU` (off; never on a board) appends
+  `linux/qemu.config` last: virtio disk/net/rng, the generic PCI host,
+  PL011/PL031/PL061, GICv3, the i6300esb watchdog. It only adds options,
+  so the release and slot-init's kernel check are the board's. A runner
+  (Gaia's `scripts/qemu-rpi-slots.sh`) stands in for the firmware: with no
+  `chosen/bootloader/tryboot` in the device tree, slot-init and the
+  writer take `atlas.tryboot=0|1` from the command line, and a trial
+  restart also leaves `tryboot.req` on p1 for it (3f9402a). Under QEMU set
+  `USB_GADGET_ENABLED=0` in /etc/board/usb-gadget.env: with no USB device
+  controller the gadget is the slot's management link, so every trial
+  would roll back.
 - **`slots stage-image` and the pre-reboot hook (2026-11-02):** the board
   installs a slots build's `.img.xz` itself: `slots stage-image <file|->
   [--sha256 <hex>] [--pin]` (stdin: xz, hashed on the way through). The disk

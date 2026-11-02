@@ -14,6 +14,17 @@ config BR2_RAZE_LEMNOS_USERS_TABLE
 	  `lemnos` user lemnosd.service runs as, created at build time
 	  because systemd-sysusers can't add it on a read-only root.
 
+config BR2_RAZE_KERNEL_QEMU
+	bool "Raze kernel for QEMU (simulated board only)"
+	default n
+	help
+	  Apply linux/qemu.config last, after raze.config and the trim:
+	  virtio disk and network, the generic PCI host, PL011/PL031/PL061,
+	  the i6300esb watchdog
+	  and GICv3, so the slot's own kernel boots on QEMU -M virt. Only
+	  adds options; the kernel release stays the board's. For the
+	  simulated board (HeliOS's qemu layer); never on in a board build.
+
 config BR2_RAZE_KERNEL_TRIM
 	bool "Raze kernel install-size trim"
 	default y

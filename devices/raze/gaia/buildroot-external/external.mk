@@ -21,6 +21,13 @@ ifeq ($(BR2_RAZE_KERNEL_TRIM),y)
 LINUX_KCONFIG_FRAGMENT_FILES += $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/raze-trim.config
 RAZE_KERNEL_FRAGMENTS += $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/raze-trim.config
 endif
+# The simulated board's kernel (BR2_RAZE_KERNEL_QEMU, never on a board): last,
+# so its VIRTIO_MENU=y wins over raze.config's "not set", here and in the
+# check (a fragment's later line wins).
+ifeq ($(BR2_RAZE_KERNEL_QEMU),y)
+LINUX_KCONFIG_FRAGMENT_FILES += $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/qemu.config
+RAZE_KERNEL_FRAGMENTS += $(BR2_EXTERNAL_RAZE_DEVICE_PATH)/linux/qemu.config
+endif
 
 # The package's kernel patches (linux/patches/*.patch, in order), after
 # Buildroot's own: ws2812-pio-rp1's clear_on_probe, which the package turns
