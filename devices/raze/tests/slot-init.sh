@@ -157,6 +157,23 @@ in_order "persist $R/boot/trial.txt" "umount $R/boot" "umount $R/data" "sync" "r
 grep -q "kernel log" "$R/data/board/slots/last-failure.log" || fail "no last-failure.log"
 grep -q "kernel log" "$R/boot/slot-init.log" || fail "no slot-init.log on p1"
 
+[ ! -e "$R/boot/tryboot.req" ] || fail "tryboot.req on a board the firmware boots"
+
+echo "under a runner (QEMU: no tryboot in the device tree, atlas.tryboot= on the command line)"
+setup
+rm "$R/proc/device-tree/chosen/bootloader/tryboot"
+sed -i 's/$/ atlas.tryboot=0/' "$R/proc/cmdline"
+rm "$R/data/slots/pv-a.erofs"
+run
+in_order "persist $R/boot/trial.txt" "persist $R/boot/tryboot.req" "umount $R/boot" "reboot-tryboot"
+setup
+rm "$R/proc/device-tree/chosen/bootloader/tryboot"
+sed -i 's/$/ atlas.tryboot=1/' "$R/proc/cmdline"
+rm "$R/data/slots/pv-a.erofs"
+run
+called "reboot-tryboot" && fail "a runner's trial fell back instead of restarting plainly"
+called "reboot" || fail "a runner's failed trial: no plain restart: $(cat "$T/calls")"
+
 echo "after three fallbacks in a row: no fourth, a plain restart"
 setup
 rm "$R/data/slots/pv-a.erofs"

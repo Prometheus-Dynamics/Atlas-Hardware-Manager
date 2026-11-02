@@ -367,6 +367,7 @@ up apply 2>/dev/null
 [ "$(wc -l < "$T/hook-calls")" = 2 ] || fail "the pre-reboot hook didn't run before the restart"
 [ "$(cat "$T/boot/trial.txt")" = "os_prefix=slots/pv-b/" ] || fail "trial.txt: $(cat "$T/boot/trial.txt")"
 [ "$(tail -n 1 "$T/reboots")" = tryboot ] || fail "no tryboot restart"
+[ ! -e "$T/boot/tryboot.req" ] || fail "tryboot.req on a board the firmware boots"
 [ "$(cat "$T/boot/default.txt")" = "os_prefix=slots/pv-a/" ] || fail "the default changed before confirm"
 
 echo "confirm on the trial makes it the default, with a root copy"
@@ -410,12 +411,24 @@ up confirm 2>/dev/null # lost again: no third try
 [ "$(cat "$T/reboots")" = tryboot ] || fail "tried a third time: $(cat "$T/reboots")"
 status | grep -q "didn't reach its initramfs's /init (its kernel stopped before it, or the restart lost the tryboot flag)" || fail "a trial that didn't reach /init: $(status)"
 grep -q '^GOOD=no' "$T/data/board/slots/pv-c.meta" || fail "a slot that didn't start isn't marked bad: $(cat "$T/data/board/slots/pv-c.meta")"
+# Under a runner (QEMU: atlas.tryboot= on the command line) the trial
+# restart is p1's tryboot.req as well.
+echo "console=ttyAMA0 atlas.tryboot=0" > "$T/cmdline"
+export BOARD_PROC_CMDLINE=$T/cmdline
 up apply 2>/dev/null
+unset BOARD_PROC_CMDLINE
+[ -e "$T/boot/tryboot.req" ] || fail "a runner's boot once left no tryboot.req"
+rm "$T/boot/tryboot.req"
 printf '\000\000\000\001' > "$T/dt/chosen/bootloader/tryboot"
 up confirm 2>/dev/null
 status | grep -q "the firmware did the trial boot but started pv-b" || fail "a tryboot that started another slot: $(status)"
 grep -q '^GOOD=no' "$T/data/board/slots/pv-c.meta" || fail "pv-c marked bad after a real trial"
 rm -rf "$T/dt"
+for flag in 0 1; do
+	echo "console=ttyAMA0 atlas.tryboot=$flag" > "$T/cmdline"
+	[ "$(. "$lib/lib.sh" && BOARD_PROC_CMDLINE=$T/cmdline board_tryboot)" = $flag ] || fail "a runner's atlas.tryboot=$flag isn't the tryboot flag"
+done
+[ -z "$(. "$lib/lib.sh" && BOARD_PROC_CMDLINE=$T/cmdline-none board_tryboot)" ] || fail "a tryboot flag with neither the firmware's nor a runner's"
 
 echo "a trial noticed on a boot that began at power-on says the board lost power"
 up apply 2>/dev/null || true

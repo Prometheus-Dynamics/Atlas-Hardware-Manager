@@ -418,9 +418,14 @@ board_rsts() {
 }
 
 # Whether the firmware booted this time as a tryboot (chosen/bootloader/
-# tryboot): 1 or 0; empty off a Pi.
+# tryboot): 1 or 0. Under a runner (QEMU) its atlas.tryboot=0|1 instead;
+# empty when neither says.
 board_tryboot() {
-	[ -r "$BOARD_DT_DIR/chosen/bootloader/tryboot" ] || return 0
+	if [ ! -r "$BOARD_DT_DIR/chosen/bootloader/tryboot" ]; then
+		board_cmdline_arg atlas.tryboot
+		case "$BOARD_ARG" in 0 | 1) echo "$BOARD_ARG" ;; esac
+		return 0
+	fi
 	od -An -tu1 -N4 "$BOARD_DT_DIR/chosen/bootloader/tryboot" | awk 'NF == 4 { print ($4 || $3 || $2 || $1) ? 1 : 0 }'
 }
 

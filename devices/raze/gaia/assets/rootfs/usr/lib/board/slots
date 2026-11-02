@@ -246,6 +246,17 @@ root_copy() {
 	boot_sync
 }
 
+# trial_txt <id>: the next tryboot starts <id>. A runner (QEMU) boots
+# with atlas.tryboot=0|1 and never sees the reboot argument, so for it the
+# "0 tryboot" is p1's tryboot.req too, which it deletes as it starts the
+# one trial boot (slot-init leaves it the same way). The boot FAT is
+# mounted.
+trial_txt() {
+	write_line trial.txt "os_prefix=slots/$1/"
+	board_cmdline_arg atlas.tryboot
+	[ -z "$BOARD_ARG" ] || write_line tryboot.req ''
+}
+
 tryboot_reboot() {
 	if [ -n "${UPDATE_REBOOT:-}" ]; then eval "$UPDATE_REBOOT"; return; fi
 	"$SYSTEMCTL" reboot --reboot-argument='0 tryboot'
@@ -786,7 +797,7 @@ cmd_boot_once() {
 	mount_boot
 	[ -d "$BOOT/slots/$_id" ] || refuse "slot $_id has no boot files"
 	run_hook pre-reboot "$_id" || refuse "the pre-reboot hook stopped the restart; nothing changed"
-	write_line trial.txt "os_prefix=slots/$_id/"
+	trial_txt "$_id"
 	# A new trial: confirm may try it once more if the restart loses its flag.
 	meta_set "$_id" RETRIED no
 	TRIAL=$_id STATE=rebooting
@@ -876,7 +887,7 @@ cmd_confirm() {
 	save_state
 	if [ -n "${_retry:-}" ]; then
 		mount_boot
-		write_line trial.txt "os_prefix=slots/$_retry/"
+		trial_txt "$_retry"
 		STATE=rebooting
 		save_state
 		umount_boot
