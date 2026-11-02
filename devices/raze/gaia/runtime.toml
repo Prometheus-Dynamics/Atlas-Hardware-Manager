@@ -242,15 +242,9 @@ dest = "/usr/lib/systemd/system/board-stream@.service"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-systemd-system-board-http-socket"
-src = "${self}/assets/rootfs/usr/lib/systemd/system/board-http.socket"
-dest = "/usr/lib/systemd/system/board-http.socket"
-origin = "static-asset"
-
-[[stage.files]]
 id = "raze-systemd-system-board-http-service"
-src = "${self}/assets/rootfs/usr/lib/systemd/system/board-http@.service"
-dest = "/usr/lib/systemd/system/board-http@.service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-http.service"
+dest = "/usr/lib/systemd/system/board-http.service"
 origin = "static-asset"
 
 [[stage.files]]
@@ -719,7 +713,6 @@ stage_files = [
   "raze-systemd-resolved-conf-d-60-board-mdns-conf",
   "raze-systemd-system-preset-70-board-preset",
   "raze-systemd-system-board-hostname-service",
-  "raze-systemd-system-board-http-socket",
   "raze-systemd-system-board-stream-socket",
   "raze-systemd-system-board-data-setup-service",
   "raze-board-data-setup",

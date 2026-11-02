@@ -1,12 +1,12 @@
 # Device package units, enabled by default when the image is built
 # (Buildroot runs `systemctl preset-all`). An OS turns one off with a preset
 # file that sorts earlier, e.g. /usr/lib/systemd/system-preset/50-os.preset:
-#   disable board-http.socket
+#   disable board-http.service
 enable board-hostname.service
 enable board-identity.service
 enable board-identity-refresh.path
 enable board-identity-refresh.timer
-enable board-http.socket
+enable board-http.service
 enable board-stream.socket
 enable board-usb-gadget.service
 enable board-usb-gadget-dhcp.service

@@ -1,6 +1,6 @@
 #!/bin/sh
-# One HTTP/1.0 exchange on stdin/stdout, started per connection by
-# board-http.socket (Accept=yes). Unauthenticated:
+# One HTTP/1.0 exchange on stdin/stdout, run per connection by
+# board-http.service (board-stream --serve-each). Unauthenticated:
 #   GET|HEAD /.well-known/pd-device  -> 200, the identity JSON
 #   GET|HEAD /status                 -> 200, `status --json` (read-only: the
 #                                       drift part is root's kept result)
@@ -20,8 +20,8 @@
 #                                       /run/board/requests/<id>, which a
 #                                       root path unit acts on; 404 otherwise.
 #                                       From the USB link (REMOTE_ADDR on the
-#                                       gadget network, set by systemd for
-#                                       Accept=yes) with the security switch
+#                                       gadget network, set by the
+#                                       listener) with the security switch
 #                                       off, BOARD_USB_ACTIONS count too, and
 #                                       the identity lists them
 #   other methods on those paths     -> 405

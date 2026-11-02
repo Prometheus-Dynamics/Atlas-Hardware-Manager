@@ -14,7 +14,35 @@ fn millis(name: &str, default: u64) -> Duration {
     )
 }
 
+/// `--serve-each <port> <program>`: the resident listener (`serve`).
+#[cfg(target_os = "linux")]
+fn serve_each(mut args: impl Iterator<Item = String>) -> ExitCode {
+    let (Some(port), Some(program)) = (args.next().and_then(|p| p.parse().ok()), args.next())
+    else {
+        let _ = writeln!(
+            io::stderr(),
+            "usage: board-stream --serve-each <port> <program>"
+        );
+        return ExitCode::from(2);
+    };
+    let served = board_stream::serve::listen(port).and_then(|listener| {
+        board_stream::serve::run(listener, program.into(), board_stream::serve::RUNTIME_MAX)
+    });
+    if let Err(error) = served {
+        let _ = writeln!(io::stderr(), "board-stream: serving {port}: {error}");
+        return ExitCode::FAILURE;
+    }
+    ExitCode::SUCCESS
+}
+
 fn main() -> ExitCode {
+    #[cfg(target_os = "linux")]
+    {
+        let mut args = std::env::args().skip(1);
+        if args.next().as_deref() == Some("--serve-each") {
+            return serve_each(args);
+        }
+    }
     let mut input = BufReader::new(io::stdin().lock());
     let mut out = io::stdout().lock();
     let request = match read_request(&mut input) {

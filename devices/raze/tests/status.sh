@@ -2,7 +2,7 @@
 # Off-device test of the board's awareness: the event log (lib.sh
 # board_event, event), the boot record, `status` (fake sysfs and systemctl),
 # drift, and the identity endpoint's GET /status and GET /events (one HTTP
-# exchange on stdin, as board-http.socket runs it).
+# exchange on stdin, as board-http.service runs it).
 # Needs python3. Run: sh devices/raze/tests/status.sh
 set -eu
 
@@ -498,7 +498,7 @@ grep -q 'm/s²' "$T/run/hardware.json" || fail "the hardware has a non-ASCII uni
 len=$(printf '%s\n' "$r" | sed -n 's/^Content-Length: \([0-9]*\)\r$/\1/p')
 [ "$len" = "$(printf '%s\n' "$r" | body | wc -c | tr -d ' ')" ] || fail "Content-Length $len"
 
-echo "per request, the identity and /status fork a handful of times, not a hundred (board-http@ runs one each)"
+echo "per request, the identity and /status fork a handful of times, not a hundred (board-http runs one each)"
 # As on the board: root's kept results fresh, timesyncd's directory, a boot
 # record, and no drift check (the endpoint's user can't).
 sh "$lib/status" --refresh-drift --refresh-failed --refresh-hardware --quiet || fail "refresh"

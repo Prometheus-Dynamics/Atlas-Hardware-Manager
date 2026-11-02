@@ -1,0 +1,36 @@
+[Unit]
+Description=Device identity endpoint (TCP 5899, GET /.well-known/pd-device)
+
+[Service]
+# One resident listener, sandboxed once: each connection runs identity-http
+# with REMOTE_ADDR/REMOTE_PORT set, as Accept=yes did, but starts no unit
+# (under QEMU a unit start was most of a request). The listener keeps the
+# socket unit's limits: 16 connections, 4 per address, 10 s per request
+# (then the request's processes are killed).
+ExecStart=/usr/bin/board-stream --serve-each 5899 /usr/lib/board/identity-http
+Restart=always
+RestartSec=1
+# Content-Length is the body's ${#} length: bytes only in the C locale.
+Environment=LC_ALL=C
+StandardError=journal
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+# The only write: an action request for the root path units to act on.
+ReadWritePaths=-/run/board/requests
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+# 16 requests at once, each a thread and a few processes.
+MemoryMax=64M
+TasksMax=96
+
+[Install]
+WantedBy=multi-user.target

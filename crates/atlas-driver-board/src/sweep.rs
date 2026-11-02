@@ -29,7 +29,7 @@ const EVERY: Duration = Duration::from_secs(60);
 const TIMEOUT: Duration = Duration::from_millis(600);
 /// Addresses asked at once.
 const AT_ONCE: usize = 48;
-/// The port every board serves its identity on (board-http.socket), as the
+/// The port every board serves its identity on (board-http.service), as the
 /// USB gadget's links assume too.
 pub(crate) const PORT: u16 = 5899;
 

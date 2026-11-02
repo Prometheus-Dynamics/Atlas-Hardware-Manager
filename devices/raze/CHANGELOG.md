@@ -7,6 +7,16 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **The identity endpoint starts no unit per request (2026-11-02):**
+  board-http.socket (Accept=yes) and its sandboxed `board-http@` instance
+  per connection are replaced by one resident `board-http.service`:
+  `board-stream --serve-each 5899 /usr/lib/board/identity-http`, sandboxed
+  once (the same sandbox, plus IPv4/IPv6 for its listener). Each connection
+  still runs identity-http with `REMOTE_ADDR`/`REMOTE_PORT`, and the socket
+  unit's limits stay: 16 at once, 4 per address, 10 s per request (then the
+  request's process group is killed). Under QEMU a unit start was 2.3–2.8 s
+  of a 2.6–3.4 s identity request, past Atlas's 2 s fetch timeout. An OS
+  preset that disabled `board-http.socket` now disables `board-http.service`.
 - **The simulated board: QEMU -M virt (2026-11-02, untested on a build):**
   `BR2_RAZE_KERNEL_QEMU` (off; never on a board) appends
   `linux/qemu.config` last: virtio disk/net/rng, the generic PCI host,
