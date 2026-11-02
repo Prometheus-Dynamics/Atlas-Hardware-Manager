@@ -14,8 +14,9 @@
 //!
 //! A sweep runs at most once a minute, in the background: discovery hands
 //! out what the last one found. Only a network's first sweep is waited for
-//! (children, `found_now`). Wider networks than a /24 are not swept (too
-//! many addresses to ask).
+//! (children, `found_now`); a one-shot command waits out the first sweep of
+//! this computer's own networks with [`first_sweeps`] and scans again.
+//! Wider networks than a /24 are not swept (too many addresses to ask).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::net::Ipv4Addr;
@@ -31,6 +32,34 @@ const AT_ONCE: usize = 48;
 /// The port every board serves its identity on (board-http.socket), as the
 /// USB gadget's links assume too.
 pub(crate) const PORT: u16 = 5899;
+
+/// The longest [`first_sweeps`] waits: a /24 takes about 6 rounds of
+/// [`TIMEOUT`].
+const FIRST_SWEEPS_LIMIT: Duration = Duration::from_secs(10);
+
+/// First sweeps of this computer's own networks still running, and whether
+/// any finished one found a board.
+static FIRST_SWEEPS: Mutex<(usize, bool)> = Mutex::new((0, false));
+
+fn first_sweeps_state() -> std::sync::MutexGuard<'static, (usize, bool)> {
+    FIRST_SWEEPS
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// For a one-shot command: waits for the first sweeps of this computer's own
+/// networks that a scan started (none started, no 10.x network: no wait)
+/// and says whether they found a board, which that scan couldn't see yet.
+pub async fn first_sweeps() -> bool {
+    let deadline = Instant::now() + FIRST_SWEEPS_LIMIT;
+    loop {
+        let (running, found) = *first_sweeps_state();
+        if running == 0 || Instant::now() >= deadline {
+            return found;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
 
 /// What a board answering a sweep said it is.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -97,9 +126,9 @@ impl Default for Sweeper {
 }
 
 impl Sweeper {
-    /// The identity URLs found so far; starts a sweep of `nets` in the
-    /// background when one is due.
-    pub(crate) fn found(&self, http: &reqwest::Client, nets: Vec<Net>) -> Vec<String> {
+    /// What was found so far, by identity URL; starts a sweep of `nets` in
+    /// the background when one is due.
+    pub(crate) fn found(&self, http: &reqwest::Client, nets: Vec<Net>) -> BTreeMap<String, Swept> {
         let mut state = self
             .state
             .lock()
@@ -107,11 +136,22 @@ impl Sweeper {
         let due = state.last.is_none_or(|last| last.elapsed() >= EVERY);
         if due && !state.running && !nets.is_empty() {
             state.running = true;
+            let first = state.last.is_none();
+            if first {
+                first_sweeps_state().0 += 1;
+            }
             let sweeper = self.clone();
             let http = http.clone();
-            tokio::spawn(async move { sweeper.sweep(&http, nets).await });
+            tokio::spawn(async move {
+                let found = sweeper.sweep(&http, nets).await;
+                if first {
+                    let mut waiting = first_sweeps_state();
+                    waiting.0 -= 1;
+                    waiting.1 |= found;
+                }
+            });
         }
-        state.found.keys().cloned().collect()
+        state.found.clone()
     }
 
     /// Like [`found`](Self::found), with each URL's serial, but the first
@@ -145,7 +185,8 @@ impl Sweeper {
             .clone()
     }
 
-    async fn sweep(&self, http: &reqwest::Client, nets: Vec<Net>) {
+    /// Sweeps `nets`; whether it found a board.
+    async fn sweep(&self, http: &reqwest::Client, nets: Vec<Net>) -> bool {
         let hosts: Vec<Ipv4Addr> = nets
             .into_iter()
             .collect::<BTreeSet<_>>()
@@ -192,9 +233,11 @@ impl Sweeper {
             .state
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let any = !found.is_empty();
         state.found = found;
         state.last = Some(Instant::now());
         state.running = false;
+        any
     }
 }
 
@@ -282,8 +325,41 @@ mod tests {
             .sweep(&http, vec![Net::parse("127.0.0.0/30").unwrap()])
             .await;
         assert_eq!(
-            sweeper.found(&http, Vec::new()),
+            sweeper
+                .found(&http, Vec::new())
+                .into_keys()
+                .collect::<Vec<_>>(),
             vec![format!("http://127.0.0.1:{port}{}", crate::IDENTITY_PATH)]
         );
+    }
+
+    /// A one-shot command waits for the background first sweep, and hears
+    /// that it found a board.
+    #[tokio::test]
+    async fn first_sweeps_waits_for_the_background_sweep() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 1024];
+                let _ = socket.read(&mut buf).await;
+                let body = r#"{"contract":1,"model":"raze","serial":"y"}"#;
+                let reply = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = socket.write_all(reply.as_bytes()).await;
+            }
+        });
+        let sweeper = Sweeper {
+            state: Arc::default(),
+            port,
+        };
+        let http = reqwest::Client::new();
+        let net = Net::parse("127.0.0.0/30").unwrap();
+        assert!(sweeper.found(&http, vec![net]).is_empty(), "not swept yet");
+        assert!(first_sweeps().await, "the first sweep's board");
+        assert_eq!(sweeper.found(&http, vec![net]).len(), 1);
     }
 }

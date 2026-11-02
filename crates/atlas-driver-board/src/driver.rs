@@ -309,7 +309,13 @@ impl Driver for BoardDriver {
             .collect();
         // Networks behind a board's USB route are that board's children.
         let nets = crate::sweep::own_robot_nets();
-        for found in self.sweeper.found(&self.http, nets) {
+        // Only this driver's model, as with the adverts.
+        let swept = self.sweeper.found(&self.http, nets).into_iter();
+        for (found, _) in swept.filter(|(_, swept)| {
+            swept
+                .model
+                .eq_ignore_ascii_case(self.manifest.family.as_str())
+        }) {
             if !addresses.contains(&found) {
                 addresses.push(found);
             }

@@ -16,8 +16,7 @@ pub(crate) type CommandResult = Result<ExitCode, String>;
 
 pub(crate) async fn ls(atlas: &Atlas, as_json: bool) -> CommandResult {
     let mut report = atlas.scan().await;
-    // A board only mDNS finds answers after that scan has already looked.
-    if atlas_driver_board::first_answers().await {
+    if found_late().await {
         report = atlas.scan().await;
     }
     let devices = atlas.devices();
@@ -217,10 +216,18 @@ fn print_plan(plan: &JobPlan) {
 pub(crate) async fn scan_settled(atlas: &Atlas) {
     atlas.scan().await;
     atlas.scan().await;
-    // A board only mDNS finds answers after those have already looked.
-    if atlas_driver_board::first_answers().await {
+    if found_late().await {
         atlas.scan().await;
     }
+}
+
+/// Whether a board answered only after the first scan looked: mDNS's first
+/// answers, or the first sweep of this computer's own robot networks (a
+/// network without mDNS). Both are waited out; then a scan sees them.
+async fn found_late() -> bool {
+    let heard = atlas_driver_board::first_answers().await;
+    let swept = atlas_driver_board::first_sweeps().await;
+    heard || swept
 }
 
 pub(crate) async fn update(atlas: &Atlas, options: UpdateOptions) -> CommandResult {

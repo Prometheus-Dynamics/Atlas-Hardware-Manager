@@ -23,6 +23,7 @@
 
 mod browse;
 pub use browse::first_answers;
+pub use sweep::first_sweeps;
 pub mod camera;
 mod console;
 mod contract;
