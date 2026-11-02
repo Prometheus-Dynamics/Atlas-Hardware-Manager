@@ -1,0 +1,11 @@
+# Radxa ROCK 5C device support from Atlas: everything an OS imports, so a later
+# addition here needs no change there. Import it from a source named `atlas`
+# (Gaia's examples/boards/rock-5c):
+#
+#   imports = [
+#     { source = "atlas", path = "devices/radxa-rock-5c/gaia/device.toml" },
+#   ]
+config = 3
+gaia_version = ">=2.0.0"
+
+imports = ["identity.toml"]

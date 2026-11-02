@@ -139,8 +139,15 @@ pub fn document(options: &Options, facts: &Facts) -> String {
             json_string(slot)
         )
     });
+    // Every board is flashed whole from its download mode; one booted from a
+    // Gaia NAND slot (`gaia.slot`) also takes slot installs.
+    let methods = if facts.slot.is_some() {
+        "\"image-write\",\"nand-slots\""
+    } else {
+        "\"image-write\""
+    };
     format!(
-        "{{\"contract\":1,\"model\":{},\"rev\":{},\"serial\":{},\"hostname\":{},\"os\":{{\"name\":{},\"version\":{}}},\"device_package\":{{\"version\":{},\"commit\":{}}},\"update_methods\":[\"nand-slots\"],\"manage_url\":null,\"macs\":{{{}}},\"time\":{now}{slot}}}",
+        "{{\"contract\":1,\"model\":{},\"rev\":{},\"serial\":{},\"hostname\":{},\"os\":{{\"name\":{},\"version\":{}}},\"device_package\":{{\"version\":{},\"commit\":{}}},\"update_methods\":[{methods}],\"manage_url\":null,\"macs\":{{{}}},\"time\":{now}{slot}}}",
         json_string(&options.model),
         json_or_null(options.rev.as_deref()),
         json_string(&facts.serial),
@@ -209,6 +216,52 @@ pub(crate) mod tests {
         std::fs::create_dir_all(root.join("proc/device-tree")).unwrap();
         std::fs::write(root.join("proc/device-tree/serial-number"), "ABC123\0").unwrap();
         assert_eq!(facts(&root).serial, "abc123");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// What devices/schema/identity.schema.json requires of the document.
+    fn schema_checked(document: &str) -> serde_json::Value {
+        let doc: serde_json::Value = serde_json::from_str(document).unwrap();
+        for key in [
+            "contract",
+            "model",
+            "rev",
+            "serial",
+            "hostname",
+            "os",
+            "device_package",
+            "update_methods",
+            "manage_url",
+            "macs",
+        ] {
+            assert!(doc.get(key).is_some(), "{key} missing");
+        }
+        let methods = doc["update_methods"].as_array().unwrap();
+        assert!(methods.iter().any(|method| method == "image-write"));
+        doc
+    }
+
+    #[test]
+    fn the_document_meets_the_schema_with_and_without_a_slot() {
+        let root = tree("document");
+        let options = Options {
+            model: "luckfox-pico-pro".into(),
+            rev: None,
+            package_version: "2026.1.0-dev.1+abcdef12".into(),
+            root: root.clone(),
+        };
+        let doc = schema_checked(&document(&options, &facts(&root)));
+        assert_eq!(doc["update_methods"][1], "nand-slots");
+        assert_eq!(doc["nand_slot"]["slot"], "b");
+        assert_eq!(doc["device_package"]["commit"], "abcdef12");
+        std::fs::write(
+            root.join("proc/cmdline"),
+            "root=PARTLABEL=rootfs-a rootwait\n",
+        )
+        .unwrap();
+        let doc = schema_checked(&document(&options, &facts(&root)));
+        assert_eq!(doc["update_methods"].as_array().unwrap().len(), 1);
+        assert!(doc.get("nand_slot").is_none());
         let _ = std::fs::remove_dir_all(root);
     }
 

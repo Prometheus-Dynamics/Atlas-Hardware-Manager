@@ -194,6 +194,12 @@ read-only, and takes no commands. `devices/luckfox-pico-pro/gaia/device.toml`
 imports it with the slot layer. Atlas's real browser and client found it across
 two network namespaces; not yet on a board.
 
+The ROCK 5C, ROCK 4D and K230D Zero carry the same package in their own
+`gaia/device.toml`: board-lite for aarch64, and for the K230D a static riscv64
+build (that target links dynamically unless built with `+crt-static`). Every
+board reports `update_methods: ["image-write"]`, plus `nand-slots` when it
+booted from a Gaia NAND slot.
+
 How Atlas writes to such a board isn't settled: it has no SSH, Orion or USB
 console, and nothing in it takes commands from the network.
 

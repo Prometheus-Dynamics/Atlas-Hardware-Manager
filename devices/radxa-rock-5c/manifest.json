@@ -6,8 +6,9 @@
   "display_name": "ROCK 5C",
   "record_only": true,
   "vendor": "Radxa",
-  "description": "Radxa ROCK 5C (Rockchip RK3588S2) dev board, on order. A board record: Atlas flashes it from maskrom (rockusb) with Rockchip's loader file and no vendor tool. Written from rkdeveloptool, U-Boot and Radxa's docs; untested on this board.",
+  "description": "Radxa ROCK 5C (Rockchip RK3588S2) dev board, on order. A board record: Atlas flashes it from maskrom (rockusb) with Rockchip's loader file and no vendor tool; running, it serves the identity contract (board-lite, gaia/device.toml), read-only. Written from rkdeveloptool, U-Boot and Radxa's docs; untested on this board.",
   "platform": { "soc": "RK3588S2", "arch": "aarch64" },
+  "identity": { "identity_port": 5899 },
   "recovery": {
     "usb_boot": { "vid": "2207", "pid": "350b" },
     "method": "rockusb",

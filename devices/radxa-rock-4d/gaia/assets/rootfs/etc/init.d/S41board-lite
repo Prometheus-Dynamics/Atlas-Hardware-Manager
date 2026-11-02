@@ -1,0 +1,16 @@
+#!/bin/sh
+# The board's identity contract for Atlas (crates/board-lite): its identity on
+# :5899 and its mDNS advertisement. Read-only. It waits for an address by
+# itself, so it doesn't matter whether DHCP has finished.
+
+BOARD_LITE=${BOARD_LITE:-/usr/sbin/board-lite}
+
+case "${1:-start}" in
+start)
+	"$BOARD_LITE" --model radxa-rock-4d > /dev/null 2>&1 &
+	;;
+stop)
+	killall board-lite 2> /dev/null
+	;;
+esac
+exit 0

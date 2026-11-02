@@ -17,5 +17,8 @@ path = "src/lib.rs"
 name = "board-lite"
 path = "src/main.rs"
 
+[dev-dependencies]
+serde_json.workspace = true
+
 [lints]
 workspace = true

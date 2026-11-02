@@ -1,0 +1,11 @@
+# BPI-CanMV-K230D-Zero device support from Atlas: everything an OS imports, so a later
+# addition here needs no change there. Import it from a source named `atlas`
+# (Gaia's examples/boards/k230d-zero):
+#
+#   imports = [
+#     { source = "atlas", path = "devices/bpi-canmv-k230d-zero/gaia/device.toml" },
+#   ]
+config = 3
+gaia_version = ">=2.0.0"
+
+imports = ["identity.toml"]

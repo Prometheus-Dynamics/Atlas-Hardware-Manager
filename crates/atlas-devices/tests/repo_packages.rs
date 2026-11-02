@@ -233,3 +233,59 @@ fn the_desktop_bundle_carries_every_package_file_the_app_reads() {
         }
     }
 }
+
+/// Each board record that names an identity port carries the package that
+/// serves it: board-lite built for the record's architecture, started with
+/// the record's model.
+#[test]
+fn board_records_with_an_identity_carry_board_lite_for_their_arch() {
+    let catalog = repo_catalog();
+    let mut with_identity = Vec::new();
+    for package in catalog.packages() {
+        let manifest = &package.manifest;
+        if !manifest.record_only || manifest.identity.identity_port.is_none() {
+            continue;
+        }
+        let model = manifest.model.as_str();
+        with_identity.push(model.to_string());
+        assert_eq!(manifest.identity.identity_port, Some(5899), "{model}");
+        let gaia = package.dir.join("gaia");
+        let read = |path: &str| {
+            std::fs::read_to_string(gaia.join(path))
+                .unwrap_or_else(|error| panic!("{model}: {path}: {error}"))
+        };
+        assert!(read("device.toml").contains("\"identity.toml\""), "{model}");
+        let recipe = read("identity.toml");
+        let arch = manifest
+            .platform
+            .as_ref()
+            .and_then(|platform| platform.arch.as_deref())
+            .expect(model);
+        let target = match arch {
+            "aarch64" => "aarch64-unknown-linux-musl",
+            "armv7" => "armv7-unknown-linux-musleabihf",
+            "riscv64" => "riscv64gc-unknown-linux-musl",
+            other => panic!("{model}: no board-lite target for {other}"),
+        };
+        assert!(
+            recipe.contains(&format!("target = \"{target}\"")),
+            "{model}: board-lite for {target}"
+        );
+        if arch == "riscv64" {
+            // This target links dynamically unless asked not to.
+            assert!(recipe.contains("+crt-static"), "{model}");
+        }
+        let init = read("assets/rootfs/etc/init.d/S41board-lite");
+        assert!(init.contains(&format!("--model {model} ")), "{model}");
+    }
+    with_identity.sort();
+    assert_eq!(
+        with_identity,
+        [
+            "bpi-canmv-k230d-zero",
+            "luckfox-pico-pro",
+            "radxa-rock-4d",
+            "radxa-rock-5c"
+        ]
+    );
+}

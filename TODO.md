@@ -37,19 +37,6 @@ unless the user says otherwise.
   - **Done when:** the draft covers everything on dev. It reopens with each
     change.
   - **Blocked by:** nothing.
-- [ ] **Running side of the other three board records.**
-  - **What:** the Luckfox has its identity package
-    (`devices/luckfox-pico-pro/gaia/device.toml`, 058c53c; written, untested).
-    The ROCK 5C, ROCK 4D and K230D Zero have only their flash records: no
-    `identity`, no `gaia/` package. board-lite needs a build for each; aarch64 is
-    in `rust-toolchain.toml`, riscv64 (K230D) isn't.
-  - **Why:** devices as data: no per-board code beyond the flasher, and Atlas
-    lists a running board the same way as a flashed one.
-  - **Done when:** each board is recognised running, from its package, on the
-    board.
-  - **Blocked by:** nothing for the packages (Gaia has images for all three:
-    006284a, 3d1f249). The proof: the boards, on order.
-
 ## Open: the user's call
 
 - [ ] **How Atlas writes to a Luckfox.**
@@ -256,6 +243,19 @@ no longer a blocker: Gaia's builds put each one beside its image (006284a,
   - **Blocked by:** the Luckfox Pico Pro. For the attach alone, the user's yes to
     `sudo modprobe nandsim` on this computer. Driving it from Atlas waits on the
     write path above.
+- [ ] **The four boards running: identity on the board.**
+  - **What:** each record's `gaia/device.toml` imports board-lite (identity on
+    :5899 and `_pd-device._tcp`, read-only), built for its arch: armv7 Luckfox
+    (058c53c), aarch64 ROCK 5C and 4D, static riscv64 K230D (riscv64 added to
+    `rust-toolchain.toml`). Written, untested: all four builds run under
+    qemu-user, and a repo test ties each record to its package.
+  - **Why:** devices as data: no per-board code beyond the flasher, and Atlas
+    lists a running board the same way as a flashed one.
+  - **Done when:** each board is listed by `atlas ls` running, from its package.
+  - **Blocked by:** the boards. Before that: Gaia importing the ROCK and K230D
+    packages into its examples (the Luckfox's is in, 17c20df). The K230D has
+    no Ethernet and Gaia's image sets up no Wi-Fi, so it has nothing to answer
+    on until one of them does.
 - [ ] **RK3562 and RK3566 records.**
   - **What:** board records for these two, in the user's additions. No record
     exists and no board is on order. The driver takes a new record as data.
@@ -364,7 +364,8 @@ again 2026-11-01); the board proofs are the open items above.
       from Gaia's `slot-bundle.tar` (3e7cbf7). Gaia 720c211 enabled the watchdog
       node, `/data` and the slot bundle.
 - [x] board-lite: identity on :5899 and `_pd-device._tcp` for a small board, the
-      Luckfox package, `atlas ls` waiting for mDNS's first answers (058c53c).
+      Luckfox package, `atlas ls` waiting for mDNS's first answers (058c53c); its
+      `update_methods` carry `image-write`, as the identity schema requires.
       Found by the real `atlas ls` across two network namespaces. In Gaia's full
       Luckfox image (Gaia 17c20df; root filesystem 2,043,904 bytes).
 

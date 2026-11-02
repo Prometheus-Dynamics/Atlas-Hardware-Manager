@@ -6,8 +6,9 @@
   "display_name": "CanMV K230D Zero",
   "record_only": true,
   "vendor": "Banana Pi / Canaan",
-  "description": "BPI-CanMV-K230D-Zero (Kendryte K230D, 128 MB LPDDR4 in package) dev board, on order. A board record: Atlas flashes it from the K230 boot ROM's USB mode with Canaan's burner U-Boot and no vendor tool. Written from Canaan's k230_burning_tool and docs; untested on this board.",
+  "description": "BPI-CanMV-K230D-Zero (Kendryte K230D, 128 MB LPDDR4 in package) dev board, on order. A board record: Atlas flashes it from the K230 boot ROM's USB mode with Canaan's burner U-Boot and no vendor tool; running, it serves the identity contract (board-lite, gaia/device.toml), read-only. Written from Canaan's k230_burning_tool and docs; untested on this board.",
   "platform": { "soc": "K230D", "arch": "riscv64" },
+  "identity": { "identity_port": 5899 },
   "recovery": {
     "usb_boot": { "vid": "29f1", "pid": "0230" },
     "method": "k230-usb",
@@ -34,7 +35,8 @@
       "The burner's load address on the board: 0x80300000, where Gaia's burner links (k230_flash uses 0x80360000 for its own loaders). If the boot ROM won't start it there, Atlas says to check this.",
       "Which of the two USB-C ports is the OTG data port, and whether a BOOT key exists (the page names a function key and a reset key only).",
       "Whether the boot ROM wants Canaan's K230 firmware header on the burner over USB (k230_flash sends it raw).",
-      "The medium codes (SD 2, SPI-NAND 3) are the Python port's; the C tool's header wasn't read."
+      "The medium codes (SD 2, SPI-NAND 3) are the Python port's; the C tool's header wasn't read.",
+      "Running, Atlas reaches it only over the network: the board has no Ethernet, and Gaia's image sets up no Wi-Fi yet, so board-lite has no address to answer on until it does."
     ]
   }
 }
