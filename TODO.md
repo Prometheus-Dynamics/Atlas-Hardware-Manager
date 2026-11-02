@@ -19,16 +19,6 @@ unless the user says otherwise.
 
 ## Open: code, no hardware needed
 
-- [ ] **The file-size gate fails on dev.**
-  - **What:** `scripts/check-file-sizes.sh` fails on three files over 600 lines:
-    `crates/atlas-driver-soc/src/flash.rs` (1004),
-    `crates/atlas-driver-rpi/src/remote.rs` (833),
-    `crates/atlas-ubi/src/nand_slots.rs` (652). Split them.
-  - **Why:** the gate runs before clippy and the tests, so on all three OSes
-    CI's `checks` stop there (run 41301714645, 058c53c). That run's `device
-    package tests` also failed, on a rustup download of clippy, not on a test.
-  - **Done when:** the script exits 0 and a CI run on dev passes.
-  - **Blocked by:** nothing.
 - [ ] **Release notes kept current.**
   - **What:** the draft, docs/release-notes/2026.1.0.md. It has the flashing and
     raw SPI-NAND writes; it lacks NAND slots on a running board (702b1ae,
@@ -368,6 +358,16 @@ again 2026-11-01); the board proofs are the open items above.
       `update_methods` carry `image-write`, as the identity schema requires.
       Found by the real `atlas ls` across two network namespaces. In Gaia's full
       Luckfox image (Gaia 17c20df; root filesystem 2,043,904 bytes).
+
+### CI green on all three OSes (2026-11-02)
+
+- [x] The three files over the 600-line gate split (e05452b). With the gate
+      passing, clippy and the tests reached macOS and Windows again and found
+      what had built up behind it: Linux-only imports, tests and fields
+      (3e6a8d6, 884775f), the board console on Windows and its host-shell
+      tests (c4cadbc), the app not compiling on Windows since cc6389b
+      (d53912e), and folder syncs Windows can't do (a3a630f). Run 41422351907:
+      `checks` green on Ubuntu, macOS and Windows.
 
 ### Core and contract
 - [x] Driver contract (`atlas-driver`): identity, links, capabilities
