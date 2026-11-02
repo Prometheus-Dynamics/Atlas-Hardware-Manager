@@ -469,3 +469,24 @@ async fn only_a_routing_board_on_usb_has_children() {
     assert!(driver.routed_nets(&identity).is_empty());
     assert!(driver.children(&identity).await.unwrap().is_empty());
 }
+
+/// The roboRIO and the SystemCore have their own drivers (atlas-driver-robot)
+/// in the same families; a board driver for their packages would take their
+/// place in the registry, and neither would be found.
+#[test]
+fn devices_recognised_by_data_get_no_board_driver() {
+    let devices = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../devices");
+    let catalog = DeviceCatalog::load(&[devices]);
+    let families: Vec<String> = drivers_for_catalog(&catalog, &SshAccess::default())
+        .iter()
+        .map(|driver| driver.manifest().family.as_str().to_string())
+        .collect();
+    assert!(families.contains(&"raze".to_string()), "{families:?}");
+    assert!(
+        families.contains(&"luckfox-pico-pro".to_string()),
+        "{families:?}"
+    );
+    for theirs in ["roborio", "systemcore"] {
+        assert!(!families.contains(&theirs.to_string()), "{families:?}");
+    }
+}

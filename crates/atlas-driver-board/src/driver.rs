@@ -269,9 +269,13 @@ pub fn drivers_for_catalog(catalog: &DeviceCatalog, ssh: &SshAccess) -> Vec<Arc<
     catalog
         .packages()
         .iter()
-        // A board record speaks no identity contract, unless it says it does.
+        // A board record speaks no identity contract, unless it says it does;
+        // a device recognised by data (the roboRIO, the SystemCore:
+        // `fingerprints`) has its own driver, which a board driver of the
+        // same family would push out of the registry.
         .filter(|package| {
-            !package.manifest.record_only || package.manifest.identity.identity_port.is_some()
+            (!package.manifest.record_only || package.manifest.identity.identity_port.is_some())
+                && package.manifest.fingerprints.is_empty()
         })
         .map(|package| {
             Arc::new(BoardDriver::with_ssh(package.clone(), ssh.clone())) as Arc<dyn Driver>
