@@ -48,6 +48,15 @@ fn local(config: ImageServerConfig) -> ImageServer {
     })
 }
 
+/// A client whose requests fail rather than hang: a stuck response shows
+/// as the step that got stuck (one hung for 44 minutes on macOS CI).
+fn client() -> reqwest::Client {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .unwrap()
+}
+
 fn pattern(len: usize) -> Vec<u8> {
     (0..len).map(|i| (i * 7 % 251) as u8).collect()
 }
@@ -93,7 +102,7 @@ async fn whole_files_heads_and_ranges() {
     let server = local(ImageServerConfig::default());
     let (url, _) = offer(&server, &path, &sum);
     assert!(url.contains("photon%20vision.img.xz"), "{url}");
-    let client = reqwest::Client::new();
+    let client = client();
     let etag = format!("\"{sum}\"");
 
     let whole = client.get(&url).send().await.unwrap();
@@ -276,13 +285,13 @@ async fn downloads_per_token_are_capped() {
     assert_eq!(busy.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert!(busy.headers().contains_key(header::RETRY_AFTER));
     // HEAD isn't a download.
-    let head = reqwest::Client::new().head(&url).send().await.unwrap();
+    let head = client().head(&url).send().await.unwrap();
     assert_eq!(head.status(), StatusCode::OK);
 
     drop(first);
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
-        let again = reqwest::Client::new()
+        let again = client()
             .get(&url)
             .header(header::RANGE, "bytes=0-0")
             .send()
@@ -311,7 +320,7 @@ async fn gigabyte_images_stream_from_disk() {
     drop(file);
     let server = local(ImageServerConfig::default());
     let (url, _) = offer(&server, &path, &"0".repeat(64));
-    let client = reqwest::Client::new();
+    let client = client();
 
     let head = client.head(&url).send().await.unwrap();
     assert_eq!(
