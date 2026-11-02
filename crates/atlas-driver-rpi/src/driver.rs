@@ -441,7 +441,7 @@ mod tests {
             agent_jobs: None,
         });
         let gadget = StorageGadget {
-            location: "001-4".into(),
+            location: "1-4".into(),
             port: "1-4".into(),
             serial: Some("a317bcbee5226d57".into()),
         };

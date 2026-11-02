@@ -11,7 +11,7 @@ pub mod k230;
 pub mod rockchip;
 pub mod transport;
 
-pub use transport::{NusbIo, Script, Step, UsbError, UsbIo};
+pub use transport::{DeviceIo, Script, Step, UsbError, UsbIo};
 
 /// What a long transfer is doing.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

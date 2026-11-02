@@ -1,17 +1,13 @@
 //! The USB a SoC's download mode needs: vendor control requests to the
-//! device, and one bulk OUT and one bulk IN endpoint. [`NusbIo`] is the
-//! real one; tests drive the protocols through [`Script`], which checks
+//! device, and one bulk OUT and one bulk IN endpoint. [`DeviceIo`] is the
+//! real one (lemnos-usb); tests drive the protocols through [`Script`], which checks
 //! every transfer against a recorded trace.
 
 use std::time::Duration;
 
 use async_trait::async_trait;
-pub use nusb::DeviceInfo;
-use nusb::descriptors::TransferType;
-use nusb::transfer::{
-    Buffer, Bulk, ControlIn, ControlOut, ControlType, Direction, In, Out, Recipient, TransferError,
-};
-use nusb::{Endpoint, ErrorKind, Interface};
+pub use lemnos_usb::UsbDeviceInfo as DeviceInfo;
+use lemnos_usb::{ControlSetup, Direction, ErrorKind, Interface, TransferType, UsbDevice};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum UsbError {
@@ -72,20 +68,35 @@ pub trait UsbIo: Send {
 /// `1-2.3`: the bus and port path, stable while the board stays in the same
 /// port, across its re-enumeration between download stages.
 pub fn location(info: &DeviceInfo) -> String {
-    let ports: Vec<String> = info.port_chain().iter().map(u8::to_string).collect();
-    format!("{}-{}", info.bus_id(), ports.join("."))
+    info.location().to_string()
+}
+
+/// Every USB device, listed off the async threads.
+pub(crate) async fn list_all() -> Result<Vec<DeviceInfo>, UsbError> {
+    tokio::task::spawn_blocking(lemnos_usb::list_devices)
+        .await
+        .map_err(|error| UsbError::Other(error.to_string()))?
+        .map_err(|error| UsbError::Other(error.to_string()))
 }
 
 const CONTROL_TIMEOUT: Duration = Duration::from_secs(5);
 
-fn transfer_error(error: TransferError) -> UsbError {
-    match error {
-        TransferError::Disconnected => UsbError::Disconnected,
-        other => UsbError::Other(other.to_string()),
+fn transfer_error(error: lemnos_usb::Error) -> UsbError {
+    match error.kind() {
+        ErrorKind::Disconnected => UsbError::Disconnected,
+        _ => UsbError::Other(error.to_string()),
     }
 }
 
-fn access_error(error: &nusb::Error, what: &str) -> UsbError {
+fn joined<T>(
+    result: Result<Result<T, lemnos_usb::Error>, tokio::task::JoinError>,
+) -> Result<T, UsbError> {
+    result
+        .map_err(|error| UsbError::Other(error.to_string()))?
+        .map_err(transfer_error)
+}
+
+fn access_error(error: &lemnos_usb::Error, what: &str) -> UsbError {
     match error.kind() {
         ErrorKind::PermissionDenied => UsbError::Access {
             message: format!("No permission to open the {what}."),
@@ -112,73 +123,80 @@ fn access_error(error: &nusb::Error, what: &str) -> UsbError {
 }
 
 /// A real device, its first interface with a bulk endpoint pair claimed.
-pub struct NusbIo {
-    interface: Interface,
-    out: Endpoint<Bulk, Out>,
-    input: Endpoint<Bulk, In>,
+pub struct DeviceIo {
+    device: UsbDevice,
+    /// Held for the claim; dropping it releases the interface.
+    _interface: Interface,
+    out: u8,
+    out_packet: usize,
+    input: u8,
+    in_packet: usize,
     bulk_timeout: Duration,
 }
 
-impl NusbIo {
+impl DeviceIo {
     /// Opens `info`, `what` naming it in errors ("Rockchip maskrom device").
     pub async fn open(
         info: &DeviceInfo,
         what: &str,
         bulk_timeout: Duration,
     ) -> Result<Self, UsbError> {
-        let device = info
-            .open()
+        let info = info.clone();
+        let what = what.to_string();
+        tokio::task::spawn_blocking(move || Self::open_blocking(&info, &what, bulk_timeout))
             .await
-            .map_err(|error| access_error(&error, what))?;
+            .map_err(|error| UsbError::Other(error.to_string()))?
+    }
+
+    fn open_blocking(
+        info: &DeviceInfo,
+        what: &str,
+        bulk_timeout: Duration,
+    ) -> Result<Self, UsbError> {
+        let device = UsbDevice::open(info).map_err(|error| access_error(&error, what))?;
         let config = device
             .active_configuration()
             .map_err(|error| UsbError::Other(error.to_string()))?;
         // The first interface with both bulk directions.
-        let mut found = None;
-        for interface in config.interfaces() {
-            for alt in interface.alt_settings() {
+        let found = config.interfaces.iter().find_map(|interface| {
+            interface.alternates.iter().find_map(|alt| {
                 let bulk = |direction| {
-                    alt.endpoints()
-                        .find(|ep| {
-                            ep.transfer_type() == TransferType::Bulk && ep.direction() == direction
-                        })
-                        .map(|ep| ep.address())
+                    alt.endpoints.iter().find(|ep| {
+                        ep.transfer_type == TransferType::Bulk && ep.direction == direction
+                    })
                 };
-                if let (Some(out), Some(input)) = (bulk(Direction::Out), bulk(Direction::In)) {
-                    found = Some((alt.interface_number(), out, input));
-                    break;
-                }
-            }
-            if found.is_some() {
-                break;
-            }
-        }
+                Some((
+                    interface.number,
+                    *bulk(Direction::Out)?,
+                    *bulk(Direction::In)?,
+                ))
+            })
+        });
         let (number, out, input) = found
             .ok_or_else(|| UsbError::Protocol(format!("the {what} has no bulk endpoint pair")))?;
-        #[cfg(target_os = "linux")]
-        let claimed = device.detach_and_claim_interface(number).await;
-        #[cfg(not(target_os = "linux"))]
-        let claimed = device.claim_interface(number).await;
-        let interface = claimed.map_err(|error| access_error(&error, what))?;
-        let out = interface
-            .endpoint::<Bulk, Out>(out)
-            .map_err(|error| UsbError::Other(error.to_string()))?;
-        let input = interface
-            .endpoint::<Bulk, In>(input)
-            .map_err(|error| UsbError::Other(error.to_string()))?;
+        // Linux unbinds a kernel driver first; elsewhere a plain claim.
+        let interface = if cfg!(target_os = "linux") {
+            device.detach_and_claim_interface(number)
+        } else {
+            device.claim_interface(number)
+        }
+        .map_err(|error| access_error(&error, what))?;
         Ok(Self {
-            interface,
-            out,
-            input,
+            device,
+            _interface: interface,
+            out: out.address,
+            out_packet: usize::from(out.max_packet_size).max(1),
+            input: input.address,
+            in_packet: usize::from(input.max_packet_size).max(1),
             bulk_timeout,
         })
     }
 }
 
 #[async_trait]
-impl UsbIo for NusbIo {
+impl UsbIo for DeviceIo {
     fn max_packet_out(&self) -> usize {
-        self.out.max_packet_size().max(1)
+        self.out_packet
     }
 
     async fn control_out(
@@ -188,20 +206,14 @@ impl UsbIo for NusbIo {
         index: u16,
         data: &[u8],
     ) -> Result<(), UsbError> {
-        self.interface
-            .control_out(
-                ControlOut {
-                    control_type: ControlType::Vendor,
-                    recipient: Recipient::Device,
-                    request,
-                    value,
-                    index,
-                    data,
-                },
-                CONTROL_TIMEOUT,
-            )
-            .await
-            .map_err(transfer_error)
+        let device = self.device.clone();
+        let setup = ControlSetup::vendor(Direction::Out, request, value, index);
+        let data = data.to_vec();
+        joined(
+            tokio::task::spawn_blocking(move || device.control_out(&setup, &data, CONTROL_TIMEOUT))
+                .await,
+        )
+        .map(drop)
     }
 
     async fn control_in(
@@ -211,35 +223,28 @@ impl UsbIo for NusbIo {
         index: u16,
         length: u16,
     ) -> Result<Vec<u8>, UsbError> {
-        self.interface
-            .control_in(
-                ControlIn {
-                    control_type: ControlType::Vendor,
-                    recipient: Recipient::Device,
-                    request,
-                    value,
-                    index,
-                    length,
-                },
-                CONTROL_TIMEOUT,
-            )
-            .await
-            .map_err(transfer_error)
+        let device = self.device.clone();
+        let setup = ControlSetup::vendor(Direction::In, request, value, index);
+        joined(
+            tokio::task::spawn_blocking(move || device.control_in(&setup, length, CONTROL_TIMEOUT))
+                .await,
+        )
     }
 
     async fn bulk_out(&mut self, data: &[u8]) -> Result<(), UsbError> {
-        self.out.submit(Buffer::from(data.to_vec()));
-        let Ok(completion) =
-            tokio::time::timeout(self.bulk_timeout, self.out.next_complete()).await
-        else {
-            self.out.cancel_all();
+        let mut transfer = self
+            .device
+            .submit_bulk_out(self.out, data.to_vec())
+            .map_err(transfer_error)?;
+        let Ok(outcome) = tokio::time::timeout(self.bulk_timeout, &mut transfer).await else {
+            transfer.cancel();
             return Err(UsbError::Timeout("a bulk write".into()));
         };
-        completion.status.map_err(transfer_error)?;
-        if completion.actual_len != data.len() {
+        let outcome = outcome.map_err(transfer_error)?;
+        if outcome.actual_length != data.len() {
             return Err(UsbError::Protocol(format!(
                 "took {} of {} bytes",
-                completion.actual_len,
+                outcome.actual_length,
                 data.len()
             )));
         }
@@ -248,18 +253,19 @@ impl UsbIo for NusbIo {
 
     async fn bulk_in(&mut self, max: usize) -> Result<Vec<u8>, UsbError> {
         // IN transfers are whole packets.
-        let packet = self.input.max_packet_size().max(1);
-        let buffer = self.input.allocate(max.div_ceil(packet) * packet);
-        self.input.submit(buffer);
-        let Ok(completion) =
-            tokio::time::timeout(self.bulk_timeout, self.input.next_complete()).await
-        else {
-            self.input.cancel_all();
+        let buffer = vec![0; max.div_ceil(self.in_packet) * self.in_packet];
+        let mut transfer = self
+            .device
+            .submit_bulk_in(self.input, buffer)
+            .map_err(transfer_error)?;
+        let Ok(outcome) = tokio::time::timeout(self.bulk_timeout, &mut transfer).await else {
+            transfer.cancel();
             return Err(UsbError::Timeout("a bulk read".into()));
         };
-        completion.status.map_err(transfer_error)?;
-        let mut data = completion.buffer.into_vec();
-        data.truncate(completion.actual_len.min(max));
+        let outcome = outcome.map_err(transfer_error)?;
+        let length = outcome.actual_length.min(max);
+        let mut data = outcome.into_buffer();
+        data.truncate(length);
         Ok(data)
     }
 }

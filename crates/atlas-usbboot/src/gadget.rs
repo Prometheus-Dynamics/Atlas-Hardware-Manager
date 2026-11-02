@@ -3,7 +3,7 @@
 //! these too, so a flash that stopped after USB boot (or a board booted by
 //! another tool) can be written without power-cycling it.
 
-use nusb::DeviceInfo;
+use lemnos_usb::UsbDeviceInfo as DeviceInfo;
 use serde::Serialize;
 
 use crate::{BROADCOM_VENDOR_ID, UsbBootError};
@@ -40,27 +40,22 @@ fn is_storage_gadget(info: &DeviceInfo) -> bool {
         && info.product_id() == STORAGE_GADGET_PRODUCT_ID
         && info
             .interfaces()
-            .any(|interface| interface.class() == MASS_STORAGE_CLASS)
+            .iter()
+            .any(|interface| interface.class == MASS_STORAGE_CLASS)
 }
 
 /// Every Pi currently exposing its eMMC as a USB disk.
 pub async fn list_storage_gadgets() -> Result<Vec<StorageGadget>, UsbBootError> {
-    let devices = nusb::list_devices()
-        .await
-        .map_err(|error| UsbBootError::Usb(error.to_string()))?;
-    Ok(devices
+    Ok(crate::usb::list_all()
+        .await?
+        .into_iter()
         .filter(is_storage_gadget)
         .map(|info| {
-            let ports: Vec<String> = info.port_chain().iter().map(u8::to_string).collect();
-            let bus = info.bus_id();
-            let sysfs_bus = bus.trim_start_matches('0');
+            // Lemnos's location is the sysfs form already (`1-4.2`).
+            let location = info.location().to_string();
             StorageGadget {
-                location: format!("{bus}-{}", ports.join(".")),
-                port: format!(
-                    "{}-{}",
-                    if sysfs_bus.is_empty() { "0" } else { sysfs_bus },
-                    ports.join(".")
-                ),
+                port: location.clone(),
+                location,
                 serial: info.serial_number().map(str::to_string),
             }
         })
@@ -73,7 +68,7 @@ mod tests {
 
     fn gadget(serial: Option<&str>) -> StorageGadget {
         StorageGadget {
-            location: "001-4".into(),
+            location: "1-4".into(),
             port: "1-4".into(),
             serial: serial.map(str::to_string),
         }

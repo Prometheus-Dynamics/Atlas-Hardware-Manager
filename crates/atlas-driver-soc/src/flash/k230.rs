@@ -25,7 +25,7 @@ impl Job {
         self.progress.step_started(UpdateStep::Transfer);
         let mut io = handle.block_on(async {
             let info = self.wait_for(None).await?;
-            let mut io = NusbIo::open(&info, "K230 USB boot device", BULK_TIMEOUT)
+            let mut io = DeviceIo::open(&info, "K230 USB boot device", BULK_TIMEOUT)
                 .await
                 .map_err(usb(UpdateStep::Transfer))?;
             match bootrom::stage(&mut io).await.map_err(usb(UpdateStep::Transfer))? {
@@ -49,7 +49,7 @@ impl Job {
             loop {
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 if let Ok(info) = self.wait_for(None).await
-                    && let Ok(mut io) = NusbIo::open(&info, "K230 burner", BULK_TIMEOUT).await
+                    && let Ok(mut io) = DeviceIo::open(&info, "K230 burner", BULK_TIMEOUT).await
                     && matches!(bootrom::stage(&mut io).await, Ok(Stage::Burner))
                 {
                     return Ok(io);

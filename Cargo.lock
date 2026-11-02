@@ -252,9 +252,9 @@ dependencies = [
  "board-lite",
  "futures",
  "if-addrs",
+ "lemnos-usb",
  "mdns-sd",
  "nix",
- "nusb",
  "reqwest",
  "rmpv",
  "serde",
@@ -301,7 +301,7 @@ dependencies = [
  "atlas-usb-agent",
  "futures",
  "if-addrs",
- "nusb",
+ "lemnos-usb",
  "reqwest",
  "serde",
  "serde_json",
@@ -349,8 +349,8 @@ dependencies = [
  "async-trait",
  "atlas-flasher-proto",
  "flasher",
+ "lemnos-usb",
  "lzma-rs",
- "nusb",
  "ruzstd",
  "serde_json",
  "sha2 0.11.0",
@@ -420,7 +420,7 @@ version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "atlas-ubi",
- "nusb",
+ "lemnos-usb",
  "serde",
  "sha2 0.11.0",
  "tokio",
@@ -444,6 +444,7 @@ dependencies = [
  "http-body-util",
  "hyper",
  "hyper-util",
+ "lemnos-usb",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -455,8 +456,7 @@ name = "atlas-usbboot"
 version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
- "futures",
- "nusb",
+ "lemnos-usb",
  "serde",
  "thiserror 2.0.21",
  "tokio",
@@ -2611,6 +2611,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "lemnos-linux-sys"
+version = "2.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=a40f71b9580be07d7cc8035e339ff1b7e1423c5d#a40f71b9580be07d7cc8035e339ff1b7e1423c5d"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "lemnos-usb"
+version = "2.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=a40f71b9580be07d7cc8035e339ff1b7e1423c5d#a40f71b9580be07d7cc8035e339ff1b7e1423c5d"
+dependencies = [
+ "futures-core",
+ "lemnos-linux-sys",
+ "libc",
+ "nusb",
+]
+
+[[package]]
 name = "libappindicator"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2936,9 +2955,9 @@ dependencies = [
 
 [[package]]
 name = "nusb"
-version = "0.2.7"
+version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18ef13beb3b3a8fc16fd7aea912ebd3d45dde00a9a5b968d0742297468065845"
+checksum = "1de8b6d15f559f50760dad6c1b56fde4041f99dc96a08e55c2b41f44c7417ad9"
 dependencies = [
  "core-foundation",
  "core-foundation-sys",
@@ -2950,11 +2969,10 @@ dependencies = [
  "once_cell",
  "rustix",
  "slab",
- "tokio",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]

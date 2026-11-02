@@ -1,13 +1,15 @@
-//! USB boot over nusb: finding Pis in boot mode and running both rounds.
+//! USB boot over Lemnos's USB layer (lemnos-usb): finding Pis in boot mode
+//! and running both rounds. Its calls block, so they run on tokio's blocking
+//! pool; bulk transfers are futures.
 
 use std::collections::BTreeMap;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use nusb::transfer::{
-    Buffer, Bulk, ControlIn, ControlOut, ControlType, Out, Recipient, TransferError,
+use lemnos_usb::{
+    ControlKind, ControlRecipient, ControlSetup, Direction, ErrorKind, Interface, UsbDevice,
+    UsbDeviceInfo as DeviceInfo,
 };
-use nusb::{DeviceInfo, Endpoint, ErrorKind, Interface};
 use serde::Serialize;
 
 use crate::protocol::{BootEvent, BootTransport, FileServerOutcome, file_server, second_stage};
@@ -79,8 +81,7 @@ pub struct BootDevice {
 }
 
 fn location(info: &DeviceInfo) -> String {
-    let ports: Vec<String> = info.port_chain().iter().map(u8::to_string).collect();
-    format!("{}-{}", info.bus_id(), ports.join("."))
+    info.location().to_string()
 }
 
 fn boot_chip(info: &DeviceInfo) -> Option<Chip> {
@@ -89,11 +90,18 @@ fn boot_chip(info: &DeviceInfo) -> Option<Chip> {
         .flatten()
 }
 
-async fn list_infos() -> Result<Vec<(DeviceInfo, Chip)>, UsbBootError> {
-    let devices = nusb::list_devices()
+/// Every USB device, listed off the async threads.
+pub(crate) async fn list_all() -> Result<Vec<DeviceInfo>, UsbBootError> {
+    tokio::task::spawn_blocking(lemnos_usb::list_devices)
         .await
-        .map_err(|error| UsbBootError::Usb(error.to_string()))?;
-    Ok(devices
+        .map_err(|error| UsbBootError::Usb(error.to_string()))?
+        .map_err(|error| UsbBootError::Usb(error.to_string()))
+}
+
+async fn list_infos() -> Result<Vec<(DeviceInfo, Chip)>, UsbBootError> {
+    Ok(list_all()
+        .await?
+        .into_iter()
         .filter_map(|info| boot_chip(&info).map(|chip| (info, chip)))
         .collect())
 }
@@ -112,19 +120,12 @@ pub async fn list_boot_devices() -> Result<Vec<BootDevice>, UsbBootError> {
         .collect())
 }
 
-#[cfg(target_os = "windows")]
+/// Windows only: no WinUSB driver bound (`winusb_bound` is `None` elsewhere).
 fn needs_driver(info: &DeviceInfo) -> bool {
-    !info
-        .driver()
-        .is_some_and(|driver| driver.eq_ignore_ascii_case("winusb"))
+    info.winusb_bound() == Some(false)
 }
 
-#[cfg(not(target_os = "windows"))]
-fn needs_driver(_info: &DeviceInfo) -> bool {
-    false
-}
-
-fn access_error(error: &nusb::Error) -> UsbBootError {
+fn access_error(error: &lemnos_usb::Error) -> UsbBootError {
     match error.kind() {
         ErrorKind::PermissionDenied => UsbBootError::Access {
             message: "No permission to open the Pi's USB boot device.".into(),
@@ -159,17 +160,43 @@ fn windows_driver_error() -> UsbBootError {
     }
 }
 
-fn transfer_error(error: TransferError) -> UsbBootError {
-    match error {
-        TransferError::Disconnected => UsbBootError::Disconnected,
-        other => UsbBootError::Usb(other.to_string()),
+fn transfer_error(error: lemnos_usb::Error) -> UsbBootError {
+    match error.kind() {
+        ErrorKind::Disconnected => UsbBootError::Disconnected,
+        _ => UsbBootError::Usb(error.to_string()),
     }
+}
+
+fn joined<T>(
+    result: Result<Result<T, lemnos_usb::Error>, tokio::task::JoinError>,
+) -> Result<T, UsbBootError> {
+    result
+        .map_err(|error| UsbBootError::Usb(error.to_string()))?
+        .map_err(transfer_error)
+}
+
+/// The device descriptor's iSerialNumber, by a standard GET_DESCRIPTOR.
+/// Interim: lemnos-usb doesn't expose the device descriptor yet (asked for;
+/// nusb read it from the OS's copy without a request).
+fn serial_index(device: &UsbDevice) -> Result<u8, lemnos_usb::Error> {
+    let setup = ControlSetup {
+        direction: Direction::In,
+        kind: ControlKind::Standard,
+        recipient: ControlRecipient::Device,
+        request: 6, // GET_DESCRIPTOR
+        value: 0x0100,
+        index: 0,
+    };
+    let descriptor = device.control_in(&setup, 18, CONTROL_OUT_TIMEOUT)?;
+    Ok(descriptor.get(16).copied().unwrap_or(0))
 }
 
 /// The boot interface of one Pi, claimed for exclusive use.
 pub struct UsbBootTransport {
-    interface: Interface,
-    out: Endpoint<Bulk, Out>,
+    device: UsbDevice,
+    /// Held for the claim; dropping it releases the interface.
+    _interface: Interface,
+    out: u8,
 }
 
 impl UsbBootTransport {
@@ -180,85 +207,89 @@ impl UsbBootTransport {
             return Err(windows_driver_error());
         }
 
-        let device = info.open().await.map_err(|error| access_error(&error))?;
-        let serial_index = device
-            .device_descriptor()
-            .serial_number_string_index()
-            .map_or(0, std::num::NonZeroU8::get);
-        let interfaces = device
-            .active_configuration()
-            .map(|config| config.num_interfaces())
-            .unwrap_or(1);
-        // BCM2837 can start with a mass storage interface first; the vendor
-        // interface is then interface 1 with OUT endpoint 3.
-        let (number, out_address) = if interfaces == 1 {
-            (0, 0x01)
-        } else {
-            (1, 0x03)
-        };
-
-        #[cfg(target_os = "linux")]
-        let claimed = device.detach_and_claim_interface(number).await;
-        #[cfg(not(target_os = "linux"))]
-        let claimed = device.claim_interface(number).await;
-        let interface = claimed.map_err(|error| access_error(&error))?;
-        let out = interface
-            .endpoint::<Bulk, Out>(out_address)
-            .map_err(|error| UsbBootError::Usb(error.to_string()))?;
-        Ok((Self { interface, out }, serial_index))
+        let info = info.clone();
+        tokio::task::spawn_blocking(move || {
+            let device = UsbDevice::open(&info).map_err(|error| access_error(&error))?;
+            let interfaces = device
+                .active_configuration()
+                .map(|config| config.interfaces.len())
+                .unwrap_or(1);
+            // BCM2837 can start with a mass storage interface first; the
+            // vendor interface is then interface 1 with OUT endpoint 3.
+            let (number, out) = if interfaces == 1 {
+                (0, 0x01)
+            } else {
+                (1, 0x03)
+            };
+            // Linux unbinds a kernel driver first; elsewhere a plain claim.
+            let interface = if cfg!(target_os = "linux") {
+                device.detach_and_claim_interface(number)
+            } else {
+                device.claim_interface(number)
+            }
+            .map_err(|error| access_error(&error))?;
+            // After the claim: Windows sends control requests through it.
+            let serial_index = serial_index(&device).map_err(transfer_error)?;
+            Ok((
+                Self {
+                    device,
+                    _interface: interface,
+                    out,
+                },
+                serial_index,
+            ))
+        })
+        .await
+        .map_err(|error| UsbBootError::Usb(error.to_string()))?
     }
 }
 
 #[async_trait]
 impl BootTransport for UsbBootTransport {
     async fn control_out_len(&mut self, length: u32) -> Result<(), UsbBootError> {
-        self.interface
-            .control_out(
-                ControlOut {
-                    control_type: ControlType::Vendor,
-                    recipient: Recipient::Device,
-                    request: 0,
-                    value: (length & 0xffff) as u16,
-                    index: (length >> 16) as u16,
-                    data: &[],
-                },
-                CONTROL_OUT_TIMEOUT,
-            )
-            .await
-            .map_err(transfer_error)
+        let device = self.device.clone();
+        let setup = ControlSetup::vendor(
+            Direction::Out,
+            0,
+            (length & 0xffff) as u16,
+            (length >> 16) as u16,
+        );
+        joined(
+            tokio::task::spawn_blocking(move || {
+                device.control_out(&setup, &[], CONTROL_OUT_TIMEOUT)
+            })
+            .await,
+        )
+        .map(drop)
     }
 
     async fn control_in(&mut self, length: u16) -> Result<Vec<u8>, UsbBootError> {
-        self.interface
-            .control_in(
-                ControlIn {
-                    control_type: ControlType::Vendor,
-                    recipient: Recipient::Device,
-                    request: 0,
-                    value: length,
-                    index: 0,
-                    length,
-                },
-                CONTROL_IN_TIMEOUT,
-            )
-            .await
-            .map_err(transfer_error)
+        let device = self.device.clone();
+        let setup = ControlSetup::vendor(Direction::In, 0, length, 0);
+        joined(
+            tokio::task::spawn_blocking(move || {
+                device.control_in(&setup, length, CONTROL_IN_TIMEOUT)
+            })
+            .await,
+        )
     }
 
     async fn bulk_out(&mut self, data: &[u8]) -> Result<(), UsbBootError> {
-        self.out.submit(Buffer::from(data.to_vec()));
-        let completion = match tokio::time::timeout(BULK_TIMEOUT, self.out.next_complete()).await {
-            Ok(completion) => completion,
+        let mut transfer = self
+            .device
+            .submit_bulk_out(self.out, data.to_vec())
+            .map_err(transfer_error)?;
+        let outcome = match tokio::time::timeout(BULK_TIMEOUT, &mut transfer).await {
+            Ok(outcome) => outcome.map_err(transfer_error)?,
             Err(_) => {
-                self.out.cancel_all();
+                transfer.cancel();
                 return Err(UsbBootError::Usb("bulk transfer timed out".into()));
             }
         };
-        completion.status.map_err(transfer_error)?;
-        if completion.actual_len != data.len() {
+        if outcome.actual_length != data.len() {
             return Err(UsbBootError::Usb(format!(
                 "sent {} of {} bytes",
-                completion.actual_len,
+                outcome.actual_length,
                 data.len()
             )));
         }

@@ -182,7 +182,7 @@ mod tests {
             versions: BTreeMap::new(),
             name: None,
             link: LinkId("usb-boot".into()),
-            address: "001-4".into(),
+            address: "1-4".into(),
             attributes,
         }
     }

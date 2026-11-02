@@ -18,7 +18,7 @@ atlas-driver-robot.workspace = true
 # This computer's networks, for the sweep (sweep.rs), on every OS.
 if-addrs = "0.15"
 mdns-sd.workspace = true
-nusb.workspace = true
+lemnos-usb.workspace = true
 reqwest.workspace = true
 futures.workspace = true
 rmpv.workspace = true

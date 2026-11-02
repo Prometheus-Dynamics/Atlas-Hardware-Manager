@@ -58,12 +58,6 @@ pub(crate) struct Flash {
     pub boot_writes: BTreeMap<String, String>,
 }
 
-/// The sysfs port in nusb's location form: `3-1.1` is `003-1.1`.
-fn nusb_location(port: &str) -> Option<String> {
-    let (bus, ports) = port.split_once('-')?;
-    Some(format!("{:03}-{ports}", bus.parse::<u16>().ok()?))
-}
-
 fn read_attr(dir: &Path, name: &str) -> Option<String> {
     std::fs::read_to_string(dir.join(name))
         .ok()
@@ -236,9 +230,12 @@ async fn boot(
         ),
     );
     let files = BootFiles::open(boot_files).map_err(|error| error.to_string())?;
-    let location = nusb_location(port).ok_or("bad port")?;
+    // A boot device's location is the sysfs port form (lemnos-usb).
+    let location = port
+        .parse::<lemnos_usb::UsbLocation>()
+        .map_err(|_| "bad port")?;
     let options = BootOptions {
-        location: Some(location),
+        location: Some(location.to_string()),
         ..BootOptions::default()
     };
     let stop = cancel.clone();
@@ -530,9 +527,13 @@ mod tests {
     }
 
     #[test]
-    fn ports_map_to_nusb_locations() {
-        assert_eq!(nusb_location("3-1.1").as_deref(), Some("003-1.1"));
-        assert_eq!(nusb_location("12-2").as_deref(), Some("012-2"));
-        assert_eq!(nusb_location("x-2"), None);
+    fn ports_are_boot_device_locations() {
+        let location = |port: &str| {
+            port.parse::<lemnos_usb::UsbLocation>()
+                .map(|l| l.to_string())
+        };
+        assert_eq!(location("3-1.1").as_deref(), Ok("3-1.1"));
+        assert_eq!(location("012-2").as_deref(), Ok("12-2"));
+        assert!(location("3").is_err());
     }
 }

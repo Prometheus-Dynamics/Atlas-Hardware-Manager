@@ -29,7 +29,7 @@ use atlas_socflash::rockchip::loader::Loader;
 use atlas_socflash::rockchip::maskrom;
 use atlas_socflash::rockchip::rockusb::{Reset, Rockusb, SECTOR, Storage, chip_number};
 use atlas_socflash::rockchip::write::{LbaNand, write_image};
-use atlas_socflash::{NusbIo, Phase, UsbError};
+use atlas_socflash::{DeviceIo, Phase, UsbError};
 use tokio::runtime::Handle;
 
 use crate::driver::{Soc, list};

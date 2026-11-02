@@ -12,11 +12,10 @@ description = "Pure-Rust Raspberry Pi USB boot (rpiboot) for Atlas, on Linux, Wi
 
 [dependencies]
 async-trait.workspace = true
-futures.workspace = true
-nusb.workspace = true
+lemnos-usb.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["time"] }
+tokio = { workspace = true, features = ["time", "rt"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt", "macros", "time", "test-util"] }

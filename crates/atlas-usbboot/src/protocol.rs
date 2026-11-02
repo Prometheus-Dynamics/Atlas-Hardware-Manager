@@ -16,7 +16,7 @@ const FILE_MESSAGE_LEN: u16 = 4 + 256;
 const MAX_READ_RETRIES: u32 = 10;
 
 /// The three transfers USB boot needs. `UsbBootTransport` implements this
-/// over nusb; tests use a scripted fake.
+/// over lemnos-usb; tests use a scripted fake.
 #[async_trait]
 pub trait BootTransport: Send {
     /// Vendor OUT request 0 with no data. `wValue`/`wIndex` carry a 32-bit

@@ -31,16 +31,17 @@ pub(crate) struct UsbGadget {
 pub(crate) async fn gadgets() -> Vec<UsbGadget> {
     const LINUX_FOUNDATION: u16 = 0x1d6b;
     const COMPOSITE_GADGET: u16 = 0x0104;
-    let Ok(devices) = nusb::list_devices().await else {
+    let Ok(Ok(devices)) = tokio::task::spawn_blocking(lemnos_usb::list_devices).await else {
         return Vec::new();
     };
     devices
+        .into_iter()
         .filter(|info| {
             info.vendor_id() == LINUX_FOUNDATION && info.product_id() == COMPOSITE_GADGET
         })
         .map(|info| UsbGadget {
-            manufacturer: info.manufacturer_string().map(str::to_string),
-            product: info.product_string().map(str::to_string),
+            manufacturer: info.manufacturer().map(str::to_string),
+            product: info.product().map(str::to_string),
             serial: info.serial_number().map(str::to_string),
         })
         .collect()

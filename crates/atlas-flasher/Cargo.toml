@@ -13,7 +13,7 @@ description = "Atlas's side of the raze-flasher (docs/flasher.md): finds a USB-b
 [dependencies]
 async-trait.workspace = true
 atlas-flasher-proto.workspace = true
-nusb.workspace = true
+lemnos-usb.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["io-util", "rt", "sync", "time", "macros"] }

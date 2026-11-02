@@ -48,7 +48,7 @@ impl Job {
                 .into_iter()
                 .any(|(found, _)| found.location == self.location && found.stage == "maskrom");
             if maskrom {
-                let mut io = NusbIo::open(&info, "Rockchip maskrom device", BULK_TIMEOUT)
+                let mut io = DeviceIo::open(&info, "Rockchip maskrom device", BULK_TIMEOUT)
                     .await
                     .map_err(usb(UpdateStep::Transfer))?;
                 self.progress
@@ -63,7 +63,7 @@ impl Job {
                     .log("already in loader mode; no maskrom download");
             }
             let info = self.wait_for(Some("loader")).await?;
-            NusbIo::open(&info, "Rockchip loader", BULK_TIMEOUT)
+            DeviceIo::open(&info, "Rockchip loader", BULK_TIMEOUT)
                 .await
                 .map_err(usb(UpdateStep::Transfer))
         })?;

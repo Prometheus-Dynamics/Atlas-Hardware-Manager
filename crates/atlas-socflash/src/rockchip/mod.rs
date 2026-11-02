@@ -13,7 +13,7 @@ pub mod rc4;
 pub mod rockusb;
 pub mod write;
 
-use crate::transport::{UsbError, location};
+use crate::transport::{DeviceInfo, UsbError, list_all, location};
 
 pub const VENDOR_ID: u16 = 0x2207;
 
@@ -50,11 +50,10 @@ pub struct Device {
 
 /// Every Rockchip device in a download mode. Rockchip's mass-storage PIDs
 /// (`2207:0000`, `2207:0010`) are a running board's, not a download mode.
-pub async fn list() -> Result<Vec<(Device, nusb::DeviceInfo)>, UsbError> {
-    let devices = nusb::list_devices()
-        .await
-        .map_err(|error| UsbError::Other(error.to_string()))?;
-    Ok(devices
+pub async fn list() -> Result<Vec<(Device, DeviceInfo)>, UsbError> {
+    Ok(list_all()
+        .await?
+        .into_iter()
         .filter(|info| info.vendor_id() == VENDOR_ID && info.product_id() >> 8 != 0)
         .map(|info| {
             let device = Device {

@@ -59,11 +59,12 @@ pub fn is_systemcore_gadget(vendor: u16, product: u16, manufacturer: Option<&str
 
 /// The USB serials of the SystemCores plugged into this computer.
 pub async fn plugged_in() -> Vec<String> {
-    let Ok(devices) = nusb::list_devices().await else {
+    let Ok(Ok(devices)) = tokio::task::spawn_blocking(lemnos_usb::list_devices).await else {
         return Vec::new();
     };
     devices
-        .filter(|d| is_systemcore_gadget(d.vendor_id(), d.product_id(), d.manufacturer_string()))
+        .into_iter()
+        .filter(|d| is_systemcore_gadget(d.vendor_id(), d.product_id(), d.manufacturer()))
         .map(|d| d.serial_number().unwrap_or_default().to_string())
         .collect()
 }

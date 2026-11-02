@@ -14,9 +14,8 @@ use atlas_flasher_proto::{
     Decoder, Emmc, Format, Kind, PRODUCT, PRODUCT_ID, PROTOCOL, Phase, RebootInto, Reply, Request,
     VENDOR_ID, data_frame, json_frame,
 };
-use nusb::DeviceInfo;
-use nusb::descriptors::TransferType;
-use nusb::transfer::{Bulk, Direction, In, Out};
+use lemnos_usb::UsbDeviceInfo as DeviceInfo;
+use lemnos_usb::{Direction, Interface, Transfer, TransferType, UsbDevice};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
 
@@ -105,23 +104,112 @@ impl<W: AsyncWrite + Send + Unpin> Transport for StreamTransport<W> {
     }
 }
 
-struct UsbTransport(nusb::io::EndpointWrite<Bulk>);
+/// Bytes per bulk OUT transfer, and how many are in flight at once.
+const USB_TRANSFER: usize = 256 * 1024;
+const USB_IN_FLIGHT: usize = 4;
+
+/// The flasher's bulk OUT endpoint: each send in transfers of at most
+/// [`USB_TRANSFER`], [`USB_IN_FLIGHT`] at a time; `end` waits for them and
+/// ends a stream that filled its last packet with a zero-length one, so the
+/// board's read returns.
+struct UsbTransport {
+    device: UsbDevice,
+    /// Held for the claim; dropping it releases the interface.
+    _interface: Interface,
+    endpoint: u8,
+    packet: usize,
+    in_flight: std::collections::VecDeque<(Transfer, usize)>,
+    /// The last transfer's length, for the zero-length packet.
+    last: usize,
+}
+
+fn usb_io(error: lemnos_usb::Error) -> io::Error {
+    let kind = match error.kind() {
+        lemnos_usb::ErrorKind::Disconnected => io::ErrorKind::BrokenPipe,
+        lemnos_usb::ErrorKind::Timeout => io::ErrorKind::TimedOut,
+        _ => io::ErrorKind::Other,
+    };
+    io::Error::new(kind, error.to_string())
+}
+
+impl UsbTransport {
+    async fn finish_one(&mut self) -> io::Result<()> {
+        let Some((transfer, length)) = self.in_flight.pop_front() else {
+            return Ok(());
+        };
+        let outcome = transfer.await.map_err(usb_io)?;
+        if outcome.actual_length != length {
+            return Err(io::Error::other(format!(
+                "the board took {} of {length} bytes",
+                outcome.actual_length
+            )));
+        }
+        Ok(())
+    }
+
+    fn submit(&mut self, data: Vec<u8>) -> io::Result<()> {
+        let length = data.len();
+        let transfer = self
+            .device
+            .submit_bulk_out(self.endpoint, data)
+            .map_err(usb_io)?;
+        self.in_flight.push_back((transfer, length));
+        self.last = length;
+        Ok(())
+    }
+}
 
 #[async_trait]
 impl Transport for UsbTransport {
     async fn send(&mut self, bytes: &[u8]) -> io::Result<()> {
-        self.0.write_all(bytes).await
+        for chunk in bytes.chunks(USB_TRANSFER) {
+            while self.in_flight.len() >= USB_IN_FLIGHT {
+                self.finish_one().await?;
+            }
+            self.submit(chunk.to_vec())?;
+        }
+        Ok(())
     }
     async fn end(&mut self) -> io::Result<()> {
-        self.0.flush_end_async().await
+        if self.last != 0 && self.last % self.packet == 0 {
+            // Needs lemnos-usb to accept a zero-length bulk OUT (asked for).
+            self.submit(Vec::new())?;
+        }
+        while !self.in_flight.is_empty() {
+            self.finish_one().await?;
+        }
+        self.last = 0;
+        Ok(())
     }
+}
+
+/// The board's replies, read by a task into a pipe that [`Flasher::new`]
+/// reads; the task ends with the pipe or the device.
+fn usb_replies(device: UsbDevice, endpoint: u8, packet: usize) -> tokio::io::DuplexStream {
+    let (mut to_flasher, replies) = tokio::io::duplex(64 * 1024);
+    tokio::spawn(async move {
+        let mut buffer = vec![0u8; (16 * 1024usize).div_ceil(packet) * packet];
+        loop {
+            let Ok(transfer) = device.submit_bulk_in(endpoint, buffer) else {
+                return;
+            };
+            let Ok(outcome) = transfer.await else {
+                return;
+            };
+            if to_flasher.write_all(outcome.data()).await.is_err() {
+                return;
+            }
+            buffer = outcome.into_buffer();
+        }
+    });
+    replies
 }
 
 /// Whether a USB device is a Raze flasher.
 pub(crate) fn is_flasher(info: &DeviceInfo) -> bool {
     info.vendor_id() == VENDOR_ID
         && info.product_id() == PRODUCT_ID
-        && info.product_string() == Some(PRODUCT)
+        && info.product() == Some(PRODUCT)
 }
 
 /// The board serial a flasher reports as its USB serial (the boot ROM's,
@@ -136,10 +224,12 @@ pub fn board_serial(info: &DeviceInfo) -> Option<String> {
 
 /// Flashers plugged in now; with `serial`, only that board's.
 pub async fn find(serial: Option<&str>) -> Result<Vec<DeviceInfo>, FlasherError> {
-    let devices = nusb::list_devices()
+    let devices = tokio::task::spawn_blocking(lemnos_usb::list_devices)
         .await
+        .map_err(|error| FlasherError::Usb(error.to_string()))?
         .map_err(|error| FlasherError::Usb(error.to_string()))?;
     Ok(devices
+        .into_iter()
         .filter(is_flasher)
         .filter(|info| {
             serial.is_none_or(|want| {
@@ -168,46 +258,65 @@ pub async fn wait_for(
 
 /// Opens a flasher's vendor interface.
 pub async fn open(info: &DeviceInfo) -> Result<Flasher, FlasherError> {
-    let usb = |error: nusb::Error| FlasherError::Usb(error.to_string());
-    let device = info.open().await.map_err(usb)?;
-    let (number, endpoint_in, endpoint_out) = {
-        let config = device
-            .active_configuration()
-            .map_err(|error| FlasherError::Usb(error.to_string()))?;
-        let found = config.interface_alt_settings().find_map(|interface| {
-            if interface.class() != atlas_flasher_proto::INTERFACE_CLASS {
+    let info = info.clone();
+    let (device, interface, input, output) =
+        tokio::task::spawn_blocking(move || claim_vendor_interface(&info))
+            .await
+            .map_err(|error| FlasherError::Usb(error.to_string()))??;
+    let packet = |endpoint: lemnos_usb::EndpointInfo| usize::from(endpoint.max_packet_size).max(1);
+    let replies = usb_replies(device.clone(), input.address, packet(input));
+    let transport = UsbTransport {
+        device,
+        _interface: interface,
+        endpoint: output.address,
+        packet: packet(output),
+        in_flight: std::collections::VecDeque::new(),
+        last: 0,
+    };
+    Ok(Flasher::new(transport, replies))
+}
+
+type Claimed = (
+    UsbDevice,
+    Interface,
+    lemnos_usb::EndpointInfo,
+    lemnos_usb::EndpointInfo,
+);
+
+/// Opens the device and claims its bulk vendor interface: the device, the
+/// claim, and the IN and OUT endpoints. Blocking.
+fn claim_vendor_interface(info: &DeviceInfo) -> Result<Claimed, FlasherError> {
+    let usb = |error: lemnos_usb::Error| FlasherError::Usb(error.to_string());
+    let device = UsbDevice::open(info).map_err(usb)?;
+    let config = device.active_configuration().map_err(usb)?;
+    let found = config.interfaces.iter().find_map(|interface| {
+        interface.alternates.iter().find_map(|alt| {
+            if alt.class != atlas_flasher_proto::INTERFACE_CLASS {
                 return None;
             }
             let bulk = |direction: Direction| {
-                interface
-                    .endpoints()
-                    .find(|ep| {
-                        ep.transfer_type() == TransferType::Bulk && ep.direction() == direction
-                    })
-                    .map(|ep| ep.address())
+                alt.endpoints
+                    .iter()
+                    .find(|ep| ep.transfer_type == TransferType::Bulk && ep.direction == direction)
+                    .copied()
             };
             Some((
-                interface.interface_number(),
+                interface.number,
                 bulk(Direction::In)?,
                 bulk(Direction::Out)?,
             ))
-        });
-        found.ok_or_else(|| FlasherError::Usb("the flasher has no bulk vendor interface".into()))?
-    };
-    #[cfg(target_os = "linux")]
-    let claimed = device.detach_and_claim_interface(number).await;
-    #[cfg(not(target_os = "linux"))]
-    let claimed = device.claim_interface(number).await;
-    let interface = claimed.map_err(usb)?;
-    let to_board = interface
-        .endpoint::<Bulk, Out>(endpoint_out)
-        .map_err(|error| FlasherError::Usb(error.to_string()))?;
-    let from_board = interface
-        .endpoint::<Bulk, In>(endpoint_in)
-        .map_err(|error| FlasherError::Usb(error.to_string()))?;
-    let writer = to_board.writer(256 * 1024).with_num_transfers(4);
-    let reader = from_board.reader(16 * 1024).with_num_transfers(2);
-    Ok(Flasher::new(UsbTransport(writer), reader))
+        })
+    });
+    let (number, input, output) = found
+        .ok_or_else(|| FlasherError::Usb("the flasher has no bulk vendor interface".into()))?;
+    // Linux unbinds a kernel driver first; elsewhere a plain claim.
+    let interface = if cfg!(target_os = "linux") {
+        device.detach_and_claim_interface(number)
+    } else {
+        device.claim_interface(number)
+    }
+    .map_err(usb)?;
+    Ok((device, interface, input, output))
 }
 
 /// A session with one flasher.

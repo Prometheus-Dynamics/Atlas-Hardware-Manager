@@ -16,7 +16,7 @@ pub mod bootrom;
 pub mod firmware;
 pub mod kburn;
 
-use crate::transport::{UsbError, location};
+use crate::transport::{DeviceInfo, UsbError, list_all, location};
 
 pub const VENDOR_ID: u16 = 0x29f1;
 pub const PRODUCT_ID: u16 = 0x0230;
@@ -28,11 +28,10 @@ pub struct Device {
     pub serial: Option<String>,
 }
 
-pub async fn list() -> Result<Vec<(Device, nusb::DeviceInfo)>, UsbError> {
-    let devices = nusb::list_devices()
-        .await
-        .map_err(|error| UsbError::Other(error.to_string()))?;
-    Ok(devices
+pub async fn list() -> Result<Vec<(Device, DeviceInfo)>, UsbError> {
+    Ok(list_all()
+        .await?
+        .into_iter()
         .filter(|info| info.vendor_id() == VENDOR_ID && info.product_id() == PRODUCT_ID)
         .map(|info| {
             let device = Device {

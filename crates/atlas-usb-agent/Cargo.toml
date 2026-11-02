@@ -13,6 +13,7 @@ description = "Atlas's agent on another host boards in USB boot are plugged into
 [dependencies]
 atlas-blockdev.workspace = true
 atlas-usbboot.workspace = true
+lemnos-usb.workspace = true
 bytes = "1"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["server", "http1"] }
