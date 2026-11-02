@@ -165,12 +165,76 @@ fn reload_udev() {
         .status();
 }
 
+/// This host's own board serial (a SystemCore is a CM5), from its device
+/// tree.
+fn host_serial() -> Option<String> {
+    std::fs::read_to_string("/proc/device-tree/serial-number")
+        .ok()
+        .map(|text| text.trim_matches(['\0', ' ', '\n']).to_ascii_lowercase())
+        .filter(|serial| !serial.is_empty())
+}
+
+/// Whether two board serials name the same chip: Raspberry Pi shows the
+/// last eight hex digits in some places and all sixteen in others.
+fn same_board(a: &str, b: &str) -> bool {
+    let tail = |serial: &str| {
+        let serial = serial.to_ascii_lowercase();
+        serial[serial.len().saturating_sub(8)..].to_string()
+    };
+    a.len() >= 8 && b.len() >= 8 && tail(a) == tail(b)
+}
+
+/// What may be USB booted: a device on one of this host's USB ports (this
+/// host's own gadget side is never listed there), in a Raspberry Pi boot
+/// ROM, and not this host's own chip.
+fn check_boot_target(
+    port: &str,
+    ids: Option<(String, String)>,
+    serial: Option<&str>,
+    host: Option<&str>,
+) -> Result<(), String> {
+    if !atlas_usb_agent::valid_port(port) {
+        return Err(format!("refusing to USB boot {port:?}: not a USB port"));
+    }
+    let Some((vendor, product)) = ids else {
+        return Err(format!("refusing to USB boot USB {port}: nothing is there"));
+    };
+    if UsbDevice::kind_of(&vendor, &product) != UsbKind::UsbBoot {
+        return Err(format!(
+            "refusing to USB boot USB {port}: it is {vendor}:{product}, not a Raspberry Pi boot ROM"
+        ));
+    }
+    if let (Some(serial), Some(host)) = (serial, host)
+        && same_board(serial, host)
+    {
+        return Err(format!(
+            "refusing to USB boot USB {port}: its serial {serial} is this host's own"
+        ));
+    }
+    Ok(())
+}
+
 async fn boot(
     boot_files: &Path,
     port: &str,
     sink: &Sink,
     cancel: &Arc<AtomicBool>,
 ) -> Result<(), String> {
+    let dir = Path::new(USB_DEVICES).join(port);
+    let serial = read_attr(&dir, "serial");
+    check_boot_target(
+        port,
+        usb_ids(port),
+        serial.as_deref(),
+        host_serial().as_deref(),
+    )?;
+    log(
+        sink,
+        format!(
+            "USB booting the boot ROM on USB {port} (serial {})",
+            serial.as_deref().unwrap_or("none")
+        ),
+    );
     let files = BootFiles::open(boot_files).map_err(|error| error.to_string())?;
     let location = nusb_location(port).ok_or("bad port")?;
     let options = BootOptions {
@@ -438,6 +502,32 @@ impl Reattach {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_boot_rom_that_isnt_this_host_is_usb_booted() {
+        let rom = || Some(("0a5c".to_string(), "2712".to_string()));
+        assert!(
+            check_boot_target(
+                "3-1.1.4.1",
+                rom(),
+                Some("e5226d57"),
+                Some("10000000880f3c99")
+            )
+            .is_ok()
+        );
+        assert!(check_boot_target("3-1.1.4.1", rom(), None, None).is_ok());
+        // The host's own chip, whichever length either serial is shown at.
+        let own = check_boot_target("1-4", rom(), Some("880f3c99"), Some("10000000880f3c99"));
+        assert!(own.unwrap_err().contains("this host's own"));
+        assert!(
+            check_boot_target("1-4", rom(), Some("10000000880F3C99"), Some("880f3c99")).is_err()
+        );
+        // Not a ROM: a gadget, a running board, or nothing.
+        let gadget = Some(("0a5c".to_string(), "0104".to_string()));
+        assert!(check_boot_target("3-1.1.4.1", gadget, None, None).is_err());
+        assert!(check_boot_target("3-1.1.4.1", None, None, None).is_err());
+        assert!(check_boot_target("usb0", rom(), None, None).is_err());
+    }
 
     #[test]
     fn ports_map_to_nusb_locations() {

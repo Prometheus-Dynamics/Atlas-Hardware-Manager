@@ -67,10 +67,16 @@ fn find_console(sys: &Path, disk_name: &str) -> Result<String, String> {
         })
         .collect();
     found.sort();
-    found
+    let tty = found
         .into_iter()
         .next()
-        .ok_or_else(|| "the gadget has no serial console (an older boot image?)".to_string())
+        .ok_or_else(|| "the gadget has no serial console (an older boot image?)".to_string())?;
+    // Never this host's own console, whatever the sysfs says.
+    let own = std::fs::read_to_string(sys.join("class/tty/console/active")).unwrap_or_default();
+    if own.split_whitespace().any(|name| name == tty) {
+        return Err(format!("{tty} is this host's own console"));
+    }
+    Ok(tty)
 }
 
 /// Types the restart into the console at `/dev/<tty>`; answers whether the
@@ -253,6 +259,17 @@ mod tests {
         let root = temp("found");
         let sys = sysfs(&root, ("0a5c", "0104"), true);
         assert_eq!(find_console(&sys, "sdc").unwrap(), "ttyACM0");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn never_this_hosts_own_console() {
+        let root = temp("own");
+        let sys = sysfs(&root, ("0a5c", "0104"), true);
+        std::fs::create_dir_all(sys.join("class/tty/console")).unwrap();
+        std::fs::write(sys.join("class/tty/console/active"), "tty1 ttyACM0\n").unwrap();
+        let error = find_console(&sys, "sdc").unwrap_err();
+        assert!(error.contains("this host's own console"), "{error}");
         let _ = std::fs::remove_dir_all(root);
     }
 
