@@ -3,7 +3,7 @@
 //! back from the volume and compared.
 
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use sha2::{Digest, Sha256};
 
@@ -117,7 +117,7 @@ pub fn write_volume(
             volume.capacity
         ));
     }
-    let path: PathBuf = dev.join(&volume.node);
+    let path: std::path::PathBuf = dev.join(&volume.node);
     let mut file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)

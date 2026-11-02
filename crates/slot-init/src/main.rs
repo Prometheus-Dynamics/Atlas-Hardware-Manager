@@ -42,7 +42,7 @@
 
 use std::process::ExitCode;
 
-use slot_init::{Manifest, State, boot_files, cmdline_arg, field, fields, root_hash, valid_id};
+use slot_init::{Manifest, State, boot_files, cmdline_arg, field, fields, valid_id};
 
 fn read(path: &str) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))
@@ -123,7 +123,7 @@ fn run(args: &[String]) -> Result<String, String> {
 #[cfg(target_os = "linux")]
 fn open(image: &str, manifest: &str, root: &str, name: &str) -> Result<String, String> {
     let manifest = Manifest::parse(&read(manifest)?)?;
-    let root = root_hash(root)?;
+    let root = slot_init::root_hash(root)?;
     // A one-image slot's verity, or the layer this image is (by its id).
     let verity = match &manifest.verity {
         Some(v) => v.clone(),
