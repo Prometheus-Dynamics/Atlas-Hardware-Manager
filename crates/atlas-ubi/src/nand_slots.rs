@@ -267,9 +267,13 @@ pub fn keep_commit_image(dir: &Path, slot: Slot, image: &[u8]) -> Result<(), Str
     file.sync_all().map_err(fail)?;
     drop(file);
     std::fs::rename(&temporary, &path).map_err(fail)?;
+    // The rename lasts once the folder is synced. Windows can't open a
+    // folder as a file (and the board is Linux).
+    #[cfg(unix)]
     File::open(dir)
         .and_then(|folder| folder.sync_all())
-        .map_err(fail)
+        .map_err(fail)?;
+    Ok(())
 }
 
 fn kept_path(dir: &Path, slot: Slot) -> PathBuf {

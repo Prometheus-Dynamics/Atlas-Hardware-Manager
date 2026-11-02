@@ -123,6 +123,8 @@ pub fn persist_file(path: &Path, text: &str) -> std::io::Result<()> {
     file.sync_all()?;
     drop(file);
     std::fs::rename(&tmp, path)?;
+    // Windows can't open a folder as a file; the board is Linux.
+    #[cfg(unix)]
     if let Some(dir) = path.parent() {
         std::fs::File::open(dir)?.sync_all()?;
     }
