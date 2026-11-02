@@ -99,6 +99,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@1.99.0
 
+      # rust-toolchain.toml's components and targets, once: left to the first
+      # cargo call, the tests below race each other installing them.
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+
       # Every devices/raze/tests/*.sh, in parallel.
       - name: Run the tests
         run: |
