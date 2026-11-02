@@ -29,13 +29,6 @@ unless the user says otherwise.
     package tests` also failed, on a rustup download of clippy, not on a test.
   - **Done when:** the script exits 0 and a CI run on dev passes.
   - **Blocked by:** nothing.
-- [ ] **docs/soc-flashing.md: two stale passages.**
-  - **What:** line 79 says "four points" above six. Lines 183-185 say the slot
-    install "needs the Luckfox serving the identity contract"; board-lite serves
-    it now (058c53c), and the gap is the write path below.
-  - **Why:** that doc is what a board bring-up starts from.
-  - **Done when:** both read true.
-  - **Blocked by:** nothing.
 - [ ] **Release notes kept current.**
   - **What:** the draft, docs/release-notes/2026.1.0.md. It has the flashing and
     raw SPI-NAND writes; it lacks NAND slots on a running board (702b1ae,

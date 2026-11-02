@@ -76,7 +76,7 @@ Gaia's builds (006284a) produced rkbin's `rk3588_spl_loader_v1.18.113.bin`
 (ROCK 5C), `rk3576_loader_v1.13.109.bin` (ROCK 4D) and
 `rv1106_download_v1.15.108.bin` (Luckfox Pico Pro).
 `crates/atlas-socflash/tests/real_loaders.rs` parses any loaders named in
-`ATLAS_TEST_LOADERS`. Both pass, and they settled four points:
+`ATLAS_TEST_LOADERS`. All three pass, and they settled these points:
 
 - The header layout and entry tables are as derived. The 471 stage has two
   entries: `UsbHead`, then the DDR init.
@@ -181,8 +181,8 @@ The board's side comes from `devices/luckfox-pico-pro/gaia/nand-slot.toml`,
 which Gaia's Luckfox build imports. It holds the binary at `/usr/sbin/atlas-ubi`
 (about 473 KB, static ARMv7) and `/etc/init.d/S00nand-slot`, first in rcS, which
 runs `trial-check` and starts `watchdog` with a 600 s deadline. Not built yet:
-Atlas's slot install driving this over SSH or Orion, which needs the Luckfox
-serving the identity contract.
+Atlas's slot install driving this. The board serves the identity contract
+(below), but nothing on it takes commands yet.
 
 ## A running small board
 
