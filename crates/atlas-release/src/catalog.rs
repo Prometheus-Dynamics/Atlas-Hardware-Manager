@@ -10,14 +10,15 @@ use sha2::{Digest, Sha256};
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 
 use crate::hash::{normalize_sha256, to_hex};
-use crate::{Manifest, PublicKey, ReleaseError, sha256_file};
+use crate::{Keyring, Manifest, PublicKey, ReleaseError, SignatureStatus, check_file, sha256_file};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Channel {
     Stable,
     Beta,
-    /// A file the user added from disk. Unsigned.
+    /// A file the user added from disk; signed when a trusted key's
+    /// `<file>.minisig` is next to it.
     Local,
 }
 
@@ -56,8 +57,14 @@ pub struct ReleaseEntry {
     /// The file on disk: the user's file for local releases, the cache for
     /// downloaded ones. `None` until a remote release is downloaded.
     pub path: Option<PathBuf>,
-    /// True when a trusted key signed the manifest.
+    /// True when a trusted key signed the manifest (a remote release) or
+    /// the file (a local one), with an unexpired key.
     pub signed: bool,
+    /// A local file's signature: who signed it and who owns the key, or
+    /// why that can't be told. `None` for remote releases (their manifest
+    /// is what's signed) and for entries from before signatures were read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature: Option<SignatureStatus>,
     pub boards: Vec<String>,
     pub notes_url: Option<String>,
     pub added_ms: u64,
@@ -254,6 +261,14 @@ impl ReleaseCatalog {
             .await
             .map_err(|error| ReleaseError::io(path, error))?;
         let sha256 = sha256_file(path).await?;
+        let signature = {
+            let path = path.to_path_buf();
+            tokio::task::spawn_blocking(move || check_file(&path, &Keyring::load()))
+                .await
+                .unwrap_or_else(|error| SignatureStatus::Bad {
+                    reason: error.to_string(),
+                })
+        };
         let entry = ReleaseEntry {
             id: format!("local-{}", short(&sha256)),
             family,
@@ -267,7 +282,8 @@ impl ReleaseCatalog {
             sha256,
             size_bytes: metadata.len(),
             path: Some(path.to_path_buf()),
-            signed: false,
+            signed: signature.trusted(),
+            signature: Some(signature),
             boards: Vec::new(),
             notes_url: None,
             added_ms: now_ms(),
@@ -389,6 +405,7 @@ impl ReleaseCatalog {
                 size_bytes: body.artifact.size,
                 path: existing_path,
                 signed,
+                signature: None,
                 boards: body.boards,
                 notes_url: body.notes_url,
                 added_ms: now_ms(),

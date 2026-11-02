@@ -218,6 +218,7 @@ async fn a_download_survives_a_500_and_a_dropped_connection() {
             size_bytes: BODY.len() as u64,
             path: None,
             signed: true,
+            signature: None,
             boards: Vec::new(),
             notes_url: None,
             added_ms: 0,
@@ -230,4 +231,31 @@ async fn a_download_survives_a_500_and_a_dropped_connection() {
     assert_eq!(std::fs::read(entry.path.unwrap()).unwrap(), BODY);
     assert_eq!(server.join().unwrap(), ["", "", "bytes=4-"]);
     let _ = std::fs::remove_dir_all(dir);
+}
+
+#[tokio::test]
+async fn a_local_file_carries_what_its_signature_says() {
+    let dir = temp_dir("signature");
+    let catalog = ReleaseCatalog::open(dir.join("catalog.json"), dir.join("cache")).unwrap();
+    let unsigned = add(&catalog, &dir, "plain.img", "plain").await;
+    assert!(!unsigned.signed);
+    assert_eq!(unsigned.signature, Some(SignatureStatus::Unsigned));
+
+    // Signed, but by the fixtures' throwaway key, which Atlas doesn't trust.
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/trust/fixtures");
+    for name in ["image.img", "image.img.minisig"] {
+        std::fs::copy(fixtures.join(name), dir.join(name)).unwrap();
+    }
+    let entry = catalog
+        .add_local_file(&dir.join("image.img"), Family::new("rpi"), "1".into())
+        .await
+        .unwrap();
+    assert!(!entry.signed);
+    assert_eq!(
+        entry.signature,
+        Some(SignatureStatus::UnknownKey {
+            key_id: "8E128666038FC1F5".into()
+        })
+    );
+    std::fs::remove_dir_all(dir).unwrap();
 }

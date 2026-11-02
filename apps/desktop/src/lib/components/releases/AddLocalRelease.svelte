@@ -68,7 +68,7 @@
       </Field>
     </div>
     <p class="flex items-center gap-2 text-[12.5px] text-warn-fg">
-      <Icon name="alert-triangle" size={15} />Local files are unsigned. They're hashed now, and you're warned if one changes before it's installed.
+      <Icon name="alert-triangle" size={15} />A file is signed when a trusted key's &lt;file&gt;.minisig sits next to it; otherwise it's unsigned. It's hashed now, and you're warned if it changes before it's installed.
     </p>
     {#if error}<p class="flex items-center gap-2 text-[13px] text-err-fg" role="alert"><Icon name="alert-circle" size={15} />{error}</p>{/if}
     <div class="flex gap-2">

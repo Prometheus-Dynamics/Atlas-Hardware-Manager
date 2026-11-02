@@ -273,6 +273,7 @@ export const mockApi: Api = {
         size_bytes: 1_000_000 + Math.floor(Math.random() * 9_000_000),
         path,
         signed: false,
+        signature: { state: "unsigned" },
         boards: [],
         notes_url: null,
         added_ms: Date.now(),

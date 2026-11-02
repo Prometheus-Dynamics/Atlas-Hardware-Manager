@@ -21,6 +21,28 @@
     local: { label: "Local file", tone: "neutral" },
   };
 
+  // A local file's signature: who signed it, and what to be wary of.
+  const signature = $derived.by(() => {
+    const status = entry.signature;
+    if (!status) return entry.signed ? { tone: "success" as Tone, label: "Signed", title: "Its manifest is signed by a trusted key", by: "" } : null;
+    switch (status.state) {
+      case "signed": {
+        const key = status.key;
+        const purpose = key.purpose === "dev" ? "dev/example" : "production";
+        const by = `Signed by ${key.name} (${key.owner}, ${purpose})`;
+        if (status.expired) return { tone: "warning" as Tone, label: "Key expired", title: `${by}; the key expired on ${key.expires}`, by };
+        if (key.purpose === "dev") return { tone: "warning" as Tone, label: "Dev key", title: `${by}: fine for testing, not a production release`, by };
+        return { tone: "success" as Tone, label: "Signed", title: `${by} · ${key.contact}`, by };
+      }
+      case "unknown-key":
+        return { tone: "warning" as Tone, label: "Unknown key", title: `Signed by key minisign:${status.key_id}, which isn't in Atlas's trusted keys`, by: "" };
+      case "bad":
+        return { tone: "error" as Tone, label: "Bad signature", title: `Its signature doesn't check out (${status.reason}): the file may have changed after it was signed`, by: "" };
+      default:
+        return null;
+    }
+  });
+
   async function togglePin() {
     await api.setReleasePinned(entry.id, !entry.pinned);
     await releases.load();
@@ -39,6 +61,11 @@
     <p class="truncate text-[12px] text-fg-faint" title={entry.path ?? entry.artifact_name}>
       <span class="mono">{entry.artifact_name}</span> · {entry.origin.kind === "remote" ? `from ${entry.origin.source}` : "added by you"}{entry.boards.length ? ` · ${entry.boards.join(", ")}` : ""}
     </p>
+    {#if signature?.by}
+      <p class="truncate text-[12px] text-fg-faint" title={signature.title}>
+        <Icon name="shield-check" size={12} class="mr-1 inline align-[-1px]" />{signature.by}
+      </p>
+    {/if}
     {#if running.length}
       <p class="truncate text-[12px] text-ok-fg" title={running.map(deviceName).join(", ")}>
         <Icon name="circle-check" size={12} class="mr-1 inline align-[-1px]" />Runs on {running.map(deviceName).join(", ")}
@@ -47,8 +74,8 @@
   </div>
   <div class="pills flex flex-wrap items-center gap-1.5">
     <Pill tone={channel[entry.channel].tone} label={channel[entry.channel].label} />
-    {#if entry.signed}
-      <Pill tone="success" icon="shield-check" label="Signed" />
+    {#if signature}
+      <Pill tone={signature.tone} icon={signature.tone === "success" ? "shield-check" : "alert-triangle"} label={signature.label} title={signature.title} />
     {:else}
       <Pill tone="warning" icon="alert-triangle" label="Unsigned" title="No signature: where this file came from can't be verified" />
     {/if}

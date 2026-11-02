@@ -279,6 +279,28 @@ export type Channel = "stable" | "beta" | "local";
 
 export type ReleaseOrigin = { kind: "local-file" } | { kind: "remote"; source: string; url: string };
 
+/** A key Atlas trusts to sign image files, and who owns it (keys/trusted-keys.json). */
+export interface TrustedKey {
+  name: string;
+  kind: string;
+  key_id: string;
+  public_key: string;
+  owner: string;
+  contact: string;
+  purpose: "dev" | "production";
+  created: string;
+  expires: string | null;
+  note: string;
+  source: string;
+}
+
+/** What the `<file>.minisig` next to a local file says. */
+export type SignatureStatus =
+  | { state: "signed"; key: TrustedKey; comment: string; expired: boolean }
+  | { state: "unsigned" }
+  | { state: "unknown-key"; key_id: string }
+  | { state: "bad"; reason: string };
+
 export interface ReleaseEntry {
   id: string;
   family: string;
@@ -290,7 +312,10 @@ export interface ReleaseEntry {
   size_bytes: number;
   /** Null until a remote release is downloaded. */
   path: string | null;
+  /** A trusted, unexpired key signed the manifest (remote) or the file (local). */
   signed: boolean;
+  /** A local file's signature; absent for remote releases. */
+  signature?: SignatureStatus;
   boards: string[];
   notes_url: string | null;
   added_ms: number;
