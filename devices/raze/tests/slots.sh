@@ -36,7 +36,7 @@ mkdir -p "$T/bin"
 cat > "$T/bin/slot-init" <<'STUB'
 #!/bin/sh
 case "$1" in
-field | fields | layers | merge-layers | set-layer | boot-files)
+field | fields | layers | merge-layers | set-layer | boot-files | unpack-disk)
 	[ -z "$REAL_SLOT_INIT" ] || {
 		[ -z "${HELPER_LOG:-}" ] || echo "$1" >> "$HELPER_LOG"
 		exec "$REAL_SLOT_INIT" "$@"
@@ -213,6 +213,96 @@ grep -q "only an upload in" "$T/err" || fail "outside: $(cat "$T/err")"
 [ "$(rc stage-url "file://$T/data/updates/u1/pv-b.slot.tar" --sha256 "$(printf 0%.0s $(seq 64))" --size "$size")" = 3 ] || fail "an upload with the wrong sha256 installed"
 [ "$(rc stage-url "file://$T/data/updates/u1/none.slot.tar" --sha256 "$sha" --size "$size")" = 3 ] || fail "a missing upload wasn't refused"
 
+echo "a slots build's .img.xz installs as the slot it carries, the same as its bundle (stage-image)"
+image_tools=yes
+for tool in mkfs.vfat mcopy mke2fs debugfs sfdisk xz; do
+	command -v "$tool" >/dev/null 2>&1 || image_tools=''
+done
+if [ -z "$REAL_SLOT_INIT" ] || [ -z "$image_tools" ]; then
+	echo "  skipped (needs the real slot-init, mtools, e2fsprogs, sfdisk, xz)"
+else
+	# image <id> <out.img.xz>: the disk Gaia's slots.toml makes for the
+	# bundle `bundle` makes: MBR, p1 FAT (default.txt, slots/<id>/ with the
+	# slot's own cmdline), p2 ext4 (slots/<id>.erofs and .json).
+	image() {
+		bundle "$1" 2026.4.2
+		b=$T/build/$1
+		i=$T/img/$1
+		rm -rf "$i"
+		mkdir -p "$i/fat/slots/$1" "$i/data/slots"
+		cp -r "$b/boot/." "$i/fat/slots/$1/"
+		cp "$b/slot.json" "$i/fat/slots/$1/slot.json"
+		printf '%s atlas.slot=%s atlas.roothash=cdcd atlas.data=PARTUUID=5056525a-02 panic=5\n' "$(cat "$b/boot/cmdline.txt")" "$1" > "$i/fat/slots/$1/cmdline.txt"
+		echo "os_prefix=slots/$1/" > "$i/fat/default.txt"
+		cp "$b/rootfs.erofs" "$i/data/slots/$1.erofs"
+		cp "$b/slot.json" "$i/data/slots/$1.json"
+		mkfs.vfat -C "$i/p1" 33792 > /dev/null
+		mcopy -s -i "$i/p1" "$i/fat/"* ::/
+		mke2fs -q -t ext4 -d "$i/data" "$i/p2" 4M
+		truncate -s $(((1 + 33 + 4) * 1048576)) "$i/disk"
+		printf 'start=2048, size=67584, type=c\nstart=69632, size=8192, type=83\n' | sfdisk -q "$i/disk"
+		dd if="$i/p1" of="$i/disk" bs=1M seek=1 conv=notrunc status=none
+		dd if="$i/p2" of="$i/disk" bs=1M seek=34 conv=notrunc status=none
+		xz -T1 -c "$i/disk" > "$2"
+	}
+	# A loop mount without root: the files read out with mtools and debugfs.
+	cat > "$T/bin/img-mount" <<'MOUNT'
+#!/bin/sh
+echo "$2 $(basename "$5")" >> "$IMG_MOUNTS"
+case $2 in
+vfat) mcopy -s -n -i "$5" '::/*' "$6/" ;;
+ext4) debugfs -R "rdump /slots $6" "$5" > /dev/null 2>&1 ;;
+esac
+MOUNT
+	printf '#!/bin/sh\necho "umount $1" >> "$IMG_MOUNTS"\n' > "$T/bin/img-umount"
+	chmod +x "$T/bin/img-mount" "$T/bin/img-umount"
+	export IMG_MOUNTS=$T/img-mounts
+	stage_image() { SLOTS_MOUNT=$T/bin/img-mount SLOTS_UMOUNT=$T/bin/img-umount rc stage-image "$@"; }
+
+	image pv-i "$T/pv-i.img.xz"
+	sha=$(sha256sum "$T/pv-i.img.xz" | cut -d' ' -f1)
+	[ "$(stage_image "$T/pv-i.img.xz" --sha256 "$sha")" = 0 ] || fail "stage-image: $(cat "$T/out" "$T/err")"
+	cmp -s "$T/data/slots/pv-i.erofs" "$T/build/pv-i/rootfs.erofs" || fail "stage-image: the root isn't the image's"
+	cmp -s "$T/data/slots/pv-i.json" "$T/build/pv-i/slot.json" || fail "stage-image: slot.json isn't the image's"
+	grep -qx "console=ttyAMA10 atlas.slot=pv-i atlas.roothash=cdcd[cd]* atlas.data=PARTUUID=abcd1234-02 panic=5" "$T/boot/slots/pv-i/cmdline.txt" ||
+		fail "stage-image: the slot's cmdline is the image's, not this board's: $(cat "$T/boot/slots/pv-i/cmdline.txt")"
+	cmp -s "$T/boot/slots/pv-i/kernel8.img" "$T/build/pv-i/boot/kernel8.img" || fail "stage-image: the kernel"
+	[ -f "$T/boot/slots/pv-i/overlays/README" ] || fail "stage-image: no overlays/README"
+	status | grep -q '"slot_staged":"pv-i"' || fail "stage-image staged: $(status)"
+	grep -qx "vfat p1.img" "$IMG_MOUNTS" && grep -qx "ext4 p2.img" "$IMG_MOUNTS" || fail "the partitions: $(cat "$IMG_MOUNTS")"
+	[ "$(grep -c '^umount ' "$IMG_MOUNTS")" = 2 ] || fail "the partitions weren't let go: $(cat "$IMG_MOUNTS")"
+	ls -a "$T/data/slots" | grep -q install && fail "stage-image left its work dir (the unpacked disk)"
+
+	echo "  on stdin, hashed on the way through; a wrong --sha256 installs nothing"
+	image pv-j "$T/pv-j.img.xz"
+	sha=$(sha256sum "$T/pv-j.img.xz" | cut -d' ' -f1)
+	[ "$(stage_image - --sha256 "$(printf 0%.0s $(seq 64))" < "$T/pv-j.img.xz")" = 3 ] || fail "stdin: a wrong sha256 installed"
+	[ ! -e "$T/data/slots/pv-j.erofs" ] && [ ! -e "$T/boot/slots/pv-j" ] || fail "stdin: a refused image left a slot"
+	ls -a "$T/data/slots" | grep -q install && fail "stdin: a refused image left its work dir"
+	[ "$(stage_image - --sha256 "$sha" < "$T/pv-j.img.xz")" = 0 ] || fail "stage-image stdin: $(cat "$T/out" "$T/err")"
+	cmp -s "$T/data/slots/pv-j.erofs" "$T/build/pv-j/rootfs.erofs" || fail "stdin: the root isn't the image's"
+
+	echo "  a broken root, the running slot, or a disk that isn't a slots image: nothing installed"
+	image pv-k "$T/pv-k.img.xz"
+	echo tampered >> "$T/img/pv-k/data/slots/pv-k.erofs"
+	rm -f "$T/img/pv-k/p2" && mke2fs -q -t ext4 -d "$T/img/pv-k/data" "$T/img/pv-k/p2" 4M
+	dd if="$T/img/pv-k/p2" of="$T/img/pv-k/disk" bs=1M seek=34 conv=notrunc status=none
+	xz -T1 -c "$T/img/pv-k/disk" > "$T/pv-k.img.xz"
+	[ "$(stage_image "$T/pv-k.img.xz")" = 1 ] || fail "a tampered root installed"
+	grep -q "rootfs.erofs isn't the size slot.json says\|doesn't match slot.json's sha256" "$T/err" || fail "tampered: $(cat "$T/err")"
+	[ ! -e "$T/data/slots/pv-k.erofs" ] || fail "a tampered root was kept"
+	image pv-a "$T/pv-a.img.xz"
+	[ "$(stage_image "$T/pv-a.img.xz")" = 3 ] || fail "the running slot's image installed"
+	head -c 4194304 /dev/zero | xz -T1 -c > "$T/zero.img.xz"
+	[ "$(stage_image "$T/zero.img.xz")" = 1 ] || fail "a disk without an MBR installed"
+	grep -q "no MBR" "$T/err" || fail "no MBR: $(cat "$T/err")"
+	ls -a "$T/data/slots" | grep -q install && fail "a failed stage-image left its work dir"
+	up remove pv-i > /dev/null 2>&1 || true
+	up remove pv-j > /dev/null 2>&1 || true
+	# Back to what the tests below start from: pv-b staged.
+	up stage "$T/pv-b.slot.tar" 2> /dev/null || fail "restaging pv-b"
+fi
+
 echo "a bundle without an overlay the board's config loads is refused (it would boot without that device)"
 printf 'dtoverlay=bcm2712d0\ndtoverlay=ov9782,cam0,clk-continuous\n' > "$T/boot/raze-device.txt"
 bundle pv-o 2026.4.9
@@ -252,8 +342,22 @@ tar -cf "$T/pv-d.slot.tar" -C "$T/build/pv-d" slot.json boot rootfs.erofs
 grep -q "initramfs won't boot: .*xz initramfs isn't supported" "$T/err" || fail "the reason: $(cat "$T/err")"
 [ ! -e "$T/data/slots/pv-d.erofs" ] && [ ! -d "$T/boot/slots/pv-d" ] || fail "pv-d left behind"
 
+echo "the OS's pre-reboot hook runs before boot once, and a failing one stops it with nothing changed"
+mkdir -p "$T/etc/update.d"
+printf '#!/bin/sh\necho "$BOARD_UPDATE_SLOT $BOARD_UPDATE_VERSION" >> "%s"\nexit 1\n' "$T/hook-calls" > "$T/etc/update.d/pre-reboot"
+chmod +x "$T/etc/update.d/pre-reboot"
+: > "$T/reboots"
+[ "$(rc apply)" = 3 ] || fail "a failing pre-reboot hook didn't stop the restart"
+grep -q "the pre-reboot hook stopped the restart" "$T/err" || fail "hook refusal: $(cat "$T/err")"
+[ "$(cat "$T/hook-calls")" = "pv-b 2026.4.0" ] || fail "the hook's slot and version: $(cat "$T/hook-calls")"
+[ ! -s "$T/reboots" ] || fail "restarted despite the hook"
+[ "$(cat "$T/boot/trial.txt")" = "os_prefix=slots/pv-a/" ] || fail "trial.txt changed despite the hook"
+status | grep -q '"slot_staged":"pv-b"' || fail "the hook's refusal unstaged pv-b: $(status)"
+sed -i 's/^exit 1$/exit 0/' "$T/etc/update.d/pre-reboot"
+
 echo "boot once writes trial.txt and restarts with tryboot"
 up apply 2>/dev/null
+[ "$(wc -l < "$T/hook-calls")" = 2 ] || fail "the pre-reboot hook didn't run before the restart"
 [ "$(cat "$T/boot/trial.txt")" = "os_prefix=slots/pv-b/" ] || fail "trial.txt: $(cat "$T/boot/trial.txt")"
 [ "$(tail -n 1 "$T/reboots")" = tryboot ] || fail "no tryboot restart"
 [ "$(cat "$T/boot/default.txt")" = "os_prefix=slots/pv-a/" ] || fail "the default changed before confirm"
@@ -348,8 +452,11 @@ chmod +x "$T/etc/update-health"
 echo pv-c > "$T/data/board/slots/booted"
 echo pv-c > "$T/data/board/slots/trial-started"
 : > "$T/reboots"
+# A failing pre-reboot hook doesn't keep a bad trial running.
+sed -i 's/^exit 0$/exit 1/' "$T/etc/update.d/pre-reboot"
 up confirm 2>/dev/null || true
 grep -qx plain "$T/reboots" || fail "an unhealthy trial didn't restart back: $(cat "$T/reboots")"
+rm -f "$T/etc/update.d/pre-reboot"
 grep -q '^GOOD=no' "$T/data/board/slots/pv-c.meta" || fail "the unhealthy trial isn't marked bad"
 status | grep -q "slot pv-c failed its health check" || fail "the trial's reason: $(status)"
 rm -f "$T/etc/update-health"

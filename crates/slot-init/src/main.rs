@@ -32,6 +32,9 @@
 //!   slot-init merge-layers <slot.json> <layers.json>
 //!                                             a bundle's slot.json with the build's layers (Gaia's
 //!                                             layers.json) as its own
+//!   slot-init unpack-disk <dir>               a whole-disk image on stdin (decompressed), one sparse
+//!                                             file per MBR partition (<dir>/p1.img, ...); prints
+//!                                             their paths, one a line (slots stage-image)
 //!   slot-init open <image> <slot.json> <root hash> [name]
 //!                                             a read-only loop + dm-verity device; prints /dev/dm-N
 //!
@@ -110,6 +113,14 @@ fn run(args: &[String]) -> Result<String, String> {
             .map(|(sha, name)| format!("{sha}  {name}"))
             .collect::<Vec<_>>()
             .join("\n")),
+        ["unpack-disk", dir] => Ok(slot_init::disk::unpack(
+            std::io::stdin().lock(),
+            std::path::Path::new(dir),
+        )?
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join("\n")),
         ["open", image, manifest, root, rest @ ..] if rest.len() <= 1 => open(
             image,
             manifest,

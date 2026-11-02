@@ -7,6 +7,24 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **`slots stage-image` and the pre-reboot hook (2026-11-02):** the board
+  installs a slots build's `.img.xz` itself: `slots stage-image <file|->
+  [--sha256 <hex>] [--pin]` (stdin: xz, hashed on the way through). The disk
+  is split into one sparse file per partition (`slot-init unpack-disk`), so
+  its empty space takes no room. The FAT and ext4 are mounted read-only and
+  give a bundle's layout: the slot's boot files, its cmdline taken back to
+  the base, slot.json, the root. That then goes through `stage`'s own install
+  and checks: slot.json's digests, the root's size and sha256, the overlays,
+  the initramfs, the free-space reserve. So HeliOS's update API and Atlas
+  share one format. At the peak /data holds the disk's data plus one copy of
+  the root, as `stage` does with a tar. `slots` now runs the OS's
+  /etc/board/update.d/pre-reboot hook, the A/B updater's, with the same
+  variables, before `apply`/`boot-once` and `rollback`. A failing hook stops
+  the restart with nothing changed. The board's own restarts (a failed trial
+  going back, a lost trial tried again) log the hook's failure and go on.
+  Every restart is `systemctl reboot`, so services stop cleanly first.
+  Untested on a board.
+
 - **The .img.xz is the only deliverable (2026-11-02):** as the user decided,
   `gaia/slots.toml` no longer writes `<id>.slot.tar`. Atlas makes the bundle
   from the image when it installs one as a slot (7b65401). The first-flash

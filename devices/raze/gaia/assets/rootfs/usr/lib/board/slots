@@ -8,6 +8,10 @@
 #   slots stage <bundle.tar|-> [--sha256 <hex>] [--pin]
 #                                 install a slot bundle (never over the
 #                                 running or default slot)
+#   slots stage-image <file.img.xz|-> [--sha256 <hex>] [--pin]
+#                                 install the slot a slots build's whole-disk
+#                                 image carries (what Atlas installs on a
+#                                 laptop; stdin: xz), with the bundle's checks
 #   slots stage-url <url> --sha256 <hex> --size <bytes> [--pin]
 #   slots check <bundle.tar>      JSON: whether `stage` would install it (the
 #                                 same checks, nothing written to /data or
@@ -68,10 +72,14 @@ UPLOADS_DIR=${SLOTS_UPLOADS_DIR:-$DATA/updates}
 REFUSED=3
 BOOT='' BOOT_DEV=''
 CHECKING=''
-WORK_DIR='' STREAMED=''
-# One exit handler: the install's work dir, a bundle that came on stdin (it
-# can't resume, so it never stays on /data), the boot FAT if mounted here.
+WORK_DIR='' STREAMED='' IMAGE_MOUNTS=''
+# One exit handler: an image's partitions mounted in the work dir, the
+# install's work dir, a bundle that came on stdin (it can't resume, so it
+# never stays on /data), the boot FAT if mounted here.
 cleanup() {
+	for _m in $IMAGE_MOUNTS; do
+		$UMOUNT "$_m" 2>/dev/null || umount -l "$_m" 2>/dev/null || true
+	done
 	[ -z "$WORK_DIR" ] || rm -rf "$WORK_DIR"
 	rm -f "$DOWNLOAD_DIR/.download.err" 2>/dev/null || true
 	[ -z "$STREAMED" ] || rm -f "$STREAMED"
@@ -228,6 +236,23 @@ tryboot_reboot() {
 }
 plain_reboot() { eval "${UPDATE_REBOOT_PLAIN:-$SYSTEMCTL reboot}"; }
 
+# run_hook <name> <slot>: the OS's hook in /etc/board/update.d/, as the A/B
+# updater runs it (the same names and variables), if there is one. Every
+# restart here is `systemctl reboot`, which stops the OS's services cleanly
+# first; the hook is for what has to happen before that.
+run_hook() {
+	_hook=$BOARD_ETC_DIR/update.d/$1
+	[ -x "$_hook" ] || return 0
+	board_log "running the $1 hook"
+	BOARD_UPDATE_SLOT=$2 BOARD_UPDATE_VERSION=$(mf "$2" version) BOARD_UPDATE_IMAGE='' "$_hook"
+}
+# A restart the board makes on its own (a failed trial going back, a lost
+# trial tried once more) isn't stopped by the hook: its failure is logged and
+# the restart goes on.
+recovery_hook() {
+	run_hook pre-reboot "$1" || board_log "the pre-reboot hook failed; restarting anyway"
+}
+
 # --- status -----------------------------------------------------------------
 
 slots_json() {
@@ -360,12 +385,17 @@ bundle_layers() {
 
 # install_bundle <tar> <pin yes|no>: unpack into /data/slots/.install.<pid>,
 # check everything against slot.json, then put each part in place by rename.
-install_bundle() {
-	_tar=$1
+# new_work: a fresh install work dir on /data ($_work), removed on exit.
+new_work() {
 	_work=$IMAGES/.install.$$
 	rm -rf "$IMAGES"/.install.* 2>/dev/null || true
 	mkdir -p "$_work"
 	WORK_DIR=$_work
+}
+
+install_bundle() {
+	_tar=$1
+	new_work
 	_need=$(( $(board_file_size "$_tar") / 1024 + RESERVE_KB ))
 	[ "$(free_kb)" -ge "$_need" ] || refuse "no room for this slot: it needs $((_need / 1024)) MiB with the reserve, /data has $(( $(free_kb) / 1024 )) MiB free; remove a slot first"
 	STATE=staging PROGRESS=100 ERROR=''
@@ -373,6 +403,13 @@ install_bundle() {
 	tar -xf "$_tar" -C "$_work" || die "the bundle doesn't unpack"
 	# Unpacked: a streamed bundle's tar goes now, not after the install.
 	[ -z "$STREAMED" ] || { rm -f "$STREAMED"; STREAMED=''; }
+	install_unpacked "$_work" "$2"
+}
+
+# install_unpacked <work> <pin>: a bundle's layout (slot.json, boot/,
+# rootfs.erofs or layers/) in <work>, checked and installed.
+install_unpacked() {
+	_work=$1
 	[ -r "$_work/slot.json" ] && [ -d "$_work/boot" ] || die "not a slot bundle (slot.json, rootfs.erofs or layers/, boot/)"
 	_id=$($INIT field "$_work/slot.json" id) || die "slot.json has no id"
 	valid_id "$_id" || die "slot.json: \`$_id\` isn't a slot id"
@@ -495,6 +532,95 @@ cmd_stage() {
 	[ -z "$_want" ] || [ "$(sha256sum "$_file" | cut -d' ' -f1)" = "$_want" ] || refuse "the bundle doesn't match --sha256; nothing changed"
 	board_event update.stage "installing a slot from $(basename "$_file")"
 	install_bundle "$_file" "$_pin"
+}
+
+# The decompressor for an image file, from its first bytes (stdin: xz).
+image_reader() {
+	case "$(od -An -tx1 -N6 "$1" | tr -d ' \n')" in
+	fd377a585a00) if command -v xz >/dev/null 2>&1; then echo "xz -dc"; else echo xzcat; fi ;;
+	28b52ffd*) echo "zstd -dc" ;;
+	1f8b*) echo "gzip -dc" ;;
+	*) echo cat ;;
+	esac
+}
+
+# The slot a slots build's whole-disk image carries (Gaia's slots.toml: MBR,
+# p1 FAT with slots/<id>/ and default.txt naming it, p2 ext4 with
+# slots/<id>.erofs and <id>.json), unpacked to a bundle's layout in the work
+# dir and installed as `stage` installs a bundle: the same checks, the same
+# result. The disk is unpacked into one sparse file per partition
+# (slot-init unpack-disk), so its empty space takes no room; the root is
+# copied out of it, then the partitions go.
+# At the peak /data holds the disk's data and one copy of the root, as a
+# bundle's tar and its unpacked root do for `stage`.
+cmd_stage_image() {
+	_file='' _want='' _pin=no
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--sha256) _want=${2:-}; shift 2 ;;
+		--pin) _pin=yes; shift ;;
+		-) _file=-; shift ;;
+		-*) die "unknown option '$1'" ;;
+		*) _file=$1; shift ;;
+		esac
+	done
+	[ -n "$_file" ] || die "usage: slots stage-image <file.img.xz|-> [--sha256 <hex>] [--pin]"
+	if [ "$_file" = - ]; then
+		_reader="xz -dc"
+		command -v xz >/dev/null 2>&1 || _reader=xzcat
+	else
+		[ -r "$_file" ] || die "no image at $_file"
+		[ -z "$_want" ] || [ "$(sha256sum "$_file" | cut -d' ' -f1)" = "$_want" ] || refuse "the image doesn't match --sha256; nothing changed"
+		_reader=$(image_reader "$_file")
+	fi
+	board_event update.stage "installing a slot from the image $(basename "$_file")"
+	new_work
+	[ "$(free_kb)" -ge "$RESERVE_KB" ] || refuse "no room to unpack the image: /data has $(( $(free_kb) / 1024 )) MiB free, the reserve is $((RESERVE_KB / 1024)) MiB; remove a slot first"
+	STATE=staging PROGRESS=0 ERROR=''
+	save_state
+	mkdir -p "$_work/disk"
+	if [ "$_file" = - ]; then
+		# Hashed on the way through: stdin is read once.
+		mkfifo "$_work/in"
+		sha256sum < "$_work/in" > "$_work/in.sha256" &
+		_hasher=$!
+		_parts=$( (set -o pipefail 2>/dev/null || true; tee "$_work/in" | $_reader | $INIT unpack-disk "$_work/disk") 2> "$_work/err") ||
+			{ wait "$_hasher" || true; die "the image doesn't unpack: $(tail -n 1 "$_work/err")"; }
+		wait "$_hasher" || die "can't hash the image"
+		[ -z "$_want" ] || [ "$(cut -d' ' -f1 < "$_work/in.sha256")" = "$_want" ] || refuse "the image doesn't match --sha256; nothing changed"
+	else
+		_parts=$( (set -o pipefail 2>/dev/null || true; $_reader < "$_file" | $INIT unpack-disk "$_work/disk") 2> "$_work/err") ||
+			die "the image doesn't unpack: $(tail -n 1 "$_work/err")"
+	fi
+	PROGRESS=100 && write_status
+	_fat=$(echo "$_parts" | sed -n 1p) _ext=$(echo "$_parts" | sed -n 2p)
+	[ -n "$_fat" ] && [ -n "$_ext" ] || die "the image has no boot and data partitions: not a slots build's image"
+	mkdir -p "$_work/fat" "$_work/data"
+	$MOUNT -t vfat -o ro,loop "$_fat" "$_work/fat" || die "can't read the image's boot partition"
+	IMAGE_MOUNTS=$_work/fat
+	$MOUNT -t ext4 -o ro,noload,loop "$_ext" "$_work/data" || die "can't read the image's data partition"
+	IMAGE_MOUNTS="$_work/data $IMAGE_MOUNTS"
+	_id=$(sed -n 's|^os_prefix=slots/\(.*\)/$|\1|p' "$_work/fat/default.txt" 2>/dev/null | head -n 1)
+	valid_id "$_id" || die "the image's boot partition names no slot (default.txt): not a slots build's image"
+	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
+	[ "$_id" != "$DEFAULT" ] || refuse "$_id is the default slot"
+	[ -d "$_work/fat/slots/$_id" ] || die "the image has no boot files for $_id"
+	[ -r "$_work/data/slots/$_id.json" ] || die "the image has no slot.json for $_id"
+	_erofs=$_work/data/slots/$_id.erofs
+	[ -r "$_erofs" ] || die "the image has no root image for $_id (slots/$_id.erofs)"
+	_need=$(( $(board_file_size "$_erofs") / 1024 + RESERVE_KB ))
+	[ "$(free_kb)" -ge "$_need" ] || refuse "no room for this slot: it needs $((_need / 1024)) MiB with the reserve, /data has $(( $(free_kb) / 1024 )) MiB free; remove a slot first"
+	cp -r "$_work/fat/slots/$_id" "$_work/boot" || die "can't copy the image's boot files"
+	rm -f "$_work/boot/slot.json"
+	# The FAT's cmdline is the slot's (atlas.slot= and on); a bundle carries
+	# the base, which slot.json's digest is of and the writer adds them to.
+	sed 's/ atlas\.slot=.*$//' "$_work/fat/slots/$_id/cmdline.txt" > "$_work/boot/cmdline.txt"
+	cp "$_work/data/slots/$_id.json" "$_work/slot.json"
+	cp "$_erofs" "$_work/rootfs.erofs" || die "can't copy the image's root"
+	$UMOUNT "$_work/data" && $UMOUNT "$_work/fat" || die "can't let go of the image"
+	IMAGE_MOUNTS=''
+	rm -rf "$_work/disk" "$_work/fat" "$_work/data" "$_work/in" "$_work/in.sha256" "$_work/err"
+	install_unpacked "$_work" "$_pin"
 }
 
 # --- check ------------------------------------------------------------------
@@ -646,6 +772,7 @@ cmd_boot_once() {
 	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
 	mount_boot
 	[ -d "$BOOT/slots/$_id" ] || refuse "slot $_id has no boot files"
+	run_hook pre-reboot "$_id" || refuse "the pre-reboot hook stopped the restart; nothing changed"
 	write_line trial.txt "os_prefix=slots/$_id/"
 	# A new trial: confirm may try it once more if the restart loses its flag.
 	meta_set "$_id" RETRIED no
@@ -675,6 +802,7 @@ cmd_confirm() {
 			# The failure on the ring before the restart back.
 			STATE=error
 			save_state
+			recovery_hook "$DEFAULT"
 			plain_reboot
 			return
 		fi
@@ -739,6 +867,7 @@ cmd_confirm() {
 		STATE=rebooting
 		save_state
 		umount_boot
+		recovery_hook "$_retry"
 		tryboot_reboot
 	fi
 }
@@ -752,6 +881,7 @@ cmd_check_link() {
 	board_event update.link-bad "$ERROR" "slot=$_run"
 	TRIAL='' STATE=rolled-back
 	save_state
+	recovery_hook "$DEFAULT"
 	plain_reboot
 }
 
@@ -772,6 +902,7 @@ cmd_rollback() {
 	[ -n "$PREVIOUS" ] && installed "$PREVIOUS" || refuse "there is no previous slot to go back to"
 	_back=$PREVIOUS
 	_from=$DEFAULT
+	[ "${1:-}" = --no-reboot ] || run_hook pre-reboot "$_back" || refuse "the pre-reboot hook stopped the restart; nothing changed"
 	mount_boot
 	write_line default.txt "os_prefix=slots/$_back/"
 	root_copy "$_back"
@@ -1036,6 +1167,7 @@ status | list)
 	cat "$STATUS_JSON"
 	;;
 stage) cmd_stage "$@" ;;
+stage-image) cmd_stage_image "$@" ;;
 stage-url) cmd_stage_url "$@" ;;
 apply | boot-once) cmd_boot_once "$@" ;;
 confirm) cmd_confirm ;;
@@ -1048,7 +1180,7 @@ unpin) cmd_pin no "${1:-}" ;;
 cancel) cmd_cancel ;;
 push) cmd_push "$@" ;;
 *)
-	sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 	;;
 esac
