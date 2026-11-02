@@ -53,17 +53,59 @@ fn partitions(disk: &Disk) -> Vec<String> {
     parts
 }
 
+/// The mount points of `parts` in a /proc/mounts text, as the kernel
+/// escapes them (`\040` for a space) decoded.
+#[cfg(target_os = "linux")]
+fn mounts_of(mounts: &str, parts: &[String]) -> Vec<String> {
+    mounts
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split(' ');
+            let source = fields.next()?;
+            let point = fields.next()?;
+            parts.iter().any(|part| part == source).then(|| unescape(point))
+        })
+        .collect()
+}
+
+#[cfg(target_os = "linux")]
+fn unescape(field: &str) -> String {
+    let bytes = field.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\'
+            && i + 3 < bytes.len()
+            && let Ok(byte) = u8::from_str_radix(&field[i + 1..i + 4], 8)
+        {
+            out.push(byte);
+            i += 4;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// Unmounts everything on the disk, keeping it attached (a Pi gadget disk
 /// stays reachable for its console). Best effort: what the desktop mounted
-/// is unmounted, what fails is left.
+/// is unmounted, what fails is left. Without UDisks (a controller's own
+/// automounter, as on a SystemCore after it restarts), what is still
+/// mounted is unmounted directly, which needs root.
 pub fn unmount_all(disk: &Disk) -> Result<(), BlockError> {
     #[cfg(target_os = "linux")]
     {
-        for part in partitions(disk) {
+        let parts = partitions(disk);
+        for part in &parts {
             let _ = run(
                 "udisksctl",
-                &["unmount", "--no-user-interaction", "-b", &part],
+                &["unmount", "--no-user-interaction", "-b", part],
             );
+        }
+        let mounts = std::fs::read_to_string("/proc/mounts").unwrap_or_default();
+        for point in mounts_of(&mounts, &parts) {
+            let _ = nix::mount::umount2(point.as_str(), nix::mount::MntFlags::empty());
         }
         Ok(())
     }
@@ -294,4 +336,19 @@ fn mounted_at(output: &str) -> Result<PathBuf, BlockError> {
         .rsplit_once(" at ")
         .map(|(_, point)| PathBuf::from(point.trim_end_matches('.')))
         .ok_or_else(|| BlockError::Desktop(format!("unexpected udisksctl output: {output}")))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_disks_mounts_are_found_with_their_points_decoded() {
+        let mounts = "/dev/mmcblk0p5 / ext4 rw 0 0\n\
+                      /dev/sda1 /V vfat rw,relatime 0 0\n\
+                      /dev/sda2 /media/my\\040disk ext4 rw 0 0\n\
+                      /dev/sdb1 /W vfat rw 0 0\n";
+        let parts = vec!["/dev/sda1".to_string(), "/dev/sda2".to_string()];
+        assert_eq!(mounts_of(mounts, &parts), ["/V", "/media/my disk"]);
+    }
 }
