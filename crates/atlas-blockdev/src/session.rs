@@ -63,7 +63,10 @@ fn mounts_of(mounts: &str, parts: &[String]) -> Vec<String> {
             let mut fields = line.split(' ');
             let source = fields.next()?;
             let point = fields.next()?;
-            parts.iter().any(|part| part == source).then(|| unescape(point))
+            parts
+                .iter()
+                .any(|part| part == source)
+                .then(|| unescape(point))
         })
         .collect()
 }
