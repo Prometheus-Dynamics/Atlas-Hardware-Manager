@@ -525,10 +525,16 @@ up unpin pv-a
 up remove pv-c 2>/dev/null
 [ ! -e "$T/data/slots/pv-c.erofs" ] && [ ! -d "$T/boot/slots/pv-c" ] || fail "pv-c not removed"
 
-echo "rollback makes the previous slot the default"
+echo "rollback makes the previous slot the default, and reports rolled-back once the board is on it"
 up rollback --no-reboot 2>/dev/null
 [ "$(cat "$T/boot/default.txt")" = "os_prefix=slots/pv-a/" ] || fail "rollback default.txt"
 status | grep -q '"slot_default":"pv-a","slot_previous":"pv-b"' || fail "rollback state: $(status)"
+status | grep -q '"state":"rebooting"' || fail "rollback before the restart: $(status)"
+status | grep -q '"error":null' || fail "rollback kept an old error: $(status)"
+echo pv-a > "$T/data/board/slots/booted"
+up confirm 2>/dev/null
+status | grep -q '"state":"rolled-back"' || fail "rollback after the restart: $(status)"
+status | grep -q '"slot_active":"pv-a"' || fail "rollback's slot: $(status)"
 
 # lbundle <id> <out.tar> <name:content>...: a layered slot bundle; each
 # layer's file is its content, its id the sha256 of it (as Gaia names them),

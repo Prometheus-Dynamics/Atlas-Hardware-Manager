@@ -7,6 +7,11 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **A slots rollback ends as `rolled-back` (2026-11-02):** `slots
+  rollback` (Orion's `update.rollback`) left the state `rebooting` for good,
+  with an older trial's error still in it. It now clears the error, and the
+  next boot's `confirm` reports `rolled-back` on the previous slot, as an
+  A/B rollback does.
 - **A slots trial gets the A/B trial's checks (2026-11-02):** on a slots
   board `update confirm` handed everything to `slots`, so a trial was judged
   by the OS's `update-health` alone and the package's checks never ran (the
