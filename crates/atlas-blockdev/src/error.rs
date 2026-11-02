@@ -29,6 +29,9 @@ pub enum BlockError {
     ImageHashMismatch { expected: String, actual: String },
     #[error("the write was cancelled; the disk is partly written and needs a new write")]
     Cancelled,
+    /// A resumable write gave up on a link that kept dropping.
+    #[error("{0}")]
+    LinkLost(String),
     #[error("{message}")]
     Elevation { message: String, fix: String },
     #[error("the helper failed: {0}")]

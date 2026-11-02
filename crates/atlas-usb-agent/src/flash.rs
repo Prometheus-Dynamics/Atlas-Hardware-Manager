@@ -11,13 +11,17 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use atlas_blockdev::{Disk, WriteOptions, WriteProgress};
-use atlas_usb_agent::{Event, UsbDevice};
+use atlas_blockdev::{Disk, DiskTarget, ResumePolicy, WriteOptions, WriteProgress};
+use atlas_usb_agent::{Event, UsbDevice, UsbKind};
 use atlas_usbboot::{BootEvent, BootFiles, BootOptions};
 
 /// How long the eMMC may take to show as a disk after USB boot.
 const DISK_TIMEOUT: Duration = Duration::from_secs(60);
 const DISK_POLL: Duration = Duration::from_millis(500);
+/// How long the board may take to come back after its link drops: a hub
+/// reset, or a fall back to its ROM and a new USB boot.
+const REATTACH_TIMEOUT: Duration = Duration::from_secs(180);
+const REATTACH_POLL_MAX: Duration = Duration::from_secs(4);
 /// Raspberry Pi's mass-storage gadget, the only USB device written.
 const GADGET_IDS: (&str, &str) = ("0a5c", "0104");
 const USB_DEVICES: &str = "/sys/bus/usb/devices";
@@ -161,9 +165,14 @@ fn reload_udev() {
         .status();
 }
 
-async fn boot(flash: &Flash, sink: &Sink, cancel: &Arc<AtomicBool>) -> Result<(), String> {
-    let files = BootFiles::open(&flash.boot_files).map_err(|error| error.to_string())?;
-    let location = nusb_location(&flash.port).ok_or("bad port")?;
+async fn boot(
+    boot_files: &Path,
+    port: &str,
+    sink: &Sink,
+    cancel: &Arc<AtomicBool>,
+) -> Result<(), String> {
+    let files = BootFiles::open(boot_files).map_err(|error| error.to_string())?;
+    let location = nusb_location(port).ok_or("bad port")?;
     let options = BootOptions {
         location: Some(location),
         ..BootOptions::default()
@@ -235,7 +244,7 @@ pub(crate) async fn flash(
                 }
                 None => return Err(format!("nothing is on USB {}", flash.port)),
             }
-            boot(&flash, &sink, &cancel).await?;
+            boot(&flash.boot_files, &flash.port, &sink, &cancel).await?;
             log(&sink, "waiting for the eMMC to show as a disk");
             let deadline = Instant::now() + DISK_TIMEOUT;
             loop {
@@ -269,16 +278,33 @@ pub(crate) async fn flash(
         verify: true,
         image_sha256: flash.sha256.clone(),
     };
+    // The gadget's USB serial carries the board's: how it is found again.
+    let serial = read_attr(&Path::new(USB_DEVICES).join(&flash.port), "serial");
+    let journal = atlas_blockdev::journal_path(&flash.image);
+    let journal_id = serial.clone().unwrap_or_else(|| flash.port.clone());
+    let mut reattach = Reattach {
+        boot_files: flash.boot_files.clone(),
+        port: flash.port.clone(),
+        serial,
+        runtime: tokio::runtime::Handle::current(),
+        sink: sink.clone(),
+        cancel: cancel.clone(),
+    };
     let target = disk.clone();
     let image = flash.image.clone();
     let stop = cancel.clone();
     let events = sink.clone();
-    let report = tokio::task::spawn_blocking(move || {
+    let (report, disk) = tokio::task::spawn_blocking(move || {
+        let mut target =
+            DiskTarget::open(target, Box::new(move |deadline| reattach.find(deadline)))
+                .map_err(|error| error.to_string())?;
         let mut last = Instant::now() - Duration::from_secs(1);
-        atlas_blockdev::write_image(
+        let written = atlas_blockdev::write_resumable(
             &image,
-            &target,
+            &mut target,
             &options,
+            &ResumePolicy::default(),
+            Some((&journal, &journal_id)),
             &mut |progress| {
                 // A line a quarter second at most, and every phase change.
                 let phase_only = !matches!(
@@ -294,10 +320,11 @@ pub(crate) async fn flash(
             },
             &stop,
         )
+        .map_err(|error| error.to_string())?;
+        Ok::<_, String>((written, target.disk().clone()))
     })
     .await
-    .map_err(|error| error.to_string())?
-    .map_err(|error| error.to_string())?;
+    .map_err(|error| error.to_string())??;
     sink(Event::Written {
         bytes: report.bytes_written,
         seconds: report.seconds,
@@ -330,6 +357,82 @@ pub(crate) async fn flash(
             restart_error: Some(reason),
         },
     })
+}
+
+/// Finds the board again after its link drops.
+struct Reattach {
+    boot_files: PathBuf,
+    port: String,
+    serial: Option<String>,
+    runtime: tokio::runtime::Handle,
+    sink: Sink,
+    cancel: Arc<AtomicBool>,
+}
+
+impl Reattach {
+    /// Waits, backing off, for the board's gadget to show again (by serial,
+    /// on any port) with its disk; a board back in its ROM on its port gets
+    /// the bootloader again.
+    fn find(&mut self, deadline: Instant) -> Result<Disk, String> {
+        let deadline = deadline.min(Instant::now() + REATTACH_TIMEOUT);
+        let mut wait = Duration::from_millis(250);
+        loop {
+            if self.cancel.load(Ordering::Relaxed) {
+                return Err("cancelled".into());
+            }
+            let devices = usb_devices();
+            let gadget = devices.iter().find(|device| {
+                device.kind == UsbKind::Gadget
+                    && match &self.serial {
+                        Some(serial) => device.serial.as_ref() == Some(serial),
+                        None => device.port == self.port,
+                    }
+            });
+            if let Some(gadget) = gadget {
+                if let Some(disk) = disk_on(&gadget.port)? {
+                    atlas_blockdev::check_target(&disk, None).map_err(|error| error.to_string())?;
+                    let _ = atlas_blockdev::unmount_all(&disk);
+                    if gadget.port != self.port {
+                        log(
+                            &self.sink,
+                            format!("the board moved to USB {}", gadget.port),
+                        );
+                        self.port.clone_from(&gadget.port);
+                    }
+                    log(
+                        &self.sink,
+                        format!("the board is back: its eMMC shows as {}", disk.name),
+                    );
+                    return Ok(disk);
+                }
+            } else if devices
+                .iter()
+                .any(|device| device.port == self.port && device.kind == UsbKind::UsbBoot)
+            {
+                log(
+                    &self.sink,
+                    "the board fell back to its boot ROM; sending the bootloader again",
+                );
+                self.runtime.block_on(boot(
+                    &self.boot_files,
+                    &self.port,
+                    &self.sink,
+                    &self.cancel,
+                ))?;
+                wait = Duration::from_millis(250);
+                continue;
+            }
+            let now = Instant::now();
+            if now >= deadline {
+                return Err(format!(
+                    "the board did not show again on USB within {} s",
+                    REATTACH_TIMEOUT.as_secs()
+                ));
+            }
+            std::thread::sleep(wait.min(deadline - now));
+            wait = (wait * 2).min(REATTACH_POLL_MAX);
+        }
+    }
 }
 
 #[cfg(test)]

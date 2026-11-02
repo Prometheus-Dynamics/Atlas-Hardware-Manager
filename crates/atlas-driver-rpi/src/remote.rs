@@ -468,6 +468,11 @@ enum Stopped {
 }
 use Stopped::{Ended, Lost};
 
+/// Whole percent of the image read, for a person.
+fn percent(done: u64, total: u64) -> u64 {
+    (done * 100).checked_div(total).unwrap_or(0).min(100)
+}
+
 /// Follows the job to its end, through link drops: its `done`, or why it
 /// failed. Cancelling asks the agent to stop and waits for it to.
 async fn follow(
@@ -513,6 +518,25 @@ async fn follow(
                             UpdateStep::Apply,
                             input_done as f32 / input_total as f32,
                         ),
+                        Event::Write(atlas_blockdev::WriteProgress::LinkDropped {
+                            input_done,
+                            input_total,
+                            drops,
+                            max_drops,
+                            reason,
+                            ..
+                        }) => progress.log(format!(
+                            "link dropped at {}% ({reason}); drop {drops} of {max_drops} allowed",
+                            percent(input_done, input_total)
+                        )),
+                        Event::Write(atlas_blockdev::WriteProgress::Resuming {
+                            input_done,
+                            input_total,
+                            ..
+                        }) => progress.log(format!(
+                            "link back, resuming at {}%",
+                            percent(input_done, input_total)
+                        )),
                         Event::Write(atlas_blockdev::WriteProgress::Verifying { done, total })
                             if total > 0 =>
                         {

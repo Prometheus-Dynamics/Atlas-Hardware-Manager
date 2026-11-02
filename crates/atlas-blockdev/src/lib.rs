@@ -15,6 +15,7 @@ mod gadget_console;
 mod image;
 mod messages;
 mod platform;
+mod resume;
 mod session;
 mod slot_bundle;
 mod sniff;
@@ -27,6 +28,9 @@ pub use gadget_console::restart_gadget;
 pub use image::{ImageFormat, decode_to_file};
 pub use messages::HelperMessage;
 pub use platform::list_disks;
+#[cfg(target_os = "linux")]
+pub use resume::DiskTarget;
+pub use resume::{ResumePolicy, Target, journal_path, write_resumable};
 pub use session::{
     eject, mount_read_only, open_folder, read_boot_file, unmount_all, write_boot_file,
 };

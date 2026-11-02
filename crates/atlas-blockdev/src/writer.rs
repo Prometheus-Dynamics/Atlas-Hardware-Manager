@@ -46,6 +46,26 @@ pub enum WriteProgress {
         done: u64,
         total: u64,
     },
+    /// A resumable write lost its disk; the segment from `written` goes out
+    /// again once the disk is back.
+    LinkDropped {
+        written: u64,
+        input_done: u64,
+        input_total: u64,
+        drops: u32,
+        max_drops: u32,
+        reason: String,
+    },
+    /// The disk is back, or a journal said how far it is proven: writing
+    /// goes on from `written`.
+    Resuming {
+        written: u64,
+        input_done: u64,
+        input_total: u64,
+    },
+    /// A phase from a newer writer.
+    #[serde(other)]
+    Other,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -70,11 +90,11 @@ impl std::fmt::Display for CancelledWrite {
 
 impl std::error::Error for CancelledWrite {}
 
-fn cancelled_error() -> io::Error {
+pub(crate) fn cancelled_error() -> io::Error {
     io::Error::other(CancelledWrite)
 }
 
-fn is_cancelled(error: &io::Error) -> bool {
+pub(crate) fn is_cancelled(error: &io::Error) -> bool {
     error
         .get_ref()
         .is_some_and(|inner| inner.is::<CancelledWrite>())
@@ -143,7 +163,7 @@ impl Write for DiskSink<'_> {
     }
 }
 
-fn hash_file(
+pub(crate) fn hash_file(
     path: &Path,
     progress: &mut dyn FnMut(WriteProgress),
     cancel: &AtomicBool,
