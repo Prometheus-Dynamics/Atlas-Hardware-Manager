@@ -51,13 +51,18 @@ pub(crate) fn request(
 }
 
 /// Submits `request` and waits up to `timeout` for a final state, calling
-/// `on_progress` with per-mille progress while it runs.
+/// `on_progress` with per-mille progress while it runs. A request that names
+/// no deadline gets `timeout` as one, so the node doesn't end it sooner (its
+/// default is 30 s).
 pub(crate) async fn run_and_wait(
     transport: &dyn OrionTransport,
-    request: ActionRequest,
+    mut request: ActionRequest,
     timeout: Duration,
     on_progress: &(dyn Fn(u16) + Send + Sync),
 ) -> Result<ActionResult, DriverError> {
+    if request.deadline_ms == 0 {
+        request.deadline_ms = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
+    }
     let id = request.action_id.clone();
     let name = request.name.clone();
     let result = transport.run_action(request).await?;

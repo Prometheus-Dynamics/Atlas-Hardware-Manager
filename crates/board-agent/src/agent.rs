@@ -59,8 +59,11 @@ pub const CLAIMED_KEY: &str = "action.claimed";
 /// The writer's exit status for "refused, nothing changed".
 const WRITER_REFUSED: i32 = 3;
 
-/// How long `update` waits for the writer to take its lock.
-const START_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long `update` waits for the writer to take its lock before it
+/// answers "staging" anyway (the writer's state tells the rest). Well inside
+/// orion-node's default action deadline (30 s, for a request that names
+/// none): a slow start (a busy board, QEMU) mustn't time the action out.
+const START_TIMEOUT: Duration = Duration::from_secs(20);
 /// How long a new update waits for a failed stage's writer to exit.
 const FAILED_STAGE_EXIT: Duration = Duration::from_secs(2);
 

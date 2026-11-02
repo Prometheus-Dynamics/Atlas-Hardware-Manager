@@ -250,6 +250,16 @@ async fn an_update_is_verified_from_durable_state_after_the_reboot() {
     );
 }
 
+/// The node's default deadline is 30 s; a board slow to start its stage
+/// (QEMU) answered after it. The update names the minute Atlas waits.
+#[tokio::test(start_paused = true)]
+async fn the_update_asks_the_node_for_as_long_as_atlas_waits() {
+    let (outcome, _, fake) = update_with(Ending::Confirms, CancellationToken::new()).await;
+    outcome.unwrap();
+    let request = fake.0.lock().unwrap().update_request.clone().unwrap();
+    assert_eq!(request.deadline_ms, 60_000);
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_rolled_back_update_says_why() {
     assert_eq!(
