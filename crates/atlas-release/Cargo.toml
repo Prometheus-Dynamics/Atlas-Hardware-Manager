@@ -12,6 +12,9 @@ description = "Release catalog for Atlas: local images, signed manifests, verifi
 
 [dependencies]
 atlas-driver.workspace = true
+base64.workspace = true
+blake2.workspace = true
+dirs.workspace = true
 ed25519-dalek.workspace = true
 futures.workspace = true
 reqwest.workspace = true

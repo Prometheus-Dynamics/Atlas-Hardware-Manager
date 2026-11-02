@@ -10,6 +10,7 @@ mod commands;
 mod flash;
 mod hardware;
 mod install_file;
+mod keys;
 mod layer_push;
 mod output;
 mod reboots;
@@ -153,6 +154,12 @@ enum Command {
         device: String,
         #[command(subcommand)]
         command: Option<slots::SlotsCommand>,
+    },
+    /// The keys Atlas trusts to sign images and who owns each: list (the
+    /// default), or `check <file>` to say who signed a file.
+    Keys {
+        #[command(subcommand)]
+        command: Option<keys::KeysCommand>,
     },
     /// Save a device's support bundle for a bug report (a .tar.gz): what
     /// Atlas knows about it, and its own bundles from HeliOS (a SystemCore's
@@ -479,6 +486,7 @@ async fn run_cli(cli: Cli) -> ExitCode {
         Command::Doctor => system::doctor(&atlas, cli.json).await,
         Command::Fix { action } => system::fix(&atlas, &action).await,
         Command::Disks => system::disks(cli.json).await,
+        Command::Keys { command } => keys::keys(command, cli.json).await,
     };
     match result {
         Ok(code) => code,

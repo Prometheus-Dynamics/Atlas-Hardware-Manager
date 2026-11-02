@@ -10,6 +10,7 @@ mod catalog;
 mod error;
 mod hash;
 mod manifest;
+mod trust;
 
 pub use app_update::{
     APP_FAMILY, AppInstaller, AppRelease, AppUpdateQuery, InstallKind, VerifiedInstaller,
@@ -24,4 +25,7 @@ pub use hash::{normalize_sha256, sha256_file};
 pub use manifest::{
     Manifest, ManifestArtifact, ManifestBody, PublicKey, Requirements, public_key_for,
     sign_manifest,
+};
+pub use trust::{
+    Keyring, Purpose, SignatureStatus, TrustedKey, check_file, signature_path, user_file,
 };

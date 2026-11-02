@@ -68,6 +68,9 @@ atlas-socflash = { path = "crates/atlas-socflash" }
 atlas-driver-soc = { path = "crates/atlas-driver-soc" }
 atlas-cli = { path = "crates/atlas-cli" }
 async-trait = "0.1"
+base64 = "0.22"
+# minisign's prehash (image signatures, atlas-release trust).
+blake2 = "0.10"
 clap = { version = "4.6", features = ["derive"] }
 dirs = "7"
 ed25519-dalek = { version = "3", default-features = false }

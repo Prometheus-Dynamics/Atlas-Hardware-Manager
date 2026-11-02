@@ -168,6 +168,7 @@ pub(crate) async fn flash(atlas: &Atlas, options: FlashOptions) -> CommandResult
             storage_name(storage.as_deref())
         ));
     }
+    crate::keys::report(&options.image).await;
     let board_serial = atlas
         .devices()
         .into_iter()
