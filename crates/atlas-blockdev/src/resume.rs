@@ -22,7 +22,9 @@ use crate::writer::{WriteOptions, WriteProgress, WriteReport, cancelled_error, h
 
 #[cfg(target_os = "linux")]
 mod disk_target;
-#[cfg(target_os = "linux")]
+#[cfg(not(target_os = "linux"))]
+#[path = "resume/unsupported.rs"]
+mod disk_target;
 pub use disk_target::DiskTarget;
 
 /// Sector size every segment is padded to.
