@@ -7,6 +7,13 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **Lemnos 2610455 (2026-11-02):** lemnosd comes from Lemnos 2610455
+  (`gaia_import.rev`), the commit HeliOS's lemnos-ipc and Daedalus build
+  on; board-stream and board-agent's lemnos-ipc move with it. The vendored
+  board schema follows (new: a device's `owner`, the definition's host
+  `identity`, more built-in drivers); the generated board.toml is
+  unchanged. Lemnos's renames (the `pv.*` looks to `detect.*`/`link.*`,
+  `raze-example` to `sample-board`) touch nothing here.
 - **The identity endpoint starts no unit per request (2026-11-02):**
   board-http.socket (Accept=yes) and its sandboxed `board-http@` instance
   per connection are replaced by one resident `board-http.service`:

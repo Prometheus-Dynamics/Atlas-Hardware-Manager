@@ -89,7 +89,7 @@ orion-control-plane = { git = "https://github.com/Prometheus-Dynamics/Orion", re
 orion-core = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "f8d767ac5f7a995fbdc205d727f58dcf719c25dc", default-features = false, features = ["std"] }
 # lemnosd's client (board-stream's live readings), at the commit the Raze
 # package pins (devices/raze/manifest.json, capabilities.hardware-service).
-lemnos-ipc = { git = "https://github.com/Prometheus-Dynamics/Lemnos", rev = "fc879eb17f48fec5e0cec88c2adf5edeb918abe6" }
+lemnos-ipc = { git = "https://github.com/Prometheus-Dynamics/Lemnos", rev = "2610455519f44e2d2ecfe8230ca9dd4ae49b8780" }
 # NetworkTables 4 client and server (the desktop app's NetworkTables page);
 # independent of orion-node.
 orion-nt4 = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "f8d767ac5f7a995fbdc205d727f58dcf719c25dc" }
