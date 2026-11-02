@@ -291,8 +291,13 @@ mod nand {
             &mut |_| {},
         )?;
 
-        // 2. Its root.
-        let (mut rootfs, rootfs_bytes) = bundle.reader("rootfs.squashfs")?;
+        // 2. Its root: EROFS with its dm-verity tree appended, one file for
+        // one volume (its env images carry the root hash), or the squashfs of
+        // bundles from before.
+        let (mut rootfs, rootfs_bytes) = bundle
+            .reader("rootfs.erofs")
+            .or_else(|_| bundle.reader("rootfs.squashfs"))
+            .map_err(|_| "the bundle has neither rootfs.erofs nor rootfs.squashfs".to_string())?;
         let root = write_volume(
             Path::new(UBI),
             Path::new("/dev"),
