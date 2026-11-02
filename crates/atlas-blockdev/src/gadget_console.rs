@@ -196,7 +196,7 @@ pub fn restart_gadget(_disk_name: &str) -> Result<String, String> {
     Err("restarting the board from Atlas works on Linux only for now".into())
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

@@ -2,7 +2,9 @@
 //! streams through fixed buffers into the disk, and the read-back hashes as
 //! it goes. A 512 MiB image must not take more than a few dozen MiB. (A
 //! 1.4 GB HeliOS .img.xz written and verified this way peaked at 82 MB in
-//! all, decoder included.)
+//! all, decoder included.) It reads /proc, so it runs on Linux only.
+
+#![cfg(target_os = "linux")]
 
 use std::sync::atomic::AtomicBool;
 
@@ -16,7 +18,6 @@ fn peak_kib() -> u64 {
 }
 
 #[test]
-#[cfg(target_os = "linux")]
 fn a_large_image_is_written_in_bounded_memory() {
     const SIZE: u64 = 512 << 20;
     let dir = std::env::temp_dir().join(format!("atlas-bounded-{}", std::process::id()));

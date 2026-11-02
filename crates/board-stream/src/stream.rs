@@ -125,6 +125,7 @@ pub struct Stream<W: Write> {
     #[cfg(unix)]
     live: Option<std::sync::mpsc::Receiver<crate::hardware::Live>>,
     /// Readings not sent yet, per device.
+    #[cfg(unix)]
     batch: std::collections::BTreeMap<String, Vec<Value>>,
 }
 
@@ -141,6 +142,7 @@ impl<W: Write> Stream<W> {
             last_write: Instant::now(),
             #[cfg(unix)]
             live: None,
+            #[cfg(unix)]
             batch: std::collections::BTreeMap::new(),
         }
     }

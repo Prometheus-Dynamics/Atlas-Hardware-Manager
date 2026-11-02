@@ -1,5 +1,8 @@
 //! Atlas's client against the real daemon session, over a socket pair in
 //! place of the USB bulk endpoints, writing a file in place of the eMMC.
+//! The socket pair is a Unix one, so it runs where those exist.
+
+#![cfg(unix)]
 
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
