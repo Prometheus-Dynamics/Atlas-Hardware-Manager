@@ -7,8 +7,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use lemnos_usb::{
-    ControlKind, ControlRecipient, ControlSetup, Direction, ErrorKind, Interface, UsbDevice,
-    UsbDeviceInfo as DeviceInfo,
+    ControlSetup, Direction, ErrorKind, Interface, UsbDevice, UsbDeviceInfo as DeviceInfo,
 };
 use serde::Serialize;
 
@@ -167,30 +166,6 @@ fn transfer_error(error: lemnos_usb::Error) -> UsbBootError {
     }
 }
 
-fn joined<T>(
-    result: Result<Result<T, lemnos_usb::Error>, tokio::task::JoinError>,
-) -> Result<T, UsbBootError> {
-    result
-        .map_err(|error| UsbBootError::Usb(error.to_string()))?
-        .map_err(transfer_error)
-}
-
-/// The device descriptor's iSerialNumber, by a standard GET_DESCRIPTOR.
-/// Interim: lemnos-usb doesn't expose the device descriptor yet (asked for;
-/// nusb read it from the OS's copy without a request).
-fn serial_index(device: &UsbDevice) -> Result<u8, lemnos_usb::Error> {
-    let setup = ControlSetup {
-        direction: Direction::In,
-        kind: ControlKind::Standard,
-        recipient: ControlRecipient::Device,
-        request: 6, // GET_DESCRIPTOR
-        value: 0x0100,
-        index: 0,
-    };
-    let descriptor = device.control_in(&setup, 18, CONTROL_OUT_TIMEOUT)?;
-    Ok(descriptor.get(16).copied().unwrap_or(0))
-}
-
 /// The boot interface of one Pi, claimed for exclusive use.
 pub struct UsbBootTransport {
     device: UsbDevice,
@@ -228,8 +203,7 @@ impl UsbBootTransport {
                 device.claim_interface(number)
             }
             .map_err(|error| access_error(&error))?;
-            // After the claim: Windows sends control requests through it.
-            let serial_index = serial_index(&device).map_err(transfer_error)?;
+            let serial_index = device.device_descriptor().serial_number_index;
             Ok((
                 Self {
                     device,
@@ -254,24 +228,23 @@ impl BootTransport for UsbBootTransport {
             (length & 0xffff) as u16,
             (length >> 16) as u16,
         );
-        joined(
-            tokio::task::spawn_blocking(move || {
-                device.control_out(&setup, &[], CONTROL_OUT_TIMEOUT)
-            })
-            .await,
-        )
-        .map(drop)
+        device
+            .submit_control_out(setup, Vec::new(), CONTROL_OUT_TIMEOUT)
+            .map_err(transfer_error)?
+            .await
+            .map(drop)
+            .map_err(transfer_error)
     }
 
     async fn control_in(&mut self, length: u16) -> Result<Vec<u8>, UsbBootError> {
         let device = self.device.clone();
         let setup = ControlSetup::vendor(Direction::In, 0, length, 0);
-        joined(
-            tokio::task::spawn_blocking(move || {
-                device.control_in(&setup, length, CONTROL_IN_TIMEOUT)
-            })
-            .await,
-        )
+        let outcome = device
+            .submit_control_in(setup, length, CONTROL_IN_TIMEOUT)
+            .map_err(transfer_error)?
+            .await
+            .map_err(transfer_error)?;
+        Ok(outcome.data().to_vec())
     }
 
     async fn bulk_out(&mut self, data: &[u8]) -> Result<(), UsbBootError> {

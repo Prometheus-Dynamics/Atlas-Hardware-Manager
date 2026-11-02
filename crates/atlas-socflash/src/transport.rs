@@ -88,14 +88,6 @@ fn transfer_error(error: lemnos_usb::Error) -> UsbError {
     }
 }
 
-fn joined<T>(
-    result: Result<Result<T, lemnos_usb::Error>, tokio::task::JoinError>,
-) -> Result<T, UsbError> {
-    result
-        .map_err(|error| UsbError::Other(error.to_string()))?
-        .map_err(transfer_error)
-}
-
 fn access_error(error: &lemnos_usb::Error, what: &str) -> UsbError {
     match error.kind() {
         ErrorKind::PermissionDenied => UsbError::Access {
@@ -209,11 +201,12 @@ impl UsbIo for DeviceIo {
         let device = self.device.clone();
         let setup = ControlSetup::vendor(Direction::Out, request, value, index);
         let data = data.to_vec();
-        joined(
-            tokio::task::spawn_blocking(move || device.control_out(&setup, &data, CONTROL_TIMEOUT))
-                .await,
-        )
-        .map(drop)
+        device
+            .submit_control_out(setup, data, CONTROL_TIMEOUT)
+            .map_err(transfer_error)?
+            .await
+            .map(drop)
+            .map_err(transfer_error)
     }
 
     async fn control_in(
@@ -225,10 +218,12 @@ impl UsbIo for DeviceIo {
     ) -> Result<Vec<u8>, UsbError> {
         let device = self.device.clone();
         let setup = ControlSetup::vendor(Direction::In, request, value, index);
-        joined(
-            tokio::task::spawn_blocking(move || device.control_in(&setup, length, CONTROL_TIMEOUT))
-                .await,
-        )
+        let outcome = device
+            .submit_control_in(setup, length, CONTROL_TIMEOUT)
+            .map_err(transfer_error)?
+            .await
+            .map_err(transfer_error)?;
+        Ok(outcome.data().to_vec())
     }
 
     async fn bulk_out(&mut self, data: &[u8]) -> Result<(), UsbError> {

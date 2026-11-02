@@ -171,8 +171,9 @@ impl Transport for UsbTransport {
         Ok(())
     }
     async fn end(&mut self) -> io::Result<()> {
-        if self.last != 0 && self.last % self.packet == 0 {
-            // Needs lemnos-usb to accept a zero-length bulk OUT (asked for).
+        if self.last != 0 && self.last.is_multiple_of(self.packet) {
+            // A zero-length transfer: on every OS (URB_ZERO_PACKET is
+            // Linux only, and the last transfer isn't known when it's sent).
             self.submit(Vec::new())?;
         }
         while !self.in_flight.is_empty() {

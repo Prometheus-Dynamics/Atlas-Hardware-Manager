@@ -83,7 +83,7 @@ tar = { version = "0.4", default-features = false }
 mdns-sd = "0.21"
 # Lemnos's one USB layer (listing, hotplug, claims, control and bulk on
 # usbdevfs, WinUSB and IOKit); nothing in Atlas imports nusb itself.
-lemnos-usb = { git = "https://github.com/Prometheus-Dynamics/Lemnos", rev = "a40f71b9580be07d7cc8035e339ff1b7e1423c5d" }
+lemnos-usb = { git = "https://github.com/Prometheus-Dynamics/Lemnos", rev = "d4d333aa9e69b7839cbb1d99f259a91783a00b77" }
 # Orion (control protocol 5, layout of f8d767a) and its remote operator client, pinned together.
 # Features per crate: the remote operator client (Atlas), IPC (board-agent).
 orion-client = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "f8d767ac5f7a995fbdc205d727f58dcf719c25dc", default-features = false }
