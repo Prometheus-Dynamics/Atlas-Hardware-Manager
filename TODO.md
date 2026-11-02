@@ -21,12 +21,13 @@ unless the user says otherwise.
 
 - [ ] **Release notes kept current.**
   - **What:** the draft, docs/release-notes/2026.1.0.md. It has the flashing and
-    raw SPI-NAND writes; it lacks NAND slots on a running board (702b1ae,
-    3e7cbf7) and board-lite (058c53c).
+    raw SPI-NAND writes, NAND slots on a running board and board-lite
+    (brought up to date 2026-11-02).
   - **Why:** so the notes are ready whenever the user cuts a release.
   - **Done when:** the draft covers everything on dev. It reopens with each
     change.
   - **Blocked by:** nothing.
+
 ## Open: the user's call
 
 - [ ] **How Atlas writes to a Luckfox.**
