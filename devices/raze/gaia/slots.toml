@@ -1,5 +1,5 @@
-# Raze dynamic slots: the slot bundle (<id>.slot.tar), the first-flash disk
-# (MBR: p1 FAT32 boot, p2 ext4 data) and the slot manifest, for any OS on a
+# Raze dynamic slots: the first-flash disk (MBR: p1 FAT32 boot, p2 ext4 data)
+# and the slot manifest, for any OS on a
 # Raze (PhotonVision, HeliOS). An OS imports this and initramfs.toml (the
 # slot initramfs, slot-init) after the Raze layers, and sets the inputs
 # below; everything here is additive (its own trees, filesystems, disks and
@@ -16,7 +16,10 @@
 # input's value may be a source token (slot_commit =
 # "${source.<id>.commit_short}") but not another input's token: set
 # slot_variant per variant or preset, not as "${input.backend}".
-# Outputs (in the image output dir): <id>.slot.tar and <id>.img.xz.
+# Output (in the image output dir): <id>.img.xz, the only Raze deliverable.
+# There is no <id>.slot.tar: Atlas makes the slot bundle from the image when
+# it installs one as a slot (the FAT's slots/<id>/ and p2's slots/<id>.erofs
+# carry everything the bundle does).
 
 config = 3
 
@@ -103,8 +106,8 @@ id = "slots-data"
 path = "${assembly.work}/slots/data"
 
 # The boot payload of a slot (kernel, initramfs, both CM5 DTBs, the overlays,
-# the base cmdline). It is filled once, here, and the first-flash FAT copies
-# and the bundle read it. The overlays are the stock set minus the names the
+# the base cmdline). It is filled once, here; the first-flash FAT copies read
+# it, and slot.json's boot digests are over it. The overlays are the stock set minus the names the
 # Raze build overrides (its boot tree, Atlas devices/raze/gaia/boot.toml and
 # buildroot-external/external.mk RAZE_KERNEL_OVERLAYS), then the overrides and
 # the three Atlas-built overlays, so the result does not depend on copy order.
@@ -128,8 +131,9 @@ tree = "slots-payload"
 src = "${assembly.work}/slots/initramfs.cpio.zst"
 dest = "initramfs"
 
-# The base cmdline (input.slot_cmdline, no slot arguments): the bundle's boot/cmdline.txt. The
-# first-flash cmdline.txt is the slot's, built in the slots-fat tree below.
+# The base cmdline (input.slot_cmdline, no slot arguments): what a bundle's
+# boot/cmdline.txt holds (Atlas takes the FAT's back to it). The first-flash
+# cmdline.txt is the slot's, built in the slots-fat tree below.
 [[image.assembly.files]]
 tree = "slots-payload"
 content = "${input.slot_cmdline}\n"
@@ -205,7 +209,7 @@ tree = "slots-payload"
 src = "${assembly.tree.boot}/overlays/raze-usb-power.dtbo"
 dest = "overlays/raze-usb-power.dtbo"
 
-# The slot manifest: slot.json (the bundle's, the FAT's and /data's copy).
+# The slot manifest: slot.json (the FAT's and /data's copy).
 [[image.assembly.files]]
 tree = "slots-manifest"
 dest = "slot.json"
@@ -223,11 +227,12 @@ data_dirs = ["${input.slot_data_dir}"]
 display_name = "${input.slot_display_name}"
 
 # The boot payload's digests: every regular file of the payload tree, keyed by
-# its path in the tree, which is the bundle's boot/. The slots writer checks a
-# bundle against them at install; nothing checks a slot dir on the FAT
-# against them. There cmdline.txt differs by design: the bundle's is the base
-# cmdline, and the slot's (written by the writer, or below for the first
-# flash) adds atlas.slot, atlas.roothash and atlas.data.
+# its path in the tree, which is a bundle's boot/. Atlas checks the FAT's
+# files against them when it makes a bundle from the image, and the board's
+# slots writer checks the bundle again at install. There cmdline.txt differs
+# by design: the bundle's is the base cmdline, and the slot's (written by the
+# writer, or below for the first flash) adds atlas.slot, atlas.roothash and
+# atlas.data.
 boot = { files = "${assembly.sha256_tree:slots-payload}" }
 
 [image.assembly.files.json.image]
@@ -459,27 +464,6 @@ image = "${assembly.work}/slots/data.ext4"
 kind = "xz"
 src = "${assembly.work}/slots/slots-sdcard.img"
 dest = "${assembly.out}/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}.img.xz"
-
-# The slot bundle: <id>.slot.tar, uncompressed, in the image output dir (a
-# published output of the run, like the xz image above). The boot files are one tree
-# member under boot/ (the payload tree, so the bundle and its digests name the
-# same files); the overlays are its glob, minus the Raze names, as above.
-[[image.assembly.archives]]
-id = "slots-bundle"
-output = "${assembly.out}/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}.slot.tar"
-
-[[image.assembly.archives.members]]
-name = "slot.json"
-src = "${assembly.tree.slots-manifest}/slot.json"
-
-[[image.assembly.archives.members]]
-name = "rootfs.erofs"
-src = "${assembly.work}/slots/rootfs.erofs"
-
-[[image.assembly.archives.members]]
-tree = "slots-payload"
-prefix = "boot/"
-
 
 # The boot partition as the firmware will read it: every dtoverlay= that
 # config.txt and tryboot.txt load (raze-device.txt) has its .dtbo in the

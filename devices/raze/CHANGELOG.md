@@ -7,6 +7,14 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **The .img.xz is the only deliverable (2026-11-02):** as the user decided,
+  `gaia/slots.toml` no longer writes `<id>.slot.tar`. Atlas makes the bundle
+  from the image when it installs one as a slot (7b65401). The first-flash
+  disk, slot.json and its boot digests are unchanged. `gaia/slots-layered.toml`
+  is removed: its `<id>.layered.slot.tar` was its only output. That leaves no
+  build output that installs a layered slot, so `atlas slots push` has no
+  layered slot to push to until a layered image exists.
+
 - **Versions (2026-11-01):** the package moves from 1.0.8-dev to Atlas's
   scheme, as the user asked. `board_package_version` composes what the identity
   document and the self-test report from `BOARD_PACKAGE_VERSION`,
