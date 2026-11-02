@@ -50,11 +50,15 @@ impl Drop for Shell {
     }
 }
 
+/// Whether this host's sh and base64 can stand in for the board's GNU or
+/// BusyBox ones. On macOS they don't (the script test's output came back
+/// wrong there, CI run 41417129698), so these run on Linux only.
 fn has_base64() -> bool {
-    Command::new("sh")
-        .args(["-c", "command -v base64"])
-        .output()
-        .is_ok_and(|out| out.status.success())
+    cfg!(target_os = "linux")
+        && Command::new("sh")
+            .args(["-c", "command -v base64"])
+            .output()
+            .is_ok_and(|out| out.status.success())
 }
 
 #[test]

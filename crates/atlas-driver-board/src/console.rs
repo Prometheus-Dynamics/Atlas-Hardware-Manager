@@ -431,9 +431,10 @@ impl Tty {
 impl Port for Tty {
     fn read_some(&mut self, until: Instant) -> std::io::Result<Vec<u8>> {
         let mut buf = [0u8; 4096];
+        let mut file: &std::fs::File = &self.file;
         loop {
             // VTIME: a read returns after 100 ms with nothing.
-            let n = (&*self.file).read(&mut buf)?;
+            let n = file.read(&mut buf)?;
             if n > 0 {
                 return Ok(buf[..n].to_vec());
             }
