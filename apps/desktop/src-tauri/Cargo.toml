@@ -35,9 +35,9 @@ serde_json.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tokio = { workspace = true, features = ["rt", "sync", "time", "macros"] }
-
-# The atlas command, run by this binary on Linux and macOS (src/main.rs).
-[target.'cfg(not(windows))'.dependencies]
+# The atlas command, run by this binary on Linux and macOS (src/main.rs; on
+# Windows it's the atlas.exe sidecar), and on every OS the hardware drivers and
+# support bundles the app shares with it.
 atlas-cli.workspace = true
 
 [dev-dependencies]
