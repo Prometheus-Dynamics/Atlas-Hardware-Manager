@@ -7,6 +7,14 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **A slots trial gets the A/B trial's checks (2026-11-02):** on a slots
+  board `update confirm` handed everything to `slots`, so a trial was judged
+  by the OS's `update-health` alone and the package's checks never ran (the
+  running kernel has modules on its root, the USB gadget is bound, no
+  `UPDATE_CRITICAL_UNITS` failed). A QEMU trial without its gadget was
+  kept as the default. `slots confirm` now asks `update trial-checks` for
+  them first (after `UPDATE_CONFIRM_DELAY`) and restarts back on a failure,
+  as on an A/B board: "slot <id> failed its checks: <reason>".
 - **Lemnos 2610455 (2026-11-02):** lemnosd comes from Lemnos 2610455
   (`gaia_import.rev`), the commit HeliOS's lemnos-ipc and Daedalus build
   on; board-stream and board-agent's lemnos-ipc move with it. The vendored

@@ -819,9 +819,17 @@ cmd_confirm() {
 		STATE=trying ERROR=''
 		write_status
 		sleep "${SLOTS_TRYING_HOLD_SEC:-2}"
-		if [ -x "$BOARD_ETC_DIR/update-health" ] && ! "$BOARD_ETC_DIR/update-health"; then
+		# The package's checks (an A/B trial's: modules for this kernel, the
+		# USB gadget, the critical units), then the OS's update-health.
+		_failed=''
+		if ! _reason=$("$BOARD_LIB_DIR/update" trial-checks); then
+			_failed="slot $_run failed its checks: ${_reason:-no reason given}"
+		elif [ -x "$BOARD_ETC_DIR/update-health" ] && ! "$BOARD_ETC_DIR/update-health"; then
+			_failed="slot $_run failed its health check"
+		fi
+		if [ -n "$_failed" ]; then
 			meta_set "$_run" GOOD no
-			ERROR="slot $_run failed its health check"
+			ERROR=$_failed
 			board_event update.trial-failed "$ERROR" "slot=$_run"
 			# The failure on the ring before the restart back.
 			STATE=error
@@ -841,7 +849,11 @@ cmd_confirm() {
 		meta_set "$TRIAL" GOOD no
 		# The initramfs writes trial-init once it has /data on a trial, and
 		# trial-started once it has started the slot.
-		if [ "$ERROR" = "slot $TRIAL failed its health check" ]; then
+		_judged=''
+		case $ERROR in
+		"slot $TRIAL failed its health check" | "slot $TRIAL failed its checks: "*) _judged=yes ;;
+		esac
+		if [ -n "$_judged" ]; then
 			# The trial judged itself and restarted back: its reason stands.
 			ERROR="$ERROR; back on $_run"
 		elif [ "$(cat "$STATE_DIR/trial-started" 2>/dev/null)" = "$TRIAL" ]; then

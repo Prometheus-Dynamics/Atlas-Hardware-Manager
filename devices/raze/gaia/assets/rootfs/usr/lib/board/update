@@ -1240,6 +1240,15 @@ if [ "${1:-}" = check-link ]; then
 	LINK_REASON=$(slot_sanity) || LINK_OK=0
 fi
 
+# trial-checks: a trial's checks, as confirm runs them (slots asks for them
+# while it judges its trial): after the services' moment, slot_sanity's
+# reason on stdout and exit 1 when one fails.
+if [ "${1:-}" = trial-checks ]; then
+	sleep "${UPDATE_CONFIRM_DELAY:-0}"
+	slot_sanity
+	exit
+fi
+
 # A board with dynamic slots (slot images on /data): the slots writer does
 # every command (it takes the lock and the device lock itself).
 if [ -r "${UPDATE_SLOTS_STATE:-/data/board/slots/state.json}" ]; then
