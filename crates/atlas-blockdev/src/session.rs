@@ -246,12 +246,9 @@ pub fn write_boot_file(disk: &Disk, relative: &str, contents: &str) -> Result<()
         let read_write = options.split(',').any(|option| option.trim() == "rw");
         let (point, ours) = match existing {
             Some(point) if read_write => (PathBuf::from(point), false),
-            Some(_) => {
+            Some(point) => {
                 // Mounted read-only (say, by Browse files): remount it ours.
-                run(
-                    "udisksctl",
-                    &["unmount", "--no-user-interaction", "-b", &part],
-                )?;
+                unmount_ours(&part, Path::new(point))?;
                 (mount_rw(&part)?, true)
             }
             None => (mount_rw(&part)?, true),
@@ -268,10 +265,7 @@ pub fn write_boot_file(disk: &Disk, relative: &str, contents: &str) -> Result<()
                 .map_err(|error| BlockError::io(&target, error))
         })();
         if ours {
-            let _ = run(
-                "udisksctl",
-                &["unmount", "--no-user-interaction", "-b", &part],
-            );
+            let _ = unmount_ours(&part, &point);
         }
         result
     }
@@ -301,20 +295,11 @@ pub fn read_boot_file(disk: &Disk, relative: &str) -> Result<Option<String>, Blo
             .filter(|p| !p.is_empty())
         {
             Some(point) => (PathBuf::from(point), false),
-            None => {
-                let output = run(
-                    "udisksctl",
-                    &["mount", "--no-user-interaction", "-b", &part, "-o", "ro"],
-                )?;
-                (mounted_at(&output)?, true)
-            }
+            None => (mount_boot(&part, false)?, true),
         };
         let text = std::fs::read_to_string(point.join(relative)).ok();
         if ours {
-            let _ = run(
-                "udisksctl",
-                &["unmount", "--no-user-interaction", "-b", &part],
-            );
+            let _ = unmount_ours(&part, &point);
         }
         Ok(text)
     }
@@ -327,8 +312,51 @@ pub fn read_boot_file(disk: &Disk, relative: &str) -> Result<Option<String>, Blo
 
 #[cfg(target_os = "linux")]
 fn mount_rw(part: &str) -> Result<PathBuf, BlockError> {
-    let output = run("udisksctl", &["mount", "--no-user-interaction", "-b", part])?;
-    mounted_at(&output)
+    mount_boot(part, true)
+}
+
+/// Where a root process (the USB agent on a robot controller, which has no
+/// desktop disk service) mounts a boot partition itself.
+#[cfg(target_os = "linux")]
+const OWN_MOUNTS: &str = "/run/atlas-blockdev";
+
+/// Mounts a boot partition: through UDisks2 as the logged-in user, or
+/// directly as root (a controller has no `udisksctl`; its first flash
+/// behind one lost the board's SSH key that way).
+#[cfg(target_os = "linux")]
+fn mount_boot(part: &str, write: bool) -> Result<PathBuf, BlockError> {
+    if !nix::unistd::geteuid().is_root() {
+        let mut args = vec!["mount", "--no-user-interaction", "-b", part];
+        if !write {
+            args.extend(["-o", "ro"]);
+        }
+        return mounted_at(&run("udisksctl", &args)?);
+    }
+    use nix::mount::MsFlags;
+    let name = Path::new(part).file_name().unwrap_or_default();
+    let point = Path::new(OWN_MOUNTS).join(name);
+    std::fs::create_dir_all(&point).map_err(|error| BlockError::io(&point, error))?;
+    let mut flags = MsFlags::MS_NOSUID | MsFlags::MS_NODEV | MsFlags::MS_NOEXEC;
+    if !write {
+        flags |= MsFlags::MS_RDONLY;
+    }
+    nix::mount::mount(Some(part), &point, Some("vfat"), flags, None::<&str>)
+        .map_err(|error| BlockError::Desktop(format!("mounting {part}: {error}")))?;
+    Ok(point)
+}
+
+/// Unmounts what `mount_boot` mounted, the same way.
+#[cfg(target_os = "linux")]
+fn unmount_ours(part: &str, point: &Path) -> Result<(), BlockError> {
+    if point.starts_with(OWN_MOUNTS) || nix::unistd::geteuid().is_root() {
+        nix::mount::umount2(point, nix::mount::MntFlags::empty())
+            .map_err(|error| BlockError::Desktop(format!("unmounting {part}: {error}")))?;
+        if point.starts_with(OWN_MOUNTS) {
+            let _ = std::fs::remove_dir(point);
+        }
+        return Ok(());
+    }
+    run("udisksctl", &["unmount", "--no-user-interaction", "-b", part]).map(|_| ())
 }
 
 /// The mount point in udisksctl's "Mounted /dev/sdc1 at /run/media/u/BOOT".
