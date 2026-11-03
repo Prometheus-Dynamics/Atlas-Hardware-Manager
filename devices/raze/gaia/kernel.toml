@@ -53,3 +53,36 @@ config_overrides = [
   # dtc for the compile-dts assembly transforms in boot.toml.
   ["BR2_PACKAGE_HOST_DTC", "y"],
 ]
+
+# The seven Realtek USB Ethernet firmware files r8152 loads, extracted from
+# linux-firmware into rootfs/usr/lib/firmware (merged /usr: an overlay may not
+# hold /lib), instead of Buildroot's linux-firmware package, which extracts the
+# whole 650 MB tarball on every clean build. r8152 is kept by raze-trim.config.
+# Needs Gaia 96ceeec+ (members, extract_to, extract cache).
+[[sources]]
+id = "linux-firmware"
+kind = "archive"
+url = "https://cdn.kernel.org/pub/linux/kernel/firmware/linux-firmware-20260810.tar.xz"
+sha256 = "ac17c34fe73756926a961fbafadf8d8f07a3bd2dd2f4ea31a0fb5d50c714a49a"
+strip_components = 1
+extract_to = "rootfs/usr/lib/firmware"
+members = [
+  "linux-firmware-20260810/rtl_nic/rtl8153a-2.fw",
+  "linux-firmware-20260810/rtl_nic/rtl8153a-3.fw",
+  "linux-firmware-20260810/rtl_nic/rtl8153a-4.fw",
+  "linux-firmware-20260810/rtl_nic/rtl8153b-2.fw",
+  "linux-firmware-20260810/rtl_nic/rtl8153c-1.fw",
+  "linux-firmware-20260810/rtl_nic/rtl8156a-2.fw",
+  "linux-firmware-20260810/rtl_nic/rtl8156b-2.fw",
+]
+
+# An OS adds its own overlays the same way; Gaia appends every layer's list to
+# BR2_ROOTFS_OVERLAY (Gaia cf62b48+).
+[image.rootfs]
+overlays = ["${source.linux-firmware.path}/rootfs"]
+
+[image.checks]
+# r8152 also lists these two, which no linux-firmware release ships; it works
+# without them. Needs Gaia 9445693+ (optional_firmware) and 8626987+ (an OS's
+# own [image.checks] keeps this list).
+optional_firmware = ["rtl_nic/rtl8157-1.fw", "rtl_nic/rtl8159-1.fw"]
