@@ -1,4 +1,4 @@
-//! A bundle uploaded to a board behind a robot controller, through the
+//! An image uploaded to a board behind a robot controller, through the
 //! controller's HeliOS: the board can't reach this computer to fetch it, so
 //! the file goes to the board's own HeliOS (`/v1/update/uploads`), which
 //! keeps it in /data/updates and answers with its `file://` URL there. The

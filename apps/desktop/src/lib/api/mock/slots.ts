@@ -104,8 +104,8 @@ export async function installSlot(key: DeviceKey, path: string, pin: boolean, bo
   const set = setOf(key);
   if (!set) throw `${keyString(key)} has no slots`;
   const name = path.split(/[\\/]/).pop() ?? path;
-  if (!name.endsWith(".slot.tar")) throw "that isn't a slot bundle (.slot.tar)";
-  const id = name.replace(/\.slot\.tar$/, "").replace(/[^a-z0-9._-]/g, "-").slice(0, 64);
+  if (!/\.img(\.(xz|zst|gz))?$/.test(name)) throw "that isn't a slots build's .img.xz, the one update image";
+  const id = name.replace(/\.img(\.(xz|zst|gz))?$/, "").replace(/[^a-z0-9._-]/g, "-").slice(0, 64);
   const size = Math.round(0.55 * GiB);
   if (size > set.free_bytes - set.reserve_bytes) throw "not enough room on /data; remove a slot first";
   onProgress({ type: "step-started", step: "transfer" });
@@ -167,7 +167,7 @@ export function installChoices(key: DeviceKey, path: string | null, name: string
           },
     );
   if (caps.includes("slots")) {
-    offer("slot", "Install as a slot", ["slot-bundle", "slots-image"], { steps: ["preflight", "transfer", "apply", ...(bootAfter ? (["reboot"] as const) : [])], erases: false, restarts: bootAfter, summary: `Installs ${version} beside the other slots` }, "a slot bundle or a slots image");
+    offer("slot", "Install as a slot", ["slots-image"], { steps: ["preflight", "transfer", "apply", ...(bootAfter ? (["reboot"] as const) : [])], erases: false, restarts: bootAfter, summary: `Installs ${version} beside the other slots` }, "a slots image (the build's .img.xz)");
   }
   if (caps.includes("update") && !recovery) {
     offer("ab-image", "Update in place", ["ab-image", "disk-image"], { steps: ["preflight", "transfer", "apply", "reboot", "confirm"], erases: false, restarts: true, summary: `Update to ${version}; settings stay` }, "an A/B image");

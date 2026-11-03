@@ -168,7 +168,7 @@ The adapters, mostly moving code that exists:
 
 | Method | Kinds | Today's code |
 |---|---|---|
-| `slot` | `SlotBundle`, `SlotsImage` (made into a bundle) | `BoardSlots::install` / `OrionSlots::install`, `slot_bundle_from_image` |
+| `slot` | `SlotsImage` (the build's `.img.xz`, sent as it is; the board unpacks it with `slots stage-image`) | `BoardSlots::install` / `OrionSlots::install` |
 | `ab-image` | `AbImage` | `SshUpdate` / `OrionUpdate` (`UpdateCapability`) |
 | `layer` | `Layer` | `push_layer` |
 | `fresh` | `DiskImage`, `SlotsImage` | the rpi driver's USB-boot flash |

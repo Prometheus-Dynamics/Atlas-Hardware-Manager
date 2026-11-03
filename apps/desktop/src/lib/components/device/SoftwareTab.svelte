@@ -193,7 +193,6 @@
     if (method === "update" && slotted) {
       return [
         { title: entry && !entry.path ? "Download it on the Releases page first" : get, note: "" },
-        ...(fromImage ? [{ title: "Make the slot from the image", note: "On this computer, about 10 s" }] : []),
         { title: "Copy it to the board beside the other slots", note: "Every file is checked against its manifest before anything is replaced" },
         ...(bootAfter
           ? [
@@ -234,12 +233,11 @@
     return parts.join(" · ");
   });
 
-  /** The bundle file for a slot install: chosen, or a release already here. */
+  /** The image file for a slot install: chosen, or a release already here. */
   const bundlePath = $derived(choice?.path ?? entry?.path ?? null);
-  /** The file a slot install starts from: a slot bundle, or a slots build's image, which Atlas makes the bundle from. */
+  /** A slot installs from the build's .img.xz, the one update image; the board unpacks it. */
   const slotFile = $derived((entry?.artifact_name ?? bundlePath ?? "").toLowerCase());
-  const fromImage = $derived(/\.img(\.(xz|zst|gz))?$/.test(slotFile));
-  const notBundle = $derived(!!version && !slotFile.endsWith(".slot.tar") && !fromImage);
+  const notImage = $derived(!!version && !/\.img(\.(xz|zst|gz))?$/.test(slotFile));
   const label = $derived.by(() => {
     if (!version) return "Choose an image";
     // The image's name is right above (chosen) and below (Writes …).
@@ -252,7 +250,7 @@
   const disabled = $derived.by(() => {
     if (!version || !method) return true;
     if (method === "update" && viaPackage) return !bundlePath || !choiceFor("package")?.plan || installing !== null;
-    if (method === "update" && slotted) return !bundlePath || notBundle || installing !== null;
+    if (method === "update" && slotted) return !bundlePath || notImage || installing !== null;
     if (method === "update") return !draft.plan || draft.planning;
     if (fresh === "flash") return !draft.plan || draft.planning || hostBlocked;
     return hostBlocked;
@@ -475,7 +473,7 @@
       {#if writes && !confirming}
         <p class="hint" title={entry?.sha256 ?? ""}>Writes {writes}</p>
       {/if}
-      {#if method === "update" && slotted && notBundle}
+      {#if method === "update" && slotted && notImage}
         <p class="hint">Choose the image (.img.xz) to install as a slot.</p>
       {/if}
       {#if installing !== null}

@@ -62,24 +62,19 @@ pub async fn install_slot(
     let progress = ProgressSink::new(move |update| {
         let _ = on_progress.send(update);
     });
-    let (path, sha256) = if atlas_blockdev::is_slot_bundle(&path) {
-        (path, sha256)
-    } else {
-        progress.log(format!(
-            "making the slot bundle from {}",
-            path.file_name()
-                .map_or_else(String::new, |name| name.to_string_lossy().into_owned())
-        ));
-        let out = state.paths.cache_dir.join("slot-bundles");
-        let made = tokio::task::spawn_blocking(move || {
-            atlas_blockdev::slot_bundle_from_image(&path, &out)
-        })
+    // The build's .img.xz is the one update image: it goes to the board as
+    // it is, and the board unpacks and checks the slot it carries.
+    let probe = path.clone();
+    let kind = tokio::task::spawn_blocking(move || atlas_blockdev::sniff_artifact(&probe))
         .await
-        .map_err(text)?
         .map_err(text)?;
-        let sha256 = atlas_release::sha256_file(&made.path).await.map_err(text)?;
-        (made.path, sha256)
-    };
+    if kind != atlas_driver::ArtifactKind::SlotsImage {
+        return Err(format!(
+            "{} isn't a slots build's .img.xz, the one update image ({})",
+            path.display(),
+            kind.label()
+        ));
+    }
     let size_bytes = std::fs::metadata(&path)
         .map_err(|error| format!("{}: {error}", path.display()))?
         .len();

@@ -66,7 +66,7 @@ export const api = {
   /** A slots board's installed images; null when it has none (A/B). */
   deviceSlots: (key: DeviceKey) => invoke<SlotSet | null>("device_slots", { key }),
   slotCommand: (key: DeviceKey, command: SlotCommand) => invoke<void>("slot_command", { key, command }),
-  /** Installs the slot bundle at `path`; boot runs it once on trial when it is in. */
+  /** Installs the slot the image at `path` (a slots build's .img.xz) carries; boot runs it once on trial when it is in. */
   /** What the device can take this file by: `path` when it is on this computer (its content tells), else its `name`. */
   installChoices: (key: DeviceKey, path: string | null, name: string, version: string, bootAfter: boolean) =>
     invoke<InstallChoices>("install_choices", { key, path, name, version, bootAfter }),

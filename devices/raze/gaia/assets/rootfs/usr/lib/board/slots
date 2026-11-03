@@ -13,6 +13,8 @@
 #                                 image carries (what Atlas installs on a
 #                                 laptop; stdin: xz), with the bundle's checks
 #   slots stage-url <url> --sha256 <hex> --size <bytes> [--pin]
+#                                 fetch (or take an upload in /data/updates)
+#                                 and install a slots image (.img.xz) or bundle
 #   slots check <bundle.tar>      JSON: whether `stage` would install it (the
 #                                 same checks, nothing written to /data or
 #                                 the boot FAT); exit status as stage's
@@ -67,7 +69,7 @@ SYSTEMCTL=${UPDATE_SYSTEMCTL:-systemctl}
 RESERVE_KB=${SLOTS_RESERVE_KB:-2097152}
 STATUS_JSON=${BOARD_RUN_DIR}/update.json
 DOWNLOAD_DIR=${UPDATE_DOWNLOAD_DIR:-$DATA/board/update}
-# Bundles uploaded to the board (HeliOS's /v1/update/uploads, through a
+# Images uploaded to the board (HeliOS's /v1/update/uploads, through a
 # robot controller's gateway): stage-url installs a file:// URL here in place.
 UPLOADS_DIR=${SLOTS_UPLOADS_DIR:-$DATA/updates}
 REFUSED=3
@@ -777,12 +779,12 @@ cmd_stage_url() {
 		[ -z "$_size" ] || [ "$(board_file_size "$_file")" = "$_size" ] || refuse "the upload isn't --size bytes; nothing changed"
 		[ "$(sha256sum "$_file" | cut -d' ' -f1)" = "$_want" ] || refuse "the upload doesn't match --sha256; nothing changed"
 		board_event update.stage "installing a slot from the upload $(basename "$_file")"
-		install_bundle "$_file" "$_pin"
+		install_fetched "$_file" "$_want" "$_pin"
 		return
 		;;
 	esac
 	mkdir -p "$DOWNLOAD_DIR"
-	_file=$DOWNLOAD_DIR/$_want.slot.tar
+	_file=$DOWNLOAD_DIR/$_want.download
 	staging 0
 	# The tool's own reason (an HTTP status, a refused connection) goes into
 	# the error, so a failed download says why.
@@ -798,8 +800,20 @@ cmd_stage_url() {
 	rm -f "$_err"
 	[ -z "$_size" ] || [ "$(board_file_size "$_file")" = "$_size" ] || die "the download isn't --size bytes"
 	[ "$(sha256sum "$_file" | cut -d' ' -f1)" = "$_want" ] || { rm -f "$_file"; die "the download doesn't match --sha256"; }
-	install_bundle "$_file" "$_pin"
+	install_fetched "$_file" "$_want" "$_pin"
 	rm -f "$_file"
+}
+
+# What stage-url fetched or found uploaded: a slots build's image (.img.xz,
+# the one update image HeliOS and Atlas send), else a bundle.
+install_fetched() {
+	if [ "$(image_reader "$1")" = cat ]; then
+		install_bundle "$1" "$3"
+	elif [ "$3" = yes ]; then
+		cmd_stage_image "$1" --sha256 "$2" --pin
+	else
+		cmd_stage_image "$1" --sha256 "$2"
+	fi
 }
 
 # --- booting ----------------------------------------------------------------

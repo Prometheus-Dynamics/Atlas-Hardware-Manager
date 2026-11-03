@@ -145,7 +145,7 @@ impl BoardSlots {
     ) -> Result<(), DriverError> {
         let bundle = &install.bundle;
         let script = as_atlas(&format!(
-            "{WRITER} stage - --sha256 {}{}",
+            "{WRITER} stage-image - --sha256 {}{}",
             bundle.sha256.to_ascii_lowercase(),
             if install.pin { " --pin" } else { "" }
         ));

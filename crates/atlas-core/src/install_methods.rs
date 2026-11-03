@@ -54,7 +54,8 @@ impl InstallMethod for SlotMethod {
     }
 
     fn kinds(&self) -> &'static [ArtifactKind] {
-        &[ArtifactKind::SlotBundle, ArtifactKind::SlotsImage]
+        // The build's .img.xz only: no bundle goes over the wire.
+        &[ArtifactKind::SlotsImage]
     }
 
     fn plan(
@@ -98,9 +99,9 @@ impl InstallMethod for SlotMethod {
         _cancel: &CancellationToken,
     ) -> Result<UpdateOutcome, InstallFailure> {
         let (tracker, sink) = ChangeTracker::watch(progress);
-        if request.kind != ArtifactKind::SlotBundle {
+        if request.kind != ArtifactKind::SlotsImage {
             return Err(tracker.failure(DriverError::Incompatible(
-                "make the slot bundle from the image first".into(),
+                "a slot installs from a slots build's .img.xz, the one update image".into(),
             )));
         }
         let install = SlotInstall {
@@ -339,7 +340,7 @@ fn not_this_kind(method: InstallMethodId, kind: ArtifactKind) -> String {
         return "this board isn't on slots yet: it needs one fresh install of a slots image (its .img.xz), then slots install in place".into();
     }
     let takes = match method {
-        InstallMethodId::Slot => "a slot bundle or a slots image",
+        InstallMethodId::Slot => "a slots image (the build's .img.xz)",
         InstallMethodId::AbImage => "an A/B image",
         InstallMethodId::Fresh => "a disk image",
         InstallMethodId::Layer => "a layer",

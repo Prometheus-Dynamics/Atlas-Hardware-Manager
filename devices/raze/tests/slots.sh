@@ -291,6 +291,17 @@ MOUNT
 	[ "$(stage_image - --sha256 "$sha" < "$T/pv-j.img.xz")" = 0 ] || fail "stage-image stdin: $(cat "$T/out" "$T/err")"
 	cmp -s "$T/data/slots/pv-j.erofs" "$T/build/pv-j/rootfs.erofs" || fail "stdin: the root isn't the image's"
 
+	echo "  an uploaded .img.xz (the controller gateway's one update image) installs through stage-url"
+	image pv-u "$T/pv-u.img.xz"
+	mkdir -p "$T/data/updates/u2"
+	cp "$T/pv-u.img.xz" "$T/data/updates/u2/pv-u.img.xz"
+	sha=$(sha256sum "$T/pv-u.img.xz" | cut -d' ' -f1)
+	size=$(wc -c < "$T/pv-u.img.xz" | tr -d ' ')
+	[ "$(SLOTS_MOUNT=$T/bin/img-mount SLOTS_UMOUNT=$T/bin/img-umount rc stage-url "file://$T/data/updates/u2/pv-u.img.xz" --sha256 "$sha" --size "$size")" = 0 ] ||
+		fail "stage-url .img.xz: $(cat "$T/out" "$T/err")"
+	cmp -s "$T/data/slots/pv-u.erofs" "$T/build/pv-u/rootfs.erofs" || fail "stage-url .img.xz: the root isn't the image's"
+	[ -f "$T/data/updates/u2/pv-u.img.xz" ] || fail "stage-url .img.xz: the upload was removed (it is the uploader's)"
+
 	echo "  a broken root, the running slot, or a disk that isn't a slots image: nothing installed"
 	image pv-k "$T/pv-k.img.xz"
 	echo tampered >> "$T/img/pv-k/data/slots/pv-k.erofs"
