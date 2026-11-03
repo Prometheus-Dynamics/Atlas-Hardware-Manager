@@ -33,6 +33,10 @@
   });
 
   function network(ip: string): string {
+    // The address in use is named by how Atlas reaches it: through a
+    // controller it's the controller's, over USB it's the USB link's.
+    if (ip === current && record.link_kind.kind === "gateway") return "Controller IP";
+    if (ip === current && record.link_kind.kind === "usb-network") return "USB IP";
     if (ip.startsWith("172.31.")) return "USB IP";
     if (ip.startsWith("169.254.")) return "Link-local";
     if (ip.includes(":")) return ip.toLowerCase().startsWith("fe80") ? "IPv6 (local)" : "IPv6";

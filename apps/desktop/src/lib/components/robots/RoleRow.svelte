@@ -3,6 +3,7 @@
   import Button from "#lib/components/common/Button.svelte";
   import { deviceName } from "#lib/format.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
+  import { familyName } from "#lib/present.ts";
 
   let {
     role = $bindable(),
@@ -29,7 +30,7 @@
     <input class="input" bind:value={role.role} placeholder="Role, e.g. front camera" aria-label="Role {index + 1} name" />
     <select class="select" value={role.family} onchange={(e) => setFamily(e.currentTarget.value)} aria-label="Role {index + 1} family">
       {#each families as family (family)}
-        <option value={family}>{family}</option>
+        <option value={family}>{familyName(family)}</option>
       {/each}
     </select>
     <Button variant="ghost" size="sm" icon="x" label="Remove role {role.role || index + 1}" onclick={onremove} />

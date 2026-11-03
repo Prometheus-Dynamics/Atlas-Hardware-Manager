@@ -7,6 +7,7 @@
   import { rise, softFade } from "#lib/ui/motion.ts";
   import { sentence } from "#lib/format.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
+  import { familyName } from "#lib/present.ts";
   import { releases } from "#lib/stores/releases.svelte.ts";
   import { robots } from "#lib/stores/robots.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
@@ -99,7 +100,7 @@
     {/if}
     {#each targetFamilies as family (family)}
       <label class="grid grid-cols-[8rem_1fr] items-center gap-3">
-        <span class="truncate text-[13px] text-fg-muted">{family}</span>
+        <span class="truncate text-[13px] text-fg-muted" title={family}>{familyName(family)}</span>
         <input
           class="input mono"
           list="targets-{family}"
