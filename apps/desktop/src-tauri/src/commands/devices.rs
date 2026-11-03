@@ -16,12 +16,12 @@ pub async fn scan(state: State<'_, AppState>) -> CmdResult<ScanReport> {
     Ok(state.atlas.scan().await)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_devices(state: State<'_, AppState>) -> Vec<DeviceRecord> {
     state.atlas.devices()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_device_label(
     state: State<'_, AppState>,
     key: DeviceKey,
@@ -30,7 +30,7 @@ pub fn set_device_label(
     state.atlas.set_label(&key, label).map_err(text)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_device_robot(
     state: State<'_, AppState>,
     key: DeviceKey,
@@ -39,7 +39,7 @@ pub fn set_device_robot(
     state.atlas.set_device_robot(&key, robot).map_err(text)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn forget_device(state: State<'_, AppState>, key: DeviceKey) -> CmdResult<()> {
     state.atlas.forget_device(&key).map_err(text)?;
     // A board met again later is pinned afresh (it may have a new OS by then).
@@ -49,7 +49,7 @@ pub fn forget_device(state: State<'_, AppState>, key: DeviceKey) -> CmdResult<()
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn device_actions(state: State<'_, AppState>, key: DeviceKey) -> CmdResult<Vec<DeviceAction>> {
     state.atlas.actions(&key).map_err(text)
 }
@@ -207,7 +207,7 @@ pub async fn start_hardware_stream(
 
 /// Stops a live hardware stream (closing the board's connection, which
 /// ends its lemnosd subscriptions).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stop_hardware_stream(state: State<'_, AppState>, id: u64) {
     if let Some(task) = state
         .hardware_streams
@@ -314,7 +314,7 @@ pub async fn start_live_stream(
 }
 
 /// Stops following a device's live readings.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stop_live_stream(state: State<'_, AppState>, id: u64) {
     stop_hardware_stream(state, id);
 }
@@ -360,7 +360,7 @@ pub async fn start_camera_stream(
 }
 
 /// Stops following a camera (its connection closes).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stop_camera_stream(state: State<'_, AppState>, id: u64) {
     stop_hardware_stream(state, id);
 }
@@ -407,7 +407,7 @@ pub async fn start_vision_stream(
 }
 
 /// Stops following a device's PhotonVision.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn stop_vision_stream(state: State<'_, AppState>, id: u64) {
     stop_hardware_stream(state, id);
 }
@@ -420,7 +420,7 @@ pub async fn run_selftest(state: State<'_, AppState>, key: DeviceKey) -> CmdResu
 }
 
 /// The last self-test of this device's board, if it ever ran.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn device_selftest(state: State<'_, AppState>, key: DeviceKey) -> Option<SelfTestRecord> {
     state.atlas.selftest(&key)
 }
@@ -503,7 +503,7 @@ pub async fn device_kernel_record(
 
 /// The device's history, newest first: what Atlas did and what its board's
 /// event log says (Orion, someone on the board).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn device_history(
     state: State<'_, AppState>,
     key: DeviceKey,
@@ -513,7 +513,7 @@ pub fn device_history(
 }
 
 /// Fleet history, newest first.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_activity(state: State<'_, AppState>, limit: usize) -> Vec<ActivityEntry> {
     state.atlas.activity(limit.clamp(1, 1000))
 }

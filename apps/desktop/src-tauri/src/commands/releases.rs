@@ -16,7 +16,7 @@ pub struct DownloadEvent {
     pub total: Option<u64>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_releases(state: State<'_, AppState>) -> Vec<ReleaseEntry> {
     state.releases.entries()
 }
@@ -41,13 +41,13 @@ pub async fn add_local_release(
         .map_err(text)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn remove_release(state: State<'_, AppState>, id: String) -> CmdResult<()> {
     state.releases.remove(&id).map_err(text)
 }
 
 /// Pins a release so it stays when older local images drop off the list.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_release_pinned(state: State<'_, AppState>, id: String, pinned: bool) -> CmdResult<()> {
     state.releases.set_pinned(&id, pinned).map_err(text)
 }
@@ -82,17 +82,17 @@ pub async fn download_release(
         .map_err(text)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_release_sources(state: State<'_, AppState>) -> Vec<RemoteSource> {
     state.releases.sources()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_release_source(state: State<'_, AppState>, source: RemoteSource) -> CmdResult<()> {
     state.releases.set_source(source).map_err(text)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn remove_release_source(state: State<'_, AppState>, name: String) -> CmdResult<()> {
     state.releases.remove_source(&name).map_err(text)
 }

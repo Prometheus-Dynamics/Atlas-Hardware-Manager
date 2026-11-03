@@ -60,26 +60,26 @@ async fn get<T: serde::de::DeserializeOwned>(
     agent: &str,
     path: &str,
 ) -> Result<T, DriverError> {
-    http.get(format!("http://{agent}{path}"))
+    let response = http
+        .get(format!("http://{agent}{path}"))
         .timeout(Duration::from_secs(20))
         .send()
         .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|error| unreachable(agent, error))?
+        .map_err(|error| unreachable(agent, error))?;
+    atlas_driver::util::answered(response)
+        .await
+        .map_err(|words| unreachable(agent, format!("{path} {words}")))?
         .json()
         .await
         .map_err(|error| unreachable(agent, error))
 }
 
-/// The agent's own words for a refusal (`{"error": ...}`), or the status.
+/// The agent's own words for a refusal, with its status.
 async fn refusal(response: reqwest::Response) -> String {
-    let status = response.status();
-    response
-        .json::<serde_json::Value>()
+    atlas_driver::util::answered(response)
         .await
-        .ok()
-        .and_then(|body| body.get("error")?.as_str().map(str::to_string))
-        .unwrap_or_else(|| status.to_string())
+        .err()
+        .unwrap_or_default()
 }
 
 /// The key serial: the board serial's last 8 hex digits, as the board

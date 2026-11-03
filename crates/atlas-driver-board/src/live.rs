@@ -152,11 +152,14 @@ pub(crate) fn parse_logs(value: Value) -> Vec<LogLine> {
 }
 
 pub(crate) async fn get_json(http: &reqwest::Client, url: &str) -> Result<Value, DriverError> {
-    http.get(url)
+    let response = http
+        .get(url)
         .send()
         .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|error| DriverError::Unreachable(error.to_string()))?
+        .map_err(|error| DriverError::Unreachable(error.to_string()))?;
+    atlas_driver::util::answered(response)
+        .await
+        .map_err(|words| DriverError::Unreachable(format!("{url} {words}")))?
         .json::<Value>()
         .await
         .map_err(|error| DriverError::Other(format!("{url} sent something unreadable: {error}")))
@@ -206,12 +209,15 @@ impl ActionsCapability for BoardActions {
     /// `POST <actions>/<id>`; any 2xx answer counts as done.
     async fn run_action(&self, _device: &Identity, action_id: &str) -> Result<(), DriverError> {
         let url = format!("{}/{action_id}", self.url.trim_end_matches('/'));
-        self.http
+        let response = self
+            .http
             .post(&url)
             .send()
             .await
-            .and_then(reqwest::Response::error_for_status)
             .map_err(|error| DriverError::Unreachable(error.to_string()))?;
+        atlas_driver::util::answered(response)
+            .await
+            .map_err(|words| DriverError::Unreachable(format!("{url} {words}")))?;
         Ok(())
     }
 }

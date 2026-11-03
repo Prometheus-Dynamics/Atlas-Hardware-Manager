@@ -24,7 +24,10 @@
       out:softFade
     >
       <span class="ic"><Icon name={icon[toast.tone]} size={16} stroke={2} /></span>
-      <p class="flex-1 text-[13px] leading-snug text-fg">{toast.message}</p>
+      <p class="flex-1 text-[13px] leading-snug text-fg">
+        {toast.message}
+        {#if toast.ref}<span class="ref" title="This error's id in atlas.log">error {toast.ref}</span>{/if}
+      </p>
       <button type="button" class="close" aria-label="Dismiss" onclick={() => toasts.dismiss(toast.id)}>
         <Icon name="x" size={14} />
       </button>
@@ -52,6 +55,13 @@
     gap: 10px;
     padding: 11px 12px;
     border-radius: var(--r-card);
+  }
+  .ref {
+    margin-left: 6px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-fg-muted);
+    white-space: nowrap;
   }
   .ic {
     display: inline-flex;

@@ -52,6 +52,70 @@ pub fn host_port(host: &str, port: u16) -> String {
     }
 }
 
+#[cfg(feature = "http")]
+/// The response when it is a 2xx; otherwise what the server said, for an
+/// error: its status and its own words (an `{"error": ...}` field, or the
+/// start of the body), so atlas.log shows why it refused. The caller names
+/// the URL.
+pub async fn answered(response: reqwest::Response) -> Result<reqwest::Response, String> {
+    let status = response.status();
+    if status.is_success() {
+        return Ok(response);
+    }
+    let body = response.text().await.unwrap_or_default();
+    Err(refusal(status.as_u16(), &body))
+}
+
+#[cfg(feature = "http")]
+/// `answered <status> <reason>: <words>`, from a non-2xx reply; an HTML
+/// error page is reduced to its text.
+pub fn refusal(status: u16, body: &str) -> String {
+    const WORDS: usize = 160;
+    let words = serde_json::from_str::<serde_json::Value>(body)
+        .ok()
+        .and_then(|json| json.get("error")?.as_str().map(str::to_string))
+        .unwrap_or_else(|| text_of(body));
+    let mut words: String = words.chars().take(WORDS).collect();
+    if words.chars().count() == WORDS {
+        words.push('…');
+    }
+    let reason = reqwest::StatusCode::from_u16(status)
+        .ok()
+        .and_then(|code| code.canonical_reason())
+        .map_or(String::new(), |reason| format!(" {reason}"));
+    if words.is_empty() {
+        format!("answered {status}{reason}")
+    } else {
+        format!("answered {status}{reason}: {words}")
+    }
+}
+
+#[cfg(feature = "http")]
+/// A body's text on one line: tags, a page's head and repeated spaces out.
+fn text_of(body: &str) -> String {
+    let body = match (body.find("<body"), body.find("<head")) {
+        (Some(start), _) => &body[start..],
+        (None, Some(head)) => body
+            .find("</head>")
+            .map_or(&body[head..], |end| &body[end..]),
+        _ => body,
+    };
+    let mut text = String::with_capacity(body.len());
+    let mut in_tag = false;
+    for c in body.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' if in_tag => {
+                in_tag = false;
+                text.push(' ');
+            }
+            _ if !in_tag => text.push(c),
+            _ => {}
+        }
+    }
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// `value` rounded to `places` decimals.
 pub fn round_to(value: f64, places: i32) -> f64 {
     let scale = 10f64.powi(places);
@@ -93,5 +157,23 @@ mod tests {
         }
         assert_eq!(host_port("fe80::1", 22), "[fe80::1]:22");
         assert_eq!(host_port("raze.local", 22), "raze.local:22");
+    }
+
+    #[cfg(feature = "http")]
+    #[test]
+    fn a_refusal_says_what_the_server_said() {
+        assert_eq!(
+            refusal(409, r#"{"error":"a flash is running"}"#),
+            "answered 409 Conflict: a flash is running"
+        );
+        assert_eq!(
+            refusal(
+                404,
+                "<!DOCTYPE HTML>\n<html><head><title>Error response</title></head>\n<body><h1>Error</h1>\n<p>Message: File not found.</p></body></html>"
+            ),
+            "answered 404 Not Found: Error Message: File not found."
+        );
+        assert!(refusal(500, &"x".repeat(500)).ends_with(&format!(": {}…", "x".repeat(160))));
+        assert_eq!(refusal(502, ""), "answered 502 Bad Gateway");
     }
 }

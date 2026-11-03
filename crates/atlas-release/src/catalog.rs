@@ -440,8 +440,10 @@ impl ReleaseCatalog {
             .get(&source.index_url)
             .send()
             .await
-            .and_then(reqwest::Response::error_for_status)
             .map_err(|error| download_error(error.to_string()))?;
+        let response = atlas_driver::util::answered(response)
+            .await
+            .map_err(download_error)?;
         response
             .json::<Vec<Manifest>>()
             .await

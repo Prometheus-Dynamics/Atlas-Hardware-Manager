@@ -211,13 +211,15 @@ pub async fn latest_app_release(
         url: url.clone(),
         message,
     };
-    let releases: Vec<GhRelease> = http
+    let response = http
         .get(&url)
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|e| error(e.to_string()))?
+        .map_err(|e| error(e.to_string()))?;
+    let releases: Vec<GhRelease> = atlas_driver::util::answered(response)
+        .await
+        .map_err(error)?
         .json()
         .await
         .map_err(|e| error(e.to_string()))?;
@@ -302,15 +304,18 @@ async fn expected_sha256(
                 ))
             });
     };
-    let manifest: Manifest = http
+    let failed = |message: String| ReleaseError::Download {
+        url: manifest_url.clone(),
+        message,
+    };
+    let response = http
         .get(manifest_url)
         .send()
         .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|e| ReleaseError::Download {
-            url: manifest_url.clone(),
-            message: e.to_string(),
-        })?
+        .map_err(|e| failed(e.to_string()))?;
+    let manifest: Manifest = atlas_driver::util::answered(response)
+        .await
+        .map_err(failed)?
         .json()
         .await
         .map_err(|e| ReleaseError::InvalidManifest(e.to_string()))?;
@@ -374,8 +379,10 @@ pub async fn download_app_installer(
         .get(&installer.url)
         .send()
         .await
-        .and_then(reqwest::Response::error_for_status)
         .map_err(|e| error(e.to_string()))?;
+    let response = atlas_driver::util::answered(response)
+        .await
+        .map_err(error)?;
     let total = response.content_length().or(Some(installer.size));
     let mut file = tokio::fs::File::create(&partial)
         .await

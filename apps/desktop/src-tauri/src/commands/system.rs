@@ -17,7 +17,7 @@ pub struct AppInfo {
     pub startup_warnings: Vec<String>,
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_info(state: State<'_, AppState>) -> AppInfo {
     AppInfo {
         version: crate::app_update::version().into(),
@@ -30,7 +30,7 @@ pub fn app_info(state: State<'_, AppState>) -> AppInfo {
 }
 
 /// How devices are being found: which sources push changes, which are polled.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn discovery_status(state: State<'_, AppState>) -> atlas_core::DiscoveryStatus {
     state.atlas.discovery()
 }
@@ -50,7 +50,7 @@ pub async fn fix_health(state: State<'_, AppState>, action: String) -> CmdResult
         .map_err(|error| error.to_string())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_settings(state: State<'_, AppState>) -> AppSettings {
     state.settings()
 }
@@ -93,7 +93,7 @@ pub async fn save_settings(state: State<'_, AppState>, settings: AppSettings) ->
 }
 
 /// Where Atlas's own update stands: this version, a newer release, progress.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn app_update_status(state: State<'_, AppState>) -> crate::app_update::AppUpdateStatus {
     state.app_update.status()
 }
@@ -114,7 +114,7 @@ pub async fn install_app_update(app: AppHandle, state: State<'_, AppState>) -> C
     state.app_update.install(&app, &state.paths.cache_dir).await
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn restart_app(app: AppHandle) {
     app.restart();
 }
@@ -122,7 +122,7 @@ pub fn restart_app(app: AppHandle) {
 /// Opens an http(s) URL in the system browser (xdg-open, open, or the
 /// Windows URL handler). Only http and https, passed as one argument with no
 /// shell, so a page can't run anything else this way.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn open_url(url: String) -> CmdResult<()> {
     let ok = (url.starts_with("https://") || url.starts_with("http://"))
         && !url.chars().any(|c| c.is_control() || c.is_whitespace());
@@ -151,8 +151,14 @@ pub fn open_url(url: String) -> CmdResult<()> {
 
 /// An error the UI hit (a page that threw, a promise nobody caught), into
 /// atlas.log, so it can be found after the fact like a backend panic.
-#[tauri::command]
-pub fn report_ui_error(message: String, at: String) {
+/// `kind` UI-CALL is a command that failed, UI-STUCK one that took too
+/// long; both carry an error id and the user's last steps.
+#[tauri::command(async)]
+pub fn report_ui_error(message: String, at: String, kind: Option<String>) {
+    let kind = ["UI-CALL", "UI-STUCK"]
+        .into_iter()
+        .find(|known| kind.as_deref() == Some(*known))
+        .unwrap_or("UI-ERROR");
     let message: String = message.chars().take(4000).collect();
-    crate::logfile::line("UI-ERROR", &format!("{message} (at {at})"));
+    crate::logfile::line(kind, &format!("{message} (at {at})"));
 }

@@ -216,12 +216,14 @@ impl RadioStatus {
 
 /// `GET http://ip/status`.
 pub async fn read(http: &reqwest::Client, ip: Ipv4Addr) -> Result<RadioStatus, DriverError> {
-    let body = http
+    let response = http
         .get(format!("http://{ip}/status"))
         .send()
         .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|error| DriverError::Unreachable(format!("{ip}: {error}")))?
+        .map_err(|error| DriverError::Unreachable(format!("{ip}: {error}")))?;
+    let body = atlas_driver::util::answered(response)
+        .await
+        .map_err(|words| DriverError::Unreachable(format!("{ip}: {words}")))?
         .text()
         .await
         .map_err(|error| DriverError::Unreachable(format!("{ip}: {error}")))?;

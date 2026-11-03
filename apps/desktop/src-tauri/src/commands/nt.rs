@@ -13,7 +13,7 @@ use crate::state::AppState;
 
 /// Connects a viewer to `target`: a team number (its robot, 10.TE.AM.2) or
 /// a host. Returns its id for [`nt_disconnect`].
-#[tauri::command]
+#[tauri::command(async)]
 pub fn nt_connect(
     state: State<'_, AppState>,
     target: String,
@@ -23,7 +23,7 @@ pub fn nt_connect(
     state.nt.connect(&target, port, on_frame)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn nt_disconnect(state: State<'_, AppState>, id: u64) {
     state.nt.disconnect(id);
 }
@@ -121,7 +121,7 @@ pub struct NtCameraAddress {
 
 /// For each online device Atlas reaches over IP, the address of this
 /// computer on the way to it.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn nt_camera_addresses(state: State<'_, AppState>) -> Vec<NtCameraAddress> {
     let mut found: Vec<NtCameraAddress> = state
         .atlas

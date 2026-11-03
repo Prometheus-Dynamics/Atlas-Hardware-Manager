@@ -2,7 +2,8 @@
 // Argument names are camelCase: Tauri maps them to the Rust snake_case
 // parameters. Rejected promises carry a user-facing sentence (a string).
 
-import { Channel, invoke } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
+import { errorText, invoke } from "./trace";
 import type {
   ActivityEntry,
   AppInfo,
@@ -290,9 +291,4 @@ export const api = {
   installAppUpdate: () => invoke<void>("install_app_update"),
 };
 
-/** Normalizes a rejected command into a displayable sentence. */
-export function errorText(error: unknown): string {
-  if (typeof error === "string") return error;
-  if (error instanceof Error) return error.message;
-  return String(error);
-}
+export { errorText };

@@ -172,6 +172,9 @@ jobs:
       - name: Run file-size lint
         run: ./scripts/check-file-sizes.sh
 
+      - name: Check Tauri commands run off the main thread
+        run: ./scripts/check-commands-async.sh
+
       - name: Run clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 

@@ -14,7 +14,7 @@ description = "Atlas driver for Raspberry Pi compute modules in USB boot mode: b
 async-trait.workspace = true
 atlas-blockdev.workspace = true
 atlas-devices.workspace = true
-atlas-driver.workspace = true
+atlas-driver = { workspace = true, features = ["http"] }
 atlas-usbboot.workspace = true
 atlas-flasher.workspace = true
 atlas-usb-agent.workspace = true

@@ -199,17 +199,17 @@ pub async fn start_update(
     state.atlas.start_update(request).map_err(text)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn cancel_job(state: State<'_, AppState>, id: JobId) -> CmdResult<()> {
     state.atlas.cancel_job(id).map_err(text)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_jobs(state: State<'_, AppState>) -> Vec<JobRecord> {
     state.atlas.jobs()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_job(state: State<'_, AppState>, id: JobId) -> Option<JobRecord> {
     state.atlas.job(id)
 }

@@ -211,7 +211,12 @@ computer's USB means its regular USB port (the one used for flashing) here.
 
 - [ ] **UI quality, round 2 (queued by HeliOS 2026-11-02).**
   - **What:**
-    - Self-logging: failed or stuck loads go to atlas.log, error ids show in toasts.
+    - Done: self-logging. A failed command (UI-CALL) or one that hasn't answered in
+      15 s (UI-STUCK) goes to atlas.log with an error id and the user's last
+      clicks and pages; the error toast shows the id. A failed request says
+      its status and the server's words. Every Tauri command runs off the
+      main thread (scripts/check-commands-async.sh in CI). Live check on the
+      bench pending.
     - Done: Raze #2 shown through the SystemCore with no PC route, or as
       "unreachable: <reason>" (30d5d1e).
     - Done: health; an unclean shutdown on its own is not a warning (96f1c1c).

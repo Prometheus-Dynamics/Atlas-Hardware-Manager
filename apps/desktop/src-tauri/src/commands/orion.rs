@@ -14,7 +14,7 @@ fn transport(state: &AppState) -> Option<&atlas_driver_orion::RemoteTransport> {
     state.orion.as_ref().map(|orion| orion.transport.as_ref())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn orion_connection(state: State<'_, AppState>) -> Option<OrionConnection> {
     transport(&state).map(atlas_driver_orion::RemoteTransport::connection)
 }
@@ -77,7 +77,7 @@ pub async fn enroll_orion_with_key(
 }
 
 /// Where boards download update images from. `None` without Orion.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn image_server_status(state: State<'_, AppState>) -> Option<ImageServerStatus> {
     state.orion.as_ref().map(|orion| orion.images.status())
 }

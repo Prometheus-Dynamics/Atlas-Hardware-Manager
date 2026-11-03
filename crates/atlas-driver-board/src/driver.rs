@@ -262,12 +262,10 @@ impl BoardDriver {
     }
 
     async fn fetch(&self, url: &str) -> Result<BoardIdentity, String> {
-        self.http
-            .get(url)
-            .send()
+        let response = self.http.get(url).send().await.map_err(|e| e.to_string())?;
+        atlas_driver::util::answered(response)
             .await
-            .and_then(reqwest::Response::error_for_status)
-            .map_err(|error| error.to_string())?
+            .map_err(|words| format!("{url} {words}"))?
             .json::<BoardIdentity>()
             .await
             .map_err(|error| error.to_string())

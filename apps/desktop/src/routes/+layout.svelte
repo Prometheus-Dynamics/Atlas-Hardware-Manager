@@ -1,6 +1,8 @@
 <script lang="ts">
   import "../app.css";
+  import { afterNavigate } from "$app/navigation";
   import { page } from "$app/state";
+  import { crumb } from "#lib/api/trace.ts";
   import Guard from "#lib/components/common/Guard.svelte";
   import HelpPopover from "#lib/components/shell/HelpPopover.svelte";
   import JobsTray from "#lib/components/shell/JobsTray.svelte";
@@ -16,6 +18,7 @@
   // One event subscription for the whole app.
   $effect(() => startSync());
   $effect(() => scale.start());
+  afterNavigate(({ to }) => to && crumb(`open ${to.url.pathname}${to.url.search}`));
 </script>
 
 <svelte:window onkeydown={handleShortcut} />

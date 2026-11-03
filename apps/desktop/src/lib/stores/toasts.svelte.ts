@@ -1,11 +1,15 @@
 // Transient notifications. Errors stay longer than confirmations.
 
+import { errorId } from "#lib/api/trace.ts";
+
 export type ToastTone = "success" | "error" | "info" | "warning";
 
 export interface Toast {
   id: number;
   tone: ToastTone;
   message: string;
+  /** The atlas.log error id of the failure an error is about. */
+  ref: string | null;
 }
 
 let nextId = 1;
@@ -15,7 +19,12 @@ class ToastStore {
 
   push(tone: ToastTone, message: string, ms = tone === "error" ? 8000 : 3500) {
     const id = nextId++;
-    this.items.push({ id, tone, message });
+    this.items.push({
+      id,
+      tone,
+      message,
+      ref: tone === "error" ? errorId(message) : null,
+    });
     setTimeout(() => this.dismiss(id), ms);
   }
 
