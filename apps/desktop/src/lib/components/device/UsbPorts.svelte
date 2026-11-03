@@ -37,12 +37,12 @@
   const canSwitch = (port: HardwareDevice) => deviceKey !== null && port.controls.some((c) => c.name === "power.on");
 
   let drafts = $state<Record<string, number>>({});
-  let asking = $state<{ port: HardwareDevice; what: "on" | "off" | "reset" } | null>(null);
+  /** Power on or off, asked first; a reset (back in a second) isn't. */
+  let asking = $state<{ port: HardwareDevice; what: "on" | "off" } | null>(null);
   let busy = $state<string | null>(null);
 
-  async function go() {
-    if (!asking || !deviceKey) return;
-    const { port, what } = asking;
+  async function go(port: HardwareDevice, what: "on" | "off" | "reset") {
+    if (!deviceKey) return;
     asking = null;
     busy = port.id;
     try {
@@ -87,7 +87,7 @@
         ></button>
       {/if}
       {#if canSwitch(port) && canReset(port) && on}
-        <Button size="sm" variant="ghost" icon="refresh" label="Reset {nice(port.id)}" title="Cut the port for a second" onclick={() => (asking = { port, what: "reset" })} />
+        <Button size="sm" variant="ghost" icon="refresh" label="Reset {nice(port.id)}" title="Cut the port for a second" onclick={() => void go(port, "reset")} />
       {/if}
     </span>
   </div>
@@ -98,15 +98,13 @@
           Turn {nice(port.id)} power on? The board draws <b class="mono">{draw}</b> now; a device here can add {budget(port.id)}. On a
           computer's USB port that can brown the board out.
         </p>
-      {:else if asking.what === "off"}
-        <p>Turn {nice(port.id)} power off? Anything plugged in loses power.</p>
       {:else}
-        <p>Cut {nice(port.id)} for a second? What's plugged in restarts.</p>
+        <p>Turn {nice(port.id)} power off? Anything plugged in loses power.</p>
       {/if}
       <div class="flex justify-end gap-1.5">
         <Button size="sm" variant="ghost" onclick={() => (asking = null)}>Cancel</Button>
-        <Button size="sm" variant={asking.what === "on" ? "primary" : "danger"} onclick={() => void go()}>
-          {asking.what === "on" ? "Turn on" : asking.what === "off" ? "Turn off" : "Reset"}
+        <Button size="sm" variant={asking.what === "on" ? "primary" : "danger"} onclick={() => asking && void go(asking.port, asking.what)}>
+          {asking.what === "on" ? "Turn on" : "Turn off"}
         </Button>
       </div>
     </div>

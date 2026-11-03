@@ -101,7 +101,7 @@
             <p class="mt-1 text-[12.5px] text-warn-fg">No public keys: every manifest from this source is rejected.</p>
           {/each}
         </div>
-        <ConfirmButton action={() => remove(source.name)} size="sm" variant="ghost" icon="trash" label="Remove {source.name}" prompt="Remove {source.name}?" confirmLabel="Remove" />
+        <ConfirmButton action={() => remove(source.name)} size="sm" variant="ghost" icon="trash" label="Remove {source.name}" prompt="Remove it?" confirmLabel="Remove" />
       </li>
     {/each}
   </ul>

@@ -114,7 +114,9 @@
   th {
     position: sticky;
     top: 0;
-    background: var(--glass);
+    z-index: 1;
+    /* Opaque, so rows and sparklines scroll under it, not through it. */
+    background: linear-gradient(var(--glass), var(--glass)), var(--bg);
     text-align: left;
     font-size: 11px;
     font-weight: 500;

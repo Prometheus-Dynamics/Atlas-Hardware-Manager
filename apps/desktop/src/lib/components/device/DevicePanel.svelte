@@ -131,19 +131,21 @@
       .filter(Boolean)
       .join(" · ");
   });
+  const readWhen = $derived(refreshing || devices.scanning ? "reading" : readAt === null ? "not read" : timeAgo(readAt, clock.now));
 </script>
 
 {#if !record}
   <div class="flex items-center gap-3 p-6 text-[13px] text-fg-muted">
     <a href="/devices" class="back" aria-label="Back to devices" title="Back to devices"><Icon name="arrow-left" size={16} /></a>
-    This device is no longer in the inventory.
+    {devices.loaded ? "This device is no longer in the inventory." : "Looking for this device…"}
   </div>
 {:else}
   <header class="head shrink-0" in:softFade>
+    <!-- The name keeps room to be read (the subline gives way first). -->
     <div class="flex items-center gap-x-3">
       <a href="/devices" class="back" aria-label="Back to devices" title="Back to devices"><Icon name="arrow-left" size={16} /></a>
       <IconTile icon={deviceIcon(record)} size={34} tone={recovery && record.presence === "online" ? "accent" : "neutral"} />
-      <div class="min-w-0 shrink">
+      <div class="min-w-[9rem] shrink">
         <h1 class="truncate text-[16px] font-semibold leading-tight text-fg" title={deviceName(record)}>{deviceName(record)}</h1>
         <p class="truncate text-[12px] text-fg-muted" title={subline}>{subline}</p>
       </div>
@@ -178,8 +180,8 @@
           icon="refresh"
           busy={refreshing || devices.scanning}
           onclick={() => void refresh()}
-          title="Look for it on every link and re-read what it reports"
-          >Refresh <span class="when">{refreshing || devices.scanning ? "reading" : readAt === null ? "not read" : timeAgo(readAt, clock.now)}</span></Button
+          title="Look for it on every link and re-read what it reports ({readWhen})"
+          >Refresh <span class="when">{readWhen}</span></Button
         >
         <DeviceMenu {record} />
       </div>
@@ -237,6 +239,13 @@
   }
   .head {
     padding: 10px 16px;
+    container-type: inline-size;
+  }
+  /* A narrow header keeps the name readable: the age moves to the tooltip. */
+  @container (max-width: 860px) {
+    .when {
+      display: none !important;
+    }
   }
   /* "just now" to "12s ago" doesn't move the buttons beside it. */
   .when {

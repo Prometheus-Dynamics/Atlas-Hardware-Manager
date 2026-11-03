@@ -27,7 +27,7 @@
         { href: "/", label: "Overview", icon: "heartbeat", key: "1" },
         { href: "/devices", label: "Devices", icon: "layout-grid", key: "2", badge: () => insights.needYou, tone: "accent" },
         { href: "/monitor", label: "Monitor", icon: "chart-line", key: "3" },
-        { href: "/networktables", label: "NetworkTables", icon: "sitemap", key: "7" },
+        { href: "/networktables", label: "NetworkTables", icon: "sitemap", key: "4" },
       ],
     },
     {
@@ -35,7 +35,7 @@
       items: [
         { href: "/jobs", label: "Updates and flashes", icon: "download", key: "5", badge: () => jobs.running.length, tone: "warn" },
         { href: "/releases", label: "Releases", icon: "package", key: "6" },
-        { href: "/robots", label: "Robots", icon: "robot", key: "4", badge: () => robots.statuses.filter((s) => s.state !== "ready").length },
+        { href: "/robots", label: "Robots", icon: "robot", key: "7", badge: () => robots.statuses.filter((s) => s.state !== "ready").length },
       ],
     },
   ];

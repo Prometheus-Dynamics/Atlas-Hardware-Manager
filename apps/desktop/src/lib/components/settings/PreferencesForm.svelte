@@ -21,7 +21,6 @@
   let error = $state<string | null>(null);
 
   const dirty = $derived(JSON.stringify(draft) !== JSON.stringify(system.settings));
-  const seconds = $derived(draft.scan_interval_ms / 1000);
 
   const stagedOptions: { value: StagedRollout; label: string }[] = [
     { value: "auto", label: "Auto" },
@@ -101,23 +100,26 @@
   }
 </script>
 
-<GlassCard title="Preferences" subtitle="Finding devices and rolling out updates" icon="settings" large fill>
+<GlassCard title="Preferences" subtitle="Finding devices and rolling out updates" icon="settings" large>
   <form class="flex flex-col gap-3" onsubmit={save}>
     <Field inline label="Watch for devices" hint="Devices appear and disappear as they're plugged in, unplugged, or announce themselves on the network.">
       <Toggle bind:checked={draft.auto_scan} label="Watch for devices" />
     </Field>
 
-    <Field inline label="Safety-net check" hint="Every {seconds.toFixed(0)} s, look again for devices that left without saying so.">
-      <input
-        class="input mono w-28"
-        type="number"
-        min="5000"
-        max="300000"
-        step="5000"
-        bind:value={draft.scan_interval_ms}
-        disabled={!draft.auto_scan}
-        aria-label="Safety-net check interval in milliseconds"
-      />
+    <Field inline label="Safety-net check" hint="How often to look again for devices that left without saying so.">
+      <span class="flex items-center gap-1.5">
+        <input
+          class="input mono w-20"
+          type="number"
+          min="5"
+          max="300"
+          step="5"
+          bind:value={() => draft.scan_interval_ms / 1000, (s) => (draft.scan_interval_ms = Math.round(Number(s) * 1000))}
+          disabled={!draft.auto_scan}
+          aria-label="Safety-net check interval in seconds"
+        />
+        <span class="text-[13px] text-fg-muted">s</span>
+      </span>
     </Field>
 
     <Field inline label="Live readings from Orion" hint="Boards whose Orion node streams their readings push them as they happen, with the last five minutes at once. Other boards are asked every second or two.">

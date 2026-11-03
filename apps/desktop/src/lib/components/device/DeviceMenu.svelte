@@ -17,9 +17,8 @@
 
   let { record }: { record: DeviceRecord } = $props();
 
-  /** Offline for a while, or for good: asked first. */
+  /** Offline until someone acts (or a step back): asked first. */
   const GUARDED: Record<string, string> = {
-    reboot: "It goes offline for about 40 s, then comes back by itself.",
     "power-off": "It stays off until its power is cycled.",
     "usb-boot": "It waits in USB boot until it's flashed or power-cycled.",
     "update.rollback": "It restarts into its previous version.",
@@ -66,8 +65,11 @@
   }
   const inHeader = $derived(new Set(quickActions(actions).map((a) => a.id)));
   const offered = $derived(actions.filter((a) => !inHeader.has(a.id) && !ELSEWHERE.has(a.id) && applies(a.id)));
-  const everyday = $derived(offered.filter((a) => !a.destructive && !(a.id in GUARDED)));
-  const guarded = $derived(offered.filter((a) => a.destructive || a.id in GUARDED));
+  /** Offline for a while, then back by itself: runs on click, under "Takes it offline". */
+  const RETURNS = new Set(["reboot"]);
+  const asks = (a: DeviceAction) => !RETURNS.has(a.id) && (a.destructive || a.id in GUARDED);
+  const everyday = $derived(offered.filter((a) => !RETURNS.has(a.id) && !asks(a)));
+  const guarded = $derived(offered.filter((a) => RETURNS.has(a.id) || asks(a)));
   const bundle = $derived(record.capabilities.includes("status"));
 
   async function run(action: DeviceAction) {
@@ -141,7 +143,11 @@
         <div class="sep"></div>
         <div class="group">Takes it offline</div>
         {#each guarded as action (action.id)}
-          <button type="button" class="item danger" role="menuitem" onclick={() => ask(action)}>{action.label}…</button>
+          {#if asks(action)}
+            <button type="button" class="item danger" role="menuitem" onclick={() => ask(action)}>{action.label}…</button>
+          {:else}
+            <button type="button" class="item danger" role="menuitem" onclick={() => void run(action)}>{action.label}</button>
+          {/if}
         {/each}
       {/if}
       {#if record.presence === "offline"}

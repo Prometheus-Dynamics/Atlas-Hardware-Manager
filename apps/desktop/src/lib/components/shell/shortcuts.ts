@@ -6,7 +6,8 @@ import { devices } from "#lib/stores/devices.svelte.ts";
 import { system } from "#lib/stores/system.svelte.ts";
 import { ui } from "#lib/stores/ui.svelte.ts";
 
-const ROUTES = ["/", "/devices", "/monitor", "/robots", "/jobs", "/releases", "/networktables", "/settings"];
+// The sidebar, top to bottom (Sidebar.svelte shows each key).
+const ROUTES = ["/", "/devices", "/monitor", "/networktables", "/jobs", "/releases", "/robots", "/settings"];
 
 function typing(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;

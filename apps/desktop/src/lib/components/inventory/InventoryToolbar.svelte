@@ -74,7 +74,6 @@
         </ConfirmButton>
       {/if}
       <Button variant="ghost" size="sm" onclick={() => ui.selection.clear()}>Clear</Button>
-      <span class="text-fg-faint">·</span>
     {/if}
   </div>
 </div>
