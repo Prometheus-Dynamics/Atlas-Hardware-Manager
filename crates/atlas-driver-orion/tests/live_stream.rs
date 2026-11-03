@@ -15,6 +15,21 @@ use orion_control_plane::{
 };
 use orion_node::{NodeApp, NodeConfig, NodeId, OperatorOpenRead};
 
+/// Waits up to 10 s for `frames` to hold one that `wanted` accepts. Not a
+/// fixed sleep: on a loaded machine the subscription can take longer than
+/// one, and a publish sent before its backfill lands in the backfill.
+async fn until(frames: &Mutex<Vec<LiveFrame>>, wanted: impl Fn(&LiveFrame) -> bool) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while !frames.lock().unwrap().iter().any(&wanted) {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "no such frame in 10 s: {:?}",
+            frames.lock().unwrap()
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+}
+
 fn now_us() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -115,9 +130,21 @@ async fn rows_arrive_backfilled_then_live() {
         })
         .await
     });
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    until(&frames, |frame| {
+        matches!(frame, LiveFrame::Rows { backfill: true, .. })
+    })
+    .await;
     publisher.publish(&stream, samples(100, 120)).await.unwrap();
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    until(&frames, |frame| {
+        matches!(
+            frame,
+            LiveFrame::Rows {
+                backfill: false,
+                ..
+            }
+        )
+    })
+    .await;
 
     let frames = frames.lock().unwrap().clone();
     let LiveFrame::Rows {
