@@ -84,6 +84,8 @@ pub(crate) fn link_rank(kind: &LinkKind) -> u8 {
 #[derive(Default)]
 pub(crate) struct Inventory {
     records: BTreeMap<DeviceKey, DeviceRecord>,
+    /// When the saved records were restored (0 for a fresh inventory).
+    restored_ms: u64,
 }
 
 impl Inventory {
@@ -96,7 +98,16 @@ impl Inventory {
                 (record.key.clone(), record)
             })
             .collect();
-        Self { records }
+        Self {
+            records,
+            restored_ms: atlas_driver::util::now_ms(),
+        }
+    }
+
+    /// When this run restored the saved records: a device last seen before
+    /// it was offline only because Atlas wasn't running.
+    pub(crate) fn restored_ms(&self) -> u64 {
+        self.restored_ms
     }
 
     pub(crate) fn upsert(

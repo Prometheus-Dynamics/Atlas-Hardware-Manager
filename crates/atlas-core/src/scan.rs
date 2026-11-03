@@ -8,10 +8,10 @@ use crate::links::host_ip;
 use serde::Serialize;
 use tokio::task::JoinSet;
 
+use crate::Event;
 use crate::activity::{self, ActivityEntry, ActivityKind, ActivityLevel};
 use crate::atlas::{Inner, LiveDevice};
 use crate::inventory::{Upsert, link_rank};
-use crate::{DeviceRecord, Event};
 use atlas_driver::util::now_ms;
 
 /// How long an online device that is still found but doesn't answer stays
@@ -118,9 +118,10 @@ impl Scan<'_> {
         let capabilities = self.inner.capabilities(pending.driver.as_ref(), &identity);
         let kinds = capabilities.kinds_for(identity.mode);
         let key = identity.key.clone();
-        let (outcome, record, previous): (Upsert, DeviceRecord, Option<DeviceRecord>) = {
+        let (outcome, record, previous, run_since) = {
             let mut state = self.inner.state();
             let previous = state.inventory.get(&key).cloned();
+            let run_since = state.inventory.restored_ms();
             state.live.insert(
                 key,
                 LiveDevice {
@@ -133,12 +134,15 @@ impl Scan<'_> {
                 state
                     .inventory
                     .upsert(identity, pending.link_kind.clone(), kinds, now_ms());
-            (outcome, record, previous)
+            (outcome, record, previous, run_since)
         };
         if outcome != Upsert::Unchanged {
             self.changed = true;
-            self.inner
-                .record_activity(activity::for_sighting(previous.as_ref(), &record));
+            self.inner.record_activity(activity::for_sighting(
+                previous.as_ref(),
+                &record,
+                run_since,
+            ));
             self.inner.events.emit(Event::DeviceSeen {
                 record: Box::new(record),
                 new: outcome == Upsert::New,

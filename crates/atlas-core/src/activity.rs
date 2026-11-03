@@ -85,9 +85,13 @@ fn unreachable_reason(record: &DeviceRecord) -> Option<&str> {
         .map(String::as_str)
 }
 
+/// What changed between two sightings of a device. `run_since_ms` is when
+/// this run of Atlas started watching: a device last seen before then was
+/// only offline while Atlas wasn't running, so seeing it again isn't news.
 pub(crate) fn for_sighting(
     previous: Option<&DeviceRecord>,
     current: &DeviceRecord,
+    run_since_ms: u64,
 ) -> Vec<ActivityEntry> {
     let name = current.display_name();
     let Some(previous) = previous else {
@@ -121,7 +125,10 @@ pub(crate) fn for_sighting(
         )),
         _ => {}
     }
-    if previous.presence == crate::Presence::Offline && unreachable_reason(current).is_none() {
+    if previous.presence == crate::Presence::Offline
+        && previous.last_seen_ms >= run_since_ms
+        && unreachable_reason(current).is_none()
+    {
         entries.push(ActivityEntry::about(
             current,
             ActivityKind::DeviceOnline,
@@ -253,7 +260,7 @@ mod tests {
 
     #[test]
     fn a_new_device_is_found() {
-        let entries = for_sighting(None, &record("1", Presence::Online, DeviceMode::Normal));
+        let entries = for_sighting(None, &record("1", Presence::Online, DeviceMode::Normal), 0);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].kind, ActivityKind::DeviceFound);
         assert_eq!(entries[0].robot.as_deref(), Some("comp"));
@@ -263,7 +270,7 @@ mod tests {
     fn coming_back_with_a_new_version_reports_both() {
         let before = record("1", Presence::Offline, DeviceMode::Normal);
         let after = record("2", Presence::Online, DeviceMode::Normal);
-        let kinds: Vec<_> = for_sighting(Some(&before), &after)
+        let kinds: Vec<_> = for_sighting(Some(&before), &after, 0)
             .into_iter()
             .map(|entry| entry.kind)
             .collect();
@@ -274,16 +281,28 @@ mod tests {
     }
 
     #[test]
+    fn atlas_starting_again_is_not_a_device_coming_online() {
+        // Last seen (at 2) before this run restored its records (at 10).
+        let before = record("1", Presence::Offline, DeviceMode::Normal);
+        let after = record("2", Presence::Online, DeviceMode::Normal);
+        let kinds: Vec<_> = for_sighting(Some(&before), &after, 10)
+            .into_iter()
+            .map(|entry| entry.kind)
+            .collect();
+        assert_eq!(kinds, vec![ActivityKind::VersionChanged]);
+    }
+
+    #[test]
     fn an_unchanged_sighting_is_quiet() {
         let current = record("1", Presence::Online, DeviceMode::Normal);
-        assert!(for_sighting(Some(&current), &current).is_empty());
+        assert!(for_sighting(Some(&current), &current, 0).is_empty());
     }
 
     #[test]
     fn entering_recovery_is_a_warning() {
         let before = record("1", Presence::Online, DeviceMode::Normal);
         let after = record("bootloader", Presence::Online, DeviceMode::Recovery);
-        let entries = for_sighting(Some(&before), &after);
+        let entries = for_sighting(Some(&before), &after, 0);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].level, ActivityLevel::Warning);
     }
