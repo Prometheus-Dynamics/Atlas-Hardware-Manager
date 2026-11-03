@@ -28,8 +28,9 @@
   const online = $derived(record.presence === "online");
   const waiting = $derived(online && isRecovery(record));
   const via = $derived(viaName(record, devices.nameOf));
-  // Its USB port leads onto the robot network (usb-route).
-  const routing = $derived(record.presence === "online" && usbRoute(record)?.state === "active");
+  // Its USB port leads onto the robot network (usb-route): news only when
+  // this computer is on that port, not for a board reached through a gateway.
+  const routing = $derived(record.presence === "online" && !via && usbRoute(record)?.state === "active");
   const fresh = $derived(devices.fresh.has(id));
   const twin = $derived(devices.runningTwin(record));
 
@@ -100,7 +101,7 @@
         </span>
       {:else}
         <span class="link" title={linkText(record.link_kind, devices.nameOf)}>
-          <Icon name={LINK_ICON[record.link_kind.kind] ?? "plug-connected"} size={12} />{via ? via : linkText(record.link_kind, devices.nameOf)}
+          <Icon name={LINK_ICON[record.link_kind.kind] ?? "plug-connected"} size={12} /><span class="truncate">{via ? via : linkText(record.link_kind, devices.nameOf)}</span>
         </span>
       {/if}
     </div>
@@ -144,7 +145,7 @@
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    max-width: 9rem;
+    max-width: 6.5rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;

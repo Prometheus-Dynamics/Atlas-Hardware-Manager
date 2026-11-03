@@ -129,7 +129,7 @@
           <span class="text-[13px] font-medium text-fg">Let this computer in</span>
           <span class="hint">Run this on the device (check the fingerprint matches the one above), then press Check.</span>
           <div class="command">
-            <code class="mono">{connection.enroll_command}</code>
+            <code class="mono" title={connection.enroll_command}>{connection.enroll_command}</code>
             <Button size="sm" variant="ghost" icon="copy" onclick={() => copy(connection!.enroll_command, "Command")}>Copy</Button>
           </div>
           {#if showKey}
@@ -187,5 +187,11 @@
     line-height: 1.5;
     color: var(--fg-muted);
     word-break: break-all;
+    /* It names every action the node grants: its start says what it is, Copy takes all of it. */
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    overflow: hidden;
   }
 </style>

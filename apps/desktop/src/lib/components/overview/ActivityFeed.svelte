@@ -37,8 +37,12 @@
         last.entry.kind === entry.kind &&
         Math.abs(last.entry.at_ms - entry.at_ms) < BURST_MS
       ) {
-        last.count++;
-        last.names.push(subject(entry));
+        // A device twice in one burst (back online, and reachable again) counts once.
+        const name = subject(entry);
+        if (!last.names.includes(name)) {
+          last.count++;
+          last.names.push(name);
+        }
       } else {
         const base = `${entry.at_ms}|${entry.kind}|${entry.message}`;
         const n = seen.get(base) ?? 0;

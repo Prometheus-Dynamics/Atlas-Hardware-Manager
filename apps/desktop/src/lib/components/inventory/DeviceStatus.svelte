@@ -60,6 +60,9 @@
     <Pill tone="success" icon="check" label="Up to date" />
     {#if !compact}<span class="mono truncate text-[12px] text-fg-faint">{version}</span>{/if}
   </span>
+{:else if compact}
+  <!-- The list has a Version column: the status says what's known of it. -->
+  <Pill tone="neutral" label="No release known" />
 {:else if version}
   <Pill tone="neutral" mono label={version} />
 {/if}

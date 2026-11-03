@@ -47,7 +47,7 @@
         <IconTile icon={style[check.status].icon} tone={style[check.status].tone} size={30} />
         <div class="min-w-0 flex-1">
           <p class="text-[13px] font-semibold text-fg">{check.label}</p>
-          <p class="text-[13px] text-fg-muted">{check.detail}</p>
+          <p class="line-clamp-2 break-words text-[13px] text-fg-muted" title={check.detail}>{check.detail}</p>
           {#if check.fix && check.status !== "ok"}<p class="mt-1 text-[12.5px] text-fg-faint">{check.fix}</p>{/if}
         </div>
         {#if check.fix_action}
