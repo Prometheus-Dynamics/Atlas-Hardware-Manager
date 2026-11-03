@@ -7,6 +7,13 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **Boot time no longer counts the trial's judging (2026-11-03).** The
+  trial-confirm unit (`board-update-confirm.service`) starts as `Type=exec`,
+  like the management-link watch (a593c8c), so "Startup finished" on a trial
+  boot is the real boot time (it read 41 s on Raze #2, 32 s of it the
+  confirm). A trial is also judged as soon as its critical units are active
+  and stay so for `UPDATE_CONFIRM_SETTLE` (5 s) instead of after a fixed
+  `UPDATE_CONFIRM_DELAY` (30 s, now the most it waits).
 - **Orion protocol 1 (2026-11-03).** board-agent is built against Orion
   2795a4b and speaks protocol 1, the version Orion reset to before its first
   release. It needs an OS whose orion-node speaks protocol 1 too (HeliOS

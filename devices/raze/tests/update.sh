@@ -64,9 +64,18 @@ EOF
 cat > "$T/bin/systemctl" <<'EOF'
 #!/bin/sh
 # is-failed --quiet <unit>: failed when listed in $FAILED_UNITS.
-[ "$1" = is-failed ] || exit 0
-case " ${FAILED_UNITS:-} " in *" $3 "*) exit 0 ;; esac
-exit 1
+# is-active --quiet <unit>: active unless listed in $INACTIVE_UNITS.
+case $1 in
+is-failed)
+	case " ${FAILED_UNITS:-} " in *" $3 "*) exit 0 ;; esac
+	exit 1
+	;;
+is-active)
+	case " ${INACTIVE_UNITS:-} " in *" $3 "*) exit 1 ;; esac
+	exit 0
+	;;
+esac
+exit 0
 EOF
 chmod +x "$T/bin/mount" "$T/bin/mount-ro" "$T/bin/umount" "$T/bin/reboot" "$T/bin/systemctl"
 
@@ -535,6 +544,20 @@ trial env
 mv "$T/gadget/g1/UDC.off" "$T/gadget/g1/UDC"
 echo "a trial with a failed critical unit isn't confirmed"
 trial env FAILED_UNITS=board-identity.service UPDATE_CRITICAL_UNITS=board-identity.service
+
+echo "a trial whose services are up is judged after the settle, not the whole delay"
+cp "$T/etc/update.env" "$T/etc/update.env.keep"
+printf 'UPDATE_CONFIRM_DELAY=30\nUPDATE_CONFIRM_SETTLE=1\nUPDATE_CRITICAL_UNITS=board-identity.service\n' > "$T/etc/update.env"
+start=$(date +%s)
+update trial-checks >/dev/null || fail "healthy trial checks should pass"
+[ $(($(date +%s) - start)) -lt 10 ] || fail "a healthy trial should be judged in seconds"
+echo "a trial whose unit is still starting is judged when the delay is over"
+printf 'UPDATE_CONFIRM_DELAY=3\nUPDATE_CONFIRM_SETTLE=1\nUPDATE_CRITICAL_UNITS=board-identity.service\n' > "$T/etc/update.env"
+start=$(date +%s)
+INACTIVE_UNITS=board-identity.service sh "$lib/update" trial-checks >/dev/null ||
+	fail "a unit that hasn't failed still passes when the wait is over"
+[ $(($(date +%s) - start)) -ge 3 ] || fail "a starting unit should be waited for"
+mv "$T/etc/update.env.keep" "$T/etc/update.env"
 
 echo "check-link goes back to the previous slot after bad boots"
 new_root 5 5.0 raze

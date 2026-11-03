@@ -5,8 +5,9 @@ After=multi-user.target
 ConditionPathExists=/usr/lib/board/update
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+# Started, not waited for: judging a trial holds the writer's lock (which
+# anything else on the slots waits for), not "Startup finished".
+Type=exec
 ExecStart=/usr/lib/board/update confirm
 
 [Install]

@@ -498,6 +498,34 @@ slot_sanity() {
 	return 0
 }
 
+# A trial's services are up: the slot is sane and every critical unit is
+# active (not only "not failed", which a unit still starting also is).
+services_up() {
+	slot_sanity >/dev/null || return 1
+	command -v "$SYSTEMCTL" >/dev/null 2>&1 || return 0
+	for unit in ${UPDATE_CRITICAL_UNITS:-}; do
+		"$SYSTEMCTL" is-active --quiet "$unit" 2>/dev/null || return 1
+	done
+}
+
+# Before a trial is judged: until its services are up and have stayed up for
+# UPDATE_CONFIRM_SETTLE seconds, at most UPDATE_CONFIRM_DELAY. A healthy
+# trial is judged in seconds; a slow or failing one when the wait is over.
+await_services() {
+	waited=0
+	steady=0
+	while [ "$waited" -lt "${UPDATE_CONFIRM_DELAY:-0}" ]; do
+		if services_up; then
+			[ "$steady" -lt "${UPDATE_CONFIRM_SETTLE:-5}" ] || return 0
+			steady=$((steady + 1))
+		else
+			steady=0
+		fi
+		sleep 1
+		waited=$((waited + 1))
+	done
+}
+
 # The kernel release in a boot slot's kernel image (raw or gzip Image),
 # from config.txt's kernel= or the Pi 5's default names. Empty if unknown.
 kernel_release() {
@@ -984,8 +1012,8 @@ _confirm() {
 	set_phase checking
 	save_state
 	run_hook post-boot || board_log "the post-boot hook failed"
-	# Give the services a moment to come up before judging them.
-	sleep "${UPDATE_CONFIRM_DELAY:-0}"
+	# Give the services their moment to come up before judging them.
+	await_services
 	if ! reason=$(slot_sanity); then
 		fail_trial "$reason"
 		return 1
@@ -1244,7 +1272,7 @@ fi
 # while it judges its trial): after the services' moment, slot_sanity's
 # reason on stdout and exit 1 when one fails.
 if [ "${1:-}" = trial-checks ]; then
-	sleep "${UPDATE_CONFIRM_DELAY:-0}"
+	await_services
 	slot_sanity
 	exit
 fi
