@@ -69,7 +69,7 @@
         {#each ticks as t, i (i)}<span>{Math.round(t)}</span>{/each}
       </div>
       <div class="area" bind:clientWidth={W} bind:clientHeight={H}>
-        <svg viewBox="0 0 {W} {H}" role="img" aria-label="{title} of {lines.length} devices">
+        <svg viewBox="0 0 {W} {H}" data-live role="img" aria-label="{title} of {lines.length} devices">
           {#each ticks as t, i (i)}<line x1="0" x2={W} y1={y(t)} y2={y(t)} class="grid" />{/each}
           {#if warn !== null}<line x1="0" x2={W} y1={y(warn)} y2={y(warn)} class="limit" />{/if}
           {#each lines as l (l.id)}

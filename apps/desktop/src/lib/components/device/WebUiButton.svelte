@@ -48,7 +48,7 @@
     <Button {size} icon="chevron-down" label="Other ways to open the web UI" onclick={() => (open = !open)} class="joined-right" />
     {#if open}
       <ul class="menu glass-layer" role="menu" aria-label="Open the web UI" transition:popover>
-        {#each targets as target (target.url)}
+        {#each targets as target, k (`${k}:${target.url}`)}
           <li class="row">
             <button type="button" role="menuitem" class="open" onclick={() => go(target.url)} title={target.url}>
               <Icon name={target.kind === "ip" ? "router" : "world-www"} size={16} />

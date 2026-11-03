@@ -66,7 +66,7 @@
   const draw = $derived(amps === null ? "unknown" : `${amps.toFixed(2)} A${volts === null ? "" : ` at ${volts.toFixed(2)} V`}`);
 </script>
 
-{#each ports as port (port.id)}
+{#each ports as port, k (`${k}:${port.id}`)}
   {@const on = isOn(port)}
   <div class="port">
     <span class="dot" class:on class:fault={fault(port)}></span>

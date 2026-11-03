@@ -41,7 +41,7 @@
     <span class="title"><span class="rec"></span>{device} · {streamLabel(stream.name)}</span>
     {#if streams.length > 1}
       <div class="views" role="tablist" aria-label="Camera views">
-        {#each streams as other, i (other.name)}
+        {#each streams as other, i (`${i}:${other.name}`)}
           <button type="button" role="tab" class="view" class:on={i === index} aria-selected={i === index} onclick={() => (index = i)}>
             {streamLabel(other.name)}
           </button>

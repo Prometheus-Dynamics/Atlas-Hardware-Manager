@@ -58,7 +58,7 @@
           <td>
             <a href={devicePath(row.id)} class="name">
               <span class="dot" style:background={dot(row.record)}></span>
-              <span class="font-medium">{deviceName(row.record)}</span>
+              <span class="truncate font-medium" title={deviceName(row.record)}>{deviceName(row.record)}</span>
               <span class="muted model truncate">{displayModel(row.record)}</span>
             </a>
           </td>
@@ -124,6 +124,12 @@
   th:first-child,
   td:first-child {
     padding-left: 14px;
+  }
+  /* The name takes what the numbers leave and truncates: every column
+     stays in view, nothing scrolls sideways. */
+  td:first-child {
+    width: 100%;
+    max-width: 0;
   }
   td {
     padding: 6px 8px;

@@ -51,18 +51,24 @@
       {#snippet heading()}<h1 class="text-[19px] font-semibold">Devices</h1>{/snippet}
       {#snippet actions()}
         <SearchPill />
-        {#if selecting}
-          <Button
-            variant="primary"
-            icon={flashOnly ? "bolt" : "arrow-up"}
-            disabled={count === 0}
-            title={count === 0 ? "None of the selected devices can be updated right now" : "Update the selection (U)"}
-            onclick={() => ui.updateSelection(staged)}
-          >
-            {flashOnly ? "Flash" : "Update"} ({count})
-          </Button>
-        {:else if insights.outdated.length > 0}
-          <Button variant="primary" icon="arrow-up" onclick={updateAll}>Update all</Button>
+        <!-- One width for "Update all" and "Update (12)": swapping them
+             doesn't move the search beside them. -->
+        {#if selecting || insights.outdated.length > 0}
+          <span class="inline-flex min-w-[10.75rem] justify-end">
+            {#if selecting}
+              <Button
+                variant="primary"
+                icon={flashOnly ? "bolt" : "arrow-up"}
+                disabled={count === 0}
+                title={count === 0 ? "None of the selected devices can be updated right now" : "Update the selection (U)"}
+                onclick={() => ui.updateSelection(staged)}
+              >
+                {flashOnly ? "Flash" : "Update"} ({count})
+              </Button>
+            {:else if insights.outdated.length > 0}
+              <Button variant="primary" icon="arrow-up" onclick={updateAll}>Update all</Button>
+            {/if}
+          </span>
         {/if}
       {/snippet}
     </PageHeader>

@@ -98,7 +98,7 @@
         <button type="button" class="item" disabled={!clickable} onclick={() => open(entry)}>
           <span class="mark {TONE[entry.level]}"><Icon name={icon(entry)} size={13} stroke={2} /></span>
           <span class="min-w-0 flex-1 text-[13px] leading-snug text-fg">{text(row)}</span>
-          <span class="when shrink-0 text-[11.5px] text-fg-faint" title={new Date(entry.at_ms).toLocaleString()}>{timeAgo(entry.at_ms, clock.now)}</span>
+          <span class="when min-w-[7ch] shrink-0 text-right text-[11.5px] text-fg-faint tabular-nums" title={new Date(entry.at_ms).toLocaleString()}>{timeAgo(entry.at_ms, clock.now)}</span>
         </button>
       </li>
     {/each}

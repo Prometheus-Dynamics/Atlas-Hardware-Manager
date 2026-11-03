@@ -78,7 +78,7 @@
   {/if}
   {#if cores.length > 0 && coreView.perCore}
     <div class="cores mt-auto pt-2" role="list" aria-label="Each core">
-      {#each cores as core (core.id)}
+      {#each cores as core, k (`${k}:${core.id}`)}
         <div class="bar" role="listitem" title="{core.label}: {Math.round(core.value)} %" aria-label="{core.label}: {Math.round(core.value)} %">
           <span style="height: {Math.min(100, Math.max(0, core.value))}%; background: {toneColor(metricTone(core))}"></span>
         </div>

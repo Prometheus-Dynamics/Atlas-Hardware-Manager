@@ -13,6 +13,8 @@ if (typeof window !== "undefined") {
     void reportUiError(event.reason, `${location.pathname} (a promise nobody awaited)`);
   });
   window.addEventListener("error", (event) => {
+    // The browser's note that a resize settled over two frames: not an error.
+    if (String(event.message).startsWith("ResizeObserver loop")) return;
     void reportUiError(event.error ?? event.message, `${location.pathname} (an event handler)`);
   });
 }

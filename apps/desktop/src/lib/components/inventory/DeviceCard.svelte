@@ -107,13 +107,13 @@
   </div>
 
   <div class="glance" class:empty={glance.length === 0}>
-    {#each glance as metric (metric.id)}
+    {#each glance as metric, k (`${k}:${metric.id}`)}
       {@const shown = metricValue(metric)}
       {@const tone = metricTone(metric)}
       {@const fraction = metricFraction(metric)}
       <div class="reading {tone}" title="{metric.label}: {shown.value} {shown.unit}">
         <span class="r-label"><Icon name={metricIcon(metric)} size={11} />{metric.label}</span>
-        <span class="r-value">{shown.value}<small>{shown.unit}</small></span>
+        <span class="r-value"><span class="num">{shown.value}</span><small>{shown.unit}</small></span>
         {#if fraction !== null}
           <span class="meter"><span style="width: {fraction * 100}%; background: {TONE_COLOR[tone]}"></span></span>
         {/if}
@@ -191,6 +191,12 @@
     font-weight: 600;
     color: var(--fg);
     line-height: 1.15;
+  }
+  /* Room for three digits, so the unit holds still as the reading changes. */
+  .r-value .num {
+    display: inline-block;
+    min-width: 3ch;
+    font-variant-numeric: tabular-nums;
   }
   .r-value small {
     margin-left: 2px;

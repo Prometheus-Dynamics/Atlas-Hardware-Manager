@@ -22,7 +22,7 @@
 </script>
 
 <ul class="glass flex flex-col gap-2 px-4 py-3">
-  {#each checks as check (check.text)}
+  {#each checks as check, k (`${k}:${check.text}`)}
     <li class="flex items-center gap-2.5 text-[13px] text-fg">
       <span class="ic {check.tone}"><Icon name={check.icon} size={14} stroke={2} /></span>
       {check.text}

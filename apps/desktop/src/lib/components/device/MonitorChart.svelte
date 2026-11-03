@@ -89,7 +89,7 @@
       <span>{tick(range.high)}</span><span>{tick((range.high + range.low) / 2)}</span><span>{tick(range.low)}</span>
     </div>
     <div class="area" bind:clientWidth={W} bind:clientHeight={H}>
-      <svg viewBox="0 0 {W} {H}" role="img" aria-label="{title} for each device over {minutes} minutes">
+      <svg viewBox="0 0 {W} {H}" data-live role="img" aria-label="{title} for each device over {minutes} minutes">
         <line x1="0" x2={W} y1="0.5" y2="0.5" class="grid" />
         <line x1="0" x2={W} y1={H / 2} y2={H / 2} class="grid" />
         <line x1="0" x2={W} y1={H - 0.5} y2={H - 0.5} class="grid" />
@@ -228,7 +228,10 @@
     white-space: nowrap;
     max-width: 110px;
   }
+  /* Room for "2,880": a reading that gains a digit doesn't push the next. */
   .value {
+    display: inline-block;
+    min-width: 5ch;
     color: var(--fg);
     font-variant-numeric: tabular-nums;
   }

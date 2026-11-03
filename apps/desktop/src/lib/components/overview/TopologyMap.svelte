@@ -44,6 +44,11 @@
   const x = (n: MapNode) => left + n.depth * colW;
   const y = (n: MapNode) => PAD + n.row * ROW_H + ROW_H / 2;
 
+  // A link label shows where the wire leaves it room (at 10.5 px, about 6 px
+  // a letter); in a tight map it would sit on the node to its left, and the
+  // device's own line says the same.
+  const fits = (label: string) => label.length * 6 + 12 <= colW - NODE_W;
+
   function path(from: MapNode, to: MapNode): string {
     const x0 = x(from) + NODE_W;
     const y0 = y(from);
@@ -89,7 +94,7 @@
            their ends. -->
       {#each map.edges as edge (`${edge.from}>${edge.to}`)}
         {@const to = byId.get(edge.to)}
-        {#if to && edge.label && byId.has(edge.from)}
+        {#if to && edge.label && byId.has(edge.from) && fits(edge.label)}
           <text x={x(to) - 8} y={y(to) - 5} class="tag">{edge.label}</text>
         {/if}
       {/each}

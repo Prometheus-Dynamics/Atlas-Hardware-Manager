@@ -96,7 +96,7 @@
   <!-- A faint baseline, so a fresh trend reads as "filling in", not broken. -->
   <span class="base" style="background: {color}"></span>
   <div>
-    <svg viewBox="0 0 {W} {height}" style="height: {height}px" class="w-full overflow-visible" aria-hidden="true">
+    <svg viewBox="0 0 {W} {height}" data-live style="height: {height}px" class="w-full overflow-visible" aria-hidden="true">
       {#if line}
         <defs>
           <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
@@ -116,7 +116,7 @@
       <span class="tip-value">{format(values[hover.index])}</span>{#if hoverTime}<span class="tip-time">{hoverTime}</span>{/if}
     </div>
   {:else if last}
-    <span class="dot" style="top: {last[1]}px; background: {color}; box-shadow: 0 0 0 3px color-mix(in srgb, {color} 25%, transparent)"></span>
+    <span class="dot" style="transform: translateY({last[1]}px); background: {color}; box-shadow: 0 0 0 3px color-mix(in srgb, {color} 25%, transparent)"></span>
   {/if}
 </div>
 
@@ -171,8 +171,10 @@
     font-size: 11px;
     color: var(--fg-faint);
   }
+  /* Moved by transform: following the line isn't a layout shift. */
   .dot {
     position: absolute;
+    top: 0;
     right: 0;
     width: 5px;
     height: 5px;

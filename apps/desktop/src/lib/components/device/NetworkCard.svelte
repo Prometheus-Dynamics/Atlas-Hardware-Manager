@@ -56,7 +56,7 @@
     <span class="panel-note">{reached}</span>
   </div>
   <dl>
-    {#each list as a (a.ip)}
+    {#each list as a, k (`${k}:${a.ip}`)}
       <div class="row">
         <dt>{a.via}</dt>
         <dd class="ip" class:use={a.inUse} class:v6={a.ip.includes(":")}>{a.ip}</dd>

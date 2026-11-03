@@ -157,6 +157,7 @@
           type="button"
           class="mode"
           class:pit={ui.mode === "pit"}
+          aria-pressed={ui.mode === "pit"}
           title={ui.mode === "robot" ? "ROBOT mode: network, team and security are locked. Click for PIT." : "PIT mode: the bench; updates and checks first. Click for ROBOT."}
           onclick={() => ui.setMode(ui.mode === "robot" ? "pit" : "robot")}>{ui.mode === "robot" ? "ROBOT" : "PIT"}</button
         >
@@ -229,7 +230,11 @@
   .head {
     padding: 10px 16px;
   }
+  /* "just now" to "12s ago" doesn't move the buttons beside it. */
   .when {
+    display: inline-block;
+    min-width: 8ch;
+    text-align: left;
     color: var(--fg-muted);
     font-variant-numeric: tabular-nums;
   }

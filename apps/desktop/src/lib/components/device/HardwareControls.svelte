@@ -99,7 +99,7 @@
 
 {#if visible.length > 0}
   <div class="mt-3 flex flex-col gap-2">
-    {#each visible as control (control.name)}
+    {#each visible as control, k (`${k}:${control.name}`)}
       {@const value = shown(control)}
       <div class="glass flex min-w-0 items-center gap-3 px-3.5 py-2.5">
         <span class="w-20 shrink-0 text-[12px] text-fg-faint">{label(control.name)}</span>

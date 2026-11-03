@@ -27,7 +27,7 @@
     {/key}
     {#if streams.length > 1}
       <div class="switch" role="group" aria-label="Camera view">
-        {#each streams as stream, i (stream.name)}
+        {#each streams as stream, i (`${i}:${stream.name}`)}
           <button type="button" aria-pressed={i === shown} class:on={i === shown} onclick={() => (shown = i)}>{streamLabel(stream.name)}</button>
         {/each}
       </div>
@@ -35,7 +35,7 @@
   </div>
 {:else}
   <div class="streams" class:several={streams.length > 1}>
-    {#each streams as stream, i (stream.name)}
+    {#each streams as stream, i (`${i}:${stream.name}`)}
       <CameraPreview
         src={stream.url}
         name={device}

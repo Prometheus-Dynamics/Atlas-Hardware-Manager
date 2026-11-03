@@ -65,7 +65,7 @@
   {:else if !status}
     <p class="text-[12.5px] text-fg-faint">Reading…</p>
   {:else}
-    {#each parts as [name, part] (name)}
+    {#each parts as [name, part], k (`${k}:${name}`)}
       <div class="part">
         <span class="name">{PART_NAMES[name] ?? name}</span>
         <span class="bar"><ProgressBar value={part.confidence} tone={part.active ? tone(part.confidence) : "neutral"} size={5} label="{name} confidence" /></span>
@@ -90,7 +90,7 @@
     {:else}
       {#if status.failed}<p class="text-[12.5px] text-warn-fg">The last routine didn't finish well enough to use. Try it again.</p>{/if}
       <div class="flex flex-wrap items-center gap-2">
-        {#each routines as routine (routine)}
+        {#each routines as routine, k (`${k}:${routine}`)}
           <Button size="sm" icon="player-play" title={ROUTINES[routine].how} action={() => run("start", routine)}>{ROUTINES[routine].label}</Button>
         {/each}
         {#if parts.some(([, p]) => p.active)}

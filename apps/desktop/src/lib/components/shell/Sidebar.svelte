@@ -46,7 +46,9 @@
     return href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`);
   }
 
-  // The robot's devices: what needs you first, then online, then offline.
+  // The robot's devices: USB boot first, then online, then offline. Not by
+  // temperature: a reading that crosses a threshold would move a board on a
+  // tick; its dot says it's warm.
   const mine = $derived(
     devices.all
       .filter((d) => ui.robot === null || (ui.robot === NO_ROBOT ? !d.robot : d.robot === ui.robot))
@@ -56,10 +58,8 @@
   $effect(() => watchLive(mine.filter((d) => d.presence === "online"), SLOW_MS));
 
   function rank(d: DeviceRecord): number {
-    if (d.presence !== "online") return 3;
-    if (isRecovery(d)) return 0;
-    const temp = live.metric(keyString(d.key), "temp");
-    return temp && metricTone(temp) !== "ok" && metricTone(temp) !== "neutral" ? 1 : 2;
+    if (d.presence !== "online") return 2;
+    return isRecovery(d) ? 0 : 1;
   }
 
   /** The dot, and what is worth a glance: USB boot, offline, else its temperature. */

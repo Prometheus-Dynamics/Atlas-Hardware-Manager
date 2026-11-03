@@ -58,7 +58,7 @@
           A computer on this camera's USB port reaches this camera only.
         {:else if route.subnets.length}
           A computer on this camera's USB port reaches
-          {#each route.subnets as net, i (net)}<span class="mono">{net}</span>{i < route.subnets.length - 1 ? ", " : ""}{/each}
+          {#each route.subnets as net, i (`${i}:${net}`)}<span class="mono">{net}</span>{i < route.subnets.length - 1 ? ", " : ""}{/each}
           through it, as if on the radio.
         {:else}
           On: once this camera is on a network, a computer on its USB port reaches it through the camera.

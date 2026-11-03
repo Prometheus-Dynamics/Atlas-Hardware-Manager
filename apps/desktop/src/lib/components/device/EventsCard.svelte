@@ -62,7 +62,9 @@
   li:first-child {
     border-top: 0;
   }
+  /* "5s ago" to "12s ago" doesn't move the row. */
   .when {
+    min-width: 7ch;
     color: var(--fg-faint);
     font-variant-numeric: tabular-nums;
   }

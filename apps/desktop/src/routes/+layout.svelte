@@ -26,7 +26,9 @@
     <div class="relative min-h-0 flex-1">
       <!-- Pages fill this box (Page.svelte); it only scrolls when the window
            is shorter than a page can fold to. -->
-      <main class="h-full overflow-y-auto px-5 py-5 xl:px-7 min-[1800px]:px-10">
+      <!-- The scrollbar's room is kept: one appearing would narrow the page
+           and flip width-based layouts (Settings' columns) under the cursor. -->
+      <main class="h-full overflow-y-auto px-5 py-5 [scrollbar-gutter:stable] xl:px-7 min-[1800px]:px-10">
         <div class="mx-auto h-full max-w-[2400px]">
           {#key page.url.pathname}
             <Guard name="This page">{@render children()}</Guard>

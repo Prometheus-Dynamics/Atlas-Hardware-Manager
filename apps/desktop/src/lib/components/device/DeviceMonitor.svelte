@@ -60,7 +60,7 @@
   {:else}
     {#if metrics.length}
       <ul class="rows">
-        {#each metrics as metric (metric.id)}
+        {#each metrics as metric, k (`${k}:${metric.id}`)}
           {@const shown = metricValue(metric)}
           <li class="row" title={metric.detail ?? undefined}>
             <span class="label">{metric.label}</span>
@@ -77,7 +77,7 @@
           </li>
           {#if metric.id === "cpu" && cores.length}
             <li class="cores" aria-label="CPU cores">
-              {#each cores as core (core.id)}
+              {#each cores as core, k (`${k}:${core.id}`)}
                 <span class="core" title="{core.label}: {Math.round(core.value)}%"><span style="height: {Math.min(100, core.value)}%"></span></span>
               {/each}
             </li>

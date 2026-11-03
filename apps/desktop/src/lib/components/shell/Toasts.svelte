@@ -13,7 +13,8 @@
   };
 </script>
 
-<div class="stack" aria-live="polite">
+<!-- data-live: toasts float over the page; a new one moving the others is the point. -->
+<div class="stack" data-live aria-live="polite">
   {#each toasts.items as toast (toast.id)}
     <div
       class="toast glass-layer {toast.tone}"

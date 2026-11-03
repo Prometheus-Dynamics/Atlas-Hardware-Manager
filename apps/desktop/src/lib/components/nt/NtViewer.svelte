@@ -322,7 +322,7 @@
                     <button type="button" onclick={() => toggleGraph(name)} title="Graph {name}">
                       <Icon name="chart-line" size={14} />
                       <span class="mono min-w-0 flex-1 truncate text-left">{name}</span>
-                      <span class="mono text-fg">{topic.text}</span>
+                      <span class="mono min-w-[9ch] shrink-0 text-right text-fg tabular-nums">{topic.text}</span>
                     </button>
                   </li>
                 {/each}
@@ -430,7 +430,10 @@
     flex-shrink: 0;
     color: var(--fg-faint);
   }
+  /* A fixed width: a value that changes doesn't reflow the chips after it
+     (the whole value is in the title). */
   .output .mono {
+    width: 12ch;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -505,8 +508,10 @@
     color: var(--fg-faint);
     white-space: nowrap;
   }
+  /* The rest of the row, the text at its right: a value that gets longer
+     doesn't move its box or the row. */
   .value {
-    margin-left: auto;
+    flex: 1 1 0;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

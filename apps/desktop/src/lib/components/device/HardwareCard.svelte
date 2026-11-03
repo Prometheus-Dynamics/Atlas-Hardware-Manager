@@ -79,7 +79,7 @@
     <div class="live" class:imu={device.class === "imu"}>
       {#if device.class === "imu"}<div class="view"><ImuView series={live} {fused} {light} /></div>{/if}
       <div class="charts">
-        {#each live.groups() as group (group.unit)}
+        {#each live.groups() as group, k (`${k}:${group.unit}`)}
           <LiveChart series={live} channels={group.channels} unit={group.unit} {windowS} />
         {/each}
       </div>
@@ -99,12 +99,12 @@
     {#if device.controls.length === 0 && !device.reason && device.class !== "light"}<p class="text-[13px] text-fg-muted">No readings.</p>{/if}
   {:else}
     <div class="auto-grid" style="--min: 150px; --gap: 8px">
-      {#each entries as entry (entry.key)}
+      {#each entries as entry, k (`${k}:${entry.key}`)}
         {#if entry.kind === "axes"}
           <div class="axes glass min-w-0 px-3.5 py-2.5">
             <p class="text-[12px] text-fg-faint">{entry.label}</p>
             <div class="mt-1 grid grid-cols-3 gap-3">
-              {#each entry.axes as axis (axis.axis)}
+              {#each entry.axes as axis, k (`${k}:${axis.axis}`)}
                 <HardwareReadingTile label={axis.axis} reading={axis.reading} series={seriesFor(axis.reading.name)} bare />
               {/each}
             </div>

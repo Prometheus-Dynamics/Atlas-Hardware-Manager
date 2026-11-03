@@ -74,7 +74,7 @@
         <span class="mono shrink-0">{shown?.fps ? `${Math.round(shown.fps)} fps` : waiting ? "waiting" : "–"}</span>
       </div>
       {#if segments.length}
-        <div class="strip" role="img" aria-label="Latency stages: {segments.map((s) => `${s.label} ${s.ms.toFixed(2)} ms`).join(', ')}">
+        <div class="strip" data-live role="img" aria-label="Latency stages: {segments.map((s) => `${s.label} ${s.ms.toFixed(2)} ms`).join(', ')}">
           {#each segments as seg (seg.key)}
             <span style="width: {seg.pct}%; background: {seg.color}" title="{seg.label} {seg.ms.toFixed(2)} ms">{#if seg.pct > 12}{seg.label} {seg.ms.toFixed(seg.ms < 1 ? 2 : 1)}{/if}</span>
           {/each}

@@ -217,7 +217,7 @@
     aria-label="{series.id}: {channels.map((c) => label(series.channels[c].name)).join(', ')}, live"
   ></canvas>
   <div class="legend">
-    {#each channels as c, n (c)}
+    {#each channels as c, n (`${n}:${c}`)}
       <span class="item"><span class="swatch" style="background: {colors[n % colors.length]}"></span>{label(series.channels[c].name)}{#if current[n] !== undefined}<span class="now">{formatValue(current[n])}</span>{/if}</span>
     {/each}
     {#if paused !== null}<span class="paused">Paused</span>{/if}
@@ -226,7 +226,7 @@
   {#if hover && picked}
     <div class="tip glass-layer" style="left: {hover.left}px; top: {hover.top}px" role="tooltip" use:portal>
       <p class="when">{picked.when}</p>
-      {#each picked.values as value, n (value.name)}
+      {#each picked.values as value, n (`${n}:${value.name}`)}
         <p class="row">
           <span class="swatch" style="background: {colors[n % colors.length]}"></span>
           <span class="name">{label(value.name)}</span>
