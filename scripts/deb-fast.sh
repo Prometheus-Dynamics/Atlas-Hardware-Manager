@@ -58,13 +58,19 @@ commit=$(git -C "$root_dir" rev-parse --short HEAD)
 version=$("$root_dir/scripts/version.sh")
 rpm_config=$("$root_dir/scripts/package-versions.sh" rpm-config "$version")
 
+# Rootful docker writes as root: hand the output back to you. Rootless podman
+# already writes as you, and a chown in it would map to a subordinate uid
+# (and leave apps/desktop/build unremovable for a host build).
+chown_to=""
+[[ "$(basename "$engine")" == docker ]] && chown_to="$(id -u):$(id -g)"
+
 "$engine" run --rm --security-opt label=disable \
   -v "$root_dir:/src" -v "$cache/target:/target" \
   -v "$cache/registry:/opt/cargo/registry" -v "$cache/git:/opt/cargo/git" \
   -e CARGO_TARGET_DIR=/target -e CARGO_BUILD_JOBS="$jobs" \
   -e CARGO_PROFILE_RELEASE_LTO=false -e CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
   -e CARGO_PROFILE_RELEASE_INCREMENTAL=true \
-  -e ATLAS_VERSION="$version" -e KIND="$kind" -e RPM_CONFIG="$rpm_config" -e SKIP_UI="$skip_ui" -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+  -e ATLAS_VERSION="$version" -e KIND="$kind" -e RPM_CONFIG="$rpm_config" -e SKIP_UI="$skip_ui" -e CHOWN_TO="$chown_to" \
   -w /src "$tag" bash -euo pipefail -c '
     target=x86_64-unknown-linux-gnu
     scripts/prepare-bundle.sh "$target" >/dev/null
@@ -82,7 +88,7 @@ rpm_config=$("$root_dir/scripts/package-versions.sh" rpm-config "$version")
       bun run tauri build --target "$target" --bundles deb "${configs[@]}"
       ../../scripts/package-versions.sh fix-debs "/target/$target/release/bundle/deb" "$ATLAS_VERSION"
     fi
-    chown -R "$HOST_UID:$HOST_GID" /target build src-tauri/binaries 2>/dev/null || true
+    [ -z "$CHOWN_TO" ] || chown -R "$CHOWN_TO" /target build src-tauri/binaries 2>/dev/null || true
   '
 printf '%s\n' "$ui_key" > "$cache/ui.key"
 package=$(ls -t "$cache/target/x86_64-unknown-linux-gnu/release/bundle/$kind/"*."$kind" | head -n 1)
