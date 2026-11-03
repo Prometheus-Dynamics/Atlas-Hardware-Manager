@@ -29,6 +29,8 @@ struct Peer {
 #[derive(Debug, Deserialize)]
 struct Model {
     model: String,
+    #[serde(default)]
+    serial: Option<String>,
 }
 
 /// The routed peers' nodes from `GET /v1/peers`'s answer.
@@ -43,21 +45,21 @@ pub fn parse_peers(body: &str) -> Result<Vec<String>, String> {
         .collect())
 }
 
-/// The boards behind the controller at `ip`: none when its HeliOS doesn't
-/// answer (another OS, or HeliOS without peers).
+/// The boards behind the controller at `ip`, and their serials: none when
+/// its HeliOS doesn't answer (another OS, or HeliOS without peers).
 pub async fn candidates(
     http: &reqwest::Client,
     ip: Ipv4Addr,
-) -> Result<Vec<Candidate>, DriverError> {
+) -> Result<(Vec<Candidate>, Vec<String>), DriverError> {
     let Ok(response) = http
         .get(format!("http://{ip}:{HELIOS_PORT}/v1/peers"))
         .send()
         .await
     else {
-        return Ok(Vec::new());
+        return Ok(Default::default());
     };
     if !response.status().is_success() {
-        return Ok(Vec::new());
+        return Ok(Default::default());
     }
     let body = response
         .text()
@@ -65,6 +67,7 @@ pub async fn candidates(
         .map_err(|error| DriverError::Unreachable(format!("{ip}: {error}")))?;
     let nodes = parse_peers(&body).map_err(DriverError::Other)?;
     let mut found = Vec::new();
+    let mut serials = Vec::new();
     for node in nodes {
         let peer = ControllerPeer {
             host: ip.to_string(),
@@ -86,13 +89,14 @@ pub async fn candidates(
         if model.model.is_empty() {
             continue;
         }
+        serials.extend(model.serial);
         found.push(Candidate {
             link: LinkId(LINK_ID.into()),
             family: Family::new(model.model.to_ascii_lowercase()),
             address: url,
         });
     }
-    Ok(found)
+    Ok((found, serials))
 }
 
 #[cfg(test)]

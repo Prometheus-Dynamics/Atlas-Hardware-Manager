@@ -36,6 +36,10 @@ pub mod attributes {
     /// How far the device's clock is from this computer's, in seconds
     /// (negative: behind), when it is noticeably off. Absent when it's right.
     pub const CLOCK_OFFSET_S: &str = "clock_offset_s";
+    /// Why Atlas can't reach a device it knows is there (a board a
+    /// controller sees on its USB that the controller's HeliOS doesn't
+    /// offer). The device has no capabilities but its info while it's set.
+    pub const UNREACHABLE: &str = "unreachable";
 
     /// Atlas's board-serial rule: the last 8 hex digits, lowercase. A
     /// Raspberry Pi's boot ROM reports just those; the running OS (device

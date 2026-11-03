@@ -12,7 +12,7 @@
   import { deviceName, primaryVersion, timeAgo } from "#lib/format.ts";
   import { uptimeText } from "#lib/metrics.ts";
   import { live } from "#lib/stores/live.svelte.ts";
-  import { deviceIcon, isRecovery, modelName, storageName, usbRoute } from "#lib/present.ts";
+  import { deviceIcon, isRecovery, modelName, storageName, usbRoute, viaName } from "#lib/present.ts";
   import { clock } from "#lib/stores/clock.svelte.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { deviceStatus } from "#lib/stores/status.svelte.ts";
@@ -114,6 +114,9 @@
     }
   }
 
+  // Seen through a controller that offers no way to it.
+  const unreachable = $derived(record?.identity.attributes.unreachable);
+
   const subline = $derived.by(() => {
     if (!record) return "";
     const storage = storageName(record.identity.attributes?.storage);
@@ -145,7 +148,9 @@
         <p class="truncate text-[12px] text-fg-muted" title={subline}>{subline}</p>
       </div>
       <div class="flex shrink-0 items-center gap-1.5">
-        {#if record.presence === "online"}
+        {#if record.presence === "online" && unreachable}
+          <Pill tone="warning" icon="plug-connected-x" label="Unreachable" />
+        {:else if record.presence === "online"}
           <Pill tone="success" icon="circle-check" label="Online" />
         {:else}
           <Pill tone="neutral" icon="plug-connected-x" label="Offline · seen {timeAgo(record.last_seen_ms, clock.now)}" />
@@ -179,6 +184,9 @@
         <DeviceMenu {record} />
       </div>
     </div>
+    {#if unreachable && record.presence === "online"}
+      <p class="mt-2 text-[12.5px] text-warn-fg">Seen via {viaName(record, devices.nameOf) ?? "a controller"}, unreachable: {unreachable}.</p>
+    {/if}
     {#if tabs.length > 1}
       <div class="mt-2.5">
         <SegmentedControl options={tabs} bind:value={tab} label="Device sections" size="sm" />

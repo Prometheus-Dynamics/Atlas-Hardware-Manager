@@ -307,16 +307,17 @@ impl Driver for BoardDriver {
         if link.id.0 != LINK_ID {
             return Ok(Vec::new());
         }
-        // mDNS when it works; the sweep of this computer's robot networks
-        // whatever mDNS does.
+        // mDNS when it works; the sweep of this computer's robot networks always.
         let advertisements = Browser::shared().advertisements().unwrap_or_default();
+        // At an address this computer can reach (`gadget::reachable_here`).
+        let manifest = &self.package.manifest;
         let mut addresses: Vec<String> = advertisements
             .into_iter()
             .filter(|ad| {
                 ad.model()
                     .is_some_and(|model| model.eq_ignore_ascii_case(self.manifest.family.as_str()))
             })
-            .map(|ad| ad.identity_url())
+            .filter_map(|ad| crate::gadget::reachable_ad(manifest, ad))
             .collect();
         // Networks behind a board's USB route are that board's children.
         let nets = crate::sweep::own_robot_nets();
@@ -344,6 +345,9 @@ impl Driver for BoardDriver {
     /// A USB gadget candidate counts only when the board that answers has
     /// the USB serial its address came from.
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
+        if let Some(seen) = crate::seen::identity(&self.package, candidate) {
+            return Ok(seen);
+        }
         let probe = self
             .probes
             .lock()

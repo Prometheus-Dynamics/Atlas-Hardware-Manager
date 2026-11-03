@@ -16,6 +16,8 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use atlas_driver::attributes::normalize_board_serial;
+use atlas_driver::controller_peer::SeenOnUsb;
 use atlas_driver::{
     ActionsCapability, Artifact, ArtifactKind, CancellationToken, Candidate, DeviceAction,
     DriverError, Family, Identity, InstallMethod, InstallRequest, LinkId, ProgressSink,
@@ -83,17 +85,69 @@ pub async fn info(http: &reqwest::Client, ip: Ipv4Addr) -> Option<AgentInfo> {
     get(http, ip, "/v1/agent").await
 }
 
-/// The Raspberry Pi boards behind the agent at `ip`: in USB boot, or
-/// showing their eMMC.
-pub async fn boards(http: &reqwest::Client, ip: Ipv4Addr, link: &LinkId) -> Vec<Candidate> {
-    let devices: Vec<UsbDevice> = get(http, ip, "/v1/usb").await.unwrap_or_default();
+/// What the agent at `ip` lists on its host's USB.
+pub async fn usb(http: &reqwest::Client, ip: Ipv4Addr) -> Vec<UsbDevice> {
+    get(http, ip, "/v1/usb").await.unwrap_or_default()
+}
+
+/// Which running boards on the agent's USB Atlas has another way to.
+pub struct Seen<'a> {
+    /// The serials of the boards the controller's HeliOS offers as peers.
+    pub offered: &'a [String],
+    /// Board gadgets' USB product names, and their models (the catalog's).
+    pub board_gadgets: &'a [(String, String)],
+}
+
+/// The boards in `devices`, listed by the agent at `ip`: Raspberry Pis in
+/// USB boot or showing their eMMC, for the rpi driver; and running boards
+/// (a device package's gadget, `1d6b:0104` with its product name) that the
+/// controller's HeliOS doesn't offer, seen and out of reach (`SeenOnUsb`),
+/// for their model's driver.
+pub fn boards(
+    devices: Vec<UsbDevice>,
+    ip: Ipv4Addr,
+    link: &LinkId,
+    seen: &Seen<'_>,
+) -> Vec<Candidate> {
     devices
         .into_iter()
-        .filter(|device| matches!(device.kind, UsbKind::UsbBoot | UsbKind::Gadget))
-        .map(|device| Candidate {
-            link: link.clone(),
-            family: Family::new(RPI_FAMILY),
-            address: atlas_usb_agent::board_address(&format!("{ip}:{PORT}"), &device.port),
+        .filter_map(|device| {
+            let (family, address) = match device.kind {
+                UsbKind::UsbBoot | UsbKind::Gadget => (
+                    RPI_FAMILY.to_string(),
+                    atlas_usb_agent::board_address(&format!("{ip}:{PORT}"), &device.port),
+                ),
+                UsbKind::Other => {
+                    if (device.vendor.as_str(), device.product.as_str()) != ("1d6b", "0104") {
+                        return None;
+                    }
+                    let name = device.name.as_deref()?;
+                    let (_, model) = seen
+                        .board_gadgets
+                        .iter()
+                        .find(|(product, _)| product.eq_ignore_ascii_case(name))?;
+                    let serial = device.serial?;
+                    let short = normalize_board_serial(&serial)?;
+                    if seen
+                        .offered
+                        .iter()
+                        .any(|known| normalize_board_serial(known).as_deref() == Some(&short))
+                    {
+                        return None;
+                    }
+                    let at = SeenOnUsb {
+                        controller: ip.to_string(),
+                        usb_port: device.port,
+                        serial,
+                    };
+                    (model.clone(), at.address())
+                }
+            };
+            Some(Candidate {
+                link: link.clone(),
+                family: Family::new(family),
+                address,
+            })
         })
         .collect()
 }
@@ -166,6 +220,59 @@ impl ActionsCapability for AgentActions {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_running_board_the_controller_doesnt_offer_is_seen_out_of_reach() {
+        let device = |port: &str, name: &str, serial: &str| UsbDevice {
+            port: port.into(),
+            vendor: "1d6b".into(),
+            product: "0104".into(),
+            name: Some(name.into()),
+            serial: Some(serial.into()),
+            kind: UsbKind::Other,
+        };
+        let devices = vec![
+            device("3-1.4", "Raze", "0708c973b00a37bc"),
+            device("3-1.1.4.1", "Raze", "a317bcbee5226d57"),
+            device("3-1.2", "Some Gadget", "1234"),
+        ];
+        let gadgets = [("Raze".to_string(), "raze".to_string())];
+        let offered = ["0708c973b00a37bc".to_string()];
+        let seen = Seen {
+            offered: &offered,
+            board_gadgets: &gadgets,
+        };
+        let found = boards(
+            devices.clone(),
+            Ipv4Addr::new(172, 27, 0, 1),
+            &LinkId("usb".into()),
+            &seen,
+        );
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].family, Family::new("raze"));
+        assert_eq!(
+            found[0].address,
+            "seen-usb://172.27.0.1/3-1.1.4.1/a317bcbee5226d57"
+        );
+        // Once HeliOS offers it, it's the peer's.
+        let offered = [
+            "0708c973b00a37bc".to_string(),
+            "a317bcbee5226d57".to_string(),
+        ];
+        let seen = Seen {
+            offered: &offered,
+            board_gadgets: &gadgets,
+        };
+        assert!(
+            boards(
+                devices,
+                Ipv4Addr::new(172, 27, 0, 1),
+                &LinkId("usb".into()),
+                &seen
+            )
+            .is_empty()
+        );
+    }
 
     #[test]
     fn the_package_names_its_version_as_the_agent_reports_it() {

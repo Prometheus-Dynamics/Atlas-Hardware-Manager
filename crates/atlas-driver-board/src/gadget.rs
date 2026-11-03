@@ -75,6 +75,53 @@ fn identity_url(address: &str) -> String {
     )
 }
 
+/// Whether this computer can reach a board at `ip`, an address it
+/// advertised. An address in the package's gadget networks is a board's USB
+/// link, which only the computer on the other end of that cable can reach
+/// (one with an address on the same subnet). A board plugged into a
+/// SystemCore advertises it too, since mDNS gets across the controller;
+/// Atlas reaches that one through the controller instead.
+pub(crate) fn reachable_here(manifest: &DeviceManifest, ip: std::net::IpAddr) -> bool {
+    let std::net::IpAddr::V4(ip) = ip else {
+        return true;
+    };
+    if !manifest
+        .gadget_addressing()
+        .is_some_and(|addressing| addressing.contains(ip))
+    {
+        return true;
+    }
+    let own = if_addrs::get_if_addrs().unwrap_or_default();
+    on_own_subnet(
+        ip,
+        own.iter().filter_map(|interface| match &interface.addr {
+            if_addrs::IfAddr::V4(v4) => Some((v4.ip, v4.netmask)),
+            if_addrs::IfAddr::V6(_) => None,
+        }),
+    )
+}
+
+/// `ad`'s identity URL at its first address this computer can reach.
+pub(crate) fn reachable_ad(
+    manifest: &DeviceManifest,
+    mut ad: crate::browse::Advertisement,
+) -> Option<String> {
+    ad.address = std::iter::once(ad.address)
+        .chain(ad.addresses.iter().copied())
+        .find(|ip| reachable_here(manifest, *ip))?;
+    Some(ad.identity_url())
+}
+
+fn on_own_subnet(
+    ip: std::net::Ipv4Addr,
+    mut own: impl Iterator<Item = (std::net::Ipv4Addr, std::net::Ipv4Addr)>,
+) -> bool {
+    own.any(|(address, mask)| {
+        let mask = u32::from(mask);
+        mask != 0 && u32::from(address) & mask == u32::from(ip) & mask
+    })
+}
+
 /// One probe per plugged-in gadget of this model.
 pub(crate) fn probes(manifest: &DeviceManifest, gadgets: &[UsbGadget]) -> Vec<GadgetProbe> {
     let mine: Vec<&UsbGadget> = gadgets
@@ -219,5 +266,25 @@ mod tests {
         assert_eq!(one[0].serial.as_deref(), Some("e5226d57"));
         let two = probes(&manifest, &[raze(Some("a317bcbee5226d57")), raze(None)]);
         assert!(two.is_empty());
+    }
+
+    #[test]
+    fn a_board_usb_address_counts_only_from_its_own_cable() {
+        let ip = |text: &str| text.parse::<std::net::Ipv4Addr>().unwrap();
+        // This computer on a SystemCore's USB (172.27.0.x) and on a board's
+        // own gadget network (172.31.12.80/29).
+        let own = [
+            (ip("172.27.0.2"), ip("255.255.255.0")),
+            (ip("172.31.12.82"), ip("255.255.255.248")),
+        ];
+        assert!(on_own_subnet(ip("172.31.12.81"), own.into_iter()));
+        // Raze #2 on the SystemCore's other USB port: its advert gets here,
+        // its address doesn't.
+        assert!(!on_own_subnet(ip("172.31.209.217"), own.into_iter()));
+        let addressing = manifest().gadget_addressing().unwrap();
+        assert!(addressing.contains(ip("172.31.209.217")));
+        assert!(addressing.contains(ip("172.31.250.1")));
+        assert!(!addressing.contains(ip("10.16.78.11")));
+        assert!(reachable_here(&manifest(), "10.16.78.11".parse().unwrap()));
     }
 }

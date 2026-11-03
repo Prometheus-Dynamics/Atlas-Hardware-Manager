@@ -77,6 +77,14 @@ impl ActivityEntry {
 }
 
 /// The entries a device sighting produces, compared with what was known.
+fn unreachable_reason(record: &DeviceRecord) -> Option<&str> {
+    record
+        .identity
+        .attributes
+        .get(atlas_driver::attributes::UNREACHABLE)
+        .map(String::as_str)
+}
+
 pub(crate) fn for_sighting(
     previous: Option<&DeviceRecord>,
     current: &DeviceRecord,
@@ -87,11 +95,33 @@ pub(crate) fn for_sighting(
             current,
             ActivityKind::DeviceFound,
             ActivityLevel::Info,
-            format!("Found {name} ({})", current.identity.model),
+            match unreachable_reason(current) {
+                Some(reason) => format!(
+                    "Found {name} ({}), unreachable: {reason}",
+                    current.identity.model
+                ),
+                None => format!("Found {name} ({})", current.identity.model),
+            },
         )];
     };
     let mut entries = Vec::new();
-    if previous.presence == crate::Presence::Offline {
+    // Once each way, not each scan: a board seen and out of reach, and back.
+    match (unreachable_reason(previous), unreachable_reason(current)) {
+        (None, Some(reason)) => entries.push(ActivityEntry::about(
+            current,
+            ActivityKind::DeviceOffline,
+            ActivityLevel::Warning,
+            format!("{name} is unreachable: {reason}"),
+        )),
+        (Some(_), None) => entries.push(ActivityEntry::about(
+            current,
+            ActivityKind::DeviceOnline,
+            ActivityLevel::Info,
+            format!("{name} is reachable again"),
+        )),
+        _ => {}
+    }
+    if previous.presence == crate::Presence::Offline && unreachable_reason(current).is_none() {
         entries.push(ActivityEntry::about(
             current,
             ActivityKind::DeviceOnline,

@@ -190,6 +190,8 @@ pub struct SystemcoreDriver {
     /// The catalog's SystemCore package, with `fingerprints`; else the
     /// built-in one.
     package: Option<DeviceManifest>,
+    /// The catalog's boards' USB gadget product names, and their models.
+    board_gadgets: Vec<(String, String)>,
 }
 
 impl SystemcoreDriver {
@@ -209,6 +211,20 @@ impl SystemcoreDriver {
                 .by_model(crate::systemcore::SYSTEMCORE_FAMILY)
                 .map(|package| package.manifest.clone())
                 .filter(|manifest| !manifest.fingerprints.is_empty()),
+            board_gadgets: catalog
+                .packages()
+                .iter()
+                .filter_map(|package| {
+                    let product = package
+                        .manifest
+                        .identity
+                        .usb_gadget
+                        .as_ref()?
+                        .product
+                        .clone()?;
+                    Some((product, package.manifest.model.clone()))
+                })
+                .collect(),
         }
     }
 }
@@ -310,12 +326,18 @@ impl Driver for SystemcoreDriver {
     /// The boards behind it: as its HeliOS lists them
     /// (`crate::controller_peers`), reached only through the routes HeliOS
     /// offers for them; and, with Atlas's USB agent on it, the Raspberry Pi
-    /// boards in USB boot on its USB (`crate::usb_agent`).
+    /// boards in USB boot on its USB and the running ones its HeliOS doesn't
+    /// offer (`crate::usb_agent`).
     async fn children(&self, device: &Identity) -> Result<Vec<Candidate>, DriverError> {
         let ip = ip_of(&device.address)?;
-        let mut found = crate::controller_peers::candidates(&self.http, ip).await?;
+        let (mut found, offered) = crate::controller_peers::candidates(&self.http, ip).await?;
         if device.attributes.contains_key(crate::usb_agent::ATTRIBUTE) {
-            found.extend(crate::usb_agent::boards(&self.http, ip, &device.link).await);
+            let devices = crate::usb_agent::usb(&self.http, ip).await;
+            let seen = crate::usb_agent::Seen {
+                offered: &offered,
+                board_gadgets: &self.board_gadgets,
+            };
+            found.extend(crate::usb_agent::boards(devices, ip, &device.link, &seen));
         }
         Ok(found)
     }

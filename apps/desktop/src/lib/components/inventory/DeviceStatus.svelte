@@ -4,8 +4,9 @@
   import Pill from "#lib/components/common/Pill.svelte";
   import ProgressBar from "#lib/components/common/ProgressBar.svelte";
   import { jobStatusLabel, overallFraction, primaryVersion, timeAgo } from "#lib/format.ts";
-  import { isRecovery, isRecoveryPlan, stepLabel } from "#lib/present.ts";
+  import { isRecovery, isRecoveryPlan, stepLabel, viaName } from "#lib/present.ts";
   import { clock } from "#lib/stores/clock.svelte.ts";
+  import { devices } from "#lib/stores/devices.svelte.ts";
   import { insights } from "#lib/stores/insights.svelte.ts";
   import { jobs } from "#lib/stores/jobs.svelte.ts";
 
@@ -17,6 +18,9 @@
   const outcome = $derived(insights.failedIds.has(id) ? insights.lastOutcome.get(id) : undefined);
   const pct = $derived(active ? Math.round(overallFraction(active.state) * 100) : 0);
   const verb = $derived(active && isRecoveryPlan(active.state.plan) ? "Flashing" : "Updating");
+  // Seen through a controller that offers no way to it (the `unreachable` attribute).
+  const unreachable = $derived(record.identity.attributes.unreachable);
+  const via = $derived(viaName(record, devices.nameOf));
 </script>
 
 {#if active}
@@ -35,6 +39,13 @@
   {/if}
 {:else if record.presence !== "online"}
   <Pill tone="neutral" icon="plug-connected-x" label="Offline · {timeAgo(record.last_seen_ms, clock.now)}" />
+{:else if unreachable}
+  <Pill
+    tone="warning"
+    icon="plug-connected-x"
+    label={compact ? "Unreachable" : `Seen via ${via ?? "a controller"} · unreachable`}
+    title="Unreachable: {unreachable}"
+  />
 {:else if isRecovery(record)}
   <Pill tone="primary" icon="usb" label={compact ? "USB boot" : "Waiting in USB boot"} />
 {:else if outcome}

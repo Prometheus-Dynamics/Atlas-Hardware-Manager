@@ -56,6 +56,14 @@ fn parse_cidr(text: &str) -> Option<(u32, u8)> {
 }
 
 impl GadgetAddressing {
+    /// Whether `ip` is in `base`: a board's USB link, or its host end.
+    pub fn contains(&self, ip: Ipv4Addr) -> bool {
+        parse_cidr(&self.base).is_some_and(|(base, prefix)| {
+            let mask = u32::MAX.checked_shl(u32::from(32 - prefix)).unwrap_or(0);
+            u32::from(ip) & mask == base & mask
+        })
+    }
+
     /// The subnet of the board whose normalized serial (8 lowercase hex
     /// digits, see `atlas_driver::attributes::normalize_board_serial`) is
     /// `serial8`. `None` for another scheme, invalid parameters, or a serial

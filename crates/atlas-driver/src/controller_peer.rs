@@ -8,6 +8,46 @@
 //! SSH, no board-agent endpoints. A board's address in Atlas is that
 //! identity URL.
 
+/// A running board a controller sees on its USB (Atlas's USB agent lists
+/// it) but whose HeliOS doesn't offer as a peer: Atlas knows it's there and
+/// has no way to it. Its address is `seen-usb://<controller>/<usb port>/<serial>`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SeenOnUsb {
+    pub controller: String,
+    pub usb_port: String,
+    /// The board's serial as its USB descriptor gives it.
+    pub serial: String,
+}
+
+const SEEN_SCHEME: &str = "seen-usb://";
+
+impl SeenOnUsb {
+    pub fn address(&self) -> String {
+        format!(
+            "{SEEN_SCHEME}{}/{}/{}",
+            self.controller, self.usb_port, self.serial
+        )
+    }
+
+    pub fn from_address(address: &str) -> Option<Self> {
+        let mut parts = address.strip_prefix(SEEN_SCHEME)?.split('/');
+        let (controller, usb_port, serial) = (parts.next()?, parts.next()?, parts.next()?);
+        let plain = |part: &str| {
+            part.chars().any(|c| c.is_ascii_alphanumeric())
+                && part
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':'))
+        };
+        (parts.next().is_none() && plain(controller) && plain(usb_port) && plain(serial)).then(
+            || Self {
+                controller: controller.into(),
+                usb_port: usb_port.into(),
+                serial: serial.into(),
+            },
+        )
+    }
+}
+
 /// A board reached through a controller: the controller's HeliOS at
 /// `host:port`, the board as node `node` there.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -73,6 +113,22 @@ pub fn valid_node(node: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_board_seen_on_a_controllers_usb_round_trips_its_address() {
+        let seen = SeenOnUsb {
+            controller: "172.27.0.1".into(),
+            usb_port: "3-1.1.4.1".into(),
+            serial: "a317bcbee5226d57".into(),
+        };
+        assert_eq!(
+            seen.address(),
+            "seen-usb://172.27.0.1/3-1.1.4.1/a317bcbee5226d57"
+        );
+        assert_eq!(SeenOnUsb::from_address(&seen.address()), Some(seen));
+        assert_eq!(SeenOnUsb::from_address("seen-usb://h/3-1/../x"), None);
+        assert_eq!(SeenOnUsb::from_address("http://172.31.209.217:5899/"), None);
+    }
 
     #[test]
     fn a_controllers_identity_url_names_the_peer() {

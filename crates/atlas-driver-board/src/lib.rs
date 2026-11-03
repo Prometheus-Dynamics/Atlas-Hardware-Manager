@@ -30,6 +30,7 @@ mod contract;
 mod driver;
 mod gadget;
 mod live;
+mod seen;
 mod serial;
 mod slots;
 mod ssh;
