@@ -29,6 +29,7 @@ mod console;
 mod contract;
 mod driver;
 mod gadget;
+mod gateway;
 mod live;
 mod seen;
 mod serial;

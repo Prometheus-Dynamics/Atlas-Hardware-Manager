@@ -6,8 +6,8 @@
 
 use std::time::Duration;
 
-use atlas_driver::controller_peer::ControllerPeer;
-use atlas_driver::{Artifact, DriverError};
+use crate::controller_peer::ControllerPeer;
+use crate::{Artifact, DriverError};
 use tokio::io::AsyncReadExt;
 
 /// Read from the file and sent at a time.
@@ -17,7 +17,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// Uploads `artifact` to the board `peer` names, calling `sent` with the
 /// fraction sent so far; returns the upload's URL on the board.
-pub(crate) async fn upload(
+pub async fn upload(
     peer: &ControllerPeer,
     artifact: &Artifact,
     sent: impl Fn(f32) + Send + Sync + 'static,

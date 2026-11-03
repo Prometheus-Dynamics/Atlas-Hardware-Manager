@@ -12,11 +12,14 @@ description = "Device driver contract for Atlas: identity, links, capabilities, 
 
 [features]
 # `util::answered`, for the crates that talk HTTP (device builds stay without TLS).
-http = ["dep:reqwest"]
+http = ["dep:reqwest", "dep:futures", "dep:tokio"]
 
 [dependencies]
 async-trait.workspace = true
 reqwest = { workspace = true, optional = true }
+# The upload to a board behind a controller (peer_upload.rs).
+futures = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["fs", "io-util"] }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

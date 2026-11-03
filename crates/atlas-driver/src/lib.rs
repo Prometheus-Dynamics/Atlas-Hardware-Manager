@@ -15,6 +15,8 @@ mod hardware;
 mod health;
 mod install;
 mod observe;
+#[cfg(feature = "http")]
+pub mod peer_upload;
 mod registry;
 pub mod robot_net;
 mod selftest;

@@ -441,11 +441,13 @@ impl Driver for BoardDriver {
         let Some((identity_url, reported)) = self.reported(device) else {
             return Capabilities::default();
         };
-        // Behind a robot controller only its identity and its orion-node
-        // (atlas-driver-orion's tunnel) are offered: its endpoints and SSH
-        // would resolve to the controller itself.
-        if atlas_driver::controller_peer::ControllerPeer::from_address(&identity_url).is_some() {
-            return Capabilities::default();
+        // Behind a robot controller its endpoints and SSH would resolve to
+        // the controller itself: the board's HeliOS API through the
+        // controller's gateway instead (and Orion's tunnel, its own driver).
+        if let Some(peer) =
+            atlas_driver::controller_peer::ControllerPeer::from_address(&identity_url)
+        {
+            return crate::gateway::capabilities(self.http.clone(), peer, &reported);
         }
         let endpoint = |name: &str| {
             reported

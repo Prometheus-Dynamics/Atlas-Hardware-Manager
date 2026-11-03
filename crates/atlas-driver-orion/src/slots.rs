@@ -150,7 +150,7 @@ impl SlotsCapability for OrionSlots {
         let url = match peer {
             Some(peer) => {
                 let sink = progress.clone();
-                crate::upload::upload(&peer, &install.bundle, move |done| {
+                atlas_driver::peer_upload::upload(&peer, &install.bundle, move |done| {
                     sink.step_progress(UpdateStep::Transfer, done / 2.0);
                 })
                 .await?

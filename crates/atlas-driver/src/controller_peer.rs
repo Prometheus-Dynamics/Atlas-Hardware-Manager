@@ -4,9 +4,10 @@
 //! boards, `GET /v1/peers/<node>/board/identity` is a peer board's identity
 //! document, and `/v1/peers/<node>/orion` (HTTP Upgrade `orion`) a tunnel
 //! to its orion-node, only while the robot's security is off, with Orion's
-//! own auth end to end. Nothing else of the board is reachable that way: no
-//! SSH, no board-agent endpoints. A board's address in Atlas is that
-//! identity URL.
+//! own auth end to end. `/v1/peers/<node>/<path>` passes the board's own
+//! HeliOS API (`/v1/<path>`): Restart and slots (atlas-driver-board's
+//! gateway.rs). No SSH, no other board-agent endpoints. A board's address in
+//! Atlas is that identity URL.
 
 /// A running board a controller sees on its USB (Atlas's USB agent lists
 /// it) but whose HeliOS doesn't offer as a peer: Atlas knows it's there and
