@@ -1,5 +1,5 @@
 {
-  "$comment": "Vendored unchanged (apart from this comment) from Lemnos 01939e9d32fa docs/schemas/lemnos-board.schema.json. devices/tools/gen-raze.py validates the generated /etc/lemnos/board.toml against it. Update it together with the Lemnos pin (capabilities.hardware-service.gaia_import.rev).",
+  "$comment": "Vendored unchanged (apart from this comment) from Lemnos 50533a8d79cb docs/schemas/lemnos-board.schema.json. devices/tools/gen-raze.py validates the generated /etc/lemnos/board.toml against it. Update it together with the Lemnos pin (capabilities.hardware-service.gaia_import.rev).",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Prometheus-Dynamics/Lemnos/docs/schemas/lemnos-board.schema.json",
   "title": "Lemnos board definition",
@@ -133,6 +133,52 @@
         "type": "string"
       },
       "description": "Clients allowed raw bus and line access; empty: any client."
+    },
+    "look_writers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Clients allowed to change looks and presets; empty: lemnos-ctl and orion:*."
+    },
+    "composites": {
+      "type": "array",
+      "description": "Composite devices hosted by lemnosd (docs/composite-devices.md). Only the fan-controller driver exists.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "driver"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "driver": {
+            "type": "string",
+            "enum": [
+              "fan-controller"
+            ]
+          },
+          "inputs": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^[^.]+\\.[^.]+$"
+            }
+          },
+          "outputs": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "config": {
+            "type": "object"
+          }
+        }
+      }
     }
   },
   "$defs": {

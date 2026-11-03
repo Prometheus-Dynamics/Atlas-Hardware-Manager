@@ -27,15 +27,16 @@ from pathlib import Path
 
 SELECTOR_KEYS = ("name", "compatible", "of", "node")
 
-# What lemnos-board's DriverRegistry (Lemnos 01939e9, crates/lemnos-board/src
-# registry.rs and light.rs) accepts: placement, config keys, match keys.
+# What lemnos-board's DriverRegistry (Lemnos 50533a8, crates/lemnos-board/src
+# registry.rs and light.rs) accepts: placement, config keys, match keys. The system
+# looks (updating, booting, locate, ...) are look files since Lemnos c87819a, so
+# their keys are gone; a board file that sets one is refused.
 LIGHT_KEYS = (
-    "count", "wire", "offset", "direction", "brightness", "gpio", "fade_ms", "easing",
-    "status_effect", "error_effect", "breathe_period_ms", "breathe_depth", "blink_period_ms",
-    "blink_duty", "ok", "warn", "error", "busy", "locate", "locate_effect",
-    "spinner_period_ms", "spinner_tail", "spinner_base", "idle", "progress", "progress_background",
-    "updating", "verifying", "writing", "staged", "booting", "rebooting", "failed",
-    "gravity_device", "gravity_plane", "gravity_led0_deg", "default_down",
+    "count", "wire", "offset", "direction", "brightness", "look_brightness", "gpio", "fade_ms",
+    "easing", "status_effect", "error_effect", "breathe_period_ms", "breathe_depth",
+    "blink_period_ms", "blink_duty", "ok", "warn", "error", "busy", "default_look", "progress",
+    "progress_background", "spinner_period_ms", "spinner_tail", "spinner_base", "gravity_device",
+    "gravity_plane", "gravity_led0_deg", "default_down",
 )
 INA_KEYS = ("shunt_micro_ohms", "shunt_ohms", "max_current_micro_amps", "max_current_amps")
 DRIVERS = {

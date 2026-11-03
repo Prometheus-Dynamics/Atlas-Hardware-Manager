@@ -7,6 +7,14 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **Lemnos 50533a8 (2026-11-03): the system looks are a look file.** lemnosd
+  builds in only the `status.*` looks now; the update, boot, recovery and
+  locate looks (`system.*`) ship as `/etc/lemnos/looks.d/system.toml`, staged
+  unchanged from Lemnos's example set (`lemnos.toml`, item `lemnos-system-looks`).
+  The ring's board config gains `default_look = "status.ok"`, so it never goes
+  dark. The removed light keys (`idle`, `locate`, `updating`, `booting`, ...) are
+  refused by lemnosd, and gen-raze.py's key list and the vendored board schema
+  follow Lemnos 50533a8. The OS builds pin Lemnos 50533a8 with this commit.
 - **Lemnos 01939e9 (2026-11-02):** lemnosd and lemnos-ipc move to Lemnos
   dev 01939e9, the commit HeliOS's Styx and Daedalus pins build on (its M2M
   additions). The board schema, lemnos-ipc and lemnos-board's drivers and

@@ -22,7 +22,7 @@
 #   id = "lemnos"
 #   kind = "git"
 #   repo = "https://github.com/Prometheus-Dynamics/Lemnos.git"
-#   rev = "01939e9d32fa1522bda04ed3fdb718aa9edf9179"
+#   rev = "50533a8d79cbac8dbc8986b6d3042f5ff6c18b16"
 #
 # Without it, resolving this layer fails and names the source `lemnos`. For
 # local development: --set sources.lemnos.path=/path/to/Lemnos.
@@ -54,6 +54,7 @@ config_overrides = [
 # are named here; lemnosd.toml names its own.
 [image.feed]
 install_entries = ["install-lemnos-orion"]
+stage_files = ["lemnos-system-looks"]
 stage_services = ["lemnos-orion-service"]
 
 # Replaces Lemnos's item of the same id (a later layer replaces the whole
@@ -62,5 +63,15 @@ stage_services = ["lemnos-orion-service"]
 id = "lemnosd-env"
 src = "${self}/assets/lemnos/lemnosd.env"
 dest = "/etc/default/lemnosd.env"
+mode = 420
+origin = "static-asset"
+
+# The system looks (update, boot, recovery and locate: system.*), which lemnosd's
+# intents name. Since Lemnos c87819a only status.* is built in; these come from
+# Lemnos's example set, unchanged. lemnosd reads every file in /etc/lemnos/looks.d.
+[[stage.files]]
+id = "lemnos-system-looks"
+src = "${source.lemnos.path}/examples/looks/looks.d/system.toml"
+dest = "/etc/lemnos/looks.d/system.toml"
 mode = 420
 origin = "static-asset"
