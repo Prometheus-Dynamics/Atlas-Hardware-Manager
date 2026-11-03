@@ -118,7 +118,7 @@ impl ActionsCapability for EepromUpdate {
     fn actions(&self, _device: &Identity) -> Vec<DeviceAction> {
         vec![DeviceAction {
             id: UPDATE_BOOTLOADER.into(),
-            label: "Update bootloader (EEPROM)".into(),
+            label: "Update the bootloader".into(),
             destructive: true,
         }]
     }

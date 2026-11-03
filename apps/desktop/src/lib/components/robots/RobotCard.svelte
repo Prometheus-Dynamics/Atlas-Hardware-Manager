@@ -3,12 +3,11 @@
   import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
   import IconTile from "#lib/components/common/IconTile.svelte";
-  import Pill from "#lib/components/common/Pill.svelte";
   import StatusDot from "#lib/components/common/StatusDot.svelte";
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
-  import { ROBOT_STATE } from "./robotState";
+  import RobotStateLabel from "./RobotStateLabel.svelte";
 
   let {
     profile,
@@ -24,7 +23,6 @@
     onselect?: () => void;
   } = $props();
 
-  const badge = $derived(status ? ROBOT_STATE[status.state] : null);
   const editing = $derived(ui.panel?.kind === "robot" && ui.panel.name === profile.name);
 
   async function remove() {
@@ -50,7 +48,7 @@
       {/if}
       <p class="truncate text-[12.5px] text-fg-muted">{profile.notes ?? `${profile.roles.length} role${profile.roles.length === 1 ? "" : "s"}`}</p>
     </div>
-    {#if badge}<Pill tone={badge.tone} icon={badge.icon} label={badge.label} />{/if}
+    {#if status}<RobotStateLabel value={status.state} />{/if}
   </header>
 
   <ul class="flex flex-1 flex-col gap-0.5 px-3 py-3">

@@ -42,11 +42,11 @@
   /** The camera the stream shows, by name; else the first. */
   const shown = $derived(cameras.find((c) => streams.some((s) => s.name.split(/[-_]/)[0] === c.camera.toLowerCase())) ?? cameras[0] ?? null);
   const SEGMENTS = [
-    { key: "exposure_half", label: "exp/2", color: "var(--series-1)" },
-    { key: "readout", label: "readout", color: "var(--series-8)" },
+    { key: "exposure_half", label: "exposure", color: "var(--series-1)" },
+    { key: "readout", label: "sensor read", color: "var(--series-8)" },
     { key: "isp", label: "ISP", color: "var(--series-4)" },
-    { key: "detection", label: "detect", color: "var(--series-2)" },
-    { key: "pv_nt", label: "PV+NT", color: "var(--series-3)" },
+    { key: "detection", label: "detection", color: "var(--series-2)" },
+    { key: "pv_nt", label: "publish", color: "var(--series-3)" },
   ] as const;
   const segments = $derived.by(() => {
     const s = shown?.stages;

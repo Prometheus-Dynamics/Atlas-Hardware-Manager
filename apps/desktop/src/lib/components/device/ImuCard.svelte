@@ -67,7 +67,7 @@
 <section class="panel imu" aria-label="IMU">
   <div class="panel-head">
     <h2 class="panel-title">IMU</h2>
-    <span class="text-[11px] text-fg-faint">{fused ? "fused on the board" : "live"}</span>
+    <span class="text-[11px] text-fg-faint">{fused ? "worked out on the board" : "live"}</span>
   </div>
   {#if series}
     <ImuView {series} {fused} {light} compact />
@@ -81,9 +81,13 @@
   <div class="cal">
     <span class="dot {calTone}"></span>
     <span class="truncate" title={calText ?? "Calibration unknown"}>{calText ?? "Calibration unknown"}</span>
-    {#if ui.mode === "pit"}
-      <button type="button" class="link ml-auto shrink-0 text-[12px]" onclick={() => oncalibrate?.()}>Calibrate…</button>
-    {/if}
+    <button
+      type="button"
+      class="link ml-auto shrink-0 text-[12px]"
+      disabled={ui.mode === "robot"}
+      title={ui.mode === "robot" ? "Switch to PIT to calibrate" : undefined}
+      onclick={() => oncalibrate?.()}>Calibrate…</button
+    >
   </div>
 </section>
 

@@ -143,6 +143,9 @@
 </script>
 
 <div class="flex flex-col gap-4">
+  <!-- The server and where to point a camera side by side: stopped, the
+       tab isn't one small form over an empty page. -->
+  <div class="grid items-start gap-4 lg:grid-cols-2">
   <GlassCard title="Local NetworkTables server" subtitle="An NT4 server on this computer, with only the topics you make here and what cameras publish. Not a robot simulator.">
     {#snippet actions()}
       {#if info}<Pill tone="success" label="Running on port {info.port}" />{/if}
@@ -170,7 +173,6 @@
     {/if}
   </GlassCard>
 
-  {#if info}
     <GlassCard title="Point a camera at this computer" subtitle="Give the camera this computer's address as its NetworkTables server. A team number won't work: it means the robot (10.TE.AM.2).">
       {#if cameras.length}
         <ul class="flex flex-col gap-2">
@@ -185,16 +187,23 @@
           {/each}
         </ul>
       {/if}
+      {#if info}
       <p class="mt-3 text-[12.5px] text-fg-muted">
         This computer answers on {#each info.addresses as address, i (address)}<span class="mono address-inline">{address}</span>{i < info.addresses.length - 1 ? ", " : ""}{/each}, port {info.port}.
         Use the one on the camera's network (over USB, the address on the board's USB link).
       </p>
+      {:else if !cameras.length}
+      <p class="text-[12.5px] text-fg-muted">Start the server, and this computer's addresses show here.</p>
+      {/if}
       <ol class="steps mt-3 text-[12.5px] text-fg-muted">
         <li>In PhotonVision, open <b>Settings → Networking</b>.</li>
         <li>Set <b>Team Number / NetworkTables Server Address</b> to the address above, and save.</li>
         <li>The camera connects within a few seconds and shows under Clients; its topics appear below.</li>
       </ol>
     </GlassCard>
+  </div>
+
+  {#if info}
 
     <div class="grid gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
       <GlassCard title="Topics" subtitle="{info.topics.length} on the server">

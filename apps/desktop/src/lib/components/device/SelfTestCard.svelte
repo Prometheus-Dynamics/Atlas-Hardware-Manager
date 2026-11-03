@@ -10,6 +10,7 @@
   import { timeAgo, type Tone } from "#lib/format.ts";
   import { clock } from "#lib/stores/clock.svelte.ts";
   import { canSelftest, selftests } from "#lib/stores/selftests.svelte.ts";
+  import { ui } from "#lib/stores/ui.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
   import type { IconName } from "#lib/ui/icons.ts";
 
@@ -70,7 +71,14 @@
     <div class="panel-head">
       <h2 class="panel-title">Self-test</h2>
       {#if can}
-        <Button size="sm" icon="list-check" action={run} busy={running}>{last ? "Run again" : "Run self-test"}</Button>
+        <Button
+          size="sm"
+          icon="list-check"
+          action={run}
+          busy={running}
+          disabled={ui.mode === "robot"}
+          title={ui.mode === "robot" ? "Switch to PIT to run it: it drives the LEDs, fan and camera" : undefined}>{last ? "Run again" : "Run self-test"}</Button
+        >
       {/if}
     </div>
 

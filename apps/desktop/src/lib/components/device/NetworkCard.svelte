@@ -13,7 +13,7 @@
   const attrs = $derived(record.identity.attributes ?? {});
   const reached = $derived.by(() => {
     const how = linkText(record.link_kind, devices.nameOf);
-    return how.startsWith("via ") ? `reached ${how}` : `reached by ${how}`;
+    return how.startsWith("via ") ? `Through ${how.slice(4)}` : `Over ${how}`;
   });
   /** The host of an address (a URL, `[v6]:port`, or a bare IP). */
   function host(address: string): string {
@@ -33,11 +33,11 @@
   });
 
   function network(ip: string): string {
-    if (ip.startsWith("172.31.")) return "USB";
-    if (ip.startsWith("169.254.")) return "link-local";
-    if (ip.includes(":")) return ip.toLowerCase().startsWith("fe80") ? "IPv6 link" : "IPv6";
-    if (ip.startsWith("10.")) return "robot network";
-    return "network";
+    if (ip.startsWith("172.31.")) return "USB IP";
+    if (ip.startsWith("169.254.")) return "Link-local";
+    if (ip.includes(":")) return ip.toLowerCase().startsWith("fe80") ? "IPv6 (local)" : "IPv6";
+    if (ip.startsWith("10.")) return "Robot IP";
+    return "Other IP";
   }
 
   async function copy(ip: string) {
@@ -66,7 +66,7 @@
     {/each}
     {#if attrs.hostname}
       <div class="row">
-        <dt>hostname</dt>
+        <dt>Hostname</dt>
         <dd class="ip use">{attrs.hostname}</dd>
         <button type="button" class="copy" aria-label="Copy {attrs.hostname}" title="Copy" onclick={() => copy(attrs.hostname ?? "")}><Icon name="copy" size={13} /></button>
       </div>

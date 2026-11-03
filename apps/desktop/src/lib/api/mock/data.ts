@@ -104,7 +104,7 @@ export function razeUsbBoot(serial: string, board: string): SimDevice {
     caps: ["info", "recover", "actions"],
     actions: [
       { id: "open-as-disk", label: "Open as USB disk", destructive: false },
-      { id: "update-bootloader", label: "Update bootloader (EEPROM)", destructive: true },
+      { id: "update-bootloader", label: "Update the bootloader", destructive: true },
     ],
   };
 }

@@ -64,5 +64,6 @@
   <!-- The list has a Version column: the status says what's known of it. -->
   <Pill tone="neutral" label="No release known" />
 {:else if version}
-  <Pill tone="neutral" mono label={version} />
+  <!-- A version is a fact, not a status: text, not a chip. -->
+  <span class="mono truncate text-[12px] text-fg-muted">{version}</span>
 {/if}

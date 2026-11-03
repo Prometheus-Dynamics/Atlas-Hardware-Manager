@@ -133,6 +133,10 @@
   // started): it's still being looked for, not gone, until a scan ends or a
   // while passes.
   const LOOK_MS = 15_000;
+  const MODES: { value: "robot" | "pit"; label: string; title: string }[] = [
+    { value: "robot", label: "ROBOT", title: "On the robot: network, team and security are locked" },
+    { value: "pit", label: "PIT", title: "On the bench: settings open, self-test and calibration" },
+  ];
   const opened = Date.now();
   const gone = $derived(devices.loaded && (devices.lastScanAt !== null || clock.now - opened > LOOK_MS));
 </script>
@@ -163,14 +167,9 @@
         {#if recovery && record.presence === "online"}<Pill tone="primary" icon="usb" label="Waiting for an image" />{/if}
       </div>
       {#if record.presence === "online" && !recovery}
-        <button
-          type="button"
-          class="mode"
-          class:pit={ui.mode === "pit"}
-          aria-pressed={ui.mode === "pit"}
-          title={ui.mode === "robot" ? "ROBOT mode: network, team and security are locked. Click for PIT." : "PIT mode: the bench; updates and checks first. Click for ROBOT."}
-          onclick={() => ui.setMode(ui.mode === "robot" ? "pit" : "robot")}>{ui.mode === "robot" ? "ROBOT" : "PIT"}</button
-        >
+        <div class="shrink-0">
+          <SegmentedControl size="sm" label="Mode" options={MODES} bind:value={() => ui.mode, (mode) => ui.setMode(mode)} />
+        </div>
       {/if}
       <div class="ml-auto flex shrink-0 items-center gap-1.5">
         <QuickActions {record} />
@@ -254,22 +253,6 @@
     text-align: left;
     color: var(--fg-muted);
     font-variant-numeric: tabular-nums;
-  }
-  .mode {
-    height: 20px;
-    padding: 0 7px;
-    border: 1px solid var(--glass-border);
-    border-radius: var(--r-sm);
-    background: var(--glass);
-    color: var(--fg-muted);
-    font-size: 10.5px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-  }
-  .mode.pit {
-    border-color: #5a4a22;
-    background: #231d12;
-    color: var(--warn-fg);
   }
   .back {
     display: grid;

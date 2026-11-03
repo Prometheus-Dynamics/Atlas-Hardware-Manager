@@ -30,7 +30,7 @@
 </script>
 
 <section class="panel board" aria-label="Board hardware">
-  <div class="panel-head"><h2 class="panel-title">Board hardware</h2><span class="text-[11px] text-fg-faint">lemnosd</span></div>
+  <div class="panel-head"><h2 class="panel-title">Board hardware</h2></div>
   <div class="body">
     {#if ring}
       <RingView series={live.series.get(ring.id) ?? null} deviceId={ring.id} {deviceKey} tick={live.tick} size={64} />

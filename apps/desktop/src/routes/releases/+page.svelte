@@ -18,19 +18,21 @@
   let width = $state(1200);
   const wide = $derived(width >= 1100);
   // Families in as many columns as fit at 360 px (beside the sources on a
-  // wide window), each family into the shortest column so far: no holes
-  // under a family with few releases.
+  // wide window). The biggest families are placed first, each into the
+  // shortest column so far, so the columns end level (no hole under a small
+  // family); each column then reads in name order.
   const cols = $derived(Math.max(1, Math.min(releases.families.length, 4, Math.floor((wide ? width * 0.76 : width) / 360))));
   const columns = $derived.by(() => {
     const out: string[][] = Array.from({ length: cols }, () => []);
     const heights = new Array<number>(cols).fill(0);
-    for (const family of releases.families) {
+    // A card's header is about two releases tall.
+    const size = (family: string) => releases.forFamily(family).length + 2;
+    for (const family of [...releases.families].sort((a, b) => size(b) - size(a))) {
       const shortest = heights.indexOf(Math.min(...heights));
       out[shortest].push(family);
-      // A card's header is about two releases tall.
-      heights[shortest] += releases.forFamily(family).length + 2;
+      heights[shortest] += size(family);
     }
-    return out;
+    return out.map((column) => column.sort((a, b) => releases.families.indexOf(a) - releases.families.indexOf(b)));
   });
 
   async function refresh() {

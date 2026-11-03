@@ -78,9 +78,17 @@
     return sortMetrics([...seen.values()]).slice(0, 9);
   });
 
-  // As many columns as fit at about 420 px; rows share the height.
+  // As many columns as fit at about 420 px; rows share the height. A short
+  // window takes more columns (down to 260 px each) before a row gets less
+  // than a chart needs, and only then scrolls.
+  const ROW_MIN = 150;
   let width = $state(1200);
-  const cols = $derived(Math.max(1, Math.min(charts.length, 3, Math.floor(width / 420) || 1)));
+  let height = $state(800);
+  const cols = $derived.by(() => {
+    const most = Math.max(1, Math.min(charts.length, 3, Math.floor(width / 260)));
+    const rowsFit = Math.max(1, Math.floor((height + 10) / (ROW_MIN + 10)));
+    return Math.min(most, Math.max(Math.floor(width / 420) || 1, Math.ceil(charts.length / rowsFit)));
+  });
   // Rows share the height; a short last row stretches across, so no cell
   // stays empty.
   const rows = $derived(
@@ -134,7 +142,7 @@
       <p class="text-[13px] text-fg-muted">{candidates.length ? "None of the chosen devices is online." : "No device that reports readings is online."}</p>
     </div>
   {:else}
-    <div class="grid-area" bind:clientWidth={width}>
+    <div class="grid-area" bind:clientWidth={width} bind:clientHeight={height}>
       {#each rows as row, r (r)}
         <div class="row">
           {#each row as m (m.id)}
@@ -199,10 +207,12 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
+    overflow-y: auto;
   }
+  /* Never shorter than its charts (plot, times, legend): past that the
+     grid scrolls rather than a chart running into the next. */
   .row {
-    flex: 1 1 0;
-    min-height: 0;
+    flex: 1 0 0;
     display: flex;
     gap: 10px;
   }

@@ -120,7 +120,6 @@
     flex-direction: column;
     gap: 6px;
     min-width: 0;
-    min-height: 0;
     padding: 10px 12px;
     background: var(--glass);
     border: 1px solid var(--glass-border);

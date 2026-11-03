@@ -390,7 +390,7 @@ export const mockApi: Api = {
     }),
   discoveryStatus: () =>
     reply(() => ({ live: settings.auto_scan, watching: ["Simulated"], polled: [], fallback_ms: settings.scan_interval_ms })),
-  fixHealth: (action) => reply(() => `Fixed ${action} (simulated).`),
+  fixHealth: () => reply(() => "Fixed (simulated)."),
   getSettings: () => reply(() => settings),
   saveSettings: (next) =>
     reply(() => {

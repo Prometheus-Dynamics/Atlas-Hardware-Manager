@@ -138,7 +138,7 @@
 
     {#if online}
       {#if locked}
-        <p class="lock">ROBOT mode: the network settings are locked. Switch to PIT (the chip by the name) to change them.</p>
+        <p class="lock">ROBOT mode: the network settings are locked. Switch to PIT (beside the device's name) to change them.</p>
       {/if}
       <NetworkCard {record} />
       <fieldset class="contents" disabled={locked}><UsbRouteCard {record} {actions} {run} /></fieldset>

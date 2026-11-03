@@ -181,6 +181,11 @@ body {
   .link:hover {
     text-decoration: underline;
   }
+  .link:disabled {
+    color: var(--fg-faint);
+    text-decoration: none;
+    cursor: not-allowed;
+  }
   /*
    * Layout primitives. A page fills the window: header, then a body that
    * takes the rest of the height (see Page.svelte). Only regions with

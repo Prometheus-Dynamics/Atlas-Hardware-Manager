@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { familyName } from "#lib/present.ts";
   import { api, errorText, keyString } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
@@ -45,7 +46,7 @@
   {#if devices.families.length > 1}
     <div class="families flex min-w-0 items-center gap-1" role="group" aria-label="Device family">
       {#each devices.families as family (family)}
-        <button type="button" class="chip" aria-pressed={ui.families.has(family)} onclick={() => toggleFamily(family)}>{family}</button>
+        <button type="button" class="chip" aria-pressed={ui.families.has(family)} title={family} onclick={() => toggleFamily(family)}>{familyName(family)}</button>
       {/each}
     </div>
   {/if}

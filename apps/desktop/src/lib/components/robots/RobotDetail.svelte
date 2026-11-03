@@ -5,7 +5,6 @@
   import Button from "#lib/components/common/Button.svelte";
   import GlassCard from "#lib/components/common/GlassCard.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
-  import Pill from "#lib/components/common/Pill.svelte";
   import MonitorChart from "#lib/components/device/MonitorChart.svelte";
   import DeviceCard from "#lib/components/inventory/DeviceCard.svelte";
   import { isCore, isTextMetric, sortMetrics } from "#lib/metrics.ts";
@@ -13,11 +12,10 @@
   import { live, SLOW_MS, watchLive } from "#lib/stores/live.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
   import { makeReady, showDevices } from "./robotActions";
-  import { ROBOT_STATE } from "./robotState";
+  import RobotStateLabel from "./RobotStateLabel.svelte";
 
   let { profile, status }: { profile: RobotProfile; status: RobotStatus | undefined } = $props();
 
-  const badge = $derived(status ? ROBOT_STATE[status.state] : null);
   const roles = $derived(status?.roles ?? []);
   // Roles in as few rows as fit at 230 px a card, spread evenly over them:
   // four roles are two by two, not three and one beside an empty space.
@@ -49,7 +47,7 @@
 
 <GlassCard fill large icon="robot" title={profile.name} subtitle={profile.notes ?? `${roles.length} role${roles.length === 1 ? "" : "s"}`} scroll={false} class="h-full">
   {#snippet actions()}
-    {#if badge}<Pill tone={badge.tone} icon={badge.icon} label={badge.label} />{/if}
+    {#if status}<RobotStateLabel value={status.state} />{/if}
     {#if status && status.state !== "ready"}
       <Button variant="tint" size="sm" icon="wand" action={() => makeReady(profile.name)}>Make ready</Button>
     {/if}

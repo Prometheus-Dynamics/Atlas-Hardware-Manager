@@ -56,7 +56,7 @@
 </script>
 
 <GlassCard
-  title={compact ? "Where releases come from" : "Sources"}
+  title="Sources"
   subtitle={compact ? `${count} source${count === 1 ? "" : "s"} · signed manifests checked for new releases` : "Signed manifests checked for new releases"}
   icon="world-www"
   large

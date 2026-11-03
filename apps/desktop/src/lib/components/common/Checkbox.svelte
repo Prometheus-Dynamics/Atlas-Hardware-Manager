@@ -57,9 +57,10 @@
   .check:active {
     transform: scale(0.92);
   }
+  /* Checked is green like a switch that's on (the accent is for actions). */
   .check.on {
-    background: var(--accent);
-    border-color: var(--accent);
+    background: var(--ok);
+    border-color: var(--ok);
   }
   .mark {
     display: inline-flex;

@@ -34,8 +34,10 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
     transition: transform var(--t-med) var(--ease-out);
   }
+  /* On is green, as "on" reads everywhere: the accent is for actions and
+     "needs you", and a red switch looks like a warning. */
   .toggle:checked {
-    background: var(--accent);
+    background: var(--ok);
     border-color: transparent;
   }
   .toggle:checked::after {

@@ -28,29 +28,39 @@
   // nodes narrow (names cut, the whole name on hover) rather than the map
   // scrolling sideways.
   const GAP = $derived(Math.max(20, Math.min(72, (width - PAD * 2) / (map.depth + 1) / 3)));
-  const NODE_W = $derived(Math.floor(Math.min(220, Math.max(56, (width - PAD * 2 - map.depth * GAP) / (map.depth + 1)))));
-  const ROW_H = $derived(Math.floor(Math.min(92, Math.max(28, (boxHeight - PAD * 2) / Math.max(1, map.rows)))));
+  const TREE_W = $derived(Math.floor(Math.min(220, (width - PAD * 2 - map.depth * GAP) / (map.depth + 1))));
+  // Too narrow for columns that show a name: an outline instead, each
+  // device on its own line, indented under what it hangs off.
+  const outline = $derived(map.depth > 0 && TREE_W < 120);
+  const INDENT = 20;
+  const NODE_W = $derived(outline ? width - PAD * 2 : TREE_W);
+  const rows = $derived(outline ? map.nodes.length : map.rows);
+  const ROW_H = $derived(Math.floor(Math.min(92, Math.max(28, (boxHeight - PAD * 2) / Math.max(1, rows)))));
   const NODE_H = $derived(Math.min(54, Math.max(24, ROW_H - 8)));
   // Short rows show the name only.
   const oneLine = $derived(NODE_H < 34);
   // Narrow nodes drop the icon tile so the name keeps the room.
-  const compact = $derived(NODE_W < 170);
+  const compact = $derived(outline || NODE_W < 170);
   // Columns spread with the width, up to a point; a wide window centres the
   // tree rather than stretching its wires across the screen.
-  const colW = $derived(map.depth === 0 ? 0 : Math.min(NODE_W + 260, Math.max(NODE_W + GAP, (width - NODE_W - PAD * 2) / map.depth)));
-  const left = $derived(Math.max(PAD, (width - (map.depth * colW + NODE_W)) / 2));
-  const height = $derived(map.rows * ROW_H + PAD * 2);
+  const colW = $derived(outline ? INDENT : map.depth === 0 ? 0 : Math.min(NODE_W + 260, Math.max(NODE_W + GAP, (width - NODE_W - PAD * 2) / map.depth)));
+  const left = $derived(outline ? PAD : Math.max(PAD, (width - (map.depth * colW + NODE_W)) / 2));
+  const height = $derived(rows * ROW_H + PAD * 2);
   const byId = $derived(new Map(map.nodes.map((n) => [n.id, n])));
 
   const x = (n: MapNode) => left + n.depth * colW;
-  const y = (n: MapNode) => PAD + n.row * ROW_H + ROW_H / 2;
+  const y = (n: MapNode) => PAD + (outline ? n.line : n.row) * ROW_H + ROW_H / 2;
+  /** An outline's node ends at the right edge however deep it sits. */
+  const w = (n: MapNode) => (outline ? NODE_W - n.depth * INDENT : NODE_W);
 
   // A link label shows where the wire leaves it room (at 10.5 px, about 6 px
   // a letter); in a tight map it would sit on the node to its left, and the
   // device's own line says the same.
-  const fits = (label: string) => label.length * 6 + 12 <= colW - NODE_W;
+  const fits = (label: string) => !outline && label.length * 6 + 12 <= colW - NODE_W;
 
   function path(from: MapNode, to: MapNode): string {
+    // An outline's wire drops from under the parent and turns into the child.
+    if (outline) return `M${x(from) + INDENT / 2},${y(from) + NODE_H / 2} V${y(to)} H${x(to)}`;
     const x0 = x(from) + NODE_W;
     const y0 = y(from);
     const x1 = x(to);
@@ -103,7 +113,7 @@
 
     {#each map.nodes as node (node.id)}
       {#if node.id === HOST}
-        <div class="node host" class:compact class:one-line={oneLine} style="left: {x(node)}px; top: {y(node) - NODE_H / 2}px; width: {NODE_W}px; height: {NODE_H}px">
+        <div class="node host" class:compact class:one-line={oneLine} style="left: {x(node)}px; top: {y(node) - NODE_H / 2}px; width: {w(node)}px; height: {NODE_H}px">
           <span class="ico"><Icon name="device-laptop" size={17} stroke={1.7} /></span>
           <span class="min-w-0">
             <span class="name" title="This computer">This computer</span>
@@ -120,7 +130,7 @@
           title="{deviceName(record)} · {primaryVersion(record.identity) ?? record.identity.model}"
           class:offline={record.presence !== "online"}
           class:attention={dotState(record) === "failed" || isRecovery(record)}
-          style="left: {x(node)}px; top: {y(node) - NODE_H / 2}px; width: {NODE_W}px; height: {NODE_H}px"
+          style="left: {x(node)}px; top: {y(node) - NODE_H / 2}px; width: {w(node)}px; height: {NODE_H}px"
           onclick={() => ui.openDevice(node.id)}
         >
           <span class="ico"><Icon name={deviceIcon(record)} size={17} stroke={1.7} /></span>

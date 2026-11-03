@@ -27,6 +27,18 @@ export function deviceIcon(record: DeviceRecord): IconName {
   return "cpu";
 }
 
+/** A device family's name for people ("Raspberry Pi"); its id otherwise. */
+const FAMILY_NAMES: Record<string, string> = {
+  rpi: "Raspberry Pi",
+  raze: "Raze",
+  systemcore: "SystemCore",
+  "sim-helios": "Sim cameras",
+  "sim-mcu": "Sim MCUs",
+};
+export function familyName(family: string): string {
+  return FAMILY_NAMES[family] ?? family;
+}
+
 /** The short model name: "Raze", "cm5". */
 export function modelName(record: DeviceRecord): string {
   return record.identity.model || record.key.family;

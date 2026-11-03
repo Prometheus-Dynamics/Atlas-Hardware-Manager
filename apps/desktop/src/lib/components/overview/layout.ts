@@ -20,6 +20,8 @@ export interface MapNode {
   depth: number;
   /** Centre, in layout units (row index scaled by the caller). */
   row: number;
+  /** Its line when drawn as an outline (each node on its own, parents first). */
+  line: number;
 }
 
 export interface MapEdge {
@@ -97,12 +99,14 @@ export function layoutMap(records: DeviceRecord[]): { nodes: MapNode[]; edges: M
   const nodes: MapNode[] = [];
   const edges: MapEdge[] = [];
   let nextRow = 0;
+  let nextLine = 0;
   let maxDepth = 0;
   const placed = new Set<string>();
 
   // Leaves take the next row; parents sit centred on their children.
   function place(id: string, record: DeviceRecord | null, depth: number): number {
     placed.add(id);
+    const line = nextLine++;
     maxDepth = Math.max(maxDepth, depth);
     const kids = (children.get(id) ?? []).filter((k) => !placed.has(keyString(k.key))).sort(byDeviceName);
     let row: number;
@@ -116,7 +120,7 @@ export function layoutMap(records: DeviceRecord[]): { nodes: MapNode[]; edges: M
       });
       row = (rows[0] + rows[rows.length - 1]) / 2;
     }
-    nodes.push({ id, record, depth, row });
+    nodes.push({ id, record, depth, row, line });
     return row;
   }
 

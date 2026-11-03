@@ -6,7 +6,6 @@
   import { deviceStatus, hasStatus } from "#lib/stores/status.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
   import { cameraStreams } from "#lib/present.ts";
-  import { ui } from "#lib/stores/ui.svelte.ts";
   import BoardHardwareCard from "./BoardHardwareCard.svelte";
   import { BoardLive } from "./boardLive.svelte.ts";
   import BootsCard from "./BootsCard.svelte";
@@ -18,6 +17,7 @@
   import NetworkCard from "./NetworkCard.svelte";
   import NowCard from "./NowCard.svelte";
   import SelfTestCard from "./SelfTestCard.svelte";
+  import { canSelftest, selftests } from "#lib/stores/selftests.svelte.ts";
   import SetupCard from "./SetupCard.svelte";
   import VisionCard from "./VisionCard.svelte";
 
@@ -100,7 +100,7 @@
   });
   const controlKey = $derived(record.capabilities.includes("hardware-control") ? record.key : null);
   /** The third column (the board's IMU, hardware and the self-test) has something to show. */
-  const bodyColumn = $derived((online && (!!imu || !!hardware)) || ui.mode === "pit");
+  const bodyColumn = $derived((online && (!!imu || !!hardware)) || canSelftest(record) || !!selftests.forDevice(record));
 </script>
 
 <!-- Revision 1: one dense screen. What it sees (camera, latency, tags) and
@@ -147,7 +147,7 @@
         <BoardHardwareCard {hardware} live={board} deviceKey={controlKey} {volts} {amps} onchanged={() => void deviceStatus.refresh(record.key)} />
       {/if}
       </Guard>
-      <Guard name="Self-test">{#if ui.mode === "pit"}<SelfTestCard {record} />{/if}</Guard>
+      <Guard name="Self-test"><SelfTestCard {record} /></Guard>
     </div>
     {/if}
   </div>

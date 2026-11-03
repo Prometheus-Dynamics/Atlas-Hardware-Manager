@@ -57,13 +57,13 @@
     <div class="kv"><span>Hostname</span><span class="mono truncate" title={attrs.hostname}>{attrs.hostname}</span><button type="button" class="copy" aria-label="Copy {attrs.hostname}" title="Copy" onclick={() => void copy(`${attrs.hostname}.local`)}><Icon name="copy" size={13} /></button></div>
   {/if}
   {#if route}
-    {@const routeText = route.state === "active" ? "on · routing" : route.state === "on" ? "on · idle" : "off"}
-    <div class="kv"><span>USB route</span><span class="truncate" title={route.state === "active" ? "On: this computer reaches the robot network through the board" : route.state === "on" ? "On, not routing now" : "Off"}>{routeText}</span><span></span></div>
+    {@const routeText = route.state === "active" ? "On, sharing" : route.state === "on" ? "On, idle" : "Off"}
+    <div class="kv"><span title="The robot network, reached from this computer over USB through this board">Robot net</span><span class="truncate" title={route.state === "active" ? "On: this computer reaches the robot network through the board" : route.state === "on" ? "On, not routing now" : "Off"}>{routeText}</span><span></span></div>
   {/if}
   {#if security}
     <div class="kv"><span>Security</span><span class="truncate" title={security}>{security}</span><span></span></div>
   {/if}
-  <div class="kv"><span>Mode</span><span class="truncate" title={ui.mode === "robot" ? "ROBOT: network, team and security settings are locked" : "PIT: the bench; updates and checks first"}>{ui.mode === "robot" ? "ROBOT · locked" : "PIT · bench"}</span><span></span></div>
+  <div class="kv"><span>Mode</span><span class="truncate" title={ui.mode === "robot" ? "ROBOT: network, team and security settings are locked" : "PIT: the bench; updates and checks first"}>{ui.mode === "robot" ? "Robot (settings locked)" : "Pit (settings open)"}</span><span></span></div>
 </section>
 
 <style>

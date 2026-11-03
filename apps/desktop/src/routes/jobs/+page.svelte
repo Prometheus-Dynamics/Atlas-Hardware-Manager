@@ -96,6 +96,12 @@
   }
   .split.none {
     grid-template-columns: minmax(0, 1fr) clamp(16.5rem, 30%, 28rem);
+    /* The versions table ends with its last device (no empty panel under a
+       small robot); a big one still scrolls inside the page's height. */
+    align-items: start;
+  }
+  .split.none > :global(*) {
+    max-height: 100%;
   }
   @container page (max-width: 620px) {
     .split {
