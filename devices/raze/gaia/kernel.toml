@@ -80,6 +80,11 @@ members = [
 # BR2_ROOTFS_OVERLAY (Gaia cf62b48+).
 [image.rootfs]
 overlays = ["${source.linux-firmware.path}/rootfs"]
+# An OS that ships out-of-tree modules in updates/ (Styx's ov9282, pisp-be,
+# rp1-cfe-downstream) gets their in-tree copies left out: modprobe never
+# loads them. A variant that leaves the out-of-tree package out keeps the
+# in-tree module. Needs Gaia f90bed4+ and per-package directories.
+drop_shadowed_modules = true
 
 [image.checks]
 # r8152 also lists these two, which no linux-firmware release ships; it works
