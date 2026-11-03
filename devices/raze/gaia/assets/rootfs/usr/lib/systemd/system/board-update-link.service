@@ -5,8 +5,9 @@ After=multi-user.target board-update-confirm.service
 ConditionPathExists=/usr/lib/board/update
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+# Started, not waited for: the check watches the link for minutes, and a
+# oneshot held "Startup finished" at ~2 min on a board up in ~13 s.
+Type=exec
 ExecStart=/usr/lib/board/update check-link
 
 [Install]
