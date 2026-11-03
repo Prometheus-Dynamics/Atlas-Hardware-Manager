@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Guard from "#lib/components/common/Guard.svelte";
   import { goto } from "$app/navigation";
   import { keyString, sameKey, type DeviceRecord, type HistoryEntry } from "#lib/api/client.ts";
   import Icon from "#lib/components/common/Icon.svelte";
@@ -130,7 +131,7 @@
           </dl>
         {/if}
       </section>
-      <BootsCard {record} {status} />
+      <Guard name="Last boots"><BootsCard {record} {status} /></Guard>
     </div>
   </div>
 {/if}

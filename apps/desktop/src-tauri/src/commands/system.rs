@@ -148,3 +148,11 @@ pub fn open_url(url: String) -> CmdResult<()> {
         .map(|_| ())
         .map_err(|error| format!("couldn't start the browser: {error}"))
 }
+
+/// An error the UI hit (a page that threw, a promise nobody caught), into
+/// atlas.log, so it can be found after the fact like a backend panic.
+#[tauri::command]
+pub fn report_ui_error(message: String, at: String) {
+    let message: String = message.chars().take(4000).collect();
+    crate::logfile::line("UI-ERROR", &format!("{message} (at {at})"));
+}

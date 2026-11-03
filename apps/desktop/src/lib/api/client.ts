@@ -64,3 +64,18 @@ export async function openExternal(url: string): Promise<void> {
     toasts.error(`Couldn't open ${url}: ${errorText(error)}`);
   }
 }
+
+/** Puts an error the UI hit in atlas.log (the console in a browser). */
+export async function reportUiError(error: unknown, at: string): Promise<void> {
+  const message = error instanceof Error ? `${error.message}\n${error.stack ?? ""}` : errorText(error);
+  if (!isTauri) {
+    console.error(`UI error at ${at}:`, error);
+    return;
+  }
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("report_ui_error", { message, at });
+  } catch {
+    // Logging is best effort.
+  }
+}

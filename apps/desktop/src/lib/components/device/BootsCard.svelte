@@ -26,6 +26,8 @@
   const boots = $derived(
     history
       .filter((e) => e.origin === "board" && e.kind === "boot")
+      // The same boot can arrive twice (from the board and through a controller).
+      .filter((e, i, all) => all.findIndex((o) => o.at_ms === e.at_ms && o.boot_id === e.boot_id) === i)
       .sort((a, b) => a.at_ms - b.at_ms)
       .slice(-SHOWN)
       .map((e, i, all) => {
@@ -101,10 +103,10 @@
     {/if}
     {#if boots.length > 0}
       <div class="strip" role="img" aria-label="Last {boots.length} boots: {unclean} unclean">
-        {#each boots as b (b.at)}<span class="boot {b.kind}" title={b.title}></span>{/each}
+        {#each boots as b, i (i)}<span class="boot {b.kind}" title={b.title}></span>{/each}
       </div>
       <ol class="rows" aria-label="Newest boots">
-        {#each rows as b (b.at)}
+        {#each rows as b, i (i)}
           <li title={b.title}>
             <span class="num mono">{b.count ? `#${b.count}` : "—"}</span>
             <span class="began" class:power={b.began === "power-on"}>{b.began}</span>

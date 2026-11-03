@@ -218,7 +218,9 @@ impl Nt {
         let mut config = ClientConfig::new(host.clone(), CLIENT_NAME);
         config.port = port;
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
-        let task = tokio::spawn(async move {
+        // On Tauri's runtime: `nt_connect` is a sync command, so this runs on
+        // the main thread, where `tokio::spawn` has no runtime and panics.
+        let task = tauri::async_runtime::handle().inner().spawn(async move {
             let mut client = Client::start(config);
             let handle = client.handle();
             let options = SubscribeOptions {
@@ -540,6 +542,22 @@ mod tests {
         nt.disconnect(id);
         nt.stop_server().await;
         assert!(nt.server_info().await.is_none());
+    }
+
+    #[test]
+    fn a_viewer_connects_from_a_thread_without_a_runtime() {
+        // As Tauri calls the sync `nt_connect`: from a plain thread.
+        let nt = Nt::default();
+        let (frames, seen) = collecting::<NtFrame>();
+        let id = std::thread::spawn(move || {
+            let id = nt.connect("127.0.0.1", Some(1), frames);
+            nt.disconnect(id);
+            id
+        })
+        .join()
+        .expect("connect panicked");
+        assert_eq!(id, 1);
+        drop(seen);
     }
 
     #[test]

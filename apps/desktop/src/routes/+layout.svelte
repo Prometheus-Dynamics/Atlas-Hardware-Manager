@@ -1,5 +1,7 @@
 <script lang="ts">
   import "../app.css";
+  import { page } from "$app/state";
+  import Guard from "#lib/components/common/Guard.svelte";
   import HelpPopover from "#lib/components/shell/HelpPopover.svelte";
   import JobsTray from "#lib/components/shell/JobsTray.svelte";
   import Sidebar from "#lib/components/shell/Sidebar.svelte";
@@ -26,7 +28,9 @@
            is shorter than a page can fold to. -->
       <main class="h-full overflow-y-auto px-5 py-5 xl:px-7 min-[1800px]:px-10">
         <div class="mx-auto h-full max-w-[2400px]">
-          {@render children()}
+          {#key page.url.pathname}
+            <Guard name="This page">{@render children()}</Guard>
+          {/key}
         </div>
       </main>
       <SidePanel />

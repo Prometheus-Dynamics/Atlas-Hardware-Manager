@@ -141,6 +141,7 @@ pub fn run() {
             commands::releases::remove_release_source,
             commands::system::app_info,
             commands::system::open_url,
+            commands::system::report_ui_error,
             commands::system::health_checks,
             commands::nt::nt_connect,
             commands::nt::nt_disconnect,

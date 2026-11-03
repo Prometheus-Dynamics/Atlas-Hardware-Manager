@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Guard from "#lib/components/common/Guard.svelte";
   import { api, keyString, type DeviceAction, type DeviceRecord } from "#lib/api/client.ts";
   import Skeleton from "#lib/components/common/Skeleton.svelte";
   import { deviceName } from "#lib/format.ts";
@@ -109,11 +110,12 @@
 {#if reports}
   <div class="overview" class:bodyless={!bodyColumn}>
     <div class="col">
-      {#if streams.length || online}<VisionCard {record} {streams} />{/if}
-      {#if status && happening}<NowCard {status} {actions} {run} />{/if}
-      <div class="events"><EventsCard {record} limit={status && happening ? 3 : 6} onmore={onhistory} /></div>
+      <Guard name="Vision">{#if streams.length || online}<VisionCard {record} {streams} />{/if}</Guard>
+      <Guard name="Now">{#if status && happening}<NowCard {status} {actions} {run} />{/if}</Guard>
+      <Guard name="Events"><div class="events"><EventsCard {record} limit={status && happening ? 3 : 6} onmore={onhistory} /></div></Guard>
     </div>
     <div class="col">
+      <Guard name="Health">
       {#if status}
         <HealthRows {record} {status} {volts} {amps} {voltSeries} />
       {:else if statusError}
@@ -121,11 +123,13 @@
       {:else}
         <Skeleton height={190} />
       {/if}
-      {#if online}<SetupCard {record} {onsettings} />{/if}
-      <BootsCard {record} {status} />
+      </Guard>
+      <Guard name="Setup">{#if online}<SetupCard {record} {onsettings} />{/if}</Guard>
+      <Guard name="Last boots"><BootsCard {record} {status} /></Guard>
     </div>
     {#if bodyColumn}
     <div class="col">
+      <Guard name="IMU">
       {#if online && imu}
         <ImuCard
           imuId={imu.id}
@@ -137,23 +141,26 @@
           oncalibrate={onsettings}
         />
       {/if}
+      </Guard>
+      <Guard name="Hardware">
       {#if online && hardware}
         <BoardHardwareCard {hardware} live={board} deviceKey={controlKey} {volts} {amps} onchanged={() => void deviceStatus.refresh(record.key)} />
       {/if}
-      {#if ui.mode === "pit"}<SelfTestCard {record} />{/if}
+      </Guard>
+      <Guard name="Self-test">{#if ui.mode === "pit"}<SelfTestCard {record} />{/if}</Guard>
     </div>
     {/if}
   </div>
 {:else}
   <div class="overview two">
     <div class="col">
-      {#if streams.length}<CameraStreams {streams} device={deviceName(record)} single />{/if}
-      {#if telemetry}<DeviceCharts {record} />{/if}
+      <Guard name="Cameras">{#if streams.length}<CameraStreams {streams} device={deviceName(record)} single />{/if}</Guard>
+      <Guard name="Charts">{#if telemetry}<DeviceCharts {record} />{/if}</Guard>
     </div>
     <div class="col">
-      {#if online}<NetworkCard {record} />{/if}
-      <SelfTestCard {record} />
-      <div class="events"><EventsCard {record} onmore={onhistory} /></div>
+      <Guard name="Network">{#if online}<NetworkCard {record} />{/if}</Guard>
+      <Guard name="Self-test"><SelfTestCard {record} /></Guard>
+      <Guard name="Events"><div class="events"><EventsCard {record} onmore={onhistory} /></div></Guard>
     </div>
   </div>
 {/if}
