@@ -212,12 +212,14 @@ computer's USB means its regular USB port (the one used for flashing) here.
 - [ ] **UI quality, round 2 (queued by HeliOS 2026-11-02).**
   - **What:**
     - Self-logging: failed or stuck loads go to atlas.log, error ids show in toasts.
-    - Raze #2 shown through the SystemCore with no PC route, or as "unreachable: <reason>".
-    - Health: an unclean shutdown on its own is not a warning.
+    - Done: Raze #2 shown through the SystemCore with no PC route, or as
+      "unreachable: <reason>" (30d5d1e).
+    - Done: health; an unclean shutdown on its own is not a warning (96f1c1c).
     - Webcam views through the gateway and the agent.
-    - Every overflow fixed: the CI cut-off check reports without failing,
-      and the Overview at 1280x800 is 50 px too tall.
-    - No confirmation for reversible actions.
+    - Done: every overflow fixed, and e2e/overflow.spec.ts blocks in the
+      Playwright gate (the old cut-off script is gone). The device Overview
+      fits 1280x800 in ROBOT and PIT.
+    - Done: no confirmation for reversible actions ("Restart port", "Restart").
     - The Fable per-screen pass.
   - **Why:** the user's verdict on dev.475 to dev.479.
   - **Done when:** each item is checked on the test bed, and the cut-off

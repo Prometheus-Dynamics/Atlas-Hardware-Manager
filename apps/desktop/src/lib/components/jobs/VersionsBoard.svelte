@@ -106,11 +106,11 @@
           <tr>
             <td>
               <button type="button" class="name" onclick={() => ui.openDevice(r.id, "software")}>
-                <span class="font-medium">{deviceName(r.record)}</span><span class="muted model">{displayModel(r.record)}</span>
+                <span class="truncate font-medium" title={deviceName(r.record)}>{deviceName(r.record)}</span><span class="muted model truncate" title={displayModel(r.record)}>{displayModel(r.record)}</span>
               </button>
             </td>
-            <td class="mono">{r.version ?? "—"}</td>
-            <td class="mono" class:behind={r.state === "behind"}>{r.target ?? "—"}</td>
+            <td class="mono" title={r.version ?? undefined}>{r.version ?? "—"}</td>
+            <td class="mono" class:behind={r.state === "behind"} title={r.target ?? undefined}>{r.target ?? "—"}</td>
             <td><span class="chip {r.state}">{LABEL[r.state]}</span></td>
             <td class="muted last">
               {#if r.outcome}{r.outcome.state.status.status.replaceAll("-", " ")}
@@ -280,10 +280,17 @@
   td:first-child {
     padding-left: 14px;
   }
+  /* The name column takes what's left, and cuts its name rather than
+     widening the table past its card. */
+  td:first-child {
+    width: 100%;
+    max-width: 0;
+  }
   .name {
     display: flex;
     align-items: baseline;
     gap: 8px;
+    max-width: 100%;
     color: var(--fg);
   }
   .name:hover {

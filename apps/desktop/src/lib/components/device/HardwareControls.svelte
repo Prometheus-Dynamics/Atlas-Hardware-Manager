@@ -7,7 +7,6 @@
   // Otherwise the values only.
   import { api, errorText, type DeviceKey, type HardwareCommand, type HardwareDevice } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
-  import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
   import { deviceStatus } from "#lib/stores/status.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
   import { formatValue, label } from "./hardware.ts";
@@ -150,9 +149,8 @@
       <div class="flex flex-wrap gap-2">
         <Button size="sm" variant="ghost" icon="refresh" action={restore}>Restore</Button>
         {#if device.class === "power-switch" && device.controls.some((c) => c.name === "power.reset")}
-          <ConfirmButton size="sm" variant="ghost" icon="refresh" prompt="Cut {device.id} for a second?" confirmLabel="Restart port" action={restartPort}>
-            Restart port
-          </ConfirmButton>
+          <!-- A second without power, then back: routine, so no confirm. -->
+          <Button size="sm" variant="ghost" icon="refresh" title="Cut {device.id} for a second" action={restartPort}>Restart port</Button>
         {/if}
         {#if device.class === "fan"}
           <Button size="sm" variant="ghost" icon="propeller" action={release}>Hand back to the board</Button>

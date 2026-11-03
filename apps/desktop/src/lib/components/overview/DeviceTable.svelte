@@ -59,7 +59,7 @@
             <a href={devicePath(row.id)} class="name">
               <span class="dot" style:background={dot(row.record)}></span>
               <span class="truncate font-medium" title={deviceName(row.record)}>{deviceName(row.record)}</span>
-              <span class="muted model truncate">{displayModel(row.record)}</span>
+              <span class="muted model truncate" title={displayModel(row.record)}>{displayModel(row.record)}</span>
             </a>
           </td>
           <td class="nowrap">

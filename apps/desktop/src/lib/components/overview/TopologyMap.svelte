@@ -24,10 +24,11 @@
   // Nodes widen on big screens so names and readings have room.
   const map = $derived(layoutMap(records));
   // Room between columns for the wire and its link label ("USB boot"),
-  // less when the box is narrow. Nodes keep room for a name (112 px); a
-  // tree that still doesn't fit scrolls sideways rather than cutting names.
-  const GAP = $derived(Math.max(40, Math.min(72, (width - PAD * 2) / (map.depth + 1) / 3)));
-  const NODE_W = $derived(Math.floor(Math.min(220, Math.max(112, (width - PAD * 2 - map.depth * GAP) / (map.depth + 1)))));
+  // less when the box is narrow. The tree always fits the box's width:
+  // nodes narrow (names cut, the whole name on hover) rather than the map
+  // scrolling sideways.
+  const GAP = $derived(Math.max(20, Math.min(72, (width - PAD * 2) / (map.depth + 1) / 3)));
+  const NODE_W = $derived(Math.floor(Math.min(220, Math.max(56, (width - PAD * 2 - map.depth * GAP) / (map.depth + 1)))));
   const ROW_H = $derived(Math.floor(Math.min(92, Math.max(28, (boxHeight - PAD * 2) / Math.max(1, map.rows)))));
   const NODE_H = $derived(Math.min(54, Math.max(24, ROW_H - 8)));
   // Short rows show the name only.
@@ -80,7 +81,7 @@
 </script>
 
 <div class="box" bind:clientWidth={width} bind:clientHeight={boxHeight}>
-  <div class="relative my-auto shrink-0" style="height: {height}px; min-width: {map.depth * colW + NODE_W + PAD * 2}px">
+  <div class="relative my-auto shrink-0" style="height: {height}px">
     <svg class="absolute inset-0 h-full w-full" aria-hidden="true">
       {#each map.edges as edge (`${edge.from}>${edge.to}`)}
         {@const from = byId.get(edge.from)}
@@ -142,7 +143,8 @@
     inset: 6px 10px 10px;
     display: flex;
     flex-direction: column;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
   .wire {
     fill: none;

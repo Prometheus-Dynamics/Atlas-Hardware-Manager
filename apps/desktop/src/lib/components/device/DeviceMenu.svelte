@@ -20,13 +20,13 @@
   /** Offline for a while, or for good: asked first. */
   const GUARDED: Record<string, string> = {
     reboot: "It goes offline for about 40 s, then comes back by itself.",
-    restart: "It goes offline for a moment, then comes back by itself.",
     "power-off": "It stays off until its power is cycled.",
     "usb-boot": "It waits in USB boot until it's flashed or power-cycled.",
     "update.rollback": "It restarts into its previous version.",
   };
   const DONE: Record<string, string> = {
     reboot: "is restarting.",
+    restart: "is restarting.",
     "power-off": "is shutting down. It stays off until its power is cycled.",
     "usb-boot": "is restarting into USB boot.",
     "set-clock": "has this computer's time.",

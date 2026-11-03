@@ -70,7 +70,12 @@
         };
       }),
   );
-  const rows = $derived(boots.slice(-ROWS).reverse());
+  // As many of the newest as fit the column, up to ROWS: a short window
+  // shows fewer rather than pushing the Overview past it.
+  const ROW_PX = 25;
+  let listHeight = $state(0);
+  const fit = $derived(listHeight > 0 ? Math.max(1, Math.min(ROWS, Math.floor(listHeight / ROW_PX))) : ROWS);
+  const rows = $derived(boots.slice(-fit).reverse());
   const cuts = $derived(boots.filter((b) => b.kind === "cut").length);
   // A crash loop: the board restarting itself again and again.
   const crashes = $derived(boots.slice(-10).filter((b) => b.kind === "crash" || b.kind === "panic").length);
@@ -83,7 +88,7 @@
 </script>
 
 {#if update || boots.length > 0}
-  <section class="panel" aria-label="Last boots">
+  <section class="panel boots-card" aria-label="Last boots">
     <div class="panel-head">
       <h2 class="panel-title">Last boots</h2>
       {#if boots.length > 0}
@@ -120,7 +125,7 @@
       <div class="strip" role="img" aria-label="Last {boots.length} boots: {cuts} power cuts, {crashes} crashes">
         {#each boots as b, i (i)}<span class="boot {b.kind}" title={b.title}></span>{/each}
       </div>
-      <ol class="rows" aria-label="Newest boots">
+      <ol class="rows" aria-label="Newest boots" bind:clientHeight={listHeight}>
         {#each rows as b, i (i)}
           <li title={b.title}>
             <span class="num mono">{b.count ? `#${b.count}` : "—"}</span>
@@ -183,9 +188,19 @@
     height: 12px;
     border-radius: 1px;
   }
+  .boots-card {
+    display: flex;
+    flex-direction: column;
+    flex: 0 1 auto;
+    min-height: 0;
+  }
   .rows {
     display: flex;
     flex-direction: column;
+    /* Room for ROWS rows when the column has it, down to one. */
+    flex: 1 1 calc(5 * 25px);
+    min-height: 25px;
+    overflow: hidden;
     margin: 0;
     padding: 0;
     list-style: none;

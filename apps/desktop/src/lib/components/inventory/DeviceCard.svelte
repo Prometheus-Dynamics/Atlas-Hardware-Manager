@@ -87,7 +87,7 @@
     <IconTile icon={deviceIcon(record)} size={32} tone={waiting ? "accent" : online ? "neutral" : "muted"} />
     <div class="min-w-0 flex-1">
       <h3 class="truncate text-[13.5px] font-semibold leading-tight text-fg" title={name}>{name}</h3>
-      <p class="truncate text-[11.5px] text-fg-muted" title={twin ? `The same board as ${deviceName(twin)}` : undefined}>
+      <p class="truncate text-[11.5px] text-fg-muted" title={twin ? `The same board as ${deviceName(twin)}` : deviceSubline(record)}>
         {#if twin}<Icon name="history" size={11} class="mr-0.5 inline align-[-1px]" />{deviceName(twin)} · USB boot{:else}{deviceSubline(record)}{/if}
       </p>
     </div>

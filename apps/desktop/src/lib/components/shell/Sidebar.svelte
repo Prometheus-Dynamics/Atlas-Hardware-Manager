@@ -151,7 +151,7 @@
                         aria-current={page.url.pathname === "/device" && ui.viewing === id ? "page" : undefined}
                       >
                         <span class="dot" style:background={g.dot}></span>
-                        <span class="flex-1 truncate">{deviceName(d)}</span>
+                        <span class="flex-1 truncate" title={deviceName(d)}>{deviceName(d)}</span>
                         <span class="note" style:color={g.tone}>{g.note}</span>
                       </a>
                     </li>
