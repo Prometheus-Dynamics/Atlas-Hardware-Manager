@@ -1,9 +1,10 @@
 //! A board behind a robot controller, through the controller's HeliOS
 //! gateway: `/v1/peers/<node>/<path>` passes the board's own HeliOS API
 //! (`/v1/<path>`), so the board gets Restart (`system/reboot`) and its slots
-//! (`update/status`, `update/slots/switch`, `update/uploads` +
+//! (`update/status`, `update/slots/switch` and the writer's
+//! `update/slots/<set-default|remove|pin|unpin>`, `update/uploads` +
 //! `update/apply`) without SSH. Orion, when its tunnel reaches the board,
-//! offers more (the default, remove, pin) and goes first.
+//! goes first.
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -23,6 +24,9 @@ use crate::ssh_actions::REBOOT_ACTION;
 /// waiting.
 const STAGE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const STAGE_POLL: Duration = Duration::from_secs(2);
+/// How long a board may take to restart into a new slot and answer again.
+const BOOT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const BOOT_POLL: Duration = Duration::from_secs(3);
 
 /// The board's HeliOS API through the controller.
 #[derive(Clone)]
@@ -120,6 +124,16 @@ fn slot_set(status: &Value) -> Result<Option<SlotSet>, DriverError> {
     }))
 }
 
+/// The installed slots' ids in HeliOS's update status.
+fn slot_ids(status: &Value) -> Vec<String> {
+    status["slots"]["installed"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|slot| slot["id"].as_str().map(str::to_string))
+        .collect()
+}
+
 /// Where HeliOS's task `update_id` (staging an upload) stands: `None`
 /// while it runs.
 fn staged(status: &Value, update_id: &str) -> Option<Result<(), String>> {
@@ -145,16 +159,27 @@ impl SlotsCapability for GatewaySlots {
     }
 
     async fn command(&self, _device: &Identity, command: &SlotCommand) -> Result<(), DriverError> {
-        match command {
-            SlotCommand::BootOnce { id } => self
-                .0
-                .post("update/slots/switch", json!({ "slot": id }))
-                .await
-                .map(|_| ()),
-            _ => Err(DriverError::Unsupported(format!(
-                "through the robot controller Atlas can only boot a slot on trial, not {}",
-                command.describe()
-            ))),
+        // Booting another slot is HeliOS's switch (on trial); the rest are
+        // the writer's own commands (`update/slots/<command>`).
+        let (path, id) = match command {
+            SlotCommand::BootOnce { id } => ("update/slots/switch".to_string(), id),
+            other => (
+                format!("update/slots/{}", other.writer_command()),
+                &other.id().to_string(),
+            ),
+        };
+        match self.0.post(&path, json!({ "slot": id })).await {
+            // A HeliOS without the route (the controller's own 404 says
+            // the board isn't its peer).
+            Err(DriverError::Other(words))
+                if words.contains("answered 404") && !words.contains("not a peer") =>
+            {
+                Err(DriverError::Unsupported(format!(
+                    "this board's HeliOS can't {} through the robot controller yet",
+                    command.describe()
+                )))
+            }
+            result => result.map(|_| ()),
         }
     }
 
@@ -176,8 +201,9 @@ impl SlotsCapability for GatewaySlots {
                 sink.step_progress(UpdateStep::Transfer, done);
             })
             .await?;
+        let before = slot_ids(&self.0.get("update/status").await?);
         progress.step_started(UpdateStep::Apply);
-        let answer = self
+        let answer = match self
             .0
             .post(
                 "update/apply",
@@ -187,7 +213,16 @@ impl SlotsCapability for GatewaySlots {
                     "reboot": install.boot,
                 }),
             )
-            .await?;
+            .await
+        {
+            Ok(answer) => answer,
+            // HeliOS answers once the slot is staged, and with `reboot` the
+            // restart can end the request first.
+            Err(DriverError::Unreachable(_)) if install.boot => {
+                return self.restarted_into_new_slot(&before, progress).await;
+            }
+            Err(error) => return Err(error),
+        };
         if let Some(message) = answer["message"].as_str() {
             progress.log(message);
         }
@@ -197,7 +232,10 @@ impl SlotsCapability for GatewaySlots {
             tokio::time::sleep(STAGE_POLL).await;
             match self.0.get("update/status").await {
                 Ok(status) => match staged(&status, &update_id) {
-                    Some(Ok(())) => break,
+                    Some(Ok(())) if install.boot => {
+                        return self.restarted_into_new_slot(&before, progress).await;
+                    }
+                    Some(Ok(())) => return Ok(()),
                     Some(Err(reason)) => {
                         return Err(DriverError::Other(atlas_driver::refusal(&reason)));
                     }
@@ -208,7 +246,9 @@ impl SlotsCapability for GatewaySlots {
                     }
                 },
                 // Restarting into the new slot: the board is gone a while.
-                Err(DriverError::Unreachable(_)) if install.boot => break,
+                Err(_) if install.boot => {
+                    return self.restarted_into_new_slot(&before, progress).await;
+                }
                 Err(error) => return Err(error),
             }
             if started.elapsed() >= STAGE_TIMEOUT {
@@ -218,10 +258,40 @@ impl SlotsCapability for GatewaySlots {
                 )));
             }
         }
-        if install.boot {
-            progress.step_started(UpdateStep::Reboot);
+    }
+}
+
+impl GatewaySlots {
+    /// Waits for the board to go and come back with a slot it didn't have
+    /// (`before`): the image staged, and the board restarted into it.
+    async fn restarted_into_new_slot(
+        &self,
+        before: &[String],
+        progress: &ProgressSink,
+    ) -> Result<(), DriverError> {
+        progress.step_started(UpdateStep::Reboot);
+        let started = Instant::now();
+        let mut went = false;
+        while started.elapsed() < BOOT_TIMEOUT {
+            tokio::time::sleep(BOOT_POLL).await;
+            // While it restarts the controller doesn't route to it (404).
+            let Ok(status) = self.0.get("update/status").await else {
+                went = true;
+                continue;
+            };
+            if slot_ids(&status).iter().any(|id| !before.contains(id)) {
+                return Ok(());
+            }
+            if went {
+                return Err(DriverError::Other(
+                    "the board restarted without the new slot; its writer refused the image".into(),
+                ));
+            }
         }
-        Ok(())
+        Err(DriverError::Unreachable(format!(
+            "the board didn't answer through the controller {} min after its restart",
+            BOOT_TIMEOUT.as_secs() / 60
+        )))
     }
 }
 

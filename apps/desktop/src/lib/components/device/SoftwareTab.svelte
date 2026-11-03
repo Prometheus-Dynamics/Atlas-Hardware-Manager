@@ -52,6 +52,8 @@
   let slotsReload = $state(0);
   let bootAfter = $state(true);
   let pinIt = $state(false);
+  // Through a robot controller's gateway a slot can't be pinned as it installs.
+  const pinnable = $derived(!record.identity.address.includes("/v1/peers/"));
   let installing = $state<number | null>(null);
   const entries = $derived(imagesFor(record, releases.entries));
   const choice = $derived(draft.choices[family]);
@@ -283,7 +285,7 @@
       await api.installSlot(
         record.key,
         bundlePath,
-        pinIt,
+        pinIt && pinnable,
         bootAfter,
         (u) => {
           if (u.type === "step-progress") installing = u.fraction;
@@ -413,9 +415,11 @@
           <span class="flex items-center gap-2 text-[12.5px] text-fg">
             <Checkbox checked={bootAfter} label="Boot it once when it's in" onclick={() => (bootAfter = !bootAfter)} />Boot it once when it's in
           </span>
-          <span class="flex items-center gap-2 text-[12.5px] text-fg">
-            <Checkbox checked={pinIt} label="Pin it" onclick={() => (pinIt = !pinIt)} />Pin it <span class="text-fg-faint">(kept from removal)</span>
-          </span>
+          {#if pinnable}
+            <span class="flex items-center gap-2 text-[12.5px] text-fg">
+              <Checkbox checked={pinIt} label="Pin it" onclick={() => (pinIt = !pinIt)} />Pin it <span class="text-fg-faint">(kept from removal)</span>
+            </span>
+          {/if}
         </div>
       {/if}
       {#if method === "fresh"}
