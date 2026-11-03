@@ -423,7 +423,8 @@ id = "slots-boot"
 kind = "vfat"
 source_tree = "slots-fat"
 output = "${assembly.work}/slots/boot.vfat"
-size = "1G"
+size = "auto"
+free = "64M"
 
 [[image.assembly.filesystems]]
 id = "slots-data"
@@ -431,7 +432,7 @@ kind = "ext4"
 source_tree = "slots-data"
 output = "${assembly.work}/slots/data.ext4"
 size = "auto"
-free = "256M"
+free = "8M"
 label = "data"
 
 # The first-flash disk is built in the work dir: only its xz image (below) is
@@ -454,7 +455,6 @@ name = "slots-boot"
 type_alias = "fat32-lba"
 bootable = true
 image = "${assembly.work}/slots/boot.vfat"
-size = "1G"
 
 [[image.assembly.disks.partitions]]
 name = "data"

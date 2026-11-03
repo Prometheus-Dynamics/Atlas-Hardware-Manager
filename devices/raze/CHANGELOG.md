@@ -7,6 +7,13 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **Slots image sized to content (2026-11-03).** The first-flash boot FAT is
+  `size = "auto"` with 64 MiB free (FAT16, about 80 MiB) instead of a fixed
+  1 GiB, and the data partition carries 8 MiB free instead of 256 MiB; first
+  boot grows /data to the eMMC as before. The slots raw image drops from about
+  1.3 GiB to 144 MiB (HeliOS) and 1,419 to 224 MiB (PV). `slots stage` and
+  `slots check` now refuse a slot whose boot files don't fit the FAT's free
+  space, before anything is written. Not yet booted on a real CM5 bootloader.
 - **Lemnos 50533a8 (2026-11-03): the system looks are a look file.** lemnosd
   builds in only the `status.*` looks now; the update, boot, recovery and
   locate looks (`system.*`) ship as `/etc/lemnos/looks.d/system.toml`, staged

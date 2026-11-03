@@ -2,7 +2,7 @@
 # Off-device test of the slots writer (gaia/assets/rootfs/usr/lib/board/slots)
 # and `update` handing over to it: install a bundle, refusals that change
 # nothing, boot once, confirm, a failed trial, set-default, rollback, remove,
-# pin, the device lock and the space reserve. slot-init's JSON commands are
+# pin, the device lock, the space reserve and the boot FAT's free space. slot-init's JSON commands are
 # the real slot-init (built with cargo, or SLOT_INIT_BIN), python3 stubs
 # without one; its device commands are stubbed. Run: sh devices/raze/tests/slots.sh
 set -eu
@@ -179,6 +179,8 @@ grep -q '"refused":false,"error":"rootfs.erofs isn' "$T/out" || fail "check: bro
 [ "$(rc check "$T/pv-b-dot.slot.tar")" = 0 ] || fail "check: a tar with ./ names: $(cat "$T/out" "$T/err")"
 [ "$(SLOTS_RESERVE_KB=999999999 rc check "$T/pv-b.slot.tar")" = 3 ] || fail "check: no room"
 grep -q 'no room for this slot' "$T/out" || fail "check: no room: $(cat "$T/out")"
+[ "$(SLOTS_BOOT_FREE_KB=1024 rc check "$T/pv-b.slot.tar")" = 3 ] || fail "check: a full boot FAT"
+grep -q 'no room on the boot partition' "$T/out" || fail "check: the boot FAT: $(cat "$T/out")"
 snap > "$T/after"
 cmp -s "$T/before" "$T/after" || fail "failed checks changed files: $(diff "$T/before" "$T/after")"
 
@@ -340,6 +342,10 @@ tar -cf "$T/pv-c.slot.tar" -C "$T/build/pv-c" slot.json boot rootfs.erofs
 [ "$(rc stage "$T/pv-c.slot.tar")" = 1 ] || fail "a tampered image was installed"
 [ ! -e "$T/data/slots/pv-c.erofs" ] || fail "tampered image left on /data"
 [ "$(SLOTS_RESERVE_KB=999999999 rc stage "$T/pv-b.slot.tar")" = 3 ] || fail "no room wasn't refused"
+bundle pv-f 2026.4.3
+[ "$(SLOTS_BOOT_FREE_KB=1024 rc stage "$T/pv-f.slot.tar")" = 3 ] || fail "a full boot FAT wasn't refused"
+grep -q 'no room on the boot partition' "$T/err" || fail "the boot FAT's reason: $(cat "$T/err")"
+[ ! -e "$T/data/slots/pv-f.erofs" ] && [ ! -e "$T/boot/slots/pv-f" ] && [ ! -e "$T/boot/slots/.pv-f.new" ] || fail "a full boot FAT left pv-f behind"
 mkdir "$T/device-lock"
 [ "$(rc stage "$T/pv-b.slot.tar")" = 3 ] || fail "the device lock didn't hold"
 rmdir "$T/device-lock"
