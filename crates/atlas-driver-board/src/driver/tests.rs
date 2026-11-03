@@ -507,13 +507,13 @@ fn a_board_that_misses_one_fetch_keeps_what_it_reported() {
             ("serial".to_string(), serial.to_string()),
         ]))
     };
-    let kept = unanswered(Some(full.clone()), txt("1000000052540077")).unwrap();
+    let kept = BoardIdentity::unanswered(Some(full.clone()), txt("1000000052540077")).unwrap();
     assert_eq!(kept.update_methods, full.update_methods);
     // Another board at the address now: its own record.
-    let other = unanswered(Some(full.clone()), txt("2000")).unwrap();
+    let other = BoardIdentity::unanswered(Some(full.clone()), txt("2000")).unwrap();
     assert_eq!(other.serial, "2000");
     assert!(other.update_methods.is_empty());
     // No advertisement: unreachable, whatever it said before.
-    assert!(unanswered(Some(full), None).is_none());
-    assert!(unanswered(None, txt("3")).is_some_and(|txt| txt.serial == "3"));
+    assert!(BoardIdentity::unanswered(Some(full), None).is_none());
+    assert!(BoardIdentity::unanswered(None, txt("3")).is_some_and(|txt| txt.serial == "3"));
 }

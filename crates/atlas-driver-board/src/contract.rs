@@ -183,6 +183,21 @@ impl BoardIdentity {
         })
     }
 
+    /// The identity of a board whose endpoint didn't answer this time (a
+    /// busy board, past the driver's fetch timeout): none unless it still
+    /// advertises (`txt`, from its mDNS record), and then what the same
+    /// address fully reported earlier in this run when it is the same board.
+    /// The TXT record alone has no update methods or endpoints, so it would
+    /// leave the board with nothing but its info until the next answer.
+    pub fn unanswered(earlier: Option<Self>, txt: Option<Self>) -> Option<Self> {
+        let txt = txt?;
+        Some(
+            earlier
+                .filter(|earlier| earlier.serial == txt.serial)
+                .unwrap_or(txt),
+        )
+    }
+
     /// The Atlas identity: keyed by model and serial, with the OS and the
     /// rest as attributes.
     pub fn to_identity(
