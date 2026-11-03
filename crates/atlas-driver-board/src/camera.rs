@@ -4,7 +4,8 @@
 //! leaving it to an `<img>` that freezes on a broken stream and never says
 //! so.
 //!
-//! - A stream with no frame for [`STALL`] counts as stalled: its connection
+//! - A stream with no frame for [`STALL`] (its first for [`FIRST_FRAME`],
+//!   while the camera starts) counts as stalled: its connection
 //!   is dropped (always before the next one opens) and opened again.
 //! - Reconnecting backs off from 500 ms to [`MAX_BACKOFF`], and starts again
 //!   from the bottom once frames flow, so it recovers by itself when
@@ -19,6 +20,9 @@ use serde::Serialize;
 
 /// No frame for this long: the stream is stalled.
 pub const STALL: Duration = Duration::from_secs(3);
+/// The first frame may take this long: HeliOS starts a camera's capture
+/// when its preview is first asked for.
+pub const FIRST_FRAME: Duration = Duration::from_secs(12);
 /// The longest wait between attempts.
 pub const MAX_BACKOFF: Duration = Duration::from_secs(5);
 const FIRST_BACKOFF: Duration = Duration::from_millis(500);
@@ -112,9 +116,10 @@ async fn attempt(
     let mut frames = Frames::default();
     let mut seen = false;
     loop {
-        let chunk = match tokio::time::timeout(STALL, body.next()).await {
+        let wait = if seen { STALL } else { FIRST_FRAME };
+        let chunk = match tokio::time::timeout(wait, body.next()).await {
             Err(_) => {
-                let why = format!("no frame for {} s", STALL.as_secs());
+                let why = format!("no frame for {} s", wait.as_secs());
                 return if seen {
                     Ended::AfterFrames(why)
                 } else {
