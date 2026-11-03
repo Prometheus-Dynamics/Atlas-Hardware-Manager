@@ -70,8 +70,21 @@ fn severity_follows_the_kind() {
     };
     assert_eq!(event("update.trial-failed", &[]).severity(), "error");
     assert_eq!(event("update.confirmed", &[]).severity(), "success");
+    // A power cut on a robot is normal; a warm restart without a shutdown is a crash.
+    assert_eq!(
+        event(
+            "boot",
+            &[("previous_clean", "false"), ("reset", "power-on")]
+        )
+        .severity(),
+        "info"
+    );
     assert_eq!(
         event("boot", &[("previous_clean", "false")]).severity(),
+        "info"
+    );
+    assert_eq!(
+        event("boot", &[("previous_clean", "false"), ("reset", "reset")]).severity(),
         "warning"
     );
     assert_eq!(

@@ -5,6 +5,7 @@
   import type { DeviceStatus, DriftItem } from "#lib/api/client.ts";
   import Icon from "#lib/components/common/Icon.svelte";
   import { timeAgo } from "#lib/format.ts";
+  import { bootEnd, type BootEnd } from "#lib/present.ts";
   import { clock } from "#lib/stores/clock.svelte.ts";
   import type { IconName } from "#lib/ui/icons.ts";
   import Disclosure from "./Disclosure.svelte";
@@ -40,6 +41,13 @@
     config: "config.txt",
     sshd_config: "SSH server config",
     update_env: "update settings",
+  };
+  const END: Record<BootEnd, string | null> = { clean: "clean", power: "after a power cut", crash: "after a crash", unknown: null };
+  const END_TITLE: Record<BootEnd, string | undefined> = {
+    clean: undefined,
+    power: "Power was cut without a shutdown, as at the end of every match: normal on a robot.",
+    crash: "The board restarted without shutting down and without losing power: a crash, a kernel panic or the watchdog. The Last boots card warns when it keeps happening.",
+    unknown: undefined,
   };
   const CHANGES: Record<string, string> = { changed: "changed", added: "added", missing: "missing", present: "override" };
 
@@ -83,19 +91,21 @@
     }
     const boot = status.boot;
     if (boot) {
-      const unclean = boot.previous_clean === false;
+      // A power cut is a robot's normal day; a crash is noted, not flagged
+      // (a crash loop is, on the Last boots card).
+      const end = bootEnd(boot.previous_clean, boot.reset);
       list.push({
         id: "boot",
         icon: "refresh",
         label: "Last boot",
-        value: [boot.count != null ? `#${boot.count}` : null, unclean ? "after a crash or power cut" : boot.previous_clean ? "clean" : null]
+        value: [boot.count != null ? `#${boot.count}` : null, END[end]]
           .filter(Boolean)
           .join(" · ") || "—",
         detail: [boot.slot ? `slot ${boot.slot}` : null, boot.uptime_s != null ? `up ${uptime(boot.uptime_s)}` : null, boot.kernel]
           .filter(Boolean)
           .join(" · ") || null,
-        look: unclean ? "warn" : "plain",
-        title: unclean ? "The boot before this one didn't shut down cleanly (power cut, watchdog reset or crash)." : undefined,
+        look: "plain",
+        title: END_TITLE[end],
       });
     }
     if (status.clock_offset_s != null) {
