@@ -71,7 +71,7 @@ origin = "static-asset"
 # Lemnos's example set, unchanged. lemnosd reads every file in /etc/lemnos/looks.d.
 [[stage.files]]
 id = "lemnos-system-looks"
-src = "${source.lemnos.path}/examples/looks/looks.d/system.toml"
+src = "${source.lemnos}/examples/looks/looks.d/system.toml"
 dest = "/etc/lemnos/looks.d/system.toml"
 mode = 420
 origin = "static-asset"
