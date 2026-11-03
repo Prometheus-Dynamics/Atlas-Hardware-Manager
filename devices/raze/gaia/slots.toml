@@ -444,6 +444,10 @@ signature = "0x5056525a"
 first_lba = 2048
 alignment_lba = 2048
 truncate = "last-data"
+# The Raze's eMMC: 30,535,680 sectors (14,910 MiB, read on a board), the "16 GB"
+# budget. The full layout must fit it, or the build fails naming the device it
+# needs (Gaia 66d5f79).
+device_size = "14910M"
 
 [[image.assembly.disks.partitions]]
 name = "slots-boot"
