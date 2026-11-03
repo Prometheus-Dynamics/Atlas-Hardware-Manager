@@ -7,6 +7,11 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **Shadowed in-tree modules dropped (2026-11-03).** `kernel.toml` sets
+  `drop_shadowed_modules = true`: an OS that ships out-of-tree modules in
+  updates/ (Styx's ov9282, pisp-be, rp1-cfe-downstream) no longer also ships the
+  in-tree copies modprobe never loads (153 KiB). Variants without the Styx
+  packages keep the in-tree modules. Needs Gaia f90bed4 or later.
 - **r8152 firmware (2026-11-03).** The kernel trim keeps r8152 for USB Ethernet
   dongles, so the package now ships its 7 firmware files from linux-firmware
   20260810 under /usr/lib/firmware/rtl_nic (`kernel.toml`, an archive source
