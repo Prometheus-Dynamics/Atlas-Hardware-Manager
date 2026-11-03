@@ -234,6 +234,7 @@ name = "atlas-driver"
 version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
+ "futures",
  "reqwest",
  "serde",
  "serde_json",
