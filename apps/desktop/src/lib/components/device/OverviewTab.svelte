@@ -152,13 +152,16 @@
     {/if}
   </div>
 {:else}
-  <div class="overview two">
+  <div class="overview two" class:camera={streams.length > 0 && !telemetry}>
+    <!-- Without charts, Network sits under the camera: the left column
+         isn't a preview over an empty space beside a full right one. -->
     <div class="col">
       <Guard name="Cameras">{#if streams.length}<CameraStreams {streams} device={deviceName(record)} single />{/if}</Guard>
       <Guard name="Charts">{#if telemetry}<DeviceCharts {record} />{/if}</Guard>
+      <Guard name="Network">{#if online && !telemetry}<NetworkCard {record} />{/if}</Guard>
     </div>
     <div class="col">
-      <Guard name="Network">{#if online}<NetworkCard {record} />{/if}</Guard>
+      <Guard name="Network">{#if online && telemetry}<NetworkCard {record} />{/if}</Guard>
       <Guard name="Self-test"><SelfTestCard {record} /></Guard>
       <Guard name="Events"><div class="events"><EventsCard {record} onmore={onhistory} /></div></Guard>
     </div>
@@ -205,6 +208,11 @@
       min-height: 520px;
       grid-template-rows: minmax(0, 1fr);
       grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.95fr);
+    }
+    /* A camera beside its events: the preview takes the wider column, so it
+       grows into the height rather than leaving it empty under it. */
+    .overview.two.camera {
+      grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
     }
     /* Nothing for the third column (no hardware reported, ROBOT mode):
        two wider columns rather than an empty third. */

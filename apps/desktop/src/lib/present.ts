@@ -200,14 +200,42 @@ export function cameraStreams(record: DeviceRecord): CameraStream[] {
   return attrs.camera_stream ? [{ name: "camera", url: attrs.camera_stream }] : [];
 }
 
+/** Webcams known by their USB id alone (HeliOS names a camera "046d:0825" when it has no card name). */
+const USB_CAMERAS: Record<string, string> = {
+  "046d-0825": "Logitech C270",
+  "046d-085c": "Logitech C922",
+  "046d-082d": "Logitech C920",
+  "041e-40a3": "Creative Live! Cam Sync V3",
+};
+
 /**
- * A view's name for people: "front-raw" as "Front · raw", and a camera's
- * own name ("Front-Camera", as a HeliOS board lists "Front Camera") as
- * "Front Camera".
+ * A view's name for people, from its key's name (letters, digits, `-`):
+ * "front-raw" as "Front · raw", "Front-Camera" as "Front Camera"; a
+ * sensor's driver name ("ov9782 (kernel driver i2c 10-0060)") as
+ * "OV9782 (built-in)"; a bare USB id as the webcam's name; and a V4L2 card
+ * name cut at 31 characters ("Creative Live! Cam Sync V3: Cre") without
+ * its cut-off repeat.
  */
 export function streamLabel(name: string): string {
   const raw = /[-_]raw$/i.test(name);
-  const base = (raw ? name.slice(0, -4) : name).replace(/[-_]+/g, " ").trim();
+  let base = (raw ? name.slice(0, -4) : name).replace(/-+$/, "");
+  const sensor = /^([a-z]{2,3}\d{3,5}[a-z]?)--kernel-driver/i.exec(base);
+  if (sensor) return `${sensor[1].toUpperCase()} (built-in)${raw ? " · raw" : ""}`;
+  // HeliOS's id, used when two cameras share a name: the device node.
+  const id = /^capture_device_.+_(video\d+)$/.exec(base);
+  if (id) return `Camera on /dev/${id[1]}`;
+  if (/^[0-9a-f]{4}-[0-9a-f]{4}$/i.test(base)) base = USB_CAMERAS[base.toLowerCase()] ?? `USB camera ${base.replace("-", ":")}`;
+  // "Name: Name" cut short: drop the tail that only starts the name again.
+  const parts = base.split("--");
+  for (let i = parts.length - 1; i > 0; i--) {
+    const head = parts.slice(0, i).join("--").toLowerCase();
+    const tail = parts.slice(i).join("--").toLowerCase();
+    if (tail && head.startsWith(tail)) {
+      base = parts.slice(0, i).join("--");
+      break;
+    }
+  }
+  base = base.replace(/[-_]+/g, " ").trim();
   const nice = base.charAt(0).toUpperCase() + base.slice(1);
   return raw ? `${nice} · raw` : nice;
 }
