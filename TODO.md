@@ -209,6 +209,21 @@ computer's USB means its regular USB port (the one used for flashing) here.
     change.
   - **Blocked by:** nothing.
 
+- [ ] **UI quality, round 2 (queued by HeliOS 2026-11-02).**
+  - **What:**
+    - Self-logging: failed or stuck loads go to atlas.log, error ids show in toasts.
+    - Raze #2 shown through the SystemCore with no PC route, or as "unreachable: <reason>".
+    - Health: an unclean shutdown on its own is not a warning.
+    - Webcam views through the gateway and the agent.
+    - Every overflow fixed: the CI cut-off check reports without failing,
+      and the Overview at 1280x800 is 50 px too tall.
+    - No confirmation for reversible actions.
+    - The Fable per-screen pass.
+  - **Why:** the user's verdict on dev.475 to dev.479.
+  - **Done when:** each item is checked on the test bed, and the cut-off
+    check blocks again.
+  - **Blocked by:** nothing.
+
 ## Open: the user's call
 
 - [ ] **How Atlas writes to a Luckfox.**
@@ -485,6 +500,13 @@ again 2026-11-01); the board proofs are the open items above.
       device package has `selftest`, and Atlas runs it after a flash or
       update, keeps the result per board serial and shows it on a Self-test
       card with "Run again".
+- [x] UI quality, round 1 (2026-11-02): the "500 Internal Error" was a
+      duplicate key in the boots card (38b7c8b); a crashing card or page now
+      says so, has Retry and writes UI-ERROR to atlas.log. Lists sort by
+      name (b09b634). Nothing moves except what's under a click (cc5d81a,
+      462 moving elements to 0). Per-push UI gate in CI, about 1.4 min
+      (6899d89): every control clicked, layout shift, screenshots, list
+      order. Live check: scripts/ui-live-check.ts.
 
 ### Updates and Orion
 - [x] atlas-driver-orion: Orion adds readings, locate/reboot and updates to

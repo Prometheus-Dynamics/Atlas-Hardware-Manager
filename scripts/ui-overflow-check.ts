@@ -33,7 +33,9 @@ function chrome(): string {
 }
 
 const profile = mkdtempSync(join(tmpdir(), "atlas-overflow-"));
-const proc = spawn(chrome(), ["--headless", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "about:blank"], {
+// Chrome refuses to run as root with its sandbox on, and CI's container is root.
+const sandbox = process.getuid?.() === 0 ? ["--no-sandbox", "--disable-dev-shm-usage"] : [];
+const proc = spawn(chrome(), ["--headless", ...sandbox, "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "about:blank"], {
   stdio: "ignore",
 });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
