@@ -490,3 +490,30 @@ fn devices_recognised_by_data_get_no_board_driver() {
         assert!(!families.contains(&theirs.to_string()), "{families:?}");
     }
 }
+
+/// A busy board (QEMU under load) misses the 2 s identity fetch on a later
+/// scan: it keeps what it fully reported, not the TXT record's bare info,
+/// so a command after the scan still finds its slots.
+#[test]
+fn a_board_that_misses_one_fetch_keeps_what_it_reported() {
+    let full: BoardIdentity = serde_json::from_str(
+        r#"{ "contract": 1, "model": "raze", "serial": "1000000052540077",
+             "update_methods": ["image-write", "slots-tryboot"] }"#,
+    )
+    .unwrap();
+    let txt = |serial: &str| {
+        BoardIdentity::from_txt(&std::collections::BTreeMap::from([
+            ("model".to_string(), "raze".to_string()),
+            ("serial".to_string(), serial.to_string()),
+        ]))
+    };
+    let kept = unanswered(Some(full.clone()), txt("1000000052540077")).unwrap();
+    assert_eq!(kept.update_methods, full.update_methods);
+    // Another board at the address now: its own record.
+    let other = unanswered(Some(full.clone()), txt("2000")).unwrap();
+    assert_eq!(other.serial, "2000");
+    assert!(other.update_methods.is_empty());
+    // No advertisement: unreachable, whatever it said before.
+    assert!(unanswered(Some(full), None).is_none());
+    assert!(unanswered(None, txt("3")).is_some_and(|txt| txt.serial == "3"));
+}

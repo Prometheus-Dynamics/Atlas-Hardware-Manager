@@ -166,18 +166,28 @@ impl BoardDriver {
         Err(DriverError::Unreachable(errors.join("; ")))
     }
 
-    /// A candidate's identity, or what its mDNS TXT record says when the
-    /// endpoint doesn't answer.
+    /// A candidate's identity, or, when the endpoint doesn't answer but the
+    /// board still advertises, what it last reported (see [`unanswered`]).
     async fn fetch_candidate(&self, candidate: &Candidate) -> Result<BoardIdentity, DriverError> {
         match self.fetch(&candidate.address).await {
             Ok(reported) => Ok(reported),
-            Err(error) => Browser::shared()
-                .advertisements()
-                .unwrap_or_default()
-                .into_iter()
-                .find(|ad| ad.identity_url() == candidate.address)
-                .and_then(|ad| BoardIdentity::from_txt(&ad.txt))
-                .ok_or_else(|| DriverError::Unreachable(format!("{}: {error}", candidate.address))),
+            Err(error) => {
+                let txt = Browser::shared()
+                    .advertisements()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .find(|ad| ad.identity_url() == candidate.address)
+                    .and_then(|ad| BoardIdentity::from_txt(&ad.txt));
+                let earlier = self
+                    .reported
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner())
+                    .get(&candidate.address)
+                    .map(|(_, reported)| reported.clone());
+                unanswered(earlier, txt).ok_or_else(|| {
+                    DriverError::Unreachable(format!("{}: {error}", candidate.address))
+                })
+            }
         }
     }
 
@@ -261,6 +271,21 @@ impl BoardDriver {
             .await
             .map_err(|error| error.to_string())
     }
+}
+
+/// The identity of a board whose endpoint didn't answer this time (a busy
+/// board, past [`FETCH_TIMEOUT`]): none unless it still advertises (`txt`,
+/// its mDNS record), and then what the same address fully reported earlier
+/// in this run when it is the same board. The TXT record alone has no
+/// update methods or endpoints, so it would leave the board with nothing
+/// but its info until the next answer.
+fn unanswered(earlier: Option<BoardIdentity>, txt: Option<BoardIdentity>) -> Option<BoardIdentity> {
+    let txt = txt?;
+    Some(
+        earlier
+            .filter(|earlier| earlier.serial == txt.serial)
+            .unwrap_or(txt),
+    )
 }
 
 /// A driver for every model in the catalog, updating A/B boards over SSH
