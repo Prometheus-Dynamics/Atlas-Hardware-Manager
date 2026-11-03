@@ -21,6 +21,7 @@ mod registry;
 pub mod robot_net;
 mod selftest;
 mod slots;
+pub mod ssh_mux;
 mod status;
 mod trial;
 mod types;

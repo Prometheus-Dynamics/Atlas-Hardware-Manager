@@ -107,7 +107,13 @@ impl SshUpdate {
             // hashes them by default).
             .args(["-o", "HashKnownHosts=no"])
             .arg("-o")
-            .arg(format!("HostKeyAlias={}", self.alias()));
+            .arg(format!("HostKeyAlias={}", self.alias()))
+            // One connection for an update's every poll.
+            .args(atlas_driver::ssh_mux::options(&format!(
+                "{} {}",
+                self.alias(),
+                self.host
+            )));
         if let Some(known_hosts) = &config.known_hosts {
             if let Some(dir) = known_hosts.parent() {
                 let _ = std::fs::create_dir_all(dir);

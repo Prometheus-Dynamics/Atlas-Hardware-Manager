@@ -71,6 +71,10 @@ impl PackageMethod {
         command
             .args(["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"])
             .args(["-o", "StrictHostKeyChecking=accept-new"])
+            .args(atlas_driver::ssh_mux::options(&format!(
+                "{USER}@{}",
+                self.ip
+            )))
             .arg(format!("{USER}@{}", self.ip))
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
