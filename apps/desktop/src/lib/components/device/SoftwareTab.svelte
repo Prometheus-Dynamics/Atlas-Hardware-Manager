@@ -258,6 +258,9 @@
     return hostBlocked;
   });
 
+  /** No button that can't run: the How cards above say why each way is out. */
+  const cantRun = $derived(!!version && (!method || (method === "fresh" && hostBlocked)));
+
   async function flash(ignoreChecksum = false) {
     const job = await draft.start(ignoreChecksum);
     if (job === null || method === "update") return;
@@ -461,7 +464,7 @@
             <Button variant="ghost" disabled={handing} onclick={() => (confirming = false)}>Cancel</Button>
           </div>
         </div>
-      {:else}
+      {:else if !cantRun}
         <Button
           variant="primary"
           size="lg"

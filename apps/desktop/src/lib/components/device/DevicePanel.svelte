@@ -8,7 +8,6 @@
   import Pill from "#lib/components/common/Pill.svelte";
   import SegmentedControl from "#lib/components/common/SegmentedControl.svelte";
   import { handoffs } from "#lib/components/software/handoff.svelte.ts";
-  import { updateMethods } from "#lib/components/software/software.ts";
   import { deviceName, primaryVersion, timeAgo } from "#lib/format.ts";
   import { uptimeText } from "#lib/metrics.ts";
   import { live } from "#lib/stores/live.svelte.ts";
@@ -31,7 +30,6 @@
   import DeviceMenu from "./DeviceMenu.svelte";
   import SettingsTab from "./SettingsTab.svelte";
   import SoftwareTab from "./SoftwareTab.svelte";
-  import { canUpdate } from "#lib/stores/ui.svelte.ts";
 
   let { key, initialTab }: { key: string; initialTab?: string } = $props();
 
@@ -52,14 +50,14 @@
   // The Hardware tab can open first, so this panel keeps the status read too.
   $effect(() => (record ? deviceStatus.watch(record) : undefined));
 
-  // Four tabs: Overview, Settings, Logs, History. Software joins them for
-  // a board in USB boot, a running install, or an update started here.
+  // Overview, Settings, Logs, History, and Software for anything Atlas can
+  // update or install on (one way in on every device: no header button).
   let wantsSoftware = $state(false);
   const tabs = $derived.by(() => {
     const caps = record?.capabilities ?? [];
     const list: { value: string; label: string; icon: IconName }[] = [{ value: "overview", label: "Overview", icon: "info-circle" }];
     list.push({ value: "settings", label: "Settings", icon: "settings" });
-    const software = (recovery && record?.presence === "online") || !!handoff || !!active || wantsSoftware || !!record?.capabilities.includes("slots");
+    const software = (recovery && record?.presence === "online") || !!handoff || !!active || wantsSoftware || (["update", "install", "slots"] as const).some((c) => caps.includes(c));
     if (software) list.push({ value: "software", label: "Software", icon: "package" });
     if (caps.includes("logs")) list.push({ value: "logs", label: "Logs", icon: "file-text" });
     list.push({ value: "history", label: "History", icon: "history" });
@@ -75,7 +73,6 @@
   // svelte-ignore state_referenced_locally
   let tab = $state(asked ?? (recovery ? "software" : "overview"));
   const current = $derived(tabs.some((t) => t.value === tab) ? tab : "overview");
-  const updatable = $derived(!!record && canUpdate(record) && !recovery && (updateMethods(record).length > 0 || record.capabilities.includes("update") || record.capabilities.includes("install")));
   /** The board's host: its address is the identity URL (http://host:5899/…). */
   const sshHost = $derived.by(() => {
     const address = record?.identity.address ?? "";
@@ -132,12 +129,18 @@
       .join(" · ");
   });
   const readWhen = $derived(refreshing || devices.scanning ? "reading" : readAt === null ? "not read" : timeAgo(readAt, clock.now));
+  // A device link opened before discovery has had its look (the app just
+  // started): it's still being looked for, not gone, until a scan ends or a
+  // while passes.
+  const LOOK_MS = 15_000;
+  const opened = Date.now();
+  const gone = $derived(devices.loaded && (devices.lastScanAt !== null || clock.now - opened > LOOK_MS));
 </script>
 
 {#if !record}
   <div class="flex items-center gap-3 p-6 text-[13px] text-fg-muted">
     <a href="/devices" class="back" aria-label="Back to devices" title="Back to devices"><Icon name="arrow-left" size={16} /></a>
-    {devices.loaded ? "This device is no longer in the inventory." : "Looking for this device…"}
+    {gone ? "This device is no longer in the inventory." : "Looking for this device…"}
   </div>
 {:else}
   <header class="head shrink-0" in:softFade>
@@ -170,9 +173,6 @@
         >
       {/if}
       <div class="ml-auto flex shrink-0 items-center gap-1.5">
-        {#if ui.mode === "pit" && updatable}
-          <Button size="sm" variant="primary" icon="download" onclick={() => ((wantsSoftware = true), (tab = "software"))}>Update…</Button>
-        {/if}
         <QuickActions {record} />
         {#if ssh}<Button size="sm" icon="terminal-2" title="Copy {ssh}" onclick={() => void copySsh()}>SSH</Button>{/if}
         <Button

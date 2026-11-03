@@ -65,7 +65,7 @@
   .backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(5, 6, 8, 0.92);
+    background: rgb(5, 6, 8);
     cursor: default;
   }
   .bar {
