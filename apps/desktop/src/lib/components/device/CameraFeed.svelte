@@ -6,7 +6,10 @@
   // it comes back by itself when the camera does (PhotonVision restarting,
   // a reboot, the cable). A URL Atlas doesn't stream (a still image, the
   // browser preview) is shown directly and retried after an error.
-  import { api, type CameraState } from "#lib/api/client.ts";
+  import { api, reportUiError, type CameraState } from "#lib/api/client.ts";
+
+  /** Frames in a row that don't decode before it's written to atlas.log. */
+  const UNDECODED = 30;
 
   let {
     src,
@@ -23,6 +26,7 @@
   let last: HTMLImageElement | null = null;
   let pending: Blob | null = null;
   let decoding = false;
+  let undecoded = 0;
 
   function draw() {
     if (!canvas || !last) return;
@@ -57,11 +61,16 @@
       image.src = url;
       try {
         await image.decode();
+        undecoded = 0;
         last = image;
         hasFrame = true;
         draw();
-      } catch {
-        // A frame that doesn't decode is skipped.
+      } catch (error) {
+        // A frame that doesn't decode is skipped; a stream of them is a bug
+        // (frames arrive, nothing shows), so it's said once.
+        if (++undecoded === UNDECODED) {
+          void reportUiError(`${UNDECODED} frames in a row from ${src} don't decode: ${error}`, alt);
+        }
       } finally {
         URL.revokeObjectURL(url);
       }
@@ -88,6 +97,7 @@
     let gone = false;
     phase = "connecting";
     hasFrame = false;
+    undecoded = 0;
     direct = false;
     last = null;
     void api

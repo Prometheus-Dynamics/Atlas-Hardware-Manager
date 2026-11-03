@@ -16,6 +16,23 @@ pub mod attributes {
     pub const WEB_UI: &str = "manage_url";
     /// A live camera stream the UI can show (MJPEG or a still-image URL).
     pub const CAMERA_STREAM: &str = "camera_stream";
+
+    /// `camera_stream.<name>`, one per camera a device offers: letters,
+    /// digits, `-` and `_` kept and the rest `-`; none for a blank name.
+    pub fn camera_stream_key(name: &str) -> Option<String> {
+        let name: String = name
+            .trim()
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '-'
+                }
+            })
+            .collect();
+        (!name.is_empty()).then(|| format!("{CAMERA_STREAM}.{name}"))
+    }
     /// The device's network hostname.
     pub const HOSTNAME: &str = "hostname";
     /// The device's IP addresses on every link Atlas sees it on lately,

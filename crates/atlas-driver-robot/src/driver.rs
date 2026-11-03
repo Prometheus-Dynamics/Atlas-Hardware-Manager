@@ -279,6 +279,13 @@ impl Driver for SystemcoreDriver {
             crate::systemcore::read(&self.http, package, ip, candidate.link.clone(), serial)
                 .await?;
         identity.versions = crate::systemcore_versions::read(ip).await;
+        for (key, url) in crate::controller_cameras::read(&self.http, ip).await {
+            identity
+                .attributes
+                .entry(atlas_driver::attributes::CAMERA_STREAM.into())
+                .or_insert_with(|| url.clone());
+            identity.attributes.insert(key, url);
+        }
         let running = crate::usb_agent::info(&self.http, ip)
             .await
             .map(|agent| agent.version);

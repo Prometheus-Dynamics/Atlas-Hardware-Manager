@@ -19,7 +19,10 @@ use atlas_driver::{
 use serde_json::Value;
 
 /// Resolves `path` against the identity URL: absolute URLs stay as they are,
-/// paths are joined to the identity URL's origin.
+/// paths are joined to the identity URL's origin. For a board behind a
+/// controller (an identity URL in `/v1/peers/<node>/`), the board's own API
+/// paths (`/v1/...`, on whatever port) go through the same tunnel, and
+/// anything else isn't reachable from here.
 pub(crate) fn resolve(identity_url: &str, path: &str) -> Option<String> {
     let path = path.trim();
     if path.is_empty() {
@@ -27,6 +30,17 @@ pub(crate) fn resolve(identity_url: &str, path: &str) -> Option<String> {
     }
     if path.starts_with("http://") || path.starts_with("https://") {
         return Some(path.to_string());
+    }
+    if let Some(at) = identity_url.find("/v1/peers/") {
+        let node_end = identity_url[at + 10..]
+            .find('/')
+            .map_or(identity_url.len(), |end| at + 10 + end);
+        let rest = match path.strip_prefix(':') {
+            Some(port_and_path) => &port_and_path[port_and_path.find('/')?..],
+            None => path,
+        };
+        let api = rest.strip_prefix("/v1/")?;
+        return Some(format!("{}/{api}", &identity_url[..node_end]));
     }
     let scheme_end = identity_url.find("://")? + 3;
     let origin_end = identity_url[scheme_end..]
@@ -260,6 +274,17 @@ mod tests {
             Some("http://board.local:5898/stream")
         );
         assert_eq!(resolve(base, ":x/stream"), None);
+        let peer = "http://172.27.0.1:5880/v1/peers/raze-6d57/board/identity";
+        assert_eq!(
+            resolve(peer, ":5800/v1/cameras/cam-1/preview").as_deref(),
+            Some("http://172.27.0.1:5880/v1/peers/raze-6d57/cameras/cam-1/preview")
+        );
+        assert_eq!(
+            resolve(peer, "/v1/board/logs").as_deref(),
+            Some("http://172.27.0.1:5880/v1/peers/raze-6d57/board/logs")
+        );
+        assert_eq!(resolve(peer, ":5898/stream"), None);
+        assert_eq!(resolve(peer, "/api/metrics"), None);
         assert_eq!(resolve(base, " "), None);
         assert_eq!(resolve("not a url", "/x"), None);
     }

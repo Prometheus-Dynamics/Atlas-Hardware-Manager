@@ -298,28 +298,13 @@ impl BoardIdentity {
             let Some(url) = crate::live::resolve(&address, &stream.url) else {
                 continue;
             };
-            let name: String = stream
-                .name
-                .trim()
-                .chars()
-                .map(|c| {
-                    if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
-                        c
-                    } else {
-                        '-'
-                    }
-                })
-                .collect();
-            if name.is_empty() {
+            let Some(key) = atlas_driver::attributes::camera_stream_key(&stream.name) else {
                 continue;
-            }
+            };
             attributes
                 .entry(atlas_driver::attributes::CAMERA_STREAM.into())
                 .or_insert_with(|| url.clone());
-            attributes.insert(
-                format!("{}.{name}", atlas_driver::attributes::CAMERA_STREAM),
-                url,
-            );
+            attributes.insert(key, url);
         }
 
         Identity {
