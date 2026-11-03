@@ -17,6 +17,187 @@ the dev scheme, `<year>.<major>.<minor>-dev.<count>+<commit>`, the Raze package
 included (c26ad85). Board work gets tested on boards before anything ships,
 unless the user says otherwise.
 
+## Alpha (Raze)
+
+The alpha release covers the Raze hardware only (the user, 2026-11-03). The
+first eight items are the alpha list; the other Raze items follow. Each says
+where it runs. The bench Raze, e5226d57, is on the SystemCore; a Raze on this
+computer's USB means its regular USB port (the one used for flashing) here.
+
+- [ ] **The first real flash through the USB agent.**
+  - **Where:** behind the SystemCore.
+  - **What:** step 1 is built (456e4cc, 04d7931): the agent as a service from its
+    own `.ipk` on :5809, one-click install and update, boards behind the
+    SystemCore in `atlas ls`, `atlas flash` through it. The user approved
+    flashing e5226d57 with dev.811.
+  - **Why:** boards on a robot are plugged into the SystemCore, not the PC.
+  - **Done when:** `atlas flash --image <dev.811 image> --device rpi:e5226d57`
+    completes; the board boots, takes SSH with its key and gets a 172.31.12.8x
+    address.
+  - **Status (2026-11-02):** done at 3-1.1.4.1 itself after the driver fix
+    6f97f90 (the SystemCore and roboRIO were shadowed by board drivers): dev.811
+    written and verified in 124 s, 151 s in all, through agent dev.409; one USB
+    reset mid-write absorbed by the kernel, and the board came up on
+    172.31.209.217. Left: SSH with its key (that run wrote no
+    `board/authorized_keys`).
+  - **Blocked by:** nothing; the SSH check goes with the re-pin proof below.
+- [ ] **Fresh USB-boot install.**
+  - **Where:** on this computer's USB.
+  - **What:** `atlas flash` on a Raze in USB boot: boot, write, verify, SSH key,
+    restart, then running.
+  - **Why:** the path every new board takes.
+  - **Done when:** a board flashed from USB boot runs the image and takes
+    `atlas ssh-key` and slots commands, with the timing written down; it shows
+    up by USB hotplug without a rescan; "Open as USB disk", "Browse files",
+    "Eject and restart" and "Add my SSH key" work on its eMMC.
+  - **Blocked by:** the user: power a Raze off, hold its boot button, connect
+    that port to this computer, release once 0a5c:2712 appears.
+  - Already done on hardware: the first flash from this computer (PhotonVision
+    image, 2026-10-04/05), before `atlas flash` (56beff2) and the restart
+    through the gadget console (c3a0241, ae07a30).
+- [ ] **Re-attach after Atlas restarts.**
+  - **Where:** behind the SystemCore.
+  - **What:** built (a72418a): the remote flash remembers the agent job
+    (`<data>/agent-jobs/<board>.json`) until it ends. After a scan, Atlas starts
+    a job for any update that outlived it (`UpdateCapability::resumable`), and
+    that job follows the agent's job instead of flashing again. A job the agent
+    no longer has is said so and forgotten; a lost agent keeps the record for the
+    next Atlas. Tested: core with the mock fleet, the driver against a loopback
+    agent.
+  - **Why:** a flash outlives Atlas closing or crashing; its result must still
+    reach the job history.
+  - **Done when:** killing Atlas mid-flash and starting it again shows the flash
+    running, then its result, on a board behind the SystemCore.
+  - **Blocked by:** the same move of e5226d57.
+- [ ] **Keyless install over robot Ethernet (Orion, no controller).**
+  - **Where:** on the bench (windows through HeliOS).
+  - **What:** a slot install with security off; with security on it must refuse
+    or fall back.
+  - **Why:** the default FRC path when there is no SystemCore.
+  - **Done when:** both cases on hardware, the board pulling the bundle from
+    Atlas's image server (5da10e3, a744d40), and an Orion update cancelled and
+    one rolled back through board-agent (17c2475; until now tested only against
+    a real orion-node with a fake writer).
+  - **Blocked by:** the user or HeliOS: a Raze's Ethernet on a 10.x network with
+    this computer, not behind the SystemCore (off, the node auto-enrolls only
+    the USB gadget network and `ORION_NODE_ROBOT_NETS`, 10/8 by default; the
+    bench's 172.31.12.8x isn't one). Security on is the `security.env` switch,
+    which exists (docs/ota.md).
+  - Already done on hardware (2026-10-30): unhealthy-trial fallback, layered
+    slot plus push (over SSH), keyless install through the SystemCore, support
+    bundles.
+- [ ] **USB gadget rebind timing.**
+  - **Where:** on this computer's USB.
+  - **What:** a natural link stall recovers by the watch's rebind (79389f3).
+  - **Why:** the ECM stall's recovery is the field fix (its root cause is cut).
+  - **Done when:** `usb-gadget.rebound` lands about 15 s after TX stops, in
+    events.jsonl and the host log.
+  - **Blocked by:** the user: a running Raze left on that port until a stall
+    comes (the gap has been as long as 14 h).
+- [ ] **HEVC decoder binds.**
+  - **Where:** on the bench (windows through HeliOS).
+  - **What:** `CONFIG_VIDEO_RPI_HEVC_DEC=m` (4719dba); written, untested.
+  - **Why:** the Pi 5's decoder node was in the device tree but unbound.
+  - **Done when:** on a Raze, rpi-hevc-dec is loaded and bound to
+    brcm,bcm2712-hevc-dec.
+  - **Blocked by:** HeliOS: a slot with this kernel, then a bench window.
+- [ ] **Raze facts the manifest still marks unverified.**
+  - **Where:** on the bench (windows through HeliOS).
+  - **What:** in `devices/raze/manifest.json`: LED count and index direction, the
+    INA238 shunt (10 or 20 mOhm) and its max current, the sensor bus's select,
+    the IMU's mount angles, the camera tuning, the USB-A power line's GPIO chip
+    and control, the kernel's built-in list and version;
+    `selftest --interactive` with HeliOS running.
+  - **Why:** the generated board files and the self-test trust them.
+  - **Done when:** each has a `verified` note and
+    `devices/tools/gen-raze.py --check` passes (it passes today, with them open).
+  - **Blocked by:** a bench window; the shunt needs the user to read the
+    resistor marking (R010 or R020) or compare with a USB-C meter.
+- [ ] **"Behind SystemCore" in the app.**
+  - **Where:** behind the SystemCore.
+  - **What:** built (722f36a): the device list and cards put each device right
+    under the gateway Atlas reaches it through, indented with a tree mark. The
+    SystemCore's row shows its USB agent's version, with Install or Update when
+    Atlas carries another. Checked in the browser mock only.
+  - **Why:** on a robot that's where the boards are; the user must see the path
+    Atlas reaches them by.
+  - **Done when:** a SystemCore shows its boards under it, and a flash or update
+    is started there.
+  - **Blocked by:** the same move of e5226d57.
+- [ ] **A/B in place.**
+  - **Where:** on the bench (windows through HeliOS).
+  - **What:** an A/B image installed and confirmed on a Raze.
+  - **Why:** the update path for images without slots.
+  - **Done when:** stage, apply, confirm and a rollback on hardware.
+  - **Blocked by:** HeliOS: an A/B image and a bench window.
+- [ ] **"Last boots" on the device page.**
+  - **Where:** on the bench (windows through HeliOS).
+  - **What:** the panel, `pstore --show <boot id>` and board-agent's
+    `update.boot_*` keys (facecb9); written, untested.
+  - **Why:** the first thing to read after a reset in the field.
+  - **Done when:** after a real reset, the panel shows its cause and kept log.
+  - **Blocked by:** HeliOS: a slot carrying facecb9, then a bench window.
+- [ ] **SSH key re-pin after a slot install.**
+  - **Where:** on the bench (windows through HeliOS).
+  - **What:** a new OS's host key is re-pinned, and "Trust its new SSH key"
+    clears a stale pin (5f1e8f9); written, untested.
+  - **Why:** a slot from an older image mustn't lock Atlas out.
+  - **Done when:** both on a board whose host key changes.
+  - **Blocked by:** HeliOS: a bench window that changes the key (the bench keeps
+    its keys in /data/ssh, so an install alone doesn't).
+- [ ] **Orion live stream numbers.**
+  - **Where:** on the bench (windows through HeliOS).
+  - **What:** CPU, forks and backfill time on a board for Orion's streams
+    (2d46378). Then point HardwareTab at `board.hardware` (the driver follows it;
+    the tab reads board-stream) and retire board-http and board-stream.
+  - **Why:** always-live charts without a process per request.
+  - **Done when:** the numbers are written down and the old paths are gone or
+    kept for a stated reason.
+  - **Blocked by:** HeliOS: the measurement on a board.
+- [ ] **Flashing through a dropping USB link.**
+  - **Where:** behind the SystemCore.
+  - **What:** written (5f28070): the agent writes in 16 MiB segments, each
+    flushed and read back before it counts, with a journal beside the image. On
+    a drop it finds the board again by its gadget's USB serial, sends the
+    bootloader again if the board fell back to its ROM, and writes that segment
+    again; a later run re-reads the proven part instead of writing it. It gives
+    up after 25 drops, 45 minutes, or 3 minutes without the board, saying why.
+    The engine sits behind a small `Target` trait in atlas-blockdev;
+    fault-injection tests run it on an in-memory disk that drops.
+  - **Why:** e5226d57's port (3-1.1.4.1, behind two Genesys hubs next to a C270
+    that resets every ~4 s) drops mid-write; robots have ports like it.
+  - **Done when:** 10 flashes in a row succeed on 3-1.1.4.1, with drops,
+    resumes and time per flash recorded against a clean port. Then: the agent
+    path (detached flash, re-attach), then updates, `atlas ssh` and slot
+    commands over a dropping link.
+  - **Status (2026-11-03):** one run through agent dev.474 (2344c10, the disk
+    claim) with the C270 left resetting on the same hub (67 resets in the run):
+    dev.820 written and verified in 245 s (5.7 MB/s), 253 s in all; two drops at
+    16% (the gadget stopped answering for 30 s, SCSI timeout, port reset), each
+    resumed on its segment, nothing started over; the board booted dev.820.
+  - **Blocked by:** nothing; the run is going.
+- [ ] **PIT/ROBOT end to end.**
+  - **Where:** behind the SystemCore.
+  - **What:** the PIT/ROBOT view on a real robot: controller, radio, boards
+    behind the SystemCore, readiness.
+  - **Why:** the main screen at events.
+  - **Done when:** a robot run shows every device with its state, and one install
+    from the view.
+  - **Blocked by:** the user: a robot to run it on.
+- [ ] **The USB agent under Orion, with detached flashes.**
+  - **Where:** behind the SystemCore.
+  - **What:** step 2: the agent registers with the SystemCore's Orion node and
+    takes images over Orion. The memory-capped service and the detached flash
+    exist from step 1; the SSH-key install (opkg) goes away. Not started.
+  - **Why:** Phoenix Tuner works this way on the roboRIO; a robot needs no SSH
+    step.
+  - **Done when:** from a clean SystemCore, `atlas flash` on a board in USB boot
+    behind it installs the agent, flashes, verifies and the board comes up
+    running, with no SSH step; pulling the PC's cable mid-write doesn't stop the
+    flash.
+  - **Blocked by:** Orion's blob push, job API, non-HeliOS providers and large
+    status values (HeliOS has these four).
+
 ## Open: code, no hardware needed
 
 - [ ] **Release notes kept current.**
@@ -43,176 +224,6 @@ unless the user says otherwise.
     USB console (recommended; a USB console may need kernel or device-tree
     changes in Gaia), SSH with a key built into a dev-only image, or Orion
     (unmeasured, a doubtful fit on 128 MB). Then Gaia takes the layer.
-
-## Open: Raze on this computer's USB
-
-Each takes a Raze with its regular USB port (the one used for flashing) in this
-computer. The bench Raze, e5226d57, is on the SystemCore instead.
-
-- [ ] **Fresh USB-boot install.**
-  - **What:** `atlas flash` on a Raze in USB boot: boot, write, verify, SSH key,
-    restart, then running.
-  - **Why:** the path every new board takes.
-  - **Done when:** a board flashed from USB boot runs the image and takes
-    `atlas ssh-key` and slots commands, with the timing written down; it shows
-    up by USB hotplug without a rescan; "Open as USB disk", "Browse files",
-    "Eject and restart" and "Add my SSH key" work on its eMMC.
-  - **Blocked by:** the user: power a Raze off, hold its boot button, connect
-    that port to this computer, release once 0a5c:2712 appears.
-  - Already done on hardware: the first flash from this computer (PhotonVision
-    image, 2026-10-04/05), before `atlas flash` (56beff2) and the restart
-    through the gadget console (c3a0241, ae07a30).
-- [ ] **USB gadget rebind timing.**
-  - **What:** a natural link stall recovers by the watch's rebind (79389f3).
-  - **Why:** the ECM stall's recovery is the field fix (its root cause is cut).
-  - **Done when:** `usb-gadget.rebound` lands about 15 s after TX stops, in
-    events.jsonl and the host log.
-  - **Blocked by:** the user: a running Raze left on that port until a stall
-    comes (the gap has been as long as 14 h).
-
-## Open: Raze on the bench
-
-Windows are booked through HeliOS.
-
-- [ ] **A/B in place.**
-  - **What:** an A/B image installed and confirmed on a Raze.
-  - **Why:** the update path for images without slots.
-  - **Done when:** stage, apply, confirm and a rollback on hardware.
-  - **Blocked by:** HeliOS: an A/B image and a bench window.
-- [ ] **Keyless install over robot Ethernet (Orion, no controller).**
-  - **What:** a slot install with security off; with security on it must refuse
-    or fall back.
-  - **Why:** the default FRC path when there is no SystemCore.
-  - **Done when:** both cases on hardware, the board pulling the bundle from
-    Atlas's image server (5da10e3, a744d40), and an Orion update cancelled and
-    one rolled back through board-agent (17c2475; until now tested only against
-    a real orion-node with a fake writer).
-  - **Blocked by:** the user or HeliOS: a Raze's Ethernet on a 10.x network with
-    this computer, not behind the SystemCore (off, the node auto-enrolls only
-    the USB gadget network and `ORION_NODE_ROBOT_NETS`, 10/8 by default; the
-    bench's 172.31.12.8x isn't one). Security on is the `security.env` switch,
-    which exists (docs/ota.md).
-  - Already done on hardware (2026-10-30): unhealthy-trial fallback, layered
-    slot plus push (over SSH), keyless install through the SystemCore, support
-    bundles.
-- [ ] **HEVC decoder binds.**
-  - **What:** `CONFIG_VIDEO_RPI_HEVC_DEC=m` (4719dba); written, untested.
-  - **Why:** the Pi 5's decoder node was in the device tree but unbound.
-  - **Done when:** on a Raze, rpi-hevc-dec is loaded and bound to
-    brcm,bcm2712-hevc-dec.
-  - **Blocked by:** HeliOS: a slot with this kernel, then a bench window.
-- [ ] **"Last boots" on the device page.**
-  - **What:** the panel, `pstore --show <boot id>` and board-agent's
-    `update.boot_*` keys (facecb9); written, untested.
-  - **Why:** the first thing to read after a reset in the field.
-  - **Done when:** after a real reset, the panel shows its cause and kept log.
-  - **Blocked by:** HeliOS: a slot carrying facecb9, then a bench window.
-- [ ] **SSH key re-pin after a slot install.**
-  - **What:** a new OS's host key is re-pinned, and "Trust its new SSH key"
-    clears a stale pin (5f1e8f9); written, untested.
-  - **Why:** a slot from an older image mustn't lock Atlas out.
-  - **Done when:** both on a board whose host key changes.
-  - **Blocked by:** HeliOS: a bench window that changes the key (the bench keeps
-    its keys in /data/ssh, so an install alone doesn't).
-- [ ] **Orion live stream numbers.**
-  - **What:** CPU, forks and backfill time on a board for Orion's streams
-    (2d46378). Then point HardwareTab at `board.hardware` (the driver follows it;
-    the tab reads board-stream) and retire board-http and board-stream.
-  - **Why:** always-live charts without a process per request.
-  - **Done when:** the numbers are written down and the old paths are gone or
-    kept for a stated reason.
-  - **Blocked by:** HeliOS: the measurement on a board.
-- [ ] **Raze facts the manifest still marks unverified.**
-  - **What:** in `devices/raze/manifest.json`: LED count and index direction, the
-    INA238 shunt (10 or 20 mOhm) and its max current, the sensor bus's select,
-    the IMU's mount angles, the camera tuning, the USB-A power line's GPIO chip
-    and control, the kernel's built-in list and version;
-    `selftest --interactive` with HeliOS running.
-  - **Why:** the generated board files and the self-test trust them.
-  - **Done when:** each has a `verified` note and
-    `devices/tools/gen-raze.py --check` passes (it passes today, with them open).
-  - **Blocked by:** a bench window; the shunt needs the user to read the
-    resistor marking (R010 or R020) or compare with a USB-C meter.
-
-## Open: Raze behind the SystemCore
-
-All three start with the same move. Written, tested off the board, never run
-through a real flash.
-
-- [ ] **The first real flash through the USB agent.**
-  - **What:** step 1 is built (456e4cc, 04d7931): the agent as a service from its
-    own `.ipk` on :5809, one-click install and update, boards behind the
-    SystemCore in `atlas ls`, `atlas flash` through it. The user approved
-    flashing e5226d57 with dev.811.
-  - **Why:** boards on a robot are plugged into the SystemCore, not the PC.
-  - **Done when:** `atlas flash --image <dev.811 image> --device rpi:e5226d57`
-    completes; the board boots, takes SSH with its key and gets a 172.31.12.8x
-    address.
-  - **Status (2026-11-02):** done at 3-1.1.4.1 itself after the driver fix
-    6f97f90 (the SystemCore and roboRIO were shadowed by board drivers): dev.811
-    written and verified in 124 s, 151 s in all, through agent dev.409; one USB
-    reset mid-write absorbed by the kernel, and the board came up on
-    172.31.209.217. Left: SSH with its key (that run wrote no
-    `board/authorized_keys`).
-  - **Blocked by:** nothing; the SSH check goes with the re-pin proof below.
-- [ ] **Flashing through a dropping USB link.**
-  - **What:** written (5f28070): the agent writes in 16 MiB segments, each
-    flushed and read back before it counts, with a journal beside the image. On
-    a drop it finds the board again by its gadget's USB serial, sends the
-    bootloader again if the board fell back to its ROM, and writes that segment
-    again; a later run re-reads the proven part instead of writing it. It gives
-    up after 25 drops, 45 minutes, or 3 minutes without the board, saying why.
-    The engine sits behind a small `Target` trait in atlas-blockdev;
-    fault-injection tests run it on an in-memory disk that drops.
-  - **Why:** e5226d57's port (3-1.1.4.1, behind two Genesys hubs next to a C270
-    that resets every ~4 s) drops mid-write; robots have ports like it.
-  - **Done when:** 10 flashes in a row succeed on 3-1.1.4.1, with drops,
-    resumes and time per flash recorded against a clean port. Then: the agent
-    path (detached flash, re-attach), then updates, `atlas ssh` and slot
-    commands over a dropping link.
-  - **Blocked by:** nothing; the run is going.
-- [ ] **Re-attach after Atlas restarts.**
-  - **What:** built (a72418a): the remote flash remembers the agent job
-    (`<data>/agent-jobs/<board>.json`) until it ends. After a scan, Atlas starts
-    a job for any update that outlived it (`UpdateCapability::resumable`), and
-    that job follows the agent's job instead of flashing again. A job the agent
-    no longer has is said so and forgotten; a lost agent keeps the record for the
-    next Atlas. Tested: core with the mock fleet, the driver against a loopback
-    agent.
-  - **Why:** a flash outlives Atlas closing or crashing; its result must still
-    reach the job history.
-  - **Done when:** killing Atlas mid-flash and starting it again shows the flash
-    running, then its result, on a board behind the SystemCore.
-  - **Blocked by:** the same move of e5226d57.
-- [ ] **"Behind SystemCore" in the app.**
-  - **What:** built (722f36a): the device list and cards put each device right
-    under the gateway Atlas reaches it through, indented with a tree mark. The
-    SystemCore's row shows its USB agent's version, with Install or Update when
-    Atlas carries another. Checked in the browser mock only.
-  - **Why:** on a robot that's where the boards are; the user must see the path
-    Atlas reaches them by.
-  - **Done when:** a SystemCore shows its boards under it, and a flash or update
-    is started there.
-  - **Blocked by:** the same move of e5226d57.
-- [ ] **PIT/ROBOT end to end.**
-  - **What:** the PIT/ROBOT view on a real robot: controller, radio, boards
-    behind the SystemCore, readiness.
-  - **Why:** the main screen at events.
-  - **Done when:** a robot run shows every device with its state, and one install
-    from the view.
-  - **Blocked by:** the user: a robot to run it on.
-- [ ] **The USB agent under Orion, with detached flashes.**
-  - **What:** step 2: the agent registers with the SystemCore's Orion node and
-    takes images over Orion. The memory-capped service and the detached flash
-    exist from step 1; the SSH-key install (opkg) goes away. Not started.
-  - **Why:** Phoenix Tuner works this way on the roboRIO; a robot needs no SSH
-    step.
-  - **Done when:** from a clean SystemCore, `atlas flash` on a board in USB boot
-    behind it installs the agent, flashes, verifies and the board comes up
-    running, with no SSH step; pulling the PC's cable mid-write doesn't stop the
-    flash.
-  - **Blocked by:** Orion's blob push, job API, non-HeliOS providers and large
-    status values (HeliOS has these four).
 
 ## Open: the new boards
 
