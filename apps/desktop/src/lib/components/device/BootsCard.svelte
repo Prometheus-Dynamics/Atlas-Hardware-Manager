@@ -3,11 +3,13 @@
   // which version and what the other keeps (its update state), a strip of
   // the last 30 boots, and the newest few as rows: the boot's number, how it
   // began (a restart, or power-on after power was lost), how the boot before
-  // it ended (clean, unclean, a kernel panic), a rollback in it, and the
-  // kernel log it found of the boot before (pstore), opened on demand.
+  // it ended (clean, power cut, a crash or kernel panic), a rollback in it,
+  // and the kernel log it found of the boot before (pstore), opened on
+  // demand. A power cut is how a robot's day goes; only a crash loop warns.
   import { keyString, type DeviceRecord, type DeviceStatus, type KernelRecord } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import { timeAgo } from "#lib/format.ts";
+  import { CRASH_LOOP, bootEnd } from "#lib/present.ts";
   import { deviceStatus } from "#lib/stores/status.svelte.ts";
   import KernelLogDialog from "./KernelLogDialog.svelte";
 
@@ -21,7 +23,7 @@
     new Map(history.filter((e) => e.origin === "board" && e.kind === "update.rolled-back" && e.boot_id).map((e) => [e.boot_id!, e.data.reason || e.message])),
   );
 
-  type Kind = "clean" | "unclean" | "panic" | "rollback" | "slot" | "unknown";
+  type Kind = "clean" | "cut" | "crash" | "panic" | "rollback" | "slot" | "unknown";
   // Oldest first, the newest at the right.
   const boots = $derived(
     history
@@ -38,11 +40,14 @@
         const log = records.get(id);
         const rollback = rollbacks.get(id);
         const moved = i > 0 && !!e.data.slot && !!all[i - 1].data.slot && e.data.slot !== all[i - 1].data.slot;
+        const end = bootEnd(clean, reset);
         const kind: Kind = log?.panic
           ? "panic"
-          : clean === "false"
-            ? "unclean"
-            : rollback
+          : end === "crash"
+            ? "crash"
+            : end === "power"
+              ? "cut"
+              : rollback
               ? "rollback"
               : moved
                 ? "slot"
@@ -50,8 +55,7 @@
                   ? "clean"
                   : "unknown";
         const began = reset === "power-on" ? "power-on" : reset === "reset" ? "restart" : "—";
-        const ended =
-          kind === "panic" ? "panic" : clean === "false" ? (reset === "power-on" ? "power lost" : "unclean") : clean === "true" ? "clean" : "unknown";
+        const ended = kind === "panic" ? "panic" : end === "crash" ? "crash" : end === "power" ? "power cut" : end;
         return {
           id,
           at: e.at_ms,
@@ -67,7 +71,10 @@
       }),
   );
   const rows = $derived(boots.slice(-ROWS).reverse());
-  const unclean = $derived(boots.filter((b) => b.kind === "unclean" || b.kind === "panic").length);
+  const cuts = $derived(boots.filter((b) => b.kind === "cut").length);
+  // A crash loop: the board restarting itself again and again.
+  const crashes = $derived(boots.slice(-10).filter((b) => b.kind === "crash" || b.kind === "panic").length);
+  const looping = $derived(crashes >= CRASH_LOOP);
   const count = $derived(status?.boot?.count ?? (Number(boots.at(-1)?.count) || null));
   const update = $derived(status?.update ?? null);
   const other = $derived(update?.slot_active === "A" ? "B" : update?.slot_active === "B" ? "A" : null);
@@ -80,7 +87,9 @@
     <div class="panel-head">
       <h2 class="panel-title">Last boots</h2>
       {#if boots.length > 0}
-        <span class="panel-note" class:warn={unclean > 0}>{#if count}boot {count} · {/if}{unclean} unclean of {boots.length}</span>
+        <span class="panel-note" class:warn={looping}
+          >{#if count}boot {count} · {/if}{cuts} power cut{cuts === 1 ? "" : "s"}{#if crashes} · {crashes} crash{crashes === 1 ? "" : "es"}{/if} of {boots.length}</span
+        >
       {/if}
     </div>
     {#if update?.slot_active}
@@ -101,15 +110,21 @@
         {/if}
       </dl>
     {/if}
+    {#if looping}
+      <p class="loop">
+        Restarted itself {crashes} times in its last 10 boots without shutting down: a crash, a kernel panic or the watchdog. Open the
+        kernel log of those boots below; if it began with an update, go back to the slot it keeps.
+      </p>
+    {/if}
     {#if boots.length > 0}
-      <div class="strip" role="img" aria-label="Last {boots.length} boots: {unclean} unclean">
+      <div class="strip" role="img" aria-label="Last {boots.length} boots: {cuts} power cuts, {crashes} crashes">
         {#each boots as b, i (i)}<span class="boot {b.kind}" title={b.title}></span>{/each}
       </div>
       <ol class="rows" aria-label="Newest boots">
         {#each rows as b, i (i)}
           <li title={b.title}>
             <span class="num mono">{b.count ? `#${b.count}` : "—"}</span>
-            <span class="began" class:power={b.began === "power-on"}>{b.began}</span>
+            <span class="began">{b.began}</span>
             <span class="ended"><span class="swatch {b.kind === 'rollback' || b.kind === 'slot' ? 'clean' : b.kind}"></span>{b.ended}</span>
             <span class="where">
               {#if b.rollback}<span class="tag" title="Rolled back: {b.rollback}">rollback</span>{:else if b.slot}<span title="Slot {b.slot}">slot {b.slot}</span>{/if}
@@ -193,9 +208,6 @@
     color: var(--fg-muted);
     white-space: nowrap;
   }
-  .began.power {
-    color: var(--warn-fg);
-  }
   .ended {
     display: inline-flex;
     align-items: center;
@@ -235,8 +247,16 @@
   .clean {
     background: color-mix(in srgb, var(--ok) 55%, var(--glass));
   }
-  .unclean {
+  .cut {
+    background: var(--glass-border-strong);
+  }
+  .crash {
     background: var(--warn);
+  }
+  .loop {
+    margin: 0 0 8px;
+    font-size: 12.5px;
+    color: var(--warn-fg);
   }
   .panic {
     background: var(--err);

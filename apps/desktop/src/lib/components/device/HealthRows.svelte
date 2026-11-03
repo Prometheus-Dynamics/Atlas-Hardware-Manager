@@ -7,6 +7,7 @@
   import Sparkline from "#lib/components/common/Sparkline.svelte";
   import { linkText } from "#lib/format.ts";
   import { uptimeText } from "#lib/metrics.ts";
+  import { bootEnd } from "#lib/present.ts";
   import { clock } from "#lib/stores/clock.svelte.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { live } from "#lib/stores/live.svelte.ts";
@@ -119,10 +120,11 @@
         key: "uptime",
         label: "Uptime",
         value: uptimeText(up?.value ?? boot?.uptime_s ?? 0),
-        detail: [boot?.count ? `boot ${boot.count}` : null, boot?.previous_clean === false ? "last ended uncleanly" : boot?.previous_clean ? "clean" : null, status?.ntp_synchronized ? "clock synced" : null]
+        // A power cut isn't a problem on a robot; a crash loop shows on Last boots.
+        detail: [boot?.count ? `boot ${boot.count}` : null, boot ? { clean: "clean", power: "after a power cut", crash: "after a crash", unknown: null }[bootEnd(boot.previous_clean, boot.reset)] : null, status?.ntp_synchronized ? "clock synced" : null]
           .filter(Boolean)
           .join(" · "),
-        tone: boot?.previous_clean === false ? "warn" : "ok",
+        tone: "ok",
         series: [],
         color: "",
         unit: "",

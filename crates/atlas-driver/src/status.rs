@@ -107,8 +107,11 @@ impl DeviceEvent {
             || kind == "update.link-bad"
             || kind == "usb-boot"
             || kind == "kernel.pstore"
+            // A restart without a shutdown that wasn't a power-on: a crash.
+            // A power cut is a robot's normal day, not a warning.
             || (kind == "boot"
-                && self.data.get("previous_clean").map(String::as_str) == Some("false"))
+                && self.data.get("previous_clean").map(String::as_str) == Some("false")
+                && self.data.get("reset").map(String::as_str) == Some("reset"))
             || (kind == "selftest" && self.data.get("ok").map(String::as_str) == Some("false"))
         {
             "warning"

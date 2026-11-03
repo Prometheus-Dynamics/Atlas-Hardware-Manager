@@ -208,3 +208,20 @@ export function usbRoute(record: DeviceRecord): { state: "active" | "on" | "off"
   const subnets = (attrs["usb_route.subnets"] ?? "").split(",").filter(Boolean);
   return { state, subnets };
 }
+
+/**
+ * How the boot before a boot ended, from that boot's `previous_clean` and
+ * how it began (`reset`). On a robot, power cut without a shutdown is
+ * normal (every match ends that way), so it's "power", never a problem by
+ * itself. A restart without a shutdown that wasn't a power-on is a crash,
+ * a panic restart or the watchdog.
+ */
+export type BootEnd = "clean" | "power" | "crash" | "unknown";
+export function bootEnd(previousClean: boolean | string | null | undefined, reset: string | null | undefined): BootEnd {
+  if (previousClean === true || previousClean === "true") return "clean";
+  if (previousClean !== false && previousClean !== "false") return "unknown";
+  return reset === "reset" ? "crash" : "power";
+}
+
+/** Crashes in a board's last ten boots that make a crash loop, worth a look. */
+export const CRASH_LOOP = 3;
