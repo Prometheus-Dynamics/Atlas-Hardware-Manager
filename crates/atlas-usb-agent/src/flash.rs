@@ -15,6 +15,8 @@ use atlas_blockdev::{Disk, DiskTarget, ResumePolicy, WriteOptions, WriteProgress
 use atlas_usb_agent::{Event, UsbDevice, UsbKind};
 use atlas_usbboot::{BootEvent, BootFiles, BootOptions};
 
+use crate::claim::{self, Claim};
+
 /// How long the eMMC may take to show as a disk after USB boot.
 const DISK_TIMEOUT: Duration = Duration::from_secs(60);
 const DISK_POLL: Duration = Duration::from_millis(500);
@@ -122,47 +124,6 @@ fn disk_on(port: &str) -> Result<Option<Disk>, String> {
     Ok(disks
         .into_iter()
         .find(|disk| disk.usb && disk.size_bytes > 0 && disk.usb_port.as_deref() == Some(port)))
-}
-
-/// A udev rule, for as long as it lives, that keeps the host's automounter
-/// (a SystemCore mounts every USB filesystem it sees) off the Pi gadget's
-/// partitions: a mount between the write and the read-back changes them.
-/// Under /run, so a crash leaves nothing past the next boot.
-struct NoAutomount;
-
-const NO_AUTOMOUNT_RULE: &str = "/run/udev/rules.d/98-atlas-usb-flash.rules";
-
-impl NoAutomount {
-    fn install(sink: &Sink) -> Option<Self> {
-        let rules = Path::new(NO_AUTOMOUNT_RULE).parent()?;
-        std::fs::create_dir_all(rules).ok()?;
-        std::fs::write(
-            NO_AUTOMOUNT_RULE,
-            "# atlas-usb-agent, while it flashes a board: no mounts of the Pi gadget's disk.\n\
-             SUBSYSTEM==\"block\", ENV{ID_VENDOR_ID}==\"0a5c\", ENV{ID_MODEL_ID}==\"0104\", \
-             ENV{ID_FS_USAGE}=\"\", ENV{UDISKS_IGNORE}=\"1\"\n",
-        )
-        .ok()?;
-        reload_udev();
-        log(
-            sink,
-            "kept the automounter off the board's disk while flashing",
-        );
-        Some(Self)
-    }
-}
-
-impl Drop for NoAutomount {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_file(NO_AUTOMOUNT_RULE);
-        reload_udev();
-    }
-}
-
-fn reload_udev() {
-    let _ = std::process::Command::new("udevadm")
-        .args(["control", "--reload"])
-        .status();
 }
 
 /// This host's own board serial (a SystemCore is a CM5), from its device
@@ -286,6 +247,11 @@ pub(crate) async fn flash(
     if !flash.image.is_file() {
         return Err(format!("{}: no such image", flash.image.display()));
     }
+    // Claimed before the disk can show: the automounter acts on its arrival.
+    let _claim = Claim::install(
+        read_attr(&Path::new(USB_DEVICES).join(&flash.port), "serial").as_deref(),
+        &sink,
+    );
     let disk = match disk_on(&flash.port)? {
         Some(disk) => {
             log(
@@ -329,14 +295,13 @@ pub(crate) async fn flash(
             }
         }
     };
-    let _no_automount = NoAutomount::install(&sink);
     atlas_blockdev::check_target(&disk, None).map_err(|error| error.to_string())?;
     sink(Event::Disk {
         name: disk.name.clone(),
         size_bytes: disk.size_bytes,
     });
-    // Nothing of a fresh disk may be mounted while it is written.
-    let _ = atlas_blockdev::unmount_all(&disk);
+    // Nothing of a fresh disk may be mounted or open while it is written.
+    claim::take(&disk, &sink)?;
 
     let options = WriteOptions {
         verify: true,
@@ -455,7 +420,7 @@ impl Reattach {
             if let Some(gadget) = gadget {
                 if let Some(disk) = disk_on(&gadget.port)? {
                     atlas_blockdev::check_target(&disk, None).map_err(|error| error.to_string())?;
-                    let _ = atlas_blockdev::unmount_all(&disk);
+                    claim::take(&disk, &self.sink)?;
                     if gadget.port != self.port {
                         log(
                             &self.sink,

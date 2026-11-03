@@ -14,6 +14,7 @@
 //! foreground, its events as JSON lines on stdout; closing stdin cancels
 //! it, except with `--detached` (run under `systemd-run`).
 
+mod claim;
 mod flash;
 mod serve;
 
