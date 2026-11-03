@@ -156,8 +156,9 @@
     .readout {
       min-width: 0;
     }
+    /* Even columns: a reading changing width ("2.1°" to "-12.1°") moves nothing. */
     dl {
-      grid-template-columns: repeat(5, auto);
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       grid-auto-flow: column;
       grid-template-rows: auto auto;
       justify-content: space-between;
@@ -182,7 +183,7 @@
   }
   /* Roll, pitch, heading in a row with Zero heading; the axes are under it (ImuCard). */
   .imu.compact dl {
-    grid-template-columns: repeat(3, auto);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     grid-auto-flow: column;
     grid-template-rows: auto auto;
     gap: 0 14px;
@@ -338,7 +339,8 @@
   }
   dl {
     display: grid;
-    grid-template-columns: auto auto;
+    /* Room for the widest reading ("123.4 °/s"), so one growing moves nothing. */
+    grid-template-columns: auto minmax(9ch, auto);
     gap: 2px 14px;
     font-size: 12.5px;
     font-variant-numeric: tabular-nums;
