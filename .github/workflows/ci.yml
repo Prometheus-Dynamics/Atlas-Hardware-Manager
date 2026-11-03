@@ -199,6 +199,59 @@ jobs:
           cargo run -q -p atlas-cli -- disks
           cargo run -q -p atlas-cli -- doctor || true
 
+  # The UI gate (apps/desktop/e2e/ui-gate.spec.ts): the built UI against the
+  # browser mock in Chromium. It checks every page for console errors, 5xx and
+  # the error page; screenshots against the baselines in e2e/screens (made
+  # in this same image: scripts/ui-gate.sh --update); device order across
+  # three polls; that nothing moves on its own; and that every control, when
+  # clicked, moves only itself and what's below it. Then the overflow check.
+  ui:
+    name: UI gate
+    needs: changes
+    if: needs.changes.outputs.workspace == 'true'
+    runs-on: ubuntu-24.04
+    container: mcr.microsoft.com/playwright:v1.62.1-noble
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/desktop
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+
+      - name: Build the UI
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+
+      - name: Run the UI gate
+        env:
+          CI: "true"
+          HOME: /root
+        run: bunx playwright test -c e2e/playwright.config.ts
+
+      - name: Check for cut-off text
+        run: |
+          bunx vite preview --host 127.0.0.1 --port 4174 --strictPort &
+          until bun -e 'await fetch("http://127.0.0.1:4174/")' 2>/dev/null; do sleep 0.5; done
+          CHROME=$(ls -d /ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell | head -1) \
+            bun ../../scripts/ui-overflow-check.ts http://127.0.0.1:4174
+
+      - name: Keep the report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ui-gate-report
+          path: |
+            target/ui-gate
+            target/ui-gate-report
+          retention-days: 7
+
   # A .deb quickly, on a manual run only (never per push): the release
   # profile without LTO (16 codegen units), built in the distro it installs
   # on (scripts/deb-fast.sh does the same locally), whatever the checks say.

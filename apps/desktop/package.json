@@ -27,6 +27,7 @@
     "three": "0.186.1"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@sveltejs/adapter-static": "^4.0.0",
     "@sveltejs/kit": "^3.0.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
