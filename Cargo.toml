@@ -82,19 +82,19 @@ ext4-view = { version = "1", default-features = false, features = ["std"] }
 tar = { version = "0.4", default-features = false }
 mdns-sd = "0.21"
 nusb = { version = "0.2.7", features = ["tokio"] }
-# Orion (control protocol 5, layout of f8d767a) and its remote operator client, pinned together.
+# Orion (protocol 1, 2795a4b) and its remote operator client, pinned together.
 # Features per crate: the remote operator client (Atlas), IPC (board-agent).
-orion-client = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "f8d767ac5f7a995fbdc205d727f58dcf719c25dc", default-features = false }
-orion-control-plane = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "f8d767ac5f7a995fbdc205d727f58dcf719c25dc", default-features = false, features = ["std"] }
-orion-core = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "f8d767ac5f7a995fbdc205d727f58dcf719c25dc", default-features = false, features = ["std"] }
+orion-client = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "2795a4be8646cfee7bc694c53c72edf47ae0fff0", default-features = false }
+orion-control-plane = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "2795a4be8646cfee7bc694c53c72edf47ae0fff0", default-features = false, features = ["std"] }
+orion-core = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "2795a4be8646cfee7bc694c53c72edf47ae0fff0", default-features = false, features = ["std"] }
 # lemnosd's client (board-stream's live readings), at the commit the Raze
 # package pins (devices/raze/manifest.json, capabilities.hardware-service).
 lemnos-ipc = { git = "https://github.com/Prometheus-Dynamics/Lemnos", rev = "01939e9d32fa1522bda04ed3fdb718aa9edf9179" }
 # NetworkTables 4 client and server (the desktop app's NetworkTables page);
 # independent of orion-node.
-orion-nt4 = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "f8d767ac5f7a995fbdc205d727f58dcf719c25dc" }
+orion-nt4 = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "2795a4be8646cfee7bc694c53c72edf47ae0fff0" }
 # Tests only: a real node in-process (board-agent).
-orion-node = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "f8d767ac5f7a995fbdc205d727f58dcf719c25dc", default-features = false }
+orion-node = { git = "https://github.com/Prometheus-Dynamics/Orion", rev = "2795a4be8646cfee7bc694c53c72edf47ae0fff0", default-features = false }
 nix = { version = "0.31", default-features = false }
 # PhotonVision's UI socket (the device page's vision panel): the versions orion-nt4 uses.
 rmpv = "1.3.1"

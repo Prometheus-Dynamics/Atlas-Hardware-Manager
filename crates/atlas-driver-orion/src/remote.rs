@@ -175,16 +175,17 @@ impl RemoteTransport {
         let session = match connected {
             Ok(session) => session,
             Err(error) => {
-                let message = error.to_string();
+                let failed = crate::protocol::unreachable(&url, &error);
                 let mut state = self
                     .state
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
                 state.connected = false;
-                state.error = Some(message.clone());
-                return Err(DriverError::Unreachable(format!(
-                    "Orion at {url}: {message}"
-                )));
+                state.error = Some(match &failed {
+                    DriverError::Incompatible(message) => message.clone(),
+                    _ => error.to_string(),
+                });
+                return Err(failed);
             }
         };
         if let Some(pin) = &self.pin_file
@@ -232,7 +233,8 @@ impl RemoteTransport {
                 "This computer isn't enrolled with Orion yet; on the device run: {command}"
             ));
         }
-        DriverError::Unreachable(format!("Orion: {error}"))
+        crate::protocol::mismatch(error)
+            .unwrap_or_else(|| DriverError::Unreachable(format!("Orion: {error}")))
     }
 
     /// Runs one call, dropping the session after a failure so the next call

@@ -150,6 +150,7 @@ impl OrionHardware {
             ActionState::TimedOut => Err(DriverError::Other(format!(
                 "{hardware} didn't answer in time"
             ))),
+            ActionState::Cancelled => Err(DriverError::Cancelled),
             ActionState::Accepted | ActionState::Running { .. } => Err(DriverError::Other(
                 format!("{hardware} is still working on it; check its value in a moment"),
             )),

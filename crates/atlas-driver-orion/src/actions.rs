@@ -91,6 +91,8 @@ async fn wait_for(
                     "{name} timed out on the device"
                 )));
             }
+            // Stopped by its `<name>.cancel` companion action.
+            ActionState::Cancelled => return Err(DriverError::Cancelled),
             ActionState::Running {
                 progress: Some(progress),
             } => on_progress(*progress),
@@ -285,6 +287,8 @@ impl ActionsCapability for OrionActions {
                     "{name} timed out on the device"
                 )));
             }
+            // Stopped by its `<name>.cancel` companion action.
+            ActionState::Cancelled => return Err(DriverError::Cancelled),
             ActionState::Accepted | ActionState::Running { .. } => {
                 return Err(DriverError::Other(format!(
                     "{name} was sent through Orion and gave no result in time"

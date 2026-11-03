@@ -277,7 +277,7 @@ impl LiveStreams {
     pub(crate) async fn connect(&self, url: &str) -> Result<RemoteOperator, DriverError> {
         let operator = RemoteOperator::connect(url, self.identity.clone(), NodeTrust::FirstUse)
             .await
-            .map_err(|error| DriverError::Unreachable(format!("Orion at {url}: {error}")))?;
+            .map_err(|error| crate::protocol::unreachable(url, &error))?;
         if let Some(dir) = &self.pins {
             let pin = dir.join(operator.node_id().as_str());
             let key = operator.node_public_key();
@@ -408,8 +408,7 @@ impl LiveStreams {
         backfill: Backfill,
     ) -> Result<orion_client::remote::RemoteSession, DriverError> {
         let operator = self.connect(url).await?;
-        let unreachable =
-            |error: RemoteError| DriverError::Unreachable(format!("Orion at {url}: {error}"));
+        let unreachable = |error: RemoteError| crate::protocol::unreachable(url, &error);
         let session = operator.open_session("atlas").await.map_err(unreachable)?;
         let stream = StreamRef {
             owner: StatusSubject::Node(operator.node_id().clone()),

@@ -7,6 +7,11 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **Orion protocol 1 (2026-11-03).** board-agent is built against Orion
+  2795a4b and speaks protocol 1, the version Orion reset to before its first
+  release. It needs an OS whose orion-node speaks protocol 1 too (HeliOS
+  images from Orion 2795a4b on); against an older orion-node it can't claim
+  its actions.
 - **Shadowed in-tree modules dropped (2026-11-03).** `kernel.toml` sets
   `drop_shadowed_modules = true`: an OS that ships out-of-tree modules in
   updates/ (Styx's ov9282, pisp-be, rp1-cfe-downstream) no longer also ships the

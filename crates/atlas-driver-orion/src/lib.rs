@@ -27,6 +27,7 @@ mod live;
 mod metrics;
 mod operator;
 mod peer_tunnel;
+mod protocol;
 mod remote;
 mod slots;
 mod status;
