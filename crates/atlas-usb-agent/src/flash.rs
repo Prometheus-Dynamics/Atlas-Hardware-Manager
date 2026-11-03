@@ -301,7 +301,12 @@ pub(crate) async fn flash(
         size_bytes: disk.size_bytes,
     });
     // Nothing of a fresh disk may be mounted or open while it is written.
-    claim::take(&disk, &sink)?;
+    // Off the runtime: it runs udevadm and scans /proc, and the agent's HTTP
+    // API shares the runtime.
+    let (taken, claimed) = (disk.clone(), sink.clone());
+    tokio::task::spawn_blocking(move || claim::take(&taken, &claimed))
+        .await
+        .map_err(|error| error.to_string())??;
 
     let options = WriteOptions {
         verify: true,

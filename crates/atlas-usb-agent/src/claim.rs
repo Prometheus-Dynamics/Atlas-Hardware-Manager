@@ -16,6 +16,8 @@ use atlas_blockdev::Disk;
 use crate::flash::{Sink, log};
 
 const RULES_DIR: &str = "/run/udev/rules.d";
+/// How long udev may take with the disk's events before the claim goes on.
+const SETTLE_TIMEOUT: &str = "--timeout=10";
 
 /// The rule, for as long as it lives.
 pub(crate) struct Claim {
@@ -200,8 +202,13 @@ pub(crate) fn take(disk: &Disk, sink: &Sink) -> Result<(), String> {
     let _ = atlas_blockdev::unmount_all(disk);
     let nodes = nodes(disk);
     let _ = Command::new("udevadm")
-        .args(["trigger", "--action=change", "--settle"])
+        .args(["trigger", "--action=change"])
         .args(&nodes)
+        .status();
+    // Bounded: `trigger --settle` waited forever on a SystemCore once (an
+    // event that never finished), and the flash with it.
+    let _ = Command::new("udevadm")
+        .args(["settle", SETTLE_TIMEOUT])
         .status();
     let _ = atlas_blockdev::unmount_all(disk);
     let mounts = std::fs::read_to_string("/proc/mounts").unwrap_or_default();
