@@ -18,7 +18,7 @@ import * as runner from "./mock/runner";
 import { activity, logLines, metrics, online, record, restart, seedHistory } from "./mock/observe";
 import { listRecords, robotStatuses, robotUpdateRequest, scan, touch } from "./mock/scan";
 import { lastSelftest, runSelftest, seedSelftests } from "./mock/selftest";
-import { streamHardware, streamLive, streamVision } from "./mock/live";
+import { streamCamera, streamHardware, streamLive, streamVision } from "./mock/live";
 import { ntCameraAddresses, ntConnect, ntServer } from "./mock/nt";
 import { deviceSlots, installChoices, installSlot, slotCommand } from "./mock/slots";
 import { appUpdateStatus, checkAppUpdate, installAppUpdate } from "./mock/appUpdate";
@@ -211,8 +211,7 @@ export const mockApi: Api = {
   streamHardware,
   streamLive,
   streamVision,
-  // The browser can't read a board's stream: views show the URL directly.
-  streamCamera: () => Promise.resolve(null),
+  streamCamera,
   ntConnect,
   ntServerStart: (port) => ntServer.start(port),
   ntServerStop: () => ntServer.stop(),

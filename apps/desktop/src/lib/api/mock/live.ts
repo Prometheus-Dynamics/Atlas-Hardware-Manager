@@ -2,7 +2,7 @@
 // them: a `devices` frame, then batches of samples every 16 ms at each
 // device's period (the IMU at 100 Hz), on the board's monotonic clock.
 
-import type { DeviceKey, HardwareFrame, LiveChannel, LiveDevice, LiveFrame, LiveRow, LiveStart, Metric, VisionFrame } from "../types";
+import type { CameraState, DeviceKey, HardwareFrame, LiveChannel, LiveDevice, LiveFrame, LiveRow, LiveStart, Metric, VisionFrame } from "../types";
 
 type Model = { class: string; model: string; channels: LiveChannel[]; value: (t: number, i: number) => number };
 
@@ -209,4 +209,17 @@ export function streamVision(key: DeviceKey, onFrame: (frame: VisionFrame) => vo
     });
   }, 100);
   return Promise.resolve(() => clearInterval(timer));
+}
+
+/**
+ * A camera's stream as the app gets it: a frame the view turns into a blob:
+ * URL and decodes, under the app's CSP, like a board's JPEGs. The mock's
+ * cameras are test patterns (pattern.ts); each is sent once, as it stands.
+ */
+export function streamCamera(url: string, onFrame: (jpeg: Blob) => void, onState: (state: CameraState) => void): Promise<(() => void) | null> {
+  const svg = url.match(/^data:image\/svg\+xml;utf8,(.*)$/s);
+  if (!svg) return Promise.resolve(null);
+  onState({ state: "live" });
+  onFrame(new Blob([decodeURIComponent(svg[1])], { type: "image/svg+xml" }));
+  return Promise.resolve(() => {});
 }
