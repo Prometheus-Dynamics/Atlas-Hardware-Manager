@@ -10,6 +10,7 @@
 // off the radio, the radio off this computer.
 
 import { keyString, type DeviceRecord } from "#lib/api/client.ts";
+import { byDeviceName } from "#lib/format.ts";
 
 export const HOST = "host";
 
@@ -86,9 +87,6 @@ function edgeLabel(record: DeviceRecord, parent: DeviceRecord | null): string {
   }
 }
 
-const byName = (a: DeviceRecord, b: DeviceRecord) =>
-  (a.label ?? a.identity.name ?? a.key.serial).localeCompare(b.label ?? b.identity.name ?? b.key.serial, undefined, { numeric: true });
-
 export function layoutMap(records: DeviceRecord[]): { nodes: MapNode[]; edges: MapEdge[]; rows: number; depth: number } {
   const children = new Map<string, DeviceRecord[]>();
   for (const record of records) {
@@ -106,7 +104,7 @@ export function layoutMap(records: DeviceRecord[]): { nodes: MapNode[]; edges: M
   function place(id: string, record: DeviceRecord | null, depth: number): number {
     placed.add(id);
     maxDepth = Math.max(maxDepth, depth);
-    const kids = (children.get(id) ?? []).filter((k) => !placed.has(keyString(k.key))).sort(byName);
+    const kids = (children.get(id) ?? []).filter((k) => !placed.has(keyString(k.key))).sort(byDeviceName);
     let row: number;
     if (kids.length === 0) {
       row = nextRow++;

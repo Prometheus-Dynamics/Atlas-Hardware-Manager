@@ -11,7 +11,7 @@
   import MonitorChart from "#lib/components/device/MonitorChart.svelte";
   import Page from "#lib/components/layout/Page.svelte";
   import Region from "#lib/components/layout/Region.svelte";
-  import { deviceName } from "#lib/format.ts";
+  import { byDeviceName, deviceName } from "#lib/format.ts";
   import { isCore, isTextMetric, sortMetrics } from "#lib/metrics.ts";
   import { cameraStreams, isRecovery } from "#lib/present.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
@@ -48,11 +48,10 @@
     { value: "900000", label: "15 min" },
   ];
 
-  const byName = (a: DeviceRecord, b: DeviceRecord) => deviceName(a).localeCompare(deviceName(b), undefined, { numeric: true });
   // Every device that can report, online first: the chips. Colours follow
   // this order, so a device keeps its colour while others come and go.
   const candidates = $derived(
-    devices.all.filter((d) => d.capabilities.includes("telemetry") && !isRecovery(d)).sort((a, b) => (a.presence !== b.presence ? (a.presence === "online" ? -1 : 1) : byName(a, b))),
+    devices.all.filter((d) => d.capabilities.includes("telemetry") && !isRecovery(d)).sort((a, b) => (a.presence !== b.presence ? (a.presence === "online" ? -1 : 1) : byDeviceName(a, b))),
   );
   const colorOf = $derived(new Map(candidates.map((d, i) => [keyString(d.key), COLORS[i % COLORS.length]])));
   const chosen = (d: DeviceRecord) => ui.monitored.size === 0 || ui.monitored.has(keyString(d.key));

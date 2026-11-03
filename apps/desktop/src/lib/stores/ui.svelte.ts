@@ -4,7 +4,7 @@
 import { goto } from "$app/navigation";
 import { SvelteSet } from "svelte/reactivity";
 import { keyString, type DeviceRecord, type JobId, type UpdateRequestInput } from "#lib/api/client.ts";
-import { deviceName } from "#lib/format.ts";
+import { byDeviceName, deviceName } from "#lib/format.ts";
 import { devices } from "./devices.svelte";
 
 export type Panel =
@@ -122,7 +122,7 @@ class UiStore {
           return a.robot.localeCompare(b.robot, undefined, { numeric: true });
         }
         if (a.presence !== b.presence) return a.presence === "online" ? -1 : 1;
-        return deviceName(a).localeCompare(deviceName(b), undefined, { numeric: true });
+        return byDeviceName(a, b);
       });
   });
 

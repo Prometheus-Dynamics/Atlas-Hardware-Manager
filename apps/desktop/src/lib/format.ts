@@ -7,6 +7,11 @@ export function deviceName(record: DeviceRecord): string {
   return record.label ?? record.identity.name ?? keyString(record.key);
 }
 
+/** By name, then by key, so boards with the same name keep their order across polls. */
+export function byDeviceName(a: DeviceRecord, b: DeviceRecord): number {
+  return deviceName(a).localeCompare(deviceName(b), undefined, { numeric: true }) || keyString(a.key).localeCompare(keyString(b.key));
+}
+
 export function primaryVersion(identity: Identity): string | null {
   const v = identity.versions;
   return v.os ?? v.firmware ?? v.bootloader ?? Object.values(v)[0] ?? null;

@@ -4,7 +4,7 @@
   // device.
   import { keyString, type DeviceRecord } from "#lib/api/client.ts";
   import Sparkline from "#lib/components/common/Sparkline.svelte";
-  import { deviceName, primaryVersion } from "#lib/format.ts";
+  import { byDeviceName, deviceName, primaryVersion } from "#lib/format.ts";
   import { metricTone } from "#lib/metrics.ts";
   import { displayModel, isRecovery } from "#lib/present.ts";
   import { insights } from "#lib/stores/insights.svelte.ts";
@@ -15,7 +15,7 @@
 
   const rows = $derived(
     [...records]
-      .sort((a, b) => order(a) - order(b) || deviceName(a).localeCompare(deviceName(b), undefined, { numeric: true }))
+      .sort((a, b) => order(a) - order(b) || byDeviceName(a, b))
       .map((r) => {
         const id = keyString(r.key);
         const temp = live.metric(id, "temp");

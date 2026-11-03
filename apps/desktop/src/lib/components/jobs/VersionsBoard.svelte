@@ -5,7 +5,7 @@
   // update or flash ended. A row opens the device's Software tab.
   import type { Snippet } from "svelte";
   import { keyString, type ActivityEntry, type DeviceRecord } from "#lib/api/client.ts";
-  import { deviceName, primaryVersion, timeAgo } from "#lib/format.ts";
+  import { byDeviceName, deviceName, primaryVersion, timeAgo } from "#lib/format.ts";
   import { activity } from "#lib/stores/activity.svelte.ts";
   import { clock } from "#lib/stores/clock.svelte.ts";
   import { displayModel, isRecovery } from "#lib/present.ts";
@@ -41,7 +41,7 @@
         const outcome = insights.lastOutcome.get(id);
         return { record: d, id, version, target, outcome, state: stateOf(d, id, version, target) };
       })
-      .sort((a, b) => RANK[a.state] - RANK[b.state] || deviceName(a.record).localeCompare(deviceName(b.record), undefined, { numeric: true })),
+      .sort((a, b) => RANK[a.state] - RANK[b.state] || byDeviceName(a.record, b.record)),
   );
 
   const RANK: Record<State, number> = { "usb-boot": 0, failed: 1, behind: 2, current: 3, unknown: 4, offline: 5 };

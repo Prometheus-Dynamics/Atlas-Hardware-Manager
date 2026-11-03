@@ -5,7 +5,7 @@
   import { page } from "$app/state";
   import { keyString, type DeviceRecord } from "#lib/api/client.ts";
   import Icon from "#lib/components/common/Icon.svelte";
-  import { deviceName } from "#lib/format.ts";
+  import { byDeviceName, deviceName } from "#lib/format.ts";
   import { metricTone } from "#lib/metrics.ts";
   import { isRecovery } from "#lib/present.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
@@ -50,7 +50,7 @@
   const mine = $derived(
     devices.all
       .filter((d) => ui.robot === null || (ui.robot === NO_ROBOT ? !d.robot : d.robot === ui.robot))
-      .sort((a, b) => rank(a) - rank(b) || deviceName(a).localeCompare(deviceName(b), undefined, { numeric: true })),
+      .sort((a, b) => rank(a) - rank(b) || byDeviceName(a, b)),
   );
   const online = $derived(mine.filter((d) => d.presence === "online").length);
   $effect(() => watchLive(mine.filter((d) => d.presence === "online"), SLOW_MS));
