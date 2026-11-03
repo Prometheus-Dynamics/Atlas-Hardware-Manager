@@ -346,3 +346,91 @@ fn cancelling_stops_between_segments() {
     assert!(disk.writes.is_empty());
     let _ = std::fs::remove_file(path);
 }
+
+/// The sparse fixture (crate::sparse's tests) as a file, and its bytes.
+fn sparse_fixture() -> (PathBuf, Vec<u8>) {
+    let xz: &[u8] = include_bytes!("../../tests/data/sparse-fixture.img.xz");
+    let path = temp("sparse.img.xz");
+    std::fs::write(&path, xz).unwrap();
+    let mut image = Vec::new();
+    lzma_rs::xz_decompress(&mut { xz }, &mut image).unwrap();
+    (path, image)
+}
+
+#[test]
+fn free_space_is_skipped_through_drops_and_the_rest_lands() {
+    let (path, image) = sparse_fixture();
+    let mut disk = Dropping::new(image.len() + SEGMENT, &[SEGMENT as u64 / 2, 400 << 10]);
+    let (result, events) = write(&path, &mut disk, &policy(), None);
+    let report = result.unwrap();
+    assert_eq!(count(&events, true), 2);
+    assert_eq!(report.bytes_written, image.len() as u64);
+    // Most of the 16 MiB is free space in the two filesystems.
+    assert!(report.bytes_skipped > 9 << 20, "{}", report.bytes_skipped);
+    // What was skipped kept the old bytes; it was all zeros in the image.
+    let mut kept = 0;
+    for (on_disk, wanted) in disk.medium.chunks(4096).zip(image.chunks(4096)) {
+        if on_disk[..wanted.len()] != *wanted {
+            assert!(wanted.iter().all(|byte| *byte == 0));
+            assert!(on_disk.iter().all(|byte| *byte == 0xAA));
+            kept += wanted.len() as u64;
+        }
+    }
+    assert_eq!(kept, report.bytes_skipped);
+    std::fs::remove_file(path).unwrap();
+}
+
+/// A real image onto a file of garbage, to check with fsck afterwards:
+/// `ATLAS_SPARSE_IMAGE=<.img.xz> ATLAS_SPARSE_OUT=<file> cargo test -p
+/// atlas-blockdev sparse_onto_garbage -- --ignored`.
+#[cfg(unix)]
+#[test]
+#[ignore = "needs a real image"]
+fn sparse_onto_garbage() {
+    struct FileDisk(std::fs::File, u64);
+    impl Target for FileDisk {
+        fn capacity(&self) -> u64 {
+            self.1
+        }
+        fn write_at(&mut self, offset: u64, data: &[u8]) -> io::Result<()> {
+            std::os::unix::fs::FileExt::write_all_at(&self.0, data, offset)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            self.0.sync_data()
+        }
+        fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<()> {
+            std::os::unix::fs::FileExt::read_exact_at(&self.0, buf, offset)
+        }
+        fn reattach(&mut self, _deadline: Instant) -> Result<(), String> {
+            Err("a file doesn't drop".into())
+        }
+    }
+    let image = PathBuf::from(std::env::var("ATLAS_SPARSE_IMAGE").unwrap());
+    let out = PathBuf::from(std::env::var("ATLAS_SPARSE_OUT").unwrap());
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&out)
+        .unwrap();
+    let size = file.metadata().unwrap().len();
+    let mut disk = FileDisk(file, size);
+    let report = write_resumable(
+        &image,
+        &mut disk,
+        &verified(),
+        &ResumePolicy::default(),
+        None,
+        &mut |_| {},
+        &AtomicBool::new(false),
+    )
+    .unwrap();
+    // Read by whoever runs it (--nocapture), not asserted.
+    writeln!(
+        io::stderr(),
+        "wrote {} of {} bytes, skipped {}",
+        report.bytes_written - report.bytes_skipped,
+        report.bytes_written,
+        report.bytes_skipped
+    )
+    .unwrap();
+}

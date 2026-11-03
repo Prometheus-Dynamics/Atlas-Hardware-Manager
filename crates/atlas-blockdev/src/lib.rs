@@ -19,6 +19,7 @@ mod resume;
 mod session;
 mod slot_bundle;
 mod sniff;
+mod sparse;
 mod writer;
 
 pub use client::{HelperClient, HelperRequest};

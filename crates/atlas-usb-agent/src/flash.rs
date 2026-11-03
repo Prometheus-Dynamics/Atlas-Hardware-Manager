@@ -354,6 +354,16 @@ pub(crate) async fn flash(
     })
     .await
     .map_err(|error| error.to_string())??;
+    if report.bytes_skipped > 0 {
+        log(
+            &sink,
+            format!(
+                "wrote and read back {} MB; skipped {} MB of free space the image's filesystems don't use",
+                (report.bytes_written - report.bytes_skipped) / 1_000_000,
+                report.bytes_skipped / 1_000_000
+            ),
+        );
+    }
     sink(Event::Written {
         bytes: report.bytes_written,
         seconds: report.seconds,

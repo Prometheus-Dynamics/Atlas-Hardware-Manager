@@ -71,6 +71,10 @@ pub enum WriteProgress {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WriteReport {
     pub bytes_written: u64,
+    /// Of those, zeros in the image's free space, neither written nor read
+    /// back (crate::sparse).
+    #[serde(default)]
+    pub bytes_skipped: u64,
     /// SHA-256 of the decoded image as written.
     pub sha256: String,
     pub verified: bool,
@@ -318,6 +322,7 @@ pub fn write_image(
     drop(restore);
     Ok(WriteReport {
         bytes_written: written,
+        bytes_skipped: 0,
         sha256,
         verified: options.verify,
         seconds: started.elapsed().as_secs(),

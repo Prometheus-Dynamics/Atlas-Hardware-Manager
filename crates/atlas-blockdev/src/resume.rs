@@ -5,8 +5,11 @@
 //! (the board found again, booted again if it fell back to its ROM) and the
 //! segment goes out again from memory. A later run with the same journal
 //! re-reads the proven part instead of writing it, then goes on from there.
+//! Zero blocks the image's own filesystems call free are neither written
+//! nor read back (crate::sparse).
 
 use std::io::{self, Write};
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -18,6 +21,7 @@ use sha2::{Digest, Sha256};
 
 use crate::BlockError;
 use crate::image::{decode_into, detect_format};
+use crate::sparse::{self, FreeMap};
 use crate::writer::{WriteOptions, WriteProgress, WriteReport, cancelled_error, hash_file};
 
 #[cfg(target_os = "linux")]
@@ -140,6 +144,10 @@ struct Sink<'a> {
     readback: Vec<u8>,
     hasher: Sha256,
     written: u64,
+    /// The image's free space, and what of the segment must land.
+    map: FreeMap,
+    runs: Vec<Range<usize>>,
+    skipped: u64,
     /// Bytes a journal claims; re-read rather than written.
     claimed: u64,
     drops: u32,
@@ -164,31 +172,37 @@ impl Sink<'_> {
         cancelled_error()
     }
 
-    /// Writes, flushes and reads back the segment buffer at `written`.
-    fn land(&mut self, padded: usize) -> Result<(), Missed> {
+    /// Writes, flushes and reads back the segment's runs at `written`.
+    fn land(&mut self) -> Result<(), Missed> {
         let offset = self.written;
-        self.target
-            .write_at(offset, &self.segment[..padded])
-            .map_err(Missed::Io)?;
-        self.target.flush().map_err(Missed::Io)?;
-        if self.verify {
+        for run in &self.runs {
             self.target
-                .read_at(offset, &mut self.readback[..padded])
+                .write_at(offset + run.start as u64, &self.segment[run.clone()])
                 .map_err(Missed::Io)?;
-            if self.readback[..padded] != self.segment[..padded] {
-                return Err(Missed::Differed);
-            }
+        }
+        self.target.flush().map_err(Missed::Io)?;
+        if self.verify && !self.read_back().map_err(Missed::Io)? {
+            return Err(Missed::Differed);
         }
         Ok(())
     }
 
-    /// Whether the disk already holds the segment, as a journal claims.
-    fn already_there(&mut self, padded: usize) -> bool {
+    /// Reads the segment's runs back: whether the disk holds them.
+    fn read_back(&mut self) -> io::Result<bool> {
         let offset = self.written;
-        self.target
-            .read_at(offset, &mut self.readback[..padded])
-            .is_ok()
-            && self.readback[..padded] == self.segment[..padded]
+        for run in &self.runs {
+            self.target
+                .read_at(offset + run.start as u64, &mut self.readback[run.clone()])?;
+            if self.readback[run.clone()] != self.segment[run.clone()] {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Whether the disk already holds the segment, as a journal claims.
+    fn already_there(&mut self) -> bool {
+        self.read_back().unwrap_or(false)
     }
 
     fn commit_segment(&mut self) -> io::Result<()> {
@@ -208,8 +222,12 @@ impl Sink<'_> {
         if self.readback.len() < padded {
             self.readback.resize(padded, 0);
         }
+        self.map.observe(self.written, &self.segment[..length]);
+        let (runs, skipped) = sparse::runs(&self.map, self.written, &self.segment);
+        self.runs = runs;
+        self.skipped += skipped;
         let end = self.written + length as u64;
-        let skip = end <= self.claimed && self.already_there(padded);
+        let skip = end <= self.claimed && self.already_there();
         if !skip && self.claimed > self.written {
             // The journal's claim ends here: the disk changed since.
             self.claimed = self.written;
@@ -224,7 +242,7 @@ impl Sink<'_> {
                 };
                 (self.progress)(event);
             }
-            while let Err(missed) = self.land(padded) {
+            while let Err(missed) = self.land() {
                 self.survive(missed)?;
             }
         }
@@ -377,6 +395,9 @@ pub fn write_resumable(
         readback: Vec::new(),
         hasher: Sha256::new(),
         written: 0,
+        map: FreeMap::new(),
+        runs: Vec::new(),
+        skipped: 0,
         claimed: journal.as_ref().map_or(0, |(_, journal)| journal.proven),
         drops: 0,
         deadline: started + policy.deadline,
@@ -415,6 +436,7 @@ pub fn write_resumable(
     }
     Ok(WriteReport {
         bytes_written: sink.written,
+        bytes_skipped: sink.skipped,
         sha256: hex(&sink.hasher.finalize()),
         verified: options.verify,
         seconds: started.elapsed().as_secs(),
