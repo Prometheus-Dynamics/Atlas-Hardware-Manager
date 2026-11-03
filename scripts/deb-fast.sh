@@ -46,7 +46,12 @@ fi
 
 # The UI: rebuilt only when its sources changed.
 ui_hash=$(cd "$root_dir/apps/desktop" && git ls-files -s -- . ':!src-tauri' | sha256sum | cut -c1-16)
-ui_dirty=$(cd "$root_dir/apps/desktop" && git status --porcelain -- . ':!src-tauri' | sha256sum | cut -c1-16)
+# What the uncommitted edits say, not just which files have them: a second
+# edit to a file already modified must rebuild too.
+ui_dirty=$(cd "$root_dir/apps/desktop" && {
+  git diff HEAD -- . ':!src-tauri'
+  git ls-files -o --exclude-standard -z -- . ':!src-tauri' | xargs -0 -r sha256sum
+} | sha256sum | cut -c1-16)
 ui_key="$ui_hash-$ui_dirty"
 skip_ui=0
 [[ -f "$cache/ui.key" && "$(cat "$cache/ui.key")" == "$ui_key" && -f "$root_dir/apps/desktop/build/index.html" ]] && skip_ui=1
