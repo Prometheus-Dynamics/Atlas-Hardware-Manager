@@ -7,6 +7,12 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **r8152 firmware (2026-11-03).** The kernel trim keeps r8152 for USB Ethernet
+  dongles, so the package now ships its 7 firmware files from linux-firmware
+  20260810 under /usr/lib/firmware/rtl_nic (`kernel.toml`, an archive source
+  extracted once by Gaia, no Buildroot linux-firmware package). rtl8157-1 and
+  rtl8159-1 exist in no linux-firmware release and are listed as optional.
+  OS builds have nothing to add; they need Gaia cf62b48 or later.
 - **Slots image sized to content (2026-11-03).** The first-flash boot FAT is
   `size = "auto"` with 64 MiB free (FAT16, about 80 MiB) instead of a fixed
   1 GiB, and the data partition carries 8 MiB free instead of 256 MiB; first
