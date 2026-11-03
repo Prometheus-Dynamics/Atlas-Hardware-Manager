@@ -356,7 +356,11 @@ fn unmount_ours(part: &str, point: &Path) -> Result<(), BlockError> {
         }
         return Ok(());
     }
-    run("udisksctl", &["unmount", "--no-user-interaction", "-b", part]).map(|_| ())
+    run(
+        "udisksctl",
+        &["unmount", "--no-user-interaction", "-b", part],
+    )
+    .map(|_| ())
 }
 
 /// The mount point in udisksctl's "Mounted /dev/sdc1 at /run/media/u/BOOT".
