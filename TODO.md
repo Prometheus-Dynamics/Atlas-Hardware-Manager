@@ -24,6 +24,11 @@ first eight items are the alpha list; the other Raze items follow. Each says
 where it runs. The bench Raze, e5226d57, is on the SystemCore; a Raze on this
 computer's USB means its regular USB port (the one used for flashing) here.
 
+**Paused (the user, 2026-11-03):** the current list is finished or waiting below,
+and new work starts when the user says. Still open from that list: flashing
+through a dropping USB link. Raze #2 is reserved for Gaia's A/B once the user
+approves it.
+
 - [ ] **The first real flash through the USB agent.**
   - **Where:** behind the SystemCore.
   - **What:** step 1 is built (456e4cc, 04d7931): the agent as a service from its
@@ -96,10 +101,12 @@ computer's USB means its regular USB port (the one used for flashing) here.
   - **What:** in `devices/raze/manifest.json`: the ring's index direction, the
     IMU's mount angles, the INA238 shunt (10 or 20 mOhm) and its max current
     (-0.43 A read on Raze #2: compare the sign with a meter), the USB power
-    lines' control, the libcamera tuning files on a PhotonVision slot;
-    `selftest --interactive` with HeliOS running.
+    lines' control; `selftest --interactive` with HeliOS running. The libcamera
+    tuning files stay unverified on purpose: they belong to an OS that runs
+    libcamera (PhotonVision), HeliOS has none, and no PhotonVision slot was found
+    to read them from.
   - **Why:** the generated board files and the self-test trust them.
-  - **Done when:** each has a `verified` note and
+  - **Done when:** each has a `verified` note, the tuning excepted, and
     `devices/tools/gen-raze.py --check` passes (it passes today, with them open).
 - [ ] **"Behind SystemCore" in the app.**
   - **Where:** behind the SystemCore.
@@ -136,13 +143,19 @@ computer's USB means its regular USB port (the one used for flashing) here.
     action).
 - [ ] **Orion live stream numbers.**
   - **Where:** on the bench (windows through HeliOS).
-  - **What:** CPU, forks and backfill time on a board for Orion's streams
-    (2d46378). Then point HardwareTab at `board.hardware` (the driver follows it;
-    the tab reads board-stream) and retire board-http and board-stream.
+  - **What:** measured; what's left is pointing HardwareTab at `board.hardware`
+    (the driver follows it; the tab reads board-stream) and retiring board-http
+    and board-stream.
   - **Why:** always-live charts without a process per request.
-  - **Done when:** the numbers are written down and the old paths are gone or
-    kept for a stated reason.
-  - **Blocked by:** HeliOS: the measurement on a board.
+  - **Numbers (2026-11-03, Raze #1, one client on this computer, one run each):**
+    backfill of 600 rows of 9 values in 150-213 ms on dev.921 and 73-88 ms on
+    dev.909; live, one row per 500 ms, longest gap 535 ms; orion-node 4.96% of a
+    core idle, 5.59% with the client, memory unchanged; board-agent flat at 0.3%;
+    forks 18.2/s idle, 16.4/s streaming. Polling `/status` once a second: 25.7/s,
+    about 8 per request, but idle forks ranged from 8.6 to 19/s across runs, so
+    only "the stream adds none" is firm. board-http's own CPU wasn't read.
+  - **Done when:** the old paths are gone or kept for a stated reason.
+  - **Blocked by:** the user's start; board-http and board-stream stay until then.
 - [ ] **Flashing through a dropping USB link.**
   - **Where:** behind the SystemCore.
   - **What:** written (5f28070): the agent writes in 16 MiB segments, each
@@ -165,6 +178,8 @@ computer's USB means its regular USB port (the one used for flashing) here.
     16% (the gadget stopped answering for 30 s, SCSI timeout, port reset), each
     resumed on its segment, nothing started over; the board booted dev.820.
   - **Blocked by:** nothing; the run is going.
+  - **Waiting on:** a bench window and the user's OK to flash: Raze #2 is
+    reserved for Gaia, and 3-1.1.4.1 is its port.
 - [ ] **The USB agent under Orion, with detached flashes.**
   - **Where:** behind the SystemCore.
   - **What:** step 2: the agent registers with the SystemCore's Orion node and
@@ -311,6 +326,24 @@ no longer a blocker: Gaia's builds put each one beside its image (006284a,
   - **Done when:** an installed Atlas updates itself from GitHub and restarts on
     the new version.
   - **Blocked by:** two releases, whenever the user cuts them.
+
+## Decided, starts when the user says
+
+Decided by the user on 2026-11-03. Nothing here has started.
+
+- [ ] **OV9782 off the kernel patches.**
+  - **What:** the kernel module work happens in Lemnos, with drivers in Rust in
+    userspace, so the device package's patches go: `linux/ov9782/0001` and
+    `0002`, with what only they need. The manifest's camera entry
+    (`kernel_driver`, `kernel_driver_source`) follows.
+  - **Why:** the patched `ov9282` driver stops being the sensor's driver.
+  - **Done when:** the sensor runs from Lemnos on a Raze with the patches gone.
+  - **Blocked by:** the user's start, and Lemnos's driver.
+- [ ] **Shared libraries: static and shared modes across the deps.**
+  - **What:** Atlas's part of the shared-library work; its scope comes with the
+    start.
+  - **Done when:** set at the start.
+  - **Blocked by:** the user's start.
 
 ## Later, behind the freeze
 
