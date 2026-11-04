@@ -13,7 +13,6 @@ generated_by = "atlas devices/tools/gen-raze.py, raze package 2026.1.0-dev"
 
 # 16 SK6812-EC20 LEDs on GPIO13 (ws2812-pio), grb24 on the wire;
 # logical LED 0 is physical LED 5.
-# count: from the manifest, unverified on hardware.
 # direction: from the manifest, unverified on hardware.
 [[devices]]
 id = "status-ring"
@@ -92,7 +91,6 @@ config = { imu = "imu", mag = "magnetometer", mode = "9axis", algorithm = "mahon
 # power-on (raze-device.txt gpio=), and lemnosd requests it already on (default_on), so
 # its start doesn't toggle the port. Every boot starts on (persist off: the root is
 # read-only); on_exit keep leaves it as it is when lemnosd stops.
-# gpio chip label: unverified on hardware.
 [[devices]]
 id = "usb-a-power"
 driver = "gpio-power-switch"
@@ -103,7 +101,6 @@ config = { chip = "pinctrl-rp1", line = 20, default_on = true, persist = false, 
 # power-on (raze-device.txt gpio=), and lemnosd requests it already on (default_on), so
 # its start doesn't toggle the port. Every boot starts on (persist off: the root is
 # read-only); on_exit keep leaves it as it is when lemnosd stops.
-# gpio chip label: unverified on hardware.
 [[devices]]
 id = "usb-c-power"
 driver = "gpio-power-switch"

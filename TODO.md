@@ -87,27 +87,20 @@ computer's USB means its regular USB port (the one used for flashing) here.
   - Already done on hardware (2026-10-30): unhealthy-trial fallback, layered
     slot plus push (over SSH), keyless install through the SystemCore, support
     bundles.
-- [ ] **USB gadget rebind timing.**
-  - **Where:** on this computer's USB.
-  - **What:** a natural link stall recovers by the watch's rebind (79389f3).
-  - **Why:** the ECM stall's recovery is the field fix (its root cause is cut).
-  - **Done when:** `usb-gadget.rebound` lands about 15 s after TX stops, in
-    events.jsonl and the host log.
-  - **Blocked by:** the user: a running Raze left on that port until a stall
-    comes (the gap has been as long as 14 h).
-- [ ] **Raze facts the manifest still marks unverified.**
-  - **Where:** on the bench (windows through HeliOS).
-  - **What:** in `devices/raze/manifest.json`: LED count and index direction, the
-    INA238 shunt (10 or 20 mOhm) and its max current, the IMU's mount angles,
-    the camera tuning (neither file the manifest names is on slot
-    2026.2.0-dev.907, though the camera streams), the USB-A power line's GPIO
-    chip and control (no gpioinfo on the board);
+- [x] **USB gadget rebind timing: recovery measured only.** Unbind to bound
+  1.0 s, configured 1.6 to 2.0 s, the host back in about 9 s (Raze #2,
+  2026-11-03). How soon a natural stall is noticed can't be forced, so it stays
+  unmeasured and isn't a blocker (HeliOS, 2026-11-03).
+- [ ] **Raze facts the manifest still marks unverified (not blockers).**
+  - **Where:** on the bench, and they need a person.
+  - **What:** in `devices/raze/manifest.json`: the ring's index direction, the
+    IMU's mount angles, the INA238 shunt (10 or 20 mOhm) and its max current
+    (-0.43 A read on Raze #2: compare the sign with a meter), the USB power
+    lines' control, the libcamera tuning files on a PhotonVision slot;
     `selftest --interactive` with HeliOS running.
   - **Why:** the generated board files and the self-test trust them.
   - **Done when:** each has a `verified` note and
     `devices/tools/gen-raze.py --check` passes (it passes today, with them open).
-  - **Blocked by:** a bench window; the shunt needs the user to read the
-    resistor marking (R010 or R020) or compare with a USB-C meter.
 - [ ] **"Behind SystemCore" in the app.**
   - **Where:** behind the SystemCore.
   - **What:** built (722f36a): the device list and cards put each device right

@@ -11,6 +11,10 @@ OSes pin this layer by commit; the commits are listed per area.
   rpi_hevc_dec is loaded and bound to brcm,bcm2712-hevc-dec (1000800000.codec),
   /dev/video19 is rpi-hevc-dec. The manifest's kernel built-ins, version and
   sensor bus select are verified on the same board.
+  LED count (16, in 8 sections) and the USB power chip are verified too; the
+  camera tuning is recorded as the OS's, not the board's: HeliOS's Styx
+  pipeline carries no libcamera files. The ring's direction, mount angles and
+  shunt still need a person.
 - **Boot time no longer counts the trial's judging (2026-11-03).** The
   trial-confirm unit (`board-update-confirm.service`) starts as `Type=exec`,
   like the management-link watch (a593c8c), so "Startup finished" on a trial
