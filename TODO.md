@@ -331,14 +331,16 @@ no longer a blocker: Gaia's builds put each one beside its image (006284a,
 
 Decided by the user on 2026-11-03. Nothing here has started.
 
-- [ ] **OV9782 off the kernel patches.**
+- [ ] **OV9782 off the kernel patches, if every image variant moves.**
   - **What:** the kernel module work happens in Lemnos, with drivers in Rust in
-    userspace, so the device package's patches go: `linux/ov9782/0001` and
-    `0002`, with what only they need. The manifest's camera entry
-    (`kernel_driver`, `kernel_driver_source`) follows.
-  - **Why:** the patched `ov9282` driver stops being the sensor's driver.
-  - **Done when:** the sensor runs from Lemnos on a Raze with the patches gone.
-  - **Blocked by:** the user's start, and Lemnos's driver.
+    userspace. The device package's patches (`linux/ov9782/0001` and `0002`) can
+    only go if every image variant moves off the kernel `ov9282` driver, and the
+    libcamera variants still use it. If they all move, the manifest's camera
+    entry (`kernel_driver`, `kernel_driver_source`) follows.
+  - **Why:** the patches exist for that driver alone.
+  - **Done when:** no image variant uses the `ov9282` driver and the patches are
+    gone, or the patches are kept for a stated reason.
+  - **Blocked by:** the user's start, Lemnos's driver, the libcamera variants.
 - [ ] **Shared libraries: static and shared modes across the deps.**
   - **What:** Atlas's part of the shared-library work; its scope comes with the
     start.
