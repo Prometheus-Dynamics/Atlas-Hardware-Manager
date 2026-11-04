@@ -9,6 +9,7 @@
   import DeviceCard from "#lib/components/inventory/DeviceCard.svelte";
   import { isCore, isTextMetric, sortMetrics } from "#lib/metrics.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
+  import { clock } from "#lib/stores/clock.svelte.ts";
   import { live, SLOW_MS, watchLive } from "#lib/stores/live.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
   import { makeReady, showDevices } from "./robotActions";
@@ -36,6 +37,7 @@
   // any of them reports (temperature, CPU, vision…).
   const COLORS = Array.from({ length: 8 }, (_, i) => `var(--series-${i + 1})`);
   const charted = $derived(members.filter((d) => d.presence === "online").map((record, i) => ({ record, color: COLORS[i % COLORS.length] })));
+  const start = $derived(live.chartStart(charted.map((c) => keyString(c.record.key)), clock.now - 600_000, clock.now));
   const metrics = $derived.by(() => {
     const seen = new Map<string, import("#lib/api/client.ts").Metric>();
     for (const { record } of charted) {
@@ -111,7 +113,7 @@
     {#if metrics.length > 0}
       <section class="live" aria-label="Live readings">
         {#each metrics as m (m.id)}
-          <MonitorChart metric={m.id} title={m.label} unit={m.unit ?? ""} devices={charted} windowMs={600_000} />
+          <MonitorChart metric={m.id} title={m.label} unit={m.unit ?? ""} devices={charted} {start} />
         {/each}
       </section>
     {/if}

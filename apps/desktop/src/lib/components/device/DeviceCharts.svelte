@@ -1,8 +1,7 @@
 <script lang="ts">
-  // The device's live readings, each once, as a chart with its current
-  // value: temperature (with the fan under it), CPU, vision rate, memory,
-  // then whatever else it reports (voltage, current, …). Uptime is in the
-  // header, CPU cores in the CPU's detail. Polled while shown.
+  // The live readings the Health rows don't draw, each as a chart with its
+  // current value: the vision rate first, then whatever else the device
+  // reports (voltage, current, …). Polled while shown, for Health too.
   import { keyString, type DeviceRecord, type Metric } from "#lib/api/client.ts";
   import Skeleton from "#lib/components/common/Skeleton.svelte";
   import { isCore, isTextMetric, metricTone, metricValue } from "#lib/metrics.ts";
@@ -12,10 +11,9 @@
 
   $effect(() => watchLive([record]));
 
-  const FIRST = ["temp", "cpu", "fps", "memory"];
-  const COLORS = ["var(--series-3)", "var(--series-1)", "var(--series-2)", "var(--series-4)", "var(--series-5)"];
-  /** Shown elsewhere: the fan under the temperature, uptime in the header. */
-  const ELSEWHERE = new Set(["fan", "uptime"]);
+  const COLORS = ["var(--series-2)", "var(--series-4)", "var(--series-5)", "var(--series-1)", "var(--series-3)"];
+  /** Rows of their own in Health. */
+  const ELSEWHERE = new Set(["temp", "cpu", "memory", "fan", "uptime"]);
   // Each chart is drawn at its own size in pixels: a stretched viewBox with
   // non-scaling strokes made WebKit's painter keep memory on every redraw.
   let sizes = $state<Record<string, { w: number; h: number }>>({});
@@ -28,38 +26,27 @@
 
   const id = $derived(keyString(record.key));
   const all = $derived(live.metrics.get(id) ?? []);
-  const fan = $derived(all.find((m) => m.id === "fan") ?? null);
   const charts = $derived(
     all
       .filter((m) => !isCore(m) && !ELSEWHERE.has(m.id) && !isTextMetric(m))
-      .sort((a, b) => rank(a.id) - rank(b.id))
+      .sort((a, b) => Number(b.id === "fps") - Number(a.id === "fps"))
       .slice(0, 6)
-      .map((metric) => ({ metric, values: live.series(id, metric.id), color: COLORS[Math.min(rank(metric.id), 4)] }))
+      .map((metric, i) => ({ metric, values: live.series(id, metric.id), color: COLORS[i % COLORS.length] }))
       .filter((c) => c.values.length > 0),
   );
   const error = $derived(live.errors.get(id));
 
-  function rank(metricId: string): number {
-    const i = FIRST.indexOf(metricId);
-    return i < 0 ? FIRST.length : i;
-  }
-
   function detail(c: { metric: Metric; values: number[] }): string {
-    if (c.metric.id === "temp" && fan) {
-      const v = metricValue(fan);
-      return `fan ${v.value} ${v.unit}${c.metric.warn_above != null ? ` · warns above ${c.metric.warn_above}` : ""}`;
-    }
     if (c.metric.detail) return c.metric.detail;
-    const d = c.metric.id === "temp" ? 1 : 0;
-    return `low ${Math.min(...c.values).toFixed(d)} · high ${Math.max(...c.values).toFixed(d)}`;
+    return `low ${Math.min(...c.values).toFixed(0)} · high ${Math.max(...c.values).toFixed(0)}`;
   }
 
   function scale(c: { metric: Metric; values: number[] }, H: number) {
-    // Temperatures and voltages float well above 0; the rest are counts and shares from 0.
-    const floats = c.metric.id === "temp" || c.metric.unit === "V";
+    // Voltages float well above 0; the rest are counts and shares from 0.
+    const floats = c.metric.unit === "V";
     const spread = Math.max(...c.values) - Math.min(...c.values);
-    const low = c.metric.id === "temp" ? Math.floor(Math.min(...c.values) - 5) : floats ? Math.min(...c.values) - Math.max(spread, 0.5) : 0;
-    const high = floats && c.metric.id !== "temp" ? Math.max(...c.values) + Math.max(spread, 0.5) : Math.max(c.metric.max ?? -Infinity, ...c.values, c.metric.warn_above ?? -Infinity);
+    const low = floats ? Math.min(...c.values) - Math.max(spread, 0.5) : 0;
+    const high = floats ? Math.max(...c.values) + Math.max(spread, 0.5) : Math.max(c.metric.max ?? -Infinity, ...c.values, c.metric.warn_above ?? -Infinity);
     const span = high - low || 1;
     return (v: number) => H - ((v - low) / span) * (H - 6) - 3;
   }
@@ -74,11 +61,11 @@
 
 {#if charts.length === 0 && error}
   <p class="text-[13px] text-warn-fg">{error}</p>
-{:else if charts.length === 0}
+{:else if all.length === 0}
   <div class="charts">
-    {#each [0, 1, 2, 3] as i (i)}<Skeleton height={130} />{/each}
+    {#each [0, 1] as i (i)}<Skeleton height={130} />{/each}
   </div>
-{:else}
+{:else if charts.length > 0}
   <div class="charts" class:one={charts.length === 1}>
     {#each charts as c (c.metric.id)}
       {@const v = metricValue(c.metric)}
@@ -108,12 +95,10 @@
 
 <style>
   .charts {
-    flex: 1;
-    min-height: 220px;
     display: grid;
     gap: 10px;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    grid-auto-rows: minmax(110px, 1fr);
+    grid-auto-rows: 140px;
   }
   .charts.one {
     grid-template-columns: minmax(0, 1fr);

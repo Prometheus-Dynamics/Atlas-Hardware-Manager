@@ -30,6 +30,8 @@ const WARM_UP = 3;
 const HISTORY = 1800;
 /** What series() gives by default: two minutes at the fast rate. */
 const SHOWN = 120;
+/** The shortest stretch a chart's time axis spans. */
+const SHORTEST_SPAN_MS = 10_000;
 /** While streamed, how often a device is polled for the rest. */
 const STREAM_POLL_MS = 5000;
 /** While streamed and the last poll brought only readings that drift. */
@@ -151,6 +153,17 @@ class LiveStore {
       if (t !== undefined && t >= since) out.push({ t, v: values[i] });
     }
     return out;
+  }
+
+  /**
+   * Where the charts of these devices start: at their first reading since
+   * `since`, so a window not yet full spans what there is. One start for a
+   * whole page, so its axes read the same; a reading with less history than
+   * the rest starts where it was first read.
+   */
+  chartStart(ids: string[], since: number, now: number): number {
+    const firsts = ids.map((id) => this.times.get(id)?.find((t) => t >= since) ?? now);
+    return Math.max(since, Math.min(now - SHORTEST_SPAN_MS, ...firsts));
   }
 
   /** Whether the device's stream was refused because the board's Orion doesn't know this PC's key. */

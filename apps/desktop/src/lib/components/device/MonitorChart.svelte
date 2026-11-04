@@ -14,14 +14,15 @@
     title,
     unit,
     devices,
-    windowMs,
+    start,
   }: {
     metric: string;
     title: string;
     unit: string;
     /** The devices to draw, each with its colour. */
     devices: { record: DeviceRecord; color: string }[];
-    windowMs: number;
+    /** When the time axis starts (ms): live.chartStart, one for the whole page. */
+    start: number;
   } = $props();
 
   // Drawn at the plot's own size in pixels: a stretched viewBox with
@@ -29,12 +30,11 @@
   let W = $state(400);
   let H = $state(200);
 
-  const since = $derived(clock.now - windowMs);
   const lines = $derived(
     devices
       .map(({ record, color }) => {
         const id = keyString(record.key);
-        return { id, record, color, now: live.metric(id, metric), points: live.window(id, metric, since) };
+        return { id, record, color, now: live.metric(id, metric), points: live.window(id, metric, start) };
       })
       .filter((l) => l.now && l.points.length > 0),
   );
@@ -56,13 +56,17 @@
     }
     return { low, high: high === low ? low + 1 : high };
   });
-  // Until the window has filled, the chart spans what there is, so the
-  // first readings aren't a sliver at the right.
-  const start = $derived(Math.max(since, Math.min(clock.now - 10_000, ...lines.map((l) => l.points[0].t))));
   const span = $derived(Math.max(1, clock.now - start));
   const y = (v: number) => H - ((v - range.low) / (range.high - range.low)) * H;
   const x = (t: number) => ((t - start) / span) * W;
-  const ago = (ms: number) => (span < 120_000 ? `-${Math.round(ms / 1000)} s` : `-${Math.round(ms / 60_000)} min`);
+  const length = (ms: number, whole = span) => (whole < 120_000 ? `${Math.round(ms / 1000)} s` : `${Math.round(ms / 60_000)} min`);
+  const ago = (ms: number) => `-${length(ms)}`;
+  /** How long this reading has been read, when that's well short of the axis. */
+  const read = $derived.by(() => {
+    if (lines.length === 0) return null;
+    const first = Math.min(...lines.map((l) => l.points[0].t));
+    return first - start > span * 0.1 ? clock.now - first : null;
+  });
   const tick = (v: number) => {
     const span = range.high - range.low;
     return span >= 20 ? Math.round(v).toString() : span >= 2 ? v.toFixed(1) : v.toFixed(2);
@@ -70,7 +74,6 @@
   const path = (points: { t: number; v: number }[]) =>
     points.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join(" ");
   const hot = (l: (typeof lines)[number]) => warn != null && !!l.now && l.now.value > warn;
-  const minutes = $derived(Math.max(1, Math.round(windowMs / 60_000)));
 </script>
 
 <section class="chart" aria-label={title}>
@@ -80,6 +83,8 @@
     <span class="flex-1"></span>
     {#if lines.some(hot)}
       <span class="note hot">{lines.filter(hot).map((l) => deviceName(l.record)).join(", ")} above {warn}</span>
+    {:else if read !== null}
+      <span class="note">{length(read, read)} of readings</span>
     {:else if warn != null}
       <span class="note">warns above {warn}</span>
     {/if}
@@ -89,7 +94,7 @@
       <span>{tick(range.high)}</span><span>{tick((range.high + range.low) / 2)}</span><span>{tick(range.low)}</span>
     </div>
     <div class="area" bind:clientWidth={W} bind:clientHeight={H}>
-      <svg viewBox="0 0 {W} {H}" data-live role="img" aria-label="{title} for each device over {minutes} minutes">
+      <svg viewBox="0 0 {W} {H}" data-live role="img" aria-label="{title} for each device over the last {length(span)}">
         <line x1="0" x2={W} y1="0.5" y2="0.5" class="grid" />
         <line x1="0" x2={W} y1={H / 2} y2={H / 2} class="grid" />
         <line x1="0" x2={W} y1={H - 0.5} y2={H - 0.5} class="grid" />

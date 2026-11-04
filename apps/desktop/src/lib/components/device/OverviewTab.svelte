@@ -101,12 +101,17 @@
   const controlKey = $derived(record.capabilities.includes("hardware-control") ? record.key : null);
   /** The third column (the board's IMU, hardware and the self-test) has something to show. */
   const bodyColumn = $derived((online && (!!imu || !!hardware)) || canSelftest(record) || !!selftests.forDevice(record));
+  /** Without a board status: anything for the right column (an offline device has only its events). */
+  const side = $derived(online || canSelftest(record) || !!selftests.forDevice(record));
 </script>
 
 <!-- Revision 1: one dense screen. What it sees (camera, latency, tags) and
      what happened; is it OK (health, a trend per line) and how it's set up;
      its body (the IMU in 3D, the ring, the supply, the USB ports). A device
-     without a board status (an MCU) keeps its charts and network. -->
+     without a board status (an MCU, a camera, a controller) is laid out the
+     same from what it has: what it sees, the readings Health doesn't draw
+     and how it's reached; health. Recent events take the rest of whichever
+     side has room for them. -->
 {#if reports}
   <div class="overview" class:bodyless={!bodyColumn}>
     <div class="col">
@@ -152,19 +157,21 @@
     {/if}
   </div>
 {:else}
-  <div class="overview two" class:camera={streams.length > 0 && !telemetry}>
-    <!-- Without charts, Network sits under the camera: the left column
-         isn't a preview over an empty space beside a full right one. -->
+  <div class="overview two" class:camera={streams.length > 0} class:solo={!side}>
     <div class="col">
       <Guard name="Cameras">{#if streams.length}<CameraStreams {streams} device={deviceName(record)} single />{/if}</Guard>
       <Guard name="Charts">{#if telemetry}<DeviceCharts {record} />{/if}</Guard>
-      <Guard name="Network">{#if online && !telemetry}<NetworkCard {record} />{/if}</Guard>
+      <Guard name="Network">{#if online && streams.length}<NetworkCard {record} />{/if}</Guard>
+      <Guard name="Events">{#if !streams.length}<div class="events"><EventsCard {record} onmore={onhistory} /></div>{/if}</Guard>
     </div>
+    {#if side}
     <div class="col">
-      <Guard name="Network">{#if online && telemetry}<NetworkCard {record} />{/if}</Guard>
+      <Guard name="Health">{#if online}<HealthRows {record} />{/if}</Guard>
+      <Guard name="Network">{#if online && !streams.length}<NetworkCard {record} />{/if}</Guard>
       <Guard name="Self-test"><SelfTestCard {record} /></Guard>
-      <Guard name="Events"><div class="events"><EventsCard {record} onmore={onhistory} /></div></Guard>
+      <Guard name="Events">{#if streams.length}<div class="events"><EventsCard {record} onmore={onhistory} /></div>{/if}</Guard>
     </div>
+    {/if}
   </div>
 {/if}
 
@@ -200,6 +207,9 @@
       grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     }
   }
+  .overview.solo {
+    grid-template-columns: minmax(0, 1fr);
+  }
   @container (min-width: 900px) {
     /* The window's height, not the columns' content: Recent events gives
        up rows so the rest fits; below 520 px the tab scrolls instead. */
@@ -209,9 +219,12 @@
       grid-template-rows: minmax(0, 1fr);
       grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 0.95fr);
     }
+    .overview.two:not(.solo) {
+      grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    }
     /* A camera beside its events: the preview takes the wider column, so it
        grows into the height rather than leaving it empty under it. */
-    .overview.two.camera {
+    .overview.two.camera:not(.solo) {
       grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
     }
     /* Nothing for the third column (no hardware reported, ROBOT mode):

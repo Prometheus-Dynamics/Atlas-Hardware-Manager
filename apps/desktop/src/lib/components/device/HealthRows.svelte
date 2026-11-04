@@ -103,7 +103,7 @@
       key: "link",
       label: "Link",
       value: linkText(record.link_kind, devices.nameOf),
-      detail: streamed ? "pushed live" : pairing ? "polled: not paired with the board's Orion" : live.pollingWhy.has(id) ? `polled: ${live.pollingWhy.get(id)}` : "polled",
+      detail: !record.capabilities.includes("telemetry") ? "" : streamed ? "pushed live" : pairing ? "polled: not paired with the board's Orion" : live.pollingWhy.has(id) ? `polled: ${live.pollingWhy.get(id)}` : "polled",
       tone: record.presence === "online" ? "ok" : "err",
       series: [],
       color: "",
@@ -150,10 +150,10 @@
     <button type="button" class="row" class:open={open === row.key} onclick={() => (open = open === row.key ? null : row.key)} disabled={row.series.length < 2} title={row.detail ? `${row.label}: ${row.value} · ${row.detail}` : `${row.label}: ${row.value}`}>
       <span class="dot {row.tone}"></span>
       <span class="label truncate">{row.label}</span>
-      <span class="value mono truncate">{row.value}</span>
+      <span class="value mono truncate" class:whole={row.series.length < 2 && !row.detail}>{row.value}</span>
       {#if row.series.length > 1}
-        <span class="spark"><Sparkline values={row.series} color={row.color} height={16} capacity={120} /></span>
-      {:else}
+        <span class="spark"><Sparkline values={row.series} color={row.color} height={16} capacity={row.series.length} /></span>
+      {:else if row.detail}
         <span class="detail truncate">{row.detail}</span>
       {/if}
     </button>
@@ -208,6 +208,10 @@
   }
   .label {
     color: var(--fg-muted);
+  }
+  /* Nothing beside it: "via SystemCore-6390" isn't cut. */
+  .value.whole {
+    grid-column: 3 / -1;
   }
   .detail {
     font-size: 11.5px;

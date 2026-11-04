@@ -1,11 +1,14 @@
 <script lang="ts">
-  // One reading across every device that reports it, a line each, newest at
-  // the right, with the warning level as a dashed line and each device's
-  // current value in the legend. Lines come from the live store's history
-  // (the overview watches these devices), so the chart fills as it runs.
+  // One reading across every device that reports it, a line each over the
+  // last five minutes (or what there is of them), newest at the right, with
+  // the warning level as a dashed line and each device's current value in the
+  // legend. Lines come from the live store's history (the overview watches
+  // these devices), placed by time: a device read twice a second and one read
+  // every 15 s line up.
   import { keyString, type DeviceRecord } from "#lib/api/client.ts";
   import { deviceName } from "#lib/format.ts";
   import { metricTone } from "#lib/metrics.ts";
+  import { clock } from "#lib/stores/clock.svelte.ts";
   import { live } from "#lib/stores/live.svelte.ts";
 
   let {
@@ -17,26 +20,27 @@
   }: { records: DeviceRecord[]; metric: string; title: string; unit: string; decimals?: number } = $props();
 
   const COLORS = ["var(--series-1)", "var(--series-2)", "var(--series-3)", "var(--series-4)", "var(--series-5)"];
+  const WINDOW_MS = 300_000;
   // Drawn at the plot's own size in pixels: a stretched viewBox with
   // non-scaling strokes made WebKit's painter keep memory on every redraw
   // (~5 MB a minute on the Overview, measured).
   let W = $state(600);
   let H = $state(200);
 
+  const online = $derived(records.filter((r) => r.presence === "online"));
+  const start = $derived(live.chartStart(online.map((r) => keyString(r.key)), clock.now - WINDOW_MS, clock.now));
+  const span = $derived(Math.max(1, clock.now - start));
   const lines = $derived(
-    records
-      .filter((r) => r.presence === "online")
-      .map((r) => ({ record: r, id: keyString(r.key), now: live.metric(keyString(r.key), metric), values: live.series(keyString(r.key), metric) }))
-      .filter((l) => l.now && l.values.length > 0)
+    online
+      .map((r) => ({ record: r, id: keyString(r.key), now: live.metric(keyString(r.key), metric), points: live.window(keyString(r.key), metric, start) }))
+      .filter((l) => l.now && l.points.length > 0)
       .map((l, i) => ({ ...l, color: COLORS[i % COLORS.length] })),
   );
   const warn = $derived(lines.find((l) => l.now?.warn_above != null)?.now?.warn_above ?? null);
-  // Across the whole width from the first readings, not a sliver at the right.
-  const capacity = $derived(Math.max(2, ...lines.map((l) => l.values.length)));
 
   // A range with room above the warning level, rounded to whole tens.
   const range = $derived.by(() => {
-    const all = lines.flatMap((l) => l.values);
+    const all = lines.flatMap((l) => l.points.map((p) => p.v));
     if (all.length === 0) return { low: 0, high: 1 };
     let low = Math.min(...all);
     let high = Math.max(...all, warn ?? -Infinity);
@@ -48,16 +52,15 @@
   const y = (v: number) => H - ((v - range.low) / (range.high - range.low)) * H;
   const ticks = $derived([range.high, (range.high * 2 + range.low) / 3, (range.high + range.low * 2) / 3, range.low]);
 
-  function path(values: number[]): string {
-    const step = W / (capacity - 1);
-    return values.map((v, i) => `${i ? "L" : "M"}${(W - (values.length - 1 - i) * step).toFixed(1)} ${y(v).toFixed(1)}`).join(" ");
-  }
+  const x = (t: number) => ((t - start) / span) * W;
+  const path = (points: { t: number; v: number }[]) =>
+    points.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)} ${y(p.v).toFixed(1)}`).join(" ");
 </script>
 
 <section class="chart" aria-label={title}>
   <div class="head">
     <h2>{title}</h2>
-    <span class="sub">every device · live</span>
+    <span class="sub">every device · last {span < 120_000 ? `${Math.round(span / 1000)} s` : `${Math.round(span / 60_000)} min`}</span>
     <span class="flex-1"></span>
     {#if warn !== null}<span class="warn"><span class="dash"></span>warns above {warn} {unit}</span>{/if}
   </div>
@@ -73,7 +76,7 @@
           {#each ticks as t, i (i)}<line x1="0" x2={W} y1={y(t)} y2={y(t)} class="grid" />{/each}
           {#if warn !== null}<line x1="0" x2={W} y1={y(warn)} y2={y(warn)} class="limit" />{/if}
           {#each lines as l (l.id)}
-            <path d={path(l.values)} stroke={l.color} class="line" class:hot={l.now && metricTone(l.now) === "warn"} />
+            <path d={path(l.points)} stroke={l.color} class="line" class:hot={l.now && metricTone(l.now) === "warn"} />
           {/each}
         </svg>
       </div>

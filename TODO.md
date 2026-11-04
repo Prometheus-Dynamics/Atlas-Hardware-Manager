@@ -78,7 +78,8 @@ computer's USB means its regular USB port (the one used for flashing) here.
     Atlas's image server (5da10e3, a744d40), and an Orion update cancelled and
     one rolled back through board-agent (17c2475; until now tested only against
     a real orion-node with a fake writer).
-  - **Blocked by:** the user or HeliOS: a Raze's Ethernet on a 10.x network with
+  - **Status (2026-11-03):** untested on the bench and not a blocker: the bench
+    won't be cabled for it. It needs a Raze's Ethernet on a 10.x network with
     this computer, not behind the SystemCore (off, the node auto-enrolls only
     the USB gadget network and `ORION_NODE_ROBOT_NETS`, 10/8 by default; the
     bench's 172.31.12.8x isn't one). Security on is the `security.env` switch,

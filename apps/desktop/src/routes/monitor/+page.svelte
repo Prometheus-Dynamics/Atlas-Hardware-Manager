@@ -14,6 +14,7 @@
   import { byDeviceName, deviceName } from "#lib/format.ts";
   import { isCore, isTextMetric, sortMetrics } from "#lib/metrics.ts";
   import { cameraStreams, isRecovery } from "#lib/present.ts";
+  import { clock } from "#lib/stores/clock.svelte.ts";
   import { devices } from "#lib/stores/devices.svelte.ts";
   import { hasTelemetry, live, watchLive } from "#lib/stores/live.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
@@ -66,6 +67,7 @@
   }
 
   $effect(() => watchLive(shown));
+  const start = $derived(live.chartStart(shown.map((d) => keyString(d.key)), clock.now - Number(range), clock.now));
 
   // One chart per reading any shown device reports, in the usual order.
   const charts = $derived.by(() => {
@@ -151,7 +153,7 @@
               title={m.label}
               unit={m.unit ?? ""}
               devices={shown.map((record) => ({ record, color: colorOf.get(keyString(record.key)) ?? COLORS[0] }))}
-              windowMs={Number(range)}
+              {start}
             />
           {/each}
         </div>
