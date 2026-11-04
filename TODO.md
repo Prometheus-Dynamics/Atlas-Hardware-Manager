@@ -128,11 +128,14 @@ computer's USB means its regular USB port (the one used for flashing) here.
 - [ ] **SSH key re-pin after a slot install.**
   - **Where:** on the bench (windows through HeliOS).
   - **What:** a new OS's host key is re-pinned, and "Trust its new SSH key"
-    clears a stale pin (5f1e8f9); written, untested.
+    clears a stale pin (5f1e8f9). Both ran on Raze #1 on 2026-11-03 through
+    `SshUpdate` against a pin that didn't match the board (refused, trusted,
+    re-pinned; expected, re-pinned). No real slot install or app click yet:
+    boards behind a controller have no SSH and no such action.
   - **Why:** a slot from an older image mustn't lock Atlas out.
-  - **Done when:** both on a board whose host key changes.
-  - **Blocked by:** HeliOS: a bench window that changes the key (the bench keeps
-    its keys in /data/ssh, so an install alone doesn't).
+  - **Done when:** both from the app, on a direct-link board after a real
+    install that changes its key.
+  - **Blocked by:** the user's OK for a slot install, and a direct-link board.
 - [ ] **Orion live stream numbers.**
   - **Where:** on the bench (windows through HeliOS).
   - **What:** CPU, forks and backfill time on a board for Orion's streams
