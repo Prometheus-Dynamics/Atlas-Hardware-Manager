@@ -12,6 +12,7 @@ use atlas_driver::{
 };
 
 use crate::console::ConsoleLogs;
+use crate::http_probe::OpenPorts;
 use crate::probe::{RobotProbe, own_robot_nets};
 
 const FETCH_TIMEOUT: Duration = Duration::from_secs(2);
@@ -64,6 +65,7 @@ pub struct ControllerDriver {
     manifest: DriverManifest,
     http: reqwest::Client,
     package: Option<DeviceManifest>,
+    open: OpenPorts,
 }
 
 impl ControllerDriver {
@@ -75,6 +77,7 @@ impl ControllerDriver {
                 .by_model(CONTROLLER_FAMILY)
                 .map(|package| package.manifest.clone())
                 .filter(|manifest| !manifest.fingerprints.is_empty()),
+            open: OpenPorts::default(),
         }
     }
 }
@@ -95,7 +98,7 @@ impl Driver for ControllerDriver {
             Some(package) => package,
             None => crate::roborio::built_in()?,
         };
-        let report = crate::roborio::read(&self.http, package, ip, true).await?;
+        let report = crate::roborio::read(&self.http, package, ip, true, &self.open).await?;
         if let Some(team) = report.team {
             RobotTeams::shared().add(team);
         }

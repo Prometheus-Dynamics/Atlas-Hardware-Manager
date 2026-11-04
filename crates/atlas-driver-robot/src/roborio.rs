@@ -33,7 +33,7 @@ use atlas_driver::robot_net::{CONTROLLER_FAMILY, team_of};
 use atlas_driver::{DeviceKey, DeviceMode, DriverError, Identity, LinkId, attributes};
 use serde::{Deserialize, Serialize};
 
-use crate::http_probe::HttpProbe;
+use crate::http_probe::{HttpProbe, OpenPorts};
 
 /// The CTRE Phoenix diagnostics server's port.
 pub const PHOENIX_PORT: u16 = 1250;
@@ -223,13 +223,14 @@ impl ControllerReport {
 }
 
 /// Reads a robot controller at `ip` by `package`'s data, and (with `can`)
-/// its CAN devices. Fails when it isn't a roboRIO, or isn't on a robot
+/// its CAN devices, asking only about ports not in `open` yet. Fails when it isn't a roboRIO, or isn't on a robot
 /// network to key it by team.
 pub async fn read(
     http: &reqwest::Client,
     package: &DeviceManifest,
     ip: Ipv4Addr,
     can: bool,
+    open: &OpenPorts,
 ) -> Result<ControllerReport, DriverError> {
     let seen = Seen {
         address: ip.to_string(),
@@ -238,7 +239,7 @@ pub async fn read(
             .into_iter()
             .collect::<BTreeMap<_, _>>(),
     };
-    let probe = HttpProbe { http, ip };
+    let probe = HttpProbe { http, ip, open };
     let found = atlas_devices::recognize(package, &probe, &seen)
         .await
         .map_err(|refused| match refused {

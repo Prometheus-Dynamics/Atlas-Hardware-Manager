@@ -45,6 +45,7 @@ pub async fn controller(ip: Ipv4Addr) -> Result<ControllerReport, String> {
         crate::roborio::built_in().map_err(|error| error.to_string())?,
         ip,
         true,
+        &Default::default(),
     )
     .await
     .map_err(|error| error.to_string())

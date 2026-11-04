@@ -18,6 +18,7 @@ use atlas_driver::{
 use serde_json::{Value, json};
 
 use crate::contract::BoardIdentity;
+use crate::gateway_metrics::GatewayTelemetry;
 use crate::ssh_actions::REBOOT_ACTION;
 
 /// How long the board's writer may stage an image before Atlas stops
@@ -53,7 +54,7 @@ impl Gateway {
         Ok(response.json().await.unwrap_or(Value::Null))
     }
 
-    async fn get(&self, path: &str) -> Result<Value, DriverError> {
+    pub(crate) async fn get(&self, path: &str) -> Result<Value, DriverError> {
         self.send(self.http.get(self.url(path))).await
     }
 
@@ -62,8 +63,8 @@ impl Gateway {
     }
 }
 
-/// What a board behind a controller gets through the gateway: Restart, and
-/// its slots when it has them.
+/// What a board behind a controller gets through the gateway: Restart, its
+/// readings, and its slots when it has them.
 pub(crate) fn capabilities(
     http: reqwest::Client,
     peer: ControllerPeer,
@@ -76,6 +77,7 @@ pub(crate) fn capabilities(
         .any(|method| method == crate::slots::SLOTS_METHOD)
         .then(|| Arc::new(GatewaySlots(gateway.clone())) as Arc<dyn SlotsCapability>);
     Capabilities {
+        telemetry: Some(Arc::new(GatewayTelemetry(gateway.clone()))),
         actions: Some(Arc::new(GatewayActions(gateway))),
         slots,
         ..Capabilities::default()

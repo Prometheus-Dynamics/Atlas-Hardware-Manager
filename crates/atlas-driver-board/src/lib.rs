@@ -30,6 +30,7 @@ mod contract;
 mod driver;
 mod gadget;
 mod gateway;
+mod gateway_metrics;
 mod live;
 mod seen;
 mod serial;

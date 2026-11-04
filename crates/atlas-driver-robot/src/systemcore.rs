@@ -23,7 +23,7 @@ use std::time::Duration;
 use atlas_devices::{DeviceManifest, NotRecognized, Recognized, Seen};
 use atlas_driver::{DeviceKey, DeviceMode, DriverError, Identity, LinkId};
 
-use crate::http_probe::HttpProbe;
+use crate::http_probe::{HttpProbe, OpenPorts};
 
 /// The SystemCore's device package as built in.
 static BUILT_IN: LazyLock<Result<DeviceManifest, String>> = LazyLock::new(|| {
@@ -87,7 +87,12 @@ pub async fn read(
     link: LinkId,
     usb_serial: Option<String>,
 ) -> Result<Identity, DriverError> {
-    let probe = HttpProbe { http, ip };
+    let open = OpenPorts::default();
+    let probe = HttpProbe {
+        http,
+        ip,
+        open: &open,
+    };
     let seen = Seen {
         address: ip.to_string(),
         facts: BTreeMap::new(),

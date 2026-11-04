@@ -247,8 +247,10 @@ class LiveStore {
     const next: Record<string, number[]> = {};
     for (const metricId of ids) {
       const values = [...(past[metricId] ?? [])];
-      // A value the rows don't have carries the last one (a polled metric, a gap).
-      let last = polled.find((m) => m.id === metricId)?.value ?? values.at(-1);
+      // A value the rows don't have carries the last one (a polled metric, a
+      // gap), never back into the history: nothing was read then, and a
+      // series shorter than the times lines up with their end.
+      let last = frame.backfill ? undefined : (polled.find((m) => m.id === metricId)?.value ?? values.at(-1));
       for (const row of frame.rows) {
         const value = row.values[metricId] ?? last;
         if (value === undefined) continue;
