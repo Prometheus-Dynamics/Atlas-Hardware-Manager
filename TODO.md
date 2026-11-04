@@ -125,17 +125,15 @@ computer's USB means its regular USB port (the one used for flashing) here.
   - **Why:** the first thing to read after a reset in the field.
   - **Done when:** after a real reset, the panel shows its cause and kept log.
   - **Blocked by:** HeliOS: a slot carrying facecb9, then a bench window.
-- [ ] **SSH key re-pin after a slot install.**
-  - **Where:** on the bench (windows through HeliOS).
-  - **What:** a new OS's host key is re-pinned, and "Trust its new SSH key"
-    clears a stale pin (5f1e8f9). Both ran on Raze #1 on 2026-11-03 through
-    `SshUpdate` against a pin that didn't match the board (refused, trusted,
-    re-pinned; expected, re-pinned). No real slot install or app click yet:
-    boards behind a controller have no SSH and no such action.
-  - **Why:** a slot from an older image mustn't lock Atlas out.
-  - **Done when:** both from the app, on a direct-link board after a real
-    install that changes its key.
-  - **Blocked by:** the user's OK for a slot install, and a direct-link board.
+- [x] **SSH key re-pin after a slot install.**
+  - **Closed:** 2026-11-03, accepted by the user on this proof: on Raze #1,
+    through `SshUpdate` against a pin that didn't match the board, a stale pin
+    was refused, trusted and re-pinned, and an expected new key re-pinned by
+    itself (5f1e8f9).
+  - **Not proved:** the install trigger was simulated (`expect_new_host_key`
+    called by hand), and "Trust its new SSH key" hasn't been clicked on a real
+    direct-link board (boards behind a controller have no SSH and no such
+    action).
 - [ ] **Orion live stream numbers.**
   - **Where:** on the bench (windows through HeliOS).
   - **What:** CPU, forks and backfill time on a board for Orion's streams
