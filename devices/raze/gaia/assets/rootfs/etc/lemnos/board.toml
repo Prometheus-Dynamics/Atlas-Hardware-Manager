@@ -54,7 +54,6 @@ config = { accel_rate = "200hz", gyro_rate = "200hz-23", gyro_address = 0x68 }
 
 # BMM150 magnetometer at 0x10 on the hardware bus (i2c-1 on the 7.2.9 image).
 # Address and chip id verified on a board by chip-id register reads.
-# Bus selector from the device tree, unverified on hardware.
 # Raw reads (chip id) through lemnosd for: board-selftest.
 [[devices]]
 id = "magnetometer"
@@ -66,7 +65,6 @@ raw = ["board-selftest"]
 
 # INA238 power-monitor at 0x40 on the hardware bus (i2c-1 on the 7.2.9 image).
 # Address and chip id verified on a board by chip-id register reads.
-# Bus selector from the device tree, unverified on hardware.
 # Shunt 0.01 ohm: from the manifest, unverified against the schematic.
 # Raw reads (chip id) through lemnosd for: board-selftest.
 # Maximum current 16.384 A: the INA238's 163.84 mV full scale over the

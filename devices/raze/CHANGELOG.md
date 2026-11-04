@@ -7,6 +7,10 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **HEVC decoder measured (2026-11-03).** On slot 2026.2.0-dev.907,
+  rpi_hevc_dec is loaded and bound to brcm,bcm2712-hevc-dec (1000800000.codec),
+  /dev/video19 is rpi-hevc-dec. The manifest's kernel built-ins, version and
+  sensor bus select are verified on the same board.
 - **Boot time no longer counts the trial's judging (2026-11-03).** The
   trial-confirm unit (`board-update-confirm.service`) starts as `Type=exec`,
   like the management-link watch (a593c8c), so "Startup finished" on a trial

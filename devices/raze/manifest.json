@@ -23,8 +23,8 @@
     "fragment_merge": "os-first-package-last",
     "verified": {
       "page_size_kib": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "KernelPageSize 4 kB measured on a Raze running the PhotonVision image (package c881c60); Buildroot applies BR2_ARM64_PAGE_SIZE_4K after fragments, so every Buildroot-built Raze kernel is 4 KiB. A package build check enforces it" },
-      "builtin": "unverified",
-      "version": "unverified"
+      "builtin": { "by": "Atlas session", "date": "2026-11-03", "method": "on Raze #2, slot 2026.2.0-dev.907: erofs in /proc/filesystems and kernel/fs/erofs/erofs.ko in modules.builtin, with no module file" },
+      "version": { "by": "Atlas session", "date": "2026-11-03", "method": "uname -r on Raze #2, slot 2026.2.0-dev.907: 7.2.9-v8-16k, KernelPageSize 4 kB measured" }
     }
   },
   "revisions": [
@@ -528,7 +528,7 @@
       "verified": {
         "buses": { "by": "HeliOS coordinator", "date": "2026-10-09", "method": "chip-id register reads on the device: the BMI088 answers on the PIO bus (lemnosd pio-i2c:sda=8,scl=7 at 400 kHz, Lemnos 068427e; 100000 of 100000 reads on each die), the BMM150 and INA238 on the i2c1-pi5 bus (/dev/i2c-1, PhotonVision image, package c881c60)" },
         "devices": { "by": "HeliOS coordinator", "date": "2026-10-07", "method": "chip-id register reads on the device (PhotonVision image, package c881c60): accel 0x18 reg 0x00 = 0x1E, gyro 0x68 reg 0x00 = 0x0F, BMM150 0x10 reg 0x40 = 0x32 with 0x4B bit 0 set, INA238 0x40 reg 0xFE = 0x5449 and reg 0xFF = 0x2381" },
-        "buses.0.select": "unverified",
+        "buses.0.select": { "by": "Atlas session", "date": "2026-11-03", "method": "Raze #2, slot 2026.2.0-dev.907: /sys/bus/i2c/devices/i2c-1/of_node is /axi/pcie@1000120000/rp1/i2c@74000" },
         "devices.3.shunt_ohm": "unverified",
         "devices.3.max_current_a": "unverified"
       }

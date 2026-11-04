@@ -1,5 +1,6 @@
 //! The NetworkTables page: viewers and the local server (nt.rs).
 
+use atlas_driver::controller_peer::ControllerPeer;
 use std::net::IpAddr;
 
 use orion_nt4::{Properties, Value};
@@ -117,16 +118,28 @@ pub struct NtCameraAddress {
     pub name: String,
     pub device_ip: IpAddr,
     pub address: IpAddr,
+    /// The controller it's behind: it has a route only to the controller's
+    /// USB link (measured on a Raze behind a SystemCore), so `address`, the
+    /// way from this computer to the controller, won't reach here from it.
+    pub behind: Option<String>,
 }
 
 /// For each online device Atlas reaches over IP, the address of this
 /// computer on the way to it.
 #[tauri::command(async)]
 pub fn nt_camera_addresses(state: State<'_, AppState>) -> Vec<NtCameraAddress> {
-    let mut found: Vec<NtCameraAddress> = state
-        .atlas
-        .devices()
-        .into_iter()
+    let devices = state.atlas.devices();
+    let controller = |peer: &ControllerPeer| {
+        devices
+            .iter()
+            .find(|record| {
+                reqwest_host(&record.identity.address).as_deref() == Some(peer.host.as_str())
+                    && ControllerPeer::from_address(&record.identity.address).is_none()
+            })
+            .map_or_else(|| peer.host.clone(), |record| record.display_name())
+    };
+    let mut found: Vec<NtCameraAddress> = devices
+        .iter()
         .filter(|record| record.presence == atlas_core::Presence::Online)
         .filter_map(|record| {
             let host = reqwest_host(&record.identity.address)?;
@@ -136,6 +149,8 @@ pub fn nt_camera_addresses(state: State<'_, AppState>) -> Vec<NtCameraAddress> {
                 name: record.display_name(),
                 device_ip,
                 address,
+                behind: ControllerPeer::from_address(&record.identity.address)
+                    .map(|peer| controller(&peer)),
             })
         })
         .collect();

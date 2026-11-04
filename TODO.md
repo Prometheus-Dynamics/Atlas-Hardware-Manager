@@ -95,19 +95,13 @@ computer's USB means its regular USB port (the one used for flashing) here.
     events.jsonl and the host log.
   - **Blocked by:** the user: a running Raze left on that port until a stall
     comes (the gap has been as long as 14 h).
-- [ ] **HEVC decoder binds.**
-  - **Where:** on the bench (windows through HeliOS).
-  - **What:** `CONFIG_VIDEO_RPI_HEVC_DEC=m` (4719dba); written, untested.
-  - **Why:** the Pi 5's decoder node was in the device tree but unbound.
-  - **Done when:** on a Raze, rpi-hevc-dec is loaded and bound to
-    brcm,bcm2712-hevc-dec.
-  - **Blocked by:** HeliOS: a slot with this kernel, then a bench window.
 - [ ] **Raze facts the manifest still marks unverified.**
   - **Where:** on the bench (windows through HeliOS).
   - **What:** in `devices/raze/manifest.json`: LED count and index direction, the
-    INA238 shunt (10 or 20 mOhm) and its max current, the sensor bus's select,
-    the IMU's mount angles, the camera tuning, the USB-A power line's GPIO chip
-    and control, the kernel's built-in list and version;
+    INA238 shunt (10 or 20 mOhm) and its max current, the IMU's mount angles,
+    the camera tuning (neither file the manifest names is on slot
+    2026.2.0-dev.907, though the camera streams), the USB-A power line's GPIO
+    chip and control (no gpioinfo on the board);
     `selftest --interactive` with HeliOS running.
   - **Why:** the generated board files and the self-test trust them.
   - **Done when:** each has a `verified` note and

@@ -78,4 +78,6 @@ export interface NtCameraAddress {
   name: string;
   device_ip: string;
   address: string;
+  /** The controller it's behind, when it has no route to this computer. */
+  behind?: string | null;
 }

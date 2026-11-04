@@ -180,9 +180,13 @@
             <li class="glass flex flex-wrap items-center gap-x-3 gap-y-1 px-3.5 py-2.5">
               <Icon name="camera" size={16} />
               <span class="font-medium text-fg">{camera.name}</span>
-              <span class="text-[12px] text-fg-faint">at {camera.device_ip}: set its server to</span>
-              <span class="mono address">{camera.address}</span>
-              <Button size="sm" variant="ghost" icon="copy" label="Copy {camera.address}" action={() => copy(camera.address)} />
+              {#if camera.behind}
+                <span class="text-[12px] text-fg-muted">behind {camera.behind}: no route to this computer. It needs a route via {camera.behind}, or a server on the robot.</span>
+              {:else}
+                <span class="text-[12px] text-fg-faint">at {camera.device_ip}: set its server to</span>
+                <span class="mono address">{camera.address}</span>
+                <Button size="sm" variant="ghost" icon="copy" label="Copy {camera.address}" action={() => copy(camera.address)} />
+              {/if}
             </li>
           {/each}
         </ul>
