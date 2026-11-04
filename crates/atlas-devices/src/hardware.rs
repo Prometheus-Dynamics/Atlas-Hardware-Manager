@@ -184,7 +184,8 @@ mod tests {
         assert_eq!(leds.wire_format.as_deref(), Some("grb24"));
         assert_eq!(leds.index.as_ref().map(|index| index.offset), Some(5));
         assert!(leds.verified["part"].is_some());
-        assert!(leds.verified["count"].is_none());
+        assert!(leds.verified["count"].is_some());
+        assert!(leds.verified["index.direction"].is_none());
         let fan = manifest.fan().unwrap();
         assert_eq!(fan.cooling_levels, vec![179, 212, 245, 255, 255]);
         assert_eq!(fan.pwm.period_ns, Some(41566));
