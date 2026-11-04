@@ -1,12 +1,10 @@
 <script lang="ts">
   // The board's setup in brief: team (from its robot address, 10.TE.AM.x),
-  // addresses to copy, hostname, the USB route, the security switch and the
-  // mode. Changing them is in Settings, and in ROBOT mode the network ones
-  // are locked there.
+  // addresses to copy, hostname, the USB route and the security switch.
+  // Changing them is in Settings.
   import type { DeviceRecord } from "#lib/api/client.ts";
   import Icon from "#lib/components/common/Icon.svelte";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
-  import { ui } from "#lib/stores/ui.svelte.ts";
   import { usbRoute } from "#lib/present.ts";
 
   let { record, onsettings }: { record: DeviceRecord; onsettings?: () => void } = $props();
@@ -43,7 +41,7 @@
   <div class="panel-head">
     <h2 class="panel-title">Setup</h2>
     <button type="button" class="link truncate text-[11.5px]" onclick={() => onsettings?.()}>
-      {ui.mode === "robot" ? "Locked on the robot · Settings" : "Change in Settings"}
+      Change in Settings
     </button>
   </div>
   <div class="kv"><span>Team</span><span class="mono truncate" title={team ?? "unknown"}>{team ?? "—"}</span><span></span></div>
@@ -63,7 +61,6 @@
   {#if security}
     <div class="kv"><span>Security</span><span class="truncate" title={security}>{security}</span><span></span></div>
   {/if}
-  <div class="kv"><span>Mode</span><span class="truncate" title={ui.mode === "robot" ? "ROBOT: network, team and security settings are locked" : "PIT: the bench; updates and checks first"}>{ui.mode === "robot" ? "Robot (settings locked)" : "Pit (settings open)"}</span><span></span></div>
 </section>
 
 <style>

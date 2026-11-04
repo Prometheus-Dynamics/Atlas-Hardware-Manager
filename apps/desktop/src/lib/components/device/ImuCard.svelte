@@ -2,9 +2,8 @@
   // The IMU on the Overview, always there: the board in 3D as it is now
   // (the board's fusion when it streams, else a filter here), roll, pitch
   // and heading, the accelerometer and gyro on each axis, and how well it's
-  // calibrated. Calibrating is in Settings (PIT).
+  // calibrated. Calibrating is in Settings.
   import { api, type CalibrationStatus, type DeviceKey } from "#lib/api/client.ts";
-  import { ui } from "#lib/stores/ui.svelte.ts";
   import ImuView from "./ImuView.svelte";
   import type { LiveSeries } from "./live.ts";
 
@@ -84,8 +83,6 @@
     <button
       type="button"
       class="link ml-auto shrink-0 text-[12px]"
-      disabled={ui.mode === "robot"}
-      title={ui.mode === "robot" ? "Switch to PIT to calibrate" : undefined}
       onclick={() => oncalibrate?.()}>Calibrate…</button
     >
   </div>

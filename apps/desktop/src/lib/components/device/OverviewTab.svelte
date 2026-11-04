@@ -227,7 +227,7 @@
     .overview.two.camera:not(.solo) {
       grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
     }
-    /* Nothing for the third column (no hardware reported, ROBOT mode):
+    /* Nothing for the third column (no hardware reported):
        two wider columns rather than an empty third. */
     .overview.bodyless:not(.two) {
       grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);

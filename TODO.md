@@ -164,14 +164,6 @@ computer's USB means its regular USB port (the one used for flashing) here.
     16% (the gadget stopped answering for 30 s, SCSI timeout, port reset), each
     resumed on its segment, nothing started over; the board booted dev.820.
   - **Blocked by:** nothing; the run is going.
-- [ ] **PIT/ROBOT end to end.**
-  - **Where:** behind the SystemCore.
-  - **What:** the PIT/ROBOT view on a real robot: controller, radio, boards
-    behind the SystemCore, readiness.
-  - **Why:** the main screen at events.
-  - **Done when:** a robot run shows every device with its state, and one install
-    from the view.
-  - **Blocked by:** the user: a robot to run it on.
 - [ ] **The USB agent under Orion, with detached flashes.**
   - **Where:** behind the SystemCore.
   - **What:** step 2: the agent registers with the SystemCore's Orion node and
@@ -211,7 +203,7 @@ computer's USB means its regular USB port (the one used for flashing) here.
     - Webcam views through the gateway and the agent.
     - Done: every overflow fixed, and e2e/overflow.spec.ts blocks in the
       Playwright gate (the old cut-off script is gone). The device Overview
-      fits 1280x800 in ROBOT and PIT.
+      fits 1280x800.
     - Done: no confirmation for reversible actions ("Restart port", "Restart").
     - The Fable per-screen pass.
   - **Why:** the user's verdict on dev.475 to dev.479.

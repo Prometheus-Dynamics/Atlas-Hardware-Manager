@@ -22,7 +22,7 @@
   type Item = { href: string; label: string; icon: IconName; key: string; badge?: () => number; tone?: "accent" | "warn" };
   const sections: { title: string; items: Item[] }[] = [
     {
-      title: "Robot",
+      title: "",
       items: [
         { href: "/", label: "Overview", icon: "heartbeat", key: "1" },
         { href: "/devices", label: "Devices", icon: "layout-grid", key: "2", badge: () => insights.needYou, tone: "accent" },
@@ -127,7 +127,7 @@
     {#each sections as section (section.title)}
       {@const listsDevices = section.items.some((item) => item.href === "/devices")}
       <div class="group" class:grows={listsDevices}>
-        <div class="section">{section.title}</div>
+        {#if section.title}<div class="section">{section.title}</div>{/if}
         <ul class="flex min-h-0 flex-col gap-px">
           {#each section.items as item (item.href)}
             {@const count = item.badge?.() ?? 0}

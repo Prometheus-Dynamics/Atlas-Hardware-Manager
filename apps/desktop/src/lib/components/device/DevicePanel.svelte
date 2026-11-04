@@ -20,7 +20,6 @@
   import { softFade } from "#lib/ui/motion.ts";
   import { jobs } from "#lib/stores/jobs.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
-  import { ui } from "#lib/stores/ui.svelte.ts";
   import Region from "#lib/components/layout/Region.svelte";
   import ActiveJob from "./ActiveJob.svelte";
   import HistoryTab from "./HistoryTab.svelte";
@@ -133,10 +132,6 @@
   // started): it's still being looked for, not gone, until a scan ends or a
   // while passes.
   const LOOK_MS = 15_000;
-  const MODES: { value: "robot" | "pit"; label: string; title: string }[] = [
-    { value: "robot", label: "ROBOT", title: "On the robot: network, team and security are locked" },
-    { value: "pit", label: "PIT", title: "On the bench: settings open, self-test and calibration" },
-  ];
   const opened = Date.now();
   const gone = $derived(devices.loaded && (devices.lastScanAt !== null || clock.now - opened > LOOK_MS));
 </script>
@@ -166,11 +161,6 @@
         {/if}
         {#if recovery && record.presence === "online"}<Pill tone="primary" icon="usb" label="Waiting for an image" />{/if}
       </div>
-      {#if record.presence === "online" && !recovery}
-        <div class="shrink-0">
-          <SegmentedControl size="sm" label="Mode" options={MODES} bind:value={() => ui.mode, (mode) => ui.setMode(mode)} />
-        </div>
-      {/if}
       <div class="ml-auto flex shrink-0 items-center gap-1.5">
         <QuickActions {record} />
         {#if ssh}<Button size="sm" icon="terminal-2" title="Copy {ssh}" onclick={() => void copySsh()}>SSH</Button>{/if}

@@ -19,18 +19,6 @@ export const NO_ROBOT = "\u0000none";
 export type InventoryView = "cards" | "list";
 
 const VIEW_KEY = "atlas.inventory.view";
-const MODE_KEY = "atlas.mode";
-
-/** ROBOT: boards on the robot (risky settings locked). PIT: the bench (updates and checks first). */
-export type AppMode = "robot" | "pit";
-
-function savedMode(): AppMode {
-  try {
-    return localStorage.getItem(MODE_KEY) === "pit" ? "pit" : "robot";
-  } catch {
-    return "robot";
-  }
-}
 const MONITOR_KEY = "atlas.monitor.devices";
 
 /** A remembered set of device keys (per machine; this session without storage). */
@@ -72,8 +60,6 @@ export function canUpdate(record: DeviceRecord): boolean {
 
 class UiStore {
   panel = $state<Panel>(null);
-  /** ROBOT or PIT, remembered per machine. */
-  mode = $state<AppMode>(savedMode());
   helpOpen = $state(false);
   /** The device the device page shows, for highlighting it elsewhere. */
   viewing = $state<string | null>(null);
@@ -158,15 +144,6 @@ class UiStore {
     this.panel = null;
     this.focused = key;
     void goto(devicePath(key, tab));
-  }
-
-  setMode(mode: AppMode) {
-    this.mode = mode;
-    try {
-      localStorage.setItem(MODE_KEY, mode);
-    } catch {
-      // Private mode or blocked storage: it lasts this session.
-    }
   }
 
   toggleMonitored(key: string) {

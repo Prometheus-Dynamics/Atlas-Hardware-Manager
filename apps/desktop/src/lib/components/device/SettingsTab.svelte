@@ -1,8 +1,7 @@
 <script lang="ts">
   // A device's settings: its name and robot, how it's reached and its USB
   // route, its identity, and the board's hardware with their controls and
-  // calibration. In ROBOT mode the network settings are locked (switch to
-  // PIT to change them); LEDs and the like stay live.
+  // calibration.
   import { api, errorText, type DeviceAction, type DeviceRecord, type HardwareSnapshot } from "#lib/api/client.ts";
   import ConfirmButton from "#lib/components/common/ConfirmButton.svelte";
   import Field from "#lib/components/common/Field.svelte";
@@ -12,7 +11,6 @@
   import { robots } from "#lib/stores/robots.svelte.ts";
   import { deviceStatus } from "#lib/stores/status.svelte.ts";
   import { toasts } from "#lib/stores/toasts.svelte.ts";
-  import { ui } from "#lib/stores/ui.svelte.ts";
   import Disclosure from "./Disclosure.svelte";
   import FactGrid from "./FactGrid.svelte";
   import HardwareTab from "./HardwareTab.svelte";
@@ -25,7 +23,6 @@
   const nice = (name: string) => NAMES[name] ?? name.replaceAll("_", " ");
   const attrs = $derived(record.identity.attributes ?? {});
   const online = $derived(record.presence === "online");
-  const locked = $derived(ui.mode === "robot");
 
   let actions = $state<DeviceAction[]>([]);
   $effect(() => {
@@ -137,11 +134,8 @@
     </section>
 
     {#if online}
-      {#if locked}
-        <p class="lock">ROBOT mode: the network settings are locked. Switch to PIT (beside the device's name) to change them.</p>
-      {/if}
       <NetworkCard {record} />
-      <fieldset class="contents" disabled={locked}><UsbRouteCard {record} {actions} {run} /></fieldset>
+      <UsbRouteCard {record} {actions} {run} />
     {/if}
 
     <section class="panel" aria-label="Identity">
@@ -192,17 +186,6 @@
     gap: 12px;
     min-width: 0;
   }
-  .lock {
-    padding: 7px 10px;
-    border: 1px solid #4a3a1f;
-    border-radius: var(--r-panel);
-    background: #1d1912;
-    font-size: 12.5px;
-    color: var(--warn-fg);
-  }
-  .contents {
-    display: contents;
-  }
   @container (min-width: 980px) {
     .settings {
       grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
@@ -217,8 +200,7 @@
       columns: 2;
       column-gap: 12px;
     }
-    .settings.no-hw > .col > :global(*:not(.contents)),
-    .settings.no-hw .contents > :global(*) {
+    .settings.no-hw > .col > :global(*) {
       break-inside: avoid;
       margin-bottom: 12px;
     }

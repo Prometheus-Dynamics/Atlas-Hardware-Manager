@@ -3,7 +3,7 @@
 // with nothing that says the rest (a title on it or around it), a page
 // or card that scrolls sideways, and a child that spills out of its card.
 // The device page's Overview must also fit the window without scrolling,
-// in ROBOT and in PIT mode, at the two laptop sizes. Atlas is dark-only.
+// at the two laptop sizes. Atlas is dark-only.
 import { expect, test, type Page } from "@playwright/test";
 
 const ROUTES = [
@@ -91,15 +91,12 @@ for (const [width, height] of [
   [1440, 900],
   [1280, 800],
 ] as const) {
-  for (const mode of ["robot", "pit"] as const) {
-    test(`device Overview @ ${width}x${height} ${mode}: fits without scrolling`, async ({ page }) => {
-      await page.setViewportSize({ width, height });
-      await page.addInitScript((m) => localStorage.setItem("atlas.mode", m), mode);
-      await open(page, "/device?key=raze%3A8f3a1c2d");
-      const over = await page.evaluate(() =>
-        [...document.querySelectorAll(".scroller")].map((s) => s.scrollHeight - s.clientHeight).find((d) => d > 1) ?? 0,
-      );
-      expect(over, "px of the Overview below the window").toBe(0);
-    });
-  }
+  test(`device Overview @ ${width}x${height}: fits without scrolling`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await open(page, "/device?key=raze%3A8f3a1c2d");
+    const over = await page.evaluate(() =>
+      [...document.querySelectorAll(".scroller")].map((s) => s.scrollHeight - s.clientHeight).find((d) => d > 1) ?? 0,
+    );
+    expect(over, "px of the Overview below the window").toBe(0);
+  });
 }

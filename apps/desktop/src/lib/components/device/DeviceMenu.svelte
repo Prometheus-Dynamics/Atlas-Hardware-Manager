@@ -2,8 +2,7 @@
   // The device header's ⋯ menu: everything the device offers that isn't a
   // header button, the support bundle and the Monitor toggle, then, apart,
   // what takes it offline (restart, power off, USB boot, roll back). Those
-  // ask first, naming the device; in ROBOT mode by typing the end of its
-  // serial.
+  // ask first, naming the device.
   import { api, errorText, type DeviceAction, type DeviceRecord } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import { deviceName } from "#lib/format.ts";
