@@ -145,11 +145,16 @@ approval (the user, 2026-11-05).
     called by hand), and "Trust its new SSH key" hasn't been clicked on a real
     direct-link board (boards behind a controller have no SSH and no such
     action).
-- [ ] **Orion live stream numbers.**
+- [x] **Orion live stream numbers.**
   - **Where:** on the bench (windows through HeliOS).
-  - **What:** measured; what's left is pointing HardwareTab at `board.hardware`
-    (the driver follows it; the tab reads board-stream) and retiring board-http
-    and board-stream.
+  - **What:** measured (below). HardwareTab already follows Orion's
+    `board.hardware` first (`start_hardware_stream`, with "Live readings from
+    Orion" on by default) and falls back to board-stream. Kept, for these
+    reasons: board-http is the identity endpoint (:5899: identity, status,
+    events, and the `/actions` a controller uses, such as usb-boot), which
+    every board and board-lite serve; board-stream runs board-http's server and
+    is the only push channel and live readings for a board without Orion, or
+    with Orion off in Atlas.
   - **Why:** always-live charts without a process per request.
   - **Numbers (2026-11-03, Raze #1, one client on this computer, one run each):**
     backfill of 600 rows of 9 values in 150-213 ms on dev.921 and 73-88 ms on
@@ -158,8 +163,11 @@ approval (the user, 2026-11-05).
     forks 18.2/s idle, 16.4/s streaming. Polling `/status` once a second: 25.7/s,
     about 8 per request, but idle forks ranged from 8.6 to 19/s across runs, so
     only "the stream adds none" is firm. board-http's own CPU wasn't read.
-  - **Done when:** the old paths are gone or kept for a stated reason.
-  - **Blocked by:** the user's start; board-http and board-stream stay until then.
+  - **Done when:** the old paths are gone or kept for a stated reason (kept,
+    above, 2026-11-05).
+  - **Not seen:** the Orion `board.hardware` path in the app on a real board.
+    Every bench board sits behind the controller, where Atlas polls through the
+    gateway and has no hardware stream; it needs a Raze on USB or Ethernet here.
 - [x] **Flashing through a dropping USB link.**
   - **Where:** behind the SystemCore.
   - **What:** written (5f28070): the agent writes in 16 MiB segments, each

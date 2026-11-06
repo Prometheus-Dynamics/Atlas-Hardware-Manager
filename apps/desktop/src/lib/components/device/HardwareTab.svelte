@@ -1,6 +1,7 @@
 <script lang="ts">
   // The board's hardware, one card per device. While the tab is shown, a
-  // board that streams its readings (board-stream) sends them live, at each
+  // board that streams its readings (Orion's board.hardware, else its own
+  // board-stream) sends them live, at each
   // device's rate (motion sensors 100 Hz), drawn as charts; otherwise each
   // reading keeps a short trend of the snapshots seen (one every 10 s).
   import { api, errorText, keyString, type DeviceKey, type HardwareFrame, type HardwareSnapshot } from "#lib/api/client.ts";
