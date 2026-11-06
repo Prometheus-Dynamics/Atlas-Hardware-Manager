@@ -28,6 +28,9 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
 const START_TIMEOUT: Duration = Duration::from_secs(60);
 /// Download and install of a slot on a slow link.
 const INSTALL_TIMEOUT: Duration = Duration::from_secs(45 * 60);
+/// How long the board may stop answering once it has the install (a
+/// restart into the slot, through a robot controller, takes about a minute).
+const LOST_GRACE: Duration = Duration::from_secs(5 * 60);
 
 pub(crate) struct OrionSlots {
     pub(crate) transport: Arc<dyn OrionTransport>,
@@ -187,10 +190,53 @@ impl SlotsCapability for OrionSlots {
         .await?;
         // The download and install run on the board; the keys tell how far.
         let deadline = tokio::time::Instant::now() + INSTALL_TIMEOUT;
+        // When the board stopped answering, after it took the install.
+        let mut lost: Option<tokio::time::Instant> = None;
         loop {
             tokio::time::sleep(self.poll).await;
-            let keys = update_status(self.transport.as_ref(), &self.node).await?;
+            let keys = match update_status(self.transport.as_ref(), &self.node).await {
+                Ok(keys) => keys,
+                // The board has the install: losing it now is it busy or
+                // restarting into the slot. Never `Unreachable`, which
+                // makes the caller install it again the other way in.
+                Err(DriverError::Unreachable(reason)) => {
+                    let since = *lost.get_or_insert_with(tokio::time::Instant::now);
+                    if since.elapsed() >= LOST_GRACE {
+                        return Err(DriverError::StepFailed {
+                            step: "Installing the slot".into(),
+                            message: format!(
+                                "the board stopped answering ({reason}); check its slots \
+                                 before installing again"
+                            ),
+                        });
+                    }
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
             let state = keys.get(update_action::KEY_STATE).map(String::as_str);
+            // Back after going away: a restart, which ends the install.
+            if lost.take().is_some()
+                && install.boot
+                && !matches!(
+                    state,
+                    Some(update_action::STATE_STAGING | update_action::STATE_REBOOTING)
+                )
+            {
+                let active = keys.get("update.slot_active").map(String::as_str);
+                if active == Some(set.running.as_str()) {
+                    return Err(DriverError::StepFailed {
+                        step: "Restarting into the slot".into(),
+                        message: format!(
+                            "the board restarted on its old slot ({}); the new one is \
+                             installed but didn't come up",
+                            set.running
+                        ),
+                    });
+                }
+                progress.step_started(UpdateStep::Apply);
+                break;
+            }
             match state {
                 Some(update_action::STATE_STAGING) | None => {
                     let permille: f32 = keys
@@ -263,6 +309,139 @@ impl SlotsCapability for OrionSlots {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+
+    use atlas_driver::{Artifact, DeviceKey, DeviceMode, LinkId};
+    use orion_control_plane::{
+        ActionRequest, ActionResult, ActionState, NodeRecord, StatusEntry, StatusQuery,
+        StatusSubject,
+    };
+
+    /// One `update.*` answer: the keys, or `None` for a lost connection.
+    type Answer = Option<Vec<(&'static str, &'static str)>>;
+
+    /// A board whose `update.*` answers follow a script (the last repeats).
+    struct Board(Mutex<VecDeque<Answer>>);
+
+    #[async_trait]
+    impl OrionTransport for Board {
+        async fn nodes(&self) -> Result<Vec<NodeRecord>, DriverError> {
+            Ok(Vec::new())
+        }
+        async fn status(&self, _: StatusQuery) -> Result<Vec<StatusEntry>, DriverError> {
+            let mut script = self.0.lock().unwrap();
+            let answer = if script.len() > 1 {
+                script.pop_front().unwrap()
+            } else {
+                script[0].clone()
+            };
+            let keys = answer.ok_or_else(|| DriverError::Unreachable("reset by peer".into()))?;
+            Ok(keys
+                .into_iter()
+                .map(|(key, value)| {
+                    StatusEntry::new(
+                        StatusSubject::Node(NodeId::new("raze-1")),
+                        key,
+                        TypedConfigValue::String(value.into()),
+                    )
+                })
+                .collect())
+        }
+        async fn run_action(&self, request: ActionRequest) -> Result<ActionResult, DriverError> {
+            Ok(ActionResult {
+                action_id: request.action_id,
+                target: request.target,
+                name: request.name,
+                state: ActionState::Succeeded,
+                output: BTreeMap::new(),
+                handled_by: NodeId::new("raze-1"),
+                requested_by: "atlas".into(),
+                created_at_ms: 0,
+                updated_at_ms: 0,
+            })
+        }
+        async fn query_action(&self, _: &str) -> Result<Option<ActionResult>, DriverError> {
+            Ok(None)
+        }
+    }
+
+    struct Bundles;
+    impl BundleHost for Bundles {
+        fn url_for(
+            &self,
+            artifact: &Artifact,
+            _: Option<std::net::IpAddr>,
+        ) -> Result<String, DriverError> {
+            Ok(format!("http://atlas:7700/{}", artifact.name))
+        }
+    }
+
+    fn on(state: &'static str, active: &'static str) -> Answer {
+        Some(vec![
+            ("update.state", state),
+            ("update.layout", "slots"),
+            ("update.slot_active", active),
+            ("update.free_bytes", "9000000000"),
+            ("update.reserve_bytes", "0"),
+            (
+                "update.slots",
+                r#"[{"id":"old","flags":["running","default"]}]"#,
+            ),
+        ])
+    }
+
+    async fn install_through(script: Vec<Answer>) -> Result<(), DriverError> {
+        let slots = OrionSlots {
+            transport: Arc::new(Board(Mutex::new(script.into()))),
+            bundles: Some(Arc::new(Bundles)),
+            node: NodeId::new("raze-1"),
+            poll: Duration::from_secs(1),
+        };
+        let device = Identity {
+            key: DeviceKey::new("raze", "1"),
+            model: "Raze".into(),
+            mode: DeviceMode::Normal,
+            versions: Default::default(),
+            name: None,
+            link: LinkId("controller".into()),
+            address: "http://127.0.0.1:5899/".into(),
+            attributes: Default::default(),
+        };
+        let install = SlotInstall {
+            bundle: Artifact {
+                name: "new.img.xz".into(),
+                path: "new.img.xz".into(),
+                sha256: "00".into(),
+                size_bytes: 1,
+            },
+            pin: false,
+            boot: true,
+        };
+        slots
+            .install(&device, &install, &ProgressSink::discard())
+            .await
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_board_that_goes_away_with_the_install_restarted_into_it() {
+        // Preflight, staging, the restart (no answer), then the new slot.
+        let script = vec![on("idle", "old"), on("staging", "old"), None, None];
+        let mut back = script.clone();
+        back.push(on("confirmed", "new"));
+        assert!(install_through(back).await.is_ok());
+
+        // Back on the old slot: the new one didn't come up.
+        let mut old = script.clone();
+        old.push(on("confirmed", "old"));
+        let error = install_through(old).await.unwrap_err();
+        assert!(matches!(error, DriverError::StepFailed { .. }), "{error:?}");
+
+        // Gone for good: a failed step, never `Unreachable`, so nothing
+        // installs it a second time the other way in.
+        let error = install_through(script).await.unwrap_err();
+        assert!(matches!(error, DriverError::StepFailed { .. }), "{error:?}");
+    }
 
     #[test]
     fn an_ab_board_has_no_slot_set() {
