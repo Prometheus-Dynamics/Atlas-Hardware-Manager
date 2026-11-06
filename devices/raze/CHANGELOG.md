@@ -7,6 +7,12 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **Lemnos cf3a4ac (2026-11-06).** The joint Lemnos set moves past 952e1c7:
+  the CMA heap's capacity fix (CmaTotal, not CmaFree) and the C API's
+  SONAME. Packaging, the board schema, lemnos-board and lemnos-ipc are
+  unchanged. lemnosd's socket is 0660 `lemnos:lemnos` since 952e1c7. Its
+  clients reach it as root (board-agent, helios-api, helios-peripherals,
+  lemnos-ctl) or as the `lemnos` user (lemnos-orion); checked on Raze #1.
 - **A trial only (2026-11-06).** `slots apply|boot-once <id> --keep-default`
   boots a slot on trial without moving the default: `confirm` keeps it
   running when it is healthy, leaves `default.txt` and the root copy, and
