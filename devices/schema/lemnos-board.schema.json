@@ -1,5 +1,5 @@
 {
-  "$comment": "Vendored unchanged (apart from this comment) from Lemnos 50533a8d79cb docs/schemas/lemnos-board.schema.json. devices/tools/gen-raze.py validates the generated /etc/lemnos/board.toml against it. Update it together with the Lemnos pin (capabilities.hardware-service.gaia_import.rev).",
+  "$comment": "Vendored unchanged (apart from this comment) from Lemnos 4dceae22fb8a docs/schemas/lemnos-board.schema.json. devices/tools/gen-raze.py validates the generated /etc/lemnos/board.toml against it. Update it together with the Lemnos pin (capabilities.hardware-service.gaia_import.rev).",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/Prometheus-Dynamics/Lemnos/docs/schemas/lemnos-board.schema.json",
   "title": "Lemnos board definition",
@@ -143,10 +143,9 @@
     },
     "composites": {
       "type": "array",
-      "description": "Composite devices hosted by lemnosd (docs/composite-devices.md). Only the fan-controller driver exists.",
+      "description": "Composite devices hosted by lemnosd (docs/composite-devices.md). Each entry is a device table; only the fan-controller driver exists.",
       "items": {
         "type": "object",
-        "additionalProperties": false,
         "required": [
           "id",
           "driver"
@@ -161,21 +160,9 @@
               "fan-controller"
             ]
           },
-          "inputs": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string",
-              "pattern": "^[^.]+\\.[^.]+$"
-            }
-          },
-          "outputs": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
-          },
           "config": {
-            "type": "object"
+            "type": "object",
+            "description": "input_<role> = \"<device>.<channel>\", output_fan = \"<device>\", curve_<role> = [[value, duty], ...], and the scalars floor, hysteresis, slew, kick_ms, max_age_ms."
           }
         }
       }

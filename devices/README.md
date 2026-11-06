@@ -268,7 +268,7 @@ rev = "<pinned commit>"
 id = "lemnos"
 kind = "git"
 repo = "https://github.com/Prometheus-Dynamics/Lemnos.git"
-rev = "50533a8d79cbac8dbc8986b6d3042f5ff6c18b16"
+rev = "4dceae22fb8ae702e6dec0d512a08148d0aa6d07"
 ```
 
 For local development against an Atlas checkout:

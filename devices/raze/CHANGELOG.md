@@ -7,6 +7,11 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **Lemnos 4dceae2 (2026-11-06).** The tested Lemnos (`gaia_import.rev`,
+  board-agent's `lemnos-ipc`, the vendored board schema) moves from 50533a8
+  to Lemnos's settled set: lemnosd's IMU poll loop runs SCHED_FIFO 10 (no
+  lost samples on a loaded board), plus protocol fixes. The Raze board file
+  is unchanged; it uses no composites and no retired light keys.
 - **Vulkan-only GPU layer (2026-11-06).** `gaia/gpu-vulkan.toml` now selects
   Mesa and libdrm itself, so an OS that needs only Vulkan imports it alone:
   no libgallium, EGL, GLES or gbm. Measured on a HeliOS full Raze build
