@@ -18,10 +18,15 @@
 # itself (an install under the lock) creates <lock>.reboot-ok first: the
 # restart then goes ahead under the holder's lock instead of waiting for
 # itself. With no flock, or BOARD_REBOOT_LOCK empty, the command just runs.
+# While it waits, its line is also in BOARD_REBOOT_WAIT_FILE
+# (/run/board/reboot-wait, next to the writer's update.json), which HeliOS
+# reports as its update status's `reboot_waiting`; the file goes once the
+# wait ends, whichever way.
 set -u
 
 LOCK=${BOARD_REBOOT_LOCK-/run/lock/raze-gpu.lock}
 WAIT=${BOARD_REBOOT_LOCK_WAIT:-0}
+WAIT_FILE=${BOARD_REBOOT_WAIT_FILE-${BOARD_RUN_DIR:-/run/board}/reboot-wait}
 
 # The lock's holder from /proc/locks (whoever took it, by any tool).
 holder() {
@@ -46,18 +51,20 @@ holder() {
 # The first process with the lock file open, leaving out this script, its
 # subshells and their children.
 fd_holder() {
-	for _f in /proc/[0-9]*/fd/*; do
-		[ "$(readlink "$_f" 2>/dev/null)" = "$LOCK" ] || continue
-		_p=${_f#/proc/}
-		_p=${_p%%/*}
-		[ "$_p" = "$$" ] && continue
-		_pp=$(awk '/^PPid:/ { print $2 }' "/proc/$_p/status" 2>/dev/null)
-		[ "$_pp" = "$$" ] && continue
-		_ppp=$(awk '/^PPid:/ { print $2 }' "/proc/$_pp/status" 2>/dev/null)
-		[ "$_ppp" = "$$" ] && continue
-		echo "$_p"
-		return
-	done
+	# One ls and one awk for every fd on the board: a readlink per fd took
+	# minutes on a busy machine.
+	ls -l /proc/[0-9]*/fd/ 2>/dev/null | awk -v lock="$LOCK" '
+		/^\/proc\/[0-9]+\/fd\/?:$/ { split($0, part, "/"); pid = part[3]; next }
+		pid != "" && $NF == lock && $(NF - 1) == "->" { print pid }' | uniq |
+		while read -r _p; do
+			[ "$_p" = "$$" ] && continue
+			_pp=$(awk '/^PPid:/ { print $2 }' "/proc/$_p/status" 2>/dev/null)
+			[ "$_pp" = "$$" ] && continue
+			_ppp=$(awk '/^PPid:/ { print $2 }' "/proc/$_pp/status" 2>/dev/null)
+			[ "$_ppp" = "$$" ] && continue
+			echo "$_p"
+			break
+		done
 }
 say() {
 	echo "reboot-locked: $*" >&2
@@ -82,6 +89,12 @@ if [ -n "$LOCK" ] && command -v flock >/dev/null 2>&1 && exec 9>> "$LOCK" && ! f
 		say "restart asked for by the holder of ${LOCK##*/}, ${_by:-gone}: $*"
 	else
 		say "waiting for ${LOCK##*/} held by ${_by:-an unknown process} before the restart: $*"
+		if [ -n "$WAIT_FILE" ]; then
+			mkdir -p "${WAIT_FILE%/*}" 2>/dev/null
+			echo "waiting for ${LOCK##*/} held by ${_by:-an unknown process} before the restart" > "$WAIT_FILE.$$" 2>/dev/null &&
+				mv -f "$WAIT_FILE.$$" "$WAIT_FILE" 2>/dev/null
+			trap 'rm -f "$WAIT_FILE"' EXIT
+		fi
 		if [ "$WAIT" -gt 0 ] 2>/dev/null; then
 			if ! flock -w "$WAIT" 9; then
 				if [ "${BOARD_REBOOT_LOCK_OVERRIDE:-0}" = 1 ]; then
@@ -94,6 +107,7 @@ if [ -n "$LOCK" ] && command -v flock >/dev/null 2>&1 && exec 9>> "$LOCK" && ! f
 		else
 			flock 9
 		fi
+		[ -z "$WAIT_FILE" ] || rm -f "$WAIT_FILE"
 	fi
 fi
 "$@" || exit

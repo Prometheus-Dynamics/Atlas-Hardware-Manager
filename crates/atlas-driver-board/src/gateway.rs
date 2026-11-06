@@ -283,6 +283,15 @@ impl SlotsCapability for GatewaySlots {
     }
 }
 
+/// What a restart held back by the board's lock waits for
+/// (`reboot_waiting`, HeliOS 8c706dce: reboot-locked's line), if anything.
+fn reboot_waiting(status: &Value) -> Option<&str> {
+    status["reboot_waiting"]
+        .as_str()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+}
+
 impl GatewaySlots {
     /// Waits for the board to go and come back with a slot it didn't have
     /// (`before`): the image staged, and the board restarted into it.
@@ -294,6 +303,7 @@ impl GatewaySlots {
         progress.step_started(UpdateStep::Reboot);
         let started = Instant::now();
         let mut went = false;
+        let mut said = String::new();
         while started.elapsed() < BOOT_TIMEOUT {
             tokio::time::sleep(BOOT_POLL).await;
             // While it restarts the controller doesn't route to it (404).
@@ -301,6 +311,13 @@ impl GatewaySlots {
                 went = true;
                 continue;
             };
+            // A restart held back by the bench lock says whose, once.
+            if let Some(waiting) = reboot_waiting(&status) {
+                if waiting != said {
+                    progress.log(waiting);
+                    said = waiting.to_string();
+                }
+            }
             if slot_ids(&status).iter().any(|id| !before.contains(id)) {
                 return Ok(());
             }
@@ -320,6 +337,24 @@ impl GatewaySlots {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_restart_held_by_the_lock_says_whose() {
+        let line = "waiting for raze-gpu.lock held by pid 42 (styx run.sh) before the restart";
+        assert_eq!(
+            reboot_waiting(&json!({ "phase": "trying", "reboot_waiting": line })),
+            Some(line)
+        );
+        assert_eq!(
+            reboot_waiting(&json!({ "phase": "trying", "reboot_waiting": null })),
+            None
+        );
+        assert_eq!(
+            reboot_waiting(&json!({ "phase": "trying", "reboot_waiting": " " })),
+            None
+        );
+        assert_eq!(reboot_waiting(&json!({ "phase": "idle" })), None);
+    }
 
     #[test]
     fn helios_update_status_gives_the_slots() {

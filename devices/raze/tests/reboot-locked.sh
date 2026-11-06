@@ -17,7 +17,7 @@ fail() {
 	echo "FAIL: $*" >&2
 	exit 1
 }
-export BOARD_REBOOT_LOCK="$T/raze-gpu.lock" BOARD_REBOOT_LOCK_HOLD=0
+export BOARD_REBOOT_LOCK="$T/raze-gpu.lock" BOARD_REBOOT_LOCK_HOLD=0 BOARD_REBOOT_WAIT_FILE="$T/run/reboot-wait"
 
 echo "a free lock: no holder, and the restart runs at once"
 [ -z "$(sh "$rl" --holder)" ] || fail "a holder of a free lock: $(sh "$rl" --holder)"
@@ -34,6 +34,7 @@ BOARD_REBOOT_LOCK_WAIT=1 sh "$rl" sh -c "echo ran >> '$T/runs'" 2> "$T/err"
 r=$?
 set -e
 [ "$r" = 3 ] || fail "exit $r, want 3"
+[ ! -e "$BOARD_REBOOT_WAIT_FILE" ] || fail "the wait file outlived a refused restart"
 grep -q 'still held' "$T/err" || fail "the refusal: $(cat "$T/err")"
 # The flock that took it has exited: the holder named is the process
 # still holding the fd ($holder, now `sleep 30`), with its command.
@@ -57,9 +58,13 @@ BOARD_REBOOT_LOCK_WAIT=1 sh "$rl" sh -c "echo ran >> '$T/runs'" || fail "the hol
 echo "the restart goes once the lock is released"
 BOARD_REBOOT_LOCK_WAIT=20 sh "$rl" sh -c "echo ran >> '$T/runs'" &
 waiter=$!
+# While it waits, the wait file names the holder (HeliOS's reboot_waiting).
+until [ -s "$BOARD_REBOOT_WAIT_FILE" ]; do kill -0 "$waiter" 2>/dev/null || fail "the waiter ended early"; done
+grep -q "waiting for raze-gpu.lock held by pid $holder (sleep 30)" "$BOARD_REBOOT_WAIT_FILE" || fail "the wait file: $(cat "$BOARD_REBOOT_WAIT_FILE")"
 kill "$holder"
 holder=''
 wait "$waiter" || fail "the waiting restart failed"
+[ ! -e "$BOARD_REBOOT_WAIT_FILE" ] || fail "the wait file outlived the wait"
 [ "$(wc -l < "$T/runs")" = 2 ] || fail "the waiting restart didn't run"
 
 echo "the lock is held after the command, until the hold ends"

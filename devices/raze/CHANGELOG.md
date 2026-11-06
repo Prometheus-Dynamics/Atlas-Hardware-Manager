@@ -26,6 +26,11 @@ OSes pin this layer by commit; the commits are listed per area.
   the flock that took it has exited; `reboot-locked --holder` prints it). Orion's
   `reboot` replies "waiting for raze-gpu.lock held by pid N (cmd)", and
   `atlas action <device> reboot` prints it.
+  While it waits, the line is also in `/run/board/reboot-wait` (removed
+  when the wait ends), which HeliOS (8c706dce) reports as `reboot_waiting`
+  in `/v1/update/status`; Atlas prints it while a slot boot through the
+  robot controller waits. Finding the holder takes one `ls -l` over
+  `/proc/*/fd` instead of a `readlink` per fd (minutes on a busy machine).
 - **Lemnos cf3a4ac (2026-11-06).** The joint Lemnos set moves past 952e1c7:
   the CMA heap's capacity fix (CmaTotal, not CmaFree) and the C API's
   SONAME. Packaging, the board schema, lemnos-board and lemnos-ipc are
