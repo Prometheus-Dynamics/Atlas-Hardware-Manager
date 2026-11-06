@@ -2,8 +2,8 @@ use std::path::PathBuf;
 
 use atlas_core::{ActivityEntry, DeviceRecord, HistoryEntry, ScanReport, SelfTestRecord};
 use atlas_driver::{
-    CalibrationStatus, DeviceAction, DeviceKey, DeviceStatus, FrameSink, HardwareCommand,
-    HardwareFrame, LogLine, Metric,
+    CalibrationStatus, DeviceAction, DeviceKey, DeviceStatus, HardwareCommand, HardwareFrame,
+    LogLine, Metric,
 };
 use atlas_driver_orion::LiveFrame;
 use tauri::State;
@@ -128,14 +128,9 @@ pub async fn start_hardware_stream(
     let id = state
         .next_hardware_stream
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let atlas = state.atlas.clone();
-    let channel = on_frame.clone();
-    let sink: FrameSink = std::sync::Arc::new(move |frame| {
-        let _ = channel.send(frame);
-    });
-    // Orion's board.hardware stream first (board-agent, on the board's own
-    // node), when Live readings from Orion is on; the board's own stream
-    // when Orion doesn't answer.
+    // Orion's board.hardware stream (board-agent, on the board's own
+    // node), when Live readings from Orion is on. Every image with the
+    // device package runs Orion: without it, the snapshot is all there is.
     let orion = state
         .settings
         .lock()
@@ -148,8 +143,11 @@ pub async fn start_hardware_stream(
         .device(&key)
         .map(|record| record.identity.address.trim().to_owned())
         .unwrap_or_default();
-    // The board answers at once when it has no stream: tell before
-    // spawning, so the UI keeps its snapshot.
+    let Some(live) = orion.filter(|_| !address.is_empty()) else {
+        return Ok(None);
+    };
+    // Orion answers at once when it can't stream: tell before spawning, so
+    // the UI keeps its snapshot.
     let (tell, told) = tokio::sync::oneshot::channel();
     let task = tokio::spawn(async move {
         let tell = std::sync::Mutex::new(Some(tell));
@@ -162,32 +160,26 @@ pub async fn start_hardware_stream(
                 let _ = tell.send(ok);
             }
         };
-        if let Some(live) = orion.filter(|_| !address.is_empty()) {
-            let channel = on_frame.clone();
-            let followed = live
-                .follow_hardware(&address, &devices, |frame| {
-                    started(true);
-                    channel.send(frame).is_ok()
-                })
-                .await;
-            if followed.is_ok() {
-                let _ = on_frame.send(HardwareFrame::Gone {
-                    reason: "the board's Orion stream ended".into(),
-                });
-                return;
-            }
-        }
-        let result = atlas.stream_hardware(&key, &devices, sink).await;
-        let reason = match result {
-            Ok(false) => {
-                started(false);
-                return;
-            }
-            Ok(true) => "the board ended the stream".to_string(),
+        let channel = on_frame.clone();
+        let followed = live
+            .follow_hardware(&address, &devices, |frame| {
+                started(true);
+                channel.send(frame).is_ok()
+            })
+            .await;
+        let reason = match followed {
+            Ok(()) => "the board's Orion stream ended".to_string(),
             Err(error) => error.to_string(),
         };
-        started(true);
-        let _ = on_frame.send(HardwareFrame::Gone { reason });
+        let unstarted = tell
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .take();
+        // Ended before a frame while the caller still waits: no stream, the
+        // UI keeps its snapshot. Otherwise the UI follows it: tell it went.
+        if unstarted.is_none_or(|tell| tell.send(false).is_err()) {
+            let _ = on_frame.send(HardwareFrame::Gone { reason });
+        }
     });
     // Streaming from the start, or no stream: whichever comes first.
     let streams = tokio::select! {
@@ -205,8 +197,8 @@ pub async fn start_hardware_stream(
     Ok(Some(id))
 }
 
-/// Stops a live hardware stream (closing the board's connection, which
-/// ends its lemnosd subscriptions).
+/// Stops a live hardware stream (closing the Orion session, which ends
+/// board-agent's subscriptions).
 #[tauri::command(async)]
 pub fn stop_hardware_stream(state: State<'_, AppState>, id: u64) {
     if let Some(task) = state

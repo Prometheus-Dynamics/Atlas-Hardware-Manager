@@ -6,7 +6,7 @@
 
 use std::time::Duration;
 
-use atlas_driver::{DeviceEvent, DriverError, FrameSink, HardwareFrame, PushSink, StatusPush};
+use atlas_driver::{DeviceEvent, DriverError, PushSink, StatusPush};
 use serde_json::Value;
 
 /// A board sends a keepalive every 10 s: silence this long means it's gone.
@@ -88,57 +88,6 @@ pub(crate) async fn follow(
     .await
 }
 
-/// The live frame a `hardware` topic message means, if it's one.
-pub(crate) fn frame_of(message: &Message) -> Option<HardwareFrame> {
-    let data: Value = serde_json::from_str(&message.data).ok()?;
-    match message.event.as_str() {
-        "hardware" => Some(HardwareFrame::Devices {
-            devices: serde_json::from_value(data.get("devices")?.clone()).ok()?,
-        }),
-        "samples" => Some(HardwareFrame::Samples {
-            device: data.get("device")?.as_str()?.to_string(),
-            samples: data
-                .get("samples")?
-                .as_array()?
-                .iter()
-                .filter_map(|row| {
-                    let row = row.as_array()?;
-                    let t_us = row.first()?.as_u64()?;
-                    Some((t_us, row[1..].iter().map(Value::as_f64).collect()))
-                })
-                .collect(),
-        }),
-        "hardware-gone" => Some(HardwareFrame::Gone {
-            reason: data.get("reason")?.as_str()?.to_string(),
-        }),
-        _ => None,
-    }
-}
-
-/// Follows the board's live readings of `wanted` until the stream ends.
-pub(crate) async fn follow_hardware(
-    http: &reqwest::Client,
-    stream_url: &str,
-    wanted: &[(String, u32)],
-    sink: FrameSink,
-) -> Result<bool, DriverError> {
-    let list: Vec<String> = wanted
-        .iter()
-        .map(|(device, period)| format!("{device}:{period}"))
-        .collect();
-    let separator = if stream_url.contains('?') { '&' } else { '?' };
-    let url = format!(
-        "{stream_url}{separator}topics=hardware&hardware={}",
-        list.join(",")
-    );
-    follow_messages(http, &url, |message| {
-        if let Some(frame) = frame_of(message) {
-            sink(frame);
-        }
-    })
-    .await
-}
-
 /// Holds an SSE stream open, passing each message to `on`.
 async fn follow_messages(
     http: &reqwest::Client,
@@ -214,38 +163,6 @@ mod tests {
             seen.lock().unwrap()[1],
             StatusPush::Update {
                 state: "trying".into()
-            }
-        );
-    }
-
-    #[test]
-    fn hardware_frames_parse() {
-        let mut parser = Parser::default();
-        let messages = parser.feed(concat!(
-            "event: hardware\ndata: {\"devices\":[{\"id\":\"imu\",\"class\":\"imu\",\"period_ms\":10,\"channels\":[{\"name\":\"acceleration.x\",\"unit\":\"m/s²\"}]},{\"id\":\"gps\",\"missing\":true}]}\n\n",
-            "event: samples\ndata: {\"device\":\"imu\",\"samples\":[[1000,0.12],[11000,null]]}\n\n",
-            "event: hardware-gone\ndata: {\"reason\":\"lemnosd: gone\"}\n\n",
-        ));
-        let frames: Vec<HardwareFrame> = messages.iter().filter_map(frame_of).collect();
-        let HardwareFrame::Devices { devices } = &frames[0] else {
-            panic!("devices first");
-        };
-        assert_eq!(
-            (devices[0].period_ms, devices[0].channels[0].unit.as_str()),
-            (10, "m/s²")
-        );
-        assert!(devices[1].missing);
-        assert_eq!(
-            frames[1],
-            HardwareFrame::Samples {
-                device: "imu".into(),
-                samples: vec![(1000, vec![Some(0.12)]), (11000, vec![None])],
-            }
-        );
-        assert_eq!(
-            frames[2],
-            HardwareFrame::Gone {
-                reason: "lemnosd: gone".into()
             }
         );
     }

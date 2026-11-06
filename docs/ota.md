@@ -438,24 +438,22 @@ through board-agent, or someone typing on the board.
   that drops (a reboot) re-scans at once and then every 2 s for 2 minutes,
   so the board is seen going and coming back; boards without the stream are
   polled as before.
-- **Live readings.** The same stream's `hardware` topic:
-  `GET /stream?topics=hardware&hardware=imu:10,power:100`
-  (device:period ms, at least 5 ms, at most 8 devices) opens one lemnosd
-  connection (`board-stream`) for that viewer and subscribes those devices
-  only while it is connected, so nothing is read for nobody. lemnosd reads
-  a device at the fastest period any client asked for (and at least its
-  board `poll_ms`; the Raze's IMU is 10 ms). It sends `hardware` (each
-  device's channels and units), then `samples` every 16 ms
-  (`[[t_us, v, ..], ..]`, lemnosd's monotonic µs), and `hardware-gone` if
-  lemnosd goes. In Atlas, the Hardware tab opens this stream while it is
-  shown (motion sensors at 10 ms, the rest at 100 ms) and draws a canvas
-  chart per unit for each device at the display's rate from a ring buffer
-  (40 s at 100 Hz), with a 2, 10 or 30 s window; hovering pauses it and
-  shows the nearest sample's values and when it was read. A board without
-  the stream shows the 10 s snapshot as before. Orion's status lane stays
-  the low-rate summary (at most
-  `LEMNOS_ORION_RATE_HZ`, deadbanded): it isn't meant for live viewing, and
-  a remote operator can only poll it.
+- **Live readings.** Orion's `board.hardware` (board-agent, above): it
+  opens lemnosd subscriptions (client `board-agent`) for the devices someone
+  watches, only while they are watched, so nothing is read for nobody.
+  lemnosd reads a device at the fastest period any client asked for (and at
+  least its board `poll_ms`; the Raze's IMU is 10 ms). In Atlas, the
+  Hardware tab follows it while it is shown (with "Live readings from Orion"
+  on, the default; motion sensors at 10 ms, the rest at 100 ms) and draws a
+  canvas chart per unit for each device at the display's rate from a ring
+  buffer (40 s at 100 Hz), with a 2, 10 or 30 s window; hovering pauses it
+  and shows the nearest sample's values and when it was read. Without it
+  (Orion off in Atlas, or a board behind a controller, which Atlas polls
+  through the gateway) the tab shows the 10 s snapshot. board-stream had a
+  `hardware` topic for the same readings until 2026-11-05; every image that
+  ships this package runs orion-node, so it went. Orion's status lane stays
+  the low-rate summary (at most `LEMNOS_ORION_RATE_HZ`, deadbanded): it
+  isn't meant for live viewing, and a remote operator can only poll it.
 - **Atlas.** atlas-driver-board reads both (a `status` capability; without a
   metrics endpoint the temperatures and fan are its telemetry). atlas-core
   keeps each board's events (by board serial, at most 500, saved with the

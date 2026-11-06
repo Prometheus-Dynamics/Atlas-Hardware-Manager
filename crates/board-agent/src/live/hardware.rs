@@ -1,6 +1,6 @@
 //! The `board.hardware` stream: lemnosd's devices, a series per channel
-//! (`<device>.<channel>`), read with board-stream's reader
-//! (`board_stream::hardware`) for the devices someone watches, or that are
+//! (`<device>.<channel>`), read with the lemnosd reader
+//! ([`super::lemnos`]) for the devices someone watches, or that are
 //! sampled always. A light streams its geometry and each LED's colour
 //! (`<light>.led.<n>`, `0xWWRRGGBB` as `U32`).
 
@@ -8,7 +8,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-use board_stream::hardware::{Live, start};
+use super::lemnos::{Live, start};
 use lemnos_ipc::{DeviceClass, DeviceClient};
 use orion_control_plane::{HistoryPolicy, SampleChunkBuilder, SeriesDecl, SeriesKind};
 

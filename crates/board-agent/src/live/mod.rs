@@ -12,6 +12,7 @@
 //! With nothing to sample the loop sleeps.
 
 pub mod hardware;
+pub mod lemnos;
 pub mod sampling;
 pub mod sys;
 

@@ -7,6 +7,12 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **board-stream's `hardware` topic removed (2026-11-05).** Live readings
+  are Orion's `board.hardware` only (board-agent, which now carries the
+  lemnosd reader itself). Every image that ships this package runs
+  orion-node. `board-stream@.service` drops `SupplementaryGroups=lemnos`:
+  it reads only the events and update files now. A
+  `/stream?topics=hardware` request gets a 400.
 - **HEVC decoder measured (2026-11-03).** On slot 2026.2.0-dev.907,
   rpi_hevc_dec is loaded and bound to brcm,bcm2712-hevc-dec (1000800000.codec),
   /dev/video19 is rpi-hevc-dec. The manifest's kernel built-ins, version and

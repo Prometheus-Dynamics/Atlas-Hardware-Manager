@@ -1,9 +1,9 @@
-//! Live readings for the `hardware` topic: one lemnosd connection (client
-//! `board-stream`) per viewer, subscribed to the devices it asked for at
+//! Live readings for `board.hardware`: one lemnosd connection (client
+//! `board-agent`) per viewer, subscribed to the devices it asked for at
 //! their periods, only while it is connected. lemnosd polls a device at the
 //! fastest period any client asked for (and at least its board `poll_ms`),
 //! so the readings arrive at device rate. A thread reads them and hands
-//! them to the stream, which sends them in batches.
+//! them to the stream.
 //!
 //! A light (the status ring) has no readings: its frames are watched instead
 //! (lemnosd's frame watch, exactly the colours it wrote, sent when they
@@ -23,7 +23,7 @@ use lemnos_ipc::{
 use serde_json::{Value, json};
 
 /// The client name lemnosd sees (its logs; reads need no write policy).
-const CLIENT: &str = "board-stream";
+const CLIENT: &str = "board-agent";
 
 /// What the reader thread hands to the stream.
 #[derive(Debug, PartialEq)]

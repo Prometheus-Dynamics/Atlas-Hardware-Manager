@@ -65,28 +65,6 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     let changes = Changes::new(&paths);
-    if stream.wants_hardware() {
-        // Live readings go out in batches this often (about 60 per second);
-        // the files are looked at when they change (or every `poll`).
-        let window = millis("BOARD_STREAM_BATCH_MS", 16);
-        let mut looked = std::time::Instant::now();
-        loop {
-            if stream.pump(window).is_err() {
-                return ExitCode::SUCCESS;
-            }
-            let due = if changes.watching() {
-                changes.pending()
-            } else {
-                looked.elapsed() >= poll
-            };
-            if due || looked.elapsed() >= keepalive {
-                looked = std::time::Instant::now();
-                if stream.tick().is_err() {
-                    return ExitCode::SUCCESS;
-                }
-            }
-        }
-    }
     // Events and update state only: sleep until a file changes or the
     // keepalive is due. Until a write fails: the viewer went.
     loop {

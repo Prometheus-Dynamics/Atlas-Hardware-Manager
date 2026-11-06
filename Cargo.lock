@@ -587,7 +587,6 @@ dependencies = [
 name = "board-agent"
 version = "2026.1.0-dev"
 dependencies = [
- "board-stream",
  "lemnos-ipc",
  "nix",
  "orion-client",
@@ -610,7 +609,6 @@ dependencies = [
 name = "board-stream"
 version = "2026.1.0-dev"
 dependencies = [
- "lemnos-ipc",
  "nix",
  "serde_json",
 ]

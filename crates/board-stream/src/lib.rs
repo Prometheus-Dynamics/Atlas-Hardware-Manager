@@ -8,8 +8,6 @@
 //! endpoint through it, so a request starts no systemd unit.
 
 pub mod changes;
-#[cfg(unix)]
-pub mod hardware;
 pub mod request;
 #[cfg(target_os = "linux")]
 pub mod serve;
