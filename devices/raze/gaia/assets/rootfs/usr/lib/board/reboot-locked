@@ -1,0 +1,38 @@
+#!/bin/sh
+# reboot-locked <command> [args...]: a restart that waits for the board's
+# lock first and holds it until the shutdown ends this process.
+#
+# The lock (BOARD_REBOOT_LOCK, /run/lock/raze-gpu.lock) is what the bench's
+# measurements hold while they run, so a restart asked for during one (an
+# update's trial, a slot booted once, a reboot over Orion or the USB link)
+# waits for it to finish instead of cutting it. Holding the lock until the
+# end keeps the next measurement from starting on a board that is going
+# down. BOARD_REBOOT_LOCK_WAIT: seconds to wait (0, the default: as long as
+# it takes; past a limit the restart is refused, exit 3).
+# BOARD_REBOOT_LOCK_HOLD: seconds to keep it after the command (600). With
+# no flock, or BOARD_REBOOT_LOCK empty, the command runs as it is.
+set -u
+
+LOCK=${BOARD_REBOOT_LOCK-/run/lock/raze-gpu.lock}
+WAIT=${BOARD_REBOOT_LOCK_WAIT:-0}
+[ $# -gt 0 ] || {
+	sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2
+	exit 2
+}
+
+if [ -n "$LOCK" ] && command -v flock >/dev/null 2>&1 && exec 9>> "$LOCK"; then
+	if ! flock -n 9; then
+		logger -t board-reboot "waiting for $LOCK before the restart ($*)" 2>/dev/null || true
+		if [ "$WAIT" -gt 0 ] 2>/dev/null; then
+			flock -w "$WAIT" 9 || {
+				echo "reboot-locked: $LOCK still held after ${WAIT}s; not restarting" >&2
+				exit 3
+			}
+		else
+			flock 9
+		fi
+	fi
+fi
+"$@" || exit
+# Accepted: keep the lock (fd 9) until the shutdown stops this process.
+exec sleep "${BOARD_REBOOT_LOCK_HOLD:-600}"

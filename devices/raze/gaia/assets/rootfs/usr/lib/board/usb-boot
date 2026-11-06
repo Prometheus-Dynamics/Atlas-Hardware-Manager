@@ -19,7 +19,8 @@ BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 . "$BOARD_LIB_DIR/lib.sh"
 
 VCMAILBOX=${BOARD_VCMAILBOX:-vcmailbox}
-REBOOT=${USB_BOOT_REBOOT:-systemctl reboot}
+# After the bench's lock (reboot-locked): never in a measurement.
+REBOOT=${USB_BOOT_REBOOT:-$BOARD_LIB_DIR/reboot-locked systemctl reboot}
 SYNC=${USB_BOOT_SYNC:-sync}
 RPIBOOT_ORDER=0x3
 

@@ -275,11 +275,12 @@ trial_txt() {
 	[ -z "$BOARD_ARG" ] || write_line tryboot.req ''
 }
 
+# Both after the bench's lock (reboot-locked): never in a measurement.
 tryboot_reboot() {
 	if [ -n "${UPDATE_REBOOT:-}" ]; then eval "$UPDATE_REBOOT"; return; fi
-	"$SYSTEMCTL" reboot --reboot-argument='0 tryboot'
+	"$BOARD_LIB_DIR/reboot-locked" "$SYSTEMCTL" reboot --reboot-argument='0 tryboot'
 }
-plain_reboot() { eval "${UPDATE_REBOOT_PLAIN:-$SYSTEMCTL reboot}"; }
+plain_reboot() { eval "${UPDATE_REBOOT_PLAIN:-\"\$BOARD_LIB_DIR/reboot-locked\" \$SYSTEMCTL reboot}"; }
 
 # run_hook <name> <slot>: the OS's hook in /etc/board/update.d/, as the A/B
 # updater runs it (the same names and variables), if there is one. Every

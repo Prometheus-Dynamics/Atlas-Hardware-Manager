@@ -7,6 +7,15 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **Restarts wait for the bench lock (2026-11-06).** Every restart the
+  package makes goes through `/usr/lib/board/reboot-locked`, which waits for
+  `/run/lock/raze-gpu.lock` (what the bench's measurements hold) and keeps
+  it until the shutdown. That covers the writers' trial and plain restarts
+  (apply, boot-once, a failed or link-less trial, a retry, rollback, a
+  push's reboot), Orion's `reboot` (BOARD_AGENT_REBOOT), the USB link's
+  reboot request and usb-boot. A restart asked for during a measurement
+  waits for it instead of cutting it. `BOARD_REBOOT_LOCK_WAIT` bounds the
+  wait (0, the default: no limit; past it the restart is refused, exit 3).
 - **Lemnos cf3a4ac (2026-11-06).** The joint Lemnos set moves past 952e1c7:
   the CMA heap's capacity fix (CmaTotal, not CmaFree) and the C API's
   SONAME. Packaging, the board schema, lemnos-board and lemnos-ipc are

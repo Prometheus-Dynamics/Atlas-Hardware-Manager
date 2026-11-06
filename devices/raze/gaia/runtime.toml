@@ -491,6 +491,13 @@ dest = "/usr/lib/systemd/system.conf.d/60-board-watchdog.conf"
 origin = "static-asset"
 
 [[stage.files]]
+id = "raze-board-reboot-locked"
+src = "${self}/assets/rootfs/usr/lib/board/reboot-locked"
+dest = "/usr/lib/board/reboot-locked"
+origin = "static-asset"
+mode = 493
+
+[[stage.files]]
 id = "raze-board-usb-boot"
 src = "${self}/assets/rootfs/usr/lib/board/usb-boot"
 dest = "/usr/lib/board/usb-boot"

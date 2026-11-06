@@ -455,7 +455,8 @@ tryboot_reboot() {
 		return
 	fi
 	if command -v "$SYSTEMCTL" >/dev/null 2>&1; then
-		"$SYSTEMCTL" reboot --reboot-argument='0 tryboot'
+		# After the bench's lock (reboot-locked): never in a measurement.
+		"$BOARD_LIB_DIR/reboot-locked" "$SYSTEMCTL" reboot --reboot-argument='0 tryboot'
 		return
 	fi
 	board_log "no systemctl: can't pass the tryboot flag to the bootloader"
@@ -463,7 +464,7 @@ tryboot_reboot() {
 }
 
 plain_reboot() {
-	eval "${UPDATE_REBOOT_PLAIN:-$SYSTEMCTL reboot}"
+	eval "${UPDATE_REBOOT_PLAIN:-\"\$BOARD_LIB_DIR/reboot-locked\" \$SYSTEMCTL reboot}"
 }
 
 # The package's own checks of a booted slot, before the OS's health hook.
