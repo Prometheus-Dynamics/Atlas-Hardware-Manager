@@ -205,14 +205,25 @@ pub(crate) fn take(disk: &Disk, sink: &Sink) -> Result<(), String> {
         .args(["trigger", "--action=change"])
         .args(&nodes)
         .status();
-    // Bounded: `trigger --settle` waited forever on a SystemCore once (an
-    // event that never finished), and the flash with it.
-    let _ = Command::new("udevadm")
-        .args(["settle", SETTLE_TIMEOUT])
-        .status();
-    let _ = atlas_blockdev::unmount_all(disk);
-    let mounts = std::fs::read_to_string("/proc/mounts").unwrap_or_default();
-    let users = users(&nodes, &mounts, &holders(disk, &nodes), &open_files());
+    // udev's own probe of a disk that just showed opens it for a moment
+    // (a "(udev-worker)"), and can outlast a settle: wait that out, never
+    // anything else.
+    let mut users = Vec::new();
+    for _ in 0..UDEV_TRIES {
+        // Bounded: `trigger --settle` waited forever on a SystemCore once
+        // (an event that never finished), and the flash with it.
+        let _ = Command::new("udevadm")
+            .args(["settle", SETTLE_TIMEOUT])
+            .status();
+        let _ = atlas_blockdev::unmount_all(disk);
+        let mounts = std::fs::read_to_string("/proc/mounts").unwrap_or_default();
+        let open = open_files();
+        users = self::users(&nodes, &mounts, &holders(disk, &nodes), &open);
+        if users.is_empty() || !only_udev(&nodes, &users, &open) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
     if users.is_empty() {
         log(
             sink,
@@ -226,6 +237,22 @@ pub(crate) fn take(disk: &Disk, sink: &Sink) -> Result<(), String> {
             users.join(", ")
         ))
     }
+}
+
+/// How many times udev's own probe is waited for (about a second each).
+const UDEV_TRIES: u32 = 15;
+
+/// Whether every user of the disk is udev probing it: no mount, nothing
+/// stacked, only udev's workers with it open.
+fn only_udev(nodes: &[String], users: &[String], open: &[(u32, String, String)]) -> bool {
+    let udev = |comm: &str| comm == "(udev-worker)" || comm == "systemd-udevd";
+    let opened = open
+        .iter()
+        .filter(|(_, _, target)| nodes.iter().any(|node| node == target))
+        .collect::<Vec<_>>();
+    !opened.is_empty()
+        && opened.len() == users.len()
+        && opened.iter().all(|(_, comm, _)| udev(comm))
 }
 
 #[cfg(test)]
@@ -285,6 +312,25 @@ mod tests {
             ]
         );
         assert!(users_of_free_disk(&nodes).is_empty());
+    }
+
+    #[test]
+    fn only_udev_probing_is_waited_for() {
+        let nodes = vec!["/dev/sda".to_string(), "/dev/sda1".to_string()];
+        let worker = (529_622, "(udev-worker)".to_string(), "/dev/sda".to_string());
+        let open = vec![worker.clone(), worker.clone()];
+        let held = users(&nodes, "", &[], &open);
+        assert!(only_udev(&nodes, &held, &open));
+        let fsck = (412, "fsck.vfat".to_string(), "/dev/sda1".to_string());
+        let open = vec![worker.clone(), fsck];
+        assert!(!only_udev(&nodes, &users(&nodes, "", &[], &open), &open));
+        let open = vec![worker];
+        let mounted = users(&nodes, "/dev/sda1 /V vfat rw 0 0\n", &[], &open);
+        assert!(
+            !only_udev(&nodes, &mounted, &open),
+            "a mount is never waited for"
+        );
+        assert!(!only_udev(&nodes, &[], &[]));
     }
 
     fn users_of_free_disk(nodes: &[String]) -> Vec<String> {
