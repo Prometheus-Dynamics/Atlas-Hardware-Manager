@@ -28,6 +28,11 @@ const STAGE_POLL: Duration = Duration::from_secs(2);
 /// How long a board may take to restart into a new slot and answer again.
 const BOOT_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const BOOT_POLL: Duration = Duration::from_secs(3);
+/// How long a command through the gateway may take to answer: HeliOS holds
+/// `update/apply` until the writer has checked the image (up to 15 s), and
+/// the writer's slot commands take seconds. The driver's client is meant
+/// for quick reads (2 s for the whole request).
+const ANSWER_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// The board's HeliOS API through the controller.
 #[derive(Clone)]
@@ -59,7 +64,8 @@ impl Gateway {
     }
 
     async fn post(&self, path: &str, body: Value) -> Result<Value, DriverError> {
-        self.send(self.http.post(self.url(path)).json(&body)).await
+        let request = self.http.post(self.url(path)).json(&body);
+        self.send(request.timeout(ANSWER_TIMEOUT)).await
     }
 }
 
@@ -105,6 +111,14 @@ impl ActionsCapability for GatewayActions {
 }
 
 pub(crate) struct GatewaySlots(pub(crate) Gateway);
+
+/// A board whose HeliOS has no such route (older than the slot commands):
+/// its own "no route for <method> <path>" 404, not the writer's 404 for a
+/// slot it doesn't have, nor the controller's for a board that isn't its
+/// peer.
+fn lacks_route(words: &str) -> bool {
+    words.contains("answered 404") && words.contains("no route for")
+}
 
 /// The slots in HeliOS's update status; `None` on a board without them.
 fn slot_set(status: &Value) -> Result<Option<SlotSet>, DriverError> {
@@ -171,11 +185,7 @@ impl SlotsCapability for GatewaySlots {
             ),
         };
         match self.0.post(&path, json!({ "slot": id })).await {
-            // A HeliOS without the route (the controller's own 404 says
-            // the board isn't its peer).
-            Err(DriverError::Other(words))
-                if words.contains("answered 404") && !words.contains("not a peer") =>
-            {
+            Err(DriverError::Other(words)) if lacks_route(&words) => {
                 Err(DriverError::Unsupported(format!(
                     "this board's HeliOS can't {} through the robot controller yet",
                     command.describe()
@@ -333,6 +343,23 @@ mod tests {
         assert_eq!(set.slots[0].version, "2026.2.0-dev.904");
         let guest = json!({ "slots": { "layout": "none", "installed": [] } });
         assert_eq!(slot_set(&guest).unwrap(), None);
+    }
+
+    #[test]
+    fn only_a_missing_route_is_a_board_too_old_for_the_command() {
+        assert!(lacks_route(
+            "the board's HeliOS answered 404 Not Found: no route for POST /v1/update/slots/pin"
+        ));
+        // The writer's own answer for a slot that isn't there passes through.
+        assert!(!lacks_route(
+            "the board's HeliOS answered 404 Not Found: no installed slot s907"
+        ));
+        assert!(!lacks_route(
+            "the board's HeliOS answered 404 Not Found: raze-6d57 is not a peer"
+        ));
+        assert!(!lacks_route(
+            "the board's HeliOS answered 409 Conflict: s907 is pinned; unpin it first"
+        ));
     }
 
     #[test]
