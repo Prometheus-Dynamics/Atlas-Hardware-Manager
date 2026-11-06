@@ -37,11 +37,16 @@
       .filter((r): r is { record: DeviceRecord; id: string; metric: NonNullable<typeof r.metric> } => !!r.metric && r.record.presence === "online");
   }
 
-  /** Point-wise combination of several series, aligned at their newest end. */
+  /** Point-wise combination of several series, aligned at their newest end;
+   *  each point folds the series that reach back that far, so a device that
+   *  just came online joins from its first sample instead of cutting the
+   *  line short (or blanking it, with one sample). */
   function combine(series: number[][], fold: (values: number[]) => number): number[] {
-    const length = Math.min(...series.map((s) => s.length));
-    if (!Number.isFinite(length) || length < 2) return [];
-    return Array.from({ length }, (_, i) => fold(series.map((s) => s[s.length - length + i])));
+    const length = Math.max(0, ...series.map((s) => s.length));
+    if (length < 2) return [];
+    return Array.from({ length }, (_, i) =>
+      fold(series.filter((s) => s.length >= length - i).map((s) => s[s.length - length + i])),
+    );
   }
 
   const hottest = $derived.by(() => {
