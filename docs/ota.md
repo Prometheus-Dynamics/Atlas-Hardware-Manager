@@ -451,7 +451,9 @@ through board-agent, or someone typing on the board.
   (Orion off in Atlas, or a board behind a controller, which Atlas polls
   through the gateway) the tab shows the 10 s snapshot. board-stream had a
   `hardware` topic for the same readings until 2026-11-05; every image that
-  ships this package runs orion-node, so it went. Orion's status lane stays
+  ships this package runs orion-node, so it went. base-os: snapshot only,
+  no Orion (HeliOS's `base-os` profile, a build and test base, not a shipped
+  image). Orion's status lane stays
   the low-rate summary (at most `LEMNOS_ORION_RATE_HZ`, deadbanded): it
   isn't meant for live viewing, and a remote operator can only poll it.
 - **Atlas.** atlas-driver-board reads both (a `status` capability; without a

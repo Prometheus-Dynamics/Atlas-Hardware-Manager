@@ -158,7 +158,9 @@ approval (the user, 2026-11-05).
     and `build-raze-2026.toml`, the Styx PV `build-styx.toml`) imports
     orion-node, so it duplicated `board.hardware`. The lemnosd reader moved
     to board-agent (`live/lemnos.rs`), and HardwareTab has no fallback: no
-    Orion means the snapshot.
+    Orion means the snapshot. base-os: snapshot only, no Orion (HeliOS's
+    `base-os` profile imports the device package without orion-node; it is a
+    build and test base, not a shipped image, HeliOS 2026-11-06).
   - **Why:** always-live charts without a process per request.
   - **Numbers (2026-11-03, Raze #1, one client on this computer, one run each):**
     backfill of 600 rows of 9 values in 150-213 ms on dev.921 and 73-88 ms on
