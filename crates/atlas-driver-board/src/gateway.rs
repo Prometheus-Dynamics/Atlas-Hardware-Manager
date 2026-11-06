@@ -242,9 +242,8 @@ impl SlotsCapability for GatewaySlots {
             }
             Err(error) => return Err(error),
         };
-        if let Some(message) = answer["message"].as_str() {
-            progress.log(message);
-        }
+        // (HeliOS's `message` is written for an HTTP caller: "boot it later
+        // with POST /v1/update/apply"; Atlas says what happened itself.)
         let update_id = answer["update_id"].as_str().unwrap_or_default().to_string();
         let started = Instant::now();
         loop {
@@ -252,9 +251,13 @@ impl SlotsCapability for GatewaySlots {
             match self.0.get("update/status").await {
                 Ok(status) => match staged(&status, &update_id) {
                     Some(Ok(())) if install.boot => {
+                        progress.log("installed; the board is restarting into it once");
                         return self.restarted_into_new_slot(&before, progress).await;
                     }
-                    Some(Ok(())) => return Ok(()),
+                    Some(Ok(())) => {
+                        progress.log("installed");
+                        return Ok(());
+                    }
                     Some(Err(reason)) => {
                         return Err(DriverError::Other(atlas_driver::refusal(&reason)));
                     }
