@@ -281,6 +281,15 @@ tryboot_reboot() {
 	"$BOARD_LIB_DIR/reboot-locked" "$SYSTEMCTL" reboot --reboot-argument='0 tryboot'
 }
 plain_reboot() { eval "${UPDATE_REBOOT_PLAIN:-\"\$BOARD_LIB_DIR/reboot-locked\" \$SYSTEMCTL reboot}"; }
+# A restart that recovers the board (a trial that failed, lost its link or
+# its flag): it waits for the bench's lock at most BOARD_REBOOT_SAFETY_WAIT
+# seconds (600), then goes anyway, logged with the lock's holder.
+recovery_restart() {
+	(
+		export BOARD_REBOOT_LOCK_WAIT="${BOARD_REBOOT_SAFETY_WAIT:-600}" BOARD_REBOOT_LOCK_OVERRIDE=1
+		"$@"
+	)
+}
 
 # run_hook <name> <slot>: the OS's hook in /etc/board/update.d/, as the A/B
 # updater runs it (the same names and variables), if there is one. Every
@@ -882,7 +891,7 @@ cmd_confirm() {
 			STATE=error
 			save_state
 			recovery_hook "$DEFAULT"
-			plain_reboot
+			recovery_restart plain_reboot
 			return
 		fi
 		if [ "$(cat "$STATE_DIR/trial-keeps-default" 2>/dev/null)" = "$_run" ]; then
@@ -964,7 +973,7 @@ cmd_confirm() {
 		save_state
 		umount_boot
 		recovery_hook "$_retry"
-		tryboot_reboot
+		recovery_restart tryboot_reboot
 	fi
 }
 
@@ -978,7 +987,7 @@ cmd_check_link() {
 	TRIAL='' STATE=rolled-back
 	save_state
 	recovery_hook "$DEFAULT"
-	plain_reboot
+	recovery_restart plain_reboot
 }
 
 cmd_set_default() {

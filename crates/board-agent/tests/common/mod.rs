@@ -71,6 +71,12 @@ impl Board {
             data_dir: dir.join("data"),
             boot_id_file: dir.join("boot_id"),
             reboot_command: vec![record.display().to_string(), "reboot".into()],
+            // The bench lock's holder: what `<dir>/holder` says (none by default).
+            lock_holder_command: vec![
+                "sh".into(),
+                "-c".into(),
+                format!("cat {}/holder 2>/dev/null || true", dir.display()),
+            ],
             locate_stop_command: vec![record.display().to_string(), "locate-stop".into()],
             event_command: vec![record.display().to_string(), "event".into()],
             set_clock_command: vec![record.display().to_string(), "date".into()],

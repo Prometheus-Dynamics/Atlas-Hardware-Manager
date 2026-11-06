@@ -305,4 +305,14 @@ pub trait ActionsCapability: Send + Sync {
     }
 
     async fn run_action(&self, device: &Identity, action_id: &str) -> Result<(), DriverError>;
+
+    /// `run_action`, and what the device said about it when it said
+    /// anything (a restart waiting for a lock, and whose).
+    async fn run_action_noted(
+        &self,
+        device: &Identity,
+        action_id: &str,
+    ) -> Result<Option<String>, DriverError> {
+        self.run_action(device, action_id).await.map(|()| None)
+    }
 }

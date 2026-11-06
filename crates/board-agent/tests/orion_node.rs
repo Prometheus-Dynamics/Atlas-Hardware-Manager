@@ -224,6 +224,23 @@ async fn rollback_reboot_and_locate() {
         board.calls()
     );
 
+    // A restart that waits for the bench's lock says whose.
+    std::fs::write(board.dir.join("holder"), "pid 42 (styx run.sh)\n").unwrap();
+    let waiting = run(
+        &operator,
+        node_action("r2", "reboot").with_arg("delay_ms", TypedConfigValue::UInt(10)),
+    )
+    .await;
+    let message = waiting.output.get("message");
+    assert_eq!(
+        message,
+        Some(&text(
+            "waiting for raze-gpu.lock held by pid 42 (styx run.sh); restarting when it is free"
+        )),
+        "{:?}",
+        waiting.output
+    );
+
     // locate drops the package's request; enabled=false stops it.
     let locate = run(&operator, node_action("l1", "locate")).await;
     assert_eq!(locate.state, ActionState::Succeeded, "{locate:?}");

@@ -19,7 +19,8 @@ fail() {
 }
 export BOARD_REBOOT_LOCK="$T/raze-gpu.lock" BOARD_REBOOT_LOCK_HOLD=0
 
-echo "a free lock: the restart runs at once"
+echo "a free lock: no holder, and the restart runs at once"
+[ -z "$(sh "$rl" --holder)" ] || fail "a holder of a free lock: $(sh "$rl" --holder)"
 sh "$rl" sh -c "echo ran >> '$T/runs'"
 [ "$(cat "$T/runs")" = ran ] || fail "the command didn't run"
 
@@ -34,6 +35,16 @@ r=$?
 set -e
 [ "$r" = 3 ] || fail "exit $r, want 3"
 grep -q 'still held' "$T/err" || fail "the refusal: $(cat "$T/err")"
+# The command too, when the holder's pid is visible here (a sandbox's pid
+# namespace hides it; on the board it never is).
+grep -q "waiting for raze-gpu.lock held by pid [0-9]*" "$T/err" || fail "the wait doesn't name the holder: $(cat "$T/err")"
+sh "$rl" --holder | grep -q -E '^pid [0-9]+( \(sleep 30\))?$' || fail "--holder: $(sh "$rl" --holder)"
+
+echo "a restart that recovers the board goes anyway past the limit, naming the holder"
+BOARD_REBOOT_LOCK_WAIT=1 BOARD_REBOOT_LOCK_OVERRIDE=1 sh "$rl" sh -c "echo ran >> '$T/runs'" 2> "$T/err" || fail "the recovery restart failed"
+grep -q 'overriding raze-gpu.lock.*by pid [0-9]*' "$T/err" || fail "the override: $(cat "$T/err")"
+[ "$(wc -l < "$T/runs")" = 2 ] || fail "the recovery restart didn't run"
+echo ran > "$T/runs"
 [ "$(wc -l < "$T/runs")" = 1 ] || fail "restarted under someone else's lock"
 
 echo "the holder's own restart (<lock>.reboot-ok) goes ahead under its lock"

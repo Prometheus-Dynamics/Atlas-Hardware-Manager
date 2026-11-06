@@ -19,6 +19,7 @@ ExecStart=/usr/bin/board-agent
 Environment=BOARD_AGENT_LIVE_SAMPLING=cheap
 # Orion's `reboot` after the bench's lock: never in a measurement.
 Environment="BOARD_AGENT_REBOOT=/usr/lib/board/reboot-locked systemctl reboot"
+Environment="BOARD_AGENT_LOCK_HOLDER=/usr/lib/board/reboot-locked --holder"
 # BOARD_AGENT_* settings (sockets, writer, reboot command, live sampling).
 EnvironmentFile=-/etc/board/agent.env
 EnvironmentFile=-/data/board/agent.env

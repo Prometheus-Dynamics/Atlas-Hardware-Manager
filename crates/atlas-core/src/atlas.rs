@@ -324,6 +324,16 @@ impl Atlas {
     }
 
     pub async fn run_action(&self, key: &DeviceKey, action: &str) -> Result<(), CoreError> {
+        self.run_action_noted(key, action).await.map(|_| ())
+    }
+
+    /// `run_action`, and what the device said about it, if anything (a
+    /// restart waiting for a lock, and whose).
+    pub async fn run_action_noted(
+        &self,
+        key: &DeviceKey,
+        action: &str,
+    ) -> Result<Option<String>, CoreError> {
         let (live, record) = self.live_device(key)?;
         let actions = live
             .capabilities
@@ -344,14 +354,17 @@ impl Atlas {
             .into_iter()
             .find(|candidate| candidate.id == action)
             .map_or_else(|| action.to_string(), |candidate| candidate.label);
-        let result = actions.run_action(&record.identity, action).await;
+        let result = actions.run_action_noted(&record.identity, action).await;
         let name = record.display_name();
         self.inner.record_activity(vec![match &result {
-            Ok(()) => ActivityEntry::about(
+            Ok(note) => ActivityEntry::about(
                 &record,
                 ActivityKind::ActionRun,
                 ActivityLevel::Info,
-                format!("{label} on {name}"),
+                match note {
+                    Some(note) => format!("{label} on {name}: {note}"),
+                    None => format!("{label} on {name}"),
+                },
             ),
             Err(error) => ActivityEntry::about(
                 &record,

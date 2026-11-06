@@ -1,39 +1,73 @@
 #!/bin/sh
 # reboot-locked <command> [args...]: a restart that waits for the board's
 # lock first and holds it until the shutdown ends this process.
+# reboot-locked --holder: who holds the lock ("pid <n> (<command>)"), or
+# nothing when it is free.
 #
 # The lock (BOARD_REBOOT_LOCK, /run/lock/raze-gpu.lock) is what the bench's
 # measurements hold while they run, so a restart asked for during one (an
 # update's trial, a slot booted once, a reboot over Orion or the USB link)
-# waits for it to finish instead of cutting it. Holding the lock until the
-# end keeps the next measurement from starting on a board that is going
-# down. BOARD_REBOOT_LOCK_WAIT: seconds to wait (0, the default: as long as
-# it takes; past a limit the restart is refused, exit 3).
-# BOARD_REBOOT_LOCK_HOLD: seconds to keep it after the command (600). With
-# no flock, or BOARD_REBOOT_LOCK empty, the command runs as it is.
-# A holder that asks for the restart itself (an install under the lock)
-# creates <lock>.reboot-ok first: the restart then goes ahead under the
-# holder's lock (and removes the marker) instead of waiting for itself.
+# waits for it to finish instead of cutting it, and says whose lock it
+# waits for. Holding the lock until the end keeps the next measurement from
+# starting on a board that is going down.
+# BOARD_REBOOT_LOCK_WAIT: seconds to wait (0, the default: as long as it
+# takes). Past it the restart is refused (exit 3), or, with
+# BOARD_REBOOT_LOCK_OVERRIDE=1 (the restarts that recover the board), goes
+# anyway, logged with the holder. BOARD_REBOOT_LOCK_HOLD: seconds to keep
+# the lock after the command (600). A holder that asks for the restart
+# itself (an install under the lock) creates <lock>.reboot-ok first: the
+# restart then goes ahead under the holder's lock instead of waiting for
+# itself. With no flock, or BOARD_REBOOT_LOCK empty, the command just runs.
 set -u
 
 LOCK=${BOARD_REBOOT_LOCK-/run/lock/raze-gpu.lock}
 WAIT=${BOARD_REBOOT_LOCK_WAIT:-0}
-[ $# -gt 0 ] || {
-	sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' >&2
-	exit 2
+
+# The lock's holder from /proc/locks (whoever took it, by any tool).
+holder() {
+	[ -n "$LOCK" ] && [ -e "$LOCK" ] || return 0
+	_ino=$(ls -i "$LOCK" 2>/dev/null | awk '{print $1}')
+	[ -n "$_ino" ] || return 0
+	_pid=$(awk -v ino="$_ino" '$2 != "->" && $6 ~ (":" ino "$") { print $5 }' /proc/locks 2>/dev/null |
+		while read -r _p; do [ "$_p" = "$$" ] || { echo "$_p"; break; }; done)
+	[ -n "$_pid" ] || return 0
+	# (A pid from another pid namespace has no /proc entry here.)
+	_cmd=$( (tr '\0' ' ' < "/proc/$_pid/cmdline") 2>/dev/null | cut -c1-120)
+	_cmd=${_cmd% }
+	echo "pid $_pid${_cmd:+ ($_cmd)}"
+}
+say() {
+	echo "reboot-locked: $*" >&2
+	logger -t board-reboot "$*" 2>/dev/null || true
 }
 
+case ${1:-} in
+--holder)
+	holder
+	exit 0
+	;;
+'')
+	sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//' >&2
+	exit 2
+	;;
+esac
+
 if [ -n "$LOCK" ] && command -v flock >/dev/null 2>&1 && exec 9>> "$LOCK" && ! flock -n 9; then
+	_by=$(holder)
 	if [ -e "$LOCK.reboot-ok" ]; then
 		rm -f "$LOCK.reboot-ok"
-		logger -t board-reboot "restart asked for by the holder of $LOCK ($*)" 2>/dev/null || true
+		say "restart asked for by the holder of ${LOCK##*/}, ${_by:-gone}: $*"
 	else
-		logger -t board-reboot "waiting for $LOCK before the restart ($*)" 2>/dev/null || true
+		say "waiting for ${LOCK##*/} held by ${_by:-an unknown process} before the restart: $*"
 		if [ "$WAIT" -gt 0 ] 2>/dev/null; then
-			flock -w "$WAIT" 9 || {
-				echo "reboot-locked: $LOCK still held after ${WAIT}s; not restarting" >&2
-				exit 3
-			}
+			if ! flock -w "$WAIT" 9; then
+				if [ "${BOARD_REBOOT_LOCK_OVERRIDE:-0}" = 1 ]; then
+					say "overriding ${LOCK##*/}, still held after ${WAIT}s by $(holder): this restart recovers the board"
+				else
+					say "${LOCK##*/} still held after ${WAIT}s by $(holder); not restarting"
+					exit 3
+				fi
+			fi
 		else
 			flock 9
 		fi

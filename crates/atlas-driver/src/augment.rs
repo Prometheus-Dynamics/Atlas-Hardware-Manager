@@ -135,6 +135,14 @@ impl ActionsCapability for CombinedActions {
     }
 
     async fn run_action(&self, device: &Identity, action_id: &str) -> Result<(), DriverError> {
+        self.run_action_noted(device, action_id).await.map(|_| ())
+    }
+
+    async fn run_action_noted(
+        &self,
+        device: &Identity,
+        action_id: &str,
+    ) -> Result<Option<String>, DriverError> {
         let offers = |source: &Arc<dyn ActionsCapability>| {
             source
                 .actions(device)
@@ -143,15 +151,15 @@ impl ActionsCapability for CombinedActions {
         };
         let (own, more) = (offers(&self.own), offers(&self.more));
         if more && (self.more.preferred() || !own) {
-            match self.more.run_action(device, action_id).await {
+            match self.more.run_action_noted(device, action_id).await {
                 // Only when it never reached the device, so nothing runs twice.
                 Err(DriverError::Unreachable(_)) if own => {
-                    self.own.run_action(device, action_id).await
+                    self.own.run_action_noted(device, action_id).await
                 }
                 result => result,
             }
         } else {
-            self.own.run_action(device, action_id).await
+            self.own.run_action_noted(device, action_id).await
         }
     }
 }

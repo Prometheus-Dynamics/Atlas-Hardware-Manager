@@ -467,6 +467,16 @@ plain_reboot() {
 	eval "${UPDATE_REBOOT_PLAIN:-\"\$BOARD_LIB_DIR/reboot-locked\" \$SYSTEMCTL reboot}"
 }
 
+# A restart that recovers the board (a trial that failed, lost its link or
+# its flag): it waits for the bench's lock at most BOARD_REBOOT_SAFETY_WAIT
+# seconds (600), then goes anyway, logged with the lock's holder.
+recovery_restart() {
+	(
+		export BOARD_REBOOT_LOCK_WAIT="${BOARD_REBOOT_SAFETY_WAIT:-600}" BOARD_REBOOT_LOCK_OVERRIDE=1
+		"$@"
+	)
+}
+
 # The package's own checks of a booted slot, before the OS's health hook.
 # Prints the reason and returns 1 when the slot isn't fit to keep:
 # - the running kernel has modules on this root (boot and root slot match);
@@ -1047,7 +1057,7 @@ fail_trial() {
 		board_log "$ERROR; restarting into $VERSION_ACTIVE"
 		$SYNC
 		$UMOUNT "$AB" >/dev/null 2>&1 || true
-		plain_reboot
+		recovery_restart plain_reboot
 	fi
 }
 
@@ -1093,7 +1103,7 @@ _link_bad() {
 	board_event update.link-fallback "$ERROR" "version=$VERSION_ACTIVE" "from_slot=$active"
 	$SYNC
 	$UMOUNT "$AB" >/dev/null 2>&1 || true
-	plain_reboot
+	recovery_restart plain_reboot
 }
 
 # The PIDs of process $1 and all its descendants, from /proc.

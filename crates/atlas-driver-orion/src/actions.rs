@@ -240,7 +240,15 @@ impl ActionsCapability for OrionActions {
         true
     }
 
-    async fn run_action(&self, _device: &Identity, action_id: &str) -> Result<(), DriverError> {
+    async fn run_action(&self, device: &Identity, action_id: &str) -> Result<(), DriverError> {
+        self.run_action_noted(device, action_id).await.map(|_| ())
+    }
+
+    async fn run_action_noted(
+        &self,
+        _device: &Identity,
+        action_id: &str,
+    ) -> Result<Option<String>, DriverError> {
         let Some(name) = self.orion_name(action_id) else {
             return Err(DriverError::Unsupported(format!("no action {action_id}")));
         };
@@ -295,6 +303,11 @@ impl ActionsCapability for OrionActions {
                 )));
             }
         }
-        Ok(())
+        // What the board said about it (board-agent: a restart waiting for
+        // the bench's lock, and whose).
+        Ok(match result.output.get("message") {
+            Some(TypedConfigValue::String(message)) if !message.is_empty() => Some(message.clone()),
+            _ => None,
+        })
     }
 }

@@ -251,11 +251,19 @@ impl Agent {
             action_names::UPDATE_ROLLBACK => self.rollback(&id).await,
             action_names::REBOOT => {
                 // Report first: the reboot ends this process and the node's
-                // action record.
-                self.succeed(&id, phase(update_action::PHASE_REBOOTING))
-                    .await;
-                self.event("reboot", "restart requested through Orion", &[])
-                    .await;
+                // action record. A restart that waits for the bench's lock
+                // says whose, rather than going quiet.
+                let mut output = phase(update_action::PHASE_REBOOTING);
+                let mut message = "restart requested through Orion".to_owned();
+                if let Some(holder) = self.lock_holder().await {
+                    let waiting = format!(
+                        "waiting for raze-gpu.lock held by {holder}; restarting when it is free"
+                    );
+                    message = format!("{message}, {waiting}");
+                    output.insert("message".into(), TypedConfigValue::String(waiting));
+                }
+                self.succeed(&id, output).await;
+                self.event("reboot", &message, &[]).await;
                 self.reboot(uint("delay_ms", 0)).await;
             }
             action_names::LOCATE => {
@@ -330,6 +338,20 @@ impl Agent {
         if let Err(error) = run_command(&command).await {
             crate::log(&format!("event {kind}: {error}"));
         }
+    }
+
+    /// Who holds the lock a restart waits for (`lock_holder_command`'s
+    /// output), if anyone.
+    async fn lock_holder(&self) -> Option<String> {
+        let (program, args) = self.config.lock_holder_command.split_first()?;
+        let output = tokio::process::Command::new(program)
+            .args(args)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .await
+            .ok()?;
+        let holder = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        (output.status.success() && !holder.is_empty()).then_some(holder)
     }
 
     async fn reboot(&self, delay_ms: u64) {

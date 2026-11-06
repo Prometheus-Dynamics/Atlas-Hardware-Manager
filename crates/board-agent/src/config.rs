@@ -22,6 +22,9 @@ pub struct Config {
     pub boot_id_file: PathBuf,
     /// Restarts the board (`BOARD_AGENT_REBOOT`, split on spaces).
     pub reboot_command: Vec<String>,
+    /// Prints who holds the lock a restart waits for, or nothing
+    /// (`BOARD_AGENT_LOCK_HOLDER`; none by default).
+    pub lock_holder_command: Vec<String>,
     /// Stops a running locate (`BOARD_AGENT_LOCATE_STOP`).
     pub locate_stop_command: Vec<String>,
     /// Appends to the board's event log (`BOARD_AGENT_EVENT`): the package's
@@ -62,6 +65,7 @@ impl Default for Config {
             data_dir: "/data/board".into(),
             boot_id_file: "/proc/sys/kernel/random/boot_id".into(),
             reboot_command: words("systemctl reboot"),
+            lock_holder_command: Vec::new(),
             locate_stop_command: words("systemctl stop board-locate.service"),
             event_command: words("/usr/lib/board/event"),
             set_clock_command: words("date -u -s"),
@@ -109,6 +113,9 @@ impl Config {
         }
         if let Some(value) = get("BOARD_AGENT_REBOOT") {
             config.reboot_command = words(&value);
+        }
+        if let Some(value) = get("BOARD_AGENT_LOCK_HOLDER") {
+            config.lock_holder_command = words(&value);
         }
         if let Some(value) = get("BOARD_AGENT_LOCATE_STOP") {
             config.locate_stop_command = words(&value);

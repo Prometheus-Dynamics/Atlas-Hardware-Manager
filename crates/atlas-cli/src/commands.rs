@@ -405,14 +405,18 @@ pub(crate) async fn action(
         }
         return Ok(ExitCode::SUCCESS);
     };
-    atlas
-        .run_action(&key, action)
+    let note = atlas
+        .run_action_noted(&key, action)
         .await
         .map_err(|error| error.to_string())?;
     if as_json {
-        output::json(&json!({ "device": key, "action": action, "ok": true }));
+        output::json(&json!({ "device": key, "action": action, "ok": true, "note": note }));
     } else {
-        output::line(&format!("Ran {action} on {key}"));
+        match note {
+            // A restart waiting for the bench's lock says whose.
+            Some(note) => output::line(&format!("Ran {action} on {key}: {note}")),
+            None => output::line(&format!("Ran {action} on {key}")),
+        }
     }
     Ok(ExitCode::SUCCESS)
 }
