@@ -146,7 +146,7 @@
   <!-- The server and where to point a camera side by side: stopped, the
        tab isn't one small form over an empty page. -->
   <div class="grid items-start gap-4 lg:grid-cols-2">
-  <GlassCard title="Local NetworkTables server" subtitle="An NT4 server on this computer, with only the topics you make here and what cameras publish. Not a robot simulator.">
+  <GlassCard title="Local NetworkTables server" subtitle="An NT4 server on this computer, not a robot simulator.">
     {#snippet actions()}
       {#if info}<Pill tone="success" label="Running on port {info.port}" />{/if}
     {/snippet}
@@ -162,6 +162,7 @@
       {/if}
       {#if !info && port !== 5810}<span class="text-[12px] text-warn-fg">PhotonVision always connects on port 5810: cameras can't reach a server on another port.</span>{/if}
     </div>
+    <p class="mt-3 text-[12.5px] text-fg-muted">It carries only the topics you make here and what cameras publish.</p>
     {#if info && info.port !== 5810}
       <p class="mt-3 flex items-start gap-2 text-[12.5px] text-warn-fg" role="alert">
         <Icon name="alert-triangle" size={15} class="mt-0.5 shrink-0" />
@@ -173,7 +174,8 @@
     {/if}
   </GlassCard>
 
-    <GlassCard title="Point a camera at this computer" subtitle="Give the camera this computer's address as its NetworkTables server. A team number won't work: it means the robot (10.TE.AM.2).">
+    <GlassCard title="Point a camera at this computer" subtitle="Set its NetworkTables server to this computer's address.">
+      <p class="mb-3 text-[12.5px] text-fg-muted">A team number won't work: it means the robot (10.TE.AM.2).</p>
       {#if cameras.length}
         <ul class="flex flex-col gap-2">
           {#each cameras as camera (camera.name + camera.address)}

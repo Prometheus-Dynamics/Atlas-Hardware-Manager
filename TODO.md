@@ -250,7 +250,10 @@ approval (the user, 2026-11-05).
       Playwright gate (the old cut-off script is gone). The device Overview
       fits 1280x800.
     - Done: no confirmation for reversible actions ("Restart port", "Restart").
-    - The Fable per-screen pass.
+    - Done: the Fable per-screen pass (25 findings; rechecked 2026-11-06 at
+      1440x900, 1024x680 and 110 % to 160 %). Two are open for the user: the
+      Overview map plus activity at 1440x900 with 12 devices, and the chart
+      legend at 1280x800.
   - **Why:** the user's verdict on dev.475 to dev.479.
   - **Done when:** each item is checked on the test bed, and the cut-off
     check blocks again.
