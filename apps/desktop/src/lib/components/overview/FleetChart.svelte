@@ -128,7 +128,7 @@
   }
   .plot {
     flex: 1;
-    min-height: 80px;
+    min-height: 64px;
     display: flex;
     gap: 8px;
   }

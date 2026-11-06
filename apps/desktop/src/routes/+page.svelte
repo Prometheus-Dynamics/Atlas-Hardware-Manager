@@ -72,7 +72,7 @@
       <SummaryTiles {records} />
 
       <div class="split">
-        <div class="col">
+        <div class="col left">
           <FleetChart {records} metric="temp" title="Temperature" unit="°C" />
           <DeviceTable {records} />
         </div>
@@ -109,6 +109,12 @@
     gap: 12px;
     grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
   }
+  /* The table takes its rows' height (up to 78%), so a robot's devices are
+     listed without a scroll; the chart gets the rest, never less than its
+     header, a short plot and its legend. */
+  .col.left {
+    grid-template-rows: minmax(min-content, 1fr) fit-content(78%);
+  }
   .activity {
     min-height: 0;
     display: flex;
@@ -124,6 +130,9 @@
     .split {
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: auto auto;
+    }
+    .col.left {
+      grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
     }
   }
 </style>
