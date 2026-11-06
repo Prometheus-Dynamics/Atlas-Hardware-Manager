@@ -1,7 +1,7 @@
 #!/bin/sh
 # Every file the Raze Gaia modules stage (`src = "${self}/..."`) must be
 # tracked in git, so a clean checkout of a commit builds. Also every id in a
-# feed list must name a staged file. Run: sh devices/raze/tests/stage-files.sh
+# feed list must name a staged file, and every staged file must be fed. Run: sh devices/raze/tests/stage-files.sh
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -32,6 +32,25 @@ if [ -s "${TMPDIR:-/tmp}/stage-ids.$$" ]; then
 	bad=1
 fi
 rm -f "${TMPDIR:-/tmp}/stage-ids.$$"
+
+# The other way: with a feed list, Gaia stages only the ids it names, so a
+# stage entry left out of every list never reaches the image. lemnosd-env
+# replaces an item that Lemnos's own layer feeds.
+fed=$(printf 'lemnosd-env\n'; for toml in "$gaia"/*.toml; do
+	sed -n '/^stage_files = \[/,/^\]/p' "$toml" | sed -n 's/^ *"\(.*\)",*$/\1/p'
+	sed -n 's/^stage_files = \[\(.*\)\]$/\1/p' "$toml" | tr ',' '\n' | sed -n 's/^ *"\(.*\)" *$/\1/p'
+done)
+for toml in "$gaia"/*.toml; do
+	awk '/^\[\[stage\.files\]\]/ { f = 1; next } /^\[/ { f = 0 } f && /^id = "/ { sub(/^id = "/, ""); sub(/"$/, ""); print }' "$toml" |
+		while IFS= read -r id; do
+			printf '%s\n' "$fed" | grep -qx "$id" || echo "FAIL: ${toml##*/} stages $id, which no feed list names (so the image won't contain it)" >&2
+		done
+done 2> "${TMPDIR:-/tmp}/stage-fed.$$"
+if [ -s "${TMPDIR:-/tmp}/stage-fed.$$" ]; then
+	cat "${TMPDIR:-/tmp}/stage-fed.$$" >&2
+	bad=1
+fi
+rm -f "${TMPDIR:-/tmp}/stage-fed.$$"
 
 [ "$bad" = 0 ] || exit 1
 echo "ok"
