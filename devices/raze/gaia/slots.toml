@@ -402,8 +402,9 @@ content = "Overlays for this slot. The firmware reads them from os_prefix only w
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/overlays/README"
 
 # Second partition, p2 (ext4, label data): the slot images and manifests and
-# the slot state. The partition is sized from its content plus 256 MiB free,
-# so the root can grow by that much before the disk needs a change.
+# the slot state. The partition is sized from its content plus 8 MiB free, to
+# keep the image small; data-setup grows it to the end of the disk on the
+# first boot (it is the last partition).
 [[image.assembly.files]]
 tree = "slots-data"
 src = "${assembly.work}/slots/rootfs.erofs"
