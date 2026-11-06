@@ -21,6 +21,9 @@
 # it installs one as a slot (the FAT's slots/<id>/ and p2's slots/<id>.erofs
 # carry everything the bundle does).
 
+# Gaia 2.0.2+ (disks[].device_size); an older gaia stops with an upgrade
+# hint instead of listing unknown keys.
+gaia_version = ">=2.0.2"
 config = 3
 
 [inputs.slot_family]

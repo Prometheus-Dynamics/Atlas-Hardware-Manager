@@ -1,3 +1,7 @@
+# Gaia 2.0.2+ (members/extract_to, rootfs.overlays, drop_shadowed_modules,
+# checks.optional_firmware); an older gaia stops with an upgrade hint
+# instead of listing unknown keys.
+gaia_version = ">=2.0.2"
 config = 3
 description = "Raze kernel and firmware: Raspberry Pi kernel for CM5, OV9782 sensor support, Raspberry Pi firmware and overlays."
 
