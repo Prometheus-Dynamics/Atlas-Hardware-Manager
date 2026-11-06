@@ -46,7 +46,7 @@ run
 [ ! -e "$T/run/orion.env" ] || fail "wrote an id without a serial"
 
 # orion-node's access, switch off (the default): listening, open to read,
-# the USB cable's network enrolled for the USB actions.
+# the USB cable's network enrolled for what Atlas does, never usb-boot.
 printf '10000000a317bcbe\000' > "$T/dt/serial-number"
 : > "$T/orion-node.env"
 access() { grep -v '^#' "$T/run/orion-node.env"; }
@@ -54,19 +54,20 @@ run
 access | grep -qx 'ORION_NODE_PEER_ADDR=0.0.0.0:9200' || fail "no listener: $(access)"
 access | grep -qx 'ORION_NODE_PEER_AUTH=optional' || fail "auth: $(access)"
 access | grep -qx 'ORION_NODE_OPERATOR_OPEN_READ=status,streams' || fail "open read: $(access)"
-access | grep -Eqx 'ORION_NODE_OPERATOR_AUTO_ENROLL=[0-9.]+/[0-9]+=update\*,slot\.\*,reboot,locate,clock\.set,set,restore,release,power\.\*,calibration\.\*,looks\.\*,light\.\*,usb-route\.set,usb-boot;10\.0\.0\.0/8=update\*,slot\.\*,reboot,locate,clock\.set,set,restore,release,power\.\*,calibration\.\*,looks\.\*,light\.\*,usb-route\.set' ||
+access | grep -Eqx 'ORION_NODE_OPERATOR_AUTO_ENROLL=[0-9.]+/[0-9]+=update\*,slot\.\*,reboot,locate,clock\.set,set,restore,release,power\.\*,calibration\.\*,looks\.\*,light\.\*,usb-route\.set;10\.0\.0\.0/8=update\*,slot\.\*,reboot,locate,clock\.set,set,restore,release,power\.\*,calibration\.\*,looks\.\*,light\.\*,usb-route\.set' ||
 	fail "auto-enroll: $(access)"
 
 # The network, not the board's own address in it.
 echo 'USB_GADGET_ADDRESS=172.31.12.81/29' > "$T/etc/usb-gadget.env"
 run
-access | grep -Fqx 'ORION_NODE_OPERATOR_AUTO_ENROLL=172.31.12.80/29=update*,slot.*,reboot,locate,clock.set,set,restore,release,power.*,calibration.*,looks.*,light.*,usb-route.set,usb-boot;10.0.0.0/8=update*,slot.*,reboot,locate,clock.set,set,restore,release,power.*,calibration.*,looks.*,light.*,usb-route.set' ||
+access | grep -Fqx 'ORION_NODE_OPERATOR_AUTO_ENROLL=172.31.12.80/29=update*,slot.*,reboot,locate,clock.set,set,restore,release,power.*,calibration.*,looks.*,light.*,usb-route.set;10.0.0.0/8=update*,slot.*,reboot,locate,clock.set,set,restore,release,power.*,calibration.*,looks.*,light.*,usb-route.set' ||
 	fail "auto-enroll network: $(access)"
+! access | grep -q 'usb-boot' || fail "usb-boot by network: $(access)"
 rm -f "$T/etc/usb-gadget.env"
 
 # The robot networks are a setting: none, or others (a bad one is left out).
 ORION_NODE_ROBOT_NETS='' sh "$lib/orion-env" 2> "$T/log" || fail "orion-env: $(cat "$T/log")"
-access | grep -Eqx 'ORION_NODE_OPERATOR_AUTO_ENROLL=[0-9.]+/[0-9]+=update\*,slot\.\*,reboot,locate,clock\.set,set,restore,release,power\.\*,calibration\.\*,looks\.\*,light\.\*,usb-route\.set,usb-boot' ||
+access | grep -Eqx 'ORION_NODE_OPERATOR_AUTO_ENROLL=[0-9.]+/[0-9]+=update\*,slot\.\*,reboot,locate,clock\.set,set,restore,release,power\.\*,calibration\.\*,looks\.\*,light\.\*,usb-route\.set' ||
 	fail "no robot networks: $(access)"
 ORION_NODE_ROBOT_NETS='192.168.1.0/24 nonsense 10.12.34.0' sh "$lib/orion-env" 2> "$T/log" || fail "orion-env: $(cat "$T/log")"
 access | grep -Eq ';192\.168\.1\.0/24=update\*,slot\.\*,reboot,locate,clock\.set,set,restore,release,power\.\*,calibration\.\*,looks\.\*,light\.\*,usb-route\.set$' || fail "robot networks: $(access)"

@@ -7,6 +7,13 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **No usb-boot by network in Orion (2026-11-06).** With the security switch
+  off, operators enrolled by network (the USB cable's and the robot's) get
+  what Atlas does, but no longer `usb-boot`. Behind a robot controller the
+  cable's other end is the controller, so every client it relays (Atlas's
+  Orion tunnel) was enrolled with it. The identity endpoint keeps `usb-boot`
+  for the cable's peer (`BOARD_USB_ACTIONS`), which the controller's flash
+  agent and Atlas use. Operators already enrolled keep their stored policy.
 - **board-stream's `hardware` topic removed (2026-11-05).** Live readings
   are Orion's `board.hardware` only (board-agent, which now carries the
   lemnosd reader itself). Every image that ships this package runs

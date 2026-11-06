@@ -21,9 +21,14 @@
 #                        reboot, locate, the clock, the board's devices
 #                        (Lemnos: set, restore, release, power, calibration,
 #                        the ring's looks and brightness) and the USB route;
-#                        from the USB cable's network (usb-boot too) and the
-#                        robot network (ORION_NODE_ROBOT_NETS, FRC's
-#                        10.TE.AM.x by default)
+#                        from the USB cable's network and the robot network
+#                        (ORION_NODE_ROBOT_NETS, FRC's 10.TE.AM.x by
+#                        default). Never usb-boot: behind a robot controller
+#                        the cable's other end is the controller, and every
+#                        client it relays (Atlas's Orion tunnel) arrives from
+#                        that network. usb-boot stays on the identity endpoint
+#                        for the cable's peer (BOARD_USB_ACTIONS), which is
+#                        what a controller's flash agent uses.
 #   on                   peer auth required, nothing open, no auto-enroll
 # The OS's own ORION_NODE_PEER_ADDR wins; the rest follow the switch.
 #
@@ -40,9 +45,10 @@ BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 ORION_NODE_ENV=${ORION_NODE_ENV:-/etc/default/orion-node.env}
 ORION_NODE_PORT=${ORION_NODE_PORT:-9200}
 ORION_NODE_ROBOT_NETS=${ORION_NODE_ROBOT_NETS-10.0.0.0/8}
-# What an operator is enrolled for by network while the switch is off.
+# What an operator is enrolled for by network while the switch is off, from
+# either network (no usb-boot, above).
 ROBOT_ACTIONS=update*,slot.*,reboot,locate,clock.set,set,restore,release,power.*,calibration.*,looks.*,light.*,usb-route.set
-USB_ACTIONS=$ROBOT_ACTIONS,usb-boot
+USB_ACTIONS=$ROBOT_ACTIONS
 
 # The last <name>= the OS's env file assigns, without quotes.
 os_value() {
