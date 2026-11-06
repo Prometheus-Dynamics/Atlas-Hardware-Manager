@@ -16,6 +16,9 @@ OSes pin this layer by commit; the commits are listed per area.
   reboot request and usb-boot. A restart asked for during a measurement
   waits for it instead of cutting it. `BOARD_REBOOT_LOCK_WAIT` bounds the
   wait (0, the default: no limit; past it the restart is refused, exit 3).
+  A holder that asks for the restart itself (an install under the lock)
+  creates `/run/lock/raze-gpu.lock.reboot-ok` first, so the restart goes
+  ahead under its lock instead of waiting for itself.
 - **Lemnos cf3a4ac (2026-11-06).** The joint Lemnos set moves past 952e1c7:
   the CMA heap's capacity fix (CmaTotal, not CmaFree) and the C API's
   SONAME. Packaging, the board schema, lemnos-board and lemnos-ipc are

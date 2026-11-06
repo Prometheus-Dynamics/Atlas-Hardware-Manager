@@ -11,17 +11,23 @@
 # it takes; past a limit the restart is refused, exit 3).
 # BOARD_REBOOT_LOCK_HOLD: seconds to keep it after the command (600). With
 # no flock, or BOARD_REBOOT_LOCK empty, the command runs as it is.
+# A holder that asks for the restart itself (an install under the lock)
+# creates <lock>.reboot-ok first: the restart then goes ahead under the
+# holder's lock (and removes the marker) instead of waiting for itself.
 set -u
 
 LOCK=${BOARD_REBOOT_LOCK-/run/lock/raze-gpu.lock}
 WAIT=${BOARD_REBOOT_LOCK_WAIT:-0}
 [ $# -gt 0 ] || {
-	sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 }
 
-if [ -n "$LOCK" ] && command -v flock >/dev/null 2>&1 && exec 9>> "$LOCK"; then
-	if ! flock -n 9; then
+if [ -n "$LOCK" ] && command -v flock >/dev/null 2>&1 && exec 9>> "$LOCK" && ! flock -n 9; then
+	if [ -e "$LOCK.reboot-ok" ]; then
+		rm -f "$LOCK.reboot-ok"
+		logger -t board-reboot "restart asked for by the holder of $LOCK ($*)" 2>/dev/null || true
+	else
 		logger -t board-reboot "waiting for $LOCK before the restart ($*)" 2>/dev/null || true
 		if [ "$WAIT" -gt 0 ] 2>/dev/null; then
 			flock -w "$WAIT" 9 || {

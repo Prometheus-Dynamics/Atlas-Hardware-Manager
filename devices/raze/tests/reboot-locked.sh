@@ -36,6 +36,13 @@ set -e
 grep -q 'still held' "$T/err" || fail "the refusal: $(cat "$T/err")"
 [ "$(wc -l < "$T/runs")" = 1 ] || fail "restarted under someone else's lock"
 
+echo "the holder's own restart (<lock>.reboot-ok) goes ahead under its lock"
+touch "$BOARD_REBOOT_LOCK.reboot-ok"
+BOARD_REBOOT_LOCK_WAIT=1 sh "$rl" sh -c "echo ran >> '$T/runs'" || fail "the holder's restart was refused"
+[ "$(wc -l < "$T/runs")" = 2 ] || fail "the holder's restart didn't run"
+[ ! -e "$BOARD_REBOOT_LOCK.reboot-ok" ] || fail "the marker outlived its restart"
+: > "$T/runs"; echo ran > "$T/runs"
+
 echo "the restart goes once the lock is released"
 BOARD_REBOOT_LOCK_WAIT=20 sh "$rl" sh -c "echo ran >> '$T/runs'" &
 waiter=$!
