@@ -7,6 +7,12 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **Vulkan-only GPU layer (2026-11-06).** `gaia/gpu-vulkan.toml` now selects
+  Mesa and libdrm itself, so an OS that needs only Vulkan imports it alone:
+  no libgallium, EGL, GLES or gbm. Measured on a HeliOS full Raze build
+  (Mesa 26.1.8): mesa3d 30.0 MB to 11.5 MB, rootfs.erofs 43.8 MB to 40.7 MB,
+  .img.xz 51.3 MB to 48.1 MB (-3.1 MB); v3dv, its ICD, libvulkan and
+  vulkaninfo stay. PhotonVision keeps importing gpu.toml for GL.
 - **No usb-boot by network in Orion (2026-11-06).** With the security switch
   off, operators enrolled by network (the USB cable's and the robot's) get
   what Atlas does, but no longer `usb-boot`. Behind a robot controller the
