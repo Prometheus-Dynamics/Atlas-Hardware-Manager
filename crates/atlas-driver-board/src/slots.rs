@@ -273,8 +273,23 @@ impl SlotsCapability for BoardSlots {
         if install.boot {
             progress.log("installed; restarting into it once".to_string());
             self.ssh.expect_new_host_key();
-            match writer(&self.ssh, &format!("{WRITER} apply")).await {
+            // A trial only keeps the default; a writer before it refuses
+            // the flag with nothing changed (the slot stays installed).
+            let keep = if install.make_default {
+                ""
+            } else {
+                " --keep-default"
+            };
+            match writer(&self.ssh, &format!("{WRITER} apply{keep}")).await {
                 Ok(()) | Err(DriverError::Unreachable(_)) => {}
+                Err(error) if !keep.is_empty() && error.to_string().contains("--keep-default") => {
+                    return Err(DriverError::Incompatible(
+                        "installed, but this board's image makes a healthy trial the default, \
+                         so it didn't restart: boot it once by hand, or install with \
+                         --make-default"
+                            .into(),
+                    ));
+                }
                 Err(error) => return Err(error),
             }
         } else {

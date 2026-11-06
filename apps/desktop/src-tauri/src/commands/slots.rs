@@ -90,6 +90,8 @@ pub async fn install_slot(
         },
         pin,
         boot,
+        // The app's install that boots it keeps it, as before.
+        make_default: true,
     };
     state
         .atlas

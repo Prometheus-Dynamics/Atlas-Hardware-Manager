@@ -196,6 +196,13 @@ impl SlotsCapability for GatewaySlots {
                 "through the robot controller a slot can't be pinned as it installs".into(),
             ));
         }
+        if install.boot && !install.make_default {
+            return Err(DriverError::Unsupported(
+                "through the robot controller a slot can't boot as a trial only (it would \
+                 become the default): pass --make-default"
+                    .into(),
+            ));
+        }
         progress.step_started(UpdateStep::Transfer);
         let sink = progress.clone();
         let image_url =

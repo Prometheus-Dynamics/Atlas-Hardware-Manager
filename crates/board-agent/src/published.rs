@@ -41,6 +41,10 @@ pub const KEY_SLOTS: &str = "update.slots";
 /// carries the whole list while it fits (for Atlas before these keys), and
 /// is empty once it doesn't.
 pub const KEY_SLOT_COUNT: &str = "update.slot_count";
+/// `true`: `update` and `slot.boot-once` take `keep_default`, a trial only
+/// (it runs when healthy, the default stays). Absent on boards before it,
+/// where a healthy trial always becomes the default.
+pub const KEY_TRIAL_ONLY: &str = "update.trial_only";
 pub const KEY_SLOT_PREFIX: &str = "update.slots.";
 /// Orion's limit on one status value (orion-node `MAX_STATUS_VALUE_BYTES`):
 /// it refuses a whole publish with any value longer.
@@ -185,6 +189,7 @@ pub fn update_status_entries(
             reporter.node_status_entry(KEY_SLOT_DEFAULT, text(&status.slot_default)),
             reporter.node_status_entry(KEY_SLOT_PREVIOUS, text(&status.slot_previous)),
             reporter.node_status_entry(KEY_SLOT_TRIAL, text(&status.slot_trial)),
+            reporter.node_status_entry(KEY_TRIAL_ONLY, TypedConfigValue::Bool(true)),
             reporter.node_status_entry(KEY_FREE_BYTES, TypedConfigValue::UInt(status.free_bytes)),
             reporter.node_status_entry(
                 KEY_RESERVE_BYTES,

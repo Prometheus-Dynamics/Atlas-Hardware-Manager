@@ -108,6 +108,8 @@ impl InstallMethod for SlotMethod {
             bundle: request.artifact.clone(),
             pin: request.options.pin,
             boot: request.options.boot_after,
+            // An install that boots it is an update: it stays.
+            make_default: true,
         };
         self.0
             .install(device, &install, &sink)

@@ -137,6 +137,16 @@ impl SlotsCapability for OrionSlots {
                 "the board is busy ({state}); wait for it to finish"
             )));
         }
+        // A trial only needs a board that keeps the default (its agent
+        // says so); an older one would make a healthy trial the default.
+        let trial_only = install.boot && !install.make_default;
+        if trial_only && keys.get("update.trial_only").map(String::as_str) != Some("true") {
+            return Err(DriverError::Incompatible(
+                "this board's image makes a healthy trial the default: install it without \
+                 --boot and boot it once by hand, or pass --make-default"
+                    .into(),
+            ));
+        }
         if install.bundle.size_bytes > set.room() {
             return Err(DriverError::Incompatible(format!(
                 "the board has {} MiB of room; the slot needs {} MiB (remove one first)",
@@ -180,6 +190,10 @@ impl SlotsCapability for OrionSlots {
             ),
             ("apply".to_string(), TypedConfigValue::Bool(install.boot)),
             ("pin".to_string(), TypedConfigValue::Bool(install.pin)),
+            (
+                "keep_default".to_string(),
+                TypedConfigValue::Bool(trial_only),
+            ),
         ]);
         run_and_wait(
             self.transport.as_ref(),
@@ -392,6 +406,10 @@ mod tests {
     }
 
     async fn install_through(script: Vec<Answer>) -> Result<(), DriverError> {
+        install_as(script, true).await
+    }
+
+    async fn install_as(script: Vec<Answer>, make_default: bool) -> Result<(), DriverError> {
         let slots = OrionSlots {
             transport: Arc::new(Board(Mutex::new(script.into()))),
             bundles: Some(Arc::new(Bundles)),
@@ -417,6 +435,7 @@ mod tests {
             },
             pin: false,
             boot: true,
+            make_default,
         };
         slots
             .install(&device, &install, &ProgressSink::discard())
@@ -492,5 +511,23 @@ mod tests {
         let set = slot_set(&keys).unwrap().unwrap();
         let ids: Vec<&str> = set.slots.iter().map(|s| s.id.as_str()).collect();
         assert_eq!(ids, ["pv-a", "pv-c"]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_trial_only_needs_a_board_that_keeps_the_default() {
+        // No `update.trial_only`: an older image would make it the default.
+        let error = install_as(vec![on("idle", "old")], false)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, DriverError::Incompatible(_)), "{error:?}");
+
+        let mut able = on("idle", "old").unwrap();
+        able.push(("update.trial_only", "true"));
+        let mut staged = on("staging", "old").unwrap();
+        staged.push(("update.trial_only", "true"));
+        let mut kept = on("confirmed", "new").unwrap();
+        kept.push(("update.trial_only", "true"));
+        let script = vec![Some(able), Some(staged), None, Some(kept)];
+        assert!(install_as(script, false).await.is_ok());
     }
 }

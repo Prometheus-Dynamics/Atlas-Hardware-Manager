@@ -30,12 +30,21 @@ impl Agent {
             },
         };
         if command == "boot-once" {
+            // `keep_default`: a trial only, the default stays.
+            let keep_default = matches!(
+                request.args.get("keep_default"),
+                Some(TypedConfigValue::Bool(true))
+            );
             // Report first: the restart ends this process and the action's record.
             self.succeed(id, phase(update_action::PHASE_REBOOTING))
                 .await;
             let agent = self.clone();
             tokio::spawn(async move {
-                if let Err(error) = agent.writer.run(&["boot-once", &slot]).await {
+                let mut args = vec!["boot-once", slot.as_str()];
+                if keep_default {
+                    args.push("--keep-default");
+                }
+                if let Err(error) = agent.writer.run(&args).await {
                     crate::log(&format!("boot-once {slot}: {error}"));
                 }
                 agent.publish(false).await;

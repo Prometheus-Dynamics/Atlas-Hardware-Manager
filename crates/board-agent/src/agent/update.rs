@@ -86,7 +86,7 @@ impl Agent {
             tail,
             started_tx,
             flags.clone(),
-            request.apply,
+            request.apply_args(),
         ));
         *self.staging() = Some(Staging {
             generation,
@@ -136,7 +136,8 @@ impl Agent {
         tail: StderrTail,
         started: tokio::sync::oneshot::Sender<Result<(), String>>,
         flags: Arc<StageFlags>,
-        apply: bool,
+        // The writer's restart after the install (`apply`), if any.
+        apply: Option<Vec<&'static str>>,
     ) {
         let pid = child.id();
         let mut started = Some(started);
@@ -193,10 +194,10 @@ impl Agent {
         // restart was refused). An install only (a slots board) stops at
         // `staged`.
         self.publish(false).await;
-        if !apply {
+        let Some(apply) = apply else {
             return;
-        }
-        if let Err(error) = self.writer.run(&["apply"]).await {
+        };
+        if let Err(error) = self.writer.run(&apply).await {
             crate::log(&format!("apply: {error}"));
         }
         self.publish(false).await;

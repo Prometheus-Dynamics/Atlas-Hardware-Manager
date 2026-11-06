@@ -7,6 +7,17 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **A trial only (2026-11-06).** `slots apply|boot-once <id> --keep-default`
+  boots a slot on trial without moving the default: `confirm` keeps it
+  running when it is healthy, leaves `default.txt` and the root copy, and
+  the next restart goes back to the default. The marker is
+  `/data/board/slots/trial-keeps-default`. The trial's own writer reads it,
+  so a hand-written marker works from an older image too. board-agent takes
+  `keep_default` on `update` and `slot.boot-once`, and publishes
+  `update.trial_only = true`. `atlas slots install --boot` is now a trial
+  only (`--make-default` for the old behaviour). It is refused on boards
+  without `update.trial_only` and through the controller's HeliOS. The
+  app and `atlas install` still keep a slot they boot.
 - **Gaia 2.0.2 floor (2026-11-06).** kernel.toml and slots.toml set
   `gaia_version = ">=2.0.2"`: the keys they use (members/extract_to,
   rootfs.overlays, drop_shadowed_modules, checks.optional_firmware,

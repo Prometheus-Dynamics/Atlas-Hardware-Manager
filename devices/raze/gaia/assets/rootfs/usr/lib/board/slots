@@ -18,11 +18,14 @@
 #   slots check <bundle.tar>      JSON: whether `stage` would install it (the
 #                                 same checks, nothing written to /data or
 #                                 the boot FAT); exit status as stage's
-#   slots apply [<id>]            boot it once (trial.txt, "0 tryboot");
+#   slots apply [<id>] [--keep-default]
+#                                 boot it once (trial.txt, "0 tryboot");
 #                                 default: the slot just staged
-#   slots boot-once <id>          the same, for any installed slot
+#   slots boot-once <id> [--keep-default]
+#                                 the same, for any installed slot
 #   slots confirm                 after a boot: keep a healthy trial as the
-#                                 default; note a failed one
+#                                 default (with --keep-default: running, but
+#                                 the default stays); note a failed one
 #   slots check-link              a trial whose management link stays down
 #                                 goes back to the default
 #   slots set-default <id>        a slot that has booted well before
@@ -819,7 +822,14 @@ install_fetched() {
 # --- booting ----------------------------------------------------------------
 
 cmd_boot_once() {
-	_id=${1:-$STAGED}
+	_id='' _keep=''
+	for _a in "$@"; do
+		case $_a in
+		--keep-default) _keep=yes ;;
+		*) _id=$_a ;;
+		esac
+	done
+	_id=${_id:-$STAGED}
 	[ -n "$_id" ] || refuse "nothing is staged"
 	installed "$_id" || refuse "no slot $_id"
 	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
@@ -829,6 +839,13 @@ cmd_boot_once() {
 	trial_txt "$_id"
 	# A new trial: confirm may try it once more if the restart loses its flag.
 	meta_set "$_id" RETRIED no
+	# --keep-default: a trial only. Confirm keeps it running when it is
+	# healthy but leaves the default, so the next restart goes back to it.
+	if [ -n "$_keep" ]; then
+		echo "$_id" > "$STATE_DIR/trial-keeps-default"
+	else
+		rm -f "$STATE_DIR/trial-keeps-default"
+	fi
 	TRIAL=$_id STATE=rebooting
 	save_state
 	board_event update.apply "restarting into slot $_id ($(mf "$_id" version)) on trial" "slot=$_id"
@@ -867,12 +884,19 @@ cmd_confirm() {
 			plain_reboot
 			return
 		fi
-		mount_boot
-		root_copy "$_run"
-		write_line default.txt "os_prefix=slots/$_run/"
-		[ "$DEFAULT" = "$_run" ] || PREVIOUS=$DEFAULT
-		DEFAULT=$_run TRIAL='' STAGED='' STATE=confirmed ERROR=''
-		board_event update.confirmed "kept slot $_run ($(mf "$_run" version))" "slot=$_run"
+		if [ "$(cat "$STATE_DIR/trial-keeps-default" 2>/dev/null)" = "$_run" ]; then
+			# A trial only (boot-once --keep-default): it booted well, and
+			# the default stays for the next restart.
+			TRIAL='' STAGED='' STATE=confirmed ERROR=''
+			board_event update.trial-kept "slot $_run ($(mf "$_run" version)) booted well; the default stays $DEFAULT" "slot=$_run"
+		else
+			mount_boot
+			root_copy "$_run"
+			write_line default.txt "os_prefix=slots/$_run/"
+			[ "$DEFAULT" = "$_run" ] || PREVIOUS=$DEFAULT
+			DEFAULT=$_run TRIAL='' STAGED='' STATE=confirmed ERROR=''
+			board_event update.confirmed "kept slot $_run ($(mf "$_run" version))" "slot=$_run"
+		fi
 	elif [ -n "$TRIAL" ]; then
 		_retry=''
 		meta_set "$TRIAL" GOOD no
@@ -929,6 +953,8 @@ cmd_confirm() {
 	meta_set "$_run" LAST_BOOT "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	echo 0 > "$STATE_DIR/fallbacks"
 	rm -f "$STATE_DIR/trial-started" "$STATE_DIR/trial-init"
+	# The marker belongs to the trial just judged; a retry keeps it.
+	[ -n "${_retry:-}" ] || rm -f "$STATE_DIR/trial-keeps-default"
 	save_state
 	if [ -n "${_retry:-}" ]; then
 		mount_boot
@@ -1249,7 +1275,7 @@ unpin) cmd_pin no "${1:-}" ;;
 cancel) cmd_cancel ;;
 push) cmd_push "$@" ;;
 *)
-	sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 	;;
 esac

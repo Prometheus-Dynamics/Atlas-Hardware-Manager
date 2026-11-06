@@ -15,6 +15,9 @@ pub struct StageRequest {
     pub apply: bool,
     /// On a slots board: keep the new slot from removal (`pin = true`).
     pub pin: bool,
+    /// On a slots board: boot it once as a trial only (`keep_default =
+    /// true`): it runs when it is healthy, but the default stays.
+    pub keep_default: bool,
 }
 
 impl StageRequest {
@@ -55,6 +58,48 @@ impl StageRequest {
             size,
             apply: flag("apply", true),
             pin: flag("pin", false),
+            keep_default: flag("keep_default", false),
         })
+    }
+
+    /// The writer's restart after the install, if one is asked for.
+    pub fn apply_args(&self) -> Option<Vec<&'static str>> {
+        self.apply.then(|| {
+            let mut args = vec!["apply"];
+            if self.keep_default {
+                args.push("--keep-default");
+            }
+            args
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_trial_only_asks_the_writer_to_keep_the_default() {
+        let mut args = BTreeMap::from([
+            (
+                update_action::ARG_IMAGE_URL.to_string(),
+                TypedConfigValue::String("http://atlas:7700/new.img.xz".into()),
+            ),
+            (
+                update_action::ARG_SHA256.to_string(),
+                TypedConfigValue::String("0".repeat(64)),
+            ),
+            (
+                update_action::ARG_SIZE.to_string(),
+                TypedConfigValue::UInt(1),
+            ),
+        ]);
+        let request = StageRequest::from_args(&args).unwrap();
+        assert_eq!(request.apply_args(), Some(vec!["apply"]));
+        args.insert("keep_default".into(), TypedConfigValue::Bool(true));
+        let request = StageRequest::from_args(&args).unwrap();
+        assert_eq!(request.apply_args(), Some(vec!["apply", "--keep-default"]));
+        args.insert("apply".into(), TypedConfigValue::Bool(false));
+        assert_eq!(StageRequest::from_args(&args).unwrap().apply_args(), None);
     }
 }

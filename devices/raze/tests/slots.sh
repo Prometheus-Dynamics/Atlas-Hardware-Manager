@@ -402,6 +402,21 @@ grep -q "kernel of pv-b" "$T/boot/kernel8.img" || fail "root copy"
 status | grep -q '"slot_default":"pv-b","slot_previous":"pv-a"' || fail "state: $(status)"
 grep -q '"previous":"pv-a"' "$T/data/board/slots/state.json" || fail "state.json for the initramfs: $(cat "$T/data/board/slots/state.json")"
 
+echo "a trial only (--keep-default) runs once it is healthy, but the default stays"
+up boot-once pv-a --keep-default 2>/dev/null
+[ "$(cat "$T/boot/trial.txt")" = "os_prefix=slots/pv-a/" ] || fail "trial.txt for the trial only: $(cat "$T/boot/trial.txt")"
+echo pv-a > "$T/data/board/slots/booted"
+up confirm 2>/dev/null
+[ "$(cat "$T/boot/default.txt")" = "os_prefix=slots/pv-b/" ] || fail "a trial only changed default.txt: $(cat "$T/boot/default.txt")"
+grep -q "kernel of pv-b" "$T/boot/kernel8.img" || fail "a trial only replaced the root copy"
+status | grep -q '"state":"confirmed"' || fail "a healthy trial only: $(status)"
+status | grep -q '"slot_default":"pv-b","slot_previous":"pv-a"' || fail "a trial only moved the default: $(status)"
+[ ! -e "$T/data/board/slots/trial-keeps-default" ] || fail "the trial-only marker outlived its confirm"
+# The next restart is the default again: an ordinary boot.
+echo pv-b > "$T/data/board/slots/booted"
+up confirm 2>/dev/null
+status | grep -q '"slot_default":"pv-b"' || fail "back on the default: $(status)"
+
 echo "a trial that didn't come up is noted on the next confirm"
 up stage "$T/pv-c.slot.tar" 2>/dev/null || true
 bundle pv-c 2026.4.1

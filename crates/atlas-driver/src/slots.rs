@@ -166,6 +166,10 @@ pub struct SlotInstall {
     /// Boot it once when it is in (else install only).
     #[serde(default)]
     pub boot: bool,
+    /// With `boot`: a healthy boot becomes the default. Without it the boot
+    /// is a trial only: the default stays and the next restart goes back.
+    #[serde(default)]
+    pub make_default: bool,
 }
 
 /// How a layer pushed to a running slot takes effect.

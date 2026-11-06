@@ -25,10 +25,15 @@ pub(crate) enum SlotsCommand {
         /// Keep it from removal.
         #[arg(long)]
         pin: bool,
-        /// Boot it once when it is in (on trial: the board goes back by
-        /// itself when it doesn't come up).
+        /// Boot it once when it is in, as a trial only: it runs when it
+        /// comes up healthy, but the default stays (the next restart goes
+        /// back to it), and the board goes back by itself when it doesn't
+        /// come up.
         #[arg(long)]
         boot: bool,
+        /// With --boot: a healthy boot becomes the default.
+        #[arg(long, requires = "boot")]
+        make_default: bool,
     },
     /// Restart into a slot once, on trial.
     BootOnce { id: String },
@@ -92,7 +97,12 @@ pub(crate) async fn slots(
             }
             return Ok(ExitCode::SUCCESS);
         }
-        SlotsCommand::Install { image, pin, boot } => {
+        SlotsCommand::Install {
+            image,
+            pin,
+            boot,
+            make_default,
+        } => {
             let probe = image.clone();
             let kind = tokio::task::spawn_blocking(move || atlas_blockdev::sniff_artifact(&probe))
                 .await
@@ -105,7 +115,12 @@ pub(crate) async fn slots(
                 ));
             }
             let bundle = local_artifact(&image).await?;
-            let install = SlotInstall { bundle, pin, boot };
+            let install = SlotInstall {
+                bundle,
+                pin,
+                boot,
+                make_default,
+            };
             let quiet = as_json;
             // Each tenth of the transfer, and the board's notes.
             let shown = std::sync::atomic::AtomicU32::new(0);
