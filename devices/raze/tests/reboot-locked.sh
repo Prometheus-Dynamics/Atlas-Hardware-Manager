@@ -35,10 +35,10 @@ r=$?
 set -e
 [ "$r" = 3 ] || fail "exit $r, want 3"
 grep -q 'still held' "$T/err" || fail "the refusal: $(cat "$T/err")"
-# The command too, when the holder's pid is visible here (a sandbox's pid
-# namespace hides it; on the board it never is).
-grep -q "waiting for raze-gpu.lock held by pid [0-9]*" "$T/err" || fail "the wait doesn't name the holder: $(cat "$T/err")"
-sh "$rl" --holder | grep -q -E '^pid [0-9]+( \(sleep 30\))?$' || fail "--holder: $(sh "$rl" --holder)"
+# The flock that took it has exited: the holder named is the process
+# still holding the fd ($holder, now `sleep 30`), with its command.
+grep -q "waiting for raze-gpu.lock held by pid $holder (sleep 30)" "$T/err" || fail "the wait doesn't name the holder: $(cat "$T/err")"
+[ "$(sh "$rl" --holder)" = "pid $holder (sleep 30)" ] || fail "--holder: $(sh "$rl" --holder), want pid $holder (sleep 30)"
 
 echo "a restart that recovers the board goes anyway past the limit, naming the holder"
 BOARD_REBOOT_LOCK_WAIT=1 BOARD_REBOOT_LOCK_OVERRIDE=1 sh "$rl" sh -c "echo ran >> '$T/runs'" 2> "$T/err" || fail "the recovery restart failed"

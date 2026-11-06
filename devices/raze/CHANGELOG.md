@@ -22,7 +22,8 @@ OSes pin this layer by commit; the commits are listed per area.
   recover the board (a trial that failed, lost its link or its tryboot flag,
   an A/B fallback) wait at most `BOARD_REBOOT_SAFETY_WAIT` (600 s), then go
   anyway, logged with the holder. Every wait names the holder (pid and
-  command, from /proc/locks; `reboot-locked --holder` prints it). Orion's
+  command, from /proc/locks, or the process still holding the lock's fd when
+  the flock that took it has exited; `reboot-locked --holder` prints it). Orion's
   `reboot` replies "waiting for raze-gpu.lock held by pid N (cmd)", and
   `atlas action <device> reboot` prints it.
 - **Lemnos cf3a4ac (2026-11-06).** The joint Lemnos set moves past 952e1c7:
