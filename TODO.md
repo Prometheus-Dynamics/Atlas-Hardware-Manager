@@ -59,7 +59,7 @@ approval (the user, 2026-11-05).
   - Already done on hardware: the first flash from this computer (PhotonVision
     image, 2026-10-04/05), before `atlas flash` (56beff2) and the restart
     through the gadget console (c3a0241, ae07a30).
-- [ ] **Re-attach after Atlas restarts.**
+- [x] **Re-attach after Atlas restarts.**
   - **Where:** behind the SystemCore.
   - **What:** built (a72418a): the remote flash remembers the agent job
     (`<data>/agent-jobs/<board>.json`) until it ends. After a scan, Atlas starts
@@ -72,7 +72,12 @@ approval (the user, 2026-11-05).
     reach the job history.
   - **Done when:** killing Atlas mid-flash and starting it again shows the flash
     running, then its result, on a board behind the SystemCore.
-  - **Blocked by:** the same move of e5226d57.
+  - **Done (2026-11-05):** on Raze #2 behind the SystemCore, `atlas flash`
+    killed 9 s in (the agent still writing), then the app started: it followed
+    agent job 1761114482 instead of flashing again, showed it running at 39%,
+    then "1 verified" (written and verified in 45 s), and dropped the record.
+    The result read "Verified on local" because the CLI named a local image
+    "local"; it uses the file name now (188d3d9).
 - [ ] **Keyless install over robot Ethernet (Orion, no controller).**
   - **Where:** on the bench (windows through HeliOS).
   - **What:** a slot install with security off; with security on it must refuse
@@ -182,9 +187,14 @@ approval (the user, 2026-11-05).
     `(udev-worker)` had /dev/sda open just after it showed; the agent now waits
     out udev's own probe, about 15 s, and still refuses anything else at once
     (295c1be).
-  - **Still open, in the next item:** the agent path (detached flash,
-    re-attach), then updates, `atlas ssh` and slot commands over a dropping
-    link.
+  - **Follow-ups, 2026-11-05, same port:** re-attach (the item below) passed.
+    Slot commands through the controller over this link, 3 rounds of
+    `slots install --boot` dev.915 (34-40 s, booted and confirmed), `list`,
+    `set-default` dev.907 and Restart (back in 33-35 s): all passed, no drop
+    seen. `slots remove` through the controller is refused: HeliOS has no route
+    for it yet (the writer's `remove` over SSH worked). There is no `atlas ssh`
+    command, and Atlas uses no SSH to a board behind a controller; SSH through
+    the jump over this link worked for every command run.
 - [ ] **The USB agent under Orion, with detached flashes.**
   - **Where:** behind the SystemCore.
   - **What:** step 2: the agent registers with the SystemCore's Orion node and
