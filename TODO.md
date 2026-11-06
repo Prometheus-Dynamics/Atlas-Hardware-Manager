@@ -25,9 +25,8 @@ where it runs. The bench Raze, e5226d57, is on the SystemCore; a Raze on this
 computer's USB means its regular USB port (the one used for flashing) here.
 
 **Paused (the user, 2026-11-03):** the current list is finished or waiting below,
-and new work starts when the user says. Still open from that list: flashing
-through a dropping USB link. Raze #2 is reserved for Gaia's A/B once the user
-approves it.
+and new work starts when the user says. Raze work, flashing included, needs no
+approval (the user, 2026-11-05).
 
 - [ ] **The first real flash through the USB agent.**
   - **Where:** behind the SystemCore.
@@ -156,7 +155,7 @@ approves it.
     only "the stream adds none" is firm. board-http's own CPU wasn't read.
   - **Done when:** the old paths are gone or kept for a stated reason.
   - **Blocked by:** the user's start; board-http and board-stream stay until then.
-- [ ] **Flashing through a dropping USB link.**
+- [x] **Flashing through a dropping USB link.**
   - **Where:** behind the SystemCore.
   - **What:** written (5f28070): the agent writes in 16 MiB segments, each
     flushed and read back before it counts, with a journal beside the image. On
@@ -172,14 +171,20 @@ approves it.
     resumes and time per flash recorded against a clean port. Then: the agent
     path (detached flash, re-attach), then updates, `atlas ssh` and slot
     commands over a dropping link.
-  - **Status (2026-11-03):** one run through agent dev.474 (2344c10, the disk
-    claim) with the C270 left resetting on the same hub (67 resets in the run):
-    dev.820 written and verified in 245 s (5.7 MB/s), 253 s in all; two drops at
-    16% (the gadget stopped answering for 30 s, SCSI timeout, port reset), each
-    resumed on its segment, nothing started over; the board booted dev.820.
-  - **Blocked by:** nothing; the run is going.
-  - **Waiting on:** a bench window and the user's OK to flash: Raze #2 is
-    reserved for Gaia, and 3-1.1.4.1 is its port.
+  - **Done (2026-11-05):** 10 flashes in a row on 3-1.1.4.1 through agent
+    dev.533 (295c1be), dev.907 e8b5f8f5 each time, the board booting it every
+    time 20-31 s after the job. 143 MB written in 13 s on 7 runs; two runs had
+    one link drop each (I/O error at 0 and 16 MiB), resumed on their segment,
+    47-48 s; one ran 45 s with no drop. Job 16-65 s in all. No SystemCore reset.
+    No separate clean port was run: the drop-free runs on this port (13 s) are
+    the comparison.
+  - **Found and fixed on the way:** the first try refused the eMMC because a
+    `(udev-worker)` had /dev/sda open just after it showed; the agent now waits
+    out udev's own probe, about 15 s, and still refuses anything else at once
+    (295c1be).
+  - **Still open, in the next item:** the agent path (detached flash,
+    re-attach), then updates, `atlas ssh` and slot commands over a dropping
+    link.
 - [ ] **The USB agent under Orion, with detached flashes.**
   - **Where:** behind the SystemCore.
   - **What:** step 2: the agent registers with the SystemCore's Orion node and
