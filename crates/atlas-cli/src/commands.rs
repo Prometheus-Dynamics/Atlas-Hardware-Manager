@@ -105,6 +105,28 @@ pub(crate) struct UpdateOptions {
     pub(crate) json: bool,
 }
 
+/// An image's version from its file name, as the app names it: the name
+/// without its image and compression extensions
+/// (`helios-2026.2.0-dev.907-styx-e8b5f8f5.img.xz` is
+/// `helios-2026.2.0-dev.907-styx-e8b5f8f5`), never a bare "local".
+pub(crate) fn version_from_file_name(name: &str) -> String {
+    const EXTENSIONS: [&str; 11] = [
+        "img", "xz", "zst", "gz", "bin", "hex", "zip", "raw", "iso", "uf2", "tar",
+    ];
+    let mut stem = name;
+    while let Some((head, ext)) = stem.rsplit_once('.') {
+        if head.is_empty()
+            || !EXTENSIONS
+                .iter()
+                .any(|known| ext.eq_ignore_ascii_case(known))
+        {
+            break;
+        }
+        stem = head;
+    }
+    stem.to_string()
+}
+
 /// Hashes a local image once so the driver can check it again before use.
 pub(crate) async fn local_artifact(path: &Path) -> Result<Artifact, String> {
     crate::keys::report(path).await;
@@ -167,7 +189,10 @@ async fn build_request(atlas: &Atlas, options: &UpdateOptions) -> Result<UpdateR
     }
     if let Some(path) = &options.image {
         let artifact = local_artifact(path).await?;
-        let version = options.version.clone().unwrap_or_else(|| "local".into());
+        let version = options
+            .version
+            .clone()
+            .unwrap_or_else(|| version_from_file_name(&artifact.name));
         for key in &devices {
             releases
                 .entry(key.family.clone())
@@ -390,4 +415,23 @@ pub(crate) async fn action(
         output::line(&format!("Ran {action} on {key}"));
     }
     Ok(ExitCode::SUCCESS)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::version_from_file_name;
+
+    #[test]
+    fn an_image_is_named_by_its_file() {
+        assert_eq!(
+            version_from_file_name("helios-2026.2.0-dev.907-styx-e8b5f8f5.img.xz"),
+            "helios-2026.2.0-dev.907-styx-e8b5f8f5"
+        );
+        assert_eq!(version_from_file_name("raze.IMG.ZST"), "raze");
+        assert_eq!(
+            version_from_file_name("photon-v2026.1.tar.gz"),
+            "photon-v2026.1"
+        );
+        assert_eq!(version_from_file_name(".img"), ".img");
+    }
 }
