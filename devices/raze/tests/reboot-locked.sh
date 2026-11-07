@@ -15,6 +15,16 @@ holder=''
 trap '[ -z "$holder" ] || kill "$holder" 2>/dev/null; rm -rf "$T"' EXIT
 fail() {
 	echo "FAIL: $*" >&2
+	# What the lock looks like, for a failure seen only elsewhere (CI).
+	if [ -e "${BOARD_REBOOT_LOCK:-}" ]; then
+		ino=$(ls -i "$BOARD_REBOOT_LOCK" | awk '{print $1}')
+		echo "lock inode $ino, expected holder ${holder:-none}; /proc/locks:" >&2
+		grep -E ":$ino( |$)" /proc/locks >&2 || true
+		for p in $(awk -v ino="$ino" '$2 != "->" && $6 ~ (":" ino "$") { print $5 }' /proc/locks); do
+			echo "pid $p: $(tr '\0' ' ' < "/proc/$p/cmdline" 2>&1) [$(awk '/^(State|PPid|Tgid):/ { printf "%s ", $0 }' "/proc/$p/status" 2>&1)]" >&2
+		done
+		ps -eo pid,ppid,stat,args 2>/dev/null | awk -v t=$$ -v h="${holder:-x}" '$1 == t || $2 == t || $1 == h' | cut -c1-160 >&2 || true
+	fi
 	exit 1
 }
 export BOARD_REBOOT_LOCK="$T/raze-gpu.lock" BOARD_REBOOT_LOCK_HOLD=0 BOARD_REBOOT_WAIT_FILE="$T/run/reboot-wait"
