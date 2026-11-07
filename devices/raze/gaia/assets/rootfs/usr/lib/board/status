@@ -5,9 +5,10 @@
 #   status --refresh-drift    as root: recheck the boot files and overrides
 #                             now and keep the result (board-drift.timer)
 #   status --refresh-failed   as root: keep the failed units for unprivileged
-#                             callers (board-health.timer, every 10 s)
+#                             callers (board-health.service: started by any
+#                             service failing, and every 60 s by its timer)
 #   status --refresh-hardware as root: keep lemnosd's devices and a reading
-#                             of each (board-health.timer, every 10 s)
+#                             of each once, by hand (board-agent keeps them)
 #   --quiet                   print nothing
 #
 #   {"version":1,"time":<unix s>,
@@ -35,11 +36,13 @@
 # BOARD_FAILED_MAX_AGE seconds (120) is used. Otherwise systemctl is asked
 # directly, and when that fails the answer is null, never an empty list.
 #
-# Hardware: the board's devices as lemnosd sees them (`lemnos-ctl list`) and
-# one reading of each (`lemnos-ctl read`), kept by root in
-# /run/board/hardware.json for the same reason (lemnosd's socket is root's
-# and the `lemnos` group's); used while under BOARD_HARDWARE_MAX_AGE seconds
-# (60) old, else null.
+# Hardware: the board's devices as lemnosd sees them and a recent reading of
+# each, kept by root in /run/board/hardware.json for the same reason
+# (lemnosd's socket is root's and the `lemnos` group's): board-agent keeps it
+# from one lemnosd subscription, rewritten on change and at least every 30 s
+# (crates/board-agent/src/kept.rs); --refresh-hardware writes the same shape
+# once with `lemnos-ctl list` and `lemnos-ctl read`. Used while under
+# BOARD_HARDWARE_MAX_AGE seconds (60) old, else null.
 #
 # Drift: the running slot's boot files (config.txt, cmdline.txt, kernel*.img,
 # overlays/*) against the hashes the writer recorded on p1 when it staged the

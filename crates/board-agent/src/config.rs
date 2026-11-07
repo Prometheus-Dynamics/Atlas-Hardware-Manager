@@ -48,6 +48,9 @@ pub struct Config {
     /// `always`, `cheap` or `subscribed`; `BOARD_AGENT_LIVE_SAMPLING_SERIES`:
     /// `pattern=mode,...`).
     pub live_sampling: crate::live::sampling::Rules,
+    /// Keeps `run_dir/hardware.json` from lemnosd ([`crate::kept`];
+    /// `BOARD_AGENT_KEEP_HARDWARE`, `0` turns it off).
+    pub keep_hardware: bool,
     /// lemnosd's socket (`LEMNOSD_SOCKET`).
     pub lemnosd_socket: PathBuf,
     /// /proc and /sys (`BOARD_PROC_DIR`, `BOARD_SYS_DIR`; tests).
@@ -76,6 +79,7 @@ impl Default for Config {
             republish: Duration::from_secs(5),
             retry: Duration::from_secs(1),
             live: true,
+            keep_hardware: true,
             live_sampling: crate::live::sampling::Rules::default(),
             lemnosd_socket: "/run/lemnos/lemnosd.sock".into(),
             proc_dir: "/proc".into(),
@@ -131,6 +135,9 @@ impl Config {
         }
         if let Some(value) = get("BOARD_AGENT_LIVE") {
             config.live = !matches!(value.trim(), "0" | "off" | "no" | "false");
+        }
+        if let Some(value) = get("BOARD_AGENT_KEEP_HARDWARE") {
+            config.keep_hardware = !matches!(value.trim(), "0" | "off" | "no" | "false");
         }
         if let Some(value) = get("BOARD_AGENT_LIVE_SAMPLING") {
             match crate::live::sampling::Mode::parse(&value) {

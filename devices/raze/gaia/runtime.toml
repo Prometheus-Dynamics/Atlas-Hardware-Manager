@@ -662,6 +662,18 @@ src = "${self}/assets/rootfs/usr/lib/systemd/system/board-health.timer"
 dest = "/usr/lib/systemd/system/board-health.timer"
 origin = "static-asset"
 
+[[stage.files]]
+id = "raze-systemd-system-board-health-no-on-failure-dropin"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-health.service.d/50-no-on-failure.conf"
+dest = "/usr/lib/systemd/system/board-health.service.d/50-no-on-failure.conf"
+origin = "static-asset"
+
+[[stage.files]]
+id = "raze-systemd-system-service-board-failed-dropin"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/service.d/50-board-failed.conf"
+dest = "/usr/lib/systemd/system/service.d/50-board-failed.conf"
+origin = "static-asset"
+
 [image]
 kind = "buildroot"
 config_overrides = [
@@ -801,4 +813,6 @@ stage_files = [
   "raze-systemd-system-board-drift-timer",
   "raze-systemd-system-board-health-service",
   "raze-systemd-system-board-health-timer",
+  "raze-systemd-system-board-health-no-on-failure-dropin",
+  "raze-systemd-system-service-board-failed-dropin",
 ]

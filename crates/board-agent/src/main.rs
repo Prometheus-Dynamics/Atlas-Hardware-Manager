@@ -31,6 +31,9 @@ fn main() {
             std::process::exit(1);
         }
     };
+    if config.keep_hardware {
+        board_agent::kept::start(config.lemnosd_socket.clone(), config.run_dir.clone());
+    }
     runtime.block_on(async {
         if config.live {
             tokio::spawn(board_agent::live::run(std::sync::Arc::new(config.clone())));

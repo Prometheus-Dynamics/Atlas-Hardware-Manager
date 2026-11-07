@@ -17,6 +17,7 @@
 mod agent;
 mod clock;
 mod config;
+pub mod kept;
 pub mod live;
 mod published;
 mod stage;

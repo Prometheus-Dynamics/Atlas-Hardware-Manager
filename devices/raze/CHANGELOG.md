@@ -7,6 +7,23 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **No board-health polling (2026-11-07).** `board-health.timer` ran
+  `status --refresh-failed --refresh-hardware` every 10 s: a `systemctl` and
+  about ten `lemnos-ctl` processes each time. `/run/board/hardware.json` is
+  now board-agent's: one lemnosd connection (client `board-status`) that
+  subscribes each device at 10 s (lemnosd reads a device at the fastest
+  period any client asked for, so no extra bus reads), reads the ones it
+  won't stream (fan, lights) every 30 s on the same connection, follows
+  status events, and rewrites the file on change (at most every 5 s) and at
+  least every 30 s; it is removed while lemnosd is gone, so `GET /status`
+  says `null` as before. Same shape as the script wrote.
+  `BOARD_AGENT_KEEP_HARDWARE=0` turns it off; `status --refresh-hardware`
+  still writes it once by hand. The failed units are kept on events: any
+  service failing starts `board-health.service`
+  (`service.d/50-board-failed.conf`, `OnFailure=`; reset for itself, no
+  start limit), which now runs `status --refresh-failed` only; its timer is
+  a 60 s backstop for units that recovered (`failed.json` is used while
+  under 120 s old). Test: `tests/board-health.sh`.
 - **Restarts wait for the bench lock (2026-11-06).** Every restart the
   package makes goes through `/usr/lib/board/reboot-locked`, which waits for
   `/run/lock/raze-gpu.lock` (what the bench's measurements hold) and keeps
