@@ -127,7 +127,7 @@
     font-size: 11px;
     font-weight: 500;
     color: var(--fg-faint);
-    padding: 9px 8px;
+    padding: 8px 8px;
   }
   th:first-child,
   td:first-child {
@@ -140,7 +140,7 @@
     max-width: 0;
   }
   td {
-    padding: 6px 8px;
+    padding: 5px 8px;
     border-top: 1px solid var(--hairline);
   }
   tr:hover td {

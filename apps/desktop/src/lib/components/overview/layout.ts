@@ -127,3 +127,55 @@ export function layoutMap(records: DeviceRecord[]): { nodes: MapNode[]; edges: M
   place(HOST, null, 0);
   return { nodes, edges, rows: Math.max(1, nextRow), depth: maxDepth };
 }
+
+export interface OutlineColumns {
+  /** Each node's column and its line in that column. */
+  at: Map<string, { col: number; line: number }>;
+  /** Lines in the tallest column, this computer's included. */
+  lines: number;
+}
+
+/** The outline flowed into `cols` columns under this computer's line (it
+ *  spans them all): every branch off this computer stays whole in one
+ *  column, the columns are filled in order, and as evenly as the branches
+ *  allow. One column is the plain outline. */
+export function outlineColumns(nodes: MapNode[], cols: number): OutlineColumns {
+  const ordered = [...nodes].sort((a, b) => a.line - b.line);
+  const branches: MapNode[][] = [];
+  for (const node of ordered) {
+    if (node.depth === 0) continue;
+    if (node.depth === 1 || branches.length === 0) branches.push([]);
+    branches[branches.length - 1].push(node);
+  }
+  const sizes = branches.map((b) => b.length);
+  // The smallest column height the branches fit into, filled in order.
+  const fits = (cap: number) => {
+    let used = 1;
+    let sum = 0;
+    for (const size of sizes) {
+      if (sum + size > cap) {
+        used++;
+        sum = 0;
+      }
+      sum += size;
+    }
+    return used <= cols;
+  };
+  let cap = Math.max(1, ...sizes);
+  while (!fits(cap)) cap++;
+
+  const at = new Map<string, { col: number; line: number }>();
+  for (const node of ordered) if (node.depth === 0) at.set(node.id, { col: 0, line: 0 });
+  let col = 0;
+  let line = 0;
+  let tallest = 0;
+  for (const branch of branches) {
+    if (line > 0 && line + branch.length > cap) {
+      col++;
+      line = 0;
+    }
+    for (const node of branch) at.set(node.id, { col, line: 1 + line++ });
+    tallest = Math.max(tallest, line);
+  }
+  return { at, lines: 1 + tallest };
+}

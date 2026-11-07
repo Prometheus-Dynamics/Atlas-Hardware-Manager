@@ -10,7 +10,14 @@
   import type { IconName } from "#lib/ui/icons.ts";
   import { rise, stagger } from "#lib/ui/motion.ts";
 
-  let { entries, limit = 12, empty = "Nothing has happened yet." }: { entries: ActivityEntry[]; limit?: number; empty?: string } = $props();
+  // `fit`: as many entries as the box shows whole, the newest first, and no
+  // scrolling (the Overview's glance); the box must have a set height.
+  let {
+    entries,
+    limit = 12,
+    empty = "Nothing has happened yet.",
+    fit = false,
+  }: { entries: ActivityEntry[]; limit?: number; empty?: string; fit?: boolean } = $props();
 
   let expanded = $state(false);
 
@@ -94,7 +101,7 @@
 {#if entries.length === 0}
   <p class="py-6 text-center text-[13px] text-fg-faint">{empty}</p>
 {:else}
-  <ol class="feed">
+  <ol class="feed" class:fit>
     {#each shown as row, i (row.key)}
       {@const entry = row.entry}
       {@const clickable = row.count === 1 && !!entry.device && !!devices.get(entry.device)}
@@ -107,7 +114,7 @@
       </li>
     {/each}
   </ol>
-  {#if rows.length > limit}
+  {#if !fit && rows.length > limit}
     <button type="button" class="link mt-1 self-start text-[12.5px]" onclick={() => (expanded = !expanded)}>
       {expanded ? "Show less" : `Show all ${rows.length}`}
     </button>
@@ -120,6 +127,17 @@
     position: relative;
     display: flex;
     flex-direction: column;
+  }
+  /* Entries that don't fit whole wrap into a column out of sight. */
+  .feed.fit {
+    flex: 1 1 0;
+    min-height: 0;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    overflow: hidden;
+  }
+  .feed.fit > li {
+    width: 100%;
   }
   /* Narrow: the time goes under the text, which keeps the width. */
   @container (max-width: 300px) {

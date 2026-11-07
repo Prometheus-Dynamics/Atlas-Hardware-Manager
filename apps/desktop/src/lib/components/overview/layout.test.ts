@@ -8,7 +8,7 @@ import type { DeviceKey, DeviceRecord, LinkKind } from "#lib/api/types.ts";
 mock.module("#lib/api/client.ts", () => ({
   keyString: (key: { family: string; serial: string }) => `${key.family}:${key.serial}`,
 }));
-const { HOST, layoutMap, parentOf } = await import("./layout.ts");
+const { HOST, layoutMap, outlineColumns, parentOf } = await import("./layout.ts");
 
 function record(family: string, serial: string, name: string, address: string, link_kind: LinkKind): DeviceRecord {
   return {
@@ -69,3 +69,27 @@ test("a device behind a gateway that isn't shown hangs off this computer", () =>
   expect(parentOf(left, [left])).toBe(HOST);
   expect(layoutMap([left]).edges).toEqual([{ from: HOST, to: "raze:2da7d9c5e9ff7b61", label: "Robot net", online: true }]);
 });
+
+test("the outline flows into columns, each branch off this computer whole", () => {
+  const plain = (name: string) => record("sim", name, name, "", { kind: "simulated" });
+  const hub = plain("hub");
+  const kids = ["k1", "k2"].map((name) => record("sim", name, name, "", via(hub.key)));
+  const solos = ["a", "b", "c", "d"].map(plain);
+  const map = layoutMap([hub, ...kids, ...solos]);
+  // One column: this computer and the 7 devices, a line each.
+  expect(outlineColumns(map.nodes, 1).lines).toBe(8);
+  const two = outlineColumns(map.nodes, 2);
+  // 7 lines in branches of 1, 1, 1, 1 and 3 (the hub and its two) split 4 and 3.
+  expect(two.lines).toBe(5);
+  const hubCol = two.at.get("sim:hub")?.col;
+  for (const kid of kids) expect(two.at.get(keyOf(kid))?.col).toBe(hubCol);
+  expect(two.at.get(HOST)).toEqual({ col: 0, line: 0 });
+  // Lines within a column start under this computer and don't collide.
+  for (const col of [0, 1]) {
+    const lines = [...two.at.entries()].filter(([id, at]) => id !== HOST && at.col === col).map(([, at]) => at.line);
+    expect(new Set(lines).size).toBe(lines.length);
+    expect(Math.min(...lines)).toBe(1);
+  }
+});
+
+const keyOf = (r: DeviceRecord) => `${r.key.family}:${r.key.serial}`;

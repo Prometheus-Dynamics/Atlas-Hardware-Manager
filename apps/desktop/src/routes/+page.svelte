@@ -75,13 +75,11 @@
           <GlassCard fill scroll={false} pad={false} title="How it's connected" subtitle="Click a device to open it" icon="sitemap">
             <TopologyMap {records} />
           </GlassCard>
-          <div class="activity">
-            <GlassCard fill title="Recent activity" icon="history" pad={false}>
-              <div class="flex flex-col px-3 pb-3 pt-2">
-                <ActivityFeed entries={feed} limit={60} empty="Nothing has happened here yet." />
-              </div>
-            </GlassCard>
-          </div>
+          <GlassCard fill scroll={false} title="Recent activity" icon="history" pad={false}>
+            <div class="absolute inset-0 flex flex-col px-3 pb-3 pt-2">
+              <ActivityFeed entries={feed} limit={60} fit empty="Nothing has happened here yet." />
+            </div>
+          </GlassCard>
         </div>
       </div>
     {/if}
@@ -109,11 +107,6 @@
      header, a short plot and its legend. */
   .col.left {
     grid-template-rows: minmax(min-content, 1fr) fit-content(78%);
-  }
-  .activity {
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
   }
   @container page (min-width: 1600px) {
     .split {

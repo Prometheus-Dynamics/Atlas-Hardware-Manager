@@ -11,7 +11,7 @@
   import { jobs } from "#lib/stores/jobs.svelte.ts";
   import { live } from "#lib/stores/live.svelte.ts";
   import { ui } from "#lib/stores/ui.svelte.ts";
-  import { HOST, layoutMap, type MapNode } from "./layout";
+  import { HOST, layoutMap, outlineColumns, type MapNode } from "./layout";
 
   let { records }: { records: DeviceRecord[] } = $props();
 
@@ -33,9 +33,28 @@
   // device on its own line, indented under what it hangs off.
   const outline = $derived(map.depth > 0 && TREE_W < 120);
   const INDENT = 20;
-  const NODE_W = $derived(outline ? width - PAD * 2 : TREE_W);
-  const rows = $derived(outline ? map.nodes.length : map.rows);
-  const ROW_H = $derived(Math.floor(Math.min(92, Math.max(28, (boxHeight - PAD * 2) / Math.max(1, rows)))));
+  // An outline taller than its box flows into columns (this computer's line
+  // across the top, each branch whole in one), as few as fit, as many as
+  // keep a name readable: the map never scrolls while it can help it.
+  const MIN_ROW = 28;
+  const COL_GAP = 12;
+  const MIN_COL_W = 150;
+  const columns = $derived.by(() => {
+    if (!outline) return null;
+    let best = outlineColumns(map.nodes, 1);
+    for (let cols = 2; (width - PAD * 2 - (cols - 1) * COL_GAP) / cols >= MIN_COL_W; cols++) {
+      if (best.lines * MIN_ROW + PAD * 2 <= boxHeight) break;
+      const next = outlineColumns(map.nodes, cols);
+      if (next.lines >= best.lines) break;
+      best = next;
+    }
+    return best;
+  });
+  const cols = $derived(columns ? Math.max(1, ...[...columns.at.values()].map((at) => at.col + 1)) : 1);
+  const COL_W = $derived((width - PAD * 2 - (cols - 1) * COL_GAP) / cols);
+  const NODE_W = $derived(outline ? COL_W : TREE_W);
+  const rows = $derived(columns ? columns.lines : map.rows);
+  const ROW_H = $derived(Math.floor(Math.min(92, Math.max(MIN_ROW, (boxHeight - PAD * 2) / Math.max(1, rows)))));
   const NODE_H = $derived(Math.min(54, Math.max(24, ROW_H - 8)));
   // Short rows show the name only.
   const oneLine = $derived(NODE_H < 34);
@@ -48,10 +67,14 @@
   const height = $derived(rows * ROW_H + PAD * 2);
   const byId = $derived(new Map(map.nodes.map((n) => [n.id, n])));
 
-  const x = (n: MapNode) => left + n.depth * colW;
-  const y = (n: MapNode) => PAD + (outline ? n.line : n.row) * ROW_H + ROW_H / 2;
-  /** An outline's node ends at the right edge however deep it sits. */
-  const w = (n: MapNode) => (outline ? NODE_W - n.depth * INDENT : NODE_W);
+  /** The left edge of an outline's column. */
+  const colX = (col: number) => PAD + col * (COL_W + COL_GAP);
+  const at = (n: MapNode) => columns?.at.get(n.id) ?? { col: 0, line: n.line };
+  const x = (n: MapNode) => (outline ? colX(at(n).col) + n.depth * INDENT : left + n.depth * colW);
+  const y = (n: MapNode) => PAD + (outline ? at(n).line : n.row) * ROW_H + ROW_H / 2;
+  /** An outline's node ends at its column's right edge however deep it
+   *  sits; this computer's line spans every column. */
+  const w = (n: MapNode) => (!outline ? NODE_W : n.depth === 0 ? width - PAD * 2 : NODE_W - n.depth * INDENT);
 
   // A link label shows where the wire leaves it room (at 10.5 px, about 6 px
   // a letter); in a tight map it would sit on the node to its left, and the
@@ -60,7 +83,9 @@
 
   function path(from: MapNode, to: MapNode): string {
     // An outline's wire drops from under the parent and turns into the child.
-    if (outline) return `M${x(from) + INDENT / 2},${y(from) + NODE_H / 2} V${y(to)} H${x(to)}`;
+    // In another column than its parent (this computer's branches), the
+    // wire drops from that column's edge under this computer's line.
+    if (outline) return `M${(at(from).col === at(to).col ? x(from) : colX(at(to).col)) + INDENT / 2},${y(from) + NODE_H / 2} V${y(to)} H${x(to)}`;
     const x0 = x(from) + NODE_W;
     const y0 = y(from);
     const x1 = x(to);
