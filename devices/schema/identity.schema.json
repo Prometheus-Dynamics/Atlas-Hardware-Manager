@@ -136,7 +136,7 @@
     },
     "endpoints": {
       "type": "object",
-      "description": "Optional live endpoints, paths relative to this document's origin. Atlas uses each one it finds: metrics, logs, actions.",
+      "description": "Optional live endpoints, paths relative to this document's origin (\":<port>/path\" for another port on the same host). Atlas uses each one it finds: metrics, logs, actions, status, events, stream.",
       "properties": {
         "metrics": {
           "type": "string"
@@ -147,6 +147,18 @@
         "actions": {
           "type": "string",
           "description": "POST <actions>/<id> runs action <id>; any 2xx means accepted."
+        },
+        "status": {
+          "type": "string",
+          "description": "GET: the board's status JSON (boot, failed units, temperatures, fan, update, clock)."
+        },
+        "events": {
+          "type": "string",
+          "description": "GET: the event log, one JSON object per line; ?after_seq=<n> returns only later events."
+        },
+        "stream": {
+          "type": "string",
+          "description": "Live event and readings stream. May name another port on the same host (\":5898/stream\")."
         }
       },
       "additionalProperties": {
@@ -208,6 +220,270 @@
       "items": {
         "type": "string",
         "pattern": "^[a-z0-9][a-z0-9._-]*$"
+      }
+    },
+    "camera_streams": {
+      "type": "array",
+      "description": "Optional camera views, as the image lists them (PhotonVision): each an MJPEG stream, path or URL (\":<port>/path\" for another port on the same host). Supersedes camera_stream.",
+      "items": {
+        "type": "object",
+        "required": [
+          "url"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "security": {
+      "type": "string",
+      "enum": [
+        "on",
+        "off"
+      ],
+      "description": "The device's security switch. Off: actions are accepted from the USB link without a key."
+    },
+    "time": {
+      "type": "integer",
+      "description": "The device's clock (Unix seconds) when it served this document, so a host can tell the clock is wrong (no RTC battery, often no NTP)."
+    },
+    "usb_route": {
+      "type": "object",
+      "description": "Optional: the USB link's route onto the device's other networks (usb-route).",
+      "required": [
+        "enabled",
+        "active"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "active": {
+          "type": "boolean"
+        },
+        "subnets": {
+          "type": "array",
+          "description": "The networks routed to the USB link (a.b.c.d/n).",
+          "items": {
+            "type": "string"
+          }
+        },
+        "addresses": {
+          "type": "array",
+          "description": "The device's own addresses on them (a.b.c.d/n).",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "update": {
+      "type": "object",
+      "description": "Optional: the updater's state as it last wrote it (update.json). layout \"slots\" adds the slot fields and the installed slots; the A/B layout has none of them.",
+      "required": [
+        "state"
+      ],
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "idle",
+            "staging",
+            "staged",
+            "rebooting",
+            "trying",
+            "confirmed",
+            "rolled-back",
+            "cancelled",
+            "error"
+          ]
+        },
+        "layout": {
+          "type": "string",
+          "description": "\"slots\"; absent for the A/B layout."
+        },
+        "slot_active": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "slot_staged": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "slot_default": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "slot_previous": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "slot_trial": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version_active": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version_staged": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version_previous": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "progress": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1000,
+          "description": "Per mille."
+        },
+        "error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "started_by": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Who started it: atlas, orion or local."
+        },
+        "phase": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "enum": [
+            "checking",
+            "failed",
+            null
+          ],
+          "description": "While trying: null before confirm starts, checking, failed."
+        },
+        "free_bytes": {
+          "type": "integer"
+        },
+        "reserve_bytes": {
+          "type": "integer"
+        },
+        "slots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "family": {
+                "type": "string"
+              },
+              "version": {
+                "type": "string"
+              },
+              "variant": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "kernel": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "size": {
+                "type": "integer"
+              },
+              "verity": {
+                "type": "boolean"
+              },
+              "intact": {
+                "type": "boolean"
+              },
+              "flags": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "running",
+                    "default",
+                    "previous",
+                    "trial",
+                    "staged"
+                  ]
+                }
+              },
+              "pinned": {
+                "type": "boolean"
+              },
+              "good": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "installed": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "RFC 3339, null when unknown."
+              },
+              "last_boot": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "RFC 3339, null when never booted."
+              },
+              "display_name": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "layers": {
+                "type": [
+                  "array",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
       }
     }
   }
