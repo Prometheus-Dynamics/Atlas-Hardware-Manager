@@ -52,25 +52,36 @@ fn start_watch(app: &tauri::AppHandle) {
     });
 }
 
+/// The state from its thread; without it nothing can be shown, so a failure
+/// goes to stderr (the log has it too) and Atlas exits.
+fn built(building: std::io::Result<std::thread::JoinHandle<Result<AppState, String>>>) -> AppState {
+    let error = match building.map(|thread| thread.join()) {
+        Ok(Ok(Ok(state))) => return state,
+        Ok(Ok(Err(error))) => error,
+        Ok(Err(_)) => "building the state panicked".to_owned(),
+        Err(error) => format!("no thread to build the state on: {error}"),
+    };
+    let _ = std::io::Write::write_all(
+        &mut std::io::stderr(),
+        format!("atlas: could not start: {error}\n").as_bytes(),
+    );
+    std::process::exit(1);
+}
+
 pub fn run() {
     // Log first, so problems while starting are recorded too.
     logfile::init(&settings::AppPaths::resolve(false).log_file);
-    let state = match AppState::build() {
-        Ok(state) => state,
-        Err(error) => {
-            // Nothing else can be shown yet; the message goes to the log.
-            let _ = std::io::Write::write_all(
-                &mut std::io::stderr(),
-                format!("atlas: could not start: {error}\n").as_bytes(),
-            );
-            std::process::exit(1);
-        }
-    };
+    // The state (settings, keys, Orion, the drivers) is built on a thread of
+    // its own while this one starts GTK and the window, about 0.1 s of a
+    // launch taken off the way; setup waits for it before the event loop
+    // runs, so every command and event handler finds it managed.
+    let building = std::thread::Builder::new()
+        .name("atlas-state".into())
+        .spawn(AppState::build);
 
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(state)
-        .setup(|app| {
+        .setup(move |app| {
             // The window is made here rather than from the config: on Linux
             // GTK hands a second launch to this process as an activation,
             // which re-runs Tauri's own setup, and a config window would be
@@ -78,6 +89,7 @@ pub fn run() {
             if let Some(config) = app.config().app.windows.first() {
                 tauri::WebviewWindowBuilder::from_config(app.handle(), config)?.build()?;
             }
+            app.manage(built(building));
             let handle = app.handle();
             forward_events(handle, &app.state::<AppState>());
             start_watch(handle);
