@@ -18,7 +18,7 @@
   } = $props();
 </script>
 
-<div class="page reveal">
+<div class="page">
   <div class="min-w-0">{@render header()}</div>
   <div class="body {extra}">{@render children()}</div>
 </div>

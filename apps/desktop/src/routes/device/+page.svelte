@@ -18,7 +18,7 @@
 
 <svelte:head><title>{record ? deviceName(record) : "Device"} · Atlas</title></svelte:head>
 
-<div class="device-page reveal">
+<div class="device-page">
   {#key key + (tab ?? "")}
     <DevicePanel {key} initialTab={tab} />
   {/key}
