@@ -24,11 +24,22 @@ import { loadLiveCache, saveLiveCache } from "./liveCache";
 export const FAST_MS = 1000;
 /** For lists, tiles and the sidebar. */
 export const SLOW_MS = 2000;
-const TICK_MS = 250;
+/** How often due reads are looked for: no view asks faster than FAST_MS. */
+const TICK_MS = 1000;
 /** Readings taken at FAST_MS before a device drops to the rate its views ask. */
 const WARM_UP = 3;
 /** Samples kept per metric: 15 minutes of streamed rows (the Monitor's longest view). */
 const HISTORY = 1800;
+/** A series may run this far past HISTORY before its front is cut, so
+ * appending a reading doesn't copy the whole series each time. */
+const HISTORY_SLACK = 200;
+
+/** Appends to a kept series in place (its record is replaced, so views
+ * still see the change) and cuts its front in batches. */
+function append(series: number[], value: number) {
+  series.push(value);
+  if (series.length > HISTORY + HISTORY_SLACK) series.splice(0, series.length - HISTORY);
+}
 /** What series() gives by default: two minutes at the fast rate. */
 const SHOWN = 120;
 /** The shortest stretch a chart's time axis spans. */
@@ -275,7 +286,9 @@ class LiveStore {
   }
 
   /** Pushed rows: replace (backfill) or extend the history, and refresh the readings. */
-  private queued: [string, LiveFrame][] = [];
+  /** What came in since the last apply, in order: each is a device and the
+   * change to make for it. */
+  private queued: [string, () => void][] = [];
   private applyTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Holds a streamed frame for the next apply: the boards' frames arrive
@@ -286,23 +299,30 @@ class LiveStore {
       this.frame(id, frame);
       return;
     }
-    this.queued.push([id, frame]);
+    this.later(id, () => this.frame(id, frame));
+  }
+
+  /** Makes a change at the next apply, on the whole second with the clock
+   * (clock.svelte.ts), so frames, poll answers and relative times all land
+   * in one redraw. */
+  private later(id: string, change: () => void) {
+    this.queued.push([id, change]);
     if (this.applyTimer) return;
     const hidden = typeof document !== "undefined" && document.hidden;
     this.applyTimer = setTimeout(
       () => (hidden ? this.applyQueued() : requestAnimationFrame(() => this.applyQueued())),
-      hidden ? APPLY_HIDDEN_MS : APPLY_MS,
+      (hidden ? APPLY_HIDDEN_MS : APPLY_MS) - (Date.now() % APPLY_MS),
     );
   }
 
   private applyQueued() {
     if (this.applyTimer) clearTimeout(this.applyTimer);
     this.applyTimer = null;
-    const frames = this.queued;
+    const changes = this.queued;
     this.queued = [];
     // A device no view watches any more has stopped its stream: a frame held
     // from before that mustn't start it again.
-    for (const [id, frame] of frames) if (this.watchers.has(id)) this.frame(id, frame);
+    for (const [id, change] of changes) if (this.watchers.has(id)) change();
   }
 
   private frame(id: string, frame: LiveFrame) {
@@ -324,7 +344,7 @@ class LiveStore {
     const ids = new Set([...Object.keys(past), ...polled.map((m) => m.id), ...frame.rows.flatMap((r) => Object.keys(r.values))]);
     const next: Record<string, number[]> = {};
     for (const metricId of ids) {
-      const values = [...(past[metricId] ?? [])];
+      const values = past[metricId] ?? [];
       // A value the rows don't have carries the last one (a polled metric, a
       // gap), never back into the history: nothing was read then, and a
       // series shorter than the times lines up with their end.
@@ -332,10 +352,10 @@ class LiveStore {
       for (const row of frame.rows) {
         const value = row.values[metricId] ?? last;
         if (value === undefined) continue;
-        values.push(value);
+        append(values, value);
         last = value;
       }
-      next[metricId] = values.slice(-HISTORY);
+      next[metricId] = values;
     }
     this.history.set(id, next);
     const times = frame.backfill ? [] : (this.times.get(id) ?? []);
@@ -384,30 +404,11 @@ class LiveStore {
         this.askedAt.set(id, Date.now());
         try {
           const readings = await api.deviceTelemetry(record!.key, why.get(id));
-          const streamed = this.streams.get(id);
-          if (streamed) {
-            // The stream has its own readings and rows: take only the rest.
-            const rest = readings.filter((m) => !streamed.carries.has(m.id));
-            // Matching ids isn't enough: a board's status names its fan
-            // `fan` in rpm where the stream may say `fan.rpm`.
-            if (rest.every((m) => drifts(m.id))) this.covered.add(id);
-            else this.covered.delete(id);
-            const pushed = (this.metrics.get(id) ?? []).filter((m) => streamed.carries.has(m.id));
-            this.metrics.set(id, [...pushed, ...rest]);
-            this.errors.delete(id);
-            this.fresh(id);
-            return;
-          }
-          if (readings.length > 0 && readings.every((m) => drifts(m.id))) this.covered.add(id);
-          else this.covered.delete(id);
-          this.metrics.set(id, readings);
-          this.errors.delete(id);
-          const past = this.history.get(id) ?? {};
-          const next: Record<string, number[]> = {};
-          for (const m of readings) next[m.id] = [...(past[m.id] ?? []), m.value].slice(-HISTORY);
-          this.history.set(id, next);
-          this.times.set(id, [...(this.times.get(id) ?? []), Date.now()].slice(-HISTORY));
-          this.fresh(id);
+          const at = Date.now();
+          // The first answer draws at once (nothing is shown yet); the rest
+          // wait for the next apply, with everything else that came in.
+          if (this.metrics.has(id)) this.later(id, () => this.polled(id, readings, at));
+          else this.polled(id, readings, at);
         } catch (error) {
           this.errors.set(id, errorText(error));
         } finally {
@@ -415,6 +416,37 @@ class LiveStore {
         }
       }),
     );
+  }
+
+  private polled(id: string, readings: Metric[], at: number) {
+    const streamed = this.streams.get(id);
+    if (streamed) {
+      // The stream has its own readings and rows: take only the rest.
+      const rest = readings.filter((m) => !streamed.carries.has(m.id));
+      // Matching ids isn't enough: a board's status names its fan
+      // `fan` in rpm where the stream may say `fan.rpm`.
+      if (rest.every((m) => drifts(m.id))) this.covered.add(id);
+      else this.covered.delete(id);
+      const pushed = (this.metrics.get(id) ?? []).filter((m) => streamed.carries.has(m.id));
+      this.metrics.set(id, [...pushed, ...rest]);
+      this.errors.delete(id);
+      this.fresh(id);
+      return;
+    }
+    if (readings.length > 0 && readings.every((m) => drifts(m.id))) this.covered.add(id);
+    else this.covered.delete(id);
+    this.metrics.set(id, readings);
+    this.errors.delete(id);
+    const past = this.history.get(id) ?? {};
+    const next: Record<string, number[]> = {};
+    for (const m of readings) {
+      const values = past[m.id] ?? [];
+      append(values, m.value);
+      next[m.id] = values;
+    }
+    this.history.set(id, next);
+    this.times.set(id, [...(this.times.get(id) ?? []), at].slice(-HISTORY));
+    this.fresh(id);
   }
 }
 

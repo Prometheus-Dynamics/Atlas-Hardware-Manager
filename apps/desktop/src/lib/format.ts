@@ -36,8 +36,10 @@ export function linkText(link: LinkKind, nameOf: (key: string) => string): strin
 
 export function timeAgo(ms: number, now = Date.now()): string {
   const s = Math.max(0, Math.round((now - ms) / 1000));
-  if (s < 5) return "just now";
-  if (s < 60) return `${s}s ago`;
+  // Tens of seconds, not seconds: a text that changes every second is a
+  // repaint every second on every page that shows it.
+  if (s < 10) return "just now";
+  if (s < 60) return `${Math.floor(s / 10) * 10}s ago`;
   const m = Math.round(s / 60);
   if (m < 60) return `${m}m ago`;
   const h = Math.round(m / 60);
