@@ -36,17 +36,29 @@ holder() {
 	_pid=$(awk -v ino="$_ino" '$2 != "->" && $6 ~ (":" ino "$") { print $5 }' /proc/locks 2>/dev/null |
 		while read -r _p; do [ "$_p" = "$$" ] || { echo "$_p"; break; }; done)
 	[ -n "$_pid" ] || return 0
-	if [ ! -e "/proc/$_pid" ]; then
+	_cmd=$( (tr '\0' ' ' < "/proc/$_pid/cmdline") 2>/dev/null | cut -c1-120)
+	if [ -z "$_cmd" ]; then
 		# The usual holder (`exec 9>> lock; flock 9`) took the lock through a
-		# flock process that has exited: the lock stays with the shell that
-		# shares its fd. Name that one (not this script or its subshells).
+		# flock process that has exited (its pid gone, or showing no command:
+		# a zombie, or reused): the lock stays with the process sharing its
+		# fd. Name that one (not this script or its subshells).
 		_fd=$(fd_holder)
 		[ -z "$_fd" ] || _pid=$_fd
+		_cmd=$( (tr '\0' ' ' < "/proc/$_pid/cmdline") 2>/dev/null | cut -c1-120)
 	fi
 	# (A pid from another pid namespace has no /proc entry here.)
-	_cmd=$( (tr '\0' ' ' < "/proc/$_pid/cmdline") 2>/dev/null | cut -c1-120)
 	_cmd=${_cmd% }
 	echo "pid $_pid${_cmd:+ ($_cmd)}"
+}
+# Whether pid $1 is this script or descends from it (its subshells, at
+# any depth: dash forks more of them than bash, and their children).
+ours() {
+	_a=$1
+	while [ -n "$_a" ] && [ "$_a" -gt 1 ] 2>/dev/null; do
+		[ "$_a" = "$$" ] && return 0
+		_a=$(awk '/^PPid:/ { print $2 }' "/proc/$_a/status" 2>/dev/null)
+	done
+	return 1
 }
 # The first process with the lock file open, leaving out this script, its
 # subshells and their children.
@@ -57,11 +69,7 @@ fd_holder() {
 		/^\/proc\/[0-9]+\/fd\/?:$/ { split($0, part, "/"); pid = part[3]; next }
 		pid != "" && $NF == lock && $(NF - 1) == "->" { print pid }' | uniq |
 		while read -r _p; do
-			[ "$_p" = "$$" ] && continue
-			_pp=$(awk '/^PPid:/ { print $2 }' "/proc/$_p/status" 2>/dev/null)
-			[ "$_pp" = "$$" ] && continue
-			_ppp=$(awk '/^PPid:/ { print $2 }' "/proc/$_pp/status" 2>/dev/null)
-			[ "$_ppp" = "$$" ] && continue
+			ours "$_p" && continue
 			echo "$_p"
 			break
 		done
