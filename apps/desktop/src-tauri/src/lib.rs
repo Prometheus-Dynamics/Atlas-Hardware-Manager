@@ -177,6 +177,10 @@ pub fn run() {
                     let _ = window.show();
                     let _ = window.set_focus();
                 }
+                // Inventory saves are coalesced: write the last one out.
+                if let tauri::RunEvent::Exit = event {
+                    handle.state::<AppState>().atlas.flush_inventory();
+                }
             })
         });
     if let Err(error) = result {

@@ -399,12 +399,6 @@ Decided by the user on 2026-11-03. Nothing here has started.
   - **Why:** boards on that bootloader can't be flashed from Atlas.
   - **Done when:** a board flashed through it.
   - **Blocked by:** the freeze and the bootloader's protocol.
-- [ ] **Storage "fits" check before flashing.**
-  - **What:** today the writer stops with "image larger than disk" after writing
-    part of it (atlas-blockdev writer.rs).
-  - **Why:** a flash that can't fit shouldn't touch the disk.
-  - **Done when:** it's refused before the first write.
-  - **Blocked by:** the freeze.
 - [ ] **Job throughput and friendlier failure reasons.**
   - **What:** the app shows a stage's ETA (StageProgress.svelte) but no
     throughput, and failure reasons as the drivers word them.
@@ -532,6 +526,20 @@ again 2026-11-01); the board proofs are the open items above.
 - [x] Every version on the dev scheme, the Raze package included (c26ad85).
 
 ### Desktop app
+- **A flash that can't fit is refused before the first write (2026-11-06).**
+  The writer reads a compressed image's decoded size from its own headers (the
+  xz index, the zstd frame's content size, gzip's ISIZE), each a lower bound,
+  so a refusal is always right (atlas-blockdev decoded_size.rs).
+- **Speed and leanness, round 1 (2026-11-06).** Atlas opens on the last
+  readings (dimmed, "Readings from … ago") instead of placeholders; streamed
+  rows from every board are drawn together once a second, every 30 s while
+  hidden; the relative-time clock stops while hidden; charts draw once their
+  size is known; inventory saves are coalesced off the caller's thread, skipped
+  when unchanged and written compact (266 KB instead of 408 KB). Measured on 3
+  paired boards: idle 16 % -> 10 % CPU, 11 -> 0 spinners on the first frame.
+- **NetworkTables with several boards (2026-11-06).** Each Raze's pipeline is
+  "default": rows are keyed by path and named with their board when names
+  repeat (the page showed "This page hit a bug").
 - [x] Overview: robot readiness with one next step, live summary tiles,
       connection map, recent activity.
 - [x] Devices inventory (cards and list), selection, bulk update.

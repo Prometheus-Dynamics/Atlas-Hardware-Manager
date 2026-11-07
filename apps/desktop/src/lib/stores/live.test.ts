@@ -29,3 +29,22 @@ test("a chart starts at the first reading, however few there are", () => {
   expect(live.chartStart(["b"], 0, 60_000)).toBe(50_000);
   expect(live.chartStart(["a"], 55_000, 200_000)).toBe(60_000);
 });
+
+test("streamed rows are held and drawn together; a device no view watches drops them", () => {
+  const store = live as unknown as {
+    queue(id: string, frame: LiveFrame): void;
+    applyQueued(): void;
+    watchers: Map<string, number[]>;
+  };
+  store.watchers.set("q1", [1000]);
+  store.watchers.set("q2", [1000]);
+  const row = (t: number) => ({ kind: "rows", backfill: false, rows: [{ t, values: { cpu: t } }], latest: [reading("cpu", t)] }) as LiveFrame;
+  store.queue("q1", row(1));
+  store.queue("q2", row(2));
+  store.queue("gone", row(3));
+  expect(live.metrics.has("q1")).toBe(false);
+  store.applyQueued();
+  expect(live.metric("q1", "cpu")?.value).toBe(1);
+  expect(live.metric("q2", "cpu")?.value).toBe(2);
+  expect(live.metrics.has("gone")).toBe(false);
+});

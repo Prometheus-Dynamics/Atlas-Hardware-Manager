@@ -4,7 +4,10 @@ class Clock {
   now = $state(Date.now());
 
   constructor() {
-    if (typeof window !== "undefined") setInterval(() => (this.now = Date.now()), 1000);
+    if (typeof window === "undefined") return;
+    // Nothing shows while hidden: catch up on the way back instead.
+    setInterval(() => document.hidden || (this.now = Date.now()), 1000);
+    document.addEventListener("visibilitychange", () => document.hidden || (this.now = Date.now()));
   }
 }
 

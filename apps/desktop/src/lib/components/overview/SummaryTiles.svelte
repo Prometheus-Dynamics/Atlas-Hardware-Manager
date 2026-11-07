@@ -19,13 +19,13 @@
 
   // Readings arrive device by device; hold the row until all have answered
   // (or a moment has passed) so the tiles land together instead of popping
-  // in one at a time.
+  // in one at a time. Opened on the last session's readings, nothing waits.
   let waited = $state(false);
   $effect(() => {
     const timer = setTimeout(() => (waited = true), 2500);
     return () => clearTimeout(timer);
   });
-  const ready = $derived(waited || live.settled(records));
+  const ready = $derived(waited || live.restored || live.settled(records));
   const placeholders = $derived(records.some(hasTelemetry) ? 5 : 2);
 
   const online = $derived(records.filter((r) => r.presence === "online"));

@@ -31,7 +31,9 @@
 
   // Drawn at its own width in pixels: a stretched viewBox with a
   // non-scaling stroke made WebKit's painter keep memory on every redraw.
-  let width = $state(100);
+  // Nothing is drawn until the width is known: a first pass at a guessed
+  // width was thrown away at once, on every chart of a page being opened.
+  let width = $state(0);
   const W = $derived(Math.max(1, width));
   const id = `spark-${Math.random().toString(36).slice(2, 9)}`;
   // Fill the width while there are fewer points than the capacity.
@@ -55,7 +57,7 @@
   );
 
   const line = $derived.by(() => {
-    if (points.length < 2) return "";
+    if (points.length < 2 || width === 0) return "";
     let d = `M${points[0][0]},${points[0][1]}`;
     for (let i = 1; i < points.length; i++) {
       const [x0, y0] = points[i - 1];
@@ -66,7 +68,7 @@
     return d;
   });
   const area = $derived(line ? `${line} L${W},${height} L${points[0][0]},${height} Z` : "");
-  const last = $derived(points.at(-1));
+  const last = $derived(width === 0 ? undefined : points.at(-1));
 
   let wrap = $state<HTMLDivElement>();
   /** The hovered point: its index and where it is on screen. */

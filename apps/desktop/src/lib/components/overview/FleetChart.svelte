@@ -24,8 +24,9 @@
   // Drawn at the plot's own size in pixels: a stretched viewBox with
   // non-scaling strokes made WebKit's painter keep memory on every redraw
   // (~5 MB a minute on the Overview, measured).
-  let W = $state(600);
-  let H = $state(200);
+  // 0 until measured: nothing is drawn at a guessed size, only to be redrawn.
+  let W = $state(0);
+  let H = $state(0);
 
   const online = $derived(records.filter((r) => r.presence === "online"));
   const start = $derived(live.chartStart(online.map((r) => keyString(r.key)), clock.now - WINDOW_MS, clock.now));
@@ -72,13 +73,15 @@
         {#each ticks as t, i (i)}<span>{Math.round(t)}</span>{/each}
       </div>
       <div class="area" bind:clientWidth={W} bind:clientHeight={H}>
-        <svg viewBox="0 0 {W} {H}" data-live role="img" aria-label="{title} of {lines.length} devices">
-          {#each ticks as t, i (i)}<line x1="0" x2={W} y1={y(t)} y2={y(t)} class="grid" />{/each}
-          {#if warn !== null}<line x1="0" x2={W} y1={y(warn)} y2={y(warn)} class="limit" />{/if}
-          {#each lines as l (l.id)}
-            <path d={path(l.points)} stroke={l.color} class="line" class:hot={l.now && metricTone(l.now) === "warn"} />
-          {/each}
-        </svg>
+        {#if W > 0 && H > 0}
+          <svg viewBox="0 0 {W} {H}" data-live role="img" aria-label="{title} of {lines.length} devices">
+            {#each ticks as t, i (i)}<line x1="0" x2={W} y1={y(t)} y2={y(t)} class="grid" />{/each}
+            {#if warn !== null}<line x1="0" x2={W} y1={y(warn)} y2={y(warn)} class="limit" />{/if}
+            {#each lines as l (l.id)}
+              <path d={path(l.points)} stroke={l.color} class="line" class:hot={l.now && metricTone(l.now) === "warn"} />
+            {/each}
+          </svg>
+        {/if}
       </div>
     </div>
     <ul class="legend">

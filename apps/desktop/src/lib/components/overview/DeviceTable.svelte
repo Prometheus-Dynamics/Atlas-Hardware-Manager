@@ -4,7 +4,7 @@
   // device.
   import { keyString, type DeviceRecord } from "#lib/api/client.ts";
   import Sparkline from "#lib/components/common/Sparkline.svelte";
-  import { byDeviceName, deviceName, primaryVersion } from "#lib/format.ts";
+  import { byDeviceName, deviceName, primaryVersion, timeAgo } from "#lib/format.ts";
   import { metricTone } from "#lib/metrics.ts";
   import { displayModel, isRecovery } from "#lib/present.ts";
   import { insights } from "#lib/stores/insights.svelte.ts";
@@ -22,7 +22,9 @@
         const fps = live.metric(id, "fps");
         const cpu = live.metric(id, "cpu");
         const target = insights.outdatedIds.has(id) ? insights.target(r) : null;
-        return { record: r, id, temp, fps, cpu, cpuSeries: live.series(id, "cpu"), target, version: primaryVersion(r.identity) };
+        // Last run's readings until the device answers: shown, but quieter.
+        const cachedAt = live.cachedAt.get(id);
+        return { record: r, id, temp, fps, cpu, cpuSeries: live.series(id, "cpu"), target, version: primaryVersion(r.identity), cachedAt };
       }),
   );
 
@@ -54,7 +56,7 @@
     </thead>
     <tbody>
       {#each rows as row (row.id)}
-        <tr>
+        <tr class:stale={row.cachedAt !== undefined} title={row.cachedAt !== undefined ? `Readings from ${timeAgo(row.cachedAt)}; waiting for the device` : undefined}>
           <td>
             <a href={devicePath(row.id)} class="name">
               <span class="dot" style:background={dot(row.record)}></span>
@@ -98,6 +100,10 @@
 </section>
 
 <style>
+  /* Readings kept from the last run, until the device answers. */
+  tr.stale td + td {
+    opacity: 0.5;
+  }
   .rows {
     container-type: inline-size;
     min-height: 0;

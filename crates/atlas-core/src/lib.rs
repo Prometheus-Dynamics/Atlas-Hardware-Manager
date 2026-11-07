@@ -21,6 +21,7 @@ mod lineage;
 mod links;
 mod manage;
 mod observe;
+mod persist;
 mod push;
 mod resume;
 mod robot_teams;

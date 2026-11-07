@@ -129,7 +129,8 @@ impl InventoryStore for JsonFileStore {
             version: FORMAT_VERSION,
             snapshot: snapshot.clone(),
         };
-        let data = serde_json::to_vec_pretty(&file).map_err(|error| StoreError::Format {
+        // Compact: a third smaller than pretty-printed, and written often.
+        let data = serde_json::to_vec(&file).map_err(|error| StoreError::Format {
             path: self.path.clone(),
             message: error.to_string(),
         })?;

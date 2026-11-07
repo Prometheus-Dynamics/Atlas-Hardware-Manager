@@ -32,14 +32,9 @@
     ui.robot === null ? activity.entries : activity.entries.filter((e) => (robot && e.robot === robot) || ids.some((k) => sameKey(k, e.device))),
   );
 
-  // Hold the dashboard until the first discovery pass so it lands whole,
-  // instead of filling in device by device.
-  let waited = $state(false);
-  $effect(() => {
-    const timer = setTimeout(() => (waited = true), 3000);
-    return () => clearTimeout(timer);
-  });
-  const ready = $derived(devices.loaded && (devices.lastScanAt !== null || waited));
+  // The known devices draw at once (the inventory and their last readings
+  // are kept from the last run); discovery and live readings fill in.
+  const ready = $derived(devices.loaded);
 </script>
 
 <svelte:head><title>Overview · Atlas</title></svelte:head>

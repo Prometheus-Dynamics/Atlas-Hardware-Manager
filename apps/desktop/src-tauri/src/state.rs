@@ -86,7 +86,12 @@ impl AppState {
                 .capability_source(orion.board_nodes.clone());
         }
         let store: Arc<dyn InventoryStore> = Arc::new(JsonFileStore::new(&paths.inventory_file));
-        builder = builder.store(store);
+        // Saves are coalesced and written off the caller's thread: a scan or
+        // a board's event sync is one write, not one per change.
+        builder = builder.store(store).options(atlas_core::AtlasOptions {
+            persist_delay: std::time::Duration::from_secs(2),
+            ..Default::default()
+        });
         match simulated {
             Some(scenario) => {
                 let fleet = match scenario {

@@ -115,7 +115,8 @@ pub async fn install_app_update(app: AppHandle, state: State<'_, AppState>) -> C
 }
 
 #[tauri::command(async)]
-pub fn restart_app(app: AppHandle) {
+pub fn restart_app(app: AppHandle, state: State<'_, AppState>) {
+    state.atlas.flush_inventory();
     app.restart();
 }
 

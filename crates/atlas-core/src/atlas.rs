@@ -30,6 +30,9 @@ pub struct AtlasOptions {
     /// Staged rollout turns on automatically at this many devices of one family.
     pub staged_rollout_threshold: usize,
     pub event_capacity: usize,
+    /// How long inventory saves are held to coalesce, written off the
+    /// caller's thread; zero writes each at once (the default: tests, CLI).
+    pub persist_delay: Duration,
 }
 
 impl Default for AtlasOptions {
@@ -40,6 +43,7 @@ impl Default for AtlasOptions {
             max_parallel_updates: 16,
             staged_rollout_threshold: 3,
             event_capacity: 1024,
+            persist_delay: Duration::ZERO,
         }
     }
 }
@@ -102,7 +106,8 @@ pub(crate) struct Inner {
     pub(crate) link_sources: Vec<Arc<dyn LinkSource>>,
     /// Extra capabilities for devices other drivers own (Orion, …).
     pub(crate) capability_sources: Vec<Arc<dyn CapabilitySource>>,
-    pub(crate) store: Option<Arc<dyn InventoryStore>>,
+    /// Writes the inventory to the store, when there is one.
+    pub(crate) writer: Option<crate::persist::Writer>,
     pub(crate) options: AtlasOptions,
     pub(crate) events: EventBus,
     pub(crate) state: Mutex<State>,
@@ -150,9 +155,10 @@ impl Inner {
             .clone()
     }
 
-    /// Saves the inventory. A failure is reported as a warning, never fatal.
+    /// Saves the inventory (coalesced, see `persist`). A failure is
+    /// reported as a warning, never fatal.
     pub(crate) fn persist(&self) {
-        let Some(store) = &self.store else {
+        let Some(writer) = &self.writer else {
             return;
         };
         let snapshot = {
@@ -172,11 +178,7 @@ impl Inner {
                     .collect(),
             }
         };
-        if let Err(error) = store.save(&snapshot) {
-            self.events.emit(Event::ScanWarning {
-                message: format!("Could not save the device inventory: {error}"),
-            });
-        }
+        writer.save(snapshot);
     }
 }
 
@@ -244,13 +246,17 @@ impl AtlasBuilder {
             next_job: 1,
             ..State::default()
         };
+        let events = EventBus::new(self.options.event_capacity);
+        let writer = self.store.clone().map(|store| {
+            crate::persist::Writer::new(store, events.clone(), self.options.persist_delay)
+        });
         Ok(Atlas {
             inner: Arc::new(Inner {
+                writer,
                 registry: self.registry,
                 link_sources: self.link_sources,
                 capability_sources: self.capability_sources,
-                store: self.store,
-                events: EventBus::new(self.options.event_capacity),
+                events,
                 parallel: Arc::new(Semaphore::new(self.options.max_parallel_updates.max(1))),
                 options: self.options,
                 state: Mutex::new(state),
@@ -278,6 +284,14 @@ impl Atlas {
             capability_sources: Vec::new(),
             store: None,
             options: AtlasOptions::default(),
+        }
+    }
+
+    /// Waits until every inventory save asked for so far is on disk (with a
+    /// `persist_delay`, call it before the process exits).
+    pub fn flush_inventory(&self) {
+        if let Some(writer) = &self.inner.writer {
+            writer.flush();
         }
     }
 

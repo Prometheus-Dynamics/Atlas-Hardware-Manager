@@ -18,6 +18,7 @@
 import { SvelteMap } from "svelte/reactivity";
 import { api, errorText, keyString, type DeviceRecord, type LiveFrame, type Metric } from "#lib/api/client.ts";
 import { devices } from "./devices.svelte";
+import { loadLiveCache, saveLiveCache } from "./liveCache";
 
 /** For a device's own page and the Monitor, when polled. */
 export const FAST_MS = 1000;
@@ -36,6 +37,14 @@ const SHORTEST_SPAN_MS = 10_000;
 const STREAM_POLL_MS = 5000;
 /** While streamed and the last poll brought only readings that drift. */
 const STREAM_IDLE_MS = 60_000;
+
+/** Streamed frames are applied together at most this often (one redraw for
+ * every board's rows), and while the window is hidden only this often. */
+const APPLY_MS = 1000;
+const APPLY_HIDDEN_MS = 30_000;
+
+/** How often the last readings are written to the cache, when they changed. */
+const CACHE_SAVE_MS = 30_000;
 
 /** Polled, not streamed, and all the readings only drift (a board whose readings come from its status). */
 const POLLED_DRIFT_MS = 15_000;
@@ -65,6 +74,45 @@ class LiveStore {
   errors = new SvelteMap<string, string>();
   /** Why a device's readings are polled, not streamed (its stream didn't start or ended), for the page to say. */
   pollingWhy = new SvelteMap<string, string>();
+  /** Devices showing the last session's readings, and when those were taken (ms): stale until it answers. */
+  cachedAt = new SvelteMap<string, number>();
+  private cacheDirty = false;
+  /** Whether the app opened on the last session's readings (so nothing needs holding back for them). */
+  restored = false;
+
+  constructor() {
+    if (typeof window === "undefined") return;
+    // Open on the last readings, so nothing waits on a device to draw.
+    for (const [id, cached] of loadLiveCache()) {
+      this.metrics.set(id, cached.metrics);
+      this.history.set(id, cached.history);
+      this.times.set(id, cached.times);
+      this.cachedAt.set(id, cached.at);
+      this.restored = true;
+    }
+    const save = () => {
+      if (!this.cacheDirty) return;
+      this.cacheDirty = false;
+      saveLiveCache(
+        [...this.metrics].map(([id, metrics]) => [
+          id,
+          { metrics, history: this.history.get(id) ?? {}, times: this.times.get(id) ?? [], at: this.times.get(id)?.at(-1) ?? Date.now() },
+        ]),
+      );
+    };
+    setInterval(save, CACHE_SAVE_MS);
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) save();
+      else if (this.queued.length > 0) requestAnimationFrame(() => this.applyQueued());
+    });
+    window.addEventListener("pagehide", save);
+  }
+
+  /** Fresh readings came in for a device: it no longer shows the cached ones. */
+  private fresh(id: string) {
+    this.cachedAt.delete(id);
+    this.cacheDirty = true;
+  }
 
   /** The intervals the views showing each device ask for. */
   private watchers = new Map<string, number[]>();
@@ -202,7 +250,7 @@ class LiveStore {
     this.streamTried.set(id, Date.now());
     this.starting.add(id);
     api
-      .streamLive(record!.key, (frame) => this.frame(id, frame))
+      .streamLive(record!.key, (frame) => this.queue(id, frame))
       .then(({ stop, reason }) => {
         if (!stop) {
           this.pollingWhy.set(id, reason ?? "no stream");
@@ -227,6 +275,36 @@ class LiveStore {
   }
 
   /** Pushed rows: replace (backfill) or extend the history, and refresh the readings. */
+  private queued: [string, LiveFrame][] = [];
+  private applyTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Holds a streamed frame for the next apply: the boards' frames arrive
+   * at their own times, and each apply is a redraw. A device's first frame
+   * (its backfill) is applied at once, so its charts fill straight away. */
+  private queue(id: string, frame: LiveFrame) {
+    if (frame.kind !== "gone" && frame.backfill && this.queued.length === 0) {
+      this.frame(id, frame);
+      return;
+    }
+    this.queued.push([id, frame]);
+    if (this.applyTimer) return;
+    const hidden = typeof document !== "undefined" && document.hidden;
+    this.applyTimer = setTimeout(
+      () => (hidden ? this.applyQueued() : requestAnimationFrame(() => this.applyQueued())),
+      hidden ? APPLY_HIDDEN_MS : APPLY_MS,
+    );
+  }
+
+  private applyQueued() {
+    if (this.applyTimer) clearTimeout(this.applyTimer);
+    this.applyTimer = null;
+    const frames = this.queued;
+    this.queued = [];
+    // A device no view watches any more has stopped its stream: a frame held
+    // from before that mustn't start it again.
+    for (const [id, frame] of frames) if (this.watchers.has(id)) this.frame(id, frame);
+  }
+
   private frame(id: string, frame: LiveFrame) {
     if (frame.kind === "gone") {
       this.unstream(id);
@@ -268,6 +346,7 @@ class LiveStore {
       this.metrics.set(id, [...frame.latest, ...kept]);
     }
     this.errors.delete(id);
+    this.fresh(id);
   }
 
   private ensureTimer() {
@@ -316,6 +395,7 @@ class LiveStore {
             const pushed = (this.metrics.get(id) ?? []).filter((m) => streamed.carries.has(m.id));
             this.metrics.set(id, [...pushed, ...rest]);
             this.errors.delete(id);
+            this.fresh(id);
             return;
           }
           if (readings.length > 0 && readings.every((m) => drifts(m.id))) this.covered.add(id);
@@ -327,6 +407,7 @@ class LiveStore {
           for (const m of readings) next[m.id] = [...(past[m.id] ?? []), m.value].slice(-HISTORY);
           this.history.set(id, next);
           this.times.set(id, [...(this.times.get(id) ?? []), Date.now()].slice(-HISTORY));
+          this.fresh(id);
         } catch (error) {
           this.errors.set(id, errorText(error));
         } finally {
