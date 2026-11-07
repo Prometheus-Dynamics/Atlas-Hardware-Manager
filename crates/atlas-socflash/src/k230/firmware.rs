@@ -3,6 +3,10 @@
 //! "K230", a little-endian length and encryption type, the SHA-256 of the
 //! body, then the body from 0x210 (a 4-byte version, then the code).
 //! Checked on Gaia's K230D Zero sdcard.img (2026-10-31): both heads valid.
+//! UNCONFIRMED by k230_flash (33a75f0): that tool never looks at a firmware
+//! head (no "K230" magic, 0x210 offset or SHA-256 appears in it), so this
+//! layout rests on the SDK notes and that one image; the boot ROM's own
+//! check is not public.
 
 use sha2::{Digest, Sha256};
 

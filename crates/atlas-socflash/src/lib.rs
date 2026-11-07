@@ -9,8 +9,10 @@
 
 pub mod k230;
 pub mod rockchip;
+pub mod traced;
 pub mod transport;
 
+pub use traced::Traced;
 pub use transport::{NusbIo, Script, Step, UsbError, UsbIo};
 
 /// What a long transfer is doing.

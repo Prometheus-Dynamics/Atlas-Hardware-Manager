@@ -11,6 +11,7 @@ pub mod loader;
 pub mod maskrom;
 pub mod rc4;
 pub mod rockusb;
+pub mod sim;
 pub mod write;
 
 use crate::transport::{UsbError, location};

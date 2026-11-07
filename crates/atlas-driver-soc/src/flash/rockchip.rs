@@ -41,6 +41,10 @@ impl Job {
         }
 
         self.progress.step_started(UpdateStep::Transfer);
+        // Every transfer's request and reply in hex lands in the job's log.
+        let progress = self.progress.clone();
+        let sink: atlas_socflash::traced::Sink =
+            std::sync::Arc::new(move |line: &str| progress.log(line.to_string()));
         let mut io = handle.block_on(async {
             let info = self.wait_for(None).await?;
             let maskrom = list(self.soc)
@@ -48,9 +52,10 @@ impl Job {
                 .into_iter()
                 .any(|(found, _)| found.location == self.location && found.stage == "maskrom");
             if maskrom {
-                let mut io = NusbIo::open(&info, "Rockchip maskrom device", BULK_TIMEOUT)
+                let io = NusbIo::open(&info, "Rockchip maskrom device", BULK_TIMEOUT)
                     .await
                     .map_err(usb(UpdateStep::Transfer))?;
+                let mut io = Traced::new(Box::new(io), "maskrom").with_sink(sink.clone());
                 self.progress
                     .log("maskrom: sending the DDR init and the usbplug");
                 maskrom::download_boot(&mut io, &loader, &bytes)
@@ -63,9 +68,10 @@ impl Job {
                     .log("already in loader mode; no maskrom download");
             }
             let info = self.wait_for(Some("loader")).await?;
-            NusbIo::open(&info, "Rockchip loader", BULK_TIMEOUT)
+            let io = NusbIo::open(&info, "Rockchip loader", BULK_TIMEOUT)
                 .await
-                .map_err(usb(UpdateStep::Transfer))
+                .map_err(usb(UpdateStep::Transfer))?;
+            Ok::<_, DriverError>(Traced::new(Box::new(io), "loader").with_sink(sink))
         })?;
         let mut device = Rockusb::new(&mut io);
         handle.block_on(async {

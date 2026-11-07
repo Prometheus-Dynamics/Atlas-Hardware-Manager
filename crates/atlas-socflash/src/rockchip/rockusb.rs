@@ -42,8 +42,9 @@ pub enum Reset {
 }
 
 /// Storage ids for `CHANGE_STORAGE`, from rkdeveloptool's `cs` usage
-/// (1 eMMC, 2 SD, 9 SPI-NOR). SPI-NAND's id isn't in a source read
-/// (UNCONFIRMED); NAND boards' usbplugs start on their NAND.
+/// (main.cpp:59: 1 eMMC, 2 SD, 9 SPI-NOR), which are also the bit indices
+/// READ_STORAGE reports. SPI-NAND's id is not in that usage (UNCONFIRMED);
+/// NAND boards' usbplugs start on their NAND.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Storage {
     Emmc = 1,
@@ -105,19 +106,54 @@ pub struct Rockusb<'a> {
     tag: u32,
 }
 
-/// What `READ_FLASH_INFO` says. Its layout isn't in a source read beyond
-/// the size (UNCONFIRMED): the first u32 is the flash size in sectors.
+/// What `READ_FLASH_INFO` says: rkdeveloptool's `STRUCT_FLASHINFO_CMD`
+/// (RKDevice.h), packed. The first 11 bytes are the fields; the command
+/// asks for 11 (RKComm.cpp:400) and the reply may run to a sector. Sizes
+/// are in sectors (RKDevice.cpp:308-318 halves them to KiB).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FlashInfo {
+    /// Flash size in sectors (`uiFlashSize`).
     pub sectors: u32,
+    /// Block size in sectors (`usBlockSize`).
+    pub block_sectors: u16,
+    /// Page size in sectors (`bPageSize`).
+    pub page_sectors: u8,
+    pub ecc_bits: u8,
+    pub access_time: u8,
+    pub manufacturer: u8,
+    pub chip_select: u8,
     pub raw: Vec<u8>,
 }
 
 impl FlashInfo {
+    /// The fields of a reply of at least 11 bytes.
+    pub fn from_reply(raw: Vec<u8>) -> Result<Self, UsbError> {
+        if raw.len() < FLASH_INFO_FIELDS {
+            return Err(UsbError::Protocol(format!(
+                "flash info of {} bytes; rkdeveloptool's layout needs {FLASH_INFO_FIELDS}",
+                raw.len()
+            )));
+        }
+        Ok(Self {
+            sectors: u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]),
+            block_sectors: u16::from_le_bytes([raw[4], raw[5]]),
+            page_sectors: raw[6],
+            ecc_bits: raw[7],
+            access_time: raw[8],
+            manufacturer: raw[9],
+            chip_select: raw[10],
+            raw,
+        })
+    }
+
     pub fn bytes(&self) -> u64 {
         u64::from(self.sectors) * SECTOR as u64
     }
 }
+
+/// Bytes of `STRUCT_FLASHINFO_CMD`'s fields (the struct's 501 reserved
+/// bytes follow them).
+const FLASH_INFO_FIELDS: usize = 11;
 
 impl<'a> Rockusb<'a> {
     pub fn new(io: &'a mut dyn UsbIo) -> Self {
@@ -131,9 +167,22 @@ impl<'a> Rockusb<'a> {
         out: Option<&[u8]>,
         input: Option<usize>,
     ) -> Result<Vec<u8>, UsbError> {
+        let transfer = out.map_or(input.unwrap_or(0), <[u8]>::len) as u32;
+        self.exchange(cb, transfer, out, input).await
+    }
+
+    /// As [`Self::command`], with the CBW's transfer length given apart from
+    /// the most a reply may run to. `READ_FLASH_INFO` asks for 11 bytes and
+    /// reads up to a sector (RKComm.cpp:400, RKU_Read_EX 512).
+    async fn exchange(
+        &mut self,
+        cb: Cb,
+        transfer: u32,
+        out: Option<&[u8]>,
+        input: Option<usize>,
+    ) -> Result<Vec<u8>, UsbError> {
         self.tag = self.tag.wrapping_add(1);
         let tag = self.tag;
-        let transfer = out.map_or(input.unwrap_or(0), <[u8]>::len) as u32;
         let wire = cbw(tag, transfer, input.is_some(), cb);
         let Cb {
             opcode, lba, count, ..
@@ -183,18 +232,30 @@ impl<'a> Rockusb<'a> {
 
     pub async fn read_flash_info(&mut self) -> Result<FlashInfo, UsbError> {
         let raw = self
-            .command(Cb::short(op::READ_FLASH_INFO, 0), None, Some(SECTOR))
+            .exchange(
+                Cb::short(op::READ_FLASH_INFO, 0),
+                FLASH_INFO_FIELDS as u32,
+                None,
+                Some(SECTOR),
+            )
             .await?;
-        if raw.len() < 4 {
+        FlashInfo::from_reply(raw)
+    }
+
+    /// The storage the usbplug now uses, as the index of the first bit set
+    /// in its 4-byte mask (RKComm.cpp:599-647). `None` when no bit is set.
+    pub async fn read_storage(&mut self) -> Result<Option<u8>, UsbError> {
+        let reply = self
+            .exchange(Cb::short(op::READ_STORAGE, 0), 4, None, Some(4))
+            .await?;
+        let [a, b, c, d] = reply[..] else {
             return Err(UsbError::Protocol(format!(
-                "flash info of {} bytes",
-                raw.len()
+                "storage mask of {} bytes; rkdeveloptool reads 4",
+                reply.len()
             )));
-        }
-        Ok(FlashInfo {
-            sectors: u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]),
-            raw,
-        })
+        };
+        let mask = u32::from_le_bytes([a, b, c, d]);
+        Ok((0..32u8).find(|bit| mask & (1 << bit) != 0))
     }
 
     pub async fn read_chip_info(&mut self) -> Result<Vec<u8>, UsbError> {
@@ -207,10 +268,22 @@ impl<'a> Rockusb<'a> {
             .await
     }
 
+    /// Switches the usbplug's storage, then reads the mask back: the command
+    /// succeeds even when the storage isn't there (rkdeveloptool's `cs`
+    /// checks the same way, main.cpp:2283-2298), so a board on the wrong
+    /// medium is refused here, before anything is written.
     pub async fn change_storage(&mut self, storage: Storage) -> Result<(), UsbError> {
         self.command(Cb::short(op::CHANGE_STORAGE, storage as u8), None, None)
-            .await
-            .map(drop)
+            .await?;
+        let now = self.read_storage().await?;
+        if now == Some(storage as u8) {
+            return Ok(());
+        }
+        Err(UsbError::Protocol(format!(
+            "storage {} isn't available: the board now uses {}",
+            storage as u8,
+            now.map_or_else(|| "none".to_string(), |bit| bit.to_string())
+        )))
     }
 
     /// Writes whole sectors at `lba` (at most [`SECTORS_PER_TRANSFER`]).

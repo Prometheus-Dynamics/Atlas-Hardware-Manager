@@ -15,8 +15,9 @@ pub const REQUEST: u8 = 0x0c;
 pub const STAGE_DDR: u16 = 0x0471;
 pub const STAGE_USBPLUG: u16 = 0x0472;
 const CHUNK: usize = 4096;
-/// The pad byte rkdeveloptool appends (`ucFillByte`); its value isn't
-/// confirmed from source, 0 assumed.
+/// The pad byte rkdeveloptool appends: zero, both in the buffer it zeroes
+/// (RKComm.cpp:829, `memset`) and in its lone trailing byte (`ucFillByte`,
+/// RKComm.cpp:867-868).
 const FILL: u8 = 0;
 
 /// The bytes of one stage on the wire: the payload, a pad byte when it's

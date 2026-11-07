@@ -172,14 +172,26 @@ impl Entry {
     }
 }
 
-/// Builds a loader file as boot_merger lays one out, for tests.
+/// Builds a loader file as boot_merger lays one out, for tests, with no
+/// chip number in its header.
 pub fn build_for_test(entries: &[(EntryKind, &str, &[u8], u32)], polynomial: u32) -> Vec<u8> {
+    build_for_chip(&[0; 4], entries, polynomial)
+}
+
+/// As [`build_for_test`], with `chip` (the header's four bytes, reversed
+/// ASCII: "8853" is RK3588) in the header before the trailer is computed.
+pub fn build_for_chip(
+    chip: &[u8; 4],
+    entries: &[(EntryKind, &str, &[u8], u32)],
+    polynomial: u32,
+) -> Vec<u8> {
     const HEADER: usize = 102;
     const ENTRY: usize = 57;
     let mut file = vec![0u8; HEADER];
     file[0..4].copy_from_slice(&MAGIC_BOOT);
     file[4..6].copy_from_slice(&(HEADER as u16).to_le_bytes());
     file[6..10].copy_from_slice(&0x0101u32.to_le_bytes());
+    file[21..25].copy_from_slice(chip);
     file[44] = 1; // RC4 off
     let mut tables = Vec::new();
     let mut data_at = HEADER + entries.len() * ENTRY;
