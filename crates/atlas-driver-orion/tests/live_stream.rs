@@ -201,6 +201,9 @@ async fn a_board_without_a_listener_is_an_error_at_once() {
     assert!(started.elapsed() < Duration::from_secs(5));
 }
 
+/// What a wait in the hardware test is waiting to see in the frames.
+type Seen = dyn Fn(&[atlas_driver::HardwareFrame]) -> bool;
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn hardware_frames_come_from_board_hardware() {
     let dir = std::env::temp_dir().join(format!("atlas-live-hw-{}", std::process::id()));
@@ -269,7 +272,7 @@ async fn hardware_frames_come_from_board_hardware() {
     });
     // Waits (on a busy machine too) for the catalog before publishing, and
     // says why when the follow ended instead.
-    let until = |what: &'static str, done: Box<dyn Fn(&[atlas_driver::HardwareFrame]) -> bool>| {
+    let until = |what: &'static str, done: Box<Seen>| {
         let frames = frames.clone();
         async move {
             let deadline = std::time::Instant::now() + Duration::from_secs(15);

@@ -312,11 +312,11 @@ impl GatewaySlots {
                 continue;
             };
             // A restart held back by the bench lock says whose, once.
-            if let Some(waiting) = reboot_waiting(&status) {
-                if waiting != said {
-                    progress.log(waiting);
-                    said = waiting.to_string();
-                }
+            if let Some(waiting) = reboot_waiting(&status)
+                && waiting != said
+            {
+                progress.log(waiting);
+                said = waiting.to_string();
             }
             if slot_ids(&status).iter().any(|id| !before.contains(id)) {
                 return Ok(());
