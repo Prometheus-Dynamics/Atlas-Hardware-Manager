@@ -135,6 +135,11 @@ export function pipelinesOf(topics: Map<string, { value: NtValue | null; t_us?: 
       if (captured !== null && topic.t_us) pipeline.ageMs = Math.max(0, (topic.t_us - captured) / 1000);
     } else if (!PIPELINE_STATS.has(leaf)) pipeline.outputs.push(name);
   }
+  // Two cameras may each run a pipeline of one name ("default"): those are
+  // named with their parent too, so the rows can be told apart.
+  const named = new Map<string, number>();
+  for (const p of folders.values()) named.set(p.name, (named.get(p.name) ?? 0) + 1);
+  for (const p of folders.values()) if ((named.get(p.name) ?? 0) > 1) p.name = p.path.split("/").filter(Boolean).slice(-2).join("/");
   return [...folders.values()].map((p) => ({ ...p, outputs: p.outputs.sort() })).sort((a, b) => a.path.localeCompare(b.path));
 }
 

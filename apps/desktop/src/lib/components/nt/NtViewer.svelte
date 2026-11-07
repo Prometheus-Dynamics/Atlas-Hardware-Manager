@@ -243,7 +243,7 @@
   {#if open && pipelines.length}
     <GlassCard title="Pipelines" subtitle="HeliOS · {pipelines.length}">
       <div class="pipelines" aria-label="HeliOS pipelines">
-        {#each pipelines as pipeline (pipeline.name)}
+        {#each pipelines as pipeline (pipeline.path)}
           <div class="pipeline">
             <span class="name mono" title={pipeline.path}>{pipeline.name}</span>
             {#each [{ key: "fps", label: "fps", value: stat(pipeline.fps, 1) }, { key: "latency_ms", label: "ms", value: stat(pipeline.latencyMs, 1) }] as s (s.key)}
