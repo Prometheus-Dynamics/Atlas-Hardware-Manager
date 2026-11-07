@@ -72,8 +72,8 @@
   --r-round: 999px;
 
   /* Type */
-  --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-code: "IBM Plex Mono", ui-monospace, "SFMono-Regular", "Cascadia Code", Menlo, Consolas, monospace;
+  --font-ui: "IBM Plex Sans", sans-serif;
+  --font-code: "IBM Plex Mono", monospace;
 
   /* Motion: fast, and only for UI state. Live data snaps to new values.
      fast = hover and press, med = swaps and state changes, enter = appearing.
