@@ -9,6 +9,7 @@
 //! or USB, or changed size since the app chose it.
 
 mod client;
+mod decoded_size;
 mod disk;
 mod error;
 mod gadget_console;

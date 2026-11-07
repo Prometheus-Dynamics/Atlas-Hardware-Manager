@@ -259,9 +259,13 @@ pub fn write_image(
     let input_total = std::fs::metadata(image)
         .map_err(|error| BlockError::io(image, error))?
         .len();
-    if format == crate::ImageFormat::Raw && input_total > disk.size_bytes {
+    // Refused before anything is written: a raw image by its length, a
+    // compressed one by what its headers say it decodes to (at least).
+    if let Some(image_size) = crate::decoded_size::decoded_at_least(image, format)
+        && image_size > disk.size_bytes
+    {
         return Err(BlockError::TooLarge {
-            image: input_total,
+            image: image_size,
             disk: disk.size_bytes,
         });
     }
