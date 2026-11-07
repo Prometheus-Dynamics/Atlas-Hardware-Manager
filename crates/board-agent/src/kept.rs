@@ -87,10 +87,11 @@ fn unix_now() -> u64 {
         .map_or(0, |since| since.as_secs())
 }
 
-/// Writes `{"at":..,"devices":..}` to `path` through a temporary file, world-readable.
-fn write(path: &Path, devices: &Value) -> std::io::Result<()> {
+/// Writes `{"at":..,"devices":<devices>}` to `path` through a temporary
+/// file, world-readable.
+fn write(path: &Path, devices: &str) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    let text = format!("{}\n", json!({ "at": unix_now(), "devices": devices }));
+    let text = format!("{{\"at\":{},\"devices\":{devices}}}\n", unix_now());
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, text)?;
     std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o644))?;
@@ -104,7 +105,10 @@ struct Keeper {
     /// Devices lemnosd won't stream, read every READ_EVERY.
     polled: Vec<String>,
     read_at: Option<Instant>,
-    written: Option<(Instant, Value)>,
+    /// Something the file says may have changed since the last flush.
+    dirty: bool,
+    /// When the file was last written, and its devices as written.
+    written: Option<(Instant, String)>,
 }
 
 impl Keeper {
@@ -125,6 +129,7 @@ impl Keeper {
             }
         }
         self.read_at = None;
+        self.dirty = true;
         Ok(())
     }
 
@@ -136,11 +141,13 @@ impl Keeper {
         for id in &self.polled {
             if let Ok(reading) = client.read(id) {
                 self.readings.insert(id.clone(), values(&reading));
+                self.dirty = true;
             }
         }
     }
 
     fn on(&mut self, update: Update) {
+        self.dirty = true;
         match update {
             Update::Reading(reading) => {
                 self.readings
@@ -163,15 +170,27 @@ impl Keeper {
 
     /// Writes the file when it changed (no sooner than MIN_GAP after the
     /// last write) or when HEARTBEAT has passed.
+    /// The JSON is only built when something came in (or for the heartbeat),
+    /// not on every turn of the loop.
     fn flush(&mut self) {
-        let devices = devices_json(&self.devices, &self.readings);
-        let due = match &self.written {
-            None => true,
-            Some((at, last)) => {
-                at.elapsed() >= HEARTBEAT || (*last != devices && at.elapsed() >= MIN_GAP)
-            }
-        };
-        if !due {
+        let heartbeat = self
+            .written
+            .as_ref()
+            .is_none_or(|(at, _)| at.elapsed() >= HEARTBEAT);
+        let gap_passed = self
+            .written
+            .as_ref()
+            .is_none_or(|(at, _)| at.elapsed() >= MIN_GAP);
+        if !heartbeat && !(self.dirty && gap_passed) {
+            return;
+        }
+        self.dirty = false;
+        let devices = devices_json(&self.devices, &self.readings).to_string();
+        let changed = self
+            .written
+            .as_ref()
+            .is_none_or(|(_, last)| *last != devices);
+        if !heartbeat && !changed {
             return;
         }
         match write(&self.path, &devices) {
@@ -184,6 +203,7 @@ impl Keeper {
     fn gone(&mut self) {
         let _ = std::fs::remove_file(&self.path);
         self.written = None;
+        self.dirty = false;
         self.devices.clear();
         self.readings.clear();
         self.polled.clear();
@@ -192,50 +212,61 @@ impl Keeper {
 
 /// Keeps `run_dir/hardware.json` from lemnosd at `socket` until the process
 /// ends (a thread of its own: lemnos-ipc's client is blocking).
+/// The keeper's stack: the loop and serde_json's writer are shallow. Rust's
+/// default reserves 2 MiB.
+const STACK: usize = 128 * 1024;
+
 pub fn start(socket: PathBuf, run_dir: PathBuf) {
-    std::thread::spawn(move || {
-        let _ = std::fs::create_dir_all(&run_dir);
-        let mut keeper = Keeper {
-            path: run_dir.join("hardware.json"),
-            devices: Vec::new(),
-            readings: HashMap::new(),
-            polled: Vec::new(),
-            read_at: None,
-            written: None,
-        };
-        // Reconnecting: a lemnosd that starts later or restarts is picked up
-        // (subscriptions are sent again; the devices are listed again).
-        let mut client = match DeviceClient::options(&socket, CLIENT)
-            .reconnecting()
-            .devices()
-        {
-            Ok(client) => client,
-            Err(error) => return crate::log(&format!("hardware.json: lemnosd: {error}")),
-        };
-        let mut ready = client.is_connected() && keeper.setup(&mut client).is_ok();
-        loop {
-            match client.next_event_timeout(Duration::from_secs(1)) {
-                Ok(Some(ClientEvent::Connected { .. })) => {
-                    ready = keeper.setup(&mut client).is_ok()
+    let spawned = std::thread::Builder::new()
+        .name("hardware-json".into())
+        .stack_size(STACK)
+        .spawn(move || {
+            let _ = std::fs::create_dir_all(&run_dir);
+            let mut keeper = Keeper {
+                path: run_dir.join("hardware.json"),
+                devices: Vec::new(),
+                readings: HashMap::new(),
+                polled: Vec::new(),
+                read_at: None,
+                dirty: false,
+                written: None,
+            };
+            // Reconnecting: a lemnosd that starts later or restarts is picked up
+            // (subscriptions are sent again; the devices are listed again).
+            let mut client = match DeviceClient::options(&socket, CLIENT)
+                .reconnecting()
+                .devices()
+            {
+                Ok(client) => client,
+                Err(error) => return crate::log(&format!("hardware.json: lemnosd: {error}")),
+            };
+            let mut ready = client.is_connected() && keeper.setup(&mut client).is_ok();
+            loop {
+                match client.next_event_timeout(Duration::from_secs(1)) {
+                    Ok(Some(ClientEvent::Connected { .. })) => {
+                        ready = keeper.setup(&mut client).is_ok()
+                    }
+                    Ok(Some(ClientEvent::Disconnected { .. })) => {
+                        ready = false;
+                        keeper.gone();
+                    }
+                    Ok(Some(ClientEvent::Data(update))) => keeper.on(update),
+                    Ok(None) => {}
+                    Err(_) => {
+                        ready = false;
+                        keeper.gone();
+                        std::thread::sleep(Duration::from_secs(5));
+                    }
                 }
-                Ok(Some(ClientEvent::Disconnected { .. })) => {
-                    ready = false;
-                    keeper.gone();
-                }
-                Ok(Some(ClientEvent::Data(update))) => keeper.on(update),
-                Ok(None) => {}
-                Err(_) => {
-                    ready = false;
-                    keeper.gone();
-                    std::thread::sleep(Duration::from_secs(5));
+                if ready {
+                    keeper.read_polled(&mut client);
+                    keeper.flush();
                 }
             }
-            if ready {
-                keeper.read_polled(&mut client);
-                keeper.flush();
-            }
-        }
-    });
+        });
+    if let Err(error) = spawned {
+        crate::log(&format!("hardware.json: no thread: {error}"));
+    }
 }
 
 #[cfg(test)]
