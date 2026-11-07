@@ -30,7 +30,8 @@
       "image_offset": 0
     },
     "todo": [
-      "2207:350b as RK3588 maskrom comes from secondary sources (MNT, Radxa's guides via search); confirm with lsusb on the board.",
+      "2207:350b as RK3588 maskrom comes from secondary sources (MNT, Radxa's guides via search): rkdeveloptool 304f073's 99-rk-rockusb.rules stops at 350a and doesn't name it. Confirm with lsusb on the board.",
+      "The rkbin parts are in fetch.lock (not in git): rkbin f43a462's RK3588MINIALL.ini names rk3588_ddr_lp4_2112MHz_lp5_2400MHz_v1.18, rk3588_usbplug_v1.11 and rk3588_spl_v1.13, and builds rk3588_spl_loader_v1.18.113.bin with boot_merger. rkbin doesn't publish the merged file; Gaia's build (which runs boot_merger) is its source.",
       "Whether the RK3588S2 takes the RK3588 loader unchanged. Gaia's ROCK 5C build ships rk3588_spl_loader_v1.18.113.bin (rkbin at its Buildroot 2026.02.3 pin, f43a462) next to sdcard.img; Atlas's parser reads it (chip 3588, 2 DDR entries incl. UsbHead, usbplug, FlashHead/Data/Boot, RC4 off) and its idblock agrees with its RKNS FlashHead, so only the board's run is left.",
       "The cable: Radxa's guides differ between USB-A to USB-A and USB-A to USB-C for this port.",
       "LEDs during maskrom and flashing."

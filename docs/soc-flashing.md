@@ -72,6 +72,50 @@ Raspberry Pi's, and the download modes in `atlas_usbboot::SOC_BOOT_IDS`. A
 test keeps the installer's list and that one together. Rockchip's loader
 mode is assumed to keep its maskrom PID, as rkdeveloptool's table has it.
 
+**Open:** `SOC_BOOT_IDS` has no RK3566 entry (2207:350a, the ZERO 3W's; it's
+in rkdeveloptool's `99-rk-rockusb.rules`, line 18) and none for RK3562 (its
+PID is a guess). Adding 350a needs the installer's list too: an
+`ATLAS_BIND_WINUSB` line in `apps/desktop/src-tauri/bundle/windows/hooks.nsh`,
+which a test in `apps/desktop/src-tauri/src/drivers.rs` checks against the
+list. That is outside the socflash work.
+
+On Linux the packaged rule (`60-atlas-usbboot.rules`, installed to
+`/usr/lib/udev/rules.d` by `tauri.bundle.conf.json`) matches every `2207`
+device, so no Rockchip PID needs a rule of its own. K230 is `29f1:0230`.
+
+## Checked against the vendor source
+
+The vendor source is rkdeveloptool 304f073 and k230_flash 33a75f0, fetched
+into `/mnt/nvme-wd/atlas-blobs/` (not the repo). Checked there:
+
+- The maskrom download (RKComm.cpp:811-882): the pad byte is zero, the CRC-16
+  covers the padded payload, 4096-byte requests, and the lone trailing byte
+  at 4094.
+- The CBWs (RKComm.cpp, `InitializeCBW` and each `RKU_*`): flags, CDB length
+  and transfer length per opcode. READ_FLASH_INFO asks for 11 bytes
+  (RKComm.cpp:400), and the Rust code had asked for 512: fixed.
+- READ_FLASH_INFO's reply is rkdeveloptool's `STRUCT_FLASHINFO_CMD`
+  (RKDevice.h:34-43): size, block and page in sectors, then ECC, access
+  time, manufacturer and CS. Settled.
+- CHANGE_STORAGE succeeds even when the storage is absent, so Atlas reads
+  READ_STORAGE's mask back (RKComm.cpp:599-647, main.cpp:2283-2298) and
+  refuses a mismatch. Storage ids are the mask's bit indices: 1 eMMC, 2 SD,
+  9 SPI-NOR (main.cpp:59).
+- The K230 packets, commands, probe, load address range, and medium codes
+  (kburn.h:39-44): see `k230/` and `tests/k230_vectors.rs`.
+
+## Dry run and logs
+
+`cargo run -p atlas-socflash --example dry_run -- LOADER IMAGE CHIP [emmc|sd|spi-nor] [SECTORS]`
+walks a Rockchip flash against a mock board (`rockchip::sim`): the loader's
+DDR init and usbplug, the chip check, the storage read back, the flash
+info, the image written and read back, and a reset. No USB device is used.
+
+Every transfer goes through `traced::Traced`: the request and the reply in
+hex (the first 64 bytes, with the length), one line each, at target
+`atlas_socflash::usb`. The flash job copies those lines into its own log,
+so they show in Atlas's job log on a board's first run.
+
 ## Checked against real loaders
 
 Gaia's builds (006284a) produced rkbin's `rk3588_spl_loader_v1.18.113.bin`
@@ -212,18 +256,22 @@ each record's `todo`.
 
 - **Rockchip:**
   - the CSW residue's byte order (Atlas ignores the residue);
-  - the READ_FLASH_INFO layout beyond the size;
   - RK3576's maskrom PID;
-  - whether RV1106 wants RC4 on its 471/472 entries;
+  - whether the RV1106 boot ROM runs its 471/472 entries as stored (rkbin's
+    ini and rkdeveloptool say so; no reply shows it);
+  - the chip reply for the chips newer than rkdeveloptool's enum (RK3588,
+    RK3576, RK3562, RK3566, RV1106): Atlas reads it as reversed ASCII, as the
+    loader header carries the number;
   - SPI-NAND: how the usbplug maps LBAs (Atlas assumes directly; it reads
-    no block as bad itself), and its CHANGE_STORAGE id.
+    no block as bad itself), and its CHANGE_STORAGE id (rkdeveloptool's
+    usage lists only 1, 2 and 9).
 - **K230:**
   - whether the boot ROM starts Gaia's burner (plain u-boot.bin) at
-    0x80300000, where it links;
+    0x80300000, where it links (k230_flash's default is 0x80360000);
   - whether the boot ROM wants Canaan's firmware header over USB;
-  - the medium codes;
-  - the VERIFY reply's layout (if the burner can't checksum, Atlas logs
-    "written, not read back");
+  - whether the burner's VERIFY reply keeps the C layout (48 bytes,
+    burner_uboot.cpp:369-432); if the burner can't checksum, Atlas logs
+    "written, not read back";
   - whether the K230D Zero has SPI-NAND at all (its page lists only a TF
     slot).
 - **UBI:** a kernel attach of an image `atlas-ubi` wrote. There is no

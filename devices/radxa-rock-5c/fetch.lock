@@ -1,0 +1,71 @@
+{
+  "schema": "urn:board:fetch-lock:1",
+  "description": "Files the package needs but does not keep in git (large or third-party). Each is fetched from a pinned URL and checked against sha256. Checksums are advisory: a tool may warn on a mismatch but must let the user proceed.",
+  "entries": [
+    {
+      "name": "rk3588_ddr_lp4_2112MHz_lp5_2400MHz_v1.18.bin",
+      "dest": "rk3588_ddr_lp4_2112MHz_lp5_2400MHz_v1.18.bin",
+      "role": "ddr-init",
+      "source": "rockchip-linux/rkbin f43a462e7a1429a9d407ae52b4745033034a6cf9 bin/rk35/rk3588_ddr_lp4_2112MHz_lp5_2400MHz_v1.18.bin",
+      "url": "https://raw.githubusercontent.com/rockchip-linux/rkbin/f43a462e7a1429a9d407ae52b4745033034a6cf9/bin/rk35/rk3588_ddr_lp4_2112MHz_lp5_2400MHz_v1.18.bin",
+      "sha256": "d89d40a8183b099589bfcffc5cc2ce9d874eb5b1d19b78bdad2cfcf45b9cb68f",
+      "size": 75320,
+      "licence": "Rockchip proprietary (rkbin LICENSE)",
+      "vendored": false,
+      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-5c/rk3588_ddr_lp4_2112MHz_lp5_2400MHz_v1.18.bin",
+      "note": "CODE471 and FlashData entry of RKBOOT/RK3588MINIALL.ini."
+    },
+    {
+      "name": "rk3588_usbplug_v1.11.bin",
+      "dest": "rk3588_usbplug_v1.11.bin",
+      "role": "usbplug",
+      "source": "rockchip-linux/rkbin f43a462e7a1429a9d407ae52b4745033034a6cf9 bin/rk35/rk3588_usbplug_v1.11.bin",
+      "url": "https://raw.githubusercontent.com/rockchip-linux/rkbin/f43a462e7a1429a9d407ae52b4745033034a6cf9/bin/rk35/rk3588_usbplug_v1.11.bin",
+      "sha256": "fa38c130f3dd9160895543f0ef83833612963cc428c11f38ec9ecd66ae64d753",
+      "size": 90268,
+      "licence": "Rockchip proprietary (rkbin LICENSE)",
+      "vendored": false,
+      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-5c/rk3588_usbplug_v1.11.bin",
+      "note": "CODE472 entry of RKBOOT/RK3588MINIALL.ini."
+    },
+    {
+      "name": "rk3588_spl_v1.13.bin",
+      "dest": "rk3588_spl_v1.13.bin",
+      "role": "spl",
+      "source": "rockchip-linux/rkbin f43a462e7a1429a9d407ae52b4745033034a6cf9 bin/rk35/rk3588_spl_v1.13.bin",
+      "url": "https://raw.githubusercontent.com/rockchip-linux/rkbin/f43a462e7a1429a9d407ae52b4745033034a6cf9/bin/rk35/rk3588_spl_v1.13.bin",
+      "sha256": "2134bffc64b9a9434fbeeb6bbbbc8218bd8933ee7765fc7a05be5603d8437480",
+      "size": 239010,
+      "licence": "Rockchip proprietary (rkbin LICENSE)",
+      "vendored": false,
+      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-5c/rk3588_spl_v1.13.bin",
+      "note": "FlashBoot entry of RKBOOT/RK3588MINIALL.ini. The merged rk3588_spl_loader_v1.18.113.bin is a boot_merger output and is NOT published in rkbin at this commit."
+    },
+    {
+      "name": "RK3588MINIALL.ini",
+      "dest": "RK3588MINIALL.ini",
+      "role": "ini",
+      "source": "rockchip-linux/rkbin f43a462e7a1429a9d407ae52b4745033034a6cf9 RKBOOT/RK3588MINIALL.ini",
+      "url": "https://raw.githubusercontent.com/rockchip-linux/rkbin/f43a462e7a1429a9d407ae52b4745033034a6cf9/RKBOOT/RK3588MINIALL.ini",
+      "sha256": "f3b56dea75d5b7e8d1ad16ad3a5c0625762a4a3f67273d4b51f427be22156fb2",
+      "size": 573,
+      "licence": "Rockchip proprietary (rkbin LICENSE)",
+      "vendored": false,
+      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-5c/RK3588MINIALL.ini",
+      "note": "Names ddr v1.18, usbplug v1.11, spl v1.13, output rk3588_spl_loader_v1.18.113.bin, RC4_OFF=true."
+    },
+    {
+      "name": "rkdeveloptool-304f073 (main.cpp, RKComm.cpp, RKComm.h, RKDevice.cpp, RKDevice.h, RKScan.cpp, RKScan.h, RKBoot.cpp, RKBoot.h, RKLog.cpp, RKLog.h, DefineHeader.h, Endian.h, crc.cpp, boot_merger.h, license.txt, Readme.txt, 99-rk-rockusb.rules)",
+      "dest": "rkdeveloptool-304f073/",
+      "role": "reference",
+      "source": "rockchip-linux/rkdeveloptool 304f073752fd25c854e1bcf05d8e7f925b1f4e14 (master head 2025-03-07), file list from git/trees?recursive=1",
+      "url": "https://raw.githubusercontent.com/rockchip-linux/rkdeveloptool/304f073752fd25c854e1bcf05d8e7f925b1f4e14/RKComm.cpp",
+      "sha256": "f3aac40b9e938ed8b903bb734b9290defe770399336743fb930eaa7ca0cf77a2",
+      "size": 20757,
+      "licence": "GPL-2.0",
+      "vendored": false,
+      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-5c/rkdeveloptool-304f073/RKComm.cpp",
+      "note": "Protocol reference for test vectors, text only, never built or run. url and sha256 are RKComm.cpp (maskrom 0x0C request, CRC-CCITT, CBW/CSW); every other file in the list is at the same commit under the same raw base URL, hashes in the same directory by sha256sum."
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "schema": "urn:board:fetch-lock:1",
+  "description": "Files the package needs but does not keep in git (large or third-party). Each is fetched from a pinned URL and checked against sha256. Checksums are advisory: a tool may warn on a mismatch but must let the user proceed.",
+  "entries": [
+    {
+      "name": "rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.13.bin",
+      "dest": "rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.13.bin",
+      "role": "ddr-init",
+      "source": "rockchip-linux/rkbin 3e288fe814e059dd06833495f845cab04ac20a5c bin/rk35/rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.13.bin",
+      "url": "https://raw.githubusercontent.com/rockchip-linux/rkbin/3e288fe814e059dd06833495f845cab04ac20a5c/bin/rk35/rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.13.bin",
+      "sha256": "f697151bdd09d31bf7a1e49d63796a6a200e81bf8f9a766c2e95c840e88fc0ce",
+      "size": 79536,
+      "licence": "Rockchip proprietary (rkbin LICENSE)",
+      "vendored": false,
+      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-4d/rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.13.bin",
+      "note": "CODE471 and FlashData (LOAD_ADDR 0x3FF81000) entry of RKBOOT/RK3576MINIALL.ini."
+    },
+    {
+      "name": "rk3576_usbplug_v1.04.bin",
+      "dest": "rk3576_usbplug_v1.04.bin",
+      "role": "usbplug",
+      "source": "rockchip-linux/rkbin 3e288fe814e059dd06833495f845cab04ac20a5c bin/rk35/rk3576_usbplug_v1.04.bin",
+      "url": "https://raw.githubusercontent.com/rockchip-linux/rkbin/3e288fe814e059dd06833495f845cab04ac20a5c/bin/rk35/rk3576_usbplug_v1.04.bin",
+      "sha256": "77238d47f10e84844d95707024b8171fc9f198e19ad6500f5e8a5810ca6c680b",
+      "size": 340232,
+      "licence": "Rockchip proprietary (rkbin LICENSE)",
+      "vendored": false,
+      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-4d/rk3576_usbplug_v1.04.bin",
+      "note": "CODE472 entry of RKBOOT/RK3576MINIALL.ini."
+    },
+    {
+      "name": "rk3576_boost_v1.03.bin",
+      "dest": "rk3576_boost_v1.03.bin",
+      "role": "boost",
+      "source": "rockchip-linux/rkbin 3e288fe814e059dd06833495f845cab04ac20a5c bin/rk35/rk3576_boost_v1.03.bin",
+      "url": "https://raw.githubusercontent.com/rockchip-linux/rkbin/3e288fe814e059dd06833495f845cab04ac20a5c/bin/rk35/rk3576_boost_v1.03.bin",
+      "sha256": "ca525f15e54fabd1c84ce40450a01ecd666db408e1cbf1902d62415d91826915",
+      "size": 2604,
+      "licence": "Rockchip proprietary (rkbin LICENSE)",
+      "vendored": false,
+      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-4d/rk3576_boost_v1.03.bin",
+      "note": "FlashBoost (LOAD_ADDR 0x3FFC0000) entry of RKBOOT/RK3576MINIALL.ini; part of the 3-stage loader."
+    },
+    {
+      "name": "rk3576_spl_v1.09.bin",
+      "dest": "rk3576_spl_v1.09.bin",
+      "role": "spl",
+      "source": "rockchip-linux/rkbin 3e288fe814e059dd06833495f845cab04ac20a5c bin/rk35/rk3576_spl_v1.09.bin",
+      "url": "https://raw.githubusercontent.com/rockchip-linux/rkbin/3e288fe814e059dd06833495f845cab04ac20a5c/bin/rk35/rk3576_spl_v1.09.bin",
+      "sha256": "a077aafc31b3aa3ba98d93ae5c6bd9733c6425e13f0369a294ac70cbba0d0567",
+      "size": 331376,
+      "licence": "Rockchip proprietary (rkbin LICENSE)",
+      "vendored": false,
+      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-4d/rk3576_spl_v1.09.bin",
+      "note": "FlashBoot entry of RKBOOT/RK3576MINIALL.ini. The merged rk3576_loader_v1.13.109.bin is a boot_merger output and is NOT published in rkbin at this commit."
+    },
+    {
+      "name": "RK3576MINIALL.ini",
+      "dest": "RK3576MINIALL.ini",
+      "role": "ini",
+      "source": "rockchip-linux/rkbin 3e288fe814e059dd06833495f845cab04ac20a5c RKBOOT/RK3576MINIALL.ini",
+      "url": "https://raw.githubusercontent.com/rockchip-linux/rkbin/3e288fe814e059dd06833495f845cab04ac20a5c/RKBOOT/RK3576MINIALL.ini",
+      "sha256": "043e91e555f1cd351714799918cec314e91f6b0980b066473acece60b8d836bc",
+      "size": 724,
+      "licence": "Rockchip proprietary (rkbin LICENSE)",
+      "vendored": false,
+      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-4d/RK3576MINIALL.ini",
+      "note": "Names boost v1.03, ddr v1.13, usbplug v1.04, spl v1.09, output rk3576_loader_v1.13.109.bin and rk3576_idblock_v1.13.109.img; CRC_OFF=true, RC4_OFF=true."
+    }
+  ]
+}

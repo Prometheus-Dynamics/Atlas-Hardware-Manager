@@ -31,7 +31,7 @@
     },
     "todo": [
       "2207:110c as RV1106 maskrom comes from Luckfox's docs via search; confirm with lsusb.",
-      "The loader: Gaia's Luckfox Pico Pro build ships rv1106_download_v1.15.108.bin next to the image; Atlas's parser reads it (chip 1106, RC4 off in its header, so its 471/472 entries go as stored) and its idblock agrees with its RKNS FlashHead. Left: whether the RV1106 boot ROM takes them unscrambled (xrock has an --rc4-off option for this chip).",
+      "The loader: Gaia's Luckfox Pico Pro build ships rv1106_download_v1.15.108.bin next to the image; Atlas's parser reads it (chip 1106, RC4 off in its header, so its 471/472 entries go as stored) and its idblock agrees with its RKNS FlashHead. rkbin's RV1106MINIALL.ini sets RC4_OFF=true (fetch.lock), and rkdeveloptool's maskrom download applies no RC4 (RKComm.cpp:811-882), so the entries go as stored. Left: whether the RV1106 boot ROM runs them that way; a wrong choice shows as no loader-mode re-enumeration, since maskrom has no reply.",
       "The NAND's geometry (128 KiB eraseblocks, 2 KiB pages, 128 MB, from Gaia's config): check READ_FLASH_INFO against it on the board.",
       "Check first on the board (Gaia): `mtd list` at the U-Boot prompt names spi-nand0 (if not, a trial's erase fails; atlas-ubi nand-slot trial-check catches it in Linux); a trial of each slot, killed in Linux, comes back on the committed slot; Linux shows the partition names.",
       "Gaia's idblock.img is the vendor's rv1106_idblock_v1.15.102.img, from the same RV1106MINIALL.ini as rv1106_download_v1.15.108.bin (DDR init ddr-v1.15-306b9977f5); the idblock Atlas builds from that loader is byte for byte the same. Left: whether the RV1106 boot ROM finds it at 256K on SPI-NAND.",

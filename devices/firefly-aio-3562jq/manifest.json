@@ -32,7 +32,7 @@
     "todo": [
       "Sources: SoC, eMMC sizes, the USB 3.0/2.0 OTG port (shared with PCIe 2.1), the Recovery, MaskRom and Reset buttons, 12 V DC and two RJ45 are from Firefly's iCore-3562JQ_Specification.pdf (download.t-firefly.com, fetched 2026-11-02). The button sequence is Firefly's general one (hold the button, power on, release after one or two seconds): its 'Upgrade the firmware via USB cable' wiki page (wiki.t-firefly.com/en/iCore-3562JQ/03-upgrade_firmware.html) answered 404 here.",
       "The maskrom PID: 2207:350f is a guess (the next free one after RK3576's 350e); no text source names RK3562's, so it's marked pid_unconfirmed, and the loader must report chip RK3562 before anything is written. Confirm with lsusb on the board and drop pid_unconfirmed.",
-      "The loader file: the rkbin name (RKBOOT/RK3562MINIALL.ini makes rk3562_spl_loader_v*.bin) is assumed; Firefly's firmware ships MiniLoaderAll.bin inside update.img. Which one Gaia's build copies is open: no Gaia build for it yet.",
+      "The loader file: rkbin 3e288fe's RKBOOT/RK3562MINIALL.ini builds rk3562_loader_v1.10.108.bin from rk3562_ddr_1332MHz_v1.10, rk3562_usbplug_v1.04 and rk3562_spl_v1.08 (all in fetch.lock; the merged file is Gaia's to build with boot_merger). Firefly's MiniLoaderAll.bin inside update.img is another file, which Atlas doesn't look for. No Gaia build for this board exists yet.",
       "Whether the OTG port is a Type-A or Type-C connector on the carrier: the specification's drawing doesn't say.",
       "Network: DHCP on the first RJ45 is assumed; which of the two (RGMII gigabit or RMII 100M) is eth0 is open."
     ]
