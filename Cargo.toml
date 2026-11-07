@@ -97,7 +97,9 @@ lemnos-ipc = { git = "https://github.com/Prometheus-Dynamics/Lemnos", branch = "
 orion-nt4 = { git = "https://github.com/Prometheus-Dynamics/Orion", branch = "dev" }
 # Tests only: a real node in-process (board-agent).
 orion-node = { git = "https://github.com/Prometheus-Dynamics/Orion", branch = "dev", default-features = false }
-nix = { version = "0.31", default-features = false }
+# Gaia's on-media formats (UBI images, dm-verity superblocks), pinned by rev; features per crate.
+gaia-formats = { git = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder", rev = "e040c451bd2cbf0896879f247ae193713b095ae4", default-features = false }
+nix ={ version = "0.31", default-features = false }
 # PhotonVision's UI socket (the device page's vision panel): the versions orion-nt4 uses.
 rmpv = "1.3.1"
 libc = "0.2.190"

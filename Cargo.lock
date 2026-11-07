@@ -432,6 +432,7 @@ dependencies = [
 name = "atlas-ubi"
 version = "2026.1.0-dev"
 dependencies = [
+ "gaia-formats",
  "libc",
  "sha2 0.11.0",
 ]
@@ -1689,6 +1690,11 @@ dependencies = [
  "pin-project-lite",
  "slab",
 ]
+
+[[package]]
+name = "gaia-formats"
+version = "2.0.4-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Gaia-Image-Builder?rev=e040c451bd2cbf0896879f247ae193713b095ae4#e040c451bd2cbf0896879f247ae193713b095ae4"
 
 [[package]]
 name = "gdk"

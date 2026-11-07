@@ -19,6 +19,12 @@ path = "src/main.rs"
 
 [dependencies]
 sha2.workspace = true
+# The UBI on-media format and the image reader; the writer's PEB encoder is
+# used by the tests only.
+gaia-formats = { workspace = true, features = ["io"] }
+
+[dev-dependencies]
+gaia-formats = { workspace = true, features = ["builder"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true

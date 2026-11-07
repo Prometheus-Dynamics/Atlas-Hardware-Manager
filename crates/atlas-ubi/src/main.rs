@@ -74,9 +74,9 @@ fn info(args: &[String]) -> Result<String, String> {
     let mut file = std::fs::File::open(&path).map_err(|error| format!("{path}: {error}"))?;
     let peb_size = match peb_size {
         Some(size) => size,
-        None => atlas_ubi::find_peb_size(&mut file).map_err(|error| error.0)?,
+        None => atlas_ubi::find_peb_size(&mut file).map_err(|error| error.to_string())?,
     };
-    let image = atlas_ubi::read_image(&mut file, peb_size).map_err(|error| error.0)?;
+    let image = atlas_ubi::read_image(&mut file, peb_size).map_err(|error| error.to_string())?;
     let volumes: Vec<String> = image
         .volumes
         .iter()
@@ -97,10 +97,10 @@ fn info(args: &[String]) -> Result<String, String> {
         .collect();
     Ok(format!(
         "{{\"peb_size\":{},\"vid_header_offset\":{},\"data_offset\":{},\"leb_size\":{},\"image_seq\":{},\"pebs\":{},\"reserved_pebs\":{},\"volumes\":[{}]}}",
-        image.geometry.peb_size,
-        image.geometry.vid_header_offset,
-        image.geometry.data_offset,
-        image.geometry.leb_size(),
+        image.layout.peb_size,
+        image.layout.vid_header_offset,
+        image.layout.data_offset,
+        image.layout.leb_size(),
         image.image_seq,
         image.pebs,
         image.reserved_pebs(),

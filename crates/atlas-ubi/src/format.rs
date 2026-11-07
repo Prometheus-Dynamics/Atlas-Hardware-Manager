@@ -9,11 +9,15 @@
 //! - only the bytes up to a PEB's last non-erased page are programmed;
 //! - every good PEB after the image gets a fresh EC header, so UBI attaches
 //!   the whole device without formatting it again.
+//!
+//! The headers, the reserves and the image reader are `gaia_formats::ubi`'s.
 
 use std::io::{Read as IoRead, Seek, SeekFrom};
 
-use crate::headers::{EcHeader, HEADER_SIZE, Read};
-use crate::image::{Image, UbiError, programmed_len};
+use gaia_formats::ubi::{
+    DEFAULT_BAD_PEBS_PER_1024, EcHeader, HEADER_SIZE, Image, MAX_ERASE_COUNTER, bad_peb_reserve,
+    programmed_len,
+};
 
 /// A raw NAND flash, addressed by eraseblock: the SPI-NAND behind a
 /// Rockchip loader or the K230 burner, or a test's RAM copy.
@@ -44,20 +48,20 @@ pub struct FormatReport {
     pub empty_pebs: u32,
 }
 
-/// Linux's `CONFIG_MTD_UBI_BEB_LIMIT` default.
-const BAD_PEBS_PER_1024: u64 = 20;
+/// Why a format is refused or stopped: the message, for the operator.
+#[derive(Debug, PartialEq, Eq)]
+pub struct FormatError(pub String);
 
-/// The bad-block reserve UBI keeps on a device of `device_pebs` PEBs
-/// (`get_bad_peb_limit`): `per_1024` per 1024 PEBs, rounded up.
-pub fn bad_peb_reserve(device_pebs: u64, per_1024: u64) -> u64 {
-    (device_pebs * per_1024).div_ceil(1024)
+impl std::fmt::Display for FormatError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
 }
 
-/// Counters above this are corrupt, not worn (ubi-media.h `UBI_MAX_ERASECOUNTER`).
-const MAX_ERASE_COUNTER: u64 = 0x7fff_ffff;
+impl std::error::Error for FormatError {}
 
-fn fail<T>(message: impl Into<String>) -> Result<T, UbiError> {
-    Err(UbiError(message.into()))
+fn fail<T>(message: impl Into<String>) -> Result<T, FormatError> {
+    Err(FormatError(message.into()))
 }
 
 /// Writes `image` (read from `source`, described by `info`) to `nand`.
@@ -68,17 +72,17 @@ pub fn format(
     info: &Image,
     verify: bool,
     progress: &mut dyn FnMut(u32, u32),
-) -> Result<FormatReport, UbiError> {
-    let geometry = info.geometry;
-    if nand.peb_size() != geometry.peb_size {
+) -> Result<FormatReport, FormatError> {
+    let layout = info.layout;
+    if nand.peb_size() != layout.peb_size {
         return fail(format!(
             "the image has {}-byte PEBs; the flash's eraseblocks are {} bytes",
-            geometry.peb_size,
+            layout.peb_size,
             nand.peb_size()
         ));
     }
     let page = nand.page_size() as usize;
-    if page == 0 || !(geometry.peb_size as usize).is_multiple_of(page) {
+    if page == 0 || !(layout.peb_size as usize).is_multiple_of(page) {
         return fail(format!("the flash reports a {page}-byte page"));
     }
     let total = nand.peb_count();
@@ -88,14 +92,14 @@ pub fn format(
     let mut counters: Vec<Option<u64>> = Vec::with_capacity(total as usize);
     let mut header = [0u8; HEADER_SIZE];
     for peb in 0..total {
-        if nand.is_bad(peb).map_err(UbiError)? {
+        if nand.is_bad(peb).map_err(FormatError)? {
             report.bad.push(peb);
             counters.push(None);
             continue;
         }
-        nand.read(peb, 0, &mut header).map_err(UbiError)?;
-        counters.push(match EcHeader::read(&header) {
-            Read::Header(ec) if ec.erase_counter <= MAX_ERASE_COUNTER => Some(ec.erase_counter),
+        nand.read(peb, 0, &mut header).map_err(FormatError)?;
+        counters.push(match EcHeader::decode(&header) {
+            Ok(Some(ec)) if ec.erase_counter <= MAX_ERASE_COUNTER => Some(ec.erase_counter),
             _ => None,
         });
     }
@@ -114,7 +118,8 @@ pub fn format(
     }
     // UBI refuses to attach when the volumes' reservations, its own and
     // the bad-block reserve (20 per 1024 PEBs, Linux's default) don't fit.
-    let needed = info.reserved_pebs() + bad_peb_reserve(u64::from(total), BAD_PEBS_PER_1024);
+    let needed = info.reserved_pebs()
+        + bad_peb_reserve(u64::from(total), u64::from(DEFAULT_BAD_PEBS_PER_1024));
     if needed > good as u64 {
         return fail(format!(
             "the image's volumes and UBI's reserves need {needed} eraseblocks; the flash has {good} good ones"
@@ -124,18 +129,18 @@ pub fn format(
         counters[peb as usize].map_or(mean, |counter| counter + 1)
     };
 
-    let mut buffer = vec![0u8; geometry.peb_size as usize];
-    let mut readback = vec![0u8; geometry.peb_size as usize];
+    let mut buffer = vec![0u8; layout.peb_size as usize];
+    let mut readback = vec![0u8; layout.peb_size as usize];
     let mut peb = 0u32;
     let mut done = 0u32;
     source
         .seek(SeekFrom::Start(0))
-        .map_err(|error| UbiError(format!("the image: {error}")))?;
+        .map_err(|error| FormatError(format!("the image: {error}")))?;
     for index in 0..info.pebs {
         source
             .read_exact(&mut buffer)
-            .map_err(|error| UbiError(format!("image PEB {index}: {error}")))?;
-        let Read::Header(mut ec) = EcHeader::read(&buffer) else {
+            .map_err(|error| FormatError(format!("image PEB {index}: {error}")))?;
+        let Ok(Some(mut ec)) = EcHeader::decode(&buffer) else {
             return fail(format!("image PEB {index} has no EC header"));
         };
         loop {
@@ -169,7 +174,7 @@ pub fn format(
                     break;
                 }
                 Err(_) => {
-                    nand.mark_bad(peb).map_err(UbiError)?;
+                    nand.mark_bad(peb).map_err(FormatError)?;
                     report.marked_bad.push(peb);
                     peb += 1;
                 }
@@ -187,8 +192,8 @@ pub fn format(
         }
         let ec = EcHeader {
             erase_counter: next_counter(rest, &counters, report.mean_erase_counter),
-            vid_header_offset: geometry.vid_header_offset,
-            data_offset: geometry.data_offset,
+            vid_header_offset: layout.vid_header_offset,
+            data_offset: layout.data_offset,
             image_seq: info.image_seq,
         };
         empty[..HEADER_SIZE].copy_from_slice(&ec.encode());
@@ -198,7 +203,7 @@ pub fn format(
         {
             Ok(()) => report.empty_pebs += 1,
             Err(_) => {
-                nand.mark_bad(rest).map_err(UbiError)?;
+                nand.mark_bad(rest).map_err(FormatError)?;
                 report.marked_bad.push(rest);
             }
         }
@@ -211,8 +216,8 @@ pub fn format(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::image::read_image;
-    use crate::image::tests::sample;
+    use crate::read_image;
+    use crate::test_images::sample;
 
     /// A RAM flash that remembers what was programmed where.
     pub struct RamNand {
@@ -279,8 +284,8 @@ mod tests {
     }
 
     fn counter(nand: &RamNand, peb: u32) -> u64 {
-        match EcHeader::read(&nand.pebs[peb as usize]) {
-            Read::Header(ec) => ec.erase_counter,
+        match EcHeader::decode(&nand.pebs[peb as usize]) {
+            Ok(Some(ec)) => ec.erase_counter,
             other => panic!("PEB {peb}: {other:?}"),
         }
     }
@@ -335,17 +340,8 @@ mod tests {
         // An empty PEB carries only its EC header page.
         assert!(nand.programmed.contains(&(9, 512)));
         assert!(
-            matches!(EcHeader::read(&nand.pebs[9]), Read::Header(ec) if ec.image_seq == info.image_seq)
+            matches!(EcHeader::decode(&nand.pebs[9]), Ok(Some(ec)) if ec.image_seq == info.image_seq)
         );
-    }
-
-    #[test]
-    fn the_bad_block_reserve_matches_the_kernel() {
-        // Gaia's bad_peb_reserve gives the same.
-        assert_eq!(bad_peb_reserve(1024, 20), 20);
-        assert_eq!(bad_peb_reserve(1000, 20), 20);
-        assert_eq!(bad_peb_reserve(2048, 20), 40);
-        assert_eq!(bad_peb_reserve(16, 20), 1);
     }
 
     #[test]
