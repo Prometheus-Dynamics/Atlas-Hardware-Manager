@@ -34,6 +34,7 @@ type Shift = { value: number; at: number; sources: { node: string | null; inside
 declare global {
   interface Window {
     __shifts: Shift[];
+    __mutations: number;
     __clicked: Element | null;
     __box: DOMRect | null;
     __column: DOMRect | null;
@@ -55,6 +56,15 @@ function instrument(page: Page) {
     window.__clicked = null;
     window.__box = null;
     window.__column = null;
+    // Counts DOM changes, so a step in the page's time can wait for the page
+    // to finish what that step started (see step()).
+    window.__mutations = 0;
+    new MutationObserver((records) => (window.__mutations += records.length)).observe(document, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      characterData: true,
+    });
     const describe = (n: Node | null): string | null => {
       if (n && !(n instanceof Element)) return n.parentElement ? `text in ${describe(n.parentElement)}` : n.nodeName;
       if (!(n instanceof Element)) return null;
@@ -116,16 +126,37 @@ function guard(page: Page): string[] {
   return problems;
 }
 
+/** Moves the paused clock on by `ms` and waits, in real time, until the
+ *  page has stopped changing (no DOM change for 100 ms, at most 5 s). With
+ *  every step finished before the next, what the page shows depends only on
+ *  its own time and the seeded random, not on how loaded the machine is. */
+async function step(page: Page, ms: number) {
+  await page.clock.fastForward(ms);
+  let seen = -1;
+  for (const end = Date.now() + 5000; Date.now() < end; ) {
+    await page.waitForTimeout(50);
+    const now = await page.evaluate(() => window.__mutations);
+    if (now === seen) {
+      await page.waitForTimeout(50);
+      if ((await page.evaluate(() => window.__mutations)) === now) return;
+    }
+    seen = now;
+  }
+}
+
 /** Opens a page. With the clock paused, the page's timers run in fake time,
- *  so it renders the same every run. */
-async function open(page: Page, path: string, paused = false) {
+ *  so it renders the same every run; `settled` (screenshots) waits out each
+ *  step, the click sweep (which reopens a page after every link) doesn't. */
+async function open(page: Page, path: string, paused = false, settled = false) {
   await page.goto(path, { waitUntil: "domcontentloaded" });
   if (paused) {
-    // 6 s of the page's time in quarter-second steps, each a moment of real
-    // time for its promises to settle.
+    // 6 s of the page's time in quarter-second steps.
     for (let i = 0; i < 24; i++) {
-      await page.clock.fastForward(250);
-      await page.waitForTimeout(25);
+      if (settled) await step(page, 250);
+      else {
+        await page.clock.fastForward(250);
+        await page.waitForTimeout(25);
+      }
     }
   } else {
     await page.locator("main").first().waitFor();
@@ -205,11 +236,10 @@ for (const [name, path] of ROUTES) {
       await page.clock.install({ time: T0 });
       await page.clock.pauseAt(T0 + 100);
       await instrument(page);
-      await open(page, path, true);
+      await open(page, path, true, true);
       // The sim keeps finding devices for a while.
       for (let i = 0, last = ""; i < 12; i++) {
-        await page.clock.fastForward(5000);
-        await page.waitForTimeout(150);
+        await step(page, 5000);
         const now = (await deviceOrder(page)).join();
         if (now === last) break;
         last = now;
@@ -220,8 +250,7 @@ for (const [name, path] of ROUTES) {
 
       const first = await deviceOrder(page);
       for (let poll = 0; poll < 3; poll++) {
-        await page.clock.fastForward(POLL_MS);
-        await page.waitForTimeout(100);
+        await step(page, POLL_MS);
         expect(await deviceOrder(page), `device order after poll ${poll + 1}`).toEqual(first);
       }
       expect(problems).toEqual([]);
