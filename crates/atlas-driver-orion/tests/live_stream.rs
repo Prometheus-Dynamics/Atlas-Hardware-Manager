@@ -256,7 +256,7 @@ async fn hardware_frames_come_from_board_hardware() {
     let frames = Arc::new(Mutex::new(Vec::new()));
     let seen = frames.clone();
     let live = LiveStreams::new(OperatorIdentity::generate("atlas-test").unwrap(), None);
-    let follow = tokio::spawn(async move {
+    let mut follow = tokio::spawn(async move {
         live.follow_hardware(
             &format!("orion+tcp://{addr}"),
             &[("imu".to_owned(), 10), ("lens".to_owned(), 100)],
@@ -267,7 +267,22 @@ async fn hardware_frames_come_from_board_hardware() {
         )
         .await
     });
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    // Waits (on a busy machine too) for the catalog before publishing, and
+    // says why when the follow ended instead.
+    let until = |what: &'static str, done: Box<dyn Fn(&[atlas_driver::HardwareFrame]) -> bool>| {
+        let frames = frames.clone();
+        async move {
+            let deadline = std::time::Instant::now() + Duration::from_secs(15);
+            while !done(&frames.lock().unwrap()) {
+                assert!(std::time::Instant::now() < deadline, "no {what} in 15 s");
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }
+    };
+    tokio::select! {
+        () = until("catalog", Box::new(|f| !f.is_empty())) => {}
+        ended = &mut follow => panic!("follow_hardware ended first: {ended:?}"),
+    }
     let t = now_us();
     let mut x = SampleChunkBuilder::new(0, SeriesKind::F32);
     let mut y = SampleChunkBuilder::new(1, SeriesKind::F32);
@@ -281,7 +296,15 @@ async fn hardware_frames_come_from_board_hardware() {
         .publish(&stream, vec![x.take(), y.take(), led.take()])
         .await
         .unwrap();
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    let samples = |f: &[atlas_driver::HardwareFrame]| {
+        f.iter()
+            .map(|frame| match frame {
+                atlas_driver::HardwareFrame::Samples { samples, .. } => samples.len(),
+                _ => 0,
+            })
+            .sum::<usize>()
+    };
+    until("samples", Box::new(move |f| samples(f) >= 5)).await;
 
     let frames = frames.lock().unwrap().clone();
     let atlas_driver::HardwareFrame::Devices { devices } = &frames[0] else {

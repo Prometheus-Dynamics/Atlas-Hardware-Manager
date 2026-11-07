@@ -83,7 +83,7 @@ tar = { version = "0.4", default-features = false }
 mdns-sd = "0.21"
 nusb = { version = "0.2.7", features = ["tokio"] }
 # Orion and its remote operator client, on Orion's dev branch; the exact
-# commit (protocol 1, 2795a4b) is kept in Cargo.lock, so they move together.
+# commit is kept in Cargo.lock, so they move together.
 # Features per crate: the remote operator client (Atlas), IPC (board-agent).
 orion-client = { git = "https://github.com/Prometheus-Dynamics/Orion", branch = "dev", default-features = false }
 orion-control-plane = { git = "https://github.com/Prometheus-Dynamics/Orion", branch = "dev", default-features = false, features = ["std"] }

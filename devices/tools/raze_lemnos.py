@@ -27,7 +27,7 @@ from pathlib import Path
 
 SELECTOR_KEYS = ("name", "compatible", "of", "node")
 
-# What lemnos-board's DriverRegistry (Lemnos cf3a4ac, crates/lemnos-board/src
+# What lemnos-board's DriverRegistry (Lemnos 80d5d1e, crates/lemnos-board/src
 # registry.rs and light.rs) accepts: placement, config keys, match keys. The system
 # looks (updating, booting, locate, ...) are look files since Lemnos c87819a, so
 # their keys are gone; a board file that sets one is refused.

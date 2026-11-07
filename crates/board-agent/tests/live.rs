@@ -83,6 +83,9 @@ fn fake_lemnosd(path: PathBuf) -> Arc<Mutex<Vec<String>>> {
                                 version: VERSION,
                                 board: "raze".into(),
                                 client_id: 1,
+                                // A service without the newer features
+                                // (the boards' lemnosd before read ids).
+                                features: 0,
                             },
                             Request::List => Message::Devices(vec![imu()]),
                             Request::Subscribe {
@@ -106,6 +109,7 @@ fn fake_lemnosd(path: PathBuf) -> Arc<Mutex<Vec<String>>> {
                                         timestamp_us: boot_us(),
                                         status: DeviceStatus::Available,
                                         values: vec![120 + n, -9810],
+                                        id: 0,
                                     });
                                     if socket.write_all(&reading.encode()).is_err() {
                                         return;

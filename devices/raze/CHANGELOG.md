@@ -31,6 +31,12 @@ OSes pin this layer by commit; the commits are listed per area.
   in `/v1/update/status`; Atlas prints it while a slot boot through the
   robot controller waits. Finding the holder takes one `ls -l` over
   `/proc/*/fd` instead of a `readlink` per fd (minutes on a busy machine).
+- **Lemnos 80d5d1e (2026-11-06).** The joint Lemnos point after cf3a4ac.
+  lemnos-ipc gains read ids within protocol 1 (an appended `u32` on `Read`,
+  echoed on its `Reading`; an older peer ignores it), so board-agent and an
+  older lemnosd still talk. lemnosd reads a polled sensor at 90 % of its
+  period and allocates nothing per subscribed reading; it also adds a GPU
+  lease. The board schema and `packaging/gaia/lemnosd.toml` are unchanged.
 - **Lemnos cf3a4ac (2026-11-06).** The joint Lemnos set moves past 952e1c7:
   the CMA heap's capacity fix (CmaTotal, not CmaFree) and the C API's
   SONAME. Packaging, the board schema, lemnos-board and lemnos-ipc are
