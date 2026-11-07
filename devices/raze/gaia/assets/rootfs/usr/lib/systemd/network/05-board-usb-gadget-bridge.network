@@ -1,5 +1,7 @@
 # The USB gadget bridge, configured by board-usb-gadget.service.
-# See 05-board-usb-gadget.network.
+# See 05-board-usb-gadget.network. When networkd serves its DHCP,
+# usb-gadget-dhcp writes /run/systemd/network/04-board-usb-gadget-bridge.network,
+# which comes first and manages it instead.
 [Match]
 Name=usbbr0
 

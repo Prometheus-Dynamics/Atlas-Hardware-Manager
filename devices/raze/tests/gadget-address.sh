@@ -87,19 +87,26 @@ rm "$T/etc/usb-gadget.env"
 
 echo "usb-gadget-setup sets the USB serial, the address and the DHCP range"
 mkdir -p "$T/bin" "$T/configfs/usb_gadget" "$T/udc/fe980000.usb"
-for tool in modprobe mountpoint systemctl resolvectl; do
+for tool in modprobe mountpoint systemctl resolvectl networkctl; do
 	printf '#!/bin/sh\nexit 0\n' > "$T/bin/$tool"
 done
 printf '#!/bin/sh\necho "$*" >> "%s"\n' "$T/ip.log" > "$T/bin/ip"
 chmod +x "$T/bin/"*
 # A plain directory has no os_desc; the settings files win over the environment.
 printf 'USB_GADGET_OS_DESC=0\n' > "$T/etc/usb-gadget.env"
-PATH="$T/bin:$PATH" BOARD_CONFIGFS=$T/configfs BOARD_UDC_CLASS=$T/udc \
+# The fake systemctl says networkd is enabled: it serves DHCP.
+PATH="$T/bin:$PATH" BOARD_CONFIGFS=$T/configfs BOARD_UDC_CLASS=$T/udc BOARD_NETWORKD_DIR=$T/networkd \
 	sh "$lib/usb-gadget-setup" 2>"$T/setup.err" || fail "setup: $(cat "$T/setup.err")"
 [ "$(cat "$T/configfs/usb_gadget/g1/strings/0x409/serialnumber")" = a317bcbee5226d57 ] ||
 	fail "USB serial: $(cat "$T/configfs/usb_gadget/g1/strings/0x409/serialnumber")"
 grep -qx 'addr replace 172.31.209.217/29 dev usbbr0' "$T/ip.log" || fail "ip: $(cat "$T/ip.log")"
 grep -qx 'dhcp-range=172.31.209.218,172.31.209.222,255.255.255.248,2m' "$T/run/usb-gadget-dnsmasq.conf" ||
 	fail "dnsmasq: $(cat "$T/run/usb-gadget-dnsmasq.conf")"
+net=$T/networkd/04-board-usb-gadget-bridge.network
+for line in Name=usbbr0 Address=172.31.209.217/29 DHCPServer=yes PoolOffset=2 PoolSize=5 \
+	DefaultLeaseTimeSec=120 EmitRouter=no EmitDNS=no; do
+	grep -qx "$line" "$net" || fail "networkd, $line: $(cat "$net")"
+done
+! grep -q SendOption "$net" || fail "no routes yet: $(cat "$net")"
 
 echo "ok"

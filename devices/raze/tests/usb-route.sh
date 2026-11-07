@@ -17,6 +17,8 @@ fail() {
 mkdir -p "$T/dt" "$T/etc" "$T/data" "$T/run" "$T/bin"
 export BOARD_LIB_DIR=$lib BOARD_DT_DIR=$T/dt BOARD_ETC_DIR=$T/etc BOARD_DATA_DIR=$T/data BOARD_RUN_DIR=$T/run
 export BOARD_MACHINE_ID=$T/machine-id BOARD_IP_FORWARD=$T/ip_forward BOARD_NFT=$T/bin/nft
+# DHCP is dnsmasq's unless a case enables networkd ($T/networkd-enabled).
+export BOARD_NETWORKD_DIR=$T/networkd
 echo 0 > "$T/ip_forward"
 
 # ip: the bridge exists while $T/bridge does; addresses are $T/addrs.
@@ -25,7 +27,7 @@ cat > "$T/bin/ip" <<EOF
 case "\$*" in
 "link show dev usbbr0") [ -e "$T/bridge" ] ;;
 "-4 -o addr show scope global") cat "$T/addrs" 2>/dev/null ;;
-*) exit 0 ;;
+*) echo "ip \$*" >> "$T/ip.log" ;;
 esac
 EOF
 # nft: a rules file loaded with -f, listed, deleted; every call logged.
@@ -40,6 +42,9 @@ esac
 EOF
 cat > "$T/bin/systemctl" <<EOF
 #!/bin/sh
+case "\$*" in
+*is-enabled*systemd-networkd*) [ -e "$T/networkd-enabled" ]; exit ;;
+esac
 echo "systemctl \$*" >> "$T/systemctl.log"
 EOF
 chmod +x "$T/bin/ip" "$T/bin/nft" "$T/bin/systemctl"
@@ -130,6 +135,34 @@ route apply
 route set on
 [ -e "$T/nft.rules" ] || fail "chosen on"
 rm -f "$T/etc/usb-gadget.env"
+
+echo "networkd serves DHCP: the routes become options 121 and 249 in the bridge's .network"
+net=$T/networkd/04-board-usb-gadget-bridge.network
+: > "$T/run/usb-gadget-dhcp-routes"
+: > "$T/systemctl.log"
+touch "$T/networkd-enabled"
+route apply
+# Prefix length, the network's significant octets, the router (the board).
+vb=$(printf '\\x%02x' $(echo "$via" | tr . ' '))
+bytes="\\x18\\x0a\\x35\\x26$vb\\x16\\xc0\\xa8\\x04$vb"
+grep -qxF "SendOption=121:string:$bytes" "$net" || fail "networkd 121: $(cat "$net")"
+grep -qxF "SendOption=249:string:$bytes" "$net" || fail "networkd 249: $(cat "$net")"
+grep -qx 'systemctl reload systemd-networkd.service' "$T/systemctl.log" || fail "networkd should reload"
+! grep -q HUP "$T/systemctl.log" || fail "no dnsmasq to tell"
+: > "$T/systemctl.log"
+route set off
+! grep -q SendOption "$net" || fail "routes left in the .network: $(cat "$net")"
+grep -qx 'systemctl reload systemd-networkd.service' "$T/systemctl.log" || fail "networkd should reload when the routes go"
+: > "$T/systemctl.log"
+route apply
+! grep -q reload "$T/systemctl.log" || fail "networkd reloaded for nothing"
+route set on
+rm "$T/networkd-enabled"
+: > "$T/systemctl.log"
+sh "$lib/usb-gadget-dhcp" --refresh
+[ ! -e "$net" ] || fail "dnsmasq serves, the .network must go"
+grep -qx 'systemctl reload systemd-networkd.service' "$T/systemctl.log" || fail "networkd should let the bridge go"
+grep -qx "ip addr replace $via/.* dev usbbr0" "$T/ip.log" || fail "the bridge's address must come back: $(cat "$T/ip.log")"
 
 echo "no USB link: nothing to route, not active"
 rm -f "$T/bridge"

@@ -73,7 +73,8 @@ other_subnets() {
 }
 
 # DHCP options for the USB link: a route to each network via the board's
-# USB address (dnsmasq dhcp-optsfile; empty when off).
+# USB address (dnsmasq dhcp-optsfile, which usb-gadget-dhcp also turns into
+# networkd's options; empty when off).
 write_routes() {
 	mkdir -p "$BOARD_RUN_DIR"
 	: >"$OPTS.tmp"
@@ -91,8 +92,8 @@ write_routes() {
 	fi
 	if ! cmp -s "$OPTS.tmp" "$OPTS" 2>/dev/null; then
 		mv -f "$OPTS.tmp" "$OPTS"
-		# dnsmasq rereads its options file on SIGHUP.
-		systemctl kill -s HUP board-usb-gadget-dhcp.service 2>/dev/null || true
+		# networkd's .network is rewritten, or dnsmasq rereads the file.
+		sh "$BOARD_LIB_DIR/usb-gadget-dhcp" --refresh || true
 	else
 		rm -f "$OPTS.tmp"
 	fi

@@ -7,6 +7,39 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **mDNS through systemd-resolved, no avahi (2026-11-07).** resolved's mDNS
+  is on (`60-board-mdns.conf`, `MulticastDNS=yes`; NetworkManager
+  `connection.mdns=2`) and answers for `<hostname>.local` and the identity's
+  `_pd-device._tcp`, which `identity --dnssd` now also writes as
+  `/run/systemd/dnssd/pd-device.dnssd` (same TXT; resolved is reloaded when it
+  changes while running). avahi-daemon and avahi-dnsconfd leave the image:
+  about 2.4 MB of RAM on a Raze (avahi-daemon 1519 + 682 kB, avahi-dnsconfd
+  189 kB; resolved +40 kB). An OS whose programs use libavahi-client
+  (WPILib's NetworkTables browsing `_SystemCore._tcp`, PhotonVision) imports
+  the new `gaia/avahi.toml`, which brings avahi back with its config, enables
+  it and turns resolved's and NetworkManager's mDNS off. Verified on a Raze
+  (HeliOS, systemd 258): SystemCore's avahi browses the board with its TXT
+  and resolves `<hostname>.local`. tests/mdns.sh (was avahi.sh).
+- **Smaller journal caps (2026-11-07).** Still persistent (`journalctl -b
+  -1` works), now `SystemMaxUse=16M` (was 64M), `SystemMaxFileSize=4M`,
+  `RuntimeMaxUse=4M`. Measured on a Raze: journald's PSS is the same
+  (2502 vs 2530 kB); the caps bound /data and the page cache.
+- **USB link DHCP from systemd-networkd (2026-11-07).** With networkd enabled
+  (`USB_GADGET_DHCP_SERVER=AUTO`), `usb-gadget-dhcp` writes
+  `/run/systemd/network/04-board-usb-gadget-bridge.network`: the bridge's
+  address, `DHCPServer=yes` with the same pool and 2 minute lease, no router,
+  DNS or NTP, leases in /run, and usb-route's routes as options 121 and 249
+  (`SendOption=…:string:` with escaped bytes; usb-route's change reloads
+  networkd where it signalled dnsmasq). No dnsmasq process: about 1.8 MB of
+  RAM (networkd +6 kB). dnsmasq stays the server without networkd
+  (`USB_GADGET_DHCP_SERVER=dnsmasq` picks it); handing the bridge back from
+  networkd restores its address, which networkd takes away. Verified on a
+  Raze behind SystemCore: the lease renews, and a route with a zero byte
+  (192.0.2.0/24) reached SystemCore as a classless route. The reload is
+  `systemctl reload systemd-networkd.service` (networkd is notify-reload), so
+  it works without D-Bus: verified on a Raze with dbus masked (routes
+  rewritten and delivered, resolved mDNS, timesyncd, helios-api, identity all
+  working; dbus-daemon is 2.1 MB an OS can now drop).
 - **No board-health polling (2026-11-07).** `board-health.timer` ran
   `status --refresh-failed --refresh-hardware` every 10 s: a `systemctl` and
   about ten `lemnos-ctl` processes each time. `/run/board/hardware.json` is

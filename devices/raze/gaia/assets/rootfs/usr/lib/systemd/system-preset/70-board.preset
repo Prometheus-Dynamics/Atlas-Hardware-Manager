@@ -15,8 +15,6 @@ enable board-usb-route.service
 enable raze-leds-reprobe.service
 enable board-locate.path
 enable board-power-log.service
-enable avahi-daemon.service
-enable avahi-daemon.socket
 enable board-reboot.path
 enable board-usb-boot.path
 enable board-ssh-keys.service

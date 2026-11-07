@@ -309,24 +309,27 @@ writes `BOARD_PACKAGE_COMMIT=${source.<id>.commit}` and
 
 The Raze layer (`devices/raze/gaia/device.toml`) needs from the OS:
 
-1. **systemd as init** (`BR2_INIT_SYSTEMD=y`) and **D-Bus** (for avahi). Both
-   HeliOS and the PhotonVision image have both. The package adds avahi-daemon
-   (`BR2_PACKAGE_AVAHI_DAEMON`) for mDNS.
+1. **systemd as init** (`BR2_INIT_SYSTEMD=y`) with **systemd-resolved** (mDNS)
+   and, for the USB link's DHCP without dnsmasq, **systemd-networkd**. HeliOS
+   and the PhotonVision image have them.
 2. **A boot partition assembly tree with id `boot`**, and `include
    raze-device.txt` at top level of its `config.txt`. The layer puts
    `raze-device.txt`, the device overlays and the stock overlays it loads into
    that tree. The OS keeps its own `config.txt`, `cmdline.txt`, kernel and DTB
    copying, partition layout and root filesystem.
-3. **mDNS is avahi's, on every link.** avahi-daemon answers for
-   `<hostname>.local` and the `_pd-device._tcp` identity on every interface
-   but the USB bridge's members (`/etc/avahi/avahi-daemon.conf`), and
-   programs on the board browse through libavahi-client (WPILib's
-   NetworkTables finds the 2027 robot controller, `_SystemCore._tcp`, that
-   way). The package turns resolved's mDNS off
-   (`/usr/lib/systemd/resolved.conf.d/60-board-mdns.conf`, `MulticastDNS=no`)
-   and NetworkManager's (`connection.mdns=0`), so only avahi uses port 5353.
-   The OS must not turn them back on: a systemd-networkd `.network` with
-   `MulticastDNS=yes` (HeliOS) should drop it.
+3. **mDNS is systemd-resolved's, on every link.** resolved answers for
+   `<hostname>.local` and the `_pd-device._tcp` identity
+   (`/run/systemd/dnssd/pd-device.dnssd`, written at boot by
+   board-identity.service) on every link with an address; the USB bridge's
+   members have none, so `usbbr0` answers for them
+   (`/usr/lib/systemd/resolved.conf.d/60-board-mdns.conf`, `MulticastDNS=yes`;
+   NetworkManager's `connection.mdns=2`). An OS whose programs browse or
+   announce through libavahi-client (WPILib's NetworkTables finding the 2027
+   robot controller, `_SystemCore._tcp`; PhotonVision) imports
+   `devices/raze/gaia/avahi.toml` after `device.toml`: it adds avahi-daemon and
+   turns resolved's and NetworkManager's mDNS off, so only avahi uses 5353.
+   resolved has no avahi-client API, so without it those programs can't
+   browse mDNS (PV 2027 logged "mDNS service resolver not available").
    With NetworkManager (PhotonVision), also clear `BR2_SYSTEM_DHCP` (the CM5
    defconfig sets it to `eth0`), or systemd-networkd runs a second DHCP
    client on the link NetworkManager manages.
@@ -361,7 +364,7 @@ The device units are installed in `/usr/lib/systemd/system` and enabled by
 | `board-identity-refresh.path`, `.timer` | rewrite `/run/board/identity.part` (the identity's fixed fields, which the endpoint serves) when `update.json`, `usb-route.state` or `camera-streams.json` change, and every 30 s |
 | `board-http.service` | identity endpoint on TCP 5899: one resident listener (`board-stream --serve-each`) runs `identity-http` per connection |
 | `board-usb-gadget.service` | USB gadget (ECM/RNDIS/ACM) with the board serial as its USB serial, gadget-only bridge `usbbr0` on a per-board /29 (see "USB gadget network") |
-| `board-usb-gadget-dhcp.service` | dnsmasq DHCP on `usbbr0` only, DNS off, no default route |
+| `board-usb-gadget-dhcp.service` | DHCP on `usbbr0` only, DNS off, no default route: systemd-networkd's DHCPServer when networkd is enabled (a generated `.network`, no process), else dnsmasq (`USB_GADGET_DHCP_SERVER`) |
 | `raze-leds-reprobe.service` | re-probes the WS2812 PIO driver if `/dev/leds0` is missing |
 | `lemnosd.service` (Lemnos's unit and `80-lemnosd.preset`) | the hardware service: LED ring, fan, sensors, GPIO; `/etc/lemnos/board.toml` |
 | `board-locate.service` (+ `.path`) | the identity endpoint's locate action: `raze-leds locate 10` |
@@ -448,7 +451,7 @@ a VPN that routes `172.31.0.0/16`, shadows the gadget subnets. Changing
 | To change | Do this |
 | --- | --- |
 | Hostname | Set `/etc/hostname` (always wins), or set `BOARD_HOSTNAME_POLICY=never`, `BOARD_HOSTNAME_PATTERN` or `BOARD_HOSTNAME_STOCK` in `/etc/board/hostname.env`. An OS whose default name should give way to `raze-{serial8}` adds it: `BOARD_HOSTNAME_STOCK="$BOARD_HOSTNAME_STOCK photonvision"`. |
-| USB gadget | `/etc/board/usb-gadget.env` (any key from `/usr/lib/board/usb-gadget.env`; `USB_GADGET_ENABLED=0` turns it off, `USB_GADGET_NET=none` leaves networking to the OS, `USB_GADGET_ADDRESS=<address>/<prefix>` pins the address instead of the per-board one). Extra dnsmasq settings in `/etc/board/usb-gadget-dnsmasq.d/*.conf`. |
+| USB gadget | `/etc/board/usb-gadget.env` (any key from `/usr/lib/board/usb-gadget.env`; `USB_GADGET_ENABLED=0` turns it off, `USB_GADGET_NET=none` leaves networking to the OS, `USB_GADGET_ADDRESS=<address>/<prefix>` pins the address instead of the per-board one). Extra dnsmasq settings (when dnsmasq serves DHCP) in `/etc/board/usb-gadget-dnsmasq.d/*.conf`. |
 | mDNS advertisement | `BOARD_MDNS=0` in `/etc/board/identity.env`. |
 | Identity endpoint | `disable board-http.service` in an OS preset, or mask it. |
 | Update methods / manage URL | One id per line in `/etc/board/update-methods.d/<file>` (added after `image-write`); the URL in `/etc/board/manage-url` (an empty file means `null`). |

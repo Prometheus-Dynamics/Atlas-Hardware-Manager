@@ -6,13 +6,16 @@
 #                       identity-http serves from: identity.part (the
 #                       fixed fields, lib.sh board_identity_fixed_json) and
 #                       gadget-cidr (the USB link's network)
-#   identity --dnssd    also write the mDNS advertisement: an avahi service
-#                       file, $BOARD_AVAHI_DIR/pd-device.service
+#   identity --dnssd    also write the mDNS advertisement: a resolved
+#                       service, $BOARD_DNSSD_DIR/pd-device.dnssd, and the same
+#                       as an avahi service file, $BOARD_AVAHI_DIR/pd-device.service
 #
 # board-identity.service runs `identity --write --dnssd` at boot, and
 # board-identity-refresh.service `identity --write` whenever update.json,
 # usb-route.state or camera-streams.json change (board-identity-refresh.path;
 # its timer catches a change the path unit missed while the service ran).
+# systemd-resolved reads /run/systemd/dnssd when it starts (the service runs
+# before it; a later change reloads it). With avahi.toml,
 # etc-avahi-services.mount binds $BOARD_AVAHI_DIR over /etc/avahi/services
 # (the root is read-only; avahi reads services only from there and follows
 # changes), before avahi-daemon starts. The HTTP endpoint adds the live
@@ -24,6 +27,7 @@ BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 . "$BOARD_LIB_DIR/lib.sh"
 
 BOARD_AVAHI_DIR=${BOARD_AVAHI_DIR:-/run/board/avahi-services}
+BOARD_DNSSD_DIR=${BOARD_DNSSD_DIR:-/run/systemd/dnssd}
 BOARD_HTTP_PORT=5899
 BOARD_HTTP_PATH=/.well-known/pd-device
 
@@ -91,10 +95,28 @@ if [ "$dnssd" = 1 ]; then
 	board_load_env board-package.env
 	board_load_env identity.env
 	target="$BOARD_AVAHI_DIR/pd-device.service"
-	# The directory always exists: it is the bind mount's source.
+	dnssd_file="$BOARD_DNSSD_DIR/pd-device.dnssd"
+	dnssd_was=$(cat "$dnssd_file" 2>/dev/null || :)
+	# The directory always exists: it is the bind mount's source (avahi.toml).
 	mkdir -p "$BOARD_AVAHI_DIR"
 	if [ "${BOARD_MDNS:-1}" = 1 ]; then
 		os_ver=$(board_os_version)
+		txts="contract=1
+model=$(txt_value "${BOARD_DEVICE_MODEL:-}")
+rev=$(txt_value "$(board_rev)")
+serial=$(txt_value "$(board_serial)")
+os=$(txt_value "$(board_os_field ID)")
+os_ver=$(txt_value "$os_ver")
+path=$BOARD_HTTP_PATH"
+		{
+			printf '# Generated at boot by board-identity.service; edits are lost. Turn the\n'
+			printf '# advertisement off with BOARD_MDNS=0 in /etc/board/identity.env.\n'
+			printf '[Service]\n'
+			printf 'Name=%%H\n'
+			printf 'Type=_pd-device._tcp\n'
+			printf 'Port=%s\n' "$BOARD_HTTP_PORT"
+			printf 'TxtText=%s\n' "$(printf '%s' "$txts" | tr '\n' ' ')"
+		} | write_file "$dnssd_file"
 		{
 			printf '<?xml version="1.0" standalone="no"?>\n'
 			printf '<!DOCTYPE service-group SYSTEM "avahi-service.dtd">\n'
@@ -105,20 +127,21 @@ if [ "$dnssd" = 1 ]; then
 			printf '  <service>\n'
 			printf '    <type>_pd-device._tcp</type>\n'
 			printf '    <port>%s</port>\n' "$BOARD_HTTP_PORT"
-			for txt in "contract=1" \
-				"model=$(txt_value "${BOARD_DEVICE_MODEL:-}")" \
-				"rev=$(txt_value "$(board_rev)")" \
-				"serial=$(txt_value "$(board_serial)")" \
-				"os=$(txt_value "$(board_os_field ID)")" \
-				"os_ver=$(txt_value "$os_ver")" \
-				"path=$BOARD_HTTP_PATH"; do
+			printf '%s\n' "$txts" | while read -r txt; do
 				printf '    <txt-record>%s</txt-record>\n' "$txt"
 			done
 			printf '  </service>\n'
 			printf '</service-group>\n'
 		} | write_file "$target"
 	else
-		rm -f "$target"
+		rm -f "$target" "$dnssd_file"
+	fi
+	# resolved rereads its services on reload; before it starts (boot) it
+	# reads them when it does.
+	if [ "$(cat "$dnssd_file" 2>/dev/null || :)" != "$dnssd_was" ] &&
+		systemctl -q is-active systemd-resolved.service 2>/dev/null; then
+		systemctl reload systemd-resolved.service 2>/dev/null ||
+			board_log "couldn't reload systemd-resolved for the mDNS advertisement"
 	fi
 fi
 
