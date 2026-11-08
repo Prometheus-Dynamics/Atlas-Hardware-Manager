@@ -22,7 +22,6 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-import tomllib
 from pathlib import Path
 
 SELECTOR_KEYS = ("name", "compatible", "of", "node")
@@ -423,6 +422,10 @@ def to_toml(board: dict, notes: dict[str, list[str]], header: str) -> str:
 def check(board: dict, text: str, schema_path: Path) -> None:
     schema = json.loads(schema_path.read_text())
     errors = schema_errors(board, schema, schema) + driver_errors(board)
+    # Here, not at the top: the schema check needs no TOML, and CI runs it on
+    # a Python older than tomllib (3.10, ubuntu-22.04).
+    import tomllib
+
     if tomllib.loads(text) != board:
         errors.append("the written TOML doesn't parse back to the same definition")
     if errors:
