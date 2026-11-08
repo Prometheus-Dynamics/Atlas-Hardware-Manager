@@ -294,7 +294,7 @@ mod tests {
     }
 
     #[test]
-    fn a_rockchip_no_record_names_is_offered_as_the_unconfirmed_ones() {
+    fn a_rockchip_no_record_names_is_offered_as_the_unconfirmed_one() {
         let driver = SocDriver::new(Soc::Rockchip, catalog());
         let found = Found {
             location: "2-1".into(),
@@ -304,12 +304,10 @@ mod tests {
             serial: None,
         };
         let identity = driver.identity(&candidate("2-1"), &found);
-        // Two records guess their PID: the board is its chip until it says.
-        assert_eq!(
-            identity.attributes["possible_models"],
-            "firefly-aio-3562jq, radxa-rock-4d"
-        );
-        assert_eq!(identity.model, "Rockchip 3510");
+        // The one record that guesses its PID is offered, flagged: Atlas
+        // checks the chip the board reports before writing.
+        assert_eq!(identity.attributes["model"], "firefly-aio-3562jq");
+        assert!(identity.attributes["pid_unconfirmed"].contains("2207:3510"));
     }
 
     #[test]
