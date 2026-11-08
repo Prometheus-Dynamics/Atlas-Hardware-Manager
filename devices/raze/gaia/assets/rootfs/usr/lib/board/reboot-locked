@@ -4,7 +4,7 @@
 # reboot-locked --holder: who holds the lock ("pid <n> (<command>)"), or
 # nothing when it is free.
 #
-# The lock (BOARD_REBOOT_LOCK, /run/lock/raze-gpu.lock) is what the bench's
+# The lock (BOARD_REBOOT_LOCK, /run/lock/board-gpu.lock) is what the bench's
 # measurements hold while they run, so a restart asked for during one (an
 # update's trial, a slot booted once, a reboot over Orion or the USB link)
 # waits for it to finish instead of cutting it, and says whose lock it
@@ -21,20 +21,44 @@
 # process inherited (a holder that shells out): it isn't made to wait for
 # its own lock. With no flock, or BOARD_REBOOT_LOCK empty, the command just
 # runs.
+# The lock's old name (BOARD_REBOOT_LOCK_ALIAS, raze-gpu.lock next to it)
+# stays a working alias while bench scripts move to the new one: the two
+# names are one file (whichever exists as a file, the other a symlink to it;
+# tmpfiles makes them at boot, this script mends a missing one), so holders
+# using either exclude each other, and <alias>.reboot-ok counts too.
 # While it waits, its line is also in BOARD_REBOOT_WAIT_FILE
 # (/run/board/reboot-wait, next to the writer's update.json), which HeliOS
 # reports as its update status's `reboot_waiting`; the file goes once the
 # wait ends, whichever way.
 set -u
 
-LOCK=${BOARD_REBOOT_LOCK-/run/lock/raze-gpu.lock}
+LOCK=${BOARD_REBOOT_LOCK-/run/lock/board-gpu.lock}
+ALIAS=${BOARD_REBOOT_LOCK_ALIAS-${LOCK%/*}/raze-gpu.lock}
+[ -n "$LOCK" ] && [ "$ALIAS" != "$LOCK" ] || ALIAS=
 WAIT=${BOARD_REBOOT_LOCK_WAIT:-0}
 WAIT_FILE=${BOARD_REBOOT_WAIT_FILE-${BOARD_RUN_DIR:-/run/board}/reboot-wait}
 
+# Make the two names one file: an old-name lock already in use (an image
+# from before the rename, or a holder that came first) keeps being the lock
+# and the new name points at it; otherwise the old name points at the new.
+link_alias() {
+	[ -n "$ALIAS" ] || return 0
+	if [ -f "$ALIAS" ] && [ ! -L "$ALIAS" ]; then
+		if [ ! -e "$LOCK" ] && [ ! -L "$LOCK" ]; then
+			ln -s "$ALIAS" "$LOCK" 2>/dev/null
+		elif [ -f "$LOCK" ] && [ ! -L "$LOCK" ]; then
+			say "${LOCK##*/} and ${ALIAS##*/} are two files, not one lock: holders of one don't exclude the other's"
+		fi
+	elif [ ! -e "$ALIAS" ] && [ ! -L "$ALIAS" ]; then
+		[ -e "$LOCK" ] || : >> "$LOCK" 2>/dev/null
+		ln -s "$LOCK" "$ALIAS" 2>/dev/null
+	fi
+	return 0
+}
 # The lock's holder from /proc/locks (whoever took it, by any tool).
 holder() {
 	[ -n "$LOCK" ] && [ -e "$LOCK" ] || return 0
-	_ino=$(ls -i "$LOCK" 2>/dev/null | awk '{print $1}')
+	_ino=$(ls -iL "$LOCK" 2>/dev/null | awk '{print $1}')
 	[ -n "$_ino" ] || return 0
 	_pid=$(awk -v ino="$_ino" '$2 != "->" && $6 ~ (":" ino "$") { print $5 }' /proc/locks 2>/dev/null |
 		while read -r _p; do [ "$_p" = "$$" ] || { echo "$_p"; break; }; done)
@@ -81,7 +105,7 @@ not_holder() {
 fd_holder() {
 	# One ls and one awk for every fd on the board: a readlink per fd took
 	# minutes on a busy machine.
-	ls -l /proc/[0-9]*/fd/ 2>/dev/null | awk -v lock="$LOCK" '
+	ls -l /proc/[0-9]*/fd/ 2>/dev/null | awk -v lock="$(real_lock)" '
 		/^\/proc\/[0-9]+\/fd\/?:$/ { split($0, part, "/"); pid = part[3]; next }
 		pid != "" && $NF == lock && $(NF - 1) == "->" { print pid }' | uniq |
 		while read -r _p; do
@@ -93,8 +117,12 @@ fd_holder() {
 # An fd this process inherited on the lock file (not fd 9, which it opens
 # itself), if any.
 own_fd() {
-	ls -l /proc/$$/fd/ 2>/dev/null | awk -v lock="$LOCK" '
+	ls -l /proc/$$/fd/ 2>/dev/null | awk -v lock="$(real_lock)" '
 		$NF == lock && $(NF - 1) == "->" { n = $(NF - 2); if (n != "9") { print n; exit } }'
+}
+# The file the lock's name leads to (what /proc/<pid>/fd links show).
+real_lock() {
+	readlink -f "$LOCK" 2>/dev/null || echo "$LOCK"
 }
 say() {
 	echo "reboot-locked: $*" >&2
@@ -112,6 +140,7 @@ case ${1:-} in
 	;;
 esac
 
+[ -z "$LOCK" ] || link_alias
 # Holding the lock already, through an inherited fd: the caller is the
 # holder (flock on the fd it holds the lock through succeeds at once).
 _own=
@@ -125,8 +154,8 @@ if [ -n "$LOCK" ] && command -v flock >/dev/null 2>&1; then
 fi
 if [ -z "$_own" ] && [ -n "$LOCK" ] && command -v flock >/dev/null 2>&1 && exec 9>> "$LOCK" && ! flock -n 9; then
 	_by=$(holder)
-	if [ -e "$LOCK.reboot-ok" ]; then
-		rm -f "$LOCK.reboot-ok"
+	if [ -e "$LOCK.reboot-ok" ] || { [ -n "$ALIAS" ] && [ -e "$ALIAS.reboot-ok" ]; }; then
+		rm -f "$LOCK.reboot-ok" ${ALIAS:+"$ALIAS.reboot-ok"}
 		say "restart asked for by the holder of ${LOCK##*/}, ${_by:-gone}: $*"
 	else
 		say "waiting for ${LOCK##*/} held by ${_by:-an unknown process} before the restart: $*"

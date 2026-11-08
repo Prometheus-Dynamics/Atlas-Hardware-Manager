@@ -235,7 +235,7 @@ async fn rollback_reboot_and_locate() {
     assert_eq!(
         message,
         Some(&text(
-            "waiting for raze-gpu.lock held by pid 42 (styx run.sh); restarting when it is free"
+            "waiting for board-gpu.lock held by pid 42 (styx run.sh); restarting when it is free"
         )),
         "{:?}",
         waiting.output

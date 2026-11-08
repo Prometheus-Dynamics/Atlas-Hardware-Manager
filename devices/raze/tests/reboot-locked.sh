@@ -27,7 +27,7 @@ fail() {
 	fi
 	exit 1
 }
-export BOARD_REBOOT_LOCK="$T/raze-gpu.lock" BOARD_REBOOT_LOCK_HOLD=0 BOARD_REBOOT_WAIT_FILE="$T/run/reboot-wait"
+export BOARD_REBOOT_LOCK="$T/board-gpu.lock" BOARD_REBOOT_LOCK_HOLD=0 BOARD_REBOOT_WAIT_FILE="$T/run/reboot-wait"
 
 echo "a free lock: no holder, and the restart runs at once"
 [ -z "$(sh "$rl" --holder)" ] || fail "a holder of a free lock: $(sh "$rl" --holder)"
@@ -48,12 +48,12 @@ set -e
 grep -q 'still held' "$T/err" || fail "the refusal: $(cat "$T/err")"
 # The flock that took it has exited: the holder named is the process
 # still holding the fd ($holder, now `sleep 30`), with its command.
-grep -q "waiting for raze-gpu.lock held by pid $holder (sleep 30)" "$T/err" || fail "the wait doesn't name the holder: $(cat "$T/err")"
+grep -q "waiting for board-gpu.lock held by pid $holder (sleep 30)" "$T/err" || fail "the wait doesn't name the holder: $(cat "$T/err")"
 [ "$(sh "$rl" --holder)" = "pid $holder (sleep 30)" ] || fail "--holder: $(sh "$rl" --holder), want pid $holder (sleep 30)"
 
 echo "a restart that recovers the board goes anyway past the limit, naming the holder"
 BOARD_REBOOT_LOCK_WAIT=1 BOARD_REBOOT_LOCK_OVERRIDE=1 sh "$rl" sh -c "echo ran >> '$T/runs'" 2> "$T/err" || fail "the recovery restart failed"
-grep -q 'overriding raze-gpu.lock.*by pid [0-9]*' "$T/err" || fail "the override: $(cat "$T/err")"
+grep -q 'overriding board-gpu.lock.*by pid [0-9]*' "$T/err" || fail "the override: $(cat "$T/err")"
 [ "$(wc -l < "$T/runs")" = 2 ] || fail "the recovery restart didn't run"
 echo ran > "$T/runs"
 [ "$(wc -l < "$T/runs")" = 1 ] || fail "restarted under someone else's lock"
@@ -70,7 +70,7 @@ BOARD_REBOOT_LOCK_WAIT=20 sh "$rl" sh -c "echo ran >> '$T/runs'" &
 waiter=$!
 # While it waits, the wait file names the holder (HeliOS's reboot_waiting).
 until [ -s "$BOARD_REBOOT_WAIT_FILE" ]; do kill -0 "$waiter" 2>/dev/null || fail "the waiter ended early"; done
-grep -q "waiting for raze-gpu.lock held by pid $holder (sleep 30)" "$BOARD_REBOOT_WAIT_FILE" || fail "the wait file: $(cat "$BOARD_REBOOT_WAIT_FILE")"
+grep -q "waiting for board-gpu.lock held by pid $holder (sleep 30)" "$BOARD_REBOOT_WAIT_FILE" || fail "the wait file: $(cat "$BOARD_REBOOT_WAIT_FILE")"
 kill "$holder"
 holder=''
 wait "$waiter" || fail "the waiting restart failed"
@@ -101,4 +101,38 @@ n=$(wc -l < "$T/runs")
 [ "$(wc -l < "$T/runs")" = $((n + 1)) ] || fail "the holder's own restart didn't run"
 grep -q 'inherited fd 3' "$T/err" || fail "the log doesn't say it's the holder's own lock: $(cat "$T/err")"
 flock -n "$BOARD_REBOOT_LOCK" true || fail "the lock outlived its holder"
+echo "the old name (raze-gpu.lock) is the same lock: a holder of it makes the restart wait, and its .reboot-ok counts"
+[ -L "$T/raze-gpu.lock" ] && [ "$(readlink "$T/raze-gpu.lock")" = "$T/board-gpu.lock" ] ||
+	fail "the old name isn't a link to the lock: $(ls -l "$T/raze-gpu.lock" 2>&1)"
+sh -c 'exec 9>> "$1"; flock 9; exec sleep 30' sh "$T/raze-gpu.lock" &
+holder=$!
+until ! flock -n "$BOARD_REBOOT_LOCK" true; do :; done
+set +e
+BOARD_REBOOT_LOCK_WAIT=1 sh "$rl" true 2> "$T/err"
+r=$?
+set -e
+[ "$r" = 3 ] || fail "a holder of the old name didn't stop the restart (exit $r): $(cat "$T/err")"
+[ "$(sh "$rl" --holder)" = "pid $holder (sleep 30)" ] || fail "--holder through the old name: $(sh "$rl" --holder)"
+touch "$T/raze-gpu.lock.reboot-ok"
+BOARD_REBOOT_LOCK_WAIT=1 sh "$rl" true 2> "$T/err" || fail "the old name's .reboot-ok wasn't honoured: $(cat "$T/err")"
+[ ! -e "$T/raze-gpu.lock.reboot-ok" ] || fail "the old name's marker outlived its restart"
+kill "$holder"
+holder=''
+
+echo "an old-name lock already in use (a board from before the rename) stays the lock; the new name points at it"
+T2=$T/old
+mkdir -p "$T2"
+: > "$T2/raze-gpu.lock"
+sh -c 'exec 9>> "$1"; flock 9; exec sleep 30' sh "$T2/raze-gpu.lock" &
+holder=$!
+until ! flock -n "$T2/raze-gpu.lock" true; do :; done
+set +e
+BOARD_REBOOT_LOCK=$T2/board-gpu.lock BOARD_REBOOT_LOCK_WAIT=1 sh "$rl" true 2> "$T/err"
+r=$?
+set -e
+[ "$r" = 3 ] || fail "the restart didn't wait for the old-name holder (exit $r): $(cat "$T/err")"
+[ -L "$T2/board-gpu.lock" ] && [ -f "$T2/raze-gpu.lock" ] && [ ! -L "$T2/raze-gpu.lock" ] ||
+	fail "the names: $(ls -l "$T2")"
+kill "$holder"
+holder=''
 echo ok

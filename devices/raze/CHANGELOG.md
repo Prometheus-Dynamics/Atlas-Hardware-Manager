@@ -7,6 +7,13 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **The bench lock is board-gpu.lock; raze-gpu.lock stays an alias
+  (2026-11-07).** reboot-locked waits for `/run/lock/board-gpu.lock`. The old
+  name is the same lock: tmpfiles makes it a symlink at boot, reboot-locked
+  mends a missing one (and, on a board where the old name is already a file
+  in use, points the new name at it instead), and `<old>.reboot-ok` counts.
+  Bench scripts can move to the new name at their own pace; the alias goes
+  only once none uses it.
 - **No boot deadlock on the USB DHCP reload (2026-11-07).** usb-gadget-dhcp
   reloads networkd only when it is running, with `--no-block`. At boot
   networkd's start is queued behind network-pre, which waits for the

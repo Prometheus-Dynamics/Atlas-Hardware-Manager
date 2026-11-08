@@ -352,7 +352,7 @@ mod tests {
 
     #[test]
     fn a_restart_held_by_the_lock_says_whose() {
-        let line = "waiting for raze-gpu.lock held by pid 42 (styx run.sh) before the restart";
+        let line = "waiting for board-gpu.lock held by pid 42 (styx run.sh) before the restart";
         assert_eq!(
             reboot_waiting(&json!({ "phase": "trying", "reboot_waiting": line })),
             Some(line)

@@ -257,7 +257,7 @@ impl Agent {
                 let mut message = "restart requested through Orion".to_owned();
                 if let Some(holder) = self.lock_holder().await {
                     let waiting = format!(
-                        "waiting for raze-gpu.lock held by {holder}; restarting when it is free"
+                        "waiting for board-gpu.lock held by {holder}; restarting when it is free"
                     );
                     message = format!("{message}, {waiting}");
                     output.insert("message".into(), TypedConfigValue::String(waiting));
