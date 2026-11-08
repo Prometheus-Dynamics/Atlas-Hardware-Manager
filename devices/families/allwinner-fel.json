@@ -3,7 +3,7 @@
   "family": "allwinner-fel",
   "display_name": "Allwinner FEL",
   "vendor": "Allwinner",
-  "description": "Allwinner SoCs in FEL, the boot ROM's USB download mode: Atlas runs an eGON SPL in SRAM through the FEL thunk, then a legacy U-Boot image, and writes the storage. No vendor tool at run time (written from sunxi-tools). Untested on a board.",
+  "description": "Allwinner SoCs in FEL, the boot ROM's USB download mode: Atlas runs an eGON SPL in SRAM through the FEL thunk, then a legacy U-Boot image, and writes the storage. No vendor tool at run time. Clean-room: written from the linux-sunxi wiki's FEL pages (see crates/atlas-socflash/src/fel/mod.rs for the sources and no sunxi-tools source). Untested on a board.",
   "method": "fel",
   "usb_vendor": "1f3a",
   "entry": [
@@ -27,8 +27,10 @@
     "windows": "WinUSB class"
   },
   "todo": [
-    "The A733's FEL USB id is 1f3a:efe8: Radxa's PhoenixSuit driver instructions name it (Cubie A7A and A7Z flashing pages). Confirm with lsusb on a board.",
-    "UNCONFIRMED: sram stays null until an SoC's SRAM layout is sourced (atlas-socflash fel/layout.rs: a record gives one).",
-    "Untested on an A733: checked against the mock board and replay vectors only."
+    "The A733's FEL USB id is 1f3a:efe8: Radxa's install docs name it (a docs search result, not a fetched page; the PhoenixSuit driver page was not checked). Confirm with lsusb on a board.",
+    "UNCONFIRMED: sram stays null until an SoC's SRAM layout is sourced. The shape is in devices/schema/family.schema.json ($defs/sram); crates/atlas-socflash/src/fel/layout.rs reads it.",
+    "UNCONFIRMED: the thunk (crates/atlas-socflash/src/fel/thunk.S) is ARMv7 (armv7a-none-eabi, as briefed); the A733 is AArch64 per its record, so the thunk's ISA must be confirmed on a board before the SPL step runs.",
+    "TODO: wire allwinner-fel into atlas-driver-soc's Soc enum (a later step; the fel module is not reachable from the driver yet).",
+    "Untested on an A733: checked against the mock device (fel/sim.rs), the wire-format tests and the assembled-thunk test only."
   ]
 }

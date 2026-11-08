@@ -35,7 +35,10 @@
         },
         "fel_image": { "type": "string", "description": "allwinner-fel: the image form the family can load." },
 
-        "sram": { "type": ["object", "null"], "description": "FEL: the SRAM layout, null until an SoC's is sourced." }
+        "sram": {
+          "description": "FEL: the SRAM layout the thunk and SPL use (crates/atlas-socflash/src/fel/layout.rs reads it). Null until an SoC's layout is sourced; Atlas runs nothing without it.",
+          "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sram" }]
+        }
       }
     },
     "host": {
@@ -55,6 +58,33 @@
     "todo": { "type": "array", "items": { "type": "string" } }
   },
   "$defs": {
+    "sram": {
+      "type": "object",
+      "description": "An SoC's FEL SRAM layout, as data. Addresses are 0x-prefixed 32-bit hex strings. swap_buffers pairs each live FEL stack region (buf1) with a free backup (buf2) of the same size; the thunk swaps them around the SPL call. The thunk and the SPL must not overlap a swap buffer.",
+      "required": ["load_address", "thunk_address", "uboot_address", "swap_buffers"],
+      "additionalProperties": false,
+      "properties": {
+        "load_address": { "$ref": "#/$defs/hex32", "description": "Where the SPL is written and entered (SRAM)." },
+        "thunk_address": { "$ref": "#/$defs/hex32", "description": "Where the thunk blob is written and run (SRAM, outside every swap buffer)." },
+        "uboot_address": { "$ref": "#/$defs/hex32", "description": "Where the legacy U-Boot image is written and entered (DRAM, after the SPL)." },
+        "swap_buffers": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": ["buf1", "buf2", "size"],
+            "additionalProperties": false,
+            "properties": {
+              "buf1": { "$ref": "#/$defs/hex32", "description": "A live FEL stack region in SRAM." },
+              "buf2": { "$ref": "#/$defs/hex32", "description": "A free backup area of the same size." },
+              "size": { "$ref": "#/$defs/hex32", "description": "Bytes; a non-zero multiple of 4." }
+            }
+          }
+        },
+        "status": { "type": "string", "description": "UNCONFIRMED when the layout is not yet checked on a board." }
+      }
+    },
+    "hex32": { "type": "string", "pattern": "^0x[0-9a-fA-F]{8}$" },
     "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
     "usbid": { "type": "string", "pattern": "^[0-9a-f]{4}$" }
   }

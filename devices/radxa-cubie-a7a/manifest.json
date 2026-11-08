@@ -89,7 +89,7 @@
       "fel_image": "eGON SPL then legacy U-Boot (u-boot-sunxi-with-spl form), UNCONFIRMED for the A733"
     },
     "todo": [
-      "Sources: the FEL steps are from docs.radxa.com/en/cubie/a7a/low-level-dev/install-system/fel-install-system/fel-mode (the UBOOT key SW2 and the cable). The 1f3a:efe8 id is in Radxa's PhoenixSuit driver docs (VID_1f3a PID_efe8) and sunxi-tools' fel_lib.h (0xEFE8). UNCONFIRMED until lsusb on the board shows it in FEL mode.",
+      "Sources: the FEL steps are from docs.radxa.com/en/cubie/a7a/low-level-dev/install-system/fel-install-system/fel-mode (the UBOOT key SW2 and the cable). The 1f3a:efe8 id is what Radxa's PhoenixSuit driver notes list (VID_1f3a PID_efe8, seen in a Radxa docs search result; the driver page itself was not fetched, so its link is not recorded here). UNCONFIRMED until lsusb on the board shows it in FEL mode.",
       "UNCONFIRMED: the loader glob u-boot-sunxi-with-spl*.bin. Radxa's FEL images are Android 13 zips from github.com/radxa/allwinner-android-manifests (the A7Z's is a733_android13_radxa_a7z_20250917_uart0.zip); the A7A's zip is not downloaded and its SPL and U-Boot files are not inspected. Gaia needs: the A733 FEL image (eGON SPL and U-Boot) as the loader, and the microSD disk image (whole disk, image_offset 0).",
       "UNCONFIRMED: the 4 GB RAM size (the page lists 2, 4, 6, 8, 12 and 16 GB without saying which the 4 GB board is).",
       "UNCONFIRMED: the fan connector (2-pin 1.25 mm per the overview, 3 signals per schematic p19).",
