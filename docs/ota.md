@@ -64,7 +64,7 @@ the board's slots.
 ## The writer: `board-update` (device package)
 
 Installed as `/usr/lib/board/update` (Unreleased; tested off-device by
-`devices/raze/tests/update.sh` against a real A/B layout made with sfdisk).
+`devices/common/board-os/tests/update.sh` against a real A/B layout made with sfdisk).
 Settings: `update.env`.
 
 ```
@@ -182,7 +182,7 @@ orion-node it waits and retries; nothing else depends on it. Stopping it
 stops a stage it started (the stage is in its cgroup); `status` then records
 the interrupted stage as an error. Settings: `BOARD_AGENT_*` in
 `/etc/board/agent.env` or `/data/board/agent.env`. Gaia builds it
-(`devices/raze/gaia/board-agent.toml`) as a static aarch64 musl binary from
+(`devices/common/board-os/gaia/board-agent.toml`) as a static aarch64 musl binary from
 the OS build's `atlas` source; on an OS without Orion it stays idle.
 
 board-agent also publishes the board's **live readings as Orion streams**

@@ -579,7 +579,7 @@ again 2026-11-01); the board proofs are the open items above.
       board on this computer's USB pulls slots from it with no SSH key
       (3b999e3).
 - [x] A/B writer in the device package (`usr/lib/board/update`, tested off the
-      board by `devices/raze/tests/update.sh`) and the SSH update transport for
+      board by `devices/common/board-os/tests/update.sh`) and the SSH update transport for
       boards listing `ab-tryboot`.
 - [x] `board-agent`, the Orion device agent (17c2475; tested against a real
       orion-node with a fake writer).

@@ -13,9 +13,8 @@ echo "==> Checking file sizes"
 echo "==> Testing the package versions"
 scripts/tests/package-versions.sh
 
-echo "==> Testing the device package (every devices/raze/tests/*.sh, in parallel)"
-sh devices/raze/tests/all.sh
-sh devices/luckfox-pico-pro/tests/nand-slot-hook.sh
+echo "==> Testing the device packages (every devices/*/tests/*.sh, in parallel)"
+sh devices/tools/test-all.sh
 
 echo "==> Running clippy"
 cargo clippy --workspace --all-targets --all-features -- -D warnings

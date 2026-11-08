@@ -232,7 +232,9 @@ fn shell_value(file: &Path, key: &str) -> Option<String> {
 fn raze_names_its_gadget_address() {
     let raze = repo_catalog();
     let raze = raze.by_model("raze").expect("raze package");
-    let scripts = raze.dir.join("gaia/assets/rootfs/usr/lib/board");
+    let scripts = raze
+        .dir
+        .join("../common/board-os/gaia/assets/rootfs/usr/lib/board");
     assert_eq!(
         raze.manifest.legacy_gadget_address().as_deref(),
         Some("172.31.250.1")

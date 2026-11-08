@@ -39,7 +39,7 @@ for o in sorted(named - built):
     bad.append(f"hardware entry overlay {o} isn't built by boot.toml")
 # Files the package stages.
 staged = set()
-for f in glob.glob(f"{g}/*.toml"):
+for f in glob.glob(f"{g}/*.toml") + glob.glob(f"{g}/../../common/board-os/gaia/*.toml"):
     for item in tomllib.load(open(f, "rb")).get("stage", {}).get("files", []):
         staged.add(item.get("dest"))
 for e in hw:

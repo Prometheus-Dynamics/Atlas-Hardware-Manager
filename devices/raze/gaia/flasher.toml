@@ -193,8 +193,8 @@ backend = "docker"
 
 [artifacts.execution.docker]
 image = "board-aarch64-musl"
-dockerfile = "${self}/docker/aarch64-musl.Dockerfile"
-context = "${self}/docker"
+dockerfile = "${self}/../../common/board-os/gaia/docker/aarch64-musl.Dockerfile"
+context = "${self}/../../common/board-os/gaia/docker"
 
 # Assembly items belong to the Buildroot image, as in boot.toml.
 [image]

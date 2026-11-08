@@ -19,15 +19,19 @@ devices/
     compat.schema.json
     identity.schema.json     the document served by the identity endpoint
     lemnos-board.schema.json Lemnos's board definition (vendored from the pinned Lemnos)
-  tools/sync-device.sh       vendor a package into an OS repo, and check it
   tools/gen-raze.py          render the Raze config from its manifest; --check lints
   tools/raze_lemnos.py       its lemnosd board.toml renderer and validator
+  tools/test-all.sh          every test under devices/, in parallel
   tools/gen-usb-ids.py       render the udev rules and the Windows WinUSB binds from
                              usb-ids.json and ecosystem.json; --check compares
   usb-ids.json               every USB id Atlas matches for a download mode (one table)
   ecosystem.json             what every board package of one OS ecosystem shares: the
                              gadget's ids and network, mac_rule, identity_service and
                              gadget-net addressing (a package names it with "ecosystem")
+  common/board-os/           what every board runs, whatever the hardware: its Gaia
+    gaia/board-os.toml       layer (identity, gadget, updates and slots, status,
+    gaia/assets/rootfs/      data, SSH keys, self-test), imported by a package's
+    tests/                   device.toml; the scripts' off-device tests
   <model>/
     manifest.json            read by Atlas (and people)
     compat.json              which OS images are known to work (informational)
@@ -254,7 +258,7 @@ interrupt. All hardware access goes through `hw.sh` and its backend
 `hw_camera_list`, ...; see "Hardware backends"), so the checks and the JSON
 are the same with lemnosd or without. The identity lists `"diagnostics": ["selftest"]`; Atlas
 runs it over SSH after a flash or update and on request (docs/ota.md).
-`devices/raze/tests/selftest.sh` tests it off-device with a fake sysfs.
+`devices/common/board-os/tests/selftest.sh` tests it off-device with a fake sysfs.
 
 ## Consuming a package from an OS build
 
@@ -299,30 +303,11 @@ that contains them), so the layer works wherever it is mounted. An OS refers to
 package files as `${source.atlas}/devices/raze/...`. The layers are Gaia
 config v3 (`config = 3`; Gaia cd9ad15 or later reads them).
 
-### Vendored copy (interim)
-
-Until every OS build can import from the git source, copy the package into the
-OS repo with `devices/tools/sync-device.sh` and import the vendored
-`device.toml` by its relative path; `${self}` works the same there.
-
-```sh
-# from the OS repo, with an Atlas checkout next to it
-../Atlas-Hardware-Manager/devices/tools/sync-device.sh --commit <rev> raze vendor/devices/raze
-# in CI (and before committing): fails if the copy was edited or does not match the lock
-../Atlas-Hardware-Manager/devices/tools/sync-device.sh --check vendor/devices/raze
-```
-
-A vendored copy still needs the `atlas` source declared in the OS build:
-`board-agent` is a Gaia artifact (`gaia/board-agent.toml`) built from
-`crates/board-agent` in that source.
-
-`sync-device.sh` writes `<dest>/.device-lock` with the Atlas commit and a
-content hash, and stamps the commit and its count into the package's
-`board-package.env`, so the identity document reports
-`<year>.<major>.<minor>-dev.<count>+<commit>`. With a git-source import the OS
-writes `BOARD_PACKAGE_COMMIT=${source.<id>.commit}` and
+An OS sets the build's own identity: it writes
+`BOARD_PACKAGE_COMMIT=${source.<id>.commit}` and
 `BOARD_PACKAGE_COUNT=${source.<id>.commit_count}` to
-`/etc/board/board-package.env`.
+`/etc/board/board-package.env`, so the identity document reports
+`<year>.<major>.<minor>-dev.<count>+<commit>`.
 
 ## What the OS still provides (Raze)
 
@@ -387,7 +372,7 @@ The device units are installed in `/usr/lib/systemd/system` and enabled by
 | `raze-leds-reprobe.service` | re-probes the WS2812 PIO driver if `/dev/leds0` is missing |
 | `lemnosd.service` (Lemnos's unit and `80-lemnosd.preset`) | the hardware service: LED ring, fan, sensors, GPIO; `/etc/lemnos/board.toml` |
 | `board-locate.service` (+ `.path`) | the identity endpoint's locate action: `raze-leds locate 10` |
-| `board-agent.service` | Orion device agent (a Gaia artifact, `gaia/board-agent.toml`: a static aarch64 musl binary built from `crates/board-agent`): claims `update`, `update.cancel`, `update.rollback`, `reboot` and `locate` on orion-node's local IPC and runs them with `/usr/lib/board/update` (docs/ota.md). Waits when the OS has no orion-node |
+| `board-agent.service` | Orion device agent (a Gaia artifact, `common/board-os/gaia/board-agent.toml`: a static aarch64 musl binary built from `crates/board-agent`): claims `update`, `update.cancel`, `update.rollback`, `reboot` and `locate` on orion-node's local IPC and runs them with `/usr/lib/board/update` (docs/ota.md). Waits when the OS has no orion-node |
 
 **orion-node local auth.** The package ships
 `orion-node.service.d/50-board-agent.conf`, setting
@@ -431,7 +416,7 @@ in `atlas-devices` (`GadgetAddressing`):
 | `10000000abcdef01` | 172.31.0.113/29 |
 | `cfc0641d` | 172.31.254.9/29 (index 8097, past the excluded /24) |
 
-`devices/raze/tests/gadget-address.sh` and the `atlas-devices` unit tests
+`devices/common/board-os/tests/gadget-address.sh` and the `atlas-devices` unit tests
 check the same vectors, so the two sides can't drift.
 
 **Collisions.** Two boards share a subnet with probability 1/8160 (0.012 %).

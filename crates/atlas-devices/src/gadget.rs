@@ -135,7 +135,7 @@ mod tests {
         }
     }
 
-    /// The same vectors as devices/raze/tests/gadget-address.sh, which runs
+    /// The same vectors as devices/common/board-os/tests/gadget-address.sh, which runs
     /// them through lib.sh: the device and Atlas agree on every address.
     #[test]
     fn known_serials_map_to_known_subnets() {

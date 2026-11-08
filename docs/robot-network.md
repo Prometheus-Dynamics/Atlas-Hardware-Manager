@@ -219,5 +219,5 @@ atlas robot open frc-radio:6390           # the web page's address
   route is used as it is, and a board not on USB or not routing has no
   children.
 - Core: saved addresses name their teams.
-- `devices/raze/tests/usb-route.sh`: `addresses`, including a static `/8`.
+- `devices/common/board-os/tests/usb-route.sh`: `addresses`, including a static `/8`.
 - Desktop: `layout.test.ts` (bun test).

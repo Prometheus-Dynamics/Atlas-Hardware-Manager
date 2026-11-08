@@ -5,7 +5,7 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-lib=$here/../gaia/assets/rootfs/usr/lib/board
+lib=$here/../../common/board-os/gaia/assets/rootfs/usr/lib/board
 T=$(mktemp -d "${TMPDIR:-/tmp}/board-package-version.XXXXXX")
 trap 'rm -rf "$T"' EXIT
 export BOARD_LIB_DIR=$lib BOARD_RUN_DIR=$T/run BOARD_DATA_DIR=$T/data BOARD_ETC_DIR=$T/etc
@@ -32,7 +32,7 @@ check 2026.1.0 412 "$commit" 2026.1.0
 check '' '' '' ''
 
 echo "the tree's base is the manifest's, in the -dev form"
-base=$(sed -n 's/^BOARD_PACKAGE_VERSION=//p' "$lib/board-package.env")
+base=$(sed -n 's/^BOARD_PACKAGE_VERSION=//p' "$here/../gaia/assets/rootfs/usr/lib/board/board-package.env")
 grep -q "\"package_version\": \"$base\"" "$here/../manifest.json" || fail "manifest isn't $base"
 case $base in
 *-dev) ;;

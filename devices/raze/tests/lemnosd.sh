@@ -8,10 +8,9 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-lib=$here/../gaia/assets/rootfs/usr/lib/board
 T=$(mktemp -d "${TMPDIR:-/tmp}/board-lemnosd-test.XXXXXX")
 trap 'rm -rf "$T"' EXIT
-. "$here/fake-board.inc"
+. "$here/../../common/board-os/tests/fake-board.inc"
 
 # lemnosd's devices (board.toml ids) and their status.
 cat > "$T/lemnos-devices" <<'EOF'

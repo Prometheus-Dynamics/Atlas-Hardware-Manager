@@ -4,9 +4,9 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-lib=$here/../gaia/assets/rootfs/usr/lib/board
 T=$(mktemp -d "${TMPDIR:-/tmp}/board-usb-boot-test.XXXXXX")
 trap 'rm -rf "$T"' EXIT
+. "$here/../../common/board-os/tests/fake-board.inc"
 
 fail() {
 	echo "FAIL: $*" >&2

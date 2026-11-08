@@ -104,11 +104,10 @@ jobs:
       - name: Install the pinned toolchain
         run: rustup toolchain install
 
-      # Every devices/raze/tests/*.sh, in parallel.
+      # Every test under devices/, in parallel.
       - name: Run the tests
         run: |
-          sh devices/raze/tests/all.sh
-          sh devices/luckfox-pico-pro/tests/nand-slot-hook.sh
+          sh devices/tools/test-all.sh
 
   workspace:
     name: checks (${{ matrix.os }})

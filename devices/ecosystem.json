@@ -98,7 +98,7 @@
           "10000000abcdef01": "172.31.0.113/29",
           "cfc0641d": "172.31.254.9/29"
         },
-        "implementations": "lib.sh board_gadget_subnet (device), atlas-devices GadgetAddressing (Atlas); devices/raze/tests/gadget-address.sh"
+        "implementations": "lib.sh board_gadget_subnet (device), atlas-devices GadgetAddressing (Atlas); devices/common/board-os/tests/gadget-address.sh"
       },
       "dhcp": true,
       "settings": "/usr/lib/board/usb-gadget.env (override in /etc/board/usb-gadget.env)"

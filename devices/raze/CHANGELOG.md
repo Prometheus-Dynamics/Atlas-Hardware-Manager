@@ -7,6 +7,14 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **What every board runs now lives in `devices/common/board-os` (2026-11-08).**
+  The identity endpoint, USB gadget, updates and slots, status, data, SSH keys
+  and self-test (scripts, units, their Gaia layers and off-device tests) moved
+  out of this package; `device.toml` imports `common/board-os/gaia/board-os.toml`,
+  and the image is unchanged. OS builds keep importing `devices/raze/gaia/*.toml`.
+  Stage ids of the moved files are now `board-*`. `devices/tools/sync-device.sh`
+  is gone (nothing vendors a package now); every test runs from
+  `devices/tools/test-all.sh`.
 - **4 MB back from block integrity (2026-11-08).** `CONFIG_BLK_DEV_INTEGRITY`
   is off (a 4,096 kB mempool from `bio_integrity_initfn`, seen with
   page_owner), and `CONFIG_DM_INTEGRITY`, which selects it. Nothing on the
