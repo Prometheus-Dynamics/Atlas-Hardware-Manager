@@ -53,6 +53,33 @@ pub struct Slot {
     /// A layered slot's layers, lowest first; `None` for a one-image slot.
     #[serde(default)]
     pub layers: Option<Vec<SlotLayer>>,
+    /// How many times the slot has failed (a history: it stays after a
+    /// confirm).
+    #[serde(default)]
+    pub failures: u32,
+    /// Failed since its last confirm: `boot-once`, `set-default` and
+    /// `rollback` refuse it unless forced, and housekeeping keeps no failed
+    /// slot as a fallback.
+    #[serde(default)]
+    pub failed: bool,
+    /// The last failure (its reason, the boot it happened in, when).
+    #[serde(default)]
+    pub last_failure: Option<SlotNote>,
+    /// The last confirm (the boot, when).
+    #[serde(default)]
+    pub last_confirm: Option<SlotNote>,
+}
+
+/// A slot's failure or confirm, as the writer records it. The reason is
+/// empty for a confirm.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SlotNote {
+    #[serde(default, deserialize_with = "text")]
+    pub reason: String,
+    #[serde(default, deserialize_with = "text")]
+    pub boot: String,
+    #[serde(default, deserialize_with = "text")]
+    pub time: String,
 }
 
 /// One layer of a layered slot, as the writer lists it.
@@ -113,10 +140,17 @@ pub enum SlotCommand {
     /// when it comes up healthy (and is confirmed), else the board goes back.
     BootOnce {
         id: String,
+        /// Try a slot that failed since its last confirm anyway (a person's
+        /// deliberate choice; the writer refuses it otherwise).
+        #[serde(default, skip_serializing_if = "is_false")]
+        force: bool,
     },
     /// Make a slot that booted well the default.
     SetDefault {
         id: String,
+        /// Make a slot that failed since its last confirm the default anyway.
+        #[serde(default, skip_serializing_if = "is_false")]
+        force: bool,
     },
     Remove {
         id: String,
@@ -134,12 +168,20 @@ pub enum SlotCommand {
 impl SlotCommand {
     pub fn id(&self) -> &str {
         match self {
-            Self::BootOnce { id }
-            | Self::SetDefault { id }
+            Self::BootOnce { id, .. }
+            | Self::SetDefault { id, .. }
             | Self::Remove { id }
             | Self::Pin { id, .. } => id,
             Self::Keep { .. } => "",
         }
+    }
+
+    /// Whether the command overrides a slot's failure (`--force`).
+    pub fn forced(&self) -> bool {
+        matches!(
+            self,
+            Self::BootOnce { force: true, .. } | Self::SetDefault { force: true, .. }
+        )
     }
 
     /// The writer's command (`update <this> <id>`).
@@ -152,6 +194,11 @@ impl SlotCommand {
             Self::Pin { pinned: false, .. } => "unpin",
             Self::Keep { .. } => "keep",
         }
+    }
+
+    /// The writer's flag for a forced command (`--force`), else nothing.
+    pub fn writer_flags(&self) -> &'static str {
+        if self.forced() { " --force" } else { "" }
     }
 
     /// The writer's arguments after its command.
@@ -290,6 +337,10 @@ const fn yes() -> bool {
     true
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 /// A refusal from the board's slots writer as a reason: without the
 /// writer's and the action's prefixes (`slots: `, `slot.remove: `).
 pub fn refusal(text: &str) -> String {
@@ -356,7 +407,11 @@ mod tests {
         };
         assert_eq!(pin.writer_command(), "unpin");
         assert_eq!(pin.describe(), "unpin pv-b");
-        let json = serde_json::to_string(&SlotCommand::BootOnce { id: "pv-b".into() }).unwrap();
+        let json = serde_json::to_string(&SlotCommand::BootOnce {
+            id: "pv-b".into(),
+            force: false,
+        })
+        .unwrap();
         assert_eq!(json, r#"{"command":"boot-once","id":"pv-b"}"#);
         let keep: SlotCommand = serde_json::from_str(r#"{"command":"keep","keep":2}"#).unwrap();
         assert_eq!(
@@ -365,5 +420,42 @@ mod tests {
         );
         assert_eq!(keep.describe(), "keep the last 2 slots");
         assert_eq!(pin.writer_argument(), "pv-b");
+    }
+
+    #[test]
+    fn reads_the_failure_memory_and_forced_commands() {
+        let set: SlotSet = serde_json::from_str(
+            r#"{"layout":"slots","slot_active":"pv-a","slot_default":"pv-a",
+            "slots":[{"id":"pv-a","failures":0,"failed":false,"last_failure":null,
+                      "last_confirm":{"boot":"b1","time":"2026-11-08T01:00:00Z"}},
+                     {"id":"pv-b","failures":2,"failed":true,
+                      "last_failure":{"reason":"slot pv-b missed its confirm deadline","boot":"b2","time":"2026-11-08T02:00:00Z"},
+                      "last_confirm":null},
+                     {"id":"pv-c"}]}"#,
+        )
+        .unwrap();
+        assert!(!set.slots[0].failed);
+        assert_eq!(set.slots[0].last_confirm.as_ref().unwrap().boot, "b1");
+        assert!(set.slots[0].last_failure.is_none());
+        assert!(set.slots[1].failed);
+        assert_eq!(set.slots[1].failures, 2);
+        let failure = set.slots[1].last_failure.as_ref().unwrap();
+        assert_eq!(failure.reason, "slot pv-b missed its confirm deadline");
+        assert_eq!(failure.boot, "b2");
+        // A writer that doesn't report the fields (an older one): no failure.
+        assert!(!set.slots[2].failed && set.slots[2].failures == 0);
+        assert!(set.slots[2].last_confirm.is_none());
+
+        let forced = SlotCommand::BootOnce {
+            id: "pv-b".into(),
+            force: true,
+        };
+        assert!(forced.forced());
+        assert_eq!(forced.writer_flags(), " --force");
+        let json = serde_json::to_string(&forced).unwrap();
+        assert_eq!(json, r#"{"command":"boot-once","id":"pv-b","force":true}"#);
+        let plain: SlotCommand =
+            serde_json::from_str(r#"{"command":"set-default","id":"pv-b"}"#).unwrap();
+        assert!(!plain.forced() && plain.writer_flags().is_empty());
     }
 }

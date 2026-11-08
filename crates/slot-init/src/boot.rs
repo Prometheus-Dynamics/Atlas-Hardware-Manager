@@ -37,7 +37,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::partition::{Spec, find};
-use crate::{Manifest, State, Verity, cmdline_arg, valid_id};
+use crate::{Manifest, State, Verity, cmdline_arg, failed_since_confirm, valid_id};
 
 const MAX_FALLBACKS: u32 = 3;
 /// ext4's s_state bit for "errors detected".
@@ -259,6 +259,14 @@ impl Boot<'_> {
         };
         if previous == self.slot {
             return self.rescue(&format!("{why}; the previous slot is this one"));
+        }
+        // Only resident slots are reachable, and the previous one is the only
+        // resident candidate: a failed one is tried as before, and logged.
+        let meta = std::fs::read_to_string(state.join(format!("{previous}.meta")));
+        if meta.is_ok_and(|text| failed_since_confirm(&text)) {
+            self.log(&format!(
+                "previous slot {previous} failed since it last confirmed; no other resident slot can take its place, so it's tried anyway"
+            ));
         }
         let _ = self
             .ops

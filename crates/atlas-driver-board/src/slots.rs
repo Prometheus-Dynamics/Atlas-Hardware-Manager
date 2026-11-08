@@ -220,7 +220,11 @@ impl SlotsCapability for BoardSlots {
             SlotCommand::Keep { keep } => keep.to_string(),
             other => checked(other.id())?.to_string(),
         };
-        let script = format!("{WRITER} {} {argument}", command.writer_command());
+        let script = format!(
+            "{WRITER} {} {argument}{}",
+            command.writer_command(),
+            command.writer_flags()
+        );
         if matches!(
             command,
             SlotCommand::BootOnce { .. } | SlotCommand::SetDefault { .. }
@@ -382,6 +386,30 @@ mod tests {
         .unwrap();
         assert_eq!(set.running, "pv-a");
         assert_eq!(set.slots[0].id, "pv-a");
+    }
+
+    #[test]
+    fn status_carries_each_slots_failure_memory() {
+        let set = parse_status(
+            r#"{"state":"idle","layout":"slots","slot_active":"pv-a","slot_default":"pv-a","slot_previous":"pv-b","free_bytes":10,"reserve_bytes":2,"slots":[
+                {"id":"pv-a","flags":["running","default"],"failures":0,"failed":false,"last_failure":null,"last_confirm":{"boot":"b1","time":"2026-11-08T03:00:00Z"}},
+                {"id":"pv-b","flags":["previous"],"failures":1,"failed":true,"last_failure":{"reason":"slot pv-b hasn't confirmed","boot":"b0","time":"2026-11-08T02:00:00Z"},"last_confirm":null}]}"#,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(!set.slots[0].failed);
+        assert_eq!(set.slots[0].last_confirm.as_ref().unwrap().boot, "b1");
+        assert!(set.slots[1].failed);
+        assert_eq!(set.slots[1].failures, 1);
+        assert_eq!(
+            set.slots[1].last_failure.as_ref().unwrap().reason,
+            "slot pv-b hasn't confirmed"
+        );
+        // An older writer's status (no failure fields) is no failure.
+        let older = parse_status(r#"{"layout":"slots","slots":[{"id":"pv-c"}]}"#)
+            .unwrap()
+            .unwrap();
+        assert!(!older.slots[0].failed && older.slots[0].last_failure.is_none());
     }
 
     #[test]

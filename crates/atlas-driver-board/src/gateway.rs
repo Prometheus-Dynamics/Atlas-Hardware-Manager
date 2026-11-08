@@ -179,13 +179,19 @@ impl SlotsCapability for GatewaySlots {
     async fn command(&self, _device: &Identity, command: &SlotCommand) -> Result<(), DriverError> {
         // Booting another slot is HeliOS's switch (on trial); the rest are
         // the writer's own commands (`update/slots/<command>`).
+        if command.forced() {
+            return Err(DriverError::Unsupported(
+                "through the robot controller a failed slot can't be forced yet (its own link can)"
+                    .into(),
+            ));
+        }
         let (path, id) = match command {
             SlotCommand::Keep { .. } => {
                 return Err(DriverError::Unsupported(
                     "through the robot controller the board's housekeeping can't be set yet".into(),
                 ));
             }
-            SlotCommand::BootOnce { id } => ("update/slots/switch".to_string(), id),
+            SlotCommand::BootOnce { id, .. } => ("update/slots/switch".to_string(), id),
             other => (
                 format!("update/slots/{}", other.writer_command()),
                 &other.id().to_string(),

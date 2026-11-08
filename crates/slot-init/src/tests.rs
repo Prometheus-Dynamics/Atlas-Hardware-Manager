@@ -1,5 +1,19 @@
 use super::*;
 
+/// The failure memory (`<id>.meta`) says failed only by an exact FAILED=yes:
+/// absent, confirmed (FAILED=no) or corrupt meta is no known failure.
+#[test]
+fn failed_since_confirm_reads_the_mark_only() {
+    assert!(failed_since_confirm(
+        "GOOD=no\nFAILED=yes\nFAILURES=2\nFAIL_REASON='x'\n"
+    ));
+    assert!(!failed_since_confirm("GOOD=yes\nFAILED=no\n"));
+    assert!(!failed_since_confirm("GOOD=yes\n"));
+    assert!(!failed_since_confirm(""));
+    assert!(!failed_since_confirm("\u{0}\u{1}FAILED=yes-garbage\n"));
+    assert!(!failed_since_confirm("FAILED=yesno\n"));
+}
+
 const SLOT: &str = r#"{"schema":1,"id":"photonvision-2026.4.0-styx-1a2b3c4d","family":"photonvision",
     "version":"2026.4.0","variant":"styx","kernel":"7.2.9-v8-16k",
     "image":{"size":471859200,"sha256":"00"},

@@ -112,12 +112,27 @@
   }
 
   function bootOnce(slot: Slot) {
+    if (slot.failed) return forced(slot, "boot-once");
     asking = {
       command: { command: "boot-once", id: slot.id },
       title: `Restart ${deviceName(record)} into ${name(slot)}?`,
       body: `It restarts into ${name(slot)} once, on trial. If it comes up healthy it becomes the default; if not, the board goes back to ${set?.slot_default ? "the default" : "the running one"} by itself.`,
       label: "Restart into it",
     };
+  }
+  /** A failed slot is only tried or made the default on a deliberate choice here (the writer refuses it otherwise). */
+  function forced(slot: Slot, command: "boot-once" | "set-default") {
+    const why = slot.last_failure?.reason || "it failed";
+    asking = {
+      command: { command, id: slot.id, force: true },
+      title: command === "boot-once" ? `Boot ${name(slot)} anyway?` : `Make ${name(slot)} the default anyway?`,
+      body: `${name(slot)} failed since it last confirmed: ${why}. ${command === "boot-once" ? "Booting it again can fail again. If it doesn't come up, the board goes back by itself." : "The board would start it on every restart, and it may fail again."}`,
+      label: command === "boot-once" ? "Boot it anyway" : "Make it the default anyway",
+    };
+  }
+  function makeDefault(slot: Slot) {
+    if (slot.failed) return forced(slot, "set-default");
+    void run({ command: "set-default", id: slot.id }, `${name(slot)} is now the default on ${deviceName(record)}.`);
   }
   function remove(slot: Slot) {
     asking = {
@@ -157,7 +172,7 @@
               {#if has(slot, "trial")}<Pill tone="warning" label="On trial" />{/if}
               {#if has(slot, "previous")}<Pill label="Way back" title="The default before this one: where the board goes if the default can't start" />{/if}
               {#if slot.intact === false}<Pill tone="error" label="Damaged" title="Its image isn't the size it was built at: it won't start. Remove it and install it again" />{/if}
-              {#if slot.good === "no" && slot.intact !== false}<Pill tone="error" label="Didn't come up" title="Its last trial boot failed; the board went back" />{/if}
+              {#if slot.failed}<Pill tone="error" label="Failed" title="Failed since it last confirmed: {slot.last_failure?.reason ?? 'no reason recorded'}. Boot or make it the default only on purpose." />{:else if slot.good === "no" && slot.intact !== false}<Pill tone="error" label="Didn't come up" title="Its last trial boot failed; the board went back" />{/if}
             </span>
           </p>
           <div class="line">
@@ -167,7 +182,7 @@
                 <Button size="sm" icon="player-play" busy={busy === `boot-once:${slot.id}`} disabled={!!busy} onclick={() => bootOnce(slot)}>Boot once</Button>
               {/if}
               {#if !has(slot, "default") && slot.good === "yes"}
-                <Button size="sm" busy={busy === `set-default:${slot.id}`} disabled={!!busy} onclick={() => void run({ command: "set-default", id: slot.id }, `${name(slot)} is now the default on ${deviceName(record)}.`)}>Make default</Button>
+                <Button size="sm" busy={busy === `set-default:${slot.id}`} disabled={!!busy} onclick={() => makeDefault(slot)}>Make default</Button>
               {/if}
               <Button
                 size="sm"
@@ -181,6 +196,12 @@
               <Button size="sm" variant="ghost" icon="trash" label="Remove" title={why ?? "Remove it from the board"} disabled={!!why || !!busy} onclick={() => remove(slot)} />
             </span>
           </div>
+          {#if slot.failed && slot.last_failure}
+            <p class="reason" title={slot.last_failure.reason}>
+              <Icon name="alert-circle" size={12} />
+              <span class="truncate">{slot.last_failure.reason}{slot.last_failure.time ? ` · ${timeAgo(Date.parse(slot.last_failure.time))}` : ""}</span>
+            </p>
+          {/if}
         </li>
       {/each}
     </ul>
@@ -292,6 +313,14 @@
     min-height: 26px;
     padding: 2px 8px;
     font-size: 12px;
+  }
+  .reason {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    font-size: 11.5px;
+    color: var(--error-fg, var(--fg));
   }
   .problem {
     display: flex;

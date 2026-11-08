@@ -920,4 +920,134 @@ up keep 0 > /dev/null
 update_to q-6
 for kept in q-1 q-5 q-6; do [ -r "$H/data/slots/$kept.json" ] || fail "keep 0 removed $kept"; done
 
+echo "the failure memory: a stalled boot is a failure (refused unless forced, cleared by a confirm); a power cut never is"
+F=$T/f
+mkdir -p "$F/boot/slots/f-0" "$F/data/slots" "$F/data/board/slots" "$F/run"
+export SLOTS_DATA=$F/data SLOTS_BOOT_MOUNT=$F/boot BOARD_RUN_DIR=$F/run BOARD_DATA_DIR=$F/data/board UPDATE_SLOTS_STATE=$F/data/board/slots/state.json
+echo f0-kernel > "$F/boot/slots/f-0/kernel8.img"
+echo 'console=ttyAMA10 atlas.slot=f-0' > "$F/boot/slots/f-0/cmdline.txt"
+echo '{"schema":1,"id":"f-0","family":"helios","version":"0","variant":"styx","kernel":"7.2.9","verity":{"root_hash":"aa"}}' > "$F/data/slots/f-0.json"
+cp "$F/data/slots/f-0.json" "$F/boot/slots/f-0/slot.json"
+echo f0 > "$F/data/slots/f-0.erofs"
+echo 'os_prefix=slots/f-0/' > "$F/boot/default.txt"
+echo '{"schema":1,"default":"f-0","previous":null,"trial":null}' > "$F/data/board/slots/state.json"
+fmeta() { sed -n "s/^$2=//p" "$F/data/board/slots/$1.meta" 2>/dev/null | head -n 1; }
+# fboot <boot id> <running slot>: a boot that runs <slot> and runs its confirm
+fboot() { echo "$1" > "$T/boot_id"; echo "$2" > "$F/data/board/slots/booted"; up confirm 2>/dev/null; }
+# stall <boot id> <running slot>: a boot that never confirmed, its deadline fired
+stall() { echo "$1" > "$T/boot_id"; echo "$2" > "$F/data/board/slots/booted"; SLOTS_UPTIME_FILE=$T/uptime-late up deadline 2>/dev/null || true; }
+echo 400.0 > "$T/uptime-late"
+fboot b-f0 f-0
+[ -r "$F/data/slots/f-0.boot" ] || fail "f-0's boot files weren't kept on /data"
+up keep 3 > /dev/null
+bundle f-1 1.1
+up stage "$T/f-1.slot.tar" 2>/dev/null || fail "stage f-1: $(cat "$T/err")"
+up apply 2>/dev/null || fail "apply f-1: $(cat "$T/err")"
+fboot b-f1 f-1
+status | grep -q '"slot_default":"f-1","slot_previous":"f-0"' || fail "f-1 is the default: $(status)"
+status | grep -q '"id":"f-0"[^}]*"failed":false,"last_failure":null' || fail "a healthy slot's failure fields: $(status)"
+status | grep -q '"id":"f-1"[^}]*"last_confirm":{"boot":"b-f1"' || fail "the last confirm: $(status)"
+
+echo "  a deadline that fires on a boot that never confirmed records the failure (once per boot), with its reason"
+: > "$T/reboots"
+stall b-f0s f-0
+[ "$(fmeta f-0 FAILED)" = yes ] || fail "a stalled boot isn't a failure: $(cat "$F/data/board/slots/f-0.meta")"
+[ "$(fmeta f-0 FAILURES)" = 1 ] || fail "the count: $(fmeta f-0 FAILURES)"
+[ "$(fmeta f-0 FAIL_BOOT)" = b-f0s ] || fail "the failure's boot: $(fmeta f-0 FAIL_BOOT)"
+fmeta f-0 FAIL_REASON | grep -q "hasn't confirmed its boot within 300 s" || fail "the reason: $(fmeta f-0 FAIL_REASON)"
+grep -q '"kind":"slot.failed"' "$F/data/board/events.jsonl" || fail "no slot.failed event"
+status | grep -q '"id":"f-0"[^}]*"failed":true' || fail "status doesn't say f-0 failed: $(status)"
+status | grep -q '"last_failure":{"reason":"slot f-0 hasn'"'"'t confirmed' || fail "status has no last failure: $(status)"
+stall b-f0s f-0
+[ "$(fmeta f-0 FAILURES)" = 1 ] || fail "the same boot counted twice"
+[ ! -s "$T/reboots" ] || fail "a stalled default restarted the board: $(cat "$T/reboots")"
+echo f-1 > "$F/data/board/slots/booted"
+
+echo "  a failed slot is refused by rollback, boot once and set-default unless forced"
+[ "$(rc rollback --no-reboot)" = 3 ] || fail "rollback to a failed previous slot"
+grep -q "failed since its last confirmation" "$T/err" || fail "the refusal: $(cat "$T/err")"
+grep -q -- "--force" "$T/err" || fail "the refusal doesn't say --force: $(cat "$T/err")"
+[ "$(cat "$F/boot/default.txt")" = "os_prefix=slots/f-1/" ] || fail "a refused rollback changed the default"
+[ "$(rc boot-once f-0)" = 3 ] || fail "boot once of a failed slot"
+grep -q "failed since its last confirmation" "$T/err" || fail "boot-once refusal: $(cat "$T/err")"
+[ "$(rc set-default f-0)" = 3 ] || fail "set-default of a failed slot"
+grep -q "failed since its last confirmation" "$T/err" || fail "set-default refusal: $(cat "$T/err")"
+[ "$(rc set-default f-0 --force)" = 0 ] || fail "a forced set-default refused: $(cat "$T/err")"
+[ "$(cat "$F/boot/default.txt")" = "os_prefix=slots/f-0/" ] || fail "the forced default: $(cat "$F/boot/default.txt")"
+[ "$(rc boot-once f-0 --force)" = 0 ] || fail "a forced boot once refused: $(cat "$T/err")"
+[ "$(cat "$F/boot/trial.txt")" = "os_prefix=slots/f-0/" ] || fail "trial.txt for the forced boot"
+# The trial comes up and confirms: its failure clears (its count stays).
+fboot b-f0t f-0
+[ "$(fmeta f-0 FAILED)" = no ] || fail "a confirm didn't clear the failure: $(cat "$F/data/board/slots/f-0.meta")"
+[ "$(fmeta f-0 FAILURES)" = 1 ] || fail "a confirm erased the count"
+[ "$(fmeta f-0 CONFIRM_BOOT)" = b-f0t ] || fail "the confirm's boot"
+status | grep -q '"id":"f-0"[^}]*"failed":false' || fail "status after the confirm: $(status)"
+[ "$(rc boot-once f-1)" = 0 ] || fail "f-1 is no longer eligible: $(cat "$T/err")"
+fboot b-f1b f-1
+status | grep -q '"slot_default":"f-1"' || fail "f-1 is the default again: $(status)"
+
+echo "  a power cut is never a failure: a trial that never confirmed after power-on keeps its record and its eligibility"
+bundle f-2 1.2
+up stage "$T/f-2.slot.tar" 2>/dev/null || fail "stage f-2: $(cat "$T/err")"
+up apply f-2 2>/dev/null || fail "apply f-2: $(cat "$T/err")"
+echo f-2 > "$F/data/board/slots/trial-started"
+mkdir -p "$T/dt/chosen/bootloader"
+printf '\000\000\020\000' > "$T/dt/chosen/bootloader/rsts" # PM_RSTS 0x1000: a power-on
+fboot b-f2cut f-1
+status | grep -q "began at power-on (the board lost power)" || fail "the power-on wasn't said: $(status)"
+grep -q '^FAILED=yes' "$F/data/board/slots/f-2.meta" && fail "a power cut failed the trial: $(cat "$F/data/board/slots/f-2.meta")"
+[ "$(fmeta f-2 GOOD)" = untried ] || fail "a power cut changed the trial's GOOD: $(fmeta f-2 GOOD)"
+status | grep -q '"id":"f-2"[^}]*"failed":false,"last_failure":null' || fail "a power cut's failure fields: $(status)"
+[ "$(rc boot-once f-2)" = 0 ] || fail "a power cut made the slot ineligible: $(cat "$T/err")"
+rm -rf "$T/dt"
+# The same trial, cut short without a power cut: its initramfs started it and it never confirmed.
+echo f-2 > "$F/data/board/slots/trial-started"
+fboot b-f2s f-1
+grep -q '^FAILED=yes' "$F/data/board/slots/f-2.meta" || fail "a trial that started and never confirmed isn't a failure: $(cat "$F/data/board/slots/f-2.meta")"
+fmeta f-2 FAIL_REASON | grep -q "started but its system didn't confirm" || fail "the trial's failure reason: $(fmeta f-2 FAIL_REASON)"
+
+echo "  housekeeping: a failed slot doesn't use a keep place, and a recent one isn't removed"
+bundle f-3 1.3
+up stage "$T/f-3.slot.tar" 2>/dev/null || fail "stage f-3: $(cat "$T/err")"
+up apply f-3 2>/dev/null || fail "apply f-3: $(cat "$T/err")"
+fboot b-f3 f-3
+[ -r "$F/data/slots/f-2.json" ] || fail "housekeeping removed the recent failed f-2"
+[ -r "$F/data/slots/f-1.json" ] && [ -r "$F/data/slots/f-0.json" ] || fail "housekeeping removed an eligible slot"
+grep -q '"default":"f-3"' "$F/data/board/slots/state.json" || fail "state after housekeeping: $(cat "$F/data/board/slots/state.json")"
+
+echo "  a trial whose deadline fires goes back to the default, and stays failed"
+bundle f-4 1.4
+up stage "$T/f-4.slot.tar" 2>/dev/null || fail "stage f-4: $(cat "$T/err")"
+up apply f-4 2>/dev/null || fail "apply f-4: $(cat "$T/err")"
+echo b-f4 > "$T/boot_id"
+echo f-4 > "$F/data/board/slots/booted"
+: > "$T/reboots"
+SLOTS_UPTIME_FILE=$T/uptime-late up deadline 2>/dev/null || true
+[ "$(tail -n 1 "$T/reboots")" = plain ] || fail "a missed deadline on a trial didn't restart back: $(cat "$T/reboots")"
+[ "$(fmeta f-4 FAILED)" = yes ] || fail "the trial's failure: $(cat "$F/data/board/slots/f-4.meta")"
+[ "$(fmeta f-4 GOOD)" = no ] || fail "the trial isn't GOOD=no"
+status | grep -q 'missed its confirm deadline' || fail "the deadline's reason: $(status)"
+fboot b-f4back f-3
+status | grep -q '"state":"rolled-back"' || fail "a missed trial's rollback: $(status)"
+status | grep -q '"slot_default":"f-3"' || fail "the default moved: $(status)"
+[ "$(fmeta f-4 FAILURES)" = 1 ] || fail "the trial's failure counted twice: $(fmeta f-4 FAILURES)"
+[ "$(rc boot-once f-4)" = 3 ] || fail "a failed trial is bootable without force"
+[ "$(rc boot-once f-4 --force)" = 0 ] || fail "a failed trial isn't bootable by force: $(cat "$T/err")"
+
+echo "  corrupt meta is no known failure; the writer's status says so per slot"
+printf 'GARBAGE\n\000x=\n' > "$F/data/board/slots/f-1.meta"
+status | grep -q '"id":"f-1"[^}]*"failures":0,"failed":false,"last_failure":null,"last_confirm":null' || fail "corrupt meta isn't no failure: $(status)"
+
+echo "  a failed slot still goes once it is older than the last n"
+for g in g-1 g-2 g-3; do
+	bundle "$g" 2.0
+	up stage "$T/$g.slot.tar" 2>/dev/null || fail "stage $g: $(cat "$T/err")"
+	up apply "$g" 2>/dev/null || fail "apply $g: $(cat "$T/err")"
+	fboot "b-$g" "$g"
+done
+[ ! -e "$F/data/slots/f-2.json" ] || fail "the old failed f-2 was kept for ever"
+
+# Back to the board the sections below expect.
+export SLOTS_DATA=$T/data SLOTS_BOOT_MOUNT=$T/boot BOARD_RUN_DIR=$T/run BOARD_DATA_DIR=$T/data/board UPDATE_SLOTS_STATE=$T/data/board/slots/state.json
+
 echo "ok"

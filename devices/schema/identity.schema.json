@@ -480,6 +480,57 @@
                   "array",
                   "null"
                 ]
+              },
+              "failures": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "How many times the slot has failed. A history: it stays after a confirm."
+              },
+              "failed": {
+                "type": "boolean",
+                "description": "Failed since its last confirm. boot-once, set-default and rollback refuse such a slot unless forced; a power cut is never a failure."
+              },
+              "last_failure": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "The last failure: its reason, the boot it happened in and when (RFC 3339). Null when it never failed.",
+                "required": [
+                  "reason",
+                  "boot",
+                  "time"
+                ],
+                "properties": {
+                  "reason": {
+                    "type": "string"
+                  },
+                  "boot": {
+                    "type": "string"
+                  },
+                  "time": {
+                    "type": "string"
+                  }
+                }
+              },
+              "last_confirm": {
+                "type": [
+                  "object",
+                  "null"
+                ],
+                "description": "The last confirm: the boot and when (RFC 3339). Null when it never confirmed.",
+                "required": [
+                  "boot",
+                  "time"
+                ],
+                "properties": {
+                  "boot": {
+                    "type": "string"
+                  },
+                  "time": {
+                    "type": "string"
+                  }
+                }
               }
             }
           }

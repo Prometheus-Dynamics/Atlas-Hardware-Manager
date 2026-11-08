@@ -473,6 +473,12 @@ dest = "/usr/lib/systemd/system/board-update-confirm.service"
 origin = "static-asset"
 
 [[stage.files]]
+id = "raze-systemd-system-board-update-deadline-service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/board-update-deadline.service"
+dest = "/usr/lib/systemd/system/board-update-deadline.service"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-systemd-system-conf-d-60-board-watchdog-conf"
 src = "${self}/assets/rootfs/usr/lib/systemd/system.conf.d/60-board-watchdog.conf"
 dest = "/usr/lib/systemd/system.conf.d/60-board-watchdog.conf"
@@ -778,6 +784,7 @@ stage_files = [
   "raze-ssh-sshd-config-d-50-board-conf",
   "raze-board-update-env",
   "raze-systemd-system-board-update-confirm-service",
+  "raze-systemd-system-board-update-deadline-service",
   "raze-systemd-system-board-update-link-service",
   "raze-systemd-system-conf-d-60-board-watchdog-conf",
   "raze-board-leds-env",

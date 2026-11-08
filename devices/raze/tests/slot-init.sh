@@ -183,6 +183,19 @@ called "reboot-tryboot" && fail "a fourth fallback"
 called "reboot" || fail "no restart: $(cat "$T/calls")"
 said "fell back 3 times in a row" || fail "the reason: $(cat "$R/dev/kmsg")"
 
+echo "a previous slot that failed since it last confirmed is still tried (no other resident slot), and the log says so"
+setup
+rm "$R/data/slots/pv-a.erofs"
+printf 'GOOD=no\nFAILED=yes\nFAILURES=1\n' > "$R/data/board/slots/pv-b.meta"
+run
+[ "$(cat "$R/boot/trial.txt")" = "os_prefix=slots/pv-b/" ] || fail "a failed previous slot wasn't tried: $(cat "$R/boot/trial.txt" 2>/dev/null)"
+said "previous slot pv-b failed since it last confirmed; no other resident slot can take its place" || fail "the reason: $(cat "$R/dev/kmsg")"
+setup
+rm "$R/data/slots/pv-a.erofs"
+printf 'GOOD=yes\nFAILED=no\nFAILURES=1\n' > "$R/data/board/slots/pv-b.meta"
+run
+said "failed since it last confirmed" && fail "a confirmed previous slot is named as failed"
+
 echo "a first flash (no previous slot) restarts with the reason"
 setup
 echo '{"schema":1,"default":"pv-a","previous":null,"trial":null}' > "$R/data/board/slots/state.json"

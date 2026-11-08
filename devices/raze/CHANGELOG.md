@@ -29,6 +29,20 @@ OSes pin this layer by commit; the commits are listed per area.
   read `/run/orion`. The host keys' public halves are copied to
   `/run/board/ssh-public` for the fingerprints the node publishes
   (`ORION_NODE_SSH_HOST_KEYS`); the private keys stay in the 0700 directory.
+- **Slots remember their failures (2026-11-08).** Each slot's `<id>.meta`
+  on /data keeps a failure count, the failed mark, the last failure (reason,
+  boot, time) and the last confirm. A slot fails only with evidence a boot
+  ran and stalled, or an explicit trial failure: a new confirm deadline
+  (`board-update-deadline.service`, `UPDATE_CONFIRM_DEADLINE=300` in
+  update.env: ten times the trial's judging delay, longer than the link
+  check) records a boot that hasn't confirmed while the board was up; a
+  power cut is never a failure. A failed slot is refused by boot-once,
+  set-default and rollback unless `--force`; a failed slot uses no
+  `SLOTS_KEEP` place, and goes only once its age says so; a confirm clears the mark. `slots status` gives each
+  slot `failures`, `failed`, `last_failure`, `last_confirm`
+  (identity.schema.json). The desktop's Slots card badges a failed slot with
+  its reason and offers booting or making it the default anyway only as a
+  deliberate dialog. docs/ota.md: "Slot failure memory".
 - **The bench lock is board-gpu.lock; raze-gpu.lock stays an alias
   (2026-11-07).** reboot-locked waits for `/run/lock/board-gpu.lock`. The old
   name is the same lock: tmpfiles makes it a symlink at boot, reboot-locked

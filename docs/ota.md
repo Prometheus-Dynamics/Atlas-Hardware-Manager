@@ -290,6 +290,65 @@ EROFS root). The kernel's soft-lockup and hung-task detectors can be made to
 panic as well (`softlockup_panic=1`), which turns some silent hangs into a
 restart into the old slot.
 
+### Slot failure memory (slots boards)
+
+A slot that fails is remembered on /data, so the board stops choosing it.
+Each slot's `<id>.meta` (next to its image, written in one atomic replace)
+holds:
+
+| Key | Meaning |
+|---|---|
+| `FAILURES` | How many times it has failed. A history: a confirm doesn't reset it. |
+| `FAILED` | `yes` from a failure until the slot next confirms, else `no`. |
+| `FAIL_REASON`, `FAIL_BOOT`, `FAIL_TIME` | The last failure: why, in which boot, when. The first reason of a failure stands. |
+| `CONFIRM_BOOT`, `CONFIRM_TIME` | The last confirm. |
+
+Absent or corrupt meta is no known failure, and a slot without meta (one
+installed before this) works as before.
+
+**What counts as a failure.** Only evidence that a boot ran and stalled, or
+an explicit trial failure, is recorded:
+
+- a **trial** that fails its checks or health check, loses its management
+  link (`check-link`), or whose initramfs started it (`trial-started`) or
+  stopped it (`trial-init`) and which never confirmed;
+- the **confirm deadline** (`board-update-deadline.service`): a boot that
+  hasn't confirmed `UPDATE_CONFIRM_DEADLINE` seconds after it began, while
+  the board was up. It is recorded once per boot. For a trial the deadline
+  goes back to the default, as any failed trial does; a default that stalls is
+  only marked (the next boot that confirms clears it), since a confirm can be
+  late behind an install.
+
+**What never counts.** A power cut. A missing confirm after a power loss has
+no evidence that the boot ran: the deadline timer went down with the power,
+and a trial noticed on a boot that began at power-on (`rsts` shows a power-on)
+neither fails nor changes the trial's `GOOD`. A trial that never reached its
+initramfs's `/init` (no marker either way) is tried again as before and isn't
+marked failed, since nothing shows that it ran.
+
+**The deadline.** `UPDATE_CONFIRM_DEADLINE=300` in `update.env`. It is ten
+times `UPDATE_CONFIRM_DELAY` (30 s, the trial's judging), so a slow but healthy
+boot (eMMC, first mounts, the network) is judged well before it, and it is
+longer than `UPDATE_LINK_DELAY` (120 s), so a trial whose link stays down goes
+back by its own check first. The unit restarts on failure (5 s, never gives up)
+and waits for the writer's lock, and it never gives up or disables anything.
+
+**Eligibility.** A failed slot (failed since its last confirm) is refused by
+`boot-once`, `set-default` and `rollback` with a message that says so, unless
+the person passes `--force`. The desktop's Slots card offers force only as a
+deliberate action (a dialog that names the failure). Housekeeping doesn't count
+a failed slot toward `SLOTS_KEEP`, so as many good slots stay; the failed slot
+itself goes only once it is older than the last `SLOTS_KEEP` slots (pins and the
+running, default, trial and staged slots still stay). The initramfs chooser (`slot-init`)
+falls back only to the previous slot, which is the one resident candidate
+besides the default: when the previous slot is failed and nothing else resident
+qualifies, today's fallback stands, and the log says it failed. A confirm clears
+the failed mark, and the count stays as history.
+
+`slots status` lists per slot: `failures`, `failed`, `last_failure` (reason,
+boot, time, or null) and `last_confirm` (boot, time, or null). The schema is
+`devices/schema/identity.schema.json`.
+
 ### Hardware test procedure (one board, USB connected)
 
 1. Flash the current image over USB boot, and check that `update status`

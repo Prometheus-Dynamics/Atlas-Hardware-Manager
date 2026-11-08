@@ -805,6 +805,21 @@ export interface Slot {
   last_boot: string;
   /** The OS's name from its build recipe ("HeliOS"); absent or null when it has none. */
   display_name?: string | null;
+  /** How many times it has failed (history: it stays after a confirm). */
+  failures?: number;
+  /** Failed since its last confirm: boot once, set default and rollback refuse it unless forced. */
+  failed?: boolean;
+  /** The last failure: its reason, the boot it was in, when (ISO time). */
+  last_failure?: SlotNote | null;
+  /** The last confirm: the boot, when (ISO time). */
+  last_confirm?: SlotNote | null;
+}
+
+/** A slot's failure or confirm; the reason is empty for a confirm. */
+export interface SlotNote {
+  reason?: string;
+  boot: string;
+  time: string;
 }
 
 /** A slots board's images and its room for more. */
@@ -823,8 +838,8 @@ export interface SlotSet {
 }
 
 export type SlotCommand =
-  | { command: "boot-once"; id: string }
-  | { command: "set-default"; id: string }
+  | { command: "boot-once"; id: string; force?: boolean }
+  | { command: "set-default"; id: string; force?: boolean }
   | { command: "remove"; id: string }
   | { command: "pin"; id: string; pinned: boolean }
   | { command: "keep"; keep: number };

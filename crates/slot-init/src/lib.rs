@@ -206,6 +206,13 @@ impl State {
     }
 }
 
+/// Whether a slot's failure memory (its `<id>.meta`, written by the writer)
+/// says it failed since it last confirmed. Only an exact `FAILED=yes` line
+/// counts: absent or corrupt meta is no known failure.
+pub fn failed_since_confirm(meta: &str) -> bool {
+    meta.lines().any(|line| line.trim_end() == "FAILED=yes")
+}
+
 /// A slot id as the board names files after it: `[a-z0-9._-]`, at most 64,
 /// not starting with a dot.
 pub fn valid_id(id: &str) -> bool {

@@ -21,6 +21,10 @@ const slot = (id: string, version: string, variant: string, flags: string[], ext
   installed: "2026-10-12T18:04:00Z",
   last_boot: flags.includes("running") ? "2026-10-15T07:31:00Z" : "",
   display_name: null,
+  failures: 0,
+  failed: false,
+  last_failure: null,
+  last_confirm: flags.includes("running") ? { boot: "b-2026-10-15", time: "2026-10-15T07:31:40Z" } : null,
   ...extra,
 });
 
@@ -38,7 +42,14 @@ function seed(): SlotSet {
     slots: [
       slot("photonvision-2026.3.0-styx-1a2b3c4d", "2026.3.0", "styx", ["running", "default"]),
       slot("photonvision-2026.2.1-styx-9e8f7a6b", "2026.2.1", "styx", ["previous"], { good: "yes", pinned: true, last_boot: "2026-10-11T22:10:00Z" }),
-      slot("helios-2026.4.0-base-55aa01ff", "2026.4.0", "base", [], { good: "no", last_boot: "2026-10-14T16:45:00Z", display_name: "HeliOS Lab" }),
+      slot("helios-2026.4.0-base-55aa01ff", "2026.4.0", "base", [], {
+        good: "no",
+        last_boot: "2026-10-14T16:45:00Z",
+        display_name: "HeliOS Lab",
+        failures: 1,
+        failed: true,
+        last_failure: { reason: "slot helios-2026.4.0-base-55aa01ff hasn't confirmed its boot within 300 s", boot: "b-2026-10-14", time: "2026-10-14T16:50:00Z" },
+      }),
     ],
   };
 }
@@ -75,15 +86,21 @@ export function slotCommand(key: DeviceKey, command: SlotCommand) {
   }
   const s = set.slots.find((x) => x.id === command.id);
   if (!s) throw `no slot ${command.id}`;
+  // The writer's refusal of a failed slot, unless forced (as the board's writer words it).
+  if ((command.command === "boot-once" || command.command === "set-default") && s.failed && !command.force) {
+    throw `slot ${s.id} failed since its last confirmation (${s.last_failure?.reason ?? "no reason recorded"}); --force to try it anyway`;
+  }
   switch (command.command) {
     case "boot-once":
       if (s.id === set.slot_active) throw `${s.id} is already running`;
-      // The mock comes back on it and it confirms.
+      // The mock comes back on it and it confirms: the failure clears.
       set.slot_previous = set.slot_default;
       set.slot_default = s.id;
       set.slot_active = s.id;
       s.good = "yes";
+      s.failed = false;
       s.last_boot = new Date().toISOString();
+      s.last_confirm = { boot: `b-${s.last_boot}`, time: s.last_boot };
       break;
     case "set-default":
       if (s.good !== "yes") throw `${s.id} hasn't booted well yet; boot it once first`;

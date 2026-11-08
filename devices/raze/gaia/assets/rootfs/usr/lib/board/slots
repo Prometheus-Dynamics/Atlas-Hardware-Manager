@@ -21,18 +21,30 @@
 #   slots apply [<id>] [--keep-default] [--keep-old]
 #                                 boot it once (trial.txt, "0 tryboot");
 #                                 default: the slot just staged
-#   slots boot-once <id> [--keep-default] [--keep-old]
-#                                 the same, for any installed slot
+#   slots boot-once <id> [--keep-default] [--keep-old] [--force]
+#                                 the same, for any installed slot; a slot that
+#                                 failed since its last confirm is refused
+#                                 unless --force
 #   slots confirm                 after a boot: keep a healthy trial as the
 #                                 default (with --keep-default: running, but
 #                                 the default stays); note a failed one. A
 #                                 new default removes the oldest slots past
 #                                 `slots keep` (not with --keep-old on its
-#                                 stage or apply, never a pinned one)
+#                                 stage or apply, never a pinned one, and
+#                                 never a failed one unless it is kept)
 #   slots check-link              a trial whose management link stays down
 #                                 goes back to the default
-#   slots set-default <id>        a slot that has booted well before
-#   slots rollback [--no-reboot]  the previous slot becomes the default
+#   slots deadline [--check]      (board-update-deadline.service) waits until
+#                                 UPDATE_CONFIRM_DEADLINE seconds after boot,
+#                                 then records a failure for the running slot
+#                                 if this boot hasn't confirmed (a trial goes
+#                                 back to the default); --check: no wait
+#   slots set-default <id> [--force]
+#                                 a slot that has booted well before, and that
+#                                 hasn't failed since its last confirm
+#   slots rollback [--no-reboot] [--force]
+#                                 the previous slot becomes the default (not a
+#                                 failed one, unless --force)
 #   slots remove <id>             not the running, default or a pinned slot
 #                                 (the previous one too: rollback then has
 #                                 none, and slot-init retries the default)
@@ -63,7 +75,8 @@
 # mounting p1), SLOTS_BOOT_DEV (the device flushed after FAT writes with
 # SLOTS_BOOT_MOUNT), SLOT_INIT, UPDATE_REBOOT, UPDATE_REBOOT_PLAIN, UPDATE_SYNC,
 # SLOTS_RESERVE_KB, SLOTS_BOOT_FREE_KB (the boot FAT's free space), SLOTS_RUNNING,
-# SLOTS_PARTUUID.
+# SLOTS_PARTUUID, SLOTS_UPTIME_FILE (/proc/uptime, for the confirm deadline),
+# UPDATE_BOOT_ID_FILE (this boot's id).
 set -eu
 
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
@@ -169,11 +182,69 @@ save_state() {
 }
 
 # <id>.meta: PINNED, GOOD (yes, no, untried), INSTALLED, LAST_BOOT.
-meta_get() { sed -n "s/^$2=//p" "$STATE_DIR/$1.meta" 2>/dev/null | head -n 1 | tr -d "'"; }
+meta_get() { sed -n "s/^$2=//p" "$STATE_DIR/$1.meta" 2>/dev/null | head -n 1 | sed "s/^'//; s/'\$//"; }
 meta_set() {
 	_m=$STATE_DIR/$1.meta
 	{ grep -v "^$2=" "$_m" 2>/dev/null || true; echo "$2=$3"; } > "$_m.tmp"
 	mv -f "$_m.tmp" "$_m"
+}
+# meta_put <id> <KEY> <value> [<KEY> <value>...]: several keys in one write
+# (the file is replaced whole: a power cut leaves the old one or the new).
+meta_put() {
+	_mp_id=$1
+	shift
+	_mp_pat='' _mp_add=''
+	while [ $# -ge 2 ]; do
+		_mp_pat="$_mp_pat${_mp_pat:+|}$1="
+		_mp_add="$_mp_add$1=$2
+"
+		shift 2
+	done
+	_mp=$STATE_DIR/$_mp_id.meta
+	{ grep -Ev "^($_mp_pat)" "$_mp" 2>/dev/null || true; printf '%s' "$_mp_add"; } > "$_mp.tmp"
+	mv -f "$_mp.tmp" "$_mp"
+}
+
+# The failure memory, per slot (its <id>.meta): FAILURES (how many failures
+# it has had), FAILED (yes from a failure until the slot next confirms),
+# FAIL_REASON, FAIL_BOOT, FAIL_TIME (the last failure), CONFIRM_BOOT and
+# CONFIRM_TIME (the last confirm). A failed slot is no fallback, rollback or
+# boot-once target unless forced. Absent or corrupt meta is no known failure.
+# A power cut is never a failure: only a deadline that fired while the board
+# was up (`deadline`), or an explicit trial failure, is recorded.
+this_boot() { cat "${UPDATE_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}" 2>/dev/null | tr -d '\n' || true; }
+now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+failed() { [ "$(meta_get "$1" FAILED)" = yes ]; }
+# fail_text <id>: the last failure's reason, boot and time, for a refusal.
+fail_text() {
+	_ft_r=$(meta_get "$1" FAIL_REASON)
+	printf '%s, boot %s, %s' "${_ft_r:-no reason recorded}" "$(meta_get "$1" FAIL_BOOT)" "$(meta_get "$1" FAIL_TIME)"
+}
+# record_failure <id> <reason>: the slot failed. The first reason of a
+# failure stands until the slot confirms, and counts once.
+record_failure() {
+	failed "$1" && return 0
+	_rf_n=$(meta_get "$1" FAILURES)
+	case $_rf_n in '' | *[!0-9]*) _rf_n=0 ;; esac
+	_rf_r=$(printf '%s' "$2" | tr -d '\n')
+	meta_put "$1" FAILED yes FAILURES "$((_rf_n + 1))" FAIL_REASON "'$_rf_r'" \
+		FAIL_BOOT "$(this_boot)" FAIL_TIME "$(now_iso)"
+	board_event slot.failed "slot $1 failed: $_rf_r" "slot=$1" "reason=$_rf_r"
+}
+# record_confirm <id>: the slot booted well and confirmed: its failure clears
+# (its count stays as history).
+record_confirm() {
+	meta_put "$1" GOOD yes FAILED no CONFIRM_BOOT "$(this_boot)" \
+		CONFIRM_TIME "$(now_iso)" LAST_BOOT "$(now_iso)"
+}
+# check_failed <id>: a failed slot is refused, unless --force.
+check_failed() {
+	failed "$1" || return 0
+	if [ "${FORCE:-}" = yes ]; then
+		board_log "forcing past slot $1's failure ($(fail_text "$1"))"
+		return 0
+	fi
+	refuse "slot $1 failed since its last confirmation ($(fail_text "$1")); --force to try it anyway"
 }
 
 running() {
@@ -371,13 +442,26 @@ EOF
 			_intact=$_lok
 			_root=layered
 		fi
+		# The failure memory: a count, the failed mark, the last failure and the
+		# last confirm (null when there is none).
+		_fails=$(meta_get "$_id" FAILURES)
+		case $_fails in '' | *[!0-9]*) _fails=0 ;; esac
+		_failed=false
+		failed "$_id" && _failed=true
+		_lf=null _lc=null
+		if [ -n "$(meta_get "$_id" FAIL_TIME)" ]; then
+			_lf="{\"reason\":$(board_json_str "$(meta_get "$_id" FAIL_REASON)"),\"boot\":$(board_json_str "$(meta_get "$_id" FAIL_BOOT)"),\"time\":$(board_json_str "$(meta_get "$_id" FAIL_TIME)")}"
+		fi
+		if [ -n "$(meta_get "$_id" CONFIRM_TIME)" ]; then
+			_lc="{\"boot\":$(board_json_str "$(meta_get "$_id" CONFIRM_BOOT)"),\"time\":$(board_json_str "$(meta_get "$_id" CONFIRM_TIME)")}"
+		fi
 		_flags=''
 		[ "$_id" = "$(running)" ] && _flags="$_flags\"running\","
 		[ "$_id" = "$DEFAULT" ] && _flags="$_flags\"default\","
 		[ "$_id" = "$PREVIOUS" ] && _flags="$_flags\"previous\","
 		[ "$_id" = "$TRIAL" ] && _flags="$_flags\"trial\","
 		[ "$_id" = "$STAGED" ] && _flags="$_flags\"staged\","
-		printf '{"id":%s,"family":%s,"version":%s,"variant":%s,"kernel":%s,"size":%s,"verity":%s,"intact":%s,"flags":[%s],"pinned":%s,"good":%s,"installed":%s,"last_boot":%s,"display_name":%s,"layers":%s}' \
+		printf '{"id":%s,"family":%s,"version":%s,"variant":%s,"kernel":%s,"size":%s,"verity":%s,"intact":%s,"flags":[%s],"pinned":%s,"good":%s,"installed":%s,"last_boot":%s,"display_name":%s,"layers":%s,"failures":%s,"failed":%s,"last_failure":%s,"last_confirm":%s}' \
 			"$(board_json_str "$_id")" "$(board_json_str "$_family")" "$(board_json_str "$_version")" \
 			"$(board_json_str "$_variant")" "$(board_json_str "$_kernel")" "$_size" \
 			"$([ -n "$_root" ] && echo true || echo false)" "$_intact" "${_flags%,}" \
@@ -385,7 +469,8 @@ EOF
 			"$(board_json_str "$(meta_get "$_id" GOOD)")" "$(board_json_str "$(meta_get "$_id" INSTALLED)")" \
 			"$(board_json_str "$(meta_get "$_id" LAST_BOOT)")" \
 				"$(if [ -n "$_display" ]; then board_json_str "$_display"; else printf null; fi)" \
-			"$(if [ -n "$_layers" ]; then printf '[%s]' "${_layers%,}"; else printf null; fi)"
+			"$(if [ -n "$_layers" ]; then printf '[%s]' "${_layers%,}"; else printf null; fi)" \
+			"$_fails" "$_failed" "$_lf" "$_lc"
 	done
 	printf ']'
 }
@@ -842,6 +927,7 @@ cmd_boot_once() {
 	[ -n "$_id" ] || refuse "nothing is staged"
 	installed "$_id" || refuse "no slot $_id"
 	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
+	check_failed "$_id"
 	mount_boot
 	# Room for its boot files first: only resident slots' stay.
 	boot_evict "$_id"
@@ -888,6 +974,7 @@ cmd_confirm() {
 		if [ -n "$_failed" ]; then
 			meta_set "$_run" GOOD no
 			ERROR=$_failed
+			record_failure "$_run" "$_failed"
 			board_event update.trial-failed "$ERROR" "slot=$_run"
 			# The failure on the ring before the restart back.
 			STATE=error
@@ -911,21 +998,27 @@ cmd_confirm() {
 			_housekeep=yes
 		fi
 	elif [ -n "$TRIAL" ]; then
-		_retry=''
-		meta_set "$TRIAL" GOOD no
+		_retry='' _evidence=''
+		# A boot that began at power-on may have been cut short by the power:
+		# that is no evidence the trial ran, so it neither fails nor changes
+		# the trial's GOOD (the boot's reason is said below, as before).
+		_reset=$(board_reset_cause)
+		[ "$_reset" = power-on ] || meta_set "$TRIAL" GOOD no
 		# The initramfs writes trial-init once it has /data on a trial, and
 		# trial-started once it has started the slot.
 		_judged=''
 		case $ERROR in
-		"slot $TRIAL failed its health check" | "slot $TRIAL failed its checks: "*) _judged=yes ;;
+		"slot $TRIAL failed its health check" | "slot $TRIAL failed its checks: "* | "slot $TRIAL missed its confirm deadline"*) _judged=yes ;;
 		esac
 		if [ -n "$_judged" ]; then
 			# The trial judged itself and restarted back: its reason stands.
 			ERROR="$ERROR; back on $_run"
 		elif [ "$(cat "$STATE_DIR/trial-started" 2>/dev/null)" = "$TRIAL" ]; then
-			ERROR="slot $TRIAL started but its system didn't confirm the boot; back on $_run"
+			_evidence="slot $TRIAL started but its system didn't confirm the boot"
+				ERROR="$_evidence; back on $_run"
 		elif [ "$(cat "$STATE_DIR/trial-init" 2>/dev/null)" = "$TRIAL" ]; then
-			ERROR="slot $TRIAL didn't start (its initramfs stopped; the reason is in slot-init.log on the boot partition); back on $_run"
+			_evidence="slot $TRIAL didn't start (its initramfs stopped; the reason is in slot-init.log on the boot partition)"
+				ERROR="$_evidence; back on $_run"
 		else
 			# This boot's tryboot flag: 1 is the firmware doing the trial but
 			# starting another slot. 0 can't tell a restart that lost the
@@ -946,8 +1039,8 @@ cmd_confirm() {
 		fi
 		# A boot that began at power-on: the board lost power on the way (a
 		# bench brown-out loses the tryboot flag), not necessarily the slot.
-		_reset=$(board_reset_cause)
 		[ "$_reset" != power-on ] || ERROR="$ERROR; this boot began at power-on (the board lost power), so the trial may never have run: try it again"
+		[ -z "$_evidence" ] || [ "$_reset" = power-on ] || record_failure "$TRIAL" "$_evidence"
 		if [ -n "$_retry" ]; then
 			meta_set "$_retry" RETRIED yes
 			ERROR=''
@@ -962,8 +1055,7 @@ cmd_confirm() {
 		STATE=rolled-back
 	fi
 	[ -n "$DEFAULT" ] || DEFAULT=$_run
-	meta_set "$_run" GOOD yes
-	meta_set "$_run" LAST_BOOT "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	record_confirm "$_run"
 	echo 0 > "$STATE_DIR/fallbacks"
 	rm -f "$STATE_DIR/trial-started" "$STATE_DIR/trial-init"
 	# The marker belongs to the trial just judged; a retry keeps it.
@@ -1002,8 +1094,39 @@ cmd_check_link() {
 	[ "${LINK_OK:-1}" = 1 ] && return 0
 	meta_set "$_run" GOOD no
 	ERROR="slot $_run came up without its management link (${LINK_REASON:-}); back to $DEFAULT"
+	record_failure "$_run" "$ERROR"
 	board_event update.link-bad "$ERROR" "slot=$_run"
 	TRIAL='' STATE=rolled-back
+	save_state
+	recovery_hook "$DEFAULT"
+	recovery_restart plain_reboot
+}
+
+# The confirm deadline (board-update-deadline.service, started early in every boot).
+# A boot that hasn't confirmed UPDATE_CONFIRM_DEADLINE seconds after it began
+# stalled while the board was up, so its slot fails. A power cut takes the
+# timer down with the boot: it is never a failure. A failed trial goes back to
+# the default, as any failed trial does. A default that stalls is only marked
+# (the next boot that confirms clears it): a confirm can be late behind an
+# install, and the default is what the board boots when nothing else works.
+deadline_wait() {
+	_dw_up=$(awk '{ printf "%d", $1 }' "${SLOTS_UPTIME_FILE:-/proc/uptime}" 2>/dev/null || echo 0)
+	_dw_left=$((${UPDATE_CONFIRM_DEADLINE:-300} - ${_dw_up:-0}))
+	[ "$_dw_left" -le 0 ] || sleep "$_dw_left"
+}
+cmd_deadline() {
+	_run=$(running)
+	_boot=$(this_boot)
+	[ -n "$_run" ] && [ -n "$_boot" ] || return 0
+	# Confirmed or failed already in this boot: nothing to judge.
+	[ "$(meta_get "$_run" CONFIRM_BOOT)" != "$_boot" ] || return 0
+	if failed "$_run" && [ "$(meta_get "$_run" FAIL_BOOT)" = "$_boot" ]; then return 0; fi
+	record_failure "$_run" "slot $_run hasn't confirmed its boot within ${UPDATE_CONFIRM_DEADLINE:-300} s"
+	[ "$TRIAL" = "$_run" ] || return 0
+	meta_set "$_run" GOOD no
+	ERROR="slot $_run missed its confirm deadline (${UPDATE_CONFIRM_DEADLINE:-300} s); back on $DEFAULT"
+	board_event update.trial-failed "$ERROR" "slot=$_run"
+	STATE=error
 	save_state
 	recovery_hook "$DEFAULT"
 	recovery_restart plain_reboot
@@ -1012,6 +1135,7 @@ cmd_check_link() {
 cmd_set_default() {
 	_id=${1:-}
 	installed "$_id" || refuse "no slot $_id"
+	check_failed "$_id"
 	[ "$(meta_get "$_id" GOOD)" = yes ] || refuse "slot $_id hasn't booted well here yet: boot it once first"
 	mount_boot
 	boot_evict "$_id"
@@ -1027,6 +1151,7 @@ cmd_set_default() {
 
 cmd_rollback() {
 	[ -n "$PREVIOUS" ] && installed "$PREVIOUS" || refuse "there is no previous slot to go back to"
+	check_failed "$PREVIOUS"
 	_back=$PREVIOUS
 	_from=$DEFAULT
 	[ "${1:-}" = --no-reboot ] || run_hook pre-reboot "$_back" || refuse "the pre-reboot hook stopped the restart; nothing changed"
@@ -1123,16 +1248,24 @@ housekeep() {
 		for _hi in "$(running)" "$DEFAULT" "$TRIAL" "$STAGED" "$PREVIOUS"; do [ -z "$_hi" ] || echo "$_hi"; done
 		by_age
 	)
-	_n=0 _seen=' ' _gone=''
+	_n=0 _a=0 _seen=' ' _gone=''
 	for _hi in $_order; do
 		case $_seen in *" $_hi "*) continue ;; esac
 		_seen="$_seen$_hi "
 		installed "$_hi" || continue
 		[ "$(meta_get "$_hi" PINNED)" != yes ] || continue
 		case " $(running) $DEFAULT $TRIAL $STAGED " in
-		*" $_hi "*) _n=$((_n + 1)); continue ;;
+		*" $_hi "*) _n=$((_n + 1)) _a=$((_a + 1)); continue ;;
 		esac
-		if [ "$_n" -lt "$_keep" ]; then _n=$((_n + 1)); continue; fi
+		# A failed slot is no fallback, so it doesn't use a keep place: the
+		# good ones stay as many. Removing can't be undone and the mark may
+		# be a slow boot's, so it goes only once its age says so anyway.
+		if failed "$_hi"; then
+			if [ "$_a" -lt "$_keep" ]; then _a=$((_a + 1)); continue; fi
+		elif [ "$_n" -lt "$_keep" ]; then
+			_n=$((_n + 1)) _a=$((_a + 1))
+			continue
+		fi
 		remove_slot "$_hi"
 		_gone="$_gone $_hi"
 	done
@@ -1383,6 +1516,8 @@ if [ "${1:-}" = check ]; then
 	cmd_check "$@"
 	exit 0
 fi
+# The deadline waits for its time before the lock (a wait holds nothing up).
+if [ "${1:-}" = deadline ] && [ "${2:-}" != --check ]; then deadline_wait; fi
 exec 9> "$BOARD_RUN_DIR/update.lock"
 if command -v flock >/dev/null 2>&1; then
 	waited=0
@@ -1398,10 +1533,12 @@ load_state
 cmd=${1:-}
 [ $# -eq 0 ] || shift
 # --keep-old, wherever it is: this update keeps the old slots.
-KEEP_OLD=''
+KEEP_OLD='' FORCE=''
 for _a in "$@"; do
 	shift
-	if [ "$_a" = --keep-old ]; then KEEP_OLD=yes; else set -- "$@" "$_a"; fi
+	if [ "$_a" = --keep-old ]; then KEEP_OLD=yes
+	elif [ "$_a" = --force ]; then FORCE=yes
+	else set -- "$@" "$_a"; fi
 done
 case "$cmd" in
 status | list)
@@ -1419,6 +1556,7 @@ stage-url) cmd_stage_url "$@" ;;
 apply | boot-once) cmd_boot_once "$@" ;;
 confirm) cmd_confirm ;;
 check-link) cmd_check_link ;;
+deadline) cmd_deadline ;;
 set-default) cmd_set_default "$@" ;;
 rollback) cmd_rollback "$@" ;;
 remove) cmd_remove "$@" ;;

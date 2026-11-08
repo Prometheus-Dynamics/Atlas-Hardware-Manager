@@ -43,9 +43,19 @@ pub(crate) enum SlotsCommand {
     /// ones don't count; 0: never remove any). Without a number, say it.
     Keep { count: Option<u32> },
     /// Restart into a slot once, on trial.
-    BootOnce { id: String },
+    BootOnce {
+        id: String,
+        /// Try a slot that failed since its last confirm anyway.
+        #[arg(long)]
+        force: bool,
+    },
     /// Make a slot that booted well the default.
-    SetDefault { id: String },
+    SetDefault {
+        id: String,
+        /// Make a slot that failed since its last confirm the default anyway.
+        #[arg(long)]
+        force: bool,
+    },
     /// Remove a slot (not the running, default, trial or a pinned one).
     Remove {
         id: String,
@@ -182,8 +192,8 @@ pub(crate) async fn slots(
             }
             return Ok(ExitCode::SUCCESS);
         }
-        SlotsCommand::BootOnce { id } => SlotCommand::BootOnce { id },
-        SlotsCommand::SetDefault { id } => SlotCommand::SetDefault { id },
+        SlotsCommand::BootOnce { id, force } => SlotCommand::BootOnce { id, force },
+        SlotsCommand::SetDefault { id, force } => SlotCommand::SetDefault { id, force },
         SlotsCommand::Remove { id, yes } => {
             if !yes {
                 return Err(format!(

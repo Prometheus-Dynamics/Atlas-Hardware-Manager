@@ -95,6 +95,11 @@ impl SlotsCapability for OrionSlots {
     }
 
     async fn command(&self, _device: &Identity, command: &SlotCommand) -> Result<(), DriverError> {
+        if command.forced() {
+            return Err(DriverError::Unsupported(
+                "Orion can't force a failed slot (the board's own link can)".into(),
+            ));
+        }
         let mut args = BTreeMap::from([(
             "id".to_string(),
             TypedConfigValue::String(command.id().to_string()),
