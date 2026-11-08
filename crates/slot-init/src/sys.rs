@@ -184,7 +184,8 @@ pub fn open_verity(
 /// Restarts with the firmware's one-time "0 tryboot": the next boot reads
 /// tryboot.txt. Doesn't return when it works.
 pub fn reboot_tryboot() -> Result<(), String> {
-    let arg = std::ffi::CString::new(crate::family::TRIAL_RESTART_ARG).map_err(|e| e.to_string())?;
+    let arg =
+        std::ffi::CString::new(crate::family::TRIAL_RESTART_ARG).map_err(|e| e.to_string())?;
     // SAFETY: reboot(2) with LINUX_REBOOT_CMD_RESTART2 and a NUL-terminated
     // argument; the caller synced the filesystems first.
     let rc = unsafe {
