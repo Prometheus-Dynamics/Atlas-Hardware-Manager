@@ -9,7 +9,7 @@ Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/lib/board/raze-leds-reprobe
 Restart=on-failure
-RestartSec=30
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target

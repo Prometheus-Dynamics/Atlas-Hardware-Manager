@@ -3,6 +3,9 @@ Description=Kernel log over the network (netconsole), when netconsole.env sets a
 Documentation=file:/usr/lib/board/netconsole.env
 After=network-online.target board-usb-gadget.service
 Wants=network-online.target
+# Restarts for as long as it fails (no start limit): the board has no one
+# to restart it by hand.
+StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot

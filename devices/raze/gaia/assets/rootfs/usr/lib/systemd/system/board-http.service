@@ -1,5 +1,8 @@
 [Unit]
 Description=Device identity endpoint (TCP 5899, GET /.well-known/pd-device)
+# Restarts for as long as it fails (no start limit): the board has no one
+# to restart it by hand.
+StartLimitIntervalSec=0
 
 [Service]
 # One resident listener, sandboxed once: each connection runs identity-http

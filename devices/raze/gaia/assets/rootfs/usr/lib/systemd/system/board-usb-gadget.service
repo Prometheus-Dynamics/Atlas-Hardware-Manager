@@ -15,7 +15,7 @@ ExecStart=/usr/lib/board/usb-gadget-setup
 # Refresh the identity file with the gadget interfaces' MACs.
 ExecStartPost=-/usr/lib/board/identity --write --quiet
 Restart=on-failure
-RestartSec=30
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
