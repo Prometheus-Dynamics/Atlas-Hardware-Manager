@@ -858,7 +858,9 @@ update_to q-1
 update_to q-2
 [ "$(fat)" = "q-1 q-2" ] || fail "the old slot stayed on the FAT (only running/default/previous/trial): $(fat)"
 [ -r "$H/data/slots/q-0.json" ] && [ -r "$H/data/slots/q-0.boot" ] || fail "q-0 went from /data with its boot files"
-[ "$(ls "$H/data/slots/bootfiles" | while read -r f; do grep -lx dtbo "$H/data/slots/bootfiles/$f"; done | wc -l | tr -d ' ')" = 1 ] ||
+# One grep over the store (a loop's non-matching grep would end the
+# command substitution under dash's set -e).
+[ "$(grep -lx dtbo "$H"/data/slots/bootfiles/* | wc -l | tr -d ' ')" = 1 ] ||
 	fail "the slots' shared overlay is kept more than once"
 
 echo "  set-default to a slot that is only on /data puts it back on the FAT first; rollback the same"
