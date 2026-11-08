@@ -89,6 +89,11 @@ pub struct SlotSet {
     pub free_bytes: u64,
     #[serde(default)]
     pub reserve_bytes: u64,
+    /// How many slots housekeeping keeps when an update is confirmed (pinned
+    /// ones don't count; 0: never removes any). `None` from a writer without
+    /// housekeeping.
+    #[serde(default)]
+    pub keep: Option<u32>,
     #[serde(default)]
     pub slots: Vec<Slot>,
 }
@@ -120,6 +125,10 @@ pub enum SlotCommand {
         id: String,
         pinned: bool,
     },
+    /// How many slots housekeeping keeps (0: never remove any).
+    Keep {
+        keep: u32,
+    },
 }
 
 impl SlotCommand {
@@ -129,6 +138,7 @@ impl SlotCommand {
             | Self::SetDefault { id }
             | Self::Remove { id }
             | Self::Pin { id, .. } => id,
+            Self::Keep { .. } => "",
         }
     }
 
@@ -140,6 +150,15 @@ impl SlotCommand {
             Self::Remove { .. } => "remove",
             Self::Pin { pinned: true, .. } => "pin",
             Self::Pin { pinned: false, .. } => "unpin",
+            Self::Keep { .. } => "keep",
+        }
+    }
+
+    /// The writer's arguments after its command.
+    pub fn writer_argument(&self) -> String {
+        match self {
+            Self::Keep { keep } => keep.to_string(),
+            other => other.id().to_string(),
         }
     }
 
@@ -152,6 +171,8 @@ impl SlotCommand {
             Self::Remove { .. } => format!("remove {id}"),
             Self::Pin { pinned: true, .. } => format!("pin {id}"),
             Self::Pin { pinned: false, .. } => format!("unpin {id}"),
+            Self::Keep { keep: 0 } => "keep every slot".to_string(),
+            Self::Keep { keep } => format!("keep the last {keep} slots"),
         }
     }
 }
@@ -170,6 +191,10 @@ pub struct SlotInstall {
     /// is a trial only: the default stays and the next restart goes back.
     #[serde(default)]
     pub make_default: bool,
+    /// This update removes no old slots when it is confirmed (the board's
+    /// housekeeping skips it once).
+    #[serde(default)]
+    pub keep_old: bool,
 }
 
 /// How a layer pushed to a running slot takes effect.
@@ -303,6 +328,7 @@ mod tests {
         assert_eq!(set.running, "pv-a");
         assert_eq!(set.previous, "");
         assert_eq!(set.room(), 8000);
+        assert_eq!(set.keep, None);
         assert_eq!(set.slots[0].good, "yes");
         assert!(set.slots[0].has("default"));
         assert_eq!(set.slots[0].display_name, None);
@@ -332,5 +358,12 @@ mod tests {
         assert_eq!(pin.describe(), "unpin pv-b");
         let json = serde_json::to_string(&SlotCommand::BootOnce { id: "pv-b".into() }).unwrap();
         assert_eq!(json, r#"{"command":"boot-once","id":"pv-b"}"#);
+        let keep: SlotCommand = serde_json::from_str(r#"{"command":"keep","keep":2}"#).unwrap();
+        assert_eq!(
+            (keep.writer_command(), keep.writer_argument().as_str()),
+            ("keep", "2")
+        );
+        assert_eq!(keep.describe(), "keep the last 2 slots");
+        assert_eq!(pin.writer_argument(), "pv-b");
     }
 }

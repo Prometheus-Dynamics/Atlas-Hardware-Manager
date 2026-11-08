@@ -136,6 +136,8 @@ fn slot_set(status: &Value) -> Result<Option<SlotSet>, DriverError> {
         trial: text("trial"),
         free_bytes: slots["free_bytes"].as_u64().unwrap_or(0),
         reserve_bytes: slots["reserve_bytes"].as_u64().unwrap_or(0),
+        // Housekeeping's setting is the writer's, over SSH.
+        keep: None,
         slots: installed,
     }))
 }
@@ -178,6 +180,11 @@ impl SlotsCapability for GatewaySlots {
         // Booting another slot is HeliOS's switch (on trial); the rest are
         // the writer's own commands (`update/slots/<command>`).
         let (path, id) = match command {
+            SlotCommand::Keep { .. } => {
+                return Err(DriverError::Unsupported(
+                    "through the robot controller the board's housekeeping can't be set yet".into(),
+                ));
+            }
             SlotCommand::BootOnce { id } => ("update/slots/switch".to_string(), id),
             other => (
                 format!("update/slots/{}", other.writer_command()),
@@ -204,6 +211,11 @@ impl SlotsCapability for GatewaySlots {
         if install.pin {
             return Err(DriverError::Unsupported(
                 "through the robot controller a slot can't be pinned as it installs".into(),
+            ));
+        }
+        if install.keep_old {
+            return Err(DriverError::Unsupported(
+                "through the robot controller an update can't keep the old slots yet".into(),
             ));
         }
         if install.boot && !install.make_default {

@@ -40,6 +40,38 @@ OSes pin this layer by commit; the commits are listed per area.
   it works without D-Bus: verified on a Raze with dbus masked (routes
   rewritten and delivered, resolved mDNS, timesyncd, helios-api, identity all
   working; dbus-daemon is 2.1 MB an OS can now drop).
+- **Slot boot files on demand, and housekeeping (2026-11-07).** The boot
+  FAT now holds only the resident slots: running, default, previous and
+  trial, plus the default's root copy. It no longer limits how many slots a
+  board has.
+  - Every slot's boot dir (with its cmdline.txt and slot.json) is kept on
+    /data in `slots/bootfiles/<sha256>`, stored by content so slots sharing
+    a kernel, dtbs or overlays keep one copy. The listing is
+    `slots/<id>.boot`, in sha256sum format.
+  - The new sourced module `slot-boot` (boot_put, boot_stage, boot_evict,
+    boot_drop, boot_migrate) puts a slot's dir onto the FAT, checked
+    against its sha256s, before `apply`, `boot-once`, `set-default`,
+    `rollback` or a retry writes default.txt or trial.txt. Other slots' dirs
+    come off only after the new pointers are written, so after a power loss
+    the FAT has either the old pointers with their dirs or the new ones with
+    a checked dir.
+  - slot-init's fallback copies nothing: the previous slot stays resident.
+  - FAT dirs from before this, or from a Gaia image, are copied to /data
+    first, on the first confirm.
+  - An install writes /data only (a full FAT is refused at boot-once, not
+    at install). A push updates the kept cmdline too.
+  - Housekeeping: `slots keep [<n>]` (/data's `settings.env`, default
+    `SLOTS_KEEP=3` in update.env, 0 = never). When an update is confirmed as
+    the new default, slots past the last n go, oldest first by install
+    order, not the clock. Pinned slots never go and don't count.
+    `--keep-old` on stage or apply skips it for that update.
+  - `slots remove` may remove the previous slot. `rollback` then has none,
+    and slot-init retries the default.
+  - Status JSON gains `keep`.
+  - `slots reap [--dry-run]` removes only FAT dirs whose slot isn't on
+    /data.
+  - Raze #1: one stray (`ha-m64`).
+  - tests/slots.sh.
 - **No board-health polling (2026-11-07).** `board-health.timer` ran
   `status --refresh-failed --refresh-hardware` every 10 s: a `systemctl` and
   about ten `lemnos-ctl` processes each time. `/run/board/hardware.json` is

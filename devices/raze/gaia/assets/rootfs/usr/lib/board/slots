@@ -5,33 +5,42 @@
 # their meaning, and slots adds its own:
 #
 #   slots status | list           JSON: the update state, every slot, free space
-#   slots stage <bundle.tar|-> [--sha256 <hex>] [--pin]
+#   slots stage <bundle.tar|-> [--sha256 <hex>] [--pin] [--keep-old]
 #                                 install a slot bundle (never over the
 #                                 running or default slot)
-#   slots stage-image <file.img.xz|-> [--sha256 <hex>] [--pin]
+#   slots stage-image <file.img.xz|-> [--sha256 <hex>] [--pin] [--keep-old]
 #                                 install the slot a slots build's whole-disk
 #                                 image carries (what Atlas installs on a
 #                                 laptop; stdin: xz), with the bundle's checks
-#   slots stage-url <url> --sha256 <hex> --size <bytes> [--pin]
+#   slots stage-url <url> --sha256 <hex> --size <bytes> [--pin] [--keep-old]
 #                                 fetch (or take an upload in /data/updates)
 #                                 and install a slots image (.img.xz) or bundle
 #   slots check <bundle.tar>      JSON: whether `stage` would install it (the
 #                                 same checks, nothing written to /data or
 #                                 the boot FAT); exit status as stage's
-#   slots apply [<id>] [--keep-default]
+#   slots apply [<id>] [--keep-default] [--keep-old]
 #                                 boot it once (trial.txt, "0 tryboot");
 #                                 default: the slot just staged
-#   slots boot-once <id> [--keep-default]
+#   slots boot-once <id> [--keep-default] [--keep-old]
 #                                 the same, for any installed slot
 #   slots confirm                 after a boot: keep a healthy trial as the
 #                                 default (with --keep-default: running, but
-#                                 the default stays); note a failed one
+#                                 the default stays); note a failed one. A
+#                                 new default removes the oldest slots past
+#                                 `slots keep` (not with --keep-old on its
+#                                 stage or apply, never a pinned one)
 #   slots check-link              a trial whose management link stays down
 #                                 goes back to the default
 #   slots set-default <id>        a slot that has booted well before
 #   slots rollback [--no-reboot]  the previous slot becomes the default
 #   slots remove <id>             not the running, default or a pinned slot
-#   slots pin|unpin <id>
+#                                 (the previous one too: rollback then has
+#                                 none, and slot-init retries the default)
+#   slots reap [--dry-run]        remove boot files on the FAT whose slot
+#                                 isn't on /data any more (never a slot)
+#   slots keep [<n>]              JSON: how many slots housekeeping keeps; with
+#                                 <n>, set it (0: never remove any)
+#   slots pin|unpin <id>          a pinned slot is never removed by housekeeping
 #   slots cancel                  stop a running install
 #   slots push <layer.tar|-> [--reboot|--no-restart]
 #                                 replace one layer of the running (layered)
@@ -46,7 +55,9 @@
 # files on the boot FAT (default.txt, trial.txt: os_prefix=slots/<id>/); the
 # rest is in /data/board/slots/: state.env (DEFAULT, PREVIOUS, TRIAL, STAGED
 # and the update's STATE), state.json (generated from it, for the
-# initramfs), <id>.meta per slot, booted (the initramfs's), fallbacks.
+# initramfs), <id>.meta per slot, booted (the initramfs's), fallbacks,
+# settings.env (SLOTS_KEEP). Only the resident slots' boot files are on the
+# FAT; every slot's are on /data (slot-boot).
 #
 # Test hooks: SLOTS_DATA (/data), SLOTS_BOOT_MOUNT (a mounted FAT instead of
 # mounting p1), SLOTS_BOOT_DEV (the device flushed after FAT writes with
@@ -193,6 +204,8 @@ valid_id() {
 	[ "${#1}" -le 64 ]
 }
 mf() { $INIT field "$IMAGES/$1.json" "$2" 2>/dev/null || true; }
+# shellcheck source=slot-boot
+. "$BOARD_LIB_DIR/slot-boot"
 
 # --- the boot FAT -----------------------------------------------------------
 
@@ -217,17 +230,6 @@ mount_boot() {
 boot_sync() {
 	$SYNC
 	[ -z "$BOOT_DEV" ] || $INIT flush "$BOOT_DEV" > /dev/null || board_log "couldn't flush $BOOT_DEV's write cache"
-}
-
-# boot_room <boot dir>: refuses a slot whose boot files don't fit the boot
-# FAT. The FAT is sized to its content and room for a few more slots
-# (slots.toml), so this is checked before anything is written; 1 MiB covers
-# the FAT's cluster rounding.
-boot_room() {
-	mount_boot
-	_need_kb=$(($(du -sk "$1" | cut -f1) + 1024))
-	_fat_kb=${SLOTS_BOOT_FREE_KB:-$(df -kP "$BOOT" 2>/dev/null | awk 'NR == 2 { print $4 }')}
-	[ "${_fat_kb:-0}" -ge "$_need_kb" ] || refuse "no room on the boot partition for this slot's boot files: they need $((_need_kb / 1024)) MiB, it has $((${_fat_kb:-0} / 1024)) MiB free; remove a slot first"
 }
 
 # Done with the FAT before a restart: unmounted (its dirty flag cleared),
@@ -392,12 +394,12 @@ write_status() {
 	mkdir -p "$BOARD_RUN_DIR"
 	_run=$(running)
 	_free=$(free_kb)
-	printf '{"state":%s,"layout":"slots","slot_active":%s,"slot_staged":%s,"slot_default":%s,"slot_previous":%s,"slot_trial":%s,"version_active":%s,"version_staged":%s,"progress":%s,"error":%s,"version_previous":%s,"started_by":%s,"phase":null,"free_bytes":%s,"reserve_bytes":%s,"slots":%s}\n' \
+	printf '{"state":%s,"layout":"slots","slot_active":%s,"slot_staged":%s,"slot_default":%s,"slot_previous":%s,"slot_trial":%s,"version_active":%s,"version_staged":%s,"progress":%s,"error":%s,"version_previous":%s,"started_by":%s,"phase":null,"free_bytes":%s,"reserve_bytes":%s,"keep":%s,"slots":%s}\n' \
 		"$(board_json_str "$STATE")" "$(board_json_str "$_run")" "$(board_json_str "$STAGED")" "$(board_json_str "$DEFAULT")" \
 		"$(board_json_str "$PREVIOUS")" "$(board_json_str "$TRIAL")" "$(board_json_str "$([ -n "$_run" ] && mf "$_run" version)")" \
 		"$(board_json_str "$([ -n "$STAGED" ] && mf "$STAGED" version)")" "${PROGRESS:-0}" "$(board_json_str "$ERROR")" \
 		"$(board_json_str "$([ -n "$PREVIOUS" ] && mf "$PREVIOUS" version)")" "$(board_json_str "$STARTED_BY")" \
-		"$((${_free:-0} * 1024))" "$((RESERVE_KB * 1024))" "$(slots_json)" > "$STATUS_JSON.tmp.$$"
+		"$((${_free:-0} * 1024))" "$((RESERVE_KB * 1024))" "$(keep_count)" "$(slots_json)" > "$STATUS_JSON.tmp.$$"
 	chmod 0644 "$STATUS_JSON.tmp.$$" 2>/dev/null || true
 	# The boot it describes, as `update status` checks before answering from it.
 	cat "${UPDATE_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}" > "$STATUS_JSON.boot" 2>/dev/null || true
@@ -469,7 +471,6 @@ install_unpacked() {
 	valid_id "$_id" || die "slot.json: \`$_id\` isn't a slot id"
 	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
 	[ "$_id" != "$DEFAULT" ] || refuse "$_id is the default slot"
-	boot_room "$_work/boot"
 	# A layered slot: each layer the board already has is kept as it is;
 	# the others come from the bundle's layers/<id>.erofs (or the build's
 	# own name for it, layers/<name>.erofs), checked here. A bundle whose
@@ -516,22 +517,19 @@ EOF
 	if [ -d "$_work/boot/overlays" ] && [ ! -e "$_work/boot/overlays/README" ]; then
 		printf 'Overlays for this slot. The firmware reads them from os_prefix only when this file exists.\n' > "$_work/boot/overlays/README"
 	fi
-	# The boot side: slots/<id>/ on the FAT, its cmdline naming the slot.
+	# The boot side: the slot's FAT dir (its cmdline naming the slot), kept
+	# on /data; it goes onto the FAT when it is tried or made the default
+	# (slot-boot). A resident slot installed again gets its new files now.
 	mount_boot
 	_missing=$(missing_overlays "$BOOT" "$_work/boot/overlays" | tr '\n' ' ')
 	[ -z "$_missing" ] || refuse "the bundle has no overlay for ${_missing% } (the board's config.txt loads it): it would boot without that device"
 	_dev=${SLOTS_PARTUUID:-$(findmnt -n -o PARTUUID "$DATA" 2>/dev/null || true)}
 	_base=$(tr '\n' ' ' < "$_work/boot/cmdline.txt" 2>/dev/null | sed 's/ *$//')
-	rm -rf "$BOOT/slots/.$_id.new"
-	mkdir -p "$BOOT/slots"
-	cp -r "$_work/boot" "$BOOT/slots/.$_id.new" || die "can't write the slot's boot files"
-	cp "$_work/slot.json" "$BOOT/slots/.$_id.new/slot.json"
+	cp "$_work/slot.json" "$_work/boot/slot.json"
 	printf '%s atlas.slot=%s atlas.roothash=%s atlas.data=PARTUUID=%s panic=5\n' \
-		"$_base" "$_id" "$_root" "$_dev" > "$BOOT/slots/.$_id.new/cmdline.txt"
-	boot_sync
-	rm -rf "$BOOT/slots/$_id"
-	mv "$BOOT/slots/.$_id.new" "$BOOT/slots/$_id" || die "can't put the slot's boot files in place"
-	boot_sync
+		"$_base" "$_id" "$_root" "$_dev" > "$_work/boot/cmdline.txt"
+	boot_put "$_id" "$_work/boot"
+	[ ! -d "$BOOT/slots/$_id" ] || boot_stage "$_id" --replace
 	PROGRESS=900 && write_status
 	# The data side: the image (or the new layers) and the manifest, each
 	# by rename, the manifest last.
@@ -560,6 +558,8 @@ EOF
 	meta_set "$_id" PINNED "$2"
 	meta_set "$_id" GOOD untried
 	meta_set "$_id" INSTALLED "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	meta_set "$_id" SEQ "$(next_seq)"
+	keep_old_mark "$_id"
 	STAGED=$_id STATE=staged PROGRESS=1000 STARTED_BY=${BOARD_EVENT_SOURCE:-local}
 	save_state
 	board_event update.staged "installed slot $_id ($(mf "$_id" family) $(mf "$_id" version))" "slot=$_id" "sha256=$_sha"
@@ -715,7 +715,6 @@ cmd_check() {
 	valid_id "$_id" || die "slot.json: \`$_id\` isn't a slot id"
 	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
 	[ "$_id" != "$DEFAULT" ] || refuse "$_id is the default slot"
-	boot_room "$_work/boot"
 	_reuse=0
 	bundle_layers "$_work"
 	if _lines=$(layered "$_work/slot.json"); then
@@ -844,8 +843,11 @@ cmd_boot_once() {
 	installed "$_id" || refuse "no slot $_id"
 	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
 	mount_boot
-	[ -d "$BOOT/slots/$_id" ] || refuse "slot $_id has no boot files"
+	# Room for its boot files first: only resident slots' stay.
+	boot_evict "$_id"
+	boot_stage "$_id"
 	run_hook pre-reboot "$_id" || refuse "the pre-reboot hook stopped the restart; nothing changed"
+	keep_old_mark "$_id"
 	trial_txt "$_id"
 	# A new trial: confirm may try it once more if the restart loses its flag.
 	meta_set "$_id" RETRIED no
@@ -906,6 +908,7 @@ cmd_confirm() {
 			[ "$DEFAULT" = "$_run" ] || PREVIOUS=$DEFAULT
 			DEFAULT=$_run TRIAL='' STAGED='' STATE=confirmed ERROR=''
 			board_event update.confirmed "kept slot $_run ($(mf "$_run" version))" "slot=$_run"
+			_housekeep=yes
 		fi
 	elif [ -n "$TRIAL" ]; then
 		_retry=''
@@ -968,13 +971,29 @@ cmd_confirm() {
 	save_state
 	if [ -n "${_retry:-}" ]; then
 		mount_boot
+		boot_stage "$_retry"
 		trial_txt "$_retry"
 		STATE=rebooting
 		save_state
 		umount_boot
 		recovery_hook "$_retry"
 		recovery_restart tryboot_reboot
+		return
 	fi
+	# A new default: the oldest slots past `slots keep` go, unless its
+	# install or trial said --keep-old.
+	if [ -n "${_housekeep:-}" ]; then
+		if [ "$(cat "$STATE_DIR/keep-old" 2>/dev/null)" = "$_run" ]; then
+			board_log "keeping the old slots this time (--keep-old)"
+		else
+			housekeep
+		fi
+		rm -f "$STATE_DIR/keep-old"
+	fi
+	# Boot files of slots no longer resident off the FAT (and, once, every
+	# slot's copied to /data). Never fails the confirm.
+	mount_boot
+	(boot_evict) || board_log "couldn't tidy the boot partition"
 }
 
 cmd_check_link() {
@@ -995,12 +1014,15 @@ cmd_set_default() {
 	installed "$_id" || refuse "no slot $_id"
 	[ "$(meta_get "$_id" GOOD)" = yes ] || refuse "slot $_id hasn't booted well here yet: boot it once first"
 	mount_boot
+	boot_evict "$_id"
+	boot_stage "$_id"
 	write_line default.txt "os_prefix=slots/$_id/"
 	root_copy "$_id"
 	[ "$DEFAULT" = "$_id" ] || PREVIOUS=$DEFAULT
 	DEFAULT=$_id
 	save_state
 	board_event update.default "slot $_id is the default from the next boot" "slot=$_id"
+	boot_evict
 }
 
 cmd_rollback() {
@@ -1009,6 +1031,7 @@ cmd_rollback() {
 	_from=$DEFAULT
 	[ "${1:-}" = --no-reboot ] || run_hook pre-reboot "$_back" || refuse "the pre-reboot hook stopped the restart; nothing changed"
 	mount_boot
+	boot_stage "$_back"
 	write_line default.txt "os_prefix=slots/$_back/"
 	root_copy "$_back"
 	DEFAULT=$_back PREVIOUS=$_from STATE=rebooting ERROR=''
@@ -1028,16 +1051,127 @@ cmd_remove() {
 	[ "$_id" != "$DEFAULT" ] || refuse "$_id is the default slot"
 	[ "$_id" != "$TRIAL" ] || refuse "$_id is about to be tried"
 	[ "$(meta_get "$_id" PINNED)" != yes ] || refuse "$_id is pinned; unpin it first"
+	remove_slot "$_id"
+	board_event slot.removed "removed slot $_id" "slot=$_id"
+}
+
+# remove_slot <id>: its boot files (FAT, /data), image, manifest and state.
+# The pointer first: state.json never names a slot that is going.
+remove_slot() {
+	[ "$PREVIOUS" != "$1" ] || PREVIOUS=''
+	[ "$STAGED" != "$1" ] || STAGED=''
+	save_state
 	mount_boot
-	rm -rf "$BOOT/slots/$_id"
-	$SYNC
-	rm -f "$IMAGES/$_id.erofs" "$IMAGES/$_id.json" "$STATE_DIR/$_id.meta"
+	rm -rf "$BOOT/slots/$1"
+	boot_sync
+	rm -f "$IMAGES/$1.erofs" "$IMAGES/$1.json" "$STATE_DIR/$1.meta"
+	boot_drop "$1"
 	gc_layers
 	$SYNC
-	[ "$PREVIOUS" != "$_id" ] || PREVIOUS=''
-	[ "$STAGED" != "$_id" ] || STAGED=''
-	save_state
-	board_event slot.removed "removed slot $_id" "slot=$_id"
+	write_status
+}
+
+# --- housekeeping -----------------------------------------------------------
+
+# How many slots housekeeping keeps: settings.env's SLOTS_KEEP (`slots keep`),
+# else update.env's, else 3. Pinned slots don't count and never go.
+keep_count() {
+	_k=${SLOTS_KEEP:-3}
+	[ -r "$STATE_DIR/settings.env" ] && _k=$(sed -n "s/^SLOTS_KEEP=//p" "$STATE_DIR/settings.env" | tr -d "'" | tail -n 1)
+	case $_k in '' | *[!0-9]*) _k=${SLOTS_KEEP:-3} ;; esac
+	echo "$_k"
+}
+cmd_keep() {
+	if [ -n "${1:-}" ]; then
+		case $1 in *[!0-9]* | ????*) refuse "\`$1\` isn't a number of slots" ;; esac
+		printf 'SLOTS_KEEP=%s\n' "$(($1 + 0))" > "$STATE_DIR/settings.env.tmp"
+		mv -f "$STATE_DIR/settings.env.tmp" "$STATE_DIR/settings.env"
+		$SYNC
+		board_event slot.keep "housekeeping keeps $(($1 + 0)) slot(s)" "keep=$(($1 + 0))"
+	fi
+	printf '{"keep":%s}\n' "$(keep_count)"
+}
+# A slot's install order (SEQ in its .meta): the board's clock can be far off.
+next_seq() {
+	_s=$(cat "$STATE_DIR/seq" 2>/dev/null || echo 0)
+	case $_s in '' | *[!0-9]*) _s=0 ;; esac
+	_s=$((_s + 1))
+	echo "$_s" > "$STATE_DIR/seq"
+	echo "$_s"
+}
+# keep_old_mark <id>: --keep-old given: confirming <id> removes nothing.
+keep_old_mark() {
+	[ -n "$KEEP_OLD" ] || return 0
+	echo "$1" > "$STATE_DIR/keep-old"
+}
+# Installed slots, newest first (SEQ, then the install time).
+by_age() {
+	for _man in "$IMAGES"/*.json; do
+		[ -e "$_man" ] || continue
+		_hi=${_man##*/}
+		_hi=${_hi%.json}
+		valid_id "$_hi" && installed "$_hi" || continue
+		printf '%s %s %s\n' "$(meta_get "$_hi" SEQ | grep -x '[0-9]*' || echo 0)" "$(meta_get "$_hi" INSTALLED)" "$_hi"
+	done | sort -k1,1nr -k2,2r | awk '{ print $NF }'
+}
+# The running, default, trial and staged slots stay and count, then the
+# previous one, then the newest; past `slots keep` the rest go.
+housekeep() {
+	_keep=$(keep_count)
+	[ "$_keep" -gt 0 ] || return 0
+	_order=$(
+		for _hi in "$(running)" "$DEFAULT" "$TRIAL" "$STAGED" "$PREVIOUS"; do [ -z "$_hi" ] || echo "$_hi"; done
+		by_age
+	)
+	_n=0 _seen=' ' _gone=''
+	for _hi in $_order; do
+		case $_seen in *" $_hi "*) continue ;; esac
+		_seen="$_seen$_hi "
+		installed "$_hi" || continue
+		[ "$(meta_get "$_hi" PINNED)" != yes ] || continue
+		case " $(running) $DEFAULT $TRIAL $STAGED " in
+		*" $_hi "*) _n=$((_n + 1)); continue ;;
+		esac
+		if [ "$_n" -lt "$_keep" ]; then _n=$((_n + 1)); continue; fi
+		remove_slot "$_hi"
+		_gone="$_gone $_hi"
+	done
+	[ -n "$_gone" ] || return 0
+	board_event slot.housekept "removed $(echo $_gone | wc -w) old slot(s), keeping $_keep:$_gone" "keep=$_keep" "removed=$(echo $_gone | tr ' ' ',')"
+}
+
+# Boot files on the FAT with no slot on /data (an interrupted remove).
+reap_strays() {
+	[ -d "$BOOT/slots" ] || return 0
+	for _d in "$BOOT/slots"/*; do
+		[ -d "$_d" ] || continue
+		_i=${_d##*/}
+		case " $(running) $DEFAULT $PREVIOUS $TRIAL $STAGED " in *" $_i "*) continue ;; esac
+		installed "$_i" || echo "$_i"
+	done
+}
+
+cmd_reap() {
+	mount_boot
+	_strays=$(reap_strays)
+	if [ "${1:-}" = --dry-run ]; then
+		umount_boot
+		printf '{"remove":['
+		_sep=''
+		for _i in $_strays; do printf '%s%s' "$_sep" "$(board_json_str "$_i")"; _sep=','; done
+		printf ']}\n'
+		return 0
+	fi
+	[ -n "$_strays" ] || return 0
+	_n=0
+	for _i in $_strays; do
+		rm -rf "$BOOT/slots/$_i"
+		rm -f "$STATE_DIR/$_i.meta"
+		_n=$((_n + 1))
+	done
+	$SYNC
+	write_status
+	board_event slot.reaped "removed the boot files of $_n slot(s) no longer on /data: $(echo $_strays)" "count=$_n"
 }
 
 cmd_pin() {
@@ -1106,6 +1240,8 @@ push_persist() {
 	cp "$IMAGES/$_run.json" "$STATE_DIR/$_run.prev.json.tmp" && mv -f "$STATE_DIR/$_run.prev.json.tmp" "$STATE_DIR/$_run.prev.json"
 	cp "$_man" "$IMAGES/.$_run.json.tmp" && mv -f "$IMAGES/.$_run.json.tmp" "$IMAGES/$_run.json"
 	$SYNC
+	# The slot's copy on /data takes the new cmdline too (slot-boot).
+	boot_put "$_run" "$BOOT/slots/$_run"
 }
 
 # push_live <slot> <name> <id> <root hash>: the layer now, over LIVE_DIRS,
@@ -1261,6 +1397,12 @@ load_state
 
 cmd=${1:-}
 [ $# -eq 0 ] || shift
+# --keep-old, wherever it is: this update keeps the old slots.
+KEEP_OLD=''
+for _a in "$@"; do
+	shift
+	if [ "$_a" = --keep-old ]; then KEEP_OLD=yes; else set -- "$@" "$_a"; fi
+done
 case "$cmd" in
 status | list)
 	# An install that died (power loss, a kill) under the lock: an error.
@@ -1280,12 +1422,14 @@ check-link) cmd_check_link ;;
 set-default) cmd_set_default "$@" ;;
 rollback) cmd_rollback "$@" ;;
 remove) cmd_remove "$@" ;;
+reap) cmd_reap "$@" ;;
+keep) cmd_keep "$@" ;;
 pin) cmd_pin yes "${1:-}" ;;
 unpin) cmd_pin no "${1:-}" ;;
 cancel) cmd_cancel ;;
 push) cmd_push "$@" ;;
 *)
-	sed -n '2,41p' "$0" | sed 's/^# \{0,1\}//' >&2
+	sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//' >&2
 	exit 2
 	;;
 esac

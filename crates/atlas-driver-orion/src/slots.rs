@@ -78,6 +78,8 @@ pub(crate) fn slot_set(keys: &HashMap<String, String>) -> Result<Option<SlotSet>
         trial: get("update.slot_trial"),
         free_bytes: bytes("update.free_bytes"),
         reserve_bytes: bytes("update.reserve_bytes"),
+        // Housekeeping's setting is the writer's, over SSH.
+        keep: None,
         slots,
     }))
 }
@@ -105,6 +107,13 @@ impl SlotsCapability for OrionSlots {
                 args.insert("pinned".into(), TypedConfigValue::Bool(*pinned));
                 "slot.pin"
             }
+            // Housekeeping's setting is the writer's (SSH) until Lemnos
+            // provisioning carries it.
+            SlotCommand::Keep { .. } => {
+                return Err(DriverError::Unsupported(
+                    "Orion can't set the board's housekeeping".into(),
+                ));
+            }
         };
         run_and_wait(
             self.transport.as_ref(),
@@ -126,6 +135,11 @@ impl SlotsCapability for OrionSlots {
         install: &SlotInstall,
         progress: &ProgressSink,
     ) -> Result<(), DriverError> {
+        if install.keep_old {
+            return Err(DriverError::Unsupported(
+                "Orion can't keep the old slots on an update".into(),
+            ));
+        }
         progress.step_started(UpdateStep::Preflight);
         let keys = update_status(self.transport.as_ref(), &self.node).await?;
         let set = slot_set(&keys)?
@@ -436,6 +450,7 @@ mod tests {
             pin: false,
             boot: true,
             make_default,
+            keep_old: false,
         };
         slots
             .install(&device, &install, &ProgressSink::discard())

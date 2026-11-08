@@ -185,7 +185,7 @@ export const mockApi: Api = {
     }
   },
   slotCommand: (key, command) => reply(() => slotCommand(key, command)),
-  installSlot: async (key, path, pin, boot, onProgress, _expectedSha256 = null) => {
+  installSlot: async (key, path, pin, boot, onProgress, _expectedSha256 = null, _keepOld = false) => {
     await latency();
     try {
       await installSlot(key, path, pin, boot, onProgress);

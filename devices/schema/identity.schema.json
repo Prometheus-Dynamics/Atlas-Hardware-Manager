@@ -483,6 +483,14 @@
               }
             }
           }
+        },
+        "keep": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0,
+          "description": "Slots boards: how many slots housekeeping keeps when an update is confirmed (pinned ones don't count; 0: never removes any)."
         }
       }
     }

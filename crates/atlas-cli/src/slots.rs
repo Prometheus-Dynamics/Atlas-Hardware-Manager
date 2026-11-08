@@ -34,7 +34,14 @@ pub(crate) enum SlotsCommand {
         /// With --boot: a healthy boot becomes the default.
         #[arg(long, requires = "boot")]
         make_default: bool,
+        /// Remove no old slots when this one is confirmed (the board's
+        /// housekeeping skips it once).
+        #[arg(long)]
+        keep_old: bool,
     },
+    /// How many slots the board keeps when an update is confirmed (pinned
+    /// ones don't count; 0: never remove any). Without a number, say it.
+    Keep { count: Option<u32> },
     /// Restart into a slot once, on trial.
     BootOnce { id: String },
     /// Make a slot that booted well the default.
@@ -102,6 +109,7 @@ pub(crate) async fn slots(
             pin,
             boot,
             make_default,
+            keep_old,
         } => {
             let probe = image.clone();
             let kind = tokio::task::spawn_blocking(move || atlas_blockdev::sniff_artifact(&probe))
@@ -120,6 +128,7 @@ pub(crate) async fn slots(
                 pin,
                 boot,
                 make_default,
+                keep_old,
             };
             let quiet = as_json;
             // Each tenth of the transfer, and the board's notes.
@@ -185,6 +194,20 @@ pub(crate) async fn slots(
         }
         SlotsCommand::Pin { id } => SlotCommand::Pin { id, pinned: true },
         SlotsCommand::Unpin { id } => SlotCommand::Pin { id, pinned: false },
+        SlotsCommand::Keep { count: Some(keep) } => SlotCommand::Keep { keep },
+        SlotsCommand::Keep { count: None } => {
+            let set = atlas
+                .slots(&key)
+                .await
+                .map_err(|error| error.to_string())?
+                .ok_or_else(|| format!("{key} has no slots (an A/B board?)"))?;
+            if as_json {
+                output::json(&json!({ "device": key, "keep": set.keep }));
+            } else {
+                output::line(&keep_line(set.keep));
+            }
+            return Ok(ExitCode::SUCCESS);
+        }
     };
     atlas
         .slot_command(&key, &command)
@@ -342,6 +365,17 @@ fn print(set: &SlotSet) {
         mib(set.room()),
         mib(set.reserve_bytes)
     ));
+    output::line(&keep_line(set.keep));
+}
+
+fn keep_line(keep: Option<u32>) -> String {
+    match keep {
+        None => "this board's image has no housekeeping".into(),
+        Some(0) => "housekeeping: keeps every slot".into(),
+        Some(keep) => format!(
+            "housekeeping: keeps the last {keep} slots when an update is confirmed (pinned ones too)"
+        ),
+    }
 }
 
 fn mib(bytes: u64) -> String {

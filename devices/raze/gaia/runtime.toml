@@ -455,6 +455,12 @@ origin = "static-asset"
 mode = 493
 
 [[stage.files]]
+id = "raze-board-slot-boot"
+src = "${self}/assets/rootfs/usr/lib/board/slot-boot"
+dest = "/usr/lib/board/slot-boot"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-board-update-env"
 src = "${self}/assets/rootfs/usr/lib/board/update.env"
 dest = "/usr/lib/board/update.env"
@@ -759,6 +765,7 @@ stage_files = [
   "raze-systemd-system-serial-getty-ttygs1-dropin",
   "raze-board-update",
   "raze-board-slots",
+  "raze-board-slot-boot",
   "raze-board-reboot-locked",
   "raze-board-usb-boot",
   "raze-ssh-sshd-config-d-50-board-conf",

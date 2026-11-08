@@ -91,10 +91,11 @@ export const api = {
     boot: boolean,
     onProgress: (update: ProgressUpdate) => void,
     expectedSha256: string | null = null,
+    keepOld = false,
   ) => {
     const channel = new Channel<ProgressUpdate>();
     channel.onmessage = onProgress;
-    return invoke<void>("install_slot", { key, path, pin, boot, expectedSha256, onProgress: channel });
+    return invoke<void>("install_slot", { key, path, pin, boot, keepOld, expectedSha256, onProgress: channel });
   },
   /**
    * Runs a command on one of the board's devices (`hardware` is its id in the

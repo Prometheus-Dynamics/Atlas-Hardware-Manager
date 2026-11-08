@@ -102,7 +102,8 @@ export UPDATE_SYSTEMCTL=false
 mkdir -p "$T/etc" "$T/run" "$T/boot/slots/pv-a" "$T/data/slots" "$T/data/board/slots"
 mkdir -p "$T/sysroot/lib/modules/7.2.9-test" "$T/gadget/g1"
 echo 1000480000.usb > "$T/gadget/g1/UDC"
-printf 'UPDATE_CONFIRM_DELAY=0\nUPDATE_LINK_DELAY=0\n' > "$T/etc/update.env"
+# Housekeeping off until its own test (it would remove the slots below).
+printf 'UPDATE_CONFIRM_DELAY=0\nUPDATE_LINK_DELAY=0\nSLOTS_KEEP=0\n' > "$T/etc/update.env"
 echo boot-1 > "$T/boot_id"
 echo 'os_prefix=slots/pv-a/' > "$T/boot/default.txt"
 echo 'os_prefix=slots/pv-a/' > "$T/boot/trial.txt"
@@ -136,6 +137,8 @@ p=sys.argv[1]; m=json.load(open(p)); m["display_name"]=sys.argv[2]; json.dump(m,
 }
 up() { sh "$lib/update" "$@"; }
 status() { up status; }
+# bf <id> <path>: a slot's boot file as kept on /data (slot-boot).
+bf() { echo "$T/data/slots/bootfiles/$(awk -v p="$2" '$2 == p { print $1 }' "$T/data/slots/$1.boot")"; }
 rc() {
 	set +e
 	up "$@" > "$T/out" 2> "$T/err"
@@ -179,25 +182,26 @@ grep -q '"refused":false,"error":"rootfs.erofs isn' "$T/out" || fail "check: bro
 [ "$(rc check "$T/pv-b-dot.slot.tar")" = 0 ] || fail "check: a tar with ./ names: $(cat "$T/out" "$T/err")"
 [ "$(SLOTS_RESERVE_KB=999999999 rc check "$T/pv-b.slot.tar")" = 3 ] || fail "check: no room"
 grep -q 'no room for this slot' "$T/out" || fail "check: no room: $(cat "$T/out")"
-[ "$(SLOTS_BOOT_FREE_KB=1024 rc check "$T/pv-b.slot.tar")" = 3 ] || fail "check: a full boot FAT"
-grep -q 'no room on the boot partition' "$T/out" || fail "check: the boot FAT: $(cat "$T/out")"
+[ "$(SLOTS_BOOT_FREE_KB=1024 rc check "$T/pv-b.slot.tar")" = 0 ] || fail "check: an install needs no room on the boot FAT: $(cat "$T/out")"
 snap > "$T/after"
 cmp -s "$T/before" "$T/after" || fail "failed checks changed files: $(diff "$T/before" "$T/after")"
 
-echo "a bundle installs as a slot: the boot dir on the FAT, the image on /data"
+echo "a bundle installs as a slot on /data: the image, and its boot files (by content); nothing on the FAT"
 bundle pv-b 2026.4.0 "PhotonVision Lab"
 up stage "$T/pv-b.slot.tar" --sha256 "$(sha256sum "$T/pv-b.slot.tar" | cut -d' ' -f1)" 2>/dev/null
 [ -f "$T/data/slots/pv-b.erofs" ] && [ -f "$T/data/slots/pv-b.json" ] || fail "image or manifest missing"
 [ ! -e "$T/run/update/progress" ] || fail "the ring's progress file outlived the install: $(cat "$T/run/update/progress")"
-grep -q "atlas.slot=pv-b atlas.roothash=cdcd" "$T/boot/slots/pv-b/cmdline.txt" || fail "cmdline: $(cat "$T/boot/slots/pv-b/cmdline.txt")"
-grep -q "atlas.data=PARTUUID=abcd1234-02" "$T/boot/slots/pv-b/cmdline.txt" || fail "PARTUUID"
-[ -f "$T/boot/slots/pv-b/overlays/bcm2712d0.dtbo" ] || fail "overlays not copied"
-[ -f "$T/boot/slots/pv-b/overlays/README" ] || fail "no overlays/README: the firmware would ignore the slot's overlays"
+grep -q "atlas.slot=pv-b atlas.roothash=cdcd" "$(bf pv-b cmdline.txt)" || fail "cmdline: $(cat "$T/data/slots/pv-b.boot")"
+grep -q "atlas.data=PARTUUID=abcd1234-02" "$(bf pv-b cmdline.txt)" || fail "PARTUUID"
+[ -f "$(bf pv-b overlays/bcm2712d0.dtbo)" ] || fail "overlays not kept"
+[ -f "$(bf pv-b overlays/README)" ] || fail "no overlays/README: the firmware would ignore the slot's overlays"
+cmp -s "$(bf pv-b slot.json)" "$T/data/slots/pv-b.json" || fail "the boot dir's slot.json"
+(cd "$T/data/slots/bootfiles" && for f in *; do [ "$(sha256sum "$f" | cut -d' ' -f1)" = "$f" ] || fail "bootfiles/$f isn't its sha256"; done)
+[ ! -e "$T/boot/slots/pv-b" ] || fail "an install put boot files on the FAT"
 status | grep -q '"slot_staged":"pv-b"' || fail "staged: $(status)"
 status | grep -q '"id":"pv-b"[^}]*"display_name":"PhotonVision Lab"' || fail "pv-b display_name: $(status)"
 status | grep -q '"id":"pv-a"[^}]*"display_name":null' || fail "pv-a without display_name isn't null: $(status)"
 ls "$T/data/slots" | grep -q install && fail "the work dir was left behind"
-grep -qx /dev/fake-p1 "$T/flushes" || fail "the FAT's device wasn't flushed after the slot's boot files"
 status | grep -q '"id":"pv-a"[^}]*"size":2,' || fail "pv-a's size isn't its file's: $(status)"
 
 echo "a bundle on stdin installs the same, and its tar never stays on /data"
@@ -273,10 +277,10 @@ MOUNT
 	[ "$(stage_image "$T/pv-i.img.xz" --sha256 "$sha")" = 0 ] || fail "stage-image: $(cat "$T/out" "$T/err")"
 	cmp -s "$T/data/slots/pv-i.erofs" "$T/build/pv-i/rootfs.erofs" || fail "stage-image: the root isn't the image's"
 	cmp -s "$T/data/slots/pv-i.json" "$T/build/pv-i/slot.json" || fail "stage-image: slot.json isn't the image's"
-	grep -qx "console=ttyAMA10 atlas.slot=pv-i atlas.roothash=cdcd[cd]* atlas.data=PARTUUID=abcd1234-02 panic=5" "$T/boot/slots/pv-i/cmdline.txt" ||
-		fail "stage-image: the slot's cmdline is the image's, not this board's: $(cat "$T/boot/slots/pv-i/cmdline.txt")"
-	cmp -s "$T/boot/slots/pv-i/kernel8.img" "$T/build/pv-i/boot/kernel8.img" || fail "stage-image: the kernel"
-	[ -f "$T/boot/slots/pv-i/overlays/README" ] || fail "stage-image: no overlays/README"
+	grep -qx "console=ttyAMA10 atlas.slot=pv-i atlas.roothash=cdcd[cd]* atlas.data=PARTUUID=abcd1234-02 panic=5" "$(bf pv-i cmdline.txt)" ||
+		fail "stage-image: the slot's cmdline is the image's, not this board's: $(cat "$(bf pv-i cmdline.txt)")"
+	cmp -s "$(bf pv-i kernel8.img)" "$T/build/pv-i/boot/kernel8.img" || fail "stage-image: the kernel"
+	[ -f "$(bf pv-i overlays/README)" ] || fail "stage-image: no overlays/README"
 	status | grep -q '"slot_staged":"pv-i"' || fail "stage-image staged: $(status)"
 	grep -qx "vfat p1.img" "$IMG_MOUNTS" && grep -qx "ext4 p2.img" "$IMG_MOUNTS" || fail "the partitions: $(cat "$IMG_MOUNTS")"
 	[ "$(grep -c '^umount ' "$IMG_MOUNTS")" = 2 ] || fail "the partitions weren't let go: $(cat "$IMG_MOUNTS")"
@@ -353,10 +357,17 @@ tar -cf "$T/pv-c.slot.tar" -C "$T/build/pv-c" slot.json boot rootfs.erofs
 [ "$(rc stage "$T/pv-c.slot.tar")" = 1 ] || fail "a tampered image was installed"
 [ ! -e "$T/data/slots/pv-c.erofs" ] || fail "tampered image left on /data"
 [ "$(SLOTS_RESERVE_KB=999999999 rc stage "$T/pv-b.slot.tar")" = 3 ] || fail "no room wasn't refused"
+echo "a full boot FAT doesn't stop an install, only a boot once (nothing changed)"
 bundle pv-f 2026.4.3
-[ "$(SLOTS_BOOT_FREE_KB=1024 rc stage "$T/pv-f.slot.tar")" = 3 ] || fail "a full boot FAT wasn't refused"
-grep -q 'no room on the boot partition' "$T/err" || fail "the boot FAT's reason: $(cat "$T/err")"
-[ ! -e "$T/data/slots/pv-f.erofs" ] && [ ! -e "$T/boot/slots/pv-f" ] && [ ! -e "$T/boot/slots/.pv-f.new" ] || fail "a full boot FAT left pv-f behind"
+[ "$(SLOTS_BOOT_FREE_KB=1024 rc stage "$T/pv-f.slot.tar")" = 0 ] || fail "an install needed room on the boot FAT: $(cat "$T/err")"
+[ ! -e "$T/boot/slots/pv-f" ] || fail "an install put boot files on the FAT"
+[ "$(SLOTS_BOOT_FREE_KB=1024 rc boot-once pv-f)" = 3 ] || fail "a full boot FAT wasn't refused"
+grep -q 'no room on the boot partition for slot pv-f' "$T/err" || fail "the boot FAT's reason: $(cat "$T/err")"
+[ ! -e "$T/boot/slots/pv-f" ] && [ ! -e "$T/boot/slots/.pv-f.new" ] || fail "a full boot FAT left pv-f's boot files"
+[ "$(cat "$T/boot/trial.txt")" = "os_prefix=slots/pv-a/" ] || fail "a refused boot once wrote trial.txt"
+up remove pv-f 2>/dev/null
+[ ! -e "$T/data/slots/pv-f.boot" ] || fail "remove left pv-f's boot files on /data"
+up stage "$T/pv-b.slot.tar" 2> /dev/null || fail "restaging pv-b"
 mkdir "$T/device-lock"
 [ "$(rc stage "$T/pv-b.slot.tar")" = 3 ] || fail "the device lock didn't hold"
 rmdir "$T/device-lock"
@@ -386,8 +397,12 @@ grep -q "the pre-reboot hook stopped the restart" "$T/err" || fail "hook refusal
 status | grep -q '"slot_staged":"pv-b"' || fail "the hook's refusal unstaged pv-b: $(status)"
 sed -i 's/^exit 1$/exit 0/' "$T/etc/update.d/pre-reboot"
 
-echo "boot once writes trial.txt and restarts with tryboot"
+echo "boot once puts the slot's boot files on the FAT (checked), writes trial.txt and restarts with tryboot"
+: > "$T/flushes"
 up apply 2>/dev/null
+grep -q "atlas.slot=pv-b atlas.roothash=cdcd" "$T/boot/slots/pv-b/cmdline.txt" || fail "the trial's cmdline on the FAT"
+[ -f "$T/boot/slots/pv-b/overlays/README" ] && [ -f "$T/boot/slots/pv-b/slot.json" ] || fail "the trial's boot dir: $(ls -R "$T/boot/slots/pv-b")"
+grep -qx /dev/fake-p1 "$T/flushes" || fail "the FAT's device wasn't flushed after the slot's boot files"
 [ "$(wc -l < "$T/hook-calls")" = 2 ] || fail "the pre-reboot hook didn't run before the restart"
 [ "$(cat "$T/boot/trial.txt")" = "os_prefix=slots/pv-b/" ] || fail "trial.txt: $(cat "$T/boot/trial.txt")"
 [ "$(tail -n 1 "$T/reboots")" = tryboot ] || fail "no tryboot restart"
@@ -401,6 +416,9 @@ up confirm 2>/dev/null
 grep -q "kernel of pv-b" "$T/boot/kernel8.img" || fail "root copy"
 status | grep -q '"slot_default":"pv-b","slot_previous":"pv-a"' || fail "state: $(status)"
 grep -q '"previous":"pv-a"' "$T/data/board/slots/state.json" || fail "state.json for the initramfs: $(cat "$T/data/board/slots/state.json")"
+[ -r "$T/data/slots/pv-a.boot" ] || fail "pv-a's boot files (on the FAT only, from before) weren't kept on /data"
+grep -q old-kernel "$(bf pv-a kernel8.img)" || fail "pv-a's kept kernel"
+[ -d "$T/boot/slots/pv-a" ] || fail "the previous slot's boot files left the FAT (slot-init's fallback needs them)"
 
 echo "a trial only (--keep-default) runs once it is healthy, but the default stays"
 up boot-once pv-a --keep-default 2>/dev/null
@@ -568,6 +586,23 @@ up confirm 2>/dev/null
 status | grep -q '"state":"rolled-back"' || fail "rollback after the restart: $(status)"
 status | grep -q '"slot_active":"pv-a"' || fail "rollback's slot: $(status)"
 
+echo "reap: only boot files on the FAT whose slot isn't on /data go; never a slot, and confirm reaps nothing"
+mkdir -p "$T/boot/slots/ghost" "$T/boot/slots/ghost2"
+echo k > "$T/boot/slots/ghost/kernel8.img"
+before=$(snap)
+dry=$(up reap --dry-run)
+[ "$(printf '%s' "$dry" | python3 -c 'import json,sys; print(" ".join(sorted(json.load(sys.stdin)["remove"])))')" = "ghost ghost2" ] ||
+	fail "reap would remove: $dry"
+[ "$(snap)" = "$before" ] || fail "a dry run changed files"
+slots_before=$(ls "$T/data/slots" | sort)
+up reap 2>/dev/null
+[ ! -d "$T/boot/slots/ghost" ] && [ ! -d "$T/boot/slots/ghost2" ] || fail "the stray boot dirs stayed"
+[ "$(ls "$T/data/slots" | sort)" = "$slots_before" ] || fail "reap touched /data's slots"
+for kept in pv-a pv-b; do [ -d "$T/boot/slots/$kept" ] || fail "reap removed $kept's boot files"; done
+grep -rq 'slot.reaped' "$T/data/board" || fail "no slot.reaped event"
+[ "$(up reap --dry-run)" = '{"remove":[]}' ] || fail "nothing left to reap: $(up reap --dry-run)"
+! grep -q 'cmd_reap' "$(sed -n '/^cmd_confirm() {/,/^}/p' "$lib/slots" > "$T/confirm.sh"; echo "$T/confirm.sh")" || fail "confirm reaps"
+
 # lbundle <id> <out.tar> <name:content>...: a layered slot bundle; each
 # layer's file is its content, its id the sha256 of it (as Gaia names them),
 # its root hash a fixed one per name. Layers named with a leading "-" are
@@ -609,7 +644,7 @@ for c in base-1 raze-1 app-1; do
 	[ -f "$T/data/slots/layers/$(lid $c).erofs" ] || fail "layer $c not in the store: $(ls "$T/data/slots/layers")"
 done
 [ ! -e "$T/data/slots/hx-a.erofs" ] || fail "a layered slot got a one-image file"
-grep -q "atlas.slot=hx-a atlas.roothash=$(rh base),$(rh platform),$(rh app) " "$T/boot/slots/hx-a/cmdline.txt" || fail "cmdline: $(cat "$T/boot/slots/hx-a/cmdline.txt")"
+grep -q "atlas.slot=hx-a atlas.roothash=$(rh base),$(rh platform),$(rh app) " "$(bf hx-a cmdline.txt)" || fail "cmdline: $(cat "$(bf hx-a cmdline.txt)")"
 status | grep -q '"id":"hx-a"[^]]*"intact":true' || fail "hx-a intact: $(status)"
 status | grep -q '"id":"hx-a",[^{]*"display_name":null,"layers":\[{"name":"base"' || fail "hx-a layers listed: $(status)"
 status | grep -q '"id":"pv-a"[^}]*"layers":null' || fail "a one-image slot's layers aren't null: $(status)"
@@ -657,7 +692,7 @@ for n in base platform app; do
 	[ -f "$T/data/slots/layers/$(printf 'gaia %s\n' "$n" | sha256sum | cut -d' ' -f1).erofs" ] || fail "layer $n not stored by id: $(ls "$T/data/slots/layers")"
 done
 grep -q '"layers"' "$T/data/slots/gx-a.json" || fail "the installed manifest has no layers: $(cat "$T/data/slots/gx-a.json")"
-grep -q "atlas.roothash=$(rh gbase),$(rh gplatform),$(rh gapp) " "$T/boot/slots/gx-a/cmdline.txt" || fail "cmdline: $(cat "$T/boot/slots/gx-a/cmdline.txt")"
+grep -q "atlas.roothash=$(rh gbase),$(rh gplatform),$(rh gapp) " "$(bf gx-a cmdline.txt)" || fail "cmdline: $(cat "$(bf gx-a cmdline.txt)")"
 up remove gx-a 2>/dev/null || fail "remove gx-a"
 sed -i 's/"verity":{[^}]*}/"verity":null/' "$g/layers/layers.json"
 tar -cf "$T/gx-b.slot.tar" -C "$g" slot.json boot layers
@@ -676,6 +711,11 @@ up remove hx-b 2>/dev/null
 # A layered slot to push to: hx-p, "running".
 lbundle hx-p "$T/hx-p.slot.tar" base:base-p platform:raze-p app:app-p
 up stage "$T/hx-p.slot.tar" 2>/dev/null || fail "stage hx-p: $(cat "$T/err")"
+# Running, so its boot files are on the FAT (a booted slot's always are).
+while read -r h f; do
+	mkdir -p "$T/boot/slots/hx-p/$(dirname "$f")"
+	cp "$T/data/slots/bootfiles/$h" "$T/boot/slots/hx-p/$f"
+done < "$T/data/slots/hx-p.boot"
 # The live side's hooks: mounts are recorded, and an erofs "mount" unpacks
 # the layer (a tar of its tree here) where it would show.
 mkdir -p "$T/live/usr" "$T/live/opt" "$T/live/etc"
@@ -734,6 +774,7 @@ v2=$plid
 [ -f "$T/data/slots/layers/$v2.erofs" ] || fail "the pushed layer isn't in the store"
 grep -q "\"id\": *\"$v2\"" "$T/data/slots/hx-p.json" || fail "the manifest doesn't list it: $(cat "$T/data/slots/hx-p.json")"
 grep -q "atlas.roothash=$(rh base),$(rh platform),$(rh push-v2) " "$T/boot/slots/hx-p/cmdline.txt" || fail "cmdline: $(cat "$T/boot/slots/hx-p/cmdline.txt")"
+grep -q "atlas.roothash=$(rh base),$(rh platform),$(rh push-v2) " "$(bf hx-p cmdline.txt)" || fail "the kept copy of the cmdline missed the push"
 [ ! -e "$T/data/slots/layers/$(lid app-p).erofs" ] || [ -e "$T/data/board/slots/hx-p.prev.json" ] || fail "the replaced layer went without a revert record"
 [ -f "$T/data/slots/layers/$(lid app-p).erofs" ] || fail "the replaced layer went (push --revert needs it): $(ls "$T/data/slots/layers" "$T/data/board/slots"; cat "$T/data/board/slots/hx-p.prev.json")"
 grep -qx "open $T/data/slots/layers/$v2.erofs $(rh push-v2) push-app-$(printf '%s' "$v2" | cut -c1-12)" "$T/live-calls" || fail "verity open: $(cat "$T/live-calls")"
@@ -785,5 +826,96 @@ echo "36 25 0:31 / $T/live/usr/local rw - tmpfs tmpfs rw" > "$T/mountinfo"
 [ "$(push "$T/push-v5.tar")" = 0 ] || fail "push v5: $(cat "$T/out" "$T/err")"
 grep -q "overlay.*$T/live/usr$" "$T/live-calls" && fail "/usr was laid over a submount"
 grep -q '"next_boot":\["/usr","/etc"\]' "$T/out" || fail "result: $(cat "$T/out")"
+
+echo "boot files on demand: the FAT holds the resident slots' only, the rest is staged when a slot is tried or made the default"
+# A board of its own: q-0 booted from the image (its boot files on the FAT only).
+H=$T/h
+mkdir -p "$H/boot/slots/q-0" "$H/data/slots" "$H/data/board/slots" "$H/run"
+export SLOTS_DATA=$H/data SLOTS_BOOT_MOUNT=$H/boot BOARD_RUN_DIR=$H/run BOARD_DATA_DIR=$H/data/board UPDATE_SLOTS_STATE=$H/data/board/slots/state.json
+echo q0-kernel > "$H/boot/slots/q-0/kernel8.img"
+echo 'console=ttyAMA10 atlas.slot=q-0' > "$H/boot/slots/q-0/cmdline.txt"
+echo '{"schema":1,"id":"q-0","family":"helios","version":"0","variant":"styx","kernel":"7.2.9","verity":{"root_hash":"aa"}}' > "$H/data/slots/q-0.json"
+cp "$H/data/slots/q-0.json" "$H/boot/slots/q-0/slot.json"
+echo q0 > "$H/data/slots/q-0.erofs"
+echo 'os_prefix=slots/q-0/' > "$H/boot/default.txt"
+echo '{"schema":1,"default":"q-0","previous":null,"trial":null}' > "$H/data/board/slots/state.json"
+hb() { echo "$H/data/slots/bootfiles/$(awk -v p="$2" '$2 == p { print $1 }' "$H/data/slots/$1.boot")"; }
+fat() { (cd "$H/boot/slots" && ls -A | tr '\n' ' ' | sed 's/ $//'); }
+boot_as() { echo "$1" > "$H/data/board/slots/booted"; up confirm 2>/dev/null; }
+update_to() { # update_to <id> [stage flags]: stage, try, boot it, confirm
+	id=$1
+	shift
+	bundle "$id" "1.$id"
+	up stage "$T/$id.slot.tar" "$@" 2>/dev/null || fail "stage $id: $(rc stage "$T/$id.slot.tar"; cat "$T/err")"
+	up apply 2>/dev/null || fail "apply $id"
+	boot_as "$id"
+}
+boot_as q-0
+[ -r "$H/data/slots/q-0.boot" ] || fail "the image's slot wasn't copied to /data on its first confirm"
+grep -qx q0-kernel "$(hb q-0 kernel8.img)" || fail "q-0's kept kernel"
+update_to q-1
+[ "$(fat)" = "q-0 q-1" ] || fail "FAT after q-1: $(fat)"
+update_to q-2
+[ "$(fat)" = "q-1 q-2" ] || fail "the old slot stayed on the FAT (only running/default/previous/trial): $(fat)"
+[ -r "$H/data/slots/q-0.json" ] && [ -r "$H/data/slots/q-0.boot" ] || fail "q-0 went from /data with its boot files"
+[ "$(ls "$H/data/slots/bootfiles" | while read -r f; do grep -lx dtbo "$H/data/slots/bootfiles/$f"; done | wc -l | tr -d ' ')" = 1 ] ||
+	fail "the slots' shared overlay is kept more than once"
+
+echo "  set-default to a slot that is only on /data puts it back on the FAT first; rollback the same"
+up set-default q-0 2>/dev/null || fail "set-default q-0: $(rc set-default q-0; cat "$T/err")"
+[ "$(cat "$H/boot/default.txt")" = "os_prefix=slots/q-0/" ] || fail "default.txt: $(cat "$H/boot/default.txt")"
+grep -qx q0-kernel "$H/boot/slots/q-0/kernel8.img" || fail "q-0's boot files on the FAT"
+grep -qx q0-kernel "$H/boot/kernel8.img" || fail "the root copy"
+[ "$(fat)" = "q-0 q-2" ] || fail "FAT after set-default (q-1 neither default nor previous): $(fat)"
+up rollback --no-reboot 2>/dev/null
+[ "$(cat "$H/boot/default.txt")" = "os_prefix=slots/q-2/" ] || fail "rollback default.txt"
+boot_as q-2
+[ "$(fat)" = "q-0 q-2" ] || fail "FAT after rollback: $(fat)"
+
+echo "  a boot file that doesn't read back as kept stops boot once; nothing on the FAT, trial.txt as it was"
+cp "$(hb q-1 kernel8.img)" "$T/q1-kernel"
+echo bad > "$(hb q-1 kernel8.img)"
+trial_before=$(cat "$H/boot/trial.txt" 2>/dev/null || true)
+[ "$(rc boot-once q-1)" = 1 ] || fail "a damaged boot file was booted: $(cat "$T/err")"
+grep -q "didn't read back" "$T/err" || fail "the reason: $(cat "$T/err")"
+[ ! -e "$H/boot/slots/q-1" ] && [ ! -e "$H/boot/slots/.q-1.new" ] || fail "a damaged slot's dir on the FAT: $(fat)"
+[ "$(cat "$H/boot/trial.txt" 2>/dev/null || true)" = "$trial_before" ] || fail "trial.txt changed"
+cp "$T/q1-kernel" "$(hb q-1 kernel8.img)"
+
+echo "  a half-written dir (power lost while staging) goes on the next boot"
+mkdir -p "$H/boot/slots/.q-9.new"
+boot_as q-2
+[ ! -e "$H/boot/slots/.q-9.new" ] || fail "the half-written dir stayed: $(fat)"
+
+echo "housekeeping: keep the last n (pinned ones never go, nor count), --keep-old skips it once"
+[ "$(up keep)" = '{"keep":0}' ] || fail "keep from update.env: $(up keep)"
+[ "$(up keep 2)" = '{"keep":2}' ] || fail "keep 2"
+[ "$(rc keep two)" = 3 ] || fail "keep took a non-number"
+up pin q-1
+update_to q-3
+for gone in q-0; do
+	[ ! -e "$H/data/slots/$gone.json" ] && [ ! -e "$H/data/slots/$gone.erofs" ] && [ ! -e "$H/data/slots/$gone.boot" ] && [ ! -e "$H/boot/slots/$gone" ] ||
+		fail "housekeeping left $gone"
+done
+for kept in q-1 q-2 q-3; do [ -r "$H/data/slots/$kept.json" ] || fail "housekeeping removed $kept"; done
+grep -q '"kind":"slot.housekept"' "$H/data/board/events.jsonl" || fail "no slot.housekept event"
+update_to q-4 --keep-old
+for kept in q-1 q-2 q-3 q-4; do [ -r "$H/data/slots/$kept.json" ] || fail "--keep-old: $kept removed"; done
+[ ! -e "$H/data/board/slots/keep-old" ] || fail "--keep-old outlived its update"
+update_to q-5
+for gone in q-2 q-3; do [ ! -e "$H/data/slots/$gone.json" ] || fail "housekeeping kept $gone"; done
+for kept in q-1 q-4 q-5; do [ -r "$H/data/slots/$kept.json" ] || fail "housekeeping removed $kept"; done
+for f in "$H/data/slots/bootfiles"/*; do
+	grep -q "^${f##*/} " "$H/data/slots"/*.boot || fail "a boot file no slot lists stayed: ${f##*/}"
+done
+
+echo "the previous slot can be removed: rollback then has none, and state.json says so"
+up remove q-4 2>/dev/null || fail "remove the previous slot: $(rc remove q-4; cat "$T/err")"
+grep -q '"previous":null' "$H/data/board/slots/state.json" || fail "state.json: $(cat "$H/data/board/slots/state.json")"
+[ ! -e "$H/boot/slots/q-4" ] && [ ! -e "$H/data/slots/q-4.boot" ] || fail "q-4 left boot files"
+[ "$(rc rollback --no-reboot)" = 3 ] || fail "rollback without a previous slot"
+up keep 0 > /dev/null
+update_to q-6
+for kept in q-1 q-5 q-6; do [ -r "$H/data/slots/$kept.json" ] || fail "keep 0 removed $kept"; done
 
 echo "ok"

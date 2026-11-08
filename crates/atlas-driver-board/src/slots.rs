@@ -104,7 +104,7 @@ impl BoardSlots {
             "{WRITER} stage-url '{url}' --sha256 {} --size {}{}",
             bundle.sha256.to_ascii_lowercase(),
             bundle.size_bytes,
-            if install.pin { " --pin" } else { "" }
+            flags(install)
         ));
         let log = progress.clone();
         let on_line: crate::console::SharedOnLine = Arc::new(move |line: &str| {
@@ -147,7 +147,7 @@ impl BoardSlots {
         let script = as_atlas(&format!(
             "{WRITER} stage-image - --sha256 {}{}",
             bundle.sha256.to_ascii_lowercase(),
-            if install.pin { " --pin" } else { "" }
+            flags(install)
         ));
         self.ssh
             .upload_to(
@@ -170,6 +170,19 @@ impl BoardSlots {
 }
 
 /// Slot ids go into the board's command line: the writer's charset only.
+/// The install's flags for the writer's stage commands. `--keep-old` only
+/// when asked: a writer without housekeeping doesn't know it.
+fn flags(install: &SlotInstall) -> String {
+    let mut flags = String::new();
+    if install.pin {
+        flags.push_str(" --pin");
+    }
+    if install.keep_old {
+        flags.push_str(" --keep-old");
+    }
+    flags
+}
+
 fn checked(id: &str) -> Result<&str, DriverError> {
     let ok = !id.is_empty()
         && id.len() <= 64
@@ -203,11 +216,11 @@ impl SlotsCapability for BoardSlots {
     }
 
     async fn command(&self, _device: &Identity, command: &SlotCommand) -> Result<(), DriverError> {
-        let script = format!(
-            "{WRITER} {} {}",
-            command.writer_command(),
-            checked(command.id())?
-        );
+        let argument = match command {
+            SlotCommand::Keep { keep } => keep.to_string(),
+            other => checked(other.id())?.to_string(),
+        };
+        let script = format!("{WRITER} {} {argument}", command.writer_command());
         if matches!(
             command,
             SlotCommand::BootOnce { .. } | SlotCommand::SetDefault { .. }

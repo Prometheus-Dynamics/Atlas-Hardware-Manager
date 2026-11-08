@@ -798,6 +798,9 @@ export interface SlotSet {
   free_bytes: number;
   /** Kept free by the writer: a new slot may take free_bytes - reserve_bytes. */
   reserve_bytes: number;
+  /** How many slots housekeeping keeps when an update is confirmed (pinned
+   * ones don't count; 0: never removes any); null without housekeeping. */
+  keep?: number | null;
   slots: Slot[];
 }
 
@@ -805,7 +808,8 @@ export type SlotCommand =
   | { command: "boot-once"; id: string }
   | { command: "set-default"; id: string }
   | { command: "remove"; id: string }
-  | { command: "pin"; id: string; pinned: boolean };
+  | { command: "pin"; id: string; pinned: boolean }
+  | { command: "keep"; keep: number };
 
 /** What an artifact is, from its content (atlas-driver's ArtifactKind). */
 export type ArtifactKind = "slot-bundle" | "slots-image" | "ab-image" | "disk-image" | "layer" | "ipk" | "deb" | "firmware" | "unknown";

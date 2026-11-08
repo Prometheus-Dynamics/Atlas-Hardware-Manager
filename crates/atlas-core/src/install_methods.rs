@@ -110,6 +110,7 @@ impl InstallMethod for SlotMethod {
             boot: request.options.boot_after,
             // An install that boots it is an update: it stays.
             make_default: true,
+            keep_old: false,
         };
         self.0
             .install(device, &install, &sink)

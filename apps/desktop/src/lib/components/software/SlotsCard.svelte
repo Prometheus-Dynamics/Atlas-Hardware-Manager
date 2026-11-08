@@ -3,6 +3,7 @@
   // the way back, and the room for more. Boot one once (on trial: the board
   // goes back by itself when it doesn't come up), make one that booted well
   // the default, pin one, remove one. Removing and restarting ask first.
+  // Housekeeping: how many slots stay when an update is confirmed.
   import { api, errorText, keyString, type DeviceRecord, type Slot, type SlotCommand, type SlotSet } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
@@ -75,6 +76,14 @@
     set ? [...set.slots].sort((a, b) => a.family.localeCompare(b.family) || compareVersionsDesc(a.version, b.version)) : [],
   );
   const room = $derived(set ? Math.max(0, set.free_bytes - set.reserve_bytes) : 0);
+  // Housekeeping's choices (0: keeps every slot); the board's own value
+  // stays listed when it is another one.
+  const KEEPS = [0, 1, 2, 3, 5, 10];
+  const keeps = $derived(set?.keep != null && !KEEPS.includes(set.keep) ? [...KEEPS, set.keep].sort((a, b) => a - b) : KEEPS);
+  function setKeep(value: string) {
+    const keep = Number(value);
+    void run({ command: "keep", keep }, keep ? `${deviceName(record)} keeps the last ${keep} slots from now on.` : `${deviceName(record)} keeps every slot from now on.`);
+  }
   const total = $derived(used + (set?.free_bytes ?? 0));
 
   const VERB: Record<SlotCommand["command"], string> = {
@@ -82,17 +91,19 @@
     "set-default": "make the default",
     remove: "remove",
     pin: "change the pin of",
+    keep: "change how many slots",
   };
 
   async function run(command: SlotCommand, done: string) {
-    busy = `${command.command}:${command.id}`;
+    const target = "id" in command ? command.id : "";
+    busy = `${command.command}:${target}`;
     try {
       await api.slotCommand(record.key, command);
       toasts.success(done);
       void deviceStatus.refresh(record.key);
     } catch (e) {
-      const slot = set?.slots.find((s) => s.id === command.id);
-      toasts.error(`Can't ${VERB[command.command]} ${slot ? name(slot) : command.id}: ${errorText(e)}`);
+      const slot = set?.slots.find((s) => s.id === target);
+      toasts.error(`Can't ${VERB[command.command]} ${slot ? name(slot) : target || `${deviceName(record)} keeps`}: ${errorText(e)}`);
     } finally {
       busy = null;
       asking = null;
@@ -180,6 +191,17 @@
       </div>
       <p class="text-[11px] text-fg-faint">{bytes(used)} in slots · {bytes(room)} free · {bytes(set.reserve_bytes)} kept free for data</p>
     </div>
+    {#if set.keep != null}
+      <label class="keep" title="When an update is confirmed good, older slots past this number are removed. Pinned slots never are, and don't count.">
+        <span>Keep</span>
+        <select class="select" value={String(set.keep)} disabled={!!busy} onchange={(e) => setKeep(e.currentTarget.value)} aria-label="Slots kept after an update">
+          {#each keeps as n (n)}
+            <option value={String(n)}>{n === 0 ? "every slot" : n === 1 ? "only the running slot" : `the last ${n} slots`}</option>
+          {/each}
+        </select>
+        <span class="text-fg-faint">after an update</span>
+      </label>
+    {/if}
   {/if}
 </section>
 
@@ -256,6 +278,20 @@
   .reserve {
     margin-left: auto;
     background: repeating-linear-gradient(135deg, var(--hairline) 0 3px, transparent 3px 6px);
+  }
+  .keep {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+    font-size: 12px;
+    color: var(--fg);
+  }
+  .keep .select {
+    width: auto;
+    min-height: 26px;
+    padding: 2px 8px;
+    font-size: 12px;
   }
   .problem {
     display: flex;

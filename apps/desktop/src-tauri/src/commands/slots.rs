@@ -45,6 +45,7 @@ pub async fn install_slot(
     path: PathBuf,
     pin: bool,
     boot: bool,
+    keep_old: Option<bool>,
     expected_sha256: Option<String>,
     on_progress: Channel<ProgressUpdate>,
 ) -> CmdResult<()> {
@@ -92,6 +93,7 @@ pub async fn install_slot(
         boot,
         // The app's install that boots it keeps it, as before.
         make_default: true,
+        keep_old: keep_old.unwrap_or(false),
     };
     state
         .atlas

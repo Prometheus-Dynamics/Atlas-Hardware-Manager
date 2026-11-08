@@ -52,6 +52,9 @@
   let slotsReload = $state(0);
   let bootAfter = $state(true);
   let pinIt = $state(false);
+  // This update removes no old slots (the board's housekeeping skips it once).
+  let keepOld = $state(false);
+  const housekept = $derived(!!slotSet?.keep);
   // Through a robot controller's gateway a slot can't be pinned as it installs.
   const pinnable = $derived(!record.identity.address.includes("/v1/peers/"));
   let installing = $state<number | null>(null);
@@ -296,6 +299,7 @@
         // A catalog release is checked against its own digest: a cached file
         // that isn't it is refused before anything is sent.
         entry?.sha256 || null,
+        keepOld && pinnable && housekept,
       );
       toasts.success(bootAfter ? `${version} is installed; ${deviceName(record)} is restarting into it once.` : `${version} is installed on ${deviceName(record)}.`);
     } catch (error) {
@@ -422,6 +426,11 @@
             <span class="flex items-center gap-2 text-[12.5px] text-fg">
               <Checkbox checked={pinIt} label="Pin it" onclick={() => (pinIt = !pinIt)} />Pin it <span class="text-fg-faint">(kept from removal)</span>
             </span>
+            {#if housekept}
+              <span class="flex items-center gap-2 text-[12.5px] text-fg" title="The board keeps the last {slotSet?.keep} slots once an update is confirmed; this time it removes none">
+                <Checkbox checked={keepOld} label="Keep old versions" onclick={() => (keepOld = !keepOld)} />Keep old versions
+              </span>
+            {/if}
           {/if}
         </div>
       {/if}

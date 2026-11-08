@@ -34,6 +34,7 @@ function seed(): SlotSet {
     slot_trial: "",
     free_bytes: Math.round(21.4 * GiB),
     reserve_bytes: 2 * GiB,
+    keep: 3,
     slots: [
       slot("photonvision-2026.3.0-styx-1a2b3c4d", "2026.3.0", "styx", ["running", "default"]),
       slot("photonvision-2026.2.1-styx-9e8f7a6b", "2026.2.1", "styx", ["previous"], { good: "yes", pinned: true, last_boot: "2026-10-11T22:10:00Z" }),
@@ -68,6 +69,10 @@ export function deviceSlots(key: DeviceKey): SlotSet | null {
 export function slotCommand(key: DeviceKey, command: SlotCommand) {
   const set = setOf(key);
   if (!set) throw `${keyString(key)} has no slots`;
+  if (command.command === "keep") {
+    set.keep = command.keep;
+    return;
+  }
   const s = set.slots.find((x) => x.id === command.id);
   if (!s) throw `no slot ${command.id}`;
   switch (command.command) {
