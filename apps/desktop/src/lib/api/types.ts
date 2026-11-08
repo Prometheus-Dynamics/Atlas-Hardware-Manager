@@ -457,6 +457,8 @@ export interface LiveRow {
 export interface LiveStart {
   stop: (() => void) | null;
   reason: string | null;
+  /** Set when the board refuses this computer's key. */
+  pairing?: OtherKey | null;
 }
 
 export type LiveFrame =
@@ -492,6 +494,20 @@ export interface OrionConnection {
   node_id: string | null;
   node_fingerprint: string | null;
   error: string | null;
+  /** Set while the board refuses this computer's key (it has another key for the name). */
+  other_key: OtherKey | null;
+}
+
+/** A board refuses this computer's key: the fix runs on the board, not in Atlas. */
+export interface OtherKey {
+  /** `operator:<name>`, as the board enrolled it. */
+  operator_id: string;
+  /** This computer's key, `sha256:<32 hex>`. */
+  fingerprint: string;
+  /** On the board: removes the enrolment under the other key. */
+  remove_command: string;
+  /** On the board: enrolls this computer's key. */
+  enroll_command: string;
 }
 
 export interface AppPaths {

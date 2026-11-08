@@ -57,6 +57,7 @@
 
   const status = $derived.by((): { tone: Tone; label: string } => {
     if (!connection?.url) return { tone: "neutral", label: "Not set up" };
+    if (connection.other_key) return { tone: "error", label: "Board has another key" };
     if (connection.error) return { tone: "error", label: "Can't connect" };
     if (!connection.connected) return { tone: "neutral", label: "Not connected yet" };
     if (!connection.enrolled) return { tone: "warning", label: "Waiting for enrollment" };
@@ -112,7 +113,24 @@
         </div>
       </Field>
 
-      {#if connection.error}
+      {#if connection.other_key}
+        {@const other = connection.other_key}
+        <div class="flex flex-col gap-2">
+          <span class="flex items-start gap-2 text-[13px] font-medium text-err-fg"><Icon name="alert-circle" size={15} class="mt-0.5 shrink-0" />The board has another key for this computer</span>
+          <p class="text-[12.5px] text-fg-muted">
+            This computer's Orion key ({other.fingerprint}) isn't the one the board enrolled for {other.operator_id.replace(/^operator:/, "")}. Atlas doesn't change the board. On the board (check the fingerprint first), run both, in order:
+          </p>
+          <div class="command">
+            <code class="mono" title={other.remove_command}>{other.remove_command}</code>
+            <Button size="sm" variant="ghost" icon="copy" onclick={() => copy(other.remove_command, "Command")}>Copy</Button>
+          </div>
+          <div class="command">
+            <code class="mono" title={other.enroll_command}>{other.enroll_command}</code>
+            <Button size="sm" variant="ghost" icon="copy" onclick={() => copy(other.enroll_command, "Command")}>Copy</Button>
+          </div>
+          <span class="hint">Then press Check. Atlas tries the board's stream again on its own.</span>
+        </div>
+      {:else if connection.error}
         <p class="flex items-start gap-2 text-[12.5px] text-err-fg"><Icon name="alert-circle" size={15} class="mt-0.5 shrink-0" />{connection.error}</p>
       {/if}
 
@@ -124,7 +142,7 @@
         {/if}
       </div>
 
-      {#if connection.url && !connection.enrolled}
+      {#if connection.url && !connection.enrolled && !connection.other_key}
         <div class="flex flex-col gap-2">
           <span class="text-[13px] font-medium text-fg">Let this computer in</span>
           <span class="hint">Run this on the device (check the fingerprint matches the one above), then press Check.</span>

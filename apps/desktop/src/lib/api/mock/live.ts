@@ -2,7 +2,7 @@
 // them: a `devices` frame, then batches of samples every 16 ms at each
 // device's period (the IMU at 100 Hz), on the board's monotonic clock.
 
-import type { CameraState, DeviceKey, HardwareFrame, LiveChannel, LiveDevice, LiveFrame, LiveRow, LiveStart, Metric, VisionFrame } from "../types";
+import type { CameraState, DeviceKey, HardwareFrame, LiveChannel, LiveDevice, LiveFrame, LiveRow, LiveStart, Metric, OtherKey, VisionFrame } from "../types";
 
 type Model = { class: string; model: string; channels: LiveChannel[]; value: (t: number, i: number) => number };
 
@@ -153,8 +153,20 @@ export function streamHardware(
   return Promise.resolve(() => clearInterval(timer));
 }
 
+/** A simulated board whose Orion enrolled another key for this computer: its stream is refused. */
+const OTHER_KEY_SERIAL = "5c0ffee1";
+const OTHER_KEY: OtherKey = {
+  operator_id: "operator:atlas-workstation",
+  fingerprint: "sha256:9c41b7e2d0f8a3c65e1b2d4f7a8c9e01",
+  remove_command: "orionctl operators remove operator:atlas-workstation",
+  enroll_command: "orionctl operators enroll operator:atlas-workstation --fingerprint sha256:9c41b7e2d0f8a3c65e1b2d4f7a8c9e01 --action 'locate'",
+};
+
 /** A simulated board's Orion stream: five minutes of rows at once, then a row every 500 ms. */
 export function streamLive(key: DeviceKey, onFrame: (frame: LiveFrame) => void): Promise<LiveStart> {
+  if (key.serial === OTHER_KEY_SERIAL) {
+    return Promise.resolve({ stop: null, reason: "the board refuses this computer's Orion key", pairing: OTHER_KEY });
+  }
   if (key.serial !== "8f3a1c2d") return Promise.resolve({ stop: null, reason: "this simulated board has no stream" });
   const ROW_MS = 500;
   const row = (t: number): LiveRow => {

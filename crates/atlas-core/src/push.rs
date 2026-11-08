@@ -9,8 +9,9 @@
 //! [`LOOK_EVERY`] for [`LOOK_FOR`], so a board that restarts is seen going
 //! and coming back within seconds; after that the follower only reconnects
 //! while the device stays live: after [`RETRY_EVERY`], twice as long after
-//! each try that fails, up to [`RETRY_MAX`] (a board whose board-stream is
-//! down isn't asked every few seconds for as long as Atlas runs).
+//! each try that fails, up to [`RETRY_MAX`] (10 s: a board whose board-stream
+//! is down is tried again within seconds of its coming back, never minutes
+//! later).
 //!
 //! While a device's channel is open, Atlas polls it only as a safety net:
 //! its event syncs (history.rs), the fallback scan (watch.rs) and the
@@ -26,8 +27,8 @@ use crate::{Atlas, Event};
 
 pub(crate) const LOOK_EVERY: Duration = Duration::from_secs(2);
 pub(crate) const LOOK_FOR: Duration = Duration::from_secs(120);
-pub(crate) const RETRY_EVERY: Duration = Duration::from_secs(10);
-pub(crate) const RETRY_MAX: Duration = Duration::from_secs(300);
+pub(crate) const RETRY_EVERY: Duration = Duration::from_secs(2);
+pub(crate) const RETRY_MAX: Duration = Duration::from_secs(10);
 
 impl Atlas {
     /// After a scan, while watching: follows each live device's push

@@ -12,6 +12,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use atlas_driver::util::round_to as round;
@@ -22,6 +23,8 @@ use orion_control_plane::{
     StreamSubscription,
 };
 use serde::Serialize;
+
+use crate::pairing::{OtherKey, PairingLog, Refusals};
 
 /// Orion's `orion+tcp` port on boards.
 pub const DEFAULT_PORT: u16 = 9200;
@@ -249,11 +252,37 @@ pub struct LiveStreams {
     identity: OperatorIdentity,
     /// A node key per node id, trusted on first use (`<dir>/<node id>`).
     pins: Option<PathBuf>,
+    /// The boards (by URL) that refused this computer's key, with the fix.
+    refused: Refusals,
 }
 
 impl LiveStreams {
     pub fn new(identity: OperatorIdentity, pins: Option<PathBuf>) -> Self {
-        Self { identity, pins }
+        Self {
+            identity,
+            pins,
+            refused: Refusals::default(),
+        }
+    }
+
+    /// Logs a board's refusal of this computer's key (once per board and key).
+    pub fn with_pairing_log(mut self, log: Arc<PairingLog>) -> Self {
+        self.refused = Refusals::new(Some(log));
+        self
+    }
+
+    /// The fix for the board at `address`, when it refused this computer's
+    /// key the last time Atlas tried it.
+    pub fn refusal(&self, address: &str) -> Option<OtherKey> {
+        self.refused.get(&Self::url_for(address))
+    }
+
+    /// The error for a connection or request to the board at `url` that
+    /// failed with `error`; a refused key is recorded and logged.
+    fn failed(&self, url: &str, error: &RemoteError) -> DriverError {
+        self.refused
+            .rejection(url, &self.identity, error)
+            .unwrap_or_else(|| crate::protocol::unreachable(url, error))
     }
 
     /// `orion+tcp://<host>:9200` for an address Atlas reached the board at:
@@ -277,7 +306,8 @@ impl LiveStreams {
     pub(crate) async fn connect(&self, url: &str) -> Result<RemoteOperator, DriverError> {
         let operator = RemoteOperator::connect(url, self.identity.clone(), NodeTrust::FirstUse)
             .await
-            .map_err(|error| crate::protocol::unreachable(url, &error))?;
+            .map_err(|error| self.failed(url, &error))?;
+        self.refused.accept(url);
         if let Some(dir) = &self.pins {
             let pin = dir.join(operator.node_id().as_str());
             let key = operator.node_public_key();
@@ -408,7 +438,7 @@ impl LiveStreams {
         backfill: Backfill,
     ) -> Result<orion_client::remote::RemoteSession, DriverError> {
         let operator = self.connect(url).await?;
-        let unreachable = |error: RemoteError| crate::protocol::unreachable(url, &error);
+        let unreachable = |error: RemoteError| self.failed(url, &error);
         let session = operator.open_session("atlas").await.map_err(unreachable)?;
         let stream = StreamRef {
             owner: StatusSubject::Node(operator.node_id().clone()),

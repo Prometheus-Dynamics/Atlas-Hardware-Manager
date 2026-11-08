@@ -5,7 +5,7 @@ use atlas_driver::{
     CalibrationStatus, DeviceAction, DeviceKey, DeviceStatus, HardwareCommand, HardwareFrame,
     LogLine, Metric,
 };
-use atlas_driver_orion::LiveFrame;
+use atlas_driver_orion::{LiveFrame, OtherKey};
 use tauri::State;
 
 use super::{CmdResult, text};
@@ -218,6 +218,9 @@ pub fn stop_hardware_stream(state: State<'_, AppState>, id: u64) {
 pub struct LiveStart {
     id: Option<u64>,
     reason: Option<String>,
+    /// Set when the board refuses this computer's key (another key is
+    /// enrolled for its name): the fix the UI shows.
+    pairing: Option<OtherKey>,
 }
 
 /// No stream (`id` absent, with the `reason` the UI shows) when the board
@@ -229,11 +232,12 @@ pub async fn start_live_stream(
     key: DeviceKey,
     on_frame: tauri::ipc::Channel<LiveFrame>,
 ) -> CmdResult<LiveStart> {
-    let polling = |reason: String| {
+    let polling = |reason: String, pairing: Option<OtherKey>| {
         crate::logfile::trace(&format!("live-stream {key}: none ({reason})"));
         Ok(LiveStart {
             id: None,
             reason: Some(reason),
+            pairing,
         })
     };
     let enabled = state
@@ -242,10 +246,10 @@ pub async fn start_live_stream(
         .unwrap_or_else(|poisoned| poisoned.into_inner())
         .live_streams;
     let Some(orion) = &state.orion else {
-        return polling("Orion isn't set up".into());
+        return polling("Orion isn't set up".into(), None);
     };
     if !enabled {
-        return polling("live streams are off in Settings".into());
+        return polling("live streams are off in Settings".into(), None);
     }
     let record = state
         .atlas
@@ -253,9 +257,10 @@ pub async fn start_live_stream(
         .ok_or_else(|| format!("no device {key}"))?;
     let address = record.identity.address.trim().to_owned();
     if address.is_empty() {
-        return polling("no address for the board".into());
+        return polling("no address for the board".into(), None);
     }
     let live = orion.live.clone();
+    let streams = live.clone();
     let (tell, told) = tokio::sync::oneshot::channel();
     let at = address.clone();
     let task = tokio::spawn(async move {
@@ -288,7 +293,14 @@ pub async fn start_live_stream(
     };
     if let Err(reason) = outcome {
         task.abort();
-        return polling(format!("{reason} (at {at})"));
+        // The refusal is recorded before the task reports it.
+        if let Some(pairing) = streams.refusal(&at) {
+            return polling(
+                format!("the board refuses this computer's Orion key (at {at})"),
+                Some(pairing),
+            );
+        }
+        return polling(format!("{reason} (at {at})"), None);
     }
     crate::logfile::trace(&format!("live-stream {key} at {at}: streaming"));
     let id = state
@@ -302,6 +314,7 @@ pub async fn start_live_stream(
     Ok(LiveStart {
         id: Some(id),
         reason: None,
+        pairing: None,
     })
 }
 
