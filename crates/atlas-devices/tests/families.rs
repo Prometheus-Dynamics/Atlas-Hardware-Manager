@@ -295,16 +295,16 @@ fn the_repository_families_load_with_their_data() {
 }
 
 /// Validates `files` against `schema` with the repository's JSON Schema
-/// checker (`devices/tools/raze_lemnos.py`, `schema_errors`), returning the
+/// checker (`devices/tools/board_lemnos.py`, `schema_errors`), returning the
 /// errors it finds, one per line.
 fn schema_errors(schema: &Path, files: &[PathBuf]) -> String {
     const CHECK: &str = r#"
 import json, sys
 sys.path.insert(0, sys.argv[1])
-import raze_lemnos
+import board_lemnos
 schema = json.load(open(sys.argv[2]))
 for path in sys.argv[3:]:
-    for error in raze_lemnos.schema_errors(json.load(open(path)), schema, schema):
+    for error in board_lemnos.schema_errors(json.load(open(path)), schema, schema):
         print(f"{path}: {error}")
 "#;
     let output = Command::new("python3")

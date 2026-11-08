@@ -7,6 +7,9 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **`gen-raze.py` is `gen-board.py <pkg>` (2026-11-08)**, and `raze_lemnos.py`
+  is `board_lemnos.py`. The output files are unchanged apart from comments and
+  board.toml's `generated_by`.
 - **Generic names no longer say Raze (2026-11-08).** `raze-leds` is
   `board-leds` (in the shared layer), `RAZE_LEDS_*` are `BOARD_LEDS_*` and
   overrides go in `board-leds.env`; the RP1 probe is `rp1-ws2812-reprobe`

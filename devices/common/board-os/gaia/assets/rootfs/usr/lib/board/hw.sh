@@ -21,7 +21,7 @@
 # source this file and override functions; here it counts as "auto").
 #
 # Settings: leds.env and hardware.env, both generated from the package's
-# manifest.json (devices/tools/gen-raze.py). Paths, overridable for tests:
+# manifest.json (devices/tools/gen-board.py). Paths, overridable for tests:
 #   BOARD_SYS_DIR    sysfs                 (/sys)
 #   BOARD_DEV_DIR    device nodes          (/dev)
 #   BOARD_CONFIGFS   configfs              (/sys/kernel/config)

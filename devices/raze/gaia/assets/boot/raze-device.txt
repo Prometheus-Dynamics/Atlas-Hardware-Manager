@@ -9,19 +9,19 @@
 # this file.
 
 [cm5]
-# >>> gen-raze: i2c (generated from manifest.json by devices/tools/gen-raze.py; do not edit)
+# >>> gen-board: i2c (generated from manifest.json by devices/tools/gen-board.py; do not edit)
 # Hardware I2C bus 1 (/dev/i2c-1): SDA GPIO10, SCL GPIO11; BMM150, INA238.
 dtoverlay=i2c1-pi5,pins_10_11
 # No overlay for GPIO8 SDA / GPIO7 SCL (BMI088): lemnosd runs
 # that bus on RP1 PIO (pio-i2c), so nothing else may claim the pins.
-# <<< gen-raze
+# <<< gen-board
 
-# >>> gen-raze: leds (generated from manifest.json by devices/tools/gen-raze.py; do not edit)
+# >>> gen-board: leds (generated from manifest.json by devices/tools/gen-board.py; do not edit)
 # Status LED ring: 16 SK6812-EC20 LEDs (24-bit GRB on the wire)
 # on GPIO13 via RP1 PIO, /dev/leds0. No `rgbw`: that sends 32 bits per LED and
 # smears the colours around the ring.
 dtoverlay=ws2812-pio,gpio=13,num_leds=16,brightness=255,dev_name=leds%d
-# <<< gen-raze
+# <<< gen-board
 
 # External USB-A (GPIO20) and USB-C (GPIO16) port power: driven high by the
 # firmware from power-on, then switched by lemnosd (gpio-power-switch takes
@@ -29,12 +29,12 @@ dtoverlay=ws2812-pio,gpio=13,num_leds=16,brightness=255,dev_name=leds%d
 # lemnosd loads dtoverlay=raze-usb-power instead (kernel hogs), not both.
 gpio=16,20=op,dh
 
-# >>> gen-raze: fan (generated from manifest.json by devices/tools/gen-raze.py; do not edit)
+# >>> gen-board: fan (generated from manifest.json by devices/tools/gen-board.py; do not edit)
 # Fan, driven by the kernel thermal governor. No tachometer: gen1's isn't
 # wired, so the fan offers no speed rather than 0 rpm (the image follows the
 # default revision; boards carry no revision marker yet).
 dtoverlay=raze-fan,notach
-# <<< gen-raze
+# <<< gen-board
 
 # GPU (V3D) and display (KMS) drivers.
 dtoverlay=vc4-kms-v3d-pi5
@@ -50,11 +50,11 @@ dtoverlay=ramoops-pi5,total-size=0x40000,record-size=0x10000,console-size=0x2000
 # (network + serial). Which Raze connector it is wired to is not recorded yet.
 dtoverlay=dwc2,dr_mode=peripheral
 
-# >>> gen-raze: camera (generated from manifest.json by devices/tools/gen-raze.py; do not edit)
+# >>> gen-board: camera (generated from manifest.json by devices/tools/gen-board.py; do not edit)
 # OV9782 global-shutter camera on CAM0, continuous clock.
 camera_auto_detect=0
 dtoverlay=ov9782,cam0,clk-continuous
-# <<< gen-raze
+# <<< gen-board
 
 [all]
 

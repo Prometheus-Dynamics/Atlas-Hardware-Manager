@@ -111,7 +111,7 @@ approval (the user, 2026-11-05).
     to read them from.
   - **Why:** the generated board files and the self-test trust them.
   - **Done when:** each has a `verified` note, the tuning excepted, and
-    `devices/tools/gen-raze.py --check` passes (it passes today, with them open).
+    `devices/tools/gen-board.py raze --check` passes (it passes today, with them open).
 - [ ] **"Behind SystemCore" in the app.**
   - **Where:** behind the SystemCore.
   - **What:** built (722f36a): the device list and cards put each device right
@@ -558,7 +558,7 @@ again 2026-11-01); the board proofs are the open items above.
       continues without a power-cycle.
 - [x] A flashed board replaces its USB-boot record (matched by board serial).
 - [x] Hardware self-test: the Raze manifest is the source of the board's
-      hardware facts (generated config, `gen-raze.py --check` lint), the
+      hardware facts (generated config, `gen-board.py raze --check` lint), the
       device package has `selftest`, and Atlas runs it after a flash or
       update, keeps the result per board serial and shows it on a Self-test
       card with "Run again".

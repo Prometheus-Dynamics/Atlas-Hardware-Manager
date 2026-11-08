@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
-"""Render the Raze device files that repeat hardware facts from manifest.json.
+"""Render a board package's files that repeat hardware facts from its manifest.
 
-devices/raze/manifest.json is the single source of truth for the board's
+A package's manifest.json is the single source of truth for the board's
 hardware (LED ring, fan, camera, I2C devices, watchdog) and kernel. This tool
 writes the files and file regions derived from it, and lints the manifest
 itself, including that its kernel facts match gaia/kernel.toml and the kernel
 fragment (which it only reads):
 
-    devices/tools/gen-raze.py            rewrite the generated files
-    devices/tools/gen-raze.py --check    change nothing; print a diff and exit 1
-                                         when anything disagrees with the manifest
+    devices/tools/gen-board.py <pkg>          rewrite the generated files
+    devices/tools/gen-board.py <pkg> --check  change nothing; print a diff and exit 1
+                                              when anything disagrees with the manifest
+
+A package whose manifest states no capabilities has nothing to generate.
 
 Generated output is committed (Gaia has no step that runs a script at package
 build time), and the --check lint in CI keeps it in step with the manifest.
 Whole generated files start with a "generated" header; generated regions inside
-hand-written files sit between `>>> gen-raze: <name>` and `<<< gen-raze` marker
+hand-written files sit between `>>> gen-board: <name>` and `<<< gen-board` marker
 comments. Edit the manifest, not those parts.
 
 It also renders lemnosd's board definition (gaia/assets/rootfs/etc/lemnos/
-board.toml, see raze_lemnos.py) and validates it against Lemnos's JSON Schema
+board.toml, see board_lemnos.py) and validates it against Lemnos's JSON Schema
 and driver rules; with a lemnos-ctl (--lemnos-ctl, $LEMNOS_CTL or PATH) it runs
 `lemnos-ctl validate` on it as well.
 
@@ -39,20 +41,15 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True  # no __pycache__ next to the tool
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import raze_lemnos  # noqa: E402
+import board_lemnos  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
-PKG = ROOT / "devices" / "raze"
-MANIFEST = PKG / "manifest.json"
-GAIA = PKG / "gaia"
-BOOT = GAIA / "assets" / "boot"
-ROOTFS = GAIA / "assets" / "rootfs"
-LIBDIR = ROOTFS / "usr" / "lib" / "board"
-
 LEMNOS_SCHEMA = ROOT / "devices" / "schema" / "lemnos-board.schema.json"
+TOOL = "devices/tools/gen-board.py"
 
-SOURCE = "devices/raze/manifest.json"
-TOOL = "devices/tools/gen-raze.py"
+# The package being generated, set by use_package().
+PKG = GAIA = BOOT = ROOTFS = LIBDIR = BOARD_TOML = Path()
+SOURCE = ""
 
 WIRE_FORMATS = {"grb24", "rgb24", "grbw32", "rgbw32"}
 LAYOUT = re.compile(r"^(?!.*(.).*\1)[rgbw]{4}$")
@@ -61,6 +58,17 @@ POLARITIES = {"normal": 0, "inversed": 1}
 
 class LintError(Exception):
     pass
+
+
+def use_package(name: str) -> None:
+    global PKG, GAIA, BOOT, ROOTFS, LIBDIR, BOARD_TOML, SOURCE
+    PKG = ROOT / "devices" / name
+    GAIA = PKG / "gaia"
+    BOOT = GAIA / "assets" / "boot"
+    ROOTFS = GAIA / "assets" / "rootfs"
+    LIBDIR = ROOTFS / "usr" / "lib" / "board"
+    BOARD_TOML = ROOTFS / "etc" / "lemnos" / "board.toml"
+    SOURCE = f"devices/{name}/manifest.json"
 
 
 def header(comment: str) -> str:
@@ -244,7 +252,7 @@ def lint(manifest: dict) -> None:
             )
         if pio and not (isinstance(bus.get("hz", 400_000), int) and 0 < bus.get("hz", 400_000) <= 1_000_000):
             raise LintError(f"capabilities.i2c.buses[{bus['bus']}].hz must be 1..1000000")
-        select = {k: v for k, v in bus.get("select", {}).items() if k in raze_lemnos.SELECTOR_KEYS}
+        select = {k: v for k, v in bus.get("select", {}).items() if k in board_lemnos.SELECTOR_KEYS}
         if "select" in bus and (
             not select or any(not isinstance(v, str) or not v or ";" in v or " " in v for v in select.values())
         ):
@@ -372,13 +380,13 @@ def region_device_txt(manifest: dict) -> dict[str, str]:
     )
     rev = default_revision(manifest)
     if fan_tachometer(manifest):
-        fan_text = "# Fan, driven by the kernel thermal governor; its speed from the RP1 PWM counter.\ndtoverlay=raze-fan\n"
+        fan_text = f"# Fan, driven by the kernel thermal governor; its speed from the RP1 PWM counter.\ndtoverlay={PKG.name}-fan\n"
     else:
         fan_text = (
             f"# Fan, driven by the kernel thermal governor. No tachometer: {rev}'s isn't\n"
             "# wired, so the fan offers no speed rather than 0 rpm (the image follows the\n"
             "# default revision; boards carry no revision marker yet).\n"
-            "dtoverlay=raze-fan,notach\n"
+            f"dtoverlay={PKG.name}-fan,notach\n"
         )
     return {"i2c": "".join(i2c_lines), "leds": leds_text, "camera": cam_text, "fan": fan_text}
 
@@ -436,7 +444,7 @@ def render_hardware_env(manifest: dict) -> str:
     leds, fan, cam, i2c, wd = (caps[k] for k in ("leds", "fan", "camera", "i2c", "watchdog"))
     devices = " ".join(f"{d['id']}:{d['bus']}:{hexaddr(d['address'])}:{d['part']}" for d in i2c["devices"])
     buses = " ".join(
-        f"{b['bus']}:{raze_lemnos.bus_ref(caps, b['bus'])[4:]}" for b in i2c["buses"] if b.get("select")
+        f"{b['bus']}:{board_lemnos.bus_ref(caps, b['bus'])[4:]}" for b in i2c["buses"] if b.get("select")
     )
     chip_ids = []
     for d in i2c["devices"]:
@@ -470,7 +478,7 @@ def render_hardware_env(manifest: dict) -> str:
         ("HW_I2C_DEVICES", devices),
         ("HW_I2C_BUSES", buses),
         ("HW_I2C_PIO_BUSES", " ".join(
-            f"{b['bus']}:{raze_lemnos.bus_ref(caps, b['bus'])}" for b in i2c["buses"] if b["kind"] == "pio"
+            f"{b['bus']}:{board_lemnos.bus_ref(caps, b['bus'])}" for b in i2c["buses"] if b["kind"] == "pio"
         )),
         ("HW_I2C_IDS", ids),
         ("HW_LEMNOS_DEVICES", lemnos),
@@ -564,25 +572,22 @@ def replace_regions(text: str, regions: dict[str, str], comment: tuple[str, str]
     start, end = comment
     for name, body in regions.items():
         pattern = re.compile(
-            rf"(^[ \t]*{re.escape(start)} >>> gen-raze: {re.escape(name)}\b[^\n]*\n)(.*?)(^[ \t]*{re.escape(start)} <<< gen-raze\b[^\n]*\n)",
+            rf"(^[ \t]*{re.escape(start)} >>> gen-board: {re.escape(name)}\b[^\n]*\n)(.*?)(^[ \t]*{re.escape(start)} <<< gen-board\b[^\n]*\n)",
             re.S | re.M,
         )
         if len(pattern.findall(text)) != 1:
-            raise LintError(f"{path.relative_to(ROOT)}: expected one `gen-raze: {name}` region")
+            raise LintError(f"{path.relative_to(ROOT)}: expected one `gen-board: {name}` region")
         text = pattern.sub(lambda m: m.group(1) + body + m.group(3), text)
     return text
 
 
-BOARD_TOML = ROOTFS / "etc" / "lemnos" / "board.toml"
-
-
 def render_board_toml(manifest: dict) -> str:
     """lemnosd's board definition, checked against Lemnos's schema and drivers."""
-    board, notes = raze_lemnos.board_definition(manifest, manifest["package_version"])
-    text = raze_lemnos.to_toml(board, notes, header("#"))
+    board, notes = board_lemnos.board_definition(manifest, manifest["package_version"])
+    text = board_lemnos.to_toml(board, notes, header("#"))
     try:
-        raze_lemnos.check(board, text, LEMNOS_SCHEMA)
-    except raze_lemnos.BoardError as error:
+        board_lemnos.check(board, text, LEMNOS_SCHEMA)
+    except board_lemnos.BoardError as error:
         raise LintError(str(error))
     return text
 
@@ -598,9 +603,9 @@ def render_flasher_cmdline(manifest: dict) -> str:
 
 
 def outputs(manifest: dict) -> dict[Path, str]:
-    device_txt = BOOT / "raze-device.txt"
+    device_txt = BOOT / f"{PKG.name}-device.txt"
     flasher_txt = GAIA / "assets" / "flasher" / "config.txt"
-    fan_dts = BOOT / "overlays" / "raze-fan-overlay.dts"
+    fan_dts = BOOT / "overlays" / f"{PKG.name}-fan-overlay.dts"
     return {
         device_txt: replace_regions(device_txt.read_text(), region_device_txt(manifest), ("#", ""), device_txt),
         fan_dts: replace_regions(fan_dts.read_text(), region_fan_dts(manifest), ("/*", "*/"), fan_dts),
@@ -610,8 +615,8 @@ def outputs(manifest: dict) -> dict[Path, str]:
         GAIA / "assets" / "flasher" / "cmdline.txt": render_flasher_cmdline(manifest),
         LIBDIR / "leds.env": render_leds_env(manifest),
         LIBDIR / "hardware.env": render_hardware_env(manifest),
-        ROOTFS / "usr" / "share" / "board" / "raze" / "sensors.toml": render_sensors_toml(manifest),
-        ROOTFS / "usr" / "share" / "board" / "raze" / "camera.toml": render_camera_toml(manifest),
+        ROOTFS / "usr" / "share" / "board" / PKG.name / "sensors.toml": render_sensors_toml(manifest),
+        ROOTFS / "usr" / "share" / "board" / PKG.name / "camera.toml": render_camera_toml(manifest),
         ROOTFS / "usr" / "lib" / "systemd" / "system.conf.d" / "60-board-watchdog.conf": render_watchdog_conf(manifest),
         BOARD_TOML: render_board_toml(manifest),
     }
@@ -633,6 +638,7 @@ def staged_in_runtime(paths: list[Path]) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("package", help="the package's folder under devices/, e.g. raze")
     parser.add_argument("--check", action="store_true", help="print a diff and exit 1 instead of writing")
     parser.add_argument(
         "--lemnos-ctl",
@@ -641,12 +647,16 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    use_package(args.package)
     try:
-        manifest = json.loads(MANIFEST.read_text())
+        manifest = json.loads((PKG / "manifest.json").read_text())
+        if not manifest.get("capabilities"):
+            print(f"gen-board: {SOURCE} states no capabilities; nothing to generate", file=sys.stderr)
+            return 0
         lint(manifest)
         files = outputs(manifest)
-    except (LintError, KeyError, ValueError) as error:
-        print(f"gen-raze: {SOURCE}: {error}", file=sys.stderr)
+    except (LintError, KeyError, ValueError, OSError) as error:
+        print(f"gen-board: {SOURCE}: {error}", file=sys.stderr)
         return 1
 
     stale = []
@@ -665,24 +675,24 @@ def main() -> int:
         else:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
-            print(f"gen-raze: wrote {rel}")
+            print(f"gen-board: wrote {rel}")
 
     if args.lemnos_ctl:
         with tempfile.TemporaryDirectory() as tmp:
             board = Path(tmp) / "board.toml"
             board.write_text(files[BOARD_TOML])
-            ok, said = raze_lemnos.lemnos_ctl_validate(args.lemnos_ctl, board)
-        print(f"gen-raze: lemnos-ctl validate: {said.replace(str(board), 'board.toml')}", file=sys.stderr)
+            ok, said = board_lemnos.lemnos_ctl_validate(args.lemnos_ctl, board)
+        print(f"gen-board: lemnos-ctl validate: {said.replace(str(board), 'board.toml')}", file=sys.stderr)
         if not ok:
             return 1
 
     unstaged = staged_in_runtime(list(files))
     for rel in unstaged:
-        print(f"gen-raze: {rel} is not staged and fed in gaia/runtime.toml", file=sys.stderr)
+        print(f"gen-board: {rel} is not staged and fed in gaia/runtime.toml", file=sys.stderr)
 
     if args.check and stale:
         print(
-            f"gen-raze: {len(stale)} file(s) disagree with {SOURCE}; run {TOOL} and commit the result",
+            f"gen-board: {len(stale)} file(s) disagree with {SOURCE}; run {TOOL} {PKG.name} and commit the result",
             file=sys.stderr,
         )
         return 1

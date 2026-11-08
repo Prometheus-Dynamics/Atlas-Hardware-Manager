@@ -15,12 +15,12 @@ fail() {
 }
 
 echo "the committed files match the manifest"
-python3 "$root/devices/tools/gen-raze.py" --check || fail "run devices/tools/gen-raze.py and commit the result"
+python3 "$root/devices/tools/gen-board.py" raze --check || fail "run devices/tools/gen-board.py raze and commit the result"
 
 # A scratch copy of what the tool reads and writes.
 mkdir -p "$T/devices"
 cp -R "$root/devices/raze" "$root/devices/tools" "$root/devices/schema" "$root/devices/README.md" "$T/devices/"
-gen() { python3 "$T/devices/tools/gen-raze.py" "$@"; }
+gen() { python3 "$T/devices/tools/gen-board.py" raze "$@"; }
 edit() {
 	python3 - "$T/devices/raze/manifest.json" "$1" <<'EOF'
 import json, sys
@@ -105,7 +105,7 @@ echo "the board.toml checks catch what Lemnos would refuse"
 python3 - "$T/devices/tools" "$T/devices/schema/lemnos-board.schema.json" <<'EOF' || fail "the validator: see above"
 import json, sys
 sys.path.insert(0, sys.argv[1])
-import raze_lemnos as rl
+import board_lemnos as rl
 schema = json.load(open(sys.argv[2]))
 good = {"format": "lemnos.board", "schema_version": 1, "board": {"id": "raze"}, "devices": [
     {"id": "imu", "driver": "bmi088", "bus": "pio-i2c:sda=8,scl=7", "address": 24},

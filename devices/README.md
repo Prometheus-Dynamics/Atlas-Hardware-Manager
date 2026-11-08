@@ -19,8 +19,8 @@ devices/
     compat.schema.json
     identity.schema.json     the document served by the identity endpoint
     lemnos-board.schema.json Lemnos's board definition (vendored from the pinned Lemnos)
-  tools/gen-raze.py          render the Raze config from its manifest; --check lints
-  tools/raze_lemnos.py       its lemnosd board.toml renderer and validator
+  tools/gen-board.py         render a package's config from its manifest; --check lints
+  tools/board_lemnos.py      its lemnosd board.toml renderer and validator
   tools/test-all.sh          every test under devices/, in parallel
   tools/gen-usb-ids.py       render the udev rules and the Windows WinUSB binds from
                              usb-ids.json and ecosystem.json; --check compares
@@ -129,12 +129,13 @@ address strings still read.
 
 ### Generated files and the lint
 
-`devices/tools/gen-raze.py` (python3, standard library) renders, from the
-manifest:
+`devices/tools/gen-board.py <pkg>` (python3, standard library) renders, from
+the package's manifest (Raze is the one stating hardware facts so far; a package
+with no `capabilities` has nothing to generate):
 
-- the `gen-raze: i2c`, `leds` and `camera` regions of `raze-device.txt` (the
+- the `gen-board: i2c`, `leds` and `camera` regions of `raze-device.txt` (the
   `ws2812-pio` line passes `rgbw` only for a 32-bit `wire_format`);
-- the `gen-raze: fan` region of `raze-fan-overlay.dts` (`cooling-levels` and
+- the `gen-board: fan` region of `raze-fan-overlay.dts` (`cooling-levels` and
   `pwms`, polarity included);
 - whole files with a "Generated" header: `usr/lib/board/leds.env`
   (board-leds defaults), `usr/lib/board/hardware.env` (selftest facts),
@@ -142,7 +143,7 @@ manifest:
   `etc/lemnos/board.toml`, lemnosd's board definition (see below).
 
 Edit the manifest and run the tool; never edit generated parts by hand.
-`gen-raze.py --check` changes nothing: it prints a diff and exits 1 when a
+`gen-board.py raze --check` changes nothing: it prints a diff and exits 1 when a
 file disagrees, when the manifest breaks a rule (levels, offsets, addresses,
 missing `verified` notes, rgbw vs wire format) or when the kernel facts
 disagree with `gaia/kernel.toml` and the fragment, which it only reads. It

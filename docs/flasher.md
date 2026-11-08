@@ -110,7 +110,7 @@ firmware things it needs itself (below).
     dtoverlay=ws2812-pio,gpio=13,num_leds=16,brightness=255,dev_name=leds%d
     dtparam=watchdog=on
 
-(The ring's overlay line comes from gen-raze, like raze-device.txt.)
+(The ring's overlay line comes from gen-board, like raze-device.txt.)
 
 boot.img must also carry `overlays/bcm2712d0.dtbo`, as the OS's boot
 partition does: the firmware applies it by itself on D0-stepping BCM2712s,

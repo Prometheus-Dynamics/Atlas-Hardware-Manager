@@ -322,7 +322,7 @@
       }
     },
     "capabilities": {
-      "description": "Hardware facts, precise enough to generate the package's config from (devices/tools/gen-raze.py). Each hardware section carries `verified`: per fact (a dotted path inside the section), who confirmed it, when and how, or \"unverified\".",
+      "description": "Hardware facts, precise enough to generate the package's config from (devices/tools/gen-board.py). Each hardware section carries `verified`: per fact (a dotted path inside the section), who confirmed it, when and how, or \"unverified\".",
       "type": "object",
       "required": ["camera", "fan", "leds", "usb-power", "gadget-net"],
       "additionalProperties": { "type": "object" },

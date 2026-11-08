@@ -450,7 +450,7 @@ src = "${self}/assets/rootfs/usr/lib/board/hw-lemnosd.sh"
 dest = "/usr/lib/board/hw-lemnosd.sh"
 origin = "static-asset"
 
-# lemnosd's board definition, generated from manifest.json (gen-raze.py).
+# lemnosd's board definition, generated from manifest.json (gen-board.py).
 [[stage.files]]
 id = "board-udev-rules-d-60-board-lemnosd-rules"
 src = "${self}/assets/rootfs/usr/lib/udev/rules.d/60-board-lemnosd.rules"

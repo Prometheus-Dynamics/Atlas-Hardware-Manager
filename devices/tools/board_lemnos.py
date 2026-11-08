@@ -1,4 +1,4 @@
-"""The Raze's Lemnos board definition (/etc/lemnos/board.toml), for gen-raze.py.
+"""A board's Lemnos board definition (/etc/lemnos/board.toml), for gen-board.py.
 
 lemnosd, the board's hardware service, builds its devices from a board
 definition in Lemnos's format (Lemnos docs/board-definition.md, schema
@@ -13,7 +13,7 @@ commit). This module renders it from manifest.json and checks it:
   schema;
 - by parsing the TOML it wrote back (tomllib) and comparing.
 
-`lemnos-ctl validate` itself runs too when gen-raze.py finds one (--lemnos-ctl
+`lemnos-ctl validate` itself runs too when gen-board.py finds one (--lemnos-ctl
 or $LEMNOS_CTL). Python 3.11+ standard library only.
 """
 
@@ -362,7 +362,7 @@ def board_definition(manifest: dict, version: str) -> tuple[dict, dict[str, list
         devices.append({"id": port["device"], "driver": "gpio-power-switch", "writers": ul["writers"], "config": gpio})
         notes[port["device"]] = [
             f"The {port['port']} port's power switch (RP1 GPIO{line['gpio']}). The firmware drives it high from",
-            "power-on (raze-device.txt gpio=), and lemnosd requests it already on (default_on), so",
+            "power-on (the device config's gpio=), and lemnosd requests it already on (default_on), so",
             "its start doesn't toggle the port. Every boot starts on (persist off: the root is",
             "read-only); on_exit keep leaves it as it is when lemnosd stops.",
         ]
@@ -375,7 +375,7 @@ def board_definition(manifest: dict, version: str) -> tuple[dict, dict[str, list
         "board": {
             "id": manifest["model"],
             "name": manifest["display_name"],
-            "generated_by": f"atlas devices/tools/gen-raze.py, {manifest['model']} package {version}",
+            "generated_by": f"atlas devices/tools/gen-board.py, {manifest['model']} package {version}",
         },
         "devices": devices,
     }
@@ -405,7 +405,7 @@ def toml_value(key: str, value: object) -> str:
 
 
 def to_toml(board: dict, notes: dict[str, list[str]], header: str) -> str:
-    out = [header, "#\n# lemnosd's board definition (Lemnos docs/board-definition.md). The Raze package\n",
+    out = [header, "#\n# lemnosd's board definition (Lemnos docs/board-definition.md). The board's package\n",
            "# installs it as /etc/lemnos/board.toml; an OS replaces it with its own file there.\n"]
     for key in ("format", "schema_version"):
         out.append(f"{key} = {toml_value(key, board[key])}\n")
