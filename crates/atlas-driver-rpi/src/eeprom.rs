@@ -192,6 +192,7 @@ mod tests {
             .unwrap(),
             compat: Default::default(),
             dir: dir.to_path_buf(),
+            family: None,
         }
     }
 

@@ -14,6 +14,10 @@ use atlas_socflash::{k230, rockchip};
 pub const ROCKCHIP_FAMILY: &str = "rockchip";
 pub const K230_FAMILY: &str = "k230";
 
+/// The device family (`devices/families/`) of Rockchip maskrom boards: the
+/// chip each download-mode PID stands for is its `pid_chips`.
+const ROCKCHIP_DEVICE_FAMILY: &str = "rockchip-maskrom";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Soc {
     Rockchip,
@@ -72,19 +76,6 @@ pub(crate) async fn list(
     })
 }
 
-/// The chip a Rockchip download-mode PID stands for, where it's known.
-fn rockchip_chip(product_id: u16) -> Option<&'static str> {
-    match product_id {
-        0x350a => Some("RK3566/RK3568"),
-        0x350b => Some("RK3588"),
-        0x350e => Some("RK3576"),
-        0x110c => Some("RV1106/RV1103"),
-        0x330c => Some("RK3399"),
-        0x320c => Some("RK3328"),
-        _ => None,
-    }
-}
-
 pub struct SocDriver {
     soc: Soc,
     manifest: DriverManifest,
@@ -110,9 +101,17 @@ impl SocDriver {
         }
     }
 
+    /// The chip a Rockchip download-mode PID stands for, where the Rockchip
+    /// family names it.
+    fn rockchip_chip(&self, product_id: u16) -> Option<&str> {
+        self.catalog
+            .family(ROCKCHIP_DEVICE_FAMILY)?
+            .chip_for_pid(product_id)
+    }
+
     fn chip(&self, found: &Found) -> String {
         match self.soc {
-            Soc::Rockchip => rockchip_chip(found.product_id).map_or_else(
+            Soc::Rockchip => self.rockchip_chip(found.product_id).map_or_else(
                 || format!("Rockchip {:04x}", found.product_id),
                 str::to_string,
             ),
@@ -127,7 +126,7 @@ impl SocDriver {
         // board then reports that record's chip.
         let provisional = packages.is_empty()
             && self.soc == Soc::Rockchip
-            && rockchip_chip(found.product_id).is_none();
+            && self.rockchip_chip(found.product_id).is_none();
         if provisional {
             packages = self.catalog.unconfirmed_usb_boot(found.vendor_id);
         }
@@ -185,6 +184,9 @@ impl SocDriver {
 fn describe(package: &DevicePackage, attributes: &mut BTreeMap<String, String>) {
     let recovery = &package.manifest.recovery;
     attributes.insert("model".into(), package.manifest.model.clone());
+    if let Some(family) = &package.family {
+        attributes.insert("family".into(), family.display_name().to_string());
+    }
     if let Some(storage) = &recovery.storage_target {
         attributes.insert("storage".into(), storage.clone());
     }
@@ -368,7 +370,14 @@ mod tests {
             serial: None,
         };
         let identity = driver.identity(&candidate("1-4"), &found);
-        assert_eq!(identity.model, "CanMV K230D Zero (K230)");
-        assert_eq!(identity.attributes["storage"], "sd");
+        // Two records share 0230 (the K230D Zero and the AI-CAM): the chip
+        // is named, and both candidates are listed until the board says more.
+        assert_eq!(identity.model, "K230");
+        assert!(
+            identity.attributes["possible_models"].contains("bpi-canmv-k230d-zero"),
+            "{:?}",
+            identity.attributes
+        );
+        assert!(!identity.attributes.contains_key("storage"));
     }
 }

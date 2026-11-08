@@ -192,13 +192,15 @@ pub struct NandGeometry {
 pub struct Recovery {
     #[serde(default)]
     pub usb_boot: Option<UsbBootId>,
-    /// For example `mass-storage-gadget`.
+    /// For example `mass-storage-gadget`. A board that names a family and
+    /// leaves this out gets the family's.
     #[serde(default)]
     pub method: Option<String>,
     /// `emmc` or `nvme`.
     #[serde(default)]
     pub storage_target: Option<String>,
-    /// Short steps shown while Atlas waits for the board in USB boot.
+    /// Short steps shown while Atlas waits for the board in USB boot. A
+    /// board that names a family and leaves these out gets the family's.
     #[serde(default)]
     pub instructions: Vec<String>,
     /// `untested`: the flashing is written and unit-tested but hasn't run
@@ -237,6 +239,17 @@ pub struct EepromInfo {
     pub update_method: Option<String>,
 }
 
+/// A variant of a board that differs in data only (the AI-CAM's lens
+/// variants): `data` is what the record gives for it, passed on as written.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Variant {
+    pub id: String,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub data: Value,
+}
+
 /// `devices/<model>/manifest.json`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DeviceManifest {
@@ -252,6 +265,13 @@ pub struct DeviceManifest {
     /// package (identity contract) yet.
     #[serde(default)]
     pub record_only: bool,
+    /// The device family this board belongs to (`devices/families/`). Its
+    /// `recovery.method` and `recovery.instructions` default to the family's.
+    #[serde(default)]
+    pub family: Option<String>,
+    /// Variants that differ in data only.
+    #[serde(default)]
+    pub variants: Vec<Variant>,
     #[serde(default)]
     pub platform: Option<Platform>,
     #[serde(default)]
@@ -260,6 +280,8 @@ pub struct DeviceManifest {
     pub rev_source: Option<Value>,
     #[serde(default)]
     pub identity: IdentityRules,
+    /// After loading, a family's method and steps are filled in where the
+    /// record left them out (`DeviceCatalog::load`).
     #[serde(default)]
     pub recovery: Recovery,
     #[serde(default)]

@@ -9,6 +9,10 @@
 //! - `compat.json`: which OS versions are known to work. Informational
 //!   only: Atlas warns, it never blocks.
 //!
+//! A board may name a device family (`"family"`, `devices/families/<id>.json`,
+//! `family`): the family's recovery method and download-mode steps stand in
+//! for what the board's manifest leaves out.
+//!
 //! A device with no identity contract (the roboRIO) is recognised from its
 //! manifest's `fingerprints`, `info` and `key` instead (`recognize`).
 //!
@@ -17,6 +21,7 @@
 
 mod catalog;
 mod compat;
+mod family;
 mod gadget;
 mod hardware;
 mod manifest;
@@ -24,13 +29,14 @@ mod recognize;
 
 pub use catalog::{DeviceCatalog, DevicePackage, default_search_dirs, search_report};
 pub use compat::{CompatEntry, CompatImage, CompatList, CompatStatus};
+pub use family::{FAMILY_SCHEMA, Family};
 pub use gadget::{GadgetAddressing, GadgetSubnet, SERIAL_HASH_V1};
 pub use hardware::{
     Fan, FanPwm, I2cAddress, I2cDevice, LedIndex, LedRing, SelfTestInfo, Verification,
 };
 pub use manifest::{
     DeviceManifest, EepromFile, EepromInfo, FlashSpec, IdentityRules, NandGeometry, Platform,
-    Recovery, Revision, UsbBootId, UsbGadget, UsbId,
+    Recovery, Revision, UsbBootId, UsbGadget, UsbId, Variant,
 };
 pub use recognize::{
     Expect, Fingerprint, HttpAnswer, HttpGet, InfoValue, NamedPort, NotRecognized, Probe,
