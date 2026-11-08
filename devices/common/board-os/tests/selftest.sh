@@ -42,7 +42,7 @@ printf '%s' "$out" | grep -q '"board_serial":"10000000a317bcbe"' || fail "board 
 for id in leds fan camera i2c watchdog gadget; do check_status "$out" "$id" ok; done
 [ "$(cat "$T/run/selftest.json")" = "$out" ] || fail "the report should be written to /run/board/selftest.json"
 printf '%s' "$out" | grep -q '"steps":\[{"state":0,"pwm":179,"expected":179' || fail "fan steps: $out"
-[ ! -s "$T/dev/leds0" ] || fail "with no raze-leds state, no LED frame may be written"
+[ ! -s "$T/dev/leds0" ] || fail "with no board-leds state, no LED frame may be written"
 printf '%s' "$out" | grep -q '"backend":"sysfs"' || fail "the report names the backend: $out"
 
 echo "I2C: buses found by their selectors, chip ids read, the BMM150 woken and put back"
@@ -105,7 +105,7 @@ echo "the fan is handed back: state and governor as before"
 [ "$(cat "$S/class/thermal/thermal_zone0/mode")" = enabled ] || fail "thermal zone left disabled"
 [ ! -d "$T/run/selftest.lock" ] || fail "the lock was left behind"
 
-echo "with raze-leds state, the ring's frame is redrawn as it was"
+echo "with board-leds state, the ring's frame is redrawn as it was"
 printf 'ON=1 R=255 G=0 B=0 W=0 BRIGHT=100\n' > "$T/run/leds.state"
 out=$(selftest --json)
 check_status "$out" leds ok
@@ -113,18 +113,18 @@ want=$(i=0; while [ "$i" -lt 16 ]; do printf ff000000; i=$((i + 1)); done)
 [ "$(leds_hex)" = "$want" ] || fail "LED frame: $(leds_hex)"
 
 echo "the LED index offset follows the manifest (5) and its settings"
-sh "$lib/raze-leds" pixel 0 255 0 0
+sh "$lib/board-leds" pixel 0 255 0 0
 [ "$(leds_hex)" = "$(zeros 20)ff000000$(zeros 40)" ] || fail "LED 0 should be slot 5: $(leds_hex)"
-sh "$lib/raze-leds" pixel 15 0 0 255
+sh "$lib/board-leds" pixel 15 0 0 255
 [ "$(leds_hex)" = "$(zeros 16)0000ff00$(zeros 44)" ] || fail "LED 15 should be slot 4: $(leds_hex)"
-RAZE_LEDS_OFFSET=0 sh "$lib/raze-leds" pixel 0 255 0 0
+BOARD_LEDS_OFFSET=0 sh "$lib/board-leds" pixel 0 255 0 0
 [ "$(leds_hex)" = "ff000000$(zeros 60)" ] || fail "offset 0: $(leds_hex)"
-printf 'RAZE_LEDS_DIRECTION=-1\n' > "$T/etc/raze-leds.env"
-sh "$lib/raze-leds" pixel 1 0 255 0
+printf 'BOARD_LEDS_DIRECTION=-1\n' > "$T/etc/board-leds.env"
+sh "$lib/board-leds" pixel 1 0 255 0
 [ "$(leds_hex)" = "$(zeros 16)00ff0000$(zeros 44)" ] || fail "direction -1: LED 1 should be slot 4: $(leds_hex)"
-rm "$T/etc/raze-leds.env"
-sh "$lib/raze-leds" show | grep -q 'color=255,0,0,0' || fail "pixel must not change the saved state"
-sh "$lib/raze-leds" refresh
+rm "$T/etc/board-leds.env"
+sh "$lib/board-leds" show | grep -q 'color=255,0,0,0' || fail "pixel must not change the saved state"
+sh "$lib/board-leds" refresh
 [ "$(leds_hex)" = "$want" ] || fail "refresh should redraw the state: $(leds_hex)"
 
 echo "interactive: the operator's answers are recorded and the ring is put back"

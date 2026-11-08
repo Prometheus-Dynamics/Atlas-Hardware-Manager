@@ -21,6 +21,7 @@ lib=$T/lib
 mkdir -p "$lib" "$T/dt" "$T/etc" "$T/data/pstore/b1" "$T/data/pstore/b2" "$T/run" "$T/bin" "$T/pstore" "$T/out"
 cp "$real/lib.sh" "$real"/*.env "$lib/"
 cp "$real/support-bundle" "$lib/"
+cp "$here/../../../raze/gaia/assets/rootfs/usr/lib/board/board-package.env" "$lib/"
 printf '10000000a317bcbe\000' > "$T/dt/serial-number"
 cat > "$lib/identity" <<'EOF'
 #!/bin/sh

@@ -39,7 +39,7 @@ ring_dev=${ring_arg%%:*}
 ring_rest=${ring_arg#*:}
 ring_count=${ring_rest%%:*}
 
-# ring R G B: every LED one colour, 4 bytes an LED (R G B W, as raze-leds).
+# ring R G B: every LED one colour, 4 bytes an LED (R G B W, as board-leds).
 ring() {
 	[ -n "$ring_dev" ] && [ -w "$ring_dev" ] || return 0
 	px=$(printf '\\%03o\\%03o\\%03o\\000' "$1" "$2" "$3")

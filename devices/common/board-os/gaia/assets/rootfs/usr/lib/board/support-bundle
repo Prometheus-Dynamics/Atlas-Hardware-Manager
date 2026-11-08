@@ -36,6 +36,7 @@ set -u
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 # shellcheck source=lib.sh
 . "$BOARD_LIB_DIR/lib.sh"
+board_load_env board-package.env
 
 boots=${BOARD_SUPPORT_BOOTS:-3}
 lines=${BOARD_SUPPORT_LINES:-30000}
@@ -55,7 +56,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/support-bundle.XXXXXX") || exit 1
 trap 'rm -rf "$work"' EXIT
 serial=$(board_serial 2>/dev/null)
 stamp=${BOARD_SUPPORT_STAMP:-$(date -u +%Y%m%d-%H%M%S)}
-name=raze-${serial:-unknown}-$stamp
+name=${BOARD_DEVICE_MODEL:-board}-${serial:-unknown}-$stamp
 dir=$work/$name
 mkdir -p "$dir/pstore"
 
@@ -204,7 +205,7 @@ find "$dir" -type f ! -name '*.z' | while IFS= read -r file; do
 done
 
 cat > "$dir/README.txt" <<EOF
-Support bundle for raze ${serial:-unknown}, written $(date -u '+%Y-%m-%d %H:%M:%S') UTC
+Support bundle for ${BOARD_DEVICE_MODEL:-board} ${serial:-unknown}, written $(date -u '+%Y-%m-%d %H:%M:%S') UTC
 by /usr/lib/board/support-bundle.
 
 What each file is: the top of /usr/lib/board/support-bundle on the board.

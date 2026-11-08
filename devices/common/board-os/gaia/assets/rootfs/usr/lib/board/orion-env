@@ -41,6 +41,7 @@ set -u
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 # shellcheck source=lib.sh
 . "$BOARD_LIB_DIR/lib.sh"
+board_load_env board-package.env
 
 ORION_NODE_ENV=${ORION_NODE_ENV:-/etc/default/orion-node.env}
 ORION_NODE_PORT=${ORION_NODE_PORT:-9200}
@@ -118,7 +119,7 @@ else
 		board_log "no board serial or machine id; orion-node keeps its own id"
 		exit 0
 	fi
-	id=raze-${serial8#"${serial8%????}"}
+	id=${BOARD_DEVICE_MODEL:-board}-${serial8#"${serial8%????}"}
 fi
 
 tmp=$BOARD_RUN_DIR/.orion.env.$$

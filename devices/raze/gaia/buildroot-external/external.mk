@@ -31,7 +31,7 @@ endif
 
 # The package's kernel patches (linux/patches/*.patch, in order), after
 # Buildroot's own: ws2812-pio-rp1's clear_on_probe, which the package turns
-# off (modprobe.d/raze-ws2812-pio.conf) so the ring keeps lemnosd's reboot
+# off (modprobe.d/rp1-ws2812-pio.conf) so the ring keeps lemnosd's reboot
 # ember through a restart instead of going dark when the driver loads. Each
 # applies once: one already in the tree (a rebuild) is skipped.
 define RAZE_APPLY_KERNEL_PATCHES

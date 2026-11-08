@@ -5,17 +5,17 @@
 
 # ---------------------------------------------------------------------------
 # LED ring. Colours are "r,g,b,w", 0-255 each. Logical LED i sits in driver
-# slot (RAZE_LEDS_OFFSET + RAZE_LEDS_DIRECTION * i) mod RAZE_LEDS_COUNT, and
-# every slot takes 4 bytes in RAZE_LEDS_ORDER (the driver drops W on a 24-bit
+# slot (BOARD_LEDS_OFFSET + BOARD_LEDS_DIRECTION * i) mod BOARD_LEDS_COUNT, and
+# every slot takes 4 bytes in BOARD_LEDS_ORDER (the driver drops W on a 24-bit
 # ring).
 
 hw_leds_device() {
-	hw_dev_path "${RAZE_LEDS_DEVICE:-/dev/leds0}"
+	hw_dev_path "${BOARD_LEDS_DEVICE:-/dev/leds0}"
 }
 
 # What the report calls the ring.
 hw_leds_name() {
-	printf '%s\n' "${RAZE_LEDS_DEVICE:-/dev/leds0}"
+	printf '%s\n' "${BOARD_LEDS_DEVICE:-/dev/leds0}"
 }
 
 # The ring's state: available (it can be opened for writing, nothing is
@@ -43,7 +43,7 @@ _hw_leds_pixel() {
 	*) _hw_w=0 ;;
 	esac
 	_hw_px=''
-	for _hw_ch in $(printf '%s' "${RAZE_LEDS_ORDER:-rgbw}" | sed 's/./& /g'); do
+	for _hw_ch in $(printf '%s' "${BOARD_LEDS_ORDER:-rgbw}" | sed 's/./& /g'); do
 		case "$_hw_ch" in
 		r) _hw_v=$_hw_r ;;
 		g) _hw_v=$_hw_g ;;
@@ -70,7 +70,7 @@ hw_leds_fill() {
 	_hw_px=$(_hw_leds_pixel "$1")
 	_hw_all=''
 	_hw_i=0
-	while [ "$_hw_i" -lt "${RAZE_LEDS_COUNT:-16}" ]; do
+	while [ "$_hw_i" -lt "${BOARD_LEDS_COUNT:-16}" ]; do
 		_hw_all="$_hw_all$_hw_px"
 		_hw_i=$((_hw_i + 1))
 	done
@@ -82,9 +82,9 @@ hw_leds_fill() {
 # LED i. LEDs without an argument are off.
 hw_leds_write_frame() {
 	_hw_leds_writable || return 1
-	_hw_n=${RAZE_LEDS_COUNT:-16}
-	_hw_off=${RAZE_LEDS_OFFSET:-0}
-	_hw_dir=${RAZE_LEDS_DIRECTION:-1}
+	_hw_n=${BOARD_LEDS_COUNT:-16}
+	_hw_off=${BOARD_LEDS_OFFSET:-0}
+	_hw_dir=${BOARD_LEDS_DIRECTION:-1}
 	_hw_all=''
 	_hw_last=''
 	_hw_lastpx=''
@@ -107,11 +107,11 @@ hw_leds_write_frame() {
 	printf "$_hw_all" > "$_hw_dev"
 }
 
-# Gives the ring back after frames of our own: raze-leds draws its saved
+# Gives the ring back after frames of our own: board-leds draws its saved
 # state again, or the ring goes dark.
 hw_leds_release() {
-	if [ -r "$BOARD_RUN_DIR/leds.state" ] && [ -x "$BOARD_LIB_DIR/raze-leds" ]; then
-		"$BOARD_LIB_DIR/raze-leds" refresh 2>/dev/null && return 0
+	if [ -r "$BOARD_RUN_DIR/leds.state" ] && [ -x "$BOARD_LIB_DIR/board-leds" ]; then
+		"$BOARD_LIB_DIR/board-leds" refresh 2>/dev/null && return 0
 	fi
 	hw_leds_fill 0,0,0,0 2>/dev/null || true
 }

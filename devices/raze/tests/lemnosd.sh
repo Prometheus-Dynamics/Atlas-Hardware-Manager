@@ -1,5 +1,5 @@
 #!/bin/sh
-# Off-device test of the lemnosd backend: raze-leds and the self-test as
+# Off-device test of the lemnosd backend: board-leds and the self-test as
 # lemnosd clients, against a fake lemnos-ctl that records its calls and acts
 # like lemnosd (devices and their status, the fan's duty and writers, the fan
 # hand-back, brokered raw I2C for the clients board.toml lists in `raw`), on
@@ -100,7 +100,7 @@ chmod +x "$T/bin/lemnos-ctl"
 export CTL_LOG=$T/ctl.log FAKE=$T
 unset BOARD_HW_BACKEND
 
-leds() { sh "$lib/raze-leds" "$@"; }
+leds() { sh "$lib/board-leds" "$@"; }
 # expect <log line>...: the calls since the last expect, exactly.
 expect() {
 	got=$(cat "$CTL_LOG" 2>/dev/null || true)
@@ -112,38 +112,38 @@ $want"
 	: > "$CTL_LOG"
 }
 
-echo "with lemnos-ctl installed, raze-leds is a lemnosd client"
+echo "with lemnos-ctl installed, board-leds is a lemnosd client"
 leds color 255 0 0
-expect "raze-leds led color ff0000 --brightness 1.00 --device status-ring"
+expect "board-leds led color ff0000 --brightness 1.00 --device status-ring"
 [ ! -s "$T/dev/leds0" ] || fail "nothing may be written to /dev/leds0 with lemnosd"
 leds dim 50
-expect "raze-leds led color ff0000 --brightness 0.50 --device status-ring"
+expect "board-leds led color ff0000 --brightness 0.50 --device status-ring"
 leds status warn
-expect "raze-leds led off --device status-ring" "raze-leds led status warn --brightness 0.50 --device status-ring"
+expect "board-leds led off --device status-ring" "board-leds led status warn --brightness 0.50 --device status-ring"
 leds status warn
-expect "raze-leds led status warn --brightness 0.50 --device status-ring"
+expect "board-leds led status warn --brightness 0.50 --device status-ring"
 leds blink 4
-expect "raze-leds led status warn --brightness 0.50 --effect breathe --period 250 --depth 1 --easing ease-in-out --device status-ring"
+expect "board-leds led status warn --brightness 0.50 --effect breathe --period 250 --depth 1 --easing ease-in-out --device status-ring"
 leds blink --hard 4
-expect "raze-leds led status warn --brightness 0.50 --blink --period 250 --device status-ring"
+expect "board-leds led status warn --brightness 0.50 --blink --period 250 --device status-ring"
 leds show | grep -qx 'on=1 color=255,160,0,0 brightness=50% blinking=yes' || fail "show: $(leds show)"
 leds color 0 0 255
-expect "raze-leds led off --device status-ring" "raze-leds led color 0000ff --brightness 0.50 --device status-ring"
+expect "board-leds led off --device status-ring" "board-leds led color 0000ff --brightness 0.50 --device status-ring"
 leds show | grep -q 'blinking=no' || fail "a colour stops the blink: $(leds show)"
 leds pixel 2 0 255 0
-expect "raze-leds led frame 000000,000000,00ff00,000000,000000,000000,000000,000000,000000,000000,000000,000000,000000,000000,000000,000000 --fade 0 --device status-ring"
+expect "board-leds led frame 000000,000000,00ff00,000000,000000,000000,000000,000000,000000,000000,000000,000000,000000,000000,000000,000000 --fade 0 --device status-ring"
 leds pixel all 1 2 3
-expect "raze-leds led color 010203 --fade 0 --device status-ring"
+expect "board-leds led color 010203 --fade 0 --device status-ring"
 leds show | grep -q 'color=0,0,255,0' || fail "pixel must not change the saved state"
 leds refresh
-expect "raze-leds led color 0000ff --brightness 0.50 --device status-ring"
+expect "board-leds led color 0000ff --brightness 0.50 --device status-ring"
 leds locate 3
-expect "raze-leds led locate --seconds 3 --device status-ring"
+expect "board-leds led locate --seconds 3 --device status-ring"
 leds set 0
-expect "raze-leds led off --device status-ring"
+expect "board-leds led off --device status-ring"
 leds status off
-expect "raze-leds led off --device status-ring"
-RAZE_LEDS_CLIENT=photonvision leds on
+expect "board-leds led off --device status-ring"
+BOARD_LEDS_CLIENT=photonvision leds on
 expect "photonvision led color 0000ff --brightness 0.50 --device status-ring"
 
 echo "BOARD_HW_BACKEND=sysfs writes frames itself, even with lemnos-ctl"
@@ -155,7 +155,7 @@ printf 'BOARD_HW_BACKEND=sysfs\n' > "$T/etc/hw.env"
 leds off
 expect
 BOARD_HW_BACKEND=lemnosd leds off
-expect "raze-leds led off --device status-ring"
+expect "board-leds led off --device status-ring"
 rm "$T/etc/hw.env"
 : > "$T/dev/leds0"
 
@@ -227,14 +227,14 @@ grep '^board-selftest --priority 100 led ' "$CTL_LOG" | tail -n 1 | grep -q ' le
 	fail "the self-test's test layer should be cleared at the end: $(cat "$CTL_LOG")"
 : > "$CTL_LOG"
 
-echo "lemnosd down: the ring and the fan fail and say why; raze-leds fails"
+echo "lemnosd down: the ring and the fan fail and say why; board-leds fails"
 touch "$T/lemnosd-down"
 out=$(selftest --json)
 check_status "$out" leds fail
 check_status "$out" fan fail
 printf '%s' "$out" | grep -q "lemnosd doesn't answer" || fail "the reason: $out"
-if leds on 2> "$T/err"; then fail "raze-leds should fail without lemnosd"; fi
-grep -q 'is lemnosd.service running' "$T/err" || fail "raze-leds' message: $(cat "$T/err")"
+if leds on 2> "$T/err"; then fail "board-leds should fail without lemnosd"; fi
+grep -q 'is lemnosd.service running' "$T/err" || fail "board-leds' message: $(cat "$T/err")"
 rm "$T/lemnosd-down"
 
 echo "a failed hand-back fails the fan check"

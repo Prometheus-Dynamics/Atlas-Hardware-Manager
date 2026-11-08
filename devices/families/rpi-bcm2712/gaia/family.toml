@@ -7,22 +7,22 @@ description = "BCM2712 (Pi 5, CM5) boot family: firmware hooks for the board scr
 imports = ["./boot.toml"]
 
 [[stage.files]]
-id = "bcm2712-modprobe-d-raze-ws2812-pio-conf"
-src = "${self}/assets/rootfs/usr/lib/modprobe.d/raze-ws2812-pio.conf"
-dest = "/usr/lib/modprobe.d/raze-ws2812-pio.conf"
+id = "bcm2712-modprobe-d-rp1-ws2812-pio-conf"
+src = "${self}/assets/rootfs/usr/lib/modprobe.d/rp1-ws2812-pio.conf"
+dest = "/usr/lib/modprobe.d/rp1-ws2812-pio.conf"
 origin = "static-asset"
 
 [[stage.files]]
-id = "bcm2712-board-raze-leds-reprobe"
-src = "${self}/assets/rootfs/usr/lib/board/raze-leds-reprobe"
-dest = "/usr/lib/board/raze-leds-reprobe"
+id = "bcm2712-board-rp1-ws2812-reprobe"
+src = "${self}/assets/rootfs/usr/lib/board/rp1-ws2812-reprobe"
+dest = "/usr/lib/board/rp1-ws2812-reprobe"
 origin = "static-asset"
 mode = 493
 
 [[stage.files]]
-id = "bcm2712-systemd-system-raze-leds-reprobe-service"
-src = "${self}/assets/rootfs/usr/lib/systemd/system/raze-leds-reprobe.service"
-dest = "/usr/lib/systemd/system/raze-leds-reprobe.service"
+id = "bcm2712-systemd-system-rp1-ws2812-reprobe-service"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/rp1-ws2812-reprobe.service"
+dest = "/usr/lib/systemd/system/rp1-ws2812-reprobe.service"
 origin = "static-asset"
 
 [[stage.files]]
@@ -62,9 +62,9 @@ kind = "buildroot"
 
 [image.feed]
 stage_files = [
-  "bcm2712-modprobe-d-raze-ws2812-pio-conf",
-  "bcm2712-board-raze-leds-reprobe",
-  "bcm2712-systemd-system-raze-leds-reprobe-service",
+  "bcm2712-modprobe-d-rp1-ws2812-pio-conf",
+  "bcm2712-board-rp1-ws2812-reprobe",
+  "bcm2712-systemd-system-rp1-ws2812-reprobe-service",
   "bcm2712-board-usb-boot",
   "bcm2712-systemd-system-board-usb-boot-path",
   "bcm2712-systemd-system-board-usb-boot-service",

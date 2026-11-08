@@ -12,7 +12,7 @@ enable board-usb-gadget.service
 enable board-usb-gadget-dhcp.service
 enable board-usb-gadget-watch.service
 enable board-usb-route.service
-enable raze-leds-reprobe.service
+enable rp1-ws2812-reprobe.service
 enable board-locate.path
 enable board-power-log.service
 enable board-reboot.path

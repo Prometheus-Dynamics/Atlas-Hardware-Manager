@@ -14,13 +14,6 @@ dest = "/usr/lib/board/board-package.env"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-board-raze-leds"
-src = "${self}/assets/rootfs/usr/lib/board/raze-leds"
-dest = "/usr/lib/board/raze-leds"
-origin = "static-asset"
-mode = 493
-
-[[stage.files]]
 id = "raze-udev-rules-d-60-raze-usb-power-rules"
 src = "${self}/assets/rootfs/usr/lib/udev/rules.d/60-raze-usb-power.rules"
 dest = "/usr/lib/udev/rules.d/60-raze-usb-power.rules"
@@ -67,18 +60,24 @@ src = "${self}/assets/rootfs/usr/lib/systemd/system.conf.d/60-board-watchdog.con
 dest = "/usr/lib/systemd/system.conf.d/60-board-watchdog.conf"
 origin = "static-asset"
 
+[[stage.files]]
+id = "raze-board-hostname-env"
+src = "${self}/assets/rootfs/usr/lib/board/hostname.env"
+dest = "/usr/lib/board/hostname.env"
+origin = "static-asset"
+
 [image]
 kind = "buildroot"
 
 [image.feed]
 stage_files = [
+  "raze-board-hostname-env",
   "raze-systemd-system-conf-d-60-board-watchdog-conf",
   "raze-modules-load-d-raze-i2c-dev-conf",
   "raze-board-device-package-env",
   "raze-udev-rules-d-60-raze-usb-power-rules",
   "raze-board-raze-sensors-toml",
   "raze-board-raze-camera-toml",
-  "raze-board-raze-leds",
   "raze-board-leds-env",
   "raze-board-hardware-env",
   "raze-lemnos-board",

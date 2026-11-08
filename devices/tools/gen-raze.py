@@ -413,19 +413,20 @@ def render_leds_env(manifest: dict) -> str:
     lines = [
         header("#"),
         "#\n",
-        "# LED ring defaults for raze-leds and the selftest. Each value yields to the\n",
-        "# environment; OS and user overrides go in raze-leds.env (in /etc/board or\n",
-        "# /data/board), which raze-leds reads after this file.\n",
+        "# LED ring defaults for board-leds and the selftest. Each value yields to the\n",
+        "# environment; OS and user overrides go in board-leds.env (in /etc/board or\n",
+        "# /data/board), which board-leds reads after this file.\n",
         "#\n",
         f"# {leds['part']}: {leds['wire_format']} on the wire. The driver reads\n",
         f"# {leds['userspace']['bytes_per_led']} bytes per LED in {leds['userspace']['layout']} order and drops "
         f"{', '.join(c.upper() for c in leds['userspace'].get('ignored_channels', [])) or 'nothing'}.\n",
         "# Logical LED i is driver slot (OFFSET + DIRECTION * i) mod COUNT.\n",
-        f"RAZE_LEDS_DEVICE=${{RAZE_LEDS_DEVICE:-{leds['device']}}}\n",
-        f"RAZE_LEDS_COUNT=${{RAZE_LEDS_COUNT:-{leds['count']}}}\n",
-        f"RAZE_LEDS_ORDER=${{RAZE_LEDS_ORDER:-{leds['userspace']['layout']}}}\n",
-        f"RAZE_LEDS_OFFSET=${{RAZE_LEDS_OFFSET:-{leds['index']['offset']}}}\n",
-        f"RAZE_LEDS_DIRECTION=${{RAZE_LEDS_DIRECTION:-{leds['index']['direction']}}}\n",
+        f"BOARD_LEDS_DEVICE=${{BOARD_LEDS_DEVICE:-{leds['device']}}}\n",
+        f"BOARD_LEDS_COUNT=${{BOARD_LEDS_COUNT:-{leds['count']}}}\n",
+        f"BOARD_LEDS_ORDER=${{BOARD_LEDS_ORDER:-{leds['userspace']['layout']}}}\n",
+        f"BOARD_LEDS_OFFSET=${{BOARD_LEDS_OFFSET:-{leds['index']['offset']}}}\n",
+        f"BOARD_LEDS_DIRECTION=${{BOARD_LEDS_DIRECTION:-{leds['index']['direction']}}}\n",
+        f"BOARD_LEDS_PIO_DEV=${{BOARD_LEDS_PIO_DEV:-ws2812_pio@{leds['gpio']:x}}}\n",
     ]
     return "".join(lines)
 

@@ -73,7 +73,7 @@ kind = "leds"
 modules = ["ws2812-pio-rp1"]
 compatible = ["raspberrypi,ws2812-pio-rp1"]
 overlays = ["ws2812-pio"]
-files = ["/usr/lib/modprobe.d/raze-ws2812-pio.conf"]
+files = ["/usr/lib/modprobe.d/rp1-ws2812-pio.conf"]
 firmware = []
 
 [[image.hardware]]

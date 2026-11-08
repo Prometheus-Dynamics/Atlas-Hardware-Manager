@@ -1,51 +1,51 @@
 #!/bin/sh
 # Raze LED ring: 16 SK6812-EC20 LEDs (24-bit GRB) on /dev/leds0 (ws2812-pio-rp1).
 #
-#   raze-leds on | off                 light the ring in its colour, or not
-#   raze-leds set <0|1>                same, as PhotonVision's LED command calls it ({v} = 0 or 1)
-#   raze-leds dim <0-100>              brightness in percent (default 100)
-#   raze-leds color <r> <g> <b> [<w>]  colour, 0-255 each; w is ignored by this ring
-#   raze-leds status <ok|warn|error|busy|off>   green, amber, red, blue, off
-#   raze-leds blink [--hard] [<hz>]    pulse the current colour (default 2 Hz):
+#   board-leds on | off                 light the ring in its colour, or not
+#   board-leds set <0|1>                same, as PhotonVision's LED command calls it ({v} = 0 or 1)
+#   board-leds dim <0-100>              brightness in percent (default 100)
+#   board-leds color <r> <g> <b> [<w>]  colour, 0-255 each; w is ignored by this ring
+#   board-leds status <ok|warn|error|busy|off>   green, amber, red, blue, off
+#   board-leds blink [--hard] [<hz>]    pulse the current colour (default 2 Hz):
 #                                      an eased fade to off and back; --hard
 #                                      flashes it on and off instead
-#   raze-leds locate [<seconds>]       the locate look, then back (10 s)
-#   raze-leds pixel <index|all> <r> <g> <b> [<w>]
+#   board-leds locate [<seconds>]       the locate look, then back (10 s)
+#   board-leds pixel <index|all> <r> <g> <b> [<w>]
 #                                      light one LED (or all) once; the saved
 #                                      state stays as it is
-#   raze-leds refresh                  show the saved state again
-#   raze-leds show                     print the current state
+#   board-leds refresh                  show the saved state again
+#   board-leds show                     print the current state
 #
 # With lemnosd (the default when /usr/bin/lemnos-ctl exists) this is a thin
-# wrapper over `lemnos-ctl --client raze-leds led ...`: lemnosd owns the ring
+# wrapper over `lemnos-ctl --client board-leds led ...`: lemnosd owns the ring
 # and arbitrates it between its clients (system states such as an update and
 # locate above status, status above colours), fades changes (250 ms, from
 # /etc/lemnos/board.toml) and shows `status` with the board's status effect
 # (breathe). `color`, `on`, `dim` send a colour intent, `status` a status
 # intent, `blink` the colour with lemnosd's breathe effect at full depth
 # (eased, ease-in-out; --hard: its blink effect), `locate` lemnosd's
-# locate effect, `pixel` a one-off frame; `off` drops raze-leds' intents, so
-# other clients' looks show again. RAZE_LEDS_CLIENT names the client.
+# locate effect, `pixel` a one-off frame; `off` drops board-leds' intents, so
+# other clients' looks show again. BOARD_LEDS_CLIENT names the client.
 #
 # With the sysfs backend (BOARD_HW_BACKEND=sysfs, or no lemnos-ctl) it writes
 # one frame of 16 x 4 bytes per change to /dev/leds0 itself; the ring keeps it
 # until the next. The driver reads 4 bytes (R, G, B, W) per LED and drops W on
 # the wire, so white is `color 255 255 255`. A blink is a background loop, and
-# RAZE_LEDS_FOREGROUND=1 runs it in the foreground (board-locate.service does;
+# BOARD_LEDS_FOREGROUND=1 runs it in the foreground (board-locate.service does;
 # with lemnosd it waits out the locate instead).
 #
 # State lives in /run/board/leds.state, so commands combine: `color` then
 # `dim` keeps the colour. Any command but show and refresh stops a blink.
 # Defaults come from leds.env, generated from the package manifest. Override
-# them in /etc/board/raze-leds.env (or /data/board/raze-leds.env); the sysfs
+# them in /etc/board/board-leds.env (or /data/board/board-leds.env); the sysfs
 # backend uses:
-#   RAZE_LEDS_ORDER      the driver's 4-byte layout, rgbw. If colours come out
+#   BOARD_LEDS_ORDER      the driver's 4-byte layout, rgbw. If colours come out
 #                        swapped on a board revision, reorder the four letters
 #                        (e.g. grbw); a 3-letter order misaligns the buffer.
-#   RAZE_LEDS_OFFSET     the driver slot of LED index 0 (5: the ring's first LED
+#   BOARD_LEDS_OFFSET     the driver slot of LED index 0 (5: the ring's first LED
 #                        sits at slot 5 on gen1)
-#   RAZE_LEDS_DIRECTION  1, or -1 when indexes run the other way round
-#   RAZE_LEDS_COUNT, RAZE_LEDS_DEVICE
+#   BOARD_LEDS_DIRECTION  1, or -1 when indexes run the other way round
+#   BOARD_LEDS_COUNT, BOARD_LEDS_DEVICE
 # LED index i is driver slot (OFFSET + DIRECTION * i) mod COUNT (lemnosd takes
 # the same from board.toml). Hardware access goes through hw.sh.
 set -eu
@@ -58,8 +58,8 @@ case "${BOARD_HW_BACKEND:-}" in
 # shellcheck source=hw.sh
 *) . "$BOARD_LIB_DIR/hw.sh" ;;
 esac
-board_load_env raze-leds.env
-HW_LEMNOS_CLIENT=${RAZE_LEDS_CLIENT:-raze-leds}
+board_load_env board-leds.env
+HW_LEMNOS_CLIENT=${BOARD_LEDS_CLIENT:-board-leds}
 
 STATE_DIR=${BOARD_RUN_DIR:-/run/board}
 STATE=$STATE_DIR/leds.state
@@ -73,7 +73,7 @@ usage() {
 byte() {
 	# byte <0-255>: clamp and validate
 	case "$1" in
-	'' | *[!0-9]*) echo "raze-leds: not a number: $1" >&2; exit 2 ;;
+	'' | *[!0-9]*) echo "board-leds: not a number: $1" >&2; exit 2 ;;
 	esac
 	if [ "$1" -gt 255 ]; then echo 255; else echo "$1"; fi
 }
@@ -103,7 +103,7 @@ scaled() {
 
 ctl_led() {
 	if ! lemnos-ctl --client "$HW_LEMNOS_CLIENT" led "$@" --device "$HW_LEMNOS_RING" >/dev/null; then
-		echo "raze-leds: lemnos-ctl led $1 failed (is lemnosd.service running?)" >&2
+		echo "board-leds: lemnos-ctl led $1 failed (is lemnosd.service running?)" >&2
 		exit 1
 	fi
 }
@@ -180,8 +180,8 @@ start_blink() {
 	half=$(awk -v hz="$1" 'BEGIN { if (hz <= 0) hz = 2; printf "%.3f", 0.5 / hz }')
 	until=0
 	if [ "$2" -gt 0 ]; then until=$(($(date +%s) + $2)); fi
-	# Under a service (RAZE_LEDS_FOREGROUND=1) the blink is the service.
-	if [ "${RAZE_LEDS_FOREGROUND:-0}" = 1 ]; then
+	# Under a service (BOARD_LEDS_FOREGROUND=1) the blink is the service.
+	if [ "${BOARD_LEDS_FOREGROUND:-0}" = 1 ]; then
 		blink_loop "$half" "$until"
 		load_state
 		render_sysfs
@@ -275,7 +275,7 @@ locate)
 	if [ "$HW_BACKEND" = lemnosd ]; then
 		# lemnosd's locate look, above every other intent, timed by lemnosd.
 		ctl_led locate --seconds "$seconds"
-		[ "${RAZE_LEDS_FOREGROUND:-0}" != 1 ] || sleep "$seconds"
+		[ "${BOARD_LEDS_FOREGROUND:-0}" != 1 ] || sleep "$seconds"
 		exit 0
 	fi
 	save_state
@@ -292,7 +292,7 @@ pixel)
 	fi
 	case "$1" in '' | *[!0-9]*) usage ;; esac
 	if [ "$1" -ge "$(hw_leds_count)" ]; then
-		echo "raze-leds: LED $1 is outside 0..$(($(hw_leds_count) - 1))" >&2
+		echo "board-leds: LED $1 is outside 0..$(($(hw_leds_count) - 1))" >&2
 		exit 2
 	fi
 	# Index i is the (i+1)th argument; the ones before it are off.

@@ -137,7 +137,7 @@ manifest:
 - the `gen-raze: fan` region of `raze-fan-overlay.dts` (`cooling-levels` and
   `pwms`, polarity included);
 - whole files with a "Generated" header: `usr/lib/board/leds.env`
-  (raze-leds defaults), `usr/lib/board/hardware.env` (selftest facts),
+  (board-leds defaults), `usr/lib/board/hardware.env` (selftest facts),
   `usr/share/board/raze/sensors.toml`, the systemd watchdog drop-in and
   `etc/lemnos/board.toml`, lemnosd's board definition (see below).
 
@@ -225,12 +225,12 @@ fan:
 Set it in the environment or in `/etc/board/hw.env`. A path instead names a
 replacement backend file that defines the same `hw_*` functions.
 
-`raze-leds` keeps its commands (`on`, `off`, `set`, `dim`, `color`, `status`,
+`board-leds` keeps its commands (`on`, `off`, `set`, `dim`, `color`, `status`,
 `blink`, `locate`, `pixel`, `refresh`, `show`) and its state file; with
-lemnosd it is a thin wrapper over `lemnos-ctl --client raze-leds led ...`
+lemnosd it is a thin wrapper over `lemnos-ctl --client board-leds led ...`
 (`status` uses lemnosd's status look, `blink` its blink effect, `locate` its
-locate effect, `off` drops raze-leds' intents so other clients' looks show).
-`board-locate.service` runs `raze-leds locate 10`.
+locate effect, `off` drops board-leds' intents so other clients' looks show).
+`board-locate.service` runs `board-leds locate 10`.
 
 ## Self-test
 
@@ -239,7 +239,7 @@ a time. Each check is `ok`, `skip` or `fail` with a message and data:
 
 | Check | What it does |
 | --- | --- |
-| `leds` | lemnosd has the ring available (lemnosd backend), or `/dev/leds0` takes a frame (sysfs: redraws raze-leds' state, or only opens the device when another program owns the ring). `--interactive`: red, green, blue, a W-only frame a 24-bit ring must drop, and a walk round the ring by index with the offset applied (as `board-selftest` frames at priority 100 through lemnosd); the operator answers on the terminal. |
+| `leds` | lemnosd has the ring available (lemnosd backend), or `/dev/leds0` takes a frame (sysfs: redraws board-leds' state, or only opens the device when another program owns the ring). `--interactive`: red, green, blue, a W-only frame a 24-bit ring must drop, and a walk round the ring by index with the offset applied (as `board-selftest` frames at priority 100 through lemnosd); the operator answers on the terminal. |
 | `fan` | sets the duty of each cooling state in turn (lemnosd: `set fan duty`; sysfs: the cooling device, with the thermal zone paused), reads the duty (and rpm with a tachometer) back against `cooling_levels`, then hands the fan back to the governor (lemnosd's hand-back, or the state and governor restored) |
 | `camera` | the sensor's I2C client is bound to its driver (which checked the chip id), and rp1-cfe video nodes, `media-ctl` or `cam -l` see it |
 | `i2c` | the manifest's devices answer on their bus, found by its `select` (else its number): a device lemnosd has available counts as checked (its driver read the chip id); otherwise `i2cdetect -r` probes it and `i2cget` reads its chip id against the manifest. The BMM150 boots suspended: without lemnosd its power bit is set for the read and put back; with lemnosd it is left alone. |
@@ -374,9 +374,9 @@ The device units are installed in `/usr/lib/systemd/system` and enabled by
 | `board-http.service` | identity endpoint on TCP 5899: one resident listener (`board-stream --serve-each`) runs `identity-http` per connection |
 | `board-usb-gadget.service` | USB gadget (ECM/RNDIS/ACM) with the board serial as its USB serial, gadget-only bridge `usbbr0` on a per-board /29 (see "USB gadget network") |
 | `board-usb-gadget-dhcp.service` | DHCP on `usbbr0` only, DNS off, no default route: systemd-networkd's DHCPServer when networkd is enabled (a generated `.network`, no process), else dnsmasq (`USB_GADGET_DHCP_SERVER`) |
-| `raze-leds-reprobe.service` | re-probes the WS2812 PIO driver if `/dev/leds0` is missing |
+| `rp1-ws2812-reprobe.service` | re-probes the WS2812 PIO driver if `/dev/leds0` is missing |
 | `lemnosd.service` (Lemnos's unit and `80-lemnosd.preset`) | the hardware service: LED ring, fan, sensors, GPIO; `/etc/lemnos/board.toml` |
-| `board-locate.service` (+ `.path`) | the identity endpoint's locate action: `raze-leds locate 10` |
+| `board-locate.service` (+ `.path`) | the identity endpoint's locate action: `board-leds locate 10` |
 | `board-agent.service` | Orion device agent (a Gaia artifact, `common/board-os/gaia/board-agent.toml`: a static aarch64 musl binary built from `crates/board-agent`): claims `update`, `update.cancel`, `update.rollback`, `reboot` and `locate` on orion-node's local IPC and runs them with `/usr/lib/board/update` (docs/ota.md). Waits when the OS has no orion-node |
 
 **orion-node local auth.** The package ships
@@ -465,7 +465,7 @@ a VPN that routes `172.31.0.0/16`, shadows the gadget subnets. Changing
 | Identity endpoint | `disable board-http.service` in an OS preset, or mask it. |
 | Update methods / manage URL | One id per line in `/etc/board/update-methods.d/<file>` (added after `image-write`); the URL in `/etc/board/manage-url` (an empty file means `null`). |
 | Board revision | The revision id in `/etc/board/rev`. |
-| LED byte order, index offset and direction | With lemnosd: `offset`/`direction` in `/etc/lemnos/board.toml`. Sysfs backend: `RAZE_LEDS_ORDER`, `RAZE_LEDS_OFFSET`, `RAZE_LEDS_DIRECTION` in `/etc/board/raze-leds.env` (defaults from the generated `leds.env`). |
+| LED byte order, index offset and direction | With lemnosd: `offset`/`direction` in `/etc/lemnos/board.toml`. Sysfs backend: `BOARD_LEDS_ORDER`, `BOARD_LEDS_OFFSET`, `BOARD_LEDS_DIRECTION` in `/etc/board/board-leds.env` (defaults from the generated `leds.env`). |
 | Hardware backend | `BOARD_HW_BACKEND=sysfs` (or `lemnosd`) in `/etc/board/hw.env`. |
 | lemnosd | Its board definition: stage your own `/etc/lemnos/board.toml` (item `raze-lemnos-board`); its settings: redeclare `lemnosd-env` (`/etc/default/lemnosd.env`) in a later layer; the unit: drop-ins in `/etc/systemd/system/lemnosd.service.d/`, or `disable lemnosd.service` in a preset. |
 | Fan, port power, LEDs, camera | Copy the lines you want from `raze-device.txt` into your `config.txt` instead of including it, and change their parameters (`raze-fan`: `level0`..`level4`, `period_ns`, `polarity`; port power: the `gpio=16,20=op,dh` line, or `dtoverlay=raze-usb-power` with `usba=off`, `usbc=off` when lemnosd doesn't run). |

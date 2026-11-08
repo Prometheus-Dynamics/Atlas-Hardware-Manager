@@ -1,9 +1,9 @@
 [Unit]
 Description=Locate: show the locate look on the LED ring so someone can find the board
-# With lemnosd, raze-leds sends lemnosd's locate intent (above every other
+# With lemnosd, board-leds sends lemnosd's locate intent (above every other
 # look, timed by lemnosd) and waits it out; without, it blinks the ring itself.
 After=lemnosd.service
-Documentation=file:/usr/lib/board/raze-leds
+Documentation=file:/usr/lib/board/board-leds
 # Started by its .path unit: never rate-limited, or a burst of changes or
 # requests trips the start limit and leaves the path unit failed for good
 # (tests/path-units.sh).
@@ -13,6 +13,6 @@ StartLimitIntervalSec=0
 Type=simple
 # Consume the request first, so the path unit doesn't fire again for it.
 ExecStartPre=/bin/rm -f /run/board/requests/locate
-Environment=RAZE_LEDS_FOREGROUND=1
-ExecStart=/usr/lib/board/raze-leds locate 10
+Environment=BOARD_LEDS_FOREGROUND=1
+ExecStart=/usr/lib/board/board-leds locate 10
 TimeoutStopSec=5

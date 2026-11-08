@@ -5,9 +5,12 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-lib=$here/../gaia/assets/rootfs/usr/lib/board
 T=$(mktemp -d "${TMPDIR:-/tmp}/board-machine-id-test.XXXXXX")
 trap 'rm -rf "$T"' EXIT
+_devices=$here/../../..
+. "$here/compose-lib.inc"
+lib=$T/lib
+compose_lib "$lib"
 
 fail() {
 	echo "FAIL: $*" >&2
@@ -30,6 +33,8 @@ printf '10000000a317bcbe\000' > "$T/dt/serial-number"
 printf 'f00df00df00df00df00df00df00df00d\n' > "$T/machine-id"
 run
 derived=$(cat "$T/machine-id")
+# The exact id: changing the salt or the hash would rename every board in its logs.
+[ "$derived" = a7573514420afce700fb1ac6fb1f90a9 ] || fail "the derived id changed: $derived"
 printf '%s' "$derived" | grep -q '^[0-9a-f]\{32\}$' || fail "not a machine id: $derived"
 [ "$derived" != f00df00df00df00df00df00df00df00d ] || fail "the transient id stayed"
 [ "$(restarts)" = 1 ] || fail "journald should restart once, did $(restarts)"

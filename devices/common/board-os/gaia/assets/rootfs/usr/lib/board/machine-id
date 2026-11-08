@@ -14,6 +14,7 @@ set -u
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 # shellcheck source=lib.sh
 . "$BOARD_LIB_DIR/lib.sh"
+board_load_env board-package.env
 
 ETC_ID=${BOARD_MACHINE_ID_FILE:-/etc/machine-id}
 MOUNT=${BOARD_MOUNT:-mount}
@@ -32,7 +33,7 @@ else
 		exit 0
 	fi
 	# 128 bits from the serial, as systemd formats a machine id.
-	id=$(printf 'raze-machine-id:%s' "$serial" | sha256sum | cut -c1-32)
+	id=$(printf '%s%s' "${BOARD_MACHINE_ID_SALT:-board-machine-id:}" "$serial" | sha256sum | cut -c1-32)
 fi
 [ "$id" != "$current" ] || exit 0
 

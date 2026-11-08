@@ -193,7 +193,7 @@ result() {
 check_leds() {
 	count=$(hw_leds_count)
 	status=$(hw_leds_status)
-	data="{\"device\":$(js "${RAZE_LEDS_DEVICE:-/dev/leds0}"),\"count\":$count,\"offset\":${RAZE_LEDS_OFFSET:-0},\"direction\":${RAZE_LEDS_DIRECTION:-1},\"wire_format\":$(js "${HW_LEDS_WIRE:-}"),\"interactive\":$([ "$interactive" = 1 ] && echo true || echo false),\"backend\":$(js "$HW_BACKEND"),\"status\":$(js "$status")"
+	data="{\"device\":$(js "${BOARD_LEDS_DEVICE:-/dev/leds0}"),\"count\":$count,\"offset\":${BOARD_LEDS_OFFSET:-0},\"direction\":${BOARD_LEDS_DIRECTION:-1},\"wire_format\":$(js "${HW_LEDS_WIRE:-}"),\"interactive\":$([ "$interactive" = 1 ] && echo true || echo false),\"backend\":$(js "$HW_BACKEND"),\"status\":$(js "$status")"
 	if [ "$HW_BACKEND" = lemnosd ]; then
 		data="$data,\"lemnosd_device\":$(js "$HW_LEMNOS_RING")"
 		case "$status" in
@@ -203,29 +203,29 @@ check_leds() {
 			return
 			;;
 		*)
-			result leds fail "lemnosd reports the ring ($HW_LEMNOS_RING) $status: is ${RAZE_LEDS_DEVICE:-/dev/leds0} there (the ws2812-pio overlay; raze-leds-reprobe.service retries it) and in board.toml?" "$data}"
+			result leds fail "lemnosd reports the ring ($HW_LEMNOS_RING) $status: is ${BOARD_LEDS_DEVICE:-/dev/leds0} there (the ws2812-pio overlay; rp1-ws2812-reprobe.service retries it) and in board.toml?" "$data}"
 			return
 			;;
 		esac
 		if [ "$interactive" = 0 ]; then
-			result leds ok "lemnosd has the ring ($HW_LEMNOS_RING on ${RAZE_LEDS_DEVICE:-/dev/leds0}) available; no frame sent (--interactive tests it)" "$data,\"frame\":\"service\"}"
+			result leds ok "lemnosd has the ring ($HW_LEMNOS_RING on ${BOARD_LEDS_DEVICE:-/dev/leds0}) available; no frame sent (--interactive tests it)" "$data,\"frame\":\"service\"}"
 			return
 		fi
 	elif [ "$status" = missing ]; then
-		result leds fail "${RAZE_LEDS_DEVICE:-/dev/leds0} is missing: the ws2812-pio overlay or its driver didn't load (raze-leds-reprobe.service retries it)" "$data}"
+		result leds fail "${BOARD_LEDS_DEVICE:-/dev/leds0} is missing: the ws2812-pio overlay or its driver didn't load (rp1-ws2812-reprobe.service retries it)" "$data}"
 		return
 	fi
 	if [ "$interactive" = 0 ]; then
 		if [ -r "$BOARD_RUN_DIR/leds.state" ] && [ "$status" = available ]; then
-			if "$BOARD_LIB_DIR/raze-leds" refresh 2>/dev/null; then
-				result leds ok "${RAZE_LEDS_DEVICE:-/dev/leds0} takes frames (redrew the ring's current state)" "$data,\"frame\":\"redrawn\"}"
+			if "$BOARD_LIB_DIR/board-leds" refresh 2>/dev/null; then
+				result leds ok "${BOARD_LEDS_DEVICE:-/dev/leds0} takes frames (redrew the ring's current state)" "$data,\"frame\":\"redrawn\"}"
 			else
-				result leds fail "writing a frame to ${RAZE_LEDS_DEVICE:-/dev/leds0} failed" "$data,\"frame\":\"failed\"}"
+				result leds fail "writing a frame to ${BOARD_LEDS_DEVICE:-/dev/leds0} failed" "$data,\"frame\":\"failed\"}"
 			fi
 		elif [ "$status" = available ]; then
-			result leds ok "${RAZE_LEDS_DEVICE:-/dev/leds0} opens for writing; no frame sent, since raze-leds has no state and another program may own the ring (--interactive tests it)" "$data,\"frame\":\"opened\"}"
+			result leds ok "${BOARD_LEDS_DEVICE:-/dev/leds0} opens for writing; no frame sent, since board-leds has no state and another program may own the ring (--interactive tests it)" "$data,\"frame\":\"opened\"}"
 		else
-			result leds fail "${RAZE_LEDS_DEVICE:-/dev/leds0} can't be opened for writing" "$data,\"frame\":\"failed\"}"
+			result leds fail "${BOARD_LEDS_DEVICE:-/dev/leds0} can't be opened for writing" "$data,\"frame\":\"failed\"}"
 		fi
 		return
 	fi
@@ -267,7 +267,7 @@ check_leds() {
 	LEDS_TOUCHED=0
 	data="$data,\"frame\":\"swept\",\"answers\":{$answers}}"
 	if [ -n "$bad" ]; then
-		result leds fail "the operator saw a problem with:$bad (check the wire format, RAZE_LEDS_ORDER and RAZE_LEDS_OFFSET)" "$data"
+		result leds fail "the operator saw a problem with:$bad (check the wire format, BOARD_LEDS_ORDER and BOARD_LEDS_OFFSET)" "$data"
 	elif printf '%s' "$answers" | grep -q '"yes"'; then
 		result leds ok "colours and the index walk looked right to the operator" "$data"
 	else
@@ -352,7 +352,7 @@ check_fan() {
 
 check_camera() {
 	addr=${HW_CAMERA_ADDRESS:-0x60}
-	sensor=${HW_CAMERA_SENSOR:-ov9782}
+	sensor=${HW_CAMERA_SENSOR:-unknown}
 	driver=${HW_CAMERA_DRIVER:-ov9282}
 	list=$(hw_camera_list "$addr")
 	client=$(printf '%s\n' "$list" | awk -v s="$sensor" -v d="$driver" '$1 == "i2c" && ($2 == s || $4 == d) { print $3 " " $4; exit }')

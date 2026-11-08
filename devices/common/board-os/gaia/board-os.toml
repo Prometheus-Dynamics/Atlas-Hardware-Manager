@@ -38,12 +38,6 @@ origin = "static-asset"
 mode = 493
 
 [[stage.files]]
-id = "board-hostname-env"
-src = "${self}/assets/rootfs/usr/lib/board/hostname.env"
-dest = "/usr/lib/board/hostname.env"
-origin = "static-asset"
-
-[[stage.files]]
 id = "board-identity"
 src = "${self}/assets/rootfs/usr/lib/board/identity"
 dest = "/usr/lib/board/identity"
@@ -575,6 +569,13 @@ src = "${self}/assets/rootfs/usr/lib/systemd/system/service.d/50-board-failed.co
 dest = "/usr/lib/systemd/system/service.d/50-board-failed.conf"
 origin = "static-asset"
 
+[[stage.files]]
+id = "board-leds"
+src = "${self}/assets/rootfs/usr/lib/board/board-leds"
+dest = "/usr/lib/board/board-leds"
+origin = "static-asset"
+mode = 493
+
 [image]
 kind = "buildroot"
 config_overrides = [
@@ -607,10 +608,10 @@ config_overrides = [
 
 [image.feed]
 stage_files = [
+  "board-leds",
   "board-NetworkManager-conf-d-60-board-conf",
   "board-modules-load-d-board-usb-gadget-conf",
   "board-hostname-default",
-  "board-hostname-env",
   "board-identity",
   "board-identity-http",
   "board-identity-env",

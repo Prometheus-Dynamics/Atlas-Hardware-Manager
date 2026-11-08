@@ -87,7 +87,7 @@ hw_leds_write_frame() {
 }
 
 # Gives the ring back: drops this client's intents, so lemnosd shows the
-# other clients' (raze-leds, applications, system states) again.
+# other clients' (board-leds, applications, system states) again.
 hw_leds_release() {
 	_hw_led off 2>/dev/null || true
 }

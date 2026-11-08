@@ -1,5 +1,5 @@
 # shellcheck shell=sh
-# Hardware layer for raze-leds and the selftest (device package contract 1).
+# Hardware layer for board-leds and the selftest (device package contract 1).
 # POSIX sh; also runs under busybox ash. Sourced after lib.sh, never executed.
 #
 # Every hardware access of those scripts goes through the hw_* functions.
@@ -53,7 +53,7 @@ hw_dev_path() {
 }
 
 hw_leds_count() {
-	printf '%s\n' "${RAZE_LEDS_COUNT:-${HW_LEDS_COUNT:-16}}"
+	printf '%s\n' "${BOARD_LEDS_COUNT:-${HW_LEDS_COUNT:-16}}"
 }
 
 # Item <n> (from 1) of the remaining arguments.

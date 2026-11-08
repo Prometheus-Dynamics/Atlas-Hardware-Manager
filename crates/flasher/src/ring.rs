@@ -3,7 +3,7 @@
 //! the eMMC is safe.
 //!
 //! Frames go straight to the ring's character device (`/dev/leds0`, 4 bytes
-//! per LED: R, G, B, W, as raze-leds writes them): no lemnosd in the
+//! per LED: R, G, B, W, as board-leds writes them): no lemnosd in the
 //! flasher. Logical LED 0 is the ring's top (physical `offset`), running
 //! with the physical indices (`clockwise`, Lemnos's sense).
 

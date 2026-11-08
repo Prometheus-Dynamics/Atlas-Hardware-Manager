@@ -7,6 +7,12 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **Generic names no longer say Raze (2026-11-08).** `raze-leds` is
+  `board-leds` (in the shared layer), `RAZE_LEDS_*` are `BOARD_LEDS_*` and
+  overrides go in `board-leds.env`; the RP1 probe is `rp1-ws2812-reprobe`
+  (`raze-leds-reprobe.service` stays as a systemd alias). Bundle names, node ids
+  and default hostnames follow `BOARD_DEVICE_MODEL`. A board's machine id is
+  unchanged: its salt is now `BOARD_MACHINE_ID_SALT` in `board-package.env`.
 - **The bootloader images are the BCM2712 family's (2026-11-08).**
   `pieeprom`, its digest and `recovery.bin` moved to
   `devices/families/rpi-bcm2712/eeprom`, described by

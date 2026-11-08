@@ -8,6 +8,7 @@ set -eu
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 # shellcheck source=lib.sh
 . "$BOARD_LIB_DIR/lib.sh"
+board_load_env board-package.env
 
 BOARD_STATIC_HOSTNAME_FILE=${BOARD_STATIC_HOSTNAME_FILE:-/etc/hostname}
 
@@ -47,7 +48,7 @@ if [ -z "$serial8" ]; then
 fi
 
 pattern=${BOARD_HOSTNAME_PATTERN:-}
-[ -n "$pattern" ] || pattern='raze-{serial8}'
+[ -n "$pattern" ] || pattern="${BOARD_DEVICE_MODEL:-board}-{serial8}"
 name=$(printf '%s' "$pattern" |
 	sed -e "s/{serial8}/$serial8/g" -e "s/{serial}/$serial/g" |
 	tr 'A-Z' 'a-z' | tr -c 'a-z0-9-' '-' | cut -c1-63)
