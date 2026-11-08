@@ -1,0 +1,7 @@
+{
+  "$comment": "The board's case for the desktop's 3D view. file is under apps/desktop/static/models (built by devices/tools/case_model.py). case_in_imu takes case vectors to IMU vectors, measured on raze:0708c973 (r22): the IMU's -z is the lens, its +x the power terminal, its +y the case's -x, a half turn about the case's (1, -1, 0). ring_led0_deg is LED 0's angle in the case's frame, from +x toward +y, and ring_direction which way the rest go: Lemnos's gravity_led0_deg 112.5 (IMU frame) through that half turn, which mirrors the ring's plane; checked live on a board.",
+  "file": "raze-case.glb",
+  "case_in_imu": [0, 0.7071067811865476, -0.7071067811865476, 0],
+  "ring_led0_deg": 157.5,
+  "ring_direction": -1
+}

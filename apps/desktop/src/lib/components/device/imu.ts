@@ -180,17 +180,8 @@ export function multiply(a: Quat, b: Quat): Quat {
   ];
 }
 
-/**
- * The case's frame from the IMU's, as the Raze Gen 1 mounts it. The case
- * (the 3D model, case_model.py) has z out of the lens and the power terminal
- * on its -y edge; measured on raze:0708c973 (r22): lens up reads accel z =
- * -g, power terminal up reads x = +g. So the IMU's -z is the lens, its +x the
- * terminal, its +y the case's -x: a half turn about the case's (1, -1, 0).
- * The quaternion takes case vectors to IMU vectors.
- */
-export const CASE_IN_IMU: Quat = [0, Math.SQRT1_2, -Math.SQRT1_2, 0];
-
-/** The case's orientation (case frame to world) from the IMU's. */
-export function caseOrientation(q: Quat): Quat {
-  return multiply(q, CASE_IN_IMU);
+/** The case's orientation (case frame to world) from the IMU's, given how the
+ * board's case sits on its IMU (boardCase.ts). */
+export function caseOrientation(q: Quat, caseInImu: Quat): Quat {
+  return multiply(q, caseInImu);
 }

@@ -1,6 +1,6 @@
 <script lang="ts">
-  // The Raze, as its case: the case model (static/models/raze-case.glb, built
-  // by devices/tools/case_model.py from the CAD: the case, a simplified board
+  // The board, as its case: the case model (static/models, named by the
+  // package's case.json and built by devices/tools/case_model.py from the CAD: the case, a simplified board
   // and the connectors at its edges, in the case's frame) turned by the
   // case's orientation (imu.ts caseOrientation), with the lens added and the axes drawn. three.js
   // loads only when this shows. `onfail` says WebGL or the model isn't there,
@@ -9,12 +9,14 @@
   import { onMount } from "svelte";
   import type { Quat } from "./imu.ts";
   import type { RingFrame } from "./ring.ts";
+  import type { BoardCase } from "./boardCase.ts";
 
   let {
+    boardCase,
     orientation,
     onfail,
     ring = () => null,
-  }: { orientation: () => Quat; onfail: () => void; ring?: () => RingFrame | null } = $props();
+  }: { boardCase: BoardCase; orientation: () => Quat; onfail: () => void; ring?: () => RingFrame | null } = $props();
 
   let host = $state<HTMLDivElement>();
 
@@ -122,7 +124,7 @@
           }),
           BUTTON: new THREE.MeshStandardMaterial({ color: 0x4a505a, roughness: 0.55 }),
         };
-        const gltf = await new GLTFLoader().loadAsync("/models/raze-case.glb");
+        const gltf = await new GLTFLoader().loadAsync(`/models/${boardCase.file}`);
         // Left while it loaded: the cleanup has freed it all already.
         if (gone) return;
         gltf.scene.traverse((node) => {
@@ -204,17 +206,10 @@
         // The ring's LEDs light the diffuser itself: each of its vertices
         // takes the colour of the LEDs nearest its angle around the lens
         // (blended between the two), over the plastic's own dim white.
-        // Physical LED 0 sits at RING_LED0_DEG from +x toward +y, the rest
-        // following that way, one step per 360/n degrees: the Raze's gravity
-        // settings (gravity_plane ["x", "y"], gravity_led0_deg 112.5) as
-        // lemnos-board's gravity.rs reads them, checked live on a board. A
-        // board with other gravity axes would need them here.
-        // Lemnos's angle is in the IMU's frame (112.5° from its +x toward +y);
-        // the diffuser's vertices are in the case's (imu.ts CASE_IN_IMU, a half
-        // turn that mirrors the ring's plane): LED 0 at 157.5° here, the rest
-        // going the other way round.
-        const RING_LED0_DEG = 157.5;
-        const RING_DIRECTION = -1;
+        // Physical LED 0 sits at ring_led0_deg from +x toward +y in the case's
+        // frame, the rest going ring_direction, one step per 360/n degrees
+        // (the package's case.json says where they come from).
+        const { ring_led0_deg: RING_LED0_DEG, ring_direction: RING_DIRECTION } = boardCase;
         const diffusers: InstanceType<typeof THREE.Mesh>[] = [];
         gltf.scene.traverse((node) => {
           const mesh = node as InstanceType<typeof THREE.Mesh>;

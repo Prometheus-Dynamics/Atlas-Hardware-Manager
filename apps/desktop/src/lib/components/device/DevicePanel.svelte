@@ -2,6 +2,7 @@
   // A device's page: a compact header (back, name, status, quick actions,
   // the Monitor toggle, the tabs) over the tab, which takes the rest of
   // the window and lays out in columns as it widens.
+  import { provideBoardModel } from "./boardCase.ts";
   import Button from "#lib/components/common/Button.svelte";
   import Icon from "#lib/components/common/Icon.svelte";
   import IconTile from "#lib/components/common/IconTile.svelte";
@@ -31,6 +32,7 @@
   import SoftwareTab from "./SoftwareTab.svelte";
 
   let { key, initialTab }: { key: string; initialTab?: string } = $props();
+  provideBoardModel(() => record?.key.family);
 
   const record = $derived(devices.get(key));
   const recovery = $derived(record ? isRecovery(record) : false);

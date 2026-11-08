@@ -7,6 +7,9 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **The 3D case is the package's data (2026-11-08).** `case.json` names the
+  model, how the case sits on the IMU and where the LED ring starts; the desktop
+  no longer has them in code, and a board without one gets the plain block.
 - **board-lite is one shared layer (2026-11-08).** `devices/common/board-lite`
   holds the identity layer and its init script, with one file per architecture;
   each board's `device.toml` imports its architecture and names its model. The

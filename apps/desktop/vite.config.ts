@@ -78,5 +78,7 @@ export default defineConfig({
     host: host || false,
     hmr: host ? { protocol: "ws", host, port: 1423 } : undefined,
     watch: { ignored: ["**/src-tauri/**"] },
+    // Package data the app reads at build time (boardCase.ts).
+    fs: { allow: ["../../devices"] },
   },
 });

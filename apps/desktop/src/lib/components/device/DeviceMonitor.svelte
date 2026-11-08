@@ -1,6 +1,7 @@
 <script lang="ts">
   // One device, compact, beside others on the Monitor page: its status, every live reading as a row with a trend,
   // and its board's streaming sensors as charts.
+  import { provideBoardModel } from "./boardCase.ts";
   import { keyString, type DeviceRecord } from "#lib/api/client.ts";
   import Button from "#lib/components/common/Button.svelte";
   import IconTile from "#lib/components/common/IconTile.svelte";
@@ -24,6 +25,7 @@
     onremove?: () => void;
     removeLabel?: string;
   } = $props();
+  provideBoardModel(() => record.key.family);
 
   const id = $derived(keyString(record.key));
   const online = $derived(record.presence === "online");

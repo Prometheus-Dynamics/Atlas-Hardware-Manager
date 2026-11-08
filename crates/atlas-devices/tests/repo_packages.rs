@@ -342,6 +342,29 @@ fn the_desktop_bundle_carries_every_package_file_the_app_reads() {
     }
 }
 
+/// A package's case.json names a model the app ships and says how it sits.
+#[test]
+fn board_cases_name_a_shipped_model() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut found = 0;
+    for package in repo_catalog().packages() {
+        let Ok(text) = std::fs::read_to_string(package.dir.join("case.json")) else {
+            continue;
+        };
+        found += 1;
+        let case: serde_json::Value = serde_json::from_str(&text).expect("case.json");
+        let file = case["file"].as_str().expect("file");
+        assert!(
+            root.join("apps/desktop/static/models").join(file).is_file(),
+            "{file}"
+        );
+        assert_eq!(case["case_in_imu"].as_array().expect("quaternion").len(), 4);
+        assert!(case["ring_led0_deg"].is_number());
+        assert!(matches!(case["ring_direction"].as_i64(), Some(1 | -1)));
+    }
+    assert_eq!(found, 1, "only the Raze has a case model so far");
+}
+
 /// Each board record that names an identity port carries the package that
 /// serves it: board-lite built for the record's architecture, started with
 /// the record's model.

@@ -8,8 +8,9 @@
   import Button from "#lib/components/common/Button.svelte";
   import { onMount } from "svelte";
   import CaseModel from "./CaseModel.svelte";
-  import { FusedOrientation, Orientation, caseOrientation, cssMatrix, euler } from "./imu.ts";
+  import { FusedOrientation, Orientation, caseOrientation, cssMatrix, euler, type Quat } from "./imu.ts";
   import { ringFrame, type RingFrame } from "./ring.ts";
+  import { boardCaseFor, boardModel } from "./boardCase.ts";
   import type { LiveSeries } from "./live.ts";
 
   /** fill: as tall as its container (a column with room to spare). */
@@ -44,8 +45,12 @@
   const current = () => (source === "board" ? board : orientation);
   let ringCache: RingFrame | null = null;
   const ring = () => (light ? (ringCache = ringFrame(light, ringCache)) : null);
-  /** The case model didn't load (no WebGL, no model): the plain block instead. */
-  let plain = $state(false);
+  /** A board with no case model, or it didn't load (no WebGL): the plain block instead. */
+  let failed = $state(false);
+  const model = boardModel();
+  const boardCase = $derived(boardCaseFor(model()));
+  const plain = $derived(failed || !boardCase);
+  const toCase = (q: Quat) => caseOrientation(q, boardCase?.case_in_imu ?? [1, 0, 0, 0]);
   let matrix = $state("none");
   let angles = $state({ roll: 0, pitch: 0, yaw: 0 });
   let accelG = $state(0);
@@ -65,7 +70,7 @@
           confidence = board.confidence;
         } else source = "here";
         // Shown and read out in the case's frame (lens out of z), not the IMU's.
-        const q = caseOrientation(current()?.q ?? orientation.q);
+        const q = toCase(current()?.q ?? orientation.q);
         matrix = cssMatrix(q);
         angles = euler(q);
         const at = series.count ? series.index(series.count - 1) : -1;
@@ -92,8 +97,10 @@
 {#if usable}
   <div class="imu" class:fill class:compact>
     <div class="stage" aria-label="The board's orientation in 3D" role="img" title="Drag to look around it, scroll to zoom, double-click to reset the view. {sourceNote}">
-      {#if !plain}
-        <CaseModel orientation={() => caseOrientation(current()?.q ?? [1, 0, 0, 0])} {ring} onfail={() => (plain = true)} />
+      {#if !plain && boardCase}
+        {#key boardCase}
+          <CaseModel {boardCase} orientation={() => toCase(current()?.q ?? [1, 0, 0, 0])} {ring} onfail={() => (failed = true)} />
+        {/key}
       {:else}
       <div class="scene">
         <div class="floor"></div>

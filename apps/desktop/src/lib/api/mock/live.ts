@@ -9,7 +9,7 @@ type Model = { class: string; model: string; channels: LiveChannel[]; value: (t:
 const axes = (prefix: string, unit: string) => ["x", "y", "z"].map((axis) => ({ name: `${prefix}.${axis}`, unit }));
 const noise = (scale: number) => (Math.random() - 0.5) * 2 * scale;
 
-// A Raze's IMU is mounted turned from its case (imu.ts CASE_IN_IMU, a half
+// A Raze's IMU is mounted turned from its case (devices/raze/case.json, a half
 // turn about the case's (1, -1, 0)): readings are made in the case's frame
 // (lying flat, lens up) and handed out in the IMU's, as a real board does.
 const toImu = ([x, y, z]: number[]): number[] => [-y, -x, -z];
