@@ -47,6 +47,10 @@ pub const LINUX_UDEV_RULES_FILE: &str = concat!(
     "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"2207\", MODE=\"0660\", TAG+=\"uaccess\"\n",
     "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"29f1\", ATTR{idProduct}==\"0230\", ",
     "MODE=\"0660\", TAG+=\"uaccess\"\n",
+    "# Allwinner A733 boards (Radxa Cubie) in FEL mode, which Atlas flashes\n",
+    "# from their SoC's download mode.\n",
+    "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"1f3a\", ATTR{idProduct}==\"efe8\", ",
+    "MODE=\"0660\", TAG+=\"uaccess\"\n",
 );
 
 /// The Windows USB product ids that need WinUSB bound for USB boot.
@@ -54,13 +58,16 @@ pub const BOOT_PRODUCT_IDS: [u16; 4] = [0x2763, 0x2764, 0x2711, 0x2712];
 
 /// The SoC download modes Atlas flashes (atlas-socflash) that need WinUSB
 /// bound on Windows, as (name, vendor, product): one per chip of a board
-/// record. RK3576's PID is the record's guess until a board confirms it.
-pub const SOC_BOOT_IDS: [(&str, u16, u16); 5] = [
+/// record. The RV1126B's PID is the record's guess (`pid_unconfirmed`) until
+/// a board confirms it.
+pub const SOC_BOOT_IDS: [(&str, u16, u16); 7] = [
     ("Rockchip RK3566 maskrom", 0x2207, 0x350a),
     ("Rockchip RK3588 maskrom", 0x2207, 0x350b),
     ("Rockchip RK3576 maskrom", 0x2207, 0x350e),
     ("Rockchip RV1106 maskrom", 0x2207, 0x110c),
+    ("Rockchip RV1126B maskrom (unconfirmed PID)", 0x2207, 0x110b),
     ("Kendryte K230 USB boot", 0x29f1, 0x0230),
+    ("Allwinner A733 FEL", 0x1f3a, 0xefe8),
 ];
 
 /// udev rule that lets the logged-in user open Pi boot devices on Linux.

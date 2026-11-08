@@ -5,6 +5,7 @@
   "package_version": "2026.1.0-dev",
   "display_name": "CanMV K230D Zero",
   "record_only": true,
+  "family": "canaan-k230",
   "vendor": "Banana Pi / Canaan",
   "description": "BPI-CanMV-K230D-Zero (Kendryte K230D, 128 MB LPDDR4 in package) dev board, on order. A board record: Atlas flashes it from the K230 boot ROM's USB mode with Canaan's burner U-Boot and no vendor tool; running, it serves the identity contract (board-lite, gaia/device.toml), read-only. Written from Canaan's k230_burning_tool and docs; untested on this board.",
   "platform": { "soc": "K230D", "arch": "riscv64" },

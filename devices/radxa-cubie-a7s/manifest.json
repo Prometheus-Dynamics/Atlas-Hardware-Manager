@@ -1,0 +1,90 @@
+{
+  "schema": "urn:board:manifest:1",
+  "contract": 1,
+  "model": "radxa-cubie-a7s",
+  "package_version": "2026.1.0-dev",
+  "display_name": "Cubie A7S",
+  "record_only": true,
+  "vendor": "Radxa",
+  "description": "Radxa Cubie A7S (Allwinner A733: 2 Cortex-A76 and 6 Cortex-A55; BXM-4-64 GPU and 3 TOPS NPU), 4 GB LPDDR5 (UNCONFIRMED: the page lists options up to 16 GB). A board record: Atlas flashes it from the A733's FEL download mode, an eGON SPL and U-Boot over USB, and writes the microSD card. The family (allwinner-fel) gives the shared download-mode method and steps. Written from Radxa's docs and the board schematic; untested on this board.",
+  "family": "allwinner-fel",
+  "platform": {
+    "soc": "A733",
+    "arch": "aarch64",
+    "hardware": {
+      "ram": {
+        "this_record": "4 GB LPDDR5 (UNCONFIRMED: the page's options start above 4 GB)",
+        "variants": "up to 16 GB (the page gives no list)",
+        "source": "docs.radxa.com/en/cubie/a7s"
+      },
+      "network": {
+        "ethernet": "1x Gigabit through the MAE0621A-Q3C PHY (schematic p18); the RJ45 has an orange link LED and a green activity LED",
+        "wifi_bt": "Wi-Fi 6 and Bluetooth 5.4, dual band"
+      },
+      "ports": [
+        "USB-C 1: USB 2.0, power and OTG",
+        "USB-C 2: USB 3.2 with DisplayPort Alt Mode, and OTG",
+        "1x USB 2.0 Type-A host",
+        "1x Gigabit Ethernet",
+        "microSD (TF) slot",
+        "FPC PCIe 3.0 x1 (NVMe)"
+      ],
+      "leds": [
+        {
+          "name": "LED2 (green, LED_G_EN)",
+          "gpio": "UNCONFIRMED",
+          "polarity": "UNCONFIRMED",
+          "source": "schematic net name only"
+        },
+        {
+          "name": "LED1 (blue, from PJ26_LED_B)",
+          "gpio": "UNCONFIRMED",
+          "polarity": "UNCONFIRMED",
+          "source": "schematic net name only"
+        }
+      ],
+      "fan": {
+        "connector": "3-pin PWM fan header"
+      },
+      "camera": {
+        "connectors": "one 4-lane MIPI camera connector (type and pinout UNCONFIRMED)",
+        "sensor": "none bundled",
+        "source": "docs.radxa.com/en/cubie/a7s"
+      },
+      "gpio": "15-pin and 30-pin headers (not a 40-pin header)"
+    }
+  },
+  "recovery": {
+    "usb_boot": {
+      "vid": "1f3a",
+      "pid": "efe8"
+    },
+    "storage_target": "sd",
+    "storage_target_evidence": [
+      "docs.radxa.com Cubie A7S: one microSD (TF) slot; an eMMC is optional (up to 256 GB) and its footprint is unpopulated by default.",
+      "Atlas writes the microSD card (the SD target). The A7S's SPI NOR is not stated (UNCONFIRMED), and Atlas does not write it."
+    ],
+    "instructions": [
+      "Unplug the Cubie A7S's power.",
+      "Hold the USB BOOT button before power-on, and connect a USB-C port of the board to this computer with a data cable (which port is UNCONFIRMED: see todo).",
+      "Power the board on, then release the USB BOOT button.",
+      "The board appears as 1f3a:efe8 (Allwinner FEL). Atlas loads the SPL and U-Boot over FEL, writes the image to the microSD card, reads it back and restarts the board."
+    ],
+    "status": "untested",
+    "flash": {
+      "loader": "u-boot-sunxi-with-spl*.bin",
+      "storage": "sd",
+      "image_offset": 0,
+      "fel_image": "eGON SPL then legacy U-Boot (u-boot-sunxi-with-spl form), UNCONFIRMED for the A733"
+    },
+    "todo": [
+      "Sources: the USB BOOT button is held before power-on (docs.radxa.com/en/cubie/a7s hardware info). The 1f3a:efe8 id is the same A733 FEL id as the A7A record (Radxa's PhoenixSuit driver docs, sunxi-tools fel_lib.h). UNCONFIRMED until lsusb on the board shows it.",
+      "UNCONFIRMED: which of the two USB-C ports is the FEL port (USB-C 1, USB 2.0 with power and OTG, or USB-C 2, USB 3.2 with DP Alt Mode and OTG), and the PC cable steps. Radxa's A7S hardware page says only that the USB BOOT button is held before power-on.",
+      "UNCONFIRMED: the loader glob u-boot-sunxi-with-spl*.bin, and the A7S's FEL image (Radxa's images are Android 13 zips from github.com/radxa/allwinner-android-manifests, not downloaded). Gaia needs: the A733 FEL image (eGON SPL and U-Boot) as the loader, and the microSD disk image.",
+      "UNCONFIRMED: the 4 GB RAM size (the page lists up to 16 GB).",
+      "UNCONFIRMED: the LEDs' GPIO pins and polarity (LED2 green on LED_G_EN; LED1 blue from PJ26_LED_B).",
+      "UNCONFIRMED: the 4-lane camera connector's type and pinout, and whether an SPI NOR is fitted.",
+      "The eMMC is optional and unpopulated by default, so the microSD is the storage target. Running, the board needs a Gaia image with board-lite; no Gaia board config for the Cubie exists yet."
+    ]
+  }
+}

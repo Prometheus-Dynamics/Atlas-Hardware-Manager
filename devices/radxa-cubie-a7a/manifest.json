@@ -1,0 +1,101 @@
+{
+  "schema": "urn:board:manifest:1",
+  "contract": 1,
+  "model": "radxa-cubie-a7a",
+  "package_version": "2026.1.0-dev",
+  "display_name": "Cubie A7A",
+  "record_only": true,
+  "vendor": "Radxa",
+  "description": "Radxa Cubie A7A (Allwinner A733: 2 Cortex-A76 and 6 Cortex-A55), 4 GB LPDDR5 (UNCONFIRMED on the page). A board record: Atlas flashes it from the A733's FEL download mode, an eGON SPL and U-Boot over USB, and writes the microSD card. The family (allwinner-fel) gives the shared download-mode method and steps. Written from Radxa's docs and the board schematic; untested on this board.",
+  "family": "allwinner-fel",
+  "platform": {
+    "soc": "A733",
+    "arch": "aarch64",
+    "hardware": {
+      "ram": {
+        "this_record": "4 GB LPDDR5 (UNCONFIRMED: not on the page's option list as this size)",
+        "variants": [
+          "2 GB",
+          "4 GB",
+          "6 GB",
+          "8 GB",
+          "12 GB",
+          "16 GB"
+        ],
+        "source": "docs.radxa.com/en/cubie/a7a"
+      },
+      "network": {
+        "ethernet": "1x Gigabit through the MAE0621A-Q3C PHY (schematic p18); PoE through a HAT",
+        "wifi_bt": "Wi-Fi 6 and Bluetooth 5.4 (module FCU760K, schematic p13)"
+      },
+      "ports": [
+        "USB-C: power and OTG (USB0), the only USB-C",
+        "1x USB 3.1 Type-A host",
+        "3x USB 2.0 Type-A host",
+        "1x HDMI, 4K at 60 Hz",
+        "1x Gigabit Ethernet",
+        "3.5 mm audio",
+        "PCIe 3.0 x1 on an FPC connector",
+        "4-lane MIPI DSI",
+        "microSD (TF) slot",
+        "8 MB SPI NOR boot flash (not written by Atlas)"
+      ],
+      "leds": [
+        {
+          "name": "LED2 (green)",
+          "gpio": "PJ26",
+          "polarity": "active-low (sunk through a FET)",
+          "source": "schematic p19"
+        },
+        {
+          "name": "LED1 (blue)",
+          "gpio": "PJ27",
+          "polarity": "active-high",
+          "source": "schematic p19"
+        }
+      ],
+      "fan": {
+        "connector": "UNCONFIRMED: the overview says a 2-pin 1.25 mm header, the schematic p19 connector carries 3 signals"
+      },
+      "camera": {
+        "connectors": "one 31-pin FPC (CAM_31P), 4 data lanes and a clock",
+        "sensor": "none bundled",
+        "source": "schematic and docs.radxa.com/en/cubie/a7a"
+      },
+      "gpio": "40-pin header"
+    }
+  },
+  "recovery": {
+    "usb_boot": {
+      "vid": "1f3a",
+      "pid": "efe8"
+    },
+    "storage_target": "sd",
+    "storage_target_evidence": [
+      "docs.radxa.com Cubie A7A: a microSD (TF) slot is fitted; an eMMC or UFS module comes on a combo connector and is not fitted by default; an 8 MB SPI NOR holds the boot flash.",
+      "Atlas writes the microSD card (the SD target) and does not write the SPI NOR."
+    ],
+    "instructions": [
+      "Unplug the Cubie A7A's power.",
+      "Hold the UBOOT key (SW2) before power-on, and connect the board's USB-C port to this computer with a USB-A to USB-C data cable.",
+      "Power the board on, then release the UBOOT key.",
+      "The board appears as 1f3a:efe8 (Allwinner FEL). Atlas loads the SPL and U-Boot over FEL, writes the image to the microSD card, reads it back and restarts the board."
+    ],
+    "status": "untested",
+    "flash": {
+      "loader": "u-boot-sunxi-with-spl*.bin",
+      "storage": "sd",
+      "image_offset": 0,
+      "fel_image": "eGON SPL then legacy U-Boot (u-boot-sunxi-with-spl form), UNCONFIRMED for the A733"
+    },
+    "todo": [
+      "Sources: the FEL steps are from docs.radxa.com/en/cubie/a7a/low-level-dev/install-system/fel-install-system/fel-mode (the UBOOT key SW2 and the cable). The 1f3a:efe8 id is in Radxa's PhoenixSuit driver docs (VID_1f3a PID_efe8) and sunxi-tools' fel_lib.h (0xEFE8). UNCONFIRMED until lsusb on the board shows it in FEL mode.",
+      "UNCONFIRMED: the loader glob u-boot-sunxi-with-spl*.bin. Radxa's FEL images are Android 13 zips from github.com/radxa/allwinner-android-manifests (the A7Z's is a733_android13_radxa_a7z_20250917_uart0.zip); the A7A's zip is not downloaded and its SPL and U-Boot files are not inspected. Gaia needs: the A733 FEL image (eGON SPL and U-Boot) as the loader, and the microSD disk image (whole disk, image_offset 0).",
+      "UNCONFIRMED: the 4 GB RAM size (the page lists 2, 4, 6, 8, 12 and 16 GB without saying which the 4 GB board is).",
+      "UNCONFIRMED: the fan connector (2-pin 1.25 mm per the overview, 3 signals per schematic p19).",
+      "UNCONFIRMED: the A733's SRAM layout for the FEL thunk (the family's sram is null until the record or family gives one).",
+      "The SPI NOR (8 MB) is not written by Atlas; the eMMC or UFS module is not fitted by default, so the microSD is the storage target.",
+      "Running, the board needs a Gaia image with board-lite before Atlas can see it; no Gaia board config for the Cubie exists yet."
+    ]
+  }
+}

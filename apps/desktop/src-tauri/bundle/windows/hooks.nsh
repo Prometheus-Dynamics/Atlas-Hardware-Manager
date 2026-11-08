@@ -1,6 +1,6 @@
 ; Atlas installer hooks. The installer runs per machine (elevated), so it can
 ; bind the WinUSB driver to the boot ROM ids the same way Raspberry Pi's rpiboot
-; installer does: Raspberry Pi's, and the Rockchip and K230 download modes (the
+; installer does: Raspberry Pi's, and the Rockchip, K230 and Allwinner FEL download modes (the
 ; list atlas_usbboot::SOC_BOOT_IDS has too). Without it, Windows cannot open a
 ; board in USB boot mode.
 
@@ -20,5 +20,7 @@
   !insertmacro ATLAS_BIND_WINUSB "Rockchip RK3588 maskrom" 0x2207 0x350b
   !insertmacro ATLAS_BIND_WINUSB "Rockchip RK3576 maskrom" 0x2207 0x350e
   !insertmacro ATLAS_BIND_WINUSB "Rockchip RV1106 maskrom" 0x2207 0x110c
+  !insertmacro ATLAS_BIND_WINUSB "Rockchip RV1126B maskrom (unconfirmed PID)" 0x2207 0x110b
   !insertmacro ATLAS_BIND_WINUSB "Kendryte K230 USB boot" 0x29f1 0x0230
+  !insertmacro ATLAS_BIND_WINUSB "Allwinner A733 FEL" 0x1f3a 0xefe8
 !macroend

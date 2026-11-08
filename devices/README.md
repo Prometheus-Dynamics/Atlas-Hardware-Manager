@@ -32,14 +32,24 @@ devices/
   roborio/manifest.json,     devices without the identity contract: only
   systemcore/manifest.json   how to recognise and read them (fingerprints,
                              info, key; docs/devices-as-data.md)
-  radxa-rock-5c/, radxa-rock-4d/, radxa-zero-3w/,
-  luckfox-pico-pro/, bpi-canmv-k230d-zero/
+  radxa-rock-5c/, radxa-rock-4d/, radxa-zero-3e/, luckfox-pico-pro/,
+  bpi-canmv-k230d-zero/, canmv-k230d-ai-cam/, waveshare-luckfox-aura/,
+  radxa-cubie-a7a/, radxa-cubie-a7s/, radxa-cubie-a7z/
                              board records ("record_only": true): boards
                              Atlas flashes from their SoC's download mode
-                             (recovery.method rockusb or k230-usb,
-                             recovery.flash) before they have a package;
+                             (recovery.flash) before they have a package;
                              "status": "untested" until run on the board
-                             (docs/soc-flashing.md)
+                             (docs/soc-flashing.md). Hardware facts that
+                             are not generated config (ports, LEDs, RAM,
+                             camera) sit under platform.hardware, with the
+                             sources in the record and UNCONFIRMED items in
+                             recovery.todo
+  families/<id>.json         device families (family.schema.json): what the
+                             boards of one SoC family share in download mode
+                             (method, entry steps, flash stages, pid_chips).
+                             A record names one with "family" and inherits
+                             its method and entry steps: rockchip-maskrom,
+                             canaan-k230, allwinner-fel
 ```
 
 ## The rule: never block the user
