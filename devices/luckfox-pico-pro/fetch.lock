@@ -12,7 +12,7 @@
       "size": 22632,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/luckfox-pico-pro/rv1106_ddr_924MHz_v1.15.bin",
+      "local": "/mnt/ssd-samsung/atlas-blobs/luckfox-pico-pro/rv1106_ddr_924MHz_v1.15.bin",
       "note": "CODE471 and FlashData entry of RKBOOT/RV1106MINIALL.ini at f43a462. Commit 3e288fe names v1.16 here instead and builds v1.16.103."
     },
     {
@@ -25,7 +25,7 @@
       "size": 52740,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/luckfox-pico-pro/rv1106_usbplug_v1.09.bin",
+      "local": "/mnt/ssd-samsung/atlas-blobs/luckfox-pico-pro/rv1106_usbplug_v1.09.bin",
       "note": "CODE472 entry of RKBOOT/RV1106MINIALL.ini."
     },
     {
@@ -38,7 +38,7 @@
       "size": 170330,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/luckfox-pico-pro/rv1106_spl_v1.02.bin",
+      "local": "/mnt/ssd-samsung/atlas-blobs/luckfox-pico-pro/rv1106_spl_v1.02.bin",
       "note": "FlashBoot entry of RKBOOT/RV1106MINIALL.ini. The merged rv1106_download_v1.15.108.bin and rv1106_idblock_v1.15.102.img are boot_merger outputs and are NOT published in rkbin (ini OUTPUT PATH / IDB_PATH only)."
     },
     {
@@ -51,7 +51,7 @@
       "size": 488,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/luckfox-pico-pro/RV1106MINIALL.ini",
+      "local": "/mnt/ssd-samsung/atlas-blobs/luckfox-pico-pro/RV1106MINIALL.ini",
       "note": "Names ddr v1.15, usbplug v1.09, spl v1.02, OUTPUT rv1106_download_v1.15.108.bin, IDB_PATH rv1106_idblock_v1.15.102.img, RC4_OFF=true."
     },
     {
@@ -64,7 +64,7 @@
       "size": 20757,
       "licence": "GPL-2.0",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-5c/rkdeveloptool-304f073/RKComm.cpp",
+      "local": "/mnt/ssd-samsung/atlas-blobs/radxa-rock-5c/rkdeveloptool-304f073/RKComm.cpp",
       "note": "Protocol reference, text only, never built or run. Shared copy lives under the rock-5c blob dir. url and sha256 are RKComm.cpp."
     }
   ]

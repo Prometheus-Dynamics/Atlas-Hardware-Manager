@@ -12,7 +12,7 @@
       "size": 58920,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/firefly-aio-3562jq/rk3562_ddr_1332MHz_v1.10.bin",
+      "local": "/mnt/ssd-samsung/atlas-blobs/firefly-aio-3562jq/rk3562_ddr_1332MHz_v1.10.bin",
       "note": "CODE471 and FlashData entry of RKBOOT/RK3562MINIALL.ini."
     },
     {
@@ -25,7 +25,7 @@
       "size": 89932,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/firefly-aio-3562jq/rk3562_usbplug_v1.04.bin",
+      "local": "/mnt/ssd-samsung/atlas-blobs/firefly-aio-3562jq/rk3562_usbplug_v1.04.bin",
       "note": "CODE472 entry of RKBOOT/RK3562MINIALL.ini."
     },
     {
@@ -38,7 +38,7 @@
       "size": 324816,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/firefly-aio-3562jq/rk3562_spl_v1.08.bin",
+      "local": "/mnt/ssd-samsung/atlas-blobs/firefly-aio-3562jq/rk3562_spl_v1.08.bin",
       "note": "FlashBoot entry of RKBOOT/RK3562MINIALL.ini. The merged rk3562_loader_v1.10.108.bin is a boot_merger output and is NOT published in rkbin at this commit."
     },
     {
@@ -51,7 +51,7 @@
       "size": 450,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/firefly-aio-3562jq/RK3562MINIALL.ini",
+      "local": "/mnt/ssd-samsung/atlas-blobs/firefly-aio-3562jq/RK3562MINIALL.ini",
       "note": "Names ddr 1332MHz v1.10, usbplug v1.04, spl v1.08, output rk3562_loader_v1.10.108.bin, RC4_OFF=true."
     }
   ]

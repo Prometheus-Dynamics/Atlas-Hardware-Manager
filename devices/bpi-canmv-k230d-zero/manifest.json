@@ -27,12 +27,12 @@
       "loader": "loader_mmc*.bin",
       "storage": "sd",
       "image_offset": 0,
-      "load_address": "0x80300000"
+      "load_address": "0x80360000"
     },
     "todo": [
       "Storage: the request said SPI-NAND; the board page lists only the TF slot. Check the board for a NAND part (a W25N01GW or similar); with one, storage becomes spi-nand with its geometry under flash.nand.",
       "The burner: Gaia's K230D build (3d1f249) ships loader_mmc.bin next to sdcard.img: the SDK's U-Boot from k230d_canmv_burntool_defconfig, plain u-boot.bin with no K230 firmware head (Canaan's guide: the generated u-boot.bin is loader.bin), with USB DFU for MMC and SPI-NAND. It links at 0x80300000, so the record loads it there (k230_flash's default is 0x80360000). Gaia's sdcard.img checks out: SPL firmware heads at 1 MiB and 1.5 MiB with matching SHA-256 (Atlas checks them before every K230 flash), U-Boot at 2 MiB, env at 1.875 MiB and 3.5 MiB, boot ext4 at 30 MiB, rootfs-a at 128 MiB.",
-      "The burner's load address on the board: 0x80300000, where Gaia's burner links. k230_flash's default is 0x80360000 (kburn_k230.h:31) and its CLI accepts 0x80300000 to 0x80400000 (k230_flash.cpp:109), so 0x80300000 is in its range. Whether the boot ROM starts the burner there is UNCONFIRMED: the log's set-data-address lines show the address sent. If the boot ROM won't start it there, try 0x80360000 first.",
+      "The load address is 0x80360000: the address the official tools send (kendryte/k230_flash 33a75f0, kburn_k230.h:31 default, k230_flash.cpp:403; the CLI accepts 0x80300000 to 0x80400000, lines 109-121). Gaia's burner links at 0x80300000 (kendryte/k230_sdk 7e302f7, k230d_canmv_burntool_defconfig:2 CONFIG_SYS_TEXT_BASE), which the tools never send. That the burner runs from 0x80360000 without relocation is inferred, not documented. Plug-in check: the set-data-address line in the trace shows the value sent; if the burner does not start there, try 0x80300000 (its link address) next.",
       "Which of the two USB-C ports is the OTG data port, and whether a BOOT key exists (the page names a function key and a reset key only).",
       "Whether the boot ROM wants Canaan's K230 firmware header on the burner over USB (k230_flash sends it raw).",
       "The medium codes are settled by Canaan's k230_flash source (kburn.h:39-44): EMMC 1, SD 2, SPI-NAND 3, SPI-NOR 4 (the record's SD 2 and SPI-NAND 3 agree). Its probe (DEV_PROBE) and info replies are logged in hex on the first run.",

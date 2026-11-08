@@ -12,7 +12,7 @@
       "size": 3697,
       "licence": "BSD-2-Clause",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/bpi-canmv-k230d-zero/k230_flash-33a75f0/kburn_k230.h",
+      "local": "/mnt/ssd-samsung/atlas-blobs/bpi-canmv-k230d-zero/k230_flash-33a75f0/kburn_k230.h",
       "note": "BROM requests (EP0_*), endpoints 0x01/0x81, default load address 0x80360000, medium info struct."
     },
     {
@@ -25,7 +25,7 @@
       "size": 5011,
       "licence": "BSD-2-Clause",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/bpi-canmv-k230d-zero/k230_flash-33a75f0/burner_brom.cpp",
+      "local": "/mnt/ssd-samsung/atlas-blobs/bpi-canmv-k230d-zero/k230_flash-33a75f0/burner_brom.cpp",
       "note": "Boot ROM stage: set data address, 1000-byte bulk chunks, PROG_START."
     },
     {
@@ -38,7 +38,7 @@
       "size": 34539,
       "licence": "BSD-2-Clause",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/bpi-canmv-k230d-zero/k230_flash-33a75f0/burner_uboot.cpp",
+      "local": "/mnt/ssd-samsung/atlas-blobs/bpi-canmv-k230d-zero/k230_flash-33a75f0/burner_uboot.cpp",
       "note": "60-byte kburn packet (6-byte header cmd/result/data_size + 54 data), command codes, result codes, probe/erase/write/read/verify/reboot."
     },
     {
@@ -51,7 +51,7 @@
       "size": 2062,
       "licence": "BSD-2-Clause",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/bpi-canmv-k230d-zero/k230_flash-33a75f0/probe_device.cpp",
+      "local": "/mnt/ssd-samsung/atlas-blobs/bpi-canmv-k230d-zero/k230_flash-33a75f0/probe_device.cpp",
       "note": "GET_CPU_INFO vendor request returns 'K230' (BROM) or 'Uboot Stage for K230'."
     },
     {
@@ -64,7 +64,7 @@
       "size": 11692,
       "licence": "BSD-2-Clause",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/bpi-canmv-k230d-zero/k230_flash-33a75f0/kburn.cpp",
+      "local": "/mnt/ssd-samsung/atlas-blobs/bpi-canmv-k230d-zero/k230_flash-33a75f0/kburn.cpp",
       "note": "VID 0x29f1 PID 0x0230 (kburn.h:205-206, kburn.cpp:403-447). Other files in the same directory: kburn.h f1b620411800ddd4e30a3986ef595c0fd6f528eb7a83722e0f5f3e0335ea5b4e, burner.cpp 43c14f8c994a7b20196e23b49589710b6d534bcf55c4ff0fe37b7128ff71c743, k230_flash.cpp d5f843025a3795e3ab10d9ed67fb85b28c96f96f7a05dee60cd6983c99d62949, README_en.md 31e1d77dc4b5c24319dd7dc7bc1911ee88533aad20da4923d22130af65383168, LICENSE 0984b6615b4b21d8639a5981f004fac5d92ccc09fa9c4f8404764ed144ed4732."
     }
   ]

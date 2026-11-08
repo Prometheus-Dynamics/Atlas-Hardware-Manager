@@ -10,7 +10,7 @@
   "platform": { "soc": "RK3576", "arch": "aarch64" },
   "identity": { "identity_port": 5899 },
   "recovery": {
-    "usb_boot": { "vid": "2207", "pid": "350e", "pid_unconfirmed": true },
+    "usb_boot": { "vid": "2207", "pid": "350e" },
     "method": "rockusb",
     "storage_target": "emmc",
     "storage_target_evidence": [
@@ -30,7 +30,7 @@
       "image_offset": 0
     },
     "todo": [
-      "The maskrom PID: 2207:350e for RK3576 is in no text source (rkdeveloptool's table stops before it; Gaia found none either), so it's marked pid_unconfirmed: a Rockchip in maskrom whose PID no record names and no chip claims is offered as this board, and its loader must report chip RK3576 before anything is written (a chip it can't read stops the flash too). Confirm with lsusb on the board and drop pid_unconfirmed.",
+      "The maskrom PID 2207:350e for RK3576 is confirmed by vendor sources: Radxa's ROCK 4D maskrom page (radxa-docs/docs rock4/rock4d/hardware-use/maskrom.md:52) shows rkdeveloptool ld printing Vid=0x2207,Pid=0x350e Maskrom, and U-Boot's rk3576_common_def.h:79 gives CONFIG_ROCKUSB_G_DNL_PID 0x350e (rockchip-linux/u-boot next-dev 1c535d6). Still confirm with lsusb on the board.",
       "The rkbin parts are in fetch.lock (not in git): rkbin 3e288fe's RK3576MINIALL.ini is a three-part loader (rk3576_boost_v1.03, rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.13, rk3576_spl_v1.09, with rk3576_usbplug_v1.04 in maskrom) that boot_merger merges into rk3576_loader_v1.13.109.bin. rkbin doesn't publish the merged file; Gaia's build is its source.",
       "The loader file: rk3576_loader_v1.13.109.bin (rkbin 3e288fe; idblock rk3576_idblock_v1.13.109.img), which Gaia's ROCK 4D build (006284a) copies next to sdcard.img. Atlas reads it: chip 3576, a 4 KiB FlashHead (RKNS) whose table lays out FlashBoost, FlashData and FlashBoot; the idblock Atlas builds follows it. Gaia's sdcard.img carries its own idblock (RKNS, unscrambled) at sector 64. Radxa ships it as rk3576_spl_loader_v*.bin; both names match.",
       "The maskrom steps: taken from the ROCK 4AB SE guide (same button, a different board); the 4D's own page didn't load.",

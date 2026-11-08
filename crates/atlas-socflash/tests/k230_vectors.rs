@@ -322,14 +322,15 @@ async fn reads_come_back_as_whole_blocks_cut_to_the_request() {
 
 #[test]
 fn the_record_agrees_with_the_c_source() {
-    // The record's facts: flash.load_address 0x80300000 sits inside the
-    // range F:109 accepts, differs from the tool's own default (F:403), and
-    // storage "sd" is medium 2 (K:41 KBURN_MEDIUM_SDCARD).
+    // The record's facts: flash.load_address 0x80360000 is the tools' own
+    // default (kburn_k230.h:31, k230_flash.cpp:403) and sits inside the range
+    // the CLI accepts (k230_flash.cpp:109-121); storage "sd" is medium 2
+    // (kburn.h:39-44 KBURN_MEDIUM_SDCARD).
     let record = include_str!("../../../devices/bpi-canmv-k230d-zero/manifest.json");
-    assert!(record.contains("\"load_address\": \"0x80300000\""));
+    assert!(record.contains("\"load_address\": \"0x80360000\""));
     assert!(record.contains("\"storage\": \"sd\""));
-    assert!(bootrom::LOAD_ADDRESS_RANGE.contains(&0x8030_0000));
-    assert_ne!(bootrom::DEFAULT_LOAD_ADDRESS, 0x8030_0000);
+    assert!(bootrom::LOAD_ADDRESS_RANGE.contains(&0x8036_0000));
+    assert_eq!(bootrom::DEFAULT_LOAD_ADDRESS, 0x8036_0000);
     for (name, code) in [
         ("emmc", 1u8),
         ("sd", 2),

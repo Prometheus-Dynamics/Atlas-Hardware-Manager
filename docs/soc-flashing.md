@@ -86,7 +86,7 @@ device, so no Rockchip PID needs a rule of its own. K230 is `29f1:0230`.
 ## Checked against the vendor source
 
 The vendor source is rkdeveloptool 304f073 and k230_flash 33a75f0, fetched
-into `/mnt/nvme-wd/atlas-blobs/` (not the repo). Checked there:
+into `/mnt/ssd-samsung/atlas-blobs/` (not the repo). Checked there:
 
 - The maskrom download (RKComm.cpp:811-882): the pad byte is zero, the CRC-16
   covers the padded payload, 4096-byte requests, and the lone trailing byte
@@ -110,6 +110,20 @@ into `/mnt/nvme-wd/atlas-blobs/` (not the repo). Checked there:
 walks a Rockchip flash against a mock board (`rockchip::sim`): the loader's
 DDR init and usbplug, the chip check, the storage read back, the flash
 info, the image written and read back, and a reset. No USB device is used.
+The same run is `atlas flash --dry-run --loader LOADER --image IMAGE
+[--chip CHIP] [--storage emmc|sd|spi-nor]` in the CLI (CLI only: the desktop
+app's flash has no dry run). The mock keeps the image in memory.
+
+## The merged loader
+
+`rockchip::merge` builds the merged loader from an RKBOOT ini and its parts,
+as rockchip-linux/u-boot's `tools/rockchip/boot_merger.c` lays it out. It
+rebuilds Radxa's published `rk3588_spl_loader_v1.08.111.bin` byte for byte,
+given the release time the file carries (the C reads that from the clock).
+Gaia's own merged loaders are not reachable, so they are not checked; the
+Gaia build still runs rkbin's `boot_merger` and that file is the one Atlas
+uses. Refused, not guessed: `NEWIDB=false`, the `LOADERn_PARAM` sections
+(RK3576), `ALIGN`, `CRC_OFF`.
 
 Every transfer goes through `traced::Traced`: the request and the reply in
 hex (the first 64 bytes, with the length), one line each, at target
@@ -256,7 +270,9 @@ each record's `todo`.
 
 - **Rockchip:**
   - the CSW residue's byte order (Atlas ignores the residue);
-  - RK3576's maskrom PID;
+  - RK3562's maskrom PID: 2207:350d is inferred from U-Boot's rockusb PID
+    (the same value as the maskrom PID on every SoC checked); no source names
+    it (RK3576's 350e is confirmed by Radxa's maskrom page);
   - whether the RV1106 boot ROM runs its 471/472 entries as stored (rkbin's
     ini and rkdeveloptool say so; no reply shows it);
   - the chip reply for the chips newer than rkdeveloptool's enum (RK3588,
@@ -266,8 +282,9 @@ each record's `todo`.
     no block as bad itself), and its CHANGE_STORAGE id (rkdeveloptool's
     usage lists only 1, 2 and 9).
 - **K230:**
-  - whether the boot ROM starts Gaia's burner (plain u-boot.bin) at
-    0x80300000, where it links (k230_flash's default is 0x80360000);
+  - whether the burner (linked at 0x80300000, kendryte/k230_sdk) runs when
+    the tools' own address, 0x80360000, is sent; the record uses 0x80360000
+    (kburn_k230.h:31) and falls back to 0x80300000 if the burner won't start;
   - whether the boot ROM wants Canaan's firmware header over USB;
   - whether the burner's VERIFY reply keeps the C layout (48 bytes,
     burner_uboot.cpp:369-432); if the burner can't checksum, Atlas logs

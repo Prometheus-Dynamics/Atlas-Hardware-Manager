@@ -12,7 +12,7 @@
       "size": 79536,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-4d/rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.13.bin",
+      "local": "/mnt/ssd-samsung/atlas-blobs/radxa-rock-4d/rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.13.bin",
       "note": "CODE471 and FlashData (LOAD_ADDR 0x3FF81000) entry of RKBOOT/RK3576MINIALL.ini."
     },
     {
@@ -25,7 +25,7 @@
       "size": 340232,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-4d/rk3576_usbplug_v1.04.bin",
+      "local": "/mnt/ssd-samsung/atlas-blobs/radxa-rock-4d/rk3576_usbplug_v1.04.bin",
       "note": "CODE472 entry of RKBOOT/RK3576MINIALL.ini."
     },
     {
@@ -38,7 +38,7 @@
       "size": 2604,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-4d/rk3576_boost_v1.03.bin",
+      "local": "/mnt/ssd-samsung/atlas-blobs/radxa-rock-4d/rk3576_boost_v1.03.bin",
       "note": "FlashBoost (LOAD_ADDR 0x3FFC0000) entry of RKBOOT/RK3576MINIALL.ini; part of the 3-stage loader."
     },
     {
@@ -51,7 +51,7 @@
       "size": 331376,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-4d/rk3576_spl_v1.09.bin",
+      "local": "/mnt/ssd-samsung/atlas-blobs/radxa-rock-4d/rk3576_spl_v1.09.bin",
       "note": "FlashBoot entry of RKBOOT/RK3576MINIALL.ini. The merged rk3576_loader_v1.13.109.bin is a boot_merger output and is NOT published in rkbin at this commit."
     },
     {
@@ -64,7 +64,7 @@
       "size": 724,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-4d/RK3576MINIALL.ini",
+      "local": "/mnt/ssd-samsung/atlas-blobs/radxa-rock-4d/RK3576MINIALL.ini",
       "note": "Names boost v1.03, ddr v1.13, usbplug v1.04, spl v1.09, output rk3576_loader_v1.13.109.bin and rk3576_idblock_v1.13.109.img; CRC_OFF=true, RC4_OFF=true."
     }
   ]

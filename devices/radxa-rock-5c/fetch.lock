@@ -12,7 +12,7 @@
       "size": 75320,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-5c/rk3588_ddr_lp4_2112MHz_lp5_2400MHz_v1.18.bin",
+      "local": "/mnt/ssd-samsung/atlas-blobs/radxa-rock-5c/rk3588_ddr_lp4_2112MHz_lp5_2400MHz_v1.18.bin",
       "note": "CODE471 and FlashData entry of RKBOOT/RK3588MINIALL.ini."
     },
     {
@@ -25,7 +25,7 @@
       "size": 90268,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-5c/rk3588_usbplug_v1.11.bin",
+      "local": "/mnt/ssd-samsung/atlas-blobs/radxa-rock-5c/rk3588_usbplug_v1.11.bin",
       "note": "CODE472 entry of RKBOOT/RK3588MINIALL.ini."
     },
     {
@@ -38,7 +38,7 @@
       "size": 239010,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-5c/rk3588_spl_v1.13.bin",
+      "local": "/mnt/ssd-samsung/atlas-blobs/radxa-rock-5c/rk3588_spl_v1.13.bin",
       "note": "FlashBoot entry of RKBOOT/RK3588MINIALL.ini. The merged rk3588_spl_loader_v1.18.113.bin is a boot_merger output and is NOT published in rkbin at this commit."
     },
     {
@@ -51,7 +51,7 @@
       "size": 573,
       "licence": "Rockchip proprietary (rkbin LICENSE)",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-5c/RK3588MINIALL.ini",
+      "local": "/mnt/ssd-samsung/atlas-blobs/radxa-rock-5c/RK3588MINIALL.ini",
       "note": "Names ddr v1.18, usbplug v1.11, spl v1.13, output rk3588_spl_loader_v1.18.113.bin, RC4_OFF=true."
     },
     {
@@ -64,7 +64,7 @@
       "size": 20757,
       "licence": "GPL-2.0",
       "vendored": false,
-      "local": "/mnt/nvme-wd/atlas-blobs/radxa-rock-5c/rkdeveloptool-304f073/RKComm.cpp",
+      "local": "/mnt/ssd-samsung/atlas-blobs/radxa-rock-5c/rkdeveloptool-304f073/RKComm.cpp",
       "note": "Protocol reference for test vectors, text only, never built or run. url and sha256 are RKComm.cpp (maskrom 0x0C request, CRC-CCITT, CBW/CSW); every other file in the list is at the same commit under the same raw base URL, hashes in the same directory by sha256sum."
     }
   ]
