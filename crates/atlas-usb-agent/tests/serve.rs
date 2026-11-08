@@ -96,7 +96,9 @@ fn uploads_jobs_and_their_events() {
     // An image needs its SHA-256, and must match it.
     let image = vec![7u8; 3 << 20];
     let digest = sha256(&image);
-    let (status, _) = request(&agent, "PUT", "/v1/images/test.img", &[], b"x");
+    // (No body on what's refused unread: closing with bytes unread is a reset,
+    // and macOS drops the reply for it.)
+    let (status, _) = request(&agent, "PUT", "/v1/images/test.img", &[], b"");
     assert_eq!(status, 400);
     let wrong = "0".repeat(64);
     let (status, body) = request(
@@ -126,7 +128,7 @@ fn uploads_jobs_and_their_events() {
         "PUT",
         "/v1/images/..%2Fx",
         &[("x-sha256", &digest)],
-        b"x",
+        b"",
     );
     assert_eq!(status, 404);
 
