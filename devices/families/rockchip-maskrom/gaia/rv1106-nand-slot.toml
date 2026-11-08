@@ -1,4 +1,4 @@
-# Luckfox Pico Pro: A/B slots on NAND from the board's side. atlas-ubi
+# RV1106 boards with SPI NAND: A/B slots on NAND from the board's side. atlas-ubi
 # (crates/atlas-ubi in this Atlas repository; Atlas's docs/soc-flashing.md)
 # carries out the slot environments of Gaia's examples/boards/README.md,
 # #nand-slots: `nand-slot` install, trial-check, watchdog and commit. A static
@@ -8,7 +8,7 @@
 # Import it from a source named `atlas`, which it builds from:
 #
 #   imports = [
-#     { source = "atlas", path = "devices/luckfox-pico-pro/gaia/nand-slot.toml" },
+#     { source = "atlas", path = "devices/families/rockchip-maskrom/gaia/rv1106-nand-slot.toml" },
 #   ]
 #
 # Written from Gaia's contract; untested on a board.
@@ -46,7 +46,7 @@ replace = true
 mode = 493 # 0755
 
 [[stage.files]]
-id = "luckfox-nand-slot-init"
+id = "rv1106-nand-slot-init"
 src = "${self}/assets/rootfs/etc/init.d/S00nand-slot"
 dest = "/etc/init.d/S00nand-slot"
 origin = "static-asset"
@@ -57,4 +57,4 @@ kind = "buildroot"
 
 [image.feed]
 install_entries = ["install-atlas-ubi"]
-stage_files = ["luckfox-nand-slot-init"]
+stage_files = ["rv1106-nand-slot-init"]

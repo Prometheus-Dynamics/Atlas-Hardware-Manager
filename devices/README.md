@@ -19,6 +19,8 @@ devices/
     compat.schema.json
     identity.schema.json     the document served by the identity endpoint
     lemnos-board.schema.json Lemnos's board definition (vendored from the pinned Lemnos)
+  common/board-lite/gaia/    board-lite for boards without the board OS: identity.toml,
+                             plus aarch64/armv7/riscv64.toml; device.toml picks one
   tools/gen-board.py         render a package's config from its manifest; --check lints
   tools/board_lemnos.py      its lemnosd board.toml renderer and validator
   tools/test-all.sh          every test under devices/, in parallel

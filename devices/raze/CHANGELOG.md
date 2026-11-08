@@ -7,6 +7,12 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **board-lite is one shared layer (2026-11-08).** `devices/common/board-lite`
+  holds the identity layer and its init script, with one file per architecture;
+  each board's `device.toml` imports its architecture and names its model. The
+  NAND slot layer moved to the Rockchip family
+  (`families/rockchip-maskrom/gaia/rv1106-nand-slot.toml`). Importing a board's
+  `device.toml` is unchanged.
 - **`gen-raze.py` is `gen-board.py <pkg>` (2026-11-08)**, and `raze_lemnos.py`
   is `board_lemnos.py`. The output files are unchanged apart from comments and
   board.toml's `generated_by`.

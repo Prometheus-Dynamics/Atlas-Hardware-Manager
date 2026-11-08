@@ -5,7 +5,14 @@
 #   imports = [
 #     { source = "atlas", path = "devices/radxa-rock-5c/gaia/device.toml" },
 #   ]
+# Network: DHCP on eth0 (BR2_SYSTEM_DHCP).
+# Written from Atlas's contract; untested on a board.
 config = 3
 gaia_version = ">=2.0.0"
 
-imports = ["identity.toml"]
+imports = ["../../common/board-lite/gaia/aarch64.toml"]
+
+[inputs.board_lite_model]
+description = "The model board-lite reports"
+kind = "string"
+default = "radxa-rock-5c"

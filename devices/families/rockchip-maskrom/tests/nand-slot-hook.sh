@@ -1,7 +1,7 @@
 #!/bin/sh
 # Off-device test of /etc/init.d/S00nand-slot: trial-check, then the watchdog
 # in the background with the deadline; a stale trial is said; nothing a stub
-# does can stop the boot. Run: sh devices/luckfox-pico-pro/tests/nand-slot-hook.sh
+# does can stop the boot. Run: sh devices/families/rockchip-maskrom/tests/nand-slot-hook.sh
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)

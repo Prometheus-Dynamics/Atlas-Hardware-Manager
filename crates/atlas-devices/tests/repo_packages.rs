@@ -357,18 +357,20 @@ fn board_records_with_an_identity_carry_board_lite_for_their_arch() {
         let model = manifest.model.as_str();
         with_identity.push(model.to_string());
         assert_eq!(manifest.identity.identity_port, Some(5899), "{model}");
-        let gaia = package.dir.join("gaia");
-        let read = |path: &str| {
-            std::fs::read_to_string(gaia.join(path))
-                .unwrap_or_else(|error| panic!("{model}: {path}: {error}"))
-        };
-        assert!(read("device.toml").contains("\"identity.toml\""), "{model}");
-        let recipe = read("identity.toml");
+        let device = std::fs::read_to_string(package.dir.join("gaia/device.toml")).expect(model);
+        assert!(
+            device.contains(&format!("default = \"{model}\"")),
+            "{model}: names itself to board-lite"
+        );
         let arch = manifest
             .platform
             .as_ref()
             .and_then(|platform| platform.arch.as_deref())
             .expect(model);
+        let layer = format!("common/board-lite/gaia/{arch}.toml");
+        assert!(device.contains(&format!("\"../../{layer}\"")), "{model}");
+        let recipe = std::fs::read_to_string(package.dir.join("../").join(&layer))
+            .unwrap_or_else(|error| panic!("{model}: {layer}: {error}"));
         let target = match arch {
             "aarch64" => "aarch64-unknown-linux-musl",
             "armv7" => "armv7-unknown-linux-musleabihf",
@@ -383,8 +385,6 @@ fn board_records_with_an_identity_carry_board_lite_for_their_arch() {
             // This target links dynamically unless asked not to.
             assert!(recipe.contains("+crt-static"), "{model}");
         }
-        let init = read("assets/rootfs/etc/init.d/S41board-lite");
-        assert!(init.contains(&format!("--model {model} ")), "{model}");
     }
     with_identity.sort();
     assert_eq!(

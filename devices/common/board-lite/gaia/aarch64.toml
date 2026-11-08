@@ -1,0 +1,25 @@
+# board-lite for aarch64 boards. A static aarch64 musl binary.
+config = 3
+gaia_version = ">=2.0.0"
+
+imports = ["identity.toml"]
+
+[providers.rust]
+allow_nested_build = true
+
+[[artifacts]]
+id = "board-lite"
+kind = "rust"
+source = "atlas"
+package = "board-lite"
+target = "aarch64-unknown-linux-musl"
+profile = "device-small"
+target_name = "board-lite"
+install_name = "board-lite"
+install_class = "binary"
+install_dest_hint = "/usr/sbin/board-lite"
+output_path = "${outputs.dir}/artifacts/board-lite/board-lite"
+build_env = [["CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER", "rust-lld"]]
+
+[artifacts.execution]
+backend = "host"
