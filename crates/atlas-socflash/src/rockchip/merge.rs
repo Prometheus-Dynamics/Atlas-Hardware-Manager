@@ -24,7 +24,7 @@
 //! is marked UNCONFIRMED below.
 //!
 //! Gaia's loaders from boot_merger 1.35 and 1.38 (rock-5c rk3588, rock-4d
-//! rk3576, zero-3w rk356x, aio-3562jq rk3562, luckfox rv1106) add, all read
+//! rk3576, zero-3w rk356x, luckfox rv1106) add, all read
 //! off those files and absent from the C: `ALIGN`, `LOADERn_PARAM`,
 //! `BOOT1_PARAM` words, `CREATE_IDB`/`IDB_PATH` (see [`merge_full`]) and the
 //! header's byte 46. They are rebuilt byte for byte in

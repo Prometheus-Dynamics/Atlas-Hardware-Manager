@@ -15,7 +15,6 @@
       "../../../devices/radxa-rock-5c/manifest.json": "devices/radxa-rock-5c/manifest.json",
       "../../../devices/radxa-rock-4d/manifest.json": "devices/radxa-rock-4d/manifest.json",
       "../../../devices/radxa-zero-3w/manifest.json": "devices/radxa-zero-3w/manifest.json",
-      "../../../devices/firefly-aio-3562jq/manifest.json": "devices/firefly-aio-3562jq/manifest.json",
       "../../../devices/luckfox-pico-pro/manifest.json": "devices/luckfox-pico-pro/manifest.json",
       "../../../devices/bpi-canmv-k230d-zero/manifest.json": "devices/bpi-canmv-k230d-zero/manifest.json"
     },

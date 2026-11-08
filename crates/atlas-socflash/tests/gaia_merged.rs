@@ -152,22 +152,6 @@ fn zero_3w_rk356x_loader_v1_23_114() {
 }
 
 #[test]
-fn aio_3562jq_rk3562_loader_and_idblock_v1_10_108() {
-    check(&Board {
-        gaia: "aio-3562jq",
-        blobs: "firefly-aio-3562jq",
-        ini: "RK3562MINIALL.ini",
-        loader: "rk3562_loader_v1.10.108.bin",
-        loader_sha256: "7fd93fa43afedc29e42a4c4d8efecf4ddc5b4c96f68a21a09d1db2b0807c68d9",
-        idblock: Some((
-            "idblock.img",
-            "5c9ad17c4a3905831b8efc5fe18914ff0a5c8c9a9ba8322a6b1d91056a0134fd",
-        )),
-        spl: None,
-    });
-}
-
-#[test]
 fn luckfox_pico_pro_rv1106_loader_and_idblock_with_the_sdk_spl() {
     check(&Board {
         gaia: "luckfox-pico-pro",

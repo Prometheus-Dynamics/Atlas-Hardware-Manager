@@ -10,7 +10,6 @@ board.** The boards are on order. Each board record says
 | Radxa ROCK 5C | RK3588S2 | maskrom 2207:350b | eMMC | `devices/radxa-rock-5c` |
 | Radxa ROCK 4D | RK3576 | maskrom 2207:350e (a guess: `pid_unconfirmed`) | eMMC | `devices/radxa-rock-4d` |
 | Radxa ZERO 3W | RK3566 | maskrom 2207:350a (shared with RK3568) | eMMC | `devices/radxa-zero-3w` |
-| Firefly AIO-3562JQ | RK3562J | maskrom 2207:350f (a guess: `pid_unconfirmed`) | eMMC | `devices/firefly-aio-3562jq` |
 | Luckfox Pico Pro | RV1106G2 (Flame's SoC) | maskrom 2207:110c | SPI-NAND, 128 MB | `devices/luckfox-pico-pro` |
 | BPI-CanMV-K230D-Zero | K230D | USB boot 29f1:0230 | microSD | `devices/bpi-canmv-k230d-zero` |
 
@@ -73,8 +72,7 @@ test keeps the installer's list and that one together. Rockchip's loader
 mode is assumed to keep its maskrom PID, as rkdeveloptool's table has it.
 
 **Open:** `SOC_BOOT_IDS` has no RK3566 entry (2207:350a, the ZERO 3W's; it's
-in rkdeveloptool's `99-rk-rockusb.rules`, line 18) and none for RK3562 (its
-PID is a guess). Adding 350a needs the installer's list too: an
+in rkdeveloptool's `99-rk-rockusb.rules`, line 18). Adding 350a needs the installer's list too: an
 `ATLAS_BIND_WINUSB` line in `apps/desktop/src-tauri/bundle/windows/hooks.nsh`,
 which a test in `apps/desktop/src-tauri/src/drivers.rs` checks against the
 list. That is outside the socflash work.
@@ -270,13 +268,10 @@ each record's `todo`.
 
 - **Rockchip:**
   - the CSW residue's byte order (Atlas ignores the residue);
-  - RK3562's maskrom PID: 2207:350d is inferred from U-Boot's rockusb PID
-    (the same value as the maskrom PID on every SoC checked); no source names
-    it (RK3576's 350e is confirmed by Radxa's maskrom page);
   - whether the RV1106 boot ROM runs its 471/472 entries as stored (rkbin's
     ini and rkdeveloptool say so; no reply shows it);
   - the chip reply for the chips newer than rkdeveloptool's enum (RK3588,
-    RK3576, RK3562, RK3566, RV1106): Atlas reads it as reversed ASCII, as the
+    RK3576, RK3566, RV1106): Atlas reads it as reversed ASCII, as the
     loader header carries the number;
   - SPI-NAND: how the usbplug maps LBAs (Atlas assumes directly; it reads
     no block as bad itself), and its CHANGE_STORAGE id (rkdeveloptool's
