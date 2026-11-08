@@ -472,7 +472,7 @@ def render_hardware_env(manifest: dict) -> str:
         ("HW_FAN_TACH", 1 if fan_tachometer(manifest) else 0),
         ("HW_CAMERA_PART", cam["part"]),
         ("HW_CAMERA_SENSOR", cam["sensor"]),
-        ("HW_CAMERA_DRIVER", cam["kernel_driver"]),
+        ("HW_CAMERA_DRIVER", " ".join([cam["kernel_driver"], *cam.get("kernel_driver_alternatives", [])])),
         ("HW_CAMERA_ADDRESS", hexaddr(cam["i2c"]["address"])),
         ("HW_CAMERA_RECEIVER", cam["csi"]["receiver_driver"]),
         ("HW_I2C_DEVICES", devices),

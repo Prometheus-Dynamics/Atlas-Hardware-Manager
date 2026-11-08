@@ -29,7 +29,10 @@ description = "Raze supported hardware: what an image must carry for each device
 [[image.hardware]]
 id = "ov9782"
 kind = "camera-sensor"
-modules = ["ov9282"]
+# Any shipped driver may claim it: ov9282 on images that use the kernel's
+# patched driver, lemnos-ov9782 on images that turn that off (kernel.toml). An
+# OS can name its own in an entry of its own.
+modules = []
 compatible = ["ovti,ov9782"]
 overlays = ["ov9782"]
 files = []

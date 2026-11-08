@@ -100,6 +100,22 @@ out=$(selftest --json)
 check_message "$out" fan | grep -q " 1500 1500 1500 1500 1500 rpm" || fail "a wired tach is read: $(check_message "$out" fan)"
 rm -f "$T/etc/hardware.env" "$S/class/hwmon/hwmon2/fan1_input"
 
+echo "the camera may be bound to any driver the package lists"
+mkdir -p "$T/etc" "$S/bus/i2c/drivers/lemnos-ov9782"
+ln -sfn ../../drivers/lemnos-ov9782 "$S/bus/i2c/devices/10-0060/driver"
+echo "HW_CAMERA_SENSOR=ov9782 HW_CAMERA_DRIVER='ov9282 lemnos-ov9782'" > "$T/etc/hardware.env"
+out=$(FAKE_CAMERA_ENTITY='ov9782 10-0060' selftest --json)
+check_status "$out" camera ok
+check_data "$out" camera | grep -q '"driver": "lemnos-ov9782"' || fail "the bound driver: $(check_data "$out" camera)"
+check_message "$out" camera | grep -q 'in the media graph' || fail "the media graph: $(check_message "$out" camera)"
+# Matched by the second name alone, when the sensor name doesn't help.
+echo "HW_CAMERA_SENSOR=other HW_CAMERA_DRIVER='ov9282 lemnos-ov9782'" > "$T/etc/hardware.env"
+out=$(FAKE_CAMERA_ENTITY='lemnos-ov9782 10-0060' selftest --json)
+check_status "$out" camera ok
+check_message "$out" camera | grep -q 'in the media graph' || fail "by driver name: $(check_message "$out" camera)"
+rm -f "$T/etc/hardware.env"
+ln -sfn ../../drivers/ov9282 "$S/bus/i2c/devices/10-0060/driver"
+
 echo "the fan is handed back: state and governor as before"
 [ "$(cat "$S/class/thermal/cooling_device1/cur_state")" = 1 ] || fail "cur_state not restored"
 [ "$(cat "$S/class/thermal/thermal_zone0/mode")" = enabled ] || fail "thermal zone left disabled"

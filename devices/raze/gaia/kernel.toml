@@ -36,7 +36,9 @@ config_overrides = [
   # external.mk, so they always win. Empty by default, which also drops the
   # defconfig's linux-4k-page-size.fragment.
   ["BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES", "\"\""],
-  # OV9782 as a variant of the upstream ov9282 driver (VIDEO_OV9282=m).
+  # OV9782 as a variant of the upstream ov9282 driver (VIDEO_OV9282=m). An OS
+  # that ships its own OV9782 driver sets this to "n", and the kernel then has
+  # no driver for the sensor (linux-ext-ov9782.mk).
   ["BR2_LINUX_KERNEL_EXT_OV9782", "y"],
   ["BR2_PACKAGE_RPI_FIRMWARE", "y"],
   # The firmware's overlay set, for OS-level overlays. The ones raze-device.txt

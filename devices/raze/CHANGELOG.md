@@ -51,6 +51,13 @@ OSes pin this layer by commit; the commits are listed per area.
   Stage ids of the moved files are now `board-*`. `devices/tools/sync-device.sh`
   is gone (nothing vendors a package now); every test runs from
   `devices/tools/test-all.sh`.
+- **An OS can ship its own OV9782 driver (2026-11-08).** Setting
+  `BR2_LINUX_KERNEL_EXT_OV9782` to `n` leaves the kernel's `ov9282.c` unpatched
+  and turns `VIDEO_OV9282` off, so nothing in the kernel claims `ovti,ov9782`.
+  The default stays on, so an image that doesn't set it (PhotonVision) is
+  unchanged. The self-test accepts `lemnos-ov9782` as well as `ov9282`
+  (`kernel_driver_alternatives`), and the hardware list no longer names the
+  module. The stock overlays are built whatever the option says.
 - **4 MB back from block integrity (2026-11-08).** `CONFIG_BLK_DEV_INTEGRITY`
   is off (a 4,096 kB mempool from `bio_integrity_initfn`, seen with
   page_owner), and `CONFIG_DM_INTEGRITY`, which selects it. Nothing on the

@@ -424,6 +424,7 @@
             },
             "overlay": { "type": "string" },
             "kernel_driver": { "type": "string" },
+            "kernel_driver_alternatives": { "type": "array", "items": { "type": "string" } },
             "kernel_compatible": { "type": "string" },
             "tuning": { "type": "array", "items": { "type": "string" } },
             "lens": {

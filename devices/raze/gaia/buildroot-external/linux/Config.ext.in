@@ -3,3 +3,5 @@ config BR2_LINUX_KERNEL_EXT_OV9782
 	help
 	  Patch and enable the upstream OV9282 V4L2 sensor driver with
 	  OV9782 variant support in the Linux kernel built by Buildroot.
+	  Leave off when the image ships its own OV9782 driver: VIDEO_OV9282
+	  is then turned off, so nothing in the kernel claims the sensor.

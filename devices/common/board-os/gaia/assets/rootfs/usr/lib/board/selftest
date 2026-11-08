@@ -355,10 +355,13 @@ check_camera() {
 	sensor=${HW_CAMERA_SENSOR:-unknown}
 	driver=${HW_CAMERA_DRIVER:-ov9282}
 	list=$(hw_camera_list "$addr")
-	client=$(printf '%s\n' "$list" | awk -v s="$sensor" -v d="$driver" '$1 == "i2c" && ($2 == s || $4 == d) { print $3 " " $4; exit }')
-	media=$(printf '%s\n' "$list" | awk -v s="$sensor" -v d="$driver" '$1 == "media" && (index($4, s) || index($4, d)) { print $2; exit }')
+	# HW_CAMERA_DRIVER is a list: an image binds one of them.
+	names_driver='function names_driver(x, n, a, i) { n = split(d, a, " "); for (i = 1; i <= n; i++) if (index(x, a[i])) return 1; return 0 }
+'
+	client=$(printf '%s\n' "$list" | awk -v s="$sensor" -v d="$driver" '$1 == "i2c" && ($2 == s || index(" " d " ", " " $4 " ")) { print $3 " " $4; exit }')
+	media=$(printf '%s\n' "$list" | awk -v s="$sensor" -v d="$driver" "$names_driver"'$1 == "media" && (index($4, s) || names_driver($4)) { print $2; exit }')
 	videos=$(printf '%s\n' "$list" | awk -v r="${HW_CAMERA_RECEIVER:-rp1-cfe}" '$1 == "video" && index($3, r) == 1' | wc -l | tr -d ' ')
-	libcam=$(printf '%s\n' "$list" | awk -v s="$sensor" -v d="$driver" '$1 == "libcamera" && (index($2, s) || index($2, d)) { print "yes"; exit }')
+	libcam=$(printf '%s\n' "$list" | awk -v s="$sensor" -v d="$driver" "$names_driver"'$1 == "libcamera" && (index($2, s) || names_driver($2)) { print "yes"; exit }')
 	where=${client%% *}
 	bound=${client#* }
 	data="{\"sensor\":$(js "$sensor"),\"address\":$(($addr)),\"i2c_client\":$(js "$where"),\"driver\":$(js "$bound"),\"media_device\":$(js "$media"),\"receiver_video_nodes\":$videos,\"libcamera\":$(if hw_have cam; then [ -n "$libcam" ] && echo true || echo false; else echo null; fi)}"

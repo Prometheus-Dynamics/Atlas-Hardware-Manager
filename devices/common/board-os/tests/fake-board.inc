@@ -105,7 +105,7 @@ cat > "$T/bin/media-ctl" <<'EOF'
 #!/bin/sh
 printf 'Media controller API version 7.2.9\n\nMedia device information\n------------------------\ndriver          rp1-cfe\nmodel           rp1-cfe\n\n'
 printf -- '- entity 1: csi2 (4 pads, 8 links)\n'
-printf -- '- entity 20: ov9282 10-0060 (1 pad, 1 link)\n'
+printf -- '- entity 20: %s (1 pad, 1 link)\n' "${FAKE_CAMERA_ENTITY:-ov9282 10-0060}"
 EOF
 chmod +x "$T/bin/"*
 

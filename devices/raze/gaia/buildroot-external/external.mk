@@ -95,7 +95,7 @@ endif
 # from images/raze-overlays/.
 RAZE_KERNEL_OVERLAYS = dwc2 i2c1-pi5 ws2812-pio vc4-kms-v3d-pi5 ramoops-pi5
 
-ifeq ($(BR2_LINUX_KERNEL_EXT_OV9782),y)
+ifeq ($(BR2_LINUX_KERNEL),y)
 define RAZE_BUILD_KERNEL_OVERLAYS
 	$(LINUX_MAKE_ENV) $(BR2_MAKE) $(LINUX_MAKE_FLAGS) -C $(LINUX_DIR) \
 		$(foreach o,$(RAZE_KERNEL_OVERLAYS),overlays/$(o).dtbo)

@@ -5,6 +5,13 @@
 # or build the old standalone ov9782.c driver from this extension.
 ################################################################################
 
+# Off (BR2_LINUX_KERNEL_EXT_OV9782 unset): the image's OV9782 driver comes from
+# outside the kernel (HeliOS: Lemnos's lemnos-ov9782.ko), so the kernel isn't
+# patched and VIDEO_OV9282 is turned off, which the CM5 defconfig would
+# otherwise leave on. Nothing in the kernel then claims the sensor.
+
+ifeq ($(BR2_LINUX_KERNEL_EXT_OV9782),y)
+
 OV9782_EXT_DIR := $(dir $(lastword $(MAKEFILE_LIST)))
 
 define OV9782_PREPARE_KERNEL
@@ -34,3 +41,14 @@ define OV9782_ENABLE_CONFIG
 endef
 
 LINUX_POST_CONFIGURE_HOOKS += OV9782_ENABLE_CONFIG$(sep)
+
+else
+
+define OV9782_DISABLE_CONFIG
+	$(LINUX_DIR)/scripts/config --file $(LINUX_DIR)/.config --disable VIDEO_OV9282
+	$(MAKE) -C $(LINUX_DIR) $(LINUX_MAKE_FLAGS) olddefconfig
+endef
+
+LINUX_POST_CONFIGURE_HOOKS += OV9782_DISABLE_CONFIG$(sep)
+
+endif

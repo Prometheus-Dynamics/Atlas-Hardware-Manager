@@ -124,6 +124,7 @@
       },
       "overlay": "ov9782,cam0,clk-continuous",
       "kernel_driver": "ov9282",
+      "kernel_driver_alternatives": ["lemnos-ov9782"],
       "kernel_compatible": "ovti,ov9782",
       "kernel_driver_source": "buildroot-external/linux/ov9782 (ov9282 driver with an ov9782 variant)",
       "libcamera_pipeline": "rpi/pisp",
