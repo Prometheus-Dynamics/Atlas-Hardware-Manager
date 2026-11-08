@@ -23,8 +23,8 @@ use crate::transport::{UsbError, location};
 
 /// k230_flash kburn.h:205-206 (VID 0x29f1 / PID 0x0230); verified against
 /// the C source, not against a board.
-pub const VENDOR_ID: u16 = 0x29f1;
-pub const PRODUCT_ID: u16 = 0x0230;
+pub const VENDOR_ID: u16 = atlas_usb_ids::KENDRYTE_VENDOR_ID;
+pub const PRODUCT_ID: u16 = atlas_usb_ids::K230_BOOT_PRODUCT_ID;
 
 /// The tracing target of every K230 transfer log.
 pub const LOG_TARGET: &str = "atlas_socflash::k230";

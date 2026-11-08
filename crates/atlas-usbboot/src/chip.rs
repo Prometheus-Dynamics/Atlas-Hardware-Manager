@@ -1,7 +1,7 @@
+use atlas_usb_ids::{
+    BCM2711_PRODUCT_ID, BCM2712_PRODUCT_ID, BCM2835_PRODUCT_ID, BCM2837_PRODUCT_ID,
+};
 use serde::{Deserialize, Serialize};
-
-/// Broadcom's USB vendor id, used by every Pi boot ROM.
-pub const BROADCOM_VENDOR_ID: u16 = 0x0a5c;
 
 /// The Pi SoC behind a USB boot device, from its product id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -20,20 +20,20 @@ pub enum Chip {
 impl Chip {
     pub fn from_product_id(product_id: u16) -> Option<Self> {
         match product_id {
-            0x2763 => Some(Self::Bcm2835),
-            0x2764 => Some(Self::Bcm2837),
-            0x2711 => Some(Self::Bcm2711),
-            0x2712 => Some(Self::Bcm2712),
+            BCM2835_PRODUCT_ID => Some(Self::Bcm2835),
+            BCM2837_PRODUCT_ID => Some(Self::Bcm2837),
+            BCM2711_PRODUCT_ID => Some(Self::Bcm2711),
+            BCM2712_PRODUCT_ID => Some(Self::Bcm2712),
             _ => None,
         }
     }
 
     pub fn product_id(self) -> u16 {
         match self {
-            Self::Bcm2835 => 0x2763,
-            Self::Bcm2837 => 0x2764,
-            Self::Bcm2711 => 0x2711,
-            Self::Bcm2712 => 0x2712,
+            Self::Bcm2835 => BCM2835_PRODUCT_ID,
+            Self::Bcm2837 => BCM2837_PRODUCT_ID,
+            Self::Bcm2711 => BCM2711_PRODUCT_ID,
+            Self::Bcm2712 => BCM2712_PRODUCT_ID,
         }
     }
 

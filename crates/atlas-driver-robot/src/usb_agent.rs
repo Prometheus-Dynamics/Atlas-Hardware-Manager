@@ -23,6 +23,7 @@ use atlas_driver::{
     DriverError, Family, Identity, InstallMethod, InstallRequest, LinkId, ProgressSink,
 };
 use atlas_usb_agent::{AgentInfo, PORT, UsbDevice, UsbKind};
+use atlas_usb_ids::{BOARD_GADGET_PRODUCT_ID, BOARD_GADGET_VENDOR_ID, hex};
 
 /// The rpi driver's family: boards in USB boot behind the agent are its.
 const RPI_FAMILY: &str = "rpi";
@@ -118,7 +119,9 @@ pub fn boards(
                     atlas_usb_agent::board_address(&format!("{ip}:{PORT}"), &device.port),
                 ),
                 UsbKind::Other => {
-                    if (device.vendor.as_str(), device.product.as_str()) != ("1d6b", "0104") {
+                    if device.vendor != hex(BOARD_GADGET_VENDOR_ID)
+                        || device.product != hex(BOARD_GADGET_PRODUCT_ID)
+                    {
                         return None;
                     }
                     let name = device.name.as_deref()?;

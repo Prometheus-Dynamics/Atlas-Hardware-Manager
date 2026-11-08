@@ -18,9 +18,9 @@ pub const PROTOCOL: u32 = 1;
 
 /// The flasher's USB identity: as the Raze's own gadget, told apart by its
 /// product string. Its serial is the board serial the boot ROM reported.
-pub const VENDOR_ID: u16 = 0x1d6b;
-pub const PRODUCT_ID: u16 = 0x0104;
-pub const PRODUCT: &str = "Raze flasher";
+pub const VENDOR_ID: u16 = atlas_usb_ids::BOARD_GADGET_VENDOR_ID;
+pub const PRODUCT_ID: u16 = atlas_usb_ids::BOARD_GADGET_PRODUCT_ID;
+pub const PRODUCT: &str = atlas_usb_ids::FLASHER_PRODUCT;
 /// The vendor interface's string, and its class.
 pub const INTERFACE: &str = "atlas-flasher";
 pub const INTERFACE_CLASS: u8 = 0xff;

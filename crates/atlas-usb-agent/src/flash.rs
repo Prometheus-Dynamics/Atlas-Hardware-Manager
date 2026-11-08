@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use atlas_blockdev::{Disk, DiskTarget, ResumePolicy, WriteOptions, WriteProgress};
 use atlas_usb_agent::{Event, UsbDevice, UsbKind};
+use atlas_usb_ids::{BROADCOM_VENDOR_ID, STORAGE_GADGET_PRODUCT_ID, hex};
 use atlas_usbboot::{BootEvent, BootFiles, BootOptions};
 
 use crate::claim::{self, Claim};
@@ -24,8 +25,6 @@ const DISK_POLL: Duration = Duration::from_millis(500);
 /// reset, or a fall back to its ROM and a new USB boot.
 const REATTACH_TIMEOUT: Duration = Duration::from_secs(180);
 const REATTACH_POLL_MAX: Duration = Duration::from_secs(4);
-/// Raspberry Pi's mass-storage gadget, the only USB device written.
-const GADGET_IDS: (&str, &str) = ("0a5c", "0104");
 const USB_DEVICES: &str = "/sys/bus/usb/devices";
 
 /// Where a flash's events go.
@@ -111,8 +110,11 @@ pub(crate) fn usb_devices() -> Vec<UsbDevice> {
     found
 }
 
+/// Raspberry Pi's mass-storage gadget, the only USB device written.
 fn is_gadget(port: &str) -> bool {
-    usb_ids(port).is_some_and(|(vendor, product)| (vendor.as_str(), product.as_str()) == GADGET_IDS)
+    usb_ids(port).is_some_and(|(vendor, product)| {
+        vendor == hex(BROADCOM_VENDOR_ID) && product == hex(STORAGE_GADGET_PRODUCT_ID)
+    })
 }
 
 /// The Pi gadget's disk on `port`, when it shows.
@@ -265,7 +267,9 @@ pub(crate) async fn flash(
         }
         None => {
             match usb_ids(&flash.port) {
-                Some((vendor, product)) if vendor == "0a5c" && product != GADGET_IDS.1 => {}
+                Some((vendor, product))
+                    if vendor == hex(BROADCOM_VENDOR_ID)
+                        && product != hex(STORAGE_GADGET_PRODUCT_ID) => {}
                 Some((vendor, product)) => {
                     return Err(format!(
                         "USB {} is {vendor}:{product}, not a Raspberry Pi in USB boot",

@@ -22,6 +22,7 @@ use std::time::Duration;
 
 use atlas_devices::{DeviceManifest, NotRecognized, Recognized, Seen};
 use atlas_driver::{DeviceKey, DeviceMode, DriverError, Identity, LinkId};
+use atlas_usb_ids::{BOARD_GADGET_PRODUCT_ID, BOARD_GADGET_VENDOR_ID};
 
 use crate::http_probe::{HttpProbe, OpenPorts};
 
@@ -52,8 +53,8 @@ pub fn usb_address() -> Ipv4Addr {
 
 /// A SystemCore's USB gadget, by its descriptor strings.
 pub fn is_systemcore_gadget(vendor: u16, product: u16, manufacturer: Option<&str>) -> bool {
-    vendor == 0x1d6b
-        && product == 0x0104
+    vendor == BOARD_GADGET_VENDOR_ID
+        && product == BOARD_GADGET_PRODUCT_ID
         && manufacturer.is_some_and(|m| m.trim().eq_ignore_ascii_case("limelight"))
 }
 

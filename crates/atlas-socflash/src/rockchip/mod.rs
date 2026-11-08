@@ -19,7 +19,7 @@ pub mod write;
 
 use crate::transport::{UsbError, location};
 
-pub const VENDOR_ID: u16 = 0x2207;
+pub const VENDOR_ID: u16 = atlas_usb_ids::ROCKCHIP_VENDOR_ID;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]

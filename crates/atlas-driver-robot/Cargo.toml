@@ -11,6 +11,7 @@ publish.workspace = true
 description = "Atlas drivers for the FRC robot network's own devices: the robot controller (roboRIO) and the radio (VH-109), read-only and without credentials."
 
 [dependencies]
+atlas-usb-ids.workspace = true
 async-trait.workspace = true
 atlas-devices.workspace = true
 atlas-driver = { workspace = true, features = ["http"] }

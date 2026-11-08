@@ -18,6 +18,7 @@
 use std::collections::BTreeMap;
 
 use atlas_blockdev::WriteProgress;
+use atlas_usb_ids::{BROADCOM_VENDOR_ID, RPI_BOOT_PRODUCT_IDS, STORAGE_GADGET_PRODUCT_ID, hex};
 use serde::{Deserialize, Serialize};
 
 /// The agent's port: in FRC's team range (5800-5810), so the field passes
@@ -108,10 +109,15 @@ pub struct UsbDevice {
 
 impl UsbDevice {
     pub fn kind_of(vendor: &str, product: &str) -> UsbKind {
-        match (vendor, product) {
-            ("0a5c", "2711" | "2712" | "2763" | "2764") => UsbKind::UsbBoot,
-            ("0a5c", "0104") => UsbKind::Gadget,
-            _ => UsbKind::Other,
+        if vendor != hex(BROADCOM_VENDOR_ID) {
+            return UsbKind::Other;
+        }
+        if RPI_BOOT_PRODUCT_IDS.iter().any(|id| product == hex(*id)) {
+            UsbKind::UsbBoot
+        } else if product == hex(STORAGE_GADGET_PRODUCT_ID) {
+            UsbKind::Gadget
+        } else {
+            UsbKind::Other
         }
     }
 }

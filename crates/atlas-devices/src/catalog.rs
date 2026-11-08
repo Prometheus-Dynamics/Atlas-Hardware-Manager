@@ -1,5 +1,8 @@
 use std::path::{Path, PathBuf};
 
+use serde_json::Value;
+
+use crate::ecosystem::{Ecosystem, load_ecosystems};
 use crate::family::load_families;
 use crate::{CONTRACT, CompatList, DeviceManifest, Family, Recovery, Variant};
 
@@ -39,6 +42,7 @@ impl DevicePackage {
 pub struct DeviceCatalog {
     packages: Vec<DevicePackage>,
     families: Vec<Family>,
+    ecosystems: Vec<Ecosystem>,
     warnings: Vec<String>,
 }
 
@@ -179,6 +183,18 @@ impl DeviceCatalog {
                     ));
                 }
             }
+            let (ecosystems, warnings) = load_ecosystems(dir);
+            catalog.warnings.extend(warnings);
+            for ecosystem in ecosystems {
+                if catalog.ecosystem(&ecosystem.ecosystem).is_none() {
+                    catalog.ecosystems.push(ecosystem);
+                } else {
+                    catalog.warnings.push(format!(
+                        "ecosystem {} is defined more than once; the first one is used",
+                        ecosystem.ecosystem
+                    ));
+                }
+            }
         }
         for dir in dirs {
             let Ok(entries) = std::fs::read_dir(dir) else {
@@ -191,7 +207,7 @@ impl DeviceCatalog {
                 .collect();
             folders.sort();
             for folder in folders {
-                match load_package(&folder, &catalog.families) {
+                match load_package(&folder, &catalog.families, &catalog.ecosystems) {
                     Ok(package) => {
                         if catalog.by_model(&package.manifest.model).is_none() {
                             catalog.packages.push(package);
@@ -223,6 +239,17 @@ impl DeviceCatalog {
     /// The family with this id (`family` in a board's manifest).
     pub fn family(&self, id: &str) -> Option<&Family> {
         self.families.iter().find(|family| family.family == id)
+    }
+
+    /// The ecosystem with this id (`ecosystem` in a package's manifest).
+    pub fn ecosystem(&self, id: &str) -> Option<&Ecosystem> {
+        self.ecosystems
+            .iter()
+            .find(|ecosystem| ecosystem.ecosystem == id)
+    }
+
+    pub fn ecosystems(&self) -> &[Ecosystem] {
+        &self.ecosystems
     }
 
     pub fn warnings(&self) -> &[String] {
@@ -288,11 +315,29 @@ fn inherit(recovery: &mut Recovery, family: &Family) {
     }
 }
 
-fn load_package(folder: &Path, families: &[Family]) -> Result<DevicePackage, String> {
+fn load_package(
+    folder: &Path,
+    families: &[Family],
+    ecosystems: &[Ecosystem],
+) -> Result<DevicePackage, String> {
     let manifest_path = folder.join("manifest.json");
     let data = std::fs::read(&manifest_path)
         .map_err(|error| format!("{}: {error}", manifest_path.display()))?;
-    let mut manifest: DeviceManifest = serde_json::from_slice(&data)
+    let mut raw: Value = serde_json::from_slice(&data)
+        .map_err(|error| format!("{}: {error}", manifest_path.display()))?;
+    if let Some(id) = raw.get("ecosystem").and_then(Value::as_str) {
+        let ecosystem = ecosystems
+            .iter()
+            .find(|ecosystem| ecosystem.ecosystem == id)
+            .ok_or_else(|| {
+                format!(
+                    "{}: names ecosystem {id}, which no ecosystem file defines (devices/ecosystem.json)",
+                    manifest_path.display()
+                )
+            })?;
+        ecosystem.inherit_into(&mut raw);
+    }
+    let mut manifest: DeviceManifest = serde_json::from_value(raw)
         .map_err(|error| format!("{}: {error}", manifest_path.display()))?;
     if manifest.contract > CONTRACT {
         return Err(format!(

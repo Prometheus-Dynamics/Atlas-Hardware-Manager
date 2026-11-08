@@ -13,6 +13,7 @@ members = [
     "crates/slot-init",
     "crates/atlas-image-server",
     "crates/atlas-release",
+    "crates/atlas-usb-ids",
     "crates/atlas-usbboot",
     "crates/atlas-flasher-proto",
     "crates/atlas-flasher",
@@ -58,6 +59,7 @@ atlas-driver-orion = { path = "crates/atlas-driver-orion" }
 atlas-driver-robot = { path = "crates/atlas-driver-robot" }
 atlas-image-server = { path = "crates/atlas-image-server" }
 atlas-release = { path = "crates/atlas-release" }
+atlas-usb-ids = { path = "crates/atlas-usb-ids" }
 atlas-usbboot = { path = "crates/atlas-usbboot" }
 atlas-flasher-proto = { path = "crates/atlas-flasher-proto" }
 atlas-flasher = { path = "crates/atlas-flasher" }

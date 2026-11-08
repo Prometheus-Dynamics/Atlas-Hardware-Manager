@@ -24,12 +24,16 @@ mod protocol;
 mod usb;
 
 pub use bootfiles::BootFiles;
-pub use chip::{BROADCOM_VENDOR_ID, Chip};
+pub use chip::Chip;
 pub use error::UsbBootError;
 pub use gadget::{StorageGadget, list_storage_gadgets};
 pub use hotplug::watch_usb;
 pub use protocol::{BootEvent, BootTransport, FileServerOutcome, second_stage};
+// The USB ids live in atlas-usb-ids; these names are kept for the callers.
+pub use atlas_usb_ids::{
+    BROADCOM_VENDOR_ID, LINUX_UDEV_RULE, LINUX_UDEV_RULES_FILE,
+    RPI_BOOT_PRODUCT_IDS as BOOT_PRODUCT_IDS, SOC_BOOT_IDS,
+};
 pub use usb::{
-    BOOT_PRODUCT_IDS, BootDevice, BootOptions, BootOutcome, LINUX_UDEV_RULE, LINUX_UDEV_RULES_FILE,
-    SOC_BOOT_IDS, UsbBootTransport, boot_device, list_boot_devices,
+    BootDevice, BootOptions, BootOutcome, UsbBootTransport, boot_device, list_boot_devices,
 };

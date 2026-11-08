@@ -10,6 +10,8 @@ use nusb::transfer::{
 use nusb::{DeviceInfo, Endpoint, ErrorKind, Interface};
 use serde::Serialize;
 
+use atlas_usb_ids::LINUX_UDEV_RULE;
+
 use crate::protocol::{BootEvent, BootTransport, FileServerOutcome, file_server, second_stage};
 use crate::{BROADCOM_VENDOR_ID, BootFiles, Chip, UsbBootError};
 
@@ -17,62 +19,6 @@ const CONTROL_OUT_TIMEOUT: Duration = Duration::from_secs(1);
 const CONTROL_IN_TIMEOUT: Duration = Duration::from_secs(20);
 const BULK_TIMEOUT: Duration = Duration::from_secs(5);
 const POLL_INTERVAL: Duration = Duration::from_millis(250);
-
-/// The installed udev rules file: the rule plus a header saying who owns
-/// it. Linux packages ship it in `/usr/lib/udev/rules.d`; `atlas-helper
-/// install-usb-access` writes it to `/etc/udev/rules.d` for AppImage users.
-pub const LINUX_UDEV_RULES_FILE: &str = concat!(
-    "# Installed by Atlas Hardware Manager: lets the logged-in user USB-boot\n",
-    "# Raspberry Pi boards (BCM2835/2837/2711/2712 boot ROMs) without root.\n",
-    "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"0a5c\", ",
-    "ATTR{idProduct}==\"2711|2712|2763|2764\", MODE=\"0660\", TAG+=\"uaccess\"\n",
-    "# The mass-storage gadget's serial console, so Atlas can restart a board\n",
-    "# into its new image after a flash.\n",
-    "SUBSYSTEM==\"tty\", ATTRS{idVendor}==\"0a5c\", ATTRS{idProduct}==\"0104\", ",
-    "TAG+=\"uaccess\"\n",
-    "# Atlas's raze-flasher (a USB-booted Raze): its console and its bulk\n",
-    "# interface, by product name, since 1d6b:0104 alone is any Linux gadget\n",
-    "# (a running Raze's own console among them).\n",
-    "SUBSYSTEM==\"tty\", ATTRS{idVendor}==\"1d6b\", ATTRS{idProduct}==\"0104\", ",
-    "ATTRS{product}==\"Raze flasher\", TAG+=\"uaccess\"\n",
-    "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"1d6b\", ATTR{idProduct}==\"0104\", ",
-    "ATTR{product}==\"Raze flasher\", MODE=\"0660\", TAG+=\"uaccess\"\n",
-    "# A running board's own console (device package 1.0.7+), by its\n",
-    "# manufacturer: Atlas manages a board plugged in here through it, with no\n",
-    "# SSH key (holding the cable is the access).\n",
-    "SUBSYSTEM==\"tty\", ATTRS{idVendor}==\"1d6b\", ATTRS{idProduct}==\"0104\", ",
-    "ATTRS{manufacturer}==\"Prometheus Dynamics\", TAG+=\"uaccess\"\n",
-    "# Rockchip boards in maskrom or loader mode (rockusb), and Kendryte K230\n",
-    "# boards in USB boot, which Atlas flashes from their SoC's download mode.\n",
-    "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"2207\", MODE=\"0660\", TAG+=\"uaccess\"\n",
-    "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"29f1\", ATTR{idProduct}==\"0230\", ",
-    "MODE=\"0660\", TAG+=\"uaccess\"\n",
-    "# Allwinner A733 boards (Radxa Cubie) in FEL mode, which Atlas flashes\n",
-    "# from their SoC's download mode.\n",
-    "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"1f3a\", ATTR{idProduct}==\"efe8\", ",
-    "MODE=\"0660\", TAG+=\"uaccess\"\n",
-);
-
-/// The Windows USB product ids that need WinUSB bound for USB boot.
-pub const BOOT_PRODUCT_IDS: [u16; 4] = [0x2763, 0x2764, 0x2711, 0x2712];
-
-/// The SoC download modes Atlas flashes (atlas-socflash) that need WinUSB
-/// bound on Windows, as (name, vendor, product): one per chip of a board
-/// record. The RV1126B's PID is the record's guess (`pid_unconfirmed`) until
-/// a board confirms it.
-pub const SOC_BOOT_IDS: [(&str, u16, u16); 7] = [
-    ("Rockchip RK3566 maskrom", 0x2207, 0x350a),
-    ("Rockchip RK3588 maskrom", 0x2207, 0x350b),
-    ("Rockchip RK3576 maskrom", 0x2207, 0x350e),
-    ("Rockchip RV1106 maskrom", 0x2207, 0x110c),
-    ("Rockchip RV1126B maskrom (unconfirmed PID)", 0x2207, 0x110b),
-    ("Kendryte K230 USB boot", 0x29f1, 0x0230),
-    ("Allwinner A733 FEL", 0x1f3a, 0xefe8),
-];
-
-/// udev rule that lets the logged-in user open Pi boot devices on Linux.
-pub const LINUX_UDEV_RULE: &str = "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"0a5c\", \
-ATTR{idProduct}==\"2711|2712|2763|2764\", MODE=\"0660\", TAG+=\"uaccess\"\n";
 
 /// A Pi waiting in USB boot mode.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

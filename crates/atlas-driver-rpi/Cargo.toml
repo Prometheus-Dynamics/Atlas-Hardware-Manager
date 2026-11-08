@@ -11,6 +11,7 @@ publish.workspace = true
 description = "Atlas driver for Raspberry Pi compute modules in USB boot mode: boot, write, verify."
 
 [dependencies]
+atlas-usb-ids.workspace = true
 async-trait.workspace = true
 atlas-blockdev.workspace = true
 atlas-devices.workspace = true

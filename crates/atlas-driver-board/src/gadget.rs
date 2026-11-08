@@ -15,6 +15,7 @@ use async_trait::async_trait;
 use atlas_devices::DeviceManifest;
 use atlas_driver::attributes::normalize_board_serial;
 use atlas_driver::{Link, LinkId, LinkKind, LinkSource};
+use atlas_usb_ids::{BOARD_GADGET_PRODUCT_ID, BOARD_GADGET_VENDOR_ID};
 
 pub(crate) const LINK_ID: &str = "usb-gadget";
 
@@ -29,14 +30,13 @@ pub(crate) struct UsbGadget {
 
 /// USB devices with the Linux composite gadget id that device-package images use.
 pub(crate) async fn gadgets() -> Vec<UsbGadget> {
-    const LINUX_FOUNDATION: u16 = 0x1d6b;
-    const COMPOSITE_GADGET: u16 = 0x0104;
     let Ok(devices) = nusb::list_devices().await else {
         return Vec::new();
     };
     devices
         .filter(|info| {
-            info.vendor_id() == LINUX_FOUNDATION && info.product_id() == COMPOSITE_GADGET
+            info.vendor_id() == BOARD_GADGET_VENDOR_ID
+                && info.product_id() == BOARD_GADGET_PRODUCT_ID
         })
         .map(|info| UsbGadget {
             manufacturer: info.manufacturer_string().map(str::to_string),

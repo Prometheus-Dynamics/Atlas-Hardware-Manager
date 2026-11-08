@@ -12,9 +12,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-/// The gadget's USB ids (Broadcom, "Multifunction Composite Gadget").
-const GADGET_VENDOR: &str = "0a5c";
-const GADGET_PRODUCT: &str = "0104";
+use atlas_usb_ids::{BROADCOM_VENDOR_ID, STORAGE_GADGET_PRODUCT_ID, hex};
 
 /// How long the gadget may take to go after the reboot is typed. The
 /// gadget writes through its page cache: after a whole image, `sync` can
@@ -48,7 +46,9 @@ fn attr(dir: &Path, name: &str) -> String {
 fn find_console(sys: &Path, disk_name: &str) -> Result<String, String> {
     let device = usb_device_dir(&sys.join("block").join(disk_name))
         .ok_or_else(|| format!("{disk_name} isn't a USB disk"))?;
-    if attr(&device, "idVendor") != GADGET_VENDOR || attr(&device, "idProduct") != GADGET_PRODUCT {
+    if attr(&device, "idVendor") != hex(BROADCOM_VENDOR_ID)
+        || attr(&device, "idProduct") != hex(STORAGE_GADGET_PRODUCT_ID)
+    {
         return Err(format!(
             "{disk_name} isn't Raspberry Pi's mass-storage gadget ({}:{})",
             attr(&device, "idVendor"),

@@ -49,8 +49,8 @@ pub mod sim;
 pub mod thunk;
 
 /// Allwinner's USB vendor id and the FEL product id of the A733 record.
-pub const VENDOR_ID: u16 = 0x1f3a;
-pub const PRODUCT_ID: u16 = 0xefe8;
+pub const VENDOR_ID: u16 = atlas_usb_ids::ALLWINNER_VENDOR_ID;
+pub const PRODUCT_ID: u16 = atlas_usb_ids::FEL_PRODUCT_ID;
 
 /// The tracing target of every FEL transfer log.
 pub const LOG_TARGET: &str = "atlas_socflash::fel";

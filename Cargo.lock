@@ -162,6 +162,7 @@ name = "atlas-blockdev"
 version = "2026.1.0-dev"
 dependencies = [
  "atlas-driver",
+ "atlas-usb-ids",
  "ext4-view",
  "fatfs",
  "flate2",
@@ -222,6 +223,7 @@ dependencies = [
 name = "atlas-devices"
 version = "2026.1.0-dev"
 dependencies = [
+ "atlas-usb-ids",
  "futures",
  "serde",
  "serde_json",
@@ -252,6 +254,7 @@ dependencies = [
  "atlas-devices",
  "atlas-driver",
  "atlas-driver-robot",
+ "atlas-usb-ids",
  "board-lite",
  "futures",
  "if-addrs",
@@ -303,6 +306,7 @@ dependencies = [
  "atlas-devices",
  "atlas-driver",
  "atlas-usb-agent",
+ "atlas-usb-ids",
  "futures",
  "if-addrs",
  "nusb",
@@ -322,6 +326,7 @@ dependencies = [
  "atlas-driver",
  "atlas-flasher",
  "atlas-usb-agent",
+ "atlas-usb-ids",
  "atlas-usbboot",
  "futures",
  "nix",
@@ -367,6 +372,7 @@ dependencies = [
 name = "atlas-flasher-proto"
 version = "2026.1.0-dev"
 dependencies = [
+ "atlas-usb-ids",
  "serde",
  "serde_json",
 ]
@@ -424,6 +430,7 @@ version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "atlas-ubi",
+ "atlas-usb-ids",
  "nusb",
  "serde",
  "serde_json",
@@ -447,6 +454,7 @@ name = "atlas-usb-agent"
 version = "2026.1.0-dev"
 dependencies = [
  "atlas-blockdev",
+ "atlas-usb-ids",
  "atlas-usbboot",
  "bytes",
  "http-body-util",
@@ -459,10 +467,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-usb-ids"
+version = "2026.1.0-dev"
+
+[[package]]
 name = "atlas-usbboot"
 version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
+ "atlas-usb-ids",
  "futures",
  "nusb",
  "serde",

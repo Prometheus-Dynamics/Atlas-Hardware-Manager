@@ -11,6 +11,7 @@ publish.workspace = true
 description = "Rockchip maskrom/loader mode and Kendryte K230 USB burning for Atlas, in Rust, with no vendor tool at run time."
 
 [dependencies]
+atlas-usb-ids.workspace = true
 async-trait.workspace = true
 atlas-ubi.workspace = true
 nusb.workspace = true

@@ -12,6 +12,7 @@ description = "Atlas's agent on another host boards in USB boot are plugged into
 
 [dependencies]
 atlas-blockdev.workspace = true
+atlas-usb-ids.workspace = true
 atlas-usbboot.workspace = true
 bytes = "1"
 http-body-util = "0.1"

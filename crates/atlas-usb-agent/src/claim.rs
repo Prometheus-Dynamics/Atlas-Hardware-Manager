@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use atlas_blockdev::Disk;
+use atlas_usb_ids::{BROADCOM_VENDOR_ID, STORAGE_GADGET_PRODUCT_ID, hex};
 
 use crate::flash::{Sink, log};
 
@@ -45,10 +46,12 @@ fn rule_text(tail: Option<&str>) -> String {
         ),
         None => ("a board".to_string(), String::new()),
     };
+    let vendor = hex(BROADCOM_VENDOR_ID);
+    let product = hex(STORAGE_GADGET_PRODUCT_ID);
     format!(
         "# atlas-usb-agent, while it flashes {board}: no mounts or fsck of its disk.\n\
-         ACTION!=\"remove\", SUBSYSTEM==\"block\", ENV{{ID_VENDOR_ID}}==\"0a5c\", \
-         ENV{{ID_MODEL_ID}}==\"0104\", {serial}\
+         ACTION!=\"remove\", SUBSYSTEM==\"block\", ENV{{ID_VENDOR_ID}}==\"{vendor}\", \
+         ENV{{ID_MODEL_ID}}==\"{product}\", {serial}\
          ENV{{ID_FS_USAGE}}=\"\", ENV{{UDISKS_IGNORE}}=\"1\", ENV{{UDISKS_AUTO}}=\"0\", \
          ENV{{SYSTEMD_READY}}=\"0\"\n"
     )

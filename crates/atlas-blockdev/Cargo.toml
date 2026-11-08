@@ -12,6 +12,7 @@ description = "Disk discovery, safety checks, and verified raw image writes for 
 
 [dependencies]
 atlas-driver.workspace = true
+atlas-usb-ids.workspace = true
 ext4-view.workspace = true
 fatfs.workspace = true
 flate2.workspace = true

@@ -269,6 +269,11 @@ pub struct DeviceManifest {
     /// `recovery.method` and `recovery.instructions` default to the family's.
     #[serde(default)]
     pub family: Option<String>,
+    /// The ecosystem this package belongs to (`devices/ecosystem.json`). The
+    /// catalog fills in its gadget, identity and addressing keys where the
+    /// manifest leaves them out; the manifest's own keys win.
+    #[serde(default)]
+    pub ecosystem: Option<String>,
     /// Variants that differ in data only.
     #[serde(default)]
     pub variants: Vec<Variant>,

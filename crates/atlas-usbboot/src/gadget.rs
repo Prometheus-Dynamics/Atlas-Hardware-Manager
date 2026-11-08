@@ -6,11 +6,9 @@
 use nusb::DeviceInfo;
 use serde::Serialize;
 
-use crate::{BROADCOM_VENDOR_ID, UsbBootError};
+use atlas_usb_ids::STORAGE_GADGET_PRODUCT_ID;
 
-/// The USB product id of Raspberry Pi's mass-storage gadget
-/// ("Raspberry Pi multi-function USB device").
-pub const STORAGE_GADGET_PRODUCT_ID: u16 = 0x0104;
+use crate::{BROADCOM_VENDOR_ID, UsbBootError};
 const MASS_STORAGE_CLASS: u8 = 0x08;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

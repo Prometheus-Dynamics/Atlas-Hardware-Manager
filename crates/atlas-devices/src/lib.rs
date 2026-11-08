@@ -21,6 +21,7 @@
 
 mod catalog;
 mod compat;
+mod ecosystem;
 mod family;
 mod gadget;
 mod hardware;
@@ -29,6 +30,7 @@ mod recognize;
 
 pub use catalog::{DeviceCatalog, DevicePackage, default_search_dirs, search_report};
 pub use compat::{CompatEntry, CompatImage, CompatList, CompatStatus};
+pub use ecosystem::{ECOSYSTEM_SCHEMA, Ecosystem};
 pub use family::{FAMILY_SCHEMA, Family};
 pub use gadget::{GadgetAddressing, GadgetSubnet, SERIAL_HASH_V1};
 pub use hardware::{

@@ -2,6 +2,7 @@
 
 use atlas_blockdev::HelperClient;
 use atlas_driver::{DriverError, HealthCheck};
+use atlas_usb_ids::{BCM2711_PRODUCT_ID, BROADCOM_VENDOR_ID, STORAGE_GADGET_PRODUCT_ID, hex};
 use atlas_usbboot::list_boot_devices;
 
 /// Fix action: install the udev rule (Linux) or WinUSB driver (Windows).
@@ -70,8 +71,10 @@ fn udev_check() -> Option<HealthCheck> {
             .flatten()
             .flatten()
             .any(|entry| {
-                std::fs::read_to_string(entry.path())
-                    .is_ok_and(|text| text.contains("0a5c") && text.contains("2711"))
+                std::fs::read_to_string(entry.path()).is_ok_and(|text| {
+                    text.contains(&hex(BROADCOM_VENDOR_ID))
+                        && text.contains(&hex(BCM2711_PRODUCT_ID))
+                })
             })
     });
     // Rules from before the gadget console line still USB-boot, but Atlas
@@ -82,8 +85,10 @@ fn udev_check() -> Option<HealthCheck> {
             .flatten()
             .flatten()
             .any(|entry| {
-                std::fs::read_to_string(entry.path())
-                    .is_ok_and(|text| text.contains("0a5c") && text.contains("0104"))
+                std::fs::read_to_string(entry.path()).is_ok_and(|text| {
+                    text.contains(&hex(BROADCOM_VENDOR_ID))
+                        && text.contains(&hex(STORAGE_GADGET_PRODUCT_ID))
+                })
             })
     });
     if found && !console {

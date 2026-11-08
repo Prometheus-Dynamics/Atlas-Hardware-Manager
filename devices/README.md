@@ -22,6 +22,12 @@ devices/
   tools/sync-device.sh       vendor a package into an OS repo, and check it
   tools/gen-raze.py          render the Raze config from its manifest; --check lints
   tools/raze_lemnos.py       its lemnosd board.toml renderer and validator
+  tools/gen-usb-ids.py       render the udev rules and the Windows WinUSB binds from
+                             usb-ids.json and ecosystem.json; --check compares
+  usb-ids.json               every USB id Atlas matches for a download mode (one table)
+  ecosystem.json             what every board package of one OS ecosystem shares: the
+                             gadget's ids and network, mac_rule, identity_service and
+                             gadget-net addressing (a package names it with "ecosystem")
   <model>/
     manifest.json            read by Atlas (and people)
     compat.json              which OS images are known to work (informational)
@@ -102,7 +108,10 @@ prose:
 | `capabilities.selftest` | where the self-test is, its report format and checks |
 
 The USB gadget (`identity.usb_gadget`, `capabilities.gadget-net`) is a
-reference only: its settings live in `usb-gadget.env`.
+reference only: its settings live in `usb-gadget.env`. A package with
+`"ecosystem": "atlas-board"` inherits its `identity.mac_rule`,
+`identity.usb_gadget` vid/pid/manufacturer/serial, `identity_service` and
+`capabilities.gadget-net` from `ecosystem.json`; its own keys win.
 
 Each section has `verified`: per fact (a dotted path in the section) either
 `{"by", "date", "method"}` or `"unverified"`. Atlas reads the sections
