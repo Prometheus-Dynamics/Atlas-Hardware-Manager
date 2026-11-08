@@ -68,6 +68,9 @@ def rules_text(ids: dict, eco: dict) -> str:
     wide = {hex4(v) for v in ids.get("vendor_wide", [])}
     gadget = eco["identity"]["usb_gadget"]
     flasher = eco["flasher"]["product"]
+    init = (ROOT / "devices/families/rpi-bcm2712/gaia/assets/flasher/init").read_text()
+    if f'echo "{flasher}" > $g/strings/0x409/product' not in init:
+        raise GenError(f"the flasher's init doesn't set the product {flasher!r} from ecosystem.json")
     board_vid, board_pid = hex4(gadget["vid"]), hex4(gadget["pid"])
     manufacturer = gadget["manufacturer"]
     storage = ids["storage_gadget"]

@@ -20,6 +20,7 @@ BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
 # shellcheck source=lib.sh
 . "$BOARD_LIB_DIR/lib.sh"
 
+board_load_env board-package.env
 board_load_env usb-gadget.env
 
 if [ "${USB_GADGET_ENABLED:-1}" != 1 ]; then
@@ -129,13 +130,13 @@ echo high-speed > "$G/max_speed" 2>/dev/null || true
 mkdir -p "$G/strings/0x409"
 printf '%s' "$serial" > "$G/strings/0x409/serialnumber"
 printf '%s' "${USB_GADGET_MANUFACTURER:-Prometheus Dynamics}" > "$G/strings/0x409/manufacturer"
-printf '%s' "${USB_GADGET_PRODUCT:-Raze}" > "$G/strings/0x409/product"
+printf '%s' "${USB_GADGET_PRODUCT:-${BOARD_DEVICE_MODEL:-board}}" > "$G/strings/0x409/product"
 
 C1="$G/configs/c.1"
 C2="$G/configs/c.2"
 mkdir -p "$C1/strings/0x409" "$C2/strings/0x409"
-echo "${USB_GADGET_PRODUCT:-Raze} (ECM/NCM)" > "$C1/strings/0x409/configuration"
-echo "${USB_GADGET_PRODUCT:-Raze} (RNDIS)" > "$C2/strings/0x409/configuration"
+echo "${USB_GADGET_PRODUCT:-${BOARD_DEVICE_MODEL:-board}} (ECM/NCM)" > "$C1/strings/0x409/configuration"
+echo "${USB_GADGET_PRODUCT:-${BOARD_DEVICE_MODEL:-board}} (RNDIS)" > "$C2/strings/0x409/configuration"
 for cfg in "$C1" "$C2"; do
 	echo 0x80 > "$cfg/bmAttributes"
 	echo 250 > "$cfg/MaxPower"
