@@ -418,8 +418,8 @@ pub fn merge(
 /// The 471 and 472 stages are padded to 2048 bytes; the FlashHead and the
 /// loader stages to `ALIGN` sectors (4096 with `ALIGN=8`, as in Gaia's
 /// rock-4d loader). The idblock, when `CREATE_IDB` is set, is the FlashHead
-/// and the loader stages as plain bytes, back to back (read off the rock-4d,
-/// rk3562 and rv1106 idblocks, which equal the loader's flash entries
+/// and the loader stages as plain bytes, back to back (read off the rock-4d
+/// and rv1106 idblocks, which equal the loader's flash entries
 /// unscrambled). `CRC_OFF` leaves the trailing CRC-32 in place.
 ///
 /// UNCONFIRMED, from the C only: `471_RC4_OFF=false` scrambles each 471/472

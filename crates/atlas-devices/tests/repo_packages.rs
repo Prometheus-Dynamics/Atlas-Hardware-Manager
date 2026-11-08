@@ -56,9 +56,14 @@ fn the_board_records_say_how_to_flash_them_and_that_its_untested() {
     let records = [
         ("radxa-rock-5c", 0x2207, 0x350b, "rockusb", "emmc"),
         ("radxa-rock-4d", 0x2207, 0x350e, "rockusb", "emmc"),
-        ("radxa-zero-3w", 0x2207, 0x350a, "rockusb", "emmc"),
+        ("radxa-zero-3e", 0x2207, 0x350a, "rockusb", "sd"),
+        ("waveshare-luckfox-aura", 0x2207, 0x110b, "rockusb", "emmc"),
         ("luckfox-pico-pro", 0x2207, 0x110c, "rockusb", "spi-nand"),
         ("bpi-canmv-k230d-zero", 0x29f1, 0x0230, "k230-usb", "sd"),
+        ("canmv-k230d-ai-cam", 0x29f1, 0x0230, "k230-usb", "sd"),
+        ("radxa-cubie-a7a", 0x1f3a, 0xefe8, "fel", "sd"),
+        ("radxa-cubie-a7s", 0x1f3a, 0xefe8, "fel", "sd"),
+        ("radxa-cubie-a7z", 0x1f3a, 0xefe8, "fel", "sd"),
     ];
     for (model, vid, pid, method, storage) in records {
         let package = catalog.by_model(model).expect(model);
@@ -71,7 +76,12 @@ fn the_board_records_say_how_to_flash_them_and_that_its_untested() {
             Some(storage),
             "{model}"
         );
-        assert_eq!(catalog.for_usb_boot(vid, pid).len(), 1, "{model}");
+        // A shared PID (the K230D's, the A733's) is offered for each record
+        // that names it.
+        assert!(
+            models_for(&catalog, vid, pid).contains(&model.to_string()),
+            "{model}"
+        );
         let flash = manifest.recovery.flash.as_ref().expect(model);
         assert!(!flash.loader.is_empty(), "{model}");
         assert_eq!(flash.nand.is_some(), storage == "spi-nand", "{model}");
@@ -85,9 +95,86 @@ fn the_board_records_say_how_to_flash_them_and_that_its_untested() {
             "{model}"
         );
     }
-    // No record guesses its maskrom PID now: an unnamed Rockchip is only a
-    // chip, never a record.
-    assert!(catalog.unconfirmed_usb_boot(0x2207).is_empty());
+    assert_eq!(
+        models_for(&catalog, 0x29f1, 0x0230),
+        ["bpi-canmv-k230d-zero", "canmv-k230d-ai-cam"]
+    );
+    assert_eq!(
+        models_for(&catalog, 0x1f3a, 0xefe8),
+        ["radxa-cubie-a7a", "radxa-cubie-a7s", "radxa-cubie-a7z"]
+    );
+    // Only the RV1126B's PID is a guess now: an unnamed Rockchip is a chip,
+    // or the record that guesses it.
+    let unconfirmed: Vec<&str> = catalog
+        .unconfirmed_usb_boot(0x2207)
+        .iter()
+        .map(|package| package.manifest.model.as_str())
+        .collect();
+    assert_eq!(unconfirmed, ["waveshare-luckfox-aura"]);
+}
+
+/// The record models that name a download-mode id, sorted.
+fn models_for(catalog: &DeviceCatalog, vid: u16, pid: u16) -> Vec<String> {
+    let mut models: Vec<String> = catalog
+        .for_usb_boot(vid, pid)
+        .iter()
+        .map(|package| package.manifest.model.clone())
+        .collect();
+    models.sort();
+    models
+}
+
+/// A board that names a family inherits the family's recovery method, and
+/// the family file is loaded: the download-mode data the boards share.
+#[test]
+fn family_boards_name_a_loaded_family_and_inherit_its_method() {
+    let catalog = repo_catalog();
+    let families: [(&str, &str, &[&str]); 3] = [
+        (
+            "rockchip-maskrom",
+            "rockusb",
+            &[
+                "radxa-rock-5c",
+                "radxa-rock-4d",
+                "radxa-zero-3e",
+                "waveshare-luckfox-aura",
+                "luckfox-pico-pro",
+            ],
+        ),
+        (
+            "canaan-k230",
+            "k230-usb",
+            &["bpi-canmv-k230d-zero", "canmv-k230d-ai-cam"],
+        ),
+        (
+            "allwinner-fel",
+            "fel",
+            &["radxa-cubie-a7a", "radxa-cubie-a7s", "radxa-cubie-a7z"],
+        ),
+    ];
+    for (family, method, models) in families {
+        let loaded = catalog.family(family).expect(family);
+        assert_eq!(loaded.method, method, "{family}");
+        for model in models {
+            let package = catalog.by_model(model).expect(model);
+            assert_eq!(package.family_id(), Some(family), "{model}");
+            assert_eq!(
+                package.manifest.recovery.method.as_deref(),
+                Some(method),
+                "{model}"
+            );
+        }
+    }
+
+    // The AI-CAM's two lenses are variants that differ in data only.
+    let cam = catalog.by_model("canmv-k230d-ai-cam").expect("the AI-CAM");
+    let lenses: Vec<(&str, Option<u64>)> = cam
+        .manifest
+        .variants
+        .iter()
+        .map(|variant| (variant.id.as_str(), variant.data["lens_deg"].as_u64()))
+        .collect();
+    assert_eq!(lenses, [("lens-72", Some(72)), ("lens-140", Some(140))]);
 }
 
 /// Every `board-package.env` under a package reports the manifest's
@@ -283,7 +370,7 @@ fn board_records_with_an_identity_carry_board_lite_for_their_arch() {
             "luckfox-pico-pro",
             "radxa-rock-4d",
             "radxa-rock-5c",
-            "radxa-zero-3w"
+            "radxa-zero-3e"
         ]
     );
 }

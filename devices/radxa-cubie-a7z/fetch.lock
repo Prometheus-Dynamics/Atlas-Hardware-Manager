@@ -1,0 +1,18 @@
+{
+  "schema": "urn:board:fetch-lock:1",
+  "description": "Files the package needs but does not keep in git (large or third-party). Each is fetched from a pinned URL and checked against sha256. Checksums are advisory: a tool may warn on a mismatch but must let the user proceed.",
+  "entries": [
+    {
+      "name": "radxa_cubie_a7z_schematic_v2.00.pdf",
+      "dest": "radxa_cubie_a7z_schematic_v2.00.pdf",
+      "role": "reference",
+      "source": "Radxa Cubie A7Z schematic v2.00 (the record cites its LED and CSI connector pages). The download URL was not recorded when it was kept, so no url is pinned.",
+      "sha256": "1c66f1fe09709f211ebb8dd83acc90d81085cdf92335510107b0b344072aacc3",
+      "size": 1050892,
+      "licence": "Radxa schematic (reference only, not redistributed)",
+      "vendored": false,
+      "local": "/mnt/ssd-samsung/atlas-blobs/cubie-a7/radxa_cubie_a7z_schematic_v2.00.pdf",
+      "note": "Reference for the record's wiring facts. The V2.00 schematic has two CSI connectors; V1.10 and V1.11 are UNCONFIRMED in the record."
+    }
+  ]
+}

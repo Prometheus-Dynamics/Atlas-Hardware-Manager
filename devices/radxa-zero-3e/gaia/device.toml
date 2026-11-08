@@ -1,9 +1,9 @@
-# Radxa ZERO 3W device support from Atlas: everything an OS imports, so a later
+# Radxa ZERO 3E device support from Atlas: everything an OS imports, so a later
 # addition here needs no change there. Import it from a source named `atlas`
 # (none in Gaia yet):
 #
 #   imports = [
-#     { source = "atlas", path = "devices/radxa-zero-3w/gaia/device.toml" },
+#     { source = "atlas", path = "devices/radxa-zero-3e/gaia/device.toml" },
 #   ]
 config = 3
 gaia_version = ">=2.0.0"

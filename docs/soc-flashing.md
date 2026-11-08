@@ -7,11 +7,29 @@ board.** The boards are on order. Each board record says
 
 | Board | SoC | Mode (USB id) | Storage | Record |
 |---|---|---|---|---|
-| Radxa ROCK 5C | RK3588S2 | maskrom 2207:350b | eMMC | `devices/radxa-rock-5c` |
-| Radxa ROCK 4D | RK3576 | maskrom 2207:350e (a guess: `pid_unconfirmed`) | eMMC | `devices/radxa-rock-4d` |
-| Radxa ZERO 3W | RK3566 | maskrom 2207:350a (shared with RK3568) | eMMC | `devices/radxa-zero-3w` |
+| Radxa ROCK 5C (2 GB) | RK3588S2 | maskrom 2207:350b | eMMC | `devices/radxa-rock-5c` |
+| Radxa ROCK 4D | RK3576 | maskrom 2207:350e | eMMC | `devices/radxa-rock-4d` |
+| Radxa ZERO 3E | RK3566 | maskrom 2207:350a (shared with RK3568) | microSD | `devices/radxa-zero-3e` |
+| Luckfox Aura | RV1126B | maskrom 2207:110b (a guess: `pid_unconfirmed`) | eMMC | `devices/waveshare-luckfox-aura` |
 | Luckfox Pico Pro | RV1106G2 (Flame's SoC) | maskrom 2207:110c | SPI-NAND, 128 MB | `devices/luckfox-pico-pro` |
-| BPI-CanMV-K230D-Zero | K230D | USB boot 29f1:0230 | microSD | `devices/bpi-canmv-k230d-zero` |
+| Radxa Cubie A7A, A7S, A7Z | A733 | FEL 1f3a:efe8 | microSD | `devices/radxa-cubie-a7a`, `-a7s`, `-a7z` |
+| BPI-CanMV-K230D-Zero | K230D | USB boot 29f1:0230 (shared with the AI-CAM) | microSD | `devices/bpi-canmv-k230d-zero` |
+| CanMV K230D AI-CAM | K230D | USB boot 29f1:0230 (shared with the Zero) | microSD | `devices/canmv-k230d-ai-cam` |
+
+## Families
+
+A board whose download mode is one its family shares names the family
+(`"family"`, `devices/families/<id>.json`). The family gives the recovery
+method (`rockusb`, `k230-usb`, `fel`), the USB vendor, the entry steps and
+the flash stages, and for Rockchip the chip each PID stands for
+(`pid_chips`). A record leaves out the method and entry steps its family
+gives, and keeps what is its own: the pads or buttons, the storage, the
+image, and the loader file. The families are `rockchip-maskrom`,
+`canaan-k230` and `allwinner-fel`.
+
+Records give their hardware facts under `platform.hardware` (ports, LEDs,
+RAM, camera), each with its source; anything unsourced is UNCONFIRMED in the
+record's `todo`, with the check on the board.
 
 ## Pieces
 
@@ -71,15 +89,28 @@ Raspberry Pi's, and the download modes in `atlas_usbboot::SOC_BOOT_IDS`. A
 test keeps the installer's list and that one together. Rockchip's loader
 mode is assumed to keep its maskrom PID, as rkdeveloptool's table has it.
 
-**Open:** `SOC_BOOT_IDS` has no RK3566 entry (2207:350a, the ZERO 3W's; it's
-in rkdeveloptool's `99-rk-rockusb.rules`, line 18). Adding 350a needs the installer's list too: an
-`ATLAS_BIND_WINUSB` line in `apps/desktop/src-tauri/bundle/windows/hooks.nsh`,
-which a test in `apps/desktop/src-tauri/src/drivers.rs` checks against the
-list. That is outside the socflash work.
+`SOC_BOOT_IDS` names the RK3566 (350a, from rkdeveloptool's
+`99-rk-rockusb.rules`, line 18), the RK3588, RK3576, RV1106 (110c), the
+RV1126B (110b, a guess), the K230 (29f1:0230) and the A733 FEL (1f3a:efe8).
+Each has an `ATLAS_BIND_WINUSB` line in
+`apps/desktop/src-tauri/bundle/windows/hooks.nsh`, and a test in
+`apps/desktop/src-tauri/src/drivers.rs` checks the two lists agree.
 
 On Linux the packaged rule (`60-atlas-usbboot.rules`, installed to
-`/usr/lib/udev/rules.d` by `tauri.bundle.conf.json`) matches every `2207`
-device, so no Rockchip PID needs a rule of its own. K230 is `29f1:0230`.
+`/usr/lib/udev/rules.d` by `tauri.bundle.conf.json`, and the same text as
+`atlas_usbboot::LINUX_UDEV_RULES_FILE`) matches every `2207` device, so no
+Rockchip PID needs a rule of its own. It names `29f1:0230` (K230) and
+`1f3a:efe8` (FEL).
+
+## FEL
+
+The Allwinner FEL protocol is `crates/atlas-socflash/src/fel`: the version
+and memory requests, an eGON SPL written into SRAM and run through the
+thunk, then a legacy U-Boot image, and the storage write. It is checked
+against a mock board only. Atlas's SoC driver does not reach it yet (its
+`Soc` has the Rockchip and K230 drivers only), and the family's SRAM layout
+is `null` until an A733 layout is sourced, so the Cubie records cannot be
+flashed from the app.
 
 ## Checked against the vendor source
 
@@ -186,8 +217,9 @@ board fetches rkbin and the K230 SDK, so it is the natural place for the
 loader to come from. The loaders are:
 
 - rkbin's boot_merger names (`rk3588_loader_v*.bin`, `rk3576_loader_v*.bin`,
-  `rv1106_download_v*.bin`) and Radxa's (`rk3588_spl_loader_v*.bin`,
-  `rk3576_spl_loader_v*.bin`); a record's `loader` lists both;
+  `rv1106_download_v*.bin`, `rv1126b_loader_v*.bin`) and Radxa's
+  (`rk3588_spl_loader_v*.bin`, `rk3576_spl_loader_v*.bin`,
+  `rk356x_spl_loader_v*.bin`); a record's `loader` lists them;
 - the Luckfox SDK's `download*.bin`;
 - Canaan's `loader_mmc*.bin`.
 
@@ -276,6 +308,12 @@ each record's `todo`.
   - SPI-NAND: how the usbplug maps LBAs (Atlas assumes directly; it reads
     no block as bad itself), and its CHANGE_STORAGE id (rkdeveloptool's
     usage lists only 1, 2 and 9).
+- **RV1126B:** the maskrom PID 2207:110b (a guess, U-Boot's default) and
+  the chip number its loader reports (RV110F; the reversed-ASCII value is
+  UNCONFIRMED, and the record's `platform.soc` must contain it).
+- **Allwinner A733:** the FEL id 1f3a:efe8 (Radxa's docs; `lsusb`), the FEL
+  image (eGON SPL and U-Boot, from Radxa's Android zips, not inspected), the
+  SRAM layout for the thunk, and the USB-C port each Cubie uses for FEL.
 - **K230:**
   - whether the burner (linked at 0x80300000, kendryte/k230_sdk) runs when
     the tools' own address, 0x80360000, is sent; the record uses 0x80360000

@@ -1,0 +1,77 @@
+{
+  "schema": "urn:board:manifest:1",
+  "contract": 1,
+  "model": "radxa-zero-3e",
+  "package_version": "2026.1.0-dev",
+  "display_name": "ZERO 3E",
+  "record_only": true,
+  "vendor": "Radxa",
+  "description": "Radxa ZERO 3E (Rockchip RK3566), 1 GB LPDDR4 (the user's SKU), microSD storage and no eMMC, Gigabit Ethernet and no Wi-Fi. A board record: Atlas flashes it from maskrom (rockusb) with Rockchip's loader file and no vendor tool; running, it serves the identity contract (board-lite, gaia/device.toml), read-only. Written from Radxa's docs, the Linux device tree and rkdeveloptool; untested on this board.",
+  "family": "rockchip-maskrom",
+  "platform": {
+    "soc": "RK3566",
+    "arch": "aarch64",
+    "hardware": {
+      "ram": {
+        "this_record": "1 GB LPDDR4",
+        "variants": ["1 GB", "2 GB", "4 GB", "8 GB"],
+        "source": "docs.radxa.com/en/zero/zero3?model=zero-3e"
+      },
+      "network": {
+        "ethernet": "Gigabit; PHY RTL8211F-CG (CNX product page); the device tree (rk3566-radxa-zero-3e.dts) gives PHY reset on GPIO3 PC0, active low",
+        "wifi_bt": "none (the ZERO 3W has Wi-Fi 6 and Bluetooth 5.4; the 3E has neither)"
+      },
+      "ports": [
+        "USB 2.0 Type-C OTG, which also takes the power input: the maskrom port",
+        "USB 3.0 Type-C host",
+        "microSD slot (the only storage)",
+        "40-pin header (populated: UNCONFIRMED)"
+      ],
+      "leds": [
+        {
+          "name": "green",
+          "gpio": "GPIO0 PA0",
+          "polarity": "active-high",
+          "source": "rk3566-radxa-zero-3.dtsi led-green (shared with the ZERO 3W's device tree)"
+        }
+      ],
+      "fan": "none found (UNCONFIRMED)",
+      "camera": {
+        "connectors": "one 4-lane MIPI CSI connector, 22-pin, 0.5 mm pitch",
+        "sensor": "none bundled",
+        "source": "docs.radxa.com ZERO 3E page"
+      }
+    }
+  },
+  "identity": { "identity_port": 5899 },
+  "recovery": {
+    "usb_boot": { "vid": "2207", "pid": "350a" },
+    "storage_target": "sd",
+    "storage_target_evidence": [
+      "docs.radxa.com ZERO 3E page: microSD only, no eMMC (the ZERO 3W is the eMMC variant).",
+      "Atlas writes the SD card image from byte 0 (GPT, with u-boot-rockchip.bin at sector 64). Whether the RK3566's maskrom usbplug writes the SD card is UNCONFIRMED (todo)."
+    ],
+    "instructions": [
+      "Take out the microSD card and unplug the power.",
+      "Connect the board's USB 2.0 Type-C OTG port (the one that also takes the power) to this computer with a USB-A to USB-C cable. The green LED stays on in maskrom.",
+      "If the board has a MaskROM button, hold it while you connect the cable (UNCONFIRMED: see todo).",
+      "The board appears as 2207:350a (RK3566 maskrom). Atlas runs the loader's DDR init and usbplug, writes the image to the microSD card, reads it back and restarts the board."
+    ],
+    "status": "untested",
+    "flash": {
+      "loader": "rk356x_spl_loader_*.bin",
+      "storage": "sd",
+      "image_offset": 0
+    },
+    "todo": [
+      "Sources: the maskrom steps, the OTG port and the green LED are from docs.radxa.com/en/zero/zero3/low-level-dev/install-os-on-emmc (fetched 2026-11-02). That page is the ZERO 3's eMMC guide; the 3E has no eMMC, so its SD steps are the same as the 3W's and need checking on the board. The PID 2207:350a is in rkdeveloptool 304f073's 99-rk-rockusb.rules line 18 (RK3566); lsusb on the board has the last word.",
+      "UNCONFIRMED: the MaskROM button. CNX lists one on the 3E; Radxa's page lists none. The instructions say to use it only if the board has one.",
+      "UNCONFIRMED: whether the RK3566's maskrom usbplug writes the microSD card at all. The record targets it through CHANGE_STORAGE id 2 (SD); Atlas reads READ_STORAGE back and refuses a mismatch, so a usbplug without SD support stops before writing.",
+      "2207:350a is shared by RK3566 and RK3568: any RK356x board in maskrom is offered as this record, and its loader reports the same chip family. Confirm with lsusb on the board, and add a second RK356x record only with a way to tell them apart.",
+      "The loader: rkbin f43a462's RKBOOT/RK3566MINIALL.ini (CHIP_NAME=RK3568) names rk3566_ddr_1056MHz_v1.23, rk356x_usbplug_v1.17 and rk356x_spl_v1.14 and builds rk356x_spl_loader_v1.23.114.bin with boot_merger. Those three parts are in fetch.lock (not in git). rkbin does not publish the merged loader, and no rk3566_loader_v*.bin exists in rkbin. Gaia needs: the merged rk356x_spl_loader_v*.bin, from a Gaia build; Gaia's ZERO 3W build is the closest source (not built yet, so no loader is on hand). ASK: does a Gaia build exist for the RK3566 ZERO 3E?",
+      "Gaia's facts (not verified on this side): sdcard.img is GPT with u-boot-rockchip.bin at 32 KiB (LBA 64), uboot-env at 16 MiB, then rootfs-a (extlinux), rootfs-b and data; mainline U-Boot 2026.01 and Linux 6.19; the gadget is usb0 at 10.55.0.1, the host gets 10.55.0.2.",
+      "UNCONFIRMED: the 40-pin header is populated on the 3E. UNCONFIRMED: a fan header (none found).",
+      "Network: Gigabit Ethernet (RTL8211F-CG); the Gaia image must bring the Ethernet up (DHCP on eth0 is UNCONFIRMED for this board) before board-lite answers."
+    ]
+  }
+}

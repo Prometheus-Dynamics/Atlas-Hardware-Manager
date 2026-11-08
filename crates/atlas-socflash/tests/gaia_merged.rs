@@ -142,7 +142,7 @@ fn rock_4d_rk3576_loader_and_idblock_v1_13_109() {
 fn zero_3w_rk356x_loader_v1_23_114() {
     check(&Board {
         gaia: "zero-3w",
-        blobs: "radxa-zero-3w",
+        blobs: "radxa-zero-3e",
         ini: "RK3566MINIALL.ini",
         loader: "rk356x_spl_loader_v1.23.114.bin",
         loader_sha256: "356445f4bacfbc8129c6d2849cccb5b34e06fabf83ffa30cc057f059c10b2848",

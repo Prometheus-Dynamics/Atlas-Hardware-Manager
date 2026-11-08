@@ -1,9 +1,9 @@
-# Radxa ZERO 3W: how Atlas sees the board running. board-lite
+# Radxa ZERO 3E: how Atlas sees the board running. board-lite
 # (crates/board-lite in this Atlas repository) serves the identity document on
 # :5899 and advertises it by mDNS, read-only. A static aarch64 musl binary
 # at /usr/sbin/board-lite, and /etc/init.d/S41board-lite to start it. It carries
 # its own version, 2026.1.0-dev.<count>+<commit>, from the checkout it's built
-# in. Network: the ZERO 3W has no Ethernet, only Wi-Fi, which a Gaia image must set up before this answers. Written from Atlas's contract; untested on a board.
+# in. Network: Gigabit Ethernet (RTL8211F-CG; the ZERO 3E has no Wi-Fi), which a Gaia image must bring up before this answers (DHCP on eth0 is UNCONFIRMED). Written from Atlas's contract; untested on a board.
 config = 3
 gaia_version = ">=2.0.0"
 
@@ -35,7 +35,7 @@ replace = true
 mode = 493 # 0755
 
 [[stage.files]]
-id = "zero-3w-board-lite-init"
+id = "zero-3e-board-lite-init"
 src = "${self}/assets/rootfs/etc/init.d/S41board-lite"
 dest = "/etc/init.d/S41board-lite"
 origin = "static-asset"
@@ -46,4 +46,4 @@ kind = "buildroot"
 
 [image.feed]
 install_entries = ["install-board-lite"]
-stage_files = ["zero-3w-board-lite-init"]
+stage_files = ["zero-3e-board-lite-init"]

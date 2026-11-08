@@ -7,7 +7,7 @@ BOARD_LITE=${BOARD_LITE:-/usr/sbin/board-lite}
 
 case "${1:-start}" in
 start)
-	"$BOARD_LITE" --model radxa-zero-3w > /dev/null 2>&1 &
+	"$BOARD_LITE" --model radxa-zero-3e > /dev/null 2>&1 &
 	;;
 stop)
 	killall board-lite 2> /dev/null

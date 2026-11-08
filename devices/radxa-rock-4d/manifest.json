@@ -5,6 +5,7 @@
   "package_version": "2026.1.0-dev",
   "display_name": "ROCK 4D",
   "record_only": true,
+  "family": "rockchip-maskrom",
   "vendor": "Radxa",
   "description": "Radxa ROCK 4D (Rockchip RK3576) dev board, on order. A board record: Atlas flashes it from maskrom (rockusb) with Rockchip's loader file and no vendor tool; running, it serves the identity contract (board-lite, gaia/device.toml), read-only. Written from rkdeveloptool, U-Boot and Radxa's docs; untested on this board.",
   "platform": { "soc": "RK3576", "arch": "aarch64" },

@@ -331,11 +331,12 @@ no longer a blocker: Gaia's builds put each one beside its image (006284a,
     Wi-Fi driver or firmware, no USB gadget networking, lo only): board-lite
     runs but can't be reached, serial console only. Adding Wi-Fi or gadget
     networking is the user's call.
-- [ ] **RK3566 record (ZERO 3W).**
-  - **What:** written (2026-11-02) from the vendors' docs, every field marked
-    untested with its source: `devices/radxa-zero-3w` (RK3566, maskrom
-    2207:350a, eMMC), with board-lite. The Firefly AIO-3562JQ record was
-    deleted on the user's decision (2026-11-07).
+- [ ] **RK3566 record (ZERO 3E).**
+  - **What:** written (2026-11-02, renamed from the ZERO 3W on 2026-11-07)
+    from the vendors' docs, every field marked untested with its source:
+    `devices/radxa-zero-3e` (RK3566, maskrom 2207:350a, microSD: the 3E has
+    no eMMC), with board-lite. The Firefly AIO-3562JQ record was deleted on
+    the user's decision (2026-11-07).
   - **Why:** the module families the user named.
   - **Done when:** each flashed from maskrom on a board, and its PID confirmed.
   - **Blocked by:** the boards.
