@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use crate::ecosystem::{Ecosystem, load_ecosystems};
 use crate::family::load_families;
-use crate::{CONTRACT, CompatList, DeviceManifest, Family, Recovery, Variant};
+use crate::{CONTRACT, CompatList, DeviceManifest, EepromInfo, Family, Recovery, Variant};
 
 /// One `devices/<model>/` folder.
 #[derive(Clone, Debug, PartialEq)]
@@ -315,6 +315,28 @@ fn inherit(recovery: &mut Recovery, family: &Family) {
     }
 }
 
+/// The family's bootloader images under the board's: the board's own files
+/// win by role, and the family's are read from the family's folder.
+fn inherit_eeprom(eeprom: &mut Option<EepromInfo>, family: &Family) {
+    let Some(from) = &family.eeprom else {
+        return;
+    };
+    let board = eeprom.get_or_insert_with(EepromInfo::default);
+    if board.min_version.is_none() {
+        board.min_version = from.min_version.clone();
+    }
+    if board.update_method.is_none() {
+        board.update_method = from.update_method.clone();
+    }
+    for file in &from.files {
+        if !board.files.iter().any(|own| own.role == file.role) {
+            let mut file = file.clone();
+            file.path = family.dir.join(&file.path).to_string_lossy().into_owned();
+            board.files.push(file);
+        }
+    }
+}
+
 fn load_package(
     folder: &Path,
     families: &[Family],
@@ -360,6 +382,7 @@ fn load_package(
                     )
                 })?;
             inherit(&mut manifest.recovery, family);
+            inherit_eeprom(&mut manifest.eeprom, family);
             Some(family.clone())
         }
     };

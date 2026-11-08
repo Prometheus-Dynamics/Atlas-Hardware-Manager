@@ -7,6 +7,7 @@
   "description": "Raspberry Pi CM5 vision device with an OV9782 global-shutter camera.",
   "vendor": "Prometheus Dynamics",
   "ecosystem": "atlas-board",
+  "family": "rpi-bcm2712",
   "platform": {
     "soc": "bcm2712",
     "module": "cm5",
@@ -62,7 +63,6 @@
       "vid": "0a5c",
       "pid": "2712"
     },
-    "method": "mass-storage-gadget",
     "flasher": { "bundle": "raze-flasher" },
     "storage_target": "emmc",
     "storage_target_evidence": [
@@ -79,39 +79,14 @@
     ]
   },
   "eeprom": {
-    "min_version": {
-      "date": "2025-12-08",
-      "timestamp": 1765222194,
-      "hash": "2226a853bb9f5fd80392e3a4a89e457aeca88008"
-    },
     "files": [
-      {
-        "path": "eeprom/pieeprom-2025-12-08.upd",
-        "role": "pieeprom",
-        "sha256": "aef058c6c223ece5f567ac671ea253943da3227d28536b6b837967f8288beb66",
-        "notes": "Bootloader image with bootconf.txt embedded. Flash as pieeprom.bin (rpiboot recovery) or pieeprom.upd (in-OS self-update)."
-      },
-      {
-        "path": "eeprom/pieeprom-2025-12-08.sig",
-        "role": "pieeprom-sig",
-        "sha256": "66a716ef29777cf5ace2cb2fbab42bdb4c1416a0a4aef1ef50fcbe06cb62b0f3",
-        "notes": "rpi-eeprom-digest file (sha256 of the image plus timestamp), not a cryptographic signature. Use as pieeprom.sig."
-      },
       {
         "path": "eeprom/bootconf.txt",
         "role": "bootconf",
         "sha256": "06d730fe0ed7064c7a7eaf10b7f8dca8216de556e68d70092e9089db8c6d7453",
         "notes": "The configuration embedded in the image, extracted for reference."
-      },
-      {
-        "path": "eeprom/recovery.bin",
-        "role": "recovery",
-        "notes": "rpi-eeprom recovery.bin for BCM2712 from release v2025.12.08-2712, matching the bundled pieeprom. The EEPROM flashing tool rpiboot loads as the second stage. Kept in git (about 100 KB).",
-        "sha256": "ad66b2960559c1bad92687f915bd9d993017f5a2ee7d7495ba866776ad6f1d3d",
-        "source": "https://raw.githubusercontent.com/raspberrypi/rpi-eeprom/cb1a22eff0b15b15a686318a885d1f1a2563ff6f/firmware-2712/latest/recovery.bin"
       }
     ],
-    "update_method": "rpiboot-recovery",
     "bootconf": {
       "BOOT_UART": "1",
       "POWER_OFF_ON_HALT": "1",

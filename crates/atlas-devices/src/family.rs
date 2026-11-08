@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::manifest::UsbId;
+use crate::manifest::{EepromInfo, UsbId};
 
 /// The schema every family file carries (`devices/schema/family.schema.json`).
 pub const FAMILY_SCHEMA: &str = "urn:board:family:1";
@@ -48,8 +48,14 @@ pub struct Family {
     /// hex digits (`350b`).
     #[serde(default)]
     pub pid_chips: BTreeMap<String, String>,
+    /// The family's bootloader images, `path`s relative to [`Family::dir`].
+    #[serde(default)]
+    pub eeprom: Option<EepromInfo>,
     #[serde(default)]
     pub todo: Vec<String>,
+    /// `devices/families/<id>/`, where the family's files are.
+    #[serde(skip)]
+    pub dir: PathBuf,
 }
 
 impl Family {
@@ -107,8 +113,9 @@ pub(crate) fn load_families(root: &Path) -> (Vec<Family>, Vec<String>) {
 
 fn load_family(path: &Path) -> Result<Family, String> {
     let data = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
-    let family: Family =
+    let mut family: Family =
         serde_json::from_slice(&data).map_err(|error| format!("{}: {error}", path.display()))?;
+    family.dir = path.with_extension("");
     if family.schema.as_deref() != Some(FAMILY_SCHEMA) {
         return Err(format!(
             "{}: not a family file (its schema must be {FAMILY_SCHEMA})",

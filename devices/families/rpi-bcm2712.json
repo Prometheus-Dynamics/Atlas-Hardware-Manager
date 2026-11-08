@@ -1,0 +1,52 @@
+{
+  "schema": "urn:board:family:1",
+  "family": "rpi-bcm2712",
+  "display_name": "Raspberry Pi BCM2712",
+  "vendor": "Broadcom",
+  "description": "BCM2712 (Pi 5, CM5) boards: the boot ROM's USB boot, the mass-storage gadget that exposes the eMMC, and the bootloader EEPROM images. The board-OS boot mechanism is this family's Gaia layer (rpi-bcm2712/gaia).",
+  "method": "mass-storage-gadget",
+  "usb_vendor": "0a5c",
+  "entry": [
+    "Hold the board's boot button while connecting its USB port to this computer.",
+    "The board appears as 0a5c:2712 (BCM2712 boot ROM)."
+  ],
+  "flash": {
+    "stages": [
+      "usb-boot: the boot ROM takes the mass-storage-gadget boot files, or the board's flasher bundle",
+      "write: the eMMC is written over USB (the flasher writes and verifies it on the board)"
+    ]
+  },
+  "host": {
+    "linux": "udev vendor match (idVendor 0a5c)",
+    "windows": "WinUSB class"
+  },
+  "eeprom": {
+    "min_version": {
+      "date": "2025-12-08",
+      "timestamp": 1765222194,
+      "hash": "2226a853bb9f5fd80392e3a4a89e457aeca88008"
+    },
+    "update_method": "rpiboot-recovery",
+    "files": [
+      {
+        "path": "eeprom/pieeprom-2025-12-08.upd",
+        "role": "pieeprom",
+        "sha256": "aef058c6c223ece5f567ac671ea253943da3227d28536b6b837967f8288beb66",
+        "notes": "Bootloader image with bootconf.txt embedded. Flash as pieeprom.bin (rpiboot recovery) or pieeprom.upd (in-OS self-update)."
+      },
+      {
+        "path": "eeprom/pieeprom-2025-12-08.sig",
+        "role": "pieeprom-sig",
+        "sha256": "66a716ef29777cf5ace2cb2fbab42bdb4c1416a0a4aef1ef50fcbe06cb62b0f3",
+        "notes": "rpi-eeprom-digest file (sha256 of the image plus timestamp), not a cryptographic signature. Use as pieeprom.sig."
+      },
+      {
+        "path": "eeprom/recovery.bin",
+        "role": "recovery",
+        "notes": "rpi-eeprom recovery.bin for BCM2712 from release v2025.12.08-2712, matching the bundled pieeprom. The EEPROM flashing tool rpiboot loads as the second stage. Kept in git (about 100 KB).",
+        "sha256": "ad66b2960559c1bad92687f915bd9d993017f5a2ee7d7495ba866776ad6f1d3d",
+        "source": "https://raw.githubusercontent.com/raspberrypi/rpi-eeprom/cb1a22eff0b15b15a686318a885d1f1a2563ff6f/firmware-2712/latest/recovery.bin"
+      }
+    ]
+  }
+}

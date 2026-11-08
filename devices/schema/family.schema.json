@@ -10,11 +10,11 @@
     "schema": { "const": "urn:board:family:1" },
     "family": { "$ref": "#/$defs/id" },
     "display_name": { "type": "string", "minLength": 1 },
-    "vendor": { "enum": ["Rockchip", "Allwinner", "Canaan"] },
+    "vendor": { "enum": ["Rockchip", "Allwinner", "Canaan", "Broadcom"] },
     "description": { "type": "string" },
     "method": {
       "description": "The recovery method every board of the family gets when its record omits recovery.method.",
-      "enum": ["rockusb", "fel", "k230-usb"]
+      "enum": ["rockusb", "fel", "k230-usb", "mass-storage-gadget"]
     },
     "usb_vendor": { "$ref": "#/$defs/usbid" },
     "entry": {
@@ -49,6 +49,11 @@
         "windows": { "type": "string" }
       },
       "additionalProperties": { "type": "string" }
+    },
+    "eeprom": {
+      "type": "object",
+      "description": "The family's bootloader images (paths relative to devices/families/<id>/): a board's own eeprom block adds to and overrides these by role.",
+      "additionalProperties": true
     },
     "pid_chips": {
       "type": "object",

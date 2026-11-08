@@ -307,12 +307,24 @@ fn the_desktop_bundle_carries_every_package_file_the_app_reads() {
         // The roles stage_role() reads in atlas-driver-rpi/src/eeprom.rs.
         for role in ["recovery", "pieeprom", "pieeprom-sig"] {
             if let Some(file) = package.manifest.eeprom_file(role) {
-                needed.push(file.path.clone());
+                // A family's file (an absolute path) is checked under its folder.
+                needed.push(match file.path.split_once("/devices/families/") {
+                    Some((_, rest)) => format!("../families/{rest}"),
+                    None => file.path.clone(),
+                });
             }
         }
         for rel in needed {
-            let source = format!("../../../devices/{folder}/{rel}");
-            let target = format!("devices/{folder}/{rel}");
+            let (source, target) = match rel.strip_prefix("../families/") {
+                Some(rest) => (
+                    format!("../../../devices/families/{rest}"),
+                    format!("devices/families/{rest}"),
+                ),
+                None => (
+                    format!("../../../devices/{folder}/{rel}"),
+                    format!("devices/{folder}/{rel}"),
+                ),
+            };
             // The file itself, or a directory entry ("…/eeprom/") that holds
             // it at the same place.
             let bundled = resources.iter().any(|(from, to)| {

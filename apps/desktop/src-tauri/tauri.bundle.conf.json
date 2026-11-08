@@ -24,6 +24,8 @@
       "../../../devices/bpi-canmv-k230d-zero/manifest.json": "devices/bpi-canmv-k230d-zero/manifest.json",
       "../../../devices/families/allwinner-fel.json": "devices/families/allwinner-fel.json",
       "../../../devices/families/canaan-k230.json": "devices/families/canaan-k230.json",
+      "../../../devices/families/rpi-bcm2712.json": "devices/families/rpi-bcm2712.json",
+      "../../../devices/families/rpi-bcm2712/eeprom/": "devices/families/rpi-bcm2712/eeprom/",
       "../../../devices/families/rockchip-maskrom.json": "devices/families/rockchip-maskrom.json"
     },
     "linux": {

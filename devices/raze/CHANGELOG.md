@@ -7,6 +7,11 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **The bootloader images are the BCM2712 family's (2026-11-08).**
+  `pieeprom`, its digest and `recovery.bin` moved to
+  `devices/families/rpi-bcm2712/eeprom`, described by
+  `devices/families/rpi-bcm2712.json`; Raze names the family and keeps its
+  `bootconf`. The recovery method comes from the family too.
 - **The USB-boot flasher is a family feature (2026-11-08).** Its layer, init
   and boot firmware moved to the BCM2712 family; Raze keeps its generated
   `flasher/config.txt` line and `cmdline.txt`. Atlas picks the bundle from the

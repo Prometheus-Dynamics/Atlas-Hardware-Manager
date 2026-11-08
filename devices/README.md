@@ -63,7 +63,8 @@ devices/
                              (method, entry steps, flash stages, pid_chips).
                              A record names one with "family" and inherits
                              its method and entry steps: rockchip-maskrom,
-                             canaan-k230, allwinner-fel
+                             canaan-k230, allwinner-fel, rpi-bcm2712 (which also
+                             carries the bootloader images, in rpi-bcm2712/eeprom/)
 ```
 
 ## The rule: never block the user

@@ -55,7 +55,7 @@ fn stage_role(
     let source = package.dir.join(&file.path);
     let data = std::fs::read(&source).map_err(|error| {
         failed(format!(
-            "{} is missing ({error}); fetch it as listed in the package's fetch.lock",
+            "{} is missing ({error}); fetch it as listed in its package's or family's fetch.lock",
             source.display()
         ))
     })?;
