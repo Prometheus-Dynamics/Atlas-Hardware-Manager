@@ -5,7 +5,9 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
-use atlas_driver_orion::{BoardNodes, BundleHost, LiveStreams, OrionDirectory, RemoteTransport};
+use atlas_driver_orion::{
+    BoardNodes, BundleHost, LiveStreams, OrionDirectory, PairingLog, RemoteTransport,
+};
 use atlas_image_server::{ImageServer, ImageServerConfig};
 
 use crate::settings::{AppPaths, AppSettings};
@@ -44,15 +46,22 @@ pub struct Orion {
 impl Orion {
     pub fn new(paths: &AppPaths, settings: &AppSettings) -> Result<Self, String> {
         let identity = atlas_driver_orion::operator_identity(&paths.data_dir)?;
-        let live = Arc::new(LiveStreams::new(
-            identity.clone(),
-            Some(paths.data_dir.join(LIVE_PINS)),
-        ));
-        let transport = Arc::new(RemoteTransport::new(
-            identity.clone(),
-            settings.orion_url.clone(),
-            Some(paths.data_dir.join(PIN_FILE)),
-        ));
+        // A board that refuses this PC's key is logged once, under ORION.
+        let pairing = Arc::new(PairingLog::new(|line| {
+            crate::logfile::line("ORION", line);
+        }));
+        let live = Arc::new(
+            LiveStreams::new(identity.clone(), Some(paths.data_dir.join(LIVE_PINS)))
+                .with_pairing_log(pairing.clone()),
+        );
+        let transport = Arc::new(
+            RemoteTransport::new(
+                identity.clone(),
+                settings.orion_url.clone(),
+                Some(paths.data_dir.join(PIN_FILE)),
+            )
+            .with_pairing_log(pairing),
+        );
         let images = ImageServer::new(image_config(settings))
             .with_logger(Arc::new(|line| crate::logfile::line("IMAGES", line)));
         let bundles: Arc<dyn BundleHost> = Arc::new(images.clone());

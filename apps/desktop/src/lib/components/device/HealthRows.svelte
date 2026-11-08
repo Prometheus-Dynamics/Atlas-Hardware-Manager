@@ -103,7 +103,17 @@
       key: "link",
       label: "Link",
       value: linkText(record.link_kind, devices.nameOf),
-      detail: !record.capabilities.includes("telemetry") ? "" : streamed ? "pushed live" : pairing ? "polled: not paired with the board's Orion" : live.pollingWhy.has(id) ? `polled: ${live.pollingWhy.get(id)}` : "polled",
+      detail: !record.capabilities.includes("telemetry")
+        ? ""
+        : streamed
+          ? "pushed live"
+          : pairing === "other-key"
+            ? "polled: the board has another key for this PC"
+            : pairing
+              ? "polled: not paired with the board's Orion"
+              : live.pollingWhy.has(id)
+                ? `polled: ${live.pollingWhy.get(id)}`
+                : "polled",
       tone: record.presence === "online" ? "ok" : "err",
       series: [],
       color: "",
@@ -158,7 +168,19 @@
       {/if}
     </button>
   {/each}
-  {#if pairing}<OrionRepair {id} kind={pairing} />{/if}
+  {#if pairing}
+    <OrionRepair {id} kind={pairing} />
+  {:else if live.streamRetrying(id)}
+    <div class="flex items-center gap-2 pt-1 text-[12px] text-fg-muted">
+      <span class="min-w-0 flex-1 truncate">Stream retries every {Math.round((live.retryEvery(id) ?? 0) / 1000)} s</span>
+      <button type="button" class="link" onclick={() => live.stopRetrying(id)}>Stop retrying</button>
+    </div>
+  {:else if live.retriesStopped(id)}
+    <div class="flex items-center gap-2 pt-1 text-[12px] text-fg-muted">
+      <span class="min-w-0 flex-1 truncate">Stream retries stopped</span>
+      <button type="button" class="link" onclick={() => live.retryStream(id)}>Retry now</button>
+    </div>
+  {/if}
   {#if opened}
     <div class="pop" role="dialog" aria-label="{opened.label}, last five minutes">
       <div class="flex items-center justify-between text-[12px]">

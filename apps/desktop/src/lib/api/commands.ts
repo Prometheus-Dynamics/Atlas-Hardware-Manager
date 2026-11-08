@@ -9,6 +9,7 @@ import type {
   AppInfo,
   DiscoveryStatus,
   OrionConnection,
+  OtherKey,
   AppSettings,
   DeviceAction,
   DeviceKey,
@@ -190,9 +191,9 @@ export const api = {
   streamLive: async (key: DeviceKey, onFrame: (frame: LiveFrame) => void): Promise<LiveStart> => {
     const channel = new Channel<LiveFrame>();
     channel.onmessage = onFrame;
-    const started = await invoke<{ id: number | null; reason: string | null }>("start_live_stream", { key, onFrame: channel });
+    const started = await invoke<{ id: number | null; reason: string | null; pairing: OtherKey | null }>("start_live_stream", { key, onFrame: channel });
     const id = started.id;
-    if (id === null) return { stop: null, reason: started.reason ?? "no stream" };
+    if (id === null) return { stop: null, reason: started.reason ?? "no stream", pairing: started.pairing };
     return {
       stop: () => {
         void invoke<void>("stop_live_stream", { id });

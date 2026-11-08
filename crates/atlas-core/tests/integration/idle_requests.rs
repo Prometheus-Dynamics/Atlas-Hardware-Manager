@@ -250,8 +250,9 @@ async fn an_idle_board_is_asked_little() {
             }
             // No push: polled as before.
             Channel::None => assert!(rate.total() <= 11.0, "{rate:?}"),
-            // A channel that won't open is tried less and less often.
-            Channel::Refused => assert!(rate.connects <= 0.5, "{rate:?}"),
+            // A channel that won't open is retried at most every 10 s (the
+            // failure rule's cap: 2 s, doubling), so about 6 tries a minute.
+            Channel::Refused => assert!(rate.connects <= 6.5, "{rate:?}"),
             // Orion's channel stands in for the board's own: as Open, with
             // each status read asking both sources.
             Channel::OrionOnly => {

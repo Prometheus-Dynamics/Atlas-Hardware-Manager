@@ -141,10 +141,8 @@ impl AppPaths {
     /// Simulated runs keep their own inventory so they never mix with
     /// real devices.
     pub fn resolve(simulated: bool) -> Self {
-        let data_dir = std::env::var_os("ATLAS_DATA_DIR")
-            .map(PathBuf::from)
-            .or_else(|| dirs::data_dir().map(|dir| dir.join("atlas")))
-            .unwrap_or_else(|| std::env::temp_dir().join("atlas"));
+        // The same folder the CLI uses (atlas_core::data_dir).
+        let data_dir = atlas_core::data_dir();
         let cache_dir = dirs::cache_dir()
             .map(|dir| dir.join("atlas"))
             .unwrap_or_else(|| data_dir.join("cache"));

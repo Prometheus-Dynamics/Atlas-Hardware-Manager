@@ -8,7 +8,7 @@
 //! key is trusted on first use and then pinned (`pin_file`).
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -21,6 +21,9 @@ use orion_control_plane::{
 use orion_core::NodeId;
 use serde::Serialize;
 
+use crate::pairing::{
+    OtherKey, PairingLog, enroll_command, is_other_key, is_removed, removed_message,
+};
 use crate::transport::OrionTransport;
 
 /// What the UI shows about the Orion connection.
@@ -38,6 +41,9 @@ pub struct OrionConnection {
     pub node_id: Option<String>,
     pub node_fingerprint: Option<String>,
     pub error: Option<String>,
+    /// Set while the node refuses this computer's key because it has another
+    /// key enrolled for the operator name: the fix to show.
+    pub other_key: Option<OtherKey>,
 }
 
 pub struct RemoteTransport {
@@ -46,10 +52,11 @@ pub struct RemoteTransport {
     url: Mutex<Option<String>>,
     session: tokio::sync::Mutex<Option<RemoteOperator>>,
     state: Mutex<OrionConnection>,
+    pairing_log: Option<Arc<PairingLog>>,
 }
 
 /// The actions Atlas runs through Orion; the enroll command grants these.
-const ACTIONS: [&str; 32] = [
+pub(crate) const ACTIONS: [&str; 32] = [
     "update",
     "update.cancel",
     "update.rollback",
@@ -93,12 +100,7 @@ impl RemoteTransport {
     pub fn new(identity: OperatorIdentity, url: Option<String>, pin_file: Option<PathBuf>) -> Self {
         let operator_id = identity.operator_id().to_string();
         let fingerprint = identity.fingerprint();
-        let enroll_command = format!(
-            "orionctl operators enroll {operator_id} --fingerprint {fingerprint} {}",
-            ACTIONS
-                .map(|action| format!("--action '{action}'"))
-                .join(" ")
-        );
+        let enroll_command = enroll_command(&operator_id, &fingerprint);
         Self {
             identity,
             pin_file,
@@ -111,7 +113,14 @@ impl RemoteTransport {
             }),
             url: Mutex::new(url),
             session: tokio::sync::Mutex::new(None),
+            pairing_log: None,
         }
+    }
+
+    /// Logs a board's refusal of this computer's key (once per board and key).
+    pub fn with_pairing_log(mut self, log: Arc<PairingLog>) -> Self {
+        self.pairing_log = Some(log);
+        self
     }
 
     /// Points Atlas at another node (or none); the next call reconnects.
@@ -131,6 +140,7 @@ impl RemoteTransport {
         state.node_id = None;
         state.node_fingerprint = None;
         state.error = None;
+        state.other_key = None;
         // A new node has its own key: trust it on first use again.
         if let Some(pin) = &self.pin_file {
             let _ = std::fs::remove_file(pin);
@@ -175,16 +185,28 @@ impl RemoteTransport {
         let session = match connected {
             Ok(session) => session,
             Err(error) => {
-                let failed = crate::protocol::unreachable(&url, &error);
+                let other = is_other_key(&error).then(|| self.refused(&url));
+                let failed = match &other {
+                    Some(key) => DriverError::Unsupported(key.message()),
+                    None if is_removed(&error) => {
+                        DriverError::Unsupported(removed_message(&self.identity))
+                    }
+                    None => crate::protocol::unreachable(&url, &error),
+                };
                 let mut state = self
                     .state
                     .lock()
                     .unwrap_or_else(|poisoned| poisoned.into_inner());
                 state.connected = false;
-                state.error = Some(match &failed {
-                    DriverError::Incompatible(message) => message.clone(),
+                state.error = Some(match (&other, &failed) {
+                    (Some(key), _) => key.message(),
+                    (None, DriverError::Incompatible(message)) => message.clone(),
+                    (None, DriverError::Unsupported(message)) if is_removed(&error) => {
+                        message.clone()
+                    }
                     _ => error.to_string(),
                 });
+                state.other_key = other;
                 return Err(failed);
             }
         };
@@ -209,6 +231,10 @@ impl RemoteTransport {
     }
 
     fn record<T>(&self, result: &Result<T, RemoteError>) {
+        let other = match result {
+            Err(error) if is_other_key(error) => Some(self.refused(&self.board())),
+            _ => None,
+        };
         let mut state = self
             .state
             .lock()
@@ -217,21 +243,56 @@ impl RemoteTransport {
             Ok(_) => {
                 state.enrolled = true;
                 state.error = None;
+                state.other_key = None;
+            }
+            Err(error) if is_removed(error) => {
+                state.enrolled = false;
+                state.error = Some(removed_message(&self.identity));
+                state.other_key = None;
             }
             Err(error) if error.is_not_enrolled() => {
                 state.enrolled = false;
                 state.error = None;
+                state.other_key = None;
+            }
+            Err(_) if other.is_some() => {
+                state.enrolled = false;
+                state.error = other.as_ref().map(OtherKey::message);
+                state.other_key = other;
             }
             Err(error) => state.error = Some(error.to_string()),
         }
     }
 
+    /// The node at `board` refused this computer's key: logged once.
+    fn refused(&self, board: &str) -> OtherKey {
+        let key = OtherKey::for_identity(&self.identity);
+        if let Some(log) = &self.pairing_log {
+            log.refused(board, &key);
+        }
+        key
+    }
+
+    fn board(&self) -> String {
+        self.url
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+            .unwrap_or_default()
+    }
+
     fn error(&self, error: &RemoteError) -> DriverError {
+        if is_removed(error) {
+            return DriverError::Unsupported(removed_message(&self.identity));
+        }
         if error.is_not_enrolled() {
             let command = self.connection().enroll_command;
             return DriverError::Unsupported(format!(
                 "This computer isn't enrolled with Orion yet; on the device run: {command}"
             ));
+        }
+        if is_other_key(error) {
+            return DriverError::Unsupported(OtherKey::for_identity(&self.identity).message());
         }
         crate::protocol::mismatch(error)
             .unwrap_or_else(|| DriverError::Unreachable(format!("Orion: {error}")))

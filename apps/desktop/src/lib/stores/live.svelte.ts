@@ -15,10 +15,11 @@
 // readings that drift; never twice for two views, not again when a view
 // re-subscribes, and not while the window is hidden.
 
-import { SvelteMap } from "svelte/reactivity";
-import { api, errorText, keyString, type DeviceRecord, type LiveFrame, type Metric } from "#lib/api/client.ts";
+import { SvelteMap, SvelteSet } from "svelte/reactivity";
+import { api, errorText, keyString, type DeviceRecord, type LiveFrame, type Metric, type OtherKey } from "#lib/api/client.ts";
 import { devices } from "./devices.svelte";
 import { loadLiveCache, saveLiveCache } from "./liveCache";
+import { nextStreamWait, pairingOf, STREAM_RETRY_MS, type Pairing } from "./liveRetry";
 
 /** For a device's own page and the Monitor, when polled. */
 export const FAST_MS = 1000;
@@ -64,10 +65,7 @@ const POLLED_DRIFT_MS = 15_000;
 function drifts(metricId: string): boolean {
   return metricId === "temp" || metricId.startsWith("temp.") || metricId === "fan" || metricId === "fan.rpm" || metricId === "uptime";
 }
-/** How long before a board without a stream is asked again: doubling from this after each refusal… */
-const STREAM_RETRY_MS = 30_000;
-/** …up to this, until its link changes (another cable, another address) or the user retries. */
-const STREAM_RETRY_MAX_MS = 300_000;
+/** A board that refuses its stream is asked again after a short wait that doubles, up to 10 s (liveRetry.ts); until its link changes or the user retries. */
 /** A stream outlives its last view this long, so a view re-subscribing keeps it. */
 const STREAM_LINGER_MS = 2000;
 
@@ -85,6 +83,8 @@ class LiveStore {
   errors = new SvelteMap<string, string>();
   /** Why a device's readings are polled, not streamed (its stream didn't start or ended), for the page to say. */
   pollingWhy = new SvelteMap<string, string>();
+  /** The fix for a device whose board refuses this computer's key (another key is enrolled for its name). */
+  refused = new SvelteMap<string, OtherKey>();
   /** Devices showing the last session's readings, and when those were taken (ms): stale until it answers. */
   cachedAt = new SvelteMap<string, number>();
   private cacheDirty = false;
@@ -136,7 +136,10 @@ class LiveStore {
   private starting = new Set<string>();
   /** When a stream was last tried per device (ms), how long to wait after that, and on which link. */
   private streamTried = new Map<string, number>();
-  private streamWait = new Map<string, number>();
+  /** The wait before the next try, once a try was refused (the shown retry interval). */
+  private streamWait = new SvelteMap<string, number>();
+  /** Devices whose stream retries were stopped by the user (until a retry). */
+  private stopped = new SvelteSet<string>();
   private streamLink = new Map<string, string>();
   private lingering = new Map<string, ReturnType<typeof setTimeout>>();
   /** Devices whose last poll brought only readings that drift, besides the stream's when streamed. */
@@ -225,20 +228,42 @@ class LiveStore {
     return Math.max(since, Math.min(now - SHORTEST_SPAN_MS, ...firsts));
   }
 
-  /** Whether the device's stream was refused because the board's Orion doesn't know this PC's key. */
-  pairing(id: string): "other-key" | "unenrolled" | null {
-    const why = this.streams.has(id) ? undefined : this.pollingWhy.get(id);
-    if (!why) return null;
-    if (/not its enrolled key/.test(why)) return "other-key";
-    if (/isn't enrolled|not enrolled/.test(why)) return "unenrolled";
-    return null;
+  /** Whether the device's board refuses this computer's key (other-key), or doesn't know its operator (unenrolled); null while streamed. */
+  pairing(id: string): Pairing | null {
+    return pairingOf(this.streams.has(id), this.refused.has(id), this.pollingWhy.get(id));
   }
 
-  /** Tries the device's stream again now (after re-pairing, say), whatever the wait. */
+  /** The fix for the device's board refusing this computer's key; null while streamed. */
+  otherKey(id: string): OtherKey | null {
+    return this.streams.has(id) ? null : (this.refused.get(id) ?? null);
+  }
+
+  /** Tries the device's stream again now (after re-pairing, say), whatever the wait; also ends a manual stop. */
   retryStream(id: string) {
+    this.stopped.delete(id);
     this.streamTried.delete(id);
     this.streamWait.delete(id);
     this.stream(id);
+  }
+
+  /** Stops asking for the device's stream (its readings stay polled) until the user retries. */
+  stopRetrying(id: string) {
+    this.stopped.add(id);
+  }
+
+  /** Whether the user stopped the device's stream retries. */
+  retriesStopped(id: string): boolean {
+    return this.stopped.has(id);
+  }
+
+  /** Whether a refused device's stream is retried on its own (not streamed, not stopped). */
+  streamRetrying(id: string): boolean {
+    return !this.streams.has(id) && this.pollingWhy.has(id) && !this.stopped.has(id);
+  }
+
+  /** The wait, in ms, before the next try of a refused stream; null when none was refused. */
+  retryEvery(id: string): number | null {
+    return this.streamWait.get(id) ?? null;
   }
 
   /** Whether the device's readings are pushed right now. */
@@ -249,7 +274,7 @@ class LiveStore {
   /** Starts the device's stream, unless it has one or had none a moment ago. */
   private stream(id: string) {
     const record = devices.get(id);
-    if (!hasTelemetry(record) || this.streams.has(id) || this.starting.has(id)) return;
+    if (!hasTelemetry(record) || this.streams.has(id) || this.starting.has(id) || this.stopped.has(id)) return;
     // A new link may stream where the old one was refused: ask at once.
     const link = `${record!.link_kind} ${record!.identity.address}`;
     if (this.streamLink.get(id) !== link) {
@@ -262,21 +287,28 @@ class LiveStore {
     this.starting.add(id);
     api
       .streamLive(record!.key, (frame) => this.queue(id, frame))
-      .then(({ stop, reason }) => {
+      .then(({ stop, reason, pairing }) => {
         if (!stop) {
-          this.pollingWhy.set(id, reason ?? "no stream");
-          // The first wait is STREAM_RETRY_MS; each refusal after doubles it.
-          const waited = this.streamWait.get(id);
-          this.streamWait.set(id, waited === undefined ? STREAM_RETRY_MS : Math.min(waited * 2, STREAM_RETRY_MAX_MS));
+          this.refuse(id, reason ?? "no stream", pairing ?? null);
           return;
         }
         this.streamWait.delete(id);
+        this.refused.delete(id);
         this.pollingWhy.delete(id);
         if (this.watchers.has(id)) this.streams.set(id, { stop, carries: this.streams.get(id)?.carries ?? new Set() });
         else stop();
       })
-      .catch(() => {})
+      // A failed call waits like a refusal, and says why.
+      .catch((error) => this.refuse(id, errorText(error), null))
       .finally(() => this.starting.delete(id));
+  }
+
+  /** The stream was refused (or its call failed): say why, and wait longer before the next try. */
+  private refuse(id: string, why: string, pairing: OtherKey | null) {
+    this.pollingWhy.set(id, why);
+    if (pairing) this.refused.set(id, pairing);
+    else this.refused.delete(id);
+    this.streamWait.set(id, nextStreamWait(this.streamWait.get(id)));
   }
 
   private unstream(id: string) {

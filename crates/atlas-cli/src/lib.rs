@@ -241,16 +241,12 @@ impl From<StagedArg> for StagedRollout {
     }
 }
 
-fn default_state_path() -> Option<PathBuf> {
-    dirs::data_dir().map(|dir| dir.join("atlas").join("inventory.json"))
-}
-
 fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
     let mut builder = Atlas::builder();
     let state_path = match (&cli.state, cli.sim) {
         (Some(path), _) => Some(path.clone()),
         (None, Some(_)) => None,
-        (None, None) => default_state_path(),
+        (None, None) => Some(atlas_core::data_dir().join("inventory.json")),
     };
     if let Some(path) = state_path {
         builder = builder.store(Arc::new(JsonFileStore::new(path)) as Arc<dyn InventoryStore>);
@@ -267,13 +263,13 @@ fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
             builder = builder.link_source(fleet.link_source());
         }
         None => {
-            let data = dirs::data_dir().map(|data| data.join("atlas"));
+            let data = atlas_core::data_dir();
             let ssh = SshAccess::new(SshConfig {
                 identity_file: cli
                     .ssh_key
                     .as_deref()
                     .and_then(atlas_driver_board::private_key_for),
-                known_hosts: data.as_ref().map(|data| data.join("known_hosts")),
+                known_hosts: Some(data.join("known_hosts")),
                 public_key: ssh_keys.get().and_then(|keys| {
                     keys.lines()
                         .map(str::trim)
@@ -284,7 +280,7 @@ fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
             let mut warnings = Vec::new();
             builder = hardware::register_hardware(
                 builder,
-                data.as_deref(),
+                Some(data.as_path()),
                 &ssh_keys,
                 &ssh,
                 &mut warnings,
@@ -295,8 +291,10 @@ fn build_atlas(cli: &Cli, ssh_keys: SshKeys) -> Result<Atlas, String> {
             // Each board's own orion-node (slots, actions, status without an
             // SSH key while its security switch is off; the only way to a
             // board behind a robot controller), with the app's operator key.
-            if let Some(data) = dirs::data_dir() {
-                match atlas_driver_orion::operator_identity(&data.join("atlas")) {
+            // The same data folder as the app (ATLAS_DATA_DIR, else the user's).
+            {
+                let data = atlas_core::data_dir();
+                match atlas_driver_orion::operator_identity(&data) {
                     Ok(identity) => {
                         // Boards fetch slot bundles from this computer, as
                         // from the app (started on the first install).

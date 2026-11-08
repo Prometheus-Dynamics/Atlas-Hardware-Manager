@@ -75,6 +75,7 @@ const orion: OrionConnection = {
   node_id: null,
   node_fingerprint: null,
   error: null,
+  other_key: null,
 };
 
 function imageServer(): ImageServerStatus {
