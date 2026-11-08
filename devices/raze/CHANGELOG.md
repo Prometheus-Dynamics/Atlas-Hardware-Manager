@@ -7,6 +7,11 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **About 6 MB back from the kernel's hash tables (2026-11-08).** The slot
+  command line sizes the dentry, inode, TCP and UDP tables for this board
+  (`dhash_entries=16384 ihash_entries=8192 thash_entries=4096
+  uhash_entries=1024`): vmalloc 21.9 to 18.6 MB and 2.9 MB more available on
+  Raze #1 (HeliOS dev.1024), still above the board's ~11k dentries.
 - **orion-node can keep the clock and publish the host keys (2026-11-08).**
   An OS that has orion-node discipline the clock doesn't run timesyncd
   (a Condition on its unit; other OSes keep it). Status reads the node's

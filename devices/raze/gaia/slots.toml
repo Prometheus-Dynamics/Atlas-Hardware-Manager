@@ -69,7 +69,9 @@ default = "7.2.9-v8-16k"
 [inputs.slot_cmdline]
 description = "The slot's kernel command line before the slot arguments (atlas.slot, atlas.roothash, atlas.data, panic) are added"
 kind = "string"
-default = "console=serial0,115200 console=tty1 rootwait quiet splash systemd.unified_cgroup_hierarchy=1"
+# The four hash tables sized for a board with about 11k dentries: the kernel's
+# defaults scale with RAM and cost about 6 MB (measured on Raze #1, dev.1024).
+default = "console=serial0,115200 console=tty1 rootwait quiet splash systemd.unified_cgroup_hierarchy=1 dhash_entries=16384 ihash_entries=8192 thash_entries=4096 uhash_entries=1024"
 
 # /etc/slot.json, reduced (no verity values: they come from the image, which
 # contains this file). Stage env set: rendered to /etc/default/slot.env in
