@@ -7,6 +7,7 @@
 //! source confirmed is marked UNCONFIRMED where it's used. Untested on a
 //! board: the boards are on order.
 
+pub mod fel;
 pub mod k230;
 pub mod rockchip;
 pub mod traced;

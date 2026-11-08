@@ -106,11 +106,28 @@ Rockchip PID needs a rule of its own. It names `29f1:0230` (K230) and
 
 The Allwinner FEL protocol is `crates/atlas-socflash/src/fel`: the version
 and memory requests, an eGON SPL written into SRAM and run through the
-thunk, then a legacy U-Boot image, and the storage write. It is checked
-against a mock board only. Atlas's SoC driver does not reach it yet (its
-`Soc` has the Rockchip and K230 drivers only), and the family's SRAM layout
-is `null` until an A733 layout is sourced, so the Cubie records cannot be
-flashed from the app.
+thunk (`fel/thunk.S`, assembled with clang for armv7a, as briefed), then a
+legacy U-Boot image into DRAM, and its run. The SPL step writes the SPL,
+reads it back, runs the thunk and checks that FEL answers again.
+
+- Clean-room, MIT. The facts come from the linux-sunxi wiki's FEL pages
+  (FEL, FEL/Protocol, FEL/USBBoot, BROM), read from web.archive.org
+  snapshots; no sunxi-tools source was consulted. The sources and wiki
+  revisions are in the module header, `fel/mod.rs`.
+- Stub: a thunk is needed. The boot ROM's FEL stacks sit in the SRAM a
+  full SPL needs, and the SPL must return to the ROM's FEL loop, so FEL
+  execute alone is not safe. The thunk swaps the stack buffers with backup
+  buffers around the SPL call.
+- The SRAM layout is data: the family's `flash.sram` (schema
+  `$defs/sram`). It is `null` for the A733, so nothing runs on it yet.
+- Tested against the mock device (`fel/sim.rs`), the wire-format tests and
+  the assembled-thunk comparison. Untested on an A733.
+- UNCONFIRMED for the A733: the SRAM layout, the thunk and SPL addresses,
+  the DRAM address for U-Boot, the SoC id, the thunk's ISA (the record says
+  AArch64; the thunk is ARMv7), and the FEL USB id's source (see
+  `devices/radxa-cubie-a7a`).
+- Atlas's SoC driver does not reach it yet (its `Soc` has the Rockchip and
+  K230 drivers only), so the Cubie records cannot be flashed from the app.
 
 ## Checked against the vendor source
 

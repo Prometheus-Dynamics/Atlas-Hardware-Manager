@@ -78,7 +78,7 @@
       "fel_image": "eGON SPL then legacy U-Boot (u-boot-sunxi-with-spl form), UNCONFIRMED for the A733"
     },
     "todo": [
-      "Sources: the USB BOOT button is held before power-on (docs.radxa.com/en/cubie/a7s hardware info). The 1f3a:efe8 id is the same A733 FEL id as the A7A record (Radxa's PhoenixSuit driver docs, sunxi-tools fel_lib.h). UNCONFIRMED until lsusb on the board shows it.",
+      "Sources: the USB BOOT button is held before power-on (docs.radxa.com/en/cubie/a7s hardware info). The 1f3a:efe8 id is the same A733 FEL id as the A7A record (Radxa's PhoenixSuit driver docs). UNCONFIRMED until lsusb on the board shows it.",
       "UNCONFIRMED: which of the two USB-C ports is the FEL port (USB-C 1, USB 2.0 with power and OTG, or USB-C 2, USB 3.2 with DP Alt Mode and OTG), and the PC cable steps. Radxa's A7S hardware page says only that the USB BOOT button is held before power-on.",
       "UNCONFIRMED: the loader glob u-boot-sunxi-with-spl*.bin, and the A7S's FEL image (Radxa's images are Android 13 zips from github.com/radxa/allwinner-android-manifests, not downloaded). Gaia needs: the A733 FEL image (eGON SPL and U-Boot) as the loader, and the microSD disk image.",
       "UNCONFIRMED: the 4 GB RAM size (the page lists up to 16 GB).",
