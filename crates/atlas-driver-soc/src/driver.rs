@@ -293,9 +293,41 @@ mod tests {
         assert_eq!(identity.versions["bootloader"], "maskrom");
     }
 
+    /// A catalog whose one record guesses its PID, written to a temporary
+    /// folder for the test (no repo record guesses one at this point).
+    fn guessing_catalog(name: &str) -> Arc<DeviceCatalog> {
+        const RECORD: &str = r#"{
+  "schema": "urn:board:manifest:1",
+  "contract": 1,
+  "model": "guessed-rockchip",
+  "package_version": "2026.1.0-dev",
+  "display_name": "Guessed Rockchip",
+  "record_only": true,
+  "platform": { "soc": "RK3588S2", "arch": "aarch64" },
+  "recovery": {
+    "usb_boot": { "vid": "2207", "pid": "3511", "pid_unconfirmed": true },
+    "method": "rockusb",
+    "storage_target": "emmc",
+    "instructions": ["Test record: its PID is a guess."],
+    "status": "untested",
+    "flash": { "loader": "test_loader_*.bin", "storage": "emmc", "image_offset": 0 }
+  }
+}
+"#;
+        let root =
+            std::env::temp_dir().join(format!("atlas-guessing-{}-{name}", std::process::id()));
+        let folder = root.join("guessed-rockchip");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("manifest.json"), RECORD).unwrap();
+        let catalog = DeviceCatalog::load(std::slice::from_ref(&root));
+        std::fs::remove_dir_all(&root).ok();
+        assert!(catalog.warnings().is_empty(), "{:?}", catalog.warnings());
+        Arc::new(catalog)
+    }
+
     #[test]
     fn a_rockchip_no_record_names_is_offered_as_the_unconfirmed_one() {
-        let driver = SocDriver::new(Soc::Rockchip, catalog());
+        let driver = SocDriver::new(Soc::Rockchip, guessing_catalog("offered"));
         let found = Found {
             location: "2-1".into(),
             vendor_id: 0x2207,
@@ -306,7 +338,7 @@ mod tests {
         let identity = driver.identity(&candidate("2-1"), &found);
         // The one record that guesses its PID is offered, flagged: Atlas
         // checks the chip the board reports before writing.
-        assert_eq!(identity.attributes["model"], "firefly-aio-3562jq");
+        assert_eq!(identity.attributes["model"], "guessed-rockchip");
         assert!(identity.attributes["pid_unconfirmed"].contains("2207:3510"));
     }
 

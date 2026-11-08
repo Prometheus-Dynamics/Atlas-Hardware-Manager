@@ -57,7 +57,6 @@ fn the_board_records_say_how_to_flash_them_and_that_its_untested() {
         ("radxa-rock-5c", 0x2207, 0x350b, "rockusb", "emmc"),
         ("radxa-rock-4d", 0x2207, 0x350e, "rockusb", "emmc"),
         ("radxa-zero-3w", 0x2207, 0x350a, "rockusb", "emmc"),
-        ("firefly-aio-3562jq", 0x2207, 0x350d, "rockusb", "emmc"),
         ("luckfox-pico-pro", 0x2207, 0x110c, "rockusb", "spi-nand"),
         ("bpi-canmv-k230d-zero", 0x29f1, 0x0230, "k230-usb", "sd"),
     ];
@@ -86,14 +85,9 @@ fn the_board_records_say_how_to_flash_them_and_that_its_untested() {
             "{model}"
         );
     }
-    // RK3562's maskrom PID is inferred from U-Boot, not read from a boot ROM;
-    // any other unnamed Rockchip may be it.
-    let unconfirmed: Vec<&str> = catalog
-        .unconfirmed_usb_boot(0x2207)
-        .iter()
-        .map(|package| package.manifest.model.as_str())
-        .collect();
-    assert_eq!(unconfirmed, ["firefly-aio-3562jq"]);
+    // No record guesses its maskrom PID now: an unnamed Rockchip is only a
+    // chip, never a record.
+    assert!(catalog.unconfirmed_usb_boot(0x2207).is_empty());
 }
 
 /// Every `board-package.env` under a package reports the manifest's
@@ -286,7 +280,6 @@ fn board_records_with_an_identity_carry_board_lite_for_their_arch() {
         with_identity,
         [
             "bpi-canmv-k230d-zero",
-            "firefly-aio-3562jq",
             "luckfox-pico-pro",
             "radxa-rock-4d",
             "radxa-rock-5c",
