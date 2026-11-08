@@ -16,6 +16,7 @@
   !insertmacro ATLAS_BIND_WINUSB "Raspberry Pi USB boot" 0x0a5c 0x2712
   !insertmacro ATLAS_BIND_WINUSB "Raspberry Pi USB boot" 0x0a5c 0x2763
   !insertmacro ATLAS_BIND_WINUSB "Raspberry Pi USB boot" 0x0a5c 0x2764
+  !insertmacro ATLAS_BIND_WINUSB "Rockchip RK3566 maskrom" 0x2207 0x350a
   !insertmacro ATLAS_BIND_WINUSB "Rockchip RK3588 maskrom" 0x2207 0x350b
   !insertmacro ATLAS_BIND_WINUSB "Rockchip RK3576 maskrom" 0x2207 0x350e
   !insertmacro ATLAS_BIND_WINUSB "Rockchip RV1106 maskrom" 0x2207 0x110c
