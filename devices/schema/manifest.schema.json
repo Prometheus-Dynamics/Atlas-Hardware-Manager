@@ -29,9 +29,21 @@
         "eeprom",
         "capabilities",
         "identity_service"
-      ]
+      ],
+      "properties": {
+        "identity": {
+          "required": ["serial_source", "hostname_pattern", "mac_rule", "usb_gadget"]
+        }
+      }
     }
   },
+  "allOf": [
+    {
+      "description": "A board named by no family gives its own recovery method and entry steps; a family-named one inherits them (devices/families/).",
+      "if": { "not": { "required": ["family"] } },
+      "then": { "properties": { "recovery": { "required": ["method", "instructions"] } } }
+    }
+  ],
   "additionalProperties": false,
   "properties": {
     "schema": { "const": "urn:board:manifest:1" },
@@ -48,6 +60,24 @@
     },
     "description": { "type": "string" },
     "vendor": { "type": "string" },
+    "family": {
+      "$ref": "#/$defs/id",
+      "description": "The device family (devices/families/<id>.json, family.schema.json) this board belongs to: its recovery.method and recovery.instructions default to the family's when omitted."
+    },
+    "variants": {
+      "type": "array",
+      "description": "Variants of this board that differ in data only (the AI-CAM's lens variants). Atlas exposes each one's data as written.",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "display_name": { "type": "string" },
+          "data": { "type": "object" }
+        }
+      }
+    },
     "platform": {
       "type": "object",
       "properties": {
@@ -112,7 +142,7 @@
     },
     "identity": {
       "type": "object",
-      "required": ["serial_source", "hostname_pattern", "mac_rule", "usb_gadget"],
+      "description": "A board package requires all four of serial_source, hostname_pattern, mac_rule and usb_gadget (see the top-level else). A board record gives only what it serves (identity_port).",
       "properties": {
         "serial_source": {
           "type": "object",
@@ -165,7 +195,7 @@
     },
     "recovery": {
       "type": "object",
-      "required": ["usb_boot", "method", "storage_target", "instructions"],
+      "required": ["usb_boot", "storage_target"],
       "properties": {
         "usb_boot": {
           "type": "object",
@@ -180,8 +210,8 @@
           }
         },
         "method": {
-          "description": "mass-storage-gadget: a Raspberry Pi boot ROM serves the eMMC as a USB disk. rockusb: a Rockchip boot ROM (maskrom) runs a loader file's DDR init and usbplug, which writes the storage. k230-usb: the K230 boot ROM runs Canaan's burner U-Boot, which writes the storage.",
-          "enum": ["mass-storage-gadget", "rockusb", "k230-usb"]
+          "description": "mass-storage-gadget: a Raspberry Pi boot ROM serves the eMMC as a USB disk. rockusb: a Rockchip boot ROM (maskrom) runs a loader file's DDR init and usbplug, which writes the storage. k230-usb: the K230 boot ROM runs Canaan's burner U-Boot, which writes the storage. fel: the Allwinner boot ROM takes an eGON SPL in SRAM over FEL, then U-Boot. Required unless the board names a family, which gives it.",
+          "enum": ["mass-storage-gadget", "rockusb", "k230-usb", "fel"]
         },
         "storage_target": { "enum": ["emmc", "sd", "nvme", "usb", "spi-nand", "spi-nor"] },
         "storage_target_evidence": { "type": "array", "items": { "type": "string" } },
@@ -210,6 +240,10 @@
               "type": "integer",
               "minimum": 0,
               "description": "Byte offset on the storage where the image's first byte goes (0: the image is the whole disk, idblock and all)."
+            },
+            "fel_image": {
+              "type": "string",
+              "description": "allwinner-fel: the image form this board's FEL package takes (the family says what Atlas can load)."
             },
             "load_address": {
               "type": "string",

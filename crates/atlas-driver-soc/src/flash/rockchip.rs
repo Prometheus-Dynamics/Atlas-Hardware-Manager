@@ -29,13 +29,19 @@ impl Job {
 
         // A loader for another chip would run the wrong DDR init.
         if let (Some(number), Some(soc)) = (loader.chip_number(), self.chip.as_deref())
-            && !soc.to_ascii_uppercase().contains(&number)
+            && !self
+                .loader_chips
+                .as_ref()
+                .is_some_and(|tags| tags.contains(&number))
         {
             return Err(failed(
                 UpdateStep::Preflight,
                 format!(
-                    "{} is a loader for chip {number}; this board is {soc}",
-                    self.loader.display()
+                    "{} is a loader for chip {number}; this board is {soc}, whose family accepts {}",
+                    self.loader.display(),
+                    self.loader_chips
+                        .as_ref()
+                        .map_or_else(|| "no chip".to_string(), |tags| tags.join(", "))
                 ),
             ));
         }
@@ -91,8 +97,13 @@ impl Job {
         let chip = handle
             .block_on(device.read_chip_info())
             .map_err(|error| error.to_string());
-        let said = chip_verdict(chip, self.chip.as_deref(), self.chip_required)
-            .map_err(|why| failed(UpdateStep::Transfer, why))?;
+        let said = chip_verdict(
+            chip,
+            self.chip.as_deref(),
+            self.loader_chips.as_deref(),
+            self.chip_required,
+        )
+        .map_err(|why| failed(UpdateStep::Transfer, why))?;
         self.progress.log(said);
         let storage = match self.storage() {
             Some("emmc") => Some(Storage::Emmc),

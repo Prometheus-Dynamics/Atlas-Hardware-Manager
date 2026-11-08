@@ -1,0 +1,30 @@
+{
+  "schema": "urn:board:family:1",
+  "family": "canaan-k230",
+  "display_name": "Canaan K230",
+  "vendor": "Canaan",
+  "description": "Kendryte K230 and K230D: the boot ROM enters USB download mode when its storage holds nothing it can boot. Atlas loads Canaan's burner U-Boot at the record's load_address, and the burner writes the storage. No vendor tool at run time (written from Canaan's k230_flash). Untested on a board.",
+  "method": "k230-usb",
+  "usb_vendor": "29f1",
+  "entry": [
+    "Make sure the board's storage holds nothing it can boot: the boot ROM waits for USB only then.",
+    "Connect the board's USB OTG port to this computer, then power the board on.",
+    "The board appears as a K230 USB boot device (29f1:<pid>)."
+  ],
+  "flash": {
+    "stages": [
+      "usb-boot: the boot ROM takes Canaan's burner (the record's loader) and starts it at the record's load_address",
+      "burn: the burner writes the image to the record's medium from image_offset",
+      "confirm: the burner checksums the written image; a burner that can't checksum says so, then the board restarts"
+    ],
+    "loader_check": "The SPL firmware heads in the image are checked (SHA-256) before every flash."
+  },
+  "host": {
+    "linux": "udev vendor match (idVendor 29f1)",
+    "windows": "WinUSB class"
+  },
+  "todo": [
+    "Only the K230D's USB id 29f1:0230 is sourced (the bpi-canmv-k230d-zero record); the plain K230's download-mode PID is not.",
+    "The load address is per board: the official tools send 0x80360000, and Gaia's burner links at 0x80300000 (see the record)."
+  ]
+}

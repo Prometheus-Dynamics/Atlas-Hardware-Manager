@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:board:family:1",
+  "title": "Device family (contract 1)",
+  "description": "devices/families/<id>.json: what every board of one chip family shares in its download mode (recovery method, entry steps, USB vendor, family-wide flash rules, host driver, chip names per PID). A board record names its family with \"family\" and omits what the family gives; its own facts (usb_boot, recovery.flash, storage_target) stay in the record.",
+  "type": "object",
+  "required": ["schema", "family", "display_name", "vendor", "method", "usb_vendor", "entry", "flash", "host"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "urn:board:family:1" },
+    "family": { "$ref": "#/$defs/id" },
+    "display_name": { "type": "string", "minLength": 1 },
+    "vendor": { "enum": ["Rockchip", "Allwinner", "Canaan"] },
+    "description": { "type": "string" },
+    "method": {
+      "description": "The recovery method every board of the family gets when its record omits recovery.method.",
+      "enum": ["rockusb", "fel", "k230-usb"]
+    },
+    "usb_vendor": { "$ref": "#/$defs/usbid" },
+    "entry": {
+      "description": "Generic download-mode steps: the default recovery.instructions of the family's boards. A record's own instructions replace them.",
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "flash": {
+      "type": "object",
+      "description": "Family-wide flash rules, data only: the stages Atlas runs and what it checks. A board's own flash facts (loader, storage, image_offset, load_address, nand) stay in its record's recovery.flash.",
+      "properties": {
+        "stages": { "type": "array", "items": { "type": "string" } },
+        "loader_check": { "type": "string" },
+        "loader_chips": {
+          "type": "object",
+          "description": "rockusb: the chip tags a loader may report (the four characters a chip-info or loader header carries, as reversed ASCII), keyed by the record's SoC name. A loader or chip reply outside a board's list stops the flash.",
+          "additionalProperties": { "type": "array", "minItems": 1, "items": { "type": "string", "pattern": "^[0-9A-Za-z]{4}$" } }
+        },
+        "fel_image": { "type": "string", "description": "allwinner-fel: the image form the family can load." },
+
+        "sram": { "type": ["object", "null"], "description": "FEL: the SRAM layout, null until an SoC's is sourced." }
+      }
+    },
+    "host": {
+      "type": "object",
+      "description": "How a host sees the family's devices: the driver or rule that matches it, per host OS.",
+      "properties": {
+        "linux": { "type": "string" },
+        "windows": { "type": "string" }
+      },
+      "additionalProperties": { "type": "string" }
+    },
+    "pid_chips": {
+      "type": "object",
+      "description": "The chip a download-mode PID stands for, keyed by the USB product id as four hex digits. A PID not listed names no chip.",
+      "additionalProperties": { "type": "string", "minLength": 1 }
+    },
+    "todo": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "usbid": { "type": "string", "pattern": "^[0-9a-f]{4}$" }
+  }
+}

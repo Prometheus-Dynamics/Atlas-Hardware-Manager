@@ -10,6 +10,7 @@ fn package() -> DevicePackage {
         .unwrap(),
         compat: Default::default(),
         dir: std::path::PathBuf::from("/nonexistent"),
+        family: None,
     }
 }
 

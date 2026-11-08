@@ -1,0 +1,34 @@
+{
+  "schema": "urn:board:family:1",
+  "family": "allwinner-fel",
+  "display_name": "Allwinner FEL",
+  "vendor": "Allwinner",
+  "description": "Allwinner SoCs in FEL, the boot ROM's USB download mode: Atlas runs an eGON SPL in SRAM through the FEL thunk, then a legacy U-Boot image, and writes the storage. No vendor tool at run time (written from sunxi-tools). Untested on a board.",
+  "method": "fel",
+  "usb_vendor": "1f3a",
+  "entry": [
+    "Power the board off.",
+    "Hold its FEL (download) key, or short its FEL pads, and connect the board's USB port to this computer.",
+    "Power the board on, then release the key or remove the short.",
+    "The board appears as an Allwinner FEL device (1f3a:<pid>)."
+  ],
+  "flash": {
+    "stages": [
+      "fel: the boot ROM answers the FEL version and memory requests",
+      "spl: an eGON SPL is written into SRAM, run through the FEL thunk and read back",
+      "uboot: the SPL, then a legacy U-Boot image is written and executed",
+      "confirm: the storage is written from the image and read back"
+    ],
+    "sram": null,
+    "fel_image": "eGON SPL then legacy U-Boot (u-boot-sunxi-with-spl form); the board record names the file. UNCONFIRMED for the A733."
+  },
+  "host": {
+    "linux": "udev vendor match (idVendor 1f3a)",
+    "windows": "WinUSB class"
+  },
+  "todo": [
+    "The A733's FEL USB id is 1f3a:efe8: Radxa's PhoenixSuit driver instructions name it (Cubie A7A and A7Z flashing pages). Confirm with lsusb on a board.",
+    "UNCONFIRMED: sram stays null until an SoC's SRAM layout is sourced (atlas-socflash fel/layout.rs: a record gives one).",
+    "Untested on an A733: checked against the mock board and replay vectors only."
+  ]
+}

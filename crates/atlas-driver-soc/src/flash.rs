@@ -270,6 +270,17 @@ impl UpdateCapability for SocUpdate {
                 .platform
                 .as_ref()
                 .and_then(|platform| platform.soc.clone()),
+            loader_chips: package
+                .family
+                .as_ref()
+                .zip(
+                    package
+                        .manifest
+                        .platform
+                        .as_ref()
+                        .and_then(|p| p.soc.as_deref()),
+                )
+                .and_then(|(family, soc)| family.loader_chips(soc)),
             chip_required: device.attributes.contains_key("pid_unconfirmed"),
             progress: progress.clone(),
             cancel: cancel.clone(),
@@ -332,6 +343,7 @@ fn k230_heads(image: &Path) -> Result<Vec<String>, String> {
 fn chip_verdict(
     info: Result<Vec<u8>, String>,
     soc: Option<&str>,
+    accepted: Option<&[String]>,
     required: bool,
 ) -> Result<String, String> {
     let guess = "its USB id is a guess, so the board must confirm its chip";
@@ -345,11 +357,12 @@ fn chip_verdict(
         Err(error) => return Ok(format!("no chip info ({error})")),
     };
     match (chip_number(&info), soc) {
-        (Some(number), Some(soc)) if soc.to_ascii_uppercase().contains(&number) => {
+        (Some(number), Some(_)) if accepted.is_some_and(|tags| tags.contains(&number)) => {
             Ok(format!("chip: {number}"))
         }
         (Some(number), Some(soc)) => Err(format!(
-            "the board reports chip {number}, but its record is for {soc}: nothing was written"
+            "the board reports chip {number}, but its record is for {soc} (its family accepts {}): nothing was written",
+            accepted.map_or_else(|| "no chip".to_string(), |tags| tags.join(", "))
         )),
         _ if required => Err(format!(
             "unreadable chip info {info:02x?}; {guess}: nothing was written"
@@ -383,6 +396,9 @@ struct Job {
     storage_target: Option<String>,
     /// The record's SoC (`RK3576`), checked against what the board reports.
     chip: Option<String>,
+    /// The chip tags the record's family accepts for that SoC (its
+    /// `flash.loader_chips`), as a loader or the board's reply carries them.
+    loader_chips: Option<Vec<String>>,
     /// The record's PID is a guess: the board must confirm the chip.
     chip_required: bool,
     progress: ProgressSink,

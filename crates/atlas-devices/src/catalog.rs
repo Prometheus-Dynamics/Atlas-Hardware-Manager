@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use crate::{CONTRACT, CompatList, DeviceManifest};
+use crate::family::load_families;
+use crate::{CONTRACT, CompatList, DeviceManifest, Family, Recovery, Variant};
 
 /// One `devices/<model>/` folder.
 #[derive(Clone, Debug, PartialEq)]
@@ -8,6 +9,10 @@ pub struct DevicePackage {
     pub manifest: DeviceManifest,
     pub compat: CompatList,
     pub dir: PathBuf,
+    /// The family the board names, when it names one. Its recovery method
+    /// and steps are already in `manifest.recovery` where the record left
+    /// them out.
+    pub family: Option<Family>,
 }
 
 impl DevicePackage {
@@ -17,12 +22,23 @@ impl DevicePackage {
         let dir = self.dir.join("eeprom");
         dir.is_dir().then_some(dir)
     }
+
+    /// The family id the board names (`family`), if any.
+    pub fn family_id(&self) -> Option<&str> {
+        self.manifest.family.as_deref()
+    }
+
+    /// The board's variants that differ in data only, as the record gives them.
+    pub fn variants(&self) -> &[Variant] {
+        &self.manifest.variants
+    }
 }
 
-/// Every device package Atlas found.
+/// Every device package and device family Atlas found.
 #[derive(Clone, Debug, Default)]
 pub struct DeviceCatalog {
     packages: Vec<DevicePackage>,
+    families: Vec<Family>,
     warnings: Vec<String>,
 }
 
@@ -142,11 +158,28 @@ impl DeviceCatalog {
 }
 
 impl DeviceCatalog {
-    /// Loads every `<dir>/<model>/manifest.json`. The first directory that
-    /// has a model wins for that model. Problems become warnings, never
-    /// errors: a broken package must not stop Atlas.
+    /// Loads every `<dir>/<model>/manifest.json` and every
+    /// `<dir>/families/*.json`. The first directory that has a model (or a
+    /// family) wins for it. Families load first: a board may name one from
+    /// another folder. Problems become warnings, never errors: a broken
+    /// package must not stop Atlas. A board naming a family no file defines
+    /// is left out, with a warning that names both.
     pub fn load(dirs: &[PathBuf]) -> Self {
         let mut catalog = Self::default();
+        for dir in dirs {
+            let (families, warnings) = load_families(dir);
+            catalog.warnings.extend(warnings);
+            for family in families {
+                if catalog.family(&family.family).is_none() {
+                    catalog.families.push(family);
+                } else {
+                    catalog.warnings.push(format!(
+                        "family {} is defined more than once; the first one is used",
+                        family.family
+                    ));
+                }
+            }
+        }
         for dir in dirs {
             let Ok(entries) = std::fs::read_dir(dir) else {
                 continue;
@@ -158,7 +191,7 @@ impl DeviceCatalog {
                 .collect();
             folders.sort();
             for folder in folders {
-                match load_package(&folder) {
+                match load_package(&folder, &catalog.families) {
                     Ok(package) => {
                         if catalog.by_model(&package.manifest.model).is_none() {
                             catalog.packages.push(package);
@@ -181,6 +214,15 @@ impl DeviceCatalog {
 
     pub fn packages(&self) -> &[DevicePackage] {
         &self.packages
+    }
+
+    pub fn families(&self) -> &[Family] {
+        &self.families
+    }
+
+    /// The family with this id (`family` in a board's manifest).
+    pub fn family(&self, id: &str) -> Option<&Family> {
+        self.families.iter().find(|family| family.family == id)
     }
 
     pub fn warnings(&self) -> &[String] {
@@ -235,11 +277,22 @@ impl DeviceCatalog {
     }
 }
 
-fn load_package(folder: &Path) -> Result<DevicePackage, String> {
+/// What a record leaves out, its family gives: the recovery method and the
+/// download-mode steps. What the record says wins.
+fn inherit(recovery: &mut Recovery, family: &Family) {
+    if recovery.method.is_none() {
+        recovery.method = Some(family.method.clone());
+    }
+    if recovery.instructions.is_empty() {
+        recovery.instructions = family.entry.clone();
+    }
+}
+
+fn load_package(folder: &Path, families: &[Family]) -> Result<DevicePackage, String> {
     let manifest_path = folder.join("manifest.json");
     let data = std::fs::read(&manifest_path)
         .map_err(|error| format!("{}: {error}", manifest_path.display()))?;
-    let manifest: DeviceManifest = serde_json::from_slice(&data)
+    let mut manifest: DeviceManifest = serde_json::from_slice(&data)
         .map_err(|error| format!("{}: {error}", manifest_path.display()))?;
     if manifest.contract > CONTRACT {
         return Err(format!(
@@ -248,6 +301,23 @@ fn load_package(folder: &Path) -> Result<DevicePackage, String> {
             manifest.contract
         ));
     }
+    let family = match manifest.family.as_deref() {
+        None => None,
+        Some(id) => {
+            let family = families
+                .iter()
+                .find(|family| family.family == id)
+                .ok_or_else(|| {
+                    format!(
+                        "{}: board {} names family {id}, which no family file defines (devices/families/{id}.json)",
+                        manifest_path.display(),
+                        manifest.model
+                    )
+                })?;
+            inherit(&mut manifest.recovery, family);
+            Some(family.clone())
+        }
+    };
     let compat_path = folder.join("compat.json");
     let compat = match std::fs::read(&compat_path) {
         Ok(data) => serde_json::from_slice(&data)
@@ -258,6 +328,7 @@ fn load_package(folder: &Path) -> Result<DevicePackage, String> {
         manifest,
         compat,
         dir: folder.to_path_buf(),
+        family,
     })
 }
 

@@ -407,6 +407,7 @@ mod tests {
             .unwrap(),
             compat: Default::default(),
             dir: PathBuf::from("/nonexistent"),
+            family: None,
         }
     }
 
