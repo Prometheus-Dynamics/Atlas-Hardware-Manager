@@ -13,7 +13,12 @@
 # boot only, and it says so. A reflash makes a new /data, hence new keys
 # (Atlas forgets the old ones when it flashes). Settings: ssh-keys.env.
 # Test hooks: BOARD_DATA_ROOT (/data), SSH_HOSTKEYS_ETC (/etc/ssh),
-# SSH_HOSTKEYS_RUN (/run/board/ssh/hostkeys), SSH_KEYGEN (ssh-keygen).
+# SSH_HOSTKEYS_RUN (/run/board/ssh/hostkeys), SSH_HOSTKEYS_PUBLIC
+# (/run/board/ssh-public), SSH_KEYGEN (ssh-keygen).
+#
+# The public halves are also copied to /run/board/ssh-public, readable by
+# everyone: orion-node (not root) publishes their fingerprints, so a client
+# can check this board's key over Orion's authenticated channel.
 set -u
 
 BOARD_LIB_DIR=${BOARD_LIB_DIR:-/usr/lib/board}
@@ -24,6 +29,7 @@ board_load_env ssh-keys.env
 STORE=${BOARD_DATA_ROOT:-/data}/ssh
 ETC=${SSH_HOSTKEYS_ETC:-/etc/ssh}
 RUN=${SSH_HOSTKEYS_RUN:-$BOARD_RUN_DIR/ssh/hostkeys}
+PUBLIC=${SSH_HOSTKEYS_PUBLIC:-$BOARD_RUN_DIR/ssh-public}
 KEYGEN=${SSH_KEYGEN:-ssh-keygen}
 TYPES=${SSH_HOSTKEY_TYPES:-ed25519 ecdsa rsa}
 
@@ -75,5 +81,13 @@ for type in $TYPES; do
 	cp "$src" "$RUN/.$name" && cp "$src.pub" "$RUN/.$name.pub" &&
 		chmod 0600 "$RUN/.$name" && chmod 0644 "$RUN/.$name.pub" &&
 		mv -f "$RUN/.$name.pub" "$RUN/$name.pub" && mv -f "$RUN/.$name" "$RUN/$name"
+done
+
+mkdir -p "$PUBLIC"
+chmod 0755 "$PUBLIC"
+for pub in "$RUN"/*.pub; do
+	[ -s "$pub" ] || continue
+	name=${pub##*/}
+	cp "$pub" "$PUBLIC/.$name" && chmod 0644 "$PUBLIC/.$name" && mv -f "$PUBLIC/.$name" "$PUBLIC/$name"
 done
 exit 0

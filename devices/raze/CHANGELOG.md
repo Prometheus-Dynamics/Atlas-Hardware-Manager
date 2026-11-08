@@ -7,6 +7,14 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **orion-node can keep the clock and publish the host keys (2026-11-08).**
+  An OS that has orion-node discipline the clock doesn't run timesyncd
+  (a Condition on its unit; other OSes keep it). Status reads the node's
+  flag, `/run/board/orion-time/synced`, set through
+  `ORION_NODE_TIME_SYNCED_FILE`, because the identity endpoint's user can't
+  read `/run/orion`. The host keys' public halves are copied to
+  `/run/board/ssh-public` for the fingerprints the node publishes
+  (`ORION_NODE_SSH_HOST_KEYS`); the private keys stay in the 0700 directory.
 - **The bench lock is board-gpu.lock; raze-gpu.lock stays an alias
   (2026-11-07).** reboot-locked waits for `/run/lock/board-gpu.lock`. The old
   name is the same lock: tmpfiles makes it a symlink at boot, reboot-locked

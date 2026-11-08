@@ -569,6 +569,12 @@ dest = "/usr/lib/systemd/system/orion-node.service.d/50-board-agent.conf"
 origin = "static-asset"
 
 [[stage.files]]
+id = "raze-systemd-system-timesyncd-orion-dropin"
+src = "${self}/assets/rootfs/usr/lib/systemd/system/systemd-timesyncd.service.d/50-orion-keeps-time.conf"
+dest = "/usr/lib/systemd/system/systemd-timesyncd.service.d/50-orion-keeps-time.conf"
+origin = "static-asset"
+
+[[stage.files]]
 id = "raze-systemd-system-board-orion-env-service"
 src = "${self}/assets/rootfs/usr/lib/systemd/system/board-orion-env.service"
 dest = "/usr/lib/systemd/system/board-orion-env.service"
@@ -760,6 +766,7 @@ stage_files = [
   "raze-systemd-system-board-locate-service",
   "raze-systemd-system-board-ssh-keys-service",
   "raze-systemd-system-board-ssh-hostkeys-service",
+  "raze-systemd-system-timesyncd-orion-dropin",
   "raze-board-ssh-hostkeys",
   "raze-systemd-system-serial-getty-ttygs0-dropin",
   "raze-systemd-system-serial-getty-ttygs1-dropin",

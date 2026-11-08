@@ -37,6 +37,12 @@ run "$T/os1"
 cmp -s "$T/data/ssh/ssh_host_ed25519_key" "$T/run/ssh/hostkeys/ssh_host_ed25519_key" || fail "sshd's copy differs"
 [ "$(stat -c %a "$T/run/ssh/hostkeys/ssh_host_ed25519_key")" = 600 ] || fail "run key mode"
 
+echo "the public halves are readable by the node, and only they are copied"
+[ "$(stat -c %a "$T/run/ssh-public")" = 755 ] || fail "public dir mode"
+[ "$(stat -c %a "$T/run/ssh-public/ssh_host_ed25519_key.pub")" = 644 ] || fail "public key mode"
+cmp -s "$T/run/ssh/hostkeys/ssh_host_ed25519_key.pub" "$T/run/ssh-public/ssh_host_ed25519_key.pub" || fail "public copy differs"
+[ -z "$(ls "$T/run/ssh-public" | grep -v '\.pub$' || true)" ] || fail "a private key in the public directory"
+
 echo "another OS image (a slot switch) gets the same keys, not its own"
 first=$(fp "$T/data/ssh/ssh_host_ed25519_key.pub")
 run "$T/os2"

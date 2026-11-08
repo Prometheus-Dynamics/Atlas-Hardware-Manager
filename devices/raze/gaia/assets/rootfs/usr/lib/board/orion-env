@@ -64,6 +64,16 @@ access=$BOARD_RUN_DIR/orion-node.env
 before=$(cat "$access" 2>/dev/null || true)
 {
 	echo '# From /usr/lib/board/orion-env and the security switch (security.env).'
+	# The host keys' public halves (ssh-hostkeys), for the fingerprints
+	# orion-node publishes.
+	[ -n "$(os_value ORION_NODE_SSH_HOST_KEYS)" ] || echo "ORION_NODE_SSH_HOST_KEYS=$BOARD_RUN_DIR/ssh-public"
+	# Where orion-node says the clock is synchronized: status reads it, from
+	# the identity endpoint's unprivileged user (/run/orion is 0750).
+	if [ -z "$(os_value ORION_NODE_TIME_SYNCED_FILE)" ] && mkdir -p "$BOARD_RUN_DIR/orion-time"; then
+		chown orion:orion "$BOARD_RUN_DIR/orion-time" 2>/dev/null || true
+		chmod 0755 "$BOARD_RUN_DIR/orion-time"
+		echo "ORION_NODE_TIME_SYNCED_FILE=$BOARD_RUN_DIR/orion-time/synced"
+	fi
 	[ -n "$(os_value ORION_NODE_PEER_ADDR)" ] || echo "ORION_NODE_PEER_ADDR=0.0.0.0:$ORION_NODE_PORT"
 	if board_security_on; then
 		echo 'ORION_NODE_PEER_AUTH=required'

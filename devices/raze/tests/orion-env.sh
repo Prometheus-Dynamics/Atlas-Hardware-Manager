@@ -94,4 +94,14 @@ access | grep -qx 'ORION_NODE_OPERATOR_AUTO_ENROLL=' || fail "auto-enroll on: $(
 PATH=$T/bin:$PATH sh "$lib/orion-env" --restart 2> "$T/log" || fail "orion-env --restart: $(cat "$T/log")"
 [ "$(wc -l < "$T/systemctl.calls")" -eq 1 ] || fail "restarted without a change"
 
+# The host keys' public halves and the clock flag, by default and when the OS sets its own.
+: > "$T/orion-node.env"
+run
+grep -qx "ORION_NODE_SSH_HOST_KEYS=$T/run/ssh-public" "$T/run/orion-node.env" || fail "no host-key directory"
+grep -qx "ORION_NODE_TIME_SYNCED_FILE=$T/run/orion-time/synced" "$T/run/orion-node.env" || fail "no clock flag"
+[ "$(stat -c %a "$T/run/orion-time")" = 755 ] || fail "the clock flag's directory isn't readable"
+printf 'ORION_NODE_SSH_HOST_KEYS=/elsewhere\nORION_NODE_TIME_SYNCED_FILE=/elsewhere/flag\n' > "$T/orion-node.env"
+run
+if grep -q 'ORION_NODE_SSH_HOST_KEYS\|ORION_NODE_TIME_SYNCED_FILE' "$T/run/orion-node.env"; then fail "the OS's own settings overridden"; fi
+
 echo "orion-env: ok"

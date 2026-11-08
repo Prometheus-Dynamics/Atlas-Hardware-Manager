@@ -62,15 +62,16 @@
 # panic when a panic or oops record is among them. [] with none; null when
 # the directory can't be read.
 #
-# Clock: ntp_synchronized from systemd-timesyncd's flag file
-# (/run/systemd/timesync/synchronized; its directory without it: false),
-# else timedatectl.
+# Clock: ntp_synchronized from orion-node's flag file when it keeps the
+# clock (/run/board/orion-time/synced, see orion-env) or systemd-timesyncd's
+# (/run/systemd/timesync/synchronized); either directory without its flag:
+# false; else timedatectl.
 #
 # The identity endpoint runs this per GET /status, so the reading of what
 # root keeps and of /proc and /sys is done without forks (date aside).
 #
 # Test hooks: the paths in lib.sh and hw.sh, BOARD_SYSTEMCTL, BOARD_PROC_UPTIME,
-# BOARD_TIMESYNC_DIR,
+# BOARD_TIMESYNC_DIR, BOARD_ORION_TIME_DIR,
 # BOARD_ROOT_RO (1|0), BOARD_SSHD_DIR, BOARD_DRIFT_BOOT_DIR and
 # BOARD_DRIFT_AB_DIR (the running boot slot's and p1's files; with them no
 # partition is mounted and no root is needed).
@@ -91,6 +92,7 @@ HARDWARE_JSON=$BOARD_RUN_DIR/hardware.json
 HARDWARE_MAX_AGE=${BOARD_HARDWARE_MAX_AGE:-60}
 LEMNOS_CTL=${BOARD_LEMNOS_CTL:-lemnos-ctl}
 TIMESYNC_DIR=${BOARD_TIMESYNC_DIR:-/run/systemd/timesync}
+ORION_TIME_DIR=${BOARD_ORION_TIME_DIR:-$BOARD_RUN_DIR/orion-time}
 NOW=$(date +%s)
 
 quiet=0
@@ -369,9 +371,9 @@ update_json() {
 
 clock_json() {
 	ntp=null
-	if [ -e "$TIMESYNC_DIR/synchronized" ]; then
+	if [ -e "$ORION_TIME_DIR/synced" ] || [ -e "$TIMESYNC_DIR/synchronized" ]; then
 		ntp=true
-	elif [ -d "$TIMESYNC_DIR" ]; then
+	elif [ -d "$TIMESYNC_DIR" ] || [ -d "$ORION_TIME_DIR" ]; then
 		ntp=false
 	elif command -v timedatectl >/dev/null 2>&1; then
 		case "$(bounded timedatectl show -p NTPSynchronized --value 2>/dev/null)" in

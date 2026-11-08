@@ -512,6 +512,15 @@ request 'GET /status HTTP/1.0' | body | is "False 3 True" \
 	"the board-like status"
 : > "$T/timesync/synchronized"
 request 'GET /status HTTP/1.0' | body | is True 'd["clock"]["ntp_synchronized"]' "timesyncd's flag"
+rm "$T/timesync/synchronized"
+rmdir "$T/timesync"
+mkdir -p "$T/run/orion-time"
+request 'GET /status HTTP/1.0' | body | is False 'd["clock"]["ntp_synchronized"]' "orion-node's directory without its flag"
+: > "$T/run/orion-time/synced"
+request 'GET /status HTTP/1.0' | body | is True 'd["clock"]["ntp_synchronized"]' "orion-node's flag"
+rm "$T/run/orion-time/synced"
+rmdir "$T/run/orion-time"
+mkdir -p "$T/timesync"
 # forks <request line> [REMOTE_ADDR]: the processes one exchange starts, in
 # a PID namespace of its own (whose last PID counts them), less those of the
 # same pipeline into a script that only reads. Under the board's shell when
