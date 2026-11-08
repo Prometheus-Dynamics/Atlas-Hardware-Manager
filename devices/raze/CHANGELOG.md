@@ -7,6 +7,11 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **An OS can add its own kernel arguments (2026-11-08).** The new
+  `slot_cmdline_os` input is appended to the board's slot command line, empty
+  by default. It is there for `module_blacklist=vc4` on HeliOS (about 2 MB,
+  still being proved with a GPU graph); that isn't the board's default because
+  another OS's GL camera path may need vc4's display device, unmeasured.
 - **About 6 MB back from the kernel's hash tables (2026-11-08).** The slot
   command line sizes the dentry, inode, TCP and UDP tables for this board
   (`dhash_entries=16384 ihash_entries=8192 thash_entries=4096

@@ -73,6 +73,11 @@ kind = "string"
 # defaults scale with RAM and cost about 6 MB (measured on Raze #1, dev.1024).
 default = "console=serial0,115200 console=tty1 rootwait quiet splash systemd.unified_cgroup_hierarchy=1 dhash_entries=16384 ihash_entries=8192 thash_entries=4096 uhash_entries=1024"
 
+[inputs.slot_cmdline_os]
+description = "More kernel arguments for this OS only, after the board's (empty by default; for arguments another OS's camera path may not tolerate, such as module_blacklist=vc4)"
+kind = "string"
+default = ""
+
 # /etc/slot.json, reduced (no verity values: they come from the image, which
 # contains this file). Stage env set: rendered to /etc/default/slot.env in
 # the rootfs before the erofs is made; the OS's post-image script writes
@@ -141,7 +146,7 @@ dest = "initramfs"
 # cmdline.txt is the slot's, built in the slots-fat tree below.
 [[image.assembly.files]]
 tree = "slots-payload"
-content = "${input.slot_cmdline}\n"
+content = "${input.slot_cmdline} ${input.slot_cmdline_os}\n"
 dest = "cmdline.txt"
 
 [[image.assembly.files]]
@@ -334,7 +339,7 @@ dest = "overlays/raze-usb-power.dtbo"
 # same file, so the two cannot differ.
 [[image.assembly.files]]
 tree = "slots-fat"
-content = "${input.slot_cmdline} atlas.slot=${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit} atlas.roothash=${assembly.verity:${assembly.work}/slots/rootfs.erofs:root_hash} atlas.data=PARTUUID=5056525a-02 panic=5\n"
+content = "${input.slot_cmdline} ${input.slot_cmdline_os} atlas.slot=${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit} atlas.roothash=${assembly.verity:${assembly.work}/slots/rootfs.erofs:root_hash} atlas.data=PARTUUID=5056525a-02 panic=5\n"
 dest = "slots/${input.slot_family}-${input.slot_version}-${input.slot_variant}-${input.slot_commit}/cmdline.txt"
 
 [[image.assembly.files]]
