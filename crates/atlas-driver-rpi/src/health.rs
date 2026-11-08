@@ -2,6 +2,7 @@
 
 use atlas_blockdev::HelperClient;
 use atlas_driver::{DriverError, HealthCheck};
+#[cfg(target_os = "linux")]
 use atlas_usb_ids::{BCM2711_PRODUCT_ID, BROADCOM_VENDOR_ID, STORAGE_GADGET_PRODUCT_ID, hex};
 use atlas_usbboot::list_boot_devices;
 
