@@ -26,6 +26,9 @@
 gaia_version = ">=2.0.2"
 config = 3
 
+# A package names its fragment by redeclaring this input with a default in its
+# own thin slots.toml, which imports this file. Import this file only from
+# there: imported again after it, this required entry would replace the default.
 [inputs.board_device_config]
 description = "The board's config.txt fragment; the package sets it (devices/raze/gaia/slots.toml)"
 kind = "string"
