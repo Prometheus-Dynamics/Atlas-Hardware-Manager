@@ -192,6 +192,7 @@ dependencies = [
  "atlas-driver-soc",
  "atlas-image-server",
  "atlas-release",
+ "atlas-socflash",
  "clap",
  "dirs",
  "flate2",

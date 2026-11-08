@@ -251,16 +251,21 @@ impl UsbIo for Board {
 /// Walks a whole flash on `board`: the loader's 471 and 472 entries, the
 /// chip check, the storage (read back), the flash info, the image written
 /// and read back, then a reset. Returns what was written. Each transfer is
-/// logged through [`Traced`].
+/// logged through [`Traced`], and to `sink` when one is given.
 pub async fn walk(
     loader_file: &[u8],
     image: &[u8],
     start_lba: u32,
     storage: Option<Storage>,
     board: Board,
+    sink: Option<crate::traced::Sink>,
 ) -> Result<Written, String> {
     let loader = crate::rockchip::loader::Loader::parse(loader_file).map_err(|e| e.to_string())?;
-    let mut io = Traced::new(Box::new(board), "dry-run");
+    let mut traced = Traced::new(Box::new(board), "dry-run");
+    if let Some(sink) = sink {
+        traced = traced.with_sink(sink);
+    }
+    let mut io = traced;
     maskrom::download_boot(&mut io, &loader, loader_file)
         .await
         .map_err(|e| e.to_string())?;
@@ -329,7 +334,7 @@ mod tests {
         let image: Vec<u8> = (0..3000u32).map(|n| (n % 251) as u8).collect();
         let board = Board::new("3588", 1 << 16, &[Storage::Emmc, Storage::Sd]);
         let disk = board.disk();
-        let written = walk(&loader(), &image, 64, Some(Storage::Emmc), board)
+        let written = walk(&loader(), &image, 64, Some(Storage::Emmc), board, None)
             .await
             .unwrap();
         assert_eq!(written.bytes, 3072);
@@ -348,9 +353,16 @@ mod tests {
     async fn a_storage_the_board_lacks_is_refused_before_writing() {
         let board = Board::new("3588", 1 << 16, &[Storage::Emmc]);
         let disk = board.disk();
-        let error = walk(&loader(), &[7u8; 512], 64, Some(Storage::SpiNor), board)
-            .await
-            .unwrap_err();
+        let error = walk(
+            &loader(),
+            &[7u8; 512],
+            64,
+            Some(Storage::SpiNor),
+            board,
+            None,
+        )
+        .await
+        .unwrap_err();
         assert!(error.contains("isn't available"), "{error}");
         assert!(disk.lock().unwrap().iter().all(|byte| *byte == 0));
     }
@@ -358,7 +370,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_chip_the_loader_is_not_for_is_refused() {
         let board = Board::new("3576", 1 << 16, &[Storage::Emmc]);
-        let error = walk(&loader(), &[7u8; 512], 64, None, board)
+        let error = walk(&loader(), &[7u8; 512], 64, None, board, None)
             .await
             .unwrap_err();
         assert!(error.contains("chip"), "{error}");

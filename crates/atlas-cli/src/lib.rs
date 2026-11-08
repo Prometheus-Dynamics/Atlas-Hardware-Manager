@@ -204,6 +204,23 @@ enum Command {
         /// Seconds to wait for a --usb-boot board to show up in USB boot.
         #[arg(long, default_value_t = 90)]
         wait: u64,
+        /// Run a Rockchip flash against the mock board instead: the loader's
+        /// DDR init and usbplug, the chip check, the storage, the write and
+        /// its read-back, with every transfer logged in hex. No board is
+        /// touched and nothing is written anywhere.
+        #[arg(long, conflicts_with_all = ["device", "usb_boot"])]
+        dry_run: bool,
+        /// The vendor loader for --dry-run (the merged file Gaia's build
+        /// copies next to its image).
+        #[arg(long, requires = "dry_run")]
+        loader: Option<PathBuf>,
+        /// The chip number --dry-run's mock reports ("3588"); default the
+        /// loader's own.
+        #[arg(long, requires = "dry_run")]
+        chip: Option<String>,
+        /// The storage --dry-run switches to: emmc (default), sd or spi-nor.
+        #[arg(long, requires = "dry_run", value_parser = ["emmc", "sd", "spi-nor"])]
+        storage: Option<String>,
     },
 }
 
@@ -453,16 +470,35 @@ async fn run_cli(cli: Cli) -> ExitCode {
             device,
             usb_boot,
             wait,
+            dry_run,
+            loader,
+            chip,
+            storage,
         } => {
-            let options = flash::FlashOptions {
-                image,
-                device,
-                usb_boot,
-                wait: Duration::from_secs(wait),
-                add_key: cli.ssh_key.is_some(),
-                json: cli.json,
-            };
-            flash::flash(&atlas, options).await
+            if dry_run {
+                match loader {
+                    Some(loader) => {
+                        flash::dry_run(flash::DryRunOptions {
+                            image,
+                            loader,
+                            chip,
+                            storage,
+                        })
+                        .await
+                    }
+                    None => Err("--dry-run needs --loader (the merged loader file)".into()),
+                }
+            } else {
+                let options = flash::FlashOptions {
+                    image,
+                    device,
+                    usb_boot,
+                    wait: Duration::from_secs(wait),
+                    add_key: cli.ssh_key.is_some(),
+                    json: cli.json,
+                };
+                flash::flash(&atlas, options).await
+            }
         }
         Command::RebootTest {
             device,

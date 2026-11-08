@@ -1,5 +1,5 @@
 //! Rockusb vectors derived by hand from rkdeveloptool 304f073 (the source the
-//! blob fetch recorded in /mnt/nvme-wd/atlas-blobs/radxa-rock-5c/
+//! blob fetch recorded in /mnt/ssd-samsung/atlas-blobs/radxa-rock-5c/
 //! rkdeveloptool-304f073/). Each CBW is built from the C layout: the struct
 //! `CBW` (RKComm.h:60-77), `InitializeCBW` (RKComm.cpp, flags and CDB length
 //! per opcode), and the transfer length each `RKU_*` sets in its own body.

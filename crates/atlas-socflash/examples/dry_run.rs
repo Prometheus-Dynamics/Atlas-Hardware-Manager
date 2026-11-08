@@ -57,7 +57,7 @@ fn main() {
         sectors,
         &[Storage::Emmc, Storage::Sd, Storage::SpiNor],
     );
-    match runtime.block_on(walk(&loader, &image, 0, Some(storage), board)) {
+    match runtime.block_on(walk(&loader, &image, 0, Some(storage), board, None)) {
         Ok(written) => println!(
             "dry run ok: wrote and read back {} bytes, sha256 {}",
             written.bytes, written.sha256

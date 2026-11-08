@@ -23,8 +23,66 @@ use atlas_driver::{DeviceKey, DeviceMode};
 use atlas_driver_rpi::RPI_FAMILY;
 use atlas_driver_soc::{K230_FAMILY, ROCKCHIP_FAMILY};
 
+use atlas_socflash::rockchip::loader::Loader;
+use atlas_socflash::rockchip::rockusb::Storage;
+use atlas_socflash::rockchip::sim::{Board, walk};
+use atlas_socflash::traced::Sink;
+
 use crate::commands::{self, CommandResult, UpdateOptions, resolve};
 use crate::output;
+
+/// `atlas flash --dry-run`: the Rockchip flash against the mock board.
+pub(crate) struct DryRunOptions {
+    pub(crate) image: PathBuf,
+    pub(crate) loader: PathBuf,
+    pub(crate) chip: Option<String>,
+    pub(crate) storage: Option<String>,
+}
+
+/// Walks the whole Rockchip flash on the mock board: the sim takes the
+/// loader's download and answers every rockusb command, and each transfer
+/// is printed in hex. Nothing reaches USB or a disk. The mock keeps the
+/// image in memory, so the image has to fit in RAM.
+pub(crate) async fn dry_run(options: DryRunOptions) -> CommandResult {
+    let loader_bytes = std::fs::read(&options.loader)
+        .map_err(|error| format!("{}: {error}", options.loader.display()))?;
+    let loader = Loader::parse(&loader_bytes).map_err(|error| error.to_string())?;
+    let chip = match options.chip {
+        Some(chip) => chip,
+        None => loader
+            .chip_number()
+            .ok_or("the loader names no chip; pass --chip")?,
+    };
+    let storage = match options.storage.as_deref() {
+        None | Some("emmc") => Storage::Emmc,
+        Some("sd") => Storage::Sd,
+        Some(_) => Storage::SpiNor,
+    };
+    let image = std::fs::read(&options.image)
+        .map_err(|error| format!("{}: {error}", options.image.display()))?;
+    let sectors = u32::try_from(image.len().div_ceil(512).max(1))
+        .map_err(|_| "the image is past what 32-bit LBAs address".to_string())?;
+    let board = Board::new(
+        &chip,
+        sectors,
+        &[Storage::Emmc, Storage::Sd, Storage::SpiNor],
+    );
+    let sink: Sink = std::sync::Arc::new(|line: &str| output::line(line));
+    output::line(&format!(
+        "dry run: chip {chip}, {} storage, {} bytes from {}; the mock board, nothing written",
+        options.storage.as_deref().unwrap_or("emmc"),
+        image.len(),
+        options.image.display()
+    ));
+    let written = walk(&loader_bytes, &image, 0, Some(storage), board, Some(sink))
+        .await
+        .map_err(|error| format!("dry run failed: {error}"))?;
+    output::line(&format!(
+        "dry run ok: {} bytes would be written and read back, sha256 {}",
+        written.bytes, written.sha256
+    ));
+    Ok(std::process::ExitCode::SUCCESS)
+}
 
 pub(crate) struct FlashOptions {
     pub(crate) image: PathBuf,
