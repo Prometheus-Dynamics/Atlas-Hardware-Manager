@@ -77,6 +77,16 @@ lease_sec() {
 	esac
 }
 
+# Tell a running networkd the .network changed. Only a running one, and
+# without waiting: at boot networkd's start is queued behind network-pre,
+# which waits for the gadget (this script), so a blocking reload queued
+# behind that start deadlocked the boot (Raze #1, no D-Bus image). A
+# networkd that hasn't started reads the file when it does.
+# systemctl, not networkctl: no D-Bus needed (networkd is notify-reload).
+networkd_reload() {
+	systemctl -q is-active systemd-networkd.service 2>/dev/null &&
+		systemctl --no-block reload systemd-networkd.service 2>/dev/null || true
+}
 write_network() {
 	board_gadget_address
 	_cidr=$BOARD_GADGET_CIDR
@@ -144,9 +154,7 @@ EOF
 		return 0
 	fi
 	mv -f "$NETWORK.tmp" "$NETWORK"
-	# Before networkd starts (early boot) it reads the file when it does.
-	# systemctl, not networkctl: no D-Bus needed (networkd is notify-reload).
-	systemctl reload systemd-networkd.service 2>/dev/null || true
+	networkd_reload
 }
 
 if ! dhcp_on; then
@@ -163,7 +171,7 @@ if [ -e "$NETWORK" ]; then
 	# networkd managed the bridge: handing it back takes the bridge's address
 	# with it (seen on a Raze), so put the address back for dnsmasq.
 	rm -f "$NETWORK"
-	systemctl reload systemd-networkd.service 2>/dev/null || true
+	networkd_reload
 	board_gadget_address
 	ip addr replace "$BOARD_GADGET_CIDR" dev "$BRIDGE" 2>/dev/null ||
 		board_log "couldn't put $BOARD_GADGET_CIDR back on $BRIDGE"

@@ -44,6 +44,7 @@ cat > "$T/bin/systemctl" <<EOF
 #!/bin/sh
 case "\$*" in
 *is-enabled*systemd-networkd*) [ -e "$T/networkd-enabled" ]; exit ;;
+*is-active*systemd-networkd*) [ -e "$T/networkd-running" ]; exit ;;
 esac
 echo "systemctl \$*" >> "$T/systemctl.log"
 EOF
@@ -140,28 +141,33 @@ echo "networkd serves DHCP: the routes become options 121 and 249 in the bridge'
 net=$T/networkd/04-board-usb-gadget-bridge.network
 : > "$T/run/usb-gadget-dhcp-routes"
 : > "$T/systemctl.log"
-touch "$T/networkd-enabled"
+touch "$T/networkd-enabled" "$T/networkd-running"
 route apply
 # Prefix length, the network's significant octets, the router (the board).
 vb=$(printf '\\x%02x' $(echo "$via" | tr . ' '))
 bytes="\\x18\\x0a\\x35\\x26$vb\\x16\\xc0\\xa8\\x04$vb"
 grep -qxF "SendOption=121:string:$bytes" "$net" || fail "networkd 121: $(cat "$net")"
 grep -qxF "SendOption=249:string:$bytes" "$net" || fail "networkd 249: $(cat "$net")"
-grep -qx 'systemctl reload systemd-networkd.service' "$T/systemctl.log" || fail "networkd should reload"
+grep -qx 'systemctl --no-block reload systemd-networkd.service' "$T/systemctl.log" || fail "networkd should reload"
 ! grep -q HUP "$T/systemctl.log" || fail "no dnsmasq to tell"
 : > "$T/systemctl.log"
 route set off
 ! grep -q SendOption "$net" || fail "routes left in the .network: $(cat "$net")"
-grep -qx 'systemctl reload systemd-networkd.service' "$T/systemctl.log" || fail "networkd should reload when the routes go"
+grep -qx 'systemctl --no-block reload systemd-networkd.service' "$T/systemctl.log" || fail "networkd should reload when the routes go"
 : > "$T/systemctl.log"
 route apply
 ! grep -q reload "$T/systemctl.log" || fail "networkd reloaded for nothing"
+echo "at boot, before networkd runs: the .network is written, and no reload is queued (it would wait for networkd's start, which waits for the gadget)"
+rm "$T/networkd-running"
 route set on
+grep -q SendOption "$net" || fail "the routes aren't in the .network: $(cat "$net")"
+! grep -q reload "$T/systemctl.log" || fail "a reload was queued before networkd runs: $(cat "$T/systemctl.log")"
+touch "$T/networkd-running"
 rm "$T/networkd-enabled"
 : > "$T/systemctl.log"
 sh "$lib/usb-gadget-dhcp" --refresh
 [ ! -e "$net" ] || fail "dnsmasq serves, the .network must go"
-grep -qx 'systemctl reload systemd-networkd.service' "$T/systemctl.log" || fail "networkd should let the bridge go"
+grep -qx 'systemctl --no-block reload systemd-networkd.service' "$T/systemctl.log" || fail "networkd should let the bridge go"
 grep -qx "ip addr replace $via/.* dev usbbr0" "$T/ip.log" || fail "the bridge's address must come back: $(cat "$T/ip.log")"
 
 echo "no USB link: nothing to route, not active"

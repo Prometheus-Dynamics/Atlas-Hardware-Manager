@@ -7,6 +7,12 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **No boot deadlock on the USB DHCP reload (2026-11-07).** usb-gadget-dhcp
+  reloads networkd only when it is running, with `--no-block`. At boot
+  networkd's start is queued behind network-pre, which waits for the
+  gadget, so a blocking reload sat behind it and the boot hung (Raze #1,
+  HeliOS dev.1007 without D-Bus, found by HeliOS alpha). A networkd that
+  hasn't started reads the .network when it does.
 - **A holder's own restart never waits for itself (2026-11-07).**
   `reboot-locked` started from a shell that already holds `raze-gpu.lock`
   on an inherited fd (a holder that shells out) used to wait for its own
