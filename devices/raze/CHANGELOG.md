@@ -7,6 +7,13 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **A holder's own restart never waits for itself (2026-11-07).**
+  `reboot-locked` started from a shell that already holds `raze-gpu.lock`
+  on an inherited fd (a holder that shells out) used to wait for its own
+  lock forever, naming "an unknown process" (seen on Raze #1, 1.5 h). It
+  now finds that fd, checks the lock is held through it, and goes ahead as
+  the holder, as with `<lock>.reboot-ok`; `--holder` names "this process
+  (inherited fd N)" when the pid in /proc/locks is gone.
 - **mDNS through systemd-resolved, no avahi (2026-11-07).** resolved's mDNS
   is on (`60-board-mdns.conf`, `MulticastDNS=yes`; NetworkManager
   `connection.mdns=2`) and answers for `<hostname>.local` and the identity's

@@ -17,7 +17,10 @@
 # the lock after the command (600). A holder that asks for the restart
 # itself (an install under the lock) creates <lock>.reboot-ok first: the
 # restart then goes ahead under the holder's lock instead of waiting for
-# itself. With no flock, or BOARD_REBOOT_LOCK empty, the command just runs.
+# itself. So does a caller that already holds the lock on an fd this
+# process inherited (a holder that shells out): it isn't made to wait for
+# its own lock. With no flock, or BOARD_REBOOT_LOCK empty, the command just
+# runs.
 # While it waits, its line is also in BOARD_REBOOT_WAIT_FILE
 # (/run/board/reboot-wait, next to the writer's update.json), which HeliOS
 # reports as its update status's `reboot_waiting`; the file goes once the
@@ -35,7 +38,11 @@ holder() {
 	[ -n "$_ino" ] || return 0
 	_pid=$(awk -v ino="$_ino" '$2 != "->" && $6 ~ (":" ino "$") { print $5 }' /proc/locks 2>/dev/null |
 		while read -r _p; do [ "$_p" = "$$" ] || { echo "$_p"; break; }; done)
-	[ -n "$_pid" ] || return 0
+	if [ -z "$_pid" ]; then
+		_own=$(own_fd)
+		[ -z "$_own" ] || echo "this process (inherited fd $_own)"
+		return 0
+	fi
 	_cmd=$( (tr '\0' ' ' < "/proc/$_pid/cmdline") 2>/dev/null | cut -c1-120)
 	if [ -z "$_cmd" ]; then
 		# The usual holder (`exec 9>> lock; flock 9`) took the lock through a
@@ -43,6 +50,12 @@ holder() {
 		# a zombie, or reused): the lock stays with the process sharing its
 		# fd. Name that one (not this script or its subshells).
 		_fd=$(fd_holder)
+		if [ -z "$_fd" ]; then
+			# Nobody else has it open: the lock is this process's own,
+			# through an fd it inherited from a holder that has exited.
+			_own=$(own_fd)
+			[ -z "$_own" ] || { echo "this process (inherited fd $_own)"; return 0; }
+		fi
 		[ -z "$_fd" ] || _pid=$_fd
 		_cmd=$( (tr '\0' ' ' < "/proc/$_pid/cmdline") 2>/dev/null | cut -c1-120)
 	fi
@@ -77,6 +90,12 @@ fd_holder() {
 			break
 		done
 }
+# An fd this process inherited on the lock file (not fd 9, which it opens
+# itself), if any.
+own_fd() {
+	ls -l /proc/$$/fd/ 2>/dev/null | awk -v lock="$LOCK" '
+		$NF == lock && $(NF - 1) == "->" { n = $(NF - 2); if (n != "9") { print n; exit } }'
+}
 say() {
 	echo "reboot-locked: $*" >&2
 	logger -t board-reboot "$*" 2>/dev/null || true
@@ -93,7 +112,18 @@ case ${1:-} in
 	;;
 esac
 
-if [ -n "$LOCK" ] && command -v flock >/dev/null 2>&1 && exec 9>> "$LOCK" && ! flock -n 9; then
+# Holding the lock already, through an inherited fd: the caller is the
+# holder (flock on the fd it holds the lock through succeeds at once).
+_own=
+if [ -n "$LOCK" ] && command -v flock >/dev/null 2>&1; then
+	_own=$(own_fd)
+	if [ -n "$_own" ] && flock -n "$_own"; then
+		say "restart asked for by the holder of ${LOCK##*/} (this process, inherited fd $_own): $*"
+	else
+		_own=
+	fi
+fi
+if [ -z "$_own" ] && [ -n "$LOCK" ] && command -v flock >/dev/null 2>&1 && exec 9>> "$LOCK" && ! flock -n 9; then
 	_by=$(holder)
 	if [ -e "$LOCK.reboot-ok" ]; then
 		rm -f "$LOCK.reboot-ok"

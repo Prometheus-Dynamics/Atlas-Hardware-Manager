@@ -91,4 +91,14 @@ r=$?
 set -e
 [ "$r" != 0 ] || fail "a failed restart reported success"
 flock -n "$BOARD_REBOOT_LOCK" true || fail "a failed restart kept the lock"
+echo "a holder that shells out (the lock on an inherited fd) restarts at once instead of waiting for itself"
+n=$(wc -l < "$T/runs")
+(
+	exec 3>> "$BOARD_REBOOT_LOCK"
+	flock 3
+	BOARD_REBOOT_LOCK_WAIT=1 BOARD_REBOOT_LOCK_HOLD=0 sh "$rl" sh -c "echo ran >> '$T/runs'"
+) 2> "$T/err" || fail "the holder's own restart was refused: $(cat "$T/err")"
+[ "$(wc -l < "$T/runs")" = $((n + 1)) ] || fail "the holder's own restart didn't run"
+grep -q 'inherited fd 3' "$T/err" || fail "the log doesn't say it's the holder's own lock: $(cat "$T/err")"
+flock -n "$BOARD_REBOOT_LOCK" true || fail "the lock outlived its holder"
 echo ok
