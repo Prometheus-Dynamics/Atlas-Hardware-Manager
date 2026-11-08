@@ -9,6 +9,7 @@
 pub mod crc;
 pub mod loader;
 pub mod maskrom;
+pub mod merge;
 pub mod rc4;
 pub mod rockusb;
 pub mod sim;

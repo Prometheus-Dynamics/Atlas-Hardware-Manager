@@ -6,13 +6,15 @@
 
 use crate::rockchip::crc::{LOADER_POLYNOMIALS, rk_crc32};
 
-const MAGIC_BOOT: [u8; 4] = *b"BOOT";
-const MAGIC_LDR: [u8; 4] = *b"LDR ";
+pub(crate) const MAGIC_BOOT: [u8; 4] = *b"BOOT";
+pub(crate) const MAGIC_LDR: [u8; 4] = *b"LDR ";
 /// The header's fields end at 45 (57 reserved bytes follow, 102 in all).
 const HEADER_FIELDS: usize = 45;
 /// Bytes of an entry the parser reads: size, type, 20 UTF-16 name
 /// characters, data offset, data size, delay.
-const ENTRY_FIELDS: usize = 57;
+pub(crate) const ENTRY_FIELDS: usize = 57;
+/// The whole header, reserved bytes included.
+pub(crate) const HEADER_SIZE: usize = 102;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EntryKind {
@@ -185,8 +187,8 @@ pub fn build_for_chip(
     entries: &[(EntryKind, &str, &[u8], u32)],
     polynomial: u32,
 ) -> Vec<u8> {
-    const HEADER: usize = 102;
-    const ENTRY: usize = 57;
+    const HEADER: usize = HEADER_SIZE;
+    const ENTRY: usize = ENTRY_FIELDS;
     let mut file = vec![0u8; HEADER];
     file[0..4].copy_from_slice(&MAGIC_BOOT);
     file[4..6].copy_from_slice(&(HEADER as u16).to_le_bytes());
