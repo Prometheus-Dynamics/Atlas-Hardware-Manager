@@ -63,6 +63,7 @@
       "pid": "2712"
     },
     "method": "mass-storage-gadget",
+    "flasher": { "bundle": "raze-flasher" },
     "storage_target": "emmc",
     "storage_target_evidence": [
       "The old Raze bootloader.conf uses boot_partition=/dev/mmcblk0p1 and the PhotonVision Raze cmdline uses root=/dev/mmcblk0p2: the CM5 eMMC (mmcblk0 on a CM5 with eMMC).",

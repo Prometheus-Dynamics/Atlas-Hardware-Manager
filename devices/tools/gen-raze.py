@@ -586,12 +586,27 @@ def render_board_toml(manifest: dict) -> str:
     return text
 
 
+FLASHER_CMDLINE = "console=serial0,115200 console=tty1 rdinit=/init loglevel=7 printk.devkmsg=on panic=5"
+
+
+def render_flasher_cmdline(manifest: dict) -> str:
+    """The flasher's command line: where its ring is, read by its init and daemon."""
+    leds = manifest["capabilities"]["leds"]
+    index = leds["index"]
+    return f"{FLASHER_CMDLINE} atlas.ring={leds['device']}:{leds['count']}:{index['offset']}:{index['direction']}\n"
+
+
 def outputs(manifest: dict) -> dict[Path, str]:
     device_txt = BOOT / "raze-device.txt"
+    flasher_txt = GAIA / "assets" / "flasher" / "config.txt"
     fan_dts = BOOT / "overlays" / "raze-fan-overlay.dts"
     return {
         device_txt: replace_regions(device_txt.read_text(), region_device_txt(manifest), ("#", ""), device_txt),
         fan_dts: replace_regions(fan_dts.read_text(), region_fan_dts(manifest), ("/*", "*/"), fan_dts),
+        flasher_txt: replace_regions(
+            flasher_txt.read_text(), {"leds": leds_overlay_line(manifest["capabilities"]["leds"]) + "\n"}, ("#", ""), flasher_txt
+        ),
+        GAIA / "assets" / "flasher" / "cmdline.txt": render_flasher_cmdline(manifest),
         LIBDIR / "leds.env": render_leds_env(manifest),
         LIBDIR / "hardware.env": render_hardware_env(manifest),
         ROOTFS / "usr" / "share" / "board" / "raze" / "sensors.toml": render_sensors_toml(manifest),

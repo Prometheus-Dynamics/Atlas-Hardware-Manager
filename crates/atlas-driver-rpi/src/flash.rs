@@ -6,6 +6,7 @@
 use std::path::Path;
 use std::time::Duration;
 
+use atlas_devices::DeviceCatalog;
 use atlas_driver::{
     Artifact, CancellationToken, DriverError, Identity, ProgressSink, ReleaseRef, UpdateOutcome,
     UpdateStep,
@@ -18,9 +19,6 @@ use crate::recover::{RESTARTED, forget_host_keys};
 
 /// How long the flasher may take to come up after USB boot (~3 s on a CM5).
 const FLASHER_APPEAR_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// The model that has a flasher.
-const FLASHER_MODEL: &str = "raze";
 
 /// How the flasher would take this image: `.zst` and `.xz` as they are
 /// (the board decompresses), raw `.img` as is. Others (gzip, zip) go the
@@ -38,12 +36,11 @@ pub(crate) fn image_format(path: &Path) -> Option<ImageFormat> {
     }
 }
 
-/// Whether this board in USB boot has a flasher.
-pub(crate) fn has_flasher(device: &Identity) -> bool {
-    device
-        .attributes
-        .get("model")
-        .is_some_and(|model| model == FLASHER_MODEL)
+/// This board's USB-boot flasher bundle, when its manifest names one.
+pub(crate) fn flasher_bundle(catalog: &DeviceCatalog, device: &Identity) -> Option<String> {
+    let model = device.attributes.get("model")?;
+    let recovery = &catalog.by_model(model)?.manifest.recovery;
+    Some(recovery.flasher.as_ref()?.bundle.clone())
 }
 
 fn failed(step: UpdateStep, message: impl Into<String>) -> DriverError {
@@ -74,7 +71,7 @@ pub(crate) async fn run(
     progress: &ProgressSink,
     cancel: &CancellationToken,
 ) -> Result<UpdateOutcome, DriverError> {
-    progress.log(format!("raze-flasher: {}", files.dir().display()));
+    progress.log(format!("flasher: {}", files.dir().display()));
 
     progress.step_started(UpdateStep::Transfer);
     let events = progress.clone();

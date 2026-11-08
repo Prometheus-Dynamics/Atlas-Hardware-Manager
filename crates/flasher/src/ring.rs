@@ -52,9 +52,19 @@ pub struct Ring {
 }
 
 impl Ring {
-    /// The Raze's ring: 16 LEDs, logical 0 at physical 5, clockwise.
-    pub fn raze() -> Self {
-        Self::new("/dev/leds0".into(), 16, 5, true)
+    /// The ring the kernel command line describes, when it does:
+    /// `atlas.ring=<device>:<count>:<offset>:<direction>` (1: clockwise),
+    /// generated from the board's manifest.
+    pub fn from_cmdline(cmdline: &str) -> Option<Self> {
+        let value = cmdline
+            .split_ascii_whitespace()
+            .find_map(|arg| arg.strip_prefix("atlas.ring="))?;
+        let mut parts = value.split(':');
+        let path = PathBuf::from(parts.next()?);
+        let count = parts.next()?.parse().ok().filter(|count| *count > 0)?;
+        let offset = parts.next()?.parse().ok()?;
+        let clockwise = parts.next()? == "1";
+        Some(Self::new(path, count, offset, clockwise))
     }
 
     pub fn new(path: PathBuf, count: usize, offset: usize, clockwise: bool) -> Self {
@@ -176,6 +186,22 @@ mod tests {
         assert_eq!(led(&ring.frame(Look::Failed), 7), [72, 17, 17]);
         // Waiting isn't green: green is done.
         assert_eq!(led(&ring.frame(Look::Waiting), 3), [24, 23, 22]);
+    }
+
+    #[test]
+    fn the_ring_comes_from_the_command_line() {
+        let ring = Ring::from_cmdline("panic=5 atlas.ring=/dev/leds0:16:5:1 quiet").unwrap();
+        assert_eq!(
+            (ring.path.to_str(), ring.count, ring.offset, ring.clockwise),
+            (Some("/dev/leds0"), 16, 5, true)
+        );
+        assert!(
+            !Ring::from_cmdline("atlas.ring=/dev/leds0:16:5:-1")
+                .unwrap()
+                .clockwise
+        );
+        assert!(Ring::from_cmdline("panic=5").is_none());
+        assert!(Ring::from_cmdline("atlas.ring=/dev/leds0:0:5:1").is_none());
     }
 
     #[test]

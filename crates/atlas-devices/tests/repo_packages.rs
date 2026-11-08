@@ -229,6 +229,14 @@ fn shell_value(file: &Path, key: &str) -> Option<String> {
 }
 
 #[test]
+fn raze_names_its_flasher() {
+    let catalog = repo_catalog();
+    let raze = catalog.by_model("raze").expect("raze package");
+    let flasher = raze.manifest.recovery.flasher.as_ref().expect("flasher");
+    assert_eq!(flasher.bundle, "raze-flasher");
+}
+
+#[test]
 fn raze_names_its_gadget_address() {
     let raze = repo_catalog();
     let raze = raze.by_model("raze").expect("raze package");

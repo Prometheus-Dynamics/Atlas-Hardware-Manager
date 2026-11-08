@@ -188,6 +188,13 @@ pub struct NandGeometry {
     pub size: Option<u64>,
 }
 
+/// A USB-boot flasher bundle (docs/flasher.md).
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FlasherSpec {
+    /// The bundle's directory name among the USB-boot files.
+    pub bundle: String,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Recovery {
     #[serde(default)]
@@ -199,6 +206,9 @@ pub struct Recovery {
     /// `emmc` or `nvme`.
     #[serde(default)]
     pub storage_target: Option<String>,
+    /// The board's USB-boot flasher bundle, when it has one.
+    #[serde(default)]
+    pub flasher: Option<FlasherSpec>,
     /// Short steps shown while Atlas waits for the board in USB boot. A
     /// board that names a family and leaves these out gets the family's.
     #[serde(default)]

@@ -37,8 +37,8 @@ pub use hardware::{
     Fan, FanPwm, I2cAddress, I2cDevice, LedIndex, LedRing, SelfTestInfo, Verification,
 };
 pub use manifest::{
-    DeviceManifest, EepromFile, EepromInfo, FlashSpec, IdentityRules, NandGeometry, Platform,
-    Recovery, Revision, UsbBootId, UsbGadget, UsbId, Variant,
+    DeviceManifest, EepromFile, EepromInfo, FlashSpec, FlasherSpec, IdentityRules, NandGeometry,
+    Platform, Recovery, Revision, UsbBootId, UsbGadget, UsbId, Variant,
 };
 pub use recognize::{
     Expect, Fingerprint, HttpAnswer, HttpGet, InfoValue, NamedPort, NotRecognized, Probe,

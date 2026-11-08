@@ -230,12 +230,12 @@ impl UpdateCapability for RpiRecovery {
                 format!("the image {} is missing", artifact.path.display()),
             ));
         }
-        // A Raze in USB boot with a raze-flasher bundle at hand: the board
+        // A board in USB boot whose flasher bundle is at hand: the board
         // takes the image itself (crate::flash). Else the mass-storage way.
         if storage_port(device).is_none()
-            && crate::flash::has_flasher(device)
+            && let Some(bundle) = crate::flash::flasher_bundle(&self.config.catalog, device)
             && let Some(format) = crate::flash::image_format(&artifact.path)
-            && let Some(files) = find_flasher_files(&self.config.boot_file_dirs)
+            && let Some(files) = find_flasher_files(&bundle, &self.config.boot_file_dirs)
         {
             return crate::flash::run(
                 &self.config,

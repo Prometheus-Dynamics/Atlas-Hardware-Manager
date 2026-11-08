@@ -33,14 +33,20 @@ mount -t configfs configfs /sys/kernel/config
 
 log() { echo "raze-flasher: $*" > /dev/kmsg; }
 
-# ring R G B: every LED one colour, 16 LEDs x 4 bytes (R G B W, as raze-leds).
+# The board's ring, from cmdline.txt: atlas.ring=<device>:<count>:<offset>:<direction>.
+ring_arg=$(sed -n 's/.*atlas\.ring=\([^ ]*\).*/\1/p' /proc/cmdline)
+ring_dev=${ring_arg%%:*}
+ring_rest=${ring_arg#*:}
+ring_count=${ring_rest%%:*}
+
+# ring R G B: every LED one colour, 4 bytes an LED (R G B W, as raze-leds).
 ring() {
-	[ -w /dev/leds0 ] || return 0
+	[ -n "$ring_dev" ] && [ -w "$ring_dev" ] || return 0
 	px=$(printf '\\%03o\\%03o\\%03o\\000' "$1" "$2" "$3")
 	all=""
 	i=0
-	while [ $i -lt 16 ]; do all="$all$px"; i=$((i + 1)); done
-	printf "$all" > /dev/leds0 2>/dev/null
+	while [ $i -lt "$ring_count" ]; do all="$all$px"; i=$((i + 1)); done
+	printf "$all" > "$ring_dev" 2>/dev/null
 }
 # A failed step: red ring, the reason in the kernel log (and so in pstore),
 # then a warm reset after 20 s (the watchdog would reset anyway).

@@ -7,6 +7,11 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **The USB-boot flasher is a family feature (2026-11-08).** Its layer, init
+  and boot firmware moved to the BCM2712 family; Raze keeps its generated
+  `flasher/config.txt` line and `cmdline.txt`. Atlas picks the bundle from the
+  manifest's `recovery.flasher.bundle`, and the flasher reads its ring from
+  `atlas.ring=<device>:<count>:<offset>:<direction>` on the command line.
 - **The BCM2712 boot mechanism is a family layer (2026-11-08).** How the Pi
   firmware boots and tries a slot (config.txt/tryboot.txt, `os_prefix`,
   `0 tryboot`, the A/B `update` writer, the reset register, the `usb-boot`

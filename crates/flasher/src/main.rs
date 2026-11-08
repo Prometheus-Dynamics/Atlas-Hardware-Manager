@@ -23,7 +23,7 @@ fn main() {
     use atlas_flasher_proto::RebootInto;
     use flasher::board::Board;
     use flasher::ffs::Function;
-    use flasher::ring::{Emmc, Look, Ring, Show};
+    use flasher::ring::{Emmc, Look, NoRing, Ring, Show};
     use flasher::session::{self, Context, Outcome};
 
     fn log(message: &str) {
@@ -57,7 +57,13 @@ fn main() {
         let _ = nix::sys::reboot::reboot(nix::sys::reboot::RebootMode::RB_AUTOBOOT);
         std::process::exit(0);
     }
-    let ring: Arc<dyn Show> = Arc::new(Ring::raze());
+    let ring: Arc<dyn Show> = match std::fs::read_to_string("/proc/cmdline")
+        .ok()
+        .and_then(|cmdline| Ring::from_cmdline(&cmdline))
+    {
+        Some(ring) => Arc::new(ring),
+        None => Arc::new(NoRing),
+    };
     ring.show(Look::Waiting);
     let emmc = Arc::new(Mutex::new(Emmc::Untouched));
     let context = Context {

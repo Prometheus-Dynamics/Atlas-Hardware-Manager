@@ -231,6 +231,13 @@
           "enum": ["mass-storage-gadget", "rockusb", "k230-usb", "fel"]
         },
         "storage_target": { "enum": ["emmc", "sd", "nvme", "usb", "spi-nand", "spi-nor"] },
+        "flasher": {
+          "type": "object",
+          "description": "This board's USB-boot flasher bundle (docs/flasher.md): Atlas uses it instead of the mass-storage path when the bundle is at hand.",
+          "required": ["bundle"],
+          "additionalProperties": false,
+          "properties": { "bundle": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" } }
+        },
         "storage_target_evidence": { "type": "array", "items": { "type": "string" } },
         "instructions": { "type": "array", "minItems": 1, "items": { "type": "string" } },
         "status": {

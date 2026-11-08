@@ -53,7 +53,7 @@ raze-flasher instead of mass-storage-gadget64 is a different directory:
       boot.img                       ours (Gaia), FAT: kernel, dtb, initramfs
       boot.sig                       only for secure-boot boards (not today)
 
-Change: `atlas-driver-rpi` picks raze-flasher when the board's device
+Change: `atlas-driver-rpi` picks the bundle in `recovery.flasher` when the board's device
 package ships it (or Atlas bundles it), and keeps mass-storage-gadget64 as
 the fallback until the new path is proven on hardware (setting, plus an
 automatic fallback when the flasher doesn't answer within 30 s of the file
