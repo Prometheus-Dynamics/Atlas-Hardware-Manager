@@ -77,7 +77,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -88,7 +88,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -255,6 +255,7 @@ dependencies = [
  "atlas-driver",
  "atlas-driver-robot",
  "atlas-usb-ids",
+ "base64 0.22.1",
  "board-lite",
  "futures",
  "if-addrs",
@@ -265,6 +266,7 @@ dependencies = [
  "rmpv",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tokio",
  "tokio-tungstenite",
 ]
@@ -1278,7 +1280,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users",
- "windows-sys 0.59.0",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -1461,7 +1463,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2850,7 +2852,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.21",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -2978,7 +2980,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -3205,7 +3207,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 [[package]]
 name = "orion-auth"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#a1eb75034d80be4a5b1b231a6b616038fa20511d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#7012e8dc2f767ba89c8e952b75c36b981ed9d164"
 dependencies = [
  "ed25519-dalek",
  "hmac",
@@ -3220,7 +3222,7 @@ dependencies = [
 [[package]]
 name = "orion-client"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#a1eb75034d80be4a5b1b231a6b616038fa20511d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#7012e8dc2f767ba89c8e952b75c36b981ed9d164"
 dependencies = [
  "ed25519-dalek",
  "getrandom 0.4.3",
@@ -3239,7 +3241,7 @@ dependencies = [
 [[package]]
 name = "orion-cluster"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#a1eb75034d80be4a5b1b231a6b616038fa20511d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#7012e8dc2f767ba89c8e952b75c36b981ed9d164"
 dependencies = [
  "orion-control-plane",
  "orion-core",
@@ -3250,7 +3252,7 @@ dependencies = [
 [[package]]
 name = "orion-control-plane"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#a1eb75034d80be4a5b1b231a6b616038fa20511d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#7012e8dc2f767ba89c8e952b75c36b981ed9d164"
 dependencies = [
  "orion-core",
  "rkyv",
@@ -3263,7 +3265,7 @@ dependencies = [
 [[package]]
 name = "orion-core"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#a1eb75034d80be4a5b1b231a6b616038fa20511d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#7012e8dc2f767ba89c8e952b75c36b981ed9d164"
 dependencies = [
  "rkyv",
  "serde",
@@ -3273,7 +3275,7 @@ dependencies = [
 [[package]]
 name = "orion-data-plane"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#a1eb75034d80be4a5b1b231a6b616038fa20511d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#7012e8dc2f767ba89c8e952b75c36b981ed9d164"
 dependencies = [
  "orion-core",
  "rkyv",
@@ -3284,7 +3286,7 @@ dependencies = [
 [[package]]
 name = "orion-node"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#a1eb75034d80be4a5b1b231a6b616038fa20511d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#7012e8dc2f767ba89c8e952b75c36b981ed9d164"
 dependencies = [
  "ed25519-dalek",
  "getrandom 0.4.3",
@@ -3312,13 +3314,14 @@ dependencies = [
 [[package]]
 name = "orion-nt4"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#a1eb75034d80be4a5b1b231a6b616038fa20511d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#7012e8dc2f767ba89c8e952b75c36b981ed9d164"
 dependencies = [
  "futures-util",
  "rmp",
  "rmpv",
  "serde",
  "serde_json",
+ "socket2",
  "thiserror 2.0.21",
  "tokio",
  "tokio-tungstenite",
@@ -3327,7 +3330,7 @@ dependencies = [
 [[package]]
 name = "orion-runtime"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#a1eb75034d80be4a5b1b231a6b616038fa20511d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#7012e8dc2f767ba89c8e952b75c36b981ed9d164"
 dependencies = [
  "orion-control-plane",
  "orion-core",
@@ -3337,12 +3340,12 @@ dependencies = [
 [[package]]
 name = "orion-service"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#a1eb75034d80be4a5b1b231a6b616038fa20511d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#7012e8dc2f767ba89c8e952b75c36b981ed9d164"
 
 [[package]]
 name = "orion-transport-common"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#a1eb75034d80be4a5b1b231a6b616038fa20511d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#7012e8dc2f767ba89c8e952b75c36b981ed9d164"
 dependencies = [
  "tokio",
 ]
@@ -3350,7 +3353,7 @@ dependencies = [
 [[package]]
 name = "orion-transport-http"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#a1eb75034d80be4a5b1b231a6b616038fa20511d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#7012e8dc2f767ba89c8e952b75c36b981ed9d164"
 dependencies = [
  "orion-auth",
  "orion-control-plane",
@@ -3364,7 +3367,7 @@ dependencies = [
 [[package]]
 name = "orion-transport-ipc"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#a1eb75034d80be4a5b1b231a6b616038fa20511d"
+source = "git+https://github.com/Prometheus-Dynamics/Orion?branch=dev#7012e8dc2f767ba89c8e952b75c36b981ed9d164"
 dependencies = [
  "libc",
  "orion-control-plane",
@@ -3725,7 +3728,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4047,7 +4050,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4104,7 +4107,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4571,7 +4574,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5097,7 +5100,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5472,7 +5475,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.21",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
 ]
 
 [[package]]
@@ -5858,7 +5861,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -5879,7 +5882,7 @@ dependencies = [
  "objc2-foundation",
  "objc2-quartz-core",
  "raw-window-handle",
- "windows-sys 0.61.2",
+ "windows-sys 0.60.2",
  "windows-version",
 ]
 
