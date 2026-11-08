@@ -7,6 +7,10 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **4 MB back from block integrity (2026-11-08).** `CONFIG_BLK_DEV_INTEGRITY`
+  is off (a 4,096 kB mempool from `bio_integrity_initfn`, seen with
+  page_owner), and `CONFIG_DM_INTEGRITY`, which selects it. Nothing on the
+  board uses either; slots use dm-verity.
 - **An OS can add its own kernel arguments (2026-11-08).** The new
   `slot_cmdline_os` input is appended to the board's slot command line, empty
   by default. It is there for `module_blacklist=vc4` on HeliOS (about 2 MB,
