@@ -75,6 +75,7 @@ pub async fn save_settings(state: State<'_, AppState>, settings: AppSettings) ->
     settings.teams.sort_unstable();
     settings.teams.dedup();
     settings.note_teams();
+    atlas_driver_orion::set_serve_clock(settings.serve_clock);
     settings.save(&AppPaths::resolve(false).settings_file)?;
     let previous = std::mem::replace(
         &mut *state

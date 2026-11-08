@@ -316,6 +316,7 @@ impl Nt {
             let server = Server::start(ServerConfig {
                 bind,
                 persist_path: persist,
+                ..ServerConfig::default()
             })
             .await
             .map_err(|error| format!("couldn't start a NetworkTables server on {bind}: {error}"))?;

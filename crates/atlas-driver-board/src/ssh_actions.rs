@@ -158,6 +158,14 @@ impl ActionsCapability for BoardDeviceActions {
     }
 
     async fn run_action(&self, device: &Identity, action_id: &str) -> Result<(), DriverError> {
+        self.run_action_noted(device, action_id).await.map(|_| ())
+    }
+
+    async fn run_action_noted(
+        &self,
+        device: &Identity,
+        action_id: &str,
+    ) -> Result<Option<String>, DriverError> {
         let ours = self.offer.actions().iter().any(|a| a.id == action_id);
         // The board offers it over HTTP only to the computer on its USB link
         // (reboot, usb-boot): no key needed. The console still goes first.
@@ -171,11 +179,16 @@ impl ActionsCapability for BoardDeviceActions {
                 self.ssh.as_ref().is_some_and(SshUpdate::has_console),
             )
         {
-            return http.run_action(device, action_id).await;
+            return http.run_action(device, action_id).await.map(|()| None);
         }
         match (&self.ssh, &self.http) {
-            (Some(ssh), _) if ours => run_ssh_action(ssh, &self.offer, action_id).await,
-            (_, Some(http)) => http.run_action(device, action_id).await,
+            (Some(ssh), _) if ours && action_id == SSH_TRUST_NEW_KEY_ACTION => {
+                ssh.trust_new_key().await
+            }
+            (Some(ssh), _) if ours => run_ssh_action(ssh, &self.offer, action_id)
+                .await
+                .map(|()| None),
+            (_, Some(http)) => http.run_action(device, action_id).await.map(|()| None),
             _ => Err(DriverError::Incompatible(format!(
                 "this board doesn't offer {action_id}"
             ))),
@@ -196,7 +209,6 @@ async fn run_ssh_action(
                 .ok_or_else(|| DriverError::Incompatible("Atlas has no SSH key set".into()))?;
             ssh.run(&add_key_script(key)?).await.map(|_| ())
         }
-        SSH_TRUST_NEW_KEY_ACTION => ssh.forget_host_key(),
         USB_BOOT_ACTION => restart_into_usb_boot(ssh).await,
         SET_CLOCK_ACTION => set_clock(ssh).await,
         REBOOT_ACTION => {

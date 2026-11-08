@@ -32,7 +32,11 @@ use crate::console::{Console, ConsoleError, SharedOnLine};
 
 mod access;
 pub mod host_keys;
+mod published;
 mod upload;
+
+use published::Verdict;
+pub use published::set_host_key_source;
 
 pub use access::{SshAccess, SshConfig, private_key_for};
 use upload::key_refused;
@@ -223,14 +227,21 @@ impl SshUpdate {
             }
             let stderr = String::from_utf8_lossy(&output.stderr);
             // A new OS on the board (Atlas just put it there): its new host
-            // key replaces the old pin, once.
-            if !retried
-                && host_key_changed(&stderr)
-                && host_keys::new_key_expected(&self.alias())
-                && self.forget_host_key().is_ok()
-            {
-                retried = true;
-                continue;
+            // key replaces the old pin, once. When the board's Orion node
+            // publishes its keys, the key must be one of them.
+            if !retried && host_key_changed(&stderr) && host_keys::new_key_expected(&self.alias()) {
+                match published::verdict(&self.host, self.serial()).await {
+                    Verdict::Refused(reason) => return Err(DriverError::Incompatible(reason)),
+                    Verdict::Verified(keys) if self.pin_verified(&keys).is_ok() => {
+                        retried = true;
+                        continue;
+                    }
+                    Verdict::NotPublished if self.forget_host_key().is_ok() => {
+                        retried = true;
+                        continue;
+                    }
+                    _ => {}
+                }
             }
             return Err(ssh_error(output.status.code(), &stderr));
         }

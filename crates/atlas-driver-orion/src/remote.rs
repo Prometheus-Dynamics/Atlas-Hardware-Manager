@@ -8,6 +8,7 @@
 //! key is trusted on first use and then pinned (`pin_file`).
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -21,6 +22,7 @@ use orion_control_plane::{
 use orion_core::NodeId;
 use serde::Serialize;
 
+use crate::clock::ClockServer;
 use crate::pairing::{
     OtherKey, PairingLog, enroll_command, is_other_key, is_removed, removed_message,
 };
@@ -46,11 +48,21 @@ pub struct OrionConnection {
     pub other_key: Option<OtherKey>,
 }
 
+/// A live session, and what serves the clock over it: dropping the link
+/// stops the offers with the connection.
+struct Link {
+    operator: RemoteOperator,
+    _clock: Option<ClockServer>,
+}
+
 pub struct RemoteTransport {
     identity: OperatorIdentity,
     pin_file: Option<PathBuf>,
     url: Mutex<Option<String>>,
-    session: tokio::sync::Mutex<Option<RemoteOperator>>,
+    session: tokio::sync::Mutex<Option<Link>>,
+    /// Whether the live session's node key was pinned before it connected
+    /// (see [`OrionTransport::authenticated`]).
+    trusted: AtomicBool,
     state: Mutex<OrionConnection>,
     pairing_log: Option<Arc<PairingLog>>,
 }
@@ -113,8 +125,16 @@ impl RemoteTransport {
             }),
             url: Mutex::new(url),
             session: tokio::sync::Mutex::new(None),
+            trusted: AtomicBool::new(false),
             pairing_log: None,
         }
+    }
+
+    /// Ends the live session (and its clock offers), so the next call
+    /// connects again.
+    async fn drop_session(&self) {
+        *self.session.lock().await = None;
+        self.trusted.store(false, Ordering::SeqCst);
     }
 
     /// Logs a board's refusal of this computer's key (once per board and key).
@@ -129,7 +149,7 @@ impl RemoteTransport {
             .url
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = url.clone();
-        *self.session.lock().await = None;
+        self.drop_session().await;
         let mut state = self
             .state
             .lock()
@@ -159,6 +179,11 @@ impl RemoteTransport {
         let session = self.session().await?;
         let result = session.enroll_with_key(key.as_bytes()).await;
         self.record(&result);
+        if result.is_ok() {
+            // The next call introduces Atlas again, so the welcome carries
+            // what the enrollment granted (the clock's grant, too).
+            self.drop_session().await;
+        }
         result.map(|_| ()).map_err(|error| self.error(&error))
     }
 
@@ -172,8 +197,8 @@ impl RemoteTransport {
 
     async fn session(&self) -> Result<RemoteOperator, DriverError> {
         let mut guard = self.session.lock().await;
-        if let Some(session) = guard.as_ref() {
-            return Ok(session.clone());
+        if let Some(link) = guard.as_ref() {
+            return Ok(link.operator.clone());
         }
         let url = self
             .url
@@ -181,7 +206,11 @@ impl RemoteTransport {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone()
             .ok_or_else(|| DriverError::Unsupported("Orion isn't set up in Atlas".into()))?;
-        let connected = RemoteOperator::connect(&url, self.identity.clone(), self.trust()).await;
+        let trust = self.trust();
+        // Only a key pinned before this connection proves the node: a first
+        // use takes whatever key the node shows.
+        let pinned = matches!(trust, NodeTrust::Key(_));
+        let connected = RemoteOperator::connect(&url, self.identity.clone(), trust).await;
         let session = match connected {
             Ok(session) => session,
             Err(error) => {
@@ -226,7 +255,13 @@ impl RemoteTransport {
             state.node_fingerprint = Some(session.node_fingerprint());
             state.error = None;
         }
-        *guard = Some(session.clone());
+        // The clock is offered on this connection, for as long as it lives.
+        let clock = ClockServer::start(&session);
+        self.trusted.store(pinned, Ordering::SeqCst);
+        *guard = Some(Link {
+            operator: session.clone(),
+            _clock: clock,
+        });
         Ok(session)
     }
 
@@ -312,7 +347,7 @@ impl RemoteTransport {
             Ok(value) => Ok(value),
             Err(error) => {
                 if !error.is_not_enrolled() {
-                    *self.session.lock().await = None;
+                    self.drop_session().await;
                     self.state
                         .lock()
                         .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -350,6 +385,10 @@ impl OrionTransport for RemoteTransport {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .is_some()
+    }
+
+    fn authenticated(&self) -> bool {
+        self.trusted.load(Ordering::SeqCst)
     }
 
     async fn nodes(&self) -> Result<Vec<NodeRecord>, DriverError> {

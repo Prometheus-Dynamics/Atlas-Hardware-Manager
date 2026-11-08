@@ -67,6 +67,10 @@ impl Orion {
         let bundles: Arc<dyn BundleHost> = Arc::new(images.clone());
         let directory = OrionDirectory::new(transport.clone(), Some(bundles.clone()));
         directory.set_live_streams(live.clone());
+        // A board's SSH host key is checked against what its node publishes,
+        // over this (authenticated) configured Orion.
+        atlas_driver_board::set_host_key_source(directory.clone());
+        atlas_driver_orion::set_serve_clock(settings.serve_clock);
         let board_nodes = BoardNodes::new(
             identity,
             Some(bundles),

@@ -20,6 +20,7 @@
 
 mod actions;
 mod board_nodes;
+mod clock;
 mod control;
 mod directory;
 mod hardware;
@@ -36,6 +37,7 @@ mod transport;
 mod update;
 
 pub use board_nodes::BoardNodes;
+pub use clock::{ClockServer, serve_clock, set_serve_clock};
 pub use directory::OrionDirectory;
 pub use live::{LiveFrame, LiveRow, LiveStreams};
 pub use operator::operator_identity;

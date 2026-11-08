@@ -14,6 +14,9 @@ description = "Atlas driver for running boards that follow device contract v1 (m
 atlas-usb-ids.workspace = true
 async-trait.workspace = true
 atlas-devices.workspace = true
+# A board's SSH host key's fingerprint (ssh/published.rs).
+base64.workspace = true
+sha2.workspace = true
 atlas-driver = { workspace = true, features = ["http"] }
 atlas-driver-robot.workspace = true
 # This computer's networks, for the sweep (sweep.rs), on every OS.

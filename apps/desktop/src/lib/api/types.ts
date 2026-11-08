@@ -360,6 +360,8 @@ export interface AppSettings {
   orion_url: string | null;
   /** Board readings pushed by the board's own Orion node where it streams them; else polled. */
   live_streams: boolean;
+  /** Offer this computer's clock to boards whose Orion node takes it (operators with clock.set). */
+  serve_clock: boolean;
   /** TCP port boards download update images from (Orion updates). */
   image_server_port: number;
   /** Host put in image URLs when the route to a board can't be told; null is automatic. */

@@ -126,6 +126,10 @@
       <Toggle bind:checked={draft.live_streams} label="Live readings from Orion" />
     </Field>
 
+    <Field inline label="Serve this computer's clock to boards" hint="Boards whose Orion node takes the time from this computer get it, when Orion allows this computer to set their clock. Boards without that grant are left alone.">
+      <Toggle bind:checked={draft.serve_clock} label="Serve this computer's clock to boards" />
+    </Field>
+
     <Field
       label="Robot teams"
       hint="FRC team numbers. Behind a board's USB route Atlas looks on each team's robot network (10.TE.AM.0/24) for boards, the robot controller and the radio. Teams devices were seen on are looked on anyway."

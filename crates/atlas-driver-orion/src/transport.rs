@@ -19,6 +19,14 @@ pub trait OrionTransport: Send + Sync {
         true
     }
 
+    /// Whether the connection the last call used is authenticated to its
+    /// node: its key was pinned before it connected, or the enrollment
+    /// handshake proved it. Only such a connection's answers may decide a
+    /// host key (see `atlas_driver::HostKeySource`). False by default.
+    fn authenticated(&self) -> bool {
+        false
+    }
+
     /// Every node Orion knows, with its observed host facts. A rebooted
     /// node's new `boot_id` shows up here (not on the status lane) once it
     /// is back and has synced; until then the old record may still appear.

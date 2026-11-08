@@ -46,4 +46,4 @@ use contract::IDENTITY_PATH;
 pub use driver::{CatalogHealth, NetworkLinks, drivers_for_catalog};
 pub use gadget::UsbGadgetLinks;
 pub use slots::set_bundle_host;
-pub use ssh::{SshAccess, SshConfig, host_keys, private_key_for};
+pub use ssh::{SshAccess, SshConfig, host_keys, private_key_for, set_host_key_source};

@@ -8,8 +8,9 @@ use std::time::Duration;
 use async_trait::async_trait;
 use atlas_driver::attributes::{BOARD_SERIAL, normalize_board_serial};
 use atlas_driver::{
-    ActionsCapability, Capabilities, CapabilitySource, HardwareCapability, HealthCheck, Identity,
-    Link, LinkSource, StatusCapability, TelemetryCapability, UpdateCapability,
+    ActionsCapability, Capabilities, CapabilitySource, HardwareCapability, HealthCheck,
+    HostKeySource, Identity, Link, LinkSource, PublishedHostKey, StatusCapability,
+    TelemetryCapability, UpdateCapability,
 };
 use orion_control_plane::{
     NodeRecord, StatusQuery, StatusSubject, TypedConfigValue, update_action,
@@ -190,6 +191,48 @@ impl OrionDirectory {
 /// Orion's default node id, which a board's node had before it had its own.
 fn is_placeholder(record: &NodeRecord) -> bool {
     record.node_id.as_str() == "node-local"
+}
+
+/// The status keys a board's node publishes its SSH host keys under.
+const HOST_KEY_PREFIX: &str = "identity.ssh_host_key.";
+
+/// The SSH host keys of boards this directory knows, read over the
+/// configured Orion's connection, and only when that connection is
+/// authenticated to its node (see `OrionTransport::authenticated`).
+#[async_trait]
+impl HostKeySource for OrionDirectory {
+    async fn published_host_keys(&self, serial: &str) -> Vec<PublishedHostKey> {
+        let serial = normalize_board_serial(serial).unwrap_or_else(|| serial.to_owned());
+        let Some(node) = self.node_by_serial(&serial) else {
+            return Vec::new();
+        };
+        let query = StatusQuery {
+            subject: Some(StatusSubject::Node(node.node_id.clone())),
+            key_prefix: Some(HOST_KEY_PREFIX.into()),
+        };
+        // Authenticated before and after the read: the connection that
+        // answered must have been one authenticated to the node.
+        let before = self.transport.authenticated();
+        let Ok(entries) = self.transport.status(query).await else {
+            return Vec::new();
+        };
+        if !(before && self.transport.authenticated()) {
+            return Vec::new();
+        }
+        entries
+            .iter()
+            .filter_map(|entry| {
+                let kind = entry.key.strip_prefix(HOST_KEY_PREFIX)?;
+                let fingerprint = crate::status::text(&entry.value)?;
+                fingerprint
+                    .starts_with("SHA256:")
+                    .then(|| PublishedHostKey {
+                        kind: kind.to_owned(),
+                        fingerprint,
+                    })
+            })
+            .collect()
+    }
 }
 
 #[async_trait]

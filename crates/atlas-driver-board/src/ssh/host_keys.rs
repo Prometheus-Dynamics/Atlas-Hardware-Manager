@@ -71,6 +71,32 @@ pub fn forget(known_hosts: &Path, alias: &str) -> bool {
     ok
 }
 
+/// Pins `keys` (SSH key type and base64 blob, as `ssh-keyscan` prints them)
+/// for `alias`: the alias's entries are replaced, every other line stays.
+pub(crate) fn pin(known_hosts: &Path, alias: &str, keys: &[(&str, &str)]) -> std::io::Result<()> {
+    if let Some(dir) = known_hosts.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let text = match std::fs::read_to_string(known_hosts) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(error),
+    };
+    let mut out = String::new();
+    for line in text.lines() {
+        if line.split_whitespace().next() != Some(alias) {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    for (kind, blob) in keys {
+        out.push_str(&format!("{alias} {kind} {blob}\n"));
+    }
+    let tmp = known_hosts.with_extension("tmp");
+    std::fs::write(&tmp, out)?;
+    std::fs::rename(&tmp, known_hosts)
+}
+
 /// Forgets the board with device key `key` (its display form,
 /// `family:serial`).
 pub fn forget_board(known_hosts: &Path, key: &str) -> bool {
@@ -124,6 +150,29 @@ mod tests {
         assert!(!new_key_expected(&a));
         expect_new_key(&a);
         assert!(new_key_expected(&a));
+    }
+
+    #[test]
+    fn pinning_replaces_only_the_boards_own_entries() {
+        let dir = std::env::temp_dir().join(format!("atlas-pin-{}", std::process::id()));
+        let file = dir.join("known_hosts");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            &file,
+            "board-raze-1234 ssh-ed25519 OLDKEY\nboard-other-9 ssh-rsa KEEP\n",
+        )
+        .unwrap();
+        pin(
+            &file,
+            "board-raze-1234",
+            &[("ssh-ed25519", "NEWKEY"), ("ssh-rsa", "NEWRSA")],
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "board-other-9 ssh-rsa KEEP\nboard-raze-1234 ssh-ed25519 NEWKEY\nboard-raze-1234 ssh-rsa NEWRSA\n"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

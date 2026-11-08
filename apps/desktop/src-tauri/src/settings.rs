@@ -49,6 +49,10 @@ pub struct AppSettings {
     /// Board readings pushed by the board's own Orion node (its live
     /// streams) where it offers them; otherwise, and when off, polled.
     pub live_streams: bool,
+    /// Offer this computer's clock to boards whose Orion node takes it (for
+    /// operators allowed `clock.set`). On by default.
+    #[serde(default = "serve_clock_default")]
+    pub serve_clock: bool,
     /// The TCP port boards download update images from (Orion updates).
     pub image_server_port: u16,
     /// The host put in image URLs when Atlas can't tell which of its
@@ -75,12 +79,18 @@ impl Default for AppSettings {
             ssh_key_file: None,
             orion_url: None,
             live_streams: true,
+            serve_clock: serve_clock_default(),
             image_server_port: atlas_image_server::DEFAULT_PORT,
             image_host: None,
             app_updates: crate::app_update::AppUpdateSettings::default(),
             teams: Vec::new(),
         }
     }
+}
+
+/// Serving the clock is on unless the user turns it off.
+fn serve_clock_default() -> bool {
+    true
 }
 
 pub const DEFAULT_FALLBACK_MS: u64 = 20_000;

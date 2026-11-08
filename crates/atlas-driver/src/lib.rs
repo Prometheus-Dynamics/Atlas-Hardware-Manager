@@ -13,6 +13,7 @@ mod driver;
 mod error;
 mod hardware;
 mod health;
+mod host_key;
 mod install;
 mod observe;
 #[cfg(feature = "http")]
@@ -41,6 +42,7 @@ pub use hardware::{
     HardwareCommand, HardwareFrame, LiveChannel, LiveDevice,
 };
 pub use health::{HealthCheck, HealthStatus};
+pub use host_key::{HostKeySource, PublishedHostKey};
 pub use install::{
     ArtifactKind, ChangeTracker, DeviceChannel, InstallFailure, InstallMethod, InstallMethodId,
     InstallOptions, InstallPlan, InstallRequest,
