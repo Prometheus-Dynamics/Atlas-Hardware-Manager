@@ -10,7 +10,7 @@ use std::path::Path;
 
 use atlas_socflash::rockchip::crc::rk_crc32;
 use atlas_socflash::rockchip::loader::{EntryKind, Loader};
-use atlas_socflash::rockchip::merge::{Ini, MergeError, ReleaseTime, merge, merge_dir};
+use atlas_socflash::rockchip::merge::{Ini, MergeError, ReleaseTime, merge, merge_dir, merge_full};
 use atlas_socflash::rockchip::rc4::rc4_blocks;
 
 const TIME: ReleaseTime = ReleaseTime {
@@ -120,11 +120,37 @@ fn bad_input_is_refused_with_a_message() {
     assert!(refused(INI.replace("NEWIDB=true", "NEWIDB=false")).contains("NEWIDB"));
     assert!(refused(INI.replace("FlashBoot=bin/spl.bin\n", "")).contains("FlashBoot"));
     assert!(refused(format!("{INI}ALIGN=8\n[FLAG2]\n")).contains("unknown section"));
-    assert!(refused(format!("{INI}[LOADER1_PARAM]\nLOAD_ADDR=0x1\n")).contains("not supported"));
-    assert!(refused(format!("{INI}[BOOT1_PARAM]\nWORD_0=0x5\n")).contains("BOOT1_PARAM"));
+    assert!(refused(format!("{INI}[LOADER3_PARAM]\nLOAD_ADDR=0x1\n")).contains("only 2 loaders"));
+    assert!(refused(format!("{INI}[LOADER1_PARAM]\nLOAD=0x1\n")).contains("LOAD"));
+    assert!(refused(format!("{INI}[BOOT1_PARAM]\nWORD_8=0x5\n")).contains("WORD_8"));
     assert!(refused("garbage".into()).contains("line 1"));
     let empty = merge(&Ini::parse(INI).unwrap(), TIME, |_| Ok(Vec::new()));
     assert!(matches!(empty, Err(MergeError::EmptyPart(_))));
+}
+
+#[test]
+fn align_params_and_the_idblock_shape_the_output() {
+    let plain = merge_full(&Ini::parse(INI).unwrap(), TIME, parts).unwrap();
+    assert!(plain.idblock.is_none());
+    let text = format!(
+        "{INI}[LOADER1_PARAM]\nLOAD_ADDR=0x3FFC0000\nFLAG=0x2\n[BOOT1_PARAM]\nWORD_2=0x100\n"
+    )
+    .replace("[SYSTEM]\n", "[SYSTEM]\nALIGN=8\n")
+    .replace("[FLAG]\n", "[FLAG]\nCREATE_IDB=true\nCRC_OFF=true\n");
+    let merged = merge_full(&Ini::parse(&text).unwrap(), TIME, parts).unwrap();
+    let file = merged.loader;
+    let loader = Loader::parse(&file).unwrap();
+    let sizes: Vec<_> = loader.entries.iter().map(|e| e.size).collect();
+    assert_eq!(sizes, [2048, 4096, 2048, 4096, 4096, 4096]);
+    assert_eq!(file[46], 1, "CRC_OFF");
+    let idblock = merged.idblock.unwrap();
+    assert_eq!(idblock.len(), 4096 * 3);
+    assert_eq!(&idblock[..4], b"RKNS");
+    // WORD_2 at 96; the first image at sector 8 with LOAD_ADDR and FLAG.
+    assert_eq!(&idblock[96..100], &0x100u32.to_le_bytes());
+    assert_eq!(&idblock[120..124], &((8u32 << 16) + 8).to_le_bytes());
+    assert_eq!(&idblock[124..132], &[0, 0, 0xfc, 0x3f, 2, 0, 0, 0]);
+    assert_eq!(&idblock[4096..4096 + 4], &[0xd1; 4]);
 }
 
 #[test]

@@ -10,6 +10,8 @@ pub mod crc;
 pub mod loader;
 pub mod maskrom;
 pub mod merge;
+pub mod merge_rkns;
+pub mod merge_time;
 pub mod rc4;
 pub mod rockusb;
 pub mod sim;

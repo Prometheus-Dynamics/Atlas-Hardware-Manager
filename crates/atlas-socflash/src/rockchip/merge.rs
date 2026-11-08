@@ -22,32 +22,29 @@
 //! published rk3588_spl_loader_v1.08.111.bin and rebuilt byte for byte from
 //! its rkbin parts (`tests/merge_vectors.rs`). What no published file shows
 //! is marked UNCONFIRMED below.
+//!
+//! Gaia's loaders from boot_merger 1.35 and 1.38 (rock-5c rk3588, rock-4d
+//! rk3576, zero-3w rk356x, aio-3562jq rk3562, luckfox rv1106) add, all read
+//! off those files and absent from the C: `ALIGN`, `LOADERn_PARAM`,
+//! `BOOT1_PARAM` words, `CREATE_IDB`/`IDB_PATH` (see [`merge_full`]) and the
+//! header's byte 46. They are rebuilt byte for byte in
+//! `tests/gaia_merged.rs`.
 
 use std::io;
 use std::path::Path;
 
-use sha2::{Digest, Sha256};
-
 use crate::rockchip::crc::rk_crc32;
 use crate::rockchip::loader::{ENTRY_FIELDS, HEADER_SIZE, MAGIC_LDR};
+use crate::rockchip::merge_rkns::{BOOT1_WORDS, ImageParam, SECTOR, rkns_header};
+pub use crate::rockchip::merge_time::ReleaseTime;
 use crate::rockchip::rc4::{rc4, rc4_blocks};
 
 /// boot_merger's polynomial (the C table's second entry is 0x04C10DB7).
 const POLYNOMIAL: u32 = 0x04c1_0db7;
 /// `ENTRY_ALIGN`: every part is zero-padded to this.
 const ENTRY_ALIGN: usize = 2048;
-const SECTOR: usize = 512;
-/// What the newer boot_merger writes for `mergerVersion` (the C source says
-/// 0x01030000).
-const MERGER_VERSION: u32 = 0x0100_0000;
 /// Name characters an entry holds (`MAX_NAME_LEN`).
 const NAME_UNITS: usize = 20;
-/// RKNS header: the images table, its size field, and where the hash goes.
-const RKNS_SIZE: usize = 2048;
-const RKNS_IMAGES: usize = 120;
-const RKNS_IMAGE_SIZE: usize = 88;
-const RKNS_MAX_IMAGES: usize = 4;
-const RKNS_HASH_AT: usize = 1536;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum MergeError {
@@ -107,8 +104,23 @@ pub struct Ini {
     pub rc4_off_471: bool,
     /// `[FLAG] RC4_OFF`: the header's `rc4Flag`.
     pub rc4_off: bool,
-    /// Settings that change the output and that nothing settles.
-    unsupported: Vec<String>,
+    /// `[SYSTEM] ALIGN`, in 512-byte sectors: the loader (flash) entries and
+    /// the FlashHead are padded to this; 4 (2048 bytes) when absent.
+    pub align_sectors: u32,
+    /// `[FLAG] CREATE_IDB`: also build the idblock.
+    pub create_idb: bool,
+    /// `[OUTPUT] IDB_PATH`.
+    pub idb_path: Option<String>,
+    /// `[FLAG] CRC_OFF`: sets header byte 46 (see `merge_full`). The trailing
+    /// CRC-32 is written either way (rock-4d rk3576_loader_v1.13.109.bin).
+    pub crc_off: bool,
+    /// `[LOADERn_PARAM]`, one per loader stage in order.
+    pub loader_params: Vec<ImageParam>,
+    /// `[BOOT1_PARAM] WORD_0..WORD_7`.
+    pub boot1_words: [u32; BOOT1_WORDS],
+    /// The header's merge version (0x01000000 in every loader seen, from
+    /// boot_merger 1.35 and 1.38 alike).
+    pub merger_version: u32,
 }
 
 /// A section name and its (line, key, value) settings.
@@ -133,6 +145,25 @@ fn number(line: usize, key: &str, value: &str) -> Result<u32, MergeError> {
     }
 }
 
+/// A number as the ini writes it: decimal or 0x hex.
+fn word(line: usize, key: &str, value: &str) -> Result<u32, MergeError> {
+    let value = value.trim();
+    let parsed = match value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        Some(hex) => u32::from_str_radix(hex, 16),
+        None => value.parse::<u32>(),
+    };
+    parsed.or_else(|_| ini_error(line, format!("{key} is {value:?}, not a number")))
+}
+
+/// `LOADER<n>_PARAM` -> n.
+fn loader_param_index(section: &str) -> Option<usize> {
+    let digits = section.strip_prefix("LOADER")?.strip_suffix("_PARAM")?;
+    digits.parse().ok().filter(|n| *n >= 1)
+}
+
 /// fixPath: backslashes become slashes.
 fn fix_path(value: &str) -> String {
     value.replace('\\', "/")
@@ -144,7 +175,10 @@ impl Ini {
     /// and the `<name>=path` lines are looked up by number and name, so their
     /// order doesn't matter; like the C, every `<n>` from 1 to NUM must exist.
     pub fn parse(text: &str) -> Result<Self, MergeError> {
-        let mut ini = Self::default();
+        let mut ini = Self {
+            merger_version: 0x0100_0000,
+            ..Self::default()
+        };
         let mut sections: Vec<Section> = Vec::new();
         for (index, raw) in text.lines().enumerate() {
             let line = index + 1;
@@ -194,10 +228,7 @@ impl Ini {
                     | "FLAG"
                     | "BOOT1_PARAM"
             );
-            if name.starts_with("LOADER") && name.ends_with("_PARAM") {
-                ini.unsupported
-                    .push(format!("[{name}] (load address and flag)"));
-            } else if !known {
+            if !known && loader_param_index(name).is_none() {
                 return ini_error(
                     entries.first().map_or(0, |e| e.0).saturating_sub(1),
                     format!("unknown section [{name}]"),
@@ -258,22 +289,50 @@ impl Ini {
                 *field = flag(line, value)?;
             }
         }
-        // Keys the newer boot_merger reads and no source or published file
-        // shows the effect of: refused at merge, not guessed.
-        for (section, key) in [("SYSTEM", "ALIGN"), ("FLAG", "CRC_OFF")] {
-            if find(section, key).is_some() {
-                ini.unsupported.push(format!("[{section}] {key}"));
+        ini.align_sectors = match find("SYSTEM", "ALIGN") {
+            Some((line, value)) => word(line, "ALIGN", value)?,
+            None => (ENTRY_ALIGN / SECTOR) as u32,
+        };
+        if ini.align_sectors == 0 || ini.align_sectors > 0xffff {
+            return Err(MergeError::OutOfRange("ALIGN is 0 or over 65535".into()));
+        }
+        for (key, field) in [
+            ("CREATE_IDB", &mut ini.create_idb),
+            ("CRC_OFF", &mut ini.crc_off),
+        ] {
+            if let Some((line, value)) = find("FLAG", key) {
+                *field = flag(line, value)?;
             }
         }
+        ini.idb_path = find("OUTPUT", "IDB_PATH").map(|(_, path)| path.to_string());
         for (_, entries) in sections.iter().filter(|s| s.0 == "BOOT1_PARAM") {
             for (line, key, value) in entries {
-                let zero = value
-                    .trim_start_matches("0x")
-                    .chars()
-                    .all(|digit| digit == '0');
-                if !zero {
-                    ini.unsupported
-                        .push(format!("[BOOT1_PARAM] {key}={value} (line {line})"));
+                let index = key
+                    .strip_prefix("WORD_")
+                    .and_then(|n| n.parse::<usize>().ok())
+                    .filter(|n| *n < BOOT1_WORDS);
+                match index {
+                    Some(n) => ini.boot1_words[n] = word(*line, key, value)?,
+                    None => return ini_error(*line, format!("unknown [BOOT1_PARAM] key {key}")),
+                }
+            }
+        }
+        ini.loader_params = vec![ImageParam::default(); ini.loaders.len()];
+        for (name, entries) in &sections {
+            let Some(n) = loader_param_index(name) else {
+                continue;
+            };
+            let Some(param) = ini.loader_params.get_mut(n - 1) else {
+                return ini_error(
+                    entries.first().map_or(0, |e| e.0),
+                    format!("[{name}] but only {} loaders", ini.loaders.len()),
+                );
+            };
+            for (line, key, value) in entries {
+                match key.as_str() {
+                    "LOAD_ADDR" => param.load_addr = word(*line, key, value)?,
+                    "FLAG" => param.flag = word(*line, key, value)?,
+                    _ => return ini_error(*line, format!("unknown [{name}] key {key}")),
                 }
             }
         }
@@ -281,39 +340,15 @@ impl Ini {
     }
 }
 
-/// The header's release time (the C reads the build machine's local clock).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ReleaseTime {
-    pub year: u16,
-    pub month: u8,
-    pub day: u8,
-    pub hour: u8,
-    pub minute: u8,
-    pub second: u8,
-}
-
-impl ReleaseTime {
-    /// UTC from Unix seconds (the C uses `localtime`; the caller picks).
-    pub fn from_unix_utc(seconds: u64) -> Self {
-        let (days, rest) = (seconds / 86_400, seconds % 86_400);
-        // Howard Hinnant's civil_from_days.
-        let z = days as i64 + 719_468;
-        let era = z.div_euclid(146_097);
-        let doe = z.rem_euclid(146_097);
-        let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-        let mp = (5 * doy + 2) / 153;
-        let day = (doy - (153 * mp + 2) / 5 + 1) as u8;
-        let month = if mp < 10 { mp + 3 } else { mp - 9 } as u8;
-        let year = yoe + era * 400 + i64::from(month <= 2);
-        Self {
-            year: year as u16,
-            month,
-            day,
-            hour: (rest / 3_600) as u8,
-            minute: (rest % 3_600 / 60) as u8,
-            second: (rest % 60) as u8,
-        }
+impl Ini {
+    /// What the Luckfox `scripts/spl.sh` does with `sed`: the `FlashBoot`
+    /// part becomes `path`. False when the ini has no FlashBoot stage.
+    pub fn set_flash_boot(&mut self, path: &str) -> bool {
+        let slot = self
+            .loaders
+            .iter_mut()
+            .find(|(name, _)| name == "FlashBoot");
+        slot.map(|(_, part)| *part = fix_path(path)).is_some()
     }
 }
 
@@ -324,46 +359,6 @@ fn entry_name(path_or_name: &str) -> Vec<u16> {
     let file = path_or_name.rsplit('/').next().unwrap_or(path_or_name);
     let stem = file.split('.').next().unwrap_or(file);
     stem.encode_utf16().take(NAME_UNITS).collect()
-}
-
-fn pad_align(data: &[u8]) -> Vec<u8> {
-    let mut padded = data.to_vec();
-    padded.resize(data.len().div_ceil(ENTRY_ALIGN) * ENTRY_ALIGN, 0);
-    padded
-}
-
-/// The RKNS header `rkcommon_set_header0_v2` writes for `images` (each
-/// already padded): images from sector 4 on, SHA-256 of every image, then
-/// SHA-256 of the header up to the hash field.
-fn rkns_header(images: &[&[u8]]) -> Result<Vec<u8>, MergeError> {
-    if images.len() > RKNS_MAX_IMAGES {
-        return Err(MergeError::Unsupported(format!(
-            "{} images; an RKNS header holds {RKNS_MAX_IMAGES}",
-            images.len()
-        )));
-    }
-    let mut header = vec![0u8; RKNS_SIZE];
-    header[..4].copy_from_slice(b"RKNS");
-    // [31:16] images, [15:0] the hash field's offset in words... 384.
-    let size_and_nimage = ((images.len() as u32) << 16) + 384;
-    header[8..12].copy_from_slice(&size_and_nimage.to_le_bytes());
-    header[12..16].copy_from_slice(&1u32.to_le_bytes()); // boot_flag: SHA-256
-    let mut sector = 4u32;
-    for (index, image) in images.iter().enumerate() {
-        let sectors = u32::try_from(image.len() / SECTOR)
-            .ok()
-            .filter(|count| *count <= 0xffff)
-            .ok_or_else(|| MergeError::OutOfRange("an image is over 32 MiB".into()))?;
-        let at = RKNS_IMAGES + index * RKNS_IMAGE_SIZE;
-        header[at..at + 4].copy_from_slice(&((sectors << 16) + sector).to_le_bytes());
-        header[at + 4..at + 8].copy_from_slice(&0xffff_ffffu32.to_le_bytes());
-        header[at + 12..at + 16].copy_from_slice(&(index as u32 + 1).to_le_bytes());
-        header[at + 24..at + 56].copy_from_slice(&Sha256::digest(image));
-        sector += sectors;
-    }
-    let hash = Sha256::digest(&header[..RKNS_HASH_AT]);
-    header[RKNS_HASH_AT..RKNS_HASH_AT + 32].copy_from_slice(&hash);
-    Ok(header)
 }
 
 /// An entry name and its padded part.
@@ -394,33 +389,55 @@ fn chip_type(chip: &str) -> Result<u32, MergeError> {
     Ok(u32::from_be_bytes(bytes))
 }
 
+/// What a merge makes: the loader, and the idblock when `CREATE_IDB` is set.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Merged {
+    pub loader: Vec<u8>,
+    pub idblock: Option<Vec<u8>>,
+}
+
+fn pad_to(data: &[u8], unit: usize) -> Vec<u8> {
+    let mut padded = data.to_vec();
+    padded.resize(data.len().div_ceil(unit) * unit, 0);
+    padded
+}
+
+/// [`merge_full`]'s loader only.
+pub fn merge(
+    ini: &Ini,
+    time: ReleaseTime,
+    read: impl FnMut(&str) -> io::Result<Vec<u8>>,
+) -> Result<Vec<u8>, MergeError> {
+    Ok(merge_full(ini, time, read)?.loader)
+}
+
 /// Merges the loader `ini` describes; `read` returns the bytes of a part
 /// from its ini path. Only the `NEWIDB` layout is built: the older one (no
 /// UsbHead/FlashHead) was never compared to a published file.
 ///
+/// The 471 and 472 stages are padded to 2048 bytes; the FlashHead and the
+/// loader stages to `ALIGN` sectors (4096 with `ALIGN=8`, as in Gaia's
+/// rock-4d loader). The idblock, when `CREATE_IDB` is set, is the FlashHead
+/// and the loader stages as plain bytes, back to back (read off the rock-4d,
+/// rk3562 and rv1106 idblocks, which equal the loader's flash entries
+/// unscrambled). `CRC_OFF` leaves the trailing CRC-32 in place.
+///
 /// UNCONFIRMED, from the C only: `471_RC4_OFF=false` scrambles each 471/472
 /// stage (and the UsbHead) in one RC4 stream; `RC4_OFF=false` clears the
-/// header's `rc4Flag` and changes nothing else. More than two 471+472
-/// stages in the UsbHead, and three loader stages in the FlashHead (RK3576
-/// has FlashBoost), follow the same RKNS rules but no published file shows
-/// them.
-pub fn merge(
+/// header's `rc4Flag` and changes nothing else.
+pub fn merge_full(
     ini: &Ini,
     time: ReleaseTime,
     mut read: impl FnMut(&str) -> io::Result<Vec<u8>>,
-) -> Result<Vec<u8>, MergeError> {
+) -> Result<Merged, MergeError> {
     if !ini.newidb {
         return Err(MergeError::Unsupported(
             "an ini without [SYSTEM] NEWIDB=true (the legacy layout is not built)".into(),
         ));
     }
-    if let Some(first) = ini.unsupported.first() {
-        return Err(MergeError::Unsupported(format!(
-            "{first}: its effect on the loader isn't settled by any source or published file"
-        )));
-    }
     let chip = chip_type(&ini.chip)?;
-    let mut part = |path: &str| -> Result<Vec<u8>, MergeError> {
+    let align = ini.align_sectors as usize * SECTOR;
+    let mut part = |path: &str, unit: usize| -> Result<Vec<u8>, MergeError> {
         let data = read(path).map_err(|error| MergeError::MissingPart {
             path: path.to_string(),
             reason: error.to_string(),
@@ -428,25 +445,34 @@ pub fn merge(
         if data.is_empty() {
             return Err(MergeError::EmptyPart(path.to_string()));
         }
-        Ok(pad_align(&data))
+        Ok(pad_to(&data, unit))
     };
     let mut stage = |paths: &[String]| -> Result<Vec<NamedPart>, MergeError> {
         paths
             .iter()
-            .map(|path| Ok((entry_name(path), part(path)?)))
+            .map(|path| Ok((entry_name(path), part(path, ENTRY_ALIGN)?)))
             .collect()
     };
     let (ddr, usbplug) = (stage(&ini.code471)?, stage(&ini.code472)?);
     let mut loaders = Vec::new();
     for (name, path) in &ini.loaders {
-        loaders.push((entry_name(name), part(path)?));
+        loaders.push((entry_name(name), part(path, align)?));
     }
 
     let scramble_stage = |data: Vec<u8>| if ini.rc4_off_471 { data } else { rc4(&data) };
     let usb_images: Vec<&[u8]> = ddr.iter().chain(&usbplug).map(|p| p.1.as_slice()).collect();
-    let usb_head = scramble_stage(rkns_header(&usb_images)?);
+    let usb_head = rkns_header(&usb_images, ENTRY_ALIGN, &ini.boot1_words, &[])?;
+    let usb_head = scramble_stage(usb_head);
     let flash_images: Vec<&[u8]> = loaders.iter().map(|p| p.1.as_slice()).collect();
-    let flash_head = rc4_blocks(&rkns_header(&flash_images)?);
+    let flash_plain = rkns_header(&flash_images, align, &ini.boot1_words, &ini.loader_params)?;
+    let flash_head = rc4_blocks(&flash_plain);
+    let idblock = ini.create_idb.then(|| {
+        let mut idb = flash_plain;
+        loaders
+            .iter()
+            .for_each(|(_, data)| idb.extend_from_slice(data));
+        idb
+    });
 
     let mut stored = vec![Stored {
         code: 1,
@@ -500,7 +526,7 @@ pub fn merge(
     out[0..4].copy_from_slice(&MAGIC_LDR);
     out[4..6].copy_from_slice(&(HEADER_SIZE as u16).to_le_bytes());
     out[6..10].copy_from_slice(&((u32::from(ini.major) << 8) | u32::from(ini.minor)).to_le_bytes());
-    out[10..14].copy_from_slice(&MERGER_VERSION.to_le_bytes());
+    out[10..14].copy_from_slice(&ini.merger_version.to_le_bytes());
     out[14..16].copy_from_slice(&time.year.to_le_bytes());
     out[16..21].copy_from_slice(&[time.month, time.day, time.hour, time.minute, time.second]);
     out[21..25].copy_from_slice(&chip.to_le_bytes());
@@ -515,6 +541,11 @@ pub fn merge(
     out[43] = 0; // signFlag: unsigned
     out[44] = u8::from(ini.rc4_off);
     out[45] = 1; // reserved[0]: set in every NEWIDB loader seen
+    // reserved[1] is 1 in the one loader made with CRC_OFF (rock-4d), 0 in
+    // the four without. That loader also has ALIGN=8 and LOADERn_PARAM, and
+    // no file has either key without CRC_OFF, so the reference can't tell
+    // which key sets it: CRC_OFF is the guess.
+    out[46] = u8::from(ini.crc_off);
     let mut data_at = HEADER_SIZE + stored.len() * ENTRY_FIELDS;
     for entry in &stored {
         let mut record = vec![0u8; ENTRY_FIELDS];
@@ -534,11 +565,19 @@ pub fn merge(
     }
     let crc = rk_crc32(&out, POLYNOMIAL);
     out.extend_from_slice(&crc.to_le_bytes());
-    Ok(out)
+    Ok(Merged {
+        loader: out,
+        idblock,
+    })
 }
 
 /// [`merge`] with the parts read from `base_dir` (the ini's paths are
 /// relative to rkbin's root).
 pub fn merge_dir(ini: &Ini, time: ReleaseTime, base_dir: &Path) -> Result<Vec<u8>, MergeError> {
     merge(ini, time, |path| std::fs::read(base_dir.join(path)))
+}
+
+/// [`merge_full`] with the parts read from `base_dir`.
+pub fn merge_full_dir(ini: &Ini, time: ReleaseTime, base_dir: &Path) -> Result<Merged, MergeError> {
+    merge_full(ini, time, |path| std::fs::read(base_dir.join(path)))
 }
