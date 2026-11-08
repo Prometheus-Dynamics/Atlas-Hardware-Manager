@@ -409,60 +409,17 @@ board_rev() {
 	printf '%s' "$_board_rev" | tr -cd 'A-Za-z0-9._-'
 }
 
-# The reset register (PM_RSTS) as the bootloader saw it at this boot
-# (chosen/bootloader/rsts), as a number; empty off a Pi.
-board_rsts() {
-	[ -r "$BOARD_DT_DIR/chosen/bootloader/rsts" ] || return 0
-	od -An -tu1 -N4 "$BOARD_DT_DIR/chosen/bootloader/rsts" |
-		awk 'NF == 4 { printf "%d", $1 * 16777216 + $2 * 65536 + $3 * 256 + $4 }'
-}
-
-# Whether the firmware booted this time as a tryboot (chosen/bootloader/
-# tryboot): 1 or 0. Under a runner (QEMU) its atlas.tryboot=0|1 instead;
-# empty when neither says.
-board_tryboot() {
-	if [ ! -r "$BOARD_DT_DIR/chosen/bootloader/tryboot" ]; then
-		board_cmdline_arg atlas.tryboot
-		case "$BOARD_ARG" in 0 | 1) echo "$BOARD_ARG" ;; esac
-		return 0
-	fi
-	od -An -tu1 -N4 "$BOARD_DT_DIR/chosen/bootloader/tryboot" | awk 'NF == 4 { print ($4 || $3 || $2 || $1) ? 1 : 0 }'
-}
-
-# How this boot began: "power-on" (PM_RSTS bit 12: the board had lost power,
-# which also forgets a pending tryboot: a bench brown-out), "reset" (bit 5:
-# the watchdog, which a reboot and a panic restart use too), else empty.
-board_reset_cause() {
-	_board_rsts=$(board_rsts)
-	[ -n "$_board_rsts" ] || return 0
-	if [ $((_board_rsts & 4096)) -ne 0 ]; then
-		echo power-on
-	elif [ $((_board_rsts & 32)) -ne 0 ]; then
-		echo reset
-	fi
-}
-
-# Sets BOARD_BL_VERSION and BOARD_BL_TIMESTAMP (empty when unknown). Reads the device
-# tree first (no VideoCore access needed), then `vcgencmd bootloader_version`.
+# What the boot chip decides; a family's family.sh (sourced last) replaces
+# these. Without one nothing is known about the boot.
+board_rsts() { :; }
+board_tryboot() { :; }
+board_reset_cause() { :; }
 board_bootloader() {
 	BOARD_BL_VERSION=''
 	BOARD_BL_TIMESTAMP=''
-	_board_bl="$BOARD_DT_DIR/chosen/bootloader"
-	if [ -r "$_board_bl/version" ]; then
-		BOARD_BL_VERSION=$(tr -d '\000' < "$_board_bl/version" | tr -cd 'A-Za-z0-9._-')
-	fi
-	if [ -r "$_board_bl/build-timestamp" ]; then
-		BOARD_BL_TIMESTAMP=$(od -An -tu1 -N4 "$_board_bl/build-timestamp" |
-			awk 'NF == 4 { printf "%d", $1 * 16777216 + $2 * 65536 + $3 * 256 + $4 }')
-	fi
-	if [ -z "$BOARD_BL_VERSION" ] && command -v vcgencmd >/dev/null 2>&1; then
-		_board_out=$(vcgencmd bootloader_version 2>/dev/null) || _board_out=''
-		BOARD_BL_VERSION=$(printf '%s\n' "$_board_out" | sed -n 's/^version \([0-9A-Za-z]*\).*/\1/p' | head -n 1)
-		if [ -z "$BOARD_BL_TIMESTAMP" ]; then
-			BOARD_BL_TIMESTAMP=$(printf '%s\n' "$_board_out" | sed -n 's/^timestamp \([0-9]*\).*/\1/p' | head -n 1)
-		fi
-	fi
 }
+board_usb_boot_supported() { return 1; }
+board_boot_hashes() { :; }
 
 # JSON string literal for $1, or null when empty. Control characters are dropped.
 board_json_str() {
@@ -517,15 +474,6 @@ board_json_var() {
 
 # Update method ids: "image-write" always, then one id per line from
 # update-methods.d/* in the package and OS directories.
-# True when this board can restart straight into USB boot (RPIBOOT) without
-# its button: a BCM2712 (Pi 5/CM5) firmware takes a one-time boot order
-# through the mailbox (set_reboot_order), and vcmailbox is installed.
-#   BOARD_VCMAILBOX  the vcmailbox command   (vcmailbox)
-board_usb_boot_supported() {
-	tr '\000' '\n' 2>/dev/null < "$BOARD_DT_DIR/compatible" | grep -qx 'brcm,bcm2712' &&
-		command -v "${BOARD_VCMAILBOX:-vcmailbox}" >/dev/null 2>&1
-}
-
 board_update_methods() {
 	{
 		printf '%s\n' image-write
@@ -1037,14 +985,9 @@ board_active_slot() {
 	)
 }
 
-# board_boot_hashes <boot dir>: "<sha256>  <path>" lines for the files that
-# decide how a slot boots: config.txt, cmdline.txt, kernel*.img, overlays/*.
-board_boot_hashes() {
-	(
-		cd "$1" 2>/dev/null || exit 0
-		for _board_f in config.txt cmdline.txt kernel*.img overlays/*; do
-			[ -f "$_board_f" ] || continue
-			printf '%s  %s\n' "$(sha256sum < "$_board_f" | cut -d' ' -f1)" "$_board_f"
-		done
-	)
-}
+# The boot chip's part (devices/families/<family>): BOARD_FAMILY_SH is a test hook.
+_board_family=${BOARD_FAMILY_SH:-$BOARD_LIB_DIR/family.sh}
+if [ -r "$_board_family" ]; then
+	# shellcheck disable=SC1090
+	. "$_board_family"
+fi

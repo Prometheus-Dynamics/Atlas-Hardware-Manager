@@ -8,14 +8,17 @@
 # With erofs-utils (mkfs.erofs, fsck.erofs) it also installs an image whose
 # root slot is a real EROFS filesystem, read back through the writer's
 # read-only mount.
-# Needs sh, cc, sfdisk, xz, zstd, sha256sum. Run: sh devices/common/board-os/tests/update.sh
+# Needs sh, cc, sfdisk, xz, zstd, sha256sum. Run: sh devices/families/rpi-bcm2712/tests/update.sh
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-lib=$here/../gaia/assets/rootfs/usr/lib/board
 tool_src=$here/../../../raze/gaia/buildroot-external/packages/board-image-slots/src/board-image-slots.c
 T=$(mktemp -d "${TMPDIR:-/tmp}/board-update-test.XXXXXX")
 trap 'rm -rf "$T"' EXIT
+_devices=$here/../../..
+. "$_devices/common/board-os/tests/compose-lib.inc"
+lib=$T/lib
+compose_lib "$lib"
 PATH=$PATH:/usr/sbin:/sbin
 
 fail() {

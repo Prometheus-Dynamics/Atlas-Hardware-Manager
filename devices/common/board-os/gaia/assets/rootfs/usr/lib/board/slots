@@ -63,8 +63,8 @@
 #
 # Exit status as `update`: 0 done, 3 refused with nothing changed (another
 # command running, the device lock held, no room, a slot that can't be
-# touched), anything else failed. The firmware's choice is two one-line
-# files on the boot FAT (default.txt, trial.txt: os_prefix=slots/<id>/); the
+# touched), anything else failed. How the firmware is told is the family's
+# (family.sh: boot_set_default, boot_set_trial, boot_restart_trial); the
 # rest is in /data/board/slots/: state.env (DEFAULT, PREVIOUS, TRIAL, STAGED
 # and the update's STATE), state.json (generated from it, for the
 # initramfs), <id>.meta per slot, booted (the initramfs's), fallbacks,
@@ -337,22 +337,7 @@ root_copy() {
 	boot_sync
 }
 
-# trial_txt <id>: the next tryboot starts <id>. A runner (QEMU) boots
-# with atlas.tryboot=0|1 and never sees the reboot argument, so for it the
-# "0 tryboot" is p1's tryboot.req too, which it deletes as it starts the
-# one trial boot (slot-init leaves it the same way). The boot FAT is
-# mounted.
-trial_txt() {
-	write_line trial.txt "os_prefix=slots/$1/"
-	board_cmdline_arg atlas.tryboot
-	[ -z "$BOARD_ARG" ] || write_line tryboot.req ''
-}
-
-# Both after the bench's lock (reboot-locked): never in a measurement.
-tryboot_reboot() {
-	if [ -n "${UPDATE_REBOOT:-}" ]; then eval "$UPDATE_REBOOT"; return; fi
-	"$BOARD_LIB_DIR/reboot-locked" "$SYSTEMCTL" reboot --reboot-argument='0 tryboot'
-}
+# After the bench's lock (reboot-locked): never in a measurement.
 plain_reboot() { eval "${UPDATE_REBOOT_PLAIN:-\"\$BOARD_LIB_DIR/reboot-locked\" \$SYSTEMCTL reboot}"; }
 # A restart that recovers the board (a trial that failed, lost its link or
 # its flag): it waits for the bench's lock at most BOARD_REBOOT_SAFETY_WAIT
@@ -501,20 +486,6 @@ write_status() {
 
 # --- install ----------------------------------------------------------------
 
-# missing_overlays <boot FAT> <slot's overlays dir>: the overlays the board's
-# config (config.txt, raze-device.txt) loads that the slot doesn't carry, one
-# a line. The firmware reads a slot's overlays from its own overlays/ (it has
-# a README), so a slot without one boots without that device (the shipped
-# PhotonVision 2026 images: no camera).
-missing_overlays() {
-	for _cfg in "$1/config.txt" "$1/raze-device.txt"; do
-		[ -f "$_cfg" ] && tr -d '\r' < "$_cfg" | sed -n 's/^[[:space:]]*dtoverlay=\([^,[:space:]]*\).*/\1/p'
-	done | sort -u | while IFS= read -r _o; do
-		[ -n "$_o" ] || continue
-		ls -1 "$2" 2>/dev/null | tr 'A-Z' 'a-z' | grep -qx "$(printf '%s' "$_o" | tr 'A-Z' 'a-z').dtbo" || echo "$_o"
-	done
-}
-
 # bundle_layers <dir>: a slot.json without layers of its own, next to the
 # build's layers/layers.json (Gaia), takes its layers from it.
 bundle_layers() {
@@ -596,12 +567,7 @@ EOF
 	if [ -f "$_work/boot/initramfs" ]; then
 		_why=$($INIT check-initramfs "$_work/boot/initramfs" 2>&1) || refuse "the bundle's initramfs won't boot: ${_why#slot-init: }"
 	fi
-	# The firmware reads overlays from os_prefix only when overlays/README
-	# exists; without it the slot gets the root overlays (the default slot's).
-	# Bundles from before slots.toml shipped one get it here.
-	if [ -d "$_work/boot/overlays" ] && [ ! -e "$_work/boot/overlays/README" ]; then
-		printf 'Overlays for this slot. The firmware reads them from os_prefix only when this file exists.\n' > "$_work/boot/overlays/README"
-	fi
+	boot_prepare_slot "$_work/boot"
 	# The boot side: the slot's FAT dir (its cmdline naming the slot), kept
 	# on /data; it goes onto the FAT when it is tried or made the default
 	# (slot-boot). A resident slot installed again gets its new files now.
@@ -739,7 +705,7 @@ cmd_stage_image() {
 	IMAGE_MOUNTS=$_work/fat
 	$MOUNT -t ext4 -o ro,noload,loop "$_ext" "$_work/data" || die "can't read the image's data partition"
 	IMAGE_MOUNTS="$_work/data $IMAGE_MOUNTS"
-	_id=$(sed -n 's|^os_prefix=slots/\(.*\)/$|\1|p' "$_work/fat/default.txt" 2>/dev/null | head -n 1)
+	_id=$(boot_image_default "$_work/fat")
 	valid_id "$_id" || die "the image's boot partition names no slot (default.txt): not a slots build's image"
 	[ "$_id" != "$(running)" ] || refuse "$_id is the running slot"
 	[ "$_id" != "$DEFAULT" ] || refuse "$_id is the default slot"
@@ -934,7 +900,7 @@ cmd_boot_once() {
 	boot_stage "$_id"
 	run_hook pre-reboot "$_id" || refuse "the pre-reboot hook stopped the restart; nothing changed"
 	keep_old_mark "$_id"
-	trial_txt "$_id"
+	boot_set_trial "$_id"
 	# A new trial: confirm may try it once more if the restart loses its flag.
 	meta_set "$_id" RETRIED no
 	# --keep-default: a trial only. Confirm keeps it running when it is
@@ -948,7 +914,7 @@ cmd_boot_once() {
 	save_state
 	board_event update.apply "restarting into slot $_id ($(mf "$_id" version)) on trial" "slot=$_id"
 	umount_boot
-	tryboot_reboot
+	boot_restart_trial
 }
 
 # After every boot (board-update-confirm): a healthy trial becomes the
@@ -991,7 +957,7 @@ cmd_confirm() {
 		else
 			mount_boot
 			root_copy "$_run"
-			write_line default.txt "os_prefix=slots/$_run/"
+			boot_set_default "$_run"
 			[ "$DEFAULT" = "$_run" ] || PREVIOUS=$DEFAULT
 			DEFAULT=$_run TRIAL='' STAGED='' STATE=confirmed ERROR=''
 			board_event update.confirmed "kept slot $_run ($(mf "$_run" version))" "slot=$_run"
@@ -1064,12 +1030,12 @@ cmd_confirm() {
 	if [ -n "${_retry:-}" ]; then
 		mount_boot
 		boot_stage "$_retry"
-		trial_txt "$_retry"
+		boot_set_trial "$_retry"
 		STATE=rebooting
 		save_state
 		umount_boot
 		recovery_hook "$_retry"
-		recovery_restart tryboot_reboot
+		recovery_restart boot_restart_trial
 		return
 	fi
 	# A new default: the oldest slots past `slots keep` go, unless its
@@ -1140,7 +1106,7 @@ cmd_set_default() {
 	mount_boot
 	boot_evict "$_id"
 	boot_stage "$_id"
-	write_line default.txt "os_prefix=slots/$_id/"
+	boot_set_default "$_id"
 	root_copy "$_id"
 	[ "$DEFAULT" = "$_id" ] || PREVIOUS=$DEFAULT
 	DEFAULT=$_id
@@ -1157,7 +1123,7 @@ cmd_rollback() {
 	[ "${1:-}" = --no-reboot ] || run_hook pre-reboot "$_back" || refuse "the pre-reboot hook stopped the restart; nothing changed"
 	mount_boot
 	boot_stage "$_back"
-	write_line default.txt "os_prefix=slots/$_back/"
+	boot_set_default "$_back"
 	root_copy "$_back"
 	DEFAULT=$_back PREVIOUS=$_from STATE=rebooting ERROR=''
 	save_state

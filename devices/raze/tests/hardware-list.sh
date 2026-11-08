@@ -33,13 +33,15 @@ loaded = set(re.findall(r"^dtoverlay=([A-Za-z0-9_-]+)", txt, re.M))
 for o in sorted(loaded - named):
     bad.append(f"raze-device.txt loads overlay {o}, which no hardware entry names")
 # Overlays boot.toml puts in the boot partition.
-boot = tomllib.load(open(f"{g}/boot.toml", "rb"))["image"]["assembly"]
-built = {os.path.basename(x["dest"]).removesuffix(".dtbo") for x in boot.get("transforms", []) + boot.get("files", []) if x["dest"].endswith(".dtbo")}
+built = set()
+for f in (f"{g}/boot.toml", f"{g}/../../families/rpi-bcm2712/gaia/boot.toml"):
+    boot = tomllib.load(open(f, "rb"))["image"]["assembly"]
+    built |= {os.path.basename(x["dest"]).removesuffix(".dtbo") for x in boot.get("transforms", []) + boot.get("files", []) if x["dest"].endswith(".dtbo")}
 for o in sorted(named - built):
     bad.append(f"hardware entry overlay {o} isn't built by boot.toml")
 # Files the package stages.
 staged = set()
-for f in glob.glob(f"{g}/*.toml") + glob.glob(f"{g}/../../common/board-os/gaia/*.toml"):
+for f in glob.glob(f"{g}/*.toml") + glob.glob(f"{g}/../../common/board-os/gaia/*.toml") + glob.glob(f"{g}/../../families/rpi-bcm2712/gaia/*.toml"):
     for item in tomllib.load(open(f, "rb")).get("stage", {}).get("files", []):
         staged.add(item.get("dest"))
 for e in hw:

@@ -37,6 +37,7 @@ imports = [
   "./camera.toml",
   "./boot.toml",
   "../../common/board-os/gaia/board-os.toml",
+  "../../families/rpi-bcm2712/gaia/family.toml",
   "./runtime.toml",
   "./lemnos.toml",
   # What the image must carry per device, for Gaia's image check (Gaia

@@ -36,6 +36,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::family;
 use crate::partition::{Spec, find};
 use crate::{Manifest, State, Verity, cmdline_arg, failed_since_confirm, valid_id};
 
@@ -88,7 +89,7 @@ pub struct Env {
 }
 
 impl Env {
-    fn at(&self, path: &str) -> PathBuf {
+    pub(crate) fn at(&self, path: &str) -> PathBuf {
         self.root.join(path.trim_start_matches('/'))
     }
 }
@@ -99,7 +100,7 @@ struct Boot<'a> {
     tryboot: bool,
     /// A runner boots this (QEMU), not the Pi firmware: it says whether
     /// the boot is a trial with `atlas.tryboot=0|1` and takes a trial
-    /// restart from p1's tryboot.req (see [`TRYBOOT_REQUEST`]).
+    /// restart from p1's tryboot.req (see [`family::TRYBOOT_REQUEST`]).
     runner: bool,
     slot: String,
     data_dev: Option<PathBuf>,
@@ -278,11 +279,11 @@ impl Boot<'_> {
             .is_ok()
         {
             let mut written = self.ops.persist(
-                &boot.join("trial.txt"),
-                &format!("os_prefix=slots/{previous}/\n"),
+                &boot.join(family::TRIAL_FILE),
+                &family::trial_entry(&previous),
             );
             if written.is_ok() && self.runner {
-                written = self.ops.persist(&boot.join(TRYBOOT_REQUEST), "");
+                written = self.ops.persist(&boot.join(family::TRYBOOT_REQUEST), "");
             }
             self.ops.sync();
             self.ops.umount(&boot);
@@ -565,20 +566,6 @@ fn has_errors(dev: &Path) -> bool {
         && u16::from_le_bytes([sb[58], sb[59]]) & EXT4_ERROR_FS != 0
 }
 
-/// On p1, a runner's "0 tryboot": the reboot argument doesn't reach it, so
-/// a restart into tryboot.txt leaves this file, which the runner deletes
-/// as it starts that one trial boot (with `atlas.tryboot=1`).
-pub const TRYBOOT_REQUEST: &str = "tryboot.req";
-
-/// Whether this boot is a trial: the firmware's chosen/bootloader/tryboot
-/// (a big-endian 1), else a runner's `atlas.tryboot=1`.
-fn is_tryboot(env: &Env, cmdline: &str) -> bool {
-    match std::fs::read(env.at("proc/device-tree/chosen/bootloader/tryboot")) {
-        Ok(b) => b.len() >= 4 && b[..4] == [0, 0, 0, 1],
-        Err(_) => cmdline_arg(cmdline, "atlas.tryboot") == Some("1"),
-    }
-}
-
 /// Boots the slot. On a board it returns only when it couldn't (the
 /// reason); with recording ops, empty when it got to switch_root.
 pub fn boot(ops: &dyn Ops, env: &Env) -> String {
@@ -589,7 +576,7 @@ pub fn boot(ops: &dyn Ops, env: &Env) -> String {
     let mut boot = Boot {
         ops,
         env,
-        tryboot: is_tryboot(env, &cmdline),
+        tryboot: family::is_trial(env, &cmdline),
         runner: cmdline_arg(&cmdline, "atlas.tryboot").is_some(),
         slot: String::new(),
         data_dev: None,

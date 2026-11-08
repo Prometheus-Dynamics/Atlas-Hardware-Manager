@@ -7,6 +7,14 @@ The package follows Atlas's versions: 2026.1.0-dev in the tree, and a build
 reports 2026.1.0-dev.<count>+<commit> (the Atlas commit it came from).
 OSes pin this layer by commit; the commits are listed per area.
 
+- **The BCM2712 boot mechanism is a family layer (2026-11-08).** How the Pi
+  firmware boots and tries a slot (config.txt/tryboot.txt, `os_prefix`,
+  `0 tryboot`, the A/B `update` writer, the reset register, the `usb-boot`
+  restart, the stock overlays and the RP1 LED probe) moved to
+  `devices/families/rpi-bcm2712`. The shared scripts call its hooks
+  (`family.sh`), and slot-init keeps the firmware's details in one module.
+  Raze names its config fragment with the new `board_device_config` input,
+  which `devices/raze/gaia/slots.toml` sets; OS builds change nothing.
 - **What every board runs now lives in `devices/common/board-os` (2026-11-08).**
   The identity endpoint, USB gadget, updates and slots, status, data, SSH keys
   and self-test (scripts, units, their Gaia layers and off-device tests) moved

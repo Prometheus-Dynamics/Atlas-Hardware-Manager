@@ -461,6 +461,7 @@ pub fn cmdline_arg<'a>(cmdline: &'a str, key: &str) -> Option<&'a str> {
 
 pub mod boot;
 pub mod disk;
+pub mod family;
 pub mod initramfs;
 pub mod partition;
 pub mod record;

@@ -64,7 +64,7 @@ the board's slots.
 ## The writer: `board-update` (device package)
 
 Installed as `/usr/lib/board/update` (Unreleased; tested off-device by
-`devices/common/board-os/tests/update.sh` against a real A/B layout made with sfdisk).
+`devices/families/rpi-bcm2712/tests/update.sh` against a real A/B layout made with sfdisk).
 Settings: `update.env`.
 
 ```

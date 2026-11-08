@@ -32,6 +32,10 @@ devices/
     gaia/board-os.toml       layer (identity, gadget, updates and slots, status,
     gaia/assets/rootfs/      data, SSH keys, self-test), imported by a package's
     tests/                   device.toml; the scripts' off-device tests
+  families/rpi-bcm2712/      the BCM2712 boot family: gaia/family.toml (hooks the
+    gaia/family.toml         board scripts call, family.sh; A/B tryboot `update`;
+    gaia/slots.toml          RP1 LED probe; stock overlays), gaia/slots.toml (dynamic
+    tests/                   slots), the GPU stack, and their tests
   <model>/
     manifest.json            read by Atlas (and people)
     compat.json              which OS images are known to work (informational)

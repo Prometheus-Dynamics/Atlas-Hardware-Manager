@@ -2,12 +2,6 @@ config = 3
 description = "Raze runtime: what only this board has (generated hardware description, LED ring, USB port power, sensors). The rest is devices/common/board-os."
 
 [[stage.files]]
-id = "raze-modprobe-d-raze-ws2812-pio-conf"
-src = "${self}/assets/rootfs/usr/lib/modprobe.d/raze-ws2812-pio.conf"
-dest = "/usr/lib/modprobe.d/raze-ws2812-pio.conf"
-origin = "static-asset"
-
-[[stage.files]]
 id = "raze-modules-load-d-raze-i2c-dev-conf"
 src = "${self}/assets/rootfs/usr/lib/modules-load.d/raze-i2c-dev.conf"
 dest = "/usr/lib/modules-load.d/raze-i2c-dev.conf"
@@ -20,36 +14,11 @@ dest = "/usr/lib/board/board-package.env"
 origin = "static-asset"
 
 [[stage.files]]
-id = "raze-board-raze-leds-reprobe"
-src = "${self}/assets/rootfs/usr/lib/board/raze-leds-reprobe"
-dest = "/usr/lib/board/raze-leds-reprobe"
-origin = "static-asset"
-mode = 493
-
-[[stage.files]]
 id = "raze-board-raze-leds"
 src = "${self}/assets/rootfs/usr/lib/board/raze-leds"
 dest = "/usr/lib/board/raze-leds"
 origin = "static-asset"
 mode = 493
-
-[[stage.files]]
-id = "raze-systemd-system-board-usb-boot-path"
-src = "${self}/assets/rootfs/usr/lib/systemd/system/board-usb-boot.path"
-dest = "/usr/lib/systemd/system/board-usb-boot.path"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-systemd-system-board-usb-boot-service"
-src = "${self}/assets/rootfs/usr/lib/systemd/system/board-usb-boot.service"
-dest = "/usr/lib/systemd/system/board-usb-boot.service"
-origin = "static-asset"
-
-[[stage.files]]
-id = "raze-systemd-system-raze-leds-reprobe-service"
-src = "${self}/assets/rootfs/usr/lib/systemd/system/raze-leds-reprobe.service"
-dest = "/usr/lib/systemd/system/raze-leds-reprobe.service"
-origin = "static-asset"
 
 [[stage.files]]
 id = "raze-udev-rules-d-60-raze-usb-power-rules"
@@ -70,13 +39,6 @@ id = "raze-board-raze-camera-toml"
 src = "${self}/assets/rootfs/usr/share/board/raze/camera.toml"
 dest = "/usr/share/board/raze/camera.toml"
 origin = "static-asset"
-
-[[stage.files]]
-id = "raze-board-usb-boot"
-src = "${self}/assets/rootfs/usr/lib/board/usb-boot"
-dest = "/usr/lib/board/usb-boot"
-origin = "static-asset"
-mode = 493
 
 [[stage.files]]
 id = "raze-board-leds-env"
@@ -111,18 +73,12 @@ kind = "buildroot"
 [image.feed]
 stage_files = [
   "raze-systemd-system-conf-d-60-board-watchdog-conf",
-  "raze-modprobe-d-raze-ws2812-pio-conf",
   "raze-modules-load-d-raze-i2c-dev-conf",
   "raze-board-device-package-env",
-  "raze-board-raze-leds-reprobe",
-  "raze-systemd-system-raze-leds-reprobe-service",
   "raze-udev-rules-d-60-raze-usb-power-rules",
   "raze-board-raze-sensors-toml",
   "raze-board-raze-camera-toml",
   "raze-board-raze-leds",
-  "raze-systemd-system-board-usb-boot-path",
-  "raze-systemd-system-board-usb-boot-service",
-  "raze-board-usb-boot",
   "raze-board-leds-env",
   "raze-board-hardware-env",
   "raze-lemnos-board",

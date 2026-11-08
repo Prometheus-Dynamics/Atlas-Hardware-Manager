@@ -8,13 +8,16 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-lib=$here/../gaia/assets/rootfs/usr/lib/board
 command -v python3 >/dev/null 2>&1 || {
 	echo "slots: skipped (no python3 for the slot-init stub)"
 	exit 0
 }
 T=$(mktemp -d "${TMPDIR:-/tmp}/board-slots-test.XXXXXX")
 trap 'rm -rf "$T"' EXIT
+_devices=$here/../../..
+. "$here/compose-lib.inc"
+lib=$T/lib
+compose_lib "$lib"
 fail() {
 	echo "FAIL: $*" >&2
 	exit 1

@@ -3,17 +3,13 @@
 # lemnosd.sh; not a test itself): sysfs, /dev, configfs and the device tree
 # under $T, and fake i2cdetect, i2cget, i2cset, systemctl, ip and media-ctl on
 # PATH. Needs $T (a scratch directory) and $here (the test's directory). Sets
-# $S (the fake sysfs) and $lib (/usr/lib/board as a Raze image has it: the
-# shared scripts next to what the package adds).
+# $S (the fake sysfs) and $lib (/usr/lib/board as a Raze image has it).
 
 _devices=$here
 while [ ! -d "$_devices/common/board-os" ]; do _devices=$_devices/..; done
+. "$_devices/common/board-os/tests/compose-lib.inc"
 lib=$T/lib
-mkdir -p "$lib"
-for _f in "$_devices"/common/board-os/gaia/assets/rootfs/usr/lib/board/* \
-	"$_devices"/raze/gaia/assets/rootfs/usr/lib/board/*; do
-	ln -s "$_f" "$lib/"
-done
+compose_lib "$lib"
 
 S=$T/sys
 mkdir -p "$T/dev" "$T/run" "$T/etc" "$T/data" "$T/dt" "$T/bin" "$T/net/usbbr0" "$T/cfg/usb_gadget/g1"

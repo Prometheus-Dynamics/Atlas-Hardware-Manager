@@ -1,12 +1,12 @@
 #!/bin/sh
 # Off-device test of usb-boot: a fake firmware mailbox and device tree, and
-# the reboot recorded. Run: sh devices/raze/tests/usb-boot.sh
+# the reboot recorded. Run: sh devices/families/rpi-bcm2712/tests/usb-boot.sh
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 T=$(mktemp -d "${TMPDIR:-/tmp}/board-usb-boot-test.XXXXXX")
 trap 'rm -rf "$T"' EXIT
-. "$here/../../common/board-os/tests/fake-board.inc"
+. "$here/../../../common/board-os/tests/fake-board.inc"
 
 fail() {
 	echo "FAIL: $*" >&2

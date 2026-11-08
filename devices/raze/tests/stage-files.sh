@@ -59,6 +59,7 @@ check_layers() {
 # The package, and the layer every board shares.
 check_layers "$here/../gaia"
 check_layers "$here/../../common/board-os/gaia"
+check_layers "$here/../../families/rpi-bcm2712/gaia"
 
 [ "$bad" = 0 ] || exit 1
 echo "ok"

@@ -2,11 +2,12 @@
 # Off-device test of gaia/scripts/check-boot-overlays.sh on boot FAT trees
 # laid out as slots.toml lays them out, and of slots.toml itself: its slot
 # payload carries overlays/README and every overlay raze-device.txt loads.
-# Run: sh devices/raze/tests/boot-overlays.sh
+# Run: sh devices/families/rpi-bcm2712/tests/boot-overlays.sh
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
 gaia=$here/../gaia
+raze=$here/../../../raze/gaia
 check=$gaia/scripts/check-boot-overlays.sh
 T=$(mktemp -d "${TMPDIR:-/tmp}/raze-boot-overlays.XXXXXX")
 trap 'rm -rf "$T"' EXIT
@@ -14,7 +15,17 @@ fail() {
 	echo "FAIL: $*" >&2
 	exit 1
 }
-overlays=$(sed -n 's/^dtoverlay=\([^,]*\).*/\1/p' "$gaia/assets/boot/raze-device.txt" | sort -u)
+overlays=$(sed -n 's/^dtoverlay=\([^,]*\).*/\1/p' "$raze/assets/boot/raze-device.txt" | sort -u)
+
+# boot_config <dir>: config.txt and tryboot.txt as slots.toml writes them for Raze.
+boot_config() {
+	python3 - "$gaia/slots.toml" "$1" <<'PY'
+import sys, tomllib
+for e in tomllib.load(open(sys.argv[1], "rb"))["image"]["assembly"]["files"]:
+    if e.get("tree") == "slots-fat" and e.get("dest") in ("config.txt", "tryboot.txt"):
+        open(f"{sys.argv[2]}/{e['dest']}", "w").write(e["content"].replace("${input.board_device_config}", "raze-device.txt"))
+PY
+}
 
 # fat <dir> <slot overlays...>: a FAT as slots.toml makes it, slot "s1".
 fat() {
@@ -22,7 +33,8 @@ fat() {
 	shift
 	rm -rf "$f"
 	mkdir -p "$f/overlays" "$f/slots/s1/overlays"
-	cp "$gaia/assets/slots/config.txt" "$gaia/assets/slots/tryboot.txt" "$gaia/assets/boot/raze-device.txt" "$f/"
+	boot_config "$f"
+	cp "$raze/assets/boot/raze-device.txt" "$f/"
 	echo "os_prefix=slots/s1/" > "$f/default.txt"
 	echo "os_prefix=slots/s1/" > "$f/trial.txt"
 	echo readme > "$f/slots/s1/overlays/README"
@@ -107,11 +119,11 @@ for o in bcm2712d0 dwc2 i2c1-pi5 ws2812-pio vc4-kms-v3d-pi5 ramoops-pi5 disable-
 : > "$B/images/rpi-firmware/overlays/overlay_map.dtb"
 for o in dwc2 i2c1-pi5 ws2812-pio vc4-kms-v3d-pi5 ramoops-pi5; do : > "$B/images/raze-overlays/$o.dtbo"; done
 for o in ov9782 raze-fan raze-usb-power; do : > "$B/boot/overlays/$o.dtbo"; done
-cp "$gaia/assets/boot/raze-device.txt" "$B/boot/raze-device.txt"
+cp "$raze/assets/boot/raze-device.txt" "$B/boot/raze-device.txt"
 python3 - "$gaia" "$B" "$T/fat" <<'PY2' || fail "assembling the FAT: see above"
 import fnmatch, glob, os, shutil, sys, tomllib
 g, b, out = sys.argv[1:]
-inputs = {"slot_family": "pv", "slot_version": "1", "slot_variant": "v", "slot_commit": "c0ffee00"}
+inputs = {"board_device_config": "raze-device.txt", "slot_family": "pv", "slot_version": "1", "slot_variant": "v", "slot_commit": "c0ffee00"}
 def expand(v):
     for k, x in inputs.items():
         v = v.replace("${input." + k + "}", x)

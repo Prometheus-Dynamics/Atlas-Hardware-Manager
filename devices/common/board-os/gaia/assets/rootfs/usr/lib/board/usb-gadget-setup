@@ -63,7 +63,7 @@ set_addrs() {
 	fi
 }
 
-modprobe dwc2 2>/dev/null || true
+[ -z "${BOARD_UDC_MODULE:-}" ] || modprobe "$BOARD_UDC_MODULE" 2>/dev/null || true
 modprobe libcomposite 2>/dev/null || true
 
 if ! mountpoint -q "$CONFIGFS" 2>/dev/null; then
@@ -82,7 +82,7 @@ if [ -z "$udc" ]; then
 		udc=$(ls "$UDC_CLASS" 2>/dev/null | head -n 1)
 		[ -z "$udc" ] || break
 		if [ "$waited" -ge "$limit" ]; then
-			board_log "no USB device controller after ${limit}s (is dtoverlay=dwc2,dr_mode=peripheral set?)"
+			board_log "no USB device controller after ${limit}s ${BOARD_UDC_HINT:+($BOARD_UDC_HINT)}"
 			exit 1
 		fi
 		sleep 1

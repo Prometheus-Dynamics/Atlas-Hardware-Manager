@@ -7,9 +7,12 @@
 set -eu
 
 here=$(cd "$(dirname "$0")" && pwd)
-lib=$here/../gaia/assets/rootfs/usr/lib/board
 T=$(mktemp -d "${TMPDIR:-/tmp}/board-status-test.XXXXXX")
 trap 'rm -rf "$T"' EXIT
+_devices=$here/../../..
+. "$here/compose-lib.inc"
+lib=$T/lib
+compose_lib "$lib"
 
 fail() {
 	echo "FAIL: $*" >&2

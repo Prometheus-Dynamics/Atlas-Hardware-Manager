@@ -363,7 +363,7 @@ check_camera() {
 	bound=${client#* }
 	data="{\"sensor\":$(js "$sensor"),\"address\":$(($addr)),\"i2c_client\":$(js "$where"),\"driver\":$(js "$bound"),\"media_device\":$(js "$media"),\"receiver_video_nodes\":$videos,\"libcamera\":$(if hw_have cam; then [ -n "$libcam" ] && echo true || echo false; else echo null; fi)}"
 	if [ -z "$client" ]; then
-		result camera fail "no $sensor at $addr on any I2C bus: is the camera connected, and does raze-device.txt load its overlay?" "$data"
+		result camera fail "no $sensor at $addr on any I2C bus: is the camera connected, and does ${BOARD_DEVICE_CONFIG:-config.txt} load its overlay?" "$data"
 	elif [ "$bound" = unbound ]; then
 		result camera fail "$sensor at $where has no driver: the probe failed (chip id or power; see dmesg)" "$data"
 	elif [ -z "$media" ] && [ "$videos" = 0 ] && [ -z "$libcam" ]; then

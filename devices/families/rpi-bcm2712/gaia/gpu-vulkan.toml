@@ -1,0 +1,26 @@
+# Optional, not imported by device.toml: Vulkan on the V3D GPU, for OS code
+# that uses wgpu or Vulkan directly (dmabuf import, fences). It selects Mesa
+# and libdrm itself, so it stands alone: an OS that needs only Vulkan imports
+# just this (no EGL, GLES or gbm):
+#   { source = "atlas", path = "devices/raze/gaia/gpu-vulkan.toml" }
+# An OS that also needs GL (PhotonVision's libcamera GL driver) imports
+# gpu.toml as well; the order doesn't matter.
+config = 3
+description = "Raze Vulkan: Mesa's v3dv driver, the Vulkan loader, and vulkaninfo."
+
+[image]
+kind = "buildroot"
+config_overrides = [
+  ["BR2_PACKAGE_MESA3D", "y"],
+  # v3dv, Mesa's Vulkan driver for the Pi 5/CM5 V3D core (ICD in
+  # /usr/share/vulkan/icd.d/broadcom_icd.*.json). It needs no Gallium
+  # driver: without gpu.toml, Mesa builds no libEGL, libGLES or libgbm.
+  ["BR2_PACKAGE_MESA3D_VULKAN_DRIVER_BROADCOM", "y"],
+  ["BR2_PACKAGE_LIBDRM", "y"],
+  # libvulkan.so, which applications link against; it finds the ICD.
+  ["BR2_PACKAGE_VULKAN_HEADERS", "y"],
+  ["BR2_PACKAGE_VULKAN_LOADER", "y"],
+  # vulkaninfo, for diagnostics (pulls in vulkan-sdk; vkcube isn't built,
+  # there is no window system).
+  ["BR2_PACKAGE_VULKAN_TOOLS", "y"],
+]

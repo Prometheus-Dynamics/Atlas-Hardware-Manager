@@ -382,13 +382,6 @@ dest = "/usr/lib/systemd/system/serial-getty@ttyGS1.service.d/50-board.conf"
 origin = "static-asset"
 
 [[stage.files]]
-id = "board-update"
-src = "${self}/assets/rootfs/usr/lib/board/update"
-dest = "/usr/lib/board/update"
-origin = "static-asset"
-mode = 493
-
-[[stage.files]]
 id = "board-slots"
 src = "${self}/assets/rootfs/usr/lib/board/slots"
 dest = "/usr/lib/board/slots"
@@ -673,7 +666,6 @@ stage_files = [
   "board-ssh-hostkeys",
   "board-systemd-system-serial-getty-ttygs0-dropin",
   "board-systemd-system-serial-getty-ttygs1-dropin",
-  "board-update",
   "board-slots",
   "board-slot-boot",
   "board-reboot-locked",
