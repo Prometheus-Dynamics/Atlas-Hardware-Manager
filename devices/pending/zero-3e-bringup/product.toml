@@ -11,6 +11,10 @@ version = 1
 name = "zero-3e-bringup"
 description = "Radxa ZERO 3E bring-up: the base OS plus dev-only SSH key and usb0 gadget network."
 
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.02.3"
+
 [components]
 radxa-zero-3e-extlinux = "../../components/radxa-zero-3e-extlinux/component.toml"
 dev-bench-ssh-key = "components/dev-bench-ssh-key/component.toml"
@@ -24,3 +28,7 @@ components = ["radxa-zero-3e-extlinux", "dev-bench-ssh-key", "dev-usb0-gadget"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["../../products/zero-3e-base/os.fragment", "os.fragment"] }
 recipe = "sd-image"
 budget = "1G"
+
+[images.settings]
+# Names the disk (required by sd-image; see zero-3e-base).
+id = "zero-3e-bringup"

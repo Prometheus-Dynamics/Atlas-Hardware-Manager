@@ -3,10 +3,10 @@
 # bring-up extras (those are in devices/pending/zero-3e-bringup, outside the
 # check until Gaia's local input exists). Untested on board: G3 runs it.
 #
-# Gaia 10beed8 (F7): `sd-image` takes no settings the board needs. The recipe
-# builds the slot file (slot_device defaults to /data/slots/root.img, the path
-# in the dm-verity table), adds it to the data tree at slot_path (default
-# slots/root.img), and the rootfs partition is the build tree as ext4.
+# Gaia 10beed8 (F7): `sd-image` builds the slot file itself (slot_device, the
+# path in the dm-verity table, defaults to /data/slots/root.img), adds it to the
+# data tree at slot_path (slots/root.img), and makes the rootfs partition the
+# build tree as ext4, marked bootable by the recipe. Settings used: id only.
 version = 1
 name = "zero-3e-base"
 description = "Radxa ZERO 3E base OS: bring-up form (raw areas, rootfs and data partitions)."
@@ -26,3 +26,8 @@ components = ["radxa-zero-3e-extlinux"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
 recipe = "sd-image"
 budget = "1G"
+
+[images.settings]
+# Names the disk (required by sd-image; its GUIDs are derived from it, so they
+# stay the same across rebuilds). Gaia's zero-3e-demo uses its own name the same way.
+id = "zero-3e-base"

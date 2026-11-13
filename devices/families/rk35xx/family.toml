@@ -46,6 +46,9 @@ name = "u-boot"
 role = "bootloader"
 offset = "32K"
 in_table = false
+# The file written at the offset: U-Boot's binman output (idbloader and U-Boot),
+# which the OS build makes. Gaia's rk35xx example names it the same way.
+content = "u-boot-rockchip.bin"
 
 [[partitions]]
 name = "uboot-env"
@@ -55,22 +58,12 @@ offset = "16M"
 size = "64K"
 
 # Bring-up form (Gaia's sd-image, F7, at 10beed8): the rootfs partition holds
-# /boot/extlinux/extlinux.conf for U-Boot's distro boot; data holds the slot
-# file. Moves to the slot boot form (boot partition, slots on data) when
-# Gaia's real boot recipe exists.
-# rootfs: the OS tree as ext4 (the build tree, every component's layer merged).
-#   512M: dev's rootfs-a size; a systemd OS is bigger than dev's BusyBox one, so
-#   this is checked when the image is built, not assumed.
-[[partitions]]
-name = "rootfs"
-role = "rootfs"
-size = "512M"
-
-# data: holds the slot file. No size: the slot file's size is the recipe's
-#   (a fixed 64M, dev's empty data, would not hold it).
-[[partitions]]
-name = "data"
-role = "data"
+# /boot/extlinux/extlinux.conf (radxa-zero-3e-extlinux) for U-Boot's distro
+# boot; data holds the slot file. Moves to the slot boot form when Gaia's real
+# boot recipe exists.
+# rootfs and data are not declared here: sd-image makes them itself (the build
+# tree as ext4, marked bootable; and the data partition holding the slot file).
+# The board's partitions are only the areas outside the table and the env.
 
 [disk]
 scheme = "gpt"
