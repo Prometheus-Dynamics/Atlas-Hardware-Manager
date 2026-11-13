@@ -18,6 +18,8 @@ pub mod model;
 pub mod names;
 #[cfg(target_os = "linux")]
 pub mod node;
+#[cfg(target_os = "linux")]
+pub mod readings;
 pub mod script;
 pub mod slots;
 

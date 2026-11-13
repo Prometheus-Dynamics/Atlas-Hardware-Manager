@@ -38,6 +38,7 @@ use orion_stubs::{Board, Security};
 use crate::bundle;
 use crate::model::Model;
 use crate::names;
+use crate::readings;
 use crate::script::{Behaviour, LinkFault, Script};
 use crate::slots::{NewSlot, State, Status, code, valid_id};
 
@@ -195,6 +196,8 @@ struct Shared {
     hold_installs: Arc<AtomicBool>,
     /// How many runs have been stalled by the script (see [`Behaviour::Stall`]).
     stalled: Arc<AtomicUsize>,
+    /// Withdraws the device resources while set (see [`readings`]).
+    devices: readings::Control,
 }
 
 /// A simulated board. Dropping it stops the node logic, the link and the comm core, and frees
@@ -239,6 +242,7 @@ impl SimNode {
             lemnos_down: Arc::new(AtomicBool::new(false)),
             hold_installs: Arc::new(AtomicBool::new(false)),
             stalled: Arc::new(AtomicUsize::new(0)),
+            devices: readings::Control::default(),
         };
 
         let (ready, started) = mpsc::channel();
@@ -315,6 +319,12 @@ impl SimNode {
     #[must_use]
     pub fn stalled_runs(&self) -> usize {
         self.shared.stalled.load(Ordering::SeqCst)
+    }
+
+    /// Withdraws the device resources (`true`) or lists them again (`false`), the way the
+    /// bridge's session is published again when a fact appears or disappears.
+    pub fn hold_devices(&self, hold: bool) {
+        self.shared.devices.hold(hold);
     }
 
     /// Restarts the service now: running jobs are lost, and nothing resumes.
@@ -416,6 +426,8 @@ struct Node {
     readings: Option<Publisher>,
     /// The hello facts, one topic each, on a node with Lemnos only. Kept alive for the session.
     _hello: Vec<Publisher>,
+    /// The devices a Lemnos node describes, on a node with Lemnos only.
+    devices: Option<readings::Devices>,
     active: Vec<Run>,
     install: Option<Install>,
     started: Instant,
@@ -462,6 +474,12 @@ impl Node {
         if let Kind::WithLemnos(hello) = kind {
             lock(&shared.model).slots.board.clone_from(&hello.family);
         }
+        let devices = match kind {
+            Kind::WithLemnos(_) => {
+                Some(readings::Devices::declare(&orion, shared.devices.clone())?)
+            }
+            Kind::Plain => None,
+        };
         // Only a node with Lemnos has readings, a hardware description and hello facts.
         let mut readings = None;
         let mut hello_topics = Vec::new();
@@ -522,6 +540,7 @@ impl Node {
             shared,
             board,
             _hello: hello_topics,
+            devices,
             active: Vec::new(),
             install: None,
             started: Instant::now(),
@@ -802,6 +821,9 @@ impl Node {
             (model.readings(), model.take_new_logs())
         };
         let now = self.now();
+        if let Some(devices) = self.devices.as_mut() {
+            devices.tick(&self._orion, now);
+        }
         if let Some(readings_topic) = self.readings.as_mut() {
             let _ = readings_topic.publish(FieldId(0), now, &readings.temperature_c.to_le_bytes());
             let _ = readings_topic.publish(FieldId(1), now, &readings.input_v.to_le_bytes());
