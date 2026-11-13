@@ -255,7 +255,30 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
     validate_file product "$product"
   fi
   lockfile=$locks/$(echo "$product" | tr '/' '_').lock
-  if ! "$gaia" lock "$product" --lock "$lockfile" >"$errs" 2>&1; then
+  # gaia lock asks the network where each source's ref points. A host being
+  # unreachable says nothing about the description, so it is retried, and if
+  # it stays unreachable the committed lock is planned as it is and the
+  # freshness comparison is skipped, out loud.
+  lock_ok=0
+  offline=0
+  for attempt in 1 2 3; do
+    if "$gaia" lock "$product" --lock "$lockfile" >"$errs" 2>&1; then
+      lock_ok=1
+      break
+    fi
+    if grep -qiE 'unable to access|could not resolve|failed to connect|could not connect|timed out|connection reset|temporary failure' "$errs"; then
+      offline=1
+      sleep $((attempt * 5))
+    else
+      offline=0
+      break
+    fi
+  done
+  if [[ $lock_ok -eq 0 && $offline -eq 1 && $write_locks -eq 0 && -f $committed ]]; then
+    echo "check-devices: NOTE $product: a source host was unreachable, so its gaia.lock was not compared with a fresh one:"
+    sed 's/^/  /' "$errs"
+    cp "$committed" "$lockfile"
+  elif [[ $lock_ok -eq 0 ]]; then
     bad "$product: gaia lock failed:"
     sed 's/^/  /' "$errs" >&2
     continue
