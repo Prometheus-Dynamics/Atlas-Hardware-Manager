@@ -57,7 +57,7 @@ Every job on a board through the Orion client, against a simulated node.
 - [ ] [C3](docs/prs/C3.md) Actions (wave 4; needs C1, A10)
 - [ ] [C4](docs/prs/C4.md) Files (wave 4; needs C1, A10)
 - [x] [C5](docs/prs/C5.md) Slots and updates (wave 5; needs C3, C4, A7, X1)
-- [ ] [C6](docs/prs/C6.md) Trial and confirm watch (wave 6; needs C5)
+- [x] [C6](docs/prs/C6.md) Trial and confirm watch (wave 6; needs C5)
 - [ ] [C7](docs/prs/C7.md) Board data: backup, restore, files (wave 5; needs C4)
 - [ ] [C8](docs/prs/C8.md) SSH and the recovery shell (wave 4; needs C1, A10)
 - [ ] [C9](docs/prs/C9.md) NetworkTables viewer (wave 4; needs C1)

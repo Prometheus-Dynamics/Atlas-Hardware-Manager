@@ -4,15 +4,19 @@
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
 
-use atlas_board_slots::{BoardSlots, SlotInstalls};
+use std::future::Future;
+
+use atlas_actions::ActionError;
+use atlas_board_slots::{BoardSlots, SlotError, SlotInstalls};
 use atlas_jobs::{Backoff, DeviceHolds, Events, JobTiming};
 use atlas_session::{Handle, Lease, Pause, Presence, Sessions};
 use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode};
+use atlas_slots::SlotList;
 use atlas_types::DeviceKey;
 use orion::Address;
 use tokio::time;
@@ -41,6 +45,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 pub struct Relay {
     addr: SocketAddr,
     live: Arc<Mutex<Vec<(TcpStream, TcpStream)>>>,
+    refusing: Arc<AtomicBool>,
 }
 
 impl Relay {
@@ -49,8 +54,15 @@ impl Relay {
         let addr = listener.local_addr().expect("the relay has an address");
         let live: Arc<Mutex<Vec<(TcpStream, TcpStream)>>> = Arc::new(Mutex::new(Vec::new()));
         let kept = Arc::clone(&live);
+        let refusing = Arc::new(AtomicBool::new(false));
+        let refused = Arc::clone(&refusing);
         thread::spawn(move || {
             for client in listener.incoming().flatten() {
+                // A board that is away: the connection is closed at once, as if nothing answered.
+                if refused.load(Ordering::SeqCst) {
+                    let _ = client.shutdown(Shutdown::Both);
+                    continue;
+                }
                 let Ok(server) = TcpStream::connect(upstream) else {
                     continue;
                 };
@@ -75,7 +87,17 @@ impl Relay {
                 });
             }
         });
-        Self { addr, live }
+        Self {
+            addr,
+            live,
+            refusing,
+        }
+    }
+
+    /// While `away`, new connections are closed at once: the board is not reachable. Lifting it
+    /// lets the session connect again, as the same node.
+    pub fn away(&self, away: bool) {
+        self.refusing.store(away, Ordering::SeqCst);
     }
 
     pub const fn addr(&self) -> SocketAddr {
@@ -89,6 +111,60 @@ impl Relay {
             let _ = server.shutdown(Shutdown::Both);
         }
     }
+}
+
+/// The session waits at most 2 s for a short call's answer (`DIRECT_WAIT`), and a later answer
+/// comes back as `NotFinished` with the run asked to stop. Under load that happens to a call that
+/// is correct and only slow, so the tests make the call again: for a call that is safe to repeat
+/// (`list`, `set_default`, `set_starred`, `set_keep`). Every answer other than `NotFinished` is
+/// returned as it is, so a refusal is still checked as the board's words. Bounded by the sim's
+/// [`DEADLINE`].
+pub async fn answered<T, Fut>(what: &str, mut call: impl FnMut() -> Fut) -> Result<T, SlotError>
+where
+    Fut: Future<Output = Result<T, SlotError>>,
+{
+    time::timeout(DEADLINE, async {
+        loop {
+            match call().await {
+                Err(SlotError::Board(ActionError::NotFinished { .. })) => {
+                    time::sleep(Duration::from_millis(20)).await;
+                }
+                other => return other,
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("{what} did not answer within {DEADLINE:?}"))
+}
+
+/// The same for a call that must NOT be repeated blindly (start a trial, remove): after a
+/// `NotFinished`, the board's list is read. When the call's effect is there, the call is done. When
+/// it is not, the call is made again, as `BoardSlots` documents: the caller checks the list first.
+pub async fn answered_once<Fut>(
+    rig: &Rig,
+    what: &str,
+    mut call: impl FnMut() -> Fut,
+    effect: impl Fn(&SlotList) -> bool,
+) -> Result<(), SlotError>
+where
+    Fut: Future<Output = Result<(), SlotError>>,
+{
+    time::timeout(DEADLINE, async {
+        loop {
+            match call().await {
+                Err(SlotError::Board(ActionError::NotFinished { .. })) => {
+                    let listed = answered("the slot list", || rig.slots.list()).await?;
+                    if effect(&listed) {
+                        return Ok(());
+                    }
+                    time::sleep(Duration::from_millis(20)).await;
+                }
+                other => return other,
+            }
+        }
+    })
+    .await
+    .unwrap_or_else(|_| panic!("{what} did not take effect within {DEADLINE:?}"))
 }
 
 /// A scratch directory under the system temp dir, kept short for the node's socket path.
