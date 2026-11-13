@@ -10,6 +10,9 @@
 # [does-not-build <target-triple>]: portable crates that CI found do not compile natively on that
 # OS. One crate per line; the comment is the first error. The check fails if one starts to build
 # (remove it then) and fails for any other portable crate that does not build.
+#
+# [not-yet <target-triple>]: portable crates that wait on another PR, named in the comment. They are
+# compiled on every run and printed; the PR that makes them build removes the entry.
 
 [orion-bound]
 atlas-access        # binds on: orion (direct, the client facade)
@@ -25,3 +28,12 @@ atlas-topics        # binds on: orion (direct, the client facade)
 [does-not-build x86_64-pc-windows-msvc]
 
 [does-not-build aarch64-apple-darwin]
+
+[not-yet x86_64-pc-windows-msvc]
+# D18 (the disk writer behind a platform seam, pr/D18): atlas-disk's test target needs the Unix
+# positional file calls (tests/common/mod.rs) and xz_stream.rs is not gated; first error on Windows:
+# cannot find `unix` in `os`. Its library builds, so atlas-driver-disk is not affected.
+atlas-disk          # D18: the write-path tests use std::os::unix::fs::FileExt (tests/common/mod.rs:8)
+# D18: the helper's privileged write path is the disk writer's platform code; its link test calls
+# std::os::unix::fs::symlink (main.rs:497). First error on Windows: cannot find `unix` in `os`.
+atlas-helper        # D18: the helper's test links with std::os::unix::fs::symlink (main.rs:497)
