@@ -16,12 +16,7 @@ use atlas_usb::{DeviceSummary, OpenOptions, Timeouts, UsbBus, UsbError};
 const LOCATION: &str = "1-2";
 
 fn device() -> DeviceSummary {
-    DeviceSummary {
-        location: LOCATION.into(),
-        vendor: 0x0a5c,
-        product: 0x2712,
-        serial: None,
-    }
+    DeviceSummary::new(LOCATION, 0x0a5c, 0x2712)
 }
 
 fn request(command: i32, name: &str) -> Answer {

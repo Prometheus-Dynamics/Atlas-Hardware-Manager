@@ -55,13 +55,14 @@ Our own loader for every chip family, then the flasher image, then an ordinary u
 - [ ] [D3](docs/prs/D3.md) Rockchip maskrom and loader (wave 3; needs D1)
 - [ ] [D4](docs/prs/D4.md) Kendryte K230 burn (wave 3; needs D1)
 - [ ] [D5](docs/prs/D5.md) Allwinner FEL (wave 3; needs D1)
-- [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11)
+- [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11, D12, D13)
 - [ ] [D7](docs/prs/D7.md) Disk writer and its helper (wave 2; needs A1)
 - [ ] [D8](docs/prs/D8.md) UBI images for NAND boards (wave 2; needs A1)
 - [ ] [D9](docs/prs/D9.md) Slot bundles from the image (wave 3; needs A7)
 - [ ] [D10](docs/prs/D10.md) Fastboot client (wave 3; needs D1)
 - [ ] [D11](docs/prs/D11.md) Read a slot out of the first-flash image (wave 4; needs D9)
 - [ ] [D12](docs/prs/D12.md) Find a board's Orion link over USB by its interface string (wave 4; needs D1, A8)
+- [ ] [D13](docs/prs/D13.md) slot.json schema 3, and the bundle made from the image (wave 5; needs D9, D11)
 
 ## E. Robot network and SystemCore
 

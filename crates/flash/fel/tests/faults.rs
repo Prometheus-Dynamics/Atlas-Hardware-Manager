@@ -101,12 +101,7 @@ fn spl_stage(spl: &[u8]) -> Vec<Answer> {
 }
 
 async fn device(bus: &SimBus) -> Box<dyn UsbIo> {
-    bus.attach(DeviceSummary {
-        location: LOCATION.into(),
-        vendor: 0x1f3a,
-        product: 0xefe8,
-        serial: None,
-    });
+    bus.attach(DeviceSummary::new(LOCATION, 0x1f3a, 0xefe8));
     bus.open(LOCATION, &OpenOptions::default()).await.unwrap()
 }
 

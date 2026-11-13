@@ -3,11 +3,8 @@
 //! the `RemovableDisk` state and nothing else. The write itself is the
 //! helper's job (`atlas-helper`), not this driver's.
 //!
-//! The manifest declares no link kinds yet. The registry routes a link only
-//! to drivers that handle its kind, and no kind names local disks: adding one
-//! is a change to `crates/core/types` and waits for an A-series PR. Until
-//! then the registry never calls this driver; its functions are tested
-//! directly.
+//! The manifest names `LinkKind::LocalDisk`, so the registry calls this driver
+//! for a card reader or removable disk link.
 //!
 //! This crate depends on no other driver. It is named `atlas-driver-disk`
 //! because `atlas-disk` is the flash crate in `crates/flash/disk`.
@@ -21,6 +18,7 @@ use atlas_disk::{Disk, DiskSource, SysfsDisks, check_target};
 use atlas_driver::{Driver, DriverError, DriverManifest};
 use atlas_types::{
     Candidate, CapabilityKind, CapabilitySet, DeviceKey, DeviceState, Family, Identity, Link,
+    LinkKind,
 };
 
 /// The family every removable disk belongs to: the disk itself, not a board.
@@ -39,7 +37,7 @@ impl DiskDriver {
                 family: Family::new(FAMILY),
                 name: "Removable disk".into(),
                 version: env!("CARGO_PKG_VERSION").into(),
-                link_kinds: Vec::new(),
+                link_kinds: vec![LinkKind::LocalDisk],
                 priority: 0,
             },
             source,
