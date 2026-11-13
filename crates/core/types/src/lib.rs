@@ -9,7 +9,7 @@ mod device;
 mod ids;
 mod link;
 
-pub use capability::{CapabilityKind, CapabilitySet};
+pub use capability::{CapabilityKind, CapabilitySet, Offers, Reading};
 pub use device::{DeviceState, Identity, LemnosState};
 pub use ids::{DeviceKey, Family, KeyError, LinkId, NoBoardIdentity, Serial};
 pub use link::{Candidate, Link, LinkKind};

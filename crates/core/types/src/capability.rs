@@ -91,13 +91,53 @@ impl CapabilityKind {
     }
 }
 
+/// Whether a driver could read what a device offers: the contracts its node serves.
+///
+/// `NotReported` is a third state, distinct from "offers nothing". It is set when the device
+/// publishes facts that say it runs Lemnos, but its offers are absent or unreadable (a node's
+/// offers are dropped when they are too long for the hello document). Then no kind it could
+/// grant through an offer is known to be absent, and none is known to be present.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Offers {
+    /// The offers were read: a kind that is not granted is not offered.
+    #[default]
+    Reported,
+    /// The offers were not reported: a kind that is not granted may still be offered.
+    NotReported,
+}
+
+impl Offers {
+    /// Whether the offers were reported. Used to leave the field out of a set that has them.
+    #[must_use]
+    pub const fn is_reported(&self) -> bool {
+        matches!(self, Self::Reported)
+    }
+}
+
+/// What a capability set says about one kind: granted, not granted (the offers were read and
+/// the kind is not among them), or not reported (the offers were not reported).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Reading {
+    /// The driver granted the kind.
+    Granted,
+    /// The offers were read, and the kind is not granted.
+    NotGranted,
+    /// The offers were not reported: whether the kind is offered is not known.
+    NotReported,
+}
+
 /// The capability kinds one driver grants one device. Absent means unsupported.
 ///
 /// This is the only way a device's features are described to the rest of
 /// Atlas. A driver grants kinds; the state of the device decides what is shown.
+/// A set whose offers were not reported says so ([`CapabilitySet::offers`]), and its
+/// [`CapabilitySet::reading`] of a kind is [`Reading::NotReported`] unless it is granted.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CapabilitySet {
     kinds: BTreeSet<CapabilityKind>,
+    #[serde(default, skip_serializing_if = "Offers::is_reported")]
+    offers: Offers,
 }
 
 impl CapabilitySet {
@@ -109,6 +149,35 @@ impl CapabilitySet {
     pub fn from_kinds(kinds: impl IntoIterator<Item = CapabilityKind>) -> Self {
         Self {
             kinds: kinds.into_iter().collect(),
+            offers: Offers::Reported,
+        }
+    }
+
+    /// A set whose offers were not reported, with the kinds the driver granted anyway.
+    // LOCK: Lemnos M8c (offers cap 1024): until then a board whose offers are dropped is this set.
+    pub fn offers_not_reported(kinds: impl IntoIterator<Item = CapabilityKind>) -> Self {
+        Self {
+            kinds: kinds.into_iter().collect(),
+            offers: Offers::NotReported,
+        }
+    }
+
+    /// Whether the offers this set was built from were reported.
+    #[must_use]
+    pub const fn offers(&self) -> Offers {
+        self.offers
+    }
+
+    /// What this set says about `kind`: granted, not granted with the offers read, or not
+    /// reported. A caller that gates on a kind must treat [`Reading::NotReported`] as neither.
+    #[must_use]
+    pub fn reading(&self, kind: CapabilityKind) -> Reading {
+        if self.kinds.contains(&kind) {
+            Reading::Granted
+        } else if self.offers.is_reported() {
+            Reading::NotGranted
+        } else {
+            Reading::NotReported
         }
     }
 

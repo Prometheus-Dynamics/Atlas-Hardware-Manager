@@ -44,6 +44,10 @@ pub enum SlotError {
     /// The board does not offer the slot contract. Normal: "this board has no slots".
     #[error("this board has no slots")]
     NoSlots,
+    /// The board did not report what it offers: its node publishes Lemnos facts but no readable
+    /// offers. Not "no slots", and not "slots": the offers are unknown until they are reported.
+    #[error("this board did not report what it offers")]
+    NotReported,
     /// The board refused, failed, or did not answer. Its words are shown as they are.
     #[error(transparent)]
     Board(#[from] ActionError),

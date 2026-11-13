@@ -37,6 +37,7 @@ use orion::{Address, Orion, fields};
 use orion_stubs::{Board, Options, Security};
 
 use crate::bundle;
+use crate::lease;
 use crate::model::Model;
 use crate::names;
 use crate::readings;
@@ -237,6 +238,8 @@ struct Shared {
     devices: readings::Control,
     /// How many runs have been asked for, by action name, refused ones included.
     runs: Arc<Mutex<BTreeMap<String, usize>>>,
+    /// The lease per caller identity, on a simulated clock (see [`crate::lease`]).
+    leases: Arc<lease::Leases>,
 }
 
 /// A simulated board. Dropping it stops the node logic, the link and the comm core, and frees
@@ -300,6 +303,7 @@ impl SimNode {
             calls: Arc::new(AtomicUsize::new(0)),
             devices: readings::Control::default(),
             runs: Arc::new(Mutex::new(BTreeMap::new())),
+            leases: Arc::new(lease::Leases::new()),
         };
 
         let (ready, started) = mpsc::channel();
@@ -466,6 +470,37 @@ impl SimNode {
         lock(&self.shared.runs).get(name).copied().unwrap_or(0)
     }
 
+    /// How many runs of a device's `.call` the node took, over all devices: the bridge's requests
+    /// that renew a lease (see `crate::lease`). Refused ones included.
+    #[must_use]
+    pub fn bridge_calls_started(&self) -> usize {
+        lock(&self.shared.runs)
+            .iter()
+            .filter(|(name, _)| is_device_call(name))
+            .map(|(_, count)| *count)
+            .sum()
+    }
+
+    /// Moves the simulated lease clock by `secs`. A caller silent for longer than the lease period
+    /// loses its lease: its running runs end with the lease's words, and [`SimNode::lease_drops`]
+    /// counts it. Nothing else moves the clock.
+    pub fn lease_advance(&self, secs: u64) {
+        self.shared.leases.advance(Duration::from_secs(secs));
+    }
+
+    /// Sets the simulated lease period and stall time, shorter for a test. The defaults are
+    /// [`lease::PERIOD`] and [`lease::STALL`].
+    pub fn lease_set(&self, period: Duration, stall: Duration) {
+        self.shared.leases.set(period, stall);
+    }
+
+    /// How many drops the lease has applied: callers that lost their lease and stalled runs that
+    /// were dropped, counted when the node applied them.
+    #[must_use]
+    pub fn lease_drops(&self) -> usize {
+        self.shared.leases.dropped()
+    }
+
     /// Where the network port is, for a client that does not use the link.
     #[must_use]
     pub fn network(&self) -> SocketAddr {
@@ -602,6 +637,22 @@ impl Node {
                 .map_err(|e| e.to_string())?;
             registration.get_or_insert(handle);
         }
+        // A node with Lemnos names each device's `.call` the way the bridge does: `lemnos.<device>.call`.
+        if matches!(kind, Kind::WithLemnos(_)) {
+            for device in readings::DEVICES {
+                let name = format!("lemnos.{}.call", device.id);
+                let policy = Policy::new(Admits::ANYONE).without_grant();
+                let decl = ActionDecl {
+                    name: &name,
+                    target: target(),
+                    description: "the device's call, as the bridge names it",
+                };
+                let handle = orion
+                    .register_action(&decl, policy)
+                    .map_err(|e| e.to_string())?;
+                registration.get_or_insert(handle);
+            }
+        }
         let logs = orion
             .declare(&TopicDecl {
                 name: names::LOGS,
@@ -709,9 +760,20 @@ impl Node {
                     ..
                 })) => {
                     self.shared.calls.fetch_add(1, Ordering::SeqCst);
+                    self.shared.leases.request(&caller);
                     self.start(call, &name, args, &caller);
                 }
-                Ok(Some(Request::Cancel { call })) => self.cancel(call),
+                Ok(Some(Request::Cancel { call })) => {
+                    if let Some(caller) = self
+                        .active
+                        .iter()
+                        .find(|run| run.call == call)
+                        .map(|run| run.caller.clone())
+                    {
+                        self.shared.leases.request(&caller);
+                    }
+                    self.cancel(call);
+                }
                 Ok(None) => {}
                 // The comm core went away: nothing more can be answered.
                 Err(_) => break,
@@ -736,6 +798,32 @@ impl Node {
         self.finish(call, outcome_for(status.code), &[], &status.to_string());
     }
 
+    /// Ends the runs the lease has dropped: a caller's running runs, or one stalled run.
+    fn apply_lease_drops(&mut self) {
+        for drop in self.shared.leases.take() {
+            match drop {
+                lease::Drop::Caller(caller) => {
+                    let ended: Vec<u64> = self
+                        .active
+                        .iter()
+                        .filter(|run| run.caller == caller)
+                        .map(|run| run.call)
+                        .collect();
+                    self.active.retain(|run| run.caller != caller);
+                    for call in ended {
+                        self.finish(call, Outcome::Failed, &[], lease::CALLER_WORDS);
+                    }
+                }
+                lease::Drop::Run(call) => {
+                    if let Some(at) = self.active.iter().position(|run| run.call == call) {
+                        self.active.remove(at);
+                        self.finish(call, Outcome::Failed, &[], lease::STALL_WORDS);
+                    }
+                }
+            }
+        }
+    }
+
     fn start(&mut self, call: u64, name: &str, args: Vec<u8>, caller: &str) {
         *lock(&self.shared.runs).entry(name.to_string()).or_default() += 1;
         if names::is_lemnos(name) && self.shared.lemnos_down.load(Ordering::SeqCst) {
@@ -746,11 +834,23 @@ impl Node {
             );
             return;
         }
+        if is_device_call(name) && args.is_empty() {
+            // The bridge's `.call` with no method: refused before anything is read or written.
+            self.finish(call, Outcome::Rejected, &[], "call needs a method");
+            return;
+        }
+        if is_device_call(name) && args == b"describe" {
+            // The renewal at I6h (`.call describe`): a read of the description, which changes nothing.
+            // LOCK: Lemnos I6h describe.
+            self.finish(call, Outcome::Succeeded, &[], "");
+            return;
+        }
         let behaviour = lock(&self.shared.script).take_action(name);
         match behaviour {
             Behaviour::Refuse(reason) => self.finish(call, Outcome::Rejected, &[], &reason),
             Behaviour::Fail(reason) => self.finish(call, Outcome::Failed, &[], &reason),
             Behaviour::Stall => {
+                self.shared.leases.stalled(call);
                 self.shared.stalled.fetch_add(1, Ordering::SeqCst);
                 self.active.push(Run {
                     call,
@@ -1011,6 +1111,7 @@ impl Node {
         if self.shared.restart.swap(false, Ordering::SeqCst) {
             self.restart();
         }
+        self.apply_lease_drops();
         if self.live {
             self.sync_hello();
         }
@@ -1082,6 +1183,11 @@ impl Node {
 }
 
 /// The path a pushed bundle is kept at on the shelf.
+/// A device's `.call` action: `lemnos.<device>.call`, the bridge's name for it.
+fn is_device_call(name: &str) -> bool {
+    name.starts_with("lemnos.") && name.ends_with(".call")
+}
+
 fn pushed(name: &str) -> String {
     format!("{}{name}", names::INCOMING)
 }
