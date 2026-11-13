@@ -228,8 +228,15 @@ fn bad_app_data_is_refused() {
 
 /// A fresh folder under the test target's temporary directory.
 fn scratch(name: &str) -> PathBuf {
+    // Tests run in parallel and two of them use the same case names, so each
+    // test gets its own folder (the test thread carries the test's name).
+    let test = std::thread::current()
+        .name()
+        .unwrap_or("main")
+        .replace("::", "-");
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join("catalog")
+        .join(test)
         .join(name);
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("scratch dir");
