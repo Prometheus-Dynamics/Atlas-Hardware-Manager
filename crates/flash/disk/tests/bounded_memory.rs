@@ -1,3 +1,4 @@
+#![cfg(unix)]
 //! Writing keeps memory flat whatever the image's size: decoded data streams
 //! through fixed buffers, and the read-back compares segment by segment. A
 //! 128 MiB image must not take more than the bound below. It reads /proc, so

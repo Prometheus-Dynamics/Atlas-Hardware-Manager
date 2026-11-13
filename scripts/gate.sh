@@ -34,6 +34,13 @@ if [ -x scripts/check-devices.sh ]; then
   step "device descriptions" scripts/check-devices.sh
 fi
 
+# Every line of every board's kernel fragments must take (PR B25). Needs the pinned kernel trees (fetched once,
+# cached by the pin) and flex and bison. A source that cannot be fetched is a failure, here as in CI.
+if [ -x scripts/check-kernel-fragments.sh ]; then
+  step "kernel fragments" scripts/check-kernel-fragments.sh
+  step "kernel fragments self-test" scripts/check-kernel-fragments.sh --self-test
+fi
+
 # The Lemnos gadget drop-in (R1d): installed exactly where the installed board file has a usb-gadget device.
 if [ -f scripts/check-lemnos-gadget.py ]; then
   step "lemnos gadget drop-in pairing" python3 scripts/check-lemnos-gadget.py

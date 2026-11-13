@@ -5,7 +5,6 @@
 
 use std::fs::{self, File};
 use std::io;
-use std::os::unix::fs::FileExt;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -14,6 +13,46 @@ use atlas_disk::Target;
 use sha2::{Digest, Sha256};
 
 static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Writes all of `data` at `offset`, the same on every system.
+#[cfg(unix)]
+pub fn write_all_at(file: &fs::File, data: &[u8], offset: u64) -> io::Result<()> {
+    std::os::unix::fs::FileExt::write_all_at(file, data, offset)
+}
+
+/// Fills `buf` from `offset`, the same on every system.
+#[cfg(unix)]
+pub fn read_exact_at(file: &fs::File, buf: &mut [u8], offset: u64) -> io::Result<()> {
+    std::os::unix::fs::FileExt::read_exact_at(file, buf, offset)
+}
+
+/// Writes all of `data` at `offset`. `seek_write` may move fewer bytes, so it loops.
+#[cfg(windows)]
+pub fn write_all_at(file: &fs::File, mut data: &[u8], mut offset: u64) -> io::Result<()> {
+    while !data.is_empty() {
+        let moved = std::os::windows::fs::FileExt::seek_write(file, data, offset)?;
+        if moved == 0 {
+            return Err(io::Error::from(io::ErrorKind::WriteZero));
+        }
+        offset += moved as u64;
+        data = &data[moved..];
+    }
+    Ok(())
+}
+
+/// Fills `buf` from `offset`. `seek_read` may move fewer bytes, so it loops.
+#[cfg(windows)]
+pub fn read_exact_at(file: &fs::File, mut buf: &mut [u8], mut offset: u64) -> io::Result<()> {
+    while !buf.is_empty() {
+        let moved = std::os::windows::fs::FileExt::seek_read(file, buf, offset)?;
+        if moved == 0 {
+            return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
+        }
+        offset += moved as u64;
+        buf = &mut buf[moved..];
+    }
+    Ok(())
+}
 
 /// A fresh path in the temporary directory, unique to this process and call.
 pub fn temp(label: &str) -> PathBuf {
@@ -89,7 +128,7 @@ impl Target for FileTarget {
     }
 
     fn write_at(&mut self, offset: u64, data: &[u8]) -> io::Result<()> {
-        self.file.write_all_at(data, offset)
+        write_all_at(&self.file, data, offset)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -97,7 +136,7 @@ impl Target for FileTarget {
     }
 
     fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<()> {
-        self.file.read_exact_at(buf, offset)
+        read_exact_at(&self.file, buf, offset)
     }
 
     fn reattach(&mut self) -> Result<(), String> {
@@ -107,7 +146,8 @@ impl Target for FileTarget {
     fn pause(&mut self, _how_long: std::time::Duration) {}
 }
 
-/// The xz file of `raw`, made by the `xz` program with its CRC-64 check.
+/// The xz file of `raw`, made by the `xz` program with its CRC-64 check. Needs
+/// `xz` on the PATH: the tests that call it are unix-only.
 pub fn xz_bytes(raw: &[u8]) -> Vec<u8> {
     use std::io::Write;
     use std::process::{Command, Stdio};
