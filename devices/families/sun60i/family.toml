@@ -96,6 +96,8 @@ ref = "b1cec0a90c795f65b82cee7098489e0bdf550b74"
 [kernel]
 source = "linux"
 fragments = ["assets/linux.fragment"]
+# The storage controller a slot boots from, built in (=y): the A733 SD and eMMC hosts (sunxi-mmc) (PR B26).
+storage_drivers = ["CONFIG_MMC_SUNXI"]
 
 [bootloader]
 source = "u-boot"

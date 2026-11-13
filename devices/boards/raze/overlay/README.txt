@@ -1,5 +1,5 @@
 NOT COMMITTED: the Raze's device-tree overlay is generated, at build time, by `lemnos-ctl tree` from the
-board file (components/raze-lemnos-board/files/board.toml). Nothing here is hand-written and nothing is compiled.
+board file (boards/raze/lemnos-board.toml). Nothing here is hand-written and nothing is compiled.
 
 The generator writes three outputs (lemnos-ctl built from Lemnos d6b9361d, the L1 rev, and its SoC map
 socs/bcm2712-rp1.toml; the lock is d6b9361d, PR B23, see Status):

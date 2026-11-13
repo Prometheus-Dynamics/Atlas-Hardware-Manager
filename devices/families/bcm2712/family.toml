@@ -20,6 +20,11 @@ source = "linux"
 defconfig = "bcm2712"
 # Built-in options the flasher needs (no modules in its image); each line says why (PR B14).
 fragments = ["assets/linux.fragment"]
+# The storage controller a slot boots from, built in (=y): the CM5 eMMC host (sdio1, brcm,bcm2712-sdhci).
+# CONFIG_MMC_SDHCI_BRCMSTB is off by default for bcm2712 (Kconfig depends on ARCH_BRCMSTB), and no fragment sets it
+# yet (docs/prs/B22.md): the Raze's kernel fragment must set it =y before a kernel check reads this list (PR B26 only
+# states the list; Gaia checks it only when a component states a kernel contract).
+storage_drivers = ["CONFIG_MMC_SDHCI_BRCMSTB"]
 
 # The boot ROM's USB boot: the family's bootfiles (bootcode5.bin, bootmain and
 # the rest of the 2712 set) are what the loader serves. The EEPROM tool and

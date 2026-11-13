@@ -26,6 +26,9 @@ ref = "v2.15.0"
 source = "linux"
 # The trim (assets/trim.fragment, PR B16) first, then the family options (PR B14 and dts/dtb needs).
 fragments = ["assets/trim.fragment", "assets/linux.fragment"]
+# The storage controllers a slot boots from, built in (=y): the SD slot (DesignWare MMC) and the eMMC socket
+# (DWCMSHC, the rk3588 compatible). A board that enables only one of them may name its own list (not done in PR B26).
+storage_drivers = ["CONFIG_MMC_DW_ROCKCHIP", "CONFIG_MMC_SDHCI_OF_DWCMSHC"]
 
 [bootloader]
 source = "u-boot"
