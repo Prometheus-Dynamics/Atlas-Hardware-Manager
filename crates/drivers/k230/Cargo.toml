@@ -1,0 +1,20 @@
+[package]
+name = "atlas-driver-k230"
+description = "The Kendryte K230 boot ROM driver: finds K230s in USB download mode, says which stage each one is, and grants Flash in the boot ROM state."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+atlas-driver = { path = "../../core/driver" }
+atlas-k230 = { path = "../../flash/k230" }
+atlas-types = { path = "../../core/types" }
+atlas-usb = { path = "../../flash/usb" }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "test-util"] }
+
+[lints]
+workspace = true

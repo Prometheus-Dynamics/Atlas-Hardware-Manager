@@ -1,0 +1,18 @@
+[package]
+name = "atlas-k230"
+description = "The Kendryte K230 boot ROM and its burner over USB: load and start a RAM image, read the burner's medium, and the burner's write path. No Atlas types."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+atlas-usb = { path = "../usb" }
+sha2 = "0.11"
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "test-util"] }
+
+[lints]
+workspace = true
