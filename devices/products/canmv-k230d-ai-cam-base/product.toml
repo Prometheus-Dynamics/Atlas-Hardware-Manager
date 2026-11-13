@@ -1,22 +1,21 @@
-# The CanMV K230D AI-CAM's base OS image: root slots on microSD, no components yet.
-# Written in Gaia F8's form. At Gaia e90ee03 this fails the device check (no OS build; `slot` and
-# product `[sources]` are refused). Waits for the Gaia F8 rev. Untested on board (G7).
-# Items marked `# F8?` are where the F8 spelling is not certain.
+# The CanMV K230D AI-CAM's base OS image: root slots on microSD, no components yet. Untested on
+# board (G7). Written in Gaia 70a5133's F8 form; validates and plans at that pin.
 version = 1
 name = "canmv-k230d-ai-cam-base"
 description = "CanMV K230D AI-CAM: base OS image"
 
-# F8?: the OS's own sources. Dev pins none (see the Zero's product); the AI-CAM's kernel is not
-# pinned anywhere in dev. Open: pin them.
-# [sources.buildroot]
+# Buildroot 2024.02.1, a tag named in Gaia 3d1f249's K230D Zero notes. Dev pins no Buildroot: confirm
+# it before G7 (the AI-CAM's own Buildroot config is not pinned anywhere in dev).
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2024.02.1"
 
 [[images]]
 name = "canmv-k230d-ai-cam-base"
 board = "../../boards/canmv-k230d-ai-cam/board.toml"
-recipe = "slot" # F8: today's name is `ab-slot` (the locked Gaia refuses `slot`)
-
-# F8?: the Buildroot OS; the source and fragments are open (see above).
-os = { provider = "buildroot", source = "buildroot", fragments = [] } # F8?
+recipe = "slot"
+# No fragments yet: the AI-CAM's Buildroot config is not pinned in dev. Open.
+os = { provider = "buildroot", source = "buildroot", fragments = [] }
 
 # UNCONFIRMED: the slot's device. The board's microSD is on SDIO1 (mmc_sd1, dev's record from the
 # SDK's patch), and the pinned SDK's k230d_canmv.dts enables mmc_sd0 and mmc_sd1, so mmcblk1 is an

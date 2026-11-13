@@ -9,16 +9,15 @@ description = "BPI-CanMV-K230D-Zero (K230D, 128 MB, microSD)"
 [target]
 cpu = "xuantie-c908"
 
-# The burner: the SDK's U-Boot built with k230d_canmv_burntool_defconfig, plain u-boot.bin
-# (dev's record: loader_mmc.bin). It links at 0x80300000; Atlas's default load address is
-# 0x80360000 (the official tools), so this board loads at 0x80300000 first and falls back to
-# 0x80360000 if the burner won't start (dev's todo).
-[bootloader]
-defconfig = "k230d_canmv_burntool_defconfig"
-
-# Power: the supply is a USB-C 5 V 2 A (the K230D Zero's rating in dev's AI-CAM record). Dev's
-# files hold no firmware power cap; this is the only power figure. Open: a cap, if one is wanted.
+# Burner (flash loader, Atlas side): the SDK's U-Boot built with k230d_canmv_burntool_defconfig,
+# plain u-boot.bin (dev's record: loader_mmc.bin). It links at 0x80300000; the official tools send
+# 0x80360000, so the burn tries 0x80300000 first and falls back to 0x80360000 (dev's todo). Both are
+# outside needs (family). The image's own U-Boot is not named yet: the burntool defconfig is the
+# loader's, not the SD image's.
 #
-# Open (dev's todo): which USB-C is the OTG data port; whether a BOOT key exists; whether the
-# boot ROM wants Canaan's firmware header on the burner (k230_flash sends it raw); storage: the
-# board page lists only the TF slot, so no SPI-NAND is described.
+# Power: the supply is a USB-C 5 V 2 A (the K230D Zero's rating in dev's AI-CAM record). No firmware
+# power cap: the user dropped it on 2026-10-30.
+#
+# Open (dev's todo): which USB-C is the OTG data port; whether a BOOT key exists; whether the boot
+# ROM wants Canaan's firmware header on the burner (k230_flash sends it raw); storage: the board
+# page lists only the TF slot, so no SPI-NAND is described.

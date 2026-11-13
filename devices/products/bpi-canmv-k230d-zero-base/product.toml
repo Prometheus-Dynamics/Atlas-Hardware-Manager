@@ -1,26 +1,25 @@
-# The BPI-CanMV-K230D-Zero's base OS image: root slots on microSD, no components yet.
-# Written in Gaia F8's form. At Gaia e90ee03 this fails the device check (no OS build; `slot` and
-# product `[sources]` are refused). Waits for the Gaia F8 rev. Untested on board (G7).
-# Items marked `# F8?` are where the F8 spelling is not certain.
+# The BPI-CanMV-K230D-Zero's base OS image: root slots on microSD, no components yet. Untested on
+# board (G7). Written in Gaia 70a5133's F8 form; validates and plans at that pin.
 version = 1
 name = "bpi-canmv-k230d-zero-base"
 description = "BPI-CanMV-K230D-Zero: base OS image"
 
-# F8?: the OS's own sources. Dev pins none: Gaia 3d1f249 used Buildroot 2024.02.1 from the K230 SDK
-# sync, and the Linux kernel (ruyisdk) is named there but not pinned by dev. Open: pin them.
-# [sources.buildroot]
+# Buildroot 2024.02.1, a tag named in Gaia 3d1f249's K230D Zero notes (its SDK sync downloads that
+# release). Dev pins no Buildroot, so this tag is a Gaia-note source: confirm it before G7.
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2024.02.1"
 
 [[images]]
 name = "bpi-canmv-k230d-zero-base"
 board = "../../boards/bpi-canmv-k230d-zero/board.toml"
-recipe = "slot" # F8: today's name is `ab-slot` (the locked Gaia refuses `slot`)
-
-# F8?: the Buildroot OS: arch, CPU, kernel, U-Boot and TF-A come from the board; the toolchain and
-# packages go in the fragments. The Buildroot source and its defconfig fragment are open (not in dev).
-os = { provider = "buildroot", source = "buildroot", fragments = [] } # F8?
+recipe = "slot"
+# The OS is the Buildroot tree above, with no fragments yet: the SDK's Buildroot config (its
+# buildroot-ext configs/k230d_canmv_defconfig, pinned in k230-sdk) is not a file this product can
+# name at this pin. Open.
+os = { provider = "buildroot", source = "buildroot", fragments = [] }
 
 # The slot's device: rootfs-a, the image's second partition (mmcblk0p2, from Gaia 3d1f249's
-# K230D Zero notes). F8?: the four recipe inputs (kernel, device-trees, bootloader, os) are the
-# OS's boot files; the recipe takes them from the image, not from settings.
+# K230D Zero notes).
 [images.settings]
 device = "/dev/mmcblk0p2"

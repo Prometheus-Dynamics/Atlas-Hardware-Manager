@@ -13,7 +13,7 @@ cpu = "xuantie-c908"
 
 # Open: the burner's defconfig for this board. Canaan's SDK names k230d_canmv_junroc_ai_cam_defconfig
 # for the RTOS and Linux builds only; dev pins no burner defconfig for it (its loader is loader.bin
-# or loader_mmc*.bin). Until one is pinned, the board has no [bootloader] defconfig.
+# or loader_mmc*.bin). The pinned SDK has no junroc defconfig at all.
 #
 # Lens variants (for B10's app data, devices/boards/canmv-k230d-ai-cam/app/app.json, not written here):
 #   lens-72 (72 degrees), lens-140 (140 degrees). Both UNCONFIRMED: no vendor source for 72; the
@@ -21,9 +21,9 @@ cpu = "xuantie-c908"
 #   One board description covers both lenses; the hardware here does not differ between them.
 #
 # Power: USB-C 5 V 2 A is the K230D Zero's rating (dev's record). This board's supply is not
-# sourced, and dev's files hold no firmware power cap.
+# sourced. No firmware power cap: the user dropped it on 2026-10-30.
 #
 # Open (dev's todo): which USB-C is the power input and which is UART0 (presumed through a CH342K);
 # the burner's load address (0x80360000 vs 0x80300000, as for the Zero); the Wi-Fi driver and
-# firmware (RTL8189FTV) need a Gaia image before the board has any network; no LEDs, fan or
-# header pins are sourced.
+# firmware (RTL8189FTV) need a Gaia image before the board has any network; no LEDs, fan or header
+# pins are sourced.

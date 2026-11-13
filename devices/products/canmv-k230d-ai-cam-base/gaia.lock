@@ -1,0 +1,14 @@
+# Written by `gaia lock`. Do not edit.
+version = 1
+
+[source."canmv-k230d-ai-cam-base.buildroot"]
+kind = "git"
+url = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2024.02.1"
+commit = "9a3d34139b018bf79ac1c37b0212b5b775e3ae77"
+
+[source."canmv-k230d-ai-cam.k230-sdk"]
+kind = "git"
+url = "https://github.com/kendryte/k230_sdk.git"
+ref = "7e302f733311d284be255f0d81d3463b6ae6ee6d"
+commit = "7e302f733311d284be255f0d81d3463b6ae6ee6d"
