@@ -52,3 +52,26 @@ jobs:
         with:
           path: ~/.cache/atlas/kernel
           key: kernel-${{ runner.os }}-${{ hashFiles('devices/families/*/family.toml', 'devices/boards/*/board.toml') }}
+
+  # What must build on Windows and macOS (PR G9). Each job builds every portable crate natively
+  # for its own OS: lib, bins and tests, compiled and not run. The Orion-bound crates are skipped
+  # and printed, with the Orion crate that binds them (scripts/orion-bound.txt).
+  portable:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            triple: x86_64-pc-windows-msvc
+          - os: macos-latest
+            triple: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: bash scripts/check-portable.sh "${{ matrix.triple }}"
+        shell: bash

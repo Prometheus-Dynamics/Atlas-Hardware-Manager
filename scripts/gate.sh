@@ -51,6 +51,12 @@ if [ -f scripts/check-board-ids.py ]; then
   step "board ids agree" python3 scripts/check-board-ids.py
 fi
 
+# What must build on Windows and macOS (PR G9): the Orion-bound list against the graph. The
+# cross checks need those targets, so CI runs them natively (the portable job in next.yml).
+if [ -x scripts/check-portable.sh ]; then
+  step "portable crates classification" scripts/check-portable.sh --classify
+fi
+
 # Nothing that runs on a board lives here except the flasher image description
 # and the SystemCore package description, which are data under devices/.
 if compgen -G "crates/*/*/src" > /dev/null; then
