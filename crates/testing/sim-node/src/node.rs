@@ -1012,10 +1012,14 @@ impl Node {
             self.restart();
         }
         // The running slot is what the board booted: its hello `version.slot` follows the model's
-        // running slot, as a boot writes it (a confirm changes the default, not this).
+        // running slot, as a boot writes it (a confirm changes the default, not this). A node whose
+        // hello publishes no slot fact (an empty `slot`) keeps publishing none.
         let running = lock(&self.shared.model).slots.active.clone();
         if let Some(running) = running {
-            lock(&self.shared.hello).slot = running;
+            let mut hello = lock(&self.shared.hello);
+            if !hello.slot.is_empty() {
+                hello.slot = running;
+            }
         }
         if self.live {
             self.sync_hello();
