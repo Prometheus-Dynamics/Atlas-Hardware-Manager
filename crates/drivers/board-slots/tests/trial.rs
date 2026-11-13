@@ -486,6 +486,7 @@ async fn a_trial_is_followed_after_atlas_restarts_and_its_outcome_is_reported_on
     rig.node.slot_clock_advance(30);
     leave(&rig);
     come_back(&rig);
+    until("the board to be back", || rig.handle.node_key().is_some()).await;
 
     let after = follower(&rig, LONG);
     assert!(matches!(
