@@ -9,8 +9,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."lemnos-ctl.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
-commit = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+ref = "4a2d3b7d07573d0406f1e8aa7a73248ad123646f"
+commit = "4a2d3b7d07573d0406f1e8aa7a73248ad123646f"
 
 [source."lemnos-orion.root"]
 kind = "image"
@@ -20,8 +20,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."lemnos-orion.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
-commit = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+ref = "4a2d3b7d07573d0406f1e8aa7a73248ad123646f"
+commit = "4a2d3b7d07573d0406f1e8aa7a73248ad123646f"
 
 [source."lemnos-slot-init.root"]
 kind = "image"
@@ -31,14 +31,14 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."lemnos-slot-init.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
-commit = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+ref = "4a2d3b7d07573d0406f1e8aa7a73248ad123646f"
+commit = "4a2d3b7d07573d0406f1e8aa7a73248ad123646f"
 
 [source."lemnos.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
-commit = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+ref = "4a2d3b7d07573d0406f1e8aa7a73248ad123646f"
+commit = "4a2d3b7d07573d0406f1e8aa7a73248ad123646f"
 
 [source."lemnosd.root"]
 kind = "image"
@@ -48,8 +48,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."lemnosd.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
-commit = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+ref = "4a2d3b7d07573d0406f1e8aa7a73248ad123646f"
+commit = "4a2d3b7d07573d0406f1e8aa7a73248ad123646f"
 
 [source."orion-recovery.root"]
 kind = "image"

@@ -37,6 +37,8 @@ Every board as Gaia `next` data in `devices/`. Starts first; the Raze and the ZE
 - [ ] [B13](docs/prs/B13.md) The bring-up and base consoles, and the SSH host key on the data partition (wave 5; needs B11)
 - [ ] [B14](docs/prs/B14.md) The flasher's built-in kernel options, per family (wave 4; needs B2, B3, B9)
 - [ ] [B15](docs/prs/B15.md) A USB device-mode port in each board's description, and stable gadget addresses on the bring-up products (wave 5; needs B11, Lemnos Q2e)
+- [ ] [B18](docs/prs/B18.md) Lemnos lock to 4a2d3b7d: every Lemnos pin moved, one-rev check per product, ZERO 3E port validated, Raze refusals on record (needs B15; Lemnos 4a2d3b7d)
+- [ ] [B19](docs/prs/B19.md) Cubie A7 (Allwinner A733): vendor sources pinned, and a bring-up that shows life without a console (wave 5; needs B12, B13, B15)
 
 ## C. One board driver
 

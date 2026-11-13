@@ -1,0 +1,20 @@
+[package]
+name = "atlas-access"
+description = "SSH and the recovery shell, for a person: a terminal on a board through its Orion node, and one public key installed on it. Built on atlas-session. No board job is run over it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+atlas-session = { path = "../session" }
+base64 = "0.22"
+orion = { workspace = true }
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+
+[dev-dependencies]
+atlas-sim-node = { path = "../../testing/sim-node" }
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+
+[lints]
+workspace = true
