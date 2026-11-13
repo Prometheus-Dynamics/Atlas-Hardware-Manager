@@ -1,0 +1,13 @@
+# DEV ONLY (Cubie A7S bring-up, pending). Each line says why it is here.
+# The bring-up needs a USB network that exists before any userspace, because the board has no
+# serial adapter and the PC's first sign of life is a new network interface. So the gadget is
+# built in, not configfs (which waits for a userspace that is not in this image).
+# CONFIG_USB_ETH: the legacy Ethernet gadget (g_ether), built in. It takes the device and host
+#   MAC addresses from the command line (extlinux.conf: g_ether.dev_addr, g_ether.host_addr).
+# CONFIG_USB_ETH_RNDIS: the RNDIS function, so a Windows PC gets the network with no driver
+#   (Windows 10 and later bind RNDIS natively). CDC ECM is the function g_ether also offers, so
+#   Linux and macOS get it too.
+# This gadget binds the one USB device controller at boot. It must never be in a managed image:
+# the managed image's gadget is Lemnos's configfs one, and the two cannot share the controller.
+CONFIG_USB_ETH=y
+CONFIG_USB_ETH_RNDIS=y
