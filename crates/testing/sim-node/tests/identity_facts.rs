@@ -144,3 +144,22 @@ fn a_plain_node_publishes_no_hello_facts_but_the_hello_document_still_answers() 
     let document = orion.node().expect("the document");
     assert!(document.facts.is_empty(), "{:?}", document.facts);
 }
+
+#[test]
+fn a_fact_that_goes_away_is_withdrawn_on_the_same_session_and_the_node_keeps_answering() {
+    let node = start("withdraw", Hello::default());
+    let orion = node.connect("withdraw").expect("a session");
+    assert_eq!(
+        fact_in(&orion, "serial").as_deref(),
+        Some("0123456789abcdef")
+    );
+
+    node.change_hello(|hello| hello.serial.clear());
+    wait_for("the serial withdrawn", || {
+        fact_in(&orion, "serial").is_none().then_some(())
+    });
+    // Nothing was republished: the same session still has its other facts and answers its calls.
+    assert_eq!(fact_in(&orion, "family").as_deref(), Some("simulated"));
+    let status = call(&orion, names::STATUS, b"").expect("status answers");
+    assert_eq!(status.outcome, Outcome::Succeeded);
+}

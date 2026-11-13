@@ -33,7 +33,7 @@ use orion::actions::{
 };
 use orion::topics::{FieldId, Publisher, SampleTime, TopicDecl};
 use orion::{Address, Orion, fields};
-use orion_stubs::{Board, Security};
+use orion_stubs::{Board, Options, Security};
 
 use crate::bundle;
 use crate::model::Model;
@@ -48,6 +48,14 @@ pub const NODE_NAME: &str = "board";
 const OFFERS: &[&str] = &["system.identity/1", "system.reboot/1", "system.slots/1"];
 /// How often the node logic moves runs on and publishes readings.
 const TICK: Duration = Duration::from_millis(20);
+
+/// The comm core's heartbeat: Orion's default, a session is asked to ping every two seconds.
+const HEARTBEAT_MS: u32 = 2_000;
+/// How long a session may go unheard before the comm core drops it. Orion's default is three
+/// heartbeats (6 s), which a loaded test machine (load 80 and up) can exceed for a healthy session:
+/// a starved process is not a lost one. Fifteen heartbeats keeps a test's session up through that.
+/// A test that wants a session gone drops it itself (a dropped connection, or the node stopped).
+const IDLE_MS: u32 = 30_000;
 /// The one overall deadline for anything the sim waits on: a call's outcome, a run's end, a
 /// condition a test polls for. Nothing here is a fixed delay standing in for "it should have
 /// happened by now"; this only ever matters when something is truly stuck, so it is generous.
@@ -255,7 +263,16 @@ impl SimNode {
     /// connect to the comm core or declare its facts.
     pub fn start_with(dir: &Path, kind: &Kind, port: Option<u16>) -> Result<Self, String> {
         std::fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
-        let board = Arc::new(Board::start_in(dir, Security::Off, port));
+        let board = Arc::new(Board::start_with(
+            dir,
+            Options {
+                security: Security::Off,
+                port,
+                heartbeat_ms: HEARTBEAT_MS,
+                idle_ms: IDLE_MS,
+                ..Options::default()
+            },
+        ));
         let hello = match kind {
             Kind::WithLemnos(hello) => hello.clone(),
             Kind::Plain => Hello::default(),
@@ -364,8 +381,8 @@ impl SimNode {
     }
 
     /// Changes the hello facts while the node runs. A changed value is published as it changes,
-    /// on the same session. A fact that appears or goes away changes the set of topics, so the
-    /// node's own session is published again: its topics and actions are said again on a new
+    /// on the same session. A fact that went away is withdrawn on the same session. A fact that
+    /// appeared republishes the node's own session: its topics and actions are said again on a new
     /// session, and a client sees a short gap in them. A client's own connection is not dropped.
     pub fn change_hello(&self, change: impl FnOnce(&mut Hello)) {
         change(&mut lock(&self.shared.hello));
@@ -862,18 +879,29 @@ impl Node {
     }
 
     /// Makes the hello topics say what the hello facts say now. A value that changed is published
-    /// as it changes. A fact that appeared or went away changes the set of topics, which a session
-    /// cannot take back: the node asks to be published again on a new session.
+    /// as it changes. A fact that went away is withdrawn on this session: its topic is taken back,
+    /// so the document no longer carries it. A fact that appeared cannot be declared on a session
+    /// that is already published, so the node asks to be published again on a new session, where
+    /// every fact is said again.
     fn sync_hello(&mut self) {
         let wanted = lock(&self.shared.hello).facts();
-        let same_topics = wanted.len() == self.hello.len()
-            && wanted
-                .iter()
-                .all(|(name, _)| self.hello.iter().any(|topic| topic.name == *name));
-        if !same_topics {
+        if wanted
+            .iter()
+            .any(|(name, _)| !self.hello.iter().any(|topic| topic.name == *name))
+        {
             self.reopen = true;
             return;
         }
+        let mut kept = Vec::with_capacity(self.hello.len());
+        for topic in self.hello.drain(..) {
+            if wanted.iter().any(|(name, _)| *name == topic.name) {
+                kept.push(topic);
+            } else {
+                // The fact is gone: the topic is withdrawn, and the document drops it.
+                let _ = topic.publisher.withdraw();
+            }
+        }
+        self.hello = kept;
         let now = self.now();
         for (name, value) in wanted {
             if let Some(topic) = self.hello.iter_mut().find(|topic| topic.name == name)

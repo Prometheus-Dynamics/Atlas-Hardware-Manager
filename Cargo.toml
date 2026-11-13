@@ -16,7 +16,7 @@ homepage = "https://github.com/Prometheus-Dynamics/Atlas-Hardware-Manager"
 
 [workspace.dependencies]
 # Locked by commit. Moving a lock is its own PR.
-orion = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "c0187f4c195cd27f8353c055dd0a94247c2965cc", default-features = false }
+orion = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "6dfb990b0dac670d43a8576f0a33491c96406891", default-features = false }
 
 [workspace.lints.rust]
 missing_debug_implementations = "warn"

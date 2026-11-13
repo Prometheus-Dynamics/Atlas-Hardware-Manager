@@ -36,6 +36,7 @@ Every board as Gaia `next` data in `devices/`. Starts first; the Raze and the ZE
 - [ ] [B12](docs/prs/B12.md) Allwinner A733: a candidate source tree, and a bring-up product for the Cubie A7 boards (wave 4; needs B5)
 - [ ] [B13](docs/prs/B13.md) The bring-up and base consoles, and the SSH host key on the data partition (wave 5; needs B11)
 - [ ] [B14](docs/prs/B14.md) The flasher's built-in kernel options, per family (wave 4; needs B2, B3, B9)
+- [ ] [B15](docs/prs/B15.md) A USB device-mode port in each board's description, and stable gadget addresses on the bring-up products (wave 5; needs B11, Lemnos Q2e)
 
 ## C. One board driver
 
