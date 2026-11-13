@@ -292,14 +292,12 @@ impl<'a> Router<'a> {
                     return Err(ImageError::Layout("unexpected signature error".into()));
                 }
             };
-            if let Some(target) = target {
-                if info.board != target {
-                    self.refused = Some(Refusal::WrongBoard {
-                        image: info.board.clone(),
-                        target,
-                    });
-                    return Err(ImageError::Layout("the image was refused".into()));
-                }
+            if let Some(target) = target.filter(|t| info.board != *t) {
+                self.refused = Some(Refusal::WrongBoard {
+                    image: info.board.clone(),
+                    target,
+                });
+                return Err(ImageError::Layout("the image was refused".into()));
             }
             self.board = Some(info);
             if stop_after_board {

@@ -62,8 +62,13 @@ use crate::xzscan::{self, MAX_DICT_BYTES};
 /// The manifest's schema, as Lemnos takes it.
 pub const SCHEMA: u64 = 1;
 /// The detached signature's file name, beside the image.
+// PROVISIONAL: the name `flash.sig` beside the image is the W1 sender's name for the
+// signature file; Lemnos to confirm (who writes it, and the name it is pushed under).
 pub const SIGNATURE_FILE: &str = "flash.sig";
 /// A detached Ed25519 signature, as Lemnos takes it.
+// PROVISIONAL: a 64-byte length check is a format check only; the signature is
+// NOT verified here (no key store). Lemnos to confirm the signed object: the brief
+// signs flash.json bytes, which Atlas now makes, so the signer must reproduce them.
 pub const SIGNATURE_BYTES: u64 = 64;
 /// The most slot manifests read from the image.
 const MAX_SLOTS: usize = 256;
@@ -298,6 +303,8 @@ pub(crate) fn read_board(spool: &Path) -> Result<BoardInfo, FlashError> {
         let value: serde_json::Value = serde_json::from_str(&text).map_err(|error| {
             ImageError::Malformed(format!("slot {id:?}'s manifest is not JSON: {error}"))
         })?;
+        // PROVISIONAL: any slots/<id>.json's `board` is taken as the board, without
+        // checking the manifest's schema or its id; the bundle checks them at install.
         let this = match value.get("board") {
             None => return Err(Refusal::NoBoard { slot: id.into() }.into()),
             Some(serde_json::Value::String(text)) if valid_board_id(text) => text.clone(),
@@ -334,6 +341,8 @@ fn run(image: &Path, scratch_parent: &Path, mode: Mode) -> Result<Pass, FlashErr
     let options = crate::Options::default();
     let scratch = Scratch::create(scratch_parent)?;
     let mut file = Counted::open(image)?;
+    // PROVISIONAL: the format is sniffed from the bytes (xz magic), not the file name;
+    // Lemnos's write `format` must match what is sent, which is the same decision.
     let xz = xzscan::prepare(&mut file, MAX_DICT_BYTES)?;
     let mut input = BufReader::with_capacity(READ_BUFFER, file);
     let format = if xz { Format::Xz } else { Format::Raw };
@@ -387,13 +396,11 @@ pub fn flash_manifest(
     scratch_parent: &Path,
     target: Option<&str>,
 ) -> Result<FlashImage, FlashError> {
-    if let Some(target) = target {
-        if !valid_board_id(target) {
-            return Err(Refusal::BadTarget {
-                target: target.to_string(),
-            }
-            .into());
+    if let Some(target) = target.filter(|t| !valid_board_id(t)) {
+        return Err(Refusal::BadTarget {
+            target: target.to_string(),
         }
+        .into());
     }
     let pass = run(
         image,

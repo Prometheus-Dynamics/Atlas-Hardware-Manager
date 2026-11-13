@@ -98,7 +98,7 @@ fn both_image_forms_give_their_manifest() {
             first_lba: 2048,
             bytes: &rootfs,
         }],
-        &DATA_FIXTURE.to_vec(),
+        DATA_FIXTURE,
         4096,
     );
     // The real form: a boot partition, then data.
@@ -190,7 +190,8 @@ fn a_wrong_board_is_refused_and_both_names_are_in_the_message() {
 #[test]
 fn an_image_with_no_slot_no_board_or_two_boards_is_refused_with_its_own_message() {
     let dir = TestDir::new("boards");
-    let cases: Vec<(&str, Vec<(&str, Vec<u8>)>, Refusal)> = vec![
+    type Case = (&'static str, Vec<(&'static str, Vec<u8>)>, Refusal);
+    let cases: Vec<Case> = vec![
         (
             "no slot",
             vec![("readme.txt", b"no slots here".to_vec())],
