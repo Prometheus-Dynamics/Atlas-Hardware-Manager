@@ -24,7 +24,8 @@ ref = "v2.15.0"
 
 [kernel]
 source = "linux"
-fragments = ["assets/linux.fragment"]
+# The trim (assets/trim.fragment, PR B16) first, then the family options (PR B14 and dts/dtb needs).
+fragments = ["assets/trim.fragment", "assets/linux.fragment"]
 
 [bootloader]
 source = "u-boot"

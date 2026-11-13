@@ -15,6 +15,8 @@ cpu = "cortex-a76.cortex-a55"
 # The in-tree device tree (Linux v7.3.3 has rk3588s-rock-5c.dts; checked).
 [kernel]
 device_tree = "rockchip/rk3588s-rock-5c"
+# Lists replace the family's: the family trim and fragment first, then the board's own (PR B16).
+fragments = ["../../families/rk35xx/assets/trim.fragment", "../../families/rk35xx/assets/linux.fragment", "assets/linux.fragment"]
 
 # U-Boot's board defconfig (U-Boot v2026.10 has rock-5c-rk3588s_defconfig;
 # checked). Gaia strips the `_defconfig` suffix.
