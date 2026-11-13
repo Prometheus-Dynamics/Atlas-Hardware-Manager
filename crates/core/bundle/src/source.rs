@@ -1,0 +1,40 @@
+//! The seam between a first-flash image and the bundle writer.
+//!
+//! The writer needs four things from the image: the slot's verity table
+//! (Gaia's `verity.table` text), the slot's EROFS file with its hash tree
+//! appended, and the boot files that go with it. Each stream is read from
+//! its start every time it is asked for: the writer reads the rootfs and
+//! the boot files twice (once to hash them into `slot.json`, once to write
+//! them into the tar), so a source must give the same bytes both times.
+//!
+//! The real source (a streaming xz decoder and a read-only ext4 and FAT
+//! reader over a bounded window) is blocked on Gaia X3; see the crate docs.
+
+use std::io::Read;
+
+use crate::BundleError;
+
+/// A boot file of the slot: its path under `boot/` and its size in bytes.
+/// The size is informational; the writer hashes what the stream gives.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BootFile {
+    pub path: String,
+    pub size: u64,
+}
+
+/// One slot of a first-flash image.
+pub trait SlotSource {
+    /// The slot's verity table: Gaia's `verity.table` text.
+    fn verity_table(&self) -> Result<String, BundleError>;
+
+    /// The slot's file, read from its first byte: the EROFS image padded to
+    /// whole 4 KiB blocks, then the dm-verity tree appended.
+    fn rootfs(&self) -> Result<Box<dyn Read + '_>, BundleError>;
+
+    /// The boot files of the slot (kernel, device trees, initramfs,
+    /// `cmdline.txt`, ...), by path under `boot/`.
+    fn boot_files(&self) -> Result<Vec<BootFile>, BundleError>;
+
+    /// One boot file, read from its first byte.
+    fn boot_file(&self, path: &str) -> Result<Box<dyn Read + '_>, BundleError>;
+}

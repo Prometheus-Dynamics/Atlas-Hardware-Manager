@@ -1,0 +1,1 @@
+{ "schema": "urn:atlas:device-app:1", "model": "radxa-zero-3e", "display_name": "ZERO 3E", "usb": ["rockchip-rk3566-maskrom"] }

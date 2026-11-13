@@ -1,0 +1,1 @@
+{ "schema": "urn:atlas:device-app:1", "model": "bpi-canmv-k230d-zero", "display_name": "CanMV K230D Zero", "usb": ["kendryte-k230-usb-boot"] }
