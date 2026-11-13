@@ -1,0 +1,31 @@
+# The ROCK 5C's USB device port, NOT ACTIVE (B15). Every entry is commented out, so this file holds no
+# Lemnos entry and cannot be installed as one. It is a record of the candidate and why it is held.
+#
+# Candidate entry, for Lemnos e99d51c0 (Q2e, socs/rk3588.toml), when it is safe to activate:
+#
+#   [[hardware]]
+#   name = "udc:fc000000.usb"
+#   controller = "usb-otg0"
+#   role = "peripheral"
+#   # options = ["usb3"]   (OPEN: see below; not set)
+#
+#   [[devices]]
+#   id = "gadget"
+#   driver = "usb-gadget"
+#   uses = { function = "udc:fc000000.usb" }
+#
+# Why it is held (evidence, mainline device tree at v7.3.3, arch/arm64/boot/dts/rockchip/):
+# (a) Which connector: usb_host0_xhci (usb@fc000000, rk3588-base.dtsi) is the device-capable DRD controller
+#     0 (dr_mode "otg" in the SoC tree; the board's rk3588s-rock-5c.dts sets it "host"). Radxa's ROCK 5C
+#     interface page (docs.radxa.com/en/rock5/rock5c/hardware-design/hardware-interface) names the upper
+#     USB 3.0 port as the OTG port. The schematic's Type-C page was not read.
+# (b) SuperSpeed: the SoC tree links usb_host0_xhci to usbdp_phy0 (USB3) and the board enables usbdp_phy0.
+#     Whether the lanes reach the upper port was NOT read from the schematic. OPEN: `usb3` stays off.
+# (c) phy-supply: YES, and it is the blocker. rk3588s-rock-5c.dts sets
+#     `&u2phy0_otg { phy-supply = <&vcc5v0_usb_otg0>; }`, a fixed regulator on GPIO0 PD4 (usb_otg_pwren_h),
+#     which is host-mode VBUS. The overlay does not remove it, so an active device entry would source 5 V
+#     from the device port. A device port must not drive VBUS. Held until the tree stops setting it.
+#
+# What would settle it: (1) a board dts of Atlas's own (not the overlay) that drops the phy-supply on
+# u2phy0_otg, reviewed and run on a board; (2) the ROCK 5C schematic's USB Type-C page (V2.10 at
+# dl.radxa.com/rock5/5c/docs/radxa_rock_5c_schematic_v2.10.pdf) for the upper port's SuperSpeed lanes.

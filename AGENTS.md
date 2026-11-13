@@ -38,6 +38,8 @@ reference, and nothing here changes it. Read [`docs/design.md`](docs/design.md) 
 - lemnosd does not go down: it is the board's kernel as far as we are concerned. Nothing is
   designed around it being stopped. No fallback, script, unit or screen exists "in case lemnosd
   isn't running"; a board whose Lemnos isn't answering is faulted and restarting.
+- In a product, every Lemnos component (the boot script, `lemnos-slot-init`, lemnosd, the bridge) is
+  locked to ONE Lemnos rev. They are one program in several files; a mix does not boot reliably.
 - No library needs another to work. An Orion node with no Lemnos is normal (a PC, someone else's
   board, a controller before our package): show it and offer everything Orion itself provides.
   Only a node that is expected to run Lemnos is faulted when Lemnos doesn't answer. The device
