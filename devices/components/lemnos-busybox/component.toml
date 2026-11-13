@@ -1,0 +1,63 @@
+# Lemnos's packaging for an image WITHOUT systemd (BusyBox init), at Lemnos next b0bf0101: the two init
+# scripts, the daemon's and the bridge's environment files, and the users both run as. The flasher image
+# (products/flasher-*) is this form: a RAM-only initramfs with BusyBox as its init (decision in the B9 PR
+# text: systemd as an initramfs init is heavy and needs a real root). The same daemon, privilege path and
+# watchdog escalation as the units (Lemnos packaging/README.md, "Without systemd").
+#
+# Not installed here, and why:
+#   - init/mdev.conf.fragment: it must be APPENDED to /etc/mdev.conf, and a component cannot append to a
+#     file the OS owns (INPUTS, "The console on a managed board" / the BusyBox note). Field wanted: an
+#     install mode that appends, or a Lemnos-shipped full mdev.conf. Until then lemnosd cannot open its
+#     device nodes (/dev/i2c-N, /dev/gpiochipN, the watchdog, the USB ffs nodes) under mdev.
+#   - systemd/*.service, lemnos.conf, udev rules: the image has no systemd and no udev.
+#   - the users: the `lemnos` and `lemnos-orion` lines are declared below as [[users]] and [[groups]]
+#     (Lemnos README's BusyBox passwd lines, with Gaia's own ids).
+version = 1
+name = "lemnos-busybox"
+description = "Lemnos for BusyBox init: the lemnosd and lemnos-orion init scripts, their environment files, and the lemnos users"
+
+[sources.src]
+git = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+
+[[install]]
+from = { source = "src", path = "packaging/init/S50lemnosd" }
+to = "/etc/init.d/S50lemnosd"
+mode = "0755"
+
+[[install]]
+from = { source = "src", path = "packaging/init/S51lemnos-orion" }
+to = "/etc/init.d/S51lemnos-orion"
+mode = "0755"
+
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnosd.env.example" }
+to = "/etc/lemnos/lemnosd.env"
+mode = "0644"
+
+# LEMNOS_ORION_GROUPS in this file names `orion`: the group the Orion node's socket is for. The flasher
+# carries that group (below) for the bridge's supplementary groups; whether orion-recovery's socket is
+# in it is UNVERIFIED (Orion has no recovery packaging yet): see the B9 PR text.
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnos-orion.env.example" }
+to = "/etc/lemnos/lemnos-orion.env"
+mode = "0644"
+
+# Ids are the image's choice (Lemnos's example uses 999 and 998); nothing keys on them.
+[[groups]]
+name = "lemnos"
+
+[[groups]]
+name = "lemnos-orion"
+
+[[groups]]
+name = "orion"
+
+[[users]]
+name = "lemnos"
+group = "lemnos"
+
+[[users]]
+name = "lemnos-orion"
+group = "lemnos-orion"
+groups = ["lemnos", "orion"]

@@ -1,0 +1,48 @@
+# The Raze flasher's Buildroot options: the `os` of flasher-bcm2712. A RAM-only root: a BusyBox init
+# and no systemd, because an initramfs is not a board's OS (systemd as an initramfs init is heavy and needs
+# a real root; decision in the B9 PR text). Gaia starts from Buildroot's allnoconfig, so EVERYTHING here
+# is on because a line says so. The kernel is the board's (boards/raze/kernel), not this file's.
+# F8?: the option names are Buildroot's; Gaia's coming "every requested line survives" check is the test.
+
+# -- Init ----------------------------------------------------------------------------------------------
+# BusyBox init, not systemd: Lemnos's packaging/init scripts (S50lemnosd, S51lemnos-orion) and Gaia's
+# skeleton rcS start the daemon. The same privilege path and watchdog rule as the units (Lemnos
+# packaging/README.md "Without systemd").
+BR2_INIT_BUSYBOX=y
+# The default skeleton: /etc/inittab and /etc/init.d/rcS, which runs the S* scripts at boot. Without it no
+# Lemnos script runs.
+BR2_ROOTFS_SKELETON_DEFAULT=y
+# mdev runs at boot (mdev -s) and on hotplug: the device nodes lemnosd opens (its rules are the
+# mdev.conf fragment, which a component cannot append: a field wanted, see components/lemnos-busybox).
+BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_MDEV=y
+# The applets: os/busybox.fragment, beside this file, with the reason for each.
+BR2_PACKAGE_BUSYBOX=y
+BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="@here@/busybox.fragment"
+
+# -- The console and the way in ------------------------------------------------------------------------
+# A getty on the USB gadget's ACM port, ttyGS0: the one serial console (Orion's gadget decision 5; Lemnos
+# builds the ACM function from the board file). It is the person's last way in, as on the base OS.
+BR2_TARGET_GENERIC_GETTY=y
+BR2_TARGET_GENERIC_GETTY_PORT="ttyGS0"
+# The console login follows the board's security setting, the same policy as the base OS (raze.fragment):
+# security OFF (the FRC default) logs root in with no password. Security ON: OPEN (the mechanism that
+# switches it is not defined yet; the default here is the off behaviour).
+BR2_TARGET_ENABLE_ROOT_LOGIN=y
+BR2_TARGET_GENERIC_ROOT_PASSWD=""
+# No SSH server: Orion's recovery build serves SSH itself (its recovery way in), so a second server would
+# be a second way in.
+
+# -- Root filesystem -----------------------------------------------------------------------------------
+# Read-only: the initramfs is the root and is not written. The flasher writes the board's storage through
+# lemnosd, never through the root. Left unset: BR2_TARGET_GENERIC_REMOUNT_ROOTFS_RW (off, Gaia's default).
+
+# -- Kernel modules ------------------------------------------------------------------------------------
+# No kernel modules in the image: the initramfs has no /lib/modules, and nothing loads one. Everything the
+# flasher needs is built into the board's kernel, or it is a gap named in the PR text (usb_f_fs is m on the
+# Raze; lemnos.ko is a module and needs Gaia's kernel-module builder).
+# BR2_LINUX_KERNEL_INSTALL_TARGET is not set
+
+# -- Network -------------------------------------------------------------------------------------------
+# None. The board's link to a person is Orion's USB link (a FunctionFS function that lemnosd builds) and the
+# console above. The NCM network function is in the gadget, for Orion's network use after the flash, not
+# for the flasher itself. No ifupdown, no DHCP.
