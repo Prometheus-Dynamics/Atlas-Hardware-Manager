@@ -68,7 +68,7 @@ The robot's own devices, and Atlas installing its package on the controller.
 
 - [ ] [E1](docs/prs/E1.md) The robot's own devices (wave 3; needs A1, A3)
 - [ ] [E2](docs/prs/E2.md) Install on a SystemCore (wave 4; needs E1, C1, B8)
-- [ ] [E3](docs/prs/E3.md) Through the SystemCore (wave 7; needs E2, D6)
+- [ ] [E3](docs/prs/E3.md) Through the SystemCore (wave 7; needs E2, D6, X6)
 - [ ] [E4](docs/prs/E4.md) The SystemCore's page data (wave 5; needs E2, C2)
 - [ ] [E5](docs/prs/E5.md) Install a product on a SystemCore (wave 5; needs E2, X4)
 
@@ -91,7 +91,7 @@ Mockups first, then a faster, cleaner app on the new core.
 Every job with real clicks on real boards, then docs and the lock.
 
 - [ ] [G1](docs/prs/G1.md) Raze, direct (wave 8; needs F4, F5, B2, B9, X1, X2, X3; board run)
-- [ ] [G2](docs/prs/G2.md) Raze behind the SystemCore (wave 9; needs G1, F6, E3, X5; board run)
+- [ ] [G2](docs/prs/G2.md) Raze behind the SystemCore (wave 9; needs G1, F6, E3, X5, X6; board run)
 - [ ] [G3](docs/prs/G3.md) ZERO 3E (wave 8; needs F5, B3, D3; board run)
 - [ ] [G4](docs/prs/G4.md) ROCK 5C (wave 9; needs G3, B4; board run)
 - [ ] [G5](docs/prs/G5.md) Cubie A7 (wave 8; needs F5, B5, D5; board run)
