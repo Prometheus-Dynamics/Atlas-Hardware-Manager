@@ -1,0 +1,15 @@
+[package]
+name = "atlas-slots"
+description = "Slots as the model and the policy: the board's slot list read into data, the signature outcome of a slot, the keep-last-N policy with starred versions, the guard on removal, and the stages of an install. Pure: no I/O, no calls to a board."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+atlas-image = { path = "../../flash/image" }
+serde_json = "1"
+thiserror = "2"
+
+[lints]
+workspace = true

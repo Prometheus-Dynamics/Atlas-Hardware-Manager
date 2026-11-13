@@ -68,6 +68,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-board-slots"
+version = "2026.1.0-dev"
+dependencies = [
+ "async-trait",
+ "atlas-actions",
+ "atlas-bundle",
+ "atlas-driver",
+ "atlas-files",
+ "atlas-image",
+ "atlas-jobs",
+ "atlas-session",
+ "atlas-sim-node",
+ "atlas-slots",
+ "atlas-types",
+ "orion",
+ "serde",
+ "serde_json",
+ "tar",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-bundle"
 version = "2026.1.0-dev"
 dependencies = [
@@ -343,6 +366,15 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tar",
+]
+
+[[package]]
+name = "atlas-slots"
+version = "2026.1.0-dev"
+dependencies = [
+ "atlas-image",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
