@@ -1,6 +1,6 @@
-//! The bundle against a synthetic slot: no Gaia image exists yet (X3), so the
-//! source is a double that gives the bytes Gaia's `gaia.verity` would give
-//! for its shape: an EROFS data region padded to 4 KiB blocks, a verity table
+//! The bundle against a synthetic slot: this is the writer and the reader
+//! checked against a double, with the bytes Gaia's `gaia.verity` would give
+//! for its shape (the image path is in tests/image.rs): an EROFS data region padded to 4 KiB blocks, a verity table
 //! in Gaia's `verity.table` layout, and a tree after the data.
 //!
 //! The tree bytes are stand-ins: the writer checks the data's root hash
@@ -161,8 +161,9 @@ impl SlotSource for Synthetic {
 
 fn meta() -> SlotMeta {
     SlotMeta {
-        family: Some("example".into()),
-        version: Some("2026.1.0".into()),
+        product: "example".into(),
+        version: "2026.1.0".into(),
+        board: "example-board".into(),
         ..SlotMeta::default()
     }
 }
@@ -233,15 +234,24 @@ fn a_bundle_has_the_members_in_order_and_its_signature_verifies() {
         hex(&Sha256::digest(source.rootfs_bytes()))
     );
     assert_eq!(inspected.manifest.boot.files.len(), 3);
-    assert_eq!(inspected.manifest.family.as_deref(), Some("example"));
+    assert_eq!(inspected.manifest.product, "example");
+    assert_eq!(inspected.manifest.board, "example-board");
+    assert_eq!(inspected.board, "example-board");
+    assert_eq!(inspected.product, "example");
+    assert_eq!(inspected.version, "2026.1.0");
 }
 
 #[test]
-fn slot_json_is_schema_2_with_the_fields_lemnos_reads() {
+fn slot_json_is_schema_3_with_the_fields_lemnos_reads() {
     let secret = throwaway("schema");
     let bundle = write(&Synthetic::new(2), &secret).expect("writes");
     let json: serde_json::Value = serde_json::from_slice(&members(&bundle)[0].1).expect("json");
-    assert_eq!(json["schema"], 2);
+    assert_eq!(json["schema"], 3);
+    assert_eq!(json["product"], "example");
+    assert_eq!(json["version"], "2026.1.0");
+    assert_eq!(json["board"], "example-board");
+    assert!(json.get("family").is_none(), "no family key in schema 3");
+    assert!(json.get("variant").is_none(), "absent when not given");
     assert_eq!(json["id"], "slot-a.1");
     assert_eq!(json["image"]["size"], 5 * BLOCK as u64);
     assert_eq!(json["image"]["sha256"].as_str().map(str::len), Some(64));
@@ -430,4 +440,94 @@ fn a_larger_slot_is_streamed_with_the_same_checks() {
         let data = &source.data;
         root_hash(&Sha256::digest(data), data).expect("root")
     });
+}
+
+/// A bundle whose `slot.json` is `json` (signed by `secret` as given), with
+/// the rest of a slot's members.
+fn bundle_with_manifest(json: &[u8], secret: &[u8; 32]) -> Vec<u8> {
+    let sig = atlas_bundle::sign_slot(json, secret);
+    let mut out = Vec::new();
+    {
+        let mut builder = tar::Builder::new(&mut out);
+        let mut add = |name: &str, bytes: &[u8]| {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o644);
+            header.set_entry_type(tar::EntryType::Regular);
+            builder
+                .append_data(&mut header, name, bytes)
+                .expect("append");
+        };
+        add("slot.json", json);
+        add("slot.sig", &sig);
+        add("rootfs.erofs", &[0u8; 8]);
+        builder.finish().expect("finish");
+    }
+    out
+}
+
+#[test]
+fn schema_2_input_is_refused_by_name() {
+    let secret = throwaway("schema2");
+    let json = br#"{"schema":2,"id":"slot-a.1","family":"example","image":{"size":8,"sha256":"00"},"verity":{"root_hash":"00"},"boot":{"files":{}}}"#;
+    let bundle = bundle_with_manifest(json, &secret);
+    let error = inspect_bundle(&bundle[..], &keys_of(&secret)).expect_err("refused");
+    let text = error.to_string();
+    assert!(text.contains("schema 2"), "names the schema found: {text}");
+    assert!(matches!(error, BundleError::Malformed(_)));
+}
+
+#[test]
+fn a_family_key_is_refused_by_name() {
+    let secret = throwaway("family");
+    let json = br#"{"schema":3,"id":"slot-a.1","family":"example","product":"example","version":"1","board":"example-board","image":{"size":8,"sha256":"00"},"verity":{"root_hash":"00"},"boot":{"files":{}}}"#;
+    let bundle = bundle_with_manifest(json, &secret);
+    let error = inspect_bundle(&bundle[..], &keys_of(&secret)).expect_err("refused");
+    assert!(error.to_string().contains("family"), "{error}");
+}
+
+#[test]
+fn a_bundle_without_a_board_is_refused() {
+    let secret = throwaway("noboard");
+    let json = br#"{"schema":3,"id":"slot-a.1","product":"example","version":"1","image":{"size":8,"sha256":"00"},"verity":{"root_hash":"00"},"boot":{"files":{}}}"#;
+    let bundle = bundle_with_manifest(json, &secret);
+    let error = inspect_bundle(&bundle[..], &keys_of(&secret)).expect_err("refused");
+    assert!(error.to_string().contains("board"), "{error}");
+}
+
+#[test]
+fn a_slot_for_another_board_is_refused_naming_both() {
+    let secret = throwaway("board");
+    let bundle = write(&Synthetic::new(2), &secret).expect("writes");
+    let inspected = inspect_bundle(&bundle[..], &keys_of(&secret)).expect("inspects");
+    assert!(atlas_bundle::check_board(&inspected.board, "example-board").is_ok());
+    let error = atlas_bundle::check_board(&inspected.board, "other-board").expect_err("refused");
+    let text = error.to_string();
+    assert!(
+        text.contains("example-board") && text.contains("other-board"),
+        "{text}"
+    );
+}
+
+#[test]
+fn a_board_or_product_name_outside_the_rules_is_refused() {
+    let mut source = Synthetic::new(2);
+    let secret = throwaway("names");
+    let mut bad = meta();
+    bad.board = "Example_Board".into();
+    let mut out = Vec::new();
+    assert!(matches!(
+        write_bundle(&source, "slot-a.1", &bad, &secret, &mut out),
+        Err(BundleError::InvalidName { field: "board", .. })
+    ));
+    bad = meta();
+    bad.product = String::new();
+    assert!(matches!(
+        write_bundle(&source, "slot-a.1", &bad, &secret, &mut out),
+        Err(BundleError::InvalidName {
+            field: "product",
+            ..
+        })
+    ));
+    source.boot.clear();
 }

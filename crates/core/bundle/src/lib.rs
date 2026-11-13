@@ -1,31 +1,51 @@
 //! Slot bundles: one slot of a first-flash image, made into the tar a board's
 //! slot writer takes, and read back the way that writer reads it.
 //!
-//! A bundle is a plain tar holding `slot.json` (schema 2), `slot.sig`, the
+//! A bundle is a plain tar holding `slot.json` (schema 3), `slot.sig`, the
 //! slot's `rootfs.erofs` (the EROFS image with its dm-verity tree appended),
 //! and the `boot/` files that go with it. `slot.sig` is the raw 64-byte
 //! ed25519 signature over the exact bytes of `slot.json`. The format is
 //! Lemnos's: its `system.slots` install takes exactly this.
 //!
-//! [`write_bundle`] makes one from a [`SlotSource`]; [`inspect_bundle`] reads
-//! one back with the board's checks; [`verify_slot`] checks a signature over
-//! `slot.json` on its own.
+//! `slot.json` carries `product`, `version`, optional `variant`, `board` (the
+//! board file's `[board] id`, the board the slot was built for; a bundle
+//! without it, or for another board, is refused), `id`, `kernel`,
+//! `display_name`, `image.*`, `verity.root_hash` and `boot.files`. There is no
+//! `family` key. Schema 2 is refused by name.
 //!
-//! The source is a seam. The real one reads the slot out of a first-flash
-//! `.img.xz` (a streaming xz decoder and a read-only ext4 and FAT reader
-//! over a bounded window). That reader is blocked: Gaia `next` cannot yet
-//! produce such an image (F7 puts the slot file on the data partition, F8
-//! wires the OS boot files into the boot partition), so there is no image to
-//! read and no Gaia output to match. Every other part of this crate runs
-//! against a [`SlotSource`] test double.
+//! The main entry points:
 //!
-//! Open: the verity salt. Gaia's `verity.table` gives the salt, and the root
-//! hash is recomputed from the data with it; the hash is checked against the
-//! table, but not the stored tree block by block. dm-verity checks the tree at
-//! boot. The tree's layout (the root block's place) is not yet confirmed
-//! against `veritysetup` output, since no `veritysetup` is installed here.
+//! - [`bundle_from_image`]: open a first-flash image (through `atlas-image`),
+//!   take a slot by id, write its bundle. Not complete yet: it stops with
+//!   [`BundleError::NoVerityTable`] (see below).
+//! - [`write_bundle`]: make a bundle from any [`SlotSource`].
+//! - [`inspect_bundle`]: read a bundle back with the board's checks; then
+//!   [`check_board`] before anything is pushed.
+//! - [`verify_slot`]: check a signature over `slot.json` on its own.
+//!
+//! The source is a seam, [`SlotSource`]. Its real implementation is
+//! [`ImageSource`], over `atlas-image`'s slot. Tests use a double.
+//!
+//! Open, and why the bundle from an image is not complete. The seam asks for
+//! a verity table (Gaia's `verity.table` text: the salt, the data block count,
+//! and the root hash) so the writer can check the slot file's tree against
+//! it. An image's manifest gives only the root hash, so the table cannot be
+//! built and [`ImageSource`] returns [`BundleError::NoVerityTable`]. Nothing is
+//! invented. The seam change that would take the root hash and the data
+//! length instead waits on Lemnos's answer about the `verity.*` keys. Until
+//! then:
+//!
+//! - the rootfs and boot files of an image slot are read through the seam as
+//!   they are (their digests are checked against the image's manifest by
+//!   [`ImageSource::check_image_digest`]);
+//! - the verity root hash is not recomputed; the board's dm-verity checks the
+//!   tree at boot. The `veritysetup` cross-check on a real Gaia slot has not
+//!   been run.
+//!
+//! Untested on board.
 
 mod error;
+mod from_image;
 mod inspect;
 mod manifest;
 mod sign;
@@ -34,10 +54,11 @@ mod verity;
 mod write;
 
 pub use error::BundleError;
-pub use inspect::{Inspected, inspect_bundle};
+pub use from_image::{ImageSource, bundle_from_image, check_stream_digest};
+pub use inspect::{Inspected, check_board, inspect_bundle};
 pub use manifest::{
     BootEntry, CMDLINE, ImageEntry, SCHEMA, SlotManifest, SlotMeta, VerityEntry,
-    validate_boot_path, validate_id,
+    validate_boot_path, validate_id, validate_name,
 };
 pub use sign::{SIG_LEN, sign_slot, verify_slot};
 pub use source::{BootFile, SlotSource};
