@@ -1178,8 +1178,8 @@ fn apply(model: &mut Model, name: &str, args: &[u8], caller: &str) -> Result<Vec
     let found = words(args);
     match name {
         // LOCK: Lemnos M8a 5dcf1a78. A reply over 60 KiB is refused by name, with no partial
-        // output. Our Atlas lock (4a2d3b7d) predates M8a, so a real board cannot answer `list`
-        // until the lock moves.
+        // output. Today: the Atlas lock (4a2d3b7d) predates M8a, so a real board cannot answer
+        // `list` until the lock moves.
         names::SLOTS_LIST => {
             let listing = model.slots.list_json();
             if listing.len() > LIST_LIMIT {

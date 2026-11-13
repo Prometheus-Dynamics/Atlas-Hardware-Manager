@@ -158,7 +158,7 @@ fn list_has_the_i5f_fields_null_by_default_and_an_outcome_per_slot() {
     }
     // The default slot is unsigned: its outcome is not checked, and its signed label is kept.
     let first = slot(&listing, "slot-1");
-    assert_eq!(first["outcome"], "not_checked_unsigned");
+    assert_eq!(first["signature"], "not_checked_unsigned");
     assert_eq!(first["signed"], "unsigned");
     assert_eq!(first["signer"], "");
 }
@@ -445,15 +445,15 @@ fn signature_outcomes_are_verified_unsigned_and_unknown_key_and_installed() {
     assert_eq!(unknown.outcome, Outcome::Succeeded, "{}", unknown.detail);
 
     let listing = list(&orion);
-    assert_eq!(slot(&listing, "verified")["outcome"], "verified");
+    assert_eq!(slot(&listing, "verified")["signature"], "verified");
     assert_eq!(slot(&listing, "verified")["signed"], "trusted");
     assert_eq!(slot(&listing, "verified")["signer"], "Test Owner");
     assert_eq!(
-        slot(&listing, "unsigned")["outcome"],
+        slot(&listing, "unsigned")["signature"],
         "not_checked_unsigned"
     );
     assert_eq!(
-        slot(&listing, "unknown")["outcome"],
+        slot(&listing, "unknown")["signature"],
         "not_checked_unknown_key"
     );
     assert_eq!(slot(&listing, "unknown")["signed"], "untrusted");
@@ -519,7 +519,7 @@ fn a_bad_signature_from_a_known_key_and_a_malformed_signature_are_refused_and_le
 #[test]
 fn security_on_refuses_to_make_an_unverified_slot_the_default() {
     let (node, orion) = node_with_slot_2("security-default");
-    node.model().slots.require_signed = true;
+    node.model().slots.board_security = true;
     node.model()
         .slots
         .trusted
@@ -636,4 +636,29 @@ fn a_board_mismatch_at_install_is_minus_95_naming_both_boards_and_leaves_nothing
         "error",
         "the state carries the refusal"
     );
+}
+
+#[test]
+fn a_signed_bundle_without_slot_key_is_refused_minus_22_and_leaves_nothing() {
+    let node = start("signed-no-key");
+    let orion = node.connect("signed-no-key").expect("a session");
+    let signer = SigningKey::from_bytes(&[7; 32]);
+    node.model()
+        .slots
+        .trusted
+        .push(atlas_sim_node::slots::TrustedKey {
+            public: signer.verifying_key().to_bytes(),
+            owner: "Test Owner".into(),
+        });
+    let rootfs = b"rootfs of no-key\n".repeat(64);
+    let boot: [(&str, &[u8]); 1] = [("cmdline.txt", b"console=ttyS0\n")];
+    let manifest = bundle::manifest("no-key", "2.0.0", &rootfs, &boot);
+    let signature = bundle::sign(&manifest, &signer);
+    // The signature is there, and the key id is not.
+    let bytes = bundle::build(&manifest, Some(&signature[..]), None, &rootfs, &boot);
+    let finished = install(&orion, &bytes, false, false);
+    assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
+    assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
+    assert!(finished.detail.contains("slot.key"), "{}", finished.detail);
+    assert_eq!(slot_count(&list(&orion)), 1, "nothing is listed");
 }

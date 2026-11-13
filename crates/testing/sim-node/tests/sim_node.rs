@@ -895,7 +895,7 @@ fn a_node_publishes_the_hello_facts_a_board_publishes_and_a_restart_on_its_port_
 fn security_on_refuses_unsigned_and_untrusted_bundles_and_keeps_nothing() {
     let node = start("security-on");
     let orion = node.connect("security-on").expect("a session");
-    node.model().slots.require_signed = true;
+    node.model().slots.board_security = true;
 
     // No trusted keys at all: the install does not start.
     let refusal = install(&orion, &bundle_for("slot-2", "2.0.0", None), false, false);

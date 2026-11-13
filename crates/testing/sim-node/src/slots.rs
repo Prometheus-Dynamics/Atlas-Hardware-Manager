@@ -173,10 +173,13 @@ pub struct Slots {
     pub keep: u32,
     pub free_bytes: u64,
     pub reserve_bytes: u64,
-    /// The security switch, off by default. Off, every signature is still checked and shown
-    /// (`signed`, `signer`), and nothing is refused for it. On, an install that is unsigned or
-    /// signed by an untrusted key is refused.
-    pub require_signed: bool,
+    /// The board's security switch, default off. Internal to the sim: Atlas never sends it, and
+    /// `list` never shows it. Off, a signature that does not verify with a key on the list is
+    /// refused, an unknown key is `not_checked_unknown_key`, and nothing else is refused. On, an
+    /// install that is unsigned or signed by an untrusted key is refused.
+    // LOCK: Lemnos L2. Today: the board has no security switch in the sim's sense; a known key with
+    // a bad signature installs as untrusted, and no install is refused for signing.
+    pub board_security: bool,
     /// The board this node is, as its hello `family` fact. A slot built for another board is
     /// refused for set-default and trial.
     pub board: String,
@@ -241,7 +244,7 @@ impl Slots {
             keep: 3,
             free_bytes: 8 * 1024 * 1024 * 1024,
             reserve_bytes: RESERVE_BYTES,
-            require_signed: false,
+            board_security: false,
             board: "simulated".into(),
             trusted: Vec::new(),
             events: Vec::new(),
@@ -293,9 +296,10 @@ impl Slots {
     }
 
     /// With security on, a slot whose signature is not verified is not made the default or tried
-    /// (I5g).
+    /// (I5g). The refusal names the reason in `error`, as every refusal does.
+    // LOCK: Lemnos L2. Today: set_default and trial do not look at the signature.
     fn check_signature_policy(&self, entry: &Entry) -> Result<(), Status> {
-        if self.require_signed && !matches!(entry.signed, Signed::Trusted { .. }) {
+        if self.board_security && !matches!(entry.signed, Signed::Trusted { .. }) {
             return Err(Status::new(
                 code::NOT_PERMITTED,
                 format!(
@@ -314,7 +318,7 @@ impl Slots {
     ///
     /// The Lemnos status of the refusal.
     pub fn check_install_start(&self, size: u64) -> Result<(), Status> {
-        if self.require_signed && self.trusted.is_empty() {
+        if self.board_security && self.trusted.is_empty() {
             return Err(Status::new(
                 code::NOT_PERMITTED,
                 "security needs a trusted key, and the board has none",
@@ -341,7 +345,8 @@ impl Slots {
     pub fn check_signed(&self, signed: &Signed) -> Result<(), Status> {
         match signed {
             Signed::Trusted { .. } => Ok(()),
-            _ if self.require_signed => Err(Status::new(
+            // LOCK: Lemnos L2. Today: no install is refused for its signature.
+            _ if self.board_security => Err(Status::new(
                 code::NOT_PERMITTED,
                 "security is on and the bundle is not signed by a trusted key",
             )),
@@ -652,8 +657,8 @@ impl Slots {
                     "pinned": entry.pinned,
                     "failures": entry.failures,
                     "failed": entry.failed,
+                    // LOCK: Lemnos L2. Today: no `signature` field in a slot's list.
                     "signature": outcome_label(&entry.signed),
-                    "outcome": outcome_label(&entry.signed),
                 })
             })
             .collect();

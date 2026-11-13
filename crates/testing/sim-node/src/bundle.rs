@@ -43,10 +43,12 @@ pub struct Verified {
     pub signed: Signed,
 }
 
-/// The signature rule of I5g (security off; the `require_signed` gate is the caller's, see
-/// `Slots::check_signed`). Signed bundles need both `slot.sig` and `slot.key`; a malformed
-/// signature or key id is refused. A key id on the board's list must verify, or the bundle is
-/// refused by name. A key id the board does not hold, or a board with no list, is not checked.
+/// The signature rule of I5g, with the security switch off (on, the gate is `Slots::check_signed`).
+/// Signed bundles need both `slot.sig` and `slot.key`; a malformed signature or key id is refused
+/// (-22). A key id on the board's list must verify, or the bundle is refused by name (-1). A key id
+/// the board does not hold, or a board with no list, is not checked.
+// LOCK: Lemnos L2. Today: `slot.key` does not exist; a bundle signed by a known key whose signature
+// does not verify installs as untrusted; a malformed signature installs as unsigned.
 fn signature_of(
     members: &BTreeMap<String, Vec<u8>>,
     manifest_bytes: &[u8],
@@ -64,6 +66,7 @@ fn signature_of(
             Some(text.to_string())
         }
     };
+    // LOCK: Lemnos L2 (slot.key, the key id member). Today: no key id member.
     match (members.get(SLOT_SIG), key_id) {
         (None, None) => Ok(Signed::Unsigned),
         (None, Some(_)) => Err(refuse("slot.key is there with no slot.sig")),

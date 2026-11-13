@@ -109,6 +109,9 @@ pub struct Resolved {
     pub time_s: u64,
 }
 
+// LOCK: Lemnos L2 (the boot-partition records and trial-reason). Today: the boot record has
+// `trial_armed` only, no attempt counter, and no trial-reason file. The trial lifecycle itself is
+// Lemnos I5f.
 /// The reason written when the driver cannot write its record.
 const RECORD_FAILED: &str = "the state directory refused the write";
 /// The reason a trial is not confirmed while the board is not healthy.
