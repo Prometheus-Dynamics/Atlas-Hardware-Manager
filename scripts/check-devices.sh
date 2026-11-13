@@ -129,6 +129,18 @@ recipes=$dir/src/recipes
 
 # python3 is the tool the python component builder names; gaia plan needs it given.
 python3_path=$(command -v python3) || die "python3 is needed (the python builder's tool)"
+tool_args=(--tool "python=$python3_path")
+# The slot recipe names veritysetup, and gaia plan wants every named tool
+# present even though planning never runs it (Gaia has accepted dropping that).
+# Where it isn't installed, planning gets a stand-in so the description can
+# still be checked; a build needs the real one. CI installs the real one.
+if ! command -v veritysetup >/dev/null 2>&1; then
+  stand_in_dir=$(mktemp -d)
+  printf '#!/bin/sh\necho "veritysetup stand-in: planning only" >&2\nexit 1\n' > "$stand_in_dir/veritysetup"
+  chmod +x "$stand_in_dir/veritysetup"
+  tool_args+=(--tool "veritysetup=$stand_in_dir/veritysetup")
+  echo "check-devices: NOTE veritysetup is not installed; planning uses a stand-in (a real build needs cryptsetup)"
+fi
 
 # ---- which commands: validate when gaia has it (and plan always), else plan ----
 
@@ -223,7 +235,7 @@ fi
 # planned with the committed lock. A tree path in a lock is relative to the product's directory, so
 # the same lock holds in every checkout.
 locks=$(mktemp -d)
-trap 'rm -rf "$locks" "$used" "$errs" "$outs"' EXIT
+trap 'rm -rf "$locks" "$used" "$errs" "$outs" ${stand_in_dir:+"$stand_in_dir"}' EXIT
 for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev/null | sort); do
   pdir=$(dirname "$product")
   committed=$pdir/gaia.lock
@@ -247,7 +259,7 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
     { diff "$committed" "$lockfile" || true; } | sed 's/^/  /' >&2
     continue
   fi
-  if "$gaia" plan "$product" --lock "$committed" --recipes "$recipes" --tool "python=$python3_path" >"$outs" 2>&1; then
+  if "$gaia" plan "$product" --lock "$committed" --recipes "$recipes" "${tool_args[@]}" >"$outs" 2>&1; then
     echo "check-devices: ok $product (gaia plan)"
   else
     bad "$product: gaia plan failed:"
