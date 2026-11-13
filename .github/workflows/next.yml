@@ -25,4 +25,10 @@ jobs:
       # rust-toolchain.toml selects the toolchain and its components.
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # scripts/check-devices.sh builds Gaia at the commit devices/gaia.lock names
+      # and keeps it here; the key moves only when the lock does.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/atlas/gaia
+          key: gaia-${{ runner.os }}-${{ hashFiles('devices/gaia.lock') }}
       - run: ./scripts/gate.sh
