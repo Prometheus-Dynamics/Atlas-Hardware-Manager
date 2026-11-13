@@ -1,0 +1,25 @@
+[package]
+name = "atlas-board"
+description = "The one board driver: finds Orion nodes on a link, identifies them from their hello document, and keeps each one's connection with the failure rule."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+atlas-driver = { path = "../../core/driver" }
+atlas-types = { path = "../../core/types" }
+async-trait = "0.1"
+orion = { workspace = true }
+tokio = { version = "1", features = ["sync", "time"] }
+
+[dev-dependencies]
+orion = { workspace = true, features = ["topics"] }
+# The comm core for tests: Orion's own server, hello and keys on a real socket and port, at
+# the same commit as the locked `orion` crate (as crates/drivers/mock does).
+orion-stubs = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "c0187f4c195cd27f8353c055dd0a94247c2965cc" }
+tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
+serde_json = "1"
+
+[lints]
+workspace = true
