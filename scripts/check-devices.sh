@@ -13,7 +13,8 @@
 # given: gaia has no version stamp, so its commit is not checked), else a build from that commit
 # cached under ${ATLAS_GAIA_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/gaia}/<commit>/.
 # The recipes come from the same Gaia checkout. With a gaia that has `gaia validate`, every family,
-# board, component and product file is validated, and every product is also planned. With one that
+# board, component and product file is validated (products against the checkout's recipes/, so a bogus
+# recipe name fails), and every product is also planned. With one that
 # does not, every product is planned and nothing else is checked. Each product's gaia.lock, committed
 # beside its product.toml, must match what `gaia lock` writes; `--write-locks` writes them.
 set -euo pipefail
@@ -233,7 +234,10 @@ fi
 # gaia validate stops at the first bad file and names its file and key, so each file gets its own
 # run and every bad file is reported. The kind comes from the directory the file sits in.
 validate_file() {  # <kind> <file>
-  if "$gaia" validate "$2" --kind "$1" >"$outs" 2>&1; then
+  # A product's recipe names are checked against the locked Gaia's recipes/ (validate --recipes).
+  local recipes_arg=()
+  if [[ $1 == product && -d $recipes ]]; then recipes_arg=(--recipes "$recipes"); fi
+  if "$gaia" validate "$2" --kind "$1" ${recipes_arg[@]+"${recipes_arg[@]}"} >"$outs" 2>&1; then
     cat "$outs"
   else
     bad "$2: gaia validate failed:"
@@ -280,7 +284,9 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
   # gaia lock asks the network where each source's ref points. A host being
   # unreachable says nothing about the description, so it is retried, and if
   # it stays unreachable the committed lock is planned as it is and the
-  # freshness comparison is skipped, out loud. A dead host must not hold the
+  # freshness comparison is skipped, out loud. A registry that answers "too many
+  # requests" (HTTP 429) or a server error is the same case: it says nothing
+  # about the description. A dead host must not hold the
   # check for long: one try is cut off after LOCK_TRY_SECONDS (a lock that
   # works takes a few seconds), and once a product has stayed unreachable
   # through all its tries, the products after it get one try each.
@@ -296,7 +302,7 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
     if [[ $rc -eq 124 ]]; then
       echo "gaia lock: timed out after ${LOCK_TRY_SECONDS:-60} s" >>"$errs"
     fi
-    if grep -qiE 'unable to access|could not resolve|failed to connect|could not connect|timed out|connection reset|temporary failure' "$errs"; then
+    if grep -qiE 'unable to access|could not resolve|failed to connect|could not connect|timed out|connection reset|temporary failure|HTTP 429|HTTP 50[0234]|too many requests' "$errs"; then
       offline=1
       sleep $((attempt * 5))
     else
