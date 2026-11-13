@@ -1,0 +1,18 @@
+# systemd config the Raze keeps as a file: the journal kept across boots, bounded, so a failed boot
+# leaves its logs for the support bundle (Orion).
+version = 1
+name = "raze-base-files"
+description = "Raze base system config: the bounded persistent journal"
+
+[[install]]
+from = { file = "files/60-board-journald.conf" }
+to = "/usr/lib/systemd/journald.conf.d/60-board.conf"
+mode = "0644"
+
+# No systemd watchdog here: lemnosd feeds the hardware watchdog (15 s by default, from the board file),
+# and it is the only opener of the device.
+
+# The console: a getty on the USB gadget's ACM port, ttyGS0 (the gadget's one serial function). systemd runs it.
+[[services]]
+unit = "serial-getty@ttyGS0.service"
+enable = true

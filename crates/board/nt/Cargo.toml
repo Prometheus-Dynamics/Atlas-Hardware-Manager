@@ -1,0 +1,24 @@
+[package]
+name = "atlas-nt"
+description = "NetworkTables for Atlas: a viewer of an NT4 server's topics that edits what the server accepts, and the plain editable NT4 server Atlas runs itself. Both on Orion's NT4 crate."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+# Orion's NT4 crate, at the rev the root Cargo.toml locks (the same repository and rev as `orion`).
+orion-nt4 = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "c0187f4c195cd27f8353c055dd0a94247c2965cc", default-features = false, features = ["client", "server"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "sync"] }
+
+[dev-dependencies]
+# The real comm core, in process, with its NT4 gateway (as Orion's own gateway test runs it).
+orion = { workspace = true, features = ["topics"] }
+orion-comm-app = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "c0187f4c195cd27f8353c055dd0a94247c2965cc", default-features = false, features = ["nt4"] }
+orion-config = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "c0187f4c195cd27f8353c055dd0a94247c2965cc" }
+tokio = { version = "1", features = ["macros", "rt", "sync", "time", "net"] }
+
+[lints]
+workspace = true
