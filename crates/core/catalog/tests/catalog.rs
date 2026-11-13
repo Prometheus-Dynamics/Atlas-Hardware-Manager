@@ -50,6 +50,7 @@ fn fixture_boards_are_recognised_from_their_ids() {
     let catalog = read_dir(Path::new(FIXTURES)).expect("fixtures read");
     let models: Vec<&str> = catalog.boards.iter().map(|b| b.model.as_str()).collect();
     assert_eq!(models, ["alpha-board", "beta-board", "gamma-board"]);
+    // delta-board has no app/, and stray/ is outside boards/: neither is in.
     assert_every_board_recognised(&catalog);
 
     // A shared id is a candidate for both boards, and says what state it is in.
@@ -86,8 +87,14 @@ fn look_references_are_relative_to_devices() {
     let catalog = read_dir(Path::new(FIXTURES)).expect("fixtures read");
     let alpha = catalog.board("alpha-board").expect("alpha");
     assert_eq!(alpha.display_name, "Alpha Board");
-    assert_eq!(alpha.picture.as_deref(), Some("boards/alpha/picture.png"));
-    assert_eq!(alpha.case.as_deref(), Some("boards/alpha/case.glb"));
+    assert_eq!(
+        alpha.picture.as_deref(),
+        Some("boards/alpha-board/app/picture.png")
+    );
+    assert_eq!(
+        alpha.case.as_deref(),
+        Some("boards/alpha-board/app/case.glb")
+    );
     let beta = catalog.board("beta-board").expect("beta");
     assert_eq!(beta.picture, None);
 }
@@ -122,69 +129,87 @@ fn absent_or_empty_devices_is_an_empty_catalog() {
     let absent = base.join("nope");
     assert!(read_dir(&absent).expect("absent is fine").boards.is_empty());
     let empty = base.join("empty");
-    fs::create_dir_all(&empty).expect("mkdir");
+    fs::create_dir_all(empty.join("boards")).expect("mkdir");
     assert!(read_dir(&empty).expect("empty is fine").boards.is_empty());
-    // A Gaia build file alone is not app data.
-    fs::create_dir_all(empty.join("gaia")).expect("mkdir");
-    fs::write(empty.join("gaia/board.toml"), "not app data").expect("write");
+    // A Gaia build file beside no app/ is not app data.
+    fs::create_dir_all(empty.join("boards/x-board/gaia")).expect("mkdir");
+    fs::write(empty.join("boards/x-board/gaia/board.toml"), "not app data").expect("write");
     assert!(read_dir(&empty).expect("ignored").boards.is_empty());
+}
+
+/// Writes `devices/usb-ids.json` and `devices/boards/<dir>/app/app.json`.
+fn write_tree(dir: &Path, board_dir: &str, app: &str) {
+    let usb = r#"{"schema":"urn:atlas:usb-ids:1","ids":{"m":{"state":"download","vid":"2207","pid":"350a","name":"M"}}}"#;
+    fs::write(dir.join("usb-ids.json"), usb).expect("write");
+    let app_dir = dir.join("boards").join(board_dir).join("app");
+    fs::create_dir_all(&app_dir).expect("mkdir");
+    fs::write(app_dir.join("app.json"), app).expect("write");
 }
 
 #[test]
 fn bad_app_data_is_refused() {
-    let usb = r#"{"schema":"urn:atlas:usb-ids:1","ids":{"m":{"state":"download","vid":"2207","pid":"350a","name":"M"}}}"#;
     let good =
         r#"{"schema":"urn:atlas:device-app:1","model":"x-board","display_name":"X","usb":["m"]}"#;
-    let cases: &[(&str, &str, &str)] = &[
+    let cases: &[(&str, &str, &str, &str)] = &[
         (
             "unknown usb ref",
+            "x-board",
             r#"{"schema":"urn:atlas:device-app:1","model":"x-board","display_name":"X","usb":["nope"]}"#,
             "usb id \"nope\" is not",
         ),
         (
             "wrong schema",
-            r#"{"schema":"urn:other:1","model":"x","display_name":"X"}"#,
+            "x-board",
+            r#"{"schema":"urn:other:1","model":"x-board","display_name":"X"}"#,
             "schema must be",
         ),
         (
             "unknown field",
-            r#"{"schema":"urn:atlas:device-app:1","model":"x","display_name":"X","extra":1}"#,
+            "x-board",
+            r#"{"schema":"urn:atlas:device-app:1","model":"x-board","display_name":"X","extra":1}"#,
             "unknown field",
         ),
         (
+            "model differs from directory",
+            "y-board",
+            good,
+            "must equal its board directory name",
+        ),
+        (
             "bad model",
+            "x-board",
             r#"{"schema":"urn:atlas:device-app:1","model":"X Board","display_name":"X"}"#,
-            "must be [a-z0-9-]",
+            "must equal its board directory name",
         ),
         (
-            "picture escapes folder",
+            "picture escapes app folder",
+            "x-board",
             r#"{"schema":"urn:atlas:device-app:1","model":"x-board","display_name":"X","look":{"picture":"../p.png"}}"#,
-            "inside the board's folder",
+            "inside the board's app/ folder",
         ),
         (
-            "absolute picture",
+            "absolute case",
+            "x-board",
             r#"{"schema":"urn:atlas:device-app:1","model":"x-board","display_name":"X","look":{"case":"/etc/c.glb"}}"#,
-            "inside the board's folder",
+            "inside the board's app/ folder",
         ),
         (
             "uppercase prefix",
+            "x-board",
             r#"{"schema":"urn:atlas:device-app:1","model":"x-board","display_name":"X","network":{"hostname_prefix":"X-"}}"#,
             "hostname_prefix",
         ),
     ];
-    for (name, app, want) in cases {
+    for (name, dir_name, app, want) in cases {
         let dir = scratch(&name.replace(' ', "-"));
-        fs::write(dir.join("usb-ids.json"), usb).expect("write");
-        fs::create_dir_all(dir.join("x")).expect("mkdir");
-        fs::write(dir.join("x/app.json"), app).expect("write");
+        write_tree(&dir, dir_name, app);
         let err = read_dir(&dir).expect_err(name);
         assert!(err.reason.contains(want), "{name}: {err}");
     }
 
     let dir = scratch("bad-hex");
-    fs::write(dir.join("usb-ids.json"), usb.replace("350a", "35zz")).expect("write");
-    fs::create_dir_all(dir.join("x")).expect("mkdir");
-    fs::write(dir.join("x/app.json"), good).expect("write");
+    write_tree(&dir, "x-board", good);
+    fs::write(dir.join("usb-ids.json"), r#"{"schema":"urn:atlas:usb-ids:1","ids":{"m":{"state":"download","vid":"35zz","pid":"350a","name":"M"}}}"#).expect("write");
     assert!(
         read_dir(&dir)
             .expect_err("hex")
@@ -192,18 +217,10 @@ fn bad_app_data_is_refused() {
             .contains("4 hex digits")
     );
 
-    let dir = scratch("duplicate-model");
-    fs::write(dir.join("usb-ids.json"), usb).expect("write");
-    for sub in ["a", "b"] {
-        fs::create_dir_all(dir.join(sub)).expect("mkdir");
-        fs::write(dir.join(sub).join("app.json"), good).expect("write");
-    }
-    assert!(
-        read_dir(&dir)
-            .expect_err("dup")
-            .reason
-            .contains("already defined")
-    );
+    let dir = scratch("bad-state");
+    write_tree(&dir, "x-board", good);
+    fs::write(dir.join("usb-ids.json"), r#"{"schema":"urn:atlas:usb-ids:1","ids":{"m":{"state":"console","vid":"2207","pid":"350a","name":"M"}}}"#).expect("write");
+    assert!(read_dir(&dir).is_err());
 }
 
 /// A fresh folder under the test target's temporary directory.

@@ -16,6 +16,10 @@ pub const APP_SCHEMA: &str = "urn:atlas:device-app:1";
 pub const USB_IDS_SCHEMA: &str = "urn:atlas:usb-ids:1";
 /// The schema of the generated catalog.
 pub const CATALOG_SCHEMA: &str = "urn:atlas:catalog:1";
+/// The folder under `devices/` holding one board directory each.
+pub const BOARDS_DIR: &str = "boards";
+/// The folder inside a board directory holding its app data.
+pub const APP_DIR: &str = "app";
 /// The file name of one board's app data.
 pub const APP_FILE: &str = "app.json";
 /// The file name of the shared USB ids, at the `devices/` root.
@@ -80,40 +84,56 @@ struct Look {
     case: Option<String>,
 }
 
-/// Reads every `app.json` under `devices`, and the shared `usb-ids.json` at
-/// its root. A `devices` folder that is absent, or has no app data, gives an
-/// empty catalog. Only files with the names above are read: anything else
-/// under `devices/` (the Gaia build files) is never looked at. Symlinks are
-/// not followed.
+/// Reads the app data of every board under `devices/boards/`, and the shared
+/// `usb-ids.json` at the `devices/` root. A board's app data is exactly
+/// `devices/boards/<board>/app/app.json`: nothing else under a board is read
+/// (its Gaia description and build files included), and a board directory
+/// without `app/app.json` is not in the catalog. A `devices/` folder that is
+/// absent, or has no such boards, gives an empty catalog. Symlinks are not
+/// followed.
 pub fn from_dir(devices: &Path) -> Result<Catalog, LoadError> {
     let empty = Catalog {
         schema: CATALOG_SCHEMA.to_string(),
         boards: Vec::new(),
     };
-    if !devices.is_dir() {
+    let boards_dir = devices.join(BOARDS_DIR);
+    if !boards_dir.is_dir() {
         return Ok(empty);
     }
     let usb_ids = load_usb_ids(devices)?;
-    let mut apps = Vec::new();
-    collect_apps(devices, &mut apps)?;
-    apps.sort();
+    let apps = board_apps(&boards_dir)?;
 
-    let mut boards: Vec<Board> = Vec::new();
-    for app in &apps {
-        let board = load_board(devices, app, &usb_ids)?;
-        if boards.iter().any(|b| b.model == board.model) {
-            return Err(err(
-                app,
-                format!("model {:?} is already defined", board.model),
-            ));
-        }
-        boards.push(board);
+    let mut boards = Vec::new();
+    for (dir_name, app) in &apps {
+        boards.push(load_board(devices, dir_name, app, &usb_ids)?);
     }
     boards.sort_by(|a, b| a.model.cmp(&b.model));
     Ok(Catalog {
         schema: CATALOG_SCHEMA.to_string(),
         boards,
     })
+}
+
+/// Each board directory's `app/app.json`, with the directory's name, sorted by
+/// name. A directory without one is skipped.
+fn board_apps(boards_dir: &Path) -> Result<Vec<(String, PathBuf)>, LoadError> {
+    let entries = fs::read_dir(boards_dir).map_err(|e| err(boards_dir, e.to_string()))?;
+    let mut apps = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| err(boards_dir, e.to_string()))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|e| err(boards_dir, e.to_string()))?;
+        if !file_type.is_dir() {
+            continue;
+        }
+        let app = entry.path().join(APP_DIR).join(APP_FILE);
+        if app.is_file() {
+            apps.push((entry.file_name().to_string_lossy().into_owned(), app));
+        }
+    }
+    apps.sort();
+    Ok(apps)
 }
 
 fn err(path: &Path, reason: impl Into<String>) -> LoadError {
@@ -166,23 +186,9 @@ fn load_usb_ids(devices: &Path) -> Result<BTreeMap<String, UsbId>, LoadError> {
     Ok(ids)
 }
 
-fn collect_apps(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), LoadError> {
-    let entries = fs::read_dir(dir).map_err(|e| err(dir, e.to_string()))?;
-    for entry in entries {
-        let entry = entry.map_err(|e| err(dir, e.to_string()))?;
-        let file_type = entry.file_type().map_err(|e| err(dir, e.to_string()))?;
-        let path = entry.path();
-        if file_type.is_dir() {
-            collect_apps(&path, out)?;
-        } else if file_type.is_file() && entry.file_name() == APP_FILE {
-            out.push(path);
-        }
-    }
-    Ok(())
-}
-
 fn load_board(
     devices: &Path,
+    dir_name: &str,
     app: &Path,
     usb_ids: &BTreeMap<String, UsbId>,
 ) -> Result<Board, LoadError> {
@@ -190,6 +196,15 @@ fn load_board(
     let file: AppFile = serde_json::from_str(&text).map_err(|e| err(app, e.to_string()))?;
     if file.schema != APP_SCHEMA {
         return Err(err(app, format!("schema must be {APP_SCHEMA:?}")));
+    }
+    if file.model != dir_name {
+        return Err(err(
+            app,
+            format!(
+                "model {:?} must equal its board directory name {dir_name:?}",
+                file.model
+            ),
+        ));
     }
     if file.model.is_empty() || !file.model.chars().all(is_name_char) {
         return Err(err(
@@ -221,8 +236,9 @@ fn load_board(
             Some(p)
         }
     };
-    let board_dir = app.parent().unwrap_or(devices);
-    let rel_dir = board_dir.strip_prefix(devices).unwrap_or(board_dir);
+    // References are relative to the app/ folder, and stored relative to devices/.
+    let app_dir = app.parent().unwrap_or(devices);
+    let rel_dir = app_dir.strip_prefix(devices).unwrap_or(app_dir);
     let (picture, case) = match file.look {
         None => (None, None),
         Some(look) => (
@@ -242,15 +258,15 @@ fn load_board(
     })
 }
 
-/// A file a board names, relative to its own folder, becomes a path relative
-/// to the `devices/` root. It must stay inside the board's folder.
+/// A file a board names, relative to its app/ folder, becomes a path relative
+/// to the `devices/` root. It must stay inside that folder.
 fn reference(app: &Path, rel_dir: &Path, name: &str) -> Result<String, LoadError> {
     let path = Path::new(name);
     let inside = !name.is_empty() && path.components().all(|c| matches!(c, Component::Normal(_)));
     if !inside {
         return Err(err(
             app,
-            format!("look reference {name:?} must be a path inside the board's folder"),
+            format!("look reference {name:?} must be a path inside the board's app/ folder"),
         ));
     }
     Ok(rel_dir.join(path).to_string_lossy().replace('\\', "/"))

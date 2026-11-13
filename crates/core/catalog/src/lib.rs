@@ -4,46 +4,49 @@
 //! # The app data
 //!
 //! The data lives under the repository's `devices/` folder, beside each
-//! board's description. The reader takes only these two kinds of file and
-//! ignores everything else in that folder, so the Gaia build files stay out
-//! of the app.
+//! board's description (`devices/boards/<board>/`, the Gaia format). The
+//! reader takes exactly two kinds of file and ignores everything else:
 //!
-//! `devices/usb-ids.json` holds the USB ids, shared by every board that
-//! shows them. A board names them by their key:
+//! - `devices/usb-ids.json`, the USB ids, shared by every board that shows
+//!   them. A board names them by their key:
 //!
-//! ```json
-//! {
-//!   "schema": "urn:atlas:usb-ids:1",
-//!   "ids": {
-//!     "rockchip-rk3588-maskrom": { "state": "download", "vid": "2207", "pid": "350b", "name": "Rockchip RK3588 maskrom" },
-//!     "rpi-storage-gadget": { "state": "storage", "vid": "0a5c", "pid": "0104", "name": "Raspberry Pi storage gadget" }
+//!   ```json
+//!   {
+//!     "schema": "urn:atlas:usb-ids:1",
+//!     "ids": {
+//!       "rockchip-rk3588-maskrom": { "state": "download", "vid": "2207", "pid": "350b", "name": "Rockchip RK3588 maskrom" },
+//!       "rpi-storage-gadget": { "state": "storage", "vid": "0a5c", "pid": "0104", "name": "Raspberry Pi storage gadget" }
+//!     }
 //!   }
-//! }
-//! ```
+//!   ```
 //!
-//! `state` is `download`, `storage` or `gadget`. `vid` and `pid` are four hex
-//! digits. The key is `[a-z0-9-]`.
+//!   `state` is `download`, `storage` or `gadget`. `vid` and `pid` are four
+//!   hex digits. A key is `[a-z0-9-]`.
 //!
-//! Each board has one `app.json` in its own folder, next to its description:
+//! - `devices/boards/<board>/app/app.json`, one board's app data. Nothing
+//!   else under a board is read (its Gaia files included). A board directory
+//!   without `app/app.json` is not in the catalog.
 //!
-//! ```json
-//! {
-//!   "schema": "urn:atlas:device-app:1",
-//!   "model": "example-board",
-//!   "display_name": "Example Board",
-//!   "usb": ["rockchip-rk3588-maskrom"],
-//!   "network": { "hostname_prefix": "example-" },
-//!   "look": { "picture": "picture.png", "case": "case.glb" }
-//! }
-//! ```
+//!   ```json
+//!   {
+//!     "schema": "urn:atlas:device-app:1",
+//!     "model": "example-board",
+//!     "display_name": "Example Board",
+//!     "usb": ["rockchip-rk3588-maskrom"],
+//!     "network": { "hostname_prefix": "example-" },
+//!     "look": { "picture": "picture.png", "case": "case.glb" }
+//!   }
+//!   ```
 //!
-//! `model` is unique across the tree. `usb` lists keys from `usb-ids.json`.
-//! `network` and `look` are optional. `picture` and `case` are files in the
-//! board's own folder (they must stay inside it); the catalog stores them as
-//! paths relative to `devices/`, and does not read them. Unknown fields are
-//! an error.
+//!   `model` must equal the board's directory name (`example-board` above),
+//!   and is `[a-z0-9-]`. `usb` lists keys from `usb-ids.json`. `network` and
+//!   `look` are optional. `picture` and `case` are files in the board's
+//!   `app/` folder; they must stay inside it. The catalog stores them as
+//!   paths relative to `devices/` (`boards/example-board/app/picture.png`) and
+//!   does not read them. Unknown fields are an error.
 //!
-//! A missing `devices/` folder, or one with no app data, is an empty catalog.
+//! A missing `devices/` folder, or one with no such boards, is an empty
+//! catalog.
 //!
 //! # The embedded catalog
 //!

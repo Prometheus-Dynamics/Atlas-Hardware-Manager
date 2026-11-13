@@ -16,7 +16,16 @@ fn main() {
     let devices = manifest.join("../../../devices");
     let out = PathBuf::from(std::env::var("OUT_DIR").expect("cargo sets it")).join("catalog.json");
 
-    println!("cargo:rerun-if-changed={}", devices.display());
+    // Both may be absent (no boards yet): cargo then reruns this script each
+    // build, and the reader returns an empty catalog. Never an error.
+    println!(
+        "cargo:rerun-if-changed={}",
+        devices.join("usb-ids.json").display()
+    );
+    println!(
+        "cargo:rerun-if-changed={}",
+        devices.join("boards").display()
+    );
     println!("cargo:rerun-if-changed=src/model.rs");
     println!("cargo:rerun-if-changed=src/load.rs");
 
