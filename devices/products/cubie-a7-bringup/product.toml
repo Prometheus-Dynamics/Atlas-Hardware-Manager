@@ -5,11 +5,11 @@
 # Then SSH with the bench key. NO Lemnos, NO Orion, NO slots. Candidate sources, UNVERIFIED, never booted.
 # The test procedure, and what each missing sign means, is docs/prs/B19.md ("What you should see").
 #
-# PENDING, outside the device check: the bench SSH public key is a Gaia local input (`--input`), not in the
-# locked Gaia rev (4abf626). Its board is board/board.toml (extends the A7S; the bring-up's own kernel
-# fragment and dts). When Gaia's rev with the input is locked, move this to devices/products/, commit its
-# gaia.lock, and check it plans. The sources (kernel series, U-Boot, TF-A, DRAM blob) are the family's, and
-# carry no open licence (see families/sun60i/family.toml).
+# Its board is board/board.toml, inside this product (it extends the sun60i family and repeats the A7S's
+# few lines; see that file). It is a product-local board, not a boards/ entry, because the A7S's own board
+# does not carry this bring-up's device tree or kernel fragment. The bench public key is the named input
+# `bench-key`. The sources (kernel series, U-Boot, TF-A, DRAM blob) are the family's, and carry no open
+# licence (see families/sun60i/family.toml).
 version = 1
 name = "cubie-a7-bringup"
 description = "Radxa Cubie A7S bring-up (DEV ONLY): SD boot, Ethernet and usb0, SSH with the bench key. Candidate, never booted."

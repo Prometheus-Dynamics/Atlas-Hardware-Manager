@@ -1,0 +1,36 @@
+# ROCK 5C bring-up: rock-5c-base plus the DEV-ONLY way in (the bench SSH public key). DEV ONLY: the one
+# place a dev-only unit is allowed; the base product stays clean. No Lemnos and no Orion: they are not on a
+# bring-up board.
+#
+# The ROCK 5C USB restriction (INPUTS.md: "do NOT build a ROCK 5C image for a person to plug in as a USB
+# device before Lemnos Q2g") does NOT apply to this product: it has no USB gadget, and the board's
+# device-mode port (usb_host0_xhci) is not enabled in this image. Its connectors are host-only in the
+# tree (lemnos-board.pending.toml's device entries are commented out, B15), so nothing here drives the
+# switched VBUS line (GPIO0 PD4) as a device port. The first proof is Ethernet, DHCP on eth0 through
+# systemd-networkd (from the base). The bench public key is the named input `bench-key`.
+# Untested on board: nothing here has booted; the user flashes the card.
+version = 1
+name = "rock-5c-bringup"
+description = "ROCK 5C bring-up: the base OS plus the dev-only SSH key (Ethernet first; no USB network on this board's tree)."
+
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.02.3"
+
+[components]
+radxa-rock-5c-extlinux = "../../components/radxa-rock-5c-extlinux/component.toml"
+dev-bench-ssh-key = "components/dev-bench-ssh-key/component.toml"
+dev-bringup-hostkey = "../../components/dev-bringup-hostkey/component.toml"
+
+[[images]]
+name = "rock-5c-bringup"
+board = "../../boards/radxa-rock-5c/board.toml"
+components = ["radxa-rock-5c-extlinux", "dev-bench-ssh-key", "dev-bringup-hostkey"]
+# The base OS fragment, then the bring-up's own (dropbear, the serial getty).
+os = { provider = "buildroot", source = "buildroot", fragments = ["../../products/rock-5c-base/os.fragment", "os.fragment"] }
+recipe = "sd-image"
+budget = "1G"
+
+[images.settings]
+# Names the disk (required by sd-image; see rock-5c-base).
+id = "rock-5c-bringup"
