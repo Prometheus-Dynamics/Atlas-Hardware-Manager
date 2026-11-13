@@ -49,6 +49,59 @@ broken_failed_as_it_must() {
   return 0
 }
 
+# The Lemnos rule (AGENTS.md: every Lemnos component in a product is locked to ONE rev). Every source of
+# the Lemnos repository in a product's gaia.lock is one [source.*] block with a url and a commit: the
+# commits of those blocks must be one. Prints the distinct revs, one per line.
+lemnos_revs() {
+  awk '
+    /^\[/ { lem = 0; next }
+    /^url = .*Prometheus-Dynamics\/Lemnos/ { lem = 1; next }
+    /^commit = / && lem { c = $0; sub(/^commit = "/, "", c); sub(/"$/, "", c); print c }
+  ' "$1" | sort -u
+}
+
+# Prints "REV1 and REV2" (plus a count of any more) and returns 1 when the lock pins two or more Lemnos revs.
+lemnos_two_revs() {
+  local revs=() r
+  while IFS= read -r r; do
+    [[ -n $r ]] && revs+=("$r")
+  done < <(lemnos_revs "$1")
+  [[ ${#revs[@]} -le 1 ]] && return 0
+  local more=$(( ${#revs[@]} - 2 )) tail=""
+  (( more > 0 )) && tail=" (and $more more)"
+  echo "${revs[0]} and ${revs[1]}$tail"
+  return 1
+}
+
+# Proves the rule catches two revs and passes one, on a lock written here (the fixture is not a product).
+lemnos_rule_self_test() {
+  local two one rc=0
+  two=$(mktemp); one=$(mktemp)
+  cat >"$two" <<'EOF'
+[source."a.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "1111111111111111111111111111111111111111"
+commit = "1111111111111111111111111111111111111111"
+
+[source."b.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "2222222222222222222222222222222222222222"
+commit = "2222222222222222222222222222222222222222"
+EOF
+  sed 's/2222222222222222222222222222222222222222/1111111111111111111111111111111111111111/g' "$two" >"$one"
+  if lemnos_two_revs "$two" >/dev/null; then
+    echo "check-devices: self-test: a lock with two Lemnos revs was not refused" >&2; rc=1
+  elif [[ $(lemnos_two_revs "$two") != "1111111111111111111111111111111111111111 and 2222222222222222222222222222222222222222" ]]; then
+    echo "check-devices: self-test: the two-rev refusal does not name both revs" >&2; rc=1
+  fi
+  lemnos_two_revs "$one" >/dev/null || { echo "check-devices: self-test: a lock with one Lemnos rev was refused" >&2; rc=1; }
+  rm -f "$two" "$one"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the Lemnos one-rev rule refuses two revs and passes one"
+  return $rc
+}
+
 fixtures=$repo/devices/tests/fixtures
 
 if [[ $mode == self-test ]]; then
@@ -57,6 +110,7 @@ if [[ $mode == self-test ]]; then
     echo "== $good fixture: must pass"
     "$self" --root "$fixtures/$good" || { echo "check-devices: self-test: $good fixture did not pass" >&2; status=1; }
   done
+  lemnos_rule_self_test || status=1
   echo "== broken fixture: must fail"
   out=$(mktemp)
   rc=0
@@ -322,6 +376,11 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
     sed 's/^/  /' "$errs" >&2
     continue
   fi
+  # The Lemnos rule: every Lemnos source in this product's lock is one rev (the lock as gaia lock writes
+  # it now, so --write-locks is checked too).
+  if ! lemnos_msg=$(lemnos_two_revs "$lockfile"); then
+    bad "$product: Lemnos is locked to more than one rev in this product, $lemnos_msg: every Lemnos component of a product must be locked to one rev"
+  fi
   if [[ $write_locks -eq 1 ]]; then
     cp "$lockfile" "$committed"
     echo "check-devices: wrote $root/$committed"
@@ -363,5 +422,6 @@ if [[ $root_given -eq 0 ]]; then
     die "self-check: the broken fixture passed, or failed without naming its bad key, so the checker no longer catches a broken file"
   fi
   rm -f "$out"
+  lemnos_rule_self_test || die "self-check: the Lemnos one-rev rule no longer refuses two revs in one product"
   echo "check-devices: self-check passed (good fixtures pass, broken fixture fails)"
 fi
