@@ -1,0 +1,49 @@
+# Radxa ROCK 4D (RK3576: 4 Cortex-A72 and 4 Cortex-A53, microSD, an eMMC or UFS
+# module socket, and a 16 MB SPI NOR factory bootloader that stays) on the rk35xx
+# family. Its boot path is the family's; what differs is below. Untested on
+# board: G4 runs it.
+version = 1
+extends = "../../families/rk35xx/family.toml"
+name = "radxa-rock-4d"
+description = "Radxa ROCK 4D (RK3576)"
+
+# RK3576 is four A72 and four A53 (dev's manifest and Gaia's cpu table).
+[target]
+cpu = "cortex-a72.cortex-a53"
+
+# The in-tree device tree (Linux v7.3.3 has rk3576-rock-4d.dts; checked).
+[kernel]
+device_tree = "rockchip/rk3576-rock-4d"
+
+# U-Boot's board defconfig (U-Boot v2026.10 has rock-4d-rk3576_defconfig;
+# checked).
+[bootloader]
+defconfig = "rock-4d-rk3576"
+
+# The 4D's own rkbin pin: 3e288fe, the commit dev pinned for this board (dev's
+# fetch.lock). It is also the family's current pin, written out here so that a
+# later family repin (for the ZERO 3E) does not move this board. The blob
+# below is the RK3576 one at this commit, not the RK3566 v1.26 that is suspect.
+[sources.rkbin]
+git = "https://github.com/rockchip-linux/rkbin.git"
+ref = "3e288fe814e059dd06833495f845cab04ac20a5c"
+
+# U-Boot's make variable ROCKCHIP_TPL: the RK3576 DDR init, v1.13 at 3e288fe
+# (dev's fetch.lock; its RKBOOT ini names the same file).
+# NOT VERIFIED ON HARDWARE. Dev never booted this board; this is the blob dev
+# named for it, with no board run behind it. Keep until a board run proves it.
+[bootloader.blobs]
+ROCKCHIP_TPL = { source = "rkbin", path = "bin/rk35/rk3576_ddr_lp4_2112MHz_lp5_2736MHz_v1.13.bin" }
+
+# TF-A's platform for RK3576. v2.15.0 has plat/rockchip/rk3576 (checked), so
+# BL31 is built from the family's TF-A pin, not taken as rkbin's
+# rk3576_bl31_v1.25.elf (the blob Gaia's older ROCK 4D example used when TF-A
+# had no RK3576 port). Unverified on hardware.
+[bootloader.trusted_firmware]
+platform = "rk3576"
+
+# The maskrom loader's RKBOOT ini at 3e288fe: a three-part loader (boost v1.03,
+# ddr v1.13, spl v1.09) with usbplug v1.04 in maskrom (dev's fetch.lock). The
+# merged rk3576_loader_v1.13.109.bin is made by Gaia's build, not published.
+[flash.files]
+loader_ini = { source = "rkbin", path = "RKBOOT/RK3576MINIALL.ini" }
