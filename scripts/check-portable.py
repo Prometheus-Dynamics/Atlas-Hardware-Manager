@@ -17,8 +17,9 @@ import sys
 
 ORION_SOURCE = "git+https://github.com/Prometheus-Dynamics/Orion"
 LINUX_GATE = re.compile(r'^#!\[cfg\(target_os = "linux"\)\]', re.M)
-COULD_NOT_COMPILE = re.compile(r"could not compile `([^`]+)`")
+COULD_NOT_COMPILE = re.compile(r"could not compile `([^`]+)`(?: \(([^)]*)\))?")
 ERROR_START = re.compile(r"^error(\[[A-Z0-9]+\])?:")
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def die(message):
@@ -214,31 +215,36 @@ def cmd_verdict(list_path, meta_path, triple, log_path, rc):
             print(f"FAIL {error}", file=sys.stderr)
         die(f"{len(errors)} problem(s) with {list_path}")
     listed = not_build.get(triple, {})
-    # cargo --keep-going names each crate it could not compile: "error: could not compile `x` ...".
-    # The first error block before that line is the crate's first error.
+    # cargo --keep-going names each unit it could not compile: "error: could not compile `x` (lib)".
+    # The first error block before that line is the unit's first error.
     first_error, block_first = {}, None
+    lib_failing = set()
     with open(log_path, encoding="utf-8", errors="replace") as handle:
         for line in handle:
-            text = line.rstrip("\r\n")
+            text = ANSI.sub("", line).rstrip("\r\n")
             match = COULD_NOT_COMPILE.search(text)
             if match:
-                first_error.setdefault(match.group(1), block_first or text.strip())
+                name, unit = match.group(1), match.group(2) or ""
+                first_error.setdefault(name, block_first or text.strip())
+                if unit == "lib":
+                    lib_failing.add(name)
                 block_first = None
             elif block_first is None and ERROR_START.match(text):
                 block_first = text.strip()
     failing = set(first_error)
     if int(rc) != 0 and not failing:
         die(f"cargo check failed for {triple} without a compile error; see the log above")
-    # A crate whose dependency does not build is blocked, not built.
+    # Only a library that does not build blocks the crates that depend on it. A failing test
+    # or bin target blocks nothing else. A crate whose dependency's library is missing is blocked.
     blocked = {}
     changed = True
     while changed:
         changed = False
         for name in portable:
-            if name in failing or name in blocked:
+            if name in lib_failing or name in blocked:
                 continue
             for dep in graph.workspace_deps(name):
-                if dep in failing or dep in blocked:
+                if dep in lib_failing or dep in blocked:
                     blocked[name] = dep
                     changed = True
                     break
