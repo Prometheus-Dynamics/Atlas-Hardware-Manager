@@ -1,7 +1,27 @@
-# Radxa Cubie A7S on the Allwinner A733 (sun60i) family. RECORD, NOT A BUILDABLE DESCRIPTION:
-# untested on board. Only what differs from the family is kept here. Sources missing: see
-# the family file (kernel, U-Boot, TF-A, OS, FEL SPL, SRAM layout, AArch64 thunk, SD device).
+# Radxa Cubie A7S on the Allwinner A733 (sun60i) family. CANDIDATE, UNVERIFIED, NEVER BOOTED.
+# Only what differs from the family is kept here. The A7S is the one A733 board with a kernel
+# device tree in a public source (DockSeed's 7.3.3 series) and a U-Boot defconfig (Radxa's tree).
 version = 1
 extends = "../../families/sun60i/family.toml"
 name = "radxa-cubie-a7s"
-description = "Radxa Cubie A7S (Allwinner A733)"
+description = "Radxa Cubie A7S (Allwinner A733), candidate sources, untested on board"
+
+# Kernel device tree: the A7S board dts of DockSeed's series (also the name in the upstream
+# posting of 2026-06-13). A new choice, not carried from dev. candidate, unverified.
+[kernel]
+device_tree = "allwinner/sun60i-a733-cubie-a7s"
+
+# U-Boot defconfig: radxa-cubie-a7s_defconfig in radxa/u-boot @ 9da4b3e8 (its
+# CONFIG_DEFAULT_DEVICE_TREE is sun60i-a733-cubie-a7s). candidate, unverified.
+[bootloader]
+defconfig = "radxa-cubie-a7s_defconfig"
+
+# The vendor DRAM init, built into the SPL. Its file is awbin/a733/ddr.bin in radxa-pkg/
+# u-boot-dlan17 @ b1cec0a9 (sha256 d89804f4...). Known to boot this board: NO (never booted).
+# CLOSED vendor code, no redistribution grant: not published in any image. F8? the key form.
+[bootloader.blobs]
+SUNXI_LIBDRAM = { source = "dlan17-pkg", path = "awbin/a733/ddr.bin" }
+
+# The A7S's Ethernet is the gmac210 (MAE0621A-Q3C PHY), built in by the family fragment.
+# Its USB-C 1 is USB 2.0 with power and OTG (device-mode network is a bring-up item, pending).
+# OPEN: which USB-C port is the FEL port (dev's record, UNCONFIRMED).
