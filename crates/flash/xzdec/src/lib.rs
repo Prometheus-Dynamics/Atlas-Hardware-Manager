@@ -399,6 +399,9 @@ pub fn scan<R: Read + Seek>(input: &mut R) -> Result<Layout, XzError> {
         ));
     }
     let last = stream_ending_at(input, len)?;
+    // PROVISIONAL: Lemnos W1 contract 2026-11-13, test vectors pending. A last stream of
+    // one block and at most RECORD_MAX decoded bytes is read as the record candidate; a
+    // real image is never that small.
     let record_candidate =
         last.blocks.len() == 1 && last.uncompressed <= RECORD_MAX && last.start > 0;
     if record_candidate {

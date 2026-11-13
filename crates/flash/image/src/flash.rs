@@ -62,6 +62,8 @@ pub const RECORD_BYTES: usize = 108;
 /// The record's magic.
 pub const RECORD_MAGIC: &[u8; 8] = b"LMNSSIG1";
 /// The domain tag at the start of the signed message (with its NUL).
+// PROVISIONAL: Lemnos W1 contract 2026-11-13, test vectors pending. The record and the
+// signed message follow draft 2 of W1-actions.md; Lemnos's implementation confirms them.
 pub const SIGNED_TAG: &[u8; 19] = b"lemnos-first-flash\0";
 /// The signed message's version.
 pub const SIGNED_VERSION: u32 = 1;
@@ -290,6 +292,7 @@ impl BoardOutcome {
     }
 }
 
+// PROVISIONAL: Lemnos W1 contract 2026-11-13, test vectors pending (the message layout).
 /// The message the signature covers, rebuilt the way the board rebuilds it:
 /// the domain tag, a u32 version, the board id, the kind, the raw size as a u64,
 /// and the raw SHA-256, with lengths as u32 little-endian.
@@ -314,6 +317,7 @@ fn push_field(out: &mut Vec<u8>, bytes: &[u8]) {
     out.extend_from_slice(bytes);
 }
 
+// PROVISIONAL: Lemnos W1 contract 2026-11-13, test vectors pending (the record location).
 /// Every question about the signature goes through here. Reads the record stream
 /// only (its footer and index, and its 108 bytes); the image stream is not decoded.
 pub fn signature(image: &Path) -> Result<SignatureState, FlashError> {
