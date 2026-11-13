@@ -53,15 +53,22 @@ def write(path, data):
         handle.write(data)
 
 
-def make_slot(stage, slot_id, erofs, boot_files):
-    """boot_files: {path: bytes}. Writes the slot's four data-side pieces."""
+def make_slot(stage, slot_id, erofs, data_blocks, boot_files):
+    """erofs is the data (data_blocks blocks) then its one-block tree. boot_files:
+    {path: bytes}. Writes the slot's four data-side pieces."""
     slots = os.path.join(stage, "slots")
-    root = verity_root(erofs[:len(erofs) - BLOCK] if len(erofs) > BLOCK else erofs, SALT)
+    data = erofs[:data_blocks * BLOCK]
+    assert len(erofs) == data_blocks * BLOCK + BLOCK, "one tree block"
+    root = verity_root(data, SALT)
     manifest = {
-        "schema": 2,
+        "schema": 3,
         "id": slot_id,
+        "product": "example",
+        "version": "1",
+        "board": "example-board",
         "image": {"size": len(erofs), "sha256": sha256(erofs)},
-        "verity": {"root_hash": root},
+        "verity": {"root_hash": root, "salt": SALT.hex(),
+                   "data_blocks": data_blocks, "hash_offset": data_blocks * BLOCK},
         "boot": {"files": {path: sha256(data) for path, data in boot_files.items()}},
     }
     manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
@@ -90,8 +97,8 @@ def main():
 
     with tempfile.TemporaryDirectory() as tmp:
         stage = os.path.join(tmp, "data")
-        alpha_root = make_slot(stage, "alpha", alpha_erofs, alpha_boot)
-        make_slot(stage, "beta", beta_erofs, beta_boot)
+        alpha_root = make_slot(stage, "alpha", alpha_erofs, 4, alpha_boot)
+        make_slot(stage, "beta", beta_erofs, 1, beta_boot)
         out = os.path.join(HERE, "data.ext4")
         if os.path.exists(out):
             os.remove(out)

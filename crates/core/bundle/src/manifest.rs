@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 
+use atlas_image::Verity;
 use serde::{Deserialize, Serialize};
 
 use crate::BundleError;
@@ -53,9 +54,20 @@ pub struct ImageEntry {
     pub sha256: String,
 }
 
+/// `verity`: the four values of the slot's dm-verity tree. The layout they
+/// describe (format 1, SHA-256, 4 KiB blocks, no superblock, the tree appended
+/// after the data) is fixed by convention and is not written here; see
+/// `atlas-image`'s `verity` module.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerityEntry {
+    /// The root hash, 64 lowercase hex digits.
     pub root_hash: String,
+    /// The salt, lowercase hex; `""` for no salt.
+    pub salt: String,
+    /// The data's length in 4096-byte blocks.
+    pub data_blocks: u64,
+    /// The byte offset of the tree: `data_blocks * 4096`.
+    pub hash_offset: u64,
 }
 
 /// `boot/...`: each file's path under `boot/` to its SHA-256.
@@ -69,7 +81,7 @@ impl SlotManifest {
         id: &str,
         meta: &SlotMeta,
         image: ImageEntry,
-        root_hash: String,
+        verity: &Verity,
         boot: BTreeMap<String, String>,
     ) -> Self {
         Self {
@@ -82,7 +94,12 @@ impl SlotManifest {
             kernel: meta.kernel.clone(),
             display_name: meta.display_name.clone(),
             image,
-            verity: VerityEntry { root_hash },
+            verity: VerityEntry {
+                root_hash: verity.root_hash.clone(),
+                salt: verity.salt_hex(),
+                data_blocks: verity.data_blocks,
+                hash_offset: verity.hash_offset,
+            },
             boot: BootEntry { files: boot },
         }
     }
@@ -139,11 +156,15 @@ impl SlotManifest {
                 "image.sha256 is not a SHA-256 digest".into(),
             ));
         }
-        if !is_hex(&self.verity.root_hash, 64) {
-            return Err(BundleError::Malformed(
-                "verity.root_hash is not a SHA-256 digest".into(),
-            ));
-        }
+        // The verity values: the layout, the salt's hex, and the file's length as
+        // the manifest gives it (the same checks the image reader and the board make).
+        Verity::from_manifest(
+            &self.verity.root_hash,
+            &self.verity.salt,
+            self.verity.data_blocks,
+            self.verity.hash_offset,
+        )?
+        .check_size(self.image.size)?;
         for (path, digest) in &self.boot.files {
             validate_boot_path(path)?;
             if !is_hex(digest, 64) {

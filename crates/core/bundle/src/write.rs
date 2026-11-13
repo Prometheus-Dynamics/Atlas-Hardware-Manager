@@ -1,12 +1,17 @@
 //! Making a slot bundle from a [`SlotSource`]: two passes over the source,
 //! then the tar.
 //!
-//! Pass one hashes the rootfs (its SHA-256 and size, and the verity root hash
-//! of its data against the table) and every boot file. That is what
-//! `slot.json` says, and `slot.sig` signs those exact bytes. Pass two writes
-//! the tar, hashing again as it goes: if a source gives different bytes the
-//! second time, the write fails rather than leave a bundle whose manifest is
-//! wrong.
+//! Pass one hashes the rootfs (its SHA-256 and size; the verity root hash of its
+//! data, salted, against the source's `verity.root_hash`; the file's length
+//! against the layout) and every boot file. That is what `slot.json` says, and
+//! `slot.sig` signs those exact bytes. Pass two writes the tar, hashing again as
+//! it goes: if a source gives different bytes the second time, the write fails
+//! rather than leave a bundle whose manifest is wrong.
+//!
+//! The appended tree is measured (its length, and its bytes in the SHA-256 of
+//! the file) but its bytes are not recomputed: the root hash covers the data, not
+//! the tree, and a tree that does not match its root fails the board's verity
+//! check at boot, not the install. See the crate docs.
 //!
 //! Tar order: `slot.json`, `slot.sig`, `rootfs.erofs`, then `boot/...` in
 //! path order. Nothing else. Memory is one 64 KiB buffer and the verity
@@ -17,13 +22,15 @@ use std::io::{Read, Write};
 
 use sha2::{Digest, Sha256};
 
+use atlas_image::{Verity, VerityError, tree_bytes};
+
 use crate::BundleError;
 use crate::manifest::{
     CMDLINE, ImageEntry, SlotManifest, SlotMeta, validate_boot_path, validate_id,
 };
 use crate::sign::sign_slot;
 use crate::source::SlotSource;
-use crate::verity::{VerityHasher, VerityTable};
+use crate::verity::VerityHasher;
 
 /// The read buffer for every stream.
 pub(crate) const CHUNK: usize = 64 * 1024;
@@ -36,10 +43,10 @@ pub const BOOT_DIR: &str = "boot/";
 /// Writes the bundle of `source` as `id` to `out` and returns the manifest
 /// it carries. `signing_key` is the ed25519 secret that signs `slot.json`.
 ///
-/// Fails if the id or a boot path is not valid, if `cmdline.txt` is missing,
-/// if the table is not one this writer reads, if the rootfs's verity tree
-/// does not give the table's root hash, or if a source changes between reads.
-/// On failure `out` holds a partial tar that must be discarded.
+/// Fails if the id or a boot path is not valid, if `cmdline.txt` is missing, if
+/// the verity values do not describe the layout, if the file is not its data and
+/// whole tree, if the data does not give the root hash, or if a source changes
+/// between reads. On failure `out` holds a partial tar that must be discarded.
 pub fn write_bundle<W: Write>(
     source: &dyn SlotSource,
     id: &str,
@@ -48,10 +55,11 @@ pub fn write_bundle<W: Write>(
     out: W,
 ) -> Result<SlotManifest, BundleError> {
     validate_id(id)?;
-    let table = VerityTable::parse(&source.verity_table()?)?;
+    let verity = source.verity()?;
+    verity.check()?;
 
     // Pass one: what slot.json says.
-    let rootfs = scan_rootfs(source, &table)?;
+    let rootfs = scan_rootfs(source, &verity)?;
     let boot = scan_boot(source)?;
     if !boot.contains_key(CMDLINE) {
         return Err(BundleError::MissingCmdline);
@@ -63,7 +71,7 @@ pub fn write_bundle<W: Write>(
             size: rootfs.size,
             sha256: rootfs.sha256.clone(),
         },
-        rootfs.root_hash,
+        &verity,
         boot.iter()
             .map(|(path, file)| (path.clone(), file.sha256.clone()))
             .collect(),
@@ -95,7 +103,6 @@ pub fn write_bundle<W: Write>(
 struct Rootfs {
     size: u64,
     sha256: String,
-    root_hash: String,
 }
 
 /// What pass one learned about one boot file.
@@ -104,14 +111,13 @@ struct Hashed {
     sha256: String,
 }
 
-/// Reads the rootfs once: the data through the verity hasher, the tree after
-/// it through SHA-256 only, and checks the root hash against the table.
-fn scan_rootfs(source: &dyn SlotSource, table: &VerityTable) -> Result<Rootfs, BundleError> {
-    let data_len = table
-        .data_len()
-        .ok_or_else(|| BundleError::Table("the data is too long".into()))?;
+/// Reads the rootfs once: the data through the verity hasher, the tree after it
+/// through SHA-256 only. Checks the file's length against the layout, then the
+/// data's root hash against the source's `verity.root_hash`.
+fn scan_rootfs(source: &dyn SlotSource, verity: &Verity) -> Result<Rootfs, BundleError> {
+    let data_len = verity.data_len();
     let mut reader = source.rootfs()?;
-    let mut verity = VerityHasher::new(&table.salt);
+    let mut hasher = VerityHasher::new(&verity.salt);
     let mut sha = Sha256::new();
     let mut size = 0u64;
     let mut buf = vec![0u8; CHUNK];
@@ -120,11 +126,15 @@ fn scan_rootfs(source: &dyn SlotSource, table: &VerityTable) -> Result<Rootfs, B
         let want = usize::try_from((data_len - size).min(CHUNK as u64)).unwrap_or(CHUNK);
         let read = read_chunk(&mut *reader, &mut buf[..want], ROOTFS)?;
         if read == 0 {
-            return Err(BundleError::Malformed(format!(
-                "{ROOTFS} is {size} bytes, shorter than the table's {data_len} bytes of data"
-            )));
+            // The file ends inside the data: the block count or the file is wrong.
+            return Err(VerityError::Size {
+                data_blocks: verity.data_blocks,
+                size,
+                expected: data_len.saturating_add(tree_bytes(verity.data_blocks)),
+            }
+            .into());
         }
-        verity.update(&buf[..read]);
+        hasher.update(&buf[..read]);
         sha.update(&buf[..read]);
         size += read as u64;
     }
@@ -136,22 +146,17 @@ fn scan_rootfs(source: &dyn SlotSource, table: &VerityTable) -> Result<Rootfs, B
         sha.update(&buf[..read]);
         size += read as u64;
     }
-    if size == data_len {
-        return Err(BundleError::Malformed(format!(
-            "{ROOTFS} has no verity tree after its data"
-        )));
-    }
-    let root_hash = verity.finish()?;
-    if root_hash != table.root_hash {
+    verity.check_size(size)?;
+    let root_hash = hasher.finish()?;
+    if root_hash != verity.root_hash {
         return Err(BundleError::RootHashMismatch {
-            expected: table.root_hash.clone(),
+            expected: verity.root_hash.clone(),
             actual: root_hash,
         });
     }
     Ok(Rootfs {
         size,
         sha256: to_hex(&sha.finalize()),
-        root_hash,
     })
 }
 

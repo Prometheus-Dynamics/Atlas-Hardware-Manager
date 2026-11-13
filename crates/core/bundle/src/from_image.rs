@@ -2,15 +2,11 @@
 //! slot seen as a [`SlotSource`], and [`bundle_from_image`] is the one call
 //! that opens the image, takes a slot and writes its bundle.
 //!
-//! What the image gives and what it does not. The image's slot has the slot
-//! file (`rootfs`), its boot files, and the manifest's `verity.root_hash`,
-//! `image.size` and `image.sha256`. It does not have the verity salt or the
-//! data block count, which a [`SlotSource::verity_table`] needs to recompute
-//! the root hash. So [`ImageSource::verity_table`] returns
-//! [`BundleError::NoVerityTable`], and [`bundle_from_image`] stops there: no
-//! value is invented. It waits on Lemnos's answer about which `verity.*` keys
-//! `slot.json` carries (or on `atlas-image` reading them). The image's
-//! `slot.json` is not a boot file of the bundle: the bundle writes its own.
+//! What the image gives: the slot file (`rootfs`), its boot files, and the four
+//! verity values of its manifest (`verity.root_hash`, `verity.salt`,
+//! `verity.data_blocks`, `verity.hash_offset`), which `atlas-image` checked when
+//! it read the slot. The image's `slot.json` is not a boot file of the bundle:
+//! the bundle writes its own, from those values and the file it measures.
 
 use std::io::{Read, Write};
 use std::path::Path;
@@ -22,6 +18,7 @@ use crate::BundleError;
 use crate::manifest::{SlotManifest, SlotMeta};
 use crate::source::{BootFile, SlotSource};
 use crate::write::{CHUNK, SLOT_JSON, read_chunk, to_hex, write_bundle};
+use atlas_image::Verity;
 
 /// One slot of a first-flash image as a bundle source.
 pub struct ImageSource<'a> {
@@ -60,12 +57,8 @@ impl<'a> ImageSource<'a> {
 }
 
 impl SlotSource for ImageSource<'_> {
-    fn verity_table(&self) -> Result<String, BundleError> {
-        Err(BundleError::NoVerityTable(format!(
-            "slot {:?} of the image: its manifest gives the verity root hash {} but not the salt or the data block count a verity table needs, so no bundle is made from it yet (waits on Lemnos's answer about the verity.* keys slot.json carries)",
-            self.slot.id(),
-            self.slot.root_hash()
-        )))
+    fn verity(&self) -> Result<Verity, BundleError> {
+        Ok(self.slot.verity().clone())
     }
 
     fn rootfs(&self) -> Result<Box<dyn Read + '_>, BundleError> {
@@ -96,8 +89,9 @@ impl SlotSource for ImageSource<'_> {
 /// The image is read with its scratch directory under `scratch_parent`; the
 /// scratch is removed before this returns, on success or failure. Order: open
 /// the image, take the slot (by id: the reader has no listing of slots), check
-/// the slot file's digest against its manifest, then write the bundle. Today
-/// the last step returns [`BundleError::NoVerityTable`]; see the module docs.
+/// the slot file's digest against its manifest, then write the bundle: its
+/// verity root is recomputed from the data and the manifest's salt, and must
+/// match. A bundle is made from a first-flash image in this one call.
 pub fn bundle_from_image<W: Write>(
     image: &Path,
     scratch_parent: &Path,

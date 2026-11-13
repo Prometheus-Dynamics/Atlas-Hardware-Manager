@@ -35,6 +35,13 @@ fn check_alpha(path: &std::path::Path, scratch: &std::path::Path) {
         "the manifest's root is the tree's root"
     );
     assert_eq!(slot.image_size(), alpha_file().len() as u64);
+    // The four verity values, as the manifest gives them: salt, four data blocks,
+    // the tree after them.
+    let verity = slot.verity();
+    assert_eq!(verity.root_hash, alpha_root());
+    assert_eq!(verity.salt, SALT.to_vec());
+    assert_eq!(verity.data_blocks, 4);
+    assert_eq!(verity.hash_offset, 4 * BLOCK as u64);
     assert_eq!(read_all(slot.rootfs().expect("rootfs")), alpha_file());
     // Read again: a bundle writer reads the slot twice.
     assert_eq!(read_all(slot.rootfs().expect("rootfs")), alpha_file());
@@ -193,10 +200,10 @@ fn an_image_without_a_data_partition_is_refused() {
 fn a_boot_file_that_is_not_its_name_is_refused() {
     let dir = TestDir::new("tampered");
     let scratch = TestDir::new("tampered-scratch");
-    // The Image blob's blocks in the fixture (debugfs: blocks 74 to 113, 1 KiB
+    // The Image blob's blocks in the fixture (debugfs: blocks 75 to 114, 1 KiB
     // each). The pattern repeats, so a search would find other copies; the offset
     // is checked against the expected bytes before one is flipped.
-    let blob_at = 74 * 1024;
+    let blob_at = 75 * 1024;
     assert_eq!(
         &DATA_FIXTURE[blob_at..blob_at + 64],
         &pattern(40_000, 3)[..64],

@@ -6,10 +6,9 @@
 //! test-private). The fixture's slot `alpha` has four data blocks and one tree
 //! block; its manifest's root hash was made with the salt below.
 //!
-//! The one thing the image cannot give is the verity table (salt and block
-//! count), so the writer test supplies one from the test's own knowledge of
-//! the fixture, and says so. The one-call path is tested to stop at the named
-//! error.
+//! The image gives the four verity values from its manifest, so the bundle is
+//! made from it in one call (`bundle_from_image`), and the bundle's parts are
+//! checked against the slot's parts member by member.
 
 use std::fs;
 use std::io::Read;
@@ -17,8 +16,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use atlas_bundle::{
-    BLOCK, BootFile, BundleError, ImageSource, SlotMeta, SlotSource, bundle_from_image,
-    check_stream_digest, inspect_bundle, verify_slot, write_bundle,
+    BLOCK, BundleError, SlotMeta, bundle_from_image, check_stream_digest, inspect_bundle,
+    verify_slot,
 };
 use atlas_release::{PublicKey, public_key_for};
 use sha2::{Digest, Sha256};
@@ -168,29 +167,6 @@ fn image_file(dir: &TestDir) -> PathBuf {
     path
 }
 
-/// The image's slot `alpha`, with the verity table the test supplies: the
-/// salt and block count the fixture was made with, and the root its manifest
-/// carries. The image gives the rest.
-struct WithTable<'a> {
-    inner: ImageSource<'a>,
-    table: String,
-}
-
-impl SlotSource for WithTable<'_> {
-    fn verity_table(&self) -> Result<String, BundleError> {
-        Ok(self.table.clone())
-    }
-    fn rootfs(&self) -> Result<Box<dyn Read + '_>, BundleError> {
-        self.inner.rootfs()
-    }
-    fn boot_files(&self) -> Result<Vec<BootFile>, BundleError> {
-        self.inner.boot_files()
-    }
-    fn boot_file(&self, path: &str) -> Result<Box<dyn Read + '_>, BundleError> {
-        self.inner.boot_file(path)
-    }
-}
-
 /// The members of a bundle: name and contents.
 fn members(bundle: &[u8]) -> Vec<(String, Vec<u8>)> {
     let mut archive = tar::Archive::new(bundle);
@@ -208,34 +184,28 @@ fn members(bundle: &[u8]) -> Vec<(String, Vec<u8>)> {
 }
 
 #[test]
-fn a_bundle_from_the_image_matches_the_slots_parts_member_by_member() {
+fn a_bundle_from_the_image_in_one_call_matches_the_slots_parts_member_by_member() {
     let dir = TestDir::new("parts");
     let image_path = image_file(&dir);
-    let image = atlas_image::open(
-        &image_path,
-        dir.path(),
-        &["alpha"],
-        &atlas_image::Options::default(),
-    )
-    .expect("the reader opens the fixture");
-    let slot = image.slot("alpha").expect("alpha");
-    let source = WithTable {
-        table: format!(
-            "hash_type 1\nalgorithm sha256\nroot_hash {}\nsalt {}\ndata_blocks 4\n\
-             data_block_size 4096\nhash_block_size 4096\nhash_offset 16384\n",
-            slot.root_hash(),
-            hex(&SALT)
-        ),
-        inner: ImageSource::new(slot),
-    };
-    source
-        .inner
-        .check_image_digest()
-        .expect("the slot file is what its manifest says");
-
+    let scratch = dir.path().join("scratch");
+    fs::create_dir_all(&scratch).expect("scratch parent");
     let secret = throwaway("parts");
     let mut bundle = Vec::new();
-    let manifest = write_bundle(&source, "alpha", &meta(), &secret, &mut bundle).expect("writes");
+    let manifest = bundle_from_image(
+        &image_path,
+        &scratch,
+        "alpha",
+        &meta(),
+        &secret,
+        &mut bundle,
+    )
+    .expect("one call makes the bundle");
+
+    // The verity values are the image manifest's, and the root is the data's.
+    assert_eq!(manifest.verity.root_hash, slot_root());
+    assert_eq!(manifest.verity.salt, hex(&SALT));
+    assert_eq!(manifest.verity.data_blocks, 4);
+    assert_eq!(manifest.verity.hash_offset, 4 * BLOCK as u64);
 
     let all = members(&bundle);
     let names: Vec<&str> = all.iter().map(|(n, _)| n.as_str()).collect();
@@ -281,6 +251,8 @@ fn a_bundle_from_the_image_matches_the_slots_parts_member_by_member() {
     let mut changed = json.clone();
     changed[20] ^= 1;
     assert!(verify_slot(&changed, sig, &keys_of(&secret)).is_err());
+    // Nothing is left of the scratch spool.
+    assert!(fs::read_dir(&scratch).expect("scratch").next().is_none());
 }
 
 fn slot_root() -> String {
@@ -295,31 +267,6 @@ fn slot_root() -> String {
     )
     .expect("open");
     image.slot("alpha").expect("alpha").root_hash().to_string()
-}
-
-#[test]
-fn the_one_call_stops_at_the_named_verity_error_and_leaves_no_scratch() {
-    let dir = TestDir::new("oncall");
-    let image_path = image_file(&dir);
-    let scratch = dir.path().join("scratch");
-    fs::create_dir_all(&scratch).expect("scratch parent");
-    let mut out = Vec::new();
-    let error = bundle_from_image(
-        &image_path,
-        &scratch,
-        "alpha",
-        &meta(),
-        &throwaway("oncall"),
-        &mut out,
-    )
-    .expect_err("no table can be made from an image yet");
-    assert!(matches!(error, BundleError::NoVerityTable(_)), "{error:?}");
-    assert!(error.to_string().contains("alpha"), "{error}");
-    assert!(out.is_empty(), "nothing is written before the table step");
-    assert!(
-        fs::read_dir(&scratch).expect("scratch").next().is_none(),
-        "the scratch spool is removed"
-    );
 }
 
 #[test]

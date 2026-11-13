@@ -1,109 +1,37 @@
-//! The dm-verity root hash, streamed, and Gaia's verity table file.
+//! The dm-verity root hash of a slot's data, streamed.
 //!
-//! The layout is the kernel's format 1 with SHA-256, 4 KiB data and hash
-//! blocks, and a salt that is prepended to every hashed block: a block's
-//! digest is `sha256(salt || block)`; a hash block holds 128 digests, zero
-//! padded; the root is the digest of the single top hash block. Gaia's
-//! `gaia.verity` makes the tree with `veritysetup` in this layout.
+//! The layout is the one `atlas_image::verity` states: the kernel's format 1,
+//! SHA-256, 4 KiB data and hash blocks. Format 1 "prepends the salt when hashing"
+//! (the kernel's `Documentation/admin-guide/device-mapper/verity.rst`, version 1),
+//! so a block's digest is `sha256(salt || block)`; each digest is padded to a
+//! power of two, which a 32-byte SHA-256 digest already is. A hash block holds 128
+//! digests, zero padded; the root is the digest of the single top hash block,
+//! with the salt before it. Format 0, which appends the salt, is not used. The
+//! `veritysetup` test in `tests/veritysetup.rs` checks this against the real tool.
 //!
-//! [`VerityHasher`] keeps one partial block per tree level, so its memory is
-//! a few 4 KiB blocks whatever the image's size.
+//! [`VerityHasher`] keeps one partial block per tree level, so its memory is a few
+//! 4 KiB blocks whatever the image's size. It recomputes the ROOT only. The tree
+//! bytes appended to the data are not recomputed (see the crate docs).
 
 use sha2::{Digest, Sha256};
 
 use crate::BundleError;
-use crate::manifest::is_hex;
 
-/// The data and hash block size.
-pub const BLOCK: usize = 4096;
+/// The data and hash block size, in bytes, as the `usize` the buffers want.
+pub const BLOCK: usize = atlas_image::BLOCK as usize;
 /// Digests per hash block.
 const DIGESTS_PER_BLOCK: usize = BLOCK / 32;
 
-/// The fields of Gaia's `verity.table` that the writer needs.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct VerityTable {
-    /// Lowercase hex.
-    pub root_hash: String,
-    pub salt: Vec<u8>,
-    /// The data's length in blocks; the data is `data_blocks * BLOCK` bytes.
-    pub data_blocks: u64,
-    /// Where the tree starts. Gaia puts it right after the padded data.
-    pub hash_offset: u64,
-}
-
-impl VerityTable {
-    /// Reads Gaia's table text: one `key value` line per field, the dm-verity
-    /// table line last. Unknown keys are ignored; a table that is not the
-    /// kernel format, sha256 with 4 KiB blocks, is refused.
-    pub fn parse(text: &str) -> Result<Self, BundleError> {
-        let field = |key: &str| {
-            text.lines().find_map(|line| {
-                let (name, value) = line.split_once(' ')?;
-                (name == key).then_some(value.trim())
-            })
-        };
-        let need =
-            |key: &str| field(key).ok_or_else(|| BundleError::Table(format!("no {key} line")));
-        let refuse = |why: String| BundleError::Table(why);
-
-        if need("hash_type")? != "1" {
-            return Err(refuse("hash_type is not 1 (the kernel format)".into()));
-        }
-        if need("algorithm")? != "sha256" {
-            return Err(refuse("algorithm is not sha256".into()));
-        }
-        for key in ["data_block_size", "hash_block_size"] {
-            if need(key)? != BLOCK.to_string() {
-                return Err(refuse(format!("{key} is not {BLOCK}")));
-            }
-        }
-        let root_hash = need("root_hash")?.to_ascii_lowercase();
-        if !is_hex(&root_hash, 64) {
-            return Err(refuse("root_hash is not a SHA-256 digest".into()));
-        }
-        let salt = need("salt")?;
-        let salt = decode_hex(salt).ok_or_else(|| refuse("salt is not hex".into()))?;
-        let data_blocks: u64 = need("data_blocks")?
-            .parse()
-            .map_err(|_| refuse("data_blocks is not a number".into()))?;
-        let hash_offset: u64 = need("hash_offset")?
-            .parse()
-            .map_err(|_| refuse("hash_offset is not a number".into()))?;
-        if data_blocks == 0 {
-            return Err(refuse("data_blocks is 0".into()));
-        }
-        let table = Self {
-            root_hash,
-            salt,
-            data_blocks,
-            hash_offset,
-        };
-        // Gaia puts the tree right after the padded data, so the data is
-        // exactly `hash_offset` bytes long and the tree follows it.
-        if table.data_len().map(|len| len == hash_offset) != Some(true) {
-            return Err(refuse(
-                "hash_offset is not the end of the padded data".into(),
-            ));
-        }
-        Ok(table)
-    }
-
-    /// The data's length in bytes, or `None` if it does not fit in a `u64`.
-    pub fn data_len(&self) -> Option<u64> {
-        self.data_blocks.checked_mul(BLOCK as u64)
-    }
-}
-
-/// The root hash of `data` (a whole number of blocks) with `salt`, in one
-/// call. For the streamed form use [`VerityHasher`].
+/// The root hash of `data` (a whole number of blocks) with `salt`, in one call.
+/// For the streamed form use [`VerityHasher`].
 pub fn root_hash(salt: &[u8], data: &[u8]) -> Result<String, BundleError> {
     let mut hasher = VerityHasher::new(salt);
     hasher.update(data);
     hasher.finish()
 }
 
-/// Streams data blocks into a dm-verity root hash. The data is hashed as it
-/// is given, in any chunks; the input must end on a block boundary.
+/// Streams data blocks into a dm-verity root hash. The data is hashed as it is
+/// given, in any chunks; the input must end on a block boundary.
 #[derive(Debug)]
 pub struct VerityHasher {
     salt: Vec<u8>,
@@ -113,8 +41,8 @@ pub struct VerityHasher {
     levels: Vec<Level>,
 }
 
-/// A tree level: the digests waiting for their hash block, and how many
-/// hash blocks of the level were already written out.
+/// A tree level: the digests waiting for their hash block, and how many hash
+/// blocks of the level were already written out.
 #[derive(Debug, Default)]
 struct Level {
     pending: Vec<u8>,
@@ -146,26 +74,26 @@ impl VerityHasher {
         }
     }
 
-    /// The root hash, lowercase hex. Fails if the data was empty or did not
-    /// end on a block boundary.
+    /// The root hash, lowercase hex. Fails if the data was empty or did not end
+    /// on a block boundary.
     pub fn finish(mut self) -> Result<String, BundleError> {
         if !self.block.is_empty() {
-            return Err(BundleError::Table(
-                "the data does not end on a 4 KiB block".into(),
+            return Err(BundleError::Malformed(
+                "the verity data does not end on a 4 KiB block".into(),
             ));
         }
         if self.levels.is_empty() {
-            return Err(BundleError::Table("the data is empty".into()));
+            return Err(BundleError::Malformed("the verity data is empty".into()));
         }
         let mut level = 0;
         loop {
             let Some(current) = self.levels.get_mut(level) else {
-                return Err(BundleError::Table("the hash tree has no top".into()));
+                return Err(BundleError::Malformed("the hash tree has no top".into()));
             };
             let pending = std::mem::take(&mut current.pending);
             if current.flushed == 0 {
-                // Nothing was written out at this level, so its pending
-                // digests are the whole level: one block, the top.
+                // Nothing was written out at this level, so its pending digests are
+                // the whole level: one block, the top.
                 let mut block = pending;
                 block.resize(BLOCK, 0);
                 return Ok(to_hex(&self.digest(&block)));
@@ -181,9 +109,9 @@ impl VerityHasher {
         }
     }
 
-    /// Adds a digest to `level`. A full hash block is written out only when
-    /// another digest arrives for it, so the last block of a level is never
-    /// written early: a level of up to 128 digests is one block, the top.
+    /// Adds a digest to `level`. A full hash block is written out only when another
+    /// digest arrives for it, so the last block of a level is never written early: a
+    /// level of up to 128 digests is one block, the top.
     fn push(&mut self, level: usize, digest: [u8; 32]) {
         if self.levels.len() <= level {
             self.levels.push(Level::default());
@@ -209,22 +137,12 @@ fn to_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-fn decode_hex(text: &str) -> Option<Vec<u8>> {
-    if text.is_empty() || !text.len().is_multiple_of(2) || text.len() > 512 {
-        return None;
-    }
-    (0..text.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(text.get(i..i + 2)?, 16).ok())
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// The tree built whole in memory, level by level: an independent
-    /// statement of the same layout.
+    /// The tree built whole in memory, level by level: an independent statement of
+    /// the same layout.
     fn reference(salt: &[u8], data: &[u8]) -> String {
         let digest = |block: &[u8]| -> [u8; 32] {
             let mut hasher = Sha256::new();
@@ -296,45 +214,12 @@ mod tests {
     }
 
     #[test]
-    fn gaias_table_text_is_read() {
-        // The layout Gaia's `verity.table` writes (gaia.verity).
-        let text = format!(
-            "hash_type 1\nalgorithm sha256\nroot_hash {}\nsalt {}\nuuid 01234567-89ab-4cde-8f01-23456789abcd\n\
-             data_blocks 3\ndata_block_size 4096\nhash_block_size 4096\n\
-             hash_offset 12288\nhash_start_block 4\ntable 0 24 verity 1 /dev/vda3 /dev/vda3 4096 4096 3 4 sha256 x y\n",
-            "AB".repeat(32),
-            "cd".repeat(32)
+    fn the_salt_is_prepended_to_every_block() {
+        // A block hashed with the salt is not the block hashed alone.
+        let data = blocks(1);
+        assert_ne!(
+            root_hash(b"salt", &data).expect("salted"),
+            root_hash(b"", &data).expect("unsalted")
         );
-        let table = VerityTable::parse(&text).expect("parses");
-        assert_eq!(table.root_hash, "ab".repeat(32));
-        assert_eq!(table.salt, vec![0xcd; 32]);
-        assert_eq!(table.data_blocks, 3);
-        assert_eq!(table.data_len(), Some(12288));
-    }
-
-    #[test]
-    fn a_table_that_is_not_the_kernel_format_is_refused() {
-        let good = |edit: &str| {
-            let base = format!(
-                "hash_type 1\nalgorithm sha256\nroot_hash {}\nsalt abcd\ndata_blocks 3\n\
-                 data_block_size 4096\nhash_block_size 4096\nhash_offset 12288\n",
-                "ab".repeat(32)
-            );
-            base.replace(edit, "")
-        };
-        assert!(VerityTable::parse(&good("")).is_ok());
-        for bad in [
-            "hash_type 1\n",
-            "algorithm sha256\n",
-            "data_block_size 4096\n",
-            "salt abcd\n",
-            "hash_offset 12288\n",
-        ] {
-            assert!(VerityTable::parse(&good(bad)).is_err(), "without {bad:?}");
-        }
-        let wrong_offset = good("hash_offset 12288\n") + "hash_offset 4096\n";
-        assert!(VerityTable::parse(&wrong_offset).is_err());
-        let wrong_block = good("data_block_size 4096\n") + "data_block_size 512\n";
-        assert!(VerityTable::parse(&wrong_block).is_err());
     }
 }
