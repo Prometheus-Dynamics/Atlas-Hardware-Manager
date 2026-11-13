@@ -7,7 +7,9 @@ use std::time::Duration;
 use atlas_nt::{Error, LocalServer, LocalServerConfig, Update, Value, Viewer, ViewerConfig};
 use tokio::time::timeout;
 
-const WAIT: Duration = Duration::from_secs(10);
+/// The longest any one wait may take: a bound for a stuck wait, generous for a loaded machine (a
+/// wait that works ends in milliseconds). Same reasoning as `DEADLINE` in `orion_gateway.rs`.
+const WAIT: Duration = Duration::from_secs(60);
 
 async fn until<T>(viewer: &mut Viewer, mut wanted: impl FnMut(&Update) -> Option<T>) -> T {
     timeout(WAIT, async {
