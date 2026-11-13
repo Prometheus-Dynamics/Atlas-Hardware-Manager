@@ -151,6 +151,9 @@ struct Run {
     cancel: Option<CancelState>,
     /// The node key this install is on, recorded at its first contact when submit had none.
     node_key: Option<[u8; 32]>,
+    /// Set by a cancel before the job is stopped: the step's own ending must not overwrite
+    /// `Cancelled` with the board's words about the same cancel.
+    cancelling: bool,
 }
 
 /// Why a step stopped: wait and try again, or the job ends with these words.
@@ -208,6 +211,15 @@ impl InstallKind {
 
     fn with<T>(&self, nonce: &str, change: impl FnOnce(&mut Run) -> T) -> T {
         change(self.runs().entry(nonce.to_owned()).or_default())
+    }
+
+    /// Records how a step ended, unless a cancel is what ended it (the cancel records that).
+    fn settle(&self, nonce: &str, stage: Stage) {
+        self.with(nonce, |run| {
+            if !run.cancelling {
+                run.stage = Some(stage);
+            }
+        });
     }
 
     fn set_stage(&self, nonce: &str, stage: Stage) {
@@ -466,7 +478,7 @@ impl JobKind for InstallKind {
         let board = BoardActions::new(handle.clone());
         match self.drive(&spec, &handle, &board).await {
             Ok(slot) => {
-                self.set_stage(&spec.nonce, Stage::Done { slot });
+                self.settle(&spec.nonce, Stage::Done { slot });
                 self.finish(&spec.nonce);
                 Ok(())
             }
@@ -480,7 +492,7 @@ impl JobKind for InstallKind {
                 Err(DriverError::Unreachable(reason))
             }
             Err(Step::Settled(reason)) => {
-                self.set_stage(
+                self.settle(
                     &spec.nonce,
                     Stage::Failed {
                         reason: reason.clone(),
@@ -775,6 +787,7 @@ impl SlotInstalls {
         else {
             return false;
         };
+        self.kind.with(&spec.nonce, |run| run.cancelling = true);
         if !self.jobs.cancel(job) {
             return false;
         }
