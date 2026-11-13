@@ -4,7 +4,6 @@
 #![cfg(target_os = "linux")]
 
 use std::io::Cursor;
-use std::path::Path;
 
 use atlas_sim_node::bundle;
 use atlas_sim_node::names;
