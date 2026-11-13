@@ -16,12 +16,7 @@ const ID: UsbId = UsbId {
 };
 
 fn device(location: &str, product: u16) -> DeviceSummary {
-    DeviceSummary {
-        location: location.into(),
-        vendor: 0xf00d,
-        product,
-        serial: None,
-    }
+    DeviceSummary::new(location, 0xf00d, product)
 }
 
 /// A bus with one fastboot device at `LOCATION`, opened.

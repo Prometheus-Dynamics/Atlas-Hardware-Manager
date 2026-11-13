@@ -202,11 +202,23 @@ for f in $(find boards products -mindepth 2 -maxdepth 2 \( -name board.toml -o -
     realpath -m "$d/$ref"
   done
 done >> "$used"
+unbuilt=""
 for f in $(find families boards components -mindepth 2 -maxdepth 2 -name '*.toml' 2>/dev/null | sort); do
   if ! grep -qxF "$(realpath -m "$f")" "$used"; then
-    bad "$f: no product or board names it, so gaia never reads it"
+    # gaia validate reads every file on its own, so a board no product names
+    # yet (a record of a board whose sources aren't chosen) is still checked.
+    # Without validate, gaia reads a file only through a product.
+    if [ "$verb" = validate ]; then
+      unbuilt="$unbuilt ${f%/*.toml}"
+    else
+      bad "$f: no product or board names it, so gaia never reads it"
+    fi
   fi
 done
+
+if [ -n "$unbuilt" ]; then
+  echo "check-devices: NOTE in no product yet, validated but never planned:$unbuilt"
+fi
 
 # gaia validate stops at the first bad file and names its file and key, so each file gets its own
 # run and every bad file is reported. The kind comes from the directory the file sits in.

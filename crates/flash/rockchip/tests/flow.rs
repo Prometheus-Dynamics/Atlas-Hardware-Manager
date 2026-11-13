@@ -6,6 +6,7 @@
 
 use std::time::Duration;
 
+use atlas_rockchip::Mode;
 use atlas_rockchip::crc::LOADER_POLYNOMIALS;
 use atlas_rockchip::flow::{chip_agrees, ready, report, run_usbplug};
 use atlas_rockchip::loader::{EntryKind, Loader, build_loader};
@@ -234,4 +235,37 @@ async fn a_stalled_query_is_returned_by_the_report() {
     // The first command's CBW stalls.
     sim.inject(Fault::Stall);
     assert_eq!(report(io.as_mut()).await.err(), Some(UsbError::Stall));
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_bus_says_maskrom_before_the_usbplug_and_loader_after() {
+    let sim = maskrom_board();
+    let before = sim.devices().await.unwrap();
+    assert_eq!(Mode::of(&before[0]), Mode::Maskrom);
+    assert_eq!(before[0].bcd_usb, 0x0200);
+
+    let file = loader_file(b"8853");
+    let loader = Loader::parse(&file).unwrap();
+    run_usbplug(
+        &sim,
+        LOCATION,
+        &loader,
+        &file,
+        &OpenOptions::default(),
+        REENUMERATE,
+    )
+    .await
+    .unwrap();
+
+    let after = sim.devices().await.unwrap();
+    assert_eq!(after[0].location, LOCATION);
+    assert_eq!(Mode::of(&after[0]), Mode::Loader);
+    assert_eq!(after[0].bcd_device, 0x0100);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_loader_board_is_read_as_loader_from_the_start() {
+    let sim = SimRockchip::loader(LOCATION, ID, "3588", 1000);
+    let devices = sim.devices().await.unwrap();
+    assert_eq!(Mode::of(&devices[0]), Mode::Loader);
 }

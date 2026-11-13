@@ -80,6 +80,8 @@ impl State {
         self.generation += 1;
         self.loader = true;
         self.stage = None;
+        // A loader running sets bit 0 of bcdUSB, as rkdeveloptool reads it.
+        self.summary.bcd_usb |= 1;
         self.bus.attach(self.summary.clone());
     }
 
@@ -156,12 +158,8 @@ impl SimRockchip {
 
     fn build(location: &str, id: UsbId, chip: &str, sectors: u32, loader: bool) -> Self {
         let bus = SimBus::new();
-        let summary = DeviceSummary {
-            location: location.to_string(),
-            vendor: id.vendor,
-            product: id.product,
-            serial: None,
-        };
+        let summary = DeviceSummary::new(location.to_string(), id.vendor, id.product)
+            .with_versions(if loader { 0x0201 } else { 0x0200 }, 0x0100);
         bus.attach(summary.clone());
         Self {
             state: Arc::new(Mutex::new(State {

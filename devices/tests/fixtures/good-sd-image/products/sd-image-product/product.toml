@@ -1,0 +1,17 @@
+# EXAMPLE sd-image product in Gaia 10beed8 form (fixture). Not a device.
+# Modelled on Gaia's examples/products/zero-3e-demo: the OS on Buildroot, the
+# board's disk, and the sd-image recipe with its settings.
+version = 1
+name = "sd-image-product"
+
+[sources.kernel]
+path = "sources/kernel"
+
+[[images]]
+name = "sd-image-product"
+board = "../../boards/example-board/board.toml"
+recipe = "sd-image"
+os = { provider = "buildroot", source = "kernel", fragments = ["fragments/os.fragment"] }
+
+[images.settings]
+id = "sd-image-product"

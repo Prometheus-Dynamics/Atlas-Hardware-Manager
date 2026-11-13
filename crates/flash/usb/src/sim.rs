@@ -374,12 +374,21 @@ mod tests {
     use super::*;
 
     fn device(location: &str) -> DeviceSummary {
-        DeviceSummary {
-            location: location.into(),
-            vendor: 0x0a5c,
-            product: 0x2764,
-            serial: Some("abc".into()),
-        }
+        DeviceSummary::new(location, 0x0a5c, 0x2764).with_serial("abc")
+    }
+
+    #[tokio::test]
+    async fn a_simulated_device_reports_the_versions_it_was_attached_with() {
+        let bus = SimBus::new();
+        let mut attached = device("1-1");
+        attached.bcd_usb = 0x0201;
+        attached.bcd_device = 0x0304;
+        bus.attach(attached.clone());
+
+        let listed = bus.devices().await.unwrap();
+        assert_eq!(listed, vec![attached]);
+        assert_eq!(listed[0].bcd_usb, 0x0201);
+        assert_eq!(listed[0].bcd_device, 0x0304);
     }
 
     #[tokio::test]

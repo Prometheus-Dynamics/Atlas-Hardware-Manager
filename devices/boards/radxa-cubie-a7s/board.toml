@@ -1,0 +1,7 @@
+# Radxa Cubie A7S on the Allwinner A733 (sun60i) family. RECORD, NOT A BUILDABLE DESCRIPTION:
+# untested on board. Only what differs from the family is kept here. Sources missing: see
+# the family file (kernel, U-Boot, TF-A, OS, FEL SPL, SRAM layout, AArch64 thunk, SD device).
+version = 1
+extends = "../../families/sun60i/family.toml"
+name = "radxa-cubie-a7s"
+description = "Radxa Cubie A7S (Allwinner A733)"

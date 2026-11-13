@@ -2,10 +2,10 @@
 //! download, the wait for the usbplug to re-enumerate, the readiness check,
 //! and the read-only queries that say what the board is.
 //!
-//! Which mode a device is in comes from the caller. The bus reports no
-//! bcdUSB, and loader mode is told apart from maskrom by bit 0 of it, so a
-//! caller that knows the device is already in loader mode skips
-//! [`run_usbplug`] and calls [`ready`] on its own handle.
+//! Which mode a device is in comes from [`crate::Mode`], read from the
+//! device's `bcdUSB`, or from the caller when it knows better. A caller that
+//! knows the device is already in loader mode skips [`run_usbplug`] and calls
+//! [`ready`] on its own handle.
 
 use std::time::Duration;
 
