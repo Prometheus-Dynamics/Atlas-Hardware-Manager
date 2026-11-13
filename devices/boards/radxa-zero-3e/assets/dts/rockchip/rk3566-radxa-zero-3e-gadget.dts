@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+// The ZERO 3E with its USB 2.0 OTG port (usb_host0_xhci) as a USB device, so
+// the gadget can be a network function. Carried from dev's gadget DTS.
+// Why this DTS, and not the in-tree one: a gadget needs the port in peripheral
+// mode; this file changes only that property. (Whether the in-tree DTS leaves it
+// in host mode is not checked here.)
+#include "rk3566-radxa-zero-3e.dts"
+
+&usb_host0_xhci {
+	dr_mode = "peripheral";
+};
