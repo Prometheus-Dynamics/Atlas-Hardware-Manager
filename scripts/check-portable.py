@@ -198,7 +198,7 @@ def cmd_plan(list_path, meta_path, triple):
         die(f"{len(errors)} problem(s) with {list_path}")
     listed = not_build.get(triple, {})
     for name in sorted(bound):
-        print(f"skip  {name:22} Orion-bound, {bound[name]}; {bound_list[name]}", file=sys.stderr)
+        print(f"skip  {name:22} Orion-bound: {bound[name]}", file=sys.stderr)
     for name in sorted(listed):
         print(f"skip  {name:22} not built on {triple} (listed): {listed[name]}", file=sys.stderr)
     for name in portable:
@@ -219,7 +219,7 @@ def cmd_verdict(list_path, meta_path, triple, log_path, rc):
     first_error, block_first = {}, None
     with open(log_path, encoding="utf-8", errors="replace") as handle:
         for line in handle:
-            text = line.rstrip("\n")
+            text = line.rstrip("\r\n")
             match = COULD_NOT_COMPILE.search(text)
             if match:
                 first_error.setdefault(match.group(1), block_first or text.strip())

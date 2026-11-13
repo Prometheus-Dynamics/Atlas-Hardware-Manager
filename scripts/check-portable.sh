@@ -39,6 +39,7 @@ fi
 triple=$mode
 args=()
 while IFS= read -r crate; do
+  crate=${crate%$'\r'}  # Windows: Python writes CRLF in text mode
   args+=(-p "$crate")
 done < <("$PY" -I scripts/check-portable.py plan "$LIST" "$tmp/metadata.json" "$triple")
 if [ "${#args[@]}" -eq 0 ]; then
@@ -46,7 +47,7 @@ if [ "${#args[@]}" -eq 0 ]; then
   exit 1
 fi
 
-echo "==> cargo check --locked --keep-going --target $triple --lib --bins --tests (${#args[@]} crates, $(( ${#args[@]} / 2 )) -p)"
+echo "==> cargo check --locked --keep-going --target $triple --lib --bins --tests ($(( ${#args[@]} / 2 )) crates)"
 set +e
 cargo check --locked --keep-going --target "$triple" --lib --bins --tests "${args[@]}" > "$tmp/cargo.log" 2>&1
 rc=$?
