@@ -143,7 +143,11 @@ cd "$root"
 fail=0
 bad() { echo "check-devices: FAIL $*" >&2; fail=1; }
 
-# Each kind is one directory per item, holding its description file.
+# Each kind is one directory per item, holding its description file. A board directory that holds
+# only app/ is recognition-only (a radio, a roboRIO) or a board whose description is not merged
+# yet: it is skipped, not counted, and reported in one line. Every other bad entry is reported and
+# the rest of the tree is still checked.
+app_only=()
 for kind in families:family.toml boards:board.toml components:component.toml products:product.toml; do
   dirname_=${kind%%:*}; desc=${kind#*:}
   [[ -d $dirname_ ]] || continue
@@ -151,11 +155,16 @@ for kind in families:family.toml boards:board.toml components:component.toml pro
     [[ $entry == .gitkeep ]] && continue
     if [[ ! -d $dirname_/$entry ]]; then
       bad "$dirname_/$entry: a file here; each $dirname_ item is its own directory (see devices/README.md)"
-    elif [[ ! -f $dirname_/$entry/$desc ]]; then
-      bad "$dirname_/$entry: no $desc in it"
+    elif [[ -f $dirname_/$entry/$desc ]]; then
+      continue
+    elif [[ $dirname_ == boards && $(ls -A "$dirname_/$entry") == app && -d $dirname_/$entry/app ]]; then
+      app_only+=("$entry")
+    else
+      bad "$dirname_/$entry: no $desc in it (a board directory may hold only app/ when it has no $desc)"
     fi
   done < <(ls -A "$dirname_")
 done
+echo "check-devices: skipped ${#app_only[@]} app-only board director$([[ ${#app_only[@]} == 1 ]] && echo y || echo ies), not counted as boards${app_only[*]+: ${app_only[*]}}"
 
 count() { [[ -d $1 ]] || { echo 0; return; }; find "$1" -mindepth 2 -maxdepth 2 -name "$2" | wc -l; }
 nf=$(count families family.toml); nb=$(count boards board.toml)

@@ -21,6 +21,8 @@ devices/
   tests/fixtures/                      examples and a broken copy, used by `--self-test`
 ```
 
+A board directory holds `board.toml`, or, when it is app-only, only `app/` (see App data).
+
 ## App data
 
 Two kinds of file here are for the app, not for Gaia. The check never reads them as Gaia files.
@@ -34,10 +36,17 @@ Two kinds of file here are for the app, not for Gaia. The check never reads them
 `crates/core/catalog` is the reader, and it is the authority on the exact keys. The app embeds the
 catalog it generates from these files; the files themselves are not embedded.
 
+App-only boards: a board directory that holds only `app/` and no `board.toml` is app-only. It is a
+recognition-only device (a radio, a roboRIO) or a board whose description is not merged yet. The
+check skips it, does not count it as a board, and prints one line with how many it skipped. A board
+directory with no `board.toml` that is not app-only fails the check, and the other directories are
+still checked.
+
 Every family, board, component and product is its own directory, holding its description file.
 Other files may sit beside the description (assets, a component's `src/`, a fragment, `app/`). The
 check validates only the description files, but it does require that every family, board and
 component is named by a product or a board, because Gaia reads a file only through one of those.
+An app-only board is named by nothing, which is why it is skipped rather than failed.
 
 ## Gaia's format (what Gaia `next` reads today)
 
