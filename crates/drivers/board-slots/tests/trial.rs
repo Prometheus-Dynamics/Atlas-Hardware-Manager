@@ -26,6 +26,13 @@ const SHORT: Duration = Duration::from_millis(20);
 /// A poll that does not fire during a test: outcomes are then read on the board's events only.
 const LONG: Duration = Duration::from_secs(3600);
 
+/// A simulated board whose running slot follows its boots, as a real board's does.
+async fn start_board(name: &str) -> Rig {
+    let rig = Rig::start(name).await;
+    rig.node.slot_follow_boot(true);
+    rig
+}
+
 fn key(rig: &Rig) -> [u8; 32] {
     rig.handle.node_key().expect("the board is connected")
 }
@@ -134,7 +141,7 @@ fn ended_state(ended: Option<Ended>) -> TrialState {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_held_trial_is_followed_across_power_cycles_and_reported_once() {
-    let rig = Rig::start("held").await;
+    let rig = start_board("held").await;
     install(&rig, "slot-2", "2.0.0").await;
     let follower = follower(&rig, SHORT);
     follower
@@ -205,7 +212,7 @@ async fn a_held_trial_is_followed_across_power_cycles_and_reported_once() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_record_and_a_running_version_that_disagree_are_both_shown_and_neither_is_picked() {
-    let rig = Rig::start("disagree").await;
+    let rig = start_board("disagree").await;
     install(&rig, "slot-2", "2.0.0").await;
     let follower = follower(&rig, LONG);
     follower
@@ -249,7 +256,7 @@ async fn a_record_and_a_running_version_that_disagree_are_both_shown_and_neither
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_trial_that_does_not_hold_says_the_boards_reason_and_the_version_it_runs() {
-    let rig = Rig::start("fell-back").await;
+    let rig = start_board("fell-back").await;
     install(&rig, "slot-2", "2.0.0").await;
     rig.node.slot_set_healthy(false);
     let follower = follower(&rig, LONG);
@@ -297,7 +304,7 @@ async fn a_trial_that_does_not_hold_says_the_boards_reason_and_the_version_it_ru
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn three_boots_that_never_reach_the_daemon_fall_back_and_the_watch_says_why() {
-    let rig = Rig::start("three-boots").await;
+    let rig = start_board("three-boots").await;
     install(&rig, "slot-2", "2.0.0").await;
     rig.node.slot_boots_without_daemon(3);
     let follower = follower(&rig, LONG);
@@ -359,7 +366,7 @@ async fn three_boots_that_never_reach_the_daemon_fall_back_and_the_watch_says_wh
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_unwritable_state_dir_is_shown_as_a_record_error_and_never_as_a_guessed_outcome() {
-    let rig = Rig::start("record-error").await;
+    let rig = start_board("record-error").await;
     install(&rig, "slot-2", "2.0.0").await;
     rig.node.slot_fail_record_writes(true);
     let follower = follower(&rig, LONG);
@@ -408,7 +415,7 @@ async fn an_unwritable_state_dir_is_shown_as_a_record_error_and_never_as_a_guess
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_explicit_confirm_by_another_caller_is_reported_as_a_call() {
-    let rig = Rig::start("call").await;
+    let rig = start_board("call").await;
     install(&rig, "slot-2", "2.0.0").await;
     let follower = follower(&rig, LONG);
     follower
@@ -457,7 +464,7 @@ async fn an_explicit_confirm_by_another_caller_is_reported_as_a_call() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_trial_is_followed_after_atlas_restarts_and_its_outcome_is_reported_once() {
-    let rig = Rig::start("restart").await;
+    let rig = start_board("restart").await;
     install(&rig, "slot-2", "2.0.0").await;
     let before = follower(&rig, LONG);
     before
@@ -508,7 +515,7 @@ async fn a_trial_is_followed_after_atlas_restarts_and_its_outcome_is_reported_on
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_board_that_never_returns_keeps_its_watch_and_a_person_can_stop_it() {
-    let rig = Rig::start("stays-away").await;
+    let rig = start_board("stays-away").await;
     install(&rig, "slot-2", "2.0.0").await;
     let follower = follower(&rig, SHORT);
     follower
@@ -559,7 +566,7 @@ async fn a_board_that_never_returns_keeps_its_watch_and_a_person_can_stop_it() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_board_replaced_mid_trial_ends_the_watch_and_reads_nothing_from_the_other() {
-    let rig = Rig::start("replaced").await;
+    let rig = start_board("replaced").await;
     install(&rig, "slot-2", "2.0.0").await;
     let follower = follower(&rig, SHORT);
     follower
@@ -613,7 +620,7 @@ async fn a_board_replaced_mid_trial_ends_the_watch_and_reads_nothing_from_the_ot
 /// the same board coming back.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_session_reports_a_replacement_as_replaced() {
-    let rig = Rig::start("pinned").await;
+    let rig = start_board("pinned").await;
     let port = rig.node.network().port();
     let dir = rig.dir.clone();
     let Rig {
