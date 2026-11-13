@@ -26,6 +26,10 @@ BR2_TARGET_GENERIC_GETTY_BAUDRATE_KEEP=y
 # SSH host key (B13): on the data partition, not in /run. components/dev-bringup-hostkey mounts /data and
 # gives dropbear -r /data/dropbear/dropbear_ed25519_host_key, so the key survives a reflash and a slot change.
 #
-# Not carried from dev: BusyBox's udhcpd applet, which the first boot did not
-# have (and whose lease directory is on the read-only root). The DHCP server for
-# usb0 is systemd-networkd's, in 10-usb0.network.
+# usb0 (PR B24): the usb-gadget-network component serves DHCP on usb0 with BusyBox's udhcpd, its
+# one DHCP server. systemd-networkd's DHCPServer on usb0 (B11) is gone with dev-usb0-gadget. The
+# lease file is in /tmp (the root is read-only; B11's first boot had no udhcpd applet, see busybox.fragment).
+# BusyBox applets for the usb-gadget-network component (PR B24): the script's udhcpd (the one DHCP server
+# on usb0), ifconfig, killall, sha256sum and mountpoint. The fragment is beside this file.
+BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="@here@/busybox.fragment"
+

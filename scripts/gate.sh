@@ -39,6 +39,11 @@ if [ -f scripts/check-lemnos-gadget.py ]; then
   step "lemnos gadget drop-in pairing" python3 scripts/check-lemnos-gadget.py
 fi
 
+# The board id: one string per board (directory, Gaia name, Lemnos [board] id, bring-up family line). PR B24.
+if [ -f scripts/check-board-ids.py ]; then
+  step "board ids agree" python3 scripts/check-board-ids.py
+fi
+
 # Nothing that runs on a board lives here except the flasher image description
 # and the SystemCore package description, which are data under devices/.
 if compgen -G "crates/*/*/src" > /dev/null; then

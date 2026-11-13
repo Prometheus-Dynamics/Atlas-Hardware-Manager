@@ -1,0 +1,39 @@
+# The bring-up's USB network: Gaia's usb-gadget-network component (CDC NCM through configfs, stable Ethernet
+# addresses from the board id and serial, usb0 at 10.55.0.1, udhcpd handing 10.55.0.2), taken from its own
+# file in the PINNED Gaia checkout. No copy of its files is carried here: the two [[install]] entries read
+# them from the source below. Only the unit that runs its init script is ours (files/).
+#
+# Why a wrapper: a product names a component by a path inside Atlas's own tree, so Gaia's example component
+# cannot be named from a product directly at Gaia 4509f6b; a component may install a file from a source, and
+# that is the form used here. The pin is Gaia 4509f6b (the commit devices/gaia.lock names).
+#
+# The board id (/etc/usb-gadget.family) and the serial rule are the image's: see the product's own
+# usb-gadget-family component. Untested on board.
+version = 1
+name = "usb-gadget-network"
+description = "Bring-up USB network: Gaia's configfs NCM gadget (pinned source), run by a systemd unit. Untested on board."
+
+[sources.gaia]
+git = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
+ref = "4509f6b74247f56594cb2667e701c5d1f7566498"
+
+# Gaia's init script (run by the unit below; it is an init-style script, not a unit on its own).
+[[install]]
+from = { source = "gaia", path = "examples/components/usb-gadget-network/files/S41usb0" }
+to = "/etc/init.d/S41usb0"
+mode = "0755"
+
+# Gaia's udhcpd config: usb0, one lease, 10.55.0.2.
+[[install]]
+from = { source = "gaia", path = "examples/components/usb-gadget-network/files/udhcpd.usb0.conf" }
+to = "/etc/udhcpd.usb0.conf"
+mode = "0644"
+
+# Ours: the unit that runs the script under systemd (the image's init is systemd, not SysV).
+[[install]]
+from = { file = "files/usb-gadget-network.service" }
+to = "/etc/systemd/system/usb-gadget-network.service"
+mode = "0644"
+
+[[services]]
+unit = "usb-gadget-network.service"
