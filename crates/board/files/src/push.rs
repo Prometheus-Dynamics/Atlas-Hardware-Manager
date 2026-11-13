@@ -102,7 +102,12 @@ impl JobKind for PushKind {
         })?;
         let answer = run(&pending).await;
         self.forget(step);
-        answer.map_err(DriverError::Incompatible)
+        answer.map_err(|reason| {
+            pending.shared.finish(Stage::Failed {
+                reason: reason.clone(),
+            });
+            DriverError::Incompatible(reason)
+        })
     }
 }
 

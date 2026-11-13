@@ -60,7 +60,9 @@ impl Relay {
 
     /// Changes the rate for the bytes that move from now on.
     pub fn set_rate(&self, bytes_per_sec: u64) {
-        self.control.bytes_per_sec.store(bytes_per_sec, Ordering::SeqCst);
+        self.control
+            .bytes_per_sec
+            .store(bytes_per_sec, Ordering::SeqCst);
     }
 
     /// Refuses (or stops refusing) new connections.
@@ -172,7 +174,7 @@ impl Read for Generated {
         let mut word = 0_u64;
         for (i, byte) in buf[..count].iter_mut().enumerate() {
             let offset = self.position + i as u64;
-            if i == 0 || offset % 8 == 0 {
+            if i == 0 || offset.is_multiple_of(8) {
                 word = splitmix(self.seed ^ (offset / 8));
             }
             *byte = (word >> (8 * (offset % 8))) as u8;

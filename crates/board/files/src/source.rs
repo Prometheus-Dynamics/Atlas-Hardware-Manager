@@ -161,8 +161,10 @@ impl Shared {
         lock(&self.meter).clear();
         self.progress.send_modify(|progress| {
             progress.rate_bytes_per_sec = 0;
-            if !matches!(progress.stage, Stage::Committed | Stage::Failed { .. } | Stage::Cancelled)
-            {
+            if !matches!(
+                progress.stage,
+                Stage::Committed | Stage::Failed { .. } | Stage::Cancelled
+            ) {
                 progress.stage = Stage::WaitingForBoard { reason };
             }
         });
@@ -173,8 +175,10 @@ impl Shared {
         lock(&self.meter).clear();
         self.progress.send_modify(|progress| {
             progress.rate_bytes_per_sec = 0;
-            if !matches!(progress.stage, Stage::Committed | Stage::Failed { .. } | Stage::Cancelled)
-            {
+            if !matches!(
+                progress.stage,
+                Stage::Committed | Stage::Failed { .. } | Stage::Cancelled
+            ) {
                 progress.stage = stage;
             }
         });
@@ -230,7 +234,8 @@ impl<'a> Guard<'a> {
 impl Read for Guard<'_> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.shared.cancelled() {
-            return Err(io::Error::new(io::ErrorKind::Interrupted, "the push was cancelled"));
+            // Not `Interrupted`: `read_exact` retries that kind forever.
+            return Err(io::Error::other("the push was cancelled"));
         }
         if let Some(reason) = self.shared.refusal() {
             return Err(io::Error::other(reason));
@@ -256,9 +261,7 @@ impl Read for Guard<'_> {
             return Ok(read);
         }
         if read == 0 {
-            return Err(self.refused(
-                "the source got shorter while it was being sent".to_owned(),
-            ));
+            return Err(self.refused("the source got shorter while it was being sent".to_owned()));
         }
         self.position += read as u64;
         self.shared.sent(read as u64, self.position);

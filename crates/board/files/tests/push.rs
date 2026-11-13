@@ -187,7 +187,9 @@ async fn push_through_drops(rig: &Rig, size: u64, seed: u64, cuts: &[f64]) -> Co
     assert_eq!(progress.stage, Stage::Committed, "{progress:?}");
     assert_eq!(progress.sent, size);
     let committed = rig.node.shelf().committed.lock().unwrap();
-    let data = committed.get(destination).expect("the board holds the file");
+    let data = committed
+        .get(destination)
+        .expect("the board holds the file");
     assert!(
         is_generated(data, size, seed),
         "the board holds exactly the bytes that were pushed"
@@ -254,7 +256,9 @@ async fn a_lost_session_is_waited_for_and_the_job_stays_running_not_failed() {
     assert_eq!(push.progress().stage, Stage::Committed);
     let committed = rig.node.shelf().committed.lock().unwrap();
     assert!(is_generated(
-        committed.get(destination).expect("the board holds the file"),
+        committed
+            .get(destination)
+            .expect("the board holds the file"),
         size,
         3
     ));
@@ -289,17 +293,35 @@ async fn a_cancelled_push_stops_and_the_board_gets_no_more_of_the_file() {
         push.counters()
     );
     assert!(
-        rig.node.shelf().committed.lock().unwrap().get(destination).is_none(),
+        rig.node
+            .shelf()
+            .committed
+            .lock()
+            .unwrap()
+            .get(destination)
+            .is_none(),
         "a cancelled push never commits"
     );
 
     // The session is free again once the push's call has ended: a call answers.
-    connected(&rig.handle).await;
-    let answer = rig
-        .handle
-        .with_client(|orion| -> Result<String, orion::Error> { Ok(orion.node()?.name) })
-        .await;
-    assert!(answer.is_ok(), "{answer:?}");
+    // Cancelling ends the session the push ran on, so the monitor connects again: a call answers
+    // once it is back. A call made in the gap says the node is not connected, and is asked again.
+    let deadline = Instant::now() + DEADLINE;
+    loop {
+        connected(&rig.handle).await;
+        let answer = rig
+            .handle
+            .with_client(|orion| -> Result<String, orion::Error> { Ok(orion.node()?.name) })
+            .await;
+        if answer.is_ok() {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the node never answered: {answer:?}"
+        );
+        tokio::time::sleep(POLL).await;
+    }
 }
 
 #[tokio::test]
@@ -342,7 +364,13 @@ async fn a_changed_source_is_refused_and_nothing_more_is_sent() {
     assert!(reason.contains("changed"), "{reason}");
     assert!(matches!(push.progress().stage, Stage::Failed { .. }));
     assert!(
-        rig.node.shelf().committed.lock().unwrap().get(destination).is_none(),
+        rig.node
+            .shelf()
+            .committed
+            .lock()
+            .unwrap()
+            .get(destination)
+            .is_none(),
         "a changed file is never committed"
     );
     let _ = std::fs::remove_file(&path);
@@ -385,9 +413,12 @@ async fn a_different_file_under_the_same_name_starts_from_nothing() {
     )
     .await
     .expect("the second push starts");
-    job_where(&rig.jobs, second.job(), "the second push commits", |status| {
-        *status == JobStatus::Done
-    })
+    job_where(
+        &rig.jobs,
+        second.job(),
+        "the second push commits",
+        |status| *status == JobStatus::Done,
+    )
     .await;
     assert!(
         second.counters().bytes_sent >= size,
