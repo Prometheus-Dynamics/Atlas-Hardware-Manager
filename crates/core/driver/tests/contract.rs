@@ -130,11 +130,7 @@ fn registered_driver_identifies_and_answers_capabilities() {
     );
     assert_eq!(
         granted.shown(DeviceState::BootRom),
-        vec![
-            CapabilityKind::Info,
-            CapabilityKind::Recover,
-            CapabilityKind::Logs
-        ]
+        vec![CapabilityKind::Info]
     );
 
     let health = block_on(driver.health());
