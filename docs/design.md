@@ -118,3 +118,4 @@ A PR that needs one waits for it; don't work around it.
 | X3 | Gaia F8 and F7: the OS and the board in the graph, the disk image | building B-series boards (writing them waits on nothing) |
 | X4 | A HeliOS product on `next` | E5 |
 | X5 | Orion and Lemnos packaged for the SystemCore (Gaia's ipk recipe is merged) | E2 on a real controller |
+| X6 | Orion F10: reaching a node through another (a board behind a controller) | E3, G2 |
