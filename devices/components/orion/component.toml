@@ -6,8 +6,9 @@
 # wrappers, scripts/zigcc, and the zig cache); the public rust image has no zig. The next Gaia PR
 # pins that root. Until then this component plans and does not build.
 #
-# The units, settings and user are Orion's packaging/systemd files, installed at the paths its
-# packaging README gives, unrewritten. The user is made at build time too: the image's root is read-only.
+# The units and user are Orion's packaging/systemd files, installed at the paths its packaging README
+# gives, unrewritten; the settings are the board's own (files/orion.conf), and the drop-ins in files/ point
+# the state at /data. The user is made at build time too: the image's root is read-only.
 version = 1
 name = "orion"
 description = "Orion: the orion binary as the board's comm core and node logic (orion-bin), its two units, settings, and the orion user"
@@ -45,9 +46,22 @@ from = { source = "src", path = "packaging/systemd/orion-node.service" }
 to = "/usr/lib/systemd/system/orion-node.service"
 mode = "0644"
 
+# The settings: Orion's example with the board's state on /data (files/orion.conf; the reasons are in that file).
+# Replaces the example install, which keeps the state in /var/lib/orion.
 [[install]]
-from = { source = "src", path = "packaging/systemd/orion.conf.example" }
+from = { file = "files/orion.conf" }
 to = "/etc/orion/orion.conf"
+mode = "0644"
+
+# The two units, with drop-ins on Orion's own (Orion's packaging/README: change a unit with a drop-in).
+[[install]]
+from = { file = "files/orion-comm-state.conf" }
+to = "/etc/systemd/system/orion-comm.service.d/10-board-state.conf"
+mode = "0644"
+
+[[install]]
+from = { file = "files/orion-node-state.conf" }
+to = "/etc/systemd/system/orion-node.service.d/10-board-state.conf"
 mode = "0644"
 
 [[install]]

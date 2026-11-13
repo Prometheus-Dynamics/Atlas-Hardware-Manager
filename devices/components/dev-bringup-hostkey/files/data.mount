@@ -1,0 +1,13 @@
+# DEV ONLY (bring-up). The data partition at /data, read-write ext4. The bring-up root is read-only and
+# nothing else mounts this partition. Read by systemd as the unit data.mount (the name is the mount point).
+[Unit]
+Description=DEV ONLY: the data partition at /data
+
+[Mount]
+What=/dev/disk/by-partlabel/data
+Where=/data
+Type=ext4
+Options=defaults
+
+[Install]
+WantedBy=local-fs.target
