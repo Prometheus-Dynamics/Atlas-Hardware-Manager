@@ -3,12 +3,12 @@
 # Lemnos drivers or Orion is not here (the PR text lists each file's new home).
 version = 1
 name = "raze-lemnos-board"
-description = "Raze board files for lemnosd: the i2c-dev module load and the USB power rule; the board file is refused by lemnos-ctl tree at Lemnos 4a2d3b7d (identity, watchdog, slots: Lemnos Q2d)"
+description = "Raze board files for lemnosd: the i2c-dev module load, the USB power rule, and the board file written to Lemnos Q2d (6905b681); the lock 4a2d3b7d refuses it until the lock moves"
 
-# /etc/lemnos/board.toml: the Raze's board file (files/board.toml). Its generated outputs come from
-# `lemnos-ctl tree` on this file at build time. Three of its devices are refused by the generator at
-# 4a2d3b7d (identity, watchdog, slots; Lemnos Q2d is not in that rev): until Lemnos lands that, lemnosd
-# refuses to start on this image.
+# /etc/lemnos/board.toml: the Raze's board file (files/board.toml), written to Lemnos 6905b681 (Q2d). Its
+# generated outputs come from `lemnos-ctl tree` on this file at build time. The lock is still 4a2d3b7d, which
+# predates Q2d and refuses this file (docs/prs/B20.md): it takes effect when the lock moves to a rev containing
+# Q2d. Until then lemnosd on this image refuses to start, as it does on today's file.
 
 [[install]]
 from = { file = "files/board.toml" }
