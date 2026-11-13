@@ -257,6 +257,7 @@ fi
 # planned with the committed lock. A tree path in a lock is relative to the product's directory, so
 # the same lock holds in every checkout.
 locks=$(mktemp -d)
+lock_tries="1 2 3"
 trap 'rm -rf "$locks" "$used" "$errs" "$outs" ${stand_in_dir:+"$stand_in_dir"}' EXIT
 for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev/null | sort); do
   pdir=$(dirname "$product")
@@ -268,13 +269,21 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
   # gaia lock asks the network where each source's ref points. A host being
   # unreachable says nothing about the description, so it is retried, and if
   # it stays unreachable the committed lock is planned as it is and the
-  # freshness comparison is skipped, out loud.
+  # freshness comparison is skipped, out loud. A dead host must not hold the
+  # check for long: one try is cut off after LOCK_TRY_SECONDS (a lock that
+  # works takes a few seconds), and once a product has stayed unreachable
+  # through all its tries, the products after it get one try each.
   lock_ok=0
   offline=0
-  for attempt in 1 2 3; do
-    if "$gaia" lock "$product" --lock "$lockfile" >"$errs" 2>&1; then
+  for attempt in $lock_tries; do
+    rc=0
+    timeout "${LOCK_TRY_SECONDS:-60}" "$gaia" lock "$product" --lock "$lockfile" >"$errs" 2>&1 || rc=$?
+    if [[ $rc -eq 0 ]]; then
       lock_ok=1
       break
+    fi
+    if [[ $rc -eq 124 ]]; then
+      echo "gaia lock: timed out after ${LOCK_TRY_SECONDS:-60} s" >>"$errs"
     fi
     if grep -qiE 'unable to access|could not resolve|failed to connect|could not connect|timed out|connection reset|temporary failure' "$errs"; then
       offline=1
@@ -284,6 +293,9 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
       break
     fi
   done
+  if [[ $lock_ok -eq 0 && $offline -eq 1 ]]; then
+    lock_tries="1"
+  fi
   if [[ $lock_ok -eq 0 && $offline -eq 1 && $write_locks -eq 0 && -f $committed ]]; then
     echo "check-devices: NOTE $product: a source host was unreachable, so its gaia.lock was not compared with a fresh one:"
     sed 's/^/  /' "$errs"
