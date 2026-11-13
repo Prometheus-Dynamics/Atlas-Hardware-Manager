@@ -269,6 +269,18 @@ scripts/check-devices.sh --write-locks
 The check fails when a product has no `gaia.lock` beside it, or when that lock differs from what
 `gaia lock` writes now. The message names the command above. Never edit a lock by hand.
 
+## Lemnos rev
+
+Every Lemnos component of a product (lemnosd, lemnos-ctl, lemnos-orion, lemnos-slot-init and the
+`lemnos` packaging) is locked to ONE Lemnos commit: they are one program in several files, and a mix
+does not boot reliably. The pin is the `ref` of each component in `components/lemnos*/component.toml`
+(and `components/lemnos/component.toml` for the packaging); the product lock records the commit each
+source resolved to. The check fails a product whose lock pins two Lemnos commits, and names both.
+The current rev is `4a2d3b7d` (PR B18). To move it: change every `ref` above to the full commit, run
+`scripts/check-devices.sh --write-locks`, and commit the components and every changed `gaia.lock`
+together. The board files (`lemnos-board.toml`) follow the rev's board-file format, and `lemnos-ctl
+validate` and `lemnos-ctl tree` at that rev are the check for them (run from a build of that rev).
+
 ## Running the check
 
 ```
