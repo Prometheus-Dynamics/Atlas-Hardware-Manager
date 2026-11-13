@@ -1,67 +1,46 @@
-//! Test helpers: the deterministic contents the fixtures hold, a GPT and a FAT
-//! writer, the xz wrapper, and a test directory that removes itself.
+//! Test helpers: the deterministic contents of the fixture's slots, a GPT writer,
+//! the xz wrapper, and a test directory that removes itself.
 
 #![allow(dead_code)]
 
 use std::fs;
-use std::io::{Cursor, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use atlas_bundle::{BLOCK, root_hash};
+use atlas_bundle::root_hash;
 
 pub const DATA_FIXTURE: &[u8] = include_bytes!("../fixtures/data.ext4");
-pub const ROOTFS_FIXTURE: &[u8] = include_bytes!("../fixtures/rootfs.ext4");
 
-/// The slot's salt: the fixture's table was made with it.
+/// The salt the fixture's verity roots were made with (make-fixtures.py).
 pub const SALT: [u8; 16] = [0x5A; 16];
-/// Four data blocks, then one tree block.
-pub const SLOT_DATA_LEN: usize = 4 * BLOCK;
-pub const SLOT_TREE_LEN: usize = BLOCK;
+pub const BLOCK: usize = 4096;
 
-/// The bytes the fixtures were made from (the same formula as the Python
-/// generator, make-fixtures.py).
+/// The bytes the fixture was made from (the same formula as make-fixtures.py).
 pub fn pattern(n: usize, seed: u64) -> Vec<u8> {
     (0..n as u64)
         .map(|i| ((i * 7 + seed * 13) % 251) as u8)
         .collect()
 }
 
-/// The slot file: the data blocks, then the verity tree.
-pub fn slot_file() -> Vec<u8> {
-    let mut bytes = pattern(SLOT_DATA_LEN, 1);
-    bytes.extend_from_slice(&pattern(SLOT_TREE_LEN, 2));
+/// Slot `alpha`'s file: four data blocks, then one tree block.
+pub fn alpha_file() -> Vec<u8> {
+    let mut bytes = pattern(4 * BLOCK, 1);
+    bytes.extend_from_slice(&pattern(BLOCK, 2));
     bytes
 }
 
-/// Gaia's verity table text for the slot, the root computed by the bundle
-/// crate's own hasher (the fixture's table was computed by the Python script).
-pub fn verity_text() -> String {
-    let root = root_hash(&SALT, &slot_file()[..SLOT_DATA_LEN]).expect("root");
-    let salt: String = SALT.iter().map(|b| format!("{b:02x}")).collect();
-    format!(
-        "hash_type 1\nalgorithm sha256\nroot_hash {root}\nsalt {salt}\ndata_blocks 4\n\
-         data_block_size 4096\nhash_block_size 4096\nhash_offset {}\n",
-        SLOT_DATA_LEN
-    )
+/// Slot `beta`'s file: two blocks (one data, one tree).
+pub fn beta_file() -> Vec<u8> {
+    let mut bytes = pattern(BLOCK, 7);
+    bytes.extend_from_slice(&pattern(BLOCK, 8));
+    bytes
 }
 
-/// The bring-up form's boot files, by path under `boot/`: the rootfs's `/boot`.
-pub fn bringup_boot() -> Vec<(&'static str, Vec<u8>)> {
-    vec![
-        ("Image", pattern(40_000, 3)),
-        ("board.dtb", pattern(1234, 4)),
-        (
-            "extlinux/extlinux.conf",
-            b"default l\nlabel l\n  kernel /boot/Image\n  fdt /boot/board.dtb\n  append root=PARTLABEL=rootfs ro\n"
-                .to_vec(),
-        ),
-    ]
-}
-
-/// The real form's boot files of slot `alpha` on the FAT boot partition, by
-/// path under `boot/`. Slot `beta` is there too, to check it is not read.
-pub fn real_boot() -> Vec<(&'static str, Vec<u8>)> {
+/// Slot `alpha`'s boot files, by path (the manifest's `boot.files` and the
+/// `.boot` list's content, except `slot.json`, which is the manifest itself).
+pub fn alpha_boot() -> Vec<(&'static str, Vec<u8>)> {
     vec![
         ("Image", pattern(40_000, 3)),
         ("board.dtb", pattern(1234, 4)),
@@ -70,7 +49,24 @@ pub fn real_boot() -> Vec<(&'static str, Vec<u8>)> {
             "cmdline.txt",
             b"console=tty1 root=PARTUUID=abc panic=5\n".to_vec(),
         ),
+        ("overlays/one.dtbo", pattern(777, 6)),
     ]
+}
+
+/// Slot `beta`'s boot files (its `cmdline.txt` is not alpha's).
+pub fn beta_boot() -> Vec<(&'static str, Vec<u8>)> {
+    vec![("cmdline.txt", b"console=tty2 panic=5\n".to_vec())]
+}
+
+/// The verity root of slot `alpha`, computed by the bundle crate's hasher. The
+/// fixture's manifest carries the same value (checked by the tests).
+pub fn alpha_root() -> String {
+    root_hash(&SALT, &alpha_file()[..4 * BLOCK]).expect("root")
+}
+
+/// The verity root of slot `beta`.
+pub fn beta_root() -> String {
+    root_hash(&SALT, &beta_file()[..BLOCK]).expect("root")
 }
 
 /// A test directory under the cargo target tmp dir, removed on drop.
@@ -137,8 +133,8 @@ fn crc32(bytes: &[u8]) -> u32 {
 }
 
 /// A disk: a protective MBR, the primary GPT (header at LBA 1, 128 entries at
-/// LBA 2), and the partitions at their sectors. No backup table: the reader
-/// does not need one.
+/// LBA 2) and the partitions at their sectors. No backup table: the reader does
+/// not need one.
 pub fn gpt_disk(parts: &[Part<'_>]) -> Vec<u8> {
     let end = parts
         .iter()
@@ -189,44 +185,11 @@ pub fn gpt_disk(parts: &[Part<'_>]) -> Vec<u8> {
     disk
 }
 
-/// A FAT volume of `size` bytes with the given files (paths with `/`).
-pub fn fat_volume(size: u32, files: &[(String, Vec<u8>)]) -> Vec<u8> {
-    use fatfs::{FileSystem, FormatVolumeOptions, FsOptions};
-
-    let mut cursor = Cursor::new(vec![0u8; size as usize]);
-    fatfs::format_volume(
-        &mut cursor,
-        FormatVolumeOptions::new().total_sectors(size / 512),
-    )
-    .expect("format");
-    cursor.set_position(0);
-    let fs = FileSystem::new(&mut cursor, FsOptions::new()).expect("mount");
-    for (path, bytes) in files {
-        let mut dir = fs.root_dir();
-        let parts: Vec<&str> = path.split('/').collect();
-        for part in &parts[..parts.len() - 1] {
-            dir = match dir.open_dir(part) {
-                Ok(open) => open,
-                Err(_) => {
-                    dir.create_dir(part).expect("mkdir");
-                    dir.open_dir(part).expect("open dir")
-                }
-            };
-        }
-        let mut file = dir.create_file(parts[parts.len() - 1]).expect("create");
-        file.write_all(bytes).expect("write");
-    }
-    fs.unmount().expect("unmount");
-    cursor.into_inner()
-}
-
-/// The xz file of `raw`, as the image's build writes it: liblzma's encoder (the
-/// `xz` program) with its default CRC-64 block check, which is what Gaia's xz
-/// writer produces. The pure-Rust encoder in lzma-rs writes no check at all, so
-/// it cannot show that a damaged stream is refused.
+/// The xz file of `raw`, as the image's build writes it: the `xz` program
+/// (liblzma, the same library as Gaia's xz writer) with its default CRC-64 block
+/// check. The pure-Rust encoder in lzma-rs writes no check at all, so it cannot
+/// show that a damaged stream is refused.
 pub fn xz(raw: &[u8]) -> Vec<u8> {
-    use std::process::{Command, Stdio};
-
     let mut child = Command::new("xz")
         .args(["--check=crc64", "--compress", "--stdout"])
         .stdin(Stdio::piped())
@@ -242,41 +205,11 @@ pub fn xz(raw: &[u8]) -> Vec<u8> {
     output.stdout
 }
 
-/// The real form's disk: the FAT boot partition at LBA 2048 (2 MiB), holding
-/// `slots/alpha/` and a decoy `slots/beta/`, then the data partition after it.
-pub fn real_disk() -> Vec<u8> {
-    let mut files: Vec<(String, Vec<u8>)> = real_boot()
-        .into_iter()
-        .map(|(name, bytes)| (format!("slots/alpha/{name}"), bytes))
-        .collect();
-    files.push(("slots/beta/Image".to_string(), pattern(10, 9)));
-    let boot = fat_volume(2 << 20, &files);
-    gpt_disk(&[
-        Part {
-            name: "boot",
-            first_lba: 2048,
-            bytes: &boot,
-        },
-        Part {
-            name: "data",
-            first_lba: 2048 + 4096,
-            bytes: DATA_FIXTURE,
-        },
-    ])
-}
-
-/// The bring-up form's disk: `rootfs` (the boot files) then `data` (the slot).
-pub fn bringup_disk() -> Vec<u8> {
-    gpt_disk(&[
-        Part {
-            name: "rootfs",
-            first_lba: 2048,
-            bytes: ROOTFS_FIXTURE,
-        },
-        Part {
-            name: "data",
-            first_lba: 2048 + 512,
-            bytes: DATA_FIXTURE,
-        },
-    ])
+/// The image: a GPT with one partition, `data`, the fixture.
+pub fn image_disk() -> Vec<u8> {
+    gpt_disk(&[Part {
+        name: "data",
+        first_lba: 2048,
+        bytes: DATA_FIXTURE,
+    }])
 }

@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
-"""Makes the two ext4 fixtures the reader tests read: data.ext4 (the slot file
-and its verity table, the real form's data partition and the bring-up form's
-data partition) and rootfs.ext4 (the bring-up form's /boot).
+"""Makes data.ext4, the fixture the reader tests read: the real form's data
+partition in Lemnos's layout (slots/<id>.erofs, slots/<id>.json, slots/<id>.boot,
+slots/bootfiles/<sha256>), for two slots: alpha (the test subject) and beta (a
+decoy the reader must not mix in).
 
 Run from this directory: python3 make-fixtures.py. It needs e2fsprogs'
 mke2fs and no root: `mke2fs -d` copies a directory in without mounting it.
 
-The contents are deterministic (see pattern()), so the Rust tests in
-tests/common regenerate the same bytes. The verity root is computed here with
-hashlib, independently of the bundle crate's own implementation; the test
-checks that the two agree.
+The contents are deterministic (pattern()), so the Rust tests in
+tests/common/mod.rs regenerate the same bytes. The verity root is computed here
+with hashlib; the reader does not check it, and the tests compare it with the
+bundle crate's hasher.
 """
 
 import hashlib
+import json
 import os
 import subprocess
 import tempfile
 
 BLOCK = 4096
 SALT = bytes([0x5A]) * 16
-DATA_BLOCKS = 4
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -42,11 +43,8 @@ def verity_root(data, salt):
         level = [hashlib.sha256(salt + block).digest() for block in blocks]
 
 
-def verity_text(root, salt, blocks):
-    return (f"hash_type 1\nalgorithm sha256\nroot_hash {root}\n"
-            f"salt {salt.hex()}\ndata_blocks {blocks}\n"
-            f"data_block_size {BLOCK}\nhash_block_size {BLOCK}\n"
-            f"hash_offset {blocks * BLOCK}\n")
+def sha256(data):
+    return hashlib.sha256(data).hexdigest()
 
 
 def write(path, data):
@@ -55,34 +53,52 @@ def write(path, data):
         handle.write(data)
 
 
-def mke2fs(stage, out, label, size):
-    if os.path.exists(out):
-        os.remove(out)
-    subprocess.run(["mke2fs", "-q", "-t", "ext4", "-b", "1024", "-N", "32",
-                    "-O", "^has_journal", "-L", label, "-d", stage, out, size],
-                   check=True)
+def make_slot(stage, slot_id, erofs, boot_files):
+    """boot_files: {path: bytes}. Writes the slot's four data-side pieces."""
+    slots = os.path.join(stage, "slots")
+    root = verity_root(erofs[:len(erofs) - BLOCK] if len(erofs) > BLOCK else erofs, SALT)
+    manifest = {
+        "schema": 2,
+        "id": slot_id,
+        "image": {"size": len(erofs), "sha256": sha256(erofs)},
+        "verity": {"root_hash": root},
+        "boot": {"files": {path: sha256(data) for path, data in boot_files.items()}},
+    }
+    manifest_bytes = (json.dumps(manifest, indent=2, sort_keys=True) + "\n").encode()
+    everything = dict(boot_files)
+    everything["slot.json"] = manifest_bytes
+    lines = "".join(f"{sha256(everything[path])}  {path}\n" for path in sorted(everything))
+    write(os.path.join(slots, f"{slot_id}.erofs"), erofs)
+    write(os.path.join(slots, f"{slot_id}.json"), manifest_bytes)
+    write(os.path.join(slots, f"{slot_id}.boot"), lines.encode())
+    for data in everything.values():
+        write(os.path.join(slots, "bootfiles", sha256(data)), data)
+    return root
 
 
 def main():
-    slot_data = pattern(DATA_BLOCKS * BLOCK, 1)
-    slot_tree = pattern(BLOCK, 2)
-    root = verity_root(slot_data, SALT)
-    table = verity_text(root, SALT, DATA_BLOCKS)
-    extlinux = (b"default l\nlabel l\n  kernel /boot/Image\n"
-                b"  fdt /boot/board.dtb\n  append root=PARTLABEL=rootfs ro\n")
+    alpha_erofs = pattern(4 * BLOCK, 1) + pattern(BLOCK, 2)
+    alpha_boot = {
+        "Image": pattern(40_000, 3),
+        "board.dtb": pattern(1234, 4),
+        "initramfs.cpio.gz": pattern(9000, 5),
+        "cmdline.txt": b"console=tty1 root=PARTUUID=abc panic=5\n",
+        "overlays/one.dtbo": pattern(777, 6),
+    }
+    beta_erofs = pattern(BLOCK, 7) + pattern(BLOCK, 8)
+    beta_boot = {"cmdline.txt": b"console=tty2 panic=5\n"}
 
     with tempfile.TemporaryDirectory() as tmp:
-        data_stage = os.path.join(tmp, "data")
-        write(os.path.join(data_stage, "slots", "alpha"), slot_data + slot_tree)
-        write(os.path.join(data_stage, "slots", "alpha.verity"), table.encode())
-        mke2fs(data_stage, os.path.join(HERE, "data.ext4"), "data", "256K")
-
-        rootfs_stage = os.path.join(tmp, "rootfs")
-        write(os.path.join(rootfs_stage, "boot", "Image"), pattern(40000, 3))
-        write(os.path.join(rootfs_stage, "boot", "board.dtb"), pattern(1234, 4))
-        write(os.path.join(rootfs_stage, "boot", "extlinux", "extlinux.conf"), extlinux)
-        mke2fs(rootfs_stage, os.path.join(HERE, "rootfs.ext4"), "rootfs", "256K")
-    print("root", root)
+        stage = os.path.join(tmp, "data")
+        alpha_root = make_slot(stage, "alpha", alpha_erofs, alpha_boot)
+        make_slot(stage, "beta", beta_erofs, beta_boot)
+        out = os.path.join(HERE, "data.ext4")
+        if os.path.exists(out):
+            os.remove(out)
+        subprocess.run(["mke2fs", "-q", "-t", "ext4", "-b", "1024", "-N", "64",
+                        "-O", "^has_journal", "-L", "data", "-d", stage, out, "512K"],
+                       check=True)
+    print("alpha root", alpha_root)
 
 
 if __name__ == "__main__":

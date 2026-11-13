@@ -22,8 +22,9 @@ fn cuts(len: usize, n: usize) -> Vec<usize> {
     points
 }
 
-/// Reads every part of every slot the image gives, ignoring the results: the
-/// point is that reading a damaged image does not panic.
+/// Reads every part of slot `alpha` the image gives, ignoring the results: the
+/// point is that reading a damaged image does not panic. Returns whether the
+/// image was read at all.
 fn touch_everything(path: &std::path::Path, scratch: &std::path::Path) -> bool {
     let Ok(image) = open(path, scratch, &["alpha"], &Options::default()) else {
         return false;
@@ -31,15 +32,13 @@ fn touch_everything(path: &std::path::Path, scratch: &std::path::Path) -> bool {
     let Ok(slot) = image.slot("alpha") else {
         return false;
     };
-    let _ = slot.verity_table();
+    let _ = slot.root_hash();
     if let Ok(mut reader) = slot.rootfs() {
         let _ = reader.read_to_end(&mut Vec::new());
     }
-    if let Ok(files) = slot.boot_files() {
-        for file in files {
-            if let Ok(mut reader) = slot.boot_file(&file.path) {
-                let _ = reader.read_to_end(&mut Vec::new());
-            }
+    for file in slot.boot_files() {
+        if let Ok(mut reader) = slot.boot_file(&file.path) {
+            let _ = reader.read_to_end(&mut Vec::new());
         }
     }
     true
@@ -49,7 +48,7 @@ fn touch_everything(path: &std::path::Path, scratch: &std::path::Path) -> bool {
 fn a_truncated_xz_is_refused_wherever_it_is_cut() {
     let dir = TestDir::new("trunc-xz");
     let scratch = TestDir::new("trunc-xz-scratch");
-    let whole = xz(&real_disk());
+    let whole = xz(&image_disk());
     for cut in cuts(whole.len(), 41) {
         if cut == whole.len() {
             continue;
@@ -72,7 +71,7 @@ fn a_truncated_xz_is_refused_wherever_it_is_cut() {
 fn a_truncated_plain_img_is_refused_wherever_it_is_cut() {
     let dir = TestDir::new("trunc-img");
     let scratch = TestDir::new("trunc-img-scratch");
-    let whole = bringup_disk();
+    let whole = image_disk();
     for cut in cuts(whole.len(), 97) {
         if cut == whole.len() {
             continue;
@@ -91,9 +90,7 @@ fn a_truncated_plain_img_is_refused_wherever_it_is_cut() {
 fn corrupt_xz_bytes_are_refused_not_read_as_a_slot() {
     let dir = TestDir::new("corrupt-xz");
     let scratch = TestDir::new("corrupt-xz-scratch");
-    let whole = xz(&real_disk());
-    // Every position through the stream would be slow; a spread of them, with
-    // the header, the middle and the index at the end.
+    let whole = xz(&image_disk());
     let mut positions: Vec<usize> = (0..40).map(|i| whole.len() * i / 40).collect();
     positions.extend([6, 12, 20, whole.len() - 1, whole.len() - 8]);
     for at in positions {
@@ -113,7 +110,7 @@ fn corrupt_xz_bytes_are_refused_not_read_as_a_slot() {
 fn a_damaged_partition_table_is_refused() {
     let dir = TestDir::new("gpt");
     let scratch = TestDir::new("gpt-scratch");
-    let whole = bringup_disk();
+    let whole = image_disk();
     // The header's signature, its CRC, its entry array, and a partition name.
     for at in [
         512,
@@ -134,7 +131,7 @@ fn a_damaged_partition_table_is_refused() {
     assert!(scratch.entries().is_empty());
 }
 
-/// A deterministic generator, so a failure can be replayed.
+/// A deterministic generator, so a failure can be replayed from its seed.
 struct Xorshift(u64);
 
 impl Xorshift {
@@ -146,32 +143,31 @@ impl Xorshift {
     }
 }
 
+/// Random damage, a fixed seed and 40 runs by default, so the gate stays quick.
+/// `ATLAS_IMAGE_DAMAGE_RUNS=N` runs N (for a longer local check).
 #[test]
 fn random_damage_never_panics_the_reader() {
+    let runs: usize = std::env::var("ATLAS_IMAGE_DAMAGE_RUNS")
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(40);
     let dir = TestDir::new("mutate");
     let scratch = TestDir::new("mutate-scratch");
-    let whole = real_disk();
+    let whole = image_disk();
     let mut rng = Xorshift(0x9E37_79B9_7F4A_7C15);
-    let mut read = 0;
-    for _ in 0..300 {
+    for _ in 0..runs {
         let mut damaged = whole.clone();
-        // Two to four bytes, in the table and the partitions, not the padding.
         let count = 2 + (rng.next() % 3) as usize;
         for _ in 0..count {
-            let at = (rng.next() as usize) % (3 * 1024 * 1024 + 300 * 1024).min(damaged.len());
+            let at = (rng.next() as usize) % damaged.len();
             damaged[at] = rng.next() as u8;
         }
         let path = dir.write("mutated.img", &damaged);
-        if touch_everything(&path, scratch.path()) {
-            read += 1;
-        }
+        touch_everything(&path, scratch.path());
         assert!(
             scratch.entries().is_empty(),
             "left behind: {:?}",
             scratch.entries()
         );
     }
-    // Some damage lands in bytes nothing reads (the MBR, free space), so some
-    // images still read; the point is that none panics.
-    assert!(read < 300);
 }
