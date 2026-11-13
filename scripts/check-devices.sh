@@ -226,9 +226,15 @@ echo "gaia: $("$gaia" --version 2>&1 | head -1), command: $verb, locked commit $
 # The list lives here, once. "*" applies to every slot family; "FAMILY:" applies to that family only.
 #   sha256: CRYPTO_SHA256 is dm-verity's hash (the verity table names sha256); the storage host is the
 #   controller the root and data partitions sit on (the Raze: the CM5 eMMC host; the RK35xx: the DW MMC).
+#   MMC_BLOCK: the block layer over MMC. Without it a host driver finds the card and no block device exists.
+#   "*" is right while both slot families boot from MMC; an NVMe-booting family would name BLK_DEV_NVME instead.
+#   The RK35xx boards have two storage hosts: the SD slot (DesignWare MMC) and the eMMC socket (DWCMSHC, the
+#   rk3588 compatible; the RK3576's rk3576-dwcmshc binds the same driver through its fallback). Both are built in.
 SLOT_CHAIN=(
   "*:BLK_DEV_DM" "*:DM_BUFIO" "*:DM_VERITY" "*:BLK_DEV_LOOP" "*:EROFS_FS" "*:EXT4_FS" "*:CRYPTO_SHA256"
-  "bcm2712:MMC_SDHCI_BRCMSTB" "rk35xx:MMC_DW_ROCKCHIP"
+  "*:MMC_BLOCK"
+  "bcm2712:MMC_SDHCI_BRCMSTB"
+  "rk35xx:MMC_DW_ROCKCHIP" "rk35xx:MMC_SDHCI_OF_DWCMSHC"
 )
 # A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe).
 SLOT_RECIPES="sd-image|slot"
