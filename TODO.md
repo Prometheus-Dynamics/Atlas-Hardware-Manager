@@ -16,6 +16,7 @@ The core every other group builds on: types, the driver contract, inventory, job
 - [ ] [A7](docs/prs/A7.md) Releases and trust (wave 2; needs A1)
 - [ ] [A8](docs/prs/A8.md) Core follow-ups from the first wave (wave 3; needs A1, A6, D1)
 - [ ] [A9](docs/prs/A9.md) The simulated node out of the drivers, and one driver for every family (wave 4; needs A1, A4)
+- [ ] [A10](docs/prs/A10.md) A key that says what it is, a board's Lemnos state, and the board session as its own crate (wave 4; needs A9, C1)
 
 ## B. Board descriptions
 
@@ -37,13 +38,13 @@ Every board as Gaia `next` data in `devices/`. Starts first; the Raze and the ZE
 Every job on a board through the Orion client, against a simulated node.
 
 - [ ] [C1](docs/prs/C1.md) Connect, discover and identify (wave 3; needs A1, A4)
-- [ ] [C2](docs/prs/C2.md) Readings and logs (wave 4; needs C1)
-- [ ] [C3](docs/prs/C3.md) Actions (wave 4; needs C1)
-- [ ] [C4](docs/prs/C4.md) Files (wave 4; needs C1)
+- [ ] [C2](docs/prs/C2.md) Readings and logs (wave 4; needs C1, A10)
+- [ ] [C3](docs/prs/C3.md) Actions (wave 4; needs C1, A10)
+- [ ] [C4](docs/prs/C4.md) Files (wave 4; needs C1, A10)
 - [ ] [C5](docs/prs/C5.md) Slots and updates (wave 5; needs C3, C4, A7, X1)
 - [ ] [C6](docs/prs/C6.md) Trial and confirm watch (wave 6; needs C5)
 - [ ] [C7](docs/prs/C7.md) Board data: backup, restore, files (wave 5; needs C4)
-- [ ] [C8](docs/prs/C8.md) SSH and the recovery shell (wave 4; needs C1)
+- [ ] [C8](docs/prs/C8.md) SSH and the recovery shell (wave 4; needs C1, A10)
 - [ ] [C9](docs/prs/C9.md) NetworkTables viewer (wave 4; needs C1)
 
 ## D. Flashing
