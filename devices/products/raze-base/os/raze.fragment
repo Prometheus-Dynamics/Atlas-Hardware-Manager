@@ -56,3 +56,11 @@ BR2_TARGET_GENERIC_ROOT_PASSWD=""
 # systemd-networkd is the network manager (systemd's own; no ifupdown). OPEN: the .network file for the
 # gadget's NCM interface (its address, and whether the board serves DHCP on it). ZERO 3E's usb0 lesson:
 # the DHCP server must actually run. No .network file is written here.
+
+# ---- Stripping (PR B16). Gaia's OS config starts from allnoconfig, where a bool's default does not
+# apply: Buildroot's BR2_STRIP_strip (default y, depends on BR2_BINFMT_ELF) is OFF unless set here.
+# It strips the target's binaries and libraries, and it also sets the kernel modules' install strip
+# (linux.mk: INSTALL_MOD_STRIP=1 follows BR2_STRIP_strip). BR2_BINFMT_ELF is written out too: the
+# ELF format is a choice whose default follows the MMU, so it is not left to that default.
+BR2_BINFMT_ELF=y
+BR2_STRIP_strip=y

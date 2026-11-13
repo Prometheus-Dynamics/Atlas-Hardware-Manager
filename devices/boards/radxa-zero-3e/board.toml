@@ -15,7 +15,7 @@ cpu = "cortex-a55"
 [kernel]
 device_tree = "rockchip/rk3566-radxa-zero-3e-gadget"
 device_tree_dir = "assets/dts"
-fragments = ["../../families/rk35xx/assets/linux.fragment", "assets/linux.fragment"]
+fragments = ["../../families/rk35xx/assets/trim.fragment", "../../families/rk35xx/assets/linux.fragment", "assets/linux.fragment"]
 
 [bootloader]
 defconfig = "radxa-zero-3-rk3566"

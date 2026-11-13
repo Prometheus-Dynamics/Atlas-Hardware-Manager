@@ -1,0 +1,151 @@
+# Every RK35xx board (RK3566 ZERO 3E, RK3588S ROCK 5C, RK3576 ROCK 4D): the kernel trim (PR B16).
+# Applied after the arm64 defconfig, before linux.fragment and any board fragment. Every line is
+# "not set" or a symbol the boards or the root path need, and each group says why it is here.
+# Standing rule: a symbol is turned off only when no board's dts, no Lemnos need, no slot or gadget
+# need and no product uses it. Where unsure, the symbol stays on and is listed as a candidate in
+# docs/prs/B16.md. Checked with merge_config and olddefconfig against the pinned Linux 7.3.3 Kconfig.
+
+# -- Other SoC vendors' platforms: their clocks, pinctrl, PHYs and drivers go with the platform. --
+# A platform symbol is off unless its own family is the board's. ARCH_ROCKCHIP stays (the boards).
+# CONFIG_ARCH_ACTIONS is not set
+# CONFIG_ARCH_AIROHA is not set
+# CONFIG_ARCH_SUNXI is not set
+# CONFIG_ARCH_ALPINE is not set
+# CONFIG_ARCH_APPLE is not set
+# CONFIG_ARCH_ARTPEC is not set
+# CONFIG_ARCH_ASPEED is not set
+# CONFIG_ARCH_AXIADO is not set
+# CONFIG_ARCH_BCM2835 is not set
+# CONFIG_ARCH_BCM_IPROC is not set
+# CONFIG_ARCH_BCMBCA is not set
+# CONFIG_ARCH_BRCMSTB is not set
+# CONFIG_ARCH_BCM is not set
+# CONFIG_ARCH_BERLIN is not set
+# CONFIG_ARCH_BITMAIN is not set
+# CONFIG_ARCH_BLAIZE is not set
+# CONFIG_ARCH_BST is not set
+# CONFIG_ARCH_CIX is not set
+# CONFIG_ARCH_EXYNOS is not set
+# CONFIG_ARCH_K3 is not set
+# CONFIG_ARCH_LG1K is not set
+# CONFIG_ARCH_HISI is not set
+# CONFIG_ARCH_KEEMBAY is not set
+# CONFIG_ARCH_MEDIATEK is not set
+# CONFIG_ARCH_MESON is not set
+# CONFIG_ARCH_LAN969X is not set
+# CONFIG_ARCH_SPARX5 is not set
+# CONFIG_ARCH_MMP is not set
+# CONFIG_ARCH_MVEBU is not set
+# CONFIG_ARCH_LAYERSCAPE is not set
+# CONFIG_ARCH_MXC is not set
+# CONFIG_ARCH_S32 is not set
+# CONFIG_ARCH_MA35 is not set
+# CONFIG_ARCH_NPCM is not set
+# CONFIG_ARCH_PENSANDO is not set
+# CONFIG_ARCH_QCOM is not set
+# CONFIG_ARCH_REALTEK is not set
+# CONFIG_ARCH_RENESAS is not set
+# CONFIG_ARCH_SEATTLE is not set
+# CONFIG_ARCH_INTEL_SOCFPGA is not set
+# CONFIG_ARCH_SOPHGO is not set
+# CONFIG_ARCH_STM32 is not set
+# CONFIG_ARCH_SYNQUACER is not set
+# CONFIG_ARCH_TEGRA is not set
+# CONFIG_ARCH_TESLA_FSD is not set
+# CONFIG_ARCH_SPRD is not set
+# CONFIG_ARCH_THUNDER is not set
+# CONFIG_ARCH_THUNDER2 is not set
+# CONFIG_ARCH_UNIPHIER is not set
+# CONFIG_ARCH_VEXPRESS is not set
+# CONFIG_ARCH_VISCONTI is not set
+# CONFIG_ARCH_XGENE is not set
+# CONFIG_ARCH_ZYNQMP is not set
+
+# -- Virtualization and server hardware: no guest and no server board runs this kernel. --
+# CONFIG_VIRTUALIZATION is not set
+# CONFIG_KVM is not set
+# Server NICs: none is on any RK35xx board. The Gigabit GMAC (STMMAC) and the PHYs stay.
+# CONFIG_NET_VENDOR_INTEL is not set
+# CONFIG_NET_VENDOR_MELLANOX is not set
+# CONFIG_NET_VENDOR_BROADCOM is not set
+# CONFIG_NET_VENDOR_CAVIUM is not set
+
+# -- Wireless and Bluetooth: none is on the three boards (an M.2 module is added by hand, not built in). --
+# CONFIG_WLAN is not set
+# CONFIG_BT is not set
+
+# -- USB audio: no board has a USB sound device. --
+# CONFIG_SND_USB_AUDIO is not set
+
+# -- Filesystems no product mounts. ext4, vfat, EROFS, tmpfs, configfs and squashfs stay.
+#    OVERLAY_FS is off: Lemnos refuses layered manifests, so nothing mounts an overlay (as the Raze's trim).
+# CONFIG_OVERLAY_FS is not set
+# CONFIG_BTRFS_FS is not set
+# CONFIG_FUSE_FS is not set
+# CONFIG_NFS_FS is not set
+# CONFIG_CIFS is not set
+
+# -- DRM bridges the RK35xx boards do not use: the NXP TDA998x HDMI bridge (the boards' HDMI is the
+#    Synopsys DW-HDMI through DRM_ROCKCHIP). ROCKCHIP's own DRM stays.
+# CONFIG_DRM_I2C_NXP_TDA998X is not set
+
+# -- Debug information and kallsyms: the image is the shipped kernel, and oopses still name functions
+#    (KALLSYMS stays, as the Raze's trim). No DWARF or BTF is built into the Image or the modules.
+# The "Debug information" choice is None: DEBUG_INFO itself is derived from it (not settable).
+CONFIG_DEBUG_INFO_NONE=y
+# CONFIG_DEBUG_INFO_BTF is not set
+# CONFIG_KALLSYMS_ALL is not set
+# CONFIG_KPROBES is not set
+# CONFIG_FTRACE is not set
+
+# -- The slot root's dm-verity. Off in the arm64 defconfig, and Lemnos's slot initramfs needs
+#    dm-mod, dm-bufio and dm-verity (docs/slots.md, "The kernel needs ... loop and dm-verity").
+#    Built in, so no module has to be packed into the initramfs (a built-in module needs no load).
+CONFIG_BLK_DEV_DM=y
+CONFIG_DM_BUFIO=y
+CONFIG_DM_VERITY=y
+
+# -- USB gadget functions (PR B14 made USB_CONFIGFS=y, so every configfs function the defconfig asks for
+#    now builds). Kept: FunctionFS (Orion's link), NCM (the board's network function, the Raze's) and ACM
+#    (the one serial console). Every other configfs function is off: no RK35xx product uses it.
+#    The legacy g_* gadget modules are off too; the ZERO 3E's board fragment keeps USB_ETH (the one
+#    legacy module, its bring-up's usb0 ECM), and that is the only one any pending product needs.
+# CONFIG_USB_CONFIGFS_SERIAL is not set
+# CONFIG_USB_CONFIGFS_OBEX is not set
+# CONFIG_USB_CONFIGFS_ECM is not set
+# CONFIG_USB_CONFIGFS_ECM_SUBSET is not set
+# CONFIG_USB_CONFIGFS_RNDIS is not set
+# CONFIG_USB_CONFIGFS_EEM is not set
+# CONFIG_USB_CONFIGFS_MASS_STORAGE is not set
+# CONFIG_USB_CONFIGFS_F_LB_SS is not set
+# CONFIG_USB_CONFIGFS_F_UAC1 is not set
+# CONFIG_USB_CONFIGFS_F_UAC1_LEGACY is not set
+# CONFIG_USB_CONFIGFS_F_UAC2 is not set
+# CONFIG_USB_CONFIGFS_F_MIDI is not set
+# CONFIG_USB_CONFIGFS_F_MIDI2 is not set
+# CONFIG_USB_CONFIGFS_F_HID is not set
+# CONFIG_USB_CONFIGFS_F_UVC is not set
+# CONFIG_USB_CONFIGFS_F_PRINTER is not set
+# CONFIG_USB_G_SERIAL is not set
+# CONFIG_USB_G_NCM is not set
+# CONFIG_USB_G_MULTI is not set
+# CONFIG_USB_G_HID is not set
+# CONFIG_USB_G_PRINTER is not set
+# -- Legacy gadget modules (drivers/usb/gadget/legacy). Each is off, except USB_ETH, which the ZERO 3E's
+#    board fragment sets for its bring-up's usb0 (one ECM function). USB_ETH's RNDIS and EEM sub-options
+#    are off: the board uses one network function. USB_MASS_STORAGE is the legacy module that also
+#    selects the mass-storage function; off with the configfs one.
+# CONFIG_USB_ETH_RNDIS is not set
+# CONFIG_USB_ETH_EEM is not set
+# CONFIG_USB_MASS_STORAGE is not set
+# CONFIG_USB_ZERO is not set
+# CONFIG_USB_AUDIO is not set
+# CONFIG_USB_GADGETFS is not set
+# CONFIG_USB_FUNCTIONFS is not set
+# CONFIG_USB_RAW_GADGET is not set
+# CONFIG_USB_CDC_COMPOSITE is not set
+# CONFIG_USB_G_WEBCAM is not set
+# CONFIG_USB_MIDI_GADGET is not set
+# CONFIG_USB_G_NOKIA is not set
+# CONFIG_USB_G_ACM_MS is not set
+# CONFIG_USB_G_MULTI is not set

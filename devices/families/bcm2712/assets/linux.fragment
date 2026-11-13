@@ -30,3 +30,17 @@ CONFIG_RP1_PIO=y
 CONFIG_FIRMWARE_RP1=y
 # CONFIG_MBOX_RP1: the RP1 mailbox FIRMWARE_RP1 uses. Depends on MFD_RP1 (=y in bcm2712_defconfig).
 CONFIG_MBOX_RP1=y
+#
+# -- RP1 chain's last link and its MSI dependency (PR B16, from Lemnos docs/kernel-config.md @4c6678f3) --
+# CONFIG_PCI_MSI: MFD_RP1 depends on PCI && PCI_MSI. bcm2712_defconfig sets PCI=y and does NOT set PCI_MSI, and
+#   the Kconfig in this tree gives PCI_MSI no default, so MFD_RP1 could drop to n in olddefconfig. Set here.
+# CONFIG_MFD_RP1: the RP1 multi-function device the mailbox (MBOX_RP1) sits on. bcm2712_defconfig has it =y
+#   (checked in its file); set here too so the chain does not depend on the defconfig's value alone.
+CONFIG_PCI_MSI=y
+CONFIG_MFD_RP1=y
+#
+# -- Built in for the flasher (no modules; Lemnos docs/kernel-config.md "Built in" column) --
+# CONFIG_SPI_SPIDEV: /dev/spidevB.C, the stock SPI route (m in bcm2712_defconfig, line 771).
+CONFIG_SPI_SPIDEV=y
+# CONFIG_DMABUF_HEAPS_CMA: /dev/dma_heap/linux,cma (needs DMA_CMA and CMA).
+CONFIG_DMABUF_HEAPS_CMA=y
