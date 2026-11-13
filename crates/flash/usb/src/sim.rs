@@ -23,7 +23,19 @@ use crate::bus::UsbBus;
 use crate::gauge::{Gauges, Kind, Tracked};
 use crate::hotplug::HotplugEvent;
 use crate::record::{Record, Transfer};
-use crate::{DeviceSummary, OpenOptions, Timeouts, UsbError, UsbIo};
+use crate::{DeviceSummary, InterfaceSummary, OpenOptions, Timeouts, UsbError, UsbIo};
+
+/// How a simulated device answers the requests for its interface strings.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum StringRequests {
+    /// Answers with the strings it was given.
+    #[default]
+    Answer,
+    /// Stalls the request, as a device with a broken descriptor does.
+    Stall,
+    /// Never answers: the request times out after the control timeout.
+    Silent,
+}
 
 /// One scripted answer to one transfer.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -51,6 +63,9 @@ struct Slot {
     generation: u64,
     answers: VecDeque<Answer>,
     records: Vec<Record>,
+    interfaces: Vec<InterfaceSummary>,
+    string_requests: StringRequests,
+    claimed: Vec<u8>,
 }
 
 #[derive(Debug, Default)]
@@ -118,6 +133,9 @@ impl SimBus {
                 generation,
                 answers: VecDeque::new(),
                 records: Vec::new(),
+                interfaces: Vec::new(),
+                string_requests: StringRequests::Answer,
+                claimed: Vec::new(),
             },
         );
         state.announce(HotplugEvent::Attached(summary));
@@ -138,6 +156,45 @@ impl SimBus {
             }
             None => false,
         }
+    }
+
+    /// Gives the device at `location` its interfaces. A device with none
+    /// opens as before, with no interface to pick. `false` if no device is
+    /// there.
+    pub fn set_interfaces(
+        &self,
+        location: &str,
+        interfaces: impl IntoIterator<Item = InterfaceSummary>,
+    ) -> bool {
+        match lock(&self.state).slots.get_mut(location) {
+            Some(slot) => {
+                slot.interfaces = interfaces.into_iter().collect();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Sets how the device at `location` answers its interface string
+    /// requests. `false` if no device is there.
+    pub fn set_string_requests(&self, location: &str, requests: StringRequests) -> bool {
+        match lock(&self.state).slots.get_mut(location) {
+            Some(slot) => {
+                slot.string_requests = requests;
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The interface numbers opened at `location` since it was attached, in
+    /// order. Empty if none is there or it has no interfaces.
+    pub fn claimed(&self, location: &str) -> Vec<u8> {
+        lock(&self.state)
+            .slots
+            .get(location)
+            .map(|slot| slot.claimed.clone())
+            .unwrap_or_default()
     }
 
     /// Every transfer the device at `location` has answered since it was
@@ -197,16 +254,61 @@ impl UsbBus for SimBus {
         Ok(devices)
     }
 
+    async fn interfaces(
+        &self,
+        location: &str,
+        timeouts: Timeouts,
+    ) -> Result<Vec<InterfaceSummary>, UsbError> {
+        let (interfaces, requests) = {
+            let state = lock(&self.state);
+            let slot = state
+                .slots
+                .get(location)
+                .ok_or_else(|| UsbError::NotFound(location.to_string()))?;
+            (slot.interfaces.clone(), slot.string_requests)
+        };
+        // A device with no interface strings is never asked for one.
+        let asks = interfaces
+            .iter()
+            .any(|interface| interface.string.is_some());
+        match requests {
+            StringRequests::Answer => Ok(interfaces),
+            StringRequests::Stall if asks => Err(UsbError::Stall),
+            StringRequests::Silent if asks => {
+                tokio::time::sleep(timeouts.control).await;
+                Err(UsbError::Timeout("the interface string request".into()))
+            }
+            StringRequests::Stall | StringRequests::Silent => Ok(interfaces),
+        }
+    }
+
     async fn open(
         &self,
         location: &str,
         options: &OpenOptions,
     ) -> Result<Box<dyn UsbIo>, UsbError> {
-        let generation = lock(&self.state)
-            .slots
-            .get(location)
-            .map(|slot| slot.generation)
-            .ok_or_else(|| UsbError::NotFound(location.to_string()))?;
+        let generation = {
+            let mut state = lock(&self.state);
+            let slot = state
+                .slots
+                .get_mut(location)
+                .ok_or_else(|| UsbError::NotFound(location.to_string()))?;
+            if !slot.interfaces.is_empty() {
+                // Claim the named interface, or else the first one with a
+                // bulk endpoint, as the real bus does.
+                let chosen = match options.interface {
+                    Some(number) => slot.interfaces.iter().find(|i| i.number == number),
+                    None => slot.interfaces.iter().find(|i| has_bulk(i)),
+                }
+                .filter(|interface| has_bulk(interface))
+                .ok_or_else(|| {
+                    UsbError::Protocol(format!("no bulk endpoint to claim at {location}"))
+                })?;
+                let number = chosen.number;
+                slot.claimed.push(number);
+            }
+            slot.generation
+        };
         let io: Box<dyn UsbIo> = Box::new(SimIo {
             state: Arc::clone(&self.state),
             location: location.to_string(),
@@ -216,6 +318,13 @@ impl UsbBus for SimBus {
         });
         Ok(io)
     }
+}
+
+fn has_bulk(interface: &InterfaceSummary) -> bool {
+    interface
+        .endpoints
+        .iter()
+        .any(|ep| ep.kind == crate::EndpointKind::Bulk)
 }
 
 /// What a transfer resolved to, before any waiting.
