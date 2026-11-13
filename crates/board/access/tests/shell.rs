@@ -6,7 +6,7 @@
 mod common;
 
 use atlas_access::{AccessError, End, Event, OpenRequest, ShellKind, Terminal, open};
-use atlas_session::Lease;
+use atlas_session::{Clock, Lease};
 use atlas_sim_node::access::ShellServer;
 use atlas_sim_node::{DEADLINE, Kind, Mode, NODE_NAME, SimNode};
 use common::{
@@ -204,12 +204,15 @@ async fn a_shell_whose_session_lapses_while_it_is_open_ends_as_a_lapse_not_as_a_
     fresh(&dir);
     let node = start_node(&dir, Mode::Running, None);
     let shell = ShellServer::start().expect("the shell listens");
-    // Renewals never come (a long renew) and the period is short: silence with the hold is a lapse.
-    let sessions = sessions().with_lease(Lease {
-        period: Duration::from_millis(300),
-        renew: Duration::from_secs(3600),
-        in_force: true,
-    });
+    // The lease is on a manual clock, and renews are far away: the lapse is an advance of the clock.
+    let clock = Clock::manual();
+    let sessions = sessions()
+        .with_lease(Lease {
+            period: Duration::from_secs(60),
+            renew: Duration::from_secs(3600),
+            in_force: true,
+        })
+        .with_clock(clock.clone());
     let handle = handle_for(&sessions, node.network().port());
     connected(&handle).await;
     stated(&handle).await;
@@ -217,6 +220,8 @@ async fn a_shell_whose_session_lapses_while_it_is_open_ends_as_a_lapse_not_as_a_
     let mut term = open(&handle, carrier.clone(), OpenRequest::new(80, 24))
         .await
         .expect("the shell opens");
+    // Silent past the lease with the shell open.
+    clock.advance(Duration::from_secs(61));
     match end_of(&mut term).await {
         End::HoldLapsed(reason) => {
             assert!(reason.contains("may have dropped this shell"), "{reason}");

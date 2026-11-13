@@ -43,7 +43,7 @@ use orion::{Address, ClientError, Identity, Options, Orion};
 use tokio::sync::{oneshot, watch};
 
 use crate::backoff::Backoff;
-use crate::lease::{self, Hold, Lease, Shared as LeaseShared};
+use crate::lease::{self, Clock, Hold, Lease, Shared as LeaseShared};
 use crate::long::{
     Cancel, MAX_LONG_OPERATIONS, Outcome, STEP_WAIT, Step, StepError, SteppedTransfer,
 };
@@ -525,7 +525,14 @@ impl Monitor {
     /// is taken as the expected one (trust on first use). The first try happens on the new
     /// thread. Calls on the handle wait `call_wait` for their answer.
     pub fn start(address: Address, pause: Arc<dyn Pause>, call_wait: Duration) -> Self {
-        Self::start_full(address, None, pause, call_wait, Lease::DEFAULT)
+        Self::start_full(
+            address,
+            None,
+            pause,
+            call_wait,
+            Lease::DEFAULT,
+            Clock::real(),
+        )
     }
 
     /// As [`Monitor::start`], for a node whose key the caller already knows: the first connect is
@@ -536,16 +543,25 @@ impl Monitor {
         pause: Arc<dyn Pause>,
         call_wait: Duration,
     ) -> Self {
-        Self::start_full(address, Some(key), pause, call_wait, Lease::DEFAULT)
+        Self::start_full(
+            address,
+            Some(key),
+            pause,
+            call_wait,
+            Lease::DEFAULT,
+            Clock::real(),
+        )
     }
 
-    /// The whole start: an optional pinned key and the lease the session keeps for its holds.
+    /// The whole start: an optional pinned key, the lease the session keeps for its holds, and the
+    /// clock that lease is measured on.
     pub fn start_full(
         address: Address,
         pin: Option<[u8; 32]>,
         pause: Arc<dyn Pause>,
         call_wait: Duration,
         lease: Lease,
+        clock: Clock,
     ) -> Self {
         let (sender, presence) = watch::channel(Presence::Searching);
         let (calls, received) = mpsc::channel::<Box<dyn Job>>();
@@ -570,7 +586,8 @@ impl Monitor {
                     parked: VecDeque::new(),
                     lease,
                     shared: thread_shared,
-                    last_bridge: Instant::now(),
+                    last_bridge: clock.now(),
+                    clock,
                     last_try: None,
                     lapse_marked: false,
                     node: None,
@@ -644,9 +661,11 @@ struct Keeper {
     /// The holds of this session, and its lapse count.
     shared: Arc<LeaseShared>,
     /// When the board last had a request from this session: a bridge call, or a renewal.
-    last_bridge: Instant,
+    last_bridge: Duration,
     /// When the session last tried to renew, successfully or not. Throttles a failing renewal.
-    last_try: Option<Instant>,
+    last_try: Option<Duration>,
+    /// The clock the lease is measured on (see [`Clock`]).
+    clock: Clock,
     /// Whether the current silence has been recorded as a lapse already.
     lapse_marked: bool,
     /// The node this session is connected to, while it is Found.
@@ -654,7 +673,7 @@ struct Keeper {
     /// The device whose bridge renews the lease, once listed (see `bridge_device`).
     device: Option<String>,
     /// When the node's devices were last listed, when none was found.
-    last_listed: Option<Instant>,
+    last_listed: Option<Duration>,
 }
 
 impl Keeper {
@@ -808,15 +827,15 @@ impl Keeper {
             return Ok(());
         };
         self.check_lapse();
-        let silent = self.last_bridge.elapsed();
+        let silent = self.since(self.last_bridge);
         let due = silent >= self.lease.renew
             && self
                 .last_try
-                .is_none_or(|tried| tried.elapsed() >= self.lease.renew);
+                .is_none_or(|tried| self.since(tried) >= self.lease.renew);
         if !due {
             return Ok(());
         }
-        self.last_try = Some(Instant::now());
+        self.last_try = Some(self.clock.now());
         let Ok(name) = node_name.parse::<NodeName>() else {
             return Ok(());
         };
@@ -839,11 +858,11 @@ impl Keeper {
         }
         if self
             .last_listed
-            .is_some_and(|listed| listed.elapsed() < self.lease.renew)
+            .is_some_and(|listed| self.since(listed) < self.lease.renew)
         {
             return Ok(None);
         }
-        self.last_listed = Some(Instant::now());
+        self.last_listed = Some(self.clock.now());
         match lease::device_for_renewal(orion) {
             Ok(device) => {
                 self.device.clone_from(&device);
@@ -860,7 +879,7 @@ impl Keeper {
         if !self.lease.in_force || self.shared.holds() == 0 {
             return;
         }
-        if self.last_bridge.elapsed() > self.lease.period && !self.lapse_marked {
+        if self.since(self.last_bridge) > self.lease.period && !self.lapse_marked {
             // Silent for longer than the board's lease: the board may have dropped the holds.
             self.lapse_marked = true;
             self.shared.lapse();
@@ -882,8 +901,13 @@ impl Keeper {
 
     /// A request reached the board's bridge from this session: the lease is renewed, and a lapse
     /// that was recorded for the silence before is over.
+    /// The time since `at`, on this session's clock.
+    fn since(&self, at: Duration) -> Duration {
+        self.clock.now().saturating_sub(at)
+    }
+
     fn mark_bridge(&mut self) {
-        self.last_bridge = Instant::now();
+        self.last_bridge = self.clock.now();
         self.lapse_marked = false;
     }
 
