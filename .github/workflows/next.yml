@@ -31,6 +31,14 @@ jobs:
         with:
           path: ~/.cache/atlas/gaia
           key: gaia-${{ runner.os }}-${{ hashFiles('devices/gaia.lock') }}
+      # scripts/check-kernel-fragments.sh resolves each board's kernel configuration from its pinned tree (fetched
+      # once per pin and cached here: the key moves only when a kernel pin moves). flex and bison are the kernel's
+      # host tools for configuration (no cross compiler is needed to resolve a config).
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/atlas/kernel
+          key: kernel-${{ runner.os }}-${{ hashFiles('devices/families/*/family.toml', 'devices/boards/*/board.toml') }}
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends flex bison
       # gaia plan wants the tools a recipe names: veritysetup (slot), mkfs.erofs and the disk tools (sd-image), bwrap (a Rust component).
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cryptsetup-bin erofs-utils e2fsprogs dosfstools mtools gdisk xz-utils bubblewrap
       - run: ./scripts/gate.sh

@@ -2,7 +2,7 @@
 # every BCM2712 board shares. A board file extends this and keeps only what
 # differs (the Raze: its fragments, device trees, disk and flash methods).
 # Pinned as dev pins it: raspberrypi/linux rpi-7.2.y at 53679a5 (Linux 7.2.9,
-# kernel release 7.2.9-v8-16k with 4 KiB pages). Untested on board.
+# kernel release 7.2.9-v8, 4 KiB pages; the suffix was "-v8-16k" from the defconfig until PR B25). Untested on board.
 version = 1
 
 [target]
