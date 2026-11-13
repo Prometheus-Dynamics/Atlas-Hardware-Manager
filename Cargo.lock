@@ -149,6 +149,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-files"
+version = "2026.1.0-dev"
+dependencies = [
+ "async-trait",
+ "atlas-driver",
+ "atlas-jobs",
+ "atlas-session",
+ "atlas-sim-node",
+ "orion",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-helper"
 version = "2026.1.0-dev"
 dependencies = [
