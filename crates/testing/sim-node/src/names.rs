@@ -33,15 +33,15 @@ pub const SURFACE: &[Method] = &[
     },
     Method {
         contract: "system.slots/1",
-        lemnos: "install",
-        action: SLOTS_INSTALL,
-        long_job: true,
+        lemnos: "accept",
+        action: SLOTS_ACCEPT,
+        long_job: false,
     },
     Method {
         contract: "system.slots/1",
-        lemnos: "write",
-        action: SLOTS_WRITE,
-        long_job: false,
+        lemnos: "install_file",
+        action: SLOTS_INSTALL_FILE,
+        long_job: true,
     },
     Method {
         contract: "system.slots/1",
@@ -90,8 +90,8 @@ pub const SURFACE: &[Method] = &[
 /// Actions the simulated node registers: the I5 surface, then the board's own.
 pub const ACTIONS: &[&str] = &[
     SLOTS_LIST,
-    SLOTS_INSTALL,
-    SLOTS_WRITE,
+    SLOTS_ACCEPT,
+    SLOTS_INSTALL_FILE,
     SLOTS_SET_DEFAULT,
     SLOTS_TRIAL,
     SLOTS_CONFIRM,
@@ -115,12 +115,38 @@ pub const ACTIONS: &[&str] = &[
 /// Topics the simulated node publishes.
 pub const TOPICS: &[&str] = &[READINGS, HARDWARE, LOGS];
 
-// system.slots/1. Arguments are `key=value` lines (OPEN: Orion's encoding of Lemnos args).
-// `install` takes `size` (u64 LE, 8 bytes), `pin` and `keep_old` (one byte each, 0 or 1).
-// `write` takes `offset` (u64 LE, 8 bytes) then the chunk bytes.
+// The hello facts: one text topic per fact, published once at start, the way a board's own
+// program publishes them. Orion signs the hello document; Atlas reads `family`, `serial` and
+// `state` (running | recovery | flasher) as required, and `model`, `name`, `version.*` and
+// `offers` (comma-separated capability kinds) as optional. See the board driver's identity.
+pub const HELLO_FAMILY: &str = "hello.family";
+pub const HELLO_SERIAL: &str = "hello.serial";
+pub const HELLO_STATE: &str = "hello.state";
+pub const HELLO_MODEL: &str = "hello.model";
+pub const HELLO_NAME: &str = "hello.name";
+pub const HELLO_OFFERS: &str = "hello.offers";
+pub const HELLO_VERSION_OS: &str = "hello.version.os";
+
+/// Every hello topic the node may publish.
+pub const HELLO: &[&str] = &[
+    HELLO_FAMILY,
+    HELLO_SERIAL,
+    HELLO_STATE,
+    HELLO_MODEL,
+    HELLO_NAME,
+    HELLO_OFFERS,
+    HELLO_VERSION_OS,
+];
+
+// system.slots/1. Arguments are UTF-8 words, separated by spaces, as Lemnos's bridge takes them
+// (`lemnos_wire::text::encode_args`): numbers in decimal, bools as true/false (or on/off, 1/0),
+// strings as one word. A bundle never goes as an argument: `accept <size>` checks there is room,
+// the bundle is pushed as a file (Orion's `Files::push`) into `INCOMING`, and
+// `install_file <name> <pin> <keep_old>` installs it as a long job. Direct socket callers
+// (`install` + `write`) are not on the Orion surface.
 pub const SLOTS_LIST: &str = "system.slots.list";
-pub const SLOTS_INSTALL: &str = "system.slots.install";
-pub const SLOTS_WRITE: &str = "system.slots.write";
+pub const SLOTS_ACCEPT: &str = "system.slots.accept";
+pub const SLOTS_INSTALL_FILE: &str = "system.slots.install-file";
 pub const SLOTS_SET_DEFAULT: &str = "system.slots.set-default";
 pub const SLOTS_TRIAL: &str = "system.slots.trial";
 pub const SLOTS_CONFIRM: &str = "system.slots.confirm";
@@ -128,10 +154,26 @@ pub const SLOTS_REMOVE: &str = "system.slots.remove";
 pub const SLOTS_PIN: &str = "system.slots.pin";
 pub const SLOTS_SET_KEEP: &str = "system.slots.set-keep";
 
+/// The directory a pushed bundle lands in, relative to the data partition. The driver owns it:
+/// it is cleared when the node starts, and a file is removed when its install job ends.
+pub const INCOMING: &str = "slots/.incoming/";
+
+/// Whether `name` is one path component of `[A-Za-z0-9._-]`, not `.` or `..`.
+#[must_use]
+pub fn valid_name(name: &str) -> bool {
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
 // system.reboot/1.
 pub const REBOOT: &str = "system.reboot.reboot";
 
-// The board's own actions, outside I5 (provisional).
+// The board's own actions, outside I5 (provisional). Their words are the same: spaces between
+// them, and bytes as hex.
 /// The boot and slot state as text.
 pub const STATUS: &str = "status";
 pub const LOCATE: &str = "locate";
@@ -139,7 +181,8 @@ pub const SELF_TEST: &str = "self-test";
 pub const SET_CLOCK: &str = "set-clock";
 /// A small text report of the board's state, returned as output.
 pub const SUPPORT_BUNDLE: &str = "support-bundle";
-// The data partition. `data.restore` takes a backup as its args; `fs.*` take `path=`.
+// The data partition. `data.backup` answers the partition as hex; `data.restore` takes that hex;
+// `fs.*` take a path as a word.
 pub const DATA_BACKUP: &str = "data.backup";
 pub const DATA_RESTORE: &str = "data.restore";
 pub const FS_LIST: &str = "fs.list";
@@ -161,9 +204,16 @@ mod tests {
     #[test]
     fn names_are_unique() {
         let mut seen = std::collections::BTreeSet::new();
-        for name in ACTIONS.iter().chain(TOPICS) {
+        for name in ACTIONS.iter().chain(TOPICS).chain(HELLO) {
             assert!(seen.insert(*name), "{name} is listed twice");
             assert!(!name.is_empty() && !name.contains(' '));
+        }
+    }
+
+    #[test]
+    fn hello_topics_are_named_hello_dot_fact() {
+        for topic in HELLO {
+            assert!(topic.starts_with("hello."), "{topic}");
         }
     }
 

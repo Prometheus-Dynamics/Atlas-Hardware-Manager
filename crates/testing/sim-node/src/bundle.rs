@@ -120,6 +120,11 @@ pub fn verify(bundle: &[u8], trusted: &[TrustedKey]) -> Result<Verified, Status>
     if manifest.get("schema").and_then(Value::as_u64) != Some(2) {
         return Err(refuse("slot.json is not schema 2"));
     }
+    if manifest.get("layers").is_some() {
+        return Err(refuse(
+            "layered slots are not supported: send a single-image bundle",
+        ));
+    }
     let id = text(&manifest, "id")?.to_string();
     if !valid_id(&id) {
         return Err(refuse(format!("{id:?} is not a slot id")));

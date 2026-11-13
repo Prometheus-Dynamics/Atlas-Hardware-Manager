@@ -163,7 +163,9 @@ pub struct Slots {
     pub keep: u32,
     pub free_bytes: u64,
     pub reserve_bytes: u64,
-    /// The security switch. Off, signatures are shown but do not refuse an install.
+    /// The security switch, off by default. Off, every signature is still checked and shown
+    /// (`signed`, `signer`), and nothing is refused for it. On, an install that is unsigned or
+    /// signed by an untrusted key is refused.
     pub require_signed: bool,
     pub trusted: Vec<TrustedKey>,
     /// What happened, for the log, drained by the model.
@@ -278,6 +280,25 @@ impl Slots {
                 "security is on and the bundle is not signed by a trusted key",
             )),
             _ => Ok(()),
+        }
+    }
+
+    /// Replaces the trusted keys with the ones in a key file (see [`parse_keys`]). A file that
+    /// does not parse loads as no keys at all.
+    ///
+    /// # Errors
+    ///
+    /// The message from [`parse_keys`], when the file is refused.
+    pub fn load_keys(&mut self, text: &str) -> Result<usize, String> {
+        match parse_keys(text) {
+            Ok(keys) => {
+                self.trusted = keys;
+                Ok(self.trusted.len())
+            }
+            Err(error) => {
+                self.trusted.clear();
+                Err(error)
+            }
         }
     }
 
@@ -572,15 +593,6 @@ impl Slots {
         }
     }
 
-    fn signed_label(&self, signed: &Signed) -> &'static str {
-        match signed {
-            Signed::Trusted { .. } => "trusted",
-            _ if !self.require_signed => "unverified",
-            Signed::Untrusted => "untrusted",
-            Signed::Unsigned => "unsigned",
-        }
-    }
-
     /// `list`, as the slot driver writes it: newest slot first.
     #[must_use]
     pub fn list_json(&self) -> String {
@@ -618,7 +630,7 @@ impl Slots {
                     "kernel": entry.kernel,
                     "display_name": entry.display_name,
                     "good": entry.good.label(),
-                    "signed": self.signed_label(&entry.signed),
+                    "signed": signed_label(&entry.signed),
                     "signer": signer,
                     "installed": "",
                     "last_boot": "",
@@ -647,6 +659,60 @@ impl Slots {
         })
         .to_string()
     }
+}
+
+/// How a slot's signature stood: `trusted`, `untrusted` or `unsigned`. Shown whatever the
+/// security switch says.
+fn signed_label(signed: &Signed) -> &'static str {
+    match signed {
+        Signed::Trusted { .. } => "trusted",
+        Signed::Untrusted => "untrusted",
+        Signed::Unsigned => "unsigned",
+    }
+}
+
+/// Reads a key file: one `<64 hex public key> <owner>` per line. Blank lines and `#` comments
+/// are skipped. A line without an owner, or a key that is not 64 hex digits, refuses the whole
+/// file.
+///
+/// # Errors
+///
+/// A message naming the line that is wrong.
+pub fn parse_keys(text: &str) -> Result<Vec<TrustedKey>, String> {
+    let mut keys = Vec::new();
+    for (index, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let number = index + 1;
+        let (hex, owner) = line
+            .split_once(char::is_whitespace)
+            .ok_or_else(|| format!("line {number}: the key has no owner after it"))?;
+        let owner = owner.trim();
+        if owner.is_empty() {
+            return Err(format!("line {number}: the key has no owner after it"));
+        }
+        let public = decode_key(hex)
+            .ok_or_else(|| format!("line {number}: the key is not 64 hex digits"))?;
+        keys.push(TrustedKey {
+            public,
+            owner: owner.to_string(),
+        });
+    }
+    Ok(keys)
+}
+
+fn decode_key(hex: &str) -> Option<[u8; 32]> {
+    if hex.len() != 64 || !hex.is_ascii() {
+        return None;
+    }
+    let mut key = [0_u8; 32];
+    for (byte, pair) in key.iter_mut().zip(hex.as_bytes().chunks(2)) {
+        let text = std::str::from_utf8(pair).ok()?;
+        *byte = u8::from_str_radix(text, 16).ok()?;
+    }
+    Some(key)
 }
 
 fn not_found(id: &str) -> Status {
