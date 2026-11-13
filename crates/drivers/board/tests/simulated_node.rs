@@ -11,12 +11,12 @@ use std::sync::atomic::AtomicBool;
 use std::thread;
 use std::time::Duration;
 
-use atlas_board::identity::{KEY_SOURCE, LEMNOS, LEMNOS_DETAIL};
 use atlas_board::{BoardDriver, Pause, Seed};
 use atlas_driver::{Driver, DriverError, Serves};
 use atlas_sim_node::{Hello, Kind, Mode, SimNode};
 use atlas_types::{
-    Candidate, CapabilityKind, DeviceKey, DeviceState, Identity, Link, LinkId, LinkKind,
+    Candidate, CapabilityKind, DeviceKey, DeviceState, Identity, LemnosState, Link, LinkId,
+    LinkKind,
 };
 
 const LINK: &str = "usbnet:test0";
@@ -99,10 +99,6 @@ async fn identify(driver: &BoardDriver, candidate: &Candidate) -> Identity {
     driver.identify(candidate).await.expect("identified")
 }
 
-fn attribute<'a>(identity: &'a Identity, name: &str) -> Option<&'a str> {
-    identity.attributes.get(name).map(String::as_str)
-}
-
 #[tokio::test]
 async fn a_node_is_found_identified_lost_and_found_again() {
     let dir = scratch("cycle");
@@ -119,8 +115,8 @@ async fn a_node_is_found_identified_lost_and_found_again() {
     assert_eq!(identity.key, DeviceKey::new("test-family", "0001"));
     assert_eq!(identity.state, DeviceState::Running);
     assert_eq!(identity.model, "test-model");
-    assert_eq!(attribute(&identity, KEY_SOURCE), Some("hardware"));
-    assert_eq!(attribute(&identity, LEMNOS), Some("answering"));
+    assert!(identity.key.is_board());
+    assert_eq!(identity.lemnos, LemnosState::Answering);
     let grants = driver.capabilities(&identity);
     assert!(
         grants.grants(CapabilityKind::Slots),
@@ -167,19 +163,17 @@ async fn a_node_with_lemnos_a_plain_node_and_a_faulted_lemnos_are_three_kinds_of
     // restarting, not plain. Its key is still the board's.
     board.stop_lemnos();
     let faulted = identify(&driver, &offered(&driver, &link).await).await;
-    assert_eq!(
-        attribute(&faulted, LEMNOS),
-        Some("not-answering"),
+    assert!(
+        matches!(&faulted.lemnos, LemnosState::NotAnswering { reason } if reason.starts_with("-4")),
         "{faulted:?}"
     );
-    assert!(attribute(&faulted, LEMNOS_DETAIL).is_some_and(|detail| detail.starts_with("-4")));
     assert_eq!(faulted.key, DeviceKey::new("test-family", "0001"));
     assert!(faulted.key.is_board(), "a board key, not a plain one");
 
     // Lemnos answers again: back to answering.
     board.resume_lemnos();
     let back = identify(&driver, &offered(&driver, &link).await).await;
-    assert_eq!(attribute(&back, LEMNOS), Some("answering"));
+    assert_eq!(back.lemnos, LemnosState::Answering);
 
     // A plain Orion node: no hardware facts, no Lemnos. It is not refused; it is keyed by its
     // fingerprint and grants Orion's own services only.
@@ -187,13 +181,11 @@ async fn a_node_with_lemnos_a_plain_node_and_a_faulted_lemnos_are_three_kinds_of
     let plain = start(&plain_dir, &Kind::Plain, None);
     let plain_driver = driver_for(plain.network().port(), &pause);
     let plain_id = identify(&plain_driver, &offered(&plain_driver, &link).await).await;
-    assert_eq!(plain_id.key.family().map(|f| f.as_str()), Some("orion"));
-    assert_eq!(
-        plain_id.key.serial().map(|s| s.as_str()),
-        attribute(&plain_id, "fingerprint")
+    assert!(
+        matches!(plain_id.key, DeviceKey::Node { .. }),
+        "keyed by the node's fingerprint"
     );
-    assert_eq!(attribute(&plain_id, KEY_SOURCE), Some("fingerprint"));
-    assert_eq!(attribute(&plain_id, LEMNOS), Some("absent"));
+    assert_eq!(plain_id.lemnos, LemnosState::Absent);
     let plain_grants = plain_driver.capabilities(&plain_id);
     for kind in [
         CapabilityKind::Files,
@@ -246,7 +238,7 @@ async fn a_node_that_does_not_publish_a_family_still_identifies_by_fingerprint()
     let pause = std::sync::Arc::new(Delays::default());
     let driver = driver_for(board.network().port(), &pause);
     let identity = identify(&driver, &offered(&driver, &usb_link()).await).await;
-    assert_eq!(attribute(&identity, KEY_SOURCE), Some("fingerprint"));
+    assert!(matches!(identity.key, DeviceKey::Node { .. }));
 }
 
 #[tokio::test]

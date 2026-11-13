@@ -10,7 +10,8 @@
 //!   [`monitor::Monitor`] per node: a thread that keeps the session and follows the failure
 //!   rule (see [`backoff`]).
 //! - [`identity`] maps a hello document and Lemnos's state to an [`atlas_types::Identity`] and
-//!   grants the capabilities the node offers. [`lemnos::Lemnos`] is Lemnos's state.
+//!   grants the capabilities the node offers. [`lemnos`] reads Lemnos's state into
+//!   [`atlas_types::LemnosState`].
 //!
 //! The driver depends on no other driver crate. Its tests run against Orion's comm core and
 //! the simulated node (`atlas-sim-node`) on a real socket and port.

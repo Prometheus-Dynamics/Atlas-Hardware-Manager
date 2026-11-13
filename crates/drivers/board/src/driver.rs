@@ -15,8 +15,8 @@ use crate::monitor::{Handle, Monitor, Pause, Presence, RealPause};
 use crate::reach::{LINK_KINDS, Seed};
 
 /// The label this driver is listed under. It serves every family, so the label is only the
-/// scan's name for it; no device has this family (a node without hardware facts is keyed by
-/// its fingerprint under the same label).
+/// scan's name for it. No device's key carries it: a node's key is its own kind (see
+/// [`atlas_types::DeviceKey`]).
 pub const FAMILY: &str = "orion";
 /// How long `identify` waits for a node that was seen but has just dropped out.
 const IDENTIFY_WAIT: Duration = Duration::from_secs(2);
@@ -134,7 +134,6 @@ impl Driver for BoardDriver {
         identity::identity(
             &answer.node,
             &answer.lemnos,
-            FAMILY,
             &candidate.link,
             &candidate.address,
         )

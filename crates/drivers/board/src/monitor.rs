@@ -24,7 +24,9 @@ use orion::{Address, Options, Orion};
 use tokio::sync::{oneshot, watch};
 
 use crate::backoff::Backoff;
-use crate::lemnos::{self, Lemnos};
+use atlas_types::LemnosState;
+
+use crate::lemnos;
 
 /// The program name this driver connects as.
 pub const PROGRAM: &str = "atlas";
@@ -51,7 +53,7 @@ pub enum Presence {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Answer {
     pub node: Node,
-    pub lemnos: Lemnos,
+    pub lemnos: LemnosState,
 }
 
 type Ask = oneshot::Sender<Result<Answer, String>>;
@@ -257,7 +259,7 @@ impl Keeper {
         let lemnos = if self.expects_lemnos {
             probe(orion, &node)?
         } else {
-            Lemnos::Absent
+            LemnosState::Absent
         };
         Ok(Answer { node, lemnos })
     }
@@ -273,12 +275,11 @@ fn plain() -> Options {
 
 /// Asks Lemnos its read-only question. A session that breaks during it is an error; any other
 /// failure is Lemnos not answering, with the reason.
-fn probe(orion: &Orion, node: &Node) -> Result<Lemnos, orion::Error> {
+fn probe(orion: &Orion, node: &Node) -> Result<LemnosState, orion::Error> {
     let Ok(name) = node.name.parse() else {
-        return Ok(Lemnos::NotAnswering(format!(
-            "the node's name {:?} is not a valid name",
-            node.name
-        )));
+        return Ok(LemnosState::NotAnswering {
+            reason: format!("the node's name {:?} is not a valid name", node.name),
+        });
     };
     let answered = orion
         .run(&ActionCall {
@@ -292,7 +293,11 @@ fn probe(orion: &Orion, node: &Node) -> Result<Lemnos, orion::Error> {
     let finished = match answered {
         Ok(finished) => finished,
         Err(error) if error.is_lost() => return Err(error),
-        Err(error) => return Ok(Lemnos::NotAnswering(error.to_string())),
+        Err(error) => {
+            return Ok(LemnosState::NotAnswering {
+                reason: error.to_string(),
+            });
+        }
     };
-    Ok(Lemnos::from_probe(finished.outcome, &finished.detail))
+    Ok(lemnos::from_probe(finished.outcome, &finished.detail))
 }
