@@ -16,5 +16,23 @@ thiserror = "2"
 [target.'cfg(unix)'.dependencies]
 nix = { version = "0.31", default-features = false, features = ["fs", "mount"] }
 
+# macOS: the authopen file descriptor comes back over a socket (SCM_RIGHTS),
+# and `diskutil` output is a property list. Both are mainstream crates.
+[target.'cfg(target_os = "macos")'.dependencies]
+nix = { version = "0.31", default-features = false, features = ["socket", "uio"] }
+plist = "1"
+
+# Windows: the device and volume control codes. Microsoft's own bindings; the
+# version already in the workspace lock.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Ioctl",
+    "Win32_System_Threading",
+] }
+
 [lints]
 workspace = true

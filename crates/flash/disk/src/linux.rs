@@ -7,22 +7,12 @@ use std::fs::{self, File, OpenOptions};
 use std::io;
 use std::os::unix::fs::{FileExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
-use crate::disk::{check_target, find_again, is_system_mount};
-use crate::{Disk, DiskError, DiskSource, Target};
+use crate::disk::is_system_mount;
+use crate::platform::{Guard, LINUX_PROOF, Platform, Proof, RawDisk};
+use crate::{Disk, DiskError, DiskSource};
 
 const SKIPPED_PREFIXES: [&str; 8] = ["loop", "ram", "zram", "dm-", "md", "sr", "fd", "nbd"];
-
-/// Every whole disk the kernel shows, read from sysfs.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct SysfsDisks;
-
-impl DiskSource for SysfsDisks {
-    fn disks(&self) -> Result<Vec<Disk>, DiskError> {
-        list_disks()
-    }
-}
 
 fn read_trimmed(path: &Path) -> Option<String> {
     fs::read_to_string(path)
@@ -224,93 +214,60 @@ fn open_exclusive(disk: &Disk) -> Result<File, DiskError> {
         .map_err(|error| DiskError::io(&disk.path, error))
 }
 
-/// A whole disk on this Linux computer as a write [`Target`]. After a drop it
-/// finds the same disk again (by USB port, else path), checks it is still a
-/// writable card of the same size, and reopens it.
-pub struct BlockDevice {
-    disk: Disk,
-    file: Option<File>,
-    source: Arc<dyn DiskSource>,
-}
-
-impl std::fmt::Debug for BlockDevice {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("BlockDevice")
-            .field("disk", &self.disk)
-            .finish_non_exhaustive()
-    }
-}
-
-impl BlockDevice {
-    /// Opens a whole disk for writing. The caller has checked `disk` with
-    /// [`check_target`](crate::check_target) on a fresh listing.
-    pub fn open(disk: Disk, source: Arc<dyn DiskSource>) -> Result<Self, DiskError> {
-        unmount_all(&disk)?;
-        let file = open_exclusive(&disk)?;
-        Ok(Self {
-            disk,
-            file: Some(file),
-            source,
-        })
-    }
-
-    /// The disk as it is now, after any reattach.
-    pub fn disk(&self) -> &Disk {
-        &self.disk
-    }
-
-    fn file(&self) -> io::Result<&File> {
-        self.file
-            .as_ref()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "the disk is gone"))
-    }
-}
-
-impl Target for BlockDevice {
-    fn capacity(&self) -> u64 {
-        self.disk.size_bytes
-    }
-
-    fn identity(&self) -> String {
-        self.disk
-            .usb_port
-            .clone()
-            .unwrap_or_else(|| self.disk.path.display().to_string())
-    }
-
+impl RawDisk for File {
     fn write_at(&mut self, offset: u64, data: &[u8]) -> io::Result<()> {
-        self.file()?.write_all_at(data, offset)
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        // On a block device this also flushes the device's own cache.
-        self.file()?.sync_data()
+        self.write_all_at(data, offset)
     }
 
     fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<()> {
-        let file = self.file()?;
         // The pages are clean after the flush: dropping them makes the read
         // come from the medium.
         let _ = nix::fcntl::posix_fadvise(
-            file,
+            &*self,
             offset as i64,
             buf.len() as i64,
             nix::fcntl::PosixFadviseAdvice::POSIX_FADV_DONTNEED,
         );
-        file.read_exact_at(buf, offset)
+        self.read_exact_at(buf, offset)
     }
 
-    fn reattach(&mut self) -> Result<(), String> {
-        self.file = None;
-        let disks = self.source.disks().map_err(|error| error.to_string())?;
-        let disk = find_again(&disks, &self.disk)
-            .ok_or_else(|| format!("{} is not there", self.disk.name))?;
-        // Checked again as if new: the same size, and still a card that may be written.
-        check_target(&disk, Some(self.disk.size_bytes)).map_err(|error| error.to_string())?;
-        unmount_all(&disk).map_err(|error| error.to_string())?;
-        self.file = Some(open_exclusive(&disk).map_err(|error| error.to_string())?);
-        self.disk = disk;
-        Ok(())
+    fn sync(&mut self) -> io::Result<()> {
+        // On a block device this also flushes the device's own cache.
+        self.sync_data()
+    }
+}
+
+/// Linux: sysfs lists the disks, mountinfo says what is mounted, unmounting
+/// takes the disk's own mounts off, and one exclusive open holds the device.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LinuxPlatform;
+
+impl DiskSource for LinuxPlatform {
+    fn disks(&self) -> Result<Vec<Disk>, DiskError> {
+        list_disks()
+    }
+}
+
+impl Platform for LinuxPlatform {
+    fn name(&self) -> &'static str {
+        "Linux"
+    }
+
+    fn proof(&self) -> Proof {
+        LINUX_PROOF
+    }
+
+    fn prepare(&self, disk: &Disk) -> Result<Guard, DiskError> {
+        unmount_all(disk)?;
+        Ok(Box::new(()))
+    }
+
+    fn open(&self, disk: &Disk) -> Result<Box<dyn RawDisk>, DiskError> {
+        Ok(Box::new(open_exclusive(disk)?))
+    }
+
+    fn finish(&self, disk: &Disk, mut raw: Box<dyn RawDisk>) -> Result<(), DiskError> {
+        raw.sync().map_err(|error| DiskError::io(&disk.path, error))
     }
 }
 

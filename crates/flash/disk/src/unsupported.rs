@@ -1,61 +1,41 @@
-//! Platforms where disks are not listed or written yet. Every call says so,
-//! so nothing on these platforms can pass for a write.
+//! Systems where disks are not listed or written. Every call says so, so
+//! nothing on these systems can pass for a write.
 
-use std::io;
-use std::sync::Arc;
+use crate::platform::{Guard, Platform, Proof, RawDisk};
+use crate::{Disk, DiskError, DiskSource};
 
-use crate::{Disk, DiskError, DiskSource, Target};
+/// The platform of a system Atlas does not write disks on.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct UnsupportedPlatform;
 
 fn unsupported() -> DiskError {
-    DiskError::Unsupported("disk discovery and writing are only available on Linux so far".into())
+    DiskError::Unsupported("disk discovery and writing are not available on this system".into())
 }
 
-pub fn list_disks() -> Result<Vec<Disk>, DiskError> {
-    Err(unsupported())
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-pub struct SysfsDisks;
-
-impl DiskSource for SysfsDisks {
+impl DiskSource for UnsupportedPlatform {
     fn disks(&self) -> Result<Vec<Disk>, DiskError> {
-        list_disks()
-    }
-}
-
-#[derive(Debug)]
-pub struct BlockDevice {
-    _disk: Disk,
-}
-
-impl BlockDevice {
-    pub fn open(_disk: Disk, _source: Arc<dyn DiskSource>) -> Result<Self, DiskError> {
         Err(unsupported())
     }
 }
 
-impl Target for BlockDevice {
-    fn capacity(&self) -> u64 {
-        0
+impl Platform for UnsupportedPlatform {
+    fn name(&self) -> &'static str {
+        "this system"
     }
 
-    fn identity(&self) -> String {
-        String::new()
+    fn proof(&self) -> Proof {
+        Proof::Unproven
     }
 
-    fn write_at(&mut self, _offset: u64, _data: &[u8]) -> io::Result<()> {
-        Err(io::Error::other(unsupported().to_string()))
+    fn prepare(&self, _disk: &Disk) -> Result<Guard, DiskError> {
+        Err(unsupported())
     }
 
-    fn flush(&mut self) -> io::Result<()> {
-        Err(io::Error::other(unsupported().to_string()))
+    fn open(&self, _disk: &Disk) -> Result<Box<dyn RawDisk>, DiskError> {
+        Err(unsupported())
     }
 
-    fn read_at(&mut self, _offset: u64, _buf: &mut [u8]) -> io::Result<()> {
-        Err(io::Error::other(unsupported().to_string()))
-    }
-
-    fn reattach(&mut self) -> Result<(), String> {
-        Err(unsupported().to_string())
+    fn finish(&self, _disk: &Disk, _raw: Box<dyn RawDisk>) -> Result<(), DiskError> {
+        Err(unsupported())
     }
 }

@@ -25,6 +25,10 @@ pub enum DiskError {
     ImageHashMismatch { expected: String, actual: String },
     #[error("the write was cancelled; the disk is partly written and needs a new write")]
     Cancelled,
+    /// The image was written and verified, but finishing the disk (flush,
+    /// re-reading it, ejecting) failed. The message says so first.
+    #[error("the image is written and verified; finishing the disk failed: {0}")]
+    Finish(String),
     /// This platform cannot do it yet; the message says so.
     #[error("{0}")]
     Unsupported(String),
