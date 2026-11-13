@@ -1,0 +1,23 @@
+[package]
+name = "atlas-robot"
+description = "The robot's own devices: the roboRIO, the robot radio and the SystemCore on a robot network, read without credentials and found by team number."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+atlas-driver = { path = "../../core/driver" }
+atlas-types = { path = "../../core/types" }
+futures = { version = "0.3", default-features = false, features = ["alloc"] }
+reqwest = { version = "0.13", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", default-features = false, features = ["net", "time"] }
+
+[dev-dependencies]
+tokio = { version = "1", default-features = false, features = ["io-util", "macros", "net", "rt", "test-util", "time"] }
+
+[lints]
+workspace = true

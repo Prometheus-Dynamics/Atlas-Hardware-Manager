@@ -1,0 +1,1 @@
+{ "schema": "urn:atlas:device-app:1", "model": "radxa-rock-4d", "display_name": "ROCK 4D", "usb": ["rockchip-rk3576-maskrom"] }
