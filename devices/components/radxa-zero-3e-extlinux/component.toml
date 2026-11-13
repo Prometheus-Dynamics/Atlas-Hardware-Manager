@@ -3,7 +3,7 @@
 # slot boot (record = "uboot") when Gaia's slot recipe exists.
 version = 1
 name = "radxa-zero-3e-extlinux"
-description = "extlinux.conf for U-Boot's distro boot, root=PARTLABEL=rootfs (bring-up form)."
+description = "extlinux.conf for U-Boot's distro boot, root=PARTLABEL=rootfs (bring-up form). Why: U-Boot's distro boot reads it from the rootfs partition; the root is named by its label, not a device."
 
 [[install]]
 from = { file = "extlinux.conf" }

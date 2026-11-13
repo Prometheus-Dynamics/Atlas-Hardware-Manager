@@ -1,7 +1,11 @@
-# USB gadget network on the OTG port (g_ether: CDC ECM and RNDIS), with the
-# OTG controller in peripheral mode (rk3566-radxa-zero-3e-gadget.dts), for a
-# board without a cable on its Ethernet port.
+# USB gadget framework for the ZERO 3E's OTG port (USB 2.0 Type-C, also the
+# power input). Each line says why it is here (standing rule).
+# CONFIG_USB_GADGET: the gadget framework; nothing on the port works without it.
+# CONFIG_USB_DWC3_DUAL_ROLE: the DWC3 controller can take either role; the
+#   gadget DTS (assets/dts) pins it to peripheral.
+# CONFIG_USB_ETH: one network function (CDC ECM through g_ether). RNDIS (dev's)
+#   is dropped: a single network function, which Orion chooses (decision 5);
+#   the gadget itself is Lemnos's to build from the board file later.
 CONFIG_USB_GADGET=y
 CONFIG_USB_DWC3_DUAL_ROLE=y
 CONFIG_USB_ETH=y
-CONFIG_USB_ETH_RNDIS=y

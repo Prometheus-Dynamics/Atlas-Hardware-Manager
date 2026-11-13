@@ -54,20 +54,23 @@ type = "3de21764-95bd-54bd-a5c3-4abe786f38a8"
 offset = "16M"
 size = "64K"
 
-# Bring-up form (what Gaia's sd-image lands with): the root partition holds
-# /boot/extlinux/extlinux.conf for U-Boot's distro boot, and data holds the
-# slot file. Moves to the slot boot form (boot partition, slots on data) when
-# Gaia's recipe exists. `bootable` is not a key at Gaia 70a5133 (the root
-# partition should be bootable: an F7 wish).
+# Bring-up form (Gaia's sd-image, F7, at 10beed8): the rootfs partition holds
+# /boot/extlinux/extlinux.conf for U-Boot's distro boot; data holds the slot
+# file. Moves to the slot boot form (boot partition, slots on data) when
+# Gaia's real boot recipe exists.
+# rootfs: the OS tree as ext4 (the build tree, every component's layer merged).
+#   512M: dev's rootfs-a size; a systemd OS is bigger than dev's BusyBox one, so
+#   this is checked when the image is built, not assumed.
 [[partitions]]
 name = "rootfs"
 role = "rootfs"
 size = "512M"
 
+# data: holds the slot file. No size: the slot file's size is the recipe's
+#   (a fixed 64M, dev's empty data, would not hold it).
 [[partitions]]
 name = "data"
 role = "data"
-size = "64M"
 
 [disk]
 scheme = "gpt"

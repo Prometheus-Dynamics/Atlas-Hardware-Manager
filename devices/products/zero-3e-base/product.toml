@@ -1,8 +1,12 @@
 # Radxa ZERO 3E base OS, on Buildroot, in the bring-up form: raw areas, rootfs
 # and data partitions, extlinux for U-Boot's distro boot. No bench key, no
-# bring-up extras (those are zero-3e-bringup). Untested on board: G3 runs it.
+# bring-up extras (those are in devices/pending/zero-3e-bringup, outside the
+# check until Gaia's local input exists). Untested on board: G3 runs it.
 #
-# Draft until Gaia's sd-image recipe exists (F7, not at 70a5133). See the PR text.
+# Gaia 10beed8 (F7): `sd-image` takes no settings the board needs. The recipe
+# builds the slot file (slot_device defaults to /data/slots/root.img, the path
+# in the dm-verity table), adds it to the data tree at slot_path (default
+# slots/root.img), and the rootfs partition is the build tree as ext4.
 version = 1
 name = "zero-3e-base"
 description = "Radxa ZERO 3E base OS: bring-up form (raw areas, rootfs and data partitions)."
@@ -20,10 +24,5 @@ board = "../../boards/radxa-zero-3e/board.toml"
 components = ["radxa-zero-3e-extlinux"]
 # The board gives the kernel, U-Boot and TF-A; os.fragment the rest.
 os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
-recipe = "sd-image" # F7, not at 70a5133: the recipe does not exist yet
+recipe = "sd-image"
 budget = "1G"
-
-[images.settings]
-# UNCONFIRMED: the microSD is the only storage and mmcblk0 is where Rockchip
-# boards without eMMC usually put it. Check with lsblk on the board (G3).
-device = "/dev/mmcblk0" # F7? the sd-image settings are not known at 70a5133
