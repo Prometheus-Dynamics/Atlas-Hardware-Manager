@@ -120,6 +120,9 @@ impl JsonFileStore {
         if let Some(parent) = parent {
             fs::create_dir_all(parent)?;
         }
+        // A file a newer Atlas wrote is kept as a copy before this build
+        // rewrites it. The copy is never replaced once it exists.
+        self.keep_newer_copy()?;
         let (devices, aliases, robots, power_cycles) = inventory.to_parts();
         let data = serde_json::to_vec(&Saved {
             version: FORMAT_VERSION,
@@ -148,6 +151,48 @@ impl JsonFileStore {
             .unwrap_or_default();
         name.push(".tmp");
         self.path.with_file_name(name)
+    }
+
+    /// When the saved file names a format version newer than this build's,
+    /// copies it to `<name>.newer-<version>` before the save replaces it. An
+    /// existing copy is left as it is, so a second save over the same newer
+    /// file keeps the first copy. A copy that cannot be made stops the save:
+    /// the newer file is never overwritten without its copy.
+    fn keep_newer_copy(&self) -> io::Result<()> {
+        let data = match fs::read(&self.path) {
+            Ok(data) => data,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(error),
+        };
+        let Some(version) = serde_json::from_slice::<Value>(&data)
+            .ok()
+            .and_then(|value| value.get("version")?.as_u64())
+        else {
+            return Ok(());
+        };
+        if version <= u64::from(FORMAT_VERSION) {
+            return Ok(());
+        }
+        let mut name = self
+            .path
+            .file_name()
+            .map(|name| name.to_os_string())
+            .unwrap_or_default();
+        name.push(format!(".newer-{version}"));
+        let copy = self.path.with_file_name(name);
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&copy)
+        {
+            Ok(mut file) => {
+                file.write_all(&data)?;
+                file.sync_all()?;
+                sync_dir(self.path.parent().unwrap_or_else(|| Path::new(".")))
+            }
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => Ok(()),
+            Err(error) => Err(error),
+        }
     }
 
     /// Moves the unusable file to `<name>.bad-<unix ms>`. Returns where it
