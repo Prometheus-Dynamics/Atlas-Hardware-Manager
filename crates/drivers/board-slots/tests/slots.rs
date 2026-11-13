@@ -221,13 +221,17 @@ async fn a_session_lost_during_the_boards_install_never_starts_install_file_twic
 /// it, and it is not reported as installed.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_install_whose_session_lapses_while_the_board_runs_it_ends_as_a_lapse() {
+    // The lease is read on a manual clock: the lapse is an advance of it, made once the install is held
+    // on the board, and nothing in the run depends on how long a step takes.
+    let clock = atlas_session::Clock::manual();
     let rig = Rig::start_leased(
         "install-lapse",
         Some(atlas_session::Lease {
-            period: Duration::from_millis(300),
+            period: Duration::from_secs(60),
             renew: Duration::from_secs(3600),
             in_force: true,
         }),
+        Some(clock.clone()),
     )
     .await;
     rig.node.hold_installs(true);
@@ -245,6 +249,8 @@ async fn an_install_whose_session_lapses_while_the_board_runs_it_ends_as_a_lapse
         rig.node.runs_started(names::SLOTS_INSTALL_FILE) == 1
     })
     .await;
+    // The install is held on the board, and its session is silent past the lease.
+    clock.advance(Duration::from_secs(61));
     stage_is(&rig, job, "the install to end as a lapse", |stage| {
         matches!(stage, Stage::Failed { reason } if reason.contains("may have dropped the hold"))
     })

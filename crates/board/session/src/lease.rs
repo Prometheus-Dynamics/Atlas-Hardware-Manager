@@ -24,8 +24,8 @@
 //! records a lapse, and each hold reports it through [`Hold::lapsed`]. Holders treat a lapse as an
 //! outcome of its own: "the board may have dropped the hold".
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use orion::actions::{ActionCall, Target};
@@ -61,6 +61,55 @@ pub const RENEW_WAIT: Duration = Duration::from_secs(2);
 const DEVICE_PREFIX: &str = "lemnos.";
 // LOCK: Lemnos d6b9361d: `RESOURCE_KIND` in `service/orion/src/lib.rs`.
 const DEVICE_KIND: &str = "lemnos.device";
+
+/// The clock the lease is measured on. A session reads it for every silence, renewal and lapse. The
+/// real clock is the monotonic time since it was made. A manual clock moves only when a test moves it
+/// with [`Clock::advance`], so a test states "now the lease has passed" instead of sleeping and hoping.
+#[derive(Clone, Debug)]
+pub struct Clock {
+    source: Arc<Source>,
+}
+
+#[derive(Debug)]
+enum Source {
+    Real(std::time::Instant),
+    Manual(Mutex<Duration>),
+}
+
+impl Clock {
+    /// The monotonic clock of this process: what a production session uses.
+    #[must_use]
+    pub fn real() -> Self {
+        Self {
+            source: Arc::new(Source::Real(std::time::Instant::now())),
+        }
+    }
+
+    /// A clock that stands still until [`Clock::advance`] moves it. It starts at zero.
+    #[must_use]
+    pub fn manual() -> Self {
+        Self {
+            source: Arc::new(Source::Manual(Mutex::new(Duration::ZERO))),
+        }
+    }
+
+    /// The time on this clock, from its start.
+    #[must_use]
+    pub fn now(&self) -> Duration {
+        match &*self.source {
+            Source::Real(origin) => origin.elapsed(),
+            Source::Manual(now) => *now.lock().unwrap_or_else(PoisonError::into_inner),
+        }
+    }
+
+    /// Moves a manual clock forward by `by`. A real clock does not move: it is only advanced by time
+    /// passing, so this does nothing on it.
+    pub fn advance(&self, by: Duration) {
+        if let Source::Manual(now) = &*self.source {
+            *now.lock().unwrap_or_else(PoisonError::into_inner) += by;
+        }
+    }
+}
 
 /// The period and the renewal interval of a session's lease.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 use atlas_files::{Counters, Progress, Push, PushError, PushKind, Stage, submit};
 use atlas_jobs::{Backoff, DeviceHolds, Events, JobId, JobKind, JobStatus, JobTiming, Jobs};
-use atlas_session::{Handle, Lease, Pause, Presence, Sessions};
+use atlas_session::{Clock, Handle, Lease, Pause, Presence, Sessions};
 use atlas_sim_node::{Hello, Kind, Mode, SimNode};
 use common::{DEADLINE, Generated, POLL, Relay, is_generated};
 use orion::{Address, Identity, Options, Orion};
@@ -650,6 +650,10 @@ async fn a_call_issued_during_a_push_completes_only_after_it_today() {
 /// down, and a board that comes back holds no partial. The push waits for the board, notes the lapse
 /// as its own stage until bytes are acknowledged again, sends the file again from zero, and commits
 /// the right bytes. Everything is resent: the board's dropped partial is not resumed.
+///
+/// Time is the test's: the lease is read on a manual clock, and the silence past the lease is an
+/// `advance` of that clock while the board is down. The relay's rate is cut to a trickle once the
+/// quarter is held, so the push cannot finish while the test thread is slow to act.
 #[tokio::test]
 async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
     let dir = scratch("lapse");
@@ -663,15 +667,17 @@ async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
     });
     let node = SimNode::start_with(&dir.join("node"), &board, None).expect("the node starts");
     let port = node.network().port();
-    // Throttled, so the push is still running when the board goes down.
-    let relay = Relay::start(node.network(), 16 * 1024 * 1024);
-    // A lease of 300 ms with no renewals: the silence past it is the lapse. In force, as a board's is
-    // once the lock moves.
-    let sessions = Sessions::new(Arc::new(ShortPause)).with_lease(Lease {
-        period: Duration::from_millis(300),
-        renew: Duration::from_secs(3600),
-        in_force: true,
-    });
+    let fast = 8 * 1024 * 1024;
+    let relay = Relay::start(node.network(), fast);
+    // A lease in force with no renewals from this test's clock: only the advance makes a silence.
+    let clock = Clock::manual();
+    let sessions = Sessions::new(Arc::new(ShortPause))
+        .with_lease(Lease {
+            period: Duration::from_secs(60),
+            renew: Duration::from_secs(3600),
+            in_force: true,
+        })
+        .with_clock(clock.clone());
     let address = Address::from_str(&format!("orion+tcp://{}", relay.addr())).unwrap();
     let handle = sessions.handle(&address).expect("a handle");
     connected(&handle).await;
@@ -716,16 +722,19 @@ async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
     .await;
     let held_before = push.progress().sent;
 
-    // The board drops the transfer: it goes down, and the session is lost.
+    // The board drops the transfer: the rate falls to a trickle so nothing more lands, and the node
+    // goes down, so the session is lost.
+    relay.set_rate(1024);
     drop(node);
     progress_where(&push, "the push waits for the board", |p| {
         matches!(p.stage, Stage::WaitingForBoard { .. })
     })
     .await;
     // Silent past the lease, with the hold on the board.
-    tokio::time::sleep(Duration::from_millis(600)).await;
+    clock.advance(Duration::from_secs(61));
 
-    // The board is back, holding nothing.
+    // The board is back, holding nothing, at full speed again.
+    relay.set_rate(fast);
     let back =
         SimNode::start_with(&dir.join("node"), &board, Some(port)).expect("the node is back");
     progress_where(&push, "the push says the file starts over", |p| {
