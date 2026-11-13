@@ -25,11 +25,12 @@ ref = "2026.08"
 lemnos = "../../components/lemnos/component.toml"
 raze-lemnos-board = "../../components/raze-lemnos-board/component.toml"
 raze-base-files = "../../components/raze-base-files/component.toml"
+orion = "../../components/orion/component.toml"
 
 [[images]]
 name = "raze-base"
 board = "../../boards/raze/board.toml"
-components = ["lemnos", "raze-lemnos-board", "raze-base-files"]
+components = ["lemnos", "raze-lemnos-board", "raze-base-files", "orion"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/raze.fragment"] }
 recipe = "slot"
 

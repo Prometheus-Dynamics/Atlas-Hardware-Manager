@@ -1,0 +1,77 @@
+# Orion's board image: the one `orion` binary, run as two services (orion-comm: `orion comm`, root with
+# group orion; orion-node: `orion node`, user orion). Board-neutral: every board that runs Orion imports
+# this. Built from Orion at c0187f4 (the rev the workspace pins; Orion commits its Cargo.lock).
+#
+# Build facts (INPUTS, Orion): package `orion-bin`, binary `orion`, profile `service`, target
+# aarch64-unknown-linux-musl, `--locked --offline`, no features. The package is built in its own cargo
+# invocation. The profile `service` is NOT a setting the Gaia rust builder takes at 70a5133 (it runs
+# `--release`): the wanted field is in the PR text.
+#
+# The units, settings and user are Orion's packaging/systemd files, installed as Orion's packaging README
+# table says, not rewritten. The user is made at build time too: the image's root is read-only.
+version = 1
+name = "orion"
+description = "Orion: the orion binary as the board's comm core and node logic, its two units, settings, and the orion user"
+
+[sources.orion]
+git = "https://github.com/Prometheus-Dynamics/Orion.git"
+ref = "c0187f4c195cd27f8353c055dd0a94247c2965cc"
+
+[build]
+builder = "rust"
+source = "orion"
+
+[build.settings]
+package = "orion-bin"
+triple = "aarch64-unknown-linux-musl"
+
+[[install]]
+from = "orion"
+to = "/usr/bin/orion"
+mode = "0755"
+
+[[install]]
+from = { source = "orion", path = "packaging/systemd/orion-comm.service" }
+to = "/usr/lib/systemd/system/orion-comm.service"
+mode = "0644"
+
+[[install]]
+from = { source = "orion", path = "packaging/systemd/orion-node.service" }
+to = "/usr/lib/systemd/system/orion-node.service"
+mode = "0644"
+
+[[install]]
+from = { source = "orion", path = "packaging/systemd/orion.conf.example" }
+to = "/etc/orion/orion.conf"
+mode = "0644"
+
+[[install]]
+from = { source = "orion", path = "packaging/systemd/orion.sysusers" }
+to = "/usr/lib/sysusers.d/orion.conf"
+mode = "0644"
+
+[[install]]
+from = { source = "orion", path = "packaging/systemd/orion.preset" }
+to = "/usr/lib/systemd/system-preset/80-orion.preset"
+mode = "0644"
+
+# The orion user and group, uid and gid 901 (Orion's sysusers file; socket.node_uids = 901 in the
+# settings: keep the two the same). The user also in dialout, for serial links.
+[[groups]]
+name = "orion"
+gid = 901
+
+[[users]]
+name = "orion"
+uid = 901
+group = "orion"
+groups = ["dialout"]
+home = "/var/lib/orion"
+
+[[services]]
+unit = "orion-comm.service"
+enable = true
+
+[[services]]
+unit = "orion-node.service"
+enable = true

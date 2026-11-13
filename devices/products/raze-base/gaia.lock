@@ -7,6 +7,12 @@ url = "https://github.com/Prometheus-Dynamics/Lemnos.git"
 ref = "26364ff7eb938c9009796eff40269ab471a0d51d"
 commit = "26364ff7eb938c9009796eff40269ab471a0d51d"
 
+[source."orion.orion"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Orion.git"
+ref = "c0187f4c195cd27f8353c055dd0a94247c2965cc"
+commit = "c0187f4c195cd27f8353c055dd0a94247c2965cc"
+
 [source."raze-base.buildroot"]
 kind = "git"
 url = "https://gitlab.com/buildroot.org/buildroot.git"
