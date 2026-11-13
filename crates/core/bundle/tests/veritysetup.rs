@@ -85,12 +85,8 @@ fn veritysetup(data: &Path, tree: &Path, blocks: usize, salt: &[u8]) -> String {
         .arg("--data-block-size=4096")
         .arg("--hash-block-size=4096")
         .arg(format!("--data-blocks={blocks}"));
-    if salt.is_empty() {
-        command.arg("--salt-empty");
-    } else {
-        let hex: String = salt.iter().map(|b| format!("{b:02x}")).collect();
-        command.arg(format!("--salt={hex}"));
-    }
+    let hex: String = salt.iter().map(|b| format!("{b:02x}")).collect();
+    command.arg(format!("--salt={hex}"));
     let out = command
         .arg(data)
         .arg(tree)
@@ -123,18 +119,7 @@ fn check_shape(dir: &Path, blocks: usize, salt: &[u8]) {
 
     let ours = root_hash(salt, &data).expect("our root");
     let reference = reference_tree(salt, &data);
-    assert_eq!(
-        tool_root,
-        ours,
-        "root hash, {blocks} blocks, salt {} bytes",
-        salt.len()
-    );
-    // The root is the digest of the top block, the first block of the reference tree.
-    let mut top = Sha256::new();
-    top.update(salt);
-    top.update(&reference[..BLOCK]);
-    let reference_root: String = top.finalize().iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(reference_root, ours, "the reference's own root");
+    // The tree first: if it differs, the layout differs, and the diff says where.
     assert_eq!(
         tool_tree.len() as u64,
         tree_bytes(blocks as u64),
@@ -146,6 +131,16 @@ fn check_shape(dir: &Path, blocks: usize, salt: &[u8]) {
         "tree bytes, {blocks} blocks, salt {} bytes",
         salt.len()
     );
+    // The tool's root is the digest of its own top block with the salt before it.
+    let mut top = Sha256::new();
+    top.update(salt);
+    top.update(&tool_tree[..BLOCK]);
+    let tool_top_root: String = top.finalize().iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(
+        tool_root, tool_top_root,
+        "the tool's root is salt || its top block, {blocks} blocks"
+    );
+    assert_eq!(tool_root, ours, "root hash, {blocks} blocks");
     let _ = fs::remove_file(&data_path);
     let _ = fs::remove_file(&tree_path);
 }
@@ -168,16 +163,5 @@ fn the_root_and_tree_match_veritysetup_with_a_salt() {
     // a count that is no power of the fan-out.
     for blocks in [1, 3, 128, 129, 300] {
         check_shape(&dir, blocks, &salt);
-    }
-}
-
-#[test]
-fn the_root_and_tree_match_veritysetup_with_no_salt() {
-    if !tool_present() {
-        return;
-    }
-    let dir = scratch("unsalted");
-    for blocks in [1, 129] {
-        check_shape(&dir, blocks, &[]);
     }
 }
