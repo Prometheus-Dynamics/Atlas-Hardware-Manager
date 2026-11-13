@@ -54,6 +54,41 @@ pub(crate) fn len(fs: &Ext4, path: &str) -> Result<u64, ImageError> {
     Ok(fs.metadata(&to_path(path)?).map_err(fs_error)?.len())
 }
 
+/// The names of the regular files directly in `dir` (absolute, inside the image),
+/// sorted. `None` when the directory is not there. A name that is not UTF-8, or
+/// more than `max` files, is refused rather than skipped.
+pub(crate) fn list_files(
+    fs: &Ext4,
+    dir: &str,
+    max: usize,
+) -> Result<Option<Vec<String>>, ImageError> {
+    let path = to_path(dir)?;
+    if !fs.exists(&path).map_err(fs_error)? {
+        return Ok(None);
+    }
+    let mut names = Vec::new();
+    for entry in fs.read_dir(&path).map_err(fs_error)? {
+        let entry = entry.map_err(fs_error)?;
+        let file_type = entry.file_type().map_err(fs_error)?;
+        if !file_type.is_regular_file() {
+            continue;
+        }
+        let name = entry
+            .file_name()
+            .as_str()
+            .map_err(|_| ImageError::Malformed(format!("a name in {dir} is not UTF-8")))?
+            .to_string();
+        names.push(name);
+        if names.len() > max {
+            return Err(ImageError::Limit(format!(
+                "{dir} holds more than the {max} files read"
+            )));
+        }
+    }
+    names.sort();
+    Ok(Some(names))
+}
+
 /// A small text file of the image (a verity table), read whole. A file larger
 /// than `max` is refused, not read.
 pub(crate) fn read_text(fs: &Ext4, path: &str, max: u64) -> Result<String, ImageError> {

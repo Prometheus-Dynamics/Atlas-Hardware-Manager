@@ -7,25 +7,59 @@
 //! The data partition is kept: the slot files are read from it with random access
 //! (`ext4-view` needs that), and a bundle writer reads a slot's file twice. Its
 //! length is the scratch disk the read needs.
+//!
+//! In the first-flash mode ([`Mode::Flash`]) every decoded byte is also hashed
+//! (the raw image's SHA-256), and the board is read from the slots as soon as the
+//! data partition is spooled. A board the caller did not ask for stops the pass
+//! there, and so does a probe for the board alone: the bytes after the data
+//! partition are then never decoded.
 
 use std::fs::File;
 use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
+use sha2::{Digest, Sha256};
+
 use crate::error::ImageError;
+use crate::flash::{self, BoardInfo, FlashError, Refusal};
 use crate::gpt::{self, Entry, Header};
 use crate::{Options, PartitionInfo};
 
-/// What the pass hands back: the partitions and the data spool.
+/// What the pass does with the board.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum Mode {
+    /// `open`: the slots are read later; nothing is hashed and no board is read.
+    Slots,
+    /// The first-flash pass. `target`, when set, is the board the caller is
+    /// connected to: a different board refuses at the data partition's end.
+    /// `stop_after_board` ends the pass once the board is known.
+    Flash {
+        target: Option<String>,
+        stop_after_board: bool,
+    },
+}
+
+/// The raw image as the pass saw it: its length and SHA-256.
+#[derive(Debug)]
+pub(crate) struct Raw {
+    pub(crate) len: u64,
+    pub(crate) sha256: [u8; 32],
+}
+
+/// What the pass hands back: the partitions, the data spool, and in the first-flash
+/// mode the board and (when the pass ran to the end) the raw image's digest.
 #[derive(Debug)]
 pub(crate) struct Output {
     pub(crate) partitions: Vec<PartitionInfo>,
     pub(crate) data: PathBuf,
+    pub(crate) board: Option<BoardInfo>,
+    pub(crate) raw: Option<Raw>,
 }
 
 pub(crate) struct Router<'a> {
     scratch: &'a Path,
     options: &'a Options,
+    mode: Mode,
     /// The bytes before the partition table ends, until it is read.
     head: Vec<u8>,
     header: Option<Header>,
@@ -36,6 +70,14 @@ pub(crate) struct Router<'a> {
     partitions: Vec<PartitionInfo>,
     spool: Option<(BufWriter<File>, PathBuf)>,
     data: Option<PathBuf>,
+    board: Option<BoardInfo>,
+    /// The raw image's digest and length, in the first-flash mode.
+    hash: Option<Sha256>,
+    raw_len: u64,
+    /// Set when the pass ends by its own choice (a probe has its board).
+    stopped: bool,
+    /// The board check refused the image. Reported before any decode error.
+    refused: Option<Refusal>,
     /// The first failure. The decoder only ever sees "stopped" for it.
     error: Option<ImageError>,
 }
@@ -43,10 +85,12 @@ pub(crate) struct Router<'a> {
 const STOPPED: &str = "the image read has stopped";
 
 impl<'a> Router<'a> {
-    pub(crate) fn new(scratch: &'a Path, options: &'a Options) -> Self {
+    pub(crate) fn new(scratch: &'a Path, options: &'a Options, mode: Mode) -> Self {
+        let hash = matches!(mode, Mode::Flash { .. }).then(Sha256::new);
         Self {
             scratch,
             options,
+            mode,
             head: Vec::new(),
             header: None,
             pos: 0,
@@ -54,39 +98,65 @@ impl<'a> Router<'a> {
             partitions: Vec::new(),
             spool: None,
             data: None,
+            board: None,
+            hash,
+            raw_len: 0,
+            stopped: false,
+            refused: None,
             error: None,
         }
     }
 
-    /// Ends the pass. `stream` is the decoder's own result; a router failure is
-    /// the real cause and is reported first.
-    pub(crate) fn complete(mut self, stream: Result<(), String>) -> Result<Output, ImageError> {
+    /// Ends the pass. `stream` is the decoder's own result; a refusal or a router
+    /// failure is the real cause and is reported first.
+    pub(crate) fn complete(mut self, stream: Result<(), String>) -> Result<Output, FlashError> {
+        if let Some(refusal) = self.refused.take() {
+            return Err(FlashError::Refused(refusal));
+        }
         if let Some(error) = self.error.take() {
-            return Err(error);
+            return Err(FlashError::Image(error));
+        }
+        if self.stopped {
+            let data = self
+                .data
+                .take()
+                .ok_or_else(|| ImageError::Layout("the data partition was not read".into()))?;
+            return Ok(Output {
+                partitions: self.partitions,
+                data,
+                board: self.board,
+                raw: None,
+            });
         }
         if let Err(message) = stream {
-            return Err(ImageError::Decode(message));
+            return Err(FlashError::Image(ImageError::Decode(message)));
         }
         let Some((start, end)) = self.want else {
-            return Err(ImageError::Truncated(
+            return Err(FlashError::Image(ImageError::Truncated(
                 "the image ends inside its partition table".into(),
-            ));
+            )));
         };
         if self.pos < end {
-            return Err(ImageError::Truncated(format!(
+            return Err(FlashError::Image(ImageError::Truncated(format!(
                 "the image ends at byte {}, inside the {:?} partition ({} bytes at {start})",
                 self.pos,
                 self.options.names.data,
                 end - start
-            )));
+            ))));
         }
-        let data = self
-            .data
-            .take()
-            .ok_or_else(|| ImageError::Layout("the data partition was not read".into()))?;
+        let data = self.data.take().ok_or_else(|| {
+            FlashError::Image(ImageError::Layout("the data partition was not read".into()))
+        })?;
+        let raw_len = self.raw_len;
+        let raw = self.hash.take().map(|hash| Raw {
+            len: raw_len,
+            sha256: hash.finalize().into(),
+        });
         Ok(Output {
             partitions: self.partitions,
             data,
+            board: self.board,
+            raw,
         })
     }
 
@@ -183,11 +253,16 @@ impl<'a> Router<'a> {
             buf = &buf[take..];
             if self.pos == end {
                 self.finish()?;
+                if self.stopped {
+                    return Ok(());
+                }
             }
         }
         Ok(())
     }
 
+    /// The data partition is spooled. In the first-flash mode its slots name the
+    /// board; a refusal is kept for the caller, and a probe stops here.
     fn finish(&mut self) -> Result<(), ImageError> {
         let (mut writer, path) = self
             .spool
@@ -197,6 +272,40 @@ impl<'a> Router<'a> {
             .flush()
             .map_err(|error| ImageError::io("the spool", &error))?;
         drop(writer);
+
+        let flash = match &self.mode {
+            Mode::Slots => None,
+            Mode::Flash {
+                target,
+                stop_after_board,
+            } => Some((target.clone(), *stop_after_board)),
+        };
+        if let Some((target, stop_after_board)) = flash {
+            let info = match flash::read_board(&path) {
+                Ok(info) => info,
+                Err(FlashError::Refused(refusal)) => {
+                    self.refused = Some(refusal);
+                    return Err(ImageError::Layout("the image was refused".into()));
+                }
+                Err(FlashError::Image(error)) => return Err(error),
+                Err(FlashError::Signature(_)) => {
+                    return Err(ImageError::Layout("unexpected signature error".into()));
+                }
+            };
+            if let Some(target) = target {
+                if info.board != target {
+                    self.refused = Some(Refusal::WrongBoard {
+                        image: info.board.clone(),
+                        target,
+                    });
+                    return Err(ImageError::Layout("the image was refused".into()));
+                }
+            }
+            self.board = Some(info);
+            if stop_after_board {
+                self.stopped = true;
+            }
+        }
         self.data = Some(path);
         Ok(())
     }
@@ -204,10 +313,15 @@ impl<'a> Router<'a> {
 
 impl Write for Router<'_> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        if self.error.is_some() {
+        if self.error.is_some() || self.refused.is_some() || self.stopped {
             return Err(io::Error::other(STOPPED));
         }
+        if let Some(hash) = self.hash.as_mut() {
+            hash.update(buf);
+            self.raw_len += buf.len() as u64;
+        }
         match self.feed(buf) {
+            Ok(()) if self.stopped => Err(io::Error::other(STOPPED)),
             Ok(()) => Ok(buf.len()),
             Err(error) => {
                 self.error = Some(error);
