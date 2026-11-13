@@ -17,7 +17,7 @@ use atlas_actions::{
     Reported, Route,
 };
 use atlas_jobs::{Backoff, DeviceHolds, Events, JobId, JobStatus, JobTiming};
-use atlas_session::{Handle, Pause, Presence, Sessions};
+use atlas_session::{Handle, Lease, Pause, Presence, Sessions};
 use atlas_sim_node::actions::DRY_RUN;
 use atlas_sim_node::names::SELF_TEST;
 use atlas_sim_node::script::Behaviour;
@@ -592,4 +592,48 @@ async fn progress_is_reported_while_a_run_goes_and_ends_with_its_result() {
         "progress does not go backwards: {seen:?}"
     );
     assert!(seen.iter().any(|progress| progress.percent.is_some()));
+}
+
+/// A long action whose session goes silent while its hold exists, and then the board drops the run
+/// with its lease: each outcome has its own message, and neither is the board's last word alone.
+#[tokio::test]
+async fn a_board_that_drops_the_hold_on_a_long_action_is_reported_as_a_lapse_then_as_the_drop() {
+    let node = start(&scratch("lapse").join("node"), &lemnos_kind());
+    // Atlas renews only once its silence is over the lease period, which here never comes: the
+    // period is short, so silence with a hold is a lapse at once.
+    let sessions = Arc::new(Sessions::new(Arc::new(NoPause)).with_lease(Lease {
+        period: Duration::from_millis(300),
+        renew: Duration::from_secs(3600),
+        in_force: true,
+    }));
+    let address = address(&node);
+    let handle = sessions.handle(&address).expect("the node is on");
+    connected(&handle).await;
+    let catalog = BoardActions::new(handle.clone())
+        .catalog()
+        .await
+        .expect("the board lists its actions");
+    let jobs = jobs("lapse", sessions.clone()).await;
+    let self_test = named(&catalog, SELF_TEST);
+
+    node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let id = jobs
+        .submit(device(), &address, self_test, &[])
+        .await
+        .expect("the job is queued");
+    until("the run to start and stall", || node.stalled_runs() == 1).await;
+
+    // The session is silent with the hold on the board: the job learns of the lapse.
+    wait_status(&jobs, id, "the job to report the lapse", |status| {
+        matches!(status, JobStatus::Retrying { error, .. } if error.contains("may have dropped the hold"))
+    })
+    .await;
+
+    // The board's lease runs out: it drops the caller's run, and the run ends with its words.
+    node.lease_advance(61);
+    wait_status(&jobs, id, "the run the board dropped", |status| {
+        matches!(status, JobStatus::Failed { reason } if reason.contains("the lease ran out"))
+    })
+    .await;
+    assert!(node.lease_drops() >= 1, "the board dropped the caller");
 }

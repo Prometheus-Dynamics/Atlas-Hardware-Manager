@@ -214,6 +214,41 @@ async fn a_session_lost_during_the_boards_install_never_starts_install_file_twic
     assert!(list(&rig).await.get("slot-2").is_some());
 }
 
+/// An install is a hold on its board. Its session goes silent past the lease period while the board
+/// is running it: the install ends as a lapse, with the words that say the board may have dropped
+/// it, and it is not reported as installed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_install_whose_session_lapses_while_the_board_runs_it_ends_as_a_lapse() {
+    let rig = Rig::start_leased(
+        "install-lapse",
+        Some(atlas_session::Lease {
+            period: Duration::from_millis(300),
+            renew: Duration::from_secs(3600),
+            in_force: true,
+        }),
+    )
+    .await;
+    rig.node.hold_installs(true);
+    let path = write_bundle(
+        &rig.dir.join("bundles"),
+        "slot-2.tar",
+        &bundle_bytes("slot-2", "2.0.0", None),
+    );
+    let job = rig
+        .installs
+        .submit(device(), &rig.address(), BOARD, true, request(path, false))
+        .await
+        .expect("queued");
+    until("the board to start the install", || {
+        rig.node.runs_started(names::SLOTS_INSTALL_FILE) == 1
+    })
+    .await;
+    stage_is(&rig, job, "the install to end as a lapse", |stage| {
+        matches!(stage, Stage::Failed { reason } if reason.contains("may have dropped the hold"))
+    })
+    .await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn cancel_stops_the_install_on_the_board_and_leaves_no_slot() {
     let rig = Rig::start("cancel").await;
@@ -380,6 +415,28 @@ async fn the_removal_guard_refuses_running_starred_and_the_board_keeps_the_last_
         .await
         .expect("an unstarred, unused slot is removed");
     assert!(list(&rig).await.get("slot-2").is_none());
+}
+
+/// A board whose offers were not reported is neither "has slots" nor "has no slots": the slot calls
+/// say so, and the board is asked nothing. The capability set is the one the driver builds for it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_board_that_did_not_report_its_offers_is_not_told_it_has_no_slots() {
+    let rig = Rig::start("not-reported").await;
+    let caps = atlas_types::CapabilitySet::offers_not_reported([]);
+    let unknown = BoardSlots::for_capabilities(rig.handle.clone(), BOARD, &caps);
+    assert!(!unknown.reported());
+    assert!(matches!(unknown.list().await, Err(SlotError::NotReported)));
+    assert_eq!(
+        rig.node.runs_started(names::SLOTS_LIST),
+        0,
+        "nothing is sent for a board whose offers are unknown"
+    );
+
+    // A set whose offers were read still says "no slots" for a board without the contract.
+    let read = atlas_types::CapabilitySet::from_kinds([]);
+    let plain = BoardSlots::for_capabilities(rig.handle.clone(), BOARD, &read);
+    assert!(plain.reported());
+    assert!(matches!(plain.list().await, Err(SlotError::NoSlots)));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

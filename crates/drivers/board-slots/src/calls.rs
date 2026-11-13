@@ -13,6 +13,7 @@
 use atlas_actions::{Action, ActionError, Arg, ArgKind, BoardActions, Reported};
 use atlas_session::Handle;
 use atlas_slots::{SlotList, check_remove};
+use atlas_types::{CapabilityKind, CapabilitySet, Reading};
 
 use crate::SlotError;
 
@@ -54,6 +55,9 @@ pub struct BoardSlots {
     board: String,
     /// Whether the board's offers include `system.slots/1`.
     offered: bool,
+    /// Whether the board reported its offers at all. A board that did not is neither "has slots"
+    /// nor "has no slots": see [`SlotError::NotReported`].
+    reported: bool,
 }
 
 impl BoardSlots {
@@ -66,7 +70,35 @@ impl BoardSlots {
             actions: BoardActions::new(handle),
             board: board.into(),
             offered,
+            reported: true,
         }
+    }
+
+    /// The slots of the node `handle` keeps a session with, as its capability set says. A set
+    /// whose offers were not reported ([`CapabilitySet::offers_not_reported`]) gives
+    /// [`SlotError::NotReported`] for every call, not [`SlotError::NoSlots`].
+    // LOCK: Lemnos M8c (offers cap 1024): until the board's offers are reported in full, a board
+    // with about 19 or more contracts reads as not reported here.
+    #[must_use]
+    pub fn for_capabilities(
+        handle: Handle,
+        board: impl Into<String>,
+        capabilities: &CapabilitySet,
+    ) -> Self {
+        let reading = capabilities.reading(CapabilityKind::Slots);
+        Self {
+            actions: BoardActions::new(handle),
+            board: board.into(),
+            offered: reading == Reading::Granted,
+            reported: reading != Reading::NotReported,
+        }
+    }
+
+    /// Whether the board reported what it offers. `false` when the offers were not reported: then
+    /// [`BoardSlots::offered`] is not an answer.
+    #[must_use]
+    pub const fn reported(&self) -> bool {
+        self.reported
     }
 
     /// This board's id.
@@ -82,7 +114,9 @@ impl BoardSlots {
     }
 
     pub(crate) fn require_offered(&self) -> Result<(), SlotError> {
-        if self.offered {
+        if !self.reported {
+            Err(SlotError::NotReported)
+        } else if self.offered {
             Ok(())
         } else {
             Err(SlotError::NoSlots)

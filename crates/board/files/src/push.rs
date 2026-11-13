@@ -245,11 +245,17 @@ pub async fn submit(
     }
 }
 
+/// The note a push shows when its hold lapsed: the board may have dropped the partial file.
+const LAPSE_NOTE: &str = "the session was silent past the board's lease, so the board may have dropped the partial file: sending the file again from its start";
+
 /// The push itself: attempts until the board commits, a refusal ends it, or it is cancelled.
 /// `Err` is the reason it stopped for good. An attempt is one long operation on the node's session
 /// (see `atlas_session::long`); a lost session ends it, and the next attempt begins the file again.
 async fn run(pending: &Pending) -> Result<(), String> {
     let shared = &pending.shared;
+    // The push holds the board's lease from its start to its outcome: a push is on the board until
+    // it commits, is rejected or is cancelled, and a silent session would lose it there.
+    let mut hold = pending.handle.hold();
     let mut backoff = Backoff::default();
     // The node this push sends to: the key of the first node it finds. A push resumes only on
     // that node. If a person accepts another node under this address, the session comes back
@@ -282,6 +288,14 @@ async fn run(pending: &Pending) -> Result<(), String> {
             }
         }
 
+        if hold.lapsed() {
+            // The session was silent past the lease while the transfer was held: the board may have
+            // dropped the partial file. The file is sent again from its start, and the stage says so
+            // until the board acknowledges bytes. Checked once the node is back, so the note is not
+            // replaced by the wait for it.
+            hold.acknowledge();
+            shared.resending(LAPSE_NOTE.to_owned());
+        }
         let before = shared.acked();
         shared.sending();
         let source = Arc::clone(&pending.source);

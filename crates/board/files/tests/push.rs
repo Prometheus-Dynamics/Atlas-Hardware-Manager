@@ -18,8 +18,8 @@ use std::time::{Duration, Instant};
 
 use atlas_files::{Counters, Progress, Push, PushError, PushKind, Stage, submit};
 use atlas_jobs::{Backoff, DeviceHolds, Events, JobId, JobKind, JobStatus, JobTiming, Jobs};
-use atlas_session::{Handle, Pause, Presence, Sessions};
-use atlas_sim_node::{Kind, SimNode};
+use atlas_session::{Handle, Lease, Pause, Presence, Sessions};
+use atlas_sim_node::{Hello, Kind, Mode, SimNode};
 use common::{DEADLINE, Generated, POLL, Relay, is_generated};
 use orion::{Address, Identity, Options, Orion};
 
@@ -644,4 +644,116 @@ async fn a_call_issued_during_a_push_completes_only_after_it_today() {
         *status == JobStatus::Done
     })
     .await;
+}
+
+/// A push whose session is silent past the lease. The board drops the partial file: its node goes
+/// down, and a board that comes back holds no partial. The push waits for the board, notes the lapse
+/// as its own stage until bytes are acknowledged again, sends the file again from zero, and commits
+/// the right bytes. Everything is resent: the board's dropped partial is not resumed.
+#[tokio::test]
+async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
+    let dir = scratch("lapse");
+    let _ = std::fs::remove_dir_all(&dir);
+    let board = Kind::WithLemnos(Hello {
+        family: "test-family".into(),
+        serial: "0001".into(),
+        mode: Mode::Running,
+        model: "test-model".into(),
+        ..Hello::default()
+    });
+    let node = SimNode::start_with(&dir.join("node"), &board, None).expect("the node starts");
+    let port = node.network().port();
+    // Throttled, so the push is still running when the board goes down.
+    let relay = Relay::start(node.network(), 16 * 1024 * 1024);
+    // A lease of 300 ms with no renewals: the silence past it is the lapse. In force, as a board's is
+    // once the lock moves.
+    let sessions = Sessions::new(Arc::new(ShortPause)).with_lease(Lease {
+        period: Duration::from_millis(300),
+        renew: Duration::from_secs(3600),
+        in_force: true,
+    });
+    let address = Address::from_str(&format!("orion+tcp://{}", relay.addr())).unwrap();
+    let handle = sessions.handle(&address).expect("a handle");
+    connected(&handle).await;
+
+    let scratch = tempfile::Builder::new()
+        .prefix("jobs-")
+        .tempdir_in(Path::new(env!("CARGO_TARGET_TMPDIR")))
+        .expect("a scratch directory");
+    let kind = PushKind::new();
+    let kinds: Vec<Arc<dyn JobKind>> = vec![kind.clone()];
+    let timing = JobTiming {
+        step_timeout: Duration::from_secs(24 * 60 * 60),
+        backoff: Backoff {
+            first: Duration::from_millis(10),
+            cap: Duration::from_secs(5),
+        },
+    };
+    let jobs = Jobs::open(
+        scratch.path().join("jobs.json"),
+        kinds,
+        Events::new(1024),
+        timing,
+        DeviceHolds::new(),
+    )
+    .await
+    .expect("the jobs open");
+
+    let size = 64 * 1024 * 1024;
+    let destination = "images/lapsed.img";
+    let push = submit(
+        &kind,
+        &jobs,
+        &handle,
+        destination,
+        Box::new(Generated::new(size, 7)),
+    )
+    .await
+    .expect("the push starts");
+    progress_where(&push, "the board holds a quarter", |p| {
+        p.sent >= size / 4 && p.sent < size
+    })
+    .await;
+    let held_before = push.progress().sent;
+
+    // The board drops the transfer: it goes down, and the session is lost.
+    drop(node);
+    progress_where(&push, "the push waits for the board", |p| {
+        matches!(p.stage, Stage::WaitingForBoard { .. })
+    })
+    .await;
+    // Silent past the lease, with the hold on the board.
+    tokio::time::sleep(Duration::from_millis(600)).await;
+
+    // The board is back, holding nothing.
+    let back =
+        SimNode::start_with(&dir.join("node"), &board, Some(port)).expect("the node is back");
+    progress_where(&push, "the push says the file starts over", |p| {
+        matches!(p.stage, Stage::Resending { .. })
+    })
+    .await;
+    job_where(&jobs, push.job(), "the push commits", |status| {
+        *status == JobStatus::Done
+    })
+    .await;
+    assert_eq!(push.progress().stage, Stage::Committed);
+    {
+        let committed = back.shelf().committed.lock().unwrap();
+        assert!(
+            is_generated(
+                committed
+                    .get(destination)
+                    .expect("the board holds the file"),
+                size,
+                7
+            ),
+            "the committed bytes are the file"
+        );
+    }
+    let counters = push.counters();
+    assert!(counters.attempts >= 2, "the file began again: {counters:?}");
+    assert!(
+        counters.bytes_sent >= held_before + size,
+        "everything was resent: the board's partial was not resumed: {counters:?} (held {held_before})"
+    );
 }
