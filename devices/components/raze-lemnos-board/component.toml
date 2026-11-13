@@ -3,7 +3,7 @@
 # Lemnos drivers or Orion is not here (the PR text lists each file's new home).
 version = 1
 name = "raze-lemnos-board"
-description = "Raze board files: lemnosd's board definition and env, the USB gadget and i2c module loads, the USB power rule"
+description = "Raze board files for lemnosd: the drop-in for the fan and gadget writes, the i2c-dev module load, the USB power rule; the board file is a placeholder pending Lemnos Q2a"
 
 # /etc/lemnos/board.toml: PENDING Lemnos Q2a. The placeholder (files/board.toml.PLACEHOLDER) is not
 # installed: the file is not a board file yet, and lemnosd would refuse it.
