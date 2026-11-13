@@ -10,9 +10,9 @@
 
 use crate::slots::{Status, code};
 
-/// The board's action list. Its answer is the JSON document. LOCK: Lemnos M8 (5dcf1a78) lets the
-/// bridge's `call` take a method that returns through an out buffer; the Atlas lock must move to
-/// that rev before a real board answers this. The name is ours, provisional, until Lemnos names the list.
+/// The board's action list. Its answer is the JSON document. Lemnos M8a (in the lock since d6b9361d)
+/// lets the bridge's `call` take a method that returns through an out buffer. The name is ours,
+/// provisional, until Lemnos names the list.
 pub const CATALOG: &str = "actions.list";
 /// An action the board lists that no part of Atlas names. It takes a text label and a count of
 /// steps (1 to 100), runs one step per tick, and reports how many it ran.
@@ -75,8 +75,7 @@ fn dry_run_steps(args: &[u8]) -> Result<u32, Status> {
 /// A refusal in the node's own words, when the arguments do not fit.
 pub fn apply(name: &str, args: &[u8]) -> Result<Vec<u8>, Status> {
     match name {
-        // LOCK: Lemnos M8 (5dcf1a78): this answer reaches a real board once the Atlas lock moves to a rev
-        // that has it; the simulated node answers as M8 does.
+        // Lemnos M8a (in the lock since d6b9361d): the simulated node answers as M8a does.
         CATALOG => Ok(CATALOG_JSON.as_bytes().to_vec()),
         DRY_RUN => {
             let steps = dry_run_steps(args)?;

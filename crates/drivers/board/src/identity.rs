@@ -223,6 +223,8 @@ fn serial_form(value: &str) -> Result<(), String> {
 }
 
 /// Offers: contract ids (`name/version`, such as `system.slots/1`), separated by single spaces.
+// LOCK: waits for Lemnos M8c (not in d6b9361d): `hello.offers` naming every contract the board's devices
+// serve, kept current as devices come and go. Until then the offers fact is what the node publishes.
 fn offers_form(value: &str) -> Result<(), String> {
     text(value)?;
     for contract in value.split(' ') {
