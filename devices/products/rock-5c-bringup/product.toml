@@ -9,9 +9,14 @@
 # switched VBUS line (GPIO0 PD4) as a device port. The first proof is Ethernet, DHCP on eth0 through
 # systemd-networkd (from the base). The bench public key is the named input `bench-key`.
 # Untested on board: nothing here has booted; the user flashes the card.
+# DO NOT CONNECT ANY OF THIS BOARD'S USB PORTS TO A PC. This image enables no USB device port and has no
+# gadget, so every USB port on the board is a HOST port that supplies 5 V. Two supplies on one cable can
+# damage the PC's port or the board. Reach the board over Ethernet only. (Condition set by the
+# coordinator on 2026-11-13 for keeping this product out of pending/; README.md in this directory is
+# the list of what a person should see.)
 version = 1
 name = "rock-5c-bringup"
-description = "ROCK 5C bring-up: the base OS plus the dev-only SSH key (Ethernet first; no USB network on this board's tree)."
+description = "ROCK 5C bring-up: the base OS plus the dev-only SSH key (Ethernet first; no USB network on this board's tree). USB ports are host ports: never connect one to a PC."
 
 [sources.buildroot]
 git = "https://gitlab.com/buildroot.org/buildroot.git"
