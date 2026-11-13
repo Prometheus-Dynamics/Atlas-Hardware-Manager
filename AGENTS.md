@@ -35,6 +35,10 @@ reference, and nothing here changes it. Read [`docs/design.md`](docs/design.md) 
 - Atlas runs nothing on a board. Don't add a board-side program or script. If a board needs one,
   it is a Lemnos driver or an Orion feature: say so in the PR text.
 - Loaders are our own Rust, no vendor tools, for every chip family.
+- "dev had it" is never a reason to keep something. If the shape is wrong, replace it. Each thing
+  carried from `dev` has its own reason written beside it (a comment, or a line in the PR text),
+  or it does not come over. This applies to board files above all: rootfs files, env files, udev
+  rules, `config.txt` lines, kernel fragments.
 - Board, product and module names appear only under `devices/` and in tests. Code reads them as
   data.
 - No driver depends on another driver. One capability set, in the driver contract.
