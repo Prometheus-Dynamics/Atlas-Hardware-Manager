@@ -63,8 +63,10 @@ impl LemnosState {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Identity {
     pub key: DeviceKey,
-    /// Hardware model or board name, as data.
-    pub model: String,
+    /// Hardware model or board name, as data. `None` when the device does not report one: a
+    /// fact that is not reported is absent, never an empty name.
+    #[serde(default)]
+    pub model: Option<String>,
     pub state: DeviceState,
     /// The board's Lemnos state. Absent for a node that never ran Lemnos.
     #[serde(default)]

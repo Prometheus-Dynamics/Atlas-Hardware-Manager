@@ -20,7 +20,7 @@ fn key() -> DeviceKey {
 fn identity(link: &str, address: &str, state: DeviceState, version: &str) -> Identity {
     Identity {
         key: key(),
-        model: "sample-board".into(),
+        model: Some("sample-board".into()),
         state,
         lemnos: atlas_types::LemnosState::Absent,
         versions: BTreeMap::from([("os".to_string(), version.to_string())]),

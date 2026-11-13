@@ -89,7 +89,7 @@ async fn identify_names_the_board_and_grants_flash_only_in_the_boot_rom_state() 
 
     let identity = driver.identify(&candidate).await.unwrap();
 
-    assert_eq!(identity.model, "sample-board");
+    assert_eq!(identity.model.as_deref(), Some("sample-board"));
     assert_eq!(identity.state, DeviceState::BootRom);
     assert_eq!(identity.key.to_string(), "rpi:abc123");
     assert_eq!(identity.address, "1-2");
@@ -156,7 +156,7 @@ async fn boot_is_refused_without_flasher_files_and_health_says_so() {
     let driver = RpiDriver::new(Arc::new(bus), config(None));
     let identity = Identity {
         key: atlas_types::DeviceKey::from_static("rpi", "abc123"),
-        model: "sample-board".into(),
+        model: Some("sample-board".into()),
         state: DeviceState::BootRom,
         lemnos: atlas_types::LemnosState::Absent,
         versions: Default::default(),
@@ -179,7 +179,7 @@ async fn a_model_the_config_does_not_know_is_unsupported() {
     let driver = RpiDriver::new(Arc::new(SimBus::new()), config(Some(flasher())));
     let identity = Identity {
         key: atlas_types::DeviceKey::from_static("rpi", "x"),
-        model: "other-board".into(),
+        model: Some("other-board".into()),
         state: DeviceState::BootRom,
         lemnos: atlas_types::LemnosState::Absent,
         versions: Default::default(),

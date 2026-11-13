@@ -35,10 +35,15 @@ BR2_PACKAGE_HOST_DTC=y
 # No BR2_TARGET_UBOOT_FORMAT_CUSTOM and no ATF BL31 ELF lines: the A733 chain is the SPL that
 # carries the DRAM blob and its own BL31 (TF-A, built from source), in one u-boot-sunxi-with-spl.bin.
 
-# Kernel console (B13): OPEN, nothing masked and no getty added. The kernel console is ttyS0 at 115200
-# (cubie-a7s-extlinux/extlinux.conf, the append line: console=ttyS0,115200). This fragment configures no getty
-# (no BR2_TARGET_GENERIC_GETTY), so systemd's getty generator is the only thing that starts one on that console:
-# serial-getty@ttyS0. There is no second getty to mask. Open: the login policy on that getty is not written
-# (root login is unset here, so Buildroot's allnoconfig default applies). Decide with the other bring-up boards.
+# Serial console (B19, decided): kept configured although no adapter is attached. Its login policy is the
+# base's default (security OFF: root logs in on the console with no password, the bench rule; the zero-3e
+# bring-up does the same). The getty is on ttyS0, the kernel's console (extlinux.conf). Without these lines
+# systemd's generator still starts serial-getty@ttyS0, but with root login off nobody could log in on it.
+BR2_TARGET_ENABLE_ROOT_LOGIN=y
+BR2_TARGET_GENERIC_ROOT_PASSWD=""
+BR2_TARGET_GENERIC_GETTY=y
+BR2_TARGET_GENERIC_GETTY_PORT="ttyS0"
+BR2_TARGET_GENERIC_GETTY_BAUDRATE_KEEP=y
 # SSH host key (B13): on the data partition, through components/dev-bringup-hostkey (product.toml).
-# Note: this product has no dropbear.default, so dropbear runs with no -s and allows password logins if root has a password.
+# SSH login: dropbear runs with -s from components/dev-bench-ssh-key/dropbear.default (B19 closes the B13 open
+# point: key only, no password logins over SSH; the console is the separate login above).

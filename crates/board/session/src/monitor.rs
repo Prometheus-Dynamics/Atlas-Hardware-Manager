@@ -165,6 +165,11 @@ impl Handle {
         &self.address
     }
 
+    /// How long a call on this node waits for its answer (see [`CALL_WAIT`]).
+    pub const fn call_wait(&self) -> Duration {
+        self.call_wait
+    }
+
     /// What the node is doing now, as the last connect saw it.
     pub fn presence(&self) -> Presence {
         self.presence.borrow().clone()
@@ -173,6 +178,17 @@ impl Handle {
     /// A receiver of presence changes, for code that waits on them.
     pub fn watch(&self) -> watch::Receiver<Presence> {
         self.presence.clone()
+    }
+
+    /// The same handle, with its calls waiting `call_wait` for their answer. For a call that is
+    /// long by nature, such as a file push: the wait then bounds a node that does not answer,
+    /// not how long the call may run. The call still ends when its session ends.
+    #[must_use]
+    pub fn waiting(&self, call_wait: Duration) -> Self {
+        Self {
+            call_wait,
+            ..self.clone()
+        }
     }
 
     /// Runs `call` on the node's live client and returns what it answers.
