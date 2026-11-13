@@ -9,11 +9,11 @@ rust-version.workspace = true
 [dependencies]
 async-trait = "0.1"
 atlas-driver = { path = "../../core/driver" }
+atlas-rockchip = { path = "../../flash/rockchip" }
 atlas-types = { path = "../../core/types" }
 atlas-usb = { path = "../../flash/usb" }
 
 [dev-dependencies]
-atlas-rockchip = { path = "../../flash/rockchip" }
 tokio = { version = "1", features = ["macros", "rt", "test-util"] }
 
 [lints]

@@ -3,4 +3,4 @@
 # lock: each product's own gaia.lock is written by `gaia lock`.
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-commit = "361d085059a5aaa9338f16f65d78649fd196a8ae"
+commit = "10beed87d9591175305997a2ebf1f88e3f5e4b2b"

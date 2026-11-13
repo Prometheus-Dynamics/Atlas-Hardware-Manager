@@ -14,6 +14,8 @@ pub enum LinkKind {
     UsbSerial,
     /// A device in a USB boot ROM or bootloader mode.
     UsbBoot,
+    /// A card reader or removable disk on this computer.
+    LocalDisk,
     /// Reached through another device that relays to it.
     Gateway { via: DeviceKey },
     /// Simulated devices for tests and UI work.
@@ -28,6 +30,7 @@ impl LinkKind {
             Self::Ethernet => "ethernet",
             Self::UsbSerial => "usb-serial",
             Self::UsbBoot => "usb-boot",
+            Self::LocalDisk => "local-disk",
             Self::Gateway { .. } => "gateway",
             Self::Simulated => "simulated",
         }
@@ -72,5 +75,11 @@ mod tests {
         };
         assert!(a.same_kind(&b));
         assert!(!a.same_kind(&LinkKind::Ethernet));
+    }
+
+    #[test]
+    fn a_local_disk_is_its_own_kind_with_a_label() {
+        assert_eq!(LinkKind::LocalDisk.label(), "local-disk");
+        assert!(!LinkKind::LocalDisk.same_kind(&LinkKind::UsbBoot));
     }
 }

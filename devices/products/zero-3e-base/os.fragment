@@ -1,0 +1,56 @@
+# Radxa ZERO 3E base OS: Buildroot 2026.02.3 with systemd 258.7 (Buildroot's
+# systemd; 254 or newer is the RK35xx standard, decision 3). Every line says why
+# it is here (standing rule: "dev had it" is not a reason).
+
+# Toolchain: Buildroot's bootlin aarch64 glibc. Gaia's F8 example built with it
+# end to end, so it is the known-good toolchain for this board.
+BR2_TOOLCHAIN_EXTERNAL=y
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN=y
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_STABLE=y
+
+# Init: systemd, the one standard path on the RK35xx boards. Lemnos's and
+# Orion's units apply to it (decision 3).
+# Watchdog (Lemnos's rule for every board): no RuntimeWatchdogSec and no
+# ShutdownWatchdogSec in this OS config. lemnosd feeds the hardware watchdog
+# itself; a second feeder would be a second opener.
+BR2_INIT_SYSTEMD=y
+BR2_PACKAGE_SYSTEMD=y
+# systemd-networkd: configures eth0 (BR2_SYSTEM_DHCP below) and the bring-up
+# usb0 link. Reason: the network manager for a systemd OS.
+BR2_PACKAGE_SYSTEMD_NETWORKD=y
+
+# Network: eth0 gets its address by DHCP through systemd-networkd (Buildroot
+# writes its .network file). Reason: the Gigabit port is how the board is
+# reached on a LAN. Unconfirmed on the board (dev's DHCP-on-eth0 note).
+BR2_SYSTEM_DHCP="eth0"
+
+# Hostname: the default before an identity sets one (the app's hostname prefix
+# is app data, not this).
+BR2_TARGET_GENERIC_HOSTNAME="zero3e"
+
+# BusyBox: /bin/sh and the core utilities, not the init. Reason: a shell and
+# coreutils the OS needs; systemd is the init.
+BR2_PACKAGE_BUSYBOX=y
+
+# Devices: systemd-udevd creates the device nodes; the /dev choice is hidden
+# under systemd, so mdev (dev's choice) is dropped. Reason: systemd's own udev.
+
+# Host build tools for the kernel and U-Boot (not on the board). Gaia built with
+# these; kept with that reason.
+BR2_LINUX_KERNEL_NEEDS_HOST_OPENSSL=y
+BR2_LINUX_KERNEL_NEEDS_HOST_PYTHON3=y
+BR2_TARGET_UBOOT_NEEDS_DTC=y
+BR2_TARGET_UBOOT_NEEDS_PYLIBFDT=y
+BR2_TARGET_UBOOT_NEEDS_PYELFTOOLS=y
+BR2_TARGET_UBOOT_NEEDS_OPENSSL=y
+BR2_TARGET_UBOOT_NEEDS_GNUTLS=y
+BR2_TARGET_UBOOT_NEEDS_UTIL_LINUX=y
+BR2_PACKAGE_HOST_DTC=y
+
+# TF-A's BL31 as an ELF, which U-Boot's binman packs into u-boot-rockchip.bin
+# with the DDR init (the raw area's content). Reason: the bootloader output
+# format the board needs.
+BR2_TARGET_ARM_TRUSTED_FIRMWARE_IMAGES="bl31/bl31.elf"
+BR2_TARGET_UBOOT_NEEDS_ATF_BL31_ELF=y
+BR2_TARGET_UBOOT_FORMAT_CUSTOM=y
+BR2_TARGET_UBOOT_FORMAT_CUSTOM_NAME="u-boot-rockchip.bin"

@@ -31,4 +31,6 @@ jobs:
         with:
           path: ~/.cache/atlas/gaia
           key: gaia-${{ runner.os }}-${{ hashFiles('devices/gaia.lock') }}
+      # gaia plan wants the tools a recipe names: veritysetup (slot), mkfs.erofs and the disk tools (sd-image).
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cryptsetup-bin erofs-utils e2fsprogs dosfstools mtools gdisk xz-utils
       - run: ./scripts/gate.sh

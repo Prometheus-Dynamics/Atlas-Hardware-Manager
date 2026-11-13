@@ -4,15 +4,18 @@
 #   scripts/check-devices.sh               check devices/, then prove the checker still catches
 #                                          a broken file (the fixtures; the gate runs this)
 #   scripts/check-devices.sh --root DIR    check another tree laid out like devices/ (no self-check)
-#   scripts/check-devices.sh --self-test   the verbose form: good fixture must pass, broken must
-#                                          fail, and the f8 fixture is printed
+#   scripts/check-devices.sh --write-locks regenerate every product's committed gaia.lock, then check
+#                                          (with --root DIR, the same for that tree)
+#   scripts/check-devices.sh --self-test   the verbose form: both good fixtures must pass, broken must
+#                                          fail
 #
 # The Gaia commit is read from devices/gaia.lock. The gaia binary is $GAIA_BIN when set (used as
 # given: gaia has no version stamp, so its commit is not checked), else a build from that commit
 # cached under ${ATLAS_GAIA_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/gaia}/<commit>/.
 # The recipes come from the same Gaia checkout. With a gaia that has `gaia validate`, every family,
 # board, component and product file is validated, and every product is also planned. With one that
-# does not, every product is planned and nothing else is checked.
+# does not, every product is planned and nothing else is checked. Each product's gaia.lock, committed
+# beside its product.toml, must match what `gaia lock` writes; `--write-locks` writes them.
 set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -20,6 +23,7 @@ self=$repo/scripts/check-devices.sh
 root=$repo/devices
 mode=check
 root_given=0
+write_locks=0
 
 die() { echo "check-devices: $*" >&2; exit 1; }
 
@@ -27,7 +31,8 @@ while [[ $# -gt 0 ]]; do
   case $1 in
     --root) [[ $# -ge 2 ]] || die "--root needs a directory"; root=$2; root_given=1; shift 2 ;;
     --self-test) mode=self-test; shift ;;
-    -h|--help) sed -n '2,12p' "$self"; exit 0 ;;
+    --write-locks) write_locks=1; shift ;;
+    -h|--help) sed -n '2,15p' "$self"; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
@@ -47,8 +52,10 @@ fixtures=$repo/devices/tests/fixtures
 
 if [[ $mode == self-test ]]; then
   status=0
-  echo "== good fixture: must pass"
-  "$self" --root "$fixtures/good" || { echo "check-devices: self-test: good fixture did not pass" >&2; status=1; }
+  for good in good good-f8; do
+    echo "== $good fixture: must pass"
+    "$self" --root "$fixtures/$good" || { echo "check-devices: self-test: $good fixture did not pass" >&2; status=1; }
+  done
   echo "== broken fixture: must fail"
   out=$(mktemp)
   rc=0
@@ -60,8 +67,6 @@ if [[ $mode == self-test ]]; then
     echo "check-devices: self-test: broken fixture did not fail as it must (see above)" >&2; status=1
   fi
   rm -f "$out"
-  echo "== f8 fixture: reported only (Gaia F8 is not on next yet)"
-  "$self" --root "$fixtures/f8" || true
   exit $status
 fi
 
@@ -124,6 +129,18 @@ recipes=$dir/src/recipes
 
 # python3 is the tool the python component builder names; gaia plan needs it given.
 python3_path=$(command -v python3) || die "python3 is needed (the python builder's tool)"
+tool_args=(--tool "python=$python3_path")
+# The slot recipe names veritysetup, and gaia plan wants every named tool
+# present even though planning never runs it (Gaia has accepted dropping that).
+# Where it isn't installed, planning gets a stand-in so the description can
+# still be checked; a build needs the real one. CI installs the real one.
+if ! command -v veritysetup >/dev/null 2>&1; then
+  stand_in_dir=$(mktemp -d)
+  printf '#!/bin/sh\necho "veritysetup stand-in: planning only" >&2\nexit 1\n' > "$stand_in_dir/veritysetup"
+  chmod +x "$stand_in_dir/veritysetup"
+  tool_args+=(--tool "veritysetup=$stand_in_dir/veritysetup")
+  echo "check-devices: NOTE veritysetup is not installed; planning uses a stand-in (a real build needs cryptsetup)"
+fi
 
 # ---- which commands: validate when gaia has it (and plan always), else plan ----
 
@@ -139,7 +156,10 @@ echo "gaia: $("$gaia" --version 2>&1 | head -1), command: $verb, locked commit $
 # ---- the tree ------------------------------------------------------------------
 
 [[ -d $root ]] || die "no such directory: $root"
+root=$(cd "$root" && pwd)
 cd "$root"
+regen="scripts/check-devices.sh --write-locks"
+[[ $root_given -eq 0 ]] || regen="$regen --root $root"
 fail=0
 bad() { echo "check-devices: FAIL $*" >&2; fail=1; }
 
@@ -182,11 +202,23 @@ for f in $(find boards products -mindepth 2 -maxdepth 2 \( -name board.toml -o -
     realpath -m "$d/$ref"
   done
 done >> "$used"
+unbuilt=""
 for f in $(find families boards components -mindepth 2 -maxdepth 2 -name '*.toml' 2>/dev/null | sort); do
   if ! grep -qxF "$(realpath -m "$f")" "$used"; then
-    bad "$f: no product or board names it, so gaia never reads it"
+    # gaia validate reads every file on its own, so a board no product names
+    # yet (a record of a board whose sources aren't chosen) is still checked.
+    # Without validate, gaia reads a file only through a product.
+    if [ "$verb" = validate ]; then
+      unbuilt="$unbuilt ${f%/*.toml}"
+    else
+      bad "$f: no product or board names it, so gaia never reads it"
+    fi
   fi
 done
+
+if [ -n "$unbuilt" ]; then
+  echo "check-devices: NOTE in no product yet, validated but never planned:$unbuilt"
+fi
 
 # gaia validate stops at the first bad file and names its file and key, so each file gets its own
 # run and every bad file is reported. The kind comes from the directory the file sits in.
@@ -210,22 +242,17 @@ if [[ $verb == validate ]]; then
   done
 fi
 
-# Every product is validated (when gaia can), then locked in a temp file, then planned with that
-# lock. Gaia writes a tree path relative to the product's directory only when it lies under it;
-# components live in devices/components/, so a committed product lock would hold this checkout's
-# absolute paths and fail anywhere else. So a product lock is never committed here; if one exists
-# it must still match.
+# Every product is validated (when gaia can), then locked into a temp file, and that lock must
+# match the gaia.lock committed beside its product.toml (--write-locks writes it). Then the product is
+# planned with the committed lock. A tree path in a lock is relative to the product's directory, so
+# the same lock holds in every checkout.
 locks=$(mktemp -d)
-trap 'rm -rf "$locks" "$used" "$errs" "$outs"' EXIT
+trap 'rm -rf "$locks" "$used" "$errs" "$outs" ${stand_in_dir:+"$stand_in_dir"}' EXIT
 for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev/null | sort); do
   pdir=$(dirname "$product")
+  committed=$pdir/gaia.lock
   if [[ $verb == validate ]]; then
     validate_file product "$product"
-  fi
-  if [[ -f $pdir/gaia.lock ]] && ! "$gaia" lock "$product" --check >"$errs" 2>&1; then
-    bad "$product: committed gaia.lock does not match (delete it: the check locks products itself):"
-    sed 's/^/  /' "$errs" >&2
-    continue
   fi
   lockfile=$locks/$(echo "$product" | tr '/' '_').lock
   if ! "$gaia" lock "$product" --lock "$lockfile" >"$errs" 2>&1; then
@@ -233,7 +260,18 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
     sed 's/^/  /' "$errs" >&2
     continue
   fi
-  if "$gaia" plan "$product" --lock "$lockfile" --recipes "$recipes" --tool "python=$python3_path" >"$outs" 2>&1; then
+  if [[ $write_locks -eq 1 ]]; then
+    cp "$lockfile" "$committed"
+    echo "check-devices: wrote $root/$committed"
+  elif [[ ! -f $committed ]]; then
+    bad "$product: no gaia.lock beside it; write it with: $regen"
+    continue
+  elif ! cmp -s "$lockfile" "$committed"; then
+    bad "$product: gaia.lock beside it differs from what gaia lock writes; regenerate with: $regen"
+    { diff "$committed" "$lockfile" || true; } | sed 's/^/  /' >&2
+    continue
+  fi
+  if "$gaia" plan "$product" --lock "$committed" --recipes "$recipes" "${tool_args[@]}" >"$outs" 2>&1; then
     echo "check-devices: ok $product (gaia plan)"
   else
     bad "$product: gaia plan failed:"
@@ -247,13 +285,15 @@ if [[ $fail -ne 0 ]]; then
 fi
 echo "check-devices: passed ($nf families, $nb boards, $nc components, $np products)"
 
-# The default run also proves the checker still catches a broken file: the good fixture must
+# The default run also proves the checker still catches a broken file: the good fixtures must
 # pass and the broken one must fail. Not run for --root, which names a tree to check alone.
 if [[ $root_given -eq 0 ]]; then
   out=$(mktemp)
-  if ! "$self" --root "$fixtures/good" >"$out" 2>&1; then
-    cat "$out" >&2; die "self-check: the good fixture no longer passes"
-  fi
+  for good in good good-f8; do
+    if ! "$self" --root "$fixtures/$good" >"$out" 2>&1; then
+      cat "$out" >&2; die "self-check: the $good fixture no longer passes"
+    fi
+  done
   rc=0
   "$self" --root "$fixtures/broken" >"$out" 2>&1 || rc=$?
   if ! broken_failed_as_it_must "$out" "$rc"; then
@@ -261,5 +301,5 @@ if [[ $root_given -eq 0 ]]; then
     die "self-check: the broken fixture passed, or failed without naming its bad key, so the checker no longer catches a broken file"
   fi
   rm -f "$out"
-  echo "check-devices: self-check passed (good fixture passes, broken fixture fails)"
+  echo "check-devices: self-check passed (good fixtures pass, broken fixture fails)"
 fi

@@ -156,9 +156,56 @@ pub fn public_key_for(secret_key: &[u8; 32]) -> PublicKey {
     PublicKey(SigningKey::from_bytes(secret_key).verifying_key())
 }
 
+/// A raw ed25519 signature over `message`: 64 bytes, no encoding around them.
+/// Used for files whose format is only their signature (a bundle's `slot.sig`).
+/// The signing key is a parameter and is never stored here.
+pub fn sign_bytes(message: &[u8], secret_key: &[u8; 32]) -> [u8; 64] {
+    SigningKey::from_bytes(secret_key).sign(message).to_bytes()
+}
+
+impl PublicKey {
+    /// Whether `signature` is a good raw ed25519 signature of `message` by this
+    /// key. A signature that is not 64 bytes is never good.
+    pub fn verify_bytes(&self, message: &[u8], signature: &[u8]) -> bool {
+        let Ok(bytes) = <[u8; 64]>::try_from(signature) else {
+            return false;
+        };
+        self.0
+            .verify(message, &Signature::from_bytes(&bytes))
+            .is_ok()
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    #[test]
+    fn raw_signatures_verify_with_the_matching_key_only() {
+        let secret = throwaway(40);
+        let other = throwaway(41);
+        let key = public_key_for(&secret);
+        let message = b"slot.json bytes";
+        let signature = sign_bytes(message, &secret);
+
+        assert!(key.verify_bytes(message, &signature));
+        assert!(!public_key_for(&other).verify_bytes(message, &signature));
+    }
+
+    #[test]
+    fn one_changed_byte_or_a_short_signature_fails() {
+        let secret = throwaway(42);
+        let key = public_key_for(&secret);
+        let mut message = b"slot.json bytes".to_vec();
+        let signature = sign_bytes(&message, &secret);
+
+        message[0] ^= 1;
+        assert!(!key.verify_bytes(&message, &signature));
+        message[0] ^= 1;
+        assert!(key.verify_bytes(&message, &signature));
+        assert!(!key.verify_bytes(&message, &signature[..63]));
+        assert!(!key.verify_bytes(&message, &[]));
+    }
 
     /// A throwaway secret made when a test runs: never stored in the repo.
     pub(crate) fn throwaway(salt: u8) -> [u8; 32] {

@@ -1,6 +1,6 @@
 [package]
 name = "atlas-mock"
-description = "Simulated devices and the simulated node: an in-process Orion comm core with scripted actions, topics and files, for tests and UI work."
+description = "Simulated devices, one in every device state, behind a driver: for tests and UI work. The simulated node is atlas-sim-node."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -10,14 +10,6 @@ rust-version.workspace = true
 atlas-driver = { path = "../../core/driver" }
 atlas-types = { path = "../../core/types" }
 async-trait = "0.1"
-ed25519-dalek = "2"
-serde_json = "1"
-sha2 = "0.10"
-tar = "0.4"
-orion = { workspace = true, features = ["topics", "records", "actions", "files"] }
-# The comm core for tests: the real server, broker, hello and keys on a real socket, with
-# small stand-ins for node logic. Same commit as the locked `orion` crate.
-orion-stubs = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "c0187f4c195cd27f8353c055dd0a94247c2965cc" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }

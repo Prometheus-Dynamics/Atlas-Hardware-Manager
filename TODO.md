@@ -15,6 +15,7 @@ The core every other group builds on: types, the driver contract, inventory, job
 - [ ] [A6](docs/prs/A6.md) The device catalog (wave 2; needs A1)
 - [ ] [A7](docs/prs/A7.md) Releases and trust (wave 2; needs A1)
 - [ ] [A8](docs/prs/A8.md) Core follow-ups from the first wave (wave 3; needs A1, A6, D1)
+- [ ] [A9](docs/prs/A9.md) The simulated node out of the drivers, and one driver for every family (wave 4; needs A1, A4)
 
 ## B. Board descriptions
 
@@ -54,12 +55,15 @@ Our own loader for every chip family, then the flasher image, then an ordinary u
 - [ ] [D3](docs/prs/D3.md) Rockchip maskrom and loader (wave 3; needs D1)
 - [ ] [D4](docs/prs/D4.md) Kendryte K230 burn (wave 3; needs D1)
 - [ ] [D5](docs/prs/D5.md) Allwinner FEL (wave 3; needs D1)
-- [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11)
+- [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11, D12, D13)
 - [ ] [D7](docs/prs/D7.md) Disk writer and its helper (wave 2; needs A1)
 - [ ] [D8](docs/prs/D8.md) UBI images for NAND boards (wave 2; needs A1)
 - [ ] [D9](docs/prs/D9.md) Slot bundles from the image (wave 3; needs A7)
 - [ ] [D10](docs/prs/D10.md) Fastboot client (wave 3; needs D1)
 - [ ] [D11](docs/prs/D11.md) Read a slot out of the first-flash image (wave 4; needs D9)
+- [ ] [D12](docs/prs/D12.md) Find a board's Orion link over USB by its interface string (wave 4; needs D1, A8)
+- [ ] [D13](docs/prs/D13.md) slot.json schema 3, and the bundle made from the image (wave 5; needs D9, D11)
+- [ ] [D14](docs/prs/D14.md) Verity keys in the slot manifest, and the bundle from an image in one call (wave 6; needs D13)
 
 ## E. Robot network and SystemCore
 
@@ -67,7 +71,7 @@ The robot's own devices, and Atlas installing its package on the controller.
 
 - [ ] [E1](docs/prs/E1.md) The robot's own devices (wave 3; needs A1, A3)
 - [ ] [E2](docs/prs/E2.md) Install on a SystemCore (wave 4; needs E1, C1, B8)
-- [ ] [E3](docs/prs/E3.md) Through the SystemCore (wave 7; needs E2, D6)
+- [ ] [E3](docs/prs/E3.md) Through the SystemCore (wave 7; needs E2, D6, X6)
 - [ ] [E4](docs/prs/E4.md) The SystemCore's page data (wave 5; needs E2, C2)
 - [ ] [E5](docs/prs/E5.md) Install a product on a SystemCore (wave 5; needs E2, X4)
 
@@ -90,7 +94,7 @@ Mockups first, then a faster, cleaner app on the new core.
 Every job with real clicks on real boards, then docs and the lock.
 
 - [ ] [G1](docs/prs/G1.md) Raze, direct (wave 8; needs F4, F5, B2, B9, X1, X2, X3; board run)
-- [ ] [G2](docs/prs/G2.md) Raze behind the SystemCore (wave 9; needs G1, F6, E3, X5; board run)
+- [ ] [G2](docs/prs/G2.md) Raze behind the SystemCore (wave 9; needs G1, F6, E3, X5, X6; board run)
 - [ ] [G3](docs/prs/G3.md) ZERO 3E (wave 8; needs F5, B3, D3; board run)
 - [ ] [G4](docs/prs/G4.md) ROCK 5C (wave 9; needs G3, B4; board run)
 - [ ] [G5](docs/prs/G5.md) Cubie A7 (wave 8; needs F5, B5, D5; board run)

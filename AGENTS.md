@@ -35,6 +35,21 @@ reference, and nothing here changes it. Read [`docs/design.md`](docs/design.md) 
 - Atlas runs nothing on a board. Don't add a board-side program or script. If a board needs one,
   it is a Lemnos driver or an Orion feature: say so in the PR text.
 - Loaders are our own Rust, no vendor tools, for every chip family.
+- lemnosd does not go down: it is the board's kernel as far as we are concerned. Nothing is
+  designed around it being stopped. No fallback, script, unit or screen exists "in case lemnosd
+  isn't running"; a board whose Lemnos isn't answering is faulted and restarting.
+- No library needs another to work. An Orion node with no Lemnos is normal (a PC, someone else's
+  board, a controller before our package): show it and offer everything Orion itself provides.
+  Only a node that is expected to run Lemnos is faulted when Lemnos doesn't answer. The device
+  key is `family:serial` when the board publishes them, else the node's Orion key fingerprint;
+  only jobs that need a board identity (flashing, slot installs) require the first.
+- "dev had it" is never a reason to keep something. If the shape is wrong, replace it. Each thing
+  carried from `dev` has its own reason written beside it (a comment, or a line in the PR text),
+  or it does not come over. This applies to board files above all: rootfs files, env files, udev
+  rules, `config.txt` lines, kernel fragments.
+- A boot blob (DDR init, loader, firmware) is pinned to a commit whose version is known to boot
+  that board, and the board file says which version and whether it was verified on hardware.
+  Never track a moving branch. Never bump a blob without a board run.
 - Board, product and module names appear only under `devices/` and in tests. Code reads them as
   data.
 - No driver depends on another driver. One capability set, in the driver contract.
