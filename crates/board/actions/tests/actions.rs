@@ -43,8 +43,10 @@ impl Pause for NoPause {
     }
 }
 
+/// A scratch directory under the system temp dir, kept short: the node's Unix socket must fit
+/// `SUN_LEN`, and a long build path (CI's workspace) would not.
 fn scratch(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("actions-{name}"))
+    std::env::temp_dir().join(format!("atl-c3-{}-{name}", std::process::id()))
 }
 
 fn lemnos_kind() -> Kind {
