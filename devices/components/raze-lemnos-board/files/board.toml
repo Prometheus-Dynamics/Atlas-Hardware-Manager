@@ -112,6 +112,10 @@ config = { timeout_s = 15 }
 # health = []: the base OS has no product, so no product's health is required (INPUTS: Raze base empty).
 # keep = 3 and reserve_mb = 2048 are the reference's values; the keep-last-N count is a setting (user
 # policy 2026-11-07), and 3 is the reference's.
+# FLAGGED, do not rely on it: `boot = "/boot/firmware"`. On Raze #2's running image (read by Lemnos, 2026-11-13)
+# that path does not exist: the boot partition is /dev/mmcblk0p1 (vfat, 79 MB) and is not mounted. Where the
+# image mounts it, and how that stays safe against a power cut at any moment, is being settled between Lemnos
+# and Gaia; this key changes to what they decide.
 [[devices]]
 id = "slots"
 driver = "system-slots"
@@ -134,8 +138,8 @@ driver = "usb-gadget"
 uses = { function = "udc:1000480000.usb", identity = "identity" }
 config = { vendor = 0x1d6b, product = 0x0104, interfaces = "function ffs\ninterface 0xff 0 0 orion-link\nendpoint in bulk\nendpoint out bulk\nfunction ncm derive\nfunction acm\n" }
 
-# The fan on RP1 PWM1, channel 3 (dev's rp1_pwm1 channel 3 on GPIO45). The reference's example is channel 1;
-# dev's channel is the Raze's. frequency_hz 24057 is dev's period of 41566 ns (1 / 41566 ns), min_duty 700 is
+# The fan on RP1 PWM1, channel 3 (dev's rp1_pwm1 channel 3 on GPIO45). VERIFIED on Raze #2 (read by Lemnos,
+# 2026-11-13): channel 3 of the RP1 PWM at pwm@9c000, period 41566 ns. The reference's channel 1 was wrong. frequency_hz 24057 is dev's period of 41566 ns (1 / 41566 ns), min_duty 700 is
 # dev's 70 % floor ("a 70 % floor keeps air moving", dev's manifest). kick_ms = 500 is the reference's start kick.
 [[devices]]
 id = "fan"
@@ -179,7 +183,9 @@ driver = "gpio-power-switch"
 uses = { line = "gpio:pinctrl-rp1:34" }
 config = { default_on = true }
 
-# The 16-LED ring: the strip on GPIO13 through the PIO block, 24-bit, 16 LEDs. wire "rgb" and offset 5 are dev's
+# The 16-LED ring: the strip on GPIO13 through the PIO block, 24-bit, 16 LEDs (16 LEDs and 24 bits per LED
+# VERIFIED on Raze #2, 2026-11-13). UNVERIFIED: the pixel order on the wire (`wire`); Lemnos is trying it on the
+# board. wire "rgb" and offset 5 are dev's
 # values (dev: "16 SK6812-EC20 LEDs on GPIO13, grb24 on the wire; logical LED 0 is physical LED 5").
 # Dev's direction = "cw" is not carried: dev marked it unverified on hardware, and the ring's look is the
 # later indicator rev.
