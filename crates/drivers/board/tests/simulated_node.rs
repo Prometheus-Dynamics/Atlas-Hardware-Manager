@@ -21,6 +21,8 @@ use atlas_types::{
 };
 
 const LINK: &str = "usbnet:test0";
+/// The serial of the test board: lowercase hex, as the identity rule asks.
+const SERIAL: &str = "0123456789abcdef";
 
 /// Records each delay the monitor asks for. It sleeps only briefly, so the tests run at once;
 /// the delays are what the failure rule is checked on.
@@ -71,7 +73,7 @@ fn driver_for(port: u16, pause: &std::sync::Arc<Delays>) -> BoardDriver {
 fn running_board() -> Kind {
     Kind::WithLemnos(Hello {
         family: "test-family".into(),
-        serial: "0001".into(),
+        serial: SERIAL.into(),
         mode: Mode::Running,
         model: "test-model".into(),
         ..Hello::default()
@@ -124,9 +126,9 @@ async fn a_node_is_found_identified_lost_and_found_again() {
     let candidate = offered(&driver, &link).await;
     assert_eq!(candidate.link, LinkId::new(LINK));
     let identity = identify(&driver, &candidate).await;
-    assert_eq!(identity.key, DeviceKey::from_static("test-family", "0001"));
+    assert_eq!(identity.key, DeviceKey::from_static("test-family", SERIAL));
     assert_eq!(identity.state, DeviceState::Running);
-    assert_eq!(identity.model, "test-model");
+    assert_eq!(identity.model.as_deref(), Some("test-model"));
     assert!(identity.key.is_board());
     assert_eq!(identity.lemnos, LemnosState::Answering);
     let grants = driver.capabilities(&identity);
@@ -173,7 +175,7 @@ async fn a_node_with_lemnos_a_plain_node_and_a_faulted_lemnos_are_three_kinds_of
     let driver = driver_for(board.network().port(), &pause);
     let link = usb_link();
     let board_id = identify(&driver, &offered(&driver, &link).await).await;
-    assert_eq!(board_id.key, DeviceKey::from_static("test-family", "0001"));
+    assert_eq!(board_id.key, DeviceKey::from_static("test-family", SERIAL));
     assert!(driver.capabilities(&board_id).grants(CapabilityKind::Slots));
 
     // Lemnos stopped on that same node: its facts are still published, so it is faulted and
@@ -184,7 +186,7 @@ async fn a_node_with_lemnos_a_plain_node_and_a_faulted_lemnos_are_three_kinds_of
         matches!(&faulted.lemnos, LemnosState::NotAnswering { reason } if reason.starts_with("-4")),
         "{faulted:?}"
     );
-    assert_eq!(faulted.key, DeviceKey::from_static("test-family", "0001"));
+    assert_eq!(faulted.key, DeviceKey::from_static("test-family", SERIAL));
     assert!(faulted.key.is_board(), "a board key, not a plain one");
 
     // Lemnos answers again: back to answering.
@@ -283,4 +285,161 @@ async fn a_turned_off_node_is_not_offered_until_turned_on() {
     assert!(driver.discover(&link).await.unwrap().is_empty());
     driver.turn_on(&address);
     offered(&driver, &link).await;
+}
+
+/// The board's hello facts as the test board has them, changed by `change`.
+fn changed_board(change: impl FnOnce(&mut Hello)) -> Kind {
+    let mut hello = Hello {
+        family: "test-family".into(),
+        serial: SERIAL.into(),
+        mode: Mode::Running,
+        model: "test-model".into(),
+        ..Hello::default()
+    };
+    change(&mut hello);
+    Kind::WithLemnos(hello)
+}
+
+/// Identifies the node until an identity comes back that `ready` accepts. A call that says the
+/// node is unreachable is a wait, not an answer; any other failure is a test failure.
+async fn identified_where(
+    driver: &BoardDriver,
+    candidate: &Candidate,
+    ready: impl Fn(&Identity) -> bool,
+) -> Identity {
+    tokio::time::timeout(DEADLINE, async {
+        loop {
+            match driver.identify(candidate).await {
+                Ok(identity) if ready(&identity) => return identity,
+                Ok(_) | Err(DriverError::Unreachable(_)) => {}
+                Err(error) => panic!("an identity read failed: {error:?}"),
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the node is identified")
+}
+
+#[tokio::test]
+async fn a_value_that_changes_while_connected_is_read_on_the_same_session() {
+    let dir = scratch("changes");
+    let board = start(&dir, &running_board(), None);
+    let pause = std::sync::Arc::new(Delays::default());
+    let driver = driver_for(board.network().port(), &pause);
+    let link = usb_link();
+    let candidate = offered(&driver, &link).await;
+    let before = identify(&driver, &candidate).await;
+    assert_eq!(before.versions.get("os").map(String::as_str), Some("1.0.0"));
+    let pauses = pause.0.lock().unwrap().len();
+
+    board.change_hello(|hello| hello.os_version = "1.0.1".into());
+    // The node publishes the change within a tick: wait until a read has it.
+    let after = identified_where(&driver, &candidate, |id| {
+        id.versions.get("os").map(String::as_str) == Some("1.0.1")
+    })
+    .await;
+    assert_eq!(after.versions.get("os").map(String::as_str), Some("1.0.1"));
+    assert_eq!(after.key, before.key, "the same board");
+    // A changed value is no republish: the monitor never lost the node.
+    assert_eq!(pause.0.lock().unwrap().len(), pauses);
+    assert!(driver.identify(&candidate).await.is_ok(), "still connected");
+}
+
+#[tokio::test]
+async fn a_fact_that_appears_republishes_the_session_and_the_blip_is_not_a_fault_or_a_change() {
+    let dir = scratch("blip");
+    // No Lemnos version yet: the fact appears while the node runs.
+    let board = start(
+        &dir,
+        &changed_board(|hello| hello.lemnos_version.clear()),
+        None,
+    );
+    let pause = std::sync::Arc::new(Delays::default());
+    let driver = driver_for(board.network().port(), &pause);
+    let link = usb_link();
+    let candidate = offered(&driver, &link).await;
+    let before = identify(&driver, &candidate).await;
+    assert!(!before.versions.contains_key("lemnos"));
+
+    board.change_hello(|hello| hello.lemnos_version = "1.0.0".into());
+    // Every read until the new fact is said is taken during the republish or after it. None may
+    // change the identity or report Lemnos as faulted.
+    let mut reads = Vec::new();
+    let after = tokio::time::timeout(DEADLINE, async {
+        loop {
+            match driver.identify(&candidate).await {
+                Ok(identity) if identity.versions.contains_key("lemnos") => return identity,
+                Ok(identity) => reads.push(identity),
+                Err(DriverError::Unreachable(_)) => {}
+                Err(error) => panic!("an identity read failed: {error:?}"),
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("the new fact is read");
+    reads.push(after.clone());
+    for read in &reads {
+        assert_eq!(read.key, before.key, "the blip changes no identity");
+        assert_eq!(read.model, before.model);
+        assert_eq!(read.lemnos, LemnosState::Answering, "not a fault");
+    }
+    assert_eq!(
+        after.versions.get("lemnos").map(String::as_str),
+        Some("1.0.0")
+    );
+    assert_eq!(after.versions.get("os"), before.versions.get("os"));
+}
+
+#[tokio::test]
+async fn an_identity_that_cannot_be_read_with_offers_present_is_lemnos_not_reporting_identity() {
+    let dir = scratch("unreadable");
+    let board = start(
+        &dir,
+        &Kind::WithLemnos(Hello {
+            family: String::new(),
+            serial: String::new(),
+            model: String::new(),
+            slot: String::new(),
+            product: String::new(),
+            os_version: String::new(),
+            lemnos_version: String::new(),
+            ..Hello::default()
+        }),
+        None,
+    );
+    let pause = std::sync::Arc::new(Delays::default());
+    let driver = driver_for(board.network().port(), &pause);
+    let identity = identify(&driver, &offered(&driver, &usb_link()).await).await;
+    assert!(
+        matches!(identity.key, DeviceKey::Node { .. }),
+        "no board key"
+    );
+    assert_eq!(identity.lemnos, LemnosState::Answering, "Lemnos is there");
+    assert!(identity.versions.is_empty());
+    assert!(driver.capabilities(&identity).grants(CapabilityKind::Slots));
+}
+
+#[tokio::test]
+async fn a_malformed_serial_is_refused_with_its_reason_and_the_node_is_keyed_by_fingerprint() {
+    let dir = scratch("malformed");
+    let board = start(
+        &dir,
+        &changed_board(|hello| hello.serial = "ABCDEF0123".into()),
+        None,
+    );
+    let pause = std::sync::Arc::new(Delays::default());
+    let driver = driver_for(board.network().port(), &pause);
+    let identity = identify(&driver, &offered(&driver, &usb_link()).await).await;
+    assert!(matches!(identity.key, DeviceKey::Node { .. }));
+    assert!(
+        identity
+            .attributes
+            .get("refused.serial")
+            .is_some_and(|reason| reason.contains("lowercase")),
+        "{:?}",
+        identity.attributes
+    );
+    assert_eq!(identity.lemnos, LemnosState::Answering);
 }

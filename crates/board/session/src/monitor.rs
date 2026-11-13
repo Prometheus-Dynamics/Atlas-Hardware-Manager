@@ -208,6 +208,11 @@ impl Handle {
         &self.address
     }
 
+    /// How long a call on this node waits for its answer (see [`CALL_WAIT`]).
+    pub const fn call_wait(&self) -> Duration {
+        self.call_wait
+    }
+
     /// What the node is doing now, as the last connect saw it.
     pub fn presence(&self) -> Presence {
         self.presence.borrow().clone()

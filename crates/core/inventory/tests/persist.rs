@@ -40,7 +40,7 @@ fn sample() -> Inventory {
     let mut inventory = Inventory::new();
     let identity = Identity {
         key: DeviceKey::from_static("sample-soc", "1000abcd"),
-        model: "sample-board".into(),
+        model: Some("sample-board".into()),
         state: atlas_types::DeviceState::Running,
         lemnos: atlas_types::LemnosState::Absent,
         versions: BTreeMap::from([("os".to_string(), "1.0.0".to_string())]),
@@ -258,7 +258,7 @@ fn save_then_edit(scratch: &Scratch, edit: impl FnOnce(&mut serde_json::Value)) 
     inventory.observe(
         Identity {
             key: DeviceKey::from_static("sample-soc", "2000beef"),
-            model: "sample-board".into(),
+            model: Some("sample-board".into()),
             state: atlas_types::DeviceState::Running,
             lemnos: atlas_types::LemnosState::Absent,
             versions: BTreeMap::new(),

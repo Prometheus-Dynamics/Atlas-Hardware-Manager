@@ -144,7 +144,7 @@ fn identity(
         .map_err(|error| DriverError::Incompatible(error.reason))?;
     Ok(Identity {
         key,
-        model,
+        model: Some(model),
         state: DeviceState::RobotDevice,
         lemnos: atlas_types::LemnosState::Absent,
         versions,
@@ -297,7 +297,7 @@ mod tests {
         .unwrap();
         assert_eq!(identity.key.to_string(), "roborio:6390");
         assert_eq!(identity.state, S::RobotDevice);
-        assert_eq!(identity.model, "roboRIO");
+        assert_eq!(identity.model.as_deref(), Some("roboRIO"));
         assert_eq!(identity.name.as_deref(), Some("roboRIO-6390-FRC"));
         assert_eq!(identity.versions["phoenix"], "2026.3.0");
         assert_eq!(identity.versions["season"], "2026");
