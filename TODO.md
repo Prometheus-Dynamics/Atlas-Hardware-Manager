@@ -47,6 +47,7 @@ Every board as Gaia `next` data in `devices/`. Starts first; the Raze and the ZE
 - [ ] [B22](docs/prs/B22.md) Gaia lock to 7db227f (next head): the checker refuses a binary of another commit, the plain check is offline, the bring-up products leave pending/ with a named bench-key input (needs B17, B18, B19)
 - [ ] [B24](docs/prs/B24.md) Bring-up USB network: Gaia's usb-gadget-network (configfs NCM, pinned Gaia 4509f6b) for the ZERO 3E and the Cubie A7S; addresses from the board id and serial; the board-id check (needs B15, B16, B19, B22)
 - [ ] [B16](docs/prs/B16.md) Each family's kernel trimmed to what its boards use, stripping on, and dtbs built with symbols (wave 5; needs B2, B3, B14; Lemnos 4c6678f3 kernel doc)
+- [ ] [B25](docs/prs/B25.md) Every kernel fragment line takes, checked in the gate (wave 6; needs B16, B24)
 
 ## C. One board driver
 
