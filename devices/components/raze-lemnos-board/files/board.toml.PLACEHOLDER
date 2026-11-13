@@ -1,0 +1,21 @@
+PLACEHOLDER: not a board file. Do not install it.
+
+What this file will be: Lemnos's board file for the Raze, read by lemnosd (`--board /etc/lemnos/board.toml`).
+Where it installs: /etc/lemnos/board.toml (the lemnosd unit has ConditionPathExists on it; without it lemnosd
+does not start).
+
+Its format is PENDING Lemnos Q2a: it will name the hardware (controller and pins per bus) instead of runtime
+names, and gains the fan's PWM period and cooling levels and the CMA size. `lemnos-ctl tree board.toml -o
+board-overlay.dts` generates the one device-tree overlay and the modprobe.d line from it.
+
+Must contain, once the format lands:
+  - `[board] id = "raze"` (the directory name under devices/boards; `[a-z0-9-]`).
+  - `require_signed = false` (signing off on the Raze; the app's security switch maps to it). Not a key at
+    Lemnos 26364ff; I5, pending.
+  - the serial source: the device-tree serial-number (the same 16 hex digits as the cpuinfo Serial line).
+    Key spelling pending Lemnos P1 (docs/identity.md is not on origin/next at 0d54a5ef).
+  - the IMU, magnetometer, power monitor, orientation, fan (PWM period, cooling levels), the cpu thermal zone,
+    the two port power switches, the USB gadget (one configuration: FunctionFS "orion-link" + NCM + one ACM
+    console), and the camera sensor with `continuous_clock` (dev's `clk-continuous`).
+
+Until it lands the board has no lemnosd, so no fan control, I2C devices, camera or gadget from Lemnos.

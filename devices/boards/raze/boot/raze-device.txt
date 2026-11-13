@@ -1,37 +1,22 @@
-# Raze device configuration (device package "raze"). The OS config.txt pulls this in at top level
-# with `include raze-device.txt`.
+# Raze device configuration. The OS config.txt includes this file at top level.
+# Only the product's own overlays are here; the board's device tree comes from one generated overlay
+# (boards/raze/overlay/README.txt, pending Lemnos). Each line has its reason.
 
-[cm5]
-# Hardware I2C bus 1 (/dev/i2c-1): SDA GPIO10, SCL GPIO11. The BMM150 magnetometer and the INA238
-# power monitor sit on it.
-dtoverlay=i2c1-pi5,pins_10_11
-
-# Fan: the kernel's pwm-fan on RP1 PWM1 channel 3, no tachometer (gen1's isn't wired). Our overlay
-# (dts/raze-fan-overlay.dts); Lemnos's hwmon-fan drives it.
-dtoverlay=raze-fan,notach
-
-# External USB-A (GPIO20) and USB-C (GPIO16) port power: driven high by the firmware from power-on,
-# before Linux, and claims nothing; Lemnos's gpio-power-switch then takes the lines.
-gpio=16,20=op,dh
-
-# GPU (V3D) and display (KMS) drivers. HeliOS wants it; dma-buf frame streams allocate from it.
+# GPU (V3D) and display (KMS). The product's choice: HeliOS wants it, and dma-buf frame streams
+# allocate from it.
 dtoverlay=vc4-kms-v3d-pi5
 
-# Kernel logs kept in RAM across a reset (pstore, ramoops): 256 KiB at 0x0b000000, 128 KiB of it the
-# console log and two 64 KiB panic/oops records. A warm reset keeps them; a power loss doesn't.
+# Kernel logs kept in RAM across a reset (pstore): 256 KiB at 0x0b000000, 128 KiB of it the console
+# log and two 64 KiB panic/oops records. Kept for the support bundle: a crash on a robot leaves its
+# last log. Sizes are dev's, measured on a Raze.
 dtoverlay=ramoops-pi5,total-size=0x40000,record-size=0x10000,console-size=0x20000
 
-# CM5 USB 2.0 OTG controller (dwc2) as a USB peripheral, for the USB gadget.
-dtoverlay=dwc2,dr_mode=peripheral
-
-# The camera (OV9782, CAM0): the sensor is Lemnos's ov9782 driver. The receiver and clock lines
-# come from the camera overlay, which is PENDING Lemnos Q2 (PR text). camera_auto_detect=0 keeps the
-# firmware from loading a stock sensor overlay.
-camera_auto_detect=0
+# External USB-A (GPIO20) and USB-C (GPIO16) port power: driven high by the firmware before Linux, so
+# the ports are never off at boot. Claims nothing; Lemnos's gpio-power-switch then takes the lines.
+gpio=16,20=op,dh
 
 [all]
 
-# The hardware watchdog (bcm2835 wdt) is on from the start. systemd arms it: RuntimeWatchdogSec=15s
-# in components/raze-base-files (systemd.conf.d). Lemnos's hw-watchdog driver is not in the Raze's
-# board file, so systemd is the one that arms it.
+# The bcm2835 hardware watchdog, on from the start. systemd arms it (RuntimeWatchdogSec=15s,
+# raze-base-files), so a hung boot resets. Without this line systemd has no watchdog device.
 dtparam=watchdog=on

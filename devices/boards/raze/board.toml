@@ -7,19 +7,15 @@ extends = "../../families/bcm2712/family.toml"
 name = "raze"
 description = "Raze (CM5 + OV9782): Raspberry Pi CM5 vision device"
 
-# raze.config is the Raze's own decisions (4 KiB pages, built-in EROFS, and the
-# lockup panics). raze-trim.config is applied after it: the install-size trim.
-# The fan overlay (dts/raze-fan-overlay.dts) is the Raze's own: Lemnos's hwmon-fan drives the kernel's
-# pwm-fan through it. Gaia's kernel.overlays refuses it for an OS build at 70a5133 (PR text).
-# The camera overlay is pending Lemnos Q2 (dts/raze-camera-overlay.PENDING.txt, not listed here).
+# raze.config: the Raze's kernel decisions, each with its reason in the file. raze-trim.config is
+# applied after it: the install-size trim.
+# No device-tree overlay of ours. The board's devices (I2C, fan PWM, CSI receiver, USB device
+# controller) come from ONE overlay Lemnos generates from the Lemnos board file: a placeholder until it
+# exists (boards/raze/overlay/README.txt). The board has no fan control, I2C, camera receiver or USB
+# gadget from the device tree until then. Provisional.
 [kernel]
-overlays = ["raze-fan"]
-device_tree_dir = "dts"
 fragments = ["kernel/raze.config", "kernel/raze-trim.config"]
 
-# The stock overlays (i2c1-pi5, dwc2, vc4-kms-v3d-pi5, ramoops-pi5) come from the Pi firmware's own
-# overlay set through config.txt's dtoverlay=, so they need no Gaia support (see the os fragment,
-# BR2_PACKAGE_RPI_FIRMWARE_DTB_OVERLAYS).
 
 # The eMMC: 30,535,680 sectors (14,910 MiB), the "16 GB" module. MBR, as the slot disk is.
 [disk]
@@ -28,10 +24,6 @@ first = "1M"
 alignment = "1M"
 size = "14910M"
 
-# Flashed over USB boot: the boot ROM takes the bootfiles, the flasher image writes the eMMC.
+# Written over USB boot: the boot ROM takes the family's bootfiles and Atlas's loader writes the eMMC.
 [flash]
 methods = ["usb-boot"]
-
-[flash.files]
-flasher_config = { file = "flasher/config.txt" }
-flasher_cmdline = { file = "flasher/cmdline.txt" }

@@ -42,10 +42,8 @@ from = { source = "lemnos", path = "packaging/udev/70-lemnos.rules" }
 to = "/usr/lib/udev/rules.d/70-lemnos.rules"
 mode = "0644"
 
-[[install]]
-from = { source = "lemnos", path = "packaging/systemd/lemnosd.env.example" }
-to = "/etc/lemnos/lemnosd.env"
-mode = "0644"
+# lemnosd.env.example is not installed: every line in it is a comment, so an installed copy would set
+# nothing. The unit reads /etc/lemnos/lemnosd.env only when it exists (EnvironmentFile=-).
 
 # The lemnos user: the image is read-only, so systemd-sysusers can't add it at boot; the
 # image makes it at build time, as the unit's User=lemnos needs.
