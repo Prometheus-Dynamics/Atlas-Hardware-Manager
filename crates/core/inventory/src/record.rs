@@ -187,5 +187,6 @@ pub(crate) fn link_rank(kind: &LinkKind) -> u8 {
         LinkKind::Gateway { .. } => 3,
         LinkKind::UsbBoot => 4,
         LinkKind::Simulated => 5,
+        LinkKind::LocalDisk => 6,
     }
 }
