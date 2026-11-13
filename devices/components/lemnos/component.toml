@@ -1,0 +1,61 @@
+# Lemnos's hardware daemon, lemnosd, at Lemnos next 26364ff (L1 packaging). Board-neutral:
+# every board that runs Lemnos imports it; what a board adds (its board file, a drop-in for its
+# own writes) is in the board's own component.
+#
+# lemnosd is built from the Lemnos source by Gaia's rust builder (static musl, aarch64). The
+# packaging files are installed where Lemnos's packaging/README.md says. Not shipped here:
+# lemnos-orion.service (the Orion bridge; no Orion component yet) and lemnos-module.conf (no
+# lemnos.ko in the kernel). See the PR text for both.
+version = 1
+name = "lemnos"
+description = "Lemnos: the lemnosd hardware daemon, its unit, the lemnos user, its device-node rules and env example"
+
+[sources.lemnos]
+git = "https://github.com/Prometheus-Dynamics/Lemnos.git"
+ref = "26364ff7eb938c9009796eff40269ab471a0d51d"
+
+[build]
+builder = "rust"
+source = "lemnos"
+
+[build.settings]
+package = "lemnosd"
+triple = "aarch64-unknown-linux-musl"
+
+[[install]]
+from = "lemnosd"
+to = "/usr/bin/lemnosd"
+mode = "0755"
+
+[[install]]
+from = { source = "lemnos", path = "packaging/systemd/lemnosd.service" }
+to = "/usr/lib/systemd/system/lemnosd.service"
+mode = "0644"
+
+[[install]]
+from = { source = "lemnos", path = "packaging/systemd/lemnos.conf" }
+to = "/usr/lib/sysusers.d/lemnos.conf"
+mode = "0644"
+
+[[install]]
+from = { source = "lemnos", path = "packaging/udev/70-lemnos.rules" }
+to = "/usr/lib/udev/rules.d/70-lemnos.rules"
+mode = "0644"
+
+[[install]]
+from = { source = "lemnos", path = "packaging/systemd/lemnosd.env.example" }
+to = "/etc/lemnos/lemnosd.env"
+mode = "0644"
+
+# The lemnos user: the image is read-only, so systemd-sysusers can't add it at boot; the
+# image makes it at build time, as the unit's User=lemnos needs.
+[[users]]
+name = "lemnos"
+group = "lemnos"
+
+[[groups]]
+name = "lemnos"
+
+[[services]]
+unit = "lemnosd.service"
+enable = true

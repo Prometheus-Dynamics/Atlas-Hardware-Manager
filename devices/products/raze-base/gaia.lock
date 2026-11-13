@@ -1,0 +1,26 @@
+# Written by `gaia lock`. Do not edit.
+version = 1
+
+[source."lemnos.lemnos"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos.git"
+ref = "26364ff7eb938c9009796eff40269ab471a0d51d"
+commit = "26364ff7eb938c9009796eff40269ab471a0d51d"
+
+[source."raze-base.buildroot"]
+kind = "git"
+url = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.08"
+commit = "d5180309b1b66ef3b8eaccca70ad69be8e0729a1"
+
+[source."raze.linux"]
+kind = "git"
+url = "https://github.com/raspberrypi/linux.git"
+ref = "53679a5788f7912272b412fd78029bccae6f2b1a"
+commit = "53679a5788f7912272b412fd78029bccae6f2b1a"
+
+[source."raze.rpi-firmware"]
+kind = "git"
+url = "https://github.com/raspberrypi/firmware.git"
+ref = "6f0881cba8bea8ec24956a5718714730e9936ec5"
+commit = "6f0881cba8bea8ec24956a5718714730e9936ec5"

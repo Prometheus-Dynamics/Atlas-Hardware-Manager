@@ -1,64 +1,37 @@
-# Raze device configuration (device package "raze", contract 1).
-#
-# The OS config.txt pulls this in at top level (under [all]) with:
-#
-#   include raze-device.txt
-#
-# Everything here is a default. To change an overlay's parameters, or to drop a
-# line, copy the lines you want into your own config.txt instead of including
-# this file.
+# Raze device configuration (device package "raze"). The OS config.txt pulls this in at top level
+# with `include raze-device.txt`.
 
 [cm5]
-# >>> gen-board: i2c (generated from manifest.json by devices/tools/gen-board.py; do not edit)
-# Hardware I2C bus 1 (/dev/i2c-1): SDA GPIO10, SCL GPIO11; BMM150, INA238.
+# Hardware I2C bus 1 (/dev/i2c-1): SDA GPIO10, SCL GPIO11. The BMM150 magnetometer and the INA238
+# power monitor sit on it.
 dtoverlay=i2c1-pi5,pins_10_11
-# No overlay for GPIO8 SDA / GPIO7 SCL (BMI088): lemnosd runs
-# that bus on RP1 PIO (pio-i2c), so nothing else may claim the pins.
-# <<< gen-board
 
-# >>> gen-board: leds (generated from manifest.json by devices/tools/gen-board.py; do not edit)
-# Status LED ring: 16 SK6812-EC20 LEDs (24-bit GRB on the wire)
-# on GPIO13 via RP1 PIO, /dev/leds0. No `rgbw`: that sends 32 bits per LED and
-# smears the colours around the ring.
-dtoverlay=ws2812-pio,gpio=13,num_leds=16,brightness=255,dev_name=leds%d
-# <<< gen-board
+# Fan: the kernel's pwm-fan on RP1 PWM1 channel 3, no tachometer (gen1's isn't wired). Our overlay
+# (dts/raze-fan-overlay.dts); Lemnos's hwmon-fan drives it.
+dtoverlay=raze-fan,notach
 
-# External USB-A (GPIO20) and USB-C (GPIO16) port power: driven high by the
-# firmware from power-on, then switched by lemnosd (gpio-power-switch takes
-# the lines already on, so the ports never pass through off). An OS without
-# lemnosd loads dtoverlay=raze-usb-power instead (kernel hogs), not both.
+# External USB-A (GPIO20) and USB-C (GPIO16) port power: driven high by the firmware from power-on,
+# before Linux, and claims nothing; Lemnos's gpio-power-switch then takes the lines.
 gpio=16,20=op,dh
 
-# >>> gen-board: fan (generated from manifest.json by devices/tools/gen-board.py; do not edit)
-# Fan, driven by the kernel thermal governor. No tachometer: gen1's isn't
-# wired, so the fan offers no speed rather than 0 rpm (the image follows the
-# default revision; boards carry no revision marker yet).
-dtoverlay=raze-fan,notach
-# <<< gen-board
-
-# GPU (V3D) and display (KMS) drivers.
+# GPU (V3D) and display (KMS) drivers. HeliOS wants it; dma-buf frame streams allocate from it.
 dtoverlay=vc4-kms-v3d-pi5
 
-# Kernel logs kept in RAM across a reset (pstore, ramoops): 256 KiB at
-# 0x0b000000, 128 KiB of it the console log (what the kernel printed until
-# the reset) and two 64 KiB panic/oops records. A warm reset (the watchdog,
-# a reboot) keeps them; a power loss doesn't. board-pstore.service moves them
-# to /data/board/pstore/ on the next boot.
+# Kernel logs kept in RAM across a reset (pstore, ramoops): 256 KiB at 0x0b000000, 128 KiB of it the
+# console log and two 64 KiB panic/oops records. A warm reset keeps them; a power loss doesn't.
 dtoverlay=ramoops-pi5,total-size=0x40000,record-size=0x10000,console-size=0x20000
 
-# CM5 USB 2.0 OTG controller (dwc2) as a USB peripheral, for the USB gadget
-# (network + serial). Which Raze connector it is wired to is not recorded yet.
+# CM5 USB 2.0 OTG controller (dwc2) as a USB peripheral, for the USB gadget.
 dtoverlay=dwc2,dr_mode=peripheral
 
-# >>> gen-board: camera (generated from manifest.json by devices/tools/gen-board.py; do not edit)
-# OV9782 global-shutter camera on CAM0, continuous clock.
+# The camera (OV9782, CAM0): the sensor is Lemnos's ov9782 driver. The receiver and clock lines
+# come from the camera overlay, which is PENDING Lemnos Q2 (PR text). camera_auto_detect=0 keeps the
+# firmware from loading a stock sensor overlay.
 camera_auto_detect=0
-dtoverlay=ov9782,cam0,clk-continuous
-# <<< gen-board
 
 [all]
 
-# Hardware watchdog available to the kernel from the start. systemd arms it
-# (RuntimeWatchdogSec, package system.conf.d) once PID 1 runs; a panic before
-# that restarts through panic= on the OS's cmdline (docs/ota.md).
+# The hardware watchdog (bcm2835 wdt) is on from the start. systemd arms it: RuntimeWatchdogSec=15s
+# in components/raze-base-files (systemd.conf.d). Lemnos's hw-watchdog driver is not in the Raze's
+# board file, so systemd is the one that arms it.
 dtparam=watchdog=on
