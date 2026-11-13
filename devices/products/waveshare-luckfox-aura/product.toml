@@ -1,0 +1,15 @@
+# Luckfox Aura: the flasher image, the initramfs loaded over maskrom before the
+# eMMC is written. Plain newc, not signed (signing key open, see the PR text).
+# The base OS image is open: the eMMC layout is unconfirmed.
+version = 1
+name = "waveshare-luckfox-aura"
+description = "Luckfox Aura: flasher image"
+
+[components]
+rv11xx-orion-recovery = "../../components/rv11xx-orion-recovery/component.toml"
+
+[[images]]
+name = "waveshare-luckfox-aura-flasher"
+board = "../../boards/waveshare-luckfox-aura/board.toml"
+components = ["rv11xx-orion-recovery"]
+recipe = "initramfs-boot"

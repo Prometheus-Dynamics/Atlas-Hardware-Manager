@@ -1,0 +1,17 @@
+# Luckfox Pico Pro: the flasher image, the initramfs Atlas loads over maskrom
+# before it writes SPI-NAND. Plain newc, not signed: the recovery recipe needs a
+# signing key, which is not decided (open, see the PR text). The base OS image
+# (UBI slots on the ubi partition) is not described here: the locked Gaia has no
+# recipe that lays out a UBI region (open, see the PR text).
+version = 1
+name = "luckfox-pico-pro"
+description = "Luckfox Pico Pro: flasher image"
+
+[components]
+rv11xx-orion-recovery = "../../components/rv11xx-orion-recovery/component.toml"
+
+[[images]]
+name = "luckfox-pico-pro-flasher"
+board = "../../boards/luckfox-pico-pro/board.toml"
+components = ["rv11xx-orion-recovery"]
+recipe = "initramfs-boot"

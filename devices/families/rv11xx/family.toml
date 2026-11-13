@@ -1,0 +1,11 @@
+# Rockchip RV11xx: the small RV1106 and RV1126B boards. Each board takes its
+# SoC's CPU and its rkbin files; the family holds what the two share: Linux,
+# and a maskrom flash by Atlas's own loader (rockusb, no vendor tool). Both
+# boards' files come from rkbin's bin/rv11 and RKBOOT inis.
+version = 1
+
+[target]
+os = "linux"
+
+[flash]
+methods = ["maskrom"]
