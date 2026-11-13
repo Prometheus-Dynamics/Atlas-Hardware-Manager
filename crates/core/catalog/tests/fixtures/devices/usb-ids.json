@@ -1,0 +1,9 @@
+{
+  "schema": "urn:atlas:usb-ids:1",
+  "ids": {
+    "alpha-maskrom": { "state": "download", "vid": "2207", "pid": "350a", "name": "Alpha maskrom" },
+    "shared-usb-boot": { "state": "download", "vid": "29f1", "pid": "0230", "name": "Shared USB boot" },
+    "storage-gadget": { "state": "storage", "vid": "0a5c", "pid": "0104", "name": "Storage gadget" },
+    "beta-gadget": { "state": "gadget", "vid": "1d6b", "pid": "0104", "name": "Beta gadget" }
+  }
+}
