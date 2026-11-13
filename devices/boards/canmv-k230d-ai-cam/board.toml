@@ -1,0 +1,29 @@
+# CanMV K230D AI-CAM (Junroc, Kendryte K230D, riscv64, 128 MB LPDDR4 in the package) on the K230
+# family. microSD holds the boot and the data; no eMMC; no SPI-NAND by default. Hardware: a GC2093
+# camera (MIPI CSI RX1, 4 lanes, I2C4, reset GPIO20, MCLK1 on IO13), a Realtek RTL8189FTV Wi-Fi on
+# SDIO0 (no Ethernet), a 480x800 ST7701 MIPI DSI panel. The lens is a variant: see the note below.
+# Untested on board (G7).
+version = 1
+extends = "../../families/k230/family.toml"
+name = "canmv-k230d-ai-cam"
+description = "CanMV K230D AI-CAM (K230D, 128 MB, microSD, GC2093 camera, Wi-Fi)"
+
+[target]
+cpu = "xuantie-c908"
+
+# Open: the burner's defconfig for this board. Canaan's SDK names k230d_canmv_junroc_ai_cam_defconfig
+# for the RTOS and Linux builds only; dev pins no burner defconfig for it (its loader is loader.bin
+# or loader_mmc*.bin). Until one is pinned, the board has no [bootloader] defconfig.
+#
+# Lens variants (for B10's app data, devices/boards/canmv-k230d-ai-cam/app/app.json, not written here):
+#   lens-72 (72 degrees), lens-140 (140 degrees). Both UNCONFIRMED: no vendor source for 72; the
+#   140 one rests on one reseller listing. Check the module's label and the FPC pinout on the board.
+#   One board description covers both lenses; the hardware here does not differ between them.
+#
+# Power: USB-C 5 V 2 A is the K230D Zero's rating (dev's record). This board's supply is not
+# sourced, and dev's files hold no firmware power cap.
+#
+# Open (dev's todo): which USB-C is the power input and which is UART0 (presumed through a CH342K);
+# the burner's load address (0x80360000 vs 0x80300000, as for the Zero); the Wi-Fi driver and
+# firmware (RTL8189FTV) need a Gaia image before the board has any network; no LEDs, fan or
+# header pins are sourced.

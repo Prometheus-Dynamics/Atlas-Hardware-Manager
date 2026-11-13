@@ -1,0 +1,66 @@
+# Kendryte K230 and K230D (riscv64): the boot ROM enters USB download mode when its storage holds
+# nothing it can boot. Atlas's own loader (no vendor tool at run time) loads Canaan's burner U-Boot
+# at the board's load address, and the burner writes the storage. Written from dev's records and
+# Canaan's k230_flash source; untested on board (G7).
+version = 1
+
+[target]
+arch = "riscv64"
+os = "linux"
+
+# Canaan's SDK, pinned by dev (kendryte/k230_sdk 7e302f7, full commit below): the burner U-Boot is
+# in its src/little/uboot (the locked Gaia cannot name a subdirectory of a git source: open).
+[sources.k230-sdk]
+git = "https://github.com/kendryte/k230_sdk.git"
+ref = "7e302f733311d284be255f0d81d3463b6ae6ee6d"
+
+[bootloader]
+source = "k230-sdk"
+
+# The burn is the K230 burn protocol (Atlas's Rust loader). Gaia's [flash] at e90ee03 takes only
+# methods and files: see the note below for what it cannot yet say.
+[flash]
+methods = ["k230-usb"]
+
+# SD layout of the K230 boot ROM and SDK U-Boot, from dev's record of the K230D Zero's sdcard.img
+# (checked there: SPL firmware heads at 1 MiB and 1.5 MiB with matching SHA-256, U-Boot at 2 MiB,
+# environment at 1.875 MiB and 3.5 MiB). The AI-CAM uses the same SDK's layout; check it at G7.
+[[partitions]]
+name = "spl"
+role = "bootloader"
+offset = "1M"
+in_table = false
+
+[[partitions]]
+name = "spl-copy"
+role = "bootloader"
+offset = "1536K"
+in_table = false
+
+[[partitions]]
+name = "u-boot"
+role = "bootloader"
+offset = "2M"
+in_table = false
+
+[[partitions]]
+name = "uboot-env"
+role = "raw"
+offset = "1920K"
+in_table = false
+
+[[partitions]]
+name = "uboot-env-copy"
+role = "raw"
+offset = "3584K"
+in_table = false
+
+# NOTE (Atlas, not Gaia's format at e90ee03: Gaia refuses these keys, so they are not written as
+# keys; they are for Atlas's K230 burn until Gaia takes them):
+#   usb_boot: 29f1:0230 (kburn_k230.h:205-206, dev's record)
+#   loader: loader_mmc*.bin (the burner U-Boot, built by the SDK; the AI-CAM also names loader.bin)
+#   load_address: per board (the board descriptions say which)
+#   medium: sd, code 2 (kburn.h:39-44: EMMC 1, SD 2, SPI-NAND 3, SPI-NOR 4)
+#   image_offset: 0
+# Open: the kernel source and config (dev pins none), the bootloader's U-Boot subdirectory in the
+# SDK (Gaia's git source has no subdirectory at e90ee03), the rootfs and disk layout (the recipe's).

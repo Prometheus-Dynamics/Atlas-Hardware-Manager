@@ -1,0 +1,24 @@
+# BPI-CanMV-K230D-Zero (Kendryte K230D, riscv64, 128 MB LPDDR4 in the package) on the K230 family.
+# A TF slot only: the image is for microSD. No Ethernet, and Gaia's image has no Wi-Fi yet, so the
+# board has no network. Untested on board (G7).
+version = 1
+extends = "../../families/k230/family.toml"
+name = "bpi-canmv-k230d-zero"
+description = "BPI-CanMV-K230D-Zero (K230D, 128 MB, microSD)"
+
+[target]
+cpu = "xuantie-c908"
+
+# The burner: the SDK's U-Boot built with k230d_canmv_burntool_defconfig, plain u-boot.bin
+# (dev's record: loader_mmc.bin). It links at 0x80300000; Atlas's default load address is
+# 0x80360000 (the official tools), so this board loads at 0x80300000 first and falls back to
+# 0x80360000 if the burner won't start (dev's todo).
+[bootloader]
+defconfig = "k230d_canmv_burntool_defconfig"
+
+# Power: the supply is a USB-C 5 V 2 A (the K230D Zero's rating in dev's AI-CAM record). Dev's
+# files hold no firmware power cap; this is the only power figure. Open: a cap, if one is wanted.
+#
+# Open (dev's todo): which USB-C is the OTG data port; whether a BOOT key exists; whether the
+# boot ROM wants Canaan's firmware header on the burner (k230_flash sends it raw); storage: the
+# board page lists only the TF slot, so no SPI-NAND is described.
