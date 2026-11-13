@@ -18,11 +18,11 @@ use std::collections::VecDeque;
 use async_trait::async_trait;
 use atlas_usb::{UsbError, UsbIo};
 
-use crate::layout::Layout;
+use crate::layout::{Layout, ThunkIsa};
 use crate::protocol::{
     AW_USB_READ, AW_USB_WRITE, MODE_FEL, REQUEST_LEN, STATUS_LEN, VERIFY_LEN, cmd,
 };
-use crate::thunk::{ENTRY_OFFSET, TABLE_ENTRIES, TABLE_OFFSET};
+use crate::thunk::{self, TABLE_ENTRIES};
 
 /// The SRAM the mock has: 0..0x60000.
 pub const SRAM_LEN: usize = 0x6_0000;
@@ -65,6 +65,10 @@ pub struct FelDevice {
     /// The SRAM the SPL saw when the thunk called it (its first `spl_len`
     /// bytes). Empty until a thunk run.
     pub spl_seen: Vec<u8>,
+    /// Each reset vector register write the thunk made: (register, value).
+    pub reset_writes: Vec<(u32, u32)>,
+    /// The entry the device warm-reset into, when an RMR thunk ran.
+    pub warm_reset_into: Option<u32>,
 }
 
 impl FelDevice {
@@ -90,6 +94,8 @@ impl FelDevice {
             gone: false,
             commands: Vec::new(),
             spl_seen: Vec::new(),
+            reset_writes: Vec::new(),
+            warm_reset_into: None,
         }
     }
 
@@ -150,11 +156,15 @@ impl FelDevice {
         self.replies.push_back(csw);
     }
 
-    /// The thunk's work, as thunk.S does it: swap every table buffer, let the
-    /// SPL see its load address, swap back.
-    fn run_thunk(&mut self) {
+    /// The thunk's work, as its source does it. ARMv7 and AArch64: swap every
+    /// table buffer, let the SPL see its load address, swap back, and return
+    /// to FEL. RMR: swap, write the entry to the reset vector register, and
+    /// request the warm reset: the device leaves FEL and nothing returns.
+    /// Returns whether the device is still in FEL afterwards.
+    fn run_thunk(&mut self) -> bool {
         let thunk = self.layout.thunk_address as usize;
-        let table_at = thunk + TABLE_OFFSET;
+        let shape = thunk::shape(self.layout.thunk_isa);
+        let table_at = thunk + shape.table;
         let swaps: Vec<(u32, u32, u32)> = self.sram[table_at..table_at + TABLE_ENTRIES * 12]
             .chunks(12)
             .map(|entry| {
@@ -173,7 +183,7 @@ impl FelDevice {
             }
         };
         swap_all(&mut self.sram);
-        let entry_at = thunk + ENTRY_OFFSET;
+        let entry_at = thunk + shape.entry;
         let entry = u32::from_le_bytes([
             self.sram[entry_at],
             self.sram[entry_at + 1],
@@ -181,7 +191,15 @@ impl FelDevice {
             self.sram[entry_at + 3],
         ]);
         self.spl_seen = self.sram[entry as usize..entry as usize + self.spl_len].to_vec();
+        if let ThunkIsa::Aarch32ToAarch64 { reset_vector } = self.layout.thunk_isa {
+            // The entry goes to the reset vector register, then RMR asks for
+            // the warm reset. The swapped buffers stay swapped: nothing returns.
+            self.reset_writes.push((reset_vector, entry));
+            self.warm_reset_into = Some(entry);
+            return false;
+        }
         swap_all(&mut self.sram);
+        true
     }
 
     fn command(&mut self, body: &[u8]) {
@@ -204,8 +222,12 @@ impl FelDevice {
             }
             cmd::RUN => {
                 if address == self.layout.thunk_address {
-                    self.run_thunk();
-                    self.reply(Vec::new(), 0);
+                    if self.run_thunk() {
+                        self.reply(Vec::new(), 0);
+                    } else {
+                        // The warm reset took the device out of FEL.
+                        self.gone = true;
+                    }
                 } else {
                     // Any other code takes over: the device leaves FEL.
                     self.gone = true;

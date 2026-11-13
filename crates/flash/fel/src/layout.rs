@@ -12,15 +12,76 @@
 
 use serde_json::Value;
 
-use crate::thunk::{BLOB_LEN, TABLE_ENTRIES};
+use crate::thunk::{TABLE_ENTRIES, shape};
 
-/// The instruction set the thunk is written in. Only ARMv7 has a thunk;
-/// the A733 is AArch64 by its record, and no AArch64 thunk is written, so
-/// a layout that names it is refused. Which one the A733's FEL state runs
-/// is UNCONFIRMED until a board answers.
+/// The thunk a layout uses, which is also the FEL execution state it
+/// assumes. Three modes; each has its own thunk source (see [`crate::thunk`]).
+///
+/// - [`ThunkIsa::Armv7`]: FEL runs AArch32, the SPL is AArch32. The thunk
+///   calls the SPL and returns into the boot ROM's FEL loop.
+/// - [`ThunkIsa::Aarch64`]: FEL runs native AArch64. The same contract with
+///   AArch64 registers: the thunk calls the SPL and returns to FEL.
+/// - [`ThunkIsa::Aarch32ToAarch64`]: FEL runs AArch32 and the SPL is entered
+///   in AArch64 through a warm reset. The thunk writes the SPL's entry to
+///   the SoC's reset vector register (`reset_vector`, the RVBAR backing
+///   store on Allwinner cores) and requests the warm reset with RMR. The
+///   core resets into the SPL, so there is no return to FEL: the flow is
+///   [`ReturnMode::NoReturnExpected`].
+///
+/// Which mode the A733 uses is UNCONFIRMED. The records name the choice and
+/// the flow refuses an unconfirmed record unless the caller acknowledges it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ThunkIsa {
     Armv7,
+    Aarch64,
+    Aarch32ToAarch64 {
+        /// The SoC's writable reset vector register, written with the SPL's
+        /// entry address before the RMR request (a physical address).
+        reset_vector: u32,
+    },
+}
+
+/// Whether the SPL's run ends back in the boot ROM's FEL loop.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReturnMode {
+    /// The thunk returns into FEL; FEL can be used again (an image can follow).
+    ReturnsToFel,
+    /// The core warm-resets into the SPL. FEL is gone and no return is
+    /// expected, so nothing can follow over FEL.
+    NoReturnExpected,
+}
+
+impl ThunkIsa {
+    /// The return mode this thunk gives.
+    pub fn return_mode(self) -> ReturnMode {
+        match self {
+            Self::Armv7 | Self::Aarch64 => ReturnMode::ReturnsToFel,
+            Self::Aarch32ToAarch64 { .. } => ReturnMode::NoReturnExpected,
+        }
+    }
+
+    /// The thunk blob's length in bytes.
+    pub fn blob_len(self) -> usize {
+        shape(self).len()
+    }
+
+    /// The name a layout record gives this mode.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Armv7 => "armv7",
+            Self::Aarch64 => "aarch64",
+            Self::Aarch32ToAarch64 { .. } => "aarch32-rmr",
+        }
+    }
+}
+
+/// What a caller does with a layout record that is UNCONFIRMED (its
+/// `confirmed` field is false). Refused by default; the caller passes
+/// [`Unconfirmed::Acknowledge`] to accept a guessed layout on purpose.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unconfirmed {
+    Refuse,
+    Acknowledge,
 }
 
 /// One swap: `size` bytes at `buf1` (a live FEL stack region) exchange with
@@ -60,8 +121,11 @@ pub enum LayoutError {
     Overlap(String),
     /// A count, size or alignment the thunk can't use.
     Invalid(String),
-    /// The layout asks for something no thunk is written for.
+    /// The layout asks for something no thunk is written for, or for a flow
+    /// that can't follow it (an image after an SPL that does not return).
     Unsupported(String),
+    /// The record is UNCONFIRMED and the caller did not acknowledge it.
+    Unconfirmed(String),
 }
 
 impl std::fmt::Display for LayoutError {
@@ -75,6 +139,11 @@ impl std::fmt::Display for LayoutError {
             Self::Overlap(message) => write!(f, "the SRAM layout overlaps itself: {message}"),
             Self::Invalid(message) => write!(f, "the SRAM layout is unusable: {message}"),
             Self::Unsupported(message) => write!(f, "the SRAM layout is unsupported: {message}"),
+            Self::Unconfirmed(message) => write!(
+                f,
+                "the SRAM layout is UNCONFIRMED ({message}); it is refused unless the \
+                 caller acknowledges an unproven layout"
+            ),
         }
     }
 }
@@ -102,11 +171,27 @@ fn hex_u32(value: &Value, field: &str) -> Result<u32, LayoutError> {
 }
 
 impl Layout {
-    /// Reads a layout value. Null or missing is [`LayoutError::Unsourced`].
-    /// Fields: `thunk_isa` ("armv7"), `load_address`, `thunk_address`,
-    /// `image_address`, `image_entry` (hex strings), `swap_buffers` (a list
-    /// of `{buf1, buf2, size}` hex strings).
+    /// Reads a layout record, refusing an UNCONFIRMED one. Null or missing is
+    /// [`LayoutError::Unsourced`]. This is the default entry point: it is
+    /// [`Layout::from_record`] with [`Unconfirmed::Refuse`].
     pub fn from_value(sram: Option<&Value>) -> Result<Self, LayoutError> {
+        Self::from_record(sram, Unconfirmed::Refuse)
+    }
+
+    /// Reads a layout record. Fields: `thunk_isa` ("armv7", "aarch64" or
+    /// "aarch32-rmr"), `confirmed` (true or false: a record whose layout is
+    /// not yet proven on hardware is false), `reset_vector` (a hex string,
+    /// required by "aarch32-rmr"), `load_address`, `thunk_address`,
+    /// `image_address`, `image_entry` (hex strings), and `swap_buffers` (a
+    /// list of `{buf1, buf2, size}` hex strings). Any other field, such as a
+    /// `note`, is data for a reader and is ignored.
+    ///
+    /// An UNCONFIRMED record is refused with [`LayoutError::Unconfirmed`]
+    /// unless `unconfirmed` is [`Unconfirmed::Acknowledge`].
+    pub fn from_record(
+        sram: Option<&Value>,
+        unconfirmed: Unconfirmed,
+    ) -> Result<Self, LayoutError> {
         let sram = match sram {
             None | Some(Value::Null) => return Err(LayoutError::Unsourced),
             Some(value) => value,
@@ -115,16 +200,23 @@ impl Layout {
             sram.get(name)
                 .ok_or_else(|| LayoutError::Malformed(format!("no {name}")))
         };
+        let confirmed = field("confirmed")?
+            .as_bool()
+            .ok_or_else(|| LayoutError::Malformed("confirmed is not true or false".into()))?;
+        if !confirmed && unconfirmed == Unconfirmed::Refuse {
+            return Err(LayoutError::Unconfirmed(
+                "the record's confirmed field is false; a board run answers it".into(),
+            ));
+        }
         let isa = match field("thunk_isa")?.as_str() {
             Some("armv7") => ThunkIsa::Armv7,
-            Some("aarch64") => {
-                return Err(LayoutError::Unsupported(
-                    "no AArch64 thunk is written; the A733's FEL state is UNCONFIRMED".into(),
-                ));
-            }
+            Some("aarch64") => ThunkIsa::Aarch64,
+            Some("aarch32-rmr") => ThunkIsa::Aarch32ToAarch64 {
+                reset_vector: hex_u32(field("reset_vector")?, "reset_vector")?,
+            },
             _ => {
                 return Err(LayoutError::Malformed(
-                    "thunk_isa is not \"armv7\" or \"aarch64\"".into(),
+                    "thunk_isa is not \"armv7\", \"aarch64\" or \"aarch32-rmr\"".into(),
                 ));
             }
         };
@@ -159,6 +251,13 @@ impl Layout {
     /// The layout's own rules: alignment, sizes, a table the thunk holds,
     /// and no overlap between the thunk and the swap buffers.
     pub fn check(&self) -> Result<(), LayoutError> {
+        if let ThunkIsa::Aarch32ToAarch64 { reset_vector } = self.thunk_isa
+            && (reset_vector == 0 || reset_vector % 4 != 0)
+        {
+            return Err(LayoutError::Invalid(format!(
+                "the reset vector register {reset_vector:#010x} is not a 4-byte address"
+            )));
+        }
         if self.swaps.len() > TABLE_ENTRIES {
             return Err(LayoutError::Invalid(format!(
                 "{} swap buffers; the thunk's table holds {TABLE_ENTRIES}",
@@ -190,7 +289,7 @@ impl Layout {
                 )));
             }
         }
-        let thunk = (self.thunk_address, BLOB_LEN as u32);
+        let thunk = (self.thunk_address, self.thunk_isa.blob_len() as u32);
         for (index, swap) in self.swaps.iter().enumerate() {
             let buf1 = (swap.buf1, swap.size);
             let buf2 = (swap.buf2, swap.size);
@@ -230,7 +329,7 @@ impl Layout {
                 "the SPL runs past the address space".into(),
             ));
         }
-        let thunk = (self.thunk_address as u64, BLOB_LEN as u64);
+        let thunk = (self.thunk_address as u64, self.thunk_isa.blob_len() as u64);
         let spl = (start, len as u64);
         if overlaps64(spl, thunk) {
             return Err(LayoutError::Overlap("the SPL overlaps the thunk".into()));
@@ -315,6 +414,7 @@ mod tests {
     fn value() -> Value {
         json!({
             "thunk_isa": "armv7",
+            "confirmed": true,
             "load_address": "0x00002000",
             "thunk_address": "0x00020000",
             "image_address": "0x4a000000",
@@ -344,19 +444,78 @@ mod tests {
     }
 
     #[test]
-    fn an_aarch64_thunk_is_refused_not_guessed() {
-        let mut aarch64 = value();
-        aarch64["thunk_isa"] = json!("aarch64");
-        assert!(matches!(
-            Layout::from_value(Some(&aarch64)),
-            Err(LayoutError::Unsupported(_))
-        ));
+    fn an_unknown_thunk_isa_is_refused_and_the_known_ones_read() {
         let mut unknown = value();
         unknown["thunk_isa"] = json!("riscv");
         assert!(matches!(
             Layout::from_value(Some(&unknown)),
             Err(LayoutError::Malformed(_))
         ));
+        let mut a64 = value();
+        a64["thunk_isa"] = json!("aarch64");
+        assert_eq!(
+            Layout::from_value(Some(&a64)).unwrap().thunk_isa,
+            ThunkIsa::Aarch64
+        );
+    }
+
+    #[test]
+    fn the_rmr_mode_needs_a_nonzero_reset_vector_register() {
+        let mut rmr = value();
+        rmr["thunk_isa"] = json!("aarch32-rmr");
+        assert!(matches!(
+            Layout::from_value(Some(&rmr)),
+            Err(LayoutError::Malformed(_))
+        ));
+        rmr["reset_vector"] = json!("0x08001004");
+        assert_eq!(
+            Layout::from_value(Some(&rmr)).unwrap().thunk_isa,
+            ThunkIsa::Aarch32ToAarch64 {
+                reset_vector: 0x0800_1004
+            }
+        );
+        rmr["reset_vector"] = json!("0x00000000");
+        assert!(matches!(
+            Layout::from_value(Some(&rmr)),
+            Err(LayoutError::Invalid(_))
+        ));
+    }
+
+    #[test]
+    fn an_unconfirmed_record_is_refused_unless_acknowledged() {
+        let mut guessed = value();
+        guessed["confirmed"] = json!(false);
+        assert!(matches!(
+            Layout::from_value(Some(&guessed)),
+            Err(LayoutError::Unconfirmed(_))
+        ));
+        assert!(Layout::from_record(Some(&guessed), Unconfirmed::Acknowledge).is_ok());
+        let mut missing = value();
+        missing.as_object_mut().unwrap().remove("confirmed");
+        assert!(matches!(
+            Layout::from_value(Some(&missing)),
+            Err(LayoutError::Malformed(_))
+        ));
+    }
+
+    #[test]
+    fn a_note_beside_the_fields_is_data_and_is_ignored() {
+        let mut noted = value();
+        noted["note"] = json!("a reader's note");
+        assert_eq!(Layout::from_value(Some(&noted)).unwrap(), sample());
+    }
+
+    #[test]
+    fn each_mode_says_whether_its_spl_returns_to_fel() {
+        assert_eq!(ThunkIsa::Armv7.return_mode(), ReturnMode::ReturnsToFel);
+        assert_eq!(ThunkIsa::Aarch64.return_mode(), ReturnMode::ReturnsToFel);
+        assert_eq!(
+            ThunkIsa::Aarch32ToAarch64 {
+                reset_vector: 0x0800_1004
+            }
+            .return_mode(),
+            ReturnMode::NoReturnExpected
+        );
     }
 
     #[test]
@@ -410,5 +569,27 @@ mod tests {
             layout.spl_pieces(0x2000),
             Err(LayoutError::Overlap(_))
         ));
+    }
+
+    /// The A733's record, as shipped: UNCONFIRMED, so refused by default.
+    const A733: &str = include_str!("../records/sun60i-a733.json");
+
+    #[test]
+    fn the_a733_record_is_refused_until_the_caller_acknowledges_it() {
+        let record: Value = serde_json::from_str(A733).unwrap();
+        assert!(matches!(
+            Layout::from_value(Some(&record)),
+            Err(LayoutError::Unconfirmed(_))
+        ));
+        let layout = Layout::from_record(Some(&record), Unconfirmed::Acknowledge).unwrap();
+        assert_eq!(
+            layout.thunk_isa,
+            ThunkIsa::Aarch32ToAarch64 {
+                reset_vector: 0x0800_1004
+            }
+        );
+        assert_eq!(layout.load_address, 0x0004_7000);
+        assert_eq!(layout.thunk_address, 0x0009_0000);
+        assert!(layout.swaps.is_empty());
     }
 }

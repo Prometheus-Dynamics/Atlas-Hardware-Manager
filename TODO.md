@@ -63,6 +63,7 @@ Our own loader for every chip family, then the flasher image, then an ordinary u
 - [ ] [D3](docs/prs/D3.md) Rockchip maskrom and loader (wave 3; needs D1)
 - [ ] [D4](docs/prs/D4.md) Kendryte K230 burn (wave 3; needs D1)
 - [ ] [D5](docs/prs/D5.md) Allwinner FEL (wave 3; needs D1)
+- [ ] [D16](docs/prs/D16.md) FEL: an AArch64 thunk for the A733 (needs D5; untested on board)
 - [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11, D12, D13)
 - [ ] [D7](docs/prs/D7.md) Disk writer and its helper (wave 2; needs A1)
 - [ ] [D8](docs/prs/D8.md) UBI images for NAND boards (wave 2; needs A1)
