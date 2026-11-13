@@ -1,28 +1,31 @@
-//! The board driver: the one `Driver` that finds and identifies boards through Orion.
+//! The board driver: the one `Driver` that finds Orion nodes and identifies them.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use atlas_driver::{Driver, DriverError, DriverManifest};
+use atlas_driver::{Driver, DriverError, DriverManifest, Serves};
 use atlas_types::{Candidate, CapabilitySet, Family, Identity, Link};
 use tokio::sync::watch;
 
+use crate::discovery;
 use crate::identity;
 use crate::monitor::{Handle, Monitor, Pause, Presence, RealPause};
 use crate::reach::{LINK_KINDS, Seed};
 
-/// The family name the driver is listed under. A board's own family comes from its hello
-/// document, so one driver covers every family.
+/// The label this driver is listed under. It serves every family, so the label is only the
+/// scan's name for it; no device has this family (a node without hardware facts is keyed by
+/// its fingerprint under the same label).
 pub const FAMILY: &str = "orion";
 /// How long `identify` waits for a node that was seen but has just dropped out.
 const IDENTIFY_WAIT: Duration = Duration::from_secs(2);
 
 /// Finds and identifies Orion nodes at the addresses it was given, on the links they sit on.
 ///
-/// The first scan that names a node starts its monitor. A node that is up is offered by
-/// `discover`; one that is gone is not, until its monitor finds it again.
+/// It serves [`Serves::Any`]: a node's family comes from its identity. The first scan that
+/// names a node starts its monitor. A node that is up is offered by `discover`; one that is
+/// gone is not, until its monitor finds it again.
 #[derive(Debug)]
 pub struct BoardDriver {
     manifest: DriverManifest,
@@ -56,7 +59,7 @@ impl BoardDriver {
     }
 
     /// Stops watching the node at `address` until [`BoardDriver::turn_on`]. This is the manual
-    /// off: nothing turns a node off by itself.
+    /// off: nothing turns a node off by itself, and a scan does not start it again.
     pub fn turn_off(&self, address: &str) {
         lock(&self.off).insert(address.to_owned());
         lock(&self.monitors).remove(address);
@@ -78,18 +81,23 @@ impl Driver for BoardDriver {
         &self.manifest
     }
 
+    fn serves(&self) -> Serves {
+        Serves::Any
+    }
+
     async fn discover(&self, link: &Link) -> Result<Vec<Candidate>, DriverError> {
+        let addresses = discovery::addresses_on(&self.seeds, link);
         let off = lock(&self.off).clone();
         let mut monitors = lock(&self.monitors);
         let mut found = Vec::new();
-        for seed in self.seeds.iter().filter(|seed| seed.is_on(link)) {
-            let key = seed.address.to_string();
+        for address in addresses {
+            let key = address.to_string();
             if off.contains(&key) {
                 continue;
             }
             let monitor = monitors
                 .entry(key.clone())
-                .or_insert_with(|| Monitor::start(seed.address.clone(), self.pause.clone()));
+                .or_insert_with(|| Monitor::start(address, self.pause.clone()));
             if matches!(monitor.handle().presence(), Presence::Found(_)) {
                 found.push(Candidate {
                     link: link.id.clone(),
@@ -117,20 +125,28 @@ impl Driver for BoardDriver {
                 Presence::Lost(reason) => reason.clone(),
                 _ => "not answering yet".into(),
             };
-            return Err(DriverError::Unreachable(format!(
-                "{}: {reason}",
-                candidate.address
-            )));
+            return Err(unreachable(&candidate.address, &reason));
         }
-        let node = handle.ask().await.map_err(|reason| {
-            DriverError::Unreachable(format!("{}: {reason}", candidate.address))
-        })?;
-        identity::identity(&node, &candidate.link, &candidate.address)
+        let answer = handle
+            .ask()
+            .await
+            .map_err(|reason| unreachable(&candidate.address, &reason))?;
+        identity::identity(
+            &answer.node,
+            &answer.lemnos,
+            FAMILY,
+            &candidate.link,
+            &candidate.address,
+        )
     }
 
     fn capabilities(&self, device: &Identity) -> CapabilitySet {
         identity::capabilities(device)
     }
+}
+
+fn unreachable(address: &str, reason: &str) -> DriverError {
+    DriverError::Unreachable(format!("{address}: {reason}"))
 }
 
 /// Whether the monitor has found the node within the identify wait.

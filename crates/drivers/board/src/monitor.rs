@@ -1,50 +1,60 @@
-//! One node, kept: a thread that connects, says who the node is, and keeps the connection.
+//! One node, kept: a thread that connects, asks the node who it is, and keeps the connection.
 //!
-//! Orion's client is blocking and not `Send`, so each node's session lives on one thread of
-//! its own, and the rest of Atlas reads what that thread reports through a watch channel. The
+//! Orion's client is blocking and not `Send`, so each node's session lives on one thread of its
+//! own, and the rest of Atlas reads what that thread reports through a watch channel. The
 //! thread follows the failure rule: a connection that fails or breaks is tried again after a
 //! delay that doubles up to the cap, and a success starts the delays again. It never gives up
-//! by itself; [`Monitor`] dropped (or turned off by the driver) is the only way it stops.
+//! by itself; dropping the [`Monitor`] (or turning the node off in the driver) is the only way
+//! it stops. There is no timer of its own: it waits on the session, and a request for the
+//! node's identity is answered on the same thread.
 //!
-//! Every later PR that calls a node (readings, logs, actions, files, shell) runs on this same
-//! thread, while its session is up.
+//! Connections are security off (plain). A node that needs a key refuses them, and the reason
+//! is kept as the presence.
 
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-use std::sync::mpsc;
-
+use orion::actions::{ActionCall, Target};
 use orion::node::Node;
 use orion::{Address, Options, Orion};
 use tokio::sync::{oneshot, watch};
 
 use crate::backoff::Backoff;
+use crate::lemnos::{self, Lemnos};
 
 /// The program name this driver connects as.
 pub const PROGRAM: &str = "atlas";
-/// How long one wait on the session lasts before the thread looks at its stop flag again.
+/// How long one wait on the session lasts before the thread looks at its requests again.
 const POLL: Duration = Duration::from_millis(100);
 /// How long one connect and its hello may take.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
-/// How long a request for a fresh hello document waits for the session to answer.
-const ASK_WAIT: Duration = Duration::from_secs(2);
-
-/// A request for the node's hello document as it is now, answered on the session's thread.
-type Ask = oneshot::Sender<Result<Node, String>>;
+/// How long a request for the node's identity waits for the session to answer.
+const ASK_WAIT: Duration = Duration::from_secs(5);
 
 /// What a node is doing, as its monitor last saw it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Presence {
-    /// Not tried yet, or tried for the first time.
+    /// Not tried yet.
     Searching,
     /// Connected and identified: the node's hello document as it answered.
     Found(Node),
     /// Not reachable now. The reason is the last error, in words.
     Lost(String),
 }
+
+/// A node's answer to a request for its identity: its hello document, and what its Lemnos is
+/// doing now.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Answer {
+    pub node: Node,
+    pub lemnos: Lemnos,
+}
+
+type Ask = oneshot::Sender<Result<Answer, String>>;
 
 /// The wait between tries. The monitor asks it to wait; the real one sleeps, a test's records
 /// the delay. It returns early once `stop` is set.
@@ -77,8 +87,8 @@ pub struct Monitor {
     thread: Option<JoinHandle<()>>,
 }
 
-/// What the rest of Atlas holds of a monitor: its presence, and a way to ask the node for its
-/// hello document now. Cheap to clone.
+/// What the rest of Atlas holds of a monitor: its presence, and a way to ask the node who it is
+/// now. Cheap to clone.
 #[derive(Clone, Debug)]
 pub struct Handle {
     address: Address,
@@ -92,7 +102,7 @@ impl Handle {
         &self.address
     }
 
-    /// What the node is doing now.
+    /// What the node is doing now, as the last connect or answer saw it.
     pub fn presence(&self) -> Presence {
         self.presence.borrow().clone()
     }
@@ -102,13 +112,13 @@ impl Handle {
         self.presence.clone()
     }
 
-    /// The node's hello document as it answers now. Facts a board publishes after it has
-    /// connected show up here, which the presence snapshot does not.
+    /// The node's identity as it answers now: its hello document, read again, and Lemnos's
+    /// state. Facts a board publishes after it has connected show up here.
     ///
     /// # Errors
     ///
     /// If the session is not up, or does not answer in time. The message says why.
-    pub async fn ask(&self) -> Result<Node, String> {
+    pub async fn ask(&self) -> Result<Answer, String> {
         let (reply, answer) = oneshot::channel();
         self.asks
             .send(reply)
@@ -131,13 +141,15 @@ impl Monitor {
         let thread = thread::Builder::new()
             .name(format!("node-{address}"))
             .spawn(move || {
-                run(
-                    &thread_address,
-                    &sender,
-                    &asks_received,
-                    &thread_stop,
-                    pause.as_ref(),
-                );
+                let mut keeper = Keeper {
+                    address: thread_address,
+                    sender,
+                    asks: asks_received,
+                    stop: thread_stop,
+                    pause,
+                    expects_lemnos: false,
+                };
+                keeper.run();
             })
             .ok();
         Self {
@@ -166,69 +178,121 @@ impl Drop for Monitor {
     }
 }
 
-fn run(
-    address: &Address,
-    sender: &watch::Sender<Presence>,
-    asks: &mpsc::Receiver<Ask>,
-    stop: &AtomicBool,
-    pause: &dyn Pause,
-) {
-    let mut backoff = Backoff::default();
-    let options = || Options {
-        timeout: CONNECT_TIMEOUT,
-        ..Options::default()
-    };
-    while !stop.load(Ordering::SeqCst) {
-        match Orion::connect_with(address, PROGRAM, options()) {
-            Ok(orion) => match orion.node() {
-                Ok(node) => {
-                    backoff.reset();
-                    sender.send_replace(Presence::Found(node));
-                    let reason = serve(&orion, sender, asks, stop);
-                    if stop.load(Ordering::SeqCst) {
-                        return;
+/// The state the monitor thread keeps across connections.
+struct Keeper {
+    address: Address,
+    sender: watch::Sender<Presence>,
+    asks: mpsc::Receiver<Ask>,
+    stop: Arc<AtomicBool>,
+    pause: Arc<dyn Pause>,
+    /// Once a node has published Lemnos facts or offers, it is expected to answer for Lemnos
+    /// from then on, even while its facts are gone (after its own restart).
+    expects_lemnos: bool,
+}
+
+impl Keeper {
+    fn run(&mut self) {
+        let mut backoff = Backoff::default();
+        while !self.stopped() {
+            match Orion::connect_with(&self.address, PROGRAM, plain()) {
+                Ok(orion) => match orion.node() {
+                    Ok(node) => {
+                        backoff.reset();
+                        self.sender.send_replace(Presence::Found(node));
+                        let reason = self.serve(&orion);
+                        if self.stopped() {
+                            return;
+                        }
+                        self.sender.send_replace(Presence::Lost(reason));
                     }
-                    sender.send_replace(Presence::Lost(reason));
-                }
+                    Err(error) => {
+                        self.sender.send_replace(Presence::Lost(error.to_string()));
+                    }
+                },
                 Err(error) => {
-                    sender.send_replace(Presence::Lost(error.to_string()));
+                    self.sender.send_replace(Presence::Lost(error.to_string()));
                 }
-            },
-            Err(error) => {
-                sender.send_replace(Presence::Lost(error.to_string()));
+            }
+            self.pause.pause(backoff.next_delay(), &self.stop);
+        }
+    }
+
+    fn stopped(&self) -> bool {
+        self.stop.load(Ordering::SeqCst)
+    }
+
+    /// Keeps the session up until it breaks or the monitor is stopped, answering requests on
+    /// the way. Returns why it broke.
+    fn serve(&mut self, orion: &Orion) -> String {
+        while !self.stopped() {
+            while let Ok(reply) = self.asks.try_recv() {
+                match self.answer(orion) {
+                    Ok(answer) => {
+                        self.sender
+                            .send_replace(Presence::Found(answer.node.clone()));
+                        let _ = reply.send(Ok(answer));
+                    }
+                    Err(error) => {
+                        let text = error.to_string();
+                        let _ = reply.send(Err(text.clone()));
+                        if error.is_lost() {
+                            return text;
+                        }
+                    }
+                }
+            }
+            if let Err(error) = orion.pump(POLL) {
+                return error.to_string();
             }
         }
-        pause.pause(backoff.next_delay(), stop);
+        String::new()
+    }
+
+    /// Asks the node who it is, and, when it is expected to run Lemnos, whether Lemnos answers.
+    fn answer(&mut self, orion: &Orion) -> Result<Answer, orion::Error> {
+        let node = orion.node()?;
+        if lemnos::published_by(&node) {
+            self.expects_lemnos = true;
+        }
+        let lemnos = if self.expects_lemnos {
+            probe(orion, &node)?
+        } else {
+            Lemnos::Absent
+        };
+        Ok(Answer { node, lemnos })
     }
 }
 
-/// Keeps the session up until it breaks or the monitor is stopped, answering requests for the
-/// node's hello document on the way. Returns why it broke.
-fn serve(
-    orion: &Orion,
-    sender: &watch::Sender<Presence>,
-    asks: &mpsc::Receiver<Ask>,
-    stop: &AtomicBool,
-) -> String {
-    while !stop.load(Ordering::SeqCst) {
-        while let Ok(reply) = asks.try_recv() {
-            match orion.node() {
-                Ok(node) => {
-                    sender.send_replace(Presence::Found(node.clone()));
-                    let _ = reply.send(Ok(node));
-                }
-                Err(error) => {
-                    let text = error.to_string();
-                    let _ = reply.send(Err(text.clone()));
-                    if error.is_lost() {
-                        return text;
-                    }
-                }
-            }
-        }
-        if let Err(error) = orion.pump(POLL) {
-            return error.to_string();
-        }
+/// Plain connections: security off, the only kind this build makes.
+fn plain() -> Options {
+    Options {
+        timeout: CONNECT_TIMEOUT,
+        ..Options::default()
     }
-    String::new()
+}
+
+/// Asks Lemnos its read-only question. A session that breaks during it is an error; any other
+/// failure is Lemnos not answering, with the reason.
+fn probe(orion: &Orion, node: &Node) -> Result<Lemnos, orion::Error> {
+    let Ok(name) = node.name.parse() else {
+        return Ok(Lemnos::NotAnswering(format!(
+            "the node's name {:?} is not a valid name",
+            node.name
+        )));
+    };
+    let answered = orion
+        .run(&ActionCall {
+            name: lemnos::PROBE,
+            target: Target::Node(name),
+            args: b"",
+            deadline_ms: 0,
+            detached: false,
+        })
+        .and_then(|mut run| Ok(run.finish(lemnos::PROBE_WAIT)?));
+    let finished = match answered {
+        Ok(finished) => finished,
+        Err(error) if error.is_lost() => return Err(error),
+        Err(error) => return Ok(Lemnos::NotAnswering(error.to_string())),
+    };
+    Ok(Lemnos::from_probe(finished.outcome, &finished.detail))
 }
