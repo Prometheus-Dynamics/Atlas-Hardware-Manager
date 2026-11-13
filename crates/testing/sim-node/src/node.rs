@@ -23,7 +23,7 @@
 use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::Path;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, mpsc};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -47,8 +47,10 @@ pub const NODE_NAME: &str = "board";
 const OFFERS: &str = "update,slots,logs,actions,status,telemetry,files,self-test";
 /// How often the node logic moves runs on and publishes readings.
 const TICK: Duration = Duration::from_millis(20);
-/// How long a call waits for its outcome before the caller gives up.
-const CALL_WAIT: Duration = Duration::from_secs(10);
+/// The one overall deadline for anything the sim waits on: a call's outcome, a run's end, a
+/// condition a test polls for. Nothing here is a fixed delay standing in for "it should have
+/// happened by now"; this only ever matters when something is truly stuck, so it is generous.
+pub const DEADLINE: Duration = Duration::from_secs(60);
 /// How many bundle bytes an install verifies and unpacks per tick.
 pub const INSTALL_STEP: u64 = 64 * 1024;
 
@@ -76,7 +78,7 @@ pub fn call(orion: &Orion, name: &str, args: &[u8]) -> Result<Finished, orion::E
         deadline_ms: 0,
         detached: false,
     })?;
-    Ok(run.finish(CALL_WAIT)?)
+    Ok(run.finish(DEADLINE)?)
 }
 
 /// The state a node is in, as its hello `state` fact says it.
@@ -187,6 +189,12 @@ struct Shared {
     /// Set while Lemnos is stopped on a node that has it: the node stays up and its Lemnos calls
     /// fail. That is not the same as Lemnos being absent.
     lemnos_down: Arc<AtomicBool>,
+    /// Set while an install job is held where it is: it still runs, but moves no bytes until a
+    /// test lets it go. Holding is how a test makes "the install is still running" true for as
+    /// long as it needs, whatever the machine's load.
+    hold_installs: Arc<AtomicBool>,
+    /// How many runs have been stalled by the script (see [`Behaviour::Stall`]).
+    stalled: Arc<AtomicUsize>,
 }
 
 /// A simulated board. Dropping it stops the node logic, the link and the comm core, and frees
@@ -229,6 +237,8 @@ impl SimNode {
             stop: Arc::new(AtomicBool::new(false)),
             restart: Arc::new(AtomicBool::new(false)),
             lemnos_down: Arc::new(AtomicBool::new(false)),
+            hold_installs: Arc::new(AtomicBool::new(false)),
+            stalled: Arc::new(AtomicUsize::new(0)),
         };
 
         let (ready, started) = mpsc::channel();
@@ -291,6 +301,20 @@ impl SimNode {
     /// What the next runs and connections do, for a test to queue failures in.
     pub fn script(&self) -> MutexGuard<'_, Script> {
         lock(&self.shared.script)
+    }
+
+    /// Holds an install job where it is (`true`) or lets it move on (`false`). A held install is
+    /// still running: it can be cancelled, restarted or attached to, and it finishes only once it
+    /// is let go.
+    pub fn hold_installs(&self, hold: bool) {
+        self.shared.hold_installs.store(hold, Ordering::SeqCst);
+    }
+
+    /// How many runs the script has stalled so far. A test waits on this to know a stalled run
+    /// has started, rather than on a delay.
+    #[must_use]
+    pub fn stalled_runs(&self) -> usize {
+        self.shared.stalled.load(Ordering::SeqCst)
     }
 
     /// Restarts the service now: running jobs are lost, and nothing resumes.
@@ -549,14 +573,17 @@ impl Node {
         match behaviour {
             Behaviour::Refuse(reason) => self.finish(call, Outcome::Rejected, &[], &reason),
             Behaviour::Fail(reason) => self.finish(call, Outcome::Failed, &[], &reason),
-            Behaviour::Stall => self.active.push(Run {
-                call,
-                name: name.to_string(),
-                args,
-                left: 1,
-                total: 1,
-                stalled: true,
-            }),
+            Behaviour::Stall => {
+                self.shared.stalled.fetch_add(1, Ordering::SeqCst);
+                self.active.push(Run {
+                    call,
+                    name: name.to_string(),
+                    args,
+                    left: 1,
+                    total: 1,
+                    stalled: true,
+                });
+            }
             Behaviour::RestartDaemon => {
                 self.restart();
                 self.finish(call, Outcome::Failed, &[], "-4: the service restarted");
@@ -788,7 +815,8 @@ impl Node {
 
         // The install job moves over the bundle bytes, and finishes when they are all done.
         let mut finished_install = false;
-        if let Some(install) = self.install.as_mut() {
+        let held = self.shared.hold_installs.load(Ordering::SeqCst);
+        if let Some(install) = self.install.as_mut().filter(|_| !held) {
             install.done = (install.done + INSTALL_STEP).min(install.size);
             let percent = (install.done * 100)
                 .checked_div(install.size)
