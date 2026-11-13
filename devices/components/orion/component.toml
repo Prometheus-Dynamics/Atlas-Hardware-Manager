@@ -1,0 +1,72 @@
+version = 1
+name = "orion"
+description = "Orion: the node that reaches boards and runs their jobs. Built from the Orion repository's next branch; its packaging units and settings are read from that same source."
+
+# Orion `next` at c0187f4 (origin/next, read for this PR). Workspace version 1.0.1-dev
+# at that commit (Cargo.toml [workspace.package]); `~dev` orders it below the release, as opkg does.
+[sources.orion]
+git = "https://github.com/Prometheus-Dynamics/Orion.git"
+ref = "c0187f4c195cd27f8353c055dd0a94247c2965cc"
+
+# `orion-bin` built for aarch64 glibc. The Orion packaging README asks for
+# profile `service` (size-tuned, LTO, stripped); the locked Gaia rust builder
+# takes no profile setting, so that is not expressed here (see the PR text).
+[build]
+builder = "rust"
+source = "orion"
+
+[build.settings]
+package = "orion-bin"
+triple = "aarch64-unknown-linux-gnu"
+
+[package]
+version = "1.0.1~dev"
+architecture = "aarch64"
+maintainer = "Prometheus Dynamics"
+description = """
+Orion: the node on this controller that reaches boards and runs their jobs.
+"""
+depends = []
+
+[[install]]
+from = { source = "orion", path = "packaging/systemd/orion-comm.service" }
+to = "/usr/lib/systemd/system/orion-comm.service"
+mode = "0644"
+
+[[install]]
+from = { source = "orion", path = "packaging/systemd/orion-node.service" }
+to = "/usr/lib/systemd/system/orion-node.service"
+mode = "0644"
+
+[[install]]
+from = { source = "orion", path = "packaging/systemd/orion.preset" }
+to = "/usr/lib/systemd/system-preset/80-orion.preset"
+mode = "0644"
+
+[[install]]
+from = { source = "orion", path = "packaging/systemd/orion.sysusers" }
+to = "/usr/lib/sysusers.d/orion.conf"
+mode = "0644"
+
+[[install]]
+from = { source = "orion", path = "packaging/systemd/orion.conf.example" }
+to = "/etc/orion/orion.conf"
+mode = "0644"
+
+[[services]]
+unit = "orion-comm.service"
+
+[[services]]
+unit = "orion-node.service"
+
+[[users]]
+name = "orion"
+uid = 901
+group = "orion"
+groups = ["dialout"]
+home = "/var/lib/orion"
+shell = "/usr/sbin/nologin"
+
+[[groups]]
+name = "orion"
+gid = 901

@@ -1,0 +1,7 @@
+version = 1
+name = "systemcore"
+description = "WPILib's SystemCore robot controller: aarch64 Linux, software installed as .ipk packages through opkg. A package target: Atlas never reflashes it."
+
+[target]
+arch = "aarch64"
+os = "linux"
