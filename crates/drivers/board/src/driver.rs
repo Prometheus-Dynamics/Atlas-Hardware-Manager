@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use atlas_driver::{Driver, DriverError, DriverManifest, Serves};
 use atlas_session::{Handle, Pause, Presence, RealPause, Seed, Sessions};
 use atlas_types::{Candidate, CapabilitySet, Family, Identity, LemnosState, Link, LinkKind};
+use orion::Address;
 use orion::node::Node;
 use tokio::sync::watch;
 
@@ -46,6 +47,9 @@ pub struct BoardDriver {
     /// Nodes that have published Lemnos facts or offers. Once one has, it is expected to answer
     /// for Lemnos from then on, even while its facts are gone (after its own restart).
     expects_lemnos: Mutex<BTreeSet<String>>,
+    /// Node keys the caller already knows, by address. A node whose monitor starts with a key
+    /// is pinned to it from its first connect.
+    known_keys: Mutex<BTreeMap<String, [u8; 32]>>,
     /// The identity each node was last read with, by address, and when it was last read with a
     /// board key (see [`BoardDriver::settle`]).
     known: Mutex<BTreeMap<String, Known>>,
@@ -85,8 +89,16 @@ impl BoardDriver {
             seeds,
             sessions: Sessions::new(pause),
             expects_lemnos: Mutex::new(BTreeSet::new()),
+            known_keys: Mutex::new(BTreeMap::new()),
             known: Mutex::new(BTreeMap::new()),
         }
+    }
+
+    /// Says which key the node at `address` is known by. Its session is pinned to that key from
+    /// its first connect, so a different node at the address is refused. It takes effect when
+    /// the node's session starts: a session that is already running keeps the key it has.
+    pub fn know_key(&self, address: &Address, key: [u8; 32]) {
+        lock(&self.known_keys).insert(address.to_string(), key);
     }
 
     /// Stops watching the node at `address` until [`BoardDriver::turn_on`]. This is the manual
@@ -175,7 +187,12 @@ impl Driver for BoardDriver {
     async fn discover(&self, link: &Link) -> Result<Vec<Candidate>, DriverError> {
         let mut found = Vec::new();
         for address in discovery::addresses_on(&self.seeds, link) {
-            let Some(handle) = self.sessions.handle(&address) else {
+            let known = lock(&self.known_keys).get(&address.to_string()).copied();
+            let handle = match known {
+                Some(key) => self.sessions.handle_pinned(&address, key),
+                None => self.sessions.handle(&address),
+            };
+            let Some(handle) = handle else {
                 continue;
             };
             if matches!(handle.presence(), Presence::Found(_)) {
@@ -200,7 +217,10 @@ impl Driver for BoardDriver {
         if !wait_found(&mut presence).await {
             let reason = match &*presence.borrow() {
                 Presence::Lost(reason) => reason.clone(),
-                _ => "not answering yet".into(),
+                Presence::Replaced { .. } => {
+                    "the address answers with another node key: the board was replaced".into()
+                }
+                Presence::Searching | Presence::Found(_) => "not answering yet".into(),
             };
             return Err(unreachable(&candidate.address, &reason));
         }

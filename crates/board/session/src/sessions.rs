@@ -52,6 +52,30 @@ impl Sessions {
         Some(monitor.handle())
     }
 
+    /// As [`Sessions::handle`], for a node whose key the caller already knows. A monitor that
+    /// starts now is pinned to `key` from its first connect: a different node at the address is
+    /// refused at once. A monitor that is already running keeps the key it has.
+    pub fn handle_pinned(&self, address: &Address, key: [u8; 32]) -> Option<Handle> {
+        let key_text = address.to_string();
+        if lock(&self.off).contains(&key_text) {
+            return None;
+        }
+        let mut monitors = lock(&self.monitors);
+        let monitor = monitors.entry(key_text).or_insert_with(|| {
+            Monitor::start_pinned(address.clone(), key, self.pause.clone(), self.call_wait)
+        });
+        Some(monitor.handle())
+    }
+
+    /// A person's act: the node at `address` now means `key`. Its session is pinned to that key
+    /// from now on, and starts fresh. Returns `false` if no monitor is watching `address`. Nothing
+    /// calls this on its own.
+    pub fn accept_key(&self, address: &str, key: [u8; 32]) -> bool {
+        lock(&self.monitors)
+            .get(address)
+            .is_some_and(|monitor| monitor.accept(key))
+    }
+
     /// The handle for a node whose monitor is already running, by its address text. `None` if
     /// it was never asked for, or is turned off.
     pub fn existing(&self, address: &str) -> Option<Handle> {

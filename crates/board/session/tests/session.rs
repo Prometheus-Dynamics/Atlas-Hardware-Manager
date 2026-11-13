@@ -31,6 +31,11 @@ fn scratch(name: &str) -> PathBuf {
 
 fn start(dir: &Path, port: Option<u16>) -> SimNode {
     let _ = std::fs::remove_dir_all(dir);
+    start_again(dir, port)
+}
+
+/// The same node in the same directory: its key is kept, so it is the same board.
+fn start_again(dir: &Path, port: Option<u16>) -> SimNode {
     let kind = Kind::WithLemnos(Hello {
         family: "test-family".into(),
         serial: "0001".into(),
@@ -143,7 +148,8 @@ async fn a_node_is_found_again_on_the_same_port_and_calls_run_again() {
     drop(first);
     lost(&handle).await;
 
-    let _second = start(&dir, Some(port));
+    // The same node again: the same directory keeps its key, as a board keeps its own.
+    let _second = start_again(&dir, Some(port));
     connected(&handle).await;
     let name = handle
         .with_client(|orion| -> Result<String, orion::Error> { Ok(orion.node()?.name) })
