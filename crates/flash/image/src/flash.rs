@@ -46,8 +46,8 @@ use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::Path;
 
-use thiserror::Error;
 use atlas_xzdec::Layout;
+use thiserror::Error;
 
 use crate::error::ImageError;
 use crate::ext;
@@ -293,7 +293,12 @@ impl BoardOutcome {
 /// The message the signature covers, rebuilt the way the board rebuilds it:
 /// the domain tag, a u32 version, the board id, the kind, the raw size as a u64,
 /// and the raw SHA-256, with lengths as u32 little-endian.
-pub fn signed_message(board: &str, kind: ImageKind, raw_size: u64, raw_sha256: &[u8; 32]) -> Vec<u8> {
+pub fn signed_message(
+    board: &str,
+    kind: ImageKind,
+    raw_size: u64,
+    raw_sha256: &[u8; 32],
+) -> Vec<u8> {
     let mut out = Vec::with_capacity(96);
     out.extend_from_slice(SIGNED_TAG);
     out.extend_from_slice(&SIGNED_VERSION.to_le_bytes());
@@ -411,19 +416,33 @@ pub struct FlashImage {
 pub enum Refusal {
     #[error("this image has no slot, so it names no board. Nothing was pushed.")]
     NoSlot,
-    #[error("slot {slot:?} in this image has no board, so the image names none. Nothing was pushed.")]
+    #[error(
+        "slot {slot:?} in this image has no board, so the image names none. Nothing was pushed."
+    )]
     NoBoard { slot: String },
-    #[error("slot {slot:?} in this image names no valid board id (lowercase letters, digits and '-', at most 64). Nothing was pushed.")]
+    #[error(
+        "slot {slot:?} in this image names no valid board id (lowercase letters, digits and '-', at most 64). Nothing was pushed."
+    )]
     BadBoard { slot: String },
-    #[error("slot {slot:?}'s manifest is schema {found}; this reader takes schema 3 only. Nothing was pushed.")]
+    #[error(
+        "slot {slot:?}'s manifest is schema {found}; this reader takes schema 3 only. Nothing was pushed."
+    )]
     SlotSchema { slot: String, found: String },
-    #[error("slot {slot:?}'s manifest does not parse as JSON, so the image cannot be checked. Nothing was pushed.")]
+    #[error(
+        "slot {slot:?}'s manifest does not parse as JSON, so the image cannot be checked. Nothing was pushed."
+    )]
     BadSlot { slot: String },
-    #[error("the slots in this image name two boards, {first:?} and {second:?}. An image is built for one board. Nothing was pushed.")]
+    #[error(
+        "the slots in this image name two boards, {first:?} and {second:?}. An image is built for one board. Nothing was pushed."
+    )]
     ConflictingBoards { first: String, second: String },
-    #[error("this image is for the board {image:?}, and the connected board is {target:?}. Nothing was pushed. Flash the image built for {target:?}, or connect {image:?}.")]
+    #[error(
+        "this image is for the board {image:?}, and the connected board is {target:?}. Nothing was pushed. Flash the image built for {target:?}, or connect {image:?}."
+    )]
     WrongBoard { image: String, target: String },
-    #[error("the connected board's id {target:?} is not a board id (lowercase letters, digits and '-', at most 64)")]
+    #[error(
+        "the connected board's id {target:?} is not a board id (lowercase letters, digits and '-', at most 64)"
+    )]
     BadTarget { target: String },
 }
 
@@ -459,7 +478,9 @@ impl FlashError {
             FlashError::NotFirstFlash(text) => {
                 ImageError::Layout(format!("not a first-flash image: {text}"))
             }
-            FlashError::Record(text) => ImageError::Malformed(format!("malformed signature record: {text}")),
+            FlashError::Record(text) => {
+                ImageError::Malformed(format!("malformed signature record: {text}"))
+            }
         }
     }
 }
@@ -533,9 +554,10 @@ pub(crate) fn read_board(spool: &Path) -> Result<BoardInfo, FlashError> {
         };
         names::check_id(id)?;
         let text = ext::read_text(&fs, &format!("/slots/{name}"), MAX_MANIFEST_BYTES)?;
-        let value: serde_json::Value = serde_json::from_str(&text).map_err(|_| Refusal::BadSlot {
-            slot: id.to_string(),
-        })?;
+        let value: serde_json::Value =
+            serde_json::from_str(&text).map_err(|_| Refusal::BadSlot {
+                slot: id.to_string(),
+            })?;
         match value.get("schema") {
             Some(serde_json::Value::Number(number)) if number.as_u64() == Some(SLOT_SCHEMA) => {}
             other => {
@@ -599,7 +621,8 @@ fn run(image: &Path, scratch_parent: &Path, mode: Mode) -> Result<Pass, FlashErr
         None => None,
     };
     let mut router = Router::new(scratch.path(), &options, mode);
-    let stream = atlas_xzdec::decode_image(&mut file, &layout, &mut router).map_err(|error| error.to_string());
+    let stream = atlas_xzdec::decode_image(&mut file, &layout, &mut router)
+        .map_err(|error| error.to_string());
     let output = router.complete(stream)?;
     Ok(Pass {
         output,

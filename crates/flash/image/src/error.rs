@@ -48,7 +48,9 @@ impl From<atlas_xzdec::XzError> for ImageError {
         match error {
             atlas_xzdec::XzError::Io(text) => ImageError::Io(text),
             atlas_xzdec::XzError::Truncated(text) => ImageError::Truncated(text),
-            atlas_xzdec::XzError::Malformed(text) => ImageError::Malformed(format!("not a first-flash image: {text}")),
+            atlas_xzdec::XzError::Malformed(text) => {
+                ImageError::Malformed(format!("not a first-flash image: {text}"))
+            }
             atlas_xzdec::XzError::Limit(text) => ImageError::Limit(text),
         }
     }

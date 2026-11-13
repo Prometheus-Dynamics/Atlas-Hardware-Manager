@@ -163,7 +163,9 @@ fn varint(bytes: &[u8], at: &mut usize) -> Result<u64, XzError> {
             return Ok(value);
         }
     }
-    Err(XzError::Malformed("a number is longer than nine bytes".into()))
+    Err(XzError::Malformed(
+        "a number is longer than nine bytes".into(),
+    ))
 }
 
 /// The CRC-32 the xz headers and footers use (IEEE, reflected).
@@ -194,7 +196,9 @@ struct StreamInfo {
 /// decoded.
 fn stream_ending_at<R: Read + Seek>(input: &mut R, end: u64) -> Result<StreamInfo, XzError> {
     if end < HEADER + FOOTER {
-        return Err(XzError::Malformed("the file is shorter than an xz stream".into()));
+        return Err(XzError::Malformed(
+            "the file is shorter than an xz stream".into(),
+        ));
     }
     let foot = read_at(input, end - FOOTER, FOOTER)?;
     if foot[10..12] != *b"YZ" {
@@ -203,18 +207,24 @@ fn stream_ending_at<R: Read + Seek>(input: &mut R, end: u64) -> Result<StreamInf
         )));
     }
     if le32(&foot[0..4])? != crc32(&foot[4..10]) {
-        return Err(XzError::Malformed("a stream footer's CRC does not match".into()));
+        return Err(XzError::Malformed(
+            "a stream footer's CRC does not match".into(),
+        ));
     }
     let flags = [foot[8], foot[9]];
     let index_size = (u64::from(le32(&foot[4..8])?) + 1) * 4;
     if index_size > MAX_INDEX || index_size > end - HEADER - FOOTER {
-        return Err(XzError::Malformed("a stream's index is larger than the stream".into()));
+        return Err(XzError::Malformed(
+            "a stream's index is larger than the stream".into(),
+        ));
     }
     let index_start = end - FOOTER - index_size;
     let index = read_at(input, index_start, index_size)?;
     let (body, crc) = index.split_at(index.len() - 4);
     if body.first() != Some(&0) {
-        return Err(XzError::Malformed("the index does not start where the footer says".into()));
+        return Err(XzError::Malformed(
+            "the index does not start where the footer says".into(),
+        ));
     }
     if le32(crc)? != crc32(body) {
         return Err(XzError::Malformed("an index's CRC does not match".into()));
@@ -264,20 +274,32 @@ fn stream_ending_at<R: Read + Seek>(input: &mut R, end: u64) -> Result<StreamInf
 fn check_stream<R: Read + Seek>(input: &mut R, s: &StreamInfo) -> Result<u64, XzError> {
     let head = read_at(input, s.start, HEADER)?;
     if head[..6] != *XZ_MAGIC {
-        return Err(XzError::Malformed(format!("no xz stream header at byte {}", s.start)));
+        return Err(XzError::Malformed(format!(
+            "no xz stream header at byte {}",
+            s.start
+        )));
     }
     if head[6] != 0 {
-        return Err(XzError::Malformed("a stream header's reserved flag is not zero".into()));
+        return Err(XzError::Malformed(
+            "a stream header's reserved flag is not zero".into(),
+        ));
     }
     if head[6..8] != s.flags {
-        return Err(XzError::Malformed("a stream's footer and header flags differ".into()));
+        return Err(XzError::Malformed(
+            "a stream's footer and header flags differ".into(),
+        ));
     }
     // none (0), CRC-32 (1), CRC-64 (4) and SHA-256 (10): all four the contract allows.
     if !matches!(head[7], 0 | 1 | 4 | 10) {
-        return Err(XzError::Malformed(format!("a stream's check type {} is not one read", head[7])));
+        return Err(XzError::Malformed(format!(
+            "a stream's check type {} is not one read",
+            head[7]
+        )));
     }
     if le32(&head[8..12])? != crc32(&head[6..8]) {
-        return Err(XzError::Malformed("a stream header's CRC does not match".into()));
+        return Err(XzError::Malformed(
+            "a stream header's CRC does not match".into(),
+        ));
     }
     let mut dictionary = 0u64;
     let mut at = s.start + HEADER;
@@ -300,7 +322,9 @@ fn check_block<R: Read + Seek>(input: &mut R, offset: u64) -> Result<u64, XzErro
     let head = read_at(input, offset, size)?;
     let (body, crc) = head.split_at(head.len() - 4);
     if le32(crc)? != crc32(body) {
-        return Err(XzError::Malformed("a block header's CRC does not match".into()));
+        return Err(XzError::Malformed(
+            "a block header's CRC does not match".into(),
+        ));
     }
     let flags = body[1];
     if flags & 0x03 != 0 {
@@ -323,7 +347,9 @@ fn check_block<R: Read + Seek>(input: &mut R, offset: u64) -> Result<u64, XzErro
     }
     let props = varint(body, &mut at)?;
     if props != 1 {
-        return Err(XzError::Malformed("an LZMA2 filter's properties are not one byte".into()));
+        return Err(XzError::Malformed(
+            "an LZMA2 filter's properties are not one byte".into(),
+        ));
     }
     let prop = *body
         .get(at)
@@ -443,7 +469,11 @@ fn memlimit(dictionary: u64) -> u64 {
 
 /// Decodes one xz stream. Concatenated streams are not decoded: liblzma is not
 /// asked for them, so the stream's end is the end of its decoding.
-fn decode_stream<R: BufRead, W: Write>(input: &mut R, sink: &mut W, dictionary: u64) -> io::Result<()> {
+fn decode_stream<R: BufRead, W: Write>(
+    input: &mut R,
+    sink: &mut W,
+    dictionary: u64,
+) -> io::Result<()> {
     let stream = Stream::new_stream_decoder(memlimit(dictionary), 0).map_err(io::Error::other)?;
     let mut decoder = XzDecoder::new_stream(sink, stream);
     io::copy(input, &mut decoder)?;
@@ -457,14 +487,17 @@ pub fn read_record<R: Read + Seek>(input: &mut R, layout: &Layout) -> Result<Vec
     let span = layout
         .record
         .ok_or_else(|| XzError::Malformed("the file has no second stream".into()))?;
-    input.seek(SeekFrom::Start(span.start)).map_err(|e| io_error(&e))?;
+    input
+        .seek(SeekFrom::Start(span.start))
+        .map_err(|e| io_error(&e))?;
     let mut bytes = Capped {
         bytes: Vec::new(),
         cap: RECORD_MAX as usize,
     };
     let mut reader = BufReader::new(input.by_ref().take(span.len));
-    decode_stream(&mut reader, &mut bytes, DICT_CEILING)
-        .map_err(|error| XzError::Malformed(format!("the second stream does not decode: {error}")))?;
+    decode_stream(&mut reader, &mut bytes, DICT_CEILING).map_err(|error| {
+        XzError::Malformed(format!("the second stream does not decode: {error}"))
+    })?;
     Ok(bytes.bytes)
 }
 
@@ -477,7 +510,9 @@ struct Capped {
 impl Write for Capped {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         if self.bytes.len() + buf.len() > self.cap {
-            return Err(io::Error::other("the second stream decodes to more than a record"));
+            return Err(io::Error::other(
+                "the second stream decodes to more than a record",
+            ));
         }
         self.bytes.extend_from_slice(buf);
         Ok(buf.len())

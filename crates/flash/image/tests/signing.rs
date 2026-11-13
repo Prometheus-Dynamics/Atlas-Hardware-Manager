@@ -74,7 +74,11 @@ fn the_record_parses_and_writes_the_vector_bytes() {
     let record = Record::parse(&bytes).expect("the vector record parses");
     assert_eq!(record.key_id_hex(), VECTOR_KEY_ID);
     assert_eq!(hex(&record.signature), VECTOR_SIGNATURE);
-    assert_eq!(hex(&record.to_bytes()), VECTOR_RECORD, "the writer reproduces the bytes");
+    assert_eq!(
+        hex(&record.to_bytes()),
+        VECTOR_RECORD,
+        "the writer reproduces the bytes"
+    );
 }
 
 #[test]
@@ -85,7 +89,10 @@ fn malformed_records_are_refused_with_their_own_messages() {
     bad_magic[0] = b'X';
     let error = Record::parse(&bad_magic).expect_err("magic");
     assert!(matches!(error, FlashError::Record(_)), "{error}");
-    assert!(error.to_string().starts_with("malformed signature record"), "{error}");
+    assert!(
+        error.to_string().starts_with("malformed signature record"),
+        "{error}"
+    );
 
     let mut unknown_algorithm = good.clone();
     unknown_algorithm[8] = 2;
@@ -99,30 +106,53 @@ fn malformed_records_are_refused_with_their_own_messages() {
 
     let error = Record::parse(&good[..107]).expect_err("length");
     assert!(matches!(error, FlashError::NotFirstFlash(_)), "{error}");
-    assert!(error.to_string().starts_with("not a first-flash image"), "{error}");
+    assert!(
+        error.to_string().starts_with("not a first-flash image"),
+        "{error}"
+    );
 }
 
 #[test]
 fn the_board_outcomes_are_the_four_wire_values_and_anything_else_is_unrecognised() {
     for (wire, outcome, code) in [
         ("verified", BoardOutcome::Verified, Some(0)),
-        ("not_checked_unsigned", BoardOutcome::NotCheckedUnsigned, Some(1)),
-        ("not_checked_unknown_key", BoardOutcome::NotCheckedUnknownKey, Some(2)),
+        (
+            "not_checked_unsigned",
+            BoardOutcome::NotCheckedUnsigned,
+            Some(1),
+        ),
+        (
+            "not_checked_unknown_key",
+            BoardOutcome::NotCheckedUnknownKey,
+            Some(2),
+        ),
         ("refused", BoardOutcome::Refused, None),
     ] {
         assert_eq!(BoardOutcome::parse(wire), outcome, "{wire}");
         assert_eq!(outcome.as_wire(), wire);
         assert_eq!(outcome.code(), code, "{wire}");
     }
-    assert_eq!(BoardOutcome::Verified.reason(), Some("signature verified with a key on this board's list"));
+    assert_eq!(
+        BoardOutcome::Verified.reason(),
+        Some("signature verified with a key on this board's list")
+    );
     assert_eq!(BoardOutcome::Refused.reason(), None);
     // A value outside the four is never mapped to one of them.
     let other = BoardOutcome::parse("verified_with_warning");
-    assert_eq!(other, BoardOutcome::Unrecognised("verified_with_warning".into()));
+    assert_eq!(
+        other,
+        BoardOutcome::Unrecognised("verified_with_warning".into())
+    );
     assert_eq!(other.as_wire(), "verified_with_warning");
     assert_eq!(other.code(), None);
-    assert_eq!(BoardOutcome::parse(""), BoardOutcome::Unrecognised(String::new()));
-    assert!(ImageKind::parse("xz").is_err(), "a compression name is never a kind");
+    assert_eq!(
+        BoardOutcome::parse(""),
+        BoardOutcome::Unrecognised(String::new())
+    );
+    assert!(
+        ImageKind::parse("xz").is_err(),
+        "a compression name is never a kind"
+    );
     assert_eq!(ImageKind::parse("disk").expect("disk"), ImageKind::Disk);
 }
 
@@ -146,7 +176,10 @@ fn a_signed_two_stream_image_is_read_and_its_record_round_trips() {
     // The file's signature state, without decoding the image.
     let state = signature(&path).expect("signature");
     match &state {
-        SignatureState::Signed { key_id, record: found } => {
+        SignatureState::Signed {
+            key_id,
+            record: found,
+        } => {
             assert_eq!(found, &record, "the record round-trips");
             assert_eq!(hex(key_id), hex(&record.key_id));
         }
@@ -158,14 +191,29 @@ fn a_signed_two_stream_image_is_read_and_its_record_round_trips() {
     assert_eq!(made.manifest.image_size(), raw.len() as u64);
     assert_eq!(made.manifest.image_sha256(), hex(&sha));
     assert_eq!(made.manifest.kind(), ImageKind::Disk);
-    let rebuilt = signed_message("example-board", made.manifest.kind(), made.manifest.image_size(), &sha);
+    let rebuilt = signed_message(
+        "example-board",
+        made.manifest.kind(),
+        made.manifest.image_size(),
+        &sha,
+    );
     key.verifying_key()
         .verify_strict(&rebuilt, &sig)
         .expect("the record's signature verifies over the rebuilt message");
     let json = String::from_utf8(made.json).expect("utf8");
-    assert!(json.starts_with("{\"schema\":1,\"board\":\"example-board\",\"format\":\"disk\","), "{json}");
-    assert!(json.ends_with(&format!("\"signature\":\"{}\"}}", hex(&record.to_bytes()))), "{json}");
-    assert!(dir.entries().iter().all(|name| !name.starts_with("atlas-image-")));
+    assert!(
+        json.starts_with("{\"schema\":1,\"board\":\"example-board\",\"format\":\"disk\","),
+        "{json}"
+    );
+    assert!(
+        json.ends_with(&format!("\"signature\":\"{}\"}}", hex(&record.to_bytes()))),
+        "{json}"
+    );
+    assert!(
+        dir.entries()
+            .iter()
+            .all(|name| !name.starts_with("atlas-image-"))
+    );
 }
 
 #[test]
@@ -179,7 +227,10 @@ fn the_two_stream_file_gives_the_single_stream_manifest_and_the_slot_reader_stop
 
     let one = flash_manifest(&single, dir.path(), None).expect("single");
     let two = flash_manifest(&double, dir.path(), None).expect("double");
-    assert_eq!(one.manifest, two.manifest, "size and hash cover stream 1 only");
+    assert_eq!(
+        one.manifest, two.manifest,
+        "size and hash cover stream 1 only"
+    );
     assert_eq!(one.signature, SignatureState::Unsigned);
     assert!(matches!(two.signature, SignatureState::Signed { .. }));
 
@@ -191,7 +242,11 @@ fn the_two_stream_file_gives_the_single_stream_manifest_and_the_slot_reader_stop
     let image = open(&double, dir.path(), &["alpha"], &Options::default()).expect("open");
     assert_eq!(image.slot("alpha").expect("slot").image_size(), 20480);
     drop(image);
-    assert!(dir.entries().iter().all(|name| !name.starts_with("atlas-image-")));
+    assert!(
+        dir.entries()
+            .iter()
+            .all(|name| !name.starts_with("atlas-image-"))
+    );
 }
 
 #[test]
@@ -206,7 +261,10 @@ fn a_sha256_check_is_accepted_and_a_bigger_dictionary_is_refused_by_name() {
     let seven = dir.write("seven.img.xz", &xz_with(&big, &["-7", "--check=crc64"]));
     let error = flash_manifest(&seven, dir.path(), None).expect_err("16 MiB dictionary");
     let text = error.to_string();
-    assert!(text.contains("dictionary") && text.contains("8 MiB"), "{text}");
+    assert!(
+        text.contains("dictionary") && text.contains("8 MiB"),
+        "{text}"
+    );
     assert!(text.contains("bytes"), "the size found is named: {text}");
 }
 
@@ -222,14 +280,20 @@ fn the_layout_refusals_are_each_by_name() {
     third.extend_from_slice(&record_stream(&record));
     let path = dir.write("third.img.xz", &third);
     let error = flash_manifest(&path, dir.path(), None).expect_err("third stream");
-    assert!(error.to_string().starts_with("not a first-flash image"), "{error}");
+    assert!(
+        error.to_string().starts_with("not a first-flash image"),
+        "{error}"
+    );
 
     // A junk second stream, big: not a record, refused by name.
     let mut junk = xz(&raw);
     junk.extend_from_slice(&xz(&noise(4096, 3)));
     let path = dir.write("junk.img.xz", &junk);
     let error = flash_manifest(&path, dir.path(), None).expect_err("junk stream");
-    assert!(error.to_string().starts_with("not a first-flash image"), "{error}");
+    assert!(
+        error.to_string().starts_with("not a first-flash image"),
+        "{error}"
+    );
 
     // A small second stream of the wrong length.
     let mut short = xz(&raw);
@@ -245,21 +309,30 @@ fn the_layout_refusals_are_each_by_name() {
     wrong.extend_from_slice(&record_stream(&magic));
     let path = dir.write("magic.img.xz", &wrong);
     let error = flash_manifest(&path, dir.path(), None).expect_err("magic");
-    assert!(error.to_string().starts_with("malformed signature record"), "{error}");
+    assert!(
+        error.to_string().starts_with("malformed signature record"),
+        "{error}"
+    );
 
     // Trailing bytes after the record stream.
     let mut trailing = xz(&raw);
     trailing.extend_from_slice(&record_stream(&record));
     trailing.extend_from_slice(b"junk");
     let path = dir.write("trailing.img.xz", &trailing);
-    assert!(flash_manifest(&path, dir.path(), None).is_err(), "trailing bytes");
+    assert!(
+        flash_manifest(&path, dir.path(), None).is_err(),
+        "trailing bytes"
+    );
 
     // Non-zero bytes between the streams.
     let mut gap = xz(&raw);
     gap.extend_from_slice(&[1, 0, 0, 0]);
     gap.extend_from_slice(&record_stream(&record));
     let path = dir.write("gap.img.xz", &gap);
-    assert!(flash_manifest(&path, dir.path(), None).is_err(), "non-zero padding");
+    assert!(
+        flash_manifest(&path, dir.path(), None).is_err(),
+        "non-zero padding"
+    );
 
     // Zero padding in a multiple of four between the streams is the xz format's own.
     let mut padded = xz(&raw);
@@ -269,7 +342,11 @@ fn the_layout_refusals_are_each_by_name() {
     let made = flash_manifest(&path, dir.path(), None).expect("zero padding accepted");
     assert!(matches!(made.signature, SignatureState::Signed { .. }));
 
-    assert!(dir.entries().iter().all(|name| !name.starts_with("atlas-image-")));
+    assert!(
+        dir.entries()
+            .iter()
+            .all(|name| !name.starts_with("atlas-image-"))
+    );
 }
 
 fn sha256(bytes: &[u8]) -> [u8; 32] {
@@ -292,14 +369,23 @@ fn gaias_builder_command_is_accepted_and_preset_seven_is_refused_naming_the_dict
     // The builder line the coordinator gave: `xz -6 --check=crc64 -T1` (8 MiB dictionary).
     let dir = TestDir::new("gaia-preset");
     let raw = image_disk();
-    let six = dir.write("six.img.xz", &xz_with(&raw, &["-6", "--check=crc64", "-T1"]));
+    let six = dir.write(
+        "six.img.xz",
+        &xz_with(&raw, &["-6", "--check=crc64", "-T1"]),
+    );
     let made = flash_manifest(&six, dir.path(), None).expect("-6 -T1 is accepted");
     assert_eq!(made.manifest.image_sha256(), hex(&sha256(&raw)));
 
     let big: Vec<u8> = (0..(17u64 << 20)).map(|i| (i % 251) as u8).collect();
-    let seven = dir.write("seven.img.xz", &xz_with(&big, &["-7", "--check=crc64", "-T1"]));
+    let seven = dir.write(
+        "seven.img.xz",
+        &xz_with(&big, &["-7", "--check=crc64", "-T1"]),
+    );
     let error = flash_manifest(&seven, dir.path(), None).expect_err("-7 is refused");
     let text = error.to_string();
-    assert!(text.contains("dictionary is 16777216 bytes (16 MiB)"), "{text}");
+    assert!(
+        text.contains("dictionary is 16777216 bytes (16 MiB)"),
+        "{text}"
+    );
     assert!(text.contains("limit of 8 MiB"), "{text}");
 }

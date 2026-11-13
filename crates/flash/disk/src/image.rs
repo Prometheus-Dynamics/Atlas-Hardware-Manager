@@ -104,6 +104,8 @@ pub(crate) fn decoded_at_least(path: &Path, format: ImageFormat) -> Option<u64> 
     };
     match format {
         ImageFormat::Raw => input.inner.metadata().ok().map(|meta| meta.len()),
-        ImageFormat::Xz => atlas_xzdec::scan(&mut input).ok().map(|layout| layout.uncompressed),
+        ImageFormat::Xz => atlas_xzdec::scan(&mut input)
+            .ok()
+            .map(|layout| layout.uncompressed),
     }
 }

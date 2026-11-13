@@ -51,7 +51,11 @@ fn a_two_stream_file_writes_stream_one_and_never_the_record() {
     let mut disk = FileTarget::new(4 << 20, 0xAA);
     write_to(&image, &mut disk);
     let written = disk.contents();
-    assert_eq!(&written[..raw.len()], &raw[..], "the card holds stream 1 exactly");
+    assert_eq!(
+        &written[..raw.len()],
+        &raw[..],
+        "the card holds stream 1 exactly"
+    );
     assert!(
         written[raw.len()..].iter().all(|byte| *byte == 0xAA),
         "nothing past the image is written: the record never reaches storage"

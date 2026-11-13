@@ -81,8 +81,8 @@ use sha2::{Digest, Sha256};
 
 pub use error::ImageError;
 pub use flash::{
-    Algorithm, BoardOutcome, BoardProbe, FlashError, FlashImage, FlashManifest, Format, ImageKind, Record,
-    Refusal, SCHEMA, SignatureState, check_target, flash_manifest, probe_board, signature,
+    Algorithm, BoardOutcome, BoardProbe, FlashError, FlashImage, FlashManifest, Format, ImageKind,
+    Record, Refusal, SCHEMA, SignatureState, check_target, flash_manifest, probe_board, signature,
     signed_message, valid_board_id,
 };
 pub use verity::{BLOCK, Verity, VerityError, tree_bytes};
@@ -236,7 +236,8 @@ pub fn open(
     };
     let mut router = Router::new(scratch.path(), options, Mode::Slots);
     // Only the image stream is decoded: the record stream after it is never read.
-    let stream = atlas_xzdec::decode_image(&mut file, &layout, &mut router).map_err(|error| error.to_string());
+    let stream = atlas_xzdec::decode_image(&mut file, &layout, &mut router)
+        .map_err(|error| error.to_string());
     let output = router
         .complete(stream)
         .map_err(flash::FlashError::into_image)?;
