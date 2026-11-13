@@ -31,14 +31,11 @@ CONFIG_FIRMWARE_RP1=y
 # CONFIG_MBOX_RP1: the RP1 mailbox FIRMWARE_RP1 uses. Depends on MFD_RP1 (=y in bcm2712_defconfig).
 CONFIG_MBOX_RP1=y
 #
-# -- RP1 chain's last link and its MSI dependency (PR B16, from Lemnos docs/kernel-config.md @4c6678f3) --
-# CONFIG_PCI_MSI: MFD_RP1 depends on PCI && PCI_MSI. bcm2712_defconfig sets PCI=y and does NOT set PCI_MSI, and
-#   the Kconfig in this tree gives PCI_MSI no default, so MFD_RP1 could drop to n in olddefconfig. Set here.
-# CONFIG_MFD_RP1: the RP1 multi-function device the mailbox (MBOX_RP1) sits on. bcm2712_defconfig has it =y
-#   (checked in its file); set here too so the chain does not depend on the defconfig's value alone.
-# Mark for the RP1 rows (Lemnos docs/kernel-config.md at 818473f6): MFD_RP1 and PCI_MSI are generic (verified
-#   against the reference SoC's .config in that doc).
-CONFIG_PCI_MSI=y
+# -- RP1 chain's top link (PR B16; Lemnos docs/kernel-config.md @818473f6, the reference SoC's MFD_RP1 row, verified) --
+# CONFIG_MFD_RP1: the RP1 multi-function device the mailbox (MBOX_RP1) sits on. bcm2712_defconfig has it =y, and the
+#   resolved Raze config (raspberrypi/linux 53679a5, Linux 7.2.9) keeps it =y. Set here so the chain does not depend
+#   on the defconfig's value alone. (PCI_MSI, which MFD_RP1 also needs: the resolved Raze config already has it =y
+#   without this fragment, so it is not set here.)
 CONFIG_MFD_RP1=y
 #
 # -- Built in for the flasher (no modules; Lemnos docs/kernel-config.md "Built in" column) --
