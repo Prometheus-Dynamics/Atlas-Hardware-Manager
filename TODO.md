@@ -61,6 +61,7 @@ Our own loader for every chip family, then the flasher image, then an ordinary u
 - [ ] [D9](docs/prs/D9.md) Slot bundles from the image (wave 3; needs A7)
 - [ ] [D10](docs/prs/D10.md) Fastboot client (wave 3; needs D1)
 - [ ] [D11](docs/prs/D11.md) Read a slot out of the first-flash image (wave 4; needs D9)
+- [ ] [D12](docs/prs/D12.md) Find a board's Orion link over USB by its interface string (wave 4; needs D1, A8)
 
 ## E. Robot network and SystemCore
 
