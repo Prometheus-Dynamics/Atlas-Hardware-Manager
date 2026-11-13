@@ -16,8 +16,10 @@ step() {
 # The workspace globs match nothing until the first crate lands.
 if compgen -G "crates/*/*/Cargo.toml" > /dev/null || compgen -G "apps/*/src-tauri/Cargo.toml" > /dev/null; then
   step format cargo fmt --all --check
-  step clippy cargo clippy --workspace --all-targets -- -D warnings
-  step tests cargo test --workspace
+  # Cargo.lock is committed. --locked fails the gate when it is stale: run
+  # `cargo update -w` (or just build once without --locked) and commit it.
+  step clippy cargo clippy --locked --workspace --all-targets -- -D warnings
+  step tests cargo test --locked --workspace
 else
   echo "no crates yet"
 fi

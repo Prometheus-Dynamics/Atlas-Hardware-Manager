@@ -22,11 +22,16 @@ mod record;
 pub mod sim;
 mod traced;
 
-pub use bus::{UsbBus, await_device};
+pub use bus::{
+    InterfaceMatch, Scan, Skipped, UsbBus, await_device, find_by_interface_string, open_interface,
+};
 pub use error::UsbError;
 pub use gauge::{Gauges, Live};
 pub use hotplug::{HotplugEvent, Watch, spawn_watch, watch_usb};
-pub use io::{DeviceSummary, OpenOptions, Timeouts, UsbId, UsbIo};
+pub use io::{
+    DeviceSummary, EndpointDirection, EndpointKind, EndpointSummary, InterfaceSummary, OpenOptions,
+    Timeouts, UsbId, UsbIo,
+};
 pub use nusb_backend::NusbBus;
 pub use record::{Record, Transfer};
 pub use traced::{Recorder, Sink, Traced};
