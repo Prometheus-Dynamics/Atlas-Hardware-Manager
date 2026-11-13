@@ -1,0 +1,497 @@
+//! Jobs: a job survives an Atlas restart, a stuck job holds up no other, and
+//! failing steps are retried until they succeed.
+//!
+//! These run on real time: the job list is written to disk, and a paused clock
+//! would advance past the waits while the writes are in flight.
+
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use async_trait::async_trait;
+use atlas_driver::DriverError;
+use atlas_jobs::{
+    Backoff, DeviceClaim, DeviceHolds, Event, Events, JobError, JobId, JobKind, JobRecord,
+    JobStatus, JobTiming, Jobs,
+};
+use atlas_types::DeviceKey;
+use tokio::sync::broadcast::{Receiver, error::RecvError};
+use tokio::time;
+
+/// Records each step it runs. `hang` names a step that never finishes, and
+/// `failures` makes the first calls fail.
+struct Kind {
+    name: &'static str,
+    resumable: bool,
+    hang: Option<&'static str>,
+    failures: Mutex<u32>,
+    log: Arc<Mutex<Vec<String>>>,
+}
+
+impl Kind {
+    fn arc(
+        name: &'static str,
+        resumable: bool,
+        hang: Option<&'static str>,
+        failures: u32,
+        log: &Arc<Mutex<Vec<String>>>,
+    ) -> Arc<dyn JobKind> {
+        Arc::new(Self {
+            name,
+            resumable,
+            hang,
+            failures: Mutex::new(failures),
+            log: Arc::clone(log),
+        })
+    }
+}
+
+#[async_trait]
+impl JobKind for Kind {
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn resumable(&self) -> bool {
+        self.resumable
+    }
+
+    async fn run_step(&self, _claim: &DeviceClaim, step: &str) -> Result<(), DriverError> {
+        self.log.lock().unwrap().push(step.to_owned());
+        if self.hang == Some(step) {
+            std::future::pending::<()>().await;
+        }
+        let fail = {
+            let mut left = self.failures.lock().unwrap();
+            if *left > 0 {
+                *left -= 1;
+                true
+            } else {
+                false
+            }
+        };
+        if fail {
+            return Err(DriverError::Unreachable(
+                "the device is not answering".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn steps(names: &[&str]) -> Vec<String> {
+    names.iter().map(|s| (*s).to_owned()).collect()
+}
+
+fn log() -> Arc<Mutex<Vec<String>>> {
+    Arc::new(Mutex::new(Vec::new()))
+}
+
+async fn open(path: &Path, kinds: Vec<Arc<dyn JobKind>>, events: &Events) -> Jobs {
+    Jobs::open(
+        path,
+        kinds,
+        events.clone(),
+        JobTiming::default(),
+        DeviceHolds::new(),
+    )
+    .await
+    .expect("the job list opens")
+}
+
+/// Waits for a change to job `id` that `wanted` accepts, read from the events
+/// (each one is sent after its save).
+async fn wait_for_job(
+    rx: &mut Receiver<Event>,
+    id: JobId,
+    wanted: impl Fn(&JobRecord) -> bool,
+) -> JobRecord {
+    time::timeout(Duration::from_secs(30), async {
+        loop {
+            match rx.recv().await {
+                Ok(Event::Job { job }) if job.id == id && wanted(&job) => return job,
+                Ok(_) | Err(RecvError::Lagged(_)) => {}
+                Err(RecvError::Closed) => panic!("event stream closed"),
+            }
+        }
+    })
+    .await
+    .expect("the job did not reach the expected state")
+}
+
+#[tokio::test]
+async fn a_job_survives_a_restart_and_finished_steps_do_not_repeat() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("jobs.json");
+    let device = DeviceKey::new("sample-soc", "1000abcd");
+
+    // First Atlas: step "a" finishes and is saved; step "b" hangs. Then Atlas stops.
+    let events = Events::new(256);
+    let mut rx = events.subscribe();
+    let first = log();
+    let jobs = open(
+        &path,
+        vec![Kind::arc("resumable-kind", true, Some("b"), 0, &first)],
+        &events,
+    )
+    .await;
+    let id = jobs
+        .submit(
+            "resumable-kind",
+            DeviceClaim::writes([device.clone()]),
+            steps(&["a", "b", "c"]),
+        )
+        .await
+        .unwrap();
+    wait_for_job(&mut rx, id, |job| job.completed == 1).await;
+    jobs.shutdown();
+
+    // Second Atlas reads the same file and carries the job on from step "b".
+    let events = Events::new(256);
+    let mut rx = events.subscribe();
+    let second = log();
+    let jobs = open(
+        &path,
+        vec![Kind::arc("resumable-kind", true, None, 0, &second)],
+        &events,
+    )
+    .await;
+    let job = wait_for_job(&mut rx, id, |job| job.status == JobStatus::Done).await;
+
+    assert_eq!(job.completed, 3);
+    assert_eq!(job.claim.devices, vec![device]);
+    assert_eq!(*second.lock().unwrap(), vec!["b", "c"], "step a ran again");
+    assert_eq!(jobs.get(id).unwrap().status, JobStatus::Done);
+    jobs.shutdown();
+}
+
+#[tokio::test]
+async fn a_job_that_cannot_resume_is_marked_interrupted_not_dropped() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("jobs.json");
+
+    let events = Events::new(256);
+    let mut rx = events.subscribe();
+    let first = log();
+    let jobs = open(
+        &path,
+        vec![Kind::arc("one-shot-kind", false, Some("b"), 0, &first)],
+        &events,
+    )
+    .await;
+    let id = jobs
+        .submit(
+            "one-shot-kind",
+            DeviceClaim::writes([DeviceKey::new("sample-soc", "1000abcd")]),
+            steps(&["a", "b", "c"]),
+        )
+        .await
+        .unwrap();
+    wait_for_job(&mut rx, id, |job| job.completed == 1).await;
+    jobs.shutdown();
+
+    let events = Events::new(256);
+    let second = log();
+    let jobs = open(
+        &path,
+        vec![Kind::arc("one-shot-kind", false, None, 0, &second)],
+        &events,
+    )
+    .await;
+    let job = jobs.get(id).expect("the interrupted job is still listed");
+    match &job.status {
+        JobStatus::Interrupted { reason } => {
+            assert!(reason.contains("cannot continue"), "{reason}")
+        }
+        other => panic!("expected interrupted, got {other:?}"),
+    }
+    assert!(
+        second.lock().unwrap().is_empty(),
+        "an interrupted job ran again"
+    );
+
+    // An interrupted job no longer holds its device.
+    jobs.submit(
+        "one-shot-kind",
+        DeviceClaim::writes([DeviceKey::new("sample-soc", "1000abcd")]),
+        steps(&["a"]),
+    )
+    .await
+    .expect("an interrupted job still held its device");
+}
+
+#[tokio::test]
+async fn a_stuck_job_holds_up_no_other_job() {
+    let dir = tempfile::tempdir().unwrap();
+    let events = Events::new(256);
+    let mut rx = events.subscribe();
+    let shared = log();
+    let jobs = open(
+        &dir.path().join("jobs.json"),
+        vec![Kind::arc("mixed-kind", true, Some("stuck"), 0, &shared)],
+        &events,
+    )
+    .await;
+
+    let stuck = jobs
+        .submit("mixed-kind", DeviceClaim::none(), steps(&["stuck"]))
+        .await
+        .unwrap();
+    let quick = jobs
+        .submit("mixed-kind", DeviceClaim::none(), steps(&["go"]))
+        .await
+        .unwrap();
+    wait_for_job(&mut rx, quick, |job| job.status == JobStatus::Done).await;
+    assert_eq!(jobs.get(stuck).unwrap().status, JobStatus::Running);
+
+    assert!(jobs.cancel(stuck));
+    wait_for_job(&mut rx, stuck, |job| job.status == JobStatus::Cancelled).await;
+    jobs.shutdown();
+}
+
+#[tokio::test]
+async fn a_failing_step_is_retried_until_it_succeeds() {
+    let dir = tempfile::tempdir().unwrap();
+    let events = Events::new(256);
+    let mut rx = events.subscribe();
+    let calls = log();
+    let timing = JobTiming {
+        step_timeout: Duration::from_secs(60),
+        backoff: Backoff {
+            first: Duration::from_millis(1),
+            cap: Duration::from_millis(5),
+        },
+    };
+    let jobs = Jobs::open(
+        dir.path().join("jobs.json"),
+        vec![Kind::arc("flaky-kind", true, None, 3, &calls)],
+        events.clone(),
+        timing,
+        DeviceHolds::new(),
+    )
+    .await
+    .unwrap();
+
+    let id = jobs
+        .submit("flaky-kind", DeviceClaim::none(), steps(&["only"]))
+        .await
+        .unwrap();
+    let job = wait_for_job(&mut rx, id, |job| job.status == JobStatus::Done).await;
+    assert_eq!(job.completed, 1);
+    assert_eq!(
+        calls.lock().unwrap().len(),
+        4,
+        "three failures, then one success"
+    );
+    jobs.shutdown();
+}
+
+#[tokio::test]
+async fn submit_refuses_an_unknown_kind_and_an_empty_job() {
+    let dir = tempfile::tempdir().unwrap();
+    let events = Events::new(256);
+    let jobs = open(
+        &dir.path().join("jobs.json"),
+        vec![Kind::arc("known-kind", true, None, 0, &log())],
+        &events,
+    )
+    .await;
+    assert_eq!(
+        jobs.submit("missing-kind", DeviceClaim::none(), steps(&["a"]))
+            .await,
+        Err(JobError::UnknownKind("missing-kind".into()))
+    );
+    assert_eq!(
+        jobs.submit("known-kind", DeviceClaim::none(), Vec::new())
+            .await,
+        Err(JobError::NoSteps)
+    );
+    assert!(jobs.list().is_empty());
+}
+
+/// A step that the device refuses: a settled answer, not a failure to retry.
+struct Refuser;
+
+#[async_trait]
+impl JobKind for Refuser {
+    fn name(&self) -> &str {
+        "refusing-kind"
+    }
+
+    fn resumable(&self) -> bool {
+        true
+    }
+
+    async fn run_step(&self, _claim: &DeviceClaim, step: &str) -> Result<(), DriverError> {
+        if step == "refuse" {
+            return Err(DriverError::Incompatible(
+                "this board revision is not supported".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn a_refused_step_ends_the_job_as_failed_with_the_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let events = Events::new(256);
+    let mut rx = events.subscribe();
+    let jobs = open(
+        &dir.path().join("jobs.json"),
+        vec![Arc::new(Refuser)],
+        &events,
+    )
+    .await;
+
+    let id = jobs
+        .submit(
+            "refusing-kind",
+            DeviceClaim::none(),
+            steps(&["refuse", "never"]),
+        )
+        .await
+        .unwrap();
+    let job = wait_for_job(&mut rx, id, |job| {
+        matches!(job.status, JobStatus::Failed { .. })
+    })
+    .await;
+    match &job.status {
+        JobStatus::Failed { reason } => assert!(reason.contains("not supported"), "{reason}"),
+        other => panic!("expected failed, got {other:?}"),
+    }
+    assert_eq!(job.completed, 0, "a step after the refusal ran");
+    jobs.shutdown();
+}
+
+#[tokio::test]
+async fn a_second_job_for_a_held_device_is_refused_naming_the_holder() {
+    let dir = tempfile::tempdir().unwrap();
+    let events = Events::new(256);
+    let mut rx = events.subscribe();
+    let shared = log();
+    let jobs = open(
+        &dir.path().join("jobs.json"),
+        vec![Kind::arc("update-kind", true, Some("hold"), 0, &shared)],
+        &events,
+    )
+    .await;
+    let device = DeviceKey::new("sample-soc", "1000abcd");
+
+    let first = jobs
+        .submit(
+            "update-kind",
+            DeviceClaim::writes([device.clone()]),
+            steps(&["hold"]),
+        )
+        .await
+        .unwrap();
+    let refused = jobs
+        .submit(
+            "update-kind",
+            DeviceClaim::writes([device.clone()]),
+            steps(&["go"]),
+        )
+        .await;
+    match refused {
+        Err(JobError::DeviceHeld {
+            device: d,
+            job,
+            kind,
+        }) => {
+            assert_eq!(d, device);
+            assert_eq!(job, first);
+            assert_eq!(kind, "update-kind");
+        }
+        other => panic!("expected the second job refused, got {other:?}"),
+    }
+    assert_eq!(jobs.list().len(), 1, "a refused job was queued");
+
+    // Another device is not affected.
+    let other = jobs
+        .submit(
+            "update-kind",
+            DeviceClaim::writes([DeviceKey::new("sample-soc", "2000beef")]),
+            steps(&["go"]),
+        )
+        .await
+        .unwrap();
+    wait_for_job(&mut rx, other, |job| job.status == JobStatus::Done).await;
+
+    // Cancelling the holder releases the device for the next job.
+    assert!(jobs.cancel(first));
+    wait_for_job(&mut rx, first, |job| job.status == JobStatus::Cancelled).await;
+    let next = jobs
+        .submit("update-kind", DeviceClaim::writes([device]), steps(&["go"]))
+        .await
+        .expect("the device was not released by the cancel");
+    wait_for_job(&mut rx, next, |job| job.status == JobStatus::Done).await;
+    jobs.shutdown();
+}
+
+#[tokio::test]
+async fn a_claim_is_restored_after_a_restart_while_the_job_is_active() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("jobs.json");
+    let device = DeviceKey::new("sample-soc", "1000abcd");
+
+    let events = Events::new(256);
+    let mut rx = events.subscribe();
+    let first = log();
+    let jobs = open(
+        &path,
+        vec![Kind::arc("flash-kind", true, Some("b"), 0, &first)],
+        &events,
+    )
+    .await;
+    let id = jobs
+        .submit(
+            "flash-kind",
+            DeviceClaim::writes([device.clone()]),
+            steps(&["a", "b", "c"]),
+        )
+        .await
+        .unwrap();
+    wait_for_job(&mut rx, id, |job| job.completed == 1).await;
+    jobs.shutdown();
+
+    // The restarted Atlas still has the job active, so it still holds the device.
+    let events = Events::new(256);
+    let mut rx = events.subscribe();
+    let second = log();
+    let jobs = open(
+        &path,
+        vec![Kind::arc("flash-kind", true, Some("b"), 0, &second)],
+        &events,
+    )
+    .await;
+    let saved = jobs.get(id).expect("the active job survived the restart");
+    assert!(
+        matches!(saved.status, JobStatus::Queued | JobStatus::Running),
+        "unexpected status {:?}",
+        saved.status
+    );
+    let refused = jobs
+        .submit(
+            "flash-kind",
+            DeviceClaim::writes([device.clone()]),
+            steps(&["x"]),
+        )
+        .await;
+    assert_eq!(
+        refused,
+        Err(JobError::DeviceHeld {
+            device: device.clone(),
+            job: id,
+            kind: "flash-kind".into(),
+        })
+    );
+
+    // Once that job is cancelled, the device is free.
+    assert!(jobs.cancel(id));
+    wait_for_job(&mut rx, id, |job| job.status == JobStatus::Cancelled).await;
+    jobs.submit("flash-kind", DeviceClaim::writes([device]), steps(&["x"]))
+        .await
+        .expect("the device stayed held after the job ended");
+    jobs.shutdown();
+}

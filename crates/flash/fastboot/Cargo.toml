@@ -1,0 +1,18 @@
+[package]
+name = "atlas-fastboot"
+description = "A fastboot client over atlas-usb for the last step of a flasher start: getvar, download and boot only. No flash, erase or OEM commands. No Atlas types."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+atlas-usb = { path = "../usb" }
+tokio = { version = "1", features = ["time"] }
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "test-util"] }
+
+[lints]
+workspace = true

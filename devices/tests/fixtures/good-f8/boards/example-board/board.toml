@@ -1,0 +1,14 @@
+# EXAMPLE in Gaia F8 form, as Gaia 70a5133 reads it (fixture). Not a device.
+version = 1
+extends = "../../families/example-family/family.toml"
+name = "example-board"
+description = "Example board (F8 fixture)"
+
+[target]
+cpu = "cortex-a55"
+
+[sources.rkbin]
+path = "rkbin"
+
+[bootloader.blobs]
+ROCKCHIP_TPL = { source = "rkbin", path = "bin/example.bin" }

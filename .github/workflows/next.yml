@@ -31,4 +31,6 @@ jobs:
         with:
           path: ~/.cache/atlas/gaia
           key: gaia-${{ runner.os }}-${{ hashFiles('devices/gaia.lock') }}
+      # gaia plan wants the tools a recipe names; the slot recipe names veritysetup.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cryptsetup-bin
       - run: ./scripts/gate.sh
