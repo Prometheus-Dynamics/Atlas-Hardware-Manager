@@ -1,7 +1,20 @@
-# Radxa Cubie A7A on the Allwinner A733 (sun60i) family. RECORD, NOT A BUILDABLE DESCRIPTION:
-# untested on board. Only what differs from the family is kept here. Sources missing: see
-# the family file (kernel, U-Boot, TF-A, OS, FEL SPL, SRAM layout, AArch64 thunk, SD device).
+# Radxa Cubie A7A on the Allwinner A733 (sun60i) family. CANDIDATE, UNVERIFIED, NEVER BOOTED.
+# Only what differs from the family is kept here.
 version = 1
 extends = "../../families/sun60i/family.toml"
 name = "radxa-cubie-a7a"
-description = "Radxa Cubie A7A (Allwinner A733)"
+description = "Radxa Cubie A7A (Allwinner A733), candidate sources, untested on board"
+
+# U-Boot defconfig: radxa-cubie-a7a_defconfig in radxa/u-boot @ 9da4b3e8 (its
+# CONFIG_DEFAULT_DEVICE_TREE is sun60i-a733-radxa-a7a: the U-Boot dts is named "radxa-a7a").
+# candidate, unverified, never booted; a new choice, not carried from dev.
+[bootloader]
+defconfig = "radxa-cubie-a7a_defconfig"
+
+# OPEN, blocks a build: NO kernel device tree for the A7A is public (no sun60i-a733-*a7a dts in
+# DockSeed's series, the upstream posting, or any Radxa kernel tree read in B12). The kernel
+# device_tree is left unset on purpose: no name is guessed.
+#
+# OPEN: the DRAM blob. The A7A record says 4 GB LPDDR5 (UNCONFIRMED). The A7S blob is the one
+# candidate (radxa-pkg/u-boot-dlan17 @ b1cec0a9, awbin/a733/ddr.bin, closed, no grant); it is
+# not pinned here until its SKU match is known. Never published in an image.

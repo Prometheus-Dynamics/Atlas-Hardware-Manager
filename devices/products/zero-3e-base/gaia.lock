@@ -10,8 +10,8 @@ commit = "d50d994bffa3c7c6db2d8bc4c5f0c55e3f46b0cd"
 [source."radxa-zero-3e.rkbin"]
 kind = "git"
 url = "https://github.com/rockchip-linux/rkbin.git"
-ref = "3e288fe814e059dd06833495f845cab04ac20a5c"
-commit = "3e288fe814e059dd06833495f845cab04ac20a5c"
+ref = "f43a462e7a1429a9d407ae52b4745033034a6cf9"
+commit = "f43a462e7a1429a9d407ae52b4745033034a6cf9"
 
 [source."radxa-zero-3e.tf-a"]
 kind = "git"

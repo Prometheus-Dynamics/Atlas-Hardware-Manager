@@ -1,0 +1,38 @@
+# The Raze base OS product, Gaia F8 form at the pin (4abf626 and later). One image: the Raze board, its OS
+# (Buildroot, os/raze.fragment), the Lemnos and Orion components, and the root slot.
+#
+# Components named here but NOT on the image (the check reads them, the base image doesn't ship them):
+#   lemnos-slot-init   goes in the SLOT INITRAMFS (the slot's /init), not the root filesystem: no Gaia field
+#                      targets an initramfs tree yet (PR text).
+#   orion-recovery     the recovery package: for an initramfs or flasher image (the flasher product, B9).
+# Components on the image: the Lemnos packaging, lemnosd, lemnos-ctl, lemnos-orion; the Orion board image
+# (orion-bin); the Raze's board file and the base files.
+version = 1
+name = "raze-base"
+description = "Raze base OS: the Raze board with the Lemnos and Orion packages, as a root slot"
+
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.08"
+
+[components]
+lemnos = "../../components/lemnos/component.toml"
+lemnosd = "../../components/lemnosd/component.toml"
+lemnos-ctl = "../../components/lemnos-ctl/component.toml"
+lemnos-orion = "../../components/lemnos-orion/component.toml"
+lemnos-slot-init = "../../components/lemnos-slot-init/component.toml"
+raze-lemnos-board = "../../components/raze-lemnos-board/component.toml"
+raze-base-files = "../../components/raze-base-files/component.toml"
+orion = "../../components/orion/component.toml"
+orion-recovery = "../../components/orion-recovery/component.toml"
+
+[[images]]
+name = "raze-base"
+board = "../../boards/raze/board.toml"
+components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "orion"]
+os = { provider = "buildroot", source = "buildroot", fragments = ["os/raze.fragment"] }
+recipe = "slot"
+
+# The path the root slot is written to. F8?: the value's form (the zero-3e example uses a /data/slots path).
+[images.settings]
+device = "/data/slots/root.img"
