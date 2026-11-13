@@ -323,13 +323,17 @@ impl Follower {
     /// final state (`Stopped`), if a watch was held.
     pub fn stop(&self, board: NodeKey) -> Option<Ended> {
         let stop = lock(&self.stops).remove(&board);
-        {
+        // Stopped and released under one hold of the lock. With the lock let go in between, the
+        // follow task (woken by any change of the board's presence) released the stopped watch
+        // itself, and the person's stop then returned nothing.
+        let ended = {
             let mut trials = lock(&self.trials);
             if let Some(watch) = trials.watch_mut(board) {
                 watch.stop();
             }
-        }
-        let ended = self.release(board);
+            let (state, saved) = trials.release(board);
+            state.map(|state| Ended { state, saved })
+        };
         if let Some(stop) = stop {
             let _ = stop.send(());
         }

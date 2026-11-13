@@ -8,7 +8,7 @@ use orion::Address;
 
 use std::time::Duration;
 
-use crate::lease::Lease;
+use crate::lease::{Clock, Lease};
 use crate::monitor::{CALL_WAIT, Handle, Monitor, Pause};
 
 /// The monitors of the nodes this program is watching.
@@ -17,6 +17,7 @@ pub struct Sessions {
     pause: Arc<dyn Pause>,
     call_wait: Duration,
     lease: Lease,
+    clock: Clock,
     monitors: Mutex<BTreeMap<String, Monitor>>,
     off: Mutex<BTreeSet<String>>,
 }
@@ -34,6 +35,7 @@ impl Sessions {
             pause,
             call_wait,
             lease: Lease::DEFAULT,
+            clock: Clock::real(),
             monitors: Mutex::new(BTreeMap::new()),
             off: Mutex::new(BTreeSet::new()),
         }
@@ -44,6 +46,14 @@ impl Sessions {
     #[must_use]
     pub fn with_lease(mut self, lease: Lease) -> Self {
         self.lease = lease;
+        self
+    }
+
+    /// As built, with the clock the sessions measure their leases on. A test passes a manual clock and
+    /// moves it; production keeps [`Clock::real`].
+    #[must_use]
+    pub fn with_clock(mut self, clock: Clock) -> Self {
+        self.clock = clock;
         self
     }
 
@@ -64,6 +74,7 @@ impl Sessions {
                 self.pause.clone(),
                 self.call_wait,
                 self.lease,
+                self.clock.clone(),
             )
         });
         Some(monitor.handle())
@@ -85,6 +96,7 @@ impl Sessions {
                 self.pause.clone(),
                 self.call_wait,
                 self.lease,
+                self.clock.clone(),
             )
         });
         Some(monitor.handle())

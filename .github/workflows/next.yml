@@ -31,6 +31,47 @@ jobs:
         with:
           path: ~/.cache/atlas/gaia
           key: gaia-${{ runner.os }}-${{ hashFiles('devices/gaia.lock') }}
+      # scripts/check-kernel-fragments.sh resolves each board's kernel configuration from its pinned tree (fetched
+      # once per pin and cached here: the key moves only when a kernel pin moves). flex and bison are the kernel's
+      # host tools for configuration (no cross compiler is needed to resolve a config).
+      # Restored from the nearest earlier key too: each tree inside is kept under its own pin, so an edit to a
+      # board file that moves no kernel pin fetches nothing. Saved at the end even when a later step fails
+      # (see the save step), so a tree that was fetched once is not fetched again.
+      - uses: actions/cache/restore@v4
+        id: kernel-cache
+        with:
+          path: ~/.cache/atlas/kernel
+          key: kernel-${{ runner.os }}-${{ hashFiles('devices/families/*/family.toml', 'devices/boards/*/board.toml') }}
+          restore-keys: kernel-${{ runner.os }}-
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends flex bison
       # gaia plan wants the tools a recipe names: veritysetup (slot), mkfs.erofs and the disk tools (sd-image), bwrap (a Rust component).
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cryptsetup-bin erofs-utils e2fsprogs dosfstools mtools gdisk xz-utils bubblewrap
       - run: ./scripts/gate.sh
+      - uses: actions/cache/save@v4
+        if: always() && steps.kernel-cache.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/atlas/kernel
+          key: kernel-${{ runner.os }}-${{ hashFiles('devices/families/*/family.toml', 'devices/boards/*/board.toml') }}
+
+  # What must build on Windows and macOS (PR G9). Each job builds every portable crate natively
+  # for its own OS: lib, bins and tests, compiled and not run. The Orion-bound crates are skipped
+  # and printed, with the Orion crate that binds them (scripts/orion-bound.txt).
+  portable:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            triple: x86_64-pc-windows-msvc
+          - os: macos-latest
+            triple: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: bash scripts/check-portable.sh "${{ matrix.triple }}"
+        shell: bash

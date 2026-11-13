@@ -103,28 +103,89 @@ pub fn check_target(disk: &Disk, expected_size: Option<u64>) -> Result<(), DiskE
     Ok(())
 }
 
-/// Accepts a device path only when it names a whole disk under `/dev`:
-/// `sdX`, `mmcblkN` or `nvmeNnM`. Partitions, other names and anything with
-/// a `..` or a shell character fail the shape, so no path reaches the disk
-/// layer unvalidated.
+/// The disk that was chosen is the disk that is there: the same size, and the
+/// same serial, model and USB port wherever both records have them.
+pub fn same_disk(now: &Disk, chosen: &Disk) -> Result<(), DiskError> {
+    let differs =
+        |a: &Option<String>, b: &Option<String>| matches!((a, b), (Some(x), Some(y)) if x != y);
+    if now.size_bytes != chosen.size_bytes
+        || differs(&now.serial, &chosen.serial)
+        || differs(&now.model, &chosen.model)
+        || differs(&now.usb_port, &chosen.usb_port)
+    {
+        return Err(DiskError::Unsafe(format!(
+            "{} is not the disk that was chosen (its size, model, serial or port differs); choose it again",
+            chosen.name
+        )));
+    }
+    Ok(())
+}
+
+/// The largest disk written on the first choice. A card for a first flash is
+/// smaller than this; a larger removable disk is more often one that holds
+/// data, so it is written only after a second, explicit choice.
+pub const LARGE_DISK_BYTES: u64 = 256_000_000_000;
+
+/// Refuses a disk above [`LARGE_DISK_BYTES`] unless the caller chose it.
+pub fn check_size_choice(disk: &Disk, allow_large: bool) -> Result<(), DiskError> {
+    if !allow_large && disk.size_bytes > LARGE_DISK_BYTES {
+        return Err(DiskError::Unsafe(format!(
+            "{} is {} bytes, more than {LARGE_DISK_BYTES} (256 GB); it is written only after a second, explicit choice that it is the card to write",
+            disk.name, disk.size_bytes
+        )));
+    }
+    Ok(())
+}
+
+/// Accepts a device path only when it names a whole disk of this system:
+/// `/dev/sdX`, `/dev/mmcblkN` or `/dev/nvmeNnM` on Linux, `/dev/diskN` on
+/// macOS, `\\.\PhysicalDriveN` on Windows. Partitions, other names and
+/// anything with a `..` or a shell character fail the shape, so no path reaches
+/// the disk layer unvalidated.
 pub fn device_path(text: &str) -> Result<PathBuf, DiskError> {
-    let refused = || {
-        DiskError::Unsafe(format!(
-            "{text} is not a whole disk path; expected /dev/sdX, /dev/mmcblkN or /dev/nvmeNnM"
-        ))
-    };
-    let name = text.strip_prefix("/dev/").ok_or_else(refused)?;
-    if whole_disk_name(name) {
+    if whole_disk_path(text) {
         Ok(PathBuf::from(text))
     } else {
-        Err(refused())
+        Err(DiskError::Unsafe(format!(
+            "{text} is not a whole disk path; {WHOLE_DISK_SHAPE}"
+        )))
     }
+}
+
+#[cfg(target_os = "linux")]
+const WHOLE_DISK_SHAPE: &str = "expected /dev/sdX, /dev/mmcblkN or /dev/nvmeNnM";
+#[cfg(target_os = "macos")]
+const WHOLE_DISK_SHAPE: &str = "expected /dev/diskN";
+#[cfg(windows)]
+const WHOLE_DISK_SHAPE: &str = r"expected \\.\PhysicalDriveN";
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+const WHOLE_DISK_SHAPE: &str = "no whole disk names are known on this system";
+
+#[cfg(target_os = "linux")]
+fn whole_disk_path(text: &str) -> bool {
+    text.strip_prefix("/dev/").is_some_and(whole_disk_name)
+}
+
+#[cfg(target_os = "macos")]
+fn whole_disk_path(text: &str) -> bool {
+    text.strip_prefix("/dev/disk").is_some_and(digits)
+}
+
+#[cfg(windows)]
+fn whole_disk_path(text: &str) -> bool {
+    text.strip_prefix(r"\\.\PhysicalDrive").is_some_and(digits)
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", windows)))]
+fn whole_disk_path(_text: &str) -> bool {
+    false
 }
 
 fn digits(text: &str) -> bool {
     !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
 }
 
+#[cfg(target_os = "linux")]
 fn whole_disk_name(name: &str) -> bool {
     let sd = name
         .strip_prefix("sd")
@@ -247,6 +308,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
     fn whole_disks_are_accepted_and_everything_else_is_not() {
         for good in ["/dev/sdb", "/dev/sdaa", "/dev/mmcblk0", "/dev/nvme0n1"] {
             assert_eq!(device_path(good).unwrap(), PathBuf::from(good), "{good}");
@@ -266,6 +328,55 @@ mod tests {
         ] {
             assert!(device_path(bad).is_err(), "{bad} should be refused");
         }
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn macos_whole_disks_are_accepted_and_slices_are_not() {
+        assert!(device_path("/dev/disk2").is_ok());
+        for bad in ["/dev/disk2s1", "/dev/rdisk2", "/dev/disk", "/dev/sda"] {
+            assert!(device_path(bad).is_err(), "{bad} should be refused");
+        }
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn windows_whole_disks_are_accepted_and_partitions_are_not() {
+        assert!(device_path(r"\\.\PhysicalDrive2").is_ok());
+        for bad in [
+            r"\\.\PhysicalDrive",
+            r"\\.\C:",
+            "/dev/sdb",
+            r"\\.\PhysicalDrive2 x",
+        ] {
+            assert!(device_path(bad).is_err(), "{bad} should be refused");
+        }
+    }
+
+    #[test]
+    fn a_chosen_disk_must_still_be_the_disk_that_is_there() {
+        let chosen = card();
+        assert!(same_disk(&card(), &chosen).is_ok());
+        let mut other_serial = card();
+        other_serial.serial = Some("ABC".into());
+        let mut chosen_serial = card();
+        chosen_serial.serial = Some("XYZ".into());
+        assert!(same_disk(&other_serial, &chosen_serial).is_err());
+        let mut resized = card();
+        resized.size_bytes += 512;
+        assert!(same_disk(&resized, &chosen).is_err());
+        let mut moved = card();
+        moved.usb_port = Some("2-1".into());
+        assert!(same_disk(&moved, &chosen).is_err());
+    }
+
+    #[test]
+    fn a_disk_above_the_large_bound_needs_a_second_choice() {
+        let mut big = card();
+        big.size_bytes = LARGE_DISK_BYTES + 1;
+        assert!(check_size_choice(&big, false).is_err());
+        assert!(check_size_choice(&big, true).is_ok());
+        assert!(check_size_choice(&card(), false).is_ok());
     }
 
     #[test]

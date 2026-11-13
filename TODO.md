@@ -47,6 +47,7 @@ Every board as Gaia `next` data in `devices/`. Starts first; the Raze and the ZE
 - [ ] [B22](docs/prs/B22.md) Gaia lock to 7db227f (next head): the checker refuses a binary of another commit, the plain check is offline, the bring-up products leave pending/ with a named bench-key input (needs B17, B18, B19)
 - [ ] [B24](docs/prs/B24.md) Bring-up USB network: Gaia's usb-gadget-network (configfs NCM, pinned Gaia 4509f6b) for the ZERO 3E and the Cubie A7S; addresses from the board id and serial; the board-id check (needs B15, B16, B19, B22)
 - [ ] [B16](docs/prs/B16.md) Each family's kernel trimmed to what its boards use, stripping on, and dtbs built with symbols (wave 5; needs B2, B3, B14; Lemnos 4c6678f3 kernel doc)
+- [ ] [B25](docs/prs/B25.md) Every kernel fragment line takes, checked in the gate (wave 6; needs B16, B24)
 
 ## C. One board driver
 
@@ -77,6 +78,7 @@ Our own loader for every chip family, then the flasher image, then an ordinary u
 - [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11, D12, D13)
 - [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11, D12, D13, D15)
 - [ ] [D7](docs/prs/D7.md) Disk writer and its helper (wave 2; needs A1)
+- [ ] [D18](docs/prs/D18.md) Writing a card on Windows and macOS, as far as it can be proven here (needs D7; host test: docs/host-tests/disk-writer.md)
 - [ ] [D8](docs/prs/D8.md) UBI images for NAND boards (wave 2; needs A1)
 - [ ] [D9](docs/prs/D9.md) Slot bundles from the image (wave 3; needs A7)
 - [ ] [D10](docs/prs/D10.md) Fastboot client (wave 3; needs D1)
@@ -123,3 +125,4 @@ Every job with real clicks on real boards, then docs and the lock.
 - [ ] [G6](docs/prs/G6.md) Luckfox (wave 8; needs F5, B6, D8; board run)
 - [ ] [G7](docs/prs/G7.md) K230D (wave 8; needs F5, B7, D4; board run)
 - [ ] [G8](docs/prs/G8.md) Docs, lock, hand-over (wave 10; needs G1, G2, G3, F8, F9)
+- [ ] [G9](docs/prs/G9.md) What must build on Windows and macOS is checked in CI (needs nothing; native CI on windows-latest and macos-latest; scripts/check-portable.sh)

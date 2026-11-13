@@ -8,7 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 atlas-types = { path = "../../core/types" }
-orion = { workspace = true }
+orion = { workspace = true, features = ["actions", "provider"] }
 tokio = { version = "1", features = ["sync", "time"] }
 
 [dev-dependencies]

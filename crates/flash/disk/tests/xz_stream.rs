@@ -1,3 +1,4 @@
+#![cfg(unix)]
 //! The card writer and the image's streams: a two-stream file (the image, then a
 //! signature record) writes exactly stream 1 and never the record, and a large
 //! single-block image is written in bounded resident memory (Linux only: the peak is

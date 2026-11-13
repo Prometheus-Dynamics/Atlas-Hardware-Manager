@@ -9,10 +9,15 @@
 //!
 //! ```text
 //! atlas-helper write --device /dev/sdb --image /abs/image.img.xz \
-//!     --expected-size 31914983424 [--progress /abs/progress.jsonl] \
-//!     [--cancel-file /abs/cancel] [--journal /abs/image.img.xz.journal] \
-//!     [--image-sha256 <hex>] [--no-verify]
+//!     --expected-size 31914983424 [--expected-serial <text>] [--allow-large] \
+//!     [--progress /abs/progress.jsonl] [--cancel-file /abs/cancel] \
+//!     [--journal /abs/image.img.xz.journal] [--image-sha256 <hex>] [--no-verify]
+//! atlas-helper list
 //! ```
+//!
+//! `list` reads the disks of this computer and says, for each, whether a write
+//! would be refused and why. It writes nothing and opens no disk for writing.
+//! It is the first step of the host test in `docs/host-tests/disk-writer.md`.
 //!
 //! Progress and the result are JSON lines. They go to the `--progress` file
 //! (elevation tools do not reliably pass stdout back) or to stdout without it.
@@ -27,18 +32,21 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use atlas_disk::{
-    BlockDevice, Disk, DiskError, DiskSource, ImageFormat, ResumePolicy, SysfsDisks, WriteOptions,
-    WriteProgress, WriteReport, check_target, detect_format, device_path, write_image,
+    Disk, DiskError, DiskSource, ImageFormat, Platform, ResumePolicy, WriteOptions, WriteProgress,
+    WriteReport, WriteRequest, check_size_choice, check_target, detect_format, device_path,
+    host_acknowledgement, host_platform, host_proof,
 };
 use serde::Serialize;
 
-const USAGE: &str = "usage: atlas-helper write --device <path> --image <path> --expected-size <bytes> [--progress <path>] [--cancel-file <path>] [--journal <path>] [--image-sha256 <hex>] [--no-verify]";
+const USAGE: &str = "usage: atlas-helper write --device <path> --image <path> --expected-size <bytes> [--expected-serial <text>] [--allow-large] [--progress <path>] [--cancel-file <path>] [--journal <path>] [--image-sha256 <hex>] [--no-verify]\n       atlas-helper list";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct WriteArgs {
     device: PathBuf,
     image: PathBuf,
     expected_size: u64,
+    expected_serial: Option<String>,
+    allow_large: bool,
     progress: Option<PathBuf>,
     cancel_file: Option<PathBuf>,
     journal: Option<PathBuf>,
@@ -117,6 +125,8 @@ fn parse_write(args: &[String]) -> Result<WriteArgs, String> {
         device: PathBuf::new(),
         image: PathBuf::new(),
         expected_size: 0,
+        expected_serial: None,
+        allow_large: false,
         progress: None,
         cancel_file: None,
         journal: None,
@@ -140,6 +150,8 @@ fn parse_write(args: &[String]) -> Result<WriteArgs, String> {
                         .map_err(|_| "--expected-size must be a number of bytes".to_string())?,
                 );
             }
+            "--expected-serial" => parsed.expected_serial = Some(value()?.to_string()),
+            "--allow-large" => parsed.allow_large = true,
             "--progress" => parsed.progress = Some(output_file(value()?, "--progress")?),
             "--cancel-file" => parsed.cancel_file = Some(output_file(value()?, "--cancel-file")?),
             "--journal" => parsed.journal = Some(output_file(value()?, "--journal")?),
@@ -165,6 +177,14 @@ fn prepare(args: &WriteArgs, source: &dyn DiskSource) -> Result<Disk, DiskError>
         .find(|disk| disk.path == args.device)
         .ok_or_else(|| DiskError::NotFound(args.device.display().to_string()))?;
     check_target(&disk, Some(args.expected_size))?;
+    if let Some(serial) = &args.expected_serial
+        && disk.serial.as_deref() != Some(serial.as_str())
+    {
+        return Err(DiskError::Unsafe(format!(
+            "{} is not the card that was chosen (its serial is not {serial}); choose it again",
+            disk.name
+        )));
+    }
     Ok(disk)
 }
 
@@ -221,31 +241,40 @@ impl Reporter {
     }
 }
 
+/// The write, through the shared pipeline of the disk crate: the same rules
+/// as everywhere else, on this system's platform.
 fn write_disk(
     args: &WriteArgs,
-    source: &Arc<dyn DiskSource>,
+    platform: &Arc<dyn Platform>,
     reporter: &mut Reporter,
     cancel: &Arc<AtomicBool>,
 ) -> Result<WriteReport, DiskError> {
-    let disk = prepare(args, source.as_ref())?;
+    let disk = prepare(args, platform.as_ref())?;
     let format = detect_format(&args.image)?;
     image_matches_name(&args.image, format)?;
-    let mut target = BlockDevice::open(disk, source.clone())?;
+    check_size_choice(&disk, args.allow_large)?;
     let options = WriteOptions {
         verify: args.verify,
         image_sha256: args.image_sha256.clone(),
+    };
+    let policy = ResumePolicy::default();
+    let request = WriteRequest {
+        image: &args.image,
+        options: &options,
+        policy: &policy,
+        journal: args.journal.as_deref(),
+        allow_large: args.allow_large,
     };
     let mut on_progress = |progress: WriteProgress| {
         reporter.send(&Message::Progress {
             progress: &progress,
         });
     };
-    write_image(
-        &args.image,
-        &mut target,
-        &options,
-        &ResumePolicy::default(),
-        args.journal.as_deref(),
+    atlas_disk::write_disk(
+        platform.clone(),
+        &disk,
+        host_acknowledgement(),
+        &request,
         &mut on_progress,
         cancel,
     )
@@ -253,7 +282,7 @@ fn write_disk(
 
 fn run_write(args: WriteArgs) -> Result<(), String> {
     let mut reporter = Reporter::open(args.progress.as_deref())?;
-    let source: Arc<dyn DiskSource> = Arc::new(SysfsDisks);
+    let platform = host_platform();
     let cancel = Arc::new(AtomicBool::new(false));
     if let Some(cancel_file) = args.cancel_file.clone() {
         let cancel = cancel.clone();
@@ -266,7 +295,7 @@ fn run_write(args: WriteArgs) -> Result<(), String> {
             }
         });
     }
-    let result = write_disk(&args, &source, &mut reporter, &cancel);
+    let result = write_disk(&args, &platform, &mut reporter, &cancel);
     // Stops the cancel watcher, whatever the outcome.
     cancel.store(true, Ordering::Relaxed);
     match result {
@@ -282,10 +311,51 @@ fn run_write(args: WriteArgs) -> Result<(), String> {
     }
 }
 
+/// Prints this system's disks, one JSON line each, with the verdict a write
+/// would get. Reads only.
+fn run_list() -> Result<(), String> {
+    let platform = host_platform();
+    println!(
+        "{}",
+        serde_json::json!({
+            "type": "host",
+            "platform": platform.name(),
+            "proof": format!("{:?}", host_proof()),
+            "acknowledged": host_acknowledgement() == atlas_disk::Acknowledgement::Given,
+        })
+    );
+    let disks = platform.disks().map_err(|error| error.to_string())?;
+    for disk in disks {
+        let verdict = match check_target(&disk, None).and_then(|()| check_size_choice(&disk, false))
+        {
+            Ok(()) => "would be written".to_string(),
+            Err(error) => format!("refused: {error}"),
+        };
+        println!(
+            "{}",
+            serde_json::json!({
+                "type": "disk",
+                "path": disk.path.display().to_string(),
+                "name": disk.name,
+                "description": disk.description(),
+                "size_bytes": disk.size_bytes,
+                "removable": disk.removable,
+                "usb": disk.usb,
+                "system": disk.system,
+                "serial": disk.serial,
+                "mount_points": disk.mount_points,
+                "verdict": verdict,
+            })
+        );
+    }
+    Ok(())
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let outcome = match args.first().map(String::as_str) {
         Some("write") => parse_write(&args[1..]).and_then(run_write),
+        Some("list") if args.len() == 1 => run_list(),
         _ => Err(USAGE.to_string()),
     };
     match outcome {
@@ -332,6 +402,8 @@ mod tests {
             device: PathBuf::from(device),
             image: PathBuf::from("/unused.img.xz"),
             expected_size: expected,
+            expected_serial: None,
+            allow_large: false,
             progress: None,
             cancel_file: None,
             journal: None,
@@ -490,6 +562,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_link_is_not_an_output_file() {
         let target = temp_image("link-target", b"x");
         let link = std::env::temp_dir().join(format!("atlas-helper-link-{}", std::process::id()));
