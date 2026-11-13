@@ -77,7 +77,7 @@ trap '[[ ${KEEP_KERNEL_SCRATCH:-0} == 1 ]] || rm -rf "$scratch"' EXIT
 mkdir -p "$cache"
 
 # One line per board with a kernel, read from the TOML files (python3 tomllib):
-#   name|family|kernel-url|kernel-ref|defconfig|fragment-paths   or   name|SKIP|reason
+#   name|family|kernel-url|kernel-ref|defconfig|fragment-paths|series-url|series-ref   or   name|SKIP|reason
 manifest() {
   python3 - "$devices" <<'PY'
 import glob, os, sys, tomllib
@@ -108,16 +108,23 @@ for bpath in sorted(glob.glob(os.path.join(dev, "boards", "*", "board.toml"))):
         print(f"{name}|SKIP|kernel source {src_name!r} is not a git source")
         continue
     series = sorted(k for k in sources if "series" in k)
-    if series:
-        print(f"{name}|SKIP|needs patch series {','.join(series)}, not applied by this check")
+    series_pin = ""
+    if len(series) > 1:
+        print(f"{name}|SKIP|the family names {len(series)} patch series ({', '.join(series)}); this check applies one")
         continue
+    if series:
+        ss = sources[series[0]]
+        if "git" not in ss:
+            print(f"{name}|SKIP|patch series {series[0]} is not a git source; this check cannot fetch it")
+            continue
+        series_pin = f"{ss['git']}|{ss['ref']}"
     defconfig = bk.get("defconfig", fk.get("defconfig", "defconfig"))
     if "fragments" in bk:
         frags = [os.path.normpath(os.path.join(bdir, f)) for f in bk["fragments"]]
     else:
         frags = [os.path.normpath(os.path.join(fdir, f)) for f in fk.get("fragments", [])]
     fam_name = fam.get("name", os.path.basename(fdir))
-    print("|".join([name, fam_name, src["git"], src["ref"], defconfig, ",".join(frags)]))
+    print("|".join([name, fam_name, src["git"], src["ref"], defconfig, ",".join(frags), series_pin]))
 PY
 }
 
@@ -161,8 +168,9 @@ PY
 fails=0
 checked=0
 skipped=0
+declare -A patched=()
 while IFS= read -r row; do
-  IFS='|' read -r name fam url ref defconfig frags <<<"$row"
+  IFS='|' read -r name fam url ref defconfig frags series_pin <<<"$row"
   if [[ $fam == SKIP ]]; then
     echo "check-kernel-fragments: SKIPPED $name: $url" >&2
     skipped=$((skipped + 1))
@@ -180,16 +188,51 @@ while IFS= read -r row; do
     fi
     echo "$url $ref" > "$src/.pin"
   fi
+  res=$src
+  if [[ -n ${series_pin:-} ]]; then
+    surl=${series_pin%%|*}; sref=${series_pin#*|}
+    fam_key=$(printf '%s %s %s' "$url" "$ref" "$surl $sref" | sha256sum | cut -c1-16)
+    if [[ -z ${patched[$fam_key]:-} ]]; then
+      skey=$(printf '%s %s' "$surl" "$sref" | sha256sum | cut -c1-16)
+      ssrc=$cache/series-$skey/src
+      if [[ ! -f $ssrc/.pin ]]; then
+        echo "check-kernel-fragments: fetching $name's patch series: $surl at $sref" >&2
+        rm -rf "$cache/series-$skey"; mkdir -p "$ssrc"
+        if ! { git -C "$ssrc" init -q && git -C "$ssrc" fetch -q --depth 1 "$surl" "$sref" && git -C "$ssrc" checkout -q FETCH_HEAD; } 2>"$scratch/series-fetch.err"; then
+          cat "$scratch/series-fetch.err" >&2
+          rm -rf "$cache/series-$skey"
+          die "$name: CANNOT FETCH the patch series $surl at $sref. This FAILS in CI too."
+        fi
+        echo "$surl $sref" > "$ssrc/.pin"
+      fi
+      pdir=$scratch/patched-$fam_key
+      echo "check-kernel-fragments: applying $name's patch series (the series' own method: patch -p1 --fuzz=0, in its order) to a copy of $url at $ref" >&2
+      rm -rf "$pdir"; cp -a "$src" "$pdir"
+      n=0
+      while IFS= read -r p; do
+        [[ -z $p ]] && continue
+        if ! { patch -d "$pdir" -p1 --fuzz=0 --batch --forward --dry-run -s < "$ssrc/patches/$p" && patch -d "$pdir" -p1 --fuzz=0 --batch --forward --no-backup-if-mismatch -s < "$ssrc/patches/$p"; } >"$scratch/patch.out" 2>&1; then
+          echo "check-kernel-fragments: FAIL $name: patch $p (number $((n + 1)) of the series) does not apply to $ref:" >&2
+          sed 's/^/    /' "$scratch/patch.out" >&2
+          die "$name: the patch series does not apply to $ref (see above)"
+        fi
+        n=$((n + 1))
+      done < <(awk '{ sub(/[[:space:]]*#.*/, "") } /[^[:space:]]/' "$ssrc/patches/series")
+      echo "check-kernel-fragments: $name's patch series applied: $n patches, 0 failed" >&2
+      patched[$fam_key]=$pdir
+    fi
+    res=${patched[$fam_key]}
+  fi
   o=$scratch/$name
   mkdir -p "$o"
   target=$defconfig
   [[ $defconfig == defconfig ]] || target=${defconfig}_defconfig
-  (cd "$src" && make -s ARCH=arm64 O="$o" "$target") >"$scratch/$name.log" 2>&1 \
+  (cd "$res" && make -s ARCH=arm64 O="$o" "$target") >"$scratch/$name.log" 2>&1 \
     || die "$name: the $target step failed (log: $scratch/$name.log)"
   IFS=',' read -ra farr <<<"$frags"
-  (cd "$src" && scripts/kconfig/merge_config.sh -m -O "$o" "$o/.config" "${farr[@]}") >>"$scratch/$name.log" 2>&1 \
+  (cd "$res" && scripts/kconfig/merge_config.sh -m -O "$o" "$o/.config" "${farr[@]}") >>"$scratch/$name.log" 2>&1 \
     || die "$name: merge_config failed (log: $scratch/$name.log)"
-  (cd "$src" && make -s ARCH=arm64 O="$o" olddefconfig) >>"$scratch/$name.log" 2>&1 \
+  (cd "$res" && make -s ARCH=arm64 O="$o" olddefconfig) >>"$scratch/$name.log" 2>&1 \
     || die "$name: olddefconfig failed (log: $scratch/$name.log)"
   board_fail=0
   for f in "${farr[@]}"; do
