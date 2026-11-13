@@ -169,6 +169,44 @@ fails=0
 checked=0
 skipped=0
 declare -A patched=()
+# Fetches one pinned commit or tag of `url` into `dir` (an empty directory) and checks it out.
+#
+# A host that does not answer is tried again: 3 tries, 10 s apart, each bounded (connect and stall), so an
+# unreachable host costs minutes, not the job's whole time. git.kernel.org has been unreachable from CI
+# runners more than once.
+#
+# When the pin is a full commit id, the same commit is then asked of a second host that carries the same
+# history (MIRRORS). That is not a weaker check: a commit id names its content, and the fetched commit is
+# compared with the pin before it is used. A tag pin is never taken from a second host, because a tag is
+# only a name there.
+declare -A MIRRORS=(
+  [https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git]=https://github.com/gregkh/linux.git
+)
+fetch_pin() {
+  local dir=$1 url=$2 ref=$3 from try
+  local -a hosts=("$url")
+  if [[ $ref =~ ^[0-9a-f]{40}$ && -n ${MIRRORS[$url]:-} ]]; then hosts+=("${MIRRORS[$url]}"); fi
+  for from in "${hosts[@]}"; do
+    for try in 1 2 3; do
+      rm -rf "$dir"; mkdir -p "$dir"
+      if git -C "$dir" init -q \
+        && git -C "$dir" -c http.connectTimeout=30 -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=60 \
+             fetch -q --depth 1 "$from" "$ref" \
+        && git -C "$dir" checkout -q FETCH_HEAD; then
+        if [[ $ref =~ ^[0-9a-f]{40}$ && $(git -C "$dir" rev-parse HEAD) != "$ref" ]]; then
+          echo "check-kernel-fragments: $from answered $ref with another commit; not used" >&2
+          break
+        fi
+        [[ $from == "$url" ]] || echo "check-kernel-fragments: $url did not answer; commit $ref taken from $from and checked against the pin" >&2
+        return 0
+      fi
+      echo "check-kernel-fragments: fetch of $ref from $from failed (try $try of 3)" >&2
+      [[ $try == 3 ]] || sleep 10
+    done
+  done
+  return 1
+}
+
 while IFS= read -r row; do
   IFS='|' read -r name fam url ref defconfig frags series_pin <<<"$row"
   if [[ $fam == SKIP ]]; then
@@ -181,7 +219,7 @@ while IFS= read -r row; do
   if [[ ! -f $src/.pin ]]; then
     echo "check-kernel-fragments: fetching $name's kernel: $url at $ref" >&2
     rm -rf "$cache/$key"; mkdir -p "$src"
-    if ! { git -C "$src" init -q && git -C "$src" fetch -q --depth 1 "$url" "$ref" && git -C "$src" checkout -q FETCH_HEAD; } 2>"$scratch/fetch.err"; then
+    if ! fetch_pin "$src" "$url" "$ref" 2>"$scratch/fetch.err"; then
       cat "$scratch/fetch.err" >&2
       rm -rf "$cache/$key"
       die "$name: CANNOT FETCH $url at $ref. This FAILS in CI too: a kernel configuration that cannot be resolved is not a pass. Locally only, ATLAS_KERNEL_SKIP=1 skips this check, visibly."
@@ -198,7 +236,7 @@ while IFS= read -r row; do
       if [[ ! -f $ssrc/.pin ]]; then
         echo "check-kernel-fragments: fetching $name's patch series: $surl at $sref" >&2
         rm -rf "$cache/series-$skey"; mkdir -p "$ssrc"
-        if ! { git -C "$ssrc" init -q && git -C "$ssrc" fetch -q --depth 1 "$surl" "$sref" && git -C "$ssrc" checkout -q FETCH_HEAD; } 2>"$scratch/series-fetch.err"; then
+        if ! fetch_pin "$ssrc" "$surl" "$sref" 2>"$scratch/series-fetch.err"; then
           cat "$scratch/series-fetch.err" >&2
           rm -rf "$cache/series-$skey"
           die "$name: CANNOT FETCH the patch series $surl at $sref. This FAILS in CI too."
