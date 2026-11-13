@@ -90,6 +90,17 @@ mod synthetic {
     /// A workspace with two drivers and a core crate. `deps` maps a package
     /// name to the dependency names it declares.
     fn sample(drivers: &[&str], core: &[&str], deps: &[(&str, &[&str])]) -> Value {
+        sample_in(drivers, core, &[], deps)
+    }
+
+    /// As [`sample`], with testing crates (under `crates/testing/`) too. A testing crate is not
+    /// a driver, so a driver may depend on it.
+    fn sample_in(
+        drivers: &[&str],
+        core: &[&str],
+        testing: &[&str],
+        deps: &[(&str, &[&str])],
+    ) -> Value {
         let mut packages = Vec::new();
         let mut members = Vec::new();
         let all = drivers
@@ -98,6 +109,11 @@ mod synthetic {
             .chain(
                 core.iter()
                     .map(|name| (*name, format!("{ROOT}/crates/core/{name}/Cargo.toml"))),
+            )
+            .chain(
+                testing
+                    .iter()
+                    .map(|name| (*name, format!("{ROOT}/crates/testing/{name}/Cargo.toml"))),
             );
         for (name, manifest) in all {
             let dependencies: Vec<Value> = deps
@@ -179,6 +195,35 @@ mod synthetic {
         assert_eq!(
             driver_to_driver_edges(&metadata),
             Ok(vec!["atlas-drv-b -> atlas-drv-a".to_string()])
+        );
+    }
+
+    #[test]
+    fn a_driver_may_dev_depend_on_the_sim_node() {
+        // The simulated node is a testing crate, not a driver: a driver's tests use it.
+        let metadata = sample_in(
+            &["atlas-drv-a"],
+            &["atlas-driver"],
+            &["atlas-sim-node"],
+            &[("atlas-drv-a", &["atlas-driver", "atlas-sim-node"])],
+        );
+        assert_eq!(driver_to_driver_edges(&metadata), Ok(vec![]));
+    }
+
+    #[test]
+    fn a_driver_to_driver_dev_dependency_still_fails_beside_the_sim_node_edge() {
+        let metadata = sample_in(
+            &["atlas-drv-a", "atlas-drv-b"],
+            &["atlas-driver"],
+            &["atlas-sim-node"],
+            &[(
+                "atlas-drv-a",
+                &["atlas-driver", "atlas-sim-node", "atlas-drv-b"],
+            )],
+        );
+        assert_eq!(
+            driver_to_driver_edges(&metadata),
+            Ok(vec!["atlas-drv-a -> atlas-drv-b".to_string()])
         );
     }
 

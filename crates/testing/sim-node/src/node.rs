@@ -1,19 +1,21 @@
 //! The simulated node: an Orion comm core running in this process, with node logic that
-//! answers the board's actions, topics and files the way a real board does.
+//! answers the board's actions, topics and files the way a board does.
 //!
 //! Three parts, each one Orion's own code:
 //! - the comm core is `orion-stubs`' [`Board`]: the real server, broker, hello and keys on a
 //!   real socket and a real network port, with stand-ins for the record store, the action
-//!   router, the file receiver and the workload tracker;
-//! - the node logic is an `orion` client on that socket. It registers every action in
-//!   [`names::ACTIONS`], declares the topics in [`names::TOPICS`], and answers each run;
+//!   router, the file receiver and the workload tracker. A detached run survives its caller's
+//!   session and can be attached to again; a cancel reaches the run only from the session and
+//!   call that started it (the stub's router does both, as Orion's own does);
+//! - the node logic is an `orion` client on that socket. It publishes the hello facts, registers
+//!   every action in [`names::ACTIONS`], declares the topics, and answers each run;
 //! - a loopback link proxy sits in front of the network port, so a connection can be cut
 //!   mid-transfer or held still. That is the only piece here that is not Orion's.
 //!
-//! A slot install is a long job: `system.slots.install` starts it, `system.slots.write`
-//! streams its bytes in order, and the last write installs it. Cancelling the install, or
-//! its starter disconnecting (Orion's router sends the cancel), discards what was written.
-//! A service restart loses every running job, and nothing resumes.
+//! A slot install over Orion is `accept <size>`, a file push of the bundle into
+//! [`names::INCOMING`] (the stub's file receiver holds it on the [`Shelf`]), then
+//! `install_file <name> <pin> <keep_old>`, a long job. The job's progress is bundle bytes over
+//! verify and unpack. The file is removed when the job ends, however it ends.
 //!
 //! Other runs are applied to the [`Model`] when they finish, never before, so a run that is
 //! refused, fails or is cancelled before it finishes changes nothing.
@@ -31,7 +33,7 @@ use orion::actions::{
 };
 use orion::topics::{FieldId, Publisher, SampleTime, TopicDecl};
 use orion::{Address, Orion, fields};
-use orion_stubs::{Board, Security, Shelf};
+use orion_stubs::{Board, Security};
 
 use crate::bundle;
 use crate::model::Model;
@@ -41,12 +43,14 @@ use crate::slots::{NewSlot, State, Status, code, valid_id};
 
 /// The name the simulated board gives itself.
 pub const NODE_NAME: &str = "board";
+/// The offers a running sim node makes: the kinds it really serves (no shell, no gateway).
+const OFFERS: &str = "update,slots,logs,actions,status,telemetry,files,self-test";
 /// How often the node logic moves runs on and publishes readings.
 const TICK: Duration = Duration::from_millis(20);
 /// How long a call waits for its outcome before the caller gives up.
 const CALL_WAIT: Duration = Duration::from_secs(10);
-/// The largest chunk one write may carry.
-pub const MAX_CHUNK: usize = 32 * 1024;
+/// How many bundle bytes an install verifies and unpacks per tick.
+pub const INSTALL_STEP: u64 = 64 * 1024;
 
 /// The target every simulated action is registered and run against.
 #[must_use]
@@ -58,7 +62,8 @@ pub fn target() -> Target {
     )
 }
 
-/// Runs `name` with `args` on the node `orion` is connected to, and waits for how it ended.
+/// Runs `name` with `args` (UTF-8 words) on the node `orion` is connected to, and waits for how
+/// it ended.
 ///
 /// # Errors
 ///
@@ -74,6 +79,104 @@ pub fn call(orion: &Orion, name: &str, args: &[u8]) -> Result<Finished, orion::E
     Ok(run.finish(CALL_WAIT)?)
 }
 
+/// The state a node is in, as its hello `state` fact says it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Mode {
+    /// Booted and running its own software.
+    Running,
+    /// Waiting in a recovery mode.
+    Recovery,
+    /// A freshly loaded flasher image.
+    Flasher,
+}
+
+impl Mode {
+    /// The word the `state` fact carries.
+    #[must_use]
+    pub const fn word(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Recovery => "recovery",
+            Self::Flasher => "flasher",
+        }
+    }
+}
+
+/// The facts the node publishes about itself, as a board's own program publishes them.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Hello {
+    pub family: String,
+    pub serial: String,
+    pub mode: Mode,
+    pub model: String,
+    /// The name stored on the node. Not published when `None`.
+    pub name: Option<String>,
+    /// The version of the node's own OS, published as `version.os`.
+    pub os_version: String,
+    /// Comma-separated capability kinds the node offers.
+    pub offers: String,
+}
+
+impl Default for Hello {
+    /// A running simulated node: one of the simulated family, with the offers it serves.
+    fn default() -> Self {
+        Self {
+            family: "simulated".into(),
+            serial: "SIM-RUN-1".into(),
+            mode: Mode::Running,
+            model: "simulated-board".into(),
+            name: Some("sim".into()),
+            os_version: "1.0.0".into(),
+            offers: OFFERS.into(),
+        }
+    }
+}
+
+impl Hello {
+    /// Each hello topic and the text it carries.
+    fn facts(&self) -> Vec<(&'static str, String)> {
+        let mut facts = vec![
+            (names::HELLO_FAMILY, self.family.clone()),
+            (names::HELLO_SERIAL, self.serial.clone()),
+            (names::HELLO_STATE, self.mode.word().to_string()),
+            (names::HELLO_MODEL, self.model.clone()),
+            (names::HELLO_VERSION_OS, self.os_version.clone()),
+            (names::HELLO_OFFERS, self.offers.clone()),
+        ];
+        if let Some(name) = &self.name {
+            facts.push((names::HELLO_NAME, name.clone()));
+        }
+        facts
+    }
+}
+
+/// What kind of Orion node this is. A node with Lemnos publishes its hardware facts and offers, and
+/// serves the slot and reboot surface. A plain Orion node has none of that: it is normal (a PC, a
+/// board of someone else's, a controller without our package) and still serves Orion's own things:
+/// files, its own actions and its logs. Its identity is its key fingerprint from the hello document.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Kind {
+    /// A node with Lemnos, publishing these facts.
+    WithLemnos(Hello),
+    /// A plain Orion node: no hardware facts, no offers, no Lemnos actions or readings.
+    Plain,
+}
+
+impl Default for Kind {
+    fn default() -> Self {
+        Self::WithLemnos(Hello::default())
+    }
+}
+
+/// Whether a node of this kind registers `name`. A plain node has no Lemnos actions (so its slot and
+/// reboot surface is absent: calls to it are not found), and only its own file actions.
+fn offered(kind: &Kind, name: &str) -> bool {
+    match kind {
+        Kind::WithLemnos(_) => true,
+        Kind::Plain => name.starts_with("fs."),
+    }
+}
+
 /// The state shared between the test and the node logic.
 #[derive(Clone, Debug)]
 struct Shared {
@@ -81,12 +184,17 @@ struct Shared {
     script: Arc<Mutex<Script>>,
     stop: Arc<AtomicBool>,
     restart: Arc<AtomicBool>,
+    /// Set while Lemnos is stopped on a node that has it: the node stays up and its Lemnos calls
+    /// fail. That is not the same as Lemnos being absent.
+    lemnos_down: Arc<AtomicBool>,
 }
 
-/// A simulated board. Dropping it stops the node logic, the link and the comm core.
+/// A simulated board. Dropping it stops the node logic, the link and the comm core, and frees
+/// its network port. Starting one again in the same directory on the same port brings it back
+/// as the same device: a lost node is found again.
 #[derive(Debug)]
 pub struct SimNode {
-    board: Board,
+    board: Arc<Board>,
     link: SocketAddr,
     shared: Shared,
     node: Option<JoinHandle<()>>,
@@ -94,26 +202,43 @@ pub struct SimNode {
 }
 
 impl SimNode {
-    /// Starts a simulated board in `dir`, which is created if it is missing. Its socket
-    /// lives there, so the path must stay short enough for a Unix socket.
+    /// Starts a running node with Lemnos in `dir` on a free port. See [`SimNode::start_with`].
     ///
     /// # Errors
     ///
-    /// If the directory cannot be made, or the node logic cannot connect to the comm core.
+    /// As [`SimNode::start_with`].
     pub fn start(dir: &Path) -> Result<Self, String> {
+        Self::start_with(dir, &Kind::default(), None)
+    }
+
+    /// Starts a simulated Orion node in `dir`, which is created if it is missing. Its socket lives
+    /// there, so the path must stay short enough for a Unix socket. `kind` says whether it runs
+    /// Lemnos ([`Kind::WithLemnos`], publishing that hello) or is plain Orion ([`Kind::Plain`]).
+    /// It listens on `port` (any free port when `None`).
+    ///
+    /// # Errors
+    ///
+    /// If the directory cannot be made, the port cannot be taken, or the node logic cannot
+    /// connect to the comm core or declare its facts.
+    pub fn start_with(dir: &Path, kind: &Kind, port: Option<u16>) -> Result<Self, String> {
         std::fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
-        let board = Board::start_in(dir, Security::Off, None);
+        let board = Arc::new(Board::start_in(dir, Security::Off, port));
         let shared = Shared {
             model: Arc::new(Mutex::new(Model::new())),
             script: Arc::new(Mutex::new(Script::new())),
             stop: Arc::new(AtomicBool::new(false)),
             restart: Arc::new(AtomicBool::new(false)),
+            lemnos_down: Arc::new(AtomicBool::new(false)),
         };
 
         let (ready, started) = mpsc::channel();
         let socket = board.socket().to_path_buf();
         let node_shared = shared.clone();
-        let node = thread::spawn(move || serve(&socket, &node_shared, &ready));
+        let node_kind = kind.clone();
+        let node_board = Arc::clone(&board);
+        let node = thread::spawn(move || {
+            serve(&socket, &node_shared, &node_kind, &node_board, &ready);
+        });
         started
             .recv()
             .map_err(|_| "the node logic stopped before it started".to_string())??;
@@ -173,15 +298,27 @@ impl SimNode {
         self.shared.restart.store(true, Ordering::SeqCst);
     }
 
-    /// The files the comm core has committed, as a file receiver holds them.
+    /// Stops Lemnos on this node while the node stays up: its facts stay published, and every
+    /// Lemnos call fails as "not answering" (`-4`). Only a node with Lemnos has anything to stop.
+    pub fn stop_lemnos(&self) {
+        self.shared.lemnos_down.store(true, Ordering::SeqCst);
+    }
+
+    /// Lemnos answers again after [`SimNode::stop_lemnos`].
+    pub fn resume_lemnos(&self) {
+        self.shared.lemnos_down.store(false, Ordering::SeqCst);
+    }
+
+    /// The files the comm core has received and committed, by destination. A bundle pushed for
+    /// `install_file` is here until its job ends.
     #[must_use]
-    pub fn shelf(&self) -> &Shelf {
+    pub fn shelf(&self) -> &orion_stubs::Shelf {
         self.board.shelf()
     }
 
     /// Where the network port is, for a client that does not use the link.
     #[must_use]
-    pub const fn network(&self) -> SocketAddr {
+    pub fn network(&self) -> SocketAddr {
         self.board.network()
     }
 }
@@ -203,8 +340,14 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 /// The node logic's thread: connect, register, publish, then serve until stopped.
-fn serve(socket: &Path, shared: &Shared, ready: &mpsc::Sender<Result<(), String>>) {
-    match Node::open(socket, shared.clone()) {
+fn serve(
+    socket: &Path,
+    shared: &Shared,
+    kind: &Kind,
+    board: &Arc<Board>,
+    ready: &mpsc::Sender<Result<(), String>>,
+) {
+    match Node::open(socket, shared.clone(), kind, Arc::clone(board)) {
         Ok(mut node) => {
             let _ = ready.send(Ok(()));
             node.run();
@@ -226,14 +369,15 @@ struct Run {
     stalled: bool,
 }
 
-/// The slot install in progress: its bytes so far.
+/// The slot install in progress: the bundle file it works on, and how far it has got.
 #[derive(Debug)]
 struct Install {
     call: u64,
+    name: String,
     size: u64,
+    done: u64,
     pin: bool,
     keep_old: bool,
-    buf: Vec<u8>,
 }
 
 /// The node logic: one Orion session, with its actions, topics and runs.
@@ -241,9 +385,13 @@ struct Node {
     // Kept alive for the session: dropping it closes the connection.
     _orion: Orion,
     registration: Registration,
-    readings: Publisher,
     logs: Publisher,
     shared: Shared,
+    board: Arc<Board>,
+    /// Readings, on a node with Lemnos only.
+    readings: Option<Publisher>,
+    /// The hello facts, one topic each, on a node with Lemnos only. Kept alive for the session.
+    _hello: Vec<Publisher>,
     active: Vec<Run>,
     install: Option<Install>,
     started: Instant,
@@ -258,11 +406,13 @@ impl std::fmt::Debug for Node {
 }
 
 impl Node {
-    fn open(socket: &Path, shared: Shared) -> Result<Self, String> {
+    fn open(socket: &Path, shared: Shared, kind: &Kind, board: Arc<Board>) -> Result<Self, String> {
+        // The driver clears its incoming directory when it starts.
+        clear_incoming(&board);
         let orion = Orion::connect(&Address::Local(socket.to_path_buf()), "sim-node")
             .map_err(|error| error.to_string())?;
         let mut registration = None;
-        for name in names::ACTIONS {
+        for name in names::ACTIONS.iter().filter(|name| offered(kind, name)) {
             let policy = Policy::new(Admits::ANYONE).without_grant();
             let decl = ActionDecl {
                 name,
@@ -274,24 +424,6 @@ impl Node {
                 .map_err(|e| e.to_string())?;
             registration.get_or_insert(handle);
         }
-        let readings = orion
-            .declare(&TopicDecl {
-                name: names::READINGS,
-                fields: &fields![temperature: Float "C", voltage: Float "V", fan: Int "rpm"],
-                history: 64,
-                expiry_ms: 0,
-                max_payload: 8,
-            })
-            .map_err(|e| e.to_string())?;
-        let mut hardware = orion
-            .declare(&TopicDecl {
-                name: names::HARDWARE,
-                fields: &fields![description: Text],
-                history: 1,
-                expiry_ms: 0,
-                max_payload: 256,
-            })
-            .map_err(|e| e.to_string())?;
         let logs = orion
             .declare(&TopicDecl {
                 name: names::LOGS,
@@ -301,14 +433,62 @@ impl Node {
                 max_payload: 256,
             })
             .map_err(|e| e.to_string())?;
-        let description = "model=simulated-board serial=SIM-RUN-1 os=1.0.0";
-        hardware
-            .publish(
-                FieldId(0),
-                SampleTime::from_nanos(1),
-                description.as_bytes(),
-            )
-            .map_err(|e| e.to_string())?;
+
+        // The slot table knows its board: the hello `family` fact of a node with Lemnos.
+        if let Kind::WithLemnos(hello) = kind {
+            lock(&shared.model).slots.board.clone_from(&hello.family);
+        }
+        // Only a node with Lemnos has readings, a hardware description and hello facts.
+        let mut readings = None;
+        let mut hello_topics = Vec::new();
+        if let Kind::WithLemnos(hello) = kind {
+            readings = Some(
+                orion
+                    .declare(&TopicDecl {
+                        name: names::READINGS,
+                        fields: &fields![temperature: Float "C", voltage: Float "V", fan: Int "rpm"],
+                        history: 64,
+                        expiry_ms: 0,
+                        max_payload: 8,
+                    })
+                    .map_err(|e| e.to_string())?,
+            );
+            let mut hardware = orion
+                .declare(&TopicDecl {
+                    name: names::HARDWARE,
+                    fields: &fields![description: Text],
+                    history: 1,
+                    expiry_ms: 0,
+                    max_payload: 256,
+                })
+                .map_err(|e| e.to_string())?;
+            let description = format!(
+                "model={} serial={} os={}",
+                hello.model, hello.serial, hello.os_version
+            );
+            hardware
+                .publish(
+                    FieldId(0),
+                    SampleTime::from_nanos(1),
+                    description.as_bytes(),
+                )
+                .map_err(|e| e.to_string())?;
+            for (topic, value) in hello.facts() {
+                let mut publisher = orion
+                    .declare(&TopicDecl {
+                        name: topic,
+                        fields: &fields![value: Text],
+                        history: 1,
+                        expiry_ms: 0,
+                        max_payload: 256,
+                    })
+                    .map_err(|e| e.to_string())?;
+                publisher
+                    .publish(FieldId(0), SampleTime::from_nanos(1), value.as_bytes())
+                    .map_err(|e| e.to_string())?;
+                hello_topics.push(publisher);
+            }
+        }
         let registration = registration.ok_or("no actions to register")?;
         Ok(Self {
             _orion: orion,
@@ -316,6 +496,8 @@ impl Node {
             readings,
             logs,
             shared,
+            board,
+            _hello: hello_topics,
             active: Vec::new(),
             install: None,
             started: Instant::now(),
@@ -355,6 +537,14 @@ impl Node {
     }
 
     fn start(&mut self, call: u64, name: &str, args: Vec<u8>) {
+        if names::is_lemnos(name) && self.shared.lemnos_down.load(Ordering::SeqCst) {
+            // Lemnos is stopped on this node: the node is up, its Lemnos calls are not answered.
+            self.finish_status(
+                call,
+                &Status::new(code::INTERRUPTED, "lemnos is not answering on this node"),
+            );
+            return;
+        }
         let behaviour = lock(&self.shared.script).take_action(name);
         match behaviour {
             Behaviour::Refuse(reason) => self.finish(call, Outcome::Rejected, &[], &reason),
@@ -371,8 +561,10 @@ impl Node {
                 self.restart();
                 self.finish(call, Outcome::Failed, &[], "-4: the service restarted");
             }
-            Behaviour::Answer if name == names::SLOTS_INSTALL => self.install_start(call, &args),
-            Behaviour::Answer if name == names::SLOTS_WRITE => self.write(call, &args),
+            Behaviour::Answer if name == names::SLOTS_ACCEPT => self.accept(call, &args),
+            Behaviour::Answer if name == names::SLOTS_INSTALL_FILE => {
+                self.install_start(call, &args);
+            }
             Behaviour::Answer => {
                 let total = ticks_for(name);
                 self.active.push(Run {
@@ -387,106 +579,133 @@ impl Node {
         }
     }
 
-    /// `system.slots.install`: starts the long job. Args: size (u64 LE), pin, keep_old.
-    fn install_start(&mut self, call: u64, args: &[u8]) {
+    /// `system.slots.accept <size>`: checks there is room for a bundle of `size` bytes. Nothing
+    /// is written: the sender pushes the file next.
+    fn accept(&mut self, call: u64, args: &[u8]) {
         if self.install.is_some() {
-            self.finish(
-                call,
-                Outcome::Rejected,
-                &[],
-                "-16: another install is running",
-            );
+            self.finish_status(call, &Status::new(code::BUSY, "an install is running"));
             return;
         }
-        let (Some(size), Some(&pin), Some(&keep_old)) = (le_u64(args, 0), args.get(8), args.get(9))
-        else {
+        let size = match words(args)
+            .first()
+            .and_then(|word| word.parse::<u64>().ok())
+        {
+            Some(size) => size,
+            None => {
+                self.finish_status(
+                    call,
+                    &Status::new(code::INVALID_ARGUMENT, "accept takes the bundle's size"),
+                );
+                return;
+            }
+        };
+        let checked = lock(&self.shared.model).slots.check_install_start(size);
+        match checked {
+            Ok(()) => self.finish(call, Outcome::Succeeded, &[], ""),
+            Err(status) => {
+                lock(&self.shared.model)
+                    .slots
+                    .error
+                    .clone_from(&status.message);
+                self.finish_status(call, &status);
+            }
+        }
+    }
+
+    /// `system.slots.install-file <name> <pin> <keep_old>`: starts the long job that installs
+    /// the bundle pushed as `INCOMING/<name>`.
+    fn install_start(&mut self, call: u64, args: &[u8]) {
+        if self.install.is_some() {
+            self.finish_status(call, &Status::new(code::BUSY, "an install is running"));
+            return;
+        }
+        let parsed = (|| -> Result<(String, bool, bool), Status> {
+            let found = words(args);
+            let name = found.first().cloned().unwrap_or_default();
+            if !names::valid_name(&name) {
+                return Err(Status::new(
+                    code::INVALID_ARGUMENT,
+                    format!("{name:?} is not one file name"),
+                ));
+            }
+            Ok((name, flag(&found, 1)?, flag(&found, 2)?))
+        })();
+        let (name, pin, keep_old) = match parsed {
+            Ok(parsed) => parsed,
+            Err(status) => {
+                self.finish_status(call, &status);
+                return;
+            }
+        };
+        let size = {
+            let committed = lock_shelf(&self.board);
+            committed
+                .get(&pushed(&name))
+                .map(|bytes| bytes.len() as u64)
+        };
+        let Some(size) = size else {
             self.finish_status(
                 call,
-                &Status::new(code::INVALID_ARGUMENT, "install takes a size and two flags"),
+                &Status::new(code::NOT_FOUND, format!("there is no pushed file {name}")),
             );
             return;
         };
-        let started = {
+        let checked = {
             let mut model = lock(&self.shared.model);
             model
                 .slots
                 .check_install_start(size)
                 .map(|()| model.slots.staging())
         };
-        match started {
+        match checked {
             Ok(()) => {
                 self.install = Some(Install {
                     call,
+                    name,
                     size,
-                    pin: pin == 1,
-                    keep_old: keep_old == 1,
-                    buf: Vec::new(),
+                    done: 0,
+                    pin,
+                    keep_old,
                 });
             }
-            Err(status) => self.finish_status(call, &status),
+            Err(status) => {
+                lock(&self.shared.model)
+                    .slots
+                    .error
+                    .clone_from(&status.message);
+                self.finish_status(call, &status);
+            }
         }
     }
 
-    /// `system.slots.write`: appends a chunk at the offset the install expects.
-    fn write(&mut self, call: u64, args: &[u8]) {
-        let Some(offset) = le_u64(args, 0) else {
-            self.finish_status(
-                call,
-                &Status::new(code::INVALID_ARGUMENT, "write takes an offset"),
-            );
-            return;
-        };
-        let chunk = args.get(8..).unwrap_or_default();
-        let Some(install) = self.install.as_mut() else {
-            self.finish_status(call, &Status::new(code::NOT_FOUND, "no install is running"));
-            return;
-        };
-        let written = install.buf.len() as u64;
-        let problem = if offset != written {
-            Some(format!(
-                "offset {offset} is not where the last write ended, at {written}"
-            ))
-        } else if written + chunk.len() as u64 > install.size {
-            Some("the write goes past the size the install was started with".to_string())
-        } else if chunk.len() > MAX_CHUNK {
-            Some("the chunk is larger than the largest allowed".to_string())
-        } else {
-            None
-        };
-        if let Some(problem) = problem {
-            // The install goes on: the write is refused, nothing changes.
-            self.finish_status(call, &Status::new(code::INVALID_ARGUMENT, problem));
-            return;
-        }
-        install.buf.extend_from_slice(chunk);
-        let complete = install.buf.len() as u64 == install.size;
-        self.finish(call, Outcome::Succeeded, &[], "");
-        if complete {
-            self.complete_install();
-        }
-    }
-
-    /// The last write is in: check the bundle and install it, or say why not.
+    /// The install job's last step: verify and unpack the file, install it or say why not. The
+    /// file goes whatever the outcome.
     fn complete_install(&mut self) {
         let Some(install) = self.install.take() else {
             return;
         };
+        let bytes = lock_shelf(&self.board).remove(&pushed(&install.name));
         let result = {
             let mut model = lock(&self.shared.model);
-            let trusted = model.slots.trusted.clone();
-            let outcome = bundle::verify(&install.buf, &trusted).and_then(|verified| {
-                model.slots.check_signed(&verified.signed)?;
-                model
-                    .slots
-                    .install_done(new_slot(verified), install.pin, install.keep_old)
-            });
-            if outcome.is_err() {
+            let outcome = match bytes {
+                None => Err(Status::new(
+                    code::IO,
+                    "the pushed file went away mid-install",
+                )),
+                Some(bytes) => {
+                    let trusted = model.slots.trusted.clone();
+                    let board = model.slots.board.clone();
+                    bundle::verify(&bytes, &trusted, &board).and_then(|verified| {
+                        model.slots.check_signed(&verified.signed)?;
+                        model
+                            .slots
+                            .install_done(new_slot(verified), install.pin, install.keep_old)
+                    })
+                }
+            };
+            if let Err(status) = &outcome {
                 model.slots.state = State::Error;
-                model.slots.error = outcome
-                    .as_ref()
-                    .err()
-                    .map(ToString::to_string)
-                    .unwrap_or_default();
+                model.slots.error.clone_from(&status.message);
             }
             outcome
         };
@@ -496,14 +715,17 @@ impl Node {
         }
     }
 
-    /// Cancelling: an install discards what it wrote; a timed run changed nothing.
+    /// Cancelling: an install job removes its file and changes nothing else; a timed run changed
+    /// nothing. Orion only sends a cancel from the run's own starter.
     fn cancel(&mut self, call: u64) {
         if self
             .install
             .as_ref()
             .is_some_and(|install| install.call == call)
         {
-            self.install = None;
+            if let Some(install) = self.install.take() {
+                lock_shelf(&self.board).remove(&pushed(&install.name));
+            }
             lock(&self.shared.model).slots.cancelled();
             self.finish(
                 call,
@@ -522,7 +744,8 @@ impl Node {
         }
     }
 
-    /// A service restart: every running job is lost. An install cut short is recorded.
+    /// A service restart: every running job is lost. An install cut short is recorded, and the
+    /// incoming directory is cleared as the driver does when it starts.
     fn restart(&mut self) {
         let mut lost = Vec::new();
         if let Some(install) = self.install.take() {
@@ -530,6 +753,7 @@ impl Node {
             lost.push(install.call);
         }
         lost.extend(self.active.drain(..).map(|run| run.call));
+        clear_incoming(&self.board);
         for call in lost {
             self.finish(
                 call,
@@ -551,26 +775,32 @@ impl Node {
             (model.readings(), model.take_new_logs())
         };
         let now = self.now();
-        let _ = self
-            .readings
-            .publish(FieldId(0), now, &readings.temperature_c.to_le_bytes());
-        let _ = self
-            .readings
-            .publish(FieldId(1), now, &readings.input_v.to_le_bytes());
-        let _ = self
-            .readings
-            .publish(FieldId(2), now, &readings.fan_rpm.to_le_bytes());
+        if let Some(readings_topic) = self.readings.as_mut() {
+            let _ = readings_topic.publish(FieldId(0), now, &readings.temperature_c.to_le_bytes());
+            let _ = readings_topic.publish(FieldId(1), now, &readings.input_v.to_le_bytes());
+            let _ = readings_topic.publish(FieldId(2), now, &readings.fan_rpm.to_le_bytes());
+        }
         for line in lines {
             let mut text = line;
             text.truncate(256);
             let _ = self.logs.publish(FieldId(0), now, text.as_bytes());
         }
 
-        if let Some(install) = &self.install {
-            let (call, size, written) = (install.call, install.size, install.buf.len() as u64);
-            let percent = (written * 100).checked_div(size).unwrap_or(100).min(100) as u8;
-            let message = format!("{written}/{size} bytes");
-            let _ = self.registration.progress(call, percent, &message, &[]);
+        // The install job moves over the bundle bytes, and finishes when they are all done.
+        let mut finished_install = false;
+        if let Some(install) = self.install.as_mut() {
+            install.done = (install.done + INSTALL_STEP).min(install.size);
+            let percent = (install.done * 100)
+                .checked_div(install.size)
+                .unwrap_or(100) as u8;
+            let message = format!("{}/{} bytes", install.done, install.size);
+            let _ = self
+                .registration
+                .progress(install.call, percent, &message, &[]);
+            finished_install = install.done == install.size;
+        }
+        if finished_install {
+            self.complete_install();
         }
 
         let mut done = Vec::new();
@@ -601,6 +831,20 @@ impl Node {
     }
 }
 
+/// The path a pushed bundle is kept at on the shelf.
+fn pushed(name: &str) -> String {
+    format!("{}{name}", names::INCOMING)
+}
+
+fn lock_shelf(board: &Board) -> MutexGuard<'_, std::collections::BTreeMap<String, Vec<u8>>> {
+    lock(&board.shelf().committed)
+}
+
+/// Removes every pushed file the driver keeps.
+fn clear_incoming(board: &Board) {
+    lock_shelf(board).retain(|path, _| !path.starts_with(names::INCOMING));
+}
+
 /// How many ticks a timed action takes. Only the long ones show progress.
 fn ticks_for(name: &str) -> u32 {
     match name {
@@ -619,40 +863,37 @@ fn outcome_for(code_value: i32) -> Outcome {
     }
 }
 
-fn le_u64(bytes: &[u8], at: usize) -> Option<u64> {
-    let raw: [u8; 8] = bytes.get(at..at + 8)?.try_into().ok()?;
-    Some(u64::from_le_bytes(raw))
+/// The words of an argument: UTF-8, separated by whitespace.
+fn words(args: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(args)
+        .split_whitespace()
+        .map(str::to_owned)
+        .collect()
 }
 
-fn new_slot(verified: bundle::Verified) -> NewSlot {
-    NewSlot {
-        id: verified.id,
-        family: verified.family,
-        version: verified.version,
-        variant: verified.variant,
-        kernel: verified.kernel,
-        display_name: verified.display_name,
-        size: verified.size,
-        verity: verified.verity,
-        signed: verified.signed,
+/// The bool at `index`, as Lemnos's text encoding reads one: true/on/1 or false/off/0.
+fn flag(words: &[String], index: usize) -> Result<bool, Status> {
+    match words.get(index).map(String::as_str) {
+        Some("true" | "on" | "1") => Ok(true),
+        Some("false" | "off" | "0") => Ok(false),
+        Some(other) => Err(Status::new(
+            code::INVALID_ARGUMENT,
+            format!("{other:?} is not a bool"),
+        )),
+        None => Err(Status::new(code::INVALID_ARGUMENT, "a value is missing")),
     }
 }
 
-/// The value of `key=` in the args: the first line that starts with it.
-fn arg(args: &[u8], key: &str) -> Option<String> {
-    let prefix = format!("{key}=");
-    args.split(|byte| *byte == b'\n').find_map(|line| {
-        line.strip_prefix(prefix.as_bytes())
-            .map(|value| String::from_utf8_lossy(value).into_owned())
-    })
+/// The word at `index`, or a refusal naming what it should be.
+fn word(words: &[String], index: usize, what: &str) -> Result<String, Status> {
+    words
+        .get(index)
+        .cloned()
+        .ok_or_else(|| Status::new(code::INVALID_ARGUMENT, format!("missing {what}")))
 }
 
-fn required(args: &[u8], key: &str) -> Result<String, Status> {
-    arg(args, key).ok_or_else(|| Status::new(code::INVALID_ARGUMENT, format!("missing {key}=")))
-}
-
-fn slot_id(args: &[u8]) -> Result<String, Status> {
-    let id = required(args, "id")?;
+fn slot_id(words: &[String]) -> Result<String, Status> {
+    let id = word(words, 0, "a slot id")?;
     if valid_id(&id) {
         Ok(id)
     } else {
@@ -663,36 +904,63 @@ fn slot_id(args: &[u8]) -> Result<String, Status> {
     }
 }
 
-fn flag(args: &[u8], key: &str) -> bool {
-    arg(args, key).is_some_and(|value| value == "true")
+fn hex_bytes(text: &str) -> Result<Vec<u8>, Status> {
+    let bad = || Status::new(code::INVALID_ARGUMENT, format!("{text:?} is not hex bytes"));
+    if !text.len().is_multiple_of(2) || !text.is_ascii() {
+        return Err(bad());
+    }
+    (0..text.len())
+        .step_by(2)
+        .map(|at| u8::from_str_radix(&text[at..at + 2], 16).map_err(|_| bad()))
+        .collect()
+}
+
+fn hex_text(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+fn new_slot(verified: bundle::Verified) -> NewSlot {
+    NewSlot {
+        id: verified.id,
+        product: verified.product,
+        board: verified.board,
+        version: verified.version,
+        variant: verified.variant,
+        kernel: verified.kernel,
+        display_name: verified.display_name,
+        size: verified.size,
+        verity: verified.verity,
+        signed: verified.signed,
+    }
 }
 
 /// Applies a finished timed run to the board. Its output goes back to the caller.
 fn apply(model: &mut Model, name: &str, args: &[u8]) -> Result<Vec<u8>, Status> {
     let nothing = Vec::new();
+    let found = words(args);
     match name {
         names::SLOTS_LIST => Ok(model.slots.list_json().into_bytes()),
         names::SLOTS_SET_DEFAULT => model
             .slots
-            .set_default(&slot_id(args)?, flag(args, "force"))
+            .set_default(&slot_id(&found)?, flag(&found, 1).unwrap_or(false))
             .map(|()| nothing),
         names::SLOTS_TRIAL => model
             .slots
             .trial(
-                &slot_id(args)?,
-                flag(args, "keep_default"),
-                flag(args, "keep_old"),
-                flag(args, "force"),
+                &slot_id(&found)?,
+                flag(&found, 1)?,
+                flag(&found, 2)?,
+                flag(&found, 3)?,
             )
             .map(|()| nothing),
         names::SLOTS_CONFIRM => model.slots.confirm().map(|()| nothing),
-        names::SLOTS_REMOVE => model.slots.remove(&slot_id(args)?).map(|()| nothing),
+        names::SLOTS_REMOVE => model.slots.remove(&slot_id(&found)?).map(|()| nothing),
         names::SLOTS_PIN => model
             .slots
-            .pin(&slot_id(args)?, flag(args, "pinned"))
+            .pin(&slot_id(&found)?, flag(&found, 1)?)
             .map(|()| nothing),
         names::SLOTS_SET_KEEP => {
-            let keep: u32 = required(args, "keep")?
+            let keep: u32 = word(&found, 0, "keep")?
                 .parse()
                 .map_err(|_| Status::new(code::INVALID_ARGUMENT, "keep is not a number"))?;
             model.slots.set_keep(keep);
@@ -724,10 +992,13 @@ fn apply(model: &mut Model, name: &str, args: &[u8]) -> Result<Vec<u8>, Status> 
             }
             Ok(text.into_bytes())
         }
-        names::DATA_BACKUP => Ok(model.data_backup()),
-        names::DATA_RESTORE => model.data_restore(args).map(|()| nothing),
+        names::DATA_BACKUP => Ok(hex_text(&model.data_backup()).into_bytes()),
+        names::DATA_RESTORE => {
+            let blob = hex_bytes(&word(&found, 0, "a backup")?)?;
+            model.data_restore(&blob).map(|()| nothing)
+        }
         names::FS_LIST => {
-            let prefix = arg(args, "path").unwrap_or_default();
+            let prefix = found.first().cloned().unwrap_or_default();
             let mut text = String::new();
             for path in model.data.keys().filter(|path| path.starts_with(&prefix)) {
                 text.push_str(path);
@@ -736,25 +1007,21 @@ fn apply(model: &mut Model, name: &str, args: &[u8]) -> Result<Vec<u8>, Status> 
             Ok(text.into_bytes())
         }
         names::FS_READ => {
-            let path = required(args, "path")?;
+            let path = word(&found, 0, "a path")?;
             model
                 .data
                 .get(&path)
-                .cloned()
+                .map(|bytes| hex_text(bytes).into_bytes())
                 .ok_or_else(|| Status::new(code::NOT_FOUND, format!("there is no file {path}")))
         }
         names::FS_WRITE => {
-            let path = required(args, "path")?;
-            let body = args
-                .split(|byte| *byte == b'\n')
-                .skip(1)
-                .collect::<Vec<_>>()
-                .join(&b'\n');
+            let path = word(&found, 0, "a path")?;
+            let body = hex_bytes(found.get(1).map_or("", String::as_str))?;
             model.data.insert(path, body);
             Ok(nothing)
         }
         names::FS_REMOVE => {
-            let path = required(args, "path")?;
+            let path = word(&found, 0, "a path")?;
             match model.data.remove(&path) {
                 Some(_) => Ok(nothing),
                 None => Err(Status::new(

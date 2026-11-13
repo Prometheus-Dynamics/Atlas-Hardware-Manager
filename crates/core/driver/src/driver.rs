@@ -4,7 +4,21 @@ use serde::{Deserialize, Serialize};
 
 use crate::{DriverError, HealthCheck};
 
+/// Which device families a driver serves.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Serves {
+    /// One family. A device of this family on a link the driver handles is its device.
+    Family(Family),
+    /// Every family: the driver finds devices of any family on its links, and the family of
+    /// each comes from the [`Identity`] the driver reports.
+    Any,
+}
+
 /// Static description of a driver, used for matching and ranking.
+///
+/// For a driver that serves [`Serves::Any`], `family` is the driver's own label, not a device
+/// family: the scan names its work and events by it, so it must not be a family of any
+/// driver. The registry refuses a label that is another driver's family, and the reverse.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DriverManifest {
     pub family: Family,
@@ -28,6 +42,13 @@ impl DriverManifest {
 #[async_trait]
 pub trait Driver: Send + Sync {
     fn manifest(&self) -> &DriverManifest;
+
+    /// The families this driver serves. By default the family its manifest names. A driver that
+    /// serves every family returns [`Serves::Any`] and then every link kind its manifest lists
+    /// is its own, to be shared with no other any-family driver.
+    fn serves(&self) -> Serves {
+        Serves::Family(self.manifest().family.clone())
+    }
 
     /// Finds candidates on one link. Must return quickly; slow probing
     /// belongs in [`identify`](Self::identify).
