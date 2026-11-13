@@ -1,9 +1,9 @@
 # Rockchip RK35xx family: mainline Linux, U-Boot and TF-A, rkbin's DDR init
 # and maskrom loader. Boards extend this and keep only what differs: CPU,
 # device tree, U-Boot defconfig, TF-A platform, DDR blob and RKBOOT ini.
-# Pins are dev's (Linux 7.3.3, U-Boot v2026.10, TF-A v2.15.0) and rkbin
-# 3e288fe, where the RK3566 DDR blobs are v1.26. Untested on board, and the
-# rkbin pin is suspect: see the note in boards/radxa-zero-3e/board.toml.
+# Pins are dev's (Linux 7.3.3, U-Boot v2026.10, TF-A v2.15.0). The family pins
+# no boot blobs: each board names the rkbin commit and the blob versions it is
+# known to boot with, and says whether that was verified on hardware.
 version = 1
 
 [target]
@@ -21,12 +21,6 @@ ref = "v2026.10"
 [sources.tf-a]
 git = "https://github.com/ARM-software/arm-trusted-firmware.git"
 ref = "v2.15.0"
-
-# rkbin 3e288fe (master on 2026-11-13): the RK3566 DDR blobs are v1.26 there,
-# and the usbplug v1.17 and SPL v1.14 are unchanged from dev's f43a462.
-[sources.rkbin]
-git = "https://github.com/rockchip-linux/rkbin.git"
-ref = "3e288fe814e059dd06833495f845cab04ac20a5c"
 
 [kernel]
 source = "linux"
