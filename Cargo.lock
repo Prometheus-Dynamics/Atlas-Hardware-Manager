@@ -26,6 +26,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-board"
+version = "2026.1.0-dev"
+dependencies = [
+ "async-trait",
+ "atlas-driver",
+ "atlas-sim-node",
+ "atlas-types",
+ "orion",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-bundle"
 version = "2026.1.0-dev"
 dependencies = [
