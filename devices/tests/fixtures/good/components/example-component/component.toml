@@ -1,0 +1,19 @@
+# EXAMPLE, for scripts/check-devices.sh only. Not a device.
+# A component: a python package built into the image's data.
+version = 1
+name = "example-component"
+description = "Example component (fixture)"
+
+[sources.src]
+path = "src"
+
+[sources.wheels]
+path = "wheels"
+
+[build]
+builder = "python"
+source = "src"
+
+[build.settings]
+platform = ""
+interpreter = "/usr/bin/python3"
