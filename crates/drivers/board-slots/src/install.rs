@@ -52,7 +52,7 @@ use atlas_actions::{ActionError, ArgKind, BoardActions, CANCEL_CONFIRM, CancelSt
 use atlas_driver::DriverError;
 use atlas_files::{Push, PushKind, Stage as PushStage, submit as submit_push};
 use atlas_jobs::{DeviceClaim, DeviceHolds, Events, JobId, JobKind, JobTiming, Jobs};
-use atlas_session::{Handle, Sessions};
+use atlas_session::{Handle, Presence, Sessions};
 use atlas_slots::Stage;
 use atlas_types::DeviceKey;
 use orion::Address;
@@ -64,6 +64,8 @@ use crate::calls::{ACCEPT, INSTALL_FILE, short};
 
 /// The name the install job kind is saved under.
 pub const KIND: &str = "slot-install";
+/// What a step says when the board at the install's address is another board now.
+pub const REPLACED: &str = "the board at this address was replaced by another one";
 /// The sink a pushed bundle lands in (the board's `.incoming`), as the file name's prefix.
 // LOCK: Lemnos L1 (system.slots `.incoming` sink, I5e): the bridge's file sink for the device takes
 // this name; today's lock names the same directory, so the prefix is data to be checked at the lock move.
@@ -108,6 +110,9 @@ struct Spec {
     board: String,
     dest: String,
     starred: bool,
+    /// The node key the install was submitted to, when the node was connected then. Every step
+    /// checks the node still answers with it; another key ends the install (see `same_board`).
+    node_key: Option<[u8; 32]>,
     source: SavedSource,
 }
 
@@ -144,6 +149,8 @@ struct Run {
     call: Option<u64>,
     stage: Option<Stage>,
     cancel: Option<CancelState>,
+    /// The node key this install is on, recorded at its first contact when submit had none.
+    node_key: Option<[u8; 32]>,
 }
 
 /// Why a step stopped: wait and try again, or the job ends with these words.
@@ -495,9 +502,41 @@ impl InstallKind {
     ) -> Result<String, Step> {
         let (bundle, size) = self.ensure_bundle(spec).await?;
         self.check_board(spec, &bundle)?;
+        self.same_board(spec, handle)?;
         self.accept(spec, board, size).await?;
+        self.same_board(spec, handle)?;
         self.push(spec, handle, &bundle, size).await?;
+        self.same_board(spec, handle)?;
         self.install(spec, board).await
+    }
+
+    /// The board at the address must still be the one the install started on. A replacement
+    /// (another node key, or the monitor's `Replaced` presence) ends the install: nothing is sent
+    /// to another board, and nothing resumes on it. The first contact records the key when submit
+    /// had none. Presence is matched without a wildcard, so every state is named.
+    fn same_board(&self, spec: &Spec, handle: &Handle) -> Result<(), Step> {
+        match handle.presence() {
+            Presence::Replaced { .. } => return Err(Step::Settled(REPLACED.to_owned())),
+            Presence::Searching => return Err(Step::Wait("the node is not connected yet".into())),
+            Presence::Lost(reason) => return Err(Step::Wait(reason)),
+            Presence::Found(_) => {}
+        }
+        let Some(now) = handle.node_key() else {
+            return Err(Step::Wait(
+                "the node has not said which key it holds yet".into(),
+            ));
+        };
+        let expected = spec
+            .node_key
+            .or_else(|| self.with_run(&spec.nonce, |run| run.node_key));
+        match expected {
+            Some(expected) if expected != now => Err(Step::Settled(REPLACED.to_owned())),
+            Some(_) => Ok(()),
+            None => {
+                self.with(&spec.nonce, |run| run.node_key = Some(now));
+                Ok(())
+            }
+        }
     }
 }
 
@@ -668,12 +707,18 @@ impl SlotInstalls {
                 signing_key: encode_key(&signing_key),
             },
         };
+        let node_key = self
+            .kind
+            .sessions
+            .handle(address)
+            .and_then(|handle| handle.node_key());
         let spec = Spec {
             dest: format!("{PUSH_FILE_TAG}-{nonce}.tar"),
             nonce,
             address: address.to_string(),
             board: board.to_owned(),
             starred: request.starred,
+            node_key,
             source,
         };
         let text =

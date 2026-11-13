@@ -429,3 +429,64 @@ async fn the_signature_outcome_of_an_installed_slot_is_not_checked_when_unsigned
         atlas_slots::Reported::Known(BoardOutcome::NotCheckedUnsigned)
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_install_interrupted_by_a_replaced_board_ends_and_sends_nothing_to_the_other() {
+    let rig = Rig::start("replaced").await;
+    rig.node.hold_installs(true);
+    let path = write_bundle(
+        &rig.dir.join("bundles"),
+        "r.tar",
+        &bundle_bytes("slot-2", "2.0.0", None),
+    );
+    let job = rig
+        .installs
+        .submit(device(), &rig.address(), BOARD, true, request(path, false))
+        .await
+        .expect("queued");
+    until("the first board to start the install", || {
+        rig.node.runs_started(names::SLOTS_INSTALL_FILE) == 1
+    })
+    .await;
+    // The address now answers with another board: the first node goes away, and a different
+    // node (a new key, a new keys directory) answers on the same port.
+    let port = rig.node.network().port();
+    let dir = rig.dir.clone();
+    let Rig {
+        node,
+        relay,
+        installs,
+        ..
+    } = rig;
+    drop(node);
+    let replacement =
+        atlas_sim_node::SimNode::start_with(&dir.join("replacement"), &common::kind(), Some(port))
+            .expect("the replacement node starts on the same port");
+    // Keep the relay alive for the whole test.
+    let _relay = relay;
+    let ended = tokio::time::timeout(Duration::from_secs(20), async {
+        while !installs.stage(job).is_some_and(|stage| stage.is_final()) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await;
+    assert!(
+        ended.is_ok(),
+        "the install did not end: {:?}",
+        installs.stage(job)
+    );
+    match installs.stage(job) {
+        Some(Stage::Failed { reason }) => assert_eq!(reason, atlas_board_slots::install::REPLACED),
+        other => panic!("expected the replaced-board ending, got {other:?}"),
+    }
+    assert_eq!(
+        replacement.runs_started(names::SLOTS_ACCEPT),
+        0,
+        "nothing was sent to the other board"
+    );
+    assert_eq!(
+        replacement.runs_started(names::SLOTS_INSTALL_FILE),
+        0,
+        "nothing was installed on it"
+    );
+}
