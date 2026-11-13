@@ -15,12 +15,16 @@ use nusb::transfer::{
 };
 use nusb::{Device, DeviceId, DeviceInfo, Endpoint, ErrorKind, GetDescriptorError, Interface};
 
+use std::sync::Arc;
+use std::time::Duration;
+
 use crate::bus::UsbBus;
 use crate::gauge::{Gauges, Kind, Tracked};
 use crate::hotplug::HotplugEvent;
+use crate::link::LinkOptions;
 use crate::{
-    DeviceSummary, EndpointKind, EndpointSummary, InterfaceSummary, OpenOptions, Timeouts,
-    UsbError, UsbIo,
+    BulkRead, BulkWrite, DeviceSummary, EndpointKind, EndpointSummary, InterfaceSummary,
+    OpenOptions, Timeouts, UsbError, UsbIo,
 };
 
 /// The USB bus of this machine.
@@ -357,6 +361,37 @@ impl UsbIo for NusbIo {
         Ok(())
     }
 
+    fn into_halves(self: Box<Self>, options: &LinkOptions) -> Result<crate::Halves, UsbError> {
+        let NusbIo {
+            interface,
+            out,
+            input,
+            _tracked,
+            ..
+        } = *self;
+        let (Some(out), Some(input)) = (out, input) else {
+            return Err(UsbError::Protocol(
+                "a byte link needs both a bulk OUT and a bulk IN endpoint".into(),
+            ));
+        };
+        // The claim lives while any clone of `interface` does, so both halves
+        // hold one; the endpoint counts are shared the same way.
+        let tracked = Arc::new(_tracked);
+        let reader = NusbReadHalf {
+            _interface: interface.clone(),
+            input,
+            timeout: options.read_timeout,
+            _tracked: Arc::clone(&tracked),
+        };
+        let writer = NusbWriteHalf {
+            _interface: interface,
+            out,
+            timeout: options.write_timeout,
+            _tracked: tracked,
+        };
+        Ok((Box::new(reader), Box::new(writer)))
+    }
+
     async fn bulk_in(&mut self, max: usize) -> Result<Vec<u8>, UsbError> {
         if max == 0 {
             return Ok(Vec::new());
@@ -381,6 +416,124 @@ impl UsbIo for NusbIo {
         let mut data = completion.buffer.into_vec();
         data.truncate(completion.actual_len.min(max));
         Ok(data)
+    }
+}
+
+/// The read half of a split link. See [`BulkRead`].
+pub(crate) struct NusbReadHalf {
+    _interface: nusb::Interface,
+    input: Endpoint<Bulk, In>,
+    timeout: Option<Duration>,
+    _tracked: Arc<Tracked>,
+}
+
+#[async_trait]
+impl BulkRead for NusbReadHalf {
+    fn max_packet(&self) -> usize {
+        self.input.max_packet_size().max(1)
+    }
+
+    fn submit(&mut self) {
+        // One packet per transfer, so each completion carries what arrived.
+        let buffer = self.input.allocate(self.max_packet());
+        self.input.submit(buffer);
+    }
+
+    fn pending(&self) -> usize {
+        self.input.pending()
+    }
+
+    async fn cancel(&mut self) {
+        self.input.cancel_all();
+        while self.input.pending() > 0 {
+            let _ = self.input.next_complete().await;
+        }
+    }
+
+    async fn complete(&mut self) -> Result<Vec<u8>, UsbError> {
+        if self.input.pending() == 0 {
+            return Err(UsbError::Protocol("no IN transfer is queued".into()));
+        }
+        let completion = match self.timeout {
+            None => self.input.next_complete().await,
+            Some(wait) => match tokio::time::timeout(wait, self.input.next_complete()).await {
+                Ok(completion) => completion,
+                Err(_) => {
+                    // Cancel what is queued. A packet that arrived during the
+                    // cancel is kept, not dropped with the timeout.
+                    self.input.cancel_all();
+                    let mut kept = Vec::new();
+                    while self.input.pending() > 0 {
+                        let late = self.input.next_complete().await;
+                        if late.status.is_ok() {
+                            let mut data = late.buffer.into_vec();
+                            data.truncate(late.actual_len);
+                            kept.extend(data);
+                        }
+                    }
+                    return if kept.is_empty() {
+                        Err(UsbError::Timeout("a bulk read".into()))
+                    } else {
+                        Ok(kept)
+                    };
+                }
+            },
+        };
+        completion.status.map_err(transfer_error)?;
+        let mut data = completion.buffer.into_vec();
+        data.truncate(completion.actual_len);
+        Ok(data)
+    }
+}
+
+/// The write half of a split link. See [`BulkWrite`].
+pub(crate) struct NusbWriteHalf {
+    _interface: nusb::Interface,
+    out: Endpoint<Bulk, Out>,
+    timeout: Option<Duration>,
+    _tracked: Arc<Tracked>,
+}
+
+#[async_trait]
+impl BulkWrite for NusbWriteHalf {
+    fn max_packet(&self) -> usize {
+        self.out.max_packet_size().max(1)
+    }
+
+    fn submit(&mut self, data: Vec<u8>) {
+        self.out.submit(Buffer::from(data));
+    }
+
+    fn pending(&self) -> usize {
+        self.out.pending()
+    }
+
+    async fn complete(&mut self) -> Result<(), UsbError> {
+        if self.out.pending() == 0 {
+            return Err(UsbError::Protocol("no OUT transfer is queued".into()));
+        }
+        let completion = match self.timeout {
+            None => self.out.next_complete().await,
+            Some(wait) => match tokio::time::timeout(wait, self.out.next_complete()).await {
+                Ok(completion) => completion,
+                Err(_) => {
+                    self.out.cancel_all();
+                    while self.out.pending() > 0 {
+                        let _ = self.out.next_complete().await;
+                    }
+                    return Err(UsbError::Timeout("a bulk write".into()));
+                }
+            },
+        };
+        completion.status.map_err(transfer_error)?;
+        if completion.actual_len != completion.buffer.len() {
+            return Err(UsbError::Protocol(format!(
+                "took {} of {} bytes",
+                completion.actual_len,
+                completion.buffer.len()
+            )));
+        }
+        Ok(())
     }
 }
 
