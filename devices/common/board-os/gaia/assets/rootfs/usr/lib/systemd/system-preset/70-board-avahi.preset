@@ -1,3 +1,0 @@
-# avahi.toml: mDNS through avahi-daemon.
-enable avahi-daemon.service
-enable avahi-daemon.socket

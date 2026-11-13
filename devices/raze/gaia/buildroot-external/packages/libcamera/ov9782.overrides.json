@@ -1,9 +1,0 @@
-{
-  "algorithms": [
-    {
-      "rpi.black_level": {
-        "black_level": 4096
-      }
-    }
-  ]
-}

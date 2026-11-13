@@ -1,7 +1,0 @@
-[toolchain]
-channel = "1.99.0"
-components = ["rustfmt", "clippy"]
-# Static device binaries: the SystemCore's USB agent
-# (scripts/build-usb-agent-ipk.sh, aarch64), and the new boards' atlas-ubi and
-# board-lite (aarch64 ROCK 5C and 4D, armv7 Luckfox, riscv64 K230D).
-targets = ["aarch64-unknown-linux-musl", "armv7-unknown-linux-musleabihf", "riscv64gc-unknown-linux-musl"]

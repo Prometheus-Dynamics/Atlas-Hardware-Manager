@@ -1,5 +1,0 @@
-node_modules
-/build
-/.svelte-kit
-src-tauri/gen
-src-tauri/binaries

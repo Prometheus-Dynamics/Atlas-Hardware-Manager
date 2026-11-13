@@ -1,2 +1,0 @@
-name: RAZE_DEVICE
-desc: Raze device package (board contract 1): OV9782 kernel extension, libcamera/libpisp/rpi-firmware overrides, rpi-utils (vcgencmd)

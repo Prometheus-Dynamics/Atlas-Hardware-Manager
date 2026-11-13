@@ -1,4 +1,0 @@
-# A test that hangs fails after five minutes with its name, instead of
-# holding a CI job until the job's own timeout (45 min on macOS once).
-[profile.default]
-slow-timeout = { period = "60s", terminate-after = 5 }

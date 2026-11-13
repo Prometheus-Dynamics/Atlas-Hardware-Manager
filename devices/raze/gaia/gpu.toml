@@ -1,3 +1,0 @@
-# The CM5's GPU stack is the family's.
-config = 3
-imports = ["../../families/rpi-bcm2712/gaia/gpu.toml"]

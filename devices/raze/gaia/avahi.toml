@@ -1,5 +1,0 @@
-# Optional: mDNS through avahi-daemon instead of systemd-resolved, for an OS
-# whose programs use libavahi-client. Import after device.toml; the layer is
-# every board's (devices/common/board-os/gaia/avahi.toml).
-config = 3
-imports = ["../../common/board-os/gaia/avahi.toml"]
