@@ -1,0 +1,17 @@
+{
+  "about": "Keys Atlas trusts to sign image files: a minisign signature <file>.minisig next to the file. Each key carries who owns it. Add a key here (or in your own trusted-keys.json, see src/trust.rs); no code change is needed.",
+  "keys": [
+    {
+      "name": "Prometheus Dynamics dev/example key",
+      "kind": "minisign",
+      "key_id": "1AB01E429EDCEAA6",
+      "public_key": "RWSm6tyeQh6wGqsOhGIIpai3PG7URPK1okXdZUqr1CoiLOH6pB+xuDC4",
+      "owner": "Prometheus Dynamics",
+      "contact": "https://github.com/Prometheus-Dynamics/Atlas-Hardware-Manager",
+      "purpose": "dev",
+      "created": "2026-11-02",
+      "expires": "2027-11-02",
+      "note": "Signs dev builds of HeliOS and PhotonVision. Not for production: its private key is unencrypted on developer machines."
+    }
+  ]
+}
