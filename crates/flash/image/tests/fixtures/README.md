@@ -5,11 +5,12 @@ e2fsprogs (`mke2fs 1.47.3`) and no root. It is the real form's data partition in
 Lemnos's layout, for two slots:
 
 - `slots/alpha.erofs`: 20480 bytes (four 4 KiB data blocks, then one tree block).
-- `slots/alpha.json`: the manifest (`schema` 2, `image.size`, `image.sha256`,
-  `verity.root_hash`, `boot.files`).
+- `slots/alpha.json`: the manifest (`schema` 3, `image.size`, `image.sha256`,
+  `verity.root_hash`, `verity.salt`, `verity.data_blocks`, `verity.hash_offset`,
+  `boot.files`).
 - `slots/alpha.boot`: the boot list, `sha256sum -c` form, including `slot.json`.
-- `slots/beta.*`: the same shape for a second slot (8192 bytes), so a read of one
-  slot is checked not to mix in the other.
+- `slots/beta.*`: a second slot of one data block and no tree (4096 bytes), so a read of
+  one slot is checked not to mix in the other.
 - `slots/bootfiles/<sha256>`: the boot files by content: `Image`, `board.dtb`,
   `initramfs.cpio.gz`, `cmdline.txt`, `overlays/one.dtbo`, and the manifest bytes
   (`slot.json`).

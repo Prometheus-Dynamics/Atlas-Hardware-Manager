@@ -1,16 +1,18 @@
 //! The seam between a first-flash image and the bundle writer.
 //!
-//! The writer needs four things from the image: the slot's verity table
-//! (Gaia's `verity.table` text), the slot's EROFS file with its hash tree
-//! appended, and the boot files that go with it. Each stream is read from
+//! The writer needs four things from the image: the slot's four verity values
+//! (`verity.root_hash`, `verity.salt`, `verity.data_blocks`, `verity.hash_offset`),
+//! the slot's EROFS file with its hash tree appended, and the boot files that go
+//! with it. Each stream is read from
 //! its start every time it is asked for: the writer reads the rootfs and
 //! the boot files twice (once to hash them into `slot.json`, once to write
 //! them into the tar), so a source must give the same bytes both times.
 //!
-//! The real source (a streaming xz decoder and a read-only ext4 and FAT
-//! reader over a bounded window) is blocked on Gaia X3; see the crate docs.
+//! The real source is [`crate::ImageSource`], over `atlas-image`'s slot.
 
 use std::io::Read;
+
+use atlas_image::Verity;
 
 use crate::BundleError;
 
@@ -24,11 +26,12 @@ pub struct BootFile {
 
 /// One slot of a first-flash image.
 pub trait SlotSource {
-    /// The slot's verity table: Gaia's `verity.table` text.
-    fn verity_table(&self) -> Result<String, BundleError>;
+    /// The slot's four verity values. The writer checks their layout and that the
+    /// data gives the root hash; it does not trust the root because it is given.
+    fn verity(&self) -> Result<Verity, BundleError>;
 
-    /// The slot's file, read from its first byte: the EROFS image padded to
-    /// whole 4 KiB blocks, then the dm-verity tree appended.
+    /// The slot's file, read from its first byte: the data (`data_blocks` blocks),
+    /// then the dm-verity tree appended.
     fn rootfs(&self) -> Result<Box<dyn Read + '_>, BundleError>;
 
     /// The boot files of the slot (kernel, device trees, initramfs,

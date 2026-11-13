@@ -2,9 +2,11 @@
 //!
 //! The members come in the writer's order: `slot.json`, `slot.sig`,
 //! `rootfs.erofs`, then `boot/` files. `slot.json` is checked against the
-//! trusted keys before any of its fields is believed; then the rootfs and each
-//! boot file are hashed against the manifest. A member the manifest does not
-//! list, a link, a directory, or a missing file is refused.
+//! trusted keys before any of its fields is believed (so a schema 2 manifest
+//! is refused by name only when it is signed by a trusted key); then it is
+//! parsed as schema 3, and the rootfs and each boot file are hashed against
+//! the manifest. A member the manifest does not list, a link, a directory, or
+//! a missing file is refused.
 
 use std::collections::BTreeSet;
 use std::io::Read;
@@ -26,6 +28,26 @@ pub struct Inspected {
     pub manifest: SlotManifest,
     /// The index in the keys given of the key that signed `slot.json`.
     pub signer: usize,
+    /// The board the slot was built for (`slot.json`'s `board`).
+    pub board: String,
+    /// The product the slot is of (`slot.json`'s `product`).
+    pub product: String,
+    /// The OS version the slot carries (`slot.json`'s `version`).
+    pub version: String,
+}
+
+/// Refuses a slot built for another board. `bundle_board` is the bundle's
+/// `board`, `target` the board the installer would push to. Both names are in
+/// the error. Call this before anything is pushed.
+pub fn check_board(bundle_board: &str, target: &str) -> Result<(), BundleError> {
+    if bundle_board == target {
+        Ok(())
+    } else {
+        Err(BundleError::BoardMismatch {
+            bundle: bundle_board.to_string(),
+            target: target.to_string(),
+        })
+    }
 }
 
 /// Reads a whole bundle from `reader` and checks it against `keys`.
@@ -79,10 +101,7 @@ pub fn inspect_bundle<R: Read>(reader: R, keys: &[PublicKey]) -> Result<Inspecte
                 }
                 read_exact_len(&mut entry, &mut signature, size, SLOT_SIG)?;
                 signer = verify_slot(&json, &signature, keys)?;
-                let parsed: SlotManifest = serde_json::from_slice(&json)
-                    .map_err(|error| malformed(format!("slot.json: {error}")))?;
-                parsed.validate()?;
-                manifest = Some(parsed);
+                manifest = Some(SlotManifest::parse(&json)?);
             }
             _ => {
                 let Some(manifest) = manifest.as_ref() else {
@@ -131,7 +150,13 @@ pub fn inspect_bundle<R: Read>(reader: R, keys: &[PublicKey]) -> Result<Inspecte
     {
         return Err(malformed(format!("boot/{missing} is missing")));
     }
-    Ok(Inspected { manifest, signer })
+    Ok(Inspected {
+        board: manifest.board.clone(),
+        product: manifest.product.clone(),
+        version: manifest.version.clone(),
+        manifest,
+        signer,
+    })
 }
 
 fn malformed(message: String) -> BundleError {

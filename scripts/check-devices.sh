@@ -6,7 +6,7 @@
 #   scripts/check-devices.sh --root DIR    check another tree laid out like devices/ (no self-check)
 #   scripts/check-devices.sh --write-locks regenerate every product's committed gaia.lock, then check
 #                                          (with --root DIR, the same for that tree)
-#   scripts/check-devices.sh --self-test   the verbose form: both good fixtures must pass, broken must
+#   scripts/check-devices.sh --self-test   the verbose form: the good fixtures must pass, broken must
 #                                          fail
 #
 # The Gaia commit is read from devices/gaia.lock. The gaia binary is $GAIA_BIN when set (used as
@@ -52,7 +52,7 @@ fixtures=$repo/devices/tests/fixtures
 
 if [[ $mode == self-test ]]; then
   status=0
-  for good in good good-f8; do
+  for good in good good-f8 good-rust; do
     echo "== $good fixture: must pass"
     "$self" --root "$fixtures/$good" || { echo "check-devices: self-test: $good fixture did not pass" >&2; status=1; }
   done
@@ -140,6 +140,16 @@ if ! command -v veritysetup >/dev/null 2>&1; then
   chmod +x "$stand_in_dir/veritysetup"
   tool_args+=(--tool "veritysetup=$stand_in_dir/veritysetup")
   echo "check-devices: NOTE veritysetup is not installed; planning uses a stand-in (a real build needs cryptsetup)"
+fi
+# The rust builder names bwrap, and gaia plan fails without it on PATH ("needs its input `bwrap`")
+# even though planning never runs it. Where it isn't installed, planning gets a stand-in, as
+# veritysetup does above; a build of a Rust component needs the real one (bubblewrap).
+if ! command -v bwrap >/dev/null 2>&1; then
+  stand_in_dir=${stand_in_dir:-$(mktemp -d)}
+  printf '#!/bin/sh\necho "bwrap stand-in: planning only" >&2\nexit 1\n' > "$stand_in_dir/bwrap"
+  chmod +x "$stand_in_dir/bwrap"
+  tool_args+=(--tool "bwrap=$stand_in_dir/bwrap")
+  echo "check-devices: NOTE bwrap is not installed; planning uses a stand-in (a build of a Rust component needs bubblewrap)"
 fi
 
 # ---- which commands: validate when gaia has it (and plan always), else plan ----
@@ -255,7 +265,30 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
     validate_file product "$product"
   fi
   lockfile=$locks/$(echo "$product" | tr '/' '_').lock
-  if ! "$gaia" lock "$product" --lock "$lockfile" >"$errs" 2>&1; then
+  # gaia lock asks the network where each source's ref points. A host being
+  # unreachable says nothing about the description, so it is retried, and if
+  # it stays unreachable the committed lock is planned as it is and the
+  # freshness comparison is skipped, out loud.
+  lock_ok=0
+  offline=0
+  for attempt in 1 2 3; do
+    if "$gaia" lock "$product" --lock "$lockfile" >"$errs" 2>&1; then
+      lock_ok=1
+      break
+    fi
+    if grep -qiE 'unable to access|could not resolve|failed to connect|could not connect|timed out|connection reset|temporary failure' "$errs"; then
+      offline=1
+      sleep $((attempt * 5))
+    else
+      offline=0
+      break
+    fi
+  done
+  if [[ $lock_ok -eq 0 && $offline -eq 1 && $write_locks -eq 0 && -f $committed ]]; then
+    echo "check-devices: NOTE $product: a source host was unreachable, so its gaia.lock was not compared with a fresh one:"
+    sed 's/^/  /' "$errs"
+    cp "$committed" "$lockfile"
+  elif [[ $lock_ok -eq 0 ]]; then
     bad "$product: gaia lock failed:"
     sed 's/^/  /' "$errs" >&2
     continue
@@ -289,7 +322,7 @@ echo "check-devices: passed ($nf families, $nb boards, $nc components, $np produ
 # pass and the broken one must fail. Not run for --root, which names a tree to check alone.
 if [[ $root_given -eq 0 ]]; then
   out=$(mktemp)
-  for good in good good-f8; do
+  for good in good good-f8 good-rust; do
     if ! "$self" --root "$fixtures/$good" >"$out" 2>&1; then
       cat "$out" >&2; die "self-check: the $good fixture no longer passes"
     fi

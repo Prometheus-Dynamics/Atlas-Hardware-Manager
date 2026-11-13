@@ -47,6 +47,9 @@ reference, and nothing here changes it. Read [`docs/design.md`](docs/design.md) 
   carried from `dev` has its own reason written beside it (a comment, or a line in the PR text),
   or it does not come over. This applies to board files above all: rootfs files, env files, udev
   rules, `config.txt` lines, kernel fragments.
+- A boot blob (DDR init, loader, firmware) is pinned to a commit whose version is known to boot
+  that board, and the board file says which version and whether it was verified on hardware.
+  Never track a moving branch. Never bump a blob without a board run.
 - Board, product and module names appear only under `devices/` and in tests. Code reads them as
   data.
 - No driver depends on another driver. One capability set, in the driver contract.
