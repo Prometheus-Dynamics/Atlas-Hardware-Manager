@@ -130,7 +130,7 @@ impl<'a> Fel<'a> {
 
     /// FEL_DOWNLOAD: `data` to `address`, one message and one data stage
     /// per 64 KiB, each followed by its status read.
-    pub async fn write(&mut self, address: u32, data: &[u8]) -> Result<(), UsbError> {
+    pub(crate) async fn write(&mut self, address: u32, data: &[u8]) -> Result<(), UsbError> {
         let mut at = address;
         for chunk in data.chunks(MAX_TRANSFER) {
             self.command("download", &message(cmd::DOWNLOAD, at, chunk.len() as u32))
@@ -144,7 +144,7 @@ impl<'a> Fel<'a> {
 
     /// FEL_RUN: jumps to `address`. The next command is served once the
     /// code returns (the FEL loop resumes), or the device has gone.
-    pub async fn run(&mut self, address: u32) -> Result<(), UsbError> {
+    pub(crate) async fn run(&mut self, address: u32) -> Result<(), UsbError> {
         self.command("run", &message(cmd::RUN, address, 0)).await
     }
 }
