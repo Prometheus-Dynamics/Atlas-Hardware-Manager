@@ -4,8 +4,7 @@
 #![allow(dead_code)]
 
 use std::fs::{self, File};
-use std::io;
-use std::os::unix::fs::FileExt;
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -89,7 +88,8 @@ impl Target for FileTarget {
     }
 
     fn write_at(&mut self, offset: u64, data: &[u8]) -> io::Result<()> {
-        self.file.write_all_at(data, offset)
+        self.file.seek(SeekFrom::Start(offset))?;
+        self.file.write_all(data)
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -97,7 +97,8 @@ impl Target for FileTarget {
     }
 
     fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<()> {
-        self.file.read_exact_at(buf, offset)
+        self.file.seek(SeekFrom::Start(offset))?;
+        self.file.read_exact(buf)
     }
 
     fn reattach(&mut self) -> Result<(), String> {
