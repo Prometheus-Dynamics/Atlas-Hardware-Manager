@@ -1,4 +1,4 @@
-# EXAMPLE in Gaia's F8 format (fixture). Not a device.
+# EXAMPLE in Gaia F8 form, as Gaia 70a5133 reads it (fixture). Not a device.
 version = 1
 name = "f8-product"
 
@@ -8,5 +8,5 @@ path = "sources/kernel"
 [[images]]
 name = "f8-product"
 board = "../../boards/example-board/board.toml"
-recipe = "slot"
+recipe = "firmware"
 os = { provider = "buildroot", source = "kernel", fragments = ["fragments/os.fragment"] }
