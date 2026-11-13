@@ -1,0 +1,6 @@
+# ROCK 5C only (PR B16). Its device tree enables the RK3588 AV1 video decoder and that decoder's IOMMU
+# (rk3588s-rock-5c.dts: iommu@fdca0000, compatible "rockchip,rk3588-av1-iommu", "verisilicon,iommu-1.2").
+# The IOMMU is the VSI_IOMMU driver, off in the arm64 defconfig and off in the family trim; the ZERO 3E and
+# ROCK 4D trees enable no Verisilicon IOMMU, so this line is the board's own, not the family's.
+# CONFIG_VSI_IOMMU: the Verisilicon IOMMU (depends on ARCH_ROCKCHIP && ARM64; selects IOMMU_API).
+CONFIG_VSI_IOMMU=y

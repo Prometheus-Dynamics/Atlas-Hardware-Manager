@@ -1,3 +1,6 @@
+// REMOVE when Gaia's generator step lands (PR B16): Lemnos's generated overlay (lemnos-ctl tree) is merged
+// into the board's dtb by Gaia with fdtoverlay, and this hand-written gadget DTS is replaced by that overlay.
+// Kept until then: the bring-up's gadget port depends on it.
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 // The ZERO 3E with its USB 2.0 OTG port (usb_host0_xhci) as a USB device, so
 // the gadget can be a network function. Carried from dev's gadget DTS.

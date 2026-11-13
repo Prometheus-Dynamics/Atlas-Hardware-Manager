@@ -132,3 +132,23 @@ BR2_TARGET_ARM_TRUSTED_FIRMWARE_IMAGES="bl31/bl31.elf"
 BR2_TARGET_UBOOT_NEEDS_ATF_BL31_ELF=y
 BR2_TARGET_UBOOT_FORMAT_CUSTOM=y
 BR2_TARGET_UBOOT_FORMAT_CUSTOM_NAME="u-boot-rockchip.bin"
+
+# ---- Stripping (PR B16). Gaia's OS config starts from allnoconfig, where a bool's default does not
+# apply: Buildroot's BR2_STRIP_strip (default y, depends on BR2_BINFMT_ELF) is OFF unless set here.
+# It strips the target's binaries and libraries, and it also sets the kernel modules' install strip
+# (linux.mk: INSTALL_MOD_STRIP=1 follows BR2_STRIP_strip). BR2_BINFMT_ELF is written out too: the
+# ELF format is a choice whose default follows the MMU, so it is not left to that default.
+BR2_BINFMT_ELF=y
+BR2_STRIP_strip=y
+
+# ---- Kernel in the root tree (PR B16). The bring-up form boots by extlinux from the rootfs partition, whose
+# kernel line is /boot/Image (components/*-extlinux/extlinux.conf). Buildroot puts /boot/Image in the target only
+# with this option, which is off by default and off in allnoconfig; Gaia's own zero-3e-demo sets it the same way
+# (examples/products/zero-3e-demo/os.fragment, Gaia 4abf626). Without it the bring-up product has no kernel to boot.
+# The same tree is also the root slot's EROFS file, so the copy also sits in the slot: see docs/prs/B16.md.
+BR2_LINUX_KERNEL_INSTALL_TARGET=y
+
+# ---- Device tree overlay symbols (PR B16). The dtbs are built with symbols (dtc -@, Buildroot's DTC_FLAGS=-@),
+# so an overlay (Lemnos's generated overlay, merged by Gaia with fdtoverlay) can name the board's nodes. Off in
+# allnoconfig; set here. Measured: the ZERO 3E gadget dtb 55,678 -> 115,100 bytes with symbols (host dtc 1.8.1).
+BR2_LINUX_KERNEL_DTB_OVERLAY_SUPPORT=y
