@@ -17,13 +17,27 @@ use std::collections::{HashMap, VecDeque};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::task::{Context, Poll};
-use tokio::sync::mpsc;
+use std::time::Duration;
+use tokio::sync::{Notify, mpsc};
 
 use crate::bus::UsbBus;
 use crate::gauge::{Gauges, Kind, Tracked};
 use crate::hotplug::HotplugEvent;
+use crate::link::LinkOptions;
 use crate::record::{Record, Transfer};
-use crate::{DeviceSummary, InterfaceSummary, OpenOptions, Timeouts, UsbError, UsbIo};
+use crate::{
+    BulkRead, BulkWrite, DeviceSummary, EndpointDirection, InterfaceSummary, OpenOptions, Timeouts,
+    UsbError, UsbIo,
+};
+
+/// Bytes in one simulated bulk packet. A real high-speed bulk endpoint's
+/// packet size; the link halves ask for it in every IN transfer.
+pub const SIM_PACKET_BYTES: usize = 512;
+
+/// Bytes a simulated link buffers in each direction before the sender must
+/// wait. A device's endpoint buffer is bounded, so the sender waits for the
+/// other side to read; this bound is what keeps memory bounded in the tests.
+pub const SIM_BUFFER_BYTES: usize = 8 * 1024;
 
 /// How a simulated device answers the requests for its interface strings.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -66,6 +80,7 @@ struct Slot {
     interfaces: Vec<InterfaceSummary>,
     string_requests: StringRequests,
     claimed: Vec<u8>,
+    pipe: Arc<Pipe>,
 }
 
 #[derive(Debug, Default)]
@@ -82,7 +97,9 @@ impl State {
     }
 
     fn remove(&mut self, location: &str) -> bool {
-        if self.slots.remove(location).is_some() {
+        if let Some(slot) = self.slots.remove(location) {
+            // Handles on the old enumeration, and the peer, see the unplug.
+            slot.pipe.close();
             self.announce(HotplugEvent::Detached {
                 location: location.to_string(),
             });
@@ -136,6 +153,7 @@ impl SimBus {
                 interfaces: Vec::new(),
                 string_requests: StringRequests::Answer,
                 claimed: Vec::new(),
+                pipe: Arc::new(Pipe::new()),
             },
         );
         state.announce(HotplugEvent::Attached(summary));
@@ -205,6 +223,14 @@ impl SimBus {
             .get(location)
             .map(|slot| slot.records.clone())
             .unwrap_or_default()
+    }
+
+    /// The peer end of the bulk link on the device at `location`: what the
+    /// board side sends and receives. `None` if no device is there.
+    pub fn peer(&self, location: &str) -> Option<SimPeer> {
+        lock(&self.state).slots.get(location).map(|slot| SimPeer {
+            pipe: Arc::clone(&slot.pipe),
+        })
     }
 
     /// Hotplug events from now on.
@@ -287,7 +313,7 @@ impl UsbBus for SimBus {
         location: &str,
         options: &OpenOptions,
     ) -> Result<Box<dyn UsbIo>, UsbError> {
-        let generation = {
+        let (generation, pipe) = {
             let mut state = lock(&self.state);
             let slot = state
                 .slots
@@ -307,13 +333,14 @@ impl UsbBus for SimBus {
                 let number = chosen.number;
                 slot.claimed.push(number);
             }
-            slot.generation
+            (slot.generation, Arc::clone(&slot.pipe))
         };
         let io: Box<dyn UsbIo> = Box::new(SimIo {
             state: Arc::clone(&self.state),
             location: location.to_string(),
             generation,
             timeouts: options.timeouts,
+            pipe,
             _tracked: Tracked::new(&self.gauges, Kind::Device),
         });
         Ok(io)
@@ -340,6 +367,7 @@ pub struct SimIo {
     location: String,
     generation: u64,
     timeouts: Timeouts,
+    pipe: Arc<Pipe>,
     _tracked: Tracked,
 }
 
@@ -434,6 +462,24 @@ fn short_write(took: usize, transfer: &Transfer) -> Result<Vec<u8>, UsbError> {
 
 #[async_trait]
 impl UsbIo for SimIo {
+    fn into_halves(self: Box<Self>, options: &LinkOptions) -> Result<crate::Halves, UsbError> {
+        let SimIo { pipe, _tracked, .. } = *self;
+        let tracked = Arc::new(_tracked);
+        let reader = SimReadHalf {
+            pipe: Arc::clone(&pipe),
+            queued: 0,
+            timeout: options.read_timeout,
+            _tracked: Arc::clone(&tracked),
+        };
+        let writer = SimWriteHalf {
+            pipe,
+            queue: VecDeque::new(),
+            timeout: options.write_timeout,
+            _tracked: tracked,
+        };
+        Ok((Box::new(reader), Box::new(writer)))
+    }
+
     async fn control_out(
         &mut self,
         request: u8,
@@ -473,6 +519,275 @@ impl UsbIo for SimIo {
 
     async fn bulk_in(&mut self, max: usize) -> Result<Vec<u8>, UsbError> {
         self.run(Transfer::BulkIn { max }).await
+    }
+}
+
+/// The state of one simulated bulk link. `to_pc` holds what the peer sent,
+/// as USB packets, and `to_board` what the PC wrote. A device that is
+/// unplugged closes it: every waiter wakes and fails with the gone kind.
+#[derive(Debug)]
+pub(crate) struct Pipe {
+    state: Mutex<PipeState>,
+    changed: Notify,
+}
+
+#[derive(Debug, Default)]
+struct PipeState {
+    gone: bool,
+    stall_in: bool,
+    stall_out: bool,
+    to_pc: VecDeque<Vec<u8>>,
+    to_pc_bytes: usize,
+    to_board: VecDeque<Vec<u8>>,
+    to_board_bytes: usize,
+}
+
+impl Pipe {
+    fn new() -> Self {
+        Self {
+            state: Mutex::new(PipeState::default()),
+            changed: Notify::new(),
+        }
+    }
+
+    fn close(&self) {
+        lock_pipe(self).gone = true;
+        self.changed.notify_waiters();
+    }
+}
+
+fn lock_pipe(pipe: &Pipe) -> MutexGuard<'_, PipeState> {
+    pipe.state.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Waits until `ready` returns `Some`. It sees the unplug, and any stall, as
+/// errors. Cancel-safe: `ready` only looks, and changes nothing until it
+/// returns `Some`.
+async fn wait_until<T>(
+    pipe: &Pipe,
+    mut ready: impl FnMut(&mut PipeState) -> Result<Option<T>, UsbError>,
+) -> Result<T, UsbError> {
+    loop {
+        // Made before the check, so a change between the check and the wait
+        // is not missed.
+        let changed = pipe.changed.notified();
+        {
+            let mut state = lock_pipe(pipe);
+            if state.gone {
+                return Err(UsbError::Disconnected);
+            }
+            if let Some(value) = ready(&mut state)? {
+                return Ok(value);
+            }
+        }
+        changed.await;
+    }
+}
+
+/// How many queued packets make one IN transfer that asks for `max` bytes,
+/// if they are all there: a short packet ends a transfer, and so does `max`.
+fn read_ready(state: &PipeState, max: usize) -> Option<usize> {
+    let mut total = 0;
+    for (count, packet) in state.to_pc.iter().enumerate() {
+        total += packet.len();
+        if packet.len() < SIM_PACKET_BYTES || total >= max {
+            return Some(count + 1);
+        }
+    }
+    None
+}
+
+/// The read half of a simulated link.
+#[derive(Debug)]
+pub(crate) struct SimReadHalf {
+    pipe: Arc<Pipe>,
+    queued: usize,
+    timeout: Option<Duration>,
+    _tracked: Arc<Tracked>,
+}
+
+#[async_trait]
+impl BulkRead for SimReadHalf {
+    fn max_packet(&self) -> usize {
+        SIM_PACKET_BYTES
+    }
+
+    fn submit(&mut self) {
+        self.queued += 1;
+    }
+
+    fn pending(&self) -> usize {
+        self.queued
+    }
+
+    async fn cancel(&mut self) {
+        self.queued = 0;
+    }
+
+    async fn complete(&mut self) -> Result<Vec<u8>, UsbError> {
+        let pipe = Arc::clone(&self.pipe);
+        let wait = wait_until(&pipe, |state| {
+            if state.stall_in {
+                return Err(UsbError::Stall);
+            }
+            Ok(read_ready(state, SIM_PACKET_BYTES).map(|count| {
+                let mut bytes = Vec::new();
+                for packet in state.to_pc.drain(..count) {
+                    state.to_pc_bytes -= packet.len();
+                    bytes.extend(packet);
+                }
+                bytes
+            }))
+        });
+        let outcome = match self.timeout {
+            None => wait.await,
+            Some(limit) => match tokio::time::timeout(limit, wait).await {
+                Ok(outcome) => outcome,
+                Err(_) => {
+                    // Nothing is taken until a transfer completes, so a
+                    // timeout loses no bytes.
+                    self.queued = 0;
+                    return Err(UsbError::Timeout("a bulk read".into()));
+                }
+            },
+        };
+        self.queued = self.queued.saturating_sub(1);
+        if outcome.is_ok() {
+            self.pipe.changed.notify_waiters();
+        }
+        outcome
+    }
+}
+
+/// The write half of a simulated link. A queued transfer reaches the board's
+/// side when there is room for it in [`SIM_BUFFER_BYTES`].
+#[derive(Debug)]
+pub(crate) struct SimWriteHalf {
+    pipe: Arc<Pipe>,
+    queue: VecDeque<Vec<u8>>,
+    timeout: Option<Duration>,
+    _tracked: Arc<Tracked>,
+}
+
+#[async_trait]
+impl BulkWrite for SimWriteHalf {
+    fn max_packet(&self) -> usize {
+        SIM_PACKET_BYTES
+    }
+
+    fn submit(&mut self, data: Vec<u8>) {
+        self.queue.push_back(data);
+    }
+
+    fn pending(&self) -> usize {
+        self.queue.len()
+    }
+
+    async fn complete(&mut self) -> Result<(), UsbError> {
+        let Some(front) = self.queue.front() else {
+            return Err(UsbError::Protocol("no OUT transfer is queued".into()));
+        };
+        let len = front.len();
+        let pipe = Arc::clone(&self.pipe);
+        let wait = wait_until(&pipe, |state| {
+            if state.stall_out {
+                return Err(UsbError::Stall);
+            }
+            if state.to_board_bytes >= SIM_BUFFER_BYTES {
+                return Ok(None);
+            }
+            Ok(Some(()))
+        });
+        let outcome = match self.timeout {
+            None => wait.await,
+            Some(limit) => match tokio::time::timeout(limit, wait).await {
+                Ok(outcome) => outcome,
+                Err(_) => {
+                    self.queue.clear();
+                    return Err(UsbError::Timeout("a bulk write".into()));
+                }
+            },
+        };
+        let Some(data) = self.queue.pop_front() else {
+            return Err(UsbError::Protocol("no OUT transfer is queued".into()));
+        };
+        outcome?;
+        {
+            let mut state = lock_pipe(&pipe);
+            if data.is_empty() {
+                state.to_board.push_back(Vec::new());
+            }
+            for packet in data.chunks(SIM_PACKET_BYTES) {
+                state.to_board.push_back(packet.to_vec());
+            }
+            state.to_board_bytes += len;
+        }
+        pipe.changed.notify_waiters();
+        Ok(())
+    }
+}
+
+/// The board's end of a simulated link. The test holds it while the PC side
+/// runs: it sends packets the PC reads, and reads the packets the PC wrote,
+/// with their boundaries as they were on the bus.
+#[derive(Clone, Debug)]
+pub struct SimPeer {
+    pipe: Arc<Pipe>,
+}
+
+impl SimPeer {
+    /// Sends one packet to the PC. At most [`SIM_PACKET_BYTES`]; a shorter
+    /// packet ends the IN transfer that carries it, and an empty one is a
+    /// zero-length packet. Waits while [`SIM_BUFFER_BYTES`] of packets wait
+    /// unread.
+    pub async fn send_packet(&self, bytes: &[u8]) -> Result<(), UsbError> {
+        if bytes.len() > SIM_PACKET_BYTES {
+            return Err(UsbError::Protocol(format!(
+                "a packet is at most {SIM_PACKET_BYTES} bytes, got {}",
+                bytes.len()
+            )));
+        }
+        wait_until(&self.pipe, |state| {
+            Ok((state.to_pc_bytes < SIM_BUFFER_BYTES).then_some(()))
+        })
+        .await?;
+        let mut state = lock_pipe(&self.pipe);
+        state.to_pc_bytes += bytes.len();
+        state.to_pc.push_back(bytes.to_vec());
+        drop(state);
+        self.pipe.changed.notify_waiters();
+        Ok(())
+    }
+
+    /// The next packet the PC wrote, exactly as it was sent. `None` once the
+    /// device is gone.
+    pub async fn recv_packet(&self) -> Option<Vec<u8>> {
+        let packet = wait_until(&self.pipe, |state| {
+            Ok(state.to_board.pop_front().inspect(|packet| {
+                state.to_board_bytes -= packet.len();
+            }))
+        })
+        .await
+        .ok();
+        self.pipe.changed.notify_waiters();
+        packet
+    }
+
+    /// Bytes the PC has written that the peer has not received yet.
+    pub fn queued_from_pc(&self) -> usize {
+        lock_pipe(&self.pipe).to_board_bytes
+    }
+
+    /// Makes the endpoint in `direction` stall: `In` for the PC's reads, `Out`
+    /// for its writes, until cleared with `false`.
+    pub fn set_stall(&self, direction: EndpointDirection, stalled: bool) {
+        let mut state = lock_pipe(&self.pipe);
+        match direction {
+            EndpointDirection::In => state.stall_in = stalled,
+            EndpointDirection::Out => state.stall_out = stalled,
+        }
+        drop(state);
+        self.pipe.changed.notify_waiters();
     }
 }
 
