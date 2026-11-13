@@ -1,0 +1,15 @@
+{
+  "schema": "urn:atlas:usb-ids:1",
+  "ids": {
+    "rpi-usb-boot-2712": { "state": "download", "vid": "0a5c", "pid": "2712", "name": "Raspberry Pi USB boot" },
+    "rpi-storage-gadget": { "state": "storage", "vid": "0a5c", "pid": "0104", "name": "Raspberry Pi mass-storage gadget" },
+    "atlas-board-gadget": { "state": "gadget", "vid": "1d6b", "pid": "0104", "name": "Atlas board USB gadget" },
+    "rockchip-rk3566-maskrom": { "state": "download", "vid": "2207", "pid": "350a", "name": "Rockchip RK3566 maskrom" },
+    "rockchip-rk3588-maskrom": { "state": "download", "vid": "2207", "pid": "350b", "name": "Rockchip RK3588 maskrom" },
+    "rockchip-rk3576-maskrom": { "state": "download", "vid": "2207", "pid": "350e", "name": "Rockchip RK3576 maskrom" },
+    "rockchip-rv1106-maskrom": { "state": "download", "vid": "2207", "pid": "110c", "name": "Rockchip RV1106 maskrom" },
+    "rockchip-rv1126b-maskrom": { "state": "download", "vid": "2207", "pid": "110b", "name": "Rockchip RV1126B maskrom (unconfirmed PID)" },
+    "allwinner-a733-fel": { "state": "download", "vid": "1f3a", "pid": "efe8", "name": "Allwinner A733 FEL" },
+    "kendryte-k230-usb-boot": { "state": "download", "vid": "29f1", "pid": "0230", "name": "Kendryte K230 USB boot" }
+  }
+}

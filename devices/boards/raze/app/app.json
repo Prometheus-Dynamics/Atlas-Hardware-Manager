@@ -1,0 +1,1 @@
+{ "schema": "urn:atlas:device-app:1", "model": "raze", "display_name": "Raze", "usb": ["rpi-usb-boot-2712", "rpi-storage-gadget", "atlas-board-gadget"], "network": { "hostname_prefix": "raze-" }, "look": { "case": "raze-case.glb" } }
