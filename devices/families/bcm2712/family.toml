@@ -18,6 +18,8 @@ ref = "53679a5788f7912272b412fd78029bccae6f2b1a"
 source = "linux"
 # The BCM2712 defconfig, not the architecture default.
 defconfig = "bcm2712"
+# Built-in options the flasher needs (no modules in its image); each line says why (PR B14).
+fragments = ["assets/linux.fragment"]
 
 # The boot ROM's USB boot: the family's bootfiles (bootcode5.bin, bootmain and
 # the rest of the 2712 set) are what the loader serves. The EEPROM tool and

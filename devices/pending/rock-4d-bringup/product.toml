@@ -26,11 +26,12 @@ ref = "2026.02.3"
 [components]
 radxa-rock-4d-extlinux = "../../components/radxa-rock-4d-extlinux/component.toml"
 dev-bench-ssh-key = "components/dev-bench-ssh-key/component.toml"
+dev-bringup-hostkey = "../../components/dev-bringup-hostkey/component.toml"
 
 [[images]]
 name = "rock-4d-bringup"
 board = "../../boards/radxa-rock-4d/board.toml"
-components = ["radxa-rock-4d-extlinux", "dev-bench-ssh-key"]
+components = ["radxa-rock-4d-extlinux", "dev-bench-ssh-key", "dev-bringup-hostkey"]
 # The base OS fragment, then the bring-up's own (dropbear, the serial getty).
 os = { provider = "buildroot", source = "buildroot", fragments = ["../../products/rock-4d-base/os.fragment", "os.fragment"] }
 recipe = "sd-image"

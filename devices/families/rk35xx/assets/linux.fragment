@@ -12,3 +12,10 @@ CONFIG_STMMAC_ETH=y
 CONFIG_STMMAC_PLATFORM=y
 CONFIG_DWMAC_ROCKCHIP=y
 CONFIG_PHY_ROCKCHIP_NANENG_COMBO_PHY=y
+# -- USB gadget for the flasher (no modules there): lemnosd's configfs gadget and Orion's FunctionFS link --
+# CONFIG_USB_CONFIGFS: configfs gadget (m in arm64 defconfig). Depends on USB_GADGET (=y in the defconfig;
+#   the ZERO 3E board fragment sets it too) and selects USB_LIBCOMPOSITE=y; CONFIGFS_FS=y is in the defconfig.
+CONFIG_USB_CONFIGFS=y
+# CONFIG_USB_CONFIGFS_F_FS: FunctionFS (Orion's link). Defconfig has it y, but it stayed m behind USB_CONFIGFS;
+#   this line makes it real. Selects USB_F_FS=y (no prompt, so not settable on its own).
+CONFIG_USB_CONFIGFS_F_FS=y
