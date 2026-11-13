@@ -1,4 +1,4 @@
-//! Reads a node's devices, readings and logs on its live session.
+//! Reads a node's devices, descriptions, readings and logs on its live session.
 //!
 //! This runs only inside [`atlas_session::Handle::with_client`], on the node's monitor thread,
 //! which is the one place Orion's client may be used. A subscription is made once for each
@@ -6,22 +6,31 @@
 //! keyed by the node's address. The slot names the connection it belongs to (the node's identity
 //! as its monitor saw it on connect); a slot from an earlier connection is dropped, and its
 //! subscriptions are made again on the new one. The comm core's session number is not used: a
-//! restarted node numbers its sessions again from the start. Nothing is subscribed twice in one session, and
-//! nothing is subscribed that a session does not need, so the slots are bounded by the topics
-//! the node lists.
+//! restarted node numbers its sessions again from the start. Nothing is subscribed twice in one
+//! session, and nothing is subscribed that a session does not need, so the slots are bounded by
+//! the topics the node lists.
+//!
+//! A device's description is asked for once when this connection first sees the device, and again
+//! only when its description generation moves (see [`crate::describe`]). The device's topics are
+//! subscribed before the ask, so a change made while asking is seen by the next read.
 
 use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use atlas_board::{identity, lemnos};
 use atlas_types::{Identity, LemnosState, LinkId};
 use orion::Orion;
 use orion::topics::{FieldId, FieldType, Next, Status, Subscriber};
+use orion::types::NodeName;
 use orion_msg_topics::Declare;
 use orion_wire::Decode;
 
-use crate::device::{RESOURCE_KIND, RESOURCE_PREFIX, RawDevice, RawField, RawTopic, TopicLive};
+use crate::describe::{Asked, fetch, is_due};
+use crate::description::DescriptionState;
+use crate::device::{
+    RESOURCE_KIND, RESOURCE_PREFIX, RawDevice, RawField, RawTopic, TopicLive, generation_of,
+};
 use crate::logs::{LOG_CAPACITY, LOG_TOPIC};
 use crate::value::{Scalar, decode};
 
@@ -35,7 +44,7 @@ thread_local! {
 pub(crate) struct Read {
     /// Who the node is.
     pub identity: Identity,
-    /// The device resources it lists, with their topics read.
+    /// The device resources it lists, with their topics read and their descriptions.
     pub devices: Vec<RawDevice>,
     /// The log lines since the last read, oldest first, with their times.
     pub logs: Vec<(u64, String)>,
@@ -43,7 +52,7 @@ pub(crate) struct Read {
     pub logs_missed: u64,
 }
 
-/// The subscriptions and identity one session holds.
+/// The subscriptions, identity and descriptions one session holds.
 #[derive(Default)]
 struct Live {
     /// Which connection this state belongs to: see [`read`].
@@ -51,6 +60,8 @@ struct Live {
     identity: Option<Identity>,
     topics: BTreeMap<String, Subscriber>,
     logs: Option<Subscriber>,
+    /// The descriptions asked for on this connection, by device resource name.
+    asked: BTreeMap<String, Asked>,
 }
 
 /// Reads the node at `address` on `orion`'s connection, which is the connection `session` names.
@@ -59,7 +70,8 @@ struct Live {
 /// monitor saw it on connect (its key fingerprint and clock at that connect): every connection
 /// has its own, where the comm core's session number is reused by a restarted node and cannot
 /// tell two connections apart. A state from another connection is dropped, and its
-/// subscriptions are made again on this one.
+/// subscriptions and descriptions are made again on this one. `refresh` asks every device's
+/// description again on this read.
 ///
 /// The outer `Err` is the session (the caller applies the failure rule); the inner `Err` is a
 /// reading this crate cannot make from what the node said (the session is up).
@@ -68,6 +80,7 @@ pub(crate) fn read(
     address: &str,
     session: &str,
     link: &LinkId,
+    refresh: bool,
 ) -> Result<Result<Read, String>, orion::Error> {
     LIVE.with(|cell| {
         let mut slots = cell.borrow_mut();
@@ -78,7 +91,7 @@ pub(crate) fn read(
                 ..Live::default()
             };
         }
-        live.read(orion, link, address)
+        live.read(orion, link, address, refresh)
     })
 }
 
@@ -88,8 +101,12 @@ impl Live {
         orion: &Orion,
         link: &LinkId,
         address: &str,
+        refresh: bool,
     ) -> Result<Result<Read, String>, orion::Error> {
         orion.pump(Duration::ZERO)?;
+        if refresh {
+            self.asked.clear();
+        }
         if self.identity.is_none() {
             let node = orion.node()?;
             let lemnos = if lemnos::published_by(&node) {
@@ -107,6 +124,7 @@ impl Live {
         };
 
         let mut devices = Vec::new();
+        let mut listed = BTreeSet::new();
         for resource in orion.resources(RESOURCE_PREFIX)? {
             if resource.kind != RESOURCE_KIND {
                 continue;
@@ -121,13 +139,22 @@ impl Live {
                     topics.push(read_topic(name, subscriber));
                 }
             }
+            // The topics are subscribed before the description is asked for, so a change made
+            // during the ask is seen by the next read.
+            // LOCK: Lemnos M8c's per-device generation topic (`lemnos.<device>.description`, field
+            // `generation`) is followed here. The device-set topic (`lemnos.devices`) is not
+            // subscribed: the resource list is read on every snapshot, so an appearing or leaving
+            // device is seen there, and its description is asked once when it first shows.
+            let description = self.description_of(orion, &resource.name, generation_of(&topics))?;
+            listed.insert(resource.name.clone());
             devices.push(RawDevice {
                 resource: resource.name,
                 state: resource.state,
-                labels: resource.labels,
                 topics,
+                description,
             });
         }
+        self.asked.retain(|name, _| listed.contains(name));
 
         if self.logs.is_none() {
             self.logs = Some(orion.subscribe(LOG_TOPIC)?);
@@ -143,6 +170,43 @@ impl Live {
             logs_missed,
         }))
     }
+
+    /// The description of one device now: held when it is not due, else asked for. A node with no
+    /// name yet is not asked (its state stays pending until it has one).
+    fn description_of(
+        &mut self,
+        orion: &Orion,
+        device: &str,
+        generation: Option<u64>,
+    ) -> Result<DescriptionState, orion::Error> {
+        if !is_due(self.asked.get(device), generation) {
+            return Ok(self
+                .asked
+                .get(device)
+                .map_or(DescriptionState::Pending, |asked| asked.state.clone()));
+        }
+        let Ok(node) = orion.node()?.name.parse::<NodeName>() else {
+            return Ok(DescriptionState::Pending);
+        };
+        let (state, answers) = match fetch(orion, device, &node)? {
+            Ok(bytes) => match crate::description::parse_bytes(&bytes) {
+                Ok(description) => {
+                    let answers = description.device.generation;
+                    (DescriptionState::Described(Box::new(description)), answers)
+                }
+                Err(refusal) => (DescriptionState::Unreadable(refusal), generation),
+            },
+            Err(reason) => (DescriptionState::NotAvailable(reason), generation),
+        };
+        self.asked.insert(
+            device.to_owned(),
+            Asked {
+                state: state.clone(),
+                generation: answers,
+            },
+        );
+        Ok(state)
+    }
 }
 
 /// One topic as it is now: its publisher's state, and each field's newest value.
@@ -154,8 +218,8 @@ fn read_topic(name: &str, subscriber: &mut Subscriber) -> RawTopic {
         // fault of the node.
         Status::PublisherGone => TopicLive::Gone,
     };
-    // The declaration gives each field's name, type and unit. It is there once the topic is.
-    let declared: Vec<(String, FieldType, String)> = subscriber.with_declaration(|declaration| {
+    // The declaration gives each field's name and type. It is there once the topic is.
+    let declared: Vec<(String, FieldType)> = subscriber.with_declaration(|declaration| {
         declaration
             .and_then(|bytes| Declare::decode(bytes).ok())
             .map(|declare| {
@@ -163,7 +227,7 @@ fn read_topic(name: &str, subscriber: &mut Subscriber) -> RawTopic {
                     .fields
                     .iter()
                     .flatten()
-                    .map(|field| (field.name.to_owned(), field.ty, field.unit.to_owned()))
+                    .map(|field| (field.name.to_owned(), field.ty))
                     .collect()
             })
             .unwrap_or_default()
@@ -171,11 +235,11 @@ fn read_topic(name: &str, subscriber: &mut Subscriber) -> RawTopic {
     let fields = declared
         .into_iter()
         .enumerate()
-        .map(|(index, (name, ty, unit))| {
+        .map(|(index, (name, ty))| {
             let value = subscriber
                 .latest(FieldId(index as u16))
                 .and_then(|sample| decode(&ty, sample.payload));
-            RawField { name, unit, value }
+            RawField { name, value }
         })
         .collect();
     RawTopic {

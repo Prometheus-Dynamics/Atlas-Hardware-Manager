@@ -1,8 +1,9 @@
 //! How a reading is typed and what it holds.
 //!
-//! A reading's kind is what the node's description says it is (Lemnos V1a: number, range, switch,
-//! text, colour array, three axes). A sample's value is decoded from its topic field's type. The
-//! two are separate: a description may say nothing about a reading, and a sample may not fit it.
+//! A reading's kind is what the node's description says it is (Lemnos `describe 1`: `reading`, one
+//! of number, range, switch, text, colour_array or three_axes). A sample's value is decoded from
+//! its topic field's type. The two are separate: a description may say nothing about a reading, and
+//! a sample may not fit it.
 
 use orion::topics::FieldType;
 
@@ -39,9 +40,8 @@ impl Reported<String> {
     }
 }
 
-/// What a reading is, as its description says (Lemnos V1a `reading`: 0 number, 1 range, 2 switch,
-/// 3 text, 4 colour array, 5 three axes). The wire carries the number; the words are what
-/// `lemnos-ctl show` prints, and what the simulated node writes.
+/// What a reading is, as its description says (`describe 1`'s `reading` word). A word this crate
+/// does not know is not a kind: the reading then reads as not reported.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReadingKind {
     /// A number.
@@ -67,8 +67,57 @@ impl ReadingKind {
             "range" => Self::Range,
             "switch" => Self::Switch,
             "text" => Self::Text,
-            "colour array" => Self::ColourArray,
-            "three axes" => Self::ThreeAxes,
+            "colour_array" => Self::ColourArray,
+            "three_axes" => Self::ThreeAxes,
+            _ => return None,
+        })
+    }
+}
+
+/// What an item is in its description: a value read, a control that is set, or an action run.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ItemKind {
+    /// A value the device reports.
+    Value,
+    /// A control: its value is set with `lemnos.<device>.set`.
+    Control,
+    /// An action: run, with no value.
+    Action,
+}
+
+impl ItemKind {
+    /// The kind a description's word names, or `None` for a word this crate does not know.
+    #[must_use]
+    pub fn from_word(word: &str) -> Option<Self> {
+        Some(match word {
+            "value" => Self::Value,
+            "control" => Self::Control,
+            "action" => Self::Action,
+            _ => return None,
+        })
+    }
+}
+
+/// An item's unit state (`describe 1`'s `unit_state`). Three states, and each is a fact the
+/// description gives: `Unknown` is not the same as `Dimensionless`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnitState {
+    /// The unit is the string the description gives.
+    Known,
+    /// No unit applies: a count, a switch, a text, an action.
+    Dimensionless,
+    /// The device cannot say what its unit is.
+    Unknown,
+}
+
+impl UnitState {
+    /// The state a description's word names, or `None` for a word this crate does not know.
+    #[must_use]
+    pub fn from_word(word: &str) -> Option<Self> {
+        Some(match word {
+            "known" => Self::Known,
+            "dimensionless" => Self::Dimensionless,
+            "unknown" => Self::Unknown,
             _ => return None,
         })
     }
@@ -156,13 +205,19 @@ mod tests {
     #[test]
     fn a_description_word_names_its_kind_and_an_unknown_word_names_none() {
         assert_eq!(
-            ReadingKind::from_word("three axes"),
+            ReadingKind::from_word("three_axes"),
             Some(ReadingKind::ThreeAxes)
         );
         assert_eq!(
-            ReadingKind::from_word("colour array"),
+            ReadingKind::from_word("colour_array"),
             Some(ReadingKind::ColourArray)
         );
         assert_eq!(ReadingKind::from_word("dial"), None);
+        assert_eq!(UnitState::from_word("maybe"), None);
+        assert_eq!(
+            UnitState::from_word("dimensionless"),
+            Some(UnitState::Dimensionless)
+        );
+        assert_eq!(ItemKind::from_word("control"), Some(ItemKind::Control));
     }
 }

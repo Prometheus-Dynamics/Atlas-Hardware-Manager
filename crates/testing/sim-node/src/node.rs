@@ -395,6 +395,19 @@ impl SimNode {
         self.shared.devices.hold(hold);
     }
 
+    /// Changes a simulated device's description: its state and reason, or its label. Its
+    /// description generation moves once, its generation topic says so, and a state moves its
+    /// resource. The node applies it on its next tick.
+    pub fn change_device(&self, device: &str, change: readings::Change) {
+        self.shared.devices.change(device, change);
+    }
+
+    /// Refuses `describe` on every device (`true`), as a board does whose Lemnos has no describe
+    /// through the bridge (the lock at d6b9361d), or answers it again (`false`).
+    pub fn refuse_describe(&self, refuse: bool) {
+        self.shared.devices.refuse_describe(refuse);
+    }
+
     /// Restarts the service now: running jobs are lost, and nothing resumes.
     pub fn restart_daemon(&self) {
         self.shared.restart.store(true, Ordering::SeqCst);
@@ -840,9 +853,20 @@ impl Node {
             return;
         }
         if is_device_call(name) && args == b"describe" {
-            // The renewal at I6h (`.call describe`): a read of the description, which changes nothing.
-            // LOCK: Lemnos I6h describe.
-            self.finish(call, Outcome::Succeeded, &[], "");
+            // `.call describe`: the device's description as `describe 1` text (Lemnos I6h, e5c0ff0e).
+            // It changes nothing, so the session's lease renewal is the same call.
+            let answer = match self.devices.as_ref() {
+                Some(devices) => devices.describe(device_id(name)),
+                None => Err("no such device".to_owned()),
+            };
+            match answer {
+                Ok(text) => self.finish(call, Outcome::Succeeded, text.as_bytes(), ""),
+                Err(reason) => self.finish(call, Outcome::Rejected, &[], &reason),
+            }
+            return;
+        }
+        if is_device_call(name) && args.starts_with(b"describe ") {
+            self.finish(call, Outcome::Rejected, &[], "describe takes no arguments");
             return;
         }
         let behaviour = lock(&self.shared.script).take_action(name);
@@ -1186,6 +1210,13 @@ impl Node {
 /// A device's `.call` action: `lemnos.<device>.call`, the bridge's name for it.
 fn is_device_call(name: &str) -> bool {
     name.starts_with("lemnos.") && name.ends_with(".call")
+}
+
+/// The device a `.call` action names: `lemnos.<device>.call` is `<device>`.
+fn device_id(name: &str) -> &str {
+    name.strip_prefix("lemnos.")
+        .and_then(|rest| rest.strip_suffix(".call"))
+        .unwrap_or_default()
 }
 
 fn pushed(name: &str) -> String {

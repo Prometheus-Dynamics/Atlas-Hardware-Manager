@@ -35,6 +35,7 @@
 pub mod access;
 pub mod actions;
 pub mod bundle;
+pub mod describe;
 mod lease;
 pub mod model;
 pub mod names;
