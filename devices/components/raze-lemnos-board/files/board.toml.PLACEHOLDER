@@ -11,7 +11,7 @@ board-overlay.dts` generates the one device-tree overlay and the modprobe.d line
 Must contain, once the format lands:
   - `[board] id = "raze"` (the directory name under devices/boards; `[a-z0-9-]`).
   - `require_signed = false` (signing off on the Raze; the app's security switch maps to it). Not a key at
-    Lemnos 26364ff; I5, pending.
+    Lemnos 1bae570f; I5, pending.
   - the serial source: the device-tree serial-number (the same 16 hex digits as the cpuinfo Serial line).
     Key spelling pending Lemnos P1 (docs/identity.md is not on origin/next at 0d54a5ef).
   - the IMU, magnetometer, power monitor, orientation, fan (PWM period, cooling levels), the cpu thermal zone,

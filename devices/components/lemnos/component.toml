@@ -1,4 +1,4 @@
-# Lemnos's hardware daemon, lemnosd, at Lemnos next 26364ff (L1 packaging). Board-neutral:
+# Lemnos's hardware daemon, lemnosd, at Lemnos next 1bae570f (L2 packaging; the same install paths as 26364ff, the units changed since). Board-neutral:
 # every board that runs Lemnos imports it; what a board adds (its board file, a drop-in for its
 # own writes) is in the board's own component.
 #
@@ -12,7 +12,7 @@ description = "Lemnos: the lemnosd hardware daemon, its unit, the lemnos user, i
 
 [sources.lemnos]
 git = "https://github.com/Prometheus-Dynamics/Lemnos.git"
-ref = "26364ff7eb938c9009796eff40269ab471a0d51d"
+ref = "1bae570f1e57cad8cfcb1aab4d0fa8beea230fae"
 
 [build]
 builder = "rust"

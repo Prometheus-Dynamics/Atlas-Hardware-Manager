@@ -4,8 +4,8 @@ version = 1
 [source."lemnos.lemnos"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos.git"
-ref = "26364ff7eb938c9009796eff40269ab471a0d51d"
-commit = "26364ff7eb938c9009796eff40269ab471a0d51d"
+ref = "1bae570f1e57cad8cfcb1aab4d0fa8beea230fae"
+commit = "1bae570f1e57cad8cfcb1aab4d0fa8beea230fae"
 
 [source."orion.orion"]
 kind = "git"
