@@ -1,0 +1,1 @@
+The data partition is mounted here (data.mount, DEV ONLY bring-up). This file only makes the directory exist in the read-only root.

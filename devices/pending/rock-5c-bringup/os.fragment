@@ -20,6 +20,9 @@ BR2_TARGET_GENERIC_GETTY_BAUDRATE_KEEP=y
 
 # SSH root is key only: dev-bench-ssh-key sets dropbear's -s (no password logins).
 # The base's console login is its own policy (see the base).
-# Root is read-only, as in the base, so the bring-up proves the same root. Dropbear
-# keeps its host keys in /run (the symlink its package makes), so they change at
-# each boot: the bench host's known_hosts entry needs clearing after a reboot.
+# Root is read-only, as in the base, so the bring-up proves the same root.
+# SSH host key (B13): on the data partition, not in /run. components/dev-bringup-hostkey mounts /data and
+# gives dropbear -r /data/dropbear/dropbear_ed25519_host_key, so the key survives a reflash and a slot change.
+# (B11 left this open: Buildroot's dropbear kept the key under /var/run, new at each boot.)
+# Kernel console (B13): the same tty as the getty above (the base's decision applies: the extlinux console=
+# is that tty, and systemd's getty generator adds the same unit). Nothing masked.

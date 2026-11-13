@@ -39,6 +39,14 @@ BR2_PACKAGE_BUSYBOX=y
 # default.
 BR2_TARGET_ENABLE_ROOT_LOGIN=y
 BR2_TARGET_GENERIC_ROOT_PASSWD=""
+# Kernel console decision (B13): OPEN, nothing masked. The kernel's console= comes from the image's own
+# cmdline.txt (Gaia F10: "the image's own, then <P>.slot=..."). No file on next sets it: this fragment names no
+# BR2_PACKAGE_RPI_FIRMWARE_CMDLINE_FILE, and no devices/ file has a console=. So the kernel console tty is not
+# known from these files, and the getty above (ttyGS0) is not checked against it. Dev's value was
+# console=serial0,115200 console=tty1 (dev families/rpi-bcm2712/gaia/slots.toml). If that is used, the kernel
+# console is serial0 (dev's slot tests name it ttyAMA10 on this board), so systemd would add a second getty
+# on it, serial-getty@ttyAMA10; tty1 would be a keyboard getty. Gaia has no mask form (a component's [[install]]
+# copies files, [[services]] has enable only), so a mask needs Gaia's form first. Decide with the cmdline.
 
 # -- Root filesystem ----------------------------------------------------------------------------------
 # Read-only root: the slot's root is EROFS with dm-verity, which cannot be written. The writable place is
