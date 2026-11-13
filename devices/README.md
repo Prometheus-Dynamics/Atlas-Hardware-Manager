@@ -187,7 +187,7 @@ mode = "0755"
 - The build machine needs Rust 1.99.0 (Gaia's `rust-toolchain.toml`) and bubblewrap. Not built here:
   this check plans only.
 
-## F8 format points, as Gaia aa987cc treats them (historical: not re-run at f5a32f9)
+## F8 format points, as Gaia aa987cc treats them (historical: not re-run at 7db227f)
 
 Each row was tried with Gaia `aa987cc` (`gaia 2.0.6-dev`). "validate" is `gaia validate`, "plan"
 is `gaia plan` with the product's lock and `--tool veritysetup=...` where a recipe needs it.
@@ -251,13 +251,14 @@ A bogus recipe name is refused by validate when it is given the recipes (`--reci
 ## The Gaia pin
 
 `gaia.lock` is Atlas's, written by hand: a Gaia URL and a full commit. It is not Gaia's lock. The
-commit is `f5a32f9fe242a7fb2686e48037b6e2fe23553646` (Gaia `next`: PR #85 `gaia lock` resolves nothing a
+commit is `7db227f6648917434b14da4117150ad6ab007530` (Gaia `next`: PR #85 `gaia lock` resolves nothing a
 lock already holds and works offline for full-commit refs, #86 `gaia --version` prints the commit it was
-built from, #87 `--input NAME=PATH`). The one before was `aa987ccc54f13d415bc42623da30805243746ed6`
-(PR #83, PR 52), then `4abf626316a8d3f8c2bb9561e1895a0e89745f9b` and `10beed87d9591175305997a2ebf1f88e3f5e4b2b`.
-To move it: change `commit`, build Gaia at the new commit, and run `scripts/check-devices.sh
---write-locks` with that binary (`GAIA_BIN=...`); the check refuses a binary that prints another commit
-or none. Commit the pin and every changed `gaia.lock` together.
+built from, #87 `--input NAME=PATH`, #88 the OS build split into kernel, bootloader and root filesystem
+builds with `gaia.tree.under`, and the `system` input). Before it: `f5a32f9fe242a7fb2686e48037b6e2fe23553646`,
+`aa987ccc54f13d415bc42623da30805243746ed6` (PR 52), `4abf626316a8d3f8c2bb9561e1895a0e89745f9b` and
+`10beed87d9591175305997a2ebf1f88e3f5e4b2b`. To move it: change `commit`, build Gaia at the new commit,
+and run `scripts/check-devices.sh --write-locks` with that binary (`GAIA_BIN=...`); the check refuses a
+binary that prints another commit or none. Commit the pin and every changed `gaia.lock` together.
 
 ## Product locks
 
@@ -345,9 +346,9 @@ What it needs on the machine:
 
 ## Known limits at the pin
 
-These hold at Gaia `f5a32f9`, the pin in `gaia.lock`. Items 1 and 2 were re-run only through the products: the
+These hold at Gaia `7db227f`, the pin in `gaia.lock`. Items 1 and 2 were re-run only through the products: the
 sd-image products plan with the veritysetup stand-in and the Rust component with the bwrap stand-in, as at `aa987cc`;
-the refusals themselves were not re-tested at `f5a32f9`. Item 5 is carried from `aa987cc` and was not re-run. They lift
+the refusals themselves were not re-tested at `7db227f`. Item 5 is carried from `aa987cc` and was not re-run. They lift
 when the pin moves.
 
 1. **`slot` and `sd-image` need `veritysetup`.** A product on either recipe cannot be planned where
@@ -357,9 +358,9 @@ when the pin moves.
 2. **`gaia plan` needs every tool a recipe names on PATH**, or passed with `--tool NAME=PATH`.
    Checked at aa987cc: a Rust component needs `bwrap` (the check passes a stand-in) and `rustc`; a
    Buildroot product needs `make`. `python` is needed only for a product with a python component.
-3. **The gaia binary's commit is checked.** `gaia --version` prints `gaia <version> (<commit>)` at `f5a32f9`
-   and later (PR #86); the check refuses a binary that prints another commit, `-dirty`, or no commit. This
-   holds at `f5a32f9`; `aa987cc` and older print no commit and are refused.
+3. **The gaia binary's commit is checked.** `gaia --version` prints `gaia <version> (<commit>)` at `7db227f`
+   and at `f5a32f9` and `7db227f` (PR #86); the check refuses a binary that prints another commit, `-dirty`, or no commit.
+   `aa987cc` and older print no commit and are refused.
 4. **Gaia's `Cargo.lock` is untracked** at this commit (`git ls-files Cargo.lock` is empty at
    aa987cc; the root `.gitignore` has `/Cargo.lock`), so a build is pinned by commit only, not by
    dependency versions.
