@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use atlas_board_slots::{BoardSlots, SlotInstalls};
 use atlas_jobs::{Backoff, DeviceHolds, Events, JobTiming};
-use atlas_session::{Handle, Pause, Presence, Sessions};
+use atlas_session::{Handle, Lease, Pause, Presence, Sessions};
 use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode};
 use atlas_types::DeviceKey;
 use orion::Address;
@@ -146,6 +146,11 @@ pub async fn connected(handle: &Handle) {
 
 impl Rig {
     pub async fn start(name: &str) -> Self {
+        Self::start_leased(name, None).await
+    }
+
+    /// As [`Rig::start`], with the sessions' lease shortened when one is given.
+    pub async fn start_leased(name: &str, lease: Option<Lease>) -> Self {
         let dir = scratch(name);
         let _ = std::fs::remove_dir_all(&dir);
         let node = SimNode::start_with(&dir.join("node"), &kind(), None).expect("the node starts");
@@ -153,7 +158,11 @@ impl Rig {
             SocketAddr::from_str(&format!("127.0.0.1:{}", node.network().port())).unwrap();
         let relay = Relay::start(upstream);
         let address = Address::from_str(&format!("orion+tcp://{}", relay.addr())).unwrap();
-        let sessions = Arc::new(Sessions::new(Arc::new(NoPause)));
+        let sessions = Sessions::new(Arc::new(NoPause));
+        let sessions = Arc::new(match lease {
+            Some(lease) => sessions.with_lease(lease),
+            None => sessions,
+        });
         let handle = sessions.handle(&address).expect("the node is on");
         connected(&handle).await;
         let slots = BoardSlots::new(handle.clone(), BOARD, true);

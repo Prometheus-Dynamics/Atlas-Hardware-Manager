@@ -8,6 +8,7 @@ use orion::Address;
 
 use std::time::Duration;
 
+use crate::lease::Lease;
 use crate::monitor::{CALL_WAIT, Handle, Monitor, Pause};
 
 /// The monitors of the nodes this program is watching.
@@ -15,6 +16,7 @@ use crate::monitor::{CALL_WAIT, Handle, Monitor, Pause};
 pub struct Sessions {
     pause: Arc<dyn Pause>,
     call_wait: Duration,
+    lease: Lease,
     monitors: Mutex<BTreeMap<String, Monitor>>,
     off: Mutex<BTreeSet<String>>,
 }
@@ -31,9 +33,18 @@ impl Sessions {
         Self {
             pause,
             call_wait,
+            lease: Lease::DEFAULT,
             monitors: Mutex::new(BTreeMap::new()),
             off: Mutex::new(BTreeSet::new()),
         }
+    }
+
+    /// As built, with the lease the sessions keep for their holds. Sessions started after this
+    /// use it; the locked board's lease is [`Lease::DEFAULT`]. A test shortens it.
+    #[must_use]
+    pub fn with_lease(mut self, lease: Lease) -> Self {
+        self.lease = lease;
+        self
     }
 
     /// The handle for the node at `address`. Its monitor starts on first use.
@@ -46,9 +57,15 @@ impl Sessions {
             return None;
         }
         let mut monitors = lock(&self.monitors);
-        let monitor = monitors
-            .entry(key)
-            .or_insert_with(|| Monitor::start(address.clone(), self.pause.clone(), self.call_wait));
+        let monitor = monitors.entry(key).or_insert_with(|| {
+            Monitor::start_full(
+                address.clone(),
+                None,
+                self.pause.clone(),
+                self.call_wait,
+                self.lease,
+            )
+        });
         Some(monitor.handle())
     }
 
@@ -62,7 +79,13 @@ impl Sessions {
         }
         let mut monitors = lock(&self.monitors);
         let monitor = monitors.entry(key_text).or_insert_with(|| {
-            Monitor::start_pinned(address.clone(), key, self.pause.clone(), self.call_wait)
+            Monitor::start_full(
+                address.clone(),
+                Some(key),
+                self.pause.clone(),
+                self.call_wait,
+                self.lease,
+            )
         });
         Some(monitor.handle())
     }

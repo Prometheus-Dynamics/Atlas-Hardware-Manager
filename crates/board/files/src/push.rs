@@ -250,6 +250,9 @@ pub async fn submit(
 /// (see `atlas_session::long`); a lost session ends it, and the next attempt begins the file again.
 async fn run(pending: &Pending) -> Result<(), String> {
     let shared = &pending.shared;
+    // The push holds the board's lease from its start to its outcome: a push is on the board until
+    // it commits, is rejected or is cancelled, and a silent session would lose it there.
+    let mut hold = pending.handle.hold();
     let mut backoff = Backoff::default();
     // The node this push sends to: the key of the first node it finds. A push resumes only on
     // that node. If a person accepts another node under this address, the session comes back
@@ -262,6 +265,14 @@ async fn run(pending: &Pending) -> Result<(), String> {
         }
         if let Some(reason) = shared.refusal() {
             return Err(reason);
+        }
+        if hold.lapsed() {
+            // The board may have dropped the transfer: its hold lapsed. The file is sent again from
+            // its start, as after a lost session, and the message says why it starts over.
+            hold.acknowledge();
+            shared.waiting(
+                "the board may have dropped the transfer: no request reached its bridge within the lease; sending the file again from its start".to_owned(),
+            );
         }
         let presence = pending.handle.presence();
         if !matches!(presence, Presence::Found(_)) {
