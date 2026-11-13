@@ -252,6 +252,17 @@ if [[ $verb == validate ]]; then
   done
 fi
 
+# Nothing unique per unit is in an image. Orion's identity, its trust file and its SSH host key, node
+# logic's state, and a bring-up product's dropbear host key are made on the board at first boot, on the
+# data partition. An image that carried one would give every board flashed from it the same identity,
+# and Orion cannot see that from inside. So no description installs a file there: under the data
+# partition (the one exception is the empty mount-point marker), under Orion's default state directory,
+# or anything named like a host key or a node identity. This covers pending/ too.
+while IFS= read -r hit; do
+  bad "an image must not carry per-unit state or keys (made on the board at first boot): $hit"
+done < <(grep -rnE '^[[:space:]]*to[[:space:]]*=[[:space:]]*"(/data/|/var/lib/orion|/etc/dropbear/|[^"]*(host_key|node-identity|\.ed25519)[^"]*")' \
+           --include='*.toml' . 2>/dev/null | grep -vE 'to[[:space:]]*=[[:space:]]*"/data/\.mountpoint"' || true)
+
 # Every product is validated (when gaia can), then locked into a temp file, and that lock must
 # match the gaia.lock committed beside its product.toml (--write-locks writes it). Then the product is
 # planned with the committed lock. A tree path in a lock is relative to the product's directory, so
