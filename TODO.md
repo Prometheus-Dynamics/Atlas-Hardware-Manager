@@ -54,6 +54,7 @@ Every job on a board through the Orion client, against a simulated node.
 - [ ] [C7](docs/prs/C7.md) Board data: backup, restore, files (wave 5; needs C4)
 - [ ] [C8](docs/prs/C8.md) SSH and the recovery shell (wave 4; needs C1, A10)
 - [ ] [C9](docs/prs/C9.md) NetworkTables viewer (wave 4; needs C1)
+- [ ] [C10](docs/prs/C10.md) Identity facts as Lemnos publishes them (wave 4; needs C1, A10)
 
 ## D. Flashing
 

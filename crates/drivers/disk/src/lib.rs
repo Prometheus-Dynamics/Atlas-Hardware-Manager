@@ -122,7 +122,7 @@ impl Driver for DiskDriver {
             })?;
         Ok(Identity {
             key: key_for(disk).map_err(|error| DriverError::Incompatible(error.reason))?,
-            model: disk.description(),
+            model: Some(disk.description()),
             state: DeviceState::RemovableDisk,
             lemnos: atlas_types::LemnosState::Absent,
             versions: BTreeMap::new(),

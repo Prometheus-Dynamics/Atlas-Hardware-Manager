@@ -115,27 +115,39 @@ pub const ACTIONS: &[&str] = &[
 /// Topics the simulated node publishes.
 pub const TOPICS: &[&str] = &[READINGS, HARDWARE, LOGS];
 
-// The hello facts: one text topic per fact, published once at start, the way a board's own
-// program publishes them. Orion signs the hello document; Atlas reads `family`, `serial` and
-// `state` (running | recovery | flasher) as required, and `model`, `name`, `version.*` and
-// `offers` (comma-separated capability kinds) as optional. See the board driver's identity.
+// The hello facts, as Lemnos P1c defines them (Lemnos docs/identity.md, the bridge's `hello.*`
+// topics). One text field named `value`, history 2, at most 256 bytes, UTF-8, no trailing newline.
+// Each fact has one owner, and the simulated node publishes what that owner publishes:
+// - Lemnos (the bridge, from `system.identity/1` and the daemon): `family`, `serial`, `model`,
+//   `version.slot`, `version.product`, `version.os`, `version.lemnos`, and `offers` (the contract
+//   ids of the devices running now). Atlas's board driver reads these.
+// - Orion (its own part, not Lemnos's): `state` (`running`, `recovery`, or `flasher`, which a
+//   flasher image's program sets). Orion's recovery build publishes it; the simulated node keeps
+//   it as the mode it was started in. Atlas reads it with the hello document.
+// `name` and `revision` are fields of Orion's hello document, not facts, so there is no topic
+// for them: the simulated node has none.
 pub const HELLO_FAMILY: &str = "hello.family";
 pub const HELLO_SERIAL: &str = "hello.serial";
-pub const HELLO_STATE: &str = "hello.state";
 pub const HELLO_MODEL: &str = "hello.model";
-pub const HELLO_NAME: &str = "hello.name";
-pub const HELLO_OFFERS: &str = "hello.offers";
+pub const HELLO_VERSION_SLOT: &str = "hello.version.slot";
+pub const HELLO_VERSION_PRODUCT: &str = "hello.version.product";
 pub const HELLO_VERSION_OS: &str = "hello.version.os";
+pub const HELLO_VERSION_LEMNOS: &str = "hello.version.lemnos";
+pub const HELLO_OFFERS: &str = "hello.offers";
+/// Owned by Orion, not Lemnos. See above.
+pub const HELLO_STATE: &str = "hello.state";
 
 /// Every hello topic the node may publish.
 pub const HELLO: &[&str] = &[
     HELLO_FAMILY,
     HELLO_SERIAL,
-    HELLO_STATE,
     HELLO_MODEL,
-    HELLO_NAME,
-    HELLO_OFFERS,
+    HELLO_VERSION_SLOT,
+    HELLO_VERSION_PRODUCT,
     HELLO_VERSION_OS,
+    HELLO_VERSION_LEMNOS,
+    HELLO_OFFERS,
+    HELLO_STATE,
 ];
 
 // system.slots/1. Arguments are UTF-8 words, separated by spaces, as Lemnos's bridge takes them

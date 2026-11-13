@@ -11,7 +11,7 @@ ed25519-dalek = "2"
 serde_json = "1"
 sha2 = "0.10"
 tar = "0.4"
-orion = { workspace = true, features = ["topics", "records", "actions", "files"] }
+orion = { workspace = true, features = ["topics", "records", "actions", "files", "provider"] }
 # The comm core for tests: the real server, broker, hello and keys on a real socket, with
 # small stand-ins for node logic. Same commit as the locked `orion` crate.
 orion-stubs = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "6dfb990b0dac670d43a8576f0a33491c96406891" }
