@@ -47,3 +47,8 @@ BR2_TARGET_GENERIC_GETTY_BAUDRATE_KEEP=y
 # SSH host key (B13): on the data partition, through components/dev-bringup-hostkey (product.toml).
 # SSH login: dropbear runs with -s from components/dev-bench-ssh-key/dropbear.default (B19 closes the B13 open
 # point: key only, no password logins over SSH; the console is the separate login above).
+
+# Kernel image and device trees under /boot in the root partition (B22, Gaia F11): the kernel is its own build
+# now, and Gaia puts its image and device trees under /boot only when this fragment line is set (as Gaia's
+# zero-3e-demo does). Without it the bootable root has modules and no /boot/Image for extlinux to load.
+BR2_LINUX_KERNEL_INSTALL_TARGET=y

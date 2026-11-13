@@ -36,6 +36,11 @@ fn scratch(name: &str) -> PathBuf {
 
 fn start(dir: &Path, port: Option<u16>) -> SimNode {
     let _ = std::fs::remove_dir_all(dir);
+    start_again(dir, port)
+}
+
+/// The same node in the same directory: its key is kept, so it is the same board.
+fn start_again(dir: &Path, port: Option<u16>) -> SimNode {
     let kind = Kind::WithLemnos(Hello {
         family: "test-family".into(),
         serial: "0001".into(),
@@ -315,8 +320,9 @@ async fn a_session_drop_is_stale_since_its_last_read_and_the_return_says_everyth
     }
 
     // The node comes back on the same port: the session is made again, and everything is said
-    // again. The readings are current again once the new session has read them.
-    let node = start(&dir, Some(port));
+    // again. The readings are current again once the new session has read them. It is the same
+    // node: its directory, and so its key, is kept.
+    let node = start_again(&dir, Some(port));
     let back = read_until(
         &hardware,
         "the return, with every device current",

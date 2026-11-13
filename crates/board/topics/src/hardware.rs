@@ -128,7 +128,8 @@ impl Hardware {
         // The connection this read is for: the node as the monitor saw it when it connected.
         let session = match self.handle.presence() {
             Presence::Found(node) => format!("{}/{}", node.fingerprint, node.time_ms),
-            _ => String::new(),
+            // No session: searching, lost, or another board answering at this address.
+            Presence::Searching | Presence::Lost(_) | Presence::Replaced { .. } => String::new(),
         };
         let link = self.link.clone();
         let key = address.clone();

@@ -187,7 +187,7 @@ mode = "0755"
 - The build machine needs Rust 1.99.0 (Gaia's `rust-toolchain.toml`) and bubblewrap. Not built here:
   this check plans only.
 
-## F8 format points, as Gaia aa987cc treats them
+## F8 format points, as Gaia aa987cc treats them (historical: not re-run at 7db227f)
 
 Each row was tried with Gaia `aa987cc` (`gaia 2.0.6-dev`). "validate" is `gaia validate`, "plan"
 is `gaia plan` with the product's lock and `--tool veritysetup=...` where a recipe needs it.
@@ -251,13 +251,14 @@ A bogus recipe name is refused by validate when it is given the recipes (`--reci
 ## The Gaia pin
 
 `gaia.lock` is Atlas's, written by hand: a Gaia URL and a full commit. It is not Gaia's lock. The
-commit is `aa987ccc54f13d415bc42623da30805243746ed6` (Gaia `next`, PR #83 merged: the `/root` merge fix,
-OS owners and modes in every image, the Buildroot config line check, `gaia validate --recipes`, the
-`subdir` and `[flash]` keys, and `kernel.overlays` into the kernel build). The one before was
-`4abf626316a8d3f8c2bb9561e1895a0e89745f9b` (PR #75, the Rust components), and before that
-`10beed87d9591175305997a2ebf1f88e3f5e4b2b`. To move it: change `commit`, run
-`scripts/check-devices.sh --write-locks`, and commit the pin and every regenerated `gaia.lock`
-together.
+commit is `7db227f6648917434b14da4117150ad6ab007530` (Gaia `next`: PR #85 `gaia lock` resolves nothing a
+lock already holds and works offline for full-commit refs, #86 `gaia --version` prints the commit it was
+built from, #87 `--input NAME=PATH`, #88 the OS build split into kernel, bootloader and root filesystem
+builds with `gaia.tree.under`, and the `system` input). Before it: `f5a32f9fe242a7fb2686e48037b6e2fe23553646`,
+`aa987ccc54f13d415bc42623da30805243746ed6` (PR 52), `4abf626316a8d3f8c2bb9561e1895a0e89745f9b` and
+`10beed87d9591175305997a2ebf1f88e3f5e4b2b`. To move it: change `commit`, build Gaia at the new commit,
+and run `scripts/check-devices.sh --write-locks` with that binary (`GAIA_BIN=...`); the check refuses a
+binary that prints another commit or none. Commit the pin and every changed `gaia.lock` together.
 
 ## Product locks
 
@@ -265,14 +266,38 @@ Each product's `gaia.lock` is committed beside its `product.toml`. It is written
 records the sources the product names. Tree paths in it are relative to the product's directory
 (`../../components/<name>/src`), so the same lock holds in every checkout.
 
-To write or update them after a change:
+The plain check reads the committed locks offline: it runs `gaia lock --check`, then `gaia lock` on a copy
+with git and curl replaced by programs that fail (so any request is an error), and the regenerated copy must
+equal the committed lock byte for byte (this re-hashes every directory source). Then the product is planned
+with the committed lock. A lock that needs the network (a source it does not hold, or a description that
+changed) fails the plain check with the command below.
+
+To write or update them after a change (this is the only mode that asks the network):
 
 ```
 scripts/check-devices.sh --write-locks
 ```
 
-The check fails when a product has no `gaia.lock` beside it, or when that lock differs from what
-`gaia lock` writes now. The message names the command above. Never edit a lock by hand.
+It starts each lock from the committed one, so a source the lock already holds for what its description
+says is not asked again; a new source is resolved. A host that is unreachable or rate limited is retried a
+few times and then FAILS the check, and the committed lock is left as it was. A branch or tag that moved
+is refreshed with `gaia lock --update SOURCE` (`SOURCE` is the name, e.g. `kernel.src`). Never edit a lock
+by hand.
+
+## Named inputs (the bench key)
+
+A component may install a file the command line gives, `from = { input = "bench-key" }`, instead of a file
+committed beside it (`gaia plan --input bench-key=PATH`). The bring-up products (`zero-3e-bringup`,
+`rock-4d-bringup`, `rock-5c-bringup`, `cubie-a7-bringup`) take the bench's SSH public key that way. The check
+gives every product that names `bench-key` a throwaway public key it makes in a temp dir for that run (only
+the `.pub` file is kept; the private half is deleted at once). No key is committed. A product that names
+an input is planned with it; gaia refuses an input nothing uses, so no other product gets one.
+
+PR 48's rule (no description installs per-unit state or keys) is checked by a grep on `to = "..."` for
+`/data/`, `/var/lib/orion`, `/etc/dropbear/`, and any path with `host_key`, `node-identity` or `.ed25519`.
+`/root/.ssh/authorized_keys` (the bench key's install) is not in that pattern, and the pattern is unchanged: an
+authorized_keys file for a dev-only bring-up is not a host key or a node identity. A bench input installed at
+one of the listed paths would still fail the check.
 
 ## Lemnos rev
 
@@ -290,43 +315,41 @@ validate` and `lemnos-ctl tree` at that rev are the check for them (run from a b
 
 ```
 scripts/check-devices.sh                        # devices/, then the fixture self-check (the gate runs this)
-scripts/check-devices.sh --write-locks          # regenerate every product's gaia.lock, then check
+scripts/check-devices.sh --write-locks          # the network: update each product's gaia.lock, then check
 scripts/check-devices.sh --root DIR             # another tree, laid out the same way, no self-check
 scripts/check-devices.sh --write-locks --root DIR  # the same, for that tree
 scripts/check-devices.sh --self-test            # verbose: the good fixtures pass, broken fails
 ```
 
-The default run ends with the self-check: the good fixtures (`good`, `good-f8`, `good-rust`) must pass
-and the broken one must fail, so the gate shows the checker still catches a broken file. The good
+The default run ends with the self-check: the good fixtures (`good`, `good-f8`, `good-rust`) must pass,
+the broken one must fail, and a gaia that prints another commit, or none, must be refused. The good
 fixture `tests/fixtures/good-sd-image` is checked with `--root`:
 `scripts/check-devices.sh --root devices/tests/fixtures/good-sd-image`.
 
-The check does the following. It reads the Gaia URL and commit from `gaia.lock`. It then needs a
-gaia binary: `$GAIA_BIN` if set (used as given, and its commit is not checked because gaia prints
-no commit); otherwise a build from that commit, cached in
-`${ATLAS_GAIA_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/gaia}/<commit>/`. The first run clones
-Gaia from GitHub and builds it with cargo; later runs reuse `bin/gaia`. The recipes come from the
-same checkout. With a binary that has `gaia validate` (aa987cc does), it validates every family,
-board, component and product file (with `--kind` from the directory). Then, for each product, it
-locks the product into a temp file, requires the committed `gaia.lock` to match it, and plans the
-product with the committed lock. A binary without `gaia validate` plans every product only.
+What the check does: it reads the Gaia URL and commit from `gaia.lock`. It needs a gaia binary: `$GAIA_BIN`
+if set, otherwise a build from that commit, cached in `${ATLAS_GAIA_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/gaia}/<commit>/`
+(the first run clones Gaia from GitHub and builds it with cargo). Either binary must print
+`gaia <version> (<commit>)` with the pinned commit. The recipes come from the same checkout. Every family,
+board, component and product file is validated with `gaia validate` (products against the checkout's
+`recipes/`), then each product's lock is checked offline (see Product locks) and the product is planned.
 
 What it needs on the machine:
 
-- `git` and network access to GitHub (Gaia's repository is public, so no token is needed).
+- `git` and network access to GitHub, only for `--write-locks` and the first build (Gaia's repository is public).
 - `cargo` for the first build (Gaia's `rust-toolchain.toml` pins 1.99.0; rustup installs it).
-- `python3`: the python builder names it as a tool. `gaia plan` needs it only for a product with a
-  python component; the check passes it as `--tool python=<python3>` for every product.
-- The tools a recipe names. `firmware`, `initramfs-boot`, `recovery` and `data-ext4` need none that
-  this check passes. `slot` and `sd-image` need `veritysetup`, so they cannot be planned where that
-  is not installed (the check then passes a stand-in, see point 1). A Rust component needs `bwrap`
-  and `rustc` for planning (see "Rust components").
+- `ssh-keygen`, for the throwaway bench key (every bring-up product plans with it).
+- `python3`: the python builder names it as a tool; the check passes it as `--tool python=<python3>`.
+- The tools a recipe names. `slot` and `sd-image` need `veritysetup`; where it is not installed the check
+  passes a stand-in for planning (a build needs the real one). A Rust component needs `bwrap` and `rustc`
+  for planning (the check passes a stand-in for `bwrap`).
 - `make` on PATH for a product with an `os` (the Buildroot host step).
 
 ## Known limits at the pin
 
-These hold at Gaia `aa987cc`, the pin in `gaia.lock`, and each was tested with that commit's binary
-(`gaia 2.0.6-dev`). They lift when the pin moves.
+These hold at Gaia `7db227f`, the pin in `gaia.lock`. Items 1 and 2 were re-run only through the products: the
+sd-image products plan with the veritysetup stand-in and the Rust component with the bwrap stand-in, as at `aa987cc`;
+the refusals themselves were not re-tested at `7db227f`. Item 5 is carried from `aa987cc` and was not re-run. They lift
+when the pin moves.
 
 1. **`slot` and `sd-image` need `veritysetup`.** A product on either recipe cannot be planned where
    that tool is not on PATH (or passed with `--tool veritysetup=PATH`). The check passes a stand-in
@@ -335,9 +358,9 @@ These hold at Gaia `aa987cc`, the pin in `gaia.lock`, and each was tested with t
 2. **`gaia plan` needs every tool a recipe names on PATH**, or passed with `--tool NAME=PATH`.
    Checked at aa987cc: a Rust component needs `bwrap` (the check passes a stand-in) and `rustc`; a
    Buildroot product needs `make`. `python` is needed only for a product with a python component.
-3. **`$GAIA_BIN` is trusted, not verified.** `gaia --version` prints `gaia 2.0.6-dev` and no commit
-   at aa987cc too, so the check cannot confirm the binary was built from the pinned commit. The cached
-   build is built from it by the script itself.
+3. **The gaia binary's commit is checked.** `gaia --version` prints `gaia <version> (<commit>)` at `7db227f`
+   and at `f5a32f9` and `7db227f` (PR #86); the check refuses a binary that prints another commit, `-dirty`, or no commit.
+   `aa987cc` and older print no commit and are refused.
 4. **Gaia's `Cargo.lock` is untracked** at this commit (`git ls-files Cargo.lock` is empty at
    aa987cc; the root `.gitignore` has `/Cargo.lock`), so a build is pinned by commit only, not by
    dependency versions.

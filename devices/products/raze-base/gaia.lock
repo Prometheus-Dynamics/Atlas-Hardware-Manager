@@ -59,8 +59,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."orion-recovery.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "6dfb990b0dac670d43a8576f0a33491c96406891"
-commit = "6dfb990b0dac670d43a8576f0a33491c96406891"
+ref = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
+commit = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 
 [source."orion.root"]
 kind = "image"
@@ -70,8 +70,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."orion.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "6dfb990b0dac670d43a8576f0a33491c96406891"
-commit = "6dfb990b0dac670d43a8576f0a33491c96406891"
+ref = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
+commit = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 
 [source."raze-base.buildroot"]
 kind = "git"

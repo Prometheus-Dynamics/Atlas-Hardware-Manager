@@ -270,6 +270,11 @@ impl BoardActions {
             Presence::Searching => {
                 return Err(ActionError::NotConnected("not connected yet".into()));
             }
+            Presence::Replaced { .. } => {
+                return Err(ActionError::NotConnected(
+                    "the node at this address was replaced by another node key".into(),
+                ));
+            }
         };
         node.name.parse().map_err(|_| {
             ActionError::NotAnswering(format!(

@@ -1,0 +1,28 @@
+# DEV ONLY, bring-up products only (zero-3e, rock-4d, rock-5c and cubie-a7 bring-up). The bench SSH
+# PUBLIC key is a NAMED LOCAL INPUT: `{ input = "bench-key" }` below, which `gaia plan --input
+# bench-key=PATH` supplies (a public key file from outside the repository). The check gives it a
+# throwaway public key it makes in a temp dir for each run; the image's builder gives the bench's own.
+# Commit no key, and never a private key.
+# Why it exists: dropbear refuses blank passwords, so a bring-up board needs a key to log in. Goes when
+# Orion serves SSH on the board.
+version = 1
+name = "dev-bench-ssh-key"
+description = "DEV ONLY: the bench SSH public key as root's authorized_keys (bring-up only)."
+
+# The bench public key: the named input `bench-key` (see the header).
+[[install]]
+from = { input = "bench-key" }
+to = "/root/.ssh/authorized_keys"
+mode = "0600"
+
+# Key only: dropbear's -s turns password logins off (its options file).
+[[install]]
+from = { file = "dropbear.default" }
+to = "/etc/default/dropbear"
+mode = "0644"
+
+# dropbear.service (installed by the dropbear package; Buildroot's preset is not
+# relied on): enabled here so the bring-up board takes the key at boot.
+[[services]]
+unit = "dropbear.service"
+enable = true
