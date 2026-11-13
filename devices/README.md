@@ -134,7 +134,7 @@ shows it as the fragment's input tree (`@files.0@` in the `os-config` host input
 ## Rust components (at the pin)
 
 A component that builds a Cargo package uses Gaia's `rust` builder. The form is Gaia's
-`examples/components/hello-rust/component.toml` at `4abf626`, as `tests/fixtures/good-rust` has it:
+`examples/components/hello-rust/component.toml` at `aa987cc`, as `tests/fixtures/good-rust` has it:
 
 ```toml
 version = 1
@@ -168,7 +168,7 @@ mode = "0755"
   `cargo build --package <package>`. A workspace with several binaries is one component per package.
 - The target is the board's: no triple in the description. The crates come from the source's
   `Cargo.lock`. The Gaia node refuses a source with no `Cargo.lock` at build time (read in the node's
-  source at 4abf626, not run).
+  source at aa987cc, not run).
 - Other `[build.settings]` the rust builder takes: `profile` (a cargo profile name; unset is `release`),
   `features`, `cc` and `env` (for a crate that compiles C), `triple` and `cpu` (the board's when unset).
   Plan accepts them all; it refuses `vendor` and an unknown key by name. Leave `profile` unset until
@@ -185,24 +185,24 @@ mode = "0755"
 - The build machine needs Rust 1.99.0 (Gaia's `rust-toolchain.toml`) and bubblewrap. Not built here:
   this check plans only.
 
-## F8 format points, as Gaia 4abf626 treats them
+## F8 format points, as Gaia aa987cc treats them
 
-Each row was tried with Gaia `4abf626` (`gaia 2.0.6-dev`). "validate" is `gaia validate`, "plan"
+Each row was tried with Gaia `aa987cc` (`gaia 2.0.6-dev`). "validate" is `gaia validate`, "plan"
 is `gaia plan` with the product's lock and `--tool veritysetup=...` where a recipe needs it.
 Only what was seen is written here.
 
-| Point | Format for B-series | Gaia at 4abf626 |
+| Point | Format for B-series | Gaia at aa987cc |
 |---|---|---|
 | Product sources | `[sources.<name>]` in product.toml | accepted: validate and plan pass (good-f8, good-sd-image) |
 | Image OS | `os = { provider = "buildroot", source = "<name>", fragments = [...] }` on the image | accepted: validate and plan pass; plan lists the `buildroot-host` step. With `make` absent from PATH, plan refuses: `the host gives no Buildroot setup (make, jobs, download directory)` |
 | Blob keys | `[bootloader.blobs]` keys are U-Boot's make variables: capitals, digits and `_` only, e.g. `ROCKCHIP_TPL` | `ROCKCHIP_TPL` validates and plans. validate passes `tpl` and `ROCKCHIP-TPL` too; plan refuses them (`bootloader.blobs.tpl: ... is not a make variable: capitals, digits and _`). (An earlier note here said validate refused them; 10beed8's validate passes them as well) |
 | Kernel defconfig | `kernel.defconfig = "defconfig"` is the architecture default; set it only to differ | accepted (the family in good-f8 and good-sd-image) |
-| Kernel overlays | `kernel.overlays` is refused for an OS build for now | validate accepts; plan refuses: `device tree overlays are not given to an OS build yet` |
+| Kernel overlays | `kernel.overlays` names overlays by path under the kernel's device tree directory, with no extension (`rockchip/rk3566-radxa-zero-3e-gadget`) | validate accepts either form; plan accepts the name without an extension and refuses one with it: `kernel.overlays[0]: ... is not an overlay's name: a path under the kernel's device tree directory, with no extension` (refused outright at 4abf626) |
 | Partition `bootable` | not a board key | validate refuses: `partitions[0].bootable: unknown key` |
 | Partition content | `content = "<file>"` only on `in_table = false`, with an `offset` | validate refuses `content` on `in_table = true` (a partition's content comes from the recipe); refuses `in_table = false` with no `offset` |
 | Recipe `slot` | the recipe is named `slot`; its one setting is `device` (`[images.settings] device = "/data/slots/root.img"`) | the name is accepted. `device` is required (plan: `missing; it has no default and wants a string`). With `device` set, plan still refuses without `veritysetup` on PATH: `needs its input veritysetup, and nothing gives it`. Seen with `--tool veritysetup=` unset; passing a stub makes plan pass |
 | Recipe `sd-image` | the disk recipe: `[images.settings]` with `id` (required string) and optional parameters (see below) | validate and plan pass for good-sd-image (with a veritysetup stub; plan also refuses without one, through its verity step). A board with no `[disk]` table is refused by plan: `the board has no [disk] table` |
-| Bogus recipe | `recipe = "nope"` | validate passes; plan refuses: `images[0].recipe: no recipe "nope"` |
+| Bogus recipe | `recipe = "nope"` | validate refuses when given the recipes (`--recipes DIR`, which the check passes): `no recipe named \`nope\`; the recipes are ...`. Without `--recipes` (and no `recipes/` beside the product) validate passes; plan refuses: `images[0].recipe: no recipe "nope"` |
 | Rust component | `[build] builder = "rust"` with `[build.settings] package`, see "Rust components" | validate passes; plan needs `bwrap` and `rustc` on PATH (or the check's stand-in for `bwrap`) |
 | Component build settings | the rust builder's keys in `[build.settings]` | validate does not read them; plan refuses `vendor` and unknown keys by name, accepts `profile`, `features`, `cc`, `env`, `triple`, `cpu` |
 | `@here@` | in a fragment file it is that file's directory | accepted: plan shows it as the fragment's input tree (`@files.0@`) |
@@ -243,14 +243,17 @@ What `sd-image` builds, from its recipe file (`recipes/sd-image.toml`) and the p
 
 Partition roles at this rev (for `role`): `bootloader`, `boot`, `esp`, `rootfs`, `data`, `raw`.
 
-A bogus recipe name passes validate and plan refuses it: `no recipe "nope"`.
+A bogus recipe name is refused by validate when it is given the recipes (`--recipes DIR`), and by plan always:
+`no recipe "nope"`.
 
 ## The Gaia pin
 
 `gaia.lock` is Atlas's, written by hand: a Gaia URL and a full commit. It is not Gaia's lock. The
-commit is `4abf626316a8d3f8c2bb9561e1895a0e89745f9b` (Gaia `next`, PR #75 merged: the Rust components
-and the permissions fix, after `sd-image` and the board's `[disk]` and `in_table` keys). The one before
-was `10beed87d9591175305997a2ebf1f88e3f5e4b2b`. To move it: change `commit`, run
+commit is `aa987ccc54f13d415bc42623da30805243746ed6` (Gaia `next`, PR #83 merged: the `/root` merge fix,
+OS owners and modes in every image, the Buildroot config line check, `gaia validate --recipes`, the
+`subdir` and `[flash]` keys, and `kernel.overlays` into the kernel build). The one before was
+`4abf626316a8d3f8c2bb9561e1895a0e89745f9b` (PR #75, the Rust components), and before that
+`10beed87d9591175305997a2ebf1f88e3f5e4b2b`. To move it: change `commit`, run
 `scripts/check-devices.sh --write-locks`, and commit the pin and every regenerated `gaia.lock`
 together.
 
@@ -289,7 +292,7 @@ gaia binary: `$GAIA_BIN` if set (used as given, and its commit is not checked be
 no commit); otherwise a build from that commit, cached in
 `${ATLAS_GAIA_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/gaia}/<commit>/`. The first run clones
 Gaia from GitHub and builds it with cargo; later runs reuse `bin/gaia`. The recipes come from the
-same checkout. With a binary that has `gaia validate` (4abf626 does), it validates every family,
+same checkout. With a binary that has `gaia validate` (aa987cc does), it validates every family,
 board, component and product file (with `--kind` from the directory). Then, for each product, it
 locks the product into a temp file, requires the committed `gaia.lock` to match it, and plans the
 product with the committed lock. A binary without `gaia validate` plans every product only.
@@ -308,27 +311,28 @@ What it needs on the machine:
 
 ## Known limits at the pin
 
-These hold at Gaia `4abf626`, the pin in `gaia.lock`, and each was tested with that commit's binary
+These hold at Gaia `aa987cc`, the pin in `gaia.lock`, and each was tested with that commit's binary
 (`gaia 2.0.6-dev`). They lift when the pin moves.
 
 1. **`slot` and `sd-image` need `veritysetup`.** A product on either recipe cannot be planned where
    that tool is not on PATH (or passed with `--tool veritysetup=PATH`). The check passes a stand-in
    when it is missing, so planning works; a build needs the real one (cryptsetup's tool).
-   Checked at 4abf626: `slot` with `device` set and `sd-image` both refuse without it.
+   Checked at aa987cc: `slot` with `device` set and `sd-image` both refuse without it.
 2. **`gaia plan` needs every tool a recipe names on PATH**, or passed with `--tool NAME=PATH`.
-   Checked at 4abf626: a Rust component needs `bwrap` (the check passes a stand-in) and `rustc`; a
+   Checked at aa987cc: a Rust component needs `bwrap` (the check passes a stand-in) and `rustc`; a
    Buildroot product needs `make`. `python` is needed only for a product with a python component.
 3. **`$GAIA_BIN` is trusted, not verified.** `gaia --version` prints `gaia 2.0.6-dev` and no commit
-   at 4abf626 too, so the check cannot confirm the binary was built from the pinned commit. The cached
+   at aa987cc too, so the check cannot confirm the binary was built from the pinned commit. The cached
    build is built from it by the script itself.
 4. **Gaia's `Cargo.lock` is untracked** at this commit (`git ls-files Cargo.lock` is empty at
-   4abf626; the root `.gitignore` has `/Cargo.lock`), so a build is pinned by commit only, not by
+   aa987cc; the root `.gitignore` has `/Cargo.lock`), so a build is pinned by commit only, not by
    dependency versions.
-5. **`gaia validate` does not look at recipe names, tools, blob names, component build settings or
-   the store.** A bogus recipe name passes validate, and only `gaia plan` refuses it. `kernel.overlays`
-   is the same: validate passes it, plan refuses it. So are blob names that are not make variables
-   (`tpl`, `ROCKCHIP-TPL`), and the component's `[build.settings]`.
+5. **`gaia validate` does not check tools, blob names beyond their form, component build settings, the store,
+   or kernel overlay names.** Recipe names are checked when validate is given the recipes (`--recipes DIR`,
+   which the check passes); without it, validate skips them. Plan refuses an overlay name that carries an
+   extension, refuses a blob name that is not a make variable (`tpl`), and refuses a component's
+   `[build.settings]` key it does not take (`vendor`), where validate accepts all three.
 
 A board with no product is validated on its own (`gaia validate --kind board`) and listed as "in no
-product yet". It is never planned, so plan-time rules (recipe names, `kernel.overlays`, a `[disk]`
+product yet". It is never planned, so plan-time rules (overlay names, blob names, a `[disk]`
 table for an sd-image product) are not checked for it until a product names it.
