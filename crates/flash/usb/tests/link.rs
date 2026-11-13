@@ -525,6 +525,52 @@ fn dropping_the_write_half_stops_a_blocked_read_and_the_claim_goes_with_both_hal
 }
 
 #[test]
+fn after_the_write_half_is_dropped_every_read_errors_at_once_even_with_none_pending() {
+    let bus = SimBus::new();
+    attach(&bus, "1-2");
+    let gauges = bus.gauges();
+    let (mut reader, writer) = runtime()
+        .block_on(open(&bus, "1-2", LinkOptions::default()))
+        .into_blocking()
+        .unwrap();
+    // No read is pending when the write half goes.
+    drop(writer);
+    let mut buf = [0u8; 8];
+    let started = std::time::Instant::now();
+    for _ in 0..3 {
+        let error = LinkRead::read(&mut reader, &mut buf).expect_err("stopped");
+        assert!(!is_device_gone(&error));
+    }
+    assert!(started.elapsed() < Duration::from_secs(2), "a read waited");
+    drop(reader);
+    assert_eq!(gauges.live().devices, 0, "the claim was released");
+}
+
+#[test]
+fn a_read_thread_blocked_when_the_write_half_drops_ends_and_a_later_read_errors_at_once() {
+    let bus = SimBus::new();
+    attach(&bus, "1-2");
+    let (mut reader, writer) = runtime()
+        .block_on(open(&bus, "1-2", LinkOptions::default()))
+        .into_blocking()
+        .unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        let mut buf = [0u8; 8];
+        let first = LinkRead::read(&mut reader, &mut buf).is_err();
+        let second = LinkRead::read(&mut reader, &mut buf).is_err();
+        let _ = tx.send((first, second));
+    });
+    std::thread::sleep(Duration::from_millis(50));
+    drop(writer);
+    let (first, second) = rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("the blocked read returned within the deadline");
+    assert!(first && second);
+    thread.join().expect("the thread ends");
+}
+
+#[test]
 fn a_blocked_read_on_one_thread_does_not_delay_a_write_on_another() {
     let bus = SimBus::new();
     attach(&bus, "1-2");

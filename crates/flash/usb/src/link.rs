@@ -482,6 +482,12 @@ pub trait LinkWrite: Send + 'static {
 /// The blocking read half: `std::io::Read` and [`LinkRead`]. It owns a
 /// current-thread tokio runtime, created by [`Link::into_blocking`]; its
 /// blocking waits are a `select!` on the transfer and a wake-up, not a poll.
+///
+/// Shutdown contract: once the [`BlockingWriter`] of this link is dropped, a
+/// `read` in progress returns an error at once, cancelling its queued IN
+/// transfer, and every later `read` returns an error at once too. It never
+/// blocks again and never returns `Ok(0)` for good. Dropping this half alone
+/// does not affect writes; the interface is released when both are gone.
 pub struct BlockingReader {
     core: ReadCore,
     runtime: Runtime,
@@ -554,8 +560,14 @@ impl Read for BlockingReader {
     }
 }
 
-/// The blocking write half: `std::io::Write` and [`LinkWrite`]. Dropping it
-/// stops a read the other half is blocked in.
+/// The blocking write half: `std::io::Write` and [`LinkWrite`].
+///
+/// Shutdown contract: dropping it is the signal to the read half. A `read`
+/// blocked in a transfer returns an error promptly, and so does every later
+/// `read`; the pending IN transfer is cancelled. The read thread is not joined
+/// by this drop, so it must not be waited on for the drop to finish. This drop
+/// is the only way to stop the read half; the interface is released when both
+/// halves are gone.
 pub struct BlockingWriter {
     core: WriteCore,
     runtime: Runtime,
