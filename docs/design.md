@@ -67,6 +67,8 @@ The libraries under it have been rebuilt. Orion `next` is on every board in ever
    controller is an ordinary Orion node: Atlas talks through it to boards plugged into it, its
    flash job keeps running if Atlas goes away, and its page shows real device information.
    Installing a product on the controller (HeliOS) is one more package offered the same way.
+   The first install is the one exception to rule 1: Orion isn't on the controller yet, so it
+   goes through the controller's own package install. Everything after it is Orion.
 7. **The app is fast and plain.** It opens at once. A slow or missing device never slows it.
    Nothing blocks on a scan. No confirmation on anything reversible, and a confirmation never
    moves the layout. Health ignores robot power cycles. Nothing overflows. Mockups come before
