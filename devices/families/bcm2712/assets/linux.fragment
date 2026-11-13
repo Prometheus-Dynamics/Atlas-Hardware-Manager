@@ -36,6 +36,8 @@ CONFIG_MBOX_RP1=y
 #   the Kconfig in this tree gives PCI_MSI no default, so MFD_RP1 could drop to n in olddefconfig. Set here.
 # CONFIG_MFD_RP1: the RP1 multi-function device the mailbox (MBOX_RP1) sits on. bcm2712_defconfig has it =y
 #   (checked in its file); set here too so the chain does not depend on the defconfig's value alone.
+# Mark for the RP1 rows (Lemnos docs/kernel-config.md at 818473f6): MFD_RP1 and PCI_MSI are generic (verified
+#   against the reference SoC's .config in that doc).
 CONFIG_PCI_MSI=y
 CONFIG_MFD_RP1=y
 #

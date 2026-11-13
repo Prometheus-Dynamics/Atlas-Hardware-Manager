@@ -21,6 +21,8 @@ CONFIG_USB_CONFIGFS=y
 CONFIG_USB_CONFIGFS_F_FS=y
 # -- Built in for the flasher (no modules in its image; Lemnos docs/kernel-config.md @4c6678f3, "Built in" column) --
 # CONFIG_SPI_SPIDEV: /dev/spidevB.C, the stock SPI route Lemnos uses without lemnos.ko (m in the arm64 defconfig).
+#   Mark: VERIFIED, the generic "Built in" table of Lemnos docs/kernel-config.md at 818473f6 (not per-SoC).
 CONFIG_SPI_SPIDEV=y
 # CONFIG_DMABUF_HEAPS_CMA: /dev/dma_heap/linux,cma, the CMA heap of Lemnos's stream buffers (needs DMA_CMA and CMA).
+#   Mark: VERIFIED, the generic dma-heaps table of Lemnos docs/kernel-config.md at 818473f6.
 CONFIG_DMABUF_HEAPS_CMA=y

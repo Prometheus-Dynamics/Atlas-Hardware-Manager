@@ -149,3 +149,14 @@ CONFIG_DM_VERITY=y
 # CONFIG_USB_G_NOKIA is not set
 # CONFIG_USB_G_ACM_MS is not set
 # CONFIG_USB_G_MULTI is not set
+
+# -- Per-SoC drivers this trim does NOT turn off (comments only; the symbols stay as the defconfig has them).
+#    Source: Lemnos docs/kernel-config.md at 818473f6, "The SoC drivers" table. Marks, with the doc's rev:
+#    CONFIG_I2C_RK3X (rk3566 and rk3588 I2C): FALLBACK only, rockchip,rk3399-i2c is the driver's string.
+#    CONFIG_SPI_ROCKCHIP (rk3566 and rk3588 SPI): FALLBACK only, rockchip,rk3066-spi.
+#    CONFIG_PWM_ROCKCHIP (rk3566 and rk3588 PWM): FALLBACK only, rockchip,rk3328-pwm.
+#    CONFIG_GPIO_ROCKCHIP (rk3566 and rk3588 GPIO): NOT VERIFIED (the doc did not read the driver).
+#    CONFIG_SERIAL_8250_DW (rk3566 and rk3588 UART): NOT VERIFIED (the doc did not read the driver).
+#    CONFIG_I2C_DESIGNWARE_PLATFORM, CONFIG_PWM_RP1 and CONFIG_PINCTRL_RP1 are the RP1 rows, VERIFIED,
+#    and sit in the bcm2712 fragment, not here. The ROCK 4D (rk3576) has no row in the doc: NOT VERIFIED.
+#    Every one of these is on in the resolved ZERO 3E, ROCK 5C and ROCK 4D configs (merge check, PR B16).

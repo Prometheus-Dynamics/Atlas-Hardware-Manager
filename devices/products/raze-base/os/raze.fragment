@@ -64,3 +64,8 @@ BR2_TARGET_GENERIC_ROOT_PASSWD=""
 # ELF format is a choice whose default follows the MMU, so it is not left to that default.
 BR2_BINFMT_ELF=y
 BR2_STRIP_strip=y
+
+# ---- Device tree overlay symbols (PR B16). The dtbs are built with symbols (dtc -@, Buildroot's DTC_FLAGS=-@),
+# so an overlay can name the board's nodes. Off in allnoconfig; set here. Measured on the ZERO 3E gadget dtb:
+# 55,678 -> 115,100 bytes with symbols (host dtc 1.8.1).
+BR2_LINUX_KERNEL_DTB_OVERLAY_SUPPORT=y
