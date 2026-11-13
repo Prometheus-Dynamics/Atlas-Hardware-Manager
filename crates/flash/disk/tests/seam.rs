@@ -1,4 +1,3 @@
-#![cfg(unix)]
 //! The write pipeline against a fake platform. Every "disk" is a regular file in
 //! the temporary directory, and the fake platform records the order of every
 //! call, so the tests can see what the pipeline did and in what sequence.
@@ -8,7 +7,6 @@ mod common;
 
 use std::fs::{self, File, OpenOptions};
 use std::io;
-use std::os::unix::fs::FileExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -17,7 +15,7 @@ use atlas_disk::{
     Acknowledgement, Disk, DiskError, DiskSource, Guard, Platform, Proof, RawDisk, ResumePolicy,
     WriteOptions, WriteProgress, WriteReport, WriteRequest, write_disk,
 };
-use common::{sha256_hex, temp, xz_bytes};
+use common::{sha256_hex, temp};
 
 type Log = Arc<Mutex<Vec<String>>>;
 
@@ -66,12 +64,12 @@ impl RawDisk for FakeRaw {
         {
             cancel.store(true, Ordering::Relaxed);
         }
-        self.file.write_all_at(data, offset)
+        common::write_all_at(&self.file, data, offset)
     }
 
     fn read_at(&mut self, offset: u64, buf: &mut [u8]) -> io::Result<()> {
         note(&self.log, format!("read@{offset}+{}", buf.len()));
-        self.file.read_exact_at(buf, offset)
+        common::read_exact_at(&self.file, buf, offset)
     }
 
     fn sync(&mut self) -> io::Result<()> {
@@ -535,12 +533,14 @@ fn a_cancelled_write_is_not_finished_and_writes_nothing_after_the_cancel() {
     let _ = fs::remove_file(image);
 }
 
+/// Needs the `xz` program (unix only, see `common::xz_bytes`).
 #[test]
+#[cfg(unix)]
 fn nothing_is_written_past_the_image_and_the_signature_record_never_is() {
     let raw = raw_image(10_000);
     let record = vec![0x5A; 108];
-    let mut two_streams = xz_bytes(&raw);
-    two_streams.extend_from_slice(&xz_bytes(&record));
+    let mut two_streams = common::xz_bytes(&raw);
+    two_streams.extend_from_slice(&common::xz_bytes(&record));
     let image = image_file(&two_streams);
     let target = target_file(64 * 1024);
     let platform = Arc::new(FakePlatform::new(target.clone(), card(64 * 1024)));
