@@ -63,6 +63,7 @@ Our own loader for every chip family, then the flasher image, then an ordinary u
 - [ ] [D11](docs/prs/D11.md) Read a slot out of the first-flash image (wave 4; needs D9)
 - [ ] [D12](docs/prs/D12.md) Find a board's Orion link over USB by its interface string (wave 4; needs D1, A8)
 - [ ] [D13](docs/prs/D13.md) slot.json schema 3, and the bundle made from the image (wave 5; needs D9, D11)
+- [ ] [D14](docs/prs/D14.md) Verity keys in the slot manifest, and the bundle from an image in one call (wave 6; needs D13)
 
 ## E. Robot network and SystemCore
 
