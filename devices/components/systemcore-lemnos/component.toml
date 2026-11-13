@@ -1,0 +1,56 @@
+version = 1
+name = "systemcore-lemnos"
+description = "Lemnos on the SystemCore: the daemon that owns the controller's hardware as drivers. Built from Lemnos's packaging at the pinned commit; the units, sysusers and udev rules are read from that same source."
+
+# Lemnos at 26364ff (L1 packaging merged), workspace version 2.0.1-dev there.
+[sources.lemnos]
+git = "https://github.com/Prometheus-Dynamics/Lemnos.git"
+ref = "26364ff7eb938c9009796eff40269ab471a0d51d"
+
+# `lemnosd` for aarch64 musl, as Lemnos's .cargo/config.toml builds it. The locked rust builder
+# takes one package, so `lemnos-ctl` and `lemnos-orion` are not built here (see the PR text).
+[build]
+builder = "rust"
+source = "lemnos"
+
+[build.settings]
+package = "lemnosd"
+triple = "aarch64-unknown-linux-musl"
+
+[package]
+version = "2.0.1~dev"
+architecture = "aarch64"
+maintainer = "Prometheus Dynamics"
+description = """
+Lemnos: the board-management daemon on this controller.
+"""
+depends = []
+
+# The daemon binary, as the built output (bin/lemnosd) at the path the unit runs.
+[[install]]
+from = "bin/lemnosd"
+to = "/usr/bin/lemnosd"
+mode = "0755"
+
+[[install]]
+from = { source = "lemnos", path = "packaging/systemd/lemnosd.service" }
+to = "/usr/lib/systemd/system/lemnosd.service"
+mode = "0644"
+
+[[install]]
+from = { source = "lemnos", path = "packaging/systemd/lemnos.conf" }
+to = "/usr/lib/sysusers.d/lemnos.conf"
+mode = "0644"
+
+[[install]]
+from = { source = "lemnos", path = "packaging/udev/70-lemnos.rules" }
+to = "/usr/lib/udev/rules.d/70-lemnos.rules"
+mode = "0644"
+
+[[install]]
+from = { source = "lemnos", path = "packaging/systemd/lemnosd.env.example" }
+to = "/etc/lemnos/lemnosd.env"
+mode = "0644"
+
+[[services]]
+unit = "lemnosd.service"
