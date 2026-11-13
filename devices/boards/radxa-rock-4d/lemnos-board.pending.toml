@@ -1,37 +1,64 @@
-# The ROCK 4D's USB device port, NOT ACTIVE (B15). Every entry is commented out, so this file holds no
-# Lemnos entry and cannot be installed as one. It is a record of the candidate and why it is held.
+# The ROCK 4D's USB device port, HELD. Every entry below is commented out, so this file holds no Lemnos entry
+# and cannot be installed as one.
 #
-# Candidate entry, for Lemnos 4a2d3b7d (Q2e, socs/rk3576.toml), when it is safe to activate. B18 ran it through
-# `lemnos-ctl tree` at 4a2d3b7d (scratch): accepted, the overlay sets dr_mode = "peripheral" and keeps the base
-# tree's phy-supply (the blocker below). Still held: the entry stays commented out.
+# Status and bring-up checks: docs/prs/B21.md.
+#
+# STATUS (read first): HELD. No `vbus_undriven` is asserted here, and none can be until a schematic AND a meter
+# say so. The ROCK 4D is not among the boards on hand. Its base tree says the device-capable port's 5 V is
+# always on (regulator-always-on in the dts), and an always-on 5 V cannot be a device port. The schematic shows
+# the 5 V IS switchable in hardware, so the always-on setting is the base dts's, not the board's. The only way
+# forward is an Atlas-owned board dts (reviewed, run on a board) or a `vbus = "gpio:..."` statement after a meter.
+# No ROCK 4D image may be built for a person to plug in as a USB device before that, and before Lemnos Q2g
+# (boot holds as gpio-hogs) is merged and locked.
+#
+# Candidate entry, for Lemnos 96080d36 (Q2e, socs/rk3576.toml). Written to Q2f (96080d36), unvalidated until the
+# lock moves. Commented out:
 #
 #   [[hardware]]
 #   name = "udc:23000000.usb"
 #   controller = "usb-drd0"
 #   role = "peripheral"
-#   # options = ["usb3"]   (OPEN: see below; not set)
+#   options = ["usb3"]
+#   # NO vbus / vbus_undriven / vbus_reason stated: see HELD above.
 #
 #   [[devices]]
 #   id = "gadget"
 #   driver = "usb-gadget"
 #   uses = { function = "udc:23000000.usb" }
 #
-# Why it is held (evidence, mainline device tree at v7.3.3, arch/arm64/boot/dts/rockchip/):
-# (a) Which connector: usb_drd0_dwc3 (usb@23000000) is the device-capable controller 0; its OTG PHY is
-#     u2phy0_otg and its SuperSpeed PHY is usbdp_phy. Radxa's ROCK 4D user guide
-#     (docs.radxa.com/en/rock4/rock4d/hardware-use/usb-type-a) says the top USB 3.0 Type-A port is the one
-#     that supports OTG and HOST. The lower USB 3.0 port is host only. The schematic was not read.
-#     Controller 1 (usb@23400000, usb-drd1) is the other candidate. Its OTG PHY is u2phy1_otg and it has
-#     combo PHY 1 for SuperSpeed. The lower and the second port are not OTG in the guide.
-# (b) SuperSpeed: the SoC tree links usb_drd0_dwc3 to usbdp_phy (USB3). The board enables usbdp_phy. Whether
-#     the upper port's lanes are wired to it was NOT read from the schematic. OPEN: `usb3` stays off.
-# (c) phy-supply: YES on both candidates, and it blocks both.
-#     rk3576-rock-4d.dts sets `&u2phy0_otg { phy-supply = <&vcc_5v0_otg>; }` (drd0) and
-#     `&u2phy1_otg { phy-supply = <&vcc_5v0_host>; }` (drd1). Both regulators are regulator-always-on and
-#     regulator-boot-on, so the VBUS is on from power-on and cannot be turned off by the PHY. An active
-#     device entry would source 5 V from the port. Held until the tree stops setting it.
+# Generator result, scratch copy with the entry uncommented (no base named, and with
+# `base = "usb-always-on-vbus"`): see docs/prs/B21.md, "ROCK 4D (HELD)". Both refuse; the always-on one names the
+# regulator. Neither is written into this file as active. Bring-up checks: docs/prs/B21.md, "The meter check".
 #
-# What would settle it: (1) an Atlas-owned board dts (not the overlay) that drops the phy-supply on the
-# chosen port's OTG PHY, reviewed and run on a board; (2) the V1.12 schematic
-# (dl.radxa.com/rock4/4d/docs/hw/Radxa_ROCK_4D_SCH_V1.12.pdf), its PCIe/SATA/USB3 page, for the upper port's
-# SuperSpeed lanes and which DRD it is on.
+# Evidence, from the pinned kernel tree (v7.3.3, arch/arm64/boot/dts/rockchip/, B15 scratch):
+# (a) Connector: usb_drd0_dwc3 (usb@23000000) is DRD controller 0, the OTG controller, and its OTG PHY is u2phy0_otg.
+#     Schematic sheet 21 (V1.12, "USB HUB/USB2/USB3"): the lower of the stacked USB 3.0 Type-A connector J26 is the
+#     OTG port (VBUS_0 pin 10 on net 5V_USB_OTG0, USB3_OTG0 nets). The upper J26 port is the host (5V_USB_HOST).
+# (b) SuperSpeed: schematic sheet 21 wires USB3_OTG0 SSRX/SSTX pairs to J26 (pins 14-18), through 0 ohm resistors
+#     (R364-R366), and sheet 9 names them the USB3 OTG0 lanes of the SoC (the combo PHY, shared with DP alt).
+#     `usb3` is set in the candidate; the lane sharing with DP is a PHY mode choice, not checked on a board.
+# (c) VBUS, the base tree (rk3576-rock-4d.dts): `&u2phy0_otg { phy-supply = <&vcc_5v0_otg> }`, and
+#     `vcc_5v0_otg` has `enable-active-high`, `gpios = <&gpio2 RK_PD2 GPIO_ACTIVE_HIGH>`, `regulator-always-on`
+#     and `regulator-boot-on`. So the base tree forces the regulator on from boot.
+#     `vcc_5v0_host` (the host port's `u2phy1_otg` supply) is the same: always-on, on gpio0 PD3.
+# (d) VBUS, the schematic (sheet 21): U23 is a SY6280AAC load switch. IN = VCC5V0_SYS_S5 (pin 5), VOUT (pin 1) =
+#     5V_USB_OTG0 to J26 VBUS_0, EN (pin 4) = USB_OTG0_PWREN_H through R359 (1 K), OCB (pin 3) with a 6.8 K pull-up.
+#     So the hardware can switch the OTG port's 5 V off with that enable net. The host port is the same shape:
+#     U27 SY6280AAC, EN = USB_HOST_PWREN_H, VOUT = 5V_USB_HOST.
+# (e) The SoC pin for USB_OTG0_PWREN_H: the sheet 14 pin-name rows (GPIO2_D1_d, GPIO2_D2_d) and ball labels (B17, B18)
+#     do not line up unambiguously in the text layer and the render; the dts says PD2. NOT SETTLED: the RK3576 ball
+#     map was not read, so the pin behind ball B17 is not confirmed.
+#
+# What settles it (all needed before any statement is written):
+# 1. A meter, per Lemnos testing/board-runs/Q2f.md at 96080d36 ("The check to run on a board"): on a ROCK 4D, device
+#    mode, cable unplugged, 0 V on the OTG port's VBUS, and no 5 V added to a host plugged into it. Settles whether
+#    the port's 5 V is really on in the board as built.
+# 2. The RK3576 ball map (datasheet) for ball B17, to fix the GPIO2 line behind USB_OTG0_PWREN_H (PD1 or PD2).
+# 3. The SY6280AAC datasheet for EN polarity (assumed active-high by the dts's `enable-active-high`).
+# 4. A decision on the base dts: an Atlas-owned board dts that drops `regulator-always-on` on vcc_5v0_otg. That is a
+#    board change, reviewed and run on a board. Not made here.
+# Only then: `vbus = "gpio:gpio2:<line>"` with `vbus_off` and `vbus_reason`, or `vbus_undriven = true` with the
+# schematic and the meter behind it. Until then the entry stays commented and held.
+#
+# The second candidate (drd1, `udc:23400000.usb` + `usb-drd1`) is not OTG in the Radxa guide and its base supply
+# (`vcc_5v0_host`) is also always on, so it is held for the same reason.

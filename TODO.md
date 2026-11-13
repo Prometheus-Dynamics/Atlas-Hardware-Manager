@@ -39,6 +39,7 @@ Every board as Gaia `next` data in `devices/`. Starts first; the Raze and the ZE
 - [ ] [B15](docs/prs/B15.md) A USB device-mode port in each board's description, and stable gadget addresses on the bring-up products (wave 5; needs B11, Lemnos Q2e)
 - [ ] [B18](docs/prs/B18.md) Lemnos lock to 4a2d3b7d: every Lemnos pin moved, one-rev check per product, ZERO 3E port validated, Raze refusals on record (needs B15; Lemnos 4a2d3b7d)
 - [ ] [B19](docs/prs/B19.md) Cubie A7 (Allwinner A733): vendor sources pinned, and a bring-up that shows life without a console (wave 5; needs B12, B13, B15)
+- [ ] [B21](docs/prs/B21.md) VBUS on each board's device-mode port, prepared for Lemnos Q2f (ZERO 3E complete; ROCK 5C held by Lemnos Q2g; ROCK 4D held; needs B15, B18, B19; Lemnos Q2f at 96080d36)
 
 ## C. One board driver
 
