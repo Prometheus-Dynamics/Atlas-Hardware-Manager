@@ -1,57 +1,62 @@
-# Orion's board image: the one `orion` binary, run as two services (orion-comm: `orion comm`, root with
-# group orion; orion-node: `orion node`, user orion). Board-neutral: every board that runs Orion imports
-# this. Built from Orion at c0187f4 (the rev the workspace pins; Orion commits its Cargo.lock).
+# Orion's board image: package orion-bin (binary orion), run as two services from Orion's packaging
+# (orion comm: root with group orion; orion node: user orion). Board-neutral. Built from Orion at
+# c0187f4c195cd27f8353c055dd0a94247c2965cc (the rev the workspace pins; Cargo.lock is committed there).
 #
-# Build facts (INPUTS, Orion): package `orion-bin`, binary `orion`, profile `service`, target
-# aarch64-unknown-linux-musl, `--locked --offline`, no features. The package is built in its own cargo
-# invocation. The profile `service` is NOT a setting the Gaia rust builder takes at 70a5133 (it runs
-# `--release`): the wanted field is in the PR text.
+# NOT YET BUILDABLE. Its cc and env need Gaia's pinned build root with zig (Orion's size-gate
+# wrappers, scripts/zigcc, and the zig cache); the public rust image has no zig. The next Gaia PR
+# pins that root. Until then this component plans and does not build.
 #
-# The units, settings and user are Orion's packaging/systemd files, installed as Orion's packaging README
-# table says, not rewritten. The user is made at build time too: the image's root is read-only.
+# The units, settings and user are Orion's packaging/systemd files, installed at the paths its
+# packaging README gives, unrewritten. The user is made at build time too: the image's root is read-only.
 version = 1
 name = "orion"
-description = "Orion: the orion binary as the board's comm core and node logic, its two units, settings, and the orion user"
+description = "Orion: the orion binary as the board's comm core and node logic (orion-bin), its two units, settings, and the orion user"
 
-[sources.orion]
+[sources.src]
 git = "https://github.com/Prometheus-Dynamics/Orion.git"
 ref = "c0187f4c195cd27f8353c055dd0a94247c2965cc"
 
+[sources.root]
+image = "docker.io/library/rust:1.99-slim"
+platform = "host"
+
 [build]
 builder = "rust"
-source = "orion"
+source = "src"
 
 [build.settings]
 package = "orion-bin"
-triple = "aarch64-unknown-linux-musl"
+profile = "service"
+cc = "/src/scripts/zigcc"
+env = "ZIG_GLOBAL_CACHE_DIR=/build/zig-cache\nZIG_LOCAL_CACHE_DIR=/build/zig-cache"
 
 [[install]]
-from = "orion"
+from = "bin/orion"
 to = "/usr/bin/orion"
 mode = "0755"
 
 [[install]]
-from = { source = "orion", path = "packaging/systemd/orion-comm.service" }
+from = { source = "src", path = "packaging/systemd/orion-comm.service" }
 to = "/usr/lib/systemd/system/orion-comm.service"
 mode = "0644"
 
 [[install]]
-from = { source = "orion", path = "packaging/systemd/orion-node.service" }
+from = { source = "src", path = "packaging/systemd/orion-node.service" }
 to = "/usr/lib/systemd/system/orion-node.service"
 mode = "0644"
 
 [[install]]
-from = { source = "orion", path = "packaging/systemd/orion.conf.example" }
+from = { source = "src", path = "packaging/systemd/orion.conf.example" }
 to = "/etc/orion/orion.conf"
 mode = "0644"
 
 [[install]]
-from = { source = "orion", path = "packaging/systemd/orion.sysusers" }
+from = { source = "src", path = "packaging/systemd/orion.sysusers" }
 to = "/usr/lib/sysusers.d/orion.conf"
 mode = "0644"
 
 [[install]]
-from = { source = "orion", path = "packaging/systemd/orion.preset" }
+from = { source = "src", path = "packaging/systemd/orion.preset" }
 to = "/usr/lib/systemd/system-preset/80-orion.preset"
 mode = "0644"
 

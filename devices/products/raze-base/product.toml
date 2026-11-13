@@ -1,40 +1,38 @@
-# The Raze base OS product, in Gaia `next`'s F8 form at 70a5133. One image: the Raze board, its
-# OS (Buildroot, with os/raze.fragment), its components, and the root slot.
+# The Raze base OS product, Gaia F8 form at the pin (4abf626 and later). One image: the Raze board, its OS
+# (Buildroot, os/raze.fragment), the Lemnos and Orion components, and the root slot.
 #
-# Where the OS's boot files go (Gaia puts them in four recipe inputs, by what each file is; see
-# the PR text for the bucket rules). For the Raze, from the Pi firmware and the kernel:
-#   kernel        the kernel image. F8? Buildroot names the Pi's kernel kernel8.img, which Gaia's
-#                 bucket rule does not match (it matches Image*, *.itb): it lands in `images`.
-#   device-trees  the bcm*.dtb files (DTBs match by extension).
-#   bootloader    the Pi firmware: bootcode, start4.elf, fixup4.dat (u-boot* / idbloader / spl /
-#                 bl31 / tf-a prefixes; the Pi has none, so the firmware files go to `images`).
-#   os            everything else in images/: the firmware and its overlays/ directory, and
-#                 raze-device.txt, config.txt and cmdline.txt in the boot partition.
-# The root slot (`slot`) takes the OS's rootfs only; the boot files are for the disk recipe, which
-# is not at 70a5133.
+# Components named here but NOT on the image (the check reads them, the base image doesn't ship them):
+#   lemnos-slot-init   goes in the SLOT INITRAMFS (the slot's /init), not the root filesystem: no Gaia field
+#                      targets an initramfs tree yet (PR text).
+#   orion-recovery     the recovery package: for an initramfs or flasher image (the flasher product, B9).
+# Components on the image: the Lemnos packaging, lemnosd, lemnos-ctl, lemnos-orion; the Orion board image
+# (orion-bin); the Raze's board file and the base files.
 version = 1
 name = "raze-base"
-description = "Raze base OS: the Raze board, its Lemnos packages, as a root slot"
+description = "Raze base OS: the Raze board with the Lemnos and Orion packages, as a root slot"
 
-# Buildroot 2026.08 (systemd 258.7 there; lemnosd needs 254+). Its source pins by commit in the lock.
 [sources.buildroot]
 git = "https://gitlab.com/buildroot.org/buildroot.git"
 ref = "2026.08"
 
 [components]
 lemnos = "../../components/lemnos/component.toml"
+lemnosd = "../../components/lemnosd/component.toml"
+lemnos-ctl = "../../components/lemnos-ctl/component.toml"
+lemnos-orion = "../../components/lemnos-orion/component.toml"
+lemnos-slot-init = "../../components/lemnos-slot-init/component.toml"
 raze-lemnos-board = "../../components/raze-lemnos-board/component.toml"
 raze-base-files = "../../components/raze-base-files/component.toml"
 orion = "../../components/orion/component.toml"
+orion-recovery = "../../components/orion-recovery/component.toml"
 
 [[images]]
 name = "raze-base"
 board = "../../boards/raze/board.toml"
-components = ["lemnos", "raze-lemnos-board", "raze-base-files", "orion"]
+components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "orion"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/raze.fragment"] }
 recipe = "slot"
 
-# The path the root slot is written to. F8? the value's form (the zero-3e example uses a
-# /data/slots path); the Raze's slots live on the eMMC's data partition on dev (PARTUUID 5056525a-02).
+# The path the root slot is written to. F8?: the value's form (the zero-3e example uses a /data/slots path).
 [images.settings]
 device = "/data/slots/root.img"

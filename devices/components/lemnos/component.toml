@@ -1,59 +1,73 @@
-# Lemnos's hardware daemon, lemnosd, at Lemnos next 1bae570f (L2 packaging; the same install paths as 26364ff, the units changed since). Board-neutral:
-# every board that runs Lemnos imports it; what a board adds (its board file, a drop-in for its
-# own writes) is in the board's own component.
+# Lemnos's packaging for an image with systemd, at Lemnos next b0bf0101: the units, sysusers, udev rules
+# and settings files, at the paths Lemnos's packaging/README.md gives (the "one privilege path": no
+# setcap, no xattrs, no User= in the units; lemnosd starts as root and drops itself). Board-neutral.
 #
-# lemnosd is built from the Lemnos source by Gaia's rust builder (static musl, aarch64). The
-# packaging files are installed where Lemnos's packaging/README.md says. Not shipped here:
-# lemnos-orion.service (the Orion bridge; no Orion component yet) and lemnos-module.conf (no
-# lemnos.ko in the kernel). See the PR text for both.
+# The binaries are the four Rust components beside this one (lemnosd, lemnos-ctl, lemnos-orion,
+# lemnos-slot-init), one cargo package each. Not installed here, and why:
+#   - init/S50lemnosd, init/S51lemnos-orion, init/mdev.conf.fragment: BusyBox init, for an image
+#     without systemd (this image has systemd).
+#   - systemd/lemnos-module.conf: loads lemnos.ko, which this kernel does not build yet (the
+#     generator's modprobe.d output is the module's options; see the Raze board component).
 version = 1
 name = "lemnos"
-description = "Lemnos: the lemnosd hardware daemon, its unit, the lemnos user, its device-node rules and env example"
+description = "Lemnos packaging for systemd: the lemnosd and lemnos-orion units, the lemnos and lemnos-orion users, the device-node rules, the settings files"
 
-[sources.lemnos]
-git = "https://github.com/Prometheus-Dynamics/Lemnos.git"
-ref = "1bae570f1e57cad8cfcb1aab4d0fa8beea230fae"
-
-[build]
-builder = "rust"
-source = "lemnos"
-
-[build.settings]
-package = "lemnosd"
-triple = "aarch64-unknown-linux-musl"
+[sources.src]
+git = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
 
 [[install]]
-from = "lemnosd"
-to = "/usr/bin/lemnosd"
-mode = "0755"
-
-[[install]]
-from = { source = "lemnos", path = "packaging/systemd/lemnosd.service" }
+from = { source = "src", path = "packaging/systemd/lemnosd.service" }
 to = "/usr/lib/systemd/system/lemnosd.service"
 mode = "0644"
 
 [[install]]
-from = { source = "lemnos", path = "packaging/systemd/lemnos.conf" }
+from = { source = "src", path = "packaging/systemd/lemnos-orion.service" }
+to = "/usr/lib/systemd/system/lemnos-orion.service"
+mode = "0644"
+
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnos.conf" }
 to = "/usr/lib/sysusers.d/lemnos.conf"
 mode = "0644"
 
 [[install]]
-from = { source = "lemnos", path = "packaging/udev/70-lemnos.rules" }
+from = { source = "src", path = "packaging/udev/70-lemnos.rules" }
 to = "/usr/lib/udev/rules.d/70-lemnos.rules"
 mode = "0644"
 
-# lemnosd.env.example is not installed: every line in it is a comment, so an installed copy would set
-# nothing. The unit reads /etc/lemnos/lemnosd.env only when it exists (EnvironmentFile=-).
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnosd.env.example" }
+to = "/etc/lemnos/lemnosd.env"
+mode = "0644"
 
-# The lemnos user: the image is read-only, so systemd-sysusers can't add it at boot; the
-# image makes it at build time, as the unit's User=lemnos needs.
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnos-orion.env.example" }
+to = "/etc/lemnos/lemnos-orion.env"
+mode = "0644"
+
+# The users the sysusers file names (lemnos and lemnos-orion), made at build time as well: the
+# image's root is read-only, so systemd-sysusers cannot add them at boot. No fixed ids (Lemnos's
+# sysusers file leaves them to the system).
+[[groups]]
+name = "lemnos"
+
+[[groups]]
+name = "lemnos-orion"
+
 [[users]]
 name = "lemnos"
 group = "lemnos"
 
-[[groups]]
-name = "lemnos"
+[[users]]
+name = "lemnos-orion"
+group = "lemnos-orion"
+groups = ["lemnos", "orion"]
 
 [[services]]
 unit = "lemnosd.service"
+enable = true
+
+[[services]]
+unit = "lemnos-orion.service"
 enable = true

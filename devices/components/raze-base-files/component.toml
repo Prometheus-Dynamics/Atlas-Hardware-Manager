@@ -11,3 +11,8 @@ mode = "0644"
 
 # No systemd watchdog here: lemnosd feeds the hardware watchdog (15 s by default, from the board file),
 # and it is the only opener of the device.
+
+# The console: a getty on the USB gadget's ACM port, ttyGS0 (the gadget's one serial function). systemd runs it.
+[[services]]
+unit = "serial-getty@ttyGS0.service"
+enable = true
