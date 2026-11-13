@@ -12,3 +12,9 @@ kind = "git"
 url = "https://github.com/kendryte/k230_sdk.git"
 ref = "7e302f733311d284be255f0d81d3463b6ae6ee6d"
 commit = "7e302f733311d284be255f0d81d3463b6ae6ee6d"
+
+[source."canmv-k230d-ai-cam.linux"]
+kind = "git"
+url = "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
+ref = "v7.3.3"
+commit = "d50d994bffa3c7c6db2d8bc4c5f0c55e3f46b0cd"

@@ -1,6 +1,6 @@
 # BPI-CanMV-K230D-Zero (Kendryte K230D, riscv64, 128 MB LPDDR4 in the package) on the K230 family.
-# A TF slot only: the image is for microSD. No Ethernet, and Gaia's image has no Wi-Fi yet, so the
-# board has no network. Untested on board (G7).
+# A TF slot only: the image is for microSD. The USB-C port is its only network (device mode, the
+# bring-up's NCM gadget). Untested on board (G7).
 version = 1
 extends = "../../families/k230/family.toml"
 name = "bpi-canmv-k230d-zero"
@@ -9,15 +9,48 @@ description = "BPI-CanMV-K230D-Zero (K230D, 128 MB, microSD)"
 [target]
 cpu = "xuantie-c908"
 
-# Burner (flash loader, Atlas side): the SDK's U-Boot built with k230d_canmv_burntool_defconfig,
-# plain u-boot.bin (dev's record: loader_mmc.bin). It links at 0x80300000; the official tools send
-# 0x80360000, so the burn tries 0x80300000 first and falls back to 0x80360000 (dev's todo). Both are
-# outside needs (family). The image's own U-Boot is not named yet: the burntool defconfig is the
-# loader's, not the SD image's.
+# The kernel: ruyisdk's linux-xuantie-kernel (Linux 6.6, Xuantie vendor tree), the one Gaia's Zero build
+# used (3d1f249, examples/boards/k230d-zero/assets/k230d_zero_defconfig: BR2_LINUX_KERNEL_CUSTOM_REPO_VERSION
+# and BR2_LINUX_KERNEL_DEFCONFIG="k230"). Status: BUILT, NOT BOOTED. The build's Image says
+# "Linux version 6.6.36 ... Sat Nov 7 15:30:42 MST 2026" (boot.ext4 in /mnt/ssd-samsung/gaia/boards/k230d-zero/image);
+# /mnt/ssd-samsung/gaia/boards/REPORT.md: "None of the images or loaders has been run on a board."
+[sources.k230-linux]
+git = "https://github.com/ruyisdk/linux-xuantie-kernel.git"
+ref = "ae4a7e6518cd46407be9b648828b6f704d7dc302"
+
+[kernel]
+source = "k230-linux"
+defconfig = "k230"
+device_tree = "canaan/bananapi-canmv-k230d-zero"
+device_tree_dir = "dts"
+fragments = ["kernel/base.fragment"]
+
+# The device tree (dts/): the in-tree tree with usb0 in device mode (dr_mode = "peripheral"), the one
+# change Gaia's post-image made to the dtb (sed on dtc output). Kept as a source change because that
+# edit is what makes the USB-C port a network. Why each line: see the file's header.
 #
-# Power: the supply is a USB-C 5 V 2 A (the K230D Zero's rating in dev's AI-CAM record). No firmware
-# power cap: the user dropped it on 2026-10-30.
+# The boot chain (SDK, not in the kernel): SPL from the SDK's U-Boot 2022.10 (k230d_canmv_bpi), OpenSBI 1.4,
+# U-Boot environment from the SDK's default.env. Pins: k230_sdk 7e302f7 (family). Status: built, NOT booted.
 #
-# Open (dev's todo): which USB-C is the OTG data port; whether a BOOT key exists; whether the boot
-# ROM wants Canaan's firmware header on the burner (k230_flash sends it raw); storage: the board
-# page lists only the TF slot, so no SPI-NAND is described.
+# Blobs: none for K230 (the SPL is built from source). The one binary: tools/k230_priv_gzip in the SDK
+# (c6d029a0..., 109896 B, the same sha256 Gaia's REPORT.md records), a host tool; not on a board.
+#
+# Slot device: /dev/mmcblk0p2 (rootfs-a), from this kernel's bootargs root=/dev/mmcblk0p2.
+#
+# Burner (flash loader, Atlas side): the SDK's U-Boot with k230d_canmv_burntool_defconfig, plain u-boot.bin
+# (Gaia's loader_mmc.bin, sha256 b7e82858...). It links at 0x80300000; the official tools send 0x80360000,
+# so the burn tries 0x80300000 first and falls back to 0x80360000 (dev's todo). Both are outside needs.
+#
+# Mainline 7.x (the standing goal): open. Blocks, from /mnt/ssd-samsung/gaia/boards/REPORT-mainline.md:
+# the K230 SDK's U-Boot is the boot chain (mainline U-Boot has no K230 SPL or MMC driver), and no Zero
+# device tree exists in mainline (k230.dtsi stops at the UARTs in 7.3.3). The AI-CAM board runs mainline
+# 7.3.3 with its own dts (see that board).
+#
+# Power: the supply is a USB-C 5 V 2 A (the K230D Zero's rating in dev's AI-CAM record). No firmware power
+# cap: the user dropped it on 2026-10-30.
+#
+# Watchdog: the kernel fragment keeps the DW watchdog (lemnosd feeds it later). The bring-up turns it off:
+# no feeder there. Open: whether U-Boot leaves the DW watchdog running (unknown until a board runs).
+#
+# Open (dev's todo): which USB-C is the OTG data port; whether a BOOT key exists; whether the boot ROM
+# wants Canaan's firmware header on the burner; storage: the board page lists only the TF slot.

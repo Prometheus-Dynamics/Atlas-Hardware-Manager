@@ -4,8 +4,9 @@ version = 1
 name = "bpi-canmv-k230d-zero-base"
 description = "BPI-CanMV-K230D-Zero: base OS image"
 
-# Buildroot 2024.02.1, a tag named in Gaia 3d1f249's K230D Zero notes (its SDK sync downloads that
-# release). Dev pins no Buildroot, so this tag is a Gaia-note source: confirm it before G7.
+# Buildroot 2024.02.1, the upstream release. NOT what the Gaia build used: that was the SDK's Buildroot tree
+# (`make sync` in k230_sdk: 2024.02.1 with the SDK's overlay on top; Gaia 3d1f249). The overlay is the SDK's
+# buildroot-ext (k230_sdk 7e302f7, src/little/buildroot-ext): a subdir need (outside needs). Confirm the tag.
 [sources.buildroot]
 git = "https://gitlab.com/buildroot.org/buildroot.git"
 ref = "2024.02.1"
@@ -17,7 +18,7 @@ recipe = "slot"
 # The OS is the Buildroot tree above, with no fragments yet: the SDK's Buildroot config (its
 # buildroot-ext configs/k230d_canmv_defconfig, pinned in k230-sdk) is not a file this product can
 # name at this pin. Open.
-os = { provider = "buildroot", source = "buildroot", fragments = [] }
+os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
 
 # The slot's device: rootfs-a, the image's second partition (mmcblk0p2, from Gaia 3d1f249's
 # K230D Zero notes).

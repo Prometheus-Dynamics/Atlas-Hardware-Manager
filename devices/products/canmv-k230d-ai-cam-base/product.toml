@@ -4,8 +4,8 @@ version = 1
 name = "canmv-k230d-ai-cam-base"
 description = "CanMV K230D AI-CAM: base OS image"
 
-# Buildroot 2024.02.1, a tag named in Gaia 3d1f249's K230D Zero notes. Dev pins no Buildroot: confirm
-# it before G7 (the AI-CAM's own Buildroot config is not pinned anywhere in dev).
+# Buildroot 2024.02.1, the upstream release. NOT what a Gaia build used: that was the SDK's Buildroot tree
+# with the SDK's overlay (buildroot-ext in k230_sdk 7e302f7; a subdir need). Confirm the tag before G7.
 [sources.buildroot]
 git = "https://gitlab.com/buildroot.org/buildroot.git"
 ref = "2024.02.1"
@@ -14,11 +14,9 @@ ref = "2024.02.1"
 name = "canmv-k230d-ai-cam-base"
 board = "../../boards/canmv-k230d-ai-cam/board.toml"
 recipe = "slot"
-# No fragments yet: the AI-CAM's Buildroot config is not pinned in dev. Open.
-os = { provider = "buildroot", source = "buildroot", fragments = [] }
+os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
 
-# UNCONFIRMED: the slot's device. The board's microSD is on SDIO1 (mmc_sd1, dev's record from the
-# SDK's patch), and the pinned SDK's k230d_canmv.dts enables mmc_sd0 and mmc_sd1, so mmcblk1 is an
-# inference from probe order, not a sourced name. Check it on the board (G7) before it is trusted.
+# The slot's device: the TF slot is mmc0 (alias mmc0 = mmc_sd1 in the AI-CAM dts) and its rootfs-a is
+# partition 2: /dev/mmcblk0p2, the bootargs of that dts. Untested on board (G7).
 [images.settings]
-device = "/dev/mmcblk1p2"
+device = "/dev/mmcblk0p2"

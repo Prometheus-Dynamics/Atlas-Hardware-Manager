@@ -7,6 +7,12 @@ url = "https://gitlab.com/buildroot.org/buildroot.git"
 ref = "2024.02.1"
 commit = "9a3d34139b018bf79ac1c37b0212b5b775e3ae77"
 
+[source."bpi-canmv-k230d-zero.k230-linux"]
+kind = "git"
+url = "https://github.com/ruyisdk/linux-xuantie-kernel.git"
+ref = "ae4a7e6518cd46407be9b648828b6f704d7dc302"
+commit = "ae4a7e6518cd46407be9b648828b6f704d7dc302"
+
 [source."bpi-canmv-k230d-zero.k230-sdk"]
 kind = "git"
 url = "https://github.com/kendryte/k230_sdk.git"

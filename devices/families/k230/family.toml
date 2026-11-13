@@ -20,6 +20,11 @@ ref = "7e302f733311d284be255f0d81d3463b6ae6ee6d"
 [flash]
 methods = ["k230-usb"]
 
+# The SD card is GPT (dev's record of the K230D Zero, and Gaia 3d1f249's notes: "K230D Zero (GPT, SD)").
+# Gaia's sd-image needs this table; the partitions below are outside the table (raw areas).
+[disk]
+scheme = "gpt"
+
 # SD layout of the K230 boot ROM and SDK U-Boot, from dev's record of the K230D Zero's sdcard.img
 # (checked there: SPL firmware heads at 1 MiB and 1.5 MiB with matching SHA-256, U-Boot at 2 MiB,
 # environment at 1.875 MiB and 3.5 MiB). The AI-CAM uses the same SDK's layout; check it at G7.
@@ -59,20 +64,61 @@ in_table = false
 # PLACEHOLDER until Gaia names the options: this U-Boot needs sysboot/extlinux, env import/export,
 # `test`, and FAT write. Exact CONFIG_ names come from Gaia after it builds one; none are guessed.
 
-# Outside needs for this family (Gaia 70a5133 cannot express them; Gaia builds to this list):
-#   1. A subdirectory of a git source: the U-Boot is at src/little/uboot in k230-sdk. Wanted:
-#      `subdir = "src/little/uboot"` (string, optional, a path inside the checkout at the locked
-#      ref), beside git and ref in [sources.<name>]. Example:
+# Pins and their status (evidence, read-only, from /mnt/ssd-samsung/gaia/boards/ and the Gaia build):
+#   - k230-sdk 7e302f7 (dev's pin): the SDK's U-Boot (src/little/uboot, k230d_canmv_bpi for the SD image,
+#     k230d_canmv_burntool_defconfig for the burner), its tools/k230_priv_gzip (sha256 c6d029a0..., the Gaia
+#     REPORT's value), and buildroot-ext (the SDK's overlay). Used by the Zero's build: BUILT, NOT BOOTED.
+#   - the Xuantie GCC 10.4 toolchain: archive Xuantie-900-gcc-linux-6.6.0-glibc-x86_64-V2.10.1-20240712.tar.gz,
+#     sha256 15d91b66... (Gaia 3d1f249). Used by the Zero's build: BUILT, NOT BOOTED. A download, not in dev.
+#   - OpenSBI 1.4 and U-Boot 2022.10 (Buildroot packages in the SDK tree): BUILT, NOT BOOTED.
+#   - Blobs: none for K230 (the SPL is built from the SDK's source). Nothing booted, so nothing verified.
+#
+# Slot boot on U-Boot boards (Lemnos's `record = "uboot"`, settled by Lemnos): boot-record.env on the boot
+# partition, one extlinux.conf per slot, and one static boot.cmd compiled to boot.scr. PLACEHOLDER until Gaia
+# names the options: this U-Boot needs sysboot/extlinux, env import/export, `test`, and FAT write. Exact
+# CONFIG_ names come from Gaia after it builds one; none are guessed. (The K230 boot today is the SDK's
+# default.env "blinux", not extlinux: the bring-up does not use record = "uboot".)
+
+# Outside needs for this family (Gaia 4abf626 cannot express them; Gaia builds to this list):
+#   1. A subdirectory of a git source. Used for: U-Boot at src/little/uboot, and the SDK's Buildroot external
+#      tree at src/little/buildroot-ext (its board/canaan/k230 overlay, the defconfigs). Wanted: `subdir`
+#      (string, optional, a path inside the checkout at the locked ref) beside git and ref in [sources.<name>]:
 #        [sources.k230-uboot]
 #        git = "https://github.com/kendryte/k230_sdk.git"
 #        ref = "7e302f733311d284be255f0d81d3463b6ae6ee6d"
 #        subdir = "src/little/uboot"
-#   2. In [flash]: `load_address` (integer, u64; the burner's load address, TOML hex is fine) and
-#      `medium` (string: "sd", "emmc", "spi-nand" or "spi-nor", mapped to the burner's codes 2, 1,
-#      3, 4 in kburn.h:39-44). Example:
+#   2. In [flash]: `load_address` (integer, u64, TOML hex is fine) and `medium` (string: "sd", "emmc",
+#      "spi-nand" or "spi-nor", mapped to the burner's codes 2, 1, 3, 4 in kburn.h:39-44). USB burning only; an
+#      SD image does not need them. Example:
 #        [flash]
 #        methods = ["k230-usb"]
 #        load_address = 0x80360000
 #        medium = "sd"
-#   The burner's own loader (the k230d_canmv_burntool_defconfig U-Boot, loader_mmc.bin) is part of
-#   this same gap: Gaia has no field for the flash loader's defconfig.
+#   3. The boot partition: an in-table partition built from a tree (Image and the dtb, the env's "blinux" reads
+#      them from partition 1). Gaia's sd-image builds only the rootfs and data. Wanted: `tree` (string, names a
+#      component or a built tree whose files fill the partition) and `fs` (string, "ext4" or "vfat"), on an
+#      in-table [[partitions]] entry. Example:
+#        [[partitions]]
+#        name = "boot"
+#        role = "boot"
+#        offset = "30M"
+#        size = "45M"
+#        fs = "ext4"
+#        tree = "boot"
+#   4. The raw areas' files: the SPL (fn_u-boot-spl.bin), U-Boot (fn_ug_u-boot.bin) and the environment (env.env,
+#      from default.env with mkenvimage) come out of the SDK's post-image (Gaia's assets/post-image.sh), not out of
+#      a bootloader build. `content` in [[partitions]] names one of them; it needs a bootloader output list. Wanted:
+#      `[bootloader] outputs = { spl = "fn_u-boot-spl.bin", uboot = "fn_ug_u-boot.bin", env = "env.env" }`, or the
+#      post-image step as a recipe input. Blocked on 1 (the subdir) for the U-Boot part.
+#   5. A product's kernel fragments: the bring-up's NCM and watchdog-off fragment is board-level in Gaia, so a
+#      dev-only product cannot add one. Wanted: `fragments` on the image's kernel (a list of files beside the
+#      product), like the OS fragments.
+#   6. A device tree that overrides the in-tree one of the same name: the Zero's dr_mode = "peripheral" (see the
+#      board's dts/). Wanted: when `device_tree_dir` holds a file named like the in-tree dts, Gaia builds it in
+#      place of the in-tree one (or a `device_tree_patch` key). Not verified until a plan shows it.
+#   7. A toolchain: the Xuantie GCC archive (a download source) must reach the Buildroot fragment as a path
+#      (BR2_TOOLCHAIN_EXTERNAL_PATH). Wanted: a fragment `@source.<name>@` form, or `toolchain = { source = ... }`
+#      on the image.
+#   8. The sdcard's size: the Zero's build made a 1.28 GB card with 73 MB of data (rootfs-a and -b 512 MiB each,
+#      Gaia's own warning). Wanted: the partition sizes set from the content (`size = "auto"`), as Gaia's warning
+#      asks. Lean rule: report it, do not carry the old sizes.

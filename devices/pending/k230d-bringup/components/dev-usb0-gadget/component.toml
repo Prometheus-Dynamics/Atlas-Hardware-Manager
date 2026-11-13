@@ -1,0 +1,17 @@
+# DEV ONLY, K230D bring-up products only. The USB-C port as a network: an NCM gadget through configfs
+# (dwc2 in device mode), usb0 at 10.55.0.1/24, and a one-lease DHCP server for the host's 10.55.0.2.
+# This is the one dev-only script `next` allows, on BusyBox init: the tiny boards have no systemd, and
+# Lemnos's USB driver owns the gadget later (decision 5). Gone then.
+version = 1
+name = "dev-usb0-gadget"
+description = "DEV ONLY: an NCM gadget on the K230D's USB-C, usb0 at 10.55.0.1 with DHCP for 10.55.0.2 (bring-up only)."
+
+[[install]]
+from = { file = "S41usb0" }
+to = "/etc/init.d/S41usb0"
+mode = "0755"
+
+[[install]]
+from = { file = "udhcpd.usb0.conf" }
+to = "/etc/udhcpd.usb0.conf"
+mode = "0644"
