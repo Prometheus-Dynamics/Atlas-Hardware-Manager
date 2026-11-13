@@ -15,6 +15,8 @@ pub fn device(location: &str) -> DeviceSummary {
         vendor: 0x29f1,
         product: 0x0230,
         serial: Some("K230-TEST".into()),
+        bcd_usb: 0,
+        bcd_device: 0,
     }
 }
 

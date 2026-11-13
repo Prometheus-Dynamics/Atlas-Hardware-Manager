@@ -106,6 +106,8 @@ async fn device(bus: &SimBus) -> Box<dyn UsbIo> {
         vendor: 0x1f3a,
         product: 0xefe8,
         serial: None,
+        bcd_usb: 0,
+        bcd_device: 0,
     });
     bus.open(LOCATION, &OpenOptions::default()).await.unwrap()
 }

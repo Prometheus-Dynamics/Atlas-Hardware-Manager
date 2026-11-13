@@ -75,6 +75,13 @@ pub struct DeviceSummary {
     pub vendor: u16,
     pub product: u16,
     pub serial: Option<String>,
+    /// The device's USB specification version, `bcdUSB`, as the device
+    /// reports it. Some boot ROMs flip bit 0 when a loader runs, so a caller
+    /// can tell the two modes apart with it. A simulated device reports 0
+    /// unless its summary says otherwise.
+    pub bcd_usb: u16,
+    /// The device release number, `bcdDevice`.
+    pub bcd_device: u16,
 }
 
 /// A vendor and product id pair a loader matches on.

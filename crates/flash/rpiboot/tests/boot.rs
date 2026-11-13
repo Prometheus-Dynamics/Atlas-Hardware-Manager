@@ -21,6 +21,8 @@ fn device() -> DeviceSummary {
         vendor: 0x0a5c,
         product: 0x2712,
         serial: None,
+        bcd_usb: 0,
+        bcd_device: 0,
     }
 }
 

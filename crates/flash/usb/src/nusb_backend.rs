@@ -60,6 +60,8 @@ fn summary(info: &DeviceInfo) -> DeviceSummary {
             .map(str::trim)
             .filter(|serial| !serial.is_empty())
             .map(str::to_string),
+        bcd_usb: info.usb_version(),
+        bcd_device: info.device_version(),
     }
 }
 

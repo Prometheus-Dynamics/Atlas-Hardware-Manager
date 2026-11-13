@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use atlas_driver::{Driver, DriverError};
 use atlas_driver_rockchip::{FAMILY, RockchipDriver};
+use atlas_rockchip::Mode;
 use atlas_rockchip::crc::LOADER_POLYNOMIALS;
 use atlas_rockchip::flow::{ready, run_usbplug};
 use atlas_rockchip::loader::{EntryKind, Loader, build_loader};
@@ -139,4 +140,37 @@ async fn the_device_is_still_identified_after_the_usbplug_re_enumerates() {
     let identity = driver.identify(&candidate).await.unwrap();
     assert_eq!(identity.state, DeviceState::BootRom);
     assert_eq!(identity.address, LOCATION);
+    assert_eq!(identity.attributes["rom-mode"], "loader");
+}
+
+#[tokio::test]
+async fn a_maskrom_device_says_maskrom_and_a_loader_says_loader() {
+    let maskrom = SimRockchip::maskrom(LOCATION, ID, "3588", 8);
+    let candidate = driver_for(&maskrom)
+        .discover(&boot_link())
+        .await
+        .unwrap()
+        .remove(0);
+    let identity = driver_for(&maskrom).identify(&candidate).await.unwrap();
+    assert_eq!(identity.attributes["rom-mode"], "maskrom");
+
+    let loader = SimRockchip::loader(LOCATION, ID, "3588", 8);
+    let candidate = driver_for(&loader)
+        .discover(&boot_link())
+        .await
+        .unwrap()
+        .remove(0);
+    let identity = driver_for(&loader).identify(&candidate).await.unwrap();
+    assert_eq!(identity.attributes["rom-mode"], "loader");
+    assert_eq!(identity.state, DeviceState::BootRom);
+}
+
+#[tokio::test]
+async fn the_caller_can_override_the_mode_the_descriptor_says() {
+    let sim = SimRockchip::maskrom(LOCATION, ID, "3588", 8);
+    let forced = RockchipDriver::new(Arc::new(sim.clone()) as Arc<dyn UsbBus>, vec![ID])
+        .with_mode(Mode::Loader);
+    let candidate = forced.discover(&boot_link()).await.unwrap().remove(0);
+    let identity = forced.identify(&candidate).await.unwrap();
+    assert_eq!(identity.attributes["rom-mode"], "loader");
 }

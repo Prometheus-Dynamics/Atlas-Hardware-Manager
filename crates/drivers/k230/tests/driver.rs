@@ -30,6 +30,8 @@ fn device(location: &str, serial: Option<&str>) -> DeviceSummary {
         vendor: VENDOR,
         product: PRODUCT,
         serial: serial.map(str::to_string),
+        bcd_usb: 0,
+        bcd_device: 0,
     }
 }
 
@@ -61,6 +63,8 @@ async fn discovery_finds_only_the_caller_ids_and_names_the_port() {
         vendor: 0x1d6b,
         product: 0x0002,
         serial: None,
+        bcd_usb: 0,
+        bcd_device: 0,
     });
     let found = driver(&bus).discover(&usb_boot_link()).await.unwrap();
     assert_eq!(found.len(), 1);

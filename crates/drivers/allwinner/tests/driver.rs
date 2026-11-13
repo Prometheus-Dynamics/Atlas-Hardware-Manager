@@ -53,6 +53,8 @@ fn device(location: &str, vendor: u16, product: u16) -> DeviceSummary {
         vendor,
         product,
         serial: None,
+        bcd_usb: 0,
+        bcd_device: 0,
     }
 }
 

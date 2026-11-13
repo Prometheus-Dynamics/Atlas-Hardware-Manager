@@ -282,6 +282,8 @@ mod tests {
             vendor: 0x1234,
             product: 0x0001,
             serial: Some("abc".into()),
+            bcd_usb: 0,
+            bcd_device: 0,
         }
     }
 

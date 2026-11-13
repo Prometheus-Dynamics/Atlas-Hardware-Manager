@@ -176,6 +176,8 @@ mod tests {
             vendor: 1,
             product: 2,
             serial: None,
+            bcd_usb: 0,
+            bcd_device: 0,
         });
         bus.script(
             "1-1",

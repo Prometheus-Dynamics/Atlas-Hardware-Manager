@@ -80,6 +80,8 @@ impl State {
         self.generation += 1;
         self.loader = true;
         self.stage = None;
+        // A loader running sets bit 0 of bcdUSB, as rkdeveloptool reads it.
+        self.summary.bcd_usb |= 1;
         self.bus.attach(self.summary.clone());
     }
 
@@ -161,6 +163,8 @@ impl SimRockchip {
             vendor: id.vendor,
             product: id.product,
             serial: None,
+            bcd_usb: if loader { 0x0201 } else { 0x0200 },
+            bcd_device: 0x0100,
         };
         bus.attach(summary.clone());
         Self {

@@ -97,6 +97,8 @@ mod tests {
             vendor: 0x0a5c,
             product: 0x2764,
             serial: None,
+            bcd_usb: 0,
+            bcd_device: 0,
         }
     }
 

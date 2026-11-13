@@ -62,6 +62,8 @@ mod tests {
             vendor: 0x1234,
             product: 0x5678,
             serial: None,
+            bcd_usb: 0,
+            bcd_device: 0,
         }
     }
 

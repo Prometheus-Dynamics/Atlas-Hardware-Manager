@@ -43,6 +43,8 @@ fn rom(location: &str) -> DeviceSummary {
         vendor: ROM_USB.vendor,
         product: ROM_USB.product,
         serial: Some("abc123".into()),
+        bcd_usb: 0,
+        bcd_device: 0,
     }
 }
 
@@ -70,6 +72,8 @@ async fn discover_finds_the_configured_boot_roms_on_usb_boot_links_only() {
         vendor: 0x1234,
         product: 0x5678,
         serial: None,
+        bcd_usb: 0,
+        bcd_device: 0,
     });
     let driver = RpiDriver::new(Arc::new(bus), config(Some(flasher())));
 

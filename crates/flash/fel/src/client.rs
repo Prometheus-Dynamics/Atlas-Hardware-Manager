@@ -178,6 +178,8 @@ mod tests {
             vendor: 0x1f3a,
             product: 0xefe8,
             serial: None,
+            bcd_usb: 0,
+            bcd_device: 0,
         });
         bus.open("1-1", &OpenOptions::default()).await.unwrap()
     }
