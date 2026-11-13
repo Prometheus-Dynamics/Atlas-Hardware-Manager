@@ -12,7 +12,7 @@ use atlas_image::BoardOutcome;
 use atlas_jobs::JobId;
 use atlas_sim_node::names;
 use atlas_slots::{RemoveRefusal, Resolution, SlotList, Stage};
-use common::{BOARD, Rig, bundle_bytes, device, until, write_bundle};
+use common::{BOARD, Rig, answered, answered_once, bundle_bytes, device, until, write_bundle};
 use std::time::Duration;
 
 /// The install request for a bundle file.
@@ -24,7 +24,9 @@ fn request(path: std::path::PathBuf, starred: bool) -> InstallRequest {
 }
 
 async fn list(rig: &Rig) -> SlotList {
-    rig.slots.list().await.expect("the board lists its slots")
+    answered("the slot list", || rig.slots.list())
+        .await
+        .expect("the board lists its slots")
 }
 
 /// Waits until the install's stage satisfies `ready`.
@@ -214,6 +216,41 @@ async fn a_session_lost_during_the_boards_install_never_starts_install_file_twic
     assert!(list(&rig).await.get("slot-2").is_some());
 }
 
+/// An install is a hold on its board. Its session goes silent past the lease period while the board
+/// is running it: the install ends as a lapse, with the words that say the board may have dropped
+/// it, and it is not reported as installed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_install_whose_session_lapses_while_the_board_runs_it_ends_as_a_lapse() {
+    let rig = Rig::start_leased(
+        "install-lapse",
+        Some(atlas_session::Lease {
+            period: Duration::from_millis(300),
+            renew: Duration::from_secs(3600),
+            in_force: true,
+        }),
+    )
+    .await;
+    rig.node.hold_installs(true);
+    let path = write_bundle(
+        &rig.dir.join("bundles"),
+        "slot-2.tar",
+        &bundle_bytes("slot-2", "2.0.0", None),
+    );
+    let job = rig
+        .installs
+        .submit(device(), &rig.address(), BOARD, true, request(path, false))
+        .await
+        .expect("queued");
+    until("the board to start the install", || {
+        rig.node.runs_started(names::SLOTS_INSTALL_FILE) == 1
+    })
+    .await;
+    stage_is(&rig, job, "the install to end as a lapse", |stage| {
+        matches!(stage, Stage::Failed { reason } if reason.contains("may have dropped the hold"))
+    })
+    .await;
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn cancel_stops_the_install_on_the_board_and_leaves_no_slot() {
     let rig = Rig::start("cancel").await;
@@ -247,18 +284,26 @@ async fn set_default_changes_the_default_and_refuses_what_the_board_refuses() {
     let rig = Rig::start("default").await;
     install_bundle(&rig, "slot-2", "2.0.0").await;
     // slot-2 is untried, so the board refuses it as default: its words come back verbatim.
-    match rig.slots.set_default("slot-2", false).await {
+    match answered("set-default slot-2", || {
+        rig.slots.set_default("slot-2", false)
+    })
+    .await
+    {
         Err(SlotError::Board(error)) => {
             assert!(error.to_string().contains("not marked good"), "{error}")
         }
         other => panic!("expected the board's refusal, got {other:?}"),
     }
-    rig.slots
-        .set_default("slot-1", false)
-        .await
-        .expect("slot-1 is good: it stays the default");
+    answered("set-default slot-1", || {
+        rig.slots.set_default("slot-1", false)
+    })
+    .await
+    .expect("slot-1 is good: it stays the default");
     assert_eq!(list(&rig).await.default, "slot-1");
-    let unknown = rig.slots.set_default("slot-9", false).await;
+    let unknown = answered("set-default slot-9", || {
+        rig.slots.set_default("slot-9", false)
+    })
+    .await;
     assert!(matches!(unknown, Err(SlotError::Board(_))), "{unknown:?}");
 }
 
@@ -266,10 +311,20 @@ async fn set_default_changes_the_default_and_refuses_what_the_board_refuses() {
 async fn a_trial_confirms_itself_and_the_resolved_record_says_so() {
     let rig = Rig::start("trial-confirm").await;
     install_bundle(&rig, "slot-2", "2.0.0").await;
-    rig.slots
-        .start_trial("slot-2", false, false, false)
-        .await
-        .expect("the trial starts");
+    answered_once(
+        &rig,
+        "the trial of slot-2",
+        || rig.slots.start_trial("slot-2", false, false, false),
+        |listed| {
+            listed
+                .trial
+                .as_ref()
+                .is_some_and(|trial| trial.slot == "slot-2")
+                || listed.resolved.is_some()
+        },
+    )
+    .await
+    .expect("the trial starts");
     let pending = list(&rig).await;
     assert_eq!(
         pending.trial.as_ref().map(|trial| trial.slot.as_str()),
@@ -297,10 +352,20 @@ async fn a_trial_that_is_not_healthy_falls_back_at_the_deadline_with_the_reason(
     let rig = Rig::start("trial-fallback").await;
     install_bundle(&rig, "slot-2", "2.0.0").await;
     rig.node.slot_set_healthy(false);
-    rig.slots
-        .start_trial("slot-2", false, false, false)
-        .await
-        .expect("the trial starts");
+    answered_once(
+        &rig,
+        "the trial of slot-2",
+        || rig.slots.start_trial("slot-2", false, false, false),
+        |listed| {
+            listed
+                .trial
+                .as_ref()
+                .is_some_and(|trial| trial.slot == "slot-2")
+                || listed.resolved.is_some()
+        },
+    )
+    .await
+    .expect("the trial starts");
     rig.node.slot_clock_advance(600);
     until("the fall back", || {
         rig.node.model().slots.resolved.is_some()
@@ -318,10 +383,20 @@ async fn three_boots_that_never_reach_the_daemon_fall_back_and_name_the_count() 
     let rig = Rig::start("trial-boots").await;
     install_bundle(&rig, "slot-2", "2.0.0").await;
     rig.node.slot_boots_without_daemon(3);
-    rig.slots
-        .start_trial("slot-2", false, false, false)
-        .await
-        .expect("the trial starts");
+    answered_once(
+        &rig,
+        "the trial of slot-2",
+        || rig.slots.start_trial("slot-2", false, false, false),
+        |listed| {
+            listed
+                .trial
+                .as_ref()
+                .is_some_and(|trial| trial.slot == "slot-2")
+                || listed.resolved.is_some()
+        },
+    )
+    .await
+    .expect("the trial starts");
     let actions = BoardActions::new(rig.handle.clone());
     for _ in 0..3 {
         // Each restart is a boot that never reaches the daemon.
@@ -350,36 +425,78 @@ async fn the_removal_guard_refuses_running_starred_and_the_board_keeps_the_last_
     let rig = Rig::start("remove").await;
     install_bundle(&rig, "slot-2", "2.0.0").await;
     // Running and default: refused here, before the board is asked.
-    let running = rig.slots.remove("slot-1", false).await;
+    let running = answered_once(
+        &rig,
+        "the removal of slot-1",
+        || rig.slots.remove("slot-1", false),
+        |_| false,
+    )
+    .await;
     assert!(
         matches!(running, Err(SlotError::Removal(RemoveRefusal::Running(_)))),
         "{running:?}"
     );
     // Starred: refused here unless the person says so.
-    rig.slots
-        .set_starred("slot-2", true)
+    answered("star slot-2", || rig.slots.set_starred("slot-2", true))
         .await
         .expect("slot-2 is starred");
-    let starred = rig.slots.remove("slot-2", false).await;
+    let starred = answered_once(
+        &rig,
+        "the removal of starred slot-2",
+        || rig.slots.remove("slot-2", false),
+        |_| false,
+    )
+    .await;
     assert!(
         matches!(starred, Err(SlotError::Removal(RemoveRefusal::Starred(_)))),
         "{starred:?}"
     );
     // Said so explicitly: the board still refuses a pinned slot, and its words come back.
-    let board_says = rig.slots.remove("slot-2", true).await;
+    let board_says = answered_once(
+        &rig,
+        "the board's refusal of slot-2",
+        || rig.slots.remove("slot-2", true),
+        |_| false,
+    )
+    .await;
     match board_says {
         Err(SlotError::Board(error)) => assert!(error.to_string().contains("pinned"), "{error}"),
         other => panic!("expected the board's refusal, got {other:?}"),
     }
-    rig.slots
-        .set_starred("slot-2", false)
+    answered("unstar slot-2", || rig.slots.set_starred("slot-2", false))
         .await
         .expect("unstarred");
-    rig.slots
-        .remove("slot-2", false)
-        .await
-        .expect("an unstarred, unused slot is removed");
+    answered_once(
+        &rig,
+        "the removal of slot-2",
+        || rig.slots.remove("slot-2", false),
+        |listed| listed.get("slot-2").is_none(),
+    )
+    .await
+    .expect("an unstarred, unused slot is removed");
     assert!(list(&rig).await.get("slot-2").is_none());
+}
+
+/// A board whose offers were not reported is neither "has slots" nor "has no slots": the slot calls
+/// say so, and the board is asked nothing. The capability set is the one the driver builds for it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_board_that_did_not_report_its_offers_is_not_told_it_has_no_slots() {
+    let rig = Rig::start("not-reported").await;
+    let caps = atlas_types::CapabilitySet::offers_not_reported([]);
+    let unknown = BoardSlots::for_capabilities(rig.handle.clone(), BOARD, &caps);
+    assert!(!unknown.reported());
+    assert!(matches!(unknown.list().await, Err(SlotError::NotReported)));
+    assert_eq!(
+        rig.node.runs_started(names::SLOTS_LIST),
+        0,
+        "nothing is sent for a board whose offers are unknown"
+    );
+
+    // A set whose offers were read still says "no slots" for a board without the contract.
+    let read = atlas_types::CapabilitySet::from_kinds([]);
+    let plain = BoardSlots::for_capabilities(rig.handle.clone(), BOARD, &read);
+    assert!(plain.reported());
+    assert!(matches!(plain.list().await, Err(SlotError::NoSlots)));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -407,7 +524,7 @@ async fn a_list_over_the_size_bound_is_passed_on_by_name_and_not_truncated() {
             model.slots.entries.push(entry);
         }
     }
-    match rig.slots.list().await {
+    match answered("the oversized list", || rig.slots.list()).await {
         Err(SlotError::Board(error)) => {
             let text = error.to_string();
             assert!(

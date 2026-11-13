@@ -1,6 +1,7 @@
 //! The board's actions, run on its node through the session.
 //!
-//! Every call goes through the session's [`Handle::with_client`], so it has the session's call
+//! Every call goes through the session's [`Handle::with_client`] (a read) or [`Handle::with_bridge`]
+//! (a run, or its cancel, which renews the board's lease), so it has the session's call
 //! wait and never runs after its caller gave up.
 //!
 //! Two ways to run an action:
@@ -33,7 +34,7 @@
 use std::io::ErrorKind;
 use std::time::Duration;
 
-use atlas_session::{Handle, Presence, SessionError};
+use atlas_session::{Handle, Hold, Presence, SessionError};
 use orion::actions::{ActionCall, Finished, Outcome, Target, Update};
 use orion::types::NodeName;
 use orion::{ClientError, Error as OrionError};
@@ -49,6 +50,9 @@ pub const CATALOG_ACTION: &str = "actions.list";
 pub const POLL: Duration = Duration::from_millis(250);
 /// The longest a short action may take in one call. Half the call wait is used when that is less.
 pub const DIRECT_WAIT: Duration = Duration::from_secs(2);
+
+/// What a hold lapse reports as the board's words when the run had not ended yet.
+const NOT_FINISHED: &str = "not finished";
 
 /// A run that ended successfully.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -179,7 +183,7 @@ impl BoardActions {
         let owned = name.to_owned();
         let sent = self
             .handle
-            .with_client(move |orion| {
+            .with_bridge(move |orion| {
                 let run = orion.run(&ActionCall {
                     name: &owned,
                     target: Target::Node(node_name),
@@ -212,6 +216,32 @@ impl BoardActions {
     pub async fn follow(
         &self,
         call: u64,
+        on_progress: impl FnMut(&Progress),
+    ) -> Result<Done, ActionError> {
+        self.follow_inner(call, None, on_progress).await
+    }
+
+    /// As [`BoardActions::follow`], for a run whose hold the caller keeps. When the session lapsed
+    /// while the hold existed, the board may have dropped the run's hold: the follow then ends with
+    /// [`ActionError::HoldLapsed`] instead of waiting on a board that may no longer hold the run.
+    /// A run that ended with an error after a lapse is reported the same way, with the board's words.
+    ///
+    /// # Errors
+    ///
+    /// As [`BoardActions::follow`], and [`ActionError::HoldLapsed`].
+    pub async fn follow_while_held(
+        &self,
+        call: u64,
+        hold: &Hold,
+        on_progress: impl FnMut(&Progress),
+    ) -> Result<Done, ActionError> {
+        self.follow_inner(call, Some(hold), on_progress).await
+    }
+
+    async fn follow_inner(
+        &self,
+        call: u64,
+        hold: Option<&Hold>,
         mut on_progress: impl FnMut(&Progress),
     ) -> Result<Done, ActionError> {
         // Retry: following is a read. A lost session returns `Lost` with the run's number, and
@@ -228,10 +258,27 @@ impl BoardActions {
                     }
                 })
                 .await;
+            if let Some(hold) = hold
+                && hold.lapsed()
+            {
+                return Err(ActionError::HoldLapsed {
+                    call,
+                    reason: NOT_FINISHED.to_owned(),
+                });
+            }
             match seen {
                 Ok(Seen::Quiet) => {}
                 Ok(Seen::Doing(progress)) => on_progress(&progress),
-                Ok(Seen::Ended(finished)) => return ended(finished),
+                Ok(Seen::Ended(finished)) => {
+                    let result = ended(finished);
+                    return match (hold, result) {
+                        (Some(hold), Err(error)) if hold.lapsed() => Err(ActionError::HoldLapsed {
+                            call,
+                            reason: error.to_string(),
+                        }),
+                        (_, result) => result,
+                    };
+                }
                 Ok(Seen::Refused(reason)) => return Err(ActionError::Refused(reason)),
                 Err(SessionError::Gone(reason) | SessionError::Failed(reason)) => {
                     return Err(ActionError::Lost { call, reason });
@@ -250,7 +297,7 @@ impl BoardActions {
     /// [`ActionError::Lost`] when the session did not carry the request.
     pub async fn cancel(&self, call: u64) -> Result<(), ActionError> {
         self.handle
-            .with_client(move |orion| {
+            .with_bridge(move |orion| {
                 let mut run = orion.attach(call)?;
                 run.cancel().map_err(OrionError::Client)
             })
@@ -297,7 +344,7 @@ impl BoardActions {
         let owned = name.to_owned();
         let answered = self
             .handle
-            .with_client(move |orion| {
+            .with_bridge(move |orion| {
                 let mut run = orion.run(&ActionCall {
                     name: &owned,
                     target: Target::Node(node_name),

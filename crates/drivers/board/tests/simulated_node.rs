@@ -443,3 +443,37 @@ async fn a_malformed_serial_is_refused_with_its_reason_and_the_node_is_keyed_by_
     );
     assert_eq!(identity.lemnos, LemnosState::Answering);
 }
+
+/// A board that serves contracts but whose `hello.offers` is not published: at the locked revision
+/// a board with about 19 or more contracts has its offers dropped from the hello document. Its
+/// Lemnos facts are there, so the offers are NOT REPORTED: neither "has slots" nor "has no slots".
+// LOCK: Lemnos M8c (offers cap 1024): with the cap raised the offers come, and this test's board
+// reports them like any other.
+#[tokio::test]
+async fn a_board_whose_offers_are_missing_reports_them_not_reported_and_no_slots_is_not_claimed() {
+    let dir = scratch("offers-missing");
+    let board = start(
+        &dir,
+        &changed_board(|hello| hello.offers = Vec::new()),
+        None,
+    );
+    let pause = std::sync::Arc::new(Delays::default());
+    let driver = driver_for(board.network().port(), &pause);
+    let identity = identify(&driver, &offered(&driver, &usb_link()).await).await;
+    assert_eq!(identity.lemnos, LemnosState::Answering, "Lemnos is there");
+    assert!(
+        !identity.attributes.contains_key("offers"),
+        "the board did not publish its offers"
+    );
+    let caps = driver.capabilities(&identity);
+    assert_eq!(caps.offers(), atlas_types::Offers::NotReported);
+    assert_eq!(
+        caps.reading(CapabilityKind::Slots),
+        atlas_types::Reading::NotReported
+    );
+    assert_eq!(
+        caps.reading(CapabilityKind::Files),
+        atlas_types::Reading::Granted,
+        "Orion's own are not offers"
+    );
+}

@@ -17,9 +17,9 @@
 //! Starred and keep: one notion each. See `atlas_slots::policy`. Starred is the board's `pin`;
 //! N is the board's `keep`. The install always passes `keep_old = false`.
 //!
-//! Trials: Atlas starts a trial and reads its record ([`atlas_slots::Trial`],
-//! [`atlas_slots::Resolved`]). It never confirms one: the board confirms itself. Following the
-//! trial across the reboot is C6.
+//! Trials: Atlas starts a trial and follows it across the board's restarts ([`trial::Follower`],
+//! on `atlas_trial`). It never confirms one: the board confirms itself, and Atlas reads the
+//! board's `trial` and `resolved` records.
 //!
 //! Names are Lemnos's contract method names (`system.slots.*`, the ones the bridge answers).
 //! // LOCK: Lemnos L1: every list/accept/install call here needs the out-buffer and long-job
@@ -27,6 +27,7 @@
 
 pub mod calls;
 pub mod install;
+pub mod trial;
 
 use atlas_actions::ActionError;
 use atlas_bundle::BundleError;
@@ -36,6 +37,7 @@ use thiserror::Error;
 
 pub use calls::BoardSlots;
 pub use install::{InstallRequest, SlotInstalls, Source};
+pub use trial::{Ended, FileWatchStore, Follower, TrialStart};
 
 /// Why a slot operation gave no result. The board's own words are inside [`SlotError::Board`]
 /// and print verbatim.
@@ -44,6 +46,10 @@ pub enum SlotError {
     /// The board does not offer the slot contract. Normal: "this board has no slots".
     #[error("this board has no slots")]
     NoSlots,
+    /// The board did not report what it offers: its node publishes Lemnos facts but no readable
+    /// offers. Not "no slots", and not "slots": the offers are unknown until they are reported.
+    #[error("this board did not report what it offers")]
+    NotReported,
     /// The board refused, failed, or did not answer. Its words are shown as they are.
     #[error(transparent)]
     Board(#[from] ActionError),

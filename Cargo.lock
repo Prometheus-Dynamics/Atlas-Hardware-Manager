@@ -77,10 +77,12 @@ dependencies = [
  "atlas-driver",
  "atlas-files",
  "atlas-image",
+ "atlas-inventory",
  "atlas-jobs",
  "atlas-session",
  "atlas-sim-node",
  "atlas-slots",
+ "atlas-trial",
  "atlas-types",
  "orion",
  "serde",
@@ -391,6 +393,14 @@ dependencies = [
  "orion-msg-topics",
  "orion-wire",
  "tokio",
+]
+
+[[package]]
+name = "atlas-trial"
+version = "2026.1.0-dev"
+dependencies = [
+ "atlas-inventory",
+ "atlas-slots",
 ]
 
 [[package]]

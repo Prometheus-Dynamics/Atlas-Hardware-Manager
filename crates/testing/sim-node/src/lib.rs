@@ -22,6 +22,8 @@
 //!   fall back keeps its reason in `trial_reason` (the boot partition's `trial-reason`).
 //! - `slot_config(|config| ..)`: the I5f config keys (`auto_confirm`, `confirm_uptime_s`,
 //!   `confirm_deadline_s`, `reboot_at_deadline`, `trial_attempts`).
+//! - `slot_follow_boot(bool)`: the hello's `version.slot` follows the running slot (a boot moves it,
+//!   a confirm does not). Off by default.
 //! - `runs_started(action)`: how many runs of an action the node took, refused ones included.
 //!
 //! The file pushes are not counted per byte: the stub's file receiver keeps no per-chunk record.
@@ -35,6 +37,7 @@
 pub mod access;
 pub mod actions;
 pub mod bundle;
+mod lease;
 pub mod model;
 pub mod names;
 #[cfg(target_os = "linux")]
@@ -44,6 +47,7 @@ pub mod readings;
 pub mod script;
 pub mod slots;
 
+pub use lease::{PERIOD as LEASE_PERIOD, STALL as LEASE_STALL};
 #[cfg(target_os = "linux")]
 pub use node::{DEADLINE, Hello, Kind, Mode, NODE_NAME, SimNode, call};
 pub use script::{Behaviour, LinkFault, Script};

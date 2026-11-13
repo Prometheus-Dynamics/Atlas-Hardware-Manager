@@ -34,7 +34,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use atlas_driver::DriverError;
 use atlas_jobs::{DeviceClaim, DeviceHolds, Events, JobId, JobKind, JobRecord, JobTiming, Jobs};
-use atlas_session::Sessions;
+use atlas_session::{Hold, Sessions};
 use atlas_types::DeviceKey;
 use orion::Address;
 use serde::{Deserialize, Serialize};
@@ -79,6 +79,9 @@ struct Tracked {
     starting: bool,
     progress: Option<Progress>,
     cancel: Option<CancelState>,
+    /// The hold on the board for this run. Taken when the step starts, kept while the step waits
+    /// for a lost session, and dropped with the entry when the outcome is read (see `forget`).
+    hold: Option<Hold>,
 }
 
 /// The job kind: one board action per step.
@@ -163,6 +166,17 @@ impl JobKind for ActionKind {
                 spec.name
             )));
         };
+        // The hold lives from the start of the step until the outcome is read (`forget`), so the
+        // session keeps the board's lease alive for the run, including while the session is lost.
+        self.update(&spec.nonce, |tracked| {
+            if tracked.hold.is_none() {
+                tracked.hold = Some(handle.hold());
+            }
+        });
+        let hold = self
+            .map()
+            .get(&spec.nonce)
+            .and_then(|tracked| tracked.hold.clone());
         let board = BoardActions::new(handle);
 
         let known = self.map().get(&spec.nonce).and_then(|tracked| tracked.call);
@@ -194,8 +208,13 @@ impl JobKind for ActionKind {
         };
 
         let nonce = spec.nonce.clone();
+        let Some(hold) = hold else {
+            return Err(DriverError::Unreachable(
+                "the hold on the board could not be taken".into(),
+            ));
+        };
         let followed = board
-            .follow(call, |progress| {
+            .follow_while_held(call, &hold, |progress| {
                 self.update(&nonce, |tracked| tracked.progress = Some(progress.clone()));
             })
             .await;
@@ -206,6 +225,17 @@ impl JobKind for ActionKind {
             }
             // The run is still on the board: the next attempt follows it.
             Err(error @ ActionError::Lost { .. }) => {
+                Err(DriverError::Unreachable(error.to_string()))
+            }
+            // The lease may have lapsed, so the board may have dropped the hold. The lapse is
+            // acknowledged, so the next attempt follows the run from a fresh hold, and its words
+            // say what happened.
+            Err(error @ ActionError::HoldLapsed { .. }) => {
+                self.update(&spec.nonce, |tracked| {
+                    if let Some(hold) = tracked.hold.as_mut() {
+                        hold.acknowledge();
+                    }
+                });
                 Err(DriverError::Unreachable(error.to_string()))
             }
             // The board's own answer: the job ends with its words.
