@@ -99,7 +99,7 @@ impl Driver for TestDriver {
         Ok(Identity {
             key: DeviceKey::board(self.manifest.family.as_str(), self.serial)
                 .expect("a test family and serial"),
-            model: "test-model".into(),
+            model: Some("test-model".into()),
             state: DeviceState::Running,
             lemnos: atlas_types::LemnosState::Absent,
             versions: BTreeMap::new(),

@@ -166,6 +166,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-files"
+version = "2026.1.0-dev"
+dependencies = [
+ "async-trait",
+ "atlas-driver",
+ "atlas-jobs",
+ "atlas-session",
+ "atlas-sim-node",
+ "orion",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-helper"
 version = "2026.1.0-dev"
 dependencies = [
@@ -327,6 +342,20 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tar",
+]
+
+[[package]]
+name = "atlas-topics"
+version = "2026.1.0-dev"
+dependencies = [
+ "atlas-board",
+ "atlas-session",
+ "atlas-sim-node",
+ "atlas-types",
+ "orion",
+ "orion-msg-topics",
+ "orion-wire",
+ "tokio",
 ]
 
 [[package]]
@@ -1350,6 +1379,7 @@ dependencies = [
  "orion-msg-peers",
  "orion-msg-session",
  "orion-msg-topics",
+ "orion-provider",
  "orion-records",
  "orion-topics",
  "orion-types",
@@ -1683,6 +1713,21 @@ dependencies = [
  "shm-ring-doorbell",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "orion-provider"
+version = "1.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+dependencies = [
+ "orion-actions",
+ "orion-connect",
+ "orion-msg-records",
+ "orion-msg-topics",
+ "orion-records",
+ "orion-topics",
+ "orion-types",
+ "orion-wire",
 ]
 
 [[package]]

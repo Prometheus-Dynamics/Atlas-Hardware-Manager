@@ -9,7 +9,7 @@ use atlas_sim_node::bundle;
 use atlas_sim_node::names::{self, SURFACE};
 use atlas_sim_node::slots::code;
 use atlas_sim_node::slots::parse_keys;
-use atlas_sim_node::{Behaviour, DEADLINE, Hello, Kind, LinkFault, Mode, SimNode, call};
+use atlas_sim_node::{Behaviour, DEADLINE, Hello, Kind, LinkFault, Mode, NODE_NAME, SimNode, call};
 use ed25519_dalek::SigningKey;
 use orion::actions::{ActionCall, Finished, Outcome, Update};
 use orion::topics::FieldId;
@@ -583,6 +583,24 @@ fn a_trial_confirmed_becomes_the_default_and_survives_a_reboot() {
 }
 
 #[test]
+fn a_confirm_changes_the_default_slot_and_not_the_running_slot_fact() {
+    let node = start("confirm-running");
+    let orion = node.connect("confirm-running").expect("a session");
+    assert_eq!(hello_fact(&orion, names::HELLO_VERSION_SLOT), "slot-1");
+    let two = bundle_for("slot-2", "2.0.0", None);
+    assert_eq!(
+        install(&orion, &two, false, false).outcome,
+        Outcome::Succeeded
+    );
+    ok(&orion, names::SLOTS_TRIAL, b"slot-2 false false false");
+    ok(&orion, names::SLOTS_CONFIRM, b"");
+    assert_eq!(list(&orion)["slot_default"], "slot-2");
+    // The running slot is written at boot. A confirm does not change it.
+    assert_eq!(hello_fact(&orion, names::HELLO_VERSION_SLOT), "slot-1");
+    assert_eq!(hello_fact(&orion, names::HELLO_VERSION_OS), "1.0.0");
+}
+
+#[test]
 fn housekeeping_keeps_the_last_n_and_the_pinned_ones_and_keep_old_skips_it() {
     let node = start("housekeeping");
     let orion = node.connect("housekeeping").expect("a session");
@@ -818,7 +836,6 @@ fn a_node_publishes_the_hello_facts_a_board_publishes_and_a_restart_on_its_port_
     let _ = std::fs::remove_dir_all(&dir);
     let recovery = Hello {
         mode: Mode::Recovery,
-        name: None,
         ..Hello::default()
     };
     let first =
@@ -827,11 +844,20 @@ fn a_node_publishes_the_hello_facts_a_board_publishes_and_a_restart_on_its_port_
     {
         let orion = first.connect("reader").expect("a session");
         assert_eq!(hello_fact(&orion, names::HELLO_FAMILY), "simulated");
-        assert_eq!(hello_fact(&orion, names::HELLO_SERIAL), "SIM-RUN-1");
+        assert_eq!(hello_fact(&orion, names::HELLO_SERIAL), "0123456789abcdef");
         assert_eq!(hello_fact(&orion, names::HELLO_STATE), "recovery");
         assert_eq!(hello_fact(&orion, names::HELLO_MODEL), "simulated-board");
+        assert_eq!(hello_fact(&orion, names::HELLO_VERSION_SLOT), "slot-1");
+        assert_eq!(
+            hello_fact(&orion, names::HELLO_VERSION_PRODUCT),
+            "simulated-product"
+        );
         assert_eq!(hello_fact(&orion, names::HELLO_VERSION_OS), "1.0.0");
-        assert!(hello_fact(&orion, names::HELLO_OFFERS).contains("slots"));
+        assert_eq!(hello_fact(&orion, names::HELLO_VERSION_LEMNOS), "1.0.0");
+        assert_eq!(
+            hello_fact(&orion, names::HELLO_OFFERS),
+            "system.identity/1 system.reboot/1 system.slots/1"
+        );
     }
 
     // Stopped: the port is free, and the node is gone from it.
@@ -852,7 +878,8 @@ fn a_node_publishes_the_hello_facts_a_board_publishes_and_a_restart_on_its_port_
         .connect_through_link("back")
         .expect("a session through the link");
     assert_eq!(hello_fact(&orion, names::HELLO_STATE), "running");
-    assert_eq!(hello_fact(&orion, names::HELLO_NAME), "sim");
+    // The name is the hello document's, not a fact.
+    assert_eq!(orion.node().expect("the document").name, NODE_NAME);
     let answered = call(&orion, names::STATUS, b"").expect("status answers");
     assert_eq!(answered.outcome, Outcome::Succeeded);
 }

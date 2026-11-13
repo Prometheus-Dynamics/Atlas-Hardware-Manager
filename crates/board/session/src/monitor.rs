@@ -180,6 +180,17 @@ impl Handle {
         self.presence.clone()
     }
 
+    /// The same handle, with its calls waiting `call_wait` for their answer. For a call that is
+    /// long by nature, such as a file push: the wait then bounds a node that does not answer,
+    /// not how long the call may run. The call still ends when its session ends.
+    #[must_use]
+    pub fn waiting(&self, call_wait: Duration) -> Self {
+        Self {
+            call_wait,
+            ..self.clone()
+        }
+    }
+
     /// Runs `call` on the node's live client and returns what it answers.
     ///
     /// The closure runs on the monitor's own thread, which is the only place the client may be

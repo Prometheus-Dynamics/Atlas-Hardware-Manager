@@ -136,10 +136,10 @@ impl Driver for RockchipDriver {
             })?;
         Ok(Identity {
             key: key_for(device).map_err(|error| DriverError::Incompatible(error.reason))?,
-            model: format!(
+            model: Some(format!(
                 "Rockchip boot ROM ({:04x}:{:04x})",
                 device.vendor, device.product
-            ),
+            )),
             state: DeviceState::BootRom,
             lemnos: atlas_types::LemnosState::Absent,
             versions: BTreeMap::new(),
