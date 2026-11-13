@@ -10,6 +10,9 @@ BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_STABLE=y
 
 # Init: systemd, the one standard path on the RK35xx boards. Lemnos's and
 # Orion's units apply to it (decision 3).
+# Watchdog (Lemnos's rule for every board): no RuntimeWatchdogSec and no
+# ShutdownWatchdogSec in this OS config. lemnosd feeds the hardware watchdog
+# itself; a second feeder would be a second opener.
 BR2_INIT_SYSTEMD=y
 BR2_PACKAGE_SYSTEMD=y
 # systemd-networkd: configures eth0 (BR2_SYSTEM_DHCP below) and the bring-up
