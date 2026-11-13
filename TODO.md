@@ -18,6 +18,7 @@ The core every other group builds on: types, the driver contract, inventory, job
 - [ ] [A9](docs/prs/A9.md) The simulated node out of the drivers, and one driver for every family (wave 4; needs A1, A4)
 - [ ] [A10](docs/prs/A10.md) A key that says what it is, a board's Lemnos state, and the board session as its own crate (wave 4; needs A9, C1)
 - [ ] [A12](docs/prs/A12.md) The session keeps the key it first saw (wave 5; needs A10, C8)
+- [ ] [A14](docs/prs/A14.md) The session carries calls while a transfer runs: long operations stepped between calls (needs A12; the real interleaving waits for Orion R2)
 
 ## B. Board descriptions
 
