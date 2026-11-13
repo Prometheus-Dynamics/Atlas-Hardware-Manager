@@ -25,6 +25,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-actions"
+version = "2026.1.0-dev"
+dependencies = [
+ "async-trait",
+ "atlas-driver",
+ "atlas-jobs",
+ "atlas-session",
+ "atlas-sim-node",
+ "atlas-types",
+ "orion",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-allwinner"
 version = "2026.1.0-dev"
 dependencies = [

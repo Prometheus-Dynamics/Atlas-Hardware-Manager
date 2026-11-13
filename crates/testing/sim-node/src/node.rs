@@ -526,7 +526,8 @@ impl Node {
         let orion = Orion::connect(&Address::Local(socket.to_path_buf()), "sim-node")
             .map_err(|error| error.to_string())?;
         let mut registration = None;
-        for name in names::ACTIONS.iter().filter(|name| offered(kind, name)) {
+        let all = names::ACTIONS.iter().chain(crate::actions::NAMES.iter());
+        for name in all.filter(|name| offered(kind, name)) {
             let policy = Policy::new(Admits::ANYONE).without_grant();
             let decl = ActionDecl {
                 name,
@@ -698,7 +699,7 @@ impl Node {
                 self.install_start(call, &args);
             }
             Behaviour::Answer => {
-                let total = ticks_for(name);
+                let total = crate::actions::ticks(name, &args).unwrap_or_else(|| ticks_for(name));
                 self.active.push(Run {
                     call,
                     name: name.to_string(),
@@ -1204,6 +1205,7 @@ fn apply(model: &mut Model, name: &str, args: &[u8]) -> Result<Vec<u8>, Status> 
                 )),
             }
         }
+        other if crate::actions::handles(other) => crate::actions::apply(other, args),
         other => Err(Status::new(
             code::NOT_FOUND,
             format!("no simulated action {other}"),
