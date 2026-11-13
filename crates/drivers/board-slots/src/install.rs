@@ -163,10 +163,7 @@ fn wait_of(error: &ActionError) -> Option<String> {
 }
 
 fn classify(error: &ActionError) -> Step {
-    wait_of(error).map_or_else(
-        || Step::Settled(error.to_string()),
-        Step::Wait,
-    )
+    wait_of(error).map_or_else(|| Step::Settled(error.to_string()), Step::Wait)
 }
 
 /// The install job kind. Holds the state of every install in this program.
@@ -190,7 +187,11 @@ impl std::fmt::Debug for InstallKind {
 static NEXT: AtomicU64 = AtomicU64::new(1);
 
 fn next_nonce() -> String {
-    format!("{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed))
+    format!(
+        "{}-{}",
+        std::process::id(),
+        NEXT.fetch_add(1, Ordering::Relaxed)
+    )
 }
 
 impl InstallKind {
@@ -226,7 +227,9 @@ impl InstallKind {
 
     /// Step 1: the bundle, made once.
     async fn ensure_bundle(&self, spec: &Spec) -> Result<(PathBuf, u64), Step> {
-        if let Some(found) = self.with_run(&spec.nonce, |run| run.bundle.clone().map(|path| (path, run.size))) {
+        if let Some(found) = self.with_run(&spec.nonce, |run| {
+            run.bundle.clone().map(|path| (path, run.size))
+        }) {
             return Ok(found);
         }
         self.set_stage(&spec.nonce, Stage::Preparing);
@@ -235,15 +238,24 @@ impl InstallKind {
             SavedSource::Image { .. } => {
                 let target = self.scratch.join(format!("{}.tar", spec.nonce));
                 if !target.exists() {
+                    // LOCK: Lemnos L2: a signed bundle needs slot.key (the bundle writer's, D13); the
+                    // bundle written here is only as signed as `atlas_bundle::bundle_from_image` makes it.
                     let image = spec.source.clone();
                     let partial = self.scratch.join(format!("{}.tar.partial", spec.nonce));
                     let scratch = self.scratch.clone();
-                    let made = tokio::task::spawn_blocking(move || make_bundle(&image, &scratch, &partial))
-                        .await
-                        .map_err(|error| Step::Settled(format!("the bundle maker stopped: {error}")))?;
+                    let made = tokio::task::spawn_blocking(move || {
+                        make_bundle(&image, &scratch, &partial)
+                    })
+                    .await
+                    .map_err(|error| Step::Settled(format!("the bundle maker stopped: {error}")))?;
                     made.map_err(Step::Settled)?;
-                    std::fs::rename(self.scratch.join(format!("{}.tar.partial", spec.nonce)), &target)
-                        .map_err(|error| Step::Settled(format!("the bundle could not be kept: {error}")))?;
+                    std::fs::rename(
+                        self.scratch.join(format!("{}.tar.partial", spec.nonce)),
+                        &target,
+                    )
+                    .map_err(|error| {
+                        Step::Settled(format!("the bundle could not be kept: {error}"))
+                    })?;
                 }
                 (target, true)
             }
@@ -265,16 +277,21 @@ impl InstallKind {
 
     /// Step 2: the board check, on the computer. Nothing is sent when it fails.
     fn check_board(&self, spec: &Spec, bundle: &Path) -> Result<(), Step> {
-        if self.with_run(&spec.nonce, |run| run.checked.then_some(())).is_some() {
+        if self
+            .with_run(&spec.nonce, |run| run.checked.then_some(()))
+            .is_some()
+        {
             return Ok(());
         }
         let found = bundle_board(bundle).map_err(Step::Settled)?;
         if found != spec.board {
-            return Err(Step::Settled(SlotError::BoardMismatch {
-                bundle: found,
-                board: spec.board.clone(),
-            }
-            .to_string()));
+            return Err(Step::Settled(
+                SlotError::BoardMismatch {
+                    bundle: found,
+                    board: spec.board.clone(),
+                }
+                .to_string(),
+            ));
         }
         self.with(&spec.nonce, |run| run.checked = true);
         Ok(())
@@ -282,12 +299,23 @@ impl InstallKind {
 
     /// Step 3: accept the size. Repeatable.
     async fn accept(&self, spec: &Spec, board: &BoardActions, size: u64) -> Result<(), Step> {
-        if self.with_run(&spec.nonce, |run| run.accepted.then_some(())).is_some() {
+        if self
+            .with_run(&spec.nonce, |run| run.accepted.then_some(()))
+            .is_some()
+        {
             return Ok(());
         }
-        self.set_stage(&spec.nonce, Stage::WaitingForBoard { reason: "accepting the bundle".into() });
+        self.set_stage(
+            &spec.nonce,
+            Stage::WaitingForBoard {
+                reason: "accepting the bundle".into(),
+            },
+        );
         board
-            .run(&short(ACCEPT, &[("size", ArgKind::Int)]), &[size.to_string()])
+            .run(
+                &short(ACCEPT, &[("size", ArgKind::Int)]),
+                &[size.to_string()],
+            )
             .await
             .map_err(|error| classify(&error))?;
         self.with(&spec.nonce, |run| run.accepted = true);
@@ -295,11 +323,22 @@ impl InstallKind {
     }
 
     /// Step 4: the push, started once and waited for.
-    async fn push(&self, spec: &Spec, handle: &Handle, bundle: &Path, size: u64) -> Result<(), Step> {
-        if self.with_run(&spec.nonce, |run| run.pushed.then_some(())).is_some() {
+    async fn push(
+        &self,
+        spec: &Spec,
+        handle: &Handle,
+        bundle: &Path,
+        size: u64,
+    ) -> Result<(), Step> {
+        if self
+            .with_run(&spec.nonce, |run| run.pushed.then_some(()))
+            .is_some()
+        {
             return Ok(());
         }
-        let started = self.with_run(&spec.nonce, |run| run.push.as_ref().map(|_| ())).is_some();
+        let started = self
+            .with_run(&spec.nonce, |run| run.push.as_ref().map(|_| ()))
+            .is_some();
         if !started {
             let jobs = self
                 .jobs
@@ -335,7 +374,10 @@ impl InstallKind {
                 PushStage::Queued | PushStage::Sending => {
                     self.set_stage(
                         &spec.nonce,
-                        Stage::Sending { sent: progress.sent, total: progress.total.max(size) },
+                        Stage::Sending {
+                            sent: progress.sent,
+                            total: progress.total.max(size),
+                        },
                     );
                 }
             }
@@ -348,14 +390,14 @@ impl InstallKind {
         let call = match self.with_run(&spec.nonce, |run| run.call) {
             Some(call) => call,
             None => {
-                let words = [
-                    spec.dest.clone(),
-                    flag(spec.starred),
-                    "false".to_owned(),
-                ];
+                let words = [spec.dest.clone(), flag(spec.starred), "false".to_owned()];
                 let action = short(
                     INSTALL_FILE,
-                    &[("name", ArgKind::Text), ("pin", ArgKind::Bool), ("keep_old", ArgKind::Bool)],
+                    &[
+                        ("name", ArgKind::Text),
+                        ("pin", ArgKind::Bool),
+                        ("keep_old", ArgKind::Bool),
+                    ],
                 );
                 match board.start(&action, &words).await {
                     Ok(call) => {
@@ -389,7 +431,6 @@ impl InstallKind {
         String::from_utf8(done.output)
             .map_err(|_| Step::Settled("the board's result is not a slot id".into()))
     }
-
 }
 
 #[async_trait]
@@ -423,11 +464,21 @@ impl JobKind for InstallKind {
                 Ok(())
             }
             Err(Step::Wait(reason)) => {
-                self.set_stage(&spec.nonce, Stage::WaitingForBoard { reason: reason.clone() });
+                self.set_stage(
+                    &spec.nonce,
+                    Stage::WaitingForBoard {
+                        reason: reason.clone(),
+                    },
+                );
                 Err(DriverError::Unreachable(reason))
             }
             Err(Step::Settled(reason)) => {
-                self.set_stage(&spec.nonce, Stage::Failed { reason: reason.clone() });
+                self.set_stage(
+                    &spec.nonce,
+                    Stage::Failed {
+                        reason: reason.clone(),
+                    },
+                );
                 self.finish(&spec.nonce);
                 Err(DriverError::Incompatible(reason))
             }
@@ -436,7 +487,12 @@ impl JobKind for InstallKind {
 }
 
 impl InstallKind {
-    async fn drive(&self, spec: &Spec, handle: &Handle, board: &BoardActions) -> Result<String, Step> {
+    async fn drive(
+        &self,
+        spec: &Spec,
+        handle: &Handle,
+        board: &BoardActions,
+    ) -> Result<String, Step> {
         let (bundle, size) = self.ensure_bundle(spec).await?;
         self.check_board(spec, &bundle)?;
         self.accept(spec, board, size).await?;
@@ -469,8 +525,8 @@ fn bundle_board(path: &Path) -> Result<String, String> {
                 .take(1024 * 1024)
                 .read_to_string(&mut text)
                 .map_err(|error| format!("slot.json cannot be read: {error}"))?;
-            let value: serde_json::Value =
-                serde_json::from_str(&text).map_err(|error| format!("slot.json is not JSON: {error}"))?;
+            let value: serde_json::Value = serde_json::from_str(&text)
+                .map_err(|error| format!("slot.json is not JSON: {error}"))?;
             return value
                 .get("board")
                 .and_then(serde_json::Value::as_str)
@@ -505,7 +561,8 @@ fn make_bundle(source: &SavedSource, scratch: &Path, partial: &Path) -> Result<(
         kernel: kernel.clone(),
         display_name: display_name.clone(),
     };
-    let out = File::create(partial).map_err(|error| format!("the bundle cannot be written: {error}"))?;
+    let out =
+        File::create(partial).map_err(|error| format!("the bundle cannot be written: {error}"))?;
     atlas_bundle::bundle_from_image(image, scratch, slot, &meta, &key, out)
         .map(|_| ())
         .map_err(|error| format!("the bundle cannot be made from the image: {error}"))
@@ -619,8 +676,8 @@ impl SlotInstalls {
             starred: request.starred,
             source,
         };
-        let text = serde_json::to_string(&spec)
-            .map_err(|error| SlotError::Bundle(error.to_string()))?;
+        let text =
+            serde_json::to_string(&spec).map_err(|error| SlotError::Bundle(error.to_string()))?;
         self.kind.set_stage(&spec.nonce, Stage::Preparing);
         match self
             .jobs
@@ -647,12 +704,10 @@ impl SlotInstalls {
     #[must_use]
     pub fn push_counters(&self, job: JobId) -> Option<atlas_files::Counters> {
         let nonce = self.nonce_of(job)?;
-        self.kind.runs().get(&nonce).and_then(|run| {
-            run.push
-                .as_ref()
-                .map(Push::counters)
-                .or(run.push_counters)
-        })
+        self.kind
+            .runs()
+            .get(&nonce)
+            .and_then(|run| run.push.as_ref().map(Push::counters).or(run.push_counters))
     }
 
     /// Whether a cancel reached the board's install run, once one has been asked for.
@@ -679,7 +734,12 @@ impl SlotInstalls {
             return false;
         }
         let call = self.kind.with_run(&spec.nonce, |run| run.call);
-        if let Some(push) = self.kind.runs().get(&spec.nonce).and_then(|run| run.push.as_ref()) {
+        if let Some(push) = self
+            .kind
+            .runs()
+            .get(&spec.nonce)
+            .and_then(|run| run.push.as_ref())
+        {
             push.cancel();
         }
         let state = match call {
@@ -718,8 +778,12 @@ async fn stop_on_board(kind: &InstallKind, spec: &Spec, call: u64) -> CancelStat
     }
     match time::timeout(CANCEL_CONFIRM, board.follow(call, |_| {})).await {
         Ok(Err(ActionError::Cancelled(_))) => CancelState::Confirmed,
-        Ok(Ok(_)) => CancelState::NotConfirmed("the install finished before the cancel took effect".into()),
+        Ok(Ok(_)) => {
+            CancelState::NotConfirmed("the install finished before the cancel took effect".into())
+        }
         Ok(Err(other)) => CancelState::NotConfirmed(other.to_string()),
-        Err(_) => CancelState::NotConfirmed(format!("the board did not confirm that run {call} stopped")),
+        Err(_) => {
+            CancelState::NotConfirmed(format!("the board did not confirm that run {call} stopped"))
+        }
     }
 }

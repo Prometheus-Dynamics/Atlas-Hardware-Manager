@@ -74,10 +74,7 @@ pub fn would_remove(views: &[View], keep: u32) -> Vec<String> {
         .filter(|view| view.protected && !view.starred)
         .count();
     let mut removed = Vec::new();
-    for view in views
-        .iter()
-        .filter(|view| !view.protected && !view.starred)
-    {
+    for view in views.iter().filter(|view| !view.protected && !view.starred) {
         if count < keep {
             count += 1;
         } else {
@@ -118,10 +115,19 @@ impl std::fmt::Display for RemoveRefusal {
         match self {
             Self::Missing(id) => write!(f, "there is no slot {id} on this board"),
             Self::Running(id) => write!(f, "{id} is the running slot, and is never removed"),
-            Self::Default(id) => write!(f, "{id} is the default slot; make another slot the default first"),
-            Self::Trial(id) => write!(f, "{id} is on trial; it is never removed while the trial is pending"),
+            Self::Default(id) => write!(
+                f,
+                "{id} is the default slot; make another slot the default first"
+            ),
+            Self::Trial(id) => write!(
+                f,
+                "{id} is on trial; it is never removed while the trial is pending"
+            ),
             Self::OnlySlot(id) => write!(f, "{id} is the only slot on this board"),
-            Self::Starred(id) => write!(f, "{id} is starred; remove it only if you say so explicitly"),
+            Self::Starred(id) => write!(
+                f,
+                "{id} is starred; remove it only if you say so explicitly"
+            ),
         }
     }
 }
@@ -143,7 +149,10 @@ pub fn check_remove(list: &SlotList, id: &str, allow_starred: bool) -> Result<()
     if slot.has_flag("default") || list.default == id {
         return Err(RemoveRefusal::Default(id.to_owned()));
     }
-    if slot.has_flag("trial") || list.trial_slot == id || list.trial.as_ref().is_some_and(|t| t.slot == id) {
+    if slot.has_flag("trial")
+        || list.trial_slot == id
+        || list.trial.as_ref().is_some_and(|t| t.slot == id)
+    {
         return Err(RemoveRefusal::Trial(id.to_owned()));
     }
     if list.slots.len() == 1 {

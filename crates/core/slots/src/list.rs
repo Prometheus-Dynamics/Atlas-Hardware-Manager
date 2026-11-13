@@ -161,7 +161,10 @@ impl SlotList {
     pub fn parse(text: &str) -> Result<Self, ListError> {
         let value: Value =
             serde_json::from_str(text).map_err(|error| ListError::NotJson(error.to_string()))?;
-        let slots_value = value.get("slots").and_then(Value::as_array).ok_or(ListError::NoSlots)?;
+        let slots_value = value
+            .get("slots")
+            .and_then(Value::as_array)
+            .ok_or(ListError::NoSlots)?;
         let mut slots = Vec::with_capacity(slots_value.len());
         for (index, entry) in slots_value.iter().enumerate() {
             slots.push(parse_slot(entry, index)?);
@@ -206,6 +209,8 @@ fn parse_slot(entry: &Value, index: usize) -> Result<Slot, ListError> {
                 .collect()
         })
         .unwrap_or_default();
+    // LOCK: Lemnos L2: today's board writes `signed` only; the `signature` word (the shared table,
+    // with slot.key) comes at L2. Until then an absent word is NotReported, never verified.
     let signature = match entry.get("signature").and_then(Value::as_str) {
         Some(word) if !word.is_empty() => Reported::Known(BoardOutcome::parse(word)),
         _ => Reported::NotReported,
@@ -222,11 +227,20 @@ fn parse_slot(entry: &Value, index: usize) -> Result<Slot, ListError> {
         signed: text_of(entry, "signed"),
         signer: text_of(entry, "signer"),
         size: num_of(entry, "size"),
-        verity: entry.get("verity").and_then(Value::as_bool).unwrap_or(false),
+        verity: entry
+            .get("verity")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
         flags,
-        pinned: entry.get("pinned").and_then(Value::as_bool).unwrap_or(false),
+        pinned: entry
+            .get("pinned")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
         failures: u32::try_from(num_of(entry, "failures")).unwrap_or(u32::MAX),
-        failed: entry.get("failed").and_then(Value::as_bool).unwrap_or(false),
+        failed: entry
+            .get("failed")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
         signature,
     })
 }

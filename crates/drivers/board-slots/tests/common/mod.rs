@@ -1,7 +1,6 @@
 //! The test rig: a simulated board behind a relay that can be cut, and a board's slots through it.
 #![allow(dead_code)]
 
-
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -55,10 +54,12 @@ impl Relay {
                 let Ok(server) = TcpStream::connect(upstream) else {
                     continue;
                 };
-                let (Ok(client_out), Ok(server_out)) = (client.try_clone(), server.try_clone()) else {
+                let (Ok(client_out), Ok(server_out)) = (client.try_clone(), server.try_clone())
+                else {
                     continue;
                 };
-                let (Ok(client_cut), Ok(server_cut)) = (client.try_clone(), server.try_clone()) else {
+                let (Ok(client_cut), Ok(server_cut)) = (client.try_clone(), server.try_clone())
+                else {
                     continue;
                 };
                 lock(&kept).push((client_cut, server_cut));
@@ -148,7 +149,8 @@ impl Rig {
         let dir = scratch(name);
         let _ = std::fs::remove_dir_all(&dir);
         let node = SimNode::start_with(&dir.join("node"), &kind(), None).expect("the node starts");
-        let upstream = SocketAddr::from_str(&format!("127.0.0.1:{}", node.network().port())).unwrap();
+        let upstream =
+            SocketAddr::from_str(&format!("127.0.0.1:{}", node.network().port())).unwrap();
         let relay = Relay::start(upstream);
         let address = Address::from_str(&format!("orion+tcp://{}", relay.addr())).unwrap();
         let sessions = Arc::new(Sessions::new(Arc::new(NoPause)));
@@ -198,7 +200,9 @@ pub async fn open_installs(dir: &Path, sessions: Arc<Sessions>) -> SlotInstalls 
 /// A bundle for slot `id` at `version`, for the simulated board. `board` overrides the board id
 /// the bundle claims (the wrong-board test).
 pub fn bundle_bytes(id: &str, version: &str, board: Option<&str>) -> Vec<u8> {
-    let rootfs = format!("rootfs of {id} at {version}\n").repeat(900).into_bytes();
+    let rootfs = format!("rootfs of {id} at {version}\n")
+        .repeat(900)
+        .into_bytes();
     let boot: [(&str, &[u8]); 2] = [
         ("cmdline.txt", b"console=ttyS0 root=/dev/dm-0\n"),
         ("kernel.img", b"kernel bytes"),

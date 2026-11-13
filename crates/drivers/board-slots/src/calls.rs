@@ -101,12 +101,11 @@ impl BoardSlots {
     /// [`SlotError::NoSlots`], [`SlotError::Board`] or [`SlotError::BadList`].
     pub async fn list(&self) -> Result<SlotList, SlotError> {
         self.require_offered()?;
-        let done = self
-            .actions
-            .run(&short(LIST, &[]), &[])
-            .await?;
+        let done = self.actions.run(&short(LIST, &[]), &[]).await?;
         let text = String::from_utf8(done.output).map_err(|_| {
-            SlotError::Board(ActionError::Failed("the board's slot list is not text".into()))
+            SlotError::Board(ActionError::Failed(
+                "the board's slot list is not text".into(),
+            ))
         })?;
         Ok(SlotList::parse(&text)?)
     }
@@ -121,7 +120,10 @@ impl BoardSlots {
         self.require_offered()?;
         self.actions
             .run(
-                &short(SET_DEFAULT, &[("id", ArgKind::Text), ("force", ArgKind::Bool)]),
+                &short(
+                    SET_DEFAULT,
+                    &[("id", ArgKind::Text), ("force", ArgKind::Bool)],
+                ),
                 &[id.to_owned(), flag(force)],
             )
             .await?;
@@ -153,7 +155,12 @@ impl BoardSlots {
                         ("force", ArgKind::Bool),
                     ],
                 ),
-                &[id.to_owned(), flag(keep_default), flag(keep_old), flag(force)],
+                &[
+                    id.to_owned(),
+                    flag(keep_default),
+                    flag(keep_old),
+                    flag(force),
+                ],
             )
             .await?;
         Ok(())

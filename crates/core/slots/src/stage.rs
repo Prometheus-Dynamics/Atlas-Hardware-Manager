@@ -17,7 +17,10 @@ pub enum Stage {
     /// The bundle is being sent: bytes the board has taken of the total.
     Sending { sent: u64, total: u64 },
     /// The board is installing: percent done (when it says) and its own words.
-    Installing { percent: Option<u8>, message: String },
+    Installing {
+        percent: Option<u8>,
+        message: String,
+    },
     /// Done: the new slot's id.
     Done { slot: String },
     /// Ended without a slot. `reason` is the board's words when it refused, or Atlas's.
@@ -30,7 +33,10 @@ impl Stage {
     /// Whether the install has ended (done, failed or cancelled).
     #[must_use]
     pub const fn is_final(&self) -> bool {
-        matches!(self, Self::Done { .. } | Self::Failed { .. } | Self::Cancelled)
+        matches!(
+            self,
+            Self::Done { .. } | Self::Failed { .. } | Self::Cancelled
+        )
     }
 }
 
@@ -40,10 +46,16 @@ impl fmt::Display for Stage {
             Self::Preparing => f.write_str("preparing the bundle"),
             Self::WaitingForBoard { reason } => write!(f, "waiting for the board: {reason}"),
             Self::Sending { sent, total } => write!(f, "sending {sent} of {total} bytes"),
-            Self::Installing { percent: Some(percent), message } => {
+            Self::Installing {
+                percent: Some(percent),
+                message,
+            } => {
                 write!(f, "the board is installing, {percent}%: {message}")
             }
-            Self::Installing { percent: None, message } => {
+            Self::Installing {
+                percent: None,
+                message,
+            } => {
                 write!(f, "the board is installing: {message}")
             }
             Self::Done { slot } => write!(f, "installed as {slot}"),

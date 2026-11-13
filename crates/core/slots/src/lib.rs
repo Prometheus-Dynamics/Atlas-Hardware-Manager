@@ -21,11 +21,13 @@ pub mod list;
 pub mod policy;
 pub mod stage;
 
+pub use atlas_image::BoardOutcome;
 pub use list::{
     Attempt, ListError, Reported, Resolution, Resolved, Slot, SlotList, Trial, TrialLast,
 };
-pub use atlas_image::BoardOutcome;
-pub use policy::{RemoveRefusal, View, check_remove, view_of, would_remove, would_remove_on_install, with_install};
+pub use policy::{
+    RemoveRefusal, View, check_remove, view_of, with_install, would_remove, would_remove_on_install,
+};
 pub use stage::Stage;
 
 /// The Lemnos contract name a board offers for slots. Read from `hello.offers`, which lists
@@ -35,5 +37,7 @@ pub const SUPPORTED_CONTRACT: &str = "system.slots/1";
 /// Whether a board's `offers` text includes the slot contract. An absent offers text is "no".
 #[must_use]
 pub fn offers_slots(offers: &str) -> bool {
-    offers.split_whitespace().any(|offer| offer == SUPPORTED_CONTRACT)
+    offers
+        .split_whitespace()
+        .any(|offer| offer == SUPPORTED_CONTRACT)
 }

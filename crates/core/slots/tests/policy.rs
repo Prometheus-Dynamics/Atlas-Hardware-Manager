@@ -1,7 +1,10 @@
 //! The retention policy as pure rules: keep N, starred versions, the running, default and trial
 //! slots, and what an install would remove.
 
-use atlas_slots::{RemoveRefusal, SlotList, View, check_remove, offers_slots, would_remove, would_remove_on_install, with_install};
+use atlas_slots::{
+    RemoveRefusal, SlotList, View, check_remove, offers_slots, with_install, would_remove,
+    would_remove_on_install,
+};
 
 fn view(id: &str, starred: bool, protected: bool) -> View {
     View {
@@ -26,7 +29,10 @@ fn keep_last_n_removes_the_oldest_unstarred_beyond_n_newest_first() {
         view("b", false, false),
         view("a", false, false),
     ];
-    assert_eq!(would_remove(&views, 2), vec!["b".to_owned(), "a".to_owned()]);
+    assert_eq!(
+        would_remove(&views, 2),
+        vec!["b".to_owned(), "a".to_owned()]
+    );
 }
 
 #[test]
@@ -63,7 +69,10 @@ fn the_running_and_default_and_trial_slots_are_protected_and_count() {
         view("b", false, false),
         view("a", false, true),
     ];
-    assert_eq!(would_remove(&views, 2), vec!["d".to_owned(), "b".to_owned()]);
+    assert_eq!(
+        would_remove(&views, 2),
+        vec!["d".to_owned(), "b".to_owned()]
+    );
 }
 
 #[test]
@@ -91,7 +100,10 @@ fn an_install_preview_counts_the_new_slot_as_the_newest() {
     );
     // Installed starred, the new one does not count, so one unstarred slot is kept beyond a:
     // Starred install: d is not counted, so c (count 1 -> 2) stays and only b goes.
-    assert_eq!(would_remove_on_install(&list, 2, "d", true), vec!["b".to_owned()]);
+    assert_eq!(
+        would_remove_on_install(&list, 2, "d", true),
+        vec!["b".to_owned()]
+    );
 }
 
 #[test]
@@ -117,14 +129,29 @@ fn removal_guard_refuses_running_default_trial_only_missing_and_starred() {
            {"id":"a","flags":["running","default"],"pinned":false},
            {"id":"s","flags":[],"pinned":true}"#,
     );
-    assert!(matches!(check_remove(&list, "a", true), Err(RemoveRefusal::Running(_))));
-    assert!(matches!(check_remove(&list, "b", true), Err(RemoveRefusal::Trial(_))));
-    assert!(matches!(check_remove(&list, "zz", true), Err(RemoveRefusal::Missing(_))));
-    assert!(matches!(check_remove(&list, "s", false), Err(RemoveRefusal::Starred(_))));
+    assert!(matches!(
+        check_remove(&list, "a", true),
+        Err(RemoveRefusal::Running(_))
+    ));
+    assert!(matches!(
+        check_remove(&list, "b", true),
+        Err(RemoveRefusal::Trial(_))
+    ));
+    assert!(matches!(
+        check_remove(&list, "zz", true),
+        Err(RemoveRefusal::Missing(_))
+    ));
+    assert!(matches!(
+        check_remove(&list, "s", false),
+        Err(RemoveRefusal::Starred(_))
+    ));
     assert_eq!(check_remove(&list, "s", true), Ok(()));
     assert_eq!(check_remove(&list, "c", false), Ok(()));
     let only = board(r#"{"id":"a","flags":["running","default"],"pinned":false}"#);
-    assert!(matches!(check_remove(&only, "a", false), Err(RemoveRefusal::Running(_))));
+    assert!(matches!(
+        check_remove(&only, "a", false),
+        Err(RemoveRefusal::Running(_))
+    ));
 }
 
 #[test]
@@ -134,7 +161,10 @@ fn a_default_that_is_not_running_is_refused_as_default() {
         {"id":"d","flags":["default"],"pinned":false},{"id":"x","flags":["running"],"pinned":false}]}"#,
     )
     .unwrap();
-    assert!(matches!(check_remove(&list, "d", false), Err(RemoveRefusal::Default(_))));
+    assert!(matches!(
+        check_remove(&list, "d", false),
+        Err(RemoveRefusal::Default(_))
+    ));
 }
 
 #[test]

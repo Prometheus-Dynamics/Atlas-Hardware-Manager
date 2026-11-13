@@ -56,7 +56,10 @@ fn the_trial_and_resolved_records_come_through() {
     assert_eq!(trial.attempts_left, Some(2));
     assert_eq!(trial.attempts[0].n, 1);
     assert_eq!(trial.last, Some(TrialLast::DaemonReachedNotYetConfirmed));
-    assert_eq!(trial.record_error.as_deref(), Some("state dir is read-only"));
+    assert_eq!(
+        trial.record_error.as_deref(),
+        Some("state dir is read-only")
+    );
     let resolved = list.resolved.as_ref().unwrap();
     assert_eq!(resolved.outcome, Resolution::FellBack);
     assert_eq!(resolved.caller, "7", "a numeric caller is kept as text");
