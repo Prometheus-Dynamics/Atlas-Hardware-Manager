@@ -1,24 +1,19 @@
-# Luckfox Pico Pro: the base OS image. Written in Gaia's F8 form (devices/README.md,
-# "F8 format points"); the locked Gaia (e90ee03) refuses it, so this fails the device
-# check until the pin moves. Untested on board (G6).
+# Luckfox Pico Pro: the base OS image (Gaia F8 form, pin 70a5133).
+#
+# The NAND slots are UBI volumes (the ubi partition on the board), written on the board by
+# a Lemnos driver (Lemnos I5c, system.slots/1). Gaia has no UBI layout recipe at 70a5133, so
+# this product uses `firmware` (the built tree as a tar) as a placeholder. It is NOT the
+# flashable NAND image. The UBI-layout recipe and its exact fields are listed in the PR text.
 version = 1
 name = "luckfox-pico-pro"
 description = "Luckfox Pico Pro: base OS"
 
-# F8? the product's sources: Buildroot. The ref is the Buildroot release dev's notes
-# name (2026.08, from devices/raze's Buildroot download notes); not checked for this board.
 [sources.buildroot]
 git = "https://gitlab.com/buildroot.org/buildroot.git"
-ref = "2026.08"
+ref = "813cbac680a73092e1ebb86da72972c44573145c"
 
 [[images]]
 name = "luckfox-pico-pro"
 board = "../../boards/luckfox-pico-pro/board.toml"
-# F8? the OS: Buildroot, with no fragments yet (dev's RV1106 kernel and rootfs fragments
-# are not on next; see the PR text). The OS's boot files reach the recipe as its inputs
-# `kernel`, `device-trees`, `bootloader` and `os`.
 os = { provider = "buildroot", source = "buildroot", fragments = [] }
-# F8? NAND: the ubi partition holds UBI volumes (slots), not EROFS on verity. `slot` is
-# Gaia's name for the slot recipe; no recipe lays out a UBI region yet (outside need:
-# a Gaia UBI-layout recipe). Until one exists this name is a placeholder.
-recipe = "slot"
+recipe = "firmware"

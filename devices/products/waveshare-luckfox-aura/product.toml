@@ -1,19 +1,18 @@
-# Luckfox Aura: the base OS image, written in Gaia's F8 form (see the Pico Pro product).
-# eMMC storage, so a whole-disk image is what the board takes; its layout is unconfirmed
-# (open). Fails the device check at e90ee03 until the Gaia F8 pin moves. Untested on board (G6).
+# Luckfox Aura: the base OS image (Gaia F8 form, pin 70a5133).
+#
+# The Aura's storage is eMMC, as dev records it. A whole-disk eMMC image needs Gaia's
+# sd-image recipe (F7), which is not at 70a5133, so this product uses `firmware` (the built
+# tree as a tar) as a placeholder. It is NOT the flashable eMMC image. See the PR text.
 version = 1
 name = "waveshare-luckfox-aura"
 description = "Luckfox Aura: base OS"
 
-# F8? Buildroot, as for the Pico Pro product.
 [sources.buildroot]
 git = "https://gitlab.com/buildroot.org/buildroot.git"
-ref = "2026.08"
+ref = "813cbac680a73092e1ebb86da72972c44573145c"
 
 [[images]]
 name = "waveshare-luckfox-aura"
 board = "../../boards/waveshare-luckfox-aura/board.toml"
-# F8? the OS: Buildroot, no fragments yet.
 os = { provider = "buildroot", source = "buildroot", fragments = [] }
-# F8? an eMMC disk takes the disk recipe; its name and partition table are unconfirmed (open).
-recipe = "disk"
+recipe = "firmware"
