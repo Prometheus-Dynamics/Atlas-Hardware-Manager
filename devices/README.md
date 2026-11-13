@@ -251,7 +251,7 @@ A bogus recipe name is refused by validate when it is given the recipes (`--reci
 ## The Gaia pin
 
 `gaia.lock` is Atlas's, written by hand: a Gaia URL and a full commit. It is not Gaia's lock. The
-commit is `7db227f6648917434b14da4117150ad6ab007530` (Gaia `next`: PR #85 `gaia lock` resolves nothing a
+commit is `4509f6b74247f56594cb2667e701c5d1f7566498` (Gaia `next`'s head: #91 the usb-gadget-network component in its configfs NCM form, #89 flash-xz, #90 verified-on-put, #92 the check fix; before it `7db227f6648917434b14da4117150ad6ab007530` (Gaia `next`: PR #85 `gaia lock` resolves nothing a
 lock already holds and works offline for full-commit refs, #86 `gaia --version` prints the commit it was
 built from, #87 `--input NAME=PATH`, #88 the OS build split into kernel, bootloader and root filesystem
 builds with `gaia.tree.under`, and the `system` input). Before it: `f5a32f9fe242a7fb2686e48037b6e2fe23553646`,
@@ -344,9 +344,24 @@ What it needs on the machine:
   for planning (the check passes a stand-in for `bwrap`).
 - `make` on PATH for a product with an `os` (the Buildroot host step).
 
+## The board id, and the bring-up USB network (PR B24)
+
+One string per board: the directory under `devices/boards/`, the Gaia board `name` (its `board.toml`), the
+Lemnos `[board] id` of each Lemnos board file, and the one line of `/etc/usb-gadget.family` in a bring-up image.
+`scripts/check-board-ids.py` (in the gate) refuses any of them disagreeing. The id is frozen once an image has
+shipped: changing it changes the board's USB addresses, its identity key and which slots it accepts. Nothing has
+shipped yet, so every id may still change; after the first shipped image it may not.
+
+A bring-up product with a USB network names Gaia's `usb-gadget-network` component (`devices/components/usb-gadget-network`,
+which takes the component's files from the pinned Gaia checkout with `{ source, path }`, and runs them under a
+systemd unit) and its own `usb-gadget-family` component that writes the id. The kernel side is CDC NCM through
+configfs (`CONFIG_USB_CONFIGFS=y`, `CONFIG_USB_CONFIGFS_NCM=y`), and no legacy gadget (`CONFIG_USB_ETH`) is built in,
+because a built-in legacy gadget binds the controller before the addresses are set. The ROCK 5C and ROCK 4D
+bring-ups have no USB gadget (their USB ports are host ports).
+
 ## Known limits at the pin
 
-These hold at Gaia `7db227f`, the pin in `gaia.lock`. Items 1 and 2 were re-run only through the products: the
+These hold at Gaia `4509f6b`, the pin in `gaia.lock` (the items were checked at `7db227f`; not re-run at `4509f6b`). Items 1 and 2 were re-run only through the products: the
 sd-image products plan with the veritysetup stand-in and the Rust component with the bwrap stand-in, as at `aa987cc`;
 the refusals themselves were not re-tested at `7db227f`. Item 5 is carried from `aa987cc` and was not re-run. They lift
 when the pin moves.
@@ -358,8 +373,8 @@ when the pin moves.
 2. **`gaia plan` needs every tool a recipe names on PATH**, or passed with `--tool NAME=PATH`.
    Checked at aa987cc: a Rust component needs `bwrap` (the check passes a stand-in) and `rustc`; a
    Buildroot product needs `make`. `python` is needed only for a product with a python component.
-3. **The gaia binary's commit is checked.** `gaia --version` prints `gaia <version> (<commit>)` at `7db227f`
-   and at `f5a32f9` and `7db227f` (PR #86); the check refuses a binary that prints another commit, `-dirty`, or no commit.
+3. **The gaia binary's commit is checked.** `gaia --version` prints `gaia <version> (<commit>)` at `4509f6b`
+   (and at `7db227f` and `f5a32f9`; PR #86); the check refuses a binary that prints another commit, `-dirty`, or no commit.
    `aa987cc` and older print no commit and are refused.
 4. **Gaia's `Cargo.lock` is untracked** at this commit (`git ls-files Cargo.lock` is empty at
    aa987cc; the root `.gitignore` has `/Cargo.lock`), so a build is pinned by commit only, not by

@@ -1,0 +1,19 @@
+# Starts Gaia's usb-gadget-network script (/etc/init.d/S41usb0) at boot: configfs NCM on usb0, the addresses
+# from /etc/usb-gadget.family and the device tree's serial, udhcpd on usb0. Restarted on failure after 5 s
+# and never given up on (StartLimitIntervalSec=0): a PC that is not yet there must not stop it.
+[Unit]
+Description=USB network gadget (CDC NCM) for the bring-up
+After=local-fs.target
+Before=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/etc/init.d/S41usb0 start
+ExecStop=/etc/init.d/S41usb0 stop
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

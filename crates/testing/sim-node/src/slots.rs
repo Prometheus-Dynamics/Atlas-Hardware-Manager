@@ -5,6 +5,8 @@
 
 use serde_json::json;
 
+pub mod trial;
+
 /// Lemnos statuses (`lemnos-abi`): 0 is ok, negative values are errors.
 pub mod code {
     pub const NOT_PERMITTED: i32 = -1;
@@ -15,6 +17,8 @@ pub mod code {
     pub const NO_DEVICE: i32 = -19;
     pub const INVALID_ARGUMENT: i32 = -22;
     pub const ENOSPC: i32 = -28;
+    /// `NOT_SUPPORTED` (-95): a slot built for another board.
+    pub const NOT_SUPPORTED: i32 = -95;
     pub const CANCELLED: i32 = -125;
 }
 
@@ -127,14 +131,14 @@ pub struct Entry {
     pub seq: u64,
 }
 
-/// A trial boot: a slot to boot once, to be confirmed or fallen back from.
+/// A trial boot: a slot to boot, to be confirmed or fallen back from. Its boots are in `record`
+/// (see [`trial`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Trial {
     pub id: String,
     pub keep_default: bool,
     pub keep_old: bool,
-    /// Whether the board has booted it. The next restart without a confirm falls back.
-    pub booted: bool,
+    pub record: trial::Record,
 }
 
 /// The facts of an installed bundle, as the install gate hands them over.
@@ -169,16 +173,34 @@ pub struct Slots {
     pub keep: u32,
     pub free_bytes: u64,
     pub reserve_bytes: u64,
-    /// The security switch, off by default. Off, every signature is still checked and shown
-    /// (`signed`, `signer`), and nothing is refused for it. On, an install that is unsigned or
-    /// signed by an untrusted key is refused.
-    pub require_signed: bool,
+    /// The board's security switch, default off. Internal to the sim: Atlas never sends it, and
+    /// `list` never shows it. Off, a signature that does not verify with a key on the list is
+    /// refused, an unknown key is `not_checked_unknown_key`, and nothing else is refused. On, an
+    /// install that is unsigned or signed by an untrusted key is refused.
+    // LOCK: Lemnos L2. Today: the board has no security switch in the sim's sense; a known key with
+    // a bad signature installs as untrusted, and no install is refused for signing.
+    pub board_security: bool,
     /// The board this node is, as its hello `family` fact. A slot built for another board is
     /// refused for set-default and trial.
     pub board: String,
     pub trusted: Vec<TrustedKey>,
     /// What happened, for the log, drained by the model.
     pub events: Vec<String>,
+    /// The `system-slots` config keys of the trial lifecycle (see [`trial`]).
+    pub trial_config: trial::Config,
+    /// The last trial resolution, for `list`'s `resolved`.
+    pub resolved: Option<trial::Resolved>,
+    /// The simulated clock, in seconds from the start. Moved by the test; never wall time.
+    pub now_s: u64,
+    /// Whether the board is healthy: the one health condition the sim models (the `health`
+    /// sources of I5f stand in for it). A trial confirms only while this holds.
+    pub healthy: bool,
+    /// Trial boots still to come that do not reach the daemon (a test's script).
+    pub boots_without_daemon: u32,
+    /// Whether the driver's writes of the trial record fail (a test's script).
+    pub fail_record_writes: bool,
+    /// The boot partition's `trial-reason` line, written when a fall back cannot be recorded.
+    pub trial_reason: Option<String>,
     seq: u64,
 }
 
@@ -222,10 +244,17 @@ impl Slots {
             keep: 3,
             free_bytes: 8 * 1024 * 1024 * 1024,
             reserve_bytes: RESERVE_BYTES,
-            require_signed: false,
+            board_security: false,
             board: "simulated".into(),
             trusted: Vec::new(),
             events: Vec::new(),
+            trial_config: trial::Config::default(),
+            resolved: None,
+            now_s: 0,
+            healthy: true,
+            boots_without_daemon: 0,
+            fail_record_writes: false,
+            trial_reason: None,
             seq: 1,
         }
     }
@@ -258,12 +287,28 @@ impl Slots {
             return Ok(());
         }
         Err(Status::new(
-            code::NOT_PERMITTED,
+            code::NOT_SUPPORTED,
             format!(
-                "{} was built for board {:?}, and this board is {:?}",
-                entry.id, entry.board, self.board
+                "this slot is built for board {}, and this is board {}",
+                entry.board, self.board
             ),
         ))
+    }
+
+    /// With security on, a slot whose signature is not verified is not made the default or tried
+    /// (I5g). The refusal names the reason in `error`, as every refusal does.
+    // LOCK: Lemnos L2. Today: set_default and trial do not look at the signature.
+    fn check_signature_policy(&self, entry: &Entry) -> Result<(), Status> {
+        if self.board_security && !matches!(entry.signed, Signed::Trusted { .. }) {
+            return Err(Status::new(
+                code::NOT_PERMITTED,
+                format!(
+                    "{} is not signed by a trusted key, and security is on",
+                    entry.id
+                ),
+            ));
+        }
+        Ok(())
     }
 
     /// The install gate: refused while another install runs (the caller checks that), when
@@ -273,7 +318,7 @@ impl Slots {
     ///
     /// The Lemnos status of the refusal.
     pub fn check_install_start(&self, size: u64) -> Result<(), Status> {
-        if self.require_signed && self.trusted.is_empty() {
+        if self.board_security && self.trusted.is_empty() {
             return Err(Status::new(
                 code::NOT_PERMITTED,
                 "security needs a trusted key, and the board has none",
@@ -300,7 +345,8 @@ impl Slots {
     pub fn check_signed(&self, signed: &Signed) -> Result<(), Status> {
         match signed {
             Signed::Trusted { .. } => Ok(()),
-            _ if self.require_signed => Err(Status::new(
+            // LOCK: Lemnos L2. Today: no install is refused for its signature.
+            _ if self.board_security => Err(Status::new(
                 code::NOT_PERMITTED,
                 "security is on and the bundle is not signed by a trusted key",
             )),
@@ -390,6 +436,7 @@ impl Slots {
     pub fn set_default(&mut self, id: &str, force: bool) -> Result<(), Status> {
         let entry = self.get(id).ok_or_else(|| not_found(id))?;
         self.check_board(entry)?;
+        self.check_signature_policy(entry)?;
         if entry.good != Good::Yes {
             return Err(Status::new(
                 code::NOT_PERMITTED,
@@ -425,6 +472,7 @@ impl Slots {
     ) -> Result<(), Status> {
         let entry = self.get(id).ok_or_else(|| not_found(id))?;
         self.check_board(entry)?;
+        self.check_signature_policy(entry)?;
         if self.active.as_deref() == Some(id) {
             return Err(Status::new(code::BUSY, format!("{id} is the running slot")));
         }
@@ -438,48 +486,11 @@ impl Slots {
             id: id.to_string(),
             keep_default,
             keep_old,
-            booted: false,
+            record: trial::Record::default(),
         });
+        self.resolved = None;
         self.state = State::Rebooting;
         self.reboot();
-        Ok(())
-    }
-
-    /// Confirms the running slot. A booted trial becomes the default, unless it was started
-    /// to keep the default. A trial the board is not running is recorded as failed.
-    ///
-    /// # Errors
-    ///
-    /// `NOT_FOUND` when the running slot is unknown.
-    pub fn confirm(&mut self) -> Result<(), Status> {
-        let active = self
-            .active
-            .clone()
-            .ok_or_else(|| Status::new(code::NOT_FOUND, "the running slot is unknown"))?;
-        match self.trial.clone() {
-            Some(trial) if trial.booted && trial.id == active => {
-                self.trial = None;
-                if !trial.keep_default {
-                    self.previous = self.default.replace(active.clone());
-                }
-                self.mark_good(&active);
-                self.state = State::Confirmed;
-                self.event(format!("{active} confirmed"));
-                if !trial.keep_old {
-                    self.housekeeping();
-                }
-            }
-            Some(trial) => {
-                self.fail(&trial.id, "the board is not running the trial");
-                self.trial = None;
-                self.mark_good(&active);
-                self.state = State::RolledBack;
-            }
-            None => {
-                self.mark_good(&active);
-                self.state = State::Confirmed;
-            }
-        }
         Ok(())
     }
 
@@ -547,30 +558,6 @@ impl Slots {
         if let Some(entry) = self.get_mut(id) {
             entry.good = Good::Yes;
             entry.failed = false;
-        }
-    }
-
-    /// A restart. A trial that has not booted boots now. A trial that booted and was not
-    /// confirmed falls back to the default and is recorded as failed. Otherwise the default
-    /// runs.
-    pub fn reboot(&mut self) {
-        self.state = State::Idle;
-        match self.trial.take() {
-            Some(trial) if trial.booted => {
-                self.fail(
-                    &trial.id,
-                    "the trial did not confirm before the next restart",
-                );
-                self.active = self.default.clone();
-                self.state = State::RolledBack;
-            }
-            Some(mut trial) => {
-                trial.booted = true;
-                self.active = Some(trial.id.clone());
-                self.event(format!("trial boot of {}", trial.id));
-                self.trial = Some(trial);
-            }
-            None => self.active = self.default.clone(),
         }
     }
 
@@ -670,6 +657,8 @@ impl Slots {
                     "pinned": entry.pinned,
                     "failures": entry.failures,
                     "failed": entry.failed,
+                    // LOCK: Lemnos L2. Today: no `signature` field in a slot's list.
+                    "signature": outcome_label(&entry.signed),
                 })
             })
             .collect();
@@ -685,8 +674,20 @@ impl Slots {
             "reserve_bytes": self.reserve_bytes,
             "keep": self.keep,
             "slots": slots,
+            "trial": self.trial_json(),
+            "resolved": self.resolved_json(),
         })
         .to_string()
+    }
+}
+
+/// The signature outcome word of I5g: `verified`, `not_checked_unknown_key` or
+/// `not_checked_unsigned`.
+fn outcome_label(signed: &Signed) -> &'static str {
+    match signed {
+        Signed::Trusted { .. } => "verified",
+        Signed::Untrusted => "not_checked_unknown_key",
+        Signed::Unsigned => "not_checked_unsigned",
     }
 }
 

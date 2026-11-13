@@ -29,6 +29,7 @@
 //! first connect is pinned too. Only an address that has never been seen, and has no known key,
 //! is connected unpinned (trust on first use): that first contact is the one unpinned moment.
 
+use std::collections::VecDeque;
 use std::fmt;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -41,6 +42,9 @@ use orion::{Address, ClientError, Identity, Options, Orion};
 use tokio::sync::{oneshot, watch};
 
 use crate::backoff::Backoff;
+use crate::long::{
+    Cancel, MAX_LONG_OPERATIONS, Outcome, STEP_WAIT, Step, StepError, SteppedTransfer,
+};
 
 /// The program name this crate connects as.
 pub const PROGRAM: &str = "atlas";
@@ -73,6 +77,13 @@ pub enum Presence {
         found: Option<[u8; 32]>,
     },
 }
+
+/// The most frames the session takes between two turns' steps while an operation runs. Each
+/// frame is a few microseconds; the cap keeps a flood of answers from starving the steps.
+const MAX_FRAMES_PER_TURN: usize = 64;
+
+/// The reason a long operation gives when a person changes the node's key under it.
+const CHANGED_BY_A_PERSON: &str = "the node's key was changed by a person";
 
 /// The words Orion's client gives when a pinned connect meets another key (Orion at 6dfb990,
 /// `orion_connect` transport).
@@ -128,13 +139,35 @@ impl Pause for RealPause {
 }
 
 /// One call waiting for the monitor thread. It runs on the live session, or is refused when
-/// there is none.
+/// there is none. A long operation's start is a job too: it runs once, and then waits in `ops`.
 trait Job: Send {
     /// Runs the call on the live session and answers its caller. `Err` when the session broke
-    /// during the call, with the reason.
-    fn run(self: Box<Self>, orion: &Orion) -> Result<(), String>;
+    /// during the call, with the reason. A long operation adds itself to `ops`.
+    fn run(self: Box<Self>, orion: &Orion, ops: &mut Vec<Box<dyn Op>>) -> Result<(), String>;
     /// Answers the caller without running the call: there is no session.
     fn refuse(self: Box<Self>, reason: &str);
+    /// Whether this job starts a long operation, which counts against [`MAX_LONG_OPERATIONS`].
+    fn is_long(&self) -> bool {
+        false
+    }
+}
+
+/// A long operation running on the session, advanced one turn at a time.
+trait Op {
+    /// Takes one step (or notices a cancel), and says what became of the operation.
+    fn turn(&mut self) -> Turn;
+    /// The session ends under the operation: its caller is told `reason`.
+    fn end(self: Box<Self>, reason: &str);
+}
+
+/// What one turn of an operation did.
+enum Turn {
+    /// Still going.
+    Stepped,
+    /// Finished, and its caller has been answered.
+    Finished,
+    /// The session broke during its step. Its caller has been answered; the session ends.
+    Lost(String),
 }
 
 struct Call<T, F> {
@@ -147,7 +180,7 @@ where
     T: Send + 'static,
     F: FnOnce(&Orion) -> Result<T, orion::Error> + Send + 'static,
 {
-    fn run(self: Box<Self>, orion: &Orion) -> Result<(), String> {
+    fn run(self: Box<Self>, orion: &Orion, _ops: &mut Vec<Box<dyn Op>>) -> Result<(), String> {
         let Self { call, reply } = *self;
         if reply.is_closed() {
             // The caller stopped waiting before its turn: the call is not started.
@@ -172,6 +205,108 @@ where
 
     fn refuse(self: Box<Self>, reason: &str) {
         let _ = self.reply.send(Err(SessionError::Gone(reason.to_owned())));
+    }
+}
+
+/// A long operation's start, waiting for the session thread. Its operation is kept in `ops`
+/// from then on.
+struct Long<T, F> {
+    start: F,
+    reply: oneshot::Sender<Result<Outcome<T>, SessionError>>,
+    cancel: Cancel,
+}
+
+impl<T, F> Job for Long<T, F>
+where
+    T: Send + 'static,
+    F: FnOnce(&Orion) -> Result<Box<dyn SteppedTransfer<T>>, orion::Error> + Send + 'static,
+{
+    fn run(self: Box<Self>, orion: &Orion, ops: &mut Vec<Box<dyn Op>>) -> Result<(), String> {
+        let Self {
+            start,
+            reply,
+            cancel,
+        } = *self;
+        if reply.is_closed() {
+            return Ok(());
+        }
+        if cancel.is_cancelled() {
+            let _ = reply.send(Ok(Outcome::Cancelled));
+            return Ok(());
+        }
+        match start(orion) {
+            Ok(transfer) => {
+                ops.push(Box::new(Running {
+                    transfer,
+                    reply: Some(reply),
+                    cancel,
+                }));
+                Ok(())
+            }
+            Err(error) if error.is_lost() => {
+                let text = error.to_string();
+                let _ = reply.send(Err(SessionError::Gone(text.clone())));
+                Err(text)
+            }
+            Err(error) => {
+                let _ = reply.send(Err(SessionError::Failed(error.to_string())));
+                Ok(())
+            }
+        }
+    }
+
+    fn refuse(self: Box<Self>, reason: &str) {
+        let _ = self.reply.send(Err(SessionError::Gone(reason.to_owned())));
+    }
+
+    fn is_long(&self) -> bool {
+        true
+    }
+}
+
+/// A started long operation: its transfer, its caller's answer, and its cancel request.
+struct Running<T> {
+    transfer: Box<dyn SteppedTransfer<T>>,
+    reply: Option<oneshot::Sender<Result<Outcome<T>, SessionError>>>,
+    cancel: Cancel,
+}
+
+impl<T: Send + 'static> Op for Running<T> {
+    fn turn(&mut self) -> Turn {
+        let Some(reply) = self.reply.take() else {
+            return Turn::Finished;
+        };
+        // A cancel, or a caller that stopped waiting, lands here: at the boundary, never mid-step.
+        if self.cancel.is_cancelled() || reply.is_closed() {
+            self.transfer.cancel();
+            let _ = reply.send(Ok(Outcome::Cancelled));
+            return Turn::Finished;
+        }
+        match self.transfer.step(STEP_WAIT) {
+            Ok(Step::Progress) => {
+                self.reply = Some(reply);
+                Turn::Stepped
+            }
+            Ok(Step::Done(value)) => {
+                let _ = reply.send(Ok(Outcome::Done(value)));
+                Turn::Finished
+            }
+            Err(StepError::Failed(reason)) => {
+                let _ = reply.send(Err(SessionError::Failed(reason)));
+                Turn::Finished
+            }
+            Err(StepError::Lost(reason)) => {
+                let _ = reply.send(Err(SessionError::Gone(reason.clone())));
+                Turn::Lost(reason)
+            }
+        }
+    }
+
+    fn end(mut self: Box<Self>, reason: &str) {
+        if let Some(reply) = self.reply.take() {
+            self.transfer.cancel();
+            let _ = reply.send(Err(SessionError::Gone(reason.to_owned())));
+        }
     }
 }
 
@@ -247,8 +382,8 @@ impl Handle {
     /// Runs `call` on the node's live client and returns what it answers.
     ///
     /// The closure runs on the monitor's own thread, which is the only place the client may be
-    /// used. It must not block for long: while it runs, the node's other calls wait. A
-    /// long-running job belongs on the node as an Orion run that the caller polls.
+    /// used. It must not block for long: while it runs, the node's other calls wait. A transfer
+    /// that takes long is a long operation ([`Handle::long`]), which the session advances in steps.
     ///
     /// # Errors
     ///
@@ -261,23 +396,65 @@ impl Handle {
         T: Send + 'static,
         F: FnOnce(&Orion) -> Result<T, orion::Error> + Send + 'static,
     {
-        match self.presence() {
-            Presence::Found(_) => {}
-            Presence::Lost(reason) => return Err(SessionError::Gone(reason)),
-            Presence::Searching => {
-                return Err(SessionError::Gone("not connected yet".into()));
-            }
-            Presence::Replaced { .. } => return Err(SessionError::Gone(REPLACED_WORDS.into())),
-        }
+        self.ready()?;
         let (reply, answer) = oneshot::channel();
         let job: Box<dyn Job> = Box::new(Call { call, reply });
-        if self.calls.send(job).is_err() {
-            return Err(SessionError::Gone(
-                "the monitor for this node has stopped".into(),
-            ));
+        self.queue(job)?;
+        self.answer(answer).await?
+    }
+
+    /// Starts a long operation on the node's live session and waits for how it ends.
+    ///
+    /// `start` runs on the session thread, like a call's closure, and returns the transfer. The
+    /// session then advances it one step at a time, between its other calls (see
+    /// [`crate::long`] for the fairness rule). The call answers [`Outcome::Done`] when the
+    /// transfer finishes, [`Outcome::Cancelled`] when `cancel` was made, or an error.
+    ///
+    /// Dropping the returned future cancels the operation at its next step boundary. The wait
+    /// for the answer is the handle's call wait: a long operation takes a handle made with
+    /// [`Handle::waiting`] that allows for its length.
+    ///
+    /// # Errors
+    ///
+    /// As [`Handle::with_client`]: [`SessionError::Gone`] when the node is not connected, the
+    /// session breaks during the operation (resume on a later session), or the operation waits
+    /// past the handle's call wait. [`SessionError::Failed`] when the transfer fails for good on
+    /// a live session.
+    pub async fn long<T, F>(&self, cancel: &Cancel, start: F) -> Result<Outcome<T>, SessionError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Orion) -> Result<Box<dyn SteppedTransfer<T>>, orion::Error> + Send + 'static,
+    {
+        self.ready()?;
+        let (reply, answer) = oneshot::channel();
+        let job: Box<dyn Job> = Box::new(Long {
+            start,
+            reply,
+            cancel: cancel.clone(),
+        });
+        self.queue(job)?;
+        self.answer(answer).await?
+    }
+
+    /// Whether a call may be queued now: the node must be connected under its pinned key.
+    fn ready(&self) -> Result<(), SessionError> {
+        match self.presence() {
+            Presence::Found(_) => Ok(()),
+            Presence::Lost(reason) => Err(SessionError::Gone(reason)),
+            Presence::Searching => Err(SessionError::Gone("not connected yet".into())),
+            Presence::Replaced { .. } => Err(SessionError::Gone(REPLACED_WORDS.into())),
         }
+    }
+
+    fn queue(&self, job: Box<dyn Job>) -> Result<(), SessionError> {
+        self.calls
+            .send(job)
+            .map_err(|_| SessionError::Gone("the monitor for this node has stopped".into()))
+    }
+
+    async fn answer<T>(&self, answer: oneshot::Receiver<T>) -> Result<T, SessionError> {
         match tokio::time::timeout(self.call_wait, answer).await {
-            Ok(Ok(answered)) => answered,
+            Ok(Ok(answered)) => Ok(answered),
             Ok(Err(_)) => Err(SessionError::Gone(
                 "the session ended before it answered".into(),
             )),
@@ -329,6 +506,7 @@ impl Monitor {
                     secret: Identity::generate().secret(),
                     pin,
                     replacement: None,
+                    parked: VecDeque::new(),
                 };
                 keeper.run();
             })
@@ -389,6 +567,8 @@ struct Keeper {
     pin: Option<[u8; 32]>,
     /// Set while another key answers at the address: what it showed, if known.
     replacement: Option<Option<[u8; 32]>>,
+    /// Long operations waiting for a slot, in the order they came. Never stepped while parked.
+    parked: VecDeque<Box<dyn Job>>,
 }
 
 impl Keeper {
@@ -515,20 +695,76 @@ impl Keeper {
     }
 
     /// Keeps the session up until it breaks, the monitor is stopped, or a person accepts another
-    /// key. Runs calls on the way. Returns why it broke, or `None` when it was re-pinned.
+    /// key. Runs calls and long operations on the way. Returns why it broke, or `None` when it was
+    /// re-pinned. Every operation still running ends with the same reason: none is stepped on a
+    /// session after its own has ended.
     fn serve(&mut self, orion: &Orion) -> Option<String> {
+        let mut ops: Vec<Box<dyn Op>> = Vec::new();
+        let ended = self.turns(orion, &mut ops);
+        let reason = ended
+            .clone()
+            .unwrap_or_else(|| CHANGED_BY_A_PERSON.to_owned());
+        for op in ops {
+            op.end(&reason);
+        }
+        ended
+    }
+
+    /// The session's turns, as described in [`crate::long`]: queued calls, then one step of each
+    /// operation. Returns as [`Keeper::serve`] does.
+    fn turns(&mut self, orion: &Orion, ops: &mut Vec<Box<dyn Op>>) -> Option<String> {
         while !self.stopped() {
             if let Ok(order) = self.orders.try_recv() {
                 self.apply(order);
                 return None;
             }
+            // The calls of this turn: parked operations first (they waited for a slot), then
+            // every call queued now. A call that arrives during the turn waits for the next one.
+            let mut batch: VecDeque<Box<dyn Job>> = std::mem::take(&mut self.parked);
             while let Ok(job) = self.calls.try_recv() {
-                if let Err(reason) = job.run(orion) {
+                batch.push_back(job);
+            }
+            while let Some(job) = batch.pop_front() {
+                if job.is_long() && ops.len() >= MAX_LONG_OPERATIONS {
+                    self.parked.push_back(job);
+                    continue;
+                }
+                if let Err(reason) = job.run(orion, ops) {
+                    // The session broke under this call: the rest of the turn is refused.
+                    for rest in batch {
+                        rest.refuse(&reason);
+                    }
                     return Some(reason);
                 }
             }
-            if let Err(error) = orion.pump(POLL) {
-                return Some(error.to_string());
+            let mut index = 0;
+            while index < ops.len() {
+                match ops[index].turn() {
+                    Turn::Stepped => index += 1,
+                    Turn::Finished => {
+                        ops.remove(index);
+                    }
+                    Turn::Lost(reason) => {
+                        ops.remove(index);
+                        return Some(reason);
+                    }
+                }
+            }
+            // With nothing to step, the thread waits on the session for frames. Otherwise it only
+            // takes the frames that are already here, at most MAX_FRAMES_PER_TURN, so a session
+            // that broke is noticed between steps and a flood of frames cannot starve the steps.
+            if ops.is_empty() {
+                if let Err(error) = orion.pump(POLL) {
+                    return Some(error.to_string());
+                }
+            } else {
+                for _ in 0..MAX_FRAMES_PER_TURN {
+                    match orion.pump(Duration::ZERO) {
+                        Ok(true) => {}
+                        Ok(false) => break,
+                        Err(error) => return Some(error.to_string()),
+                    }
+                }
             }
         }
         Some(String::new())
@@ -536,6 +772,9 @@ impl Keeper {
 
     /// Answers every call that is waiting with `reason`, so none is run later by surprise.
     fn refuse_waiting(&mut self, reason: &str) {
+        for job in std::mem::take(&mut self.parked) {
+            job.refuse(reason);
+        }
         while let Ok(job) = self.calls.try_recv() {
             job.refuse(reason);
         }

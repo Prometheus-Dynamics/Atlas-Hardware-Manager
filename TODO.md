@@ -18,6 +18,7 @@ The core every other group builds on: types, the driver contract, inventory, job
 - [ ] [A9](docs/prs/A9.md) The simulated node out of the drivers, and one driver for every family (wave 4; needs A1, A4)
 - [ ] [A10](docs/prs/A10.md) A key that says what it is, a board's Lemnos state, and the board session as its own crate (wave 4; needs A9, C1)
 - [ ] [A12](docs/prs/A12.md) The session keeps the key it first saw (wave 5; needs A10, C8)
+- [ ] [A14](docs/prs/A14.md) The session carries calls while a transfer runs: long operations stepped between calls (needs A12; the real interleaving waits for Orion R2)
 
 ## B. Board descriptions
 
@@ -43,6 +44,7 @@ Every board as Gaia `next` data in `devices/`. Starts first; the Raze and the ZE
 - [ ] [B20](docs/prs/B20.md) The Raze board file, written to Lemnos Q2d (6905b681); takes effect when the lock moves past 4a2d3b7d (needs B18; Lemnos 6905b681)
 - [ ] [B21](docs/prs/B21.md) VBUS on each board's device-mode port, prepared for Lemnos Q2f (ZERO 3E complete; ROCK 5C held by Lemnos Q2g; ROCK 4D held; needs B15, B18, B19; Lemnos Q2f at 96080d36)
 - [ ] [B22](docs/prs/B22.md) Gaia lock to 7db227f (next head): the checker refuses a binary of another commit, the plain check is offline, the bring-up products leave pending/ with a named bench-key input (needs B17, B18, B19)
+- [ ] [B24](docs/prs/B24.md) Bring-up USB network: Gaia's usb-gadget-network (configfs NCM, pinned Gaia 4509f6b) for the ZERO 3E and the Cubie A7S; addresses from the board id and serial; the board-id check (needs B15, B16, B19, B22)
 - [ ] [B16](docs/prs/B16.md) Each family's kernel trimmed to what its boards use, stripping on, and dtbs built with symbols (wave 5; needs B2, B3, B14; Lemnos 4c6678f3 kernel doc)
 
 ## C. One board driver
@@ -53,7 +55,7 @@ Every job on a board through the Orion client, against a simulated node.
 - [ ] [C2](docs/prs/C2.md) Readings and logs (wave 4; needs C1, A10)
 - [ ] [C3](docs/prs/C3.md) Actions (wave 4; needs C1, A10)
 - [ ] [C4](docs/prs/C4.md) Files (wave 4; needs C1, A10)
-- [ ] [C5](docs/prs/C5.md) Slots and updates (wave 5; needs C3, C4, A7, X1)
+- [x] [C5](docs/prs/C5.md) Slots and updates (wave 5; needs C3, C4, A7, X1)
 - [ ] [C6](docs/prs/C6.md) Trial and confirm watch (wave 6; needs C5)
 - [ ] [C7](docs/prs/C7.md) Board data: backup, restore, files (wave 5; needs C4)
 - [ ] [C8](docs/prs/C8.md) SSH and the recovery shell (wave 4; needs C1, A10)
