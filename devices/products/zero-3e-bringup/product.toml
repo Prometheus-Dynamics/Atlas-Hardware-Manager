@@ -1,26 +1,29 @@
-# Radxa ZERO 3E bring-up: zero-3e-base plus the DEV-ONLY pieces (the bench SSH public key and the usb0
-# gadget network). DEV ONLY: those exist only until Orion serves SSH and Lemnos's USB driver owns the gadget.
-# The bench public key is the named input `bench-key` (`gaia plan --input bench-key=PATH`); the check plans
-# this product with a throwaway public key, and commits none. Untested on board: nothing here has booted.
+# Radxa ZERO 3E bring-up: zero-3e-base plus the DEV-ONLY pieces: the bench SSH public key, the board id for the
+# USB network, and Gaia's usb-gadget-network component (configfs CDC NCM with addresses derived from the board's
+# id and serial; PR B24). The shared extlinux component is the base's. DEV ONLY: those pieces exist only until
+# Orion serves SSH and Lemnos's USB driver owns the gadget. The bench public key is the named input `bench-key`
+# (`gaia plan --input bench-key=PATH`); the check plans this product with a throwaway public key, and commits none.
+# Untested on board: nothing here has booted.
 version = 1
 name = "zero-3e-bringup"
-description = "Radxa ZERO 3E bring-up: the base OS plus dev-only SSH key and usb0 gadget network."
+description = "Radxa ZERO 3E bring-up: the base OS plus dev-only SSH key and the USB network (configfs NCM)."
 
 [sources.buildroot]
 git = "https://gitlab.com/buildroot.org/buildroot.git"
 ref = "2026.02.3"
 
 [components]
-dev-zero-3e-usb-extlinux = "components/dev-zero-3e-usb-extlinux/component.toml"
+radxa-zero-3e-extlinux = "../../components/radxa-zero-3e-extlinux/component.toml"
 dev-bench-ssh-key = "components/dev-bench-ssh-key/component.toml"
 dev-bringup-hostkey = "../../components/dev-bringup-hostkey/component.toml"
-dev-usb0-gadget = "components/dev-usb0-gadget/component.toml"
+usb-gadget-family = "components/usb-gadget-family/component.toml"
+usb-gadget-network = "../../components/usb-gadget-network/component.toml"
 
 [[images]]
 name = "zero-3e-bringup"
 board = "../../boards/radxa-zero-3e/board.toml"
-components = ["dev-zero-3e-usb-extlinux", "dev-bench-ssh-key", "dev-bringup-hostkey", "dev-usb0-gadget"]
-# The base OS fragment, then the bring-up's own (dropbear).
+components = ["radxa-zero-3e-extlinux", "dev-bench-ssh-key", "dev-bringup-hostkey", "usb-gadget-family", "usb-gadget-network"]
+# The base OS fragment, then the bring-up's own (dropbear, BusyBox applets for the gadget).
 os = { provider = "buildroot", source = "buildroot", fragments = ["../../products/zero-3e-base/os.fragment", "os.fragment"] }
 recipe = "sd-image"
 budget = "1G"

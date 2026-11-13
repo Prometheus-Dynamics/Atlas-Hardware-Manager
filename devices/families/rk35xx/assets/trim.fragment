@@ -108,8 +108,8 @@ CONFIG_DM_VERITY=y
 # -- USB gadget functions (PR B14 made USB_CONFIGFS=y, so every configfs function the defconfig asks for
 #    now builds). Kept: FunctionFS (Orion's link), NCM (the board's network function, the Raze's) and ACM
 #    (the one serial console). Every other configfs function is off: no RK35xx product uses it.
-#    The legacy g_* gadget modules are off too; the ZERO 3E's board fragment keeps USB_ETH (the one
-#    legacy module, its bring-up's usb0 ECM), and that is the only one any pending product needs.
+#    The legacy g_* gadget modules are off too (PR B24: USB_ETH included; the bring-up's network is the
+#    configfs NCM function, and a built-in legacy gadget would bind the controller first).
 # CONFIG_USB_CONFIGFS_SERIAL is not set
 # CONFIG_USB_CONFIGFS_OBEX is not set
 # CONFIG_USB_CONFIGFS_ECM is not set
@@ -131,12 +131,11 @@ CONFIG_DM_VERITY=y
 # CONFIG_USB_G_MULTI is not set
 # CONFIG_USB_G_HID is not set
 # CONFIG_USB_G_PRINTER is not set
-# -- Legacy gadget modules (drivers/usb/gadget/legacy). Each is off, except USB_ETH, which the ZERO 3E's
-#    board fragment sets for its bring-up's usb0 (one ECM function). USB_ETH's RNDIS and EEM sub-options
-#    are off: the board uses one network function. USB_MASS_STORAGE is the legacy module that also
-#    selects the mass-storage function; off with the configfs one.
-# CONFIG_USB_ETH_RNDIS is not set
-# CONFIG_USB_ETH_EEM is not set
+# -- Legacy gadget modules (drivers/usb/gadget/legacy). All are off (PR B24 removed the ZERO 3E's USB_ETH:
+#    the network is the configfs NCM function). USB_ETH's RNDIS and EEM sub-options go with USB_ETH: a line
+#    for a symbol whose parent is off is dropped by Kconfig, which the build's line check refuses.
+#    USB_MASS_STORAGE is the legacy module that also selects the mass-storage function; off with the configfs one.
+# CONFIG_USB_ETH is not set
 # CONFIG_USB_MASS_STORAGE is not set
 # CONFIG_USB_ZERO is not set
 # CONFIG_USB_AUDIO is not set
@@ -146,7 +145,6 @@ CONFIG_DM_VERITY=y
 # CONFIG_USB_CDC_COMPOSITE is not set
 # CONFIG_USB_G_WEBCAM is not set
 # CONFIG_USB_MIDI_GADGET is not set
-# CONFIG_USB_G_NOKIA is not set
 # CONFIG_USB_G_ACM_MS is not set
 # CONFIG_USB_G_MULTI is not set
 

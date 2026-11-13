@@ -1,18 +1,19 @@
-# Radxa Cubie A7S BRING-UP, DEV ONLY (B19). Boots from the card and shows three signs with NO serial adapter:
+# Radxa Cubie A7S BRING-UP, DEV ONLY (B19, B24). Boots from the card and shows three signs with NO serial adapter:
 #   1. the status LED (PJ26, blue) blinks: the kernel heartbeat, set in board/assets/dts;
-#   2. a USB network appears on the PC (legacy g_ether, built in, on USB-C 1, the device-capable port);
-#   3. DHCP: eth0 takes a lease from the LAN; the board hands the PC 10.55.0.2 on usb0 (networkd DHCPServer).
+#   2. a USB network appears on the PC: Gaia's usb-gadget-network component (CDC NCM through configfs; PR B24),
+#      on USB-C 1, the device-capable port; the addresses come from the board id and serial;
+#   3. DHCP: eth0 takes a lease from the LAN; the board hands the PC 10.55.0.2 on usb0 (udhcpd).
 # Then SSH with the bench key. NO Lemnos, NO Orion, NO slots. Candidate sources, UNVERIFIED, never booted.
 # The test procedure, and what each missing sign means, is docs/prs/B19.md ("What you should see").
 #
 # Its board is board/board.toml, inside this product (it extends the sun60i family and repeats the A7S's
 # few lines; see that file). It is a product-local board, not a boards/ entry, because the A7S's own board
-# does not carry this bring-up's device tree or kernel fragment. The bench public key is the named input
-# `bench-key`. The sources (kernel series, U-Boot, TF-A, DRAM blob) are the family's, and carry no open
-# licence (see families/sun60i/family.toml).
+# does not carry this bring-up's device tree. Its name is the A7S's id (radxa-cubie-a7s).
+# The bench public key is the named input `bench-key`. The sources (kernel series, U-Boot, TF-A, DRAM blob)
+# are the family's, and carry no open licence (see families/sun60i/family.toml).
 version = 1
 name = "cubie-a7-bringup"
-description = "Radxa Cubie A7S bring-up (DEV ONLY): SD boot, Ethernet and usb0, SSH with the bench key. Candidate, never booted."
+description = "Radxa Cubie A7S bring-up (DEV ONLY): SD boot, USB network (configfs NCM) and eth0, SSH with the bench key. Candidate, never booted."
 
 [sources.buildroot]
 git = "https://gitlab.com/buildroot.org/buildroot.git"
@@ -22,12 +23,13 @@ ref = "2026.02.3"
 cubie-a7s-extlinux = "components/cubie-a7s-extlinux/component.toml"
 dev-bench-ssh-key = "components/dev-bench-ssh-key/component.toml"
 dev-bringup-hostkey = "../../components/dev-bringup-hostkey/component.toml"
-dev-usb0-gadget = "components/dev-usb0-gadget/component.toml"
+usb-gadget-family = "components/usb-gadget-family/component.toml"
+usb-gadget-network = "../../components/usb-gadget-network/component.toml"
 
 [[images]]
 name = "cubie-a7-bringup"
 board = "board/board.toml"
-components = ["cubie-a7s-extlinux", "dev-bench-ssh-key", "dev-bringup-hostkey", "dev-usb0-gadget"]
+components = ["cubie-a7s-extlinux", "dev-bench-ssh-key", "dev-bringup-hostkey", "usb-gadget-family", "usb-gadget-network"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
 recipe = "sd-image"
 budget = "1G"

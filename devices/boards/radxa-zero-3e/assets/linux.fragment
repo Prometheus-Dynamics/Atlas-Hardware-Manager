@@ -3,9 +3,8 @@
 # CONFIG_USB_GADGET: the gadget framework; nothing on the port works without it.
 # CONFIG_USB_DWC3_DUAL_ROLE: the DWC3 controller can take either role; the
 #   gadget DTS (assets/dts) pins it to peripheral.
-# CONFIG_USB_ETH: one network function (CDC ECM through g_ether). RNDIS (dev's)
-#   is dropped: a single network function, which Orion chooses (decision 5);
-#   the gadget itself is Lemnos's to build from the board file later.
+# No legacy network gadget (CONFIG_USB_ETH, g_ether) here any more (PR B24): the bring-up's USB network is
+#   the Gaia component made through configfs (CDC NCM, rk35xx family fragment), whose addresses are set
+#   before the controller binds. A built-in g_ether binds first and takes the controller.
 CONFIG_USB_GADGET=y
 CONFIG_USB_DWC3_DUAL_ROLE=y
-CONFIG_USB_ETH=y
