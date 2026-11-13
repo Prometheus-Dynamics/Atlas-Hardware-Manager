@@ -13,6 +13,7 @@
 //! `testing/sim-node/README.md` says what the node does not do, and maps each C-series brief
 //! to the names it uses. The mock devices that drivers list are in `atlas-mock`.
 
+pub mod access;
 pub mod bundle;
 pub mod model;
 pub mod names;
