@@ -1,0 +1,31 @@
+# Radxa ZERO 3E base OS, on Buildroot, in Gaia's F8 form. Shaped as Gaia's
+# examples/products/zero-3e-demo on pr/F8 (5abb0e6); the differences are listed
+# in the PR text. Untested on board: G3 runs it.
+#
+# Draft: fails the device check at Gaia e90ee03, which has no OS build.
+version = 1
+name = "zero-3e-base"
+description = "Radxa ZERO 3E base OS: slots as EROFS files with dm-verity on one data partition."
+
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.02.3"
+
+[components]
+
+[[images]]
+name = "zero-3e-base"
+board = "../../boards/radxa-zero-3e/board.toml"
+components = []
+# The board gives the kernel, U-Boot and TF-A; os.fragment the rest.
+os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] } # F8?
+# A slot: EROFS files with dm-verity on one ext4 data partition, no A/B.
+recipe = "slot" # F8?
+budget = "512M"
+
+[images.settings]
+# The device the slot is written to. UNCONFIRMED on the board: the microSD is
+# the only storage, and mmcblk0 is where Rockchip boards without eMMC usually
+# put it. Check with lsblk on the ZERO 3E (G3). Gaia's example uses a file
+# here (/data/slots/root.img); whether `slot` takes a block device is an F8 question.
+device = "/dev/mmcblk0" # F8? UNCONFIRMED
