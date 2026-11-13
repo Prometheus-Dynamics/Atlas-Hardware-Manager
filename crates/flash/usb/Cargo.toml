@@ -1,0 +1,22 @@
+[package]
+name = "atlas-usb"
+description = "One USB layer for every boot ROM loader: open, claim, transfers with timeouts, hotplug, a traced mode, and a scriptable simulated device."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+futures-core = "0.3"
+# The same nusb dev locks (0.2.7), with its tokio feature: opening a device
+# blocks without it.
+nusb = { version = "=0.2.7", features = ["tokio"] }
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }
+
+[lints]
+workspace = true
