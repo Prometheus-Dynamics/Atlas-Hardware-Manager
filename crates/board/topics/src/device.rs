@@ -26,11 +26,11 @@ use orion::provider::ResourceState;
 
 use crate::value::{ReadingKind, Reported, Scalar};
 
-// LOCK: Lemnos V1a 63ca7a6b (PR #220). The shape of these blocks is what `describe` in the
-// host carries (`lemnos-wire`'s `DescIdentity`, `DescContractKind`, `DescItemExtra`); the
-// bridge does not publish them on Orion yet, so these keys are the carrier the simulated node
-// writes. V1b (driver packages report the new fields, most ranges and all warning limits, addresses
-// on non-I2C buses) is not done: every one of these may be unknown on a real board.
+// LOCK: the V1a/V1b blocks are in Lemnos d6b9361d's host description (`lemnos-wire`'s `DescIdentity`,
+// `DescContractKind`, `DescItemExtra`), but the bridge at d6b9361d still publishes only the driver,
+// tag and control labels, and has no `describe` verb. These keys stay the carrier the simulated node
+// writes until Lemnos puts the description on Orion (its paged `describe`, M8b/M8c, not merged).
+// Every one of these may be unknown on a real board.
 /// The device's board-file label (V1a `label`). Absent: the device is shown by its name.
 pub const LABEL_KEY: &str = "lemnos.label";
 /// The bus the device is on (V1a `bus`).

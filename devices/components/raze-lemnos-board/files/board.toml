@@ -2,9 +2,8 @@
 # Installed as /etc/lemnos/board.toml. Its generated outputs (the one overlay, the boot fragment,
 # the modprobe.d file) come from `lemnos-ctl tree` at build time; nothing they contain is written by hand.
 #
-# Written to Lemnos 6905b681 (Q2d). The Lemnos lock is 4a2d3b7d, which predates Q2d and refuses this file
-# (identity, watchdog and slots; see docs/prs/B20.md). This file takes effect when the lock moves to a Lemnos
-# rev containing Q2d. Until then the image's lemnosd refuses to start on it, as it refuses today's file.
+# Written to Lemnos Q2d (6905b681) and locked with the product to Lemnos d6b9361d (L1, PR B23): the lock now
+# accepts this file (validate and tree run with that rev's lemnos-ctl; docs/prs/B23.md).
 #
 # Where the values come from: Lemnos's reference board testing/boards/reference.toml at 6905b681 (the managed
 # shape of a Raze); Lemnos's SoC map socs/bcm2712-rp1.toml at 6905b681 for every controller, pin set and path;

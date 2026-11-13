@@ -34,6 +34,11 @@ if [ -x scripts/check-devices.sh ]; then
   step "device descriptions" scripts/check-devices.sh
 fi
 
+# The Lemnos gadget drop-in (R1d): installed exactly where the installed board file has a usb-gadget device.
+if [ -f scripts/check-lemnos-gadget.py ]; then
+  step "lemnos gadget drop-in pairing" python3 scripts/check-lemnos-gadget.py
+fi
+
 # Nothing that runs on a board lives here except the flasher image description
 # and the SystemCore package description, which are data under devices/.
 if compgen -G "crates/*/*/src" > /dev/null; then

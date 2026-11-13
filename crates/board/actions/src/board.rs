@@ -54,8 +54,7 @@ pub const DIRECT_WAIT: Duration = Duration::from_secs(2);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Done {
     /// What the action returned.
-    // LOCK: Lemnos M8 (5dcf1a78) lets the bridge call a method that returns through an out buffer; the
-    // Atlas lock does not contain it yet, so a real board refuses such an output until the lock moves.
+    // Lemnos M8a (5dcf1a78) is in the lock (d6b9361d): the bridge's `call` returns a method's out buffer.
     pub output: Vec<u8>,
     /// What the board said about the result, if it said anything.
     pub detail: String,
@@ -126,7 +125,7 @@ impl BoardActions {
                 | ActionError::Cancelled(_)) => refused,
                 other => ActionError::NotAnswering(other.to_string()),
             })?;
-        // LOCK: Lemnos M8 (5dcf1a78): an out-buffer reply is refused by the bridge until the Atlas lock moves.
+        // An out-buffer reply through the bridge (Lemnos M8a, in the lock since d6b9361d).
         let text = String::from_utf8(done.output)
             .map_err(|_| ActionError::BadCatalog("the list is not text".into()))?;
         Catalog::parse(&text).map_err(|error| ActionError::BadCatalog(error.to_string()))
@@ -359,8 +358,7 @@ fn ended(finished: Finished) -> Result<Done, ActionError> {
         }
     };
     match finished.outcome {
-        // LOCK: Lemnos M8 (5dcf1a78): an output from an out buffer is refused by the bridge until the
-        // Atlas lock moves; a refusal over 60 KiB comes back by name and is passed on verbatim.
+        // Lemnos M8a (in the lock since d6b9361d): a refusal over 60 KiB comes back by name and is passed on verbatim.
         Outcome::Succeeded => Ok(Done {
             output: finished.output,
             detail,
