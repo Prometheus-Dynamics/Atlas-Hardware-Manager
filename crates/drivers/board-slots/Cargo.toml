@@ -15,16 +15,18 @@ atlas-files = { path = "../../board/files" }
 atlas-jobs = { path = "../../core/jobs" }
 atlas-session = { path = "../../board/session" }
 atlas-slots = { path = "../../core/slots" }
+atlas-trial = { path = "../../core/trial" }
 atlas-types = { path = "../../core/types" }
 orion = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tar = { version = "0.4", default-features = false }
 thiserror = "2"
-tokio = { version = "1", features = ["sync", "time", "rt"] }
+tokio = { version = "1", features = ["macros", "sync", "time", "rt"] }
 
 [dev-dependencies]
 atlas-image = { path = "../../flash/image" }
+atlas-inventory = { path = "../../core/inventory" }
 atlas-sim-node = { path = "../../testing/sim-node" }
 serde_json = "1"
 tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }

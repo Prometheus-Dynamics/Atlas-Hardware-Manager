@@ -52,7 +52,7 @@ use atlas_actions::{ActionError, ArgKind, BoardActions, CANCEL_CONFIRM, CancelSt
 use atlas_driver::DriverError;
 use atlas_files::{Push, PushKind, Stage as PushStage, submit as submit_push};
 use atlas_jobs::{DeviceClaim, DeviceHolds, Events, JobId, JobKind, JobTiming, Jobs};
-use atlas_session::{Handle, Presence, Sessions};
+use atlas_session::{Handle, Hold, Presence, Sessions};
 use atlas_slots::Stage;
 use atlas_types::DeviceKey;
 use orion::Address;
@@ -66,6 +66,9 @@ use crate::calls::{ACCEPT, INSTALL_FILE, short};
 pub const KIND: &str = "slot-install";
 /// What a step says when the board at the install's address is another board now.
 pub const REPLACED: &str = "the board at this address was replaced by another one";
+/// What an install ends with when its session lapsed while the install's hold existed: the board
+/// may have dropped what the install was doing, so its state is not known from here.
+pub const LAPSED: &str = "the board may have dropped this install's hold: no request reached its bridge within the lease, so what the board did with the install is not known; check the slot list before installing again";
 /// The sink a pushed bundle lands in (the board's `.incoming`), as the file name's prefix.
 // LOCK: Lemnos L1 (system.slots `.incoming` sink, I5e): the bridge's file sink for the device takes
 // this name; today's lock names the same directory, so the prefix is data to be checked at the lock move.
@@ -154,6 +157,9 @@ struct Run {
     /// Set by a cancel before the job is stopped: the step's own ending must not overwrite
     /// `Cancelled` with the board's words about the same cancel.
     cancelling: bool,
+    /// The install's hold on the board: taken at its first step, kept across its steps and across
+    /// a lost session, and dropped when the install ends (see `finish`).
+    hold: Option<Hold>,
 }
 
 /// Why a step stopped: wait and try again, or the job ends with these words.
@@ -242,6 +248,7 @@ impl InstallKind {
         run.push_counters = run.push.as_ref().map(Push::counters);
         run.push = None;
         run.call = None;
+        run.hold = None;
     }
 
     /// Step 1: the bundle, made once.
@@ -390,7 +397,8 @@ impl InstallKind {
                 PushStage::WaitingForBoard { reason } => {
                     self.set_stage(&spec.nonce, Stage::WaitingForBoard { reason });
                 }
-                PushStage::Queued | PushStage::Sending => {
+                // A resend after a lapse moves bytes too: the install shows it as sending.
+                PushStage::Queued | PushStage::Sending | PushStage::Resending { .. } => {
                     self.set_stage(
                         &spec.nonce,
                         Stage::Sending {
@@ -434,19 +442,24 @@ impl InstallKind {
         };
         let runs = Arc::clone(&self.runs);
         let nonce = spec.nonce.clone();
-        let done = board
-            .follow(call, move |progress| {
-                runs.lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .entry(nonce.clone())
-                    .or_default()
-                    .stage = Some(Stage::Installing {
-                    percent: progress.percent,
-                    message: progress.message.clone(),
-                });
-            })
-            .await
-            .map_err(|error| classify(&error))?;
+        // Followed on the install's own hold: a lapse while the board runs the install ends it with
+        // the board's words about the lapse (`ActionError::HoldLapsed`), not as a wait.
+        let hold = self.with_run(&spec.nonce, |run| run.hold.clone());
+        let on_progress = move |progress: &atlas_actions::Progress| {
+            runs.lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .entry(nonce.clone())
+                .or_default()
+                .stage = Some(Stage::Installing {
+                percent: progress.percent,
+                message: progress.message.clone(),
+            });
+        };
+        let followed = match &hold {
+            Some(hold) => board.follow_while_held(call, hold, on_progress).await,
+            None => board.follow(call, on_progress).await,
+        };
+        let done = followed.map_err(|error| classify(&error))?;
         String::from_utf8(done.output)
             .map_err(|_| Step::Settled("the board's result is not a slot id".into()))
     }
@@ -512,6 +525,11 @@ impl InstallKind {
         handle: &Handle,
         board: &BoardActions,
     ) -> Result<String, Step> {
+        self.with(&spec.nonce, |run| {
+            if run.hold.is_none() {
+                run.hold = Some(handle.hold());
+            }
+        });
         let (bundle, size) = self.ensure_bundle(spec).await?;
         self.check_board(spec, &bundle)?;
         self.same_board(spec, handle)?;
@@ -527,6 +545,13 @@ impl InstallKind {
     /// to another board, and nothing resumes on it. The first contact records the key when submit
     /// had none. Presence is matched without a wildcard, so every state is named.
     fn same_board(&self, spec: &Spec, handle: &Handle) -> Result<(), Step> {
+        // Between steps, a lapse means the board may have dropped what the install did so far.
+        let lapsed = self
+            .with_run(&spec.nonce, |run| run.hold.as_ref().map(Hold::lapsed))
+            .unwrap_or(false);
+        if lapsed {
+            return Err(Step::Settled(LAPSED.to_owned()));
+        }
         match handle.presence() {
             Presence::Replaced { .. } => return Err(Step::Settled(REPLACED.to_owned())),
             Presence::Searching => return Err(Step::Wait("the node is not connected yet".into())),

@@ -38,10 +38,12 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use orion::node::Node;
+use orion::types::NodeName;
 use orion::{Address, ClientError, Identity, Options, Orion};
 use tokio::sync::{oneshot, watch};
 
 use crate::backoff::Backoff;
+use crate::lease::{self, Hold, Lease, Shared as LeaseShared};
 use crate::long::{
     Cancel, MAX_LONG_OPERATIONS, Outcome, STEP_WAIT, Step, StepError, SteppedTransfer,
 };
@@ -150,6 +152,11 @@ trait Job: Send {
     fn is_long(&self) -> bool {
         false
     }
+    /// Whether this job is a request to the board's bridge, which renews its lease (see
+    /// [`crate::lease`]).
+    fn bridge(&self) -> bool {
+        false
+    }
 }
 
 /// A long operation running on the session, advanced one turn at a time.
@@ -173,6 +180,8 @@ enum Turn {
 struct Call<T, F> {
     call: F,
     reply: oneshot::Sender<Result<T, SessionError>>,
+    /// Whether the call is a request to the board's bridge (see [`Handle::with_bridge`]).
+    bridge: bool,
 }
 
 impl<T, F> Job for Call<T, F>
@@ -180,8 +189,12 @@ where
     T: Send + 'static,
     F: FnOnce(&Orion) -> Result<T, orion::Error> + Send + 'static,
 {
+    fn bridge(&self) -> bool {
+        self.bridge
+    }
+
     fn run(self: Box<Self>, orion: &Orion, _ops: &mut Vec<Box<dyn Op>>) -> Result<(), String> {
-        let Self { call, reply } = *self;
+        let Self { call, reply, .. } = *self;
         if reply.is_closed() {
             // The caller stopped waiting before its turn: the call is not started.
             return Ok(());
@@ -335,6 +348,7 @@ pub struct Handle {
     presence: watch::Receiver<Presence>,
     calls: mpsc::Sender<Box<dyn Job>>,
     call_wait: Duration,
+    lease: Arc<LeaseShared>,
 }
 
 impl Handle {
@@ -396,11 +410,54 @@ impl Handle {
         T: Send + 'static,
         F: FnOnce(&Orion) -> Result<T, orion::Error> + Send + 'static,
     {
+        self.send_call(call, false).await
+    }
+
+    /// As [`Handle::with_client`], for a call that is a request to the board's bridge: an action
+    /// run, or its cancel. Such a request renews the board's lease for this session, so the
+    /// session sends no renewal of its own until the lease period is near again (see
+    /// [`crate::lease`]). Reads that do not reach the bridge use [`Handle::with_client`].
+    ///
+    /// # Errors
+    ///
+    /// As [`Handle::with_client`].
+    pub async fn with_bridge<T, F>(&self, call: F) -> Result<T, SessionError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Orion) -> Result<T, orion::Error> + Send + 'static,
+    {
+        self.send_call(call, true).await
+    }
+
+    async fn send_call<T, F>(&self, call: F, bridge: bool) -> Result<T, SessionError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Orion) -> Result<T, orion::Error> + Send + 'static,
+    {
         self.ready()?;
         let (reply, answer) = oneshot::channel();
-        let job: Box<dyn Job> = Box::new(Call { call, reply });
+        let job: Box<dyn Job> = Box::new(Call {
+            call,
+            reply,
+            bridge,
+        });
         self.queue(job)?;
         self.answer(answer).await?
+    }
+
+    /// A hold on this node's board: while it exists, the session keeps the board's lease alive
+    /// (see [`crate::lease`]). Dropping it ends the hold. Holding is free and sends nothing.
+    #[must_use]
+    pub fn hold(&self) -> Hold {
+        Hold::take(&self.lease)
+    }
+
+    /// The number of lapses this session has recorded: each time it was silent for longer than
+    /// the lease period while holds existed. A holder that waits on the board also waits on this
+    /// to learn that its hold may have been dropped (see [`Hold::lapsed`]).
+    #[must_use]
+    pub fn lapses(&self) -> watch::Receiver<u64> {
+        self.lease.lapses_watch()
     }
 
     /// Starts a long operation on the node's live session and waits for how it ends.
@@ -468,7 +525,7 @@ impl Monitor {
     /// is taken as the expected one (trust on first use). The first try happens on the new
     /// thread. Calls on the handle wait `call_wait` for their answer.
     pub fn start(address: Address, pause: Arc<dyn Pause>, call_wait: Duration) -> Self {
-        Self::start_with_pin(address, None, pause, call_wait)
+        Self::start_full(address, None, pause, call_wait, Lease::DEFAULT)
     }
 
     /// As [`Monitor::start`], for a node whose key the caller already knows: the first connect is
@@ -479,20 +536,24 @@ impl Monitor {
         pause: Arc<dyn Pause>,
         call_wait: Duration,
     ) -> Self {
-        Self::start_with_pin(address, Some(key), pause, call_wait)
+        Self::start_full(address, Some(key), pause, call_wait, Lease::DEFAULT)
     }
 
-    fn start_with_pin(
+    /// The whole start: an optional pinned key and the lease the session keeps for its holds.
+    pub fn start_full(
         address: Address,
         pin: Option<[u8; 32]>,
         pause: Arc<dyn Pause>,
         call_wait: Duration,
+        lease: Lease,
     ) -> Self {
         let (sender, presence) = watch::channel(Presence::Searching);
         let (calls, received) = mpsc::channel::<Box<dyn Job>>();
         let (orders, taken) = mpsc::channel::<Order>();
         let stop = Arc::new(AtomicBool::new(false));
+        let shared = Arc::new(LeaseShared::new());
         let (thread_address, thread_stop) = (address.clone(), stop.clone());
+        let thread_shared = Arc::clone(&shared);
         let thread = thread::Builder::new()
             .name(format!("node-{address}"))
             .spawn(move || {
@@ -507,6 +568,14 @@ impl Monitor {
                     pin,
                     replacement: None,
                     parked: VecDeque::new(),
+                    lease,
+                    shared: thread_shared,
+                    last_bridge: Instant::now(),
+                    last_try: None,
+                    lapse_marked: false,
+                    node: None,
+                    device: None,
+                    last_listed: None,
                 };
                 keeper.run();
             })
@@ -517,6 +586,7 @@ impl Monitor {
                 presence,
                 calls,
                 call_wait,
+                lease: shared,
             },
             orders,
             stop,
@@ -569,6 +639,22 @@ struct Keeper {
     replacement: Option<Option<[u8; 32]>>,
     /// Long operations waiting for a slot, in the order they came. Never stepped while parked.
     parked: VecDeque<Box<dyn Job>>,
+    /// The lease the session keeps for its holds (see [`crate::lease`]).
+    lease: Lease,
+    /// The holds of this session, and its lapse count.
+    shared: Arc<LeaseShared>,
+    /// When the board last had a request from this session: a bridge call, or a renewal.
+    last_bridge: Instant,
+    /// When the session last tried to renew, successfully or not. Throttles a failing renewal.
+    last_try: Option<Instant>,
+    /// Whether the current silence has been recorded as a lapse already.
+    lapse_marked: bool,
+    /// The node this session is connected to, while it is Found.
+    node: Option<Node>,
+    /// The device whose bridge renews the lease, once listed (see `bridge_device`).
+    device: Option<String>,
+    /// When the node's devices were last listed, when none was found.
+    last_listed: Option<Instant>,
 }
 
 impl Keeper {
@@ -584,8 +670,14 @@ impl Keeper {
                         self.pin = Some(node.public_key);
                         self.replacement = None;
                         backoff.reset();
+                        self.node = Some(node.clone());
+                        self.last_try = None;
+                        self.device = None;
+                        self.last_listed = None;
+                        self.lapse_on_connect(&orion);
                         self.sender.send_replace(Presence::Found(node));
                         let ended = self.serve(&orion);
+                        self.node = None;
                         if self.stopped() {
                             break;
                         }
@@ -694,6 +786,107 @@ impl Keeper {
         self.stop.load(Ordering::SeqCst)
     }
 
+    /// Keeps the board's lease alive while holds exist (see [`crate::lease`]). Sends nothing with
+    /// no hold, on a node that is not Found, or on a node without a bridge. A holder's own bridge
+    /// request counts as the renewal (see [`Keeper::mark_bridge`]). `Err` when the session is lost
+    /// during the renewal.
+    fn keep_alive(&mut self, orion: &Orion) -> Result<(), String> {
+        if self.shared.holds() == 0 {
+            self.mark_bridge();
+            return Ok(());
+        }
+        // No lease in force: nothing is sent, nothing is listed and no lapse is recorded.
+        if !self.lease.in_force {
+            return Ok(());
+        }
+        let Some(node) = self.node.as_ref() else {
+            return Ok(());
+        };
+        let node_name = node.name.clone();
+        // No bridge, no lease: a node that lists no Lemnos device is an Orion node that is not ours.
+        let Some(device) = self.bridge_device(orion)? else {
+            return Ok(());
+        };
+        self.check_lapse();
+        let silent = self.last_bridge.elapsed();
+        let due = silent >= self.lease.renew
+            && self
+                .last_try
+                .is_none_or(|tried| tried.elapsed() >= self.lease.renew);
+        if !due {
+            return Ok(());
+        }
+        self.last_try = Some(Instant::now());
+        let Ok(name) = node_name.parse::<NodeName>() else {
+            return Ok(());
+        };
+        match lease::renew(orion, &name, &device) {
+            Ok(()) => {
+                self.mark_bridge();
+                Ok(())
+            }
+            Err(error) if error.is_lost() => Err(error.to_string()),
+            Err(_) => Ok(()),
+        }
+    }
+
+    /// The device whose bridge renews the lease, as the node lists it. The listing is kept for the
+    /// session; a node that lists none is asked again once per renewal period (`Ok(None)`). Only a
+    /// lost session is an error. The listing is a read of the node, not a request to the bridge.
+    fn bridge_device(&mut self, orion: &Orion) -> Result<Option<String>, String> {
+        if let Some(device) = &self.device {
+            return Ok(Some(device.clone()));
+        }
+        if self
+            .last_listed
+            .is_some_and(|listed| listed.elapsed() < self.lease.renew)
+        {
+            return Ok(None);
+        }
+        self.last_listed = Some(Instant::now());
+        match lease::device_for_renewal(orion) {
+            Ok(device) => {
+                self.device.clone_from(&device);
+                Ok(device)
+            }
+            Err(error) if error.is_lost() => Err(error.to_string()),
+            Err(_) => Ok(None),
+        }
+    }
+
+    /// Records a lapse when the session has been silent for longer than the lease period while
+    /// holds exist, on a board whose lease is in force. Once per silence (see `lapse_marked`).
+    fn check_lapse(&mut self) {
+        if !self.lease.in_force || self.shared.holds() == 0 {
+            return;
+        }
+        if self.last_bridge.elapsed() > self.lease.period && !self.lapse_marked {
+            // Silent for longer than the board's lease: the board may have dropped the holds.
+            self.lapse_marked = true;
+            self.shared.lapse();
+        }
+    }
+
+    /// On connect, with holds that were taken before it: a session that was silent (down, or its
+    /// machine asleep) past the lease period has a lapse, recorded before the node is announced as
+    /// Found, so a holder that waits for the node sees it when it resumes. Only on a board with a
+    /// bridge, as `keep_alive` decides it.
+    fn lapse_on_connect(&mut self, orion: &Orion) {
+        if self.lease.in_force
+            && self.shared.holds() > 0
+            && self.bridge_device(orion).ok().flatten().is_some()
+        {
+            self.check_lapse();
+        }
+    }
+
+    /// A request reached the board's bridge from this session: the lease is renewed, and a lapse
+    /// that was recorded for the silence before is over.
+    fn mark_bridge(&mut self) {
+        self.last_bridge = Instant::now();
+        self.lapse_marked = false;
+    }
+
     /// Keeps the session up until it breaks, the monitor is stopped, or a person accepts another
     /// key. Runs calls and long operations on the way. Returns why it broke, or `None` when it was
     /// re-pinned. Every operation still running ends with the same reason: none is stepped on a
@@ -718,6 +911,11 @@ impl Keeper {
                 self.apply(order);
                 return None;
             }
+            // The lease comes first in a turn: a renewal is one short call, so it is never
+            // queued behind a turn's calls or steps.
+            if let Err(reason) = self.keep_alive(orion) {
+                return Some(reason);
+            }
             // The calls of this turn: parked operations first (they waited for a slot), then
             // every call queued now. A call that arrives during the turn waits for the next one.
             let mut batch: VecDeque<Box<dyn Job>> = std::mem::take(&mut self.parked);
@@ -728,6 +926,9 @@ impl Keeper {
                 if job.is_long() && ops.len() >= MAX_LONG_OPERATIONS {
                     self.parked.push_back(job);
                     continue;
+                }
+                if job.bridge() {
+                    self.mark_bridge();
                 }
                 if let Err(reason) = job.run(orion, ops) {
                     // The session broke under this call: the rest of the turn is refused.

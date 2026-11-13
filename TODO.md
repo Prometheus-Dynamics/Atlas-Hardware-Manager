@@ -19,6 +19,7 @@ The core every other group builds on: types, the driver contract, inventory, job
 - [ ] [A10](docs/prs/A10.md) A key that says what it is, a board's Lemnos state, and the board session as its own crate (wave 4; needs A9, C1)
 - [ ] [A12](docs/prs/A12.md) The session keeps the key it first saw (wave 5; needs A10, C8)
 - [ ] [A14](docs/prs/A14.md) The session carries calls while a transfer runs: long operations stepped between calls (needs A12; the real interleaving waits for Orion R2)
+- [ ] [A15](docs/prs/A15.md) A board's lease is kept while Atlas holds something on it (a hold guard, a keep-alive only while holds exist); absent `hello.offers` is NOT REPORTED, not "offers nothing" (needs A14; the renewal is `describe` at Lemnos I6h, the offers cap at M8c)
 
 ## B. Board descriptions
 
@@ -57,7 +58,7 @@ Every job on a board through the Orion client, against a simulated node.
 - [ ] [C3](docs/prs/C3.md) Actions (wave 4; needs C1, A10)
 - [ ] [C4](docs/prs/C4.md) Files (wave 4; needs C1, A10)
 - [x] [C5](docs/prs/C5.md) Slots and updates (wave 5; needs C3, C4, A7, X1)
-- [ ] [C6](docs/prs/C6.md) Trial and confirm watch (wave 6; needs C5)
+- [x] [C6](docs/prs/C6.md) Trial and confirm watch (wave 6; needs C5)
 - [ ] [C7](docs/prs/C7.md) Board data: backup, restore, files (wave 5; needs C4)
 - [ ] [C8](docs/prs/C8.md) SSH and the recovery shell (wave 4; needs C1, A10)
 - [ ] [C9](docs/prs/C9.md) NetworkTables viewer (wave 4; needs C1)
