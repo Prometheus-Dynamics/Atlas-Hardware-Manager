@@ -29,7 +29,6 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use orion::actions::{ActionCall, Target};
-use orion::node::Node;
 use orion::types::NodeName;
 use orion::{ClientError, Error as OrionError, Orion};
 use tokio::sync::watch;
