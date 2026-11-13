@@ -1,7 +1,9 @@
 # The ROCK 5C's USB device port, NOT ACTIVE (B15). Every entry is commented out, so this file holds no
 # Lemnos entry and cannot be installed as one. It is a record of the candidate and why it is held.
 #
-# Candidate entry, for Lemnos e99d51c0 (Q2e, socs/rk3588.toml), when it is safe to activate:
+# Candidate entry, for Lemnos 4a2d3b7d (Q2e, socs/rk3588.toml), when it is safe to activate. B18 ran it through
+# `lemnos-ctl tree` at 4a2d3b7d (scratch): accepted, the overlay sets dr_mode = "peripheral" and keeps the base
+# tree's phy-supply (the blocker below). Still held: the entry stays commented out.
 #
 #   [[hardware]]
 #   name = "udc:fc000000.usb"

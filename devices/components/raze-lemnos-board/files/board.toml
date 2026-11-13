@@ -1,16 +1,21 @@
-# The Raze's board file for lemnosd (Lemnos next b0bf0101, the board-file format of its Q2a/Q2c).
+# The Raze's board file for lemnosd (Lemnos next 4a2d3b7d, the board-file format of its Q2a/Q2c).
 # Installed as /etc/lemnos/board.toml. Its generated outputs (the one overlay, the boot fragment,
 # the modprobe.d file) come from `lemnos-ctl tree` at build time; nothing they contain is written by hand.
 #
 # Sources of the values, each with its file: dev's devices/raze/manifest.json and
 # devices/raze/gaia/assets (the overlays' .dts, raze-device.txt, hardware.env); Lemnos's SoC map
-# socs/bcm2712-rp1.toml at b0bf0101 for every controller path and pin set.
+# socs/bcm2712-rp1.toml at 4a2d3b7d for every controller path and pin set.
 #
-# Refused by `lemnos-ctl tree` at b0bf0101, and so NOT yet buildable (PR text, "Lemnos refusals"):
-#   - system-identity and system-slots: their drivers make nothing in any output, and the map's
-#     `needs_nothing` lists only orientation and fan-control;
-#   - the watchdog device (hw-watchdog): no name form for its node in the generator, so its need
-#     produces nothing. The `[[hardware]] controller = "watchdog"` entry below does enable the node.
+# Refused by `lemnos-ctl tree` at 4a2d3b7d (B18, run in scratch), and so NOT yet buildable. The generator
+# stops at the first refusal, so the three are listed in the order it meets them, each seen with the others
+# before it removed from a scratch copy (this file is unchanged):
+#   - identity (system-identity): "has no hardware name, so its needs produce nothing in any output; name its
+#     hardware, or list the driver in the map's `needs_nothing`". Same message for slots (system-slots);
+#   - watchdog (hw-watchdog): "uses \"watchdog0\": the generator makes nothing of that name; it knows i2c-N,
+#     spidevB.C, udc:NAME, pio-i2c:..., pio-out:..., gpio:LABEL:LINE and pwm:NODE:CHANNEL";
+#     With those three removed in a scratch copy, the rest of the file is accepted (rc 0). The map's
+#     `needs_nothing` lists only orientation and fan-control. The `[[hardware]] controller = "watchdog"` entry
+#     below does enable the node; the watchdog device's own `uses` name is what the generator refuses.
 # Open, left out on purpose (no source): the camera sensor on i2c-10 (dev's manifest puts i2c_csi_dsi0 on
 # RP1 i2c6, Lemnos's map puts i2c10 on the SoC's own controller at 7d005600), its power line
 # (cam0_reg's line, RP1 GPIO34, and the base the map holds it on: no base named here), and the USB
