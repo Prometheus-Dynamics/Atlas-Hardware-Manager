@@ -1,0 +1,6 @@
+{
+  "schema": "urn:atlas:device-app:1",
+  "model": "beta-board",
+  "display_name": "Beta Board",
+  "usb": ["shared-usb-boot", "beta-gadget"]
+}

@@ -1,0 +1,7 @@
+{
+  "schema": "urn:atlas:device-app:1",
+  "model": "gamma-board",
+  "display_name": "Gamma Board",
+  "usb": ["shared-usb-boot"],
+  "network": { "hostname_prefix": "gamma-" }
+}
