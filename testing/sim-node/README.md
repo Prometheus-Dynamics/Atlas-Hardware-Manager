@@ -5,7 +5,7 @@ so the workspace glob `crates/*/*` builds, lints and tests it; this folder holds
 driver's tests use it as a dev-dependency (a driver may: it is not a driver). The mock devices that
 drivers list are in `crates/drivers/mock` (`atlas-mock`), which does not depend on it.
 
-The proof is `crates/testing/sim-node/tests/sim_node.rs` (28 tests, Linux) and the unit tests in
+The proof is `crates/testing/sim-node/tests/sim_node.rs` (31 tests, Linux) and the unit tests in
 `src/names.rs` and `src/lib.rs`.
 
 ## The three kinds of node
@@ -53,6 +53,14 @@ One builder makes all three: `SimNode::start_with(dir, &Kind, port)`. `SimNode::
   `on`/`off`, `1`/`0`), strings as one word, bytes as hex. The node mirrors those rules in
   `src/node.rs` (`words`, `flag`, `word`, `hex_bytes`). It does not depend on the Lemnos crate, which is not in
   this workspace.
+- **The slot format** (`src/bundle.rs`, the sim's own reader; it does not depend on `crates/core/bundle`,
+  which is moving to schema 3 in another PR). `slot.json` is schema 3: `product` (lowercase `[a-z0-9-]`),
+  `version`, optional `variant`, `board` (the board's id, the same value as the `family` hello fact), and
+  `id`, `kernel`, `display_name`, `image.*`, `verity.*`, `boot.files`. The node refuses a slot whose `board`
+  is missing or is not its own board, and refuses schema 2 (`slot.json is schema 2 ...`). A slot for another
+  board is listed (`product`, `board`), but refused for set-default and trial. Tests:
+  `a_slot_for_another_board_is_refused...`, `a_schema_2_slot_is_refused`,
+  `a_slot_for_this_board_lists_its_product_and_board...`.
 - **Signing** (`src/slots.rs`, `src/bundle.rs`). Off by default. A `slot.sig` that is present is always
   checked against every trusted key. Each slot lists `signed` (`trusted` | `untrusted` | `unsigned`) and
   `signer` (the owner of the key that signed it). `require_signed` turns the gate on: an unsigned or
@@ -86,7 +94,7 @@ hello topics are `hello.<fact>`.
 
 ## Proof
 
-`cargo test -p atlas-sim-node` runs the unit tests and the 28 integration tests. They cover: every method
+`cargo test -p atlas-sim-node` runs the unit tests and the 31 integration tests. They cover: every method
 of the I5 surface, with an assertion that the test exercises exactly the surface; refused, failed, stalled
 and cancelled runs; an install pushed as a file and installed as a long job; cancel discarding the pushed
 file; a starter that disconnects having its install cancelled; a detached install that survives its starter

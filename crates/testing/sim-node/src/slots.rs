@@ -107,7 +107,10 @@ impl State {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Entry {
     pub id: String,
-    pub family: String,
+    pub product: String,
+    /// The board the slot was built for (`board`). A slot for another board is listed, but is
+    /// refused for set-default and trial.
+    pub board: String,
     pub version: String,
     pub variant: String,
     pub kernel: String,
@@ -138,7 +141,10 @@ pub struct Trial {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NewSlot {
     pub id: String,
-    pub family: String,
+    pub product: String,
+    /// The board the slot was built for (`board`). A slot for another board is listed, but is
+    /// refused for set-default and trial.
+    pub board: String,
     pub version: String,
     pub variant: String,
     pub kernel: String,
@@ -167,6 +173,9 @@ pub struct Slots {
     /// (`signed`, `signer`), and nothing is refused for it. On, an install that is unsigned or
     /// signed by an untrusted key is refused.
     pub require_signed: bool,
+    /// The board this node is, as its hello `family` fact. A slot built for another board is
+    /// refused for set-default and trial.
+    pub board: String,
     pub trusted: Vec<TrustedKey>,
     /// What happened, for the log, drained by the model.
     pub events: Vec<String>,
@@ -188,7 +197,8 @@ impl Slots {
         Self {
             entries: vec![Entry {
                 id: "slot-1".into(),
-                family: "sim".into(),
+                product: "sim".into(),
+                board: "simulated".into(),
                 version: "1.0.0".into(),
                 variant: String::new(),
                 kernel: String::new(),
@@ -213,6 +223,7 @@ impl Slots {
             free_bytes: 8 * 1024 * 1024 * 1024,
             reserve_bytes: RESERVE_BYTES,
             require_signed: false,
+            board: "simulated".into(),
             trusted: Vec::new(),
             events: Vec::new(),
             seq: 1,
@@ -239,6 +250,20 @@ impl Slots {
             || self.default.as_deref() == Some(id)
             || self.previous.as_deref() == Some(id)
             || self.trial.as_ref().is_some_and(|trial| trial.id == id)
+    }
+
+    /// A slot built for another board is listed but not made the default or tried.
+    fn check_board(&self, entry: &Entry) -> Result<(), Status> {
+        if entry.board == self.board {
+            return Ok(());
+        }
+        Err(Status::new(
+            code::NOT_PERMITTED,
+            format!(
+                "{} was built for board {:?}, and this board is {:?}",
+                entry.id, entry.board, self.board
+            ),
+        ))
     }
 
     /// The install gate: refused while another install runs (the caller checks that), when
@@ -333,7 +358,8 @@ impl Slots {
         self.event(format!("installed {id}"));
         self.entries.push(Entry {
             id: new.id,
-            family: new.family,
+            product: new.product,
+            board: new.board,
             version: new.version,
             variant: new.variant,
             kernel: new.kernel,
@@ -363,6 +389,7 @@ impl Slots {
     /// `NOT_FOUND`, or `NOT_PERMITTED` when the slot is not good, or failed and not forced.
     pub fn set_default(&mut self, id: &str, force: bool) -> Result<(), Status> {
         let entry = self.get(id).ok_or_else(|| not_found(id))?;
+        self.check_board(entry)?;
         if entry.good != Good::Yes {
             return Err(Status::new(
                 code::NOT_PERMITTED,
@@ -397,6 +424,7 @@ impl Slots {
         force: bool,
     ) -> Result<(), Status> {
         let entry = self.get(id).ok_or_else(|| not_found(id))?;
+        self.check_board(entry)?;
         if self.active.as_deref() == Some(id) {
             return Err(Status::new(code::BUSY, format!("{id} is the running slot")));
         }
@@ -624,7 +652,8 @@ impl Slots {
                 };
                 json!({
                     "id": entry.id,
-                    "family": entry.family,
+                    "product": entry.product,
+                    "board": entry.board,
                     "version": entry.version,
                     "variant": entry.variant,
                     "kernel": entry.kernel,

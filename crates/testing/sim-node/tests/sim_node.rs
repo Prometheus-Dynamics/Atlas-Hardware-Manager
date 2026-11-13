@@ -83,10 +83,11 @@ fn install(orion: &Orion, bundle: &[u8], pin: bool, keep_old: bool) -> Finished 
         .expect("the install ends")
 }
 
-/// A bundle of about a mebibyte, so an install is still running for a while.
+/// A bundle of about four mebibytes: an install runs for over a second, so a cancel or a restart
+/// always lands while it is still running.
 fn big_bundle(id: &str) -> Vec<u8> {
     let rootfs = format!("rootfs of {id}\n").into_bytes();
-    let blob = vec![7_u8; 1024 * 1024];
+    let blob = vec![7_u8; 4 * 1024 * 1024];
     let boot = [
         ("cmdline.txt", &b"console=ttyS0\n"[..]),
         ("blob.bin", &blob[..]),
@@ -390,11 +391,23 @@ fn a_detached_install_survives_its_starter_and_can_be_attached_to_again() {
     drop(starter);
 
     // The starter is gone and the install carries on: it lands the slot.
+    // The attach can reach the router before the starter's session close has been handled, so
+    // a refusal is retried for a short while: the run is detached and is still there.
     let other = node.connect("later").expect("a session");
-    let mut attached = other.attach(call_number).expect("attach to a detached run");
-    let finished = attached
-        .finish(Duration::from_secs(10))
-        .expect("the install ends");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let finished = loop {
+        let mut attached = other.attach(call_number).expect("attach to a detached run");
+        match attached.finish(Duration::from_secs(10)) {
+            Ok(finished) => break finished,
+            Err(error) => {
+                assert!(
+                    Instant::now() < deadline,
+                    "attach never found the run: {error:?}"
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    };
     assert_eq!(finished.outcome, Outcome::Succeeded, "{}", finished.detail);
     assert_eq!(text(&finished.output), "slot-2");
     assert_eq!(list(&other)["state"], "idle");
@@ -857,6 +870,97 @@ fn security_on_refuses_unsigned_and_untrusted_bundles_and_keeps_nothing() {
     );
     assert_eq!(good.outcome, Outcome::Succeeded, "{}", good.detail);
     assert_eq!(slot(&list(&orion), "trusted")["signed"], "trusted");
+}
+
+/// A bundle whose slot.json is `manifest` after `change`, with the rest of the bundle as `bundle_for`.
+fn bundle_with(id: &str, change: impl FnOnce(&mut Value)) -> Vec<u8> {
+    let rootfs = format!("rootfs of {id}\n").into_bytes();
+    let boot = [("cmdline.txt", &b"console=ttyS0\n"[..])];
+    let mut manifest = bundle::manifest(id, "2.0.0", &rootfs, &boot);
+    change(&mut manifest);
+    bundle::build(&manifest, None, &rootfs, &boot)
+}
+
+#[test]
+fn a_slot_for_another_board_is_refused_before_anything_is_kept() {
+    let node = start("board-mismatch");
+    let orion = node.connect("board-mismatch").expect("a session");
+    let other = bundle_with("slot-2", |manifest| {
+        manifest["board"] = Value::String("another-board".into());
+    });
+    let finished = install(&orion, &other, false, false);
+    assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
+    assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
+    assert!(
+        finished.detail.contains("another-board"),
+        "{}",
+        finished.detail
+    );
+    assert_eq!(list(&orion)["slots"].as_array().expect("slots").len(), 1);
+
+    // A slot with no board at all is refused too.
+    let none = bundle_with("slot-3", |manifest| {
+        manifest.as_object_mut().expect("an object").remove("board");
+    });
+    let finished = install(&orion, &none, false, false);
+    assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
+    assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
+}
+
+#[test]
+fn a_schema_2_slot_is_refused() {
+    let node = start("schema-2");
+    let orion = node.connect("schema-2").expect("a session");
+    let old = bundle_with("slot-2", |manifest| {
+        manifest["schema"] = Value::from(2);
+        manifest
+            .as_object_mut()
+            .expect("an object")
+            .remove("product");
+        manifest["family"] = Value::String("simulated".into());
+    });
+    let finished = install(&orion, &old, false, false);
+    assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
+    assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
+    assert!(finished.detail.contains("schema 2"), "{}", finished.detail);
+}
+
+#[test]
+fn a_slot_for_this_board_lists_its_product_and_board_and_a_foreign_one_cannot_be_made_default() {
+    let node = start("product-board");
+    let orion = node.connect("product-board").expect("a session");
+    let ours = bundle_with("slot-2", |manifest| {
+        manifest["product"] = Value::String("helios".into());
+        manifest["version"] = Value::String("2026.4.0".into());
+    });
+    assert_eq!(
+        install(&orion, &ours, false, false).outcome,
+        Outcome::Succeeded
+    );
+    let listed = slot(&list(&orion), "slot-2").clone();
+    assert_eq!(listed["product"], "helios");
+    assert_eq!(listed["board"], "simulated");
+    assert_eq!(listed["version"], "2026.4.0");
+    assert!(listed.get("family").is_none(), "family is gone from list");
+
+    // A slot already on this board can be made default; one built for another board cannot. The
+    // mismatch is put on the table directly, as a slot left on disk from another board would be.
+    node.model()
+        .slots
+        .entries
+        .iter_mut()
+        .find(|entry| entry.id == "slot-2")
+        .expect("slot-2")
+        .board = "another-board".into();
+    let listing = list(&orion);
+    assert_eq!(slot(&listing, "slot-2")["board"], "another-board");
+    let refused_default = refused(&orion, names::SLOTS_SET_DEFAULT, b"slot-2 false");
+    assert!(
+        refused_default.detail.contains("another-board"),
+        "{}",
+        refused_default.detail
+    );
+    refused(&orion, names::SLOTS_TRIAL, b"slot-2 false false false");
 }
 
 #[test]

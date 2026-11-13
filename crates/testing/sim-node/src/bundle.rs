@@ -15,6 +15,9 @@ use sha2::{Digest, Sha256};
 
 use crate::slots::{Signed, Status, TrustedKey, code, valid_id};
 
+/// The slot.json schema this board reads: `product`, `version`, optional `variant`, `board`, and the
+/// rest as before. Schema 2 is refused.
+pub const SCHEMA: u64 = 3;
 pub const SLOT_JSON: &str = "slot.json";
 pub const SLOT_SIG: &str = "slot.sig";
 pub const ROOTFS: &str = "rootfs.erofs";
@@ -24,7 +27,10 @@ const BOOT_PREFIX: &str = "boot/";
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Verified {
     pub id: String,
-    pub family: String,
+    /// The product the slot is for (`product`), lowercase `[a-z0-9-]`.
+    pub product: String,
+    /// The board the slot was built for (`board`): the board's id, the same as its `family` fact.
+    pub board: String,
     pub version: String,
     pub variant: String,
     pub kernel: String,
@@ -41,6 +47,14 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+/// A product or board id: lowercase letters, digits and `-`, not empty.
+fn valid_key(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
 }
 
 fn is_hex64(text: &str) -> bool {
@@ -65,7 +79,7 @@ fn text<'a>(value: &'a Value, key: &str) -> Result<&'a str, Status> {
 ///
 /// `INVALID_ARGUMENT` for a malformed bundle, a hash or size mismatch, a link or an
 /// absolute or `..` path, an unknown member, or a `slot.sig` that is not 64 bytes.
-pub fn verify(bundle: &[u8], trusted: &[TrustedKey]) -> Result<Verified, Status> {
+pub fn verify(bundle: &[u8], trusted: &[TrustedKey], board: &str) -> Result<Verified, Status> {
     let mut members: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     let mut archive = tar::Archive::new(Cursor::new(bundle));
     let entries = archive
@@ -117,8 +131,25 @@ pub fn verify(bundle: &[u8], trusted: &[TrustedKey]) -> Result<Verified, Status>
         .clone();
     let manifest: Value = serde_json::from_slice(&manifest_bytes)
         .map_err(|error| refuse(format!("slot.json is not JSON: {error}")))?;
-    if manifest.get("schema").and_then(Value::as_u64) != Some(2) {
-        return Err(refuse("slot.json is not schema 2"));
+    match manifest.get("schema").and_then(Value::as_u64) {
+        Some(SCHEMA) => {}
+        Some(other) => {
+            return Err(refuse(format!(
+                "slot.json is schema {other}; this board takes schema {SCHEMA} (product, version, board)"
+            )));
+        }
+        None => return Err(refuse("slot.json has no schema")),
+    }
+    let product = text(&manifest, "product")?;
+    if !valid_key(product) {
+        return Err(refuse(format!("{product:?} is not a product name")));
+    }
+    let slot_board = text(&manifest, "board")
+        .map_err(|_| refuse("slot.json has no board: the slot is not for any board"))?;
+    if slot_board != board {
+        return Err(refuse(format!(
+            "the slot is for board {slot_board:?}, and this board is {board:?}"
+        )));
     }
     if manifest.get("layers").is_some() {
         return Err(refuse(
@@ -206,7 +237,8 @@ pub fn verify(bundle: &[u8], trusted: &[TrustedKey]) -> Result<Verified, Status>
 
     Ok(Verified {
         id,
-        family: text(&manifest, "family").unwrap_or_default().to_string(),
+        product: product.to_string(),
+        board: slot_board.to_string(),
         version: text(&manifest, "version").unwrap_or_default().to_string(),
         variant: text(&manifest, "variant").unwrap_or_default().to_string(),
         kernel: text(&manifest, "kernel").unwrap_or_default().to_string(),
@@ -227,9 +259,10 @@ pub fn manifest(id: &str, version: &str, rootfs: &[u8], boot: &[(&str, &[u8])]) 
         .map(|(path, bytes)| ((*path).to_string(), sha256_hex(bytes)))
         .collect();
     json!({
-        "schema": 2,
+        "schema": SCHEMA,
         "id": id,
-        "family": "sim",
+        "product": "sim",
+        "board": "simulated",
         "version": version,
         "variant": "",
         "kernel": "",

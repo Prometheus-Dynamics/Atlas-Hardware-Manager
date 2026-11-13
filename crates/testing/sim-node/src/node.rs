@@ -434,6 +434,10 @@ impl Node {
             })
             .map_err(|e| e.to_string())?;
 
+        // The slot table knows its board: the hello `family` fact of a node with Lemnos.
+        if let Kind::WithLemnos(hello) = kind {
+            lock(&shared.model).slots.board.clone_from(&hello.family);
+        }
         // Only a node with Lemnos has readings, a hardware description and hello facts.
         let mut readings = None;
         let mut hello_topics = Vec::new();
@@ -690,7 +694,8 @@ impl Node {
                 )),
                 Some(bytes) => {
                     let trusted = model.slots.trusted.clone();
-                    bundle::verify(&bytes, &trusted).and_then(|verified| {
+                    let board = model.slots.board.clone();
+                    bundle::verify(&bytes, &trusted, &board).and_then(|verified| {
                         model.slots.check_signed(&verified.signed)?;
                         model
                             .slots
@@ -917,7 +922,8 @@ fn hex_text(bytes: &[u8]) -> String {
 fn new_slot(verified: bundle::Verified) -> NewSlot {
     NewSlot {
         id: verified.id,
-        family: verified.family,
+        product: verified.product,
+        board: verified.board,
         version: verified.version,
         variant: verified.variant,
         kernel: verified.kernel,
