@@ -9,7 +9,7 @@
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread;
 
-use atlas_session::{Handle, Presence};
+use atlas_session::{Handle, Hold, Presence};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
@@ -60,6 +60,9 @@ pub enum End {
     Replaced(String),
     /// The link to the shell broke while the node was still connected, with its words.
     Broke(String),
+    /// The session was silent for longer than the board's lease while this shell's hold existed:
+    /// the board may have dropped the shell. Nothing reopens it; a new shell is a person's choice.
+    HoldLapsed(String),
     /// The person closed the terminal.
     Closed,
 }
@@ -79,6 +82,8 @@ struct Finish {
     end: Mutex<Option<End>>,
     events: mpsc::UnboundedSender<Event>,
     control: Arc<dyn Control>,
+    /// The shell's hold on the board. It lives from the open to the end, and is dropped with it.
+    hold: Mutex<Option<Hold>>,
 }
 
 impl Finish {
@@ -90,6 +95,11 @@ impl Finish {
             return;
         }
         *slot = Some(end.clone());
+        // The board no longer needs this shell's hold: its lease need not be kept for it.
+        self.hold
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
         self.control.hang_up();
         let _ = self.events.send(Event::Ended(end));
     }
@@ -110,7 +120,7 @@ pub struct Terminal {
     control: Arc<dyn Control>,
     finish: Arc<Finish>,
     events: mpsc::UnboundedReceiver<Event>,
-    watcher: Option<JoinHandle<()>>,
+    watchers: Vec<JoinHandle<()>>,
     done: bool,
 }
 
@@ -186,7 +196,7 @@ impl Terminal {
     }
 
     fn stop_watching(&mut self) {
-        if let Some(watcher) = self.watcher.take() {
+        for watcher in self.watchers.drain(..) {
             watcher.abort();
         }
     }
@@ -239,16 +249,18 @@ pub async fn open(
         end: Mutex::new(None),
         events,
         control: channel.control.clone(),
+        hold: Mutex::new(Some(handle.hold())),
     });
     spawn_reader(channel.output, finish.clone());
-    let watcher = tokio::spawn(watch_presence(handle.watch(), finish.clone()));
+    let presence = tokio::spawn(watch_presence(handle.watch(), finish.clone()));
+    let lapses = tokio::spawn(watch_lapses(handle.lapses(), finish.clone()));
     Ok(Terminal {
         kind,
         identity,
         control: channel.control,
         finish,
         events: received,
-        watcher: Some(watcher),
+        watchers: vec![presence, lapses],
         done: false,
     })
 }
@@ -293,6 +305,16 @@ fn spawn_reader(mut output: Box<dyn Output>, finish: Arc<Finish>) {
             }
         }
     });
+}
+
+/// Ends the terminal when the session lapsed while its hold existed: the board may have dropped the
+/// shell with the lease. A lapse is seen once; the terminal then ends.
+async fn watch_lapses(mut lapses: watch::Receiver<u64>, finish: Arc<Finish>) {
+    if lapses.changed().await.is_ok() {
+        finish.finish(End::HoldLapsed(
+            "the board may have dropped this shell: no request reached its bridge within the lease. Nothing reopens it".into(),
+        ));
+    }
 }
 
 /// Ends the terminal the moment the node is no longer connected. It never waits for a

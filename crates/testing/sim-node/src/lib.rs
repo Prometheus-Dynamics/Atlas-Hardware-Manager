@@ -37,6 +37,7 @@
 pub mod access;
 pub mod actions;
 pub mod bundle;
+mod lease;
 pub mod model;
 pub mod names;
 #[cfg(target_os = "linux")]
@@ -46,6 +47,7 @@ pub mod readings;
 pub mod script;
 pub mod slots;
 
+pub use lease::{PERIOD as LEASE_PERIOD, STALL as LEASE_STALL};
 #[cfg(target_os = "linux")]
 pub use node::{DEADLINE, Hello, Kind, Mode, NODE_NAME, SimNode, call};
 pub use script::{Behaviour, LinkFault, Script};

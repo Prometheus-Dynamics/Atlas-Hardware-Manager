@@ -23,6 +23,19 @@ use orion::node::Node;
 const TEXT: u8 = 4;
 /// The attribute that carries the node's offers: its contract ids, sorted and space-separated.
 pub const OFFERS: &str = "offers";
+/// The attribute that is `no` when the node runs Lemnos (it publishes Lemnos facts) and its offers
+/// were not reported: the capability set is then [`atlas_types::Offers::NotReported`].
+pub const OFFERS_REPORTED: &str = "offers.reported";
+/// The hello facts a node publishes only when Lemnos runs on it.
+const LEMNOS_FACTS: [&str; 7] = [
+    "family",
+    "serial",
+    "model",
+    "version.slot",
+    "version.product",
+    "version.os",
+    "version.lemnos",
+];
 /// The most bytes any fact's text may carry (the bridge's own limit).
 const MAX_TEXT: usize = 256;
 /// The most bytes a family, product or model name may carry (Lemnos docs/identity.md).
@@ -105,10 +118,22 @@ pub fn identity(
     let offers = read
         .text(OFFERS, offers_form)
         .map(|value| contracts(&value).join(" "));
+    // A node that publishes Lemnos facts but no readable offers did not report what it offers:
+    // absent offers are not "offers nothing" there. A node with no Lemnos facts at all is a plain
+    // Orion node, which offers no Lemnos contract, and that is a reported answer.
+    let lemnos_facts = LEMNOS_FACTS
+        .iter()
+        .any(|name| node.facts.iter().any(|fact| fact.name == *name));
 
     let mut attributes = BTreeMap::new();
-    if let Some(offers) = offers {
-        attributes.insert(OFFERS.to_owned(), offers);
+    match offers {
+        Some(offers) => {
+            attributes.insert(OFFERS.to_owned(), offers);
+        }
+        None if lemnos_facts => {
+            attributes.insert(OFFERS_REPORTED.to_owned(), "no".to_owned());
+        }
+        None => {}
     }
     attributes.insert("cluster".into(), node.cluster.clone());
     attributes.insert("revision".into(), node.revision.to_string());
@@ -267,13 +292,18 @@ pub fn capabilities(identity: &Identity) -> CapabilitySet {
         .get(OFFERS)
         .map(String::as_str)
         .unwrap_or_default();
-    CapabilitySet::from_kinds(
-        ORION_OWN.into_iter().chain(
-            contracts(offered)
-                .into_iter()
-                .flat_map(|contract| contract_kinds(contract).iter().copied()),
-        ),
-    )
+    let kinds = ORION_OWN.into_iter().chain(
+        contracts(offered)
+            .into_iter()
+            .flat_map(|contract| contract_kinds(contract).iter().copied()),
+    );
+    // LOCK: Lemnos M8c (offers cap 1024): the offers of a board with about 19 or more contracts
+    // are dropped at 256 bytes, so a Lemnos node with no offers is "not reported", not "none".
+    if identity.attributes.get(OFFERS_REPORTED).map(String::as_str) == Some("no") {
+        CapabilitySet::offers_not_reported(kinds)
+    } else {
+        CapabilitySet::from_kinds(kinds)
+    }
 }
 
 /// The capability kinds a Lemnos contract grants, by the id Lemnos names it with. A contract Atlas
@@ -314,6 +344,7 @@ pub fn kind_named(name: &str) -> Option<CapabilityKind> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use atlas_types::Reading;
     use orion::node::Fact;
 
     const SERIAL: &str = "0123456789abcdef";
@@ -644,5 +675,89 @@ mod tests {
             let name = serde_json::to_value(kind).unwrap();
             assert_eq!(kind_named(name.as_str().unwrap()), Some(kind));
         }
+    }
+
+    /// The facts a Lemnos board publishes: its family, serial and version, but no offers unless the
+    /// test adds them.
+    fn lemnos_facts() -> Vec<Fact> {
+        vec![
+            fact("family", "test-family"),
+            fact("serial", SERIAL),
+            fact("version.lemnos", "1.0.0"),
+        ]
+    }
+
+    /// Twenty contracts of the kind a board with many devices serves, as an offers text.
+    fn twenty_contracts() -> String {
+        (0..20)
+            .map(|index| format!("test.device-with-a-long-name-{index:02}/1"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    #[test]
+    fn a_lemnos_node_with_no_offers_did_not_report_them_and_offers_nothing_is_not_claimed() {
+        // The board publishes Lemnos facts and no `offers` fact: at the locked revision that is
+        // the dropped-offers case, not "offers nothing".
+        let found = id(lemnos_facts(), &LemnosState::Answering);
+        assert_eq!(
+            found.attributes.get(OFFERS_REPORTED).map(String::as_str),
+            Some("no")
+        );
+        let caps = capabilities(&found);
+        assert_eq!(caps.offers(), atlas_types::Offers::NotReported);
+        assert_eq!(caps.reading(CapabilityKind::Slots), Reading::NotReported);
+        assert!(!caps.grants(CapabilityKind::Slots));
+        // Orion's own services are still granted: they do not depend on the offers.
+        assert!(caps.grants(CapabilityKind::Files));
+    }
+
+    #[test]
+    fn a_plain_orion_node_with_no_lemnos_facts_reports_that_it_offers_nothing() {
+        let found = id(Vec::new(), &LemnosState::Absent);
+        assert!(!found.attributes.contains_key(OFFERS_REPORTED));
+        let caps = capabilities(&found);
+        assert_eq!(caps.offers(), atlas_types::Offers::Reported);
+        assert_eq!(caps.reading(CapabilityKind::Slots), Reading::NotGranted);
+    }
+
+    #[test]
+    fn offers_that_are_read_are_granted_and_reported() {
+        let mut facts = lemnos_facts();
+        facts.push(fact("offers", "system.slots/1 system.reboot/1"));
+        let found = id(facts, &LemnosState::Answering);
+        assert!(!found.attributes.contains_key(OFFERS_REPORTED));
+        let caps = capabilities(&found);
+        assert_eq!(caps.reading(CapabilityKind::Slots), Reading::Granted);
+        assert_eq!(caps.offers(), atlas_types::Offers::Reported);
+    }
+
+    #[test]
+    fn twenty_contracts_whose_offers_are_dropped_are_not_reported_as_absent() {
+        // The board serves twenty contracts. At the locked revision its offers text is longer than
+        // the hello document carries, so the fact is dropped and does not come at all. The contracts
+        // are not "none": they are not reported.
+        assert!(
+            twenty_contracts().len() > MAX_TEXT,
+            "the offers text is over the cap"
+        );
+        let found = id(lemnos_facts(), &LemnosState::Answering);
+        assert_eq!(
+            capabilities(&found).reading(CapabilityKind::Slots),
+            Reading::NotReported
+        );
+    }
+
+    #[test]
+    fn offers_refused_as_too_long_are_not_reported_either() {
+        // A fact that is present but refused (here: over the cap) is not an answer either.
+        let mut facts = lemnos_facts();
+        facts.push(fact("offers", &twenty_contracts()));
+        let found = id(facts, &LemnosState::Answering);
+        assert!(found.attributes.contains_key("refused.offers"));
+        assert_eq!(
+            capabilities(&found).reading(CapabilityKind::Slots),
+            Reading::NotReported
+        );
     }
 }

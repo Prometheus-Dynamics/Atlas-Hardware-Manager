@@ -144,9 +144,22 @@ impl Shared {
             progress.rate_bytes_per_sec = rate;
             if matches!(
                 progress.stage,
-                Stage::Queued | Stage::WaitingForBoard { .. }
+                Stage::Queued | Stage::WaitingForBoard { .. } | Stage::Resending { .. }
             ) {
                 progress.stage = Stage::Sending;
+            }
+        });
+    }
+
+    /// The lease ran out while the session was silent: the board may have dropped the partial file,
+    /// so the file is sent again from its start. Stays until the board acknowledges bytes.
+    pub(crate) fn resending(&self, reason: String) {
+        self.progress.send_modify(|progress| {
+            if !matches!(
+                progress.stage,
+                Stage::Committed | Stage::Failed { .. } | Stage::Cancelled
+            ) {
+                progress.stage = Stage::Resending { reason };
             }
         });
     }
