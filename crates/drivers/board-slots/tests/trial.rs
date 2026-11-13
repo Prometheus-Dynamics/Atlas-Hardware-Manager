@@ -33,8 +33,10 @@ async fn start_board(name: &str) -> Rig {
     rig
 }
 
+/// The board's key, as the rig read it when it connected: the board is the same one whether or not
+/// its session is up at this moment.
 fn key(rig: &Rig) -> [u8; 32] {
-    rig.handle.node_key().expect("the board is connected")
+    rig.key
 }
 
 fn follower(rig: &Rig, recheck: Duration) -> Arc<Follower> {
@@ -447,6 +449,9 @@ async fn a_trial_is_followed_after_atlas_restarts_and_its_outcome_is_reported_on
     drop(before);
     rig.node.slot_clock_advance(30);
     leave(&rig);
+    // The session has to see the cut before the return is waited for: until it does, the handle
+    // still shows the connection from before the cut, and "back" would be read from that.
+    until("the board to be away", || rig.handle.node_key().is_none()).await;
     come_back(&rig);
     until("the board to be back", || rig.handle.node_key().is_some()).await;
 
