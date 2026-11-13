@@ -3,8 +3,11 @@
 # - Address 10.55.0.1/24: dev's host-side address, kept because the bench host's
 #   notes use it. It is data for the bring-up, not a design (decision 5: Lemnos
 #   builds the gadget from the board file later).
-# - DHCPServer: hands the host 10.55.0.2, which dev's udhcpd did; networkd does it
-#   now, so BusyBox's udhcpd is not carried.
+# - DHCPServer: hands the host 10.55.0.2. It is systemd-networkd's own server, part
+#   of networkd, so no BusyBox udhcpd applet is needed. The first ZERO 3E boot had
+#   no DHCP server running (the udhcpd applet was missing, and its lease directory
+#   sat on the read-only root). networkd keeps its state in /var, a tmpfs here.
+#   Not run on the board yet: check `networkctl status usb0` shows the server.
 [Match]
 Name=usb0
 

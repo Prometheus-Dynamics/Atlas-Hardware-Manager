@@ -1,0 +1,28 @@
+# PENDING Gaia local input. DEV ONLY; used only by rock-5c-bringup (in pending).
+# The bench SSH PUBLIC key is a BUILD INPUT: a named local file from outside the
+# repository, hashed into the key (Gaia's local input, `--input name=path`; not in
+# the locked Gaia rev 4abf626). Commit no key, and never a private key. Until the
+# input exists, `file` below is missing and the product does not validate: that is
+# why the product is pending. Why it exists: dropbear refuses blank passwords, so a
+# bring-up board needs a key to log in. It goes when Orion serves SSH on the board.
+version = 1
+name = "dev-bench-ssh-key"
+description = "DEV ONLY: the bench SSH public key as root's authorized_keys (bring-up only)."
+
+# The name below becomes the named local input (pending Gaia's rev).
+[[install]]
+from = { file = "authorized_keys" }
+to = "/root/.ssh/authorized_keys"
+mode = "0600"
+
+# Key only: dropbear's -s turns password logins off (its options file).
+[[install]]
+from = { file = "dropbear.default" }
+to = "/etc/default/dropbear"
+mode = "0644"
+
+# dropbear.service (installed by the dropbear package): enabled here so the
+# bring-up board takes the key at boot.
+[[services]]
+unit = "dropbear.service"
+enable = true
