@@ -37,3 +37,9 @@ size = "14910M"
 # Written over USB boot: the boot ROM takes the family's bootfiles and Atlas's loader writes the eMMC.
 [flash]
 methods = ["usb-boot"]
+
+# The Lemnos board file: lemnosd's /etc/lemnos/board.toml, written to Lemnos Q2d (lemnos-board.toml beside this
+# file). raze-lemnos-board installs it by this name, and check-devices.sh requires it of every product that
+# carries lemnosd.
+[descriptions]
+lemnos = "lemnos-board.toml"

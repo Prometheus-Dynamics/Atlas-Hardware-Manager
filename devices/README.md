@@ -15,6 +15,7 @@ devices/
   families/<family>/family.toml        one target shared by boards
   boards/<board>/board.toml            extends a family; keeps only what differs
   boards/<board>/app/app.json          app data for the board (see "App data" below)
+  boards/<board>/lemnos-board.toml     the board's Lemnos board file (see "The Lemnos board file" below)
   components/<component>/component.toml  one piece of software and what it installs
   products/<product>/product.toml      one image: its board, components, OS and recipe
   products/<product>/gaia.lock         the product's lock, written by `gaia lock` (see below)
@@ -66,7 +67,10 @@ is `deny_unknown_fields`, so a misspelled key is refused, not ignored. The examp
 - **family.toml, board.toml**: `version = 1`. A board may set `extends = "../../families/<f>/family.toml"`
   (the path is relative to the board file). Board tables override the family's, field by field.
   `[target]` (`arch`, `cpu`, `os`), `[sources.<name>]` (`git` + `ref`, or `path`), `[kernel]`
-  (`source`, `defconfig`, `fragments`, `device_tree`, `device_tree_dir`, `overlays`),
+  (`source`, `defconfig`, `fragments`, `device_tree`, `device_tree_dir`, `overlays`, `storage_drivers`:
+  the `CONFIG_` symbols a slot's storage needs built in, a list that a board's list replaces),
+  `[descriptions]` (`<name> = "<file>"`: files that describe the board to other programs, by name; see
+  "The Lemnos board file"),
   `[bootloader]` (`source`, `defconfig`, `fragments`, `[bootloader.blobs]`,
   `[bootloader.trusted_firmware]`), `[[firmware]]`, `[[partitions]]`, `[disk]`, `[flash]`.
   - `[[partitions]]` keys: `name`, `role`, `offset`, `size`, `type`, `in_table`, `content`. `role` is
@@ -248,10 +252,32 @@ Partition roles at this rev (for `role`): `bootloader`, `boot`, `esp`, `rootfs`,
 A bogus recipe name is refused by validate when it is given the recipes (`--recipes DIR`), and by plan always:
 `no recipe "nope"`.
 
+## The Lemnos board file
+
+A board's Lemnos board file is `boards/<board>/lemnos-board.toml`, and the board names it in its own
+`board.toml`: `[descriptions] lemnos = "lemnos-board.toml"` (the path is beside the board file). A component
+that installs it takes it by that name, `[[install]] from = { description = "lemnos" }`, to
+`/etc/lemnos/board.toml`. So the file an image carries is the one the board directory holds, by construction.
+Nothing names a Lemnos file by its path under a component any more (PR B26; before it, the Raze's copy lived at
+`components/raze-lemnos-board/files/board.toml`).
+
+- A product that carries `lemnosd` must resolve to one Lemnos board file: its board names `lemnos` and the file
+  exists. `scripts/check-devices.sh` refuses it otherwise, naming the product and the board (`lemnos_board_rule`
+  and its self-test). Gaia refuses an install whose description the board does not state, and a description file
+  that is not there, at validate or plan time (the wording is in `docs/prs/B26.md`).
+- A board that has no product carrying lemnosd does not name one. ZERO 3E's `lemnos-board.toml` is not named
+  (no product installs it); the ROCK 5C and ROCK 4D `lemnos-board.pending.toml` files are not named (they are not
+  usable yet, Lemnos Q2g).
+- `scripts/check-lemnos-gadget.py` and `scripts/check-board-ids.py` read the file through the board's
+  `[descriptions] lemnos` key and the component's description install, never through a component's copy.
+
 ## The Gaia pin
 
 `gaia.lock` is Atlas's, written by hand: a Gaia URL and a full commit. It is not Gaia's lock. The
-commit is `4509f6b74247f56594cb2667e701c5d1f7566498` (Gaia `next`'s head: #91 the usb-gadget-network component in its configfs NCM form, #89 flash-xz, #90 verified-on-put, #92 the check fix; before it `7db227f6648917434b14da4117150ad6ab007530` (Gaia `next`: PR #85 `gaia lock` resolves nothing a
+commit is `e1cc2951c726d21ce300e68fa1560d0ba77bacc6` (Gaia `next`'s head at PR B26: #98 `[generate]` (a component's
+tool writes files from the board's description; no product uses it yet), #97 board `[descriptions]` and the install
+that names one, #94 the gadget identity 1d6b:0103 with bcdDevice 0x0b00, #95 the slot kernel check, #96 Daedalus; before it
+`4509f6b74247f56594cb2667e701c5d1f7566498` (Gaia `next`'s head: #91 the usb-gadget-network component in its configfs NCM form, #89 flash-xz, #90 verified-on-put, #92 the check fix; before it `7db227f6648917434b14da4117150ad6ab007530` (Gaia `next`: PR #85 `gaia lock` resolves nothing a
 lock already holds and works offline for full-commit refs, #86 `gaia --version` prints the commit it was
 built from, #87 `--input NAME=PATH`, #88 the OS build split into kernel, bootloader and root filesystem
 builds with `gaia.tree.under`, and the `system` input). Before it: `f5a32f9fe242a7fb2686e48037b6e2fe23553646`,
@@ -259,6 +285,7 @@ builds with `gaia.tree.under`, and the `system` input). Before it: `f5a32f9fe242
 `10beed87d9591175305997a2ebf1f88e3f5e4b2b`. To move it: change `commit`, build Gaia at the new commit,
 and run `scripts/check-devices.sh --write-locks` with that binary (`GAIA_BIN=...`); the check refuses a
 binary that prints another commit or none. Commit the pin and every changed `gaia.lock` together.
+(The binary PR B26 used: `/mnt/ssd-samsung/atlas-next-scratch-gaia/bin-e1cc295/gaia`.)
 
 ## Product locks
 
@@ -359,12 +386,16 @@ configfs (`CONFIG_USB_CONFIGFS=y`, `CONFIG_USB_CONFIGFS_NCM=y`), and no legacy g
 because a built-in legacy gadget binds the controller before the addresses are set. The ROCK 5C and ROCK 4D
 bring-ups have no USB gadget (their USB ports are host ports).
 
+The bring-up gadget's identity is Gaia's at the pin: 1d6b:0103 with bcdDevice 0x0b00 (PR B26; at `4509f6b` it was
+1d6b:0104, a managed gadget's identity). `usb-ids.json` names the pair as `atlas-bringup-gadget`. The product locks
+take it through the `usb-gadget-network` component's Gaia source, which is pinned at the same commit as `gaia.lock`.
+
 ## Known limits at the pin
 
-These hold at Gaia `4509f6b`, the pin in `gaia.lock` (the items were checked at `7db227f`; not re-run at `4509f6b`). Items 1 and 2 were re-run only through the products: the
-sd-image products plan with the veritysetup stand-in and the Rust component with the bwrap stand-in, as at `aa987cc`;
-the refusals themselves were not re-tested at `7db227f`. Item 5 is carried from `aa987cc` and was not re-run. They lift
-when the pin moves.
+These hold at Gaia `e1cc295`, the pin in `gaia.lock` (PR B26; the items were checked at `7db227f` and carried to
+`e1cc295` by planning every product, not by re-running each refusal). Items 1 and 2 were re-run only through the products: the
+sd-image products plan with the veritysetup stand-in and the Rust component with the bwrap stand-in, as at `aa987cc`.
+Item 5 is carried from `aa987cc` and was not re-run. They lift when the pin moves.
 
 1. **`slot` and `sd-image` need `veritysetup`.** A product on either recipe cannot be planned where
    that tool is not on PATH (or passed with `--tool veritysetup=PATH`). The check passes a stand-in
@@ -373,7 +404,7 @@ when the pin moves.
 2. **`gaia plan` needs every tool a recipe names on PATH**, or passed with `--tool NAME=PATH`.
    Checked at aa987cc: a Rust component needs `bwrap` (the check passes a stand-in) and `rustc`; a
    Buildroot product needs `make`. `python` is needed only for a product with a python component.
-3. **The gaia binary's commit is checked.** `gaia --version` prints `gaia <version> (<commit>)` at `4509f6b`
+3. **The gaia binary's commit is checked.** `gaia --version` prints `gaia <version> (<commit>)` at `e1cc295`
    (and at `7db227f` and `f5a32f9`; PR #86); the check refuses a binary that prints another commit, `-dirty`, or no commit.
    `aa987cc` and older print no commit and are refused.
 4. **Gaia's `Cargo.lock` is untracked** at this commit (`git ls-files Cargo.lock` is empty at

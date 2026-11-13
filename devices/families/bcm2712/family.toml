@@ -20,6 +20,10 @@ source = "linux"
 defconfig = "bcm2712"
 # Built-in options the flasher needs (no modules in its image); each line says why (PR B14).
 fragments = ["assets/linux.fragment"]
+# The storage controller a slot boots from, built in (=y): the CM5 eMMC host (sdio1, brcm,bcm2712-sdhci).
+# assets/linux.fragment:65 sets CONFIG_MMC_SDHCI_BRCMSTB=y (the defconfig does too). Gaia reads this list only
+# under a kernel_contract, which B26 does not have yet: the list is exercised after the Lemnos move (PR B26).
+storage_drivers = ["CONFIG_MMC_SDHCI_BRCMSTB"]
 
 # The boot ROM's USB boot: the family's bootfiles (bootcode5.bin, bootmain and
 # the rest of the 2712 set) are what the loader serves. The EEPROM tool and

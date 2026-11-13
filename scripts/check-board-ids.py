@@ -2,11 +2,12 @@
 """The board id rule (PR B24): one string per board.
 
 A board's id is the directory under devices/boards/, and it must also be the Gaia board `name` (its
-board.toml), the Lemnos `[board] id` of each Lemnos board file (lemnos-board.toml, lemnos-board.pending.toml,
-and a component's files/board.toml named <board>-lemnos-board), and the one line of /etc/usb-gadget.family in
-a product whose image has a bring-up USB network (the gadget's addresses are derived from that line). A
-product-local board (a board inside a product directory) takes the id of the boards/ directory it stands for,
-so its name must still be one of those directories.
+board.toml), the Lemnos `[board] id` of each Lemnos board file (lemnos-board.toml and lemnos-board.pending.toml
+beside the board), and the one line of /etc/usb-gadget.family in a product whose image has a bring-up USB
+network (the gadget's addresses are derived from that line). The Lemnos board file an image carries is the one
+the board names under `[descriptions] lemnos` (PR B26): it is read through the board of each image, never
+through a component's copy. A product-local board (a board inside a product directory) takes the id of the
+boards/ directory it stands for, so its name must still be one of those directories.
 
 An id is frozen once an image has shipped: changing it changes the board's USB addresses, its identity key
 and the slots it accepts (devices/README.md).
@@ -38,6 +39,17 @@ def installs(component_dir):
     return load(path).get("install", []) if os.path.isfile(path) else []
 
 
+def lemnos_file(board_dir):
+    """The board's Lemnos board file under [descriptions] (its family's, when it extends one), or None."""
+    board = load(os.path.join(board_dir, "board.toml"))
+    names = board.get("descriptions")
+    if names is None and "extends" in board:
+        names = load(os.path.normpath(os.path.join(board_dir, board["extends"]))).get("descriptions")
+    if not names or "lemnos" not in names:
+        return None
+    return os.path.normpath(os.path.join(board_dir, names["lemnos"]))
+
+
 def check(root):
     problems = []
     boards = os.path.join(root, "devices", "boards")
@@ -57,18 +69,6 @@ def check(root):
                 continue  # a pending file with no [board] yet; its id is the directory's when written
             if table.get("id") != name:
                 problems.append(f"{os.path.relpath(lemnos, root)}: [board] id is {table.get('id')!r}, the board is {name!r}")
-
-    for component in sorted(glob.glob(os.path.join(root, "devices", "components", "*-lemnos-board"))):
-        board = os.path.basename(component)[: -len("-lemnos-board")]
-        file = os.path.join(component, "files", "board.toml")
-        if not os.path.isfile(file):
-            continue
-        if board not in board_names:
-            problems.append(f"{os.path.relpath(component, root)}: no board devices/boards/{board}/ for this Lemnos board file")
-            continue
-        table = load(file).get("board", {})
-        if table.get("id") != board:
-            problems.append(f"{os.path.relpath(file, root)}: [board] id is {table.get('id')!r}, the board is {board!r}")
 
     products = os.path.join(root, "devices", "products")
     for product_dir in sorted(glob.glob(os.path.join(products, "*"))):
@@ -94,6 +94,11 @@ def check(root):
             board_name = load(board_file).get("name")
             if board_name not in board_names:
                 problems.append(f"{rel}: image {image.get('name')!r} board name {board_name!r} is no devices/boards/ directory")
+            lemnos = lemnos_file(os.path.dirname(board_file))
+            if lemnos is not None and os.path.isfile(lemnos):
+                table = load(lemnos).get("board", {})
+                if table.get("id") != board_name:
+                    problems.append(f"{os.path.relpath(lemnos, root)}: [board] id is {table.get('id')!r}, the image's board is {board_name!r}")
             if network and not family_lines:
                 problems.append(f"{rel}: the USB network component is named but no component installs {FAMILY_TO}")
             for key, line in family_lines.items():
@@ -109,10 +114,14 @@ def write(root, path, text):
         handle.write(text)
 
 
-def fixture(root, name="alpha", name_in_file=None, lemnos_id=None, family="alpha", network=True):
+def fixture(root, name="alpha", name_in_file=None, lemnos_id=None, family="alpha", network=True, named_id=None):
     write(root, f"devices/boards/{name}/board.toml", f'version = 1\nname = "{name_in_file or name}"\n')
     if lemnos_id is not None:
         write(root, f"devices/boards/{name}/lemnos-board.pending.toml", f'[board]\nid = "{lemnos_id}"\n')
+    if named_id is not None:
+        write(root, f"devices/boards/{name}/board.toml",
+              f'version = 1\nname = "{name}"\n\n[descriptions]\nlemnos = "lemnos-board.toml"\n')
+        write(root, f"devices/boards/{name}/lemnos-board.toml", f'[board]\nid = "{named_id}"\n')
     write(root, "devices/components/fam/component.toml",
           'version = 1\nname = "fam"\n[[install]]\nfrom = { file = "files/usb-gadget.family" }\n'
           'to = "/etc/usb-gadget.family"\nmode = "0644"\n')
@@ -135,6 +144,8 @@ def self_test():
         ("a matching id passes", {}, []),
         ("a Gaia name that is not the directory is refused", {"name_in_file": "beta"}, ["name is 'beta'"]),
         ("a Lemnos id that is not the directory is refused", {"lemnos_id": "beta"}, ["[board] id is 'beta'"]),
+        ("a Lemnos file named by the board with another id is refused", {"named_id": "beta"}, ["[board] id is 'beta', the image's board is 'alpha'"]),
+        ("a Lemnos file named by the board with its own id passes", {"named_id": "alpha"}, []),
         ("a family line that is not the board is refused", {"family": "beta"}, ["is 'beta', the image's board is 'alpha'"]),
         ("a network with no family line is refused", {"family": None, "network": True}, ["no component installs"]),
     ]

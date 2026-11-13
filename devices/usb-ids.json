@@ -4,6 +4,7 @@
     "rpi-usb-boot-2712": { "state": "download", "vid": "0a5c", "pid": "2712", "name": "Raspberry Pi USB boot" },
     "rpi-storage-gadget": { "state": "storage", "vid": "0a5c", "pid": "0104", "name": "Raspberry Pi mass-storage gadget" },
     "atlas-board-gadget": { "state": "gadget", "vid": "1d6b", "pid": "0104", "name": "Atlas board USB gadget" },
+    "atlas-bringup-gadget": { "state": "gadget", "vid": "1d6b", "pid": "0103", "name": "Atlas bring-up USB network (Gaia NCM gadget)" },
     "rockchip-rk3566-maskrom": { "state": "download", "vid": "2207", "pid": "350a", "name": "Rockchip RK3566 maskrom" },
     "rockchip-rk3588-maskrom": { "state": "download", "vid": "2207", "pid": "350b", "name": "Rockchip RK3588 maskrom" },
     "rockchip-rk3576-maskrom": { "state": "download", "vid": "2207", "pid": "350e", "name": "Rockchip RK3576 maskrom" },

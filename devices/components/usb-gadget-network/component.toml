@@ -4,8 +4,12 @@
 # them from the source below. Only the unit that runs its init script is ours (files/).
 #
 # Why a wrapper: a product names a component by a path inside Atlas's own tree, so Gaia's example component
-# cannot be named from a product directly at Gaia 4509f6b; a component may install a file from a source, and
-# that is the form used here. The pin is Gaia 4509f6b (the commit devices/gaia.lock names).
+# cannot be named from a product directly by its own path; a component may install a file from a source, and
+# that is the form used here. The pin is Gaia e1cc295 (the commit devices/gaia.lock names).
+#
+# At e1cc295 the script presents Gaia's bring-up identity, 1d6b:0103 with bcdDevice 0x0b00 (Gaia 9b673f6, #94 gadget-identity). At
+# 4509f6b it presented 1d6b:0104, a managed gadget's identity (Lemnos's daemon), so the move to e1cc295 is what
+# gives the bring-up its own identity (PR B26; usb-ids.json names 1d6b:0103).
 #
 # The board id (/etc/usb-gadget.family) and the serial rule are the image's: see the product's own
 # usb-gadget-family component. Untested on board.
@@ -15,7 +19,7 @@ description = "Bring-up USB network: Gaia's configfs NCM gadget (pinned source),
 
 [sources.gaia]
 git = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-ref = "4509f6b74247f56594cb2667e701c5d1f7566498"
+ref = "e1cc2951c726d21ce300e68fa1560d0ba77bacc6"
 
 # Gaia's init script (run by the unit below; it is an init-style script, not a unit on its own).
 [[install]]

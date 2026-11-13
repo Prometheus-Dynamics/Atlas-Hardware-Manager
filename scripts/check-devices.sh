@@ -112,6 +112,80 @@ EOF
   return $rc
 }
 
+# The Lemnos board file rule (PR B26). A product whose components include lemnosd runs a daemon that reads
+# /etc/lemnos/board.toml, so the board it is built for must name its Lemnos board file under [descriptions]
+# (`lemnos = "lemnos-board.toml"`, beside the board.toml), and that file must exist. Zero names is refused here,
+# naming the product and the board. Gaia refuses, at plan time, an install that names a description the board
+# does not state, and a description file that does not exist; a product that carries lemnosd and installs
+# nothing from the description gets no such refusal, which is the case this rule covers. (A board names one
+# file per description name, so one name is one file.)
+# Prints the description's path, relative to the board's directory: the board's own [descriptions], else the
+# family it extends. Prints nothing when neither names it.
+lemnos_description() {
+  local file=$1 found fam
+  found=$(awk '
+    /^[[:space:]]*\[/ { sec = $0; gsub(/[[:space:]]/, "", sec); next }
+    sec == "[descriptions]" && /^[[:space:]]*lemnos[[:space:]]*=/ {
+      v = $0; sub(/^[^=]*=[[:space:]]*"/, "", v); sub(/".*$/, "", v); print v; exit
+    }
+  ' "$file")
+  if [[ -z $found ]]; then
+    fam=$({ grep -ho '^extends = "[^"]*"' "$file" || true; } | sed 's/^extends = "//; s/"$//' | head -1)
+    if [[ -n $fam && -f $(dirname "$file")/$fam ]]; then
+      found=$(lemnos_description "$(realpath -m "$(dirname "$file")/$fam")")
+    fi
+  fi
+  echo "$found"
+}
+
+# Prints a line naming the product and its board and returns 1 when the product carries lemnosd and its board
+# names no Lemnos board file, or names one that does not exist. Passes (prints nothing) otherwise.
+lemnos_board_rule() {  # <product.toml>
+  local product=$1 pdir pname board_rel board_file bname desc
+  pdir=$(dirname "$product"); pname=$(basename "$pdir")
+  board_rel=$({ grep -ho '"[^"]*board\.toml"' "$product" || true; } | tr -d '"' | head -1)
+  board_file=$(realpath -m "$pdir/$board_rel")
+  bname=$(basename "$(dirname "$board_file")")
+  desc=$(lemnos_description "$board_file")
+  if [[ -z $desc ]]; then
+    echo "product $pname (board $bname): carries lemnosd, which reads /etc/lemnos/board.toml, but its board names no Lemnos board file under [descriptions] (lemnos = \"lemnos-board.toml\")"
+    return 1
+  fi
+  if [[ ! -f $(dirname "$board_file")/$desc ]]; then
+    echo "product $pname (board $bname): carries lemnosd, and its board names the Lemnos board file $desc, which is not beside the board"
+    return 1
+  fi
+  return 0
+}
+
+# Proves the rule refuses a product whose board names no Lemnos board file, and one whose named file is missing,
+# and passes the real Raze product, on a scratch copy of devices/.
+lemnos_board_rule_self_test() {
+  local tmp rc=0 out prod
+  tmp=$(mktemp -d)
+  cp -a "$repo/devices" "$tmp/devices"
+  prod=$repo/devices/products/raze-base/product.toml
+  if ! out=$(lemnos_board_rule "$prod"); then
+    echo "check-devices: self-test: the Raze product no longer passes the Lemnos board file rule: $out" >&2; rc=1
+  fi
+  sed -i '/^\[descriptions\]$/,$d' "$tmp/devices/boards/raze/board.toml"
+  if out=$(lemnos_board_rule "$tmp/devices/products/raze-base/product.toml"); then
+    echo "check-devices: self-test: a lemnosd product whose board names no Lemnos board file was not refused" >&2; rc=1
+  elif [[ $out != *"product raze-base (board raze)"* || $out != *"no Lemnos board file"* ]]; then
+    echo "check-devices: self-test: the refusal does not name the product and board: $out" >&2; rc=1
+  fi
+  cp -a "$repo/devices/boards/raze/board.toml" "$tmp/devices/boards/raze/board.toml"
+  rm -f "$tmp/devices/boards/raze/lemnos-board.toml"
+  if out=$(lemnos_board_rule "$tmp/devices/products/raze-base/product.toml"); then
+    echo "check-devices: self-test: a lemnosd product whose named Lemnos board file is missing was not refused" >&2; rc=1
+  elif [[ $out != *"lemnos-board.toml, which is not beside the board"* ]]; then
+    echo "check-devices: self-test: the missing-file refusal does not name the file: $out" >&2; rc=1
+  fi
+  rm -rf "$tmp"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the Lemnos board file rule refuses a lemnosd product with no board file name or a missing file, and passes Raze"
+  return $rc
+}
+
 fixtures=$repo/devices/tests/fixtures
 
 if [[ $mode == self-test ]]; then
@@ -121,6 +195,7 @@ if [[ $mode == self-test ]]; then
     "$self" --root "$fixtures/$good" || { echo "check-devices: self-test: $good fixture did not pass" >&2; status=1; }
   done
   lemnos_rule_self_test || status=1
+  lemnos_board_rule_self_test || status=1
   echo "== broken fixture: must fail"
   out=$(mktemp)
   rc=0
@@ -533,6 +608,12 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
   if ! lemnos_msg=$(lemnos_two_revs "$committed"); then
     bad "$product: Lemnos is locked to more than one rev in this product, $lemnos_msg: every Lemnos component of a product must be locked to one rev"
   fi
+  # The Lemnos board file rule: a product that carries lemnosd names its board's Lemnos board file (PR B26).
+  if grep -q '/lemnosd/component\.toml"' "$product"; then
+    if ! lemnos_board_msg=$(lemnos_board_rule "$product"); then
+      bad "$product: $lemnos_board_msg"
+    fi
+  fi
   # A product whose components take a named input (`{ input = NAME }`) is planned with the input given;
   # gaia refuses an input that nothing uses, so only those products get it.
   plan_args=()
@@ -570,6 +651,7 @@ if [[ $root_given -eq 0 ]]; then
   fi
   rm -f "$out"
   lemnos_rule_self_test || die "self-check: the Lemnos one-rev rule no longer refuses two revs in one product"
+  lemnos_board_rule_self_test || die "self-check: the Lemnos board file rule no longer refuses a lemnosd product without a board file"
   slot_chain_self_test || die "self-check: the slot root chain check no longer refuses a module or a missing =y"
   # The version gate: a binary that prints another commit, or none, is refused, and the refusal names the pin.
   fake=$(mktemp -d)

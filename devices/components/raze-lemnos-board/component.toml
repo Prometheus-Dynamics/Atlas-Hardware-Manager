@@ -5,12 +5,14 @@ version = 1
 name = "raze-lemnos-board"
 description = "Raze board files for lemnosd: the i2c-dev module load, the USB power rule, the board file (Lemnos Q2d), and the gadget drop-in (R1d); locked to Lemnos d6b9361d"
 
-# /etc/lemnos/board.toml: the Raze's board file (files/board.toml), written to Lemnos Q2d, and locked to
-# Lemnos d6b9361d (L1, PR B23) with the rest of the product's Lemnos components.
+# /etc/lemnos/board.toml: the Raze's board file, written to Lemnos Q2d, and locked to Lemnos d6b9361d (L1,
+# PR B23) with the rest of the product's Lemnos components. The file is the BOARD's, not this component's: it
+# is boards/raze/lemnos-board.toml, named by boards/raze/board.toml under [descriptions] (PR B26). The install
+# takes it by that name, so the file the image carries is the one the board directory holds.
 # Its generated outputs come from `lemnos-ctl tree` on this file at build time.
 
 [[install]]
-from = { file = "files/board.toml" }
+from = { description = "lemnos" }
 to = "/etc/lemnos/board.toml"
 mode = "0644"
 
