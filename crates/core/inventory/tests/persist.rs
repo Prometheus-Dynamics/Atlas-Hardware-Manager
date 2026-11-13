@@ -70,7 +70,16 @@ fn a_saved_inventory_loads_back() {
     store.save(&sample()).unwrap();
 
     let (loaded, outcome) = store.load();
-    assert_eq!(outcome, LoadOutcome::Restored);
+    assert!(
+        matches!(
+            outcome,
+            LoadOutcome::Restored {
+                skipped_records: 0,
+                dropped_values: 0
+            }
+        ),
+        "{outcome:?}"
+    );
     let record = only_device(&loaded);
     assert_eq!(record.label.as_deref(), Some("cam"));
     assert_eq!(
@@ -98,7 +107,16 @@ fn an_older_file_without_newer_fields_loads() {
     let scratch = Scratch::new("older");
     fs::write(scratch.file(), br#"{"version":0,"devices":[]}"#).unwrap();
     let (inventory, outcome) = JsonFileStore::new(scratch.file()).load();
-    assert_eq!(outcome, LoadOutcome::Restored);
+    assert!(
+        matches!(
+            outcome,
+            LoadOutcome::Restored {
+                skipped_records: 0,
+                dropped_values: 0
+            }
+        ),
+        "{outcome:?}"
+    );
     assert!(inventory.all().is_empty());
 }
 
@@ -121,12 +139,23 @@ fn a_corrupt_file_is_set_aside_and_the_app_starts_empty() {
 }
 
 #[test]
-fn a_file_from_a_newer_atlas_is_set_aside_not_read() {
+fn a_file_from_a_newer_atlas_loads_what_this_build_understands() {
     let scratch = Scratch::new("newer");
-    fs::write(scratch.file(), br#"{"version":99,"devices":[]}"#).unwrap();
+    fs::write(
+        scratch.file(),
+        br#"{"version":99,"devices":[],"future-field":true}"#,
+    )
+    .unwrap();
     let (inventory, outcome) = JsonFileStore::new(scratch.file()).load();
     assert!(inventory.all().is_empty());
-    assert!(matches!(outcome, LoadOutcome::Reset { aside: Some(_), .. }));
+    assert_eq!(
+        outcome,
+        LoadOutcome::Restored {
+            skipped_records: 0,
+            dropped_values: 0
+        }
+    );
+    assert!(scratch.file().exists(), "a readable file is not set aside");
 }
 
 #[test]
@@ -138,7 +167,16 @@ fn a_crash_mid_save_leaves_the_last_good_file() {
     fs::write(scratch.0.join("inventory.json.tmp"), b"partial").unwrap();
 
     let (loaded, outcome) = store.load();
-    assert_eq!(outcome, LoadOutcome::Restored);
+    assert!(
+        matches!(
+            outcome,
+            LoadOutcome::Restored {
+                skipped_records: 0,
+                dropped_values: 0
+            }
+        ),
+        "{outcome:?}"
+    );
     assert_eq!(only_device(&loaded).label.as_deref(), Some("cam"));
 
     store.save(&loaded).unwrap();
@@ -157,4 +195,120 @@ fn the_power_cycle_survives_a_restart() {
     let (loaded, _) = store.load();
     assert_eq!(loaded.power_cycles("robot-a").len(), 1);
     assert_eq!(loaded.power_cycles("robot-a")[0].ended_ms, Some(6_000));
+}
+
+/// Saves a sample, then edits its JSON, the way a newer Atlas would have
+/// written it.
+fn save_then_edit(scratch: &Scratch, edit: impl FnOnce(&mut serde_json::Value)) {
+    let store = JsonFileStore::new(scratch.file());
+    let mut inventory = sample();
+    inventory.observe(
+        Identity {
+            key: DeviceKey::new("sample-soc", "2000beef"),
+            model: "sample-board".into(),
+            state: atlas_types::DeviceState::Running,
+            versions: BTreeMap::new(),
+            name: None,
+            link: LinkId::new("eth:enp3s0"),
+            address: "10.53.38.12".into(),
+            attributes: BTreeMap::new(),
+        },
+        LinkKind::Ethernet,
+        CapabilitySet::new(),
+        1_000,
+    );
+    store.save(&inventory).unwrap();
+    let mut json: serde_json::Value =
+        serde_json::from_slice(&fs::read(scratch.file()).unwrap()).unwrap();
+    edit(&mut json);
+    fs::write(scratch.file(), serde_json::to_vec(&json).unwrap()).unwrap();
+}
+
+#[test]
+fn unknown_values_inside_a_record_drop_only_those_values() {
+    let scratch = Scratch::new("unknown-values");
+    save_then_edit(&scratch, |json| {
+        let device = &mut json["devices"][0];
+        device["capabilities"]["kinds"] = serde_json::json!(["update", "from-the-future"]);
+        device["links"][0]["kind"] = serde_json::json!("from-the-future");
+        device["history"][0]["kind"] = serde_json::json!("from-the-future");
+    });
+
+    let (loaded, outcome) = JsonFileStore::new(scratch.file()).load();
+    assert_eq!(
+        outcome,
+        LoadOutcome::Restored {
+            skipped_records: 0,
+            dropped_values: 3
+        }
+    );
+    let record = loaded
+        .get(&DeviceKey::new("sample-soc", "1000abcd"))
+        .unwrap();
+    assert!(
+        record
+            .capabilities
+            .grants(atlas_types::CapabilityKind::Update)
+    );
+    assert!(
+        record.links.is_empty(),
+        "the one link was of an unknown kind"
+    );
+    assert_eq!(
+        record.history.len(),
+        1,
+        "only the unknown history entry is dropped"
+    );
+    assert_eq!(
+        record.label.as_deref(),
+        Some("cam"),
+        "the rest of the record is kept"
+    );
+    assert_eq!(loaded.all().len(), 2, "the file is not set aside");
+}
+
+#[test]
+fn an_unreadable_record_costs_only_that_record() {
+    let scratch = Scratch::new("unknown-state");
+    save_then_edit(&scratch, |json| {
+        json["devices"][1]["identity"]["state"] = serde_json::json!("warp-drive");
+    });
+
+    let (loaded, outcome) = JsonFileStore::new(scratch.file()).load();
+    assert_eq!(
+        outcome,
+        LoadOutcome::Restored {
+            skipped_records: 1,
+            dropped_values: 0
+        }
+    );
+    assert!(
+        loaded
+            .get(&DeviceKey::new("sample-soc", "1000abcd"))
+            .is_some()
+    );
+    assert!(
+        loaded
+            .get(&DeviceKey::new("sample-soc", "2000beef"))
+            .is_none()
+    );
+    assert!(scratch.file().exists(), "a readable file is not set aside");
+}
+
+#[test]
+fn an_unknown_robot_or_alias_value_costs_only_itself() {
+    let scratch = Scratch::new("unknown-alias");
+    save_then_edit(&scratch, |json| {
+        json["aliases"] = serde_json::json!([{"alias": 5}]);
+        json["robots"] = serde_json::json!([{"name": 7}]);
+    });
+    let (loaded, outcome) = JsonFileStore::new(scratch.file()).load();
+    assert_eq!(
+        outcome,
+        LoadOutcome::Restored {
+            skipped_records: 0,
+            dropped_values: 2
+        }
+    );
+    assert_eq!(loaded.all().len(), 2);
 }

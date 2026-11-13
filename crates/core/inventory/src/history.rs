@@ -23,6 +23,8 @@ pub enum HistoryKind {
     PowerCycle,
     /// The user changed its label.
     Label,
+    /// Another key for this board was folded into it, or unfolded again.
+    Folded,
 }
 
 /// One line of a device's history.

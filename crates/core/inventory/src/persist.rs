@@ -4,14 +4,19 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use atlas_types::CapabilityKind;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-use crate::inventory::{Inventory, PowerCycle};
-use crate::record::DeviceRecord;
+use crate::history::HistoryEntry;
+use crate::inventory::{AliasEntry, Inventory, PowerCycle};
+use crate::record::{DeviceRecord, LinkSighting};
 use crate::robots::Robot;
 
-/// The format written now. Files without a version, or with an older one,
-/// load: missing fields take their defaults.
+/// The format written now. A file without a version, or with an older one,
+/// loads with defaults for missing fields. A newer one loads as far as this
+/// build understands it: unknown values are dropped (see [`LoadOutcome`]).
 pub const FORMAT_VERSION: u32 = 1;
 
 /// What loading found. Loading never fails: the app always gets an
@@ -20,10 +25,17 @@ pub const FORMAT_VERSION: u32 = 1;
 pub enum LoadOutcome {
     /// No file yet. The inventory starts empty.
     Fresh,
-    /// The saved inventory was read.
-    Restored,
-    /// The file could not be used. The inventory starts empty. The file was
-    /// moved to `aside` when it could be, so nothing it held is lost.
+    /// The saved inventory was read. `skipped_records` whole records were
+    /// dropped because they could not be read at all (for example a device
+    /// state this build does not know). `dropped_values` unknown values
+    /// inside kept records were dropped: capability kinds, link kinds and
+    /// history kinds. Everything else was kept.
+    Restored {
+        skipped_records: usize,
+        dropped_values: usize,
+    },
+    /// The file could not be used at all. The inventory starts empty. The
+    /// file was moved to `aside` when it could be, so nothing it held is lost.
     Reset {
         reason: String,
         aside: Option<PathBuf>,
@@ -34,18 +46,21 @@ pub enum LoadOutcome {
 struct Saved {
     version: u32,
     devices: Vec<DeviceRecord>,
+    aliases: Vec<AliasEntry>,
     robots: Vec<Robot>,
     power_cycles: BTreeMap<String, Vec<PowerCycle>>,
 }
 
+/// The file's top level. Each record, alias and robot is read on its own, so
+/// one value this build does not know costs that value and nothing else.
 #[derive(Deserialize)]
 struct Loaded {
     #[serde(default)]
-    version: u32,
+    devices: Vec<Value>,
     #[serde(default)]
-    devices: Vec<DeviceRecord>,
+    aliases: Vec<Value>,
     #[serde(default)]
-    robots: Vec<Robot>,
+    robots: Vec<Value>,
     #[serde(default)]
     power_cycles: BTreeMap<String, Vec<PowerCycle>>,
 }
@@ -86,7 +101,7 @@ impl JsonFileStore {
             }
         };
         match parse(&data) {
-            Ok(inventory) => (inventory, LoadOutcome::Restored),
+            Ok(loaded) => loaded,
             Err(reason) => {
                 let aside = self.set_aside();
                 (Inventory::new(), LoadOutcome::Reset { reason, aside })
@@ -105,10 +120,11 @@ impl JsonFileStore {
         if let Some(parent) = parent {
             fs::create_dir_all(parent)?;
         }
-        let (devices, robots, power_cycles) = inventory.to_parts();
+        let (devices, aliases, robots, power_cycles) = inventory.to_parts();
         let data = serde_json::to_vec(&Saved {
             version: FORMAT_VERSION,
             devices,
+            aliases,
             robots,
             power_cycles,
         })
@@ -147,19 +163,70 @@ impl JsonFileStore {
     }
 }
 
-fn parse(data: &[u8]) -> Result<Inventory, String> {
+fn parse(data: &[u8]) -> Result<(Inventory, LoadOutcome), String> {
     let loaded: Loaded = serde_json::from_slice(data).map_err(|error| error.to_string())?;
-    if loaded.version > FORMAT_VERSION {
-        return Err(format!(
-            "format version {} is newer than this Atlas reads ({FORMAT_VERSION})",
-            loaded.version
-        ));
+    let mut dropped_values = 0;
+    let mut skipped_records = 0;
+
+    let mut devices = Vec::new();
+    for value in loaded.devices {
+        match read_record(value, &mut dropped_values) {
+            Some(record) => devices.push(record),
+            None => skipped_records += 1,
+        }
     }
-    Ok(Inventory::from_parts(
-        loaded.devices,
-        loaded.robots,
-        loaded.power_cycles,
+    let aliases = read_each::<AliasEntry>(loaded.aliases, &mut dropped_values);
+    let robots = read_each::<Robot>(loaded.robots, &mut dropped_values);
+
+    let inventory = Inventory::from_parts(devices, aliases, robots, loaded.power_cycles);
+    Ok((
+        inventory,
+        LoadOutcome::Restored {
+            skipped_records,
+            dropped_values,
+        },
     ))
+}
+
+/// Reads one record. Unknown capability kinds, link kinds and history kinds
+/// are dropped from it and counted. Returns `None` when the record still
+/// cannot be read (an unknown device state, for example).
+fn read_record(mut value: Value, dropped: &mut usize) -> Option<DeviceRecord> {
+    if let Some(kinds) = value.pointer_mut("/capabilities/kinds") {
+        retain_known::<CapabilityKind>(kinds, dropped);
+    }
+    if let Some(links) = value.get_mut("links") {
+        retain_known::<LinkSighting>(links, dropped);
+    }
+    if let Some(history) = value.get_mut("history") {
+        retain_known::<HistoryEntry>(history, dropped);
+    }
+    serde_json::from_value(value).ok()
+}
+
+/// Reads each value of a list, dropping and counting the ones that do not
+/// read.
+fn read_each<T: DeserializeOwned>(values: Vec<Value>, dropped: &mut usize) -> Vec<T> {
+    values
+        .into_iter()
+        .filter_map(|value| match serde_json::from_value(value) {
+            Ok(item) => Some(item),
+            Err(_) => {
+                *dropped += 1;
+                None
+            }
+        })
+        .collect()
+}
+
+/// Keeps the items of a JSON array that read as `T`; counts the rest.
+fn retain_known<T: DeserializeOwned>(list: &mut Value, dropped: &mut usize) {
+    let Some(items) = list.as_array_mut() else {
+        return;
+    };
+    let before = items.len();
+    items.retain(|item| serde_json::from_value::<T>(item.clone()).is_ok());
+    *dropped += before - items.len();
 }
 
 #[cfg(unix)]

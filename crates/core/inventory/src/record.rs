@@ -128,6 +128,40 @@ impl DeviceRecord {
             || link_rank(kind) < link_rank(&followed.kind)
     }
 
+    /// Takes in the links, history and details of a record folded into this
+    /// one. This record's identity and capabilities stay.
+    pub(crate) fn absorb(&mut self, old: DeviceRecord) {
+        for sighting in old.links {
+            match self
+                .links
+                .iter_mut()
+                .find(|mine| mine.link == sighting.link)
+            {
+                Some(mine) if mine.last_seen_ms >= sighting.last_seen_ms => {}
+                Some(mine) => *mine = sighting,
+                None => self.links.push(sighting),
+            }
+        }
+        if old.presence == Presence::Online {
+            self.presence = Presence::Online;
+        }
+        self.first_seen_ms = self.first_seen_ms.min(old.first_seen_ms);
+        self.last_seen_ms = self.last_seen_ms.max(old.last_seen_ms);
+        if self.label.is_none() {
+            self.label = old.label;
+        }
+        if self.robot.is_none() {
+            self.robot = old.robot;
+        }
+        let mut merged = std::mem::take(&mut self.history);
+        merged.extend(old.history);
+        // Stable: entries of one instant keep their order.
+        merged.sort_by_key(|entry| entry.at_ms);
+        let excess = merged.len().saturating_sub(HISTORY_LIMIT);
+        merged.drain(..excess);
+        self.history = merged;
+    }
+
     pub(crate) fn push_history(&mut self, at_ms: u64, kind: HistoryKind, message: String) {
         self.history.push(HistoryEntry {
             at_ms,

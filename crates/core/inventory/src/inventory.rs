@@ -35,8 +35,21 @@ pub struct PowerCycle {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Inventory {
     devices: BTreeMap<DeviceKey, DeviceRecord>,
+    /// Folded keys: alias to the record it was folded into. Always points at
+    /// a record that exists.
+    aliases: BTreeMap<DeviceKey, DeviceKey>,
     robots: BTreeMap<String, Robot>,
     power_cycles: BTreeMap<String, Vec<PowerCycle>>,
+}
+
+/// Each robot's power cycles, by robot name.
+pub(crate) type PowerCycles = BTreeMap<String, Vec<PowerCycle>>;
+
+/// One folded key, as saved.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct AliasEntry {
+    pub(crate) alias: DeviceKey,
+    pub(crate) into: DeviceKey,
 }
 
 impl Inventory {
@@ -57,7 +70,9 @@ impl Inventory {
         capabilities: CapabilitySet,
         now_ms: u64,
     ) -> Outcome {
-        let key = identity.key.clone();
+        let mut identity = identity;
+        let key = self.resolve(&identity.key);
+        identity.key = key.clone();
         let Some(record) = self.devices.get_mut(&key) else {
             let record = DeviceRecord::new(identity, link_kind, capabilities, now_ms);
             self.devices.insert(key, record);
@@ -114,6 +129,7 @@ impl Inventory {
     /// Marks each online device missing from `seen` as absent, and returns
     /// them. `seen` holds every key answered on any link in this scan.
     pub fn mark_absent(&mut self, seen: &BTreeSet<DeviceKey>, now_ms: u64) -> Vec<DeviceKey> {
+        let seen: BTreeSet<DeviceKey> = seen.iter().map(|key| self.resolve(key)).collect();
         let mut gone = Vec::new();
         for (key, record) in &mut self.devices {
             if record.presence == Presence::Online && !seen.contains(key) {
@@ -128,7 +144,8 @@ impl Inventory {
     /// Sets or clears the user's label for a device. Returns `false` when the
     /// device is unknown.
     pub fn set_label(&mut self, key: &DeviceKey, label: Option<String>, now_ms: u64) -> bool {
-        let Some(record) = self.devices.get_mut(key) else {
+        let key = self.resolve(key);
+        let Some(record) = self.devices.get_mut(&key) else {
             return false;
         };
         let message = match &label {
@@ -149,7 +166,8 @@ impl Inventory {
         robot: Option<String>,
         now_ms: u64,
     ) -> bool {
-        let Some(record) = self.devices.get_mut(key) else {
+        let key = self.resolve(key);
+        let Some(record) = self.devices.get_mut(&key) else {
             return false;
         };
         let message = match &robot {
@@ -262,11 +280,75 @@ impl Inventory {
 
     /// Removes a device the user no longer wants remembered.
     pub fn forget(&mut self, key: &DeviceKey) -> Option<DeviceRecord> {
-        self.devices.remove(key)
+        let key = self.resolve(key);
+        self.aliases.retain(|_, into| *into != key);
+        self.devices.remove(&key)
     }
 
     pub fn get(&self, key: &DeviceKey) -> Option<&DeviceRecord> {
-        self.devices.get(key)
+        self.devices.get(&self.resolve(key))
+    }
+
+    /// The key a sighting under `key` lands on: `key` itself, or the record
+    /// it was folded into.
+    pub fn resolve(&self, key: &DeviceKey) -> DeviceKey {
+        self.aliases
+            .get(key)
+            .cloned()
+            .unwrap_or_else(|| key.clone())
+    }
+
+    /// Folded keys and the record each one now lands on.
+    pub fn aliases(&self) -> Vec<(&DeviceKey, &DeviceKey)> {
+        self.aliases.iter().collect()
+    }
+
+    /// Folds the record under `alias` into the record under `into`, for one
+    /// board seen under two keys (a boot ROM that cannot report the running
+    /// board's serial, for example). The alias record's links and history
+    /// move to `into`; the alias is remembered, so a later sighting under it
+    /// updates `into`. Who decides to fold is the caller's.
+    ///
+    /// Returns `false`, changing nothing, when `alias` is unknown, already
+    /// folded, is `into` itself, or `into` is unknown.
+    pub fn fold(&mut self, alias: &DeviceKey, into: &DeviceKey, now_ms: u64) -> bool {
+        let into = self.resolve(into);
+        if alias == &into
+            || self.aliases.contains_key(alias)
+            || !self.devices.contains_key(alias)
+            || !self.devices.contains_key(&into)
+        {
+            return false;
+        }
+        let Some(old) = self.devices.remove(alias) else {
+            return false;
+        };
+        let Some(target) = self.devices.get_mut(&into) else {
+            return false;
+        };
+        target.absorb(old);
+        target.push_history(now_ms, HistoryKind::Folded, format!("folded in {alias}"));
+        for landed in self.aliases.values_mut() {
+            if landed == alias {
+                landed.clone_from(&into);
+            }
+        }
+        self.aliases.insert(alias.clone(), into);
+        true
+    }
+
+    /// Undoes a fold: a later sighting under `alias` makes a new record.
+    /// What was already moved stays on the record it landed on; history
+    /// cannot be split back, so the new record starts with no history.
+    /// Returns `false` when `alias` is not folded.
+    pub fn unfold(&mut self, alias: &DeviceKey, now_ms: u64) -> bool {
+        let Some(into) = self.aliases.remove(alias) else {
+            return false;
+        };
+        if let Some(record) = self.devices.get_mut(&into) {
+            record.push_history(now_ms, HistoryKind::Folded, format!("unfolded {alias}"));
+        }
+        true
     }
 
     /// Every record, in key order.
@@ -284,7 +366,7 @@ impl Inventory {
 
     /// The health of one device at `now_ms`, or `None` when it is unknown.
     pub fn health(&self, key: &DeviceKey, now_ms: u64) -> Option<Health> {
-        let record = self.devices.get(key)?;
+        let record = self.devices.get(&self.resolve(key))?;
         let cycles = record
             .robot
             .as_deref()
@@ -301,18 +383,30 @@ impl Inventory {
             .collect()
     }
 
+    /// Builds an inventory from saved parts. Aliases that point at no record,
+    /// or at themselves, are dropped.
     pub(crate) fn from_parts(
         devices: Vec<DeviceRecord>,
+        aliases: Vec<AliasEntry>,
         robots: Vec<Robot>,
-        power_cycles: BTreeMap<String, Vec<PowerCycle>>,
+        power_cycles: PowerCycles,
     ) -> Self {
         // Nothing is online until a scan sees it again.
-        let devices = devices
+        let devices: BTreeMap<DeviceKey, DeviceRecord> = devices
             .into_iter()
             .map(|mut record| {
                 record.presence = Presence::Offline;
                 (record.key.clone(), record)
             })
+            .collect();
+        let aliases = aliases
+            .into_iter()
+            .filter(|entry| {
+                entry.alias != entry.into
+                    && !devices.contains_key(&entry.alias)
+                    && devices.contains_key(&entry.into)
+            })
+            .map(|entry| (entry.alias, entry.into))
             .collect();
         let robots = robots
             .into_iter()
@@ -320,20 +414,22 @@ impl Inventory {
             .collect();
         Self {
             devices,
+            aliases,
             robots,
             power_cycles,
         }
     }
 
-    pub(crate) fn to_parts(
-        &self,
-    ) -> (
-        Vec<DeviceRecord>,
-        Vec<Robot>,
-        BTreeMap<String, Vec<PowerCycle>>,
-    ) {
+    pub(crate) fn to_parts(&self) -> (Vec<DeviceRecord>, Vec<AliasEntry>, Vec<Robot>, PowerCycles) {
         (
             self.devices.values().cloned().collect(),
+            self.aliases
+                .iter()
+                .map(|(alias, into)| AliasEntry {
+                    alias: alias.clone(),
+                    into: into.clone(),
+                })
+                .collect(),
             self.robots.values().cloned().collect(),
             self.power_cycles.clone(),
         )
