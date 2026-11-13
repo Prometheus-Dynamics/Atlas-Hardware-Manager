@@ -43,8 +43,9 @@ use crate::slots::{NewSlot, State, Status, code, valid_id};
 
 /// The name the simulated board gives itself.
 pub const NODE_NAME: &str = "board";
-/// The offers a running sim node makes: the kinds it really serves (no shell, no gateway).
-const OFFERS: &str = "update,slots,logs,actions,status,telemetry,files,self-test";
+/// The contract ids of the devices a running sim node runs (Lemnos's names for them): its
+/// identity, its reboot and its slots.
+const OFFERS: &[&str] = &["system.identity/1", "system.reboot/1", "system.slots/1"];
 /// How often the node logic moves runs on and publishes readings.
 const TICK: Duration = Duration::from_millis(20);
 /// The one overall deadline for anything the sim waits on: a call's outcome, a run's end, a
@@ -104,51 +105,72 @@ impl Mode {
     }
 }
 
-/// The facts the node publishes about itself, as a board's own program publishes them.
+/// The facts the node publishes about itself, as a board's own program publishes them (see
+/// [`names`] for each fact's owner). An empty text is a fact the device does not give: it is not
+/// published, so Atlas reads it as not reported.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Hello {
+    /// `hello.family`: the board's name, `[a-z0-9-]`.
     pub family: String,
+    /// `hello.serial`: lowercase hex, 8 to 32 digits.
     pub serial: String,
+    /// `hello.state`, Orion's own fact: the mode the node is in.
     pub mode: Mode,
+    /// `hello.model`.
     pub model: String,
-    /// The name stored on the node. Not published when `None`.
-    pub name: Option<String>,
-    /// The version of the node's own OS, published as `version.os`.
+    /// `hello.version.slot`: the running slot. It is written when the node starts, the way a boot
+    /// writes it, and no confirm changes it.
+    pub slot: String,
+    /// `hello.version.product`.
+    pub product: String,
+    /// `hello.version.os`: the running slot's version.
     pub os_version: String,
-    /// Comma-separated capability kinds the node offers.
-    pub offers: String,
+    /// `hello.version.lemnos`: the daemon's version.
+    pub lemnos_version: String,
+    /// `hello.offers`: the contract ids of the devices running now. Published sorted, distinct
+    /// and space-separated; changing this list is a live change, not a restart.
+    pub offers: Vec<String>,
 }
 
 impl Default for Hello {
-    /// A running simulated node: one of the simulated family, with the offers it serves.
+    /// A running simulated node: a simulated board with its slot, product and Lemnos, offering the
+    /// contracts its devices run.
     fn default() -> Self {
         Self {
             family: "simulated".into(),
-            serial: "SIM-RUN-1".into(),
+            serial: "0123456789abcdef".into(),
             mode: Mode::Running,
             model: "simulated-board".into(),
-            name: Some("sim".into()),
+            slot: "slot-1".into(),
+            product: "simulated-product".into(),
             os_version: "1.0.0".into(),
-            offers: OFFERS.into(),
+            lemnos_version: "1.0.0".into(),
+            offers: OFFERS.iter().map(|offer| (*offer).to_string()).collect(),
         }
     }
 }
 
 impl Hello {
-    /// Each hello topic and the text it carries.
+    /// Each hello topic that is published, and the text it carries. An empty text is left out.
     fn facts(&self) -> Vec<(&'static str, String)> {
-        let mut facts = vec![
+        let mut offers = self.offers.clone();
+        offers.sort();
+        offers.dedup();
+        let facts = [
+            (names::HELLO_STATE, self.mode.word().to_string()),
             (names::HELLO_FAMILY, self.family.clone()),
             (names::HELLO_SERIAL, self.serial.clone()),
-            (names::HELLO_STATE, self.mode.word().to_string()),
             (names::HELLO_MODEL, self.model.clone()),
+            (names::HELLO_VERSION_SLOT, self.slot.clone()),
+            (names::HELLO_VERSION_PRODUCT, self.product.clone()),
             (names::HELLO_VERSION_OS, self.os_version.clone()),
-            (names::HELLO_OFFERS, self.offers.clone()),
+            (names::HELLO_VERSION_LEMNOS, self.lemnos_version.clone()),
+            (names::HELLO_OFFERS, offers.join(" ")),
         ];
-        if let Some(name) = &self.name {
-            facts.push((names::HELLO_NAME, name.clone()));
-        }
         facts
+            .into_iter()
+            .filter(|(_, value)| !value.is_empty())
+            .collect()
     }
 }
 
@@ -183,6 +205,9 @@ fn offered(kind: &Kind, name: &str) -> bool {
 #[derive(Clone, Debug)]
 struct Shared {
     model: Arc<Mutex<Model>>,
+    /// The hello facts as they are now. A test changes them with [`SimNode::change_hello`]; the
+    /// node logic publishes the change. Only a node with Lemnos publishes them.
+    hello: Arc<Mutex<Hello>>,
     script: Arc<Mutex<Script>>,
     stop: Arc<AtomicBool>,
     restart: Arc<AtomicBool>,
@@ -231,8 +256,13 @@ impl SimNode {
     pub fn start_with(dir: &Path, kind: &Kind, port: Option<u16>) -> Result<Self, String> {
         std::fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
         let board = Arc::new(Board::start_in(dir, Security::Off, port));
+        let hello = match kind {
+            Kind::WithLemnos(hello) => hello.clone(),
+            Kind::Plain => Hello::default(),
+        };
         let shared = Shared {
             model: Arc::new(Mutex::new(Model::new())),
+            hello: Arc::new(Mutex::new(hello)),
             script: Arc::new(Mutex::new(Script::new())),
             stop: Arc::new(AtomicBool::new(false)),
             restart: Arc::new(AtomicBool::new(false)),
@@ -333,6 +363,14 @@ impl SimNode {
         self.shared.lemnos_down.store(false, Ordering::SeqCst);
     }
 
+    /// Changes the hello facts while the node runs. A changed value is published as it changes,
+    /// on the same session. A fact that appears or goes away changes the set of topics, so the
+    /// node's own session is published again: its topics and actions are said again on a new
+    /// session, and a client sees a short gap in them. A client's own connection is not dropped.
+    pub fn change_hello(&self, change: impl FnOnce(&mut Hello)) {
+        change(&mut lock(&self.shared.hello));
+    }
+
     /// The files the comm core has received and committed, by destination. A bundle pushed for
     /// `install_file` is here until its job ends.
     #[must_use]
@@ -371,15 +409,34 @@ fn serve(
     board: &Arc<Board>,
     ready: &mpsc::Sender<Result<(), String>>,
 ) {
-    match Node::open(socket, shared.clone(), kind, Arc::clone(board)) {
-        Ok(mut node) => {
-            let _ = ready.send(Ok(()));
-            node.run();
-        }
-        Err(error) => {
-            let _ = ready.send(Err(error));
+    let mut ready = Some(ready);
+    loop {
+        match Node::open(socket, shared.clone(), kind, Arc::clone(board)) {
+            Ok(mut node) => {
+                if let Some(ready) = ready.take() {
+                    let _ = ready.send(Ok(()));
+                }
+                node.run();
+                // A fact came or went: the session is published again, on a new session.
+                if !node.reopen || shared.stop.load(Ordering::SeqCst) {
+                    return;
+                }
+            }
+            Err(error) => {
+                if let Some(ready) = ready.take() {
+                    let _ = ready.send(Err(error));
+                }
+                return;
+            }
         }
     }
+}
+
+/// One hello topic the node publishes, and the text it last carried.
+struct HelloTopic {
+    name: &'static str,
+    publisher: Publisher,
+    value: String,
 }
 
 /// A timed run the node is moving along.
@@ -415,7 +472,11 @@ struct Node {
     /// Readings, on a node with Lemnos only.
     readings: Option<Publisher>,
     /// The hello facts, one topic each, on a node with Lemnos only. Kept alive for the session.
-    _hello: Vec<Publisher>,
+    hello: Vec<HelloTopic>,
+    /// Whether the node publishes hello facts (a node with Lemnos).
+    live: bool,
+    /// Set when the topics must be published again on a new session (a fact came or went).
+    reopen: bool,
     active: Vec<Run>,
     install: Option<Install>,
     started: Instant,
@@ -459,13 +520,15 @@ impl Node {
             .map_err(|e| e.to_string())?;
 
         // The slot table knows its board: the hello `family` fact of a node with Lemnos.
-        if let Kind::WithLemnos(hello) = kind {
+        let live = matches!(kind, Kind::WithLemnos(_));
+        let hello = lock(&shared.hello).clone();
+        if live {
             lock(&shared.model).slots.board.clone_from(&hello.family);
         }
         // Only a node with Lemnos has readings, a hardware description and hello facts.
         let mut readings = None;
         let mut hello_topics = Vec::new();
-        if let Kind::WithLemnos(hello) = kind {
+        if live {
             readings = Some(
                 orion
                     .declare(&TopicDecl {
@@ -497,12 +560,12 @@ impl Node {
                     description.as_bytes(),
                 )
                 .map_err(|e| e.to_string())?;
-            for (topic, value) in hello.facts() {
+            for (name, value) in hello.facts() {
                 let mut publisher = orion
                     .declare(&TopicDecl {
-                        name: topic,
+                        name,
                         fields: &fields![value: Text],
-                        history: 1,
+                        history: 2,
                         expiry_ms: 0,
                         max_payload: 256,
                     })
@@ -510,7 +573,11 @@ impl Node {
                 publisher
                     .publish(FieldId(0), SampleTime::from_nanos(1), value.as_bytes())
                     .map_err(|e| e.to_string())?;
-                hello_topics.push(publisher);
+                hello_topics.push(HelloTopic {
+                    name,
+                    publisher,
+                    value,
+                });
             }
         }
         let registration = registration.ok_or("no actions to register")?;
@@ -521,7 +588,9 @@ impl Node {
             logs,
             shared,
             board,
-            _hello: hello_topics,
+            hello: hello_topics,
+            live,
+            reopen: false,
             active: Vec::new(),
             install: None,
             started: Instant::now(),
@@ -530,7 +599,7 @@ impl Node {
 
     fn run(&mut self) {
         let mut last_tick = Instant::now();
-        while !self.shared.stop.load(Ordering::SeqCst) {
+        while !self.shared.stop.load(Ordering::SeqCst) && !self.reopen {
             match self.registration.wait(Duration::from_millis(5)) {
                 Ok(Some(Request::Run {
                     call, name, args, ..
@@ -792,9 +861,36 @@ impl Node {
         lock(&self.shared.model).log("the service restarted");
     }
 
+    /// Makes the hello topics say what the hello facts say now. A value that changed is published
+    /// as it changes. A fact that appeared or went away changes the set of topics, which a session
+    /// cannot take back: the node asks to be published again on a new session.
+    fn sync_hello(&mut self) {
+        let wanted = lock(&self.shared.hello).facts();
+        let same_topics = wanted.len() == self.hello.len()
+            && wanted
+                .iter()
+                .all(|(name, _)| self.hello.iter().any(|topic| topic.name == *name));
+        if !same_topics {
+            self.reopen = true;
+            return;
+        }
+        let now = self.now();
+        for (name, value) in wanted {
+            if let Some(topic) = self.hello.iter_mut().find(|topic| topic.name == name)
+                && topic.value != value
+            {
+                let _ = topic.publisher.publish(FieldId(0), now, value.as_bytes());
+                topic.value = value;
+            }
+        }
+    }
+
     fn tick(&mut self) {
         if self.shared.restart.swap(false, Ordering::SeqCst) {
             self.restart();
+        }
+        if self.live {
+            self.sync_hello();
         }
         let (readings, lines) = {
             let mut model = lock(&self.shared.model);
