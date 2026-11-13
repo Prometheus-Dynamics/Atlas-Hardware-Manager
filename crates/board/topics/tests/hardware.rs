@@ -123,7 +123,7 @@ async fn a_device_the_crate_has_never_heard_of_shows_its_readings_with_their_uni
 
     assert_eq!(snapshot.connection, Connection::Live);
     let identity = snapshot.identity.as_ref().expect("the node's identity");
-    assert_eq!(identity.model, "test-model");
+    assert_eq!(identity.model.as_deref(), Some("test-model"));
 
     // The vane: its label, bus, address, state, kind, contract and health.
     let vane = device(&snapshot, "lemnos.vane0").expect("the vane is listed");
