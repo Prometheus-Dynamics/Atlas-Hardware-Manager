@@ -120,3 +120,4 @@ Every job with real clicks on real boards, then docs and the lock.
 - [ ] [G6](docs/prs/G6.md) Luckfox (wave 8; needs F5, B6, D8; board run)
 - [ ] [G7](docs/prs/G7.md) K230D (wave 8; needs F5, B7, D4; board run)
 - [ ] [G8](docs/prs/G8.md) Docs, lock, hand-over (wave 10; needs G1, G2, G3, F8, F9)
+- [ ] [G9](docs/prs/G9.md) What must build on Windows and macOS is checked in CI (needs nothing; native CI on windows-latest and macos-latest; scripts/check-portable.sh)
