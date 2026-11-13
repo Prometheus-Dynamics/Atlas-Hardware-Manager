@@ -19,3 +19,33 @@ CONFIG_USB_CONFIGFS=y
 # CONFIG_USB_CONFIGFS_F_FS: FunctionFS (Orion's link). Defconfig has it y, but it stayed m behind USB_CONFIGFS;
 #   this line makes it real. Selects USB_F_FS=y (no prompt, so not settable on its own).
 CONFIG_USB_CONFIGFS_F_FS=y
+# -- Built in for the flasher (no modules in its image; Lemnos docs/kernel-config.md @4c6678f3, "Built in" column) --
+# CONFIG_SPI_SPIDEV: /dev/spidevB.C, the stock SPI route Lemnos uses without lemnos.ko (m in the arm64 defconfig).
+#   Mark: VERIFIED, the generic "Built in" table of Lemnos docs/kernel-config.md at 818473f6 (not per-SoC).
+CONFIG_SPI_SPIDEV=y
+# CONFIG_DMABUF_HEAPS_CMA: /dev/dma_heap/linux,cma, the CMA heap of Lemnos's stream buffers (needs DMA_CMA and CMA).
+#   Mark: VERIFIED, the generic dma-heaps table of Lemnos docs/kernel-config.md at 818473f6.
+CONFIG_DMABUF_HEAPS_CMA=y
+# -- The slot's root chain, built in (PR B16). lemnos-slot-init opens the root slot before any root filesystem
+#    with modules exists, and loads dm modules only from /lib/modules in its initramfs (Lemnos docs/slots.md @4a2d3b7d,
+#    service/slot-init/src/sys.rs), and Gaia's initramfs carries no modules. So each of these is =y on every
+#    RK35xx slot board. The trim (trim.fragment) sets the dm lines; these are the rest of the chain:
+CONFIG_BLK_DEV_LOOP=y
+CONFIG_BLK_DEV_DM=y
+CONFIG_DM_BUFIO=y
+CONFIG_DM_VERITY=y
+CONFIG_CRYPTO_SHA256=y
+CONFIG_EXT4_FS=y
+# The storage host the root and data partitions sit on: the RK35xx boards' SD and eMMC controllers (DW MMC).
+CONFIG_MMC_DW_ROCKCHIP=y
+# The second storage host and the block layer (PR B16). A slot board may boot from its SD slot or its eMMC:
+#   CONFIG_MMC_BLOCK: the block layer over MMC (both hosts below are MMC; no block device without it).
+#   CONFIG_MMC_SDHCI, CONFIG_MMC_SDHCI_PLTFM: the SDHCI core and its platform layer that the DWCMSHC driver sits on
+#     (MMC_SDHCI_OF_DWCMSHC depends on MMC_SDHCI_PLTFM, and that on MMC_SDHCI).
+#   CONFIG_MMC_SDHCI_OF_DWCMSHC: the eMMC socket on the ROCK 5C (rockchip,rk3588-dwcmshc) and the ROCK 4D's eMMC
+#     (rockchip,rk3576-dwcmshc, which falls back to rk3588-dwcmshc). The ROCK 4D's eMMC node is disabled in the
+#     pinned dts, so it binds only once a board dts enables it.
+CONFIG_MMC_BLOCK=y
+CONFIG_MMC_SDHCI=y
+CONFIG_MMC_SDHCI_PLTFM=y
+CONFIG_MMC_SDHCI_OF_DWCMSHC=y

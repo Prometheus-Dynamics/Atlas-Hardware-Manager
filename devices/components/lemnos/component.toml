@@ -1,4 +1,4 @@
-# Lemnos's packaging for an image with systemd, at Lemnos next 4a2d3b7d: the units, sysusers, udev rules
+# Lemnos's packaging for an image with systemd, at Lemnos next d6b9361d: the units, sysusers, udev rules
 # and settings files, at the paths Lemnos's packaging/README.md gives (the "one privilege path": no
 # setcap, no xattrs, no User= in the units; lemnosd starts as root and drops itself). Board-neutral.
 #
@@ -14,7 +14,7 @@ description = "Lemnos packaging for systemd: the lemnosd and lemnos-orion units,
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "4a2d3b7d07573d0406f1e8aa7a73248ad123646f"
+ref = "d6b9361d006e5f633149b6dea8bb5d1be9483d0a"
 
 [[install]]
 from = { source = "src", path = "packaging/systemd/lemnosd.service" }

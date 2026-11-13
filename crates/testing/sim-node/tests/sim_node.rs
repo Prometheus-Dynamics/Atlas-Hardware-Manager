@@ -341,6 +341,43 @@ fn a_stalled_self_test_is_cancelled_with_no_change() {
     assert!(node.model().slots.trial.is_none());
 }
 
+/// Lemnos I6c, the meaning of a plain cancel: it ends its own run and nothing else. The caller's
+/// session is not taken as gone, so it still carries calls, and another session's run is not
+/// touched. (The node cannot show a driver's per-caller hold here; that is Lemnos's, and Orion's
+/// reason 2 is not sent yet. See docs/prs/B23.md.)
+#[test]
+fn a_plain_cancel_ends_its_own_run_and_the_session_carries_on() {
+    let node = start("cancel-own");
+    let cancelling = node.connect("cancelling").expect("a session");
+    let other = node.connect("other").expect("a session");
+    node.script()
+        .push_action(names::SELF_TEST, Behaviour::Stall);
+    let mut run = cancelling
+        .run(&ActionCall {
+            name: names::SELF_TEST,
+            target: atlas_sim_node::node::target(),
+            args: b"",
+            deadline_ms: 0,
+            detached: false,
+        })
+        .expect("the run starts");
+    wait_for("the self-test to stall", || {
+        (node.stalled_runs() == 1).then_some(())
+    });
+    run.cancel().expect("cancel is sent");
+    assert_eq!(
+        run.finish(DEADLINE).expect("it ends").outcome,
+        Outcome::Cancelled,
+        "the plain cancel ends its own run as cancelled"
+    );
+
+    // The cancelling session is still there: it carries calls after the cancel.
+    assert_eq!(list(&cancelling)["state"], list(&other)["state"]);
+    // Another session's run is untouched: it runs to its end.
+    let finished = ok(&other, names::SELF_TEST, b"");
+    assert_eq!(finished.outcome, Outcome::Succeeded);
+}
+
 #[test]
 fn cancel_discards_the_pushed_file_and_the_install() {
     let node = start("cancel");

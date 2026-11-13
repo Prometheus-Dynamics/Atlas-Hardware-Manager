@@ -237,6 +237,104 @@ else
 fi
 echo "gaia: $("$gaia" --version 2>&1 | head -1), command: $verb, locked commit $gaia_commit" >&2
 
+# ---- the slot root chain (PR B16) ------------------------------------------------
+# A slot's root is opened by lemnos-slot-init before any module can be loaded from a root filesystem
+# (Lemnos docs/slots.md: the initramfs loads dm modules only from /lib/modules, and Lemnos is removing
+# that loader). So on every slot-booting family, the chain below is built in (=y) in the family's own
+# kernel fragments, and no fragment of that family's boards may set one of them to m or "not set".
+# The list lives here, once. "*" applies to every slot family; "FAMILY:" applies to that family only.
+#   sha256: CRYPTO_SHA256 is dm-verity's hash (the verity table names sha256); the storage host is the
+#   controller the root and data partitions sit on (the Raze: the CM5 eMMC host; the RK35xx: the DW MMC).
+#   MMC_BLOCK: the block layer over MMC. Without it a host driver finds the card and no block device exists.
+#   "*" is right while both slot families boot from MMC; an NVMe-booting family would name BLK_DEV_NVME instead.
+#   The RK35xx boards have two storage hosts: the SD slot (DesignWare MMC) and the eMMC socket (DWCMSHC, the
+#   rk3588 compatible; the RK3576's rk3576-dwcmshc binds the same driver through its fallback). Both are built in.
+SLOT_CHAIN=(
+  "*:BLK_DEV_DM" "*:DM_BUFIO" "*:DM_VERITY" "*:BLK_DEV_LOOP" "*:EROFS_FS" "*:EXT4_FS" "*:CRYPTO_SHA256"
+  "*:MMC_BLOCK"
+  "sun60i:MMC_SUNXI" "bcm2712:MMC_SDHCI_BRCMSTB"
+  "rk35xx:MMC_DW_ROCKCHIP" "rk35xx:MMC_SDHCI_OF_DWCMSHC"
+)
+# A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe).
+SLOT_RECIPES="sd-image|slot"
+
+# Textual check: this reads the fragment files, not a resolved kernel config (the script has no kernel
+# tree). The resolved-config proof is the table in docs/prs/B16.md, from a merge_config run per board.
+# Usage: slot_chain_check <devices dir>. Prints one FAIL line per problem and returns 1 if any.
+slot_chain_check() {
+  local dev=$1 rc=0 fam sym want val f b p recipe fragfile
+  local families=() boards=()
+  # slot families: the family of every board that a slot-recipe product names
+  while IFS= read -r p; do
+    grep -qE "^recipe = \"($SLOT_RECIPES)\"" "$p" || continue
+    local bpath
+    bpath=$(grep -ho '"[^"]*board\.toml"' "$p" | tr -d '"' | head -1)
+    [[ -n $bpath ]] || continue
+    b=$(realpath -m "$(dirname "$p")/$bpath")
+    fam=$(grep -ho '"[^"]*family\.toml"' "$b" | tr -d '"' | head -1)
+    [[ -n $fam ]] || continue
+    fam=$(basename "$(dirname "$(realpath -m "$(dirname "$b")/$fam")")")
+    [[ " ${families[*]-} " == *" $fam "* ]] || families+=("$fam")
+  done < <(find "$dev/products" -mindepth 2 -maxdepth 2 -name product.toml 2>/dev/null | sort)
+  for fam in ${families[@]+"${families[@]}"}; do
+    local famfile=$dev/families/$fam/family.toml
+    # the family's own kernel fragments, then every board's kernel fragments that extends it
+    local frags=()
+    while IFS= read -r f; do frags+=("$dev/families/$fam/$f"); done < <(
+      grep -E '^fragments = ' "$famfile" | grep -ho '"[^"]*\.fragment"' | tr -d '"')
+    local bfiles=()
+    while IFS= read -r b; do
+      [[ $(grep -c "families/$fam/family.toml" "$b") -gt 0 ]] || continue
+      local bdir; bdir=$(dirname "$b")
+      while IFS= read -r f; do bfiles+=("$bdir/$f"); done < <(
+        grep -E '^fragments = ' "$b" | grep -ho '"[^"]*\.\(fragment\|config\)"' | tr -d '"')
+    done < <(find "$dev/boards" -mindepth 2 -maxdepth 2 -name board.toml 2>/dev/null | sort)
+    # required: each chain symbol that applies to this family must be =y in one of the family's fragments
+    for entry in "${SLOT_CHAIN[@]}"; do
+      [[ ${entry%%:*} == "*" || ${entry%%:*} == "$fam" ]] || continue
+      sym=${entry#*:}
+      local found=""
+      for f in ${frags[@]+"${frags[@]}"}; do
+        if [[ -f $f ]] && grep -qE "^CONFIG_${sym}=y\$" "$f"; then found=$f; fi
+      done
+      if [[ -z $found ]]; then
+        echo "check-devices: FAIL families/$fam: CONFIG_$sym is not =y in the family's kernel fragments (found: none). The slot's root is opened before any module can load, so a slot of this family does not boot." >&2
+        rc=1
+      fi
+    done
+    # forbidden: no fragment of this family or of its boards may take a chain symbol to m or off
+    for f in ${frags[@]+"${frags[@]}"} ${bfiles[@]+"${bfiles[@]}"}; do
+      [[ -f $f ]] || continue
+      for entry in "${SLOT_CHAIN[@]}"; do
+        [[ ${entry%%:*} == "*" || ${entry%%:*} == "$fam" ]] || continue
+        sym=${entry#*:}
+        if grep -qE "^CONFIG_${sym}=m\$|^# CONFIG_${sym} is not set\$" "$f"; then
+          val=$(grep -oE "^CONFIG_${sym}=m|^# CONFIG_${sym} is not set" "$f" | head -1)
+          echo "check-devices: FAIL ${f#$dev/}: $val, but CONFIG_$sym must be =y on a slot family ($fam): the slot's root is opened before any module can load." >&2
+          rc=1
+        fi
+      done
+    done
+  done
+  return $rc
+}
+
+# Proves the slot root chain check catches (1) a board fragment that sets a chain symbol to m, and (2) a family
+# fragment that lacks a required =y, both on a scratch copy of devices/; and passes on the real tree.
+slot_chain_self_test() {
+  local tmp rc=0
+  tmp=$(mktemp -d)
+  cp -a "$repo/devices" "$tmp/devices"
+  echo "CONFIG_DM_VERITY=m" >> "$tmp/devices/boards/raze/kernel/raze.config"
+  slot_chain_check "$tmp/devices" >/dev/null 2>&1 && rc=1
+  cp -a "$repo/devices/." "$tmp/devices/"
+  sed -i '/^CONFIG_EXT4_FS=y$/d' "$tmp/devices/families/rk35xx/assets/linux.fragment"
+  slot_chain_check "$tmp/devices" >/dev/null 2>&1 && rc=1
+  rm -rf "$tmp"
+  [[ $rc -eq 0 ]] && slot_chain_check "$repo/devices" >/dev/null 2>&1 || rc=1
+  return $rc
+}
+
 # ---- the tree ------------------------------------------------------------------
 
 [[ -d $root ]] || die "no such directory: $root"
@@ -299,6 +397,9 @@ for f in $(find families boards components -mindepth 2 -maxdepth 2 -name '*.toml
     fi
   fi
 done
+
+# The slot root chain is enforced on every run (see slot_chain_check above).
+slot_chain_check "$root" || fail=1
 
 if [ -n "$unbuilt" ]; then
   echo "check-devices: NOTE in no product yet, validated but never planned:$unbuilt"
@@ -469,6 +570,7 @@ if [[ $root_given -eq 0 ]]; then
   fi
   rm -f "$out"
   lemnos_rule_self_test || die "self-check: the Lemnos one-rev rule no longer refuses two revs in one product"
+  slot_chain_self_test || die "self-check: the slot root chain check no longer refuses a module or a missing =y"
   # The version gate: a binary that prints another commit, or none, is refused, and the refusal names the pin.
   fake=$(mktemp -d)
   vout=$(mktemp)
