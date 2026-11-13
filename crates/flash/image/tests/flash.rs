@@ -1,16 +1,16 @@
 //! The first-flash manifest and the board check, on generated images: the
 //! manifest's fields and bytes, both image forms and both stream formats, the
-//! board refusals, the signature file, the bytes an early check reads, and the
+//! board refusals, the signature seam, the bytes an early check reads, and the
 //! truncated and hostile inputs.
 
 mod common;
 
-use std::fs;
 use std::io::Write as _;
 use std::path::Path;
 
 use atlas_image::{
-    FlashError, Format, Options, Refusal, check_target, flash_manifest, open, probe_board,
+    FlashError, Format, ImageKind, Options, Refusal, check_target, flash_manifest, open,
+    probe_board,
 };
 use common::*;
 use sha2::{Digest, Sha256};
@@ -23,9 +23,9 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 /// The `flash.json` the builder's printf would write for these fields.
-fn builder_json(board: &str, format: &str, size: usize, sha: &str) -> String {
+fn builder_json(board: &str, size: usize, sha: &str) -> String {
     format!(
-        "{{\"schema\":1,\"board\":\"{board}\",\"format\":\"{format}\",\"image\":{{\"size\":{size},\"sha256\":\"{sha}\"}}}}"
+        "{{\"schema\":1,\"board\":\"{board}\",\"format\":\"disk\",\"image\":{{\"size\":{size},\"sha256\":\"{sha}\"}}}}"
     )
 }
 
@@ -57,27 +57,27 @@ fn the_manifest_fields_and_bytes_match_values_computed_here() {
     let dir = TestDir::new("manifest");
     let raw = image_disk();
     let sha = hex(&raw);
-    let expected = builder_json("example-board", "xz", raw.len(), &sha);
+    let expected = builder_json("example-board", raw.len(), &sha);
 
     let xz_path = image_file(&dir, "image.img.xz", &xz(&raw));
     let made = flash_manifest(&xz_path, dir.path(), None).expect("xz manifest");
     assert_eq!(made.manifest.board(), "example-board");
-    assert_eq!(made.manifest.format(), Format::Xz);
+    assert_eq!(made.manifest.kind(), ImageKind::Disk);
     assert_eq!(made.manifest.image_size(), raw.len() as u64);
     assert_eq!(made.manifest.image_sha256(), sha);
     assert_eq!(
         String::from_utf8(made.json.clone()).expect("utf8"),
         expected
     );
-    assert_eq!(made.manifest.to_json(), made.json);
+    assert_eq!(made.manifest.to_json(None), made.json);
 
     // The same image as a plain .img: format raw, the same raw digest.
     let raw_path = image_file(&dir, "image.img", &raw);
     let plain = flash_manifest(&raw_path, dir.path(), None).expect("raw manifest");
-    assert_eq!(plain.manifest.format(), Format::Raw);
+    assert_eq!(plain.manifest.kind(), ImageKind::Disk);
     assert_eq!(
         String::from_utf8(plain.json).expect("utf8"),
-        builder_json("example-board", "raw", raw.len(), &sha)
+        builder_json("example-board", raw.len(), &sha)
     );
     assert!(
         dir.entries()
@@ -277,31 +277,6 @@ fn an_image_with_no_slot_no_board_or_two_boards_is_refused_with_its_own_message(
     );
 }
 
-#[test]
-fn the_signature_file_is_reported_by_presence_and_carried_untouched() {
-    let dir = TestDir::new("sig");
-    let path = image_file(&dir, "image.img.xz", &xz(&image_disk()));
-
-    let unsigned = flash_manifest(&path, dir.path(), None).expect("unsigned");
-    assert!(!unsigned.signature_present());
-    assert_eq!(unsigned.signature, None);
-
-    let bytes: Vec<u8> = (0..64).map(|i| i as u8 ^ 0xA5).collect();
-    dir.write("flash.sig", &bytes);
-    let signed = flash_manifest(&path, dir.path(), None).expect("signed");
-    assert!(signed.signature_present());
-    assert_eq!(signed.signature.as_deref(), Some(bytes.as_slice()));
-    // The manifest does not change with the signature.
-    assert_eq!(signed.json, unsigned.json);
-
-    fs::write(dir.path().join("flash.sig"), [1u8; 10]).expect("short signature");
-    let error = flash_manifest(&path, dir.path(), None).expect_err("short signature");
-    assert!(matches!(error, FlashError::Signature(10)), "{error}");
-}
-
-/// The bytes a probe reads for an image whose data partition is first and whose
-/// tail is 8 MiB of noise: the early check reads the stream up to the data
-/// partition, not the tail. The counts are printed for the PR.
 #[test]
 fn the_early_board_check_reads_only_up_to_the_data_partition() {
     let dir = TestDir::new("early");

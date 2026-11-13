@@ -106,3 +106,22 @@ impl Target for FileTarget {
 
     fn pause(&mut self, _how_long: std::time::Duration) {}
 }
+
+/// The xz file of `raw`, made by the `xz` program with its CRC-64 check.
+pub fn xz_bytes(raw: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("xz")
+        .args(["--check=crc64", "--compress", "--stdout"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("the xz program is needed to make the test images");
+    let mut stdin = child.stdin.take().expect("stdin");
+    let input = raw.to_vec();
+    let writer = std::thread::spawn(move || stdin.write_all(&input));
+    let output = child.wait_with_output().expect("xz");
+    writer.join().expect("writer").expect("write to xz");
+    assert!(output.status.success(), "xz failed");
+    output.stdout
+}

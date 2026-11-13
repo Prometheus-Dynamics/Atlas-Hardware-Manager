@@ -2,7 +2,7 @@
 //! how large an image decodes to, read from its headers.
 
 use std::fs::File;
-use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -57,7 +57,15 @@ impl<R: Read> Read for Counting<R> {
     }
 }
 
-/// Decodes `path` into `sink`, adding to `input_read` as the file is read.
+impl<R: Seek> Seek for Counting<R> {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        self.inner.seek(pos)
+    }
+}
+
+/// Decodes `path` into `sink`, adding to `input_read` as the file is read. An
+/// xz file is decoded as its image stream only (see `atlas_xzdec`): a signature
+/// record after the image is never read, so it is never written to the target.
 pub(crate) fn decode_into(
     path: &Path,
     format: ImageFormat,
@@ -65,85 +73,37 @@ pub(crate) fn decode_into(
     input_read: Arc<AtomicU64>,
 ) -> io::Result<()> {
     let file = File::open(path)?;
-    let mut input = BufReader::with_capacity(
-        1 << 20,
-        Counting {
-            inner: file,
-            count: input_read,
-        },
-    );
-    match format {
-        ImageFormat::Raw => io::copy(&mut input, sink).map(|_| ()),
-        ImageFormat::Xz => {
-            let mut sink = sink;
-            lzma_rs::xz_decompress(&mut input, &mut sink).map_err(|error| match error {
-                lzma_rs::error::Error::IoError(inner) => inner,
-                other => io::Error::new(io::ErrorKind::InvalidData, format!("{other:?}")),
-            })
+    let mut input = Counting {
+        inner: file,
+        count: input_read,
+    };
+    let layout = match format {
+        ImageFormat::Raw => {
+            let len = input.seek(SeekFrom::End(0))?;
+            input.seek(SeekFrom::Start(0))?;
+            atlas_xzdec::Layout::plain(len)
         }
-    }
+        ImageFormat::Xz => atlas_xzdec::scan(&mut input).map_err(xz_error)?,
+    };
+    let mut sink = sink;
+    atlas_xzdec::decode_image(&mut input, &layout, &mut sink)
 }
 
-/// At least how many bytes `path` decodes to, when its format says. Each
-/// answer is a lower bound: an xz file of several streams can be larger,
-/// never smaller, so refusing on it is always right.
+fn xz_error(error: atlas_xzdec::XzError) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidData, error.to_string())
+}
+
+/// At least how many bytes `path` decodes to, when its format says: the image
+/// stream's decoded size from its index. `None` when the layout cannot be read,
+/// which the decode then reports in full.
 pub(crate) fn decoded_at_least(path: &Path, format: ImageFormat) -> Option<u64> {
-    let mut file = File::open(path).ok()?;
+    let file = File::open(path).ok()?;
+    let mut input = Counting {
+        inner: file,
+        count: Arc::new(AtomicU64::new(0)),
+    };
     match format {
-        ImageFormat::Raw => file.metadata().ok().map(|meta| meta.len()),
-        ImageFormat::Xz => xz_uncompressed(&mut file),
+        ImageFormat::Raw => input.inner.metadata().ok().map(|meta| meta.len()),
+        ImageFormat::Xz => atlas_xzdec::scan(&mut input).ok().map(|layout| layout.uncompressed),
     }
-}
-
-/// The sum of the last stream's records in its index (xz file format 4, 6).
-fn xz_uncompressed(file: &mut File) -> Option<u64> {
-    let len = file.metadata().ok()?.len();
-    // Stream padding: zero bytes in fours after the footer.
-    let mut end = len;
-    let mut word = [0u8; 4];
-    while end >= 12 + 4 {
-        file.seek(SeekFrom::Start(end - 4)).ok()?;
-        file.read_exact(&mut word).ok()?;
-        if word != [0; 4] {
-            break;
-        }
-        end -= 4;
-    }
-    let mut footer = [0u8; 12];
-    file.seek(SeekFrom::Start(end.checked_sub(12)?)).ok()?;
-    file.read_exact(&mut footer).ok()?;
-    if &footer[10..12] != b"YZ" {
-        return None;
-    }
-    let backward = u64::from(u32::from_le_bytes(footer[4..8].try_into().ok()?));
-    let index_size = (backward + 1) * 4;
-    let index_start = end.checked_sub(12 + index_size)?;
-    let mut index = vec![0u8; usize::try_from(index_size).ok()?];
-    file.seek(SeekFrom::Start(index_start)).ok()?;
-    file.read_exact(&mut index).ok()?;
-    if index.first() != Some(&0) {
-        return None;
-    }
-    let mut at = 1;
-    let records = vli(&index, &mut at)?;
-    let mut total = 0u64;
-    for _ in 0..records {
-        let _unpadded = vli(&index, &mut at)?;
-        total = total.checked_add(vli(&index, &mut at)?)?;
-    }
-    Some(total)
-}
-
-/// An xz variable-length integer: seven bits a byte, low first, at most nine.
-fn vli(bytes: &[u8], at: &mut usize) -> Option<u64> {
-    let mut value = 0u64;
-    for shift in 0..9 {
-        let byte = *bytes.get(*at)?;
-        *at += 1;
-        value |= u64::from(byte & 0x7F) << (shift * 7);
-        if byte & 0x80 == 0 {
-            return Some(value);
-        }
-    }
-    None
 }

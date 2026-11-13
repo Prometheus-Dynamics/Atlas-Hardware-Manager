@@ -288,9 +288,7 @@ impl<'a> Router<'a> {
                     return Err(ImageError::Layout("the image was refused".into()));
                 }
                 Err(FlashError::Image(error)) => return Err(error),
-                Err(FlashError::Signature(_)) => {
-                    return Err(ImageError::Layout("unexpected signature error".into()));
-                }
+                Err(other) => return Err(ImageError::Layout(other.to_string())),
             };
             if let Some(target) = target.filter(|t| info.board != *t) {
                 self.refused = Some(Refusal::WrongBoard {

@@ -27,8 +27,7 @@ fn verified(image_sha256: Option<String>) -> WriteOptions {
 #[test]
 fn a_compressed_image_is_written_and_verified() {
     let original: Vec<u8> = (0..(2 << 20) + 123u32).map(|i| (i % 253) as u8).collect();
-    let mut compressed = Vec::new();
-    lzma_rs::xz_compress(&mut &original[..], &mut compressed).unwrap();
+    let compressed = common::xz_bytes(&original);
     let image = temp("image.img.xz");
     std::fs::write(&image, &compressed).unwrap();
     let mut disk = FileTarget::new(4 << 20, 0xAA);
@@ -127,8 +126,7 @@ fn a_raw_image_larger_than_the_disk_is_refused_before_any_write() {
 #[test]
 fn a_compressed_image_that_decodes_too_large_is_refused_before_any_write() {
     let original = vec![7u8; 2 << 20];
-    let mut compressed = Vec::new();
-    lzma_rs::xz_compress(&mut &original[..], &mut compressed).unwrap();
+    let compressed = common::xz_bytes(&original);
     let image = temp("big.img.xz");
     std::fs::write(&image, &compressed).unwrap();
     let mut disk = FileTarget::new(1 << 20, 0xAA);
