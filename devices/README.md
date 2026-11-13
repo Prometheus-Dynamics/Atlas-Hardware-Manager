@@ -28,11 +28,15 @@ A board directory holds `board.toml`, or, when it is app-only, only `app/` (see 
 
 Two kinds of file here are for the app, not for Gaia. The check never reads them as Gaia files.
 
-- `boards/<board>/app/app.json`: one per board. `model` is the board directory's name. The rest
-  is the display name, the USB id keys, an optional hostname prefix, and optional picture and
-  case files, paths relative to `app/`.
+- `boards/<board>/app/app.json`: one per board. `model` is the board directory's name. Required:
+  the display name and the USB id keys. Optional: a hostname prefix, `found_by` (the driver family
+  that finds a device with no USB id, free text), named `ports` (kind and label), `look` (pictures,
+  a case file, and the case's `orientation`), and `variants` (options of the board, such as lenses,
+  each with a key, a display name, `confirmed`, and the fields it overrides). Files are paths
+  relative to `app/`.
 - `usb-ids.json`: the USB ids, keyed by name. Each entry has `state` (`download`, `storage` or
-  `gadget`), `vid`, `pid` and `name`. A board's `app.json` refers to these by key.
+  `gadget`), `vid`, `name`, and `pid` (left out for a vendor-wide id that matches any product of
+  the vendor; an exact `vid:pid` match ranks above it). A board's `app.json` refers to these by key.
 
 `crates/core/catalog` is the reader, and it is the authority on the exact keys. The app embeds the
 catalog it generates from these files; the files themselves are not embedded.
