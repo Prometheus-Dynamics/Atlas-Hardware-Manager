@@ -1,0 +1,36 @@
+# The Raze's files that still have to be files on the board, and the Lemnos
+# board definition. Everything the board's scripts and units did that moved to
+# Lemnos drivers or Orion is not here (the PR text lists each file's new home).
+version = 1
+name = "raze-lemnos-board"
+description = "Raze board files: lemnosd's board definition and env, the USB gadget and i2c module loads, the USB power rule, and the ws2812 PIO modprobe option"
+
+[[install]]
+from = { file = "files/board.toml" }
+to = "/etc/lemnos/board.toml"
+mode = "0644"
+
+[[install]]
+from = { file = "files/lemnosd.env" }
+to = "/etc/default/lemnosd.env"
+mode = "0644"
+
+[[install]]
+from = { file = "files/board-usb-gadget.conf" }
+to = "/usr/lib/modules-load.d/board-usb-gadget.conf"
+mode = "0644"
+
+[[install]]
+from = { file = "files/raze-i2c-dev.conf" }
+to = "/usr/lib/modules-load.d/raze-i2c-dev.conf"
+mode = "0644"
+
+[[install]]
+from = { file = "files/60-raze-usb-power.rules" }
+to = "/usr/lib/udev/rules.d/60-raze-usb-power.rules"
+mode = "0644"
+
+[[install]]
+from = { file = "files/rp1-ws2812-pio.conf" }
+to = "/usr/lib/modprobe.d/rp1-ws2812-pio.conf"
+mode = "0644"

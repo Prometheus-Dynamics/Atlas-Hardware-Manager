@@ -1,0 +1,50 @@
+# Raze: Raspberry Pi CM5 with an OV9782 global-shutter camera, a 16 GB eMMC
+# (the CM5 module's storage, written over USB boot). Extends the BCM2712
+# family and keeps what the Raze adds: its kernel fragments, the three Raze
+# device tree overlays (built from dts/), the stock overlays it loads, the
+# eMMC disk, and the USB-boot flasher. Ported from dev devices/raze/gaia.
+# Untested on board: the image is built in a later PR and run on a Raze.
+version = 1
+extends = "../../families/bcm2712/family.toml"
+name = "raze"
+description = "Raze (CM5 + OV9782): Raspberry Pi CM5 vision device"
+
+# raze.config is the Raze's own decisions (4 KiB pages, built-in EROFS,
+# drivers, lockup panics). raze-trim.config is applied after it: the
+# install-size trim (dev's BR2_RAZE_KERNEL_TRIM, default on). The
+# ws2812-pio-rp1 clear_on_probe patch lives in kernel/ (see the PR text).
+[kernel]
+fragments = ["kernel/raze.config", "kernel/raze-trim.config"]
+device_tree_dir = "dts"
+# The Raze's own overlays (dts/) plus the stock ones it loads: dwc2,
+# i2c1-pi5, ws2812-pio, vc4-kms-v3d-pi5 and ramoops-pi5, built from this
+# kernel as dev does (RAZE_KERNEL_OVERLAYS).
+# NOTE: kernel.overlays is refused for an OS build at the locked Gaia
+# (e90ee03); see devices/families/bcm2712 notes in the PR text.
+overlays = [
+  "ov9782",
+  "raze-fan",
+  "raze-usb-power",
+  "dwc2",
+  "i2c1-pi5",
+  "ws2812-pio",
+  "vc4-kms-v3d-pi5",
+  "ramoops-pi5",
+]
+
+# The eMMC: 30,535,680 sectors (14,910 MiB), the "16 GB" module. MBR, as the
+# slot disk is (first partition at 1 MiB; slot layout in the PR text).
+[disk]
+scheme = "mbr"
+first = "1M"
+alignment = "1M"
+size = "14910M"
+
+# Flashed over USB boot: the boot ROM takes the bootfiles, the flasher image
+# writes the eMMC (dev's "mass-storage-gadget" method).
+[flash]
+methods = ["usb-boot"]
+
+[flash.files]
+flasher_config = { file = "flasher/config.txt" }
+flasher_cmdline = { file = "flasher/cmdline.txt" }

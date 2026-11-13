@@ -1,0 +1,77 @@
+# The Raze base OS product, in Gaia `next`'s F8 form (the form the Gaia F8 PR
+# reads). Draft: it fails the device check at the locked Gaia e90ee03, which has
+# no OS build, so `sources`, `os` and the `slot` recipe are refused there.
+# Every spelling this file is unsure of is marked `# F8?`.
+version = 1
+name = "raze-base"
+description = "Raze base OS: the Raze board, its boot files, the Lemnos board files, as a root slot"
+
+# The product's sources: the OS build's own inputs, pinned by commit (F8).
+# Kernel and firmware are the family's pins, repeated here so the OS build reads
+# them from the product (F8?).
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"   # F8?: upstream URL
+ref = "2026.08"   # F8?: dev runs Buildroot 2026.08; the commit is pinned at the lock
+
+[sources.linux-firmware]
+# dev extracts seven r8152 firmware files (rootfs/usr/lib/firmware) from this
+# archive, dated 2026-08-10 (sha256 ac17c34f…). F8?: archive source form.
+archive = "https://cdn.kernel.org/pub/linux/kernel/firmware/linux-firmware-20260810.tar.xz"   # F8?
+sha256 = "ac17c34fe73756926a961fbafadf8d8f07a3bd2dd2f4ea31a0fb5d50c714a49a"   # F8?
+
+[components]
+raze-lemnos-board = "../../components/raze-lemnos-board/component.toml"
+raze-base-files = "../../components/raze-base-files/component.toml"
+
+[[images]]
+name = "raze-base"
+board = "../../boards/raze/board.toml"
+components = ["raze-lemnos-board", "raze-base-files"]
+recipe = "slot"   # F8: today's Gaia names it ab-slot (e90ee03 refuses `slot`)
+
+# The OS: a Buildroot build of the Raze's base, with the os fragment.
+# `os = {...}` on the image is refused at e90ee03.
+os = { provider = "buildroot", source = "buildroot", fragments = ["os/raze.fragment"] }   # F8?
+
+# The boot files and kernel, as the four recipe inputs the F8 slot takes.
+# F8? the input table's spelling: each input names the files or sources it takes.
+#
+#   kernel        the kernel image (kernel8.img): source `linux` at 53679a5…, the board's
+#                 fragments kernel/raze.config and kernel/raze-trim.config, the
+#                 ws2812 patch (kernel/0001-…patch), defconfig bcm2712.
+#   device-trees  the bcm2712 DTBs (bcm*.dtb) from the kernel, the eight overlays:
+#                 ov9782, raze-fan, raze-usb-power (built from dts/) and dwc2,
+#                 i2c1-pi5, ws2812-pio, vc4-kms-v3d-pi5, ramoops-pi5 (stock, from the
+#                 kernel), and overlay_map.dtb.
+#   bootloader    the Pi firmware (source `rpi-firmware`, tag 1.20260915 at 6f0881cb…):
+#                 bootcode / start4.elf / fixup4.dat, and the USB-boot bootfiles
+#                 (families/bcm2712/flasher/) with outer-config.txt. The EEPROM image
+#                 and recovery.bin are firmware for the EEPROM update, not boot files.
+#   os            the Buildroot base and its packages (os/raze.fragment), the boot
+#                 config and command line: boards/raze/boot/raze-device.txt, the slot's
+#                 config.txt/tryboot.txt/default.txt/trial.txt, and cmdline.txt.
+[images.inputs.kernel]   # F8?
+source = "linux"
+fragments = ["kernel/raze.config", "kernel/raze-trim.config"]   # from the board
+defconfig = "bcm2712"
+
+[images.inputs.device-trees]   # F8?
+overlays = [
+  "ov9782", "raze-fan", "raze-usb-power",
+  "dwc2", "i2c1-pi5", "ws2812-pio", "vc4-kms-v3d-pi5", "ramoops-pi5",
+]
+
+[images.inputs.bootloader]   # F8?
+source = "rpi-firmware"
+flash_files = ["bootcode5", "bootmain", "font", "logo", "mcb", "memsys00", "memsys01", "memsys02", "memsys03"]   # from the family
+
+[images.inputs.os]   # F8?
+source = "buildroot"
+fragments = ["os/raze.fragment"]
+boot_config = "boards/raze/boot/raze-device.txt"
+cmdline = "boards/raze/flasher/cmdline.txt"
+
+# The root slot's device: the eMMC's data partition (p2), where dev keeps the slot
+# images (PARTUUID 5056525a-02). F8? the slot recipe's parameter name.
+[images.settings]
+device = "/dev/mmcblk0p2"

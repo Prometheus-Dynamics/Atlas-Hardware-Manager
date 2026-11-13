@@ -1,0 +1,14 @@
+# The Raze OS's Buildroot options (the `os` input of raze-base). Carried from dev's
+# devices/raze/gaia/kernel.toml [image] config_overrides and the external tree's
+# choices (external.mk, Config.in). Buildroot options only; kernel decisions are in
+# devices/boards/raze/kernel/ and the firmware pin in devices/families/bcm2712/.
+# F8? the Buildroot source and its fragment form are F8's spelling; untested.
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_STABLE=n
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_BLEEDING_EDGE=y
+BR2_ARM64_PAGE_SIZE_4K=y
+BR2_PACKAGE_RPI_FIRMWARE=y
+BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS=y
+BR2_PACKAGE_RPI_FIRMWARE_DTB_OVERLAYS="bcm2712d0"
+BR2_PACKAGE_RPI_UTILS=y
+BR2_PACKAGE_HOST_DTC=y
+BR2_RAZE_KERNEL_TRIM=y

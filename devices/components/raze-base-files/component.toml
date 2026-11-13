@@ -1,0 +1,16 @@
+# systemd config a Raze keeps as files: the journal kept across boots, bounded,
+# and the hardware watchdog the trial boot relies on. Both are systemd's own
+# files, not board scripts, so they stay.
+version = 1
+name = "raze-base-files"
+description = "Raze base system config: bounded persistent journal and the systemd hardware watchdog"
+
+[[install]]
+from = { file = "files/60-board-journald.conf" }
+to = "/usr/lib/systemd/journald.conf.d/60-board.conf"
+mode = "0644"
+
+[[install]]
+from = { file = "files/60-board-watchdog.conf" }
+to = "/usr/lib/systemd/system.conf.d/60-board-watchdog.conf"
+mode = "0644"
