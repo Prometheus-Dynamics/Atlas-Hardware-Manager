@@ -39,7 +39,16 @@ source = "tf-a"
 
 # The boot ROM reads idbloader and U-Boot from sector 64, outside the
 # partition table. U-Boot keeps its environment in the partition with this
-# type GUID, left empty so the built-in environment boots.
+# type GUID ("U-Boot ENV", include/part_efi.h), left empty so the built-in
+# environment boots. U-Boot and Lemnos's slot writer both find it by that type
+# GUID on the boot disk, so nothing names it by PARTUUID.
+#
+# 128 KiB (PR B28; it was 64 KiB): the redundant environment is two copies in
+# this one partition, placed from its end (copy 0 at end - size, copy 1 below
+# it; env/mmc.c). With CONFIG_ENV_SIZE=0x8000 (u-boot.fragment) the two copies
+# need 64 KiB; the partition is twice that because a partition table cannot
+# change after a board's first flash and the config can, so the environment may
+# grow to 0x10000 per copy without a new layout. Cost: 64 KiB of the card.
 [[partitions]]
 name = "u-boot"
 role = "bootloader"
@@ -54,7 +63,7 @@ name = "uboot-env"
 role = "raw"
 type = "3de21764-95bd-54bd-a5c3-4abe786f38a8"
 offset = "16M"
-size = "64K"
+size = "128K"
 
 # Bring-up form (Gaia's sd-image, F7, at 10beed8): the rootfs partition holds
 # /boot/extlinux/extlinux.conf (radxa-zero-3e-extlinux) for U-Boot's distro

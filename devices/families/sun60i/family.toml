@@ -101,7 +101,7 @@ storage_drivers = ["CONFIG_MMC_SUNXI"]
 
 [bootloader]
 source = "u-boot"
-fragments = []
+fragments = ["assets/u-boot.fragment"]
 
 [bootloader.trusted_firmware]
 source = "tf-a"
@@ -117,8 +117,20 @@ offset = "128K"
 in_table = false
 content = "u-boot-sunxi-with-spl.bin"
 
-# The first partition starts at 16 MiB, the offset DockSeed's chain uses for its rootfs. rootfs and data
-# are made by the recipe (sd-image), as for the RK35xx boards.
+# U-Boot's redundant environment (PR B28): one partition of the "U-Boot ENV" type GUID, 128 KiB, at
+# 16 MiB, the same as the RK35xx family and for the same reasons (families/rk35xx/family.toml). U-Boot and
+# Lemnos's slot writer find it by the type GUID on the boot disk. UNVERIFIED: never written to a card; the
+# offset is DockSeed's first-partition offset, which this partition now takes.
+[[partitions]]
+name = "uboot-env"
+role = "raw"
+type = "3de21764-95bd-54bd-a5c3-4abe786f38a8"
+offset = "16M"
+size = "128K"
+
+# The first filesystem partition follows the environment (DockSeed's chain put its rootfs at 16 MiB;
+# with the environment there it starts after it). rootfs and data are made by the recipe (sd-image), as
+# for the RK35xx boards.
 
 [disk]
 scheme = "gpt"
