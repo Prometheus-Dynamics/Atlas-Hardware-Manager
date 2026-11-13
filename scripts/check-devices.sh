@@ -13,7 +13,8 @@
 # given: gaia has no version stamp, so its commit is not checked), else a build from that commit
 # cached under ${ATLAS_GAIA_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/gaia}/<commit>/.
 # The recipes come from the same Gaia checkout. With a gaia that has `gaia validate`, every family,
-# board, component and product file is validated, and every product is also planned. With one that
+# board, component and product file is validated (products against the checkout's recipes/, so a bogus
+# recipe name fails), and every product is also planned. With one that
 # does not, every product is planned and nothing else is checked. Each product's gaia.lock, committed
 # beside its product.toml, must match what `gaia lock` writes; `--write-locks` writes them.
 set -euo pipefail
@@ -48,6 +49,59 @@ broken_failed_as_it_must() {
   return 0
 }
 
+# The Lemnos rule (AGENTS.md: every Lemnos component in a product is locked to ONE rev). Every source of
+# the Lemnos repository in a product's gaia.lock is one [source.*] block with a url and a commit: the
+# commits of those blocks must be one. Prints the distinct revs, one per line.
+lemnos_revs() {
+  awk '
+    /^\[/ { lem = 0; next }
+    /^url = .*Prometheus-Dynamics\/Lemnos/ { lem = 1; next }
+    /^commit = / && lem { c = $0; sub(/^commit = "/, "", c); sub(/"$/, "", c); print c }
+  ' "$1" | sort -u
+}
+
+# Prints "REV1 and REV2" (plus a count of any more) and returns 1 when the lock pins two or more Lemnos revs.
+lemnos_two_revs() {
+  local revs=() r
+  while IFS= read -r r; do
+    [[ -n $r ]] && revs+=("$r")
+  done < <(lemnos_revs "$1")
+  [[ ${#revs[@]} -le 1 ]] && return 0
+  local more=$(( ${#revs[@]} - 2 )) tail=""
+  (( more > 0 )) && tail=" (and $more more)"
+  echo "${revs[0]} and ${revs[1]}$tail"
+  return 1
+}
+
+# Proves the rule catches two revs and passes one, on a lock written here (the fixture is not a product).
+lemnos_rule_self_test() {
+  local two one rc=0
+  two=$(mktemp); one=$(mktemp)
+  cat >"$two" <<'EOF'
+[source."a.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "1111111111111111111111111111111111111111"
+commit = "1111111111111111111111111111111111111111"
+
+[source."b.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "2222222222222222222222222222222222222222"
+commit = "2222222222222222222222222222222222222222"
+EOF
+  sed 's/2222222222222222222222222222222222222222/1111111111111111111111111111111111111111/g' "$two" >"$one"
+  if lemnos_two_revs "$two" >/dev/null; then
+    echo "check-devices: self-test: a lock with two Lemnos revs was not refused" >&2; rc=1
+  elif [[ $(lemnos_two_revs "$two") != "1111111111111111111111111111111111111111 and 2222222222222222222222222222222222222222" ]]; then
+    echo "check-devices: self-test: the two-rev refusal does not name both revs" >&2; rc=1
+  fi
+  lemnos_two_revs "$one" >/dev/null || { echo "check-devices: self-test: a lock with one Lemnos rev was refused" >&2; rc=1; }
+  rm -f "$two" "$one"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the Lemnos one-rev rule refuses two revs and passes one"
+  return $rc
+}
+
 fixtures=$repo/devices/tests/fixtures
 
 if [[ $mode == self-test ]]; then
@@ -56,6 +110,7 @@ if [[ $mode == self-test ]]; then
     echo "== $good fixture: must pass"
     "$self" --root "$fixtures/$good" || { echo "check-devices: self-test: $good fixture did not pass" >&2; status=1; }
   done
+  lemnos_rule_self_test || status=1
   echo "== broken fixture: must fail"
   out=$(mktemp)
   rc=0
@@ -233,7 +288,10 @@ fi
 # gaia validate stops at the first bad file and names its file and key, so each file gets its own
 # run and every bad file is reported. The kind comes from the directory the file sits in.
 validate_file() {  # <kind> <file>
-  if "$gaia" validate "$2" --kind "$1" >"$outs" 2>&1; then
+  # A product's recipe names are checked against the locked Gaia's recipes/ (validate --recipes).
+  local recipes_arg=()
+  if [[ $1 == product && -d $recipes ]]; then recipes_arg=(--recipes "$recipes"); fi
+  if "$gaia" validate "$2" --kind "$1" ${recipes_arg[@]+"${recipes_arg[@]}"} >"$outs" 2>&1; then
     cat "$outs"
   else
     bad "$2: gaia validate failed:"
@@ -280,7 +338,9 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
   # gaia lock asks the network where each source's ref points. A host being
   # unreachable says nothing about the description, so it is retried, and if
   # it stays unreachable the committed lock is planned as it is and the
-  # freshness comparison is skipped, out loud. A dead host must not hold the
+  # freshness comparison is skipped, out loud. A registry that answers "too many
+  # requests" (HTTP 429) or a server error is the same case: it says nothing
+  # about the description. A dead host must not hold the
   # check for long: one try is cut off after LOCK_TRY_SECONDS (a lock that
   # works takes a few seconds), and once a product has stayed unreachable
   # through all its tries, the products after it get one try each.
@@ -296,7 +356,7 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
     if [[ $rc -eq 124 ]]; then
       echo "gaia lock: timed out after ${LOCK_TRY_SECONDS:-60} s" >>"$errs"
     fi
-    if grep -qiE 'unable to access|could not resolve|failed to connect|could not connect|timed out|connection reset|temporary failure' "$errs"; then
+    if grep -qiE 'unable to access|could not resolve|failed to connect|could not connect|timed out|connection reset|temporary failure|HTTP 429|HTTP 50[0234]|too many requests' "$errs"; then
       offline=1
       sleep $((attempt * 5))
     else
@@ -315,6 +375,11 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
     bad "$product: gaia lock failed:"
     sed 's/^/  /' "$errs" >&2
     continue
+  fi
+  # The Lemnos rule: every Lemnos source in this product's lock is one rev (the lock as gaia lock writes
+  # it now, so --write-locks is checked too).
+  if ! lemnos_msg=$(lemnos_two_revs "$lockfile"); then
+    bad "$product: Lemnos is locked to more than one rev in this product, $lemnos_msg: every Lemnos component of a product must be locked to one rev"
   fi
   if [[ $write_locks -eq 1 ]]; then
     cp "$lockfile" "$committed"
@@ -357,5 +422,6 @@ if [[ $root_given -eq 0 ]]; then
     die "self-check: the broken fixture passed, or failed without naming its bad key, so the checker no longer catches a broken file"
   fi
   rm -f "$out"
+  lemnos_rule_self_test || die "self-check: the Lemnos one-rev rule no longer refuses two revs in one product"
   echo "check-devices: self-check passed (good fixtures pass, broken fixture fails)"
 fi

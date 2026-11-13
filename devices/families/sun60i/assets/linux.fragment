@@ -1,5 +1,51 @@
-# Every A733 board (candidate, unverified, never booted). Each line says why it is here.
-# CONFIG_DWMAC_SUN55I: the A733's gigabit MAC (gmac210, sun60i-a733-gmac210 in the SoC dtsi) that
-#   the A7S and A7A Ethernet use; DockSeed's build set it (`CONFIG_DWMAC_SUN55I=y`). Its
-#   driver is in the 7.3.3 series, not mainline 7.3.3 (see the PR text).
+# Every A733 board (candidate, UNVERIFIED, never booted on board). Each line says why it is here.
+# Standing rule: built in (=y) where a bring-up with no modules and no console needs it early.
+# The base kernel is Linux 7.3.4 with DockSeed's A733 series applied (family.toml). Mainline 7.3.4
+# alone has no A733 clock, pinctrl, dts, MUSB or USB PHY match, no gmac210 driver match: see the
+# B19 PR text. The symbols below that exist only in the series are marked (series).
+# The DEV-ONLY bring-up gadget (legacy g_ether, built in) is NOT here: it is in the bring-up
+# board's own fragment, because a gadget bound at boot would hold the one USB device controller
+# that the managed image's Lemnos gadget needs.
+
+# -- Storage: the bring-up root is ext4 on the card (sd-image makes it); slot roots are EROFS.
+CONFIG_MMC_SUNXI=y
+CONFIG_EXT4_FS=y
+
+# -- Ethernet: the gigabit GMAC (gmac210, MAE0621A-Q3C PHY). DWMAC_SUN55I is the glue (series).
+#    STMMAC_PLATFORM and STMMAC_ETH are the generic driver it sits on; built in so eth0 exists
+#    before any module could load.
+CONFIG_STMMAC_ETH=y
+CONFIG_STMMAC_PLATFORM=y
 CONFIG_DWMAC_SUN55I=y
+
+# -- USB device and host: the OTG controller (MUSB, sunxi glue) and its USB 2 PHY. The PHY's A733
+#    entry is in the series (phy-sun4i-usb). PHY_SUN4I_USB is what the USB-C 1 port's PHY uses.
+CONFIG_USB_GADGET=y
+CONFIG_USB_MUSB_HDRC=y
+CONFIG_USB_MUSB_SUNXI=y
+CONFIG_PHY_SUN4I_USB=y
+
+# -- Pins: the A733 PIO (series). The status LED (PJ26) and the MMC pins are pins of this bank.
+CONFIG_PINCTRL_SUN60I_A733=y
+
+# -- LED class and the heartbeat trigger: the bring-up's first sign of life (the board's status LED
+#    takes "heartbeat" as its default trigger in the bring-up board's dts). Built in.
+CONFIG_LEDS_CLASS=y
+CONFIG_LEDS_GPIO=y
+CONFIG_LEDS_TRIGGER_HEARTBEAT=y
+
+# -- Lemnos's managed gadget (FunctionFS for Orion, NCM, ACM) is configfs: its kernel side here.
+#    Defconfig has these as m; they stay built in for the same reason as the gadget framework.
+CONFIG_USB_CONFIGFS=y
+CONFIG_USB_CONFIGFS_F_FS=y
+CONFIG_USB_CONFIGFS_NCM=y
+CONFIG_USB_CONFIGFS_ACM=y
+
+# -- Slot file and verity: Lemnos's initramfs needs a loop device, EROFS and dm-verity in every
+#    family's kernel (INPUTS: Lemnos docs/slots.md). Each is a real need for a slot boot.
+CONFIG_BLK_DEV_LOOP=y
+CONFIG_EROFS_FS=y
+# Device mapper must be built in for verity: a module would not exist when the slot initramfs runs
+#   (DM_VERITY is m in the defconfig, and it depends on BLK_DEV_DM, which is m there too).
+CONFIG_BLK_DEV_DM=y
+CONFIG_DM_VERITY=y

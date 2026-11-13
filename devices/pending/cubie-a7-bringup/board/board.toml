@@ -1,0 +1,26 @@
+# Cubie A7S BRING-UP board (DEV ONLY, pending, outside the device check). Candidate, UNVERIFIED, NEVER BOOTED.
+#
+# Gaia 4abf626 allows one `extends` only (a board extends a family, and a family extends nothing), so this
+# file extends the family and repeats the A7S board's own lines below. They are a COPY of
+# devices/boards/radxa-cubie-a7s/board.toml: if that file changes, these lines change with it.
+# The only differences from the A7S are the kernel device tree (the status LED's heartbeat) and the kernel
+# fragments (the built-in USB Ethernet gadget, assets/bringup.fragment).
+version = 1
+extends = "../../../families/sun60i/family.toml"
+name = "cubie-a7s-bringup"
+description = "Radxa Cubie A7S bring-up (DEV ONLY): status LED heartbeat, built-in USB Ethernet gadget. Candidate, never booted."
+
+# The bring-up's device tree (assets/dts): the A7S's dts with the status LED's heartbeat trigger. A new name, so
+# the series' own dtb (sun60i-a733-cubie-a7s.dtb) is not overwritten. The family fragment comes first, as in the family.
+[kernel]
+device_tree = "allwinner/sun60i-a733-cubie-a7s-bringup"
+device_tree_dir = "assets/dts"
+fragments = ["../../../families/sun60i/assets/linux.fragment", "assets/bringup.fragment"]
+
+# From the A7S board (copied; see the header). U-Boot defconfig, radxa/u-boot @ 9da4b3e8, UNVERIFIED.
+[bootloader]
+defconfig = "radxa-cubie-a7s_defconfig"
+
+# The vendor DRAM init, built into the SPL: the closed blob of the family's LICENCE note. Not published.
+[bootloader.blobs]
+SUNXI_LIBDRAM = { source = "dlan17-pkg", path = "awbin/a733/ddr.bin" }

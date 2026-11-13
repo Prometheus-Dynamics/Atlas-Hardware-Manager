@@ -1,69 +1,79 @@
 # Allwinner A733 (sun60i) family: Radxa Cubie A7A, A7S and A7Z. aarch64 Linux.
 #
-# CANDIDATE SOURCES, UNVERIFIED, NEVER BOOTED ON BOARD. A new choice made in B12 (2026-11-13),
-# not carried from dev (dev never built an image for these boards). Every pin below was read
-# from a real commit (URL and commit beside it). Nothing here is a board run.
+# CANDIDATE SOURCES, ALL UNVERIFIED, NEVER BOOTED ON BOARD (2026-11-13). Every pin below is a full
+# commit read from its repository on 2026-11-13. "UNVERIFIED" on a pin means no board has run it.
 #
-# What is pinned is the candidate chain that DockSeed's public recipe builds, and that the
-# earlier Gaia work on this machine built (cubie-a7s image on Linux 7.3.3, signed, NOT booted;
-# /mnt/ssd-samsung/gaia/boards/cubie-a7s/build.log, and the Gaia work config
-# /mnt/ssd-samsung/gaia/work/examples/boards/a733/base.toml). The vendor alternatives are
-# recorded at the end of this file.
+# LICENCE (the one place this is written; the board files and the bring-up point here): the vendor
+# DRAM init (awbin/a733/ddr.bin, from radxa-pkg/u-boot-dlan17) is CLOSED code with no open licence,
+# and the vendor kernel and bootloader sources here carry no open licence either. They are pinned
+# like any other source (user ruling 2026-11-13). NO image that contains them is published, and
+# none is distributed, without the user saying so. Revisit before anything is distributed.
 #
-# Chain (candidate): BROM -> U-Boot SPL (vendor DRAM blob ddr.bin, built in via SUNXI_LIBDRAM)
-#   -> BL31 (TF-A, A733 platform) -> U-Boot -> kernel. One image file, u-boot-sunxi-with-spl.bin,
-#   sits on the card at 128 KiB (sector 256); the first partition starts at 16 MiB.
+# BOOT CHAIN (candidate; order as the boot ROM loads it):
+#   BROM (mask ROM, SD or FEL) -> one file at 128 KiB, u-boot-sunxi-with-spl.bin:
+#       U-Boot SPL, which runs the closed DRAM init (ddr.bin, SUNXI_LIBDRAM) and then
+#       BL31 (TF-A, built from source and placed by the same make)
+#     -> U-Boot (Radxa's tree plus DockSeed's patches) -> distro boot (extlinux) -> Linux.
+#   The boot ROM reads the SD card at 128 KiB (sector 256); the first partition starts at 16 MiB.
+#   Not in the chain: an SCP firmware blob (nothing here loads one; whether A733 needs it is OPEN).
+#   FEL: the ROM can also load the SPL over USB FEL. Atlas's FEL crate cannot do it for this chip
+#   yet (ARMv7 thunk only; the sun60i SRAM layout is refused). So the first board proof uses the SD
+#   card (see the B19 PR text).
 #
-# OPEN, blocks shipping (see the B12 PR text): the kernel is a patch series on Linux 7.3.3
-# (Gaia's git source cannot apply it); U-Boot and TF-A also need DockSeed's patches applied; the
-# TF-A and U-Boot patch series have no F8 spelling; the DRAM blob is closed (no redistribution
-# grant): no published image may carry it.
+# KERNEL BASE (B19 decision, 2026-11-13): mainline Linux 7.3.4 (the newest 7.x release tag; 7.4 is
+# still at rc2) with DockSeed's A733 series applied on top (379 patches; all apply cleanly to 7.3.4,
+# checked in B19). Mainline 7.3.4 cannot give storage, USB device mode, Ethernet or the LED alone:
+# it has an A733 RTC clock match and nothing else of the A733 (no CCU, no pinctrl, no dts, no MUSB or
+# PHY match, no gmac210 match). The series adds the rest. The vendor 5.15 and 6.6 kernels are not
+# used (older, and the series covers what they would: see the vendor record at the end).
+#
+# OPEN, blocks shipping: the series' pinctrl and clock patches are queued for mainline 7.4 (their
+# headers say so); when 7.4 is released and has them, the series shrinks. The series is one author's
+# and is tested by that author on the A7S only.
 version = 1
 
 [target]
 arch = "aarch64"
 os = "linux"
 
-# Mainline Linux 7.3.3, the latest 7.x tag this chip's candidate runs on. Pinned to the
-# peeled commit of tag v7.3.3 (kernel.org; `git ls-remote`, tag object b7cb9f47).
-# candidate, unverified, never booted; a new choice, not carried from dev.
+# Mainline Linux v7.3.4 (stable), the newest 7.x release tag on 2026-11-13. Pinned to the peeled
+# commit (git ls-remote ...refs/tags/v7.3.4^{} on kernel.org). UNVERIFIED, never booted. Moved from
+# v7.3.3 (d50d994b) in B19: the series applies to 7.3.4 and not yet proven on the board either.
 [sources.linux]
 git = "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
-ref = "d50d994bffa3c7c6db2d8bc4c5f0c55e3f46b0cd"
+ref = "7595a62d45ee1a2297eafa5f2ef5d0a45142d84d"
 
-# DockSeed's Linux 7.3.3 patch series for the A733 (SoC, CCU, pinctrl, PMIC, GMAC, USB, GPU,
-# NPU; the A7S board dts). Applied on top of linux.linux by its build (patches/series, 19
-# commits on main). Only the Cubie A7S is tested by its author. Pinned to the commit main had
-# when the earlier build read it. candidate, unverified, never booted; a new choice, not carried from dev.
+# DockSeed's Linux patch series for the A733 (SoC dtsi, CCU, pinctrl, PMIC, GMAC, USB, GPU, NPU, the
+# A7S board dts with its LEDs and USB-C ports). Applied on top of linux.linux by its build (patches/series,
+# 379 patch files). Pinned to the commit read in B12 (fe0a8ed, 2026-11-13). UNVERIFIED, never booted.
+# Gaia cannot express a patch series at 4abf626: this pin is a source for the build, not yet a Gaia field.
 [sources.a733-kernel-series]
 git = "https://github.com/DockSeed/a7s-linux-mainline.git"
 ref = "fe0a8ed3a426c09efa8d92c14c9d9ab3769d5256"
 
-# Radxa's U-Boot tree, the one radxa-pkg/u-boot-dlan17 pins as its `src` submodule (branch
-# u-boot-dlan17). Holds the A733 defconfigs and board dts for the A7A and A7S (see the boards).
-# candidate, unverified, never booted; a new choice, not carried from dev.
+# Radxa's U-Boot tree (the tree radxa-pkg/u-boot-dlan17 pins as its src, branch u-boot-dlan17). It has
+# the A733 defconfigs and board dts for the A7A and A7S. UNVERIFIED, never booted, pinned 2026-11-13.
 [sources.u-boot]
 git = "https://github.com/radxa/u-boot.git"
 ref = "9da4b3e82d641296f5b19d5e78eaad0d3cf56eec"
 
-# DockSeed's 18 U-Boot patches on that tree (patches/u-boot/series in a733-bootchain, pinned to
-# commit b6f6872be2505e1f4d4dfcea7bee5b423a3efcb3, which is the A7S's board patches). Gaia
-# cannot express a patch series at this rev: an open field (B12 PR text). candidate, unverified.
+# DockSeed's 18 U-Boot patches on that tree (patches/u-boot/series in a733-bootchain); its commit is the
+# A7S's board patches. Gaia cannot express a patch series at 4abf626. UNVERIFIED, pinned 2026-11-13.
 [sources.a733-bootchain]
 git = "https://github.com/DockSeed/a733-bootchain.git"
 ref = "b6f6872be2505e1f4d4dfcea7bee5b423a3efcb3"
 
-# TF-A: upstream master at 3d425f4f4598 (VERSION 2.15.0, 2026-10-02) plus DockSeed's 17 patches
-# (patches/tf-a/series; they add plat/allwinner/sun60i_a733). Upstream master has no A733
-# platform of its own. candidate, unverified, never booted; a new choice, not carried from dev.
+# TF-A: upstream master at 3d425f4f (VERSION 2.15.0, 2026-10-02) plus DockSeed's 17 patches (patches/tf-a/series;
+# they add plat/allwinner/sun60i_a733). Upstream has no A733 platform of its own (checked by Gaia's report,
+# 2026-11-08; not re-read in B19). UNVERIFIED, pinned 2026-11-13.
 [sources.tf-a]
 git = "https://git.trustedfirmware.org/TF-A/trusted-firmware-a.git"
 ref = "3d425f4f459820a44d24b23464dbc09d6baab7bb"
 
-# The DRAM blob's home: radxa-pkg/u-boot-dlan17 at tag 2026.04-4. The blob is
-# awbin/a733/ddr.bin (sha256 d89804f404f2eef6ef5b03d82a310ef0906c4db8ded760be221b131f5c813a05,
-# checked by hash in the B12 work). CLOSED vendor code with no redistribution grant: it is
-# fetched at build time, never committed, and never published inside an image.
+# The DRAM blob's home: radxa-pkg/u-boot-dlan17 at tag 2026.04-4. The blob is awbin/a733/ddr.bin (sha256
+# d89804f404f2eef6ef5b03d82a310ef0906c4db8ded760be221b131f5c813a05, checked by hash in B12). CLOSED vendor
+# code: a pinned source fetched at build time, never committed, never published in an image (see LICENCE).
+# This blob is the LPDDR5 candidate; no LPDDR4 blob is pinned (see the A7Z). UNVERIFIED, pinned 2026-11-13.
 [sources.dlan17-pkg]
 git = "https://github.com/radxa-pkg/u-boot-dlan17.git"
 ref = "b1cec0a90c795f65b82cee7098489e0bdf550b74"
@@ -80,9 +90,9 @@ fragments = []
 source = "tf-a"
 platform = "sun60i_a733"
 
-# The boot ROM loads the SPL and U-Boot from the card at 128 KiB (sector 256). The SPL and
-# U-Boot are one file, u-boot-sunxi-with-spl.bin, which the OS build makes. candidate, unverified:
-# the 128 KiB rule is from DockSeed's docs/boot-chain.md (their A7S card test), not a board run.
+# The boot ROM loads the SPL and U-Boot from the card at 128 KiB (sector 256). They are one file,
+# u-boot-sunxi-with-spl.bin, which the OS build makes. UNVERIFIED: the 128 KiB rule is from DockSeed's
+# docs/boot-chain.md (their A7S card test), not a board run here.
 [[partitions]]
 name = "u-boot"
 role = "bootloader"
@@ -90,8 +100,8 @@ offset = "128K"
 in_table = false
 content = "u-boot-sunxi-with-spl.bin"
 
-# The first partition starts at 16 MiB, which is the offset DockSeed's chain uses for its rootfs.
-# rootfs and data are made by the recipe (sd-image), as for the RK35xx boards.
+# The first partition starts at 16 MiB, the offset DockSeed's chain uses for its rootfs. rootfs and data
+# are made by the recipe (sd-image), as for the RK35xx boards.
 
 [disk]
 scheme = "gpt"
@@ -99,23 +109,16 @@ scheme = "gpt"
 [flash]
 methods = ["fel", "sd-card"]
 
-# VENDOR ALTERNATIVE (records, not used by this chain; kept with its reason, B12):
-#   radxa-pkg/linux-a733 @ 166c84e4ce3e75750359f5085d712fd4f0bd1fe6 (tags 5.15.147-1..21), kernel
-#     src radxa/kernel branch allwinner-aiot-linux-5.15 @ e41499895c17074874f4c48ff04041c57d8dfd99
-#     (Linux 5.15.147). The vendor 6.6 kernel: radxa/kernel branch allwinner-aiot-linux-6.6 @
-#     76402aa303a7571bc0e7e33188a46367f0ae4420 (Linux 6.6.98). Neither tree has an A733 dts: the
-#     board files come from radxa-pkg device-a733 (below).
-#   radxa/allwinner-device branch device-a733-v1.4.6 @ 79d54f44e14111db3845096cef0639a6c9222707:
-#     configs/cubie_a7a|a7s|a7z/linux-6.6/board.dts (generic sun60iw2p1 board files), and the
-#     Radxa boot0 (bin/boot0_sdcard_sun60iw2p1.bin), sboot and fes1 blobs (vendor, closed).
+# VENDOR ALTERNATIVE (records only; not used by this chain, B12 and B19):
+#   radxa-pkg/linux-a733 @ 166c84e4ce3e75750359f5085d712fd4f0bd1fe6 (tags 5.15.147-1..21), kernel src
+#     radxa/kernel branch allwinner-aiot-linux-5.15 @ e41499895c17074874f4c48ff04041c57d8dfd99 (Linux 5.15.147).
+#     The vendor 6.6 kernel: radxa/kernel branch allwinner-aiot-linux-6.6 @ 76402aa303a7571bc0e7e33188a46367f0ae4420
+#     (Linux 6.6.98). Neither has an A733 dts: the board files come from radxa-pkg device-a733 (below).
+#   radxa/allwinner-device branch device-a733-v1.4.6 @ 79d54f44e14111db3845096cef0639a6c9222707: generic
+#     configs/cubie_a7a|a7s|a7z/linux-6.6/board.dts, and Radxa's boot0 (bin/boot0_sdcard_sun60iw2p1.bin),
+#     sboot and fes1 blobs (vendor, closed).
 #   radxa/allwinner-bsp branch cubie-aiot-v1.4.6 @ 2045a3ca2a01f088c0314dc924bda59d154e363e.
-#   The vendor first stage (boot0) and its packer (dragonsecboot, an Allwinner x86 tool) are
-#   what Atlas's rule refuses: loaders are our own Rust. Not used.
-#   dlan17/a733 docs: boot0 at 128 KiB, a boot_package at sector 32800 (16793600 B), which
-#   would overlap a 16 MiB rootfs start; the boot-chain doc above says 12 MiB for the same
-#   packer. Both unverified here; they are the vendor route only.
-#
-# OPEN, mainline (the latest 7.x goal): nothing of the A733 is in Linux 7.3.3 (see the
-# B12 PR text). Upstream posting: "[PATCH 0/4] arm64: dts: allwinner: add A733/Cubie A7S DTS
-# support" (Enzo Adriano, 2026-06-13, linux-arm-kernel; its SoC dtsi review by Jerome Brunet,
-# 2026-06-23). It needs the A733 clock and RTC series first. Merge status in 7.4+ NOT verified.
+#   The vendor first stage (boot0) and its packer (dragonsecboot, an Allwinner x86 tool) are what Atlas's rule
+#   refuses: loaders are our own Rust. Not used. dlan17/a733 docs: boot0 at 128 KiB, a boot_package at sector
+#   32800 (16793600 B), which would overlap a 16 MiB rootfs start; the boot-chain doc above says 12 MiB for the
+#   same packer. Both unverified; the vendor route only.
