@@ -15,7 +15,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use atlas_driver::{Driver, DriverRegistry};
-use atlas_types::{Candidate, DeviceKey, Family, Link, LinkId};
+use atlas_types::{Candidate, DeviceKey, Family, Identity, Link, LinkId, LinkKind};
 use tokio::time::{self, Instant};
 
 use crate::call::guarded;
@@ -131,6 +131,8 @@ struct Shared {
     events: Events,
     config: ScanConfig,
     holds: DeviceHolds,
+    /// Who serves each device. A device several drivers can see is reported by one of them.
+    registry: DriverRegistry,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -241,6 +243,24 @@ impl Shared {
         lock(&self.board).known.get(address).cloned()
     }
 
+    /// Whether `driver` is the one the registry names for this device on this link kind. A
+    /// device that a named driver and the any-family driver both see is reported once, by the
+    /// one the registry names. The other driver's identify still records the device's key for
+    /// its address, so a quiet claim on the address keeps working.
+    ///
+    /// A node key carries no family, so it is looked up under the identifying driver's own label:
+    /// the any-family driver on that link kind.
+    fn serves(&self, driver: &Arc<dyn Driver>, identity: &Identity, kind: &LinkKind) -> bool {
+        let family = identity
+            .key
+            .family()
+            .cloned()
+            .unwrap_or_else(|| driver.manifest().family.clone());
+        self.registry
+            .resolve(&family, kind)
+            .is_some_and(|owner| Arc::ptr_eq(&owner, driver))
+    }
+
     /// Clears settled answers for one family, so the next scan asks again.
     fn ask_again(&self, family: &Family) {
         lock(&self.board)
@@ -276,6 +296,7 @@ pub fn start_scan(
         events,
         config,
         holds,
+        registry: registry.clone(),
     });
     tokio::spawn(run(Arc::clone(&shared), registry, links));
     ScanControl { shared }
@@ -355,6 +376,7 @@ async fn discover(shared: Arc<Shared>, driver: Arc<dyn Driver>, link: Link, clai
                     tokio::spawn(identify(
                         Arc::clone(&shared),
                         Arc::clone(&driver),
+                        link.kind.clone(),
                         candidate,
                         identify_claim,
                     ));
@@ -389,6 +411,7 @@ async fn discover(shared: Arc<Shared>, driver: Arc<dyn Driver>, link: Link, clai
 async fn identify(
     shared: Arc<Shared>,
     driver: Arc<dyn Driver>,
+    kind: LinkKind,
     candidate: Candidate,
     claim: Claim,
 ) {
@@ -407,10 +430,12 @@ async fn identify(
         Ok((identity, capabilities)) => {
             shared.remember(&address, identity.key.clone());
             shared.succeeded(&key, shared.config.refresh);
-            shared.events.emit(Event::Identified {
-                identity,
-                capabilities,
-            });
+            if shared.serves(&driver, &identity, &kind) {
+                shared.events.emit(Event::Identified {
+                    identity,
+                    capabilities,
+                });
+            }
         }
         Err(error) if error.is_settled() => {
             let message = error.to_string();
