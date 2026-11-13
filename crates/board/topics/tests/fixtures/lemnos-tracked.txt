@@ -1,0 +1,7 @@
+describe 1
+device generation=1 label="tracked" kind="other" bus="" address=none location="" state=running reason=""
+contract index=0 tag="tracked/1" kind="other" hash=0x8a02b46718fd879c methods=4
+method contract=0 id=1 name="take" params="" returns="()" out_buffer=false job=false
+method contract=0 id=2 name="held" params="" returns="u32" out_buffer=false job=false
+method contract=0 id=3 name="who" params="" returns="u32" out_buffer=false job=false
+method contract=0 id=4 name="hold_until_cancelled" params="" returns="u64" out_buffer=false job=true

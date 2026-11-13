@@ -11,6 +11,7 @@
 //! is removed.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -67,6 +68,8 @@ pub struct Hardware {
     link: LinkId,
     grace: Duration,
     state: Mutex<State>,
+    /// Set by [`Hardware::refresh_descriptions`]: the next read asks every description again.
+    refresh: AtomicBool,
 }
 
 /// A device held by the crate, with when it was last current.
@@ -107,6 +110,7 @@ impl Hardware {
             handle,
             link,
             grace,
+            refresh: AtomicBool::new(false),
             state: Mutex::new(State {
                 connection: Connection::Stale {
                     since: Instant::now(),
@@ -121,6 +125,12 @@ impl Hardware {
         }
     }
 
+    /// Asks every device's description again on the next read, whatever its generation says: the
+    /// app's manual refresh. Nothing else asks again (see [`crate::describe`]).
+    pub fn refresh_descriptions(&self) {
+        self.refresh.store(true, Ordering::SeqCst);
+    }
+
     /// Reads the node now and returns what the app shows. Never an error: a read that cannot be
     /// made is in the [`Connection`], and the devices shown are stale.
     pub async fn snapshot(&self) -> Snapshot {
@@ -133,9 +143,10 @@ impl Hardware {
         };
         let link = self.link.clone();
         let key = address.clone();
+        let refresh = self.refresh.swap(false, Ordering::SeqCst);
         let answer = self
             .handle
-            .with_client(move |orion| read::read(orion, &key, &session, &link))
+            .with_client(move |orion| read::read(orion, &key, &session, &link, refresh))
             .await;
         let now = Instant::now();
         let mut state = lock(&self.state);
@@ -145,6 +156,10 @@ impl Hardware {
             Err(SessionError::Gone(reason) | SessionError::Failed(reason)) => {
                 state.lose(reason, now);
             }
+        }
+        // A refresh is kept until a read is made: a read that failed asked for nothing.
+        if refresh && !matches!(state.connection, Connection::Live) {
+            self.refresh.store(true, Ordering::SeqCst);
         }
         state.snapshot()
     }
@@ -274,6 +289,7 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::description::DescriptionState;
     use crate::device::{RawField, RawTopic, TopicLive};
     use crate::value::Scalar;
     use orion::provider::ResourceState;
@@ -282,16 +298,15 @@ mod tests {
         RawDevice {
             resource: name.into(),
             state: ResourceState::Ready,
-            labels: Vec::new(),
             topics: vec![RawTopic {
                 name: format!("{name}.values"),
                 live: TopicLive::Live,
                 fields: vec![RawField {
                     name: "speed".into(),
-                    unit: "m/s".into(),
                     value: Some(Scalar::Number(value)),
                 }],
             }],
+            description: DescriptionState::Pending,
         }
     }
 
