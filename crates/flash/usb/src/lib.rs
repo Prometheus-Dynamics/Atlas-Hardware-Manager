@@ -17,6 +17,7 @@ mod error;
 mod gauge;
 mod hotplug;
 mod io;
+mod link;
 mod nusb_backend;
 mod record;
 pub mod sim;
@@ -29,8 +30,13 @@ pub use error::UsbError;
 pub use gauge::{Gauges, Live};
 pub use hotplug::{HotplugEvent, Watch, spawn_watch, watch_usb};
 pub use io::{
-    DeviceSummary, EndpointDirection, EndpointKind, EndpointSummary, InterfaceSummary, OpenOptions,
-    Timeouts, UsbId, UsbIo,
+    BulkRead, BulkWrite, DeviceSummary, EndpointDirection, EndpointKind, EndpointSummary, Halves,
+    InterfaceSummary, OpenOptions, Timeouts, UsbId, UsbIo,
+};
+pub use link::{
+    BlockingReader, BlockingWriter, Link, LinkOptions, LinkRead, LinkReader, LinkWrite, LinkWriter,
+    READ_IN_FLIGHT, WRITE_IN_FLIGHT, WRITE_TRANSFER, ZeroLength, is_device_gone, open_link,
+    usb_error,
 };
 pub use nusb_backend::NusbBus;
 pub use record::{Record, Transfer};

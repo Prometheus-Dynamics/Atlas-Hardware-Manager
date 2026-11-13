@@ -181,6 +181,9 @@ pub struct Rig {
     pub slots: BoardSlots,
     pub installs: SlotInstalls,
     pub dir: PathBuf,
+    /// The node's key, read once when the rig connected. A test names the board by this, not by
+    /// the handle's presence at that moment, which is empty between two connections.
+    pub key: [u8; 32],
 }
 
 pub fn kind() -> Kind {
@@ -208,16 +211,21 @@ pub async fn until(what: &str, mut check: impl FnMut() -> bool) {
     .unwrap_or_else(|_| panic!("timed out waiting for {what}"));
 }
 
-/// Waits until the handle's monitor reports the node connected.
-pub async fn connected(handle: &Handle) {
+/// Waits until the handle's monitor reports the node connected, and returns that node's key, read
+/// from the same report: a later look at the handle could find the session between two connections.
+pub async fn connected(handle: &Handle) -> [u8; 32] {
     let mut presence = handle.watch();
-    time::timeout(
+    let found = time::timeout(
         DEADLINE,
         presence.wait_for(|presence| matches!(presence, Presence::Found(_))),
     )
     .await
     .expect("the node is connected")
     .expect("the monitor is running");
+    match &*found {
+        Presence::Found(node) => node.public_key,
+        _ => unreachable!("waited for a found node"),
+    }
 }
 
 impl Rig {
@@ -240,7 +248,7 @@ impl Rig {
             None => sessions,
         });
         let handle = sessions.handle(&address).expect("the node is on");
-        connected(&handle).await;
+        let key = connected(&handle).await;
         let slots = BoardSlots::new(handle.clone(), BOARD, true);
         let installs = open_installs(&dir, Arc::clone(&sessions)).await;
         Self {
@@ -251,6 +259,7 @@ impl Rig {
             slots,
             installs,
             dir,
+            key,
         }
     }
 
