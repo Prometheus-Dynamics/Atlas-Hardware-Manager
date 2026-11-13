@@ -1,0 +1,19 @@
+[package]
+name = "atlas-fel"
+description = "Allwinner FEL: the boot ROM's USB download mode. Writes an SPL through a thunk into SRAM, then loads and starts an image. Our own code, no vendor tool."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+atlas-usb = { path = "../usb" }
+serde_json = "1"
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "time", "test-util"] }
+
+[lints]
+workspace = true
