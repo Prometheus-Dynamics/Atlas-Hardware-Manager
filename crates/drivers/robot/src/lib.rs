@@ -270,7 +270,7 @@ mod tests {
             let all = CapabilityKind::ALL;
             let identity = atlas_types::Identity {
                 key: DeviceKey::from_static("x", "1"),
-                model: String::new(),
+                model: None,
                 state: DeviceState::RobotDevice,
                 lemnos: atlas_types::LemnosState::Absent,
                 versions: Default::default(),

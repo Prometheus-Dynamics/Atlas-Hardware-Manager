@@ -48,10 +48,10 @@
 //!   [`Options::max_spool_bytes`] (default 8 GiB).
 //! - Boot files: [`Options::max_file_bytes`] each and
 //!   [`Options::max_boot_bytes`] in total, read once at open to be hashed.
-//! - The decoder is `lzma-rs`, pure Rust. Its xz path has no memory limit: its
-//!   dictionary buffer grows with the stream's back-references, up to the
-//!   dictionary size each block declares. It does not support the SHA-256 xz
-//!   check (Gaia uses CRC-64); such an image is refused as undecodable.
+//! - The decoder is liblzma, streamed (the `xzdec` crate): memory is bounded by the
+//!   dictionary, checked against 8 MiB from the stream's index before any decode.
+//!   Only the image stream is decoded; a signature record after it is never read
+//!   into the image.
 //!
 //! # What is not checked here
 //!
@@ -64,6 +64,7 @@
 mod budget;
 mod error;
 mod ext;
+mod flash;
 mod gpt;
 mod manifest;
 mod names;
@@ -72,22 +73,25 @@ mod scratch;
 pub mod verity;
 
 use std::collections::BTreeMap;
-use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read};
+use std::io::{self, Read, Seek};
 use std::path::Path;
 
 use ext4_view::Ext4;
 use sha2::{Digest, Sha256};
 
 pub use error::ImageError;
+pub use flash::{
+    Algorithm, BoardOutcome, BoardProbe, FlashError, FlashImage, FlashManifest, Format, ImageKind,
+    Record, Refusal, SCHEMA, SignatureState, check_target, flash_manifest, probe_board, signature,
+    signed_message, valid_board_id,
+};
 pub use verity::{BLOCK, Verity, VerityError, tree_bytes};
 
 use crate::budget::Budget;
 use crate::manifest::Manifest;
-use crate::route::Router;
+use crate::route::{Mode, Router};
 use crate::scratch::Scratch;
 
-const XZ_MAGIC: &[u8] = &[0xFD, b'7', b'z', b'X', b'Z', 0x00];
 /// The largest manifest read.
 const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 /// The largest boot list read.
@@ -219,21 +223,24 @@ pub fn open(
     requested.dedup();
 
     let scratch = Scratch::create(scratch_parent)?;
-    let file = File::open(image).map_err(|error| ImageError::io("the image", &error))?;
-    let mut input = BufReader::with_capacity(1 << 20, file);
-    let xz = input
-        .fill_buf()
-        .map_err(|error| ImageError::io("the image", &error))?
-        .starts_with(XZ_MAGIC);
-    let mut router = Router::new(scratch.path(), options);
-    let stream = if xz {
-        lzma_rs::xz_decompress(&mut input, &mut router).map_err(|error| format!("{error:?}"))
+    let mut file = flash::Counted::open(image)?;
+    let layout = if atlas_xzdec::is_xz(&mut file).map_err(|e| ImageError::Io(e.to_string()))? {
+        atlas_xzdec::scan(&mut file)?
     } else {
-        io::copy(&mut input, &mut router)
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+        let len = file
+            .seek(std::io::SeekFrom::End(0))
+            .map_err(|e| ImageError::Io(e.to_string()))?;
+        file.seek(std::io::SeekFrom::Start(0))
+            .map_err(|e| ImageError::Io(e.to_string()))?;
+        atlas_xzdec::Layout::plain(len)
     };
-    let output = router.complete(stream)?;
+    let mut router = Router::new(scratch.path(), options, Mode::Slots);
+    // Only the image stream is decoded: the record stream after it is never read.
+    let stream = atlas_xzdec::decode_image(&mut file, &layout, &mut router)
+        .map_err(|error| error.to_string());
+    let output = router
+        .complete(stream)
+        .map_err(flash::FlashError::into_image)?;
     let data = ext::load(&output.data)?;
 
     let mut budget = Budget::new(options.max_boot_bytes, options.max_file_bytes);
