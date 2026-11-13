@@ -1,13 +1,22 @@
-# Allwinner A733 (sun60i) family (Radxa Cubie A7A, A7S and A7Z): aarch64 Linux, written by
-# Atlas's own FEL loader over USB, then the microSD card. Holds what the three boards
-# share; each board keeps only what differs. Untested on board.
+# Allwinner A733 (sun60i) family: Radxa Cubie A7A, A7S and A7Z. aarch64 Linux, written by
+# Atlas's own FEL loader over USB, then the microSD card. Holds what the three boards share.
 #
-# Open (not written, because dev pinned no value for them):
-#   - [sources] for the kernel, U-Boot and TF-A, and [kernel]/[bootloader] built from them.
-#   - [target] cpu: the A733 is two Cortex-A76 and six Cortex-A55; one cpu value does not fit both.
-#   - [flash.files] the FEL image (eGON SPL then legacy U-Boot). Dev's record only names a glob
-#     (u-boot-sunxi-with-spl*.bin) and no file is in the repo.
-#   - [[partitions]] and [disk]: the sunxi layout offsets are not in dev's records.
+# RECORDS, NOT BUILDABLE DESCRIPTIONS. untested on board. Sources missing (nobody has chosen them;
+# dev pins none):
+#   - kernel source and its pin (git + ref), and a defconfig if it is not the arch default
+#   - U-Boot source and pin, for the FEL SPL and the U-Boot that FEL runs
+#   - TF-A source and pin (the A733 platform)
+#   - OS source: a Buildroot git source and its fragments (the product's os.source)
+#   - FEL SPL: the eGON SPL file for the loader (dev names only a glob, u-boot-sunxi-with-spl*.bin)
+#   - SRAM layout for the FEL thunk (the family's sram is null in dev's record)
+#   - AArch64 thunk for FEL: dev's thunk is ARMv7; the A733 is AArch64, so a new one is needed
+#   - microSD device path for the slot (dev records none)
+#   - [target] cpu: the A733 is two Cortex-A76 and six Cortex-A55; one value does not fit both
+#
+# Slot boot on U-Boot boards (record = "uboot", settled by Lemnos): boot-record.env on the boot
+# partition, one extlinux.conf per slot, and one static boot.cmd (Lemnos) compiled to boot.scr.
+# TODO: the U-Boot fragment needs sysboot/extlinux, env import/export, `test`, and FAT write.
+# Exact CONFIG_ option names come from Gaia after it builds one; none guessed here.
 version = 1
 
 [target]
