@@ -58,6 +58,7 @@ fn lease(renew: Duration) -> Lease {
     Lease {
         period: Duration::from_secs(30),
         renew,
+        in_force: true,
     }
 }
 
@@ -313,6 +314,7 @@ async fn a_silent_session_with_a_hold_records_a_lapse_and_one_without_does_not()
     let sessions = sessions(Lease {
         period: Duration::from_millis(300),
         renew: Duration::from_secs(3600),
+        in_force: true,
     });
     let handle = sessions
         .handle(&address(node.network().port()))
@@ -357,4 +359,30 @@ async fn holds_are_per_board() {
         "a hold on one board sends nothing to another"
     );
     assert_eq!(node_b.calls_received(), 0);
+}
+
+/// At the locked revision the lease is not in force. A session with holds then sends nothing to the
+/// bridge for the lease, lists no device for it, and records no lapse, however long it is silent:
+/// so no holder can be told its hold was dropped by a lease that does not exist.
+#[tokio::test]
+async fn with_the_lease_not_in_force_a_hold_sends_nothing_and_records_no_lapse() {
+    let node = start_node(&scratch("off"), &with_lemnos(), None);
+    let sessions = sessions(Lease {
+        period: Duration::from_millis(300),
+        renew: Duration::from_millis(100),
+        in_force: false,
+    });
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+
+    let mut hold = handle.hold();
+    let mut lapses = handle.lapses();
+    let lapsed = tokio::time::timeout(Duration::from_millis(1500), lapses.changed()).await;
+    assert!(lapsed.is_err(), "no lease in force: no lapse is recorded");
+    assert!(!hold.lapsed(), "the hold never sees a lapse");
+    hold.acknowledge();
+    assert_eq!(renewals(&node), 0, "nothing is sent to the bridge for the lease");
+    assert_eq!(node.calls_received(), 0, "no request of any kind reaches the node");
 }

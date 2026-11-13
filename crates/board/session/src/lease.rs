@@ -39,6 +39,14 @@ use tokio::sync::watch;
 // kept here until one does; then read it from the node.
 pub const LEASE: Duration = Duration::from_secs(60);
 
+/// Whether the board's bridge keeps a lease at all: the lease is a Lemnos I6g change, and the locked
+/// bridge (`d6b9361d`) keeps none. Nothing a client can read says it is in force: no hello fact, no
+/// topic, no contract in `hello.offers`, and the only probe (`.call describe`, I6h) is itself a request.
+/// Until the lock moves, a session sends nothing for a lease, lists no devices for one, and records no
+/// lapse, so no hold can be reported as dropped by a lease that does not exist.
+// LOCK: Lemnos I6g/I6h. The lock move that brings the lease flips this to `true`.
+pub const LEASE_IN_FORCE: bool = false;
+
 /// How often a held lease is renewed when nothing else renewed it: a third of [`LEASE`]. Two
 /// renewals may fail (a refused or slow one) before the lease runs out. The session checks every
 /// 100 ms, so a renewal is never more than that late.
@@ -62,13 +70,17 @@ pub struct Lease {
     /// How long the session waits between renewals while holds exist ([`LEASE_RENEW`]). Must be
     /// shorter than `period`.
     pub renew: Duration,
+    /// Whether the board keeps a lease for this session. `false` sends nothing, lists nothing and
+    /// records no lapse. The locked board is [`LEASE_IN_FORCE`]; a test turns it on.
+    pub in_force: bool,
 }
 
 impl Lease {
-    /// The lease as the locked bridge keeps it.
+    /// The lease as the board keeps it at the locked revision ([`LEASE_IN_FORCE`]).
     pub const DEFAULT: Self = Self {
         period: LEASE,
         renew: LEASE_RENEW,
+        in_force: LEASE_IN_FORCE,
     };
 }
 
@@ -176,10 +188,8 @@ pub(crate) fn device_for_renewal(orion: &Orion) -> Result<Option<String>, OrionE
 
 /// Renews the lease through the bridge of `device` (a resource name from [`device_for_renewal`]).
 ///
-/// It is one action run on the device's `.call`, with no side effect on the device. At the locked
-/// revision the bridge refuses a `.call` with no method ("call needs a method") before it writes
-/// anything; the refusal is an answer, so the bridge has the request and the lease is renewed.
-/// The bridge lists the devices first, which only reads.
+/// It is one action run on the device's `.call describe`, which reads the description and changes
+/// nothing. The session calls it only while [`Lease::in_force`] is set.
 ///
 /// `Ok` also when the bridge answered in any way, including a refusal, or did not finish in
 /// [`RENEW_WAIT`] (the run is then cancelled, and the cancel is a request too).
@@ -189,10 +199,10 @@ pub(crate) fn device_for_renewal(orion: &Orion) -> Result<Option<String>, OrionE
 /// [`OrionError`] when the session is gone or the run could not be sent. The caller checks
 /// [`OrionError::is_lost`].
 pub(crate) fn renew(orion: &Orion, node: &NodeName, device: &str) -> Result<(), OrionError> {
-    // LOCK: Lemnos I6h describe. At I6h the renewal is `describe` with no other arguments: the
-    // bridge answers the device description as text, a read. Until then the empty call is the
-    // cheapest one the bridge answers, and it has no side effect (see above).
-    const RENEW_ARGS: &[u8] = b"";
+    // LOCK: Lemnos I6h describe. The renewal is `describe` with no other arguments: the bridge
+    // answers the device description as text, a read. The session calls this only while the lease
+    // is in force (see `LEASE_IN_FORCE`); at the locked revision nothing is sent.
+    const RENEW_ARGS: &[u8] = b"describe";
     let name = format!("{device}.call");
     let mut run = orion.run(&ActionCall {
         name: &name,

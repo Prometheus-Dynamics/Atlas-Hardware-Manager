@@ -397,7 +397,8 @@ impl InstallKind {
                 PushStage::WaitingForBoard { reason } => {
                     self.set_stage(&spec.nonce, Stage::WaitingForBoard { reason });
                 }
-                PushStage::Queued | PushStage::Sending => {
+                // A resend after a lapse moves bytes too: the install shows it as sending.
+                PushStage::Queued | PushStage::Sending | PushStage::Resending { .. } => {
                     self.set_stage(
                         &spec.nonce,
                         Stage::Sending {

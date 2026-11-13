@@ -245,6 +245,9 @@ pub async fn submit(
     }
 }
 
+/// The note a push shows when its hold lapsed: the board may have dropped the partial file.
+const LAPSE_NOTE: &str = "the session was silent past the board's lease, so the board may have dropped the partial file: sending the file again from its start";
+
 /// The push itself: attempts until the board commits, a refusal ends it, or it is cancelled.
 /// `Err` is the reason it stopped for good. An attempt is one long operation on the node's session
 /// (see `atlas_session::long`); a lost session ends it, and the next attempt begins the file again.
@@ -266,14 +269,6 @@ async fn run(pending: &Pending) -> Result<(), String> {
         if let Some(reason) = shared.refusal() {
             return Err(reason);
         }
-        if hold.lapsed() {
-            // The board may have dropped the transfer: its hold lapsed. The file is sent again from
-            // its start, as after a lost session, and the message says why it starts over.
-            hold.acknowledge();
-            shared.waiting(
-                "the board may have dropped the transfer: no request reached its bridge within the lease; sending the file again from its start".to_owned(),
-            );
-        }
         let presence = pending.handle.presence();
         if !matches!(presence, Presence::Found(_)) {
             shared.waiting(presence_reason(&presence));
@@ -293,6 +288,14 @@ async fn run(pending: &Pending) -> Result<(), String> {
             }
         }
 
+        if hold.lapsed() {
+            // The session was silent past the lease while the transfer was held: the board may have
+            // dropped the partial file. The file is sent again from its start, and the stage says so
+            // until the board acknowledges bytes. Checked once the node is back, so the note is not
+            // replaced by the wait for it.
+            hold.acknowledge();
+            shared.resending(LAPSE_NOTE.to_owned());
+        }
         let before = shared.acked();
         shared.sending();
         let source = Arc::clone(&pending.source);

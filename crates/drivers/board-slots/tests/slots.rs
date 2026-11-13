@@ -224,6 +224,7 @@ async fn an_install_whose_session_lapses_while_the_board_runs_it_ends_as_a_lapse
         Some(atlas_session::Lease {
             period: Duration::from_millis(300),
             renew: Duration::from_secs(3600),
+            in_force: true,
         }),
     )
     .await;

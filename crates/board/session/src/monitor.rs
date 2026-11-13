@@ -674,6 +674,7 @@ impl Keeper {
                         self.last_try = None;
                         self.device = None;
                         self.last_listed = None;
+                        self.lapse_on_connect(&orion);
                         self.sender.send_replace(Presence::Found(node));
                         let ended = self.serve(&orion);
                         self.node = None;
@@ -794,6 +795,10 @@ impl Keeper {
             self.mark_bridge();
             return Ok(());
         }
+        // No lease in force: nothing is sent, nothing is listed and no lapse is recorded.
+        if !self.lease.in_force {
+            return Ok(());
+        }
         let Some(node) = self.node.as_ref() else {
             return Ok(());
         };
@@ -802,12 +807,8 @@ impl Keeper {
         let Some(device) = self.bridge_device(orion)? else {
             return Ok(());
         };
+        self.check_lapse();
         let silent = self.last_bridge.elapsed();
-        if silent > self.lease.period && !self.lapse_marked {
-            // Silent for longer than the board's lease: the board may have dropped the holds.
-            self.lapse_marked = true;
-            self.shared.lapse();
-        }
         let due = silent >= self.lease.renew
             && self
                 .last_try
@@ -850,6 +851,29 @@ impl Keeper {
             }
             Err(error) if error.is_lost() => Err(error.to_string()),
             Err(_) => Ok(None),
+        }
+    }
+
+    /// Records a lapse when the session has been silent for longer than the lease period while
+    /// holds exist, on a board whose lease is in force. Once per silence (see `lapse_marked`).
+    fn check_lapse(&mut self) {
+        if !self.lease.in_force || self.shared.holds() == 0 {
+            return;
+        }
+        if self.last_bridge.elapsed() > self.lease.period && !self.lapse_marked {
+            // Silent for longer than the board's lease: the board may have dropped the holds.
+            self.lapse_marked = true;
+            self.shared.lapse();
+        }
+    }
+
+    /// On connect, with holds that were taken before it: a session that was silent (down, or its
+    /// machine asleep) past the lease period has a lapse, recorded before the node is announced as
+    /// Found, so a holder that waits for the node sees it when it resumes. Only on a board with a
+    /// bridge, as `keep_alive` decides it.
+    fn lapse_on_connect(&mut self, orion: &Orion) {
+        if self.lease.in_force && self.shared.holds() > 0 && self.bridge_device(orion).ok().flatten().is_some() {
+            self.check_lapse();
         }
     }
 

@@ -208,6 +208,7 @@ async fn a_shell_whose_session_lapses_while_it_is_open_ends_as_a_lapse_not_as_a_
     let sessions = sessions().with_lease(Lease {
         period: Duration::from_millis(300),
         renew: Duration::from_secs(3600),
+        in_force: true,
     });
     let handle = handle_for(&sessions, node.network().port());
     connected(&handle).await;

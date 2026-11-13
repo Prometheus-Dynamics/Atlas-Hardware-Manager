@@ -604,6 +604,7 @@ async fn a_board_that_drops_the_hold_on_a_long_action_is_reported_as_a_lapse_the
     let sessions = Arc::new(Sessions::new(Arc::new(NoPause)).with_lease(Lease {
         period: Duration::from_millis(300),
         renew: Duration::from_secs(3600),
+        in_force: true,
     }));
     let address = address(&node);
     let handle = sessions.handle(&address).expect("the node is on");

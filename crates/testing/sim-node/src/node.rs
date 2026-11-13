@@ -835,9 +835,14 @@ impl Node {
             return;
         }
         if is_device_call(name) && args.is_empty() {
-            // The bridge's `.call` with no method: refused before anything is read or written. The
-            // refusal is the answer that renews a lease (see `crate::lease`).
+            // The bridge's `.call` with no method: refused before anything is read or written.
             self.finish(call, Outcome::Rejected, &[], "call needs a method");
+            return;
+        }
+        if is_device_call(name) && args == b"describe" {
+            // The renewal at I6h (`.call describe`): a read of the description, which changes nothing.
+            // LOCK: Lemnos I6h describe.
+            self.finish(call, Outcome::Succeeded, &[], "");
             return;
         }
         let behaviour = lock(&self.shared.script).take_action(name);

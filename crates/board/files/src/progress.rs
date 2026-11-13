@@ -15,6 +15,13 @@ pub enum Stage {
     Queued,
     /// Bytes are moving to the board.
     Sending,
+    /// The lease ran out while the session was silent, so the board may have dropped the partial
+    /// file. The push sends the file again from its start. Nothing has failed: this stays until the
+    /// board acknowledges bytes again, and then the push is `Sending`.
+    Resending {
+        /// Why the file starts over, in words.
+        reason: String,
+    },
     /// The session to the node is gone. The push waits for it and goes on by itself, with a
     /// wait that never exceeds the failure rule's cap. This is not an error: nothing has failed.
     WaitingForBoard {
