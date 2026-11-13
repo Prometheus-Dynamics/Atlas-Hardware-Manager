@@ -32,7 +32,8 @@ pub const PROGRAM: &str = "atlas";
 const POLL: Duration = Duration::from_millis(100);
 /// How long one connect and its hello may take.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
-/// How long a call waits for its answer before the caller is told the node did not answer.
+/// How long a call waits for its answer by default, before the caller is told the node did not
+/// answer. A [`Sessions`](crate::Sessions) may be built with another wait.
 pub const CALL_WAIT: Duration = Duration::from_secs(5);
 
 /// What a node is doing, as its monitor last saw it.
@@ -155,6 +156,7 @@ pub struct Handle {
     address: Address,
     presence: watch::Receiver<Presence>,
     calls: mpsc::Sender<Box<dyn Job>>,
+    call_wait: Duration,
 }
 
 impl Handle {
@@ -182,7 +184,8 @@ impl Handle {
     /// # Errors
     ///
     /// [`SessionError::Gone`] when the node is not connected now, the session breaks during the
-    /// call, the monitor has stopped, or the node does not answer within [`CALL_WAIT`]. The
+    /// call, the monitor has stopped, or the node does not answer within the handle's call wait
+    /// (`CALL_WAIT` unless the sessions were built with another). The
     /// closure's own error ends up as [`SessionError::Failed`] when the session is still up.
     pub async fn with_client<T, F>(&self, call: F) -> Result<T, SessionError>
     where
@@ -203,7 +206,7 @@ impl Handle {
                 "the monitor for this node has stopped".into(),
             ));
         }
-        match tokio::time::timeout(CALL_WAIT, answer).await {
+        match tokio::time::timeout(self.call_wait, answer).await {
             Ok(Ok(answered)) => answered,
             Ok(Err(_)) => Err(SessionError::Gone(
                 "the session ended before it answered".into(),
@@ -214,8 +217,9 @@ impl Handle {
 }
 
 impl Monitor {
-    /// Starts watching the node at `address`. The first try happens on the new thread.
-    pub fn start(address: Address, pause: Arc<dyn Pause>) -> Self {
+    /// Starts watching the node at `address`. The first try happens on the new thread. Calls on
+    /// the handle wait `call_wait` for their answer.
+    pub fn start(address: Address, pause: Arc<dyn Pause>, call_wait: Duration) -> Self {
         let (sender, presence) = watch::channel(Presence::Searching);
         let (calls, received) = mpsc::channel::<Box<dyn Job>>();
         let stop = Arc::new(AtomicBool::new(false));
@@ -238,6 +242,7 @@ impl Monitor {
                 address,
                 presence,
                 calls,
+                call_wait,
             },
             stop,
             thread,

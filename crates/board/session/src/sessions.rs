@@ -6,21 +6,31 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use orion::Address;
 
-use crate::monitor::{Handle, Monitor, Pause};
+use std::time::Duration;
+
+use crate::monitor::{CALL_WAIT, Handle, Monitor, Pause};
 
 /// The monitors of the nodes this program is watching.
 #[derive(Debug)]
 pub struct Sessions {
     pause: Arc<dyn Pause>,
+    call_wait: Duration,
     monitors: Mutex<BTreeMap<String, Monitor>>,
     off: Mutex<BTreeSet<String>>,
 }
 
 impl Sessions {
     /// No node is watched until [`Sessions::handle`] names it. `pause` is the wait between tries.
+    /// Calls wait [`CALL_WAIT`] for their answer.
     pub fn new(pause: Arc<dyn Pause>) -> Self {
+        Self::with_call_wait(pause, CALL_WAIT)
+    }
+
+    /// As [`Sessions::new`], with the wait for a call's answer chosen by the caller.
+    pub fn with_call_wait(pause: Arc<dyn Pause>, call_wait: Duration) -> Self {
         Self {
             pause,
+            call_wait,
             monitors: Mutex::new(BTreeMap::new()),
             off: Mutex::new(BTreeSet::new()),
         }
@@ -38,7 +48,7 @@ impl Sessions {
         let mut monitors = lock(&self.monitors);
         let monitor = monitors
             .entry(key)
-            .or_insert_with(|| Monitor::start(address.clone(), self.pause.clone()));
+            .or_insert_with(|| Monitor::start(address.clone(), self.pause.clone(), self.call_wait));
         Some(monitor.handle())
     }
 
