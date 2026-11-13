@@ -8,7 +8,7 @@ use std::path::{Component, Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::model::{Board, Catalog, UsbId, UsbState};
+use crate::model::{Board, Catalog, Orientation, Overrides, Port, UsbId, UsbState, Variant};
 
 /// The schema every board's `app.json` must name.
 pub const APP_SCHEMA: &str = "urn:atlas:device-app:1";
@@ -53,7 +53,9 @@ struct UsbIdsFile {
 struct UsbIdEntry {
     state: UsbState,
     vid: String,
-    pid: String,
+    /// Absent for a vendor-wide id.
+    #[serde(default)]
+    pid: Option<String>,
     name: String,
 }
 
@@ -69,6 +71,13 @@ struct AppFile {
     network: Option<Network>,
     #[serde(default)]
     look: Option<Look>,
+    /// The driver family that finds a device with no USB id, as free text.
+    #[serde(default)]
+    found_by: Option<String>,
+    #[serde(default)]
+    ports: BTreeMap<String, PortEntry>,
+    #[serde(default)]
+    variants: Vec<VariantEntry>,
 }
 
 #[derive(Deserialize)]
@@ -80,8 +89,42 @@ struct Network {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Look {
+    /// The first picture. `pictures` lists the rest, after it.
     picture: Option<String>,
+    #[serde(default)]
+    pictures: Vec<String>,
     case: Option<String>,
+    orientation: Option<Orientation>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PortEntry {
+    kind: String,
+    label: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct VariantEntry {
+    key: String,
+    display_name: String,
+    /// Defaults to `true`.
+    #[serde(default)]
+    confirmed: Option<bool>,
+    #[serde(default)]
+    overrides: Option<OverridesEntry>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct OverridesEntry {
+    #[serde(default)]
+    pictures: Option<Vec<String>>,
+    #[serde(default)]
+    case: Option<String>,
+    #[serde(default)]
+    ports: Option<BTreeMap<String, PortEntry>>,
 }
 
 /// Reads the app data of every board under `devices/boards/`, and the shared
@@ -167,12 +210,13 @@ fn load_usb_ids(devices: &Path) -> Result<BTreeMap<String, UsbId>, LoadError> {
                 format!("{name}: vid {:?} must be 4 hex digits", entry.vid),
             )
         })?;
-        let pid = parse_id(&entry.pid).ok_or_else(|| {
-            err(
-                &path,
-                format!("{name}: pid {:?} must be 4 hex digits", entry.pid),
-            )
-        })?;
+        let pid =
+            match &entry.pid {
+                None => None,
+                Some(text) => Some(parse_id(text).ok_or_else(|| {
+                    err(&path, format!("{name}: pid {text:?} must be 4 hex digits"))
+                })?),
+            };
         ids.insert(
             name,
             UsbId {
@@ -236,26 +280,155 @@ fn load_board(
             Some(p)
         }
     };
+    let found_by = match file.found_by {
+        None => None,
+        Some(text) => {
+            let text = text.trim().to_string();
+            if text.is_empty() {
+                return Err(err(app, "found_by is empty"));
+            }
+            Some(text)
+        }
+    };
+    let ports = load_ports(app, &file.ports)?;
+
     // References are relative to the app/ folder, and stored relative to devices/.
     let app_dir = app.parent().unwrap_or(devices);
     let rel_dir = app_dir.strip_prefix(devices).unwrap_or(app_dir);
-    let (picture, case) = match file.look {
-        None => (None, None),
-        Some(look) => (
-            look.picture
-                .map(|p| reference(app, rel_dir, &p))
-                .transpose()?,
-            look.case.map(|c| reference(app, rel_dir, &c)).transpose()?,
-        ),
+    let (pictures, picture, case, orientation) = match file.look {
+        None => (Vec::new(), None, None, None),
+        Some(look) => {
+            let listed: Vec<&String> = look.picture.iter().chain(look.pictures.iter()).collect();
+            let pictures = references(app, rel_dir, listed)?;
+            let picture = pictures.first().cloned();
+            let case = look.case.map(|c| reference(app, rel_dir, &c)).transpose()?;
+            if let Some(orientation) = &look.orientation {
+                check_orientation(app, orientation)?;
+            }
+            (pictures, picture, case, look.orientation)
+        }
     };
+
+    let mut variants = Vec::new();
+    let mut keys = BTreeSet::new();
+    for entry in file.variants {
+        if !is_key(&entry.key) {
+            return Err(err(
+                app,
+                format!("variant key {:?} must be [a-z0-9-]", entry.key),
+            ));
+        }
+        if !keys.insert(entry.key.clone()) {
+            return Err(err(
+                app,
+                format!("variant key {:?} is listed twice", entry.key),
+            ));
+        }
+        if entry.display_name.trim().is_empty() {
+            return Err(err(
+                app,
+                format!("variant {:?}: display_name is empty", entry.key),
+            ));
+        }
+        let overrides = match entry.overrides {
+            None => Overrides::default(),
+            Some(o) => Overrides {
+                pictures: o
+                    .pictures
+                    .map(|list| references(app, rel_dir, list.iter().collect()))
+                    .transpose()?,
+                case: o.case.map(|c| reference(app, rel_dir, &c)).transpose()?,
+                ports: o.ports.map(|map| load_ports(app, &map)).transpose()?,
+            },
+        };
+        variants.push(Variant {
+            key: entry.key,
+            display_name: entry.display_name,
+            confirmed: entry.confirmed.unwrap_or(true),
+            overrides,
+        });
+    }
+    variants.sort_by(|a, b| a.key.cmp(&b.key));
+
     Ok(Board {
         model: file.model,
         display_name: file.display_name,
         usb,
         hostname_prefix,
+        found_by,
+        ports,
+        pictures,
         picture,
         case,
+        orientation,
+        variants,
     })
+}
+
+/// The named ports, sorted by name. A name and a kind are `[a-z0-9-]`; a
+/// label is not empty.
+fn load_ports(app: &Path, map: &BTreeMap<String, PortEntry>) -> Result<Vec<Port>, LoadError> {
+    let mut ports = Vec::new();
+    for (name, entry) in map {
+        if !is_key(name) {
+            return Err(err(app, format!("port name {name:?} must be [a-z0-9-]")));
+        }
+        if !is_key(&entry.kind) {
+            return Err(err(
+                app,
+                format!("port {name:?}: kind {:?} must be [a-z0-9-]", entry.kind),
+            ));
+        }
+        if entry.label.trim().is_empty() {
+            return Err(err(app, format!("port {name:?}: label is empty")));
+        }
+        ports.push(Port {
+            name: name.clone(),
+            kind: entry.kind.clone(),
+            label: entry.label.clone(),
+        });
+    }
+    Ok(ports)
+}
+
+/// Each picture named, as a path relative to devices/. The same file twice is
+/// refused.
+fn references(app: &Path, rel_dir: &Path, names: Vec<&String>) -> Result<Vec<String>, LoadError> {
+    let mut out: Vec<String> = Vec::new();
+    for name in names {
+        let path = reference(app, rel_dir, name)?;
+        if out.contains(&path) {
+            return Err(err(app, format!("picture {name:?} is listed twice")));
+        }
+        out.push(path);
+    }
+    Ok(out)
+}
+
+/// The orientation's numbers must be what they say: a unit quaternion, an angle
+/// in `0..360`, and a direction of 1 or -1.
+fn check_orientation(app: &Path, o: &Orientation) -> Result<(), LoadError> {
+    if let Some(q) = o.case_in_imu {
+        let norm = q.iter().map(|v| v * v).sum::<f64>().sqrt();
+        if !q.iter().all(|v| v.is_finite()) || (norm - 1.0).abs() > 1e-3 {
+            return Err(err(
+                app,
+                "look.orientation.case_in_imu must be a unit quaternion [w, x, y, z]",
+            ));
+        }
+    }
+    if let Some(deg) = o.ring_led0_deg
+        && !(deg.is_finite() && (0.0..360.0).contains(&deg))
+    {
+        return Err(err(app, "look.orientation.ring_led0_deg must be in 0..360"));
+    }
+    if let Some(dir) = o.ring_direction
+        && dir != 1
+        && dir != -1
+    {
+        return Err(err(app, "look.orientation.ring_direction must be 1 or -1"));
+    }
+    Ok(())
 }
 
 /// A file a board names, relative to its app/ folder, becomes a path relative
@@ -274,6 +447,11 @@ fn reference(app: &Path, rel_dir: &Path, name: &str) -> Result<String, LoadError
 
 fn is_name_char(c: char) -> bool {
     c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'
+}
+
+/// A key a file names things by: not empty, `[a-z0-9-]`.
+fn is_key(text: &str) -> bool {
+    !text.is_empty() && text.chars().all(is_name_char)
 }
 
 /// Exactly four hex digits, as a USB id is written.

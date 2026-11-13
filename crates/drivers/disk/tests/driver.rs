@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::task::{Context, Poll, Waker};
 
 use atlas_disk::{Disk, DiskError, DiskSource};
-use atlas_driver::{Driver, DriverError};
+use atlas_driver::{Driver, DriverError, DriverRegistry};
 use atlas_driver_disk::{DiskDriver, FAMILY};
 use atlas_types::{CapabilityKind, DeviceState, Link, LinkId, LinkKind};
 
@@ -78,7 +78,7 @@ fn empty_reader() -> Disk {
 fn link() -> Link {
     Link {
         id: LinkId::new("disks"),
-        kind: LinkKind::Simulated,
+        kind: LinkKind::LocalDisk,
         label: "Local disks".into(),
     }
 }
@@ -174,9 +174,26 @@ fn the_driver_grants_flash_for_a_removable_disk_and_nothing_else() {
 }
 
 #[test]
-fn the_manifest_names_the_family_and_no_link_kind_yet() {
+fn the_manifest_names_the_family_and_the_local_disk_link() {
     let driver = driver(Vec::new());
     let manifest = driver.manifest();
     assert_eq!(manifest.family.as_str(), FAMILY);
-    assert!(manifest.link_kinds.is_empty());
+    assert_eq!(manifest.link_kinds, vec![LinkKind::LocalDisk]);
+    assert!(manifest.handles(&LinkKind::LocalDisk));
+    assert!(!manifest.handles(&LinkKind::UsbBoot));
+}
+
+#[test]
+fn a_registry_routes_a_local_disk_link_to_the_disk_driver() {
+    let mut registry = DriverRegistry::new();
+    registry.register(Arc::new(driver(vec![card("sdz", Some("A1"))])));
+
+    let routed = registry.for_link(&LinkKind::LocalDisk);
+    assert_eq!(routed.len(), 1);
+    assert_eq!(routed[0].manifest().family.as_str(), FAMILY);
+    assert!(registry.for_link(&LinkKind::Ethernet).is_empty());
+
+    // The registry's driver finds the card from a local-disk link.
+    let candidates = block_on(routed[0].discover(&link())).unwrap();
+    assert_eq!(candidates.len(), 1);
 }

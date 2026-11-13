@@ -18,6 +18,7 @@ pub mod crc;
 pub mod flow;
 pub mod loader;
 pub mod maskrom;
+pub mod mode;
 pub mod rockusb;
 pub mod sim;
 
@@ -26,3 +27,4 @@ pub type UsbResult<T> = Result<T, atlas_usb::UsbError>;
 
 pub use flow::{BoardReport, chip_agrees, ready, report, run_usbplug};
 pub use loader::{Loader, LoaderError};
+pub use mode::Mode;

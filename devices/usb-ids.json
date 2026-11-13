@@ -10,6 +10,7 @@
     "rockchip-rv1106-maskrom": { "state": "download", "vid": "2207", "pid": "110c", "name": "Rockchip RV1106 maskrom" },
     "rockchip-rv1126b-maskrom": { "state": "download", "vid": "2207", "pid": "110b", "name": "Rockchip RV1126B maskrom (unconfirmed PID)" },
     "allwinner-a733-fel": { "state": "download", "vid": "1f3a", "pid": "efe8", "name": "Allwinner A733 FEL" },
-    "kendryte-k230-usb-boot": { "state": "download", "vid": "29f1", "pid": "0230", "name": "Kendryte K230 USB boot" }
+    "kendryte-k230-usb-boot": { "state": "download", "vid": "29f1", "pid": "0230", "name": "Kendryte K230 USB boot" },
+    "rockchip-vendor": { "state": "download", "vid": "2207", "name": "Rockchip boot ROM, any product" }
   }
 }

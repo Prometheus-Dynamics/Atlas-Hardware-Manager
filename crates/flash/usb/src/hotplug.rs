@@ -92,12 +92,7 @@ mod tests {
     use crate::{Live, OpenOptions, UsbBus};
 
     fn summary(location: &str) -> DeviceSummary {
-        DeviceSummary {
-            location: location.into(),
-            vendor: 0x0a5c,
-            product: 0x2764,
-            serial: None,
-        }
+        DeviceSummary::new(location, 0x0a5c, 0x2764)
     }
 
     /// Lets spawned tasks run until `done` holds. Fails if they never settle.

@@ -7,6 +7,12 @@
 //! called by the flash job with the device's location. The ids are data from
 //! the caller, so no board or chip-number table lives here.
 //!
+//! Each identity says which mode the device is in, in its `rom-mode`
+//! attribute: maskrom or loader, read from the device's `bcdUSB`
+//! ([`atlas_rockchip::Mode`]). A caller that knows better sets the mode with
+//! [`RockchipDriver::with_mode`], and the override applies to every device
+//! the driver reports.
+//!
 //! This crate depends on no other driver. It is named `atlas-driver-rockchip`
 //! because `atlas-rockchip` is the flash crate in `crates/flash/rockchip`.
 
@@ -16,6 +22,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use atlas_driver::{Driver, DriverError, DriverManifest};
+use atlas_rockchip::Mode;
 use atlas_types::{
     Candidate, CapabilityKind, CapabilitySet, DeviceKey, DeviceState, Family, Identity, Link,
     LinkKind,
@@ -30,6 +37,7 @@ pub struct RockchipDriver {
     manifest: DriverManifest,
     bus: Arc<dyn UsbBus>,
     ids: Vec<UsbId>,
+    mode_override: Option<Mode>,
 }
 
 impl RockchipDriver {
@@ -45,7 +53,19 @@ impl RockchipDriver {
             },
             bus,
             ids,
+            mode_override: None,
         }
+    }
+
+    /// Reports every device in `mode`, instead of the mode its `bcdUSB` says.
+    pub fn with_mode(mut self, mode: Mode) -> Self {
+        self.mode_override = Some(mode);
+        self
+    }
+
+    /// The mode a device is in: the override, else its `bcdUSB`.
+    fn mode_of(&self, device: &DeviceSummary) -> Mode {
+        self.mode_override.unwrap_or_else(|| Mode::of(device))
     }
 
     fn is_boot_rom(&self, device: &DeviceSummary) -> bool {
@@ -130,6 +150,10 @@ impl Driver for RockchipDriver {
                 (
                     "usb-id".to_string(),
                     format!("{:04x}:{:04x}", device.vendor, device.product),
+                ),
+                (
+                    "rom-mode".to_string(),
+                    self.mode_of(device).label().to_string(),
                 ),
             ]),
         })
