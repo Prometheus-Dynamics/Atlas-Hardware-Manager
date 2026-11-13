@@ -1,0 +1,24 @@
+[package]
+name = "atlas-files"
+description = "Sending a file to an Orion node: resumable through a lost session, streamed, checked end to end, with progress as a job. Built on atlas-session; works on any Orion node."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+atlas-driver = { path = "../../core/driver" }
+atlas-jobs = { path = "../../core/jobs" }
+atlas-session = { path = "../session" }
+orion = { workspace = true, features = ["files"] }
+sha2 = "0.10"
+tokio = { version = "1", features = ["sync", "time"] }
+
+[dev-dependencies]
+atlas-sim-node = { path = "../../testing/sim-node" }
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+
+[lints]
+workspace = true
