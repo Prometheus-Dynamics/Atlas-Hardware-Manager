@@ -1,0 +1,7 @@
+# Radxa Cubie A7Z on the Allwinner A733 family. Only what differs from the family is
+# kept here; dev's record gives no device tree, no pinned source and no partition
+# offsets for this board. Untested on board.
+version = 1
+extends = "../../families/sun60i/family.toml"
+name = "radxa-cubie-a7z"
+description = "Radxa Cubie A7Z (Allwinner A733)"

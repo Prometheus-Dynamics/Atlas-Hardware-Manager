@@ -1,0 +1,17 @@
+# The base OS for the Radxa Cubie A7S. A SKELETON in Gaia's F8 form: a record, not a
+# buildable description, until the sources are chosen. Untested on board.
+# Locked Gaia (e90ee03) refuses this file: no "slot" recipe, no product [sources], no image os.
+version = 1
+name = "radxa-cubie-a7s"
+description = "Base OS for the Radxa Cubie A7S"
+
+# F8?: product [sources.<name>] for the OS. OPEN: dev has no kernel, U-Boot or OS source for the A733.
+# F8?: the image's os = { provider = "buildroot", source = <open>, fragments = [<open>] }. OPEN.
+
+[[images]]
+name = "radxa-cubie-a7s"
+board = "../../boards/radxa-cubie-a7s/board.toml"
+recipe = "slot" # F8?: locked Gaia names it "ab-slot" and it needs veritysetup on PATH
+# F8?: the four recipe inputs kernel, device-trees, bootloader and os come from the board and
+#   the image's os. OPEN: no OS source pinned.
+# OPEN: the device the slot is written to (the microSD device path). Dev records none, not guessed.

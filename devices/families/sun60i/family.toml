@@ -1,0 +1,20 @@
+# Allwinner A733 (sun60i) family (Radxa Cubie A7A, A7S and A7Z): aarch64 Linux, written by
+# Atlas's own FEL loader over USB, then the microSD card. Holds what the three boards
+# share; each board keeps only what differs. Untested on board.
+#
+# Open (not written, because dev pinned no value for them):
+#   - [sources] for the kernel, U-Boot and TF-A, and [kernel]/[bootloader] built from them.
+#   - [target] cpu: the A733 is two Cortex-A76 and six Cortex-A55; one cpu value does not fit both.
+#   - [flash.files] the FEL image (eGON SPL then legacy U-Boot). Dev's record only names a glob
+#     (u-boot-sunxi-with-spl*.bin) and no file is in the repo.
+#   - [[partitions]] and [disk]: the sunxi layout offsets are not in dev's records.
+version = 1
+
+[target]
+arch = "aarch64"
+os = "linux"
+
+# Written by FEL (the boot ROM's USB download mode), then the microSD card. A board's
+# record decides the storage target; this family's default is the SD card.
+[flash]
+methods = ["fel", "sd-card"]
