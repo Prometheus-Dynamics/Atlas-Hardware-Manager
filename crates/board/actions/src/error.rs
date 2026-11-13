@@ -1,6 +1,8 @@
 //! Why an action did not give a result. Each message is the board's own words where the board
 //! gave some: a refusal reads exactly as the board refused it.
 
+use std::time::Duration;
+
 use atlas_jobs::JobError;
 use thiserror::Error;
 
@@ -35,6 +37,16 @@ pub enum ActionError {
     /// The action was cancelled. The message is the board's reason, or what the cancel did.
     #[error("{0}")]
     Cancelled(String),
+    /// A short action did not finish within its wait. It was asked to stop; a longer action runs
+    /// as a job.
+    #[error(
+        "{name} did not finish within {wait:?}; it was asked to stop, and a longer action runs as a job"
+    )]
+    NotFinished { name: String, wait: Duration },
+    /// A short action's call did not come back. It may have run and may still be running; the
+    /// board cancels a run whose session ends. The caller decides what to do next.
+    #[error("the outcome of {name} is not known: {reason}")]
+    Unknown { name: String, reason: String },
     /// The start was sent but the node did not confirm it. It may have started, so it is not
     /// sent again; check the board's state before starting it on purpose.
     #[error("the board did not confirm that {name} started, so it was not sent again: {reason}")]

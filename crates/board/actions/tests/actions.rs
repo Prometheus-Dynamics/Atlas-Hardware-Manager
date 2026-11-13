@@ -234,7 +234,7 @@ async fn every_listed_action_runs_on_the_simulated_node() {
             Route::Direct => {
                 let done = rig
                     .board
-                    .run(action, &argv, DEADLINE)
+                    .run(action, &argv)
                     .await
                     .unwrap_or_else(|error| panic!("{}: {error}", action.name));
                 if action.name == "locate" {
@@ -275,7 +275,7 @@ async fn an_action_the_code_has_never_heard_of_runs_from_its_description() {
 
     let done = rig
         .board
-        .run(described, &argv, DEADLINE)
+        .run(described, &argv)
         .await
         .expect("the action runs");
     assert_eq!(done.output, b"dry run label: 3 steps");
@@ -293,7 +293,7 @@ async fn a_refusal_comes_back_with_the_boards_reason_for_a_call_and_for_a_job() 
         .push_action(DRY_RUN, Behaviour::Refuse(reason.into()));
     let direct = rig
         .board
-        .run(named(&catalog, DRY_RUN), &words("label 2"), DEADLINE)
+        .run(named(&catalog, DRY_RUN), &words("label 2"))
         .await
         .unwrap_err();
     assert_eq!(direct, ActionError::Refused(reason.into()));
@@ -332,20 +332,12 @@ async fn bad_arguments_are_refused_before_anything_is_sent() {
     rig.node
         .script()
         .push_action(DRY_RUN, Behaviour::Refuse("the first real send".into()));
-    let not_a_count = rig
-        .board
-        .run(dry, &words("label many"), DEADLINE)
-        .await
-        .unwrap_err();
+    let not_a_count = rig.board.run(dry, &words("label many")).await.unwrap_err();
     assert!(
         matches!(&not_a_count, ActionError::BadArguments(text) if text.contains("steps")),
         "{not_a_count}"
     );
-    let missing = rig
-        .board
-        .run(dry, &words("label"), DEADLINE)
-        .await
-        .unwrap_err();
+    let missing = rig.board.run(dry, &words("label")).await.unwrap_err();
     assert!(matches!(missing, ActionError::BadArguments(_)), "{missing}");
     let bad_job = jobs
         .submit(device(), &rig.address, dry, &words("label many"))
@@ -357,11 +349,7 @@ async fn bad_arguments_are_refused_before_anything_is_sent() {
         "a refused submit queues nothing"
     );
 
-    let next = rig
-        .board
-        .run(dry, &words("label 2"), DEADLINE)
-        .await
-        .unwrap_err();
+    let next = rig.board.run(dry, &words("label 2")).await.unwrap_err();
     assert_eq!(next, ActionError::Refused("the first real send".into()));
 }
 
@@ -494,12 +482,9 @@ async fn a_start_the_node_does_not_confirm_is_not_sent_again() {
         Behaviour::Refuse("the abandoned start must not run".into()),
     );
     let began = Instant::now();
-    let unanswered = board
-        .run(dry, &words("label 2"), DEADLINE)
-        .await
-        .unwrap_err();
+    let unanswered = board.run(dry, &words("label 2")).await.unwrap_err();
     assert!(
-        matches!(&unanswered, ActionError::StartInDoubt { name, reason }
+        matches!(&unanswered, ActionError::Unknown { name, reason }
             if name == DRY_RUN && reason.contains("did not answer in time")),
         "{unanswered:?}"
     );
@@ -509,15 +494,40 @@ async fn a_start_the_node_does_not_confirm_is_not_sent_again() {
     let _ = blocker.await;
 
     // The abandoned start was never run: the queued refusal is still the next answer.
-    let next = board
-        .run(dry, &words("label 2"), DEADLINE)
-        .await
-        .unwrap_err();
+    let next = board.run(dry, &words("label 2")).await.unwrap_err();
     assert_eq!(
         next,
         ActionError::Refused("the abandoned start must not run".into()),
         "the timed-out start did not run later"
     );
+}
+
+#[tokio::test]
+async fn a_short_action_that_runs_past_its_wait_is_asked_to_stop() {
+    let rig = Rig::start("late", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let dry = named(&catalog, DRY_RUN);
+
+    // A stalled run never finishes on its own: the direct call's wait runs out first.
+    rig.node.script().push_action(DRY_RUN, Behaviour::Stall);
+    let late = rig.board.run(dry, &words("label 2")).await.unwrap_err();
+    assert!(
+        matches!(&late, ActionError::NotFinished { name, .. } if name == DRY_RUN),
+        "{late:?}"
+    );
+    assert_eq!(
+        rig.node.stalled_runs(),
+        1,
+        "the run did stall, and was not started twice"
+    );
+
+    // The board is not wedged: the next short call runs to its end.
+    let next = rig
+        .board
+        .run(dry, &words("label 2"))
+        .await
+        .expect("the next short action runs");
+    assert_eq!(next.output, b"dry run label: 2 steps");
 }
 
 #[tokio::test]
@@ -532,7 +542,7 @@ async fn a_start_with_no_connection_sends_nothing() {
     drop(node);
     lost(&handle).await;
     let error = board
-        .run(named(&catalog, DRY_RUN), &words("label 2"), DEADLINE)
+        .run(named(&catalog, DRY_RUN), &words("label 2"))
         .await
         .unwrap_err();
     assert!(

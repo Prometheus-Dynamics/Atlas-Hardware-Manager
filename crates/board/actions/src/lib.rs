@@ -26,7 +26,7 @@ mod catalog;
 mod error;
 mod jobs;
 
-pub use board::{BoardActions, CATALOG_ACTION, CATALOG_LIMIT, Done, POLL, Progress};
+pub use board::{BoardActions, CATALOG_ACTION, DIRECT_WAIT, Done, POLL, Progress};
 pub use catalog::{Action, Arg, ArgKind, Catalog, CatalogError, Reported, Route};
 pub use error::ActionError;
 pub use jobs::{ActionJobs, CANCEL_CONFIRM, CancelState, KIND};
