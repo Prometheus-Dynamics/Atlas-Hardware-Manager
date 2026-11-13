@@ -872,7 +872,10 @@ impl Keeper {
     /// Found, so a holder that waits for the node sees it when it resumes. Only on a board with a
     /// bridge, as `keep_alive` decides it.
     fn lapse_on_connect(&mut self, orion: &Orion) {
-        if self.lease.in_force && self.shared.holds() > 0 && self.bridge_device(orion).ok().flatten().is_some() {
+        if self.lease.in_force
+            && self.shared.holds() > 0
+            && self.bridge_device(orion).ok().flatten().is_some()
+        {
             self.check_lapse();
         }
     }

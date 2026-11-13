@@ -701,9 +701,15 @@ async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
 
     let size = 64 * 1024 * 1024;
     let destination = "images/lapsed.img";
-    let push = submit(&kind, &jobs, &handle, destination, Box::new(Generated::new(size, 7)))
-        .await
-        .expect("the push starts");
+    let push = submit(
+        &kind,
+        &jobs,
+        &handle,
+        destination,
+        Box::new(Generated::new(size, 7)),
+    )
+    .await
+    .expect("the push starts");
     progress_where(&push, "the board holds a quarter", |p| {
         p.sent >= size / 4 && p.sent < size
     })
@@ -720,7 +726,8 @@ async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
     tokio::time::sleep(Duration::from_millis(600)).await;
 
     // The board is back, holding nothing.
-    let back = SimNode::start_with(&dir.join("node"), &board, Some(port)).expect("the node is back");
+    let back =
+        SimNode::start_with(&dir.join("node"), &board, Some(port)).expect("the node is back");
     progress_where(&push, "the push says the file starts over", |p| {
         matches!(p.stage, Stage::Resending { .. })
     })
@@ -733,7 +740,13 @@ async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
     {
         let committed = back.shelf().committed.lock().unwrap();
         assert!(
-            is_generated(committed.get(destination).expect("the board holds the file"), size, 7),
+            is_generated(
+                committed
+                    .get(destination)
+                    .expect("the board holds the file"),
+                size,
+                7
+            ),
             "the committed bytes are the file"
         );
     }

@@ -383,6 +383,14 @@ async fn with_the_lease_not_in_force_a_hold_sends_nothing_and_records_no_lapse()
     assert!(lapsed.is_err(), "no lease in force: no lapse is recorded");
     assert!(!hold.lapsed(), "the hold never sees a lapse");
     hold.acknowledge();
-    assert_eq!(renewals(&node), 0, "nothing is sent to the bridge for the lease");
-    assert_eq!(node.calls_received(), 0, "no request of any kind reaches the node");
+    assert_eq!(
+        renewals(&node),
+        0,
+        "nothing is sent to the bridge for the lease"
+    );
+    assert_eq!(
+        node.calls_received(),
+        0,
+        "no request of any kind reaches the node"
+    );
 }
