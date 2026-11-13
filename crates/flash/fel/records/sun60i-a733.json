@@ -1,0 +1,11 @@
+{
+  "thunk_isa": "aarch32-rmr",
+  "confirmed": false,
+  "reset_vector": "0x08001004",
+  "load_address": "0x00047000",
+  "thunk_address": "0x00090000",
+  "image_address": "0x41000000",
+  "image_entry": "0x41000000",
+  "swap_buffers": [],
+  "note": "Allwinner A733 (sun60i). UNCONFIRMED: the choice of thunk mode, the boot ROM's FEL SRAM stack (so no swap buffers), the thunk address (just above the SPL's largest size, usable only by the no-return mode), the image address, and whether a write to reset_vector then RMR resets into the SPL. Addresses load_address and reset_vector are from the pinned Radxa U-Boot Kconfig at 9da4b3e8 (SUNXI_SRAM_ADDRESS, SUNXI_RVBAR_ADDRESS). The first board check is read-only: a FEL verify and the scratchpad field; then decide between aarch32-rmr and aarch64 and set confirmed only after a run. See crates/flash/fel/src/lib.rs and docs/prs/D16.md."
+}
