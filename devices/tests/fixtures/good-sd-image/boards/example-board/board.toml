@@ -1,0 +1,26 @@
+# EXAMPLE in Gaia sd-image form, as Gaia 10beed8 reads it (fixture). Not a device.
+version = 1
+extends = "../../families/example-family/family.toml"
+name = "example-board"
+description = "Example board (sd-image fixture)"
+
+[target]
+cpu = "cortex-a55"
+
+[sources.rkbin]
+path = "rkbin"
+
+[bootloader.blobs]
+ROCKCHIP_TPL = { source = "rkbin", path = "bin/example.bin" }
+
+# The bootloader area outside the table: written at its offset from the OS's
+# bootloader output. The disk is laid out with the sd-image recipe.
+[disk]
+scheme = "gpt"
+
+[[partitions]]
+name = "u-boot"
+role = "bootloader"
+offset = "32K"
+in_table = false
+content = "u-boot-rockchip.bin"

@@ -1,0 +1,9 @@
+# EXAMPLE in Gaia sd-image form, as Gaia 10beed8 reads it (fixture). Not a device.
+version = 1
+
+[target]
+arch = "aarch64"
+os = "linux"
+
+[kernel]
+defconfig = "defconfig"
