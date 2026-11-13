@@ -3,6 +3,21 @@
 # CANDIDATE SOURCES, ALL UNVERIFIED, NEVER BOOTED ON BOARD (2026-11-13). Every pin below is a full
 # commit read from its repository on 2026-11-13. "UNVERIFIED" on a pin means no board has run it.
 #
+# BOARDS (plain words, for a reader):
+#   - Radxa Cubie A7S: the one A733 board with a device tree (DockSeed's, in the series). Its bring-up
+#     is B19; nothing is booted.
+#   - Radxa Cubie A7A and A7Z: BLOCKED. No public device tree exists for either, so their wiring (the
+#     LED pins, the USB ports, the power rails) is NOT guessed. They stay config-only until a tree
+#     exists.
+#
+# OPEN, does the A733 need SCP firmware? Nothing in the boot chain above loads one (B19 Part 3). It
+#   would be answered by: TF-A's A733 platform code, whether it expects an SCP image (read in the pinned
+#   TF-A tree, not yet read); whether PSCI CPU_ON and suspend work without one on the A7S (a board run);
+#   and what the vendor boot package holds, by component name. U-Boot's config reserves an SCP slot at
+#   0x48100000 (SUNXI_SCP_BASE), which is an address, not evidence that one is needed.
+#
+# FEL: the A733 flasher path is a separate, UNCONFIRMED record (crates/flash/fel/records/sun60i-a733.json,
+#   refused until acknowledged). See docs/prs/D16.md for the thunk modes and the first read-only board check.
 # LICENCE (the one place this is written; the board files and the bring-up point here): the vendor
 # DRAM init (awbin/a733/ddr.bin, from radxa-pkg/u-boot-dlan17) is CLOSED code with no open licence,
 # and the vendor kernel and bootloader sources here carry no open licence either. They are pinned

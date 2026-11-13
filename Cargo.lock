@@ -25,6 +25,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-actions"
+version = "2026.1.0-dev"
+dependencies = [
+ "async-trait",
+ "atlas-driver",
+ "atlas-jobs",
+ "atlas-session",
+ "atlas-sim-node",
+ "atlas-types",
+ "orion",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-allwinner"
 version = "2026.1.0-dev"
 dependencies = [
@@ -75,7 +92,7 @@ dependencies = [
 name = "atlas-disk"
 version = "2026.1.0-dev"
 dependencies = [
- "lzma-rs",
+ "atlas-xzdec",
  "nix",
  "serde",
  "serde_json",
@@ -149,6 +166,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-files"
+version = "2026.1.0-dev"
+dependencies = [
+ "async-trait",
+ "atlas-driver",
+ "atlas-jobs",
+ "atlas-session",
+ "atlas-sim-node",
+ "orion",
+ "sha2 0.10.9",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-helper"
 version = "2026.1.0-dev"
 dependencies = [
@@ -162,8 +194,9 @@ name = "atlas-image"
 version = "2026.1.0-dev"
 dependencies = [
  "atlas-bundle",
+ "atlas-xzdec",
+ "ed25519-dalek 2.2.0",
  "ext4-view",
- "lzma-rs",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -313,6 +346,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-topics"
+version = "2026.1.0-dev"
+dependencies = [
+ "atlas-board",
+ "atlas-session",
+ "atlas-sim-node",
+ "atlas-types",
+ "orion",
+ "orion-msg-topics",
+ "orion-wire",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-types"
 version = "2026.1.0-dev"
 dependencies = [
@@ -333,6 +380,14 @@ dependencies = [
  "nusb",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "atlas-xzdec"
+version = "2026.1.0-dev"
+dependencies = [
+ "thiserror",
+ "xz2",
 ]
 
 [[package]]
@@ -420,12 +475,6 @@ name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
-
-[[package]]
-name = "byteorder"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
 
 [[package]]
 name = "bytes"
@@ -1239,13 +1288,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
-name = "lzma-rs"
-version = "0.3.0"
+name = "lzma-sys"
+version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "297e814c836ae64db86b36cf2a557ba54368d03f6afcd7d947c266692f71115e"
+checksum = "5fda04ab3764e6cde78b9974eec4f779acaba7c4e84b36eca3cf77c581b85d27"
 dependencies = [
- "byteorder",
- "crc",
+ "cc",
+ "libc",
+ "pkg-config",
 ]
 
 [[package]]
@@ -1324,7 +1374,7 @@ checksum = "7e036b411754132fd6b74e94b74e9a13c5cf606fa93d1885c35860d3060820b1"
 [[package]]
 name = "orion"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-actions",
  "orion-connect",
@@ -1333,6 +1383,7 @@ dependencies = [
  "orion-msg-peers",
  "orion-msg-session",
  "orion-msg-topics",
+ "orion-provider",
  "orion-records",
  "orion-topics",
  "orion-types",
@@ -1343,7 +1394,7 @@ dependencies = [
 [[package]]
 name = "orion-actions"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-check",
  "orion-connect",
@@ -1355,7 +1406,7 @@ dependencies = [
 [[package]]
 name = "orion-broker"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-config",
  "orion-msg-topics",
@@ -1370,7 +1421,7 @@ dependencies = [
 [[package]]
 name = "orion-broker-buffers"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-broker",
  "orion-msg-topics",
@@ -1382,7 +1433,7 @@ dependencies = [
 [[package]]
 name = "orion-broker-proxy"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-broker",
  "orion-msg-topics",
@@ -1394,7 +1445,7 @@ dependencies = [
 [[package]]
 name = "orion-check"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-types",
  "serde",
@@ -1403,7 +1454,7 @@ dependencies = [
 [[package]]
 name = "orion-comm-app"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-broker",
  "orion-config",
@@ -1421,7 +1472,7 @@ dependencies = [
 [[package]]
 name = "orion-config"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-check",
  "orion-types",
@@ -1430,7 +1481,7 @@ dependencies = [
 [[package]]
 name = "orion-connect"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-identity",
  "orion-msg-session",
@@ -1445,7 +1496,7 @@ dependencies = [
 [[package]]
 name = "orion-device-gateway"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-msg-actions",
  "orion-msg-records",
@@ -1461,7 +1512,7 @@ dependencies = [
 [[package]]
 name = "orion-files"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-connect",
  "orion-msg-files",
@@ -1473,7 +1524,7 @@ dependencies = [
 [[package]]
 name = "orion-hello"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-broker",
  "orion-keys",
@@ -1488,7 +1539,7 @@ dependencies = [
 [[package]]
 name = "orion-identity"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "ed25519-dalek 3.0.0",
  "getrandom 0.4.3",
@@ -1501,7 +1552,7 @@ dependencies = [
 [[package]]
 name = "orion-keys"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "ed25519-dalek 3.0.0",
  "getrandom 0.4.3",
@@ -1519,7 +1570,7 @@ dependencies = [
 [[package]]
 name = "orion-link-serial"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-server",
  "orion-supervise",
@@ -1533,7 +1584,7 @@ dependencies = [
 [[package]]
 name = "orion-measure"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "libc",
 ]
@@ -1541,7 +1592,7 @@ dependencies = [
 [[package]]
 name = "orion-msg-actions"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-check",
  "orion-types",
@@ -1552,7 +1603,7 @@ dependencies = [
 [[package]]
 name = "orion-msg-files"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-types",
  "orion-wire",
@@ -1562,7 +1613,7 @@ dependencies = [
 [[package]]
 name = "orion-msg-peers"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-msg-records",
  "orion-types",
@@ -1573,7 +1624,7 @@ dependencies = [
 [[package]]
 name = "orion-msg-records"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-types",
  "orion-wire",
@@ -1583,7 +1634,7 @@ dependencies = [
 [[package]]
 name = "orion-msg-session"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-types",
  "orion-wire",
@@ -1593,7 +1644,7 @@ dependencies = [
 [[package]]
 name = "orion-msg-topics"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-types",
  "orion-wire",
@@ -1603,7 +1654,7 @@ dependencies = [
 [[package]]
 name = "orion-msg-workloads"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-types",
  "orion-wire",
@@ -1613,7 +1664,7 @@ dependencies = [
 [[package]]
 name = "orion-net-handshake"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "hmac",
  "orion-identity",
@@ -1624,7 +1675,7 @@ dependencies = [
 [[package]]
 name = "orion-nt4"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-ws",
  "serde",
@@ -1637,7 +1688,7 @@ dependencies = [
 [[package]]
 name = "orion-nt4-gateway"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-broker",
  "orion-config",
@@ -1655,7 +1706,7 @@ dependencies = [
 [[package]]
 name = "orion-outbound"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-broker",
  "orion-config",
@@ -1669,9 +1720,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "orion-provider"
+version = "1.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
+dependencies = [
+ "orion-actions",
+ "orion-connect",
+ "orion-msg-records",
+ "orion-msg-topics",
+ "orion-records",
+ "orion-topics",
+ "orion-types",
+ "orion-wire",
+]
+
+[[package]]
 name = "orion-records"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-connect",
  "orion-msg-records",
@@ -1682,7 +1748,7 @@ dependencies = [
 [[package]]
 name = "orion-relay"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-msg-actions",
  "orion-msg-session",
@@ -1693,7 +1759,7 @@ dependencies = [
 [[package]]
 name = "orion-server"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-check",
  "orion-config",
@@ -1709,7 +1775,7 @@ dependencies = [
 [[package]]
 name = "orion-stubs"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-broker",
  "orion-broker-buffers",
@@ -1738,12 +1804,12 @@ dependencies = [
 [[package]]
 name = "orion-supervise"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 
 [[package]]
 name = "orion-tcp"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "hmac",
  "orion-keys",
@@ -1759,7 +1825,7 @@ dependencies = [
 [[package]]
 name = "orion-time"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-broker",
  "orion-config",
@@ -1777,7 +1843,7 @@ dependencies = [
 [[package]]
 name = "orion-topics"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-connect",
  "orion-msg-topics",
@@ -1792,7 +1858,7 @@ dependencies = [
 [[package]]
 name = "orion-types"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "serde",
  "shm-sample-time",
@@ -1801,7 +1867,7 @@ dependencies = [
 [[package]]
 name = "orion-unix"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-server",
  "shm-fdpass",
@@ -1811,7 +1877,7 @@ dependencies = [
 [[package]]
 name = "orion-values"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-msg-topics",
  "orion-types",
@@ -1820,7 +1886,7 @@ dependencies = [
 [[package]]
 name = "orion-wire"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-types",
  "postcard",
@@ -1830,7 +1896,7 @@ dependencies = [
 [[package]]
 name = "orion-ws"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=455a956e13e62c97081d66e0e8f3bf2aced1eac8#455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 dependencies = [
  "orion-server",
  "socket2",
@@ -2280,7 +2346,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 [[package]]
 name = "shm-fdpass"
 version = "2.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=b48efaf1af90c52e35b6be27427a93e3d2996f1d#b48efaf1af90c52e35b6be27427a93e3d2996f1d"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=0aa305101109719a86d2958fe8554ec7f1c46ce6#0aa305101109719a86d2958fe8554ec7f1c46ce6"
 dependencies = [
  "libc",
 ]
@@ -2288,7 +2354,7 @@ dependencies = [
 [[package]]
 name = "shm-ring"
 version = "2.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=b48efaf1af90c52e35b6be27427a93e3d2996f1d#b48efaf1af90c52e35b6be27427a93e3d2996f1d"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=0aa305101109719a86d2958fe8554ec7f1c46ce6#0aa305101109719a86d2958fe8554ec7f1c46ce6"
 dependencies = [
  "libc",
  "shm-sample-time",
@@ -2297,7 +2363,7 @@ dependencies = [
 [[package]]
 name = "shm-ring-doorbell"
 version = "2.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=b48efaf1af90c52e35b6be27427a93e3d2996f1d#b48efaf1af90c52e35b6be27427a93e3d2996f1d"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=0aa305101109719a86d2958fe8554ec7f1c46ce6#0aa305101109719a86d2958fe8554ec7f1c46ce6"
 dependencies = [
  "libc",
  "shm-ring",
@@ -2306,7 +2372,7 @@ dependencies = [
 [[package]]
 name = "shm-ring-time"
 version = "2.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=b48efaf1af90c52e35b6be27427a93e3d2996f1d#b48efaf1af90c52e35b6be27427a93e3d2996f1d"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=0aa305101109719a86d2958fe8554ec7f1c46ce6#0aa305101109719a86d2958fe8554ec7f1c46ce6"
 dependencies = [
  "shm-ring",
  "shm-ring-doorbell",
@@ -2315,7 +2381,7 @@ dependencies = [
 [[package]]
 name = "shm-sample-time"
 version = "2.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=b48efaf1af90c52e35b6be27427a93e3d2996f1d#b48efaf1af90c52e35b6be27427a93e3d2996f1d"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=0aa305101109719a86d2958fe8554ec7f1c46ce6#0aa305101109719a86d2958fe8554ec7f1c46ce6"
 dependencies = [
  "libc",
  "serde",
@@ -2908,6 +2974,15 @@ checksum = "963d6fab92d5504b971dc8bd90ca743c2575e590bc8071ea5bc571598667ae08"
 dependencies = [
  "libc",
  "rustix",
+]
+
+[[package]]
+name = "xz2"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "388c44dc09d76f1536602ead6d325eb532f5c122f17782bd57fb47baeeb767e2"
+dependencies = [
+ "lzma-sys",
 ]
 
 [[package]]

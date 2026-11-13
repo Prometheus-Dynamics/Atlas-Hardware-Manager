@@ -189,8 +189,14 @@ pub fn gpt_disk(parts: &[Part<'_>]) -> Vec<u8> {
 /// check. The pure-Rust encoder in lzma-rs writes no check at all, so it cannot
 /// show that a damaged stream is refused.
 pub fn xz(raw: &[u8]) -> Vec<u8> {
+    xz_with(raw, &["--check=crc64"])
+}
+
+/// [`xz`] with the given options (a preset such as `-7`, a block size).
+pub fn xz_with(raw: &[u8], options: &[&str]) -> Vec<u8> {
     let mut child = Command::new("xz")
-        .args(["--check=crc64", "--compress", "--stdout"])
+        .args(options)
+        .args(["--compress", "--stdout"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
@@ -211,4 +217,62 @@ pub fn image_disk() -> Vec<u8> {
         first_lba: 2048,
         bytes: DATA_FIXTURE,
     }])
+}
+
+/// Bytes with no repeats the compressor can use: a xorshift stream, so a large
+/// one stays large once compressed.
+pub fn noise(n: usize, seed: u64) -> Vec<u8> {
+    let mut state = seed | 1;
+    (0..n)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state as u8
+        })
+        .collect()
+}
+
+/// A data partition (ext4, 512 KiB, label `data`) holding `files` (paths inside
+/// it, relative to the root), made by `mke2fs -d` as the fixture is: no mount, no
+/// root. The files are written into a staging directory first.
+pub fn ext4_data(files: &[(&str, Vec<u8>)]) -> Vec<u8> {
+    let dir = TestDir::new("ext4-stage");
+    let stage = dir.path().join("stage");
+    for (path, bytes) in files {
+        let full = stage.join(path);
+        fs::create_dir_all(full.parent().expect("parent")).expect("stage dir");
+        fs::write(&full, bytes).expect("stage file");
+    }
+    let out = dir.path().join("data.ext4");
+    fs::write(&out, vec![0u8; 512 * 1024]).expect("image file");
+    let status = Command::new("mke2fs")
+        .args([
+            "-q",
+            "-F",
+            "-t",
+            "ext4",
+            "-b",
+            "1024",
+            "-N",
+            "64",
+            "-O",
+            "^has_journal",
+            "-L",
+            "data",
+            "-d",
+        ])
+        .arg(&stage)
+        .arg(&out)
+        .status()
+        .expect("mke2fs is needed to make the test images");
+    assert!(status.success(), "mke2fs failed");
+    fs::read(&out).expect("read image")
+}
+
+/// The data partition's slot manifest as the board check reads it: a schema 3
+/// manifest with `board` set to `board` (or left out when `None`).
+pub fn slot_json(id: &str, board: Option<&str>) -> Vec<u8> {
+    let board = board.map_or(String::new(), |b| format!("\"board\":\"{b}\","));
+    format!("{{\"schema\":3,\"id\":\"{id}\",\"product\":\"example\",\"version\":\"1\",{board}\"image\":{{\"size\":4096,\"sha256\":\"{}\"}}}}", "0".repeat(64)).into_bytes()
 }

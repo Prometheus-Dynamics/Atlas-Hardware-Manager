@@ -142,7 +142,7 @@ impl RadioStatus {
         Ok(Identity {
             key: DeviceKey::board(RADIO_FAMILY, team.to_string())
                 .map_err(|error| DriverError::Incompatible(error.reason))?,
-            model: self.model().to_string(),
+            model: Some(self.model().to_string()),
             state: DeviceState::RobotDevice,
             lemnos: atlas_types::LemnosState::Absent,
             versions,
@@ -295,7 +295,7 @@ mod tests {
             .unwrap();
         assert_eq!(identity.key.to_string(), "frc-radio:6390");
         assert_eq!(identity.state, DeviceState::RobotDevice);
-        assert_eq!(identity.model, "VH-109");
+        assert_eq!(identity.model.as_deref(), Some("VH-109"));
         assert_eq!(identity.versions["firmware"], "2.0.1-02062026");
         let attrs = &identity.attributes;
         assert_eq!(attrs[ATTR_MANAGE_URL], "http://10.63.90.4/");

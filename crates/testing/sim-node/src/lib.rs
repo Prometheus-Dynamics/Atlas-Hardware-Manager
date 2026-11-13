@@ -14,11 +14,14 @@
 //! to the names it uses. The mock devices that drivers list are in `atlas-mock`.
 
 pub mod access;
+pub mod actions;
 pub mod bundle;
 pub mod model;
 pub mod names;
 #[cfg(target_os = "linux")]
 pub mod node;
+#[cfg(target_os = "linux")]
+pub mod readings;
 pub mod script;
 pub mod slots;
 

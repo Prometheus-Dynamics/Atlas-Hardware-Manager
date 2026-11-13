@@ -1,0 +1,26 @@
+[package]
+name = "atlas-actions"
+description = "The actions a board offers, read from the board and run on its node: short calls, long actions as jobs with progress, cancel and re-attach after a lost session, and refusals passed through with the board's reason."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+atlas-driver = { path = "../../core/driver" }
+atlas-jobs = { path = "../../core/jobs" }
+atlas-session = { path = "../session" }
+atlas-types = { path = "../../core/types" }
+async-trait = "0.1"
+orion = { workspace = true, features = ["actions"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["sync", "time", "rt"] }
+
+[dev-dependencies]
+atlas-sim-node = { path = "../../testing/sim-node" }
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+
+[lints]
+workspace = true

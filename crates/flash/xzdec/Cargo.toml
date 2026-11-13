@@ -1,0 +1,14 @@
+[package]
+name = "atlas-xzdec"
+description = "Streaming xz for first-flash images: the stream layout (one image stream, optionally one signature record stream), the one-stream decode with liblzma's memory bound, and the record read. liblzma is bundled and linked statically."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+thiserror = "2"
+xz2 = { version = "0.1", features = ["static"] }
+
+[lints]
+workspace = true

@@ -208,7 +208,7 @@ impl Driver for MockDriver {
             .ok_or_else(|| DriverError::Unreachable(format!("{key} did not answer")))?;
         Ok(Identity {
             key,
-            model: device.model,
+            model: Some(device.model),
             state: device.state,
             lemnos: atlas_types::LemnosState::Absent,
             versions: device.versions,

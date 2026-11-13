@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use atlas_allwinner::{FAMILY, FelDriver, Images};
 use atlas_driver::{Driver, DriverError};
-use atlas_fel::layout::{Layout, ThunkIsa};
+use atlas_fel::layout::{Confirmation, Layout, LayoutParts, ThunkIsa};
 use atlas_fel::protocol::VERIFY_LEN;
 use atlas_fel::sim::{FelDevice, MOCK_SOC_ID};
 use atlas_types::{Candidate, CapabilityKind, DeviceState, Link, LinkId, LinkKind};
@@ -20,14 +20,18 @@ const IDS: [UsbId; 1] = [UsbId {
 }];
 
 fn layout() -> Layout {
-    Layout {
-        thunk_isa: ThunkIsa::Armv7,
-        load_address: 0x2000,
-        thunk_address: 0x20000,
-        swaps: Vec::new(),
-        image_address: 0x4100_0000,
-        image_entry: 0x4100_0000,
-    }
+    Layout::new(
+        LayoutParts {
+            thunk_isa: ThunkIsa::Armv7,
+            load_address: 0x2000,
+            thunk_address: 0x20000,
+            swaps: Vec::new(),
+            image_address: 0x4100_0000,
+            image_entry: 0x4100_0000,
+        },
+        Confirmation::Confirmed,
+    )
+    .unwrap()
 }
 
 fn images(expected_soc: Option<u32>) -> Images {
@@ -175,7 +179,7 @@ async fn flash_is_granted_in_the_boot_rom_only_with_images() {
     let flashable = FelDriver::new(bus, IDS.to_vec(), Some(images(None)));
     let identity = |state: DeviceState| atlas_types::Identity {
         key: atlas_types::DeviceKey::from_static(FAMILY, "usb-1-2"),
-        model: "x".into(),
+        model: Some("x".into()),
         state,
         lemnos: atlas_types::LemnosState::Absent,
         versions: Default::default(),
