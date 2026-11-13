@@ -1,9 +1,9 @@
 //! A push as a job: the file goes to the node's session in one job step, which waits through a
 //! lost session and goes on by itself.
 //!
-//! Each push is one step of one [`atlas_jobs`] job of [`PushKind`]. The step runs Orion's
-//! `Files::push` on the node's live session, through [`atlas_session::Handle::with_client`]. When the
-//! session breaks, the step waits for it and begins the file again: the board answers with how
+//! Each push is one step of one [`atlas_jobs`] job of [`PushKind`]. The step runs its attempts as long
+//! operations on the node's session ([`atlas_session::Handle::long`]); the adapter in `transfer.rs`
+//! sends the file. When the session breaks, the step waits for it and begins the file again: the board answers with how
 //! many bytes it holds, and the push carries on from there, so a drop costs at most the window
 //! Orion keeps in flight. The step ends only when the board commits the file, the source changes
 //! or cannot be read, the board refuses the file, or a person cancels. A session that never comes
@@ -19,13 +19,14 @@ use std::time::Duration;
 use async_trait::async_trait;
 use atlas_driver::DriverError;
 use atlas_jobs::{DeviceClaim, JobError, JobId, JobKind, Jobs};
-use atlas_session::{Backoff, Handle, Presence};
+use atlas_session::{Backoff, Handle, Outcome, Presence, SessionError};
 use orion::files::FileState;
 use orion::types::FileName;
 use tokio::sync::watch;
 
 use crate::progress::{Progress, Stage};
-use crate::source::{Counters, Guard, PushSource, Shared};
+use crate::source::{Counters, PushSource, Shared};
+use crate::transfer;
 
 /// The job kind's name, as saved with each push.
 pub const KIND: &str = "file-push";
@@ -245,7 +246,8 @@ pub async fn submit(
 }
 
 /// The push itself: attempts until the board commits, a refusal ends it, or it is cancelled.
-/// `Err` is the reason it stopped for good.
+/// `Err` is the reason it stopped for good. An attempt is one long operation on the node's session
+/// (see `atlas_session::long`); a lost session ends it, and the next attempt begins the file again.
 async fn run(pending: &Pending) -> Result<(), String> {
     let shared = &pending.shared;
     let mut backoff = Backoff::default();
@@ -282,25 +284,18 @@ async fn run(pending: &Pending) -> Result<(), String> {
 
         let before = shared.acked();
         shared.sending();
-        let attempt = Arc::clone(shared);
         let source = Arc::clone(&pending.source);
+        let attempt = Arc::clone(shared);
         let destination = pending.destination.clone();
         let answer = pending
             .handle
-            .with_client(move |orion| {
-                let mut source = source.lock().unwrap_or_else(PoisonError::into_inner);
-                let mut guard = Guard::new(&mut **source, &attempt);
-                orion
-                    .files()
-                    .push(&destination, &mut guard, |received, total| {
-                        attempt.report(received, total);
-                    })
-                    .map_err(orion::Error::from)
+            .long(&shared.token(), move |orion| {
+                transfer::start(orion, destination, source, attempt)
             })
             .await;
 
         match answer {
-            Ok(transfer) => match transfer.state {
+            Ok(Outcome::Done(transfer)) => match transfer.state {
                 FileState::Committed => {
                     let total = shared.current().total;
                     if transfer.received != total {
@@ -322,7 +317,8 @@ async fn run(pending: &Pending) -> Result<(), String> {
                     tokio::time::sleep(backoff.next_delay()).await;
                 }
             },
-            Err(atlas_session::SessionError::Gone(reason)) => {
+            Ok(Outcome::Cancelled) => return Err("the push was cancelled".to_owned()),
+            Err(SessionError::Gone(reason)) => {
                 if let Some(reason) = shared.refusal() {
                     return Err(reason);
                 }
@@ -335,7 +331,7 @@ async fn run(pending: &Pending) -> Result<(), String> {
                 shared.waiting(reason);
                 tokio::time::sleep(backoff.next_delay()).await;
             }
-            Err(atlas_session::SessionError::Failed(reason)) => {
+            Err(SessionError::Failed(reason)) => {
                 return Err(shared.refusal().unwrap_or(reason));
             }
         }

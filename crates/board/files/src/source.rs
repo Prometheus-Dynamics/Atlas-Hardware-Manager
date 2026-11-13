@@ -8,10 +8,11 @@
 //! board holds.
 
 use std::io::{self, Read, Seek, SeekFrom};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Instant;
 
+use atlas_session::Cancel;
 use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 
@@ -39,7 +40,8 @@ pub struct Counters {
 
 /// The state of one push, shared by its attempts and read by its owner.
 pub(crate) struct Shared {
-    cancelled: AtomicBool,
+    /// The request to stop the push. A long operation sees it at its next step boundary.
+    cancel: Cancel,
     /// Set when the push must stop for good, with why: the source changed or could not be read.
     refusal: Mutex<Option<String>>,
     /// The SHA-256 the file had when the first attempt began.
@@ -69,7 +71,7 @@ impl Shared {
     pub(crate) fn new(total: u64) -> (Self, watch::Receiver<Progress>) {
         let (progress, receiver) = watch::channel(Progress::queued(total));
         let shared = Self {
-            cancelled: AtomicBool::new(false),
+            cancel: Cancel::new(),
             refusal: Mutex::new(None),
             identity: Mutex::new(None),
             acked: AtomicU64::new(0),
@@ -83,11 +85,16 @@ impl Shared {
     }
 
     pub(crate) fn cancel(&self) {
-        self.cancelled.store(true, Ordering::SeqCst);
+        self.cancel.cancel();
     }
 
     pub(crate) fn cancelled(&self) -> bool {
-        self.cancelled.load(Ordering::SeqCst)
+        self.cancel.is_cancelled()
+    }
+
+    /// The cancel request of this push, for the long operation that sends it.
+    pub(crate) fn token(&self) -> Cancel {
+        self.cancel.clone()
     }
 
     /// Stops the push for good, unless it already has a reason.
@@ -205,17 +212,18 @@ impl Shared {
 }
 
 /// One attempt's view of the source: it hashes the file on the way in, then checks that hash and
-/// counts the bytes sent. It holds no bytes of its own.
-pub(crate) struct Guard<'a> {
-    source: &'a mut dyn PushSource,
-    shared: &'a Shared,
+/// counts the bytes sent. It holds no bytes of its own, and owns handles to the source and the
+/// push's state, so it can be moved to whichever adapter sends it.
+pub(crate) struct Guard {
+    source: Arc<Mutex<Box<dyn PushSource>>>,
+    shared: Arc<Shared>,
     position: u64,
     /// Hashing the file from the start. `None` once that pass has ended.
     hashing: Option<Sha256>,
 }
 
-impl<'a> Guard<'a> {
-    pub(crate) fn new(source: &'a mut dyn PushSource, shared: &'a Shared) -> Self {
+impl Guard {
+    pub(crate) fn new(source: Arc<Mutex<Box<dyn PushSource>>>, shared: Arc<Shared>) -> Self {
         shared.begin_attempt();
         Self {
             source,
@@ -225,13 +233,41 @@ impl<'a> Guard<'a> {
         }
     }
 
+    fn source(&self) -> MutexGuard<'_, Box<dyn PushSource>> {
+        lock(&self.source)
+    }
+
     fn refused(&self, reason: String) -> io::Error {
         self.shared.refuse(reason.clone());
         io::Error::other(reason)
     }
+
+    // LOCK: Orion R2 push_with (`Known { digest, size }`, Orion D15): the transfer's digest is known
+    // from the first attempt, so this hashing pass goes. A changed source is then caught by the
+    // board's digest check at commit, and `Files::push_file` refuses early on size and mtime. Until
+    // then this pass is the second read of the source, and the only place that makes it.
+    fn hashing_read(&mut self, mut hasher: Sha256, buf: &mut [u8]) -> io::Result<usize> {
+        let read = match self.source().read(buf) {
+            Ok(read) => read,
+            Err(error) => {
+                return Err(self.refused(format!("the source could not be read: {error}")));
+            }
+        };
+        if read == 0 {
+            let found: [u8; 32] = hasher.finalize().into();
+            return match self.shared.check_identity(found) {
+                Ok(()) => Ok(0),
+                Err(reason) => Err(self.refused(reason)),
+            };
+        }
+        hasher.update(&buf[..read]);
+        self.hashing = Some(hasher);
+        self.position += read as u64;
+        Ok(read)
+    }
 }
 
-impl Read for Guard<'_> {
+impl Read for Guard {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         if self.shared.cancelled() {
             // Not `Interrupted`: `read_exact` retries that kind forever.
@@ -240,26 +276,16 @@ impl Read for Guard<'_> {
         if let Some(reason) = self.shared.refusal() {
             return Err(io::Error::other(reason));
         }
-        let read = match self.source.read(buf) {
+        if let Some(hasher) = self.hashing.take() {
+            // The hashing pass: it reads the file from its start to its end, once.
+            return self.hashing_read(hasher, buf);
+        }
+        let read = match self.source().read(buf) {
             Ok(read) => read,
             Err(error) => {
                 return Err(self.refused(format!("the source could not be read: {error}")));
             }
         };
-        if let Some(mut hasher) = self.hashing.take() {
-            // The hashing pass: it reads the file from its start to its end, once.
-            if read == 0 {
-                let found: [u8; 32] = hasher.finalize().into();
-                return match self.shared.check_identity(found) {
-                    Ok(()) => Ok(0),
-                    Err(reason) => Err(self.refused(reason)),
-                };
-            }
-            hasher.update(&buf[..read]);
-            self.hashing = Some(hasher);
-            self.position += read as u64;
-            return Ok(read);
-        }
         if read == 0 {
             return Err(self.refused("the source got shorter while it was being sent".to_owned()));
         }
@@ -269,9 +295,9 @@ impl Read for Guard<'_> {
     }
 }
 
-impl Seek for Guard<'_> {
+impl Seek for Guard {
     fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
-        let position = self.source.seek(to)?;
+        let position = self.source().seek(to)?;
         self.position = position;
         Ok(position)
     }

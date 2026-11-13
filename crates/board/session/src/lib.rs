@@ -41,16 +41,25 @@
 //!
 //! The client is blocking and not `Send`, so it is only ever used inside the closure, on the
 //! monitor's thread. A call that holds the session for long makes the node's other calls wait:
-//! a long job is an Orion run that the caller polls, not a call that blocks.
+//! a transfer that takes long is a long operation instead ([`Handle::long`]), advanced in steps
+//! between the calls.
+//!
+//! A long transfer, such as a file push, is not a call: [`Handle::long`] starts it on the session
+//! and the session advances it in steps, between its calls (see [`long`] for the rule). The
+//! transfer is a [`SteppedTransfer`], which names nothing of Orion; an adapter in the crate that
+//! needs the transfer (`atlas-files`) supplies it.
 //!
 //! This crate depends on Orion and `atlas-types` only. It is not a driver and knows no family.
 
 pub mod backoff;
+pub mod double;
+pub mod long;
 pub mod monitor;
 mod seed;
 mod sessions;
 
 pub use backoff::Backoff;
+pub use long::{Cancel, MAX_LONG_OPERATIONS, Outcome, STEP_WAIT, Step, StepError, SteppedTransfer};
 pub use monitor::{CALL_WAIT, Handle, Monitor, PROGRAM, Pause, Presence, RealPause, SessionError};
 pub use seed::Seed;
 pub use sessions::Sessions;
