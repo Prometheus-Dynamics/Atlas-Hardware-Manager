@@ -11,8 +11,9 @@ use std::sync::atomic::AtomicBool;
 use std::thread;
 use std::time::Duration;
 
-use atlas_board::{BoardDriver, Pause, Seed};
+use atlas_board::BoardDriver;
 use atlas_driver::{Driver, DriverError, Serves};
+use atlas_session::{Pause, Seed};
 use atlas_sim_node::{Hello, Kind, Mode, SimNode};
 use atlas_types::{
     Candidate, CapabilityKind, DeviceKey, DeviceState, Identity, LemnosState, Link, LinkId,

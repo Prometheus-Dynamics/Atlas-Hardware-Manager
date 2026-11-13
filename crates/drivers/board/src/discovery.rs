@@ -8,7 +8,7 @@
 use atlas_types::Link;
 use orion::Address;
 
-use crate::reach::Seed;
+use atlas_session::Seed;
 
 /// The Orion addresses that a scan of `link` should try, from the seeds the caller gave.
 pub fn addresses_on(seeds: &[Seed], link: &Link) -> Vec<Address> {

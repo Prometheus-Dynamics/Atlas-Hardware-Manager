@@ -31,6 +31,7 @@ version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "atlas-driver",
+ "atlas-session",
  "atlas-sim-node",
  "atlas-types",
  "orion",
@@ -262,6 +263,16 @@ name = "atlas-rpiboot"
 version = "2026.1.0-dev"
 dependencies = [
  "atlas-usb",
+ "tokio",
+]
+
+[[package]]
+name = "atlas-session"
+version = "2026.1.0-dev"
+dependencies = [
+ "atlas-sim-node",
+ "atlas-types",
+ "orion",
  "tokio",
 ]
 

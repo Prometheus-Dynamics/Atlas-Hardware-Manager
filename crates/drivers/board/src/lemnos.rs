@@ -3,7 +3,8 @@
 //! which is normal. The four states are [`LemnosState`] on the identity, not text in an error.
 
 use atlas_types::LemnosState;
-use orion::actions::Outcome;
+use orion::Orion;
+use orion::actions::{ActionCall, Outcome, Target};
 use orion::node::Node;
 
 /// The hello facts that say a node runs Lemnos. A node that publishes one of them, or that
@@ -35,6 +36,35 @@ pub fn from_probe(outcome: Outcome, detail: &str) -> LemnosState {
             reason: detail.to_owned(),
         },
     }
+}
+
+/// Asks Lemnos its read-only question. A session that breaks during it is an error; any other
+/// failure is Lemnos not answering, with the reason.
+pub fn probe(orion: &Orion, node: &Node) -> Result<LemnosState, orion::Error> {
+    let Ok(name) = node.name.parse() else {
+        return Ok(LemnosState::NotAnswering {
+            reason: format!("the node's name {:?} is not a valid name", node.name),
+        });
+    };
+    let answered = orion
+        .run(&ActionCall {
+            name: PROBE,
+            target: Target::Node(name),
+            args: b"",
+            deadline_ms: 0,
+            detached: false,
+        })
+        .and_then(|mut run| Ok(run.finish(PROBE_WAIT)?));
+    let finished = match answered {
+        Ok(finished) => finished,
+        Err(error) if error.is_lost() => return Err(error),
+        Err(error) => {
+            return Ok(LemnosState::NotAnswering {
+                reason: error.to_string(),
+            });
+        }
+    };
+    Ok(from_probe(finished.outcome, &finished.detail))
 }
 
 /// Whether the hello document carries a fact that says the node runs Lemnos.
