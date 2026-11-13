@@ -489,23 +489,12 @@ mod tests {
         assert!(image_matches_name(Path::new("/x/plain.img"), ImageFormat::Raw).is_ok());
     }
 
-    /// A file symlink, made the way each platform makes one.
-    #[cfg(unix)]
-    fn symlink_file(target: &Path, link: &Path) -> std::io::Result<()> {
-        std::os::unix::fs::symlink(target, link)
-    }
-
-    #[cfg(windows)]
-    fn symlink_file(target: &Path, link: &Path) -> std::io::Result<()> {
-        std::os::windows::fs::symlink_file(target, link)
-    }
-
     #[test]
     fn a_link_is_not_an_output_file() {
         let target = temp_image("link-target", b"x");
         let link = std::env::temp_dir().join(format!("atlas-helper-link-{}", std::process::id()));
         let _ = fs::remove_file(&link);
-        symlink_file(&target, &link).unwrap();
+        std::os::unix::fs::symlink(&target, &link).unwrap();
         assert!(output_file(&link.display().to_string(), "--progress").is_err());
         let _ = fs::remove_file(link);
         let _ = fs::remove_file(target);
