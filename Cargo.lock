@@ -189,12 +189,6 @@ dependencies = [
  "async-trait",
  "atlas-driver",
  "atlas-types",
- "ed25519-dalek 2.2.0",
- "orion",
- "orion-stubs",
- "serde_json",
- "sha2 0.10.9",
- "tar",
  "tokio",
 ]
 
@@ -256,6 +250,18 @@ version = "2026.1.0-dev"
 dependencies = [
  "atlas-usb",
  "tokio",
+]
+
+[[package]]
+name = "atlas-sim-node"
+version = "2026.1.0-dev"
+dependencies = [
+ "ed25519-dalek 2.2.0",
+ "orion",
+ "orion-stubs",
+ "serde_json",
+ "sha2 0.10.9",
+ "tar",
 ]
 
 [[package]]
