@@ -1,55 +1,124 @@
-# Radxa ROCK 5C base OS: Buildroot 2026.02.3 with systemd 258.7 (Buildroot's
-# systemd; 254 or newer is the RK35xx standard, decision 3). Every line says why
-# it is here (standing rule: "dev had it" is not a reason).
+# Radxa ROCK 5C base OS: Buildroot 2026.02.3 (679b9ead, the commit in gaia.lock)
+# with systemd 258.7. Gaia starts this OS from Buildroot's `allnoconfig`, so
+# every choice is written out here: a line is set because the base needs it, or
+# a line says why it is off. Each option name was checked in Buildroot's
+# Config.in at that tag, with its depends-on and default, and the list is in the
+# PR text. The base's only way in is the serial console (the login section): no
+# SSH server. Orion is the way in over the network on a managed board; the
+# bring-up product adds the SSH server for the bench.
 
-# Toolchain: Buildroot's bootlin aarch64 glibc. Gaia's F8 example built with it
-# end to end, so it is the known-good toolchain for this board.
+# ---- Toolchain
+# Bootlin's aarch64 glibc toolchain. BR2_INIT_SYSTEMD needs glibc, SSP, threads,
+# headers >= 5.4 and gcc >= 8, and this one has them.
 BR2_TOOLCHAIN_EXTERNAL=y
 BR2_TOOLCHAIN_EXTERNAL_BOOTLIN=y
 BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_STABLE=y
 
-# Init: systemd, the one standard path on the RK35xx boards. Lemnos's and
-# Orion's units apply to it (decision 3).
-# Watchdog (Lemnos's rule for every board): no RuntimeWatchdogSec and no
-# ShutdownWatchdogSec in this OS config. lemnosd feeds the hardware watchdog
-# itself; a second feeder would be a second opener.
+# ---- Init: systemd (the one init on the RK35xx boards)
 BR2_INIT_SYSTEMD=y
 BR2_PACKAGE_SYSTEMD=y
-# systemd-networkd: configures eth0 (BR2_SYSTEM_DHCP below) and the bring-up
-# usb0 link. Reason: the network manager for a systemd OS.
+# Watchdog: no RuntimeWatchdogSec and no ShutdownWatchdogSec, here or in any
+# unit. lemnosd feeds the hardware watchdog itself, and a second feeder would be
+# a second opener. No Buildroot option sets either key, so nothing does.
+
+# systemd's own defaults switch these on (Config.in: default y), so each one
+# that is off is written out, with its reason.
 BR2_PACKAGE_SYSTEMD_NETWORKD=y
+# BR2_PACKAGE_SYSTEMD_RESOLVED is not set
+# No DNS daemon: the base resolves no name (the PC and Orion reach the board by
+# address). networkd does not need resolved. Revisit when a name is needed.
+# BR2_PACKAGE_SYSTEMD_TIMESYNCD is not set
+# The clock comes from the PC over Orion, not from an NTP server the board would
+# reach on its own. Two clock sources would fight over the time.
+# BR2_PACKAGE_SYSTEMD_TIMEDATED is not set
+# The D-Bus time and zone service. Nothing sets the time or the zone on the board.
+# BR2_PACKAGE_SYSTEMD_HOSTNAMED is not set
+# The D-Bus hostname service. The hostname is set once, in /etc/hostname (below).
+# BR2_PACKAGE_SYSTEMD_VCONSOLE is not set
+# Console keymap and font setup. No keyboard is used on the board.
+# BR2_PACKAGE_SYSTEMD_HWDB is not set
+# udev's hardware database, for the properties of input devices. This OS has none.
+# BR2_PACKAGE_SYSTEMD_PSTORE is not set
+# Archives pstore crash records. The RK35xx kernel fragment sets no pstore
+# backend, so there is nothing to archive. (ramoops is a Raze overlay, not ours here.)
+# BR2_PACKAGE_SYSTEMD_MYHOSTNAME is not set
+# The NSS plugin that resolves the board's own name. Nothing looks the name up.
 
-# Network: eth0 gets its address by DHCP through systemd-networkd (Buildroot
-# writes its .network file). Reason: the Gigabit port is how the board is
-# reached on a LAN. Unconfirmed on the board (dev's DHCP-on-eth0 note).
+# ---- Network: systemd-networkd, eth0 by DHCP
+# Buildroot writes /etc/systemd/network/eth0.network (DHCP=ipv4). The Gigabit port
+# is the only network on the base. No USB network here: the board's device tree
+# enables no device-mode port (the OTG port's controller is dr_mode = host), so the
+# bring-up has none either.
 BR2_SYSTEM_DHCP="eth0"
+# ifupdown's scripts belong to BusyBox init. networkd does the network here.
+# BR2_PACKAGE_IFUPDOWN_SCRIPTS: not set (hidden under systemd, so Kconfig writes no line for it)
 
-# Hostname: the default before an identity sets one (the app's hostname prefix
-# is app data, not this).
-BR2_TARGET_GENERIC_HOSTNAME="rock5c"
-
-# BusyBox: /bin/sh and the core utilities, not the init. Reason: a shell and
-# coreutils the OS needs; systemd is the init.
+# ---- Name and shell
+BR2_TARGET_GENERIC_HOSTNAME="zero3e"
+# /bin/sh for the units' ExecStart lines. Without BusyBox, Buildroot's default
+# shell is bash. Its applet set is Buildroot's default; trimming it is a size
+# item for later, not part of this audit.
 BR2_PACKAGE_BUSYBOX=y
+BR2_SYSTEM_BIN_SH_BUSYBOX=y
 
-# Devices: systemd-udevd creates the device nodes; the /dev choice is hidden
-# under systemd, so mdev (dev's choice) is dropped. Reason: systemd's own udev.
+# ---- Login: the serial console follows the board's security setting
+# The console is the person's last way in when the network or Orion is not
+# reachable. Its login policy follows the board's one security switch. The default
+# is security OFF (the FRC default): root logs in on the serial console with no
+# password, because on a bench or robot board physical access is already total.
+# This fragment gives that default. With security ON the console login must be
+# off, or need the board's credential; the simpler secure choice is "off". The
+# mechanism that switches a running board to security ON, and changes this login
+# policy with it, is NOT defined yet (open). This file cannot read the switch.
+# Root's shadow entry is empty (no password): Buildroot's skeleton writes "root::"
+# when root login is enabled and no root password is given.
+BR2_TARGET_ENABLE_ROOT_LOGIN=y
+BR2_TARGET_GENERIC_ROOT_PASSWD=""
+# No SSH server in a base product. Orion serves SSH on a managed board.
+# No dropbear here (the bring-up products add it; a line here that they change would be an override).
+# BR2_PACKAGE_OPENSSH is not set
+# The one serial getty, on the debug UART the device tree names as the console (the
+# extlinux.conf console= too). Not ttyGS0: the USB gadget does not exist in the base
+# (Lemnos's USB driver will own it). With a real tty as port, Buildroot's systemd
+# step enables serial-getty@ttyS2 and leaves getty@tty1 off (systemd's preset would
+# otherwise enable a login on a keyboard console). The baud rate is the kernel's.
+# TERM and OPTIONS are not read under systemd (their Config.in says so), so unset.
+BR2_TARGET_GENERIC_GETTY=y
+BR2_TARGET_GENERIC_GETTY_PORT="ttyS2"
+BR2_TARGET_GENERIC_GETTY_BAUDRATE_KEEP=y
 
-# Host build tools for the kernel and U-Boot (not on the board). Gaia built with
-# these; kept with that reason.
-BR2_LINUX_KERNEL_NEEDS_HOST_OPENSSL=y
+# ---- Root filesystem: read-only
+# The slot root is read-only EROFS, and the data partition is the writable place.
+# Buildroot's default is read-write, so this line changes it. Its fstab line is
+# "/dev/root / auto ro".
+# BR2_TARGET_GENERIC_REMOUNT_ROOTFS_RW is not set
+# With a read-only root Buildroot needs a /var choice. The factory one fills a
+# tmpfs /var from the factory at boot, and needs no kernel overlayfs. So /var is
+# in RAM, and journald's journal is too: it is lost at reboot. No Buildroot option
+# sets journald's storage, so systemd's default (auto) applies.
+BR2_INIT_SYSTEMD_VAR_FACTORY=y
+
+# ---- Host tools for the kernel and U-Boot (built on the host, not the board)
+# The arm64 defconfig builds CONFIG_DRM_MSM=m, which Buildroot's help names as the
+# case that needs host python3.
 BR2_LINUX_KERNEL_NEEDS_HOST_PYTHON3=y
+# (BR2_LINUX_KERNEL_NEEDS_HOST_OPENSSL is not set: it is for extract-cert, which
+# only CONFIG_SYSTEM_TRUSTED_KEYRING or module signing needs. The arm64 defconfig
+# enables neither, and no fragment here does.)
+# U-Boot builds with dtc (BR2_TARGET_UBOOT_NEEDS_DTC selects the host dtc).
 BR2_TARGET_UBOOT_NEEDS_DTC=y
+# U-Boot's binman packs the image with pylibfdt and pyelftools. The next four are
+# carried from Buildroot's own rock5b_defconfig (the same SoC family). Which U-Boot
+# make target needs each one was not traced here; they stay until a build shows
+# otherwise.
 BR2_TARGET_UBOOT_NEEDS_PYLIBFDT=y
 BR2_TARGET_UBOOT_NEEDS_PYELFTOOLS=y
 BR2_TARGET_UBOOT_NEEDS_OPENSSL=y
 BR2_TARGET_UBOOT_NEEDS_GNUTLS=y
 BR2_TARGET_UBOOT_NEEDS_UTIL_LINUX=y
-BR2_PACKAGE_HOST_DTC=y
 
-# TF-A's BL31 as an ELF, which U-Boot's binman packs into u-boot-rockchip.bin
-# with the DDR init (the raw area's content). Reason: the bootloader output
-# format the board needs.
+# TF-A's BL31 as an ELF, which U-Boot's binman packs into u-boot-rockchip.bin with
+# the DDR init (the raw area's content). rock5b_defconfig carries the same two lines.
 BR2_TARGET_ARM_TRUSTED_FIRMWARE_IMAGES="bl31/bl31.elf"
 BR2_TARGET_UBOOT_NEEDS_ATF_BL31_ELF=y
 BR2_TARGET_UBOOT_FORMAT_CUSTOM=y

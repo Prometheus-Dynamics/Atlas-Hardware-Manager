@@ -20,21 +20,22 @@ fragments = ["../../families/rk35xx/assets/linux.fragment", "assets/linux.fragme
 [bootloader]
 defconfig = "radxa-zero-3-rk3566"
 
-# U-Boot's make variable ROCKCHIP_TPL: the DDR init blob, RK3566 v1.26 at
-# rkbin 3e288fe.
-# NOT VERIFIED ON HARDWARE, AND SUSPECT (2026-11-13): Gaia's first bring-up
-# image with this blob did not boot. dev's working image used rkbin f43a462e
-# with rk3566_ddr_1056MHz_v1.23.bin. A rebuilt image with v1.23 is the test;
-# when it boots, this pin moves back to f43a462e / v1.23 and says so here.
-# Other boards must not copy this version: pin a blob only to a version that
-# has booted that board.
+# The ZERO 3E's own rkbin pin: f43a462e, the commit dev's working image used.
+[sources.rkbin]
+git = "https://github.com/rockchip-linux/rkbin.git"
+ref = "f43a462e7a1429a9d407ae52b4745033034a6cf9"
+
+# U-Boot's make variable ROCKCHIP_TPL: the DDR init blob, RK3566 v1.23.
+# VERIFIED ON HARDWARE 2026-11-13: Gaia's bring-up image with this blob boots
+# the board (Linux 7.3.3 up, SSH in). v1.26 at rkbin 3e288fe did NOT boot it.
+# Never move this without a board run.
 [bootloader.blobs]
-ROCKCHIP_TPL = { source = "rkbin", path = "bin/rk35/rk3566_ddr_1056MHz_v1.26.bin" }
+ROCKCHIP_TPL = { source = "rkbin", path = "bin/rk35/rk3566_ddr_1056MHz_v1.23.bin" }
 
 [bootloader.trusted_firmware]
 platform = "rk3568"
 
 # The maskrom loader's RKBOOT ini: names the DDR init and usbplug above and
-# the output rk356x_loader_v1.26.114.bin that boot_merger builds from it.
+# the merged loader boot_merger builds from it (versions as that commit's ini names them).
 [flash.files]
 loader_ini = { source = "rkbin", path = "RKBOOT/RK3566MINIALL.ini" }

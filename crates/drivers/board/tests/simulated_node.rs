@@ -14,14 +14,13 @@ use std::time::Duration;
 use atlas_board::BoardDriver;
 use atlas_driver::{Driver, DriverError, Serves};
 use atlas_session::{Pause, Seed};
-use atlas_sim_node::{Hello, Kind, Mode, SimNode};
+use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode};
 use atlas_types::{
     Candidate, CapabilityKind, DeviceKey, DeviceState, Identity, LemnosState, Link, LinkId,
     LinkKind,
 };
 
 const LINK: &str = "usbnet:test0";
-const WAIT: Duration = Duration::from_secs(15);
 
 /// Records each delay the monitor asks for. It sleeps only briefly, so the tests run at once;
 /// the delays are what the failure rule is checked on.
@@ -33,6 +32,18 @@ impl Pause for Delays {
         self.0.lock().unwrap().push(delay);
         thread::sleep(Duration::from_millis(2));
     }
+}
+
+/// Waits until the monitor has recorded more than `count` pauses: it has backed off that many
+/// times. Only [`DEADLINE`] ends the wait.
+async fn paused_beyond(pause: &Delays, count: usize) {
+    tokio::time::timeout(DEADLINE, async {
+        while pause.0.lock().unwrap().len() <= count {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the monitor backed off");
 }
 
 fn scratch(name: &str) -> PathBuf {
@@ -69,7 +80,7 @@ fn running_board() -> Kind {
 
 /// Polls `discover` until the node is offered, or the wait runs out.
 async fn offered(driver: &BoardDriver, link: &Link) -> Candidate {
-    tokio::time::timeout(WAIT, async {
+    tokio::time::timeout(DEADLINE, async {
         loop {
             if let Some(candidate) = driver.discover(link).await.unwrap().into_iter().next() {
                 return candidate;
@@ -83,7 +94,7 @@ async fn offered(driver: &BoardDriver, link: &Link) -> Candidate {
 
 /// Polls `discover` until the node is no longer offered.
 async fn gone(driver: &BoardDriver, link: &Link) {
-    tokio::time::timeout(WAIT, async {
+    tokio::time::timeout(DEADLINE, async {
         loop {
             if driver.discover(link).await.unwrap().is_empty() {
                 return;
@@ -126,6 +137,7 @@ async fn a_node_is_found_identified_lost_and_found_again() {
     assert!(grants.grants(CapabilityKind::Logs));
 
     // Lost: the node goes away, and the scan stops offering it.
+    let paused_before = pause.0.lock().unwrap().len();
     drop(first);
     gone(&driver, &link).await;
     let lost = driver.identify(&candidate).await;
@@ -133,6 +145,9 @@ async fn a_node_is_found_identified_lost_and_found_again() {
         matches!(lost, Err(DriverError::Unreachable(_))),
         "a lost node is unreachable, not identified: {lost:?}"
     );
+    // The monitor records its wait just after it marks the node lost. Wait for that record
+    // before the node comes back, so the wait is seen whatever the machine's pace.
+    paused_beyond(&pause, paused_before).await;
 
     // Found again on the same port, with the same identity.
     let _second = start(&dir, &running_board(), Some(port));
@@ -216,12 +231,10 @@ async fn a_bare_tcp_listener_is_never_offered_as_a_node() {
     let pause = std::sync::Arc::new(Delays::default());
     let driver = driver_for(port, &pause);
     let link = usb_link();
-    for _ in 0..50 {
-        if pause.0.lock().unwrap().len() >= 2 {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(20)).await;
-    }
+    // The first scan starts the monitor. Then wait for it to try and back off twice: a bare
+    // connect must still offer nothing, whenever the scan is asked.
+    assert!(driver.discover(&link).await.unwrap().is_empty());
+    paused_beyond(&pause, 1).await;
     assert!(driver.discover(&link).await.unwrap().is_empty());
 }
 

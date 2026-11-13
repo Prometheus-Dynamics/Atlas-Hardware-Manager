@@ -9,13 +9,39 @@ use atlas_sim_node::bundle;
 use atlas_sim_node::names::{self, SURFACE};
 use atlas_sim_node::slots::code;
 use atlas_sim_node::slots::parse_keys;
-use atlas_sim_node::{Behaviour, Hello, Kind, LinkFault, Mode, SimNode, call};
+use atlas_sim_node::{Behaviour, DEADLINE, Hello, Kind, LinkFault, Mode, SimNode, call};
 use ed25519_dalek::SigningKey;
-use orion::actions::{ActionCall, Finished, Outcome};
+use orion::actions::{ActionCall, Finished, Outcome, Update};
 use orion::topics::FieldId;
 use orion::{Address, Orion};
 use serde_json::Value;
 
+/// How often a wait looks again at the condition it waits for. Only [`DEADLINE`] ends a wait
+/// that never comes true; the poll interval is never a claim about how long anything takes.
+const POLL: Duration = Duration::from_millis(10);
+
+/// Asks `check` until it has an answer. Load can make any step slow, so nothing here assumes a
+/// step has happened by some time: the wait ends when the answer is there, or at [`DEADLINE`].
+fn wait_for<T>(what: &str, mut check: impl FnMut() -> Option<T>) -> T {
+    let deadline = Instant::now() + DEADLINE;
+    loop {
+        if let Some(found) = check() {
+            return found;
+        }
+        assert!(Instant::now() < deadline, "{what} never happened");
+        std::thread::sleep(POLL);
+    }
+}
+
+/// Waits until the slots report `state` (the listing's `state` word).
+fn wait_for_state(orion: &Orion, state: &str) {
+    wait_for(&format!("the slots reaching {state}"), || {
+        (list(orion)["state"] == state).then_some(())
+    });
+}
+
+/// A node for one test. Each test has its own name, so its own directory: the node's socket and
+/// state never meet another test's.
 fn start(name: &str) -> SimNode {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("sim-{name}"));
     let _ = std::fs::remove_dir_all(&dir);
@@ -79,12 +105,13 @@ fn install(orion: &Orion, bundle: &[u8], pin: bool, keep_old: bool) -> Finished 
     }
     push(orion, BUNDLE, bundle);
     start_install(orion, BUNDLE, pin, keep_old)
-        .finish(Duration::from_secs(10))
+        .finish(DEADLINE)
         .expect("the install ends")
 }
 
-/// A bundle of about four mebibytes: an install runs for over a second, so a cancel or a restart
-/// always lands while it is still running.
+/// A bundle of about four mebibytes. Only the large-transfer test uses it: every other test
+/// installs a small bundle and holds the install where it is, so nothing depends on how fast
+/// the machine moves bytes.
 fn big_bundle(id: &str) -> Vec<u8> {
     let rootfs = format!("rootfs of {id}\n").into_bytes();
     let blob = vec![7_u8; 4 * 1024 * 1024];
@@ -296,10 +323,12 @@ fn a_stalled_self_test_is_cancelled_with_no_change() {
             detached: false,
         })
         .expect("the run starts");
-    std::thread::sleep(Duration::from_millis(60));
+    wait_for("the self-test to stall", || {
+        (node.stalled_runs() == 1).then_some(())
+    });
     run.cancel().expect("cancel is sent");
     assert_eq!(
-        run.finish(Duration::from_secs(5)).expect("it ends").outcome,
+        run.finish(DEADLINE).expect("it ends").outcome,
         Outcome::Cancelled
     );
     assert!(node.model().slots.trial.is_none());
@@ -309,17 +338,19 @@ fn a_stalled_self_test_is_cancelled_with_no_change() {
 fn cancel_discards_the_pushed_file_and_the_install() {
     let node = start("cancel");
     let orion = node.connect("cancel").expect("a session");
-    let big = big_bundle("slot-2");
+    node.hold_installs(true);
+    let bundle = bundle_for("slot-2", "2.0.0", None);
     ok(
         &orion,
         names::SLOTS_ACCEPT,
-        big.len().to_string().as_bytes(),
+        bundle.len().to_string().as_bytes(),
     );
-    push(&orion, BUNDLE, &big);
+    push(&orion, BUNDLE, &bundle);
     let mut run = start_install(&orion, BUNDLE, false, false);
+    wait_for_state(&orion, "staging");
     run.cancel().expect("cancel is sent");
     assert_eq!(
-        run.finish(Duration::from_secs(5)).expect("it ends").outcome,
+        run.finish(DEADLINE).expect("it ends").outcome,
         Outcome::Cancelled
     );
     let listing = list(&orion);
@@ -343,39 +374,35 @@ fn cancel_discards_the_pushed_file_and_the_install() {
 fn a_starter_that_disconnects_has_its_install_cancelled() {
     let node = start("disconnect");
     let starter = node.connect("starter").expect("a session");
-    let big = big_bundle("slot-2");
+    node.hold_installs(true);
+    let bundle = bundle_for("slot-2", "2.0.0", None);
     ok(
         &starter,
         names::SLOTS_ACCEPT,
-        big.len().to_string().as_bytes(),
+        bundle.len().to_string().as_bytes(),
     );
-    push(&starter, BUNDLE, &big);
+    push(&starter, BUNDLE, &bundle);
     let run = start_install(&starter, BUNDLE, false, false);
+    wait_for_state(&starter, "staging");
     drop(run);
     drop(starter);
 
     let other = node.connect("after").expect("a session");
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while list(&other)["state"] != "cancelled" {
-        assert!(
-            Instant::now() < deadline,
-            "the install was not cancelled when its starter left"
-        );
-        std::thread::sleep(Duration::from_millis(20));
-    }
+    wait_for_state(&other, "cancelled");
 }
 
 #[test]
 fn a_detached_install_survives_its_starter_and_can_be_attached_to_again() {
     let node = start("detached");
     let starter = node.connect("starter").expect("a session");
-    let big = big_bundle("slot-2");
+    node.hold_installs(true);
+    let bundle = bundle_for("slot-2", "2.0.0", None);
     ok(
         &starter,
         names::SLOTS_ACCEPT,
-        big.len().to_string().as_bytes(),
+        bundle.len().to_string().as_bytes(),
     );
-    push(&starter, BUNDLE, &big);
+    push(&starter, BUNDLE, &bundle);
     let args = format!("{BUNDLE} false false");
     let run = starter
         .run(&ActionCall {
@@ -390,24 +417,18 @@ fn a_detached_install_survives_its_starter_and_can_be_attached_to_again() {
     drop(run);
     drop(starter);
 
-    // The starter is gone and the install carries on: it lands the slot.
-    // The attach can reach the router before the starter's session close has been handled, so
-    // a refusal is retried for a short while: the run is detached and is still there.
+    // The starter is gone, and the install is still held in its place. The attach can reach the
+    // router before the starter's session close has been handled, so an attach that is not
+    // answered yet is asked again until the run is found.
     let other = node.connect("later").expect("a session");
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let finished = loop {
-        let mut attached = other.attach(call_number).expect("attach to a detached run");
-        match attached.finish(Duration::from_secs(10)) {
-            Ok(finished) => break finished,
-            Err(error) => {
-                assert!(
-                    Instant::now() < deadline,
-                    "attach never found the run: {error:?}"
-                );
-                std::thread::sleep(Duration::from_millis(20));
-            }
-        }
-    };
+    let mut attached = wait_for("the detached run to be found", || {
+        let mut attached = other.attach(call_number).ok()?;
+        let answered = attached.wait(POLL).is_ok();
+        answered.then_some(attached)
+    });
+    // Now let the install land: the run that was attached to is the one that finishes.
+    node.hold_installs(false);
+    let finished = attached.finish(DEADLINE).expect("the run ends");
     assert_eq!(finished.outcome, Outcome::Succeeded, "{}", finished.detail);
     assert_eq!(text(&finished.output), "slot-2");
     assert_eq!(list(&other)["state"], "idle");
@@ -417,25 +438,30 @@ fn a_detached_install_survives_its_starter_and_can_be_attached_to_again() {
 fn a_plain_run_cannot_be_attached_to_by_another_session() {
     let node = start("starter-only");
     let starter = node.connect("starter").expect("a session");
-    let big = big_bundle("slot-2");
+    node.hold_installs(true);
+    let bundle = bundle_for("slot-2", "2.0.0", None);
     ok(
         &starter,
         names::SLOTS_ACCEPT,
-        big.len().to_string().as_bytes(),
+        bundle.len().to_string().as_bytes(),
     );
-    push(&starter, BUNDLE, &big);
+    push(&starter, BUNDLE, &bundle);
     let run = start_install(&starter, BUNDLE, false, false);
+    wait_for_state(&starter, "staging");
     let call_number = run.call();
 
-    // Another session cannot attach to a run that was not started detached.
+    // Another session cannot attach to a run that was not started detached. The install is held,
+    // so the only way the intruder's attach gets an answer is a refusal: a run it was handed
+    // could not finish while held.
     let other = node.connect("intruder").expect("a session");
-    let refused = match other.attach(call_number) {
-        Err(_) => true,
-        Ok(mut attached) => match attached.finish(Duration::from_secs(2)) {
-            Err(_) => true,
-            Ok(finished) => finished.outcome != Outcome::Succeeded,
-        },
-    };
+    let mut attached = other.attach(call_number).expect("the attach is sent");
+    let refused = wait_for("the intruder's attach to be refused", || {
+        match attached.wait(POLL) {
+            Err(_) => Some(true),
+            Ok(Some(Update::Finished(finished))) => Some(finished.outcome != Outcome::Succeeded),
+            Ok(_) => None,
+        }
+    });
     assert!(refused, "a plain run is not handed to another session");
     drop(run);
     drop(starter);
@@ -446,24 +472,21 @@ fn a_plain_run_cannot_be_attached_to_by_another_session() {
 fn a_service_restart_loses_the_running_install_and_a_new_one_starts_clean() {
     let node = start("restart");
     let orion = node.connect("restart").expect("a session");
-    let big = big_bundle("slot-2");
+    node.hold_installs(true);
+    let bundle = bundle_for("slot-2", "2.0.0", None);
     ok(
         &orion,
         names::SLOTS_ACCEPT,
-        big.len().to_string().as_bytes(),
+        bundle.len().to_string().as_bytes(),
     );
-    push(&orion, BUNDLE, &big);
+    push(&orion, BUNDLE, &bundle);
     let mut run = start_install(&orion, BUNDLE, false, false);
     // Restart only once the install has started: the request and the restart are both handled
     // by the node, in its own order.
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while list(&orion)["state"] != "staging" {
-        assert!(Instant::now() < deadline, "the install never started");
-        std::thread::sleep(Duration::from_millis(5));
-    }
+    wait_for_state(&orion, "staging");
 
     node.restart_daemon();
-    let lost = run.finish(Duration::from_secs(5)).expect("it ends");
+    let lost = run.finish(DEADLINE).expect("it ends");
     assert_eq!(lost.outcome, Outcome::Failed, "{}", lost.detail);
     assert!(lost.detail.starts_with("-4"), "{}", lost.detail);
     let listing = list(&orion);
@@ -474,6 +497,7 @@ fn a_service_restart_loses_the_running_install_and_a_new_one_starts_clean() {
     );
 
     // Nothing resumes: a fresh install of the same bundle starts from zero and lands.
+    node.hold_installs(false);
     let two = bundle_for("slot-2", "2.0.0", None);
     let again = install(&orion, &two, false, false);
     assert_eq!(again.outcome, Outcome::Succeeded, "{}", again.detail);
@@ -778,15 +802,14 @@ fn a_layered_manifest_is_refused() {
 /// The text of one hello fact, as the node's own hello document carries it.
 fn hello_fact(orion: &Orion, topic: &str) -> String {
     let fact = topic.strip_prefix("hello.").expect("a hello topic");
-    let deadline = Instant::now() + Duration::from_secs(5);
-    loop {
+    wait_for(&format!("the hello fact {fact}"), || {
         let document = orion.node().expect("the node document");
-        if let Some(found) = document.facts.iter().find(|found| found.name == fact) {
-            return text(&found.value);
-        }
-        assert!(Instant::now() < deadline, "no hello fact {fact}");
-        std::thread::sleep(Duration::from_millis(20));
-    }
+        document
+            .facts
+            .iter()
+            .find(|found| found.name == fact)
+            .map(|found| text(&found.value))
+    })
 }
 
 #[test]
@@ -985,16 +1008,12 @@ fn readings_come_with_their_units_on_a_topic() {
     let node = start("readings");
     let orion = node.connect("reader").expect("a session");
     let mut subscriber = orion.subscribe(names::READINGS).expect("a subscription");
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let temperature = loop {
+    let temperature = wait_for("a temperature sample", || {
+        subscriber.wait(POLL).expect("the topic waits");
         subscriber
-            .wait(Duration::from_millis(50))
-            .expect("the topic waits");
-        if let Some(sample) = subscriber.latest(FieldId(0)) {
-            break f64::from_le_bytes(sample.payload.try_into().expect("8 bytes"));
-        }
-        assert!(Instant::now() < deadline, "no temperature sample arrived");
-    };
+            .latest(FieldId(0))
+            .map(|sample| f64::from_le_bytes(sample.payload.try_into().expect("8 bytes")))
+    });
     assert!(
         (40.0..=50.0).contains(&temperature),
         "temperature {temperature}"
@@ -1002,14 +1021,12 @@ fn readings_come_with_their_units_on_a_topic() {
     let mut hardware = orion
         .subscribe(names::HARDWARE)
         .expect("the hardware topic");
-    hardware
-        .wait(Duration::from_secs(5))
-        .expect("the description arrives");
-    let description = hardware
-        .latest(FieldId(0))
-        .expect("one description")
-        .payload
-        .to_vec();
+    let description = wait_for("the hardware description", || {
+        hardware.wait(POLL).expect("the topic waits");
+        hardware
+            .latest(FieldId(0))
+            .map(|sample| sample.payload.to_vec())
+    });
     assert!(
         text(&description).contains("model="),
         "{}",
@@ -1054,6 +1071,17 @@ fn a_file_dropped_mid_transfer_resumes_and_lands_whole() {
     assert_eq!(transfer.received, data.len() as u64);
     let committed = node.shelf().committed.lock().unwrap();
     assert_eq!(committed.get(destination), Some(&data));
+}
+
+#[test]
+fn a_four_mebibyte_bundle_installs_whole() {
+    // The one test that moves a large bundle through an install at its own pace.
+    let node = start("large-bundle");
+    let orion = node.connect("large").expect("a session");
+    let big = big_bundle("slot-2");
+    let finished = install(&orion, &big, false, false);
+    assert_eq!(finished.outcome, Outcome::Succeeded, "{}", finished.detail);
+    assert_eq!(list(&orion)["state"], "idle");
 }
 
 #[test]

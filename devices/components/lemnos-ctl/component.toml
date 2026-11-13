@@ -1,0 +1,27 @@
+# One Lemnos cargo package: lemnos-ctl, built from Lemnos next b0bf0101 (the rev with Cargo.lock).
+# The target is the board's and the crates come from Cargo.lock: no triple, no vendor here.
+# Gaia's rust builder, at 4abf626 and later: `--package lemnos-ctl --profile service`.
+version = 1
+name = "lemnos-ctl"
+description = "the Lemnos command-line client, lemnos-ctl (service profile; the board-file tool)"
+
+[sources.src]
+git = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+
+[sources.root]
+image = "docker.io/library/rust:1.99-slim"
+platform = "host"
+
+[build]
+builder = "rust"
+source = "src"
+
+[build.settings]
+package = "lemnos-ctl"
+profile = "service"
+
+[[install]]
+from = "bin/lemnos-ctl"
+to = "/usr/bin/lemnos-ctl"
+mode = "0755"

@@ -1,0 +1,29 @@
+# Raze: Raspberry Pi CM5 with an OV9782 global-shutter camera, a 16 GB eMMC (written over USB boot).
+# Extends the BCM2712 family and keeps what the Raze adds: its kernel fragments, the eMMC disk and
+# the USB-boot flasher. The Raze's overlays are pending Lemnos's minimal list (PR text). Ported from
+# dev devices/raze/gaia. Untested on board.
+version = 1
+extends = "../../families/bcm2712/family.toml"
+name = "raze"
+description = "Raze (CM5 + OV9782): Raspberry Pi CM5 vision device"
+
+# raze.config: the Raze's kernel decisions, each with its reason in the file. raze-trim.config is
+# applied after it: the install-size trim.
+# No device-tree overlay of ours. The board's devices (I2C, fan PWM, CSI receiver, USB device
+# controller) come from ONE overlay Lemnos generates from the Lemnos board file: a placeholder until it
+# exists (boards/raze/overlay/README.txt). The board has no fan control, I2C, camera receiver or USB
+# gadget from the device tree until then. Provisional.
+[kernel]
+fragments = ["kernel/raze.config", "kernel/raze-trim.config"]
+
+
+# The eMMC: 30,535,680 sectors (14,910 MiB), the "16 GB" module. MBR, as the slot disk is.
+[disk]
+scheme = "mbr"
+first = "1M"
+alignment = "1M"
+size = "14910M"
+
+# Written over USB boot: the boot ROM takes the family's bootfiles and Atlas's loader writes the eMMC.
+[flash]
+methods = ["usb-boot"]

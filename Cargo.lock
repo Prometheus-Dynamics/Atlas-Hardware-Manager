@@ -207,6 +207,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-nt"
+version = "2026.1.0-dev"
+dependencies = [
+ "orion",
+ "orion-comm-app",
+ "orion-config",
+ "orion-nt4",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-release"
 version = "2026.1.0-dev"
 dependencies = [
@@ -713,7 +726,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e35d6e78f4cebb90e51d543db8fe41528851d6deeef6ef21ebd4bfdc1e784776"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1377,6 +1390,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "orion-comm-app"
+version = "1.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=c0187f4c195cd27f8353c055dd0a94247c2965cc#c0187f4c195cd27f8353c055dd0a94247c2965cc"
+dependencies = [
+ "orion-broker",
+ "orion-config",
+ "orion-hello",
+ "orion-keys",
+ "orion-nt4-gateway",
+ "orion-server",
+ "orion-supervise",
+ "orion-types",
+ "orion-unix",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "orion-config"
 version = "1.0.1-dev"
 source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=c0187f4c195cd27f8353c055dd0a94247c2965cc#c0187f4c195cd27f8353c055dd0a94247c2965cc"
@@ -1588,6 +1619,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "orion-nt4"
+version = "1.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=c0187f4c195cd27f8353c055dd0a94247c2965cc#c0187f4c195cd27f8353c055dd0a94247c2965cc"
+dependencies = [
+ "orion-ws",
+ "serde",
+ "serde_json",
+ "socket2",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "orion-nt4-gateway"
+version = "1.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=c0187f4c195cd27f8353c055dd0a94247c2965cc#c0187f4c195cd27f8353c055dd0a94247c2965cc"
+dependencies = [
+ "orion-broker",
+ "orion-config",
+ "orion-msg-topics",
+ "orion-nt4",
+ "orion-ring",
+ "orion-types",
+ "orion-values",
+ "orion-wire",
+ "orion-ws",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "orion-outbound"
 version = "1.0.1-dev"
 source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=c0187f4c195cd27f8353c055dd0a94247c2965cc#c0187f4c195cd27f8353c055dd0a94247c2965cc"
@@ -1771,6 +1833,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "orion-values"
+version = "1.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=c0187f4c195cd27f8353c055dd0a94247c2965cc#c0187f4c195cd27f8353c055dd0a94247c2965cc"
+dependencies = [
+ "orion-msg-topics",
+ "orion-types",
+]
+
+[[package]]
 name = "orion-wire"
 version = "1.0.1-dev"
 source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=c0187f4c195cd27f8353c055dd0a94247c2965cc#c0187f4c195cd27f8353c055dd0a94247c2965cc"
@@ -1901,7 +1972,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2028,7 +2099,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2085,7 +2156,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2231,6 +2302,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "signal-hook-registry"
+version = "1.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
+dependencies = [
+ "errno",
+ "libc",
+]
+
+[[package]]
 name = "signature"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2368,7 +2449,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2417,6 +2498,7 @@ dependencies = [
  "libc",
  "mio",
  "pin-project-lite",
+ "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",
@@ -2691,7 +2773,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

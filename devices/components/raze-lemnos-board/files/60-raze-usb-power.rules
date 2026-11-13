@@ -1,0 +1,6 @@
+# Raze: keep USB devices on the external ports fully powered. Runtime
+# autosuspend and USB2 hardware LPM caused cameras and peripherals to drop.
+# Ported from helios-usb-power-setup.sh (USB_POWER_FORCE_POWER_CONTROL_ON and
+# USB_POWER_DISABLE_USB2_LPM). Override with /etc/udev/rules.d/60-raze-usb-power.rules.
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", TEST=="power/control", ATTR{power/control}="on"
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", TEST=="power/usb2_hardware_lpm", ATTR{power/usb2_hardware_lpm}="0"

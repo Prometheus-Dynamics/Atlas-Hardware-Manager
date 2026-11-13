@@ -1,0 +1,7 @@
+# EXAMPLE, for scripts/check-devices.sh only. Not a device.
+# A family: the target its boards share.
+version = 1
+
+[target]
+arch = "aarch64"
+os = "linux"

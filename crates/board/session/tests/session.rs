@@ -11,10 +11,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use atlas_session::{Handle, Pause, Presence, RealPause, SessionError, Sessions};
-use atlas_sim_node::{Hello, Kind, Mode, SimNode};
+use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode};
 use orion::{Address, ClientError};
-
-const WAIT: Duration = Duration::from_secs(15);
 
 /// A pause that does not wait: the failure rule's delays are tested on the driver side. It only
 /// yields, so the monitor thread does not spin while the node is gone.
@@ -51,7 +49,7 @@ fn address(port: u16) -> Address {
 async fn connected(handle: &Handle) {
     let mut presence = handle.watch();
     tokio::time::timeout(
-        WAIT,
+        DEADLINE,
         presence.wait_for(|presence| matches!(presence, Presence::Found(_))),
     )
     .await
@@ -63,7 +61,7 @@ async fn connected(handle: &Handle) {
 async fn lost(handle: &Handle) {
     let mut presence = handle.watch();
     tokio::time::timeout(
-        WAIT,
+        DEADLINE,
         presence.wait_for(|presence| matches!(presence, Presence::Lost(_))),
     )
     .await
