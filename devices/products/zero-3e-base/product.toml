@@ -1,7 +1,7 @@
 # Radxa ZERO 3E base OS, on Buildroot, in the bring-up form: raw areas, rootfs
 # and data partitions, extlinux for U-Boot's distro boot. No bench key, no
-# bring-up extras (those are in devices/pending/zero-3e-bringup, outside the
-# check until Gaia's local input exists). Untested on board: G3 runs it.
+# bring-up extras (those are in devices/products/zero-3e-bringup, which adds
+# them on top of this base). Untested on board: G3 runs it.
 #
 # Gaia 10beed8 (F7): `sd-image` builds the slot file itself (slot_device, the
 # path in the dm-verity table, defaults to /data/slots/root.img), adds it to the

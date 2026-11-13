@@ -1,0 +1,44 @@
+# Written by `gaia lock`. Do not edit.
+version = 1
+
+[source."cubie-a7-bringup.buildroot"]
+kind = "git"
+url = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.02.3"
+commit = "679b9ead7620bbf193620d1ebf56f53c1764d37a"
+
+[source."cubie-a7s-bringup.a733-bootchain"]
+kind = "git"
+url = "https://github.com/DockSeed/a733-bootchain.git"
+ref = "b6f6872be2505e1f4d4dfcea7bee5b423a3efcb3"
+commit = "b6f6872be2505e1f4d4dfcea7bee5b423a3efcb3"
+
+[source."cubie-a7s-bringup.a733-kernel-series"]
+kind = "git"
+url = "https://github.com/DockSeed/a7s-linux-mainline.git"
+ref = "fe0a8ed3a426c09efa8d92c14c9d9ab3769d5256"
+commit = "fe0a8ed3a426c09efa8d92c14c9d9ab3769d5256"
+
+[source."cubie-a7s-bringup.dlan17-pkg"]
+kind = "git"
+url = "https://github.com/radxa-pkg/u-boot-dlan17.git"
+ref = "b1cec0a90c795f65b82cee7098489e0bdf550b74"
+commit = "b1cec0a90c795f65b82cee7098489e0bdf550b74"
+
+[source."cubie-a7s-bringup.linux"]
+kind = "git"
+url = "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
+ref = "7595a62d45ee1a2297eafa5f2ef5d0a45142d84d"
+commit = "7595a62d45ee1a2297eafa5f2ef5d0a45142d84d"
+
+[source."cubie-a7s-bringup.tf-a"]
+kind = "git"
+url = "https://git.trustedfirmware.org/TF-A/trusted-firmware-a.git"
+ref = "3d425f4f459820a44d24b23464dbc09d6baab7bb"
+commit = "3d425f4f459820a44d24b23464dbc09d6baab7bb"
+
+[source."cubie-a7s-bringup.u-boot"]
+kind = "git"
+url = "https://github.com/radxa/u-boot.git"
+ref = "9da4b3e82d641296f5b19d5e78eaad0d3cf56eec"
+commit = "9da4b3e82d641296f5b19d5e78eaad0d3cf56eec"

@@ -9,14 +9,24 @@
 #   scripts/check-devices.sh --self-test   the verbose form: the good fixtures must pass, broken must
 #                                          fail
 #
-# The Gaia commit is read from devices/gaia.lock. The gaia binary is $GAIA_BIN when set (used as
-# given: gaia has no version stamp, so its commit is not checked), else a build from that commit
-# cached under ${ATLAS_GAIA_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/gaia}/<commit>/.
-# The recipes come from the same Gaia checkout. With a gaia that has `gaia validate`, every family,
-# board, component and product file is validated (products against the checkout's recipes/, so a bogus
-# recipe name fails), and every product is also planned. With one that
-# does not, every product is planned and nothing else is checked. Each product's gaia.lock, committed
-# beside its product.toml, must match what `gaia lock` writes; `--write-locks` writes them.
+# The Gaia commit is read from devices/gaia.lock. The gaia binary is $GAIA_BIN when set, else a build
+# from that commit cached under ${ATLAS_GAIA_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/gaia}/<commit>/.
+# Either way it must say, in `gaia --version`, that it was built from that commit (`gaia <version>
+# (<commit>)`); a binary that says another commit, says none, or says `-dirty` is refused.
+# The recipes come from the same Gaia checkout. Every family, board, component and product file is
+# validated (products against the checkout's recipes/, so a bogus recipe name fails), and every
+# product is planned.
+#
+# Each product's gaia.lock, committed beside its product.toml, is checked OFFLINE: `gaia lock` runs on a
+# copy of it with git and curl replaced by programs that fail, so a lock that needs a request is a
+# failure, not a silent fetch, and the plan uses the committed lock. `--write-locks` is the only mode
+# that asks the network (each source's ref, a download, an image's digest): it starts from the committed
+# lock, so a source the lock already holds for what its description names is not asked again (gaia lock's
+# rule). What is new or changed is resolved. A host that is unreachable or rate limited there is a FAILURE,
+# not a note. To refresh a source that did not change in its description, run `gaia lock --update NAME`.
+#
+# Products that take a bench SSH public key (`{ input = "bench-key" }` in a component) are planned with
+# a throwaway public key the check makes in a temp dir for each run; no key is committed.
 set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -175,10 +185,19 @@ ensure_src
 if [[ -n ${GAIA_BIN:-} ]]; then
   gaia=$GAIA_BIN
   [[ -x $gaia ]] || die "GAIA_BIN=$gaia is not an executable"
-  echo "gaia: using GAIA_BIN=$gaia; its commit is not checked (gaia has no version stamp)" >&2
 else
   ensure_bin
   gaia=$dir/bin/gaia
+fi
+# The binary must be a build of the pinned commit: it prints `gaia <version> (<commit>)`, and that
+# commit must be devices/gaia.lock's. A binary that prints no commit (an old Gaia) is refused too.
+gaia_line=$("$gaia" --version 2>&1 | head -1 || true)
+if [[ ! $gaia_line =~ ^gaia\ [^\ ]+\ \(([^\)]*)\)$ ]]; then
+  die "$gaia does not print its commit ('$gaia_line'), so it cannot be checked against $gaia_commit (devices/gaia.lock). Build that commit, or unset GAIA_BIN to let the check build it."
+fi
+gaia_built=${BASH_REMATCH[1]}
+if [[ $gaia_built != "$gaia_commit" ]]; then
+  die "$gaia was built from '$gaia_built', but devices/gaia.lock pins $gaia_commit: a stale binary. Rebuild Gaia at $gaia_commit, or unset GAIA_BIN."
 fi
 recipes=$dir/src/recipes
 
@@ -321,13 +340,55 @@ while IFS= read -r hit; do
 done < <(grep -rnE '^[[:space:]]*to[[:space:]]*=[[:space:]]*"(/data/|/var/lib/orion|/etc/dropbear/|[^"]*(host_key|node-identity|\.ed25519)[^"]*")' \
            --include='*.toml' . 2>/dev/null | grep -vE 'to[[:space:]]*=[[:space:]]*"/data/\.mountpoint"' || true)
 
-# Every product is validated (when gaia can), then locked into a temp file, and that lock must
-# match the gaia.lock committed beside its product.toml (--write-locks writes it). Then the product is
-# planned with the committed lock. A tree path in a lock is relative to the product's directory, so
-# the same lock holds in every checkout.
+# Every product is validated (when gaia can), then its lock is checked, then it is planned.
+#
+# The plain check (no --write-locks) never asks the network. The committed gaia.lock is copied, and
+# `gaia lock --check` must find it matching the descriptions; then `gaia lock` runs on a second copy
+# with git and curl set to /bin/false, so any request it would make is an error. The regenerated copy
+# must equal the committed lock byte for byte (this also re-hashes every directory source, which
+# --check does not). Only then is the product planned, with the committed lock.
+#
+# --write-locks starts each product's lock from its committed lock and lets gaia lock resolve what that
+# lock lacks (the network). A source whose host is unreachable or rate limited is retried a few times,
+# then it is a FAILURE: the committed lock is left as it was.
+offline_tool=$(command -v false)
 locks=$(mktemp -d)
+bench_dir=""
 lock_tries="1 2 3"
-trap 'rm -rf "$locks" "$used" "$errs" "$outs" ${stand_in_dir:+"$stand_in_dir"}' EXIT
+trap 'rm -rf "$locks" "$used" "$errs" "$outs" ${stand_in_dir:+"$stand_in_dir"} ${bench_dir:+"$bench_dir"}' EXIT
+
+# Writes the lock $2 for product $1 (the network for what it lacks). Retries a host that is down or
+# limiting requests; any other error ends it at once. Returns 0 when the lock was written.
+write_lock() {
+  local product=$1 lockfile=$2 attempt rc network
+  for attempt in $lock_tries; do
+    rc=0
+    timeout "${LOCK_TRY_SECONDS:-60}" "$gaia" lock "$product" --lock "$lockfile" >"$errs" 2>&1 || rc=$?
+    [[ $rc -eq 0 ]] && return 0
+    if [[ $rc -eq 124 ]]; then
+      echo "gaia lock: timed out after ${LOCK_TRY_SECONDS:-60} s" >>"$errs"
+    fi
+    network=0
+    if [[ $rc -eq 124 ]] || grep -qiE 'unable to access|could not resolve|failed to connect|could not connect|timed out|connection reset|temporary failure|HTTP 429|HTTP 50[0234]|too many requests' "$errs"; then
+      network=1
+    fi
+    [[ $network -eq 1 && $attempt != "${lock_tries##* }" ]] || break
+    sleep $((attempt * 5))
+  done
+  return 1
+}
+
+# A throwaway bench public key for the products that take one (see the header). Made once per run,
+# in a temp dir; the private half is deleted at once, so only the public key exists.
+bench_key_pub() {
+  if [[ -z $bench_dir ]]; then
+    command -v ssh-keygen >/dev/null || die "ssh-keygen is needed to make the throwaway bench key that bring-up products are planned with"
+    bench_dir=$(mktemp -d)
+    ssh-keygen -q -t ed25519 -N '' -C atlas-check-throwaway -f "$bench_dir/key" || die "cannot make the throwaway bench key"
+    rm -f "$bench_dir/key"
+  fi
+  echo "$bench_dir/key.pub"
+}
 for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev/null | sort); do
   pdir=$(dirname "$product")
   committed=$pdir/gaia.lock
@@ -335,64 +396,49 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
     validate_file product "$product"
   fi
   lockfile=$locks/$(echo "$product" | tr '/' '_').lock
-  # gaia lock asks the network where each source's ref points. A host being
-  # unreachable says nothing about the description, so it is retried, and if
-  # it stays unreachable the committed lock is planned as it is and the
-  # freshness comparison is skipped, out loud. A registry that answers "too many
-  # requests" (HTTP 429) or a server error is the same case: it says nothing
-  # about the description. A dead host must not hold the
-  # check for long: one try is cut off after LOCK_TRY_SECONDS (a lock that
-  # works takes a few seconds), and once a product has stayed unreachable
-  # through all its tries, the products after it get one try each.
-  lock_ok=0
-  offline=0
-  for attempt in $lock_tries; do
-    rc=0
-    timeout "${LOCK_TRY_SECONDS:-60}" "$gaia" lock "$product" --lock "$lockfile" >"$errs" 2>&1 || rc=$?
-    if [[ $rc -eq 0 ]]; then
-      lock_ok=1
-      break
-    fi
-    if [[ $rc -eq 124 ]]; then
-      echo "gaia lock: timed out after ${LOCK_TRY_SECONDS:-60} s" >>"$errs"
-    fi
-    if grep -qiE 'unable to access|could not resolve|failed to connect|could not connect|timed out|connection reset|temporary failure|HTTP 429|HTTP 50[0234]|too many requests' "$errs"; then
-      offline=1
-      sleep $((attempt * 5))
-    else
-      offline=0
-      break
-    fi
-  done
-  if [[ $lock_ok -eq 0 && $offline -eq 1 ]]; then
-    lock_tries="1"
-  fi
-  if [[ $lock_ok -eq 0 && $offline -eq 1 && $write_locks -eq 0 && -f $committed ]]; then
-    echo "check-devices: NOTE $product: a source host was unreachable, so its gaia.lock was not compared with a fresh one:"
-    sed 's/^/  /' "$errs"
-    cp "$committed" "$lockfile"
-  elif [[ $lock_ok -eq 0 ]]; then
-    bad "$product: gaia lock failed:"
-    sed 's/^/  /' "$errs" >&2
-    continue
-  fi
-  # The Lemnos rule: every Lemnos source in this product's lock is one rev (the lock as gaia lock writes
-  # it now, so --write-locks is checked too).
-  if ! lemnos_msg=$(lemnos_two_revs "$lockfile"); then
-    bad "$product: Lemnos is locked to more than one rev in this product, $lemnos_msg: every Lemnos component of a product must be locked to one rev"
-  fi
   if [[ $write_locks -eq 1 ]]; then
+    if [[ -f $committed ]]; then cp "$committed" "$lockfile"; else rm -f "$lockfile"; fi
+    if ! write_lock "$product" "$lockfile"; then
+      bad "$product: gaia lock could not resolve its sources (a host unreachable or rate limited, or a bad description); the committed lock was left as it was:"
+      sed 's/^/  /' "$errs" >&2
+      continue
+    fi
     cp "$lockfile" "$committed"
     echo "check-devices: wrote $root/$committed"
-  elif [[ ! -f $committed ]]; then
-    bad "$product: no gaia.lock beside it; write it with: $regen"
-    continue
-  elif ! cmp -s "$lockfile" "$committed"; then
-    bad "$product: gaia.lock beside it differs from what gaia lock writes; regenerate with: $regen"
-    { diff "$committed" "$lockfile" || true; } | sed 's/^/  /' >&2
-    continue
+  else
+    if [[ ! -f $committed ]]; then
+      bad "$product: no gaia.lock beside it; write it with: $regen"
+      continue
+    fi
+    cp "$committed" "$lockfile"
+    if ! "$gaia" lock "$product" --lock "$lockfile" --check >"$errs" 2>&1; then
+      bad "$product: gaia.lock beside it does not match the descriptions; regenerate with: $regen"
+      sed 's/^/  /' "$errs" >&2
+      continue
+    fi
+    cp "$committed" "$lockfile.offline"
+    if ! "$gaia" lock "$product" --lock "$lockfile.offline" --tool "git=$offline_tool" --tool "curl=$offline_tool" >"$errs" 2>&1; then
+      bad "$product: gaia lock needs the network for this lock (a source is not locked for what its description says, or a directory changed to a source it did not hash); regenerate with: $regen"
+      sed 's/^/  /' "$errs" >&2
+      continue
+    fi
+    if ! cmp -s "$lockfile.offline" "$committed"; then
+      bad "$product: gaia.lock beside it differs from what gaia lock writes; regenerate with: $regen"
+      { diff "$committed" "$lockfile.offline" || true; } | sed 's/^/  /' >&2
+      continue
+    fi
   fi
-  if "$gaia" plan "$product" --lock "$committed" --recipes "$recipes" "${tool_args[@]}" >"$outs" 2>&1; then
+  # The Lemnos rule: every Lemnos source in this product's lock is one rev.
+  if ! lemnos_msg=$(lemnos_two_revs "$committed"); then
+    bad "$product: Lemnos is locked to more than one rev in this product, $lemnos_msg: every Lemnos component of a product must be locked to one rev"
+  fi
+  # A product whose components take a named input (`{ input = NAME }`) is planned with the input given;
+  # gaia refuses an input that nothing uses, so only those products get it.
+  plan_args=()
+  if grep -rqs 'input = "bench-key"' "$pdir"; then
+    plan_args=(--input "bench-key=$(bench_key_pub)")
+  fi
+  if "$gaia" plan "$product" --lock "$committed" --recipes "$recipes" "${tool_args[@]}" ${plan_args[@]+"${plan_args[@]}"} >"$outs" 2>&1; then
     echo "check-devices: ok $product (gaia plan)"
   else
     bad "$product: gaia plan failed:"
@@ -423,5 +469,20 @@ if [[ $root_given -eq 0 ]]; then
   fi
   rm -f "$out"
   lemnos_rule_self_test || die "self-check: the Lemnos one-rev rule no longer refuses two revs in one product"
-  echo "check-devices: self-check passed (good fixtures pass, broken fixture fails)"
+  # The version gate: a binary that prints another commit, or none, is refused, and the refusal names the pin.
+  fake=$(mktemp -d)
+  vout=$(mktemp)
+  other=1111111111111111111111111111111111111111
+  printf '#!/bin/sh\necho "gaia 2.0.6-dev (%s)"\n' "$other" > "$fake/gaia-other"
+  printf '#!/bin/sh\necho "gaia 2.0.6-dev"\n' > "$fake/gaia-none"
+  chmod +x "$fake/gaia-other" "$fake/gaia-none"
+  for fb in gaia-other gaia-none; do
+    rc=0
+    GAIA_BIN="$fake/$fb" "$self" --root "$fixtures/good" >"$vout" 2>&1 || rc=$?
+    if [[ $rc -eq 0 ]] || ! grep -q "devices/gaia.lock" "$vout" || ! grep -q "$gaia_commit" "$vout"; then
+      cat "$vout" >&2; rm -rf "$fake" "$vout"; die "self-check: a $fb binary was not refused naming the pinned commit"
+    fi
+  done
+  rm -rf "$fake" "$vout"
+  echo "check-devices: self-check passed (good fixtures pass, broken fixture fails, a wrong or unknown gaia commit is refused)"
 fi

@@ -1,12 +1,7 @@
-# Radxa ZERO 3E bring-up: zero-3e-base plus the DEV-ONLY pieces (the bench SSH
-# public key and the usb0 gadget network). Those exist only until Orion serves
-# SSH and Lemnos's USB driver owns the gadget.
-#
-# PENDING, and deliberately outside the device check: this file is under
-# devices/pending/, which the check does not read, because the bench key is a
-# Gaia local input that the locked rev does not have yet. When Gaia's rev with
-# `--input name=path` is locked, move this back to devices/products/ and
-# commit its lock. The base product must pass on its own without it.
+# Radxa ZERO 3E bring-up: zero-3e-base plus the DEV-ONLY pieces (the bench SSH public key and the usb0
+# gadget network). DEV ONLY: those exist only until Orion serves SSH and Lemnos's USB driver owns the gadget.
+# The bench public key is the named input `bench-key` (`gaia plan --input bench-key=PATH`); the check plans
+# this product with a throwaway public key, and commits none. Untested on board: nothing here has booted.
 version = 1
 name = "zero-3e-bringup"
 description = "Radxa ZERO 3E bring-up: the base OS plus dev-only SSH key and usb0 gadget network."
