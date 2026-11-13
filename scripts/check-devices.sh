@@ -284,7 +284,9 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
   # gaia lock asks the network where each source's ref points. A host being
   # unreachable says nothing about the description, so it is retried, and if
   # it stays unreachable the committed lock is planned as it is and the
-  # freshness comparison is skipped, out loud. A dead host must not hold the
+  # freshness comparison is skipped, out loud. A registry that answers "too many
+  # requests" (HTTP 429) or a server error is the same case: it says nothing
+  # about the description. A dead host must not hold the
   # check for long: one try is cut off after LOCK_TRY_SECONDS (a lock that
   # works takes a few seconds), and once a product has stayed unreachable
   # through all its tries, the products after it get one try each.
@@ -300,7 +302,7 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
     if [[ $rc -eq 124 ]]; then
       echo "gaia lock: timed out after ${LOCK_TRY_SECONDS:-60} s" >>"$errs"
     fi
-    if grep -qiE 'unable to access|could not resolve|failed to connect|could not connect|timed out|connection reset|temporary failure' "$errs"; then
+    if grep -qiE 'unable to access|could not resolve|failed to connect|could not connect|timed out|connection reset|temporary failure|HTTP 429|HTTP 50[0234]|too many requests' "$errs"; then
       offline=1
       sleep $((attempt * 5))
     else
