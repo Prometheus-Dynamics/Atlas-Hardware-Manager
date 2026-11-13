@@ -3,21 +3,31 @@
 # Lemnos drivers or Orion is not here (the PR text lists each file's new home).
 version = 1
 name = "raze-lemnos-board"
-description = "Raze board files for lemnosd: the i2c-dev module load, the USB power rule, and the board file written to Lemnos Q2d (6905b681); the lock 4a2d3b7d refuses it until the lock moves"
+description = "Raze board files for lemnosd: the i2c-dev module load, the USB power rule, the board file (Lemnos Q2d), and the gadget drop-in (R1d); locked to Lemnos d6b9361d"
 
-# /etc/lemnos/board.toml: the Raze's board file (files/board.toml), written to Lemnos 6905b681 (Q2d). Its
-# generated outputs come from `lemnos-ctl tree` on this file at build time. The lock is still 4a2d3b7d, which
-# predates Q2d and refuses this file (docs/prs/B20.md): it takes effect when the lock moves to a rev containing
-# Q2d. Until then lemnosd on this image refuses to start, as it does on today's file.
+# /etc/lemnos/board.toml: the Raze's board file (files/board.toml), written to Lemnos Q2d, and locked to
+# Lemnos d6b9361d (L1, PR B23) with the rest of the product's Lemnos components.
+# Its generated outputs come from `lemnos-ctl tree` on this file at build time.
 
 [[install]]
 from = { file = "files/board.toml" }
 to = "/etc/lemnos/board.toml"
 mode = "0644"
 
-# No lemnosd drop-in: lemnosd starts as root and drops to user lemnos itself (Lemnos L3), so the
-# PWM and gadget writes need no capability or ReadWritePaths here. No setcap, no xattrs, no
-# ExecStartPre helper.
+# The gadget drop-in (Lemnos R1d): the FunctionFS mount needs CAP_SYS_ADMIN in the root phase and
+# mount/umount2 in the filter. The base unit has none of it. Installed here because this board file has a
+# usb-gadget device; scripts/check-lemnos-gadget.py enforces that pairing both ways.
+[sources.lemnos]
+git = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "d6b9361d006e5f633149b6dea8bb5d1be9483d0a"
+
+[[install]]
+from = { source = "lemnos", path = "packaging/systemd/lemnosd.service.d/gadget.conf" }
+to = "/etc/systemd/system/lemnosd.service.d/gadget.conf"
+mode = "0644"
+
+# lemnosd starts as root and drops to user lemnos itself (Lemnos L3): no setcap, no xattrs, no ExecStartPre
+# helper. The gadget's UDC writes are made by the daemon after the drop.
 
 # No gadget modules here: the gadget is one configuration built by Lemnos's usb-gadget driver from the
 # board file (Lemnos Q2a, with the generated overlay's UDC). dev's board-usb-gadget.conf is not carried.
@@ -37,4 +47,3 @@ mode = "0644"
 from = { file = "files/60-raze-usb-power.rules" }
 to = "/usr/lib/udev/rules.d/60-raze-usb-power.rules"
 mode = "0644"
-

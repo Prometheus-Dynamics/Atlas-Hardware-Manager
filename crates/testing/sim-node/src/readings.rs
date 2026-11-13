@@ -7,9 +7,9 @@
 //! values topic (one field per item, its unit in the field) and a status topic (`health`,
 //! `reason`). The Atlas topics crate knows none of these names: it reads what they describe.
 //!
-//! // LOCK: Lemnos V1a 63ca7a6b. The bridge at that commit publishes only the driver, tag and
-//! // control labels (`service/orion/src/publish.rs`); the V1a blocks are in the host's
-//! // description. Until the bridge carries them, the node writes them here as labels with the
+//! // LOCK: waits for Lemnos's description on Orion (not in d6b9361d; the bridge publishes only the
+//! // driver, tag and control labels, `service/orion/src/publish.rs`). The V1a blocks are in the
+//! // host's description. Until the bridge carries them, the node writes them here as labels with the
 //! // keys in the Atlas topics crate's `device` module (`lemnos.label`, `lemnos.item.<field>`,
 //! // and the rest), one `key=value;...` block per item.
 //!
