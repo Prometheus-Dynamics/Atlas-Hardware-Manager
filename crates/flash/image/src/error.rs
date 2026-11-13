@@ -42,3 +42,16 @@ impl ImageError {
         Self::Io(format!("{what}: {error}"))
     }
 }
+
+impl From<atlas_xzdec::XzError> for ImageError {
+    fn from(error: atlas_xzdec::XzError) -> Self {
+        match error {
+            atlas_xzdec::XzError::Io(text) => ImageError::Io(text),
+            atlas_xzdec::XzError::Truncated(text) => ImageError::Truncated(text),
+            atlas_xzdec::XzError::Malformed(text) => {
+                ImageError::Malformed(format!("not a first-flash image: {text}"))
+            }
+            atlas_xzdec::XzError::Limit(text) => ImageError::Limit(text),
+        }
+    }
+}

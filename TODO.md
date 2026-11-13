@@ -68,6 +68,7 @@ Our own loader for every chip family, then the flasher image, then an ordinary u
 - [ ] [D5](docs/prs/D5.md) Allwinner FEL (wave 3; needs D1)
 - [ ] [D16](docs/prs/D16.md) FEL: an AArch64 thunk for the A733 (needs D5; untested on board)
 - [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11, D12, D13)
+- [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11, D12, D13, D15)
 - [ ] [D7](docs/prs/D7.md) Disk writer and its helper (wave 2; needs A1)
 - [ ] [D8](docs/prs/D8.md) UBI images for NAND boards (wave 2; needs A1)
 - [ ] [D9](docs/prs/D9.md) Slot bundles from the image (wave 3; needs A7)
@@ -76,6 +77,7 @@ Our own loader for every chip family, then the flasher image, then an ordinary u
 - [ ] [D12](docs/prs/D12.md) Find a board's Orion link over USB by its interface string (wave 4; needs D1, A8)
 - [ ] [D13](docs/prs/D13.md) slot.json schema 3, and the bundle made from the image (wave 5; needs D9, D11)
 - [ ] [D14](docs/prs/D14.md) Verity keys in the slot manifest, and the bundle from an image in one call (wave 6; needs D13)
+- [ ] [D15](docs/prs/D15.md) The first-flash manifest, made by Atlas from the image (wave 6; needs D11, D13)
 
 ## E. Robot network and SystemCore
 
