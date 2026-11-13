@@ -22,6 +22,8 @@ devices/
   tests/fixtures/                      examples and a broken copy, used by `--self-test`
 ```
 
+Boards, plainly: the Allwinner A733 boards (Cubie A7A, A7S, A7Z) are listed with their blockers and open items at the top of `families/sun60i/family.toml`.
+
 A board directory holds `board.toml`, or, when it is app-only, only `app/` (see App data).
 
 ## App data
