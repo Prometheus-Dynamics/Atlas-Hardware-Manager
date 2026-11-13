@@ -95,7 +95,7 @@ pub fn identity(
             .map_err(|error| DriverError::Incompatible(format!("the node's identity: {error}")))?,
     };
 
-    let model = read.text("model", text).unwrap_or_default();
+    let model = read.text("model", text);
     let mut versions = BTreeMap::new();
     for (fact, version, check) in VERSIONS {
         if let Some(value) = read.text(fact, check) {
@@ -363,7 +363,7 @@ mod tests {
         let found = id(every_fact(), &LemnosState::Answering);
         assert_eq!(found.key, DeviceKey::board("test-family", SERIAL).unwrap());
         assert!(found.key.is_board());
-        assert_eq!(found.model, "test-model r2");
+        assert_eq!(found.model.as_deref(), Some("test-model r2"));
         assert_eq!(found.state, DeviceState::Running);
         assert_eq!(found.name.as_deref(), Some("board"));
         assert_eq!(found.lemnos, LemnosState::Answering);
@@ -403,7 +403,7 @@ mod tests {
             vec![fact("family", "test-family"), fact("serial", SERIAL)],
             &LemnosState::Absent,
         );
-        assert_eq!(found.model, "");
+        assert_eq!(found.model, None);
         assert!(found.versions.is_empty());
         assert!(!found.attributes.contains_key(OFFERS));
         assert!(
@@ -492,7 +492,7 @@ mod tests {
             ],
             &LemnosState::Absent,
         );
-        assert_eq!(found.model, "");
+        assert_eq!(found.model, None);
         assert!(!found.versions.contains_key("os"));
         assert!(found.attributes.contains_key("refused.model"));
         assert!(found.attributes.contains_key("refused.version.os"));
@@ -506,7 +506,7 @@ mod tests {
             vec![fact("family", "test-family"), fact("serial", SERIAL), bytes],
             &LemnosState::Absent,
         );
-        assert_eq!(found.model, "");
+        assert_eq!(found.model, None);
         assert!(found.attributes.contains_key("refused.model"));
     }
 
@@ -581,7 +581,7 @@ mod tests {
         assert_eq!(found.key, DeviceKey::node("ab:cd").unwrap());
         assert_eq!(found.lemnos, LemnosState::Answering);
         assert!(found.versions.is_empty());
-        assert_eq!(found.model, "");
+        assert_eq!(found.model, None);
         assert!(capabilities(&found).grants(CapabilityKind::Slots));
         // A node with no Lemnos at all is the same key with Absent.
         let plain = id(Vec::new(), &LemnosState::Absent);

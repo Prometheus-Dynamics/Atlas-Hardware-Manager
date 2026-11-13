@@ -117,11 +117,11 @@ impl RpiDriver {
             .config
             .boot_roms
             .iter()
-            .find(|rom| rom.model == device.model)
+            .find(|rom| device.model.as_deref() == Some(rom.model.as_str()))
             .ok_or_else(|| {
                 DriverError::Unsupported(format!(
                     "{} is not a boot ROM this driver knows",
-                    device.model
+                    device.model.as_deref().unwrap_or_default()
                 ))
             })?;
         let flasher = self.config.flasher.as_deref().ok_or_else(|| {
@@ -196,7 +196,7 @@ impl Driver for RpiDriver {
         Ok(Identity {
             key: DeviceKey::board(FAMILY, serial)
                 .map_err(|error| DriverError::Incompatible(error.reason))?,
-            model: rom.model.clone(),
+            model: Some(rom.model.clone()),
             state: DeviceState::BootRom,
             lemnos: atlas_types::LemnosState::Absent,
             versions: BTreeMap::new(),

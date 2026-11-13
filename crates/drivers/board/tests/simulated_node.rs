@@ -128,7 +128,7 @@ async fn a_node_is_found_identified_lost_and_found_again() {
     let identity = identify(&driver, &candidate).await;
     assert_eq!(identity.key, DeviceKey::from_static("test-family", SERIAL));
     assert_eq!(identity.state, DeviceState::Running);
-    assert_eq!(identity.model, "test-model");
+    assert_eq!(identity.model.as_deref(), Some("test-model"));
     assert!(identity.key.is_board());
     assert_eq!(identity.lemnos, LemnosState::Answering);
     let grants = driver.capabilities(&identity);

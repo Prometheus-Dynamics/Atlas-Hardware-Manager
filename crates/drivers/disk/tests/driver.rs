@@ -118,7 +118,7 @@ fn a_card_is_identified_as_a_removable_disk_with_a_stable_key() {
 
     assert_eq!(identity.key.to_string(), format!("{FAMILY}:A1B2"));
     assert_eq!(identity.state, DeviceState::RemovableDisk);
-    assert_eq!(identity.model, "Reader SD");
+    assert_eq!(identity.model.as_deref(), Some("Reader SD"));
     assert_eq!(identity.address, "/dev/sdz");
     assert_eq!(
         identity.attributes.get("usb-port").map(String::as_str),

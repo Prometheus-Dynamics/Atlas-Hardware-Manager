@@ -264,7 +264,7 @@ mod tests {
     fn read(key: DeviceKey, lemnos: LemnosState) -> Identity {
         Identity {
             key,
-            model: "test-model".into(),
+            model: Some("test-model".into()),
             state: DeviceState::Running,
             lemnos,
             versions: BTreeMap::from([("os".to_owned(), "1.0.0".to_owned())]),
