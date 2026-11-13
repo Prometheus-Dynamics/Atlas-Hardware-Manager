@@ -10,8 +10,24 @@
 //! There is no timer of its own: it waits on the session, and calls are answered on the same
 //! thread between pumps of the session.
 //!
-//! Connections are security off (plain). A node that needs a key refuses them, and the reason
-//! is kept as the presence.
+//! Connections are signed with this monitor's own client key, which is generated when the
+//! monitor starts and is not kept anywhere: a node with security on accepts a signed client, a
+//! plain one it refuses.
+//!
+//! # The key a node was seen with
+//!
+//! A session pins the node key it first saw at its address for its whole life. Every later
+//! connect is made to the address in Orion's pin form (`orion+tcp://host#<key>`), so Orion
+//! refuses a different key during the handshake, before any call is made. A node that answers
+//! with another key is never sent a call and never becomes [`Presence::Found`]: presence is
+//! [`Presence::Replaced`] while the monitor keeps looking for the expected node. The expected
+//! node answering again makes the session Found again. Only a person's explicit act, through
+//! [`Monitor::accept`] (or [`crate::Sessions::accept_key`]), makes another key the new expected
+//! one, and that starts a fresh session.
+//!
+//! A monitor may start with a key the caller already knows ([`Monitor::start_pinned`]): its
+//! first connect is pinned too. Only an address that has never been seen, and has no known key,
+//! is connected unpinned (trust on first use): that first contact is the one unpinned moment.
 
 use std::fmt;
 use std::sync::Arc;
@@ -21,7 +37,7 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use orion::node::Node;
-use orion::{Address, Options, Orion};
+use orion::{Address, ClientError, Identity, Options, Orion};
 use tokio::sync::{oneshot, watch};
 
 use crate::backoff::Backoff;
@@ -39,13 +55,31 @@ pub const CALL_WAIT: Duration = Duration::from_secs(5);
 /// What a node is doing, as its monitor last saw it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Presence {
-    /// Not tried yet.
+    /// Not tried yet, or re-pinned by a person and not yet connected again.
     Searching,
-    /// Connected and identified: the node's hello document as it answered on connect.
+    /// Connected and identified: the node's hello document as it answered on connect. Its key is
+    /// the session's pin.
     Found(Node),
     /// Not reachable now. The reason is the last error, in words.
     Lost(String),
+    /// The address answers with a node key other than the one this session is pinned to. No
+    /// call is sent to that node. `expected` is the pinned key. `found` is the key the other node
+    /// showed when Orion says it; `None` at the locked Orion revision, whose refusal does not carry
+    /// it. It holds until the expected node answers again or a person accepts the new key.
+    Replaced {
+        /// The key this session was pinned to.
+        expected: [u8; 32],
+        /// The key the other node showed, if known.
+        found: Option<[u8; 32]>,
+    },
 }
+
+/// The words Orion's client gives when a pinned connect meets another key (Orion at 6dfb990,
+/// `orion_connect` transport).
+// LOCK: at 6dfb990 the refusal is `ClientError::Denied` with these words and no key. The lock
+// rev after it returns `ClientError::OtherKey { asked, answered }`; match that here, and fill
+// `found` from `answered`.
+const OTHER_KEY: &str = "the node is not the one that was expected";
 
 /// Why a call on a node gave no answer. The two cases ask for different things.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -141,10 +175,19 @@ where
     }
 }
 
+/// A person's order to a monitor. Orders are taken between connects and between a session's
+/// calls.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Order {
+    /// This address now means this key: the session is pinned to it and starts fresh.
+    Accept([u8; 32]),
+}
+
 /// The monitor of one node. Dropping it stops its thread.
 #[derive(Debug)]
 pub struct Monitor {
     handle: Handle,
+    orders: mpsc::Sender<Order>,
     stop: Arc<AtomicBool>,
     thread: Option<JoinHandle<()>>,
 }
@@ -175,6 +218,16 @@ impl Handle {
         self.presence.clone()
     }
 
+    /// The key of the node this session is connected to now, if it is connected. A caller that
+    /// resumes work on a node compares this with the key the work started on: a different key is
+    /// a different node.
+    pub fn node_key(&self) -> Option<[u8; 32]> {
+        match &*self.presence.borrow() {
+            Presence::Found(node) => Some(node.public_key),
+            Presence::Searching | Presence::Lost(_) | Presence::Replaced { .. } => None,
+        }
+    }
+
     /// Runs `call` on the node's live client and returns what it answers.
     ///
     /// The closure runs on the monitor's own thread, which is the only place the client may be
@@ -198,6 +251,7 @@ impl Handle {
             Presence::Searching => {
                 return Err(SessionError::Gone("not connected yet".into()));
             }
+            Presence::Replaced { .. } => return Err(SessionError::Gone(REPLACED_WORDS.into())),
         }
         let (reply, answer) = oneshot::channel();
         let job: Box<dyn Job> = Box::new(Call { call, reply });
@@ -217,11 +271,33 @@ impl Handle {
 }
 
 impl Monitor {
-    /// Starts watching the node at `address`. The first try happens on the new thread. Calls on
-    /// the handle wait `call_wait` for their answer.
+    /// Starts watching the node at `address`, with no key known yet: the first node that answers
+    /// is taken as the expected one (trust on first use). The first try happens on the new
+    /// thread. Calls on the handle wait `call_wait` for their answer.
     pub fn start(address: Address, pause: Arc<dyn Pause>, call_wait: Duration) -> Self {
+        Self::start_with_pin(address, None, pause, call_wait)
+    }
+
+    /// As [`Monitor::start`], for a node whose key the caller already knows: the first connect is
+    /// pinned to `key`, so a different node at the address is refused from the start.
+    pub fn start_pinned(
+        address: Address,
+        key: [u8; 32],
+        pause: Arc<dyn Pause>,
+        call_wait: Duration,
+    ) -> Self {
+        Self::start_with_pin(address, Some(key), pause, call_wait)
+    }
+
+    fn start_with_pin(
+        address: Address,
+        pin: Option<[u8; 32]>,
+        pause: Arc<dyn Pause>,
+        call_wait: Duration,
+    ) -> Self {
         let (sender, presence) = watch::channel(Presence::Searching);
         let (calls, received) = mpsc::channel::<Box<dyn Job>>();
+        let (orders, taken) = mpsc::channel::<Order>();
         let stop = Arc::new(AtomicBool::new(false));
         let (thread_address, thread_stop) = (address.clone(), stop.clone());
         let thread = thread::Builder::new()
@@ -231,8 +307,12 @@ impl Monitor {
                     address: thread_address,
                     sender,
                     calls: received,
+                    orders: taken,
                     stop: thread_stop,
                     pause,
+                    secret: Identity::generate().secret(),
+                    pin,
+                    replacement: None,
                 };
                 keeper.run();
             })
@@ -244,6 +324,7 @@ impl Monitor {
                 calls,
                 call_wait,
             },
+            orders,
             stop,
             thread,
         }
@@ -252,6 +333,17 @@ impl Monitor {
     /// What the rest of Atlas holds of this monitor.
     pub fn handle(&self) -> Handle {
         self.handle.clone()
+    }
+
+    /// A person's act: this address now means `key`. The session is pinned to it from now on,
+    /// the old session's pin ends, and a session with the old node (if one is up) is dropped.
+    /// Nothing calls this on its own. Returns `false` if the monitor has stopped.
+    ///
+    /// The new session is a new identity: nothing that was running on the old node resumes on
+    /// this one. A caller that resumes work compares [`Handle::node_key`] with the key it started
+    /// on.
+    pub fn accept(&self, key: [u8; 32]) -> bool {
+        self.orders.send(Order::Accept(key)).is_ok()
     }
 }
 
@@ -264,62 +356,166 @@ impl Drop for Monitor {
     }
 }
 
+/// What a call gets while the address answers with another key.
+const REPLACED_WORDS: &str = "the node at this address was replaced: it answers with another node key, and nothing is sent to it";
+
 /// The state the monitor thread keeps across connections.
 struct Keeper {
     address: Address,
     sender: watch::Sender<Presence>,
     calls: mpsc::Receiver<Box<dyn Job>>,
+    orders: mpsc::Receiver<Order>,
     stop: Arc<AtomicBool>,
     pause: Arc<dyn Pause>,
+    /// This monitor's client key, as its secret bytes: a connect makes its identity from them.
+    secret: [u8; 32],
+    /// The node key this session is pinned to. `None` until the first node answers.
+    pin: Option<[u8; 32]>,
+    /// Set while another key answers at the address: what it showed, if known.
+    replacement: Option<Option<[u8; 32]>>,
 }
 
 impl Keeper {
     fn run(&mut self) {
         let mut backoff = Backoff::default();
         while !self.stopped() {
-            match Orion::connect_with(&self.address, PROGRAM, plain()) {
+            self.take_orders();
+            match self.connect() {
                 Ok(orion) => match orion.node() {
-                    Ok(node) => {
+                    Ok(node) if self.accepts(&node) => {
+                        // Trust on first use only when nothing is pinned yet. From here the
+                        // node that answers is the expected one.
+                        self.pin = Some(node.public_key);
+                        self.replacement = None;
                         backoff.reset();
                         self.sender.send_replace(Presence::Found(node));
-                        let reason = self.serve(&orion);
+                        let ended = self.serve(&orion);
                         if self.stopped() {
                             break;
                         }
-                        self.sender.send_replace(Presence::Lost(reason));
+                        match ended {
+                            Some(reason) => self.lost(reason),
+                            // A person accepted another key: start again at once.
+                            None => {
+                                // Calls queued for the old node are not run on the new one.
+                                self.refuse_waiting("the node's key was changed by a person");
+                                backoff.reset();
+                                continue;
+                            }
+                        }
                     }
+                    // Orion refuses a different key in the handshake, so this is not expected. It
+                    // is still refused here, before any call is made on the session.
+                    Ok(node) => self.replaced(Some(node.public_key)),
                     Err(error) => self.lost(error.to_string()),
                 },
+                Err(error) if self.is_other_key(&error) => self.replaced(None),
                 Err(error) => self.lost(error.to_string()),
             }
-            self.refuse_waiting("the node is not connected");
+            let down = if self.replacement.is_some() {
+                REPLACED_WORDS
+            } else {
+                "the node is not connected"
+            };
+            self.refuse_waiting(down);
             self.pause.pause(backoff.next_delay(), &self.stop);
         }
         self.refuse_waiting("the monitor for this node has stopped");
     }
 
+    /// Connects to the address, pinned to the key the session holds when there is one.
+    fn connect(&self) -> Result<Orion, orion::Error> {
+        let address = match &self.address {
+            Address::Network { host, .. } => Address::Network {
+                host: host.clone(),
+                key: self.pin,
+            },
+            other => other.clone(),
+        };
+        let options = Options {
+            timeout: CONNECT_TIMEOUT,
+            identity: Some(Identity::from_secret(&self.secret)),
+            ..Options::default()
+        };
+        Orion::connect_with(&address, PROGRAM, options)
+    }
+
+    /// Whether `node` is the node this session is pinned to. A node is accepted when nothing is
+    /// pinned yet, or when its key is the pinned one.
+    fn accepts(&self, node: &Node) -> bool {
+        self.pin.is_none_or(|pin| pin == node.public_key)
+    }
+
+    /// Whether a pinned connect was refused because another key answered at the address.
+    fn is_other_key(&self, error: &orion::Error) -> bool {
+        self.pin.is_some()
+            && matches!(
+                error,
+                orion::Error::Client(ClientError::Denied(why)) if *why == OTHER_KEY
+            )
+    }
+
+    /// Takes the orders a person gave while no session was running.
+    fn take_orders(&mut self) {
+        while let Ok(order) = self.orders.try_recv() {
+            self.apply(order);
+        }
+    }
+
+    fn apply(&mut self, order: Order) {
+        match order {
+            Order::Accept(key) => {
+                self.pin = Some(key);
+                self.replacement = None;
+                self.sender.send_replace(Presence::Searching);
+            }
+        }
+    }
+
+    /// Records that another key answers at the address.
+    fn replaced(&mut self, found: Option<[u8; 32]>) {
+        self.replacement = Some(found);
+        self.show_replaced();
+    }
+
+    fn show_replaced(&self) {
+        if let (Some(expected), Some(found)) = (self.pin, self.replacement) {
+            self.sender
+                .send_replace(Presence::Replaced { expected, found });
+        }
+    }
+
+    /// The session is down for `reason`, unless another key is what answers the address.
     fn lost(&self, reason: String) {
-        self.sender.send_replace(Presence::Lost(reason));
+        if self.replacement.is_some() {
+            self.show_replaced();
+        } else {
+            self.sender.send_replace(Presence::Lost(reason));
+        }
     }
 
     fn stopped(&self) -> bool {
         self.stop.load(Ordering::SeqCst)
     }
 
-    /// Keeps the session up until it breaks or the monitor is stopped, running calls on the way.
-    /// Returns why it broke.
-    fn serve(&mut self, orion: &Orion) -> String {
+    /// Keeps the session up until it breaks, the monitor is stopped, or a person accepts another
+    /// key. Runs calls on the way. Returns why it broke, or `None` when it was re-pinned.
+    fn serve(&mut self, orion: &Orion) -> Option<String> {
         while !self.stopped() {
+            if let Ok(order) = self.orders.try_recv() {
+                self.apply(order);
+                return None;
+            }
             while let Ok(job) = self.calls.try_recv() {
                 if let Err(reason) = job.run(orion) {
-                    return reason;
+                    return Some(reason);
                 }
             }
             if let Err(error) = orion.pump(POLL) {
-                return error.to_string();
+                return Some(error.to_string());
             }
         }
-        String::new()
+        Some(String::new())
     }
 
     /// Answers every call that is waiting with `reason`, so none is run later by surprise.
@@ -327,13 +523,5 @@ impl Keeper {
         while let Ok(job) = self.calls.try_recv() {
             job.refuse(reason);
         }
-    }
-}
-
-/// Plain connections: security off, the only kind this build makes.
-fn plain() -> Options {
-    Options {
-        timeout: CONNECT_TIMEOUT,
-        ..Options::default()
     }
 }

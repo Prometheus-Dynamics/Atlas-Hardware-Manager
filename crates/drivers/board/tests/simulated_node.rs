@@ -150,7 +150,8 @@ async fn a_node_is_found_identified_lost_and_found_again() {
     paused_beyond(&pause, paused_before).await;
 
     // Found again on the same port, with the same identity.
-    let _second = start(&dir, &running_board(), Some(port));
+    // The same board again: the same directory keeps its key.
+    let _second = SimNode::start_with(&dir, &running_board(), Some(port)).expect("the node starts");
     let back = offered(&driver, &link).await;
     let again = identify(&driver, &back).await;
     assert_eq!(again.key, identity.key);

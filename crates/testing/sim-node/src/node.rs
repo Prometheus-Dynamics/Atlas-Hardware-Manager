@@ -203,6 +203,8 @@ struct Shared {
     hold_installs: Arc<AtomicBool>,
     /// How many runs have been stalled by the script (see [`Behaviour::Stall`]).
     stalled: Arc<AtomicUsize>,
+    /// How many calls the node logic has been asked to start (every run request it received).
+    calls: Arc<AtomicUsize>,
 }
 
 /// A simulated board. Dropping it stops the node logic, the link and the comm core, and frees
@@ -243,6 +245,8 @@ impl SimNode {
             Options {
                 security: Security::Off,
                 port,
+                // A node keeps its key across a restart in the same directory, as a board does.
+                on_disk: true,
                 heartbeat_ms: HEARTBEAT_MS,
                 idle_ms: IDLE_MS,
                 ..Options::default()
@@ -256,6 +260,7 @@ impl SimNode {
             lemnos_down: Arc::new(AtomicBool::new(false)),
             hold_installs: Arc::new(AtomicBool::new(false)),
             stalled: Arc::new(AtomicUsize::new(0)),
+            calls: Arc::new(AtomicUsize::new(0)),
         };
 
         let (ready, started) = mpsc::channel();
@@ -325,6 +330,13 @@ impl SimNode {
     /// is let go.
     pub fn hold_installs(&self, hold: bool) {
         self.shared.hold_installs.store(hold, Ordering::SeqCst);
+    }
+
+    /// How many calls this node has been asked to start, since it started. A test that must show
+    /// a node saw nothing reads this: a session that refused a node sends it no call.
+    #[must_use]
+    pub fn calls_received(&self) -> usize {
+        self.shared.calls.load(Ordering::SeqCst)
     }
 
     /// How many runs the script has stalled so far. A test waits on this to know a stalled run
@@ -551,7 +563,10 @@ impl Node {
             match self.registration.wait(Duration::from_millis(5)) {
                 Ok(Some(Request::Run {
                     call, name, args, ..
-                })) => self.start(call, &name, args),
+                })) => {
+                    self.shared.calls.fetch_add(1, Ordering::SeqCst);
+                    self.start(call, &name, args);
+                }
                 Ok(Some(Request::Cancel { call })) => self.cancel(call),
                 Ok(None) => {}
                 // The comm core went away: nothing more can be answered.
