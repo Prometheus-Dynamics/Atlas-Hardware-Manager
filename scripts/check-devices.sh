@@ -13,7 +13,8 @@
 # given: gaia has no version stamp, so its commit is not checked), else a build from that commit
 # cached under ${ATLAS_GAIA_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/gaia}/<commit>/.
 # The recipes come from the same Gaia checkout. With a gaia that has `gaia validate`, every family,
-# board, component and product file is validated, and every product is also planned. With one that
+# board, component and product file is validated (products against the checkout's recipes/, so a bogus
+# recipe name fails), and every product is also planned. With one that
 # does not, every product is planned and nothing else is checked. Each product's gaia.lock, committed
 # beside its product.toml, must match what `gaia lock` writes; `--write-locks` writes them.
 set -euo pipefail
@@ -233,7 +234,10 @@ fi
 # gaia validate stops at the first bad file and names its file and key, so each file gets its own
 # run and every bad file is reported. The kind comes from the directory the file sits in.
 validate_file() {  # <kind> <file>
-  if "$gaia" validate "$2" --kind "$1" >"$outs" 2>&1; then
+  # A product's recipe names are checked against the locked Gaia's recipes/ (validate --recipes).
+  local recipes_arg=()
+  if [[ $1 == product && -d $recipes ]]; then recipes_arg=(--recipes "$recipes"); fi
+  if "$gaia" validate "$2" --kind "$1" ${recipes_arg[@]+"${recipes_arg[@]}"} >"$outs" 2>&1; then
     cat "$outs"
   else
     bad "$2: gaia validate failed:"
