@@ -17,6 +17,7 @@ The core every other group builds on: types, the driver contract, inventory, job
 - [ ] [A8](docs/prs/A8.md) Core follow-ups from the first wave (wave 3; needs A1, A6, D1)
 - [ ] [A9](docs/prs/A9.md) The simulated node out of the drivers, and one driver for every family (wave 4; needs A1, A4)
 - [ ] [A10](docs/prs/A10.md) A key that says what it is, a board's Lemnos state, and the board session as its own crate (wave 4; needs A9, C1)
+- [ ] [A12](docs/prs/A12.md) The session keeps the key it first saw (wave 5; needs A10, C8)
 
 ## B. Board descriptions
 
@@ -41,6 +42,7 @@ Every board as Gaia `next` data in `devices/`. Starts first; the Raze and the ZE
 - [ ] [B19](docs/prs/B19.md) Cubie A7 (Allwinner A733): vendor sources pinned, and a bring-up that shows life without a console (wave 5; needs B12, B13, B15)
 - [ ] [B20](docs/prs/B20.md) The Raze board file, written to Lemnos Q2d (6905b681); takes effect when the lock moves past 4a2d3b7d (needs B18; Lemnos 6905b681)
 - [ ] [B21](docs/prs/B21.md) VBUS on each board's device-mode port, prepared for Lemnos Q2f (ZERO 3E complete; ROCK 5C held by Lemnos Q2g; ROCK 4D held; needs B15, B18, B19; Lemnos Q2f at 96080d36)
+- [ ] [B22](docs/prs/B22.md) Gaia lock to 7db227f (next head): the checker refuses a binary of another commit, the plain check is offline, the bring-up products leave pending/ with a named bench-key input (needs B17, B18, B19)
 
 ## C. One board driver
 

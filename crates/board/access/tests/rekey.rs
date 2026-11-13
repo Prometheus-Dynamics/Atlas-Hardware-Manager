@@ -1,14 +1,15 @@
-//! What happens today when a node comes back under the same address with a DIFFERENT node key.
-//!
-//! The session connects without a key pin and keeps whatever signed hello the node gives it, so
-//! the monitor reports the new node as found. Nothing in the session compares it with the key it
-//! had before. The terminal layer refuses only when the caller pins the key it knew.
+//! A node back under the same address with a DIFFERENT node key is a replacement, not the same
+//! board. The session is pinned to the key it first saw: the other node is reported as
+//! replaced, is sent no call, and gets no shell. A terminal open when the board is replaced ends
+//! with a reason that says so.
 
 #![cfg(target_os = "linux")]
 
 mod common;
 
-use atlas_access::{AccessError, OpenRequest, ShellKind, open};
+use std::sync::atomic::Ordering;
+
+use atlas_access::{AccessError, End, Event, OpenRequest, open};
 use atlas_session::Presence;
 use atlas_sim_node::access::ShellServer;
 use atlas_sim_node::{DEADLINE, Mode};
@@ -24,7 +25,7 @@ fn found_key(presence: Presence) -> Option<[u8; 32]> {
 }
 
 #[tokio::test]
-async fn a_node_back_under_the_same_address_with_another_key_is_accepted_as_the_new_node() {
+async fn a_node_back_under_the_same_address_with_another_key_is_replaced_and_gets_no_shell() {
     let dir_a = scratch("rekey-a");
     fresh(&dir_a);
     let node_a = start_node(&dir_a, Mode::Running, None);
@@ -43,35 +44,120 @@ async fn a_node_back_under_the_same_address_with_another_key_is_accepted_as_the_
     fresh(&dir_b);
     let node_b = start_node(&dir_b, Mode::Running, Some(port));
     let mut presence = handle.watch();
-    let key_b = tokio::time::timeout(
+    let replaced = tokio::time::timeout(
         DEADLINE,
-        presence.wait_for(|p| found_key(p.clone()).is_some_and(|key| key != key_a)),
+        presence.wait_for(|p| matches!(p, Presence::Replaced { .. })),
     )
     .await
-    .expect("the session reports a node again")
-    .expect("the monitor is running");
-    let key_b = found_key(key_b.clone()).expect("found");
-    assert_ne!(key_a, key_b, "a different key came back");
-    // Today: no refusal and no Lost in between that holds it. The session says Found with B's key.
-    assert!(matches!(handle.presence(), Presence::Found(_)));
+    .expect("the session reports the replacement")
+    .expect("the monitor is running")
+    .clone();
+    assert!(
+        matches!(replaced, Presence::Replaced { expected, .. } if expected == key_a),
+        "the session is pinned to the key it saw: {replaced:?}"
+    );
+    assert_eq!(
+        handle.presence(),
+        replaced,
+        "a replaced node is never Found"
+    );
 
-    // The terminal layer: a caller that knew A's key is refused, and nothing is asked of B.
-    stated(&handle).await;
+    // No shell on the other node: the open is refused on this side and nothing reaches B.
     let carrier = SimCarrier::new(shell.addr());
-    let mut pinned = OpenRequest::new(80, 24);
-    pinned.expected_key = Some(key_a);
-    let refused = open(&handle, carrier.clone(), pinned).await;
+    let refused = open(&handle, carrier.clone(), OpenRequest::new(80, 24)).await;
+    assert!(
+        matches!(refused, Err(AccessError::Gone(_))),
+        "a replaced node gets no shell: {refused:?}"
+    );
+    assert_eq!(carrier.opens.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        node_b.calls_received(),
+        0,
+        "the other node received no call"
+    );
+    drop(node_b);
+}
+
+#[tokio::test]
+async fn a_caller_that_knows_a_different_key_is_refused_before_any_shell_opens() {
+    let dir_a = scratch("pinned-a");
+    fresh(&dir_a);
+    let node_a = start_node(&dir_a, Mode::Running, None);
+    let port = node_a.network().port();
+    let shell = ShellServer::start().expect("the shell listens");
+    let sessions = sessions();
+    let handle = handle_for(&sessions, port);
+    connected(&handle).await;
+    stated(&handle).await;
+    let key_a = found_key(handle.presence()).expect("the node is found");
+
+    let carrier = SimCarrier::new(shell.addr());
+    let mut other = OpenRequest::new(80, 24);
+    other.expected_key = Some([0x5a; 32]);
+    let refused = open(&handle, carrier.clone(), other).await;
     assert!(
         matches!(refused, Err(AccessError::KeyChanged { .. })),
-        "a pinned key is checked: {refused:?}"
+        "a key the caller did not know is refused: {refused:?}"
     );
-    assert_eq!(carrier.opens.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(carrier.opens.load(Ordering::SeqCst), 0);
 
-    // A caller that did not pin a key gets a shell on B, silently.
-    let term = open(&handle, carrier.clone(), OpenRequest::new(80, 24))
+    let term = open(
+        &handle,
+        carrier.clone(),
+        OpenRequest {
+            expected_key: Some(key_a),
+            ..OpenRequest::new(80, 24)
+        },
+    )
+    .await
+    .expect("the pinned node gets a shell");
+    assert_eq!(term.identity().public_key, key_a);
+    drop(node_a);
+}
+
+#[tokio::test]
+async fn a_terminal_open_when_its_board_is_replaced_ends_with_a_reason_and_is_not_reopened() {
+    let dir_a = scratch("ended-a");
+    fresh(&dir_a);
+    let node_a = start_node(&dir_a, Mode::Running, None);
+    let port = node_a.network().port();
+    let shell = ShellServer::start().expect("the shell listens");
+    let sessions = sessions();
+    let handle = handle_for(&sessions, port);
+    connected(&handle).await;
+    stated(&handle).await;
+    let carrier = SimCarrier::new(shell.addr());
+    let mut term = open(&handle, carrier.clone(), OpenRequest::new(80, 24))
         .await
-        .expect("an unpinned caller gets a shell on the new node");
-    assert_eq!(term.identity().public_key, key_b);
-    assert_eq!(term.kind(), ShellKind::Normal);
+        .expect("a shell on the first node");
+
+    drop(node_a);
+    let dir_b = scratch("ended-b");
+    fresh(&dir_b);
+    let node_b = start_node(&dir_b, Mode::Running, Some(port));
+
+    // The watcher ends the terminal on the first state it sees that is not connected: Lost
+    // while the old session is down, or Replaced once the other node answers. Either way it
+    // is not reopened on the other node.
+    let end = loop {
+        match tokio::time::timeout(DEADLINE, term.recv())
+            .await
+            .expect("the terminal ends")
+        {
+            Some(Event::Ended(end)) => break end,
+            Some(Event::Output(_)) => {}
+            None => panic!("the terminal ended without a reason"),
+        }
+    };
+    assert!(
+        matches!(end, End::Lost(_) | End::Replaced(_)),
+        "the terminal ends with the session's state: {end:?}"
+    );
+    assert_eq!(
+        carrier.opens.load(Ordering::SeqCst),
+        1,
+        "no shell was reopened"
+    );
+    assert_eq!(node_b.calls_received(), 0);
     drop(node_b);
 }

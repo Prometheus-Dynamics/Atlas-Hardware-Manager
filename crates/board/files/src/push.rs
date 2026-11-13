@@ -249,6 +249,11 @@ pub async fn submit(
 async fn run(pending: &Pending) -> Result<(), String> {
     let shared = &pending.shared;
     let mut backoff = Backoff::default();
+    // The node this push sends to: the key of the first node it finds. A push resumes only on
+    // that node. If a person accepts another node under this address, the session comes back
+    // with another key, and what the board "already holds" is then another board's: the push
+    // ends, and a new one is the person's choice.
+    let mut started_on: Option<[u8; 32]> = None;
     loop {
         if shared.cancelled() {
             return Err("the push was cancelled".to_owned());
@@ -261,6 +266,18 @@ async fn run(pending: &Pending) -> Result<(), String> {
             shared.waiting(presence_reason(&presence));
             wait_for_board(&pending.handle, backoff.next_delay()).await;
             continue;
+        }
+        if let Some(key) = pending.handle.node_key() {
+            match started_on {
+                None => started_on = Some(key),
+                Some(first) if first != key => {
+                    return Err(
+                        "the board at this address was replaced by another one; the push was not continued on it"
+                            .to_owned(),
+                    );
+                }
+                Some(_) => {}
+            }
         }
 
         let before = shared.acked();
@@ -328,7 +345,11 @@ async fn run(pending: &Pending) -> Result<(), String> {
 fn presence_reason(presence: &Presence) -> String {
     match presence {
         Presence::Lost(reason) => reason.clone(),
-        _ => "the node is not connected yet".to_owned(),
+        Presence::Replaced { .. } => {
+            "another board answers at this address; waiting for the one this push started on"
+                .to_owned()
+        }
+        Presence::Searching | Presence::Found(_) => "the node is not connected yet".to_owned(),
     }
 }
 

@@ -54,6 +54,10 @@ pub enum End {
     Exited(i32),
     /// The session to the node was lost, with the session's words. Nothing reopens the shell.
     Lost(String),
+    /// The address now answers with another node key: the board was replaced. Nothing is sent to
+    /// the other node, and nothing reopens the shell on it. Distinct from [`End::Lost`]: the board
+    /// that was open is not the one that answers now.
+    Replaced(String),
     /// The link to the shell broke while the node was still connected, with its words.
     Broke(String),
     /// The person closed the terminal.
@@ -295,12 +299,15 @@ fn spawn_reader(mut output: Box<dyn Output>, finish: Arc<Finish>) {
 /// reconnect: the shell does not come back by itself.
 async fn watch_presence(mut presence: watch::Receiver<Presence>, finish: Arc<Finish>) {
     loop {
-        let lost = match &*presence.borrow_and_update() {
-            Presence::Lost(reason) => Some(reason.clone()),
+        let ended = match &*presence.borrow_and_update() {
+            Presence::Lost(reason) => Some(End::Lost(reason.clone())),
+            Presence::Replaced { .. } => Some(End::Replaced(
+                "the board was replaced: its address now answers with another node key".into(),
+            )),
             Presence::Searching | Presence::Found(_) => None,
         };
-        if let Some(reason) = lost {
-            finish.finish(End::Lost(reason));
+        if let Some(end) = ended {
+            finish.finish(end);
             return;
         }
         if presence.changed().await.is_err() {

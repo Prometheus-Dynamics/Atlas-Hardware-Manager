@@ -231,6 +231,8 @@ struct Shared {
     hold_installs: Arc<AtomicBool>,
     /// How many runs have been stalled by the script (see [`Behaviour::Stall`]).
     stalled: Arc<AtomicUsize>,
+    /// How many calls the node logic has been asked to start (every run request it received).
+    calls: Arc<AtomicUsize>,
     /// Withdraws the device resources while set (see [`readings`]).
     devices: readings::Control,
     /// How many runs have been asked for, by action name, refused ones included.
@@ -275,6 +277,8 @@ impl SimNode {
             Options {
                 security: Security::Off,
                 port,
+                // A node keeps its key across a restart in the same directory, as a board does.
+                on_disk: true,
                 heartbeat_ms: HEARTBEAT_MS,
                 idle_ms: IDLE_MS,
                 ..Options::default()
@@ -293,6 +297,7 @@ impl SimNode {
             lemnos_down: Arc::new(AtomicBool::new(false)),
             hold_installs: Arc::new(AtomicBool::new(false)),
             stalled: Arc::new(AtomicUsize::new(0)),
+            calls: Arc::new(AtomicUsize::new(0)),
             devices: readings::Control::default(),
             runs: Arc::new(Mutex::new(BTreeMap::new())),
         };
@@ -364,6 +369,13 @@ impl SimNode {
     /// is let go.
     pub fn hold_installs(&self, hold: bool) {
         self.shared.hold_installs.store(hold, Ordering::SeqCst);
+    }
+
+    /// How many calls this node has been asked to start, since it started. A test that must show
+    /// a node saw nothing reads this: a session that refused a node sends it no call.
+    #[must_use]
+    pub fn calls_received(&self) -> usize {
+        self.shared.calls.load(Ordering::SeqCst)
     }
 
     /// How many runs the script has stalled so far. A test waits on this to know a stalled run
@@ -695,7 +707,10 @@ impl Node {
                     args,
                     caller,
                     ..
-                })) => self.start(call, &name, args, &caller),
+                })) => {
+                    self.shared.calls.fetch_add(1, Ordering::SeqCst);
+                    self.start(call, &name, args, &caller);
+                }
                 Ok(Some(Request::Cancel { call })) => self.cancel(call),
                 Ok(None) => {}
                 // The comm core went away: nothing more can be answered.
