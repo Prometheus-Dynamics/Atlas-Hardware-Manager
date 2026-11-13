@@ -217,6 +217,9 @@ fn offered(kind: &Kind, name: &str) -> bool {
 #[derive(Clone, Debug)]
 struct Shared {
     model: Arc<Mutex<Model>>,
+    /// Set while the hello's `version.slot` follows the model's running slot (a boot moves it).
+    /// Off by default: a node keeps the slot its hello was built with, as before.
+    follow_boot: Arc<AtomicBool>,
     /// The hello facts as they are now. A test changes them with [`SimNode::change_hello`]; the
     /// node logic publishes the change. Only a node with Lemnos publishes them.
     hello: Arc<Mutex<Hello>>,
@@ -303,6 +306,7 @@ impl SimNode {
             calls: Arc::new(AtomicUsize::new(0)),
             devices: readings::Control::default(),
             runs: Arc::new(Mutex::new(BTreeMap::new())),
+            follow_boot: Arc::new(AtomicBool::new(false)),
             leases: Arc::new(lease::Leases::new()),
         };
 
@@ -455,6 +459,13 @@ impl SimNode {
     /// trial then carries `record_error`, and a fall back keeps its reason in `trial_reason`.
     pub fn slot_fail_record_writes(&self, fail: bool) {
         lock(&self.shared.model).slots.set_record_writes_fail(fail);
+    }
+
+    /// Makes the hello's `version.slot` follow the model's running slot: a boot (a trial's, a
+    /// reboot, a power cut) moves it, and a confirm does not. Off by default, so a test that does
+    /// not ask keeps the slot its hello was built with.
+    pub fn slot_follow_boot(&self, follow: bool) {
+        self.shared.follow_boot.store(follow, Ordering::SeqCst);
     }
 
     /// Changes the trial's config keys (I5f), for example `trial_attempts`, `confirm_uptime_s`,
@@ -1110,6 +1121,16 @@ impl Node {
     fn tick(&mut self) {
         if self.shared.restart.swap(false, Ordering::SeqCst) {
             self.restart();
+        }
+        // With `slot_follow_boot`, the running slot is what the board booted: `version.slot` follows
+        // the model's running slot, as a boot writes it (a confirm changes the default, not this). A
+        // node whose hello publishes no slot fact (an empty `slot`) keeps publishing none.
+        let running = lock(&self.shared.model).slots.active.clone();
+        if let Some(running) = running.filter(|_| self.shared.follow_boot.load(Ordering::SeqCst)) {
+            let mut hello = lock(&self.shared.hello);
+            if !hello.slot.is_empty() {
+                hello.slot = running;
+            }
         }
         self.apply_lease_drops();
         if self.live {

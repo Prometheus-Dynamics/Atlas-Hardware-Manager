@@ -22,6 +22,8 @@
 //!   fall back keeps its reason in `trial_reason` (the boot partition's `trial-reason`).
 //! - `slot_config(|config| ..)`: the I5f config keys (`auto_confirm`, `confirm_uptime_s`,
 //!   `confirm_deadline_s`, `reboot_at_deadline`, `trial_attempts`).
+//! - `slot_follow_boot(bool)`: the hello's `version.slot` follows the running slot (a boot moves it,
+//!   a confirm does not). Off by default.
 //! - `runs_started(action)`: how many runs of an action the node took, refused ones included.
 //!
 //! The file pushes are not counted per byte: the stub's file receiver keeps no per-chunk record.
