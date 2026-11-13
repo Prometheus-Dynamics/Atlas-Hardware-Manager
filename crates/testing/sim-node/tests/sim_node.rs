@@ -63,7 +63,14 @@ fn bundle_for(id: &str, version: &str, key: Option<&SigningKey>) -> Vec<u8> {
     ];
     let manifest = bundle::manifest(id, version, &rootfs, &boot);
     let signature = key.map(|key| bundle::sign(&manifest, key));
-    bundle::build(&manifest, signature.as_ref(), &rootfs, &boot)
+    let key_id = key.map(bundle::key_id);
+    bundle::build(
+        &manifest,
+        signature.as_ref().map(|signature| &signature[..]),
+        key_id.as_deref(),
+        &rootfs,
+        &boot,
+    )
 }
 
 /// The name a test pushes its bundle under.
@@ -120,7 +127,7 @@ fn big_bundle(id: &str) -> Vec<u8> {
         ("blob.bin", &blob[..]),
     ];
     let manifest = bundle::manifest(id, "2.0.0", &rootfs, &boot);
-    bundle::build(&manifest, None, &rootfs, &boot)
+    bundle::build(&manifest, None, None, &rootfs, &boot)
 }
 
 fn list(orion: &Orion) -> Value {
@@ -809,7 +816,7 @@ fn a_layered_manifest_is_refused() {
     let rootfs = b"rootfs bytes".to_vec();
     let mut manifest = bundle::manifest("layered-1", "2.0.0", &rootfs, &[("cmdline.txt", b"x")]);
     manifest["layers"] = serde_json::json!([{ "id": "base" }]);
-    let bytes = bundle::build(&manifest, None, &rootfs, &[("cmdline.txt", b"x")]);
+    let bytes = bundle::build(&manifest, None, None, &rootfs, &[("cmdline.txt", b"x")]);
     let finished = install(&orion, &bytes, false, false);
     assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
     assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
@@ -888,7 +895,7 @@ fn a_node_publishes_the_hello_facts_a_board_publishes_and_a_restart_on_its_port_
 fn security_on_refuses_unsigned_and_untrusted_bundles_and_keeps_nothing() {
     let node = start("security-on");
     let orion = node.connect("security-on").expect("a session");
-    node.model().slots.require_signed = true;
+    node.model().slots.board_security = true;
 
     // No trusted keys at all: the install does not start.
     let refusal = install(&orion, &bundle_for("slot-2", "2.0.0", None), false, false);
@@ -935,7 +942,7 @@ fn bundle_with(id: &str, change: impl FnOnce(&mut Value)) -> Vec<u8> {
     let boot = [("cmdline.txt", &b"console=ttyS0\n"[..])];
     let mut manifest = bundle::manifest(id, "2.0.0", &rootfs, &boot);
     change(&mut manifest);
-    bundle::build(&manifest, None, &rootfs, &boot)
+    bundle::build(&manifest, None, None, &rootfs, &boot)
 }
 
 #[test]
@@ -947,9 +954,11 @@ fn a_slot_for_another_board_is_refused_before_anything_is_kept() {
     });
     let finished = install(&orion, &other, false, false);
     assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
-    assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
+    assert!(finished.detail.starts_with("-95:"), "{}", finished.detail);
     assert!(
-        finished.detail.contains("another-board"),
+        finished
+            .detail
+            .contains("this slot is built for board another-board, and this is board simulated"),
         "{}",
         finished.detail
     );

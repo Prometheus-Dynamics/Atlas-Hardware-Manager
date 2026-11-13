@@ -20,6 +20,7 @@
 //! Other runs are applied to the [`Model`] when they finish, never before, so a run that is
 //! refused, fails or is cancelled before it finishes changes nothing.
 
+use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::Path;
@@ -40,6 +41,7 @@ use crate::model::Model;
 use crate::names;
 use crate::readings;
 use crate::script::{Behaviour, LinkFault, Script};
+use crate::slots::trial;
 use crate::slots::{NewSlot, State, Status, code, valid_id};
 
 /// The name the simulated board gives itself.
@@ -231,6 +233,8 @@ struct Shared {
     stalled: Arc<AtomicUsize>,
     /// Withdraws the device resources while set (see [`readings`]).
     devices: readings::Control,
+    /// How many runs have been asked for, by action name, refused ones included.
+    runs: Arc<Mutex<BTreeMap<String, usize>>>,
 }
 
 /// A simulated board. Dropping it stops the node logic, the link and the comm core, and frees
@@ -290,6 +294,7 @@ impl SimNode {
             hold_installs: Arc::new(AtomicBool::new(false)),
             stalled: Arc::new(AtomicUsize::new(0)),
             devices: readings::Control::default(),
+            runs: Arc::new(Mutex::new(BTreeMap::new())),
         };
 
         let (ready, started) = mpsc::channel();
@@ -405,6 +410,50 @@ impl SimNode {
         self.board.shelf()
     }
 
+    /// Advances the simulated slot clock by `secs`, then runs the trial's rules: a trial whose
+    /// daemon has been up for `confirm_uptime_s` confirms, and at `confirm_deadline_s` with a
+    /// condition unmet, falls back. Nothing else moves the clock.
+    pub fn slot_clock_advance(&self, secs: u64) {
+        lock(&self.shared.model).slots.advance_clock(secs);
+    }
+
+    /// Sets whether the board is healthy. A trial confirms only while it is.
+    pub fn slot_set_healthy(&self, healthy: bool) {
+        lock(&self.shared.model).slots.healthy = healthy;
+    }
+
+    /// Sets how many of the next trial boots do not reach the daemon. Each such boot spends one
+    /// attempt; after `trial_attempts` of them the trial falls back. Each boot is a restart: `trial`
+    /// starts the first one, and the reboot action or [`SimNode::slot_power_cut`] starts the next.
+    pub fn slot_boots_without_daemon(&self, count: u32) {
+        lock(&self.shared.model).slots.boots_without_daemon = count;
+    }
+
+    /// Cuts the power while a trial's boot runs. A boot that reached the daemon is cut short: no
+    /// attempt is spent, and the next restart boots the trial again.
+    pub fn slot_power_cut(&self) {
+        lock(&self.shared.model).slots.power_cut();
+    }
+
+    /// Makes the driver's writes of the trial record fail (`true`) or succeed (`false`). A pending
+    /// trial then carries `record_error`, and a fall back keeps its reason in `trial_reason`.
+    pub fn slot_fail_record_writes(&self, fail: bool) {
+        lock(&self.shared.model).slots.set_record_writes_fail(fail);
+    }
+
+    /// Changes the trial's config keys (I5f), for example `trial_attempts`, `confirm_uptime_s`,
+    /// `confirm_deadline_s` or `auto_confirm`.
+    pub fn slot_config(&self, change: impl FnOnce(&mut trial::Config)) {
+        change(&mut lock(&self.shared.model).slots.trial_config);
+    }
+
+    /// How many runs of `name` the node has been asked to start, refused ones included. A run is
+    /// counted when the node takes it, so a test can tell that an install was not issued twice.
+    #[must_use]
+    pub fn runs_started(&self, name: &str) -> usize {
+        lock(&self.shared.runs).get(name).copied().unwrap_or(0)
+    }
+
     /// Where the network port is, for a client that does not use the link.
     #[must_use]
     pub fn network(&self) -> SocketAddr {
@@ -472,6 +521,8 @@ struct Run {
     call: u64,
     name: String,
     args: Vec<u8>,
+    /// Who asked for the run (the audit name Orion gives it).
+    caller: String,
     left: u32,
     total: u32,
     stalled: bool,
@@ -639,8 +690,12 @@ impl Node {
         while !self.shared.stop.load(Ordering::SeqCst) && !self.reopen {
             match self.registration.wait(Duration::from_millis(5)) {
                 Ok(Some(Request::Run {
-                    call, name, args, ..
-                })) => self.start(call, &name, args),
+                    call,
+                    name,
+                    args,
+                    caller,
+                    ..
+                })) => self.start(call, &name, args, &caller),
                 Ok(Some(Request::Cancel { call })) => self.cancel(call),
                 Ok(None) => {}
                 // The comm core went away: nothing more can be answered.
@@ -666,7 +721,8 @@ impl Node {
         self.finish(call, outcome_for(status.code), &[], &status.to_string());
     }
 
-    fn start(&mut self, call: u64, name: &str, args: Vec<u8>) {
+    fn start(&mut self, call: u64, name: &str, args: Vec<u8>, caller: &str) {
+        *lock(&self.shared.runs).entry(name.to_string()).or_default() += 1;
         if names::is_lemnos(name) && self.shared.lemnos_down.load(Ordering::SeqCst) {
             // Lemnos is stopped on this node: the node is up, its Lemnos calls are not answered.
             self.finish_status(
@@ -685,6 +741,7 @@ impl Node {
                     call,
                     name: name.to_string(),
                     args,
+                    caller: caller.to_string(),
                     left: 1,
                     total: 1,
                     stalled: true,
@@ -704,6 +761,7 @@ impl Node {
                     call,
                     name: name.to_string(),
                     args,
+                    caller: caller.to_string(),
                     left: total,
                     total,
                     stalled: false,
@@ -887,6 +945,7 @@ impl Node {
         }
         lost.extend(self.active.drain(..).map(|run| run.call));
         clear_incoming(&self.board);
+        lock(&self.shared.model).slots.daemon_restarted();
         for call in lost {
             self.finish(
                 call,
@@ -943,6 +1002,7 @@ impl Node {
         let (readings, lines) = {
             let mut model = lock(&self.shared.model);
             model.ticks += 1;
+            model.slots.evaluate();
             (model.readings(), model.take_new_logs())
         };
         let now = self.now();
@@ -996,7 +1056,7 @@ impl Node {
             let run = self.active.remove(index);
             let outcome = {
                 let mut model = lock(&self.shared.model);
-                apply(&mut model, &run.name, &run.args)
+                apply(&mut model, &run.name, &run.args, &run.caller)
             };
             match outcome {
                 Ok(output) => self.finish(run.call, Outcome::Succeeded, &output, ""),
@@ -1109,12 +1169,28 @@ fn new_slot(verified: bundle::Verified) -> NewSlot {
     }
 }
 
+/// The largest reply a method with an out buffer can give (Lemnos M8a: 60 KiB).
+const LIST_LIMIT: usize = 60 * 1024;
+
 /// Applies a finished timed run to the board. Its output goes back to the caller.
-fn apply(model: &mut Model, name: &str, args: &[u8]) -> Result<Vec<u8>, Status> {
+fn apply(model: &mut Model, name: &str, args: &[u8], caller: &str) -> Result<Vec<u8>, Status> {
     let nothing = Vec::new();
     let found = words(args);
     match name {
-        names::SLOTS_LIST => Ok(model.slots.list_json().into_bytes()),
+        // LOCK: Lemnos M8a 5dcf1a78. A reply over 60 KiB is refused by name, with no partial
+        // output. Today: the Atlas lock (4a2d3b7d) predates M8a, so a real board cannot answer
+        // `list` until the lock moves.
+        names::SLOTS_LIST => {
+            let listing = model.slots.list_json();
+            if listing.len() > LIST_LIMIT {
+                Err(Status::new(
+                    code::INVALID_ARGUMENT,
+                    "system.slots.list: the reply is over 60 KiB; refused by name, nothing partial is sent",
+                ))
+            } else {
+                Ok(listing.into_bytes())
+            }
+        }
         names::SLOTS_SET_DEFAULT => model
             .slots
             .set_default(&slot_id(&found)?, flag(&found, 1).unwrap_or(false))
@@ -1128,7 +1204,7 @@ fn apply(model: &mut Model, name: &str, args: &[u8]) -> Result<Vec<u8>, Status> 
                 flag(&found, 3)?,
             )
             .map(|()| nothing),
-        names::SLOTS_CONFIRM => model.slots.confirm().map(|()| nothing),
+        names::SLOTS_CONFIRM => model.slots.confirm(caller).map(|()| nothing),
         names::SLOTS_REMOVE => model.slots.remove(&slot_id(&found)?).map(|()| nothing),
         names::SLOTS_PIN => model
             .slots

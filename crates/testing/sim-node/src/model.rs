@@ -95,7 +95,7 @@ impl Model {
         let slots = &self.slots;
         let trial = match &slots.trial {
             None => "none".to_string(),
-            Some(trial) if trial.booted => format!("{} (booted, unconfirmed)", trial.id),
+            Some(trial) if trial.record.reached => format!("{} (booted, unconfirmed)", trial.id),
             Some(trial) => format!("{} (pending)", trial.id),
         };
         format!(
