@@ -30,10 +30,3 @@ atlas-topics        # binds on: orion (direct, the client facade)
 [does-not-build aarch64-apple-darwin]
 
 [not-yet x86_64-pc-windows-msvc]
-# D18 (the disk writer behind a platform seam, pr/D18): atlas-disk's test target needs the Unix
-# positional file calls (tests/common/mod.rs) and xz_stream.rs is not gated; first error on Windows:
-# cannot find `unix` in `os`. Its library builds, so atlas-driver-disk is not affected.
-atlas-disk          # D18: the write-path tests use std::os::unix::fs::FileExt (tests/common/mod.rs:8)
-# D18: the helper's privileged write path is the disk writer's platform code; its link test calls
-# std::os::unix::fs::symlink (main.rs:497). First error on Windows: cannot find `unix` in `os`.
-atlas-helper        # D18: the helper's test links with std::os::unix::fs::symlink (main.rs:497)
