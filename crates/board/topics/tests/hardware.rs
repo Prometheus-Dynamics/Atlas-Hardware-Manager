@@ -501,8 +501,12 @@ async fn a_device_that_comes_back_from_off_is_described_again() {
         &hardware,
         "the off device running and described",
         |snapshot| {
-            device(snapshot, "lemnos.off0")
-                .is_some_and(|device| matches!(device.description, DescriptionState::Described(_)))
+            // The description and the resource state change in the same tick, but the two reads may
+            // land on different snapshots under load: wait for both.
+            device(snapshot, "lemnos.off0").is_some_and(|device| {
+                matches!(device.description, DescriptionState::Described(_))
+                    && device.availability == Reported::Value(Availability::Ready)
+            })
         },
     )
     .await;
