@@ -1,0 +1,9 @@
+# EXAMPLE, for scripts/check-devices.sh only. Not a device.
+# A board: extends its family and keeps only what differs.
+version = 1
+extends = "../../families/example-family/family.toml"
+name = "example-board"
+description = "Example board (fixture)"
+
+[target]
+cpu = "cortex-a55"

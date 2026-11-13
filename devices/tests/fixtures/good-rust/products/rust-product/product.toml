@@ -1,0 +1,13 @@
+# EXAMPLE, for scripts/check-devices.sh only. Not a device.
+# A product: one image of the example board, with its Rust component built by Gaia's rust builder.
+version = 1
+name = "rust-product"
+
+[components]
+hello-rust = "../../components/hello-rust/component.toml"
+
+[[images]]
+name = "rust-product"
+board = "../../boards/example-board/board.toml"
+components = ["hello-rust"]
+recipe = "firmware"
