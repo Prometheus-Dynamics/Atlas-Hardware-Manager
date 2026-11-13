@@ -1,15 +1,19 @@
-# Luckfox Aura: the flasher image, the initramfs loaded over maskrom before the
-# eMMC is written. Plain newc, not signed (signing key open, see the PR text).
-# The base OS image is open: the eMMC layout is unconfirmed.
+# Luckfox Aura: the base OS image, written in Gaia's F8 form (see the Pico Pro product).
+# eMMC storage, so a whole-disk image is what the board takes; its layout is unconfirmed
+# (open). Fails the device check at e90ee03 until the Gaia F8 pin moves. Untested on board (G6).
 version = 1
 name = "waveshare-luckfox-aura"
-description = "Luckfox Aura: flasher image"
+description = "Luckfox Aura: base OS"
 
-[components]
-rv11xx-orion-recovery = "../../components/rv11xx-orion-recovery/component.toml"
+# F8? Buildroot, as for the Pico Pro product.
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.08"
 
 [[images]]
-name = "waveshare-luckfox-aura-flasher"
+name = "waveshare-luckfox-aura"
 board = "../../boards/waveshare-luckfox-aura/board.toml"
-components = ["rv11xx-orion-recovery"]
-recipe = "initramfs-boot"
+# F8? the OS: Buildroot, no fragments yet.
+os = { provider = "buildroot", source = "buildroot", fragments = [] }
+# F8? an eMMC disk takes the disk recipe; its name and partition table are unconfirmed (open).
+recipe = "disk"

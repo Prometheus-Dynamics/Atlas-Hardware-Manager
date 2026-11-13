@@ -6,6 +6,8 @@ name = "luckfox-pico-pro"
 description = "Luckfox Pico Pro (RV1106G2)"
 
 # Gaia's name for ARMv7 is `arm`.
+# USB id 2207:110c (RV1106 maskrom) comes from Luckfox's docs via search, not a lsusb
+# check: confirm on the board before relying on it (dev's record, open).
 [target]
 arch = "arm"
 

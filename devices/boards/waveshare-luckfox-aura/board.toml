@@ -7,6 +7,9 @@ extends = "../../families/rv11xx/family.toml"
 name = "waveshare-luckfox-aura"
 description = "Luckfox Aura (RV1126B), sold by Waveshare"
 
+# Storage is eMMC, as dev records it (wiki and Waveshare: eMMC optional, microSD standard,
+# no NAND). USB id 2207:110b is a GUESS (U-Boot's RV1126 default, a search snippet), not
+# confirmed: check with lsusb -d 2207: in maskrom.
 [target]
 arch = "aarch64"
 cpu = "cortex-a53"
