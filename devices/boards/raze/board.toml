@@ -1,4 +1,7 @@
 # Raze: Raspberry Pi CM5 with an OV9782 global-shutter camera, a 16 GB eMMC (written over USB boot).
+# Board fact: keeps pstore: required. There is no wired console until Gaia can mask a unit, so the kernel
+# log of an early boot and the previous boot's log live in pstore (ramoops-pi5 overlay, boot/raze-device.txt;
+# PSTORE, PSTORE_RAM, PSTORE_CONSOLE, PSTORE_PMSG built in, raze.config).
 # Extends the BCM2712 family and keeps what the Raze adds: its kernel fragments, the eMMC disk and
 # the USB-boot flasher. The Raze's overlays are pending Lemnos's minimal list (PR text). Ported from
 # dev devices/raze/gaia. Untested on board.

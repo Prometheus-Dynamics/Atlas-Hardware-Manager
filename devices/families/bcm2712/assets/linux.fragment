@@ -43,3 +43,23 @@ CONFIG_MFD_RP1=y
 CONFIG_SPI_SPIDEV=y
 # CONFIG_DMABUF_HEAPS_CMA: /dev/dma_heap/linux,cma (needs DMA_CMA and CMA).
 CONFIG_DMABUF_HEAPS_CMA=y
+#
+# -- The slot's root chain, built in (PR B16). lemnos-slot-init opens the root slot before any root filesystem
+#    with modules exists, and it loads dm modules only from /lib/modules in the slot initramfs (Lemnos
+#    docs/slots.md @4a2d3b7d, service/slot-init/src/sys.rs load_module). Gaia's initramfs carries no modules, so
+#    these must be =y for every slot-booting board of this family. Each has its reason:
+# CONFIG_BLK_DEV_DM: device mapper (/dev/mapper/control, the verity target's device).
+CONFIG_BLK_DEV_DM=y
+# CONFIG_DM_BUFIO: the buffer layer dm-verity selects.
+CONFIG_DM_BUFIO=y
+# CONFIG_DM_VERITY: the verity target that checks the root slot's hash tree.
+CONFIG_DM_VERITY=y
+# The rest of the slot-root chain on the Raze, built in (PR B16; the same reason as above). Each is =y in the
+# resolved Raze config from the pinned tree (raze-out2): BLK_DEV_LOOP (raze.config), EROFS_FS (raze.config),
+# EXT4_FS (the data partition), CRYPTO_SHA256 (dm-verity's sha256 hash; raze.config), and the storage host the
+# root and data partitions sit on: MMC_SDHCI_BRCMSTB (the CM5's eMMC; also set =y in the defconfig).
+CONFIG_BLK_DEV_LOOP=y
+CONFIG_EROFS_FS=y
+CONFIG_EXT4_FS=y
+CONFIG_CRYPTO_SHA256=y
+CONFIG_MMC_SDHCI_BRCMSTB=y

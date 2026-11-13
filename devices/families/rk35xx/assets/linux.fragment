@@ -26,3 +26,15 @@ CONFIG_SPI_SPIDEV=y
 # CONFIG_DMABUF_HEAPS_CMA: /dev/dma_heap/linux,cma, the CMA heap of Lemnos's stream buffers (needs DMA_CMA and CMA).
 #   Mark: VERIFIED, the generic dma-heaps table of Lemnos docs/kernel-config.md at 818473f6.
 CONFIG_DMABUF_HEAPS_CMA=y
+# -- The slot's root chain, built in (PR B16). lemnos-slot-init opens the root slot before any root filesystem
+#    with modules exists, and loads dm modules only from /lib/modules in its initramfs (Lemnos docs/slots.md @4a2d3b7d,
+#    service/slot-init/src/sys.rs), and Gaia's initramfs carries no modules. So each of these is =y on every
+#    RK35xx slot board. The trim (trim.fragment) sets the dm lines; these are the rest of the chain:
+CONFIG_BLK_DEV_LOOP=y
+CONFIG_BLK_DEV_DM=y
+CONFIG_DM_BUFIO=y
+CONFIG_DM_VERITY=y
+CONFIG_CRYPTO_SHA256=y
+CONFIG_EXT4_FS=y
+# The storage host the root and data partitions sit on: the RK35xx boards' SD and eMMC controllers (DW MMC).
+CONFIG_MMC_DW_ROCKCHIP=y
