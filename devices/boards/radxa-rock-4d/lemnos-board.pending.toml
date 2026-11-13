@@ -1,0 +1,35 @@
+# The ROCK 4D's USB device port, NOT ACTIVE (B15). Every entry is commented out, so this file holds no
+# Lemnos entry and cannot be installed as one. It is a record of the candidate and why it is held.
+#
+# Candidate entry, for Lemnos e99d51c0 (Q2e, socs/rk3576.toml), when it is safe to activate:
+#
+#   [[hardware]]
+#   name = "udc:23000000.usb"
+#   controller = "usb-drd0"
+#   role = "peripheral"
+#   # options = ["usb3"]   (OPEN: see below; not set)
+#
+#   [[devices]]
+#   id = "gadget"
+#   driver = "usb-gadget"
+#   uses = { function = "udc:23000000.usb" }
+#
+# Why it is held (evidence, mainline device tree at v7.3.3, arch/arm64/boot/dts/rockchip/):
+# (a) Which connector: usb_drd0_dwc3 (usb@23000000) is the device-capable controller 0; its OTG PHY is
+#     u2phy0_otg and its SuperSpeed PHY is usbdp_phy. Radxa's ROCK 4D user guide
+#     (docs.radxa.com/en/rock4/rock4d/hardware-use/usb-type-a) says the top USB 3.0 Type-A port is the one
+#     that supports OTG and HOST. The lower USB 3.0 port is host only. The schematic was not read.
+#     Controller 1 (usb@23400000, usb-drd1) is the other candidate. Its OTG PHY is u2phy1_otg and it has
+#     combo PHY 1 for SuperSpeed. The lower and the second port are not OTG in the guide.
+# (b) SuperSpeed: the SoC tree links usb_drd0_dwc3 to usbdp_phy (USB3). The board enables usbdp_phy. Whether
+#     the upper port's lanes are wired to it was NOT read from the schematic. OPEN: `usb3` stays off.
+# (c) phy-supply: YES on both candidates, and it blocks both.
+#     rk3576-rock-4d.dts sets `&u2phy0_otg { phy-supply = <&vcc_5v0_otg>; }` (drd0) and
+#     `&u2phy1_otg { phy-supply = <&vcc_5v0_host>; }` (drd1). Both regulators are regulator-always-on and
+#     regulator-boot-on, so the VBUS is on from power-on and cannot be turned off by the PHY. An active
+#     device entry would source 5 V from the port. Held until the tree stops setting it.
+#
+# What would settle it: (1) an Atlas-owned board dts (not the overlay) that drops the phy-supply on the
+# chosen port's OTG PHY, reviewed and run on a board; (2) the V1.12 schematic
+# (dl.radxa.com/rock4/4d/docs/hw/Radxa_ROCK_4D_SCH_V1.12.pdf), its PCIe/SATA/USB3 page, for the upper port's
+# SuperSpeed lanes and which DRD it is on.
