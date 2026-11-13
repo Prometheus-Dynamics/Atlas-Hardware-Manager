@@ -1,0 +1,16 @@
+[package]
+name = "atlas-driver-disk"
+description = "The removable-disk driver: finds cards and removable disks that an image can be written to, and says what each one is."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+atlas-disk = { path = "../../flash/disk" }
+atlas-driver = { path = "../../core/driver" }
+atlas-types = { path = "../../core/types" }
+
+[lints]
+workspace = true
