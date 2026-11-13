@@ -73,7 +73,7 @@ pub fn drivers(reach: Arc<dyn Reach>, teams: Arc<dyn Teams>) -> Vec<Arc<dyn Driv
 /// device relays it, so the placeholder `via` is never compared.
 pub(crate) fn gateway_kind() -> LinkKind {
     LinkKind::Gateway {
-        via: DeviceKey::new("relay", ""),
+        via: DeviceKey::new("relay", "placeholder"),
     }
 }
 
@@ -272,6 +272,7 @@ mod tests {
                 key: DeviceKey::new("x", "1"),
                 model: String::new(),
                 state: DeviceState::RobotDevice,
+                lemnos: atlas_types::LemnosState::Absent,
                 versions: Default::default(),
                 name: None,
                 link: LinkId::new("robot-net"),

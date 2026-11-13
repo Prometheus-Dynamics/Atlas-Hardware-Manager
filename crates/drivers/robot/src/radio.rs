@@ -143,6 +143,7 @@ impl RadioStatus {
             key: DeviceKey::new(RADIO_FAMILY, team.to_string()),
             model: self.model().to_string(),
             state: DeviceState::RobotDevice,
+            lemnos: atlas_types::LemnosState::Absent,
             versions,
             name: Some(format!("radio-{team}")),
             link: LinkId::new(""),

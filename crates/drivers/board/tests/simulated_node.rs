@@ -174,10 +174,7 @@ async fn a_node_with_lemnos_a_plain_node_and_a_faulted_lemnos_are_three_kinds_of
     );
     assert!(attribute(&faulted, LEMNOS_DETAIL).is_some_and(|detail| detail.starts_with("-4")));
     assert_eq!(faulted.key, DeviceKey::new("test-family", "0001"));
-    assert!(
-        faulted.key != DeviceKey::new("orion", ""),
-        "not a plain key"
-    );
+    assert!(faulted.key.is_board(), "a board key, not a plain one");
 
     // Lemnos answers again: back to answering.
     board.resume_lemnos();
@@ -190,9 +187,9 @@ async fn a_node_with_lemnos_a_plain_node_and_a_faulted_lemnos_are_three_kinds_of
     let plain = start(&plain_dir, &Kind::Plain, None);
     let plain_driver = driver_for(plain.network().port(), &pause);
     let plain_id = identify(&plain_driver, &offered(&plain_driver, &link).await).await;
-    assert_eq!(plain_id.key.family.as_str(), "orion");
+    assert_eq!(plain_id.key.family().map(|f| f.as_str()), Some("orion"));
     assert_eq!(
-        Some(plain_id.key.serial.as_str()),
+        plain_id.key.serial().map(|s| s.as_str()),
         attribute(&plain_id, "fingerprint")
     );
     assert_eq!(attribute(&plain_id, KEY_SOURCE), Some("fingerprint"));

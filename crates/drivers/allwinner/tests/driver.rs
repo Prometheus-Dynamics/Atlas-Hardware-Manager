@@ -177,6 +177,7 @@ async fn flash_is_granted_in_the_boot_rom_only_with_images() {
         key: atlas_types::DeviceKey::new(FAMILY, "usb-1-2"),
         model: "x".into(),
         state,
+        lemnos: atlas_types::LemnosState::Absent,
         versions: Default::default(),
         name: None,
         link: LinkId::new("usb-boot"),

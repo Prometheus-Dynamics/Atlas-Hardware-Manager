@@ -187,10 +187,13 @@ impl Driver for MockDriver {
             .lock()
             .values()
             .filter(|device| device.online)
-            .map(|device| Candidate {
-                link: link.id.clone(),
-                family: device.key.family.clone(),
-                address: device.key.serial.as_str().to_string(),
+            .filter_map(|device| {
+                let (family, serial) = device.key.board_identity().ok()?;
+                Some(Candidate {
+                    link: link.id.clone(),
+                    family: family.clone(),
+                    address: serial.as_str().to_string(),
+                })
             })
             .collect())
     }
@@ -206,6 +209,7 @@ impl Driver for MockDriver {
             key,
             model: device.model,
             state: device.state,
+            lemnos: atlas_types::LemnosState::Absent,
             versions: device.versions,
             name: device.name,
             link: candidate.link.clone(),

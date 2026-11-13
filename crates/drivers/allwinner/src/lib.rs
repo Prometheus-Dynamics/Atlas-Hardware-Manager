@@ -170,6 +170,7 @@ impl Driver for FelDriver {
             key: DeviceKey::new(FAMILY, format!("usb-{}", candidate.address)),
             model: "Allwinner SoC in FEL".into(),
             state: DeviceState::BootRom,
+            lemnos: atlas_types::LemnosState::Absent,
             versions: BTreeMap::new(),
             name: None,
             link: candidate.link.clone(),

@@ -124,6 +124,7 @@ impl Driver for DiskDriver {
             key: key_for(disk),
             model: disk.description(),
             state: DeviceState::RemovableDisk,
+            lemnos: atlas_types::LemnosState::Absent,
             versions: BTreeMap::new(),
             name: None,
             link: candidate.link.clone(),

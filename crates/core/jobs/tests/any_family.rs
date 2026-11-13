@@ -88,6 +88,7 @@ impl Driver for Device {
             key: DeviceKey::new(self.family, self.serial),
             model: "test-model".into(),
             state: DeviceState::Running,
+            lemnos: atlas_types::LemnosState::Absent,
             versions: BTreeMap::new(),
             name: None,
             link: candidate.link.clone(),
@@ -188,7 +189,7 @@ async fn an_any_family_driver_beside_a_named_one_is_identified_by_each_devices_o
         !seen
             .iter()
             .any(|event| matches!(event, Event::Identified { identity, .. }
-            if identity.key.family.as_str() == "board-label")),
+            if identity.key.family().map(Family::as_str) == Some("board-label"))),
         "the driver's label is never a device's family"
     );
     // Its discovery is reported under the driver's label: the scan's name for that work.

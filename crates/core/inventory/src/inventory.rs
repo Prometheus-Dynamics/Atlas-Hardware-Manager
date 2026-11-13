@@ -360,7 +360,7 @@ impl Inventory {
     pub fn of_family(&self, family: &Family) -> Vec<&DeviceRecord> {
         self.devices
             .values()
-            .filter(|record| &record.key.family == family)
+            .filter(|record| record.key.family() == Some(family))
             .collect()
     }
 

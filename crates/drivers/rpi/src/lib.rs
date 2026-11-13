@@ -197,6 +197,7 @@ impl Driver for RpiDriver {
             key: DeviceKey::new(FAMILY, serial),
             model: rom.model.clone(),
             state: DeviceState::BootRom,
+            lemnos: atlas_types::LemnosState::Absent,
             versions: BTreeMap::new(),
             name: None,
             link: candidate.link.clone(),

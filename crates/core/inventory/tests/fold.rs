@@ -34,6 +34,7 @@ fn identity(
         key: key.clone(),
         model: "sample-board".into(),
         state,
+        lemnos: atlas_types::LemnosState::Absent,
         versions: BTreeMap::from([("os".to_string(), version.to_string())]),
         name: None,
         link: LinkId::new(link),

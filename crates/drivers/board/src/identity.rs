@@ -107,6 +107,7 @@ pub fn identity(
         key,
         model: fact("model").unwrap_or_default(),
         state,
+        lemnos: atlas_types::LemnosState::Absent,
         versions,
         name: Some(node.name.clone()),
         link: link.clone(),

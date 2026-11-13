@@ -196,6 +196,7 @@ impl Driver for K230Driver {
             key: DeviceKey::new(FAMILY, serial),
             model: "Kendryte K230 in USB download mode".into(),
             state: DeviceState::BootRom,
+            lemnos: atlas_types::LemnosState::Absent,
             versions: Default::default(),
             name: None,
             link: candidate.link.clone(),

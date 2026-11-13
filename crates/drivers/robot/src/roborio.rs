@@ -144,6 +144,7 @@ fn identity(
         key: DeviceKey::new(ROBORIO_FAMILY, team.to_string()),
         model,
         state: DeviceState::RobotDevice,
+        lemnos: atlas_types::LemnosState::Absent,
         versions,
         name: Some(hostname),
         link: LinkId::new(""),

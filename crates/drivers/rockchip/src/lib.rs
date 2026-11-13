@@ -141,6 +141,7 @@ impl Driver for RockchipDriver {
                 device.vendor, device.product
             ),
             state: DeviceState::BootRom,
+            lemnos: atlas_types::LemnosState::Absent,
             versions: BTreeMap::new(),
             name: None,
             link: candidate.link.clone(),

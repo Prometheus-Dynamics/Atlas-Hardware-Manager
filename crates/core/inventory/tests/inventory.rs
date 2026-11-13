@@ -22,6 +22,7 @@ fn identity(link: &str, address: &str, state: DeviceState, version: &str) -> Ide
         key: key(),
         model: "sample-board".into(),
         state,
+        lemnos: atlas_types::LemnosState::Absent,
         versions: BTreeMap::from([("os".to_string(), version.to_string())]),
         name: Some("front camera".into()),
         link: LinkId::new(link),
