@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+// Cubie A7S bring-up (DEV ONLY, pending). The A7S dts from DockSeed's series, plus one change: the
+// blue status LED (PJ26, named in the series' LED patch) blinks as the kernel's heartbeat. That is
+// the first sign of life a person can see with no serial adapter. Only this one property differs
+// from the series; the rest of the board is the included file, unchanged.
+#include "sun60i-a733-cubie-a7s.dts"
+
+/ {
+	leds {
+		status-led {
+			linux,default-trigger = "heartbeat";
+		};
+	};
+};

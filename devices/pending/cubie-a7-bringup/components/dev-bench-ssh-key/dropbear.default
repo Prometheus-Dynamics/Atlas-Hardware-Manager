@@ -1,0 +1,5 @@
+# DEV ONLY (bring-up). Dropbear's options, read by dropbear.service.
+# -s: no password logins. The A7S bring-up's root has no password (the base's console policy is
+# root login off), so without -s a password login would need a blank password; with -s the bench
+# key is the only way in over SSH. (The B13 open point, closed in B19.)
+DROPBEAR_ARGS="-s"

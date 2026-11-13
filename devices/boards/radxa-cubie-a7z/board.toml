@@ -12,3 +12,7 @@ description = "Radxa Cubie A7Z (Allwinner A733), candidate sources, untested on 
 # OPEN: the DRAM blob. Dev's record says 1 GB LPDDR4 (the user's SKU). No A733 DRAM blob for LPDDR4
 # is pinned here: the one public candidate is the LPDDR5 build (radxa-pkg/u-boot-dlan17 @
 # b1cec0a9, awbin/a733/ddr.bin). Nothing is pinned until its match is known.
+
+# B19 (2026-11-13): the A7Z has no dts and no U-Boot defconfig in any public source read (see above), so its
+# USB device port, its LED GPIO and its VBUS wiring are all UNKNOWN. Its bring-up is blocked on those, not
+# guessed. Expected to share the A7S's USB-C 1 wiring only if a dts for it shows the same (not assumed).
