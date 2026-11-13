@@ -174,7 +174,7 @@ async fn flash_is_granted_in_the_boot_rom_only_with_images() {
     let read_only = FelDriver::new(bus.clone(), IDS.to_vec(), None);
     let flashable = FelDriver::new(bus, IDS.to_vec(), Some(images(None)));
     let identity = |state: DeviceState| atlas_types::Identity {
-        key: atlas_types::DeviceKey::new(FAMILY, "usb-1-2"),
+        key: atlas_types::DeviceKey::from_static(FAMILY, "usb-1-2"),
         model: "x".into(),
         state,
         lemnos: atlas_types::LemnosState::Absent,

@@ -14,7 +14,7 @@ use atlas_types::{
 const T0: u64 = 1_000_000;
 
 fn key() -> DeviceKey {
-    DeviceKey::new("sample-soc", "1000abcd")
+    DeviceKey::from_static("sample-soc", "1000abcd")
 }
 
 fn identity(link: &str, address: &str, state: DeviceState, version: &str) -> Identity {
@@ -37,7 +37,7 @@ fn caps() -> CapabilitySet {
 
 fn gateway() -> LinkKind {
     LinkKind::Gateway {
-        via: DeviceKey::new("sample-controller", "c0ffee"),
+        via: DeviceKey::from_static("sample-controller", "c0ffee"),
     }
 }
 
@@ -305,7 +305,7 @@ fn robots_group_devices_and_robots_group_into_teams() {
         caps(),
         T0,
     );
-    let other = DeviceKey::new("sample-soc", "2000beef");
+    let other = DeviceKey::from_static("sample-soc", "2000beef");
     let mut spare = identity("eth:enp3s0", "10.53.38.12", DeviceState::Running, "1.0.0");
     spare.key = other.clone();
     inventory.observe(spare, LinkKind::Ethernet, caps(), T0);

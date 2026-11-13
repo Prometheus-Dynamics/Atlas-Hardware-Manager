@@ -85,7 +85,7 @@ impl Driver for Device {
 
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
         Ok(Identity {
-            key: DeviceKey::new(self.family, self.serial),
+            key: DeviceKey::from_static(self.family, self.serial),
             model: "test-model".into(),
             state: DeviceState::Running,
             lemnos: atlas_types::LemnosState::Absent,
@@ -174,7 +174,7 @@ async fn an_any_family_driver_beside_a_named_one_is_identified_by_each_devices_o
     assert!(
         seen.iter()
             .any(|event| matches!(event, Event::Identified { identity, .. }
-            if identity.key == DeviceKey::new("fast-family", "fast-serial"))),
+            if identity.key == DeviceKey::from_static("fast-family", "fast-serial"))),
         "the named device is identified"
     );
     // The any-family device is identified under the family it reports, not under the driver's
@@ -182,7 +182,7 @@ async fn an_any_family_driver_beside_a_named_one_is_identified_by_each_devices_o
     assert!(
         seen.iter()
             .any(|event| matches!(event, Event::Identified { identity, .. }
-            if identity.key == DeviceKey::new("widget-family", "widget-serial"))),
+            if identity.key == DeviceKey::from_static("widget-family", "widget-serial"))),
         "the any-family device is identified by its own family"
     );
     assert!(
@@ -229,7 +229,7 @@ async fn a_device_two_drivers_see_is_reported_once_by_the_driver_the_registry_na
         }
         match next_matching(&mut rx, left, |_| true).await {
             Some(Event::Identified { identity, .. })
-                if identity.key == DeviceKey::new("fast-family", "fast-serial") =>
+                if identity.key == DeviceKey::from_static("fast-family", "fast-serial") =>
             {
                 identified += 1;
             }

@@ -113,7 +113,7 @@ async fn a_node_is_found_identified_lost_and_found_again() {
     let candidate = offered(&driver, &link).await;
     assert_eq!(candidate.link, LinkId::new(LINK));
     let identity = identify(&driver, &candidate).await;
-    assert_eq!(identity.key, DeviceKey::new("test-family", "0001"));
+    assert_eq!(identity.key, DeviceKey::from_static("test-family", "0001"));
     assert_eq!(identity.state, DeviceState::Running);
     assert_eq!(identity.model, "test-model");
     assert!(identity.key.is_board());
@@ -157,7 +157,7 @@ async fn a_node_with_lemnos_a_plain_node_and_a_faulted_lemnos_are_three_kinds_of
     let driver = driver_for(board.network().port(), &pause);
     let link = usb_link();
     let board_id = identify(&driver, &offered(&driver, &link).await).await;
-    assert_eq!(board_id.key, DeviceKey::new("test-family", "0001"));
+    assert_eq!(board_id.key, DeviceKey::from_static("test-family", "0001"));
     assert!(driver.capabilities(&board_id).grants(CapabilityKind::Slots));
 
     // Lemnos stopped on that same node: its facts are still published, so it is faulted and
@@ -168,7 +168,7 @@ async fn a_node_with_lemnos_a_plain_node_and_a_faulted_lemnos_are_three_kinds_of
         matches!(&faulted.lemnos, LemnosState::NotAnswering { reason } if reason.starts_with("-4")),
         "{faulted:?}"
     );
-    assert_eq!(faulted.key, DeviceKey::new("test-family", "0001"));
+    assert_eq!(faulted.key, DeviceKey::from_static("test-family", "0001"));
     assert!(faulted.key.is_board(), "a board key, not a plain one");
 
     // Lemnos answers again: back to answering.

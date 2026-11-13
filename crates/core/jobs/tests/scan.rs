@@ -97,7 +97,8 @@ impl Driver for TestDriver {
             return Err(error.clone());
         }
         Ok(Identity {
-            key: DeviceKey::new(self.manifest.family.as_str(), self.serial),
+            key: DeviceKey::board(self.manifest.family.as_str(), self.serial)
+                .expect("a test family and serial"),
             model: "test-model".into(),
             state: DeviceState::Running,
             lemnos: atlas_types::LemnosState::Absent,
@@ -459,7 +460,7 @@ async fn a_quiet_claim_stops_identify_calls_for_that_device_only() {
     .unwrap();
     jobs.submit(
         "hang-kind",
-        DeviceClaim::writes([DeviceKey::new("loader-family", "loader")])
+        DeviceClaim::writes([DeviceKey::from_static("loader-family", "loader")])
             .quiet()
             .at("loader-addr"),
         vec!["load".into()],

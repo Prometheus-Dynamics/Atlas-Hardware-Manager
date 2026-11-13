@@ -202,7 +202,7 @@ mod tests {
             ],
             &LemnosState::Answering,
         );
-        assert_eq!(found.key, DeviceKey::new("test-family", "0001"));
+        assert_eq!(found.key, DeviceKey::from_static("test-family", "0001"));
         assert!(found.key.is_board());
         assert_eq!(found.model, "test-model");
         assert_eq!(found.versions.get("os").map(String::as_str), Some("1.2.3"));

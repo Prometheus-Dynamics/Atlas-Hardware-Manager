@@ -34,7 +34,7 @@ pub struct MockDevice {
 impl MockDevice {
     /// A device in `state`, with the versions that state reports.
     #[must_use]
-    pub fn new(serial: &str, state: DeviceState) -> Self {
+    pub fn new(serial: &'static str, state: DeviceState) -> Self {
         let (version_name, version) = match state {
             DeviceState::Running => ("os", "1.0.0"),
             DeviceState::Recovery => ("bootloader", "2.1.0"),
@@ -43,7 +43,7 @@ impl MockDevice {
             DeviceState::RobotDevice => ("firmware", "3.2.0"),
         };
         Self {
-            key: DeviceKey::new(SIM_FAMILY, serial),
+            key: DeviceKey::from_static(SIM_FAMILY, serial),
             model: format!("simulated-{}", state_word(state)),
             state,
             versions: BTreeMap::from([(version_name.to_string(), version.to_string())]),
@@ -199,7 +199,8 @@ impl Driver for MockDriver {
     }
 
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
-        let key = DeviceKey::new(candidate.family.as_str(), candidate.address.as_str());
+        let key = DeviceKey::board(candidate.family.as_str(), candidate.address.as_str())
+            .map_err(|error| DriverError::Incompatible(error.reason))?;
         let device = self
             .fleet
             .device(&key)

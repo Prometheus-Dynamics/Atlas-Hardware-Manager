@@ -155,7 +155,7 @@ async fn boot_is_refused_without_flasher_files_and_health_says_so() {
     bus.attach(rom("1-2"));
     let driver = RpiDriver::new(Arc::new(bus), config(None));
     let identity = Identity {
-        key: atlas_types::DeviceKey::new("rpi", "abc123"),
+        key: atlas_types::DeviceKey::from_static("rpi", "abc123"),
         model: "sample-board".into(),
         state: DeviceState::BootRom,
         lemnos: atlas_types::LemnosState::Absent,
@@ -178,7 +178,7 @@ async fn boot_is_refused_without_flasher_files_and_health_says_so() {
 async fn a_model_the_config_does_not_know_is_unsupported() {
     let driver = RpiDriver::new(Arc::new(SimBus::new()), config(Some(flasher())));
     let identity = Identity {
-        key: atlas_types::DeviceKey::new("rpi", "x"),
+        key: atlas_types::DeviceKey::from_static("rpi", "x"),
         model: "other-board".into(),
         state: DeviceState::BootRom,
         lemnos: atlas_types::LemnosState::Absent,

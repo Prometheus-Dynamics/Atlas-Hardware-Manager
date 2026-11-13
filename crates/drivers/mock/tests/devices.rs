@@ -47,7 +47,7 @@ async fn one_device_in_every_state_is_found_and_identified() {
 async fn a_device_lost_from_the_link_is_found_again_when_it_returns() {
     let fleet = MockFleet::one_in_every_state();
     let driver = fleet.driver();
-    let key = DeviceKey::new(atlas_mock::SIM_FAMILY, "SIM-RUN-1");
+    let key = DeviceKey::from_static(atlas_mock::SIM_FAMILY, "SIM-RUN-1");
     assert!(fleet.set_online(&key, false));
     let seen = driver.discover(&sim_link()).await.expect("discover");
     assert_eq!(seen.len(), 4, "the lost device is not offered");

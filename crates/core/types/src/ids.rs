@@ -59,7 +59,7 @@ impl fmt::Display for Serial {
 ///   family that starts with `@` or contains `:`.
 ///
 /// The text form ([`fmt::Display`]) round-trips through [`DeviceKey::parse`] for every key the
-/// constructors accept. An old `family:serial` string parses as a board key.
+/// checked constructors accept. An old `family:serial` string parses as a board key.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum DeviceKey {
     /// A board's own identity: its family and its serial as the board reports them.
@@ -126,14 +126,14 @@ impl DeviceKey {
         Ok(Self::Node { fingerprint })
     }
 
-    /// A board key for values that are known to be valid, such as a driver's own family and a
-    /// serial it read from the hardware.
+    /// A board key from literals, for constants and tests. Never for values a device reports:
+    /// those go through [`DeviceKey::board`], which returns the reason instead of panicking.
     ///
     /// # Panics
     ///
-    /// If [`DeviceKey::board`] would refuse the parts. Use `board` for values that come from
-    /// outside the program.
-    pub fn new(family: impl Into<String>, serial: impl Into<String>) -> Self {
+    /// If [`DeviceKey::board`] would refuse the literals. A literal that panics is a bug in the
+    /// program, found by its first test.
+    pub fn from_static(family: &'static str, serial: &'static str) -> Self {
         match Self::board(family, serial) {
             Ok(key) => key,
             Err(error) => panic!("{error}"),
@@ -269,7 +269,7 @@ mod tests {
 
     #[test]
     fn a_board_key_round_trips_through_its_text_form() {
-        let key = DeviceKey::new("sample-soc", "1000abcd");
+        let key = DeviceKey::from_static("sample-soc", "1000abcd");
         assert_eq!(key.to_string(), "sample-soc:1000abcd");
         assert_eq!(DeviceKey::parse("sample-soc:1000abcd"), Some(key));
     }
@@ -287,9 +287,9 @@ mod tests {
     #[test]
     fn every_key_the_constructors_accept_parses_back_to_itself() {
         let keys = [
-            DeviceKey::new("sample-soc", "1000abcd"),
-            DeviceKey::new("sample-soc", "serial:with:colons"),
-            DeviceKey::new("sample-soc", " padded "),
+            DeviceKey::from_static("sample-soc", "1000abcd"),
+            DeviceKey::from_static("sample-soc", "serial:with:colons"),
+            DeviceKey::from_static("sample-soc", " padded "),
             DeviceKey::node("ab:cd").unwrap(),
             DeviceKey::node("@at-sign").unwrap(),
         ];
@@ -328,7 +328,7 @@ mod tests {
         assert!(refused.to_string().contains("no board identity"));
         assert!(refused.to_string().contains("ab:cd"));
 
-        let board = DeviceKey::new("sample-soc", "1000abcd");
+        let board = DeviceKey::from_static("sample-soc", "1000abcd");
         let (family, serial) = board.board_identity().unwrap();
         assert_eq!(
             (family.as_str(), serial.as_str()),
@@ -340,13 +340,13 @@ mod tests {
     fn a_board_key_as_an_object_from_before_kinds_still_loads_as_a_board_key() {
         let legacy = r#"{"family":"sample-soc","serial":"1000abcd"}"#;
         let key: DeviceKey = serde_json::from_str(legacy).unwrap();
-        assert_eq!(key, DeviceKey::new("sample-soc", "1000abcd"));
+        assert_eq!(key, DeviceKey::from_static("sample-soc", "1000abcd"));
     }
 
     #[test]
     fn the_stored_form_is_the_text_form_and_round_trips() {
         for key in [
-            DeviceKey::new("sample-soc", "1000abcd"),
+            DeviceKey::from_static("sample-soc", "1000abcd"),
             DeviceKey::node("ab:cd").unwrap(),
         ] {
             let stored = serde_json::to_string(&key).unwrap();

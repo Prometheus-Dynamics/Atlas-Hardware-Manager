@@ -123,7 +123,7 @@ async fn wait_for_job(
 async fn a_job_survives_a_restart_and_finished_steps_do_not_repeat() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("jobs.json");
-    let device = DeviceKey::new("sample-soc", "1000abcd");
+    let device = DeviceKey::from_static("sample-soc", "1000abcd");
 
     // First Atlas: step "a" finishes and is saved; step "b" hangs. Then Atlas stops.
     let events = Events::new(256);
@@ -182,7 +182,7 @@ async fn a_job_that_cannot_resume_is_marked_interrupted_not_dropped() {
     let id = jobs
         .submit(
             "one-shot-kind",
-            DeviceClaim::writes([DeviceKey::new("sample-soc", "1000abcd")]),
+            DeviceClaim::writes([DeviceKey::from_static("sample-soc", "1000abcd")]),
             steps(&["a", "b", "c"]),
         )
         .await
@@ -213,7 +213,7 @@ async fn a_job_that_cannot_resume_is_marked_interrupted_not_dropped() {
     // An interrupted job no longer holds its device.
     jobs.submit(
         "one-shot-kind",
-        DeviceClaim::writes([DeviceKey::new("sample-soc", "1000abcd")]),
+        DeviceClaim::writes([DeviceKey::from_static("sample-soc", "1000abcd")]),
         steps(&["a"]),
     )
     .await
@@ -376,7 +376,7 @@ async fn a_second_job_for_a_held_device_is_refused_naming_the_holder() {
         &events,
     )
     .await;
-    let device = DeviceKey::new("sample-soc", "1000abcd");
+    let device = DeviceKey::from_static("sample-soc", "1000abcd");
 
     let first = jobs
         .submit(
@@ -411,7 +411,7 @@ async fn a_second_job_for_a_held_device_is_refused_naming_the_holder() {
     let other = jobs
         .submit(
             "update-kind",
-            DeviceClaim::writes([DeviceKey::new("sample-soc", "2000beef")]),
+            DeviceClaim::writes([DeviceKey::from_static("sample-soc", "2000beef")]),
             steps(&["go"]),
         )
         .await
@@ -433,7 +433,7 @@ async fn a_second_job_for_a_held_device_is_refused_naming_the_holder() {
 async fn a_claim_is_restored_after_a_restart_while_the_job_is_active() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("jobs.json");
-    let device = DeviceKey::new("sample-soc", "1000abcd");
+    let device = DeviceKey::from_static("sample-soc", "1000abcd");
 
     let events = Events::new(256);
     let mut rx = events.subscribe();

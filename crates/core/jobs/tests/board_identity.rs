@@ -97,7 +97,7 @@ async fn a_flash_job_takes_a_board_key_and_an_inspect_takes_a_node_key() {
     let dir = tempfile::tempdir().unwrap();
     let jobs = open(dir.path()).await;
 
-    let board = DeviceKey::new("sample-soc", "1000abcd");
+    let board = DeviceKey::from_static("sample-soc", "1000abcd");
     let flashed = jobs
         .submit("flash", DeviceClaim::writes([board]), steps())
         .await;

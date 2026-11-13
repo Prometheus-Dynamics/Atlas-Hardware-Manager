@@ -85,12 +85,12 @@ impl fmt::Debug for RockchipDriver {
 /// The stable key: the serial when the device reports one, else its USB port.
 /// A port can change if the device is moved, which is the best a boot ROM
 /// without a serial offers.
-fn key_for(device: &DeviceSummary) -> DeviceKey {
+fn key_for(device: &DeviceSummary) -> Result<DeviceKey, atlas_types::KeyError> {
     let serial = device
         .serial
         .clone()
         .unwrap_or_else(|| format!("usb-{}", device.location));
-    DeviceKey::new(FAMILY, serial)
+    DeviceKey::board(FAMILY, serial)
 }
 
 #[async_trait]
@@ -135,7 +135,7 @@ impl Driver for RockchipDriver {
                 ))
             })?;
         Ok(Identity {
-            key: key_for(device),
+            key: key_for(device).map_err(|error| DriverError::Incompatible(error.reason))?,
             model: format!(
                 "Rockchip boot ROM ({:04x}:{:04x})",
                 device.vendor, device.product

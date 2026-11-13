@@ -39,7 +39,7 @@ impl Drop for Scratch {
 fn sample() -> Inventory {
     let mut inventory = Inventory::new();
     let identity = Identity {
-        key: DeviceKey::new("sample-soc", "1000abcd"),
+        key: DeviceKey::from_static("sample-soc", "1000abcd"),
         model: "sample-board".into(),
         state: atlas_types::DeviceState::Running,
         lemnos: atlas_types::LemnosState::Absent,
@@ -51,7 +51,7 @@ fn sample() -> Inventory {
     };
     inventory.observe(identity, LinkKind::Ethernet, CapabilitySet::new(), 1_000);
     inventory.set_label(
-        &DeviceKey::new("sample-soc", "1000abcd"),
+        &DeviceKey::from_static("sample-soc", "1000abcd"),
         Some("cam".into()),
         2_000,
     );
@@ -257,7 +257,7 @@ fn save_then_edit(scratch: &Scratch, edit: impl FnOnce(&mut serde_json::Value)) 
     let mut inventory = sample();
     inventory.observe(
         Identity {
-            key: DeviceKey::new("sample-soc", "2000beef"),
+            key: DeviceKey::from_static("sample-soc", "2000beef"),
             model: "sample-board".into(),
             state: atlas_types::DeviceState::Running,
             lemnos: atlas_types::LemnosState::Absent,
@@ -297,7 +297,7 @@ fn unknown_values_inside_a_record_drop_only_those_values() {
         }
     );
     let record = loaded
-        .get(&DeviceKey::new("sample-soc", "1000abcd"))
+        .get(&DeviceKey::from_static("sample-soc", "1000abcd"))
         .unwrap();
     assert!(
         record
@@ -338,12 +338,12 @@ fn an_unreadable_record_costs_only_that_record() {
     );
     assert!(
         loaded
-            .get(&DeviceKey::new("sample-soc", "1000abcd"))
+            .get(&DeviceKey::from_static("sample-soc", "1000abcd"))
             .is_some()
     );
     assert!(
         loaded
-            .get(&DeviceKey::new("sample-soc", "2000beef"))
+            .get(&DeviceKey::from_static("sample-soc", "2000beef"))
             .is_none()
     );
     assert!(scratch.file().exists(), "a readable file is not set aside");
@@ -392,7 +392,7 @@ fn a_file_written_before_keys_and_lemnos_states_loaded_as_board_devices() {
         }
     );
     let record = loaded
-        .get(&DeviceKey::new("sample-soc", "2000beef"))
+        .get(&DeviceKey::from_static("sample-soc", "2000beef"))
         .expect("the older record loads under its board key");
     assert!(record.key.is_board());
     assert_eq!(record.identity.lemnos, atlas_types::LemnosState::Absent);

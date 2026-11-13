@@ -138,7 +138,10 @@ mod tests {
             "address": "10.0.0.2"
         }"#;
         let identity: Identity = serde_json::from_str(before).unwrap();
-        assert_eq!(identity.key, DeviceKey::new("sample-soc", "1000abcd"));
+        assert_eq!(
+            identity.key,
+            DeviceKey::from_static("sample-soc", "1000abcd")
+        );
         assert_eq!(identity.lemnos, LemnosState::Absent);
         assert!(identity.attributes.is_empty());
     }

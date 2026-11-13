@@ -95,7 +95,7 @@ async fn read(net: &RobotNet, ip: Ipv4Addr, team: u16) -> Result<Identity, Drive
             services.push(*name);
         }
     }
-    Ok(identity(ip, team, phoenix.as_ref(), &services))
+    identity(ip, team, phoenix.as_ref(), &services)
 }
 
 /// Phoenix's version, when robot code runs its diagnostics server and the answer
@@ -116,7 +116,7 @@ fn identity(
     team: u16,
     phoenix: Option<&PhoenixVersion>,
     services: &[&str],
-) -> Identity {
+) -> Result<Identity, DriverError> {
     let hostname = ROBORIO_HOSTNAME.replace("{team}", &team.to_string());
     let mut versions = std::collections::BTreeMap::new();
     let mut model = "roboRIO".to_string();
@@ -140,8 +140,10 @@ fn identity(
         ),
         (ATTR_SERVICES, services.join(",")),
     ];
-    Identity {
-        key: DeviceKey::new(ROBORIO_FAMILY, team.to_string()),
+    let key = DeviceKey::board(ROBORIO_FAMILY, team.to_string())
+        .map_err(|error| DriverError::Incompatible(error.reason))?;
+    Ok(Identity {
+        key,
         model,
         state: DeviceState::RobotDevice,
         lemnos: atlas_types::LemnosState::Absent,
@@ -153,7 +155,7 @@ fn identity(
             .into_iter()
             .map(|(name, value)| (name.to_string(), value))
             .collect(),
-    }
+    })
 }
 
 /// The robot controllers to look for on this link: the controller address of
@@ -379,7 +381,7 @@ mod tests {
             Fake::new().reach(),
             Arc::new(BTreeSet::new()),
         ));
-        let identity = identity(rio(), 6390, None, &[]);
+        let identity = identity(rio(), 6390, None, &[]).unwrap();
         let set = driver.capabilities(&identity);
         assert_eq!(
             set.shown(S::RobotDevice),

@@ -68,10 +68,10 @@ mod tests {
     #[test]
     fn gateways_match_regardless_of_parent() {
         let a = LinkKind::Gateway {
-            via: DeviceKey::new("sample-soc", "a"),
+            via: DeviceKey::from_static("sample-soc", "a"),
         };
         let b = LinkKind::Gateway {
-            via: DeviceKey::new("sample-soc", "b"),
+            via: DeviceKey::from_static("sample-soc", "b"),
         };
         assert!(a.same_kind(&b));
         assert!(!a.same_kind(&LinkKind::Ethernet));
