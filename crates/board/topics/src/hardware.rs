@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use atlas_session::{Handle, SessionError};
+use atlas_session::{Handle, Presence, SessionError};
 use atlas_types::{Identity, LinkId};
 
 use crate::device::{Availability, Device, Freshness, RawDevice, describe};
@@ -124,12 +124,17 @@ impl Hardware {
     /// Reads the node now and returns what the app shows. Never an error: a read that cannot be
     /// made is in the [`Connection`], and the devices shown are stale.
     pub async fn snapshot(&self) -> Snapshot {
-        let key = self.handle.address().to_string();
+        let address = self.handle.address().to_string();
+        // The connection this read is for: the node as the monitor saw it when it connected.
+        let session = match self.handle.presence() {
+            Presence::Found(node) => format!("{}/{}", node.fingerprint, node.time_ms),
+            _ => String::new(),
+        };
         let link = self.link.clone();
-        let address = key.clone();
+        let key = address.clone();
         let answer = self
             .handle
-            .with_client(move |orion| read::read(orion, &key, &link, &address))
+            .with_client(move |orion| read::read(orion, &key, &session, &link))
             .await;
         let now = Instant::now();
         let mut state = lock(&self.state);

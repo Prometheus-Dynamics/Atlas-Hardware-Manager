@@ -214,26 +214,43 @@ async fn a_session_drop_is_stale_since_its_last_read_and_the_return_says_everyth
     }
 
     // The node comes back on the same port: the session is made again, and everything is said
-    // again (the subscriptions are made on the new session and the readings are current).
+    // again. The readings are current again once the new session has read them.
     let node = start(&dir, Some(port));
-    let back = read_until(&hardware, "the return", |snapshot| {
-        snapshot.connection == Connection::Live && all_read(snapshot)
-    })
+    let back = read_until(
+        &hardware,
+        "the return, with every device current",
+        |snapshot| {
+            snapshot.connection == Connection::Live
+                && all_read(snapshot)
+                && snapshot
+                    .devices
+                    .iter()
+                    .all(|device| device.freshness == Freshness::Live)
+        },
+    )
     .await;
-    assert!(
-        back.devices
-            .iter()
-            .all(|device| device.freshness == Freshness::Live)
-    );
+    assert_eq!(back.devices.len(), 2);
 
-    node.model().log("after the return");
-    read_until(&hardware, "the log line after the return", |snapshot| {
-        snapshot
+    // A line written on the new node reaches a subscriber that has just been made. A line
+    // written before the subscription is live is not sent to a network subscriber (see the
+    // LOCK note in the simulated readings), so the line is written again until it arrives.
+    let deadline = Instant::now() + DEADLINE;
+    loop {
+        node.model().log("after the return");
+        let snapshot = hardware.snapshot().await;
+        if snapshot
             .logs
             .iter()
             .any(|line| line.text == "after the return")
-    })
-    .await;
+        {
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the log line never came: {snapshot:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
 }
 
 #[tokio::test]

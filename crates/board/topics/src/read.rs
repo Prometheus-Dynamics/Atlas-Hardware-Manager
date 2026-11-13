@@ -3,9 +3,10 @@
 //! This runs only inside [`atlas_session::Handle::with_client`], on the node's monitor thread,
 //! which is the one place Orion's client may be used. A subscription is made once for each
 //! session and kept: a topic's subscriber is not Send, so it lives on that thread, in a slot
-//! keyed by the node's address. The session's number (`Welcomed::session`) says which session a
-//! slot belongs to; a slot from an earlier session is dropped when the number changes, and its
-//! subscriptions are made again on the new one. Nothing is subscribed twice in one session, and
+//! keyed by the node's address. The slot names the connection it belongs to (the node's identity
+//! as its monitor saw it on connect); a slot from an earlier connection is dropped, and its
+//! subscriptions are made again on the new one. The comm core's session number is not used: a
+//! restarted node numbers its sessions again from the start. Nothing is subscribed twice in one session, and
 //! nothing is subscribed that a session does not need, so the slots are bounded by the topics
 //! the node lists.
 
@@ -45,28 +46,35 @@ pub(crate) struct Read {
 /// The subscriptions and identity one session holds.
 #[derive(Default)]
 struct Live {
-    session: Option<u32>,
+    /// Which connection this state belongs to: see [`read`].
+    session: Option<String>,
     identity: Option<Identity>,
     topics: BTreeMap<String, Subscriber>,
     logs: Option<Subscriber>,
 }
 
-/// Reads the node at `key` (its address) on `orion`'s session. The outer `Err` is the session
-/// (the caller applies the failure rule); the inner `Err` is a reading this crate cannot make
-/// from what the node said (the session is up).
+/// Reads the node at `address` on `orion`'s connection, which is the connection `session` names.
+///
+/// The state kept for the node is for one connection. `session` is the node's identity as the
+/// monitor saw it on connect (its key fingerprint and clock at that connect): every connection
+/// has its own, where the comm core's session number is reused by a restarted node and cannot
+/// tell two connections apart. A state from another connection is dropped, and its
+/// subscriptions are made again on this one.
+///
+/// The outer `Err` is the session (the caller applies the failure rule); the inner `Err` is a
+/// reading this crate cannot make from what the node said (the session is up).
 pub(crate) fn read(
     orion: &Orion,
-    key: &str,
-    link: &LinkId,
     address: &str,
+    session: &str,
+    link: &LinkId,
 ) -> Result<Result<Read, String>, orion::Error> {
-    let session = orion.welcomed().session;
     LIVE.with(|cell| {
         let mut slots = cell.borrow_mut();
-        let live = slots.entry(key.to_owned()).or_default();
-        if live.session != Some(session) {
+        let live = slots.entry(address.to_owned()).or_default();
+        if live.session.as_deref() != Some(session) {
             *live = Live {
-                session: Some(session),
+                session: Some(session.to_owned()),
                 ..Live::default()
             };
         }
