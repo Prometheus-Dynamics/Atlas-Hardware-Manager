@@ -18,3 +18,10 @@ defconfig = "radxa-cubie-a7a_defconfig"
 # OPEN: the DRAM blob. The A7A record says 4 GB LPDDR5 (UNCONFIRMED). The A7S blob is the one
 # candidate (radxa-pkg/u-boot-dlan17 @ b1cec0a9, awbin/a733/ddr.bin, closed, no grant); it is
 # not pinned here until its SKU match is known. Never published in an image.
+
+# B19 (2026-11-13): ports and LEDs, from Radxa's A7A page (no schematic read; no dts exists to check against).
+#   USB: one USB Type-C "OTG/power" port is the only device-capable port on the A7A page (USB 2.0, the 5 V input).
+#     Which PHY index and whether its VBUS is sourced: UNKNOWN (no dts for the A7A). OPEN: a device-mode entry
+#     must not be written until the A7A dts shows no VBUS regulator on that PHY index (the B15 phy-supply rule).
+#   LEDs: power (green) and status (blue; "blinks when the system boots normally", Radxa). GPIO: UNKNOWN. OPEN.
+#   The A7A bring-up is BLOCKED on the missing kernel dts above (no LED GPIO, no USB wiring, no DRAM SKU match).
