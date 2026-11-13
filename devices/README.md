@@ -50,7 +50,9 @@ still checked.
 Every family, board, component and product is its own directory, holding its description file.
 Other files may sit beside the description (assets, a component's `src/`, a fragment, `app/`). The
 check validates only the description files, but it does require that every family, board and
-component is named by a product or a board, because Gaia reads a file only through one of those.
+component is checked. One that no product or board names yet is validated on its own and
+listed in a NOTE line as "in no product yet": it is a record, never planned or built, until a
+product names it.
 An app-only board is named by nothing, which is why it is skipped rather than failed.
 
 ## Gaia's format (what Gaia `next` reads at the pin)
@@ -201,6 +203,6 @@ These hold at Gaia `70a5133`, the pin in `gaia.lock`, and each was tested with t
    validate, and only `gaia plan` refuses it. Blob keys and `kernel.overlays` are the same: validate
    passes them, plan refuses them.
 
-A board with no product fails the unreferenced rule above. `gaia validate` checks a board alone
-(`--kind board`), but the check still needs a product to name it, since Gaia reads a board only
-through one.
+A board with no product is validated on its own (`gaia validate --kind board`) and listed as "in no
+product yet". It is never planned, so plan-time rules (recipe names, blob keys, `kernel.overlays`)
+are not checked for it until a product names it.
