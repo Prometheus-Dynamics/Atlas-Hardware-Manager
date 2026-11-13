@@ -19,7 +19,9 @@ use serde_json::Value;
 
 /// A node for one test, in its own directory.
 fn start(name: &str) -> SimNode {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("sim-trial-{name}"));
+    // Under the system temp dir and short: the node's Unix socket path must fit SUN_LEN, and a
+    // long build path (CI's workspace) would not.
+    let dir = std::env::temp_dir().join(format!("atl-trial-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     SimNode::start(&dir).expect("the simulated node starts")
 }
