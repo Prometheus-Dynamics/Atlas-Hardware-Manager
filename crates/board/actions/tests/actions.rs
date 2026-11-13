@@ -17,7 +17,7 @@ use atlas_actions::{
     Reported, Route,
 };
 use atlas_jobs::{Backoff, DeviceHolds, Events, JobId, JobStatus, JobTiming};
-use atlas_session::{Handle, Lease, Pause, Presence, Sessions};
+use atlas_session::{Clock, Handle, Lease, Pause, Presence, Sessions};
 use atlas_sim_node::actions::DRY_RUN;
 use atlas_sim_node::names::SELF_TEST;
 use atlas_sim_node::script::Behaviour;
@@ -599,13 +599,18 @@ async fn progress_is_reported_while_a_run_goes_and_ends_with_its_result() {
 #[tokio::test]
 async fn a_board_that_drops_the_hold_on_a_long_action_is_reported_as_a_lapse_then_as_the_drop() {
     let node = start(&scratch("lapse").join("node"), &lemnos_kind());
-    // Atlas renews only once its silence is over the lease period, which here never comes: the
-    // period is short, so silence with a hold is a lapse at once.
-    let sessions = Arc::new(Sessions::new(Arc::new(NoPause)).with_lease(Lease {
-        period: Duration::from_millis(300),
-        renew: Duration::from_secs(3600),
-        in_force: true,
-    }));
+    // The session's lease is on a manual clock: the lapse is an advance of that clock, not a wait. The
+    // renew is far away, so nothing renews the lease but the job's own requests.
+    let clock = Clock::manual();
+    let sessions = Arc::new(
+        Sessions::new(Arc::new(NoPause))
+            .with_lease(Lease {
+                period: Duration::from_secs(60),
+                renew: Duration::from_secs(3600),
+                in_force: true,
+            })
+            .with_clock(clock.clone()),
+    );
     let address = address(&node);
     let handle = sessions.handle(&address).expect("the node is on");
     connected(&handle).await;
@@ -623,7 +628,8 @@ async fn a_board_that_drops_the_hold_on_a_long_action_is_reported_as_a_lapse_the
         .expect("the job is queued");
     until("the run to start and stall", || node.stalled_runs() == 1).await;
 
-    // The session is silent with the hold on the board: the job learns of the lapse.
+    // The session is silent past the lease with the hold on the board: the job learns of the lapse.
+    clock.advance(Duration::from_secs(61));
     wait_status(&jobs, id, "the job to report the lapse", |status| {
         matches!(status, JobStatus::Retrying { error, .. } if error.contains("may have dropped the hold"))
     })
