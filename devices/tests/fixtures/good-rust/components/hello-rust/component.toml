@@ -1,0 +1,26 @@
+# EXAMPLE, for scripts/check-devices.sh only. Not a device.
+# A Rust component in the form Gaia 4abf626 reads (hello-rust in Gaia's examples): one cargo
+# package, its source a path in this directory, its build image pinned by the lock, the target
+# and crates taken from the board and Cargo.lock.
+version = 1
+name = "hello-rust"
+description = "Example Rust component (fixture)"
+
+[sources.src]
+path = "src"
+
+[sources.root]
+image = "docker.io/library/debian:trixie-slim"
+platform = "host"
+
+[build]
+builder = "rust"
+source = "src"
+
+[build.settings]
+package = "hello-rust"
+
+[[install]]
+from = "bin/hello-rust"
+to = "/usr/bin/hello-rust"
+mode = "0755"
