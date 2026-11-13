@@ -1,0 +1,3 @@
+# EXAMPLE fragment.
+BR2_example=y
+BR2_FRAGMENT_DIR="@here@"
