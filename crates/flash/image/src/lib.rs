@@ -7,17 +7,23 @@
 //!
 //! - `slots/<id>.erofs`: the slot's file, the EROFS image with its dm-verity tree
 //!   appended;
-//! - `slots/<id>.json`: the slot's manifest (its `verity.root_hash`, `image.size`,
+//! - `slots/<id>.json`: the slot's manifest, schema 3 (its `verity.root_hash`,
+//!   `verity.salt`, `verity.data_blocks`, `verity.hash_offset`, `image.size`,
 //!   `image.sha256`, and the boot files by sha256);
 //! - `slots/<id>.boot`: the boot list, `<sha256>  <path>` per file, including
 //!   `slot.json`;
 //! - `slots/bootfiles/<sha256>`: the boot files, kept by content.
 //!
-//! The reader gives back the slot's file, its manifest and its boot files, each
-//! byte for byte, and refuses anything that does not agree with its own names:
-//! a boot file whose content is not the sha256 in its name, a manifest that
-//! names another slot, a boot list that disagrees with the manifest, or an
-//! erofs whose length is not `image.size`.
+//! The reader gives back the slot's file, its manifest, its verity values and its
+//! boot files, each byte for byte, and refuses anything that does not agree with
+//! its own names: a boot file whose content is not the sha256 in its name, a
+//! manifest that names another slot or is not schema 3, a boot list that disagrees
+//! with the manifest, verity values that do not fit the layout in [`verity`], or an
+//! erofs whose length is not the data plus its whole tree.
+//!
+//! What is trusted at boot is the root hash, from the kernel command line. A
+//! signature over the manifest protects what is installed; it does not make a
+//! slot "verified boot".
 //!
 //! # How it reads
 //!
@@ -52,7 +58,8 @@
 //! The erofs file's own bytes are not hashed at open (a slot can be gigabytes):
 //! [`Slot::image_sha256`] is the manifest's claim, and the bundle writer or the
 //! board's verity check is what proves it. The verity tree is not recomputed:
-//! the manifest's root hash is exposed as written.
+//! the manifest's root hash is exposed as written ([`Verity`] is checked for
+//! layout only).
 
 mod budget;
 mod error;
@@ -62,6 +69,7 @@ mod manifest;
 mod names;
 mod route;
 mod scratch;
+pub mod verity;
 
 use std::collections::BTreeMap;
 use std::fs::File;
@@ -72,6 +80,7 @@ use ext4_view::Ext4;
 use sha2::{Digest, Sha256};
 
 pub use error::ImageError;
+pub use verity::{BLOCK, Verity, VerityError, tree_bytes};
 
 use crate::budget::Budget;
 use crate::manifest::Manifest;
@@ -373,6 +382,13 @@ impl Slot<'_> {
     /// The manifest's `verity.root_hash`, lowercase hex, as written.
     pub fn root_hash(&self) -> &str {
         &self.data.manifest.verity.root_hash
+    }
+
+    /// The manifest's four verity values (`verity.root_hash`, `verity.salt`,
+    /// `verity.data_blocks`, `verity.hash_offset`), checked against the layout and
+    /// the slot file's length when the image was read.
+    pub fn verity(&self) -> &Verity {
+        &self.data.manifest.verity
     }
 
     /// The manifest's `image.sha256` (the slot file's digest), as written. Not

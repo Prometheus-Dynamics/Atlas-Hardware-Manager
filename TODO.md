@@ -32,6 +32,8 @@ Every board as Gaia `next` data in `devices/`. Starts first; the Raze and the ZE
 - [ ] [B8](docs/prs/B8.md) SystemCore and robot devices (wave 2; needs B1)
 - [ ] [B9](docs/prs/B9.md) The flasher image, per family (wave 3; needs B2, B3)
 - [ ] [B10](docs/prs/B10.md) App data for every board (wave 3; needs A6, B1)
+- [ ] [B11](docs/prs/B11.md) Bring-up products for the ROCK 5C and ROCK 4D (wave 4; needs B4)
+- [ ] [B12](docs/prs/B12.md) Allwinner A733: a candidate source tree, and a bring-up product for the Cubie A7 boards (wave 4; needs B5)
 
 ## C. One board driver
 
