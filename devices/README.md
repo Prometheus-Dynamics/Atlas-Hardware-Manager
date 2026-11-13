@@ -281,7 +281,7 @@ Every Lemnos component of a product (lemnosd, lemnos-ctl, lemnos-orion, lemnos-s
 does not boot reliably. The pin is the `ref` of each component in `components/lemnos*/component.toml`
 (and `components/lemnos/component.toml` for the packaging); the product lock records the commit each
 source resolved to. The check fails a product whose lock pins two Lemnos commits, and names both.
-The current rev is `4a2d3b7d` (PR B18). To move it: change every `ref` above to the full commit, run
+The current rev is `d6b9361d` (L1; PR B18 locked 4a2d3b7d, PR B23 moved it to d6b9361d). To move it: change every `ref` above to the full commit, run
 `scripts/check-devices.sh --write-locks`, and commit the components and every changed `gaia.lock`
 together. The board files (`lemnos-board.toml`) follow the rev's board-file format, and `lemnos-ctl
 validate` and `lemnos-ctl tree` at that rev are the check for them (run from a build of that rev).
