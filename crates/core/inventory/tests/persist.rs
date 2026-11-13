@@ -159,6 +159,58 @@ fn a_file_from_a_newer_atlas_loads_what_this_build_understands() {
 }
 
 #[test]
+fn a_newer_file_is_copied_aside_before_the_first_save_over_it() {
+    let scratch = Scratch::new("newer-copy");
+    let newer = br#"{"version":7,"devices":[],"future-field":true}"#;
+    fs::write(scratch.file(), newer).unwrap();
+    let store = JsonFileStore::new(scratch.file());
+    store.save(&sample()).unwrap();
+
+    let copy = scratch.0.join("inventory.json.newer-7");
+    assert_eq!(fs::read(&copy).unwrap(), newer, "the copy is the old bytes");
+    let saved: serde_json::Value =
+        serde_json::from_slice(&fs::read(scratch.file()).unwrap()).unwrap();
+    assert_eq!(saved["version"], 1, "the save wrote this build's format");
+}
+
+#[test]
+fn an_existing_newer_copy_is_never_overwritten() {
+    let scratch = Scratch::new("newer-copy-kept");
+    let copy = scratch.0.join("inventory.json.newer-7");
+    fs::write(&copy, br#"{"version":7,"first":true}"#).unwrap();
+    fs::write(
+        scratch.file(),
+        br#"{"version":7,"devices":[],"second":true}"#,
+    )
+    .unwrap();
+
+    JsonFileStore::new(scratch.file())
+        .save(&Inventory::new())
+        .unwrap();
+
+    assert_eq!(
+        fs::read(&copy).unwrap(),
+        br#"{"version":7,"first":true}"#,
+        "the first copy stays"
+    );
+}
+
+#[test]
+fn a_current_or_older_file_gets_no_copy() {
+    let scratch = Scratch::new("no-copy");
+    fs::write(scratch.file(), br#"{"version":1,"devices":[]}"#).unwrap();
+    JsonFileStore::new(scratch.file())
+        .save(&Inventory::new())
+        .unwrap();
+    let copies: Vec<_> = fs::read_dir(&scratch.0)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name())
+        .filter(|name| name.to_string_lossy().contains(".newer-"))
+        .collect();
+    assert!(copies.is_empty(), "no copy for a current file: {copies:?}");
+}
+
+#[test]
 fn a_crash_mid_save_leaves_the_last_good_file() {
     let scratch = Scratch::new("crash");
     let store = JsonFileStore::new(scratch.file());

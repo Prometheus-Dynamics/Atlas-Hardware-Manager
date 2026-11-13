@@ -3,7 +3,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use tokio::time::{Instant, sleep};
 
-use crate::{DeviceSummary, OpenOptions, UsbError, UsbIo};
+use crate::{DeviceSummary, InterfaceSummary, OpenOptions, Timeouts, UsbError, UsbIo};
 
 /// The devices on the bus, and opening one of them.
 #[async_trait]
@@ -14,6 +14,102 @@ pub trait UsbBus: Send + Sync {
     /// Opens the device at `location` and claims its interface.
     async fn open(&self, location: &str, options: &OpenOptions)
     -> Result<Box<dyn UsbIo>, UsbError>;
+
+    /// The interfaces of the device at `location`: class, interface string
+    /// and endpoints. Each interface string is read from the device with
+    /// `timeouts`, so a device that does not answer fails here instead of
+    /// hanging. A bus that cannot list interfaces says so.
+    async fn interfaces(
+        &self,
+        _location: &str,
+        _timeouts: Timeouts,
+    ) -> Result<Vec<InterfaceSummary>, UsbError> {
+        Err(UsbError::Other(
+            "this USB bus cannot list interfaces".into(),
+        ))
+    }
+}
+
+/// An interface whose string matched, and the device it is on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InterfaceMatch {
+    pub device: DeviceSummary,
+    pub interface: InterfaceSummary,
+}
+
+/// A device a scan could not ask, and why. The scan goes on without it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Skipped {
+    pub location: String,
+    pub error: UsbError,
+}
+
+/// The result of [`find_by_interface_string`].
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Scan {
+    pub matches: Vec<InterfaceMatch>,
+    pub skipped: Vec<Skipped>,
+}
+
+/// Every device on the bus with an interface whose string is `string`. A
+/// device that cannot be opened, stalls its string request or does not
+/// answer it in time is skipped and listed in [`Scan::skipped`], so one bad
+/// device never stops the others from being found.
+pub async fn find_by_interface_string(
+    bus: &dyn UsbBus,
+    string: &str,
+    timeouts: Timeouts,
+) -> Result<Scan, UsbError> {
+    let mut scan = Scan::default();
+    for device in bus.devices().await? {
+        match bus.interfaces(&device.location, timeouts).await {
+            Ok(interfaces) => {
+                scan.matches.extend(
+                    interfaces
+                        .into_iter()
+                        .filter(|interface| interface.string.as_deref() == Some(string))
+                        .map(|interface| InterfaceMatch {
+                            device: device.clone(),
+                            interface,
+                        }),
+                );
+            }
+            Err(error) => scan.skipped.push(Skipped {
+                location: device.location,
+                error,
+            }),
+        }
+    }
+    Ok(scan)
+}
+
+/// Opens the device at `location` and claims only its interface whose string
+/// is `string`. The other interfaces stay with the operating system's
+/// drivers. The returned handle does bulk I/O on that interface's endpoints.
+pub async fn open_interface(
+    bus: &dyn UsbBus,
+    location: &str,
+    string: &str,
+    options: &OpenOptions,
+) -> Result<Box<dyn UsbIo>, UsbError> {
+    let interfaces = bus.interfaces(location, options.timeouts).await?;
+    let interface = interfaces
+        .iter()
+        .find(|interface| interface.string.as_deref() == Some(string))
+        .ok_or_else(|| UsbError::NotFound(format!("interface \"{string}\" at {location}")))?;
+    if !interface.has_bulk_pair() {
+        return Err(UsbError::Protocol(format!(
+            "interface \"{string}\" at {location} has no bulk OUT and IN pair"
+        )));
+    }
+    bus.open(
+        location,
+        &OpenOptions {
+            interface: Some(interface.number),
+            timeouts: options.timeouts,
+        },
+    )
+    .await
 }
 
 const FIRST_RETRY: Duration = Duration::from_millis(100);
@@ -57,12 +153,7 @@ mod tests {
     use crate::sim::SimBus;
 
     fn summary(location: &str) -> DeviceSummary {
-        DeviceSummary {
-            location: location.into(),
-            vendor: 0x1234,
-            product: 0x5678,
-            serial: None,
-        }
+        DeviceSummary::new(location, 0x1234, 0x5678)
     }
 
     /// A bus whose devices always refuse to open.

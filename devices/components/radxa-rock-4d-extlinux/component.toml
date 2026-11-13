@@ -1,0 +1,12 @@
+# extlinux.conf for U-Boot's distro boot, root=PARTLABEL=rootfs (bring-up form).
+# Why: U-Boot's distro boot reads it from the rootfs partition, and the root is
+# named by its label. Moves to the slot boot (record = "uboot") with Gaia's
+# slot recipe, as the ZERO 3E's does.
+version = 1
+name = "radxa-rock-4d-extlinux"
+description = "extlinux.conf for U-Boot's distro boot on the ROCK 4D (bring-up form)."
+
+[[install]]
+from = { file = "extlinux.conf" }
+to = "/boot/extlinux/extlinux.conf"
+mode = "0644"

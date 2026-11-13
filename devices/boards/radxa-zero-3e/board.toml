@@ -1,0 +1,40 @@
+# Radxa ZERO 3E (RK3566, 1 GB LPDDR4, microSD, Gigabit Ethernet, no Wi-Fi) on
+# the rk35xx family. Its OTG port runs in peripheral mode as a USB gadget
+# network (assets/dts, assets/linux.fragment). Untested on board.
+version = 1
+extends = "../../families/rk35xx/family.toml"
+name = "radxa-zero-3e"
+description = "Radxa ZERO 3E (RK3566)"
+
+[target]
+cpu = "cortex-a55"
+
+# Lists replace the family's, so both fragment files are named here.
+# The booted device tree is the gadget variant (the OTG port in peripheral
+# mode); the in-tree rk3566-radxa-zero-3e.dts is included by it.
+[kernel]
+device_tree = "rockchip/rk3566-radxa-zero-3e-gadget"
+device_tree_dir = "assets/dts"
+fragments = ["../../families/rk35xx/assets/linux.fragment", "assets/linux.fragment"]
+
+[bootloader]
+defconfig = "radxa-zero-3-rk3566"
+
+# U-Boot's make variable ROCKCHIP_TPL: the DDR init blob, RK3566 v1.26 at
+# rkbin 3e288fe.
+# NOT VERIFIED ON HARDWARE, AND SUSPECT (2026-11-13): Gaia's first bring-up
+# image with this blob did not boot. dev's working image used rkbin f43a462e
+# with rk3566_ddr_1056MHz_v1.23.bin. A rebuilt image with v1.23 is the test;
+# when it boots, this pin moves back to f43a462e / v1.23 and says so here.
+# Other boards must not copy this version: pin a blob only to a version that
+# has booted that board.
+[bootloader.blobs]
+ROCKCHIP_TPL = { source = "rkbin", path = "bin/rk35/rk3566_ddr_1056MHz_v1.26.bin" }
+
+[bootloader.trusted_firmware]
+platform = "rk3568"
+
+# The maskrom loader's RKBOOT ini: names the DDR init and usbplug above and
+# the output rk356x_loader_v1.26.114.bin that boot_merger builds from it.
+[flash.files]
+loader_ini = { source = "rkbin", path = "RKBOOT/RK3566MINIALL.ini" }

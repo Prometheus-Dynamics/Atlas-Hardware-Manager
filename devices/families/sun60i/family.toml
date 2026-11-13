@@ -1,0 +1,29 @@
+# Allwinner A733 (sun60i) family: Radxa Cubie A7A, A7S and A7Z. aarch64 Linux, written by
+# Atlas's own FEL loader over USB, then the microSD card. Holds what the three boards share.
+#
+# RECORDS, NOT BUILDABLE DESCRIPTIONS. untested on board. Sources missing (nobody has chosen them;
+# dev pins none):
+#   - kernel source and its pin (git + ref), and a defconfig if it is not the arch default
+#   - U-Boot source and pin, for the FEL SPL and the U-Boot that FEL runs
+#   - TF-A source and pin (the A733 platform)
+#   - OS source: a Buildroot git source and its fragments (the product's os.source)
+#   - FEL SPL: the eGON SPL file for the loader (dev names only a glob, u-boot-sunxi-with-spl*.bin)
+#   - SRAM layout for the FEL thunk (the family's sram is null in dev's record)
+#   - AArch64 thunk for FEL: dev's thunk is ARMv7; the A733 is AArch64, so a new one is needed
+#   - microSD device path for the slot (dev records none)
+#   - [target] cpu: the A733 is two Cortex-A76 and six Cortex-A55; one value does not fit both
+#
+# Slot boot on U-Boot boards (record = "uboot", settled by Lemnos): boot-record.env on the boot
+# partition, one extlinux.conf per slot, and one static boot.cmd (Lemnos) compiled to boot.scr.
+# TODO: the U-Boot fragment needs sysboot/extlinux, env import/export, `test`, and FAT write.
+# Exact CONFIG_ option names come from Gaia after it builds one; none guessed here.
+version = 1
+
+[target]
+arch = "aarch64"
+os = "linux"
+
+# Written by FEL (the boot ROM's USB download mode), then the microSD card. A board's
+# record decides the storage target; this family's default is the SD card.
+[flash]
+methods = ["fel", "sd-card"]

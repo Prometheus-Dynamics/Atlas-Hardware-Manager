@@ -48,12 +48,7 @@ fn usb_link() -> Link {
 }
 
 fn device(location: &str, vendor: u16, product: u16) -> DeviceSummary {
-    DeviceSummary {
-        location: location.into(),
-        vendor,
-        product,
-        serial: None,
-    }
+    DeviceSummary::new(location, vendor, product)
 }
 
 fn candidate(location: &str) -> Candidate {

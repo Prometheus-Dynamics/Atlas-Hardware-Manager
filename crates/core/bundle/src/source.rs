@@ -7,8 +7,8 @@
 //! the boot files twice (once to hash them into `slot.json`, once to write
 //! them into the tar), so a source must give the same bytes both times.
 //!
-//! The real source (a streaming xz decoder and a read-only ext4 and FAT
-//! reader over a bounded window) is blocked on Gaia X3; see the crate docs.
+//! The real source is [`crate::ImageSource`], over `atlas-image`'s slot. Its
+//! verity table is the one part the image cannot give yet; see the crate docs.
 
 use std::io::Read;
 

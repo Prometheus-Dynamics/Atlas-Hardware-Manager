@@ -1,0 +1,20 @@
+# Each line says why it is here (standing rule).
+# CONFIG_ENV_SIZE, CONFIG_PARTITION_TYPE_GUID, CONFIG_ENV_IS_IN_MMC: the
+#   environment lives in the empty `uboot-env` partition found by its GUID
+#   (family.toml), so the built-in environment boots from the microSD (MMC).
+# CONFIG_ENV_IS_NOWHERE is not set: undoes the default that would drop the env.
+# CONFIG_TOOLS_MKEFICAPSULE is not set: its PKCS#11 signing needs a GnuTLS built
+#   with p11-kit, which Buildroot's host-gnutls is not (dev's note; the tool is
+#   not used by Atlas).
+CONFIG_ENV_SIZE=0x10000
+CONFIG_PARTITION_TYPE_GUID=y
+# CONFIG_ENV_IS_NOWHERE is not set
+CONFIG_ENV_IS_IN_MMC=y
+# CONFIG_TOOLS_MKEFICAPSULE is not set
+
+# PLACEHOLDER, not yet config names: `record = "uboot"` slot boot (Lemnos) needs
+# this U-Boot to have, built in: (1) sysboot / extlinux (distro boot reads
+# extlinux.conf); (2) env import and export (boot-record.env on the boot
+# partition); (3) the `test` command (boot.cmd uses it); (4) FAT write (the
+# boot partition is FAT). Gaia will give the CONFIG_ names after it builds one;
+# do not guess them here.

@@ -1,0 +1,9 @@
+# Radxa ZERO 3E bring-up only, on top of zero-3e-base's os.fragment.
+# Every line says why it is here (standing rule).
+
+# SSH server for the bench key: the only way in until Orion serves SSH on the
+# board. dropbear.service is enabled by dev-bench-ssh-key's [[services]] entry.
+BR2_PACKAGE_DROPBEAR=y
+
+# Not carried from dev: BR2_PACKAGE_BUSYBOX udhcpd (dev's DHCP server for usb0).
+# systemd-networkd's DHCPServer does that job now (10-usb0.network).

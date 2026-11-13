@@ -1,5 +1,4 @@
 # Ignored until G8, so parallel PRs cannot conflict on it.
-Cargo.lock
 target/
 **/__pycache__/
 *.py[cod]
