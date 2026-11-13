@@ -559,7 +559,7 @@ async fn a_plain_orion_node_lists_no_actions_and_says_why() {
     connected(&handle).await;
     let error = BoardActions::new(handle).catalog().await.unwrap_err();
     assert!(
-        matches!(error, ActionError::NoCatalog(_)),
+        matches!(&error, ActionError::Refused(reason) if !reason.is_empty()),
         "a plain node is a normal node with no list: {error:?}"
     );
 }

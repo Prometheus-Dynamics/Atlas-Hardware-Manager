@@ -54,8 +54,8 @@ pub const DIRECT_WAIT: Duration = Duration::from_secs(2);
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Done {
     /// What the action returned.
-    // LOCK: until Lemnos M8 the bridge refuses a method that returns through an out buffer, so an
-    // output that comes from one is not readable on a real board yet.
+    // LOCK: Lemnos M8 (5dcf1a78) lets the bridge call a method that returns through an out buffer; the
+    // Atlas lock does not contain it yet, so a real board refuses such an output until the lock moves.
     pub output: Vec<u8>,
     /// What the board said about the result, if it said anything.
     pub detail: String,
@@ -104,27 +104,29 @@ impl BoardActions {
         &self.handle
     }
 
-    /// Reads the board's action list, as one short call. Until Lemnos M8 a real board refuses
-    /// this read (the bridge cannot call a method that returns through an out buffer), so it shows
-    /// as [`ActionError::NoCatalog`]. The simulated node answers it as M8 will.
+    /// Reads the board's action list, as one short call. A board's refusal of the read (a reply
+    /// over the bridge's size bound, or a node that lists nothing) comes back as
+    /// [`ActionError::Refused`] with the board's reason, verbatim. The simulated node answers it
+    /// as Lemnos M8 does.
     ///
     /// # Errors
     ///
-    /// [`ActionError::NoCatalog`] when the node lists no actions (a plain Orion node, or a refusal
-    /// with the node's reason); [`ActionError::NotAnswering`] when the node did not answer;
-    /// [`ActionError::BadCatalog`] when the list is not one Atlas reads.
+    /// [`ActionError::Refused`] (a refusal, with the board's reason; a plain Orion node refuses
+    /// the read because it lists nothing); [`ActionError::NotAnswering`] when the node did not
+    /// answer; [`ActionError::BadCatalog`] when the list is not one Atlas reads.
     pub async fn catalog(&self) -> Result<Catalog, ActionError> {
         // Retry: reading the list changes nothing, so the caller may make it again.
         let done = self
             .direct(CATALOG_ACTION, Vec::new())
             .await
             .map_err(|error| match error {
-                ActionError::Refused(reason)
-                | ActionError::Failed(reason)
-                | ActionError::Cancelled(reason) => ActionError::NoCatalog(reason),
+                // The board's own words, verbatim: a size refusal is never reported as "no actions".
+                refused @ (ActionError::Refused(_)
+                | ActionError::Failed(_)
+                | ActionError::Cancelled(_)) => refused,
                 other => ActionError::NotAnswering(other.to_string()),
             })?;
-        // LOCK: until Lemnos M8 the output of this read is the out buffer the bridge refuses.
+        // LOCK: Lemnos M8 (5dcf1a78): an out-buffer reply is refused by the bridge until the Atlas lock moves.
         let text = String::from_utf8(done.output)
             .map_err(|_| ActionError::BadCatalog("the list is not text".into()))?;
         Catalog::parse(&text).map_err(|error| ActionError::BadCatalog(error.to_string()))
@@ -352,8 +354,8 @@ fn ended(finished: Finished) -> Result<Done, ActionError> {
         }
     };
     match finished.outcome {
-        // LOCK: until Lemnos M8 an action whose output comes from an out buffer is refused by the
-        // bridge; the output here is that buffer.
+        // LOCK: Lemnos M8 (5dcf1a78): an output from an out buffer is refused by the bridge until the
+        // Atlas lock moves; a refusal over 60 KiB comes back by name and is passed on verbatim.
         Outcome::Succeeded => Ok(Done {
             output: finished.output,
             detail,

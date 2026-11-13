@@ -12,10 +12,6 @@ pub enum ActionError {
     /// The board does not list this action, so it is not sent.
     #[error("the board does not list {0}")]
     NotListed(String),
-    /// The node answers, but it lists no actions (a plain Orion node, or one whose list is
-    /// refused). The reason is the node's.
-    #[error("the board lists no actions: {0}")]
-    NoCatalog(String),
     /// The board's list is there but is not a list Atlas reads.
     #[error("the board's action list cannot be read: {0}")]
     BadCatalog(String),
