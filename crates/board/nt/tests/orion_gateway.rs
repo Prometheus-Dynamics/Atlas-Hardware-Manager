@@ -16,7 +16,10 @@ use orion_comm_app::{CommCore, CommSettings};
 use orion_config::Source;
 use tokio::time::timeout;
 
-const WAIT: Duration = Duration::from_secs(15);
+/// The longest any one wait may take. A wait that works ends in milliseconds; this only bounds a
+/// wait that is stuck, so it is generous: a loaded machine (load average 150-200) slows the
+/// board's and the viewer's threads, and a 15 s bound failed a passing test there.
+const DEADLINE: Duration = Duration::from_secs(60);
 
 static RUNS: AtomicU32 = AtomicU32::new(0);
 
@@ -163,8 +166,21 @@ fn run(socket: &Path, stop: &AtomicBool, setpoints: &mpsc::Sender<f64>) {
     }
 }
 
+/// Pumps the viewer until the table it keeps satisfies `ready`. Waits on the state, not on one
+/// event: an update consumed while waiting for one topic is still in the table, so waiting for
+/// `/Tank/full` after `/Tank/level` cannot miss it when the gateway announced it first.
+async fn until_table(viewer: &mut Viewer, mut ready: impl FnMut(&Viewer) -> bool) {
+    timeout(DEADLINE, async {
+        while !ready(viewer) {
+            viewer.next().await.expect("the viewer runs");
+        }
+    })
+    .await
+    .expect("the viewer reached the state it waits for");
+}
+
 async fn until<T>(viewer: &mut Viewer, mut wanted: impl FnMut(&Update) -> Option<T>) -> T {
-    timeout(WAIT, async {
+    timeout(DEADLINE, async {
         loop {
             let update = viewer.next().await.expect("the viewer runs");
             if let Some(found) = wanted(&update) {
@@ -178,7 +194,7 @@ async fn until<T>(viewer: &mut Viewer, mut wanted: impl FnMut(&Update) -> Option
 
 /// The next setpoint the board's programs read, waiting without holding up the viewer.
 async fn on_the_board(setpoints: &mpsc::Receiver<f64>) -> f64 {
-    timeout(WAIT, async {
+    timeout(DEADLINE, async {
         loop {
             if let Ok(value) = setpoints.try_recv() {
                 return value;
@@ -227,18 +243,19 @@ fn a_viewer_sees_and_writes_through_orion_gateway_and_comes_back() {
         .await;
 
         // The mapped fields are topics, under the NT4 names and types the mapping gives.
-        let level = until(&mut viewer, |u| match u {
-            Update::Announced(t) if t.name == "/Tank/level" => Some(t.clone()),
-            _ => None,
+        // The two announces may come in either order: both are waited for in the table.
+        until_table(&mut viewer, |v| {
+            v.topic("/Tank/level").is_some() && v.topic("/Tank/full").is_some()
         })
         .await;
-        assert_eq!(level.type_name, "double");
-        let full = until(&mut viewer, |u| match u {
-            Update::Announced(t) if t.name == "/Tank/full" => Some(t.clone()),
-            _ => None,
-        })
-        .await;
-        assert_eq!(full.type_name, "boolean");
+        assert_eq!(
+            viewer.topic("/Tank/level").map(|t| t.type_name.as_str()),
+            Some("double")
+        );
+        assert_eq!(
+            viewer.topic("/Tank/full").map(|t| t.type_name.as_str()),
+            Some("boolean")
+        );
 
         // Their values follow the board's: the level rises half a litre at a time.
         let level_of = |u: &Update| match u {
@@ -322,11 +339,7 @@ fn a_viewer_sees_and_writes_through_orion_gateway_and_comes_back() {
             .then_some(())
         })
         .await;
-        until(&mut viewer, |u| match u {
-            Update::Announced(t) if t.name == "/Tank/level" => Some(()),
-            _ => None,
-        })
-        .await;
+        until_table(&mut viewer, |v| v.topic("/Tank/level").is_some()).await;
         until(&mut viewer, |u| level_of(u)).await;
 
         // Writes work on the new gateway too: the publication is sent again on connect.
