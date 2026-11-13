@@ -9,6 +9,10 @@
 @ writable RVBAR backing store, from the layout), and runs fel_thunk_rmr
 @ through FEL_RUN.
 @
+@ The RMR write is MCR p15, 0, r2, c12, c0, 2 (AArch32 RMR, the low 32 bits of
+@ RMR_EL3; EL3 only). At EL2 or EL1 it is UNDEFINED. The exception level the
+@ boot ROM's FEL runs at is UNCONFIRMED: docs/prs/D16.md, items 8 and 10.
+@
 @ Steps: swap every table buffer so the SPL's bytes sit at their load
 @ address; write the AArch64 entry to the RVBAR backing store; write RMR
 @ with AA64 = 1 and RR = 1 (the architecture's warm reset into AArch64 at

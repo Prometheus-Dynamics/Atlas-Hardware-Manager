@@ -75,15 +75,6 @@ impl ThunkIsa {
     }
 }
 
-/// What a caller does with a layout record that is UNCONFIRMED (its
-/// `confirmed` field is false). Refused by default; the caller passes
-/// [`Unconfirmed::Acknowledge`] to accept a guessed layout on purpose.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Unconfirmed {
-    Refuse,
-    Acknowledge,
-}
-
 /// One swap: `size` bytes at `buf1` (a live FEL stack region) exchange with
 /// `size` bytes at `buf2` (a free backup area).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -93,9 +84,9 @@ pub struct Swap {
     pub size: u32,
 }
 
-/// The SRAM and DRAM facts an FEL flash needs.
+/// The fields of a [`Layout`], as a caller gives them to [`Layout::new`].
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Layout {
+pub struct LayoutParts {
     pub thunk_isa: ThunkIsa,
     /// Where the SPL's first byte is loaded and entered (SRAM).
     pub load_address: u32,
@@ -108,6 +99,53 @@ pub struct Layout {
     /// Where the image is entered. Usually its address; a format with a
     /// header may enter elsewhere.
     pub image_entry: u32,
+}
+
+/// Whether the caller accepts an UNCONFIRMED layout for use on a device.
+/// Given when the layout is made; the device-touching entry points check it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Acknowledgement {
+    /// Not accepted: the layout may be read with, but no device write or run
+    /// is made with it.
+    Withheld,
+    /// Accepted on purpose: a guessed layout may be used on a device.
+    Given,
+}
+
+/// Whether a layout is proven on hardware.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Confirmation {
+    Confirmed,
+    Unconfirmed(Acknowledgement),
+}
+
+/// The SRAM and DRAM facts an FEL flash needs, with their confirmation.
+///
+/// A `Layout` is made only by the checked constructors ([`Layout::new`],
+/// [`Layout::from_value`], [`Layout::from_record`]), which run the layout's
+/// own rules. Its fields are crate-private, so a struct literal does not
+/// build outside this crate:
+///
+/// ```compile_fail
+/// let _ = atlas_fel::layout::Layout {
+///     thunk_isa: atlas_fel::layout::ThunkIsa::Armv7,
+///     load_address: 0x2000,
+///     thunk_address: 0x20000,
+///     swaps: Vec::new(),
+///     image_address: 0x4100_0000,
+///     image_entry: 0x4100_0000,
+///     confirmation: atlas_fel::layout::Confirmation::Confirmed,
+/// };
+/// ```
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Layout {
+    pub(crate) thunk_isa: ThunkIsa,
+    pub(crate) load_address: u32,
+    pub(crate) thunk_address: u32,
+    pub(crate) swaps: Vec<Swap>,
+    pub(crate) image_address: u32,
+    pub(crate) image_entry: u32,
+    pub(crate) confirmation: Confirmation,
 }
 
 /// Why a layout can't be used.
@@ -139,11 +177,7 @@ impl std::fmt::Display for LayoutError {
             Self::Overlap(message) => write!(f, "the SRAM layout overlaps itself: {message}"),
             Self::Invalid(message) => write!(f, "the SRAM layout is unusable: {message}"),
             Self::Unsupported(message) => write!(f, "the SRAM layout is unsupported: {message}"),
-            Self::Unconfirmed(message) => write!(
-                f,
-                "the SRAM layout is UNCONFIRMED ({message}); it is refused unless the \
-                 caller acknowledges an unproven layout"
-            ),
+            Self::Unconfirmed(message) => write!(f, "the SRAM layout is UNCONFIRMED: {message}"),
         }
     }
 }
@@ -171,11 +205,35 @@ fn hex_u32(value: &Value, field: &str) -> Result<u32, LayoutError> {
 }
 
 impl Layout {
-    /// Reads a layout record, refusing an UNCONFIRMED one. Null or missing is
-    /// [`LayoutError::Unsourced`]. This is the default entry point: it is
-    /// [`Layout::from_record`] with [`Unconfirmed::Refuse`].
+    /// Makes a layout from its parts, running the layout's own rules. The
+    /// confirmation says whether it is proven and, when it is not, whether
+    /// the caller acknowledges it.
+    pub fn new(parts: LayoutParts, confirmation: Confirmation) -> Result<Self, LayoutError> {
+        let layout = Self {
+            thunk_isa: parts.thunk_isa,
+            load_address: parts.load_address,
+            thunk_address: parts.thunk_address,
+            swaps: parts.swaps,
+            image_address: parts.image_address,
+            image_entry: parts.image_entry,
+            confirmation,
+        };
+        layout.check()?;
+        Ok(layout)
+    }
+
+    /// The layout's confirmation.
+    pub fn confirmation(&self) -> Confirmation {
+        self.confirmation
+    }
+
+    /// Reads a layout record. Null or missing is [`LayoutError::Unsourced`].
+    /// An UNCONFIRMED record is read with no acknowledgement given: it can be
+    /// read with, but no device write or run accepts it. This is the default
+    /// entry point; it is [`Layout::from_record`] with
+    /// [`Acknowledgement::Withheld`].
     pub fn from_value(sram: Option<&Value>) -> Result<Self, LayoutError> {
-        Self::from_record(sram, Unconfirmed::Refuse)
+        Self::from_record(sram, Acknowledgement::Withheld)
     }
 
     /// Reads a layout record. Fields: `thunk_isa` ("armv7", "aarch64" or
@@ -186,11 +244,11 @@ impl Layout {
     /// list of `{buf1, buf2, size}` hex strings). Any other field, such as a
     /// `note`, is data for a reader and is ignored.
     ///
-    /// An UNCONFIRMED record is refused with [`LayoutError::Unconfirmed`]
-    /// unless `unconfirmed` is [`Unconfirmed::Acknowledge`].
+    /// `acknowledge` matters only when the record is UNCONFIRMED: it is the
+    /// caller's acknowledgement that a guessed layout may be used on a device.
     pub fn from_record(
         sram: Option<&Value>,
-        unconfirmed: Unconfirmed,
+        acknowledge: Acknowledgement,
     ) -> Result<Self, LayoutError> {
         let sram = match sram {
             None | Some(Value::Null) => return Err(LayoutError::Unsourced),
@@ -203,11 +261,11 @@ impl Layout {
         let confirmed = field("confirmed")?
             .as_bool()
             .ok_or_else(|| LayoutError::Malformed("confirmed is not true or false".into()))?;
-        if !confirmed && unconfirmed == Unconfirmed::Refuse {
-            return Err(LayoutError::Unconfirmed(
-                "the record's confirmed field is false; a board run answers it".into(),
-            ));
-        }
+        let confirmation = if confirmed {
+            Confirmation::Confirmed
+        } else {
+            Confirmation::Unconfirmed(acknowledge)
+        };
         let isa = match field("thunk_isa")?.as_str() {
             Some("armv7") => ThunkIsa::Armv7,
             Some("aarch64") => ThunkIsa::Aarch64,
@@ -236,16 +294,31 @@ impl Layout {
                 size: part("size")?,
             });
         }
-        let layout = Self {
-            thunk_isa: isa,
-            load_address: hex_u32(field("load_address")?, "load_address")?,
-            thunk_address: hex_u32(field("thunk_address")?, "thunk_address")?,
-            swaps,
-            image_address: hex_u32(field("image_address")?, "image_address")?,
-            image_entry: hex_u32(field("image_entry")?, "image_entry")?,
-        };
-        layout.check()?;
-        Ok(layout)
+        Self::new(
+            LayoutParts {
+                thunk_isa: isa,
+                load_address: hex_u32(field("load_address")?, "load_address")?,
+                thunk_address: hex_u32(field("thunk_address")?, "thunk_address")?,
+                swaps,
+                image_address: hex_u32(field("image_address")?, "image_address")?,
+                image_entry: hex_u32(field("image_entry")?, "image_entry")?,
+            },
+            confirmation,
+        )
+    }
+
+    /// Refuses a device write or run with an UNCONFIRMED layout whose
+    /// acknowledgement was withheld. Every device-touching entry point calls
+    /// this before its first write.
+    pub(crate) fn may_write(&self) -> Result<(), LayoutError> {
+        match self.confirmation {
+            Confirmation::Unconfirmed(Acknowledgement::Withheld) => Err(LayoutError::Unconfirmed(
+                "the layout is not proven on hardware and its acknowledgement was withheld; \
+                 no write or run is made with it"
+                    .into(),
+            )),
+            Confirmation::Confirmed | Confirmation::Unconfirmed(Acknowledgement::Given) => Ok(()),
+        }
     }
 
     /// The layout's own rules: alignment, sizes, a table the thunk holds,
@@ -408,6 +481,7 @@ mod tests {
             }],
             image_address: 0x4a00_0000,
             image_entry: 0x4a00_0000,
+            confirmation: Confirmation::Confirmed,
         }
     }
 
@@ -482,14 +556,19 @@ mod tests {
     }
 
     #[test]
-    fn an_unconfirmed_record_is_refused_unless_acknowledged() {
+    fn an_unconfirmed_record_reads_and_carries_its_acknowledgement() {
         let mut guessed = value();
         guessed["confirmed"] = json!(false);
-        assert!(matches!(
-            Layout::from_value(Some(&guessed)),
-            Err(LayoutError::Unconfirmed(_))
-        ));
-        assert!(Layout::from_record(Some(&guessed), Unconfirmed::Acknowledge).is_ok());
+        assert_eq!(
+            Layout::from_value(Some(&guessed)).unwrap().confirmation(),
+            Confirmation::Unconfirmed(Acknowledgement::Withheld)
+        );
+        assert_eq!(
+            Layout::from_record(Some(&guessed), Acknowledgement::Given)
+                .unwrap()
+                .confirmation(),
+            Confirmation::Unconfirmed(Acknowledgement::Given)
+        );
         let mut missing = value();
         missing.as_object_mut().unwrap().remove("confirmed");
         assert!(matches!(
@@ -571,17 +650,18 @@ mod tests {
         ));
     }
 
-    /// The A733's record, as shipped: UNCONFIRMED, so refused by default.
+    /// The A733's record, as shipped: UNCONFIRMED. It reads, and nothing
+    /// writes with it until the caller acknowledges it.
     const A733: &str = include_str!("../records/sun60i-a733.json");
 
     #[test]
-    fn the_a733_record_is_refused_until_the_caller_acknowledges_it() {
+    fn the_a733_record_reads_unconfirmed_and_its_addresses_are_the_pinned_ones() {
         let record: Value = serde_json::from_str(A733).unwrap();
-        assert!(matches!(
-            Layout::from_value(Some(&record)),
-            Err(LayoutError::Unconfirmed(_))
-        ));
-        let layout = Layout::from_record(Some(&record), Unconfirmed::Acknowledge).unwrap();
+        let layout = Layout::from_value(Some(&record)).unwrap();
+        assert_eq!(
+            layout.confirmation(),
+            Confirmation::Unconfirmed(Acknowledgement::Withheld)
+        );
         assert_eq!(
             layout.thunk_isa,
             ThunkIsa::Aarch32ToAarch64 {

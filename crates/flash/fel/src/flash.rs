@@ -103,6 +103,9 @@ pub async fn load_spl(
     spl: &[u8],
     expected_soc: Option<u32>,
 ) -> Result<Spl, FlashError> {
+    // Refused before the device is touched: an unconfirmed layout whose
+    // acknowledgement was withheld is never written with.
+    layout.may_write()?;
     layout.check()?;
     // The SRAM plan is worked out before the device is touched.
     let pieces = layout.spl_pieces(spl.len())?;
@@ -172,6 +175,7 @@ pub async fn load_image(
     layout: &Layout,
     image: &[u8],
 ) -> Result<(), FlashError> {
+    layout.may_write()?;
     let mut fel = Fel::new(io);
     fel.write(layout.image_address, image).await?;
     let back = fel.read(layout.image_address, image.len()).await?;
@@ -196,6 +200,7 @@ pub async fn flash(
     image: &[u8],
     expected_soc: Option<u32>,
 ) -> Result<Report, FlashError> {
+    layout.may_write()?;
     // Refused before the device is touched: an image cannot follow an SPL
     // that warm-resets away from FEL. Such a layout runs load_spl only.
     if layout.thunk_isa.return_mode() == ReturnMode::NoReturnExpected {
@@ -217,7 +222,7 @@ pub async fn flash(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::layout::{ReturnMode, Swap, ThunkIsa};
+    use crate::layout::{Acknowledgement, Confirmation, LayoutParts, ReturnMode, Swap, ThunkIsa};
     use crate::protocol::cmd;
     use crate::sim::{FelDevice, MOCK_SOC_ID, STACK_FILL};
 
@@ -235,6 +240,7 @@ mod tests {
             }],
             image_address: 0x4100_0000,
             image_entry: 0x4100_0000,
+            confirmation: Confirmation::Confirmed,
         }
     }
 
@@ -367,5 +373,86 @@ mod tests {
         ));
         assert!(board.commands.is_empty());
         assert!(board.spl_seen.is_empty());
+    }
+
+    /// Every public way to obtain an UNCONFIRMED layout, acknowledgement
+    /// withheld: `Layout::new`, `from_value`, `from_record`.
+    fn withheld_layouts() -> Vec<Layout> {
+        let parts = LayoutParts {
+            thunk_isa: ThunkIsa::Armv7,
+            load_address: 0x1800,
+            thunk_address: 0x20000,
+            swaps: vec![Swap {
+                buf1: 0x1800,
+                buf2: 0x44000,
+                size: 0x800,
+            }],
+            image_address: 0x4100_0000,
+            image_entry: 0x4100_0000,
+        };
+        let record = serde_json::json!({
+            "thunk_isa": "armv7",
+            "confirmed": false,
+            "load_address": "0x00001800",
+            "thunk_address": "0x00020000",
+            "image_address": "0x41000000",
+            "image_entry": "0x41000000",
+            "swap_buffers": [{"buf1": "0x00001800", "buf2": "0x00044000", "size": "0x00000800"}]
+        });
+        vec![
+            Layout::new(parts, Confirmation::Unconfirmed(Acknowledgement::Withheld)).unwrap(),
+            Layout::from_value(Some(&record)).unwrap(),
+            Layout::from_record(Some(&record), Acknowledgement::Withheld).unwrap(),
+        ]
+    }
+
+    #[tokio::test]
+    async fn an_unconfirmed_layout_without_acknowledgement_is_refused_before_any_device_write() {
+        let spl = vec![0x33u8; 0x400];
+        let image = vec![0x44u8; 0x100];
+        for layout in withheld_layouts() {
+            assert_eq!(
+                layout.confirmation(),
+                Confirmation::Unconfirmed(Acknowledgement::Withheld)
+            );
+            let mut board = FelDevice::new(layout.clone(), spl.len(), image.len());
+            let error = flash(&mut board, &layout, &spl, &image, None)
+                .await
+                .unwrap_err();
+            assert!(
+                matches!(error, FlashError::Layout(LayoutError::Unconfirmed(_))),
+                "{error}"
+            );
+            let error = load_spl(&mut board, &layout, &spl, None).await.unwrap_err();
+            assert!(
+                matches!(error, FlashError::Layout(LayoutError::Unconfirmed(_))),
+                "{error}"
+            );
+            let error = load_image(&mut board, &layout, &image).await.unwrap_err();
+            assert!(
+                matches!(error, FlashError::Layout(LayoutError::Unconfirmed(_))),
+                "{error}"
+            );
+            // Not a single command reached the device, and no SRAM was written.
+            assert!(board.commands.is_empty());
+            assert!(board.spl_seen.is_empty());
+        }
+    }
+
+    #[tokio::test]
+    async fn an_acknowledged_unconfirmed_layout_runs_on_the_mock_device() {
+        let spl = vec![0x33u8; 0x400];
+        let parts = LayoutParts {
+            thunk_isa: ThunkIsa::Armv7,
+            load_address: 0x1800,
+            thunk_address: 0x20000,
+            swaps: Vec::new(),
+            image_address: 0x4100_0000,
+            image_entry: 0x4100_0000,
+        };
+        let layout = Layout::new(parts, Confirmation::Unconfirmed(Acknowledgement::Given)).unwrap();
+        let mut board = FelDevice::new(layout.clone(), spl.len(), 0x1000);
+        load_spl(&mut board, &layout, &spl, None).await.unwrap();
+        assert_eq!(board.spl_seen, spl);
     }
 }

@@ -8,7 +8,7 @@
 //! `sim::FelDevice`, which keeps the state a read-back needs.
 
 use atlas_fel::flash::{FlashError, flash, load_image, load_spl};
-use atlas_fel::layout::{Layout, ThunkIsa};
+use atlas_fel::layout::{Confirmation, Layout, LayoutParts, ThunkIsa};
 use atlas_fel::protocol::VERIFY_LEN;
 use atlas_usb::sim::{Answer, SimBus};
 use atlas_usb::{DeviceSummary, OpenOptions, UsbBus, UsbError, UsbIo};
@@ -20,14 +20,18 @@ const THUNK_LEN: usize = 284;
 
 /// No swap buffers: the SPL is one piece at its load address.
 fn layout() -> Layout {
-    Layout {
-        thunk_isa: ThunkIsa::Armv7,
-        load_address: 0x2000,
-        thunk_address: 0x20000,
-        swaps: Vec::new(),
-        image_address: 0x4100_0000,
-        image_entry: 0x4100_0000,
-    }
+    Layout::new(
+        LayoutParts {
+            thunk_isa: ThunkIsa::Armv7,
+            load_address: 0x2000,
+            thunk_address: 0x20000,
+            swaps: Vec::new(),
+            image_address: 0x4100_0000,
+            image_entry: 0x4100_0000,
+        },
+        Confirmation::Confirmed,
+    )
+    .unwrap()
 }
 
 fn csw(status: u8) -> Answer {
