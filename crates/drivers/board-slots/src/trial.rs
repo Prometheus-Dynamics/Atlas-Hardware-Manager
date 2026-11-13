@@ -36,6 +36,10 @@ use tokio::sync::oneshot;
 use crate::SlotError;
 use crate::calls::BoardSlots;
 
+// LOCK: Lemnos M8c slot state topics. The board's own confirm produces no event a client can wait
+// on, so a settling trial is read again on this interval. When Lemnos's slot state topics (`trial`,
+// `resolved`, the slot list) arrive as state-like topics with last value on subscribe, this poll is
+// replaced by a subscription. Until then it stays as it is.
 /// How often a settling trial's records are read again while the board stays connected. A poll
 /// interval, not a deadline: the board may settle for as long as it needs.
 pub const RECHECK: Duration = Duration::from_secs(5);

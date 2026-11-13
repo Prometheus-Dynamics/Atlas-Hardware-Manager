@@ -19,7 +19,7 @@ use atlas_session::Presence;
 use atlas_sim_node::{DEADLINE, SimNode, call, names};
 use atlas_slots::{Resolution, Stage};
 use atlas_trial::{Outcome, Running, Seen, TrialState, health_while_settling, hex, settling};
-use common::{BOARD, Rig, bundle_bytes, device, until, write_bundle};
+use common::{BOARD, Rig, answered, answered_once, bundle_bytes, device, until, write_bundle};
 
 /// The watch's own poll of a settling trial in these tests: short, so states show quickly.
 const SHORT: Duration = Duration::from_millis(20);
@@ -39,6 +39,46 @@ fn key(rig: &Rig) -> [u8; 32] {
 
 fn follower(rig: &Rig, recheck: Duration) -> Arc<Follower> {
     Arc::new(Follower::open(&rig.dir.join("state")).with_recheck(recheck))
+}
+
+/// The board's slot list, read through the retry for a call the session may answer late.
+async fn list(rig: &Rig) -> atlas_slots::SlotList {
+    answered("the slot list", || rig.slots.list())
+        .await
+        .expect("the board lists its slots")
+}
+
+/// Starts the trial of slot-2 through the follower. A call the board answers late is checked
+/// against the list, and made again only when the trial is not there.
+async fn start(rig: &Rig, follower: &Follower) {
+    answered_once(
+        rig,
+        "the trial of slot-2",
+        || async {
+            follower
+                .start_trial(
+                    &rig.slots,
+                    &rig.handle,
+                    TrialStart {
+                        id: "slot-2",
+                        keep_default: false,
+                        keep_old: false,
+                        force: false,
+                        now_ms: 1,
+                    },
+                )
+                .await
+                .map(|_| ())
+        },
+        |listed| {
+            listed
+                .trial
+                .as_ref()
+                .is_some_and(|trial| trial.slot == "slot-2")
+        },
+    )
+    .await
+    .expect("the trial starts");
 }
 
 /// Installs `id` at `version` through the job path, and waits for it to finish.
@@ -144,32 +184,19 @@ async fn a_held_trial_is_followed_across_power_cycles_and_reported_once() {
     let rig = start_board("held").await;
     install(&rig, "slot-2", "2.0.0").await;
     let follower = follower(&rig, SHORT);
-    follower
-        .start_trial(
-            &rig.slots,
-            &rig.handle,
-            TrialStart {
-                id: "slot-2",
-                keep_default: false,
-                keep_old: false,
-                force: false,
-                now_ms: 1,
-            },
-        )
-        .await
-        .expect("the trial starts");
+    start(&rig, &follower).await;
     let task = spawn_follow(&follower, &rig);
     until_state(&follower, "the trial to settle", settling_with(1)).await;
 
     // The device list: settling beside its name, and its health is not red.
-    let list = rig.slots.list().await.expect("the board lists its slots");
+    let listed = list(&rig).await;
     let seen = Seen::Found {
         key: key(&rig),
         running: Some("slot-2".into()),
     };
-    assert!(settling(Some(&list), &seen));
+    assert!(settling(Some(&listed), &seen));
     assert_eq!(
-        health_while_settling(Health::Fault, settling(Some(&list), &seen)),
+        health_while_settling(Health::Fault, settling(Some(&listed), &seen)),
         Health::Away
     );
 
@@ -205,9 +232,9 @@ async fn a_held_trial_is_followed_across_power_cycles_and_reported_once() {
 
     // It is not reported again after an Atlas restart, and the board's default is the new slot.
     assert!(Follower::open(&rig.dir.join("state")).states().is_empty());
-    let list = rig.slots.list().await.expect("lists");
-    assert_eq!(list.default, "slot-2");
-    assert!(list.trial.is_none());
+    let listed = list(&rig).await;
+    assert_eq!(listed.default, "slot-2");
+    assert!(listed.trial.is_none());
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -215,20 +242,7 @@ async fn a_record_and_a_running_version_that_disagree_are_both_shown_and_neither
     let rig = start_board("disagree").await;
     install(&rig, "slot-2", "2.0.0").await;
     let follower = follower(&rig, LONG);
-    follower
-        .start_trial(
-            &rig.slots,
-            &rig.handle,
-            TrialStart {
-                id: "slot-2",
-                keep_default: false,
-                keep_old: false,
-                force: false,
-                now_ms: 1,
-            },
-        )
-        .await
-        .expect("the trial starts");
+    start(&rig, &follower).await;
     let task = spawn_follow(&follower, &rig);
     until_state(&follower, "the trial to settle", settling_with(1)).await;
 
@@ -260,20 +274,7 @@ async fn a_trial_that_does_not_hold_says_the_boards_reason_and_the_version_it_ru
     install(&rig, "slot-2", "2.0.0").await;
     rig.node.slot_set_healthy(false);
     let follower = follower(&rig, LONG);
-    follower
-        .start_trial(
-            &rig.slots,
-            &rig.handle,
-            TrialStart {
-                id: "slot-2",
-                keep_default: false,
-                keep_old: false,
-                force: false,
-                now_ms: 1,
-            },
-        )
-        .await
-        .expect("the trial starts");
+    start(&rig, &follower).await;
     let task = spawn_follow(&follower, &rig);
     until_state(&follower, "the trial to settle", settling_with(1)).await;
 
@@ -294,10 +295,10 @@ async fn a_trial_that_does_not_hold_says_the_boards_reason_and_the_version_it_ru
     assert!(decided.reason.contains("not healthy"), "{}", decided.reason);
     assert_eq!(decided.running, Running::Other("slot-1".into()));
     assert_eq!(decided.by, "auto");
-    let list = rig.slots.list().await.expect("lists");
-    assert!(list.get("slot-2").is_some_and(|slot| slot.failed));
+    let listed = list(&rig).await;
+    assert!(listed.get("slot-2").is_some_and(|slot| slot.failed));
     assert_eq!(
-        list.resolved.map(|resolved| resolved.outcome),
+        listed.resolved.map(|resolved| resolved.outcome),
         Some(Resolution::FellBack)
     );
 }
@@ -308,20 +309,7 @@ async fn three_boots_that_never_reach_the_daemon_fall_back_and_the_watch_says_wh
     install(&rig, "slot-2", "2.0.0").await;
     rig.node.slot_boots_without_daemon(3);
     let follower = follower(&rig, LONG);
-    follower
-        .start_trial(
-            &rig.slots,
-            &rig.handle,
-            TrialStart {
-                id: "slot-2",
-                keep_default: false,
-                keep_old: false,
-                force: false,
-                now_ms: 1,
-            },
-        )
-        .await
-        .expect("the trial starts");
+    start(&rig, &follower).await;
     let task = spawn_follow(&follower, &rig);
     // The first boot never reached the daemon: the board runs the default, with two attempts left.
     until_state(&follower, "the first boot to be recorded", |state| {
@@ -370,20 +358,7 @@ async fn an_unwritable_state_dir_is_shown_as_a_record_error_and_never_as_a_guess
     install(&rig, "slot-2", "2.0.0").await;
     rig.node.slot_fail_record_writes(true);
     let follower = follower(&rig, LONG);
-    follower
-        .start_trial(
-            &rig.slots,
-            &rig.handle,
-            TrialStart {
-                id: "slot-2",
-                keep_default: false,
-                keep_old: false,
-                force: false,
-                now_ms: 1,
-            },
-        )
-        .await
-        .expect("the trial starts");
+    start(&rig, &follower).await;
     let task = spawn_follow(&follower, &rig);
     until_state(
         &follower,
@@ -418,20 +393,7 @@ async fn an_explicit_confirm_by_another_caller_is_reported_as_a_call() {
     let rig = start_board("call").await;
     install(&rig, "slot-2", "2.0.0").await;
     let follower = follower(&rig, LONG);
-    follower
-        .start_trial(
-            &rig.slots,
-            &rig.handle,
-            TrialStart {
-                id: "slot-2",
-                keep_default: false,
-                keep_old: false,
-                force: false,
-                now_ms: 1,
-            },
-        )
-        .await
-        .expect("the trial starts");
+    start(&rig, &follower).await;
     let task = spawn_follow(&follower, &rig);
     until_state(&follower, "the trial to settle", settling_with(1)).await;
 
@@ -519,20 +481,7 @@ async fn a_board_that_never_returns_keeps_its_watch_and_a_person_can_stop_it() {
     let rig = start_board("stays-away").await;
     install(&rig, "slot-2", "2.0.0").await;
     let follower = follower(&rig, SHORT);
-    follower
-        .start_trial(
-            &rig.slots,
-            &rig.handle,
-            TrialStart {
-                id: "slot-2",
-                keep_default: false,
-                keep_old: false,
-                force: false,
-                now_ms: 1,
-            },
-        )
-        .await
-        .expect("the trial starts");
+    start(&rig, &follower).await;
     let board = key(&rig);
     let task = spawn_follow(&follower, &rig);
     until_state(&follower, "the trial to settle", settling_with(1)).await;
@@ -558,9 +507,9 @@ async fn a_board_that_never_returns_keeps_its_watch_and_a_person_can_stop_it() {
 
     come_back(&rig);
     until("the board to be back", || rig.handle.node_key().is_some()).await;
-    let list = rig.slots.list().await.expect("lists");
+    let listed = list(&rig).await;
     assert!(
-        list.trial.is_some_and(|trial| trial.slot == "slot-2"),
+        listed.trial.is_some_and(|trial| trial.slot == "slot-2"),
         "the board's trial is still pending: Atlas did not confirm it"
     );
 }
@@ -570,20 +519,7 @@ async fn a_board_replaced_mid_trial_ends_the_watch_and_reads_nothing_from_the_ot
     let rig = start_board("replaced").await;
     install(&rig, "slot-2", "2.0.0").await;
     let follower = follower(&rig, SHORT);
-    follower
-        .start_trial(
-            &rig.slots,
-            &rig.handle,
-            TrialStart {
-                id: "slot-2",
-                keep_default: false,
-                keep_old: false,
-                force: false,
-                now_ms: 1,
-            },
-        )
-        .await
-        .expect("the trial starts");
+    start(&rig, &follower).await;
     let board = key(&rig);
     let task = spawn_follow(&follower, &rig);
     until_state(&follower, "the trial to settle", settling_with(1)).await;
