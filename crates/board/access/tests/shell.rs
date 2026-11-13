@@ -6,11 +6,13 @@
 mod common;
 
 use atlas_access::{AccessError, End, Event, OpenRequest, ShellKind, Terminal, open};
+use atlas_session::Lease;
 use atlas_sim_node::access::ShellServer;
 use atlas_sim_node::{DEADLINE, Kind, Mode, NODE_NAME, SimNode};
 use common::{
     SimCarrier, connected, fresh, handle_for, lost, scratch, sessions, start_node, stated,
 };
+use std::time::Duration;
 
 /// Reads output until it contains `wanted`. A terminal that ends first fails the test.
 async fn output_until(term: &mut Terminal, wanted: &str) -> String {
@@ -191,4 +193,34 @@ async fn a_session_lost_mid_shell_ends_the_terminal_with_the_reason_and_nothing_
         .expect("a new shell opens when asked for");
     assert_eq!(carrier.opens.load(std::sync::atomic::Ordering::SeqCst), 2);
     drop(node);
+}
+
+/// A shell is a hold on its board. Its session goes silent past the lease period with the shell
+/// open: the board may have dropped the shell, so it ends as a lapse, with its own words, and
+/// nothing reopens it. It is not a loss: the node stays connected throughout.
+#[tokio::test]
+async fn a_shell_whose_session_lapses_while_it_is_open_ends_as_a_lapse_not_as_a_loss() {
+    let dir = scratch("lapse");
+    fresh(&dir);
+    let node = start_node(&dir, Mode::Running, None);
+    let shell = ShellServer::start().expect("the shell listens");
+    // Renewals never come (a long renew) and the period is short: silence with the hold is a lapse.
+    let sessions = sessions().with_lease(Lease {
+        period: Duration::from_millis(300),
+        renew: Duration::from_secs(3600),
+        in_force: true,
+    });
+    let handle = handle_for(&sessions, node.network().port());
+    connected(&handle).await;
+    stated(&handle).await;
+    let carrier = SimCarrier::new(shell.addr());
+    let mut term = open(&handle, carrier.clone(), OpenRequest::new(80, 24))
+        .await
+        .expect("the shell opens");
+    match end_of(&mut term).await {
+        End::HoldLapsed(reason) => {
+            assert!(reason.contains("may have dropped this shell"), "{reason}");
+        }
+        other => panic!("the shell ends as a lapse, not {other:?}"),
+    }
 }
