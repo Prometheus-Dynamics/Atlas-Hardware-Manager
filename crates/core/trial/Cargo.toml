@@ -1,0 +1,14 @@
+[package]
+name = "atlas-trial"
+description = "The trial watch: follows one board from a started update to its outcome across the restarts, reads the board's own trial and resolved records, says what a person sees, keeps what is needed to follow it after Atlas restarts, and gives the device list its settling predicate. Pure: no I/O, no clock; the caller passes the events and the store."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+atlas-inventory = { path = "../inventory" }
+atlas-slots = { path = "../slots" }
+
+[lints]
+workspace = true

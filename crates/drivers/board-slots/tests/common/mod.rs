@@ -4,7 +4,7 @@
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::Duration;
@@ -41,6 +41,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 pub struct Relay {
     addr: SocketAddr,
     live: Arc<Mutex<Vec<(TcpStream, TcpStream)>>>,
+    refusing: Arc<AtomicBool>,
 }
 
 impl Relay {
@@ -49,8 +50,15 @@ impl Relay {
         let addr = listener.local_addr().expect("the relay has an address");
         let live: Arc<Mutex<Vec<(TcpStream, TcpStream)>>> = Arc::new(Mutex::new(Vec::new()));
         let kept = Arc::clone(&live);
+        let refusing = Arc::new(AtomicBool::new(false));
+        let refused = Arc::clone(&refusing);
         thread::spawn(move || {
             for client in listener.incoming().flatten() {
+                // A board that is away: the connection is closed at once, as if nothing answered.
+                if refused.load(Ordering::SeqCst) {
+                    let _ = client.shutdown(Shutdown::Both);
+                    continue;
+                }
                 let Ok(server) = TcpStream::connect(upstream) else {
                     continue;
                 };
@@ -75,7 +83,17 @@ impl Relay {
                 });
             }
         });
-        Self { addr, live }
+        Self {
+            addr,
+            live,
+            refusing,
+        }
+    }
+
+    /// While `away`, new connections are closed at once: the board is not reachable. Lifting it
+    /// lets the session connect again, as the same node.
+    pub fn away(&self, away: bool) {
+        self.refusing.store(away, Ordering::SeqCst);
     }
 
     pub const fn addr(&self) -> SocketAddr {

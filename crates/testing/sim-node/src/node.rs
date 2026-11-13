@@ -1011,6 +1011,12 @@ impl Node {
         if self.shared.restart.swap(false, Ordering::SeqCst) {
             self.restart();
         }
+        // The running slot is what the board booted: its hello `version.slot` follows the model's
+        // running slot, as a boot writes it (a confirm changes the default, not this).
+        let running = lock(&self.shared.model).slots.active.clone();
+        if let Some(running) = running {
+            lock(&self.shared.hello).slot = running;
+        }
         if self.live {
             self.sync_hello();
         }
