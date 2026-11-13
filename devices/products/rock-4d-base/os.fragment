@@ -77,6 +77,10 @@ BR2_TARGET_GENERIC_ROOT_PASSWD=""
 # No SSH server in a base product. Orion serves SSH on a managed board.
 # No dropbear here (the bring-up products add it; a line here that they change would be an override).
 # BR2_PACKAGE_OPENSSH is not set
+# Kernel console decision (B13): the kernel command line's console=ttyS0,1500000 (components/radxa-rock-4d-extlinux/extlinux.conf, line 8) is
+# this same tty. systemd-getty-generator adds serial-getty@ttyS0.service for that console, which is the unit
+# the getty lines below enable (package/systemd/systemd.mk: a GETTY_PORT that is not a tty name is enabled as
+# serial-getty@<port>). One unit, so nothing is masked.
 # The one serial getty, on the debug UART the device tree names as the console (the
 # extlinux.conf console= too). Not ttyGS0: the USB gadget does not exist in the base
 # (Lemnos's USB driver will own it). With a real tty as port, Buildroot's systemd

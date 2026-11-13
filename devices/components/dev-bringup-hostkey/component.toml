@@ -1,0 +1,35 @@
+# DEV ONLY, bring-up products only (zero-3e-bringup, rock-5c-bringup, rock-4d-bringup). Two things every
+# bring-up product needs so that its SSH host key survives a reflash or a slot change:
+#   - the data partition mounted at /data (nothing in the bring-up root mounts it; the root is read-only);
+#   - dropbear's host key kept on /data, not in RAM (Buildroot's dropbear.service keeps it under /etc/dropbear,
+#     a symlink to /var/run/dropbear, so it changes at every boot).
+# The managed system is different: lemnos-slot-init moves /data into the new root (Lemnos docs/slots.md, step 7),
+# and Orion keeps its own key on /data (components/orion). This component is not on a managed board.
+# Goes with the bring-up products.
+version = 1
+name = "dev-bringup-hostkey"
+description = "DEV ONLY: the data partition at /data and dropbear's host key on it (bring-up only)."
+
+# The data partition, by its partition label (sd-image names it `data`: Gaia's sd-image data_name default).
+# A mount unit, not an fstab line: systemd-fstab-generator is not needed for one entry. The mount point is
+# the placeholder below, because the root is read-only and a mount point has to exist in it.
+[[install]]
+from = { file = "files/data.mount" }
+to = "/etc/systemd/system/data.mount"
+mode = "0644"
+
+[[install]]
+from = { file = "files/data-mountpoint" }
+to = "/data/.mountpoint"
+mode = "0644"
+
+# Dropbear's unit, with the host key on /data: the key file is made once, when it is missing, and dropbear
+# is told its path with -r. The unit waits for the /data mount (RequiresMountsFor).
+[[install]]
+from = { file = "files/dropbear-hostkey.conf" }
+to = "/etc/systemd/system/dropbear.service.d/10-hostkey.conf"
+mode = "0644"
+
+[[services]]
+unit = "data.mount"
+enable = true
