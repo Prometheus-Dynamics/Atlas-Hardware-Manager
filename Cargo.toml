@@ -1,7 +1,9 @@
 [workspace]
-# Every directory directly inside a crates/<folder>/ is a crate, and the desktop
-# app's Rust side is one more. Adding a crate never edits this file.
-members = ["crates/*/*", "apps/*/src-tauri"]
+# Every directory directly inside a crates/<folder>/ is a crate. Adding a crate
+# never edits this file. The desktop app's Rust side ("apps/*/src-tauri") joins
+# with F2: cargo refuses a member glob that matches nothing, so it can't be
+# listed before the app exists.
+members = ["crates/*/*"]
 resolver = "3"
 
 [workspace.package]
