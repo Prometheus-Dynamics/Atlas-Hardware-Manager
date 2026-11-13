@@ -1,0 +1,96 @@
+# Atlas `next`: the PR list
+
+Every PR has a brief in `docs/prs/`. `python3 scripts/pr-status.py` shows what is ready.
+Needs named `X<n>` are outside blocks, listed in `docs/design.md`.
+
+## A. Foundation
+
+The core every other group builds on: types, the driver contract, inventory, jobs, logging, the catalog and trust.
+
+- [ ] [A1](docs/prs/A1.md) Types and the driver contract (wave 1; needs nothing)
+- [ ] [A2](docs/prs/A2.md) Inventory and store (wave 2; needs A1)
+- [ ] [A3](docs/prs/A3.md) Scan, jobs and events (wave 2; needs A1)
+- [ ] [A4](docs/prs/A4.md) The simulated node and mock devices (wave 2; needs A1)
+- [ ] [A5](docs/prs/A5.md) Logging (wave 1; needs nothing)
+- [ ] [A6](docs/prs/A6.md) The device catalog (wave 2; needs A1)
+- [ ] [A7](docs/prs/A7.md) Releases and trust (wave 2; needs A1)
+
+## B. Board descriptions
+
+Every board as Gaia `next` data in `devices/`. Starts first; the Raze and the ZERO 3E before the rest.
+
+- [ ] [B1](docs/prs/B1.md) Layout, schema and checks (wave 1; needs nothing)
+- [ ] [B2](docs/prs/B2.md) BCM2712 family and the Raze (wave 2; needs B1)
+- [ ] [B3](docs/prs/B3.md) RK35xx family and the ZERO 3E (wave 2; needs B1)
+- [ ] [B4](docs/prs/B4.md) ROCK 5C and ROCK 4D (wave 3; needs B3)
+- [ ] [B5](docs/prs/B5.md) Allwinner A733 family and the Cubie A7A, A7S, A7Z (wave 2; needs B1)
+- [ ] [B6](docs/prs/B6.md) Luckfox Pico Pro and Aura (wave 2; needs B1)
+- [ ] [B7](docs/prs/B7.md) K230D Zero and AI-CAM (wave 2; needs B1)
+- [ ] [B8](docs/prs/B8.md) SystemCore and robot devices (wave 2; needs B1)
+- [ ] [B9](docs/prs/B9.md) The flasher image, per family (wave 3; needs B2, B3)
+- [ ] [B10](docs/prs/B10.md) App data for every board (wave 3; needs A6, B1)
+
+## C. One board driver
+
+Every job on a board through the Orion client, against a simulated node.
+
+- [ ] [C1](docs/prs/C1.md) Connect, discover and identify (wave 3; needs A1, A4)
+- [ ] [C2](docs/prs/C2.md) Readings and logs (wave 4; needs C1)
+- [ ] [C3](docs/prs/C3.md) Actions (wave 4; needs C1)
+- [ ] [C4](docs/prs/C4.md) Files (wave 4; needs C1)
+- [ ] [C5](docs/prs/C5.md) Slots and updates (wave 5; needs C3, C4, A7, X1)
+- [ ] [C6](docs/prs/C6.md) Trial and confirm watch (wave 6; needs C5)
+- [ ] [C7](docs/prs/C7.md) Board data: backup, restore, files (wave 5; needs C4)
+- [ ] [C8](docs/prs/C8.md) SSH and the recovery shell (wave 4; needs C1)
+- [ ] [C9](docs/prs/C9.md) NetworkTables viewer (wave 4; needs C1)
+
+## D. Flashing
+
+Our own loader for every chip family, then the flasher image, then an ordinary update.
+
+- [ ] [D1](docs/prs/D1.md) USB transport, hotplug and ids (wave 2; needs A1)
+- [ ] [D2](docs/prs/D2.md) Raspberry Pi USB boot (wave 3; needs D1)
+- [ ] [D3](docs/prs/D3.md) Rockchip maskrom and loader (wave 3; needs D1)
+- [ ] [D4](docs/prs/D4.md) Kendryte K230 burn (wave 3; needs D1)
+- [ ] [D5](docs/prs/D5.md) Allwinner FEL (wave 3; needs D1)
+- [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3)
+- [ ] [D7](docs/prs/D7.md) Disk writer and its helper (wave 2; needs A1)
+- [ ] [D8](docs/prs/D8.md) UBI images for NAND boards (wave 2; needs A1)
+- [ ] [D9](docs/prs/D9.md) Slot bundles from the image (wave 3; needs A7)
+
+## E. Robot network and SystemCore
+
+The robot's own devices, and Atlas installing its package on the controller.
+
+- [ ] [E1](docs/prs/E1.md) The robot's own devices (wave 3; needs A1, A3)
+- [ ] [E2](docs/prs/E2.md) Install on a SystemCore (wave 4; needs E1, C1, B8)
+- [ ] [E3](docs/prs/E3.md) Through the SystemCore (wave 7; needs E2, D6)
+- [ ] [E4](docs/prs/E4.md) The SystemCore's page data (wave 5; needs E2, C2)
+- [ ] [E5](docs/prs/E5.md) Install a product on a SystemCore (wave 5; needs E2, X4)
+
+## F. App and CLI
+
+Mockups first, then a faster, cleaner app on the new core.
+
+- [ ] [F1](docs/prs/F1.md) Design language and mockups (wave 1; needs nothing)
+- [ ] [F2](docs/prs/F2.md) The app shell (wave 3; needs A2, A3, A5)
+- [ ] [F3](docs/prs/F3.md) Device list and discovery (wave 4; needs F1, F2, C1, A6)
+- [ ] [F4](docs/prs/F4.md) The board page (wave 6; needs F3, C2, C3, C5, C7, C8)
+- [ ] [F5](docs/prs/F5.md) The flash flow (wave 7; needs F3, D6, D7)
+- [ ] [F6](docs/prs/F6.md) Robot and SystemCore pages (wave 6; needs F3, E1, E2, E4)
+- [ ] [F7](docs/prs/F7.md) Settings, keys and security (wave 4; needs F2, A7)
+- [ ] [F8](docs/prs/F8.md) The CLI (wave 7; needs C5, D6, E2)
+- [ ] [F9](docs/prs/F9.md) Packaging and self-update (wave 4; needs F2)
+
+## G. Board runs and finish
+
+Every job with real clicks on real boards, then docs and the lock.
+
+- [ ] [G1](docs/prs/G1.md) Raze, direct (wave 8; needs F4, F5, B2, B9, X1, X2, X3; board run)
+- [ ] [G2](docs/prs/G2.md) Raze behind the SystemCore (wave 9; needs G1, F6, E3, X5; board run)
+- [ ] [G3](docs/prs/G3.md) ZERO 3E (wave 8; needs F5, B3, D3; board run)
+- [ ] [G4](docs/prs/G4.md) ROCK 5C (wave 9; needs G3, B4; board run)
+- [ ] [G5](docs/prs/G5.md) Cubie A7 (wave 8; needs F5, B5, D5; board run)
+- [ ] [G6](docs/prs/G6.md) Luckfox (wave 8; needs F5, B6, D8; board run)
+- [ ] [G7](docs/prs/G7.md) K230D (wave 8; needs F5, B7, D4; board run)
+- [ ] [G8](docs/prs/G8.md) Docs, lock, hand-over (wave 10; needs G1, G2, G3, F8, F9)

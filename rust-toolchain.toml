@@ -1,0 +1,5 @@
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]
+# Static binaries for the SystemCore package and the flasher images.
+targets = ["aarch64-unknown-linux-musl", "armv7-unknown-linux-musleabihf", "riscv64gc-unknown-linux-musl"]
