@@ -14,7 +14,8 @@ description = "Raze (CM5 + OV9782): Raspberry Pi CM5 vision device"
 # exists (boards/raze/overlay/README.txt). The board has no fan control, I2C, camera receiver or USB
 # gadget from the device tree until then. Provisional.
 [kernel]
-fragments = ["kernel/raze.config", "kernel/raze-trim.config"]
+# Lists replace the family's, so the family fragment is named here too (the flasher's built-in options).
+fragments = ["../../families/bcm2712/assets/linux.fragment", "kernel/raze.config", "kernel/raze-trim.config"]
 
 
 # The eMMC: 30,535,680 sectors (14,910 MiB), the "16 GB" module. MBR, as the slot disk is.

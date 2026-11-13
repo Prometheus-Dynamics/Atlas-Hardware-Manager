@@ -1,0 +1,32 @@
+# Every BCM2712 board. The flasher image has no kernel modules (its initramfs carries no
+# /lib/modules, PR B9/B14), so each option its lemnosd or Orion needs is built in (=y), not m.
+# Each line says why it is here; the dependencies each one forces are named beside it, checked
+# against the pinned kernel's Kconfig (raspberrypi/linux 53679a5, Linux 7.2.9) and bcm2712_defconfig.
+#
+# -- USB gadget: lemnosd builds one configuration through configfs; Orion's link is FunctionFS --
+# CONFIG_USB_CONFIGFS: the gadget framework's configfs front end. Depends on USB_GADGET (=y in
+#   bcm2712_defconfig). Selects USB_LIBCOMPOSITE=y (its configfs_composite_bind is in libcomposite.ko)
+#   and, through USB_LIBCOMPOSITE, CONFIGFS_FS=y (already set by raze.config).
+CONFIG_USB_CONFIGFS=y
+# CONFIG_USB_CONFIGFS_F_FS: the FunctionFS function (Orion's link). Depends on USB_CONFIGFS; selects
+#   USB_F_FS=y and DMA_SHARED_BUFFER=y. USB_F_FS itself has no prompt, so it cannot be set directly:
+#   this symbol is the one that takes it.
+CONFIG_USB_CONFIGFS_F_FS=y
+#
+# -- I2C: /dev/i2c-N for the BMM150 and INA238 (RP1's DesignWare controllers) --
+# CONFIG_I2C_CHARDEV: /dev/i2c-N. Depends on I2C (=y in bcm2712_defconfig); nothing else.
+CONFIG_I2C_CHARDEV=y
+# CONFIG_I2C_DESIGNWARE_CORE: the DesignWare adapter. Defaults m in bcm2712_defconfig. Required by
+#   the PLATFORM symbol below: its Kconfig entry sits inside "if I2C_DESIGNWARE_CORE".
+CONFIG_I2C_DESIGNWARE_CORE=y
+# CONFIG_I2C_DESIGNWARE_PLATFORM: the platform binding for the RP1 I2C controllers. Depends on
+#   I2C_DESIGNWARE_CORE (above) and on !ACPI (satisfied).
+CONFIG_I2C_DESIGNWARE_PLATFORM=y
+#
+# -- RP1 PIO: Lemnos's PIO transports (the LED ring and the PIO I2C bus) --
+# CONFIG_RP1_PIO: depends on FIRMWARE_RP1 (not COMPILE_TEST); defaults n.
+CONFIG_RP1_PIO=y
+# CONFIG_FIRMWARE_RP1: the RP1 firmware driver that RP1_PIO needs. Depends on MBOX_RP1.
+CONFIG_FIRMWARE_RP1=y
+# CONFIG_MBOX_RP1: the RP1 mailbox FIRMWARE_RP1 uses. Depends on MFD_RP1 (=y in bcm2712_defconfig).
+CONFIG_MBOX_RP1=y
