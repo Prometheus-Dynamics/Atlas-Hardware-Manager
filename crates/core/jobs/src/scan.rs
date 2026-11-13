@@ -34,6 +34,10 @@ pub struct ScanConfig {
     pub tick: Duration,
     /// How long a successful discovery waits before the next one.
     pub interval: Duration,
+    /// How long a device that answered identify waits before it is identified
+    /// again. Identify runs when a device appears or its discovery changes,
+    /// then at this slow refresh; not on every scan.
+    pub refresh: Duration,
     /// Limit on one discovery. A call past it is dropped and retried.
     pub discover_timeout: Duration,
     /// Limit on one identify (and the capabilities read after it).
@@ -47,6 +51,7 @@ impl Default for ScanConfig {
         Self {
             tick: Duration::from_millis(250),
             interval: Duration::from_secs(2),
+            refresh: Duration::from_secs(60),
             discover_timeout: Duration::from_secs(10),
             identify_timeout: Duration::from_secs(10),
             backoff: Backoff::default(),
@@ -401,7 +406,7 @@ async fn identify(
     match result {
         Ok((identity, capabilities)) => {
             shared.remember(&address, identity.key.clone());
-            shared.succeeded(&key, shared.config.interval);
+            shared.succeeded(&key, shared.config.refresh);
             shared.events.emit(Event::Identified {
                 identity,
                 capabilities,

@@ -202,6 +202,10 @@ fn identified(family: &'static str) -> impl FnMut(&Event) -> bool {
     move |event| matches!(event, Event::Identified { identity, .. } if identity.key.family.as_str() == family)
 }
 
+fn discovered(family: &'static str) -> impl FnMut(&Event) -> bool {
+    move |event| matches!(event, Event::Discovered { family: f, .. } if f.as_str() == family)
+}
+
 fn probe_failed(family: &'static str) -> impl FnMut(&Event) -> bool {
     move |event| matches!(event, Event::ProbeFailed { family: f, .. } if f.as_str() == family)
 }
@@ -221,7 +225,7 @@ async fn a_driver_that_sleeps_in_every_call_delays_nothing_else() {
     let mut rx = events.subscribe();
     let control = start(registry, &events);
 
-    // The fast device is identified within a second, and again on the next round.
+    // The fast device is identified within a second, and discovered again on the next round.
     assert!(
         next_matching(&mut rx, Duration::from_secs(1), identified("fast-family"))
             .await
@@ -229,7 +233,7 @@ async fn a_driver_that_sleeps_in_every_call_delays_nothing_else() {
         "the fast device was held up by the slow driver"
     );
     assert!(
-        next_matching(&mut rx, Duration::from_secs(5), identified("fast-family"))
+        next_matching(&mut rx, Duration::from_secs(5), discovered("fast-family"))
             .await
             .is_some(),
         "the fast device was not scanned again"
@@ -320,7 +324,7 @@ async fn a_paused_family_starts_no_calls_until_resumed() {
     control.pause_family(&family);
     assert!(control.is_paused(&family));
     assert!(
-        next_matching(&mut rx, Duration::from_secs(10), identified("held-family"))
+        next_matching(&mut rx, Duration::from_secs(10), discovered("held-family"))
             .await
             .is_none(),
         "a paused family was still scanned"
@@ -328,7 +332,7 @@ async fn a_paused_family_starts_no_calls_until_resumed() {
 
     control.resume_family(&family);
     assert!(
-        next_matching(&mut rx, Duration::from_secs(3), identified("held-family"))
+        next_matching(&mut rx, Duration::from_secs(3), discovered("held-family"))
             .await
             .is_some(),
         "the family did not restart after resume"
@@ -492,5 +496,60 @@ async fn a_quiet_claim_stops_identify_calls_for_that_device_only() {
         "discovery stopped for the whole link"
     );
     jobs.shutdown();
+    control.stop();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_steady_device_is_identified_once_per_refresh_not_once_per_scan() {
+    let steady = TestDriver::new("steady-family", "steady", Duration::ZERO, false);
+    let identify_calls = Arc::clone(&steady.identify_calls);
+    let discover_calls = Arc::clone(&steady.discover_calls);
+    let mut registry = DriverRegistry::new();
+    registry.register(steady.arc());
+    let events = Events::new(512);
+    let control = start(registry, &events);
+
+    time::sleep(Duration::from_secs(300)).await;
+    control.stop();
+
+    // Discovery ran about every 2 s; identify ran about once a minute.
+    let discovers = discover_calls.load(Ordering::SeqCst);
+    let identifies = identify_calls.load(Ordering::SeqCst);
+    assert!(
+        discovers >= 100,
+        "discovery ran only {discovers} times in 300 s"
+    );
+    assert!(
+        (5..=6).contains(&identifies),
+        "identified {identifies} times in 300 s; expected once per 60 s refresh"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_device_that_appears_is_identified_at_once() {
+    let late = TestDriver::new("late-family", "late", Duration::ZERO, false);
+    late.present.store(false, Ordering::SeqCst);
+    let present = Arc::clone(&late.present);
+    let identify_calls = Arc::clone(&late.identify_calls);
+    let mut registry = DriverRegistry::new();
+    registry.register(late.arc());
+    let events = Events::new(512);
+    let mut rx = events.subscribe();
+    let control = start(registry, &events);
+
+    time::sleep(Duration::from_secs(10)).await;
+    assert_eq!(
+        identify_calls.load(Ordering::SeqCst),
+        0,
+        "an absent device was identified"
+    );
+
+    present.store(true, Ordering::SeqCst);
+    assert!(
+        next_matching(&mut rx, Duration::from_secs(3), identified("late-family"))
+            .await
+            .is_some(),
+        "a device that appeared was not identified at once"
+    );
     control.stop();
 }
