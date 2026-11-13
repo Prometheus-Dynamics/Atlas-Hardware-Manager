@@ -14,6 +14,8 @@ The core every other group builds on: types, the driver contract, inventory, job
 - [ ] [A5](docs/prs/A5.md) Logging (wave 1; needs nothing)
 - [ ] [A6](docs/prs/A6.md) The device catalog (wave 2; needs A1)
 - [ ] [A7](docs/prs/A7.md) Releases and trust (wave 2; needs A1)
+- [ ] [A8](docs/prs/A8.md) Core follow-ups from the first wave (wave 3; needs A1, A6, D1)
+- [ ] [A9](docs/prs/A9.md) The simulated node out of the drivers, and one driver for every family (wave 4; needs A1, A4)
 
 ## B. Board descriptions
 
@@ -53,10 +55,12 @@ Our own loader for every chip family, then the flasher image, then an ordinary u
 - [ ] [D3](docs/prs/D3.md) Rockchip maskrom and loader (wave 3; needs D1)
 - [ ] [D4](docs/prs/D4.md) Kendryte K230 burn (wave 3; needs D1)
 - [ ] [D5](docs/prs/D5.md) Allwinner FEL (wave 3; needs D1)
-- [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3)
+- [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11)
 - [ ] [D7](docs/prs/D7.md) Disk writer and its helper (wave 2; needs A1)
 - [ ] [D8](docs/prs/D8.md) UBI images for NAND boards (wave 2; needs A1)
 - [ ] [D9](docs/prs/D9.md) Slot bundles from the image (wave 3; needs A7)
+- [ ] [D10](docs/prs/D10.md) Fastboot client (wave 3; needs D1)
+- [ ] [D11](docs/prs/D11.md) Read a slot out of the first-flash image (wave 4; needs D9)
 
 ## E. Robot network and SystemCore
 

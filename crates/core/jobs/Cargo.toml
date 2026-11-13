@@ -1,0 +1,23 @@
+[package]
+name = "atlas-jobs"
+description = "Atlas background work: the driver scan and jobs that resume after a restart, reporting by events."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+atlas-driver = { path = "../driver" }
+atlas-types = { path = "../types" }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["fs", "io-util", "macros", "rt", "sync", "time"] }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt", "sync", "test-util", "time"] }
+
+[lints]
+workspace = true

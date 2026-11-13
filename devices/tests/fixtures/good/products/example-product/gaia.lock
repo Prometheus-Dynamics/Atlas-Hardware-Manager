@@ -1,0 +1,12 @@
+# Written by `gaia lock`. Do not edit.
+version = 1
+
+[source."example-component.src"]
+kind = "tree"
+path = "../../components/example-component/src"
+digest = "sha256:445da40bc83f3bf256cbb476e89c77ffb7fb2be13a9d2404cbc5af8c0df56743"
+
+[source."example-component.wheels"]
+kind = "tree"
+path = "../../components/example-component/wheels"
+digest = "sha256:6169370a1724b3d010e9d87a53eee3e3ac290ac142cbfe7b5aaf2bb9988eb273"
