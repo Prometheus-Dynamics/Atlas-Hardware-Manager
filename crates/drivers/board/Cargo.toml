@@ -1,6 +1,6 @@
 [package]
 name = "atlas-board"
-description = "The one board driver: finds Orion nodes on a link, identifies them from their hello document, and keeps each one's connection with the failure rule."
+description = "The one board driver: finds Orion nodes on a link and identifies them from their hello document and Lemnos's state."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 atlas-driver = { path = "../../core/driver" }
+atlas-session = { path = "../../board/session" }
 atlas-types = { path = "../../core/types" }
 async-trait = "0.1"
 orion = { workspace = true, features = ["actions"] }

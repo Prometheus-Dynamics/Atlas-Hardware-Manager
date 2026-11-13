@@ -85,9 +85,10 @@ impl Driver for Device {
 
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
         Ok(Identity {
-            key: DeviceKey::new(self.family, self.serial),
+            key: DeviceKey::from_static(self.family, self.serial),
             model: "test-model".into(),
             state: DeviceState::Running,
+            lemnos: atlas_types::LemnosState::Absent,
             versions: BTreeMap::new(),
             name: None,
             link: candidate.link.clone(),
@@ -173,7 +174,7 @@ async fn an_any_family_driver_beside_a_named_one_is_identified_by_each_devices_o
     assert!(
         seen.iter()
             .any(|event| matches!(event, Event::Identified { identity, .. }
-            if identity.key == DeviceKey::new("fast-family", "fast-serial"))),
+            if identity.key == DeviceKey::from_static("fast-family", "fast-serial"))),
         "the named device is identified"
     );
     // The any-family device is identified under the family it reports, not under the driver's
@@ -181,14 +182,14 @@ async fn an_any_family_driver_beside_a_named_one_is_identified_by_each_devices_o
     assert!(
         seen.iter()
             .any(|event| matches!(event, Event::Identified { identity, .. }
-            if identity.key == DeviceKey::new("widget-family", "widget-serial"))),
+            if identity.key == DeviceKey::from_static("widget-family", "widget-serial"))),
         "the any-family device is identified by its own family"
     );
     assert!(
         !seen
             .iter()
             .any(|event| matches!(event, Event::Identified { identity, .. }
-            if identity.key.family.as_str() == "board-label")),
+            if identity.key.family().map(Family::as_str) == Some("board-label"))),
         "the driver's label is never a device's family"
     );
     // Its discovery is reported under the driver's label: the scan's name for that work.
@@ -198,5 +199,48 @@ async fn an_any_family_driver_beside_a_named_one_is_identified_by_each_devices_o
             Event::Discovered { family, .. } if family.as_str() == "board-label"
         )),
         "the any-family driver's discovery is scanned"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_device_two_drivers_see_is_reported_once_by_the_driver_the_registry_names() {
+    // A named driver and an any-family driver both find the same device on the same link.
+    let mut registry = DriverRegistry::new();
+    registry.register(Device::named("fast-family", "fast-serial").arc());
+    registry.register(Device::any("board-label", "fast-family", "fast-serial").arc());
+
+    let events = Events::new(512);
+    let mut rx = events.subscribe();
+    let links: Arc<dyn LinkSource> = Arc::new(FixedLinks(vec![usb_link()]));
+    let control: ScanControl = start_scan(
+        registry,
+        links,
+        events.clone(),
+        ScanConfig::default(),
+        DeviceHolds::new(),
+    );
+
+    let mut identified = 0;
+    let end = time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let left = end.saturating_duration_since(time::Instant::now());
+        if left.is_zero() {
+            break;
+        }
+        match next_matching(&mut rx, left, |_| true).await {
+            Some(Event::Identified { identity, .. })
+                if identity.key == DeviceKey::from_static("fast-family", "fast-serial") =>
+            {
+                identified += 1;
+            }
+            Some(_) => {}
+            None => break,
+        }
+    }
+    control.stop();
+
+    assert_eq!(
+        identified, 1,
+        "the device is reported once, not once per driver"
     );
 }

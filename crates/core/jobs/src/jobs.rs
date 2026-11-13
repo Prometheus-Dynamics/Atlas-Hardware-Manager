@@ -19,6 +19,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use atlas_driver::DriverError;
 use atlas_types::DeviceKey;
+use atlas_types::NoBoardIdentity;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::io::AsyncWriteExt;
@@ -53,6 +54,13 @@ pub trait JobKind: Send + Sync {
     /// Whether an unfinished job of this kind continues after an Atlas restart.
     /// `false` means it is marked interrupted when Atlas starts again.
     fn resumable(&self) -> bool;
+
+    /// Whether the job works on a board's own identity: its family and serial (flashing, version
+    /// installs, matching a board description). Such a job refuses, at submit, a device whose key
+    /// is a node's Orion fingerprint. Default `false`: any device will do.
+    fn needs_board_identity(&self) -> bool {
+        false
+    }
 
     /// Runs one step against the devices the job claimed. It is dropped at any
     /// await point when the job is cancelled, so it must be cancel-safe.
@@ -132,6 +140,13 @@ pub enum JobError {
     UnknownKind(String),
     #[error("a job needs at least one step")]
     NoSteps,
+    /// The kind works on a board's own identity, and a device it was given has only a node key.
+    /// Nothing was queued.
+    #[error("{kind} works on a board, and {reason}")]
+    NeedsBoard {
+        kind: String,
+        reason: NoBoardIdentity,
+    },
     /// The device is already being worked on by another job. Nothing was queued.
     #[error(
         "{device} is already being worked on by {job} ({kind}); a second job for it waits for that one to end"
@@ -360,11 +375,21 @@ impl Jobs {
         claim: DeviceClaim,
         steps: Vec<String>,
     ) -> Result<JobId, JobError> {
-        if !self.inner.kinds.contains_key(kind) {
+        let Some(job_kind) = self.inner.kinds.get(kind) else {
             return Err(JobError::UnknownKind(kind.to_owned()));
-        }
+        };
         if steps.is_empty() {
             return Err(JobError::NoSteps);
+        }
+        if job_kind.needs_board_identity() {
+            for device in &claim.devices {
+                if let Err(reason) = device.board_identity() {
+                    return Err(JobError::NeedsBoard {
+                        kind: kind.to_owned(),
+                        reason,
+                    });
+                }
+            }
         }
         let record = {
             let mut state = self.inner.state();

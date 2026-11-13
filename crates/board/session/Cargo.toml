@@ -1,0 +1,19 @@
+[package]
+name = "atlas-session"
+description = "The connection to one Orion node, kept: the seeds that say where a node is, the monitor thread that connects and follows the failure rule, and the handle later calls run on."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+atlas-types = { path = "../../core/types" }
+orion = { workspace = true }
+tokio = { version = "1", features = ["sync", "time"] }
+
+[dev-dependencies]
+atlas-sim-node = { path = "../../testing/sim-node" }
+tokio = { version = "1", features = ["macros", "rt", "sync", "time"] }
+
+[lints]
+workspace = true

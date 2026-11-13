@@ -5,29 +5,22 @@
 //! are published by Lemnos as topics `hello.<fact>`: `family`, `serial`, `model`,
 //! `version.<name>` and `offers`. A fact that cannot be known is absent, never guessed.
 //!
-//! The device key is `family:serial` when the board publishes both, else the node's Orion key
-//! fingerprint (under this driver's label, see [`FAMILY`](crate::FAMILY)). A node without
-//! Lemnos is not refused; only jobs that need a board identity refuse, and they check
-//! [`has_board_identity`].
+//! The device key is a board key (`family:serial`) when the board publishes both, else a node
+//! key from the node's Orion key fingerprint. A node without Lemnos is not refused; only jobs
+//! that need a board identity refuse a node key (see [`atlas_types::DeviceKey::board_identity`]).
 
 use std::collections::BTreeMap;
 
 use atlas_driver::DriverError;
-use atlas_types::{CapabilityKind, CapabilitySet, DeviceKey, DeviceState, Identity, LinkId};
+use atlas_types::{
+    CapabilityKind, CapabilitySet, DeviceKey, DeviceState, Identity, LemnosState, LinkId,
+};
 use orion::node::Node;
-
-use crate::lemnos::Lemnos;
 
 /// The `UTF-8 text` field type number in Orion's topic declarations.
 const TEXT: u8 = 4;
 /// The attribute that carries the offers, as the node published them.
 pub const OFFERS: &str = "offers";
-/// The attribute that says where the key comes from: `hardware` or `fingerprint`.
-pub const KEY_SOURCE: &str = "key-source";
-/// The attribute that carries Lemnos's state (see [`Lemnos::word`]).
-pub const LEMNOS: &str = "lemnos";
-/// The attribute that carries the reason behind a Lemnos state that has one.
-pub const LEMNOS_DETAIL: &str = "lemnos-detail";
 
 /// What every Orion node provides, Lemnos or not: its files, shell, logs, topics and actions.
 const ORION_OWN: [CapabilityKind; 5] = [
@@ -42,12 +35,12 @@ const ORION_OWN: [CapabilityKind; 5] = [
 ///
 /// # Errors
 ///
-/// If the node publishes a state Atlas does not know. A node with no state published is
-/// running: Orion publishes `recovery` and a flasher publishes `flasher`.
+/// If the node publishes a state Atlas does not know, or a family or serial that cannot make a
+/// key. A node with no state published is running: Orion publishes `recovery` and a flasher
+/// publishes `flasher`.
 pub fn identity(
     node: &Node,
-    lemnos: &Lemnos,
-    family_label: &str,
+    lemnos: &LemnosState,
     link: &LinkId,
     address: &str,
 ) -> Result<Identity, DriverError> {
@@ -68,12 +61,12 @@ pub fn identity(
         }
     };
 
-    let (key, key_source) = match (fact("family"), fact("serial")) {
-        (Some(family), Some(serial)) => (DeviceKey::new(family, serial), "hardware"),
-        _ => (
-            DeviceKey::new(family_label, node.fingerprint.clone()),
-            "fingerprint",
-        ),
+    let key = match (fact("family"), fact("serial")) {
+        (Some(family), Some(serial)) => DeviceKey::board(family, serial).map_err(|error| {
+            DriverError::Incompatible(format!("the node's hardware identity: {error}"))
+        })?,
+        _ => DeviceKey::node(node.fingerprint.clone())
+            .map_err(|error| DriverError::Incompatible(format!("the node's identity: {error}")))?,
     };
 
     let mut versions = BTreeMap::new();
@@ -94,12 +87,6 @@ pub fn identity(
             },
         }
     }
-    attributes.insert(KEY_SOURCE.into(), key_source.into());
-    attributes.insert(LEMNOS.into(), lemnos.word().into());
-    if let Some(detail) = lemnos.detail() {
-        attributes.insert(LEMNOS_DETAIL.into(), detail.into());
-    }
-    attributes.insert("fingerprint".into(), node.fingerprint.clone());
     attributes.insert("cluster".into(), node.cluster.clone());
     attributes.insert("revision".into(), node.revision.to_string());
 
@@ -107,18 +94,13 @@ pub fn identity(
         key,
         model: fact("model").unwrap_or_default(),
         state,
+        lemnos: lemnos.clone(),
         versions,
         name: Some(node.name.clone()),
         link: link.clone(),
         address: address.to_owned(),
         attributes,
     })
-}
-
-/// Whether the identity is a board's own (family and serial), which flashing and slot installs
-/// need. A plain Orion node is identified by its fingerprint and cannot be flashed.
-pub fn has_board_identity(identity: &Identity) -> bool {
-    identity.attributes.get(KEY_SOURCE).map(String::as_str) == Some("hardware")
 }
 
 /// The capabilities an identified node grants.
@@ -180,8 +162,6 @@ mod tests {
     use super::*;
     use orion::node::Fact;
 
-    const LABEL: &str = "orion";
-
     fn fact(name: &str, value: &str) -> Fact {
         Fact {
             name: name.into(),
@@ -206,12 +186,12 @@ mod tests {
         LinkId::new("usbnet:a")
     }
 
-    fn id(facts: Vec<Fact>, lemnos: &Lemnos) -> Identity {
-        identity(&node(facts), lemnos, LABEL, &link(), "x").unwrap()
+    fn id(facts: Vec<Fact>, lemnos: &LemnosState) -> Identity {
+        identity(&node(facts), lemnos, &link(), "x").unwrap()
     }
 
     #[test]
-    fn family_and_serial_make_the_key_and_the_node_name_and_revision_come_from_the_document() {
+    fn family_and_serial_make_a_board_key_and_the_node_name_and_revision_come_from_the_document() {
         let found = id(
             vec![
                 fact("family", "test-family"),
@@ -220,10 +200,10 @@ mod tests {
                 fact("version.os", "1.2.3"),
                 fact("offers", "slots"),
             ],
-            &Lemnos::Answering,
+            &LemnosState::Answering,
         );
-        assert_eq!(found.key, DeviceKey::new("test-family", "0001"));
-        assert!(has_board_identity(&found));
+        assert_eq!(found.key, DeviceKey::from_static("test-family", "0001"));
+        assert!(found.key.is_board());
         assert_eq!(found.model, "test-model");
         assert_eq!(found.versions.get("os").map(String::as_str), Some("1.2.3"));
         assert_eq!(found.name.as_deref(), Some("board"));
@@ -231,44 +211,69 @@ mod tests {
             found.attributes.get("revision").map(String::as_str),
             Some("3")
         );
-        assert_eq!(
-            found.attributes.get(LEMNOS).map(String::as_str),
-            Some("answering")
-        );
+        assert_eq!(found.lemnos, LemnosState::Answering);
     }
 
     #[test]
-    fn a_node_without_hardware_facts_is_a_plain_node_keyed_by_its_fingerprint() {
-        let plain = id(Vec::new(), &Lemnos::Absent);
-        assert_eq!(plain.key, DeviceKey::new(LABEL, "ab:cd"));
-        assert!(!has_board_identity(&plain));
+    fn a_node_without_hardware_facts_is_keyed_by_its_fingerprint_and_is_not_a_board() {
+        let plain = id(Vec::new(), &LemnosState::Absent);
+        assert_eq!(plain.key, DeviceKey::node("ab:cd").unwrap());
+        assert!(!plain.key.is_board());
         assert_eq!(plain.state, DeviceState::Running);
-        assert_eq!(
-            plain.attributes.get(LEMNOS).map(String::as_str),
-            Some("absent")
-        );
+        assert_eq!(plain.lemnos, LemnosState::Absent);
     }
 
     #[test]
-    fn a_node_with_only_a_serial_falls_back_to_its_fingerprint() {
-        let found = id(vec![fact("serial", "1")], &Lemnos::Absent);
-        assert_eq!(found.key, DeviceKey::new(LABEL, "ab:cd"));
+    fn a_node_with_only_a_serial_is_keyed_by_its_fingerprint() {
+        let found = id(vec![fact("serial", "1")], &LemnosState::Absent);
+        assert_eq!(found.key, DeviceKey::node("ab:cd").unwrap());
+    }
+
+    #[test]
+    fn a_family_that_cannot_make_a_key_is_refused_rather_than_guessed() {
+        let refused = identity(
+            &node(vec![fact("family", "bad:family"), fact("serial", "1")]),
+            &LemnosState::Absent,
+            &link(),
+            "x",
+        );
+        assert!(matches!(refused, Err(DriverError::Incompatible(_))));
+    }
+
+    #[test]
+    fn every_lemnos_state_reaches_the_identity_unchanged() {
+        let states = [
+            LemnosState::Absent,
+            LemnosState::Answering,
+            LemnosState::NotAnswering {
+                reason: "-4: not answering".into(),
+            },
+            LemnosState::RevisionMismatch {
+                reason: "built from different Lemnos revisions".into(),
+            },
+        ];
+        for state in states {
+            let found = id(
+                vec![fact("family", "test-family"), fact("serial", "1")],
+                &state,
+            );
+            assert_eq!(found.lemnos, state);
+        }
     }
 
     #[test]
     fn recovery_and_flasher_are_recovery_and_an_unknown_state_is_refused() {
         assert_eq!(
-            id(vec![fact("state", "recovery")], &Lemnos::Absent).state,
+            id(vec![fact("state", "recovery")], &LemnosState::Absent).state,
             DeviceState::Recovery
         );
         assert_eq!(
-            id(vec![fact("state", "flasher")], &Lemnos::Absent).state,
+            id(vec![fact("state", "flasher")], &LemnosState::Absent).state,
             DeviceState::Recovery
         );
         let unknown = identity(
             &node(vec![fact("state", "boot-rom")]),
-            &Lemnos::Absent,
-            LABEL,
+            &LemnosState::Absent,
             &link(),
             "x",
         );
@@ -277,7 +282,7 @@ mod tests {
 
     #[test]
     fn orion_services_are_granted_to_every_node_and_lemnos_contracts_only_when_offered() {
-        let plain = capabilities(&id(Vec::new(), &Lemnos::Absent));
+        let plain = capabilities(&id(Vec::new(), &LemnosState::Absent));
         for kind in ORION_OWN {
             assert!(plain.grants(kind), "{kind:?} for a plain node");
         }
@@ -290,7 +295,7 @@ mod tests {
                 "offers",
                 "slots, update, hardware, reboot, not-a-kind",
             )],
-            &Lemnos::Answering,
+            &LemnosState::Answering,
         ));
         assert!(board.grants(CapabilityKind::Slots));
         assert!(board.grants(CapabilityKind::Update));

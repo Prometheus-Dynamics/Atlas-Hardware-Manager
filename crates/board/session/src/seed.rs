@@ -1,4 +1,4 @@
-//! How a node is reached: the links Atlas discovers on, and the Orion address of a node on each.
+//! Where a node is: the link it sits on and its Orion address there.
 
 use std::str::FromStr;
 
@@ -38,13 +38,6 @@ impl Seed {
             )
     }
 }
-
-/// The link kinds this driver discovers nodes on.
-pub const LINK_KINDS: [LinkKind; 3] = [
-    LinkKind::UsbNetwork,
-    LinkKind::Ethernet,
-    LinkKind::UsbSerial,
-];
 
 #[cfg(test)]
 mod tests {

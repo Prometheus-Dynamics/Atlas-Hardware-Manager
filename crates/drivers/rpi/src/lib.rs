@@ -194,9 +194,11 @@ impl Driver for RpiDriver {
             .clone()
             .unwrap_or_else(|| format!("usb-{}", device.location));
         Ok(Identity {
-            key: DeviceKey::new(FAMILY, serial),
+            key: DeviceKey::board(FAMILY, serial)
+                .map_err(|error| DriverError::Incompatible(error.reason))?,
             model: rom.model.clone(),
             state: DeviceState::BootRom,
+            lemnos: atlas_types::LemnosState::Absent,
             versions: BTreeMap::new(),
             name: None,
             link: candidate.link.clone(),

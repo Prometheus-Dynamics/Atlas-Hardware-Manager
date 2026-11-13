@@ -64,13 +64,13 @@ fn writable(disk: &Disk) -> bool {
 }
 
 /// The stable key: the serial when the disk has one, else its USB port, else its name.
-fn key_for(disk: &Disk) -> DeviceKey {
+fn key_for(disk: &Disk) -> Result<DeviceKey, atlas_types::KeyError> {
     let serial = disk
         .serial
         .clone()
         .or_else(|| disk.usb_port.as_ref().map(|port| format!("usb-{port}")))
         .unwrap_or_else(|| disk.name.clone());
-    DeviceKey::new(FAMILY, serial)
+    DeviceKey::board(FAMILY, serial)
 }
 
 fn attributes_for(disk: &Disk) -> BTreeMap<String, String> {
@@ -121,9 +121,10 @@ impl Driver for DiskDriver {
                 ))
             })?;
         Ok(Identity {
-            key: key_for(disk),
+            key: key_for(disk).map_err(|error| DriverError::Incompatible(error.reason))?,
             model: disk.description(),
             state: DeviceState::RemovableDisk,
+            lemnos: atlas_types::LemnosState::Absent,
             versions: BTreeMap::new(),
             name: None,
             link: candidate.link.clone(),

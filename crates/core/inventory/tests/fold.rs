@@ -16,11 +16,11 @@ const T0: u64 = 1_000_000;
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
 fn running() -> DeviceKey {
-    DeviceKey::new("sample-soc", "1000abcd")
+    DeviceKey::from_static("sample-soc", "1000abcd")
 }
 
 fn boot_rom() -> DeviceKey {
-    DeviceKey::new("sample-soc", "port-1-2")
+    DeviceKey::from_static("sample-soc", "port-1-2")
 }
 
 fn identity(
@@ -34,6 +34,7 @@ fn identity(
         key: key.clone(),
         model: "sample-board".into(),
         state,
+        lemnos: atlas_types::LemnosState::Absent,
         versions: BTreeMap::from([("os".to_string(), version.to_string())]),
         name: None,
         link: LinkId::new(link),
@@ -206,7 +207,7 @@ fn unfold_makes_the_alias_a_new_record_again() {
 #[test]
 fn fold_refuses_what_it_cannot_do() {
     let mut inventory = folded();
-    let stranger = DeviceKey::new("sample-soc", "9999ffff");
+    let stranger = DeviceKey::from_static("sample-soc", "9999ffff");
     assert!(!inventory.fold(&stranger, &running(), T0), "unknown alias");
     assert!(!inventory.fold(&running(), &running(), T0), "into itself");
     assert!(
@@ -223,7 +224,7 @@ fn fold_refuses_what_it_cannot_do() {
 #[test]
 fn folds_chain_to_the_final_record() {
     let mut inventory = folded();
-    let third = DeviceKey::new("sample-soc", "3000cafe");
+    let third = DeviceKey::from_static("sample-soc", "3000cafe");
     inventory.observe(
         identity(
             &third,

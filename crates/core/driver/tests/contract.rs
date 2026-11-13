@@ -57,9 +57,10 @@ impl Driver for SampleDriver {
 
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
         Ok(Identity {
-            key: DeviceKey::new("sample-soc", "0001"),
+            key: DeviceKey::from_static("sample-soc", "0001"),
             model: "sample-board".into(),
             state: DeviceState::Running,
+            lemnos: atlas_types::LemnosState::Absent,
             versions: [("os".to_string(), "2026.3.1".to_string())].into(),
             name: None,
             link: candidate.link.clone(),

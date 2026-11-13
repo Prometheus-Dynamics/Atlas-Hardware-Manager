@@ -140,9 +140,11 @@ impl RadioStatus {
             self.systemcore_enabled.to_string(),
         );
         Ok(Identity {
-            key: DeviceKey::new(RADIO_FAMILY, team.to_string()),
+            key: DeviceKey::board(RADIO_FAMILY, team.to_string())
+                .map_err(|error| DriverError::Incompatible(error.reason))?,
             model: self.model().to_string(),
             state: DeviceState::RobotDevice,
+            lemnos: atlas_types::LemnosState::Absent,
             versions,
             name: Some(format!("radio-{team}")),
             link: LinkId::new(""),

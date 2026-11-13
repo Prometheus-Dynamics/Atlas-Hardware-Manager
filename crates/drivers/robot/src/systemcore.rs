@@ -70,9 +70,11 @@ async fn read(net: &RobotNet, ip: Ipv4Addr) -> Result<Identity, DriverError> {
         )));
     }
     Ok(Identity {
-        key: DeviceKey::new(SYSTEMCORE_FAMILY, team.to_string()),
+        key: DeviceKey::board(SYSTEMCORE_FAMILY, team.to_string())
+            .map_err(|error| DriverError::Incompatible(error.reason))?,
         model: "SystemCore".into(),
         state: DeviceState::RobotDevice,
+        lemnos: atlas_types::LemnosState::Absent,
         versions: Default::default(),
         name: None,
         link: LinkId::new(""),

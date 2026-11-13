@@ -31,6 +31,7 @@ version = "2026.1.0-dev"
 dependencies = [
  "async-trait",
  "atlas-driver",
+ "atlas-session",
  "atlas-sim-node",
  "atlas-types",
  "orion",
@@ -279,6 +280,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-session"
+version = "2026.1.0-dev"
+dependencies = [
+ "atlas-sim-node",
+ "atlas-types",
+ "orion",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-sim-node"
 version = "2026.1.0-dev"
 dependencies = [
@@ -295,6 +306,7 @@ name = "atlas-types"
 version = "2026.1.0-dev"
 dependencies = [
  "serde",
+ "serde_json",
 ]
 
 [[package]]

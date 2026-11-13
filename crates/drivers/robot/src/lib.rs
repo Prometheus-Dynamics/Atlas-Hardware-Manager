@@ -73,7 +73,7 @@ pub fn drivers(reach: Arc<dyn Reach>, teams: Arc<dyn Teams>) -> Vec<Arc<dyn Driv
 /// device relays it, so the placeholder `via` is never compared.
 pub(crate) fn gateway_kind() -> LinkKind {
     LinkKind::Gateway {
-        via: DeviceKey::new("relay", ""),
+        via: DeviceKey::from_static("relay", "placeholder"),
     }
 }
 
@@ -269,9 +269,10 @@ mod tests {
         for driver in &drivers {
             let all = CapabilityKind::ALL;
             let identity = atlas_types::Identity {
-                key: DeviceKey::new("x", "1"),
+                key: DeviceKey::from_static("x", "1"),
                 model: String::new(),
                 state: DeviceState::RobotDevice,
+                lemnos: atlas_types::LemnosState::Absent,
                 versions: Default::default(),
                 name: None,
                 link: LinkId::new("robot-net"),
@@ -307,7 +308,7 @@ mod tests {
             let manifest = driver.manifest();
             assert!(manifest.handles(&LinkKind::Ethernet));
             assert!(manifest.handles(&LinkKind::Gateway {
-                via: DeviceKey::new("any", "x")
+                via: DeviceKey::from_static("any", "x")
             }));
             assert!(!manifest.handles(&usb));
             assert!(!manifest.handles(&LinkKind::UsbSerial));

@@ -10,6 +10,6 @@ mod ids;
 mod link;
 
 pub use capability::{CapabilityKind, CapabilitySet};
-pub use device::{DeviceState, Identity};
-pub use ids::{DeviceKey, Family, LinkId, Serial};
+pub use device::{DeviceState, Identity, LemnosState};
+pub use ids::{DeviceKey, Family, KeyError, LinkId, NoBoardIdentity, Serial};
 pub use link::{Candidate, Link, LinkKind};

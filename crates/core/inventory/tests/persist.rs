@@ -39,9 +39,10 @@ impl Drop for Scratch {
 fn sample() -> Inventory {
     let mut inventory = Inventory::new();
     let identity = Identity {
-        key: DeviceKey::new("sample-soc", "1000abcd"),
+        key: DeviceKey::from_static("sample-soc", "1000abcd"),
         model: "sample-board".into(),
         state: atlas_types::DeviceState::Running,
+        lemnos: atlas_types::LemnosState::Absent,
         versions: BTreeMap::from([("os".to_string(), "1.0.0".to_string())]),
         name: None,
         link: LinkId::new("eth:enp3s0"),
@@ -50,7 +51,7 @@ fn sample() -> Inventory {
     };
     inventory.observe(identity, LinkKind::Ethernet, CapabilitySet::new(), 1_000);
     inventory.set_label(
-        &DeviceKey::new("sample-soc", "1000abcd"),
+        &DeviceKey::from_static("sample-soc", "1000abcd"),
         Some("cam".into()),
         2_000,
     );
@@ -256,9 +257,10 @@ fn save_then_edit(scratch: &Scratch, edit: impl FnOnce(&mut serde_json::Value)) 
     let mut inventory = sample();
     inventory.observe(
         Identity {
-            key: DeviceKey::new("sample-soc", "2000beef"),
+            key: DeviceKey::from_static("sample-soc", "2000beef"),
             model: "sample-board".into(),
             state: atlas_types::DeviceState::Running,
+            lemnos: atlas_types::LemnosState::Absent,
             versions: BTreeMap::new(),
             name: None,
             link: LinkId::new("eth:enp3s0"),
@@ -295,7 +297,7 @@ fn unknown_values_inside_a_record_drop_only_those_values() {
         }
     );
     let record = loaded
-        .get(&DeviceKey::new("sample-soc", "1000abcd"))
+        .get(&DeviceKey::from_static("sample-soc", "1000abcd"))
         .unwrap();
     assert!(
         record
@@ -336,12 +338,12 @@ fn an_unreadable_record_costs_only_that_record() {
     );
     assert!(
         loaded
-            .get(&DeviceKey::new("sample-soc", "1000abcd"))
+            .get(&DeviceKey::from_static("sample-soc", "1000abcd"))
             .is_some()
     );
     assert!(
         loaded
-            .get(&DeviceKey::new("sample-soc", "2000beef"))
+            .get(&DeviceKey::from_static("sample-soc", "2000beef"))
             .is_none()
     );
     assert!(scratch.file().exists(), "a readable file is not set aside");
@@ -363,4 +365,35 @@ fn an_unknown_robot_or_alias_value_costs_only_itself() {
         }
     );
     assert_eq!(loaded.all().len(), 2);
+}
+
+#[test]
+fn a_file_written_before_keys_and_lemnos_states_loaded_as_board_devices() {
+    // The shape before this change: each key an object with `family` and `serial`, and an
+    // identity with no Lemnos state.
+    let scratch = Scratch::new("before-kinds");
+    save_then_edit(&scratch, |json| {
+        for device in json["devices"].as_array_mut().unwrap() {
+            let text = device["key"].as_str().unwrap().to_owned();
+            let (family, serial) = text.split_once(':').unwrap();
+            let old = serde_json::json!({ "family": family, "serial": serial });
+            device["key"] = old.clone();
+            device["identity"]["key"] = old;
+            device["identity"].as_object_mut().unwrap().remove("lemnos");
+        }
+    });
+
+    let (loaded, outcome) = JsonFileStore::new(scratch.file()).load();
+    assert_eq!(
+        outcome,
+        LoadOutcome::Restored {
+            skipped_records: 0,
+            dropped_values: 0
+        }
+    );
+    let record = loaded
+        .get(&DeviceKey::from_static("sample-soc", "2000beef"))
+        .expect("the older record loads under its board key");
+    assert!(record.key.is_board());
+    assert_eq!(record.identity.lemnos, atlas_types::LemnosState::Absent);
 }
