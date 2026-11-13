@@ -3,6 +3,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 use crate::UsbError;
+use crate::link::LinkOptions;
+
+/// The two halves of a split link.
+pub type Halves = (Box<dyn BulkRead>, Box<dyn BulkWrite>);
 
 /// One open device's transfers. A loader drives a boot ROM through this
 /// trait only, so it can run against the simulated device in tests.
@@ -38,6 +42,58 @@ pub trait UsbIo: Send {
     fn max_packet_out(&self) -> usize {
         512
     }
+
+    /// Takes the claimed interface's bulk IN and OUT endpoints apart into two
+    /// independent halves for a byte link (see [`crate::LinkOptions`]). Both
+    /// halves keep the claim alive; it is released when both are dropped. A
+    /// handle that cannot be split says so.
+    fn into_halves(self: Box<Self>, _options: &LinkOptions) -> Result<Halves, UsbError> {
+        Err(UsbError::Other(
+            "this USB handle cannot be split into a byte link".into(),
+        ))
+    }
+}
+
+/// The read half of a claimed bulk IN endpoint. Each [`submit`](Self::submit)
+/// queues one IN transfer of one max-packet-size read, so a transfer ends
+/// with every packet and a read returns as soon as a packet arrives.
+#[async_trait]
+pub trait BulkRead: Send {
+    /// The endpoint's max packet size. Every IN transfer asks for this many bytes.
+    fn max_packet(&self) -> usize;
+
+    /// Queues one IN transfer. Returns at once.
+    fn submit(&mut self);
+
+    /// Transfers queued and not yet completed.
+    fn pending(&self) -> usize;
+
+    /// Waits for the oldest queued transfer and returns its bytes. An empty
+    /// result is a zero-length packet, not the end of the stream. Cancel-safe:
+    /// dropping the future leaves the transfer queued.
+    async fn complete(&mut self) -> Result<Vec<u8>, UsbError>;
+
+    /// Cancels every queued transfer and waits until none is left. Bytes
+    /// already received into them are dropped. Used when the reader is leaving.
+    async fn cancel(&mut self);
+}
+
+/// The write half of a claimed bulk OUT endpoint. Each
+/// [`submit`](Self::submit) queues one OUT transfer.
+#[async_trait]
+pub trait BulkWrite: Send {
+    /// The endpoint's max packet size.
+    fn max_packet(&self) -> usize;
+
+    /// Queues one OUT transfer carrying `data`. Empty `data` is a zero-length
+    /// packet. Returns at once.
+    fn submit(&mut self, data: Vec<u8>);
+
+    /// Transfers queued and not yet completed.
+    fn pending(&self) -> usize;
+
+    /// Waits for the oldest queued transfer to complete, or fails.
+    async fn complete(&mut self) -> Result<(), UsbError>;
 }
 
 /// How long each kind of transfer may wait for the device.
