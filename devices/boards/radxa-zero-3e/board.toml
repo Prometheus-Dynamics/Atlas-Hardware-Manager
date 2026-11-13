@@ -21,7 +21,13 @@ fragments = ["../../families/rk35xx/assets/linux.fragment", "assets/linux.fragme
 defconfig = "radxa-zero-3-rk3566"
 
 # U-Boot's make variable ROCKCHIP_TPL: the DDR init blob, RK3566 v1.26 at
-# rkbin 3e288fe. B4's boards must use the v1.26 name too (rkbin master moved).
+# rkbin 3e288fe.
+# NOT VERIFIED ON HARDWARE, AND SUSPECT (2026-11-13): Gaia's first bring-up
+# image with this blob did not boot. dev's working image used rkbin f43a462e
+# with rk3566_ddr_1056MHz_v1.23.bin. A rebuilt image with v1.23 is the test;
+# when it boots, this pin moves back to f43a462e / v1.23 and says so here.
+# Other boards must not copy this version: pin a blob only to a version that
+# has booted that board.
 [bootloader.blobs]
 ROCKCHIP_TPL = { source = "rkbin", path = "bin/rk35/rk3566_ddr_1056MHz_v1.26.bin" }
 

@@ -2,7 +2,8 @@
 # and maskrom loader. Boards extend this and keep only what differs: CPU,
 # device tree, U-Boot defconfig, TF-A platform, DDR blob and RKBOOT ini.
 # Pins are dev's (Linux 7.3.3, U-Boot v2026.10, TF-A v2.15.0) and rkbin
-# 3e288fe, where the RK3566 DDR blobs are v1.26. Untested on board.
+# 3e288fe, where the RK3566 DDR blobs are v1.26. Untested on board, and the
+# rkbin pin is suspect: see the note in boards/radxa-zero-3e/board.toml.
 version = 1
 
 [target]
