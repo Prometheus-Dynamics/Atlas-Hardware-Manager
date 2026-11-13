@@ -454,6 +454,13 @@ fn a_service_restart_loses_the_running_install_and_a_new_one_starts_clean() {
     );
     push(&orion, BUNDLE, &big);
     let mut run = start_install(&orion, BUNDLE, false, false);
+    // Restart only once the install has started: the request and the restart are both handled
+    // by the node, in its own order.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while list(&orion)["state"] != "staging" {
+        assert!(Instant::now() < deadline, "the install never started");
+        std::thread::sleep(Duration::from_millis(5));
+    }
 
     node.restart_daemon();
     let lost = run.finish(Duration::from_secs(5)).expect("it ends");
