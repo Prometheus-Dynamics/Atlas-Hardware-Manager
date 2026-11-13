@@ -1,0 +1,27 @@
+# What must build on Windows and macOS, read by scripts/check-portable.sh (PR G9).
+#
+# [orion-bound]: every Atlas crate that reaches an Orion crate which is Linux-only at the Orion rev
+# locked in the root Cargo.toml (a crate-level #![cfg(target_os = "linux")] in that crate's lib.rs).
+# One crate per line; the comment names the Orion crate that binds it. The check derives this set
+# from `cargo metadata` and fails if it differs in either direction, so the list shrinks here when
+# Orion's portable client lands (Orion F12). Every other workspace crate is portable and is built
+# for Windows and macOS.
+#
+# [does-not-build <target-triple>]: portable crates that CI found do not compile natively on that
+# OS. One crate per line; the comment is the first error. The check fails if one starts to build
+# (remove it then) and fails for any other portable crate that does not build.
+
+[orion-bound]
+atlas-access        # binds on: orion (direct, the client facade)
+atlas-actions       # binds on: orion (direct, the client facade)
+atlas-board         # binds on: orion (direct, the client facade)
+atlas-board-slots   # binds on: orion (direct, the client facade)
+atlas-files         # binds on: orion (direct, the client facade)
+atlas-nt            # binds on: orion-ws (through orion-nt4); dev-only: orion, orion-comm-app
+atlas-session       # binds on: orion (direct, the client facade)
+atlas-sim-node      # binds on: orion and orion-stubs (direct; the simulated node's comm core)
+atlas-topics        # binds on: orion (direct, the client facade)
+
+[does-not-build x86_64-pc-windows-msvc]
+
+[does-not-build aarch64-apple-darwin]
