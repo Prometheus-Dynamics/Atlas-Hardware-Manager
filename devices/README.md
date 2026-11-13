@@ -16,7 +16,8 @@ devices/
   boards/<board>/board.toml            extends a family; keeps only what differs
   boards/<board>/app/app.json          app data for the board (see "App data" below)
   components/<component>/component.toml  one piece of software and what it installs
-  products/<product>/product.toml      which components go on which board, and the recipe
+  products/<product>/product.toml      one image: its board, components, OS and recipe
+  products/<product>/gaia.lock         the product's lock, written by `gaia lock` (see below)
   usb-ids.json                         USB ids shared by every board (see "App data" below)
   tests/fixtures/                      examples and a broken copy, used by `--self-test`
 ```
@@ -45,10 +46,12 @@ still checked.
 Every family, board, component and product is its own directory, holding its description file.
 Other files may sit beside the description (assets, a component's `src/`, a fragment, `app/`). The
 check validates only the description files, but it does require that every family, board and
-component is named by a product or a board, because Gaia reads a file only through one of those.
+component is checked. One that no product or board names yet is validated on its own and
+listed in a NOTE line as "in no product yet": it is a record, never planned or built, until a
+product names it.
 An app-only board is named by nothing, which is why it is skipped rather than failed.
 
-## Gaia's format (what Gaia `next` reads today)
+## Gaia's format (what Gaia `next` reads at the pin)
 
 Gaia's source of truth is `crates/core/describe/src/*.rs` at the locked commit. Each struct there
 is `deny_unknown_fields`, so a misspelled key is refused, not ignored. The examples are in
@@ -63,57 +66,108 @@ is `deny_unknown_fields`, so a misspelled key is refused, not ignored. The examp
 - **component.toml**: `version = 1`, `name`, `description`, `[sources.<name>]`, `[build]`
   (`builder`, `source`, `[build.settings]`), `[[install]]`, `[[services]]`, `[[users]]`,
   `[[groups]]`, `[package]` (for an `.ipk`).
-- **product.toml**: `version = 1`, `name`, `description`, `[components]` (name = path to a
-  component.toml), `[[images]]` with `name`, `board` (path to a board.toml), `components` (names),
-  `data` (names), `recipe`, `budget`, and `[images.settings]` for the recipe's own settings.
+- **product.toml**: `version = 1`, `name`, `description`, `[sources.<name>]` (the OS source, see
+  below), `[components]` (name = path to a component.toml), `[[images]]` with `name`, `board` (path
+  to a board.toml), `components` (names), `os` (see below), `data` (names), `recipe`, `budget`, and
+  `[images.settings]` for the recipe's own settings.
 
-## F8 format points, and what Gaia accepts today
+## The product form (Gaia F8, at the pin)
 
-These come from Gaia `next`'s F8, which is not merged. Each row was tried against Gaia at the
-locked commit (`361d085`), with `gaia validate` unless the row says plan. Write to the F8 column;
-today's column says what the check would say.
+A product is one image. Its OS comes from a source the product names; the board gives the kernel,
+U-Boot and TF-A; the product's OS fragment gives the rest. A minimal product that `gaia validate`
+and `gaia plan` accept at the pin is `tests/fixtures/good-f8/products/f8-product/product.toml`:
 
-| Point | Format for B2/B3 | Gaia at 361d085 |
+```toml
+version = 1
+name = "f8-product"
+
+[sources.kernel]
+path = "sources/kernel"
+
+[[images]]
+name = "f8-product"
+board = "../../boards/example-board/board.toml"
+recipe = "firmware"
+os = { provider = "buildroot", source = "kernel", fragments = ["fragments/os.fragment"] }
+```
+
+A real product names a Buildroot git source (`git` + `ref`) instead of the fixture's path. The
+`slot` recipe is the one B2/B3 want; see point 2 of the known limits before using it.
+
+The fragment file is Buildroot config (`BR2_...=y`). `@here@` in it is that file's directory.
+
+## F8 format points, as Gaia 70a5133 treats them
+
+Each row was tried with Gaia `70a5133` (`gaia 2.0.6-dev`). "validate" is `gaia validate`, "plan"
+is `gaia plan` with the product's lock and `--tool python=...`. Only what was seen is written here.
+
+| Point | Format for B-series | Gaia at 70a5133 |
 |---|---|---|
-| Product sources | `[sources.<name>]` in product.toml | refused by validate: `sources: unknown key` |
-| Image OS | `os = { provider = "buildroot", source = "<name>", fragments = [...] }` on the image | refused by validate: `images[0].os: unknown key` |
-| Blob keys | `[bootloader.blobs]` keys are U-Boot's make variables: capitals, digits and `_` only, e.g. `ROCKCHIP_TPL` | accepted: `ROCKCHIP_TPL`, lowercase `tpl` and `ROCKCHIP-TPL` all pass validate: no rule yet |
-| Kernel defconfig | `kernel.defconfig = "defconfig"` is the architecture default; set it only to differ | accepted |
-| Kernel overlays | `kernel.overlays` is refused for an OS build for now | accepted by validate on a family; the OS-build refusal is not testable, since the `os` key is refused |
-| Slot recipe | the recipe is named `slot` | validate accepts any recipe name; plan refuses it: `no recipe "slot"`. Today's name is `ab-slot`, which plans only with `veritysetup` on PATH (not installed here) |
-| `@here@` | in a fragment file it is that file's directory | not testable: fragments are reached only through the `os` key, which is refused |
-| Derivation | arch, CPU, kernel, U-Boot, TF-A sources, defconfigs, fragments, DTS and blobs come from the board; toolchain, packages and output format go in the image's fragments | F8 |
+| Product sources | `[sources.<name>]` in product.toml | accepted: validate and plan pass (good-f8) |
+| Image OS | `os = { provider = "buildroot", source = "<name>", fragments = [...] }` on the image | accepted: validate and plan pass; plan lists the `buildroot-host` step (it needs `make` on PATH) |
+| Blob keys | `[bootloader.blobs]` keys are U-Boot's make variables: capitals, digits and `_` only, e.g. `ROCKCHIP_TPL` | `ROCKCHIP_TPL` plans. `tpl` and `ROCKCHIP-TPL` pass validate but plan refuses them: `is not a make variable: capitals, digits and _` |
+| Kernel defconfig | `kernel.defconfig = "defconfig"` is the architecture default; set it only to differ | accepted (the family in good-f8) |
+| Kernel overlays | `kernel.overlays` is refused for an OS build for now | validate accepts; plan refuses: `device tree overlays are not given to an OS build yet` |
+| Recipe `slot` | the recipe is named `slot`; its one setting is `device` (`[images.settings] device = "/data/slots/root.img"`) | the name is accepted (validate, and plan gets past it). Plan refuses without `veritysetup` on PATH: `needs its input veritysetup, and nothing gives it`. With a stub passed as `--tool veritysetup=...` the plan passed. `veritysetup` is not installed on this machine |
+| `@here@` | in a fragment file it is that file's directory | accepted: plan (`--json`) resolves it to the fragment's directory |
+| Derivation | arch, CPU, kernel, U-Boot, TF-A sources, defconfigs, fragments, DTS and blobs come from the board; toolchain, packages and output format go in the image's fragments | the OS step's inputs are `board.target`, `board.kernel` and `board.bootloader` (plan output) |
 
-So B2/B3 cannot write an OS image until F8 merges. Until then the check fails on any product using
-`os`, `sources` or recipe `slot`, which is the signal. The fixture `tests/fixtures/f8/` is that F8 form; the
-self-test prints its result and does not gate on it.
+Recipes at this pin, from `recipes/` of the checkout: `slot`, `initramfs-boot`, `recovery`,
+`firmware`, `data-ext4`. What plan reports for each (a setting that is not a recipe parameter is
+refused by name):
+
+- `firmware`: takes `level`, `threads`. The good-f8 product uses it with no settings.
+- `slot`: takes `device` (required, a string), `compression`, `level`.
+- `initramfs-boot`: takes no settings.
+- `recovery`: takes `key_env`, `level`, `public_key`, `threads`.
+- `data-ext4`: takes `journal`, `label`, `margin`, `size`.
+
+A bogus recipe name passes validate and plan refuses it: `no recipe "nope"`.
 
 ## The Gaia pin
 
 `gaia.lock` is Atlas's, written by hand: a Gaia URL and a full commit. It is not Gaia's lock. The
-commit is `origin/next` of Gaia at the time of writing (`361d085`, the merge of `gaia validate`); it
-will move when F8 merges.
-To move it: change `commit`, run `scripts/check-devices.sh`, and commit both together.
+commit is `70a513341635b3df7a1971d1522c8eeedff68ac1` (Gaia `next`, after F8 and relative lock
+paths). To move it: change `commit`, run `scripts/check-devices.sh --write-locks`, and commit the pin
+and every regenerated `gaia.lock` together.
+
+## Product locks
+
+Each product's `gaia.lock` is committed beside its `product.toml`. It is written by `gaia lock` and
+records the sources the product names. Tree paths in it are relative to the product's directory
+(`../../components/<name>/src`), so the same lock holds in every checkout.
+
+To write or update them after a change:
+
+```
+scripts/check-devices.sh --write-locks
+```
+
+The check fails when a product has no `gaia.lock` beside it, or when that lock differs from what
+`gaia lock` writes now. The message names the command above. Never edit a lock by hand.
 
 ## Running the check
 
 ```
-scripts/check-devices.sh               # devices/, then the fixture self-check (the gate runs this)
-scripts/check-devices.sh --root DIR    # another tree, laid out the same way, no self-check
-scripts/check-devices.sh --self-test   # verbose: good must pass, broken must fail, f8 is printed
+scripts/check-devices.sh                        # devices/, then the fixture self-check (the gate runs this)
+scripts/check-devices.sh --write-locks          # regenerate every product's gaia.lock, then check
+scripts/check-devices.sh --root DIR             # another tree, laid out the same way, no self-check
+scripts/check-devices.sh --write-locks --root DIR  # the same, for that tree
+scripts/check-devices.sh --self-test            # verbose: both good fixtures pass, broken fails
 ```
 
-The default run ends with the self-check: the good fixture must pass and the broken one must fail,
-so the gate shows the checker still catches a broken file.
+The default run ends with the self-check: the two good fixtures (`good`, `good-f8`) must pass and
+the broken one must fail, so the gate shows the checker still catches a broken file.
 
 The check does the following. It reads the Gaia URL and commit from `gaia.lock`. It then needs a
 gaia binary: `$GAIA_BIN` if set (used as given, and its commit is not checked because gaia prints
 no commit); otherwise a build from that commit, cached in
 `${ATLAS_GAIA_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/gaia}/<commit>/`. The first run clones
 Gaia from GitHub and builds it with cargo; later runs reuse `bin/gaia`. The recipes come from the
-same checkout. With a binary that has `gaia validate` (361d085 does), it validates every family,
-board, component and product file (with `--kind` from the directory), then plans every product. A
-binary without it plans every product only.
+same checkout. With a binary that has `gaia validate` (70a5133 does), it validates every family,
+board, component and product file (with `--kind` from the directory). Then, for each product, it
+locks the product into a temp file, requires the committed `gaia.lock` to match it, and plans the
+product with the committed lock. A binary without `gaia validate` plans every product only.
 
 What it needs on the machine:
 
@@ -121,49 +175,30 @@ What it needs on the machine:
 - `cargo` for the first build (Gaia's `rust-toolchain.toml` pins 1.99.0; rustup installs it).
 - `python3`: the python builder names it as a tool, and `gaia plan` needs every tool a recipe
   names. The check passes it as `--tool python=<python3>`.
-- The tools a recipe names. The `firmware` recipe names none this check needs. `ab-slot` names
-  `veritysetup`, so it cannot be planned where that is not installed.
+- The tools a recipe names. `firmware`, `initramfs-boot`, `recovery` and `data-ext4` need none that
+  this check passes. `slot` needs `veritysetup`, so it cannot be planned where that is not installed.
+- `make` on PATH for a product with an `os` (the Buildroot host step).
 
-Gaia writes a tree path relative to a product's directory only when the path lies under it. The
-components live in `devices/components/`, outside a product's directory, so `gaia lock` would write
-this checkout's absolute paths. For that reason the check locks each product in a temporary file
-(`gaia lock --lock`, then `gaia plan --lock`) and never reads a product lock committed beside it. If a product's `gaia.lock`
-is committed and does not match, the check fails and says so. Do not commit product locks while
-their components sit outside the product directory.
+## Known limits at the pin
 
-## Known limits at the locked Gaia commit
+These hold at Gaia `70a5133`, the pin in `gaia.lock`, and each was tested with that commit's binary
+(`gaia 2.0.6-dev`). They lift when the pin moves.
 
-These hold at Gaia `361d085`, the pin in `gaia.lock`, and each was re-tested with that commit's
-binary (`gaia 2.0.6-dev`). They lift when the pin moves.
-
-1. **A product's lock cannot be committed.** Gaia writes a tree path relative to the product's
-   directory only when the path lies under it. Components sit in `devices/components/`, outside
-   every product directory, so the lock would hold this checkout's absolute paths. The check locks
-   each product in a temp file (`gaia lock --lock`, then `gaia plan --lock`) and fails if a committed one does not match.
-2. **`ab-slot` needs `veritysetup`**, which is not on every machine. A product that uses it cannot
-   be planned where that tool is missing. The check does not install it.
-3. **`gaia plan` needs every tool a recipe names on PATH**, or passed with `--tool NAME=PATH`. The
+1. **`slot` needs `veritysetup`.** A product on `recipe = "slot"` cannot be planned where that tool
+   is not on PATH (or passed with `--tool veritysetup=PATH`). The check passes no such tool, so
+   the fixtures use `firmware`. The check does not install it.
+2. **`gaia plan` needs every tool a recipe names on PATH**, or passed with `--tool NAME=PATH`. The
    check passes `--tool python=<python3>` for the python builder. Other tools a recipe names must
-   be on PATH on the machine (and on CI).
-4. **`$GAIA_BIN` is trusted, not verified.** Gaia prints a version but no commit, so the check
-   cannot confirm the binary was built from the pinned commit. The cached build is built from it
-   by the script itself.
-5. **Gaia's `Cargo.lock` is untracked**, so a build is pinned by commit only, not by dependency
-   versions.
+   be on PATH on the machine (and on CI). Buildroot products need `make` on PATH.
+3. **`$GAIA_BIN` is trusted, not verified.** `gaia --version` prints `gaia 2.0.6-dev` and no commit,
+   so the check cannot confirm the binary was built from the pinned commit. The cached build is built
+   from it by the script itself.
+4. **Gaia's `Cargo.lock` is untracked** at this commit, so a build is pinned by commit only, not by
+   dependency versions.
+5. **`gaia validate` does not look at recipe names, tools or the store.** A bogus recipe name passes
+   validate, and only `gaia plan` refuses it. Blob keys and `kernel.overlays` are the same: validate
+   passes them, plan refuses them.
 
-6. **`gaia validate` does not look at recipe names, tools or the store.** A recipe `slot` passes
-   validate and only `gaia plan` refuses it, so every product still gets a plan step.
-
-The F8 format points are refused by today's Gaia. Write B2/B3 descriptions to the F8 form above;
-the check fails on them until the pin moves:
-
-- product `[sources]`: refused by validate, `sources: unknown key`;
-- image `os = {...}`: refused by validate, `images[0].os: unknown key`;
-- recipe `slot`: refused by plan, `no recipe "slot"` (today's is `ab-slot`, see point 2);
-- blob keys: lowercase and dashed keys are accepted, and no rule enforces the capitals rule yet;
-- `kernel.overlays` for an OS build and `@here@` cannot be tested until an OS build exists.
-  Reviewers check these until F8 merges.
-
-A board with no product fails the unreferenced rule above. `gaia validate` checks a board alone
-(`--kind board`), but the check still needs a product to name it, since Gaia reads a board only
-through one.
+A board with no product is validated on its own (`gaia validate --kind board`) and listed as "in no
+product yet". It is never planned, so plan-time rules (recipe names, blob keys, `kernel.overlays`)
+are not checked for it until a product names it.
