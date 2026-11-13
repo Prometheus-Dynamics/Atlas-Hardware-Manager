@@ -12,8 +12,10 @@
 # origin/dev) for the Raze's own facts. Each entry says which one it takes and, where it differs from the
 # reference, why. docs/prs/B20.md has the full difference list.
 #
-# UNVERIFIED on a board (marked at each entry, checks for the G1 board run): the magnetometer's bus, and the
-# power monitor's max current and shunt value.
+# UNVERIFIED on a board (marked at each entry, checks for the G1 board run): the power monitor's shunt value
+# and max current. The magnetometer's bus and the power monitor's chip and address were read off Raze #2.
+# The camera sensor reaches running about 7 s after its first bind attempt on that board (the first attempts
+# fail the chip-ID check; cause open), so no start deadline tighter than that is put on the camera.
 format = "lemnos.board"
 schema_version = 1
 
@@ -195,20 +197,20 @@ driver = "bmi088"
 bus = "pio-i2c:sda=8,scl=7,hz=400000"
 config = { accel_address = 0x18, gyro_address = 0x68, accel_rate = 200, gyro_rate = 200, fifo = false }
 
-# UNVERIFIED: the reference puts the magnetometer on the PIO bus (SDA8/SCL7, shared with the IMU). An earlier
-# board run (dev's manifest, verified by chip-id reads) saw it on i2c-1 at 0x10. The address 0x10 is what
-# both agree on. G1 check: which bus the chip answers on. If it is i2c-1, bus = "i2c-1" and this line's
-# comment goes.
+# VERIFIED on Raze #2 (read by Lemnos, 2026-11-13): a BMM150 answers at 0x10 on i2c-1 with chip ID 0x32. It
+# is NOT on the PIO bus; Lemnos's reference.toml at 6905b681 had that wrong (its PR Q2h corrects it).
 [[devices]]
 id = "magnetometer"
 driver = "bmm150"
-bus = "pio-i2c:sda=8,scl=7"
+bus = "i2c-1"
 config = { address = 0x10 }
 
-# UNVERIFIED: the power monitor's chip is ina238 (dev: chip id verified on a board) and its shunt is 0.010 ohm
-# (the reference; dev's manifest also says 0.01 ohm, marked unverified against the schematic). The max current
-# is the reference's 2.0 A. Dev's value is 16.384 A (the INA238's 163.84 mV full scale over that shunt, derived,
-# not a board rating). G1 check: the shunt value from the schematic, and the full-scale value the product wants.
+# VERIFIED on Raze #2 (read by Lemnos, 2026-11-13): an INA238-family chip answers at 0x40 on i2c-1
+# (manufacturer 0x5449, device 0x2381).
+# UNVERIFIED: the shunt value. It cannot be read from the board; 0.010 ohm is the reference's value (dev's
+# manifest also said 0.01 ohm, unverified against the schematic) and stays unverified until someone confirms
+# it from the schematic. The max current is the reference's 2.0 A; dev's value was 16.384 A (the INA238's
+# 163.84 mV full scale over that shunt, derived, not a board rating). Open: the full-scale value the product wants.
 [[devices]]
 id = "power"
 driver = "ina2xx"
