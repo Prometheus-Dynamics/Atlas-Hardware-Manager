@@ -19,9 +19,9 @@ use std::time::{Duration, Instant};
 use atlas_files::{Counters, Progress, Push, PushError, PushKind, Stage, submit};
 use atlas_jobs::{Backoff, DeviceHolds, Events, JobId, JobKind, JobStatus, JobTiming, Jobs};
 use atlas_session::{Handle, Pause, Presence, Sessions};
-use atlas_sim_node::SimNode;
+use atlas_sim_node::{Kind, SimNode};
 use common::{DEADLINE, Generated, POLL, Relay, is_generated};
-use orion::Address;
+use orion::{Address, Identity, Options, Orion};
 
 /// Orion's window: eight chunks of 32 KiB in flight, and the one being read.
 const CHUNK: u64 = 32 * 1024;
@@ -485,4 +485,110 @@ fn write_file(path: &Path, fill: u8, size: u64) {
         left -= take as u64;
     }
     file.sync_all().expect("the file is synced");
+}
+
+/// The key a node at `port` shows, as a person's tool would learn it: one unpinned signed connect.
+fn learn_key(port: u16) -> [u8; 32] {
+    let address = Address::from_str(&format!("orion+tcp://127.0.0.1:{port}")).unwrap();
+    let options = Options {
+        identity: Some(Identity::generate()),
+        ..Options::default()
+    };
+    Orion::connect_with(&address, "push-test", options)
+        .expect("the node answers a signed connect")
+        .node()
+        .expect("the hello")
+        .public_key
+}
+
+#[tokio::test]
+async fn a_push_is_not_continued_on_another_board_and_the_job_fails() {
+    let rig = rig("replaced", 4 * 1024 * 1024).await;
+    let size = 8 * 1024 * 1024;
+    let destination = "images/replaced.img";
+    let push = submit(
+        &rig.kind,
+        &rig.jobs,
+        &rig.handle,
+        destination,
+        Box::new(Generated::new(size, 5)),
+    )
+    .await
+    .expect("the push starts");
+    progress_where(&push, "the board holds a quarter", |p| p.sent >= size / 4).await;
+
+    // The first board goes: its address is refused, and the live session is cut.
+    rig.relay.refuse(true);
+    rig.relay.cut();
+    progress_where(&push, "the push is waiting for the board", |p| {
+        matches!(p.stage, Stage::WaitingForBoard { .. })
+    })
+    .await;
+
+    // Another board, with another key, comes up on the same port the relay forwards to.
+    let port = rig.node.network().port();
+    drop(rig.node);
+    let other_dir = scratch("replaced-other");
+    let _ = std::fs::remove_dir_all(&other_dir);
+    let other = SimNode::start_with(&other_dir, &Kind::default(), Some(port))
+        .expect("the other board starts");
+    rig.relay.refuse(false);
+
+    // The push says another board answers, and sends that board nothing.
+    progress_where(&push, "the push says another board answers", |p| {
+        matches!(&p.stage, Stage::WaitingForBoard { reason } if reason.contains("another board answers"))
+    })
+    .await;
+    assert_eq!(
+        rig.jobs.get(push.job()).map(|job| job.status),
+        Some(JobStatus::Running),
+        "waiting for another board is not yet a failure"
+    );
+    assert_eq!(
+        other.calls_received(),
+        0,
+        "the other board received no call"
+    );
+    assert!(
+        !other
+            .shelf()
+            .committed
+            .lock()
+            .unwrap()
+            .contains_key(destination),
+        "the other board holds none of the file"
+    );
+
+    // A person accepts the other board's key for this address. The push does not continue on it.
+    let address = Address::from_str(&format!("orion+tcp://{}", rig.relay.addr()))
+        .unwrap()
+        .to_string();
+    assert!(rig._sessions.accept_key(&address, learn_key(port)));
+    job_where(&rig.jobs, push.job(), "the push ends as failed", |status| {
+        matches!(status, JobStatus::Failed { .. })
+    })
+    .await;
+    let status = rig.jobs.get(push.job()).map(|job| job.status);
+    match status {
+        Some(JobStatus::Failed { reason }) => assert!(
+            reason.contains("replaced by another one"),
+            "the reason says the board was replaced: {reason}"
+        ),
+        other => panic!("expected the job failed, got {other:?}"),
+    }
+    assert_ne!(push.progress().stage, Stage::Committed);
+    assert_eq!(
+        other.calls_received(),
+        0,
+        "still no call on the other board"
+    );
+    assert!(
+        !other
+            .shelf()
+            .committed
+            .lock()
+            .unwrap()
+            .contains_key(destination),
+        "the other board still holds none of the file"
+    );
 }
