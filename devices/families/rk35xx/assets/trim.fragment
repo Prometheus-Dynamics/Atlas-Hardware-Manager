@@ -6,19 +6,17 @@
 # docs/prs/B16.md. Checked with merge_config and olddefconfig against the pinned Linux 7.3.3 Kconfig.
 
 # -- Other SoC vendors' platforms: their clocks, pinctrl, PHYs and drivers go with the platform. --
+# PR B25: a platform symbol that depends on an off parent (ARCH_EXYNOS, ARCH_BCM, ARCH_TEGRA ...) is absent from
+# the resolved config once that parent is off, so its own "not set" line would be inert and is not listed; the parent's
+# line takes. Likewise KVM (VIRTUALIZATION is off) and DEBUG_INFO_BTF (DEBUG_INFO_NONE).
 # A platform symbol is off unless its own family is the board's. ARCH_ROCKCHIP stays (the boards).
 # CONFIG_ARCH_ACTIONS is not set
 # CONFIG_ARCH_AIROHA is not set
 # CONFIG_ARCH_SUNXI is not set
 # CONFIG_ARCH_ALPINE is not set
 # CONFIG_ARCH_APPLE is not set
-# CONFIG_ARCH_ARTPEC is not set
 # CONFIG_ARCH_ASPEED is not set
 # CONFIG_ARCH_AXIADO is not set
-# CONFIG_ARCH_BCM2835 is not set
-# CONFIG_ARCH_BCM_IPROC is not set
-# CONFIG_ARCH_BCMBCA is not set
-# CONFIG_ARCH_BRCMSTB is not set
 # CONFIG_ARCH_BCM is not set
 # CONFIG_ARCH_BERLIN is not set
 # CONFIG_ARCH_BITMAIN is not set
@@ -51,7 +49,6 @@
 # CONFIG_ARCH_STM32 is not set
 # CONFIG_ARCH_SYNQUACER is not set
 # CONFIG_ARCH_TEGRA is not set
-# CONFIG_ARCH_TESLA_FSD is not set
 # CONFIG_ARCH_SPRD is not set
 # CONFIG_ARCH_THUNDER is not set
 # CONFIG_ARCH_THUNDER2 is not set
@@ -63,7 +60,6 @@
 
 # -- Virtualization and server hardware: no guest and no server board runs this kernel. --
 # CONFIG_VIRTUALIZATION is not set
-# CONFIG_KVM is not set
 # Server NICs: none is on any RK35xx board. The Gigabit GMAC (STMMAC) and the PHYs stay.
 # CONFIG_NET_VENDOR_INTEL is not set
 # CONFIG_NET_VENDOR_MELLANOX is not set
@@ -93,7 +89,6 @@
 #    (KALLSYMS stays, as the Raze's trim). No DWARF or BTF is built into the Image or the modules.
 # The "Debug information" choice is None: DEBUG_INFO itself is derived from it (not settable).
 CONFIG_DEBUG_INFO_NONE=y
-# CONFIG_DEBUG_INFO_BTF is not set
 # CONFIG_KALLSYMS_ALL is not set
 # CONFIG_KPROBES is not set
 # CONFIG_FTRACE is not set

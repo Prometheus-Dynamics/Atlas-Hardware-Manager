@@ -146,7 +146,12 @@ for num, line in enumerate(open(frag), 1):
             continue
         sym, want = m.group(1), "n"
     got = resolved.get(sym, "absent")
-    if want == "n" and got in ("n", "absent"):
+    if got == "absent":
+        # The symbol does not exist in this tree: the line is inert (a "not set" that asks for nothing). It must
+        # be removed or replaced by a line for a symbol that exists (PR B25: no line may remain that does not take).
+        print(f"FAIL {board}: {rel}:{num}: {sym} requested {want}, resolved absent (no such symbol in this kernel tree: the line is inert)")
+        continue
+    if want == "n" and got == "n":
         continue
     if got != want:
         print(f"FAIL {board}: {rel}:{num}: {sym} requested {want}, resolved {got}")
