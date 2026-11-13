@@ -30,9 +30,15 @@ BR2_PACKAGE_BUSYBOX=y
 # The console: a getty on the USB gadget's ACM port, ttyGS0, is systemd's serial-getty@ttyGS0.service. It is
 # enabled in components/raze-base-files (a systemd unit, not a Buildroot option), because Buildroot's getty
 # option is the sysvinit form. F8?: systemd's getty needs no Buildroot line.
-# Root login: OFF. The root account has no password, and the console asks for a login. Which user logs in on
-# the console is OPEN (Orion's user list is not in this image yet); dev's autologin root console is not carried.
-# BR2_TARGET_ENABLE_ROOT_LOGIN is therefore left off.
+# Console login follows the board's security setting, the one switch.
+# Security OFF (the default for FRC): root logs in on this console with no
+# password. It is the person's last way in when the network or Orion can't be
+# reached, on a bench or a robot where physical access is already total.
+# Security ON: console login must be off. How a running board switches this
+# when security is turned on is not defined yet (OPEN); this fragment is the
+# default.
+BR2_TARGET_ENABLE_ROOT_LOGIN=y
+BR2_TARGET_GENERIC_ROOT_PASSWD=""
 
 # -- Root filesystem ----------------------------------------------------------------------------------
 # Read-only root: the slot's root is EROFS with dm-verity, which cannot be written. The writable place is
