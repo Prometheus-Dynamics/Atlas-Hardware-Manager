@@ -9,7 +9,7 @@ use atlas_sim_node::bundle;
 use atlas_sim_node::names::{self, SURFACE};
 use atlas_sim_node::slots::code;
 use atlas_sim_node::slots::parse_keys;
-use atlas_sim_node::{Behaviour, Hello, LinkFault, Mode, SimNode, call};
+use atlas_sim_node::{Behaviour, Hello, Kind, LinkFault, Mode, SimNode, call};
 use ed25519_dalek::SigningKey;
 use orion::actions::{ActionCall, Finished, Outcome};
 use orion::topics::FieldId;
@@ -778,7 +778,8 @@ fn a_node_publishes_the_hello_facts_a_board_publishes_and_a_restart_on_its_port_
         name: None,
         ..Hello::default()
     };
-    let first = SimNode::start_with(&dir, &recovery, None).expect("the node starts");
+    let first =
+        SimNode::start_with(&dir, &Kind::WithLemnos(recovery), None).expect("the node starts");
     let port = first.network().port();
     {
         let orion = first.connect("reader").expect("a session");
@@ -802,7 +803,7 @@ fn a_node_publishes_the_hello_facts_a_board_publishes_and_a_restart_on_its_port_
     assert!(stopped.is_err(), "a stopped node answers nothing");
 
     // Found again on the same port, running this time, with its name.
-    let second = SimNode::start_with(&dir, &Hello::default(), Some(port)).expect("restart");
+    let second = SimNode::start_with(&dir, &Kind::default(), Some(port)).expect("restart");
     assert_eq!(second.network().port(), port);
     let orion = second
         .connect_through_link("back")
@@ -956,6 +957,90 @@ fn a_stalled_link_holds_then_carries_on() {
     let finished = call(&orion, names::STATUS, b"").expect("an answer after the stall");
     assert_eq!(finished.outcome, Outcome::Succeeded);
     assert!(started.elapsed() >= pause, "the stall held the connection");
+}
+
+/// The three kinds of node the sim offers, and what each one has. A test builds each with
+/// `SimNode::start_with(dir, &kind, port)`: `Kind::default()` (or `start(dir)`) is a node with Lemnos,
+/// `Kind::Plain` a plain Orion node, and `stop_lemnos` on a node with Lemnos is the case where Lemnos
+/// stops answering while the node stays up.
+#[test]
+fn a_plain_orion_node_has_no_lemnos_facts_or_actions_but_keeps_its_own_services() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("sim-plain");
+    let _ = std::fs::remove_dir_all(&dir);
+    let node = SimNode::start_with(&dir, &Kind::Plain, None).expect("the plain node starts");
+    let orion = node.connect("plain").expect("a session");
+
+    // Its identity is the key fingerprint of its hello document; there are no hardware facts
+    // and no offers.
+    let document = orion.node().expect("the hello document");
+    assert!(
+        !document.fingerprint.is_empty(),
+        "the fingerprint is its identity"
+    );
+    for fact in ["family", "serial", "state", "model", "offers"] {
+        assert!(
+            document.facts.iter().all(|found| found.name != fact),
+            "a plain node publishes no {fact} fact"
+        );
+    }
+
+    // No Lemnos actions: the slot surface is not on the node at all, so a call is not found.
+    match call(&orion, names::SLOTS_LIST, b"") {
+        Err(_) => {}
+        Ok(finished) => assert_ne!(
+            finished.outcome,
+            Outcome::Succeeded,
+            "a plain node has no slot list: {}",
+            finished.detail
+        ),
+    }
+
+    // Orion's own services work: a file pushed to it, its own file actions, and its logs topic.
+    orion
+        .files()
+        .push("notes/hello.txt", &mut Cursor::new(&b"hi"[..]), |_, _| {})
+        .expect("a file push works without Lemnos");
+    assert!(
+        node.shelf()
+            .committed
+            .lock()
+            .expect("the shelf")
+            .contains_key("notes/hello.txt")
+    );
+    ok(&orion, names::FS_WRITE, b"notes.txt 68656c6c6f");
+    assert_eq!(
+        ok(&orion, names::FS_READ, b"notes.txt").output,
+        b"68656c6c6f"
+    );
+    orion.subscribe(names::LOGS).expect("the logs topic");
+}
+
+#[test]
+fn a_node_whose_lemnos_stops_keeps_its_facts_and_fails_its_calls_until_it_answers_again() {
+    let node = start("lemnos-stops");
+    let orion = node.connect("lemnos-stops").expect("a session");
+    assert_eq!(
+        list(&orion)["slot_active"],
+        "slot-1",
+        "Lemnos answers first"
+    );
+    let family = hello_fact(&orion, names::HELLO_FAMILY);
+
+    node.stop_lemnos();
+    // Expected but not answering: the call fails with "not answering" (-4), not "not found".
+    let stopped = call(&orion, names::SLOTS_LIST, b"").expect("the call is answered");
+    assert_eq!(stopped.outcome, Outcome::Failed, "{}", stopped.detail);
+    assert!(stopped.detail.starts_with("-4:"), "{}", stopped.detail);
+    // The node itself stays up: its facts and its own actions still answer.
+    assert_eq!(hello_fact(&orion, names::HELLO_FAMILY), family);
+    ok(&orion, names::STATUS, b"");
+
+    node.resume_lemnos();
+    assert_eq!(
+        list(&orion)["slot_active"],
+        "slot-1",
+        "Lemnos answers again"
+    );
 }
 
 #[test]

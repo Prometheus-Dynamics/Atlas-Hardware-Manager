@@ -5,8 +5,26 @@ so the workspace glob `crates/*/*` builds, lints and tests it; this folder holds
 driver's tests use it as a dev-dependency (a driver may: it is not a driver). The mock devices that
 drivers list are in `crates/drivers/mock` (`atlas-mock`), which does not depend on it.
 
-The proof is `crates/testing/sim-node/tests/sim_node.rs` (26 tests, Linux) and the unit tests in
+The proof is `crates/testing/sim-node/tests/sim_node.rs` (28 tests, Linux) and the unit tests in
 `src/names.rs` and `src/lib.rs`.
+
+## The three kinds of node
+
+One builder makes all three: `SimNode::start_with(dir, &Kind, port)`. `SimNode::start(dir)` is
+`start_with(dir, &Kind::default(), None)`.
+
+1. **A node with Lemnos** (`Kind::WithLemnos(Hello)`, the default). It publishes the hello facts
+   `family`, `serial`, `state`, `model`, `version.os`, `offers` (and `name`), the `readings` and
+   `hardware` topics, and the `system.slots/1` and `system.reboot/1` surface. Test:
+   `a_node_publishes_the_hello_facts_...` and the slot tests.
+2. **A plain Orion node** (`Kind::Plain`). No hardware facts and no `offers`; the identity is the
+   hello document's key fingerprint. No Lemnos actions, so a slot call is not found. Orion's own
+   services still work: a file push, its own `fs.*` actions and the `logs` topic. Test:
+   `a_plain_orion_node_has_no_lemnos_facts_or_actions_...`.
+3. **A node whose Lemnos stops** (case 1, then `stop_lemnos()`). The node stays up and its facts stay
+   published, but every Lemnos call fails with `-4` ("not answering"), which is not the same as the
+   plain node's "not found". `resume_lemnos()` brings it back. Test:
+   `a_node_whose_lemnos_stops_keeps_its_facts_...`.
 
 ## What it is
 
@@ -15,10 +33,11 @@ The proof is `crates/testing/sim-node/tests/sim_node.rs` (26 tests, Linux) and t
   receiver are Orion's stand-ins, with the rules Orion itself enforces: a detached run survives its
   starter's session and can be attached to again, a plain run is not handed to another session, and a
   cancel reaches a run only from the session and call that started it.
-- **The node logic** is an `orion` client on that socket (`src/node.rs`). It publishes the hello facts a
-  board publishes (`hello.family`, `serial`, `state` = running | recovery | flasher, `model`, `name`,
-  `version.os`, `offers`), registers the I5 surface and the board's own actions, declares the topics
-  `readings`, `hardware` and `logs`, and answers each run.
+- **The node logic** is an `orion` client on that socket (`src/node.rs`). On a node with Lemnos it publishes
+  the hello facts a board publishes (`hello.family`, `serial`, `state` = running | recovery | flasher,
+  `model`, `name`, `version.os`, `offers`), registers the I5 surface and the board's own actions, and
+  declares the topics `readings` and `hardware`. A plain node registers only its file actions. Both
+  declare `logs` and answer each run.
 - **Start and stop.** `SimNode::start(dir)` starts a running node on a free port. `SimNode::start_with(dir,
   &Hello, port)` starts one in any state, on a given port. Dropping it stops the node and frees the port;
   starting it again on the same port in the same directory brings the same device back.
@@ -67,7 +86,7 @@ hello topics are `hello.<fact>`.
 
 ## Proof
 
-`cargo test -p atlas-sim-node` runs the unit tests and the 26 integration tests. They cover: every method
+`cargo test -p atlas-sim-node` runs the unit tests and the 28 integration tests. They cover: every method
 of the I5 surface, with an assertion that the test exercises exactly the surface; refused, failed, stalled
 and cancelled runs; an install pushed as a file and installed as a long job; cancel discarding the pushed
 file; a starter that disconnects having its install cancelled; a detached install that survives its starter
@@ -75,7 +94,7 @@ and is attached to again; a plain run that another session cannot attach to; a s
 running install and a fresh one starting clean; the trial fallback and confirm paths; housekeeping with
 keep-last, pins and `keep_old`; bundle refusals; a layered manifest refused; signing (off by default, the
 `signed`/`signer` fields, `require_signed`); the key file; hello facts and a restart on the same port;
-readings, hardware and link faults.
+the three kinds of node above; readings, hardware and link faults.
 
 ## What it cannot do (not simulated)
 

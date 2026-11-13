@@ -150,6 +150,33 @@ impl Hello {
     }
 }
 
+/// What kind of Orion node this is. A node with Lemnos publishes its hardware facts and offers, and
+/// serves the slot and reboot surface. A plain Orion node has none of that: it is normal (a PC, a
+/// board of someone else's, a controller without our package) and still serves Orion's own things:
+/// files, its own actions and its logs. Its identity is its key fingerprint from the hello document.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Kind {
+    /// A node with Lemnos, publishing these facts.
+    WithLemnos(Hello),
+    /// A plain Orion node: no hardware facts, no offers, no Lemnos actions or readings.
+    Plain,
+}
+
+impl Default for Kind {
+    fn default() -> Self {
+        Self::WithLemnos(Hello::default())
+    }
+}
+
+/// Whether a node of this kind registers `name`. A plain node has no Lemnos actions (so its slot and
+/// reboot surface is absent: calls to it are not found), and only its own file actions.
+fn offered(kind: &Kind, name: &str) -> bool {
+    match kind {
+        Kind::WithLemnos(_) => true,
+        Kind::Plain => name.starts_with("fs."),
+    }
+}
+
 /// The state shared between the test and the node logic.
 #[derive(Clone, Debug)]
 struct Shared {
@@ -157,6 +184,9 @@ struct Shared {
     script: Arc<Mutex<Script>>,
     stop: Arc<AtomicBool>,
     restart: Arc<AtomicBool>,
+    /// Set while Lemnos is stopped on a node that has it: the node stays up and its Lemnos calls
+    /// fail. That is not the same as Lemnos being absent.
+    lemnos_down: Arc<AtomicBool>,
 }
 
 /// A simulated board. Dropping it stops the node logic, the link and the comm core, and frees
@@ -172,24 +202,25 @@ pub struct SimNode {
 }
 
 impl SimNode {
-    /// Starts a running simulated board in `dir` on a free port. See [`SimNode::start_with`].
+    /// Starts a running node with Lemnos in `dir` on a free port. See [`SimNode::start_with`].
     ///
     /// # Errors
     ///
     /// As [`SimNode::start_with`].
     pub fn start(dir: &Path) -> Result<Self, String> {
-        Self::start_with(dir, &Hello::default(), None)
+        Self::start_with(dir, &Kind::default(), None)
     }
 
-    /// Starts a simulated board in `dir`, which is created if it is missing. Its socket lives
-    /// there, so the path must stay short enough for a Unix socket. It publishes `hello` as its
-    /// hello facts and listens on `port` (any free port when `None`).
+    /// Starts a simulated Orion node in `dir`, which is created if it is missing. Its socket lives
+    /// there, so the path must stay short enough for a Unix socket. `kind` says whether it runs
+    /// Lemnos ([`Kind::WithLemnos`], publishing that hello) or is plain Orion ([`Kind::Plain`]).
+    /// It listens on `port` (any free port when `None`).
     ///
     /// # Errors
     ///
     /// If the directory cannot be made, the port cannot be taken, or the node logic cannot
     /// connect to the comm core or declare its facts.
-    pub fn start_with(dir: &Path, hello: &Hello, port: Option<u16>) -> Result<Self, String> {
+    pub fn start_with(dir: &Path, kind: &Kind, port: Option<u16>) -> Result<Self, String> {
         std::fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
         let board = Arc::new(Board::start_in(dir, Security::Off, port));
         let shared = Shared {
@@ -197,15 +228,16 @@ impl SimNode {
             script: Arc::new(Mutex::new(Script::new())),
             stop: Arc::new(AtomicBool::new(false)),
             restart: Arc::new(AtomicBool::new(false)),
+            lemnos_down: Arc::new(AtomicBool::new(false)),
         };
 
         let (ready, started) = mpsc::channel();
         let socket = board.socket().to_path_buf();
         let node_shared = shared.clone();
-        let node_hello = hello.clone();
+        let node_kind = kind.clone();
         let node_board = Arc::clone(&board);
         let node = thread::spawn(move || {
-            serve(&socket, &node_shared, &node_hello, &node_board, &ready);
+            serve(&socket, &node_shared, &node_kind, &node_board, &ready);
         });
         started
             .recv()
@@ -266,6 +298,17 @@ impl SimNode {
         self.shared.restart.store(true, Ordering::SeqCst);
     }
 
+    /// Stops Lemnos on this node while the node stays up: its facts stay published, and every
+    /// Lemnos call fails as "not answering" (`-4`). Only a node with Lemnos has anything to stop.
+    pub fn stop_lemnos(&self) {
+        self.shared.lemnos_down.store(true, Ordering::SeqCst);
+    }
+
+    /// Lemnos answers again after [`SimNode::stop_lemnos`].
+    pub fn resume_lemnos(&self) {
+        self.shared.lemnos_down.store(false, Ordering::SeqCst);
+    }
+
     /// The files the comm core has received and committed, by destination. A bundle pushed for
     /// `install_file` is here until its job ends.
     #[must_use]
@@ -300,11 +343,11 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 fn serve(
     socket: &Path,
     shared: &Shared,
-    hello: &Hello,
+    kind: &Kind,
     board: &Arc<Board>,
     ready: &mpsc::Sender<Result<(), String>>,
 ) {
-    match Node::open(socket, shared.clone(), hello, Arc::clone(board)) {
+    match Node::open(socket, shared.clone(), kind, Arc::clone(board)) {
         Ok(mut node) => {
             let _ = ready.send(Ok(()));
             node.run();
@@ -342,11 +385,12 @@ struct Node {
     // Kept alive for the session: dropping it closes the connection.
     _orion: Orion,
     registration: Registration,
-    readings: Publisher,
     logs: Publisher,
     shared: Shared,
     board: Arc<Board>,
-    /// The hello facts, one topic each. Kept alive for the session.
+    /// Readings, on a node with Lemnos only.
+    readings: Option<Publisher>,
+    /// The hello facts, one topic each, on a node with Lemnos only. Kept alive for the session.
     _hello: Vec<Publisher>,
     active: Vec<Run>,
     install: Option<Install>,
@@ -362,18 +406,13 @@ impl std::fmt::Debug for Node {
 }
 
 impl Node {
-    fn open(
-        socket: &Path,
-        shared: Shared,
-        hello: &Hello,
-        board: Arc<Board>,
-    ) -> Result<Self, String> {
+    fn open(socket: &Path, shared: Shared, kind: &Kind, board: Arc<Board>) -> Result<Self, String> {
         // The driver clears its incoming directory when it starts.
         clear_incoming(&board);
         let orion = Orion::connect(&Address::Local(socket.to_path_buf()), "sim-node")
             .map_err(|error| error.to_string())?;
         let mut registration = None;
-        for name in names::ACTIONS {
+        for name in names::ACTIONS.iter().filter(|name| offered(kind, name)) {
             let policy = Policy::new(Admits::ANYONE).without_grant();
             let decl = ActionDecl {
                 name,
@@ -385,24 +424,6 @@ impl Node {
                 .map_err(|e| e.to_string())?;
             registration.get_or_insert(handle);
         }
-        let readings = orion
-            .declare(&TopicDecl {
-                name: names::READINGS,
-                fields: &fields![temperature: Float "C", voltage: Float "V", fan: Int "rpm"],
-                history: 64,
-                expiry_ms: 0,
-                max_payload: 8,
-            })
-            .map_err(|e| e.to_string())?;
-        let mut hardware = orion
-            .declare(&TopicDecl {
-                name: names::HARDWARE,
-                fields: &fields![description: Text],
-                history: 1,
-                expiry_ms: 0,
-                max_payload: 256,
-            })
-            .map_err(|e| e.to_string())?;
         let logs = orion
             .declare(&TopicDecl {
                 name: names::LOGS,
@@ -412,32 +433,57 @@ impl Node {
                 max_payload: 256,
             })
             .map_err(|e| e.to_string())?;
-        let description = format!(
-            "model={} serial={} os={}",
-            hello.model, hello.serial, hello.os_version
-        );
-        hardware
-            .publish(
-                FieldId(0),
-                SampleTime::from_nanos(1),
-                description.as_bytes(),
-            )
-            .map_err(|e| e.to_string())?;
+
+        // Only a node with Lemnos has readings, a hardware description and hello facts.
+        let mut readings = None;
         let mut hello_topics = Vec::new();
-        for (topic, value) in hello.facts() {
-            let mut publisher = orion
+        if let Kind::WithLemnos(hello) = kind {
+            readings = Some(
+                orion
+                    .declare(&TopicDecl {
+                        name: names::READINGS,
+                        fields: &fields![temperature: Float "C", voltage: Float "V", fan: Int "rpm"],
+                        history: 64,
+                        expiry_ms: 0,
+                        max_payload: 8,
+                    })
+                    .map_err(|e| e.to_string())?,
+            );
+            let mut hardware = orion
                 .declare(&TopicDecl {
-                    name: topic,
-                    fields: &fields![value: Text],
+                    name: names::HARDWARE,
+                    fields: &fields![description: Text],
                     history: 1,
                     expiry_ms: 0,
                     max_payload: 256,
                 })
                 .map_err(|e| e.to_string())?;
-            publisher
-                .publish(FieldId(0), SampleTime::from_nanos(1), value.as_bytes())
+            let description = format!(
+                "model={} serial={} os={}",
+                hello.model, hello.serial, hello.os_version
+            );
+            hardware
+                .publish(
+                    FieldId(0),
+                    SampleTime::from_nanos(1),
+                    description.as_bytes(),
+                )
                 .map_err(|e| e.to_string())?;
-            hello_topics.push(publisher);
+            for (topic, value) in hello.facts() {
+                let mut publisher = orion
+                    .declare(&TopicDecl {
+                        name: topic,
+                        fields: &fields![value: Text],
+                        history: 1,
+                        expiry_ms: 0,
+                        max_payload: 256,
+                    })
+                    .map_err(|e| e.to_string())?;
+                publisher
+                    .publish(FieldId(0), SampleTime::from_nanos(1), value.as_bytes())
+                    .map_err(|e| e.to_string())?;
+                hello_topics.push(publisher);
+            }
         }
         let registration = registration.ok_or("no actions to register")?;
         Ok(Self {
@@ -487,6 +533,14 @@ impl Node {
     }
 
     fn start(&mut self, call: u64, name: &str, args: Vec<u8>) {
+        if names::is_lemnos(name) && self.shared.lemnos_down.load(Ordering::SeqCst) {
+            // Lemnos is stopped on this node: the node is up, its Lemnos calls are not answered.
+            self.finish_status(
+                call,
+                &Status::new(code::INTERRUPTED, "lemnos is not answering on this node"),
+            );
+            return;
+        }
         let behaviour = lock(&self.shared.script).take_action(name);
         match behaviour {
             Behaviour::Refuse(reason) => self.finish(call, Outcome::Rejected, &[], &reason),
@@ -716,15 +770,11 @@ impl Node {
             (model.readings(), model.take_new_logs())
         };
         let now = self.now();
-        let _ = self
-            .readings
-            .publish(FieldId(0), now, &readings.temperature_c.to_le_bytes());
-        let _ = self
-            .readings
-            .publish(FieldId(1), now, &readings.input_v.to_le_bytes());
-        let _ = self
-            .readings
-            .publish(FieldId(2), now, &readings.fan_rpm.to_le_bytes());
+        if let Some(readings_topic) = self.readings.as_mut() {
+            let _ = readings_topic.publish(FieldId(0), now, &readings.temperature_c.to_le_bytes());
+            let _ = readings_topic.publish(FieldId(1), now, &readings.input_v.to_le_bytes());
+            let _ = readings_topic.publish(FieldId(2), now, &readings.fan_rpm.to_le_bytes());
+        }
         for line in lines {
             let mut text = line;
             text.truncate(256);

@@ -22,6 +22,6 @@ pub mod script;
 pub mod slots;
 
 #[cfg(target_os = "linux")]
-pub use node::{Hello, Mode, NODE_NAME, SimNode, call};
+pub use node::{Hello, Kind, Mode, NODE_NAME, SimNode, call};
 pub use script::{Behaviour, LinkFault, Script};
 pub use slots::{Slots, Status};

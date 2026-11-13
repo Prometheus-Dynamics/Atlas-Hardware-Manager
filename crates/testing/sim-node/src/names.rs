@@ -158,6 +158,12 @@ pub const SLOTS_SET_KEEP: &str = "system.slots.set-keep";
 /// it is cleared when the node starts, and a file is removed when its install job ends.
 pub const INCOMING: &str = "slots/.incoming/";
 
+/// Whether `name` is one of Lemnos's own actions (the slot and reboot surface).
+#[must_use]
+pub fn is_lemnos(name: &str) -> bool {
+    name.starts_with("system.")
+}
+
 /// Whether `name` is one path component of `[A-Za-z0-9._-]`, not `.` or `..`.
 #[must_use]
 pub fn valid_name(name: &str) -> bool {
