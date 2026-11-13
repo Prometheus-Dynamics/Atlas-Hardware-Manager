@@ -1,0 +1,25 @@
+# Radxa ROCK 5C bring-up only, on top of rock-5c-base's os.fragment (the base is
+# listed first in the product). DEV ONLY: the one place a dev-only unit is
+# allowed; the base stays clean. Every line says why it is here.
+
+# SSH server for the bench key: the way in until Orion serves SSH on the board.
+# dropbear.service is enabled by dev-bench-ssh-key's [[services]] entry.
+BR2_PACKAGE_DROPBEAR=y
+BR2_PACKAGE_DROPBEAR_SMALL=y
+# The board serves only; it needs no ssh client.
+# BR2_PACKAGE_DROPBEAR_CLIENT is not set
+# The base has no DNS (resolved is off), and dropbear's reverse-DNS lookup on
+# connect stalls until the lookup times out (Buildroot's help for this option).
+BR2_PACKAGE_DROPBEAR_DISABLE_REVERSEDNS=y
+
+# Serial console: a login on the debug UART, bring-up only. The ROCK 5C's
+# extlinux.conf names console=ttyS2,1500000 (UART2, the board's stdout-path).
+BR2_TARGET_GENERIC_GETTY=y
+BR2_TARGET_GENERIC_GETTY_PORT="ttyS2"
+BR2_TARGET_GENERIC_GETTY_BAUDRATE_KEEP=y
+
+# SSH root is key only: dev-bench-ssh-key sets dropbear's -s (no password logins).
+# The base's console login is its own policy (see the base).
+# Root is read-only, as in the base, so the bring-up proves the same root. Dropbear
+# keeps its host keys in /run (the symlink its package makes), so they change at
+# each boot: the bench host's known_hosts entry needs clearing after a reboot.

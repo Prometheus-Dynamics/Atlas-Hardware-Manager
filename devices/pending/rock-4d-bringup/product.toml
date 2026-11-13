@@ -1,0 +1,41 @@
+# ROCK 4D bring-up: rock-4d-base plus the DEV-ONLY way in (the bench SSH public
+# key). This is the one place a dev-only unit is allowed; the base product stays
+# clean. No Lemnos and no Orion: they are not on a bring-up board.
+#
+# The board's tree enables no device-mode port (usb_drd0_dwc3 and usb_drd1_dwc3
+# are dr_mode = host), so there is no USB network: the first proof is Ethernet,
+# DHCP on eth0 through systemd-networkd (from the base).
+#
+# PENDING, and outside the device check (devices/pending/ is not read). The
+# bench key is a Gaia named local input (`--input name=path`), and Gaia 4abf626
+# has none: its describe structs take no inputs, and a component's install
+# `file` must be a file committed beside it (checked by validate). So the key
+# cannot be supplied yet, and the product stays here. When Gaia's rev has the
+# input and this product passes with a missing key handled as Gaia documents,
+# move it to devices/products/ and commit its gaia.lock.
+#
+# Untested on board: nothing here has booted. The user flashes the card.
+version = 1
+name = "rock-4d-bringup"
+description = "ROCK 4D bring-up: the base OS plus the dev-only SSH key (Ethernet first; no USB network on this board's tree)."
+
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.02.3"
+
+[components]
+radxa-rock-4d-extlinux = "../../components/radxa-rock-4d-extlinux/component.toml"
+dev-bench-ssh-key = "components/dev-bench-ssh-key/component.toml"
+
+[[images]]
+name = "rock-4d-bringup"
+board = "../../boards/radxa-rock-4d/board.toml"
+components = ["radxa-rock-4d-extlinux", "dev-bench-ssh-key"]
+# The base OS fragment, then the bring-up's own (dropbear, the serial getty).
+os = { provider = "buildroot", source = "buildroot", fragments = ["../../products/rock-4d-base/os.fragment", "os.fragment"] }
+recipe = "sd-image"
+budget = "1G"
+
+[images.settings]
+# Names the disk (required by sd-image; see rock-4d-base).
+id = "rock-4d-bringup"
