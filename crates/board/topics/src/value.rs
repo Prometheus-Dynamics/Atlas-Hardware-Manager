@@ -1,5 +1,8 @@
-//! How a reading is typed and what it holds. A reading's type is its topic field's type; its
-//! unit is the unit its field declares. Nothing else about it is assumed.
+//! How a reading is typed and what it holds.
+//!
+//! A reading's kind is what the node's description says it is (Lemnos V1a: number, range, switch,
+//! text, colour array, three axes). A sample's value is decoded from its topic field's type. The
+//! two are separate: a description may say nothing about a reading, and a sample may not fit it.
 
 use orion::topics::FieldType;
 
@@ -9,8 +12,19 @@ use orion::topics::FieldType;
 pub enum Reported<T> {
     /// The description gives it.
     Value(T),
-    /// The description does not give it.
+    /// The description does not give it (yet).
     NotReported,
+}
+
+impl<T> Reported<T> {
+    /// The value, when it is given.
+    #[must_use]
+    pub const fn get(&self) -> Option<&T> {
+        match self {
+            Self::Value(value) => Some(value),
+            Self::NotReported => None,
+        }
+    }
 }
 
 impl Reported<String> {
@@ -25,63 +39,81 @@ impl Reported<String> {
     }
 }
 
-/// How a reading is shown: its type, from the field it is in.
+/// What a reading is, as its description says (Lemnos V1a `reading`: 0 number, 1 range, 2 switch,
+/// 3 text, 4 colour array, 5 three axes). The wire carries the number; the words are what
+/// `lemnos-ctl show` prints, and what the simulated node writes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReadingKind {
-    /// A 64-bit float.
+    /// A number.
     Number,
-    /// A 64-bit signed integer.
-    Integer,
-    /// A flag, on or off.
+    /// A number with a range.
+    Range,
+    /// On or off.
     Switch,
-    /// UTF-8 text.
+    /// Text.
     Text,
-    /// A type this crate does not show yet (bytes, arrays, structured values, frame buffers).
-    Unsupported,
+    /// An array of colour components.
+    ColourArray,
+    /// One axis of a three-axis vector.
+    ThreeAxes,
 }
 
 impl ReadingKind {
-    /// The kind a field of type `ty` reads as.
+    /// The kind a description's word names, or `None` for a word this crate does not know.
     #[must_use]
-    pub fn of(ty: &FieldType) -> Self {
-        match *ty {
-            FieldType::Float => Self::Number,
-            FieldType::Int => Self::Integer,
-            FieldType::Bool => Self::Switch,
-            FieldType::Text => Self::Text,
-            _ => Self::Unsupported,
-        }
+    pub fn from_word(word: &str) -> Option<Self> {
+        Some(match word {
+            "number" => Self::Number,
+            "range" => Self::Range,
+            "switch" => Self::Switch,
+            "text" => Self::Text,
+            "colour array" => Self::ColourArray,
+            "three axes" => Self::ThreeAxes,
+            _ => return None,
+        })
     }
 }
 
 /// A value read from a sample.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Scalar {
-    /// A float.
+    /// A number (a float, or an integer read as one).
     Number(f64),
-    /// An integer.
-    Integer(i64),
-    /// A flag.
+    /// On or off.
     Switch(bool),
     /// Text.
     Text(String),
+    /// An array of numbers.
+    Numbers(Vec<f64>),
 }
 
-/// Reads a sample's payload as a reading of `kind`. `None` when the payload does not fit the kind
-/// (a short or badly coded sample), or the kind is not shown.
+/// Decodes a sample's payload as a value of a field of type `ty`. `None` when the payload does not
+/// fit the type, or the type is not shown (bytes, structured values, frame buffers).
 #[must_use]
-pub fn decode(kind: ReadingKind, payload: &[u8]) -> Option<Scalar> {
-    match kind {
-        ReadingKind::Number => Some(Scalar::Number(f64::from_le_bytes(payload.try_into().ok()?))),
-        ReadingKind::Integer => Some(Scalar::Integer(i64::from_le_bytes(
-            payload.try_into().ok()?,
-        ))),
-        ReadingKind::Switch => match payload {
+pub fn decode(ty: &FieldType, payload: &[u8]) -> Option<Scalar> {
+    match ty {
+        FieldType::Float => Some(Scalar::Number(f64::from_le_bytes(payload.try_into().ok()?))),
+        FieldType::Int => Some(Scalar::Number(
+            i64::from_le_bytes(payload.try_into().ok()?) as f64
+        )),
+        FieldType::Bool => match payload {
             [byte] => Some(Scalar::Switch(*byte != 0)),
             _ => None,
         },
-        ReadingKind::Text => String::from_utf8(payload.to_vec()).ok().map(Scalar::Text),
-        ReadingKind::Unsupported => None,
+        FieldType::Text => String::from_utf8(payload.to_vec()).ok().map(Scalar::Text),
+        FieldType::FloatArray => {
+            let (chunks, rest) = payload.as_chunks::<8>();
+            if !rest.is_empty() {
+                return None;
+            }
+            Some(Scalar::Numbers(
+                chunks
+                    .iter()
+                    .map(|chunk| f64::from_le_bytes(*chunk))
+                    .collect(),
+            ))
+        }
+        _ => None,
     }
 }
 
@@ -99,26 +131,38 @@ mod tests {
     fn a_float_sample_decodes_and_a_short_one_does_not() {
         let bytes = 21.5_f64.to_le_bytes();
         assert_eq!(
-            decode(ReadingKind::Number, &bytes),
+            decode(&FieldType::Float, &bytes),
             Some(Scalar::Number(21.5))
         );
-        assert_eq!(decode(ReadingKind::Number, &bytes[..4]), None);
+        assert_eq!(decode(&FieldType::Float, &bytes[..4]), None);
     }
 
     #[test]
-    fn a_switch_is_one_byte_and_text_must_be_utf8() {
+    fn a_switch_is_one_byte_text_must_be_utf8_and_an_array_is_whole_floats() {
+        assert_eq!(decode(&FieldType::Bool, &[1]), Some(Scalar::Switch(true)));
+        assert_eq!(decode(&FieldType::Bool, &[0, 0]), None);
+        assert_eq!(decode(&FieldType::Text, &[0xff]), None);
+        let mut colour = Vec::new();
+        for component in [0.1_f64, 0.2, 0.3] {
+            colour.extend_from_slice(&component.to_le_bytes());
+        }
         assert_eq!(
-            decode(ReadingKind::Switch, &[1]),
-            Some(Scalar::Switch(true))
+            decode(&FieldType::FloatArray, &colour),
+            Some(Scalar::Numbers(vec![0.1, 0.2, 0.3]))
         );
-        assert_eq!(decode(ReadingKind::Switch, &[0, 0]), None);
-        assert_eq!(decode(ReadingKind::Text, &[0xff]), None);
+        assert_eq!(decode(&FieldType::FloatArray, &colour[..7]), None);
     }
 
     #[test]
-    fn a_field_type_reads_as_its_kind() {
-        assert_eq!(ReadingKind::of(&FieldType::Float), ReadingKind::Number);
-        assert_eq!(ReadingKind::of(&FieldType::Bool), ReadingKind::Switch);
-        assert_eq!(ReadingKind::of(&FieldType::Bytes), ReadingKind::Unsupported);
+    fn a_description_word_names_its_kind_and_an_unknown_word_names_none() {
+        assert_eq!(
+            ReadingKind::from_word("three axes"),
+            Some(ReadingKind::ThreeAxes)
+        );
+        assert_eq!(
+            ReadingKind::from_word("colour array"),
+            Some(ReadingKind::ColourArray)
+        );
+        assert_eq!(ReadingKind::from_word("dial"), None);
     }
 }

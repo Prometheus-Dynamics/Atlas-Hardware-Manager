@@ -23,7 +23,7 @@ use orion_wire::Decode;
 
 use crate::device::{RESOURCE_KIND, RESOURCE_PREFIX, RawDevice, RawField, RawTopic, TopicLive};
 use crate::logs::{LOG_CAPACITY, LOG_TOPIC};
-use crate::value::{ReadingKind, Scalar, decode};
+use crate::value::{Scalar, decode};
 
 thread_local! {
     /// The live state of each node this thread serves, by the node's address.
@@ -172,16 +172,10 @@ fn read_topic(name: &str, subscriber: &mut Subscriber) -> RawTopic {
         .into_iter()
         .enumerate()
         .map(|(index, (name, ty, unit))| {
-            let kind = ReadingKind::of(&ty);
             let value = subscriber
                 .latest(FieldId(index as u16))
-                .and_then(|sample| decode(kind, sample.payload));
-            RawField {
-                name,
-                kind,
-                unit,
-                value,
-            }
+                .and_then(|sample| decode(&ty, sample.payload));
+            RawField { name, unit, value }
         })
         .collect();
     RawTopic {
@@ -199,7 +193,7 @@ fn read_logs(subscriber: &mut Subscriber) -> (Vec<(u64, String)>, u64) {
         match subscriber.next() {
             Next::Sample(sample) => {
                 if sample.field == FieldId(0)
-                    && let Some(Scalar::Text(text)) = decode(ReadingKind::Text, sample.payload)
+                    && let Some(Scalar::Text(text)) = decode(&FieldType::Text, sample.payload)
                 {
                     lines.push((sample.time.as_nanos(), text));
                 }

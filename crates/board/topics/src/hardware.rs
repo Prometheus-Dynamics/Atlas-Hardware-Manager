@@ -273,9 +273,8 @@ impl State {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::device::RawField;
-    use crate::device::{RawTopic, TopicLive};
-    use crate::value::{ReadingKind, Scalar};
+    use crate::device::{RawField, RawTopic, TopicLive};
+    use crate::value::Scalar;
     use orion::provider::ResourceState;
 
     fn raw(name: &str, value: f64) -> RawDevice {
@@ -288,7 +287,6 @@ mod tests {
                 live: TopicLive::Live,
                 fields: vec![RawField {
                     name: "speed".into(),
-                    kind: ReadingKind::Number,
                     unit: "m/s".into(),
                     value: Some(Scalar::Number(value)),
                 }],
