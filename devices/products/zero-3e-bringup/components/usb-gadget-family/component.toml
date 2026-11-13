@@ -1,0 +1,12 @@
+# The board id the USB network's addresses are derived from: the one line of /etc/usb-gadget.family.
+# It is the board's id: the Gaia board's name, the Lemnos [board] id and the directory under devices/boards/
+# (devices/README.md, "The board id"). Changing it changes the board's USB addresses, its identity key and
+# the slots it accepts; it is frozen once an image has shipped.
+version = 1
+name = "usb-gadget-family"
+description = "The bring-up board's id for the USB network's addresses: /etc/usb-gadget.family (radxa-zero-3e)."
+
+[[install]]
+from = { file = "files/usb-gadget.family" }
+to = "/etc/usb-gadget.family"
+mode = "0644"

@@ -19,6 +19,11 @@ CONFIG_USB_CONFIGFS=y
 # CONFIG_USB_CONFIGFS_F_FS: FunctionFS (Orion's link). Defconfig has it y, but it stayed m behind USB_CONFIGFS;
 #   this line makes it real. Selects USB_F_FS=y (no prompt, so not settable on its own).
 CONFIG_USB_CONFIGFS_F_FS=y
+# -- NCM, the bring-up's USB network function (PR B24): the Gaia usb-gadget-network component makes the NCM
+#    function through configfs and sets its addresses before binding. =y, not m: a module would not be
+#    loaded before the gadget starts (the bring-up has no module loader step for it). Built on the rk35xx
+#    families' trim (trim.fragment keeps NCM).
+CONFIG_USB_CONFIGFS_NCM=y
 # -- Built in for the flasher (no modules in its image; Lemnos docs/kernel-config.md @4c6678f3, "Built in" column) --
 # CONFIG_SPI_SPIDEV: /dev/spidevB.C, the stock SPI route Lemnos uses without lemnos.ko (m in the arm64 defconfig).
 #   Mark: VERIFIED, the generic "Built in" table of Lemnos docs/kernel-config.md at 818473f6 (not per-SoC).
