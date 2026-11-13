@@ -1,10 +1,11 @@
-//! The bundle against a synthetic slot: this is the writer and the reader
-//! checked against a double, with the bytes Gaia's `gaia.verity` would give
-//! for its shape (the image path is in tests/image.rs): an EROFS data region padded to 4 KiB blocks, a verity table
-//! in Gaia's `verity.table` layout, and a tree after the data.
+//! The bundle against a synthetic slot: the writer and the reader checked against
+//! a double (the image path is in tests/image.rs). The double is a data region of
+//! whole 4 KiB blocks, the four verity values for it, and a tree after the data of
+//! the length the layout gives.
 //!
-//! The tree bytes are stand-ins: the writer checks the data's root hash
-//! against the table and measures the rest; it never reads the tree's layout.
+//! The tree bytes are stand-ins: the writer checks the data's root hash against
+//! the values and measures the tree's length; it does not recompute the tree (see
+//! tests/veritysetup.rs for the layout checked against the real tool).
 
 use std::cell::Cell;
 use std::io::Read;
@@ -13,6 +14,7 @@ use atlas_bundle::{
     BLOCK, BootFile, BundleError, SlotMeta, SlotSource, inspect_bundle, root_hash, verify_slot,
     write_bundle,
 };
+use atlas_image::{Verity, VerityError, tree_bytes};
 use atlas_release::{PublicKey, public_key_for};
 use sha2::{Digest, Sha256};
 
@@ -58,24 +60,10 @@ impl Read for Trickle {
     }
 }
 
-/// Gaia's `verity.table` text for a data region (gaia.verity's `Table::text`).
-fn gaia_table(root: &str, salt_hex: &str, data_blocks: u64) -> String {
-    let hash_offset = data_blocks * BLOCK as u64;
-    format!(
-        "hash_type 1\nalgorithm sha256\nroot_hash {root}\nsalt {salt_hex}\n\
-         uuid 01234567-89ab-4cde-8f01-23456789abcd\ndata_blocks {data_blocks}\n\
-         data_block_size 4096\nhash_block_size 4096\nhash_offset {hash_offset}\n\
-         hash_start_block {}\ntable 0 {} verity 1 /dev/x /dev/x 4096 4096 {data_blocks} {} sha256 {root} {salt_hex}\n",
-        hash_offset / BLOCK as u64 + 1,
-        data_blocks * 8,
-        hash_offset / BLOCK as u64 + 1,
-    )
-}
-
 struct Synthetic {
     data: Vec<u8>,
     tree: Vec<u8>,
-    table: String,
+    verity: Verity,
     boot: Vec<(String, Vec<u8>)>,
     chunk: usize,
     /// Which call to `rootfs()` gives the data with its first byte flipped.
@@ -84,16 +72,23 @@ struct Synthetic {
 }
 
 impl Synthetic {
-    /// A slot of `blocks` data blocks, its table computed from the data.
+    /// A slot of `blocks` data blocks, its verity values computed from the data
+    /// and a tree of the length the layout gives for that many blocks.
     fn new(blocks: usize) -> Self {
         let data = pattern(blocks * BLOCK, 1);
         let salt = Sha256::digest(&data);
         let root = root_hash(&salt, &data).expect("root");
-        let table = gaia_table(&root, &hex(&salt), blocks as u64);
+        let verity = Verity::from_manifest(
+            &root,
+            Some(&hex(&salt)),
+            blocks as u64,
+            (blocks * BLOCK) as u64,
+        )
+        .expect("the values fit the layout");
         Self {
             data,
-            tree: pattern(3 * BLOCK, 2),
-            table,
+            tree: pattern(tree_bytes(blocks as u64) as usize, 2),
+            verity,
             boot: vec![
                 (
                     "cmdline.txt".into(),
@@ -116,8 +111,8 @@ impl Synthetic {
 }
 
 impl SlotSource for Synthetic {
-    fn verity_table(&self) -> Result<String, BundleError> {
-        Ok(self.table.clone())
+    fn verity(&self) -> Result<Verity, BundleError> {
+        Ok(self.verity.clone())
     }
 
     fn rootfs(&self) -> Result<Box<dyn Read + '_>, BundleError> {
@@ -227,7 +222,7 @@ fn a_bundle_has_the_members_in_order_and_its_signature_verifies() {
     assert_eq!(inspected.manifest.id, "slot-a.1");
     assert_eq!(
         inspected.manifest.image.size,
-        (5 * BLOCK + 3 * BLOCK) as u64
+        (5 * BLOCK) as u64 + tree_bytes(5)
     );
     assert_eq!(
         inspected.manifest.image.sha256,
@@ -253,9 +248,12 @@ fn slot_json_is_schema_3_with_the_fields_lemnos_reads() {
     assert!(json.get("family").is_none(), "no family key in schema 3");
     assert!(json.get("variant").is_none(), "absent when not given");
     assert_eq!(json["id"], "slot-a.1");
-    assert_eq!(json["image"]["size"], 5 * BLOCK as u64);
+    assert_eq!(json["image"]["size"], 2 * BLOCK as u64 + tree_bytes(2));
     assert_eq!(json["image"]["sha256"].as_str().map(str::len), Some(64));
     assert_eq!(json["verity"]["root_hash"].as_str().map(str::len), Some(64));
+    assert_eq!(json["verity"]["salt"].as_str().map(str::len), Some(64));
+    assert_eq!(json["verity"]["data_blocks"], 2);
+    assert_eq!(json["verity"]["hash_offset"], 2 * BLOCK as u64);
     assert!(json["boot"]["files"]["cmdline.txt"].is_string());
     assert!(json.get("layers").is_none(), "no layered slots");
 }
@@ -311,10 +309,10 @@ fn a_key_that_did_not_sign_does_not_verify() {
 }
 
 #[test]
-fn the_rootfs_must_give_the_tables_root_hash() {
+fn the_rootfs_must_give_the_root_hash() {
     let secret = throwaway("root");
     let mut source = Synthetic::new(4);
-    // The table is for the data as it was; the data on the source is not.
+    // The root hash is for the data as it was; the data on the source is not.
     source.data[10] ^= 1;
     assert!(matches!(
         write(&source, &secret),
@@ -386,13 +384,134 @@ fn invalid_inputs_are_refused_before_anything_is_signed() {
 }
 
 #[test]
-fn a_table_that_is_not_gaias_format_is_refused() {
-    let secret = throwaway("table");
-    let mut source = Synthetic::new(2);
-    source.table = source.table.replace("hash_type 1", "hash_type 2");
+fn a_wrong_salt_is_refused_by_the_root_hash() {
+    let secret = throwaway("salt");
+    let mut source = Synthetic::new(4);
+    // The root was made with the real salt; the source now says another.
+    source.verity.salt = [0x11; 32];
     assert!(matches!(
         write(&source, &secret),
-        Err(BundleError::Table(_))
+        Err(BundleError::RootHashMismatch { .. })
+    ));
+}
+
+#[test]
+fn a_wrong_block_count_is_refused_by_the_file_size_rule() {
+    let secret = throwaway("blocks");
+    let blocks = |source: &mut Synthetic, n: u64| {
+        source.verity = Verity::from_manifest(
+            &source.verity.root_hash,
+            Some(&source.verity.salt_hex()),
+            n,
+            n * BLOCK as u64,
+        )
+        .expect("the offset is made to fit, so only the count is wrong");
+    };
+    // One block more and one block fewer than the data, each with its offset made to fit.
+    for wrong in [5, 3] {
+        let mut source = Synthetic::new(4);
+        blocks(&mut source, wrong);
+        assert!(
+            matches!(
+                write(&source, &secret),
+                Err(BundleError::Verity(VerityError::Size { .. }))
+            ),
+            "{wrong} blocks"
+        );
+    }
+}
+
+#[test]
+fn a_wrong_offset_is_refused_before_anything_is_read() {
+    let secret = throwaway("offset");
+    let mut source = Synthetic::new(4);
+    source.verity.hash_offset = 3 * BLOCK as u64;
+    assert!(matches!(
+        write(&source, &secret),
+        Err(BundleError::Verity(VerityError::Offset { .. }))
+    ));
+}
+
+#[test]
+fn a_truncated_tree_is_refused_by_the_size_rule() {
+    let secret = throwaway("truncated");
+    let mut source = Synthetic::new(4);
+    source.tree.pop();
+    assert!(matches!(
+        write(&source, &secret),
+        Err(BundleError::Verity(VerityError::Size { .. }))
+    ));
+}
+
+#[test]
+fn a_file_shorter_than_its_data_is_refused_by_the_size_rule() {
+    let secret = throwaway("short");
+    let mut source = Synthetic::new(4);
+    source.data.truncate(3 * BLOCK);
+    source.tree.clear();
+    assert!(matches!(
+        write(&source, &secret),
+        Err(BundleError::Verity(VerityError::Size { .. }))
+    ));
+}
+
+/// A bundle's `slot.json` with the given verity values and a valid rest, signed.
+/// A valid salt for the manifest tests: 64 hex digits.
+const SALT_HEX: &str = "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a";
+
+/// A bundle's `slot.json` with the given verity values, the rest valid. `salt` is
+/// the JSON text of the salt value (quoted), or `None` to leave the key out.
+fn manifest_json_with(
+    salt: Option<&str>,
+    data_blocks: u64,
+    hash_offset: u64,
+    size: u64,
+) -> Vec<u8> {
+    let zeros = "0".repeat(64);
+    let salt = salt.map_or(String::new(), |s| format!(r#""salt":"{s}","#));
+    format!(
+        r#"{{"schema":3,"id":"slot-a.1","product":"example","version":"1","board":"example-board","image":{{"size":{size},"sha256":"{zeros}"}},"verity":{{"root_hash":"{zeros}",{salt}"data_blocks":{data_blocks},"hash_offset":{hash_offset}}},"boot":{{"files":{{"cmdline.txt":"{zeros}"}}}}}}"#
+    )
+    .into_bytes()
+}
+
+fn manifest_json(data_blocks: u64, hash_offset: u64, size: u64) -> Vec<u8> {
+    manifest_json_with(Some(SALT_HEX), data_blocks, hash_offset, size)
+}
+
+#[test]
+fn a_manifest_whose_salt_is_missing_empty_or_the_wrong_length_is_refused_by_name() {
+    let secret = throwaway("saltjson");
+    let cases = [
+        (None, VerityError::SaltMissing),
+        (Some(""), VerityError::SaltEmpty),
+        (Some("zz"), VerityError::SaltLength { digits: 2 }),
+        (Some(&SALT_HEX[2..]), VerityError::SaltLength { digits: 62 }),
+    ];
+    for (salt, expected) in cases {
+        let json = manifest_json_with(salt, 1, 4096, 4096);
+        let bundle = bundle_with_manifest(&json, &secret);
+        let error = inspect_bundle(&bundle[..], &keys_of(&secret)).expect_err("refused");
+        assert!(
+            matches!(&error, BundleError::Verity(e) if *e == expected),
+            "{salt:?}: {error:?}"
+        );
+    }
+}
+
+#[test]
+fn a_manifest_whose_offset_or_size_do_not_fit_is_refused_by_name() {
+    let secret = throwaway("layoutjson");
+    let offset = bundle_with_manifest(&manifest_json(1, 8192, 8192), &secret);
+    assert!(matches!(
+        inspect_bundle(&offset[..], &keys_of(&secret)),
+        Err(BundleError::Verity(VerityError::Offset { .. }))
+    ));
+    // One data block has no tree, so 4096 is its whole length; 8192 is too long.
+    let size = bundle_with_manifest(&manifest_json(1, 4096, 8192), &secret);
+    assert!(matches!(
+        inspect_bundle(&size[..], &keys_of(&secret)),
+        Err(BundleError::Verity(VerityError::Size { .. }))
     ));
 }
 
@@ -489,7 +608,7 @@ fn a_family_key_is_refused_by_name() {
 #[test]
 fn a_bundle_without_a_board_is_refused() {
     let secret = throwaway("noboard");
-    let json = br#"{"schema":3,"id":"slot-a.1","product":"example","version":"1","image":{"size":8,"sha256":"00"},"verity":{"root_hash":"00"},"boot":{"files":{}}}"#;
+    let json = br#"{"schema":3,"id":"slot-a.1","product":"example","version":"1","image":{"size":8,"sha256":"00"},"verity":{"root_hash":"00","salt":"5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a","data_blocks":1,"hash_offset":4096},"boot":{"files":{}}}"#;
     let bundle = bundle_with_manifest(json, &secret);
     let error = inspect_bundle(&bundle[..], &keys_of(&secret)).expect_err("refused");
     assert!(error.to_string().contains("board"), "{error}");
