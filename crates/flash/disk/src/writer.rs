@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::image::{decode_into, decoded_at_least, detect_format};
+use crate::image::{ImageFormat, decode_into, decoded_at_least, detect_format};
 use crate::journal::{Journal, image_identity};
 use crate::{DiskError, Target};
 
@@ -362,6 +362,62 @@ pub(crate) fn hash_file(
     Ok(hex(&hasher.finalize()))
 }
 
+/// What [`check_image`] found about an image before any disk is touched.
+#[derive(Debug)]
+pub(crate) struct Checked {
+    format: ImageFormat,
+    input_total: u64,
+}
+
+/// Refuses a policy that cannot make progress.
+pub(crate) fn require_segments(policy: &ResumePolicy) -> Result<(), DiskError> {
+    if policy.segment_bytes == 0 {
+        return Err(DiskError::Image(
+            "segments must hold at least one byte".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// Checks an image against the options and a disk of `capacity` bytes, without
+/// writing anything: its SHA-256 when one is given, its format, and whether it
+/// fits.
+pub(crate) fn check_image(
+    image: &Path,
+    options: &WriteOptions,
+    capacity: u64,
+    progress: &mut dyn FnMut(WriteProgress),
+    cancel: &AtomicBool,
+) -> Result<Checked, DiskError> {
+    if let Some(expected) = &options.image_sha256 {
+        let actual = hash_file(image, progress, cancel)?;
+        if !actual.eq_ignore_ascii_case(expected.trim()) {
+            return Err(DiskError::ImageHashMismatch {
+                expected: expected.clone(),
+                actual,
+            });
+        }
+    }
+    let format = detect_format(image)?;
+    let input_total = std::fs::metadata(image)
+        .map_err(|error| DiskError::io(image, error))?
+        .len();
+    // Refused before anything is written: a raw image by its length, a
+    // compressed one by what its header says it decodes to (at least).
+    if let Some(size) = decoded_at_least(image, format)
+        && size > capacity
+    {
+        return Err(DiskError::TooLarge {
+            image: size,
+            disk: capacity,
+        });
+    }
+    Ok(Checked {
+        format,
+        input_total,
+    })
+}
+
 /// Writes the image at `image` to `target` in proven segments, through drops.
 ///
 /// With `journal`, a run picks up where an earlier one with the same image,
@@ -380,35 +436,29 @@ pub fn write_image(
     cancel: &AtomicBool,
 ) -> Result<WriteReport, DiskError> {
     let started = Instant::now();
-    if policy.segment_bytes == 0 {
-        return Err(DiskError::Image(
-            "segments must hold at least one byte".into(),
-        ));
-    }
-    if let Some(expected) = &options.image_sha256 {
-        let actual = hash_file(image, progress, cancel)?;
-        if !actual.eq_ignore_ascii_case(expected.trim()) {
-            return Err(DiskError::ImageHashMismatch {
-                expected: expected.clone(),
-                actual,
-            });
-        }
-    }
-    let format = detect_format(image)?;
-    let input_total = std::fs::metadata(image)
-        .map_err(|error| DiskError::io(image, error))?
-        .len();
-    // Refused before anything is written: a raw image by its length, a
-    // compressed one by what its header says it decodes to (at least).
-    if let Some(size) = decoded_at_least(image, format)
-        && size > target.capacity()
-    {
-        return Err(DiskError::TooLarge {
-            image: size,
-            disk: target.capacity(),
-        });
-    }
+    require_segments(policy)?;
+    let checked = check_image(image, options, target.capacity(), progress, cancel)?;
+    write_checked(
+        image, &checked, target, options, policy, journal, progress, cancel, started,
+    )
+}
 
+/// The write itself, after [`check_image`]. Shared by [`write_image`] and the
+/// platform pipeline in `device`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn write_checked(
+    image: &Path,
+    checked: &Checked,
+    target: &mut dyn Target,
+    options: &WriteOptions,
+    policy: &ResumePolicy,
+    journal: Option<&Path>,
+    progress: &mut dyn FnMut(WriteProgress),
+    cancel: &AtomicBool,
+    started: Instant,
+) -> Result<WriteReport, DiskError> {
+    let format = checked.format;
+    let input_total = checked.input_total;
     let journal = journal.filter(|_| options.verify).map(|path| {
         let fresh = Journal {
             image: image_identity(image, options.image_sha256.as_deref()).unwrap_or_default(),

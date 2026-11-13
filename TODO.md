@@ -76,6 +76,7 @@ Our own loader for every chip family, then the flasher image, then an ordinary u
 - [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11, D12, D13)
 - [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11, D12, D13, D15)
 - [ ] [D7](docs/prs/D7.md) Disk writer and its helper (wave 2; needs A1)
+- [ ] [D18](docs/prs/D18.md) Writing a card on Windows and macOS, as far as it can be proven here (needs D7; host test: docs/host-tests/disk-writer.md)
 - [ ] [D8](docs/prs/D8.md) UBI images for NAND boards (wave 2; needs A1)
 - [ ] [D9](docs/prs/D9.md) Slot bundles from the image (wave 3; needs A7)
 - [ ] [D10](docs/prs/D10.md) Fastboot client (wave 3; needs D1)
@@ -122,3 +123,4 @@ Every job with real clicks on real boards, then docs and the lock.
 - [ ] [G6](docs/prs/G6.md) Luckfox (wave 8; needs F5, B6, D8; board run)
 - [ ] [G7](docs/prs/G7.md) K230D (wave 8; needs F5, B7, D4; board run)
 - [ ] [G8](docs/prs/G8.md) Docs, lock, hand-over (wave 10; needs G1, G2, G3, F8, F9)
+- [ ] [G9](docs/prs/G9.md) What must build on Windows and macOS is checked in CI (needs nothing; native CI on windows-latest and macos-latest; scripts/check-portable.sh)
