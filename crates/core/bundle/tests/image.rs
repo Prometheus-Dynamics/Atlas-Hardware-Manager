@@ -23,8 +23,8 @@ use atlas_release::{PublicKey, public_key_for};
 use sha2::{Digest, Sha256};
 
 const DATA_FIXTURE: &[u8] = include_bytes!("../../../flash/image/tests/fixtures/data.ext4");
-/// The salt the fixture's verity roots were made with (its make-fixtures.py).
-const SALT: [u8; 16] = [0x5A; 16];
+/// The salt the fixture's verity roots were made with (its make-fixtures.py): 32 bytes.
+const SALT: [u8; 32] = [0x5A; 32];
 
 fn pattern(n: usize, seed: u64) -> Vec<u8> {
     (0..n as u64)
@@ -203,7 +203,7 @@ fn a_bundle_from_the_image_in_one_call_matches_the_slots_parts_member_by_member(
 
     // The verity values are the image manifest's, and the root is the data's.
     assert_eq!(manifest.verity.root_hash, slot_root());
-    assert_eq!(manifest.verity.salt, hex(&SALT));
+    assert_eq!(manifest.verity.salt.as_deref(), Some(hex(&SALT).as_str()));
     assert_eq!(manifest.verity.data_blocks, 4);
     assert_eq!(manifest.verity.hash_offset, 4 * BLOCK as u64);
 

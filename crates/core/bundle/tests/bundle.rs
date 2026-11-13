@@ -78,9 +78,13 @@ impl Synthetic {
         let data = pattern(blocks * BLOCK, 1);
         let salt = Sha256::digest(&data);
         let root = root_hash(&salt, &data).expect("root");
-        let verity =
-            Verity::from_manifest(&root, &hex(&salt), blocks as u64, (blocks * BLOCK) as u64)
-                .expect("the values fit the layout");
+        let verity = Verity::from_manifest(
+            &root,
+            Some(&hex(&salt)),
+            blocks as u64,
+            (blocks * BLOCK) as u64,
+        )
+        .expect("the values fit the layout");
         Self {
             data,
             tree: pattern(tree_bytes(blocks as u64) as usize, 2),
@@ -384,7 +388,7 @@ fn a_wrong_salt_is_refused_by_the_root_hash() {
     let secret = throwaway("salt");
     let mut source = Synthetic::new(4);
     // The root was made with the real salt; the source now says another.
-    source.verity.salt = b"not the salt".to_vec();
+    source.verity.salt = [0x11; 32];
     assert!(matches!(
         write(&source, &secret),
         Err(BundleError::RootHashMismatch { .. })
@@ -397,7 +401,7 @@ fn a_wrong_block_count_is_refused_by_the_file_size_rule() {
     let blocks = |source: &mut Synthetic, n: u64| {
         source.verity = Verity::from_manifest(
             &source.verity.root_hash,
-            &source.verity.salt_hex(),
+            Some(&source.verity.salt_hex()),
             n,
             n * BLOCK as u64,
         )
@@ -452,36 +456,59 @@ fn a_file_shorter_than_its_data_is_refused_by_the_size_rule() {
 }
 
 /// A bundle's `slot.json` with the given verity values and a valid rest, signed.
-fn manifest_json(salt: &str, data_blocks: u64, hash_offset: u64, size: u64) -> Vec<u8> {
+/// A valid salt for the manifest tests: 64 hex digits.
+const SALT_HEX: &str = "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a";
+
+/// A bundle's `slot.json` with the given verity values, the rest valid. `salt` is
+/// the JSON text of the salt value (quoted), or `None` to leave the key out.
+fn manifest_json_with(
+    salt: Option<&str>,
+    data_blocks: u64,
+    hash_offset: u64,
+    size: u64,
+) -> Vec<u8> {
     let zeros = "0".repeat(64);
+    let salt = salt.map_or(String::new(), |s| format!(r#""salt":"{s}","#));
     format!(
-        r#"{{"schema":3,"id":"slot-a.1","product":"example","version":"1","board":"example-board","image":{{"size":{size},"sha256":"{zeros}"}},"verity":{{"root_hash":"{zeros}","salt":"{salt}","data_blocks":{data_blocks},"hash_offset":{hash_offset}}},"boot":{{"files":{{"cmdline.txt":"{zeros}"}}}}}}"#
+        r#"{{"schema":3,"id":"slot-a.1","product":"example","version":"1","board":"example-board","image":{{"size":{size},"sha256":"{zeros}"}},"verity":{{"root_hash":"{zeros}",{salt}"data_blocks":{data_blocks},"hash_offset":{hash_offset}}},"boot":{{"files":{{"cmdline.txt":"{zeros}"}}}}}}"#
     )
     .into_bytes()
 }
 
+fn manifest_json(data_blocks: u64, hash_offset: u64, size: u64) -> Vec<u8> {
+    manifest_json_with(Some(SALT_HEX), data_blocks, hash_offset, size)
+}
+
 #[test]
-fn a_manifest_with_a_salt_that_is_not_hex_is_refused_by_name() {
+fn a_manifest_whose_salt_is_missing_empty_or_the_wrong_length_is_refused_by_name() {
     let secret = throwaway("saltjson");
-    let json = manifest_json("zz", 1, 4096, 8192);
-    let bundle = bundle_with_manifest(&json, &secret);
-    let error = inspect_bundle(&bundle[..], &keys_of(&secret)).expect_err("refused");
-    assert!(
-        matches!(error, BundleError::Verity(VerityError::Salt(_))),
-        "{error:?}"
-    );
+    let cases = [
+        (None, VerityError::SaltMissing),
+        (Some(""), VerityError::SaltEmpty),
+        (Some("zz"), VerityError::SaltLength { digits: 2 }),
+        (Some(&SALT_HEX[2..]), VerityError::SaltLength { digits: 62 }),
+    ];
+    for (salt, expected) in cases {
+        let json = manifest_json_with(salt, 1, 4096, 4096);
+        let bundle = bundle_with_manifest(&json, &secret);
+        let error = inspect_bundle(&bundle[..], &keys_of(&secret)).expect_err("refused");
+        assert!(
+            matches!(&error, BundleError::Verity(e) if *e == expected),
+            "{salt:?}: {error:?}"
+        );
+    }
 }
 
 #[test]
 fn a_manifest_whose_offset_or_size_do_not_fit_is_refused_by_name() {
     let secret = throwaway("layoutjson");
-    let offset = bundle_with_manifest(&manifest_json("", 1, 8192, 8192), &secret);
+    let offset = bundle_with_manifest(&manifest_json(1, 8192, 8192), &secret);
     assert!(matches!(
         inspect_bundle(&offset[..], &keys_of(&secret)),
         Err(BundleError::Verity(VerityError::Offset { .. }))
     ));
-    // One data block and its one-block tree is 8192 bytes; 4096 is cut short.
-    let size = bundle_with_manifest(&manifest_json("", 1, 4096, 4096), &secret);
+    // One data block has no tree, so 4096 is its whole length; 8192 is too long.
+    let size = bundle_with_manifest(&manifest_json(1, 4096, 8192), &secret);
     assert!(matches!(
         inspect_bundle(&size[..], &keys_of(&secret)),
         Err(BundleError::Verity(VerityError::Size { .. }))
@@ -581,7 +608,7 @@ fn a_family_key_is_refused_by_name() {
 #[test]
 fn a_bundle_without_a_board_is_refused() {
     let secret = throwaway("noboard");
-    let json = br#"{"schema":3,"id":"slot-a.1","product":"example","version":"1","image":{"size":8,"sha256":"00"},"verity":{"root_hash":"00","salt":"","data_blocks":1,"hash_offset":4096},"boot":{"files":{}}}"#;
+    let json = br#"{"schema":3,"id":"slot-a.1","product":"example","version":"1","image":{"size":8,"sha256":"00"},"verity":{"root_hash":"00","salt":"5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a","data_blocks":1,"hash_offset":4096},"boot":{"files":{}}}"#;
     let bundle = bundle_with_manifest(json, &secret);
     let error = inspect_bundle(&bundle[..], &keys_of(&secret)).expect_err("refused");
     assert!(error.to_string().contains("board"), "{error}");

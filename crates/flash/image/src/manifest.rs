@@ -38,7 +38,8 @@ struct Raw {
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 struct RawVerity {
     root_hash: String,
-    salt: String,
+    /// `None` when the key is missing: the verity check names it.
+    salt: Option<String>,
     data_blocks: u64,
     hash_offset: u64,
 }
@@ -102,7 +103,7 @@ pub(crate) fn parse_manifest(text: &str, id: &str) -> Result<Manifest, ImageErro
     }
     let verity = Verity::from_manifest(
         &raw.verity.root_hash,
-        &raw.verity.salt,
+        raw.verity.salt.as_deref(),
         raw.verity.data_blocks,
         raw.verity.hash_offset,
     )
@@ -174,6 +175,7 @@ mod tests {
 
     const DIGEST: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     const ROOT: &str = "ab00000000000000000000000000000000000000000000000000000000000000";
+    const SALT: &str = "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a";
 
     #[test]
     fn a_boot_list_reads_sha256sum_lines() {
@@ -203,10 +205,18 @@ mod tests {
     }
 
     #[test]
+    fn a_manifest_without_a_salt_key_is_refused_by_the_salt() {
+        let text = manifest(ROOT, SALT, 4, 4 * 4096, 5 * 4096)
+            .replace(&format!("\"salt\":\"{SALT}\","), "");
+        let error = parse_manifest(&text, "alpha").expect_err("refused");
+        assert!(error.to_string().contains("salt is missing"), "{error}");
+    }
+
+    #[test]
     fn a_manifest_must_name_its_slot_and_hash_its_parts() {
-        let good = manifest(ROOT, "5a5a", 4, 4 * 4096, 5 * 4096);
+        let good = manifest(ROOT, SALT, 4, 4 * 4096, 5 * 4096);
         let parsed = parse_manifest(&good, "alpha").expect("good");
-        assert_eq!(parsed.verity.salt, vec![0x5a, 0x5a]);
+        assert_eq!(parsed.verity.salt, [0x5a; 32]);
         assert_eq!(parsed.verity.data_blocks, 4);
         assert_eq!(parsed.verity.hash_offset, 4 * 4096);
         assert!(parse_manifest(&good, "beta").is_err());
@@ -218,7 +228,7 @@ mod tests {
     #[test]
     fn schema_2_is_refused_by_name() {
         let text =
-            manifest(ROOT, "", 4, 4 * 4096, 5 * 4096).replace("\"schema\":3", "\"schema\":2");
+            manifest(ROOT, SALT, 4, 4 * 4096, 5 * 4096).replace("\"schema\":3", "\"schema\":2");
         let error = parse_manifest(&text, "alpha").expect_err("refused");
         assert!(error.to_string().contains("schema 2"), "{error}");
     }
@@ -233,7 +243,7 @@ mod tests {
                 .to_string()
                 .contains("salt")
         );
-        let bad_offset = manifest(ROOT, "", 4, 3 * 4096, 5 * 4096);
+        let bad_offset = manifest(ROOT, SALT, 4, 3 * 4096, 5 * 4096);
         assert!(
             parse_manifest(&bad_offset, "alpha")
                 .unwrap_err()
@@ -241,7 +251,7 @@ mod tests {
                 .contains("hash_offset")
         );
         // Blocks one too few, offset made to fit: the size rule names the tree.
-        let bad_blocks = manifest(ROOT, "", 3, 3 * 4096, 5 * 4096);
+        let bad_blocks = manifest(ROOT, SALT, 3, 3 * 4096, 5 * 4096);
         assert!(
             parse_manifest(&bad_blocks, "alpha")
                 .unwrap_err()
@@ -249,7 +259,7 @@ mod tests {
                 .contains("hash tree")
         );
         // A tree cut short: image.size one block less than data plus tree.
-        let cut = manifest(ROOT, "", 4, 4 * 4096, 4 * 4096);
+        let cut = manifest(ROOT, SALT, 4, 4 * 4096, 4 * 4096);
         assert!(
             parse_manifest(&cut, "alpha")
                 .unwrap_err()

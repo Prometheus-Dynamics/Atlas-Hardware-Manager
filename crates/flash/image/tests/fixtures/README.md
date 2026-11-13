@@ -9,8 +9,8 @@ Lemnos's layout, for two slots:
   `verity.root_hash`, `verity.salt`, `verity.data_blocks`, `verity.hash_offset`,
   `boot.files`).
 - `slots/alpha.boot`: the boot list, `sha256sum -c` form, including `slot.json`.
-- `slots/beta.*`: the same shape for a second slot (8192 bytes), so a read of one
-  slot is checked not to mix in the other.
+- `slots/beta.*`: a second slot of one data block and no tree (4096 bytes), so a read of
+  one slot is checked not to mix in the other.
 - `slots/bootfiles/<sha256>`: the boot files by content: `Image`, `board.dtb`,
   `initramfs.cpio.gz`, `cmdline.txt`, `overlays/one.dtbo`, and the manifest bytes
   (`slot.json`).

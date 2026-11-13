@@ -39,6 +39,11 @@ pub struct VerityHasher {
     block: Vec<u8>,
     /// One entry per tree level, bottom first.
     levels: Vec<Level>,
+    /// The number of data blocks hashed so far.
+    blocks: u64,
+    /// The first data block, kept only for a one-block slot: a one-block slot has no
+    /// tree, and its root is the salted digest of that block.
+    first: Vec<u8>,
 }
 
 /// A tree level: the digests waiting for their hash block, and how many hash
@@ -55,6 +60,8 @@ impl VerityHasher {
             salt: salt.to_vec(),
             block: Vec::with_capacity(BLOCK),
             levels: Vec::new(),
+            blocks: 0,
+            first: Vec::new(),
         }
     }
 
@@ -67,6 +74,10 @@ impl VerityHasher {
             data = &data[take..];
             if self.block.len() == BLOCK {
                 let block = std::mem::take(&mut self.block);
+                if self.blocks == 0 {
+                    self.first = block.clone();
+                }
+                self.blocks += 1;
                 let digest = self.digest(&block);
                 self.block = Vec::with_capacity(BLOCK);
                 self.push(0, digest);
@@ -82,8 +93,12 @@ impl VerityHasher {
                 "the verity data does not end on a 4 KiB block".into(),
             ));
         }
-        if self.levels.is_empty() {
+        if self.blocks == 0 {
             return Err(BundleError::Malformed("the verity data is empty".into()));
+        }
+        if self.blocks == 1 {
+            // One block, no tree: the root is the salted digest of the block.
+            return Ok(to_hex(&self.digest(&self.first)));
         }
         let mut level = 0;
         loop {
@@ -150,6 +165,9 @@ mod tests {
             hasher.update(block);
             hasher.finalize().into()
         };
+        if data.len() == BLOCK {
+            return to_hex(&digest(data));
+        }
         let mut level: Vec<[u8; 32]> = data.chunks(BLOCK).map(digest).collect();
         loop {
             if level.len() <= DIGESTS_PER_BLOCK {
@@ -215,11 +233,11 @@ mod tests {
 
     #[test]
     fn the_salt_is_prepended_to_every_block() {
-        // A block hashed with the salt is not the block hashed alone.
+        // A block hashed with one salt is not the block hashed with another.
         let data = blocks(1);
         assert_ne!(
-            root_hash(b"salt", &data).expect("salted"),
-            root_hash(b"", &data).expect("unsalted")
+            root_hash(b"salt-one", &data).expect("one"),
+            root_hash(b"salt-two", &data).expect("two")
         );
     }
 }

@@ -62,8 +62,9 @@ pub struct ImageEntry {
 pub struct VerityEntry {
     /// The root hash, 64 lowercase hex digits.
     pub root_hash: String,
-    /// The salt, lowercase hex; `""` for no salt.
-    pub salt: String,
+    /// The salt: required, 64 lowercase hex digits (32 bytes). `None` only when a
+    /// manifest read from a bundle lacks the key; the checks refuse it.
+    pub salt: Option<String>,
     /// The data's length in 4096-byte blocks.
     pub data_blocks: u64,
     /// The byte offset of the tree: `data_blocks * 4096`.
@@ -96,7 +97,7 @@ impl SlotManifest {
             image,
             verity: VerityEntry {
                 root_hash: verity.root_hash.clone(),
-                salt: verity.salt_hex(),
+                salt: Some(verity.salt_hex()),
                 data_blocks: verity.data_blocks,
                 hash_offset: verity.hash_offset,
             },
@@ -160,7 +161,7 @@ impl SlotManifest {
         // the manifest gives it (the same checks the image reader and the board make).
         Verity::from_manifest(
             &self.verity.root_hash,
-            &self.verity.salt,
+            self.verity.salt.as_deref(),
             self.verity.data_blocks,
             self.verity.hash_offset,
         )?
