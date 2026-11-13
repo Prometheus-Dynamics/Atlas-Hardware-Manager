@@ -85,6 +85,21 @@ dev = sys.argv[1]
 def load(p):
     with open(p, "rb") as f:
         return tomllib.load(f)
+# The commit each source is locked to, from the products' committed gaia.lock files. A build takes the
+# commit from the lock, never from `ref`, so this check fetches that same commit: a tag in a description is
+# a name, and a name is asked of no host here. A source no product locks yet is fetched by its `ref`.
+locked = {}
+for lpath in sorted(glob.glob(os.path.join(dev, "products", "*", "gaia.lock"))):
+    for key, entry in load(lpath).get("source", {}).items():
+        if entry.get("kind") != "git":
+            continue
+        pin = (entry["url"], entry["ref"])
+        seen = locked.setdefault(key, {}).setdefault(pin, (entry["commit"], lpath))
+        if seen[0] != entry["commit"]:
+            sys.exit(f"check-kernel-fragments: {key} at {pin[1]} is locked to {seen[0]} in {seen[1]} and to {entry['commit']} in {lpath}")
+def commit_of(board_name, src_name, src):
+    found = locked.get(f"{board_name}.{src_name}", {}).get((src["git"], src["ref"]))
+    return found[0] if found else src["ref"]
 for bpath in sorted(glob.glob(os.path.join(dev, "boards", "*", "board.toml"))):
     bdir = os.path.dirname(bpath)
     board = load(bpath)
@@ -117,14 +132,14 @@ for bpath in sorted(glob.glob(os.path.join(dev, "boards", "*", "board.toml"))):
         if "git" not in ss:
             print(f"{name}|SKIP|patch series {series[0]} is not a git source; this check cannot fetch it")
             continue
-        series_pin = f"{ss['git']}|{ss['ref']}"
+        series_pin = f"{ss['git']}|{commit_of(name, series[0], ss)}"
     defconfig = bk.get("defconfig", fk.get("defconfig", "defconfig"))
     if "fragments" in bk:
         frags = [os.path.normpath(os.path.join(bdir, f)) for f in bk["fragments"]]
     else:
         frags = [os.path.normpath(os.path.join(fdir, f)) for f in fk.get("fragments", [])]
     fam_name = fam.get("name", os.path.basename(fdir))
-    print("|".join([name, fam_name, src["git"], src["ref"], defconfig, ",".join(frags), series_pin]))
+    print("|".join([name, fam_name, src["git"], commit_of(name, src_name, src), defconfig, ",".join(frags), series_pin]))
 PY
 }
 
