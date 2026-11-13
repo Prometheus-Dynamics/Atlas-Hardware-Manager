@@ -81,6 +81,7 @@ Our own loader for every chip family, then the flasher image, then an ordinary u
 - [ ] [D10](docs/prs/D10.md) Fastboot client (wave 3; needs D1)
 - [ ] [D11](docs/prs/D11.md) Read a slot out of the first-flash image (wave 4; needs D9)
 - [ ] [D12](docs/prs/D12.md) Find a board's Orion link over USB by its interface string (wave 4; needs D1, A8)
+- [ ] [D17](docs/prs/D17.md) atlas-usb hands out a claimed link as a read/write pair (wave 5; needs D12)
 - [ ] [D13](docs/prs/D13.md) slot.json schema 3, and the bundle made from the image (wave 5; needs D9, D11)
 - [ ] [D14](docs/prs/D14.md) Verity keys in the slot manifest, and the bundle from an image in one call (wave 6; needs D13)
 - [ ] [D15](docs/prs/D15.md) The first-flash manifest, made by Atlas from the image (wave 6; needs D11, D13)
@@ -121,3 +122,4 @@ Every job with real clicks on real boards, then docs and the lock.
 - [ ] [G6](docs/prs/G6.md) Luckfox (wave 8; needs F5, B6, D8; board run)
 - [ ] [G7](docs/prs/G7.md) K230D (wave 8; needs F5, B7, D4; board run)
 - [ ] [G8](docs/prs/G8.md) Docs, lock, hand-over (wave 10; needs G1, G2, G3, F8, F9)
+- [ ] [G9](docs/prs/G9.md) What must build on Windows and macOS is checked in CI (needs nothing; native CI on windows-latest and macos-latest; scripts/check-portable.sh)
