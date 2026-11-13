@@ -15,6 +15,7 @@ The core every other group builds on: types, the driver contract, inventory, job
 - [ ] [A6](docs/prs/A6.md) The device catalog (wave 2; needs A1)
 - [ ] [A7](docs/prs/A7.md) Releases and trust (wave 2; needs A1)
 - [ ] [A8](docs/prs/A8.md) Core follow-ups from the first wave (wave 3; needs A1, A6, D1)
+- [ ] [A9](docs/prs/A9.md) The simulated node out of the drivers, and one driver for every family (wave 4; needs A1, A4)
 
 ## B. Board descriptions
 
