@@ -15,10 +15,11 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
 use atlas_driver::{Driver, DriverRegistry};
-use atlas_types::{Candidate, Family, Link, LinkId};
+use atlas_types::{Candidate, DeviceKey, Family, Link, LinkId};
 use tokio::time::{self, Instant};
 
 use crate::call::guarded;
+use crate::claims::DeviceHolds;
 use crate::{Backoff, Event, Events};
 
 /// The links present right now. Called every tick, so it must be a quick
@@ -107,6 +108,8 @@ struct Board {
     settled: BTreeMap<Key, String>,
     /// The addresses each family's discovery listed on each link last time.
     listed: BTreeMap<(Family, LinkId), BTreeSet<String>>,
+    /// The device each address identified as last time.
+    known: BTreeMap<String, DeviceKey>,
 }
 
 #[derive(Debug, Default)]
@@ -122,6 +125,7 @@ struct Shared {
     control: Mutex<Control>,
     events: Events,
     config: ScanConfig,
+    holds: DeviceHolds,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -224,6 +228,14 @@ impl Shared {
         board.listed.retain(|(_, link), _| live.contains(link));
     }
 
+    fn remember(&self, address: &str, key: DeviceKey) {
+        lock(&self.board).known.insert(address.to_owned(), key);
+    }
+
+    fn known_key(&self, address: &str) -> Option<DeviceKey> {
+        lock(&self.board).known.get(address).cloned()
+    }
+
     /// Clears settled answers for one family, so the next scan asks again.
     fn ask_again(&self, family: &Family) {
         lock(&self.board)
@@ -251,12 +263,14 @@ pub fn start_scan(
     links: Arc<dyn LinkSource>,
     events: Events,
     config: ScanConfig,
+    holds: DeviceHolds,
 ) -> ScanControl {
     let shared = Arc::new(Shared {
         board: Mutex::new(Board::default()),
         control: Mutex::new(Control::default()),
         events,
         config,
+        holds,
     });
     tokio::spawn(run(Arc::clone(&shared), registry, links));
     ScanControl { shared }
@@ -322,6 +336,11 @@ async fn discover(shared: Arc<Shared>, driver: Arc<dyn Driver>, link: Link, clai
                 addresses,
             });
             for candidate in candidates {
+                // A quiet claim: a job is loading this device, so no identify.
+                let known = shared.known_key(&candidate.address);
+                if shared.holds.is_quiet(&candidate.address, known.as_ref()) {
+                    continue;
+                }
                 let identify_key = Key::Identify {
                     family: family.clone(),
                     link: link.id.clone(),
@@ -381,6 +400,7 @@ async fn identify(
     .await;
     match result {
         Ok((identity, capabilities)) => {
+            shared.remember(&address, identity.key.clone());
             shared.succeeded(&key, shared.config.interval);
             shared.events.emit(Event::Identified {
                 identity,

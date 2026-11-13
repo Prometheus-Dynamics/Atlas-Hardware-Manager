@@ -10,7 +10,10 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use atlas_driver::{Driver, DriverError, DriverManifest, DriverRegistry};
-use atlas_jobs::{Event, Events, LinkSource, ScanConfig, ScanControl, start_scan};
+use atlas_jobs::{
+    DeviceClaim, DeviceHolds, Event, Events, JobKind, JobTiming, Jobs, LinkSource, ScanConfig,
+    ScanControl, start_scan,
+};
 use atlas_types::{
     Candidate, CapabilityKind, CapabilitySet, DeviceKey, DeviceState, Family, Identity, Link,
     LinkId, LinkKind,
@@ -132,7 +135,26 @@ fn start(registry: DriverRegistry, events: &Events) -> ScanControl {
         Arc::new(FixedLinks(vec![usb_link()])),
         events.clone(),
         ScanConfig::default(),
+        DeviceHolds::new(),
     )
+}
+
+/// A step that never finishes, so its claim stays held.
+struct Hang;
+
+#[async_trait]
+impl JobKind for Hang {
+    fn name(&self) -> &str {
+        "hang-kind"
+    }
+
+    fn resumable(&self) -> bool {
+        true
+    }
+
+    async fn run_step(&self, _claim: &DeviceClaim, _step: &str) -> Result<(), DriverError> {
+        std::future::pending().await
+    }
 }
 
 /// Waits up to `within` (virtual time) for the first event `wanted` accepts.
@@ -404,5 +426,71 @@ async fn a_settled_discovery_is_reported_once_and_not_retried() {
         "a settled answer went to the backoff schedule"
     );
     assert_eq!(discover_calls.load(Ordering::SeqCst), 1);
+    control.stop();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_quiet_claim_stops_identify_calls_for_that_device_only() {
+    let loader = TestDriver::new("loader-family", "loader", Duration::ZERO, false);
+    let loader_identify = Arc::clone(&loader.identify_calls);
+    let loader_discover = Arc::clone(&loader.discover_calls);
+    let other = TestDriver::new("other-family", "other", Duration::ZERO, false);
+    let other_identify = Arc::clone(&other.identify_calls);
+    let mut registry = DriverRegistry::new();
+    registry.register(loader.arc());
+    registry.register(other.arc());
+
+    // A job loads the boot-ROM device quietly: the scan must not identify it.
+    let holds = DeviceHolds::new();
+    let dir = tempfile::tempdir().unwrap();
+    let jobs = Jobs::open(
+        dir.path().join("jobs.json"),
+        vec![Arc::new(Hang)],
+        Events::new(64),
+        JobTiming::default(),
+        holds.clone(),
+    )
+    .await
+    .unwrap();
+    jobs.submit(
+        "hang-kind",
+        DeviceClaim::writes([DeviceKey::new("loader-family", "loader")])
+            .quiet()
+            .at("loader-addr"),
+        vec!["load".into()],
+    )
+    .await
+    .unwrap();
+
+    let events = Events::new(512);
+    let mut rx = events.subscribe();
+    let control = start_scan(
+        registry,
+        Arc::new(FixedLinks(vec![usb_link()])),
+        events.clone(),
+        ScanConfig::default(),
+        holds,
+    );
+    assert!(
+        next_matching(&mut rx, Duration::from_secs(5), identified("other-family"))
+            .await
+            .is_some()
+    );
+    time::sleep(Duration::from_secs(120)).await;
+
+    assert_eq!(
+        loader_identify.load(Ordering::SeqCst),
+        0,
+        "a quiet device was identified"
+    );
+    assert!(
+        other_identify.load(Ordering::SeqCst) >= 1,
+        "the other device was not scanned"
+    );
+    assert!(
+        loader_discover.load(Ordering::SeqCst) > 0,
+        "discovery stopped for the whole link"
+    );
+    jobs.shutdown();
     control.stop();
 }

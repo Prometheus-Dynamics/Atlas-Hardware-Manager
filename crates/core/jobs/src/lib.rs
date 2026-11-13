@@ -11,11 +11,13 @@
 
 mod backoff;
 mod call;
+mod claims;
 mod events;
 mod jobs;
 mod scan;
 
 pub use backoff::Backoff;
+pub use claims::{DeviceClaim, DeviceHolds};
 pub use events::{Event, Events};
 pub use jobs::{JobError, JobId, JobKind, JobRecord, JobStatus, JobTiming, Jobs};
 pub use scan::{LinkSource, ScanConfig, ScanControl, start_scan};

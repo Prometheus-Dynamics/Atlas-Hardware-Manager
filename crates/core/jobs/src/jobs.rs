@@ -27,6 +27,7 @@ use tokio::task::JoinHandle;
 use tokio::time;
 
 use crate::call::guarded;
+use crate::claims::{DeviceClaim, DeviceHolds};
 use crate::{Backoff, Event, Events};
 
 /// The file format version. A file from another version is refused, not guessed at.
@@ -53,9 +54,9 @@ pub trait JobKind: Send + Sync {
     /// `false` means it is marked interrupted when Atlas starts again.
     fn resumable(&self) -> bool;
 
-    /// Runs one step. It is dropped at any await point when the job is
-    /// cancelled, so it must be cancel-safe.
-    async fn run_step(&self, device: Option<&DeviceKey>, step: &str) -> Result<(), DriverError>;
+    /// Runs one step against the devices the job claimed. It is dropped at any
+    /// await point when the job is cancelled, so it must be cancel-safe.
+    async fn run_step(&self, claim: &DeviceClaim, step: &str) -> Result<(), DriverError>;
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,7 +101,8 @@ impl JobStatus {
 pub struct JobRecord {
     pub id: JobId,
     pub kind: String,
-    pub device: Option<DeviceKey>,
+    /// The devices this job writes to. Held for the job's life.
+    pub claim: DeviceClaim,
     pub steps: Vec<String>,
     /// Steps finished, in order. A resumed job starts at this index.
     pub completed: usize,
@@ -130,6 +132,15 @@ pub enum JobError {
     UnknownKind(String),
     #[error("a job needs at least one step")]
     NoSteps,
+    /// The device is already being worked on by another job. Nothing was queued.
+    #[error(
+        "{device} is already being worked on by {job} ({kind}); a second job for it waits for that one to end"
+    )]
+    DeviceHeld {
+        device: DeviceKey,
+        job: JobId,
+        kind: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -158,6 +169,7 @@ struct Inner {
     events: Events,
     timing: JobTiming,
     state: Mutex<State>,
+    holds: DeviceHolds,
     /// One save at a time, each taking its snapshot under the lock.
     save_turn: AsyncMutex<()>,
 }
@@ -213,8 +225,12 @@ impl Inner {
     /// Changes a job's status, saves and reports it. Returns false if the
     /// job is gone.
     async fn status(&self, id: JobId, status: JobStatus) -> bool {
+        let finished = status.is_finished();
         match self.set(id, |job| job.status = status) {
             Some(job) => {
+                if finished {
+                    self.holds.release(id);
+                }
                 self.announce(job).await;
                 true
             }
@@ -277,6 +293,7 @@ impl Jobs {
         kinds: Vec<Arc<dyn JobKind>>,
         events: Events,
         timing: JobTiming,
+        holds: DeviceHolds,
     ) -> io::Result<Self> {
         let path = path.into();
         let kinds: BTreeMap<String, Arc<dyn JobKind>> = kinds
@@ -290,6 +307,7 @@ impl Jobs {
             events,
             timing,
             state: Mutex::new(State::default()),
+            holds,
             save_turn: AsyncMutex::new(()),
         });
 
@@ -303,12 +321,25 @@ impl Jobs {
                     changed = true;
                 }
                 if !job.status.is_finished() {
-                    let command = if job.status == JobStatus::Paused {
-                        Command::Pause
-                    } else {
-                        Command::Run
-                    };
-                    to_start.push((job.id, command));
+                    // A job that is still active keeps its devices after a restart.
+                    match inner.holds.insert(job.id, &job.kind, &job.claim) {
+                        Ok(()) => {
+                            let command = if job.status == JobStatus::Paused {
+                                Command::Pause
+                            } else {
+                                Command::Run
+                            };
+                            to_start.push((job.id, command));
+                        }
+                        Err((device, holder, kind)) => {
+                            job.status = JobStatus::Interrupted {
+                                reason: format!(
+                                    "{device} is held by {holder} ({kind}), which was saved first"
+                                ),
+                            };
+                            changed = true;
+                        }
+                    }
                 }
                 state.jobs.insert(job.id, job);
             }
@@ -326,7 +357,7 @@ impl Jobs {
     pub async fn submit(
         &self,
         kind: &str,
-        device: Option<DeviceKey>,
+        claim: DeviceClaim,
         steps: Vec<String>,
     ) -> Result<JobId, JobError> {
         if !self.inner.kinds.contains_key(kind) {
@@ -337,11 +368,16 @@ impl Jobs {
         }
         let record = {
             let mut state = self.inner.state();
-            state.last_id += 1;
+            let id = JobId(state.last_id + 1);
+            self.inner
+                .holds
+                .insert(id, kind, &claim)
+                .map_err(|(device, job, kind)| JobError::DeviceHeld { device, job, kind })?;
+            state.last_id = id.0;
             let record = JobRecord {
-                id: JobId(state.last_id),
+                id,
                 kind: kind.to_owned(),
-                device,
+                claim,
                 steps,
                 completed: 0,
                 status: JobStatus::Queued,
@@ -523,14 +559,14 @@ async fn run_job(inner: Arc<Inner>, id: JobId, mut command: watch::Receiver<Comm
             return;
         };
         let step = job.steps[job.completed].clone();
-        let device = job.device.clone();
+        let claim = job.claim.clone();
         inner.status(id, JobStatus::Running).await;
 
         let outcome = tokio::select! {
             biased;
             () = cancelled(&mut command) => None,
             result = guarded(inner.timing.step_timeout, async move {
-                kind.run_step(device.as_ref(), &step).await
+                kind.run_step(&claim, &step).await
             }) => Some(result),
         };
         match outcome {
