@@ -1,0 +1,12 @@
+# Written by `gaia lock`. Do not edit.
+version = 1
+
+[source."example-board.rkbin"]
+kind = "tree"
+path = "../../boards/example-board/rkbin"
+digest = "sha256:1fad9edff9cdca1b097272325d30ec707569ae09e93d1531a4207d0262c8d4ba"
+
+[source."sd-image-product.kernel"]
+kind = "tree"
+path = "sources/kernel"
+digest = "sha256:acda9d504b05da6ab1eaddbed3e0a4b2a334387552cb46a2fef09ea0c8dbc305"
