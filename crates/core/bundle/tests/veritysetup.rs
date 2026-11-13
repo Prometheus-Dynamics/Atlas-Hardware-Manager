@@ -75,7 +75,7 @@ fn reference_tree(salt: &[u8], data: &[u8]) -> Vec<u8> {
 }
 
 /// Runs `veritysetup format` on `data` into `tree` and returns its root hash.
-fn veritysetup(data: &Path, tree: &Path, blocks: usize, salt: &[u8]) -> String {
+fn veritysetup(data: &Path, tree: &Path, blocks: usize, salt: &[u8]) -> (String, String) {
     let mut command = Command::new("veritysetup");
     command
         .arg("format")
@@ -100,10 +100,12 @@ fn veritysetup(data: &Path, tree: &Path, blocks: usize, salt: &[u8]) -> String {
     );
     let text =
         String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
-    text.lines()
+    let root = text
+        .lines()
         .find_map(|line| line.trim().strip_prefix("Root hash:"))
         .map(|hash| hash.trim().to_string())
-        .unwrap_or_else(|| panic!("no Root hash line in veritysetup's output:\n{text}"))
+        .unwrap_or_else(|| panic!("no Root hash line in veritysetup's output:\n{text}"));
+    (root, text)
 }
 
 /// One shape: `blocks` data blocks with `salt`, checked against the tool.
@@ -114,8 +116,13 @@ fn check_shape(dir: &Path, blocks: usize, salt: &[u8]) {
     fs::write(&data_path, &data).expect("write data");
     let _ = fs::remove_file(&tree_path);
 
-    let tool_root = veritysetup(&data_path, &tree_path, blocks, salt);
+    let (tool_root, tool_output) = veritysetup(&data_path, &tree_path, blocks, salt);
     let tool_tree = fs::read(&tree_path).expect("the tree file");
+    let context = format!(
+        "veritysetup said:\n{tool_output}\ntree file: {} bytes, data file: {} bytes",
+        tool_tree.len(),
+        fs::metadata(&data_path).map_or(0, |m| m.len())
+    );
 
     let ours = root_hash(salt, &data).expect("our root");
     let reference = reference_tree(salt, &data);
@@ -123,7 +130,7 @@ fn check_shape(dir: &Path, blocks: usize, salt: &[u8]) {
     assert_eq!(
         tool_tree.len() as u64,
         tree_bytes(blocks as u64),
-        "the tool's tree is the length the layout gives"
+        "the tool's tree is the length the layout gives\n{context}"
     );
     assert_eq!(
         tool_tree,
