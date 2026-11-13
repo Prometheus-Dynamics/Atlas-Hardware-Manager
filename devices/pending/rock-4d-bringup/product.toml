@@ -7,7 +7,7 @@
 # DHCP on eth0 through systemd-networkd (from the base).
 #
 # PENDING, and outside the device check (devices/pending/ is not read). The
-# bench key is a Gaia named local input (`--input name=path`), and Gaia 4abf626
+# bench key is a Gaia named local input (`--input name=path`), and Gaia aa987cc
 # has none: its describe structs take no inputs, and a component's install
 # `file` must be a file committed beside it (checked by validate). So the key
 # cannot be supplied yet, and the product stays here. When Gaia's rev has the
