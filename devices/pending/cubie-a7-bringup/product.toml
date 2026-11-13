@@ -1,11 +1,15 @@
-# Radxa Cubie A7S BRING-UP, DEV ONLY: boots from the card, gives an Ethernet and an optional USB
-# device-mode network, and SSH with the bench key. NO Lemnos, NO Orion, NO slots. Candidate
-# sources, unverified, never booted (the one place a dev-only unit is allowed).
+# Radxa Cubie A7S BRING-UP, DEV ONLY (B19). Boots from the card and shows three signs with NO serial adapter:
+#   1. the status LED (PJ26, blue) blinks: the kernel heartbeat, set in board/assets/dts;
+#   2. a USB network appears on the PC (legacy g_ether, built in, on USB-C 1, the device-capable port);
+#   3. DHCP: eth0 takes a lease from the LAN; the board hands the PC 10.55.0.2 on usb0 (networkd DHCPServer).
+# Then SSH with the bench key. NO Lemnos, NO Orion, NO slots. Candidate sources, UNVERIFIED, never booted.
+# The test procedure, and what each missing sign means, is docs/prs/B19.md ("What you should see").
 #
-# PENDING, outside the device check: the bench SSH public key is a Gaia local input (`--input`),
-# not in the locked Gaia rev (10beed8). The base product is not added (no A733 base yet: the
-# kernel is a patch series Gaia cannot apply, see the family). When Gaia's rev with the input
-# is locked, move this to devices/products/, commit its gaia.lock, and check it plans.
+# PENDING, outside the device check: the bench SSH public key is a Gaia local input (`--input`), not in the
+# locked Gaia rev (4abf626). Its board is board/board.toml (extends the A7S; the bring-up's own kernel
+# fragment and dts). When Gaia's rev with the input is locked, move this to devices/products/, commit its
+# gaia.lock, and check it plans. The sources (kernel series, U-Boot, TF-A, DRAM blob) are the family's, and
+# carry no open licence (see families/sun60i/family.toml).
 version = 1
 name = "cubie-a7-bringup"
 description = "Radxa Cubie A7S bring-up (DEV ONLY): SD boot, Ethernet and usb0, SSH with the bench key. Candidate, never booted."
@@ -22,7 +26,7 @@ dev-usb0-gadget = "components/dev-usb0-gadget/component.toml"
 
 [[images]]
 name = "cubie-a7-bringup"
-board = "../../boards/radxa-cubie-a7s/board.toml"
+board = "board/board.toml"
 components = ["cubie-a7s-extlinux", "dev-bench-ssh-key", "dev-bringup-hostkey", "dev-usb0-gadget"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
 recipe = "sd-image"

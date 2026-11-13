@@ -1,4 +1,4 @@
-# One Lemnos cargo package: lemnos-slot-init, built from Lemnos next b0bf0101 (the rev with Cargo.lock).
+# One Lemnos cargo package: lemnos-slot-init, built from Lemnos next 4a2d3b7d (the rev with Cargo.lock).
 # The target is the board's and the crates come from Cargo.lock: no triple, no vendor here.
 # Gaia's rust builder, at 4abf626 and later: `--package lemnos-slot-init --profile service`.
 version = 1
@@ -7,7 +7,7 @@ description = "the Lemnos slot init, lemnos-slot-init: it goes in the slot INITR
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+ref = "4a2d3b7d07573d0406f1e8aa7a73248ad123646f"
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"

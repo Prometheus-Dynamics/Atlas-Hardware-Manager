@@ -3,11 +3,12 @@
 # Lemnos drivers or Orion is not here (the PR text lists each file's new home).
 version = 1
 name = "raze-lemnos-board"
-description = "Raze board files for lemnosd: the i2c-dev module load and the USB power rule; the board file is a placeholder pending Lemnos Q2a"
+description = "Raze board files for lemnosd: the i2c-dev module load and the USB power rule; the board file is refused by lemnos-ctl tree at Lemnos 4a2d3b7d (identity, watchdog, slots: Lemnos Q2d)"
 
 # /etc/lemnos/board.toml: the Raze's board file (files/board.toml). Its generated outputs come from
 # `lemnos-ctl tree` on this file at build time. Three of its devices are refused by the generator at
-# b0bf0101 (identity, watchdog, slots): until Lemnos lands that, lemnosd refuses to start on this image.
+# 4a2d3b7d (identity, watchdog, slots; Lemnos Q2d is not in that rev): until Lemnos lands that, lemnosd
+# refuses to start on this image.
 
 [[install]]
 from = { file = "files/board.toml" }
