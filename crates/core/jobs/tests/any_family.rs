@@ -86,7 +86,7 @@ impl Driver for Device {
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
         Ok(Identity {
             key: DeviceKey::from_static(self.family, self.serial),
-            model: "test-model".into(),
+            model: Some("test-model".into()),
             state: DeviceState::Running,
             lemnos: atlas_types::LemnosState::Absent,
             versions: BTreeMap::new(),
