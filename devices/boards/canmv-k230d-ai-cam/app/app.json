@@ -1,0 +1,1 @@
+{ "schema": "urn:atlas:device-app:1", "model": "canmv-k230d-ai-cam", "display_name": "CanMV K230D AI-CAM", "usb": ["kendryte-k230-usb-boot"] }

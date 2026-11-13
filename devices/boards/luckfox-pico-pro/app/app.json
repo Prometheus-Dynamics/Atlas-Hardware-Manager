@@ -1,0 +1,1 @@
+{ "schema": "urn:atlas:device-app:1", "model": "luckfox-pico-pro", "display_name": "Luckfox Pico Pro", "usb": ["rockchip-rv1106-maskrom"] }
