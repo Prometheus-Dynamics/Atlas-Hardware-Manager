@@ -5,17 +5,16 @@ use std::io::Cursor;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use atlas_mock::bundle;
-use atlas_mock::names::{self, SURFACE};
-use atlas_mock::slots::code;
-use atlas_mock::{Behaviour, LinkFault, SimNode, call};
+use atlas_sim_node::bundle;
+use atlas_sim_node::names::{self, SURFACE};
+use atlas_sim_node::slots::code;
+use atlas_sim_node::slots::parse_keys;
+use atlas_sim_node::{Behaviour, Hello, Kind, LinkFault, Mode, SimNode, call};
 use ed25519_dalek::SigningKey;
-use orion::Orion;
 use orion::actions::{ActionCall, Finished, Outcome};
 use orion::topics::FieldId;
+use orion::{Address, Orion};
 use serde_json::Value;
-
-const CHUNK: usize = 4096;
 
 fn start(name: &str) -> SimNode {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("sim-{name}"));
@@ -41,27 +40,60 @@ fn bundle_for(id: &str, version: &str, key: Option<&SigningKey>) -> Vec<u8> {
     bundle::build(&manifest, signature.as_ref(), &rootfs, &boot)
 }
 
-/// Starts an install and streams the bundle in chunks. Returns how the install ended.
-fn install(orion: &Orion, bundle: &[u8], pin: bool, keep_old: bool) -> Finished {
-    let mut args = (bundle.len() as u64).to_le_bytes().to_vec();
-    args.push(u8::from(pin));
-    args.push(u8::from(keep_old));
-    let mut run = orion
+/// The name a test pushes its bundle under.
+const BUNDLE: &str = "bundle.tar";
+
+/// Pushes `bytes` as a file into the incoming directory, as a sender does over Orion.
+fn push(orion: &Orion, name: &str, bytes: &[u8]) {
+    let destination = format!("{}{name}", names::INCOMING);
+    orion
+        .files()
+        .push(&destination, &mut Cursor::new(bytes), |_, _| {})
+        .expect("the bundle is pushed");
+}
+
+/// Starts the install job for a pushed bundle.
+fn start_install(orion: &Orion, name: &str, pin: bool, keep_old: bool) -> orion::actions::Run {
+    let args = format!("{name} {pin} {keep_old}");
+    orion
         .run(&ActionCall {
-            name: names::SLOTS_INSTALL,
-            target: atlas_mock::node::target(),
-            args: &args,
+            name: names::SLOTS_INSTALL_FILE,
+            target: atlas_sim_node::node::target(),
+            args: args.as_bytes(),
             deadline_ms: 0,
             detached: false,
         })
-        .expect("the install starts");
-    for (index, chunk) in bundle.chunks(CHUNK).enumerate() {
-        let mut write = ((index * CHUNK) as u64).to_le_bytes().to_vec();
-        write.extend_from_slice(chunk);
-        call(orion, names::SLOTS_WRITE, &write).expect("the write answers");
+        .expect("the install starts")
+}
+
+/// Accepts, pushes and installs a bundle, and says how the install ended.
+fn install(orion: &Orion, bundle: &[u8], pin: bool, keep_old: bool) -> Finished {
+    let accepted = call(
+        orion,
+        names::SLOTS_ACCEPT,
+        bundle.len().to_string().as_bytes(),
+    )
+    .expect("accept answers");
+    if accepted.outcome != Outcome::Succeeded {
+        return accepted;
     }
-    run.finish(Duration::from_secs(10))
+    push(orion, BUNDLE, bundle);
+    start_install(orion, BUNDLE, pin, keep_old)
+        .finish(Duration::from_secs(10))
         .expect("the install ends")
+}
+
+/// A bundle of about four mebibytes: an install runs for over a second, so a cancel or a restart
+/// always lands while it is still running.
+fn big_bundle(id: &str) -> Vec<u8> {
+    let rootfs = format!("rootfs of {id}\n").into_bytes();
+    let blob = vec![7_u8; 4 * 1024 * 1024];
+    let boot = [
+        ("cmdline.txt", &b"console=ttyS0\n"[..]),
+        ("blob.bin", &blob[..]),
+    ];
+    let manifest = bundle::manifest(id, "2.0.0", &rootfs, &boot);
+    bundle::build(&manifest, None, &rootfs, &boot)
 }
 
 fn list(orion: &Orion) -> Value {
@@ -112,10 +144,18 @@ fn every_surface_method_answers_and_its_result_is_right() {
     assert_eq!(slot(&listing, "slot-1")["good"], "yes");
     exercised.push(names::SLOTS_LIST);
 
-    // write before any install is refused and changes nothing.
-    let stray = refused(&orion, names::SLOTS_WRITE, &[0_u8; 9]);
-    assert_eq!(stray.outcome, Outcome::Rejected);
-    exercised.push(names::SLOTS_WRITE);
+    // accept answers when there is room, and changes nothing else.
+    ok(&orion, names::SLOTS_ACCEPT, b"26000");
+    exercised.push(names::SLOTS_ACCEPT);
+
+    // install_file for a name nothing was pushed under is refused and changes nothing.
+    let missing = refused(
+        &orion,
+        names::SLOTS_INSTALL_FILE,
+        b"nothing.tar false false",
+    );
+    assert_eq!(missing.outcome, Outcome::Rejected);
+    exercised.push(names::SLOTS_INSTALL_FILE);
 
     // install: a long job that ends with the new slot id. Installed slots start untried.
     let two = bundle_for("slot-2", "2.0.0", None);
@@ -123,10 +163,9 @@ fn every_surface_method_answers_and_its_result_is_right() {
     assert_eq!(done.outcome, Outcome::Succeeded, "{}", done.detail);
     assert_eq!(text(&done.output), "slot-2");
     assert_eq!(slot(&list(&orion), "slot-2")["good"], "untried");
-    exercised.push(names::SLOTS_INSTALL);
 
     // trial restarts into slot-2; confirm makes it the default with slot-1 as previous.
-    ok(&orion, names::SLOTS_TRIAL, b"id=slot-2");
+    ok(&orion, names::SLOTS_TRIAL, b"slot-2 false false false");
     assert_eq!(list(&orion)["slot_active"], "slot-2");
     exercised.push(names::SLOTS_TRIAL);
     ok(&orion, names::SLOTS_CONFIRM, b"");
@@ -136,32 +175,32 @@ fn every_surface_method_answers_and_its_result_is_right() {
     exercised.push(names::SLOTS_CONFIRM);
 
     // set_default needs a good slot: slot-1 is, so it can be made the default again.
-    ok(&orion, names::SLOTS_SET_DEFAULT, b"id=slot-1");
+    ok(&orion, names::SLOTS_SET_DEFAULT, b"slot-1 false");
     assert_eq!(list(&orion)["slot_default"], "slot-1");
-    refused(&orion, names::SLOTS_SET_DEFAULT, b"id=slot-9");
+    refused(&orion, names::SLOTS_SET_DEFAULT, b"slot-9 false");
     exercised.push(names::SLOTS_SET_DEFAULT);
 
     // pin: a pinned slot will not be removed.
-    ok(&orion, names::SLOTS_PIN, b"id=slot-2\npinned=true");
+    ok(&orion, names::SLOTS_PIN, b"slot-2 true");
     assert_eq!(slot(&list(&orion), "slot-2")["pinned"], true);
-    let pinned = refused(&orion, names::SLOTS_REMOVE, b"id=slot-2");
+    let pinned = refused(&orion, names::SLOTS_REMOVE, b"slot-2");
     assert_eq!(pinned.outcome, Outcome::Rejected);
     exercised.push(names::SLOTS_PIN);
 
     // remove: the default slot is busy; an unknown id is not found.
-    refused(&orion, names::SLOTS_REMOVE, b"id=slot-1");
-    refused(&orion, names::SLOTS_REMOVE, b"id=..");
-    ok(&orion, names::SLOTS_PIN, b"id=slot-2\npinned=false");
+    refused(&orion, names::SLOTS_REMOVE, b"slot-1");
+    refused(&orion, names::SLOTS_REMOVE, b"..");
+    ok(&orion, names::SLOTS_PIN, b"slot-2 false");
     // slot-2 is still the running slot until the next boot, so it is busy until then.
-    refused(&orion, names::SLOTS_REMOVE, b"id=slot-2");
+    refused(&orion, names::SLOTS_REMOVE, b"slot-2");
     ok(&orion, names::REBOOT, b"");
-    ok(&orion, names::SLOTS_REMOVE, b"id=slot-2");
+    ok(&orion, names::SLOTS_REMOVE, b"slot-2");
     assert!(slot_missing(&list(&orion), "slot-2"));
     exercised.push(names::SLOTS_REMOVE);
 
     // set_keep: zero keeps all; any number runs housekeeping.
-    ok(&orion, names::SLOTS_SET_KEEP, b"keep=0");
-    ok(&orion, names::SLOTS_SET_KEEP, b"keep=3");
+    ok(&orion, names::SLOTS_SET_KEEP, b"0");
+    ok(&orion, names::SLOTS_SET_KEEP, b"3");
     exercised.push(names::SLOTS_SET_KEEP);
 
     // reboot restarts into the default.
@@ -198,17 +237,17 @@ fn the_board_answers_its_own_actions_and_data_partition() {
     assert!(text(&ok(&orion, names::SUPPORT_BUNDLE, b"").output).contains("slot-1"));
 
     let backup = ok(&orion, names::DATA_BACKUP, b"").output;
-    ok(&orion, names::FS_WRITE, b"path=notes.txt\nhello");
+    ok(&orion, names::FS_WRITE, b"notes.txt 68656c6c6f");
     assert_eq!(
-        ok(&orion, names::FS_READ, b"path=notes.txt").output,
-        b"hello"
+        ok(&orion, names::FS_READ, b"notes.txt").output,
+        b"68656c6c6f"
     );
-    assert!(text(&ok(&orion, names::FS_LIST, b"path=").output).contains("notes.txt"));
-    ok(&orion, names::FS_REMOVE, b"path=notes.txt");
-    refused(&orion, names::FS_READ, b"path=notes.txt");
+    assert!(text(&ok(&orion, names::FS_LIST, b"").output).contains("notes.txt"));
+    ok(&orion, names::FS_REMOVE, b"notes.txt");
+    refused(&orion, names::FS_READ, b"notes.txt");
     ok(&orion, names::DATA_RESTORE, &backup);
     assert!(node.model().data.contains_key("config/board.toml"));
-    refused(&orion, names::DATA_RESTORE, b"not a backup");
+    refused(&orion, names::DATA_RESTORE, b"zz");
     assert!(
         node.model().data.contains_key("config/board.toml"),
         "a bad restore changes nothing"
@@ -223,7 +262,7 @@ fn a_refused_run_changes_nothing() {
         names::SLOTS_REMOVE,
         Behaviour::Refuse("held by the test".into()),
     );
-    let finished = call(&orion, names::SLOTS_REMOVE, b"id=slot-1").expect("an outcome");
+    let finished = call(&orion, names::SLOTS_REMOVE, b"slot-1").expect("an outcome");
     assert_eq!(finished.outcome, Outcome::Rejected);
     assert_eq!(finished.detail, "held by the test");
     assert_eq!(list(&orion)["slot_default"], "slot-1");
@@ -251,7 +290,7 @@ fn a_stalled_self_test_is_cancelled_with_no_change() {
     let mut run = orion
         .run(&ActionCall {
             name: names::SELF_TEST,
-            target: atlas_mock::node::target(),
+            target: atlas_sim_node::node::target(),
             args: b"",
             deadline_ms: 0,
             detached: false,
@@ -267,24 +306,17 @@ fn a_stalled_self_test_is_cancelled_with_no_change() {
 }
 
 #[test]
-fn cancel_discards_a_partly_written_install() {
+fn cancel_discards_the_pushed_file_and_the_install() {
     let node = start("cancel");
     let orion = node.connect("cancel").expect("a session");
-    let two = bundle_for("slot-2", "2.0.0", None);
-    let mut args = (two.len() as u64).to_le_bytes().to_vec();
-    args.extend_from_slice(&[0, 0]);
-    let mut run = orion
-        .run(&ActionCall {
-            name: names::SLOTS_INSTALL,
-            target: atlas_mock::node::target(),
-            args: &args,
-            deadline_ms: 0,
-            detached: false,
-        })
-        .expect("the install starts");
-    let mut first = 0_u64.to_le_bytes().to_vec();
-    first.extend_from_slice(&two[..CHUNK]);
-    ok(&orion, names::SLOTS_WRITE, &first);
+    let big = big_bundle("slot-2");
+    ok(
+        &orion,
+        names::SLOTS_ACCEPT,
+        big.len().to_string().as_bytes(),
+    );
+    push(&orion, BUNDLE, &big);
+    let mut run = start_install(&orion, BUNDLE, false, false);
     run.cancel().expect("cancel is sent");
     assert_eq!(
         run.finish(Duration::from_secs(5)).expect("it ends").outcome,
@@ -294,30 +326,31 @@ fn cancel_discards_a_partly_written_install() {
     assert_eq!(listing["state"], "cancelled");
     assert!(
         slot_missing(&listing, "slot-2"),
-        "nothing was written as a slot"
+        "nothing was installed as a slot"
     );
-    refused(&orion, names::SLOTS_WRITE, &first);
+    assert!(
+        !node
+            .shelf()
+            .committed
+            .lock()
+            .expect("the shelf")
+            .contains_key(&format!("{}{BUNDLE}", names::INCOMING)),
+        "the pushed file is removed when the job ends"
+    );
 }
 
 #[test]
 fn a_starter_that_disconnects_has_its_install_cancelled() {
     let node = start("disconnect");
     let starter = node.connect("starter").expect("a session");
-    let two = bundle_for("slot-2", "2.0.0", None);
-    let mut args = (two.len() as u64).to_le_bytes().to_vec();
-    args.extend_from_slice(&[0, 0]);
-    let run = starter
-        .run(&ActionCall {
-            name: names::SLOTS_INSTALL,
-            target: atlas_mock::node::target(),
-            args: &args,
-            deadline_ms: 0,
-            detached: false,
-        })
-        .expect("the install starts");
-    let mut first = 0_u64.to_le_bytes().to_vec();
-    first.extend_from_slice(&two[..CHUNK]);
-    ok(&starter, names::SLOTS_WRITE, &first);
+    let big = big_bundle("slot-2");
+    ok(
+        &starter,
+        names::SLOTS_ACCEPT,
+        big.len().to_string().as_bytes(),
+    );
+    push(&starter, BUNDLE, &big);
+    let run = start_install(&starter, BUNDLE, false, false);
     drop(run);
     drop(starter);
 
@@ -330,28 +363,104 @@ fn a_starter_that_disconnects_has_its_install_cancelled() {
         );
         std::thread::sleep(Duration::from_millis(20));
     }
-    refused(&other, names::SLOTS_WRITE, &first);
+}
+
+#[test]
+fn a_detached_install_survives_its_starter_and_can_be_attached_to_again() {
+    let node = start("detached");
+    let starter = node.connect("starter").expect("a session");
+    let big = big_bundle("slot-2");
+    ok(
+        &starter,
+        names::SLOTS_ACCEPT,
+        big.len().to_string().as_bytes(),
+    );
+    push(&starter, BUNDLE, &big);
+    let args = format!("{BUNDLE} false false");
+    let run = starter
+        .run(&ActionCall {
+            name: names::SLOTS_INSTALL_FILE,
+            target: atlas_sim_node::node::target(),
+            args: args.as_bytes(),
+            deadline_ms: 0,
+            detached: true,
+        })
+        .expect("the detached install starts");
+    let call_number = run.call();
+    drop(run);
+    drop(starter);
+
+    // The starter is gone and the install carries on: it lands the slot.
+    // The attach can reach the router before the starter's session close has been handled, so
+    // a refusal is retried for a short while: the run is detached and is still there.
+    let other = node.connect("later").expect("a session");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let finished = loop {
+        let mut attached = other.attach(call_number).expect("attach to a detached run");
+        match attached.finish(Duration::from_secs(10)) {
+            Ok(finished) => break finished,
+            Err(error) => {
+                assert!(
+                    Instant::now() < deadline,
+                    "attach never found the run: {error:?}"
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        }
+    };
+    assert_eq!(finished.outcome, Outcome::Succeeded, "{}", finished.detail);
+    assert_eq!(text(&finished.output), "slot-2");
+    assert_eq!(list(&other)["state"], "idle");
+}
+
+#[test]
+fn a_plain_run_cannot_be_attached_to_by_another_session() {
+    let node = start("starter-only");
+    let starter = node.connect("starter").expect("a session");
+    let big = big_bundle("slot-2");
+    ok(
+        &starter,
+        names::SLOTS_ACCEPT,
+        big.len().to_string().as_bytes(),
+    );
+    push(&starter, BUNDLE, &big);
+    let run = start_install(&starter, BUNDLE, false, false);
+    let call_number = run.call();
+
+    // Another session cannot attach to a run that was not started detached.
+    let other = node.connect("intruder").expect("a session");
+    let refused = match other.attach(call_number) {
+        Err(_) => true,
+        Ok(mut attached) => match attached.finish(Duration::from_secs(2)) {
+            Err(_) => true,
+            Ok(finished) => finished.outcome != Outcome::Succeeded,
+        },
+    };
+    assert!(refused, "a plain run is not handed to another session");
+    drop(run);
+    drop(starter);
+    drop(other);
 }
 
 #[test]
 fn a_service_restart_loses_the_running_install_and_a_new_one_starts_clean() {
     let node = start("restart");
     let orion = node.connect("restart").expect("a session");
-    let two = bundle_for("slot-2", "2.0.0", None);
-    let mut args = (two.len() as u64).to_le_bytes().to_vec();
-    args.extend_from_slice(&[0, 0]);
-    let mut run = orion
-        .run(&ActionCall {
-            name: names::SLOTS_INSTALL,
-            target: atlas_mock::node::target(),
-            args: &args,
-            deadline_ms: 0,
-            detached: false,
-        })
-        .expect("the install starts");
-    let mut first = 0_u64.to_le_bytes().to_vec();
-    first.extend_from_slice(&two[..CHUNK]);
-    ok(&orion, names::SLOTS_WRITE, &first);
+    let big = big_bundle("slot-2");
+    ok(
+        &orion,
+        names::SLOTS_ACCEPT,
+        big.len().to_string().as_bytes(),
+    );
+    push(&orion, BUNDLE, &big);
+    let mut run = start_install(&orion, BUNDLE, false, false);
+    // Restart only once the install has started: the request and the restart are both handled
+    // by the node, in its own order.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while list(&orion)["state"] != "staging" {
+        assert!(Instant::now() < deadline, "the install never started");
+        std::thread::sleep(Duration::from_millis(5));
+    }
 
     node.restart_daemon();
     let lost = run.finish(Duration::from_secs(5)).expect("it ends");
@@ -363,9 +472,9 @@ fn a_service_restart_loses_the_running_install_and_a_new_one_starts_clean() {
         listing["error"],
         "an install was interrupted: the service restarted"
     );
-    refused(&orion, names::SLOTS_WRITE, &[0_u8; 8]);
 
     // Nothing resumes: a fresh install of the same bundle starts from zero and lands.
+    let two = bundle_for("slot-2", "2.0.0", None);
     let again = install(&orion, &two, false, false);
     assert_eq!(again.outcome, Outcome::Succeeded, "{}", again.detail);
     assert_eq!(list(&orion)["state"], "idle");
@@ -394,7 +503,7 @@ fn a_trial_that_does_not_confirm_falls_back_and_marks_the_slot_failed() {
         Outcome::Succeeded
     );
 
-    ok(&orion, names::SLOTS_TRIAL, b"id=slot-2");
+    ok(&orion, names::SLOTS_TRIAL, b"slot-2 false false false");
     assert_eq!(list(&orion)["slot_active"], "slot-2");
     ok(&orion, names::REBOOT, b"");
     let fell_back = list(&orion);
@@ -407,9 +516,9 @@ fn a_trial_that_does_not_confirm_falls_back_and_marks_the_slot_failed() {
     assert_eq!(slot(&fell_back, "slot-2")["good"], "no");
 
     // A failed slot is not made the default unless forced.
-    refused(&orion, names::SLOTS_SET_DEFAULT, b"id=slot-2");
-    refused(&orion, names::SLOTS_TRIAL, b"id=slot-2");
-    ok(&orion, names::SLOTS_TRIAL, b"id=slot-2\nforce=true");
+    refused(&orion, names::SLOTS_SET_DEFAULT, b"slot-2 false");
+    refused(&orion, names::SLOTS_TRIAL, b"slot-2 false false false");
+    ok(&orion, names::SLOTS_TRIAL, b"slot-2 false false true");
     ok(&orion, names::SLOTS_CONFIRM, b"");
     assert_eq!(list(&orion)["slot_default"], "slot-2");
 }
@@ -423,7 +532,7 @@ fn a_trial_with_keep_default_leaves_the_default_alone_on_confirm() {
         install(&orion, &two, false, false).outcome,
         Outcome::Succeeded
     );
-    ok(&orion, names::SLOTS_TRIAL, b"id=slot-2\nkeep_default=true");
+    ok(&orion, names::SLOTS_TRIAL, b"slot-2 true false false");
     ok(&orion, names::SLOTS_CONFIRM, b"");
     let listing = list(&orion);
     assert_eq!(listing["slot_default"], "slot-1");
@@ -440,7 +549,7 @@ fn a_trial_confirmed_becomes_the_default_and_survives_a_reboot() {
         install(&orion, &two, false, false).outcome,
         Outcome::Succeeded
     );
-    ok(&orion, names::SLOTS_TRIAL, b"id=slot-2");
+    ok(&orion, names::SLOTS_TRIAL, b"slot-2 false false false");
     ok(&orion, names::SLOTS_CONFIRM, b"");
     ok(&orion, names::REBOOT, b"");
     let listing = list(&orion);
@@ -453,7 +562,7 @@ fn a_trial_confirmed_becomes_the_default_and_survives_a_reboot() {
 fn housekeeping_keeps_the_last_n_and_the_pinned_ones_and_keep_old_skips_it() {
     let node = start("housekeeping");
     let orion = node.connect("housekeeping").expect("a session");
-    ok(&orion, names::SLOTS_SET_KEEP, b"keep=2");
+    ok(&orion, names::SLOTS_SET_KEEP, b"2");
     let pinned = bundle_for("pinned", "1.0.0", None);
     assert_eq!(
         install(&orion, &pinned, true, false).outcome,
@@ -581,31 +690,148 @@ fn with_extra_member(good: &[u8]) -> Vec<u8> {
 }
 
 #[test]
-fn security_off_shows_signatures_as_unverified_and_installs_them_all() {
+fn security_off_installs_everything_and_still_shows_each_signature() {
     let node = start("security-off");
     let orion = node.connect("security-off").expect("a session");
     let key = SigningKey::from_bytes(&[7; 32]);
     node.model()
         .slots
         .trusted
-        .push(atlas_mock::slots::TrustedKey {
+        .push(atlas_sim_node::slots::TrustedKey {
             public: key.verifying_key().to_bytes(),
             owner: "Test Owner".into(),
         });
     let signed = bundle_for("signed", "2.0.0", Some(&key));
     assert_eq!(
-        install(&orion, &signed, false, false).outcome,
+        install(&orion, &signed, false, true).outcome,
         Outcome::Succeeded
     );
     let unsigned = bundle_for("unsigned", "3.0.0", None);
     assert_eq!(
-        install(&orion, &unsigned, false, false).outcome,
+        install(&orion, &unsigned, false, true).outcome,
+        Outcome::Succeeded
+    );
+    let stranger = SigningKey::from_bytes(&[9; 32]);
+    let untrusted = bundle_for("untrusted", "4.0.0", Some(&stranger));
+    assert_eq!(
+        install(&orion, &untrusted, false, true).outcome,
         Outcome::Succeeded
     );
     let listing = list(&orion);
     assert_eq!(slot(&listing, "signed")["signed"], "trusted");
     assert_eq!(slot(&listing, "signed")["signer"], "Test Owner");
-    assert_eq!(slot(&listing, "unsigned")["signed"], "unverified");
+    assert_eq!(slot(&listing, "unsigned")["signed"], "unsigned");
+    assert_eq!(slot(&listing, "unsigned")["signer"], "");
+    assert_eq!(slot(&listing, "untrusted")["signed"], "untrusted");
+    assert_eq!(slot(&listing, "untrusted")["signer"], "");
+    assert!(
+        !listing.to_string().contains("unverified"),
+        "the old label is gone: {listing}"
+    );
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
+#[test]
+fn a_key_file_is_hex_key_and_owner_per_line_and_a_line_without_an_owner_refuses_it() {
+    let public = SigningKey::from_bytes(&[7; 32]).verifying_key().to_bytes();
+    let text = format!(
+        "# the release keys\n\n{} Test Owner\n{}\tSecond Owner  \n",
+        hex(&public),
+        hex(&public)
+    );
+    let keys = parse_keys(&text).expect("a good key file");
+    assert_eq!(keys.len(), 2);
+    assert_eq!(keys[0].public, public);
+    assert_eq!(keys[0].owner, "Test Owner");
+    assert_eq!(keys[1].owner, "Second Owner");
+
+    let no_owner = format!("# comment\n{}\n", hex(&public));
+    assert!(parse_keys(&no_owner).is_err(), "a key with no owner");
+    assert!(parse_keys(&format!("{} owner\n", "ab".repeat(31))).is_err());
+    assert!(parse_keys(&format!("{} owner\n", "zz".repeat(32))).is_err());
+
+    // A refused file loads as no keys at all.
+    let mut slots = atlas_sim_node::slots::Slots::new();
+    assert_eq!(slots.load_keys(&text), Ok(2));
+    assert!(slots.load_keys(&no_owner).is_err());
+    assert!(slots.trusted.is_empty());
+}
+
+#[test]
+fn a_layered_manifest_is_refused() {
+    let node = start("layered");
+    let orion = node.connect("layered").expect("a session");
+    let rootfs = b"rootfs bytes".to_vec();
+    let mut manifest = bundle::manifest("layered-1", "2.0.0", &rootfs, &[("cmdline.txt", b"x")]);
+    manifest["layers"] = serde_json::json!([{ "id": "base" }]);
+    let bytes = bundle::build(&manifest, None, &rootfs, &[("cmdline.txt", b"x")]);
+    let finished = install(&orion, &bytes, false, false);
+    assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
+    assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
+    assert!(finished.detail.contains("layered"), "{}", finished.detail);
+    assert_eq!(list(&orion)["slots"].as_array().expect("slots").len(), 1);
+}
+
+/// The text of one hello fact, as the node's own hello document carries it.
+fn hello_fact(orion: &Orion, topic: &str) -> String {
+    let fact = topic.strip_prefix("hello.").expect("a hello topic");
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let document = orion.node().expect("the node document");
+        if let Some(found) = document.facts.iter().find(|found| found.name == fact) {
+            return text(&found.value);
+        }
+        assert!(Instant::now() < deadline, "no hello fact {fact}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn a_node_publishes_the_hello_facts_a_board_publishes_and_a_restart_on_its_port_finds_it_again() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("sim-hello-restart");
+    let _ = std::fs::remove_dir_all(&dir);
+    let recovery = Hello {
+        mode: Mode::Recovery,
+        name: None,
+        ..Hello::default()
+    };
+    let first =
+        SimNode::start_with(&dir, &Kind::WithLemnos(recovery), None).expect("the node starts");
+    let port = first.network().port();
+    {
+        let orion = first.connect("reader").expect("a session");
+        assert_eq!(hello_fact(&orion, names::HELLO_FAMILY), "simulated");
+        assert_eq!(hello_fact(&orion, names::HELLO_SERIAL), "SIM-RUN-1");
+        assert_eq!(hello_fact(&orion, names::HELLO_STATE), "recovery");
+        assert_eq!(hello_fact(&orion, names::HELLO_MODEL), "simulated-board");
+        assert_eq!(hello_fact(&orion, names::HELLO_VERSION_OS), "1.0.0");
+        assert!(hello_fact(&orion, names::HELLO_OFFERS).contains("slots"));
+    }
+
+    // Stopped: the port is free, and the node is gone from it.
+    drop(first);
+    let stopped = Orion::connect(
+        &Address::Network {
+            host: format!("127.0.0.1:{port}"),
+            key: None,
+        },
+        "after-stop",
+    );
+    assert!(stopped.is_err(), "a stopped node answers nothing");
+
+    // Found again on the same port, running this time, with its name.
+    let second = SimNode::start_with(&dir, &Kind::default(), Some(port)).expect("restart");
+    assert_eq!(second.network().port(), port);
+    let orion = second
+        .connect_through_link("back")
+        .expect("a session through the link");
+    assert_eq!(hello_fact(&orion, names::HELLO_STATE), "running");
+    assert_eq!(hello_fact(&orion, names::HELLO_NAME), "sim");
+    let answered = call(&orion, names::STATUS, b"").expect("status answers");
+    assert_eq!(answered.outcome, Outcome::Succeeded);
 }
 
 #[test]
@@ -624,7 +850,7 @@ fn security_on_refuses_unsigned_and_untrusted_bundles_and_keeps_nothing() {
     node.model()
         .slots
         .trusted
-        .push(atlas_mock::slots::TrustedKey {
+        .push(atlas_sim_node::slots::TrustedKey {
             public: trusted.verifying_key().to_bytes(),
             owner: "Test Owner".into(),
         });
@@ -651,6 +877,97 @@ fn security_on_refuses_unsigned_and_untrusted_bundles_and_keeps_nothing() {
     );
     assert_eq!(good.outcome, Outcome::Succeeded, "{}", good.detail);
     assert_eq!(slot(&list(&orion), "trusted")["signed"], "trusted");
+}
+
+/// A bundle whose slot.json is `manifest` after `change`, with the rest of the bundle as `bundle_for`.
+fn bundle_with(id: &str, change: impl FnOnce(&mut Value)) -> Vec<u8> {
+    let rootfs = format!("rootfs of {id}\n").into_bytes();
+    let boot = [("cmdline.txt", &b"console=ttyS0\n"[..])];
+    let mut manifest = bundle::manifest(id, "2.0.0", &rootfs, &boot);
+    change(&mut manifest);
+    bundle::build(&manifest, None, &rootfs, &boot)
+}
+
+#[test]
+fn a_slot_for_another_board_is_refused_before_anything_is_kept() {
+    let node = start("board-mismatch");
+    let orion = node.connect("board-mismatch").expect("a session");
+    let other = bundle_with("slot-2", |manifest| {
+        manifest["board"] = Value::String("another-board".into());
+    });
+    let finished = install(&orion, &other, false, false);
+    assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
+    assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
+    assert!(
+        finished.detail.contains("another-board"),
+        "{}",
+        finished.detail
+    );
+    assert_eq!(list(&orion)["slots"].as_array().expect("slots").len(), 1);
+
+    // A slot with no board at all is refused too.
+    let none = bundle_with("slot-3", |manifest| {
+        manifest.as_object_mut().expect("an object").remove("board");
+    });
+    let finished = install(&orion, &none, false, false);
+    assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
+    assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
+}
+
+#[test]
+fn a_schema_2_slot_is_refused() {
+    let node = start("schema-2");
+    let orion = node.connect("schema-2").expect("a session");
+    let old = bundle_with("slot-2", |manifest| {
+        manifest["schema"] = Value::from(2);
+        manifest
+            .as_object_mut()
+            .expect("an object")
+            .remove("product");
+        manifest["family"] = Value::String("simulated".into());
+    });
+    let finished = install(&orion, &old, false, false);
+    assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
+    assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
+    assert!(finished.detail.contains("schema 2"), "{}", finished.detail);
+}
+
+#[test]
+fn a_slot_for_this_board_lists_its_product_and_board_and_a_foreign_one_cannot_be_made_default() {
+    let node = start("product-board");
+    let orion = node.connect("product-board").expect("a session");
+    let ours = bundle_with("slot-2", |manifest| {
+        manifest["product"] = Value::String("helios".into());
+        manifest["version"] = Value::String("2026.4.0".into());
+    });
+    assert_eq!(
+        install(&orion, &ours, false, false).outcome,
+        Outcome::Succeeded
+    );
+    let listed = slot(&list(&orion), "slot-2").clone();
+    assert_eq!(listed["product"], "helios");
+    assert_eq!(listed["board"], "simulated");
+    assert_eq!(listed["version"], "2026.4.0");
+    assert!(listed.get("family").is_none(), "family is gone from list");
+
+    // A slot already on this board can be made default; one built for another board cannot. The
+    // mismatch is put on the table directly, as a slot left on disk from another board would be.
+    node.model()
+        .slots
+        .entries
+        .iter_mut()
+        .find(|entry| entry.id == "slot-2")
+        .expect("slot-2")
+        .board = "another-board".into();
+    let listing = list(&orion);
+    assert_eq!(slot(&listing, "slot-2")["board"], "another-board");
+    let refused_default = refused(&orion, names::SLOTS_SET_DEFAULT, b"slot-2 false");
+    assert!(
+        refused_default.detail.contains("another-board"),
+        "{}",
+        refused_default.detail
+    );
+    refused(&orion, names::SLOTS_TRIAL, b"slot-2 false false false");
 }
 
 #[test]
@@ -751,6 +1068,90 @@ fn a_stalled_link_holds_then_carries_on() {
     let finished = call(&orion, names::STATUS, b"").expect("an answer after the stall");
     assert_eq!(finished.outcome, Outcome::Succeeded);
     assert!(started.elapsed() >= pause, "the stall held the connection");
+}
+
+/// The three kinds of node the sim offers, and what each one has. A test builds each with
+/// `SimNode::start_with(dir, &kind, port)`: `Kind::default()` (or `start(dir)`) is a node with Lemnos,
+/// `Kind::Plain` a plain Orion node, and `stop_lemnos` on a node with Lemnos is the case where Lemnos
+/// stops answering while the node stays up.
+#[test]
+fn a_plain_orion_node_has_no_lemnos_facts_or_actions_but_keeps_its_own_services() {
+    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("sim-plain");
+    let _ = std::fs::remove_dir_all(&dir);
+    let node = SimNode::start_with(&dir, &Kind::Plain, None).expect("the plain node starts");
+    let orion = node.connect("plain").expect("a session");
+
+    // Its identity is the key fingerprint of its hello document; there are no hardware facts
+    // and no offers.
+    let document = orion.node().expect("the hello document");
+    assert!(
+        !document.fingerprint.is_empty(),
+        "the fingerprint is its identity"
+    );
+    for fact in ["family", "serial", "state", "model", "offers"] {
+        assert!(
+            document.facts.iter().all(|found| found.name != fact),
+            "a plain node publishes no {fact} fact"
+        );
+    }
+
+    // No Lemnos actions: the slot surface is not on the node at all, so a call is not found.
+    match call(&orion, names::SLOTS_LIST, b"") {
+        Err(_) => {}
+        Ok(finished) => assert_ne!(
+            finished.outcome,
+            Outcome::Succeeded,
+            "a plain node has no slot list: {}",
+            finished.detail
+        ),
+    }
+
+    // Orion's own services work: a file pushed to it, its own file actions, and its logs topic.
+    orion
+        .files()
+        .push("notes/hello.txt", &mut Cursor::new(&b"hi"[..]), |_, _| {})
+        .expect("a file push works without Lemnos");
+    assert!(
+        node.shelf()
+            .committed
+            .lock()
+            .expect("the shelf")
+            .contains_key("notes/hello.txt")
+    );
+    ok(&orion, names::FS_WRITE, b"notes.txt 68656c6c6f");
+    assert_eq!(
+        ok(&orion, names::FS_READ, b"notes.txt").output,
+        b"68656c6c6f"
+    );
+    orion.subscribe(names::LOGS).expect("the logs topic");
+}
+
+#[test]
+fn a_node_whose_lemnos_stops_keeps_its_facts_and_fails_its_calls_until_it_answers_again() {
+    let node = start("lemnos-stops");
+    let orion = node.connect("lemnos-stops").expect("a session");
+    assert_eq!(
+        list(&orion)["slot_active"],
+        "slot-1",
+        "Lemnos answers first"
+    );
+    let family = hello_fact(&orion, names::HELLO_FAMILY);
+
+    node.stop_lemnos();
+    // Expected but not answering: the call fails with "not answering" (-4), not "not found".
+    let stopped = call(&orion, names::SLOTS_LIST, b"").expect("the call is answered");
+    assert_eq!(stopped.outcome, Outcome::Failed, "{}", stopped.detail);
+    assert!(stopped.detail.starts_with("-4:"), "{}", stopped.detail);
+    // The node itself stays up: its facts and its own actions still answer.
+    assert_eq!(hello_fact(&orion, names::HELLO_FAMILY), family);
+    ok(&orion, names::STATUS, b"");
+
+    node.resume_lemnos();
+    assert_eq!(
+        list(&orion)["slot_active"],
+        "slot-1",
+        "Lemnos answers again"
+    );
 }
 
 #[test]

@@ -1,93 +1,134 @@
 # The simulated node
 
-The code is in `crates/drivers/mock` (package `atlas-mock`). It is a workspace crate, so the
-gate formats, lints and tests it. `testing/*` is outside the workspace glob, so this folder
-holds only this document. The proof is `crates/drivers/mock/tests/sim_node.rs` and
-`crates/drivers/mock/tests/devices.rs`.
+The code is `crates/testing/sim-node` (package `atlas-sim-node`). It is a crate under `crates/testing/`,
+so the workspace glob `crates/*/*` builds, lints and tests it; this folder holds only this document. A
+driver's tests use it as a dev-dependency (a driver may: it is not a driver). The mock devices that
+drivers list are in `crates/drivers/mock` (`atlas-mock`), which does not depend on it.
+
+The proof is `crates/testing/sim-node/tests/sim_node.rs` (31 tests, Linux) and the unit tests in
+`src/names.rs` and `src/lib.rs`.
+
+## The three kinds of node
+
+One builder makes all three: `SimNode::start_with(dir, &Kind, port)`. `SimNode::start(dir)` is
+`start_with(dir, &Kind::default(), None)`.
+
+1. **A node with Lemnos** (`Kind::WithLemnos(Hello)`, the default). It publishes the hello facts
+   `family`, `serial`, `state`, `model`, `version.os`, `offers` (and `name`), the `readings` and
+   `hardware` topics, and the `system.slots/1` and `system.reboot/1` surface. Test:
+   `a_node_publishes_the_hello_facts_...` and the slot tests.
+2. **A plain Orion node** (`Kind::Plain`). No hardware facts and no `offers`; the identity is the
+   hello document's key fingerprint. No Lemnos actions, so a slot call is not found. Orion's own
+   services still work: a file push, its own `fs.*` actions and the `logs` topic. Test:
+   `a_plain_orion_node_has_no_lemnos_facts_or_actions_...`.
+3. **A node whose Lemnos stops** (case 1, then `stop_lemnos()`). The node stays up and its facts stay
+   published, but every Lemnos call fails with `-4` ("not answering"), which is not the same as the
+   plain node's "not found". `resume_lemnos()` brings it back. Test:
+   `a_node_whose_lemnos_stops_keeps_its_facts_...`.
 
 ## What it is
 
-- **The comm core** is Orion's own `orion-stubs` `Board` at the locked commit (`c0187f4`): the
-  real server, broker, hello and keys on a Unix socket and a TCP port, in a thread of this
-  process. Node logic stand-ins (records, router, files, workloads) come with it.
-- **The node logic** is an `orion` client on that socket. It registers every name in
-  `crates/drivers/mock/src/names.rs` as an action and declares the topics `readings`,
-  `hardware` and `logs`. It answers each run through Orion's own `Registration`.
-- **Mock devices** (`device.rs`): one simulated device in every `DeviceState` (running,
-  recovery, boot ROM, removable disk, robot), behind a driver with discover, identify and
-  grants by state. A device can be taken off the link and brought back.
-- **Scripted failures** (`script.rs`): per action, the next run can be answered, refused,
-  failed, stalled, or can restart the service. Per link, the next connection can be cut after
-  N bytes or held still for a while. The link is a small loopback proxy in front of the
-  board's network port; it is the only part that is not Orion's.
-- **Slot rules and the bundle** (`slots.rs`, `bundle.rs`, `model.rs`): Lemnos's slot driver
-  rules (I5) and the slot bundle format (a plain tar, `slot.json` schema 2, `rootfs.erofs`,
-  `boot/`, optional `slot.sig`, Ed25519).
+- **The comm core** is Orion's `orion-stubs` `Board` at the locked commit (`c0187f4`): the real server,
+  broker, hello and keys on a Unix socket and a TCP port, in this process. Its action router and file
+  receiver are Orion's stand-ins, with the rules Orion itself enforces: a detached run survives its
+  starter's session and can be attached to again, a plain run is not handed to another session, and a
+  cancel reaches a run only from the session and call that started it.
+- **The node logic** is an `orion` client on that socket (`src/node.rs`). On a node with Lemnos it publishes
+  the hello facts a board publishes (`hello.family`, `serial`, `state` = running | recovery | flasher,
+  `model`, `name`, `version.os`, `offers`), registers the I5 surface and the board's own actions, and
+  declares the topics `readings` and `hardware`. A plain node registers only its file actions. Both
+  declare `logs` and answer each run.
+- **Start and stop.** `SimNode::start(dir)` starts a running node on a free port. `SimNode::start_with(dir,
+  &Hello, port)` starts one in any state, on a given port. Dropping it stops the node and frees the port;
+  starting it again on the same port in the same directory brings the same device back.
+- **Slots over Orion** (`src/slots.rs`, `src/bundle.rs`, `src/model.rs`). The I5 rules of Lemnos's slot
+  driver. A bundle goes as a file, never as an argument: `system.slots.accept <size>` checks there is room
+  (ENOSPC) and that no install runs (BUSY); the sender pushes the bundle with Orion's file delivery into
+  `slots/.incoming/<name>` (the file receiver holds it on the shelf); then `system.slots.install-file
+  <name> <pin> <keep_old>` is a long job. Its progress is bundle bytes over verify and unpack. The file is
+  removed when the job ends, however it ends. A failed install means pushing again.
+  `install` + `write` (direct socket callers in Lemnos) are not on the Orion surface.
+- **Arguments** are UTF-8 words separated by spaces, as Lemnos's bridge takes them
+  (`lemnos_wire::text::encode_args` at Lemnos 26364ff): numbers in decimal, bools as `true`/`false` (or
+  `on`/`off`, `1`/`0`), strings as one word, bytes as hex. The node mirrors those rules in
+  `src/node.rs` (`words`, `flag`, `word`, `hex_bytes`). It does not depend on the Lemnos crate, which is not in
+  this workspace.
+- **The slot format** (`src/bundle.rs`, the sim's own reader; it does not depend on `crates/core/bundle`,
+  which is moving to schema 3 in another PR). `slot.json` is schema 3: `product` (lowercase `[a-z0-9-]`),
+  `version`, optional `variant`, `board` (the board's id, the same value as the `family` hello fact), and
+  `id`, `kernel`, `display_name`, `image.*`, `verity.*`, `boot.files`. The node refuses a slot whose `board`
+  is missing or is not its own board, and refuses schema 2 (`slot.json is schema 2 ...`). A slot for another
+  board is listed (`product`, `board`), but refused for set-default and trial. Tests:
+  `a_slot_for_another_board_is_refused...`, `a_schema_2_slot_is_refused`,
+  `a_slot_for_this_board_lists_its_product_and_board...`.
+- **Signing** (`src/slots.rs`, `src/bundle.rs`). Off by default. A `slot.sig` that is present is always
+  checked against every trusted key. Each slot lists `signed` (`trusted` | `untrusted` | `unsigned`) and
+  `signer` (the owner of the key that signed it). `require_signed` turns the gate on: an unsigned or
+  untrusted bundle is refused and leaves nothing behind. Keys come from a key file, one `<64 hex> <owner>` per
+  line (`parse_keys`, `Slots::load_keys`); a line without an owner refuses the whole file, and the board
+  then has no keys. A layered manifest (`layers`) is refused.
+- **Scripted failures** (`src/script.rs`): per action, the next run is answered, refused, failed, stalled, or
+  the service restarts at its step. Per link, the next connection can be cut after N bytes or held still.
+  The link is a loopback proxy in front of the network port; it is the only part that is not Orion's.
 
-Runs are applied to the board state when they finish, never before. A refused, failed or
-cancelled run changes nothing.
+Runs are applied to the board state when they finish, never before. A refused, failed or cancelled run
+changes nothing.
 
-## Names and where they come from
+## Names
 
-The table is `crates/drivers/mock/src/names.rs` (`SURFACE` is the I5 method table). The
-I5 surface comes from Lemnos's `I5-actions.md`. Orion needs one action per method, so each is
-named `system.<contract>.<method>` with `-` for `_`.
+The table is `crates/testing/sim-node/src/names.rs`. `SURFACE` is the I5 method table; each method is
+`system.<contract>.<method>` with `-` for `_` (`install_file` is `system.slots.install-file`). The
+hello topics are `hello.<fact>`.
 
 | Brief | What it names | Node answer |
 |---|---|---|
-| C1 identify, reconnect | hello, sessions | Orion's own hello on both the socket and the link (`both-ways` test) |
+| C1 identify, reconnect | hello facts, `orion.node()`, the same port after a stop | the facts above; `start_with` on the port; `a_node_publishes...` test |
 | C2 readings, logs, hardware | topics `readings`, `hardware`, `logs` | readings with units `C`, `V`, `rpm`; description once; log lines |
 | C3 actions | `system.reboot.reboot`, `locate`, `self-test`, `set-clock` | answered; `self-test` takes ticks and can stall; `set-clock` clears the offset |
-| C4 files, support bundle | `support-bundle`; file push to `images/...` | bundle as text; push resumes after a cut (`a_file_dropped_mid_transfer...`) |
-| C5 slots and updates | `system.slots.{list,install,write,set-default,trial,confirm,remove,pin,set-keep}` | the I5 rules, see the test `every_surface_method...` |
+| C4 files, support bundle | `support-bundle`; file push to `slots/.incoming/...` | bundle as text; push resumes after a cut (`a_file_dropped_mid_transfer...`) |
+| C5 slots and updates | `system.slots.{list,accept,install-file,set-default,trial,confirm,remove,pin,set-keep}` | the I5 rules; `every_surface_method...` test |
 | C6 trial and confirm | `system.slots.trial`, `confirm`, `system.reboot.reboot` | an unconfirmed trial falls back and marks the slot failed; a confirmed one stays |
-| C7 board data | `data.backup`, `data.restore`, `fs.list`, `fs.read`, `fs.write`, `fs.remove` | round trip on the data partition |
-| C8 SSH, recovery shell | none | NOT simulated (see gaps) |
-| C9 NT viewer | none | NOT simulated (see gaps) |
+| C7 board data | `data.backup`, `data.restore`, `fs.list`, `fs.read`, `fs.write`, `fs.remove` | round trip on the data partition; bytes as hex |
+| C8 SSH, recovery shell | none | NOT simulated (see below) |
+| C9 NT viewer | none | NOT simulated (see below) |
 
-## Proof output
+## Proof
 
-`cargo test -p atlas-mock` runs 27 tests: 21 on the simulated node, 4 on the mock devices,
-2 unit tests. The node tests cover: every method of the I5 surface, with an assertion that
-the test exercises exactly the surface; refused, failed, stalled and cancelled runs; a
-streamed install with an out-of-order write refused and the install going on; cancel
-discarding a partial install; a starter that disconnects having its install cancelled; a
-service restart losing the running install and a fresh one starting clean; a scripted
-restart step; the trial fallback and confirm paths; housekeeping with keep-last, pins and
-`keep_old`; bundle refusals (symlink, broken tar, unknown member, running id, room); the
-security switch (off shows `unverified`, on refuses unsigned and untrusted); readings,
-hardware and link faults.
+`cargo test -p atlas-sim-node` runs the unit tests and the 31 integration tests. They cover: every method
+of the I5 surface, with an assertion that the test exercises exactly the surface; refused, failed, stalled
+and cancelled runs; an install pushed as a file and installed as a long job; cancel discarding the pushed
+file; a starter that disconnects having its install cancelled; a detached install that survives its starter
+and is attached to again; a plain run that another session cannot attach to; a service restart losing the
+running install and a fresh one starting clean; the trial fallback and confirm paths; housekeeping with
+keep-last, pins and `keep_old`; bundle refusals; a layered manifest refused; signing (off by default, the
+`signed`/`signer` fields, `require_signed`); the key file; hello facts and a restart on the same port;
+the three kinds of node above; readings, hardware and link faults.
 
-## Gaps (not simulated, and why)
+## What it cannot do (not simulated)
 
-- **C8 shell.** `orion-stubs` has no SSH or recovery shell service. A shell session needs
-  Orion's comm-app `ssh` feature, which is outside the stubs. OUTSIDE BLOCK until the stubs or
-  a comm-app harness exposes it.
-- **C9 NT.** The NT4 gateway is not in `orion-stubs`. The sim publishes the values an NT
-  gateway would carry, as topics, but the NT viewer's own test needs Orion's NT4 gateway
-  in process.
-- **C1 forwarding node.** `orion-stubs` can start a forwarding node (`start_for_node`) but
-  the sim does not use it. A board behind another node is not tested here.
-- **C4 one gigabyte.** The brief's 1 GB over a throttled link is for C4. A4 proves the cut and
-  resume at 300 kB. The link can throttle nothing yet: it cuts and holds only.
-- **Starter identity.** Orion's router does not pass the caller to the owner, so
-  `NOT_PERMITTED` for "writer is not the starter" is not simulated. Every write is accepted
-  from the connection that holds the install's session.
-- **Session across a reboot.** The sim restarts in process: the Orion session stays up over a
-  trial or reboot. A real board drops it. C6 must not depend on the session dying.
+- **A forwarding node.** `orion-stubs` can start a node that forwards to boards behind it (`start_for_node`),
+  but the sim does not use it: a board behind another node is not modelled. The SystemCore's forwarding is
+  untested here.
+- **SSH shell (C8).** `orion-stubs` has no SSH or recovery shell service; a shell session needs Orion's
+  comm-app `ssh` service.
+- **NT viewer (C9).** The NT4 gateway is not in `orion-stubs`; the sim publishes the values an NT gateway
+  would carry, as topics, but nothing serves NT4.
+- **Real Orion services.** The locked commit has `orion_comm_app::CommCore` with NT4 and SSH listeners
+  (`nt4.listen`, `ssh.listen`), which would give C8 and C9 real services in process. This PR does not wire
+  them in: they are a follow-up that exposes them behind options, off by default, with a run-time generated
+  test key.
+- **Starter identity.** Orion's router does not hand the caller's principal to the owner here, so the
+  "same principal" rule for attaching to a detached run (Orion's C18) is not enforced in the sim: any session
+  may attach to a detached run.
+- **Throttling.** The link cuts and holds; it cannot slow a transfer down.
+- **Clock.** `installed` and `last_boot` are empty: the sim has no wall clock.
+- **Session across a reboot.** The sim restarts in process: the Orion session stays up over a trial or
+  reboot. A real board drops it, so C6 must not depend on the session dying.
 
-## OPEN (outside block X1 or Orion)
+## OPEN
 
-1. **Names.** I5 names the methods; the Orion action names here (`system.slots.set-default`,
-   `system.reboot.reboot`) are ours. A change is one edit in `names.rs`.
-2. **Args encoding.** Each run's args are `key=value` lines, and install/write take binary
-   fixed-width fields (u64 LE, then one byte per flag). Orion's action args are opaque bytes, so
-   the encoding is ours until Lemnos's client encoding is the one Orion carries.
-3. **Chunk size.** Lemnos takes chunks up to 1 MiB. Orion's stub comm core runs a 64 KiB frame
-   limit, so the sim refuses a chunk over 32 KiB. C5 must chunk at 32 KiB against the stub.
-4. **`signed` label.** I5's enum is `trusted|untrusted|unsigned`. With the security switch off,
-   the sim shows any slot not signed by a trusted key as `unverified`, as the brief for this
-   PR asked. That label is not in I5; keep one or the other.
-5. **Timestamps.** `installed` and `last_boot` are empty: the sim has no wall clock.
-6. **Gate.** The workspace builds `orion-stubs` from git at the locked commit, a second
-   declaration of the same repository and revision as the locked `orion` dependency.
+1. **Names.** `system.slots.*` names are ours (the I5 method names with `-`); a change is one edit in
+   `names.rs`.
+2. **Chunk size.** A file push runs through Orion's delivery; the sim's comm core has a 64 KiB frame limit.
+3. **Gate.** The workspace builds `orion-stubs` from git at the locked commit, a second declaration of the
+   same repository and revision as the locked `orion` dependency.

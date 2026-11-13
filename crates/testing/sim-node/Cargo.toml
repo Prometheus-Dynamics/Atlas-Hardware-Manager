@@ -1,0 +1,20 @@
+[package]
+name = "atlas-sim-node"
+description = "The simulated Orion node: what a board publishes (hello facts, actions, topics, files), its slot and reboot surface, scripted failures and link faults. For tests of drivers and the app; not a driver."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+ed25519-dalek = "2"
+serde_json = "1"
+sha2 = "0.10"
+tar = "0.4"
+orion = { workspace = true, features = ["topics", "records", "actions", "files"] }
+# The comm core for tests: the real server, broker, hello and keys on a real socket, with
+# small stand-ins for node logic. Same commit as the locked `orion` crate.
+orion-stubs = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "c0187f4c195cd27f8353c055dd0a94247c2965cc" }
+
+[lints]
+workspace = true
