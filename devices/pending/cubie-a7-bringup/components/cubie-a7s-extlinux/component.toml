@@ -1,0 +1,12 @@
+# The A7S bring-up's extlinux.conf for U-Boot's distro boot (DEV ONLY, bring-up form). U-Boot's
+# boot_targets (DockSeed's chain: fel mmc_auto nvme0 usb0 pxe dhcp) reads
+# /boot/extlinux/extlinux.conf from the first partition. Same form as the ZERO 3E's component.
+# The slot boot replaces it when Lemnos's U-Boot record exists.
+version = 1
+name = "cubie-a7s-extlinux"
+description = "extlinux.conf for U-Boot's distro boot, root=PARTLABEL=rootfs, device tree sun60i-a733-cubie-a7s (candidate)."
+
+[[install]]
+from = { file = "extlinux.conf" }
+to = "/boot/extlinux/extlinux.conf"
+mode = "0644"

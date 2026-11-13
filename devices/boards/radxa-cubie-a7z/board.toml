@@ -1,7 +1,14 @@
-# Radxa Cubie A7Z on the Allwinner A733 (sun60i) family. RECORD, NOT A BUILDABLE DESCRIPTION:
-# untested on board. Only what differs from the family is kept here. Sources missing: see
-# the family file (kernel, U-Boot, TF-A, OS, FEL SPL, SRAM layout, AArch64 thunk, SD device).
+# Radxa Cubie A7Z on the Allwinner A733 (sun60i) family. CANDIDATE, UNVERIFIED, NEVER BOOTED.
+# Only what differs from the family is kept here.
 version = 1
 extends = "../../families/sun60i/family.toml"
 name = "radxa-cubie-a7z"
-description = "Radxa Cubie A7Z (Allwinner A733)"
+description = "Radxa Cubie A7Z (Allwinner A733), candidate sources, untested on board"
+
+# OPEN, blocks a build: NO U-Boot defconfig and NO kernel device tree for the A7Z in any public
+# source read in B12 (radxa/u-boot @ 9da4b3e8 has the A7A and A7S only; the A7Z appears only as
+# radxa-pkg/device-a733 configs/cubie_a7z, a generic board file). Neither is guessed.
+#
+# OPEN: the DRAM blob. Dev's record says 1 GB LPDDR4 (the user's SKU). No A733 DRAM blob for LPDDR4
+# is pinned here: the one public candidate is the LPDDR5 build (radxa-pkg/u-boot-dlan17 @
+# b1cec0a9, awbin/a733/ddr.bin). Nothing is pinned until its match is known.

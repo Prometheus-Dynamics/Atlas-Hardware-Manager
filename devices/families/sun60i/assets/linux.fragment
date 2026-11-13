@@ -1,0 +1,5 @@
+# Every A733 board (candidate, unverified, never booted). Each line says why it is here.
+# CONFIG_DWMAC_SUN55I: the A733's gigabit MAC (gmac210, sun60i-a733-gmac210 in the SoC dtsi) that
+#   the A7S and A7A Ethernet use; DockSeed's build set it (`CONFIG_DWMAC_SUN55I=y`). Its
+#   driver is in the 7.3.3 series, not mainline 7.3.3 (see the PR text).
+CONFIG_DWMAC_SUN55I=y
