@@ -28,7 +28,7 @@ One builder makes all three: `SimNode::start_with(dir, &Kind, port)`. `SimNode::
 
 ## What it is
 
-- **The comm core** is Orion's `orion-stubs` `Board` at the locked commit (`c0187f4`): the real server,
+- **The comm core** is Orion's `orion-stubs` `Board` at the locked commit (`6dfb990`): the real server,
   broker, hello and keys on a Unix socket and a TCP port, in this process. Its action router and file
   receiver are Orion's stand-ins, with the rules Orion itself enforces: a detached run survives its
   starter's session and can be attached to again, a plain run is not handed to another session, and a
