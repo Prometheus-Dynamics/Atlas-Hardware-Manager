@@ -1,0 +1,53 @@
+# Radxa ROCK 5C (RK3588S2: 4 Cortex-A76 and 4 Cortex-A55, LPDDR4X, microSD,
+# eMMC socket, Gigabit Ethernet) on the rk35xx family. Its boot path is the
+# family's (sector-64 loader, U-Boot in the raw area, sd-image disk); what
+# differs is below. Untested on board: G4 runs it.
+version = 1
+extends = "../../families/rk35xx/family.toml"
+name = "radxa-rock-5c"
+description = "Radxa ROCK 5C (RK3588S2)"
+
+# RK3588S2 is four A76 and four A55 (dev's manifest; the same cores as the
+# RK3588S profile in Gaia's cpu table).
+[target]
+cpu = "cortex-a76.cortex-a55"
+
+# The in-tree device tree (Linux v7.3.3 has rk3588s-rock-5c.dts; checked).
+[kernel]
+device_tree = "rockchip/rk3588s-rock-5c"
+
+# U-Boot's board defconfig (U-Boot v2026.10 has rock-5c-rk3588s_defconfig;
+# checked). Gaia strips the `_defconfig` suffix.
+[bootloader]
+defconfig = "rock-5c-rk3588s"
+
+# The 5C's own rkbin pin: f43a462e, the commit dev pinned for this board
+# (dev's fetch.lock; Gaia's ROCK 5C build uses the same Buildroot pin). The
+# same name as the family's entry, so this replaces it for this board only.
+# Not the family's 3e288fe: that pin carries the ZERO 3E's suspect DDR blob.
+# Gaia's board sources merge by name, so a board can pin its own commit.
+[sources.rkbin]
+git = "https://github.com/rockchip-linux/rkbin.git"
+ref = "f43a462e7a1429a9d407ae52b4745033034a6cf9"
+
+# U-Boot's make variable ROCKCHIP_TPL: the RK3588 DDR init, v1.18 at f43a462e
+# (dev's fetch.lock; its RKBOOT ini names the same file).
+# NOT VERIFIED ON HARDWARE. Dev never booted this board: this is the blob dev
+# named for it, with no board run behind it. Dev's notes say the same of
+# this blob (the 5C is "untested on this board"). Keep it until a board run
+# proves it, and never bump it without one.
+[bootloader.blobs]
+ROCKCHIP_TPL = { source = "rkbin", path = "bin/rk35/rk3588_ddr_lp4_2112MHz_lp5_2400MHz_v1.18.bin" }
+
+# TF-A's platform for RK3588 (v2.15.0 has plat/rockchip/rk3588; checked). BL31
+# is built from the family's TF-A pin, as dev's Gaia build does for this SoC.
+[bootloader.trusted_firmware]
+platform = "rk3588"
+
+# The maskrom loader's RKBOOT ini at f43a462e: names ddr v1.18, usbplug v1.11
+# and spl v1.13 (dev's fetch.lock), and the loader boot_merger builds from
+# them. The ini and the parts it names come from the same rkbin commit. The
+# merged rk3588_spl_loader_v1.18.113.bin is not published by rkbin; Gaia's
+# build makes it.
+[flash.files]
+loader_ini = { source = "rkbin", path = "RKBOOT/RK3588MINIALL.ini" }

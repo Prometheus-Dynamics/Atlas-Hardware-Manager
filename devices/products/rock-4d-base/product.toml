@@ -1,0 +1,32 @@
+# Radxa ROCK 4D base OS, on Buildroot, in the bring-up form: raw areas, rootfs
+# and data partitions, extlinux for U-Boot's distro boot. No bench key, no
+# Lemnos or Orion yet. Untested on board: G4 runs it.
+#
+# Gaia 10beed8 (F7): `sd-image` builds the slot file itself (slot_device, the
+# path in the dm-verity table, defaults to /data/slots/root.img), adds it to the
+# data tree at slot_path (slots/root.img), and makes the rootfs partition the
+# build tree as ext4, marked bootable by the recipe. Settings used: id only.
+version = 1
+name = "rock-4d-base"
+description = "Radxa ROCK 4D base OS: bring-up form (raw areas, rootfs and data partitions)."
+
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.02.3"
+
+[components]
+radxa-rock-4d-extlinux = "../../components/radxa-rock-4d-extlinux/component.toml"
+
+[[images]]
+name = "rock-4d-base"
+board = "../../boards/radxa-rock-4d/board.toml"
+components = ["radxa-rock-4d-extlinux"]
+# The board gives the kernel, U-Boot and TF-A; os.fragment the rest.
+os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
+recipe = "sd-image"
+budget = "1G"
+
+[images.settings]
+# Names the disk (required by sd-image; its GUIDs are derived from it, so they
+# stay the same across rebuilds).
+id = "rock-4d-base"
