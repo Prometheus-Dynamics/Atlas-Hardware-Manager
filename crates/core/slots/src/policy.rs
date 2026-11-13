@@ -126,6 +126,8 @@ impl std::fmt::Display for RemoveRefusal {
     }
 }
 
+impl std::error::Error for RemoveRefusal {}
+
 /// Checks that `id` may be removed. `allow_starred` is the person's explicit choice.
 ///
 /// # Errors

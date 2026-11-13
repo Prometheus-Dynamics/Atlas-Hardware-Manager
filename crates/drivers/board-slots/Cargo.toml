@@ -1,0 +1,32 @@
+[package]
+name = "atlas-board-slots"
+description = "A board's slots through its Orion node: list, set default, trial, guarded remove, pin, keep, and the install as a job (bundle, accept, push, install_file) that is safe to repeat and resumes across a lost session. Built on the actions, files and session crates; works on any node that offers the slot contract."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+atlas-actions = { path = "../../board/actions" }
+atlas-bundle = { path = "../../core/bundle" }
+atlas-driver = { path = "../../core/driver" }
+atlas-files = { path = "../../board/files" }
+atlas-jobs = { path = "../../core/jobs" }
+atlas-session = { path = "../../board/session" }
+atlas-slots = { path = "../../core/slots" }
+atlas-types = { path = "../../core/types" }
+orion = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tar = { version = "0.4", default-features = false }
+thiserror = "2"
+tokio = { version = "1", features = ["sync", "time", "rt"] }
+
+[dev-dependencies]
+atlas-sim-node = { path = "../../testing/sim-node" }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread", "sync", "time"] }
+
+[lints]
+workspace = true
