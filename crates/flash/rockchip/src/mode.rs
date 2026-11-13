@@ -54,14 +54,7 @@ mod tests {
 
     #[test]
     fn a_summary_reports_the_mode_of_its_bcd_usb() {
-        let mut device = DeviceSummary {
-            location: "1-2".into(),
-            vendor: 0x2207,
-            product: 0x350b,
-            serial: None,
-            bcd_usb: 0x0200,
-            bcd_device: 0x0100,
-        };
+        let mut device = DeviceSummary::new("1-2", 0x2207, 0x350b).with_versions(0x0200, 0x0100);
         assert_eq!(Mode::of(&device), Mode::Maskrom);
         device.bcd_usb = 0x0201;
         assert_eq!(Mode::of(&device), Mode::Loader);

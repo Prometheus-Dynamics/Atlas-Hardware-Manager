@@ -25,14 +25,7 @@ fn id() -> UsbId {
 }
 
 fn device(location: &str, serial: Option<&str>) -> DeviceSummary {
-    DeviceSummary {
-        location: location.into(),
-        vendor: VENDOR,
-        product: PRODUCT,
-        serial: serial.map(str::to_string),
-        bcd_usb: 0,
-        bcd_device: 0,
-    }
+    DeviceSummary::new(location, VENDOR, PRODUCT).with_serial_opt(serial.map(str::to_string))
 }
 
 fn usb_boot_link() -> Link {
@@ -58,14 +51,7 @@ fn driver(bus: &SimBus) -> K230Driver {
 async fn discovery_finds_only_the_caller_ids_and_names_the_port() {
     let bus = SimBus::new();
     bus.attach(device("1-2", Some("K230-A")));
-    bus.attach(DeviceSummary {
-        location: "1-3".into(),
-        vendor: 0x1d6b,
-        product: 0x0002,
-        serial: None,
-        bcd_usb: 0,
-        bcd_device: 0,
-    });
+    bus.attach(DeviceSummary::new("1-3", 0x1d6b, 0x0002));
     let found = driver(&bus).discover(&usb_boot_link()).await.unwrap();
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].address, "1-2");

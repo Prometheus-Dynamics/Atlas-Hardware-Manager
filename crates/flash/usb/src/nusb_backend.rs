@@ -51,17 +51,15 @@ fn location_of(info: &DeviceInfo) -> String {
 }
 
 fn summary(info: &DeviceInfo) -> DeviceSummary {
-    DeviceSummary {
-        location: location_of(info),
-        vendor: info.vendor_id(),
-        product: info.product_id(),
-        serial: info
-            .serial_number()
-            .map(str::trim)
-            .filter(|serial| !serial.is_empty())
-            .map(str::to_string),
-        bcd_usb: info.usb_version(),
-        bcd_device: info.device_version(),
+    let summary = DeviceSummary::new(location_of(info), info.vendor_id(), info.product_id())
+        .with_versions(info.usb_version(), info.device_version());
+    match info
+        .serial_number()
+        .map(str::trim)
+        .filter(|serial| !serial.is_empty())
+    {
+        Some(serial) => summary.with_serial(serial),
+        None => summary,
     }
 }
 

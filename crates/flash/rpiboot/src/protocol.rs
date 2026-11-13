@@ -277,14 +277,7 @@ mod tests {
     const LOCATION: &str = "1-2";
 
     fn device() -> DeviceSummary {
-        DeviceSummary {
-            location: LOCATION.into(),
-            vendor: 0x1234,
-            product: 0x0001,
-            serial: Some("abc".into()),
-            bcd_usb: 0,
-            bcd_device: 0,
-        }
+        DeviceSummary::new(LOCATION, 0x1234, 0x0001).with_serial("abc")
     }
 
     /// A file-server request: command, then the name, padded to 260 bytes.

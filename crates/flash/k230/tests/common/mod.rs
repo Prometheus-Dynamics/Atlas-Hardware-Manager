@@ -10,14 +10,7 @@ pub const LOCATION: &str = "1-2";
 
 /// A K230 in download mode, with the vendor and product ids the C tool uses.
 pub fn device(location: &str) -> DeviceSummary {
-    DeviceSummary {
-        location: location.into(),
-        vendor: 0x29f1,
-        product: 0x0230,
-        serial: Some("K230-TEST".into()),
-        bcd_usb: 0,
-        bcd_device: 0,
-    }
+    DeviceSummary::new(location, 0x29f1, 0x0230).with_serial("K230-TEST")
 }
 
 /// A bus with one K230 at [`LOCATION`].

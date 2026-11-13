@@ -38,14 +38,7 @@ fn flasher() -> BootFiles {
 }
 
 fn rom(location: &str) -> DeviceSummary {
-    DeviceSummary {
-        location: location.into(),
-        vendor: ROM_USB.vendor,
-        product: ROM_USB.product,
-        serial: Some("abc123".into()),
-        bcd_usb: 0,
-        bcd_device: 0,
-    }
+    DeviceSummary::new(location, ROM_USB.vendor, ROM_USB.product).with_serial("abc123")
 }
 
 fn usb_boot_link() -> Link {
@@ -67,14 +60,7 @@ fn request(command: i32, name: &str) -> Answer {
 async fn discover_finds_the_configured_boot_roms_on_usb_boot_links_only() {
     let bus = SimBus::new();
     bus.attach(rom("1-2"));
-    bus.attach(DeviceSummary {
-        location: "1-3".into(),
-        vendor: 0x1234,
-        product: 0x5678,
-        serial: None,
-        bcd_usb: 0,
-        bcd_device: 0,
-    });
+    bus.attach(DeviceSummary::new("1-3", 0x1234, 0x5678));
     let driver = RpiDriver::new(Arc::new(bus), config(Some(flasher())));
 
     let found = driver.discover(&usb_boot_link()).await.unwrap();

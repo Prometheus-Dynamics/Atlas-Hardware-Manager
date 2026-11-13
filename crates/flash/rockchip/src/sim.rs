@@ -158,14 +158,8 @@ impl SimRockchip {
 
     fn build(location: &str, id: UsbId, chip: &str, sectors: u32, loader: bool) -> Self {
         let bus = SimBus::new();
-        let summary = DeviceSummary {
-            location: location.to_string(),
-            vendor: id.vendor,
-            product: id.product,
-            serial: None,
-            bcd_usb: if loader { 0x0201 } else { 0x0200 },
-            bcd_device: 0x0100,
-        };
+        let summary = DeviceSummary::new(location.to_string(), id.vendor, id.product)
+            .with_versions(if loader { 0x0201 } else { 0x0200 }, 0x0100);
         bus.attach(summary.clone());
         Self {
             state: Arc::new(Mutex::new(State {

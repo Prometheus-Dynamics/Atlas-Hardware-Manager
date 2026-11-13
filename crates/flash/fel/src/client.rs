@@ -173,14 +173,7 @@ mod tests {
 
     /// A SimBus with one device at `1-1`, opened as a handle.
     async fn open(bus: &SimBus) -> Box<dyn UsbIo> {
-        bus.attach(DeviceSummary {
-            location: "1-1".into(),
-            vendor: 0x1f3a,
-            product: 0xefe8,
-            serial: None,
-            bcd_usb: 0,
-            bcd_device: 0,
-        });
+        bus.attach(DeviceSummary::new("1-1", 0x1f3a, 0xefe8));
         bus.open("1-1", &OpenOptions::default()).await.unwrap()
     }
 

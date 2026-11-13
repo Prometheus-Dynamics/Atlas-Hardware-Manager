@@ -171,14 +171,7 @@ mod tests {
     #[tokio::test]
     async fn tracing_changes_no_transfer_and_reaches_the_sink() {
         let bus = SimBus::new();
-        bus.attach(DeviceSummary {
-            location: "1-1".into(),
-            vendor: 1,
-            product: 2,
-            serial: None,
-            bcd_usb: 0,
-            bcd_device: 0,
-        });
+        bus.attach(DeviceSummary::new("1-1", 1, 2));
         bus.script(
             "1-1",
             [Answer::Ok, Answer::Data(vec![9, 9, 9]), Answer::Stall],

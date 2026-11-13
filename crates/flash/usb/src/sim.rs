@@ -374,14 +374,7 @@ mod tests {
     use super::*;
 
     fn device(location: &str) -> DeviceSummary {
-        DeviceSummary {
-            location: location.into(),
-            vendor: 0x0a5c,
-            product: 0x2764,
-            serial: Some("abc".into()),
-            bcd_usb: 0,
-            bcd_device: 0,
-        }
+        DeviceSummary::new(location, 0x0a5c, 0x2764).with_serial("abc")
     }
 
     #[tokio::test]
