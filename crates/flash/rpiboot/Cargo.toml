@@ -1,0 +1,17 @@
+[package]
+name = "atlas-rpiboot"
+description = "Raspberry Pi USB boot: the boot ROM's two rounds (second stage, then the file server) over atlas-usb, the boot files they serve, and EEPROM bootconf. No Atlas types, no board names."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+atlas-usb = { path = "../usb" }
+tokio = { version = "1", features = ["time"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "test-util"] }
+
+[lints]
+workspace = true

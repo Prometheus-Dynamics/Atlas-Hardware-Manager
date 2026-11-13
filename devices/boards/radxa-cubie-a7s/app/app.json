@@ -1,0 +1,1 @@
+{ "schema": "urn:atlas:device-app:1", "model": "radxa-cubie-a7s", "display_name": "Cubie A7S", "usb": ["allwinner-a733-fel"] }
