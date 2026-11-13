@@ -211,7 +211,7 @@ impl Devices {
                 let payload = quantity.payload(self.ticks);
                 let _ = listed.values.publish(FieldId(index as u16), now, &payload);
             }
-            // LOCK: Orion at c0187f4 does not hand a network subscriber the newest sample of a
+            // LOCK: Orion at 6dfb990 still does not hand a network subscriber the newest sample of a
             // topic that was written before it subscribed (the local ring does; the network copy
             // gets samples from the subscription on). The bridge writes its status on change, so a
             // session made later reads nothing until the next change. Until Orion delivers the

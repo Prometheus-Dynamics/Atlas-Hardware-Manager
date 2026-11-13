@@ -142,6 +142,8 @@ fn read_topic(name: &str, subscriber: &mut Subscriber) -> RawTopic {
     let live = match subscriber.status() {
         Status::Waiting => TopicLive::Waiting,
         Status::Live => TopicLive::Live,
+        // A topic its publisher withdrew reads as gone too: the topic is not there, which is not a
+        // fault of the node.
         Status::PublisherGone => TopicLive::Gone,
     };
     // The declaration gives each field's name, type and unit. It is there once the topic is.

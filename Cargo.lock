@@ -1675,7 +1675,7 @@ dependencies = [
 [[package]]
 name = "orion-provider"
 version = "1.0.1-dev"
-source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=c0187f4c195cd27f8353c055dd0a94247c2965cc#c0187f4c195cd27f8353c055dd0a94247c2965cc"
+source = "git+https://github.com/Prometheus-Dynamics/Orion.git?rev=6dfb990b0dac670d43a8576f0a33491c96406891#6dfb990b0dac670d43a8576f0a33491c96406891"
 dependencies = [
  "orion-actions",
  "orion-connect",
