@@ -1,6 +1,6 @@
 # Orion's board image: package orion-bin (binary orion), run as two services from Orion's packaging
 # (orion comm: root with group orion; orion node: user orion). Board-neutral. Built from Orion at
-# 6dfb990b0dac670d43a8576f0a33491c96406891 (the rev the workspace pins; Cargo.lock is committed there).
+# 455a956e13e62c97081d66e0e8f3bf2aced1eac8 (the rev the workspace pins; Cargo.lock is committed there).
 #
 # NOT YET BUILDABLE. Its cc and env need Gaia's pinned build root with zig (Orion's size-gate
 # wrappers, scripts/zigcc, and the zig cache); the public rust image has no zig. The next Gaia PR
@@ -15,7 +15,7 @@ description = "Orion: the orion binary as the board's comm core and node logic (
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "6dfb990b0dac670d43a8576f0a33491c96406891"
+ref = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
