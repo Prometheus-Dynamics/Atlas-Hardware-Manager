@@ -13,8 +13,8 @@ use atlas_bundle::root_hash;
 
 pub const DATA_FIXTURE: &[u8] = include_bytes!("../fixtures/data.ext4");
 
-/// The salt the fixture's verity roots were made with (make-fixtures.py).
-pub const SALT: [u8; 16] = [0x5A; 16];
+/// The salt the fixture's verity roots were made with (make-fixtures.py): 32 bytes.
+pub const SALT: [u8; 32] = [0x5A; 32];
 pub const BLOCK: usize = 4096;
 
 /// The bytes the fixture was made from (the same formula as make-fixtures.py).
@@ -33,9 +33,8 @@ pub fn alpha_file() -> Vec<u8> {
 
 /// Slot `beta`'s file: two blocks (one data, one tree).
 pub fn beta_file() -> Vec<u8> {
-    let mut bytes = pattern(BLOCK, 7);
-    bytes.extend_from_slice(&pattern(BLOCK, 8));
-    bytes
+    // One data block and no tree.
+    pattern(BLOCK, 7)
 }
 
 /// Slot `alpha`'s boot files, by path (the manifest's `boot.files` and the
@@ -66,7 +65,7 @@ pub fn alpha_root() -> String {
 
 /// The verity root of slot `beta`.
 pub fn beta_root() -> String {
-    root_hash(&SALT, &beta_file()[..BLOCK]).expect("root")
+    root_hash(&SALT, &beta_file()).expect("root")
 }
 
 /// A test directory under the cargo target tmp dir, removed on drop.

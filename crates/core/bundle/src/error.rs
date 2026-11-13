@@ -20,16 +20,16 @@ pub enum BundleError {
     DuplicateBootFile(String),
     #[error("the boot files have no cmdline.txt")]
     MissingCmdline,
-    #[error("the verity table is not one this writer reads: {0}")]
-    Table(String),
+    /// The verity values do not describe the slot file: a value does not fit the
+    /// layout, or the file is not its data and whole tree (see `atlas-image`).
+    #[error(transparent)]
+    Verity(#[from] atlas_image::VerityError),
+    /// The data, salted and hashed, does not give the manifest's root hash: a wrong
+    /// salt, or data that is not the slot's.
     #[error(
-        "the verity root hash is {actual}, the table says {expected}: the image's tree does not match its table"
+        "the verity root hash of the data is {actual}, but verity.root_hash is {expected}: the data does not match its root hash, or the salt is wrong"
     )]
     RootHashMismatch { expected: String, actual: String },
-    /// The image carries the root hash but not the salt and block counts a
-    /// verity table needs, so no table can be made from it yet.
-    #[error("{0}")]
-    NoVerityTable(String),
     #[error(
         "the slot file is {actual}, its manifest says {expected}: the image does not match its manifest"
     )]
