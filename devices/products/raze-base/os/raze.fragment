@@ -1,0 +1,44 @@
+# The Raze base OS's Buildroot options: the `os` of raze-base. Gaia starts from Buildroot's allnoconfig, so
+# EVERYTHING here is on because a line says so. Each decision is written with its reason. Kernel decisions
+# are in boards/raze/kernel/; the firmware pin is in families/bcm2712/family.toml.
+# F8?: the Buildroot option names below are the ones the fragment form takes; Gaia's option check (the
+# coming "every requested line survives") is the test. Anything it drops is a real finding.
+
+# -- Init and the platform ---------------------------------------------------------------------------
+# systemd 258.7 (Buildroot 2026.08's version, checked in its package/systemd/systemd.mk): lemnosd's unit
+# needs systemd 254+, and the Raze's units (lemnosd, lemnos-orion, Orion's comm and node) are systemd units.
+BR2_INIT_SYSTEMD=y
+BR2_PACKAGE_SYSTEMD=y
+# 4 KiB pages: the page size dev measured on a Raze (also in the kernel fragment).
+BR2_ARM64_PAGE_SIZE_4K=y
+# The Pi firmware (1.20260915, the family's pin): the boot ROM files, start4.elf and the rest, so the Pi boots.
+# Its overlay set is what config.txt's dtoverlay= loads from. The Raze's device tree is one generated
+# overlay (Lemnos); these two are the product's own choices (raze-device.txt):
+#   bcm2712d0          the firmware applies it itself on D0 silicon (without it the kernel faults in pinctrl)
+#   vc4-kms-v3d-pi5    the GPU (HeliOS wants it; dma-buf frame streams allocate from it)
+#   ramoops-pi5        crash logs for the support bundle
+BR2_PACKAGE_RPI_FIRMWARE=y
+BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS=y
+BR2_PACKAGE_RPI_FIRMWARE_DTB_OVERLAYS="bcm2712d0 vc4-kms-v3d-pi5 ramoops-pi5"
+
+# -- The console and the way in -----------------------------------------------------------------------
+# A shell for Orion's logins (Orion's comm core runs a user's own shell after it logs them in, so the base
+# needs /bin/sh). BusyBox's default applets; no others.
+BR2_PACKAGE_BUSYBOX=y
+# No sshd and no dropbear: Orion serves SSH itself (its comm core, ssh.listen), so a second server would be
+# a second way in with its own keys.
+# The console: a getty on the USB gadget's ACM port, ttyGS0, is systemd's serial-getty@ttyGS0.service. It is
+# enabled in components/raze-base-files (a systemd unit, not a Buildroot option), because Buildroot's getty
+# option is the sysvinit form. F8?: systemd's getty needs no Buildroot line.
+# Root login: OFF. The root account has no password, and the console asks for a login. Which user logs in on
+# the console is OPEN (Orion's user list is not in this image yet); dev's autologin root console is not carried.
+# BR2_TARGET_ENABLE_ROOT_LOGIN is therefore left off.
+
+# -- Root filesystem ----------------------------------------------------------------------------------
+# Read-only root: the slot's root is EROFS with dm-verity, which cannot be written. The writable place is
+# the data partition (the slots and the state), not the root. So BR2_TARGET_GENERIC_REMOUNT_ROOTFS_RW stays OFF.
+
+# -- Network ----------------------------------------------------------------------------------------
+# systemd-networkd is the network manager (systemd's own; no ifupdown). OPEN: the .network file for the
+# gadget's NCM interface (its address, and whether the board serves DHCP on it). ZERO 3E's usb0 lesson:
+# the DHCP server must actually run. No .network file is written here.

@@ -1,0 +1,147 @@
+# The Raze's board file for lemnosd (Lemnos next b0bf0101, the board-file format of its Q2a/Q2c).
+# Installed as /etc/lemnos/board.toml. Its generated outputs (the one overlay, the boot fragment,
+# the modprobe.d file) come from `lemnos-ctl tree` at build time; nothing they contain is written by hand.
+#
+# Sources of the values, each with its file: dev's devices/raze/manifest.json and
+# devices/raze/gaia/assets (the overlays' .dts, raze-device.txt, hardware.env); Lemnos's SoC map
+# socs/bcm2712-rp1.toml at b0bf0101 for every controller path and pin set.
+#
+# Refused by `lemnos-ctl tree` at b0bf0101, and so NOT yet buildable (PR text, "Lemnos refusals"):
+#   - system-identity and system-slots: their drivers make nothing in any output, and the map's
+#     `needs_nothing` lists only orientation and fan-control;
+#   - the watchdog device (hw-watchdog): no name form for its node in the generator, so its need
+#     produces nothing. The `[[hardware]] controller = "watchdog"` entry below does enable the node.
+# Open, left out on purpose (no source): the camera sensor on i2c-10 (dev's manifest puts i2c_csi_dsi0 on
+# RP1 i2c6, Lemnos's map puts i2c10 on the SoC's own controller at 7d005600), its power line
+# (cam0_reg's line, RP1 GPIO34, and the base the map holds it on: no base named here), and the USB
+# gadget's UDC name (see the usb-gadget device).
+format = "lemnos.board"
+schema_version = 1
+
+[board]
+id = "raze"
+soc = "bcm2712-rp1"
+
+# The hardware the devices use. Each entry is the one place its pins are written.
+[[hardware]]
+name = "i2c-1"                 # the Raze's hardware I2C bus: BMM150 and INA238 (dev: SDA GPIO10, SCL GPIO11)
+controller = "i2c1"
+pins = "gpio10_11"
+
+[[hardware]]
+controller = "pwm1"            # RP1 PWM1; the fan's pulse output is channel 3 on GPIO45 (dev: rp1_pwm1 channel 3)
+pins = "gpio45"
+
+[[hardware]]
+controller = "pio"             # the RP1 PIO block: the LED ring (GPIO13) and the PIO I2C bus (SDA8/SCL7)
+
+[[hardware]]
+controller = "watchdog"        # the hardware watchdog (dev: /dev/watchdog0); enables the node
+
+[[hardware]]
+name = "udc:1000480000.usb"    # the USB controller in peripheral mode; UDC name derived from its map path (see PR text)
+controller = "usb"
+
+# RP1 lines given to Lemnos. A line that a device uses needs an entry here; `boot` holds it from power-on.
+[[lines]]
+line = "gpio:pinctrl-rp1:16"
+boot = "high"
+reason = "USB-C port power: on from power-on (dev's gpio=16,20=op,dh)"
+
+[[lines]]
+line = "gpio:pinctrl-rp1:20"
+boot = "high"
+reason = "USB-A port power: on from power-on (dev's gpio=16,20=op,dh)"
+
+# The identity: the board's serial from the device tree (dev's manifest: /proc/device-tree/serial-number).
+# name and revision are the model fact (dev's manifest: "Raze", revision gen1).
+[[devices]]
+id = "identity"
+driver = "system-identity"
+[devices.config]
+serial = "device-tree"
+name = "Raze"
+revision = "gen1"
+
+# The daemon's keep-alive: the hardware watchdog, 15 s (dev's default; hardware.env HW_WATCHDOG_RUNTIME_SEC=15).
+[[devices]]
+id = "watchdog"
+driver = "hw-watchdog"
+keepalive = true
+uses = { device = "watchdog0" }
+config = { timeout_s = 15 }
+
+# The fan on RP1 PWM1 channel 3, driven directly by Lemnos. Dev's period is 41566 ns (24,057 Hz) and its
+# floor is level 179 of 255 (70 %, "a 70 % floor keeps air moving", manifest.json), i.e. 700 of 1000.
+[[devices]]
+id = "fan"
+driver = "pwm-channel-fan"
+uses = { pwm = "pwm:/axi/pcie@1000120000/rp1/pwm@9c000:3" }
+config = { frequency_hz = 24057, min_duty = 700 }
+
+# The two port power enables, active high (dev's usb-power: USB-A on GPIO20, USB-C on GPIO16).
+[[devices]]
+id = "usb-c-power"
+driver = "gpio-power-switch"
+uses = { line = "gpio:pinctrl-rp1:16" }
+config = { default_on = true }
+
+[[devices]]
+id = "usb-a-power"
+driver = "gpio-power-switch"
+uses = { line = "gpio:pinctrl-rp1:20" }
+config = { default_on = true }
+
+# The 16-LED ring: SK6812-EC20 on GPIO13 through the PIO block, 24-bit GRB (dev's manifest: grb24, offset 5).
+[[devices]]
+id = "ring"
+driver = "ws2812"
+bus = "pio-out:gpio=13"
+config = { count = 16, wire = "rgb", offset = 5, brightness = 255 }
+
+# The BMI088: accelerometer at 0x18 and gyroscope at 0x68 on the RP1 PIO bus, GPIO8 SDA and GPIO7 SCL
+# (dev: pio-i2c, no kernel adapter; hz 400000 from dev's hardware bus note).
+[[devices]]
+id = "imu"
+driver = "bmi088"
+bus = "pio-i2c:sda=8,scl=7,hz=400000"
+config = { accel_address = 0x18, gyro_address = 0x68, accel_rate = 200, gyro_rate = 200 }
+
+# The BMM150 magnetometer at 0x10 on i2c-1 (dev's manifest).
+[[devices]]
+id = "magnetometer"
+driver = "bmm150"
+bus = "i2c-1"
+config = { address = 0x10 }
+
+# The INA238 power monitor at 0x40 on i2c-1, shunt 0.010 ohm, max 16.384 A (dev's board.toml, values verbatim).
+[[devices]]
+id = "power"
+driver = "ina2xx"
+bus = "i2c-1"
+config = { chip = "ina238", address = 0x40, shunt_micro_ohms = 10000, max_current_micro_amps = 16384000 }
+
+# Orientation fused from the IMU and the magnetometer: mahony, kp 1.0, ki 0.05 (dev's fusion settings).
+[[devices]]
+id = "orientation"
+driver = "orientation"
+uses = { accel = "imu", gyro = "imu", mag = "magnetometer" }
+config = { sample_rate_hz = 100, algorithm = "mahony", kp = 1.0, ki = 0.05 }
+
+# This board as a USB device: one configuration of FunctionFS "orion-link" (Orion's link), NCM with
+# derived addresses, and one ACM console. The vendor and product are 1d6b:0104, which
+# devices/usb-ids.json recognises as "Atlas board USB gadget" (dev's Raze gadget used the same ids).
+# The serial comes from the identity device. Naming it here is required by `derive`.
+[[devices]]
+id = "gadget"
+driver = "usb-gadget"
+uses = { function = "udc:1000480000.usb" }
+config = { vendor = 0x1d6b, product = 0x0104, identity = "identity", interfaces = "function ffs\ninterface 0xff 0 0 orion-link\nendpoint in bulk\nendpoint out bulk\nfunction ncm derive\nfunction acm\n" }
+
+# The slot store: data on the data partition (dev's /data), records through tryboot (the Pi's record, dev's
+# boot path), and require_signed = false (the Raze's security switch is off by default; a signature that is
+# present is still checked). The boot partition's mount point is not sourced yet (open).
+[[devices]]
+id = "slots"
+driver = "system-slots"
+config = { data = "/data", record = "tryboot", require_signed = false }

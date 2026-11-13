@@ -1,0 +1,92 @@
+# Written by `gaia lock`. Do not edit.
+version = 1
+
+[source."lemnos-ctl.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."lemnos-ctl.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+commit = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+
+[source."lemnos-orion.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."lemnos-orion.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+commit = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+
+[source."lemnos-slot-init.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."lemnos-slot-init.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+commit = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+
+[source."lemnos.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+commit = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+
+[source."lemnosd.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."lemnosd.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+commit = "b0bf0101b150ac4c103f458346abe49aab00a6b6"
+
+[source."orion-recovery.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."orion-recovery.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Orion.git"
+ref = "c0187f4c195cd27f8353c055dd0a94247c2965cc"
+commit = "c0187f4c195cd27f8353c055dd0a94247c2965cc"
+
+[source."orion.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."orion.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Orion.git"
+ref = "c0187f4c195cd27f8353c055dd0a94247c2965cc"
+commit = "c0187f4c195cd27f8353c055dd0a94247c2965cc"
+
+[source."raze-base.buildroot"]
+kind = "git"
+url = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.08"
+commit = "d5180309b1b66ef3b8eaccca70ad69be8e0729a1"
+
+[source."raze.linux"]
+kind = "git"
+url = "https://github.com/raspberrypi/linux.git"
+ref = "53679a5788f7912272b412fd78029bccae6f2b1a"
+commit = "53679a5788f7912272b412fd78029bccae6f2b1a"
+
+[source."raze.rpi-firmware"]
+kind = "git"
+url = "https://github.com/raspberrypi/firmware.git"
+ref = "6f0881cba8bea8ec24956a5718714730e9936ec5"
+commit = "6f0881cba8bea8ec24956a5718714730e9936ec5"

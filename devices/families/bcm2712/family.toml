@@ -1,0 +1,44 @@
+# BCM2712 (Raspberry Pi 5 SoC, CM5 modules): the target and the kernel source
+# every BCM2712 board shares. A board file extends this and keeps only what
+# differs (the Raze: its fragments, device trees, disk and flash methods).
+# Pinned as dev pins it: raspberrypi/linux rpi-7.2.y at 53679a5 (Linux 7.2.9,
+# kernel release 7.2.9-v8-16k with 4 KiB pages). Untested on board.
+version = 1
+
+[target]
+arch = "aarch64"
+cpu = "cortex-a76"
+os = "linux"
+
+[sources.linux]
+git = "https://github.com/raspberrypi/linux.git"
+ref = "53679a5788f7912272b412fd78029bccae6f2b1a"
+
+[kernel]
+source = "linux"
+# The BCM2712 defconfig, not the architecture default.
+defconfig = "bcm2712"
+
+# The boot ROM's USB boot: the family's bootfiles (bootcode5.bin, bootmain and
+# the rest of the 2712 set) are what the loader serves. The EEPROM tool and
+# images are data for the bootloader update, kept beside this file.
+[flash]
+methods = ["usb-boot"]
+
+[flash.files]
+bootcode5 = { file = "flasher/bootcode5.bin" }
+bootmain = { file = "flasher/bootmain" }
+font = { file = "flasher/font.bin" }
+logo = { file = "flasher/logo.bin" }
+mcb = { file = "flasher/mcb.bin" }
+memsys00 = { file = "flasher/memsys00.bin" }
+memsys01 = { file = "flasher/memsys01.bin" }
+memsys02 = { file = "flasher/memsys02.bin" }
+memsys03 = { file = "flasher/memsys03.bin" }
+
+# The Raspberry Pi firmware release the boot partition's files come from (dev's
+# 1.20260915, the tagged release Buildroot's rpi-firmware package is overridden
+# to: tag 1.20260915, commit 6f0881c). The OS build installs them; this is the pin.
+[sources.rpi-firmware]
+git = "https://github.com/raspberrypi/firmware.git"
+ref = "6f0881cba8bea8ec24956a5718714730e9936ec5"

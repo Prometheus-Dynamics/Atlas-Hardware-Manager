@@ -1,0 +1,30 @@
+# Orion's recovery package: orion-recovery-bin (binary orion-recovery): the comm core alone, as one static
+# file, for an initramfs or a flasher image. NOT in the base product: it is named here so the check reads it,
+# and the flasher product (B9) puts it in its image. NOT YET BUILDABLE for the same reason as orion-bin
+# (zig build root at a later Gaia rev).
+version = 1
+name = "orion-recovery"
+description = "Orion recovery: orion-recovery-bin (binary orion-recovery), the comm core alone, for an initramfs or flasher image"
+
+[sources.src]
+git = "https://github.com/Prometheus-Dynamics/Orion.git"
+ref = "c0187f4c195cd27f8353c055dd0a94247c2965cc"
+
+[sources.root]
+image = "docker.io/library/rust:1.99-slim"
+platform = "host"
+
+[build]
+builder = "rust"
+source = "src"
+
+[build.settings]
+package = "orion-recovery-bin"
+profile = "service"
+cc = "/src/scripts/zigcc"
+env = "ZIG_GLOBAL_CACHE_DIR=/build/zig-cache\nZIG_LOCAL_CACHE_DIR=/build/zig-cache"
+
+[[install]]
+from = "bin/orion-recovery"
+to = "/usr/bin/orion-recovery"
+mode = "0755"
