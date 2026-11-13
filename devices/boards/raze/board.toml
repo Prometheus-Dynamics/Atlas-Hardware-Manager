@@ -17,7 +17,13 @@ description = "Raze (CM5 + OV9782): Raspberry Pi CM5 vision device"
 # exists (boards/raze/overlay/README.txt). The board has no fan control, I2C, camera receiver or USB
 # gadget from the device tree until then. Provisional.
 [kernel]
+device_tree = "broadcom/bcm2712-rpi-cm5-cm5io"
 # Lists replace the family's, so the family fragment is named here too (the flasher's built-in options).
+# The in-tree device tree this board boots (PR B16). The kernel build makes it, from the same tree as the
+# Image (raspberrypi/linux 53679a5), built with symbols (-@), so the generated overlay applies to it. The
+# firmware package's dtbs (rpi-firmware) are NOT the ones booted: they come from another kernel build.
+# bcm2712-rpi-cm5-cm5io: the CM5 with eMMC (the Raze's 16 GB eMMC), not the CM5 Lite (cm5l: no eMMC). Its
+# sha256 is f773b476... on Raze #2, the bench dtb (checked: the dtb built from this tree matches it).
 fragments = ["../../families/bcm2712/assets/linux.fragment", "kernel/raze.config", "kernel/raze-trim.config"]
 
 
