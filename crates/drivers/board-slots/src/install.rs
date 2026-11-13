@@ -165,7 +165,7 @@ fn wait_of(error: &ActionError) -> Option<String> {
 fn classify(error: &ActionError) -> Step {
     wait_of(error).map_or_else(
         || Step::Settled(error.to_string()),
-        |reason| Step::Wait(reason),
+        Step::Wait,
     )
 }
 
@@ -465,7 +465,6 @@ fn bundle_board(path: &Path) -> Result<String, String> {
             .into_owned();
         if name == "slot.json" {
             let mut text = String::new();
-            let entry = entry;
             entry
                 .take(1024 * 1024)
                 .read_to_string(&mut text)

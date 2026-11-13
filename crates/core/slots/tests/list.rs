@@ -1,7 +1,8 @@
 //! The board's list read as data: absent signatures are not verified, unknown words are kept,
 //! and the trial and resolved records come through.
 
-use atlas_slots::{Reported, Resolution, SignatureOutcome, SlotList, TrialLast};
+use atlas_image::BoardOutcome;
+use atlas_slots::{Reported, Resolution, SlotList, TrialLast};
 
 const LIST: &str = r#"{"slot_active":"s1","slot_default":"s1","slot_previous":"","slot_trial":"s2",
  "slot_staged":"","state":"idle","error":"","free_bytes":9,"reserve_bytes":2,"keep":3,
@@ -32,11 +33,11 @@ fn a_list_reads_slots_newest_first_with_flags_and_signature_words() {
     assert!(list.get("s2").unwrap().starred());
     assert_eq!(
         list.get("s2").unwrap().signature,
-        Reported::Known(SignatureOutcome::Verified)
+        Reported::Known(BoardOutcome::Verified)
     );
     assert_eq!(
         list.get("s1").unwrap().signature,
-        Reported::Known(SignatureOutcome::Other("novel_word".into())),
+        Reported::Known(BoardOutcome::Unrecognised("novel_word".into())),
         "an unknown word is kept as the board wrote it"
     );
 }

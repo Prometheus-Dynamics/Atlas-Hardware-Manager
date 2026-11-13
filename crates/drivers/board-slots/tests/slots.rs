@@ -9,7 +9,8 @@ use atlas_actions::{Action, BoardActions, Reported};
 use atlas_board_slots::{BoardSlots, InstallRequest, SlotError, Source};
 use atlas_actions::CancelState;
 use atlas_jobs::JobId;
-use atlas_slots::{RemoveRefusal, Resolution, SignatureOutcome, SlotList, Stage};
+use atlas_image::BoardOutcome;
+use atlas_slots::{RemoveRefusal, Resolution, SlotList, Stage};
 use atlas_sim_node::names;
 use common::{BOARD, Rig, bundle_bytes, device, until, write_bundle};
 use std::time::Duration;
@@ -84,7 +85,7 @@ async fn list_reads_the_board_slots_with_the_signature_per_slot() {
     assert!(slot.has_flag("running") && slot.has_flag("default"));
     assert_eq!(
         slot.signature,
-        atlas_slots::Reported::Known(SignatureOutcome::NotCheckedUnsigned)
+        atlas_slots::Reported::Known(BoardOutcome::NotCheckedUnsigned)
     );
 }
 
@@ -326,5 +327,5 @@ async fn the_signature_outcome_of_an_installed_slot_is_not_checked_when_unsigned
     let rig = Rig::start("signature").await;
     install_bundle(&rig, "slot-2", "2.0.0").await;
     let slot = list(&rig).await.get("slot-2").expect("listed").clone();
-    assert_eq!(slot.signature, atlas_slots::Reported::Known(SignatureOutcome::NotCheckedUnsigned));
+    assert_eq!(slot.signature, atlas_slots::Reported::Known(BoardOutcome::NotCheckedUnsigned));
 }

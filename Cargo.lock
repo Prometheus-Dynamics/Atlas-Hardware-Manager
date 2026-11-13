@@ -76,6 +76,7 @@ dependencies = [
  "atlas-bundle",
  "atlas-driver",
  "atlas-files",
+ "atlas-image",
  "atlas-jobs",
  "atlas-session",
  "atlas-sim-node",
@@ -371,6 +372,7 @@ dependencies = [
 name = "atlas-slots"
 version = "2026.1.0-dev"
 dependencies = [
+ "atlas-image",
  "serde_json",
  "thiserror",
 ]

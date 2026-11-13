@@ -7,7 +7,7 @@
 //!
 //! - An absent per-slot `signature` is [`Reported::NotReported`], never verified: a board that
 //!   does not say cannot be taken to have checked a signature.
-//! - An unknown `signature` or `last` word is kept as text ([`SignatureOutcome::Other`]).
+//! - An unknown `signature` or `last` word is kept as text ([`BoardOutcome::Other`]).
 //! - An absent `trial` or `resolved` is "none" (`None`), which is what the board writes when
 //!   there is nothing pending.
 //! - A top-level document without `slots` is refused: that is not a list.
@@ -15,7 +15,7 @@
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::outcome::SignatureOutcome;
+use atlas_image::BoardOutcome;
 
 /// A field of the board's answer. [`Reported::NotReported`] is shown as "not reported".
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -49,8 +49,8 @@ pub struct Slot {
     pub pinned: bool,
     pub failures: u32,
     pub failed: bool,
-    /// The signature outcome (I5g). Absent on a board that does not write it yet.
-    pub signature: Reported<SignatureOutcome>,
+    /// The signature outcome (I5g, the shared table). Absent on a board that does not write it yet.
+    pub signature: Reported<BoardOutcome>,
 }
 
 impl Slot {
@@ -207,7 +207,7 @@ fn parse_slot(entry: &Value, index: usize) -> Result<Slot, ListError> {
         })
         .unwrap_or_default();
     let signature = match entry.get("signature").and_then(Value::as_str) {
-        Some(word) if !word.is_empty() => Reported::Known(SignatureOutcome::from_word(word)),
+        Some(word) if !word.is_empty() => Reported::Known(BoardOutcome::parse(word)),
         _ => Reported::NotReported,
     };
     Ok(Slot {

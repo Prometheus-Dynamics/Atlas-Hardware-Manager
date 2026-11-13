@@ -6,8 +6,8 @@
 //! - [`list`]: the board's slot list as data. Its trial and resolved records (I5f) and the
 //!   per-slot signature outcome (I5g) are read as the board writes them; an absent signature is
 //!   "not reported", never verified.
-//! - [`outcome`]: the signature outcome words. The seam to atlas-image's `BoardOutcome` (PR 56)
-//!   is there, marked MERGE.
+//! - [`BoardOutcome`]: the signature outcome, the one table first flash and slot installs share
+//!   (atlas-image, PR 56). Used directly; nothing here re-words it.
 //! - [`policy`]: keep-last-N with starred versions, what an install would remove, and the guard
 //!   on removal. The board has the last word on every removal.
 //! - [`stage`]: the stages an install goes through, as the app shows them.
@@ -18,14 +18,13 @@
 //! of each, and why the board's per-update `keep_old` is not used.
 
 pub mod list;
-pub mod outcome;
 pub mod policy;
 pub mod stage;
 
 pub use list::{
     Attempt, ListError, Reported, Resolution, Resolved, Slot, SlotList, Trial, TrialLast,
 };
-pub use outcome::{BoardOutcome, SignatureOutcome};
+pub use atlas_image::BoardOutcome;
 pub use policy::{RemoveRefusal, View, check_remove, view_of, would_remove, would_remove_on_install, with_install};
 pub use stage::Stage;
 
