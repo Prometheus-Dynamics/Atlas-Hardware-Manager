@@ -8,17 +8,20 @@ use std::task::{Context, Poll};
 
 use async_trait::async_trait;
 use futures_core::Stream;
-use nusb::descriptors::TransferType;
+use nusb::descriptors::{TransferType, language_id};
 use nusb::hotplug::HotplugWatch;
 use nusb::transfer::{
     Buffer, Bulk, ControlIn, ControlOut, ControlType, Direction, In, Out, Recipient, TransferError,
 };
-use nusb::{DeviceId, DeviceInfo, Endpoint, ErrorKind, Interface};
+use nusb::{Device, DeviceId, DeviceInfo, Endpoint, ErrorKind, GetDescriptorError, Interface};
 
 use crate::bus::UsbBus;
 use crate::gauge::{Gauges, Kind, Tracked};
 use crate::hotplug::HotplugEvent;
-use crate::{DeviceSummary, OpenOptions, Timeouts, UsbError, UsbIo};
+use crate::{
+    DeviceSummary, EndpointKind, EndpointSummary, InterfaceSummary, OpenOptions, Timeouts,
+    UsbError, UsbIo,
+};
 
 /// The USB bus of this machine.
 #[derive(Clone, Debug)]
@@ -93,6 +96,38 @@ fn access_error(error: &nusb::Error, location: &str) -> UsbError {
     }
 }
 
+/// Reads one interface string. nusb 0.2.7 reads it from the device with
+/// the descriptor request, on Linux, Windows and macOS alike. It also keeps
+/// the string the OS cached when it enumerated the device
+/// (`InterfaceInfo::interface_string`): sysfs on Linux, `kUSBString` on
+/// macOS, and on Windows only for a composite device under `usbccgp`. The
+/// device's own answer is used, because the cache is missing on some systems.
+async fn interface_string(
+    device: &Device,
+    index: std::num::NonZeroU8,
+    timeout: std::time::Duration,
+) -> Result<String, UsbError> {
+    let request = device.get_string_descriptor(index, language_id::US_ENGLISH, timeout);
+    let answer = tokio::time::timeout(timeout, request)
+        .await
+        .map_err(|_| UsbError::Timeout("the interface string request".into()))?;
+    answer.map_err(|error| match error {
+        GetDescriptorError::Transfer(error) => transfer_error(error),
+        GetDescriptorError::InvalidDescriptor => {
+            UsbError::Protocol("the interface string is not a valid string descriptor".into())
+        }
+    })
+}
+
+fn endpoint_kind(kind: TransferType) -> EndpointKind {
+    match kind {
+        TransferType::Control => EndpointKind::Control,
+        TransferType::Isochronous => EndpointKind::Isochronous,
+        TransferType::Bulk => EndpointKind::Bulk,
+        TransferType::Interrupt => EndpointKind::Interrupt,
+    }
+}
+
 fn transfer_error(error: TransferError) -> UsbError {
     match error {
         TransferError::Disconnected => UsbError::Disconnected,
@@ -106,6 +141,50 @@ fn transfer_error(error: TransferError) -> UsbError {
 impl UsbBus for NusbBus {
     async fn devices(&self) -> Result<Vec<DeviceSummary>, UsbError> {
         Ok(list().await?.iter().map(summary).collect())
+    }
+
+    async fn interfaces(
+        &self,
+        location: &str,
+        timeouts: Timeouts,
+    ) -> Result<Vec<InterfaceSummary>, UsbError> {
+        let info = list()
+            .await?
+            .into_iter()
+            .find(|info| location_of(info) == location)
+            .ok_or_else(|| UsbError::NotFound(location.to_string()))?;
+        let device = info
+            .open()
+            .await
+            .map_err(|error| access_error(&error, location))?;
+        let config = device
+            .active_configuration()
+            .map_err(|error| UsbError::Other(error.to_string()))?;
+        let mut interfaces = Vec::new();
+        for interface in config.interfaces() {
+            // The default setting: alternate settings are not listed.
+            let Some(alt) = interface.alt_settings().next() else {
+                continue;
+            };
+            let mut summary = InterfaceSummary::new(
+                alt.interface_number(),
+                alt.class(),
+                alt.subclass(),
+                alt.protocol(),
+            );
+            if let Some(index) = alt.string_index() {
+                summary =
+                    summary.with_string(interface_string(&device, index, timeouts.control).await?);
+            }
+            for endpoint in alt.endpoints() {
+                summary = summary.with_endpoint(EndpointSummary::new(
+                    endpoint.address(),
+                    endpoint_kind(endpoint.transfer_type()),
+                ));
+            }
+            interfaces.push(summary);
+        }
+        Ok(interfaces)
     }
 
     async fn open(
