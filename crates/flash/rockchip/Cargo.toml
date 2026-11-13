@@ -1,0 +1,18 @@
+[package]
+name = "atlas-rockchip"
+description = "Rockchip boot ROMs over USB: the loader file, the maskrom download, the usbplug's read-only rockusb queries, and a simulated board for tests."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+async-trait = "0.1"
+atlas-usb = { path = "../usb" }
+tokio = { version = "1", features = ["time"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "test-util"] }
+
+[lints]
+workspace = true
