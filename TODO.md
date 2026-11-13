@@ -75,6 +75,7 @@ Our own loader for every chip family, then the flasher image, then an ordinary u
 - [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11, D12, D13)
 - [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11, D12, D13, D15)
 - [ ] [D7](docs/prs/D7.md) Disk writer and its helper (wave 2; needs A1)
+- [ ] [D18](docs/prs/D18.md) Writing a card on Windows and macOS, as far as it can be proven here (needs D7; host test: docs/host-tests/disk-writer.md)
 - [ ] [D8](docs/prs/D8.md) UBI images for NAND boards (wave 2; needs A1)
 - [ ] [D9](docs/prs/D9.md) Slot bundles from the image (wave 3; needs A7)
 - [ ] [D10](docs/prs/D10.md) Fastboot client (wave 3; needs D1)
