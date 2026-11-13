@@ -57,12 +57,7 @@ mod tests {
     use crate::sim::SimBus;
 
     fn summary(location: &str) -> DeviceSummary {
-        DeviceSummary {
-            location: location.into(),
-            vendor: 0x1234,
-            product: 0x5678,
-            serial: None,
-        }
+        DeviceSummary::new(location, 0x1234, 0x5678)
     }
 
     /// A bus whose devices always refuse to open.

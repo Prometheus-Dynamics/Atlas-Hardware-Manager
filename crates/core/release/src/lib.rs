@@ -27,7 +27,7 @@ pub use error::ReleaseError;
 pub use fetch::{Body, Fetch, HttpFetcher, Reply};
 pub use hash::{normalize_sha256, sha256_file};
 pub use manifest::{
-    Manifest, ManifestArtifact, ManifestBody, PublicKey, Requirements, public_key_for,
+    Manifest, ManifestArtifact, ManifestBody, PublicKey, Requirements, public_key_for, sign_bytes,
     sign_manifest,
 };
 pub use trust::{

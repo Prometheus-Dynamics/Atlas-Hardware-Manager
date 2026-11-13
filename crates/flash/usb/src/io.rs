@@ -75,6 +75,49 @@ pub struct DeviceSummary {
     pub vendor: u16,
     pub product: u16,
     pub serial: Option<String>,
+    /// The device's USB specification version, `bcdUSB`, as the device
+    /// reports it. Some boot ROMs flip bit 0 when a loader runs, so a caller
+    /// can tell the two modes apart with it. A simulated device reports 0
+    /// unless its summary says otherwise.
+    pub bcd_usb: u16,
+    /// The device release number, `bcdDevice`.
+    pub bcd_device: u16,
+}
+
+impl DeviceSummary {
+    /// A device at `location` with these ids, no serial, and zero versions.
+    /// Set the rest with [`with_serial`](Self::with_serial) and
+    /// [`with_versions`](Self::with_versions). Build with this, not a struct
+    /// literal, so a new field does not break every caller.
+    pub fn new(location: impl Into<String>, vendor: u16, product: u16) -> Self {
+        Self {
+            location: location.into(),
+            vendor,
+            product,
+            serial: None,
+            bcd_usb: 0,
+            bcd_device: 0,
+        }
+    }
+
+    /// Sets the serial number.
+    pub fn with_serial(mut self, serial: impl Into<String>) -> Self {
+        self.serial = Some(serial.into());
+        self
+    }
+
+    /// Sets the serial number, or clears it when `serial` is `None`.
+    pub fn with_serial_opt(mut self, serial: Option<String>) -> Self {
+        self.serial = serial;
+        self
+    }
+
+    /// Sets `bcdUSB` and `bcdDevice`.
+    pub fn with_versions(mut self, bcd_usb: u16, bcd_device: u16) -> Self {
+        self.bcd_usb = bcd_usb;
+        self.bcd_device = bcd_device;
+        self
+    }
 }
 
 /// A vendor and product id pair a loader matches on.
