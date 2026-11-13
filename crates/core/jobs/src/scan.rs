@@ -2,8 +2,12 @@
 //!
 //! Each discovery and each identify is its own task with its own timeout. The
 //! loop only decides what is due and starts it, so nothing waits on a slow
-//! device. A failing call backs off (capped) and is retried for as long as it
-//! takes; the only way it stops is a manual pause or a stop.
+//! device. Two kinds of answer:
+//! - a failure that can change on its own (absent device, timeout, I/O) backs
+//!   off, capped, and is retried for as long as it takes;
+//! - a settled answer (the driver says the device is incompatible or
+//!   unsupported as it is now) is recorded and reported once. It is asked again
+//!   only when the device disappears and returns, or when the user asks.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -27,13 +31,13 @@ pub trait LinkSource: Send + Sync {
 pub struct ScanConfig {
     /// How often the loop looks for due work.
     pub tick: Duration,
-    /// How long a successful discovery or identify waits before the next one.
+    /// How long a successful discovery waits before the next one.
     pub interval: Duration,
     /// Limit on one discovery. A call past it is dropped and retried.
     pub discover_timeout: Duration,
     /// Limit on one identify (and the capabilities read after it).
     pub identify_timeout: Duration,
-    /// Wait after a failure, doubling up to the cap.
+    /// Wait after a failure that can change on its own, doubling up to the cap.
     pub backoff: Backoff,
 }
 
@@ -64,11 +68,28 @@ enum Key {
 }
 
 impl Key {
+    fn family(&self) -> &Family {
+        match self {
+            Self::Discover { family, .. } | Self::Identify { family, .. } => family,
+        }
+    }
+
     fn link(&self) -> &LinkId {
         match self {
             Self::Discover { link, .. } | Self::Identify { link, .. } => link,
         }
     }
+}
+
+/// Whether `key` is an identify of one of `addresses` on this family and link.
+fn identifies_one_of(
+    key: &Key,
+    family: &Family,
+    link: &LinkId,
+    addresses: &BTreeSet<String>,
+) -> bool {
+    matches!(key, Key::Identify { family: f, link: l, address }
+        if f == family && l == link && addresses.contains(address))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -82,6 +103,10 @@ struct Board {
     /// Calls in flight. A key is claimed while its call runs.
     busy: BTreeSet<Key>,
     schedule: BTreeMap<Key, Schedule>,
+    /// Settled answers, with the error text. Not called again until re-asked.
+    settled: BTreeMap<Key, String>,
+    /// The addresses each family's discovery listed on each link last time.
+    listed: BTreeMap<(Family, LinkId), BTreeSet<String>>,
 }
 
 #[derive(Debug, Default)]
@@ -108,12 +133,15 @@ fn millis(duration: Duration) -> u64 {
 }
 
 impl Shared {
-    /// Takes the key if nothing is running for it and it is due. The claim is
-    /// released when dropped, even if the task holding it is aborted.
+    /// Takes the key if nothing is running for it, it is due and it is not
+    /// settled. The claim is released when dropped, even if its task is aborted.
     fn claim(self: &Arc<Self>, key: Key) -> Option<Claim> {
         let now = Instant::now();
         let mut board = lock(&self.board);
-        if board.busy.contains(&key) || board.schedule.get(&key).is_some_and(|s| s.next_at > now) {
+        if board.busy.contains(&key)
+            || board.settled.contains_key(&key)
+            || board.schedule.get(&key).is_some_and(|s| s.next_at > now)
+        {
             return None;
         }
         board.busy.insert(key.clone());
@@ -125,21 +153,21 @@ impl Shared {
 
     /// Records a success and schedules the next call. Returns whether the key
     /// had been failing.
-    fn succeeded(&self, key: &Key) -> bool {
+    fn succeeded(&self, key: &Key, interval: Duration) -> bool {
         let mut board = lock(&self.board);
         let was_failing = board.schedule.get(key).is_some_and(|s| s.failures > 0);
         board.schedule.insert(
             key.clone(),
             Schedule {
                 failures: 0,
-                next_at: Instant::now() + self.config.interval,
+                next_at: Instant::now() + interval,
             },
         );
         was_failing
     }
 
-    /// Records a failure and returns the attempt number and the wait before
-    /// the next one.
+    /// Records a failure that may clear on its own and returns the attempt
+    /// number and the wait before the next one.
     fn failed(&self, key: &Key) -> (u32, Duration) {
         let mut board = lock(&self.board);
         let failures = board
@@ -158,23 +186,49 @@ impl Shared {
         (failures, delay)
     }
 
-    /// Forgets identify schedules for candidates that are no longer listed.
-    fn forget_gone(&self, family: &Family, link: &LinkId, listed: &[String]) {
-        lock(&self.board).schedule.retain(|key, _| match key {
-            Key::Identify {
-                family: f,
-                link: l,
-                address,
-            } if f == family && l == link => listed.contains(address),
-            _ => true,
-        });
+    /// Records a settled answer. Returns true the first time it is recorded.
+    fn settle(&self, key: Key, error: String) -> bool {
+        let mut board = lock(&self.board);
+        board.schedule.remove(&key);
+        board.settled.insert(key, error).is_none()
     }
 
-    /// Forgets schedules for links that are gone, so the table stays small.
-    fn forget_links(&self, live: &BTreeSet<LinkId>) {
-        lock(&self.board)
+    /// Notes what a discovery listed. Addresses that appeared or went away
+    /// have their schedules and settled answers cleared, so a device that
+    /// returns is identified at once and asked again.
+    fn reconcile(&self, family: &Family, link: &LinkId, listed: &[String]) {
+        let now: BTreeSet<String> = listed.iter().cloned().collect();
+        let mut board = lock(&self.board);
+        let previous = board
+            .listed
+            .insert((family.clone(), link.clone()), now.clone())
+            .unwrap_or_default();
+        let changed: BTreeSet<String> = now.symmetric_difference(&previous).cloned().collect();
+        if changed.is_empty() {
+            return;
+        }
+        board
             .schedule
-            .retain(|key, _| live.contains(key.link()));
+            .retain(|key, _| !identifies_one_of(key, family, link, &changed));
+        board
+            .settled
+            .retain(|key, _| !identifies_one_of(key, family, link, &changed));
+    }
+
+    /// Forgets everything about links that are gone, so the tables stay small
+    /// and a link that returns is asked again.
+    fn prune_links(&self, live: &BTreeSet<LinkId>) {
+        let mut board = lock(&self.board);
+        board.schedule.retain(|key, _| live.contains(key.link()));
+        board.settled.retain(|key, _| live.contains(key.link()));
+        board.listed.retain(|(_, link), _| live.contains(link));
+    }
+
+    /// Clears settled answers for one family, so the next scan asks again.
+    fn ask_again(&self, family: &Family) {
+        lock(&self.board)
+            .settled
+            .retain(|key, _| key.family() != family);
     }
 }
 
@@ -241,7 +295,7 @@ async fn run(shared: Arc<Shared>, registry: DriverRegistry, links: Arc<dyn LinkS
                 }
             }
             let live_ids: BTreeSet<LinkId> = live.into_iter().map(|l| l.id).collect();
-            shared.forget_links(&live_ids);
+            shared.prune_links(&live_ids);
         }
         time::sleep(shared.config.tick).await;
     }
@@ -254,14 +308,14 @@ async fn discover(shared: Arc<Shared>, driver: Arc<dyn Driver>, link: Link, clai
     let (d, l) = (Arc::clone(&driver), link.clone());
     match guarded(limit, async move { d.discover(&l).await }).await {
         Ok(candidates) => {
-            if shared.succeeded(&key) {
+            if shared.succeeded(&key, shared.config.interval) {
                 shared.events.emit(Event::ProbeRecovered {
                     family: family.clone(),
                     link: link.id.clone(),
                 });
             }
             let addresses: Vec<String> = candidates.iter().map(|c| c.address.clone()).collect();
-            shared.forget_gone(&family, &link.id, &addresses);
+            shared.reconcile(&family, &link.id, &addresses);
             shared.events.emit(Event::Discovered {
                 family: family.clone(),
                 link: link.id.clone(),
@@ -281,6 +335,17 @@ async fn discover(shared: Arc<Shared>, driver: Arc<dyn Driver>, link: Link, clai
                         identify_claim,
                     ));
                 }
+            }
+        }
+        Err(error) if error.is_settled() => {
+            let message = error.to_string();
+            if shared.settle(key, message.clone()) {
+                shared.events.emit(Event::Settled {
+                    family,
+                    link: link.id,
+                    address: None,
+                    error: message,
+                });
             }
         }
         Err(error) => {
@@ -304,6 +369,8 @@ async fn identify(
     claim: Claim,
 ) {
     let key = claim.key.clone();
+    let family = driver.manifest().family.clone();
+    let address = candidate.address.clone();
     let limit = shared.config.identify_timeout;
     let (d, c) = (Arc::clone(&driver), candidate.clone());
     let result = guarded(limit, async move {
@@ -314,11 +381,22 @@ async fn identify(
     .await;
     match result {
         Ok((identity, capabilities)) => {
-            shared.succeeded(&key);
+            shared.succeeded(&key, shared.config.interval);
             shared.events.emit(Event::Identified {
                 identity,
                 capabilities,
             });
+        }
+        Err(error) if error.is_settled() => {
+            let message = error.to_string();
+            if shared.settle(key, message.clone()) {
+                shared.events.emit(Event::Settled {
+                    family,
+                    link: candidate.link,
+                    address: Some(address),
+                    error: message,
+                });
+            }
         }
         Err(error) => {
             shared.failed(&key);
@@ -374,6 +452,11 @@ impl ScanControl {
     pub fn is_paused(&self, family: &Family) -> bool {
         let control = lock(&self.shared.control);
         control.all_paused || control.paused.contains(family)
+    }
+
+    /// Asks again every settled answer of this family on the next round.
+    pub fn ask_again(&self, family: &Family) {
+        self.shared.ask_again(family);
     }
 
     /// Ends the scan loop within one tick. Calls already running finish.

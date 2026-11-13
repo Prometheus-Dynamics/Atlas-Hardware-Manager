@@ -74,6 +74,10 @@ pub enum JobStatus {
     Paused,
     /// Every step finished.
     Done,
+    /// A step got a settled answer (refused or unsupported). The job ends with that reason.
+    Failed {
+        reason: String,
+    },
     Cancelled,
     /// Atlas stopped while this ran, and it cannot continue. Nothing was
     /// resumed; start the work again.
@@ -86,7 +90,7 @@ impl JobStatus {
     fn is_finished(&self) -> bool {
         matches!(
             self,
-            Self::Done | Self::Cancelled | Self::Interrupted { .. }
+            Self::Done | Self::Cancelled | Self::Failed { .. } | Self::Interrupted { .. }
         )
     }
 }
@@ -539,6 +543,17 @@ async fn run_job(inner: Arc<Inner>, id: JobId, mut command: watch::Receiver<Comm
                 if let Some(job) = inner.set(id, |job| job.completed += 1) {
                     inner.announce(job).await;
                 }
+            }
+            Some(Err(error)) if error.is_settled() => {
+                inner
+                    .status(
+                        id,
+                        JobStatus::Failed {
+                            reason: error.to_string(),
+                        },
+                    )
+                    .await;
+                return;
             }
             Some(Err(error)) => {
                 attempt = attempt.saturating_add(1);

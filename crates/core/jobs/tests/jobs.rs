@@ -285,3 +285,54 @@ async fn submit_refuses_an_unknown_kind_and_an_empty_job() {
     );
     assert!(jobs.list().is_empty());
 }
+
+/// A step that the device refuses: a settled answer, not a failure to retry.
+struct Refuser;
+
+#[async_trait]
+impl JobKind for Refuser {
+    fn name(&self) -> &str {
+        "refusing-kind"
+    }
+
+    fn resumable(&self) -> bool {
+        true
+    }
+
+    async fn run_step(&self, _device: Option<&DeviceKey>, step: &str) -> Result<(), DriverError> {
+        if step == "refuse" {
+            return Err(DriverError::Incompatible(
+                "this board revision is not supported".into(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn a_refused_step_ends_the_job_as_failed_with_the_reason() {
+    let dir = tempfile::tempdir().unwrap();
+    let events = Events::new(256);
+    let mut rx = events.subscribe();
+    let jobs = open(
+        &dir.path().join("jobs.json"),
+        vec![Arc::new(Refuser)],
+        &events,
+    )
+    .await;
+
+    let id = jobs
+        .submit("refusing-kind", None, steps(&["refuse", "never"]))
+        .await
+        .unwrap();
+    let job = wait_for_job(&mut rx, id, |job| {
+        matches!(job.status, JobStatus::Failed { .. })
+    })
+    .await;
+    match &job.status {
+        JobStatus::Failed { reason } => assert!(reason.contains("not supported"), "{reason}"),
+        other => panic!("expected failed, got {other:?}"),
+    }
+    assert_eq!(job.completed, 0, "a step after the refusal ran");
+    jobs.shutdown();
+}

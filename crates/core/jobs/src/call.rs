@@ -19,6 +19,15 @@ impl CallError {
     pub(crate) fn timed_out(&self) -> bool {
         matches!(self, Self::TimedOut(_))
     }
+
+    /// A settled answer: the device is refused or unsupported as it is now.
+    /// Not retried on backoff; it is asked again only when the device changes.
+    pub(crate) fn is_settled(&self) -> bool {
+        matches!(
+            self,
+            Self::Driver(DriverError::Incompatible(_) | DriverError::Unsupported(_))
+        )
+    }
 }
 
 impl fmt::Display for CallError {

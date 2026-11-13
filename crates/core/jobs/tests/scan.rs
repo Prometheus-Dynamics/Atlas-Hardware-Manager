@@ -1,8 +1,11 @@
-//! The scan: a slow driver delays nothing else, and a failing device is retried
-//! with capped backoff. Runs on tokio's paused clock, so no real time passes.
+//! The scan: a slow driver delays nothing else, a failing device is retried
+//! with capped backoff, and a settled answer is not asked again until the
+//! device changes or the user asks. Runs on tokio's paused clock, so no real
+//! time passes.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -15,17 +18,25 @@ use atlas_types::{
 use tokio::sync::broadcast::{Receiver, error::RecvError};
 use tokio::time::{self, Instant};
 
-/// A driver whose every call waits `delay` first. `missing` makes discovery fail.
+/// One device of one family. Every call waits `delay` first. The device is
+/// listed while `present` is set; `discover_error` and `identify_error` replace
+/// the answer. Counters show how often the scan called each.
 struct TestDriver {
     manifest: DriverManifest,
     serial: &'static str,
     delay: Duration,
+    /// Makes discovery fail as unreachable.
     missing: bool,
+    discover_error: Option<DriverError>,
+    identify_error: Option<DriverError>,
+    present: Arc<AtomicBool>,
+    discover_calls: Arc<AtomicU32>,
+    identify_calls: Arc<AtomicU32>,
 }
 
 impl TestDriver {
-    fn new(family: &str, serial: &'static str, delay: Duration, missing: bool) -> Arc<Self> {
-        Arc::new(Self {
+    fn new(family: &str, serial: &'static str, delay: Duration, missing: bool) -> Self {
+        Self {
             manifest: DriverManifest {
                 family: Family::new(family),
                 name: format!("{family} test driver"),
@@ -36,7 +47,16 @@ impl TestDriver {
             serial,
             delay,
             missing,
-        })
+            discover_error: None,
+            identify_error: None,
+            present: Arc::new(AtomicBool::new(true)),
+            discover_calls: Arc::new(AtomicU32::new(0)),
+            identify_calls: Arc::new(AtomicU32::new(0)),
+        }
+    }
+
+    fn arc(self) -> Arc<Self> {
+        Arc::new(self)
     }
 }
 
@@ -47,11 +67,18 @@ impl Driver for TestDriver {
     }
 
     async fn discover(&self, link: &Link) -> Result<Vec<Candidate>, DriverError> {
+        self.discover_calls.fetch_add(1, Ordering::SeqCst);
         time::sleep(self.delay).await;
         if self.missing {
             return Err(DriverError::Unreachable(
                 "nothing answers on this link".into(),
             ));
+        }
+        if let Some(error) = &self.discover_error {
+            return Err(error.clone());
+        }
+        if !self.present.load(Ordering::SeqCst) {
+            return Ok(Vec::new());
         }
         Ok(vec![Candidate {
             link: link.id.clone(),
@@ -61,7 +88,11 @@ impl Driver for TestDriver {
     }
 
     async fn identify(&self, candidate: &Candidate) -> Result<Identity, DriverError> {
+        self.identify_calls.fetch_add(1, Ordering::SeqCst);
         time::sleep(self.delay).await;
+        if let Some(error) = &self.identify_error {
+            return Err(error.clone());
+        }
         Ok(Identity {
             key: DeviceKey::new(self.manifest.family.as_str(), self.serial),
             model: "test-model".into(),
@@ -124,6 +155,27 @@ async fn next_matching(
     .flatten()
 }
 
+/// Counts the events `wanted` accepts over `within` (virtual time).
+async fn count_matching(
+    rx: &mut Receiver<Event>,
+    within: Duration,
+    mut wanted: impl FnMut(&Event) -> bool,
+) -> usize {
+    let end = Instant::now() + within;
+    let mut count = 0;
+    while next_matching(
+        rx,
+        end.saturating_duration_since(Instant::now()),
+        &mut wanted,
+    )
+    .await
+    .is_some()
+    {
+        count += 1;
+    }
+    count
+}
+
 fn identified(family: &'static str) -> impl FnMut(&Event) -> bool {
     move |event| matches!(event, Event::Identified { identity, .. } if identity.key.family.as_str() == family)
 }
@@ -132,21 +184,17 @@ fn probe_failed(family: &'static str) -> impl FnMut(&Event) -> bool {
     move |event| matches!(event, Event::ProbeFailed { family: f, .. } if f.as_str() == family)
 }
 
+fn settled(family: &'static str) -> impl FnMut(&Event) -> bool {
+    move |event| matches!(event, Event::Settled { family: f, .. } if f.as_str() == family)
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_driver_that_sleeps_in_every_call_delays_nothing_else() {
     let mut registry = DriverRegistry::new();
-    registry.register(TestDriver::new(
-        "slow-family",
-        "slow-serial",
-        Duration::from_secs(30),
-        false,
-    ));
-    registry.register(TestDriver::new(
-        "fast-family",
-        "fast-serial",
-        Duration::ZERO,
-        false,
-    ));
+    registry.register(
+        TestDriver::new("slow-family", "slow-serial", Duration::from_secs(30), false).arc(),
+    );
+    registry.register(TestDriver::new("fast-family", "fast-serial", Duration::ZERO, false).arc());
     let events = Events::new(512);
     let mut rx = events.subscribe();
     let control = start(registry, &events);
@@ -186,12 +234,7 @@ async fn a_driver_that_sleeps_in_every_call_delays_nothing_else() {
 #[tokio::test(start_paused = true)]
 async fn a_missing_device_is_retried_with_capped_backoff_and_never_given_up() {
     let mut registry = DriverRegistry::new();
-    registry.register(TestDriver::new(
-        "gone-family",
-        "gone-serial",
-        Duration::ZERO,
-        true,
-    ));
+    registry.register(TestDriver::new("gone-family", "gone-serial", Duration::ZERO, true).arc());
     let events = Events::new(512);
     let mut rx = events.subscribe();
     let control = start(registry, &events);
@@ -241,12 +284,7 @@ async fn a_missing_device_is_retried_with_capped_backoff_and_never_given_up() {
 #[tokio::test(start_paused = true)]
 async fn a_paused_family_starts_no_calls_until_resumed() {
     let mut registry = DriverRegistry::new();
-    registry.register(TestDriver::new(
-        "held-family",
-        "held-serial",
-        Duration::ZERO,
-        false,
-    ));
+    registry.register(TestDriver::new("held-family", "held-serial", Duration::ZERO, false).arc());
     let events = Events::new(512);
     let mut rx = events.subscribe();
     let control = start(registry, &events);
@@ -273,5 +311,98 @@ async fn a_paused_family_starts_no_calls_until_resumed() {
             .is_some(),
         "the family did not restart after resume"
     );
+    control.stop();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_settled_identify_is_asked_once_and_again_only_on_request_or_return() {
+    let mut driver = TestDriver::new("refused-family", "refused-serial", Duration::ZERO, false);
+    driver.identify_error = Some(DriverError::Incompatible(
+        "this board is not supported".into(),
+    ));
+    let present = Arc::clone(&driver.present);
+    let identify_calls = Arc::clone(&driver.identify_calls);
+    let mut registry = DriverRegistry::new();
+    registry.register(driver.arc());
+    let events = Events::new(512);
+    let mut rx = events.subscribe();
+    let control = start(registry, &events);
+    let family = Family::new("refused-family");
+
+    assert!(
+        next_matching(&mut rx, Duration::from_secs(1), settled("refused-family"))
+            .await
+            .is_some()
+    );
+    assert_eq!(
+        count_matching(&mut rx, Duration::from_secs(30), settled("refused-family")).await,
+        0
+    );
+    assert_eq!(
+        identify_calls.load(Ordering::SeqCst),
+        1,
+        "a settled answer was asked again"
+    );
+
+    control.ask_again(&family);
+    assert!(
+        next_matching(&mut rx, Duration::from_secs(3), settled("refused-family"))
+            .await
+            .is_some()
+    );
+    assert_eq!(identify_calls.load(Ordering::SeqCst), 2);
+
+    // Disappears, then returns: that is a change, so it is asked again.
+    present.store(false, Ordering::SeqCst);
+    time::sleep(Duration::from_secs(5)).await;
+    present.store(true, Ordering::SeqCst);
+    assert!(
+        next_matching(&mut rx, Duration::from_secs(5), settled("refused-family"))
+            .await
+            .is_some(),
+        "a returning device was not asked again"
+    );
+    assert_eq!(identify_calls.load(Ordering::SeqCst), 3);
+    control.stop();
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_settled_discovery_is_reported_once_and_not_retried() {
+    let mut driver = TestDriver::new(
+        "unsupported-family",
+        "unsupported-serial",
+        Duration::ZERO,
+        false,
+    );
+    driver.discover_error = Some(DriverError::Unsupported(
+        "this link cannot carry the family".into(),
+    ));
+    let discover_calls = Arc::clone(&driver.discover_calls);
+    let mut registry = DriverRegistry::new();
+    registry.register(driver.arc());
+    let events = Events::new(512);
+    let mut rx = events.subscribe();
+    let control = start(registry, &events);
+
+    assert!(
+        next_matching(
+            &mut rx,
+            Duration::from_secs(1),
+            settled("unsupported-family")
+        )
+        .await
+        .is_some()
+    );
+    assert_eq!(
+        count_matching(
+            &mut rx,
+            Duration::from_secs(60),
+            probe_failed("unsupported-family")
+        )
+        .await,
+        0,
+        "a settled answer went to the backoff schedule"
+    );
+    assert_eq!(discover_calls.load(Ordering::SeqCst), 1);
     control.stop();
 }

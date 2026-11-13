@@ -37,6 +37,15 @@ pub enum Event {
         attempt: u32,
         retry_in_ms: u64,
     },
+    /// The driver gave an answer that will not change on its own (refused or
+    /// unsupported as the device is now). Sent once. It is asked again only
+    /// when the device disappears and returns, or on request.
+    Settled {
+        family: Family,
+        link: LinkId,
+        address: Option<String>,
+        error: String,
+    },
     /// A discovery that had been failing succeeded again.
     ProbeRecovered {
         family: Family,
