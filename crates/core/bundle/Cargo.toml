@@ -8,7 +8,6 @@ rust-version.workspace = true
 
 [dependencies]
 atlas-release = { path = "../release" }
-ed25519-dalek = { version = "3", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
