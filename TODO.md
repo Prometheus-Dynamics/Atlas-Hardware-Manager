@@ -40,6 +40,7 @@ Every board as Gaia `next` data in `devices/`. Starts first; the Raze and the ZE
 - [ ] [B18](docs/prs/B18.md) Lemnos lock to 4a2d3b7d: every Lemnos pin moved, one-rev check per product, ZERO 3E port validated, Raze refusals on record (needs B15; Lemnos 4a2d3b7d)
 - [ ] [B19](docs/prs/B19.md) Cubie A7 (Allwinner A733): vendor sources pinned, and a bring-up that shows life without a console (wave 5; needs B12, B13, B15)
 - [ ] [B20](docs/prs/B20.md) The Raze board file, written to Lemnos Q2d (6905b681); takes effect when the lock moves past 4a2d3b7d (needs B18; Lemnos 6905b681)
+- [ ] [B21](docs/prs/B21.md) VBUS on each board's device-mode port, prepared for Lemnos Q2f (ZERO 3E complete; ROCK 5C held by Lemnos Q2g; ROCK 4D held; needs B15, B18, B19; Lemnos Q2f at 96080d36)
 
 ## C. One board driver
 
@@ -65,7 +66,9 @@ Our own loader for every chip family, then the flasher image, then an ordinary u
 - [ ] [D3](docs/prs/D3.md) Rockchip maskrom and loader (wave 3; needs D1)
 - [ ] [D4](docs/prs/D4.md) Kendryte K230 burn (wave 3; needs D1)
 - [ ] [D5](docs/prs/D5.md) Allwinner FEL (wave 3; needs D1)
+- [ ] [D16](docs/prs/D16.md) FEL: an AArch64 thunk for the A733 (needs D5; untested on board)
 - [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11, D12, D13)
+- [ ] [D6](docs/prs/D6.md) Flash a blank board (wave 6; needs C5, B9, D2, D3, D10, D11, D12, D13, D15)
 - [ ] [D7](docs/prs/D7.md) Disk writer and its helper (wave 2; needs A1)
 - [ ] [D8](docs/prs/D8.md) UBI images for NAND boards (wave 2; needs A1)
 - [ ] [D9](docs/prs/D9.md) Slot bundles from the image (wave 3; needs A7)
@@ -74,6 +77,7 @@ Our own loader for every chip family, then the flasher image, then an ordinary u
 - [ ] [D12](docs/prs/D12.md) Find a board's Orion link over USB by its interface string (wave 4; needs D1, A8)
 - [ ] [D13](docs/prs/D13.md) slot.json schema 3, and the bundle made from the image (wave 5; needs D9, D11)
 - [ ] [D14](docs/prs/D14.md) Verity keys in the slot manifest, and the bundle from an image in one call (wave 6; needs D13)
+- [ ] [D15](docs/prs/D15.md) The first-flash manifest, made by Atlas from the image (wave 6; needs D11, D13)
 
 ## E. Robot network and SystemCore
 

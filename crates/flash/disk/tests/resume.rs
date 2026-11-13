@@ -394,8 +394,7 @@ fn a_changed_disk_is_rewritten_from_the_first_changed_segment() {
 #[test]
 fn a_compressed_image_resumes_too() {
     let original: Vec<u8> = (0..(1 << 20) + 5u32).map(|i| (i % 241) as u8).collect();
-    let mut compressed = Vec::new();
-    lzma_rs::xz_compress(&mut &original[..], &mut compressed).unwrap();
+    let compressed = common::xz_bytes(&original);
     let path = temp("image.img.xz");
     std::fs::write(&path, &compressed).unwrap();
     let mut disk = Dropping::new(2 << 20, &[256 << 10, 512 << 10]);

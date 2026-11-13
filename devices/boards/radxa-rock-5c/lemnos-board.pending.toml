@@ -1,33 +1,66 @@
-# The ROCK 5C's USB device port, NOT ACTIVE (B15). Every entry is commented out, so this file holds no
-# Lemnos entry and cannot be installed as one. It is a record of the candidate and why it is held.
+# The ROCK 5C's USB device port, NOT ACTIVE. Every entry below is commented out, so this file holds no
+# Lemnos entry and cannot be installed as one.
 #
-# Candidate entry, for Lemnos 4a2d3b7d (Q2e, socs/rk3588.toml), when it is safe to activate. B18 ran it through
-# `lemnos-ctl tree` at 4a2d3b7d (scratch): accepted, the overlay sets dr_mode = "peripheral" and keeps the base
-# tree's phy-supply (the blocker below). Still held: the entry stays commented out.
+# STATUS (read first): NO ROCK 5C IMAGE MAY BE BUILT FOR A PERSON TO PLUG IN AS A USB DEVICE before Lemnos Q2g
+# (boot holds as gpio-hogs in the generated overlay) is merged and locked. Until then nothing we generate holds
+# the switched VBUS line (GPIO0 PD4) off during boot, so the upper USB 3.0 port could drive 5 V out of a
+# device-mode board. The entry is complete on paper (B21, Lemnos Q2f merged at 96080d36), but it is unvalidated
+# until the Lemnos lock moves, and it stays commented out.
+#
+# Candidate entry, for Lemnos 96080d36 (Q2e and Q2f, socs/rk3588.toml): written to Q2f (96080d36), unvalidated
+# until the lock moves. Written to the announced key forms:
 #
 #   [[hardware]]
 #   name = "udc:fc000000.usb"
 #   controller = "usb-otg0"
 #   role = "peripheral"
-#   # options = ["usb3"]   (OPEN: see below; not set)
+#   options = ["usb3"]
+#   vbus = "gpio:gpio0:28"
+#   vbus_off = "low"
+#   vbus_reason = "the upper USB 3.0 OTG port's 5 V (VCC5V0_USB_OTG0) is the output of load switch U9 (SY6280AAC), enabled by GPIO0 PD4 (line 28) through R82; low is off (Radxa ROCK 5C V2.10, sheets 5 and 14)"
 #
 #   [[devices]]
 #   id = "gadget"
 #   driver = "usb-gadget"
 #   uses = { function = "udc:fc000000.usb" }
 #
-# Why it is held (evidence, mainline device tree at v7.3.3, arch/arm64/boot/dts/rockchip/):
-# (a) Which connector: usb_host0_xhci (usb@fc000000, rk3588-base.dtsi) is the device-capable DRD controller
-#     0 (dr_mode "otg" in the SoC tree; the board's rk3588s-rock-5c.dts sets it "host"). Radxa's ROCK 5C
-#     interface page (docs.radxa.com/en/rock5/rock5c/hardware-design/hardware-interface) names the upper
-#     USB 3.0 port as the OTG port. The schematic's Type-C page was not read.
-# (b) SuperSpeed: the SoC tree links usb_host0_xhci to usbdp_phy0 (USB3) and the board enables usbdp_phy0.
-#     Whether the lanes reach the upper port was NOT read from the schematic. OPEN: `usb3` stays off.
-# (c) phy-supply: YES, and it is the blocker. rk3588s-rock-5c.dts sets
-#     `&u2phy0_otg { phy-supply = <&vcc5v0_usb_otg0>; }`, a fixed regulator on GPIO0 PD4 (usb_otg_pwren_h),
-#     which is host-mode VBUS. The overlay does not remove it, so an active device entry would source 5 V
-#     from the device port. A device port must not drive VBUS. Held until the tree stops setting it.
+# No `[board] base` is named: no base fact in socs/rk3588.toml describes this board's tree. The map's
+# `usb-gpio-vbus` base (switch gpio:gpio4:11) is a different line and a different regulator, so naming it would be
+# refused. With no base and a statement, Q2f generates the entry (the table in docs/device-tree.md, "no fact for
+# the port" with a statement).
 #
-# What would settle it: (1) a board dts of Atlas's own (not the overlay) that drops the phy-supply on
-# u2phy0_otg, reviewed and run on a board; (2) the ROCK 5C schematic's USB Type-C page (V2.10 at
-# dl.radxa.com/rock5/5c/docs/radxa_rock_5c_schematic_v2.10.pdf) for the upper port's SuperSpeed lanes.
+# Evidence, from the pinned kernel tree (v7.3.3, arch/arm64/boot/dts/rockchip/, fetched into B15 scratch):
+# (a) Connector: usb_host0_xhci (usb@fc000000, DRD controller 0) is the controller whose OTG PHY is u2phy0_otg. The
+#     board dts sets dr_mode "host". Schematic sheet 14 ("USB2/USB3 Port") shows that the OTG nets (TYPEC0_OTG_DP/DM)
+#     go to the upper USB 3.0 Type-A connector J4 (USB3_TYPE_A_TOP, pins 11-12) through EMI filter L4.
+# (b) SuperSpeed: schematic sheet 14 shows J4's SuperSpeed pairs (pins 14-18) through 0 ohm resistors R78-R81 to the
+#     USBDP PHY0 lanes (TYPEC0_SSRX1/SSTX1, which also appear as DP0 TX lanes on sheet 7). The lanes are wired to J4;
+#     the lane sharing with DisplayPort is a PHY mode choice, not checked on a board. So `usb3` is set in the candidate.
+# (c) VBUS: rk3588s-rock-5c.dts sets `&u2phy0_otg { phy-supply = <&vcc5v0_usb_otg0> }`. That regulator is a
+#     regulator-fixed with `gpio = <&gpio0 RK_PD4 GPIO_ACTIVE_HIGH>` and `enable-active-high`, and it has no
+#     always-on flag. Schematic sheet 5 (SoC pinout) puts the net USB_OTG_PWREN_H on GPIO0_D4 (ball AL39). Schematic
+#     sheet 14 shows that net on U9 (SY6280AAC) pin 4 (EN), through R82 (1K), with U9 pin 1 (VOUT) on
+#     VCC5V0_USB_OTG0 and J4 pin 10 (VBUS_1) on the same net. So the port's 5 V is a load switch with an enable net.
+#     R83 (1K, the EN pull-down) is marked NC on the sheet: EN has no pull-down, so it floats until the pinctrl
+#     drives PD4. That is the reason the boot hold is needed.
+# (d) Nothing else drives VBUS on J4: sheet 14 has no other source on the VCC5V0_USB_OTG0 net (the VBUSDET input R86
+#     and R89 only sense it). The upper USB-C connector J1 (sheet 23, "DC IN") is a sink only: CC pins pulled down
+#     with 5.1 K, its VBUS feeds 5V_DCIN (the board's input), and it is not on the OTG net. No Type-C PD controller
+#     is on the board.
+# (e) Polarity: `enable-active-high` in the dts gives vbus_off = "low". The SY6280AAC datasheet was not read; the EN
+#     polarity is the dts's word and the schematic's EN net.
+# (f) Line: GPIO0 bank D = 3, pin 4: line = 3 * 8 + 4 = 28, so gpio:gpio0:28 (chip label "gpio0", number_base 0,
+#     so the boot hold number would be 28; the generator writes it, Lemnos Q2g does not yet).
+#
+# What remains before activation (in order):
+# 1. Lemnos Q2g merged, then the lock moves to a rev that has Q2e, Q2f and Q2g. Only then is the entry uncommented.
+# 2. Meter check, copied from Lemnos testing/board-runs/Q2f.md at 96080d36 ("The check to run on a board", steps 1-5):
+#    device mode, cable unplugged: 0 V on the port's VBUS; plugged into a host: the port must not add 5 V to the host's
+#    line; the GPIO0 line read as `out lo` in /sys/kernel/debug/gpio once the kernel runs (vbus_off "low"); the
+#    regulator's enable pin measured in U-Boot or firmware, where the boot hold is the only thing holding it.
+# 3. The ROCK 5C's own base tree (not Lemnos) must still be checked against this file: the label and line are read
+#    from the dts and the schematic, not from a board.
+# 4. Pin-level check: the schematic shows the net on GPIO0_D4; the ball map is not read here.
+#
+# Pending the lock move and Q2g, this file is not installed by any product.
+# Status and bring-up checks: docs/prs/B21.md ("ROCK 5C", "The meter check").
