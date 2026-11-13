@@ -1,0 +1,12 @@
+[package]
+name = "atlas-ubi"
+description = "Reads and checks UBI images and the slot bundle on the computer: headers, CRCs, volume tables, the bundle's members. No board I/O."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+
+[lints]
+workspace = true

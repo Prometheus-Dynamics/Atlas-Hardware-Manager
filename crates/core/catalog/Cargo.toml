@@ -1,0 +1,18 @@
+[package]
+name = "atlas-catalog"
+description = "Atlas's device catalog: how to recognise a board from its USB ids and hostname, and what it looks like. Read from devices/ at build time and embedded in the app."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[build-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lints]
+workspace = true

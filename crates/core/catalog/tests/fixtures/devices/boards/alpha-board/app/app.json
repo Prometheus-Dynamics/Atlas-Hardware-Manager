@@ -1,0 +1,8 @@
+{
+  "schema": "urn:atlas:device-app:1",
+  "model": "alpha-board",
+  "display_name": "Alpha Board",
+  "usb": ["alpha-maskrom", "storage-gadget"],
+  "network": { "hostname_prefix": "alpha-" },
+  "look": { "picture": "picture.png", "case": "case.glb" }
+}

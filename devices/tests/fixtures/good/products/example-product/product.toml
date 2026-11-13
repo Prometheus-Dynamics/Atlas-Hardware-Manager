@@ -1,0 +1,13 @@
+# EXAMPLE, for scripts/check-devices.sh only. Not a device.
+# A product: one image of the example board, its component built and laid out by a Gaia recipe.
+version = 1
+name = "example-product"
+
+[components]
+example-component = "../../components/example-component/component.toml"
+
+[[images]]
+name = "example-product"
+board = "../../boards/example-board/board.toml"
+components = ["example-component"]
+recipe = "firmware"
