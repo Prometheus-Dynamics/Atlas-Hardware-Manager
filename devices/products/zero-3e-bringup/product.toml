@@ -1,0 +1,30 @@
+# Radxa ZERO 3E bring-up: zero-3e-base plus the DEV-ONLY pieces: the bench SSH
+# public key and the usb0 gadget network. Those exist only until Orion serves
+# SSH and Lemnos's USB driver owns the gadget. The key file is a required input
+# (see dev-bench-ssh-key). Untested on board: G3 runs it.
+#
+# Draft until Gaia's sd-image recipe exists (F7, not at 70a5133). See the PR text.
+version = 1
+name = "zero-3e-bringup"
+description = "Radxa ZERO 3E bring-up: the base OS plus dev-only SSH key and usb0 gadget network."
+
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.02.3"
+
+[components]
+radxa-zero-3e-extlinux = "../../components/radxa-zero-3e-extlinux/component.toml"
+dev-bench-ssh-key = "../../components/dev-bench-ssh-key/component.toml"
+dev-usb0-gadget = "../../components/dev-usb0-gadget/component.toml"
+
+[[images]]
+name = "zero-3e-bringup"
+board = "../../boards/radxa-zero-3e/board.toml"
+components = ["radxa-zero-3e-extlinux", "dev-bench-ssh-key", "dev-usb0-gadget"]
+os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
+recipe = "sd-image" # F7, not at 70a5133: the recipe does not exist yet
+budget = "1G"
+
+[images.settings]
+# UNCONFIRMED: see zero-3e-base.
+device = "/dev/mmcblk0" # F7? the sd-image settings are not known at 70a5133

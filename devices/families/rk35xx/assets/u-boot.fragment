@@ -7,3 +7,10 @@ CONFIG_ENV_IS_IN_MMC=y
 # Not used here, and from v2026.10 its PKCS#11 signing needs a GnuTLS built
 # with p11-kit, which Buildroot's host-gnutls is not.
 # CONFIG_TOOLS_MKEFICAPSULE is not set
+
+# PLACEHOLDER, not yet config names: `record = "uboot"` slot boot (Lemnos) needs
+# this U-Boot to have, built in: (1) sysboot / extlinux (distro boot reads
+# extlinux.conf); (2) env import and export (boot-record.env on the boot
+# partition); (3) the `test` command (boot.cmd uses it); (4) FAT write (the
+# boot partition is FAT). Gaia will give the CONFIG_ names after it builds one;
+# do not guess them here.

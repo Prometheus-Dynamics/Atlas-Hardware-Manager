@@ -54,6 +54,21 @@ type = "3de21764-95bd-54bd-a5c3-4abe786f38a8"
 offset = "16M"
 size = "64K"
 
+# Bring-up form (what Gaia's sd-image lands with): the root partition holds
+# /boot/extlinux/extlinux.conf for U-Boot's distro boot, and data holds the
+# slot file. Moves to the slot boot form (boot partition, slots on data) when
+# Gaia's recipe exists. `bootable` is not a key at Gaia 70a5133 (the root
+# partition should be bootable: an F7 wish).
+[[partitions]]
+name = "rootfs"
+role = "rootfs"
+size = "512M"
+
+[[partitions]]
+name = "data"
+role = "data"
+size = "64M"
+
 [disk]
 scheme = "gpt"
 

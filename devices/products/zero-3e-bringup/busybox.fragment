@@ -1,0 +1,3 @@
+# Bring-up only: udhcpd for the usb0 gadget network (dev: assets/busybox.fragment).
+CONFIG_UDHCPD=y
+CONFIG_DHCPD_LEASES_FILE="/tmp/udhcpd.leases"
