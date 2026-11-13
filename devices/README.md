@@ -14,11 +14,25 @@ devices/
   gaia.lock                the Gaia `next` commit these files are checked with (see below)
   families/<family>/family.toml        one target shared by boards
   boards/<board>/board.toml            extends a family; keeps only what differs
-  boards/<board>/app/                  app data for the board (format set by the app's PR, not yet)
+  boards/<board>/app/app.json          app data for the board (see "App data" below)
   components/<component>/component.toml  one piece of software and what it installs
   products/<product>/product.toml      which components go on which board, and the recipe
+  usb-ids.json                         USB ids shared by every board (see "App data" below)
   tests/fixtures/                      examples and a broken copy, used by `--self-test`
 ```
+
+## App data
+
+Two kinds of file here are for the app, not for Gaia. The check never reads them as Gaia files.
+
+- `boards/<board>/app/app.json`: one per board. `model` is the board directory's name. The rest
+  is the display name, the USB id keys, an optional hostname prefix, and optional picture and
+  case files, paths relative to `app/`.
+- `usb-ids.json`: the USB ids, keyed by name. Each entry has `state` (`download`, `storage` or
+  `gadget`), `vid`, `pid` and `name`. A board's `app.json` refers to these by key.
+
+`crates/core/catalog` is the reader, and it is the authority on the exact keys. The app embeds the
+catalog it generates from these files; the files themselves are not embedded.
 
 Every family, board, component and product is its own directory, holding its description file.
 Other files may sit beside the description (assets, a component's `src/`, a fragment, `app/`). The
@@ -73,10 +87,13 @@ To move it: change `commit`, run `scripts/check-devices.sh`, and commit both tog
 ## Running the check
 
 ```
-scripts/check-devices.sh               # devices/, what the gate runs
-scripts/check-devices.sh --root DIR    # another tree, laid out the same way
-scripts/check-devices.sh --self-test   # good must pass, broken must fail, f8 is reported
+scripts/check-devices.sh               # devices/, then the fixture self-check (the gate runs this)
+scripts/check-devices.sh --root DIR    # another tree, laid out the same way, no self-check
+scripts/check-devices.sh --self-test   # verbose: good must pass, broken must fail, f8 is printed
 ```
+
+The default run ends with the self-check: the good fixture must pass and the broken one must fail,
+so the gate shows the checker still catches a broken file.
 
 The check does the following. It reads the Gaia URL and commit from `gaia.lock`. It then needs a
 gaia binary: `$GAIA_BIN` if set (used as given, and its commit is not checked because gaia prints
@@ -101,10 +118,35 @@ this checkout's absolute paths. For that reason the check locks each product in 
 is committed and does not match, the check fails and says so. Do not commit product locks while
 their components sit outside the product directory.
 
-## Limits
+## Known limits at the locked Gaia commit
 
-- Boards are checked through products. Gaia has no command that checks a board alone, so a board
-  with no product (or extended family with no board) fails the check as unused.
-- `gaia validate` does not exist on Gaia `next` yet. The check then uses `gaia plan`, which needs
-  the lock and the tools above.
-- The blob key rule and `@here@` are not checked by Gaia today; reviewers check them until F8 merges.
+These hold at Gaia `e90ee03`, the pin in `gaia.lock`. They lift when the pin moves.
+
+1. **A product's lock cannot be committed.** Gaia writes a tree path relative to the product's
+   directory only when the path lies under it. Components sit in `devices/components/`, outside
+   every product directory, so the lock would hold this checkout's absolute paths. The check locks
+   each product in a temp file (`gaia plan --lock`) and fails if a committed one does not match.
+2. **`ab-slot` needs `veritysetup`**, which is not on every machine. A product that uses it cannot
+   be planned where that tool is missing. The check does not install it.
+3. **`gaia plan` needs every tool a recipe names on PATH**, or passed with `--tool NAME=PATH`. The
+   check passes `--tool python=<python3>` for the python builder. Other tools a recipe names must
+   be on PATH on the machine (and on CI).
+4. **`$GAIA_BIN` is trusted, not verified.** Gaia prints a version but no commit, so the check
+   cannot confirm the binary was built from the pinned commit. The cached build is built from it
+   by the script itself.
+5. **Gaia's `Cargo.lock` is untracked**, so a build is pinned by commit only, not by dependency
+   versions.
+
+Gaia also has no `gaia validate` yet; the check uses `gaia plan` until it does.
+
+The F8 format points are refused by today's Gaia. Write B2/B3 descriptions to the F8 form above;
+the check fails on them until the pin moves:
+
+- product `[sources]`: refused, `sources: unknown key`;
+- image `os = {...}`: refused, `images[0].os: unknown key`;
+- recipe `slot`: refused, `no recipe "slot"` (today's is `ab-slot`, see point 2);
+- a lowercase blob key is accepted, and no rule enforces the capitals rule yet;
+- `kernel.overlays` for an OS build and `@here@` cannot be tested until an OS build exists.
+  Reviewers check these until F8 merges.
+
+A board with no product is reported as unused. Gaia has no command that checks a board alone.

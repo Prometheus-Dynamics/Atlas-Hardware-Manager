@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Checks every device description under devices/ with Gaia `next`.
 #
-#   scripts/check-devices.sh               check devices/ (the gate runs this)
-#   scripts/check-devices.sh --root DIR    check another tree laid out like devices/
-#   scripts/check-devices.sh --self-test   good fixture must pass, broken must fail, f8 is reported
+#   scripts/check-devices.sh               check devices/, then prove the checker still catches
+#                                          a broken file (the fixtures; the gate runs this)
+#   scripts/check-devices.sh --root DIR    check another tree laid out like devices/ (no self-check)
+#   scripts/check-devices.sh --self-test   the verbose form: good fixture must pass, broken must
+#                                          fail, and the f8 fixture is printed
 #
 # The Gaia commit is read from devices/gaia.lock. The gaia binary is $GAIA_BIN when set (used as
 # given: gaia has no version stamp, so its commit is not checked), else a build from that commit
@@ -13,16 +15,18 @@
 set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+self=$repo/scripts/check-devices.sh
 root=$repo/devices
 mode=check
+root_given=0
 
 die() { echo "check-devices: $*" >&2; exit 1; }
 
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --root) [[ $# -ge 2 ]] || die "--root needs a directory"; root=$2; shift 2 ;;
+    --root) [[ $# -ge 2 ]] || die "--root needs a directory"; root=$2; root_given=1; shift 2 ;;
     --self-test) mode=self-test; shift ;;
-    -h|--help) sed -n '2,11p' "${BASH_SOURCE[0]}"; exit 0 ;;
+    -h|--help) sed -n '2,12p' "$self"; exit 0 ;;
     *) die "unknown argument: $1" ;;
   esac
 done
@@ -31,15 +35,15 @@ if [[ $mode == self-test ]]; then
   fixtures=$repo/devices/tests/fixtures
   status=0
   echo "== good fixture: must pass"
-  "${BASH_SOURCE[0]}" --root "$fixtures/good" || { echo "check-devices: self-test: good fixture did not pass" >&2; status=1; }
+  "$self" --root "$fixtures/good" || { echo "check-devices: self-test: good fixture did not pass" >&2; status=1; }
   echo "== broken fixture: must fail"
-  if "${BASH_SOURCE[0]}" --root "$fixtures/broken"; then
+  if "$self" --root "$fixtures/broken"; then
     echo "check-devices: self-test: broken fixture passed, but it must fail" >&2; status=1
   else
     echo "check-devices: self-test: broken fixture failed as it must"
   fi
   echo "== f8 fixture: reported only (Gaia F8 is not on next yet)"
-  "${BASH_SOURCE[0]}" --root "$fixtures/f8" || true
+  "$self" --root "$fixtures/f8" || true
   exit $status
 fi
 
@@ -187,3 +191,18 @@ if [[ $fail -ne 0 ]]; then
   exit 1
 fi
 echo "check-devices: passed ($nf families, $nb boards, $nc components, $np products)"
+
+# The default run also proves the checker still catches a broken file: the good fixture must
+# pass and the broken one must fail. Not run for --root, which names a tree to check alone.
+if [[ $root_given -eq 0 ]]; then
+  fixtures=$repo/devices/tests/fixtures
+  out=$(mktemp)
+  if ! "$self" --root "$fixtures/good" >"$out" 2>&1; then
+    cat "$out" >&2; die "self-check: the good fixture no longer passes"
+  fi
+  if "$self" --root "$fixtures/broken" >"$out" 2>&1; then
+    die "self-check: the broken fixture passed, so the checker no longer catches a broken file"
+  fi
+  rm -f "$out"
+  echo "check-devices: self-check passed (good fixture passes, broken fixture fails)"
+fi
