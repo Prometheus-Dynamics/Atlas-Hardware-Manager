@@ -182,11 +182,9 @@ Searched on `next` (2cda9ffd): `devices/components/raze-base-files`, `devices/pr
 - Dev's tree (`origin/dev`, `devices/raze/CHANGELOG.md:585, 1185-1190, 1655`; `devices/README.md:378-379`)
   had a per-board /29 in 172.31.0.0/16, derived from the board serial, on a gadget-only bridge `usbbr0`, with
   DHCP on that bridge. That is dev's design, and it does not say how Atlas's next design (Lemnos derives the
-  NCM addresses; `lemnos0` is a direct NCM interface) would address the Raze. So the plan is NOT settled in the
-  repo, and no `.network` file is written here. Questions for the coordinator: (1) the address plan for the
-  Raze's `lemnos0` (a /29 per board, or a fixed link-local pair, and from which fact); (2) whether the board
-  serves DHCP on it (networkd's DHCPServer, or dnsmasq as dev did); (3) whether a bridge `usbbr0` is wanted or the
-  NCM interface is addressed directly.
+  NCM addresses; `lemnos0` is a direct NCM interface). ANSWERED by the 2026-11-14 ruling: the Raze serves DHCP on
+  `lemnos0` from a per-board /29 derived from the serial (scheme serial-hash-v1); no bridge; networkd's DHCPServer.
+  See "The Raze's USB network" below.
 - Gate check added: `scripts/check-usb-ifname.py` (called from `scripts/gate.sh`). It reads every systemd-networkd
   `[Match] Name=` under `devices/` and refuses a gadget-style name (`usb<N>` or `lemnos<N>`) that is not exactly the
   board interface. It matches no wildcard, so a host adapter name is not caught. Today it checks zero networkd names.
@@ -211,15 +209,13 @@ rc 0 WAS run (command and output above).
 
 ## Open items (not proven here)
 
-- THE LINK GETS ITS ADDRESS: not proven. Nothing in this repo can show it today: no QEMU or simulator job boots the
-  Raze image with its gadget, the Raze has no `.network` file (so the link has no address by design of the image
-  today), and the address plan is not stated on `next`. What it would take: (1) the address plan from the coordinator
-  (see above); (2) a networkd `.network` for `lemnos0` in the Raze's image (raze-base component), with the DHCP
-  choice; (3) a boot of the Raze image in QEMU or the simulator with the gadget bound, reading the interface's address
-  (`ip -4 addr show lemnos0`); the repo has no Raze QEMU job, so (3) is a new job, not an existing one.
-  The coordinator's (ii): a sim/QEMU check that `lemnos0` exists, is up, has a link-local address, and the Orion link
-  answers. Not built here.
-- The IPv4 plan: PARKED by the coordinator (one decision for all boards, with the gateway work). Not in this PR.
+- THE LINK GETS ITS ADDRESS: not proven. The address script and its unit are in this branch, and the off-board check
+  shows the script writes the right network file for the vectors. Nothing has booted: no QEMU or simulator job boots the
+  Raze image with its gadget, and the repo has no Raze QEMU job. What it would take: a boot of the Raze image in QEMU or
+  the simulator with the gadget bound, then `ip -4 addr show lemnos0` shows the computed address, `networkctl` shows the
+  DHCP server running, and the Orion link answers. The coordinator's (ii) asks for that check; it is not built here.
+- The IPv4 plan's wider question (one decision for all boards, a PC host with several boards, the robot network) is
+  PARKED with the gateway work. The bench and SystemCore plan is the per-board /29 above.
 - Nothing ran on a board. Nothing about the NCM name `lemnos0` is run on hardware.
 
 ## Changes still to come before the lock rev
@@ -237,9 +233,11 @@ Each is in the file as a marked comment (`MOVES AT ...`) or listed here; none is
   move". The `os.src.` word they produce is `os.src.rpi-boot-mode-1=/soc@107c000000/mmc@fff000`.
 - R1i (`contracts/usb-link.toml` version 3, `[network] board_interface = "lemnos0"`): the gate check reads it when
   `LEMNOS_USB_LINK` names that file; the fallback is `lemnos0` with `# LOCK: Lemnos R1i`.
-- The `.network` file for `lemnos0`: WRITTEN (IPv6 link-local only, decided at milestone 2; see "The Raze's USB network").
-  The IPv4 plan stays PARKED (one decision for all boards).
+- The network: WRITTEN as the address script and unit (the DHCP ruling of 2026-11-14; see "The Raze's USB network").
+  The earlier IPv6-only file was superseded and is not in the branch.
 - Bay sizes (`[boot] bay_*`) and the boot partition size: MOVING, not written.
+- PR 94 (B33, `identity` into `config` on `next`): NOT landed when this was written. Merge origin/next once it lands;
+  expect a conflict in `devices/boards/raze/lemnos-board.toml`; keep this draft's `config` form. Then a final gate.
 
 ## Re-validation at Lemnos I5i6 (4056016b, merged on Lemnos next)
 
@@ -322,33 +320,225 @@ boot/ files at 4056016b (bytes, sha256):
 are from the documentation only and not run on a board (`testing/board-runs/I5i6.md`). So the boot files are generated,
 not proven.
 
-## The Raze's USB network: HELD (not committed)
+## The Raze's USB network: serves DHCP on lemnos0 from a per-board /29 (coordinator's RULING, 2026-11-14)
 
-HOLD (coordinator, 2026-11-14): the IPv6-link-local-only decision below is being re-decided. The SystemCore the Razes plug
-into has NO IPv6 (no /proc/sys/net/ipv6, dhcpcd in IPv4-only mode), so an IPv6-only lemnos0 would be unreachable from it.
-The likely replacement is a board-served DHCP on lemnos0 from a small per-board IPv4 subnet. The network file, the
-component and fragment edits, and the BR2 networkd line are UNCOMMITTED in the worktree and stay that way until the
-decision arrives. Nothing below is committed.
+The earlier IPv6-only decision was superseded: the SystemCore the Razes plug into has no IPv6, so an IPv6-only lemnos0 is
+unreachable from it. The ruling: the Raze SERVES DHCP on lemnos0 from a per-board /29 derived from the board serial; IPv6
+link-local stays on; no IPv4LL; no bridge; no dnsmasq; no sshd in raze-base.
 
-Previous decision (superseded by the hold, kept for the record; INPUTS "DECISION: the Raze's USB network at milestone 2",
-2026-11-14): `lemnos0` comes up with IPv6 link-local ONLY. Everything goes through Atlas over the Orion link, which needs
-no IP.
+What is in this branch (`devices/components/raze-base-files`, `devices/products/raze-base/os/raze.fragment`):
 
-- Written: `devices/components/raze-base-files/files/lemnos0.network`, installed to
-  `/etc/systemd/network/lemnos0.network` (component `[[install]]`). Contents: `[Match] Name=lemnos0` (exact, no wildcard);
-  `[Network] LinkLocalAddressing=ipv6`, `DHCP=no`, `IPv6AcceptRA=no`; `[Link] RequiredForOnline=no`. No IPv4, no DHCP
-  client or server, no bridge.
-- systemd-networkd WAS NOT ENABLED on the Raze image. `raze.fragment` did not set `BR2_PACKAGE_SYSTEMD_NETWORKD`, and the
-  base is `allnoconfig` (INPUTS: a bool's default does not apply there), so networkd was not built and had no unit to enable.
-  Fixed: `BR2_PACKAGE_SYSTEMD_NETWORKD=y` in `raze.fragment`, and `[[services]] unit = "systemd-networkd.service"
-  enable = true` in `raze-base-files/component.toml`.
-- The OPEN comment at `raze.fragment:56-58` was resolved in the uncommitted file to the superseded IPv6-only decision;
-  it must be rewritten when the held decision lands.
-- `scripts/check-usb-ifname.py` checks the one networkd file: `Name=lemnos0`, equal to the fallback board interface
-  (the contract's `board_interface` is read when `LEMNOS_USB_LINK` names a version-3 contracts file; the lock has none).
-  It passed with `1 networkd name(s)`.
-- NOT PROVEN: that the link gets its address, that networkd comes up on the image, that lemnos0 appears, that the Orion link
-  answers over it. The coordinator's sim/QEMU check (ii) is not built; there is no Raze QEMU job in the repo.
+- `files/lemnos0-addressing.conf` (installed to `/etc/lemnos/lemnos0-addressing.conf`): ONE place where the scheme's
+  parameters are written: `scheme=serial-hash-v1`, `base=172.31.0.0/16`, `prefix=29`, `exclude=172.31.250.0/24`,
+  `interface=lemnos0`, `lease_seconds=120`. The host side (parked) reads these same values.
+- `files/lemnos0-address` (installed to `/usr/lib/lemnos/lemnos0-address`, mode 0755): a POSIX sh script. It reads
+  `/proc/device-tree/serial-number` (Lemnos's device-tree serial source, `docs/identity.md`, the source the Raze's
+  `system-identity` device uses), trims it, takes the LAST 8 hex digits, lowercases them, takes the first 4 bytes of
+  SHA-256 over those 8 ASCII characters as a big-endian u32, and computes the slot `hash % usable` in `172.31.0.0/16`
+  at /29 (8192 slots; 172.31.250.0/24 excluded, 32 slots; usable 8160), counting up from the lowest. The board takes the
+  slot's network + 1. It writes `/run/systemd/network/10-lemnos0.network`: `[Match] Name=lemnos0`; `[Network]`
+  `Address=<addr>/29`, `DHCP=no`, `DHCPServer=yes`, `LinkLocalAddressing=ipv6`, `IPv6AcceptRA=no`; `[Link]
+  RequiredForOnline=no`; `[DHCPServer]` `PoolOffset=2`, `PoolSize=5` (the rest of the /29: network+2 to network+6),
+  `DefaultLeaseTimeSec=120`, `EmitRouter=no`, `EmitDNS=no`. The board is not a gateway and announces no router or DNS.
+- Tools the script uses: `sh`, `tr`, `cut`, `sha256sum`, and shell arithmetic. Nothing else. The Raze root is BusyBox with
+  "BusyBox's default applets; no others" (raze.fragment:26-27). The repo does NOT list the applets, so whether the image's
+  BusyBox carries `sha256sum`, `cut` and `tr` is NOT PROVEN here: confirm on the built image (`busybox --list`). The
+  script's only non-shell tool is `sha256sum`.
+- `files/lemnos0-address.service`: a oneshot, `Before=systemd-networkd.service`, `After=local-fs.target`,
+  `DefaultDependencies=no`, enabled. If the script fails the unit shows failed.
+- `systemd-networkd`: enabled (`[[services]]` in the component). The Raze fragment builds it with
+  `BR2_PACKAGE_SYSTEMD_NETWORKD=y`. Before this branch the Raze image did NOT build networkd (base is `allnoconfig`,
+  INPUTS), so there was no unit to enable. This is a finding, fixed here.
+
+Failure rule: if the serial is unreadable, not hex, shorter than 8 digits, or the addressing file names another scheme, the
+script writes NO network file, prints one sentence saying why (`lemnos0-address: ...`), and exits 1; the unit fails. No
+fallback address is invented. The board is still reachable by its console (ttyGS0, below) and by Orion's USB link.
+
+Off-board check: `scripts/check-lemnos0-address.py` runs the shipped script (with fixtures for the serial and the output
+directory, and the component's own data file) for the six dev vectors and Raze #1. Results, run here:
+
+| Serial (as given) | serial8 | Written address | Expected | Source |
+|---|---|---|---|---|
+| a317bcbee5226d57 | e5226d57 | 172.31.209.217/29 | 172.31.209.217/29 | Raze #2; dev's vector |
+| abcdef01 | abcdef01 | 172.31.0.113/29 | 172.31.0.113/29 | ruling vector |
+| 00000000 | 00000000 | 172.31.43.201/29 | 172.31.43.201/29 | ruling vector |
+| ffffffff | ffffffff | 172.31.141.25/29 | 172.31.141.25/29 | ruling vector |
+| deadbeef | deadbeef | 172.31.209.1/29 | 172.31.209.1/29 | ruling vector |
+| cfc0641d | cfc0641d | 172.31.254.9/29 | 172.31.254.9/29 | ruling vector (past the excluded range) |
+| 0708c973b00a37bc | b00a37bc | 172.31.12.81/29 | 172.31.12.81/29 | Raze #1, the bench reading: MATCHES |
+
+Raze #1 gives 172.31.12.81/29 as the ruling expects, so the bench reading and the scheme agree; no stop. Refusals checked:
+unreadable serial, non-hex serial, serial shorter than 8 digits, and an unknown scheme each write no file and exit non-zero.
+This is an off-board check of the algorithm; nothing ran on a Raze.
+
+Changes from dev's scheme (dev at 675bd03), with the reason for each:
+- The interface is `lemnos0`, not a bridge `usbbr0` over ecm+rndis. The gadget is one NCM function (the default
+  composition, Lemnos R1h2); the board-side name is the default's `ifname=lemnos%d`. A bridge would add a second
+  interface for no reason the new composition needs.
+- The DHCP server is systemd-networkd's `DHCPServer=`, not dnsmasq. No extra package: networkd is already the network
+  manager on this image (the ruling: "no extra package").
+- No fallback address. Dev's `board_gadget_address` falls back to `BOARD_GADGET_LEGACY_ADDRESS` (172.31.250.1/24) when the
+  serial gives no subnet. The ruling says no invented fallback: the script writes nothing and fails, so an unreadable
+  serial is visible instead of silently sharing one address across boards.
+- No `/etc` network file per board: the address is computed at boot into `/run`, so the image is identical for every
+  board (the ruling: "no baked per-board file").
+- The range, the exclude, the prefix and the hash are dev's, unchanged (the ruling asked to say if anything changes:
+  nothing in the scheme changes).
+- Lease 120 seconds and the pool (network+2..network+6) are dev's lease and the /29's usable hosts less the board's own;
+  networkd's `PoolOffset` is the offset from the network address (to be confirmed against systemd.network(5) on the image).
+
+Collision (two boards on one host): the scheme has 8160 usable /29 slots. For any two boards the chance their subnets
+coincide is 1 in 8160 (about 0.012%). For n boards on one host the chance that some pair collides is about 0.06% at 5,
+0.55% at 10, 2.3% at 20, and 14% at 50 (the birthday product over 8160; a uniform hash assumed).
+- The BOARD cannot detect it: a board sees only its own serial and its own link; it cannot see another board.
+- The HOST sees it: two interfaces with the same subnet. The host-side check, parked with the gateway work, is where it
+  lives, and it must say so in words. The sentence Atlas will say: "Two boards on this computer have the same USB
+  address range (172.31.x.y/29): board A on <iface A> and board B on <iface B>; one of them must be unplugged or moved
+  to another port before either is reachable."
+- In this branch: only this paragraph and the open-items line below. No board-side detection is written, because none
+  can work.
+
+What is OPEN (not in this branch):
+- The host-side collision check and its sentence (parked with the gateway work; the host implementation reads
+  `lemnos0-addressing.conf`).
+- Orion's TCP way in: bound to the board's IPv4 address through ORION_PEER_LISTEN, never a wildcard (DONE in this
+  branch, see "Orion's ways in on the Raze"). The bind's proof on a board is not run.
+- Recovery's wildcard SSH (0.0.0.0:22, 0.0.0.0:2222) when the comm core cannot start: reported, not set; the coordinator
+  decides `recovery.listen` and `security`.
+- The bench plumbing: the PC reaches the board through an SSH local forward via the SystemCore to that IPv4 address (the
+  ruling). No sshd is in raze-base; the forward needs Orion's SSH, which is not configured to listen (see below).
+- Proof on a board or in QEMU: the lemnos0 interface comes up, gets the address, and hands out the lease. Not run.
+- Whether the image's BusyBox has `sha256sum`, `cut`, `tr` (`busybox --list` on the built image).
+
+## Orion's ways in on the Raze (2026-11-14 ruling; source: Orion fd61df3e, ways-in file)
+
+Read from source (the Orion workspace pin Atlas uses, `fd61df3e`; the same names at 455a956e per the ways-in file's diff).
+The image's Orion component still pins `455a956e`: the L2 move brings this pin, and these names are re-checked then.
+
+What is configured in this branch:
+
+- USB link: `devices/components/orion/files/orion.conf`: `links.usb = orion-link` (comm-app settings.rs:271-272). The
+  comm core declares the link by this name; an offer for an unknown name is refused `not found` (kind 8). No path: Orion
+  never opens USB hardware (the bridge sends the endpoints over the socket).
+- The bridge offers the link: `LEMNOS_ORION_LINKS=gadget=orion-link`, in
+  `devices/components/lemnos/files/lemnos-orion-links.conf` (installed to
+  `/etc/systemd/system/lemnos-orion.service.d/10-raze-links.conf`). A drop-in, not a fork of Lemnos's example env file.
+  `gadget` is the usb-gadget device id in `devices/boards/raze/lemnos-board.toml`. Unset, the bridge offers no link.
+  MOVES: to the generated output at Lemnos R1j.
+- TCP way in: NOT in the static file. `lemnos0-address` writes `/run/lemnos0/orion-peer.env` with
+  `ORION_PEER_LISTEN=<the board's own /29 address>:9200` (never a wildcard; the port is `peer_port` in the data file,
+  9200 = Orion's client default, address.rs:9-10). Orion takes `ORION_*` from the environment over the file
+  (core/config/src/lib.rs:4, 20). The comm core reads it through `devices/components/orion/files/orion-comm-peer.conf`
+  (installed to `/etc/systemd/system/orion-comm.service.d/20-raze-peer.conf`):
+  `EnvironmentFile=-/run/lemnos0/orion-peer.env` (the leading `-`: an absent file means the comm core serves the USB link
+  only), `Wants=lemnos0-address.service`, `After=lemnos0-address.service` (Wants, not Requires: a failed address program
+  must not stop the comm core).
+- SSH: OFF. `ssh.listen` and `ssh.interface` are not set (orion.conf; ssh/src/lib.rs:133-135: SSH is on only when one of
+  them is set). Nothing here turns it on.
+- Interim sysctl: `devices/components/raze-base-files/files/60-raze-lemnos0.conf` (installed to
+  `/etc/sysctl.d/60-raze-lemnos0.conf`): `net.ipv4.ip_nonlocal_bind = 1`. Reason (in the file): the comm core binds the
+  board's USB address before lemnos0 exists (lemnosd builds the gadget after the comm core may start, and networkd gives
+  the address only when lemnos0 appears); at this Orion rev a failed TCP bind is not retried and the comm core drops into
+  recovery until restarted. REMOVE when Orion has an interface-bound, waited-for TCP way in (PARKED).
+- Gate: `scripts/check-orion-link.py` (in gate.sh). One string on both sides: `links.usb` in orion.conf and the right side
+  of `LEMNOS_ORION_LINKS`; the left side is a usb-gadget device id of the Raze board file; the gadget's `interfaces`, if
+  given, puts that name on interface 0; the comm-core drop-in has `EnvironmentFile=-`, `Wants=`, no `Requires=`. Its
+  `--self-test` refuses a mismatch, a non-gadget id, and Requires=. Run here: passed.
+- The address program's file, `/run/lemnos0/orion-peer.env`, is checked by `scripts/check-lemnos0-address.py` for each
+  vector (ORION_PEER_LISTEN=<address>:9200) and absent after every refusal.
+
+Unit ordering (what starts when):
+
+    lemnosd (the daemon) ........ builds the gadget (usb-gadget, UDC bind) -> lemnos0 appears
+    lemnos0-address (oneshot) ... computes the address from the serial; writes /run/systemd/network/10-lemnos0.network
+                                  and /run/lemnos0/orion-peer.env; exits. Before=systemd-networkd, After=local-fs.target.
+    systemd-networkd ............ runs 10-lemnos0.network; configures lemnos0 (address, DHCP server) WHEN lemnos0 exists
+    orion-comm (comm core) ...... After=lemnos0-address (Wants=); reads orion-peer.env; binds ORION_PEER_LISTEN; serves
+                                  the USB link (links.usb) when the bridge offers it
+    lemnos-orion (bridge) ....... After=lemnosd; offers the gadget's endpoints to the comm core (LEMNOS_ORION_LINKS) and
+                                  retries with backoff (Lemnos's header: 1 s doubling to 8 s; the code path not read here)
+
+The comm core does not wait for lemnos0. The TCP bind happens on the address; with ip_nonlocal_bind the bind succeeds
+before the address exists, and the socket answers once networkd gives the address to lemnos0.
+
+What a person sees in each failure:
+
+- The serial cannot be read (or is not hex, or shorter than 8 digits): `lemnos0-address.service` shows FAILED; the journal
+  says `lemnos0-address: the board serial ... cannot be read: no address written` (one sentence). No network file, no peer
+  file. The comm core still starts (Wants=), serves the USB link if the bridge offers it, and has no TCP way in. The
+  board is reachable by its console (ttyGS0) and Orion's USB link. Nothing is invented.
+- lemnos0 never appears (the gadget is not bound, or lemnosd failed the gadget): networkd has the file and waits; nothing
+  takes the address; the comm core's TCP socket listens on an address no interface holds, so nothing reaches it over TCP.
+  The USB link is down too. A person sees lemnosd's device state for the gadget (failed or retrying, with its reason) and
+  `networkctl` shows lemnos0 absent. Nothing here reports "lemnos0 never appeared" in words yet: OPEN.
+- The bind races the address (the comm core binds before the address is up): with `ip_nonlocal_bind = 1` the bind
+  succeeds and the socket answers once the address is up. WITHOUT that sysctl (for example if the file were removed), the
+  bind fails, the comm core does NOT retry the TCP bind, and it drops into RECOVERY, which opens SSH on 0.0.0.0:22 and
+  0.0.0.0:2222 with security off (the ways-in file, Part 5). That is the risk the sysctl exists to prevent.
+
+Recovery's listen keys (report only; NOT set in this branch, per the coordinator's instruction):
+- `recovery.listen` (`crates/comm/comm-app/src/settings.rs:71-74`, read at `settings.rs:221`): "where recovery listens,
+  after `ssh.listen`. Empty for the usual addresses."
+- The defaults: `crates/comm/comm-app/src/recover.rs:37-41`: `listen: [0.0.0.0:22, 0.0.0.0:2222]`, `retry: 1 s`,
+  `keys_file: orion_recovery::KEYS_FILE`.
+- The list recovery uses: `recover.rs:176-183`: the `ssh.listen` address (if set), then `recovery.listen` (if set, else
+  the defaults), each once.
+- Security for recovery follows the settings' switch (`recover.rs:204-206`). With `security` off (the default, as set),
+  recovery's SSH takes any key listed in the recovery keys file and listens on all addresses.
+- To set recovery to the board's address (what the coordinator asked, once told): `recovery.listen = <board address>:22`
+  would replace the wildcards. Not set here. Decision needed: the coordinator said to tell first.
+
+Source facts that changed the design (from the ways-in file): a link-local IPv6 address cannot carry the TCP way in (an
+unscoped bind is EINVAL; `peer.listen` cannot express a scope). So the board's TCP address is its IPv4 /29 address, which is
+why the DHCP ruling and this binding go together.
+
+## The console follows the security switch (milestone-2 ruling 2, 2026-11-14)
+
+What starts the login today (read from the tree, before this change):
+
+- `serial-getty@ttyGS0.service`: enabled by `[[services]]` in `devices/components/raze-base-files/component.toml`
+  (`enable = true`, line ~31 before this change). It is systemd's getty on the gadget's ACM port. No mask. It was
+  unconditional: the login was offered whatever the security view said.
+- The root login is open: `devices/products/raze-base/os/raze.fragment` sets `BR2_TARGET_ENABLE_ROOT_LOGIN=y` and an
+  empty root password, and the fragment's own comment says security OFF means root logs in with no password.
+- The second console (ttyAMA10 / tty1): NOT started by any file in `devices/`. The kernel's `console=` is not set by any
+  file on next (raze.fragment:44-50, B13 OPEN), so no serial-getty@ttyAMA10 is enabled by us. systemd's on-demand VT
+  login (`autovt@`) is systemd's own and not masked. "Gaia has no mask form" (raze.fragment:48-50) stands: nothing here
+  masks anything.
+
+What this change does:
+
+- `files/console-allowed` (installed to `/usr/lib/lemnos/console-allowed`, mode 0755): a POSIX sh script. It reads the view
+  `/etc/board/security` (`on` or `off`, then `generation N`; docs/slots.md "The security switch"). Absent: exit 0 (off).
+  Exactly `off` with a generation line: exit 0. `on`: exit 1. Malformed (any other content, unreadable, not two lines, a
+  bad generation number, an unknown state word, no final newline): exit 1, because corrupt is ON (docs/slots.md).
+- `files/30-security-console.conf`: `[Service] ExecCondition=/usr/lib/lemnos/console-allowed`. Installed to THREE template
+  drop-ins: `serial-getty@.service.d/` (ttyGS0 and any other serial getty), `getty@.service.d/` (getty@ on the VTs), and
+  `autovt@.service.d/` (the on-demand VT login). The template covers every instance; a drop-in named only
+  `serial-getty@ttyGS0.service.d/` would not cover a second console. systemd SKIPS a unit whose ExecCondition exits 1
+  (not a failure), and starts it on 0 (systemd.service(5)'s ExecCondition rule; read from the manual, not run on a board).
+- Marked `# LOCK: Lemnos S2`. Nothing renders `/etc/board/security` at the Lemnos lock (the view is rendered by
+  `lemnos-ctl tree --security-unit`, which is in the L2 move), so the view is ABSENT and the switch reads OFF: every
+  console opens exactly as before. This change is inert until the view is rendered.
+
+Off-board test: `scripts/check-console-gate.py` (gate step): the view absent, off, on, and the malformed forms (empty,
+one line, three lines, no generation line, a bad generation, an unknown state, no final newline). Run here: passed (10
+cases). Not run on a board.
+
+What happens when the switch changes at run time (stated plainly):
+
+- A getty ALREADY running is not stopped by the switch. Nothing watches the view. A login already open stays open until
+  its session ends.
+- The check runs again when a getty next STARTS: at boot, and after a session on that console ends (systemd restarts
+  the getty, and the restart runs the check). So with the switch ON, the console stops offering a login the next time
+  it would start. Until then the change does not reach a running session.
+- No path unit: a path unit that re-checks on every change would be the right fix, but it is not written here (not
+  certain enough to add in this branch). OPEN.
+
+The sentence the step's report must state (coordinator's words, also a comment beside `[security] orion = false` in
+`devices/boards/raze/lemnos-board.toml`):
+
+    Orion sessions and its shell are NOT yet covered by the switch on this image (C32).
 
 ## Operator access on the Raze image (answered from the tree)
 
@@ -361,12 +551,19 @@ no IP.
   opens it by that path, not by ttyACM number.
 - Orion's SSH and lemnos0: `devices/components/orion/files/orion.conf:22-23` has `ssh.listen` and `ssh.interface` COMMENTED
   OUT, so our config sets neither. Orion's comm app takes the SSH way in only when `ssh.listen` is said
-  (`crates/comm/comm-app/src/settings.rs:61`: "`None` unless `ssh.listen` is said"). So as the file stands, Orion's SSH is
-  NOT configured to listen on lemnos0, or on any address. The recovery binary's fallback is `ssh.listen = 0.0.0.0:22`
-  (`crates/bins/orion-recovery/src/main.rs:34`), which is for recovery only. Even `0.0.0.0` would be IPv4-only and lemnos0
-  has no IPv4 address. Reaching the link-local `fe80::...%lemnos0` would take `ssh.listen = [::]:22` or a scoped link-local
-  bind, which nothing in the repo sets. Not proven either way.
+  (`crates/comm/comm-app/src/settings.rs:61`: "`None` unless `ssh.listen` is said"). So as the file stands Orion's SSH is
+  NOT configured to listen on lemnos0 or on any address. The recovery binary's fallback is `ssh.listen = 0.0.0.0:22`
+  (`crates/bins/orion-recovery/src/main.rs:34`), for recovery only. With the DHCP ruling, lemnos0 HAS an IPv4 address (the
+  board's own, network+1 of its /29). Orion's TCP way in is bound to THAT address at `<addr>:9200` (ORION_PEER_LISTEN, from
+  /run/lemnos0/orion-peer.env), never a wildcard. It is Orion's own protocol, NOT SSH: the app and the test tool use it.
+  SSH stays off. The bind is not run on a board here.
+- The PC side with the DHCP ruling: the host on the cable takes a lease from the board's pool (network+2 to network+6,
+  120-second lease); the board is network+1 (computed from the serial, see the table above). The SystemCore reaches the
+  board on that IPv4 address (the SystemCore has no IPv6, so IPv6 link-local is no help to it).
+- SystemCore facts (read there, not on the Raze): `microcom` and `stty` are present; `socat` and `picocom` are not. The
+  Raze's ACM port appears as `/dev/serial/by-id/usb-Prometheus_Dynamics_Raze_<serial>-if<NN>`; open it by that path.
 - Time to services ready and RAM at idle, with no IPv4: the usable paths are the ACM console (ttyGS0 getty above), the
-  Orion link (the app and the test tool), and the Orion shell. The tree does not show whether `systemd-analyze` or
+  Orion link (the app and the test tool), and the Orion shell. With the DHCP ruling the board also has an IPv4 address,
+  but Orion's SSH is not bound to it yet (above), so the IPv4 path is not a working operator path yet. The tree does not show whether `systemd-analyze` or
   `systemd-cgtop` are built on the image; that is not confirmed here. `/proc/meminfo` is a kernel file and needs no
   package.

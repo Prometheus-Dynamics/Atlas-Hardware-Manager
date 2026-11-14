@@ -59,6 +59,13 @@ from = { file = "files/orion-comm-state.conf" }
 to = "/etc/systemd/system/orion-comm.service.d/10-board-state.conf"
 mode = "0644"
 
+# The comm core's TCP way in on the board's USB address: the environment file the address program writes (ORION_PEER_LISTEN),
+# read with EnvironmentFile=- and ordered After=/Wants= lemnos0-address.service (not Requires: a failed address program must not stop the comm core).
+[[install]]
+from = { file = "files/orion-comm-peer.conf" }
+to = "/etc/systemd/system/orion-comm.service.d/20-raze-peer.conf"
+mode = "0644"
+
 [[install]]
 from = { file = "files/orion-node-state.conf" }
 to = "/etc/systemd/system/orion-node.service.d/10-board-state.conf"

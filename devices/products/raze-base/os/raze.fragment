@@ -53,9 +53,23 @@ BR2_TARGET_GENERIC_ROOT_PASSWD=""
 # the data partition (the slots and the state), not the root. So BR2_TARGET_GENERIC_REMOUNT_ROOTFS_RW stays OFF.
 
 # -- Network ----------------------------------------------------------------------------------------
-# systemd-networkd is the network manager (systemd's own; no ifupdown). OPEN: the .network file for the
-# gadget's NCM interface (its address, and whether the board serves DHCP on it). ZERO 3E's usb0 lesson:
-# the DHCP server must actually run. No .network file is written here.
+# systemd-networkd is the network manager (systemd's own; no ifupdown). Built here: BR2_PACKAGE_SYSTEMD_NETWORKD=y.
+# On the allnoconfig base it is OFF unless a fragment says so (INPUTS: Gaia's OS config starts from allnoconfig), so
+# without this line there is no networkd and no unit to run the network file.
+BR2_PACKAGE_SYSTEMD_NETWORKD=y
+# DECIDED (coordinator's RULING, 2026-11-14, INPUTS "RULING (replaces ...)"): the Raze SERVES DHCP on lemnos0 from a
+# per-board /29 derived from the board serial (scheme serial-hash-v1). Components/raze-base-files carries the parts:
+#   files/lemnos0-address          the POSIX script that computes the board's address at boot, from /proc/device-tree/
+#                                  serial-number (sh, sha256sum, cut, tr and shell arithmetic only); it writes
+#                                  /run/systemd/network/10-lemnos0.network (Address=, DHCPServer=yes, DHCP=no,
+#                                  LinkLocalAddressing=ipv6, IPv6AcceptRA=no, RequiredForOnline=no) and exits.
+#   files/lemnos0-address.service  the oneshot that runs it, Before=systemd-networkd.service.
+#   files/lemnos0-addressing.conf  the scheme's parameters (base 172.31.0.0/16, prefix 29, exclude 172.31.250.0/24).
+# No fallback address: if the serial gives no subnet the script writes nothing, says why, and the unit fails.
+# The board is still reached by its console (ttyGS0) and by Orion's USB link. No IPv4LL, no bridge, no dnsmasq, no
+# sshd in raze-base. OPEN, not in this branch: Orion's TCP way in is to be bound to the board's IPv4 address, never a
+# wildcard (the ruling). Orion's config does not carry the per-board address yet (orion.conf ssh.listen is unset).
+# Dev's scheme differed on the bridge (usbbr0 over ecm+rndis) and the DHCP server (dnsmasq); see docs/prs/L2b.md.
 
 # ---- Stripping (PR B16). Gaia's OS config starts from allnoconfig, where a bool's default does not
 # apply: Buildroot's BR2_STRIP_strip (default y, depends on BR2_BINFMT_ELF) is OFF unless set here.

@@ -59,6 +59,23 @@ def network_names(path):
     return names
 
 
+# The Raze's address script writes the network file at boot: its name is `interface` in the data file the
+# component installs (the same file scripts/check-lemnos0-address.py reads). The script's Name= is that value.
+ADDRESSING = os.path.join("devices", "components", "raze-base-files", "files", "lemnos0-addressing.conf")
+
+
+def addressing_interface(root):
+    """The `interface=` of the Raze's addressing data file, or None when the file is absent."""
+    path = os.path.join(root, ADDRESSING)
+    if not os.path.isfile(path):
+        return None
+    with open(path, encoding="utf-8") as handle:
+        for line in handle:
+            if line.startswith("interface="):
+                return line.split("=", 1)[1].strip()
+    return None
+
+
 def check_tree(root):
     problems = []
     for path in sorted(glob.glob(os.path.join(root, "devices", "**", "*.network"), recursive=True)):
@@ -66,6 +83,9 @@ def check_tree(root):
         for name in network_names(path):
             if GADGET_NAME.match(name) and name != FIRST:
                 problems.append(f"{rel}: [Match] Name={name}: the gadget's network interface is {FIRST} (default composition ifname={TEMPLATE})")
+    named = addressing_interface(root)
+    if named is not None and named != FIRST:
+        problems.append(f"{ADDRESSING}: interface={named}: the gadget's network interface is {FIRST} (default composition ifname={TEMPLATE})")
     return problems
 
 
@@ -101,7 +121,9 @@ def main():
     if problems:
         return 1
     found = sum(len(network_names(p)) for p in glob.glob("devices/**/*.network", recursive=True))
-    print(f"check-usb-ifname: passed ({found} networkd name(s) under devices/; the gadget's interface is {FIRST}, from {SOURCE})")
+    named = addressing_interface(".")
+    print(f"check-usb-ifname: passed ({found} networkd name(s) under devices/; the Raze's addressing file names {named}; "
+          f"the gadget's interface is {FIRST}, from {SOURCE})")
     return self_test()
 
 

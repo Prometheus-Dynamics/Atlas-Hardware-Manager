@@ -46,6 +46,13 @@ from = { source = "src", path = "packaging/systemd/lemnos-orion.env.example" }
 to = "/etc/lemnos/lemnos-orion.env"
 mode = "0644"
 
+# The Raze's USB link for the bridge (Atlas, not Lemnos's example): LEMNOS_ORION_LINKS=gadget=orion-link, as a drop-in on
+# lemnos-orion.service. MOVES to the generated output at Lemnos R1j; then this drop-in goes.
+[[install]]
+from = { file = "files/lemnos-orion-links.conf" }
+to = "/etc/systemd/system/lemnos-orion.service.d/10-raze-links.conf"
+mode = "0644"
+
 # The users the sysusers file names (lemnos and lemnos-orion), made at build time as well: the
 # image's root is read-only, so systemd-sysusers cannot add them at boot. No fixed ids (Lemnos's
 # sysusers file leaves them to the system).

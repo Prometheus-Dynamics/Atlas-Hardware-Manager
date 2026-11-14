@@ -139,6 +139,7 @@ config = { data = "/data", boot = "/boot/firmware", record = "tryboot", boot_arg
 [security]
 record = "/var/lib/lemnos/security.rec"
 keys = "/etc/lemnos/slot-keys"
+# "Orion sessions and its shell are NOT yet covered by the switch on this image (C32)."
 orion = false
 
 # The security device: serves system.security/1 and takes its facts from [security] above. Its uses name the

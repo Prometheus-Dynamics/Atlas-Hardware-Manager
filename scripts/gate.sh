@@ -51,6 +51,21 @@ if [ -f scripts/check-usb-ifname.py ]; then
   step "usb gadget interface name" python3 scripts/check-usb-ifname.py
 fi
 
+# The Raze's lemnos0 address (serial-hash-v1): the script's six vectors, Raze #1 (172.31.12.81/29), and its refusals.
+if [ -f scripts/check-lemnos0-address.py ]; then
+  step "lemnos0 address (serial-hash-v1)" python3 scripts/check-lemnos0-address.py
+fi
+
+# The Raze's console follows the board's security switch (LOCK: Lemnos S2): the getty's ExecCondition reads the view.
+if [ -f scripts/check-console-gate.py ]; then
+  step "console follows the security view" python3 scripts/check-console-gate.py
+fi
+
+# The Raze's Orion USB link: one name in orion.conf and in the bridge's LEMNOS_ORION_LINKS, from a usb-gadget device.
+if [ -f scripts/check-orion-link.py ]; then
+  step "orion usb link: one name on both sides" python3 scripts/check-orion-link.py
+fi
+
 # The board id: one string per board (directory, Gaia name, Lemnos [board] id, bring-up family line). PR B24.
 if [ -f scripts/check-board-ids.py ]; then
   step "board ids agree" python3 scripts/check-board-ids.py
