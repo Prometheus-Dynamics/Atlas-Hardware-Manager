@@ -65,10 +65,33 @@ BR2_TARGET_GENERIC_ROOT_PASSWD=""
 # the data partition (the slots and the state), not the root. So BR2_TARGET_GENERIC_REMOUNT_ROOTFS_RW stays OFF.
 
 # -- Network ----------------------------------------------------------------------------------------
-# systemd-networkd is the network manager (systemd's own; no ifupdown). Built here: BR2_PACKAGE_SYSTEMD_NETWORKD=y.
-# On the allnoconfig base it is OFF unless a fragment says so (INPUTS: Gaia's OS config starts from allnoconfig), so
-# without this line there is no networkd and no unit to run the network file.
+# systemd-networkd is the network manager (systemd's own; no ifupdown). It STAYS on: BR2_PACKAGE_SYSTEMD_NETWORKD=y.
+# Reasons: lemnos0-address (components/raze-base-files) writes /run/systemd/network/10-lemnos0.network for networkd;
+# that file's DHCPServer is the Raze's DHCP to the host (the ruling below); and Orion's peer listen address is the
+# board's address that file sets. Without networkd the board has no lemnos0 address and no DHCP server. networkd is
+# Type=notify-reload with a BusName= it advertises: it starts without the bus, so post-build.sh does not refuse it.
+# Buildroot defaults it to y; on Gaia's allnoconfig base it is off unless a fragment says so, hence this line.
 BR2_PACKAGE_SYSTEMD_NETWORKD=y
+
+# -- The bus daemons (PR B41) -------------------------------------------------------------------------
+# Off: systemd-resolved, systemd-timesyncd, systemd-hostnamed and systemd-timedated. Reasons:
+#   - nothing on the image uses the bus (the scan of the built root: libdbus-1 is linked only by dbus's own tools;
+#     no Lemnos or Orion binary uses the bus);
+#   - resolved: the image's name lookups are nsswitch's `resolve [!UNAVAIL=return] files myhostname dns`, which falls
+#     through when resolved is absent;
+#   - timesyncd: the clock comes from Orion's time sync (parked), not from timesyncd;
+#   - hostnamed and timedated: the hostname and the clock timezone are not set through the bus on this image.
+# Buildroot defaults each of the four to y; the fragment sets them off so the fragment states it. dbus itself cannot be
+# turned off by a line here: package/systemd/Config.in selects it (`select BR2_PACKAGE_DBUS if !BR2_PACKAGE_DBUS_BROKER`).
+# os/post-build.sh removes dbus from the installed tree and fails the build if anything still needs it.
+# BR2_PACKAGE_SYSTEMD_RESOLVED is not set
+# BR2_PACKAGE_SYSTEMD_TIMESYNCD is not set
+# BR2_PACKAGE_SYSTEMD_HOSTNAMED is not set
+# BR2_PACKAGE_SYSTEMD_TIMEDATED is not set
+
+# The post-build script: the dbus removal and its checks (os/post-build.sh, PR B41). Buildroot runs it as
+# `post-build.sh TARGET_DIR` after the install. It is in the directory beside this fragment (`@here@` is that directory).
+BR2_ROOTFS_POST_BUILD_SCRIPT="@here@/post-build.sh"
 # DECIDED (coordinator's RULING, 2026-11-14, INPUTS "RULING (replaces ...)"): the Raze SERVES DHCP on lemnos0 from a
 # per-board /29 derived from the board serial (scheme serial-hash-v1). Components/raze-base-files carries the parts:
 #   files/lemnos0-address          the POSIX script that computes the board's address at boot, from /proc/device-tree/
