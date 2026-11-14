@@ -25,8 +25,70 @@ impl Pause for NoPause {
     }
 }
 
+/// Every name this file gives [`scratch`]. The test `every_socket_path_fits_sun_len` checks each.
+const SCRATCH_NAMES: &[&str] = &[
+    "live",
+    "failed",
+    "denied-kind",
+    "not-denied-kind",
+    "gone",
+    "again",
+    "timeout",
+    "stale",
+];
+
+/// The Unix socket path limit: `SUN_LEN` is 108 bytes with its NUL, so a path may be 107 long.
+const SUN_PATH_MAX: usize = 107;
+
+/// A scratch directory for one test. It is under the system temp dir, not under
+/// `CARGO_TARGET_TMPDIR`: a node's socket is `<dir>/orion.sock`, and CI's build path is long
+/// enough that the socket would not fit `SUN_LEN` (the stub panics on it). The name is short.
 fn scratch(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("session-{name}"))
+    std::env::temp_dir().join(format!("atl-s{}-{name}", std::process::id()))
+}
+
+/// The path of a node's socket in `dir`, as Orion's stub makes it.
+fn socket_in(dir: &Path) -> PathBuf {
+    dir.join("orion.sock")
+}
+
+#[test]
+fn every_socket_path_fits_sun_len() {
+    // The worst case: the process id as wide as a u32 can print, and the longest name.
+    let widest_pid = u32::MAX.to_string().len();
+    let longest = SCRATCH_NAMES
+        .iter()
+        .map(|name| name.len())
+        .max()
+        .unwrap_or(0);
+    let temp = std::env::temp_dir();
+    let worst_dir_len = temp.as_os_str().len() + "/atl-s".len() + widest_pid + 1 + longest;
+    let worst_socket = worst_dir_len + "/orion.sock".len();
+    assert!(
+        worst_socket <= SUN_PATH_MAX,
+        "the longest socket path would be {worst_socket} bytes under {} (SUN_LEN allows {SUN_PATH_MAX}): \
+         shorten the temp dir or the longest name",
+        temp.display()
+    );
+    // Why not under CI's build path: the same name there is already too long for the socket.
+    let ci_base = "/home/runner/work/Atlas-Hardware-Manager/Atlas-Hardware-Manager/target/tmp";
+    let under_ci = ci_base.len() + "/session-".len() + longest + "/orion.sock".len();
+    assert!(
+        under_ci > SUN_PATH_MAX,
+        "the CI build path must be too long for a socket here ({under_ci} bytes)"
+    );
+    for name in SCRATCH_NAMES {
+        let socket = socket_in(&scratch(name));
+        assert!(
+            socket.as_os_str().len() <= SUN_PATH_MAX,
+            "{name}: socket path {socket:?} is {} bytes (SUN_LEN allows {SUN_PATH_MAX})",
+            socket.as_os_str().len()
+        );
+        assert!(
+            !scratch(name).starts_with(env!("CARGO_TARGET_TMPDIR")),
+            "{name}: the scratch dir must not be under CARGO_TARGET_TMPDIR"
+        );
+    }
 }
 
 fn start(dir: &Path, port: Option<u16>) -> SimNode {
