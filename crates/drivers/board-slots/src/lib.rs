@@ -74,3 +74,15 @@ pub enum SlotError {
     #[error(transparent)]
     Image(#[from] BundleError),
 }
+
+impl SlotError {
+    /// The refusal a board call carried as a value, when there is one (see
+    /// [`atlas_actions::ActionError::failure`]). A caller acts on its kind, never its words.
+    #[must_use]
+    pub fn failure(&self) -> Option<&atlas_session::Failure> {
+        match self {
+            Self::Board(error) => error.failure(),
+            _ => None,
+        }
+    }
+}

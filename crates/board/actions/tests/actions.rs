@@ -487,7 +487,7 @@ async fn a_start_the_node_does_not_confirm_is_not_sent_again() {
     let unanswered = board.run(dry, &words("label 2")).await.unwrap_err();
     assert!(
         matches!(&unanswered, ActionError::Unknown { name, reason }
-            if name == DRY_RUN && reason.contains("did not answer in time")),
+            if name == DRY_RUN && reason.text().contains("did not answer in time")),
         "{unanswered:?}"
     );
     assert!(began.elapsed() < DEADLINE, "the caller is told at once");
@@ -561,7 +561,7 @@ async fn a_plain_orion_node_lists_no_actions_and_says_why() {
     connected(&handle).await;
     let error = BoardActions::new(handle).catalog().await.unwrap_err();
     assert!(
-        matches!(&error, ActionError::Refused(reason) if !reason.is_empty()),
+        matches!(&error, ActionError::Refused(reason) if !reason.text().is_empty()),
         "a plain node is a normal node with no list: {error:?}"
     );
 }

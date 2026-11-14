@@ -422,16 +422,14 @@ async fn a_transfer_that_fails_for_good_answers_failed_and_the_session_carries_o
     struct Refused;
     impl SteppedTransfer<String> for Refused {
         fn step(&mut self, _wait: Duration) -> Result<Step<String>, StepError> {
-            Err(StepError::Failed("the board refused the file".to_owned()))
+            Err(StepError::Failed("the board refused the file".into()))
         }
         fn cancel(&mut self) {}
     }
     let outcome = handle.long(&Cancel::new(), start(Refused)).await;
     assert_eq!(
         outcome,
-        Err(SessionError::Failed(
-            "the board refused the file".to_owned()
-        ))
+        Err(SessionError::Failed("the board refused the file".into()))
     );
     let name = handle
         .with_client(|orion| orion.node().map(|node| node.name))

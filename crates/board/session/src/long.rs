@@ -26,6 +26,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+use crate::failure::Failure;
+
 /// The most time one step may spend waiting on the node before it returns with
 /// [`Step::Progress`]. A step is given this as its `wait`. Short enough that a short call waits
 /// at most a few steps (see the module docs); long enough that a step is not a busy loop of
@@ -52,8 +54,9 @@ pub enum StepError {
     /// The session is gone. The operation ends the way a call does when the session breaks: its
     /// caller is told the node is gone, and resumes it on a later session if it means to.
     Lost(String),
-    /// The operation failed for good on a live session. Retrying gives the same answer.
-    Failed(String),
+    /// The operation failed for good on a live session. Retrying gives the same answer. The
+    /// refusal's kind is kept (see [`Failure`]).
+    Failed(Failure),
 }
 
 /// A transfer advanced in steps on the session thread. Created there by the start closure of

@@ -153,9 +153,8 @@ impl Hardware {
         match answer {
             Ok(Ok(read)) => state.absorb(read, now, self.grace),
             Ok(Err(reason)) => state.lose(reason, now),
-            Err(SessionError::Gone(reason) | SessionError::Failed(reason)) => {
-                state.lose(reason, now);
-            }
+            Err(SessionError::Gone(reason)) => state.lose(reason, now),
+            Err(SessionError::Failed(failure)) => state.lose(failure.to_string(), now),
         }
         // A refresh is kept until a read is made: a read that failed asked for nothing.
         if refresh && !matches!(state.connection, Connection::Live) {

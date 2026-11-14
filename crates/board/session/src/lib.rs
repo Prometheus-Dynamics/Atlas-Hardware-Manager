@@ -53,6 +53,7 @@
 
 pub mod backoff;
 pub mod double;
+mod failure;
 pub mod lease;
 pub mod long;
 pub mod monitor;
@@ -60,6 +61,7 @@ mod seed;
 mod sessions;
 
 pub use backoff::Backoff;
+pub use failure::{Failure, FailureKind};
 pub use lease::{Clock, Hold, LEASE, LEASE_RENEW, Lease, RENEW_WAIT};
 pub use long::{Cancel, MAX_LONG_OPERATIONS, Outcome, STEP_WAIT, Step, StepError, SteppedTransfer};
 pub use monitor::{CALL_WAIT, Handle, Monitor, PROGRAM, Pause, Presence, RealPause, SessionError};

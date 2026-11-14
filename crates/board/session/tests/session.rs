@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use atlas_session::{Handle, Pause, Presence, RealPause, SessionError, Sessions};
+use atlas_session::{FailureKind, Handle, Pause, Presence, RealPause, SessionError, Sessions};
 use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode};
 use orion::{Address, ClientError};
 
@@ -105,11 +105,73 @@ async fn a_call_that_fails_on_a_live_session_is_a_failure_not_a_gone_node() {
         })
         .await;
     assert!(
-        matches!(&refused, Err(SessionError::Failed(reason)) if reason.contains("refused by the test")),
+        matches!(&refused, Err(SessionError::Failed(reason)) if reason.text().contains("refused by the test")),
         "{refused:?}"
     );
     // The session is still up after a failed call.
     assert!(matches!(handle.presence(), Presence::Found(_)));
+}
+
+#[tokio::test]
+async fn a_denied_refusal_keeps_its_kind_whatever_its_words() {
+    let dir = scratch("denied-kind");
+    let node = start(&dir, None);
+    let sessions = Sessions::new(Arc::new(NoPause));
+    let handle = sessions.handle(&address(node.network().port())).unwrap();
+    connected(&handle).await;
+
+    // Reworded on purpose: the kind decides, not the text.
+    let reworded = handle
+        .with_client(|_| -> Result<(), orion::Error> {
+            Err(orion::Error::Client(ClientError::Denied("no")))
+        })
+        .await;
+    match reworded {
+        Err(SessionError::Failed(failure)) => {
+            assert_eq!(failure.kind(), FailureKind::Denied, "{failure:?}");
+            assert_eq!(failure.text(), "no");
+        }
+        other => panic!("expected a failed call, got {other:?}"),
+    }
+
+    // The comm core's own `denied` carries its code.
+    let core = handle
+        .with_client(|_| -> Result<(), orion::Error> {
+            Err(orion::Error::Client(ClientError::Refused(
+                orion::types::Error::Denied,
+            )))
+        })
+        .await;
+    match core {
+        Err(SessionError::Failed(failure)) => {
+            assert!(failure.is_denied(), "{failure:?}");
+            assert_eq!(failure.code(), Some(orion::types::Error::Denied.code()));
+        }
+        other => panic!("expected a failed call, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_non_denied_failure_whose_text_says_denied_is_not_denied() {
+    let dir = scratch("not-denied-kind");
+    let node = start(&dir, None);
+    let sessions = Sessions::new(Arc::new(NoPause));
+    let handle = sessions.handle(&address(node.network().port())).unwrap();
+    connected(&handle).await;
+
+    let answer = handle
+        .with_client(|_| -> Result<(), orion::Error> {
+            Err(orion::Error::Client(ClientError::Protocol("denied")))
+        })
+        .await;
+    match answer {
+        Err(SessionError::Failed(failure)) => {
+            assert_eq!(failure.kind(), FailureKind::Other, "{failure:?}");
+            assert!(!failure.is_denied());
+            assert!(failure.text().contains("denied"));
+        }
+        other => panic!("expected a failed call, got {other:?}"),
+    }
 }
 
 #[tokio::test]
