@@ -1036,7 +1036,9 @@ impl Node {
                 Some(bytes) => {
                     let trusted = model.slots.trusted.clone();
                     let board = model.slots.board.clone();
-                    bundle::verify(&bytes, &trusted, &board).and_then(|verified| {
+                    // LOCK: Lemnos L2. The boot rule the bundle's cmdline must carry (I5i4, I5i5).
+                    let boot = model.slots.boot.clone();
+                    bundle::verify(&bytes, &trusted, &board, &boot).and_then(|verified| {
                         model.slots.check_signed(&verified.signed)?;
                         model
                             .slots
@@ -1339,6 +1341,7 @@ fn new_slot(verified: bundle::Verified) -> NewSlot {
         size: verified.size,
         verity: verified.verity,
         signed: verified.signed,
+        boot: verified.boot,
     }
 }
 
@@ -1392,6 +1395,8 @@ fn apply(model: &mut Model, name: &str, args: &[u8], caller: &str) -> Result<Vec
             Ok(nothing)
         }
         names::REBOOT => {
+            // lemnosd refuses a restart whose boot would run a slot that differs from its manifest.
+            model.slots.check_restart()?;
             model.slots.reboot();
             Ok(model.status_text().into_bytes())
         }

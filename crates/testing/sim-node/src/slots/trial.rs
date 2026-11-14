@@ -148,7 +148,7 @@ impl Slots {
     /// default slot until the next restart, which boots the trial again. No attempt is spent: the
     /// boot reached the daemon.
     pub fn power_cut(&mut self) {
-        self.active = self.default.clone();
+        self.boot_default();
         self.state = State::Idle;
         if let Some(trial) = self.trial.as_mut() {
             trial.record.reached = false;
@@ -208,7 +208,7 @@ impl Slots {
                 );
             }
             Some(_) => self.boot_trial(),
-            None => self.active = self.default.clone(),
+            None => self.boot_default(),
         }
     }
 
@@ -319,6 +319,14 @@ impl Slots {
     /// does not reach the daemon leaves the board on the default slot with the trial pending.
     // LOCK: Lemnos L1 (I5f). Pre-L1 board: a trial is confirmed only by an explicit confirm; no resolved, no record_error.
     fn boot_trial(&mut self) {
+        // A trial whose boot files differ from its manifest does not run: it falls back at once.
+        if let Some(id) = self.trial.as_ref().map(|trial| trial.id.clone())
+            && let Some(reason) = self.boot_mismatch(&id)
+        {
+            let reason = format!("the trial slot does not boot: {reason}");
+            self.fall_back(&id, &reason, By::Auto);
+            return;
+        }
         let now = self.now_s;
         let lost = self.boots_without_daemon > 0;
         if lost {
@@ -356,7 +364,7 @@ impl Slots {
                 format!("the trial slot did not reach a running daemon in {failed_boots} boots");
             self.fall_back(&id, &reason, By::Auto);
         } else {
-            self.active = self.default.clone();
+            self.boot_default();
             self.state = State::Idle;
             self.event(format!("trial boot of {id} did not reach the daemon"));
         }
@@ -396,7 +404,7 @@ impl Slots {
     fn fall_back(&mut self, id: &str, reason: &str, by: By) {
         self.fail(id, reason);
         self.trial = None;
-        self.active = self.default.clone();
+        self.boot_default();
         self.state = State::RolledBack;
         self.trial_reason = self.fail_record_writes.then(|| reason.to_string());
         self.resolved = Some(Resolved {

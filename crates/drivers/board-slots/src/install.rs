@@ -264,8 +264,9 @@ impl InstallKind {
             SavedSource::Image { .. } => {
                 let target = self.scratch.join(format!("{}.tar", spec.nonce));
                 if !target.exists() {
-                    // LOCK: Lemnos L2: a signed bundle needs slot.key (the bundle writer's, D13); the
-                    // bundle written here is only as signed as `atlas_bundle::bundle_from_image` makes it.
+                    // LOCK: Lemnos L2: the signature is the bundle's `slot.sig` record (108 bytes, the key
+                    // id inside it; no `slot.key` member). The bundle written here is as signed as
+                    // `atlas_bundle::bundle_from_image` makes it, with the signing key Atlas holds.
                     let image = spec.source.clone();
                     let partial = self.scratch.join(format!("{}.tar.partial", spec.nonce));
                     let scratch = self.scratch.clone();

@@ -78,7 +78,7 @@ pub fn write_bundle<W: Write>(
     );
     manifest.validate()?;
     let json = manifest.to_json()?;
-    let signature = sign_slot(&json, signing_key);
+    let signature = sign_slot(&json, signing_key)?.to_bytes();
 
     // Pass two: the tar.
     let mut tar = tar::Builder::new(out);

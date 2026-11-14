@@ -299,7 +299,11 @@ pub fn bundle_bytes(id: &str, version: &str, board: Option<&str>) -> Vec<u8> {
         .repeat(900)
         .into_bytes();
     let boot: [(&str, &[u8]); 2] = [
-        ("cmdline.txt", b"console=ttyS0 root=/dev/dm-0\n"),
+        // The command line carries the word the simulated board's default rule states.
+        (
+            "cmdline.txt",
+            b"console=ttyS0 root=/dev/dm-0 os.src.rpi-boot-mode-1=/soc@107c000000/mmc@fff000\n",
+        ),
         ("kernel.img", b"kernel bytes"),
     ];
     let mut manifest = atlas_sim_node::bundle::manifest(id, version, &rootfs, &boot);
@@ -307,7 +311,7 @@ pub fn bundle_bytes(id: &str, version: &str, board: Option<&str>) -> Vec<u8> {
     if let Some(board) = board {
         manifest["board"] = serde_json::Value::String(board.into());
     }
-    atlas_sim_node::bundle::build(&manifest, None, None, &rootfs, &boot)
+    atlas_sim_node::bundle::build(&manifest, None, &rootfs, &boot)
 }
 
 /// Writes a bundle to a file in `dir` and returns its path.

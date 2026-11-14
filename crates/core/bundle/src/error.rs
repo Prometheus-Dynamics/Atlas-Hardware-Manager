@@ -46,8 +46,16 @@ pub enum BundleError {
     },
     #[error("the bundle is not valid: {0}")]
     Malformed(String),
-    #[error("slot.sig does not verify against slot.json with any trusted key")]
+    /// The signature is by a key the list holds, and it does not verify the slot's message.
+    #[error(
+        "slot.sig is signed by a key this board holds, and it does not verify slot.json: refused"
+    )]
     BadSignature,
+    /// `boot/cmdline.txt` lacks the word for a boot source the board states.
+    #[error(
+        "boot/cmdline.txt has no {word:?} for boot source {boot_source}: the builder writes the whole command line, and the installer appends nothing"
+    )]
+    MissingBootSource { boot_source: String, word: String },
 }
 
 impl BundleError {

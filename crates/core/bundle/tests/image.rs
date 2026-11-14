@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use atlas_bundle::{
-    BLOCK, BundleError, SlotMeta, bundle_from_image, check_stream_digest, inspect_bundle,
+    BLOCK, BootRule, BundleError, SlotMeta, bundle_from_image, check_stream_digest, inspect_bundle,
     verify_slot,
 };
 use atlas_release::{PublicKey, public_key_for};
@@ -37,6 +37,16 @@ fn alpha_file() -> Vec<u8> {
     let mut bytes = pattern(4 * BLOCK, 1);
     bytes.extend_from_slice(&pattern(BLOCK, 2));
     bytes
+}
+
+/// The rule for the reader's fixture. Its cmdline (the reader's own `data.ext4`, which this crate
+/// does not change) predates the boot-source words, so it states no source here. The word check
+/// is tested with the default rule in tests/bundle.rs.
+fn fixture_rule() -> BootRule {
+    BootRule {
+        boot_args: "os".into(),
+        sources: Vec::new(),
+    }
 }
 
 /// Slot `alpha`'s boot files, by path, as the fixture lists them.
@@ -236,12 +246,13 @@ fn a_bundle_from_the_image_in_one_call_matches_the_slots_parts_member_by_member(
     // slot.json and its signature.
     let json = get("slot.json");
     let sig = get("slot.sig");
-    assert_eq!(sig.len(), 64);
+    assert_eq!(sig.len(), atlas_bundle::RECORD_LEN);
     assert_eq!(
         verify_slot(json, sig, &keys_of(&secret)).expect("verifies"),
-        0
+        atlas_bundle::Signature::Verified { signer: 0 }
     );
-    let inspected = inspect_bundle(&bundle[..], &keys_of(&secret)).expect("inspects");
+    let inspected =
+        inspect_bundle(&bundle[..], &keys_of(&secret), &fixture_rule()).expect("inspects");
     assert_eq!(inspected.board, "example-board");
     assert_eq!(inspected.manifest.verity.root_hash, slot_root());
     assert_eq!(inspected.manifest.boot.files.len(), 5);

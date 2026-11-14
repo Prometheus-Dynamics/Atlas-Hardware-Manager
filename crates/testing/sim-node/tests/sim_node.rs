@@ -22,6 +22,10 @@ const POLL: Duration = Duration::from_millis(10);
 
 /// Asks `check` until it has an answer. Load can make any step slow, so nothing here assumes a
 /// step has happened by some time: the wait ends when the answer is there, or at [`DEADLINE`].
+/// The command line the default board rule takes: its boot-source word is on it.
+const CMDLINE: &[u8] =
+    b"console=ttyS0 root=/dev/dm-0 os.src.rpi-boot-mode-1=/soc@107c000000/mmc@fff000\n";
+
 fn wait_for<T>(what: &str, mut check: impl FnMut() -> Option<T>) -> T {
     let deadline = Instant::now() + DEADLINE;
     loop {
@@ -57,17 +61,12 @@ fn bundle_for(id: &str, version: &str, key: Option<&SigningKey>) -> Vec<u8> {
     let rootfs = format!("rootfs of {id} at {version}\n")
         .repeat(900)
         .into_bytes();
-    let boot: [(&str, &[u8]); 2] = [
-        ("cmdline.txt", b"console=ttyS0 root=/dev/dm-0\n"),
-        ("kernel.img", b"kernel bytes"),
-    ];
+    let boot: [(&str, &[u8]); 2] = [("cmdline.txt", CMDLINE), ("kernel.img", b"kernel bytes")];
     let manifest = bundle::manifest(id, version, &rootfs, &boot);
-    let signature = key.map(|key| bundle::sign(&manifest, key));
-    let key_id = key.map(bundle::key_id);
+    let record = key.map(|key| bundle::sign(&manifest, key));
     bundle::build(
         &manifest,
-        signature.as_ref().map(|signature| &signature[..]),
-        key_id.as_deref(),
+        record.as_ref().map(|record| &record[..]),
         &rootfs,
         &boot,
     )
@@ -122,12 +121,9 @@ fn install(orion: &Orion, bundle: &[u8], pin: bool, keep_old: bool) -> Finished 
 fn big_bundle(id: &str) -> Vec<u8> {
     let rootfs = format!("rootfs of {id}\n").into_bytes();
     let blob = vec![7_u8; 4 * 1024 * 1024];
-    let boot = [
-        ("cmdline.txt", &b"console=ttyS0\n"[..]),
-        ("blob.bin", &blob[..]),
-    ];
+    let boot = [("cmdline.txt", CMDLINE), ("blob.bin", &blob[..])];
     let manifest = bundle::manifest(id, "2.0.0", &rootfs, &boot);
-    bundle::build(&manifest, None, None, &rootfs, &boot)
+    bundle::build(&manifest, None, &rootfs, &boot)
 }
 
 fn list(orion: &Orion) -> Value {
@@ -853,7 +849,7 @@ fn a_layered_manifest_is_refused() {
     let rootfs = b"rootfs bytes".to_vec();
     let mut manifest = bundle::manifest("layered-1", "2.0.0", &rootfs, &[("cmdline.txt", b"x")]);
     manifest["layers"] = serde_json::json!([{ "id": "base" }]);
-    let bytes = bundle::build(&manifest, None, None, &rootfs, &[("cmdline.txt", b"x")]);
+    let bytes = bundle::build(&manifest, None, &rootfs, &[("cmdline.txt", b"x")]);
     let finished = install(&orion, &bytes, false, false);
     assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
     assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
@@ -976,10 +972,10 @@ fn security_on_refuses_unsigned_and_untrusted_bundles_and_keeps_nothing() {
 /// A bundle whose slot.json is `manifest` after `change`, with the rest of the bundle as `bundle_for`.
 fn bundle_with(id: &str, change: impl FnOnce(&mut Value)) -> Vec<u8> {
     let rootfs = format!("rootfs of {id}\n").into_bytes();
-    let boot = [("cmdline.txt", &b"console=ttyS0\n"[..])];
+    let boot = [("cmdline.txt", CMDLINE)];
     let mut manifest = bundle::manifest(id, "2.0.0", &rootfs, &boot);
     change(&mut manifest);
-    bundle::build(&manifest, None, None, &rootfs, &boot)
+    bundle::build(&manifest, None, &rootfs, &boot)
 }
 
 #[test]
