@@ -7,7 +7,7 @@ description = "the Lemnos bridge to Orion, lemnos-orion (service profile)"
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "d6b9361d006e5f633149b6dea8bb5d1be9483d0a"
+ref = "7d7fababf43fa20a53a6eea2daf4bec209e78ad6"  # PLUMBING PIN (origin/pr/I5j, coordinator 2026-11-14): replaced by I5j's merged rev; never merged while it stands
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"

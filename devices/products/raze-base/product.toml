@@ -10,8 +10,9 @@
 # (orion-bin); the Raze's board file and the base files.
 #
 # THE PINS (L2d): Gaia is pinned at b8585a0 (devices/gaia.lock; its recipes are b3fa40f's, which have `slot-boot`).
-# The Lemnos pin is still d6b9361d: this product's slot, bundle and boot partition need Lemnos L2 (I5j, the bundle
-# tool, and the bay keys), so the image is held until that rev. See docs/prs/L2d.md, "The move".
+# PLUMBING PIN: Lemnos is pinned at 7d7fabab (origin/pr/I5j, a PR head, sent by the coordinator 2026-11-14) so Gaia can
+# build a plumbing-proof image that is NEVER flashed. I5j's merged rev replaces it in a new commit; this product does not
+# merge while it pins a PR head. See docs/prs/L2d.md, "The move".
 version = 1
 name = "raze-base"
 description = "Raze base OS: the Raze board with the Lemnos and Orion packages, as a root slot made by slot-boot"
