@@ -20,9 +20,23 @@ BR2_PACKAGE_RPI_FIRMWARE=y
 BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS=y
 
 # -- The console and the way in -----------------------------------------------------------------------
-# A shell for Orion's logins (Orion's comm core runs a user's own shell after it logs them in, so the base
-# needs /bin/sh). BusyBox's default applets; no others.
+# BusyBox is the image's one set of applets. Its config is os/busybox.config, a file beside this fragment (`@here@`
+# is this directory; Gaia takes the file as an input tree and Buildroot reads it as BR2_PACKAGE_BUSYBOX_CONFIG).
+# The 39 applets it enables are the table in docs/prs/B40.md, each with where the image calls it or why the
+# recovery console needs it. Not enabled: every network server (telnetd, httpd, tftpd, inetd, dnsd, ftpd, udhcpd,
+# ssl_server), the network clients but ip and ping (wget, tftp, nc, telnet, udhcpc), su, passwd, getty, vi, crond
+# and init. login IS enabled: systemd's serial-getty@ttyGS0 runs util-linux's agetty, which execs /bin/login, and
+# busybox login is the image's only one. It runs as root from agetty, so it needs no set-uid. No autologin.
+# Orion's logins run /bin/sh (its comm core's default shell), so sh is kept.
+# Set-uid: CONFIG_FEATURE_SUID is off. Buildroot 2026.08's busybox.mk nevertheless installs /bin/busybox mode 4755
+# from its BUSYBOX_PERMISSIONS table in the single-binary build, whatever the config says. Not changed here: Gaia
+# strips set-uid bits when it makes a slot root unless the product lists the file, and the next build's size report
+# states whether the bit survived (docs/prs/B40.md).
 BR2_PACKAGE_BUSYBOX=y
+BR2_PACKAGE_BUSYBOX_CONFIG="@here@/busybox.config"
+# /etc/profile without `export EDITOR=/bin/vi` (no editor on the board): the overlay directory's etc/profile is copied
+# over the skeleton's after the install (Buildroot's BR2_ROOTFS_OVERLAY). No Buildroot option names EDITOR.
+BR2_ROOTFS_OVERLAY="@here@/overlay"
 # No sshd and no dropbear: Orion serves SSH itself (its comm core, ssh.listen), so a second server would be
 # a second way in with its own keys.
 # The console: a getty on the USB gadget's ACM port, ttyGS0, is systemd's serial-getty@ttyGS0.service. It is

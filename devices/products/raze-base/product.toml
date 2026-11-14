@@ -53,6 +53,20 @@ recipe = "slot-boot"
 #                  [[partitions]] role = "boot"); check-devices refuses two numbers.
 #  compression     EROFS compression: lzma, the one the build's own mkfs.erofs writes (Buildroot's host tool has no zstd).
 #                  The board measurement on the first Raze image decides the final value (lzma, lz4hc, zstd rows).
+#  level           the lzma level, 6 (coordinator's ruling 2026-11-14, from dev's lzma options). Measured by Gaia's build from
+#                  Atlas f8e7a2c6 with the five options below: EROFS root 18,178,048 bytes, against 26,841,088 with lzma's
+#                  defaults and 38,621,184 with lz4hc (dev's root was 39,817,216). The five options are one row: their
+#                  reasons are the same measurement.
+#  dictsize        the lzma dictionary, 2,097,152 bytes (2 MiB), the same row. The kernel holds one dictionary per LZMA stream
+#                  while the image is mounted, and raze.config caps the streams at 4: up to 8 MiB of dictionary while mounted,
+#                  against the 64 MB goal. The kernel's own dictionary limit was NOT checked: no kernel tree is on this machine.
+#  cluster         the most bytes of a compressed cluster, 1,048,576 (1 MiB, a multiple of 4096), the same row. Bigger is
+#                  smaller on disk and costs RAM and read time on the board.
+#  fragments       true: mkfs.erofs -Efragments, file tails and small files packed together, the same row. A kernel from 6.1.
+#  ztailpacking    true: mkfs.erofs -Eztailpacking, a file's compressed tail kept beside its inode, the same row. A kernel from 5.17.
+#                  Kernel check (this PR): the Raze kernel is raspberrypi/linux 53679a5 (rpi-7.2.y, Linux 7.2.9, families/bcm2712
+#                  family.toml; NOT 6.12 as the brief said) so both floors are met, and raze.config has CONFIG_EROFS_FS_ZIP_LZMA=y,
+#                  the decoder for lzma. The five values are slot-boot recipe parameters (recipes/slot-boot.toml at b8585a0).
 #  sign_key_env    the environment variable that names the signing key's file (a raw 32-byte Ed25519 seed or 64 hex,
 #                  mode 0600). Set by the build's caller, never written here: no key path or key material in any file.
 #  sign_key_id     the key id the build is keyed on: SHA-256 of the 32-byte PUBLIC key. This is the BENCH key's id
@@ -68,6 +82,11 @@ product = "raze-base"
 version = "2026.1.0-dev.1+l2d"
 boot_size = 82837504
 compression = "lzma"
+level = 6
+dictsize = 2097152
+cluster = 1048576
+fragments = true
+ztailpacking = true
 sign_key_env = "ATLAS_BENCH_SEED_FILE"
 sign_key_id = "9af003d92992f9c2211a1f5b8d33a08f610c5bae45c61f9f9f6c3a10442fdd64"
 sign_pubkey_env = "ATLAS_BENCH_PUBKEY_FILE"
