@@ -20,6 +20,10 @@ use atlas_topics::description::parse;
 use atlas_topics::{ItemKind, UnitState};
 
 const TRACKED: &str = include_str!("fixtures/lemnos-tracked.txt");
+/// The same device from Lemnos's MERGED build with the lease in force (I6g ca0c7ee1, I6g2 ab31079d),
+/// as the coordinator sent it on 2026-11-13: the device record carries `lease_seconds=60`, and the
+/// contract has five methods.
+const TRACKED_LEASED: &str = include_str!("fixtures/lemnos-tracked-leased.txt");
 
 const HARD: &[&str] = &[
     "plain",
@@ -190,6 +194,36 @@ fn a_whole_description_the_encoder_writes_reads_back_as_it_was_written() {
     assert_eq!(item.warn_high, Some(90));
     assert_eq!(item.group.as_deref(), Some("accel"));
     assert_eq!(item.field.as_deref(), Some("position"));
+}
+
+#[test]
+fn the_merged_builds_reply_with_a_lease_is_read_whole() {
+    let description =
+        parse(TRACKED_LEASED).expect("no line of the merged build's reply is refused");
+    let device = &description.device;
+    assert_eq!(device.generation, Some(1));
+    assert_eq!(device.lease_seconds, Some(60));
+    assert_eq!(device.label.as_deref(), Some("tracked"));
+    assert_eq!(device.address, None, "address=none");
+    assert_eq!(device.state, Some(atlas_topics::DeviceState::Running));
+    assert_eq!(device.reason.as_deref(), Some(""));
+    let contract = &description.contracts[0];
+    assert_eq!(contract.hash, Some(0x8370_c24c_2e97_124e));
+    // `methods=` is a count, and the method records that follow are that many.
+    assert_eq!(contract.methods, Some(5));
+    assert_eq!(description.methods.len(), 5);
+    let jobs: Vec<_> = description
+        .methods
+        .iter()
+        .filter(|method| method.job == Some(true))
+        .filter_map(|method| method.name.as_deref())
+        .collect();
+    assert_eq!(jobs, ["hold_until_cancelled", "count_until_cancelled"]);
+    assert_eq!(
+        (description.unknown_records, description.unknown_keys),
+        (0, 0),
+        "every record and key of the reply is known to the reader"
+    );
 }
 
 #[test]
