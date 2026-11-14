@@ -18,10 +18,8 @@
 //! Memory: the file is never held. The push keeps one chunk buffer and at most nine chunks of 32 KiB
 //! unacknowledged at any moment (Orion's window), see [`Counters::max_in_flight`].
 //!
-//! Today's push holds the node's session while the file moves: the locked Orion rev has only a
-//! blocking `Files::push`, so calls to that node made meanwhile wait until it ends. The session
-//! already carries calls between the steps of a long operation; the stepped push of Orion R2 is what
-//! lets a file and the calls share the node (see `transfer.rs`, feature `orion-r2`).
+//! The push is stepped (Orion's `Files::start_push` and `Pushing::step`): the session carries calls
+//! between its steps, so a file and the calls share the node (see `transfer.rs`).
 //!
 //! Not here: a support bundle. Fetching one needs an Orion action that puts the bundle where a
 //! receiver can take it, which the locked Orion rev does not have.

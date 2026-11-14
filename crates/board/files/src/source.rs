@@ -255,10 +255,11 @@ impl Guard {
         io::Error::other(reason)
     }
 
-    // LOCK: Orion R2 push_with (`Known { digest, size }`, Orion D15): the transfer's digest is known
-    // from the first attempt, so this hashing pass goes. A changed source is then caught by the
-    // board's digest check at commit, and `Files::push_file` refuses early on size and mtime. Until
-    // then this pass is the second read of the source, and the only place that makes it.
+    // LOCK kept (Orion D15 is in dbd5fc08: `start_push` takes `Known { digest, size }`). The digest
+    // is known from the first attempt, so a resend could skip this hashing pass. It stays in A17:
+    // a changed source on a resend would then be caught by the board's digest check at commit
+    // ("Rejected(digest)") rather than by this guard's "source changed" refusal, a change of the
+    // error a person sees. The first attempt has no digest yet and must hash either way.
     fn hashing_read(&mut self, mut hasher: Sha256, buf: &mut [u8]) -> io::Result<usize> {
         let read = match self.source().read(buf) {
             Ok(read) => read,

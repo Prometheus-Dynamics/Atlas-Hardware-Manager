@@ -16,9 +16,9 @@
 //! No board job is ever done through this crate. There is no call that runs a command and
 //! returns its output: a terminal is the only interactive stream, and it is for a person.
 //!
-//! The way to the shell and the key list is a [`Carrier`]. Orion at the locked rev has no client
-//! call for either (see `// LOCK:` in [`carrier`]); the crate ships no production carrier and
-//! tests drive it through the simulated node.
+//! The way to the shell and the key list is a [`Carrier`]. Orion has the calls for either now (see
+//! [`carrier`]); the crate ships no production carrier yet, and tests drive it through the
+//! simulated node.
 //!
 //! # Example
 //!
