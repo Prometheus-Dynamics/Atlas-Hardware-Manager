@@ -32,6 +32,11 @@ pub struct Command {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Parsed {
     Run(Command),
+    /// `bench-key <directory>`: a command that needs no board.
+    BenchKey {
+        directory: PathBuf,
+        json: bool,
+    },
     Help,
     Usage(String),
 }
@@ -42,8 +47,11 @@ pub fn parse(args: &[String]) -> Parsed {
     match args.first().map(String::as_str) {
         None | Some("-h" | "--help" | "help") => return Parsed::Help,
         Some("slots") => {}
+        Some("bench-key") => return parse_bench_key(&args[1..]),
         Some(other) => {
-            return Parsed::Usage(format!("unknown command {other:?}; the command is slots"));
+            return Parsed::Usage(format!(
+                "unknown command {other:?}; the commands are slots and bench-key"
+            ));
         }
     }
     let mut positional: Vec<&str> = Vec::new();
@@ -96,6 +104,29 @@ pub fn parse(args: &[String]) -> Parsed {
     })
 }
 
+/// Reads the operands of `bench-key`: one directory, `--json`, `--help`.
+fn parse_bench_key(args: &[String]) -> Parsed {
+    let mut positional: Vec<&str> = Vec::new();
+    let mut json = false;
+    for arg in args {
+        match arg.as_str() {
+            "-h" | "--help" => return Parsed::Help,
+            "--json" => json = true,
+            flag if flag.starts_with("--") => {
+                return Parsed::Usage(format!("unknown option {flag}"));
+            }
+            _ => positional.push(arg),
+        }
+    }
+    match positional.as_slice() {
+        [directory] => Parsed::BenchKey {
+            directory: PathBuf::from(directory),
+            json,
+        },
+        _ => Parsed::Usage("bench-key needs one directory: bench-key <directory>".into()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,5 +170,22 @@ mod tests {
         assert!(matches!(parse(&words("slots a")), Parsed::Usage(_)));
         assert!(matches!(parse(&words("boards a list")), Parsed::Usage(_)));
         assert_eq!(parse(&words("")), Parsed::Help);
+    }
+
+    #[test]
+    fn bench_key_takes_one_directory_and_json() {
+        assert_eq!(
+            parse(&words("bench-key /x/keys --json")),
+            Parsed::BenchKey {
+                directory: PathBuf::from("/x/keys"),
+                json: true,
+            }
+        );
+        assert!(matches!(parse(&words("bench-key")), Parsed::Usage(_)));
+        assert!(matches!(parse(&words("bench-key a b")), Parsed::Usage(_)));
+        assert!(matches!(
+            parse(&words("bench-key a --state s")),
+            Parsed::Usage(_)
+        ));
     }
 }
