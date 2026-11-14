@@ -1,37 +1,50 @@
-//! The boot-file rules, as Lemnos's code does them (next e3e8a963: slot-init `boot.rs`, lemnosd
-//! `boot_guard.rs`, slot-store `bootcheck.rs`). Every boot checks the files the manifest lists,
-//! before the image is opened; the default is also checked before every restart and every ten
-//! minutes; a failed check moves the default to its previous slot when that one matches.
+//! The boot-file rules, as Lemnos's code does them (next 0c74ec76; the texts and the Pi form from
+//! e3e8a963: slot-init `boot.rs`, lemnosd `boot_guard.rs`, slot-store `bootcheck.rs`). Every boot
+//! checks the files the manifest lists, before the image is opened; the default is also checked
+//! before every restart and every 600 s; a failed check moves the default to its previous slot when
+//! that one matches, and otherwise a fallback starts another slot on trial.
 //!
 //! The simulated clock is `Slots::now_s`. Nothing waits in real time: a rescue is a deadline on
 //! the clock, moved by `advance_clock`.
 
 use std::collections::BTreeMap;
 
-use super::{Slots, State, Status, code};
+use super::{Slots, State, Status, Trial, code, trial};
 
-// LOCK: Lemnos L2 (boot.rs, boot_guard.rs at e3e8a963). The texts in this module are Lemnos's,
-// verbatim (INPUTS, "Boot-file mismatch, AS LEMNOS'S CODE DOES IT"). Lemnos checks each file in the
-// manifest's list order; this model keeps the manifest map's order (sorted by path). At the lock move
-// slot-init and lemnosd run these rules, and this module is their model.
+// LOCK: Lemnos L2 (boot.rs, boot_guard.rs at e3e8a963; the gaps at 0c74ec76). The texts in this
+// module are Lemnos's, verbatim (INPUTS, "Boot-file mismatch, AS LEMNOS'S CODE DOES IT" and "the gaps
+// closed"). Lemnos checks each file in the manifest's list order; this model keeps the manifest map's
+// order (sorted by path). At the lock move slot-init and lemnosd run these rules; this module is their
+// model.
 
-/// slot-init's `rescue_wait` default, on the simulated clock.
+/// slot-init's `rescue_wait` default, on the simulated clock (confirmed at 0c74ec76).
 pub const RESCUE_WAIT_S: u64 = 30;
 /// lemnosd's period for the default's check, on the simulated clock ("every ten minutes").
 pub const PERIODIC_CHECK_S: u64 = 600;
+/// Fallbacks in a row without a confirmed boot, after which no fallback starts.
+pub const MAX_FALLBACKS_IN_A_ROW: u32 = 3;
 
-/// Each manifest file that is missing from the boot partition or whose hash differs, in the
-/// manifest's order: `<name> is missing from the boot partition` or `<name> doesn't match its
-/// manifest hash` (bootcheck's `Mismatch` texts).
-fn mismatches(manifest: &BTreeMap<String, String>, disk: &BTreeMap<String, String>) -> Vec<String> {
+/// Each manifest file, in the manifest's order, that cannot be read, is missing from the boot
+/// partition, or whose hash differs: bootcheck's three texts (`<name> can't be read: <why>`,
+/// `<name> is missing from the boot partition`, `<name> doesn't match its manifest hash`).
+fn mismatches(
+    manifest: &BTreeMap<String, String>,
+    disk: &BTreeMap<String, String>,
+    unreadable: &BTreeMap<String, String>,
+) -> Vec<String> {
     manifest
         .iter()
-        .filter_map(|(name, wanted)| match disk.get(name) {
-            None => Some(format!("{name} is missing from the boot partition")),
-            Some(found) if found != wanted => {
-                Some(format!("{name} doesn't match its manifest hash"))
+        .filter_map(|(name, wanted)| {
+            if let Some(why) = unreadable.get(name) {
+                return Some(format!("{name} can't be read: {why}"));
             }
-            Some(_) => None,
+            match disk.get(name) {
+                None => Some(format!("{name} is missing from the boot partition")),
+                Some(found) if found != wanted => {
+                    Some(format!("{name} doesn't match its manifest hash"))
+                }
+                Some(_) => None,
+            }
         })
         .collect()
 }
@@ -42,7 +55,11 @@ impl Slots {
     #[must_use]
     pub fn why(&self, id: &str) -> Option<String> {
         let entry = self.get(id)?;
-        let list = mismatches(&entry.boot_manifest, &entry.boot_disk);
+        let list = mismatches(
+            &entry.boot_manifest,
+            &entry.boot_disk,
+            &entry.boot_unreadable,
+        );
         (!list.is_empty()).then(|| list.join("; "))
     }
 
@@ -64,6 +81,30 @@ impl Slots {
         match digest {
             Some(digest) => entry.boot_disk.insert(path.to_string(), digest.to_string()),
             None => entry.boot_disk.remove(path),
+        };
+        Ok(())
+    }
+
+    /// Makes a boot file unreadable to the store, with the reader's reason (`Some`), or readable
+    /// again (`None`). An unreadable file is reported as `<name> can't be read: <why>`.
+    ///
+    /// # Errors
+    ///
+    /// `NOT_FOUND` when there is no such slot.
+    pub fn set_boot_file_unreadable(
+        &mut self,
+        id: &str,
+        path: &str,
+        why: Option<&str>,
+    ) -> Result<(), Status> {
+        let entry = self
+            .get_mut(id)
+            .ok_or_else(|| Status::new(code::NOT_FOUND, format!("there is no slot {id}")))?;
+        match why {
+            Some(why) => entry
+                .boot_unreadable
+                .insert(path.to_string(), why.to_string()),
+            None => entry.boot_unreadable.remove(path),
         };
         Ok(())
     }
@@ -101,8 +142,8 @@ impl Slots {
         })
     }
 
-    /// Makes `previous` the default: the old default is marked failed (with its reason), then the
-    /// two pointers swap. Lemnos's `repoint`.
+    /// Makes `previous` the default: the old default is marked failed with the repoint's reason, then
+    /// the two pointers swap. Lemnos's `repoint`; the prefix is written only here.
     fn repoint(&mut self, id: &str, previous: &str, why: &str) {
         if let Some(entry) = self.get_mut(id) {
             entry.failed = true;
@@ -134,8 +175,8 @@ impl Slots {
         }
     }
 
-    /// The periodic check (lemnosd, every [`PERIODIC_CHECK_S`]): the same check, no restart. A
-    /// failed check only reports.
+    /// The periodic check (lemnosd, at once and every [`PERIODIC_CHECK_S`]): the same check, with no
+    /// restart. It repoints when the previous matches; otherwise it only reports.
     pub(super) fn periodic_check(&mut self) {
         match self.default_check(false) {
             Ok(Some(note)) => self.event(note),
@@ -144,8 +185,8 @@ impl Slots {
         }
     }
 
-    /// The timers of the simulated clock: a rescue whose wait ran out restarts the board, and the
-    /// periodic check runs when its period is due.
+    /// The timers of the simulated clock: a rescue whose wait ran out restarts the board (a plain
+    /// restart, which boots again), and the periodic check runs when its period is due.
     pub(super) fn run_timers(&mut self) {
         if let Some(at) = self.rescue_at
             && self.now_s >= at
@@ -160,9 +201,11 @@ impl Slots {
     }
 
     /// The boot path (slot-init, every boot before the image opens). The default runs when its files
-    /// match. When they do not: a previous that matches takes its place at once, with no count; with
-    /// neither matching, no slot can start, no pointer moves, and the board restarts after the rescue
-    /// wait. A default with no valid previous is failed by the normal failure path.
+    /// match. When they do not:
+    /// - a previous that matches takes its place at once, with no count;
+    /// - no valid previous: the ordinary failure path (the default fails with the bare reason, then
+    ///   another startable slot starts on trial, or no slot can start);
+    /// - a previous that does not match either: no slot can start, and no pointer moves.
     pub(super) fn boot_default(&mut self) {
         let Some(id) = self.default.clone() else {
             self.active = None;
@@ -185,20 +228,54 @@ impl Slots {
             return;
         }
         if !previous_exists {
-            // No valid previous: the default fails by the normal failure path.
+            self.event(format!("slot {id} can't start: {why}"));
             self.fail(&id, &why);
+            self.start_fallback(&id, &why);
+            return;
         }
-        let text = if previous_exists {
-            match self.why(&previous) {
-                Some(why2) => format!(
-                    "no slot can start: {why}; its previous {previous} doesn't match its manifest either: {why2}"
-                ),
-                None => format!("no slot can start: {why}"),
-            }
-        } else {
-            format!("no slot can start: {why}")
+        let previous_why = self.why(&previous).unwrap_or_default();
+        self.no_slot(&format!(
+            "{why}; its previous {previous} doesn't match its manifest either: {previous_why}"
+        ));
+    }
+
+    /// The ordinary failure path's fallback: another startable slot starts on trial (its fallback
+    /// count goes up), unless three fallbacks have come in a row without a confirmed boot.
+    fn start_fallback(&mut self, failed: &str, why: &str) {
+        if self.fallbacks_in_a_row >= MAX_FALLBACKS_IN_A_ROW {
+            self.no_slot(&format!(
+                "{why}; fell back {MAX_FALLBACKS_IN_A_ROW} times in a row without a confirmed boot"
+            ));
+            return;
+        }
+        let candidate = self
+            .entries
+            .iter()
+            .filter(|entry| entry.id != failed && !entry.failed && self.why(&entry.id).is_none())
+            .max_by_key(|entry| entry.seq)
+            .map(|entry| entry.id.clone());
+        let Some(next) = candidate else {
+            self.no_slot(&format!("{why}; no other slot can start"));
+            return;
         };
+        self.fallbacks_in_a_row += 1;
+        self.event(format!(
+            "falling back: restarting into slot {next} on trial"
+        ));
+        self.trial = Some(Trial {
+            id: next,
+            keep_default: true,
+            keep_old: true,
+            record: trial::Record::default(),
+        });
+        self.reboot();
+    }
+
+    /// No slot can start: the text, the wait, and a plain restart when the wait runs out.
+    fn no_slot(&mut self, reason: &str) {
+        let text = format!("no slot can start: {reason}");
         self.event(text.clone());
+        self.event(format!("restarting in {} s", self.rescue_wait_s));
         self.active = None;
         self.state = State::Error;
         self.error = text;

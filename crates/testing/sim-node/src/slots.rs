@@ -139,6 +139,8 @@ pub struct Entry {
     /// The boot files as they sit on the boot partition now. A boot whose files differ from
     /// `boot_manifest` is refused (see [`boot`]). A test changes them with `set_boot_file`.
     pub boot_disk: BTreeMap<String, String>,
+    /// Boot files the store cannot read, with the reader's reason (see `set_boot_file_unreadable`).
+    pub boot_unreadable: BTreeMap<String, String>,
 }
 
 /// A trial boot: a slot to boot, to be confirmed or fallen back from. Its boots are in `record`
@@ -216,6 +218,8 @@ pub struct Slots {
     pub rescue_at: Option<u64>,
     /// When the periodic boot-file check is next due, on the simulated clock.
     pub next_check_s: u64,
+    /// Fallbacks in a row since the last confirmed boot (see [`boot`]).
+    pub fallbacks_in_a_row: u32,
     /// Whether the board is healthy: the one health condition the sim models (the `health`
     /// sources of I5f stand in for it). A trial confirms only while this holds.
     pub healthy: bool,
@@ -260,6 +264,7 @@ impl Slots {
                 seq: 1,
                 boot_manifest: BTreeMap::new(),
                 boot_disk: BTreeMap::new(),
+                boot_unreadable: BTreeMap::new(),
             }],
             active: Some("slot-1".into()),
             default: Some("slot-1".into()),
@@ -281,6 +286,7 @@ impl Slots {
             rescue_wait_s: boot::RESCUE_WAIT_S,
             rescue_at: None,
             next_check_s: 0,
+            fallbacks_in_a_row: 0,
             healthy: true,
             boots_without_daemon: 0,
             fail_record_writes: false,
@@ -451,6 +457,7 @@ impl Slots {
             pinned: pin,
             seq: self.seq,
             boot_disk: new.boot.clone(),
+            boot_unreadable: BTreeMap::new(),
             boot_manifest: new.boot,
         });
         self.state = State::Idle;
@@ -591,6 +598,7 @@ impl Slots {
     }
 
     fn mark_good(&mut self, id: &str) {
+        self.fallbacks_in_a_row = 0;
         if let Some(entry) = self.get_mut(id) {
             entry.good = Good::Yes;
             entry.failed = false;

@@ -425,10 +425,69 @@ fn no_slot_can_start_when_the_default_and_its_previous_both_do_not_match() {
     );
 }
 
-#[test]
-fn a_default_with_no_valid_previous_fails_by_the_failure_path_and_nothing_starts() {
+/// A board whose default `B` has no valid previous, and another startable slot `X`.
+fn board_with_default_b_and_no_previous_but_x() -> Slots {
     let mut slots = board_with_default_b();
     slots.previous = None;
+    slots
+        .install_done(
+            new_slot("X", &[("cmdline.txt", "c1"), ("kernel8.img", "k1")]),
+            false,
+            true,
+        )
+        .expect("installs X");
+    slots
+}
+
+#[test]
+fn a_default_without_a_valid_previous_fails_and_another_slot_starts_on_trial() {
+    let mut slots = board_with_default_b_and_no_previous_but_x();
+    slots
+        .set_boot_file("B", "kernel8.img", Some("tampered"))
+        .expect("set");
+    slots.reboot();
+    assert!(
+        slots.events.contains(
+            &"slot B can't start: kernel8.img doesn't match its manifest hash".to_string()
+        ),
+        "{:?}",
+        slots.events
+    );
+    let failed = slots.get("B").expect("B");
+    assert!(failed.failed);
+    assert_eq!(failed.failures, 1, "the failure is counted");
+    assert_eq!(
+        failed.fail_reason, "kernel8.img doesn't match its manifest hash",
+        "the bare reason: the repoint prefix is not written on this path"
+    );
+    assert!(
+        slots
+            .events
+            .contains(&"falling back: restarting into slot X on trial".to_string()),
+        "{:?}",
+        slots.events
+    );
+    assert_eq!(slots.active.as_deref(), Some("X"), "X runs on trial");
+    assert_eq!(
+        slots.trial.as_ref().map(|trial| trial.id.as_str()),
+        Some("X")
+    );
+    assert_eq!(slots.fallbacks_in_a_row, 1, "the fallback count goes up");
+    assert_eq!(slots.default.as_deref(), Some("B"), "the default is kept");
+}
+
+#[test]
+fn no_slot_can_start_when_there_is_no_other_slot_to_start() {
+    let mut slots = board_with_default_b();
+    slots.previous = None;
+    // slot-1 would be a startable fallback: mark it failed so that no other slot can start.
+    for entry in slots
+        .entries
+        .iter_mut()
+        .filter(|entry| entry.id == "slot-1")
+    {
+        entry.failed = true;
+    }
     slots
         .set_boot_file("B", "kernel8.img", Some("tampered"))
         .expect("set");
@@ -436,12 +495,56 @@ fn a_default_with_no_valid_previous_fails_by_the_failure_path_and_nothing_starts
     assert_eq!(slots.active, None);
     assert_eq!(
         slots.error,
-        "no slot can start: kernel8.img doesn't match its manifest hash"
+        "no slot can start: kernel8.img doesn't match its manifest hash; no other slot can start"
     );
-    let failed = slots.get("B").expect("B");
-    assert!(failed.failed);
-    assert_eq!(failed.failures, 1);
-    assert_eq!(slots.default.as_deref(), Some("B"), "no pointer moved");
+    assert!(
+        slots.events.contains(&"restarting in 30 s".to_string()),
+        "{:?}",
+        slots.events
+    );
+    // A plain restart when the wait is over, on the simulated clock.
+    let before = events_with(&slots, "no slot can start");
+    slots.advance_clock(30);
+    assert!(
+        events_with(&slots, "no slot can start") > before,
+        "the board boots again"
+    );
+}
+
+#[test]
+fn no_slot_starts_after_three_fallbacks_in_a_row_without_a_confirmed_boot() {
+    let mut slots = board_with_default_b_and_no_previous_but_x();
+    // Three fallbacks in a row, as the earlier boots would have left them.
+    slots.fallbacks_in_a_row = 3;
+    slots
+        .set_boot_file("B", "kernel8.img", Some("tampered"))
+        .expect("set");
+    slots.reboot();
+    assert_eq!(slots.active, None);
+    assert_eq!(
+        slots.error,
+        "no slot can start: kernel8.img doesn't match its manifest hash; fell back 3 times in a row without a confirmed boot"
+    );
+    assert!(slots.trial.is_none(), "no fallback starts");
+}
+
+#[test]
+fn a_boot_file_the_store_cannot_read_is_named_before_missing_and_changed() {
+    let mut slots = board_with_default_b();
+    slots
+        .set_boot_file_unreadable("B", "kernel8.img", Some("read error: EIO"))
+        .expect("set");
+    assert_eq!(
+        slots.why("B").as_deref(),
+        Some("kernel8.img can't be read: read error: EIO")
+    );
+    slots.set_boot_file("B", "cmdline.txt", None).expect("set");
+    assert_eq!(
+        slots.why("B").as_deref(),
+        Some(
+            "cmdline.txt is missing from the boot partition; kernel8.img can't be read: read error: EIO"
+        )
+    );
 }
 
 #[test]
