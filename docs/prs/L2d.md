@@ -172,3 +172,10 @@ Gaia is at b8585a0 on this branch. Orion is unchanged. The Lemnos edits when the
    `EROFS_FS_ZIP_ZSTD` is already on for the Raze).
 6. The `[kernel] image = "Image.gz"` and `cmdline` on the Raze are already in; the B29 trim changes the kernel bay only.
 7. Re-run `gaia build --config-only`, then the full gate with `GAIA_BIN` set.
+
+**The L2 rev (2026-11-14).** The coordinator declared Lemnos next `f4a295c6` (I5j merged, PR #371) the L2 rev for this
+image; it replaces the plumbing pin `7d7fabab` in all six Lemnos components, and `gaia.lock` is regenerated. Rechecked at
+f4a295c6: `lemnos-ctl validate --no-live` on the board file rc 0 (board "raze", 21 devices); `tree` with the component's
+args and `--slot raze-base-2026.1.0-dev.1-l2d` rc 0 with the same five outputs (overlay.dts 2958 bytes); `bundle --help`
+and `boot-partition --help` list every flag `[generate.bundle]` and the boot-partition step pass; `check-devices.sh` and
+`check-config-only.sh` pass.

@@ -1,4 +1,4 @@
-# Lemnos's packaging for an image with systemd, at Lemnos next d6b9361d: the units, sysusers, udev rules
+# Lemnos's packaging for an image with systemd, at Lemnos next f4a295c6 (I5j merged): the units, sysusers, udev rules
 # and settings files, at the paths Lemnos's packaging/README.md gives (the "one privilege path": no
 # setcap, no xattrs, no User= in the units; lemnosd starts as root and drops itself). Board-neutral.
 #
@@ -14,7 +14,7 @@ description = "Lemnos packaging for systemd: the lemnosd and lemnos-orion units,
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "7d7fababf43fa20a53a6eea2daf4bec209e78ad6"  # PLUMBING PIN (origin/pr/I5j, coordinator 2026-11-14): replaced by I5j's merged rev; never merged while it stands
+ref = "f4a295c611972ba422df20a78112b9fb409c47d0"  # Lemnos next (I5j merged, PR #371), the L2 rev for the Raze image
 
 [[install]]
 from = { source = "src", path = "packaging/systemd/lemnosd.service" }

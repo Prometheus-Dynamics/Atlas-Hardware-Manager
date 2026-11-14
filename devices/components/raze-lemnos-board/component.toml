@@ -20,7 +20,7 @@ mode = "0644"
 # usb-gadget device; scripts/check-lemnos-gadget.py enforces that pairing both ways.
 [sources.lemnos]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "7d7fababf43fa20a53a6eea2daf4bec209e78ad6"  # PLUMBING PIN (origin/pr/I5j, coordinator 2026-11-14): replaced by I5j's merged rev; never merged while it stands
+ref = "f4a295c611972ba422df20a78112b9fb409c47d0"  # Lemnos next (I5j merged, PR #371), the L2 rev for the Raze image
 
 # The image lemnos-ctl is built in, and the generator runs in (Gaia #100: a [generate] tool is built for the build
 # machine and run in the image its component's `root` source names). The same image lemnos-ctl's own component uses.
@@ -28,7 +28,7 @@ ref = "7d7fababf43fa20a53a6eea2daf4bec209e78ad6"  # PLUMBING PIN (origin/pr/I5j,
 image = "docker.io/library/rust:1.99-slim"
 platform = "host"
 
-# The files `lemnos-ctl tree` writes from the board file (L2d, the held L2 flags, lemnos-ctl at Lemnos I5j 7d7fabab:
+# The files `lemnos-ctl tree` writes from the board file (L2d, the held L2 flags, lemnos-ctl at Lemnos next f4a295c6:
 # service/ctl/src/lib.rs, fn tree). NO --boot-dir: the boot partition is written as one image by `boot-partition` below
 # (I5i8: `tree --boot-dir` is refused). --boot is not passed (Gaia has no key for config.txt lines).
 # --manifest-boot comes from the SAME invocation as -o (I5i6). --cmdline-slot needs --slot (the image's slot id).
@@ -67,7 +67,7 @@ verify = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/
 
 # The slot bundle: the same tool writes it from the payload, the root image and its verity table (`@rootfs@`,
 # `@verity-table@`), signed by the key the environment names (`sign_key_env`, `sign_key_id`), and gives the payload back
-# as it bundled it (`@payload-out@`: the boot partition is written from THAT payload). Flags checked at I5j 7d7fabab with
+# as it bundled it (`@payload-out@`: the boot partition is written from THAT payload). Flags checked at Lemnos next f4a295c6 with
 # `lemnos-ctl bundle --help` (docs/prs/L2d.md, "bundle, flag by flag").
 [generate.bundle]
 args = ["bundle", "--layout-of", "@description@", "--socs", "@source@/socs", "--slot", "@slot@", "--payload", "@payload@", "--rootfs", "@rootfs@", "--verity-table", "@verity-table@", "--product", "@product@", "--version", "@version@", "--payload-out", "@payload-out@", "--out", "@out@"]
