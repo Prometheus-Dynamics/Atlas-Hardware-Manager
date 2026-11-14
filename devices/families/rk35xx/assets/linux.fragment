@@ -14,6 +14,11 @@
 CONFIG_EROFS_FS=y
 CONFIG_EROFS_FS_ZIP=y
 CONFIG_EROFS_FS_ZIP_ZSTD=y
+# The LZMA decompressor too (L2d): the slot-making recipes now default to lzma (the build's own mkfs.erofs writes no zstd;
+# the board measurement on the first image decides the final value). Lines beside the zstd line, each its own option.
+CONFIG_EROFS_FS_ZIP_LZMA=y
+# Each LZMA stream holds memory for the life of the mount: the same 4 as the Raze kernel (raze.config).
+CONFIG_EROFS_FS_ZIP_LZMA_DEFAULT_MAX_STREAMS=4
 CONFIG_STMMAC_ETH=y
 CONFIG_STMMAC_PLATFORM=y
 CONFIG_DWMAC_ROCKCHIP=y

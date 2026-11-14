@@ -67,3 +67,108 @@ follow it and write the difference down here.
 ## Not in this branch
 
 Any pin move; the simulated board; the app; rk35xx and sun60i products (parked); merging PR 89 or PR 92.
+
+## As built (2026-11-14)
+
+**Pins.** Gaia moved on this branch to `b8585a049326ed29ef6eb37a7afde56a3acfda8c` (coordinator's change; its recipes equal
+`b3fa40f`'s). The Lemnos pin (`d6b9361d`) and the Orion pin are unchanged. The bench-key public half is the only key
+material committed (`devices/components/raze-lemnos-board/files/slot-keys`).
+
+**Lemnos build.** `lemnos-ctl` built `--locked -p lemnos-ctl` (profile dev, `CARGO_TARGET_DIR` in scratch) at
+Lemnos `7d7fabab` (`origin/pr/I5j`, "I5j: lemnos-ctl writes and verifies a slot bundle"). `origin/next` does not have
+I5j yet (its tip was `092c32ed` when fetched; `7d7fabab` is the held I5j head, parent `bfbe88f4`). `lemnos-ctl bundle` exists at 7d7fabab.
+
+**Gaia, gating binary b3fa40f, then b8585a0 (the pin).** Products validated and planned with the committed locks;
+`gaia build --config-only` (warm store `store-build`) passed for the Raze product with b3fa40f (exit 0, 20 s).
+
+Raze product plan (b8585a0, `gaia plan ... --json`): 111 steps; `raze-base::erofs` constant `compression = lzma`;
+`raze-base::boot` size 82837504; `raze-base::bundle` runs as written (`key_args` `--key-file @key@ --expect-key-id @key-id@`,
+`verify_key_args` `--pubkey @pubkey@`); `raze-base::cmdline` base `dhash_entries=16384 ihash_entries=8192 thash_entries=4096 uhash_entries=1024`.
+
+`gaia validate` of product, board and component: `ok` (rc 0). `check-devices.sh` with b8585a0: rc 0, eight products `ok`.
+`check-config-only.sh` with b8585a0: all eight products `ok`, `passed`.
+
+**What the locked (c6a3d10) binary and the first pin did not accept, found on the way.** At b8585a0 (not c6a3d10):
+- every product making a slot (`sd-image` and `slot-boot`) needs `BR2_PACKAGE_HOST_EROFS_UTILS=y` and `BR2_PACKAGE_HOST_CRYPTSETUP=y`
+  in its OS fragment: refused by name without. Added to raze.fragment, rock-4d-base, rock-5c-base, zero-3e-base and
+  cubie-a7-bringup (the bringup products inherit or carry these), and to the good-sd-image fixture.
+- the recipe default for `compression` is now `lzma`, so the sd-image products plan with lzma; their families and the
+  bcm2712 family state `CONFIG_EROFS_FS_ZIP_LZMA=y` and `CONFIG_EROFS_FS_ZIP_LZMA_DEFAULT_MAX_STREAMS=4` beside the zstd lines.
+- `scripts/check-devices.sh`: `SLOT_RECIPES` gained `slot-boot`; the erofs self-test now swaps the explicit
+  `compression` line (lz4 case) and removes it (recipe-default case, refused unless the kernel has LZMA).
+
+**Lemnos bundle, flag by flag** (`lemnos-ctl bundle --help` at 7d7fabab vs `[generate.bundle]`): every flag in
+`args` (`--layout-of --socs --slot --payload --rootfs --verity-table --product --version --payload-out --out`),
+`key_args` (`--key-file --expect-key-id`) and `verify` / `verify_key_args` (`--verify --pubkey`) is in the usage line.
+Nothing missing, nothing extra. The bundle itself was NOT run (it needs a signing seed; the seed was not opened).
+
+**`tree` (the component's args, I5j 7d7fabab, no `--boot-dir`):** rc 0; outputs overlay.dts (2958 bytes),
+modprobe.conf, cmdline.words (86 bytes), cmdline-slot.words (`os.slot=raze-base-2026.1.0-dev.1-l2d os.roothash=@roothash@
+os.src.rpi-boot-mode-1=/soc@107c000000/mmc@fff000 panic=5`), manifest-boot.json (`{"overlay":{"board":"raze","sha256":...}}`).
+`dtc -@` compiles the overlay to 1,823 bytes; `fdtoverlay` applies it to the CM5 base dtb (79,751 bytes, sha256 f773b476...,
+the dev-image copy) with rc 0. The base dtb used is the dev image's copy, not a dtb from our kernel build.
+
+**Board validate:** `lemnos-ctl validate --socs socs --no-live devices/boards/raze/lemnos-board.toml`: rc 0, "board raze, 21 devices".
+
+**Boot partition (I5j tool; payload of the real sizes, the kernel a stand-in of 6,773,267 bytes, the bundle's files
+not built):** `boot-partition --layout-of ... --min-size --payload DIR` gives `kernel 6773267 10485760`,
+`initramfs 495328 1048576`, `device-tree 79751 131072`, `cmdline 249 4096`, `board-overlay 1823 16384`; total minimum
+**35,245,568** bytes (was 38,242,816 with the earlier 11 MiB kernel and 90 KiB dtb bays). `boot_size` 82,837,504 still fits, so
+it is kept. Writing at `--size 82837504` gave an image of that size and `--verify` printed `ok` for every check (rc 0).
+`--size 38000000` is refused (not a whole number of sectors; the minimum is still the one printed by `--min-size`).
+
+**Bay sizes (board file `[boot]`, flash-time sizes, set 2026-11-14 by the coordinator's direction):** a bay cannot grow after
+the image is built, so each has room past today's file. Lemnos's written rule (`docs/slots.md`, `docs/boards.md`) is the
+largest file a future slot may bring plus a margin (the board file's comment there says 10 %), rounded up. These are above
+that 10 % floor for every role; where Lemnos's rule and the coordinator's words differ, the larger value meets both.
+| key | bytes | today's file | source of today's file | room |
+|---|---|---|---|---|
+| `bay_kernel_bytes` | 10,485,760 (10 MiB) | 6,773,267 | gzip -9n of the Image, 15,096,320 raw, built by Gaia c6a3d10 from `next` on 2026-11-14 (the trim is in the plan); coordinator's measurement | 55 %; Lemnos's 10 % floor is 7,450,594 |
+| `bay_initramfs_bytes` | 1,048,576 (1 MiB) | 495,328 | slot-init newc archive (proven, one file `init`) | about 2x |
+| `bay_device_tree_bytes` | 131,072 (128 KiB) | 79,751 | bcm2712-rpi-cm5-cm5io.dtb, sha256 f773b476..., the dev-image copy (same bytes as Raze #2) | 1.6x: the base tree changes with a kernel bump |
+| `bay_overlay_bytes` | 16,384 (16 KiB) | 1,823 | compiled board overlay, `dtc -@` here | 9x: camera stream tables and later overlays grow it |
+| `bay_cmdline_bytes` | 4,096 (4 KiB) | 249 | stored cmdline, the tool's figure | 16x |
+
+Dated measurements: the kernel figure 6,773,267 is the 2026-11-14 build (coordinator's `gzip -9n`); the older
+10,168,581 gzip figure (L2-partition-requirements 8.2, 2026-11-13) was measured before B29's trim landed and is STALE.
+
+**Differences between INPUTS and the tools (found, not fixed by changing a tool):**
+1. Kernel figures. INPUTS / the brief give 6,779,764 bytes gzip "today". The L2-partition note (8.2, 2026-11-13) gives
+   10,168,581 for next's gzip -9 Image: that was measured BEFORE B29's trim landed on next and is STALE. The figure next
+   really builds is 6,773,267 bytes (gzip -9n of the 15,096,320-byte Image, Gaia c6a3d10 build from next, 2026-11-14,
+   measured by the coordinator). The brief's 6,779,764 is close to it and is not the value in use. The kernel bay is 10 MiB.
+2. INPUTS said the slot compression should be set in the image; the b8585a0 recipe's default is lzma and the product also
+   states it. No conflict, noted only.
+3. `lemnos-ctl boot-partition --layout-of BOARD --min-size --payload DIR` (the Gaia `fit` form) is accepted; the usage line
+   shows `--min-size` without `--layout-of`. Both forms exit 0.
+4. The gaia b8585a0 checks now require the host erofs and cryptsetup lines and `EROFS_FS_ZIP_LZMA*` in the families. INPUTS
+   described the first as the coming Gaia rule; it is in force at the pin.
+5. `tree --bridge-env` exists at I5j (R1j). The hand-written `lemnos-orion-links.conf` drop-in is kept until the move.
+6. The slot id and version are literal (placeholders: count 1, commit "l2d"). No check holds `slot` = `version` with `+`
+   read as `-`. INPUTS' example `raze-base-2026.1.0-dev.993-<commit8>` is the shape the move uses.
+
+**Gate.** See the PR text; the gate is run as `GAIA_BIN=...b8585a0... CARGO_TARGET_DIR=.../atlas-next-target-2 ./scripts/gate.sh`.
+
+**Not proven.** No image was built (only config-only). No bundle was written or verified (no seed read). The boot partition
+was not booted. The overlay was applied to a dev-image dtb, not to a dtb from our kernel build. The `dtc` here is not
+Buildroot's host dtc. The plan's `mkfs_erofs` is the host's `/usr/bin/mkfs.erofs`; the build uses the image's own
+(Buildroot's 1.8.10 pin). `fdtoverlay` from `BR2_PACKAGE_HOST_DTC` is assumed (Gaia's example fragment does the same). The
+Raze's `slot-keys` line is the bench key, a test credential, milestone 2 only.
+
+## The move (Lemnos only; Gaia and Orion are already at their final pins for this branch)
+
+Gaia is at b8585a0 on this branch. Orion is unchanged. The Lemnos edits when the L2 rev is sent:
+1. Lemnos lock: every `[sources.lemnos] ref` (components `lemnos`, `lemnosd`, `lemnos-ctl`, `lemnos-orion`, `lemnos-slot-init`,
+   `raze-lemnos-board`, and any other Lemnos ref) from `d6b9361d...` to the L2 rev. The L2 rev must contain I5j (`bundle`),
+   the bay keys (I5i8), `boot-partition`, and the I5i7 / I5i9 refusal texts. Then `check-devices.sh --write-locks`.
+2. Lemnos board files: run `lemnos-ctl validate` from that rev over EVERY Lemnos board file we hold (Raze, zero-3e,
+   pending files stay out). Re-check the bay sizes with the first Raze build's `role stored_bytes` line (`gaia plan` and
+   `boot-report`); change the five keys only if a stored file moved.
+3. `lemnos-orion-links.conf` (the hand-written `LEMNOS_ORION_LINKS` drop-in) goes when `tree --bridge-env` lands in the
+   generated outputs (R1j), and `--bridge-env` is added to the `[generate]` args.
+4. Version and slot: replace the placeholder count and commit with the real ones of the Atlas tree the image is built from;
+   the slot id is the version with `+` read as `-`, lowercase. Gaia's `slot` setting and the product's `version` change together.
+5. Compression: measure `lzma`, `lz4hc` and zstd on the first Raze image and set `compression` (and, for zstd, the kernel's
+   `EROFS_FS_ZIP_ZSTD` is already on for the Raze).
+6. The `[kernel] image = "Image.gz"` and `cmdline` on the Raze are already in; the B29 trim changes the kernel bay only.
+7. Re-run `gaia build --config-only`, then the full gate with `GAIA_BIN` set.

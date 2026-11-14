@@ -1,15 +1,14 @@
-# The Raze's files that still have to be files on the board, and the Lemnos
-# board definition. Everything the board's scripts and units did that moved to
-# Lemnos drivers or Orion is not here (the PR text lists each file's new home).
+# The Raze's files that still have to be files on the board, and the Lemnos board definition. Everything the board's
+# scripts and units did that moved to Lemnos drivers or Orion is not here (the PR text lists each file's new home).
 version = 1
 name = "raze-lemnos-board"
-description = "Raze board files for lemnosd: the i2c-dev module load, the USB power rule, the board file (Lemnos Q2d, from the board directory), the gadget drop-in (R1d), and the files lemnos-ctl tree generates from that board file; locked to Lemnos d6b9361d"
+description = "Raze board files for lemnosd: the i2c-dev module load, the USB power rule, the board file (from the board directory), the gadget drop-in (R1d), the trust root, and the files, slot bundle and boot partition lemnos-ctl writes from that board file (L2d, slot-boot)"
 
-# /etc/lemnos/board.toml: the Raze's board file, written to Lemnos Q2d, and locked to Lemnos d6b9361d (L1,
-# PR B23) with the rest of the product's Lemnos components. The file is the BOARD's, not this component's: it
-# is boards/raze/lemnos-board.toml, named by boards/raze/board.toml under [descriptions] (PR B26). The install
-# takes it by that name, so the file the image carries is the one the board directory holds.
-# Its generated outputs come from `lemnos-ctl tree` on this file at build time.
+# /etc/lemnos/board.toml: the Raze's board file, locked to Lemnos L2 (I5j, the bundle tool) with the rest of the
+# product's Lemnos components. The file is the BOARD's, not this component's: it is boards/raze/lemnos-board.toml,
+# named by boards/raze/board.toml under [descriptions]. The install takes it by that name, so the file the image
+# carries is the one the board directory holds. Its generated outputs come from `lemnos-ctl tree` on this file at
+# build time; the slot bundle and the boot partition from `lemnos-ctl bundle` and `boot-partition` (below).
 
 [[install]]
 from = { description = "lemnos" }
@@ -29,21 +28,52 @@ ref = "d6b9361d006e5f633149b6dea8bb5d1be9483d0a"
 image = "docker.io/library/rust:1.99-slim"
 platform = "host"
 
-# The files `lemnos-ctl tree` writes from the board file (PR B27). Its arguments are the flags that exist at this
-# Lemnos lock d6b9361d (service/ctl/src/lib.rs, fn tree): --socs, -o, --modprobe, --cmdline (and --boot, which this
-# block does not pass: Gaia has no key for config.txt lines; Lemnos writes them in its own later steps). No --udev,
-# --mdev, --boot-dir or --slot at this lock: those come with Lemnos Q2i (a06c650c), Q2j (4e668481) and the held L2
-# stack. Every declared output is written by one of the flags above, and nothing else is written.
+# The files `lemnos-ctl tree` writes from the board file (L2d, the held L2 flags, lemnos-ctl at Lemnos I5j 7d7fabab:
+# service/ctl/src/lib.rs, fn tree). NO --boot-dir: the boot partition is written as one image by `boot-partition` below
+# (I5i8: `tree --boot-dir` is refused). --boot is not passed (Gaia has no key for config.txt lines).
+# --manifest-boot comes from the SAME invocation as -o (I5i6). --cmdline-slot needs --slot (the image's slot id).
+# Every declared output is written by one of these flags. Outputs with a [generate.provides] role are read by Gaia.
 [generate]
 description = "lemnos"
 tool = { source = "lemnos", package = "lemnos-ctl" }
 args = [
   "tree", "--socs", "@source@/socs", "@description@",
   "-o", "@out@/overlay.dts",
+  "--manifest-boot", "@out@/manifest-boot.json",
   "--modprobe", "@out@/modprobe.conf",
   "--cmdline", "@out@/cmdline.words",
+  "--cmdline-slot", "@out@/cmdline-slot.words", "--slot", "@slot@",
 ]
-outputs = ["overlay.dts", "modprobe.conf", "cmdline.words"]
+outputs = ["overlay.dts", "manifest-boot.json", "modprobe.conf", "cmdline.words", "cmdline-slot.words"]
+
+# The roles slot-boot reads (Gaia #113; recipes/slot-boot.toml [inputs] provides.*). A path here must be a declared output.
+#   board-overlay: the overlay SOURCE; Gaia compiles it with `dtc -@ -I dts -O dtb` and checks it with fdtoverlay.
+#   manifest-boot: the overlay marker for the manifest's boot.overlay (the sha256 of the overlay source, 2026-11-14 I5i6).
+#   cmdline:       the generator's words; Gaia adds the board base (kernel.cmdline) first and the slot words last.
+#   cmdline-slot:  os.slot, os.roothash (a hole the bundle fills), os.src.<source>=<path>, panic=5.
+[generate.provides]
+board-overlay = "overlay.dts"
+manifest-boot = "manifest-boot.json"
+cmdline = "cmdline.words"
+cmdline-slot = "cmdline-slot.words"
+
+# The boot partition: one image, written by the tool from the payload (the bundle's boot files, as bundled), at the
+# image's boot_size. `fit` is run before anything is written and fails when the payload does not fit its bay.
+# Outputs are the image (`boot`) and the fit/args/verify printout (`boot-report`): the five bay sizes are read from it.
+[generate.image]
+fit = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--min-size", "--payload", "@payload@"]
+args = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--slot", "@slot@", "--payload", "@payload@", "--size", "@size@", "--out", "@out@"]
+verify = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--verify", "@out@"]
+
+# The slot bundle: the same tool writes it from the payload, the root image and its verity table (`@rootfs@`,
+# `@verity-table@`), signed by the key the environment names (`sign_key_env`, `sign_key_id`), and gives the payload back
+# as it bundled it (`@payload-out@`: the boot partition is written from THAT payload). Flags checked at I5j 7d7fabab with
+# `lemnos-ctl bundle --help` (docs/prs/L2d.md, "bundle, flag by flag").
+[generate.bundle]
+args = ["bundle", "--layout-of", "@description@", "--socs", "@source@/socs", "--slot", "@slot@", "--payload", "@payload@", "--rootfs", "@rootfs@", "--verity-table", "@verity-table@", "--product", "@product@", "--version", "@version@", "--payload-out", "@payload-out@", "--out", "@out@"]
+key_args = ["--key-file", "@key@", "--expect-key-id", "@key-id@"]
+verify = ["bundle", "--layout-of", "@description@", "--socs", "@source@/socs", "--verify", "@out@"]
+verify_key_args = ["--pubkey", "@pubkey@"]
 
 [[install]]
 from = { source = "lemnos", path = "packaging/systemd/lemnosd.service.d/gadget.conf" }
@@ -53,28 +83,28 @@ mode = "0644"
 # lemnosd starts as root and drops to user lemnos itself (Lemnos L3): no setcap, no xattrs, no ExecStartPre
 # helper. The gadget's UDC writes are made by the daemon after the drop.
 
+# The trust root (Lemnos S2b: [security] keys is the one key list): one line per key, `<64 hex public key> <owner>`.
+# The bench key's PUBLIC line only (boards/raze/lemnos-board.toml [security] keys = /etc/lemnos/slot-keys; the bench key
+# is `atlas-next bench-key`'s, milestone 2, a test credential: not for any released image). It holds no secret.
+[[install]]
+from = { file = "files/slot-keys" }
+to = "/etc/lemnos/slot-keys"
+mode = "0644"
+
 # No gadget modules here: the gadget is one configuration built by Lemnos's usb-gadget driver from the
 # board file (Lemnos Q2a, with the generated overlay's UDC). dev's board-usb-gadget.conf is not carried.
 
 # lemnos.ko's modprobe.d fragment: the generated modprobe.conf (`lemnos-ctl tree --modprobe`), installed as Lemnos
-# documents (`lemnos.conf` in /etc/modprobe.d/, docs/boards.md and Q2c). Until PR B27 it was in no image: the component
-# said "not kept here" and nothing generated it. lemnos.ko itself is not built by this kernel yet (the packaging
-# comment above), so the options name a module that is not loaded; the file is what the board's module needs.
+# documents (`lemnos.conf` in /etc/modprobe.d/, docs/boards.md and Q2c). lemnos.ko itself is not built by this kernel yet
+# (the packaging comment above), so the options name a module that is not loaded; the file is what the board's module needs.
 [[install]]
 from = { generated = "modprobe.conf" }
 to = "/etc/modprobe.d/lemnos.conf"
 mode = "0644"
 
-# The other two generated outputs have no consumer in this PR, so they are declared and not installed. The
-# overlay and the command line gain consumers through `[generate.provides]`: Gaia has that key at its pin 3f6e561
-# (PR #113), and the L2 branch writes it, not PR B32 (docs/prs/B27.md has what Gaia said at 7177d72):
-#   overlay.dts (-o): Gaia builds a board's kernel overlays only by name from the kernel's device tree directory
-#     (`kernel.overlays`, crates/core/graph/src/os.rs); it has no step that compiles a generated overlay source.
-#   --boot is not passed at all: Gaia has no key for config.txt lines (Lemnos writes them in its own later steps).
-#   cmdline.words (--cmdline): Gaia names no kernel command line key at this rev (the extlinux APPEND is a component's
-#     file, and the Raze has none; its command line is the firmware's cmdline.txt, on a boot partition the slot recipe
-#     does not produce).
-# None of them is hand-copied. docs/prs/B27.md has the plan lines.
+# The overlay, the command line and the manifest's overlay marker have their consumers through [generate.provides]
+# (Gaia's slot-boot): the overlay is compiled by the build and written as the boot partition's overlays/lemnos-board.dtbo;
+# the cmdline words go into the slot's cmdline.txt; manifest-boot into the bundle's manifest. None is hand-copied.
 
 # i2c-dev: /dev/i2c-N, which lemnosd opens for the buses (its groups are set by 70-lemnos.rules).
 [[install]]
@@ -82,8 +112,7 @@ from = { file = "files/raze-i2c-dev.conf" }
 to = "/usr/lib/modules-load.d/raze-i2c-dev.conf"
 mode = "0644"
 
-# Hand-written and kept: no generated udev rule at Lemnos d6b9361d (`lemnos-ctl tree` has no --udev; Lemnos Q2i a06c650c).
-# The one Lemnos move (L2) brings --udev with the rest of the held stack; until then this file stays as it is.
+# Hand-written and kept: no generated udev rule at Lemnos I5j (`lemnos-ctl tree` has no --udev; Lemnos Q2i a06c650c).
 # USB power policy, not a Lemnos-user rule: it sets power/control=on and USB2 LPM off for every USB
 # device when udev adds it, because USB autosuspend dropped external cameras on dev. udev runs it as
 # root, so it gives the lemnos user nothing.

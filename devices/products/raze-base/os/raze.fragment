@@ -81,3 +81,12 @@ BR2_STRIP_strip=y
 # so an overlay can name the board's nodes. Off in allnoconfig; set here. Measured on the ZERO 3E gadget dtb:
 # 55,678 -> 115,100 bytes with symbols (host dtc 1.8.1).
 BR2_LINUX_KERNEL_DTB_OVERLAY_SUPPORT=y
+
+# ---- Host tools the slot-boot image is made with (L2d). Gaia makes the slot's files with the BUILD's own tools, which
+# this image's Buildroot builds for the host: dtc and fdtoverlay (the overlay compile and its check, `gaia.devicetree.overlay`),
+# mkfs.erofs (the root, `gaia.fs.erofs`, 1.8.10 at this pin) and veritysetup (`gaia.verity`). Gaia refuses a slot image
+# without them, by name (crates/nodes/verity/src/lib.rs:82, crates/core/graph/src/wire.rs:998-999). Buildroot's host
+# mkfs.erofs writes no zstd: the image's compression is lzma (product settings), and the Raze kernel keeps the decompressor.
+BR2_PACKAGE_HOST_DTC=y
+BR2_PACKAGE_HOST_EROFS_UTILS=y
+BR2_PACKAGE_HOST_CRYPTSETUP=y

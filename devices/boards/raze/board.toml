@@ -18,6 +18,14 @@ description = "Raze (CM5 + OV9782): Raspberry Pi CM5 vision device"
 # gadget from the device tree until then. Provisional.
 [kernel]
 device_tree = "broadcom/bcm2712-rpi-cm5-cm5io"
+# The kernel form the payload's `kernel` role takes (L2d): gzip, as the Pi firmware boots it (the 993 slot's kernel8.img
+# is gzip and boots daily). The bay is sized for the stored file (lemnos-board.toml [boot] bay_kernel_bytes).
+image = "Image.gz"
+# The kernel command line's BASE words (L2d): the hash-table sizes dev measured on Raze #1 (docs/prs/B20.md, "Command
+# line"). Gaia adds the generator's words, the components', the recipe's and the per-slot os.slot / os.roothash / os.data
+# and panic=5 (the cmdline-slot words); a console= is NOT here (B20 and the coordinator's 6aebe13b ruling: no console
+# until Gaia has the unit mask; kernel messages and pstore are the board's own way to read a boot).
+cmdline = "dhash_entries=16384 ihash_entries=8192 thash_entries=4096 uhash_entries=1024"
 # Lists replace the family's, so the family fragment is named here too (the flasher's built-in options).
 # The in-tree device tree this board boots (PR B16). The kernel build makes it, from the same tree as the
 # Image (raspberrypi/linux 53679a5), built with symbols (-@), so the generated overlay applies to it. The

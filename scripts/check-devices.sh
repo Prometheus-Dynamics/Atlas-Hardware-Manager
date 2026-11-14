@@ -585,7 +585,7 @@ erofs_rule() {  # <devices dir> <plans dir>: plans hold <product dir name>.json
 
 # Proves the erofs rule reads the plan's value: on a scratch copy, the Raze's family builds EROFS_FS_ZIP and no ZSTD line
 # (every EROFS_FS_ZIP line is taken out first). The product with compression = "lz4" passes; the same kernel with the
-# default (zstd, from the recipe) is refused by name. Then a family with no product is held to zstd (a refusal).
+# default (lzma, from the recipe; L2d) is refused by name. Then a family with no product is held to zstd (a refusal).
 # Uses the gaia binary and the tool arguments the run set up.
 erofs_rule_self_test() {
   local tmp rc=0 pa pb pc out prod lockcopy
@@ -598,11 +598,13 @@ erofs_rule_self_test() {
   echo "CONFIG_EROFS_FS_ZIP=y" >> "$tmp/devices/families/bcm2712/assets/linux.fragment"
   prod=$tmp/devices/products/raze-base/product.toml
   lockcopy=$tmp/devices/products/raze-base/gaia.lock
-  sed -i 's/^device = "\/data\/slots\/root.img"$/&\ncompression = "lz4"/' "$prod"
+  # The product states compression = "lzma" (L2d); the scratch copy swaps that line for lz4, then removes it for the recipe default.
+  sed -i 's/^compression = "lzma"$/compression = "lz4"/' "$prod"
+  grep -q '^compression = "lz4"$' "$prod" || { echo "check-devices: self-test: the scratch product has no compression line to change" >&2; rc=1; }
   if ! "$gaia" plan "$prod" --lock "$lockcopy" --recipes "$recipes" "${tool_args[@]}" --json >"$pa/raze-base.json" 2>"$errs"; then
     cat "$errs" >&2; echo "check-devices: self-test: the lz4 scratch product did not plan" >&2; rc=1
   fi
-  sed -i '/^compression = "lz4"$/d' "$prod"
+  sed -i '/^compression = "lz4"$/d' "$prod"   # the recipe's default (lzma at the pinned Gaia)
   if ! "$gaia" plan "$prod" --lock "$lockcopy" --recipes "$recipes" "${tool_args[@]}" --json >"$pb/raze-base.json" 2>"$errs"; then
     cat "$errs" >&2; echo "check-devices: self-test: the default scratch product did not plan" >&2; rc=1
   fi
@@ -612,16 +614,16 @@ erofs_rule_self_test() {
     echo "check-devices: self-test: the lz4 product was refused, or its plan's lz4 was not read: $out" >&2; rc=1
   fi
   if out=$(erofs_rule "$tmp/devices" "$pb"); then
-    echo "check-devices: self-test: the zstd default was not refused on a kernel with no EROFS_FS_ZIP_ZSTD" >&2; rc=1
-  elif [[ $out != *"image raze-base compresses with zstd, so CONFIG_EROFS_FS_ZIP_ZSTD must be =y"* ]]; then
-    echo "check-devices: self-test: the zstd refusal does not name the plan's value and the symbol: $out" >&2; rc=1
+    echo "check-devices: self-test: the recipe's default (lzma) was not refused on a kernel with no EROFS_FS_ZIP_LZMA" >&2; rc=1
+  elif [[ $out != *"image raze-base compresses with lzma, so CONFIG_EROFS_FS_ZIP_LZMA must be =y"* ]]; then
+    echo "check-devices: self-test: the lzma refusal does not name the plan's value and the symbol: $out" >&2; rc=1
   fi
   rm -rf "$tmp/devices/products/raze-base"
   if out=$(erofs_rule "$tmp/devices" "$pc") || [[ $out != *"FAIL families/bcm2712: CONFIG_EROFS_FS_ZIP_ZSTD is not =y"* ]]; then
     echo "check-devices: self-test: a family with no product was not held to zstd by name: $out" >&2; rc=1
   fi
   rm -rf "$tmp" "$pa" "$pb" "$pc"
-  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the erofs rule reads each product's plan: lz4 passes where the default zstd is refused on the same kernel, and a family with no product is held to zstd"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the erofs rule reads each product's plan: lz4 passes where the recipe default lzma is refused on the same kernel, and a family with no product is held to zstd"
   return $rc
 }
 
@@ -818,8 +820,9 @@ SLOT_CHAIN=(
   "bcm2712:BRCM_CHAR_DRIVERS" "bcm2712:MAILBOX" "bcm2712:BCM2835_MBOX" "bcm2712:BCM_VCIO" "bcm2712:RASPBERRYPI_FIRMWARE"
   "rk35xx:MMC_DW_ROCKCHIP" "rk35xx:MMC_SDHCI_OF_DWCMSHC"
 )
-# A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe).
-SLOT_RECIPES="sd-image|slot"
+# A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe, slot-boot is
+# the slot with its bundle and boot partition: L2d).
+SLOT_RECIPES="sd-image|slot|slot-boot"
 # The LZMA decompression stream count a slot family's kernel states (see the rule in slot_chain_check).
 LZMA_STREAMS=4
 
