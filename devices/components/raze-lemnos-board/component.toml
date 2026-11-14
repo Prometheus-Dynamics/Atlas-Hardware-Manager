@@ -65,9 +65,9 @@ from = { generated = "modprobe.conf" }
 to = "/etc/modprobe.d/lemnos.conf"
 mode = "0644"
 
-# The other two generated outputs have no consumer at Gaia 7177d72, so they are declared and not installed. The
-# overlay and the command line gain consumers through `[generate.provides]` in later Gaia revs (docs/prs/B27.md
-# has what Gaia said); that key is not at 7177d72, so it is not written here:
+# The other two generated outputs have no consumer in this PR, so they are declared and not installed. The
+# overlay and the command line gain consumers through `[generate.provides]`: Gaia has that key at its pin 3f6e561
+# (PR #113), and the L2 branch writes it, not PR B32 (docs/prs/B27.md has what Gaia said at 7177d72):
 #   overlay.dts (-o): Gaia builds a board's kernel overlays only by name from the kernel's device tree directory
 #     (`kernel.overlays`, crates/core/graph/src/os.rs); it has no step that compiles a generated overlay source.
 #   --boot is not passed at all: Gaia has no key for config.txt lines (Lemnos writes them in its own later steps).

@@ -62,6 +62,11 @@ url = "https://github.com/Prometheus-Dynamics/Orion.git"
 ref = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 commit = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 
+[source."orion-recovery.tools"]
+kind = "download"
+url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"
+digest = "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239"
+
 [source."orion.root"]
 kind = "image"
 reference = "docker.io/library/rust:1.99-slim"
@@ -72,6 +77,11 @@ kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Orion.git"
 ref = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 commit = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
+
+[source."orion.tools"]
+kind = "download"
+url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"
+digest = "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239"
 
 [source."raze-base.buildroot"]
 kind = "git"

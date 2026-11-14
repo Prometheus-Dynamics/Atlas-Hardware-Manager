@@ -38,6 +38,13 @@ size = "14910M"
 [flash]
 methods = ["usb-boot"]
 
+# The board's boot firmware: the Raspberry Pi boot ROM, which reads config.txt, default.txt and trial.txt from the
+# boot partition and restarts into a slot by tryboot. Gaia reads it for the kernel contract (the mailbox and firmware
+# drivers built in, families' kernel contract version 2) and the Lemnos board file's system-slots `record` must agree
+# (scripts/check-devices.sh, firmware_rule: rpi-tryboot is record "tryboot"). PR B32.
+[boot]
+firmware = "rpi-tryboot"
+
 # The Lemnos board file: lemnosd's /etc/lemnos/board.toml, written to Lemnos Q2d (lemnos-board.toml beside this
 # file). raze-lemnos-board installs it by this name, and check-devices.sh requires it of every product that
 # carries lemnosd.

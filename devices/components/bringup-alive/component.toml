@@ -2,7 +2,7 @@
 # cubie-a7). DEV ONLY with the bring-up: it is the signal a person has with no serial adapter.
 #
 # Origin: adapted from Gaia's example component examples/components/board-alive at commit 0fb5637 (Gaia branch
-# pr/board-alive; NOT our pinned Gaia 7177d72, and the pin does not move). Changes made here, each with its reason:
+# pr/board-alive; NOT our pinned Gaia, which is 3f6e561 since PR B32: a Gaia branch's commit is never a pin here). Changes made here, each with its reason:
 #   - RuntimeWatchdogSec 30s -> 16s (files/10-watchdog.conf): 16 s is the A733 watchdog's hardware maximum
 #     (sunxi_wdt.c WDT_MAX_TIMEOUT 16); on RK35xx the same request rounds up to the 22.4 s TOP (dw_wdt.c).
 #   - The LED script changes only the LEDs and links a product names in /etc/board-alive.leds and
