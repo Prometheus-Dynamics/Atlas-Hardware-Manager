@@ -1,5 +1,5 @@
 # The Raze base OS product, Gaia F8 form. One image: the Raze board, its OS (Buildroot, os/raze.fragment), the Lemnos
-# and Orion components, and the root slot made by the `slot-boot` recipe (L2d): the EROFS root with dm-verity, the
+# and Orion components, and the root slot made by the `slot-disk` recipe (D1; slot-boot before it, L2d): the EROFS root with dm-verity, the
 # initramfs, the compiled board overlay, the kernel command line, the slot bundle (`[generate.bundle]`, Lemnos's tool,
 # signed by the BENCH key: milestone 2 only) and the boot partition (`[generate.image]`).
 #
@@ -10,12 +10,12 @@
 # (orion-bin); the Raze's board file and the base files.
 #
 # THE PINS: Gaia is pinned at 498873cf (devices/gaia.lock: --setting, keep_setid, the [generate.data] placeholders).
-# Its `slot-boot` recipe declares version and slot; the build gives both with --setting (scripts/version-rule.sh).
+# Its `slot-disk` recipe (as slot-boot) declares version and slot; the build gives both with --setting (scripts/version-rule.sh).
 # Lemnos next f4a295c6 (I5j merged, PR #371): the L2 rev for this image, declared by the coordinator 2026-11-14.
 # It replaces the plumbing pin 7d7fabab (origin/pr/I5j), which Gaia built once as a never-flashed proof.
 version = 1
 name = "raze-base"
-description = "Raze base OS: the Raze board with the Lemnos and Orion packages, as a root slot made by slot-boot"
+description = "Raze base OS: the Raze board with the Lemnos and Orion packages, as a root slot made by slot-disk"
 
 [sources.buildroot]
 git = "https://gitlab.com/buildroot.org/buildroot.git"
@@ -38,8 +38,17 @@ board = "../../boards/raze/board.toml"
 components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "orion"]
 initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/raze.fragment"] }
-recipe = "slot-boot"
+recipe = "slot-disk"
 
+# The slot-disk settings (recipes/slot-disk.toml at 498873cf): the slot-boot settings below, and three more.
+#  id          names the disk: its GUIDs and MBR signature are derived from it, so they hold across rebuilds. The image's name, as
+#              Gaia's own example does (examples/products/zero-3e-demo/product.toml: `id = "zero-3e-demo"`).
+#  board_id    the board's id, which the flasher checks the first-flash file against: the Raze's [board] id in
+#              devices/boards/raze/lemnos-board.toml, "raze".
+#  data_label  the data filesystem's label; Lemnos's slot-init finds the data partition by it. "lemnos-data" is the coordinator's
+#              value for this draft, not yet checked against Lemnos's source (M36 is not at the pin).
+#  The data partition's size is NOT a setting here: slot-disk takes it from boards/raze/board.toml (the partition named data_name).
+#  The boot and data partition names are the defaults ("boot", "data"), which match boards/raze/board.toml.
 # The slot-boot settings (recipes/slot-boot.toml at the gating rev; each names what it sets).
 #  device          where the slot is read from (the verity tree is in it too). F8?: the zero-3e example uses /data/slots.
 #  slot, version   NOT SET HERE: the product leaves both unset, and Gaia takes them as `--setting raze-base.slot=…` and
@@ -62,9 +71,13 @@ recipe = "slot-boot"
 #                  reasons are the same measurement.
 #  dictsize        the lzma dictionary, 2,097,152 bytes (2 MiB), the same row. The kernel holds one dictionary per LZMA stream
 #                  while the image is mounted, and raze.config caps the streams at 4: up to 8 MiB of dictionary while mounted,
-#                  against the 64 MB goal. The kernel's own dictionary limit was NOT checked: no kernel tree is on this machine.
+#                  against the 64 MB goal. The kernel's limit is checked (Gaia read raspberrypi/linux 53679a5, Linux 7.2.9):
+#                  the lzma dictionary must be 4096 bytes to 8 MiB (fs/erofs/decompressor_lzma.c:93, Z_EROFS_LZMA_MAX_DICT_SIZE =
+#                  8 * Z_EROFS_PCLUSTER_MAX_SIZE, erofs_fs.h:326), so 2 MiB is inside.
 #  cluster         the most bytes of a compressed cluster, 1,048,576 (1 MiB, a multiple of 4096), the same row. Bigger is
-#                  smaller on disk and costs RAM and read time on the board.
+#                  smaller on disk and costs RAM and read time on the board. Kernel limit, checked the same way (53679a5): a
+#                  compressed cluster may be at most 1 MiB physical (Z_EROFS_PCLUSTER_MAX_SIZE, erofs_fs.h:297) and 12 MiB
+#                  decompressed (zmap.c:754), so 1 MiB is exactly at the physical limit, inside it. Fragments add no separate limit.
 #  fragments       true: mkfs.erofs -Efragments, file tails and small files packed together, the same row. A kernel from 6.1.
 #  ztailpacking    true: mkfs.erofs -Eztailpacking, a file's compressed tail kept beside its inode, the same row. A kernel from 5.17.
 #                  Kernel check (this PR): the Raze kernel is raspberrypi/linux 53679a5 (rpi-7.2.y, Linux 7.2.9, families/bcm2712
@@ -81,6 +94,9 @@ recipe = "slot-boot"
 [images.settings]
 device = "/data/slots/root.img"
 product = "raze-base"
+id = "raze-base"
+board_id = "raze"
+data_label = "lemnos-data"
 boot_size = 82837504
 compression = "lzma"
 level = 6

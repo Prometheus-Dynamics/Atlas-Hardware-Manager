@@ -144,8 +144,10 @@ config = { timeout_s = 15 }
 # (tip service/slot-init/src/cmdline.rs:6 gives <prefix>.src.<source>=<path>; prefix = boot_args = "os").
 # The trial settings are the I5f defaults, taken explicitly: the user confirmed them on 2026-11-13.
 # health = []: the base OS has no product, so no product's health is required (INPUTS: Raze base empty).
-# keep = 3 and reserve_mb = 2048 are the reference's values; the keep-last-N count is a setting (user
-# policy 2026-11-07), and 3 is the reference's.
+# reserve_mb = 2048: free room kept for /data on the Raze's ~14.9 GB eMMC ([disk] size 14910M, boards/raze/board.toml).
+# It applies to live installs only (the room() check); the offline first write has no reserve, and the first start's grow
+# of p2 to the disk's end is what gives the room. (It was the reference's value; this is the reason it is kept.)
+# keep = 3: the keep-last-N count is a setting (user policy 2026-11-07), and 3 is the reference's.
 # FLAGGED, do not rely on it: `boot = "/boot/firmware"`. On Raze #2's running image (read by Lemnos, 2026-11-13)
 # that path does not exist: the boot partition is /dev/mmcblk0p1 (vfat, 79 MB) and is not mounted. Where the
 # image mounts it, and how that stays safe against a power cut at any moment, is being settled between Lemnos

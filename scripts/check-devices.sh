@@ -465,7 +465,7 @@ slot_sets() {  # <product.toml> <key> -> "yes" when [images.settings] sets the k
 slot_id_rule() {  # <devices dir> [version to check with; default CHECK_VERSION]
   local dev=$1 ver=${2:-$CHECK_VERSION} p pname rc=0 out="" product want k
   while IFS= read -r p; do
-    grep -qE '^recipe = "slot-boot"' "$p" || continue
+    grep -qE '^recipe = "slot-(boot|disk)"' "$p" || continue
     pname=$(basename "$(dirname "$p")")
     for k in version slot; do
       if [[ $(slot_sets "$p" "$k") == yes ]]; then
@@ -502,7 +502,7 @@ board_boot_size() {  # <board.toml> -> the size of its role = "boot" partition, 
 boot_size_rule() {  # <devices dir>
   local dev=$1 p pname board want have rc=0 out=""
   while IFS= read -r p; do
-    grep -qE '^recipe = "slot-boot"' "$p" || continue
+    grep -qE '^recipe = "slot-(boot|disk)"' "$p" || continue
     pname=$(basename "$(dirname "$p")")
     board=$(awk -F'"' '/^board = /{print $2; exit}' "$p")
     want=$(slot_setting "$p" boot_size)
@@ -963,9 +963,9 @@ SLOT_CHAIN=(
   "bcm2712:BRCM_CHAR_DRIVERS" "bcm2712:MAILBOX" "bcm2712:BCM2835_MBOX" "bcm2712:BCM_VCIO" "bcm2712:RASPBERRYPI_FIRMWARE"
   "rk35xx:MMC_DW_ROCKCHIP" "rk35xx:MMC_SDHCI_OF_DWCMSHC"
 )
-# A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe, slot-boot is
+# A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe, slot-boot and slot-disk are
 # the slot with its bundle and boot partition: L2d).
-SLOT_RECIPES="sd-image|slot|slot-boot"
+SLOT_RECIPES="sd-image|slot|slot-boot|slot-disk"
 # The LZMA decompression stream count a slot family's kernel states (see the rule in slot_chain_check).
 LZMA_STREAMS=4
 

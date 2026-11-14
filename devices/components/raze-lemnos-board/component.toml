@@ -75,6 +75,25 @@ key_args = ["--key-file", "@key@", "--expect-key-id", "@key-id@"]
 verify = ["bundle", "--layout-of", "@description@", "--socs", "@source@/socs", "--verify", "@out@"]
 verify_key_args = ["--pubkey", "@pubkey@"]
 
+# The data partition's contents (slot-disk): the slot installed from the bundle above, in Lemnos's own layout, into the directory
+# @out@ that Gaia makes an ext4 filesystem of, at the board's partition size. Flags from Lemnos pr/M36 9f5e0b0f, spelt as Gaia PR 145
+# and the Gaia pin 498873cf take them (src-498873c, crates/nodes/tree/src/generate_image.rs):
+#   @boot-image@  the boot step's image (the bay that holds the bundle's slot).
+#   @keys@        `keys = "files/slot-keys"` below: the bench key's public line, the trust list the image ships.
+#   @time@        "@time@ is Gaia's fixed build date, 1970-01-01T00:00:00Z (epoch 0), the same for every build."
+#   @data-size@   the size of the board's partition named by data_name ("data"): boards/raze/board.toml [[partitions]] size, 39,845,888.
+#                 Gaia makes the ext4 at that size too, so this run and the filesystem cannot differ (wire.rs data_size). The number
+#                 lives in board.toml only; product.toml has no data_size at 498873cf.
+# --layout-of and --socs are named as [generate.bundle] names them. --switch off is the default and is left out.
+# OPEN (the rest, after Gaia's placeholders): Lemnos M36's rev must carry the data-partition tool, the offline writer with no reserve
+# (the first write checks only that the slot fits --data-size), and the first-start grow of p2 (Lemnos M36b). Until that rev is pinned,
+# this run is not proven.
+# verify: the same tool reads the tree back with the boot image, deep (Lemnos pr/M36 `--verify DIR --layout-of BOARD --boot-image FILE --deep`).
+[generate.data]
+args = ["data-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--install", "@bundle@", "--boot-image", "@boot-image@", "--keys", "@keys@", "--time", "@time@", "--data-size", "@data-size@", "--out", "@out@"]
+verify = ["data-partition", "--verify", "@out@", "--layout-of", "@description@", "--boot-image", "@boot-image@", "--deep"]
+keys = "files/slot-keys"
+
 [[install]]
 from = { source = "lemnos", path = "packaging/systemd/lemnosd.service.d/gadget.conf" }
 to = "/etc/systemd/system/lemnosd.service.d/gadget.conf"
