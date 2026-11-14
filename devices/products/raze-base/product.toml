@@ -9,7 +9,8 @@
 # Components on the image: the Lemnos packaging, lemnosd, lemnos-ctl, lemnos-orion; the Orion board image
 # (orion-bin); the Raze's board file and the base files.
 #
-# THE PINS (L2d): Gaia is pinned at b8585a0 (devices/gaia.lock; its recipes are b3fa40f's, which have `slot-boot`).
+# THE PINS: Gaia is pinned at 498873cf (devices/gaia.lock: --setting, keep_setid, the [generate.data] placeholders).
+# Its `slot-boot` recipe declares version and slot; the build gives both with --setting (scripts/version-rule.sh).
 # Lemnos next f4a295c6 (I5j merged, PR #371): the L2 rev for this image, declared by the coordinator 2026-11-14.
 # It replaces the plumbing pin 7d7fabab (origin/pr/I5j), which Gaia built once as a never-flashed proof.
 version = 1
@@ -41,11 +42,13 @@ recipe = "slot-boot"
 
 # The slot-boot settings (recipes/slot-boot.toml at the gating rev; each names what it sets).
 #  device          where the slot is read from (the verity tree is in it too). F8?: the zero-3e example uses /data/slots.
-#  slot            the slot's id: lowercase [a-z0-9._-], 1..64 bytes, no `+` (Lemnos). Written out, and held equal to
-#                  <product>-<version> with `+` read as `-`, lowercased, by scripts/check-devices.sh (slot_id_for, the
-#                  one rule's one place). PLACEHOLDER count and commit: the move sets the real ones.
-#  version         the OS version, 2026.1.0-dev.<count>+<commit> (Lemnos accepts it everywhere). PLACEHOLDER: count 1,
-#                  commit "l2d"; the real count and commit of the Atlas tree the image is built from replace both.
+#  slot, version   NOT SET HERE: the product leaves both unset, and Gaia takes them as `--setting raze-base.slot=…` and
+#                  `--setting raze-base.version=…` (the recipe declares them with no default). scripts/build-product.sh computes
+#                  them from git and prints them; scripts/check-devices.sh and check-config-only.sh plan with a test value
+#                  (CHECK_VERSION). version = the Atlas dev scheme, <release>-dev.<count>+<commit> (dev's scripts/version.sh:
+#                  count = `git rev-list --count HEAD`, commit = `git rev-parse --short=8 HEAD`). slot = <product>-<version> with
+#                  `+` read as `-`, lowercased: lowercase [a-z0-9._-], 1..64 bytes, no `+` (Lemnos). The one rule's one place is
+#                  scripts/version-rule.sh (slot_id_for, atlas_version). A product that sets either is refused by check-devices.
 #  product         lowercase [a-z0-9-], <= 64 bytes.
 #  boot_size       the boot partition's size in bytes, the layout's (79 MiB = 82,837,504: the Raze's FAT boot partition,
 #                  L2-partition-requirements 8.4; `boot-partition --min-size` says the minimum, the bays are in
@@ -66,7 +69,7 @@ recipe = "slot-boot"
 #  ztailpacking    true: mkfs.erofs -Eztailpacking, a file's compressed tail kept beside its inode, the same row. A kernel from 5.17.
 #                  Kernel check (this PR): the Raze kernel is raspberrypi/linux 53679a5 (rpi-7.2.y, Linux 7.2.9, families/bcm2712
 #                  family.toml; NOT 6.12 as the brief said) so both floors are met, and raze.config has CONFIG_EROFS_FS_ZIP_LZMA=y,
-#                  the decoder for lzma. The five values are slot-boot recipe parameters (recipes/slot-boot.toml at b8585a0).
+#                  the decoder for lzma. The five values are slot-boot recipe parameters (recipes/slot-boot.toml at 498873cf).
 #  sign_key_env    the environment variable that names the signing key's file (a raw 32-byte Ed25519 seed or 64 hex,
 #                  mode 0600). Set by the build's caller, never written here: no key path or key material in any file.
 #  sign_key_id     the key id the build is keyed on: SHA-256 of the 32-byte PUBLIC key. This is the BENCH key's id
@@ -77,9 +80,7 @@ recipe = "slot-boot"
 #  sign_pubkey_env the environment variable that names the public half's file, for the tool to verify its own signature.
 [images.settings]
 device = "/data/slots/root.img"
-slot = "raze-base-2026.1.0-dev.1-l2d"
 product = "raze-base"
-version = "2026.1.0-dev.1+l2d"
 boot_size = 82837504
 compression = "lzma"
 level = 6

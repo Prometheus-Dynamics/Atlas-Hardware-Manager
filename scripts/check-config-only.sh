@@ -14,6 +14,8 @@ set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 die() { echo "check-config-only: $*" >&2; exit 1; }
+# slot_settings_args and the test version (CHECK_VERSION): scripts/version-rule.sh, the one rule's one place.
+source "$repo/scripts/version-rule.sh"
 
 lock=$repo/devices/gaia.lock
 commit=$(sed -n 's/^commit = "\(.*\)"$/\1/p' "$lock")
@@ -59,9 +61,13 @@ for product in $(find "$repo/devices/products" -mindepth 2 -maxdepth 2 -name pro
   pdir=$(dirname "$product"); pname=$(basename "$pdir")
   input_args=()
   if grep -rqs 'input = "bench-key"' "$pdir"; then input_args=(--input "bench-key=$pub"); fi
+  # A slot-boot image takes its version and slot as --settings, from the rule's TEST value (not a release).
+  setting_args=()
+  mapfile -t slot_args < <(slot_settings_args "$product" "$CHECK_VERSION")
+  if [[ ${#slot_args[@]} -gt 0 ]]; then setting_args=("${slot_args[@]}"); fi
   out=$scratch/$pname.out
   start=$SECONDS
-  if "$gaia" build "$product" --recipes "$recipes" ${input_args[@]+"${input_args[@]}"} "${tool_args[@]}" --config-only >"$out" 2>&1; then
+  if "$gaia" build "$product" --recipes "$recipes" ${input_args[@]+"${input_args[@]}"} ${setting_args[@]+"${setting_args[@]}"} "${tool_args[@]}" --config-only >"$out" 2>&1; then
     echo "check-config-only: ok products/$pname: configuration resolved, nothing compiled ($((SECONDS - start)) s)"
   else
     fail=1
