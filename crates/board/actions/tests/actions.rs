@@ -17,7 +17,7 @@ use atlas_actions::{
     Reported, Route,
 };
 use atlas_jobs::{Backoff, DeviceHolds, Events, JobId, JobStatus, JobTiming};
-use atlas_session::{Clock, Handle, Lease, Pause, Presence, Sessions};
+use atlas_session::{Clock, Handle, Pause, Presence, Sessions};
 use atlas_sim_node::actions::DRY_RUN;
 use atlas_sim_node::names::SELF_TEST;
 use atlas_sim_node::script::Behaviour;
@@ -594,23 +594,14 @@ async fn progress_is_reported_while_a_run_goes_and_ends_with_its_result() {
     assert!(seen.iter().any(|progress| progress.percent.is_some()));
 }
 
-/// A long action whose session goes silent while its hold exists, and then the board drops the run
-/// with its lease: each outcome has its own message, and neither is the board's last word alone.
+/// A long action in flight keeps its caller alive on the board: a session silent past the lease does
+/// neither lose its run nor report a lapse, and the board drops nothing while the run is running.
 #[tokio::test]
-async fn a_board_that_drops_the_hold_on_a_long_action_is_reported_as_a_lapse_then_as_the_drop() {
+async fn a_long_action_in_flight_keeps_its_caller_alive_past_the_lease() {
     let node = start(&scratch("lapse").join("node"), &lemnos_kind());
-    // The session's lease is on a manual clock: the lapse is an advance of that clock, not a wait. The
-    // renew is far away, so nothing renews the lease but the job's own requests.
+    // The session's lease is on a manual clock: a silence is an advance of that clock, not a wait.
     let clock = Clock::manual();
-    let sessions = Arc::new(
-        Sessions::new(Arc::new(NoPause))
-            .with_lease(Lease {
-                period: Duration::from_secs(60),
-                renew: Duration::from_secs(3600),
-                in_force: true,
-            })
-            .with_clock(clock.clone()),
-    );
+    let sessions = Arc::new(Sessions::new(Arc::new(NoPause)).with_clock(clock.clone()));
     let address = address(&node);
     let handle = sessions.handle(&address).expect("the node is on");
     connected(&handle).await;
@@ -622,24 +613,22 @@ async fn a_board_that_drops_the_hold_on_a_long_action_is_reported_as_a_lapse_the
     let self_test = named(&catalog, SELF_TEST);
 
     node.script().push_action(SELF_TEST, Behaviour::Stall);
-    let id = jobs
+    let _id = jobs
         .submit(device(), &address, self_test, &[])
         .await
         .expect("the job is queued");
     until("the run to start and stall", || node.stalled_runs() == 1).await;
+    let requests = node.bridge_calls_started();
 
-    // The session is silent past the lease with the hold on the board: the job learns of the lapse.
-    clock.advance(Duration::from_secs(61));
-    wait_status(&jobs, id, "the job to report the lapse", |status| {
-        matches!(status, JobStatus::Retrying { error, .. } if error.contains("may have dropped the hold"))
-    })
-    .await;
-
-    // The board's lease runs out: it drops the caller's run, and the run ends with its words.
-    node.lease_advance(61);
-    wait_status(&jobs, id, "the run the board dropped", |status| {
-        matches!(status, JobStatus::Failed { reason } if reason.contains("the lease ran out"))
-    })
-    .await;
-    assert!(node.lease_drops() >= 1, "the board dropped the caller");
+    // Far past the lease with the run in flight: the session sends no renewal, and the board keeps
+    // the caller and its run.
+    clock.advance(Duration::from_secs(3600));
+    node.lease_advance(3600);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(node.lease_drops(), 0, "a run in flight is never dropped for silence");
+    assert_eq!(
+        node.bridge_calls_started(),
+        requests,
+        "a run in flight: no renewal is sent"
+    );
 }

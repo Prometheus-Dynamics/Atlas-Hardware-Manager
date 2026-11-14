@@ -60,7 +60,10 @@ mod seed;
 mod sessions;
 
 pub use backoff::Backoff;
-pub use lease::{Clock, Hold, LEASE, LEASE_RENEW, Lease, RENEW_WAIT};
+pub use lease::{
+    Clock, Hold, LAPSE_NOTE, LEASE_FACT, LEASES_ENDED_FACT, LeaseFacts, RENEW_WAIT, lapse_words,
+    strip_note,
+};
 pub use long::{Cancel, MAX_LONG_OPERATIONS, Outcome, STEP_WAIT, Step, StepError, SteppedTransfer};
 pub use monitor::{CALL_WAIT, Handle, Monitor, PROGRAM, Pause, Presence, RealPause, SessionError};
 pub use seed::Seed;

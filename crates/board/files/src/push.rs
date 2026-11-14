@@ -255,7 +255,7 @@ async fn run(pending: &Pending) -> Result<(), String> {
     let shared = &pending.shared;
     // The push holds the board's lease from its start to its outcome: a push is on the board until
     // it commits, is rejected or is cancelled, and a silent session would lose it there.
-    let mut hold = pending.handle.hold();
+    let mut hold = pending.handle.hold_transfer("a file transfer");
     let mut backoff = Backoff::default();
     // The node this push sends to: the key of the first node it finds. A push resumes only on
     // that node. If a person accepts another node under this address, the session comes back

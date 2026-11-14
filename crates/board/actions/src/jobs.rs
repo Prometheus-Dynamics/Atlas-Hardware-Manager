@@ -170,7 +170,7 @@ impl JobKind for ActionKind {
         // session keeps the board's lease alive for the run, including while the session is lost.
         self.update(&spec.nonce, |tracked| {
             if tracked.hold.is_none() {
-                tracked.hold = Some(handle.hold());
+                tracked.hold = Some(handle.hold_work("a run on the board"));
             }
         });
         let hold = self

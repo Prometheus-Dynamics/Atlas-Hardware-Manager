@@ -134,6 +134,10 @@ pub const HELLO_VERSION_PRODUCT: &str = "hello.version.product";
 pub const HELLO_VERSION_OS: &str = "hello.version.os";
 pub const HELLO_VERSION_LEMNOS: &str = "hello.version.lemnos";
 pub const HELLO_OFFERS: &str = "hello.offers";
+/// `lease.seconds`: the lease period, when the board keeps one (Lemnos I6g; `// LOCK:` re-check at the move).
+pub const LEASE_SECONDS: &str = "hello.lease.seconds";
+/// `leases.ended`: how many leases the board has ended (Lemnos I6g).
+pub const LEASES_ENDED: &str = "hello.leases.ended";
 /// Owned by Orion, not Lemnos. See above.
 pub const HELLO_STATE: &str = "hello.state";
 

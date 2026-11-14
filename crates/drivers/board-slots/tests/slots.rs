@@ -216,24 +216,15 @@ async fn a_session_lost_during_the_boards_install_never_starts_install_file_twic
     assert!(list(&rig).await.get("slot-2").is_some());
 }
 
-/// An install is a hold on its board. Its session goes silent past the lease period while the board
-/// is running it: the install ends as a lapse, with the words that say the board may have dropped
-/// it, and it is not reported as installed.
+/// An install is a run hold on its board: the board keeps its caller alive while the install runs. A
+/// session silent past the lease does not lose it: the install is not dropped and not reported as a
+/// lapse, however far the lease clock has moved.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_install_whose_session_lapses_while_the_board_runs_it_ends_as_a_lapse() {
-    // The lease is read on a manual clock: the lapse is an advance of it, made once the install is held
-    // on the board, and nothing in the run depends on how long a step takes.
+async fn an_install_in_flight_keeps_its_caller_alive_past_the_lease() {
+    // The lease is read on a manual clock: the silence is an advance of it, made once the install is
+    // running on the board.
     let clock = atlas_session::Clock::manual();
-    let rig = Rig::start_leased(
-        "install-lapse",
-        Some(atlas_session::Lease {
-            period: Duration::from_secs(60),
-            renew: Duration::from_secs(3600),
-            in_force: true,
-        }),
-        Some(clock.clone()),
-    )
-    .await;
+    let rig = Rig::start_leased("install-alive", Some(clock.clone())).await;
     rig.node.hold_installs(true);
     let path = write_bundle(
         &rig.dir.join("bundles"),
@@ -249,12 +240,15 @@ async fn an_install_whose_session_lapses_while_the_board_runs_it_ends_as_a_lapse
         rig.node.runs_started(names::SLOTS_INSTALL_FILE) == 1
     })
     .await;
-    // The install is held on the board, and its session is silent past the lease.
-    clock.advance(Duration::from_secs(61));
-    stage_is(&rig, job, "the install to end as a lapse", |stage| {
-        matches!(stage, Stage::Failed { reason } if reason.contains("may have dropped the hold"))
-    })
-    .await;
+    clock.advance(Duration::from_secs(3600));
+    rig.node.lease_advance(3600);
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    assert_eq!(rig.node.lease_drops(), 0, "an install in flight is not dropped for silence");
+    assert!(
+        !matches!(rig.installs.stage(job), Some(Stage::Failed { .. })),
+        "the install is not failed by the lease"
+    );
+    rig.node.hold_installs(false);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

@@ -20,7 +20,7 @@
 //! Other runs are applied to the [`Model`] when they finish, never before, so a run that is
 //! refused, fails or is cancelled before it finishes changes nothing.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{Read, Write};
 use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::Path;
@@ -142,6 +142,9 @@ pub struct Hello {
     /// `hello.offers`: the contract ids of the devices running now. Published sorted, distinct
     /// and space-separated; changing this list is a live change, not a restart.
     pub offers: Vec<String>,
+    /// `lease.seconds`: the period of the lease this board keeps for its callers (Lemnos I6g). `None`
+    /// is a board with no lease: no lease fact, and nothing is ended for silence.
+    pub lease_seconds: Option<u64>,
 }
 
 impl Default for Hello {
@@ -158,6 +161,7 @@ impl Default for Hello {
             os_version: "1.0.0".into(),
             lemnos_version: "1.0.0".into(),
             offers: OFFERS.iter().map(|offer| (*offer).to_string()).collect(),
+            lease_seconds: Some(lease::PERIOD.as_secs()),
         }
     }
 }
@@ -307,7 +311,10 @@ impl SimNode {
             devices: readings::Control::default(),
             runs: Arc::new(Mutex::new(BTreeMap::new())),
             follow_boot: Arc::new(AtomicBool::new(false)),
-            leases: Arc::new(lease::Leases::new()),
+            leases: Arc::new(lease::Leases::new(match kind {
+                Kind::WithLemnos(hello) => hello.lease_seconds.map(Duration::from_secs),
+                Kind::Plain => None,
+            })),
         };
 
         let (ready, started) = mpsc::channel();
@@ -512,6 +519,12 @@ impl SimNode {
         self.shared.leases.advance(Duration::from_secs(secs));
     }
 
+    /// Turns the lease note on the first reply after an expiry on or off. Off models a board whose
+    /// bridge does not send it yet: only `leases.ended` shows a lapse.
+    pub fn lease_note(&self, on: bool) {
+        self.shared.leases.set_note(on);
+    }
+
     /// Sets the simulated lease period and stall time, shorter for a test. The defaults are
     /// [`lease::PERIOD`] and [`lease::STALL`].
     pub fn lease_set(&self, period: Duration, stall: Duration) {
@@ -629,6 +642,10 @@ struct Node {
     /// The devices a Lemnos node describes, on a node with Lemnos only.
     devices: Option<readings::Devices>,
     active: Vec<Run>,
+    /// The caller of each run the node has not finished yet: a caller with one in flight is alive.
+    callers: BTreeMap<u64, String>,
+    /// The runs whose reply carries the lease note: the first reply after a lease expiry.
+    noted: BTreeSet<u64>,
     install: Option<Install>,
     started: Instant,
 }
@@ -734,7 +751,7 @@ impl Node {
                     description.as_bytes(),
                 )
                 .map_err(|e| e.to_string())?;
-            for (name, value) in hello.facts() {
+            for (name, value) in hello.facts().into_iter().chain(shared.leases.facts()) {
                 let mut publisher = orion
                     .declare(&TopicDecl {
                         name,
@@ -767,6 +784,8 @@ impl Node {
             reopen: false,
             devices,
             active: Vec::new(),
+            callers: BTreeMap::new(),
+            noted: BTreeSet::new(),
             install: None,
             started: Instant::now(),
         })
@@ -785,6 +804,10 @@ impl Node {
                 })) => {
                     self.shared.calls.fetch_add(1, Ordering::SeqCst);
                     self.shared.leases.request(&caller);
+                    if self.shared.leases.take_note(&caller) {
+                        self.noted.insert(call);
+                    }
+                    self.callers.insert(call, caller.clone());
                     self.start(call, &name, args, &caller);
                 }
                 Ok(Some(Request::Cancel { call })) => {
@@ -802,6 +825,9 @@ impl Node {
                 // The comm core went away: nothing more can be answered.
                 Err(_) => break,
             }
+            self.shared
+                .leases
+                .set_running(self.callers.values().cloned());
             if last_tick.elapsed() >= TICK {
                 last_tick = Instant::now();
                 self.tick();
@@ -814,36 +840,31 @@ impl Node {
         SampleTime::from_nanos(nanos.saturating_add(1))
     }
 
+    /// Ends a run. The end is a request of its caller (it renews the lease), and the first reply
+    /// after a lease expiry carries the lease note.
     fn finish(&mut self, call: u64, outcome: Outcome, output: &[u8], detail: &str) {
-        let _ = self.registration.finish(call, outcome, output, detail);
+        if let Some(caller) = self.callers.remove(&call) {
+            self.shared.leases.request(&caller);
+        }
+        let detail = if self.noted.remove(&call) {
+            lease::with_note(detail)
+        } else {
+            detail.to_owned()
+        };
+        let _ = self.registration.finish(call, outcome, output, &detail);
     }
 
     fn finish_status(&mut self, call: u64, status: &Status) {
         self.finish(call, outcome_for(status.code), &[], &status.to_string());
     }
 
-    /// Ends the runs the lease has dropped: a caller's running runs, or one stalled run.
+    /// Ends the runs the lease has dropped: a stalled run past its stall time.
     fn apply_lease_drops(&mut self) {
         for drop in self.shared.leases.take() {
-            match drop {
-                lease::Drop::Caller(caller) => {
-                    let ended: Vec<u64> = self
-                        .active
-                        .iter()
-                        .filter(|run| run.caller == caller)
-                        .map(|run| run.call)
-                        .collect();
-                    self.active.retain(|run| run.caller != caller);
-                    for call in ended {
-                        self.finish(call, Outcome::Failed, &[], lease::CALLER_WORDS);
-                    }
-                }
-                lease::Drop::Run(call) => {
-                    if let Some(at) = self.active.iter().position(|run| run.call == call) {
-                        self.active.remove(at);
-                        self.finish(call, Outcome::Failed, &[], lease::STALL_WORDS);
-                    }
-                }
+            let lease::Drop::Run(call) = drop;
+            if let Some(at) = self.active.iter().position(|run| run.call == call) {
+                self.active.remove(at);
+                self.finish(call, Outcome::Failed, &[], lease::STALL_WORDS);
             }
         }
     }
@@ -1113,7 +1134,8 @@ impl Node {
     /// that is already published, so the node asks to be published again on a new session, where
     /// every fact is said again.
     fn sync_hello(&mut self) {
-        let wanted = lock(&self.shared.hello).facts();
+        let mut wanted = lock(&self.shared.hello).facts();
+        wanted.extend(self.shared.leases.facts());
         if wanted
             .iter()
             .any(|(name, _)| !self.hello.iter().any(|topic| topic.name == *name))
@@ -1211,6 +1233,7 @@ impl Node {
                 let percent = (u64::from(run.total - run.left) * 100 / u64::from(run.total)) as u8;
                 let message = format!("{} {}/{}", run.name, run.total - run.left, run.total);
                 let _ = self.registration.progress(run.call, percent, &message, &[]);
+                self.shared.leases.request(&run.caller);
             }
         }
         for index in done.into_iter().rev() {

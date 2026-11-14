@@ -14,7 +14,7 @@ use std::future::Future;
 use atlas_actions::ActionError;
 use atlas_board_slots::{BoardSlots, SlotError, SlotInstalls};
 use atlas_jobs::{Backoff, DeviceHolds, Events, JobTiming};
-use atlas_session::{Clock, Handle, Lease, Pause, Presence, Sessions};
+use atlas_session::{Clock, Handle, Pause, Presence, Sessions};
 use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode};
 use atlas_slots::SlotList;
 use atlas_types::DeviceKey;
@@ -230,11 +230,11 @@ pub async fn connected(handle: &Handle) -> [u8; 32] {
 
 impl Rig {
     pub async fn start(name: &str) -> Self {
-        Self::start_leased(name, None, None).await
+        Self::start_leased(name, None).await
     }
 
-    /// As [`Rig::start`], with the sessions' lease and the clock it is read on, when given.
-    pub async fn start_leased(name: &str, lease: Option<Lease>, clock: Option<Clock>) -> Self {
+    /// As [`Rig::start`], with the clock the sessions' lease is read on, when given.
+    pub async fn start_leased(name: &str, clock: Option<Clock>) -> Self {
         let dir = scratch(name);
         let _ = std::fs::remove_dir_all(&dir);
         let node = SimNode::start_with(&dir.join("node"), &kind(), None).expect("the node starts");
@@ -243,7 +243,6 @@ impl Rig {
         let relay = Relay::start(upstream);
         let address = Address::from_str(&format!("orion+tcp://{}", relay.addr())).unwrap();
         let sessions = Sessions::new(Arc::new(NoPause));
-        let sessions = sessions.with_lease(lease.unwrap_or(Lease::DEFAULT));
         let sessions = Arc::new(match clock {
             Some(clock) => sessions.with_clock(clock),
             None => sessions,

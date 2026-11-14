@@ -18,7 +18,7 @@ use std::time::{Duration, Instant};
 
 use atlas_files::{Counters, Progress, Push, PushError, PushKind, Stage, submit};
 use atlas_jobs::{Backoff, DeviceHolds, Events, JobId, JobKind, JobStatus, JobTiming, Jobs};
-use atlas_session::{Clock, Handle, Lease, Pause, Presence, Sessions};
+use atlas_session::{Clock, Handle, Pause, Presence, Sessions};
 use atlas_sim_node::{Hello, Kind, Mode, SimNode};
 use common::{DEADLINE, Generated, POLL, Relay, is_generated};
 use orion::{Address, Identity, Options, Orion};
@@ -669,15 +669,10 @@ async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
     let port = node.network().port();
     let fast = 8 * 1024 * 1024;
     let relay = Relay::start(node.network(), fast);
-    // A lease in force with no renewals from this test's clock: only the advance makes a silence.
+    // The lease is read on a manual clock. A transfer is not renewed, so only the advance makes a
+    // silence: the board's period is 60 s (its hello fact).
     let clock = Clock::manual();
-    let sessions = Sessions::new(Arc::new(ShortPause))
-        .with_lease(Lease {
-            period: Duration::from_secs(60),
-            renew: Duration::from_secs(3600),
-            in_force: true,
-        })
-        .with_clock(clock.clone());
+    let sessions = Sessions::new(Arc::new(ShortPause)).with_clock(clock.clone());
     let address = Address::from_str(&format!("orion+tcp://{}", relay.addr())).unwrap();
     let handle = sessions.handle(&address).expect("a handle");
     connected(&handle).await;

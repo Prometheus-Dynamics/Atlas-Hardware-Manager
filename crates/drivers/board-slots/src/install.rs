@@ -527,7 +527,7 @@ impl InstallKind {
     ) -> Result<String, Step> {
         self.with(&spec.nonce, |run| {
             if run.hold.is_none() {
-                run.hold = Some(handle.hold());
+                run.hold = Some(handle.hold_work("a board install"));
             }
         });
         let (bundle, size) = self.ensure_bundle(spec).await?;

@@ -270,7 +270,7 @@ impl BoardActions {
                 Ok(Seen::Quiet) => {}
                 Ok(Seen::Doing(progress)) => on_progress(&progress),
                 Ok(Seen::Ended(finished)) => {
-                    let result = ended(finished);
+                    let result = ended(&self.handle, finished);
                     return match (hold, result) {
                         (Some(hold), Err(error)) if hold.lapsed() => Err(ActionError::HoldLapsed {
                             call,
@@ -365,7 +365,7 @@ impl BoardActions {
             })
             .await;
         match answered {
-            Ok(Direct::Ended(finished)) => ended(finished),
+            Ok(Direct::Ended(finished)) => ended(&self.handle, finished),
             Ok(Direct::Refused(reason)) => Err(ActionError::Refused(reason)),
             Ok(Direct::Late) => Err(ActionError::NotFinished {
                 name: name.to_owned(),
@@ -395,8 +395,9 @@ impl Seen {
 }
 
 /// How a run that ended is answered: the board's words for anything that did not succeed.
-fn ended(finished: Finished) -> Result<Done, ActionError> {
-    let detail = finished.detail;
+fn ended(handle: &Handle, finished: Finished) -> Result<Done, ActionError> {
+    // The board's lease note is read here, so every reply reaches the session that kept the hold.
+    let detail = handle.bridge_detail(&finished.detail);
     let reason = |default: &str| {
         if detail.trim().is_empty() {
             default.to_owned()

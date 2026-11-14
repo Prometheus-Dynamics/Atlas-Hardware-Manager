@@ -1,23 +1,24 @@
-//! The lease: a session keeps a board's lease alive while it holds something on the board, and sends
-//! nothing for it otherwise. The node is the simulated one, which counts the requests it receives.
+//! The lease: a session keeps a board's lease alive while it holds something on the board and nothing
+//! of its own is running there, sends nothing for it otherwise, and reports a lapse from the board's
+//! note or its `leases.ended` fact. The node is the simulated one, which counts the requests it
+//! receives and keeps its own lease clock (`lease_advance`).
 //!
-//! Time is the test's, not the machine's: the session reads its lease on a manual clock
-//! (`atlas_session::Clock::manual`), which moves only when a test advances it. So "the renew period has
-//! passed" is a line in the test, and a slow or loaded machine cannot make a renewal or a lapse come
-//! early or late. The waits that remain are negative checks ("nothing is sent"), which a stall can only
-//! make pass more easily, and waits for an event the test has already caused, with the generous
-//! `DEADLINE`.
+//! Time is the test's, not the machine's: the session measures its lease on a manual clock
+//! (`atlas_session::Clock::manual`), which moves only when a test advances it. The board's period is
+//! read from its hello fact (`lease.seconds`, 60 s in the simulated node), so a renewal is due at a
+//! third of it: 20 s of clock time. The waits that remain are negative checks ("nothing is sent"),
+//! which a stall can only make pass more easily, and waits for an event the test has already caused,
+//! with the generous `DEADLINE`.
 
 #![cfg(target_os = "linux")]
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::sync::atomic::AtomicBool;
+use std::time::{Duration, Instant};
 
-use atlas_session::double::{Double, Event, Log};
-use atlas_session::{Cancel, Clock, Handle, Lease, Pause, Presence, Sessions, SteppedTransfer};
+use atlas_session::{Clock, Handle, Pause, Presence, Sessions, lapse_words};
 use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode};
 use orion::{Address, Orion};
 
@@ -30,6 +31,9 @@ impl Pause for NoPause {
         std::thread::yield_now();
     }
 }
+
+/// The simulated board's lease period (its `lease.seconds`), and the renewal due at a third of it.
+const RENEW: Duration = Duration::from_secs(20);
 
 fn scratch(name: &str) -> PathBuf {
     Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("lease-{name}"))
@@ -45,6 +49,18 @@ fn with_lemnos() -> Kind {
     })
 }
 
+/// A board with no lease: no `lease.seconds` fact, no `leases.ended`.
+fn without_lease() -> Kind {
+    Kind::WithLemnos(Hello {
+        family: "test-family".into(),
+        serial: "0002".into(),
+        mode: Mode::Running,
+        model: "test-model".into(),
+        lease_seconds: None,
+        ..Hello::default()
+    })
+}
+
 fn start_node(dir: &Path, kind: &Kind, port: Option<u16>) -> SimNode {
     SimNode::start_with(dir, kind, port).expect("the simulated node starts")
 }
@@ -53,28 +69,13 @@ fn address(port: u16) -> Address {
     Address::from_str(&format!("orion+tcp://127.0.0.1:{port}")).unwrap()
 }
 
-/// The bridge requests the node took: a device's `.call`, which is what a renewal is.
+/// The requests the node took that renew a lease: its bridge `.call`s, including the renewal.
 fn renewals(node: &SimNode) -> usize {
     node.bridge_calls_started()
 }
 
-/// The lease the tests use: in force, a renewal due after `RENEW` of clock time, a lapse after
-/// `PERIOD` of clock time. Only the clock moves them.
-const RENEW: Duration = Duration::from_secs(10);
-const PERIOD: Duration = Duration::from_secs(60);
-
-fn lease() -> Lease {
-    Lease {
-        period: PERIOD,
-        renew: RENEW,
-        in_force: true,
-    }
-}
-
-fn sessions(lease: Lease, clock: &Clock) -> Sessions {
-    Sessions::new(Arc::new(NoPause))
-        .with_lease(lease)
-        .with_clock(clock.clone())
+fn sessions(clock: &Clock) -> Sessions {
+    Sessions::new(Arc::new(NoPause)).with_clock(clock.clone())
 }
 
 /// Lets the session's own turns run a few times. Only for negative checks: nothing that is checked
@@ -105,24 +106,10 @@ async fn lost(handle: &Handle) {
     .expect("the monitor is running");
 }
 
-async fn replaced(handle: &Handle) {
-    let mut presence = handle.watch();
-    tokio::time::timeout(
-        DEADLINE,
-        presence.wait_for(|presence| matches!(presence, Presence::Replaced { .. })),
-    )
-    .await
-    .expect("the session sees another node at the address")
-    .expect("the monitor is running");
-}
-
 async fn until(what: &str, check: impl Fn() -> bool) {
-    let end = std::time::Instant::now() + DEADLINE;
+    let end = Instant::now() + DEADLINE;
     while !check() {
-        assert!(
-            std::time::Instant::now() < end,
-            "timed out waiting for: {what}"
-        );
+        assert!(Instant::now() < end, "timed out waiting for: {what}");
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
 }
@@ -149,11 +136,37 @@ async fn bridge_read(handle: &Handle) {
         .await;
 }
 
+/// Waits until the board's hello document says it has ended `want` leases (the fact is published on
+/// the node's own tick, so a test reads it back before the session can).
+async fn board_says_ended(handle: &Handle, want: u64) {
+    let end = Instant::now() + DEADLINE;
+    loop {
+        let node = handle
+            .with_client(|orion: &Orion| orion.node())
+            .await
+            .expect("the node answers");
+        let said = node
+            .facts
+            .iter()
+            .find(|fact| fact.name == "leases.ended")
+            .map(|fact| String::from_utf8_lossy(&fact.value).into_owned());
+        if said.as_deref() == Some(want.to_string().as_str()) {
+            return;
+        }
+        assert!(Instant::now() < end, "the board never said leases.ended {want}");
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
+fn lapses(handle: &Handle) -> u64 {
+    *handle.lapses().borrow()
+}
+
 #[tokio::test]
-async fn with_no_hold_the_session_sends_no_renewal() {
+async fn with_no_hold_nothing_is_sent_for_the_lease() {
     let clock = Clock::manual();
     let node = start_node(&scratch("no-hold"), &with_lemnos(), None);
-    let sessions = sessions(lease(), &clock);
+    let sessions = sessions(&clock);
     let handle = sessions
         .handle(&address(node.network().port()))
         .expect("the node is on");
@@ -163,69 +176,81 @@ async fn with_no_hold_the_session_sends_no_renewal() {
     let_turns_run().await;
     assert_eq!(renewals(&node), 0, "no hold, so no renewal");
     assert_eq!(node.calls_received(), 0, "no hold, so no request at all");
+    assert_eq!(lapses(&handle), 0);
 }
 
 #[tokio::test]
-async fn a_hold_is_renewed_when_the_renew_period_has_passed_on_the_clock() {
+async fn an_idle_hold_is_renewed_at_a_third_of_the_board_period() {
     let clock = Clock::manual();
-    let node = start_node(&scratch("renewed"), &with_lemnos(), None);
-    let sessions = sessions(lease(), &clock);
+    let node = start_node(&scratch("third"), &with_lemnos(), None);
+    let sessions = sessions(&clock);
     let handle = sessions
         .handle(&address(node.network().port()))
         .expect("the node is on");
     connected(&handle).await;
 
-    let _hold = handle.hold();
+    let _hold = handle.hold("an open terminal");
     let_turns_run().await;
-    assert_eq!(
-        renewals(&node),
-        0,
-        "the clock has not moved: nothing is due"
-    );
+    clock.advance(RENEW - Duration::from_secs(1));
+    let_turns_run().await;
+    assert_eq!(renewals(&node), 0, "19 s of 60 s is not yet due");
 
-    clock.advance(RENEW);
+    clock.advance(Duration::from_secs(1));
     renewed(&handle, &node, 1, "the first renewal").await;
     clock.advance(RENEW);
     renewed(&handle, &node, 2, "a second renewal").await;
+    assert_eq!(lapses(&handle), 0);
 }
 
 #[tokio::test]
-async fn the_holders_own_bridge_traffic_suppresses_renewals() {
+async fn a_work_hold_sends_no_renewal_and_its_silence_is_no_lapse() {
     let clock = Clock::manual();
-    let node = start_node(&scratch("traffic"), &with_lemnos(), None);
-    let sessions = sessions(lease(), &clock);
+    let node = start_node(&scratch("work"), &with_lemnos(), None);
+    let sessions = sessions(&clock);
     let handle = sessions
         .handle(&address(node.network().port()))
         .expect("the node is on");
     connected(&handle).await;
 
-    // Each step moves the clock by half the renew period, then the holder makes a bridge request.
-    // The silence never reaches the renew period, however the machine is scheduled.
-    let _hold = handle.hold();
-    for _ in 0..20 {
-        clock.advance(RENEW / 2);
-        bridge_read(&handle).await;
-    }
+    // A run, install or transfer in flight keeps its caller alive on the board by itself.
+    let _work = handle.hold_work("a run on the board");
     let_turns_run().await;
-    assert_eq!(
-        renewals(&node),
-        0,
-        "the holder's own requests renewed the lease, so none was sent"
-    );
+    clock.advance(Duration::from_secs(3600));
+    let_turns_run().await;
+    assert_eq!(renewals(&node), 0, "work in flight: no renewal is sent");
+    assert_eq!(lapses(&handle), 0, "work in flight: its silence is no lapse");
 }
 
 #[tokio::test]
-async fn two_holders_keep_the_lease_until_both_are_gone() {
+async fn a_board_with_no_lease_fact_gets_nothing_for_a_hold() {
+    let clock = Clock::manual();
+    let node = start_node(&scratch("no-fact"), &without_lease(), None);
+    let sessions = sessions(&clock);
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+
+    let _hold = handle.hold("an open terminal");
+    let _work = handle.hold_work("a run on the board");
+    clock.advance(Duration::from_secs(3600));
+    let_turns_run().await;
+    assert_eq!(node.calls_received(), 0, "no lease fact: nothing is sent");
+    assert_eq!(lapses(&handle), 0, "no lease fact: no lapse is recorded");
+}
+
+#[tokio::test]
+async fn two_holds_keep_the_lease_until_both_are_gone() {
     let clock = Clock::manual();
     let node = start_node(&scratch("two"), &with_lemnos(), None);
-    let sessions = sessions(lease(), &clock);
+    let sessions = sessions(&clock);
     let handle = sessions
         .handle(&address(node.network().port()))
         .expect("the node is on");
     connected(&handle).await;
 
-    let first = handle.hold();
-    let second = handle.hold();
+    let first = handle.hold("an open terminal");
+    let second = handle.hold("a claimed device");
     clock.advance(RENEW);
     renewed(&handle, &node, 1, "a renewal with both holds").await;
 
@@ -237,28 +262,157 @@ async fn two_holders_keep_the_lease_until_both_are_gone() {
 
     drop(second);
     let_turns_run().await;
-    let settled = renewals(&node);
+    let settled_at = renewals(&node);
     clock.advance(RENEW * 3);
     let_turns_run().await;
-    assert_eq!(
-        renewals(&node),
-        settled,
-        "no hold is left, so no renewal is sent"
-    );
+    assert_eq!(renewals(&node), settled_at, "no hold is left: no renewal");
 }
 
 #[tokio::test]
-async fn a_lost_session_stops_renewals_and_they_resume_on_the_same_node() {
+async fn a_holders_own_bridge_requests_are_its_renewals() {
+    let clock = Clock::manual();
+    let node = start_node(&scratch("traffic"), &with_lemnos(), None);
+    let sessions = sessions(&clock);
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+
+    // Each step moves the clock by 10 s, then the holder makes a bridge request: silence never
+    // reaches a third of the period, so the session sends nothing of its own.
+    let _hold = handle.hold("an open terminal");
+    for _ in 0..20 {
+        clock.advance(RENEW / 2);
+        bridge_read(&handle).await;
+    }
+    let_turns_run().await;
+    assert_eq!(renewals(&node), 0, "the holder's requests did the renewing");
+    assert_eq!(lapses(&handle), 0);
+}
+
+#[tokio::test]
+async fn a_lapse_seen_by_the_board_fact_alone_is_one_lapse() {
+    let clock = Clock::manual();
+    let node = start_node(&scratch("ended-alone"), &with_lemnos(), None);
+    node.lease_note(false);
+    let sessions = sessions(&clock);
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+
+    let hold = handle.hold("an open terminal");
+    clock.advance(RENEW);
+    renewed(&handle, &node, 1, "the first renewal, which registers the caller").await;
+    // The board drops the silent holder, and this session says nothing for longer than its lease.
+    node.lease_advance(61);
+    board_says_ended(&handle, 1).await;
+    clock.advance(RENEW);
+    renewed(&handle, &node, 2, "the renewal that finds the lapse").await;
+
+    assert_eq!(lapses(&handle), 1, "leases.ended moved while the hold existed");
+    assert!(hold.lapsed(), "the hold learns of the lapse");
+    let words = handle.lapse_words();
+    assert!(words.contains("an open terminal"), "{words}");
+    assert!(words.contains("nothing was retried"), "{words}");
+}
+
+#[tokio::test]
+async fn a_lapse_seen_by_the_note_and_the_fact_together_is_reported_once() {
+    let clock = Clock::manual();
+    let node = start_node(&scratch("both"), &with_lemnos(), None);
+    let sessions = sessions(&clock);
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+
+    let _hold = handle.hold("an open terminal");
+    clock.advance(RENEW);
+    renewed(&handle, &node, 1, "the first renewal, which registers the caller").await;
+    node.lease_advance(61);
+    board_says_ended(&handle, 1).await;
+    clock.advance(RENEW);
+    // The fact is read first (a lapse), then the renewal's reply carries the note (the same lapse).
+    renewed(&handle, &node, 1, "the renewal after the drop").await;
+    assert_eq!(lapses(&handle), 1, "both signals for one expiry: one lapse");
+}
+
+#[tokio::test]
+async fn the_note_in_a_reply_is_read_once_and_its_rest_is_kept() {
+    let clock = Clock::manual();
+    let node = start_node(&scratch("note-read"), &with_lemnos(), None);
+    let sessions = sessions(&clock);
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+
+    // Only the exact note, or the note then `"; "`, is a lapse. The rest is the reply's own detail.
+    assert_eq!(handle.bridge_detail("lease-ended: holds released; the run was refused"), "the run was refused");
+    assert_eq!(handle.bridge_detail("lease-ended: holds released"), "");
+    assert_eq!(lapses(&handle), 1, "a note is one lapse");
+    assert_eq!(
+        handle.bridge_detail("the reply said lease-ended: holds released later"),
+        "the reply said lease-ended: holds released later"
+    );
+    assert_eq!(lapses(&handle), 1, "a note that is only contained later is no lapse");
+
+    // Once per expiry: a second note with no request in between is the same expiry.
+    assert_eq!(handle.bridge_detail("lease-ended: holds released"), "");
+    assert_eq!(lapses(&handle), 1);
+    // A request that got through starts a new expiry, and its note is a new lapse.
+    bridge_read(&handle).await;
+    assert_eq!(handle.bridge_detail("lease-ended: holds released"), "");
+    assert_eq!(lapses(&handle), 2);
+    assert!(lapse_words(&[]).contains("nothing was retried"));
+}
+
+#[tokio::test]
+async fn after_a_lapse_nothing_is_claimed_again_or_retried() {
+    let clock = Clock::manual();
+    let node = start_node(&scratch("no-retry"), &with_lemnos(), None);
+    let sessions = sessions(&clock);
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+
+    let _hold = handle.hold("a claimed device");
+    clock.advance(RENEW);
+    renewed(&handle, &node, 1, "the first renewal, which registers the caller").await;
+    node.lease_advance(61);
+    board_says_ended(&handle, 1).await;
+    clock.advance(RENEW);
+    renewed(&handle, &node, 2, "the renewal that finds the lapse").await;
+
+    // The session goes on renewing the still-held lease as before, and nothing else is sent: no
+    // retry of a hold, no request of any other kind.
+    // Each renewal restarts the silence, so the clock moves a renewal period at a time.
+    clock.advance(RENEW);
+    renewed(&handle, &node, 3, "the ordinary renewals go on").await;
+    clock.advance(RENEW);
+    renewed(&handle, &node, 4, "the ordinary renewals go on").await;
+    assert_eq!(
+        node.calls_received(),
+        renewals(&node),
+        "only renewals were sent after the lapse"
+    );
+    assert_eq!(lapses(&handle), 1);
+}
+
+#[tokio::test]
+async fn a_lost_session_renews_again_on_the_same_board() {
     let clock = Clock::manual();
     let dir = scratch("lost");
     let kind = with_lemnos();
     let node = start_node(&dir, &kind, None);
     let port = node.network().port();
-    let sessions = sessions(lease(), &clock);
+    let sessions = sessions(&clock);
     let handle = sessions.handle(&address(port)).expect("the node is on");
     connected(&handle).await;
 
-    let _hold = handle.hold();
+    let _hold = handle.hold("an open terminal");
     clock.advance(RENEW);
     renewed(&handle, &node, 1, "a renewal before the loss").await;
     let key = handle.node_key().expect("connected before the loss");
@@ -269,208 +423,22 @@ async fn a_lost_session_stops_renewals_and_they_resume_on_the_same_node() {
     connected(&handle).await;
     assert_eq!(handle.node_key(), Some(key), "the same node is back");
 
-    // The silence (the node was down) is well short of the lease period: no lapse, and the renewal
-    // is due again as soon as the renew period has passed on the clock.
     clock.advance(RENEW);
     renewed(&handle, &back, 1, "a renewal once the same node is back").await;
-}
-
-#[tokio::test]
-async fn a_replaced_board_gets_no_renewal() {
-    let clock = Clock::manual();
-    let dir_a = scratch("replaced-a");
-    let kind = with_lemnos();
-    let node_a = start_node(&dir_a, &kind, None);
-    let port = node_a.network().port();
-    let sessions = sessions(lease(), &clock);
-    let handle = sessions.handle(&address(port)).expect("the node is on");
-    connected(&handle).await;
-
-    let _hold = handle.hold();
-    drop(node_a);
-    lost(&handle).await;
-
-    let node_b = start_node(&scratch("replaced-b"), &kind, Some(port));
-    replaced(&handle).await;
-    clock.advance(RENEW * 100);
-    let_turns_run().await;
-    assert_eq!(renewals(&node_b), 0, "the other board is sent no renewal");
-    assert_eq!(
-        node_b.calls_received(),
-        0,
-        "the other board is sent no call"
-    );
 }
 
 #[tokio::test]
 async fn a_node_without_lemnos_has_no_lease_and_gets_nothing() {
     let clock = Clock::manual();
     let node = start_node(&scratch("plain"), &Kind::Plain, None);
-    let sessions = sessions(lease(), &clock);
+    let sessions = sessions(&clock);
     let handle = sessions
         .handle(&address(node.network().port()))
         .expect("the node is on");
     connected(&handle).await;
 
-    let _hold = handle.hold();
+    let _hold = handle.hold("an open terminal");
     clock.advance(RENEW * 100);
     let_turns_run().await;
-    assert_eq!(
-        node.calls_received(),
-        0,
-        "a plain Orion node has no bridge: nothing is sent for the hold"
-    );
-}
-
-#[tokio::test]
-async fn a_renewal_is_not_starved_by_a_long_operation() {
-    let clock = Clock::manual();
-    let node = start_node(&scratch("long"), &with_lemnos(), None);
-    let sessions = sessions(lease(), &clock);
-    let handle = sessions
-        .handle(&address(node.network().port()))
-        .expect("the node is on");
-    connected(&handle).await;
-
-    let _hold = handle.hold();
-    let log = Log::new();
-    let released = Arc::new(AtomicBool::new(false));
-    let cancel = Cancel::new();
-    let transfer = Double::until_released("push", &log, &released);
-    let operation = {
-        let handle = handle.waiting(DEADLINE);
-        let cancel = cancel.clone();
-        tokio::spawn(async move {
-            handle
-                .long(&cancel, move |_orion: &Orion| {
-                    Ok(Box::new(transfer) as Box<dyn SteppedTransfer<String>>)
-                })
-                .await
-        })
-    };
-    // The operation steps until it is released. Each renewal is due by the clock, and the renewals
-    // keep going while it runs.
-    clock.advance(RENEW);
-    renewed(&handle, &node, 1, "a renewal while the operation runs").await;
-    clock.advance(RENEW);
-    renewed(
-        &handle,
-        &node,
-        2,
-        "a second renewal while the operation runs",
-    )
-    .await;
-    assert!(!operation.is_finished(), "the operation is still running");
-    assert!(
-        log.events()
-            .iter()
-            .any(|event| matches!(event, Event::Step { .. })),
-        "the operation stepped while the renewals went out"
-    );
-    released.store(true, Ordering::SeqCst);
-    operation
-        .await
-        .expect("the task ends")
-        .expect("the operation ends");
-}
-
-#[tokio::test]
-async fn a_silent_session_with_a_hold_records_a_lapse_and_one_without_does_not() {
-    let clock = Clock::manual();
-    let node = start_node(&scratch("lapse"), &with_lemnos(), None);
-    let sessions = sessions(lease(), &clock);
-    let handle = sessions
-        .handle(&address(node.network().port()))
-        .expect("the node is on");
-    connected(&handle).await;
-
-    // No hold: a long silence on the clock is not a lapse.
-    let mut lapses = handle.lapses();
-    clock.advance(PERIOD * 10);
-    let_turns_run().await;
-    assert!(
-        lapses.has_changed().map(|changed| !changed).unwrap_or(true),
-        "no hold, so no lapse"
-    );
-
-    // A hold taken now starts its silence now: past the period on the clock, it is a lapse.
-    let mut hold = handle.hold();
-    let_turns_run().await;
-    clock.advance(PERIOD + Duration::from_secs(1));
-    tokio::time::timeout(DEADLINE, lapses.changed())
-        .await
-        .expect("the silence with a hold is a lapse")
-        .expect("the monitor is running");
-    assert!(hold.lapsed(), "the hold sees the lapse");
-    hold.acknowledge();
-    assert!(!hold.lapsed(), "an acknowledged lapse is not seen again");
-}
-
-#[tokio::test]
-async fn holds_are_per_board() {
-    let clock = Clock::manual();
-    let node_a = start_node(&scratch("per-board-a"), &with_lemnos(), None);
-    let node_b = start_node(&scratch("per-board-b"), &with_lemnos(), None);
-    let sessions = sessions(lease(), &clock);
-    let a = sessions
-        .handle(&address(node_a.network().port()))
-        .expect("the node is on");
-    let b = sessions
-        .handle(&address(node_b.network().port()))
-        .expect("the node is on");
-    connected(&a).await;
-    connected(&b).await;
-
-    let _hold = a.hold();
-    clock.advance(RENEW);
-    renewed(&a, &node_a, 1, "a renewal on the held board").await;
-    let_turns_run().await;
-    assert_eq!(
-        renewals(&node_b),
-        0,
-        "a hold on one board sends nothing to another"
-    );
-    assert_eq!(node_b.calls_received(), 0);
-}
-
-/// At the locked revision the lease is not in force. A session with holds then sends nothing to the
-/// bridge for the lease, lists no device for it, and records no lapse, however long the clock runs:
-/// so no holder can be told its hold was dropped by a lease that does not exist.
-#[tokio::test]
-async fn with_the_lease_not_in_force_a_hold_sends_nothing_and_records_no_lapse() {
-    let clock = Clock::manual();
-    let node = start_node(&scratch("off"), &with_lemnos(), None);
-    let sessions = sessions(
-        Lease {
-            period: PERIOD,
-            renew: RENEW,
-            in_force: false,
-        },
-        &clock,
-    );
-    let handle = sessions
-        .handle(&address(node.network().port()))
-        .expect("the node is on");
-    connected(&handle).await;
-
-    let mut hold = handle.hold();
-    let lapses = handle.lapses();
-    clock.advance(PERIOD * 100);
-    let_turns_run().await;
-    assert!(
-        lapses.has_changed().map(|changed| !changed).unwrap_or(true),
-        "no lease in force: no lapse is recorded"
-    );
-    assert!(!hold.lapsed(), "the hold never sees a lapse");
-    hold.acknowledge();
-    assert_eq!(
-        renewals(&node),
-        0,
-        "nothing is sent to the bridge for the lease"
-    );
-    assert_eq!(
-        node.calls_received(),
-        0,
-        "no request of any kind reaches the node"
-    );
+    assert_eq!(node.calls_received(), 0, "a plain Orion node has no bridge");
 }

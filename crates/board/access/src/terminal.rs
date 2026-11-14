@@ -249,7 +249,7 @@ pub async fn open(
         end: Mutex::new(None),
         events,
         control: channel.control.clone(),
-        hold: Mutex::new(Some(handle.hold())),
+        hold: Mutex::new(Some(handle.hold("an open terminal"))),
     });
     spawn_reader(channel.output, finish.clone());
     let presence = tokio::spawn(watch_presence(handle.watch(), finish.clone()));
