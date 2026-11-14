@@ -44,7 +44,15 @@ configured on the USB ports, and they are host ports. Never connect a USB port o
 
 Reboot to the loader (no button): `reboot loader` writes 0xEF08A53C at offset 0x80 of a syscon at 0xfd588000 (assets/dts/rockchip/
 rk3588s-rock-5c-loader.dts; that syscon is added there because no kernel node contains the register U-Boot reads, 0xfd588080,
-U-Boot rk3588/Kconfig:418). UNVERIFIED on a board: the base 0xfd588000 is inferred from the register (no RK3588 TRM on disk).
+U-Boot rk3588/Kconfig:418). The base 0xfd588000 was inferred from the register (no RK3588 TRM on disk); it is ESTABLISHED from
+U-Boot's side: the node's register in the built dtb is 0xfd588080, U-Boot's own default. UNVERIFIED on a board.
+
+Checked in the BUILT image (Gaia, 2026-11-14, from next be263ac1; not booted): the reboot-mode node is in the dtb with
+`mode-loader = 0xef08a53c`, its register equals U-Boot v2026.10's ROCKCHIP_BOOT_MODE_REG default for this SoC, and
+"Returning to boot ROM" is in u-boot-rockchip.bin, so CONFIG_SPL_ROCKCHIP_BACK_TO_BROM took. One effect of that option to
+check at the first boot: U-Boot's `spl_boot_device()` then answers BOOTROM as the fallback when no device in
+`u-boot,spl-boot-order` works, so the SPL returns to the ROM instead of trying MMC itself. Probably harmless. Still not
+proven by anything: that the boot ROM enters its download mode after the reset.
 
 ## The watchdog, as the board will behave (UNVERIFIED on a board)
 

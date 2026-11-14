@@ -65,6 +65,13 @@ Reboot to the loader (no button): `reboot loader` writes 0xEF08A53C to the boot-
 assets/dts/rockchip/rk3566-radxa-zero-3e-gadget.dts; that file is marked for removal, and the node moves with it). U-Boot's SPL returns to
 the BootROM download for that value (CONFIG_SPL_ROCKCHIP_BACK_TO_BROM, families/rk35xx/assets/u-boot.fragment). UNVERIFIED on a board.
 
+Checked in the BUILT image (Gaia, 2026-11-14, from next be263ac1; not booted): the reboot-mode node is in the dtb with
+`mode-loader = 0xef08a53c`, its register equals U-Boot v2026.10's ROCKCHIP_BOOT_MODE_REG default for this SoC, and
+"Returning to boot ROM" is in u-boot-rockchip.bin, so CONFIG_SPL_ROCKCHIP_BACK_TO_BROM took. One effect of that option to
+check at the first boot: U-Boot's `spl_boot_device()` then answers BOOTROM as the fallback when no device in
+`u-boot,spl-boot-order` works, so the SPL returns to the ROM instead of trying MMC itself. Probably harmless. Still not
+proven by anything: that the boot ROM enters its download mode after the reset.
+
 ## The watchdog, as the board will behave (UNVERIFIED on a board)
 
 - Requested: `RuntimeWatchdogSec=16s` (components/bringup-alive/files/10-watchdog.conf). systemd pings every 8 s.
