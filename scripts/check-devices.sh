@@ -30,6 +30,8 @@
 set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# slot_id_for and the test version (CHECK_VERSION): scripts/version-rule.sh, the one rule's one place.
+source "$repo/scripts/version-rule.sh"
 self=$repo/scripts/check-devices.sh
 root=$repo/devices
 mode=check
@@ -447,10 +449,6 @@ firmware_rule() {  # <devices dir>
 #   slot id: [a-z0-9._-], 1..64 bytes, not starting with a dot; uppercase and `+` are refused by the board.
 # THE ONE RULE (this is its one place): slot = <product>-<version>, with every `+` read as `-`, lowercased.
 # A new build gets a new id, so the id follows the version and is never chosen by hand.
-slot_id_for() {  # <product> <version> -> the slot id
-  local v=${2//+/-}
-  printf '%s-%s' "$1" "${v,,}"
-}
 slot_setting() {  # <product.toml> <key> -> the [images.settings] value (string or number)
   awk -v k="$2" '
     /^\[/ { on = ($0 == "[images.settings]") ; next }
