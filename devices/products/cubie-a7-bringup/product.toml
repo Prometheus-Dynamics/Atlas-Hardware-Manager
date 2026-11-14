@@ -1,3 +1,4 @@
+# Planned, not built. Cannot build today: the TF-A, U-Boot and kernel patch series this family names are applied by nothing.
 # Radxa Cubie A7S BRING-UP, DEV ONLY (B19, B24). Boots from the card and shows three signs with NO serial adapter:
 #   1. the status LED (PJ26, blue) blinks: the kernel heartbeat, set in board/assets/dts;
 #   2. a USB network appears on the PC: Gaia's usb-gadget-network component (CDC NCM through configfs; PR B24),

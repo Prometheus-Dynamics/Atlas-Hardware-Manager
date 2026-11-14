@@ -31,7 +31,7 @@ Planned, not built: no image was built or booted for this PR. Two LEDs: `power-l
 `user-led` is the blue heartbeat LED (rk3576-rock-4d.dts, linux,default-trigger heartbeat). `user-led` is the one the signs
 use. The watchdog is armed by systemd (components/bringup-alive: RuntimeWatchdogSec 16 s). The Ethernet is matched by its type, not its name (components/bringup-network), because a GMAC is normally named end0, not eth0.
 
-| State | Green (`power-led`) | Blue (`user-led`) | What it means |
+| State | Green LED (`power-led`, colour green, function STATUS) | Blue LED (`user-led`, colour blue, function HEARTBEAT) | What it means |
 |---|---|---|---|
 | Power on, before the kernel | off | off | nothing has loaded |
 | Kernel alive, before systemd starts | on | beats (the tree's heartbeat trigger) | the kernel runs |
@@ -42,7 +42,22 @@ use. The watchdog is armed by systemd (components/bringup-alive: RuntimeWatchdog
 USB with no configuration: this image has NO USB gadget and no USB network (`dr_mode = host` on both DRD controllers in the
 tree; no device port is enabled). Nothing is configured on the USB ports. Never connect a USB port of this board to a PC.
 
-Reboot to the loader (no button): `reboot loader` writes 0xEF08A53C to pmu0_grf offset 0x40 (the node in
+Reboot to the loader (no button): `reboot loader` writes 0xEF08A53C to pmu0_grf offset 0x40 (U-Boot's RK3576 register is 0x26024040,
+arch/arm/mach-rockchip/rk3576/Kconfig:9, and pmu0_grf is 0x26024000, rk3576.dtsi:876: 0x40 = the difference; the node is in
 assets/dts/rockchip/rk3576-rock-4d-loader.dts). U-Boot returns to the BootROM download only with CONFIG_SPL_ROCKCHIP_BACK_TO_BROM
 (families/rk35xx/assets/u-boot.fragment). Untested on a board: whether the RK3576 BootROM enters loader mode after that reset is
 not in any source read. `reboot bootloader` writes BOOT_FASTBOOT; U-Boot starts `fastboot usb 0` only if fastboot is built in.
+
+## The watchdog, as the board will behave (UNVERIFIED on a board)
+
+- Requested: `RuntimeWatchdogSec=16s` (components/bringup-alive/files/10-watchdog.conf). systemd pings every 8 s.
+- RK3566, RK3588S, RK3576 (this board's SoC): the driver rounds 16 s UP to the smallest TOP that is at least 16 s
+  (drivers/watchdog/dw_wdt.c:123-143, dw_wdt_find_best_top). The TOPs are 2^(16+i) cycles of a 24 MHz clock (dw_wdt.c:52-53;
+  the clock is xin24m: clk-rk3568.c:1208, clk-rk3588.c:1060, clk-rk3576.c:727). TOP 12 is 11.2 s (below 16); TOP 13 is
+  2^29 / 24 MHz = 22.4 s. **Effective: 22.4 s** after the last ping. A PID 1 stall of about 22 s resets the board.
+- A733 (Cubie): sunxi_wdt.c:25 gives a 16 s hardware maximum (WDT_MAX_TIMEOUT). **Effective: 16 s, UNVERIFIED, never run.**
+- `RebootWatchdogSec=2min`: longer than the hardware maximum on every SoC, so the watchdog core keeps it fed while the kernel
+  runs (drivers/watchdog/watchdog_dev.c:79-125). The A733 needs the series patch sunxi-wdt-heartbeat for it to be served.
+
+LED silkscreen: the dts gives colour and function, not a label (see the ROCK 5C note). The blue LED beats from kernel boot
+(`user-led` linux,default-trigger heartbeat, rk3576-rock-4d.dts); the green power LED stays on.
