@@ -100,14 +100,16 @@ def make_slot(stage, slot_id, erofs, data_blocks, boot_files):
 
 def main():
     alpha_erofs = pattern(4 * BLOCK, 1) + pattern(BLOCK, 2)
+    # The five boot files a slot carries (Lemnos I5i8), at their fixed names.
     alpha_boot = {
-        "Image": pattern(40_000, 3),
+        "kernel8.img": pattern(40_000, 3),
+        "initramfs.cpio": pattern(9000, 5),
         "board.dtb": pattern(1234, 4),
-        "initramfs.cpio.gz": pattern(9000, 5),
         "cmdline.txt": b"console=tty1 root=PARTUUID=abc panic=5\n",
-        "overlays/one.dtbo": pattern(777, 6),
+        "overlays/lemnos-board.dtbo": pattern(777, 6),
     }
     beta_erofs = pattern(BLOCK, 7)  # one data block, no tree
+    # Beta is a decoy: its one boot file is its own cmdline (the reader does not check the set).
     beta_boot = {"cmdline.txt": b"console=tty2 panic=5\n"}
 
     with tempfile.TemporaryDirectory() as tmp:

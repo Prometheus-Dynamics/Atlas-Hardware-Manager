@@ -298,16 +298,17 @@ pub fn bundle_bytes(id: &str, version: &str, board: Option<&str>) -> Vec<u8> {
     let rootfs = format!("rootfs of {id} at {version}\n")
         .repeat(900)
         .into_bytes();
-    let boot: [(&str, &[u8]); 2] = [
-        ("cmdline.txt", b"console=ttyS0 root=/dev/dm-0\n"),
-        ("kernel.img", b"kernel bytes"),
-    ];
+    // The command line carries the word the simulated board's default rule states; the other four
+    // boot files are the five a slot carries (Lemnos I5i8).
+    let boot = atlas_sim_node::bundle::boot_files(
+        b"console=ttyS0 root=/dev/dm-0 os.src.rpi-boot-mode-1=/soc@107c000000/mmc@fff000\n",
+    );
     let mut manifest = atlas_sim_node::bundle::manifest(id, version, &rootfs, &boot);
     manifest["id"] = serde_json::Value::String(id.into());
     if let Some(board) = board {
         manifest["board"] = serde_json::Value::String(board.into());
     }
-    atlas_sim_node::bundle::build(&manifest, None, None, &rootfs, &boot)
+    atlas_sim_node::bundle::build(&manifest, None, &rootfs, &boot)
 }
 
 /// Writes a bundle to a file in `dir` and returns its path.

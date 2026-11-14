@@ -11,7 +11,7 @@ use atlas_sim_node::slots::NewSlot;
 use atlas_sim_node::slots::Signed;
 use atlas_sim_node::slots::trial::Config;
 use atlas_sim_node::{DEADLINE, SimNode, call};
-use ed25519_dalek::SigningKey;
+use ed25519_dalek::{Signer, SigningKey};
 use orion::Orion;
 use orion::actions::{ActionCall, Finished, Outcome};
 use serde_json::Value;
@@ -25,22 +25,21 @@ fn start(name: &str) -> SimNode {
     SimNode::start(&dir).expect("the simulated node starts")
 }
 
-/// A bundle for slot `id`, signed by `key` when given (its signature and key id).
+/// The command line the default board rule takes: its boot-source word is on it.
+const CMDLINE: &[u8] =
+    b"console=ttyS0 root=/dev/dm-0 os.src.rpi-boot-mode-1=/soc@107c000000/mmc@fff000\n";
+
+/// A bundle for slot `id`, signed by `key` when given (its `slot.sig` record).
 fn bundle_for(id: &str, version: &str, key: Option<&SigningKey>) -> Vec<u8> {
     let rootfs = format!("rootfs of {id} at {version}\n")
         .repeat(900)
         .into_bytes();
-    let boot: [(&str, &[u8]); 2] = [
-        ("cmdline.txt", b"console=ttyS0 root=/dev/dm-0\n"),
-        ("kernel.img", b"kernel bytes"),
-    ];
+    let boot = bundle::boot_files(CMDLINE);
     let manifest = bundle::manifest(id, version, &rootfs, &boot);
-    let signature = key.map(|key| bundle::sign(&manifest, key));
-    let key_id = key.map(bundle::key_id);
+    let record = key.map(|key| bundle::sign(&manifest, key));
     bundle::build(
         &manifest,
-        signature.as_ref().map(|signature| &signature[..]),
-        key_id.as_deref(),
+        record.as_ref().map(|record| &record[..]),
         &rootfs,
         &boot,
     )
@@ -177,6 +176,7 @@ fn a_list_over_60_kib_is_refused_by_name_with_no_output() {
                 .slots
                 .install_done(
                     NewSlot {
+                        boot: Default::default(),
                         id: format!("bulk-{index:03}"),
                         product: "sim".into(),
                         board: "simulated".into(),
@@ -466,7 +466,7 @@ fn signature_outcomes_are_verified_unsigned_and_unknown_key_and_installed() {
 }
 
 #[test]
-fn a_bad_signature_from_a_known_key_and_a_malformed_signature_are_refused_and_leave_nothing() {
+fn a_bad_signature_from_a_known_key_and_a_malformed_record_are_refused_and_leave_nothing() {
     let node = start("signature-refused");
     let orion = node.connect("signature-refused").expect("a session");
     let trusted = SigningKey::from_bytes(&[7; 32]);
@@ -478,14 +478,14 @@ fn a_bad_signature_from_a_known_key_and_a_malformed_signature_are_refused_and_le
             owner: "Test Owner".into(),
         });
     let rootfs = b"rootfs of bad-sig\n".repeat(64);
-    let boot: [(&str, &[u8]); 1] = [("cmdline.txt", b"console=ttyS0\n")];
+    let boot = bundle::boot_files(CMDLINE);
     let manifest = bundle::manifest("bad-sig", "2.0.0", &rootfs, &boot);
-    let key_id = bundle::key_id(&trusted);
+    let record = bundle::sign(&manifest, &trusted);
 
-    // A signature by the trusted key that does not verify (one byte changed).
-    let mut bad = bundle::sign(&manifest, &trusted);
-    bad[0] ^= 0xff;
-    let forged = bundle::build(&manifest, Some(&bad[..]), Some(&key_id), &rootfs, &boot);
+    // A record by the trusted key whose signature does not verify (one byte changed).
+    let mut forged_record = record;
+    forged_record[60] ^= 0xff;
+    let forged = bundle::build(&manifest, Some(&forged_record[..]), &rootfs, &boot);
     let refusal = install(&orion, &forged, false, false);
     assert_eq!(refusal.outcome, Outcome::Rejected, "{}", refusal.detail);
     assert!(refusal.detail.starts_with("-1:"), "{}", refusal.detail);
@@ -496,19 +496,27 @@ fn a_bad_signature_from_a_known_key_and_a_malformed_signature_are_refused_and_le
     );
     assert_eq!(slot_count(&list(&orion)), 1, "nothing installed");
 
-    // A signature that is not 64 bytes is malformed.
-    let short = bundle::build(&manifest, Some(&bad[..63]), Some(&key_id), &rootfs, &boot);
+    // The old bare 64-byte signature form, by the trusted key, is malformed.
+    let short = bundle::build(&manifest, Some(&record[..64]), &rootfs, &boot);
     let finished = install(&orion, &short, false, false);
     assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
-    assert!(finished.detail.contains("64 bytes"), "{}", finished.detail);
+    assert!(finished.detail.contains("108-byte"), "{}", finished.detail);
 
-    // A signature with no key id, and a key id with no signature, are malformed too.
-    let no_key = bundle::build(&manifest, Some(&bad[..]), None, &rootfs, &boot);
-    let finished = install(&orion, &no_key, false, false);
+    // A record whose magic is wrong is malformed.
+    let mut magic = record;
+    magic[0] ^= 1;
+    let bad_magic = bundle::build(&manifest, Some(&magic[..]), &rootfs, &boot);
+    let finished = install(&orion, &bad_magic, false, false);
     assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
-    let no_sig = bundle::build(&manifest, None, Some(&key_id), &rootfs, &boot);
-    let finished = install(&orion, &no_sig, false, false);
-    assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
+    assert!(finished.detail.contains("LMNSSIG1"), "{}", finished.detail);
+
+    // A signature by the trusted key over the BARE slot.json bytes does not verify.
+    let bare = trusted.sign(manifest.to_string().as_bytes()).to_bytes();
+    let mut bare_record = record;
+    bare_record[44..108].copy_from_slice(&bare);
+    let bare_bundle = bundle::build(&manifest, Some(&bare_record[..]), &rootfs, &boot);
+    let finished = install(&orion, &bare_bundle, false, false);
+    assert!(finished.detail.starts_with("-1:"), "{}", finished.detail);
 
     assert_eq!(
         slot_count(&list(&orion)),
@@ -621,10 +629,10 @@ fn a_board_mismatch_at_install_is_minus_95_naming_both_boards_and_leaves_nothing
     let node = start("install-95");
     let orion = node.connect("install-95").expect("a session");
     let rootfs = b"rootfs of slot-2\n".repeat(64);
-    let boot: [(&str, &[u8]); 1] = [("cmdline.txt", b"console=ttyS0\n")];
+    let boot = bundle::boot_files(CMDLINE);
     let mut manifest = bundle::manifest("slot-2", "2.0.0", &rootfs, &boot);
     manifest["board"] = Value::String("another-board".into());
-    let other = bundle::build(&manifest, None, None, &rootfs, &boot);
+    let other = bundle::build(&manifest, None, &rootfs, &boot);
     let finished = install(&orion, &other, false, false);
     assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
     assert_eq!(
@@ -640,9 +648,9 @@ fn a_board_mismatch_at_install_is_minus_95_naming_both_boards_and_leaves_nothing
 }
 
 #[test]
-fn a_signed_bundle_without_slot_key_is_refused_minus_22_and_leaves_nothing() {
-    let node = start("signed-no-key");
-    let orion = node.connect("signed-no-key").expect("a session");
+fn the_old_slot_key_member_is_refused_by_name_and_leaves_nothing() {
+    let node = start("slot-key-member");
+    let orion = node.connect("slot-key-member").expect("a session");
     let signer = SigningKey::from_bytes(&[7; 32]);
     node.model()
         .slots
@@ -651,15 +659,121 @@ fn a_signed_bundle_without_slot_key_is_refused_minus_22_and_leaves_nothing() {
             public: signer.verifying_key().to_bytes(),
             owner: "Test Owner".into(),
         });
-    let rootfs = b"rootfs of no-key\n".repeat(64);
-    let boot: [(&str, &[u8]); 1] = [("cmdline.txt", b"console=ttyS0\n")];
-    let manifest = bundle::manifest("no-key", "2.0.0", &rootfs, &boot);
-    let signature = bundle::sign(&manifest, &signer);
-    // The signature is there, and the key id is not.
-    let bytes = bundle::build(&manifest, Some(&signature[..]), None, &rootfs, &boot);
+    let rootfs = b"rootfs of slot-key\n".repeat(64);
+    let boot = bundle::boot_files(CMDLINE);
+    let manifest = bundle::manifest("slot-key", "2.0.0", &rootfs, &boot);
+    let record = bundle::sign(&manifest, &signer);
+    // A signed bundle with the old `slot.key` member: the key id is in the record, so the member
+    // is outside the set and is refused by name, at its header.
+    let mut parts = vec![
+        ("slot.json".to_string(), manifest.to_string().into_bytes()),
+        ("slot.sig".to_string(), record.to_vec()),
+        ("slot.key".to_string(), bundle::key_id(&signer).into_bytes()),
+        ("rootfs.erofs".to_string(), rootfs.clone()),
+    ];
+    parts.extend(
+        boot.iter()
+            .map(|(path, bytes)| (format!("boot/{path}"), bytes.to_vec())),
+    );
+    let bytes = bundle::tar_of(&parts);
     let finished = install(&orion, &bytes, false, false);
     assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
     assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
-    assert!(finished.detail.contains("slot.key"), "{}", finished.detail);
+    assert!(
+        finished
+            .detail
+            .contains("slot.key is not part of a slot bundle"),
+        "{}",
+        finished.detail
+    );
     assert_eq!(slot_count(&list(&orion)), 1, "nothing is listed");
+}
+
+/// A slot installed straight into the board's slot store, with the boot files its manifest lists.
+fn slot_with_boot(id: &str, boot: &[(&str, &str)]) -> NewSlot {
+    NewSlot {
+        id: id.into(),
+        product: "sim".into(),
+        board: "simulated".into(),
+        version: "2.0.0".into(),
+        variant: String::new(),
+        kernel: String::new(),
+        display_name: id.into(),
+        size: 4096,
+        verity: true,
+        signed: Signed::Unsigned,
+        boot: boot
+            .iter()
+            .map(|(path, digest)| ((*path).to_string(), (*digest).to_string()))
+            .collect(),
+    }
+}
+
+/// A node whose default is `C` (previous `B`), both with boot files, and `C` running.
+fn node_with_default_c(name: &str) -> (SimNode, Orion) {
+    let node = start(name);
+    let orion = node.connect(name).expect("a session");
+    {
+        let mut model = node.model();
+        model
+            .slots
+            .install_done(
+                slot_with_boot("B", &[("cmdline.txt", "c1"), ("kernel8.img", "k1")]),
+                false,
+                true,
+            )
+            .expect("installs B");
+        model
+            .slots
+            .install_done(
+                slot_with_boot("C", &[("cmdline.txt", "c1"), ("kernel8.img", "kc")]),
+                false,
+                true,
+            )
+            .expect("installs C");
+        model.slots.default = Some("C".into());
+        model.slots.previous = Some("B".into());
+        model.slots.active = Some("C".into());
+    }
+    (node, orion)
+}
+
+#[test]
+fn the_board_restart_refusal_reaches_atlas_with_the_boards_text_unchanged() {
+    let (node, orion) = node_with_default_c("restart-refused-text");
+    {
+        let mut model = node.model();
+        model
+            .slots
+            .set_boot_file("C", "kernel8.img", Some("tampered"))
+            .expect("set");
+        model
+            .slots
+            .set_boot_file("B", "cmdline.txt", Some("tampered"))
+            .expect("set");
+    }
+    let finished = refused(&orion, names::REBOOT, b"");
+    assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
+    assert_eq!(
+        finished.detail,
+        "-1: C doesn't match its manifest (kernel8.img doesn't match its manifest hash), and its previous \"B\" doesn't either: the restart is refused"
+    );
+    // The board stays up on its default.
+    assert_eq!(node.model().slots.active.as_deref(), Some("C"));
+}
+
+#[test]
+fn the_restart_repoint_note_reaches_atlas_unchanged() {
+    let (node, orion) = node_with_default_c("restart-repoint-note");
+    node.model()
+        .slots
+        .set_boot_file("C", "kernel8.img", Some("tampered"))
+        .expect("set");
+    let finished = call(&orion, names::REBOOT, b"").expect("reboot answers");
+    assert_eq!(finished.outcome, Outcome::Succeeded, "{}", finished.detail);
+    assert_eq!(
+        String::from_utf8(finished.output).expect("text"),
+        "C doesn't match its manifest (kernel8.img doesn't match its manifest hash): B is the default now"
+    );
+    assert_eq!(node.model().slots.default.as_deref(), Some("B"));
 }

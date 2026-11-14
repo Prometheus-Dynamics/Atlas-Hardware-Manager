@@ -27,6 +27,7 @@
 
 pub mod calls;
 pub mod install;
+pub mod signature;
 pub mod trial;
 
 use atlas_actions::ActionError;
@@ -37,6 +38,7 @@ use thiserror::Error;
 
 pub use calls::BoardSlots;
 pub use install::{InstallRequest, SlotInstalls, Source};
+pub use signature::SignatureWords;
 pub use trial::{Ended, FileWatchStore, Follower, TrialStart};
 
 /// Why a slot operation gave no result. The board's own words are inside [`SlotError::Board`]

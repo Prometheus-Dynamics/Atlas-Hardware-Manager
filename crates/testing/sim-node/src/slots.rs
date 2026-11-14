@@ -3,8 +3,13 @@
 //! remove, pins, keep and housekeeping, and the install gate. Pure data and rules, so each
 //! rule is checked on its own. The node runs calls against it.
 
+use std::collections::BTreeMap;
+
 use serde_json::json;
 
+use crate::bundle::BootRule;
+
+pub mod boot;
 pub mod trial;
 
 /// Lemnos statuses (`lemnos-abi`): 0 is ok, negative values are errors.
@@ -129,6 +134,13 @@ pub struct Entry {
     pub pinned: bool,
     /// Installs get increasing numbers, so `list` can show the newest first.
     pub seq: u64,
+    /// The boot files the slot's manifest lists: path to SHA-256.
+    pub boot_manifest: BTreeMap<String, String>,
+    /// The boot files as they sit on the boot partition now. A boot whose files differ from
+    /// `boot_manifest` is refused (see [`boot`]). A test changes them with `set_boot_file`.
+    pub boot_disk: BTreeMap<String, String>,
+    /// Boot files the store cannot read, with the reader's reason (see `set_boot_file_unreadable`).
+    pub boot_unreadable: BTreeMap<String, String>,
 }
 
 /// A trial boot: a slot to boot, to be confirmed or fallen back from. Its boots are in `record`
@@ -156,6 +168,8 @@ pub struct NewSlot {
     pub size: u64,
     pub verity: bool,
     pub signed: Signed,
+    /// The boot files the manifest lists: path to SHA-256.
+    pub boot: BTreeMap<String, String>,
 }
 
 /// The slot state of one board.
@@ -174,12 +188,24 @@ pub struct Slots {
     pub free_bytes: u64,
     pub reserve_bytes: u64,
     /// The board's security switch, default off. Internal to the sim: Atlas never sends it, and
-    /// `list` never shows it. Off, a signature that does not verify with a key on the list is
-    /// refused, an unknown key is `not_checked_unknown_key`, and nothing else is refused. On, an
-    /// install that is unsigned or signed by an untrusted key is refused.
-    // LOCK: Lemnos L2. Today: the board has no security switch in the sim's sense; a known key with
-    // a bad signature installs as untrusted, and no install is refused for signing.
+    /// `list` never shows it. Off, a record whose key the board holds must verify (or the install
+    /// is refused), an unknown key is `not_checked_unknown_key`, and an unsigned bundle is
+    /// `not_checked_unsigned`. On, only an install signed by a held key that verifies is taken.
+    // LOCK: Lemnos S2 (system.security/1, #255). The real switch is `system.security/1` method 3
+    // `set(on)`, stored in /etc/board/security and refused by precheck; `require_signed` is removed
+    // from system-slots. This field is the sim's stand-in and is not that contract.
     pub board_security: bool,
+    /// The command-line rule of the board: the `boot_args` prefix and the `boot_sources`. A slot
+    /// whose `boot/cmdline.txt` lacks a word is refused at install.
+    // LOCK: Lemnos L2 (I5i4, I5i5 final). Today the board file has no boot_args/boot_sources keys;
+    // the default is one source, the boot mode 1 path. At the lock move the board's own values come from its file.
+    pub boot: BootRule,
+    /// The sizes of the board's five payload bays, in [`crate::bundle::BOOT_FILES`] order: a slot's
+    /// boot file must fit its role's bay, or the install is refused before anything is stored.
+    // LOCK: Lemnos I5i8 (4e871efd). The board file's `[boot]` keys, in ROLES order: bay_kernel_bytes,
+    // bay_initramfs_bytes, bay_device_tree_bytes, bay_cmdline_bytes, bay_overlay_bytes
+    // (docs/boards.md:535-539). The defaults are Lemnos's example board's values.
+    pub bay_bytes: [u64; 5],
     /// The board this node is, as its hello `family` fact. A slot built for another board is
     /// refused for set-default and trial.
     pub board: String,
@@ -192,6 +218,14 @@ pub struct Slots {
     pub resolved: Option<trial::Resolved>,
     /// The simulated clock, in seconds from the start. Moved by the test; never wall time.
     pub now_s: u64,
+    /// slot-init's rescue wait (see [`boot`]), on the simulated clock.
+    pub rescue_wait_s: u64,
+    /// When a rescue's wait runs out and the board restarts again, if one is waiting.
+    pub rescue_at: Option<u64>,
+    /// When the periodic boot-file check is next due, on the simulated clock.
+    pub next_check_s: u64,
+    /// Fallbacks in a row since the last confirmed boot (see [`boot`]).
+    pub fallbacks_in_a_row: u32,
     /// Whether the board is healthy: the one health condition the sim models (the `health`
     /// sources of I5f stand in for it). A trial confirms only while this holds.
     pub healthy: bool,
@@ -205,6 +239,8 @@ pub struct Slots {
 }
 
 const RESERVE_BYTES: u64 = 2048 * 1024 * 1024;
+/// The example board's bays (`docs/boards.md:535-539` at Lemnos 4e871efd), in [`crate::bundle::BOOT_FILES`] order.
+const DEFAULT_BAY_BYTES: [u64; 5] = [11_534_336, 1_048_576, 90_112, 4_096, 4_096];
 
 impl Default for Slots {
     fn default() -> Self {
@@ -234,6 +270,9 @@ impl Slots {
                 fail_reason: String::new(),
                 pinned: false,
                 seq: 1,
+                boot_manifest: BTreeMap::new(),
+                boot_disk: BTreeMap::new(),
+                boot_unreadable: BTreeMap::new(),
             }],
             active: Some("slot-1".into()),
             default: Some("slot-1".into()),
@@ -245,12 +284,18 @@ impl Slots {
             free_bytes: 8 * 1024 * 1024 * 1024,
             reserve_bytes: RESERVE_BYTES,
             board_security: false,
+            boot: BootRule::default(),
+            bay_bytes: DEFAULT_BAY_BYTES,
             board: "simulated".into(),
             trusted: Vec::new(),
             events: Vec::new(),
             trial_config: trial::Config::default(),
             resolved: None,
             now_s: 0,
+            rescue_wait_s: boot::RESCUE_WAIT_S,
+            rescue_at: None,
+            next_check_s: 0,
+            fallbacks_in_a_row: 0,
             healthy: true,
             boots_without_daemon: 0,
             fail_record_writes: false,
@@ -297,7 +342,7 @@ impl Slots {
 
     /// With security on, a slot whose signature is not verified is not made the default or tried
     /// (I5g). The refusal names the reason in `error`, as every refusal does.
-    // LOCK: Lemnos L2. Today: set_default and trial do not look at the signature.
+    // LOCK: Lemnos S2. The switch's gate on set_default and trial; the signature check is the same.
     fn check_signature_policy(&self, entry: &Entry) -> Result<(), Status> {
         if self.board_security && !matches!(entry.signed, Signed::Trusted { .. }) {
             return Err(Status::new(
@@ -336,8 +381,31 @@ impl Slots {
         Ok(())
     }
 
-    /// The gate on a finished bundle: an untrusted or unsigned one is refused when security
-    /// is on, and leaves nothing behind.
+    /// The bay check of an install, before anything is stored: each boot file must fit the bay of
+    /// its role. The refusal is the board's words (`bays.rs:400`), wrapped as the install wraps
+    /// them (`install.rs:763`), and nothing is written.
+    ///
+    /// # Errors
+    ///
+    /// `INVALID_ARGUMENT` naming the first role whose file is larger than its bay.
+    pub fn check_bays(&self, slot: &str, payloads: [u64; 5]) -> Result<(), Status> {
+        for (index, role) in crate::bundle::BAY_ROLES.iter().enumerate() {
+            let (payload, bay) = (payloads[index], self.bay_bytes[index]);
+            if payload > bay {
+                return Err(Status::new(
+                    code::INVALID_ARGUMENT,
+                    format!(
+                        "slot {slot}'s boot files: {slot}: the {role} payload is {payload} bytes but its bay holds {bay}: nothing was written, the default keeps booting; rebuild the image with a larger {role} bay or a smaller payload"
+                    ),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// The gate on a finished bundle, the security switch's: with it on, an untrusted or unsigned
+    /// bundle is refused and leaves nothing behind. With it off, every bundle that got past
+    /// [`crate::bundle::verify`] installs (a held key that does not verify was refused there).
     ///
     /// # Errors
     ///
@@ -345,7 +413,7 @@ impl Slots {
     pub fn check_signed(&self, signed: &Signed) -> Result<(), Status> {
         match signed {
             Signed::Trusted { .. } => Ok(()),
-            // LOCK: Lemnos L2. Today: no install is refused for its signature.
+            // LOCK: Lemnos S2 (the switch, precheck 2 and set 3). Its refusal is by name, as here.
             _ if self.board_security => Err(Status::new(
                 code::NOT_PERMITTED,
                 "security is on and the bundle is not signed by a trusted key",
@@ -419,6 +487,9 @@ impl Slots {
             fail_reason: String::new(),
             pinned: pin,
             seq: self.seq,
+            boot_disk: new.boot.clone(),
+            boot_unreadable: BTreeMap::new(),
+            boot_manifest: new.boot,
         });
         self.state = State::Idle;
         self.error.clear();
@@ -482,6 +553,9 @@ impl Slots {
                 format!("{id} failed and the call is not forced"),
             ));
         }
+        // The restart checks the default's boot files first (lemnosd). A trial whose files differ
+        // fails at its boot, by the failure path, not here.
+        self.check_restart()?;
         self.trial = Some(Trial {
             id: id.to_string(),
             keep_default,
@@ -555,6 +629,7 @@ impl Slots {
     }
 
     fn mark_good(&mut self, id: &str) {
+        self.fallbacks_in_a_row = 0;
         if let Some(entry) = self.get_mut(id) {
             entry.good = Good::Yes;
             entry.failed = false;
@@ -657,7 +732,7 @@ impl Slots {
                     "pinned": entry.pinned,
                     "failures": entry.failures,
                     "failed": entry.failed,
-                    // LOCK: Lemnos L2. Today: no `signature` field in a slot's list.
+                    // LOCK: Lemnos L2 (`signature` in a slot's list, with `info`'s key_ids).
                     "signature": outcome_label(&entry.signed),
                 })
             })

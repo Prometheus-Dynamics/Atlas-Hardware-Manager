@@ -1,12 +1,19 @@
 //! Reading a bundle back: the checks a board's slot writer makes, streamed.
 //!
-//! The members come in the writer's order: `slot.json`, `slot.sig`,
-//! `rootfs.erofs`, then `boot/` files. `slot.json` is checked against the
-//! trusted keys before any of its fields is believed (so a schema 2 manifest
-//! is refused by name only when it is signed by a trusted key); then it is
-//! parsed as schema 3, and the rootfs and each boot file are hashed against
-//! the manifest. A member the manifest does not list, a link, a directory, or
-//! a missing file is refused.
+//! Member order and set, as Lemnos states them (I5g2 and I5i4):
+//!
+//! - `slot.json` is first;
+//! - `slot.sig` is second when present (an unsigned bundle is legal);
+//! - then `rootfs.erofs` and `boot/...` files in any order, each at most once and each listed in
+//!   `slot.json`;
+//! - `slot.json` lists exactly the five boot files of [`crate::manifest::BOOT_FILES`]: a missing
+//!   one is refused by name, a sixth is refused (Lemnos I5i8);
+//! - anything else is refused by name, at its header, before its bytes are read;
+//! - a listed member that is missing is refused at the end.
+//!
+//! `slot.sig` is checked against the keys given (see [`crate::verify_slot`]) before `slot.json` is
+//! believed. Every member is checked against its manifest digest. `boot/cmdline.txt` must carry the
+//! word for each boot source the board states ([`BootRule`]).
 
 use std::collections::BTreeSet;
 use std::io::Read;
@@ -15,19 +22,22 @@ use atlas_release::PublicKey;
 use sha2::{Digest, Sha256};
 
 use crate::BundleError;
-use crate::manifest::{SlotManifest, validate_boot_path};
-use crate::sign::{SIG_LEN, verify_slot};
+use crate::boot::BootRule;
+use crate::manifest::{CMDLINE, SlotManifest, validate_boot_path};
+use crate::sign::{RECORD_LEN, Signature, verify_slot};
 use crate::write::{BOOT_DIR, CHUNK, ROOTFS, SLOT_JSON, SLOT_SIG, read_chunk, to_hex};
 
 /// `slot.json` is a small document: a larger member is refused before it is read.
 const MAX_MANIFEST: u64 = 1024 * 1024;
+/// `boot/cmdline.txt` is one line: a larger member is refused before it is read.
+const MAX_CMDLINE: u64 = 64 * 1024;
 
 /// A bundle that passed every check.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Inspected {
     pub manifest: SlotManifest,
-    /// The index in the keys given of the key that signed `slot.json`.
-    pub signer: usize,
+    /// What the signature says. `Unsigned` is a legal bundle.
+    pub signature: Signature,
     /// The board the slot was built for (`slot.json`'s `board`).
     pub board: String,
     /// The product the slot is of (`slot.json`'s `product`).
@@ -50,8 +60,13 @@ pub fn check_board(bundle_board: &str, target: &str) -> Result<(), BundleError> 
     }
 }
 
-/// Reads a whole bundle from `reader` and checks it against `keys`.
-pub fn inspect_bundle<R: Read>(reader: R, keys: &[PublicKey]) -> Result<Inspected, BundleError> {
+/// Reads a whole bundle from `reader`, checks its signature against `keys` and its command line
+/// against `boot`.
+pub fn inspect_bundle<R: Read>(
+    reader: R,
+    keys: &[PublicKey],
+    boot: &BootRule,
+) -> Result<Inspected, BundleError> {
     let mut archive = tar::Archive::new(reader);
     let entries = archive
         .entries()
@@ -59,7 +74,7 @@ pub fn inspect_bundle<R: Read>(reader: R, keys: &[PublicKey]) -> Result<Inspecte
 
     let mut json: Vec<u8> = Vec::new();
     let mut manifest: Option<SlotManifest> = None;
-    let mut signer = 0;
+    let mut signature = Signature::Unsigned;
     let mut rootfs_done = false;
     let mut boot_done = BTreeSet::new();
     let mut buf = vec![0u8; CHUNK];
@@ -79,83 +94,112 @@ pub fn inspect_bundle<R: Read>(reader: R, keys: &[PublicKey]) -> Result<Inspecte
         }
         let size = entry.size();
 
-        match index {
-            0 => {
-                if name != SLOT_JSON {
-                    return Err(malformed("slot.json must be the first member".into()));
-                }
-                if size > MAX_MANIFEST {
-                    return Err(malformed(format!("slot.json is {size} bytes")));
-                }
-                read_exact_len(&mut entry, &mut json, size, SLOT_JSON)?;
+        if index == 0 {
+            if name != SLOT_JSON {
+                return Err(malformed(format!(
+                    "{name} is the first member: slot.json must be the first member"
+                )));
             }
-            1 => {
-                if name != SLOT_SIG {
-                    return Err(malformed("slot.sig must be the second member".into()));
-                }
-                let mut signature = Vec::new();
-                if size != SIG_LEN as u64 {
-                    return Err(malformed(format!(
-                        "slot.sig is {size} bytes, not {SIG_LEN}"
-                    )));
-                }
-                read_exact_len(&mut entry, &mut signature, size, SLOT_SIG)?;
-                signer = verify_slot(&json, &signature, keys)?;
-                manifest = Some(SlotManifest::parse(&json)?);
+            if size > MAX_MANIFEST {
+                return Err(malformed(format!("slot.json is {size} bytes")));
             }
-            _ => {
-                let Some(manifest) = manifest.as_ref() else {
-                    return Err(malformed("slot.sig is missing".into()));
-                };
-                if name == ROOTFS {
-                    if rootfs_done {
-                        return Err(malformed(format!("{ROOTFS} is listed twice")));
-                    }
-                    rootfs_done = true;
-                    check_stream(
-                        &mut entry,
-                        size,
-                        &mut buf,
-                        ROOTFS,
-                        manifest.image.size,
-                        &manifest.image.sha256,
-                    )?;
-                } else if let Some(path) = name.strip_prefix(BOOT_DIR) {
-                    validate_boot_path(path)?;
-                    let Some(expected) = manifest.boot.files.get(path) else {
-                        return Err(malformed(format!("{name} is not in slot.json")));
-                    };
-                    if !boot_done.insert(path.to_string()) {
-                        return Err(malformed(format!("{name} is listed twice")));
-                    }
-                    check_stream(&mut entry, size, &mut buf, &name, size, expected)?;
-                } else {
-                    return Err(malformed(format!("{name} is not part of a slot bundle")));
-                }
+            read_exact_len(&mut entry, &mut json, size, SLOT_JSON)?;
+            continue;
+        }
+
+        if index == 1 && name == SLOT_SIG {
+            if size != RECORD_LEN as u64 {
+                return Err(malformed(format!(
+                    "slot.sig is {size} bytes, not the {RECORD_LEN}-byte signature record"
+                )));
             }
+            let mut record = Vec::new();
+            read_exact_len(&mut entry, &mut record, size, SLOT_SIG)?;
+            signature = verify_slot(&json, &record, keys)?;
+            manifest = Some(SlotManifest::parse(&json)?);
+            continue;
+        }
+
+        if name == SLOT_SIG {
+            return Err(malformed(
+                "slot.sig is out of order: it must be the second member, right after slot.json"
+                    .into(),
+            ));
+        }
+        if name == SLOT_JSON {
+            return Err(malformed(
+                "slot.json is listed twice: it must be the first member, once".into(),
+            ));
+        }
+        if manifest.is_none() {
+            // Unsigned (no slot.sig at index 1): the manifest is first believed here.
+            manifest = Some(SlotManifest::parse(&json)?);
+        }
+        let Some(manifest) = manifest.as_ref() else {
+            return Err(malformed("slot.json was not read".into()));
+        };
+
+        if name == ROOTFS {
+            if rootfs_done {
+                return Err(malformed(format!("{ROOTFS} is listed twice")));
+            }
+            rootfs_done = true;
+            check_stream(
+                &mut entry,
+                size,
+                &mut buf,
+                ROOTFS,
+                manifest.image.size,
+                &manifest.image.sha256,
+            )?;
+        } else if let Some(path) = name.strip_prefix(BOOT_DIR) {
+            validate_boot_path(path)?;
+            let Some(expected) = manifest.boot.files.get(path) else {
+                return Err(malformed(format!("{name} is not in slot.json")));
+            };
+            if !boot_done.insert(path.to_string()) {
+                return Err(malformed(format!("{name} is listed twice")));
+            }
+            if path == CMDLINE {
+                if size > MAX_CMDLINE {
+                    return Err(malformed(format!("{name} is {size} bytes")));
+                }
+                let mut cmdline = Vec::new();
+                read_exact_len(&mut entry, &mut cmdline, size, &name)?;
+                check_digest(&cmdline, &name, size, expected)?;
+                boot.check_cmdline(&cmdline)?;
+            } else {
+                check_stream(&mut entry, size, &mut buf, &name, size, expected)?;
+            }
+        } else {
+            return Err(malformed(format!("{name} is not part of a slot bundle")));
         }
     }
 
     let Some(manifest) = manifest else {
-        return Err(malformed("the bundle has no slot.sig".into()));
+        return Err(malformed(format!(
+            "the bundle has only {SLOT_JSON}: no {ROOTFS}"
+        )));
     };
     if !rootfs_done {
         return Err(malformed(format!("the bundle has no {ROOTFS}")));
     }
+    // Every listed boot file must be a member (Lemnos install.rs:683 words, "the bundle has no boot
+    // file <name>"). The five are all listed by now: `SlotManifest::validate` refuses otherwise.
     if let Some(missing) = manifest
         .boot
         .files
         .keys()
         .find(|path| !boot_done.contains(*path))
     {
-        return Err(malformed(format!("boot/{missing} is missing")));
+        return Err(malformed(format!("the bundle has no boot file {missing}")));
     }
     Ok(Inspected {
         board: manifest.board.clone(),
         product: manifest.product.clone(),
         version: manifest.version.clone(),
         manifest,
-        signer,
+        signature,
     })
 }
 
@@ -176,6 +220,22 @@ fn read_exact_len<R: Read>(
         .map_err(|error| BundleError::io(what, error))?;
     if out.len() as u64 != size {
         return Err(malformed(format!("{what} is cut short")));
+    }
+    Ok(())
+}
+
+/// Checks a member's bytes against its length and SHA-256 in the manifest.
+fn check_digest(
+    bytes: &[u8],
+    name: &str,
+    size: u64,
+    expected_sha: &str,
+) -> Result<(), BundleError> {
+    let actual = to_hex(&Sha256::digest(bytes));
+    if bytes.len() as u64 != size || actual != expected_sha {
+        return Err(malformed(format!(
+            "{name} doesn't match slot.json: sha256 {actual}, expected {expected_sha}"
+        )));
     }
     Ok(())
 }

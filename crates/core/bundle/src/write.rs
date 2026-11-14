@@ -25,9 +25,7 @@ use sha2::{Digest, Sha256};
 use atlas_image::{Verity, VerityError, tree_bytes};
 
 use crate::BundleError;
-use crate::manifest::{
-    CMDLINE, ImageEntry, SlotManifest, SlotMeta, validate_boot_path, validate_id,
-};
+use crate::manifest::{ImageEntry, SlotManifest, SlotMeta, validate_boot_path, validate_id};
 use crate::sign::sign_slot;
 use crate::source::SlotSource;
 use crate::verity::VerityHasher;
@@ -43,7 +41,8 @@ pub const BOOT_DIR: &str = "boot/";
 /// Writes the bundle of `source` as `id` to `out` and returns the manifest
 /// it carries. `signing_key` is the ed25519 secret that signs `slot.json`.
 ///
-/// Fails if the id or a boot path is not valid, if `cmdline.txt` is missing, if
+/// Fails if the id or a boot path is not valid, if one of the five boot files
+/// ([`crate::manifest::BOOT_FILES`]) is missing or a sixth is given, if
 /// the verity values do not describe the layout, if the file is not its data and
 /// whole tree, if the data does not give the root hash, or if a source changes
 /// between reads. On failure `out` holds a partial tar that must be discarded.
@@ -61,9 +60,6 @@ pub fn write_bundle<W: Write>(
     // Pass one: what slot.json says.
     let rootfs = scan_rootfs(source, &verity)?;
     let boot = scan_boot(source)?;
-    if !boot.contains_key(CMDLINE) {
-        return Err(BundleError::MissingCmdline);
-    }
     let manifest = SlotManifest::new(
         id,
         meta,
@@ -78,7 +74,7 @@ pub fn write_bundle<W: Write>(
     );
     manifest.validate()?;
     let json = manifest.to_json()?;
-    let signature = sign_slot(&json, signing_key);
+    let signature = sign_slot(&json, signing_key)?.to_bytes();
 
     // Pass two: the tar.
     let mut tar = tar::Builder::new(out);

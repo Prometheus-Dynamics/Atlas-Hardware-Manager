@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use atlas_bundle::{
-    BLOCK, BundleError, SlotMeta, bundle_from_image, check_stream_digest, inspect_bundle,
+    BLOCK, BootRule, BundleError, SlotMeta, bundle_from_image, check_stream_digest, inspect_bundle,
     verify_slot,
 };
 use atlas_release::{PublicKey, public_key_for};
@@ -39,17 +39,27 @@ fn alpha_file() -> Vec<u8> {
     bytes
 }
 
+/// The rule for the reader's fixture. Its cmdline (the reader's own `data.ext4`, which this crate
+/// does not change) predates the boot-source words, so it states no source here. The word check
+/// is tested with the default rule in tests/bundle.rs.
+fn fixture_rule() -> BootRule {
+    BootRule {
+        boot_args: "os".into(),
+        sources: Vec::new(),
+    }
+}
+
 /// Slot `alpha`'s boot files, by path, as the fixture lists them.
 fn alpha_boot() -> Vec<(&'static str, Vec<u8>)> {
     vec![
-        ("Image", pattern(40_000, 3)),
+        ("kernel8.img", pattern(40_000, 3)),
         ("board.dtb", pattern(1234, 4)),
-        ("initramfs.cpio.gz", pattern(9000, 5)),
+        ("initramfs.cpio", pattern(9000, 5)),
         (
             "cmdline.txt",
             b"console=tty1 root=PARTUUID=abc panic=5\n".to_vec(),
         ),
-        ("overlays/one.dtbo", pattern(777, 6)),
+        ("overlays/lemnos-board.dtbo", pattern(777, 6)),
     ]
 }
 
@@ -215,11 +225,11 @@ fn a_bundle_from_the_image_in_one_call_matches_the_slots_parts_member_by_member(
             "slot.json",
             "slot.sig",
             "rootfs.erofs",
-            "boot/Image",
             "boot/board.dtb",
             "boot/cmdline.txt",
-            "boot/initramfs.cpio.gz",
-            "boot/overlays/one.dtbo",
+            "boot/initramfs.cpio",
+            "boot/kernel8.img",
+            "boot/overlays/lemnos-board.dtbo",
         ],
         "the image's slot.json is not a boot file of the bundle"
     );
@@ -236,12 +246,13 @@ fn a_bundle_from_the_image_in_one_call_matches_the_slots_parts_member_by_member(
     // slot.json and its signature.
     let json = get("slot.json");
     let sig = get("slot.sig");
-    assert_eq!(sig.len(), 64);
+    assert_eq!(sig.len(), atlas_bundle::RECORD_LEN);
     assert_eq!(
         verify_slot(json, sig, &keys_of(&secret)).expect("verifies"),
-        0
+        atlas_bundle::Signature::Verified { signer: 0 }
     );
-    let inspected = inspect_bundle(&bundle[..], &keys_of(&secret)).expect("inspects");
+    let inspected =
+        inspect_bundle(&bundle[..], &keys_of(&secret), &fixture_rule()).expect("inspects");
     assert_eq!(inspected.board, "example-board");
     assert_eq!(inspected.manifest.verity.root_hash, slot_root());
     assert_eq!(inspected.manifest.boot.files.len(), 5);

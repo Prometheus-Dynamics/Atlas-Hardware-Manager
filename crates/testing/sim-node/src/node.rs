@@ -458,6 +458,11 @@ impl SimNode {
         lock(&self.shared.model).slots.healthy = healthy;
     }
 
+    /// Sets the sizes of the board's five payload bays (see `Slots::bay_bytes`), in boot-file order.
+    pub fn slot_bay_bytes(&self, bays: [u64; 5]) {
+        lock(&self.shared.model).slots.bay_bytes = bays;
+    }
+
     /// Sets how many of the next trial boots do not reach the daemon. Each such boot spends one
     /// attempt; after `trial_attempts` of them the trial falls back. Each boot is a restart: `trial`
     /// starts the first one, and the reboot action or [`SimNode::slot_power_cut`] starts the next.
@@ -1047,8 +1052,11 @@ impl Node {
                 Some(bytes) => {
                     let trusted = model.slots.trusted.clone();
                     let board = model.slots.board.clone();
-                    bundle::verify(&bytes, &trusted, &board).and_then(|verified| {
+                    // LOCK: Lemnos L2. The boot rule the bundle's cmdline must carry (I5i4, I5i5).
+                    let boot = model.slots.boot.clone();
+                    bundle::verify(&bytes, &trusted, &board, &boot).and_then(|verified| {
                         model.slots.check_signed(&verified.signed)?;
+                        model.slots.check_bays(&verified.id, verified.payloads)?;
                         model
                             .slots
                             .install_done(new_slot(verified), install.pin, install.keep_old)
@@ -1350,6 +1358,7 @@ fn new_slot(verified: bundle::Verified) -> NewSlot {
         size: verified.size,
         verity: verified.verity,
         signed: verified.signed,
+        boot: verified.boot,
     }
 }
 
@@ -1403,8 +1412,11 @@ fn apply(model: &mut Model, name: &str, args: &[u8], caller: &str) -> Result<Vec
             Ok(nothing)
         }
         names::REBOOT => {
+            // lemnosd checks the default's boot files before the restart: it repoints and says so, or
+            // refuses the restart and the board stays up (the board's own text, as it is).
+            let note = model.slots.check_restart()?;
             model.slots.reboot();
-            Ok(model.status_text().into_bytes())
+            Ok(note.unwrap_or_else(|| model.status_text()).into_bytes())
         }
         names::STATUS => Ok(model.status_text().into_bytes()),
         names::LOCATE => Ok(b"blinking".to_vec()),

@@ -11,8 +11,9 @@ Lemnos's layout, for two slots:
 - `slots/alpha.boot`: the boot list, `sha256sum -c` form, including `slot.json`.
 - `slots/beta.*`: a second slot of one data block and no tree (4096 bytes), so a read of
   one slot is checked not to mix in the other.
-- `slots/bootfiles/<sha256>`: the boot files by content: `Image`, `board.dtb`,
-  `initramfs.cpio.gz`, `cmdline.txt`, `overlays/one.dtbo`, and the manifest bytes
+- `slots/bootfiles/<sha256>`: the boot files by content: `kernel8.img`, `board.dtb`,
+  `initramfs.cpio`, `cmdline.txt`, `overlays/lemnos-board.dtbo` (the five a slot
+  carries, Lemnos I5i8), and the manifest bytes
   (`slot.json`).
 
 Made by `python3 make-fixtures.py` in this directory. The script writes a staging

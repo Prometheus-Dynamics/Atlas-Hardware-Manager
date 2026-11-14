@@ -11,8 +11,8 @@ use std::cell::Cell;
 use std::io::Read;
 
 use atlas_bundle::{
-    BLOCK, BootFile, BundleError, SlotMeta, SlotSource, inspect_bundle, root_hash, verify_slot,
-    write_bundle,
+    BLOCK, BOOT_FILES, BootFile, BootRule, BundleError, RECORD_LEN, Signature, SlotMeta,
+    SlotSource, inspect_bundle, root_hash, slot_message, verify_slot, write_bundle,
 };
 use atlas_image::{Verity, VerityError, tree_bytes};
 use atlas_release::{PublicKey, public_key_for};
@@ -90,12 +90,11 @@ impl Synthetic {
             tree: pattern(tree_bytes(blocks as u64) as usize, 2),
             verity,
             boot: vec![
-                (
-                    "cmdline.txt".into(),
-                    b"console=tty1 root=PARTUUID=abc panic=5\n".to_vec(),
-                ),
                 ("kernel8.img".into(), pattern(100_000, 3)),
-                ("overlays/one.dtbo".into(), pattern(777, 4)),
+                ("initramfs.cpio".into(), pattern(5_000, 5)),
+                ("board.dtb".into(), pattern(900, 6)),
+                ("cmdline.txt".into(), CMDLINE.to_vec()),
+                ("overlays/lemnos-board.dtbo".into(), pattern(777, 4)),
             ],
             chunk: 64 * 1024,
             tamper_on_call: None,
@@ -154,6 +153,10 @@ impl SlotSource for Synthetic {
     }
 }
 
+/// The complete command line the default board rule takes: its one boot-source word is on it.
+const CMDLINE: &[u8] =
+    b"console=tty1 root=PARTUUID=abc panic=5 os.src.rpi-boot-mode-1=/soc@107c000000/mmc@fff000\n";
+
 fn meta() -> SlotMeta {
     SlotMeta {
         product: "example".into(),
@@ -202,23 +205,26 @@ fn a_bundle_has_the_members_in_order_and_its_signature_verifies() {
             "slot.json",
             "slot.sig",
             "rootfs.erofs",
+            "boot/board.dtb",
             "boot/cmdline.txt",
+            "boot/initramfs.cpio",
             "boot/kernel8.img",
-            "boot/overlays/one.dtbo",
+            "boot/overlays/lemnos-board.dtbo",
         ]
     );
 
     let all = members(&bundle);
     let json = &all[0].1;
     let sig = &all[1].1;
-    assert_eq!(sig.len(), 64, "slot.sig is the raw 64-byte signature");
+    assert_eq!(sig.len(), RECORD_LEN, "slot.sig is the 108-byte record");
     assert_eq!(
         verify_slot(json, sig, &keys_of(&secret)).expect("verifies"),
-        0
+        Signature::Verified { signer: 0 }
     );
 
-    let inspected = inspect_bundle(&bundle[..], &keys_of(&secret)).expect("inspects");
-    assert_eq!(inspected.signer, 0);
+    let inspected =
+        inspect_bundle(&bundle[..], &keys_of(&secret), &BootRule::default()).expect("inspects");
+    assert_eq!(inspected.signature, Signature::Verified { signer: 0 });
     assert_eq!(inspected.manifest.id, "slot-a.1");
     assert_eq!(
         inspected.manifest.image.size,
@@ -228,7 +234,7 @@ fn a_bundle_has_the_members_in_order_and_its_signature_verifies() {
         inspected.manifest.image.sha256,
         hex(&Sha256::digest(source.rootfs_bytes()))
     );
-    assert_eq!(inspected.manifest.boot.files.len(), 3);
+    assert_eq!(inspected.manifest.boot.files.len(), BOOT_FILES.len());
     assert_eq!(inspected.manifest.product, "example");
     assert_eq!(inspected.manifest.board, "example-board");
     assert_eq!(inspected.board, "example-board");
@@ -285,26 +291,33 @@ fn changing_one_byte_of_slot_json_breaks_the_signature() {
     assert_eq!(tampered[offset], json[at + 4]);
     tampered[offset] ^= 1;
     assert!(matches!(
-        inspect_bundle(&tampered[..], &keys_of(&secret)),
+        inspect_bundle(&tampered[..], &keys_of(&secret), &BootRule::default()),
         Err(BundleError::BadSignature)
     ));
 }
 
 #[test]
-fn a_key_that_did_not_sign_does_not_verify() {
+fn a_key_the_reader_does_not_hold_is_reported_not_refused() {
     let signer = throwaway("signer");
     let other = throwaway("other");
     let bundle = write(&Synthetic::new(2), &signer).expect("writes");
-    assert!(matches!(
-        inspect_bundle(&bundle[..], &keys_of(&other)),
-        Err(BundleError::BadSignature)
-    ));
-    // With the right key among several, it is found and named.
+    let inspected = inspect_bundle(&bundle[..], &keys_of(&other), &BootRule::default())
+        .expect("an unknown key is not refused");
+    let Signature::UnknownKey { key_id } = inspected.signature else {
+        panic!("expected an unknown key, got {:?}", inspected.signature);
+    };
+    assert_eq!(
+        key_id,
+        hex(&atlas_bundle::key_id_of(&public_key_for(&signer)))
+    );
+    // With the right key among several, it is found and named by its index.
     let mut keys = keys_of(&other);
     keys.extend(keys_of(&signer));
     assert_eq!(
-        inspect_bundle(&bundle[..], &keys).expect("inspects").signer,
-        1
+        inspect_bundle(&bundle[..], &keys, &BootRule::default())
+            .expect("inspects")
+            .signature,
+        Signature::Verified { signer: 1 }
     );
 }
 
@@ -356,11 +369,21 @@ fn invalid_inputs_are_refused_before_anything_is_signed() {
         );
     }
 
-    let mut no_cmdline = Synthetic::new(2);
-    no_cmdline.boot.retain(|(p, _)| p != "cmdline.txt");
+    // Each of the five boot files is required: a source without it is refused by name.
+    for name in BOOT_FILES {
+        let mut missing = Synthetic::new(2);
+        missing.boot.retain(|(p, _)| p != name);
+        assert!(
+            matches!(write(&missing, &secret), Err(BundleError::MissingBootFile(ref n)) if n == name),
+            "{name}"
+        );
+    }
+    // A sixth boot file is refused by name (Lemnos I5i9 will refuse it at install).
+    let mut sixth = Synthetic::new(2);
+    sixth.boot.push(("overlays/extra.dtbo".into(), vec![1]));
     assert!(matches!(
-        write(&no_cmdline, &secret),
-        Err(BundleError::MissingCmdline)
+        write(&sixth, &secret),
+        Err(BundleError::ExtraBootFile(ref n)) if n == "overlays/extra.dtbo"
     ));
 
     for bad in ["../evil", "/abs", "a//b", "a/./b", "x\\y"] {
@@ -470,7 +493,7 @@ fn manifest_json_with(
     let zeros = "0".repeat(64);
     let salt = salt.map_or(String::new(), |s| format!(r#""salt":"{s}","#));
     format!(
-        r#"{{"schema":3,"id":"slot-a.1","product":"example","version":"1","board":"example-board","image":{{"size":{size},"sha256":"{zeros}"}},"verity":{{"root_hash":"{zeros}",{salt}"data_blocks":{data_blocks},"hash_offset":{hash_offset}}},"boot":{{"files":{{"cmdline.txt":"{zeros}"}}}}}}"#
+        r#"{{"schema":3,"id":"slot-a.1","product":"example","version":"1","board":"example-board","image":{{"size":{size},"sha256":"{zeros}"}},"verity":{{"root_hash":"{zeros}",{salt}"data_blocks":{data_blocks},"hash_offset":{hash_offset}}},"boot":{{"files":{{"kernel8.img":"{zeros}","initramfs.cpio":"{zeros}","board.dtb":"{zeros}","cmdline.txt":"{zeros}","overlays/lemnos-board.dtbo":"{zeros}"}}}}}}"#
     )
     .into_bytes()
 }
@@ -491,7 +514,8 @@ fn a_manifest_whose_salt_is_missing_empty_or_the_wrong_length_is_refused_by_name
     for (salt, expected) in cases {
         let json = manifest_json_with(salt, 1, 4096, 4096);
         let bundle = bundle_with_manifest(&json, &secret);
-        let error = inspect_bundle(&bundle[..], &keys_of(&secret)).expect_err("refused");
+        let error = inspect_bundle(&bundle[..], &keys_of(&secret), &BootRule::default())
+            .expect_err("refused");
         assert!(
             matches!(&error, BundleError::Verity(e) if *e == expected),
             "{salt:?}: {error:?}"
@@ -504,13 +528,13 @@ fn a_manifest_whose_offset_or_size_do_not_fit_is_refused_by_name() {
     let secret = throwaway("layoutjson");
     let offset = bundle_with_manifest(&manifest_json(1, 8192, 8192), &secret);
     assert!(matches!(
-        inspect_bundle(&offset[..], &keys_of(&secret)),
+        inspect_bundle(&offset[..], &keys_of(&secret), &BootRule::default()),
         Err(BundleError::Verity(VerityError::Offset { .. }))
     ));
     // One data block has no tree, so 4096 is its whole length; 8192 is too long.
     let size = bundle_with_manifest(&manifest_json(1, 4096, 8192), &secret);
     assert!(matches!(
-        inspect_bundle(&size[..], &keys_of(&secret)),
+        inspect_bundle(&size[..], &keys_of(&secret), &BootRule::default()),
         Err(BundleError::Verity(VerityError::Size { .. }))
     ));
 }
@@ -542,7 +566,7 @@ fn a_bundle_with_an_extra_member_is_refused() {
         builder.finish().expect("finish");
     }
     assert!(matches!(
-        inspect_bundle(&out[..], &keys_of(&secret)),
+        inspect_bundle(&out[..], &keys_of(&secret), &BootRule::default()),
         Err(BundleError::Malformed(_))
     ));
 }
@@ -554,7 +578,8 @@ fn a_larger_slot_is_streamed_with_the_same_checks() {
     let secret = throwaway("large");
     let source = Synthetic::new(1024);
     let bundle = write(&source, &secret).expect("writes");
-    let inspected = inspect_bundle(&bundle[..], &keys_of(&secret)).expect("inspects");
+    let inspected =
+        inspect_bundle(&bundle[..], &keys_of(&secret), &BootRule::default()).expect("inspects");
     assert_eq!(inspected.manifest.verity.root_hash, {
         let data = &source.data;
         root_hash(&Sha256::digest(data), data).expect("root")
@@ -564,7 +589,9 @@ fn a_larger_slot_is_streamed_with_the_same_checks() {
 /// A bundle whose `slot.json` is `json` (signed by `secret` as given), with
 /// the rest of a slot's members.
 fn bundle_with_manifest(json: &[u8], secret: &[u8; 32]) -> Vec<u8> {
-    let sig = atlas_bundle::sign_slot(json, secret);
+    let sig = atlas_bundle::sign_slot(json, secret)
+        .expect("signs")
+        .to_bytes();
     let mut out = Vec::new();
     {
         let mut builder = tar::Builder::new(&mut out);
@@ -590,7 +617,8 @@ fn schema_2_input_is_refused_by_name() {
     let secret = throwaway("schema2");
     let json = br#"{"schema":2,"id":"slot-a.1","family":"example","image":{"size":8,"sha256":"00"},"verity":{"root_hash":"00"},"boot":{"files":{}}}"#;
     let bundle = bundle_with_manifest(json, &secret);
-    let error = inspect_bundle(&bundle[..], &keys_of(&secret)).expect_err("refused");
+    let error =
+        inspect_bundle(&bundle[..], &keys_of(&secret), &BootRule::default()).expect_err("refused");
     let text = error.to_string();
     assert!(text.contains("schema 2"), "names the schema found: {text}");
     assert!(matches!(error, BundleError::Malformed(_)));
@@ -601,7 +629,8 @@ fn a_family_key_is_refused_by_name() {
     let secret = throwaway("family");
     let json = br#"{"schema":3,"id":"slot-a.1","family":"example","product":"example","version":"1","board":"example-board","image":{"size":8,"sha256":"00"},"verity":{"root_hash":"00"},"boot":{"files":{}}}"#;
     let bundle = bundle_with_manifest(json, &secret);
-    let error = inspect_bundle(&bundle[..], &keys_of(&secret)).expect_err("refused");
+    let error =
+        inspect_bundle(&bundle[..], &keys_of(&secret), &BootRule::default()).expect_err("refused");
     assert!(error.to_string().contains("family"), "{error}");
 }
 
@@ -610,7 +639,8 @@ fn a_bundle_without_a_board_is_refused() {
     let secret = throwaway("noboard");
     let json = br#"{"schema":3,"id":"slot-a.1","product":"example","version":"1","image":{"size":8,"sha256":"00"},"verity":{"root_hash":"00","salt":"5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a","data_blocks":1,"hash_offset":4096},"boot":{"files":{}}}"#;
     let bundle = bundle_with_manifest(json, &secret);
-    let error = inspect_bundle(&bundle[..], &keys_of(&secret)).expect_err("refused");
+    let error =
+        inspect_bundle(&bundle[..], &keys_of(&secret), &BootRule::default()).expect_err("refused");
     assert!(error.to_string().contains("board"), "{error}");
 }
 
@@ -618,7 +648,8 @@ fn a_bundle_without_a_board_is_refused() {
 fn a_slot_for_another_board_is_refused_naming_both() {
     let secret = throwaway("board");
     let bundle = write(&Synthetic::new(2), &secret).expect("writes");
-    let inspected = inspect_bundle(&bundle[..], &keys_of(&secret)).expect("inspects");
+    let inspected =
+        inspect_bundle(&bundle[..], &keys_of(&secret), &BootRule::default()).expect("inspects");
     assert!(atlas_bundle::check_board(&inspected.board, "example-board").is_ok());
     let error = atlas_bundle::check_board(&inspected.board, "other-board").expect_err("refused");
     let text = error.to_string();
@@ -649,4 +680,352 @@ fn a_board_or_product_name_outside_the_rules_is_refused() {
         })
     ));
     source.boot.clear();
+}
+
+// ---- slot.sig: the record, the message, the order, the policy (Lemnos I5g2, I5i4) ----
+
+/// The fixed vector of Lemnos I5g2: Ed25519 seed 0x07 x32 signs the message of `{"id":"vector"}`.
+const VECTOR_SEED: [u8; 32] = [0x07; 32];
+const VECTOR_JSON: &[u8] = br#"{"id":"vector"}"#;
+const VECTOR_MESSAGE: &str =
+    "6c656d6e6f732d736c6f742d62756e646c6500010000000f0000007b226964223a22766563746f72227d";
+const VECTOR_RECORD: &str = "4c4d4e535349473101000000\
+fe812c12f3ab4ce6ac5db69ac352f906cb1b11ef43fb33e252ef7ff552263889\
+56be579db020703eb207da579036a89f0321fcd8ce2bac78a9aa939a58217e265ad27a7e1fc05829b0db05d37ac4d8dba35263c7a1b2644322b45ada4a101402";
+
+fn unhex(text: &str) -> Vec<u8> {
+    (0..text.len())
+        .step_by(2)
+        .map(|at| u8::from_str_radix(&text[at..at + 2], 16).expect("hex"))
+        .collect()
+}
+
+/// The first byte at which two byte strings differ, for the message.
+fn first_difference(a: &[u8], b: &[u8]) -> Option<usize> {
+    a.iter()
+        .zip(b)
+        .position(|(x, y)| x != y)
+        .or_else(|| (a.len() != b.len()).then(|| a.len().min(b.len())))
+}
+
+#[test]
+fn the_fixed_vector_is_reproduced_byte_for_byte() {
+    let message = slot_message(VECTOR_JSON).expect("the message");
+    let expected = unhex(VECTOR_MESSAGE);
+    if let Some(at) = first_difference(&message, &expected) {
+        panic!(
+            "the message differs at byte {at}: ours {:02x?}, the vector {:02x?}",
+            message.get(at),
+            expected.get(at)
+        );
+    }
+    let record = atlas_bundle::sign_slot(VECTOR_JSON, &VECTOR_SEED)
+        .expect("signs")
+        .to_bytes();
+    let expected = unhex(VECTOR_RECORD);
+    assert_eq!(expected.len(), RECORD_LEN, "the vector is 108 bytes");
+    if let Some(at) = first_difference(&record, &expected) {
+        panic!(
+            "the record differs at byte {at}: ours {:02x?}, the vector {:02x?}",
+            record.get(at),
+            expected.get(at)
+        );
+    }
+    // The vector's key is the seed's public key, and the record verifies under it.
+    let key = public_key_for(&VECTOR_SEED);
+    assert_eq!(
+        verify_slot(VECTOR_JSON, &expected, std::slice::from_ref(&key)).expect("verifies"),
+        Signature::Verified { signer: 0 }
+    );
+}
+
+/// The members of a bundle, re-tarred in the order given.
+fn retar(parts: &[(String, Vec<u8>)]) -> Vec<u8> {
+    let mut out = Vec::new();
+    {
+        let mut builder = tar::Builder::new(&mut out);
+        for (name, bytes) in parts {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o644);
+            header.set_entry_type(tar::EntryType::Regular);
+            builder
+                .append_data(&mut header, name, &bytes[..])
+                .expect("append");
+        }
+        builder.finish().expect("finish");
+    }
+    out
+}
+
+/// A written bundle with one member replaced by `bytes`, or removed when `None`.
+fn with_member(bundle: &[u8], name: &str, bytes: Option<Vec<u8>>) -> Vec<u8> {
+    let mut parts = members(bundle);
+    match (parts.iter().position(|(n, _)| n == name), bytes) {
+        (Some(at), Some(bytes)) => parts[at].1 = bytes,
+        (Some(at), None) => {
+            parts.remove(at);
+        }
+        (None, Some(bytes)) => parts.push((name.to_string(), bytes)),
+        (None, None) => {}
+    }
+    retar(&parts)
+}
+
+#[test]
+fn a_signature_over_the_bare_manifest_bytes_by_a_held_key_is_refused() {
+    let secret = throwaway("bare");
+    let bundle = write(&Synthetic::new(2), &secret).expect("writes");
+    let json = members(&bundle).swap_remove(0).1;
+    // The same key, the right key id, but the signature is over the bare bytes: the old form.
+    let bare = atlas_release::sign_bytes(&json, &secret);
+    let mut record = members(&bundle).swap_remove(1).1;
+    record[44..108].copy_from_slice(&bare);
+    assert!(matches!(
+        verify_slot(&json, &record, &keys_of(&secret)),
+        Err(BundleError::BadSignature)
+    ));
+    let tampered = with_member(&bundle, "slot.sig", Some(record));
+    assert!(matches!(
+        inspect_bundle(&tampered[..], &keys_of(&secret), &BootRule::default()),
+        Err(BundleError::BadSignature)
+    ));
+}
+
+#[test]
+fn a_malformed_signature_record_is_refused_whatever_the_key_list() {
+    let secret = throwaway("malformed");
+    let bundle = write(&Synthetic::new(2), &secret).expect("writes");
+    let good = members(&bundle).swap_remove(1).1;
+    let cases: Vec<(&str, Vec<u8>)> = vec![
+        ("64 bytes, the old bare form", good[..64].to_vec()),
+        ("107 bytes", good[..107].to_vec()),
+        ("a bad magic", {
+            let mut bytes = good.clone();
+            bytes[0] ^= 1;
+            bytes
+        }),
+        ("algorithm 2", {
+            let mut bytes = good.clone();
+            bytes[8] = 2;
+            bytes
+        }),
+        ("padding that is not zero", {
+            let mut bytes = good.clone();
+            bytes[10] = 1;
+            bytes
+        }),
+    ];
+    let json = members(&bundle).swap_remove(0).1;
+    for (what, record) in cases {
+        let refused = verify_slot(&json, &record, &keys_of(&secret));
+        assert!(
+            matches!(refused, Err(BundleError::Malformed(_))),
+            "{what}: {refused:?}"
+        );
+        // Refused with no key list too: the record is checked first.
+        assert!(matches!(
+            verify_slot(&json, &record, &[]),
+            Err(BundleError::Malformed(_))
+        ));
+        let tampered = with_member(&bundle, "slot.sig", Some(record));
+        assert!(
+            matches!(
+                inspect_bundle(&tampered[..], &[], &BootRule::default()),
+                Err(BundleError::Malformed(_))
+            ),
+            "{what} in a bundle"
+        );
+    }
+}
+
+#[test]
+fn an_unsigned_bundle_is_legal_and_says_so() {
+    let secret = throwaway("unsigned");
+    let bundle = write(&Synthetic::new(2), &secret).expect("writes");
+    let unsigned = with_member(&bundle, "slot.sig", None);
+    let names: Vec<String> = members(&unsigned).into_iter().map(|(n, _)| n).collect();
+    assert_eq!(names[0], "slot.json");
+    assert_eq!(names[1], "rootfs.erofs");
+    let inspected = inspect_bundle(&unsigned[..], &keys_of(&secret), &BootRule::default())
+        .expect("an unsigned bundle inspects");
+    assert_eq!(inspected.signature, Signature::Unsigned);
+    assert_eq!(inspected.board, "example-board");
+}
+
+#[test]
+fn slot_sig_must_be_second_and_slot_json_first() {
+    let secret = throwaway("order");
+    let bundle = write(&Synthetic::new(2), &secret).expect("writes");
+    let parts = members(&bundle);
+    let (json, sig, rest) = (&parts[0], &parts[1], &parts[2..]);
+
+    // slot.sig after the rootfs.
+    let mut late = vec![json.clone(), rest[0].clone(), sig.clone()];
+    late.extend_from_slice(&rest[1..]);
+    let error = inspect_bundle(&retar(&late)[..], &keys_of(&secret), &BootRule::default())
+        .expect_err("refused");
+    assert!(
+        matches!(&error, BundleError::Malformed(m) if m.contains("slot.sig is out of order")),
+        "{error:?}"
+    );
+
+    // slot.json not first.
+    let swapped = vec![sig.clone(), json.clone()];
+    let error = inspect_bundle(
+        &retar(&swapped)[..],
+        &keys_of(&secret),
+        &BootRule::default(),
+    )
+    .expect_err("refused");
+    assert!(
+        matches!(&error, BundleError::Malformed(m) if m.contains("slot.json must be the first")),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn a_payload_member_before_slot_json_is_refused_by_the_order_rule() {
+    let secret = throwaway("payload-first");
+    let bundle = write(&Synthetic::new(2), &secret).expect("writes");
+    let parts = members(&bundle);
+    let mut first = vec![parts[2].clone()];
+    first.extend_from_slice(&parts[..2]);
+    let error = inspect_bundle(&retar(&first)[..], &keys_of(&secret), &BootRule::default())
+        .expect_err("refused");
+    assert!(
+        matches!(&error, BundleError::Malformed(m) if m.contains("slot.json must be the first")),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn a_member_outside_the_set_is_refused_by_name() {
+    let secret = throwaway("unlisted");
+    let bundle = write(&Synthetic::new(2), &secret).expect("writes");
+    // The old form's slot.key member is not a slot member any more.
+    let with_key = with_member(&bundle, "slot.key", Some(vec![b'0'; 64]));
+    let error = inspect_bundle(&with_key[..], &keys_of(&secret), &BootRule::default())
+        .expect_err("refused");
+    assert!(
+        matches!(&error, BundleError::Malformed(m) if m.contains("slot.key is not part of a slot bundle")),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn a_listed_member_that_is_missing_is_refused_by_name() {
+    let secret = throwaway("missing");
+    let bundle = write(&Synthetic::new(2), &secret).expect("writes");
+    let without = with_member(&bundle, "boot/overlays/lemnos-board.dtbo", None);
+    let error =
+        inspect_bundle(&without[..], &keys_of(&secret), &BootRule::default()).expect_err("refused");
+    assert!(
+        matches!(&error, BundleError::Malformed(m) if m == "the bundle has no boot file overlays/lemnos-board.dtbo"),
+        "{error:?}"
+    );
+}
+
+/// A written bundle whose `slot.json` is edited by `edit` and re-signed by `secret`: the rest of its
+/// members as they were.
+fn resigned(
+    bundle: &[u8],
+    secret: &[u8; 32],
+    edit: impl FnOnce(&mut serde_json::Value),
+) -> Vec<u8> {
+    let mut parts = members(bundle);
+    let mut json: serde_json::Value = serde_json::from_slice(&parts[0].1).expect("json");
+    edit(&mut json);
+    let bytes = serde_json::to_vec(&json).expect("json bytes");
+    let sig = atlas_bundle::sign_slot(&bytes, secret)
+        .expect("signs")
+        .to_bytes();
+    parts[0].1 = bytes;
+    parts[1].1 = sig.to_vec();
+    retar(&parts)
+}
+
+#[test]
+fn each_boot_file_the_manifest_does_not_list_is_refused_by_the_reader() {
+    // The reader's check: a slot.json that lists four of the five is refused, naming the one it
+    // leaves out, before any member is believed.
+    let secret = throwaway("unlisted-role");
+    let bundle = write(&Synthetic::new(2), &secret).expect("writes");
+    for name in BOOT_FILES {
+        let edited = resigned(&bundle, &secret, |json| {
+            json["boot"]["files"]
+                .as_object_mut()
+                .expect("files")
+                .remove(name);
+        });
+        let error = inspect_bundle(&edited[..], &keys_of(&secret), &BootRule::default())
+            .expect_err("refused");
+        assert!(
+            matches!(&error, BundleError::MissingBootFile(n) if n == name),
+            "{name}: {error:?}"
+        );
+    }
+    // A sixth entry, listed and carried, is refused by name.
+    let sixth = resigned(&bundle, &secret, |json| {
+        json["boot"]["files"]["overlays/extra.dtbo"] = serde_json::json!("00".repeat(32));
+    });
+    let error =
+        inspect_bundle(&sixth[..], &keys_of(&secret), &BootRule::default()).expect_err("refused");
+    assert!(
+        matches!(&error, BundleError::ExtraBootFile(n) if n == "overlays/extra.dtbo"),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn a_member_that_does_not_match_its_manifest_digest_is_refused() {
+    let secret = throwaway("digest");
+    let bundle = write(&Synthetic::new(2), &secret).expect("writes");
+    let mut kernel = members(&bundle)
+        .into_iter()
+        .find(|(n, _)| n == "boot/kernel8.img")
+        .expect("kernel")
+        .1;
+    kernel[0] ^= 1;
+    let changed = with_member(&bundle, "boot/kernel8.img", Some(kernel));
+    let error =
+        inspect_bundle(&changed[..], &keys_of(&secret), &BootRule::default()).expect_err("refused");
+    assert!(
+        matches!(&error, BundleError::Malformed(m) if m.contains("boot/kernel8.img doesn't match")),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn the_cmdline_must_carry_the_word_for_each_boot_source() {
+    let secret = throwaway("cmdline");
+    let bundle = write(&Synthetic::new(2), &secret).expect("writes");
+    // The default rule: the Synthetic's line carries its word, so it inspects.
+    assert!(inspect_bundle(&bundle[..], &keys_of(&secret), &BootRule::default()).is_ok());
+    // A second source the line does not carry is refused, naming the word.
+    let rule = BootRule {
+        boot_args: "os".into(),
+        sources: vec![
+            (
+                "rpi-boot-mode-1".into(),
+                "/soc@107c000000/mmc@fff000".into(),
+            ),
+            ("mmc1".into(), "/soc/mmc@fe2e0000".into()),
+        ],
+    };
+    let error = inspect_bundle(&bundle[..], &keys_of(&secret), &rule).expect_err("refused");
+    assert!(
+        matches!(&error, BundleError::MissingBootSource { boot_source, word }
+            if boot_source == "mmc1" && word == "os.src.mmc1=/soc/mmc@fe2e0000"),
+        "{error:?}"
+    );
+    // A prefix other than the one on the line is refused as well.
+    let other_prefix = BootRule {
+        boot_args: "lemnos".into(),
+        ..BootRule::default()
+    };
+    assert!(matches!(
+        inspect_bundle(&bundle[..], &keys_of(&secret), &other_prefix),
+        Err(BundleError::MissingBootSource { .. })
+    ));
 }
