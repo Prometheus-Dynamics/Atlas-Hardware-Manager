@@ -87,7 +87,10 @@ pub fn crc32(bytes: &[u8]) -> u32 {
 #[must_use]
 pub fn parse_bayinfo(bytes: &[u8]) -> Option<BayInfo> {
     let mut best: Option<(u64, &[u8])> = None;
-    for copy in bytes.chunks_exact(SECTOR).take(2) {
+    for at in [0, SECTOR] {
+        let Some(copy) = bytes.get(at..at + SECTOR) else {
+            break;
+        };
         if &copy[0..4] != b"LMRC" || copy[4] != 1 || copy[5] != BAY_INFO_KIND {
             continue;
         }
