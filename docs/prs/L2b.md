@@ -217,7 +217,9 @@ rc 0 WAS run (command and output above).
   (see above); (2) a networkd `.network` for `lemnos0` in the Raze's image (raze-base component), with the DHCP
   choice; (3) a boot of the Raze image in QEMU or the simulator with the gadget bound, reading the interface's address
   (`ip -4 addr show lemnos0`); the repo has no Raze QEMU job, so (3) is a new job, not an existing one.
-- The address plan itself (a /29 per board, a fixed pair, or the board's own address): open.
+  The coordinator's (ii): a sim/QEMU check that `lemnos0` exists, is up, has a link-local address, and the Orion link
+  answers. Not built here.
+- The IPv4 plan: PARKED by the coordinator (one decision for all boards, with the gateway work). Not in this PR.
 - Nothing ran on a board. Nothing about the NCM name `lemnos0` is run on hardware.
 
 ## Changes still to come before the lock rev
@@ -235,5 +237,136 @@ Each is in the file as a marked comment (`MOVES AT ...`) or listed here; none is
   move". The `os.src.` word they produce is `os.src.rpi-boot-mode-1=/soc@107c000000/mmc@fff000`.
 - R1i (`contracts/usb-link.toml` version 3, `[network] board_interface = "lemnos0"`): the gate check reads it when
   `LEMNOS_USB_LINK` names that file; the fallback is `lemnos0` with `# LOCK: Lemnos R1i`.
-- The address plan and the `.network` file for `lemnos0` (see "The gadget's network interface"). Open.
+- The `.network` file for `lemnos0`: WRITTEN (IPv6 link-local only, decided at milestone 2; see "The Raze's USB network").
+  The IPv4 plan stays PARKED (one decision for all boards).
 - Bay sizes (`[boot] bay_*`) and the boot partition size: MOVING, not written.
+
+## Re-validation at Lemnos I5i6 (4056016b, merged on Lemnos next)
+
+Built `lemnos-ctl --locked` at `4056016b` (its own worktree and target under scratch, deleted after). `4056016b`
+descends from `50907f37` (`git merge-base --is-ancestor` checked). Both revs are named below.
+
+### validate, as on `origin/next` (`7d970251`) at 4056016b: REFUSED
+
+    $ lemnos-ctl validate --no-live --socs socs next-raze-current.toml
+    next-raze-current.toml: device "gadget": `identity` is a setting, not a resource: put it in the device's `config`
+    rc=1
+
+This is the refusal Lemnos's R1i described: the `identity` under `uses` of the file on `next`. PR 94 (B33) moves it to
+`config` on `next`; until it lands, `next` still refuses. The draft is the fixed form.
+
+### validate, the draft (`devices/boards/raze/lemnos-board.toml`) at 4056016b: ACCEPTED
+
+    $ lemnos-ctl validate --no-live --socs socs devices/boards/raze/lemnos-board.toml
+    security: record /var/lib/lemnos/security.rec, trust root /etc/lemnos/slot-keys, orion absent
+    .../devices/boards/raze/lemnos-board.toml: board "raze", 21 devices
+    host: call deadline 2000 ms, first retry 1000 ms, retry cap 8000 ms
+    auto-off: none, every device is retried forever
+    rc=0
+
+Nothing in the draft was refused at 4056016b. No draft fix was needed for I5i6.
+
+### tree at 4056016b (every flag this rev has, with the I5i6 flags)
+
+    lemnos-ctl tree --socs socs devices/boards/raze/lemnos-board.toml \
+      -o overlay.dts --manifest-boot manifest.json --boot boot.txt \
+      --boot-dir boot --slot os-1 --cmdline cmdline.words \
+      --cmdline-slot cmdline-slot.words --slot os-1 \
+      --modprobe modprobe.conf --udev udev.rules --mdev mdev.conf \
+      --security-unit security.service
+    tree_rc=0
+
+`--manifest-boot` is in the same invocation as `-o`, as I5i6 requires. `--cmdline-slot` needs `--slot`. The `--boot-dir`
+output is the boot partition's files (below).
+
+Slot words (`cmdline-slot.words`, the required string, exact):
+
+    os.slot=os-1 os.roothash=@roothash@ os.src.rpi-boot-mode-1=/soc@107c000000/mmc@fff000 panic=5
+
+Overlay marker lines (`overlay.dts`, lines 96-97; absent at 50907f37):
+
+    lemnos,board = "raze";
+    lemnos,overlay-sha256 = "2910e37d9417588e329e01f30093c82fd6f2f6db6daa05f75e6a15cfd6da8fea";
+
+The sha in `manifest.json` (`{"overlay":{"board":"raze","sha256":"2910e37d..."}}`, 105 bytes) is the same digest.
+
+Outputs by rev. "Both" = exists at 50907f37 and 4056016b with the same flags; "4056016b only" = new at I5i6.
+
+| Output | Bytes at 4056016b | sha256 at 4056016b | At 50907f37 |
+|---|---|---|---|
+| overlay.dts (`-o`) | 2958 | 05e6b418297110d73334b02ddb04cbc5888317d052e07aa4c190c97cebde55f9 | yes (2695, 4dbb908b...), no markers |
+| manifest.json (`--manifest-boot`) | 105 | 44ef15acaaeec44546893fb09eaebdb84b89c316dda5fd7a54f386e1cbbae441 | no |
+| boot.txt (`--boot`) | 750 | 2aa45741a2875daec4e4ac4e5fdcd2a567c664a4e09b76b62c224df87300d5b6 | yes, same bytes |
+| boot/ (`--boot-dir boot --slot os-1`): config.txt, default.txt, previous.txt, trial.txt, tryboot.txt, episodes.rec, reason.rec, trial.rec, slot-layout.toml, slot/overlays/README | 11 files | see the list below | no |
+| cmdline.words (`--cmdline`) | 86 | 9f030e937b1b8f093a5af989249e30bb932ddf92adec83352b7a6775c9b11b6d | yes, same bytes |
+| cmdline-slot.words (`--cmdline-slot --slot os-1`) | 94 | 25c95cdbf4baa11362297541a607750c6bccd0b4e704b5aea46fa2b4b7ca1e5d | no |
+| modprobe.conf (`--modprobe`) | 944 | 703cbb297ad0c6a14cb4a23b26f4c12ee23ad64f5bad39cba6617ebbc5bd77fa | yes, same bytes |
+| udev.rules (`--udev`) | 1124 | 65675261fa89be3ec6011bdd4fd93ad8296dc92758de1458b033a3eb3c7dee36 | yes (941, 78d172d3...) |
+| mdev.conf (`--mdev`) | 1326 | 8a81edd3c2c6cb69e0c6c8677e909144879e3226d52543b691d877389e120ec2 | yes (1165, 0d642409...) |
+| security.service (`--security-unit`) | 618 | 4476cc4a2fe202c0fc588f117363a4bc2a3e7c77ea881469bc3e9498bbbcdcb5 | yes, same bytes |
+
+boot/ files at 4056016b (bytes, sha256):
+
+    1723 57b8c0a2934be9128fc26b419aaff9202a19b4d20d9d96732332376c06d54d77 config.txt
+     512 5714f8a3ff47e7d9f39088cbc261433b595f57696bdb71ec8022180444871d0c default.txt
+    1024 ab94a94238422fafa6f272544bd23b8e2a1de071f64a6b9b95fbd1dbdc1f6e89 episodes.rec
+     512 5714f8a3ff47e7d9f39088cbc261433b595f57696bdb71ec8022180444871d0c previous.txt
+    1024 b74e2e1c28a27a57cbc6ac75ba172bb9aaf348f01f72b39108d3b091714651c0 reason.rec
+    3802 33a4d498abb3d0c08934d9315c37041b34d69d58a5aa3bd8a5d9dd84c9f7deac slot-layout.toml
+     162 e5404b5e7429abe4add1987e5b1374eed9def30b1e5978ff6f4676d950b95304 slot/overlays/README
+    1024 5f2d5e0c7ed0bb5113e681d3378bc69a6d1496d3bbb4c0cabe7d20cfd6379648 trial.rec
+     512 5714f8a3ff47e7d9f39088cbc261433b595f57696bdb71ec8022180444871d0c trial.txt
+    1679 a650896567ed055bb0a97f86a6099f827c66b2303b54a1445df40fbbcb06ea79 tryboot.txt
+
+`config.txt` is in the boot files at 4056016b and not in the `--boot` fragment. The `tryboot.txt` header says its lines
+are from the documentation only and not run on a board (`testing/board-runs/I5i6.md`). So the boot files are generated,
+not proven.
+
+## The Raze's USB network: HELD (not committed)
+
+HOLD (coordinator, 2026-11-14): the IPv6-link-local-only decision below is being re-decided. The SystemCore the Razes plug
+into has NO IPv6 (no /proc/sys/net/ipv6, dhcpcd in IPv4-only mode), so an IPv6-only lemnos0 would be unreachable from it.
+The likely replacement is a board-served DHCP on lemnos0 from a small per-board IPv4 subnet. The network file, the
+component and fragment edits, and the BR2 networkd line are UNCOMMITTED in the worktree and stay that way until the
+decision arrives. Nothing below is committed.
+
+Previous decision (superseded by the hold, kept for the record; INPUTS "DECISION: the Raze's USB network at milestone 2",
+2026-11-14): `lemnos0` comes up with IPv6 link-local ONLY. Everything goes through Atlas over the Orion link, which needs
+no IP.
+
+- Written: `devices/components/raze-base-files/files/lemnos0.network`, installed to
+  `/etc/systemd/network/lemnos0.network` (component `[[install]]`). Contents: `[Match] Name=lemnos0` (exact, no wildcard);
+  `[Network] LinkLocalAddressing=ipv6`, `DHCP=no`, `IPv6AcceptRA=no`; `[Link] RequiredForOnline=no`. No IPv4, no DHCP
+  client or server, no bridge.
+- systemd-networkd WAS NOT ENABLED on the Raze image. `raze.fragment` did not set `BR2_PACKAGE_SYSTEMD_NETWORKD`, and the
+  base is `allnoconfig` (INPUTS: a bool's default does not apply there), so networkd was not built and had no unit to enable.
+  Fixed: `BR2_PACKAGE_SYSTEMD_NETWORKD=y` in `raze.fragment`, and `[[services]] unit = "systemd-networkd.service"
+  enable = true` in `raze-base-files/component.toml`.
+- The OPEN comment at `raze.fragment:56-58` was resolved in the uncommitted file to the superseded IPv6-only decision;
+  it must be rewritten when the held decision lands.
+- `scripts/check-usb-ifname.py` checks the one networkd file: `Name=lemnos0`, equal to the fallback board interface
+  (the contract's `board_interface` is read when `LEMNOS_USB_LINK` names a version-3 contracts file; the lock has none).
+  It passed with `1 networkd name(s)`.
+- NOT PROVEN: that the link gets its address, that networkd comes up on the image, that lemnos0 appears, that the Orion link
+  answers over it. The coordinator's sim/QEMU check (ii) is not built; there is no Raze QEMU job in the repo.
+
+## Operator access on the Raze image (answered from the tree)
+
+- No SSH server on the image: `devices/products/raze-base/os/raze.fragment:28-29`: "No sshd and no dropbear: Orion serves
+  SSH itself (its comm core, ssh.listen)".
+- The console: `devices/components/raze-base-files/component.toml:31`, `unit = "serial-getty@ttyGS0.service"`, `enable = true`
+  (raze.fragment:30-32 says the same). That is a login prompt on the gadget's ACM port, the only serial function.
+- SystemCore tools (read on the SystemCore, not on the Raze): `microcom` and `stty` are present; `socat` and `picocom`
+  are not. A Raze's ACM port appears as `/dev/serial/by-id/usb-Prometheus_Dynamics_Raze_<serial>-if<NN>`, so an operator
+  opens it by that path, not by ttyACM number.
+- Orion's SSH and lemnos0: `devices/components/orion/files/orion.conf:22-23` has `ssh.listen` and `ssh.interface` COMMENTED
+  OUT, so our config sets neither. Orion's comm app takes the SSH way in only when `ssh.listen` is said
+  (`crates/comm/comm-app/src/settings.rs:61`: "`None` unless `ssh.listen` is said"). So as the file stands, Orion's SSH is
+  NOT configured to listen on lemnos0, or on any address. The recovery binary's fallback is `ssh.listen = 0.0.0.0:22`
+  (`crates/bins/orion-recovery/src/main.rs:34`), which is for recovery only. Even `0.0.0.0` would be IPv4-only and lemnos0
+  has no IPv4 address. Reaching the link-local `fe80::...%lemnos0` would take `ssh.listen = [::]:22` or a scoped link-local
+  bind, which nothing in the repo sets. Not proven either way.
+- Time to services ready and RAM at idle, with no IPv4: the usable paths are the ACM console (ttyGS0 getty above), the
+  Orion link (the app and the test tool), and the Orion shell. The tree does not show whether `systemd-analyze` or
+  `systemd-cgtop` are built on the image; that is not confirmed here. `/proc/meminfo` is a kernel file and needs no
+  package.
