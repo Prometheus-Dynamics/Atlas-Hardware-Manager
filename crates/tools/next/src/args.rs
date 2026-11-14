@@ -45,8 +45,26 @@ pub enum Parsed {
         identity: Option<PathBuf>,
         json: bool,
     },
+    /// `usb-boot`: USB boot a board through an agent with a built image's boot files.
+    UsbBoot(UsbBootOptions),
     Help,
     Usage(String),
+}
+
+/// What `usb-boot` was asked for.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UsbBootOptions {
+    /// The agent's `host:port` (plain http).
+    pub agent: String,
+    /// The board's USB port on the agent's host, sysfs form (`3-1.1.4.1`).
+    pub port: String,
+    pub bundle: PathBuf,
+    pub boot_partition: PathBuf,
+    pub pubkey: PathBuf,
+    /// The directory holding `bootcode5.bin` (default: the repository's Pi flasher files).
+    pub bootfiles: Option<PathBuf>,
+    pub timeout_s: Option<u64>,
+    pub dry_run: bool,
 }
 
 /// Reads the arguments after the program name.
@@ -57,9 +75,10 @@ pub fn parse(args: &[String]) -> Parsed {
         Some("slots" | "enrol") => {}
         Some("identity") => return parse_identity(&args[1..]),
         Some("bench-key") => return parse_bench_key(&args[1..]),
+        Some("usb-boot") => return parse_usb_boot(&args[1..]),
         Some(other) => {
             return Parsed::Usage(format!(
-                "unknown command {other:?}; the commands are slots, enrol, identity and bench-key"
+                "unknown command {other:?}; the commands are slots, enrol, identity, bench-key and usb-boot"
             ));
         }
     }
@@ -134,6 +153,62 @@ pub fn parse(args: &[String]) -> Parsed {
         reflashed,
         identity,
     })
+}
+
+/// Reads the options of `usb-boot`. Every value option takes one operand; `--dry-run` takes none.
+fn parse_usb_boot(args: &[String]) -> Parsed {
+    let mut agent = None;
+    let mut port = None;
+    let mut bundle = None;
+    let mut boot_partition = None;
+    let mut pubkey = None;
+    let mut bootfiles = None;
+    let mut timeout_s = None;
+    let mut dry_run = false;
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        let slot = match arg.as_str() {
+            "-h" | "--help" => return Parsed::Help,
+            "--dry-run" => {
+                dry_run = true;
+                continue;
+            }
+            "--agent" => &mut agent,
+            "--port" => &mut port,
+            "--bundle" => &mut bundle,
+            "--boot-partition" => &mut boot_partition,
+            "--pubkey" => &mut pubkey,
+            "--bootfiles" => &mut bootfiles,
+            "--timeout" => &mut timeout_s,
+            other => return Parsed::Usage(format!("usb-boot: unknown option {other:?}")),
+        };
+        match rest.next() {
+            Some(value) => *slot = Some(value.clone()),
+            None => return Parsed::Usage(format!("{arg} needs a value")),
+        }
+    }
+    let timeout_s = match timeout_s.map(|text| text.parse::<u64>()) {
+        None => None,
+        Some(Ok(seconds)) => Some(seconds),
+        Some(Err(_)) => return Parsed::Usage("--timeout takes whole seconds".into()),
+    };
+    match (agent, port, bundle, boot_partition, pubkey) {
+        (Some(agent), Some(port), Some(bundle), Some(boot_partition), Some(pubkey)) => {
+            Parsed::UsbBoot(UsbBootOptions {
+                agent,
+                port,
+                bundle: PathBuf::from(bundle),
+                boot_partition: PathBuf::from(boot_partition),
+                pubkey: PathBuf::from(pubkey),
+                bootfiles: bootfiles.map(PathBuf::from),
+                timeout_s,
+                dry_run,
+            })
+        }
+        _ => Parsed::Usage(
+            "usb-boot needs --agent, --port, --bundle, --boot-partition and --pubkey".into(),
+        ),
+    }
 }
 
 /// Reads the operands of `identity`: no operand, `--identity <file>`, `--json`, `--help`.
