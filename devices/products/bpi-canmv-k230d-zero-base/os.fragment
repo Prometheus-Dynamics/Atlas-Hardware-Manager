@@ -1,0 +1,19 @@
+# Buildroot fragment for the Zero's base OS (Gaia's os.fragment, `@here@` is this file's directory).
+# Each line says why it is here (standing rule). What is NOT here, and why, is at the end.
+
+# The K230D's core: RISC-V with the compressed and vector extensions the SDK's defconfig turns on
+# (k230d_zero_defconfig in Gaia 3d1f249: BR2_RISCV_ISA_RVC, BR2_RISCV_ISA_RVV).
+BR2_riscv=y
+BR2_RISCV_ISA_RVC=y
+BR2_RISCV_ISA_RVV=y
+BR2_TARGET_GENERIC_HOSTNAME="k230d-zero"
+BR2_TARGET_GENERIC_ISSUE="Welcome to the BPI-CanMV-K230D-Zero"
+
+# NOT here, each with its gap:
+# - the toolchain (Xuantie GCC 10.4, the SDK's external toolchain: BR2_TOOLCHAIN_EXTERNAL_CUSTOM, its
+#   path): a download source the fragment cannot name at 70a5133/4abf626 (outside needs);
+# - U-Boot and OpenSBI (BR2_TARGET_UBOOT, BR2_TARGET_OPENSBI): the boot chain is the SDK's, from a subdir
+#   of k230-sdk (outside needs: `subdir`);
+# - the kernel: from the board (ruyisdk 6.6, ae4a7e65);
+# - the SDK's Buildroot external tree (src/little/buildroot-ext: board/canaan/k230 overlay, k230-vglite):
+#   a subdir of k230-sdk (the same `subdir` need). VGLite is not carried (not on `next`).

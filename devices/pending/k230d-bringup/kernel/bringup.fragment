@@ -1,0 +1,13 @@
+# DEV ONLY (K230D bring-up). Kernel fragment for the bring-up image. Every line says why it is here.
+# The fragment belongs to the bring-up board, not the product: Gaia's kernel fragments are board-level, so
+# until a product can add one (outside needs), it is applied by hand to the board's build. Gone with the bring-up.
+
+# NCM through configfs for S41usb0 (the USB-C network). `next`'s gadget is NCM too (decision 5).
+CONFIG_USB_CONFIGFS=y
+CONFIG_USB_CONFIGFS_NCM=y
+CONFIG_USB_U_ETHER=y
+
+# No watchdog feeder in the bring-up: a DW watchdog left running would reset the board about a minute after
+# boot. lemnosd feeds the hardware watchdog itself on the managed image (watchdog rules); the bring-up has
+# no lemnosd. Open: whether U-Boot leaves the DW watchdog running (unknown until a board runs).
+# CONFIG_DW_WATCHDOG is not set
