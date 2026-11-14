@@ -10,9 +10,9 @@
 //! There is no timer of its own: it waits on the session, and calls are answered on the same
 //! thread between pumps of the session.
 //!
-//! Connections are signed with this monitor's own client key, which is generated when the
-//! monitor starts and is not kept anywhere: a node with security on accepts a signed client, a
-//! plain one it refuses.
+//! Connections are signed with the monitor's client key: a fresh one made when the monitor starts
+//! (see [`Monitor::start_full`]), or the caller's identity (see [`Monitor::start_identified`]). A
+//! node with security on accepts a signed client, a plain one it refuses.
 //!
 //! # The key a node was seen with
 //!
@@ -557,6 +557,28 @@ impl Monitor {
         lease: Lease,
         clock: Clock,
     ) -> Self {
+        Self::start_identified(
+            address,
+            pin,
+            pause,
+            call_wait,
+            lease,
+            clock,
+            Identity::generate().secret(),
+        )
+    }
+
+    /// As [`Monitor::start_full`], with the client key the sessions sign with given by the caller.
+    /// A real program passes its one identity, so every session it runs presents the same key.
+    pub fn start_identified(
+        address: Address,
+        pin: Option<[u8; 32]>,
+        pause: Arc<dyn Pause>,
+        call_wait: Duration,
+        lease: Lease,
+        clock: Clock,
+        secret: [u8; 32],
+    ) -> Self {
         let (sender, presence) = watch::channel(Presence::Searching);
         let (calls, received) = mpsc::channel::<Box<dyn Job>>();
         let (orders, taken) = mpsc::channel::<Order>();
@@ -574,7 +596,7 @@ impl Monitor {
                     orders: taken,
                     stop: thread_stop,
                     pause,
-                    secret: Identity::generate().secret(),
+                    secret,
                     pin,
                     replacement: None,
                     parked: VecDeque::new(),

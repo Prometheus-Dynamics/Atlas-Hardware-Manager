@@ -154,6 +154,7 @@ impl Pause for YieldPause {
 pub fn env(state: &Path) -> Env {
     Env {
         state_dir: Some(state.to_path_buf()),
+        identity_default: Some(state.join("identity.key")),
         pause: Arc::new(YieldPause),
         wait: Duration::from_secs(30),
         recheck: Duration::from_millis(20),

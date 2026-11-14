@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use orion::Address;
+use orion::{Address, Identity};
 
 use std::time::Duration;
 
@@ -18,15 +18,39 @@ pub struct Sessions {
     call_wait: Duration,
     lease: Lease,
     clock: Clock,
+    identity: Option<Held>,
     monitors: Mutex<BTreeMap<String, Monitor>>,
     off: Mutex<BTreeSet<String>>,
+}
+
+/// The client key a [`Sessions::with_identity`] holds. Its `Debug` prints no key bytes.
+#[derive(Clone, Copy)]
+struct Held([u8; 32]);
+
+impl std::fmt::Debug for Held {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Held(..)")
+    }
 }
 
 impl Sessions {
     /// No node is watched until [`Sessions::handle`] names it. `pause` is the wait between tries.
     /// Calls wait [`CALL_WAIT`] for their answer.
+    ///
+    /// Each monitor this starts signs its sessions with a key of its own, made when it starts.
+    /// A real program uses [`Sessions::with_identity`], so that every session presents the same
+    /// client key.
     pub fn new(pause: Arc<dyn Pause>) -> Self {
         Self::with_call_wait(pause, CALL_WAIT)
+    }
+
+    /// As [`Sessions::new`], but every monitor this starts signs its sessions with the client key
+    /// of `secret` (the 32-byte Ed25519 secret of the program's identity). Nothing else changes:
+    /// pins, `accepts` and the other key are as they are for [`Sessions::new`].
+    pub fn with_identity(pause: Arc<dyn Pause>, secret: [u8; 32]) -> Self {
+        let mut sessions = Self::new(pause);
+        sessions.identity = Some(Held(secret));
+        sessions
     }
 
     /// As [`Sessions::new`], with the wait for a call's answer chosen by the caller.
@@ -36,6 +60,7 @@ impl Sessions {
             call_wait,
             lease: Lease::DEFAULT,
             clock: Clock::real(),
+            identity: None,
             monitors: Mutex::new(BTreeMap::new()),
             off: Mutex::new(BTreeSet::new()),
         }
@@ -68,13 +93,14 @@ impl Sessions {
         }
         let mut monitors = lock(&self.monitors);
         let monitor = monitors.entry(key).or_insert_with(|| {
-            Monitor::start_full(
+            Monitor::start_identified(
                 address.clone(),
                 None,
                 self.pause.clone(),
                 self.call_wait,
                 self.lease,
                 self.clock.clone(),
+                self.client_key(),
             )
         });
         Some(monitor.handle())
@@ -90,13 +116,14 @@ impl Sessions {
         }
         let mut monitors = lock(&self.monitors);
         let monitor = monitors.entry(key_text).or_insert_with(|| {
-            Monitor::start_full(
+            Monitor::start_identified(
                 address.clone(),
                 Some(key),
                 self.pause.clone(),
                 self.call_wait,
                 self.lease,
                 self.clock.clone(),
+                self.client_key(),
             )
         });
         Some(monitor.handle())
@@ -128,6 +155,14 @@ impl Sessions {
     /// Watches the node at `address` again after [`Sessions::turn_off`].
     pub fn turn_on(&self, address: &str) {
         lock(&self.off).remove(address);
+    }
+}
+
+impl Sessions {
+    /// The client key a new monitor signs with: the identity's, or a fresh key of its own.
+    fn client_key(&self) -> [u8; 32] {
+        self.identity
+            .map_or_else(|| Identity::generate().secret(), |held| held.0)
     }
 }
 

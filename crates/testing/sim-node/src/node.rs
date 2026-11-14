@@ -32,7 +32,9 @@ use std::time::{Duration, Instant};
 use orion::actions::{
     ActionCall, ActionDecl, Admits, Finished, Outcome, Policy, Registration, Request, Target,
 };
+use orion::node::OperatorState;
 use orion::topics::{FieldId, OnSubscribe, Publisher, SampleTime, TopicDecl};
+use orion::types::KeyId;
 use orion::{Address, Orion, fields};
 use orion_stubs::{Board, Options, Security};
 
@@ -280,11 +282,72 @@ impl SimNode {
     /// If the directory cannot be made, the port cannot be taken, or the node logic cannot
     /// connect to the comm core or declare its facts.
     pub fn start_with(dir: &Path, kind: &Kind, port: Option<u16>) -> Result<Self, String> {
+        Self::start_inner(dir, kind, port, Security::Off)
+    }
+
+    /// As [`SimNode::start_with`], with security on, as a board runs by default: a session that
+    /// does not sign is refused, and a signed client may do only what the trust list grants it.
+    /// Keys the board does not know get the session but no grant (`Denied` on each action).
+    /// Use [`SimNode::trusted`], [`SimNode::grant_as_root`] and [`SimNode::revoke`] to change
+    /// the trust list.
+    ///
+    /// # Errors
+    ///
+    /// As [`SimNode::start_with`].
+    pub fn start_secured(dir: &Path, kind: &Kind, port: Option<u16>) -> Result<Self, String> {
+        Self::start_inner(dir, kind, port, Security::On)
+    }
+
+    /// The trust list's state for `key`: `None` when the board holds no record of it.
+    #[must_use]
+    pub fn trusted(&self, key: &[u8; 32]) -> Option<OperatorState> {
+        self.board
+            .keys()
+            .lock()
+            .operator(&KeyId(*key))
+            .map(|operator| operator.state)
+    }
+
+    /// What an administrator on the board does to trust `key` with every action: enrols it as an
+    /// operator and grants it every action and read. The same two calls the board's own store
+    /// makes for an administrator's approval.
+    ///
+    /// # Errors
+    ///
+    /// If the trust store cannot be saved.
+    pub fn grant_as_root(&self, key: [u8; 32], name: &str) -> Result<(), String> {
+        let mut keys = self.board.keys().lock();
+        keys.approve_operator(key, name)
+            .map_err(|error| error.to_string())?;
+        keys.grant(&KeyId(key), true, Vec::new(), true)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
+    }
+
+    /// Stops trusting `key` on the board, for good.
+    ///
+    /// # Errors
+    ///
+    /// If the trust store cannot be saved.
+    pub fn revoke(&self, key: [u8; 32]) -> Result<(), String> {
+        self.board
+            .keys()
+            .lock()
+            .revoke(key)
+            .map_err(|error| error.to_string())
+    }
+
+    fn start_inner(
+        dir: &Path,
+        kind: &Kind,
+        port: Option<u16>,
+        security: Security,
+    ) -> Result<Self, String> {
         std::fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
         let board = Arc::new(Board::start_with(
             dir,
             Options {
-                security: Security::Off,
+                security,
                 port,
                 // A node keeps its key across a restart in the same directory, as a board does.
                 on_disk: true,
@@ -644,6 +707,13 @@ impl std::fmt::Debug for Node {
     }
 }
 
+/// Who may run a simulated action. With security on, an enrolled operator may run it only when the
+/// board's trust list grants it (`Operator::may`); root on the board may run it. With security off
+/// the check admits every caller, so nothing changes for the default node.
+fn action_policy() -> Policy {
+    Policy::new(Admits::ROOT.and(Admits::OPERATOR))
+}
+
 impl Node {
     fn open(socket: &Path, shared: Shared, kind: &Kind, board: Arc<Board>) -> Result<Self, String> {
         // The driver clears its incoming directory when it starts.
@@ -653,7 +723,7 @@ impl Node {
         let mut registration = None;
         let all = names::ACTIONS.iter().chain(crate::actions::NAMES.iter());
         for name in all.filter(|name| offered(kind, name)) {
-            let policy = Policy::new(Admits::ANYONE).without_grant();
+            let policy = action_policy();
             let decl = ActionDecl {
                 name,
                 target: target(),
@@ -668,7 +738,7 @@ impl Node {
         if matches!(kind, Kind::WithLemnos(_)) {
             for device in readings::DEVICES {
                 let name = format!("lemnos.{}.call", device.id);
-                let policy = Policy::new(Admits::ANYONE).without_grant();
+                let policy = action_policy();
                 let decl = ActionDecl {
                     name: &name,
                     target: target(),

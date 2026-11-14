@@ -85,10 +85,16 @@ for o in $outputs; do
   sed 's/^/  /' <<<"$shown"
   [[ -n $out ]] || continue
   # the store paths the output holds: copied out by name, with size and digest
-  grep -oE "$GAIA_STORE/[^ ]+" <<<"$shown" | sort -u | while IFS= read -r path; do
+  # A store object is named by its digest: the copy is named by the output (`raze-base.slot`), with a number
+  # only when one output holds several objects.
+  n=0
+  while IFS= read -r path; do
     [[ -e $path ]] || continue
-    cp -a --reflink=auto "$path" "$out/"
-  done
+    n=$((n + 1))
+    if [[ $n -eq 1 ]]; then dest=$out/$o; else dest=$out/$o.$n; fi
+    cp -a --reflink=auto "$path" "$dest"
+  done < <(grep -oE "$GAIA_STORE/[^ ]+" <<<"$shown" | sort -u)
+  [[ $n -gt 0 ]] || die "gaia show $o names no store object under $GAIA_STORE: nothing to copy"
 done
 if [[ -n $out ]]; then
   echo "build-product: files in $out"

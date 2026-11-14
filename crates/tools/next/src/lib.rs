@@ -17,6 +17,7 @@
 mod args;
 pub mod bench_key;
 mod commands;
+pub mod identity;
 mod link;
 mod pins;
 mod report;
@@ -52,13 +53,17 @@ pub const USAGE: &str = "usage: atlas-next slots <address> <command> [options]
   confirm <slot id>           make the slot the default
   remove <slot id>            remove a slot (never a starred or the default one)
 
+  enrol <address>             ask the board to know this PC's identity (no proof: the owner approves it)
+  identity                    this PC's client identity: made once, prints its fingerprint and file
+
   bench-key <directory>       make the throwaway bench signing key (bench boards only, never a
                               released image): bench.seed, bench.pub, bench.keys in a new directory
 
 options:
-  --state <dir>   where pins and the trial's saved watches live
-                  (default: $XDG_DATA_HOME/atlas-next, else ~/.local/share/atlas-next)
-  --json          one JSON document on stdout instead of text
+  --state <dir>      where pins and the trial's saved watches live
+                     (default: $XDG_DATA_HOME/atlas-next, else ~/.local/share/atlas-next)
+  --identity <file>  the PC's identity file (default: <config>/atlas/identity.key, mode 0600)
+  --json             one JSON document on stdout instead of text
 
 exit status: 0 done; 1 the board refused or the outcome is a failure; 2 usage;
              3 the pin rule refused the board";
@@ -70,6 +75,10 @@ pub struct Env {
     /// The state directory when `--state` is not given. `None` means there is none: the command
     /// then refuses, unless `--state` is given.
     pub state_dir: Option<PathBuf>,
+    /// The identity file when `--identity` is not given. `None` means there is none: the command
+    /// then refuses, unless `--identity` is given. The binary sets the user's default; a test sets
+    /// a file under its own scratch directory, never the real config directory.
+    pub identity_default: Option<PathBuf>,
     /// The wait between a connection's tries.
     pub pause: Arc<dyn Pause>,
     /// How long a command waits for a node to answer.
@@ -87,6 +96,7 @@ impl Env {
     pub fn new(state_dir: Option<PathBuf>) -> Self {
         Self {
             state_dir,
+            identity_default: None,
             pause: Arc::new(RealPause),
             wait: WAIT,
             recheck: atlas_board_slots::trial::RECHECK,
@@ -108,6 +118,16 @@ pub async fn execute<W: Write>(args: &[String], env: &Env, out: &mut W) -> i32 {
         }
         args::Parsed::Run(command) => commands::run(command, env, out).await,
         args::Parsed::BenchKey { directory, json } => bench_key::run(&directory, json, out),
+        args::Parsed::Identity {
+            identity: file,
+            json,
+        } => match file.or_else(|| env.identity_default.clone()) {
+            Some(path) => identity::run(&path, json, out),
+            None => {
+                let _ = writeln!(out, "atlas-next: no identity file: give --identity <file>");
+                2
+            }
+        },
     }
 }
 

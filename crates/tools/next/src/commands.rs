@@ -13,18 +13,29 @@ use atlas_jobs::{DeviceHolds, Events, JobTiming};
 use atlas_slots::{SlotList, Stage};
 use atlas_trial::{Running, TrialState};
 use atlas_types::DeviceKey;
-use orion::Address;
-use orion::node::Node;
+use orion::node::{Node, OperatorState};
+use orion::{Address, ClientError};
 use serde_json::json;
 
 use crate::args::{Command, Verb};
-use crate::link::{self, BoardInfo, Link};
+use crate::identity;
+use crate::link::{self, BoardInfo, Link, Security};
 use crate::pins::{Pin, Pins};
 use crate::report::Report;
 use crate::{Env, parse_address};
 
 /// How often an install's stage is looked at while it runs.
 const POLL: Duration = Duration::from_millis(50);
+
+/// The name this PC's identity is enrolled under on a board.
+const ENROL_NAME: &str = "atlas-next";
+/// The first line of a board command on a board with security off: its key is checked, but the
+/// session is not signed.
+pub const SECURITY_OFF_LINE: &str =
+    "security off: the board's key is checked, the session is not signed";
+/// Refused by `enrol` on a board with security off.
+pub const SECURITY_OFF_NO_ENROL: &str =
+    "this board runs with security off: there is nothing to enrol";
 
 /// A command that did not succeed: its status and the words to show.
 #[derive(Debug)]
@@ -62,19 +73,57 @@ pub async fn run<W: Write>(command: Command, env: &Env, out: &mut W) -> i32 {
         r.say("no state directory: give --state <dir>");
         return r.finish(2);
     };
+    let Some(path) = command
+        .identity
+        .clone()
+        .or_else(|| env.identity_default.clone())
+    else {
+        r.say("no identity file: give --identity <file>");
+        return r.finish(2);
+    };
+    let key = match identity::load_or_create(&path) {
+        Ok(loaded) => loaded.secret,
+        Err(why) => {
+            r.say(why);
+            return r.finish(1);
+        }
+    };
+    // The session mode is asked once per run, and every command of this run uses the answer.
+    let mode = link::security(&address).await;
     let outcome = match &command.verb {
-        Verb::Fingerprint => fingerprint(&mut r, env, &state, &address).await,
-        Verb::Pin => pin(&mut r, env, &state, &address).await,
-        Verb::Repin => repin(&mut r, env, &state, &address, command.reflashed).await,
-        verb => board(&mut r, env, &state, &address, verb).await,
+        Verb::Fingerprint => fingerprint(&mut r, env, &state, &address, &key).await,
+        Verb::Pin => pin(&mut r, env, &state, &address, &key).await,
+        Verb::Repin => repin(&mut r, env, &state, &address, command.reflashed, &key).await,
+        Verb::Enrol => enrol(&mut r, env, &state, &address, &key, mode).await,
+        verb => board(&mut r, env, &state, &address, verb, &key, mode).await,
     };
     match outcome {
         Ok(()) => r.finish(0),
         Err(refusal) => {
-            r.say(refusal.words);
+            r.say(refusal.words.clone());
+            if !matches!(
+                command.verb,
+                Verb::Fingerprint | Verb::Pin | Verb::Repin | Verb::Enrol
+            ) && denied_by_board(&refusal.words)
+            {
+                r.say(format!(
+                    "this PC's key is not enrolled on this board: run atlas-next enrol {}",
+                    command.address
+                ));
+            }
             r.finish(refusal.code)
         }
     }
+}
+
+/// Whether a board's words are Orion's refusal of the call (`denied`): a key the board does not
+/// know, or one it has not let act. Only the words reach here: a board command's refusal crosses
+/// `atlas-board-slots` and `atlas-session` as text, so the variant (`ClientError::Refused`) is not
+/// visible to the tool. `enrol` makes its call directly and matches the variant instead.
+fn denied_by_board(words: &str) -> bool {
+    words
+        .split(|c: char| !c.is_ascii_alphabetic())
+        .any(|word| word == orion::types::Error::Denied.as_str())
 }
 
 async fn fingerprint<W: Write>(
@@ -82,9 +131,10 @@ async fn fingerprint<W: Write>(
     env: &Env,
     state: &Path,
     address: &Address,
+    key: &[u8; 32],
 ) -> Result<(), Refusal> {
     let text = address.to_string();
-    let node = probe_or_refuse(env, address, &text).await?;
+    let node = probe_or_refuse(env, address, &text, key).await?;
     r.say(format!("{text}: key fingerprint {}", node.fingerprint));
     let pins = load_pins(state)?;
     match pins.get(&text) {
@@ -107,9 +157,10 @@ async fn pin<W: Write>(
     env: &Env,
     state: &Path,
     address: &Address,
+    key: &[u8; 32],
 ) -> Result<(), Refusal> {
     let text = address.to_string();
-    let node = probe_or_refuse(env, address, &text).await?;
+    let node = probe_or_refuse(env, address, &text, key).await?;
     let mut pins = load_pins(state)?;
     match pins.get(&text).cloned() {
         Some(pin) if pin.key == node.public_key => {
@@ -139,9 +190,10 @@ async fn repin<W: Write>(
     state: &Path,
     address: &Address,
     reflashed: bool,
+    key: &[u8; 32],
 ) -> Result<(), Refusal> {
     let text = address.to_string();
-    let node = probe_or_refuse(env, address, &text).await?;
+    let node = probe_or_refuse(env, address, &text, key).await?;
     let mut pins = load_pins(state)?;
     let old = pins.get(&text).cloned();
     if !reflashed {
@@ -179,16 +231,91 @@ async fn repin<W: Write>(
     Ok(())
 }
 
+/// `enrol`: asks the board to know this PC's identity. The request carries no proof, so the
+/// board decides: its answer says whether this key is pending the owner's approval, enrolled, or
+/// revoked. The request is made on a pinned board only (the pin rule), and never on a board with
+/// security off, which has nothing to enrol.
+async fn enrol<W: Write>(
+    r: &mut Report<'_, W>,
+    env: &Env,
+    state: &Path,
+    address: &Address,
+    key: &[u8; 32],
+    mode: Security,
+) -> Result<(), Refusal> {
+    let text = address.to_string();
+    if mode == Security::Off {
+        return Err(Refusal::new(1, SECURITY_OFF_NO_ENROL));
+    }
+    let pins = load_pins(state)?;
+    let Some(pin) = pins.get(&text).cloned() else {
+        let node = probe_or_refuse(env, address, &text, key).await?;
+        return Err(Refusal::new(
+            3,
+            format!(
+                "{text} has never been seen. Its key fingerprint is {}. Nothing is trusted yet: check the fingerprint, then run `atlas-next slots {text} pin`.",
+                node.fingerprint
+            ),
+        ));
+    };
+    let public = identity::public_key(key);
+    let fingerprint = identity::fingerprint(&public);
+    let answer = link::enrol(address, pin.key, *key, ENROL_NAME)
+        .await
+        .map_err(|why| Refusal::new(1, format!("the enrolment did not finish: {why}")))?;
+    let enrollment = match answer {
+        Ok(enrollment) => enrollment,
+        Err(orion::Error::Client(ClientError::OtherKey { answered, .. })) => {
+            return Err(link::replaced(
+                &text,
+                &pin,
+                Some(identity::fingerprint(&answered)),
+            ));
+        }
+        Err(error) => return Err(Refusal::new(1, error.to_string())),
+    };
+    match enrollment.state {
+        OperatorState::Pending => r.say(format!(
+            "your key {fingerprint} is now pending on this board: the board's owner must approve it before this PC can do anything there"
+        )),
+        OperatorState::Enrolled => {
+            r.say(format!("your key {fingerprint} is enrolled on this board"));
+        }
+        OperatorState::Revoked => {
+            return Err(Refusal::new(
+                1,
+                format!(
+                    "your key {fingerprint} is revoked on this board: a revoked key does not enrol again"
+                ),
+            ));
+        }
+        other => {
+            return Err(Refusal::new(
+                1,
+                format!("the board answers your key {fingerprint} as {other:?}"),
+            ));
+        }
+    }
+    r.field("fingerprint", fingerprint);
+    r.field("state", format!("{:?}", enrollment.state));
+    Ok(())
+}
+
 async fn board<W: Write>(
     r: &mut Report<'_, W>,
     env: &Env,
     state: &Path,
     address: &Address,
     verb: &Verb,
+    key: &[u8; 32],
+    mode: Security,
 ) -> Result<(), Refusal> {
     let text = address.to_string();
+    if mode == Security::Off {
+        r.say(SECURITY_OFF_LINE);
+    }
     let pins = load_pins(state)?;
-    let link = link::pinned(env, &pins, &text, address).await?;
+    let link = link::pinned(env, &pins, &text, address, key).await?;
     let info = link::board_info(&link.node);
     if !info.reported {
         return Err(Refusal::new(
@@ -219,8 +346,10 @@ async fn board<W: Write>(
             Ok(())
         }
         Verb::Install(path) => install(r, state, &link, &info, path).await,
-        Verb::Trial(id) => trial(r, env, state, &link, &slots, &pins, address, id).await,
-        Verb::Fingerprint | Verb::Pin | Verb::Repin => Err(Refusal::new(2, "not a board command")),
+        Verb::Trial(id) => trial(r, env, state, &link, &slots, &pins, address, id, key).await,
+        Verb::Fingerprint | Verb::Pin | Verb::Repin | Verb::Enrol => {
+            Err(Refusal::new(2, "not a board command"))
+        }
     }
 }
 
@@ -377,6 +506,7 @@ async fn trial<W: Write>(
     pins: &Pins,
     address: &Address,
     id: &str,
+    key: &[u8; 32],
 ) -> Result<(), Refusal> {
     let follower = Follower::open(state).with_recheck(env.recheck);
     let note = follower
@@ -398,7 +528,7 @@ async fn trial<W: Write>(
     r.progress(format!(
         "trial of {id} started; following it to its outcome"
     ));
-    let key = link.node.public_key;
+    let node_key = link.node.public_key;
     let stop = async {
         match &env.stop {
             Some(stop) => stop.notified().await,
@@ -406,8 +536,8 @@ async fn trial<W: Write>(
         }
     };
     let ended = tokio::select! {
-        ended = follower.follow(slots, &link.handle, key) => ended,
-        () = stop => follower.stop(key),
+        ended = follower.follow(slots, &link.handle, node_key) => ended,
+        () = stop => follower.stop(node_key),
     };
     let Some(ended) = ended else {
         return Err(Refusal::new(
@@ -420,7 +550,7 @@ async fn trial<W: Write>(
             "note: the outcome is not saved, so the trial may be reported again after an Atlas restart: {why}"
         ));
     }
-    trial_outcome(r, env, pins, address, id, ended.state).await
+    trial_outcome(r, env, pins, address, id, ended.state, key).await
 }
 
 async fn trial_outcome<W: Write>(
@@ -430,6 +560,7 @@ async fn trial_outcome<W: Write>(
     address: &Address,
     id: &str,
     state: TrialState,
+    key: &[u8; 32],
 ) -> Result<(), Refusal> {
     match state {
         TrialState::Held(decided) => {
@@ -476,7 +607,7 @@ async fn trial_outcome<W: Write>(
         )),
         TrialState::Replaced { .. } => {
             let text = address.to_string();
-            let found = link::probe(env, address)
+            let found = link::probe(env, address, key)
                 .await
                 .ok()
                 .map(|node| node.fingerprint);
@@ -525,8 +656,26 @@ fn save_pins(pins: &Pins) -> Result<(), Refusal> {
     pins.save().map_err(|why| Refusal::new(1, why))
 }
 
-async fn probe_or_refuse(env: &Env, address: &Address, text: &str) -> Result<Node, Refusal> {
-    link::probe(env, address)
+async fn probe_or_refuse(
+    env: &Env,
+    address: &Address,
+    text: &str,
+    key: &[u8; 32],
+) -> Result<Node, Refusal> {
+    link::probe(env, address, key)
         .await
         .map_err(|why| Refusal::new(1, format!("the board at {text} did not answer: {why}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::denied_by_board;
+
+    #[test]
+    fn only_orions_denied_word_marks_a_refusal_of_the_board() {
+        assert!(denied_by_board("the call failed: denied"));
+        assert!(denied_by_board("denied"));
+        assert!(!denied_by_board("the board did not answer: timed out"));
+        assert!(!denied_by_board("undenied"));
+    }
 }
