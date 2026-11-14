@@ -15,6 +15,7 @@
 //! [`execute`] is what the binary runs, and what the tests run. Its output goes to any `Write`.
 
 mod args;
+pub mod bench_key;
 mod commands;
 mod link;
 mod pins;
@@ -37,6 +38,7 @@ pub const WAIT: Duration = Duration::from_secs(15);
 
 /// The usage text.
 pub const USAGE: &str = "usage: atlas-next slots <address> <command> [options]
+       atlas-next bench-key <directory> [--json]
 
   <address>   an Orion address as Orion reads it: orion+tcp://host[:port],
               orion+tcp://[::1]:9200, orion+tcp://[fe80::1%eth0]:9200, or a socket path
@@ -49,6 +51,9 @@ pub const USAGE: &str = "usage: atlas-next slots <address> <command> [options]
   trial <slot id>             start a trial and follow it to its outcome (Ctrl-C stops following)
   confirm <slot id>           make the slot the default
   remove <slot id>            remove a slot (never a starred or the default one)
+
+  bench-key <directory>       make the throwaway bench signing key (bench boards only, never a
+                              released image): bench.seed, bench.pub, bench.keys in a new directory
 
 options:
   --state <dir>   where pins and the trial's saved watches live
@@ -102,6 +107,7 @@ pub async fn execute<W: Write>(args: &[String], env: &Env, out: &mut W) -> i32 {
             2
         }
         args::Parsed::Run(command) => commands::run(command, env, out).await,
+        args::Parsed::BenchKey { directory, json } => bench_key::run(&directory, json, out),
     }
 }
 
