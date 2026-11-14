@@ -228,7 +228,12 @@ bringup_rule() {  # <devices dir>
     if ! grep -q '^bringup-network = "[^"]*bringup-network/component\.toml"$' "$p"; then
       out+="product $pname: no bringup-network component in [components] (the Ethernet by type)"$'\n'; rc=1
     fi
-    if ! grep -q '^# BR2_SYSTEM_DHCP is not set$' "$pdir/os.fragment" 2>/dev/null || grep -q '^BR2_SYSTEM_DHCP=' "$pdir/os.fragment" 2>/dev/null; then
+    # BR2_SYSTEM_DHCP is a STRING option in Buildroot (system/Config.in, default ""): it has no "is not set" form.
+    # The line that turns the base fragment's value off is the empty string; Gaia holds every fragment line as
+    # written, and "# BR2_SYSTEM_DHCP is not set" becomes BR2_SYSTEM_DHCP="" and fails its build (PR B35).
+    if grep -q '^# BR2_SYSTEM_DHCP is not set$' "$pdir/os.fragment" 2>/dev/null; then
+      out+="product $pname: its os.fragment says '# BR2_SYSTEM_DHCP is not set'; it is a string option, write BR2_SYSTEM_DHCP=\"\""$'\n'; rc=1
+    elif ! grep -q '^BR2_SYSTEM_DHCP=""$' "$pdir/os.fragment" 2>/dev/null || grep -q '^BR2_SYSTEM_DHCP="..*"$' "$pdir/os.fragment" 2>/dev/null; then
       out+="product $pname: its os.fragment does not unset BR2_SYSTEM_DHCP (Buildroot's eth0.network matches Name=eth0, which the GMAC does not have)"$'\n'; rc=1
     fi
     # The loader (B31): an RK35xx bring-up board's device tree carries the reboot-mode node at the offset that
@@ -321,7 +326,7 @@ bringup_rule_self_test() {
     echo "check-devices: self-test: the link refusal does not name the product and link: $out" >&2; rc=1
   fi
   echo ether > "$tmp/devices/products/rock-5c-bringup/components/bringup-alive-settings/files/board-alive.links"
-  sed -i '/^# BR2_SYSTEM_DHCP is not set$/d' "$tmp/devices/products/zero-3e-bringup/os.fragment"
+  sed -i '/^BR2_SYSTEM_DHCP=""$/d' "$tmp/devices/products/zero-3e-bringup/os.fragment"
   if out=$(bringup_rule "$tmp/devices"); then
     echo "check-devices: self-test: a bring-up product that leaves BR2_SYSTEM_DHCP on was not refused" >&2; rc=1
   elif [[ $out != *"product zero-3e-bringup: its os.fragment does not unset BR2_SYSTEM_DHCP"* ]]; then
