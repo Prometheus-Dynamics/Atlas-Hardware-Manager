@@ -6,7 +6,6 @@
 
 use std::io::ErrorKind;
 use std::net::{SocketAddr, TcpStream};
-use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -16,6 +15,8 @@ use atlas_session::{Pause, Presence, Seed, Sessions};
 use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode};
 use atlas_types::LinkId;
 use orion::Address;
+mod common;
+use common::scratch;
 
 /// A pause that does not wait: the monitor only yields while the node is not there.
 #[derive(Debug)]
@@ -25,10 +26,6 @@ impl Pause for NoPause {
     fn pause(&self, _delay: Duration, _stop: &AtomicBool) {
         std::thread::yield_now();
     }
-}
-
-fn scratch(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("ways-in-{name}"))
 }
 
 fn kind() -> Kind {

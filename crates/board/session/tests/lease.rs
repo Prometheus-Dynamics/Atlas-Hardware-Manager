@@ -10,7 +10,7 @@
 
 #![cfg(target_os = "linux")]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -20,6 +20,8 @@ use atlas_session::double::{Double, Event, Log};
 use atlas_session::{Cancel, Clock, Handle, Lease, Pause, Presence, Sessions, SteppedTransfer};
 use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode};
 use orion::{Address, Orion};
+mod common;
+use common::scratch;
 
 /// The monitor's wait between tries: it only yields, so a node that is gone is not spun on.
 #[derive(Debug)]
@@ -29,10 +31,6 @@ impl Pause for NoPause {
     fn pause(&self, _delay: Duration, _stop: &AtomicBool) {
         std::thread::yield_now();
     }
-}
-
-fn scratch(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("lease-{name}"))
 }
 
 fn with_lemnos() -> Kind {

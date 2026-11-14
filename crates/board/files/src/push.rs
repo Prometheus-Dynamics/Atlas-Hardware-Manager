@@ -346,7 +346,7 @@ async fn run(pending: &Pending) -> Result<(), String> {
                 tokio::time::sleep(backoff.next_delay()).await;
             }
             Err(SessionError::Failed(reason)) => {
-                return Err(shared.refusal().unwrap_or(reason));
+                return Err(shared.refusal().unwrap_or_else(|| reason.to_string()));
             }
         }
     }

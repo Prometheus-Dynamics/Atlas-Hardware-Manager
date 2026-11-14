@@ -10,6 +10,7 @@ use atlas_board_slots::{
     BoardSlots, Follower, InstallRequest, SlotError, SlotInstalls, Source, TrialStart,
 };
 use atlas_jobs::{DeviceHolds, Events, JobTiming};
+use atlas_session::Failure;
 use atlas_slots::{SlotList, Stage};
 use atlas_trial::{Running, TrialState};
 use atlas_types::DeviceKey;
@@ -37,11 +38,14 @@ pub const SECURITY_OFF_LINE: &str =
 pub const SECURITY_OFF_NO_ENROL: &str =
     "this board runs with security off: there is nothing to enrol";
 
-/// A command that did not succeed: its status and the words to show.
+/// A command that did not succeed: its status and the words to show. `denied` is set when the
+/// board's refusal was Orion's `Denied` (a key the board does not know, or one it has not let
+/// act): it is read from the kind the session carried, never from the words.
 #[derive(Debug)]
 pub struct Refusal {
     pub code: i32,
     pub words: String,
+    pub denied: bool,
 }
 
 impl Refusal {
@@ -49,13 +53,19 @@ impl Refusal {
         Self {
             code,
             words: words.into(),
+            denied: false,
         }
     }
 }
 
 impl From<SlotError> for Refusal {
     fn from(error: SlotError) -> Self {
-        Self::new(1, error.to_string())
+        let denied = error.failure().is_some_and(Failure::is_denied);
+        Self {
+            code: 1,
+            words: error.to_string(),
+            denied,
+        }
     }
 }
 
@@ -104,7 +114,7 @@ pub async fn run<W: Write>(command: Command, env: &Env, out: &mut W) -> i32 {
             if !matches!(
                 command.verb,
                 Verb::Fingerprint | Verb::Pin | Verb::Repin | Verb::Enrol
-            ) && denied_by_board(&refusal.words)
+            ) && refusal.denied
             {
                 r.say(format!(
                     "this PC's key is not enrolled on this board: run atlas-next enrol {}",
@@ -114,16 +124,6 @@ pub async fn run<W: Write>(command: Command, env: &Env, out: &mut W) -> i32 {
             r.finish(refusal.code)
         }
     }
-}
-
-/// Whether a board's words are Orion's refusal of the call (`denied`): a key the board does not
-/// know, or one it has not let act. Only the words reach here: a board command's refusal crosses
-/// `atlas-board-slots` and `atlas-session` as text, so the variant (`ClientError::Refused`) is not
-/// visible to the tool. `enrol` makes its call directly and matches the variant instead.
-fn denied_by_board(words: &str) -> bool {
-    words
-        .split(|c: char| !c.is_ascii_alphabetic())
-        .any(|word| word == orion::types::Error::Denied.as_str())
 }
 
 async fn fingerprint<W: Write>(
@@ -669,13 +669,43 @@ async fn probe_or_refuse(
 
 #[cfg(test)]
 mod tests {
-    use super::denied_by_board;
+    use atlas_actions::ActionError;
+    use atlas_board_slots::SlotError;
+    use atlas_session::{Failure, FailureKind};
+
+    use super::Refusal;
 
     #[test]
-    fn only_orions_denied_word_marks_a_refusal_of_the_board() {
-        assert!(denied_by_board("the call failed: denied"));
-        assert!(denied_by_board("denied"));
-        assert!(!denied_by_board("the board did not answer: timed out"));
-        assert!(!denied_by_board("undenied"));
+    fn a_denied_refusal_marks_the_not_enrolled_line_whatever_its_words() {
+        // Reworded on purpose: the kind decides.
+        let error = SlotError::Board(ActionError::Refused(Failure::new(
+            FailureKind::Denied,
+            None,
+            "no",
+        )));
+        assert!(Refusal::from(error).denied);
+        let unknown = SlotError::Board(ActionError::Unknown {
+            name: "system.slots.list".into(),
+            reason: Failure::new(FailureKind::Denied, Some(10), "no"),
+        });
+        assert!(Refusal::from(unknown).denied);
+    }
+
+    #[test]
+    fn a_refusal_that_is_not_denied_does_not_mark_it_even_if_its_words_say_denied() {
+        let board_words = SlotError::Board(ActionError::Refused("denied".into()));
+        assert!(!Refusal::from(board_words).denied);
+        let other = SlotError::Board(ActionError::Failed(Failure::new(
+            FailureKind::Other,
+            None,
+            "the call failed: denied",
+        )));
+        assert!(!Refusal::from(other).denied);
+        let refused = SlotError::Board(ActionError::Refused(Failure::new(
+            FailureKind::Refused,
+            Some(11),
+            "busy",
+        )));
+        assert!(!Refusal::from(refused).denied);
     }
 }

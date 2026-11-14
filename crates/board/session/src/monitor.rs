@@ -43,6 +43,7 @@ use orion::{Address, ClientError, Identity, Options, Orion};
 use tokio::sync::{oneshot, watch};
 
 use crate::backoff::Backoff;
+use crate::failure::Failure;
 use crate::lease::{self, Clock, Hold, Lease, Shared as LeaseShared};
 use crate::long::{
     Cancel, MAX_LONG_OPERATIONS, Outcome, STEP_WAIT, Step, StepError, SteppedTransfer,
@@ -96,8 +97,9 @@ pub enum SessionError {
     /// have run on the node; a caller that must know checks the node again.
     Gone(String),
     /// The call reached the node on a live session and failed there: a refusal, or an error
-    /// from the node. Retrying the same call gives the same answer.
-    Failed(String),
+    /// from the node. Retrying the same call gives the same answer. The kind of the refusal is
+    /// carried as a value (see [`Failure`]), never read from its words.
+    Failed(Failure),
 }
 
 impl fmt::Display for SessionError {
@@ -204,7 +206,7 @@ where
                 Err(text)
             }
             Err(error) => {
-                let _ = reply.send(Err(SessionError::Failed(error.to_string())));
+                let _ = reply.send(Err(SessionError::Failed(Failure::of(&error))));
                 Ok(())
             }
         }
@@ -256,7 +258,7 @@ where
                 Err(text)
             }
             Err(error) => {
-                let _ = reply.send(Err(SessionError::Failed(error.to_string())));
+                let _ = reply.send(Err(SessionError::Failed(Failure::of(&error))));
                 Ok(())
             }
         }
