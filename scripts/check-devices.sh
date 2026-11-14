@@ -820,6 +820,8 @@ SLOT_CHAIN=(
 )
 # A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe).
 SLOT_RECIPES="sd-image|slot"
+# The LZMA decompression stream count a slot family's kernel states (see the rule in slot_chain_check).
+LZMA_STREAMS=4
 
 # Textual check: this reads the fragment files, not a resolved kernel config (the script has no kernel
 # tree). The resolved-config proof is the table in docs/prs/B16.md, from a merge_config run per board.
@@ -878,6 +880,17 @@ slot_chain_check() {
         fi
       done
     done
+    # stated: a fragment that builds the LZMA decompressor in also states its stream count, as $LZMA_STREAMS.
+    # Each stream keeps a dictionary and working memory for the life of the mount, and the kernel's default is
+    # one per possible CPU up to 16, so an unstated count follows NR_CPUS. The 64 MB whole-system goal fixes it.
+    for f in ${frags[@]+"${frags[@]}"} ${bfiles[@]+"${bfiles[@]}"}; do
+      [[ -f $f ]] && grep -qE '^CONFIG_EROFS_FS_ZIP_LZMA=y$' "$f" || continue
+      val=$(grep -E '^CONFIG_EROFS_FS_ZIP_LZMA_DEFAULT_MAX_STREAMS=' "$f" | head -1)
+      if [[ $val != "CONFIG_EROFS_FS_ZIP_LZMA_DEFAULT_MAX_STREAMS=$LZMA_STREAMS" ]]; then
+        echo "check-devices: FAIL ${f#$dev/}: CONFIG_EROFS_FS_ZIP_LZMA=y, but the stream count is ${val:-not stated}; a slot family ($fam) states CONFIG_EROFS_FS_ZIP_LZMA_DEFAULT_MAX_STREAMS=$LZMA_STREAMS (each stream holds memory for the life of the mount; the kernel default follows NR_CPUS; the system's goal is 64 MB of RAM)." >&2
+        rc=1
+      fi
+    done
   done
   return $rc
 }
@@ -892,6 +905,13 @@ slot_chain_self_test() {
   slot_chain_check "$tmp/devices" >/dev/null 2>&1 && rc=1
   cp -a "$repo/devices/." "$tmp/devices/"
   sed -i '/^CONFIG_EXT4_FS=y$/d' "$tmp/devices/families/rk35xx/assets/linux.fragment"
+  slot_chain_check "$tmp/devices" >/dev/null 2>&1 && rc=1
+  # (3) the LZMA stream count removed, and (4) raised, in a fragment that builds LZMA in
+  cp -a "$repo/devices/." "$tmp/devices/"
+  sed -i '/^CONFIG_EROFS_FS_ZIP_LZMA_DEFAULT_MAX_STREAMS=/d' "$tmp/devices/boards/raze/kernel/raze.config"
+  slot_chain_check "$tmp/devices" >/dev/null 2>&1 && rc=1
+  cp -a "$repo/devices/." "$tmp/devices/"
+  sed -i 's/^CONFIG_EROFS_FS_ZIP_LZMA_DEFAULT_MAX_STREAMS=.*/CONFIG_EROFS_FS_ZIP_LZMA_DEFAULT_MAX_STREAMS=16/' "$tmp/devices/boards/raze/kernel/raze.config"
   slot_chain_check "$tmp/devices" >/dev/null 2>&1 && rc=1
   rm -rf "$tmp"
   [[ $rc -eq 0 ]] && slot_chain_check "$repo/devices" >/dev/null 2>&1 || rc=1
