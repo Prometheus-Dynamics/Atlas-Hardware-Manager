@@ -34,6 +34,12 @@ if [ -x scripts/check-devices.sh ]; then
   step "device descriptions" scripts/check-devices.sh
 fi
 
+# The config-only build of every product (PR B32, Gaia #120): each image's Buildroot configuration resolves, every
+# fragment line takes as written, nothing is compiled. A cold GAIA_STORE fetches the kernel sources (network); a warm one is offline.
+if [ -x scripts/check-config-only.sh ]; then
+  step "config-only build (every product)" scripts/check-config-only.sh
+fi
+
 # Every line of every board's kernel fragments must take (PR B25). Needs the pinned kernel trees (fetched once,
 # cached by the pin) and flex and bison. A source that cannot be fetched is a failure, here as in CI.
 if [ -x scripts/check-kernel-fragments.sh ]; then

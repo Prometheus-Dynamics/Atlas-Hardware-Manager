@@ -48,6 +48,15 @@ pub enum BundleError {
     Malformed(String),
     #[error("slot.sig does not verify against slot.json with any trusted key")]
     BadSignature,
+    /// The signing seed file, or a seed, is not usable: the message names the path and the rule,
+    /// never the seed's bytes.
+    #[error("{0}")]
+    Seed(String),
+    /// A stated key id is another key's: nothing was signed. Both ids are public.
+    #[error(
+        "the stated key id {stated} is not the key id of this seed, which is {derived}: nothing was signed"
+    )]
+    KeyIdMismatch { stated: String, derived: String },
 }
 
 impl BundleError {

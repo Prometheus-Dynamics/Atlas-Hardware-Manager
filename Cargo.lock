@@ -102,7 +102,9 @@ dependencies = [
  "serde_json",
  "sha2 0.11.1",
  "tar",
+ "tempfile",
  "thiserror",
+ "zeroize",
 ]
 
 [[package]]
@@ -274,6 +276,26 @@ dependencies = [
  "async-trait",
  "atlas-driver",
  "atlas-types",
+ "tokio",
+]
+
+[[package]]
+name = "atlas-next"
+version = "2026.1.0-dev"
+dependencies = [
+ "atlas-board-slots",
+ "atlas-bundle",
+ "atlas-jobs",
+ "atlas-release",
+ "atlas-session",
+ "atlas-sim-node",
+ "atlas-slots",
+ "atlas-trial",
+ "atlas-types",
+ "orion",
+ "serde_json",
+ "sha2 0.11.1",
+ "tempfile",
  "tokio",
 ]
 

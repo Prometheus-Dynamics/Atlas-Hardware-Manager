@@ -11,14 +11,26 @@ on:
   pull_request:
     branches:
       - next
+  # Started by hand. With no product it runs the gate, as a push does. With a product it runs ONLY the real build
+  # of that product (`build-product` below): a kernel and a Buildroot system are compiled, so it is never per push.
   workflow_dispatch:
+    inputs:
+      product:
+        description: "Build this product for real (a directory under devices/products, e.g. raze-base). Empty: run the gate."
+        required: false
+        default: ""
+      bench_key:
+        description: "A bring-up product's bench login key: one PUBLIC key line (ssh-ed25519 AAAA...). It goes into the image and shows in this run's log."
+        required: false
+        default: ""
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{ inputs.product }}
   cancel-in-progress: true
 
 jobs:
   gate:
+    if: github.event_name != 'workflow_dispatch' || inputs.product == ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -47,17 +59,83 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends flex bison gcc-aarch64-linux-gnu
       # gaia plan wants the tools a recipe names: veritysetup (slot), mkfs.erofs and the disk tools (sd-image), bwrap (a Rust component).
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cryptsetup-bin erofs-utils e2fsprogs dosfstools mtools gdisk xz-utils bubblewrap
+      # scripts/check-config-only.sh runs `gaia build --config-only` for every product: Gaia's content store (the kernel
+      # sources each family fetches, about 2.3 GiB per family) is kept here, keyed on the devices tree's source pins, so a
+      # store that was fetched once is not fetched again. Saved even when a later step fails (see the save step).
+      - uses: actions/cache/restore@v4
+        id: gaia-store-cache
+        with:
+          path: ~/.cache/atlas/gaia-store
+          key: gaia-store-${{ runner.os }}-${{ hashFiles('devices/gaia.lock', 'devices/families/*/family.toml', 'devices/boards/*/board.toml', 'devices/products/*/gaia.lock') }}
+          restore-keys: gaia-store-${{ runner.os }}-
       - run: ./scripts/gate.sh
       - uses: actions/cache/save@v4
         if: always() && steps.kernel-cache.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/atlas/kernel
           key: kernel-${{ runner.os }}-${{ hashFiles('devices/families/*/family.toml', 'devices/boards/*/board.toml') }}
+      - uses: actions/cache/save@v4
+        if: always() && steps.gaia-store-cache.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/atlas/gaia-store
+          key: gaia-store-${{ runner.os }}-${{ hashFiles('devices/gaia.lock', 'devices/families/*/family.toml', 'devices/boards/*/board.toml', 'devices/products/*/gaia.lock') }}
+
+  # The real build of ONE product, by hand only (scripts/build-product.sh): Gaia at the locked commit builds the OS,
+  # the kernel, the components and the image, and the image files are kept as the run's artifact with their sizes
+  # and SHA-256. Nothing is released, tagged or published from here.
+  build-product:
+    if: github.event_name == 'workflow_dispatch' && inputs.product != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      # A Buildroot system and a kernel need more room than a fresh runner has: the preinstalled SDKs this job
+      # never uses are removed first, and the free space is printed before and after.
+      - run: |
+          df -h / | tail -1
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h / | tail -1
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/atlas/gaia
+          key: gaia-${{ runner.os }}-${{ hashFiles('devices/gaia.lock') }}
+      # Buildroot's host needs, the kernel's, and the tools the image recipes name.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends build-essential flex bison bc cpio rsync unzip file wget libssl-dev libelf-dev cryptsetup-bin erofs-utils e2fsprogs dosfstools mtools gdisk xz-utils bubblewrap
+      # The source store the gate keeps (kernel sources per family): restored, never saved from here, so a build's
+      # outputs do not grow the gate's cache.
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/atlas/gaia-store
+          key: gaia-store-${{ runner.os }}-${{ hashFiles('devices/gaia.lock', 'devices/families/*/family.toml', 'devices/boards/*/board.toml', 'devices/products/*/gaia.lock') }}
+          restore-keys: gaia-store-${{ runner.os }}-
+      # check-devices.sh builds Gaia at the pin when the cache has none, and fetches its recipes.
+      - run: ./scripts/check-devices.sh
+      - env:
+          PRODUCT: ${{ inputs.product }}
+          BENCH_KEY: ${{ inputs.bench_key }}
+        run: |
+          [[ $PRODUCT =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "not a product name: $PRODUCT" >&2; exit 1; }
+          args=("$PRODUCT" --out "$RUNNER_TEMP/out")
+          if [[ -n $BENCH_KEY ]]; then
+            printf '%s\n' "$BENCH_KEY" > "$RUNNER_TEMP/bench-key.pub"
+            args+=(--bench-key "$RUNNER_TEMP/bench-key.pub")
+          fi
+          ./scripts/build-product.sh "${args[@]}"
+      - run: df -h / | tail -1
+        if: always()
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.product }}-${{ github.sha }}
+          path: ${{ runner.temp }}/out
+          if-no-files-found: error
+          retention-days: 14
 
   # What must build on Windows and macOS (PR G9). Each job builds every portable crate natively
   # for its own OS: lib, bins and tests, compiled and not run. The Orion-bound crates are skipped
   # and printed, with the Orion crate that binds them (scripts/orion-bound.txt).
   portable:
+    if: github.event_name != 'workflow_dispatch' || inputs.product == ''
     strategy:
       fail-fast: false
       matrix:

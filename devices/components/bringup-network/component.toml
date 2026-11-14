@@ -1,0 +1,16 @@
+# The bring-up's Ethernet network, shared by every bring-up product (B31). Replaces Buildroot's name-based eth0.network,
+# which the products' os.fragment unset (BR2_SYSTEM_DHCP is not set; see each product). Matches the link by Type=ether
+# and excludes usb0 (the USB gadget's own interface, created by usb-gadget-network). The LED link setting `ether` in
+# bringup-alive-settings selects the same set (components/bringup-alive/files/board-alive-led).
+version = 1
+name = "bringup-network"
+description = "The bring-up's Ethernet by DHCP, matched by type (Type=ether, not the name eth0), leaving usb0 to the USB gadget."
+
+[[install]]
+from = { file = "files/10-bringup-ethernet.network" }
+to = "/etc/systemd/network/10-bringup-ethernet.network"
+mode = "0644"
+
+[[services]]
+unit = "systemd-networkd.service"
+enable = true

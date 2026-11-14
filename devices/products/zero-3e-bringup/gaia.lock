@@ -28,8 +28,8 @@ commit = "5508406582f6f7120dce0c4b3059819a41788db2"
 [source."usb-gadget-network.gaia"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-ref = "7177d72e27fdcada74a8ade7b282e343542dc9f6"
-commit = "7177d72e27fdcada74a8ade7b282e343542dc9f6"
+ref = "c6a3d102467f11a86ecc7fb53965cbaca9a09725"
+commit = "c6a3d102467f11a86ecc7fb53965cbaca9a09725"
 
 [source."zero-3e-bringup.buildroot"]
 kind = "git"

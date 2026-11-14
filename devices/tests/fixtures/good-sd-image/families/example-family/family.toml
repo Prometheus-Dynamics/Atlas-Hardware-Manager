@@ -7,3 +7,4 @@ os = "linux"
 
 [kernel]
 defconfig = "defconfig"
+fragments = ["assets/linux.fragment"]

@@ -12,14 +12,12 @@ BR2_PACKAGE_SYSTEMD=y
 # 4 KiB pages: the page size dev measured on a Raze (also in the kernel fragment).
 BR2_ARM64_PAGE_SIZE_4K=y
 # The Pi firmware (1.20260915, the family's pin): the boot ROM files, start4.elf and the rest, so the Pi boots.
-# Its overlay set is what config.txt's dtoverlay= loads from. The Raze's device tree is one generated
-# overlay (Lemnos); these two are the product's own choices (raze-device.txt):
-#   bcm2712d0          the firmware applies it itself on D0 silicon (without it the kernel faults in pinctrl)
-#   vc4-kms-v3d-pi5    the GPU (HeliOS wants it; dma-buf frame streams allocate from it)
-#   ramoops-pi5        crash logs for the support bundle
+# The overlays the boot loads are the config.txt lines in boards/raze/boot/raze-device.txt (dtoverlay=vc4-kms-v3d-pi5
+# and dtoverlay=ramoops-pi5); the kernel's overlays are installed by INSTALL_DTB_OVERLAYS below. There is no Buildroot
+# option that names the overlay set: BR2_PACKAGE_RPI_FIRMWARE_DTB_OVERLAYS was refused at config-only by Gaia (PR B32:
+# "no such option, or its dependencies are not met" at Buildroot 2026.08), so it is not written.
 BR2_PACKAGE_RPI_FIRMWARE=y
 BR2_PACKAGE_RPI_FIRMWARE_INSTALL_DTB_OVERLAYS=y
-BR2_PACKAGE_RPI_FIRMWARE_DTB_OVERLAYS="bcm2712d0 vc4-kms-v3d-pi5 ramoops-pi5"
 
 # -- The console and the way in -----------------------------------------------------------------------
 # A shell for Orion's logins (Orion's comm core runs a user's own shell after it logs them in, so the base

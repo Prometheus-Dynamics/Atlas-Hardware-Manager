@@ -2,9 +2,10 @@
 # (orion comm: root with group orion; orion node: user orion). Board-neutral. Built from Orion at
 # 455a956e13e62c97081d66e0e8f3bf2aced1eac8 (the rev the workspace pins; Cargo.lock is committed there).
 #
-# NOT YET BUILDABLE. Its cc and env need Gaia's pinned build root with zig (Orion's size-gate
-# wrappers, scripts/zigcc, and the zig cache); the public rust image has no zig. The next Gaia PR
-# pins that root. Until then this component plans and does not build.
+# Built by Gaia at its pin (3f6e561) for aarch64: bin/orion 5,072,904 bytes, static and stripped (Orion
+# 455a956e, profile service; the Orion's second build was byte-identical). Its cc and env need zig: the
+# [sources.tools] below is Gaia's pinned zig 0.15.2, which Gaia puts on PATH after the toolchain. x86_64
+# build hosts only (the zig download is x86_64). The Orion's size-gate wrappers (scripts/zigcc) are its own.
 #
 # The units and user are Orion's packaging/systemd files, installed at the paths its packaging README
 # gives, unrewritten; the settings are the board's own (files/orion.conf), and the drop-ins in files/ point
@@ -20,6 +21,10 @@ ref = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
 platform = "host"
+
+# The zig 0.15.2 that cc (scripts/zigcc) runs: Gaia's build tools source, read-only at /tools on the build's PATH.
+[sources.tools]
+download = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"
 
 [build]
 builder = "rust"
