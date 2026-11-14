@@ -357,6 +357,316 @@ bringup_rule_self_test() {
   return $rc
 }
 
+# ---- the boot firmware, the slot's erofs compression, and the unnamed-file note (PR B32) -----------------
+
+# Prints the boot firmware a board states: its own [boot] firmware, else its family's (Gaia reads it for the kernel
+# contract). Prints nothing when neither states one.
+boot_firmware() {  # <board.toml>
+  local file=$1 found fam
+  found=$(awk '
+    /^[[:space:]]*\[/ { sec = $0; gsub(/[[:space:]]/, "", sec); next }
+    sec == "[boot]" && /^[[:space:]]*firmware[[:space:]]*=/ {
+      v = $0; sub(/^[^=]*=[[:space:]]*"/, "", v); sub(/".*$/, "", v); print v; exit
+    }
+  ' "$file")
+  if [[ -z $found ]]; then
+    fam=$({ grep -ho '^extends = "[^"]*"' "$file" || true; } | sed 's/^extends = "//; s/"$//' | head -1)
+    if [[ -n $fam && -f $(dirname "$file")/$fam ]]; then
+      found=$(boot_firmware "$(realpath -m "$(dirname "$file")/$fam")")
+    fi
+  fi
+  echo "$found"
+}
+
+# Prints the `record` of the system-slots device in a Lemnos board file: the config's record key, or "tryboot" when the
+# key is absent (drivers/system-slots reads it with that default). Prints nothing when the file has no system-slots device.
+lemnos_slot_record() {  # <lemnos board file>
+  awk '
+    function flush(   rec) {
+      if (!done && drv == "system-slots") {
+        rec = "tryboot"
+        if (match(cfg, /[{ ,]record[[:space:]]*=[[:space:]]*"[^"]*"/)) {
+          rec = substr(cfg, RSTART, RLENGTH)
+          sub(/^[{ ,]record[[:space:]]*=[[:space:]]*"/, "", rec); sub(/"$/, "", rec)
+        }
+        print rec; done = 1
+      }
+      drv = ""; cfg = ""
+    }
+    /^\[/ { flush(); next }
+    /^[[:space:]]*driver[[:space:]]*=/ { drv = $0; sub(/^[^=]*=[[:space:]]*"/, "", drv); sub(/".*$/, "", drv) }
+    /^[[:space:]]*config[[:space:]]*=/ { cfg = $0 }
+    END { flush() }
+  ' "$1"
+}
+
+# Gaia's boot firmware name -> the Lemnos system-slots record that boots it. The mapping is written here, once: a
+# firmware with no line is refused by firmware_rule, so a new one is added on purpose. (Lemnos's other records,
+# "uboot" and "file", have no Gaia firmware name yet.)
+firmware_record() {  # <gaia firmware name>
+  case $1 in
+    rpi-tryboot) echo tryboot ;;
+    *) ;;
+  esac
+}
+
+# The boot firmware rule (PR B32). A board that states its boot firmware (Gaia's [boot] firmware, own or from its family)
+# and names a Lemnos board file must agree with that file: the system-slots `record` is how the boot loader is told which
+# slot to start, so it must be the record that firmware boots by (firmware_record). Prints one line per problem and
+# returns 1 when any. A board with a firmware and no Lemnos file is not checked here (nothing to agree with).
+firmware_rule() {  # <devices dir>
+  local root=$1 b bdir bname fw want rec lf out="" rc=0
+  for b in "$root"/boards/*/board.toml; do
+    [[ -f $b ]] || continue
+    bdir=$(dirname "$b"); bname=$(basename "$bdir")
+    fw=$(boot_firmware "$b")
+    [[ -n $fw ]] || continue
+    lf=$(lemnos_description "$b")
+    [[ -n $lf ]] || continue
+    if [[ ! -f $bdir/$lf ]]; then
+      out+="board $bname: [boot] firmware \"$fw\" and its Lemnos board file $lf, which is not beside the board"$'\n'; rc=1; continue
+    fi
+    want=$(firmware_record "$fw")
+    if [[ -z $want ]]; then
+      out+="board $bname: [boot] firmware \"$fw\" has no Lemnos record in firmware_record (scripts/check-devices.sh): add its line there"$'\n'; rc=1; continue
+    fi
+    rec=$(lemnos_slot_record "$bdir/$lf")
+    if [[ -z $rec ]]; then
+      out+="board $bname: its Lemnos board file $lf has no system-slots device to read a record from"$'\n'; rc=1; continue
+    fi
+    if [[ $rec != "$want" ]]; then
+      out+="board $bname: [boot] firmware \"$fw\" boots by record \"$want\", but its Lemnos board file $lf says record \"$rec\""$'\n'; rc=1
+    fi
+  done
+  printf '%s' "$out"
+  return $rc
+}
+
+# Proves the boot firmware rule passes the real tree, refuses (on a scratch copy) a Lemnos record that disagrees with the
+# board's firmware, and refuses a firmware with no record mapping.
+firmware_rule_self_test() {
+  local tmp rc=0 out
+  tmp=$(mktemp -d)
+  cp -a "$repo/devices" "$tmp/devices"
+  if ! out=$(firmware_rule "$tmp/devices"); then
+    echo "check-devices: self-test: the real tree no longer passes the boot firmware rule: $out" >&2; rc=1
+  fi
+  sed -i 's/record = "tryboot", boot_args/record = "uboot", boot_args/' "$tmp/devices/boards/raze/lemnos-board.toml"
+  if out=$(firmware_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a Raze whose Lemnos record is uboot, against rpi-tryboot, was not refused" >&2; rc=1
+  elif [[ $out != *'board raze: [boot] firmware "rpi-tryboot" boots by record "tryboot", but its Lemnos board file lemnos-board.toml says record "uboot"'* ]]; then
+    echo "check-devices: self-test: the record refusal does not name the board, firmware and both records: $out" >&2; rc=1
+  fi
+  cp -a "$repo/devices/boards/raze/lemnos-board.toml" "$tmp/devices/boards/raze/lemnos-board.toml"
+  sed -i 's/^firmware = "rpi-tryboot"$/firmware = "rpi-nope"/' "$tmp/devices/boards/raze/board.toml"
+  if out=$(firmware_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a firmware with no record mapping was not refused" >&2; rc=1
+  elif [[ $out != *'board raze: [boot] firmware "rpi-nope" has no Lemnos record'* ]]; then
+    echo "check-devices: self-test: the mapping refusal does not name the firmware: $out" >&2; rc=1
+  fi
+  rm -rf "$tmp"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the boot firmware rule passes the real tree and refuses a Lemnos record that disagrees with the firmware, and a firmware with no record mapping"
+  return $rc
+}
+
+# Prints the kernel fragments a family or board names, one path per line, relative to the directory of that file.
+fragments_of() {  # <family.toml or board.toml>
+  local file=$1 f
+  while IFS= read -r f; do
+    printf '%s\n' "$(dirname "$file")/$f"
+  done < <(grep -E '^fragments = ' "$file" 2>/dev/null | grep -ho '"[^"]*\.\(fragment\|config\)"' | tr -d '"')
+}
+
+# Succeeds when one of the files sets CONFIG_<sym>=y.
+has_y() {  # <symbol> <file>...
+  local sym=$1 f
+  shift
+  for f in "$@"; do
+    [[ -f $f ]] && grep -qE "^CONFIG_${sym}=y\$" "$f" && return 0
+  done
+  return 1
+}
+
+# The kernel lines an erofs image needs for its compression (PR B32, from the INPUTS table). Cumulative: each compressor's
+# option is under EROFS_FS_ZIP in the kernel's Kconfig, so zstd needs all three lines. Prints them, one per line; returns 1
+# for a value with no line set. Not checked against a kernel tree here: the table is the rule.
+erofs_lines() {  # <compression>
+  case $1 in
+    none) printf '%s\n' EROFS_FS ;;
+    lz4|lz4hc) printf '%s\n' EROFS_FS EROFS_FS_ZIP ;;
+    lzma) printf '%s\n' EROFS_FS EROFS_FS_ZIP EROFS_FS_ZIP_LZMA ;;
+    deflate) printf '%s\n' EROFS_FS EROFS_FS_ZIP EROFS_FS_ZIP_DEFLATE ;;
+    zstd) printf '%s\n' EROFS_FS EROFS_FS_ZIP EROFS_FS_ZIP_ZSTD ;;
+    *) return 1 ;;
+  esac
+}
+
+# Prints "IMAGE COMPRESSION" for each erofs image in a plan (`gaia plan --json`): the constant `compression` of the node
+# labelled <image>::erofs. A compression that is not a constant prints "-".
+erofs_images() {  # <plan.json>
+  python3 -I -c '
+import json, sys
+graph = json.load(open(sys.argv[1]))["graph"]["graph"]
+for node in graph["nodes"]:
+    label = node.get("label", "")
+    if label.endswith("::erofs"):
+        const = node.get("consts", {}).get("compression", {})
+        value = const.get("value", "-") if const.get("type") == "str" else "-"
+        print(label[: -len("::erofs")], value)
+' "$1"
+}
+
+# Prints the board file a product names, as a path, or nothing.
+product_board() {  # <product.toml>
+  local bpath
+  bpath=$(grep -ho '"[^"]*board\.toml"' "$1" | tr -d '"' | head -1)
+  if [[ -n $bpath ]]; then realpath -m "$(dirname "$1")/$bpath"; fi
+  return 0
+}
+
+# Prints the name of the family the product's board extends, or nothing.
+product_family() {  # <product.toml>
+  local b fam
+  b=$(product_board "$1")
+  [[ -n $b && -f $b ]] || return 0
+  fam=$(grep -ho '"[^"]*family\.toml"' "$b" | tr -d '"' | head -1)
+  [[ -n $fam ]] || return 0
+  basename "$(dirname "$(realpath -m "$(dirname "$b")/$fam")")"
+}
+
+# The slot root rule (PR B32; replaces the assumed zstd). Each product's own plan says what its erofs images compress with
+# (erofs_images), and the kernel it builds (its family's fragments and its board's) must set the lines for that value
+# (erofs_lines). A family that no product names is held to zstd, and the output says so. Prints one NOTE or FAIL line per
+# item; returns 1 when any FAIL.
+erofs_rule() {  # <devices dir> <plans dir>: plans hold <product dir name>.json
+  local dev=$1 plans=$2 p pname pj b fam img comp lines sym f d named=" " out="" rc=0
+  local frags=()
+  while IFS= read -r p; do
+    pname=$(basename "$(dirname "$p")")
+    fam=$(product_family "$p")
+    named+="$fam "
+    if [[ -z $fam ]]; then
+      out+="FAIL products/$pname: its board names no family, so its kernel cannot be checked"$'\n'; rc=1; continue
+    fi
+    pj=$plans/$pname.json
+    [[ -f $pj ]] || continue
+    b=$(product_board "$p")
+    frags=()
+    while IFS= read -r f; do frags+=("$f"); done < <(fragments_of "$dev/families/$fam/family.toml"; fragments_of "$b")
+    while read -r img comp; do
+      [[ -n $img ]] || continue
+      if ! lines=$(erofs_lines "$comp"); then
+        out+="FAIL products/$pname: image $img's erofs compression is '$comp' in its plan: no kernel lines are known for that"$'\n'; rc=1; continue
+      fi
+      out+="NOTE products/$pname: image $img compresses its slot with $comp (its plan): the kernel needs $(echo $lines)"$'\n'
+      while IFS= read -r sym; do
+        if ! has_y "$sym" ${frags[@]+"${frags[@]}"}; then
+          out+="FAIL products/$pname: image $img compresses with $comp, so CONFIG_$sym must be =y; neither families/$fam nor the product's board builds it in"$'\n'; rc=1
+        fi
+      done <<<"$lines"
+    done < <(erofs_images "$pj")
+  done < <(find "$dev/products" -mindepth 2 -maxdepth 2 -name product.toml 2>/dev/null | sort)
+  for d in "$dev"/families/*/; do
+    [[ -d $d ]] || continue
+    fam=$(basename "$d")
+    [[ $named == *" $fam "* ]] && continue
+    frags=()
+    while IFS= read -r f; do frags+=("$f"); done < <(fragments_of "$d/family.toml")
+    out+="NOTE families/$fam has no product yet: its slot root is held to zstd (assumed; no plan states it)"$'\n'
+    for sym in EROFS_FS EROFS_FS_ZIP EROFS_FS_ZIP_ZSTD; do
+      if ! has_y "$sym" ${frags[@]+"${frags[@]}"}; then
+        out+="FAIL families/$fam: CONFIG_$sym is not =y in its kernel fragments, and a family with no product is held to zstd"$'\n'; rc=1
+      fi
+    done
+  done
+  printf '%s' "$out"
+  return $rc
+}
+
+# Proves the erofs rule reads the plan's value: on a scratch copy, the Raze's family builds EROFS_FS_ZIP and no ZSTD line
+# (every EROFS_FS_ZIP line is taken out first). The product with compression = "lz4" passes; the same kernel with the
+# default (zstd, from the recipe) is refused by name. Then a family with no product is held to zstd (a refusal).
+# Uses the gaia binary and the tool arguments the run set up.
+erofs_rule_self_test() {
+  local tmp rc=0 pa pb pc out prod lockcopy
+  tmp=$(mktemp -d); pa=$(mktemp -d); pb=$(mktemp -d); pc=$(mktemp -d)
+  cp -a "$repo/devices" "$tmp/devices"
+  # Every EROFS_FS_ZIP line of the scratch copy goes, whatever the tree holds now (B34 adds some to the families); the
+  # test then builds the one kernel it needs: the Raze's family builds EROFS_FS_ZIP and not EROFS_FS_ZIP_ZSTD.
+  grep -rl -E '^CONFIG_EROFS_FS_ZIP' "$tmp/devices/families" "$tmp/devices/boards" 2>/dev/null \
+    | xargs -r sed -i -E '/^CONFIG_EROFS_FS_ZIP(_[A-Z]+)?=y$/d'
+  echo "CONFIG_EROFS_FS_ZIP=y" >> "$tmp/devices/families/bcm2712/assets/linux.fragment"
+  prod=$tmp/devices/products/raze-base/product.toml
+  lockcopy=$tmp/devices/products/raze-base/gaia.lock
+  sed -i 's/^device = "\/data\/slots\/root.img"$/&\ncompression = "lz4"/' "$prod"
+  if ! "$gaia" plan "$prod" --lock "$lockcopy" --recipes "$recipes" "${tool_args[@]}" --json >"$pa/raze-base.json" 2>"$errs"; then
+    cat "$errs" >&2; echo "check-devices: self-test: the lz4 scratch product did not plan" >&2; rc=1
+  fi
+  sed -i '/^compression = "lz4"$/d' "$prod"
+  if ! "$gaia" plan "$prod" --lock "$lockcopy" --recipes "$recipes" "${tool_args[@]}" --json >"$pb/raze-base.json" 2>"$errs"; then
+    cat "$errs" >&2; echo "check-devices: self-test: the default scratch product did not plan" >&2; rc=1
+  fi
+  if out=$(erofs_rule "$tmp/devices" "$pa") && [[ $out == *"image raze-base compresses its slot with lz4"* ]]; then
+    :
+  else
+    echo "check-devices: self-test: the lz4 product was refused, or its plan's lz4 was not read: $out" >&2; rc=1
+  fi
+  if out=$(erofs_rule "$tmp/devices" "$pb"); then
+    echo "check-devices: self-test: the zstd default was not refused on a kernel with no EROFS_FS_ZIP_ZSTD" >&2; rc=1
+  elif [[ $out != *"image raze-base compresses with zstd, so CONFIG_EROFS_FS_ZIP_ZSTD must be =y"* ]]; then
+    echo "check-devices: self-test: the zstd refusal does not name the plan's value and the symbol: $out" >&2; rc=1
+  fi
+  rm -rf "$tmp/devices/products/raze-base"
+  if out=$(erofs_rule "$tmp/devices" "$pc") || [[ $out != *"FAIL families/bcm2712: CONFIG_EROFS_FS_ZIP_ZSTD is not =y"* ]]; then
+    echo "check-devices: self-test: a family with no product was not held to zstd by name: $out" >&2; rc=1
+  fi
+  rm -rf "$tmp" "$pa" "$pb" "$pc"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the erofs rule reads each product's plan: lz4 passes where the default zstd is refused on the same kernel, and a family with no product is held to zstd"
+  return $rc
+}
+
+# Prints each description file (family.toml, board.toml, component.toml) under <devices dir> that no product or board
+# names, relative to that dir. A product or board names a file by a quoted path ending .toml. Only description files count:
+# a board's other .toml files (lemnos-board.toml, lemnos-board.pending.toml) are not descriptions. (PR B32: the note used to
+# list every .toml, so the three boards that two products each name were reported as in no product.)
+unnamed_descriptions() {  # <devices dir>
+  local dev=$1 used f d ref
+  used=$(mktemp)
+  while IFS= read -r f; do
+    d=$(dirname "$dev/$f")
+    { grep -ho '"[^"]*\.toml"' "$dev/$f" || true; } | tr -d '"' | while IFS= read -r ref; do
+      realpath -m "$d/$ref"
+    done
+  done < <(cd "$dev" && find boards products -mindepth 2 -maxdepth 2 \( -name board.toml -o -name product.toml \) | sort) >>"$used"
+  while IFS= read -r f; do
+    grep -qxF "$(realpath -m "$dev/$f")" "$used" || printf '%s\n' "$f"
+  done < <(cd "$dev" && find families boards components -mindepth 2 -maxdepth 2 \( -name family.toml -o -name board.toml -o -name component.toml \) | sort)
+  rm -f "$used"
+}
+
+# Proves the unnamed note: no board that a product names is listed (the bug), and a board that nothing names is.
+unnamed_self_test() {
+  local tmp rc=0 out p b rel
+  out=$(unnamed_descriptions "$repo/devices")
+  for p in "$repo"/devices/products/*/product.toml; do
+    b=$(product_board "$p"); rel=${b#"$repo/devices/"}
+    if grep -qxF "$rel" <<<"$out"; then
+      echo "check-devices: self-test: $rel is named by a product but listed as in no product: $out" >&2; rc=1
+    fi
+  done
+  tmp=$(mktemp -d)
+  cp -a "$repo/devices" "$tmp/devices"
+  mkdir -p "$tmp/devices/boards/zz-unnamed"
+  printf 'version = 1\n' > "$tmp/devices/boards/zz-unnamed/board.toml"
+  out=$(unnamed_descriptions "$tmp/devices")
+  if [[ $out != *"boards/zz-unnamed/board.toml"* ]]; then
+    echo "check-devices: self-test: a board that nothing names is not listed: $out" >&2; rc=1
+  fi
+  rm -rf "$tmp"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the in-no-product note skips a board's other .toml files and lists a board nothing names"
+  return $rc
+}
+
 fixtures=$repo/devices/tests/fixtures
 
 if [[ $mode == self-test ]]; then
@@ -368,6 +678,8 @@ if [[ $mode == self-test ]]; then
   lemnos_rule_self_test || status=1
   lemnos_board_rule_self_test || status=1
   bringup_rule_self_test || status=1
+  firmware_rule_self_test || status=1
+  unnamed_self_test || status=1
   echo "== broken fixture: must fail"
   out=$(mktemp)
   rc=0
@@ -623,32 +935,28 @@ nc=$(count components component.toml); np=$(count products product.toml)
 echo "check-devices: checking $nf families, $nb boards, $nc components, $np products under $root with $checks"
 
 # Gaia reads a file only through a product or a board's extends, so a family, board or
-# component that nothing names would never be checked. Every one must be named.
-used=$(mktemp)
+# component that nothing names would never be checked. Every one must be named (unnamed_descriptions).
 errs=$(mktemp)
 outs=$(mktemp)
-for f in $(find boards products -mindepth 2 -maxdepth 2 \( -name board.toml -o -name product.toml \) 2>/dev/null | sort); do
-  d=$(dirname "$f")
-  { grep -ho '"[^"]*\.toml"' "$f" || true; } | tr -d '"' | while IFS= read -r ref; do
-    realpath -m "$d/$ref"
-  done
-done >> "$used"
+unnamed=$(unnamed_descriptions "$root")
 unbuilt=""
-for f in $(find families boards components -mindepth 2 -maxdepth 2 -name '*.toml' 2>/dev/null | sort); do
-  if ! grep -qxF "$(realpath -m "$f")" "$used"; then
-    # gaia validate reads every file on its own, so a board no product names
-    # yet (a record of a board whose sources aren't chosen) is still checked.
-    # Without validate, gaia reads a file only through a product.
-    if [ "$verb" = validate ]; then
-      unbuilt="$unbuilt ${f%/*.toml}"
-    else
-      bad "$f: no product or board names it, so gaia never reads it"
-    fi
+if [ -n "$unnamed" ]; then
+  if [ "$verb" = validate ]; then
+    while IFS= read -r f; do unbuilt+=" ${f%/*}"; done <<<"$unnamed"
+  else
+    while IFS= read -r f; do bad "$f: no product or board names it, so gaia never reads it"; done <<<"$unnamed"
   fi
-done
-
+fi
 # The slot root chain is enforced on every run (see slot_chain_check above).
 slot_chain_check "$root" || fail=1
+# The boot firmware rule (PR B32): a board's Gaia [boot] firmware agrees with its Lemnos board file's record.
+firmware_msg=$(firmware_rule "$root") || true
+while IFS= read -r line; do
+  case $line in
+    "") ;;
+    *) bad "$line" ;;
+  esac
+done <<<"$firmware_msg"
 # The bring-up rule (PR B31): every bring-up product carries the watchdog and LED signs (tree-wide).
 bringup_msg=$(bringup_rule "$root") || true
 while IFS= read -r line; do
@@ -712,9 +1020,10 @@ done < <(grep -rnE '^[[:space:]]*to[[:space:]]*=[[:space:]]*"(/data/|/var/lib/or
 # then it is a FAILURE: the committed lock is left as it was.
 offline_tool=$(command -v false)
 locks=$(mktemp -d)
+plans=$(mktemp -d)
 bench_dir=""
 lock_tries="1 2 3"
-trap 'rm -rf "$locks" "$used" "$errs" "$outs" ${stand_in_dir:+"$stand_in_dir"} ${bench_dir:+"$bench_dir"}' EXIT
+trap 'rm -rf "$locks" "$plans" "$errs" "$outs" ${stand_in_dir:+"$stand_in_dir"} ${bench_dir:+"$bench_dir"}' EXIT
 
 # Writes the lock $2 for product $1 (the network for what it lacks). Retries a host that is down or
 # limiting requests; any other error ends it at once. Returns 0 when the lock was written.
@@ -803,13 +1112,25 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
   if grep -rqs 'input = "bench-key"' "$pdir"; then
     plan_args=(--input "bench-key=$(bench_key_pub)")
   fi
-  if "$gaia" plan "$product" --lock "$committed" --recipes "$recipes" "${tool_args[@]}" ${plan_args[@]+"${plan_args[@]}"} >"$outs" 2>&1; then
-    echo "check-devices: ok $product (gaia plan)"
+  pjson=$plans/$(basename "$pdir").json
+  if "$gaia" plan "$product" --lock "$committed" --recipes "$recipes" "${tool_args[@]}" ${plan_args[@]+"${plan_args[@]}"} --json >"$pjson" 2>"$outs"; then
+    echo "check-devices: ok $product: planned, not built (gaia plan; this repo holds no build record)"
   else
+    rm -f "$pjson"
     bad "$product: gaia plan failed:"
     sed 's/^/  /' "$outs" >&2
   fi
 done
+
+# The slot root rule (PR B32): each product's erofs compression, from its own plan, against the kernel it builds.
+erofs_msg=$(erofs_rule "$root" "$plans") || true
+while IFS= read -r line; do
+  case $line in
+    NOTE\ *) echo "check-devices: $line" ;;
+    FAIL\ *) bad "${line#FAIL }" ;;
+    "") ;;
+  esac
+done <<<"$erofs_msg"
 
 if [[ $fail -ne 0 ]]; then
   echo "check-devices: FAILED" >&2
@@ -837,6 +1158,9 @@ if [[ $root_given -eq 0 ]]; then
   lemnos_board_rule_self_test || die "self-check: the Lemnos board file rule no longer refuses a lemnosd product without a board file"
   slot_chain_self_test || die "self-check: the slot root chain check no longer refuses a module or a missing =y"
   bringup_rule_self_test || die "self-check: the bring-up rule no longer refuses a bring-up product without its signs"
+  firmware_rule_self_test || die "self-check: the boot firmware rule no longer refuses a Lemnos record that disagrees with its firmware"
+  unnamed_self_test || die "self-check: the in-no-product note lists a product's board, or misses a board nothing names"
+  erofs_rule_self_test || die "self-check: the erofs rule no longer reads each product's plan"
   # The version gate: a binary that prints another commit, or none, is refused, and the refusal names the pin.
   fake=$(mktemp -d)
   vout=$(mktemp)

@@ -15,7 +15,7 @@ Connect the board's USB-C (the OTG port) to a PC with a data cable (not a power-
    (the heartbeat). If the heartbeat never starts: the kernel did not start (before the kernel there is no sign).
 2. **A new network interface on the PC.** It is a **CDC NCM** device: on Linux the kernel binds it with the
    `cdc_ncm` driver, and `ip link` shows a new `usb0`/`enx…` interface. `lsusb` shows vendor `1d6b`, product `0103`
-   (Gaia's bring-up USB network; `0104` is the managed gadget, not this one: components/usb-gadget-network at 7177d72 presents 1d6b:0103). If it does not appear: the controller is not up (check the cable is a data cable and that
+   (Gaia's bring-up USB network; `0104` is the managed gadget, not this one: components/usb-gadget-network at 3f6e561 presents 1d6b:0103). If it does not appear: the controller is not up (check the cable is a data cable and that
    it is on the OTG port), or the USB network unit failed on the board (no way to see that from the PC).
    Windows and macOS do not bind CDC NCM natively; a missing interface there is not a board fault (not checked).
 3. **The PC's address on that interface is `62:3a:62:a8:c9:a6`.** That is the host address derived from the board's
