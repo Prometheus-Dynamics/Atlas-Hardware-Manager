@@ -509,7 +509,7 @@ async fn start_boot_only(agent: Arc<Agent>, request: Request<Incoming>) -> Reply
         let _ = std::fs::remove_dir_all(&set);
         return error(StatusCode::CONFLICT, problem);
     }
-    let files = match BootFiles::open(&set) {
+    let files = match BootFiles::open_case_folding(&set) {
         Ok(files) => files,
         Err(problem) => {
             let _ = std::fs::remove_dir_all(&set);

@@ -12,6 +12,8 @@ pub enum UsbBootError {
     Io { path: PathBuf, message: String },
     #[error("bootfiles.bin is damaged: {0}")]
     BadArchive(String),
+    #[error("the Pi asked for `{name}`, which matches more than one file in {dir} ignoring case")]
+    AmbiguousFile { name: String, dir: PathBuf },
     #[error("no Pi in USB boot mode appeared within {seconds} s")]
     Timeout { seconds: u64 },
     #[error("the Pi disconnected during USB boot")]

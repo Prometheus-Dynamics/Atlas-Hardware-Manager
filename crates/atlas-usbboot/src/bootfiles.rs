@@ -18,6 +18,9 @@ pub struct BootFiles {
     archive: Option<Vec<u8>>,
     /// Lowercase entry name to (offset, length) in `archive`.
     entries: HashMap<String, (usize, usize)>,
+    /// Whether a loose file the exact name misses may match ignoring ASCII
+    /// case. Off for `open`; only boot-only jobs turn it on.
+    fold_case: bool,
 }
 
 /// The EEPROM flashing tool's own name. EEPROM recovery folders may ship it
@@ -46,6 +49,7 @@ impl BootFiles {
             dir,
             archive,
             entries,
+            fold_case: false,
         };
         let has_bootcode = [Chip::Bcm2837, Chip::Bcm2711, Chip::Bcm2712]
             .iter()
@@ -56,6 +60,16 @@ impl BootFiles {
         if !has_bootcode {
             return Err(UsbBootError::BootFilesMissing(files.dir));
         }
+        Ok(files)
+    }
+
+    /// Like `open`, but a boot-only job's file request may match a loose
+    /// file ignoring ASCII case when the exact name is missing (the
+    /// firmware asks in its own case). The bytes served are that file's;
+    /// an ambiguous request is refused. The flash path never uses this.
+    pub fn open_case_folding(dir: impl Into<PathBuf>) -> Result<Self, UsbBootError> {
+        let mut files = Self::open(dir)?;
+        files.fold_case = true;
         Ok(files)
     }
 
@@ -81,6 +95,66 @@ impl BootFiles {
                 .any(|path| path.is_file())
     }
 
+    /// The loose file for `name` under `root`: the exact path if it is a
+    /// file, else (with case folding on) the match segment by segment.
+    /// Every folded step picks a single directory entry's name, so the
+    /// result stays under `root`.
+    fn find_loose(&self, root: &Path, name: &str) -> Result<Option<PathBuf>, UsbBootError> {
+        let exact = root.join(name);
+        if exact.is_file() {
+            return Ok(Some(exact));
+        }
+        if !self.fold_case {
+            return Ok(None);
+        }
+        let segments: Vec<&str> = name.split('/').collect();
+        if segments
+            .iter()
+            .any(|segment| segment.is_empty() || *segment == ".")
+        {
+            return Ok(None);
+        }
+        let mut current = root.to_path_buf();
+        for (index, segment) in segments.iter().enumerate() {
+            let last = index + 1 == segments.len();
+            let kind_matches = |path: &Path| if last { path.is_file() } else { path.is_dir() };
+            let exact = current.join(segment);
+            if kind_matches(&exact) {
+                current = exact;
+                continue;
+            }
+            let Ok(entries) = std::fs::read_dir(&current) else {
+                return Ok(None);
+            };
+            let mut matches = Vec::new();
+            for entry in entries {
+                let entry = entry.map_err(|error| UsbBootError::Io {
+                    path: current.clone(),
+                    message: error.to_string(),
+                })?;
+                let path = entry.path();
+                let folded = entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|found| found.eq_ignore_ascii_case(segment));
+                if folded && kind_matches(&path) {
+                    matches.push(path);
+                }
+            }
+            match matches.len() {
+                0 => return Ok(None),
+                1 => current = matches.swap_remove(0),
+                _ => {
+                    return Err(UsbBootError::AmbiguousFile {
+                        name: name.into(),
+                        dir: current,
+                    });
+                }
+            }
+        }
+        Ok(Some(current))
+    }
+
     fn archive_entry(&self, chip: Chip, name: &str) -> Option<&[u8]> {
         let key = format!("{}/{}", chip.folder(), name).to_ascii_lowercase();
         let (offset, length) = *self.entries.get(&key)?;
@@ -94,24 +168,25 @@ impl BootFiles {
         if name.is_empty() || name.contains("..") || name.contains('\\') || name.contains(':') {
             return Ok(None);
         }
-        let [chip_override, unpacked, top_level] = self.loose_candidates(chip, name);
+        let chip_root = self.dir.join(chip.folder());
+        let unpacked_root = self.dir.join("bootfiles").join(chip.folder());
         let read = |path: &Path| {
             std::fs::read(path).map_err(|error| UsbBootError::Io {
                 path: path.to_path_buf(),
                 message: error.to_string(),
             })
         };
-        if chip_override.is_file() {
-            return read(&chip_override).map(Some);
+        if let Some(path) = self.find_loose(&chip_root, name)? {
+            return read(&path).map(Some);
         }
-        if unpacked.is_file() {
-            return read(&unpacked).map(Some);
+        if let Some(path) = self.find_loose(&unpacked_root, name)? {
+            return read(&path).map(Some);
         }
         if let Some(data) = self.archive_entry(chip, name) {
             return Ok(Some(data.to_vec()));
         }
-        if top_level.is_file() {
-            return read(&top_level).map(Some);
+        if let Some(path) = self.find_loose(&self.dir, name)? {
+            return read(&path).map(Some);
         }
         Ok(None)
     }
@@ -317,6 +392,105 @@ pub(crate) mod tests {
 
         assert_eq!(files.read(Chip::Bcm2711, "../secret").unwrap(), None);
         assert_eq!(files.read(Chip::Bcm2711, "a\\b").unwrap(), None);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// A boot-only set: bootcode5 at the top, loose files in odd case.
+    fn cased_dir(label: &str) -> PathBuf {
+        let dir = temp_dir(label);
+        std::fs::create_dir_all(dir.join("2712")).unwrap();
+        std::fs::write(dir.join("2712/bootcode5.bin"), b"cm5-stage2").unwrap();
+        std::fs::create_dir_all(dir.join("overlays")).unwrap();
+        std::fs::write(dir.join("Kernel8.img"), b"kernel").unwrap();
+        std::fs::write(dir.join("overlays/ramoops-pi5.dtbo"), b"ramoops").unwrap();
+        dir
+    }
+
+    #[test]
+    fn folding_serves_a_case_different_request_from_the_real_name() {
+        let dir = cased_dir("folding-hit");
+        let files = BootFiles::open_case_folding(&dir).unwrap();
+
+        assert_eq!(
+            files.read(Chip::Bcm2712, "kernel8.img").unwrap().unwrap(),
+            b"kernel"
+        );
+        assert_eq!(
+            files
+                .read(Chip::Bcm2712, "overlays/RAMOOPS-PI5.dtbo")
+                .unwrap()
+                .unwrap(),
+            b"ramoops"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn plain_open_does_not_fold_case() {
+        let dir = cased_dir("folding-off");
+        let files = BootFiles::open(&dir).unwrap();
+
+        assert_eq!(files.read(Chip::Bcm2712, "kernel8.img").unwrap(), None);
+        assert_eq!(
+            files
+                .read(Chip::Bcm2712, "overlays/RAMOOPS-PI5.dtbo")
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            files.read(Chip::Bcm2712, "Kernel8.img").unwrap().unwrap(),
+            b"kernel"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_exact_name_wins_over_a_folded_one() {
+        let dir = cased_dir("folding-exact");
+        std::fs::write(dir.join("kernel8.img"), b"lower").unwrap();
+        let files = BootFiles::open_case_folding(&dir).unwrap();
+
+        assert_eq!(
+            files.read(Chip::Bcm2712, "kernel8.img").unwrap().unwrap(),
+            b"lower"
+        );
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_ambiguous_folded_request_is_refused() {
+        let dir = cased_dir("folding-ambiguous");
+        std::fs::write(dir.join("a.txt"), b"lower").unwrap();
+        std::fs::write(dir.join("A.txt"), b"upper").unwrap();
+        let files = BootFiles::open_case_folding(&dir).unwrap();
+
+        // Neither entry is the exact name, so nothing picks one.
+        assert!(matches!(
+            files.read(Chip::Bcm2712, "A.TXT"),
+            Err(UsbBootError::AmbiguousFile { .. })
+        ));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn folding_keeps_the_traversal_refusals() {
+        let dir = cased_dir("folding-traversal");
+        let files = BootFiles::open_case_folding(&dir).unwrap();
+
+        assert_eq!(files.read(Chip::Bcm2712, "../Kernel8.img").unwrap(), None);
+        assert_eq!(
+            files
+                .read(Chip::Bcm2712, "overlays/../Kernel8.img")
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            files
+                .read(Chip::Bcm2712, "OVERLAYS\\ramoops-pi5.dtbo")
+                .unwrap(),
+            None
+        );
+        assert_eq!(files.read(Chip::Bcm2712, "c:kernel8.img").unwrap(), None);
         let _ = std::fs::remove_dir_all(dir);
     }
 

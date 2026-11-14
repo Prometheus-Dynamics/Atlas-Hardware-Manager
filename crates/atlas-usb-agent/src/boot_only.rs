@@ -438,6 +438,38 @@ mod tests {
         let _ = std::fs::remove_dir_all(dir);
     }
 
+    /// The firmware asks in its own case: the file is served from the
+    /// set's `config.txt`, and the event names the request as it came.
+    #[tokio::test(start_paused = true)]
+    async fn a_case_different_request_is_served_under_the_requested_name() {
+        let dir = boot_dir("folded");
+        let files = BootFiles::open_case_folding(&dir).unwrap();
+        let mut port = Fake {
+            appearances: VecDeque::from([
+                Ok(Some(appearance(0, vec![second_stage_ok()]))),
+                Ok(Some(appearance(
+                    1,
+                    vec![
+                        request(0, "CONFIG.TXT"),
+                        request(1, "CONFIG.TXT"),
+                        request(2, ""),
+                    ],
+                ))),
+            ]),
+            disk: false,
+        };
+
+        let events = job(&mut port, &files, Duration::from_secs(5)).await;
+
+        assert!(events.contains(&Event::BootFile {
+            name: "CONFIG.TXT".into(),
+            served: true,
+            bytes: Some(14),
+            sha256: Some(sha256(b"boot_ramdisk=1")),
+        }));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
     #[tokio::test(start_paused = true)]
     async fn a_boot_rom_after_the_loop_is_left_alone_and_reported() {
         let dir = boot_dir("one-shot");

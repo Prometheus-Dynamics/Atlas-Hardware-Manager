@@ -219,7 +219,8 @@ fn main() -> ExitCode {
                 watcher.store(true, Ordering::Relaxed);
             });
             let mut port = boot_only::UsbPort::at(&boot.port).ok_or("a bad port")?;
-            let files = BootFiles::open(&boot.files).map_err(|error| error.to_string())?;
+            let files =
+                BootFiles::open_case_folding(&boot.files).map_err(|error| error.to_string())?;
             let timeout = Duration::from_secs(boot.timeout_s);
             let last =
                 runtime()?.block_on(boot_only::run(&mut port, &files, timeout, &cancel, &*sink));
