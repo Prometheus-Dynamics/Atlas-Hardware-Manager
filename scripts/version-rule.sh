@@ -4,7 +4,9 @@
 #   version  the build's own: <release>-dev.<commit count>+<commit>, the Atlas dev scheme of dev's
 #            scripts/version.sh (and scripts/build-version.rs): count = `git rev-list --count HEAD`, commit =
 #            `git rev-parse --short=8 HEAD`, release = Cargo.toml's [workspace.metadata.atlas] release.
-#            A tree with tracked changes is refused: its commit would not be what the image holds.
+#            A tree with tracked changes is refused, naming the changed paths: its commit would not be what the
+#            image holds (coordinator's ruling 2026-11-14: no `.dirty` mark, which would give two different images
+#            one name prefix and complicate the slot id rule; a WIP commit is the way).
 #   slot     <product>-<version>, every `+` read as `-`, lowercased (Lemnos: [a-z0-9._-], 1..64 bytes).
 #   CHECK_VERSION  the TEST value the checks plan with. It is not a release and names no commit.
 #
@@ -20,8 +22,10 @@ slot_id_for() {  # <product> <version> -> the slot id
 
 atlas_version() {  # <repo dir> -> the Atlas dev version of its HEAD (prints it; non-zero with a reason on stderr)
   local root=$1 release count commit
-  if [[ -n $(git -C "$root" status --porcelain --untracked-files=no 2>/dev/null) ]]; then
-    echo "version-rule: $root has tracked changes: the version would name a commit the image does not hold; commit or stash first" >&2
+  local changed
+  changed=$(git -C "$root" status --porcelain --untracked-files=no 2>/dev/null | cut -c4- | tr '\n' ' ')
+  if [[ -n $changed ]]; then
+    echo "version-rule: $root has uncommitted changes in: ${changed% }. The version names a commit, and these are not in it: commit first (a WIP commit is fine)" >&2
     return 1
   fi
   release=$(sed -n '/^\[workspace.metadata.atlas\]/,/^\[/s/^release *= *"\(.*\)"/\1/p' "$root/Cargo.toml")
