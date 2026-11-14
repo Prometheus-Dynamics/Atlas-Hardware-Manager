@@ -207,7 +207,12 @@ async fn a_call_that_is_not_answered_in_the_call_wait_is_gone_and_the_session_su
     );
 
     // A timed-out call does not end the session: the node is still connected once released.
-    release.send(()).unwrap();
+    // The release is sent whether or not anything is still waiting for it. On a loaded machine
+    // the monitor may not have taken the call up within the call wait at all: the caller then gave
+    // up on a call that was still queued, and a queued call whose caller gave up is dropped
+    // unstarted (the next test), which drops its end of this channel. Both ways the call is gone
+    // and the session must have survived, which is what this test is about.
+    let _ = release.send(());
     assert!(matches!(handle.presence(), Presence::Found(_)));
 }
 

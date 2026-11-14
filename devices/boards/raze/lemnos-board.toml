@@ -159,8 +159,11 @@ driver = "system-reboot"
 
 # The board as a USB device: FunctionFS for Orion's link ("orion-link"), NCM with addresses derived from the
 # board serial (no fixed MACs: two Razes share a host), and one ACM console (ttyGS0). The gadget takes its
-# serial from the identity device (uses = identity), the reference's form at 6905b681: a `config` key of that
-# name is refused by the driver.
+# serial from the identity device, named in the gadget's `config` (`identity = "identity"`): at the locked
+# Lemnos d6b9361d the daemon reads the link only from there (service/lemnosd/src/gadget.rs:80-82). Until PR B33
+# this file named it under `uses`, which nothing reads: `lemnos-ctl validate` passed it all the same, and the
+# driver would have failed the gadget at bind, because `function ncm derive` needs the board's serial
+# (drivers/usb-gadget/src/description.rs: no identity). Read from Lemnos's code, never run on a board.
 # vendor and product stay 1d6b:0104: devices/usb-ids.json recognises them as the Atlas board gadget (dev's
 # Raze gadget used the same ids). The reference's 1209:0001 is Lemnos's example.
 # identity is a CONFIG setting, at the lock d6b9361d and at the tip alike: lemnosd reads the link from the gadget's
