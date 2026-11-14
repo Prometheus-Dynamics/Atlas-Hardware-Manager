@@ -210,6 +210,12 @@ pub struct Slots {
     pub resolved: Option<trial::Resolved>,
     /// The simulated clock, in seconds from the start. Moved by the test; never wall time.
     pub now_s: u64,
+    /// slot-init's rescue wait (see [`boot`]), on the simulated clock.
+    pub rescue_wait_s: u64,
+    /// When a rescue's wait runs out and the board restarts again, if one is waiting.
+    pub rescue_at: Option<u64>,
+    /// When the periodic boot-file check is next due, on the simulated clock.
+    pub next_check_s: u64,
     /// Whether the board is healthy: the one health condition the sim models (the `health`
     /// sources of I5f stand in for it). A trial confirms only while this holds.
     pub healthy: bool,
@@ -272,6 +278,9 @@ impl Slots {
             trial_config: trial::Config::default(),
             resolved: None,
             now_s: 0,
+            rescue_wait_s: boot::RESCUE_WAIT_S,
+            rescue_at: None,
+            next_check_s: 0,
             healthy: true,
             boots_without_daemon: 0,
             fail_record_writes: false,
@@ -506,8 +515,9 @@ impl Slots {
                 format!("{id} failed and the call is not forced"),
             ));
         }
-        // A restart into the trial is refused when the trial's boot files differ from its manifest.
-        self.refuse_restart_into(id)?;
+        // The restart checks the default's boot files first (lemnosd). A trial whose files differ
+        // fails at its boot, by the failure path, not here.
+        self.check_restart()?;
         self.trial = Some(Trial {
             id: id.to_string(),
             keep_default,

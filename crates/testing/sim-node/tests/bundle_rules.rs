@@ -305,82 +305,23 @@ fn board_with_default_b() -> Slots {
     slots
 }
 
-#[test]
-fn a_boot_whose_kernel_differs_from_the_manifest_does_not_run_and_the_previous_slot_does() {
-    let mut slots = board_with_default_b();
+fn events_with(slots: &Slots, prefix: &str) -> usize {
     slots
-        .set_boot_file("B", "kernel8.img", Some("tampered"))
-        .expect("set");
-    // The boot path (a power-on, not a restart call): B is refused, slot-1 boots.
-    slots.reboot();
-    assert_eq!(slots.active.as_deref(), Some("slot-1"));
-    assert!(
-        slots
-            .events
-            .iter()
-            .any(|event| event.contains("B refused at boot") && event.contains("boot/kernel8.img")),
-        "{:?}",
-        slots.events
-    );
+        .events
+        .iter()
+        .filter(|event| event.starts_with(prefix))
+        .count()
 }
 
 #[test]
-fn a_boot_whose_cmdline_differs_and_no_slot_matches_says_why_and_runs_nothing() {
+fn a_trial_whose_boot_files_do_not_match_fails_by_the_failure_path() {
     let mut slots = board_with_default_b();
     slots
-        .set_boot_file("B", "cmdline.txt", Some("tampered"))
-        .expect("set");
-    slots
-        .set_boot_file("slot-1", "cmdline.txt", Some("stray"))
-        .expect("set");
-    slots.reboot();
-    assert_eq!(slots.active, None);
-    assert_eq!(slots.state, State::Error);
-    assert!(slots.error.contains("boot/cmdline.txt"), "{}", slots.error);
-}
-
-#[test]
-fn a_restart_is_refused_by_name_when_the_default_would_not_boot() {
-    let mut slots = board_with_default_b();
-    slots
-        .set_boot_file("B", "kernel8.img", Some("tampered"))
-        .expect("set");
-    let refusal = slots.check_restart().expect_err("refused");
-    assert_eq!(refusal.code, code::NOT_PERMITTED);
-    assert!(
-        refusal.message.contains("boot/kernel8.img"),
-        "{}",
-        refusal.message
-    );
-    // Nothing restarted: the board still runs B.
-    assert_eq!(slots.active.as_deref(), Some("B"));
-}
-
-#[test]
-fn a_trial_into_a_slot_whose_files_differ_is_refused_at_the_call() {
-    let mut slots = board_with_default_b();
-    slots
-        .install_done(new_slot("D", &[("kernel8.img", "kd")]), false, true)
-        .expect("installs");
-    slots
-        .set_boot_file("D", "kernel8.img", Some("tampered"))
-        .expect("set");
-    let refusal = slots.trial("D", false, true, false).expect_err("refused");
-    assert_eq!(refusal.code, code::NOT_PERMITTED);
-    assert!(
-        refusal.message.contains("boot/kernel8.img"),
-        "{}",
-        refusal.message
-    );
-    assert!(slots.trial.is_none(), "no trial was set");
-    assert_eq!(slots.active.as_deref(), Some("B"));
-}
-
-#[test]
-fn a_trial_whose_files_differ_at_boot_falls_back_at_once() {
-    let mut slots = board_with_default_b();
-    slots
-        .install_done(new_slot("C", &[("kernel8.img", "kc")]), false, true)
+        .install_done(
+            new_slot("C", &[("cmdline.txt", "c1"), ("kernel8.img", "kc")]),
+            false,
+            true,
+        )
         .expect("installs");
     slots.trial("C", false, true, false).expect("tried");
     // The power goes during the trial's boot: the trial is pending, not reached.
@@ -389,19 +330,195 @@ fn a_trial_whose_files_differ_at_boot_falls_back_at_once() {
         .set_boot_file("C", "kernel8.img", Some("tampered"))
         .expect("set");
     slots.reboot();
+    let trial = slots.get("C").expect("C");
+    assert!(trial.failed, "the trial is marked failed");
+    assert_eq!(trial.failures, 1, "one failure counted");
+    assert_eq!(
+        trial.fail_reason,
+        "kernel8.img doesn't match its manifest hash"
+    );
     let resolved = slots.resolved.clone().expect("resolved");
     assert!(!resolved.confirmed);
-    assert!(
-        resolved.reason.contains("does not boot"),
-        "{}",
-        resolved.reason
+    assert_eq!(
+        resolved.reason,
+        "kernel8.img doesn't match its manifest hash"
+    );
+    assert_eq!(
+        slots.active.as_deref(),
+        Some("B"),
+        "the board falls back to the default"
+    );
+}
+
+#[test]
+fn a_default_that_does_not_match_is_swapped_with_its_previous_at_boot_with_no_count() {
+    let mut slots = board_with_default_b();
+    slots
+        .set_boot_file("B", "kernel8.img", Some("tampered"))
+        .expect("set");
+    slots.reboot();
+    assert_eq!(
+        slots.active.as_deref(),
+        Some("slot-1"),
+        "the previous boots"
+    );
+    assert_eq!(slots.default.as_deref(), Some("slot-1"));
+    assert_eq!(slots.previous.as_deref(), Some("B"));
+    let old = slots.get("B").expect("B");
+    assert!(old.failed);
+    assert_eq!(old.failures, 0, "no count: the immediate previous");
+    assert_eq!(
+        old.fail_reason,
+        "its boot files don't match its manifest: kernel8.img doesn't match its manifest hash"
     );
     assert!(
-        resolved.reason.contains("boot/kernel8.img"),
-        "{}",
-        resolved.reason
+        slots.events.contains(&"slot B's boot files don't match its manifest: kernel8.img doesn't match its manifest hash; slot-1 is the default now, restarting into it".to_string()),
+        "{:?}",
+        slots.events
     );
-    assert_eq!(slots.active.as_deref(), Some("B"));
+}
+
+/// A board whose default is `C` and previous `B`, both with boot files.
+fn board_with_default_c_and_previous_b() -> Slots {
+    let mut slots = board_with_default_b();
+    slots
+        .install_done(
+            new_slot("C", &[("cmdline.txt", "c1"), ("kernel8.img", "kc")]),
+            false,
+            true,
+        )
+        .expect("installs");
+    slots.trial("C", false, true, false).expect("tried");
+    slots.confirm("test").expect("confirmed");
+    assert_eq!(slots.default.as_deref(), Some("C"));
+    assert_eq!(slots.previous.as_deref(), Some("B"));
+    slots
+}
+
+#[test]
+fn no_slot_can_start_when_the_default_and_its_previous_both_do_not_match() {
+    let mut slots = board_with_default_c_and_previous_b();
+    slots
+        .set_boot_file("C", "kernel8.img", Some("tampered"))
+        .expect("set");
+    slots
+        .set_boot_file("B", "cmdline.txt", Some("tampered"))
+        .expect("set");
+    slots.reboot();
+    assert_eq!(slots.active, None);
+    assert_eq!(slots.state, State::Error);
+    assert_eq!(
+        slots.error,
+        "no slot can start: kernel8.img doesn't match its manifest hash; its previous B doesn't match its manifest either: cmdline.txt doesn't match its manifest hash"
+    );
+    // No pointer moved.
+    assert_eq!(slots.default.as_deref(), Some("C"));
+    assert_eq!(slots.previous.as_deref(), Some("B"));
+    // The board restarts again after its rescue wait, on the simulated clock.
+    let before = events_with(&slots, "no slot can start");
+    slots.advance_clock(slots.rescue_wait_s - 1);
+    assert_eq!(events_with(&slots, "no slot can start"), before, "not yet");
+    slots.advance_clock(1);
+    assert!(
+        events_with(&slots, "no slot can start") > before,
+        "the board boots again"
+    );
+}
+
+#[test]
+fn a_default_with_no_valid_previous_fails_by_the_failure_path_and_nothing_starts() {
+    let mut slots = board_with_default_b();
+    slots.previous = None;
+    slots
+        .set_boot_file("B", "kernel8.img", Some("tampered"))
+        .expect("set");
+    slots.reboot();
+    assert_eq!(slots.active, None);
+    assert_eq!(
+        slots.error,
+        "no slot can start: kernel8.img doesn't match its manifest hash"
+    );
+    let failed = slots.get("B").expect("B");
+    assert!(failed.failed);
+    assert_eq!(failed.failures, 1);
+    assert_eq!(slots.default.as_deref(), Some("B"), "no pointer moved");
+}
+
+#[test]
+fn a_restart_repoints_when_the_default_does_not_match_and_its_previous_does() {
+    let mut slots = board_with_default_b();
+    slots
+        .set_boot_file("B", "kernel8.img", Some("tampered"))
+        .expect("set");
+    let note = slots.check_restart().expect("the restart proceeds");
+    assert_eq!(
+        note.as_deref(),
+        Some(
+            "B doesn't match its manifest (kernel8.img doesn't match its manifest hash): slot-1 is the default now"
+        )
+    );
+    slots.reboot();
+    assert_eq!(slots.active.as_deref(), Some("slot-1"));
+}
+
+#[test]
+fn a_restart_is_refused_when_neither_the_default_nor_its_previous_matches() {
+    let mut slots = board_with_default_c_and_previous_b();
+    slots
+        .set_boot_file("C", "kernel8.img", Some("tampered"))
+        .expect("set");
+    slots
+        .set_boot_file("B", "cmdline.txt", Some("tampered"))
+        .expect("set");
+    let refusal = slots.check_restart().expect_err("refused");
+    assert_eq!(refusal.code, code::NOT_PERMITTED);
+    assert_eq!(
+        refusal.message,
+        "C doesn't match its manifest (kernel8.img doesn't match its manifest hash), and its previous \"B\" doesn't either: the restart is refused"
+    );
+    // The board stays up on the default.
+    assert_eq!(slots.active.as_deref(), Some("C"));
+    assert_eq!(slots.default.as_deref(), Some("C"));
+}
+
+#[test]
+fn the_periodic_check_only_reports_when_neither_matches() {
+    let mut slots = board_with_default_c_and_previous_b();
+    slots
+        .set_boot_file("C", "kernel8.img", Some("tampered"))
+        .expect("set");
+    slots
+        .set_boot_file("B", "cmdline.txt", Some("tampered"))
+        .expect("set");
+    slots.advance_clock(atlas_sim_node::slots::boot::PERIODIC_CHECK_S);
+    let report = "C doesn't match its manifest (kernel8.img doesn't match its manifest hash), and its previous \"B\" doesn't either";
+    assert!(
+        slots.events.iter().any(|event| event == report),
+        "{:?}",
+        slots.events
+    );
+    assert!(
+        !slots
+            .events
+            .iter()
+            .any(|event| event.ends_with("the restart is refused"))
+    );
+    assert_eq!(slots.default.as_deref(), Some("C"), "no pointer moved");
+}
+
+#[test]
+fn the_mismatch_list_names_each_file_missing_or_changed_joined_by_semicolons() {
+    let mut slots = board_with_default_b();
+    slots
+        .set_boot_file("B", "kernel8.img", Some("tampered"))
+        .expect("set");
+    slots.set_boot_file("B", "cmdline.txt", None).expect("set");
+    assert_eq!(
+        slots.why("B").as_deref(),
+        Some(
+            "cmdline.txt is missing from the boot partition; kernel8.img doesn't match its manifest hash"
+        )
+    );
 }
 
 #[test]

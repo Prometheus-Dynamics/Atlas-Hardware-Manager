@@ -685,3 +685,92 @@ fn the_old_slot_key_member_is_refused_by_name_and_leaves_nothing() {
     );
     assert_eq!(slot_count(&list(&orion)), 1, "nothing is listed");
 }
+
+/// A slot installed straight into the board's slot store, with the boot files its manifest lists.
+fn slot_with_boot(id: &str, boot: &[(&str, &str)]) -> NewSlot {
+    NewSlot {
+        id: id.into(),
+        product: "sim".into(),
+        board: "simulated".into(),
+        version: "2.0.0".into(),
+        variant: String::new(),
+        kernel: String::new(),
+        display_name: id.into(),
+        size: 4096,
+        verity: true,
+        signed: Signed::Unsigned,
+        boot: boot
+            .iter()
+            .map(|(path, digest)| ((*path).to_string(), (*digest).to_string()))
+            .collect(),
+    }
+}
+
+/// A node whose default is `C` (previous `B`), both with boot files, and `C` running.
+fn node_with_default_c(name: &str) -> (SimNode, Orion) {
+    let node = start(name);
+    let orion = node.connect(name).expect("a session");
+    {
+        let mut model = node.model();
+        model
+            .slots
+            .install_done(
+                slot_with_boot("B", &[("cmdline.txt", "c1"), ("kernel8.img", "k1")]),
+                false,
+                true,
+            )
+            .expect("installs B");
+        model
+            .slots
+            .install_done(
+                slot_with_boot("C", &[("cmdline.txt", "c1"), ("kernel8.img", "kc")]),
+                false,
+                true,
+            )
+            .expect("installs C");
+        model.slots.default = Some("C".into());
+        model.slots.previous = Some("B".into());
+        model.slots.active = Some("C".into());
+    }
+    (node, orion)
+}
+
+#[test]
+fn the_board_restart_refusal_reaches_atlas_with_the_boards_text_unchanged() {
+    let (node, orion) = node_with_default_c("restart-refused-text");
+    {
+        let mut model = node.model();
+        model
+            .slots
+            .set_boot_file("C", "kernel8.img", Some("tampered"))
+            .expect("set");
+        model
+            .slots
+            .set_boot_file("B", "cmdline.txt", Some("tampered"))
+            .expect("set");
+    }
+    let finished = refused(&orion, names::REBOOT, b"");
+    assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
+    assert_eq!(
+        finished.detail,
+        "-1: C doesn't match its manifest (kernel8.img doesn't match its manifest hash), and its previous \"B\" doesn't either: the restart is refused"
+    );
+    // The board stays up on its default.
+    assert_eq!(node.model().slots.active.as_deref(), Some("C"));
+}
+
+#[test]
+fn the_restart_repoint_note_reaches_atlas_unchanged() {
+    let (node, orion) = node_with_default_c("restart-repoint-note");
+    node.model()
+        .slots
+        .set_boot_file("C", "kernel8.img", Some("tampered"))
+        .expect("set");
+    let finished = call(&orion, names::REBOOT, b"").expect("reboot answers");
+    assert_eq!(finished.outcome, Outcome::Succeeded, "{}", finished.detail);
+    assert_eq!(
+        String::from_utf8(finished.output).expect("text"),
+        "C doesn't match its manifest (kernel8.img doesn't match its manifest hash): B is the default now"
+    );
+    assert_eq!(node.model().slots.default.as_deref(), Some("B"));
+}

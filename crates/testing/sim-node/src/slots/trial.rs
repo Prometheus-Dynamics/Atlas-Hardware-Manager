@@ -127,6 +127,7 @@ impl Slots {
     /// Moves the simulated clock on by `secs`, then runs the trial's rules.
     pub fn advance_clock(&mut self, secs: u64) {
         self.now_s = self.now_s.saturating_add(secs);
+        self.run_timers();
         self.evaluate();
     }
 
@@ -319,11 +320,10 @@ impl Slots {
     /// does not reach the daemon leaves the board on the default slot with the trial pending.
     // LOCK: Lemnos L1 (I5f). Pre-L1 board: a trial is confirmed only by an explicit confirm; no resolved, no record_error.
     fn boot_trial(&mut self) {
-        // A trial whose boot files differ from its manifest does not run: it falls back at once.
+        // A trial whose boot files differ from its manifest fails by the normal failure path.
         if let Some(id) = self.trial.as_ref().map(|trial| trial.id.clone())
-            && let Some(reason) = self.boot_mismatch(&id)
+            && let Some(reason) = self.why(&id)
         {
-            let reason = format!("the trial slot does not boot: {reason}");
             self.fall_back(&id, &reason, By::Auto);
             return;
         }

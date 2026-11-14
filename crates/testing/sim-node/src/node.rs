@@ -1395,10 +1395,11 @@ fn apply(model: &mut Model, name: &str, args: &[u8], caller: &str) -> Result<Vec
             Ok(nothing)
         }
         names::REBOOT => {
-            // lemnosd refuses a restart whose boot would run a slot that differs from its manifest.
-            model.slots.check_restart()?;
+            // lemnosd checks the default's boot files before the restart: it repoints and says so, or
+            // refuses the restart and the board stays up (the board's own text, as it is).
+            let note = model.slots.check_restart()?;
             model.slots.reboot();
-            Ok(model.status_text().into_bytes())
+            Ok(note.unwrap_or_else(|| model.status_text()).into_bytes())
         }
         names::STATUS => Ok(model.status_text().into_bytes()),
         names::LOCATE => Ok(b"blinking".to_vec()),

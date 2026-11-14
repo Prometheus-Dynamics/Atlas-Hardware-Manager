@@ -11,7 +11,14 @@ The slot bundle's signature and its checks move to the final form in INPUTS (`Sl
 - Member order and set, enforced by the inspector (`inspect_bundle`) and by the simulated board's `verify`: `slot.json` first; `slot.sig` second when present (an unsigned bundle is legal); then `rootfs.erofs` and `boot/...` in any order, each at most once and each listed in `slot.json`. An unlisted name is refused at its header, before its bytes are read, naming the member. An out-of-order member is refused naming the rule. A listed member that is missing is refused by name. Every member is checked against its manifest digest.
 - The cmdline rule: `boot/cmdline.txt` is the complete line and must carry `<boot_args>.src.<source>=<kernel path>` for each `boot_sources` entry. The inspector takes a `BootRule` (new `crates/core/bundle/src/boot.rs`); the simulated board has the same rule as the field `boot` on `Slots`, defaulting to one source `rpi-boot-mode-1=/soc@107c000000/mmc@fff000` with `boot_args` `os`.
 - Policy in the simulated board, identical to first flash: security off, an unsigned bundle is `not_checked_unsigned`, a bundle signed by a key the board holds that verifies is `verified`, a bundle signed by a key the board does not hold is `not_checked_unknown_key`, and a record whose key the board holds but whose signature does not verify is REFUSED. Security on takes only a held-and-verifying bundle. A malformed record (length, magic, algorithm, padding) is always `INVALID_ARGUMENT`.
-- The two boot-time refusals in the simulated board (`crates/testing/sim-node/src/slots/boot.rs`): a boot whose kernel, device tree, overlay or cmdline differs from the manifest does not run (the previous slot boots; a trial falls back at once), and a restart (the reboot action, or a trial call) whose target differs from its manifest is refused by name, before anything restarts.
+- The boot-file rules in the simulated board (`crates/testing/sim-node/src/slots/boot.rs`), as Lemnos's code does them (next e3e8a963: slot-init `boot.rs`, lemnosd `boot_guard.rs`, slot-store `bootcheck.rs`; INPUTS "Boot-file mismatch, AS LEMNOS'S CODE DOES IT"). Every boot checks every file the manifest lists, before the image is opened:
+  - a TRIAL that does not match fails by the normal failure path (failed, failure count, fail reason, fall back);
+  - a DEFAULT that does not match, with a previous that matches: the previous becomes the default at once, with no count; the old default is marked failed with `its boot files don't match its manifest: <why>`; the log says `slot <slot>'s boot files don't match its manifest: <why>; <previous> is the default now, restarting into it`;
+  - neither the default nor its previous matches: `no slot can start: <why>; its previous <p> doesn't match its manifest either: <why2>`; no pointer moves; the board restarts again after the rescue wait (30 s, on the simulated clock);
+  - a default with no valid previous: fails by the normal failure path (approximation: no text in INPUTS for this case; the sim reports `no slot can start: <why>`).
+  - Before a restart, and every 600 s of the simulated clock, the default is checked: it repoints when its previous matches (the restart proceeds, with the note `<default> doesn't match its manifest (<why>): <previous> is the default now`), and is refused, board up, when neither matches (`<default> doesn't match its manifest (<why>), and its previous "<previous>" doesn't either: the restart is refused`). The periodic check only reports. Interpretation: the periodic check also repoints when a previous matches, as the same check does before a restart.
+  - `<why>` is the per-file list joined with `"; "`, each `<name> is missing from the boot partition` or `<name> doesn't match its manifest hash` (bootcheck's texts), in the manifest's order (sorted by path here; Lemnos uses the manifest list order).
+  - The reboot action's reply is the note when the default was repointed; a refusal is `-1: <text>` and Atlas receives the board's text unchanged.
 - `atlas-board-slots` names the four outcomes in Atlas's own words (`crates/drivers/board-slots/src/signature.rs`, `SignatureWords`): `verified`, `not_checked_unsigned`, `not_checked_unknown_key`, `refused`. A refusal carries the board's reason unchanged. The shared outcome type is `atlas_image::BoardOutcome`, read through `atlas_slots`; nothing in core changed.
 - The `slot.key` member is gone: the key id lives in the record. A bundle that still carries `slot.key` is refused by name.
 
@@ -50,12 +57,19 @@ Signature (INPUTS item 5):
 - malformed record is `INVALID_ARGUMENT` whatever the keys: `bundle::a_malformed_signature_record_is_refused_whatever_the_key_list`, `sim::malformed_records_are_invalid_argument_whatever_the_key_list`.
 - security on: `sim_node.rs::security_on_refuses_unsigned_and_untrusted_bundles_and_keeps_nothing` and `trial.rs::security_on_refuses_to_make_an_unverified_slot_the_default` (both unchanged in meaning, moved to the new form).
 
+Boot-file rules (INPUTS "Boot-file mismatch, AS LEMNOS'S CODE DOES IT"), one test per case, in `crates/testing/sim-node/tests/bundle_rules.rs` unless stated:
+- a trial whose files differ fails by the failure path: `a_trial_whose_boot_files_do_not_match_fails_by_the_failure_path`.
+- a default whose files differ is swapped with its valid previous at boot, no count: `a_default_that_does_not_match_is_swapped_with_its_previous_at_boot_with_no_count`.
+- neither the default nor its previous matches: `no_slot_can_start_when_the_default_and_its_previous_both_do_not_match` (also: the restart comes again after the rescue wait, on the simulated clock).
+- a default with no valid previous: `a_default_with_no_valid_previous_fails_by_the_failure_path_and_nothing_starts` (approximation, see above).
+- restart repoints and proceeds: `a_restart_repoints_when_the_default_does_not_match_and_its_previous_does`.
+- restart refused, board up: `a_restart_is_refused_when_neither_the_default_nor_its_previous_matches`.
+- periodic check only reports: `the_periodic_check_only_reports_when_neither_matches`.
+- per-file list text: `the_mismatch_list_names_each_file_missing_or_changed_joined_by_semicolons`.
+- Atlas receives the board's text unchanged (node, `sim/trial.rs`): `the_board_restart_refusal_reaches_atlas_with_the_boards_text_unchanged`, `the_restart_repoint_note_reaches_atlas_unchanged`.
+
 Command line (INPUTS item 6):
 - a bundle whose cmdline lacks a source word is refused, naming the word: `bundle::the_cmdline_must_carry_the_word_for_each_boot_source`, `sim::the_cmdline_must_carry_the_word_for_each_boot_source`.
-- boot whose kernel differs: `sim::a_boot_whose_kernel_differs_from_the_manifest_does_not_run_and_the_previous_slot_does`.
-- boot whose cmdline differs with no matching slot: `sim::a_boot_whose_cmdline_differs_and_no_slot_matches_says_why_and_runs_nothing`.
-- trial whose files differ at boot falls back: `sim::a_trial_whose_files_differ_at_boot_falls_back_at_once`.
-- restart refused by name when the default would not boot: `sim::a_restart_is_refused_by_name_when_the_default_would_not_boot`; trial call refused at the call: `sim::a_trial_into_a_slot_whose_files_differ_is_refused_at_the_call`.
 
 Outcome words (item 7): `crates/drivers/board-slots/src/signature.rs` tests `the_four_outcomes_have_their_board_words_and_plain_sentences`, `a_refusal_carries_the_boards_reason_unchanged`, `an_outcome_this_atlas_does_not_know_is_not_one_of_the_four`.
 
@@ -65,7 +79,7 @@ Outcome words (item 7): `crates/drivers/board-slots/src/signature.rs` tests `the
 - `crates/core/bundle/src/boot.rs`: the cmdline rule. Today the board file has no `boot_args`/`boot_sources`. At the move the board's own values replace the default.
 - `crates/testing/sim-node/src/bundle.rs` (three notes): the record and message (I5g2); the signature rule (I5g2); the `BootRule` shape (I5i4, I5i5). At the move these are Lemnos's, and the vector test checks them.
 - `crates/testing/sim-node/src/slots.rs`: the `board_security` field is the sim's stand-in for `system.security/1` (S2, #255): `/etc/board/security`, precheck, `require_signed` removed. The gate on set_default and trial (S2). The `boot` field (L2, the boot rule). The `signature` word in a slot's list (L2, with `info`'s `key_ids`, not built here).
-- `crates/testing/sim-node/src/slots/boot.rs`: the boot refusal and the restart refusal (I5i4). Today Lemnos has neither; at the move slot-init refuses the boot and lemnosd refuses the restart.
+- `crates/testing/sim-node/src/slots/boot.rs`: the boot-file rules and their texts (block marked `// LOCK: Lemnos L2 (boot.rs, boot_guard.rs at e3e8a963)`). Today the sim models what Lemnos does at e3e8a963; the rescue wait (30 s) and the 600 s periodic period are the sim clock's values of Lemnos's `rescue_wait` and the boot guard period.
 - `crates/testing/sim-node/src/node.rs`: the restart check on the reboot action, and the boot rule passed to `verify` (L2).
 - `crates/drivers/board-slots/src/install.rs`: the signature is the bundle's `slot.sig` record, no `slot.key` (L2). `crates/drivers/board-slots/src/signature.rs`: the per-slot `signature` word is read once the L2 rev writes it (L2).
 - Already present and unchanged, listed for completeness: `crates/testing/sim-node/src/slots/trial.rs` (L1 and L2 notes on the trial record and record_error), `crates/testing/sim-node/src/node.rs` (L1, M8a), `crates/drivers/board-slots/src/install.rs` (L1 `.incoming` sink), `crates/core/slots/src/list.rs` (L2 `signature` word), `crates/drivers/board-slots/src/lib.rs` (L1 forms).
@@ -76,6 +90,7 @@ Outcome words (item 7): `crates/drivers/board-slots/src/signature.rs` tests `the
 - `info` (method 14) and `key_ids` reading are not built (later, per the brief).
 - `system.security/1` is not built: the simulated board has a field, not the contract.
 - The writer does not check the cmdline's word: Atlas does not hold a board's `boot_sources` at write time. The inspector and the simulated board refuse a bundle that lacks it. Atlas writes whatever cmdline the image carries, as before.
+- An early check in the writer would read the board file the cmdline was generated from (`tree --cmdline-slot`): the bundle does not carry `boot_sources` (INPUTS, "(c)"). Not built here; the board-side check stays the authority.
 - `crates/flash/disk` is unchanged. The first-flash record code is in `crates/flash/image` (`atlas_image::Record`), which `atlas-bundle` already depends on, so the bundle reuses it and nothing was moved.
 
 ## Checked
