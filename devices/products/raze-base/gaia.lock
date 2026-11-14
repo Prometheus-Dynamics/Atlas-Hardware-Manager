@@ -85,6 +85,11 @@ url = "https://github.com/Prometheus-Dynamics/Lemnos"
 ref = "d6b9361d006e5f633149b6dea8bb5d1be9483d0a"
 commit = "d6b9361d006e5f633149b6dea8bb5d1be9483d0a"
 
+[source."raze-lemnos-board.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
 [source."raze.linux"]
 kind = "git"
 url = "https://github.com/raspberrypi/linux.git"
