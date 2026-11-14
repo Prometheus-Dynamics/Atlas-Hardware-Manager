@@ -1,4 +1,4 @@
-//! `atlas-next usb-boot`: USB boots a Raze with the boot files of a built image, through the
+//! `atlas-next usb-boot`: USB boots a board with the boot files of a built image, through the
 //! SystemCore agent's boot-only job. The eMMC is never written: the job has no write path.
 //!
 //! Before anything is sent the tool checks, and refuses on any failure, naming each reason:
