@@ -1073,6 +1073,12 @@ regen="scripts/check-devices.sh --write-locks"
 [[ $root_given -eq 0 ]] || regen="$regen --root $root"
 fail=0
 bad() { echo "check-devices: FAIL $*" >&2; fail=1; }
+# A rule prints its findings and returns 1 with them. A rule that returns non-zero with NOTHING printed did not run
+# (an awk or grep error): that is a failure too, never a pass (G10; `$(rule) || true` passed it).
+rule_ran() {  # <rule name> <status> <output>
+  local rest=${3//[[:space:]]/}
+  if [[ $2 -ne 0 && -z $rest ]]; then bad "$1 stopped with status $2 and gave no reason: the rule did not run"; fi
+}
 
 # Each kind is one directory per item, holding its description file. A board directory that holds
 # only app/ is recognition-only (a radio, a roboRIO) or a board whose description is not merged
@@ -1118,7 +1124,9 @@ fi
 # The slot root chain is enforced on every run (see slot_chain_check above).
 slot_chain_check "$root" || fail=1
 # The boot firmware rule (PR B32): a board's Gaia [boot] firmware agrees with its Lemnos board file's record.
-firmware_msg=$(firmware_rule "$root") || true
+firmware_status=0
+firmware_msg=$(firmware_rule "$root") || firmware_status=$?
+rule_ran firmware_rule "$firmware_status" "$firmware_msg"
 while IFS= read -r line; do
   case $line in
     "") ;;
@@ -1126,7 +1134,9 @@ while IFS= read -r line; do
   esac
 done <<<"$firmware_msg"
 # The slot id rule: a slot-boot image's id is derived from its version by the one rule (slot_id_for).
-slotid_msg=$(slot_id_rule "$root") || true
+slotid_status=0
+slotid_msg=$(slot_id_rule "$root") || slotid_status=$?
+rule_ran slot_id_rule "$slotid_status" "$slotid_msg"
 while IFS= read -r line; do
   case $line in
     "") ;;
@@ -1134,7 +1144,9 @@ while IFS= read -r line; do
   esac
 done <<<"$slotid_msg"
 # The boot partition rule: a slot-boot image's boot_size is its board's boot partition.
-bootsize_msg=$(boot_size_rule "$root") || true
+bootsize_status=0
+bootsize_msg=$(boot_size_rule "$root") || bootsize_status=$?
+rule_ran boot_size_rule "$bootsize_status" "$bootsize_msg"
 while IFS= read -r line; do
   case $line in
     "") ;;
@@ -1142,7 +1154,9 @@ while IFS= read -r line; do
   esac
 done <<<"$bootsize_msg"
 # The bring-up rule (PR B31): every bring-up product carries the watchdog and LED signs (tree-wide).
-bringup_msg=$(bringup_rule "$root") || true
+bringup_status=0
+bringup_msg=$(bringup_rule "$root") || bringup_status=$?
+rule_ran bringup_rule "$bringup_status" "$bringup_msg"
 while IFS= read -r line; do
   case $line in
     NOTE\ *) echo "check-devices: $line" ;;
@@ -1186,10 +1200,15 @@ fi
 # and Orion cannot see that from inside. So no description installs a file there: under the data
 # partition (the one exception is the empty mount-point marker), under Orion's default state directory,
 # or anything named like a host key or a node identity. This covers pending/ too.
+state_status=0
+state_hits=$(grep -rnE '^[[:space:]]*to[[:space:]]*=[[:space:]]*"(/data/|/var/lib/orion|/etc/dropbear/|[^"]*(host_key|node-identity|\.ed25519)[^"]*")' \
+           --include='*.toml' .) || state_status=$?
+# grep: 0 = hits, 1 = none, 2 = an error (an unreadable file): an error fails, never passes quietly (G10).
+[[ $state_status -le 1 ]] || bad "the per-unit state search failed (grep status $state_status): it did not run"
 while IFS= read -r hit; do
+  [[ -n $hit ]] || continue
   bad "an image must not carry per-unit state or keys (made on the board at first boot): $hit"
-done < <(grep -rnE '^[[:space:]]*to[[:space:]]*=[[:space:]]*"(/data/|/var/lib/orion|/etc/dropbear/|[^"]*(host_key|node-identity|\.ed25519)[^"]*")' \
-           --include='*.toml' . 2>/dev/null | grep -vE 'to[[:space:]]*=[[:space:]]*"/data/\.mountpoint"' || true)
+done < <(grep -vE 'to[[:space:]]*=[[:space:]]*"/data/\.mountpoint"' <<<"$state_hits" || true)
 
 # Every product is validated (when gaia can), then its lock is checked, then it is planned.
 #
@@ -1310,7 +1329,9 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
 done
 
 # The slot root rule (PR B32): each product's erofs compression, from its own plan, against the kernel it builds.
-erofs_msg=$(erofs_rule "$root" "$plans") || true
+erofs_status=0
+erofs_msg=$(erofs_rule "$root" "$plans") || erofs_status=$?
+rule_ran erofs_rule "$erofs_status" "$erofs_msg"
 while IFS= read -r line; do
   case $line in
     NOTE\ *) echo "check-devices: $line" ;;
