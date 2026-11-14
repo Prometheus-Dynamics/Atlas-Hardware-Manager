@@ -274,7 +274,7 @@ Nothing names a Lemnos file by its path under a component any more (PR B26; befo
 ## The Gaia pin
 
 `gaia.lock` is Atlas's, written by hand: a Gaia URL and a full commit. It is not Gaia's lock. The
-commit is `3f6e561016752b60c50a9b8731fa28b37e48da81` (Gaia `next`'s head at PR B32: #115 an image's `initramfs` key, #116 what an image names that its recipe does not take is refused by name, #112 `[sources.tools]`, #113 generator roles and the `slot-boot` recipe, #114 failed-step logs; before it `7177d72e27fdcada74a8ade7b282e343542dc9f6` (Gaia `next`'s head at PR B27: #100 the `[generate]` tool runs in the sandbox, in the image its tool was built in; #99 the slot directory step, `gaia.tree.by-role` at layout version 2 (no pinned recipe uses it yet); before it `e1cc2951c726d21ce300e68fa1560d0ba77bacc6` (Gaia `next`'s head at PR B26: #98 `[generate]` (a component's
+commit is `b8585a049326ed29ef6eb37a7afde56a3acfda8c` (Gaia `next`'s head at PR L2d, its recipes equal `b3fa40f`'s: the `slot-boot` recipe with `[generate.bundle]` and `[generate.image]`, the lzma default for slots, and the rule that every product making a slot names `BR2_PACKAGE_HOST_EROFS_UTILS=y` and `BR2_PACKAGE_HOST_CRYPTSETUP=y`; before it `c6a3d102467f11a86ecc7fb53965cbaca9a09725` (PR B32's pin); before that `3f6e561016752b60c50a9b8731fa28b37e48da81` (Gaia `next`'s head at PR B32: #115 an image's `initramfs` key, #116 what an image names that its recipe does not take is refused by name, #112 `[sources.tools]`, #113 generator roles and the `slot-boot` recipe, #114 failed-step logs; before it `7177d72e27fdcada74a8ade7b282e343542dc9f6` (Gaia `next`'s head at PR B27: #100 the `[generate]` tool runs in the sandbox, in the image its tool was built in; #99 the slot directory step, `gaia.tree.by-role` at layout version 2 (no pinned recipe uses it yet); before it `e1cc2951c726d21ce300e68fa1560d0ba77bacc6` (Gaia `next`'s head at PR B26: #98 `[generate]` (a component's
 tool writes files from the board's description; no product uses it yet), #97 board `[descriptions]` and the install
 that names one, #94 the gadget identity 1d6b:0103 with bcdDevice 0x0b00, #95 the slot kernel check, #96 Daedalus; before it
 `4509f6b74247f56594cb2667e701c5d1f7566498` (Gaia `next`'s head: #91 the usb-gadget-network component in its configfs NCM form, #89 flash-xz, #90 verified-on-put, #92 the check fix; before it `7db227f6648917434b14da4117150ad6ab007530` (Gaia `next`: PR #85 `gaia lock` resolves nothing a
@@ -406,6 +406,12 @@ The bring-up gadget's identity is Gaia's at the pin: 1d6b:0103 with bcdDevice 0x
 take it through the `usb-gadget-network` component's Gaia source, which is pinned at the same commit as `gaia.lock`.
 
 ## Known limits at the pin
+
+At `b8585a0` (PR L2d; read against it, not re-read item by item):
+- A slot-making product (`sd-image` or `slot-boot`) must put `BR2_PACKAGE_HOST_EROFS_UTILS=y` and `BR2_PACKAGE_HOST_CRYPTSETUP=y` in its OS fragment: Gaia refuses it by name without them. Every such fragment has them.
+- The slot recipes default `compression` to `lzma`. The sd-image products' families carry `CONFIG_EROFS_FS_ZIP_LZMA=y` and its stream count (the rule in `check-devices.sh` holds it).
+- `slot-boot` with `sign_key_env` set needs `sign_key_id` set; a `[generate.bundle]` needs `key_args`.
+- The Raze's `slot-boot` plans and config-resolves; nothing is built here (the device check does not build).
 
 These hold at Gaia `3f6e561`, the pin in `gaia.lock` (PR B32, where every product was planned at the pin; PR B27 checked them at `7177d72`, PR B26 at `e1cc295`; the items were checked at `7db227f` and carried to
 `e1cc295` by planning every product, not by re-running each refusal). Items 1 and 2 were re-run only through the products: the

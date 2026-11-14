@@ -1,15 +1,20 @@
-# The Raze base OS product, Gaia F8 form at the pin (4abf626 and later). One image: the Raze board, its OS
-# (Buildroot, os/raze.fragment), the Lemnos and Orion components, and the root slot.
+# The Raze base OS product, Gaia F8 form. One image: the Raze board, its OS (Buildroot, os/raze.fragment), the Lemnos
+# and Orion components, and the root slot made by the `slot-boot` recipe (L2d): the EROFS root with dm-verity, the
+# initramfs, the compiled board overlay, the kernel command line, the slot bundle (`[generate.bundle]`, Lemnos's tool,
+# signed by the BENCH key: milestone 2 only) and the boot partition (`[generate.image]`).
 #
-# Components named here but NOT on the image (the check reads them, the base image doesn't ship them):
-#   lemnos-slot-init   goes in the SLOT INITRAMFS (the slot's /init), not the root filesystem: no Gaia field
-#                      targets an initramfs tree yet (PR text).
+# Components named here but NOT on the image's component list (the check reads them, the image takes them another way):
+#   lemnos-slot-init   goes in the slot's INITRAMFS: `initramfs = ["lemnos-slot-init"]` below, its install to /init.
 #   orion-recovery     the recovery package: for an initramfs or flasher image (the flasher product, B9).
 # Components on the image: the Lemnos packaging, lemnosd, lemnos-ctl, lemnos-orion; the Orion board image
 # (orion-bin); the Raze's board file and the base files.
+#
+# THE PINS (L2d): Gaia is pinned at b8585a0 (devices/gaia.lock; its recipes are b3fa40f's, which have `slot-boot`).
+# Lemnos next f4a295c6 (I5j merged, PR #371): the L2 rev for this image, declared by the coordinator 2026-11-14.
+# It replaces the plumbing pin 7d7fabab (origin/pr/I5j), which Gaia built once as a never-flashed proof.
 version = 1
 name = "raze-base"
-description = "Raze base OS: the Raze board with the Lemnos and Orion packages, as a root slot"
+description = "Raze base OS: the Raze board with the Lemnos and Orion packages, as a root slot made by slot-boot"
 
 [sources.buildroot]
 git = "https://gitlab.com/buildroot.org/buildroot.git"
@@ -30,9 +35,38 @@ orion-recovery = "../../components/orion-recovery/component.toml"
 name = "raze-base"
 board = "../../boards/raze/board.toml"
 components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "raze-lemnos-board", "raze-base-files", "orion"]
+initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os/raze.fragment"] }
-recipe = "slot"
+recipe = "slot-boot"
 
-# The path the root slot is written to. F8?: the value's form (the zero-3e example uses a /data/slots path).
+# The slot-boot settings (recipes/slot-boot.toml at the gating rev; each names what it sets).
+#  device          where the slot is read from (the verity tree is in it too). F8?: the zero-3e example uses /data/slots.
+#  slot            the slot's id: lowercase [a-z0-9._-], 1..64 bytes, no `+` (Lemnos). Written out, and held equal to
+#                  <product>-<version> with `+` read as `-`, lowercased, by scripts/check-devices.sh (slot_id_for, the
+#                  one rule's one place). PLACEHOLDER count and commit: the move sets the real ones.
+#  version         the OS version, 2026.1.0-dev.<count>+<commit> (Lemnos accepts it everywhere). PLACEHOLDER: count 1,
+#                  commit "l2d"; the real count and commit of the Atlas tree the image is built from replace both.
+#  product         lowercase [a-z0-9-], <= 64 bytes.
+#  boot_size       the boot partition's size in bytes, the layout's (79 MiB = 82,837,504: the Raze's FAT boot partition,
+#                  L2-partition-requirements 8.4; `boot-partition --min-size` says the minimum, the bays are in
+#                  boards/raze/lemnos-board.toml [boot]).
+#  compression     EROFS compression: lzma, the one the build's own mkfs.erofs writes (Buildroot's host tool has no zstd).
+#                  The board measurement on the first Raze image decides the final value (lzma, lz4hc, zstd rows).
+#  sign_key_env    the environment variable that names the signing key's file (a raw 32-byte Ed25519 seed or 64 hex,
+#                  mode 0600). Set by the build's caller, never written here: no key path or key material in any file.
+#  sign_key_id     the key id the build is keyed on: SHA-256 of the 32-byte PUBLIC key. This is the BENCH key's id
+#                  (9af003d92992f9c2211a1f5b8d33a08f610c5bae45c61f9f9f6c3a10442fdd64, `atlas-next bench-key`, next f5e41cbb).
+#                  A bench credential: an image that leaves the bench needs a released key, its own id, and the
+#                  board's [security] keys list must carry that key, not this one (the board file's keys file ships the
+#                  bench line only, components/raze-lemnos-board/files/slot-keys).
+#  sign_pubkey_env the environment variable that names the public half's file, for the tool to verify its own signature.
 [images.settings]
 device = "/data/slots/root.img"
+slot = "raze-base-2026.1.0-dev.1-l2d"
+product = "raze-base"
+version = "2026.1.0-dev.1+l2d"
+boot_size = 82837504
+compression = "lzma"
+sign_key_env = "ATLAS_BENCH_SEED_FILE"
+sign_key_id = "9af003d92992f9c2211a1f5b8d33a08f610c5bae45c61f9f9f6c3a10442fdd64"
+sign_pubkey_env = "ATLAS_BENCH_PUBKEY_FILE"

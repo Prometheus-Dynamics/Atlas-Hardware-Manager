@@ -2,12 +2,47 @@
 # leaves its logs for the support bundle (Orion).
 version = 1
 name = "raze-base-files"
-description = "Raze base system config: the bounded persistent journal"
+description = "Raze base system config: the bounded persistent journal, the USB network address of lemnos0 (serial-hash-v1, DHCP server), networkd enabled"
 
 [[install]]
 from = { file = "files/60-board-journald.conf" }
 to = "/usr/lib/systemd/journald.conf.d/60-board.conf"
 mode = "0644"
+
+# The USB network: lemnos0 (the gadget's NCM interface) gets its address at boot from the board serial (scheme
+# serial-hash-v1; the parameters are data in lemnos0-addressing.conf, the script is lemnos0-address). The board serves
+# DHCP to the host from the rest of its /29 with systemd-networkd's DHCPServer. Decided at milestone 2 (coordinator's
+# RULING, INPUTS "RULING (replaces ...)", 2026-11-14). The IPv6 link-local address stays on.
+[[install]]
+from = { file = "files/lemnos0-addressing.conf" }
+to = "/etc/lemnos/lemnos0-addressing.conf"
+mode = "0644"
+
+[[install]]
+from = { file = "files/lemnos0-address" }
+to = "/usr/lib/lemnos/lemnos0-address"
+mode = "0755"
+
+# The interim sysctl: the comm core may bind its USB address before the address exists (see the file's comment).
+[[install]]
+from = { file = "files/60-raze-lemnos0.conf" }
+to = "/etc/sysctl.d/60-raze-lemnos0.conf"
+mode = "0644"
+
+[[install]]
+from = { file = "files/lemnos0-address.service" }
+to = "/etc/systemd/system/lemnos0-address.service"
+mode = "0644"
+
+# The address unit runs before systemd-networkd, which runs the network file it writes. networkd is built by the Raze
+# fragment (BR2_PACKAGE_SYSTEMD_NETWORKD=y): on an allnoconfig base it is not built, so there is no unit to enable.
+[[services]]
+unit = "lemnos0-address.service"
+enable = true
+
+[[services]]
+unit = "systemd-networkd.service"
+enable = true
 
 # No systemd watchdog here: lemnosd feeds the hardware watchdog (15 s by default, from the board file),
 # and it is the only opener of the device.
@@ -16,3 +51,26 @@ mode = "0644"
 [[services]]
 unit = "serial-getty@ttyGS0.service"
 enable = true
+
+# The console follows the board's security switch (LOCK: Lemnos S2): the view /etc/board/security says on (or is
+# malformed) and no login is offered; off or absent and the getty runs as before. ExecCondition in the three template
+# drop-ins (serial-getty for ttyGS0, getty for the other VTs' getty@ units, autovt for the on-demand VTs) runs the check.
+[[install]]
+from = { file = "files/console-allowed" }
+to = "/usr/lib/lemnos/console-allowed"
+mode = "0755"
+
+[[install]]
+from = { file = "files/30-security-console.conf" }
+to = "/etc/systemd/system/serial-getty@.service.d/30-security-console.conf"
+mode = "0644"
+
+[[install]]
+from = { file = "files/30-security-console.conf" }
+to = "/etc/systemd/system/getty@.service.d/30-security-console.conf"
+mode = "0644"
+
+[[install]]
+from = { file = "files/30-security-console.conf" }
+to = "/etc/systemd/system/autovt@.service.d/30-security-console.conf"
+mode = "0644"

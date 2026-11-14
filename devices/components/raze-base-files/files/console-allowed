@@ -1,0 +1,29 @@
+#!/bin/sh
+# console-allowed: may a login be offered on a console of the Raze? (the board's security VIEW, one switch per board)
+# Used as ExecCondition= by the getty drop-ins (raze-base-files: 30-security-console.conf). systemd then skips the
+# getty when this exits 1 (not a failure), and starts it when this exits 0.
+#   view ABSENT                 -> exit 0: off, the console is open (the view is absent until Lemnos renders it)
+#   view exactly "on" + gen N   -> exit 1: ON, no login
+#   view MALFORMED (any other)  -> exit 1: ON (corrupt is on; docs/slots.md "The security switch")
+#   view exactly "off" + gen N  -> exit 0: off, the console is open
+# The view is /etc/board/security: two lines, `on` or `off`, then `generation N` (docs/slots.md). LOCK: Lemnos S2
+# (the view is rendered by `lemnos-ctl --security-unit`; nothing renders it at our lock, so until then it is absent).
+# LEMNOS_SECURITY_VIEW overrides the path for the off-board check (scripts/check-console-gate.py).
+VIEW=${LEMNOS_SECURITY_VIEW:-/etc/board/security}
+
+[ -e "$VIEW" ] || exit 0
+[ -r "$VIEW" ] || exit 1
+lines=$(wc -l < "$VIEW") || exit 1
+[ "$lines" -eq 2 ] || exit 1
+state=$(sed -n 1p "$VIEW")
+gen=$(sed -n 2p "$VIEW")
+case "$gen" in
+'generation '*) ;;
+*) exit 1 ;;
+esac
+number=${gen#generation }
+case "$number" in '' | *[!0-9]*) exit 1 ;; esac
+case "$state" in
+off) exit 0 ;;
+*) exit 1 ;;
+esac

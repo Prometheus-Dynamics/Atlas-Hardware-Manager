@@ -1,4 +1,4 @@
-# Lemnos's packaging for an image with systemd, at Lemnos next d6b9361d: the units, sysusers, udev rules
+# Lemnos's packaging for an image with systemd, at Lemnos next f4a295c6 (I5j merged): the units, sysusers, udev rules
 # and settings files, at the paths Lemnos's packaging/README.md gives (the "one privilege path": no
 # setcap, no xattrs, no User= in the units; lemnosd starts as root and drops itself). Board-neutral.
 #
@@ -14,7 +14,7 @@ description = "Lemnos packaging for systemd: the lemnosd and lemnos-orion units,
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "d6b9361d006e5f633149b6dea8bb5d1be9483d0a"
+ref = "f4a295c611972ba422df20a78112b9fb409c47d0"  # Lemnos next (I5j merged, PR #371), the L2 rev for the Raze image
 
 [[install]]
 from = { source = "src", path = "packaging/systemd/lemnosd.service" }
@@ -44,6 +44,13 @@ mode = "0644"
 [[install]]
 from = { source = "src", path = "packaging/systemd/lemnos-orion.env.example" }
 to = "/etc/lemnos/lemnos-orion.env"
+mode = "0644"
+
+# The Raze's USB link for the bridge (Atlas, not Lemnos's example): LEMNOS_ORION_LINKS=gadget=orion-link, as a drop-in on
+# lemnos-orion.service. MOVES to the generated output at Lemnos R1j; then this drop-in goes.
+[[install]]
+from = { file = "files/lemnos-orion-links.conf" }
+to = "/etc/systemd/system/lemnos-orion.service.d/10-raze-links.conf"
 mode = "0644"
 
 # The users the sysusers file names (lemnos and lemnos-orion), made at build time as well: the

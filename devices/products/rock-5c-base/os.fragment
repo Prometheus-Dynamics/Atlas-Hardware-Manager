@@ -152,3 +152,7 @@ BR2_LINUX_KERNEL_INSTALL_TARGET=y
 # so an overlay (Lemnos's generated overlay, merged by Gaia with fdtoverlay) can name the board's nodes. Off in
 # allnoconfig; set here. Measured: the ZERO 3E gadget dtb 55,678 -> 115,100 bytes with symbols (host dtc 1.8.1).
 BR2_LINUX_KERNEL_DTB_OVERLAY_SUPPORT=y
+
+# Host tools the slot is made with (L2d; the build's own mkfs.erofs and veritysetup: Gaia refuses a slot image without them).
+BR2_PACKAGE_HOST_EROFS_UTILS=y
+BR2_PACKAGE_HOST_CRYPTSETUP=y

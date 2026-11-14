@@ -442,6 +442,81 @@ firmware_rule() {  # <devices dir>
   return $rc
 }
 
+# The slot id, product and version of a slot-boot image (Lemnos next bfbe88f4, from its code):
+#   product: lowercase [a-z0-9-], 1..64 bytes.  version: 1..256 bytes, printable, no control character.
+#   slot id: [a-z0-9._-], 1..64 bytes, not starting with a dot; uppercase and `+` are refused by the board.
+# THE ONE RULE (this is its one place): slot = <product>-<version>, with every `+` read as `-`, lowercased.
+# A new build gets a new id, so the id follows the version and is never chosen by hand.
+slot_id_for() {  # <product> <version> -> the slot id
+  local v=${2//+/-}
+  printf '%s-%s' "$1" "${v,,}"
+}
+slot_setting() {  # <product.toml> <key> -> the [images.settings] value (string or number)
+  awk -v k="$2" '
+    /^\[/ { on = ($0 == "[images.settings]") ; next }
+    on && $1 == k && $2 == "=" { v = $0; sub(/^[^=]*=[ \t]*/, "", v); gsub(/^"|"[ \t]*(#.*)?$/, "", v); print v; exit }
+  ' "$1"
+}
+slot_id_rule() {  # <devices dir>
+  local dev=$1 p pname rc=0 out="" product version slot want
+  while IFS= read -r p; do
+    grep -qE '^recipe = "slot-boot"' "$p" || continue
+    pname=$(basename "$(dirname "$p")")
+    product=$(slot_setting "$p" product); version=$(slot_setting "$p" version); slot=$(slot_setting "$p" slot)
+    if [[ ! $product =~ ^[a-z0-9-]{1,64}$ ]]; then
+      out+="products/$pname: setting product \"$product\" is not 1..64 of [a-z0-9-] (Lemnos refuses it)"$'\n'; rc=1
+    fi
+    if [[ -z $version || ${#version} -gt 256 || $version =~ [[:cntrl:]] ]]; then
+      out+="products/$pname: setting version \"$version\" is not 1..256 bytes of printable text (Lemnos refuses it)"$'\n'; rc=1
+    fi
+    want=$(slot_id_for "$product" "$version")
+    if [[ $slot != "$want" ]]; then
+      out+="products/$pname: setting slot \"$slot\" is not the id the version gives, \"$want\" (the one rule: <product>-<version>, + read as -, lowercased; scripts/check-devices.sh slot_id_for)"$'\n'; rc=1
+    elif [[ ! $slot =~ ^[a-z0-9_-][a-z0-9._-]{0,63}$ ]]; then
+      out+="products/$pname: slot id \"$slot\" is not 1..64 of [a-z0-9._-] without a leading dot (Lemnos refuses it); shorten the version's commit part"$'\n'; rc=1
+    fi
+  done < <(find "$dev/products" -mindepth 2 -maxdepth 2 -name product.toml 2>/dev/null | sort)
+  printf '%s' "$out"
+  return $rc
+}
+
+# Proves the slot id rule passes the real tree and refuses: a slot id that is not the version's, an uppercase or
+# `+` version that gives a refused id, an id over 64 bytes, and a product name outside [a-z0-9-].
+slot_id_rule_self_test() {
+  local tmp rc=0 out pf
+  tmp=$(mktemp -d)
+  cp -a "$repo/devices" "$tmp/devices"
+  pf=$tmp/devices/products/raze-base/product.toml
+  if ! out=$(slot_id_rule "$tmp/devices"); then
+    echo "check-devices: self-test: the real tree no longer passes the slot id rule: $out" >&2; rc=1
+  fi
+  [[ $(slot_id_for raze-base "2026.1.0-dev.993+1A2B3C4D") == "raze-base-2026.1.0-dev.993-1a2b3c4d" ]] \
+    || { echo "check-devices: self-test: slot_id_for does not read + as - and lowercase" >&2; rc=1; }
+  sed -i 's/^slot = ".*"/slot = "raze-base-hand-picked"/' "$pf"
+  if out=$(slot_id_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a slot id not derived from the version was not refused" >&2; rc=1
+  elif [[ $out != *'is not the id the version gives'* ]]; then
+    echo "check-devices: self-test: the derivation refusal does not say why: $out" >&2; rc=1
+  fi
+  cp -a "$repo/devices/products/raze-base/product.toml" "$pf"
+  sed -i 's/^version = ".*"/version = "2026.1.0-dev.1+0123456789abcdef0123456789abcdef01234567"/; s/^slot = ".*"/slot = "raze-base-2026.1.0-dev.1-0123456789abcdef0123456789abcdef01234567"/' "$pf"
+  if out=$(slot_id_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a slot id over 64 bytes was not refused" >&2; rc=1
+  elif [[ $out != *'is not 1..64 of [a-z0-9._-]'* ]]; then
+    echo "check-devices: self-test: the length refusal does not say why: $out" >&2; rc=1
+  fi
+  cp -a "$repo/devices/products/raze-base/product.toml" "$pf"
+  sed -i 's/^product = ".*"/product = "Raze_Base"/' "$pf"
+  if out=$(slot_id_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a product name outside [a-z0-9-] was not refused" >&2; rc=1
+  elif [[ $out != *'setting product "Raze_Base"'* ]]; then
+    echo "check-devices: self-test: the product refusal does not name it: $out" >&2; rc=1
+  fi
+  rm -rf "$tmp"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the slot id rule passes the real tree and refuses an id not from the version, an id over 64 bytes and a bad product name"
+  return $rc
+}
+
 # Proves the boot firmware rule passes the real tree, refuses (on a scratch copy) a Lemnos record that disagrees with the
 # board's firmware, and refuses a firmware with no record mapping.
 firmware_rule_self_test() {
@@ -585,7 +660,7 @@ erofs_rule() {  # <devices dir> <plans dir>: plans hold <product dir name>.json
 
 # Proves the erofs rule reads the plan's value: on a scratch copy, the Raze's family builds EROFS_FS_ZIP and no ZSTD line
 # (every EROFS_FS_ZIP line is taken out first). The product with compression = "lz4" passes; the same kernel with the
-# default (zstd, from the recipe) is refused by name. Then a family with no product is held to zstd (a refusal).
+# default (lzma, from the recipe; L2d) is refused by name. Then a family with no product is held to zstd (a refusal).
 # Uses the gaia binary and the tool arguments the run set up.
 erofs_rule_self_test() {
   local tmp rc=0 pa pb pc out prod lockcopy
@@ -598,11 +673,13 @@ erofs_rule_self_test() {
   echo "CONFIG_EROFS_FS_ZIP=y" >> "$tmp/devices/families/bcm2712/assets/linux.fragment"
   prod=$tmp/devices/products/raze-base/product.toml
   lockcopy=$tmp/devices/products/raze-base/gaia.lock
-  sed -i 's/^device = "\/data\/slots\/root.img"$/&\ncompression = "lz4"/' "$prod"
+  # The product states compression = "lzma" (L2d); the scratch copy swaps that line for lz4, then removes it for the recipe default.
+  sed -i 's/^compression = "lzma"$/compression = "lz4"/' "$prod"
+  grep -q '^compression = "lz4"$' "$prod" || { echo "check-devices: self-test: the scratch product has no compression line to change" >&2; rc=1; }
   if ! "$gaia" plan "$prod" --lock "$lockcopy" --recipes "$recipes" "${tool_args[@]}" --json >"$pa/raze-base.json" 2>"$errs"; then
     cat "$errs" >&2; echo "check-devices: self-test: the lz4 scratch product did not plan" >&2; rc=1
   fi
-  sed -i '/^compression = "lz4"$/d' "$prod"
+  sed -i '/^compression = "lz4"$/d' "$prod"   # the recipe's default (lzma at the pinned Gaia)
   if ! "$gaia" plan "$prod" --lock "$lockcopy" --recipes "$recipes" "${tool_args[@]}" --json >"$pb/raze-base.json" 2>"$errs"; then
     cat "$errs" >&2; echo "check-devices: self-test: the default scratch product did not plan" >&2; rc=1
   fi
@@ -612,16 +689,16 @@ erofs_rule_self_test() {
     echo "check-devices: self-test: the lz4 product was refused, or its plan's lz4 was not read: $out" >&2; rc=1
   fi
   if out=$(erofs_rule "$tmp/devices" "$pb"); then
-    echo "check-devices: self-test: the zstd default was not refused on a kernel with no EROFS_FS_ZIP_ZSTD" >&2; rc=1
-  elif [[ $out != *"image raze-base compresses with zstd, so CONFIG_EROFS_FS_ZIP_ZSTD must be =y"* ]]; then
-    echo "check-devices: self-test: the zstd refusal does not name the plan's value and the symbol: $out" >&2; rc=1
+    echo "check-devices: self-test: the recipe's default (lzma) was not refused on a kernel with no EROFS_FS_ZIP_LZMA" >&2; rc=1
+  elif [[ $out != *"image raze-base compresses with lzma, so CONFIG_EROFS_FS_ZIP_LZMA must be =y"* ]]; then
+    echo "check-devices: self-test: the lzma refusal does not name the plan's value and the symbol: $out" >&2; rc=1
   fi
   rm -rf "$tmp/devices/products/raze-base"
   if out=$(erofs_rule "$tmp/devices" "$pc") || [[ $out != *"FAIL families/bcm2712: CONFIG_EROFS_FS_ZIP_ZSTD is not =y"* ]]; then
     echo "check-devices: self-test: a family with no product was not held to zstd by name: $out" >&2; rc=1
   fi
   rm -rf "$tmp" "$pa" "$pb" "$pc"
-  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the erofs rule reads each product's plan: lz4 passes where the default zstd is refused on the same kernel, and a family with no product is held to zstd"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the erofs rule reads each product's plan: lz4 passes where the recipe default lzma is refused on the same kernel, and a family with no product is held to zstd"
   return $rc
 }
 
@@ -818,8 +895,9 @@ SLOT_CHAIN=(
   "bcm2712:BRCM_CHAR_DRIVERS" "bcm2712:MAILBOX" "bcm2712:BCM2835_MBOX" "bcm2712:BCM_VCIO" "bcm2712:RASPBERRYPI_FIRMWARE"
   "rk35xx:MMC_DW_ROCKCHIP" "rk35xx:MMC_SDHCI_OF_DWCMSHC"
 )
-# A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe).
-SLOT_RECIPES="sd-image|slot"
+# A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe, slot-boot is
+# the slot with its bundle and boot partition: L2d).
+SLOT_RECIPES="sd-image|slot|slot-boot"
 # The LZMA decompression stream count a slot family's kernel states (see the rule in slot_chain_check).
 LZMA_STREAMS=4
 
@@ -979,6 +1057,14 @@ while IFS= read -r line; do
     *) bad "$line" ;;
   esac
 done <<<"$firmware_msg"
+# The slot id rule: a slot-boot image's id is derived from its version by the one rule (slot_id_for).
+slotid_msg=$(slot_id_rule "$root") || true
+while IFS= read -r line; do
+  case $line in
+    "") ;;
+    *) bad "$line" ;;
+  esac
+done <<<"$slotid_msg"
 # The bring-up rule (PR B31): every bring-up product carries the watchdog and LED signs (tree-wide).
 bringup_msg=$(bringup_rule "$root") || true
 while IFS= read -r line; do
@@ -1183,6 +1269,7 @@ if [[ $root_given -eq 0 ]]; then
   firmware_rule_self_test || die "self-check: the boot firmware rule no longer refuses a Lemnos record that disagrees with its firmware"
   unnamed_self_test || die "self-check: the in-no-product note lists a product's board, or misses a board nothing names"
   erofs_rule_self_test || die "self-check: the erofs rule no longer reads each product's plan"
+  slot_id_rule_self_test || die "self-check: the slot id rule no longer refuses an id that is not the version's"
   # The version gate: a binary that prints another commit, or none, is refused, and the refusal names the pin.
   fake=$(mktemp -d)
   vout=$(mktemp)

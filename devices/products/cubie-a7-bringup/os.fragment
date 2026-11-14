@@ -57,3 +57,7 @@ BR2_TARGET_GENERIC_GETTY_BAUDRATE_KEEP=y
 # now, and Gaia puts its image and device trees under /boot only when this fragment line is set (as Gaia's
 # zero-3e-demo does). Without it the bootable root has modules and no /boot/Image for extlinux to load.
 BR2_LINUX_KERNEL_INSTALL_TARGET=y
+
+# Host tools the slot is made with (L2d; the build's own mkfs.erofs and veritysetup: Gaia refuses a slot image without them).
+BR2_PACKAGE_HOST_EROFS_UTILS=y
+BR2_PACKAGE_HOST_CRYPTSETUP=y
