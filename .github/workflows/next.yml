@@ -43,7 +43,8 @@ jobs:
           path: ~/.cache/atlas/kernel
           key: kernel-${{ runner.os }}-${{ hashFiles('devices/families/*/family.toml', 'devices/boards/*/board.toml') }}
           restore-keys: kernel-${{ runner.os }}-
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends flex bison
+      # The kernel configuration is resolved with the arm64 cross compiler, as the kernel build resolves it (PR B29).
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends flex bison gcc-aarch64-linux-gnu
       # gaia plan wants the tools a recipe names: veritysetup (slot), mkfs.erofs and the disk tools (sd-image), bwrap (a Rust component).
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cryptsetup-bin erofs-utils e2fsprogs dosfstools mtools gdisk xz-utils bubblewrap
       - run: ./scripts/gate.sh

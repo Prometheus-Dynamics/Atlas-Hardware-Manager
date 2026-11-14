@@ -126,16 +126,19 @@ driver = "system-reboot"
 
 # The board as a USB device: FunctionFS for Orion's link ("orion-link"), NCM with addresses derived from the
 # board serial (no fixed MACs: two Razes share a host), and one ACM console (ttyGS0). The gadget takes its
-# serial from the identity device (uses = identity), the reference's form at 6905b681: a `config` key of that
-# name is refused by the driver.
+# serial from the identity device, named in the gadget's `config` (`identity = "identity"`): at the locked
+# Lemnos d6b9361d the daemon reads the link only from there (service/lemnosd/src/gadget.rs:80-82). Until PR B33
+# this file named it under `uses`, which nothing reads: `lemnos-ctl validate` passed it all the same, and the
+# driver would have failed the gadget at bind, because `function ncm derive` needs the board's serial
+# (drivers/usb-gadget/src/description.rs: no identity). Read from Lemnos's code, never run on a board.
 # vendor and product stay 1d6b:0104: devices/usb-ids.json recognises them as the Atlas board gadget (dev's
 # Raze gadget used the same ids). The reference's 1209:0001 is Lemnos's example.
 # The interface string is the one Orion's link needs (unchanged from the Raze's gadget before Q2d).
 [[devices]]
 id = "gadget"
 driver = "usb-gadget"
-uses = { function = "udc:1000480000.usb", identity = "identity" }
-config = { vendor = 0x1d6b, product = 0x0104, interfaces = "function ffs\ninterface 0xff 0 0 orion-link\nendpoint in bulk\nendpoint out bulk\nfunction ncm derive\nfunction acm\n" }
+uses = { function = "udc:1000480000.usb" }
+config = { vendor = 0x1d6b, product = 0x0104, identity = "identity", interfaces = "function ffs\ninterface 0xff 0 0 orion-link\nendpoint in bulk\nendpoint out bulk\nfunction ncm derive\nfunction acm\n" }
 
 # The fan on RP1 PWM1, channel 3 (dev's rp1_pwm1 channel 3 on GPIO45). VERIFIED on Raze #2 (read by Lemnos,
 # 2026-11-13): channel 3 of the RP1 PWM at pwm@9c000, period 41566 ns. The reference's channel 1 was wrong. frequency_hz 24057 is dev's period of 41566 ns (1 / 41566 ns), min_duty 700 is
