@@ -280,6 +280,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlas-next"
+version = "2026.1.0-dev"
+dependencies = [
+ "atlas-board-slots",
+ "atlas-jobs",
+ "atlas-session",
+ "atlas-sim-node",
+ "atlas-slots",
+ "atlas-trial",
+ "atlas-types",
+ "orion",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "atlas-nt"
 version = "2026.1.0-dev"
 dependencies = [
