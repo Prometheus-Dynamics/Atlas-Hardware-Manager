@@ -36,13 +36,17 @@ atlas_version() {  # <repo dir> -> the Atlas dev version of its HEAD (prints it;
   printf '%s-dev.%s+%s\n' "$release" "$count" "$commit"
 }
 
+slot_product() {  # <product.toml> -> the product name its [images.settings] gives (the slot's product)
+  awk '/^\[images\.settings\]/ { on = 1; next } /^\[/ { on = 0 } on && /^product = "/ { split($0, a, "\""); print a[2]; exit }' "$1"
+}
+
 # The --setting arguments a slot-boot product's image takes from the rule, one token per line (read with mapfile):
 # --setting IMAGE.version=VERSION, --setting IMAGE.slot=SLOT. A product with no slot-boot recipe gets none.
 slot_settings_args() {  # <product.toml> <version> -> one token per line
   local product=$1 version=$2 image pname slot
   grep -qE '^recipe = "slot-boot"' "$product" || return 0
   image=$(awk '/^\[\[images\]\]/ { on = 1; next } /^\[/ { on = 0 } on && $1 == "name" { gsub(/"/, "", $3); print $3; exit }' "$product")
-  pname=$(awk '/^\[images\.settings\]/ { on = 1; next } /^\[/ { on = 0 } on && /^product = "/ { split($0, a, "\""); print a[2]; exit }' "$product")
+  pname=$(slot_product "$product")
   [[ -n $image && -n $pname ]] || { echo "version-rule: $product names no image or no settings product" >&2; return 1; }
   slot=$(slot_id_for "$pname" "$version")
   printf '%s\n' --setting "$image.version=$version" --setting "$image.slot=$slot"
