@@ -107,24 +107,31 @@ async fn rig(name: &str, bytes_per_sec: u64) -> Rig {
 
 /// Waits until the push's progress satisfies `check`, and returns it.
 async fn progress_where(push: &Push, what: &str, check: impl Fn(&Progress) -> bool) -> Progress {
+    let started = Instant::now();
     let mut progress = push.watch();
     let found = tokio::time::timeout(DEADLINE, progress.wait_for(|now| check(now)))
         .await
-        .unwrap_or_else(|_| panic!("{what} never happened"))
+        .unwrap_or_else(|_| panic!("{what} never happened in {:?}", started.elapsed()))
         .expect("the push is running");
+    eprintln!("{what}: after {:?}", started.elapsed());
     (*found).clone()
 }
 
 /// Waits until the job is in a status that `check` accepts, and returns it.
 async fn job_where(jobs: &Jobs, id: JobId, what: &str, check: impl Fn(&JobStatus) -> bool) {
-    let deadline = Instant::now() + DEADLINE;
+    let started = Instant::now();
     loop {
         if let Some(job) = jobs.get(id)
             && check(&job.status)
         {
+            eprintln!("{what}: after {:?}", started.elapsed());
             return;
         }
-        assert!(Instant::now() < deadline, "{what} never happened");
+        assert!(
+            started.elapsed() < DEADLINE,
+            "{what} never happened in {:?}",
+            started.elapsed()
+        );
         tokio::time::sleep(POLL).await;
     }
 }
@@ -654,8 +661,8 @@ async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
     });
     let node = SimNode::start_with(&dir.join("node"), &board, None).expect("the node starts");
     let port = node.network().port();
-    let fast = 8 * 1024 * 1024;
-    let relay = Relay::start(node.network(), fast);
+    // Unthrottled: where the transfer stops is the relay's budget, not the host's speed.
+    let relay = Relay::start(node.network(), 0);
     // A lease in force with no renewals from this test's clock: only the advance makes a silence.
     let clock = Clock::manual();
     let sessions = Sessions::new(Arc::new(ShortPause))
@@ -692,8 +699,11 @@ async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
     .await
     .expect("the jobs open");
 
-    let size = 64 * 1024 * 1024;
+    // The file is small and the budget fixes where the first attempt stops: half of it passes,
+    // so the board holds a quarter and never the whole, however fast or loaded the host is.
+    let size = 8 * 1024 * 1024;
     let destination = "images/lapsed.img";
+    relay.pass_up_to(size / 2);
     let push = submit(
         &kind,
         &jobs,
@@ -709,9 +719,8 @@ async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
     .await;
     let held_before = push.progress().sent;
 
-    // The board drops the transfer: the rate falls to a trickle so nothing more lands, and the node
-    // goes down, so the session is lost.
-    relay.set_rate(1024);
+    // The board drops the transfer: the budget holds the rest, and the node goes down, so the
+    // session is lost.
     drop(node);
     progress_where(&push, "the push waits for the board", |p| {
         matches!(p.stage, Stage::WaitingForBoard { .. })
@@ -720,8 +729,8 @@ async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
     // Silent past the lease, with the hold on the board.
     clock.advance(Duration::from_secs(61));
 
-    // The board is back, holding nothing, at full speed again.
-    relay.set_rate(fast);
+    // The board is back, holding nothing, and the relay passes everything again.
+    relay.pass_up_to(u64::MAX);
     let back =
         SimNode::start_with(&dir.join("node"), &board, Some(port)).expect("the node is back");
     progress_where(&push, "the push says the file starts over", |p| {

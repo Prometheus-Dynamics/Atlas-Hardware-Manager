@@ -15,19 +15,24 @@ pub const DEADLINE: Duration = Duration::from_secs(120);
 /// How often a condition is looked at.
 pub const POLL: Duration = Duration::from_millis(5);
 
-/// A throttle, a cut and a refusal, applied to the connections a relay makes.
+/// A throttle, a budget, a cut and a refusal, applied to the connections a relay makes.
 #[derive(Debug)]
 struct Control {
     /// Bytes per second each way; 0 is unthrottled.
     bytes_per_sec: AtomicU64,
+    /// Client-to-node bytes the relay still passes, over all its connections; `u64::MAX` is no
+    /// limit. A connection that reaches it waits, so a transfer stops at a known point however
+    /// fast or slow the host runs.
+    budget: AtomicU64,
     refusing: AtomicBool,
     stop: AtomicBool,
     /// Both ends of each live connection, kept so a cut can shut them down.
     live: Mutex<Vec<(TcpStream, TcpStream)>>,
 }
 
-/// A TCP relay to a node's port. Connections through it are throttled to a rate; `cut` drops
-/// every live connection; `refuse` drops new ones as they arrive.
+/// A TCP relay to a node's port. Connections through it are throttled to a rate; `pass_up_to`
+/// stops what the client sends after a number of bytes; `cut` drops every live connection;
+/// `refuse` drops new ones as they arrive.
 #[derive(Debug)]
 pub struct Relay {
     addr: SocketAddr,
@@ -45,6 +50,7 @@ impl Relay {
         let addr = listener.local_addr().expect("the relay has an address");
         let control = Arc::new(Control {
             bytes_per_sec: AtomicU64::new(bytes_per_sec),
+            budget: AtomicU64::new(u64::MAX),
             refusing: AtomicBool::new(false),
             stop: AtomicBool::new(false),
             live: Mutex::new(Vec::new()),
@@ -63,6 +69,12 @@ impl Relay {
         self.control
             .bytes_per_sec
             .store(bytes_per_sec, Ordering::SeqCst);
+    }
+
+    /// Passes at most `bytes` more from the client to the node, then holds what the client sends
+    /// until the budget is raised. `u64::MAX` lifts the limit.
+    pub fn pass_up_to(&self, bytes: u64) {
+        self.control.budget.store(bytes, Ordering::SeqCst);
     }
 
     /// Refuses (or stops refusing) new connections.
@@ -109,24 +121,62 @@ fn accept(listener: &TcpListener, upstream: SocketAddr, control: &Arc<Control>) 
                 };
                 lock(&control.live).push((client_down, server_down));
                 let (up, down) = (Arc::clone(control), Arc::clone(control));
-                thread::spawn(move || pump(client_up, server_up, &up));
-                thread::spawn(move || pump(server, client, &down));
+                thread::spawn(move || pump(client_up, server_up, &up, true));
+                thread::spawn(move || pump(server, client, &down, false));
             }
             Err(_) => thread::sleep(POLL),
         }
     }
 }
 
-/// Copies one direction, sleeping after each piece so the rate holds.
-fn pump(mut from: TcpStream, mut to: TcpStream, control: &Control) {
-    let mut buffer = vec![0_u8; 32 * 1024];
+/// Takes up to `want` bytes from the budget, waiting while it is spent. None: the relay stopped.
+fn take_budget(control: &Control, want: usize) -> Option<usize> {
     loop {
+        if control.stop.load(Ordering::SeqCst) {
+            return None;
+        }
+        let left = control.budget.load(Ordering::SeqCst);
+        if left == u64::MAX {
+            return Some(want);
+        }
+        if left > 0 {
+            let take = left.min(want as u64);
+            if control
+                .budget
+                .compare_exchange(left, left - take, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                return Some(take as usize);
+            }
+            continue;
+        }
+        thread::sleep(POLL);
+    }
+}
+
+/// Copies one direction, sleeping after each piece so the rate holds. The client-to-node
+/// direction (`up`) also keeps to the budget.
+fn pump(mut from: TcpStream, mut to: TcpStream, control: &Control, up: bool) {
+    let mut buffer = vec![0_u8; 32 * 1024];
+    'copy: loop {
         let read = match from.read(&mut buffer) {
             Ok(0) | Err(_) => break,
             Ok(read) => read,
         };
-        if to.write_all(&buffer[..read]).is_err() {
-            break;
+        let mut at = 0;
+        while at < read {
+            let take = if up {
+                match take_budget(control, read - at) {
+                    Some(take) => take,
+                    None => break 'copy,
+                }
+            } else {
+                read - at
+            };
+            if to.write_all(&buffer[at..at + take]).is_err() {
+                break 'copy;
+            }
+            at += take;
         }
         let rate = control.bytes_per_sec.load(Ordering::SeqCst);
         if rate > 0 {
