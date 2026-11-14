@@ -9,6 +9,7 @@ pub enum Verb {
     Fingerprint,
     Pin,
     Repin,
+    Enrol,
     List,
     Install(PathBuf),
     Trial(String),
@@ -26,6 +27,8 @@ pub struct Command {
     pub state: Option<PathBuf>,
     /// `--reflashed`: only for `repin`.
     pub reflashed: bool,
+    /// `--identity <file>`: the identity file, instead of the default one.
+    pub identity: Option<PathBuf>,
 }
 
 /// What the arguments say.
@@ -37,6 +40,11 @@ pub enum Parsed {
         directory: PathBuf,
         json: bool,
     },
+    /// `identity`: the PC's client identity (made if absent), with `--identity` and `--json`.
+    Identity {
+        identity: Option<PathBuf>,
+        json: bool,
+    },
     Help,
     Usage(String),
 }
@@ -46,18 +54,21 @@ pub enum Parsed {
 pub fn parse(args: &[String]) -> Parsed {
     match args.first().map(String::as_str) {
         None | Some("-h" | "--help" | "help") => return Parsed::Help,
-        Some("slots") => {}
+        Some("slots" | "enrol") => {}
+        Some("identity") => return parse_identity(&args[1..]),
         Some("bench-key") => return parse_bench_key(&args[1..]),
         Some(other) => {
             return Parsed::Usage(format!(
-                "unknown command {other:?}; the commands are slots and bench-key"
+                "unknown command {other:?}; the commands are slots, enrol, identity and bench-key"
             ));
         }
     }
+    let enrol = args[0] == "enrol";
     let mut positional: Vec<&str> = Vec::new();
     let mut json = false;
     let mut reflashed = false;
     let mut state = None;
+    let mut identity = None;
     let mut rest = args[1..].iter();
     while let Some(arg) = rest.next() {
         match arg.as_str() {
@@ -68,11 +79,31 @@ pub fn parse(args: &[String]) -> Parsed {
                 Some(dir) => state = Some(PathBuf::from(dir)),
                 None => return Parsed::Usage("--state needs a directory".into()),
             },
+            "--identity" => match rest.next() {
+                Some(file) => identity = Some(PathBuf::from(file)),
+                None => return Parsed::Usage("--identity needs a file".into()),
+            },
             flag if flag.starts_with("--") => {
                 return Parsed::Usage(format!("unknown option {flag}"));
             }
             _ => positional.push(arg),
         }
+    }
+    if enrol {
+        if reflashed {
+            return Parsed::Usage("--reflashed is only for repin".into());
+        }
+        return match positional.as_slice() {
+            [address] => Parsed::Run(Command {
+                address: (*address).to_owned(),
+                verb: Verb::Enrol,
+                json,
+                state,
+                reflashed: false,
+                identity,
+            }),
+            _ => Parsed::Usage("enrol takes one address: enrol <address>".into()),
+        };
     }
     let [address, verb, operands @ ..] = positional.as_slice() else {
         return Parsed::Usage("a command needs an address and a command".into());
@@ -101,7 +132,27 @@ pub fn parse(args: &[String]) -> Parsed {
         json,
         state,
         reflashed,
+        identity,
     })
+}
+
+/// Reads the operands of `identity`: no operand, `--identity <file>`, `--json`, `--help`.
+fn parse_identity(args: &[String]) -> Parsed {
+    let mut identity = None;
+    let mut json = false;
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        match arg.as_str() {
+            "-h" | "--help" => return Parsed::Help,
+            "--json" => json = true,
+            "--identity" => match rest.next() {
+                Some(file) => identity = Some(PathBuf::from(file)),
+                None => return Parsed::Usage("--identity needs a file".into()),
+            },
+            other => return Parsed::Usage(format!("identity takes no operand: {other:?}")),
+        }
+    }
+    Parsed::Identity { identity, json }
 }
 
 /// Reads the operands of `bench-key`: one directory, `--json`, `--help`.
@@ -148,6 +199,7 @@ mod tests {
                 json: true,
                 state: Some(PathBuf::from("/x")),
                 reflashed: false,
+                identity: None,
             })
         );
     }

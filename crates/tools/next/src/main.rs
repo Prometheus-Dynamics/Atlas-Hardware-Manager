@@ -4,6 +4,7 @@
 use std::io::Write;
 use std::sync::Arc;
 
+use atlas_next::identity::default_path;
 use atlas_next::{Env, default_state_dir, execute, is_trial};
 use tokio::sync::Notify;
 
@@ -11,6 +12,11 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let state_dir = default_state_dir(std::env::var_os("XDG_DATA_HOME"), std::env::var_os("HOME"));
     let mut env = Env::new(state_dir);
+    env.identity_default = default_path(
+        std::env::var_os("XDG_CONFIG_HOME"),
+        std::env::var_os("HOME"),
+        std::env::var_os("APPDATA"),
+    );
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
