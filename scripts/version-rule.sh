@@ -45,10 +45,11 @@ slot_product() {  # <product.toml> -> the product name its [images.settings] giv
 }
 
 # The --setting arguments a slot-boot product's image takes from the rule, one token per line (read with mapfile):
-# --setting IMAGE.version=VERSION, --setting IMAGE.slot=SLOT. A product with no slot-boot recipe gets none.
+# --setting IMAGE.version=VERSION, --setting IMAGE.slot=SLOT. A product with no slot-boot or slot-disk recipe (both
+# declare version and slot) gets none.
 slot_settings_args() {  # <product.toml> <version> -> one token per line
   local product=$1 version=$2 image pname slot
-  grep -qE '^recipe = "slot-boot"' "$product" || return 0
+  grep -qE '^recipe = "slot-(boot|disk)"' "$product" || return 0
   image=$(awk '/^\[\[images\]\]/ { on = 1; next } /^\[/ { on = 0 } on && $1 == "name" { gsub(/"/, "", $3); print $3; exit }' "$product")
   pname=$(slot_product "$product")
   [[ -n $image && -n $pname ]] || { echo "version-rule: $product names no image or no settings product" >&2; return 1; }
