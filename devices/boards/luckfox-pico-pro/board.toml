@@ -1,0 +1,77 @@
+# Luckfox Pico Pro (Rockchip RV1106G2, armv7, 128 MB SPI-NAND, no eMMC). Dev's
+# record: devices/luckfox-pico-pro on dev. Untested on board (G6).
+version = 1
+extends = "../../families/rv11xx/family.toml"
+name = "luckfox-pico-pro"
+description = "Luckfox Pico Pro (RV1106G2)"
+
+# Gaia's name for ARMv7 is `arm`.
+# USB id 2207:110c (RV1106 maskrom) comes from Luckfox's docs via search, not a lsusb
+# check: confirm on the board before relying on it (dev's record, open).
+[target]
+arch = "arm"
+
+[sources.rkbin]
+git = "https://github.com/rockchip-linux/rkbin.git"
+ref = "f43a462e7a1429a9d407ae52b4745033034a6cf9"
+
+# DDR init: rkbin's rv1106 file, the one RV1106MINIALL.ini names.
+[bootloader.blobs]
+ROCKCHIP_TPL = { source = "rkbin", path = "bin/rv11/rv1106_ddr_924MHz_v1.15.bin" }
+
+# Maskrom loader: the ini names the DDR, usbplug and SPL above. boot_merger
+# makes the merged loader (rv1106_download_v1.15.108.bin); rkbin does not
+# publish it, so it is open: see the PR text.
+[flash.files]
+loader_ini = { source = "rkbin", path = "RKBOOT/RV1106MINIALL.ini" }
+
+# SPI-NAND layout from dev's manifest (the Gaia layout Atlas reads). Offsets
+# are the boot ROM's and the bootloader's; there is no partition table on
+# NAND, so none is listed (in_table = false).
+#
+# The ubi partition is the UBI region: its slots are UBI volumes, written on
+# the board by a Lemnos update driver (dev's atlas-ubi nand-slot). Its size is
+# the rest of the 128 MiB flash, 128M - 13M. Nothing in Gaia at e90ee03 lays
+# out a UBI region (see the PR text), so the ubi partition is described here
+# only.
+[[partitions]]
+name = "env"
+role = "raw"
+offset = "0"
+size = "256K"
+in_table = false
+
+[[partitions]]
+name = "idblock"
+role = "raw"
+offset = "256K"
+size = "256K"
+in_table = false
+
+[[partitions]]
+name = "uboot"
+role = "bootloader"
+offset = "512K"
+size = "512K"
+in_table = false
+
+[[partitions]]
+name = "boot"
+role = "boot"
+offset = "1M"
+size = "6M"
+in_table = false
+
+[[partitions]]
+name = "boot_b"
+role = "boot"
+offset = "7M"
+size = "6M"
+in_table = false
+
+[[partitions]]
+name = "ubi"
+role = "rootfs"
+offset = "13M"
+size = "115M"
+in_table = false
