@@ -45,6 +45,10 @@ CONFIG_USB_CONFIGFS_ACM=y
 #    family's kernel (INPUTS: Lemnos docs/slots.md). Each is a real need for a slot boot.
 CONFIG_BLK_DEV_LOOP=y
 CONFIG_EROFS_FS=y
+# The slot root is zstd-compressed EROFS (Gaia's slot recipes): the decompressor must be built in or the
+#   root does not mount (PR B34).
+CONFIG_EROFS_FS_ZIP=y
+CONFIG_EROFS_FS_ZIP_ZSTD=y
 # Device mapper must be built in for verity: a module would not exist when the slot initramfs runs
 #   (DM_VERITY is m in the defconfig, and it depends on BLK_DEV_DM, which is m there too).
 CONFIG_BLK_DEV_DM=y
