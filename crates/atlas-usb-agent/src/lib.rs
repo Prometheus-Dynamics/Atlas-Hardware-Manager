@@ -19,8 +19,9 @@
 //!
 //! A boot-only job USB boots one board with a set of files and does nothing
 //! else: it never looks at a disk on its port and writes nothing. Its files
-//! are uploaded once (`PUT /v1/boot-only/files/<path>`, `<path>` a name or
-//! `overlays/<name>`) and a job names them by path and SHA-256
+//! are uploaded once (`PUT /v1/boot-only/files/<path>`, `<path>` relative to the
+//! boot directory, up to four levels: `config.txt`, `overlays/<name>`,
+//! `slots/<bay>/<name>`) and a job names them by path and SHA-256
 //! (`POST /v1/boot-only`); it serves only the files it names. Its events
 //! (read with `GET /v1/jobs/<id>`) are, in order: `usb-step` (waiting, the
 //! second stage sent, a board fact the bootloader sent), one `boot-file` per
@@ -160,14 +161,18 @@ pub struct BootOnlyRequest {
 pub const BOOT_ONLY_TIMEOUT_S: u64 = 60;
 pub const BOOT_ONLY_MAX_TIMEOUT_S: u64 = 600;
 
-/// A boot-only file's path: a name, or `overlays/<name>`. Nothing else, and
-/// no `..`, absolute, or empty segments.
+/// The most directory levels a boot-only path has: a boot partition's slot bay
+/// file, `slots/<bay>/overlays/<name>`, is four.
+pub const BOOT_ONLY_MAX_DEPTH: usize = 4;
+
+/// A boot-only file's path, relative to the boot directory the Pi reads: one
+/// to [`BOOT_ONLY_MAX_DEPTH`] segments, each a [`valid_name`]. So `config.txt`,
+/// `overlays/<name>` and a slot bay's `slots/<bay>/<name>` are taken, and no
+/// `..`, `.`, absolute, hidden or empty segment is.
 pub fn valid_boot_only_path(path: &str) -> bool {
-    match path.split('/').collect::<Vec<_>>().as_slice() {
-        [name] => valid_name(name),
-        ["overlays", name] => valid_name(name),
-        _ => false,
-    }
+    let segments: Vec<&str> = path.split('/').collect();
+    (1..=BOOT_ONLY_MAX_DEPTH).contains(&segments.len())
+        && segments.iter().all(|segment| valid_name(segment))
 }
 
 /// A SHA-256 as 64 lowercase hex digits.
@@ -318,15 +323,20 @@ mod tests {
     }
 
     #[test]
-    fn boot_only_paths_are_names_or_overlays() {
+    fn boot_only_paths_are_names_overlays_or_slot_bays() {
         assert!(valid_boot_only_path("config.txt"));
         assert!(valid_boot_only_path("overlays/vc4-kms.dtbo"));
+        assert!(valid_boot_only_path("slots/bay0/kernel8.img"));
+        assert!(valid_boot_only_path(
+            "slots/bay0/overlays/lemnos-board.dtbo"
+        ));
+        assert!(!valid_boot_only_path("slots/bay0/overlays/a/b"));
+        assert!(!valid_boot_only_path("slots/./kernel8.img"));
+        assert!(!valid_boot_only_path("slots/../config.txt"));
         assert!(!valid_boot_only_path(""));
         assert!(!valid_boot_only_path("../config.txt"));
         assert!(!valid_boot_only_path("/etc/passwd"));
-        assert!(!valid_boot_only_path("etc/passwd"));
         assert!(!valid_boot_only_path("overlays/../x"));
-        assert!(!valid_boot_only_path("overlays/a/b"));
         assert!(!valid_boot_only_path("overlays//x"));
         assert!(!valid_boot_only_path("a%2fb"));
         assert!(!valid_boot_only_path(".hidden"));

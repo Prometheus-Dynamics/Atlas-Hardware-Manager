@@ -433,7 +433,9 @@ async fn put_boot_only_file(agent: &Agent, request: Request<Incoming>, path: &st
     if !valid_boot_only_path(path) {
         return error(
             StatusCode::BAD_REQUEST,
-            format!("{path:?} is not a boot-only file: a name, or overlays/<name>"),
+            format!(
+                "{path:?} is not a boot-only file: a path in the boot directory, one to four names (config.txt, overlays/<name>, slots/<bay>/<name>)"
+            ),
         );
     }
     let Some(sha256) = request

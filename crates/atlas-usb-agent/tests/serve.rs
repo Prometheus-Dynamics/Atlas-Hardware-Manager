@@ -207,7 +207,8 @@ fn boot_only_files_and_jobs() {
     assert!(!agent.state.join("boot-only/files/config.txt").exists());
     for bad in [
         "/v1/boot-only/files/..%2Fx",
-        "/v1/boot-only/files/a/b",
+        "/v1/boot-only/files/a/b/c/d/e",
+        "/v1/boot-only/files/slots/./x",
         "/v1/boot-only/files/overlays/../x",
         "/v1/boot-only/files//etc",
     ] {
