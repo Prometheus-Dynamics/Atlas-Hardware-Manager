@@ -134,7 +134,8 @@ pub const HELLO_VERSION_PRODUCT: &str = "hello.version.product";
 pub const HELLO_VERSION_OS: &str = "hello.version.os";
 pub const HELLO_VERSION_LEMNOS: &str = "hello.version.lemnos";
 pub const HELLO_OFFERS: &str = "hello.offers";
-/// Owned by Orion, not Lemnos. See above.
+/// Orion's own fact (since R2 the comm core writes it, and a program's `hello.state` is dropped).
+/// The simulated node does not publish it.
 pub const HELLO_STATE: &str = "hello.state";
 
 /// Every hello topic the node may publish.
