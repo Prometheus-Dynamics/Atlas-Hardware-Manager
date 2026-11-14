@@ -440,12 +440,14 @@ dependencies = [
 name = "atlas-usb-agent"
 version = "2026.1.0-dev"
 dependencies = [
+ "async-trait",
  "atlas-blockdev",
  "atlas-usbboot",
  "bytes",
  "http-body-util",
  "hyper",
  "hyper-util",
+ "nusb",
  "serde",
  "serde_json",
  "sha2 0.11.0",

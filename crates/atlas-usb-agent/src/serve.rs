@@ -17,9 +17,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use atlas_usb_agent::{
-    AgentInfo, BOOT_FILES, Event, FlashRequest, JobEvents, JobStarted, SHA256_HEADER, Stored,
-    valid_name, valid_port,
+    AgentInfo, BOOT_FILES, BOOT_ONLY_MAX_TIMEOUT_S, BOOT_ONLY_TIMEOUT_S, BootOnlyRequest, Event,
+    FlashRequest, JobEvents, JobStarted, SHA256_HEADER, Stored, valid_boot_only_path, valid_name,
+    valid_port, valid_sha256,
 };
+use atlas_usbboot::BootFiles;
 use bytes::Bytes;
 use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
@@ -27,6 +29,7 @@ use hyper::{Method, Request, Response, StatusCode};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 
+use crate::boot_only;
 use crate::flash::{Flash, Sink};
 
 /// The largest upload taken.
@@ -69,6 +72,11 @@ impl Agent {
         BOOT_FILES
             .iter()
             .all(|name| self.dir("boot").join(name).is_file())
+    }
+
+    /// Where boot-only files are uploaded: the store the jobs copy from.
+    fn boot_only_store(&self) -> PathBuf {
+        self.dir("boot-only").join("files")
     }
 }
 
@@ -127,6 +135,19 @@ pub(crate) async fn serve(options: Options) -> Result<(), String> {
 
 async fn handle(agent: Arc<Agent>, request: Request<Incoming>) -> Reply {
     let path = request.uri().path().to_string();
+    // Boot-only files take their path as given: no trimming, so `//` or a
+    // leading slash inside it is refused, not read as another path.
+    if let Some(relative) = path.strip_prefix("/v1/boot-only/files/") {
+        let method = request.method().clone();
+        return if method == Method::PUT {
+            put_boot_only_file(&agent, request, relative).await
+        } else {
+            error(
+                StatusCode::METHOD_NOT_ALLOWED,
+                format!("only PUT takes a boot-only file: {path}"),
+            )
+        };
+    }
     let parts: Vec<&str> = path.trim_matches('/').split('/').collect();
     match (request.method().clone(), parts.as_slice()) {
         (Method::GET, ["v1", "agent"]) => json(
@@ -162,6 +183,7 @@ async fn handle(agent: Arc<Agent>, request: Request<Incoming>) -> Reply {
             reply
         }
         (Method::POST, ["v1", "flash"]) => start(agent, request).await,
+        (Method::POST, ["v1", "boot-only"]) => start_boot_only(agent, request).await,
         (Method::GET, ["v1", "jobs", id]) if valid_name(id) => {
             let from = request
                 .uri()
@@ -303,48 +325,12 @@ async fn start(agent: Arc<Agent>, request: Request<Incoming>) -> Reply {
     if !agent.has_boot_files() {
         return error(StatusCode::CONFLICT, "the boot files aren't here yet");
     }
-    let job = {
-        let mut jobs = lock(&agent.jobs);
-        if let Some(running) = jobs
-            .iter()
-            .find(|job| !job.finished.load(Ordering::Relaxed))
-        {
-            return error(
-                StatusCode::CONFLICT,
-                format!("job {} is still running", running.id),
-            );
-        }
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |elapsed| elapsed.as_secs());
-        let job = Arc::new(Job {
-            id: format!("{stamp}-{}", flash.port),
-            events: Mutex::new(Vec::new()),
-            finished: AtomicBool::new(false),
-            cancel: Arc::new(AtomicBool::new(false)),
-        });
-        jobs.push_back(job.clone());
-        while jobs.len() > KEEP_JOBS {
-            jobs.pop_front();
-        }
-        job
+    let job = match begin_job(&agent, &flash.port) {
+        Ok(job) => job,
+        Err(problem) => return error(StatusCode::CONFLICT, problem),
     };
     prune(&agent.dir("jobs"), KEEP_JOBS, None);
-    let log_path = agent.dir("jobs").join(format!("{}.jsonl", job.id));
-    let sink: Sink = {
-        let job = job.clone();
-        Arc::new(move |event: Event| {
-            if let Ok(line) = serde_json::to_string(&event)
-                && let Ok(mut file) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&log_path)
-            {
-                let _ = writeln!(file, "{line}");
-            }
-            lock(&job.events).push(event);
-        })
-    };
+    let sink = job_sink(&job, agent.dir("jobs").join(format!("{}.jsonl", job.id)));
     let run = Flash {
         port: flash.port,
         boot_files: agent.dir("boot"),
@@ -362,6 +348,181 @@ async fn start(agent: Arc<Agent>, request: Request<Incoming>) -> Reply {
         running.finished.store(true, Ordering::Relaxed);
     });
     json(StatusCode::OK, &JobStarted { id: job.id.clone() })
+}
+
+/// Starts a job at `port`, refused while another job runs.
+fn begin_job(agent: &Agent, port: &str) -> Result<Arc<Job>, String> {
+    let mut jobs = lock(&agent.jobs);
+    if let Some(running) = jobs
+        .iter()
+        .find(|job| !job.finished.load(Ordering::Relaxed))
+    {
+        return Err(format!("job {} is still running", running.id));
+    }
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs());
+    let job = Arc::new(Job {
+        id: format!("{stamp}-{port}"),
+        events: Mutex::new(Vec::new()),
+        finished: AtomicBool::new(false),
+        cancel: Arc::new(AtomicBool::new(false)),
+    });
+    jobs.push_back(job.clone());
+    while jobs.len() > KEEP_JOBS {
+        jobs.pop_front();
+    }
+    Ok(job)
+}
+
+/// A sink that keeps a job's events in memory and appends them to its log.
+fn job_sink(job: &Arc<Job>, log_path: PathBuf) -> Sink {
+    let job = job.clone();
+    Arc::new(move |event: Event| {
+        if let Ok(line) = serde_json::to_string(&event)
+            && let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_path)
+        {
+            let _ = writeln!(file, "{line}");
+        }
+        lock(&job.events).push(event);
+    })
+}
+
+/// `PUT /v1/boot-only/files/<path>`: a boot-only file into the store,
+/// hashed on the way like an image.
+async fn put_boot_only_file(agent: &Agent, request: Request<Incoming>, path: &str) -> Reply {
+    if !valid_boot_only_path(path) {
+        return error(
+            StatusCode::BAD_REQUEST,
+            format!("{path:?} is not a boot-only file: a name, or overlays/<name>"),
+        );
+    }
+    let Some(sha256) = request
+        .headers()
+        .get(SHA256_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_ascii_lowercase)
+    else {
+        return error(
+            StatusCode::BAD_REQUEST,
+            format!("{SHA256_HEADER} is required"),
+        );
+    };
+    let target = agent.boot_only_store().join(path);
+    if let Some(parent) = target.parent()
+        && let Err(problem) = std::fs::create_dir_all(parent)
+    {
+        return error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("{}: {problem}", parent.display()),
+        );
+    }
+    upload(request, &target, Some(&sha256)).await
+}
+
+/// `POST /v1/boot-only`: a job that USB boots the port with exactly the
+/// files it names, and does nothing else.
+async fn start_boot_only(agent: Arc<Agent>, request: Request<Incoming>) -> Reply {
+    let body = match request.into_body().collect().await {
+        Ok(body) => body.to_bytes(),
+        Err(_) => return error(StatusCode::BAD_REQUEST, "the request broke off"),
+    };
+    if body.len() > 1 << 20 {
+        return error(StatusCode::BAD_REQUEST, "the request is too large");
+    }
+    let wanted: BootOnlyRequest = match serde_json::from_slice(&body) {
+        Ok(wanted) => wanted,
+        Err(problem) => return error(StatusCode::BAD_REQUEST, problem.to_string()),
+    };
+    if !valid_port(&wanted.port) {
+        return error(StatusCode::BAD_REQUEST, "a bad port");
+    }
+    if wanted.files.is_empty() {
+        return error(StatusCode::BAD_REQUEST, "no files to serve");
+    }
+    for (path, sha256) in &wanted.files {
+        if !valid_boot_only_path(path) || !valid_sha256(sha256) {
+            return error(
+                StatusCode::BAD_REQUEST,
+                format!("{path:?}: a boot-only file's path and SHA-256 (lowercase hex)"),
+            );
+        }
+    }
+    let timeout_s = wanted.timeout_s.unwrap_or(BOOT_ONLY_TIMEOUT_S);
+    if !(1..=BOOT_ONLY_MAX_TIMEOUT_S).contains(&timeout_s) {
+        return error(
+            StatusCode::BAD_REQUEST,
+            format!("timeout_s must be 1 to {BOOT_ONLY_MAX_TIMEOUT_S}"),
+        );
+    }
+    let Some(mut port) = boot_only::UsbPort::at(&wanted.port) else {
+        return error(StatusCode::BAD_REQUEST, "a bad port");
+    };
+    // The job's own set: exactly the files it names, copied from the store
+    // and hashed as copied, so what is served is what was asked for.
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_nanos());
+    let set = agent.dir("boot-only").join(format!("set-{stamp}"));
+    if let Err(problem) = stage_set(&agent.boot_only_store(), &set, &wanted.files) {
+        let _ = std::fs::remove_dir_all(&set);
+        return error(StatusCode::CONFLICT, problem);
+    }
+    let files = match BootFiles::open(&set) {
+        Ok(files) => files,
+        Err(problem) => {
+            let _ = std::fs::remove_dir_all(&set);
+            return error(StatusCode::BAD_REQUEST, problem.to_string());
+        }
+    };
+    let job = match begin_job(&agent, &wanted.port) {
+        Ok(job) => job,
+        Err(problem) => {
+            let _ = std::fs::remove_dir_all(&set);
+            return error(StatusCode::CONFLICT, problem);
+        }
+    };
+    prune(&agent.dir("jobs"), KEEP_JOBS, None);
+    let sink = job_sink(&job, agent.dir("jobs").join(format!("{}.jsonl", job.id)));
+    let running = job.clone();
+    tokio::spawn(async move {
+        let timeout = std::time::Duration::from_secs(timeout_s);
+        let last = boot_only::run(&mut port, &files, timeout, &running.cancel, &*sink).await;
+        sink(last);
+        let _ = std::fs::remove_dir_all(&set);
+        running.finished.store(true, Ordering::Relaxed);
+    });
+    json(StatusCode::OK, &JobStarted { id: job.id.clone() })
+}
+
+/// Copies each named file from the store into `set`, hashing it as copied:
+/// a file that is missing, or not the SHA-256 the job names, refuses the job.
+fn stage_set(
+    store: &Path,
+    set: &Path,
+    files: &std::collections::BTreeMap<String, String>,
+) -> Result<(), String> {
+    for (path, sha256) in files {
+        let from = store.join(path);
+        let bytes =
+            std::fs::read(&from).map_err(|_| format!("{path} is not stored: upload it first"))?;
+        let actual = hex(&Sha256::digest(&bytes));
+        if &actual != sha256 {
+            return Err(format!(
+                "{path} is stored with SHA-256 {actual}, not {sha256}"
+            ));
+        }
+        let to = set.join(path);
+        if let Some(parent) = to.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|problem| format!("{}: {problem}", parent.display()))?;
+        }
+        std::fs::write(&to, &bytes).map_err(|problem| format!("{}: {problem}", to.display()))?;
+    }
+    Ok(())
 }
 
 /// A job's events from `from` on: from memory, or its log after a restart

@@ -5,6 +5,7 @@
 //! atlas-usb-agent serve [--listen 0.0.0.0:5809] [--state /var/lib/atlas-usb-agent]
 //! atlas-usb-agent flash --port 3-1.1 --boot-files <dir or .tar> --image <file>
 //!                       [--sha256 <hex>] [--boot-file <path on p1>=<file>]... [--detached]
+//! atlas-usb-agent boot-only --port <3-1.1> --files <dir> [--timeout <s>]
 //! atlas-usb-agent version
 //! ```
 //!
@@ -14,6 +15,7 @@
 //! foreground, its events as JSON lines on stdout; closing stdin cancels
 //! it, except with `--detached` (run under `systemd-run`).
 
+mod boot_only;
 mod claim;
 mod flash;
 mod serve;
@@ -27,7 +29,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use atlas_usb_agent::{Event, PORT, valid_port};
+use atlas_usb_agent::{BOOT_ONLY_TIMEOUT_S, Event, PORT, valid_port};
+use atlas_usbboot::BootFiles;
 
 use crate::flash::{Flash, Sink, log, rss_kib};
 
@@ -38,7 +41,8 @@ const MEMORY_LIMIT_KIB: u64 = 1 << 20;
 const STATE: &str = "/var/lib/atlas-usb-agent";
 const USAGE: &str = "usage: atlas-usb-agent serve [--listen <addr:port>] [--state <dir>] \
 | flash --port <3-1.1> --boot-files <dir|tar> --image <file> [--sha256 <hex>] \
-[--boot-file <path>=<file>]... [--detached] | version";
+[--boot-file <path>=<file>]... [--detached] | boot-only --port <3-1.1> --files <dir> \
+[--timeout <s>] | version";
 
 fn stdout_sink() -> Sink {
     Arc::new(|event: Event| {
@@ -127,6 +131,41 @@ fn parse_flash(args: &[String]) -> Result<FlashArgs, String> {
     })
 }
 
+struct BootOnlyArgs {
+    port: String,
+    files: PathBuf,
+    timeout_s: u64,
+}
+
+fn parse_boot_only(args: &[String]) -> Result<BootOnlyArgs, String> {
+    let mut port = None;
+    let mut files = None;
+    let mut timeout_s = BOOT_ONLY_TIMEOUT_S;
+    let mut args = args.iter();
+    while let Some(flag) = args.next() {
+        let value = args.next().ok_or_else(|| format!("{flag} needs a value"))?;
+        match flag.as_str() {
+            "--port" => port = Some(value.clone()),
+            "--files" => files = Some(PathBuf::from(value)),
+            "--timeout" => {
+                timeout_s = value
+                    .parse()
+                    .map_err(|_| format!("--timeout {value}: write seconds"))?;
+            }
+            other => return Err(format!("unknown option {other}")),
+        }
+    }
+    let port = port.ok_or("--port is required")?;
+    if !valid_port(&port) {
+        return Err(format!("{port} isn't a USB port path like 3-1.1"));
+    }
+    Ok(BootOnlyArgs {
+        port,
+        files: files.ok_or("--files is required")?,
+        timeout_s,
+    })
+}
+
 fn parse_serve(args: &[String]) -> Result<serve::Options, String> {
     let mut options = serve::Options {
         listen: SocketAddr::from(([0, 0, 0, 0], PORT)),
@@ -167,6 +206,24 @@ fn main() -> ExitCode {
             watch_memory(sink.clone(), false);
             runtime()?.block_on(serve::serve(options))?;
             Ok(None)
+        }),
+        Some("boot-only") => parse_boot_only(&args[1..]).and_then(|boot| {
+            watch_memory(sink.clone(), true);
+            // Closing stdin (Atlas's SSH going away) cancels.
+            let cancel = Arc::new(AtomicBool::new(false));
+            let watcher = cancel.clone();
+            std::thread::spawn(move || {
+                let mut buffer = [0u8; 4096];
+                let mut stdin = std::io::stdin().lock();
+                while matches!(stdin.read(&mut buffer), Ok(n) if n > 0) {}
+                watcher.store(true, Ordering::Relaxed);
+            });
+            let mut port = boot_only::UsbPort::at(&boot.port).ok_or("a bad port")?;
+            let files = BootFiles::open(&boot.files).map_err(|error| error.to_string())?;
+            let timeout = Duration::from_secs(boot.timeout_s);
+            let last =
+                runtime()?.block_on(boot_only::run(&mut port, &files, timeout, &cancel, &*sink));
+            Ok(Some(last))
         }),
         Some("flash") => parse_flash(&args[1..]).and_then(|FlashArgs { flash, detached }| {
             watch_memory(sink.clone(), true);
@@ -236,6 +293,14 @@ mod tests {
         let _ = std::fs::remove_file(file);
         assert!(parse_flash(&["--port".to_string(), "x".to_string()]).is_err());
         assert!(parse_flash(&["--bogus".to_string()]).is_err());
+
+        let boot = parse_boot_only(
+            &["--port", "3-1.1", "--files", "/tmp/set", "--timeout", "9"].map(str::to_string),
+        )
+        .unwrap();
+        assert_eq!((boot.port.as_str(), boot.timeout_s), ("3-1.1", 9));
+        assert!(parse_boot_only(&["--port".to_string(), "3-1.1".to_string()]).is_err());
+        assert!(parse_boot_only(&["--bogus".to_string(), "x".to_string()]).is_err());
 
         let serve = parse_serve(&[]).unwrap();
         assert_eq!(serve.listen.port(), PORT);

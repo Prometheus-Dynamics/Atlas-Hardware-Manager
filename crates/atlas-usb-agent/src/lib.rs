@@ -13,7 +13,24 @@
 //! POST   /v1/flash              FlashRequest -> JobStarted (409 while one runs)
 //! GET    /v1/jobs/<id>?from=N   JobEvents: events from N on
 //! DELETE /v1/jobs/<id>          cancel
+//! PUT    /v1/boot-only/files/<path>  a boot-only file; x-sha256 must match (Stored)
+//! POST   /v1/boot-only          BootOnlyRequest -> JobStarted (409 while one runs)
 //! ```
+//!
+//! A boot-only job USB boots one board with a set of files and does nothing
+//! else: it never looks at a disk on its port and writes nothing. Its files
+//! are uploaded once (`PUT /v1/boot-only/files/<path>`, `<path>` a name or
+//! `overlays/<name>`) and a job names them by path and SHA-256
+//! (`POST /v1/boot-only`); it serves only the files it names. Its events
+//! (read with `GET /v1/jobs/<id>`) are, in order: `usb-step` (waiting, the
+//! second stage sent, a board fact the bootloader sent), one `boot-file` per
+//! file the Pi asked for (served with its bytes and SHA-256, or not found),
+//! and a last `boot-end`: `done` or `disconnected` (the file server loop
+//! ended), `timeout`, `cancelled`, or `error`. The job is one-shot: it
+//! serves one boot. Once the loop has ended it answers no more boot-ROM
+//! appearances; it looks once at its port right then, and a boot ROM
+//! already back there is left alone and reported as `usb-step` `not-served`
+//! with reason `one-shot`. Later appearances are not watched for.
 
 use std::collections::BTreeMap;
 
@@ -67,12 +84,98 @@ pub enum Event {
     Error {
         message: String,
     },
+    /// A boot-only job's USB boot step.
+    UsbStep {
+        step: UsbStep,
+    },
+    /// A file a boot-only job's Pi asked for: served (with its size and
+    /// SHA-256) or not found.
+    BootFile {
+        name: String,
+        served: bool,
+        bytes: Option<u64>,
+        sha256: Option<String>,
+    },
+    /// The last event of a boot-only job.
+    BootEnd {
+        outcome: BootOutcome,
+        message: Option<String>,
+    },
 }
 
 impl Event {
     pub fn is_last(&self) -> bool {
-        matches!(self, Self::Done { .. } | Self::Error { .. })
+        matches!(
+            self,
+            Self::Done { .. } | Self::Error { .. } | Self::BootEnd { .. }
+        )
     }
+}
+
+/// A boot-only job's USB boot step.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum UsbStep {
+    /// Waiting for a Pi in USB boot (or its re-enumeration) on the port.
+    Waiting,
+    /// The second-stage bootloader went to the boot ROM.
+    SecondStage { chip: String, bytes: u64 },
+    /// A board fact the bootloader sent (`SERIAL`, `MAC_ADDR`, ...).
+    Metadata { name: String, value: String },
+    /// A boot-ROM appearance after the file server loop ended: not answered.
+    NotServed {
+        reason: String,
+        serial: Option<String>,
+    },
+}
+
+/// How a boot-only job ended.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BootOutcome {
+    /// The Pi said it had every file it wanted.
+    Done,
+    /// The board left the port: it booted what it was sent.
+    Disconnected,
+    /// No Pi came to USB boot within the job's timeout.
+    Timeout,
+    Cancelled,
+    Error,
+}
+
+/// What `POST /v1/boot-only` asks for.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BootOnlyRequest {
+    /// The board's port (sysfs form).
+    pub port: String,
+    /// The files to serve, by path (`config.txt`, `overlays/x.dtbo`), each
+    /// with its SHA-256 (lowercase hex).
+    pub files: BTreeMap<String, String>,
+    /// How long to wait for the Pi to come to USB boot, in seconds
+    /// (default [`BOOT_ONLY_TIMEOUT_S`], at most [`BOOT_ONLY_MAX_TIMEOUT_S`]).
+    #[serde(default)]
+    pub timeout_s: Option<u64>,
+}
+
+pub const BOOT_ONLY_TIMEOUT_S: u64 = 60;
+pub const BOOT_ONLY_MAX_TIMEOUT_S: u64 = 600;
+
+/// A boot-only file's path: a name, or `overlays/<name>`. Nothing else, and
+/// no `..`, absolute, or empty segments.
+pub fn valid_boot_only_path(path: &str) -> bool {
+    match path.split('/').collect::<Vec<_>>().as_slice() {
+        [name] => valid_name(name),
+        ["overlays", name] => valid_name(name),
+        _ => false,
+    }
+}
+
+/// A SHA-256 as 64 lowercase hex digits.
+pub fn valid_sha256(sha256: &str) -> bool {
+    sha256.len() == 64
+        && sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -212,6 +315,24 @@ mod tests {
         );
         assert_eq!(parse_board_address("usb-agent://h:1/x"), None);
         assert_eq!(parse_board_address("001-2"), None);
+    }
+
+    #[test]
+    fn boot_only_paths_are_names_or_overlays() {
+        assert!(valid_boot_only_path("config.txt"));
+        assert!(valid_boot_only_path("overlays/vc4-kms.dtbo"));
+        assert!(!valid_boot_only_path(""));
+        assert!(!valid_boot_only_path("../config.txt"));
+        assert!(!valid_boot_only_path("/etc/passwd"));
+        assert!(!valid_boot_only_path("etc/passwd"));
+        assert!(!valid_boot_only_path("overlays/../x"));
+        assert!(!valid_boot_only_path("overlays/a/b"));
+        assert!(!valid_boot_only_path("overlays//x"));
+        assert!(!valid_boot_only_path("a%2fb"));
+        assert!(!valid_boot_only_path(".hidden"));
+        assert!(valid_sha256(&"ab".repeat(32)));
+        assert!(!valid_sha256(&"AB".repeat(32)));
+        assert!(!valid_sha256("abc"));
     }
 
     #[test]
