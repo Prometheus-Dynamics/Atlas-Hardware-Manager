@@ -1,0 +1,23 @@
+# Raze base OS: /etc/profile, Buildroot 2026.08's skeleton profile (system/skeleton/etc/profile) with one line
+# removed: `export EDITOR='/bin/vi'`. vi is not in the image (busybox vi is not enabled), so the variable named a
+# missing program. The PATH line is the skeleton's @PATH@ with BR2_SYSTEM_DEFAULT_PATH's default, written out.
+# Placed by os/raze.fragment's BR2_ROOTFS_OVERLAY: Buildroot copies the overlay over the root filesystem after the
+# skeleton is installed, so this file wins. (A component file cannot do it: a component may not claim a path the OS
+# layer has, and Gaia refuses the two claims.)
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+if [ "$PS1" ]; then
+	if [ "`id -u`" -eq 0 ]; then
+		export PS1='# '
+	else
+		export PS1='$ '
+	fi
+fi
+
+# Source configuration files from /etc/profile.d
+for i in /etc/profile.d/*.sh ; do
+	if [ -r "$i" ]; then
+		. $i
+	fi
+done
+unset i
