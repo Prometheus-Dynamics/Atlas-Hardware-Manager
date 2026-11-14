@@ -49,7 +49,8 @@ recipe = "slot-boot"
 #  product         lowercase [a-z0-9-], <= 64 bytes.
 #  boot_size       the boot partition's size in bytes, the layout's (79 MiB = 82,837,504: the Raze's FAT boot partition,
 #                  L2-partition-requirements 8.4; `boot-partition --min-size` says the minimum, the bays are in
-#                  boards/raze/lemnos-board.toml [boot]).
+#                  boards/raze/lemnos-board.toml [boot]). It must equal the board's boot partition (boards/raze/board.toml
+#                  [[partitions]] role = "boot"); check-devices refuses two numbers.
 #  compression     EROFS compression: lzma, the one the build's own mkfs.erofs writes (Buildroot's host tool has no zstd).
 #                  The board measurement on the first Raze image decides the final value (lzma, lz4hc, zstd rows).
 #  sign_key_env    the environment variable that names the signing key's file (a raw 32-byte Ed25519 seed or 64 hex,

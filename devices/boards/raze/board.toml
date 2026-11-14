@@ -42,6 +42,28 @@ first = "1M"
 alignment = "1M"
 size = "14910M"
 
+# The partitions, in table order (L2-partition-requirements 8.4; Gaia's image_disk reads [disk] and these).
+# p1, the boot partition: FAT (MBR type 0x0c, FAT32 LBA, the type dev's slot disk used), which the boot ROM reads
+# config.txt, the pointers and the slot bays from. Exactly the slot-boot product's `boot_size` (82,837,504 =
+# 79 MiB, 8.4: three bay sets with a gzip kernel); check-devices requires the two to agree. Its content is
+# `lemnos-ctl boot-partition`'s image.
+# Not carried from dev: the MBR active flag (the Pi boot ROM finds the FAT partition without it, and Gaia's board
+# schema has no such field) and dev's disk signature 0x5056525a (nothing names a partition by PARTUUID: the slot
+# words name the eMMC by its device-tree path, os.src.rpi-boot-mode-1).
+[[partitions]]
+name = "boot"
+role = "boot"
+type = "0x0c"
+size = "82837504"
+
+# p2, the data partition: Linux (0x83), the slots and the slot state. The LAST partition, with no size here: it
+# is the content's size on the image (Lemnos writes it offline), and the board grows it to the disk's end on its
+# first boot (the owner of that step is Lemnos's: dev's data-setup is not carried).
+[[partitions]]
+name = "data"
+role = "data"
+type = "0x83"
+
 # Written over USB boot: the boot ROM takes the family's bootfiles and Atlas's loader writes the eMMC.
 [flash]
 methods = ["usb-boot"]

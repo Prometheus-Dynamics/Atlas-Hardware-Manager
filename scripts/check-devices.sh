@@ -480,6 +480,52 @@ slot_id_rule() {  # <devices dir>
   return $rc
 }
 
+# The boot partition rule: a slot-boot image's `boot_size` is its board's boot partition (the [[partitions]] entry
+# with role = "boot", whose size Gaia lays the disk out by). Two numbers for one partition must be one number.
+board_boot_size() {  # <board.toml> -> the size of its role = "boot" partition, as written
+  awk '
+    /^\[\[partitions\]\]/ { if (on && role == "boot") { print size; done = 1; exit } on = 1; role = ""; size = ""; next }
+    /^\[/ { if (on && role == "boot") { print size; done = 1; exit } on = 0; next }
+    on && $1 == "role" { role = $3; gsub(/"/, "", role) }
+    on && $1 == "size" { size = $3; gsub(/"/, "", size) }
+    END { if (!done && on && role == "boot") print size }
+  ' "$1"
+}
+boot_size_rule() {  # <devices dir>
+  local dev=$1 p pname board want have rc=0 out=""
+  while IFS= read -r p; do
+    grep -qE '^recipe = "slot-boot"' "$p" || continue
+    pname=$(basename "$(dirname "$p")")
+    board=$(awk -F'"' '/^board = /{print $2; exit}' "$p")
+    want=$(slot_setting "$p" boot_size)
+    have=$(board_boot_size "$(dirname "$p")/$board")
+    if [[ -z $have ]]; then
+      out+="products/$pname: its board ($board) has no [[partitions]] entry with role = \"boot\" (the disk Gaia lays out needs it)"$'\n'; rc=1
+    elif [[ $have != "$want" ]]; then
+      out+="products/$pname: setting boot_size $want is not its board's boot partition size $have ($board): one partition, one number"$'\n'; rc=1
+    fi
+  done < <(find "$dev/products" -mindepth 2 -maxdepth 2 -name product.toml 2>/dev/null | sort)
+  printf '%s' "$out"
+  return $rc
+}
+boot_size_rule_self_test() {
+  local tmp rc=0 out
+  tmp=$(mktemp -d)
+  cp -a "$repo/devices" "$tmp/devices"
+  if ! out=$(boot_size_rule "$tmp/devices"); then
+    echo "check-devices: self-test: the real tree no longer passes the boot partition rule: $out" >&2; rc=1
+  fi
+  sed -i 's/^size = "82837504"/size = "82837505"/' "$tmp/devices/boards/raze/board.toml"
+  if out=$(boot_size_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a boot_size that is not the board's boot partition was not refused" >&2; rc=1
+  elif [[ $out != *'one partition, one number'* ]]; then
+    echo "check-devices: self-test: the boot partition refusal does not say why: $out" >&2; rc=1
+  fi
+  rm -rf "$tmp"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the boot partition rule passes the real tree and refuses a boot_size that is not the board's"
+  return $rc
+}
+
 # Proves the slot id rule passes the real tree and refuses: a slot id that is not the version's, an uppercase or
 # `+` version that gives a refused id, an id over 64 bytes, and a product name outside [a-z0-9-].
 slot_id_rule_self_test() {
@@ -1065,6 +1111,14 @@ while IFS= read -r line; do
     *) bad "$line" ;;
   esac
 done <<<"$slotid_msg"
+# The boot partition rule: a slot-boot image's boot_size is its board's boot partition.
+bootsize_msg=$(boot_size_rule "$root") || true
+while IFS= read -r line; do
+  case $line in
+    "") ;;
+    *) bad "$line" ;;
+  esac
+done <<<"$bootsize_msg"
 # The bring-up rule (PR B31): every bring-up product carries the watchdog and LED signs (tree-wide).
 bringup_msg=$(bringup_rule "$root") || true
 while IFS= read -r line; do
@@ -1270,6 +1324,7 @@ if [[ $root_given -eq 0 ]]; then
   unnamed_self_test || die "self-check: the in-no-product note lists a product's board, or misses a board nothing names"
   erofs_rule_self_test || die "self-check: the erofs rule no longer reads each product's plan"
   slot_id_rule_self_test || die "self-check: the slot id rule no longer refuses an id that is not the version's"
+  boot_size_rule_self_test || die "self-check: the boot partition rule no longer refuses a boot_size that is not the board's"
   # The version gate: a binary that prints another commit, or none, is refused, and the refusal names the pin.
   fake=$(mktemp -d)
   vout=$(mktemp)
