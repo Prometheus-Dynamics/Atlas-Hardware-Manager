@@ -4,7 +4,9 @@
 # For each board with a kernel: the pinned kernel tree is obtained (a shallow fetch of the one pinned commit
 # or tag, cached by the pin), then the arm64 defconfig (or the family's), the fragments in the order a board
 # applies them (the board's list replaces the family's), and `olddefconfig` run in a scratch O= directory with
-# host tools only (make, flex, bison, git, python3; no cross compiler: configuration does not compile).
+# host tools (make, flex, bison, git, python3) and the arm64 cross compiler (ATLAS_KERNEL_CROSS, default
+# aarch64-linux-gnu-). The resolve uses that toolchain, as the kernel build does: toolchain-probed symbols
+# (ARM64_MTE, AS_HAS_*, CC_HAS_*) resolve differently with a host compiler (PR B29). No host fallback.
 # Each requested line is compared with the resolved .config. A line that does not take FAILS, naming the
 # board, the fragment file, the line number, the requested value and the resolved value.
 #
@@ -64,13 +66,31 @@ if [[ $mode == self-test ]]; then
   if ! grep -q 'raze-trim.config' "$out" || ! grep -q 'CONFIG_KALLSYMS_ALL requested n, resolved y' "$out"; then
     cat "$out" >&2; die "self-test: the check failed but did not name raze-trim.config and CONFIG_KALLSYMS_ALL"
   fi
-  echo "check-kernel-fragments: self-test passed (the real check passes; a line that cannot take fails, naming it)"
+  # 3. a fragment with a bare "#" line must fail, naming the file and the line, before any kernel is resolved
+  tmp3=$(mktemp -d "${TMPDIR:-/tmp}/atlas-kernel-selftest-bare-XXXXXX")
+  trap 'rm -rf "$tmp" "$tmp3"' EXIT
+  cp -a "$devices" "$tmp3/devices"
+  printf '#\n' >> "$tmp3/devices/families/bcm2712/assets/linux.fragment"
+  rc=0
+  "$0" --devices "$tmp3/devices" >"$tmp3/out.txt" 2>&1 || rc=$?
+  if [[ $rc -eq 0 ]]; then
+    cat "$tmp3/out.txt" >&2; die "self-test: a fragment with a bare '#' line PASSED: the check does not catch it"
+  fi
+  if ! grep -q 'linux.fragment:[0-9]*: a bare comment marker' "$tmp3/out.txt"; then
+    cat "$tmp3/out.txt" >&2; die "self-test: the check failed but did not name the file and line of the bare '#'"
+  fi
+  echo "check-kernel-fragments: self-test passed (the real check passes; a line that cannot take fails, naming it; a bare '#' line fails, naming its file and line)"
   exit 0
 fi
 
 for tool in make git python3 flex bison; do
   command -v "$tool" >/dev/null || die "$tool is needed (flex and bison are the kernel's host tools for configuration)"
 done
+# The cross compiler: every board is arm64, and the resolve must see the toolchain the kernel build sees.
+CROSS_PREFIX=${ATLAS_KERNEL_CROSS:-aarch64-linux-gnu-}
+command -v "${CROSS_PREFIX}gcc" >/dev/null || die "${CROSS_PREFIX}gcc is needed: the configuration is resolved with the arm64 cross toolchain, as the kernel build resolves it (Debian and Ubuntu package: gcc-aarch64-linux-gnu). The host compiler is not used in its place."
+echo "check-kernel-fragments: resolving with ${CROSS_PREFIX}gcc $("${CROSS_PREFIX}gcc" -dumpfullversion 2>/dev/null) (ARCH=arm64 CROSS_COMPILE=$CROSS_PREFIX)" >&2
+export ARCH=arm64 CROSS_COMPILE=$CROSS_PREFIX
 cache=${ATLAS_KERNEL_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/atlas/kernel}
 scratch=$(mktemp -d "${TMPDIR:-/tmp}/atlas-kernel-XXXXXX")
 trap '[[ ${KEEP_KERNEL_SCRATCH:-0} == 1 ]] || rm -rf "$scratch"' EXIT
@@ -184,6 +204,26 @@ for num, line in enumerate(open(frag), 1):
         print(f"FAIL {board}: {rel}:{num}: {sym} requested {want}, resolved {got}")
 PY
 }
+
+# A kernel fragment line that is only "#" is refused by file and line, before any kernel is fetched: Gaia's build
+# chokes on it (PR B29). Replace the line with an empty one. Checked on every fragment a board reads.
+bare_marker_check() {
+  local bad=0 row name fam url ref defconfig frags series_pin f num
+  local -a fa
+  while IFS= read -r row; do
+    IFS='|' read -r name fam url ref defconfig frags series_pin <<<"$row"
+    [[ $fam == SKIP ]] && continue
+    IFS=',' read -ra fa <<<"$frags"
+    for f in "${fa[@]}"; do
+      while IFS= read -r num; do
+        echo "check-kernel-fragments: FAIL $name: ${f#$devices/}:$num: a bare comment marker (a line of only '#'). Replace it with an empty line." >&2
+        bad=$((bad + 1))
+      done < <(grep -nE '^#[[:space:]]*$' "$f" 2>/dev/null | cut -d: -f1)
+    done
+  done < <(manifest)
+  [[ $bad -eq 0 ]] || die "$bad bare comment marker line(s) in kernel fragments (see above)"
+}
+bare_marker_check
 
 fails=0
 checked=0

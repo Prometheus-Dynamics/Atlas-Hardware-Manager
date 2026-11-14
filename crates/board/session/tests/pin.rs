@@ -245,6 +245,7 @@ async fn a_session_opened_with_a_known_key_refuses_a_different_node_on_its_first
     drop(node_a);
     let node_b = start(&scratch("known-b"), None);
     let port = node_b.network().port();
+    let key_b = learn_key(port);
 
     let sessions = Sessions::new(Arc::new(NoPause));
     let handle = sessions
@@ -264,9 +265,9 @@ async fn a_session_opened_with_a_known_key_refuses_a_different_node_on_its_first
         first,
         Presence::Replaced {
             expected: key_a,
-            found: None
+            found: Some(key_b)
         },
-        "a different node is refused on the first connect"
+        "a different node is refused on the first connect, and its key is shown"
     );
     assert_eq!(node_b.calls_received(), 0);
     drop(node_b);

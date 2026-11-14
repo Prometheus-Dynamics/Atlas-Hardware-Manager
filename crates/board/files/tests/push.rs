@@ -593,15 +593,8 @@ async fn a_push_is_not_continued_on_another_board_and_the_job_fails() {
     );
 }
 
-/// Whether a call issued during a push waits for the push to end. TODAY it does: the locked Orion
-/// rev has only a blocking `Files::push`, so the push is one long step that holds the node's
-/// session, and the call runs after the board has committed the file. The stepped push of Orion R2
-/// removes that. When the lock moves to it, set this to `false`: the same test then asserts that the
-/// call completes while the file is still being sent.
-const TODAY_CALLS_WAIT_BEHIND_A_PUSH: bool = true;
-
 #[tokio::test]
-async fn a_call_issued_during_a_push_completes_only_after_it_today() {
+async fn a_call_issued_during_a_push_completes_while_the_file_is_still_sent() {
     let rig = rig("calls-during", 2 * 1024 * 1024).await;
     let size = 8 * 1024 * 1024;
     let destination = "images/during.img";
@@ -629,17 +622,11 @@ async fn a_call_issued_during_a_push_completes_only_after_it_today() {
         .lock()
         .unwrap()
         .contains_key(destination);
-    if TODAY_CALLS_WAIT_BEHIND_A_PUSH {
-        assert!(
-            committed_when_answered,
-            "today the call runs only after the board committed the whole file"
-        );
-    } else {
-        assert!(
-            !committed_when_answered,
-            "with the stepped push the call completes while the file is still being sent"
-        );
-    }
+    // The stepped push (Orion R2) lets the session carry the call between the push's steps.
+    assert!(
+        !committed_when_answered,
+        "the call completes while the file is still being sent"
+    );
     job_where(&rig.jobs, push.job(), "the push commits", |status| {
         *status == JobStatus::Done
     })

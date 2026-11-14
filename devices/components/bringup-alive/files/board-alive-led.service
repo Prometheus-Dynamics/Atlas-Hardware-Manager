@@ -1,0 +1,15 @@
+# The bring-up LED signs (see /usr/libexec/board-alive-led and component.toml). Restarted at once and never given up
+# on (StartLimitIntervalSec=0): a missing link must not stop the LEDs (failure-handling rule: backoff at most 5-10 s).
+[Unit]
+Description=Bring-up LEDs: beat from boot, another pattern once the named link has an address
+DefaultDependencies=no
+After=sysinit.target
+
+[Service]
+ExecStart=/usr/libexec/board-alive-led
+Restart=always
+RestartSec=2
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target

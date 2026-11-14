@@ -43,15 +43,30 @@ jobs:
           path: ~/.cache/atlas/kernel
           key: kernel-${{ runner.os }}-${{ hashFiles('devices/families/*/family.toml', 'devices/boards/*/board.toml') }}
           restore-keys: kernel-${{ runner.os }}-
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends flex bison
+      # The kernel configuration is resolved with the arm64 cross compiler, as the kernel build resolves it (PR B29).
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends flex bison gcc-aarch64-linux-gnu
       # gaia plan wants the tools a recipe names: veritysetup (slot), mkfs.erofs and the disk tools (sd-image), bwrap (a Rust component).
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends cryptsetup-bin erofs-utils e2fsprogs dosfstools mtools gdisk xz-utils bubblewrap
+      # scripts/check-config-only.sh runs `gaia build --config-only` for every product: Gaia's content store (the kernel
+      # sources each family fetches, about 2.3 GiB per family) is kept here, keyed on the devices tree's source pins, so a
+      # store that was fetched once is not fetched again. Saved even when a later step fails (see the save step).
+      - uses: actions/cache/restore@v4
+        id: gaia-store-cache
+        with:
+          path: ~/.cache/atlas/gaia-store
+          key: gaia-store-${{ runner.os }}-${{ hashFiles('devices/gaia.lock', 'devices/families/*/family.toml', 'devices/boards/*/board.toml', 'devices/products/*/gaia.lock') }}
+          restore-keys: gaia-store-${{ runner.os }}-
       - run: ./scripts/gate.sh
       - uses: actions/cache/save@v4
         if: always() && steps.kernel-cache.outputs.cache-hit != 'true'
         with:
           path: ~/.cache/atlas/kernel
           key: kernel-${{ runner.os }}-${{ hashFiles('devices/families/*/family.toml', 'devices/boards/*/board.toml') }}
+      - uses: actions/cache/save@v4
+        if: always() && steps.gaia-store-cache.outputs.cache-hit != 'true'
+        with:
+          path: ~/.cache/atlas/gaia-store
+          key: gaia-store-${{ runner.os }}-${{ hashFiles('devices/gaia.lock', 'devices/families/*/family.toml', 'devices/boards/*/board.toml', 'devices/products/*/gaia.lock') }}
 
   # What must build on Windows and macOS (PR G9). Each job builds every portable crate natively
   # for its own OS: lib, bins and tests, compiled and not run. The Orion-bound crates are skipped

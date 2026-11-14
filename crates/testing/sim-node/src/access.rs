@@ -1,11 +1,9 @@
 //! The simulated way in for a person: an interactive shell and a public key install.
 //!
-//! // LOCK: Orion at c0187f4 has no client call that carries a terminal through a session. Its
-//! // SSH way in is a server inside the comm core on `ssh.listen`, reached by an SSH client, and
-//! // its operator enrollment is a wire message (`OperatorEnroll`) that the client facade does
-//! // not wrap. Until Orion lands one of those, this module stands in for the carrier the
-//! // `atlas-access` crate calls. Its frames are this module's own, not Orion's, and it is not
-//! // a node: it is a socket that a [`SimNode`](crate::SimNode) test runs next to.
+//! // Orion at dbd5fc08 has `Orion::shell` and `Orion::enroll`, but no production carrier is built
+//! // on them yet (see `atlas-access`, carrier.rs). Until one is, this module stands in for the
+//! // carrier the `atlas-access` crate calls. Its frames are this module's own, not Orion's, and it
+//! // is not a node: it is a socket that a [`SimNode`](crate::SimNode) test runs next to.
 //!
 //! The shell is a line echo with a prompt, enough to prove bytes in and bytes out, a resize that
 //! arrives, and an exit status: `exit N` ends it with status `N`. A shell that is cut (see

@@ -274,7 +274,7 @@ Nothing names a Lemnos file by its path under a component any more (PR B26; befo
 ## The Gaia pin
 
 `gaia.lock` is Atlas's, written by hand: a Gaia URL and a full commit. It is not Gaia's lock. The
-commit is `7177d72e27fdcada74a8ade7b282e343542dc9f6` (Gaia `next`'s head at PR B27: #100 the `[generate]` tool runs in the sandbox, in the image its tool was built in; #99 the slot directory step, `gaia.tree.by-role` at layout version 2 (no pinned recipe uses it yet); before it `e1cc2951c726d21ce300e68fa1560d0ba77bacc6` (Gaia `next`'s head at PR B26: #98 `[generate]` (a component's
+commit is `3f6e561016752b60c50a9b8731fa28b37e48da81` (Gaia `next`'s head at PR B32: #115 an image's `initramfs` key, #116 what an image names that its recipe does not take is refused by name, #112 `[sources.tools]`, #113 generator roles and the `slot-boot` recipe, #114 failed-step logs; before it `7177d72e27fdcada74a8ade7b282e343542dc9f6` (Gaia `next`'s head at PR B27: #100 the `[generate]` tool runs in the sandbox, in the image its tool was built in; #99 the slot directory step, `gaia.tree.by-role` at layout version 2 (no pinned recipe uses it yet); before it `e1cc2951c726d21ce300e68fa1560d0ba77bacc6` (Gaia `next`'s head at PR B26: #98 `[generate]` (a component's
 tool writes files from the board's description; no product uses it yet), #97 board `[descriptions]` and the install
 that names one, #94 the gadget identity 1d6b:0103 with bcdDevice 0x0b00, #95 the slot kernel check, #96 Daedalus; before it
 `4509f6b74247f56594cb2667e701c5d1f7566498` (Gaia `next`'s head: #91 the usb-gadget-network component in its configfs NCM form, #89 flash-xz, #90 verified-on-put, #92 the check fix; before it `7db227f6648917434b14da4117150ad6ab007530` (Gaia `next`: PR #85 `gaia lock` resolves nothing a
@@ -285,7 +285,7 @@ builds with `gaia.tree.under`, and the `system` input). Before it: `f5a32f9fe242
 `10beed87d9591175305997a2ebf1f88e3f5e4b2b`. To move it: change `commit`, build Gaia at the new commit,
 and run `scripts/check-devices.sh --write-locks` with that binary (`GAIA_BIN=...`); the check refuses a
 binary that prints another commit or none. Commit the pin and every changed `gaia.lock` together.
-(The binary PR B27 used: `/mnt/ssd-samsung/atlas-next-scratch-gaia/bin-7177d72/gaia`; PR B26 used `bin-e1cc295`.)
+(The binary PR B32 used: `/mnt/ssd-samsung/atlas-next-scratch-gaia/bin-3f6e561/gaia`; PR B27 used `bin-7177d72`; PR B26 used `bin-e1cc295`.)
 
 ## Product locks
 
@@ -337,6 +337,21 @@ The current rev is `d6b9361d` (L1; PR B18 locked 4a2d3b7d, PR B23 moved it to d6
 `scripts/check-devices.sh --write-locks`, and commit the components and every changed `gaia.lock`
 together. The board files (`lemnos-board.toml`) follow the rev's board-file format, and `lemnos-ctl
 validate` and `lemnos-ctl tree` at that rev are the check for them (run from a build of that rev).
+
+## The slot root, the boot firmware, and what the check says (PR B32)
+
+- **Each product's erofs compression is read from its plan.** `gaia plan --json` names a node labelled `<image>::erofs`
+  with a constant `compression` (zstd unless the image sets `[images.settings] compression`). The check requires the
+  kernel lines for that value (`erofs_lines` in `scripts/check-devices.sh`: none -> EROFS_FS; lz4, lz4hc -> + EROFS_FS_ZIP;
+  lzma -> + EROFS_FS_ZIP_LZMA; deflate -> + EROFS_FS_ZIP_DEFLATE; zstd -> + EROFS_FS_ZIP_ZSTD, each option cumulative under
+  EROFS_FS_ZIP) to be `=y` in the product's family fragments or its board's. A family no product names is held to zstd, and
+  the output says so.
+- **A board's boot firmware agrees with its Lemnos board file.** `[boot] firmware = "rpi-tryboot"` (the board's, or its
+  family's) is the record `tryboot` in the board's Lemnos file (`firmware_record`; Lemnos's system-slots `record`, which
+  defaults to `tryboot`). A firmware with no mapping is refused by name.
+- **Every product line says what it is**: `planned, not built`. No build record exists in this repo.
+- **The in-no-product note** lists only boards, families and components that no product or board names. A board that
+  two products name is not listed (the note used to list every `.toml` a board directory holds).
 
 ## Running the check
 
@@ -392,7 +407,7 @@ take it through the `usb-gadget-network` component's Gaia source, which is pinne
 
 ## Known limits at the pin
 
-These hold at Gaia `7177d72`, the pin in `gaia.lock` (PR B27; PR B26 checked them at `e1cc295`; the items were checked at `7db227f` and carried to
+These hold at Gaia `3f6e561`, the pin in `gaia.lock` (PR B32, where every product was planned at the pin; PR B27 checked them at `7177d72`, PR B26 at `e1cc295`; the items were checked at `7db227f` and carried to
 `e1cc295` by planning every product, not by re-running each refusal). Items 1 and 2 were re-run only through the products: the
 sd-image products plan with the veritysetup stand-in and the Rust component with the bwrap stand-in, as at `aa987cc`.
 Item 5 is carried from `aa987cc` and was not re-run. They lift when the pin moves.
@@ -404,7 +419,7 @@ Item 5 is carried from `aa987cc` and was not re-run. They lift when the pin move
 2. **`gaia plan` needs every tool a recipe names on PATH**, or passed with `--tool NAME=PATH`.
    Checked at aa987cc: a Rust component needs `bwrap` (the check passes a stand-in) and `rustc`; a
    Buildroot product needs `make`. `python` is needed only for a product with a python component.
-3. **The gaia binary's commit is checked.** `gaia --version` prints `gaia <version> (<commit>)` at `7177d72`
+3. **The gaia binary's commit is checked.** `gaia --version` prints `gaia <version> (<commit>)` at `3f6e561`
    (and at `7db227f` and `f5a32f9`; PR #86); the check refuses a binary that prints another commit, `-dirty`, or no commit.
    `aa987cc` and older print no commit and are refused.
 4. **Gaia's `Cargo.lock` is untracked** at this commit (`git ls-files Cargo.lock` is empty at

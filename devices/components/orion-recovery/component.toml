@@ -1,7 +1,8 @@
 # Orion's recovery package: orion-recovery-bin (binary orion-recovery): the comm core alone, as one static
 # file, for an initramfs or a flasher image. NOT in the base product: it is named here so the check reads it,
-# and the flasher product (B9) puts it in its image. NOT YET BUILDABLE for the same reason as orion-bin
-# (zig build root at a later Gaia rev).
+# and the flasher product (B9) puts it in its image. Built by Gaia at its pin (3f6e561) for aarch64:
+# bin/orion-recovery 2,595,064 bytes (Orion 455a956e), with the same zig 0.15.2 tools source as orion-bin
+# below. x86_64 build hosts only.
 version = 1
 name = "orion-recovery"
 description = "Orion recovery: orion-recovery-bin (binary orion-recovery), the comm core alone, for an initramfs or flasher image"
@@ -13,6 +14,10 @@ ref = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
 platform = "host"
+
+# The zig 0.15.2 that cc (scripts/zigcc) runs: the same source as orion-bin's.
+[sources.tools]
+download = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"
 
 [build]
 builder = "rust"

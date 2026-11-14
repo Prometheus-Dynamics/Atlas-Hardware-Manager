@@ -70,8 +70,9 @@ pub enum Presence {
     Lost(String),
     /// The address answers with a node key other than the one this session is pinned to. No
     /// call is sent to that node. `expected` is the pinned key. `found` is the key the other node
-    /// showed when Orion says it; `None` at the locked Orion revision, whose refusal does not carry
-    /// it. It holds until the expected node answers again or a person accepts the new key.
+    /// proved it holds (Orion's `ClientError::OtherKey { answered }`), or `None` when the other node
+    /// answered in a form that does not say it. It holds until the expected node answers again or a
+    /// person accepts the new key.
     Replaced {
         /// The key this session was pinned to.
         expected: [u8; 32],
@@ -86,13 +87,6 @@ const MAX_FRAMES_PER_TURN: usize = 64;
 
 /// The reason a long operation gives when a person changes the node's key under it.
 const CHANGED_BY_A_PERSON: &str = "the node's key was changed by a person";
-
-/// The words Orion's client gives when a pinned connect meets another key (Orion at 6dfb990,
-/// `orion_connect` transport).
-// LOCK: at 6dfb990 the refusal is `ClientError::Denied` with these words and no key. The lock
-// rev after it returns `ClientError::OtherKey { asked, answered }`; match that here, and fill
-// `found` from `answered`.
-const OTHER_KEY: &str = "the node is not the one that was expected";
 
 /// Why a call on a node gave no answer. The two cases ask for different things.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -716,8 +710,10 @@ impl Keeper {
                     Ok(node) => self.replaced(Some(node.public_key)),
                     Err(error) => self.lost(error.to_string()),
                 },
-                Err(error) if self.is_other_key(&error) => self.replaced(None),
-                Err(error) => self.lost(error.to_string()),
+                Err(error) => match self.other_key(&error) {
+                    Some(found) => self.replaced(Some(found)),
+                    None => self.lost(error.to_string()),
+                },
             }
             let down = if self.replacement.is_some() {
                 REPLACED_WORDS
@@ -753,13 +749,16 @@ impl Keeper {
         self.pin.is_none_or(|pin| pin == node.public_key)
     }
 
-    /// Whether a pinned connect was refused because another key answered at the address.
-    fn is_other_key(&self, error: &orion::Error) -> bool {
-        self.pin.is_some()
-            && matches!(
-                error,
-                orion::Error::Client(ClientError::Denied(why)) if *why == OTHER_KEY
-            )
+    /// The key another node proved it holds, when a pinned connect was refused because another key
+    /// answered at the address. Both keys are in Orion's error: the one asked for and the one
+    /// answered. Only the answered key is kept here; the pinned key is `expected`.
+    fn other_key(&self, error: &orion::Error) -> Option<[u8; 32]> {
+        match error {
+            orion::Error::Client(ClientError::OtherKey { answered, .. }) if self.pin.is_some() => {
+                Some(*answered)
+            }
+            _ => None,
+        }
     }
 
     /// Takes the orders a person gave while no session was running.

@@ -2,7 +2,7 @@
 # /lib/modules, PR B9/B14), so each option its lemnosd or Orion needs is built in (=y), not m.
 # Each line says why it is here; the dependencies each one forces are named beside it, checked
 # against the pinned kernel's Kconfig (raspberrypi/linux 53679a5, Linux 7.2.9) and bcm2712_defconfig.
-#
+
 # -- USB gadget: lemnosd builds one configuration through configfs; Orion's link is FunctionFS --
 # CONFIG_USB_CONFIGFS: the gadget framework's configfs front end. Depends on USB_GADGET (=y in
 #   bcm2712_defconfig). Selects USB_LIBCOMPOSITE=y (its configfs_composite_bind is in libcomposite.ko)
@@ -12,7 +12,7 @@ CONFIG_USB_CONFIGFS=y
 #   USB_F_FS=y and DMA_SHARED_BUFFER=y. USB_F_FS itself has no prompt, so it cannot be set directly:
 #   this symbol is the one that takes it.
 CONFIG_USB_CONFIGFS_F_FS=y
-#
+
 # -- I2C: /dev/i2c-N for the BMM150 and INA238 (RP1's DesignWare controllers) --
 # CONFIG_I2C_CHARDEV: /dev/i2c-N. Depends on I2C (=y in bcm2712_defconfig); nothing else.
 CONFIG_I2C_CHARDEV=y
@@ -22,7 +22,7 @@ CONFIG_I2C_DESIGNWARE_CORE=y
 # CONFIG_I2C_DESIGNWARE_PLATFORM: the platform binding for the RP1 I2C controllers. Depends on
 #   I2C_DESIGNWARE_CORE (above) and on !ACPI (satisfied).
 CONFIG_I2C_DESIGNWARE_PLATFORM=y
-#
+
 # -- RP1 PIO: Lemnos's PIO transports (the LED ring and the PIO I2C bus) --
 # CONFIG_RP1_PIO: depends on FIRMWARE_RP1 (not COMPILE_TEST); defaults n.
 CONFIG_RP1_PIO=y
@@ -30,20 +30,21 @@ CONFIG_RP1_PIO=y
 CONFIG_FIRMWARE_RP1=y
 # CONFIG_MBOX_RP1: the RP1 mailbox FIRMWARE_RP1 uses. Depends on MFD_RP1 (=y in bcm2712_defconfig).
 CONFIG_MBOX_RP1=y
-#
+
 # -- RP1 chain's top link (PR B16; Lemnos docs/kernel-config.md @818473f6, the reference SoC's MFD_RP1 row, verified) --
 # CONFIG_MFD_RP1: the RP1 multi-function device the mailbox (MBOX_RP1) sits on. bcm2712_defconfig has it =y, and the
 #   resolved Raze config (raspberrypi/linux 53679a5, Linux 7.2.9) keeps it =y. Set here so the chain does not depend
 #   on the defconfig's value alone. (PCI_MSI, which MFD_RP1 also needs: the resolved Raze config already has it =y
 #   without this fragment, so it is not set here.)
 CONFIG_MFD_RP1=y
-#
+
 # -- Built in for the flasher (no modules; Lemnos docs/kernel-config.md "Built in" column) --
-# CONFIG_SPI_SPIDEV: /dev/spidevB.C, the stock SPI route (m in bcm2712_defconfig, line 771).
-CONFIG_SPI_SPIDEV=y
+# CONFIG_SPI_SPIDEV is NOT set here (PR B29): the Lemnos SoC map has no SPI controller for the BCM2712 board
+#   (Raze), so /dev/spidevB.C has nothing behind it. Off by the Raze's trim (raze-trim.config); the family line
+#   that set it is removed. The SPI core stays (lemnos.ko needs it).
 # CONFIG_DMABUF_HEAPS_CMA: /dev/dma_heap/linux,cma (needs DMA_CMA and CMA).
 CONFIG_DMABUF_HEAPS_CMA=y
-#
+
 # -- The slot's root chain, built in (PR B16). lemnos-slot-init opens the root slot before any root filesystem
 #    with modules exists, and it loads dm modules only from /lib/modules in the slot initramfs (Lemnos
 #    docs/slots.md @4a2d3b7d, service/slot-init/src/sys.rs load_module). Gaia's initramfs carries no modules, so
@@ -60,9 +61,23 @@ CONFIG_DM_VERITY=y
 # root and data partitions sit on: MMC_SDHCI_BRCMSTB (the CM5's eMMC; also set =y in the defconfig).
 CONFIG_BLK_DEV_LOOP=y
 CONFIG_EROFS_FS=y
+# The slot root is zstd-compressed EROFS (Gaia's slot recipes write it so): without the decompressor built
+# in, the root does not mount. Stated for the family here (PR B34); the Raze's own config has had both lines.
+CONFIG_EROFS_FS_ZIP=y
+CONFIG_EROFS_FS_ZIP_ZSTD=y
 CONFIG_EXT4_FS=y
 CONFIG_CRYPTO_SHA256=y
 CONFIG_MMC_SDHCI_BRCMSTB=y
 # CONFIG_MMC_BLOCK: the block layer over MMC. The Raze's root and data are on the eMMC, and a host driver with no MMC_BLOCK
 #   gives no block device (Lemnos's slot-init boots from it without a module loader). Built in (PR B16).
 CONFIG_MMC_BLOCK=y
+
+# -- The firmware mailbox, built in (PR B29; Lemnos I5i6, kernel contract version 2 for the Pi form,
+#    [firmware.rpi-tryboot] all = ["BRCM_CHAR_DRIVERS", "MAILBOX", "BCM2835_MBOX", "BCM_VCIO",
+#    "RASPBERRYPI_FIRMWARE"], all =y). slot-init asks the firmware for RPIBOOT through this mailbox after eight
+#    failed restarts, and it runs with NO module loadable: each symbol is =y, never =m.
+CONFIG_BRCM_CHAR_DRIVERS=y
+CONFIG_MAILBOX=y
+CONFIG_BCM2835_MBOX=y
+CONFIG_BCM_VCIO=y
+CONFIG_RASPBERRYPI_FIRMWARE=y

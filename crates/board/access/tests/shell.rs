@@ -8,7 +8,7 @@ mod common;
 use atlas_access::{AccessError, End, Event, OpenRequest, ShellKind, Terminal, open};
 use atlas_session::{Clock, Lease};
 use atlas_sim_node::access::ShellServer;
-use atlas_sim_node::{DEADLINE, Kind, Mode, NODE_NAME, SimNode};
+use atlas_sim_node::{DEADLINE, Mode, NODE_NAME};
 use common::{
     SimCarrier, connected, fresh, handle_for, lost, scratch, sessions, start_node, stated,
 };
@@ -87,11 +87,10 @@ async fn a_shell_session_on_the_simulated_node_carries_bytes_resizes_and_exits()
 
 #[tokio::test]
 async fn the_shell_kind_is_read_from_what_the_node_says_about_itself() {
-    for (mode, want) in [
-        (Mode::Running, ShellKind::Normal),
-        (Mode::Recovery, ShellKind::Recovery),
-        (Mode::Flasher, ShellKind::Recovery),
-    ] {
+    // A live node is an R2 comm core, which always says its own `state` (Orion's fact, since R2).
+    // The simulated comm core says `running`; recovery and flasher are read from a hello in
+    // `kind.rs` tests, because no simulated node can say them (see docs/prs/A17.md).
+    for (mode, want) in [(Mode::Running, ShellKind::Normal)] {
         let dir = scratch(&format!("kind-{}", mode.word()));
         fresh(&dir);
         let node = start_node(&dir, mode, None);
@@ -109,25 +108,6 @@ async fn the_shell_kind_is_read_from_what_the_node_says_about_itself() {
         .expect("the shell opens");
         assert_eq!(term.kind(), want, "a node that says {}", mode.word());
     }
-}
-
-#[tokio::test]
-async fn a_node_that_says_nothing_about_its_state_gets_no_shell() {
-    let dir = scratch("no-state");
-    fresh(&dir);
-    let node = SimNode::start_with(&dir, &Kind::Plain, None).expect("the node starts");
-    let shell = ShellServer::start().expect("the shell listens");
-    let sessions = sessions();
-    let handle = handle_for(&sessions, node.network().port());
-    connected(&handle).await;
-    let carrier = SimCarrier::new(shell.addr());
-    let refused = open(&handle, carrier.clone(), OpenRequest::new(80, 24)).await;
-    assert!(
-        matches!(refused, Err(AccessError::NoState)),
-        "no guess about the shell: {refused:?}"
-    );
-    assert_eq!(carrier.opens.load(std::sync::atomic::Ordering::SeqCst), 0);
-    assert_eq!(shell.connections(), 0, "nothing was sent to the node");
 }
 
 #[tokio::test]

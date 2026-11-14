@@ -1,0 +1,44 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+// B31: the ROCK 5C's image device tree: the in-tree rk3588s-rock-5c.dts plus two facts the signs and the loader need.
+// The extlinux.conf of this image names /boot/rk3588s-rock-5c-loader.dtb (components/radxa-rock-5c-extlinux).
+// Untested on board.
+#include "rk3588s-rock-5c.dts"
+#include <dt-bindings/soc/rockchip,boot-mode.h>
+
+/ {
+	/*
+	 * The no-button way back to the loader. U-Boot v2026.10 reads the boot-mode register at
+	 * 0xfd588080 (arch/arm/mach-rockchip/rk3588/Kconfig:418-419, ROCKCHIP_BOOT_MODE_REG default). The
+	 * kernel's dtsi has no node that contains that address: pmu1grf is at 0xfd58a000 (rk3588-base.dtsi:577),
+	 * above it. So this syscon takes the PMU GRF base 0xfd588000 (the base of the register; the RK3588 TRM
+	 * is not on disk, so the base was inferred from the register; it agrees with U-Boot v2026.10's
+	 * ROCKCHIP_BOOT_MODE_REG default 0xfd588080, checked in the built dtb; still UNVERIFIED on a board) with a 0x2000
+	 * size that ends where pmu1grf starts. offset = 0xfd588080 - 0xfd588000 = 0x80.
+	 * mode-loader = BOOT_BROM_DOWNLOAD (0xEF08A53C, arch/arm/include/asm/arch-rockchip/boot_mode.h:19),
+	 * the value U-Boot's SPL returns to the BootROM for (bootrom.c:52-54, with CONFIG_SPL_ROCKCHIP_BACK_TO_BROM).
+	 */
+	pmu_os_grf: syscon@fd588000 {
+		compatible = "syscon", "simple-mfd";
+		reg = <0x0 0xfd588000 0x0 0x2000>;
+
+		reboot-mode {
+			compatible = "syscon-reboot-mode";
+			offset = <0x80>;
+			mode-normal = <BOOT_NORMAL>;
+			mode-loader = <0xef08a53c>;
+			mode-recovery = <BOOT_RECOVERY>;
+			mode-bootloader = <BOOT_FASTBOOT>;
+		};
+	};
+
+	/*
+	 * led-1 (the blue heartbeat LED) already sets linux,default-trigger = "heartbeat" in the in-tree dts
+	 * (rk3588s-rock-5c.dts). It is stated again here, so this image's own dtb names the trigger that the
+	 * boot-time heartbeat depends on, not only the in-tree file it was built from.
+	 */
+	leds {
+		led-1 {
+			linux,default-trigger = "heartbeat";
+		};
+	};
+};

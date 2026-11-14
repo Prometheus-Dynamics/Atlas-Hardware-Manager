@@ -9,7 +9,7 @@ use atlas_sim_node::bundle;
 use atlas_sim_node::names::{self, SURFACE};
 use atlas_sim_node::slots::code;
 use atlas_sim_node::slots::parse_keys;
-use atlas_sim_node::{Behaviour, DEADLINE, Hello, Kind, LinkFault, Mode, NODE_NAME, SimNode, call};
+use atlas_sim_node::{Behaviour, DEADLINE, Hello, Kind, LinkFault, NODE_NAME, SimNode, call};
 use ed25519_dalek::SigningKey;
 use orion::actions::{ActionCall, Finished, Outcome, Update};
 use orion::topics::FieldId;
@@ -874,18 +874,15 @@ fn hello_fact(orion: &Orion, topic: &str) -> String {
 fn a_node_publishes_the_hello_facts_a_board_publishes_and_a_restart_on_its_port_finds_it_again() {
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("sim-hello-restart");
     let _ = std::fs::remove_dir_all(&dir);
-    let recovery = Hello {
-        mode: Mode::Recovery,
-        ..Hello::default()
-    };
-    let first =
-        SimNode::start_with(&dir, &Kind::WithLemnos(recovery), None).expect("the node starts");
+    let first = SimNode::start_with(&dir, &Kind::WithLemnos(Hello::default()), None)
+        .expect("the node starts");
     let port = first.network().port();
     {
         let orion = first.connect("reader").expect("a session");
         assert_eq!(hello_fact(&orion, names::HELLO_FAMILY), "simulated");
         assert_eq!(hello_fact(&orion, names::HELLO_SERIAL), "0123456789abcdef");
-        assert_eq!(hello_fact(&orion, names::HELLO_STATE), "recovery");
+        // `state` is Orion's fact since R2: the comm core says `running`, whatever the program says.
+        assert_eq!(hello_fact(&orion, names::HELLO_STATE), "running");
         assert_eq!(hello_fact(&orion, names::HELLO_MODEL), "simulated-board");
         assert_eq!(hello_fact(&orion, names::HELLO_VERSION_SLOT), "slot-1");
         assert_eq!(
@@ -1185,7 +1182,8 @@ fn a_plain_orion_node_has_no_lemnos_facts_or_actions_but_keeps_its_own_services(
         !document.fingerprint.is_empty(),
         "the fingerprint is its identity"
     );
-    for fact in ["family", "serial", "state", "model", "offers"] {
+    // `state` is not listed: it is Orion's own fact, and it says `running` (since R2).
+    for fact in ["family", "serial", "model", "offers"] {
         assert!(
             document.facts.iter().all(|found| found.name != fact),
             "a plain node publishes no {fact} fact"
@@ -1262,4 +1260,38 @@ fn the_board_is_reachable_on_the_socket_and_the_network_alike() {
     let b = call(&network, names::STATUS, b"").expect("status");
     assert_eq!(a.outcome, Outcome::Succeeded);
     assert_eq!(text(&a.output), text(&b.output));
+}
+
+/// The hardware description is written once, when the node starts. A subscriber that connects
+/// after that must still be sent it: the topic is declared `Latest`, so the newest sample of each
+/// field is given to a late subscriber. Before Orion's `on_subscribe` this subscriber waited for a
+/// write that never came.
+#[test]
+fn a_late_subscriber_is_sent_the_last_value_of_a_topic_written_before_it_subscribed() {
+    let node = start("late-subscriber");
+    let orion = node.connect("late-reader").expect("a session");
+    // The node logic publishes the description before its first tick, so a reading (a tick's
+    // write) means the description was written before this subscription.
+    let mut readings = orion.subscribe(names::READINGS).expect("a subscription");
+    wait_for("a reading, so the node has ticked", || {
+        readings.wait(POLL).expect("the topic waits");
+        readings.latest(FieldId(0)).map(|_| ())
+    });
+    let mut hardware = orion
+        .subscribe(names::HARDWARE)
+        .expect("the hardware topic");
+    let description = wait_for(
+        "the hardware description, sent to a late subscriber",
+        || {
+            hardware.wait(POLL).expect("the topic waits");
+            hardware
+                .latest(FieldId(0))
+                .map(|sample| sample.payload.to_vec())
+        },
+    );
+    assert!(
+        text(&description).contains("model="),
+        "{}",
+        text(&description)
+    );
 }

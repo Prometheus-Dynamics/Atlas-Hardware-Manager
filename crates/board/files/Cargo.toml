@@ -15,10 +15,6 @@ orion = { workspace = true, features = ["files"] }
 sha2 = "0.10"
 tokio = { version = "1", features = ["sync", "time"] }
 
-[features]
-# The stepped push of Orion R2. Off: the locked Orion rev does not have it (see src/transfer.rs).
-orion-r2 = []
-
 [dev-dependencies]
 atlas-sim-node = { path = "../../testing/sim-node" }
 tempfile = "3"

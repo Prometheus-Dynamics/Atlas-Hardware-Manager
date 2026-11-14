@@ -1,0 +1,17 @@
+# DEV ONLY, cubie-a7-bringup: which LED and which link the bring-up component's signs use (components/bringup-alive).
+# LED: status-led, the blue PJ26 LED (series a733-board/arm64-dts-allwinner-a733-cubie-a7s-add-the-leds.patch; the bring-up dts sets heartbeat). power-led is the green PM2 LED and is not touched.
+# Link: the USB gadget interface usb0 at 10.55.0.1 (the README's step 2; the user reaches the board over the gadget). eth0 is the second way in.
+# Both are read by /usr/libexec/board-alive-led; a missing file would drive nothing.
+version = 1
+name = "bringup-alive-settings"
+description = "DEV ONLY: this bring-up board's LED (status-led) and the link it is reached by (usb0) for the bring-up signs."
+
+[[install]]
+from = { file = "files/board-alive.leds" }
+to = "/etc/board-alive.leds"
+mode = "0644"
+
+[[install]]
+from = { file = "files/board-alive.links" }
+to = "/etc/board-alive.links"
+mode = "0644"
