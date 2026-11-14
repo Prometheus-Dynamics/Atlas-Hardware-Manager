@@ -51,6 +51,7 @@ mod error;
 mod from_image;
 mod inspect;
 mod manifest;
+mod seed;
 mod sign;
 mod source;
 mod verity;
@@ -63,6 +64,7 @@ pub use manifest::{
     BootEntry, CMDLINE, ImageEntry, SCHEMA, SlotManifest, SlotMeta, VerityEntry,
     validate_boot_path, validate_id, validate_name,
 };
+pub use seed::{SEED_LEN, Seed, sign_slot_record, slot_message};
 pub use sign::{SIG_LEN, sign_slot, verify_slot};
 pub use source::{BootFile, SlotSource};
 pub use verity::{BLOCK, VerityHasher, root_hash};
