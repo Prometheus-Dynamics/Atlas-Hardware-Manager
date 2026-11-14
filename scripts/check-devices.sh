@@ -671,7 +671,7 @@ fixtures=$repo/devices/tests/fixtures
 
 if [[ $mode == self-test ]]; then
   status=0
-  for good in good good-f8 good-rust; do
+  for good in good good-f8 good-rust good-sd-image; do
     echo "== $good fixture: must pass"
     "$self" --root "$fixtures/$good" || { echo "check-devices: self-test: $good fixture did not pass" >&2; status=1; }
   done
@@ -1142,7 +1142,7 @@ echo "check-devices: passed ($nf families, $nb boards, $nc components, $np produ
 # pass and the broken one must fail. Not run for --root, which names a tree to check alone.
 if [[ $root_given -eq 0 ]]; then
   out=$(mktemp)
-  for good in good good-f8 good-rust; do
+  for good in good good-f8 good-rust good-sd-image; do
     if ! "$self" --root "$fixtures/$good" >"$out" 2>&1; then
       cat "$out" >&2; die "self-check: the $good fixture no longer passes"
     fi
