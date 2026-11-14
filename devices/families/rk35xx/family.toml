@@ -24,6 +24,10 @@ ref = "v2.15.0"
 
 [kernel]
 source = "linux"
+# The starting configuration: arm64's own `defconfig` (mainline v7.3.3), which the fragments below then trim and
+# extend. Stated since PR B30: without it Buildroot stops with "No kernel defconfig name specified", and no product of
+# this family could build (Gaia found it building the bring-up products; our gate planned and never built).
+defconfig = "defconfig"
 # The trim (assets/trim.fragment, PR B16) first, then the family options (PR B14 and dts/dtb needs).
 fragments = ["assets/trim.fragment", "assets/linux.fragment"]
 # The storage controllers a slot boots from, built in (=y): the SD slot (DesignWare MMC) and the eMMC socket

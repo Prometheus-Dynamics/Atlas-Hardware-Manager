@@ -133,7 +133,12 @@ for bpath in sorted(glob.glob(os.path.join(dev, "boards", "*", "board.toml"))):
             print(f"{name}|SKIP|patch series {series[0]} is not a git source; this check cannot fetch it")
             continue
         series_pin = f"{ss['git']}|{commit_of(name, series[0], ss)}"
-    defconfig = bk.get("defconfig", fk.get("defconfig", "defconfig"))
+    # No default: a board whose kernel names no starting configuration cannot build (Buildroot stops), so it
+    # fails here by name instead of being checked against a configuration nobody stated.
+    defconfig = bk.get("defconfig", fk.get("defconfig"))
+    if defconfig is None:
+        print(f"{name}|SKIP|NO-DEFCONFIG")
+        continue
     if "fragments" in bk:
         frags = [os.path.normpath(os.path.join(bdir, f)) for f in bk["fragments"]]
     else:
@@ -224,6 +229,9 @@ fetch_pin() {
 
 while IFS= read -r row; do
   IFS='|' read -r name fam url ref defconfig frags series_pin <<<"$row"
+  if [[ $fam == SKIP && $url == NO-DEFCONFIG ]]; then
+    die "$name: its kernel states no \`defconfig\` (board.toml or the family's [kernel]). Buildroot cannot build a kernel without a starting configuration; state it."
+  fi
   if [[ $fam == SKIP ]]; then
     echo "check-kernel-fragments: SKIPPED $name: $url" >&2
     skipped=$((skipped + 1))
