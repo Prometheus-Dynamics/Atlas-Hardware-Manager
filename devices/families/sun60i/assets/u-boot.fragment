@@ -1,0 +1,20 @@
+# Each line says why it is here (standing rule).
+# UNVERIFIED, NEVER BUILT HERE: this family's U-Boot is Radxa's tree with DockSeed's patches (family.toml),
+# and no build of it has been run with this fragment. The lines are the ones U-Boot v2026.10 needs for a
+# redundant environment found by partition type (env/Kconfig, env/mmc.c); whether Radxa's tree has every
+# symbol under the same name is not checked.
+# CONFIG_ENV_IS_IN_MMC, CONFIG_PARTITION_TYPE_GUID, CONFIG_OF_CONTROL: the environment lives in the
+#   `uboot-env` partition (family.toml), found by its type GUID, which U-Boot searches only when built
+#   with device-tree control.
+# CONFIG_ENV_REDUNDANT, CONFIG_ENV_SIZE=0x8000: two copies, so a power cut during a write leaves the other
+#   (the slot record lives there). Two copies of 0x8000 fit the 128 KiB partition with room to grow.
+# CONFIG_ENV_IS_NOWHERE is not set: undoes a default that would drop the environment.
+# MOVES AT THE LEMNOS L2 MOVE: the environment lines below (ENV_SIZE, ENV_REDUNDANT, OF_CONTROL,
+#   PARTITION_TYPE_GUID, ENV_IS_NOWHERE, ENV_IS_IN_MMC) will be written by `lemnos-ctl tree --uboot-config`
+#   from the board file and included by Gaia; this fragment then keeps only board hardware lines.
+CONFIG_ENV_SIZE=0x8000
+CONFIG_ENV_REDUNDANT=y
+CONFIG_OF_CONTROL=y
+CONFIG_PARTITION_TYPE_GUID=y
+# CONFIG_ENV_IS_NOWHERE is not set
+CONFIG_ENV_IS_IN_MMC=y

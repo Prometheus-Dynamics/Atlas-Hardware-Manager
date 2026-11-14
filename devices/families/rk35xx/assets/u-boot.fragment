@@ -2,11 +2,22 @@
 # CONFIG_ENV_SIZE, CONFIG_PARTITION_TYPE_GUID, CONFIG_ENV_IS_IN_MMC: the
 #   environment lives in the empty `uboot-env` partition found by its GUID
 #   (family.toml), so the built-in environment boots from the microSD (MMC).
+# CONFIG_ENV_REDUNDANT, CONFIG_ENV_SIZE=0x8000: two copies of the environment,
+#   so a power cut during a write leaves the other copy (the slot record lives
+#   there: default, trial, trial_attempts). Two copies of 0x8000 fit the 128 KiB
+#   partition with room to grow. It was one copy of 0x10000 until PR B28.
+# CONFIG_OF_CONTROL: U-Boot looks for the environment partition by type GUID
+#   only when it is built with device-tree control (env/mmc.c).
 # CONFIG_ENV_IS_NOWHERE is not set: undoes the default that would drop the env.
 # CONFIG_TOOLS_MKEFICAPSULE is not set: its PKCS#11 signing needs a GnuTLS built
 #   with p11-kit, which Buildroot's host-gnutls is not (dev's note; the tool is
 #   not used by Atlas).
-CONFIG_ENV_SIZE=0x10000
+# MOVES AT THE LEMNOS L2 MOVE: the environment lines below (ENV_SIZE, ENV_REDUNDANT, OF_CONTROL,
+#   PARTITION_TYPE_GUID, ENV_IS_NOWHERE, ENV_IS_IN_MMC) will be written by `lemnos-ctl tree --uboot-config`
+#   from the board file and included by Gaia; this fragment then keeps only board hardware lines.
+CONFIG_ENV_SIZE=0x8000
+CONFIG_ENV_REDUNDANT=y
+CONFIG_OF_CONTROL=y
 CONFIG_PARTITION_TYPE_GUID=y
 # CONFIG_ENV_IS_NOWHERE is not set
 CONFIG_ENV_IS_IN_MMC=y
