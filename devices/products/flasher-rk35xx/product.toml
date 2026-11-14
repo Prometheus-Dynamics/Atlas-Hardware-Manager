@@ -1,0 +1,37 @@
+# The RK35xx flasher (first board: the Radxa ZERO 3E): a RAM-only initramfs that the maskrom loader starts
+# through U-Boot (decision 3 in docs/design.md; the Rockchip path in the B9 PR text). Once it runs, the board
+# is an ordinary Orion node on the USB link with lemnosd beside it. Untested on board.
+#
+# Recipe: `initramfs-boot` (Gaia 4abf626): the built tree as a plain newc archive. See flasher-bcm2712 for why
+# not `recovery` (it needs a signing key this repository does not hold).
+#
+# BLOCKED, named in the PR text, so this product is a shape, not a working flasher:
+#   1. No Lemnos board file for the ZERO 3E yet (Rockchip maps are landing). lemnosd has no /etc/lemnos/board.toml
+#      and refuses to start (S50lemnosd: "no board file"). The component goes in [components] when it exists.
+#   2. The fastboot U-Boot: the flasher's U-Boot is the board's U-Boot plus a fastboot fragment. Gaia derives the
+#      bootloader from the board, and an image has no bootloader fragment of its own (field wanted).
+#   3. `fastboot boot` takes an Android boot image: no Gaia recipe emits one at 4abf626 (field wanted).
+#   4. The board's raw U-Boot area and its [disk] table come from the board; initramfs-boot has no `blobs` input.
+#      See the PR text for what plan says.
+#   5. The board's kernel fragment lacks the flasher's options (USB configfs, FunctionFS, NCM, ACM, loop, ext4,
+#      vfat, the SD host). See the PR text; they belong in boards/radxa-zero-3e or families/rk35xx, not here.
+version = 1
+name = "flasher-rk35xx"
+description = "RK35xx flasher (ZERO 3E first): a RAM-only initramfs with lemnosd, the Lemnos bridge to Orion and Orion's recovery build (BusyBox init); board file and fastboot U-Boot blocked"
+
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.02.3"
+
+[components]
+lemnos-busybox = "../../components/lemnos-busybox/component.toml"
+lemnosd = "../../components/lemnosd/component.toml"
+lemnos-orion = "../../components/lemnos-orion/component.toml"
+orion-recovery = "../../components/orion-recovery/component.toml"
+
+[[images]]
+name = "flasher-rk35xx"
+board = "../../boards/radxa-zero-3e/board.toml"
+components = ["lemnos-busybox", "lemnosd", "lemnos-orion", "orion-recovery"]
+os = { provider = "buildroot", source = "buildroot", fragments = ["os/flasher.fragment"] }
+recipe = "initramfs-boot"

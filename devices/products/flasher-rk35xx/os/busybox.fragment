@@ -1,0 +1,30 @@
+# BusyBox applets for the flasher's init and the Lemnos init scripts (Lemnos packaging/init, b0bf0101).
+# The same list as flasher-bcm2712/os/busybox.fragment (kept beside each product: a product's fragments are
+# its own files). Gaia's Buildroot base is allnoconfig, so an applet is on only when this file says so.
+# ash, init, getty, login, mount, umount: the shell, PID 1, the console, the login, the rcS mounts
+# start-stop-daemon: S50lemnosd and S51lemnos-orion start their supervisors with it
+# mdev: device nodes at boot (mdev -s) and on hotplug
+# sleep kill cat date rm mkdir touch dirname test: used by the two init scripts
+# sync reboot poweroff halt: the shutdown path of init
+CONFIG_ASH=y
+CONFIG_INIT=y
+CONFIG_GETTY=y
+CONFIG_LOGIN=y
+CONFIG_MOUNT=y
+CONFIG_UMOUNT=y
+CONFIG_START_STOP_DAEMON=y
+CONFIG_MDEV=y
+CONFIG_FEATURE_MDEV_CONF=y
+CONFIG_SLEEP=y
+CONFIG_KILL=y
+CONFIG_CAT=y
+CONFIG_DATE=y
+CONFIG_RM=y
+CONFIG_MKDIR=y
+CONFIG_TOUCH=y
+CONFIG_DIRNAME=y
+CONFIG_TEST=y
+CONFIG_SYNC=y
+CONFIG_REBOOT=y
+CONFIG_POWEROFF=y
+CONFIG_HALT=y
