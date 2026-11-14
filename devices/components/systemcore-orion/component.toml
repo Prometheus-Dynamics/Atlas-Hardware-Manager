@@ -1,0 +1,62 @@
+version = 1
+name = "systemcore-orion"
+description = "Orion on the SystemCore: the node that reaches boards plugged into the controller and runs their jobs. Built from Orion's pinned commit; its packaging units are read from that same source; the settings file is this component's."
+
+# Orion at the rev in the root Cargo.toml (c0187f4), workspace version 1.0.1-dev there.
+[sources.orion]
+git = "https://github.com/Prometheus-Dynamics/Orion.git"
+ref = "c0187f4c195cd27f8353c055dd0a94247c2965cc"
+
+# The settings file: this component's data (files/orion.conf).
+[sources.config]
+path = "files"
+
+# `orion-bin`, the single `orion` binary (default features). The packaging README asks for
+# profile `service` (LTO, stripped); the locked rust builder takes no profile setting.
+[build]
+builder = "rust"
+source = "orion"
+
+[build.settings]
+package = "orion-bin"
+triple = "aarch64-unknown-linux-gnu"
+
+[package]
+version = "1.0.1~dev"
+architecture = "aarch64"
+maintainer = "Prometheus Dynamics"
+description = """
+Orion: the node on this controller that reaches boards and runs their jobs.
+"""
+depends = []
+
+[[install]]
+from = { source = "orion", path = "packaging/systemd/orion-comm.service" }
+to = "/usr/lib/systemd/system/orion-comm.service"
+mode = "0644"
+
+[[install]]
+from = { source = "orion", path = "packaging/systemd/orion-node.service" }
+to = "/usr/lib/systemd/system/orion-node.service"
+mode = "0644"
+
+[[install]]
+from = { source = "orion", path = "packaging/systemd/orion.preset" }
+to = "/usr/lib/systemd/system-preset/80-orion.preset"
+mode = "0644"
+
+[[install]]
+from = { source = "orion", path = "packaging/systemd/orion.sysusers" }
+to = "/usr/lib/sysusers.d/orion.conf"
+mode = "0644"
+
+[[install]]
+from = { source = "config", path = "orion.conf" }
+to = "/etc/orion/orion.conf"
+mode = "0644"
+
+[[services]]
+unit = "orion-comm.service"
+
+[[services]]
+unit = "orion-node.service"
