@@ -2,12 +2,18 @@
 # it" is not a reason).
 # CONFIG_EROFS_FS: the slot file on the data partition is EROFS (the slot recipe
 #   builds it; Gaia's slot is EROFS with dm-verity).
+# CONFIG_EROFS_FS_ZIP, CONFIG_EROFS_FS_ZIP_ZSTD: Gaia's slot recipes write the root as EROFS compressed
+#   with zstd (4 KiB clusters, the recipe's default). Without the zstd decompressor built in, the kernel
+#   cannot mount a slot's root at all. Found by Gaia reading a built ZERO 3E kernel (PR B34): it had
+#   EROFS_FS_ZIP_ZSTD off. The bring-up images boot an ext4 root, so it would have shown at the first slot.
 # CONFIG_STMMAC_ETH, CONFIG_STMMAC_PLATFORM, CONFIG_DWMAC_ROCKCHIP: the Gigabit
 #   GMAC (dwmac-rockchip, RTL8211F PHY built in) that eth0 needs for DHCP; built
 #   in so eth0 exists before any module could load.
 # CONFIG_PHY_ROCKCHIP_NANENG_COMBO_PHY: the combo PHY behind the USB 3.0 host
 #   port (and PCIe); the ZERO 3E's USB 3.0 Type-C host port is dead without it.
 CONFIG_EROFS_FS=y
+CONFIG_EROFS_FS_ZIP=y
+CONFIG_EROFS_FS_ZIP_ZSTD=y
 CONFIG_STMMAC_ETH=y
 CONFIG_STMMAC_PLATFORM=y
 CONFIG_DWMAC_ROCKCHIP=y
