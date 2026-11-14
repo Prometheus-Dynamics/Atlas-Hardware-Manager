@@ -6,6 +6,8 @@
 //! - `slot.sig` is second when present (an unsigned bundle is legal);
 //! - then `rootfs.erofs` and `boot/...` files in any order, each at most once and each listed in
 //!   `slot.json`;
+//! - `slot.json` lists exactly the five boot files of [`crate::manifest::BOOT_FILES`]: a missing
+//!   one is refused by name, a sixth is refused (Lemnos I5i8);
 //! - anything else is refused by name, at its header, before its bytes are read;
 //! - a listed member that is missing is refused at the end.
 //!
@@ -182,15 +184,15 @@ pub fn inspect_bundle<R: Read>(
     if !rootfs_done {
         return Err(malformed(format!("the bundle has no {ROOTFS}")));
     }
+    // Every listed boot file must be a member (Lemnos install.rs:683 words, "the bundle has no boot
+    // file <name>"). The five are all listed by now: `SlotManifest::validate` refuses otherwise.
     if let Some(missing) = manifest
         .boot
         .files
         .keys()
         .find(|path| !boot_done.contains(*path))
     {
-        return Err(malformed(format!(
-            "boot/{missing} is listed in slot.json but missing"
-        )));
+        return Err(malformed(format!("the bundle has no boot file {missing}")));
     }
     Ok(Inspected {
         board: manifest.board.clone(),

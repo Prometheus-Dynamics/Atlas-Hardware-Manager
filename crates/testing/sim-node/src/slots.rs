@@ -200,6 +200,12 @@ pub struct Slots {
     // LOCK: Lemnos L2 (I5i4, I5i5 final). Today the board file has no boot_args/boot_sources keys;
     // the default is one source, the boot mode 1 path. At the lock move the board's own values come from its file.
     pub boot: BootRule,
+    /// The sizes of the board's five payload bays, in [`crate::bundle::BOOT_FILES`] order: a slot's
+    /// boot file must fit its role's bay, or the install is refused before anything is stored.
+    // LOCK: Lemnos I5i8 (4e871efd). The board file's `[boot]` keys, in ROLES order: bay_kernel_bytes,
+    // bay_initramfs_bytes, bay_device_tree_bytes, bay_cmdline_bytes, bay_overlay_bytes
+    // (docs/boards.md:535-539). The defaults are Lemnos's example board's values.
+    pub bay_bytes: [u64; 5],
     /// The board this node is, as its hello `family` fact. A slot built for another board is
     /// refused for set-default and trial.
     pub board: String,
@@ -233,6 +239,8 @@ pub struct Slots {
 }
 
 const RESERVE_BYTES: u64 = 2048 * 1024 * 1024;
+/// The example board's bays (`docs/boards.md:535-539` at Lemnos 4e871efd), in [`crate::bundle::BOOT_FILES`] order.
+const DEFAULT_BAY_BYTES: [u64; 5] = [11_534_336, 1_048_576, 90_112, 4_096, 4_096];
 
 impl Default for Slots {
     fn default() -> Self {
@@ -277,6 +285,7 @@ impl Slots {
             reserve_bytes: RESERVE_BYTES,
             board_security: false,
             boot: BootRule::default(),
+            bay_bytes: DEFAULT_BAY_BYTES,
             board: "simulated".into(),
             trusted: Vec::new(),
             events: Vec::new(),
@@ -368,6 +377,28 @@ impl Slots {
                     self.reserve_bytes
                 ),
             ));
+        }
+        Ok(())
+    }
+
+    /// The bay check of an install, before anything is stored: each boot file must fit the bay of
+    /// its role. The refusal is the board's words (`bays.rs:400`), wrapped as the install wraps
+    /// them (`install.rs:763`), and nothing is written.
+    ///
+    /// # Errors
+    ///
+    /// `INVALID_ARGUMENT` naming the first role whose file is larger than its bay.
+    pub fn check_bays(&self, slot: &str, payloads: [u64; 5]) -> Result<(), Status> {
+        for (index, role) in crate::bundle::BAY_ROLES.iter().enumerate() {
+            let (payload, bay) = (payloads[index], self.bay_bytes[index]);
+            if payload > bay {
+                return Err(Status::new(
+                    code::INVALID_ARGUMENT,
+                    format!(
+                        "slot {slot}'s boot files: {slot}: the {role} payload is {payload} bytes but its bay holds {bay}: nothing was written, the default keeps booting; rebuild the image with a larger {role} bay or a smaller payload"
+                    ),
+                ));
+            }
         }
         Ok(())
     }

@@ -11,6 +11,18 @@ use crate::BundleError;
 pub const SCHEMA: u32 = 3;
 /// The boot file every slot must have.
 pub const CMDLINE: &str = "cmdline.txt";
+/// The five boot files every slot carries, at these fixed names, in the order Lemnos's bays take
+/// them (`ROLES` in `drivers/slot-store/src/bays.rs` at Lemnos 4e871efd, I5i8): each is listed in
+/// `boot.files` with its SHA-256, and nothing else is listed. Lemnos's install refuses a bundle
+/// that lacks one with `the bundle has no boot/<name>`, and checks each file's size against its
+/// bay (the bays are the board's; a writer does not know them).
+pub const BOOT_FILES: [&str; 5] = [
+    "kernel8.img",
+    "initramfs.cpio",
+    "board.dtb",
+    CMDLINE,
+    "overlays/lemnos-board.dtbo",
+];
 
 /// The fields a slot is made with beside the image and boot files. `product`,
 /// `version` and `board` are required; the rest are left out of the JSON when
@@ -174,11 +186,29 @@ impl SlotManifest {
                 )));
             }
         }
-        if !self.boot.files.contains_key(CMDLINE) {
-            return Err(BundleError::MissingCmdline);
-        }
+        check_boot_set(self.boot.files.keys().map(String::as_str))?;
         Ok(())
     }
+}
+
+/// Checks that the boot files listed are exactly the five of [`BOOT_FILES`]. A missing one is
+/// refused by name; so is a sixth. Called by the writer before it signs, and by the reader.
+pub fn check_boot_set<'a>(
+    listed: impl Iterator<Item = &'a str> + Clone,
+) -> Result<(), BundleError> {
+    for name in BOOT_FILES {
+        if !listed.clone().any(|path| path == name) {
+            return Err(BundleError::MissingBootFile(name.to_string()));
+        }
+    }
+    for path in listed {
+        if !BOOT_FILES.contains(&path) {
+            // Lemnos I5i9: replace with the board's exact words when it lands (today Lemnos
+            // accepts an extra entry; the bundle rule here refuses it by name).
+            return Err(BundleError::ExtraBootFile(path.to_string()));
+        }
+    }
+    Ok(())
 }
 
 /// A slot id: 1 to 64 of `[A-Za-z0-9._-]`, not `.` or `..`.

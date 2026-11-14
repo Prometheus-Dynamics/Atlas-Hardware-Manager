@@ -16,5 +16,10 @@ orion = { workspace = true, features = ["topics", "records", "actions", "files",
 # small stand-ins for node logic. Same commit as the locked `orion` crate.
 orion-stubs = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "fd61df3ed167bd9643e162a9953b8d260c048af5" }
 
+[dev-dependencies]
+# The agreement test: this board's boot-file table (`bundle::BOOT_FILES`) is the same as the
+# bundle writer's (`atlas_bundle::BOOT_FILES`).
+atlas-bundle = { path = "../../core/bundle" }
+
 [lints]
 workspace = true

@@ -458,6 +458,11 @@ impl SimNode {
         lock(&self.shared.model).slots.healthy = healthy;
     }
 
+    /// Sets the sizes of the board's five payload bays (see `Slots::bay_bytes`), in boot-file order.
+    pub fn slot_bay_bytes(&self, bays: [u64; 5]) {
+        lock(&self.shared.model).slots.bay_bytes = bays;
+    }
+
     /// Sets how many of the next trial boots do not reach the daemon. Each such boot spends one
     /// attempt; after `trial_attempts` of them the trial falls back. Each boot is a restart: `trial`
     /// starts the first one, and the reboot action or [`SimNode::slot_power_cut`] starts the next.
@@ -1051,6 +1056,7 @@ impl Node {
                     let boot = model.slots.boot.clone();
                     bundle::verify(&bytes, &trusted, &board, &boot).and_then(|verified| {
                         model.slots.check_signed(&verified.signed)?;
+                        model.slots.check_bays(&verified.id, verified.payloads)?;
                         model
                             .slots
                             .install_done(new_slot(verified), install.pin, install.keep_old)

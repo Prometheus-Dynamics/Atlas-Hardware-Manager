@@ -364,6 +364,7 @@ dependencies = [
 name = "atlas-sim-node"
 version = "2026.1.0-dev"
 dependencies = [
+ "atlas-bundle",
  "ed25519-dalek 2.2.0",
  "orion",
  "orion-stubs",

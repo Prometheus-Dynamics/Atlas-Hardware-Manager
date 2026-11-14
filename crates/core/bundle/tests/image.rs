@@ -52,14 +52,14 @@ fn fixture_rule() -> BootRule {
 /// Slot `alpha`'s boot files, by path, as the fixture lists them.
 fn alpha_boot() -> Vec<(&'static str, Vec<u8>)> {
     vec![
-        ("Image", pattern(40_000, 3)),
+        ("kernel8.img", pattern(40_000, 3)),
         ("board.dtb", pattern(1234, 4)),
-        ("initramfs.cpio.gz", pattern(9000, 5)),
+        ("initramfs.cpio", pattern(9000, 5)),
         (
             "cmdline.txt",
             b"console=tty1 root=PARTUUID=abc panic=5\n".to_vec(),
         ),
-        ("overlays/one.dtbo", pattern(777, 6)),
+        ("overlays/lemnos-board.dtbo", pattern(777, 6)),
     ]
 }
 
@@ -225,11 +225,11 @@ fn a_bundle_from_the_image_in_one_call_matches_the_slots_parts_member_by_member(
             "slot.json",
             "slot.sig",
             "rootfs.erofs",
-            "boot/Image",
             "boot/board.dtb",
             "boot/cmdline.txt",
-            "boot/initramfs.cpio.gz",
-            "boot/overlays/one.dtbo",
+            "boot/initramfs.cpio",
+            "boot/kernel8.img",
+            "boot/overlays/lemnos-board.dtbo",
         ],
         "the image's slot.json is not a boot file of the bundle"
     );

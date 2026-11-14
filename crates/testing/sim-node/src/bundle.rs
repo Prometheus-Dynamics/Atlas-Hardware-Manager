@@ -33,6 +33,26 @@ pub const SLOT_SIG: &str = "slot.sig";
 pub const ROOTFS: &str = "rootfs.erofs";
 pub const CMDLINE: &str = "boot/cmdline.txt";
 const BOOT_PREFIX: &str = "boot/";
+/// The five boot files every slot carries, at these fixed names, in the order Lemnos's bays take
+/// them (`ROLES`, `drivers/slot-store/src/bays.rs:60-92` at Lemnos 4e871efd; I5i8). Each is listed in
+/// `boot.files`, and nothing else is. `atlas-bundle`'s `BOOT_FILES` is the same table; a test checks
+/// the two agree.
+pub const BOOT_FILES: [&str; 5] = [
+    "kernel8.img",
+    "initramfs.cpio",
+    "board.dtb",
+    "cmdline.txt",
+    "overlays/lemnos-board.dtbo",
+];
+/// The bay role of each boot file, in [`BOOT_FILES`] order: the words Lemnos's bay refusals use
+/// (`bays.rs:400`).
+pub const BAY_ROLES: [&str; 5] = [
+    "kernel",
+    "initramfs",
+    "device-tree",
+    "cmdline",
+    "board-overlay",
+];
 /// The first-flash record's length, and the member that holds it.
 pub const RECORD_LEN: usize = 108;
 const RECORD_MAGIC: &[u8; 8] = b"LMNSSIG1";
@@ -87,6 +107,9 @@ pub struct Verified {
     pub signed: Signed,
     /// The boot files the manifest lists, by path, with their SHA-256 digests.
     pub boot: BTreeMap<String, String>,
+    /// The stored size of each of the five boot files, in [`BOOT_FILES`] order: what the board's
+    /// bay for that role must hold (see `Slots::check_bays`).
+    pub payloads: [u64; 5],
 }
 
 /// The first-flash record, as this board reads it.
@@ -212,6 +235,25 @@ struct Manifest {
     listed: BTreeSet<String>,
 }
 
+/// The boot-file set of `slot.json`: exactly [`BOOT_FILES`]. A missing one is refused with the
+/// board's words (`install.rs:756`); a sixth one with ours, until Lemnos I5i9 lands.
+fn check_boot_set(listed: &BTreeSet<String>) -> Result<(), Status> {
+    for name in BOOT_FILES {
+        if !listed.contains(name) {
+            return Err(refuse(format!("the bundle has no {BOOT_PREFIX}{name}")));
+        }
+    }
+    for name in listed {
+        if !BOOT_FILES.contains(&name.as_str()) {
+            // Lemnos I5i9: replace with the board's exact words when it lands.
+            return Err(refuse(format!(
+                "boot.files lists {name}, which is not one of the five boot files (kernel8.img, initramfs.cpio, board.dtb, cmdline.txt, overlays/lemnos-board.dtbo): refused"
+            )));
+        }
+    }
+    Ok(())
+}
+
 fn read_manifest(bytes: &[u8], board: &str) -> Result<Manifest, Status> {
     let manifest: Value = serde_json::from_slice(bytes)
         .map_err(|error| refuse(format!("slot.json is not JSON: {error}")))?;
@@ -253,6 +295,7 @@ fn read_manifest(bytes: &[u8], board: &str) -> Result<Manifest, Status> {
         .keys()
         .cloned()
         .collect();
+    check_boot_set(&listed)?;
     Ok(Manifest {
         value: manifest,
         listed,
@@ -343,7 +386,10 @@ pub fn verify(
                 .as_ref()
                 .is_some_and(|manifest| manifest.listed.contains(rest));
             if !listed {
-                return Err(refuse(format!("{name} is not in slot.json")));
+                // The board's words (`install.rs:211`, Lemnos 4e871efd), at the member's header.
+                return Err(refuse(format!(
+                    "boot file {rest} isn't in slot.json: a file the manifest does not list is refused"
+                )));
             }
         }
         if !seen.insert(name.clone()) {
@@ -412,10 +458,9 @@ pub fn verify(
         .ok_or_else(|| refuse("slot.json has no boot.files"))?;
     for (path, expected) in boot_files {
         let member = format!("{BOOT_PREFIX}{path}");
+        // The board's words for a listed file that is not carried (`install.rs:683`).
         let Some(bytes) = members.get(&member) else {
-            return Err(refuse(format!(
-                "{member} is listed in slot.json but missing"
-            )));
+            return Err(refuse(format!("the bundle has no boot file {path}")));
         };
         let expected = expected.as_str().unwrap_or_default();
         if sha256_hex(bytes) != expected.to_ascii_lowercase() {
@@ -442,6 +487,11 @@ pub fn verify(
         }
     }
 
+    let payloads = BOOT_FILES.map(|name| {
+        members
+            .get(&format!("{BOOT_PREFIX}{name}"))
+            .map_or(0, |bytes| bytes.len() as u64)
+    });
     let boot = boot_files
         .iter()
         .map(|(path, digest)| {
@@ -463,6 +513,7 @@ pub fn verify(
         verity: verity_root.is_some(),
         signed,
         boot,
+        payloads,
     })
 }
 
@@ -487,6 +538,27 @@ pub fn manifest(id: &str, version: &str, rootfs: &[u8], boot: &[(&str, &[u8])]) 
         "verity": { "root_hash": sha256_hex(&[rootfs, b"verity"].concat()) },
         "boot": { "files": files },
     })
+}
+
+/// Placeholder bytes for the four boot files other than the command line, in [`BOOT_FILES`] order.
+const PLACEHOLDERS: [&[u8]; 4] = [
+    b"kernel8.img placeholder\n",
+    b"initramfs.cpio placeholder\n",
+    b"board.dtb placeholder\n",
+    b"lemnos-board.dtbo placeholder\n",
+];
+
+/// The five boot files of a slot with `cmdline` as its command line: placeholders for the other
+/// four. A slot carries all five (Lemnos I5i8), so a test's bundle does too.
+#[must_use]
+pub fn boot_files(cmdline: &[u8]) -> [(&'static str, &[u8]); 5] {
+    [
+        (BOOT_FILES[0], PLACEHOLDERS[0]),
+        (BOOT_FILES[1], PLACEHOLDERS[1]),
+        (BOOT_FILES[2], PLACEHOLDERS[2]),
+        (BOOT_FILES[3], cmdline),
+        (BOOT_FILES[4], PLACEHOLDERS[3]),
+    ]
 }
 
 /// The command line that carries the default rule's word.

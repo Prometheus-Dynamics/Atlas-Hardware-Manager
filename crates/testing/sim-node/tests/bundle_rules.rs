@@ -23,7 +23,7 @@ fn held(key: &SigningKey) -> Vec<TrustedKey> {
 /// The members of a signed slot, in the writer's order, as (name, bytes).
 fn parts(id: &str, key: Option<&SigningKey>) -> Vec<(String, Vec<u8>)> {
     let rootfs = format!("rootfs of {id}\n").repeat(64).into_bytes();
-    let boot: [(&str, &[u8]); 1] = [("cmdline.txt", CMDLINE)];
+    let boot = bundle::boot_files(CMDLINE);
     let manifest = bundle::manifest(id, "2.0.0", &rootfs, &boot);
     let mut out = vec![("slot.json".to_string(), manifest.to_string().into_bytes())];
     if let Some(key) = key {
@@ -33,8 +33,23 @@ fn parts(id: &str, key: Option<&SigningKey>) -> Vec<(String, Vec<u8>)> {
         ));
     }
     out.push(("rootfs.erofs".to_string(), rootfs));
-    out.push(("boot/cmdline.txt".to_string(), CMDLINE.to_vec()));
+    out.extend(boot_members(&boot));
     out
+}
+
+/// The five boot members of `boot`, as members (`boot/<path>`), in [`bundle::BOOT_FILES`] order.
+fn boot_members(boot: &[(&str, &[u8])]) -> Vec<(String, Vec<u8>)> {
+    boot.iter()
+        .map(|(path, bytes)| (format!("boot/{path}"), bytes.to_vec()))
+        .collect()
+}
+
+/// The boot members of a bundle's members (`boot/...`), as given.
+fn boot_of(list: &[(String, Vec<u8>)]) -> Vec<(String, Vec<u8>)> {
+    list.iter()
+        .filter(|(name, _)| name.starts_with("boot/"))
+        .cloned()
+        .collect()
 }
 
 fn named(list: &[(String, Vec<u8>)], name: &str) -> Vec<u8> {
@@ -72,6 +87,7 @@ fn the_members_are_checked_in_order_and_the_order_is_named() {
     let sig = named(&list, "slot.sig");
     let rootfs = named(&list, "rootfs.erofs");
     let cmdline = named(&list, "boot/cmdline.txt");
+    let boot = boot_of(&list);
     let trust = held(&key);
 
     let first = refused(
@@ -105,12 +121,12 @@ fn the_members_are_checked_in_order_and_the_order_is_named() {
     );
 
     // Any order of the rootfs and the boot files is legal, after slot.json and slot.sig.
-    let swapped = [
+    let mut swapped = vec![
         ("slot.json".into(), json.clone()),
         ("slot.sig".into(), sig.clone()),
-        ("boot/cmdline.txt".into(), cmdline.clone()),
-        ("rootfs.erofs".into(), rootfs.clone()),
     ];
+    swapped.extend(boot.clone());
+    swapped.push(("rootfs.erofs".into(), rootfs.clone()));
     assert_eq!(
         accepted(&swapped, &trust).signed,
         Signed::Trusted {
@@ -119,11 +135,11 @@ fn the_members_are_checked_in_order_and_the_order_is_named() {
     );
 
     // An unsigned bundle is legal: no slot.sig at all.
-    let unsigned = [
+    let mut unsigned = vec![
         ("slot.json".into(), json.clone()),
         ("rootfs.erofs".into(), rootfs.clone()),
-        ("boot/cmdline.txt".into(), cmdline.clone()),
     ];
+    unsigned.extend(boot.clone());
     assert_eq!(accepted(&unsigned, &trust).signed, Signed::Unsigned);
 }
 
@@ -150,7 +166,9 @@ fn a_boot_file_slot_json_does_not_list_is_refused_by_name() {
     list.push(("boot/extra.txt".into(), b"x".to_vec()));
     let error = refused(&list, &held(&key));
     assert!(
-        error.message.contains("boot/extra.txt is not in slot.json"),
+        error
+            .message
+            .contains("boot file extra.txt isn't in slot.json"),
         "{}",
         error.message
     );
@@ -166,7 +184,7 @@ fn a_listed_member_that_is_missing_is_refused_by_name() {
     assert!(
         error
             .message
-            .contains("boot/cmdline.txt is listed in slot.json but missing"),
+            .contains("the bundle has no boot file cmdline.txt"),
         "{}",
         error.message
     );

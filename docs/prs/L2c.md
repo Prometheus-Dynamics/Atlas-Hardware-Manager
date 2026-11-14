@@ -110,3 +110,52 @@ Outcome words (item 7): `crates/drivers/board-slots/src/signature.rs` tests `the
 - Nothing here runs against a real Lemnos. The vector agrees between two implementations in this repository, both written from INPUTS. It has not been checked by Lemnos's own code.
 - Nothing is written to a board, flashed or installed. Untested on board.
 - The boot and restart refusals are the sim's model. Lemnos has neither yet.
+
+## Lemnos I5i8 (4e871efd): the five boot files
+
+Lemnos I5i8 (merged at 4e871efd) makes the slot's boot files a fixed set. This section is the bundle's side of it, in the writer (`crates/core/bundle/src/write.rs`, `manifest.rs`), the inspector (`inspect.rs`) and the simulated board (`crates/testing/sim-node/src/bundle.rs`, `slots.rs`, `node.rs`).
+
+What is modelled:
+
+- A slot's `boot/` carries all five files at fixed names, each listed in `boot.files` with the SHA-256 of its bytes, in Lemnos's `ROLES` order: `kernel8.img` (kernel), `initramfs.cpio` (initramfs), `board.dtb` (device-tree), `cmdline.txt` (cmdline), `overlays/lemnos-board.dtbo` (board-overlay). The writer's table is `atlas_bundle::BOOT_FILES` (`manifest.rs`); the simulated board keeps its own copy, `sim-node` `bundle::BOOT_FILES`, and `five_boot_files.rs::the_board_table_is_the_writers_table` checks the two agree (a dev-dependency on `atlas-bundle`).
+- The kernel is stored as shipped. There is no compression check.
+- `overlays/README`, `bayinfo.rec` and `extlinux/extlinux.conf` are not carried: the board makes them.
+- The manifest (schema 3), the signed message, the 108-byte record, the policy table and the member order are unchanged.
+- The bays are the board's, not the bundle's. The writer does not know them. The simulated board has five bay sizes (`Slots::bay_bytes`), defaulting to the example board's values.
+
+Words that are the board's own (Lemnos 4e871efd, verified by reading the code):
+
+- `the bundle has no boot/<name>`: `drivers/system-slots/src/install.rs:756`, for a role file that is neither listed nor carried. Also `install.rs:706` for `cmdline.txt` by the same words.
+- `the bundle has no boot file <name>`: `install.rs:683`, for a file listed in `slot.json` that is not carried. This is not `boot/<name>`. The simulated board uses this text for the listed-but-absent case.
+- `boot file <name> isn't in slot.json: a file the manifest does not list is refused`: `install.rs:211`, for a `boot/` member that is carried but not listed (the member's header). The simulated board uses these words for an extra member.
+- Bay refusal: `{slot}: the {role} payload is {N} bytes but its bay holds {M}: nothing was written, the default keeps booting; rebuild the image with a larger {role} bay or a smaller payload`, `drivers/slot-store/src/bays.rs:400` (the check at `:515`). The install job wraps it as `slot {id}'s boot files: {error}` (`install.rs:763`), and the simulated board's status carries that wrapper. Roles are `kernel`, `initramfs`, `device-tree`, `cmdline`, `board-overlay` (`ROLES`, `bays.rs:60`).
+- Bay keys: `bay_kernel_bytes`, `bay_initramfs_bytes`, `bay_device_tree_bytes`, `bay_cmdline_bytes`, `bay_overlay_bytes` (`docs/boards.md:535-539`; `engine/host/src/board/mod.rs:664-672`). The simulated board's `bay_bytes` is in that order.
+
+Words that are ours, pending Lemnos I5i9:
+
+- A sixth entry in `boot.files` (an extra name, listed): refused by name by the writer (`BundleError::ExtraBootFile`), the inspector, and the simulated board (`bundle::verify`, `read_manifest`). Lemnos accepts an extra entry today (if it is carried; if it is not, `install.rs:683` says it is missing). The simulated board marks the words with `// Lemnos I5i9: replace with the board's exact words when it lands`, and so do `atlas-bundle`'s `check_boot_set`.
+- The writer's own error for a missing file: `the bundle has no boot/<name>: a slot bundle carries all five boot files` (`BundleError::MissingBootFile`). It repeats the board's first words; it is ours.
+
+Proofs (all run; names as in the code):
+
+- Writer refuses a missing one, by name: `crates/core/bundle/tests/bundle.rs::invalid_inputs_are_refused_before_anything_is_signed` (loops over the five names, `MissingBootFile`) and a sixth, `ExtraBootFile`, in the same test.
+- Inspector refuses a manifest that lists four of the five, by name: `bundle.rs::each_boot_file_the_manifest_does_not_list_is_refused_by_the_reader` (re-signed manifests, so only the set is wrong); a listed file that is not carried: `bundle.rs::a_listed_member_that_is_missing_is_refused_by_name` (words `the bundle has no boot file overlays/lemnos-board.dtbo`); a sixth listed entry: the same test as the writer's, re-signed.
+- Writer and inspector accept a five-file bundle, and its members are in order: `bundle.rs::a_bundle_has_the_members_in_order_and_its_signature_verifies`; `image.rs` (the reader's fixture, below).
+- Simulated board, a missing file, with the board's words, for each of the five names, both as unlisted (`the bundle has no boot/<name>`) and listed but absent (`the bundle has no boot file <name>`): `crates/testing/sim-node/tests/five_boot_files.rs::a_missing_boot_file_the_manifest_does_not_list_is_refused_with_the_boards_words` and `a_listed_boot_file_that_is_not_carried_is_refused_with_the_boards_words`.
+- Simulated board, a sixth entry refused by name (ours): `five_boot_files.rs::a_sixth_boot_entry_is_refused_by_name`. A carried but unlisted member, with the board's words: `five_boot_files.rs::a_boot_member_the_manifest_does_not_list_is_refused_with_the_boards_words`.
+- Simulated board, an oversize file, each role (five cases), refused by the board's words through the install job, with nothing stored (the slot list has one slot, the default and running slot is still `slot-1`): `crates/testing/sim-node/tests/sim_node.rs::a_boot_file_larger_than_its_bay_is_refused_by_the_boards_words_and_nothing_is_written`.
+- A five-file bundle installs, through the install job: `sim_node.rs::a_five_file_bundle_installs_when_each_file_fits_its_bay`, and `five_boot_files.rs::a_five_file_bundle_installs_and_lists_its_five_boot_files`.
+
+Fixtures and tests carried to five files (the brief's list, all updated):
+
+- Bundle, sim and board-slots tests: every bundle built with a boot list now carries five files (`bundle::boot_files(CMDLINE)` in the sim; placeholders for the four other files, and the cmdline the test needs). `crates/drivers/board-slots/tests/common/mod.rs::bundle_bytes`, `crates/testing/sim-node/tests/{sim_node,trial,bundle_rules}.rs`, `crates/core/bundle/tests/bundle.rs`.
+- The reader's fixture `crates/flash/image/tests/fixtures/data.ext4` (its alpha slot's boot files, which `bundle_from_image` now writes): regenerated with `make-fixtures.py` (the same contents, the five names: `kernel8.img`, `initramfs.cpio`, `board.dtb`, `cmdline.txt`, `overlays/lemnos-board.dtbo`). The verity roots are unchanged (the data is unchanged). The kernel blob is now at blocks 70 to 109 (was 71 to 110), and `forms.rs` checks that offset. `crates/core/bundle/tests/image.rs` and `crates/flash/image/tests/common/mod.rs` carry the new names.
+
+Not done, and why:
+
+- The bays are not checked in the writer or the inspector: a bundle does not know its board's bays (Lemnos checks them at install). The inspector does not check sizes.
+- No `overlays/README`, `bayinfo.rec` or `extlinux/extlinux.conf` in a bundle, as Lemnos says.
+- The sim's bay sizes are a field, not a board file: there is no board file in the simulated board. The names are the board's keys (above).
+- The U-Boot form's kernel check (Lemnos refuses gzip there, `bootimage.rs:109`) is not modelled; the brief says no compression check.
+
+Untested on board. Lemnos has not run this code against these bundles; the words are read from its source at 4e871efd, not from a running board.

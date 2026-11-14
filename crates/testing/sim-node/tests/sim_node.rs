@@ -61,7 +61,7 @@ fn bundle_for(id: &str, version: &str, key: Option<&SigningKey>) -> Vec<u8> {
     let rootfs = format!("rootfs of {id} at {version}\n")
         .repeat(900)
         .into_bytes();
-    let boot: [(&str, &[u8]); 2] = [("cmdline.txt", CMDLINE), ("kernel.img", b"kernel bytes")];
+    let boot = bundle::boot_files(CMDLINE);
     let manifest = bundle::manifest(id, version, &rootfs, &boot);
     let record = key.map(|key| bundle::sign(&manifest, key));
     bundle::build(
@@ -121,7 +121,9 @@ fn install(orion: &Orion, bundle: &[u8], pin: bool, keep_old: bool) -> Finished 
 fn big_bundle(id: &str) -> Vec<u8> {
     let rootfs = format!("rootfs of {id}\n").into_bytes();
     let blob = vec![7_u8; 4 * 1024 * 1024];
-    let boot = [("cmdline.txt", CMDLINE), ("blob.bin", &blob[..])];
+    // The blob is the kernel: its bay is the largest the example board has (see `Slots::bay_bytes`).
+    let mut boot = bundle::boot_files(CMDLINE);
+    boot[0] = ("kernel8.img", &blob[..]);
     let manifest = bundle::manifest(id, "2.0.0", &rootfs, &boot);
     bundle::build(&manifest, None, &rootfs, &boot)
 }
@@ -847,9 +849,10 @@ fn a_layered_manifest_is_refused() {
     let node = start("layered");
     let orion = node.connect("layered").expect("a session");
     let rootfs = b"rootfs bytes".to_vec();
-    let mut manifest = bundle::manifest("layered-1", "2.0.0", &rootfs, &[("cmdline.txt", b"x")]);
+    let boot = bundle::boot_files(b"x");
+    let mut manifest = bundle::manifest("layered-1", "2.0.0", &rootfs, &boot);
     manifest["layers"] = serde_json::json!([{ "id": "base" }]);
-    let bytes = bundle::build(&manifest, None, &rootfs, &[("cmdline.txt", b"x")]);
+    let bytes = bundle::build(&manifest, None, &rootfs, &boot);
     let finished = install(&orion, &bytes, false, false);
     assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);
     assert!(finished.detail.starts_with("-22:"), "{}", finished.detail);
@@ -969,7 +972,7 @@ fn security_on_refuses_unsigned_and_untrusted_bundles_and_keeps_nothing() {
 /// A bundle whose slot.json is `manifest` after `change`, with the rest of the bundle as `bundle_for`.
 fn bundle_with(id: &str, change: impl FnOnce(&mut Value)) -> Vec<u8> {
     let rootfs = format!("rootfs of {id}\n").into_bytes();
-    let boot = [("cmdline.txt", CMDLINE)];
+    let boot = bundle::boot_files(CMDLINE);
     let mut manifest = bundle::manifest(id, "2.0.0", &rootfs, &boot);
     change(&mut manifest);
     bundle::build(&manifest, None, &rootfs, &boot)
@@ -1294,4 +1297,61 @@ fn a_late_subscriber_is_sent_the_last_value_of_a_topic_written_before_it_subscri
         "{}",
         text(&description)
     );
+}
+
+/// Each boot file must fit the bay of its role (Lemnos I5i8). A file one byte larger than its bay
+/// is refused by the board's words, before anything is stored: the slot list and the default are
+/// as they were, and the default still boots. Every role is proved, through the install job.
+#[test]
+fn a_boot_file_larger_than_its_bay_is_refused_by_the_boards_words_and_nothing_is_written() {
+    for (index, role) in bundle::BAY_ROLES.iter().enumerate() {
+        let node = start(&format!("bay-{role}"));
+        let orion = node.connect(role).expect("a session");
+        let rootfs = format!("rootfs for {role}\n").repeat(64).into_bytes();
+        let boot = bundle::boot_files(CMDLINE);
+        let size = boot[index].1.len() as u64;
+        let mut bays = [u64::MAX; 5];
+        bays[index] = size - 1;
+        node.slot_bay_bytes(bays);
+        let id = format!("bay-{role}");
+        let manifest = bundle::manifest(&id, "2.0.0", &rootfs, &boot);
+        let bytes = bundle::build(&manifest, None, &rootfs, &boot);
+        let finished = install(&orion, &bytes, false, false);
+        assert_eq!(
+            finished.outcome,
+            Outcome::Rejected,
+            "{role}: {}",
+            finished.detail
+        );
+        assert_eq!(
+            finished.detail,
+            format!(
+                "-22: slot {id}'s boot files: {id}: the {role} payload is {size} bytes but its bay holds {}: nothing was written, the default keeps booting; rebuild the image with a larger {role} bay or a smaller payload",
+                size - 1
+            ),
+            "{role}"
+        );
+        let listing = list(&orion);
+        assert_eq!(slot_count(&listing), 1, "{role}: nothing is listed");
+        assert_eq!(listing["slot_default"], "slot-1", "{role}");
+        assert_eq!(listing["slot_active"], "slot-1", "{role}");
+    }
+}
+
+/// The same bundle installs once every bay holds it: the bays are the only thing that refused it.
+#[test]
+fn a_five_file_bundle_installs_when_each_file_fits_its_bay() {
+    let node = start("bay-fits");
+    let orion = node.connect("bay-fits").expect("a session");
+    let rootfs = b"rootfs of bay-fits\n".repeat(64);
+    let boot = bundle::boot_files(CMDLINE);
+    let manifest = bundle::manifest("bay-fits", "2.0.0", &rootfs, &boot);
+    let bytes = bundle::build(&manifest, None, &rootfs, &boot);
+    let finished = install(&orion, &bytes, false, false);
+    assert_eq!(finished.outcome, Outcome::Succeeded, "{}", finished.detail);
+    assert_eq!(slot_count(&list(&orion)), 2);
+}
+
+fn slot_count(listing: &Value) -> usize {
+    listing["slots"].as_array().expect("slots").len()
 }

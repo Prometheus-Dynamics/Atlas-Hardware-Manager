@@ -50,11 +50,11 @@ fn check_alpha(path: &std::path::Path, scratch: &std::path::Path) {
     assert_eq!(
         listed,
         [
-            "Image",
             "board.dtb",
             "cmdline.txt",
-            "initramfs.cpio.gz",
-            "overlays/one.dtbo",
+            "initramfs.cpio",
+            "kernel8.img",
+            "overlays/lemnos-board.dtbo",
             "slot.json"
         ]
     );
@@ -200,14 +200,14 @@ fn an_image_without_a_data_partition_is_refused() {
 fn a_boot_file_that_is_not_its_name_is_refused() {
     let dir = TestDir::new("tampered");
     let scratch = TestDir::new("tampered-scratch");
-    // The Image blob's blocks in the fixture (debugfs: blocks 71 to 110, 1 KiB
+    // The kernel8.img blob's blocks in the fixture (debugfs: blocks 70 to 109, 1 KiB
     // each). The pattern repeats, so a search would find other copies; the offset
     // is checked against the expected bytes before one is flipped.
-    let blob_at = 71 * 1024;
+    let blob_at = 70 * 1024;
     assert_eq!(
         &DATA_FIXTURE[blob_at..blob_at + 64],
         &pattern(40_000, 3)[..64],
-        "the fixture's Image blob is not where the test expects"
+        "the fixture's kernel8.img blob is not where the test expects"
     );
     let mut disk = image_disk();
     disk[2048 * 512 + blob_at + 10] ^= 0x01;

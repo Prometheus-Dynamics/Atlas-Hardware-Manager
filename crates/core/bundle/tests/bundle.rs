@@ -11,8 +11,8 @@ use std::cell::Cell;
 use std::io::Read;
 
 use atlas_bundle::{
-    BLOCK, BootFile, BootRule, BundleError, RECORD_LEN, Signature, SlotMeta, SlotSource,
-    inspect_bundle, root_hash, slot_message, verify_slot, write_bundle,
+    BLOCK, BOOT_FILES, BootFile, BootRule, BundleError, RECORD_LEN, Signature, SlotMeta,
+    SlotSource, inspect_bundle, root_hash, slot_message, verify_slot, write_bundle,
 };
 use atlas_image::{Verity, VerityError, tree_bytes};
 use atlas_release::{PublicKey, public_key_for};
@@ -90,9 +90,11 @@ impl Synthetic {
             tree: pattern(tree_bytes(blocks as u64) as usize, 2),
             verity,
             boot: vec![
-                ("cmdline.txt".into(), CMDLINE.to_vec()),
                 ("kernel8.img".into(), pattern(100_000, 3)),
-                ("overlays/one.dtbo".into(), pattern(777, 4)),
+                ("initramfs.cpio".into(), pattern(5_000, 5)),
+                ("board.dtb".into(), pattern(900, 6)),
+                ("cmdline.txt".into(), CMDLINE.to_vec()),
+                ("overlays/lemnos-board.dtbo".into(), pattern(777, 4)),
             ],
             chunk: 64 * 1024,
             tamper_on_call: None,
@@ -203,9 +205,11 @@ fn a_bundle_has_the_members_in_order_and_its_signature_verifies() {
             "slot.json",
             "slot.sig",
             "rootfs.erofs",
+            "boot/board.dtb",
             "boot/cmdline.txt",
+            "boot/initramfs.cpio",
             "boot/kernel8.img",
-            "boot/overlays/one.dtbo",
+            "boot/overlays/lemnos-board.dtbo",
         ]
     );
 
@@ -230,7 +234,7 @@ fn a_bundle_has_the_members_in_order_and_its_signature_verifies() {
         inspected.manifest.image.sha256,
         hex(&Sha256::digest(source.rootfs_bytes()))
     );
-    assert_eq!(inspected.manifest.boot.files.len(), 3);
+    assert_eq!(inspected.manifest.boot.files.len(), BOOT_FILES.len());
     assert_eq!(inspected.manifest.product, "example");
     assert_eq!(inspected.manifest.board, "example-board");
     assert_eq!(inspected.board, "example-board");
@@ -365,11 +369,21 @@ fn invalid_inputs_are_refused_before_anything_is_signed() {
         );
     }
 
-    let mut no_cmdline = Synthetic::new(2);
-    no_cmdline.boot.retain(|(p, _)| p != "cmdline.txt");
+    // Each of the five boot files is required: a source without it is refused by name.
+    for name in BOOT_FILES {
+        let mut missing = Synthetic::new(2);
+        missing.boot.retain(|(p, _)| p != name);
+        assert!(
+            matches!(write(&missing, &secret), Err(BundleError::MissingBootFile(ref n)) if n == name),
+            "{name}"
+        );
+    }
+    // A sixth boot file is refused by name (Lemnos I5i9 will refuse it at install).
+    let mut sixth = Synthetic::new(2);
+    sixth.boot.push(("overlays/extra.dtbo".into(), vec![1]));
     assert!(matches!(
-        write(&no_cmdline, &secret),
-        Err(BundleError::MissingCmdline)
+        write(&sixth, &secret),
+        Err(BundleError::ExtraBootFile(ref n)) if n == "overlays/extra.dtbo"
     ));
 
     for bad in ["../evil", "/abs", "a//b", "a/./b", "x\\y"] {
@@ -479,7 +493,7 @@ fn manifest_json_with(
     let zeros = "0".repeat(64);
     let salt = salt.map_or(String::new(), |s| format!(r#""salt":"{s}","#));
     format!(
-        r#"{{"schema":3,"id":"slot-a.1","product":"example","version":"1","board":"example-board","image":{{"size":{size},"sha256":"{zeros}"}},"verity":{{"root_hash":"{zeros}",{salt}"data_blocks":{data_blocks},"hash_offset":{hash_offset}}},"boot":{{"files":{{"cmdline.txt":"{zeros}"}}}}}}"#
+        r#"{{"schema":3,"id":"slot-a.1","product":"example","version":"1","board":"example-board","image":{{"size":{size},"sha256":"{zeros}"}},"verity":{{"root_hash":"{zeros}",{salt}"data_blocks":{data_blocks},"hash_offset":{hash_offset}}},"boot":{{"files":{{"kernel8.img":"{zeros}","initramfs.cpio":"{zeros}","board.dtb":"{zeros}","cmdline.txt":"{zeros}","overlays/lemnos-board.dtbo":"{zeros}"}}}}}}"#
     )
     .into_bytes()
 }
@@ -903,11 +917,62 @@ fn a_member_outside_the_set_is_refused_by_name() {
 fn a_listed_member_that_is_missing_is_refused_by_name() {
     let secret = throwaway("missing");
     let bundle = write(&Synthetic::new(2), &secret).expect("writes");
-    let without = with_member(&bundle, "boot/overlays/one.dtbo", None);
+    let without = with_member(&bundle, "boot/overlays/lemnos-board.dtbo", None);
     let error =
         inspect_bundle(&without[..], &keys_of(&secret), &BootRule::default()).expect_err("refused");
     assert!(
-        matches!(&error, BundleError::Malformed(m) if m.contains("boot/overlays/one.dtbo") && m.contains("missing")),
+        matches!(&error, BundleError::Malformed(m) if m == "the bundle has no boot file overlays/lemnos-board.dtbo"),
+        "{error:?}"
+    );
+}
+
+/// A written bundle whose `slot.json` is edited by `edit` and re-signed by `secret`: the rest of its
+/// members as they were.
+fn resigned(
+    bundle: &[u8],
+    secret: &[u8; 32],
+    edit: impl FnOnce(&mut serde_json::Value),
+) -> Vec<u8> {
+    let mut parts = members(bundle);
+    let mut json: serde_json::Value = serde_json::from_slice(&parts[0].1).expect("json");
+    edit(&mut json);
+    let bytes = serde_json::to_vec(&json).expect("json bytes");
+    let sig = atlas_bundle::sign_slot(&bytes, secret)
+        .expect("signs")
+        .to_bytes();
+    parts[0].1 = bytes;
+    parts[1].1 = sig.to_vec();
+    retar(&parts)
+}
+
+#[test]
+fn each_boot_file_the_manifest_does_not_list_is_refused_by_the_reader() {
+    // The reader's check: a slot.json that lists four of the five is refused, naming the one it
+    // leaves out, before any member is believed.
+    let secret = throwaway("unlisted-role");
+    let bundle = write(&Synthetic::new(2), &secret).expect("writes");
+    for name in BOOT_FILES {
+        let edited = resigned(&bundle, &secret, |json| {
+            json["boot"]["files"]
+                .as_object_mut()
+                .expect("files")
+                .remove(name);
+        });
+        let error = inspect_bundle(&edited[..], &keys_of(&secret), &BootRule::default())
+            .expect_err("refused");
+        assert!(
+            matches!(&error, BundleError::MissingBootFile(n) if n == name),
+            "{name}: {error:?}"
+        );
+    }
+    // A sixth entry, listed and carried, is refused by name.
+    let sixth = resigned(&bundle, &secret, |json| {
+        json["boot"]["files"]["overlays/extra.dtbo"] = serde_json::json!("00".repeat(32));
+    });
+    let error =
+        inspect_bundle(&sixth[..], &keys_of(&secret), &BootRule::default()).expect_err("refused");
+    assert!(
+        matches!(&error, BundleError::ExtraBootFile(n) if n == "overlays/extra.dtbo"),
         "{error:?}"
     );
 }

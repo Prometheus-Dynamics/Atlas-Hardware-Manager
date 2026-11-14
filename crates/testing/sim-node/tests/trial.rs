@@ -34,7 +34,7 @@ fn bundle_for(id: &str, version: &str, key: Option<&SigningKey>) -> Vec<u8> {
     let rootfs = format!("rootfs of {id} at {version}\n")
         .repeat(900)
         .into_bytes();
-    let boot: [(&str, &[u8]); 2] = [("cmdline.txt", CMDLINE), ("kernel.img", b"kernel bytes")];
+    let boot = bundle::boot_files(CMDLINE);
     let manifest = bundle::manifest(id, version, &rootfs, &boot);
     let record = key.map(|key| bundle::sign(&manifest, key));
     bundle::build(
@@ -478,7 +478,7 @@ fn a_bad_signature_from_a_known_key_and_a_malformed_record_are_refused_and_leave
             owner: "Test Owner".into(),
         });
     let rootfs = b"rootfs of bad-sig\n".repeat(64);
-    let boot: [(&str, &[u8]); 1] = [("cmdline.txt", CMDLINE)];
+    let boot = bundle::boot_files(CMDLINE);
     let manifest = bundle::manifest("bad-sig", "2.0.0", &rootfs, &boot);
     let record = bundle::sign(&manifest, &trusted);
 
@@ -629,7 +629,7 @@ fn a_board_mismatch_at_install_is_minus_95_naming_both_boards_and_leaves_nothing
     let node = start("install-95");
     let orion = node.connect("install-95").expect("a session");
     let rootfs = b"rootfs of slot-2\n".repeat(64);
-    let boot: [(&str, &[u8]); 1] = [("cmdline.txt", CMDLINE)];
+    let boot = bundle::boot_files(CMDLINE);
     let mut manifest = bundle::manifest("slot-2", "2.0.0", &rootfs, &boot);
     manifest["board"] = Value::String("another-board".into());
     let other = bundle::build(&manifest, None, &rootfs, &boot);
@@ -660,18 +660,21 @@ fn the_old_slot_key_member_is_refused_by_name_and_leaves_nothing() {
             owner: "Test Owner".into(),
         });
     let rootfs = b"rootfs of slot-key\n".repeat(64);
-    let boot: [(&str, &[u8]); 1] = [("cmdline.txt", CMDLINE)];
+    let boot = bundle::boot_files(CMDLINE);
     let manifest = bundle::manifest("slot-key", "2.0.0", &rootfs, &boot);
     let record = bundle::sign(&manifest, &signer);
     // A signed bundle with the old `slot.key` member: the key id is in the record, so the member
     // is outside the set and is refused by name, at its header.
-    let parts = [
+    let mut parts = vec![
         ("slot.json".to_string(), manifest.to_string().into_bytes()),
         ("slot.sig".to_string(), record.to_vec()),
         ("slot.key".to_string(), bundle::key_id(&signer).into_bytes()),
         ("rootfs.erofs".to_string(), rootfs.clone()),
-        ("boot/cmdline.txt".to_string(), CMDLINE.to_vec()),
     ];
+    parts.extend(
+        boot.iter()
+            .map(|(path, bytes)| (format!("boot/{path}"), bytes.to_vec())),
+    );
     let bytes = bundle::tar_of(&parts);
     let finished = install(&orion, &bytes, false, false);
     assert_eq!(finished.outcome, Outcome::Rejected, "{}", finished.detail);

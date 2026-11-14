@@ -22,6 +22,11 @@
 //! block count and the tree's offset) and `boot.files`. There is no `family`
 //! key. Schema 2 is refused by name.
 //!
+//! `boot/` carries exactly the five files of [`BOOT_FILES`] (`kernel8.img`, `initramfs.cpio`,
+//! `board.dtb`, `cmdline.txt`, `overlays/lemnos-board.dtbo`), each listed in `boot.files`. Lemnos
+//! I5i8 (4e871efd). Each file's size is the board's bay (Lemnos checks it at install); the writer
+//! does not know the bays.
+//!
 //! `boot/cmdline.txt` is the complete command line and carries one word
 //! `<boot_args>.src.<source>=<kernel path>` for each boot source the board states
 //! ([`BootRule`]); the installer appends nothing.
@@ -74,8 +79,8 @@ pub use error::BundleError;
 pub use from_image::{ImageSource, bundle_from_image, check_stream_digest};
 pub use inspect::{Inspected, check_board, inspect_bundle};
 pub use manifest::{
-    BootEntry, CMDLINE, ImageEntry, SCHEMA, SlotManifest, SlotMeta, VerityEntry,
-    validate_boot_path, validate_id, validate_name,
+    BOOT_FILES, BootEntry, CMDLINE, ImageEntry, SCHEMA, SlotManifest, SlotMeta, VerityEntry,
+    check_boot_set, validate_boot_path, validate_id, validate_name,
 };
 pub use sign::{
     RECORD_LEN, SIG_LEN, SLOT_MESSAGE_VERSION, SLOT_TAG, Signature, key_id_of, sign_slot,

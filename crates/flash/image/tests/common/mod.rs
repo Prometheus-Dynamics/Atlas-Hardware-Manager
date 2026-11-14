@@ -41,14 +41,14 @@ pub fn beta_file() -> Vec<u8> {
 /// `.boot` list's content, except `slot.json`, which is the manifest itself).
 pub fn alpha_boot() -> Vec<(&'static str, Vec<u8>)> {
     vec![
-        ("Image", pattern(40_000, 3)),
+        ("kernel8.img", pattern(40_000, 3)),
         ("board.dtb", pattern(1234, 4)),
-        ("initramfs.cpio.gz", pattern(9000, 5)),
+        ("initramfs.cpio", pattern(9000, 5)),
         (
             "cmdline.txt",
             b"console=tty1 root=PARTUUID=abc panic=5\n".to_vec(),
         ),
-        ("overlays/one.dtbo", pattern(777, 6)),
+        ("overlays/lemnos-board.dtbo", pattern(777, 6)),
     ]
 }
 

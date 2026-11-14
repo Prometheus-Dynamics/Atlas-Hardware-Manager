@@ -18,8 +18,16 @@ pub enum BundleError {
     InvalidBootPath(String),
     #[error("boot file {0:?} is listed twice")]
     DuplicateBootFile(String),
-    #[error("the boot files have no cmdline.txt")]
-    MissingCmdline,
+    /// A slot bundle carries all five boot files (`manifest::BOOT_FILES`); one is missing. The
+    /// words are the board's (`the bundle has no boot/<name>`, Lemnos 4e871efd install.rs:756).
+    #[error("the bundle has no boot/{0}: a slot bundle carries all five boot files")]
+    MissingBootFile(String),
+    /// `boot.files` lists a file that is not one of the five. Lemnos I5i9 will refuse this at
+    /// install by name; the words here are ours until then.
+    #[error(
+        "boot.files lists {0}, which is not one of the five boot files (kernel8.img, initramfs.cpio, board.dtb, cmdline.txt, overlays/lemnos-board.dtbo): refused"
+    )]
+    ExtraBootFile(String),
     /// The verity values do not describe the slot file: a value does not fit the
     /// layout, or the file is not its data and whole tree (see `atlas-image`).
     #[error(transparent)]
