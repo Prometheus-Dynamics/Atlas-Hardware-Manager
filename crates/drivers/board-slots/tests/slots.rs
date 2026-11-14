@@ -10,7 +10,7 @@ use atlas_actions::{Action, BoardActions, Reported};
 use atlas_board_slots::{BoardSlots, InstallRequest, SlotError, Source};
 use atlas_image::BoardOutcome;
 use atlas_jobs::JobId;
-use atlas_sim_node::names;
+use atlas_sim_node::{DEADLINE, names};
 use atlas_slots::{RemoveRefusal, Resolution, SlotList, Stage};
 use common::{BOARD, Rig, answered, answered_once, bundle_bytes, device, until, write_bundle};
 use std::time::Duration;
@@ -29,9 +29,12 @@ async fn list(rig: &Rig) -> SlotList {
         .expect("the board lists its slots")
 }
 
-/// Waits until the install's stage satisfies `ready`.
+/// Waits until the install's stage satisfies `ready`. Bounded by the sim's one generous
+/// [`DEADLINE`], which only a stuck install reaches: a slow host is not a failure. The elapsed time
+/// is printed, and a failure says the stage, the push's counters and the job.
 async fn stage_is(rig: &Rig, job: JobId, what: &str, ready: impl Fn(&Stage) -> bool) {
-    let waited = tokio::time::timeout(Duration::from_secs(20), async {
+    let started = std::time::Instant::now();
+    let waited = tokio::time::timeout(DEADLINE, async {
         while !rig.installs.stage(job).is_some_and(|stage| ready(&stage)) {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
@@ -39,11 +42,14 @@ async fn stage_is(rig: &Rig, job: JobId, what: &str, ready: impl Fn(&Stage) -> b
     .await;
     if waited.is_err() {
         panic!(
-            "timed out waiting for {what}: stage {:?}, job {:?}",
+            "timed out waiting for {what} after {:?}: stage {:?}, push {:?}, job {:?}",
+            started.elapsed(),
             rig.installs.stage(job),
+            rig.installs.push_counters(job),
             rig.installs.jobs().get(job)
         );
     }
+    eprintln!("{what}: after {:?}", started.elapsed());
 }
 
 /// Waits for an install to end with a slot (returns the slot id).
@@ -587,7 +593,8 @@ async fn an_install_interrupted_by_a_replaced_board_ends_and_sends_nothing_to_th
             .expect("the replacement node starts on the same port");
     // Keep the relay alive for the whole test.
     let _relay = relay;
-    let ended = tokio::time::timeout(Duration::from_secs(20), async {
+    // The sim's one generous bound: only a stuck install reaches it.
+    let ended = tokio::time::timeout(DEADLINE, async {
         while !installs.stage(job).is_some_and(|stage| stage.is_final()) {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
