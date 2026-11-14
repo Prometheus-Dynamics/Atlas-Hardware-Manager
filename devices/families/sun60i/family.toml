@@ -1,3 +1,4 @@
+# Planned, not built. Cannot build today: the TF-A, U-Boot and kernel patch series this family names are applied by nothing.
 # Allwinner A733 (sun60i) family: Radxa Cubie A7A, A7S and A7Z. aarch64 Linux.
 #
 # CANDIDATE SOURCES, ALL UNVERIFIED, NEVER BOOTED ON BOARD (2026-11-13). Every pin below is a full

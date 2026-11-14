@@ -1,0 +1,11 @@
+# The bring-up's Ethernet, matched by its type, not its name. Buildroot's own eth0.network (BR2_SYSTEM_DHCP="eth0")
+# matches Name=eth0, but with systemd's predictable naming the GMAC is normally end0, so that file would never apply
+# and no lease would be asked for. Type=ether finds the GMAC under any name. Name=!usb0 leaves the USB gadget's
+# interface to its own script (usb-gadget-network creates usb0 and sets its address with ifconfig; networkd must not
+# manage it). A board without a gadget has no usb0, so the exclusion changes nothing there.
+[Match]
+Type=ether
+Name=!usb0
+
+[Network]
+DHCP=yes

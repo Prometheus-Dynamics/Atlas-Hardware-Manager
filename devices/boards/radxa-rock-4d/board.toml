@@ -13,7 +13,10 @@ cpu = "cortex-a72.cortex-a53"
 
 # The in-tree device tree (Linux v7.3.3 has rk3576-rock-4d.dts; checked).
 [kernel]
-device_tree = "rockchip/rk3576-rock-4d"
+# B31: the board's own dts (assets/dts) includes the in-tree one and adds the PMU GRF reboot-mode node, the no-button
+# way back to the loader (rk3576-rock-4d-loader.dts). The node is the board's: every image of this board gets it.
+device_tree = "rockchip/rk3576-rock-4d-loader"
+device_tree_dir = "assets/dts"
 
 # U-Boot's board defconfig (U-Boot v2026.10 has rock-4d-rk3576_defconfig;
 # checked).

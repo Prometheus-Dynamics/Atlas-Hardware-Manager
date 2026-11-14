@@ -61,3 +61,11 @@ CONFIG_DM_VERITY=y
 CONFIG_DM_BUFIO=y
 CONFIG_CRYPTO_SHA256=y
 CONFIG_MMC_BLOCK=y
+# -- The bring-up signs (components/bringup-alive, B31). CONFIG_SUNXI_WATCHDOG=y: the defconfig has it =m (defconfig:816),
+#    and a module is loaded from the root, which systemd's own watchdog open does not wait for. The A733 watchdog node is
+#    the DockSeed series' r_wdt (sun60i-a733.dtsi, enabled; the WDT0 node is disabled there and not used). Built in so the
+#    device exists when PID 1 opens it. The driver's 16 s hardware maximum and the sunxi-wdt-heartbeat patch: see
+#    components/bringup-alive/files/10-watchdog.conf.
+CONFIG_SUNXI_WATCHDOG=y
+# CONFIG_LEDS_TRIGGER_TIMER: the 1 s blink the bring-up LEDs switch to (board-alive-led). The heartbeat is already above.
+CONFIG_LEDS_TRIGGER_TIMER=y
