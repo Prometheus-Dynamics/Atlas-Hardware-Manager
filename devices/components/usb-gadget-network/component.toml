@@ -20,7 +20,7 @@ description = "Bring-up USB network: Gaia's configfs NCM gadget (pinned source),
 
 [sources.gaia]
 git = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-ref = "3f6e561016752b60c50a9b8731fa28b37e48da81"
+ref = "c6a3d102467f11a86ecc7fb53965cbaca9a09725"
 
 # Gaia's init script (run by the unit below; it is an init-style script, not a unit on its own).
 [[install]]
