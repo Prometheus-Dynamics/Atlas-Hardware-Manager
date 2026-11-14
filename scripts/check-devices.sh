@@ -810,6 +810,8 @@ echo "gaia: $("$gaia" --version 2>&1 | head -1), command: $verb, locked commit $
 #   rk3588 compatible; the RK3576's rk3576-dwcmshc binds the same driver through its fallback). Both are built in.
 SLOT_CHAIN=(
   "*:BLK_DEV_DM" "*:DM_BUFIO" "*:DM_VERITY" "*:BLK_DEV_LOOP" "*:EROFS_FS" "*:EXT4_FS" "*:CRYPTO_SHA256"
+  # The slot root is zstd-compressed EROFS (Gaia's slot recipes): without the decompressor built in it does not mount.
+  "*:EROFS_FS_ZIP" "*:EROFS_FS_ZIP_ZSTD"
   "*:MMC_BLOCK"
   "sun60i:MMC_SUNXI" "bcm2712:MMC_SDHCI_BRCMSTB"
   # the Pi firmware mailbox slot-init uses for RPIBOOT (kernel contract version 2, PR B29)
