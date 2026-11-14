@@ -31,3 +31,9 @@ undocumented_unsafe_blocks = "deny"
 lto = "thin"
 codegen-units = 1
 strip = true
+
+# The Atlas release being worked toward. A build from a checkout reports
+# <release>-dev.<commit count>+<commit> (scripts/version-rule.sh atlas_version, the rule of dev's
+# scripts/version.sh); a tagged release sets ATLAS_VERSION. Read by the version rule only.
+[workspace.metadata.atlas]
+release = "2026.1.0"
