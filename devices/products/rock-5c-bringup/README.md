@@ -13,7 +13,7 @@ Power it from its own supply, with the SD card in and an Ethernet cable to a net
 ## In order
 
 1. **Power LED on.** If not: power.
-2. **A DHCP lease on Ethernet** (eth0) within about a minute. Find the address on the router or DHCP
+2. **A DHCP lease on Ethernet** (the board's one Ethernet device, whatever its name: eth0 or end0) within about a minute. Find the address on the router or DHCP
    server. If there is none: the kernel did not start or the Ethernet driver did not bind; there is no
    USB network to fall back on, and the serial console (the debug UART) is the only other way in.
 3. **SSH as root with the bench key** to that address (key only, no password). If the lease is there
@@ -35,8 +35,8 @@ heartbeat LED (rk3588s-rock-5c.dts:50-65). `led-1` is the one this image's signs
 |---|---|---|---|
 | Power on, before the kernel | off | off | nothing has loaded |
 | Kernel alive, before systemd starts | on | beats (the tree's heartbeat trigger) | the kernel runs |
-| systemd up, eth0 has no lease | on | beats | userspace runs; no DHCP lease yet |
-| eth0 has its lease | on | 1 s blink | the link you reach the board by has its address |
+| systemd up, the Ethernet has no lease | on | beats | userspace runs; no DHCP lease yet |
+| the Ethernet (any Type=ether link) has its lease | on | 1 s blink | the Ethernet, the link you reach the board by, has its address |
 | Hung (PID 1 stalled) | on | the last pattern keeps going (kernel triggers) | not visible as a hang; after about 22 s the watchdog resets the board and the cycle starts again |
 
 USB with no configuration: this image has NO USB gadget and no USB network (no device port is enabled). Nothing is

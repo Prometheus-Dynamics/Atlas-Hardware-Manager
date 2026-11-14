@@ -223,7 +223,29 @@ bringup_rule() {  # <devices dir>
     for s in ${sym:+$sym} CONFIG_LEDS_TRIGGER_HEARTBEAT CONFIG_LEDS_TRIGGER_TIMER; do
       grep -qx "$s=y" "$frag" 2>/dev/null || { out+="product $pname: $(basename "$fam")'s fragment does not build in $s=y (the bring-up signs need it)"$'\n'; rc=1; }
     done
+    # The Ethernet (B31): the bring-up's network is matched by type, Buildroot's name-based eth0.network is off, and
+    # every link the LED signs name is one the image creates: `ether` (bringup-network) or usb0 (usb-gadget-network).
+    if ! grep -q '^bringup-network = "[^"]*bringup-network/component\.toml"$' "$p"; then
+      out+="product $pname: no bringup-network component in [components] (the Ethernet by type)"$'\n'; rc=1
+    fi
+    if ! grep -q '^# BR2_SYSTEM_DHCP is not set$' "$pdir/os.fragment" 2>/dev/null || grep -q '^BR2_SYSTEM_DHCP=' "$pdir/os.fragment" 2>/dev/null; then
+      out+="product $pname: its os.fragment does not unset BR2_SYSTEM_DHCP (Buildroot's eth0.network matches Name=eth0, which the GMAC does not have)"$'\n'; rc=1
+    fi
+    links=$pdir/components/bringup-alive-settings/files/board-alive.links
+    if [[ -f $links ]]; then
+      while IFS= read -r l; do
+        case $l in
+          ether) grep -q '^bringup-network = ' "$p" || { out+="product $pname: its LED link is ether, but it has no bringup-network component"$'\n'; rc=1; } ;;
+          usb0) grep -q '^usb-gadget-network = ' "$p" || { out+="product $pname: its LED link is usb0, but it has no usb-gadget-network component (the one that creates usb0)"$'\n'; rc=1; } ;;
+          *) out+="product $pname: its LED link '$l' is an interface the image does not create (only ether or usb0)"$'\n'; rc=1 ;;
+        esac
+      done < <(grep -v '^[[:space:]]*\(#\|$\)' "$links")
+    fi
   done
+  net=$root/components/bringup-network/files/10-bringup-ethernet.network
+  if compgen -G "$root/products/*-bringup/product.toml" >/dev/null && { ! grep -qx 'Type=ether' "$net" 2>/dev/null || grep -v '^#' "$net" 2>/dev/null | grep -q 'Name=eth0'; }; then
+    out+="components/bringup-network: its file must match Type=ether, and never a legacy name such as Name=eth0"$'\n'; rc=1
+  fi
   printf '%s' "$out"
   return $rc
 }
@@ -257,8 +279,29 @@ bringup_rule_self_test() {
   elif [[ $out != *"rk35xx's fragment does not build in CONFIG_LEDS_TRIGGER_TIMER=y"* ]]; then
     echo "check-devices: self-test: the trigger refusal does not name the symbol: $out" >&2; rc=1
   fi
+  cp -a "$repo/devices/components/bringup-network/files/10-bringup-ethernet.network" "$tmp/devices/components/bringup-network/files/10-bringup-ethernet.network"
+  echo eth0 > "$tmp/devices/products/rock-5c-bringup/components/bringup-alive-settings/files/board-alive.links"
+  if out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: an LED link named eth0 (not created by the image) was not refused" >&2; rc=1
+  elif [[ $out != *"product rock-5c-bringup: its LED link 'eth0' is an interface the image does not create"* ]]; then
+    echo "check-devices: self-test: the link refusal does not name the product and link: $out" >&2; rc=1
+  fi
+  echo ether > "$tmp/devices/products/rock-5c-bringup/components/bringup-alive-settings/files/board-alive.links"
+  sed -i '/^# BR2_SYSTEM_DHCP is not set$/d' "$tmp/devices/products/zero-3e-bringup/os.fragment"
+  if out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a bring-up product that leaves BR2_SYSTEM_DHCP on was not refused" >&2; rc=1
+  elif [[ $out != *"product zero-3e-bringup: its os.fragment does not unset BR2_SYSTEM_DHCP"* ]]; then
+    echo "check-devices: self-test: the DHCP refusal does not name the product: $out" >&2; rc=1
+  fi
+  cp -a "$repo/devices/products/zero-3e-bringup/os.fragment" "$tmp/devices/products/zero-3e-bringup/os.fragment"
+  sed -i 's/^Type=ether$/Name=eth0/' "$tmp/devices/components/bringup-network/files/10-bringup-ethernet.network"
+  if out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a bring-up network file matching eth0 by name was not refused" >&2; rc=1
+  elif [[ $out != *"bringup-network: its file must match Type=ether"* ]]; then
+    echo "check-devices: self-test: the network-file refusal does not name the file: $out" >&2; rc=1
+  fi
   rm -rf "$tmp"
-  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the bring-up rule passes the real tree and refuses a bring-up product with no watchdog component, settings without the LED file, or a family without a trigger"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the bring-up rule passes the real tree and refuses a bring-up product with no watchdog component, settings without the LED file, a family without a trigger, a LED link the image does not create, a product that leaves BR2_SYSTEM_DHCP on, or a network file matched by a legacy name"
   return $rc
 }
 

@@ -1,10 +1,10 @@
 # DEV ONLY, rock-5c-bringup: which LED and which link the bring-up component's signs use (components/bringup-alive).
 # LED: the blue heartbeat LED, led-1 (rk3588s-rock-5c.dts:50-65, function heartbeat, linux,default-trigger heartbeat). led-0 is the green power LED and is not touched.
-# Link: Ethernet eth0 by DHCP (the base's BR2_SYSTEM_DHCP=eth0): the only link this board has (no USB device port).
+# Link: `ether`, the Ethernet device (Type=ether, not usb0): the same set bringup-network matches. This board has no USB device port, so it is the only link. The Ethernet name is not fixed (eth0 or end0 by predictable naming), so the name is not written.
 # Both are read by /usr/libexec/board-alive-led; a missing file would drive nothing.
 version = 1
 name = "bringup-alive-settings"
-description = "DEV ONLY: this bring-up board's LED (led-1) and the link it is reached by (eth0) for the bring-up signs."
+description = "DEV ONLY: this bring-up board's LED (led-1) and the link it is reached by (ether) for the bring-up signs."
 
 [[install]]
 from = { file = "files/board-alive.leds" }

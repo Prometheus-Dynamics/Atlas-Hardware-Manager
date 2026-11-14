@@ -13,7 +13,7 @@ Power it from its own supply, with the SD card in and an Ethernet cable to a net
 ## In order
 
 1. **Power LED on.** If not: power.
-2. **A DHCP lease on Ethernet** (eth0) within about a minute. Find the address on the router or DHCP
+2. **A DHCP lease on Ethernet** (the board's one Ethernet device, whatever its name: eth0 or end0) within about a minute. Find the address on the router or DHCP
    server. If there is none: the kernel did not start or the Ethernet driver did not bind; there is no
    USB network to fall back on, and the serial console (the debug UART) is the only other way in.
 3. **SSH as root with the bench key** to that address (key only, no password). If the lease is there
@@ -29,14 +29,14 @@ Power it from its own supply, with the SD card in and an Ethernet cable to a net
 
 Planned, not built: no image was built or booted for this PR. Two LEDs: `power-led` is the green power LED (kept on), and
 `user-led` is the blue heartbeat LED (rk3576-rock-4d.dts, linux,default-trigger heartbeat). `user-led` is the one the signs
-use. The watchdog is armed by systemd (components/bringup-alive: RuntimeWatchdogSec 16 s).
+use. The watchdog is armed by systemd (components/bringup-alive: RuntimeWatchdogSec 16 s). The Ethernet is matched by its type, not its name (components/bringup-network), because a GMAC is normally named end0, not eth0.
 
 | State | Green (`power-led`) | Blue (`user-led`) | What it means |
 |---|---|---|---|
 | Power on, before the kernel | off | off | nothing has loaded |
 | Kernel alive, before systemd starts | on | beats (the tree's heartbeat trigger) | the kernel runs |
-| systemd up, eth0 has no lease | on | beats | userspace runs; no DHCP lease yet |
-| eth0 has its lease | on | 1 s blink | the link you reach the board by has its address |
+| systemd up, the Ethernet has no lease | on | beats | userspace runs; no DHCP lease yet |
+| the Ethernet (any Type=ether link) has its lease | on | 1 s blink | the Ethernet, the link you reach the board by, has its address |
 | Hung (PID 1 stalled) | on | the last pattern keeps going (kernel triggers) | not visible as a hang; after about 22 s the watchdog resets the board and the cycle starts again |
 
 USB with no configuration: this image has NO USB gadget and no USB network (`dr_mode = host` on both DRD controllers in the
