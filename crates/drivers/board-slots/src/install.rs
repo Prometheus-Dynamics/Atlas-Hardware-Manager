@@ -57,6 +57,7 @@ use atlas_slots::Stage;
 use atlas_types::DeviceKey;
 use orion::Address;
 use serde::{Deserialize, Serialize};
+use tokio::sync::watch;
 use tokio::time;
 
 use crate::SlotError;
@@ -150,6 +151,10 @@ struct Run {
     push_counters: Option<atlas_files::Counters>,
     pushed: bool,
     call: Option<u64>,
+    /// The install run's start while its reply is awaited: `None` in the channel until the board
+    /// answers, then `Some(Some(call))` or `Some(None)` when it did not start. A cancel waits on it,
+    /// so a run the board started while the cancel came in is still stopped.
+    starting: Option<watch::Receiver<Option<Option<u64>>>>,
     stage: Option<Stage>,
     cancel: Option<CancelState>,
     /// The node key this install is on, recorded at its first contact when submit had none.
@@ -170,10 +175,12 @@ enum Step {
 
 fn wait_of(error: &ActionError) -> Option<String> {
     match error {
-        ActionError::NotConnected(reason)
-        | ActionError::NotAnswering(reason)
-        | ActionError::Lost { reason, .. }
-        | ActionError::Unknown { reason, .. } => Some(reason.clone()),
+        ActionError::NotConnected(reason) | ActionError::NotAnswering(reason) => {
+            Some(reason.clone())
+        }
+        ActionError::Lost { reason, .. } | ActionError::Unknown { reason, .. } => {
+            Some(reason.text().to_owned())
+        }
         _ => None,
     }
 }
@@ -426,11 +433,40 @@ impl InstallKind {
                         ("keep_old", ArgKind::Bool),
                     ],
                 );
-                match board.start(&action, &words).await {
-                    Ok(call) => {
-                        self.with(&spec.nonce, |run| run.call = Some(call));
-                        call
+                // The start runs as its own task, not as part of the job: a cancel aborts the job,
+                // and a start aborted after the board took it would leave a run nobody can stop.
+                // The task records the call whatever happens to the job.
+                let (said, starting) = watch::channel(None);
+                self.with(&spec.nonce, |run| run.starting = Some(starting));
+                let runs = Arc::clone(&self.runs);
+                let nonce = spec.nonce.clone();
+                let starter = board.clone();
+                let started = tokio::spawn(async move {
+                    let result = starter.start(&action, &words).await;
+                    let call = result.as_ref().ok().copied();
+                    // Recorded only while the install is still known: an install already ended
+                    // (a cancel that gave up waiting) gets no new entry.
+                    if let Some(call) = call
+                        && let Some(run) = runs
+                            .lock()
+                            .unwrap_or_else(PoisonError::into_inner)
+                            .get_mut(&nonce)
+                    {
+                        run.call = Some(call);
                     }
+                    let _ = said.send(Some(call));
+                    result
+                });
+                let result = match started.await {
+                    Ok(result) => result,
+                    Err(error) => {
+                        return Err(Step::Settled(format!(
+                            "the install's start ended without the board's answer: {error}"
+                        )));
+                    }
+                };
+                match result {
+                    Ok(call) => call,
                     Err(ActionError::StartInDoubt { name, reason }) => {
                         return Err(Step::Settled(format!(
                             "the board did not confirm that {name} started, so it was not sent again; check the slot list before installing again: {reason}"
@@ -816,7 +852,21 @@ impl SlotInstalls {
         if !self.jobs.cancel(job) {
             return false;
         }
-        let call = self.kind.with_run(&spec.nonce, |run| run.call);
+        let call = match self.kind.with_run(&spec.nonce, |run| run.call) {
+            Some(call) => Some(call),
+            // A start in flight: wait for the board's answer, so a run it started is stopped too.
+            None => match self.kind.with_run(&spec.nonce, |run| run.starting.clone()) {
+                Some(mut starting) => {
+                    time::timeout(CANCEL_CONFIRM, starting.wait_for(Option::is_some))
+                        .await
+                        .ok()
+                        .and_then(Result::ok)
+                        .and_then(|said| *said)
+                        .flatten()
+                }
+                None => None,
+            },
+        };
         if let Some(push) = self
             .kind
             .runs()

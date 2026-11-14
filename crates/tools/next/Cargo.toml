@@ -14,17 +14,21 @@ path = "src/main.rs"
 atlas-actions = { path = "../../board/actions" }
 atlas-board-slots = { path = "../../drivers/board-slots" }
 atlas-bundle = { path = "../../core/bundle" }
+atlas-release = { path = "../../core/release" }
 atlas-jobs = { path = "../../core/jobs" }
 atlas-session = { path = "../../board/session" }
 atlas-slots = { path = "../../core/slots" }
 atlas-trial = { path = "../../core/trial" }
 atlas-types = { path = "../../core/types" }
+fatfs = "0.3"
 orion = { workspace = true }
 serde_json = "1"
 sha2 = "0.11"
 tokio = { version = "1", features = ["macros", "rt", "sync", "time", "signal"] }
 
 [dev-dependencies]
+atlas-actions = { path = "../../board/actions" }
+atlas-image = { path = "../../flash/image" }
 atlas-release = { path = "../../core/release" }
 atlas-sim-node = { path = "../../testing/sim-node" }
 tempfile = "3"

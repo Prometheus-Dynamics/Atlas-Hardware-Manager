@@ -22,6 +22,7 @@ pub mod identity;
 mod link;
 mod pins;
 mod report;
+pub mod usb_boot;
 
 use std::ffi::OsString;
 use std::io::Write;
@@ -61,6 +62,10 @@ pub const USAGE: &str = "usage: atlas-next slots <address> <command> [options]
                               the slot cycle in one run: install, trial, a forced bad trial that falls
                               back by itself, confirm; one scorecard file says each step in plain words
                               (--json also writes <file>.json; --dry-run lists the steps and sends nothing)
+  usb-boot --agent <host:port> --port <3-1.1.4.1> --bundle <file> --boot-partition <file>
+           --pubkey <file> [--bootfiles <dir>] [--timeout <s>] [--dry-run]
+                              USB boot a board through the SystemCore agent with a built image's
+                              boot files (never writes the eMMC; refuses before sending on any check)
 
   bench-key <directory>       make the throwaway bench signing key (bench boards only, never a
                               released image): bench.seed, bench.pub, bench.keys in a new directory
@@ -129,6 +134,7 @@ pub async fn execute<W: Write>(args: &[String], env: &Env, out: &mut W) -> i32 {
         args::Parsed::Run(command) => commands::run(command, env, out).await,
         args::Parsed::BenchKey { directory, json } => bench_key::run(&directory, json, out),
         args::Parsed::Cycle(cycle_args) => cycle::run(&cycle_args, env, out).await,
+        args::Parsed::UsbBoot(options) => usb_boot::run(&options, env, out).await,
         args::Parsed::Identity {
             identity: file,
             json,
@@ -142,16 +148,17 @@ pub async fn execute<W: Write>(args: &[String], env: &Env, out: &mut W) -> i32 {
     }
 }
 
-/// Whether the command line is a trial, which is the one command Ctrl-C stops (the binary only
-/// listens for Ctrl-C then, so every other command keeps the default Ctrl-C).
+/// Whether the command line is a trial or a `usb-boot`: the commands Ctrl-C stops (the binary
+/// only listens for Ctrl-C then, so every other command keeps the default Ctrl-C).
 #[must_use]
 pub fn is_trial(args: &[String]) -> bool {
     matches!(
         args::parse(args),
-        args::Parsed::Run(args::Command {
-            verb: args::Verb::Trial(_),
-            ..
-        })
+        args::Parsed::UsbBoot(_)
+            | args::Parsed::Run(args::Command {
+                verb: args::Verb::Trial(_),
+                ..
+            })
     )
 }
 

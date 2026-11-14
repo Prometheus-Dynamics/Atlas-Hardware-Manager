@@ -97,7 +97,7 @@ pub(crate) async fn current(handle: &atlas_session::Handle) -> Result<Node, Acce
         .await
         .map_err(|error| match error {
             atlas_session::SessionError::Gone(reason) => AccessError::Gone(reason),
-            atlas_session::SessionError::Failed(reason) => AccessError::Refused(reason),
+            atlas_session::SessionError::Failed(reason) => AccessError::Refused(reason.to_string()),
         })
 }
 

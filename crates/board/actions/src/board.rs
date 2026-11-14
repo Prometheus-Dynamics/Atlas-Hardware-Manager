@@ -34,7 +34,7 @@
 use std::io::ErrorKind;
 use std::time::Duration;
 
-use atlas_session::{Handle, Hold, Presence, SessionError};
+use atlas_session::{Failure, Handle, Hold, Presence, SessionError};
 use orion::actions::{ActionCall, Finished, Outcome, Target, Update};
 use orion::types::NodeName;
 use orion::{ClientError, Error as OrionError};
@@ -84,13 +84,13 @@ enum Seen {
     Quiet,
     Doing(Progress),
     Ended(Finished),
-    Refused(String),
+    Refused(Failure),
 }
 
 /// What one direct call saw.
 enum Direct {
     Ended(Finished),
-    Refused(String),
+    Refused(Failure),
     Late,
 }
 
@@ -253,7 +253,10 @@ impl BoardActions {
                     let mut run = orion.attach(call)?;
                     match run.wait(POLL) {
                         Ok(update) => Ok(Seen::of(update)),
-                        Err(ClientError::Refused(error)) => Ok(Seen::Refused(error.to_string())),
+                        Err(ClientError::Refused(error)) => {
+                            let text = error.to_string();
+                            Ok(Seen::Refused(Failure::of_core(error, text)))
+                        }
                         Err(error) => Err(OrionError::Client(error)),
                     }
                 })
@@ -280,7 +283,13 @@ impl BoardActions {
                     };
                 }
                 Ok(Seen::Refused(reason)) => return Err(ActionError::Refused(reason)),
-                Err(SessionError::Gone(reason) | SessionError::Failed(reason)) => {
+                Err(SessionError::Gone(reason)) => {
+                    return Err(ActionError::Lost {
+                        call,
+                        reason: Failure::other(reason),
+                    });
+                }
+                Err(SessionError::Failed(reason)) => {
                     return Err(ActionError::Lost { call, reason });
                 }
             }
@@ -303,9 +312,11 @@ impl BoardActions {
             })
             .await
             .map_err(|error| match error {
-                SessionError::Gone(reason) | SessionError::Failed(reason) => {
-                    ActionError::Lost { call, reason }
-                }
+                SessionError::Gone(reason) => ActionError::Lost {
+                    call,
+                    reason: Failure::other(reason),
+                },
+                SessionError::Failed(reason) => ActionError::Lost { call, reason },
             })
     }
 
@@ -354,7 +365,10 @@ impl BoardActions {
                 })?;
                 match run.finish(wait) {
                     Ok(finished) => Ok(Direct::Ended(finished)),
-                    Err(ClientError::Refused(error)) => Ok(Direct::Refused(error.to_string())),
+                    Err(ClientError::Refused(error)) => {
+                        let text = error.to_string();
+                        Ok(Direct::Refused(Failure::of_core(error, text)))
+                    }
                     Err(ClientError::Io(error)) if error.kind() == ErrorKind::TimedOut => {
                         // Not finished in time: asked to stop, so it is not left running unobserved.
                         let _ = run.cancel();
@@ -371,12 +385,14 @@ impl BoardActions {
                 name: name.to_owned(),
                 wait,
             }),
-            Err(SessionError::Gone(reason) | SessionError::Failed(reason)) => {
-                Err(ActionError::Unknown {
-                    name: name.to_owned(),
-                    reason,
-                })
-            }
+            Err(SessionError::Gone(reason)) => Err(ActionError::Unknown {
+                name: name.to_owned(),
+                reason: Failure::other(reason),
+            }),
+            Err(SessionError::Failed(reason)) => Err(ActionError::Unknown {
+                name: name.to_owned(),
+                reason,
+            }),
         }
     }
 }
@@ -410,14 +426,16 @@ fn ended(finished: Finished) -> Result<Done, ActionError> {
             output: finished.output,
             detail,
         }),
-        Outcome::Rejected => Err(ActionError::Refused(reason(
-            "the board refused it, without a reason",
-        ))),
+        Outcome::Rejected => Err(ActionError::Refused(
+            reason("the board refused it, without a reason").into(),
+        )),
         Outcome::Cancelled => Err(ActionError::Cancelled(reason("the run was cancelled"))),
-        Outcome::Failed => Err(ActionError::Failed(reason("the action failed"))),
-        Outcome::TimedOut => Err(ActionError::Failed(reason("the action ran out of time"))),
-        Outcome::Unknown(code) => Err(ActionError::Failed(reason(&format!(
-            "the board ended the action with outcome {code}"
-        )))),
+        Outcome::Failed => Err(ActionError::Failed(reason("the action failed").into())),
+        Outcome::TimedOut => Err(ActionError::Failed(
+            reason("the action ran out of time").into(),
+        )),
+        Outcome::Unknown(code) => Err(ActionError::Failed(
+            reason(&format!("the board ended the action with outcome {code}")).into(),
+        )),
     }
 }

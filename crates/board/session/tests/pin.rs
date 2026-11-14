@@ -8,7 +8,7 @@
 
 #![cfg(target_os = "linux")]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -18,6 +18,8 @@ use atlas_session::{Handle, Pause, Presence, SessionError, Sessions};
 use atlas_sim_node::names::SLOTS_LIST;
 use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode, call};
 use orion::{Address, Identity, Options, Orion};
+mod common;
+use common::scratch;
 
 /// A pause that does not wait: the failure rule's delays are tested on the driver side.
 #[derive(Debug)]
@@ -27,10 +29,6 @@ impl Pause for NoPause {
     fn pause(&self, _delay: Duration, _stop: &AtomicBool) {
         std::thread::yield_now();
     }
-}
-
-fn scratch(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("pin-{name}"))
 }
 
 /// A simulated node in `dir` (a fresh one: its key is new), on `port` if given.
