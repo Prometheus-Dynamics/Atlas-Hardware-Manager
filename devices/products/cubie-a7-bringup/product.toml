@@ -20,6 +20,8 @@ git = "https://gitlab.com/buildroot.org/buildroot.git"
 ref = "2026.02.3"
 
 [components]
+bringup-alive = "../../components/bringup-alive/component.toml"
+bringup-alive-settings = "components/bringup-alive-settings/component.toml"
 cubie-a7s-extlinux = "components/cubie-a7s-extlinux/component.toml"
 dev-bench-ssh-key = "components/dev-bench-ssh-key/component.toml"
 dev-bringup-hostkey = "../../components/dev-bringup-hostkey/component.toml"
@@ -29,7 +31,7 @@ usb-gadget-network = "../../components/usb-gadget-network/component.toml"
 [[images]]
 name = "cubie-a7-bringup"
 board = "board/board.toml"
-components = ["cubie-a7s-extlinux", "dev-bench-ssh-key", "dev-bringup-hostkey", "usb-gadget-family", "usb-gadget-network"]
+components = ["cubie-a7s-extlinux", "dev-bench-ssh-key", "dev-bringup-hostkey", "usb-gadget-family", "usb-gadget-network", "bringup-alive", "bringup-alive-settings"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
 recipe = "sd-image"
 budget = "1G"

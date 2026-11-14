@@ -1,0 +1,17 @@
+# DEV ONLY, rock-4d-bringup: which LED and which link the bring-up component's signs use (components/bringup-alive).
+# LED: user-led, the blue heartbeat (rk3576-rock-4d.dts, linux,default-trigger heartbeat). power-led is the green power LED and is not touched.
+# Link: Ethernet eth0 by DHCP (BR2_SYSTEM_DHCP=eth0): the only link (no USB device port on this tree).
+# Both are read by /usr/libexec/board-alive-led; a missing file would drive nothing.
+version = 1
+name = "bringup-alive-settings"
+description = "DEV ONLY: this bring-up board's LED (user-led) and the link it is reached by (eth0) for the bring-up signs."
+
+[[install]]
+from = { file = "files/board-alive.leds" }
+to = "/etc/board-alive.leds"
+mode = "0644"
+
+[[install]]
+from = { file = "files/board-alive.links" }
+to = "/etc/board-alive.links"
+mode = "0644"

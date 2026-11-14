@@ -186,6 +186,82 @@ lemnos_board_rule_self_test() {
   return $rc
 }
 
+# The bring-up rule (PR B31). Every bring-up product (its name ends in -bringup) carries the watchdog and LED signs
+# (components/bringup-alive), its own LED and link settings (components/bringup-alive-settings, which install
+# /etc/board-alive.leds and /etc/board-alive.links), and a family whose kernel fragment builds in the watchdog driver
+# and both LED triggers the signs use. A fifth bring-up product cannot miss them. Prints one line per problem and
+# returns 1 when there is any. The watchdog symbol is named per family here: a new family is added by name.
+bringup_rule() {  # <devices dir>
+  local root=$1 p pdir pname sc board bdir fam frag sym dst s rc=0 out=""
+  for p in "$root"/products/*-bringup/product.toml; do
+    [[ -f $p ]] || continue
+    pdir=$(dirname "$p"); pname=$(basename "$pdir")
+    if ! grep -q '^bringup-alive = "[^"]*bringup-alive/component\.toml"$' "$p"; then
+      out+="product $pname: no bringup-alive component in [components] (the watchdog and LED signs)"$'\n'; rc=1
+    elif ! grep -q '^components = \[.*"bringup-alive"' "$p"; then
+      out+="product $pname: bringup-alive is named in [components] but no image lists it"$'\n'; rc=1
+    fi
+    sc=$pdir/components/bringup-alive-settings/component.toml
+    if ! grep -q '^bringup-alive-settings = ' "$p" || [[ ! -f $sc ]]; then
+      out+="product $pname: no bringup-alive-settings component (the LED and link the signs use)"$'\n'; rc=1
+    else
+      for dst in /etc/board-alive.leds /etc/board-alive.links; do
+        grep -q "^to = \"$dst\"" "$sc" || { out+="product $pname: bringup-alive-settings does not install $dst"$'\n'; rc=1; }
+      done
+    fi
+    board=$(grep -o '^board = "[^"]*"' "$p" | head -1 | cut -d'"' -f2)
+    bdir=$(dirname "$(realpath -m "$pdir/$board")")
+    fam=$(grep -o '^extends = "[^"]*"' "$bdir/board.toml" | head -1 | cut -d'"' -f2)
+    fam=$(dirname "$(realpath -m "$bdir/$fam")")
+    sym=
+    case $(basename "$fam") in
+      rk35xx) sym=CONFIG_DW_WATCHDOG ;;
+      sun60i) sym=CONFIG_SUNXI_WATCHDOG ;;
+      *) out+="product $pname: family $(basename "$fam") has no watchdog symbol in the bring-up rule"$'\n'; rc=1 ;;
+    esac
+    frag=$fam/assets/linux.fragment
+    for s in ${sym:+$sym} CONFIG_LEDS_TRIGGER_HEARTBEAT CONFIG_LEDS_TRIGGER_TIMER; do
+      grep -qx "$s=y" "$frag" 2>/dev/null || { out+="product $pname: $(basename "$fam")'s fragment does not build in $s=y (the bring-up signs need it)"$'\n'; rc=1; }
+    done
+  done
+  printf '%s' "$out"
+  return $rc
+}
+
+# Proves the bring-up rule passes the real tree, and refuses (on a scratch copy of devices/) a bring-up product
+# with no watchdog component, one whose settings do not install the LED file, and a family missing a trigger.
+bringup_rule_self_test() {
+  local tmp rc=0 out
+  tmp=$(mktemp -d)
+  cp -a "$repo/devices" "$tmp/devices"
+  if ! out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: the real tree no longer passes the bring-up rule: $out" >&2; rc=1
+  fi
+  sed -i '/^bringup-alive = /d' "$tmp/devices/products/zero-3e-bringup/product.toml"
+  if out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a bring-up product with no watchdog component was not refused" >&2; rc=1
+  elif [[ $out != *"product zero-3e-bringup: no bringup-alive component"* ]]; then
+    echo "check-devices: self-test: the refusal does not name the product: $out" >&2; rc=1
+  fi
+  cp -a "$repo/devices/products/zero-3e-bringup/product.toml" "$tmp/devices/products/zero-3e-bringup/product.toml"
+  sed -i '/^to = "\/etc\/board-alive.leds"$/d' "$tmp/devices/products/rock-5c-bringup/components/bringup-alive-settings/component.toml"
+  if out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: settings that do not install the LED file were not refused" >&2; rc=1
+  elif [[ $out != *"product rock-5c-bringup: bringup-alive-settings does not install /etc/board-alive.leds"* ]]; then
+    echo "check-devices: self-test: the settings refusal does not name the file: $out" >&2; rc=1
+  fi
+  cp -a "$repo/devices/products/rock-5c-bringup/components/bringup-alive-settings/component.toml" "$tmp/devices/products/rock-5c-bringup/components/bringup-alive-settings/component.toml"
+  sed -i '/^CONFIG_LEDS_TRIGGER_TIMER=y$/d' "$tmp/devices/families/rk35xx/assets/linux.fragment"
+  if out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a family without the timer trigger was not refused" >&2; rc=1
+  elif [[ $out != *"rk35xx's fragment does not build in CONFIG_LEDS_TRIGGER_TIMER=y"* ]]; then
+    echo "check-devices: self-test: the trigger refusal does not name the symbol: $out" >&2; rc=1
+  fi
+  rm -rf "$tmp"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the bring-up rule passes the real tree and refuses a bring-up product with no watchdog component, settings without the LED file, or a family without a trigger"
+  return $rc
+}
+
 fixtures=$repo/devices/tests/fixtures
 
 if [[ $mode == self-test ]]; then
@@ -196,6 +272,7 @@ if [[ $mode == self-test ]]; then
   done
   lemnos_rule_self_test || status=1
   lemnos_board_rule_self_test || status=1
+  bringup_rule_self_test || status=1
   echo "== broken fixture: must fail"
   out=$(mktemp)
   rc=0
@@ -475,6 +552,10 @@ done
 
 # The slot root chain is enforced on every run (see slot_chain_check above).
 slot_chain_check "$root" || fail=1
+# The bring-up rule (PR B31): every bring-up product carries the watchdog and LED signs (tree-wide).
+if ! bringup_msg=$(bringup_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "$line"; done <<<"$bringup_msg"
+fi
 
 if [ -n "$unbuilt" ]; then
   echo "check-devices: NOTE in no product yet, validated but never planned:$unbuilt"
@@ -653,6 +734,7 @@ if [[ $root_given -eq 0 ]]; then
   lemnos_rule_self_test || die "self-check: the Lemnos one-rev rule no longer refuses two revs in one product"
   lemnos_board_rule_self_test || die "self-check: the Lemnos board file rule no longer refuses a lemnosd product without a board file"
   slot_chain_self_test || die "self-check: the slot root chain check no longer refuses a module or a missing =y"
+  bringup_rule_self_test || die "self-check: the bring-up rule no longer refuses a bring-up product without its signs"
   # The version gate: a binary that prints another commit, or none, is refused, and the refusal names the pin.
   fake=$(mktemp -d)
   vout=$(mktemp)

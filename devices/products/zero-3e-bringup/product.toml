@@ -13,6 +13,8 @@ git = "https://gitlab.com/buildroot.org/buildroot.git"
 ref = "2026.02.3"
 
 [components]
+bringup-alive = "../../components/bringup-alive/component.toml"
+bringup-alive-settings = "components/bringup-alive-settings/component.toml"
 radxa-zero-3e-extlinux = "../../components/radxa-zero-3e-extlinux/component.toml"
 dev-bench-ssh-key = "components/dev-bench-ssh-key/component.toml"
 dev-bringup-hostkey = "../../components/dev-bringup-hostkey/component.toml"
@@ -22,7 +24,7 @@ usb-gadget-network = "../../components/usb-gadget-network/component.toml"
 [[images]]
 name = "zero-3e-bringup"
 board = "../../boards/radxa-zero-3e/board.toml"
-components = ["radxa-zero-3e-extlinux", "dev-bench-ssh-key", "dev-bringup-hostkey", "usb-gadget-family", "usb-gadget-network"]
+components = ["radxa-zero-3e-extlinux", "dev-bench-ssh-key", "dev-bringup-hostkey", "usb-gadget-family", "usb-gadget-network", "bringup-alive", "bringup-alive-settings"]
 # The base OS fragment, then the bring-up's own (dropbear, BusyBox applets for the gadget).
 os = { provider = "buildroot", source = "buildroot", fragments = ["../../products/zero-3e-base/os.fragment", "os.fragment"] }
 recipe = "sd-image"

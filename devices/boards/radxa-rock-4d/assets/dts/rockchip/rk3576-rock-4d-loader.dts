@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+// B31: the ROCK 4D's no-button way back to the loader. Linux's `reboot loader` writes the mode-loader value to the
+// PMU GRF register that U-Boot reads (U-Boot's ROCKCHIP_BOOT_MODE_REG for RK3576 is 0x26024040, arch/arm/mach-rockchip/
+// rk3576/Kconfig:9 at U-Boot v2026.10): pmu0_grf is 0x26024000 (rk3576.dtsi:876), so the offset is 0x40.
+// The loader value is 0xEF08A53C (BOOT_BROM_DOWNLOAD, U-Boot's arch/arm/include/asm/arch-rockchip/boot_mode.h:19), not
+// BOOT_BL_DOWNLOAD (the kernel header, include/dt-bindings/soc/rockchip,boot-mode.h): U-Boot returns to the BootROM's download only for that value (bootrom.c:52-54, which the SPL
+// runs when CONFIG_SPL_ROCKCHIP_BACK_TO_BROM is set: families/rk35xx/assets/u-boot.fragment). U-Boot does not act on
+// BOOT_BL_DOWNLOAD itself (boot_mode.c:99-108 handles only BOOT_FASTBOOT and BOOT_UMS).
+// Untested on board. Whether the RK3576 BootROM accepts this value after a warm reset is not in any source read.
+#include "rk3576-rock-4d.dts"
+#include <dt-bindings/soc/rockchip,boot-mode.h>
+
+&pmu0_grf {
+	reboot-mode {
+		compatible = "syscon-reboot-mode";
+		offset = <0x40>;
+		mode-normal = <BOOT_NORMAL>;
+		mode-loader = <0xef08a53c>;
+		mode-recovery = <BOOT_RECOVERY>;
+		mode-bootloader = <BOOT_FASTBOOT>;
+	};
+};

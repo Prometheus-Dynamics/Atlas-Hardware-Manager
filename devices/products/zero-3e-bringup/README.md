@@ -14,8 +14,8 @@ Connect the board's USB-C (the OTG port) to a PC with a data cable (not a power-
 1. **Power on.** The green LED on the board comes on, and the status LED starts blinking once the kernel is up
    (the heartbeat). If the heartbeat never starts: the kernel did not start (before the kernel there is no sign).
 2. **A new network interface on the PC.** It is a **CDC NCM** device: on Linux the kernel binds it with the
-   `cdc_ncm` driver, and `ip link` shows a new `usb0`/`enx…` interface. `lsusb` shows vendor `1d6b`, product `0104`
-   ("USB network"). If it does not appear: the controller is not up (check the cable is a data cable and that
+   `cdc_ncm` driver, and `ip link` shows a new `usb0`/`enx…` interface. `lsusb` shows vendor `1d6b`, product `0103`
+   (Gaia's bring-up USB network; `0104` is the managed gadget, not this one: components/usb-gadget-network at 7177d72 presents 1d6b:0103). If it does not appear: the controller is not up (check the cable is a data cable and that
    it is on the OTG port), or the USB network unit failed on the board (no way to see that from the PC).
    Windows and macOS do not bind CDC NCM natively; a missing interface there is not a board fault (not checked).
 3. **The PC's address on that interface is `62:3a:62:a8:c9:a6`.** That is the host address derived from the board's
@@ -44,3 +44,23 @@ derived from the board's id and serial, not from fixed values in the kernel comm
 - No legacy `g_ether` (the built-in network gadget that bound the controller before userspace): the network is the
   configfs NCM function, started by the unit.
 - No networkd DHCP server on the USB network: udhcpd is the one DHCP server on it.
+
+## What the signs say (B31: the LED and the watchdog)
+
+Planned, not built: no image was built or booted for this PR. The LED is `led-green` (rk3566-radxa-zero-3.dtsi:29, the only
+LED). The watchdog is armed by systemd (components/bringup-alive: RuntimeWatchdogSec 16 s; a hang of PID 1 resets the board).
+
+| State | Green LED | What it means |
+|---|---|---|
+| Power on, before the kernel | off | nothing has loaded |
+| Kernel alive, before systemd starts | beats (the kernel's own heartbeat trigger, from the tree's dts) | the kernel runs |
+| systemd up, usb0 has no address | beats | userspace runs; the gadget has not come up |
+| usb0 has 10.55.0.1 (the link you reach the board by) | 1 s blink | the USB network link has its address |
+| Hung (PID 1 stalled) | the last pattern keeps going: the triggers run in the kernel | not visible as a hang; after about 22 s the watchdog resets the board, the LED goes off, and it starts again at "kernel alive" |
+
+USB with no configuration: the device port (USB-C 1, dr_mode peripheral, gadget dts) starts the configfs NCM function only
+(usb-gadget-network). The PC needs `cdc_ncm`. No ACM, no mass storage, no serial gadget. Nothing to configure.
+
+Reboot to the loader (no button): `reboot loader` is NOT wired on this board yet. The reboot-mode node belongs under
+`&pmugrf` at offset 0x200 (the in-tree LCKFB board's form, rk3566-lckfb-tspi.dts:554), but this board's only dts that the
+image uses is assets/dts/rockchip/rk3566-radxa-zero-3e-gadget.dts, which is marked for removal. See docs/prs/B31.md, point 2.
