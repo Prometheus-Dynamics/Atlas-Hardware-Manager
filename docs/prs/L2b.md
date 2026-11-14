@@ -506,6 +506,22 @@ What starts the login today (read from the tree, before this change):
   login (`autovt@`) is systemd's own and not masked. "Gaia has no mask form" (raze.fragment:48-50) stands: nothing here
   masks anything.
 
+Second console, stated plainly (coordinator's question):
+
+- Today the image starts ONE getty by our files: `serial-getty@ttyGS0.service` (enabled, raze-base-files). No other
+  serial getty, no `getty@tty1`, no mask anywhere.
+- The kernel's `console=` is NOT set by any file on next (B13 OPEN, raze.fragment:44-50). systemd's getty generator starts
+  a `serial-getty@<tty>` for each kernel console, so today it creates none for ttyAMA10. If `console=serial0` is set later,
+  the generator adds `serial-getty@ttyAMA10.service`, and the template drop-in below covers it.
+- tty1: systemd starts a login on a virtual terminal on demand (`autovt@tty1.service`); `getty@tty1` only if something
+  enables it. Nothing of ours enables it.
+- With the gate attached to the three TEMPLATES (below), every instance of these units is covered:
+  `serial-getty@*.service` (ttyGS0 now; ttyAMA10 if a kernel console adds it), `getty@*.service` (any getty@ instance,
+  tty1 if enabled), and `autovt@*.service` (the on-demand VT logins, tty1 included). With the view ON, none of them offers
+  a login. This is by the template drop-in, not verified on a board.
+- Not covered: a unit that is not one of these templates. Our files create none, and the kernel console getty is the
+  generator's serial-getty instance, so it is covered too.
+
 What this change does:
 
 - `files/console-allowed` (installed to `/usr/lib/lemnos/console-allowed`, mode 0755): a POSIX sh script. It reads the view
