@@ -30,6 +30,8 @@
 set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# slot_id_for and the test version (CHECK_VERSION): scripts/version-rule.sh, the one rule's one place.
+source "$repo/scripts/version-rule.sh"
 self=$repo/scripts/check-devices.sh
 root=$repo/devices
 mode=check
@@ -445,35 +447,41 @@ firmware_rule() {  # <devices dir>
 # The slot id, product and version of a slot-boot image (Lemnos next bfbe88f4, from its code):
 #   product: lowercase [a-z0-9-], 1..64 bytes.  version: 1..256 bytes, printable, no control character.
 #   slot id: [a-z0-9._-], 1..64 bytes, not starting with a dot; uppercase and `+` are refused by the board.
-# THE ONE RULE (this is its one place): slot = <product>-<version>, with every `+` read as `-`, lowercased.
-# A new build gets a new id, so the id follows the version and is never chosen by hand.
-slot_id_for() {  # <product> <version> -> the slot id
-  local v=${2//+/-}
-  printf '%s-%s' "$1" "${v,,}"
-}
+# THE ONE RULE (scripts/version-rule.sh): slot = <product>-<version>, with every `+` read as `-`, lowercased.
+# The version and slot are NOT in product.toml: Gaia takes them as --setting (slot_settings_args), so a product that
+# sets either is refused here, and the id checked is the one the CHECK_VERSION test value gives (or the version given).
 slot_setting() {  # <product.toml> <key> -> the [images.settings] value (string or number)
   awk -v k="$2" '
     /^\[/ { on = ($0 == "[images.settings]") ; next }
     on && $1 == k && $2 == "=" { v = $0; sub(/^[^=]*=[ \t]*/, "", v); gsub(/^"|"[ \t]*(#.*)?$/, "", v); print v; exit }
   ' "$1"
 }
-slot_id_rule() {  # <devices dir>
-  local dev=$1 p pname rc=0 out="" product version slot want
+slot_sets() {  # <product.toml> <key> -> "yes" when [images.settings] sets the key at all
+  awk -v k="$2" '
+    /^\[/ { on = ($0 == "[images.settings]") ; next }
+    on && $1 == k && $2 == "=" { print "yes"; exit }
+  ' "$1"
+}
+slot_id_rule() {  # <devices dir> [version to check with; default CHECK_VERSION]
+  local dev=$1 ver=${2:-$CHECK_VERSION} p pname rc=0 out="" product want k
   while IFS= read -r p; do
     grep -qE '^recipe = "slot-boot"' "$p" || continue
     pname=$(basename "$(dirname "$p")")
-    product=$(slot_setting "$p" product); version=$(slot_setting "$p" version); slot=$(slot_setting "$p" slot)
+    for k in version slot; do
+      if [[ $(slot_sets "$p" "$k") == yes ]]; then
+        out+="products/$pname: sets $k in product.toml; the slot-boot recipe takes it as a --setting (scripts/version-rule.sh), so the product leaves it unset"$'\n'; rc=1
+      fi
+    done
+    product=$(slot_setting "$p" product)
     if [[ ! $product =~ ^[a-z0-9-]{1,64}$ ]]; then
       out+="products/$pname: setting product \"$product\" is not 1..64 of [a-z0-9-] (Lemnos refuses it)"$'\n'; rc=1
     fi
-    if [[ -z $version || ${#version} -gt 256 || $version =~ [[:cntrl:]] ]]; then
-      out+="products/$pname: setting version \"$version\" is not 1..256 bytes of printable text (Lemnos refuses it)"$'\n'; rc=1
+    if [[ -z $ver || ${#ver} -gt 256 || $ver =~ [[:cntrl:]] ]]; then
+      out+="products/$pname: version \"$ver\" is not 1..256 bytes of printable text (Lemnos refuses it)"$'\n'; rc=1
     fi
-    want=$(slot_id_for "$product" "$version")
-    if [[ $slot != "$want" ]]; then
-      out+="products/$pname: setting slot \"$slot\" is not the id the version gives, \"$want\" (the one rule: <product>-<version>, + read as -, lowercased; scripts/check-devices.sh slot_id_for)"$'\n'; rc=1
-    elif [[ ! $slot =~ ^[a-z0-9_-][a-z0-9._-]{0,63}$ ]]; then
-      out+="products/$pname: slot id \"$slot\" is not 1..64 of [a-z0-9._-] without a leading dot (Lemnos refuses it); shorten the version's commit part"$'\n'; rc=1
+    want=$(slot_id_for "$product" "$ver")
+    if [[ ! $want =~ ^[a-z0-9_-][a-z0-9._-]{0,63}$ ]]; then
+      out+="products/$pname: the slot id \"$want\" that version \"$ver\" gives is not 1..64 of [a-z0-9._-] without a leading dot (Lemnos refuses it); shorten the version's commit part"$'\n'; rc=1
     fi
   done < <(find "$dev/products" -mindepth 2 -maxdepth 2 -name product.toml 2>/dev/null | sort)
   printf '%s' "$out"
@@ -526,10 +534,10 @@ boot_size_rule_self_test() {
   return $rc
 }
 
-# Proves the slot id rule passes the real tree and refuses: a slot id that is not the version's, an uppercase or
+# Proves the slot id rule passes the real tree and refuses: a product that sets version or slot, an uppercase or
 # `+` version that gives a refused id, an id over 64 bytes, and a product name outside [a-z0-9-].
 slot_id_rule_self_test() {
-  local tmp rc=0 out pf
+  local tmp rc=0 out pf sargs
   tmp=$(mktemp -d)
   cp -a "$repo/devices" "$tmp/devices"
   pf=$tmp/devices/products/raze-base/product.toml
@@ -538,19 +546,32 @@ slot_id_rule_self_test() {
   fi
   [[ $(slot_id_for raze-base "2026.1.0-dev.993+1A2B3C4D") == "raze-base-2026.1.0-dev.993-1a2b3c4d" ]] \
     || { echo "check-devices: self-test: slot_id_for does not read + as - and lowercase" >&2; rc=1; }
-  sed -i 's/^slot = ".*"/slot = "raze-base-hand-picked"/' "$pf"
+  # A product that sets the slot itself is refused: the slot is the version's, given as a --setting.
+  sed -i 's/^\[images.settings\]$/[images.settings]\nslot = "raze-base-hand-picked"/' "$pf"
   if out=$(slot_id_rule "$tmp/devices"); then
-    echo "check-devices: self-test: a slot id not derived from the version was not refused" >&2; rc=1
-  elif [[ $out != *'is not the id the version gives'* ]]; then
-    echo "check-devices: self-test: the derivation refusal does not say why: $out" >&2; rc=1
+    echo "check-devices: self-test: a product that sets slot was not refused" >&2; rc=1
+  elif [[ $out != *'sets slot in product.toml'* ]]; then
+    echo "check-devices: self-test: the slot refusal does not say why: $out" >&2; rc=1
   fi
+  # A product that still sets version is refused by name (Gaia would refuse it too: a --setting for a set name).
   cp -a "$repo/devices/products/raze-base/product.toml" "$pf"
-  sed -i 's/^version = ".*"/version = "2026.1.0-dev.1+0123456789abcdef0123456789abcdef01234567"/; s/^slot = ".*"/slot = "raze-base-2026.1.0-dev.1-0123456789abcdef0123456789abcdef01234567"/' "$pf"
+  sed -i 's/^\[images.settings\]$/[images.settings]\nversion = "2026.1.0-dev.1+l2d"/' "$pf"
   if out=$(slot_id_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a product that sets version was not refused" >&2; rc=1
+  elif [[ $out != *'sets version in product.toml'* ]]; then
+    echo "check-devices: self-test: the version refusal does not say why: $out" >&2; rc=1
+  fi
+  # A version whose slot id is over 64 bytes is refused (the check uses the version it is given).
+  cp -a "$repo/devices/products/raze-base/product.toml" "$pf"
+  if out=$(slot_id_rule "$tmp/devices" "2026.1.0-dev.1+0123456789abcdef0123456789abcdef01234567"); then
     echo "check-devices: self-test: a slot id over 64 bytes was not refused" >&2; rc=1
   elif [[ $out != *'is not 1..64 of [a-z0-9._-]'* ]]; then
     echo "check-devices: self-test: the length refusal does not say why: $out" >&2; rc=1
   fi
+  # The settings the rule hands Gaia: the image's version and its slot, from the one rule.
+  sargs=$(slot_settings_args "$pf" "$CHECK_VERSION" | tr '\n' ' ')
+  [[ $sargs == "--setting raze-base.version=$CHECK_VERSION --setting raze-base.slot=raze-base-2026.1.0-dev.0-check " ]] \
+    || { echo "check-devices: self-test: slot_settings_args gives \"$sargs\"" >&2; rc=1; }
   cp -a "$repo/devices/products/raze-base/product.toml" "$pf"
   sed -i 's/^product = ".*"/product = "Raze_Base"/' "$pf"
   if out=$(slot_id_rule "$tmp/devices"); then
@@ -559,7 +580,7 @@ slot_id_rule_self_test() {
     echo "check-devices: self-test: the product refusal does not name it: $out" >&2; rc=1
   fi
   rm -rf "$tmp"
-  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the slot id rule passes the real tree and refuses an id not from the version, an id over 64 bytes and a bad product name"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the slot id rule passes the real tree and refuses a product that sets version or slot, an id over 64 bytes and a bad product name, and hands Gaia the test value's settings"
   return $rc
 }
 
@@ -719,14 +740,15 @@ erofs_rule_self_test() {
   echo "CONFIG_EROFS_FS_ZIP=y" >> "$tmp/devices/families/bcm2712/assets/linux.fragment"
   prod=$tmp/devices/products/raze-base/product.toml
   lockcopy=$tmp/devices/products/raze-base/gaia.lock
+  mapfile -t sargs < <(slot_settings_args "$prod" "$CHECK_VERSION")
   # The product states compression = "lzma" (L2d); the scratch copy swaps that line for lz4, then removes it for the recipe default.
   sed -i 's/^compression = "lzma"$/compression = "lz4"/' "$prod"
   grep -q '^compression = "lz4"$' "$prod" || { echo "check-devices: self-test: the scratch product has no compression line to change" >&2; rc=1; }
-  if ! "$gaia" plan "$prod" --lock "$lockcopy" --recipes "$recipes" "${tool_args[@]}" --json >"$pa/raze-base.json" 2>"$errs"; then
+  if ! "$gaia" plan "$prod" --lock "$lockcopy" --recipes "$recipes" "${tool_args[@]}" ${sargs[@]+"${sargs[@]}"} --json >"$pa/raze-base.json" 2>"$errs"; then
     cat "$errs" >&2; echo "check-devices: self-test: the lz4 scratch product did not plan" >&2; rc=1
   fi
   sed -i '/^compression = "lz4"$/d' "$prod"   # the recipe's default (lzma at the pinned Gaia)
-  if ! "$gaia" plan "$prod" --lock "$lockcopy" --recipes "$recipes" "${tool_args[@]}" --json >"$pb/raze-base.json" 2>"$errs"; then
+  if ! "$gaia" plan "$prod" --lock "$lockcopy" --recipes "$recipes" "${tool_args[@]}" ${sargs[@]+"${sargs[@]}"} --json >"$pb/raze-base.json" 2>"$errs"; then
     cat "$errs" >&2; echo "check-devices: self-test: the default scratch product did not plan" >&2; rc=1
   fi
   if out=$(erofs_rule "$tmp/devices" "$pa") && [[ $out == *"image raze-base compresses its slot with lz4"* ]]; then
@@ -1274,6 +1296,9 @@ for product in $(find products -mindepth 2 -maxdepth 2 -name product.toml 2>/dev
   if grep -rqs 'input = "bench-key"' "$pdir"; then
     plan_args=(--input "bench-key=$(bench_key_pub)")
   fi
+  # A slot-boot image's version and slot are Gaia --settings, from the rule's TEST value (CHECK_VERSION, not a release).
+  mapfile -t slot_args < <(slot_settings_args "$product" "$CHECK_VERSION")
+  if [[ ${#slot_args[@]} -gt 0 ]]; then plan_args+=("${slot_args[@]}"); fi
   pjson=$plans/$(basename "$pdir").json
   if "$gaia" plan "$product" --lock "$committed" --recipes "$recipes" "${tool_args[@]}" ${plan_args[@]+"${plan_args[@]}"} --json >"$pjson" 2>"$outs"; then
     echo "check-devices: ok $product: planned, not built (gaia plan; this repo holds no build record)"

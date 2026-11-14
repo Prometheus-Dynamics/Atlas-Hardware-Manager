@@ -4,9 +4,13 @@
 # gate; the gate stops at the resolved configuration (scripts/check-config-only.sh). It is run by hand, here or
 # by the manual CI job (`build-product` in .github/workflows/next.yml).
 #
-#   scripts/build-product.sh <product> [--bench-key FILE.pub] [--until STEP] [--jobs N] [--tool NAME=PATH]... [--out DIR]
+#   scripts/build-product.sh <product> [--plan] [--bench-key FILE.pub] [--until STEP] [--jobs N] [--tool NAME=PATH]... [--out DIR]
 #
 #   <product>     a directory name under devices/products (raze-base, rock-5c-bringup, ...)
+#   --plan        plan only: print the version and slot, run `gaia plan` with them, build nothing
+#   The version is the Atlas dev scheme, <release>-dev.<count>+<commit> (dev's scripts/version.sh, via
+#   scripts/version-rule.sh atlas_version); a slot-boot product's slot is <product>-<version> (slot_id_for). Gaia takes
+#   both as --setting (IMAGE.version, IMAGE.slot): the product's product.toml sets neither. Printed before the build.
 #   --bench-key   the public key a bring-up product installs for its bench login (`{ input = "bench-key" }`).
 #                 A product that names the input refuses to build without it: there is no throwaway key here,
 #                 because an image nobody can log into proves nothing on a board.
@@ -23,11 +27,14 @@ set -euo pipefail
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 die() { echo "build-product: $*" >&2; exit 1; }
+# atlas_version, slot_id_for, slot_settings_args: scripts/version-rule.sh, the one rule's one place.
+source "$repo/scripts/version-rule.sh"
 
-pname="" key="" until_step="" jobs="" out=""
+pname="" key="" until_step="" jobs="" out="" plan_only=0
 tools=()
 while [[ $# -gt 0 ]]; do
   case $1 in
+    --plan) plan_only=1; shift ;;
     --bench-key) key=${2:?--bench-key needs a file}; shift 2 ;;
     --until) until_step=${2:?--until needs a step}; shift 2 ;;
     --jobs) jobs=${2:?--jobs needs a count}; shift 2 ;;
@@ -37,7 +44,7 @@ while [[ $# -gt 0 ]]; do
     *) [[ -z $pname ]] || die "one product only (got $pname and $1)"; pname=$1; shift ;;
   esac
 done
-[[ -n $pname ]] || die "usage: scripts/build-product.sh <product> [--bench-key FILE.pub] [--until STEP] [--jobs N] [--out DIR]"
+[[ -n $pname ]] || die "usage: scripts/build-product.sh <product> [--plan] [--bench-key FILE.pub] [--until STEP] [--jobs N] [--out DIR]"
 product=$repo/devices/products/$pname/product.toml
 [[ -f $product ]] || die "no product $pname (have: $(ls "$repo/devices/products" | tr '\n' ' '))"
 
@@ -68,6 +75,30 @@ fi
 args+=(${tools[@]+"${tools[@]}"})
 [[ -z $jobs ]] || args+=(--jobs "$jobs")
 [[ -z $until_step ]] || args+=(--until "$until_step")
+
+# The version (the Atlas dev scheme of this checkout's HEAD; a tracked change is refused) and, for a slot-boot
+# product, the slot: both as Gaia --settings, printed before anything runs.
+version=$(atlas_version "$repo") || die "no version for the build (see above)"
+setting=$(slot_settings_args "$product" "$version") || die "$pname's slot settings could not be read (see above)"
+setargs=()
+while IFS= read -r token; do
+  [[ -n $token ]] && setargs+=("$token")
+done <<<"$setting"
+echo "build-product: version $version (the dev scheme of $(git -C "$repo" rev-parse --short=8 HEAD) at $repo)"
+if [[ ${#setargs[@]} -gt 0 ]]; then
+  for ((i = 0; i < ${#setargs[@]}; i += 2)); do
+    echo "build-product: ${setargs[i]} ${setargs[i + 1]}"
+  done
+  args+=("${setargs[@]}")
+else
+  echo "build-product: $pname's recipe takes no version or slot: none given"
+fi
+
+if [[ $plan_only -eq 1 ]]; then
+  echo "build-product: plan of $pname with $gaia_line (--plan: nothing built)"
+  "$gaia" plan "${args[@]}" || die "gaia plan failed for $pname (Gaia's words are above)"
+  exit 0
+fi
 
 echo "build-product: $pname with $gaia_line, store $GAIA_STORE${until_step:+, until $until_step}"
 start=$SECONDS
