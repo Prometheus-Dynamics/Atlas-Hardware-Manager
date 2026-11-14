@@ -46,6 +46,11 @@ if [ -f scripts/check-lemnos-gadget.py ]; then
   step "lemnos gadget drop-in pairing" python3 scripts/check-lemnos-gadget.py
 fi
 
+# The board-side USB network interface name (L2b): a networkd file that names the gadget's interface must name lemnos0.
+if [ -f scripts/check-usb-ifname.py ]; then
+  step "usb gadget interface name" python3 scripts/check-usb-ifname.py
+fi
+
 # The board id: one string per board (directory, Gaia name, Lemnos [board] id, bring-up family line). PR B24.
 if [ -f scripts/check-board-ids.py ]; then
   step "board ids agree" python3 scripts/check-board-ids.py

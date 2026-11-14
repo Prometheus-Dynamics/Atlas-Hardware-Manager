@@ -23,6 +23,13 @@ id = "raze"
 soc = "bcm2712-rp1"
 base = "module-io"   # the base tree's node /cam0_reg holds the camera power line (see the line below)
 
+# `[host]` (docs/boards.md:95 and the example at :365): the dma-heaps the daemon's drivers allocate from, by name.
+# Written explicitly: ["linux,cma"] EQUALS the default (a board that leaves it out gets the same list). The Raze's
+# camera streams all use "linux,cma" (below). The key sits under [host], not at top level (the tip's
+# reference.toml has no dma_heaps key; the tip's docs and code put it under [host]).
+[host]
+dma_heaps = ["linux,cma"]
+
 # The hardware the devices use. Each entry is the one place its pins are written.
 [[hardware]]
 name = "i2c-1"
@@ -102,11 +109,16 @@ keepalive = true
 uses = { watchdog = "watchdog:/soc@107c000000/watchdog@7d200000" }
 config = { timeout_s = 15 }
 
+# MOVES AT S2b: the key list is [security] keys only. No `keys` setting on the slots, flash or security devices
+# (a `keys` there is refused at start and by validate after S2b). The draft has none.
 # The slots: data on the data partition, boot on the boot partition, records through tryboot (dev's boot
 # path, the Pi's record). boot_args = "os" is the prefix the kernel command line takes for the slot's
 # arguments (os.slot=, os.roothash=, os.data=): see docs/prs/B20.md for the command line.
-# require_signed = false: the Raze's security switch is off by default; a signature that is present is
-# still checked. The keys file is not named (signing is off, and no key file ships on the image yet).
+# require_signed is REMOVED at the L2 rev (Lemnos S2 #255, INPUTS): the security switch replaces it, in [security] below.
+# boot_sources (Lemnos I5i5 final, docs/boards.md "Boot sources"; tip docs/boards.md:101-119): the Pi form, one entry per
+# medium the board boots from. The Raze boots from its on-board eMMC, firmware boot-mode code 1 (measured on Raze #2,
+# docs/boards.md "Boot sources" table). Its generated cmdline word is then os.src.rpi-boot-mode-1=/soc@107c000000/mmc@fff000
+# (tip service/slot-init/src/cmdline.rs:6 gives <prefix>.src.<source>=<path>; prefix = boot_args = "os").
 # The trial settings are the I5f defaults, taken explicitly: the user confirmed them on 2026-11-13.
 # health = []: the base OS has no product, so no product's health is required (INPUTS: Raze base empty).
 # keep = 3 and reserve_mb = 2048 are the reference's values; the keep-last-N count is a setting (user
@@ -118,7 +130,27 @@ config = { timeout_s = 15 }
 [[devices]]
 id = "slots"
 driver = "system-slots"
-config = { data = "/data", boot = "/boot/firmware", record = "tryboot", boot_args = "os", require_signed = false, reserve_mb = 2048, keep = 3, auto_confirm = true, confirm_uptime_s = 30, confirm_deadline_s = 600, reboot_at_deadline = true, trial_attempts = 3, health = [] }
+config = { data = "/data", boot = "/boot/firmware", record = "tryboot", boot_args = "os", boot_sources = ["rpi-boot-mode-1=/soc@107c000000/mmc@fff000"], reserve_mb = 2048, keep = 3, auto_confirm = true, confirm_uptime_s = 30, confirm_deadline_s = 600, reboot_at_deadline = true, trial_attempts = 3, health = [] }
+
+# The security switch (Lemnos S2 #255; docs/slots.md "The security switch"; tip docs/boards.md:368-371 and 598-600).
+# OFF by default. record and keys are absolute paths; keys is the trust root the switch checks itself, and no key file
+# ships on the image yet (as before: an unreadable keys file leaves the board trusting no bundle). orion = false: the
+# Raze's Orion precheck is not at Orion's current revision, so ON stays refused with that reason until it is.
+[security]
+record = "/var/lib/lemnos/security.rec"
+keys = "/etc/lemnos/slot-keys"
+orion = false
+
+# The security device: serves system.security/1 and takes its facts from [security] above. Its uses name the
+# stakeholders that answer for themselves. The Raze has no system-flash device (first flash is not in this file),
+# so only the slots device is named; a board with no stakeholder bound judges on its trust root alone.
+[[devices]]
+id = "security"
+driver = "system-security"
+uses = { slots = "slots" }
+# MOVES AT S2b: uses gains identity = "identity" (the system-identity device; S2b makes the security device's uses
+# the place for it). The tip does not accept it yet, so it is not written here. The S2b form is:
+#   uses = { slots = "slots", identity = "identity" }
 
 [[devices]]
 id = "reboot"
@@ -130,12 +162,22 @@ driver = "system-reboot"
 # name is refused by the driver.
 # vendor and product stay 1d6b:0104: devices/usb-ids.json recognises them as the Atlas board gadget (dev's
 # Raze gadget used the same ids). The reference's 1209:0001 is Lemnos's example.
-# The interface string is the one Orion's link needs (unchanged from the Raze's gadget before Q2d).
+# identity is a CONFIG setting, at the lock d6b9361d and at the tip alike: lemnosd reads the link from the gadget's
+# config (lock service/lemnosd/src/gadget.rs:80-82, `device.config.get(IDENTITY)`; tip drivers/usb-gadget/src/lib.rs:657).
+# `uses = { identity = ... }` is read by nothing. The old Raze file had it under uses, and d6b9361d's validate still
+# accepted that file (rc 0), but the gadget then fails at bind: `function ncm derive` with no board serial is
+# Fault::NoIdentity (lock drivers/usb-gadget/src/description.rs:92-93, 463). See docs/prs/L2b.md, "The lock's validate".
+# `interfaces` is DROPPED (L2, Lemnos R1h2): with no `interfaces` the tip builds DEFAULT_INTERFACES
+# (drivers/usb-gadget/src/lib.rs:123-127; contracts/usb-link.toml [composition] default): the link (interface 0, class
+# 0xff, "orion-link"), then NCM derived, then ACM. The Raze's old inline text had the same composition but
+# `function ncm derive` with no ifname, so the NCM host interface is now named lemnos<N> (the default's
+# `ifname=lemnos%d`), where it was usb<N> before. Nothing in Atlas names the Raze's NCM interface (raze-base carries no
+# usb-gadget-network component); flagged in docs/prs/L2b.md.
 [[devices]]
 id = "gadget"
 driver = "usb-gadget"
-uses = { function = "udc:1000480000.usb", identity = "identity" }
-config = { vendor = 0x1d6b, product = 0x0104, interfaces = "function ffs\ninterface 0xff 0 0 orion-link\nendpoint in bulk\nendpoint out bulk\nfunction ncm derive\nfunction acm\n" }
+uses = { function = "udc:1000480000.usb" }
+config = { vendor = 0x1d6b, product = 0x0104, identity = "identity" }
 
 # The fan on RP1 PWM1, channel 3 (dev's rp1_pwm1 channel 3 on GPIO45). VERIFIED on Raze #2 (read by Lemnos,
 # 2026-11-13): channel 3 of the RP1 PWM at pwm@9c000, period 41566 ns. The reference's channel 1 was wrong. frequency_hz 24057 is dev's period of 41566 ns (1 / 41566 ns), min_duty 700 is
@@ -239,41 +281,100 @@ bus = "i2c-10"
 link = "cam0-receiver"
 config = { continuous_clock = true }
 
+# The sensor's values: jobs of one encoded FrameValues each (testing/boards/reference.toml, the same numbers).
+# 2 of 64 bytes, jobs of 64 bytes. COMPUTED, NOT RUN: ov9782::JOB_BYTES is the reference's size; nothing read on a board.
+[devices.streams.values]
+buffers = 2
+buffer_bytes = 64
+job_bytes = 64
+
+# The receiver is the kernel module's: the module owns its node, and this device is its driver's. The sensor sends
+# no embedded data lines (the reference's chip::EMBEDDED_DATA is None), so there is NO `embedded` stream here and no
+# embedded_bytes key.
 [[devices]]
 id = "cam0-receiver"
 driver = "rp1-csi2"
 link = "cam0-fe"
 config = { device = "1f00110000.csi" }
 
+# 8 of 1280000 bytes, the raw frame of sensor mode 0 (1280x800 RAW10 packed: 1280 x 10 / 8 = 1600 bytes a line,
+# 800 lines). VERIFIED ON A BOARD: the raw frames size of modes 0 and 1 (INPUTS, "Camera stream tables"). The other
+# streams below are COMPUTED, NOT RUN.
+[devices.streams.frames]
+buffers = 8
+buffer_bytes = 1280000
+memory = "dma-buf"
+heap = "linux,cma"
+
+# UNVERIFIED: lanes, mbps and data_type are required by the tip's pisp-fe (validate refused the file without them:
+# `setting "lanes" is required`). They are the reference board's values (testing/boards/reference.toml), not read from
+# the Raze: 2 CSI-2 lanes, 800 Mb/s per lane, data type 0x2b (RAW10). No repo file states the Raze's lanes or rate.
 [[devices]]
 id = "cam0-fe"
 driver = "pisp-fe"
 link = "cam0-isp"
-config = { device = "1f00110000.csi" }
+config = { device = "1f00110000.csi", lanes = 2, mbps = 800, data_type = 0x2b }
 
-# The stream sizes are the reference's, not the Raze's: dev's frame streams are 8 buffers of about 1.28 MB each
-# (INPUTS, the CMA note). G1 check: the OV9782 mode's frame size and the buffer counts.
+# 8 of 632 bytes, one front-end configuration per job (job_slots 8, job_bytes 128). COMPUTED, NOT RUN.
+# Shared memory (no memory key). Replaces the old 4 x 8192.
 [devices.streams.config]
+buffers = 8
+buffer_bytes = 632
+job_slots = 8
+job_bytes = 128
+
+# 8 of 23200 bytes, one statistics block per job, dma-buf from linux,cma. COMPUTED, NOT RUN.
+[devices.streams.statistics]
+buffers = 8
+buffer_bytes = 23200
+memory = "dma-buf"
+heap = "linux,cma"
+
+# 4 of 2052096 bytes, BAYER16 at 1280 x 800: stride 2560 x 800 = 2048000, plus a 4096-byte pad. COMPUTED, NOT RUN.
+[devices.streams.output0]
 buffers = 4
-buffer_bytes = 8192
+buffer_bytes = 2052096
+memory = "dma-buf"
+heap = "linux,cma"
+
+# 4 of 516096 bytes, BAYER16 at 640 x 400 (half the mode): stride 1280 x 400 = 512000, plus the same pad. COMPUTED, NOT RUN.
+[devices.streams.output1]
+buffers = 4
+buffer_bytes = 516096
+memory = "dma-buf"
+heap = "linux,cma"
 
 [[devices]]
 id = "cam0-isp"
 driver = "pisp-be"
 config = { device = "1000880000.pisp_be" }
 
+# 2 of 16720 bytes, one back-end configuration per job (job_slots 8, job_bytes 128). COMPUTED, NOT RUN.
+# Replaces the old 4 x 8192.
 [devices.streams.config]
-buffers = 4
-buffer_bytes = 8192
+buffers = 2
+buffer_bytes = 16720
+job_slots = 8
+job_bytes = 128
 
+# 2 of 2048000 bytes, the raw frame the job reads: BAYER16 at 1280 x 800, 64-aligned stride 2560. COMPUTED, NOT RUN.
+# Replaces the old 4 x 2097152.
 [devices.streams.input]
-buffers = 4
-buffer_bytes = 2097152
+buffers = 2
+buffer_bytes = 2048000
 memory = "dma-buf"
 heap = "linux,cma"
 
+# 4 of 1536000 bytes, NV12 at 1280 x 800 (luma 1024000 + chroma 512000). COMPUTED, NOT RUN. Replaces the old 4 x 4194304.
 [devices.streams.output0]
 buffers = 4
-buffer_bytes = 4194304
+buffer_bytes = 1536000
+memory = "dma-buf"
+heap = "linux,cma"
+
+# 4 of 384000 bytes, NV12 at 640 x 400 (half the mode). COMPUTED, NOT RUN.
+[devices.streams.output1]
+buffers = 4
+buffer_bytes = 384000
 memory = "dma-buf"
 heap = "linux,cma"

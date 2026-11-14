@@ -1,0 +1,239 @@
+# L2b: the Raze board file to the L2 keys (held for the L2 lock)
+
+**Held: not to be merged before the Lemnos lock moves.** Validated against Lemnos next
+`50907f37d7c1d5b60a1755cfa19bf6422407cf83` (the tip read on 2026-11-14 00:17), which is NOT our lock.
+Our Lemnos lock stays `d6b9361d006e5f633149b6dea8bb5d1be9483d0a`. Nothing under `devices/` that
+pins a rev has changed: `[sources.lemnos]` in `devices/components/raze-lemnos-board/component.toml`,
+`gaia.lock`, and Cargo pins are untouched.
+
+**Not proven: nothing ran on a board.** Every value marked UNVERIFIED or COMPUTED below is unrun.
+
+## What was built and how
+
+- `lemnos-ctl` built `--locked` from the tip checkout (`cargo build --locked -p lemnos-ctl`,
+  rustc 1.99.0 from the tip's `rust-toolchain.toml`, `nice -n 19 taskset -c 6-31`).
+- The validate command is the one `docs/device-tree.md` line 9 gives, run from the tip checkout so
+  `socs/` is the same checkout's maps, with no live hardware:
+
+      lemnos-ctl validate --no-live --socs socs <BOARD FILE>
+
+## validate: before (the file as on `next`, `origin/next` 2cda9ffd)
+
+    $ lemnos-ctl validate --no-live --socs socs devices/boards/raze/lemnos-board.toml
+    /run/lemnos/lemnosd.sock: not connected to the service
+    .../raze-before.toml: device "slots": setting "boot_sources" is required on a board that boots from a disk: source=device-tree path entries (see docs/boards.md)
+    rc=1
+
+`validate` prints one refusal per run, so the other refusals were found by applying fixes one at a
+time to a scratch copy of the original (outside the repo). Each was then checked at the tip:
+
+| # | Refusal at the tip (verbatim) | Original line |
+|---|---|---|
+| 1 | `device "slots": setting "boot_sources" is required on a board that boots from a disk: source=device-tree path entries (see docs/boards.md)` | `slots` config had no `boot_sources` |
+| 2 | `refused: slots still set require_signed, which was removed: the board's security switch replaces it (docs/slots.md, "The security switch")` (seen with `require_signed = false` put back) | `require_signed = false` in `slots` config |
+| 3 | `device "gadget": setting "identity" is required with `function ncm derive`: the NCM addresses come from the board serial, so name the system-identity device` | `identity` under `uses`, not `config` |
+| 4 | `device "cam0-fe": setting "lanes" is required` | pisp-fe `config` had no `lanes` |
+
+The original refused on #1 first; #2 to #4 surfaced after #1 was fixed. Nothing else in the original
+was refused (its `interfaces` text, its `boot = "/boot/firmware"`, its streams and its security-free
+layout all pass the tip's checks).
+
+## validate: after (the drafted file, `devices/boards/raze/lemnos-board.toml`)
+
+    $ lemnos-ctl validate --no-live --socs socs devices/boards/raze/lemnos-board.toml
+    security: record /var/lib/lemnos/security.rec, trust root /etc/lemnos/slot-keys, orion absent
+    .../devices/boards/raze/lemnos-board.toml: board "raze", 21 devices
+    host: call deadline 2000 ms, first retry 1000 ms, retry cap 8000 ms
+    auto-off: none, every device is retried forever
+    rc=0
+
+(`orion absent` is the tip's print for `orion = false`.) Validated AND ACCEPTED at the tip. The
+`/run/lemnos/lemnosd.sock: not connected` line in the before run is the tool probing for a daemon
+and is not a refusal.
+
+## lemnos-ctl tree on the drafted file (tip flags)
+
+    lemnos-ctl tree --socs socs devices/boards/raze/lemnos-board.toml \
+      -o out/overlay.dts --boot out/boot.txt --modprobe out/modprobe.conf \
+      --cmdline out/cmdline.words --udev out/udev.rules --mdev out/mdev.conf \
+      --security-unit out/security.service
+    rc=0
+
+The tip's `tree` also has `--uboot FILE`. Run with it, `tree` refuses the file:
+`--uboot: the bcm2712-rp1 map gives no U-Boot GPIO naming, so the 3 held line(s) (gpio:pinctrl-rp1:16, gpio:pinctrl-rp1:20, gpio:pinctrl-rp1:45) cannot be written for U-Boot; the boot fragment (`--boot`) is the firmware's only form for this SoC`, rc=1. So `--uboot` is not passed for the Raze (it is a Pi with firmware boot, no U-Boot). Not a file error.
+
+| Output | Bytes | sha256 |
+|---|---|---|
+| overlay.dts (`-o`) | 2695 | 4dbb908b671f295c24d4de2b7d7f3dcd1dd122535e5d0eb8fa666fa7d47f5481 |
+| boot.txt (`--boot`) | 750 | 2aa45741a2875daec4e4ac4e5fdcd2a567c664a4e09b76b62c224df87300d5b6 |
+| modprobe.conf (`--modprobe`) | 944 | 703cbb297ad0c6a14cb4a23b26f4c12ee23ad64f5bad39cba6617ebbc5bd77fa |
+| cmdline.words (`--cmdline`) | 86 | 9f030e937b1b8f093a5af989249e30bb932ddf92adec83352b7a6775c9b11b6d |
+| udev.rules (`--udev`) | 941 | 78d172d379d97c398b2e189b8cb53b3ce29ef64774f9e654001057d433f24000 |
+| mdev.conf (`--mdev`) | 1165 | 0d64240970fefbb2fcb4e8e914bdabaab262ce72dd9c882e84c849ab02278bc4 |
+| security.service (`--security-unit`) | 618 | 4476cc4a2fe202c0fc588f117363a4bc2a3e7c77ea881469bc3e9498bbbcdcb5 |
+
+Marker lines: the overlay's first line is `// Generated by `lemnos-ctl tree` from board "raze". Do not edit: change the`. The `lemnos,board` and `lemnos,overlay-sha256` markers that INPUTS names do NOT exist at the tip: a search of the whole checkout (excluding target/) finds neither string. Nothing quoted here as a marker is invented.
+
+`cmdline.words` at the tip: `lemnos.owned=raspberrypi,pispbe,raspberrypi,rp1-cfe lemnos.pisp_be=raspberrypi,pispbe`. It has NO `os.src.` word: the tip's `tree --cmdline` writes the driver words only. The `os.src.` word comes from the L2-move flag `--cmdline-slot` (see "What changes at the move").
+
+Check of the boot-source word (coordinator request): with `boot_args = "os"` and
+`boot_sources = ["rpi-boot-mode-1=/soc@107c000000/mmc@fff000"]`, the tip's slot-init reads the
+`<prefix>.src.<source>=<path>` form (`service/slot-init/src/cmdline.rs:6`, prefix = `boot_args`), so the
+word is `os.src.rpi-boot-mode-1=/soc@107c000000/mmc@fff000`, which is exactly the L2 word the coordinator
+gave. The generated `cmdline.words` does not carry it yet at the tip; it will at the move's `--cmdline-slot`.
+
+## Changes, with the tip's file:line for each
+
+1. `slots` config: `require_signed` removed (tip refuses it, `drivers/system-slots/src/lib.rs:1318`); `boot_sources = ["rpi-boot-mode-1=/soc@107c000000/mmc@fff000"]` added (required: `drivers/system-slots/src/lib.rs:258`; the form is `docs/boards.md:101-119`, Pi row, and `testing/boards/reference.toml`). `boot_args = "os"` kept. No other key needed: the tip's `KEYS` (`drivers/system-slots/src/lib.rs:1062-1093`) accepts every key the file has, and `boot_device` is not a key at the tip.
+2. `[host] dma_heaps = ["linux,cma"]` (new). The brief said "in the form the tip's reference.toml uses": the reference has NO `dma_heaps`. The form is the `[host]` table (`docs/boards.md:95` and the example at `:360`; field `engine/host/src/board/mod.rs:96`).
+3. `[security]` table (`record`, `keys`, `orion = false`) and the `security` device (`driver = "system-security"`, `uses = { slots = "slots" }`) added (`docs/slots.md:251-300`; example `docs/boards.md:368-371` and `:598-600`). The Raze had no security switch before. `keys` names `/etc/lemnos/slot-keys` as the reference does; no key file ships on the image yet.
+4. `uses` for the security device names `slots` only. The brief asked for `flash = "flash"` too. The Raze has no `system-flash` device, and the tip ACCEPTS a dangling `flash = "flash"` (checked: rc 0 with it), so validate does not catch it. The file leaves `flash` out. The docs (`docs/slots.md:251-300`) say a board with no stakeholder judges on its trust root.
+5. Gadget (`gadget`): `identity = "identity"` moved from `uses` to `config` (lock: `service/lemnosd/src/gadget.rs:80-82` reads `device.config["identity"]`; tip: `drivers/usb-gadget/src/lib.rs:657`). This is a REQUIRED fix, not a preference: see "The lock's validate" below. `interfaces` DROPPED: with none, the tip builds `DEFAULT_INTERFACES` (`drivers/usb-gadget/src/lib.rs:125`, `contracts/usb-link.toml` `[composition] default`): the link, then NCM, then ACM. vendor 0x1d6b, product 0x0104 kept (placeholder, user decision).
+   The board-side NCM interface is now `lemnos0` (the default's `ifname=lemnos%d`, first free number), where the old inline text (`function ncm derive`, no ifname) gave `usb0`. This is the intended L2 name on every board (coordinator ruling). Nothing on `next` configures it: see "The gadget's network interface" below.
+6. Camera streams. Sensor `values` 2 x 64 (job_bytes 64); receiver `frames` 8 x 1280000 (dma-buf, linux,cma); NO `embedded` stream, NO `embedded_bytes`; NO `kind` key anywhere. pisp-fe: `config` 8 x 632 (job_slots 8, job_bytes 128), `statistics` 8 x 23200 (dma-buf, linux,cma), `output0` 4 x 2052096, `output1` 4 x 516096. pisp-be: `config` 2 x 16720 (job_slots 8, job_bytes 128), `input` 2 x 2048000, `output0` 4 x 1536000, `output1` 4 x 384000. Sizes replace the old 4 x 8192 / 4 x 2097152 / 4 x 4194304 values. Each line is labelled VERIFIED ON A BOARD (only the raw `frames` size, mode 0) or COMPUTED, NOT RUN in the file.
+7. pisp-fe `config`: `lanes = 2`, `mbps = 800`, `data_type = 0x2b` added (`lanes` required: validate refused without it). UNVERIFIED: these are the reference board's values, not read from the Raze; no repo file states the Raze's lanes or rate. Listed in the file.
+8. Kept unchanged: every measured comment (magnetometer address 0x10, INA238 at 0x40, fan channel 3, LED ring order and the unverified wire order, fan curve, the `boot = "/boot/firmware"` flagged path). The `require_signed` comment is replaced by a note on its removal.
+
+## Differences between the tip and INPUTS.md
+
+- `dma_heaps`: INPUTS says "read the exact form from the reference.toml". The reference has no such key; the form is `[host] dma_heaps` (`docs/boards.md:95`, `engine/host/src/board/mod.rs:96`). Written explicitly as `["linux,cma"]`, which EQUALS the default (`docs/boards.md:95`; `[]` names none).
+- `lemnos-ctl tree` flags: INPUTS and the coordinator name `--uboot-config FILE` for I5i7. At the tip the flag is `--uboot FILE`, and it is refused for this SoC (see above). Not passed for the Raze.
+- `--boot-dir DIR [--slot ID]`, `--manifest-boot FILE`, `--cmdline-slot FILE`, the `os.src.` word: NOT at the tip (the I5i6 final lines, coordinator 2026-11-14; they land after I5g2 and S2b). Listed below as moving.
+- `lemnos,board` / `lemnos,overlay-sha256` overlay markers: named by INPUTS, not produced at the tip (no such string in the checkout).
+- The tip's `reference.toml` puts gadget `identity` in `config` (line 94), matching the docs. The old Raze file had it under `uses`: the fix is required, not a preference.
+- Bay sizes (`[boot] bay_*`), `uboot_env_size`, `uboot_env_device`: absent at the tip. The Pi form needs none of them. (Correct per the MOVING list.)
+- `require_signed`: INPUTS says removed; the tip removes it from the file's keys and refuses it by name (`lib.rs:1318`). The file no longer has it.
+- `boot_device`: INPUTS says removed; the tip's `KEYS` do not list it, so a file with it is refused as an unknown key. The file has none.
+
+## Keys still MOVING on Lemnos's side (the file does NOT have them)
+
+- `[boot] bay_kernel_bytes`, `bay_initramfs_bytes`, `bay_device_tree_bytes`, `bay_overlay_bytes`, `bay_cmdline_bytes`: "do NOT write until the rev has them" (INPUTS, L2 partition requirements). Absent at the tip.
+- The boot partition's size as a stated fact (`boot-partition --size`) and the Gaia rev that writes it (INPUTS "THE ONE LEMNOS MOVE IS NOW THE L2 REV" UPDATE).
+- `uboot_env_size`, `uboot_env_device`: U-Boot boards only; the Raze is a Pi. Not needed.
+- `system-reboot`: the Raze's reboot device has no config, and the tip's `REBOOT_KEYS` read `systemctl`, `data`, `boot`, `ubi`, `record`, `boot_sources`, `device_tree`, `vcio` (INPUTS I5i6 final lines). Left as is: no new key is needed for it.
+- `device_tree`, `vcio`, `demote_after_episodes` (system-slots, I5i6): optional; not written.
+- The `lemnos-data` filesystem label (Gaia's recipes): not a board-file key.
+
+## What changes at the move (component args and installs)
+
+Not edited here (the brief says do not touch `devices/components/raze-lemnos-board/component.toml`
+or any file under devices/). At the tip the generator flags are `-o`, `--boot`, `--modprobe`,
+`--cmdline`, `--udev`, `--mdev`, `--security-unit`, and `--uboot` for U-Boot boards. The current
+component passes only `-o`, `--modprobe`, `--cmdline`. At the move the args become:
+
+- add `--boot @out@/boot.txt` only if Gaia gets a key for it (Gaia has none; `tree --boot-dir` writes the boot partition instead);
+- `--boot-dir @out@/boot --slot @slot@` (I5i6), `--manifest-boot @out@/manifest.json` from the SAME invocation as `-o` (I5i6);
+- `--cmdline-slot @out@/cmdline-slot.words` (I5i6; yields `os.slot=<id> os.roothash=@roothash@ os.src.rpi-boot-mode-1=/soc@107c000000/mmc@fff000 panic=5`);
+- `--udev @out@/udev.rules` and `--mdev @out@/mdev.conf` (Q2i and Q2j, at the L2 rev; `--mdev` also gains `SUBSYSTEM=^vcio$` lines, I5i6);
+- `--security-unit @out@/security.service` and its install (`from = { generated = "security.service" }`, `to = "/etc/systemd/system/..."`), with the `/etc/board -> /run/board` link (Gaia's coming link form, `link = "/run/board"`, `to = "/etc/board"`).
+- installs gaining generated udev/mdev/modprobe outputs; the `overlay.dts` output still has no Gaia consumer until `[generate.provides]` (board-overlay).
+- the `[sources.lemnos]` `ref` moves to the L2 rev, and `[sources]` / gaia.lock regenerate.
+
+## What is not proven
+
+- Nothing ran on a board. No boot, no tryboot, no install, no security switch, no camera stream.
+- The camera sizes except the raw `frames` (mode 0) are COMPUTED from the drivers' constants, not run. The `lanes`, `mbps`, `data_type` values are the reference's and UNVERIFIED for the Raze.
+- The `[security] keys` path names a file no image ships.
+- The NCM host interface name changes from `usb<N>` to `lemnos<N>` (not run on a board; the coordinator decides).
+- `validate` does not check `flash = "flash"` against a missing device (the tip accepts it); the file leaves it out.
+- The `gate.sh` run is recorded in the commit message, not here, and is not claimed to pass before it shows `gate passed`.
+
+## The lock's validate (d6b9361d): the hole, with the command and output
+
+Question (coordinator): does `uses = { identity = ... }` do anything at the lock, and does the lock's
+validate accept our file?
+
+- (a) At `d6b9361d` the daemon reads the link only from the gadget's `config`: `lemnosd`
+  `service/lemnosd/src/gadget.rs` (the `IDENTITY` lookup, `device.config.get(IDENTITY)`, around lines 80-82).
+  `uses` is read for the `function` need only (`setup_one`, around line 138). `uses = { identity = ... }` does nothing.
+- (b) The driver then fails at bind. With no board serial the lock's `drivers/usb-gadget/src/lib.rs` passes
+  `macs = None` to `description::functions`, and a `function ncm derive` line with no macs is
+  `Fault::NoIdentity` (`drivers/usb-gadget/src/description.rs:92-93` and `:463`). `start` returns
+  `INVALID_ARGUMENT`, so the gadget does not bind.
+- The lock's `validate` ACCEPTS the original file silently, so validate does not catch this:
+
+      $ cd lemnos-lock   # worktree at d6b9361d, lemnos-ctl built --locked from it
+      $ lemnos-ctl validate --no-live --socs socs raze-before.toml   # original, identity under uses
+      raze-before.toml: board "raze", 20 devices
+      host: call deadline 2000 ms, first retry 1000 ms, retry cap 8000 ms
+      auto-off: none, every device is retried forever
+      rc=0
+
+  The same file with identity moved to `config` is also rc 0. So the lock's validate accepts a key the
+  daemon ignores, and the gadget then fails to bind. This is the hole to report to the coordinator.
+  (The tip's validate DOES refuse the `uses` form: `device "gadget": setting "identity" is required with
+  `function ncm derive`: ...`. The tip is the one fixed in this respect.)
+- Docs B23 recorded rc 0 for the then-current file at the lock: that is still true of rc, and the gadget was
+  never going to bind with identity under `uses`.
+
+## The gadget's network interface (is anything configuring it on next?)
+
+Searched on `next` (2cda9ffd): `devices/components/raze-base-files`, `devices/products/raze-base` (its
+`os/raze.fragment`), `devices/boards/raze`, all `.network` / `.netdev` / networkd files and scripts under
+`devices/`.
+
+- NOTHING configures the Raze's USB network interface today. `devices/products/raze-base/os/raze.fragment:56-58`
+  says it: "systemd-networkd is the network manager ... OPEN: the .network file for the gadget's NCM interface
+  (its address, and whether the board serves DHCP on it) ... No .network file is written here."
+- No unit or file names `usb0` or `usb*` for the Raze. The only `usb0` names are other products' (the ZERO 3E
+  and Cubie bring-ups, which use Gaia's `usb-gadget-network` and udhcpd).
+- Finding: on the next image the link comes up with NO address and nothing serves DHCP on it. The Raze's
+  address plan is NOT stated on `next`.
+- Dev's tree (`origin/dev`, `devices/raze/CHANGELOG.md:585, 1185-1190, 1655`; `devices/README.md:378-379`)
+  had a per-board /29 in 172.31.0.0/16, derived from the board serial, on a gadget-only bridge `usbbr0`, with
+  DHCP on that bridge. That is dev's design, and it does not say how Atlas's next design (Lemnos derives the
+  NCM addresses; `lemnos0` is a direct NCM interface) would address the Raze. So the plan is NOT settled in the
+  repo, and no `.network` file is written here. Questions for the coordinator: (1) the address plan for the
+  Raze's `lemnos0` (a /29 per board, or a fixed link-local pair, and from which fact); (2) whether the board
+  serves DHCP on it (networkd's DHCPServer, or dnsmasq as dev did); (3) whether a bridge `usbbr0` is wanted or the
+  NCM interface is addressed directly.
+- Gate check added: `scripts/check-usb-ifname.py` (called from `scripts/gate.sh`). It reads every systemd-networkd
+  `[Match] Name=` under `devices/` and refuses a gadget-style name (`usb<N>` or `lemnos<N>`) that is not exactly the
+  board interface. It matches no wildcard, so a host adapter name is not caught. Today it checks zero networkd names.
+  The name comes from `[network] board_interface` in `contracts/usb-link.toml` when `LEMNOS_USB_LINK` names that file
+  and it carries version 3 (Lemnos R1i). Neither the lock (d6b9361d has no `contracts/usb-link.toml`) nor the tip
+  (version 2, no `[network]`) has it, so today the check uses the fallback `lemnos0` from the tip's
+  `DEFAULT_INTERFACES`, marked `# LOCK: Lemnos R1i`. Self-test: `lemnos0` passes, `usb0` is refused, a host adapter
+  name passes (not matched). The gate has no Lemnos checkout, so the env var is the only way the contracts file reaches it.
+
+## Lemnos R1i (coordinator): identity under uses
+
+Lemnos's R1i makes `identity` under `uses` refused: `device "gadget": identity is a setting, not a resource: put it in
+the device's config`. Our file already has it in `config`, so R1i changes nothing in the Raze file.
+Lemnos's account of the past: an `identity` under `uses` was silently ignored when the composition did not derive
+addresses. Ours DOES derive (`function ncm derive`), and at d6b9361d the file as on `next` was accepted by validate
+(rc 0) and then could not bind (see "The lock's validate"). The derive makes the difference, so the old form was not
+harmless on this board.
+
+Reading versus running: the bind refusal above is from reading the lock's code (`description.rs:92-93, 463`, the
+`start` path in `drivers/usb-gadget/src/lib.rs`). It was NOT run on a board, and not run in a daemon. The validate
+rc 0 WAS run (command and output above).
+
+## Open items (not proven here)
+
+- THE LINK GETS ITS ADDRESS: not proven. Nothing in this repo can show it today: no QEMU or simulator job boots the
+  Raze image with its gadget, the Raze has no `.network` file (so the link has no address by design of the image
+  today), and the address plan is not stated on `next`. What it would take: (1) the address plan from the coordinator
+  (see above); (2) a networkd `.network` for `lemnos0` in the Raze's image (raze-base component), with the DHCP
+  choice; (3) a boot of the Raze image in QEMU or the simulator with the gadget bound, reading the interface's address
+  (`ip -4 addr show lemnos0`); the repo has no Raze QEMU job, so (3) is a new job, not an existing one.
+- The address plan itself (a /29 per board, a fixed pair, or the board's own address): open.
+- Nothing ran on a board. Nothing about the NCM name `lemnos0` is run on hardware.
+
+## Changes still to come before the lock rev
+
+Each is in the file as a marked comment (`MOVES AT ...`) or listed here; none is written as a key the tip refuses.
+
+- S2b (`#336`, head `9abb2fa2`, untested on a board; coordinator 2026-11-14): `[security] keys` is the ONLY key list.
+  No `keys` setting on the slots, flash or security devices. The draft has none (marked in the file at the slots
+  device). The file's `[security] keys = "/etc/lemnos/slot-keys"` stays.
+- S2b: the system-security device's `uses` gains `identity = "identity"`. Not written (the tip does not accept it yet);
+  the S2b form is marked in the file beside `uses = { slots = "slots" }`.
+- S2b app side (PARKED, not in this file): turning security OFF on a board with a trust root needs a signed request;
+  the Raze file needs nothing for it (the board-file part is milestone 2's).
+- I5i6 `tree` flags (`--boot-dir DIR [--slot ID]`, `--manifest-boot FILE`, `--cmdline-slot FILE`): see "What changes at the
+  move". The `os.src.` word they produce is `os.src.rpi-boot-mode-1=/soc@107c000000/mmc@fff000`.
+- R1i (`contracts/usb-link.toml` version 3, `[network] board_interface = "lemnos0"`): the gate check reads it when
+  `LEMNOS_USB_LINK` names that file; the fallback is `lemnos0` with `# LOCK: Lemnos R1i`.
+- The address plan and the `.network` file for `lemnos0` (see "The gadget's network interface"). Open.
+- Bay sizes (`[boot] bay_*`) and the boot partition size: MOVING, not written.
