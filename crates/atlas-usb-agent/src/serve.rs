@@ -325,12 +325,48 @@ async fn start(agent: Arc<Agent>, request: Request<Incoming>) -> Reply {
     if !agent.has_boot_files() {
         return error(StatusCode::CONFLICT, "the boot files aren't here yet");
     }
-    let job = match begin_job(&agent, &flash.port) {
-        Ok(job) => job,
-        Err(problem) => return error(StatusCode::CONFLICT, problem),
+    let job = {
+        let mut jobs = lock(&agent.jobs);
+        if let Some(running) = jobs
+            .iter()
+            .find(|job| !job.finished.load(Ordering::Relaxed))
+        {
+            return error(
+                StatusCode::CONFLICT,
+                format!("job {} is still running", running.id),
+            );
+        }
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs());
+        let job = Arc::new(Job {
+            id: format!("{stamp}-{}", flash.port),
+            events: Mutex::new(Vec::new()),
+            finished: AtomicBool::new(false),
+            cancel: Arc::new(AtomicBool::new(false)),
+        });
+        jobs.push_back(job.clone());
+        while jobs.len() > KEEP_JOBS {
+            jobs.pop_front();
+        }
+        job
     };
     prune(&agent.dir("jobs"), KEEP_JOBS, None);
-    let sink = job_sink(&job, agent.dir("jobs").join(format!("{}.jsonl", job.id)));
+    let log_path = agent.dir("jobs").join(format!("{}.jsonl", job.id));
+    let sink: Sink = {
+        let job = job.clone();
+        Arc::new(move |event: Event| {
+            if let Ok(line) = serde_json::to_string(&event)
+                && let Ok(mut file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_path)
+            {
+                let _ = writeln!(file, "{line}");
+            }
+            lock(&job.events).push(event);
+        })
+    };
     let run = Flash {
         port: flash.port,
         boot_files: agent.dir("boot"),
@@ -351,7 +387,7 @@ async fn start(agent: Arc<Agent>, request: Request<Incoming>) -> Reply {
 }
 
 /// Starts a job at `port`, refused while another job runs.
-fn begin_job(agent: &Agent, port: &str) -> Result<Arc<Job>, String> {
+fn begin_boot_job(agent: &Agent, port: &str) -> Result<Arc<Job>, String> {
     let mut jobs = lock(&agent.jobs);
     if let Some(running) = jobs
         .iter()
@@ -376,7 +412,7 @@ fn begin_job(agent: &Agent, port: &str) -> Result<Arc<Job>, String> {
 }
 
 /// A sink that keeps a job's events in memory and appends them to its log.
-fn job_sink(job: &Arc<Job>, log_path: PathBuf) -> Sink {
+fn boot_job_sink(job: &Arc<Job>, log_path: PathBuf) -> Sink {
     let job = job.clone();
     Arc::new(move |event: Event| {
         if let Ok(line) = serde_json::to_string(&event)
@@ -478,7 +514,7 @@ async fn start_boot_only(agent: Arc<Agent>, request: Request<Incoming>) -> Reply
             return error(StatusCode::BAD_REQUEST, problem.to_string());
         }
     };
-    let job = match begin_job(&agent, &wanted.port) {
+    let job = match begin_boot_job(&agent, &wanted.port) {
         Ok(job) => job,
         Err(problem) => {
             let _ = std::fs::remove_dir_all(&set);
@@ -486,7 +522,7 @@ async fn start_boot_only(agent: Arc<Agent>, request: Request<Incoming>) -> Reply
         }
     };
     prune(&agent.dir("jobs"), KEEP_JOBS, None);
-    let sink = job_sink(&job, agent.dir("jobs").join(format!("{}.jsonl", job.id)));
+    let sink = boot_job_sink(&job, agent.dir("jobs").join(format!("{}.jsonl", job.id)));
     let running = job.clone();
     tokio::spawn(async move {
         let timeout = std::time::Duration::from_secs(timeout_s);
