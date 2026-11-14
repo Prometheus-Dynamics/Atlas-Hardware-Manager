@@ -8,7 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 # Orion's NT4 crate, at the rev the root Cargo.toml locks (the same repository and rev as `orion`).
-orion-nt4 = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "455a956e13e62c97081d66e0e8f3bf2aced1eac8", default-features = false, features = ["client", "server"] }
+orion-nt4 = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "fd61df3ed167bd9643e162a9953b8d260c048af5", default-features = false, features = ["client", "server"] }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "sync"] }
@@ -16,8 +16,8 @@ tokio = { version = "1", features = ["macros", "sync"] }
 [dev-dependencies]
 # The real comm core, in process, with its NT4 gateway (as Orion's own gateway test runs it).
 orion = { workspace = true, features = ["topics"] }
-orion-comm-app = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "455a956e13e62c97081d66e0e8f3bf2aced1eac8", default-features = false, features = ["nt4"] }
-orion-config = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "455a956e13e62c97081d66e0e8f3bf2aced1eac8" }
+orion-comm-app = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "fd61df3ed167bd9643e162a9953b8d260c048af5", default-features = false, features = ["nt4"] }
+orion-config = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "fd61df3ed167bd9643e162a9953b8d260c048af5" }
 tokio = { version = "1", features = ["macros", "rt", "sync", "time", "net"] }
 
 [lints]

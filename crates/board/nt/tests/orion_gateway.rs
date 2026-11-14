@@ -10,7 +10,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use atlas_nt::{Error, Update, Value, Viewer, ViewerConfig};
-use orion::topics::{FieldId, Next, SampleTime, TopicDecl};
+use orion::topics::{FieldId, Next, OnSubscribe, SampleTime, TopicDecl};
 use orion::{Address, Orion, fields};
 use orion_comm_app::{CommCore, CommSettings};
 use orion_config::Source;
@@ -142,6 +142,7 @@ fn run(socket: &Path, stop: &AtomicBool, setpoints: &mpsc::Sender<f64>) {
             history: 8,
             expiry_ms: 0,
             max_payload: 16,
+            on_subscribe: OnSubscribe::FromNow,
         })
         .expect("declare");
     let mut panel = orion.subscribe("panel.setpoint").expect("subscribe");

@@ -32,7 +32,7 @@ use std::time::{Duration, Instant};
 use orion::actions::{
     ActionCall, ActionDecl, Admits, Finished, Outcome, Policy, Registration, Request, Target,
 };
-use orion::topics::{FieldId, Publisher, SampleTime, TopicDecl};
+use orion::topics::{FieldId, OnSubscribe, Publisher, SampleTime, TopicDecl};
 use orion::{Address, Orion, fields};
 use orion_stubs::{Board, Options, Security};
 
@@ -94,14 +94,18 @@ pub fn call(orion: &Orion, name: &str, args: &[u8]) -> Result<Finished, orion::E
     Ok(run.finish(DEADLINE)?)
 }
 
-/// The state a node is in, as its hello `state` fact says it.
+/// The state a node is in. Since Orion R2 the comm core writes the hello `state` fact itself, from
+/// its own state (`orion_hello`, `hello/src/lib.rs`), and a program's `state` fact is dropped. The
+/// simulated comm core (`orion-stubs`) starts as a plain comm core, so it always says `running`.
+/// `Recovery` and `Flasher` are not produced: putting a comm core in recovery needs `orion-comm-app`'s
+/// recovery start (`recover`), which the simulated node does not run (see docs/prs/A17.md).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
     /// Booted and running its own software.
     Running,
-    /// Waiting in a recovery mode.
+    /// Waiting in a recovery mode. Not produced by the simulated node (see the type's note).
     Recovery,
-    /// A freshly loaded flasher image.
+    /// A freshly loaded flasher image. Not produced by the simulated node (see the type's note).
     Flasher,
 }
 
@@ -169,7 +173,6 @@ impl Hello {
         offers.sort();
         offers.dedup();
         let facts = [
-            (names::HELLO_STATE, self.mode.word().to_string()),
             (names::HELLO_FAMILY, self.family.clone()),
             (names::HELLO_SERIAL, self.serial.clone()),
             (names::HELLO_MODEL, self.model.clone()),
@@ -684,6 +687,8 @@ impl Node {
                 history: 64,
                 expiry_ms: 0,
                 max_payload: 256,
+                // A log is a stream of events, not a state: a late subscriber is not sent the last line.
+                on_subscribe: OnSubscribe::FromNow,
             })
             .map_err(|e| e.to_string())?;
 
@@ -711,6 +716,7 @@ impl Node {
                         history: 64,
                         expiry_ms: 0,
                         max_payload: 8,
+                        on_subscribe: OnSubscribe::Latest,
                     })
                     .map_err(|e| e.to_string())?,
             );
@@ -721,6 +727,7 @@ impl Node {
                     history: 1,
                     expiry_ms: 0,
                     max_payload: 256,
+                    on_subscribe: OnSubscribe::Latest,
                 })
                 .map_err(|e| e.to_string())?;
             let description = format!(
@@ -742,6 +749,7 @@ impl Node {
                         history: 2,
                         expiry_ms: 0,
                         max_payload: 256,
+                        on_subscribe: OnSubscribe::Latest,
                     })
                     .map_err(|e| e.to_string())?;
                 publisher
@@ -787,7 +795,7 @@ impl Node {
                     self.shared.leases.request(&caller);
                     self.start(call, &name, args, &caller);
                 }
-                Ok(Some(Request::Cancel { call })) => {
+                Ok(Some(Request::Cancel { call, .. })) => {
                     if let Some(caller) = self
                         .active
                         .iter()
@@ -798,6 +806,9 @@ impl Node {
                     }
                     self.cancel(call);
                 }
+                // The leases here are kept per caller name, not per session, so a session ending
+                // has nothing to let go of in this node.
+                Ok(Some(Request::CallerGone { .. })) => {}
                 Ok(None) => {}
                 // The comm core went away: nothing more can be answered.
                 Err(_) => break,

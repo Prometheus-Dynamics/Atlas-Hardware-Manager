@@ -110,3 +110,70 @@ pub(crate) fn pinned(identity: &Identity, expected: Option<[u8; 32]>) -> Result<
         _ => Ok(()),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use orion::node::{Fact, Node};
+
+    use super::{NodeState, ShellKind, state_of};
+    use crate::error::AccessError;
+
+    /// A hello as a node answers it, with the facts the test gives. A node built here stands in for
+    /// the two cases a live node cannot be: a pre-R2 node that says nothing about its state, and a
+    /// node in recovery (no simulated comm core can be put in recovery; see docs/prs/A17.md).
+    fn node_with(facts: &[(&str, &str)]) -> Node {
+        Node {
+            name: "board".to_owned(),
+            cluster: String::new(),
+            public_key: [7; 32],
+            fingerprint: "sha256:test".to_owned(),
+            revision: 0,
+            time_ms: 0,
+            facts: facts
+                .iter()
+                .map(|(name, value)| Fact {
+                    name: (*name).to_owned(),
+                    ty: 4,
+                    value: value.as_bytes().to_vec(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_node_in_recovery_gets_the_recovery_shell() {
+        let node = node_with(&[
+            ("state", "recovery"),
+            ("recovery_why", "settings unreadable"),
+        ]);
+        let state = state_of(&node).expect("the state is read");
+        assert_eq!(state, NodeState::Recovery);
+        assert_eq!(ShellKind::for_state(state), ShellKind::Recovery);
+    }
+
+    #[test]
+    fn a_flasher_gets_the_recovery_shell() {
+        let state = state_of(&node_with(&[("state", "flasher")])).expect("the state is read");
+        assert_eq!(ShellKind::for_state(state), ShellKind::Recovery);
+    }
+
+    #[test]
+    fn a_running_node_gets_the_normal_shell() {
+        let state = state_of(&node_with(&[("state", "running")])).expect("the state is read");
+        assert_eq!(ShellKind::for_state(state), ShellKind::Normal);
+    }
+
+    /// The no-guess rule: a node without the `state` fact gets no shell at all. It is what a
+    /// pre-R2 node is, and an R2 comm core never answers without one.
+    #[test]
+    fn a_node_that_says_nothing_about_its_state_gets_no_shell_guess() {
+        let node = node_with(&[("model", "simulated-board")]);
+        assert!(matches!(state_of(&node), Err(AccessError::NoState)));
+    }
+
+    #[test]
+    fn an_unknown_state_word_gets_no_shell_guess() {
+        let node = node_with(&[("state", "updating")]);
+        assert!(matches!(state_of(&node), Err(AccessError::UnknownState(_))));
+    }
+}

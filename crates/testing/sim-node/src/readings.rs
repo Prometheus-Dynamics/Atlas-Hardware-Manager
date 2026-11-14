@@ -16,11 +16,12 @@
 //! Each listing is a new appearance, so the generation moves. Their topics stay declared, as they
 //! do on a real bridge.
 //!
-//! // LOCK: Orion at 6dfb990 does not hand a network subscriber the newest sample of a topic that
-//! // was written before it subscribed (the local ring does). The status and the generation are
-//! // written on every tick until Orion delivers the newest sample on subscribe (Orion's
-//! // last-value-on-subscribe, asked for in the coordinator's Orion shapes), so a late subscriber
-//! // reads them within one tick. Marked for removal then.
+//! // LOCK: the status and the generation are provider topics (`Describing::topic`). At Orion
+//! // dbd5fc08 that call declares every topic with `on_subscribe: FromNow` and takes no argument for
+//! // it (`crates/client/provider/src/lib.rs`), so a late subscriber gets nothing until the next
+//! // write. They are written on every tick until the provider takes `on_subscribe` (Orion C29 is
+//! // on `TopicDecl` only); the readings, hardware and hello topics are `TopicDecl`s and use
+//! // `OnSubscribe::Latest`. Marked for removal when the provider can declare Latest.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -743,7 +744,8 @@ impl Devices {
                 let payload = payload(item.sample, tick);
                 let _ = listed.values.publish(FieldId(field as u16), now, &payload);
             }
-            // LOCK: see the module note. The status and the generation are written on every tick.
+            // LOCK: provider topics have no `on_subscribe` at dbd5fc08; see the module note. The
+            // status and the generation are written on every tick until they can declare Latest.
             if let (Some(status), Some((health, reason))) = (&mut listed.status, spec.status) {
                 for (index, text) in ["ready", health, reason].iter().enumerate() {
                     let _ = status.publish(FieldId(index as u16), now, text.as_bytes());

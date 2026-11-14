@@ -1,10 +1,11 @@
 //! The carrier: the one place bytes reach the node's shell and its key list.
 //!
-//! // LOCK: Orion at c0187f4 has no client call that carries a terminal through a session, and
-//! // no client call that enrolls an operator key (`OperatorEnroll` is on the wire, the facade
-//! // does not wrap it). A production carrier implements this trait once Orion provides one, on
-//! // the monitor's thread (the Orion client is not `Send`), and returns the stream it opens.
-//! // Until then the only carrier is the simulated one in the tests.
+//! // Orion at dbd5fc08 has the calls this trait needs (`Orion::shell` for a terminal, Orion C27,
+//! // and `Orion::enroll` for an operator key, Orion D13). No production carrier is built here yet:
+//! // the trait is `Send + Sync` and blocking, while Orion's `Shell` and enrol live on the client
+//! // handle, which is not `Send` and stays on the session thread. A production carrier needs a
+//! // long operation on that thread (`Handle::long`) that pumps the shell and takes its input from a
+//! // queue. That is a PR of its own. Until then the only carrier is the simulated one in the tests.
 //!
 //! Calls on a carrier block. The crate runs them on a blocking thread, never on the async
 //! runtime. A carrier is never asked to run a command: it opens an interactive shell or

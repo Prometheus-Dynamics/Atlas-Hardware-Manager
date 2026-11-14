@@ -142,7 +142,23 @@ fn a_plain_node_publishes_no_hello_facts_but_the_hello_document_still_answers() 
     let node = SimNode::start_with(&dir, &Kind::Plain, None).expect("the node starts");
     let orion = node.connect("plain").expect("a session");
     let document = orion.node().expect("the document");
-    assert!(document.facts.is_empty(), "{:?}", document.facts);
+    // The only fact is `state`, and it is Orion's own: since R2 the comm core writes it, and the
+    // node's programs publish nothing. A plain node is running.
+    let names: Vec<&str> = document
+        .facts
+        .iter()
+        .map(|fact| fact.name.as_str())
+        .collect();
+    assert_eq!(names, ["state"], "{:?}", document.facts);
+    assert_eq!(fact_text(&document, "state"), Some("running"));
+}
+
+fn fact_text<'a>(document: &'a orion::node::Node, name: &str) -> Option<&'a str> {
+    document
+        .facts
+        .iter()
+        .find(|fact| fact.name == name)
+        .and_then(|fact| std::str::from_utf8(&fact.value).ok())
 }
 
 #[test]
