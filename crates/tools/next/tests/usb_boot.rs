@@ -402,11 +402,18 @@ fn sent_lines(case: &Case) -> Vec<String> {
         .collect()
 }
 
-/// The partition's files as the job must serve them: each path with the SHA-256 of its bytes.
+/// The files the job must serve: each path with the SHA-256 of the bytes served. A bay file is
+/// served at its stored length, which is the content the manifest hashes, not its padded size.
 fn expected_served(files: &[(String, Vec<u8>)]) -> std::collections::BTreeMap<String, String> {
     let mut map: std::collections::BTreeMap<String, String> = files
         .iter()
-        .map(|(path, bytes)| (path.clone(), sha(bytes)))
+        .map(|(path, bytes)| {
+            let stored = boot_contents()
+                .into_iter()
+                .find(|(role, _)| path.ends_with(role.as_str()) && path.contains("/bay0/"))
+                .map_or(bytes.clone(), |(_, content)| content);
+            (path.clone(), sha(&stored))
+        })
         .collect();
     map.insert("bootcode5.bin".into(), sha(SECOND_STAGE));
     map
@@ -532,6 +539,38 @@ async fn matching_files_are_uploaded_with_exact_paths_and_hashes_then_the_job_is
             .iter()
             .any(|r| r.method == "GET" && r.path.starts_with("/v1/jobs/job-1"))
     );
+}
+
+#[tokio::test]
+async fn a_mixed_case_real_name_is_uploaded_as_it_is_and_matched_by_the_job() {
+    let boot = boot_contents();
+    let mut files = partition_files("slot-a", &boot, &record_hashes(&boot), vec![]);
+    for (name, _) in files.iter_mut() {
+        if name == "slots/bay0/kernel8.img" {
+            *name = "slots/bay0/Kernel8.img".into();
+        }
+    }
+    let case = case(&SIGN_SEED, files);
+    let (code, out) = usb_boot(&case, &[]).await;
+    assert_eq!(code, 0, "{out}");
+    let requests = sent(&case);
+    assert!(
+        requests
+            .iter()
+            .any(|r| r.method == "PUT" && r.path == "/v1/boot-only/files/slots/bay0/Kernel8.img"),
+        "{:?}",
+        sent_lines(&case)
+    );
+    let post = requests
+        .iter()
+        .find(|r| r.method == "POST")
+        .expect("a POST");
+    let body: serde_json::Value = serde_json::from_slice(&post.body).expect("json");
+    assert_eq!(
+        body["files"]["slots/bay0/Kernel8.img"],
+        sha(b"kernel bytes")
+    );
+    assert!(body["files"].get("slots/bay0/kernel8.img").is_none());
 }
 
 #[tokio::test]

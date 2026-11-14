@@ -90,6 +90,12 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
     let tree = fat::read_tree(image).map_err(|error| vec![format!("{error}: nothing was sent")])?;
 
     let mut refusals = Vec::new();
+    for group in fat::collisions(&tree) {
+        refusals.push(format!(
+            "{} collide ignoring case on the boot partition (the firmware's requests would match both): nothing was sent",
+            group.join(" and ")
+        ));
+    }
     let listed: BTreeSet<&str> = manifest.boot.files.keys().map(String::as_str).collect();
     let stored: BTreeSet<&str> = fat::BAY_PATHS.into_iter().collect();
     if listed != stored {
@@ -98,31 +104,36 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
         ));
     }
 
+    // The bay set that holds the slot, and its record.
     let bay = (0..BAY_SETS).find_map(|set| {
-        let info = fat::parse_bayinfo(tree.get(&format!("slots/bay{set}/bayinfo.rec"))?)?;
+        let (_, record) = fat::find(&tree, &format!("slots/bay{set}/bayinfo.rec"))?;
+        let info = fat::parse_bayinfo(record)?;
         (info.slot == manifest.id).then_some((set, info))
     });
-    let mut bay_set = None;
+    // What each served file's bytes are: the tree's bytes, except a bay file, which is served at
+    // its stored length (the bytes the manifest hashes), never padded to the bay's size.
+    let mut served_bytes: BTreeMap<String, Vec<u8>> = tree.clone();
+    let mut bay_set = 0;
     match bay {
         None => refusals.push(format!(
             "no bay set of the boot partition holds slot {:?} (a committed bayinfo.rec names it): nothing was sent",
             manifest.id
         )),
         Some((set, info)) => {
-            bay_set = Some(set);
+            bay_set = set;
             for (path, bundle_sha) in &manifest.boot.files {
                 let Some(index) = fat::BAY_PATHS.iter().position(|p| p == path) else {
                     continue;
                 };
                 let (len, record_hash) = info.files[index];
-                let key = format!("slots/bay{set}/{path}");
-                let Some(bytes) = tree.get(&key) else {
+                let wanted = format!("slots/bay{set}/{path}");
+                let Some((real, bytes)) = fat::find(&tree, &wanted) else {
                     refusals.push(format!(
                         "{path} is missing from bay{set} of the boot partition (bundle SHA-256 {bundle_sha}): nothing was sent"
                     ));
                     continue;
                 };
-                let Some(stored_bytes) = bytes.get(..usize::try_from(len).unwrap_or(usize::MAX))
+                let Some(stored_bytes) = usize::try_from(len).ok().and_then(|n| bytes.get(..n))
                 else {
                     refusals.push(format!(
                         "{path} in bay{set} is shorter than its record's {len} bytes: nothing was sent"
@@ -140,6 +151,7 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
                         "{path}: bundle SHA-256 {bundle_sha}, boot partition SHA-256 {actual}: refused, nothing was sent"
                     ));
                 }
+                served_bytes.insert(real.to_string(), stored_bytes.to_vec());
             }
         }
     }
@@ -170,20 +182,22 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
             None
         }
     };
-    if tree.contains_key(SECOND_STAGE) {
+    if fat::find(&tree, SECOND_STAGE).is_some() {
         refusals.push(format!(
-            "the boot partition already holds {SECOND_STAGE}: nothing was sent"
+            "the boot partition already holds {SECOND_STAGE} (ignoring case): nothing was sent"
         ));
     }
 
     if !refusals.is_empty() {
         return Err(refusals);
     }
-    let bay_set = bay_set.unwrap_or(0);
-    let mut files: Vec<Served> = tree
+    let mut files: Vec<Served> = served_bytes
         .into_iter()
         .map(|(path, bytes)| {
-            let role = if path.starts_with(&format!("slots/bay{bay_set}/")) {
+            let role = if path
+                .to_ascii_lowercase()
+                .starts_with(&format!("slots/bay{bay_set}/"))
+            {
                 format!("slot {} bay{bay_set} (boot partition)", manifest.id)
             } else {
                 "boot partition tree".to_string()
@@ -212,6 +226,26 @@ pub fn make_plan(opts: &UsbBootOptions) -> Result<Plan, Vec<String>> {
     })
 }
 
+/// Re-hashes every served file's exact bytes against the hash it was planned with. A changed
+/// byte between the check and the upload is a refusal, so what is served is what was verified.
+///
+/// # Errors
+///
+/// One line per file whose bytes no longer hash to its planned SHA-256.
+pub fn verify_served(files: &[Served]) -> Result<(), Vec<String>> {
+    let bad: Vec<String> = files
+        .iter()
+        .filter(|file| sha256_hex(&file.bytes) != file.sha256)
+        .map(|file| {
+            format!(
+                "{} changed after it was verified (planned SHA-256 {}): nothing was sent",
+                file.path, file.sha256
+            )
+        })
+        .collect();
+    if bad.is_empty() { Ok(()) } else { Err(bad) }
+}
+
 /// The ramoops refusals: `config.txt`, or a file it includes, must carry the ramoops line, and
 /// the overlay must be in the tree. Nothing is added to fix them.
 fn ramoops_refusals(tree: &fat::Tree) -> Vec<String> {
@@ -224,7 +258,7 @@ fn ramoops_refusals(tree: &fat::Tree) -> Vec<String> {
             "config.txt (or a file it includes) has no {RAMOOPS_LINE:?}: link 1 can't be judged without the board's pstore: nothing was sent"
         ));
     }
-    if !tree.contains_key(RAMOOPS_OVERLAY) {
+    if fat::find(tree, RAMOOPS_OVERLAY).is_none() {
         refusals.push(format!(
             "{RAMOOPS_OVERLAY} is not in the boot partition: link 1 can't be judged without the board's pstore: nothing was sent"
         ));
@@ -239,10 +273,10 @@ fn visit_config(
     seen: &mut BTreeSet<String>,
     depth: usize,
 ) {
-    if depth > 8 || !seen.insert(name.to_string()) {
+    if depth > 8 || !seen.insert(name.to_ascii_lowercase()) {
         return;
     }
-    let Some(bytes) = tree.get(name) else {
+    let Some((_, bytes)) = fat::find(tree, name) else {
         return;
     };
     for line in String::from_utf8_lossy(bytes).lines() {
@@ -354,6 +388,13 @@ pub async fn run<W: Write>(opts: &UsbBootOptions, env: &Env, out: &mut W) -> i32
         }
     };
     write_plan(&plan, opts, out);
+    if let Err(problems) = verify_served(&plan.files) {
+        let _ = writeln!(out, "usb-boot REFUSED: nothing was sent to the agent");
+        for problem in &problems {
+            let _ = writeln!(out, "  - {problem}");
+        }
+        return 1;
+    }
     if opts.dry_run {
         let _ = writeln!(out, "dry run: nothing was sent");
         return 0;
@@ -592,5 +633,42 @@ mod tests {
         tree.remove(RAMOOPS_OVERLAY);
         tree.insert("default.txt".into(), b"# nothing\n".to_vec());
         assert_eq!(ramoops_refusals(&tree).len(), 2);
+    }
+
+    #[test]
+    fn a_byte_changed_between_verify_and_serve_is_refused() {
+        let bytes = b"kernel bytes".to_vec();
+        let file = Served {
+            path: "slots/bay0/kernel8.img".into(),
+            sha256: sha256_hex(&bytes),
+            bytes: bytes.clone(),
+            role: "test".into(),
+        };
+        assert!(verify_served(std::slice::from_ref(&file)).is_ok());
+        let mut changed = file.clone();
+        changed.bytes[0] ^= 1;
+        let problems = verify_served(&[changed]).expect_err("refused");
+        assert_eq!(problems.len(), 1);
+        assert!(problems[0].contains("slots/bay0/kernel8.img changed after it was verified"));
+    }
+
+    #[test]
+    fn names_that_collide_ignoring_case_are_found() {
+        let mut tree = fat::Tree::new();
+        tree.insert("Kernel8.img".into(), vec![1]);
+        tree.insert("kernel8.img".into(), vec![2]);
+        tree.insert("config.txt".into(), vec![3]);
+        let groups = fat::collisions(&tree);
+        assert_eq!(
+            groups,
+            vec![vec!["Kernel8.img".to_string(), "kernel8.img".to_string()]]
+        );
+        let mut mixed = fat::Tree::new();
+        mixed.insert("Kernel8.img".into(), vec![1]);
+        assert!(fat::collisions(&mixed).is_empty());
+        assert_eq!(
+            fat::find(&mixed, "kernel8.IMG").map(|(name, _)| name),
+            Some("Kernel8.img")
+        );
     }
 }

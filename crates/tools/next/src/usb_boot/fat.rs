@@ -8,8 +8,33 @@ use std::io::{Cursor, Read};
 
 use fatfs::{Dir, FileSystem, FsOptions, ReadWriteSeek};
 
-/// The boot partition's files: lower-cased path (`/` between directories) to the file's bytes.
+/// The boot partition's files: each path (`/` between directories) with the name as the volume
+/// holds it, to the file's bytes. Names are never rewritten; lookups are case-insensitive.
 pub type Tree = BTreeMap<String, Vec<u8>>;
+
+/// The entry whose path matches `path` ignoring ASCII case: the path as the volume holds it.
+#[must_use]
+pub fn find<'a>(tree: &'a Tree, path: &str) -> Option<(&'a str, &'a [u8])> {
+    tree.iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case(path))
+        .map(|(key, bytes)| (key.as_str(), bytes.as_slice()))
+}
+
+/// Paths of the tree that collide with another path ignoring ASCII case: each group named.
+#[must_use]
+pub fn collisions(tree: &Tree) -> Vec<Vec<String>> {
+    let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for key in tree.keys() {
+        groups
+            .entry(key.to_ascii_lowercase())
+            .or_default()
+            .push(key.clone());
+    }
+    groups
+        .into_values()
+        .filter(|group| group.len() > 1)
+        .collect()
+}
 
 /// The bay record's kind byte (Lemnos `Kind::BAY_INFO`).
 const BAY_INFO_KIND: u8 = 6;
@@ -33,7 +58,7 @@ pub struct BayInfo {
     pub files: Vec<(u64, [u8; 32])>,
 }
 
-/// Reads the whole file tree of a FAT boot partition image.
+/// Reads the whole file tree of a FAT boot partition image, names as the volume holds them.
 ///
 /// # Errors
 ///
@@ -53,7 +78,7 @@ fn walk<IO: ReadWriteSeek>(dir: Dir<'_, IO>, prefix: &str, tree: &mut Tree) -> R
         if name == "." || name == ".." {
             continue;
         }
-        let path = format!("{prefix}{}", name.to_ascii_lowercase());
+        let path = format!("{prefix}{name}");
         if entry.is_dir() {
             walk(entry.to_dir(), &format!("{path}/"), tree)?;
         } else {
