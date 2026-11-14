@@ -95,6 +95,10 @@ ref = "b1cec0a90c795f65b82cee7098489e0bdf550b74"
 
 [kernel]
 source = "linux"
+# The starting configuration: arm64's own `defconfig` (v7.3.4 with the A733 series), which the fragments below then trim and
+# extend. Stated since PR B30: without it Buildroot stops with "No kernel defconfig name specified", and no product of
+# this family could build (Gaia found it building the bring-up products; our gate planned and never built).
+defconfig = "defconfig"
 fragments = ["assets/linux.fragment"]
 # The storage controller a slot boots from, built in (=y): the A733 SD and eMMC hosts (sunxi-mmc) (PR B26).
 storage_drivers = ["CONFIG_MMC_SUNXI"]
