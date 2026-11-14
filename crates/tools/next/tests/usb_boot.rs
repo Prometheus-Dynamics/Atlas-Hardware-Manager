@@ -541,6 +541,7 @@ async fn the_dry_run_lists_every_file_and_sends_nothing() {
     let want = expected_served(&files);
     let case = case(&SIGN_SEED, files);
     let (code, out) = usb_boot(&case, &["--dry-run"]).await;
+    eprintln!("{out}");
     assert_eq!(code, 0, "{out}");
     assert!(out.contains("usb-boot plan"), "{out}");
     assert!(out.contains("slot       slot-a"), "{out}");
