@@ -495,6 +495,8 @@ SLOT_CHAIN=(
   "*:BLK_DEV_DM" "*:DM_BUFIO" "*:DM_VERITY" "*:BLK_DEV_LOOP" "*:EROFS_FS" "*:EXT4_FS" "*:CRYPTO_SHA256"
   "*:MMC_BLOCK"
   "sun60i:MMC_SUNXI" "bcm2712:MMC_SDHCI_BRCMSTB"
+  # the Pi firmware mailbox slot-init uses for RPIBOOT (kernel contract version 2, PR B29)
+  "bcm2712:BRCM_CHAR_DRIVERS" "bcm2712:MAILBOX" "bcm2712:BCM2835_MBOX" "bcm2712:BCM_VCIO" "bcm2712:RASPBERRYPI_FIRMWARE"
   "rk35xx:MMC_DW_ROCKCHIP" "rk35xx:MMC_SDHCI_OF_DWCMSHC"
 )
 # A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe).
