@@ -29,3 +29,10 @@ CONFIG_ENV_IS_IN_MMC=y
 # partition); (3) the `test` command (boot.cmd uses it); (4) FAT write (the
 # boot partition is FAT). Gaia will give the CONFIG_ names after it builds one;
 # do not guess them here.
+# CONFIG_SPL_ROCKCHIP_BACK_TO_BROM (B31): the SPL checks the boot-mode register at its first instruction and returns to
+#   the BootROM's download mode when it holds BOOT_BROM_DOWNLOAD (0xEF08A53C; bootrom.c:46-59 and :72-73). That is the
+#   value a board's `reboot loader` writes (the reboot-mode node, boards/radxa-rock-4d/assets/dts). Without this line
+#   bootrom.c is not compiled: the RK3566/RK3576 defconfigs select neither TPL nor this option (only the RK3066, RK3188
+#   and RV1126 select it: arch/arm/mach-rockchip/Kconfig:50,87,551), so the register is never read by the SPL. Selects
+#   ROCKCHIP_BROM_HELPER and SPL_BOOTROM_SUPPORT. UNVERIFIED on a board.
+CONFIG_SPL_ROCKCHIP_BACK_TO_BROM=y

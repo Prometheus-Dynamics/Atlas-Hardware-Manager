@@ -7,13 +7,15 @@ BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_STABLE=y
 
 # Init: systemd, the RK35xx and A733 standard (decision 3). Systemd 254 or newer is required by
 # Lemnos and Orion units; Buildroot 2026.02.3 ships systemd 258.7 (checked in the ZERO 3E base).
-# No RuntimeWatchdogSec or ShutdownWatchdogSec: lemnosd (not on this bring-up) feeds the watchdog.
+# The watchdog is armed by systemd for the bring-up signs (components/bringup-alive, B31: RuntimeWatchdogSec 16 s,
+# RebootWatchdogSec 2 min). No ShutdownWatchdogSec. lemnosd is not on this bring-up.
 BR2_INIT_SYSTEMD=y
 BR2_PACKAGE_SYSTEMD=y
-# systemd-networkd: configures eth0 (DHCP). usb0 is the usb-gadget-network component's (udhcpd, PR B24).
+# systemd-networkd configures the Ethernet (components/bringup-network); usb0 is the usb-gadget-network component's (udhcpd, PR B24).
 BR2_PACKAGE_SYSTEMD_NETWORKD=y
-# Ethernet: eth0 by DHCP through networkd. Reason: the Gigabit port is how the board is reached.
-BR2_SYSTEM_DHCP="eth0"
+# Ethernet by DHCP through networkd is components/bringup-network (B31: matched by Type=ether, not the name eth0).
+# Buildroot's name-based eth0.network is off here (BR2_SYSTEM_DHCP is not set).
+# BR2_SYSTEM_DHCP is not set
 BR2_TARGET_GENERIC_HOSTNAME="cubie-a7s"
 # BusyBox: /bin/sh and the core utilities; systemd is the init.
 BR2_PACKAGE_BUSYBOX=y

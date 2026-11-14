@@ -14,7 +14,10 @@ cpu = "cortex-a76.cortex-a55"
 
 # The in-tree device tree (Linux v7.3.3 has rk3588s-rock-5c.dts; checked).
 [kernel]
-device_tree = "rockchip/rk3588s-rock-5c"
+# B31: the image's own dts (assets/dts) includes the in-tree one and adds the PMU reboot-mode node and the led-1 trigger
+# (rk3588s-rock-5c-loader.dts). The extlinux of the image names its dtb.
+device_tree = "rockchip/rk3588s-rock-5c-loader"
+device_tree_dir = "assets/dts"
 # Lists replace the family's: the family trim and fragment first, then the board's own (PR B16).
 fragments = ["../../families/rk35xx/assets/trim.fragment", "../../families/rk35xx/assets/linux.fragment", "assets/linux.fragment"]
 

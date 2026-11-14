@@ -1,0 +1,17 @@
+# DEV ONLY, zero-3e-bringup: which LED and which link the bring-up component's signs use (components/bringup-alive).
+# LED: the board's only LED: led-green (rk3566-radxa-zero-3.dtsi:29, included by rk3566-radxa-zero-3e.dts). It already beats from kernel boot (linux,default-trigger heartbeat, same node).
+# Link: the USB gadget interface usb0 at 10.55.0.1 (usb-gadget-network; the README's step 4). The board is reached over the gadget; eth0 is the second way in and does not light the state.
+# Both are read by /usr/libexec/board-alive-led; a missing file would drive nothing.
+version = 1
+name = "bringup-alive-settings"
+description = "DEV ONLY: this bring-up board's LED (led-green) and the link it is reached by (usb0) for the bring-up signs."
+
+[[install]]
+from = { file = "files/board-alive.leds" }
+to = "/etc/board-alive.leds"
+mode = "0644"
+
+[[install]]
+from = { file = "files/board-alive.links" }
+to = "/etc/board-alive.links"
+mode = "0644"

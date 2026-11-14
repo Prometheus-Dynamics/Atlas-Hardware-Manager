@@ -54,3 +54,14 @@ CONFIG_MMC_BLOCK=y
 CONFIG_MMC_SDHCI=y
 CONFIG_MMC_SDHCI_PLTFM=y
 CONFIG_MMC_SDHCI_OF_DWCMSHC=y
+# -- The bring-up signs (components/bringup-alive, B31). Each is already =y in the arm64 defconfig this family starts
+#    from (DW_WATCHDOG at defconfig:814, LEDS_TRIGGER_TIMER at :1331, LEDS_TRIGGER_HEARTBEAT at :1333); written here so
+#    the family states what its boards need and a defconfig change cannot drop one.
+# CONFIG_DW_WATCHDOG: the Synopsys watchdog every RK35xx SoC has (compatible snps,dw-wdt; the rk3566/rk3588/rk3576 nodes
+#   in rk356x-base.dtsi:1377, rk3588-base.dtsi:2724, rk3576.dtsi:2438 have no status, so they are enabled). systemd opens it
+#   (RuntimeWatchdogSec in components/bringup-alive). Built in: it is open before any module could load.
+CONFIG_DW_WATCHDOG=y
+# CONFIG_LEDS_TRIGGER_HEARTBEAT: the heartbeat pattern the bring-up LEDs beat with from boot (board-alive-led).
+CONFIG_LEDS_TRIGGER_HEARTBEAT=y
+# CONFIG_LEDS_TRIGGER_TIMER: the 1 s blink, the second state once the named link has an address (board-alive-led).
+CONFIG_LEDS_TRIGGER_TIMER=y
