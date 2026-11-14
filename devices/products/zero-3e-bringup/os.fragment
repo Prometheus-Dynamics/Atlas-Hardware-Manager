@@ -25,7 +25,6 @@ BR2_TARGET_GENERIC_GETTY_BAUDRATE_KEEP=y
 # Root is read-only, as in the base, so the bring-up proves the same root.
 # SSH host key (B13): on the data partition, not in /run. components/dev-bringup-hostkey mounts /data and
 # gives dropbear -r /data/dropbear/dropbear_ed25519_host_key, so the key survives a reflash and a slot change.
-#
 # usb0 (PR B24): the usb-gadget-network component serves DHCP on usb0 with BusyBox's udhcpd, its
 # one DHCP server. systemd-networkd's DHCPServer on usb0 (B11) is gone with dev-usb0-gadget. The
 # lease file is in /tmp (the root is read-only; B11's first boot had no udhcpd applet, see busybox.fragment).
@@ -33,3 +32,6 @@ BR2_TARGET_GENERIC_GETTY_BAUDRATE_KEEP=y
 # on usb0), ifconfig, killall, sha256sum and mountpoint. The fragment is beside this file.
 BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="@here@/busybox.fragment"
 
+
+# B31: Buildroot's name-based eth0.network is off (it matches Name=eth0; the GMAC is normally end0). The bring-up network is components/bringup-network (Type=ether, usb0 excluded). This line comes after the base fragment, so it wins.
+BR2_SYSTEM_DHCP=""

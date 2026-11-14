@@ -186,6 +186,177 @@ lemnos_board_rule_self_test() {
   return $rc
 }
 
+# The bring-up rule (PR B31). Every bring-up product (its name ends in -bringup) carries the watchdog and LED signs
+# (components/bringup-alive), its own LED and link settings (components/bringup-alive-settings, which install
+# /etc/board-alive.leds and /etc/board-alive.links), and a family whose kernel fragment builds in the watchdog driver
+# and both LED triggers the signs use. A fifth bring-up product cannot miss them. Prints one line per problem and
+# returns 1 when there is any. The watchdog symbol is named per family here: a new family is added by name.
+bringup_rule() {  # <devices dir>
+  local root=$1 p pdir pname sc board bdir fam frag sym dst s rc=0 out="" want_off dt dtd dtsf ext extf loads links l
+  for p in "$root"/products/*-bringup/product.toml; do
+    [[ -f $p ]] || continue
+    pdir=$(dirname "$p"); pname=$(basename "$pdir")
+    if ! grep -q '^bringup-alive = "[^"]*bringup-alive/component\.toml"$' "$p"; then
+      out+="product $pname: no bringup-alive component in [components] (the watchdog and LED signs)"$'\n'; rc=1
+    elif ! grep -q '^components = \[.*"bringup-alive"' "$p"; then
+      out+="product $pname: bringup-alive is named in [components] but no image lists it"$'\n'; rc=1
+    fi
+    sc=$pdir/components/bringup-alive-settings/component.toml
+    if ! grep -q '^bringup-alive-settings = ' "$p" || [[ ! -f $sc ]]; then
+      out+="product $pname: no bringup-alive-settings component (the LED and link the signs use)"$'\n'; rc=1
+    else
+      for dst in /etc/board-alive.leds /etc/board-alive.links; do
+        grep -q "^to = \"$dst\"" "$sc" || { out+="product $pname: bringup-alive-settings does not install $dst"$'\n'; rc=1; }
+      done
+    fi
+    board=$(grep -o '^board = "[^"]*"' "$p" | head -1 | cut -d'"' -f2)
+    bdir=$(dirname "$(realpath -m "$pdir/$board")")
+    fam=$(grep -o '^extends = "[^"]*"' "$bdir/board.toml" | head -1 | cut -d'"' -f2)
+    fam=$(dirname "$(realpath -m "$bdir/$fam")")
+    sym=
+    case $(basename "$fam") in
+      rk35xx) sym=CONFIG_DW_WATCHDOG ;;
+      sun60i) sym=CONFIG_SUNXI_WATCHDOG ;;
+      *) out+="product $pname: family $(basename "$fam") has no watchdog symbol in the bring-up rule"$'\n'; rc=1 ;;
+    esac
+    frag=$fam/assets/linux.fragment
+    for s in ${sym:+$sym} CONFIG_LEDS_TRIGGER_HEARTBEAT CONFIG_LEDS_TRIGGER_TIMER; do
+      grep -qx "$s=y" "$frag" 2>/dev/null || { out+="product $pname: $(basename "$fam")'s fragment does not build in $s=y (the bring-up signs need it)"$'\n'; rc=1; }
+    done
+    # The Ethernet (B31): the bring-up's network is matched by type, Buildroot's name-based eth0.network is off, and
+    # every link the LED signs name is one the image creates: `ether` (bringup-network) or usb0 (usb-gadget-network).
+    if ! grep -q '^bringup-network = "[^"]*bringup-network/component\.toml"$' "$p"; then
+      out+="product $pname: no bringup-network component in [components] (the Ethernet by type)"$'\n'; rc=1
+    fi
+    # BR2_SYSTEM_DHCP is a STRING option in Buildroot (system/Config.in, default ""): it has no "is not set" form.
+    # The line that turns the base fragment's value off is the empty string; Gaia holds every fragment line as
+    # written, and "# BR2_SYSTEM_DHCP is not set" becomes BR2_SYSTEM_DHCP="" and fails its build (PR B35).
+    if grep -q '^# BR2_SYSTEM_DHCP is not set$' "$pdir/os.fragment" 2>/dev/null; then
+      out+="product $pname: its os.fragment says '# BR2_SYSTEM_DHCP is not set'; it is a string option, write BR2_SYSTEM_DHCP=\"\""$'\n'; rc=1
+    elif ! grep -q '^BR2_SYSTEM_DHCP=""$' "$pdir/os.fragment" 2>/dev/null || grep -q '^BR2_SYSTEM_DHCP="..*"$' "$pdir/os.fragment" 2>/dev/null; then
+      out+="product $pname: its os.fragment does not unset BR2_SYSTEM_DHCP (Buildroot's eth0.network matches Name=eth0, which the GMAC does not have)"$'\n'; rc=1
+    fi
+    # The loader (B31): an RK35xx bring-up board's device tree carries the reboot-mode node at the offset that
+    # places U-Boot's boot-mode register inside the syscon it sits in, with the loader value; its SPL returns to the
+    # BootROM for that value (families/rk35xx/assets/u-boot.fragment); and the image's extlinux loads that dtb.
+    # The A733 is excused by name (no equivalent is established: docs/prs/B31.md, point 2).
+    case $(basename "$fam") in
+      rk35xx)
+        case $(basename "$bdir") in
+          radxa-zero-3e) want_off=0x200 ;;
+          radxa-rock-5c) want_off=0x80 ;;
+          radxa-rock-4d) want_off=0x40 ;;
+          *) want_off=; out+="product $pname: board $(basename "$bdir") has no loader offset in the bring-up rule (add it with its U-Boot register)"$'\n'; rc=1 ;;
+        esac
+        dt=$(grep -o '^device_tree = "[^"]*"' "$bdir/board.toml" | head -1 | cut -d'"' -f2)
+        dtd=$(grep -o '^device_tree_dir = "[^"]*"' "$bdir/board.toml" | head -1 | cut -d'"' -f2)
+        dtsf=$bdir/${dtd:-}/$dt.dts
+        if [[ -n ${want_off:-} ]]; then
+          if [[ ! -f $dtsf ]] || ! grep -q "^\s*reboot-mode {" "$dtsf" || ! grep -q "mode-loader = <0xef08a53c>;" "$dtsf" || ! grep -q "offset = <$want_off>;" "$dtsf"; then
+            out+="product $pname: its board's dts ($dtsf) lacks the reboot-mode node with mode-loader = <0xef08a53c> and offset = <$want_off>"$'\n'; rc=1
+          fi
+        fi
+        grep -qx 'CONFIG_SPL_ROCKCHIP_BACK_TO_BROM=y' "$fam/assets/u-boot.fragment" 2>/dev/null || { out+="product $pname: $(basename "$fam")'s U-Boot fragment does not build in CONFIG_SPL_ROCKCHIP_BACK_TO_BROM=y (the SPL must return to the BootROM for the loader value)"$'\n'; rc=1; }
+        ext=$(grep -o '^radxa-[a-z0-9-]*-extlinux = "[^"]*"' "$p" | head -1 | cut -d'"' -f2)
+        if [[ -n $ext ]]; then
+          extf=$(dirname "$(realpath -m "$pdir/$ext")")/extlinux.conf
+          loads=$(grep -o 'devicetree /boot/[^ ]*' "$extf" 2>/dev/null | head -1 | sed 's#devicetree /boot/##')
+          if [[ $loads != "${dt##*/}.dtb" ]]; then
+            out+="product $pname: its extlinux loads /boot/${loads:-nothing}, but its board builds ${dt##*/}.dtb"$'\n'; rc=1
+          fi
+        fi
+        ;;
+      sun60i)
+        out+="NOTE product $pname: its loader point is EXCUSED by name: the A733 chain does not build: three patch series are named and not applied (families/sun60i/family.toml). No reboot-to-loader equivalent is established either (UNVERIFIED; docs/prs/B31.md, point 2)"$'\n'
+        ;;
+    esac
+    links=$pdir/components/bringup-alive-settings/files/board-alive.links
+    if [[ -f $links ]]; then
+      while IFS= read -r l; do
+        case $l in
+          ether) grep -q '^bringup-network = ' "$p" || { out+="product $pname: its LED link is ether, but it has no bringup-network component"$'\n'; rc=1; } ;;
+          usb0) grep -q '^usb-gadget-network = ' "$p" || { out+="product $pname: its LED link is usb0, but it has no usb-gadget-network component (the one that creates usb0)"$'\n'; rc=1; } ;;
+          *) out+="product $pname: its LED link '$l' is an interface the image does not create (only ether or usb0)"$'\n'; rc=1 ;;
+        esac
+      done < <(grep -v '^[[:space:]]*\(#\|$\)' "$links")
+    fi
+  done
+  net=$root/components/bringup-network/files/10-bringup-ethernet.network
+  if compgen -G "$root/products/*-bringup/product.toml" >/dev/null && { ! grep -qx 'Type=ether' "$net" 2>/dev/null || grep -v '^#' "$net" 2>/dev/null | grep -q 'Name=eth0'; }; then
+    out+="components/bringup-network: its file must match Type=ether, and never a legacy name such as Name=eth0"$'\n'; rc=1
+  fi
+  printf '%s' "$out"
+  return $rc
+}
+
+# Proves the bring-up rule passes the real tree, and refuses (on a scratch copy of devices/) a bring-up product
+# with no watchdog component, one whose settings do not install the LED file, and a family missing a trigger.
+bringup_rule_self_test() {
+  local tmp rc=0 out
+  tmp=$(mktemp -d)
+  cp -a "$repo/devices" "$tmp/devices"
+  if ! out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: the real tree no longer passes the bring-up rule: $out" >&2; rc=1
+  fi
+  sed -i '/^bringup-alive = /d' "$tmp/devices/products/zero-3e-bringup/product.toml"
+  if out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a bring-up product with no watchdog component was not refused" >&2; rc=1
+  elif [[ $out != *"product zero-3e-bringup: no bringup-alive component"* ]]; then
+    echo "check-devices: self-test: the refusal does not name the product: $out" >&2; rc=1
+  fi
+  cp -a "$repo/devices/products/zero-3e-bringup/product.toml" "$tmp/devices/products/zero-3e-bringup/product.toml"
+  sed -i '/^to = "\/etc\/board-alive.leds"$/d' "$tmp/devices/products/rock-5c-bringup/components/bringup-alive-settings/component.toml"
+  if out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: settings that do not install the LED file were not refused" >&2; rc=1
+  elif [[ $out != *"product rock-5c-bringup: bringup-alive-settings does not install /etc/board-alive.leds"* ]]; then
+    echo "check-devices: self-test: the settings refusal does not name the file: $out" >&2; rc=1
+  fi
+  cp -a "$repo/devices/products/rock-5c-bringup/components/bringup-alive-settings/component.toml" "$tmp/devices/products/rock-5c-bringup/components/bringup-alive-settings/component.toml"
+  sed -i '/^CONFIG_LEDS_TRIGGER_TIMER=y$/d' "$tmp/devices/families/rk35xx/assets/linux.fragment"
+  if out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a family without the timer trigger was not refused" >&2; rc=1
+  elif [[ $out != *"rk35xx's fragment does not build in CONFIG_LEDS_TRIGGER_TIMER=y"* ]]; then
+    echo "check-devices: self-test: the trigger refusal does not name the symbol: $out" >&2; rc=1
+  fi
+  cp -a "$repo/devices/components/bringup-network/files/10-bringup-ethernet.network" "$tmp/devices/components/bringup-network/files/10-bringup-ethernet.network"
+  echo eth0 > "$tmp/devices/products/rock-5c-bringup/components/bringup-alive-settings/files/board-alive.links"
+  if out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: an LED link named eth0 (not created by the image) was not refused" >&2; rc=1
+  elif [[ $out != *"product rock-5c-bringup: its LED link 'eth0' is an interface the image does not create"* ]]; then
+    echo "check-devices: self-test: the link refusal does not name the product and link: $out" >&2; rc=1
+  fi
+  echo ether > "$tmp/devices/products/rock-5c-bringup/components/bringup-alive-settings/files/board-alive.links"
+  sed -i '/^BR2_SYSTEM_DHCP=""$/d' "$tmp/devices/products/zero-3e-bringup/os.fragment"
+  if out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a bring-up product that leaves BR2_SYSTEM_DHCP on was not refused" >&2; rc=1
+  elif [[ $out != *"product zero-3e-bringup: its os.fragment does not unset BR2_SYSTEM_DHCP"* ]]; then
+    echo "check-devices: self-test: the DHCP refusal does not name the product: $out" >&2; rc=1
+  fi
+  cp -a "$repo/devices/products/zero-3e-bringup/os.fragment" "$tmp/devices/products/zero-3e-bringup/os.fragment"
+  sed -i 's/^Type=ether$/Name=eth0/' "$tmp/devices/components/bringup-network/files/10-bringup-ethernet.network"
+  if out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a bring-up network file matching eth0 by name was not refused" >&2; rc=1
+  elif [[ $out != *"bringup-network: its file must match Type=ether"* ]]; then
+    echo "check-devices: self-test: the network-file refusal does not name the file: $out" >&2; rc=1
+  fi
+  sed -i 's/offset = <0x40>;/offset = <0x44>;/' "$tmp/devices/boards/radxa-rock-4d/assets/dts/rockchip/rk3576-rock-4d-loader.dts"
+  if out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: a reboot-mode node at the wrong offset was not refused" >&2; rc=1
+  elif [[ $out != *"product rock-4d-bringup: its board's dts"* ]]; then
+    echo "check-devices: self-test: the reboot-mode refusal does not name the product: $out" >&2; rc=1
+  fi
+  cp -a "$repo/devices/boards/radxa-rock-4d/assets/dts/rockchip/rk3576-rock-4d-loader.dts" "$tmp/devices/boards/radxa-rock-4d/assets/dts/rockchip/rk3576-rock-4d-loader.dts"
+  sed -i 's#devicetree /boot/rk3588s-rock-5c-loader.dtb#devicetree /boot/rk3588s-rock-5c.dtb#' "$tmp/devices/components/radxa-rock-5c-extlinux/extlinux.conf"
+  if out=$(bringup_rule "$tmp/devices"); then
+    echo "check-devices: self-test: an extlinux that loads the wrong dtb was not refused" >&2; rc=1
+  elif [[ $out != *"product rock-5c-bringup: its extlinux loads /boot/rk3588s-rock-5c.dtb"* ]]; then
+    echo "check-devices: self-test: the extlinux refusal does not name the dtb: $out" >&2; rc=1
+  fi
+  rm -rf "$tmp"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the bring-up rule passes the real tree and refuses a bring-up product with no watchdog component, settings without the LED file, a family without a trigger, a LED link the image does not create, a product that leaves BR2_SYSTEM_DHCP on, or a network file matched by a legacy name, a reboot-mode node at the wrong offset, or an extlinux that loads the wrong dtb"
+  return $rc
+}
+
 fixtures=$repo/devices/tests/fixtures
 
 if [[ $mode == self-test ]]; then
@@ -196,6 +367,7 @@ if [[ $mode == self-test ]]; then
   done
   lemnos_rule_self_test || status=1
   lemnos_board_rule_self_test || status=1
+  bringup_rule_self_test || status=1
   echo "== broken fixture: must fail"
   out=$(mktemp)
   rc=0
@@ -477,6 +649,15 @@ done
 
 # The slot root chain is enforced on every run (see slot_chain_check above).
 slot_chain_check "$root" || fail=1
+# The bring-up rule (PR B31): every bring-up product carries the watchdog and LED signs (tree-wide).
+bringup_msg=$(bringup_rule "$root") || true
+while IFS= read -r line; do
+  case $line in
+    NOTE\ *) echo "check-devices: $line" ;;
+    "") ;;
+    *) bad "$line" ;;
+  esac
+done <<<"$bringup_msg"
 
 if [ -n "$unbuilt" ]; then
   echo "check-devices: NOTE in no product yet, validated but never planned:$unbuilt"
@@ -655,6 +836,7 @@ if [[ $root_given -eq 0 ]]; then
   lemnos_rule_self_test || die "self-check: the Lemnos one-rev rule no longer refuses two revs in one product"
   lemnos_board_rule_self_test || die "self-check: the Lemnos board file rule no longer refuses a lemnosd product without a board file"
   slot_chain_self_test || die "self-check: the slot root chain check no longer refuses a module or a missing =y"
+  bringup_rule_self_test || die "self-check: the bring-up rule no longer refuses a bring-up product without its signs"
   # The version gate: a binary that prints another commit, or none, is refused, and the refusal names the pin.
   fake=$(mktemp -d)
   vout=$(mktemp)
