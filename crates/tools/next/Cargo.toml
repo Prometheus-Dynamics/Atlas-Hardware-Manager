@@ -11,6 +11,7 @@ name = "atlas-next"
 path = "src/main.rs"
 
 [dependencies]
+atlas-actions = { path = "../../board/actions" }
 atlas-board-slots = { path = "../../drivers/board-slots" }
 atlas-bundle = { path = "../../core/bundle" }
 atlas-jobs = { path = "../../core/jobs" }
