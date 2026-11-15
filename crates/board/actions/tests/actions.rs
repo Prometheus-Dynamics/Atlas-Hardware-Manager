@@ -17,7 +17,7 @@ use atlas_actions::{
     Reported, Route,
 };
 use atlas_jobs::{Backoff, DeviceHolds, Events, JobId, JobStatus, JobTiming};
-use atlas_session::{Clock, Handle, Lease, Pause, Presence, Sessions};
+use atlas_session::{Clock, FailureKind, Handle, Lease, Pause, Presence, Sessions};
 use atlas_sim_node::actions::DRY_RUN;
 use atlas_sim_node::names::SELF_TEST;
 use atlas_sim_node::script::Behaviour;
@@ -30,6 +30,9 @@ use tokio::time;
 const FAMILY: &str = "test-family";
 const SERIAL: &str = "0123abcd";
 /// The reason the simulated node gives for a run its service restart ended.
+/// The bridge's words for a run whose caller's lease ran out (Lemnos bded77a0 calls.rs:318).
+const LEASE_RAN_OUT: &str = "its lease ran out; the job ended with its connection";
+
 const RESTARTED: &str = "-4: the service restarted before this finished";
 
 /// A pause that does not wait: the failure rule is tested on the session's side. It only yields,
@@ -637,9 +640,43 @@ async fn a_board_that_drops_the_hold_on_a_long_action_is_reported_as_a_lapse_the
 
     // The board's lease runs out: it drops the caller's run, and the run ends with its words.
     node.lease_advance(61);
-    wait_status(&jobs, id, "the run the board dropped", |status| {
-        matches!(status, JobStatus::Failed { reason } if reason.contains("the lease ran out"))
-    })
+    wait_status(
+        &jobs,
+        id,
+        "the run the board dropped",
+        |status| matches!(status, JobStatus::Failed { reason } if reason == LEASE_RAN_OUT),
+    )
     .await;
     assert!(node.lease_drops() >= 1, "the board dropped the caller");
+}
+
+#[tokio::test]
+async fn a_caller_silent_past_its_lease_has_its_run_end_failed_with_the_boards_words() {
+    let rig = Rig::start("lease-ran-out", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+
+    // The run stalls on the board, and the caller asks for nothing more: its lease runs out.
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let call = rig
+        .board
+        .start(self_test, &[])
+        .await
+        .expect("the run is started");
+    until("the run to stall", || rig.node.stalled_runs() == 1).await;
+    let board = rig.board.clone();
+    let following = tokio::spawn(async move { board.follow(call, |_| {}).await });
+
+    // The board drops the silent caller's run; the run ends Failed with the bridge's words.
+    rig.node.lease_advance(61);
+    let ended = following.await.expect("the follow finishes");
+    assert_eq!(rig.node.lease_drops(), 1, "the board dropped the caller");
+    let error = ended.expect_err("a run whose lease ran out does not succeed");
+    assert!(matches!(error, ActionError::Failed(_)), "{error:?}");
+    assert_eq!(error.board_reason(), Some(LEASE_RAN_OUT));
+    let failure = error.failure().expect("the failure is typed");
+    assert_eq!(failure.kind(), FailureKind::Other, "{failure:?}");
+    assert_eq!(failure.code(), None, "no code is sent for it yet");
+    assert!(!failure.is_denied(), "not Denied: {failure:?}");
+    assert_eq!(failure.text(), LEASE_RAN_OUT);
 }
