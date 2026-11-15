@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::io::{Cursor, Read};
 
 use fatfs::{Dir, FileSystem, FsOptions, ReadWriteSeek};
+use lemnos_slot_store::bays::ROLES;
 
 /// The boot partition's files: each path (`/` between directories) with the name as the volume
 /// holds it, to the file's bytes. Names are never rewritten; lookups are case-insensitive.
@@ -41,13 +42,13 @@ const BAY_INFO_KIND: u8 = 6;
 const SECTOR: usize = 512;
 const CRC_AT: usize = 508;
 const HEADER: usize = 18;
-/// The five payload roles of a bay set, in Lemnos's order.
+/// The five payload roles of a bay set, in Lemnos's order: `lemnos_slot_store::bays::ROLES`, the one list.
 pub const BAY_PATHS: [&str; 5] = [
-    "kernel8.img",
-    "initramfs.cpio",
-    "board.dtb",
-    "cmdline.txt",
-    "overlays/lemnos-board.dtbo",
+    ROLES[0].path,
+    ROLES[1].path,
+    ROLES[2].path,
+    ROLES[3].path,
+    ROLES[4].path,
 ];
 
 /// A bay set's committed record: the slot in it and each payload's stored length and SHA-256.

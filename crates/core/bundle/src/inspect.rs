@@ -5,8 +5,9 @@
 //! trusted keys before any of its fields is believed (so a schema 2 manifest
 //! is refused by name only when it is signed by a trusted key); then it is
 //! parsed as schema 3, and the rootfs and each boot file are hashed against
-//! the manifest. A member the manifest does not list, a link, a directory, or
-//! a missing file is refused.
+//! the manifest. A member the manifest does not list, a link, a directory other
+//! than `boot/`, or a missing file is refused. Lemnos's writer adds one directory
+//! member, `boot/`, after `slot.sig`; the reader takes it once and does not need it.
 
 use std::collections::BTreeSet;
 use std::io::Read;
@@ -16,7 +17,7 @@ use sha2::{Digest, Sha256};
 
 use crate::BundleError;
 use crate::manifest::{SlotManifest, validate_boot_path};
-use crate::sign::{SIG_LEN, verify_slot};
+use crate::sign::{RECORD_LEN, verify_slot};
 use crate::write::{BOOT_DIR, CHUNK, ROOTFS, SLOT_JSON, SLOT_SIG, read_chunk, to_hex};
 
 /// `slot.json` is a small document: a larger member is refused before it is read.
@@ -62,6 +63,7 @@ pub fn inspect_bundle<R: Read>(reader: R, keys: &[PublicKey]) -> Result<Inspecte
     let mut signer = 0;
     let mut rootfs_done = false;
     let mut boot_done = BTreeSet::new();
+    let mut boot_dir_seen = false;
     let mut buf = vec![0u8; CHUNK];
 
     for (index, entry) in entries.enumerate() {
@@ -71,13 +73,27 @@ pub fn inspect_bundle<R: Read>(reader: R, keys: &[PublicKey]) -> Result<Inspecte
             .map_err(|error| malformed(format!("bad member name: {error}")))?
             .to_string_lossy()
             .into_owned();
+        let size = entry.size();
+        if entry.header().entry_type() == tar::EntryType::Directory {
+            if index < 2
+                || name.trim_end_matches('/') != BOOT_DIR.trim_end_matches('/')
+                || size != 0
+            {
+                return Err(malformed(format!(
+                    "{name} is a directory, not part of a slot bundle"
+                )));
+            }
+            if std::mem::replace(&mut boot_dir_seen, true) {
+                return Err(malformed("boot/ is listed twice".into()));
+            }
+            continue;
+        }
         if !matches!(
             entry.header().entry_type(),
             tar::EntryType::Regular | tar::EntryType::Continuous
         ) {
             return Err(malformed(format!("{name} is not a regular file")));
         }
-        let size = entry.size();
 
         match index {
             0 => {
@@ -94,9 +110,9 @@ pub fn inspect_bundle<R: Read>(reader: R, keys: &[PublicKey]) -> Result<Inspecte
                     return Err(malformed("slot.sig must be the second member".into()));
                 }
                 let mut signature = Vec::new();
-                if size != SIG_LEN as u64 {
+                if size != RECORD_LEN as u64 {
                     return Err(malformed(format!(
-                        "slot.sig is {size} bytes, not {SIG_LEN}"
+                        "slot.sig is {size} bytes, not {RECORD_LEN}"
                     )));
                 }
                 read_exact_len(&mut entry, &mut signature, size, SLOT_SIG)?;

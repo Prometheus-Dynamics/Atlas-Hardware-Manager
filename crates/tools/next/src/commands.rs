@@ -334,7 +334,7 @@ async fn board<W: Write>(
             r.field("removed", id.clone());
             Ok(())
         }
-        Verb::Install(path) => install(r, state, &link, &info, path).await,
+        Verb::Install(path) => install(r, state, &link, &info, path).await.map(drop),
         Verb::Trial(id) => trial(r, env, state, &link, &slots, &pins, address, id, key).await,
         Verb::Fingerprint | Verb::Pin | Verb::Repin | Verb::Enrol => {
             Err(Refusal::new(2, "not a board command"))
@@ -371,7 +371,7 @@ async fn list<W: Write>(r: &mut Report<'_, W>, slots: &BoardSlots) -> Result<(),
 
 /// The list as lines: a header, a trial line when one is pending, then one line per slot with
 /// its state words.
-fn list_lines(list: &SlotList) -> Vec<String> {
+pub(crate) fn list_lines(list: &SlotList) -> Vec<String> {
     let mut lines = vec![format!(
         "running {}, default {}, keep {}",
         list.running, list.default, list.keep
@@ -410,13 +410,15 @@ fn list_lines(list: &SlotList) -> Vec<String> {
     lines
 }
 
-async fn install<W: Write>(
+/// Installs the bundle at `path` on the board and returns the id it was installed as. Shared with
+/// `cycle`, which needs the id.
+pub(crate) async fn install<W: Write>(
     r: &mut Report<'_, W>,
     state: &Path,
     link: &Link,
     info: &BoardInfo,
     path: &Path,
-) -> Result<(), Refusal> {
+) -> Result<String, Refusal> {
     let Some(family) = info.family.clone() else {
         return Err(Refusal::new(
             1,
@@ -475,8 +477,8 @@ async fn install<W: Write>(
         match stage {
             Some(Stage::Done { slot }) => {
                 r.say(format!("installed as {slot}"));
-                r.field("slot", slot);
-                return Ok(());
+                r.field("slot", slot.clone());
+                return Ok(slot);
             }
             Some(Stage::Failed { reason }) => return Err(Refusal::new(1, reason)),
             Some(Stage::Cancelled) => return Err(Refusal::new(1, "the install was cancelled")),
@@ -542,7 +544,7 @@ async fn trial<W: Write>(
     trial_outcome(r, env, pins, address, id, ended.state, key).await
 }
 
-async fn trial_outcome<W: Write>(
+pub(crate) async fn trial_outcome<W: Write>(
     r: &mut Report<'_, W>,
     env: &Env,
     pins: &Pins,
@@ -637,15 +639,15 @@ fn now_ms() -> u64 {
         })
 }
 
-fn load_pins(state: &Path) -> Result<Pins, Refusal> {
+pub(crate) fn load_pins(state: &Path) -> Result<Pins, Refusal> {
     Pins::load(state).map_err(|why| Refusal::new(1, why))
 }
 
-fn save_pins(pins: &Pins) -> Result<(), Refusal> {
+pub(crate) fn save_pins(pins: &Pins) -> Result<(), Refusal> {
     pins.save().map_err(|why| Refusal::new(1, why))
 }
 
-async fn probe_or_refuse(
+pub(crate) async fn probe_or_refuse(
     env: &Env,
     address: &Address,
     text: &str,

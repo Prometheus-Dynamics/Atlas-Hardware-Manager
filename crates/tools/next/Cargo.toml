@@ -11,8 +11,10 @@ name = "atlas-next"
 path = "src/main.rs"
 
 [dependencies]
+atlas-actions = { path = "../../board/actions" }
 atlas-board-slots = { path = "../../drivers/board-slots" }
 atlas-bundle = { path = "../../core/bundle" }
+lemnos-slot-store = { workspace = true }
 atlas-release = { path = "../../core/release" }
 atlas-jobs = { path = "../../core/jobs" }
 atlas-session = { path = "../../board/session" }

@@ -11,8 +11,8 @@ use std::cell::Cell;
 use std::io::Read;
 
 use atlas_bundle::{
-    BLOCK, BootFile, BundleError, SlotMeta, SlotSource, inspect_bundle, root_hash, verify_slot,
-    write_bundle,
+    BLOCK, BootFile, BundleError, RECORD_LEN, SlotMeta, SlotSource, inspect_bundle, root_hash,
+    verify_slot, write_bundle,
 };
 use atlas_image::{Verity, VerityError, tree_bytes};
 use atlas_release::{PublicKey, public_key_for};
@@ -211,7 +211,11 @@ fn a_bundle_has_the_members_in_order_and_its_signature_verifies() {
     let all = members(&bundle);
     let json = &all[0].1;
     let sig = &all[1].1;
-    assert_eq!(sig.len(), 64, "slot.sig is the raw 64-byte signature");
+    assert_eq!(
+        sig.len(),
+        RECORD_LEN,
+        "slot.sig is Lemnos's 108-byte signing record"
+    );
     assert_eq!(
         verify_slot(json, sig, &keys_of(&secret)).expect("verifies"),
         0
@@ -479,22 +483,25 @@ fn manifest_json(data_blocks: u64, hash_offset: u64, size: u64) -> Vec<u8> {
     manifest_json_with(Some(SALT_HEX), data_blocks, hash_offset, size)
 }
 
+/// Lemnos's manifest reader refuses a bad layout before any byte of the data is read: the refusal is
+/// `Malformed` and names the field (the installer's own sentence, `lemnos-slot-store`).
+fn refused_naming(bundle: &[u8], secret: &[u8; 32], field: &str) {
+    let error = inspect_bundle(bundle, &keys_of(secret)).expect_err("refused");
+    match &error {
+        BundleError::Malformed(text) => assert!(text.contains(field), "{field}: {text}"),
+        other => panic!("expected Malformed naming {field}, got {other:?}"),
+    }
+}
+
 #[test]
 fn a_manifest_whose_salt_is_missing_empty_or_the_wrong_length_is_refused_by_name() {
     let secret = throwaway("saltjson");
-    let cases = [
-        (None, VerityError::SaltMissing),
-        (Some(""), VerityError::SaltEmpty),
-        (Some("zz"), VerityError::SaltLength { digits: 2 }),
-        (Some(&SALT_HEX[2..]), VerityError::SaltLength { digits: 62 }),
-    ];
-    for (salt, expected) in cases {
+    for salt in [None, Some(""), Some("zz"), Some(&SALT_HEX[2..])] {
         let json = manifest_json_with(salt, 1, 4096, 4096);
-        let bundle = bundle_with_manifest(&json, &secret);
-        let error = inspect_bundle(&bundle[..], &keys_of(&secret)).expect_err("refused");
-        assert!(
-            matches!(&error, BundleError::Verity(e) if *e == expected),
-            "{salt:?}: {error:?}"
+        refused_naming(
+            &bundle_with_manifest(&json, &secret),
+            &secret,
+            "verity.salt",
         );
     }
 }
@@ -502,17 +509,17 @@ fn a_manifest_whose_salt_is_missing_empty_or_the_wrong_length_is_refused_by_name
 #[test]
 fn a_manifest_whose_offset_or_size_do_not_fit_is_refused_by_name() {
     let secret = throwaway("layoutjson");
-    let offset = bundle_with_manifest(&manifest_json(1, 8192, 8192), &secret);
-    assert!(matches!(
-        inspect_bundle(&offset[..], &keys_of(&secret)),
-        Err(BundleError::Verity(VerityError::Offset { .. }))
-    ));
+    refused_naming(
+        &bundle_with_manifest(&manifest_json(1, 8192, 8192), &secret),
+        &secret,
+        "hash_offset",
+    );
     // One data block has no tree, so 4096 is its whole length; 8192 is too long.
-    let size = bundle_with_manifest(&manifest_json(1, 4096, 8192), &secret);
-    assert!(matches!(
-        inspect_bundle(&size[..], &keys_of(&secret)),
-        Err(BundleError::Verity(VerityError::Size { .. }))
-    ));
+    refused_naming(
+        &bundle_with_manifest(&manifest_json(1, 4096, 8192), &secret),
+        &secret,
+        "image.size",
+    );
 }
 
 #[test]
@@ -649,4 +656,80 @@ fn a_board_or_product_name_outside_the_rules_is_refused() {
         })
     ));
     source.boot.clear();
+}
+
+/// The reverse of the Lemnos fixture: Lemnos's own checker (`lemnos_slot_store::bundle::verify`, the
+/// installer's rules) reads a bundle this writer makes, signature, tree and member rules included.
+#[test]
+fn lemnos_verifies_the_bundle_this_writer_makes() {
+    use lemnos_slot_store::bundle::{Context, State, verify as lemnos_verify};
+    use lemnos_slot_store::signing;
+
+    let secret = throwaway("lemnos-reads-the-writer");
+    // The slot's tree is Lemnos's (`verity::tree_of`), the way a real image's is, and the boot files are
+    // the five role files the board stores. The writer takes both as given.
+    let mut source = Synthetic::new(5);
+    let salt: [u8; 32] = Sha256::digest(&source.data).into();
+    let tree = lemnos_slot_store::verity::tree_of(salt, &source.data).expect("Lemnos's tree");
+    let root = root_hash(&salt, &source.data).expect("root");
+    source.verity =
+        Verity::from_manifest(&root, Some(&hex(&salt)), 5, (5 * BLOCK) as u64).expect("fits");
+    source.tree = tree.tree;
+    source.boot = [
+        "kernel8.img",
+        "initramfs.cpio",
+        "board.dtb",
+        "cmdline.txt",
+        "overlays/lemnos-board.dtbo",
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(i, name)| {
+        let bytes = if name == "cmdline.txt" {
+            b"console=tty1 root=PARTUUID=abc panic=5\n".to_vec()
+        } else {
+            pattern(4096 * (i + 1), i + 3)
+        };
+        (name.to_string(), bytes)
+    })
+    .collect();
+    let bundle = write(&source, &secret).expect("writes");
+    let public = public_key_for(&secret).to_string();
+    let raw: Vec<u8> = (0..32)
+        .map(|i| u8::from_str_radix(&public[8 + i * 2..10 + i * 2], 16).expect("hex"))
+        .collect();
+    let key_id = signing::key_id(&raw);
+    let check = |manifest: &[u8], sig: &[u8]| -> (State, String) {
+        let record = match signing::parse_record(sig) {
+            Ok(record) => record,
+            Err(why) => return (State::Bad, why.to_string()),
+        };
+        if record.key_id != key_id {
+            return (State::Bad, "signed by another key".into());
+        }
+        let message = signing::slot_bundle_message(manifest);
+        if public_key_for(&secret).verify_bytes(&message, &record.signature) {
+            (State::Ok, "signed by the writer's key".into())
+        } else {
+            (State::Bad, "does not verify".into())
+        }
+    };
+    let findings = lemnos_verify(
+        &mut &bundle[..],
+        &Context {
+            rules: None,
+            signature: &check,
+        },
+    );
+    let bad: Vec<_> = findings.iter().filter(|f| f.state == State::Bad).collect();
+    assert!(
+        bad.is_empty(),
+        "Lemnos refuses the writer's bundle: {bad:?}"
+    );
+    assert!(
+        findings
+            .iter()
+            .any(|f| f.state == State::Ok && f.text.starts_with("signature:")),
+        "Lemnos checked the signature: {findings:?}"
+    );
 }

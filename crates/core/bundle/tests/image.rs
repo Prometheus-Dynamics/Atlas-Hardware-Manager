@@ -16,8 +16,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use atlas_bundle::{
-    BLOCK, BundleError, SlotMeta, bundle_from_image, check_stream_digest, inspect_bundle,
-    verify_slot,
+    BLOCK, BundleError, RECORD_LEN, SlotMeta, bundle_from_image, check_stream_digest,
+    inspect_bundle, verify_slot,
 };
 use atlas_release::{PublicKey, public_key_for};
 use sha2::{Digest, Sha256};
@@ -236,7 +236,11 @@ fn a_bundle_from_the_image_in_one_call_matches_the_slots_parts_member_by_member(
     // slot.json and its signature.
     let json = get("slot.json");
     let sig = get("slot.sig");
-    assert_eq!(sig.len(), 64);
+    assert_eq!(
+        sig.len(),
+        RECORD_LEN,
+        "slot.sig is Lemnos's 108-byte record"
+    );
     assert_eq!(
         verify_slot(json, sig, &keys_of(&secret)).expect("verifies"),
         0

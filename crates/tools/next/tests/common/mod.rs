@@ -159,6 +159,7 @@ pub fn env(state: &Path) -> Env {
         wait: Duration::from_secs(30),
         recheck: Duration::from_millis(20),
         stop: None,
+        info_in_pin: false,
     }
 }
 

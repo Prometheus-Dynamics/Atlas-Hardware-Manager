@@ -45,10 +45,29 @@ pub enum Parsed {
         identity: Option<PathBuf>,
         json: bool,
     },
+    /// `cycle`: the milestone's slot cycle in one run, with a scorecard.
+    Cycle(CycleArgs),
     /// `usb-boot`: USB boot a board through an agent with a built image's boot files.
     UsbBoot(UsbBootOptions),
     Help,
     Usage(String),
+}
+
+/// The operands of `cycle`: see [`parse_cycle`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CycleArgs {
+    pub address: String,
+    /// `--good <bundle>`: a bundle that boots.
+    pub good: PathBuf,
+    /// `--bad <bundle>`: a bundle whose slot does not come up (its trial must fall back by itself).
+    pub bad: PathBuf,
+    /// `--scorecard <file>`: where the scorecard is written (text; `--json` also writes JSON beside it).
+    pub scorecard: PathBuf,
+    pub state: Option<PathBuf>,
+    pub identity: Option<PathBuf>,
+    pub json: bool,
+    /// `--dry-run`: prints the steps and their return paths; sends nothing to any board.
+    pub dry_run: bool,
 }
 
 /// What `usb-boot` was asked for.
@@ -75,10 +94,11 @@ pub fn parse(args: &[String]) -> Parsed {
         Some("slots" | "enrol") => {}
         Some("identity") => return parse_identity(&args[1..]),
         Some("bench-key") => return parse_bench_key(&args[1..]),
+        Some("cycle") => return parse_cycle(&args[1..]),
         Some("usb-boot") => return parse_usb_boot(&args[1..]),
         Some(other) => {
             return Parsed::Usage(format!(
-                "unknown command {other:?}; the commands are slots, enrol, identity, bench-key and usb-boot"
+                "unknown command {other:?}; the commands are slots, enrol, identity, bench-key, cycle and usb-boot"
             ));
         }
     }
@@ -230,6 +250,73 @@ fn parse_identity(args: &[String]) -> Parsed {
     Parsed::Identity { identity, json }
 }
 
+/// Reads the operands of `cycle`: `<address>`, `--good <bundle>`, `--bad <bundle>`,
+/// `--scorecard <file>`, and optionally `--state`, `--identity`, `--json`, `--dry-run`, `--help`.
+fn parse_cycle(args: &[String]) -> Parsed {
+    let mut positional: Vec<&str> = Vec::new();
+    let mut good = None;
+    let mut bad = None;
+    let mut scorecard = None;
+    let mut state = None;
+    let mut identity = None;
+    let mut json = false;
+    let mut dry_run = false;
+    let mut rest = args.iter();
+    while let Some(arg) = rest.next() {
+        let mut value = |flag: &str| match rest.next() {
+            Some(text) => Ok(PathBuf::from(text)),
+            None => Err(format!("{flag} needs a value")),
+        };
+        match arg.as_str() {
+            "-h" | "--help" => return Parsed::Help,
+            "--json" => json = true,
+            "--dry-run" => dry_run = true,
+            "--good" => match value("--good") {
+                Ok(path) => good = Some(path),
+                Err(why) => return Parsed::Usage(why),
+            },
+            "--bad" => match value("--bad") {
+                Ok(path) => bad = Some(path),
+                Err(why) => return Parsed::Usage(why),
+            },
+            "--scorecard" => match value("--scorecard") {
+                Ok(path) => scorecard = Some(path),
+                Err(why) => return Parsed::Usage(why),
+            },
+            "--state" => match value("--state") {
+                Ok(path) => state = Some(path),
+                Err(why) => return Parsed::Usage(why),
+            },
+            "--identity" => match value("--identity") {
+                Ok(path) => identity = Some(path),
+                Err(why) => return Parsed::Usage(why),
+            },
+            flag if flag.starts_with("--") => {
+                return Parsed::Usage(format!("unknown option {flag}"));
+            }
+            _ => positional.push(arg),
+        }
+    }
+    let [address] = positional.as_slice() else {
+        return Parsed::Usage("cycle takes one address: cycle <address> --good <bundle> --bad <bundle> --scorecard <file>".into());
+    };
+    let (Some(good), Some(bad), Some(scorecard)) = (good, bad, scorecard) else {
+        return Parsed::Usage(
+            "cycle needs --good <bundle>, --bad <bundle> and --scorecard <file>".into(),
+        );
+    };
+    Parsed::Cycle(CycleArgs {
+        address: (*address).to_owned(),
+        good,
+        bad,
+        scorecard,
+        state,
+        identity,
+        json,
+        dry_run,
+    })
+}
+
 /// Reads the operands of `bench-key`: one directory, `--json`, `--help`.
 fn parse_bench_key(args: &[String]) -> Parsed {
     let mut positional: Vec<&str> = Vec::new();
@@ -297,6 +384,37 @@ mod tests {
         assert!(matches!(parse(&words("slots a")), Parsed::Usage(_)));
         assert!(matches!(parse(&words("boards a list")), Parsed::Usage(_)));
         assert_eq!(parse(&words("")), Parsed::Help);
+    }
+
+    #[test]
+    fn cycle_takes_an_address_two_bundles_and_a_scorecard() {
+        assert_eq!(
+            parse(&words(
+                "cycle orion+tcp://[::1]:9200 --good g.tar --bad b.tar --scorecard /x/card.txt --dry-run"
+            )),
+            Parsed::Cycle(CycleArgs {
+                address: "orion+tcp://[::1]:9200".into(),
+                good: PathBuf::from("g.tar"),
+                bad: PathBuf::from("b.tar"),
+                scorecard: PathBuf::from("/x/card.txt"),
+                state: None,
+                identity: None,
+                json: false,
+                dry_run: true,
+            })
+        );
+        assert!(matches!(
+            parse(&words("cycle a --good g.tar --bad b.tar")),
+            Parsed::Usage(_)
+        ));
+        assert!(matches!(
+            parse(&words("cycle --good g --bad b --scorecard s")),
+            Parsed::Usage(_)
+        ));
+        assert!(matches!(
+            parse(&words("cycle a --good g --bad b --scorecard s --reflashed")),
+            Parsed::Usage(_)
+        ));
     }
 
     #[test]
