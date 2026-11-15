@@ -2,7 +2,7 @@
 # for the board's name). No IPv4 link-local fallback: the address is the DHCP server's.
 [Match]
 Type=ether
-Name=!usb0
+Name=!usb0 !lemnos0
 
 [Network]
 DHCP=yes

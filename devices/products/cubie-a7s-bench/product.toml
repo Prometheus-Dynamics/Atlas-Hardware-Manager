@@ -9,18 +9,19 @@
 #   the board: radxa-cubie-a7s (board.toml): the series' A7S dts (ramoops, r_wdt watchdog), the U-Boot env on GPT (no FAT env).
 #   the boot ROM files: the family's u-boot-sunxi-with-spl.bin at 128 KiB, the uboot-env GPT partition at 16 MiB (family.toml).
 #   the slot: slot-boot (EROFS root, dm-verity, initramfs = lemnos-slot-init), the Lemnos bundle, the FAT boot partition.
-#   lemnosd, lemnos-ctl, lemnos-orion, lemnos-slot-init at Lemnos pr/BB1b 7748a241 (components/lemnos*: product-local copies).
+#   lemnosd, lemnos-ctl, lemnos-orion, lemnos-slot-init at Lemnos pr/BB1b e8472620 (components/lemnos*: product-local copies).
 #   Orion (the shared orion component, Orion 455a956).
 #   Ethernet by DHCP and mDNS (components/bench-network); SSH with the PC's key (components/bench-pc-ssh-key, pc-key input).
-#   the USB network on the OTG port (USB-C 1): Gaia's configfs NCM (shared usb-gadget-network) with the board id (usb-gadget-family).
+#   the USB network on the device port J16 (USB-C 1): the Lemnos gadget on udc:4100000.usb (board file), its NCM interface lemnos0.
+#     One gadget per UDC: Gaia's usb-gadget-network is removed from this image (it would bind the same MUSB controller).
 #     Plus the Raze/ZERO 3E serial-hash-v1 addressing (components/lemnos0-addressing), now on this branch from pr/Z1 (merged).
 #   security OFF (board file), lemnosd feeds the hardware watchdog (15 s), the kernel's pstore/ramoops for crash logs (BB3 reader
 #   NOT on the pin), a serial console (ttyS0).
 #
 # THE PINS. The Gaia binary: c0d084f (merged next: the eae34d7 patch series and pr/slot-disk-blobs, slot-disk), at
 #   /mnt/ssd-samsung/atlas-next-scratch-gaia/bin-c0d084f/gaia. gaia.lock is written by `gaia lock` at that binary; the repo's
-#   devices/gaia.lock is NOT changed (the coordinator moves that pin). Lemnos pr/BB1b 7748a241 (the product-local components).
-#   Buildroot 2026.02.3 (the bring-up's, systemd 258.7). Orion 455a956 and Gaia usb-gadget-network b8585a0 are the shared
+#   devices/gaia.lock is NOT changed (the coordinator moves that pin). Lemnos pr/BB1b e8472620 (the product-local components).
+#   Buildroot 2026.02.3 (the bring-up's, systemd 258.7). Orion 455a956 is the shared
 #   components' own pins (unchanged). This PR may NOT merge while it pins the unmerged Lemnos branch pr/BB1b (see docs/prs/C1.md).
 version = 1
 name = "cubie-a7s-bench"
@@ -31,7 +32,7 @@ git = "https://gitlab.com/buildroot.org/buildroot.git"
 ref = "2026.02.3"
 
 [components]
-# The Lemnos set, product-local, at pr/BB1b 7748a241 (one Lemnos commit for the product).
+# The Lemnos set, product-local, at pr/BB1b e8472620 (one Lemnos commit for the product).
 lemnos = "components/lemnos/component.toml"
 lemnosd = "components/lemnosd/component.toml"
 lemnos-ctl = "components/lemnos-ctl/component.toml"
@@ -41,7 +42,6 @@ cubie-lemnos-board = "components/cubie-lemnos-board/component.toml"
 # The bench's access and network (product-local).
 bench-pc-ssh-key = "components/bench-pc-ssh-key/component.toml"
 bench-network = "components/bench-network/component.toml"
-usb-gadget-family = "components/usb-gadget-family/component.toml"
 # The Raze/ZERO 3E serial-hash-v1 address scheme (shared; from pr/Z1, merged into this branch). It addresses the lemnos0
 # NCM interface; on this board that interface exists only if the Lemnos gadget is declared (see docs/prs/C1-cubie-a7s-bench.md).
 lemnos0-addressing = "../../components/lemnos0-addressing/component.toml"
@@ -52,13 +52,12 @@ lemnos0-addressing = "../../components/lemnos0-addressing/component.toml"
 bench-hostname = "../../components/bench-hostname/component.toml"
 bench-hostname-prefix = "components/bench-hostname-prefix/component.toml"
 # Shared with the other products: Gaia's USB network script (configfs NCM; its own pin), and Orion.
-usb-gadget-network = "../../components/usb-gadget-network/component.toml"
 orion = "../../components/orion/component.toml"
 
 [[images]]
 name = "cubie-a7s-bench"
 board = "../../boards/radxa-cubie-a7s/board.toml"
-components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "cubie-lemnos-board", "bench-pc-ssh-key", "bench-network", "usb-gadget-family", "usb-gadget-network", "lemnos0-addressing", "bench-hostname", "bench-hostname-prefix", "orion"]
+components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "cubie-lemnos-board", "bench-pc-ssh-key", "bench-network", "lemnos0-addressing", "bench-hostname", "bench-hostname-prefix", "orion"]
 # The slot's initramfs: lemnos-slot-init goes there (as the Raze's), not on the root filesystem.
 initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }

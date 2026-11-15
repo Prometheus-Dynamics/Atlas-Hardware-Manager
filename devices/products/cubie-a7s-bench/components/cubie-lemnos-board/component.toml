@@ -1,6 +1,6 @@
 # The A7S bench image's Lemnos board files: the board file, the bench trust line, the files lemnos-ctl writes from the board
 # file (tree, bundle, boot partition). Modeled on components/raze-lemnos-board (Raze, pinned f4a295c6); this copy is pinned
-# to pr/BB1b 7748a241 with the rest of the product's Lemnos components. Untested on board.
+# to pr/BB1b e8472620 with the rest of the product's Lemnos components. Untested on board.
 version = 1
 name = "cubie-lemnos-board"
 description = "Cubie A7S bench board files for lemnosd: the board file (from the board directory), the bench trust line, and the files lemnos-ctl writes (overlay, cmdline, slot bundle, boot partition)"
@@ -11,11 +11,11 @@ from = { description = "lemnos" }
 to = "/etc/lemnos/board.toml"
 mode = "0644"
 
-# The Lemnos packaging is the product's own `lemnos` component (pr/BB1b 7748a241). The generator and the boot partition
+# The Lemnos packaging is the product's own `lemnos` component (pr/BB1b e8472620). The generator and the boot partition
 # tool are lemnos-ctl at the same rev.
 [sources.lemnos]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "7748a241fa98e703c9703ce25c7f10dda210564b"  # Lemnos pr/BB1b 7748a241 (C1 bench image)
+ref = "e847262064ee1e88c5277592e6705ab46eca0670"  # Lemnos pr/BB1b e8472620 (C1 bench image)
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
