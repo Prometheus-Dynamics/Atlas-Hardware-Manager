@@ -101,7 +101,20 @@ Triage classes come from `/mnt/ssd-samsung/atlas-next-scratch-root/research/rv11
 | PMIC | UNIDENTIFIED. Per ruling 5: two fixed supplies (`vcc3v3_sys`, always on) stand in, marked in the dts. Identify on the bench. |
 | DDR | Closed rkbin blob `rv1126b_ddr_1332MHz_v1.10.bin` (ruling 4). Bench-only, never published. |
 
-## U-Boot (scoped, not started in code)
+## U-Boot (scoped; rkcommon blocked on a decision; SoC port not written)
+
+rkcommon facts, all from disk (no download):
+- Table fields (mainline `tools/rkcommon.c` 131-158): imagename, the 4-byte SPL header, the SPL size limit, RC4, header version. The rv1126 row is `{ "rv1126", "110B", 0x10000 - 0x1000, false, RK_HEADER_V1 }` (line 157).
+- Size limit: the RV1126B `system_sram` is 0x3ffb0000 for 0x10000 bytes (seed/BSP dtsi `system_sram`, vendor dtsi lines 3929-3935; `aoa_sram` 0x3ff20000 for 0x10000 at 3920-3927). A 0x10000 - 0x1000 limit follows the rv1126 row's convention. UNVERIFIED for this SoC.
+- The ROM header: NOT derivable on disk. The rkbin RV1126B SPL (`bin/rv11/rv1126b_spl_v1.06.bin`) begins with `01 00 00 14`, a raw AArch64 branch. The RK3568 and RK3576 SPLs begin the same way. So the 4-byte header is added by mkimage (mainline) or boot_merger (vendor), and the RV1126B value is in neither file. Mainline's `110B` is the rv1126 magic. Reusing it for RV1126B would be a guess.
+- Header version: RK_HEADER_V1 (rv1126, rv1108) or V2 (rk3568, rk3576). RV1126B's rkbin ini has NEWIDB=true, as the RK35 and RV1106 inis do. That does not decide it.
+- The vendor loader: `RKBOOT/RV1126BMINIALL.ini` (NAME=RV110F; FlashData = the DDR blob; FlashBoot = `bin/rv11/rv1126b_spl_v1.06.bin`; LOAD_ADDR=0x4fe00000; RC4 off) and boot_merger produce `rv1126b_loader_v1.10.106.bin`. The BSP's `tools/rkcommon.c` has no RV1126B entry, so the vendor never uses mkimage for this chip.
+
+DECISION NEEDED (coordinator): (a) add an rkcommon row with a magic and header version the user supplies or the TRM gives; or (b) build the loader with rkbin's boot_merger from the RKBOOT ini, as the vendor does, and skip mkimage rksd for this chip. (b) needs no magic and matches the BSP. No rkcommon row is written until one of these is chosen.
+
+The SoC port itself is not written. The BSP seed is `arch/arm/mach-rockchip/rv1126b` (787 lines in `rv1126b.c`, 41 in `clk_rv1126b.c`, 25 in `syscon_rv1126b.c`, 17 Kconfig, 11 Makefile), `drivers/pinctrl/rockchip/pinctrl-rv1126b.c`, the dtsi files under `arch/arm/dts`, `configs/rv1126b_defconfig` (205 lines), and `include/configs/rv1126b_common.h` (163 lines). Mainline v2026.10 has the rv1126 precedent to follow (`arch/arm/mach-rockchip/rv1126`, `clk_rv1126.c`, `pinctrl-rv1126.c`). It is a multi-file port, and it has not been built.
+
+## U-Boot (historical scoping, superseded above)
 
 - Seed: Rockchip `u-boot-next-dev` at `1c535d65` (`/mnt/ssd-samsung/gaia/bsp/rockchip-bsp/u-boot-next-dev`, read-only). Has `arch/arm/mach-rockchip/rv1126b` (`clk_rv1126b.c`, `rv1126b.c`, `syscon_rv1126b.c`, `Kconfig`, `Makefile`; 881 lines in all) and the rv1126b defconfigs under `configs/`.
 - Mainline v2026.10 on disk: `/mnt/ssd-samsung/atlas-next-scratch-root/research/u-boot` and `scratch-uboot-mainline`, both at `5508406582f6` (v2026.10 prep). No download needed.
