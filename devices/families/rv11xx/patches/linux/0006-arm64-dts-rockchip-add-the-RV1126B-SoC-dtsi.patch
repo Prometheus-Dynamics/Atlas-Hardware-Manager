@@ -1,6 +1,5 @@
-diff --git a/b/arch/arm64/boot/dts/rockchip/rv1126b.dtsi b/arch/arm64/boot/dts/rockchip/rv1126b.dtsi
+diff --git a/arch/arm64/boot/dts/rockchip/rv1126b.dtsi b/arch/arm64/boot/dts/rockchip/rv1126b.dtsi
 new file mode 100644
-index 0000000..817a38d
 --- /dev/null
 +++ b/arch/arm64/boot/dts/rockchip/rv1126b.dtsi
 @@ -0,0 +1,444 @@
@@ -12,8 +11,8 @@ index 0000000..817a38d
 + * the vendor RV1126B SoC dtsi (Rockchip develop-6.1, GPL-2.0+ OR MIT). Nodes
 + * outside the boot set (ISP, VPSS, NPU, codecs, SARADC, thermal, PWM, SPI,
 + * the other UARTs and I2Cs, the power domains and OPP tables) are not here yet:
-+ * see docs/prs/AU1-aura.md. No pin group is referenced: the vendor pin group
-+ * table is not in this tree (missing: docs/prs/AU1-aura.md, "pinctrl").
++ * see docs/prs/AU1-aura.md. The pin groups are in rv1126b-pinctrl.dtsi, which a
++ * board includes; this file does not reference them.
 + */
 +
 +#include <dt-bindings/clock/rockchip,rv1126b-cru.h>
@@ -276,7 +275,7 @@ index 0000000..817a38d
 +	};
 +
 +	i2c0: i2c@21100000 {
-+		compatible = "rockchip,rv1126b-i2c", "rockchip,rv1126-i2c";
++		compatible = "rockchip,rv1126b-i2c";
 +		reg = <0x21100000 0x1000>;
 +		interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>;
 +		#address-cells = <1>;

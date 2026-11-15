@@ -1,19 +1,16 @@
 diff --git a/arch/arm64/boot/dts/rockchip/Makefile b/arch/arm64/boot/dts/rockchip/Makefile
-index e7936a2..c94f467 100644
 --- a/arch/arm64/boot/dts/rockchip/Makefile
 +++ b/arch/arm64/boot/dts/rockchip/Makefile
-@@ -343,3 +343,5 @@ rk3588-rock-5b-plus-radxa-4k-cam-dtbs := rk3588-rock-5b-plus.dtb \
+@@ -343,3 +343,4 @@
  dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-tiger-haikou-haikou-video-demo.dtb
  rk3588-tiger-haikou-haikou-video-demo-dtbs := rk3588-tiger-haikou.dtb \
  	rk3588-tiger-haikou-video-demo.dtbo
-+
 +dtb-$(CONFIG_ARCH_ROCKCHIP) += rv1126b-luckfox-aura.dtb
-diff --git a/b/arch/arm64/boot/dts/rockchip/rv1126b-luckfox-aura.dts b/arch/arm64/boot/dts/rockchip/rv1126b-luckfox-aura.dts
+diff --git a/arch/arm64/boot/dts/rockchip/rv1126b-luckfox-aura.dts b/arch/arm64/boot/dts/rockchip/rv1126b-luckfox-aura.dts
 new file mode 100644
-index 0000000..ad490b4
 --- /dev/null
 +++ b/arch/arm64/boot/dts/rockchip/rv1126b-luckfox-aura.dts
-@@ -0,0 +1,113 @@
+@@ -0,0 +1,126 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Waveshare (Luckfox) Aura: RV1126B, microSD boot, USB 3 OTG Type-C as a
@@ -22,9 +19,9 @@ index 0000000..ad490b4
 + * BENCH PROTOTYPE, UNTESTED ON BOARD. Every fact below marked UNVERIFIED is
 + * not yet read from the schematic, the board, or a register comparison:
 + *  - the PMIC is not identified: the two regulators here are fixed stand-ins;
-+ *  - the console UART, the microSD card-detect pin and the pin groups are the
-+ *    vendor EVB's, not the Aura's; no pinctrl-0 is set until the pinctrl port
-+ *    lands (missing: docs/prs/AU1-aura.md);
++ *  - the console UART, the microSD pins and the I2C0 pins are the BSP groups
++ *    (the EVB's choice), not the Aura's; GMAC has no pin group in the BSP, so
++ *    it has no pinctrl-0 (docs/prs/AU1-aura.md);
 + *  - the Ethernet PHY address and RGMII delays come from the strap names only;
 + *  - the ramoops address is a placeholder not checked against TF-A's, U-Boot's
 + *    or the kernel's memory use.
@@ -33,6 +30,7 @@ index 0000000..ad490b4
 +/dts-v1/;
 +
 +#include "rv1126b.dtsi"
++#include "rv1126b-pinctrl.dtsi"
 +
 +/ {
 +	model = "Waveshare Luckfox Aura";
@@ -79,7 +77,10 @@ index 0000000..ad490b4
 +	};
 +};
 +
++/* Console UART pins: the EVB's uart2m0 RX/TX (UNVERIFIED for the Aura: read the schematic). */
 +&uart2 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&uart2m0_xfer_pins>;
 +	status = "okay";
 +};
 +
@@ -89,6 +90,8 @@ index 0000000..ad490b4
 +
 +/* microSD slot: the vendor SD host. Card-detect and pins: UNVERIFIED (see above). */
 +&sdmmc0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&sdmmc0_bus4_pins &sdmmc0_cmd_pins &sdmmc0_clk_pins &sdmmc0_detn_pins>;
 +	vmmc-supply = <&vcc3v3_sys>;
 +	no-sdio;
 +	no-mmc;
@@ -113,7 +116,8 @@ index 0000000..ad490b4
 +	status = "okay";
 +};
 +
-+/* Gigabit Ethernet, RGMII. PHY address and delays: UNVERIFIED (strap names only). */
++/* Gigabit Ethernet, RGMII. PHY address and delays: UNVERIFIED (strap names only).
++ * No pinctrl-0: the BSP tree has no RV1126B RGMII pin group (the EVB's fephym1 is the on-chip PHY). Missing: docs/prs/AU1-aura.md. */
 +&gmac {
 +	phy-mode = "rgmii";
 +	status = "okay";
@@ -126,4 +130,10 @@ index 0000000..ad490b4
 +			reg = <0>;
 +		};
 +	};
++};
++
++/* I2C0: the BSP's i2c0m0 pins, left disabled: the Aura has no I2C device in the boot set (UNVERIFIED). */
++&i2c0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&i2c0m0_pins>;
 +};
