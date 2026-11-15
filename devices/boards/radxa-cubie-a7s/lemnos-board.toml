@@ -54,13 +54,17 @@ config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", b
 # ON-BOARD UNCONFIRMED (Lemnos's own marks, socs/sun60i-a733.toml): the /soc@0 bus path (the series' bus node renamed by a later
 # patch), the UDC name (the kernel names the controller musb-hdrc.N.auto; the port is given as udc:4100000.usb, resolved by
 # lemnos-linux resolve_udc), the PHY (no PHY needs entry: the PHY node's path is not in any source read), and VBUS: the map
-# has NO [bases.*] entry for the A733, so no base VBUS fact is named here (the ZERO 3E names usb-no-vbus); the series says the
-# port has no VBUS supply, and Lemnos may refuse the port until its base fact exists. The vendor/product pair is the managed
-# gadget's (0x1d6b:0x0104, as the ZERO 3E's): a test identity until the release identity.
+# has NO [bases.*] entry for the A733, so the board states VBUS itself: vbus_undriven (coordinator ruling 2026-11-14, option 1).
+# Evidence: Radxa's J16 label "USB 2.0, 5V power input and OTG", and the series (fe0a8ed, a733-usb0-gadget) gives the port no
+# VBUS supply and no ID/VBUS detect line. SCHEMATIC UNVERIFIED (the Radxa A7S schematic read is in progress), METER not needed
+# for the bench. Bench only, powered from J16 only. The vendor/product pair is the managed gadget's (0x1d6b:0x0104, as the
+# ZERO 3E's): a test identity until the release identity.
 [[hardware]]
 name = "udc:4100000.usb"
 controller = "usb-otg0"
 role = "peripheral"
+vbus_undriven = true
+vbus_reason = "J16 is the board's 5 V power input (Radxa: USB 2.0, 5V power input and OTG); the bring-up series gives usb@4100000 no VBUS supply and no ID or VBUS detect line; schematic unverified; bench powered from J16 only"
 
 [[devices]]
 id = "gadget"
