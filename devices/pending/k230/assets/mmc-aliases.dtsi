@@ -1,0 +1,21 @@
+// PENDING (K1): pins the SD card to mmc1 in both the U-Boot dts patch and the kernel dts.
+// k230.dtsi (SDK U-Boot overlay, arch/riscv/dts/k230.dtsi:34-36) has an aliases block with only uart0, so the
+// mmc numbering is probe order there. This block pins it: U-Boot's mmc index and Linux's /dev/mmcblkN then both
+// follow mmc1 = the SD host (SDK U-Boot label mmc1, node mmc1@91581000, k230.dtsi:161), the node the boot mode
+// SYSCTL_BOOT_SDIO1 selects (board/canaan/common/k230_spl.c:65, :167). mmc0 (the eMMC node, not enabled on the AI-CAM)
+// is not aliased.
+//
+// NODE NAME: Lemnos's K230-MAP (pr/K230-MAP 6b84e099) names the SD host /soc/sdhci1@91581000, and its boot_sources
+// path must match the node in the kernel dts. So the kernel dts names the node sdhci1@91581000, with the label used
+// by the alias below. The SDK U-Boot dts names it mmc1@91581000. The two names differ; the U-Boot patch keeps its label.
+//
+// Use: add this block to the root of the U-Boot k230d_canmv_bpi.dts (beside the uart0 alias), and to the root of
+// the AI-CAM kernel dts. In the kernel dts the reference must name the node's label (sdhci1 in our draft).
+//
+// CONFIRM ON BOARD before the first Lemnos write: the U-Boot index 1 and /dev/mmcblk1 are expected from this alias,
+// but neither has been seen on a board. A wrong device makes Lemnos refuse with "no valid environment"; it never
+// writes blindly.
+
+aliases {
+	mmc1 = &mmc1;	/* U-Boot dts label; the kernel dts uses the label of sdhci1@91581000 */
+};

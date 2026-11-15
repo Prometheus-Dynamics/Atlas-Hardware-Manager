@@ -1,7 +1,7 @@
-# PENDING (K1): Lemnos board file draft for canmv-k230d-ai-cam (slot form). NOT named in [descriptions] and not
-# installed by any product. The dwc2 gadget row and the SD host row are pending Lemnos's K230-MAP rev (Lemnos
-# worker on pr/BB1b; coordinator 2026-11-14). Keys follow docs/boards.md "U-Boot environment" on pr/BB1b and the
-# model testing/boards/rk3566-slots.toml (Lemnos pr/BB1b).
+# PENDING (K1): Lemnos board file draft for canmv-k230d-ai-cam (slot form). NOT named in [descriptions], not installed
+# by any product, and NOT pinned: the rows below cite Lemnos's K230-MAP, pr/K230-MAP 6b84e099 (one commit on pr/BB1b
+# e8472620), which the coordinator has not pinned. Keys follow docs/boards.md "U-Boot environment" on pr/BB1b and the
+# model testing/boards/rk3566-slots.toml. The generator refuses this file until the VBUS statement below is decided.
 format = "lemnos.board"
 schema_version = 1
 
@@ -19,25 +19,38 @@ id = "watchdog"
 driver = "hw-watchdog"
 uses = { watchdog = "watchdog:/soc/wdt0@91106000" }
 
+# The OTG device port (controller usb-otg0 in socs/k230.toml at 6b84e099: usb-peripheral, /soc/usb-otg@91500000,
+# UDC 91500000.usb-otg). The UDC name is the SDK's platform device name, UNCONFIRMED on a board (Lemnos: "not checked on a board").
+[[hardware]]
+name = "udc:91500000.usb-otg"
+controller = "usb-otg0"
+role = "peripheral"
+# VBUS: TODO, the coordinator's ruling. The generator requires a VBUS statement (model: service/devtree/tests/k230_port.rs,
+# vbus_undriven + vbus_reason). The SDK names NO VBUS supply or phy-supply for usbotg0 (see docs/prs/K1-k230d.md, "VBUS").
+# Not written from guesswork.
+
+[[devices]]
+id = "gadget"
+driver = "usb-gadget"
+uses = { function = "udc:91500000.usb-otg" }
+
 # Slots, the uboot record (BB1b). Values from the SDK on disk, all cited in docs/prs/K1-k230d.md:
-#   uboot_env_size          0x10000  U-Boot CONFIG_ENV_SIZE (k230d_canmv_bpi_defconfig:5); mkenvimage -s 0x10000 (post-image.sh:234)
-#   uboot_env_offset        0x1E0000 CONFIG_ENV_OFFSET (k230d_canmv_bpi_defconfig:6); genimage.cfg:30 (uboot_env, 0x20000 region)
-#   uboot_env_offset_redund 0x380000 genimage.cfg:43 (partition env, copy 1)
-#   uboot_env_mmc_index     1        the SD card is U-Boot's mmc1 = SYSCTL_BOOT_SDIO1 (k230_spl.c:65, 167), mmc1@91581000
-#                                    (k230.dtsi:161); no mmc aliases in k230.dtsi, so the index is the probe order
-#   uboot_env_device        /dev/mmcblk0  Linux name of the SD disk. UNVERIFIED: from Atlas's B7 AI-CAM dts draft
-#                                    (alias mmc0 = SD, bootargs root=/dev/mmcblk0p2); no Linux dts for this board is on disk.
-#   uboot_watchdog_ms       10000    see the reason in docs/prs/K1-k230d.md (the SDK's dw-wdt clock is not on disk)
+#   uboot_env_size          0x10000  CONFIG_ENV_SIZE (k230d_canmv_bpi_defconfig:5); mkenvimage -s 0x10000 (post-image.sh:234)
+#   uboot_env_offset        0x1E0000 = CONFIG_ENV_OFFSET (k230d_canmv_bpi_defconfig:6); genimage.cfg:30 (the primary copy)
+#   uboot_env_offset_redund 0x380000 genimage.cfg:43 (the redundant copy)
+#   uboot_env_mmc_index     1        SD = mmc1 (SYSCTL_BOOT_SDIO1, k230_spl.c:65, 167). Pinned by the alias mmc1 in the
+#                                    U-Boot dts and the kernel dts (assets/mmc-aliases.dtsi). CONFIRM ON BOARD.
+#   uboot_env_device        /dev/mmcblk1  the SD disk, from the same alias. CONFIRM ON BOARD before the first Lemnos write:
+#                                    a wrong device makes Lemnos refuse ("no valid environment"), it never writes blindly.
+#   uboot_watchdog_ms       10000    see docs/prs/K1-k230d.md (the SDK's dw-wdt clock is not on disk)
 # The uboot_usb_vendor/product pair is the pid.codes test pair, a placeholder Lemnos says to replace before release.
+# boot_sources is the path Lemnos's map names for the SD host (6b84e099, the socs/k230.toml header). The MMC hosts are
+# not map rows (by design); the node names in the kernel dts must match this path (see the doc, "MMC").
 [[devices]]
 id = "slots"
 driver = "system-slots"
 record = "uboot"
-config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", boot_sources = ["/soc/mmc1@91581000=/soc/mmc1@91581000"], uboot_env_size = 0x10000, uboot_env_device = "/dev/mmcblk0", uboot_env_offset = 0x1E0000, uboot_env_offset_redund = 0x380000, uboot_env_mmc_index = 1, uboot_usb_vendor = 0x1209, uboot_usb_product = 0x0001, uboot_watchdog_ms = 10000 }
+config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", boot_sources = ["/soc/sdhci1@91581000=/soc/sdhci1@91581000"], uboot_env_size = 0x10000, uboot_env_device = "/dev/mmcblk1", uboot_env_offset = 0x1E0000, uboot_env_offset_redund = 0x380000, uboot_env_mmc_index = 1, uboot_usb_vendor = 0x1209, uboot_usb_product = 0x0001, uboot_watchdog_ms = 10000 }
 
-# Not written here, open in docs/prs/K1-k230d.md:
-#   - the dwc2 OTG device row (usbotg0, snps,dwc2 at 0x91500000, k230.dtsi:209): pending Lemnos's map rev;
-#   - the SD host row (mmc1, k230.dtsi:161): pending the same rev;
-#   - boot_sources: the node form is a guess from the model's placeholder "<mmc node>=<mmc node>", UNVERIFIED;
-#   - the crash log / pstore reserved region: a board kernel item (kernel/bench.fragment and the dts), address not chosen;
-#   - Ethernet: none, the SoC has no MAC (coordinator ruling 2026-11-14); the gadget is the only network.
+# Not written here: Ethernet (none, the SoC has no MAC; coordinator ruling 2026-11-14); the crash log / pstore reserved
+# region (a board kernel item, address not chosen).
