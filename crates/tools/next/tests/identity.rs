@@ -138,10 +138,10 @@ async fn two_sessions_with_one_identity_connect_to_the_same_node() {
     }
 }
 
-/// Security off (the sim's default) changes nothing about `pin` and `fingerprint`: they work as on
-/// any board. `enrol` says there is nothing to enrol, exit 1. Nothing is refused for the mode.
+/// Security off (the sim's default) changes nothing about `pin`, `fingerprint` or `enrol`: each runs
+/// on the key the transport proves (Orion J9). No mode is asked, so no security line is printed.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_security_off_board_pins_and_fingerprints_like_any_board_and_enrol_says_so() {
+async fn a_security_off_board_pins_fingerprints_and_enrols_like_any_board() {
     let dir = scratch("sec-off-pin");
     let node = start_node(&dir, None);
     let address = direct(&node);
@@ -155,19 +155,17 @@ async fn a_security_off_board_pins_and_fingerprints_like_any_board_and_enrol_say
     let (code, out) = run(&env, &["slots", &address, "fingerprint"]).await;
     assert_eq!(code, 0, "{out}");
     assert!(out.contains("pinned: this is the key"), "{out}");
+    assert!(!out.contains("security off"), "{out}");
 
     let (code, out) = run(&env, &["enrol", &address]).await;
-    assert_eq!(code, 1, "{out}");
-    assert_eq!(
-        out.trim_end(),
-        "this board runs with security off: there is nothing to enrol"
-    );
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("is enrolled on this board"), "{out}");
 }
 
-/// Security off: a board command prints exactly one first line, the security line, then its normal
-/// output; a board never seen still refuses (the pin rule applies to every board).
+/// No security line on a board of either mode: a board command prints its normal output, and a
+/// board never seen still refuses (the pin rule applies to every board).
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_security_off_board_lists_with_exactly_one_first_line() {
+async fn a_board_command_prints_no_security_line() {
     let dir = scratch("sec-off-list");
     let node = start_node(&dir, None);
     let address = direct(&node);
@@ -175,28 +173,18 @@ async fn a_security_off_board_lists_with_exactly_one_first_line() {
 
     let (code, out) = run(&env, &["slots", &address, "list"]).await;
     assert_eq!(code, 3, "never seen: {out}");
-    assert_eq!(
-        out.lines().next(),
-        Some("security off: the board's key is checked, the session is not signed"),
-        "{out}"
-    );
+    assert!(!out.contains("security off"), "{out}");
 
     let (code, out) = run(&env, &["slots", &address, "pin"]).await;
     assert_eq!(code, 0, "{out}");
 
     let (code, out) = run(&env, &["slots", &address, "list"]).await;
     assert_eq!(code, 0, "{out}");
-    let mut lines = out.lines();
-    assert_eq!(
-        lines.next(),
-        Some("security off: the board's key is checked, the session is not signed"),
-        "{out}"
-    );
     assert!(
-        lines
+        out.lines()
             .next()
             .is_some_and(|line| line.starts_with("running ")),
         "{out}"
     );
-    assert_eq!(out.matches("security off").count(), 1, "said once: {out}");
+    assert!(!out.contains("security off"), "{out}");
 }

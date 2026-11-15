@@ -202,7 +202,7 @@ async fn a_full_run_passes_every_step_and_writes_the_scorecard() {
     );
     assert!(card_text.contains("Verdict: PASSED"), "{card_text}");
     assert!(
-        card_text.contains("Security on the board: off"),
+        card_text.contains("Security on the board: not read"),
         "{card_text}"
     );
     assert!(

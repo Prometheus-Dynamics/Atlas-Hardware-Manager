@@ -559,6 +559,11 @@ impl SimNode {
         change(&mut lock(&self.shared.model).slots.trial_config);
     }
 
+    /// Sets the free space the install gate sees, so a test can have an install refused for room.
+    pub fn slot_set_free_bytes(&self, bytes: u64) {
+        lock(&self.shared.model).slots.free_bytes = bytes;
+    }
+
     /// How many runs of `name` the node has been asked to start, refused ones included. A run is
     /// counted when the node takes it, so a test can tell that an install was not issued twice.
     #[must_use]

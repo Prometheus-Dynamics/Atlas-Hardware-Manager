@@ -52,7 +52,7 @@ use atlas_actions::{ActionError, ArgKind, BoardActions, CANCEL_CONFIRM, CancelSt
 use atlas_driver::DriverError;
 use atlas_files::{Push, PushKind, Stage as PushStage, submit as submit_push};
 use atlas_jobs::{DeviceClaim, DeviceHolds, Events, JobId, JobKind, JobTiming, Jobs};
-use atlas_session::{Handle, Hold, Presence, Sessions};
+use atlas_session::{Failure, Handle, Hold, Presence, Sessions};
 use atlas_slots::Stage;
 use atlas_types::DeviceKey;
 use orion::Address;
@@ -156,6 +156,9 @@ struct Run {
     /// so a run the board started while the cancel came in is still stopped.
     starting: Option<watch::Receiver<Option<Option<u64>>>>,
     stage: Option<Stage>,
+    /// The typed refusal the install ended with, when the board or the session gave one (kind,
+    /// code and text: see [`Failure`]). `None` when the install did not end by a refusal.
+    failure: Option<Failure>,
     cancel: Option<CancelState>,
     /// The node key this install is on, recorded at its first contact when submit had none.
     node_key: Option<[u8; 32]>,
@@ -167,10 +170,12 @@ struct Run {
     hold: Option<Hold>,
 }
 
-/// Why a step stopped: wait and try again, or the job ends with these words.
+/// Why a step stopped: wait and try again, or the job ends with these words, or with a refusal
+/// that keeps its typed value (the words are its text).
 enum Step {
     Wait(String),
     Settled(String),
+    Refused(Failure),
 }
 
 fn wait_of(error: &ActionError) -> Option<String> {
@@ -186,7 +191,13 @@ fn wait_of(error: &ActionError) -> Option<String> {
 }
 
 fn classify(error: &ActionError) -> Step {
-    wait_of(error).map_or_else(|| Step::Settled(error.to_string()), Step::Wait)
+    if let Some(reason) = wait_of(error) {
+        return Step::Wait(reason);
+    }
+    match error.failure() {
+        Some(failure) => Step::Refused(failure.clone()),
+        None => Step::Settled(error.to_string()),
+    }
 }
 
 /// The install job kind. Holds the state of every install in this program.
@@ -550,6 +561,22 @@ impl JobKind for InstallKind {
                 self.finish(&spec.nonce);
                 Err(DriverError::Incompatible(reason))
             }
+            Err(Step::Refused(failure)) => {
+                let reason = failure.text().to_owned();
+                self.settle(
+                    &spec.nonce,
+                    Stage::Failed {
+                        reason: reason.clone(),
+                    },
+                );
+                self.with(&spec.nonce, |run| {
+                    if !run.cancelling {
+                        run.failure = Some(failure);
+                    }
+                });
+                self.finish(&spec.nonce);
+                Err(DriverError::Incompatible(reason))
+            }
         }
     }
 }
@@ -815,6 +842,18 @@ impl SlotInstalls {
     pub fn stage(&self, job: JobId) -> Option<Stage> {
         let nonce = self.nonce_of(job)?;
         self.kind.with_run(&nonce, |run| run.stage.clone())
+    }
+
+    /// The typed refusal the install ended with: its kind, Orion's code when it has one, and the
+    /// words (see [`Failure`]). `None` while the install runs, when it ended some other way, and
+    /// for a refusal whose words were not a refusal of the call (a board's own answer carries
+    /// its words and no kind). Callers read the kind here, never the words.
+    #[must_use]
+    pub fn failure(&self, job: JobId) -> Option<Failure> {
+        let nonce = self.nonce_of(job)?;
+        self.kind
+            .with_run(&nonce, |run| Some(run.failure.clone()))
+            .flatten()
     }
 
     /// What the install's push has done over its attempts: bytes sent, attempts, and the window.

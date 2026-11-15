@@ -253,9 +253,8 @@ impl BoardActions {
                     let mut run = orion.attach(call)?;
                     match run.wait(POLL) {
                         Ok(update) => Ok(Seen::of(update)),
-                        Err(ClientError::Refused(error)) => {
-                            let text = error.to_string();
-                            Ok(Seen::Refused(Failure::of_core(error, text)))
+                        Err(ClientError::Refused { error, detail }) => {
+                            Ok(Seen::Refused(Failure::of_core(error, detail)))
                         }
                         Err(error) => Err(OrionError::Client(error)),
                     }
@@ -365,9 +364,8 @@ impl BoardActions {
                 })?;
                 match run.finish(wait) {
                     Ok(finished) => Ok(Direct::Ended(finished)),
-                    Err(ClientError::Refused(error)) => {
-                        let text = error.to_string();
-                        Ok(Direct::Refused(Failure::of_core(error, text)))
+                    Err(ClientError::Refused { error, detail }) => {
+                        Ok(Direct::Refused(Failure::of_core(error, detail)))
                     }
                     Err(ClientError::Io(error)) if error.kind() == ErrorKind::TimedOut => {
                         // Not finished in time: asked to stop, so it is not left running unobserved.
