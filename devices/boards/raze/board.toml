@@ -3,7 +3,7 @@
 # log of an early boot and the previous boot's log live in pstore (ramoops-pi5 overlay, boot/raze-device.txt;
 # PSTORE, PSTORE_RAM, PSTORE_CONSOLE, PSTORE_PMSG built in, raze.config).
 # Extends the BCM2712 family and keeps what the Raze adds: its kernel fragments, the eMMC disk and
-# the USB-boot flasher. The Raze's overlays are pending Lemnos's minimal list (PR text). Ported from
+# the USB-boot flasher, and the two firmware overlays its config.txt names ([kernel] overlays). Ported from
 # dev devices/raze/gaia. Untested on board.
 version = 1
 extends = "../../families/bcm2712/family.toml"
@@ -33,6 +33,13 @@ cmdline = "dhash_entries=16384 ihash_entries=8192 thash_entries=4096 uhash_entri
 # bcm2712-rpi-cm5-cm5io: the CM5 with eMMC (the Raze's 16 GB eMMC), not the CM5 Lite (cm5l: no eMMC). Its
 # sha256 is f773b476... on Raze #2, the bench dtb (checked: the dtb built from this tree matches it).
 fragments = ["../../families/bcm2712/assets/linux.fragment", "kernel/raze.config", "kernel/raze-trim.config"]
+# The firmware overlays the Raze's config.txt names (raze-device.txt today, lemnos-board.toml [boot] once Lemnos's key
+# lands with M36): ramoops-pi5 (pstore in RAM, the board's only early-boot log) and vc4-kms-v3d-pi5. Reason: the
+# kernel build made no .dtbo, so the boot partition had neither and the firmware dropped both lines (M2 link 1's
+# image gap). Built in-tree from the same tree as the dtb (Gaia emits BR2_LINUX_KERNEL_INTREE_DTSO_NAMES;
+# arch/arm64/boot/dts/overlays links to arm's at 53679a5), installed into device-trees, fed to Lemnos's
+# boot-partition --firmware through Gaia's @firmware@.
+overlays = ["overlays/ramoops-pi5", "overlays/vc4-kms-v3d-pi5"]
 
 
 # The eMMC: 30,535,680 sectors (14,910 MiB), the "16 GB" module. MBR, as the slot disk is.
