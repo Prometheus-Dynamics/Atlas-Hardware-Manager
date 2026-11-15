@@ -111,3 +111,25 @@ kind = "git"
 url = "https://github.com/raspberrypi/firmware.git"
 ref = "6f0881cba8bea8ec24956a5718714730e9936ec5"
 commit = "6f0881cba8bea8ec24956a5718714730e9936ec5"
+
+[source."rpi-dtmerge.build"]
+kind = "tree"
+path = "../../components/rpi-dtmerge/build"
+digest = "sha256:d8ee3a03a7d7e09849f08062d083d4a3aed03a746123b978d2824e4d2af057b4"
+
+[source."rpi-dtmerge.dtc"]
+kind = "git"
+url = "https://github.com/dgibson/dtc.git"
+ref = "v1.7.2"
+commit = "2d10aa2afe35527728db30b35ec491ecb6959e5c"
+
+[source."rpi-dtmerge.root"]
+kind = "image"
+reference = "docker.io/library/gcc:14"
+digest = "sha256:a6f425a380ee03e682df3b436fc9077c544fb0fea0a9cab943c3b8320db10765"
+
+[source."rpi-dtmerge.utils"]
+kind = "git"
+url = "https://github.com/raspberrypi/utils.git"
+ref = "eac8944a8f30a8365ea57e4d20d268baadd0eb67"
+commit = "eac8944a8f30a8365ea57e4d20d268baadd0eb67"
