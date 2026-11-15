@@ -61,14 +61,14 @@ impl Failure {
         }
     }
 
-    /// The failure of a client error, with `text` as its text (a caller that shows a shorter
-    /// text than the error's own passes it here).
+    /// The failure of a client error. A refusal's text is the node's words (`detail`), never empty;
+    /// the other kinds keep `text`, which the caller gives (a shorter text than the error's own).
     #[must_use]
     pub fn of_client(error: &ClientError, text: String) -> Self {
         match error {
             ClientError::Denied(_) => Self::new(FailureKind::Denied, None, text),
             ClientError::OtherKey { .. } => Self::new(FailureKind::OtherKey, None, text),
-            ClientError::Refused(core) => Self::of_core(*core, text),
+            ClientError::Refused { error, detail } => Self::of_core(*error, detail.clone()),
             _ => Self::other(text),
         }
     }
@@ -142,14 +142,20 @@ mod tests {
 
     #[test]
     fn the_comm_cores_denied_is_denied_with_its_code() {
-        let failure = Failure::of(&OrionError::Client(ClientError::Refused(CoreError::Denied)));
+        let failure = Failure::of(&OrionError::Client(ClientError::refused(
+            CoreError::Denied,
+            "",
+        )));
         assert!(failure.is_denied());
         assert_eq!(failure.code(), Some(CoreError::Denied.code()));
     }
 
     #[test]
     fn another_comm_core_refusal_keeps_its_code_and_is_not_denied() {
-        let failure = Failure::of(&OrionError::Client(ClientError::Refused(CoreError::Busy)));
+        let failure = Failure::of(&OrionError::Client(ClientError::refused(
+            CoreError::Busy,
+            "",
+        )));
         assert_eq!(failure.kind(), FailureKind::Refused);
         assert_eq!(failure.code(), Some(CoreError::Busy.code()));
         assert!(!failure.is_denied());
@@ -172,5 +178,39 @@ mod tests {
             answered: [2; 32],
         }));
         assert_eq!(failure.kind(), FailureKind::OtherKey);
+    }
+
+    #[test]
+    fn a_refusal_takes_its_kind_from_its_code_and_its_text_from_the_nodes_words() {
+        let detail = "no USB link named sda here; known: sdb, sdc";
+        let failure = Failure::of(&OrionError::Client(ClientError::refused(
+            CoreError::Denied,
+            detail,
+        )));
+        assert_eq!(failure.kind(), FailureKind::Denied);
+        assert_eq!(failure.code(), Some(CoreError::Denied.code()));
+        assert_eq!(failure.text(), detail);
+    }
+
+    #[test]
+    fn the_lease_lost_code_keeps_its_code_and_the_nodes_words_verbatim() {
+        let lost = CoreError::from_code(22).expect("code 22 is lease lost");
+        assert_eq!(lost, CoreError::LeaseLost);
+        let detail = "lease lost while quiet: taken by atlas-next";
+        let failure = Failure::of(&OrionError::Client(ClientError::refused(lost, detail)));
+        assert_eq!(failure.kind(), FailureKind::Refused);
+        assert_eq!(failure.code(), Some(22));
+        assert_eq!(failure.text(), detail);
+    }
+
+    #[test]
+    fn a_lease_held_by_another_is_denied_and_says_who_holds_it() {
+        let detail = "cam0 is held by atlas-next: only its holder or root frees it";
+        let failure = Failure::of(&OrionError::Client(ClientError::refused(
+            CoreError::Denied,
+            detail,
+        )));
+        assert!(failure.is_denied());
+        assert_eq!(failure.text(), detail);
     }
 }

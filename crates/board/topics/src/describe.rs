@@ -87,7 +87,7 @@ pub(crate) fn fetch(
             }
             _ => Err(finished.detail),
         }),
-        Err(ClientError::Refused(error)) => Ok(Err(error.to_string())),
+        Err(ClientError::Refused { detail, .. }) => Ok(Err(detail)),
         Err(ClientError::Io(error)) if error.kind() == ErrorKind::TimedOut => {
             // Not finished in time: asked to stop, so it is not left running unobserved.
             let _ = run.cancel();

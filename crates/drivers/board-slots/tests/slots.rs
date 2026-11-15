@@ -620,3 +620,44 @@ async fn an_install_interrupted_by_a_replaced_board_ends_and_sends_nothing_to_th
         "nothing was installed on it"
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_refused_install_keeps_its_typed_failure_and_the_boards_words() {
+    let rig = Rig::start("refused-install").await;
+    // No room on the board: its install gate refuses the bundle, with its own words.
+    rig.node.slot_set_free_bytes(0);
+    let path = write_bundle(
+        &rig.dir.join("bundles"),
+        "r.tar",
+        &bundle_bytes("slot-3", "3.0.0", None),
+    );
+    let job = rig
+        .installs
+        .submit(device(), &rig.address(), BOARD, true, request(path, false))
+        .await
+        .expect("queued");
+    stage_is(&rig, job, "the install to be refused", |stage| {
+        stage.is_final()
+    })
+    .await;
+    let Some(Stage::Failed { reason }) = rig.installs.stage(job) else {
+        panic!("the install was not refused: {:?}", rig.installs.stage(job));
+    };
+    let failure = rig
+        .installs
+        .failure(job)
+        .expect("the refusal is kept as a typed value");
+    assert_eq!(
+        failure.text(),
+        reason,
+        "the typed value carries the same words"
+    );
+    assert!(
+        !failure.is_denied(),
+        "a board's own refusal is not Orion's denied: {failure:?}"
+    );
+    assert!(
+        reason.contains("bytes"),
+        "the board's words are shown as they are: {reason}"
+    );
+}
