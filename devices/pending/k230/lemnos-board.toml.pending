@@ -1,5 +1,5 @@
 # PENDING (K1): Lemnos board file draft for canmv-k230d-ai-cam (slot form). NOT named in [descriptions], not installed
-# by any product, and NOT pinned: the rows below cite Lemnos's K230-MAP, pr/K230-MAP 6b84e099 (one commit on pr/BB1b
+# by any product, and NOT pinned: the rows below cite Lemnos's K230-MAP, pr/K230-MAP 6cf411d5 (one commit on pr/BB1b
 # e8472620), which the coordinator has not pinned. Keys follow docs/boards.md "U-Boot environment" on pr/BB1b and the
 # model testing/boards/rk3566-slots.toml. The generator refuses this file until the VBUS statement below is decided.
 format = "lemnos.board"
@@ -19,7 +19,7 @@ id = "watchdog"
 driver = "hw-watchdog"
 uses = { watchdog = "watchdog:/soc/wdt0@91106000" }
 
-# The OTG device port (controller usb-otg0 in socs/k230.toml at 6b84e099: usb-peripheral, /soc/usb-otg@91500000,
+# The OTG device port (controller usb-otg0 in socs/k230.toml at 6cf411d5: usb-peripheral, /soc/usb-otg@91500000,
 # UDC 91500000.usb-otg). The UDC name is the SDK's platform device name, UNCONFIRMED on a board (Lemnos: "not checked on a board").
 [[hardware]]
 name = "udc:91500000.usb-otg"
@@ -45,7 +45,7 @@ uses = { function = "udc:91500000.usb-otg" }
 # The uboot_usb_vendor/product pair is the pid.codes test pair, a placeholder Lemnos says to replace before release.
 # boot_sources is "<U-Boot DT path>=<kernel DT path>" (Lemnos docs/slots.md, "The boot source"). The left side is the
 # SD host's path in the SDK U-Boot dt: /soc/mmc1@91581000 (k230.dtsi:60 soc {, :161 mmc1@91581000, closed :277).
-# The right side is the kernel path, sdhci1@91581000, which the kernel dts names (Lemnos's map, 6b84e099). The MMC
+# The right side is the kernel path, sdhci1@91581000, which the kernel dts names (Lemnos's map, 6cf411d5). The MMC
 # hosts are not map rows (by design).
 [[devices]]
 id = "slots"

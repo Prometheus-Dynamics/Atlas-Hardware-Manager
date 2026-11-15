@@ -26,7 +26,7 @@ fragments = ["kernel/bench.fragment"]
 # snps,dwc2 at 0x91500000 with dr_mode "otg" (k230.dtsi:209-216). The controller is usbotg0. The Type-C connector
 # that wires it is NOT named by the SDK (no connector in the dts; docs/linux_sdk快速入门指南.md names only the
 # debug serial ports). From the SDK, unconfirmed until first boot.
-# Lemnos's K230-MAP (pr/K230-MAP 6b84e099, on pr/BB1b e8472620; NOT pinned) names the port usb-otg0 at
+# Lemnos's K230-MAP (pr/K230-MAP 6cf411d5, on pr/BB1b e8472620; NOT pinned) names the port usb-otg0 at
 # /soc/usb-otg@91500000, UDC 91500000.usb-otg. Pre-filled in lemnos-board.toml.pending, pending the coordinator's pin.
 # UDC name: CONFIRM ON BOARD (Lemnos: not checked on a board).
 #

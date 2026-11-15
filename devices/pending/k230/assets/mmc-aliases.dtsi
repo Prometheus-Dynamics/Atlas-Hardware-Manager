@@ -5,7 +5,7 @@
 // SYSCTL_BOOT_SDIO1 selects (board/canaan/common/k230_spl.c:65, :167). mmc0 (the eMMC node, not enabled on the AI-CAM)
 // is not aliased.
 //
-// NODE NAME: Lemnos's K230-MAP (pr/K230-MAP 6b84e099) names the SD host /soc/sdhci1@91581000, and its boot_sources
+// NODE NAME: Lemnos's K230-MAP (pr/K230-MAP 6cf411d5) names the SD host /soc/sdhci1@91581000, and its boot_sources
 // path must match the node in the kernel dts. So the kernel dts names the node sdhci1@91581000, with the label used
 // by the alias below. The SDK U-Boot dts names it mmc1@91581000. The two names differ; the U-Boot patch keeps its label.
 //
