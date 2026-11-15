@@ -1,18 +1,55 @@
-# Radxa Cubie A7Z on the Allwinner A733 (sun60i) family. CANDIDATE, UNVERIFIED, NEVER BOOTED.
-# Only what differs from the family is kept here.
+# Radxa Cubie A7Z (Allwinner A733, sun60i family). BENCH CANDIDATE, UNTESTED, NEVER BOOTED. Bench image only: the
+# closed DRAM blob (ddr.bin, family.toml LICENCE) is in the bootloader; nothing is published.
+# Only what differs from the family is kept here. No per-board code: the family is shared.
 version = 1
 extends = "../../families/sun60i/family.toml"
 name = "radxa-cubie-a7z"
-description = "Radxa Cubie A7Z (Allwinner A733), candidate sources, untested on board"
+description = "Radxa Cubie A7Z (Allwinner A733), bench candidate: kernel dts, and a U-Boot defconfig and dts this repo adds. UNTESTED, never booted."
 
-# OPEN, blocks a build: NO U-Boot defconfig and NO kernel device tree for the A7Z in any public
-# source read in B12 (radxa/u-boot @ 9da4b3e8 has the A7A and A7S only; the A7Z appears only as
-# radxa-pkg/device-a733 configs/cubie_a7z, a generic board file). Neither is guessed.
-#
-# OPEN: the DRAM blob. Dev's record says 1 GB LPDDR4 (the user's SKU). No A733 DRAM blob for LPDDR4
-# is pinned here: the one public candidate is the LPDDR5 build (radxa-pkg/u-boot-dlan17 @
-# b1cec0a9, awbin/a733/ddr.bin). Nothing is pinned until its match is known.
+# USB Type-C port 1 (the user's ruling: port 1, USB2 Type-C, carries power, OTG and FEL; the default device port). Radxa's A7Z
+# page says "one USB 2.0 Type-C and one USB 3.1 Type-C" with no port labels: the device port's VBUS role is OPEN (see lemnos-board.toml).
 
-# B19 (2026-11-13): the A7Z has no dts and no U-Boot defconfig in any public source read (see above), so its
-# USB device port, its LED GPIO and its VBUS wiring are all UNKNOWN. Its bring-up is blocked on those, not
-# guessed. Expected to share the A7S's USB-C 1 wiring only if a dts for it shows the same (not assumed).
+# Kernel device tree: an authored candidate (patches/linux, 0001), UNVERIFIED. The name is ours, not Radxa's.
+[kernel]
+device_tree = "allwinner/sun60i-a733-cubie-a7z"
+cmdline = "console=ttyS0,115200"
+# The family's series patches, then this board's dts patch (an own patch dir beside this file). Each names its source.
+patches = [{ source = "a733-kernel-series", path = "patches" }, { file = "patches/linux" }]
+
+[descriptions]
+lemnos = "lemnos-board.toml"
+
+# U-Boot: the vendor defconfig in radxa/u-boot 9da4b3e8 (A7A) or this repo's patch (A7Z, patches/u-boot, UNVERIFIED).
+[bootloader]
+defconfig = "radxa-cubie-a7z_defconfig"
+patches = [{ source = "a733-bootchain", path = "patches/u-boot" }, { file = "patches/u-boot" }]
+
+[bootloader.blobs]
+SUNXI_LIBDRAM = { source = "dlan17-pkg", path = "awbin/a733/ddr.bin" }
+
+# Partitions: the same layout as the A7S (family shape). Sizes are PLACEHOLDERS, not measured (see docs/prs/C1-cubie-a7s-bench.md, open items 1 and 4).
+[[partitions]]
+name = "u-boot"
+role = "bootloader"
+offset = "128K"
+in_table = false
+content = "u-boot-sunxi-with-spl.bin"
+
+[[partitions]]
+name = "uboot-env"
+role = "raw"
+type = "3de21764-95bd-54bd-a5c3-4abe786f38a8"
+offset = "16M"
+size = "128K"
+
+[[partitions]]
+name = "boot"
+role = "boot"
+type = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
+size = "82837504"
+
+[[partitions]]
+name = "data"
+role = "data"
+type = "0fc63daf-8483-4772-8e79-3d69d8477de4"
+size = "536870912"

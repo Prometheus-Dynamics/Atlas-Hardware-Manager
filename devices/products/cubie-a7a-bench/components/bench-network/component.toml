@@ -1,0 +1,27 @@
+# The A7A bench's Ethernet: DHCP on every Ethernet link except usb0 (the USB network's own interface, see
+# usb-gadget-network), with mDNS (systemd-resolved's responder, so the board answers to its name on the LAN).
+# Modeled on the bring-up's bringup-network (Type=ether, not the name eth0) and extended with the mDNS responder.
+# Ethernet: the gigabit GMAC (gmac210) driver is built in by the family fragment (linux.fragment). Untested on board.
+# The hostname from the serial is NOT here: no program is carried for it (TODO; the Raze's serial script lives on the
+# unmerged pr/Z1 branch, not on origin/next).
+version = 1
+name = "bench-network"
+description = "The bench's Ethernet by DHCP (matched by type, usb0 left to the USB network) and the mDNS responder."
+
+[[install]]
+from = { file = "files/10-bench-ethernet.network" }
+to = "/etc/systemd/network/10-bench-ethernet.network"
+mode = "0644"
+
+[[install]]
+from = { file = "files/10-bench-mdns.conf" }
+to = "/etc/systemd/resolved.conf.d/10-bench-mdns.conf"
+mode = "0644"
+
+[[services]]
+unit = "systemd-networkd.service"
+enable = true
+
+[[services]]
+unit = "systemd-resolved.service"
+enable = true

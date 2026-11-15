@@ -1,0 +1,121 @@
+# Written by `gaia lock`. Do not edit.
+version = 1
+
+[source."cubie-a7z-bench.buildroot"]
+kind = "git"
+url = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.02.3"
+commit = "679b9ead7620bbf193620d1ebf56f53c1764d37a"
+
+[source."cubie-lemnos-board.lemnos"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "e847262064ee1e88c5277592e6705ab46eca0670"
+commit = "e847262064ee1e88c5277592e6705ab46eca0670"
+
+[source."cubie-lemnos-board.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."lemnos-ctl.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."lemnos-ctl.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "e847262064ee1e88c5277592e6705ab46eca0670"
+commit = "e847262064ee1e88c5277592e6705ab46eca0670"
+
+[source."lemnos-orion.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."lemnos-orion.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "e847262064ee1e88c5277592e6705ab46eca0670"
+commit = "e847262064ee1e88c5277592e6705ab46eca0670"
+
+[source."lemnos-slot-init.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."lemnos-slot-init.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "e847262064ee1e88c5277592e6705ab46eca0670"
+commit = "e847262064ee1e88c5277592e6705ab46eca0670"
+
+[source."lemnos.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "e847262064ee1e88c5277592e6705ab46eca0670"
+commit = "e847262064ee1e88c5277592e6705ab46eca0670"
+
+[source."lemnosd.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."lemnosd.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "e847262064ee1e88c5277592e6705ab46eca0670"
+commit = "e847262064ee1e88c5277592e6705ab46eca0670"
+
+[source."orion.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."orion.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Orion.git"
+ref = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
+commit = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
+
+[source."orion.tools"]
+kind = "download"
+url = "https://ziglang.org/download/0.15.2/zig-x86_64-linux-0.15.2.tar.xz"
+digest = "sha256:02aa270f183da276e5b5920b1dac44a63f1a49e55050ebde3aecc9eb82f93239"
+
+[source."radxa-cubie-a7z.a733-bootchain"]
+kind = "git"
+url = "https://github.com/DockSeed/a733-bootchain.git"
+ref = "b6f6872be2505e1f4d4dfcea7bee5b423a3efcb3"
+commit = "b6f6872be2505e1f4d4dfcea7bee5b423a3efcb3"
+
+[source."radxa-cubie-a7z.a733-kernel-series"]
+kind = "git"
+url = "https://github.com/DockSeed/a7s-linux-mainline.git"
+ref = "fe0a8ed3a426c09efa8d92c14c9d9ab3769d5256"
+commit = "fe0a8ed3a426c09efa8d92c14c9d9ab3769d5256"
+
+[source."radxa-cubie-a7z.dlan17-pkg"]
+kind = "git"
+url = "https://github.com/radxa-pkg/u-boot-dlan17.git"
+ref = "b1cec0a90c795f65b82cee7098489e0bdf550b74"
+commit = "b1cec0a90c795f65b82cee7098489e0bdf550b74"
+
+[source."radxa-cubie-a7z.linux"]
+kind = "git"
+url = "https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git"
+ref = "7595a62d45ee1a2297eafa5f2ef5d0a45142d84d"
+commit = "7595a62d45ee1a2297eafa5f2ef5d0a45142d84d"
+
+[source."radxa-cubie-a7z.tf-a"]
+kind = "git"
+url = "https://git.trustedfirmware.org/TF-A/trusted-firmware-a.git"
+ref = "3d425f4f459820a44d24b23464dbc09d6baab7bb"
+commit = "3d425f4f459820a44d24b23464dbc09d6baab7bb"
+
+[source."radxa-cubie-a7z.u-boot"]
+kind = "git"
+url = "https://github.com/radxa/u-boot.git"
+ref = "9da4b3e82d641296f5b19d5e78eaad0d3cf56eec"
+commit = "9da4b3e82d641296f5b19d5e78eaad0d3cf56eec"
