@@ -1,0 +1,450 @@
+diff --git a/b/arch/arm64/boot/dts/rockchip/rv1126b.dtsi b/arch/arm64/boot/dts/rockchip/rv1126b.dtsi
+new file mode 100644
+index 0000000..817a38d
+--- /dev/null
++++ b/arch/arm64/boot/dts/rockchip/rv1126b.dtsi
+@@ -0,0 +1,444 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * RV1126B SoC: the boot set (CPU, GIC, timer, PSCI, CRU, GRF, pinctrl banks,
++ * UART, watchdog, SD and eMMC hosts, USB 2 PHY and DRD controller, combo PHY,
++ * GMAC, OTP, I2C0). Register bases and interrupt numbers are Rockchip's, from
++ * the vendor RV1126B SoC dtsi (Rockchip develop-6.1, GPL-2.0+ OR MIT). Nodes
++ * outside the boot set (ISP, VPSS, NPU, codecs, SARADC, thermal, PWM, SPI,
++ * the other UARTs and I2Cs, the power domains and OPP tables) are not here yet:
++ * see docs/prs/AU1-aura.md. No pin group is referenced: the vendor pin group
++ * table is not in this tree (missing: docs/prs/AU1-aura.md, "pinctrl").
++ */
++
++#include <dt-bindings/clock/rockchip,rv1126b-cru.h>
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/interrupt-controller/arm-gic.h>
++#include <dt-bindings/interrupt-controller/irq.h>
++#include <dt-bindings/phy/phy.h>
++#include <dt-bindings/reset/rockchip,rv1126b-cru.h>
++
++/ {
++	compatible = "rockchip,rv1126b";
++	interrupt-parent = <&gic>;
++	#address-cells = <1>;
++	#size-cells = <1>;
++
++	clocks {
++		xin32k: xin32k {
++			compatible = "fixed-clock";
++			#clock-cells = <0>;
++			clock-frequency = <32768>;
++			clock-output-names = "xin32k";
++		};
++
++		xin24m: xin24m {
++			compatible = "fixed-clock";
++			#clock-cells = <0>;
++			clock-frequency = <24000000>;
++			clock-output-names = "xin24m";
++		};
++
++		clk_rcosc: clk_rcosc {
++			compatible = "fixed-clock";
++			#clock-cells = <0>;
++			clock-frequency = <96000000>;
++			clock-output-names = "clk_rcosc";
++		};
++	};
++
++	cpus {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		cpu0: cpu@0 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a53";
++			reg = <0x0>;
++			enable-method = "psci";
++			clocks = <&cru ARMCLK>;
++		};
++
++		cpu1: cpu@1 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a53";
++			reg = <0x1>;
++			enable-method = "psci";
++			clocks = <&cru ARMCLK>;
++		};
++
++		cpu2: cpu@2 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a53";
++			reg = <0x2>;
++			enable-method = "psci";
++			clocks = <&cru ARMCLK>;
++		};
++
++		cpu3: cpu@3 {
++			device_type = "cpu";
++			compatible = "arm,cortex-a53";
++			reg = <0x3>;
++			enable-method = "psci";
++			clocks = <&cru ARMCLK>;
++		};
++	};
++
++	psci {
++		compatible = "arm,psci-1.0";
++		method = "smc";
++	};
++
++	timer {
++		compatible = "arm,armv8-timer";
++		interrupts = <GIC_PPI 13 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>,
++			     <GIC_PPI 14 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>,
++			     <GIC_PPI 11 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>,
++			     <GIC_PPI 10 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>;
++	};
++
++	gic: interrupt-controller@21201000 {
++		compatible = "arm,gic-400";
++		#interrupt-cells = <3>;
++		#address-cells = <0>;
++		interrupt-controller;
++		reg = <0x21201000 0x1000>,
++		      <0x21202000 0x2000>,
++		      <0x21204000 0x2000>,
++		      <0x21206000 0x2000>;
++		interrupts = <GIC_PPI 9 (GIC_CPU_MASK_SIMPLE(4) | IRQ_TYPE_LEVEL_LOW)>;
++	};
++
++	cru: clock-controller@20000000 {
++		compatible = "rockchip,rv1126b-cru", "syscon";
++		reg = <0x20000000 0xc0000>;
++		#clock-cells = <1>;
++		#reset-cells = <1>;
++	};
++
++	grf: syscon@20100000 {
++		compatible = "rockchip,rv1126b-grf", "syscon", "simple-mfd";
++		reg = <0x20100000 0x91000>;
++	};
++
++	ioc_grf: syscon@201a0000 {
++		compatible = "rockchip,rv1126b-ioc-grf", "syscon", "simple-mfd";
++		reg = <0x201a0000 0x50000>;
++	};
++
++	pmu: power-management@20838000 {
++		compatible = "rockchip,rv1126b-pmu", "syscon", "simple-mfd";
++		reg = <0x20838000 0x400>;
++	};
++
++	pinctrl: pinctrl {
++		compatible = "rockchip,rv1126b-pinctrl";
++		rockchip,grf = <&ioc_grf>;
++		#address-cells = <1>;
++		#size-cells = <1>;
++		ranges;
++
++		gpio0: gpio@20600000 {
++			compatible = "rockchip,gpio-bank";
++			reg = <0x20600000 0x200>;
++			interrupts = <GIC_SPI 0 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 1 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 2 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 3 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru PCLK_PMU_GPIO0>, <&cru DBCLK_PMU_GPIO0>;
++			gpio-controller;
++			#gpio-cells = <2>;
++			gpio-ranges = <&pinctrl 0 0 32>;
++			interrupt-controller;
++			#interrupt-cells = <2>;
++		};
++
++		gpio1: gpio@21300000 {
++			compatible = "rockchip,gpio-bank";
++			reg = <0x21300000 0x200>;
++			interrupts = <GIC_SPI 4 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 5 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 6 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 7 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru PCLK_GPIO1>, <&cru DBCLK_GPIO1>;
++			gpio-controller;
++			#gpio-cells = <2>;
++			gpio-ranges = <&pinctrl 0 32 32>;
++			interrupt-controller;
++			#interrupt-cells = <2>;
++		};
++
++		gpio2: gpio@21700000 {
++			compatible = "rockchip,gpio-bank";
++			reg = <0x21700000 0x200>;
++			interrupts = <GIC_SPI 8 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 9 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 10 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 11 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru PCLK_GPIO2>, <&cru DBCLK_GPIO2>;
++			gpio-controller;
++			#gpio-cells = <2>;
++			gpio-ranges = <&pinctrl 0 64 32>;
++			interrupt-controller;
++			#interrupt-cells = <2>;
++		};
++
++		gpio3: gpio@21e00000 {
++			compatible = "rockchip,gpio-bank";
++			reg = <0x21e00000 0x200>;
++			interrupts = <GIC_SPI 12 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 13 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 14 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 15 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru PCLK_GPIO3>, <&cru DBCLK_GPIO3>;
++			gpio-controller;
++			#gpio-cells = <2>;
++			gpio-ranges = <&pinctrl 0 96 32>;
++			interrupt-controller;
++			#interrupt-cells = <2>;
++		};
++
++		gpio4: gpio@21800000 {
++			compatible = "rockchip,gpio-bank";
++			reg = <0x21800000 0x200>;
++			interrupts = <GIC_SPI 16 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 17 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 18 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 19 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru PCLK_GPIO4>, <&cru DBCLK_GPIO4>;
++			gpio-controller;
++			#gpio-cells = <2>;
++			gpio-ranges = <&pinctrl 0 128 32>;
++			interrupt-controller;
++			#interrupt-cells = <2>;
++		};
++
++		gpio5: gpio@21900000 {
++			compatible = "rockchip,gpio-bank";
++			reg = <0x21900000 0x200>;
++			interrupts = <GIC_SPI 20 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 21 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 22 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 23 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru PCLK_GPIO5>, <&cru DBCLK_GPIO5>;
++			gpio-controller;
++			#gpio-cells = <2>;
++			gpio-ranges = <&pinctrl 0 160 32>;
++			interrupt-controller;
++			#interrupt-cells = <2>;
++		};
++
++		gpio6: gpio@21a00000 {
++			compatible = "rockchip,gpio-bank";
++			reg = <0x21a00000 0x200>;
++			interrupts = <GIC_SPI 24 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 25 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 26 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 27 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru PCLK_GPIO6>, <&cru DBCLK_GPIO6>;
++			gpio-controller;
++			#gpio-cells = <2>;
++			gpio-ranges = <&pinctrl 0 192 32>;
++			interrupt-controller;
++			#interrupt-cells = <2>;
++		};
++
++		gpio7: gpio@21b00000 {
++			compatible = "rockchip,gpio-bank";
++			reg = <0x21b00000 0x200>;
++			interrupts = <GIC_SPI 28 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 29 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 30 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 31 IRQ_TYPE_LEVEL_HIGH>;
++			clocks = <&cru PCLK_GPIO7>, <&cru DBCLK_GPIO7>;
++			gpio-controller;
++			#gpio-cells = <2>;
++			gpio-ranges = <&pinctrl 0 224 32>;
++			interrupt-controller;
++			#interrupt-cells = <2>;
++		};
++	};
++
++	uart2: serial@21170000 {
++		compatible = "rockchip,rv1126b-uart", "snps,dw-apb-uart";
++		reg = <0x21170000 0x100>;
++		interrupts = <GIC_SPI 58 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&cru SCLK_UART2>, <&cru PCLK_UART2>;
++		clock-names = "baudclk", "apb_pclk";
++		reg-shift = <2>;
++		reg-io-width = <4>;
++		status = "disabled";
++	};
++
++	i2c0: i2c@21100000 {
++		compatible = "rockchip,rv1126b-i2c", "rockchip,rv1126-i2c";
++		reg = <0x21100000 0x1000>;
++		interrupts = <GIC_SPI 48 IRQ_TYPE_LEVEL_HIGH>;
++		#address-cells = <1>;
++		#size-cells = <0>;
++		clocks = <&cru CLK_I2C0>, <&cru PCLK_I2C0>;
++		clock-names = "i2c", "pclk";
++		status = "disabled";
++	};
++
++	wdt: watchdog@20b60000 {
++		compatible = "snps,dw-wdt";
++		reg = <0x20b60000 0x100>;
++		clocks = <&cru TCLK_WDT_NS>, <&cru PCLK_WDT_NS>;
++		clock-names = "tclk", "pclk";
++		interrupts = <GIC_SPI 74 IRQ_TYPE_LEVEL_HIGH>;
++		status = "disabled";
++	};
++
++	otp: otp@20b90000 {
++		compatible = "rockchip,rv1126b-otp";
++		reg = <0x20b90000 0x4000>;
++		#address-cells = <1>;
++		#size-cells = <1>;
++		clocks = <&cru CLK_USER_OTPC_NS>, <&cru CLK_SBPI_OTPC_NS>,
++			 <&cru PCLK_OTPC_NS>, <&cru PCLK_OTP_MASK>;
++		clock-names = "usr", "sbpi", "apb", "phy";
++		resets = <&cru SRST_USER_OTPC_NS>, <&cru SRST_SBPI_OTPC_NS>,
++			 <&cru SRST_P_OTPC_NS>, <&cru SRST_P_OTP_MASK>;
++		reset-names = "usr", "sbpi", "apb", "phy";
++		status = "disabled";
++	};
++
++	sdmmc0: mmc@21d60000 {
++		compatible = "rockchip,rv1126b-dw-mshc", "rockchip,rk3288-dw-mshc";
++		reg = <0x21d60000 0x4000>;
++		interrupts = <GIC_SPI 187 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&cru HCLK_SDMMC0>, <&cru CCLK_SDMMC0>;
++		clock-names = "biu", "ciu";
++		fifo-depth = <0x100>;
++		max-frequency = <200000000>;
++		status = "disabled";
++	};
++
++	emmc: mmc@21470000 {
++		compatible = "rockchip,rv1126b-dw-mshc", "rockchip,rk3288-dw-mshc";
++		reg = <0x21470000 0x4000>;
++		interrupts = <GIC_SPI 189 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&cru HCLK_EMMC>, <&cru CCLK_EMMC>;
++		clock-names = "biu", "ciu";
++		fifo-depth = <0x100>;
++		max-frequency = <200000000>;
++		status = "disabled";
++	};
++
++	usb2phy: usb2-phy@21400000 {
++		compatible = "rockchip,rv1126b-usb2phy";
++		reg = <0x21400000 0x10000>;
++		clocks = <&cru PCLK_USB2PHY>;
++		clock-names = "pclk";
++		clock-output-names = "usb480m_phy";
++		#clock-cells = <0>;
++		rockchip,usbctrl-grf = <&grf>;
++		rockchip,usbgrf = <&grf>;
++		status = "disabled";
++
++		usb2phy_host: host-port {
++			#phy-cells = <0>;
++			interrupts = <GIC_SPI 35 IRQ_TYPE_LEVEL_HIGH>;
++			interrupt-names = "linestate";
++			status = "disabled";
++		};
++
++		usb2phy_otg: otg-port {
++			#phy-cells = <0>;
++			interrupts = <GIC_SPI 32 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 33 IRQ_TYPE_LEVEL_HIGH>,
++				     <GIC_SPI 34 IRQ_TYPE_LEVEL_HIGH>;
++			interrupt-names = "otg-id", "otg-bvalid", "linestate";
++			status = "disabled";
++		};
++	};
++
++	usb3phy: usb3-phy@21410000 {
++		compatible = "rockchip,rv1126b-usb3-phy";
++		reg = <0x21410000 0x10000>;
++		clocks = <&cru CLK_REF_PIPEPHY>, <&cru PCLK_PIPEPHY>;
++		clock-names = "refclk", "apbclk";
++		#phy-cells = <1>;
++		resets = <&cru SRST_P_PIPEPHY>, <&cru SRST_REF_PIPEPHY>;
++		reset-names = "combphy-apb", "combphy";
++		rockchip,pipe-grf = <&grf>;
++		rockchip,pipe-phy-grf = <&grf>;
++		status = "disabled";
++	};
++
++	usb_drd_dwc3: usb@21500000 {
++		compatible = "rockchip,rv1126b-dwc3", "rockchip,rk3576-dwc3", "snps,dwc3";
++		reg = <0x21500000 0x100000>;
++		clocks = <&cru CLK_REF_USB3OTG>,
++			 <&cru CLK_SUSPEND_USB3OTG>,
++			 <&cru ACLK_USB3OTG>;
++		clock-names = "ref", "suspend", "bus_clk";
++		interrupts = <GIC_SPI 209 IRQ_TYPE_LEVEL_HIGH>;
++		resets = <&cru SRST_A_USB3OTG>;
++		reset-names = "usb3-otg";
++		dr_mode = "otg";
++		phys = <&usb2phy_otg>, <&usb3phy PHY_TYPE_USB3>;
++		phy-names = "usb2-phy", "usb3-phy";
++		phy_type = "utmi_wide";
++		snps,dis_enblslpm_quirk;
++		snps,dis-u1-entry-quirk;
++		snps,dis-u2-entry-quirk;
++		snps,dis-u2-freeclk-exists-quirk;
++		snps,dis-del-phy-power-chg-quirk;
++		snps,dis-tx-ipgap-linecheck-quirk;
++		snps,dis_rxdet_inp3_quirk;
++		snps,parkmode-disable-hs-quirk;
++		snps,parkmode-disable-ss-quirk;
++		snps,usb2-gadget-lpm-disable;
++		snps,usb2-lpm-disable;
++		status = "disabled";
++	};
++
++	gmac: ethernet@21c70000 {
++		compatible = "rockchip,rv1126b-gmac", "snps,dwmac-4.20a";
++		reg = <0x21c70000 0x10000>;
++		interrupts = <GIC_SPI 200 IRQ_TYPE_LEVEL_HIGH>,
++			     <GIC_SPI 197 IRQ_TYPE_LEVEL_HIGH>;
++		interrupt-names = "macirq", "eth_wake_irq";
++		rockchip,grf = <&grf>;
++		rockchip,php_grf = <&ioc_grf>;
++		clocks = <&cru CLK_GMAC_125M>, <&cru CLK_50M_GMAC_IOBUF_VI>,
++			 <&cru PCLK_GMAC>, <&cru ACLK_GMAC>,
++			 <&cru CLK_GMAC_PTP_REF>;
++		clock-names = "stmmaceth", "clk_mac_ref",
++			      "pclk_mac", "aclk_mac",
++			      "ptp_ref";
++		resets = <&cru SRST_A_GMAC>;
++		reset-names = "stmmaceth";
++		snps,mixed-burst;
++		snps,tso;
++		snps,axi-config = <&gmac_stmmac_axi_setup>;
++		snps,mtl-rx-config = <&gmac_mtl_rx_setup>;
++		snps,mtl-tx-config = <&gmac_mtl_tx_setup>;
++		status = "disabled";
++
++		mdio: mdio {
++			compatible = "snps,dwmac-mdio";
++			#address-cells = <0x1>;
++			#size-cells = <0x0>;
++		};
++
++		gmac_stmmac_axi_setup: stmmac-axi-config {
++			snps,wr_osr_lmt = <4>;
++			snps,rd_osr_lmt = <8>;
++			snps,blen = <0 0 0 0 16 8 4>;
++		};
++
++		gmac_mtl_rx_setup: rx-queues-config {
++			snps,rx-queues-to-use = <1>;
++			queue0 {
++			};
++		};
++
++		gmac_mtl_tx_setup: tx-queues-config {
++			snps,tx-queues-to-use = <1>;
++			queue0 {
++			};
++		};
++	};
++};

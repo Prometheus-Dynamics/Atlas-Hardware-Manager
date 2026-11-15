@@ -1,0 +1,129 @@
+diff --git a/arch/arm64/boot/dts/rockchip/Makefile b/arch/arm64/boot/dts/rockchip/Makefile
+index e7936a2..c94f467 100644
+--- a/arch/arm64/boot/dts/rockchip/Makefile
++++ b/arch/arm64/boot/dts/rockchip/Makefile
+@@ -343,3 +343,5 @@ rk3588-rock-5b-plus-radxa-4k-cam-dtbs := rk3588-rock-5b-plus.dtb \
+ dtb-$(CONFIG_ARCH_ROCKCHIP) += rk3588-tiger-haikou-haikou-video-demo.dtb
+ rk3588-tiger-haikou-haikou-video-demo-dtbs := rk3588-tiger-haikou.dtb \
+ 	rk3588-tiger-haikou-video-demo.dtbo
++
++dtb-$(CONFIG_ARCH_ROCKCHIP) += rv1126b-luckfox-aura.dtb
+diff --git a/b/arch/arm64/boot/dts/rockchip/rv1126b-luckfox-aura.dts b/arch/arm64/boot/dts/rockchip/rv1126b-luckfox-aura.dts
+new file mode 100644
+index 0000000..ad490b4
+--- /dev/null
++++ b/arch/arm64/boot/dts/rockchip/rv1126b-luckfox-aura.dts
+@@ -0,0 +1,113 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * Waveshare (Luckfox) Aura: RV1126B, microSD boot, USB 3 OTG Type-C as a
++ * USB 2 gadget, Gigabit Ethernet (RGMII), DW watchdog, ramoops.
++ *
++ * BENCH PROTOTYPE, UNTESTED ON BOARD. Every fact below marked UNVERIFIED is
++ * not yet read from the schematic, the board, or a register comparison:
++ *  - the PMIC is not identified: the two regulators here are fixed stand-ins;
++ *  - the console UART, the microSD card-detect pin and the pin groups are the
++ *    vendor EVB's, not the Aura's; no pinctrl-0 is set until the pinctrl port
++ *    lands (missing: docs/prs/AU1-aura.md);
++ *  - the Ethernet PHY address and RGMII delays come from the strap names only;
++ *  - the ramoops address is a placeholder not checked against TF-A's, U-Boot's
++ *    or the kernel's memory use.
++ */
++
++/dts-v1/;
++
++#include "rv1126b.dtsi"
++
++/ {
++	model = "Waveshare Luckfox Aura";
++	compatible = "waveshare,luckfox-aura", "rockchip,rv1126b";
++
++	aliases {
++		serial2 = &uart2;
++		ethernet0 = &gmac;
++		mmc0 = &sdmmc0;
++	};
++
++	chosen {
++		/* UNVERIFIED: the Aura's debug UART is taken as the EVB's uart2. */
++		stdout-path = "serial2:1500000n8";
++	};
++
++	/* UNVERIFIED stand-in: a fixed 3.3 V rail for the microSD card and the
++	 * PHY, until the PMIC is identified on the bench. */
++	vcc3v3_sys: regulator-vcc3v3-sys {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc3v3_sys";
++		regulator-min-microvolt = <3300000>;
++		regulator-max-microvolt = <3300000>;
++		regulator-always-on;
++		regulator-boot-on;
++	};
++
++	reserved-memory {
++		#address-cells = <1>;
++		#size-cells = <1>;
++		ranges;
++
++		/* Crash log across a reset. UNVERIFIED placement: check against the
++		 * TF-A, U-Boot and kernel memory map on the bench (cat /proc/iomem). */
++		ramoops: ramoops@110000 {
++			compatible = "ramoops";
++			reg = <0x110000 0xf0000>;
++			console-size = <0x20000>;
++			record-size = <0x10000>;
++			ftrace-size = <0>;
++			pmsg-size = <0>;
++			ecc-size = <0>;
++		};
++	};
++};
++
++&uart2 {
++	status = "okay";
++};
++
++&wdt {
++	status = "okay";
++};
++
++/* microSD slot: the vendor SD host. Card-detect and pins: UNVERIFIED (see above). */
++&sdmmc0 {
++	vmmc-supply = <&vcc3v3_sys>;
++	no-sdio;
++	no-mmc;
++	disable-wp;
++	status = "okay";
++};
++
++&usb2phy {
++	status = "okay";
++};
++
++&usb2phy_otg {
++	status = "okay";
++};
++
++/* USB 3 OTG Type-C as a USB 2 gadget. The combo PHY is left out of the first
++ * image (no SuperSpeed); the controller runs at high speed on the USB 2 PHY. */
++&usb_drd_dwc3 {
++	dr_mode = "peripheral";
++	phys = <&usb2phy_otg>;
++	phy-names = "usb2-phy";
++	status = "okay";
++};
++
++/* Gigabit Ethernet, RGMII. PHY address and delays: UNVERIFIED (strap names only). */
++&gmac {
++	phy-mode = "rgmii";
++	status = "okay";
++
++	mdio {
++		#address-cells = <1>;
++		#size-cells = <0>;
++
++		phy: ethernet-phy@0 {
++			reg = <0>;
++		};
++	};
++};
