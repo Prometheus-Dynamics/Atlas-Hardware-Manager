@@ -261,7 +261,7 @@ pub(crate) fn renew(orion: &Orion, node: &NodeName, device: &str) -> Result<(), 
         detached: false,
     })?;
     match run.finish(RENEW_WAIT) {
-        Ok(_) | Err(ClientError::Refused(_)) => Ok(()),
+        Ok(_) | Err(ClientError::Refused { .. }) => Ok(()),
         Err(ClientError::Io(error)) if error.kind() == std::io::ErrorKind::TimedOut => {
             let _ = run.cancel();
             Ok(())

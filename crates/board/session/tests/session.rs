@@ -167,8 +167,9 @@ async fn a_denied_refusal_keeps_its_kind_whatever_its_words() {
     // The comm core's own `denied` carries its code.
     let core = handle
         .with_client(|_| -> Result<(), orion::Error> {
-            Err(orion::Error::Client(ClientError::Refused(
+            Err(orion::Error::Client(ClientError::refused(
                 orion::types::Error::Denied,
+                "",
             )))
         })
         .await;
@@ -357,4 +358,30 @@ async fn a_queued_call_whose_caller_gave_up_is_not_started_later() {
         !ran.load(Ordering::SeqCst),
         "the abandoned call was not run"
     );
+}
+
+#[tokio::test]
+async fn a_refusal_keeps_the_nodes_words_verbatim() {
+    let dir = scratch("words");
+    let node = start(&dir, None);
+    let sessions = Sessions::new(Arc::new(NoPause));
+    let handle = sessions.handle(&address(node.network().port())).unwrap();
+    connected(&handle).await;
+
+    let detail = "lease lost while quiet: taken by atlas-next";
+    let answer = handle
+        .with_client(move |_| -> Result<(), orion::Error> {
+            Err(orion::Error::Client(ClientError::refused(
+                orion::types::Error::LeaseLost,
+                detail,
+            )))
+        })
+        .await;
+    match answer {
+        Err(SessionError::Failed(failure)) => {
+            assert_eq!(failure.text(), detail);
+            assert_eq!(failure.code(), Some(22));
+        }
+        other => panic!("expected a failed call, got {other:?}"),
+    }
 }

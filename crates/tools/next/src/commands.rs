@@ -20,7 +20,7 @@ use serde_json::json;
 
 use crate::args::{Command, Verb};
 use crate::identity;
-use crate::link::{self, BoardInfo, Link, Security};
+use crate::link::{self, BoardInfo, Link};
 use crate::pins::{Pin, Pins};
 use crate::report::Report;
 use crate::{Env, parse_address};
@@ -30,13 +30,6 @@ const POLL: Duration = Duration::from_millis(50);
 
 /// The name this PC's identity is enrolled under on a board.
 const ENROL_NAME: &str = "atlas-next";
-/// The first line of a board command on a board with security off: its key is checked, but the
-/// session is not signed.
-pub const SECURITY_OFF_LINE: &str =
-    "security off: the board's key is checked, the session is not signed";
-/// Refused by `enrol` on a board with security off.
-pub const SECURITY_OFF_NO_ENROL: &str =
-    "this board runs with security off: there is nothing to enrol";
 
 /// A command that did not succeed: its status and the words to show. `denied` is set when the
 /// board's refusal was Orion's `Denied` (a key the board does not know, or one it has not let
@@ -98,14 +91,12 @@ pub async fn run<W: Write>(command: Command, env: &Env, out: &mut W) -> i32 {
             return r.finish(1);
         }
     };
-    // The session mode is asked once per run, and every command of this run uses the answer.
-    let mode = link::security(&address).await;
     let outcome = match &command.verb {
-        Verb::Fingerprint => fingerprint(&mut r, env, &state, &address, &key).await,
-        Verb::Pin => pin(&mut r, env, &state, &address, &key).await,
-        Verb::Repin => repin(&mut r, env, &state, &address, command.reflashed, &key).await,
-        Verb::Enrol => enrol(&mut r, env, &state, &address, &key, mode).await,
-        verb => board(&mut r, env, &state, &address, verb, &key, mode).await,
+        Verb::Fingerprint => fingerprint(&mut r, &state, &address, &key).await,
+        Verb::Pin => pin(&mut r, &state, &address, &key).await,
+        Verb::Repin => repin(&mut r, &state, &address, command.reflashed, &key).await,
+        Verb::Enrol => enrol(&mut r, env, &state, &address, &key).await,
+        verb => board(&mut r, env, &state, &address, verb, &key).await,
     };
     match outcome {
         Ok(()) => r.finish(0),
@@ -128,18 +119,18 @@ pub async fn run<W: Write>(command: Command, env: &Env, out: &mut W) -> i32 {
 
 async fn fingerprint<W: Write>(
     r: &mut Report<'_, W>,
-    env: &Env,
     state: &Path,
     address: &Address,
     key: &[u8; 32],
 ) -> Result<(), Refusal> {
     let text = address.to_string();
-    let node = probe_or_refuse(env, address, &text, key).await?;
-    r.say(format!("{text}: key fingerprint {}", node.fingerprint));
+    let proved = transport_or_refuse(address, &text, key).await?;
+    let fingerprint = identity::fingerprint(&proved);
+    r.say(format!("{text}: key fingerprint {fingerprint}"));
     let pins = load_pins(state)?;
     match pins.get(&text) {
         None => r.say("not pinned: run `pin` to trust this key"),
-        Some(pin) if pin.key == node.public_key => {
+        Some(pin) if pin.key == proved => {
             r.say("pinned: this is the key the address is pinned to");
         }
         Some(pin) => r.say(format!(
@@ -148,52 +139,51 @@ async fn fingerprint<W: Write>(
         )),
     }
     r.field("address", text);
-    r.field("fingerprint", node.fingerprint);
+    r.field("fingerprint", fingerprint);
     Ok(())
 }
 
 async fn pin<W: Write>(
     r: &mut Report<'_, W>,
-    env: &Env,
     state: &Path,
     address: &Address,
     key: &[u8; 32],
 ) -> Result<(), Refusal> {
     let text = address.to_string();
-    let node = probe_or_refuse(env, address, &text, key).await?;
+    let proved = transport_or_refuse(address, &text, key).await?;
+    let fingerprint = identity::fingerprint(&proved);
     let mut pins = load_pins(state)?;
     match pins.get(&text).cloned() {
-        Some(pin) if pin.key == node.public_key => {
-            r.say(format!("already pinned: {}", node.fingerprint));
+        Some(pin) if pin.key == proved => {
+            r.say(format!("already pinned: {fingerprint}"));
         }
-        Some(pin) => return Err(link::replaced(&text, &pin, Some(node.fingerprint.clone()))),
+        Some(pin) => return Err(link::replaced(&text, &pin, Some(fingerprint.clone()))),
         None => {
             pins.set(Pin {
                 address: text.clone(),
-                key: node.public_key,
-                fingerprint: node.fingerprint.clone(),
+                key: proved,
+                fingerprint: fingerprint.clone(),
             });
             save_pins(&pins)?;
             r.say(format!(
-                "pinned {} for {text}: every command now checks this key",
-                node.fingerprint
+                "pinned {fingerprint} for {text}: every command now checks this key"
             ));
         }
     }
-    r.field("fingerprint", node.fingerprint);
+    r.field("fingerprint", fingerprint);
     Ok(())
 }
 
 async fn repin<W: Write>(
     r: &mut Report<'_, W>,
-    env: &Env,
     state: &Path,
     address: &Address,
     reflashed: bool,
     key: &[u8; 32],
 ) -> Result<(), Refusal> {
     let text = address.to_string();
-    let node = probe_or_refuse(env, address, &text, key).await?;
+    let proved = transport_or_refuse(address, &text, key).await?;
+    let fingerprint = identity::fingerprint(&proved);
     let mut pins = load_pins(state)?;
     let old = pins.get(&text).cloned();
     if !reflashed {
@@ -203,50 +193,53 @@ async fn repin<W: Write>(
         return Err(Refusal::new(
             3,
             format!(
-                "repin replaces the pin, and is for a reflashed board only. Pinned: {pinned}. Answering now: {}. Nothing was changed. If the board was reflashed, run it again with --reflashed.",
-                node.fingerprint
+                "repin replaces the pin, and is for a reflashed board only. Pinned: {pinned}. Answering now: {fingerprint}. Nothing was changed. If the board was reflashed, run it again with --reflashed."
             ),
         ));
     }
     match &old {
-        Some(pin) if pin.key == node.public_key => {
-            r.say(format!("unchanged: {} is still the pin", node.fingerprint));
+        Some(pin) if pin.key == proved => {
+            r.say(format!("unchanged: {fingerprint} is still the pin"));
         }
         Some(pin) => r.say(format!(
-            "repinned {text}: {} -> {}",
-            pin.fingerprint, node.fingerprint
+            "repinned {text}: {} -> {fingerprint}",
+            pin.fingerprint
         )),
-        None => r.say(format!(
-            "pinned {text} as {} (it had no pin)",
-            node.fingerprint
-        )),
+        None => r.say(format!("pinned {text} as {fingerprint} (it had no pin)")),
     }
     pins.set(Pin {
         address: text,
-        key: node.public_key,
-        fingerprint: node.fingerprint.clone(),
+        key: proved,
+        fingerprint: fingerprint.clone(),
     });
     save_pins(&pins)?;
-    r.field("fingerprint", node.fingerprint);
+    r.field("fingerprint", fingerprint);
     Ok(())
+}
+
+/// The key the board proves it holds (see [`link::transport_key`]), or the words for a board that
+/// did not answer.
+async fn transport_or_refuse(
+    address: &Address,
+    text: &str,
+    key: &[u8; 32],
+) -> Result<[u8; 32], Refusal> {
+    link::transport_key(address, key)
+        .await
+        .map_err(|why| Refusal::new(1, format!("the board at {text} did not answer: {why}")))
 }
 
 /// `enrol`: asks the board to know this PC's identity. The request carries no proof, so the
 /// board decides: its answer says whether this key is pending the owner's approval, enrolled, or
-/// revoked. The request is made on a pinned board only (the pin rule), and never on a board with
-/// security off, which has nothing to enrol.
+/// revoked. The request is made on a pinned board only (the pin rule).
 async fn enrol<W: Write>(
     r: &mut Report<'_, W>,
     env: &Env,
     state: &Path,
     address: &Address,
     key: &[u8; 32],
-    mode: Security,
 ) -> Result<(), Refusal> {
     let text = address.to_string();
-    if mode == Security::Off {
-        return Err(Refusal::new(1, SECURITY_OFF_NO_ENROL));
-    }
     let pins = load_pins(state)?;
     let Some(pin) = pins.get(&text).cloned() else {
         let node = probe_or_refuse(env, address, &text, key).await?;
@@ -308,12 +301,8 @@ async fn board<W: Write>(
     address: &Address,
     verb: &Verb,
     key: &[u8; 32],
-    mode: Security,
 ) -> Result<(), Refusal> {
     let text = address.to_string();
-    if mode == Security::Off {
-        r.say(SECURITY_OFF_LINE);
-    }
     let pins = load_pins(state)?;
     let link = link::pinned(env, &pins, &text, address, key).await?;
     let info = link::board_info(&link.node);
