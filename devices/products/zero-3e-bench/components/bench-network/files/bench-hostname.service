@@ -1,0 +1,14 @@
+# Names the bench from its serial before the network and mDNS start (bench-network's script).
+[Unit]
+Description=Name the bench from its SoC serial
+DefaultDependencies=no
+After=systemd-sysctl.service
+Before=systemd-networkd.service systemd-resolved.service network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/bench-hostname
+
+[Install]
+WantedBy=sysinit.target

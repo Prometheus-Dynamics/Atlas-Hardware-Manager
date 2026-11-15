@@ -1,0 +1,42 @@
+# Radxa ZERO 3E bench image: a flashable SD card the PC reaches over the USB gadget ONLY (Lemnos's usb-gadget, NCM as lemnos0), with mDNS and a hostname from the board serial. No Ethernet path. It boots from SD with the plain
+# sd-image recipe (no slot layout: Lemnos has no U-Boot bays). lemnosd and Orion run with security off; the
+# hardware watchdog is armed by systemd (RuntimeWatchdogSec), because Lemnos's socs/rk3566.toml names no watchdog
+# controller, so the board file cannot name one (no second opener). Serial console: the base's getty on ttyS2.
+#
+# What is NOT here, and why: the ramoops crash log and the PSTORE and DW_WATCHDOG kernel lines are standalone
+# files under kernel/ (not wired): Gaia's board and family files are the place to attach them and are owned
+# by Gaia's side of the rewrite. See docs/prs/Z1.md. Untested on board: nothing here has booted.
+version = 1
+name = "zero-3e-bench"
+description = "Radxa ZERO 3E bench image: SD boot, USB gadget only (Lemnos usb-gadget, serial-hash-v1 addressing), mDNS, serial-based hostname, lemnosd and Orion with security off, systemd watchdog."
+
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.02.3"
+
+[components]
+radxa-zero-3e-extlinux = "../../components/radxa-zero-3e-extlinux/component.toml"
+dev-bringup-hostkey = "../../components/dev-bringup-hostkey/component.toml"
+lemnos = "../../components/lemnos/component.toml"
+lemnosd = "../../components/lemnosd/component.toml"
+lemnos-ctl = "../../components/lemnos-ctl/component.toml"
+lemnos-orion = "../../components/lemnos-orion/component.toml"
+orion = "../../components/orion/component.toml"
+bench-board = "components/bench-board/component.toml"
+bench-pc-key = "components/bench-pc-key/component.toml"
+bench-network = "components/bench-network/component.toml"
+lemnos0-addressing = "../../components/lemnos0-addressing/component.toml"
+bench-watchdog = "components/bench-watchdog/component.toml"
+
+[[images]]
+name = "zero-3e-bench"
+board = "../../boards/radxa-zero-3e/board.toml"
+components = ["radxa-zero-3e-extlinux", "dev-bringup-hostkey", "lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "orion", "bench-board", "bench-pc-key", "bench-network", "lemnos0-addressing", "bench-watchdog"]
+# The base OS, then the bench's own lines (SSH, mDNS, the BusyBox applet lemnos0-address needs).
+os = { provider = "buildroot", source = "buildroot", fragments = ["../zero-3e-base/os.fragment", "os.fragment"] }
+recipe = "sd-image"
+budget = "1G"
+
+[images.settings]
+# Names the disk (required by sd-image; see zero-3e-base).
+id = "zero-3e-bench"
