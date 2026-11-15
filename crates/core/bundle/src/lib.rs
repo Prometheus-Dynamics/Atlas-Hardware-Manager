@@ -3,9 +3,11 @@
 //!
 //! A bundle is a plain tar holding `slot.json` (schema 3), `slot.sig`, the
 //! slot's `rootfs.erofs` (the EROFS image with its dm-verity tree appended),
-//! and the `boot/` files that go with it. `slot.sig` is the raw 64-byte
-//! ed25519 signature over the exact bytes of `slot.json`. The format is
-//! Lemnos's: its `system.slots` install takes exactly this.
+//! and the `boot/` files that go with it. `slot.sig` is Lemnos's 108-byte
+//! signing record over the exact bytes of `slot.json`. The format, the manifest's
+//! bytes and the bundle's rules are Lemnos's (`lemnos-slot-store`): this crate
+//! reads and verifies through them, and its writer is for tests and the sim only.
+//! Real bundles come from Gaia's `lemnos-ctl bundle`.
 //!
 //! `slot.json` carries `product`, `version`, optional `variant`, `board` (the
 //! board file's `[board] id`, the board the slot was built for; a bundle
@@ -65,7 +67,7 @@ pub use manifest::{
     validate_boot_path, validate_id, validate_name,
 };
 pub use seed::{SEED_LEN, Seed, sign_slot_record, slot_message};
-pub use sign::{SIG_LEN, sign_slot, verify_slot};
+pub use sign::{RECORD_LEN, sign_slot, verify_slot};
 pub use source::{BootFile, SlotSource};
 pub use verity::{BLOCK, VerityHasher, root_hash};
 pub use write::{BOOT_DIR, ROOTFS, SLOT_JSON, SLOT_SIG, write_bundle};

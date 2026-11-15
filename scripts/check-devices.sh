@@ -114,6 +114,105 @@ EOF
   return $rc
 }
 
+# The Atlas side of the Lemnos pin (PR L3): the workspace's lemnos-slot-store rev must be the Lemnos rev the
+# products lock, so Atlas reads and verifies slot bundles in the format of the Lemnos the image is built from.
+# Prints the rev on the lemnos-slot-store line of a Cargo.toml (empty when that line names none).
+cargo_lemnos_rev() {  # <Cargo.toml>
+  awk '/lemnos-slot-store/ && /Prometheus-Dynamics\/Lemnos/ {
+    if (match($0, /rev = "[0-9a-f]+"/)) { print substr($0, RSTART + 7, RLENGTH - 8); exit }
+  }' "$1"
+}
+
+# Prints one line per product whose gaia.lock pins a Lemnos rev other than the Cargo.toml's, and returns 1 when
+# any does, or when no product pins Lemnos at all (nothing to hold Cargo to). Returns 0 with nothing printed when
+# every product's Lemnos rev is the Cargo rev.
+lemnos_cargo_pin_rule() {  # <Cargo.toml> <devices dir>
+  local cargo_rev lock rev bad=0 pinned=0
+  cargo_rev=$(cargo_lemnos_rev "$1")
+  if [[ -z $cargo_rev ]]; then
+    echo "$1 names no Lemnos rev on its lemnos-slot-store line"
+    return 1
+  fi
+  for lock in "$2"/products/*/gaia.lock; do
+    [[ -f $lock ]] || continue
+    while IFS= read -r rev; do
+      [[ -n $rev ]] || continue
+      pinned=1
+      if [[ $rev != "$cargo_rev" ]]; then
+        echo "$(basename "$(dirname "$lock")") locks Lemnos $rev, but $1 pins lemnos-slot-store at $cargo_rev"
+        bad=1
+      fi
+    done < <(lemnos_revs "$lock")
+  done
+  [[ $pinned -eq 1 ]] || { echo "no product's gaia.lock pins Lemnos"; return 1; }
+  return $bad
+}
+
+# The self-test: a Cargo rev that is not the products' Lemnos rev is refused and both revs are named; the real
+# tree's pair passes.
+lemnos_cargo_pin_self_test() {  # <Cargo.toml> <devices dir>
+  local real rc=0 out bad
+  real=$(cargo_lemnos_rev "$1")
+  bad=$(mktemp)
+  sed 's/rev = "[0-9a-f]*"/rev = "1111111111111111111111111111111111111111"/' "$1" >"$bad"
+  if out=$(lemnos_cargo_pin_rule "$bad" "$2"); then
+    echo "check-devices: self-test: a lemnos-slot-store rev other than the products' was not refused" >&2; rc=1
+  elif [[ $out != *"$real"* ]]; then
+    echo "check-devices: self-test: the pin refusal does not name the products' rev: $out" >&2; rc=1
+  fi
+  rm -f "$bad"
+  lemnos_cargo_pin_rule "$1" "$2" >/dev/null || { echo "check-devices: self-test: the real Cargo pin no longer matches the products' Lemnos rev" >&2; rc=1; }
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the Cargo pin rule refuses a lemnos-slot-store rev other than the products' Lemnos rev, and passes the real tree"
+  return $rc
+}
+
+# The one-copy rule for Lemnos crates (PR L3): Cargo.lock holds each Lemnos-repository package at ONE rev. Two
+# copies of one crate would be two types for one format in one binary. It is checked from Cargo.lock, which
+# `--locked` already holds to the manifests, so no cargo run is needed. Prints "NAME: REV REV" for each package
+# at two or more revs (Lemnos's git source, its rev after the #).
+lemnos_duplicate_crates() {  # <Cargo.lock>
+  awk '
+    function flush(   key, rev) {
+      if (name != "" && src ~ /Prometheus-Dynamics\/Lemnos/) {
+        rev = src; sub(/.*#/, "", rev)
+        key = name SUBSEP rev
+        if (!(key in seen)) { seen[key] = 1; count[name]++; revs[name] = revs[name] " " rev }
+      }
+      name = ""; src = ""
+    }
+    /^\[\[package\]\]/ { flush(); next }
+    /^name = / { name = $3; gsub(/"/, "", name) }
+    /^source = / { src = $0 }
+    END { flush(); for (n in count) if (count[n] > 1) print n ":" revs[n] }
+  ' "$1"
+}
+
+lemnos_duplicate_self_test() {  # <Cargo.lock>
+  local two one rc=0
+  two=$(mktemp); one=$(mktemp)
+  cat >"$two" <<'EOF'
+[[package]]
+name = "shm-ring"
+version = "1.0.0"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos?rev=1111111111111111111111111111111111111111#1111111111111111111111111111111111111111"
+
+[[package]]
+name = "shm-ring"
+version = "1.0.0"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos.git?rev=2222222222222222222222222222222222222222#2222222222222222222222222222222222222222"
+EOF
+  sed '/2222222222222222222222222222222222222222/,$d' "$two" >"$one"
+  if [[ -z $(lemnos_duplicate_crates "$two") ]]; then
+    echo "check-devices: self-test: two revs of one Lemnos crate were not refused" >&2; rc=1
+  elif [[ $(lemnos_duplicate_crates "$two") != *"1111111111111111111111111111111111111111"*"2222222222222222222222222222222222222222"* ]]; then
+    echo "check-devices: self-test: the duplicate refusal does not name both revs" >&2; rc=1
+  fi
+  [[ -z $(lemnos_duplicate_crates "$one") ]] || { echo "check-devices: self-test: one rev of a Lemnos crate was refused" >&2; rc=1; }
+  rm -f "$two" "$one"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the Lemnos one-copy rule refuses one crate at two revs and passes one rev"
+  return $rc
+}
+
 # The Lemnos board file rule (PR B26). A product whose components include lemnosd runs a daemon that reads
 # /etc/lemnos/board.toml, so the board it is built for must name its Lemnos board file under [descriptions]
 # (`lemnos = "lemnos-board.toml"`, beside the board.toml), and that file must exist. Zero names is refused here,
@@ -1340,6 +1439,19 @@ while IFS= read -r line; do
   esac
 done <<<"$erofs_msg"
 
+# The Atlas side of the Lemnos pin and the one-copy rule (PR L3). Both read this repository's own Cargo files,
+# so they run for the default tree only. They are here, in the device checker, because that is where the Lemnos
+# rev of the image is held (the products' gaia.lock) and this checker already runs in the gate.
+if [[ $root_given -eq 0 ]]; then
+  if ! cargo_msg=$(lemnos_cargo_pin_rule "$repo/Cargo.toml" "$root"); then
+    bad "Lemnos pin: ${cargo_msg//$'\n'/; }"
+  fi
+  dup_msg=$(lemnos_duplicate_crates "$repo/Cargo.lock")
+  if [[ -n $dup_msg ]]; then
+    bad "Lemnos crates at two revs in Cargo.lock: ${dup_msg//$'\n'/; }: one rev per Lemnos package"
+  fi
+fi
+
 if [[ $fail -ne 0 ]]; then
   echo "check-devices: FAILED" >&2
   exit 1
@@ -1363,6 +1475,8 @@ if [[ $root_given -eq 0 ]]; then
   fi
   rm -f "$out"
   lemnos_rule_self_test || die "self-check: the Lemnos one-rev rule no longer refuses two revs in one product"
+  lemnos_cargo_pin_self_test "$repo/Cargo.toml" "$root" || die "self-check: the Cargo pin rule no longer refuses a lemnos-slot-store rev other than the products' Lemnos rev"
+  lemnos_duplicate_self_test "$repo/Cargo.lock" || die "self-check: the one-copy rule no longer refuses a Lemnos crate at two revs"
   lemnos_board_rule_self_test || die "self-check: the Lemnos board file rule no longer refuses a lemnosd product without a board file"
   slot_chain_self_test || die "self-check: the slot root chain check no longer refuses a module or a missing =y"
   bringup_rule_self_test || die "self-check: the bring-up rule no longer refuses a bring-up product without its signs"

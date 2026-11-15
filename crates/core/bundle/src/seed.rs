@@ -5,9 +5,9 @@
 //! The key id is the SHA-256 of the 32-byte raw public key derived from that seed. A key id a caller
 //! states is checked against the derived one before anything is signed.
 //!
-//! The record is the 108-byte `LMNSSIG1` form `atlas-image` reads and writes (see [`Record`]), and
-//! what is signed is [`slot_message`]: the tag `lemnos-slot-bundle\0`, a u32 LE version (1), a u32
-//! LE length, then the exact bytes of `slot.json`. The vector is in `tests/seed.rs`.
+//! The record is Lemnos's 108-byte `LMNSSIG1` record and what is signed is Lemnos's slot-bundle message
+//! (`lemnos_slot_store::signing`, see [`crate::sign`]): nothing of either format is written here. The
+//! vector is in `tests/seed.rs`.
 //!
 //! Nothing here prints seed bytes: [`Seed`]'s `Debug` is `Seed(..)`, it has no `Display`, and every
 //! error names the path and the rule, never the file's content.
@@ -17,26 +17,18 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{ErrorKind, Read, Write};
 use std::path::Path;
 
-use atlas_image::{Algorithm, Record};
 use atlas_release::{PublicKey, public_key_for, sign_bytes};
-use sha2::{Digest, Sha256};
+use lemnos_slot_store::signing;
 use zeroize::Zeroize;
 
 use crate::BundleError;
+use crate::sign::{RECORD_LEN, key_id_of};
 
 /// The seed's length in bytes (the Ed25519 secret key).
 pub const SEED_LEN: usize = 32;
-/// The `slot.sig` record's length: the first-flash record `atlas-image` reads and writes (108 bytes).
-const RECORD_LEN: usize = 108;
-/// The domain tag at the start of the signed message, with its NUL (19 bytes).
-const SLOT_TAG: &[u8; 19] = b"lemnos-slot-bundle\0";
-/// The signed message's version.
-const SLOT_MESSAGE_VERSION: u32 = 1;
 /// The most bytes a seed file is read to: far more than either accepted form, so a huge file is
 /// refused without being read whole.
 const SEED_FILE_LIMIT: u64 = 256;
-/// The prefix of a public key's display form (`atlas-release` writes `ed25519:<64 hex>`).
-const PUBLIC_PREFIX: &str = "ed25519:";
 
 /// An Ed25519 seed: the secret that signs a bundle's `slot.sig`.
 ///
@@ -182,7 +174,7 @@ impl Seed {
     /// The key id: the SHA-256 of the 32 raw bytes of the public key.
     #[must_use]
     pub fn key_id(&self) -> [u8; 32] {
-        Sha256::digest(raw_public(&self.public_key())).into()
+        key_id_of(&self.public_key())
     }
 
     /// The key id as 64 lowercase hex characters.
@@ -223,22 +215,19 @@ impl Seed {
     }
 }
 
-/// The bytes `slot.sig` signs for `slot_json`, the exact `slot.json` bytes: the tag, a u32 LE
-/// version (1), a u32 LE length, then the manifest.
+/// The bytes `slot.sig` signs for `slot_json`, the exact `slot.json` bytes: Lemnos's
+/// `signing::slot_bundle_message` (its tag, version and length prefix, then the manifest).
 ///
 /// # Errors
 ///
 /// `Malformed` when `slot_json` is longer than a u32 can count.
 pub fn slot_message(slot_json: &[u8]) -> Result<Vec<u8>, BundleError> {
-    let length = u32::try_from(slot_json.len()).map_err(|_| {
-        BundleError::Malformed("slot.json is too long to sign: its length is not a u32".into())
-    })?;
-    let mut message = Vec::with_capacity(SLOT_TAG.len() + 8 + slot_json.len());
-    message.extend_from_slice(SLOT_TAG);
-    message.extend_from_slice(&SLOT_MESSAGE_VERSION.to_le_bytes());
-    message.extend_from_slice(&length.to_le_bytes());
-    message.extend_from_slice(slot_json);
-    Ok(message)
+    if u32::try_from(slot_json.len()).is_err() {
+        return Err(BundleError::Malformed(
+            "slot.json is too long to sign: its length is not a u32".into(),
+        ));
+    }
+    Ok(signing::slot_bundle_message(slot_json))
 }
 
 /// Signs `slot_json` (the exact bytes written to `slot.json`) with `seed` and returns the 108-byte
@@ -257,12 +246,10 @@ pub fn sign_slot_record(
         seed.check_key_id(stated)?;
     }
     let message = slot_message(slot_json)?;
-    let record = Record {
-        algorithm: Algorithm::Ed25519,
-        key_id: seed.key_id(),
-        signature: sign_bytes(&message, &seed.0),
-    };
-    Ok(record.to_bytes())
+    let record = signing::record_bytes(&seed.key_id(), &sign_bytes(&message, &seed.0));
+    let mut out = [0u8; RECORD_LEN];
+    out.copy_from_slice(&record);
+    Ok(out)
 }
 
 /// The seed a seed file's content holds, or `None` for any other form.
@@ -299,12 +286,4 @@ fn hex_digit(digit: u8) -> Option<u8> {
 
 fn encode_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|byte| format!("{byte:02x}")).collect()
-}
-
-/// The 32 raw bytes of a public key. `atlas-release` keeps the key private and displays it as
-/// `ed25519:<64 hex>`; a display that is not that shape is a broken invariant of that crate.
-fn raw_public(key: &PublicKey) -> [u8; 32] {
-    let text = key.to_string();
-    let hex = text.strip_prefix(PUBLIC_PREFIX).unwrap_or(&text);
-    decode_hex(hex.as_bytes()).expect("a public key displays as ed25519:<64 hex characters>")
 }
