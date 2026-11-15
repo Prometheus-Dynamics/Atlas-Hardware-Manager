@@ -21,8 +21,20 @@ Each patch is a plain unified diff against pristine v7.3.4. All seven apply in o
 | 0003 USB2 PHY | `rockchip,rv1126b-usb2phy`: tuning and the OTG and host port table (fields mainline has) | builds, 0 warnings |
 | 0004 USB3 combo PHY | `rockchip,rv1126b-usb3-phy`: USB3 config (not used by the first image); the binding gets an RV1126B `if` block (two clocks, two resets); `combphy_reg.offset` widened to u32 | builds, 0 warnings |
 | 0005 I2C | `rockchip,rv1126b-i2c` soc data (GRF -1); the rv1126 fallback is NOT equivalent, so it gets its own entry | builds, 0 warnings |
-| 0006 SoC dtsi | `rv1126b.dtsi`, the boot set (see the table below) | dtc clean |
-| 0007 Aura dts | `rv1126b-luckfox-aura.dts` and its Makefile line: ramoops, watchdog, UART2, SD, USB2 gadget, GMAC (RGMII), I2C0 pins | dtc clean |
+| 0006 SoC dtsi | `rv1126b.dtsi`, the boot set (see the table below); `php-grf` spelled as the mainline driver reads it | dtc clean |
+| 0007 dwmac glue | `rockchip,rv1126b-gmac`: RGMII set-to-rgmii (delays in the IOC GRF), speed (VI GRF divider), binding (compatible, php-grf required). RMII and the integrated MAC-PHY not ported. | builds, 0 warnings (kernel flags); binding not checked with dt-schema |
+| 0008 Aura dts | `rv1126b-luckfox-aura.dts` and its Makefile line: ramoops, watchdog, UART2, SD, USB2 gadget, GMAC (RGMII), I2C0 pins | dtc clean |
+
+## Register layouts: TRM not read
+
+The RV1126B TRM is not on disk and is not downloaded. Every register offset, bit and value in this series is taken from the BSP driver and dtsi (Rockchip `kernel-develop-6.12`, `470f9dccb`, read-only). Each is marked "TRM not read" here, and the file:line citations are below. Nothing is checked against silicon.
+
+- Pinctrl offsets (drive, pull, schmitt, bank iomux): BSP `drivers/pinctrl/pinctrl-rockchip.c` 2376-2501, 6368-6384. TRM not read.
+- USB2 PHY offsets (tuning, port table): BSP `drivers/phy/rockchip/phy-rockchip-inno-usb2.c` 3451-3489, 5098-5148. TRM not read.
+- USB3 combo PHY offsets (pipe-phy-grf 0x18000 and up, peri-grf 0x1003c): BSP `drivers/phy/rockchip/phy-rockchip-naneng-combphy.c` 1781-1801. TRM not read.
+- I2C soc data: BSP `drivers/i2c/busses/i2c-rk3x.c` 1834-1838, and the i2c2 GRF comment at 1986. TRM not read.
+- GMAC: VI GRF 0x50050 (interface, speed divider), IOC GRF GMACIO M0/M1 delay registers at 0x38BA0/0x38BA4 and 0x30BA8/0x30BAC: BSP `drivers/net/ethernet/stmicro/stmmac/dwmac-rk.c` 2872-2926 (defines) and 2928-2968 (set_to_rgmii and set_rgmii_speed). The M1 pair is numerically below the M0 pair; kept as the BSP has it. TRM not read.
+- The dtsi base addresses and interrupt numbers: BSP `arch/arm64/boot/dts/rockchip/rv1126b.dtsi` as copied into 0006. TRM not read.
 
 ## Register and data citations (BSP: `/mnt/ssd-samsung/gaia/bsp/rockchip-bsp/kernel-develop-6.12`, read-only)
 
@@ -85,7 +97,17 @@ Triage classes come from `/mnt/ssd-samsung/atlas-next-scratch-root/research/rv11
 | PMIC | UNIDENTIFIED. Per ruling 5: two fixed supplies (`vcc3v3_sys`, always on) stand in, marked in the dts. Identify on the bench. |
 | DDR | Closed rkbin blob `rv1126b_ddr_1332MHz_v1.10.bin` (ruling 4). Bench-only, never published. |
 
-## U-Boot (not started, per the coordinator)
+## U-Boot (scoped, not started in code)
+
+- Seed: Rockchip `u-boot-next-dev` at `1c535d65` (`/mnt/ssd-samsung/gaia/bsp/rockchip-bsp/u-boot-next-dev`, read-only). Has `arch/arm/mach-rockchip/rv1126b` (`clk_rv1126b.c`, `rv1126b.c`, `syscon_rv1126b.c`, `Kconfig`, `Makefile`; 881 lines in all) and the rv1126b defconfigs under `configs/`.
+- Mainline v2026.10 on disk: `/mnt/ssd-samsung/atlas-next-scratch-root/research/u-boot` and `scratch-uboot-mainline`, both at `5508406582f6` (v2026.10 prep). No download needed.
+- DDR: `drivers/ram/rockchip/sdram_rv1126b.c` in the seed is a stub that returns -1 under `CONFIG_TPL_BUILD` (seed line 1-12). The real DDR init is the closed rkbin blob `rv1126b_ddr_1332MHz_v1.10.bin`, so the TPL goes through binman with that blob.
+- rkcommon: the seed's `tools/rkcommon.c` has NO rv1126b entry (its rv1126 entry is at line 149), and the vendor image comes from rkbin's `boot_merger`, not from `mkimage -T rksd`. So there is no vendor value to port for the header magic, and none is written. The mainline `rkcommon.c` has no rv1126b entry either.
+- BL31: upstream TF-A `plat/rockchip/rv1126b` first (ruling 3). Not built here. The rkbin `rv1126b_bl31_v1.13.elf` is the fallback only if upstream fails; it is a closed blob.
+- Closed blobs: the DDR blob, and the BL31 blob if used. An Aura image built with either stays on the bench and its image metadata must say so. The series notes and this doc say so.
+- Status: a big port (the triage's class). The first patch would be the SoC plumbing (Kconfig, Makefile, the rv1126b SoC file, clk, syscon), then the board and defconfig. None of it is written or built yet; see the report for why.
+
+## U-Boot (historical notes)
 
 - SoC port: not written. Seed: the BSP `u-boot-next-dev` (`arch/arm/mach-rockchip/rv1126b` absent in mainline v2026.10; present in the BSP as `configs/rv1126b_defconfig`, `include/dt-bindings/clock/rockchip,rv1126b-cru.h`, `drivers/misc/rv1126b-secure-otp.S`, and others). Clean pinned series on v2026.10, Atlas's. Lemnos reviews env and boot-count parts; Gaia builds. **Owner: Atlas. Waiting: the SDK source path from Gaia (B7).**
 - DDR (TPL): the rkbin closed blob. Vendor `sdram_rv1126b.c` in the BSP `next-dev` is a stub. **Gap: closed blob, not ours to write.**
