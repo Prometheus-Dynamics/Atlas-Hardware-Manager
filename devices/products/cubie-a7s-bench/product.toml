@@ -13,7 +13,7 @@
 #   Orion (the shared orion component, Orion 455a956).
 #   Ethernet by DHCP and mDNS (components/bench-network); SSH with the PC's key (components/bench-pc-ssh-key, pc-key input).
 #   the USB network on the OTG port (USB-C 1): Gaia's configfs NCM (shared usb-gadget-network) with the board id (usb-gadget-family).
-#     NOT the Raze's serial-hash-v1 addressing: lemnos0-addressing is on the unmerged pr/Z1 branch, not origin/next (copied nothing).
+#     Plus the Raze/ZERO 3E serial-hash-v1 addressing (components/lemnos0-addressing), now on this branch from pr/Z1 (merged).
 #   security OFF (board file), lemnosd feeds the hardware watchdog (15 s), the kernel's pstore/ramoops for crash logs (BB3 reader
 #   NOT on the pin), a serial console (ttyS0).
 #
@@ -42,6 +42,9 @@ cubie-lemnos-board = "components/cubie-lemnos-board/component.toml"
 bench-pc-ssh-key = "components/bench-pc-ssh-key/component.toml"
 bench-network = "components/bench-network/component.toml"
 usb-gadget-family = "components/usb-gadget-family/component.toml"
+# The Raze/ZERO 3E serial-hash-v1 address scheme (shared; from pr/Z1, merged into this branch). It addresses the lemnos0
+# NCM interface; on this board that interface exists only if the Lemnos gadget is declared (see docs/prs/C1-cubie-a7s-bench.md).
+lemnos0-addressing = "../../components/lemnos0-addressing/component.toml"
 # Shared with the other products: Gaia's USB network script (configfs NCM; its own pin), and Orion.
 usb-gadget-network = "../../components/usb-gadget-network/component.toml"
 orion = "../../components/orion/component.toml"
@@ -49,7 +52,7 @@ orion = "../../components/orion/component.toml"
 [[images]]
 name = "cubie-a7s-bench"
 board = "../../boards/radxa-cubie-a7s/board.toml"
-components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "cubie-lemnos-board", "bench-pc-ssh-key", "bench-network", "usb-gadget-family", "usb-gadget-network", "orion"]
+components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "cubie-lemnos-board", "bench-pc-ssh-key", "bench-network", "usb-gadget-family", "usb-gadget-network", "lemnos0-addressing", "orion"]
 # The slot's initramfs: lemnos-slot-init goes there (as the Raze's), not on the root filesystem.
 initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
