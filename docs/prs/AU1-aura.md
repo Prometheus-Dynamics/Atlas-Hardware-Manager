@@ -23,7 +23,10 @@ Each patch is a plain unified diff against pristine v7.3.4. All seven apply in o
 | 0005 I2C | `rockchip,rv1126b-i2c` soc data (GRF -1); the rv1126 fallback is NOT equivalent, so it gets its own entry | builds, 0 warnings |
 | 0006 SoC dtsi | `rv1126b.dtsi`, the boot set (see the table below); `php-grf` spelled as the mainline driver reads it | dtc clean |
 | 0007 dwmac glue | `rockchip,rv1126b-gmac`: RGMII set-to-rgmii (delays in the IOC GRF), speed (VI GRF divider), binding (compatible, php-grf required). RMII and the integrated MAC-PHY not ported. | builds, 0 warnings (kernel flags); binding not checked with dt-schema |
-| 0008 Aura dts | `rv1126b-luckfox-aura.dts` and its Makefile line: ramoops, watchdog, UART2, SD, USB2 gadget, GMAC (RGMII), I2C0 pins | dtc clean |
+| 0008 OTP | `rockchip,rv1126b-otp`: the BSP's byte-addressed read path (`rv1126b_otp_read`), data size 0x90, clocks usr, sbpi, apb, phy. Word size 0 so the common path passes byte offsets. | builds, 0 warnings |
+| 0009 thermal | `rockchip,rv1126b-tsadc`: the BSP chip (v14 initialize, v5 get-temp, v4 alarm and tshut, the amplitude limiter, GRF bias and offset trim). Shared-code change: an optional `phy_init` hook, a `phy_config` field, and a probe call that is skipped when the hook is NULL. | builds, 0 warnings |
+| 0010 SARADC | `rockchip,rv1126b-saradc`: eight 13-bit channels, 24 MHz, the v2 start and read with DAS 0x14 (the BSP's v3 non-DMA path). Shared-code change: an optional `das_soc_data` field, default 0xc as before. DMA mode is NOT ported. | builds, 0 warnings |
+| 0011 Aura dts | `rv1126b-luckfox-aura.dts` and its Makefile line: ramoops, watchdog, UART2, SD, USB2 gadget, GMAC (RGMII), I2C0 pins | dtc clean |
 
 ## Register layouts: TRM not read
 
@@ -34,6 +37,9 @@ The RV1126B TRM is not on disk and is not downloaded. Every register offset, bit
 - USB3 combo PHY offsets (pipe-phy-grf 0x18000 and up, peri-grf 0x1003c): BSP `drivers/phy/rockchip/phy-rockchip-naneng-combphy.c` 1781-1801. TRM not read.
 - I2C soc data: BSP `drivers/i2c/busses/i2c-rk3x.c` 1834-1838, and the i2c2 GRF comment at 1986. TRM not read.
 - GMAC: VI GRF 0x50050 (interface, speed divider), IOC GRF GMACIO M0/M1 delay registers at 0x38BA0/0x38BA4 and 0x30BA8/0x30BAC: BSP `drivers/net/ethernet/stmicro/stmmac/dwmac-rk.c` 2872-2926 (defines) and 2928-2968 (set_to_rgmii and set_rgmii_speed). The M1 pair is numerically below the M0 pair; kept as the BSP has it. TRM not read.
+- OTP (0008): byte-addressed read `rk3568_otp_read` in BSP `drivers/nvmem/rockchip-otp.c` 527-590 (the RV1126B entry uses it, `rv1126b_data` 1040-1045). RK3568_NBYTES 2 at line 94. TRM not read.
+- Thermal (0009): BSP `drivers/thermal/rockchip_thermal.c` defines 260-268, 283, 338-351, 365-366; `rv1126b_tsadc_phy_init` 1731-1759; `rk_tsadcv14_initialize` 1292-1307; `rk_tsadcv5_get_temp` 1437-1452; `rk_tsadc_limit_amplitude` 1410-1433; `rk_tsadcv4_alarm_temp` 1536-1560; `rk_tsadcv4_tshut_temp` 1602-1617; chip data 1908-1919. TRM not read.
+- SARADC (0010): BSP `drivers/iio/adc/rockchip_saradc.c` channels 512-521, data 523-530 (`das_soc_data = 0x14`), `start_v2` 124-148, `read_v3` 236-248. TRM not read.
 - The dtsi base addresses and interrupt numbers: BSP `arch/arm64/boot/dts/rockchip/rv1126b.dtsi` as copied into 0006. TRM not read.
 
 ## Register and data citations (BSP: `/mnt/ssd-samsung/gaia/bsp/rockchip-bsp/kernel-develop-6.12`, read-only)
@@ -50,9 +56,6 @@ The RV1126B TRM is not on disk and is not downloaded. Every register offset, bit
 
 ## Not done in this PR (each with the reason)
 
-- **OTP (`drivers/nvmem/rockchip-otp.c`)**: not written. The BSP's RV1126B read path is the byte-addressed `rk3568_otp_read` with `RK3568_NBYTES` (BSP line 527); mainline's rk3568 read is word-based with a different clock list. That is a read-path port, not a data entry. Owner: Atlas. Size 0x90 and clocks `usr, sbpi, apb, phy` are in the vendor dtsi and the BSP.
-- **SARADC (`drivers/iio/adc/rockchip_saradc.c`)**: not written. The BSP's RV1126B data uses `rockchip_saradc_start_v3` and `read_v3` with a DMA mode and the `SARADC3_*` registers, and a `das_soc_data` field. Mainline has none of these. That is a driver feature, not a small port. Owner: Atlas (Lemnos review).
-- **Thermal (`drivers/thermal/rockchip_thermal.c`)**: not written. The BSP's RV1126B tsadc uses GRF unlock sequences and bias and offset fields (BSP lines 338-349); mainline has only rk3576. Owner: Atlas.
 - **dwmac (`drivers/net/ethernet/stmicro/stmmac/dwmac-rk.c`)**: not written. Mainline's `rv1126_ops` uses GRF 0x70 (the rv1126 layout). The BSP's RV1126B glue uses VI GRF 0x50050, the RK MAC-PHY registers at 0x500B4-0x500BC, and the php GRF (IOC GMACIO) at 0x38BA0 (BSP lines 2872-2995 and the `rv1126b_ops` at 3069-3077). The RGMII path needs `set_to_rgmii` and a speed hook, and the register equivalence with the rv1126 entry is not shown. The dts binds `rockchip,rv1126b-gmac` with the `snps,dwmac-4.20a` fallback, so the generic stmmac driver binds without the glue. Owner: Atlas (Lemnos review).
 - **GMAC pinctrl**: the BSP tree has no RV1126B RGMII pin group (its only GMAC-named group is the on-chip PHY's `fephym1`, which the Aura does not use). `pinctrl-0` is not set. Owner: the schematic and the user, then Atlas.
 - **U-Boot**: not started (coordinator). Waiting on the SDK path.
@@ -78,8 +81,9 @@ Triage classes come from `/mnt/ssd-samsung/atlas-next-scratch-root/research/rv11
 | DWC3 (USB OTG Type-C) | `usb_drd_dwc3`, `rockchip,rv1126b-dwc3` + `rockchip,rk3576-dwc3` fallback; the Aura runs `dr_mode = "peripheral"` on `usb2phy_otg` only | glue binds rk3576 fallback UNVERIFIED | none expected; the first image is USB 2 gadget only |
 | GMAC (Ethernet) | `gmac` node, `rockchip,rv1126b-gmac` + `snps,dwmac-4.20a`, enabled on the Aura with RGMII | not written (see above) | Atlas: glue. Generic stmmac binds meanwhile. Ethernet stays in the image (user ruling). |
 | I2C0 | `i2c0` with `rockchip,rv1126b-i2c`, disabled; pinctrl-0 `i2c0m0_pins` | 0005 adds the RV1126B soc data | Register comparison done: the rv1126 fallback differs (GRF 0x118 vs none), so it is its own patch 0005. |
-| OTP (serial source) | `otp` node, disabled, with the vendor's clocks and resets | not written (see above) | Atlas: read path port |
-| SARADC, TSADC (thermal) | not written (see above) | - | Atlas; not needed for boot to a shell |
+| OTP (serial source) | `otp` node, disabled, with the vendor's clocks and resets | 0008 adds the RV1126B read path and data | builds; `hwlocks` not carried; serial offsets UNVERIFIED |
+| SARADC0 | `saradc0` node, disabled | 0010 adds the RV1126B data | builds; DMA mode not ported |
+| TSADC (thermal) | `tsadc` node, disabled | 0009 adds the RV1126B chip and GRF trim | builds; thermal zones not in the dtsi |
 | PWM, SPI, other UARTs and I2Cs, GPU/VPU/ISP/NPU | not carried | - | later patches; not needed for the boot-to-shell set |
 | OPP tables, idle states | not carried | - | cpufreq and idle are not needed for boot |
 | ramoops | Aura dts reserved-memory node | `ramoops` generic | placement UNVERIFIED: `0x110000` is a placeholder (not checked against TF-A, U-Boot or kernel use) |
@@ -119,7 +123,7 @@ Triage classes come from `/mnt/ssd-samsung/atlas-next-scratch-root/research/rv11
 
 Grouped by owner. "Gaia" is the build owner; "Lemnos" owns non-trivial driver work and the boot-flow review (coordinator).
 
-1. **Atlas, kernel series, still to write:** OTP read path (BSP `rk3568_otp_read`, line 527, byte-addressed); SARADC v3 with DMA mode; thermal (BSP tsadc, lines 338-349); dwmac RV1126B glue (BSP lines 2872-2995 and `rv1126b_ops` at 3069); dt-bindings for `rockchip,rv1126b-grf`, `-pmu`, `-otp`, `-gmac`, `-uart`, `-ioc-grf`, and `-pinctrl` (the pinctrl binding entry is in 0001; the others are not in the series yet). The CRU is already in the tree.
+1. **Atlas, kernel series, still to write:** SARADC DMA mode (BSP `start_v3_dma`, `rockchip,dma`; not ported, not needed for basic reads); dt-bindings for `rockchip,rv1126b-grf`, `-pmu`, `-otp`, `-uart`, `-ioc-grf`, `-tsadc`, `-saradc`, and `-pinctrl` (the pinctrl and otp, tsadc, saradc and dwmac bindings are partly in the series; the others are not yet). The CRU is already in the tree. dwmac RMII and the integrated MAC-PHY are not ported.
 2. **Atlas, dts:** CRU `assigned-clocks` (vendor PLL and fractional rates); PMU power-domain children; GMAC pin group (none in the BSP tree); `aliases` and `chosen` checked against the Aura schematic.
 3. **Atlas, U-Boot port:** as above (SoC port, rkcommon entry, env and boot-flow options). Waiting on the SDK path.
 4. **Gaia:** apply the seven `[kernel] patches` on the real tree (the apply is tested here, not by Gaia); build the image; `gaia lock` the rkbin and U-Boot pins when given revs. The `d8441c9` vs `c0d084f` stale-binary refusal is Gaia's pin to move.

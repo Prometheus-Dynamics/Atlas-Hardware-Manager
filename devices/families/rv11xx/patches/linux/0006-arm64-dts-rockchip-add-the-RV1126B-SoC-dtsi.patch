@@ -2,7 +2,7 @@ diff --git a/arch/arm64/boot/dts/rockchip/rv1126b.dtsi b/arch/arm64/boot/dts/roc
 new file mode 100644
 --- /dev/null
 +++ b/arch/arm64/boot/dts/rockchip/rv1126b.dtsi
-@@ -0,0 +1,444 @@
+@@ -0,0 +1,473 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * RV1126B SoC: the boot set (CPU, GIC, timer, PSCI, CRU, GRF, pinctrl banks,
@@ -305,6 +305,35 @@ new file mode 100644
 +		resets = <&cru SRST_USER_OTPC_NS>, <&cru SRST_SBPI_OTPC_NS>,
 +			 <&cru SRST_P_OTPC_NS>, <&cru SRST_P_OTP_MASK>;
 +		reset-names = "usr", "sbpi", "apb", "phy";
++		status = "disabled";
++	};
++
++	/* TSADC: the vendor node (rv1126b.dtsi.txt 2127-2139), with mainline's clock and reset names. TRM not read. */
++	tsadc: tsadc@20bb0000 {
++		compatible = "rockchip,rv1126b-tsadc";
++		reg = <0x20bb0000 0x400>;
++		interrupts = <GIC_SPI 214 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&cru CLK_TSADC>, <&cru PCLK_TSADC>,
++			 <&cru CLK_TSADC_PHYCTRL>;
++		clock-names = "tsadc", "apb_pclk", "tsadc_phyctrl";
++		#thermal-sensor-cells = <1>;
++		rockchip,grf = <&grf>;
++		rockchip,hw-tshut-temp = <120000>;
++		rockchip,hw-tshut-mode = <0>; /* tshut mode 0:CRU 1:GPIO */
++		rockchip,hw-tshut-polarity = <0>; /* tshut polarity 0:LOW 1:HIGH */
++		status = "disabled";
++	};
++
++	/* SARADC0: the vendor node (rv1126b.dtsi.txt 3394-3404); reset name saradc-apb as the driver reads it. */
++	saradc0: saradc@21f10000 {
++		compatible = "rockchip,rv1126b-saradc";
++		reg = <0x21f10000 0x10000>;
++		interrupts = <GIC_SPI 211 IRQ_TYPE_LEVEL_HIGH>;
++		#io-channel-cells = <1>;
++		clocks = <&cru CLK_SARADC0>, <&cru PCLK_SARADC0>;
++		clock-names = "saradc", "apb_pclk";
++		resets = <&cru SRST_P_SARADC0>;
++		reset-names = "saradc-apb";
 +		status = "disabled";
 +	};
 +
