@@ -1,0 +1,88 @@
+# Radxa Cubie A7S BENCH image (C1): the A7S's slot image, the form every bench board is flashed with ONCE (user ruling, via the
+# coordinator 2026-11-14: each board is flashed once ever, so every bench image carries the Lemnos U-Boot slot system and
+# remote update). Modeled on devices/products/raze-base (the slot-boot recipe), on the A733 board and family.
+#
+# DRAFT FOR REVIEW. PLANNED, NOT BUILT, NEVER BOOTED. Nothing here is a board run. A733 images stay on the bench: the
+# DRAM blob (SUNXI_LIBDRAM, closed vendor code) is in the image's bootloader and is never published.
+#
+# What this image carries (each line's source is in its component or file):
+#   the board: radxa-cubie-a7s (board.toml): the series' A7S dts (ramoops, r_wdt watchdog), the U-Boot env on GPT (no FAT env).
+#   the boot ROM files: the family's u-boot-sunxi-with-spl.bin at 128 KiB, the uboot-env GPT partition at 16 MiB (family.toml).
+#   the slot: slot-boot (EROFS root, dm-verity, initramfs = lemnos-slot-init), the Lemnos bundle, the FAT boot partition.
+#   lemnosd, lemnos-ctl, lemnos-orion, lemnos-slot-init at Lemnos pr/BB1b e2e45ce7 (components/lemnos*: product-local copies).
+#   Orion (the shared orion component, Orion 455a956).
+#   Ethernet by DHCP and mDNS (components/bench-network); SSH with the PC's key (components/bench-pc-ssh-key, pc-key input).
+#   the USB network on the OTG port (USB-C 1): Gaia's configfs NCM (shared usb-gadget-network) with the board id (usb-gadget-family).
+#     Plus the Raze/ZERO 3E serial-hash-v1 addressing (components/lemnos0-addressing), now on this branch from pr/Z1 (merged).
+#   security OFF (board file), lemnosd feeds the hardware watchdog (15 s), the kernel's pstore/ramoops for crash logs (BB3 reader
+#   NOT on the pin), a serial console (ttyS0).
+#
+# THE PINS. The Gaia binary: eae34d7 (the board-patch series support; `[kernel] patches`), at
+#   /mnt/ssd-samsung/atlas-next-scratch-gaia/bin-eae34d7/gaia. gaia.lock is written by `gaia lock` at that binary; the repo's
+#   devices/gaia.lock is NOT changed (the coordinator moves that pin). Lemnos pr/BB1b e2e45ce7 (the product-local components).
+#   Buildroot 2026.02.3 (the bring-up's, systemd 258.7). Orion 455a956 and Gaia usb-gadget-network b8585a0 are the shared
+#   components' own pins (unchanged). This PR may NOT merge while it pins the unmerged Lemnos branch pr/BB1b (see docs/prs/C1.md).
+version = 1
+name = "cubie-a7s-bench"
+description = "Radxa Cubie A7S bench image: slot-boot with the Lemnos U-Boot slot system, Ethernet, USB network, SSH with the PC key. Planned, not built."
+
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.02.3"
+
+[components]
+# The Lemnos set, product-local, at pr/BB1b e2e45ce7 (one Lemnos commit for the product).
+lemnos = "components/lemnos/component.toml"
+lemnosd = "components/lemnosd/component.toml"
+lemnos-ctl = "components/lemnos-ctl/component.toml"
+lemnos-orion = "components/lemnos-orion/component.toml"
+lemnos-slot-init = "components/lemnos-slot-init/component.toml"
+cubie-lemnos-board = "components/cubie-lemnos-board/component.toml"
+# The bench's access and network (product-local).
+bench-pc-ssh-key = "components/bench-pc-ssh-key/component.toml"
+bench-network = "components/bench-network/component.toml"
+usb-gadget-family = "components/usb-gadget-family/component.toml"
+# The Raze/ZERO 3E serial-hash-v1 address scheme (shared; from pr/Z1, merged into this branch). It addresses the lemnos0
+# NCM interface; on this board that interface exists only if the Lemnos gadget is declared (see docs/prs/C1-cubie-a7s-bench.md).
+lemnos0-addressing = "../../components/lemnos0-addressing/component.toml"
+# The shared hostname from the serial (cubie-a7s-<six hex>), with this product's prefix. No bench-watchdog here: lemnosd is the
+# one watchdog opener on this board (INPUTS rule: no systemd RuntimeWatchdogSec on a board whose lemnosd keeps the watchdog).
+bench-hostname = "../../components/bench-hostname/component.toml"
+bench-hostname-prefix = "components/bench-hostname-prefix/component.toml"
+# Shared with the other products: Gaia's USB network script (configfs NCM; its own pin), and Orion.
+usb-gadget-network = "../../components/usb-gadget-network/component.toml"
+orion = "../../components/orion/component.toml"
+
+[[images]]
+name = "cubie-a7s-bench"
+board = "../../boards/radxa-cubie-a7s/board.toml"
+components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "cubie-lemnos-board", "bench-pc-ssh-key", "bench-network", "usb-gadget-family", "usb-gadget-network", "lemnos0-addressing", "bench-hostname", "bench-hostname-prefix", "orion"]
+# The slot's initramfs: lemnos-slot-init goes there (as the Raze's), not on the root filesystem.
+initramfs = ["lemnos-slot-init"]
+os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
+recipe = "slot-boot"
+
+# The slot-boot settings (recipes/slot-boot.toml at eae34d7; each names what it sets; the Raze's product states them the same way).
+#  slot, version   NOT SET HERE: `--setting cubie-a7s-bench.slot=...` and `.version=...`, from scripts/version-rule.sh (as the Raze).
+#  device          where the slot is read from on the board: the data partition's slots directory.
+#  boot_size       the boot partition's size in bytes (board.toml's boot partition). PLACEHOLDER, NOT MEASURED: the Raze's 79 MiB,
+#                  copied so the check has a number that agrees with the board. The real one is `lemnos-ctl boot-partition
+#                  --layout-of radxa-cubie-a7s --min-size` (L2-partition-requirements 8.8: missing). Set it from that output.
+#  compression     lzma, the one the build's own mkfs.erofs writes (Buildroot's host tool has no zstd). The kernel holds
+#                  CONFIG_EROFS_FS_ZIP_LZMA=y and the stream count (families/sun60i/assets/linux.fragment).
+#  level, dictsize, cluster, fragments, ztailpacking: the Raze's measured values (its comment), copied; UNMEASURED on this board.
+#  sign_key_env / sign_key_id / sign_pubkey_env: the BENCH key (a test credential, milestone 2 only: `atlas-next bench-key`,
+#                  9af003d9... is the Raze's bench key id; the bench key file is the environment's, never in a repo).
+[images.settings]
+device = "/data/slots/root.img"
+product = "cubie-a7s-bench"
+boot_size = 82837504
+compression = "lzma"
+level = 6
+dictsize = 2097152
+cluster = 1048576
+fragments = true
+ztailpacking = true
+sign_key_env = "ATLAS_BENCH_SEED_FILE"
+sign_key_id = "9af003d92992f9c2211a1f5b8d33a08f610c5bae45c61f9f9f6c3a10442fdd64"
+sign_pubkey_env = "ATLAS_BENCH_PUBKEY_FILE"
