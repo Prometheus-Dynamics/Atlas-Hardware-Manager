@@ -1,0 +1,63 @@
+# Radxa Cubie A7S BENCH image OS (C1): Buildroot options for the slot-boot image. Gaia starts from Buildroot's allnoconfig, so
+# EVERYTHING here is on because a line says so. Each line says why it is here (standing rule). Untested on board.
+# Toolchain: Buildroot's bootlin aarch64 glibc (the one known-good toolchain Gaia has built with), as the bring-up's.
+BR2_TOOLCHAIN_EXTERNAL=y
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN=y
+BR2_TOOLCHAIN_EXTERNAL_BOOTLIN_AARCH64_GLIBC_STABLE=y
+
+# 4 KiB pages, as the Raze fragment (the kernel is the series' arm64 defconfig; Gaia's default page size is not measured here).
+BR2_ARM64_PAGE_SIZE_4K=y
+
+# Init: systemd. lemnosd, lemnos-orion and Orion's units are systemd units; they need systemd 254+ (Buildroot 2026.02.3 ships 258.7).
+# The watchdog is lemnosd's (hw-watchdog, keepalive, 15 s in the board file): NO systemd RuntimeWatchdogSec here, the one opener rule.
+BR2_INIT_SYSTEMD=y
+BR2_PACKAGE_SYSTEMD=y
+
+# Network: systemd-networkd (DHCP on Ethernet, components/bench-network) and systemd-resolved (its mDNS responder, same component).
+BR2_PACKAGE_SYSTEMD_NETWORKD=y
+BR2_PACKAGE_SYSTEMD_RESOLVED=y
+# Off: the clock comes from Orion's time sync (parked), not timesyncd; hostnamed and timedated are not used on the bus.
+# BR2_PACKAGE_SYSTEMD_TIMESYNCD is not set
+# BR2_PACKAGE_SYSTEMD_HOSTNAMED is not set
+# BR2_PACKAGE_SYSTEMD_TIMEDATED is not set
+# Buildroot's name-based eth0.network is off (BR2_SYSTEM_DHCP is a string option: "" is the form that turns it off).
+BR2_SYSTEM_DHCP=""
+BR2_TARGET_GENERIC_HOSTNAME="cubie-a7s"
+# TODO (not carried): the hostname from the serial (pr/Z1's serial script) and the trim of D-Bus (Raze's post-build.sh,
+# which removes dbus after Buildroot selects it). Until then D-Bus stays in the image; the Raze's fragment states the reason.
+
+# BusyBox: /bin/sh and the core utilities; systemd is the init. The applets for the USB network script are in busybox.fragment.
+BR2_PACKAGE_BUSYBOX=y
+BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="@here@/busybox.fragment"
+
+# SSH: dropbear, key only (components/bench-pc-ssh-key). Orion's own SSH is not confirmed in orion.conf (INPUTS: M2 blocker B).
+BR2_PACKAGE_DROPBEAR=y
+
+# Console: root logs in on the console with no password while security is OFF (the bench rule, as the bring-up).
+# systemd starts a getty on the kernel console (ttyS0, from the board's cmdline); Buildroot's sysvinit getty option is not
+# used here (systemd does not read it).
+BR2_TARGET_ENABLE_ROOT_LOGIN=y
+BR2_TARGET_GENERIC_ROOT_PASSWD=""
+
+# Stripping and sizes: the install-size rule (everything lean and stripped). BR2_STRIP_strip is off in allnoconfig unless set.
+BR2_BINFMT_ELF=y
+BR2_STRIP_strip=y
+
+# Device tree overlay symbols: the Lemnos overlay (generated) is compiled against the board's dtb, which needs symbols.
+BR2_LINUX_KERNEL_DTB_OVERLAY_SUPPORT=y
+
+# Host tools the slot is made with (L2d): dtc and fdtoverlay (overlay compile and check), mkfs.erofs (the root) and veritysetup.
+# Gaia refuses a slot image without them, by name.
+BR2_PACKAGE_HOST_DTC=y
+BR2_PACKAGE_HOST_EROFS_UTILS=y
+BR2_PACKAGE_HOST_CRYPTSETUP=y
+
+# Host build tools for the kernel and U-Boot (not on the board): Gaia's sunxi U-Boot and kernel builds need them, as the bring-up's.
+BR2_LINUX_KERNEL_NEEDS_HOST_OPENSSL=y
+BR2_LINUX_KERNEL_NEEDS_HOST_PYTHON3=y
+BR2_TARGET_UBOOT_NEEDS_DTC=y
+BR2_TARGET_UBOOT_NEEDS_PYLIBFDT=y
+BR2_TARGET_UBOOT_NEEDS_PYELFTOOLS=y
+BR2_TARGET_UBOOT_NEEDS_OPENSSL=y
+BR2_TARGET_UBOOT_NEEDS_GNUTLS=y
+BR2_TARGET_UBOOT_NEEDS_UTIL_LINUX=y

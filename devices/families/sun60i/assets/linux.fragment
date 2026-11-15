@@ -74,3 +74,15 @@ CONFIG_MMC_BLOCK=y
 CONFIG_SUNXI_WATCHDOG=y
 # CONFIG_LEDS_TRIGGER_TIMER: the 1 s blink the bring-up LEDs switch to (board-alive-led). The heartbeat is already above.
 CONFIG_LEDS_TRIGGER_TIMER=y
+
+# -- Crash log (C1 brief; Lemnos BB3: slot boards need pstore built in). Ramoops must be live before any module loads, so
+#    all three are =y, not =m. The arm64 defconfig this family starts from may set PSTORE_RAM=m (the C1 brief says the a7s
+#    defconfig does; the family starts from `defconfig`, not a7s_defconfig, so the =m is read in that file, not checked).
+#    The ramoops region is the series' own node (families/sun60i/family.toml [kernel] patches): reg 0x60000000 0x100000.
+CONFIG_PSTORE=y
+CONFIG_PSTORE_RAM=y
+CONFIG_PSTORE_CONSOLE=y
+
+# -- The USB device controller's function filesystem (Lemnos's gadget is FunctionFS; a bench image may use it). Built in
+#    with the configfs gadget above; the same reason as CONFIG_USB_CONFIGFS_F_FS.
+CONFIG_USB_FUNCTIONFS=y

@@ -11,6 +11,9 @@ description = "Radxa Cubie A7S (Allwinner A733), candidate sources, untested on 
 # the USB-C ports (see the notes below). candidate, UNVERIFIED.
 [kernel]
 device_tree = "allwinner/sun60i-a733-cubie-a7s"
+# The words every kernel command line of this board starts with: the console (UART ttyS0; Lemnos's slot words follow).
+# The console baud and the port are the bring-up's own (cubie-a7s-extlinux, the getty on ttyS0). UNVERIFIED on a board.
+cmdline = "console=ttyS0,115200"
 
 # U-Boot defconfig: radxa-cubie-a7s_defconfig in radxa/u-boot @ 9da4b3e8 (its CONFIG_DEFAULT_DEVICE_TREE is
 # sun60i-a733-cubie-a7s). UNVERIFIED, never booted.
@@ -40,3 +43,42 @@ SUNXI_LIBDRAM = { source = "dlan17-pkg", path = "awbin/a733/ddr.bin" }
 #
 # LED: the blue status LED is PJ26 (the series' gpio-leds; "PJ26" is in its comment). Radxa's page says it blinks
 # during a normal boot. The bring-up board's dts sets it to the heartbeat trigger (pending/cubie-a7-bringup/board).
+
+# The Lemnos board file (C1, the bench image): names the board to lemnos-ctl (`[board] id` = this board's name).
+# A product that carries lemnosd resolves to it (devices/README.md, "The Lemnos board file").
+[descriptions]
+lemnos = "lemnos-board.toml"
+
+# The partitions, in table order. A board's list replaces the family's, so the family's two raw areas are repeated here.
+# u-boot: the SPL + BL31 + U-Boot file at 128 KiB (outside the table; the boot ROM reads it there). Family line, unchanged.
+[[partitions]]
+name = "u-boot"
+role = "bootloader"
+offset = "128K"
+in_table = false
+content = "u-boot-sunxi-with-spl.bin"
+
+# uboot-env: the U-Boot environment, found by its GPT type GUID (Lemnos's writer and U-Boot both look for it). 128 KiB at 16 MiB.
+[[partitions]]
+name = "uboot-env"
+role = "raw"
+type = "3de21764-95bd-54bd-a5c3-4abe786f38a8"
+offset = "16M"
+size = "128K"
+
+# boot: the FAT boot partition (role boot): the slot bays, the pointers and the boot.cmd Lemnos's boot-partition writes.
+# Sized like the Raze's boot partition (82,837,504 = 79 MiB). PLACEHOLDER, NOT MEASURED: the number is
+# `lemnos-ctl boot-partition --layout-of radxa-cubie-a7s --min-size` (L2-partition-requirements 8.8: "the U-Boot block
+# bring-up products ... gain one" a FAT boot partition; its size is still MISSING). The product's boot_size must equal it.
+# type: the EFI System GUID, the GPT form of a FAT boot partition. F8?: Gaia's GPT type spelling for role boot.
+[[partitions]]
+name = "boot"
+role = "boot"
+type = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
+size = "82837504"
+
+# data: the slots and the slot state (Lemnos's data partition), the last partition, no size: the board grows it on first boot.
+[[partitions]]
+name = "data"
+role = "data"
+type = "0fc63daf-8483-4772-8e79-3d69d8477de4"
