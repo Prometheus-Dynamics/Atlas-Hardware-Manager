@@ -4,6 +4,14 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
 
+# Every temp file of the gate and of the scripts it runs lands under one scratch root, never /tmp (PR G12). mktemp
+# and ${TMPDIR:-/tmp} both follow TMPDIR, which is set here for every step; the directory is removed on exit.
+scratch_root=${ATLAS_SCRATCH_ROOT:-$(pwd)/.scratch}
+mkdir -p "$scratch_root"
+gate_tmp=$(mktemp -d "$scratch_root/gate-XXXXXX")
+export TMPDIR=$gate_tmp
+trap 'rm -rf "$gate_tmp"' EXIT
+
 step() {
   local label="$1" start
   shift

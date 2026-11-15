@@ -1,6 +1,8 @@
 # The Gaia `next` commit the descriptions in devices/ are checked with, read by
 # scripts/check-devices.sh. This is Atlas's pin, written by hand. It is not Gaia's
 # lock: each product's own gaia.lock is written by `gaia lock`.
+# Moved to c0d084f (PR G12): Gaia next with rk-env #150 (the rk35xx env index and redundant copies, checked against the
+# disk), config-dir #151, slot-disk-blobs #152 (the first flash carries the bootloader areas).
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
 commit = "c0d084fa73a137cb0c3e9b51e7c900a123dbf25d"

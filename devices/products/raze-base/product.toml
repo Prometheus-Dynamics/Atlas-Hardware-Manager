@@ -83,7 +83,7 @@ recipe = "slot-disk"
 #  ztailpacking    true: mkfs.erofs -Eztailpacking, a file's compressed tail kept beside its inode, the same row. A kernel from 5.17.
 #                  Kernel check (this PR): the Raze kernel is raspberrypi/linux 53679a5 (rpi-7.2.y, Linux 7.2.9, families/bcm2712
 #                  family.toml; NOT 6.12 as the brief said) so both floors are met, and raze.config has CONFIG_EROFS_FS_ZIP_LZMA=y,
-#                  the decoder for lzma. The five values are slot-boot recipe parameters (recipes/slot-boot.toml at d8441c9d).
+#                  the decoder for lzma. The five values are slot-boot recipe parameters (recipes/slot-boot.toml at c0d084fa).
 #  sign_key_env    the environment variable that names the signing key's file (a raw 32-byte Ed25519 seed or 64 hex,
 #                  mode 0600). Set by the build's caller, never written here: no key path or key material in any file.
 #  sign_key_id     the key id the build is keyed on: SHA-256 of the 32-byte PUBLIC key. This is the BENCH key's id
