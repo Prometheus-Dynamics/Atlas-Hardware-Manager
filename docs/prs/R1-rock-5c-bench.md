@@ -73,8 +73,16 @@ reverse blocking holds with EN floating: UNVERIFIED. Read the Silergy datasheet 
 ## Gate and checks
 - `gaia validate` (board, family, product): ok.
 - `gaia lock` for `rock-5c-bench`: wrote `devices/products/rock-5c-bench/gaia.lock` (rc 0). Lemnos `7748a241`, Gaia `c0d084fa`.
-- `gaia plan` for `rock-5c-bench` (throwaway pc-key, the `2026.1.0-dev.0+check` test version): rc 0. Not built.
-- `scripts/gate.sh`: see the result in the PR body (log under the R1 scratch).
+- `gaia plan` for `rock-5c-bench` (throwaway pc-key, the `2026.1.0-dev.0+check` test version; recipes from the c0d084f source): rc 0. Not built.
+- `scripts/check-devices.sh` with `GAIA_BIN=bin-d8441c9/gaia` (the binary `devices/gaia.lock` names; with `bin-c0d084f` the script
+  stops first with "a stale binary", the known refusal). Result: FAIL, and all of it is expected or caused by the Gaia pin:
+  - `boards/radxa-rock-5c/board.toml:31: bootloader.patches: unknown key` under d8441c9. The patch key is in Gaia c0d084f (validates
+    there). This also fails the existing `rock-5c-base` and `rock-5c-bringup` products under the current pin. It clears when G12 moves
+    `devices/gaia.lock` to c0d084fa. Until then this PR cannot merge without breaking those two products.
+  - `Lemnos pin`: rock-5c-bench locks 7748a241 (the Z2 pin), Cargo.toml pins f4a295c6. The same refusal Z2 has.
+  - Not R1: `cubie-a7s-bench` (e2e45ce7, A733 family) and `cubie-a7-bringup` fail on their own lines.
+  - `rk_env_rule`: no FAIL for rock-5c-bench (the family's U-Boot fragment carries USE_DT=y and DEVICE_INDEX=1).
+- `scripts/gate.sh`: its clippy and tests run on the busy disk and took more than an hour; the result is in the PR body.
 
 ## Missing (named, by owner)
 - Lemnos: Q2g boot hold (merged + locked) and its PD4 claim (conflicts with the regulator; see above); pr/BB1b merged rev; the root
