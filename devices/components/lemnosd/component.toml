@@ -1,4 +1,4 @@
-# One Lemnos cargo package: lemnosd, built from Lemnos next f74d075f (M36 merged; the rev for the Raze image).
+# One Lemnos cargo package: lemnosd, built from Lemnos next fe8beb7c (M36 merged; the rev for the Raze image).
 # The target is the board's and the crates come from Cargo.lock: no triple, no vendor here.
 # Gaia's rust builder, at 4abf626 and later: `--package lemnosd --profile service`.
 version = 1
@@ -7,7 +7,7 @@ description = "the Lemnos hardware daemon, lemnosd (service profile)"
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "f74d075fea56614d0486d4e72e19301f32575d56"  # Lemnos next (M36 merged), the rev for the Raze image
+ref = "fe8beb7cc966392b22be138a5e51d742331ac2ad"  # Lemnos next (M36 merged), the rev for the Raze image
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"

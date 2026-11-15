@@ -11,7 +11,7 @@
 #
 # THE PINS: Gaia is pinned at c0d084fa (devices/gaia.lock: --setting, keep_setid, the [generate.data] placeholders, @firmware@, @tool:NAME@).
 # Its `slot-disk` recipe declares version and slot; the build gives both with --setting (scripts/version-rule.sh).
-# Lemnos next f74d075f (M36 merged): the rev for this image, declared by the coordinator 2026-11-14. It has `lemnos-ctl data-partition`.
+# Lemnos next fe8beb7c (M36f): the rev for this image, declared by the coordinator 2026-11-14. It has `lemnos-ctl data-partition`.
 version = 1
 name = "raze-base"
 description = "Raze base OS: the Raze board with the Lemnos and Orion packages, as a root slot made by slot-disk"
