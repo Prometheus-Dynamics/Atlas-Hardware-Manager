@@ -17,6 +17,7 @@
 mod args;
 pub mod bench_key;
 mod commands;
+mod cycle;
 pub mod identity;
 mod link;
 mod pins;
@@ -57,6 +58,10 @@ pub const USAGE: &str = "usage: atlas-next slots <address> <command> [options]
   enrol <address>             ask the board to know this PC's identity (no proof: the owner approves it)
   identity                    this PC's client identity: made once, prints its fingerprint and file
 
+  cycle <address> --good <bundle> --bad <bundle> --scorecard <file> [--json] [--dry-run]
+                              the slot cycle in one run: install, trial, a forced bad trial that falls
+                              back by itself, confirm; one scorecard file says each step in plain words
+                              (--json also writes <file>.json; --dry-run lists the steps and sends nothing)
   usb-boot --agent <host:port> --port <3-1.1.4.1> --bundle <file> --boot-partition <file>
            --pubkey <file> [--bootfiles <dir>] [--timeout <s>] [--dry-run]
                               USB boot a board through the SystemCore agent with a built image's
@@ -93,6 +98,9 @@ pub struct Env {
     pub recheck: Duration,
     /// Set by the binary when Ctrl-C should stop a trial's following. `None` means it never does.
     pub stop: Option<Arc<Notify>>,
+    /// Whether the Lemnos this build pins publishes the boot id (`info.last_attempt.boot`, I5k).
+    /// The binary takes `cycle::INFO_IN_PIN`; a test sets it when its simulated board has the field.
+    pub info_in_pin: bool,
 }
 
 impl Env {
@@ -107,6 +115,7 @@ impl Env {
             wait: WAIT,
             recheck: atlas_board_slots::trial::RECHECK,
             stop: None,
+            info_in_pin: cycle::INFO_IN_PIN,
         }
     }
 }
@@ -124,6 +133,7 @@ pub async fn execute<W: Write>(args: &[String], env: &Env, out: &mut W) -> i32 {
         }
         args::Parsed::Run(command) => commands::run(command, env, out).await,
         args::Parsed::BenchKey { directory, json } => bench_key::run(&directory, json, out),
+        args::Parsed::Cycle(cycle_args) => cycle::run(&cycle_args, env, out).await,
         args::Parsed::UsbBoot(options) => usb_boot::run(&options, env, out).await,
         args::Parsed::Identity {
             identity: file,
