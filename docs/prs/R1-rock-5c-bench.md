@@ -24,7 +24,7 @@ the board's `lemnos-board.toml` in slot form, the shared bench components, and a
 | Gadget on DRD0 (upper USB 3.0 Type-A) | `udc:fc000000.usb`, `controller = "usb-otg0"`, `role = "peripheral"`, `options = ["usb3"]`. Lemnos `socs/rk3588.toml` `[controllers.usb-otg0]` (path `/usb@fc000000`, sysfs `fc000000.usb`). Kernel dts: `&usb_host0_xhci { dr_mode = "peripheral"; }` (the in-tree value is `"host"`, `rk3588s-rock-5c.dts` line 937). | `dr_mode` change: DERIVED from the in-tree dts. Gadget never enumerated on a board. |
 | Gadget VBUS (the hold) | `vbus = "gpio:gpio0:28"`, `vbus_off = "low"`, `vbus_reason` cites the schematic. See "VBUS: the hold" below. | Citation: recorded reading (B21, 9174ecd6), PDF not re-read. Hold: UNVERIFIED (see below). |
 | PSTORE, PSTORE_RAM, PSTORE_CONSOLE =y | Inherited from the rk35xx family fragment (`devices/families/rk35xx/assets/linux.fragment`, Z2). | Config lines present. `check-kernel-fragments` not run here. |
-| ramoops reserved memory | `assets/dts/rockchip/rk3588s-rock-5c-ramoops.dtsi` (0x110000, 0xf0000; console 0x20000, record 0x10000), included by the loader dts. | UNVERIFIED for RK3588S: the address is copied from the ZERO 3E (RK3566 precedent), not checked against the RK3588S memory map or U-Boot load windows. Read `/proc/iomem` and the load addresses before a board run. |
+| ramoops reserved memory | `assets/dts/rockchip/rk3588s-rock-5c-ramoops.dtsi`: reg 0x110000 / 0xe0000, console 0x80000, pmsg 0x30000, ftrace 0, ecc 0, record 0x14000, from Radxa's RK3588 kernel (`gaia/bsp/radxa-kernel-6.1` `arch/arm64/boot/dts/rockchip/rk3588-linux.dtsi` lines 92-102, "0x110000 to 0x1f0000 is for ramoops"). Firefly's tree (4f6ee8c16, rk3588-linux.dtsi:85-87) uses 0xf0000; 0xe0000 fits both. boot-log-size/count left out (Rockchip vendor extensions; mainline ramoops has no such property). The next node, minidump-smem@1f0000, starts at the region's end, so the size does not grow. | Address and sizes cited from the vendor tree (the coordinator's ruling, 2026-11-14). Confirm with /proc/iomem at first boot. Not run on a board. |
 | mDNS | Inherited from the zero copy: `systemd-resolved` on, `20-bench-mdns.network` on lemnos0. | Config present. Not run on a board. |
 | Ethernet (DHCP) kept | `10-bench-ethernet.network` (DHCP, mDNS), per the coordinator's ruling. | Config present. The mainline Ethernet driver for the RK3588S GMAC: UNVERIFIED here (not checked in this PR). |
 | Shared pieces | `bench-hostname` (shared, unchanged); prefix `rock5c` (`bench-hostname-prefix`); `lemnos0-addressing` (shared); the PC key component is `bench-pc-key` (the brief's "bench-pc-ssh-key" is this component, under its real name). | Proven: files present, `gaia plan` ok. |
@@ -50,8 +50,9 @@ What R1 puts in place:
 2. Kernel: the regulator `vcc5v0_usb_otg0` owns PD4 in Linux (no gpio-hog in the kernel dts: a hog on the same line would make the
    regulator's gpio request fail). The loader dts DELETES `phy-supply` on `&u2phy0_otg`, so the PHY never drives the 5 V in gadget
    mode. Whether the regulator core then drives the line low at late init (no consumer): UNVERIFIED on board.
-3. Lemnos: the `vbus` entry names the line for Lemnos's own boot hold (Q2g, not merged). Q2g must NOT add a second hog on PD4 while the
-   regulator owns it; or the regulator is dropped from the kernel dts. Raise with Lemnos before Q2g merges.
+3. Lemnos: the `vbus` entry names the line for Lemnos's own boot hold (Q2g, not merged). Q2g skips PD4 because the regulator
+   `vcc5v0_usb_otg0` owns it (coordinator ruling 2026-11-14; Lemnos told): the U-Boot hog holds EN low first, then the regulator
+   holds it low from its probe. Q2g must not add a second hog on that line.
 
 Hold timeline (c): who holds EN at each step.
 | Step | Who holds EN (PD4) | Status |
@@ -89,7 +90,7 @@ reverse blocking holds with EN floating: UNVERIFIED. Read the Silergy datasheet 
   Cargo.toml Lemnos rev (`f4a295c6`), which the one-rev rule needs moved; `data-partition` at a pin with M36 (already at 7748a241 in Z2).
 - Gaia: `devices/gaia.lock` (G12, d8441c9 -> c0d084fa); ownership of the R1 additions to `board.toml`, `rk3588s-rock-5c-loader.dts`,
   and the U-Boot patch; the U-Boot patch applied to v2026.10 (UNVERIFIED file text); ROCK 5C `boot-report` fit.
-- Mainline: RK3588S ramoops address and memory map (`/proc/iomem`); Ethernet GMAC driver present in the family kernel (UNVERIFIED).
+- Mainline: RK3588S ramoops address confirmed with `/proc/iomem` at first boot (vendor values cited above); Ethernet GMAC driver present in the family kernel (UNVERIFIED).
 - Hardware: SY6280AAC reverse-current datasheet read (b); pad reset state of GPIO0_D4; U-Boot late-init regulator behaviour; the kernel
   build of the fragments (`check-kernel-fragments`); a meter check of VBUS on the port (B21's list applies).
 - Z2 proof: the rk35xx family's proof on the ZERO 3E (`Z2-proof`), which gates shipping R1.
