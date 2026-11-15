@@ -27,17 +27,14 @@ defconfig = "radxa-cubie-a7s_defconfig"
 SUNXI_LIBDRAM = { source = "dlan17-pkg", path = "awbin/a733/ddr.bin" }
 
 # Ports (Radxa's interface page and DockSeed's series, read 2026-11-13):
-#   USB-C 1 (Radxa: "USB 2.0, 5V power input and OTG"): the DEVICE-CAPABLE port. In DockSeed's dts it is the
-#     "J16" 5 V input, on the MUSB controller usb_otg (PHY index 0), with dr_mode "peripheral" in its gadget patch.
-#     It has NO VBUS regulator: the PHY's VBUS supply is named per index (usb0_vbus for PHY 0, phy-sun4i-usb.c:819),
-#     and the dts sets only usb1_vbus. So device mode on this port sources no 5 V. The GMAC's phy-supply is its own
-#     PHY rail, not USB. Evidence: compiled dtb of the bring-up board (B19), usb@4100000 dr_mode peripheral, no supply.
-#   USB-C 2 (Radxa: "USB 3.2, DisplayPort Alt Mode and OTG"): the "J4" host port on the USB 3 controller, sourcing
-#     VBUS from DRVVBUS (PL2) through its own regulator (usbc-vbus). Host only in DockSeed's dts. Not a device port.
+#   USB-C 1 = the Type-C port J16 (Radxa: "USB 2.0, 5V power input and OTG"): the DEVICE port, the board's 5 V input.
+#     Confirmed by the series (fe0a8ed, patches/a733-usb0-gadget/arm64-dts-allwinner-a733-cubie-a7s-enable-usb0-as-a-usb-gadget.patch):
+#     J16 is on USB0, the MUSB controller usb@4100000 (the series' usb_otg), dr_mode "peripheral". It has NO VBUS supply and no
+#     ID or VBUS detect line to the SoC, so device mode sources no 5 V. Family linux.fragment: CONFIG_USB_MUSB_GADGET=y.
+#   USB-C 2 = the Type-C port J4 (Radxa: "USB 3.2, DisplayPort Alt Mode and OTG"): a USB 3 host (DWC3), per the series' own note
+#     ("Not covered: the USB-C port J4, which is a USB 3 host"). Not a device port.
 #   USB Type-A (host). Not device.
-# The J16/J4 labels are DockSeed's; the match to Radxa's "USB-C 1" and "USB-C 2" is by function (5 V input and
-# OTG on USB 2; USB 3 and DisplayPort). The schematic was NOT read. OPEN: the schematic's port names (Radxa A7S
-# schematic, the USB-C page) to confirm the match. Nothing here is a board run.
+# The schematic was NOT read; the J16/J4 match to Radxa's labels is the series' own naming, not a schematic check.
 #
 # Ethernet: the gigabit GMAC (gmac210, its PHY is named MAE0621A-Q3C in B12's notes), built in by the family fragment.
 #

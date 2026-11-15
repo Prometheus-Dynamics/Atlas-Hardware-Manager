@@ -46,8 +46,8 @@ driver = "system-slots"
 config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", boot_sources = ["/soc@0/mmc@4020000=/soc@0/mmc@4020000"], uboot_env_size = 0x8000, uboot_env_mmc_index = 0, uboot_usb_vendor = 0x1209, uboot_usb_product = 0x0001 }
 
 # No USB gadget device here. Lemnos's socs/sun60i-a733.toml says the map has NO device port ("usb-peripheral" is absent,
-# its header: "this map has no device port"), so the usb-gadget driver has no UDC to name. The USB-C 1 port's MUSB
-# controller is usb@4100000 in the bring-up dts (board.toml, B19); adding it to the SoC map is a Lemnos change (OPEN).
+# its header: "this map has no device port"), so the usb-gadget driver has no UDC to name. The device port is J16 (USB-C 1),
+# the MUSB controller usb@4100000, dr_mode peripheral (series a733-usb0-gadget); adding it to the SoC map is a Lemnos change (OPEN).
 # Until then the bench's USB reach is Gaia's configfs NCM network (product: usb-gadget-network), not the Lemnos link.
 
 # The security switch OFF: no record kept, Orion not authenticating here. The bench image is security-off (the coordinator's

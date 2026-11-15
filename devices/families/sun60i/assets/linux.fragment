@@ -24,6 +24,9 @@ CONFIG_USB_GADGET=y
 CONFIG_USB_MUSB_HDRC=y
 CONFIG_USB_MUSB_SUNXI=y
 CONFIG_PHY_SUN4I_USB=y
+# MUSB in gadget mode: the USB-C 1 port (J16, the 5 V input) is a peripheral (series a733-usb0-gadget, dr_mode peripheral).
+# The MUSB choice is set explicitly so the port is not left to a default; the NCM function below is the gadget's.
+CONFIG_USB_MUSB_GADGET=y
 
 # -- Pins: the A733 PIO (series). The status LED (PJ26) and the MMC pins are pins of this bank.
 CONFIG_PINCTRL_SUN60I_A733=y
