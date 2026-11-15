@@ -1,0 +1,24 @@
+// Radxa ROCK 5C (RK3588S): the crash log kept across a reset (pstore, ramoops). Included by rk3588s-rock-5c-loader.dts (R1).
+//
+// Address 0x110000, size 0xf0000: COPIED FROM THE ZERO 3E (Z2; RK3566 precedent, rk3566-lckfb-tspi.dts), NOT checked for the
+// RK3588S. UNVERIFIED: no RK3588S memory map or U-Boot load window was read for this board (kernel_addr_r for rk3588 is not
+// checked here). Before a board run: read /proc/iomem and the U-Boot load addresses; move the region if it overlaps. The pmsg,
+// ftrace and ECC areas are 0: the console record is the crash log.
+// Sizes: console 0x20000, record 0x10000 (the region holds both).
+/ {
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		ramoops: ramoops@110000 {
+			compatible = "ramoops";
+			reg = <0x0 0x110000 0x0 0xf0000>;
+			console-size = <0x20000>;
+			record-size = <0x10000>;
+			ftrace-size = <0>;
+			pmsg-size = <0>;
+			ecc-size = <0>;
+		};
+	};
+};

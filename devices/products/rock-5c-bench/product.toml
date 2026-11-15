@@ -1,0 +1,72 @@
+# Radxa ROCK 5C bench image, Gaia F8 form, as a U-Boot SLOT image (R1; the Z2 zero-3e-bench form, board files as Gaia has them on next). One image: the ROCK 5C
+# board (its U-Boot with the Lemnos environment, the kernel with pstore), the bench's OS (rock-5c-base's and this product's
+# fragments), the Lemnos and Orion packages, and the first-flash disk made by the `slot-disk` recipe (the raze-base pattern; slot-boot makes the slot, slot-disk the disk): the EROFS
+# root with dm-verity, the initramfs (lemnos-slot-init), the overlay, the cmdline, the slot bundle (`[generate.bundle]`, signed by
+# the BENCH key: a test credential, milestone 2 only) and the boot partition (`[generate.image]`, the U-Boot form: boot.scr and
+# the three bay sets, written by Lemnos's tool).
+#
+# Access over the USB gadget on the upper USB 3.0 Type-A port (DRD0, usb_host0_xhci, A-to-A cable, power over USB-C;
+# R1, coordinator ruling 2026-11-14), serial-hash-v1 lemnos0 addressing, plus Ethernet DHCP and mDNS (Z1; the
+# coordinator's ruling of 2026-11-14: Ethernet stays, the gadget is added). Hostname from the serial. PC key, watchdog, serial console.
+#
+# PINS (Z2): the Lemnos components here are this product's own copies at Lemnos pr/BB1b TIP 7748a241 (BB1b head; M36 plus BB1b, data-partition) (unmerged), NOT the shared
+# devices/components/lemnos* at f4a295c6 (the Raze's L2 rev), so the Raze's lock does not move. The root Cargo.toml's
+# lemnos-slot-store rev is still f4a295c6: check-devices refuses the mismatch (Z2 stopped there; see docs/prs/Z2.md).
+# Gaia: c0d084fa (merged next: rk-env, slot-disk-blobs). devices/gaia.lock moves to it in PR #127 (G12).
+version = 1
+name = "rock-5c-bench"
+description = "Radxa ROCK 5C bench OS: U-Boot slot form (Lemnos BB1b), USB gadget on the DRD0 port and Ethernet, mDNS, serial-based hostname, lemnosd and Orion with security off, systemd watchdog."
+
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.02.3"
+
+[components]
+dev-bringup-hostkey = "../../components/dev-bringup-hostkey/component.toml"
+lemnos = "components/lemnos/component.toml"
+lemnosd = "components/lemnosd/component.toml"
+lemnos-ctl = "components/lemnos-ctl/component.toml"
+lemnos-orion = "components/lemnos-orion/component.toml"
+lemnos-slot-init = "components/lemnos-slot-init/component.toml"
+orion = "../../components/orion/component.toml"
+rock-5c-slot-board = "components/rock-5c-slot-board/component.toml"
+lemnos0-addressing = "../../components/lemnos0-addressing/component.toml"
+bench-pc-key = "components/bench-pc-key/component.toml"
+bench-network = "components/bench-network/component.toml"
+bench-hostname = "../../components/bench-hostname/component.toml"
+bench-hostname-prefix = "components/bench-hostname-prefix/component.toml"
+
+[[images]]
+name = "rock-5c-bench"
+board = "../../boards/radxa-rock-5c/board.toml"
+components = ["dev-bringup-hostkey", "lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "orion", "rock-5c-slot-board", "bench-pc-key", "bench-network", "lemnos0-addressing", "bench-hostname", "bench-hostname-prefix"]
+# The slot's initramfs carries lemnos-slot-init (installed there as /init); it is not on the root filesystem.
+initramfs = ["lemnos-slot-init"]
+os = { provider = "buildroot", source = "buildroot", fragments = ["../rock-5c-base/os.fragment", "os.fragment"] }
+recipe = "slot-disk"
+
+# The slot settings (as raze-base's slot-disk ones; each named in devices/products/raze-base/product.toml). Compression and level are the
+# Raze's board measurement (lzma, 6); the ROCK 5C kernel carries the lzma decoder (families/rk35xx linux.fragment, EROFS_FS_ZIP_LZMA).
+# version and slot are NOT set: Gaia takes them as --setting (scripts/version-rule.sh).
+[images.settings]
+# slot-disk (Gaia c0d084fa, as 355cc81): the first-flash disk. id names the disk (its GUIDs derive from it); board_id is the board
+# id the flasher checks the file against (the Lemnos board file [board] id); data_label is the data filesystem label that
+# lemnos-slot-init finds the partition by (the coordinator's value, as Raze's D1 draft: not yet checked against Lemnos source).
+# The data partition size is NOT a setting: the board gives it (boards/radxa-rock-5c/board.toml, data = 1 GiB).
+id = "rock-5c-bench"
+board_id = "radxa-rock-5c"
+data_label = "lemnos-data"
+device = "/data/slots/root.img"
+product = "rock-5c-bench"
+# UNVERIFIED: the board's boot partition size (boards/radxa-rock-5c/board.toml [[partitions]] role = "boot"). check-devices
+# requires the two to agree; Gaia's boot-partition fit refuses a size too small for the bays.
+boot_size = 134217728
+compression = "lzma"
+level = 6
+dictsize = 2097152
+cluster = 1048576
+fragments = true
+ztailpacking = true
+sign_key_env = "ATLAS_BENCH_SEED_FILE"
+sign_key_id = "9af003d92992f9c2211a1f5b8d33a08f610c5bae45c61f9f9f6c3a10442fdd64"
+sign_pubkey_env = "ATLAS_BENCH_PUBKEY_FILE"

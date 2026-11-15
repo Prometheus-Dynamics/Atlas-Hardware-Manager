@@ -3,7 +3,27 @@
 // The extlinux.conf of this image names /boot/rk3588s-rock-5c-loader.dtb (components/radxa-rock-5c-extlinux).
 // Untested on board.
 #include "rk3588s-rock-5c.dts"
+#include "rk3588s-rock-5c-ramoops.dtsi"
 #include <dt-bindings/soc/rockchip,boot-mode.h>
+
+/*
+ * R1: the upper USB 3.0 Type-A port (DRD0, usb_host0_xhci) is the bench's gadget port: an A-to-A cable to the PC, power over
+ * the USB-C. In-tree dr_mode is "host" (rk3588s-rock-5c.dts, &usb_host0_xhci); the gadget needs "peripheral".
+ */
+&usb_host0_xhci {
+	dr_mode = "peripheral";
+};
+
+/*
+ * R1: the VBUS of this port is the regulator vcc5v0_usb_otg0 (enable GPIO0 PD4, enable-active-high, in rk3588s-rock-5c.dts), wired to
+ * u2phy0_otg's phy-supply. In peripheral mode the PHY must NOT drive that 5 V out to the PC: the phy-supply is removed here. The
+ * regulator stays defined; with no consumer its enable line stays low (the regulator core disables an unused regulator at late
+ * init, UNVERIFIED on board). Owner of PD4 in Linux: the regulator (no gpio-hog in this dts: a hog on the same line would
+ * fail the regulator's gpio request). Lemnos's later overlay (Q2g) replaces this with its stand-in.
+ */
+&u2phy0_otg {
+	/delete-property/ phy-supply;
+};
 
 / {
 	/*

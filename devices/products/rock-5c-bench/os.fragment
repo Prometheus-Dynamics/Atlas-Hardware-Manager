@@ -1,0 +1,20 @@
+# Radxa ROCK 5C bench OS: the base's lines, then these. Every line says why it is here.
+# Init is systemd: the base's BR2_INIT_SYSTEMD=y (rock-5c-base/os.fragment) is kept, not changed here. Lemnos's good-boot
+# deadline and the systemd watchdog need systemd, and the bench's components are systemd units (no inittab, no BusyBox init).
+
+
+# SSH for the PC's key (bench-pc-key). Dropbear: the same small server the bring-up uses.
+BR2_PACKAGE_DROPBEAR=y
+BR2_PACKAGE_DROPBEAR_SMALL=y
+# The board serves only; it needs no ssh client.
+# BR2_PACKAGE_DROPBEAR_CLIENT is not set
+# The base has no DNS, so dropbear's reverse-DNS lookup on connect stalls. This is why it is off (Buildroot's help).
+BR2_PACKAGE_DROPBEAR_DISABLE_REVERSEDNS=y
+
+# mDNS: systemd-resolved is the one systemd daemon with an mDNS responder (MulticastDNS=yes in
+# bench-network's Ethernet and lemnos0 files), so the board answers as rock5c-<serial>.local on both interfaces. Without it there is no mDNS.
+# The base turns it off for "no DNS". The bench turns it on for the responder only: its DNS stays unused (no DNS server set).
+BR2_PACKAGE_SYSTEMD_RESOLVED=y
+
+# BusyBox applet for lemnos0-address (the Raze's script, copied): sha256sum, the serial-hash-v1 digest. See busybox.fragment.
+BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="@here@/busybox.fragment"

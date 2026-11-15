@@ -25,6 +25,10 @@ fragments = ["../../families/rk35xx/assets/trim.fragment", "../../families/rk35x
 # checked). Gaia strips the `_defconfig` suffix.
 [bootloader]
 defconfig = "rock-5c-rk3588s"
+# The U-Boot patches (R1): the gpio-hog that holds the upper USB 3.0 port's VBUS enable (GPIO0 PD4) low from U-Boot on.
+# Gaia applies the directory's *.patch files in series order, patch -p1 --fuzz=0, and fails naming the patch. See
+# docs/prs/R1-rock-5c-bench.md ("VBUS: the hold"); UNVERIFIED against U-Boot v2026.10's file text.
+patches = [{ file = "assets/patches/u-boot/0001-rock-5c-hold-usb-otg-vbus-low.patch" }]
 
 # The 5C's own rkbin pin: f43a462e, the commit dev pinned for this board
 # (dev's fetch.lock; Gaia's ROCK 5C build uses the same Buildroot pin). The
@@ -56,3 +60,37 @@ platform = "rk3588"
 # build makes it.
 [flash.files]
 loader_ini = { source = "rkbin", path = "RKBOOT/RK3588MINIALL.ini" }
+
+# R1 (the bench slot image, as the ZERO 3E's Z2): the board's Lemnos file, and the partitions restated in full. A board's
+# [[partitions]] REPLACE the family's, so the two family areas are restated unchanged here (u-boot at 32K, uboot-env 16M/128K),
+# then boot (the FAT partition the U-Boot form reads boot.scr and the bays from; size = the product's boot_size, which check-devices
+# requires to match) and data (the slot file; last; its size is the one number @data-size@ takes). Sizes as the ZERO 3E's (Z2):
+# DATA 1 GiB, BOOT 128 MiB. UNVERIFIED on board; Gaia's boot-report gives the real fit on the first build.
+[descriptions]
+lemnos = "lemnos-board.toml"
+
+[[partitions]]
+name = "u-boot"
+role = "bootloader"
+offset = "32K"
+in_table = false
+content = "u-boot-rockchip.bin"
+
+[[partitions]]
+name = "uboot-env"
+role = "raw"
+type = "3de21764-95bd-54bd-a5c3-4abe786f38a8"
+offset = "16M"
+size = "128K"
+
+[[partitions]]
+name = "boot"
+role = "boot"
+type = "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"
+size = "134217728"
+
+[[partitions]]
+name = "data"
+role = "data"
+type = "0fc63daf-8483-4772-8e79-3d69d8477de4"
+size = "1073741824"

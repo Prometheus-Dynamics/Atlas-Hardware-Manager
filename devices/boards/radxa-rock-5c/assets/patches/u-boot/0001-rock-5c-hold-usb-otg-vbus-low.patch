@@ -1,0 +1,27 @@
+From: Atlas R1 (ROCK 5C bench image)
+Subject: [PATCH] rk3588s-rock-5c: hold the upper USB 3.0 port's VBUS enable (GPIO0 PD4) low from U-Boot
+
+The upper USB 3.0 Type-A port (DRD0) is the bench's gadget port with an A-to-A cable. Its 5 V is the load switch U9
+(SY6280AAC) enabled by GPIO0 PD4 (Radxa ROCK 5C V2.10 schematic sheets 5 and 14, PDF not re-read: record B21, 9174ecd6). R83
+(the EN pull-down) is NC, so EN floats until something drives PD4. This hog drives PD4 low as soon as U-Boot binds the
+gpio0 controller. The BootROM and SPL run before it (nothing holds EN there: see docs/prs/R1-rock-5c-bench.md).
+
+UNVERIFIED: the file text is the Radxa tree's arch/arm/dts/rk3588s-rock-5c-u-boot.dtsi (11 lines); the U-Boot v2026.10 file
+is not on disk. Gaia applies this with -p1 --fuzz=0 and refuses it by name if the context does not match.
+---
+--- a/arch/arm/dts/rk3588s-rock-5c-u-boot.dtsi
++++ b/arch/arm/dts/rk3588s-rock-5c-u-boot.dtsi
+@@ -8,4 +8,13 @@
+ &sdhci {
+ 	cap-mmc-highspeed;
+ 	mmc-hs200-1_8v;
+ };
++
++&gpio0 {
++	usb-otg-vbus-hold {
++		gpio-hog;
++		gpios = <28 0>;	/* GPIO0 PD4 = bank 0 * 32 + 3 * 8 + 4 = 28, GPIO_ACTIVE_HIGH (0) */
++		output-low;
++		line-name = "usb-otg-vbus-en";
++	};
++};
