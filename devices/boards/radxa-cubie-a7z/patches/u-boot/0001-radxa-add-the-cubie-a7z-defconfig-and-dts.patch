@@ -1,21 +1,18 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 Subject: [PATCH] radxa: add the Cubie A7Z defconfig and device tree (bench, UNVERIFIED, derived from A7A)
 
-UNVERIFIED. DERIVED FROM THE A7A, NOT RADXA'S A7Z CONTENT.
-Radxa publishes no A7Z device tree or defconfig in radxa/u-boot 9da4b3e8 (WebFetch of the raw file at that rev:
-sun60i-a733-radxa-a7z.dts and configs/radxa-cubie-a7z_defconfig both 404; the A7A file loads at the same rev).
-This file is a copy of arch/arm/dts/sun60i-a733-radxa-a7a.dts (9da4b3e8) with the model and compatible renamed,
-and of configs/radxa-cubie-a7a_defconfig with CONFIG_DEFAULT_DEVICE_TREE renamed.
-The PL2 regulator is the one in Armbian armbian/build 00c27198
-patch/kernel/archive/sun60iw2-opi-vendor/0005-cubie-a7z-add-device-tree.patch:57-64 (usbc2-vbus, gpio PL2,
-no regulator-always-on, no regulator-boot-on, no vin supply), consumed by usb1_vbus-supply: the host port's VBUS,
-enabled only by the host controller. Port 1 (the gadget port) is undriven: no VBUS regulator is set on USB0.
-No host overlay for port 1 is shipped. No PL2 hog (coordinator ruling, corrected).
+UNVERIFIED. DERIVED FROM THE A7A, NOT RADXA'S A7Z CONTENT (no Radxa A7Z dts or defconfig at 9da4b3e8: both raw URLs 404).
+Copy of arch/arm/dts/sun60i-a733-radxa-a7a.dts with model/compatible renamed, and of configs/radxa-cubie-a7a_defconfig
+with CONFIG_DEFAULT_DEVICE_TREE renamed. Two changes from the A7A copy, following Armbian 00c27198
+0005-cubie-a7z-add-device-tree.patch:57-64: the PL2 regulator is reg_usbc2_vbus (usbc2-vbus, no always-on,
+no boot-on, no vin supply), and it has NO usb1_vbus-supply consumer (Armbian gives PL2 to &usbc2 drvvbus).
+usb0_vbus-supply = reg_vcc5v (the A7A copy's 5 V input rail) is left in place: the port 1 gadget is device mode only.
+The three boards' sources differ on PL2; each board follows its own source (see docs/prs/A7AZ.md).
 ---
 diff --git a/arch/arm/dts/sun60i-a733-radxa-a7z.dts b/arch/arm/dts/sun60i-a733-radxa-a7z.dts
 --- a/arch/arm/dts/sun60i-a733-radxa-a7z.dts	1969-12-31 16:00:00.000000000 -0800
-+++ b/arch/arm/dts/sun60i-a733-radxa-a7z.dts	2026-11-14 23:24:12.110530718 -0700
-@@ -0,0 +1,256 @@
++++ b/arch/arm/dts/sun60i-a733-radxa-a7z.dts	2026-11-14 23:38:29.722084800 -0700
+@@ -0,0 +1,255 @@
 +// SPDX-License-Identifier: (GPL-2.0-only OR MIT)
 +// Copyright (C) 2025 Arm Ltd.
 +// UNVERIFIED, DERIVED FROM sun60i-a733-radxa-a7a.dts (9da4b3e8). No Radxa A7Z dts exists at that rev.
@@ -87,7 +84,6 @@ diff --git a/arch/arm/dts/sun60i-a733-radxa-a7z.dts b/arch/arm/dts/sun60i-a733-r
 +
 +&usbphy {
 +	usb0_vbus-supply = <&reg_vcc5v>;
-+	usb1_vbus-supply = <&reg_usbc2_vbus>;
 +	status = "okay";
 +};
 +

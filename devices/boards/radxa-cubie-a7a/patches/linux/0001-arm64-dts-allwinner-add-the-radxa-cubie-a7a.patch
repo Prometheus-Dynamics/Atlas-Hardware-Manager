@@ -1,11 +1,11 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-Subject: [PATCH] arm64: dts: allwinner: add the Radxa Cubie A7A (bench, UNVERIFIED, derived from A7A)
+Subject: [PATCH] arm64: dts: allwinner: add the Radxa Cubie A7A (bench, UNVERIFIED)
 
 UNVERIFIED. No Radxa device tree for the A7A exists in any source read; this is an authored candidate.
-Peripherals from Radxa's A7A U-Boot dts (radxa/u-boot 9da4b3e8): vcc5v, reg_usb_vbus (PL2, no always-on, no boot-on) as usb1_vbus-supply, ehci1/ohci1 okay. No VBUS regulator on USB0 (port 1 undriven).
-Device mode on port 1 (USB0, no VBUS source). The usb1 host port: ehci1 and ohci1 enabled, usb1 VBUS from PL2.
-UNVERIFIED on the usb1 wiring: the A7S series (DockSeed, tested on the A7S) uses PM5 for usb1 and PL2 for J4 Type-C.
-No host overlay for port 1.
+Source: Radxa's A7A U-Boot dts (radxa/u-boot 9da4b3e8): reg_vcc5v 22-27, reg_usb_vbus 31-38 (PL2) as usb1_vbus-supply 69-72, ehci1/ohci1 83-88. Radxa's wiring kept as it is. The uart0 pinctrl node is added (the &uart0 block references it).
+Port 1 (USB0, device mode) gets no VBUS supply. The host controllers ehci1/ohci1 are enabled. The PL2 regulator is
+off at boot (no always-on, no boot-on). The three sources differ on PL2; each board follows its own (docs/prs/A7AZ.md).
+Syntax checked with cpp and dtc against stubbed labels only (no kernel tree, no base dtsi): labels UNVERIFIED.
 Makefile line after the A7S entry; the A7S entry is the DockSeed series (fe0a8ed).
 ---
 --- a/arch/arm64/boot/dts/allwinner/Makefile
@@ -20,7 +20,7 @@ new file mode 100644
 index 0000000..1111111
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7a.dts
-@@ -0,0 +1,117 @@
+@@ -0,0 +1,124 @@
 +// SPDX-License-Identifier: (GPL-2.0-only OR MIT)
 +/*
 + * Radxa Cubie A7A: a kernel device tree for bench images. CANDIDATE, UNTESTED, NEVER BOOTED. Bench only.
@@ -78,6 +78,13 @@ index 0000000..1111111
 +			record-size = <0x20000>;
 +			ecc-size = <16>;
 +		};
++	};
++};
++
++&pio {
++	uart0_pb9_pb10_pins: uart0-pb9-pb10-pins {
++		pins = "PB9", "PB10";
++		function = "uart0";
 +	};
 +};
 +

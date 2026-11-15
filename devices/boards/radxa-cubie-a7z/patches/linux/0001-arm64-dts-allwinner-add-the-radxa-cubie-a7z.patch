@@ -1,11 +1,11 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-Subject: [PATCH] arm64: dts: allwinner: add the Radxa Cubie A7Z (bench, UNVERIFIED, derived from A7A)
+Subject: [PATCH] arm64: dts: allwinner: add the Radxa Cubie A7Z (bench, UNVERIFIED)
 
 UNVERIFIED. No Radxa device tree for the A7Z exists in any source read; this is an authored candidate.
-Peripherals from the A7A (Radxa U-Boot 9da4b3e8); the PL2 regulator is Armbian 00c27198 0005 (usbc2-vbus, no always-on, no boot-on). usb1 host port as the coordinator ruled (PL2 as usb1 vbus-supply). No VBUS regulator on USB0 (port 1 undriven).
-Device mode on port 1 (USB0, no VBUS source). The usb1 host port: ehci1 and ohci1 enabled, usb1 VBUS from PL2.
-UNVERIFIED on the usb1 wiring: the A7S series (DockSeed, tested on the A7S) uses PM5 for usb1 and PL2 for J4 Type-C.
-No host overlay for port 1.
+Source: Armbian armbian/build 00c27198 0005-cubie-a7z-add-device-tree.patch: reg_usbc2_vbus 57-64 (PL2) as &usbc2 drvvbus-supply; ehci1/ohci1 status okay; no usb1 supply (none in Armbian). The base is the A7A (Radxa U-Boot 9da4b3e8) and the A7S series; UNVERIFIED.
+Port 1 (USB0, device mode) gets no VBUS supply. The host controllers ehci1/ohci1 are enabled. The PL2 regulator is
+off at boot (no always-on, no boot-on). The three sources differ on PL2; each board follows its own (docs/prs/A7AZ.md).
+Syntax checked with cpp and dtc against stubbed labels only (no kernel tree, no base dtsi): labels UNVERIFIED.
 Makefile line after the A7S entry; the A7S entry is the DockSeed series (fe0a8ed).
 ---
 --- a/arch/arm64/boot/dts/allwinner/Makefile
@@ -20,7 +20,7 @@ new file mode 100644
 index 0000000..1111111
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7z.dts
-@@ -0,0 +1,108 @@
+@@ -0,0 +1,116 @@
 +// SPDX-License-Identifier: (GPL-2.0-only OR MIT)
 +/*
 + * Radxa Cubie A7Z: a kernel device tree for bench images. CANDIDATE, UNTESTED, NEVER BOOTED. Bench only.
@@ -71,6 +71,13 @@ index 0000000..1111111
 +	};
 +};
 +
++&pio {
++	uart0_pb9_pb10_pins: uart0-pb9-pb10-pins {
++		pins = "PB9", "PB10";
++		function = "uart0";
++	};
++};
++
 +&uart0 {
 +	pinctrl-names = "default";
 +	pinctrl-0 = <&uart0_pb9_pb10_pins>;
@@ -114,11 +121,12 @@ index 0000000..1111111
 +	};
 +};
 +
-+/* usb1 host port: VBUS from PL2 via reg_usbc2_vbus (Armbian 00c27198 0005 patch:57-64, no always-on, no boot-on),
-+ * enabled by the host controller only. Armbian enables ehci1/ohci1 status okay (same patch); the PL2 consumer here is
-+ * usb1 per the coordinator ruling; Armbian names PL2 as usbc2 drvvbus. UNVERIFIED: see docs/prs/A7AZ.md. */
-+&usbphy {
-+	usb1_vbus-supply = <&reg_usbc2_vbus>;
++/* Armbian 00c27198 0005 patch: &usbc2 is the Type-C port controller; PL2 (reg_usbc2_vbus) is its drvvbus-supply.
++ * Armbian gives usb1 no VBUS supply (no usb1_vbus-supply line in that patch), so none is set here.
++ * ehci1/ohci1 are enabled as Armbian enables them (status okay). Line numbers not read: UNVERIFIED. */
++&usbc2 {
++	device_type = "usbc2";
++	drvvbus-supply = <&reg_usbc2_vbus>;
 +	status = "okay";
 +};
 +
