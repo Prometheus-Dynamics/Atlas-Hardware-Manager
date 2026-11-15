@@ -1,0 +1,29 @@
+# PENDING (K1): U-Boot Kconfig fragment for the K230D slot bootloader (our patched SDK U-Boot 2022.10 series).
+# Written from the Lemnos BB1b uboot record (docs/boards.md "U-Boot environment", lemnos-wBB1 origin/pr/BB1b) and
+# the SDK defconfig it extends. Not final: `lemnos-ctl tree BOARD --uboot-config FILE` writes the exact
+# fragment from the board file (uboot_env_* keys), and that output replaces this one. Every line is a claim
+# to check against the series build, not a verified option.
+
+# Redundant environment in the SDK's fixed device form (the board file sets uboot_env_device,
+# uboot_env_offset and uboot_env_offset_redund), not the GPT type-GUID form: the SDK layout puts the env
+# copies at fixed offsets (B7: 1.875 MiB and 3.5 MiB). The SDK's fixed offset is 0x1e0000; redund is 0x380000.
+CONFIG_ENV_IS_IN_MMC=y
+# The SDK also sets CONFIG_ENV_IS_IN_SPI_FLASH=y. The series removes it: two env locations is a conflict.
+# CONFIG_ENV_IS_IN_SPI_FLASH is not set
+CONFIG_ENV_REDUNDANT=y
+CONFIG_ENV_SIZE=0x10000
+CONFIG_ENV_OFFSET=0x1e0000
+CONFIG_ENV_OFFSET_REDUND=0x380000
+CONFIG_ENV_MMC_DEVICE_INDEX=0
+CONFIG_CMD_SAVEENV=y
+CONFIG_HUSH_PARSER=y
+CONFIG_CMD_SYSBOOT=y
+
+# Download mode (Lemnos rescue): fastboot over the USB device controller. Gadget port UNVERIFIED (see the board file).
+CONFIG_FASTBOOT_FLASH=y
+CONFIG_FASTBOOT_FLASH_MMC_DEV=0
+CONFIG_USB_FUNCTION_FASTBOOT=y
+CONFIG_CMD_FASTBOOT=y
+CONFIG_USB_GADGET=y
+CONFIG_WATCHDOG=y
+CONFIG_WATCHDOG_AUTOSTART=y

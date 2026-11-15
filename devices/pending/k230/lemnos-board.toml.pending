@@ -1,0 +1,38 @@
+# PENDING (K1): Lemnos board file draft for canmv-k230d-ai-cam (slot form). NOT named in [descriptions] and not
+# installed by any product: it is a draft until Lemnos's K230 gadget and mmc rows land (Lemnos answer, 2026-11-14)
+# and the family is a description. Lemnos's keys follow docs/boards.md (lemnos-wBB1 origin/pr/BB1b). The exact
+# [[devices]] and config table syntax is UNVERIFIED: copy it from Lemnos docs/slots.md before the first check.
+format = "lemnos.board"
+schema_version = 1
+
+[board]
+id = "canmv-k230d-ai-cam"        # = Gaia board name = devices/boards/<dir> (the id rule)
+soc = "k230"                     # Lemnos socs/k230.toml (since 6a970345; K230D shares this map)
+form = "fragment"
+
+# Watchdog: socs/k230.toml has watchdog0 at /soc/wdt0@91106000, snps,dw-wdt. Declared now (Lemnos answer).
+# lemnosd owns the keep-alive; the node is named watchdog:NODE.
+[[hardware]]
+controller = "watchdog0"
+
+[[devices]]
+id = "watchdog"
+driver = "hw-watchdog"
+uses = { watchdog = "watchdog:/soc/wdt0@91106000" }
+
+# Slots: the uboot record (BB1b). The env is the fixed device form, because the SDK layout puts the two copies at
+# fixed offsets (1920K and 3584K, B7; the SDK defconfig's CONFIG_ENV_OFFSET=0x1e0000). The values are in bytes.
+# UNVERIFIED: the device path /dev/mmcblk0 (from B7's bootargs root=/dev/mmcblk0p2 and the mmc0 alias, which the
+# dts still has to set), and the SDK-side offset of the redundant copy (0x380000 is an assumption, see the fragment).
+[[devices]]
+id = "slots"
+driver = "system-slots"
+record = "uboot"
+config = { uboot_env_size = 65536, uboot_env_device = "/dev/mmcblk0", uboot_env_offset = 1966080, uboot_env_offset_redund = 3670016, uboot_env_mmc_index = 0, uboot_fastboot_usb = 0 }
+
+# Not written here, each is an open item in docs/prs/K1-k230d.md:
+#   - the USB gadget (dwc2 OTG device port): not in socs/k230.toml yet, so no [[hardware]] row can name it;
+#   - the mmc / SD host node (canaan,k230-dw-mshc): not in socs/k230.toml; the SD host is not in the map;
+#   - the crash log / pstore reservation: a board kernel item (kernel/bench.fragment and the dts reserved-memory node);
+#   - the Ethernet: none on this SoC (no MAC, Gaia REPORT-mainline.md);
+#   - uboot_led, uboot_usb_vendor/product, uboot_watchdog_ms: unset until the board is proven (the SDK's defaults stand).
