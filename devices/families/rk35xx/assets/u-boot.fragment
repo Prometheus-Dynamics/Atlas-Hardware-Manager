@@ -15,20 +15,45 @@
 # MOVES AT THE LEMNOS L2 MOVE: the environment lines below (ENV_SIZE, ENV_REDUNDANT, OF_CONTROL,
 #   PARTITION_TYPE_GUID, ENV_IS_NOWHERE, ENV_IS_IN_MMC) will be written by `lemnos-ctl tree --uboot-config`
 #   from the board file and included by Gaia; this fragment then keeps only board hardware lines.
-CONFIG_ENV_SIZE=0x8000
+# Z2 (the bench slot form, HARD RULE of 2026-11-14): the environment is on the SD card, which is U-Boot's mmc 1 on this
+#   family (mmc 0 is the disabled eMMC node), and the raw-offset fallback is off. Values as Gaia's rk-env branch sets them
+#   (examples/boards/rk35xx/assets/u-boot.fragment at 1db105c): CONFIG_ENV_SIZE=0x10000 is Lemnos's uboot_env_size
+#   (testing/boards/rk3566-slots.toml at e2e45ce7), the copy size of the 128 KiB uboot-env partition in family.toml.
+#   CONFIG_ENV_MMC_DEVICE_INDEX=1 and CONFIG_ENV_MMC_USE_DT=y are the same rule: without USE_DT the redundant copies fall back
+#   to the offsets over the partition table (env/mmc.c:194-202). Lemnos's generator does not write USE_DT (its
+#   --uboot-config output lists ENV_MMC_DEVICE_INDEX only), so this file adds it. The check (scripts/check-devices.sh,
+#   rk35xx_env_rule) refuses a slot image whose config lacks either line.
+CONFIG_ENV_SIZE=0x10000
 CONFIG_ENV_REDUNDANT=y
+CONFIG_ENV_MMC_DEVICE_INDEX=1
+CONFIG_ENV_MMC_USE_DT=y
 CONFIG_OF_CONTROL=y
 CONFIG_PARTITION_TYPE_GUID=y
 # CONFIG_ENV_IS_NOWHERE is not set
 CONFIG_ENV_IS_IN_MMC=y
 # CONFIG_TOOLS_MKEFICAPSULE is not set
 
-# PLACEHOLDER, not yet config names: `record = "uboot"` slot boot (Lemnos) needs
-# this U-Boot to have, built in: (1) sysboot / extlinux (distro boot reads
-# extlinux.conf); (2) env import and export (boot-record.env on the boot
-# partition); (3) the `test` command (boot.cmd uses it); (4) FAT write (the
-# boot partition is FAT). Gaia will give the CONFIG_ names after it builds one;
-# do not guess them here.
+# The boot path's options (Z2): the lines Lemnos's `lemnos-ctl tree --uboot-config` writes for a `record = "uboot"` board
+# (service/ctl/src/boot_dir.rs uboot_config, at Lemnos pr/BB1b e2e45ce7; its test the_uboot_config_fragment_names_what_the_boot_path_needs
+# lists them). Each is U-Boot v2026.10's name, as Lemnos checked it against the Kconfig files (testing/board-runs/I5i7.md).
+#   The boot script (packaging/uboot/boot.cmd): hush with while and for, sysboot, fdt, sleep, saveenv, and the FAT boot partition.
+#   The fastboot gadget on USB (the pause and the offer for flashing) and the watchdog the loop services (cmd/fastboot.c:115).
+CONFIG_CMD_SAVEENV=y
+CONFIG_EFI_PARTITION=y
+CONFIG_HUSH_PARSER=y
+CONFIG_CMD_FDT=y
+CONFIG_CMD_SLEEP=y
+CONFIG_CMD_SYSBOOT=y
+CONFIG_USB_GADGET=y
+CONFIG_USB_FUNCTION_FASTBOOT=y
+CONFIG_CMD_FASTBOOT=y
+CONFIG_FASTBOOT_USB_DEV=0
+CONFIG_FASTBOOT_FLASH=y
+CONFIG_FASTBOOT_FLASH_MMC=y
+CONFIG_FASTBOOT_FLASH_MMC_DEV=0
+CONFIG_WDT=y
+CONFIG_WATCHDOG=y
+CONFIG_WATCHDOG_AUTOSTART=y
 # CONFIG_SPL_ROCKCHIP_BACK_TO_BROM (B31): the SPL checks the boot-mode register at its first instruction and returns to
 #   the BootROM's download mode when it holds BOOT_BROM_DOWNLOAD (0xEF08A53C; bootrom.c:46-59 and :72-73). That is the
 #   value a board's `reboot loader` writes (the reboot-mode node, boards/radxa-rock-4d/assets/dts). Without this line

@@ -9,8 +9,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."lemnos-ctl.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "f4a295c611972ba422df20a78112b9fb409c47d0"
-commit = "f4a295c611972ba422df20a78112b9fb409c47d0"
+ref = "e2e45ce795e922ff92cf6334586ed7fd66f9c3d1"
+commit = "e2e45ce795e922ff92cf6334586ed7fd66f9c3d1"
 
 [source."lemnos-orion.root"]
 kind = "image"
@@ -20,14 +20,25 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."lemnos-orion.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "f4a295c611972ba422df20a78112b9fb409c47d0"
-commit = "f4a295c611972ba422df20a78112b9fb409c47d0"
+ref = "e2e45ce795e922ff92cf6334586ed7fd66f9c3d1"
+commit = "e2e45ce795e922ff92cf6334586ed7fd66f9c3d1"
+
+[source."lemnos-slot-init.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"
+
+[source."lemnos-slot-init.src"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "e2e45ce795e922ff92cf6334586ed7fd66f9c3d1"
+commit = "e2e45ce795e922ff92cf6334586ed7fd66f9c3d1"
 
 [source."lemnos.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "f4a295c611972ba422df20a78112b9fb409c47d0"
-commit = "f4a295c611972ba422df20a78112b9fb409c47d0"
+ref = "e2e45ce795e922ff92cf6334586ed7fd66f9c3d1"
+commit = "e2e45ce795e922ff92cf6334586ed7fd66f9c3d1"
 
 [source."lemnosd.root"]
 kind = "image"
@@ -37,8 +48,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."lemnosd.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "f4a295c611972ba422df20a78112b9fb409c47d0"
-commit = "f4a295c611972ba422df20a78112b9fb409c47d0"
+ref = "e2e45ce795e922ff92cf6334586ed7fd66f9c3d1"
+commit = "e2e45ce795e922ff92cf6334586ed7fd66f9c3d1"
 
 [source."orion.root"]
 kind = "image"
@@ -85,3 +96,14 @@ kind = "git"
 url = "https://gitlab.com/buildroot.org/buildroot.git"
 ref = "2026.02.3"
 commit = "679b9ead7620bbf193620d1ebf56f53c1764d37a"
+
+[source."zero-3e-slot-board.lemnos"]
+kind = "git"
+url = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "e2e45ce795e922ff92cf6334586ed7fd66f9c3d1"
+commit = "e2e45ce795e922ff92cf6334586ed7fd66f9c3d1"
+
+[source."zero-3e-slot-board.root"]
+kind = "image"
+reference = "docker.io/library/rust:1.99-slim"
+digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d7"

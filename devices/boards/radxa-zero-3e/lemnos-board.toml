@@ -1,6 +1,14 @@
-# The ZERO 3E's Lemnos board file, the USB device port part only (B15). It is not installed by any
-# product yet, and it is not the whole board file: the buses, the fan and the other devices are not
-# written here.
+# The ZERO 3E's Lemnos board file, for the bench slot image (Z2): the USB device port (B15, below), the identity, the
+# hardware watchdog, and the U-Boot slot record (record = "uboot", Lemnos BB1b). Installed by zero-3e-bench as
+# /etc/lemnos/board.toml (through the board's [descriptions]). It is not the whole board file: the buses, the fan and the
+# other devices are not written here. Untested on board.
+#
+# Z2 sources (Lemnos pr/BB1b e2e45ce7, testing/boards/rk3566-slots.toml, which is the form this file takes for the
+# RK3566 with the SD as the one medium): the watchdog `/watchdog@fe600000` (socs/rk3566.toml [controllers.watchdog]),
+# the slots device with uboot_env_size 0x10000, uboot_env_mmc_index 1 (SD = U-Boot mmc 1, sdmmc0 `/mmc@fe2b0000`),
+# boot_sources, and the test fastboot pair 1209:0001 (pid.codes test pair: NOT a registered id, a test value).
+# The [boot] bays are Atlas's sizes, UNVERIFIED: each is the STORED file's size + margin per docs/slots.md; Gaia's
+# `boot-report` (the boot-partition fit) gives the real figures on the first build, and a larger payload is refused by name.
 #
 # WRITTEN TO Lemnos Q2f (96080d36; Q2e and Q2f, socs/rk3566.toml). VALIDATED at Lemnos 96080d36 in B21 (see
 # docs/prs/B21.md for the commands and the output). Earlier, at 4a2d3b7d (B18), the Q2e part was validated.
@@ -55,6 +63,43 @@ role = "peripheral"
 id = "identity"
 driver = "system-identity"
 config = { serial = "device-tree", name = "Radxa ZERO 3E", revision = "bench" }
+
+[boot]
+# The payload bays of the U-Boot form (Lemnos I5i8, docs/slots.md "the boot partition"): three bay sets, each file's
+# size is the STORED file's (on the U-Boot form the kernel is the raw Image; a compressed one is refused by name).
+# Sizes (UNVERIFIED on the first build): kernel 32 MiB (Gaia's untrimmed ZERO 3E Image was 23,577,088 bytes); initramfs
+# 1 MiB (the slot-init archive: 495,328 bytes on the Raze); device tree 256 KiB (this board's dtb was 115,100 bytes in
+# Gaia's scratch build); overlay 16 KiB (1,238 bytes); cmdline 4 KiB (155 bytes).
+bay_kernel_bytes = 33554432
+bay_initramfs_bytes = 1048576
+bay_device_tree_bytes = 262144
+bay_cmdline_bytes = 4096
+bay_overlay_bytes = 16384
+
+# The hardware the devices use: the watchdog (socs/rk3566.toml [controllers.watchdog]).
+[[hardware]]
+controller = "watchdog"
+
+# The system: identity, the slot store (the U-Boot record), reboot and the watchdog. Lemnos BB1b testing/boards/rk3566-slots.toml.
+[[devices]]
+id = "reboot"
+driver = "system-reboot"
+
+[[devices]]
+id = "watchdog"
+driver = "hw-watchdog"
+keepalive = true
+uses = { watchdog = "watchdog:/watchdog@fe600000" }
+config = { timeout_s = 15 }
+
+# The slots: the boot partition holds the bays (FAT), the data partition the slot file (/data). record = "uboot": U-Boot's
+# own redundant environment (the GPT partition of type 3de21764..., 128 KiB, copies of uboot_env_size 0x10000) holds the
+# record. The SD is U-Boot's mmc 1 (uboot_env_mmc_index = 1): the eMMC socket is disabled on this board. boot_sources names the SD
+# controller's device-tree path, which the boot script hands on (Lemnos docs/slots.md "the boot source").
+[[devices]]
+id = "slots"
+driver = "system-slots"
+config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", boot_sources = ["/mmc@fe2b0000=/mmc@fe2b0000"], uboot_env_size = 0x10000, uboot_env_mmc_index = 1, uboot_usb_vendor = 0x1209, uboot_usb_product = 0x0001 }
 
 # The gadget (the Lemnos usb-gadget driver), with the Raze's addressing: the default composition (the orion link, NCM
 # derived from the board serial, one ACM console); the NCM interface is lemnos<N>, addressed by the lemnos0-addressing

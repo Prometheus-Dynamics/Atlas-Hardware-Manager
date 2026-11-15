@@ -1,7 +1,0 @@
-# The crash log's kernel options (pstore into ramoops, kept across a reset). STANDALONE, NOT WIRED: no product-side
-# kernel fragment exists in Gaia's schema here. See docs/prs/Z1.md.
-# PSTORE, PSTORE_RAM, PSTORE_CONSOLE: the console record the ramoops node above keeps. No PSTORE_PMSG: its
-# pmsg-size is 0 in ramoops.dtsi, so the option would be unused.
-CONFIG_PSTORE=y
-CONFIG_PSTORE_RAM=y
-CONFIG_PSTORE_CONSOLE=y

@@ -1,5 +1,4 @@
-// Radxa ZERO 3E bench: the crash log kept across a reset (pstore, ramoops). STANDALONE, NOT WIRED: Gaia's board and
-// family files are the place to attach it (see docs/prs/Z1.md).
+// Radxa ZERO 3E: the crash log kept across a reset (pstore, ramoops). Included by rk3566-radxa-zero-3e-gadget.dts (Z2, wired).
 //
 // Address: 0x110000, size 0xf0000, as the mainline RK3566 precedent gives it: rk3566-lckfb-tspi.dts, lines 32-38, at Linux
 // v7.3.4 (kernel tree 7552930, cached on this machine). It sits below U-Boot's load windows (kernel_addr_r 0x02000000, cited by the coordinator and not read here,
