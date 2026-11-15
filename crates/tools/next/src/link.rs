@@ -8,29 +8,14 @@ use std::time::Duration;
 use atlas_session::{Handle, PROGRAM, Presence, Sessions};
 use orion::node::Enrollment;
 use orion::node::Node;
-use orion::{Address, ClientError, Identity, Options, Orion};
+use orion::{Address, Identity, Options, Orion};
 
 use crate::Env;
 use crate::commands::Refusal;
 use crate::pins::{Pin, Pins};
 
-/// Orion's words for a plain session refused by a node with security on (`crates/client/connect`,
-/// the transport's signed-session check, at the pinned rev).
-const NEEDS_SIGNED: &str = "the node needs a signed session, and this client has no key";
-
 /// How long a probe or an enrolment waits for the node to answer.
 const ANSWER_WAIT: Duration = Duration::from_secs(10);
-
-/// Whether a board runs with security off, as far as a plain session can tell.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Security {
-    /// A plain session is refused: the node needs a signed session.
-    On,
-    /// A plain session opens: the node accepts anyone, and proves no key on it.
-    Off,
-    /// Not known: the address is not a network address, or the answer is something else.
-    Unknown,
-}
 
 /// The facts a Lemnos board publishes. A node with any of them and no offers did not report what
 /// it offers.
@@ -61,41 +46,27 @@ pub struct BoardInfo {
     pub reported: bool,
 }
 
-/// Whether the board at `address` runs with security off. Only a network address is asked: a plain
-/// session to it either opens (security off) or is refused with Orion's words for a node that needs
-/// a signed session (security on). The caller asks once per run and keeps the answer.
-// Orion J9 reports the session mode in Welcomed: delete this probe in the change that moves the Orion pin to J9.
-pub async fn security(address: &Address) -> Security {
-    if !matches!(address, Address::Network { .. }) {
-        return Security::Unknown;
-    }
+/// The key the board at `address` proves it holds, as the transport says it (Orion J9): from the
+/// signed handshake when the session is signed, else asked once with a nonce, checked and kept.
+/// Pin on this key, not on the hello document's. The session signs with the PC's identity `key`.
+pub async fn transport_key(address: &Address, key: &[u8; 32]) -> Result<[u8; 32], String> {
     let address = address.clone();
-    let opened = tokio::task::spawn_blocking(move || {
-        Orion::connect_with(
+    let key = *key;
+    tokio::task::spawn_blocking(move || {
+        let orion = Orion::connect_with(
             &address,
             PROGRAM,
             Options {
-                identity: None,
+                identity: Some(Identity::from_secret(&key)),
                 timeout: ANSWER_WAIT,
                 ..Options::default()
             },
         )
-        .map(drop)
+        .map_err(|error| error.to_string())?;
+        orion.node_key().map_err(|error| error.to_string())
     })
-    .await;
-    classify(opened.ok())
-}
-
-/// What a plain session's outcome says: opened is security off; refused for a signed session is
-/// security on; anything else is not known. `None` stands for a probe that could not run.
-fn classify(opened: Option<Result<(), orion::Error>>) -> Security {
-    match opened {
-        Some(Ok(())) => Security::Off,
-        Some(Err(orion::Error::Client(ClientError::Denied(why)))) if why == NEEDS_SIGNED => {
-            Security::On
-        }
-        _ => Security::Unknown,
-    }
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 /// Asks the board at `address` to enrol `secret`'s key as an operator called `name`, on a signed
@@ -262,28 +233,5 @@ fn not_answering(presence: &Presence) -> String {
         Presence::Replaced { .. } => "another node answers at this address".to_owned(),
         Presence::Searching => "it has not answered yet".to_owned(),
         Presence::Found(_) => "it answered".to_owned(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_plain_session_that_opens_is_security_off_and_one_refused_for_a_signed_one_is_on() {
-        assert_eq!(classify(Some(Ok(()))), Security::Off);
-        assert_eq!(
-            classify(Some(Err(orion::Error::Client(ClientError::Denied(
-                NEEDS_SIGNED
-            ))))),
-            Security::On
-        );
-        assert_eq!(
-            classify(Some(Err(orion::Error::Client(ClientError::Denied(
-                "some other refusal"
-            ))))),
-            Security::Unknown
-        );
-        assert_eq!(classify(None), Security::Unknown);
     }
 }

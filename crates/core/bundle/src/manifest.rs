@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use atlas_image::Verity;
+use lemnos_slot_store::manifest::{Manifest as LemnosManifest, Verity as LemnosVerity};
 use serde::{Deserialize, Serialize};
 
 use crate::BundleError;
@@ -105,39 +106,79 @@ impl SlotManifest {
         }
     }
 
-    /// Reads `slot.json`. Only schema 3 is taken. A schema 2 manifest, or one
-    /// with a `family` key (schema 2's, which schema 3 does not have), is
-    /// refused by name.
+    /// Reads `slot.json` with Lemnos's manifest reader (`lemnos_slot_store::manifest::Manifest::parse`),
+    /// which refuses by name any schema other than 3 and any `family` key, then checks what a reader needs
+    /// here (`validate`). The bytes read are the bytes `slot.sig` signs; they are not re-serialized.
     pub fn parse(bytes: &[u8]) -> Result<Self, BundleError> {
-        let value: serde_json::Value = serde_json::from_slice(bytes)
+        let text = std::str::from_utf8(bytes)
             .map_err(|error| BundleError::Malformed(format!("slot.json: {error}")))?;
-        match value.get("schema").and_then(serde_json::Value::as_u64) {
-            Some(found) if found == u64::from(SCHEMA) => {}
-            Some(found) => {
-                return Err(BundleError::Malformed(format!(
-                    "slot.json schema {found} is not {SCHEMA}: this reader takes schema {SCHEMA} only"
-                )));
-            }
-            None => {
-                return Err(BundleError::Malformed(
-                    "slot.json has no schema number".into(),
-                ));
-            }
-        }
-        if value.get("family").is_some() {
-            return Err(BundleError::Malformed(
-                "slot.json has a family key, which schema 3 does not have (the board is named by board)".into(),
-            ));
-        }
-        let manifest: Self = serde_json::from_value(value)
-            .map_err(|error| BundleError::Malformed(format!("slot.json: {error}")))?;
+        let lemnos = LemnosManifest::parse(text).map_err(BundleError::Malformed)?;
+        let manifest = Self::from_lemnos(lemnos);
         manifest.validate()?;
         Ok(manifest)
     }
 
-    /// The bytes `slot.json` is written as, and that `slot.sig` signs.
+    /// The bytes `slot.json` is written as, and that `slot.sig` signs: Lemnos's `Manifest::to_json`, the
+    /// one writer of the format.
     pub fn to_json(&self) -> Result<Vec<u8>, BundleError> {
-        serde_json::to_vec(self).map_err(|error| BundleError::Malformed(error.to_string()))
+        Ok(self.to_lemnos().to_json().into_bytes())
+    }
+
+    fn to_lemnos(&self) -> LemnosManifest {
+        LemnosManifest {
+            id: self.id.clone(),
+            product: self.product.clone(),
+            version: self.version.clone(),
+            variant: self.variant.clone().unwrap_or_default(),
+            board: self.board.clone(),
+            kernel: self.kernel.clone().unwrap_or_default(),
+            display_name: self.display_name.clone().unwrap_or_default(),
+            image_size: self.image.size,
+            image_sha256: self.image.sha256.clone(),
+            verity: LemnosVerity {
+                root_hash: self.verity.root_hash.clone(),
+                salt: self.verity.salt.clone().unwrap_or_default(),
+                data_blocks: self.verity.data_blocks,
+                hash_offset: self.verity.hash_offset,
+            },
+            boot_files: self
+                .boot
+                .files
+                .iter()
+                .map(|(path, digest)| (path.clone(), digest.clone()))
+                .collect(),
+            overlay: None,
+            // Lemnos f74d075f added `boot.config` (the firmware config lines' digest). Atlas's manifest does not
+            // model it, so Atlas writes none, as before; a Lemnos bundle's value is read and not kept here.
+            boot_config: None,
+        }
+    }
+
+    fn from_lemnos(lemnos: LemnosManifest) -> Self {
+        let text = |value: String| (!value.is_empty()).then_some(value);
+        Self {
+            schema: SCHEMA,
+            id: lemnos.id,
+            product: lemnos.product,
+            version: lemnos.version,
+            variant: text(lemnos.variant),
+            board: lemnos.board,
+            kernel: text(lemnos.kernel),
+            display_name: text(lemnos.display_name),
+            image: ImageEntry {
+                size: lemnos.image_size,
+                sha256: lemnos.image_sha256,
+            },
+            verity: VerityEntry {
+                root_hash: lemnos.verity.root_hash,
+                salt: Some(lemnos.verity.salt),
+                data_blocks: lemnos.verity.data_blocks,
+                hash_offset: lemnos.verity.hash_offset,
+            },
+            boot: BootEntry {
+                files: lemnos.boot_files.into_iter().collect(),
+            },
+        }
     }
 
     /// Checks what a reader needs before it trusts the fields.

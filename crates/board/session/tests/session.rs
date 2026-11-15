@@ -4,14 +4,17 @@
 
 #![cfg(target_os = "linux")]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use atlas_session::{Handle, Pause, Presence, RealPause, SessionError, Sessions};
+mod common;
+
+use atlas_session::{FailureKind, Handle, Pause, Presence, RealPause, SessionError, Sessions};
 use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode};
+use common::scratch;
 use orion::{Address, ClientError};
 
 /// A pause that does not wait: the failure rule's delays are tested on the driver side. It only
@@ -25,8 +28,35 @@ impl Pause for NoPause {
     }
 }
 
-fn scratch(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("session-{name}"))
+/// Every name the session test files give `scratch`, the worst socket path among them fits
+/// `SUN_LEN`, and the CI build path would not (the reason scratch dirs are not under it).
+#[test]
+fn every_socket_path_fits_sun_len() {
+    let longest = common::NAMES
+        .iter()
+        .map(|name| name.len())
+        .max()
+        .unwrap_or(0);
+    let worst = common::worst_socket_len(longest);
+    assert!(
+        worst <= common::SUN_PATH_MAX,
+        "the longest socket path would be {worst} bytes (SUN_LEN allows {}): shorten TMPDIR or the longest name",
+        common::SUN_PATH_MAX
+    );
+    let ci_base = "/home/runner/work/Atlas-Hardware-Manager/Atlas-Hardware-Manager/target/tmp";
+    let under_ci = ci_base.len() + "/session-".len() + longest + "/orion.sock".len();
+    assert!(
+        under_ci > common::SUN_PATH_MAX,
+        "the CI build path must be too long for a socket here ({under_ci} bytes)"
+    );
+    for name in common::NAMES {
+        let socket = common::socket_in(&common::scratch(name));
+        assert!(
+            socket.as_os_str().len() <= common::SUN_PATH_MAX,
+            "{name}: socket path {socket:?} is {} bytes",
+            socket.as_os_str().len()
+        );
+    }
 }
 
 fn start(dir: &Path, port: Option<u16>) -> SimNode {
@@ -105,11 +135,74 @@ async fn a_call_that_fails_on_a_live_session_is_a_failure_not_a_gone_node() {
         })
         .await;
     assert!(
-        matches!(&refused, Err(SessionError::Failed(reason)) if reason.contains("refused by the test")),
+        matches!(&refused, Err(SessionError::Failed(reason)) if reason.text().contains("refused by the test")),
         "{refused:?}"
     );
     // The session is still up after a failed call.
     assert!(matches!(handle.presence(), Presence::Found(_)));
+}
+
+#[tokio::test]
+async fn a_denied_refusal_keeps_its_kind_whatever_its_words() {
+    let dir = scratch("denied-kind");
+    let node = start(&dir, None);
+    let sessions = Sessions::new(Arc::new(NoPause));
+    let handle = sessions.handle(&address(node.network().port())).unwrap();
+    connected(&handle).await;
+
+    // Reworded on purpose: the kind decides, not the text.
+    let reworded = handle
+        .with_client(|_| -> Result<(), orion::Error> {
+            Err(orion::Error::Client(ClientError::Denied("no")))
+        })
+        .await;
+    match reworded {
+        Err(SessionError::Failed(failure)) => {
+            assert_eq!(failure.kind(), FailureKind::Denied, "{failure:?}");
+            assert_eq!(failure.text(), "no");
+        }
+        other => panic!("expected a failed call, got {other:?}"),
+    }
+
+    // The comm core's own `denied` carries its code.
+    let core = handle
+        .with_client(|_| -> Result<(), orion::Error> {
+            Err(orion::Error::Client(ClientError::refused(
+                orion::types::Error::Denied,
+                "",
+            )))
+        })
+        .await;
+    match core {
+        Err(SessionError::Failed(failure)) => {
+            assert!(failure.is_denied(), "{failure:?}");
+            assert_eq!(failure.code(), Some(orion::types::Error::Denied.code()));
+        }
+        other => panic!("expected a failed call, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_non_denied_failure_whose_text_says_denied_is_not_denied() {
+    let dir = scratch("not-denied-kind");
+    let node = start(&dir, None);
+    let sessions = Sessions::new(Arc::new(NoPause));
+    let handle = sessions.handle(&address(node.network().port())).unwrap();
+    connected(&handle).await;
+
+    let answer = handle
+        .with_client(|_| -> Result<(), orion::Error> {
+            Err(orion::Error::Client(ClientError::Protocol("denied")))
+        })
+        .await;
+    match answer {
+        Err(SessionError::Failed(failure)) => {
+            assert_eq!(failure.kind(), FailureKind::Other, "{failure:?}");
+            assert!(!failure.is_denied());
+            assert!(failure.text().contains("denied"));
+        }
+        other => panic!("expected a failed call, got {other:?}"),
+    }
 }
 
 #[tokio::test]
@@ -265,4 +358,30 @@ async fn a_queued_call_whose_caller_gave_up_is_not_started_later() {
         !ran.load(Ordering::SeqCst),
         "the abandoned call was not run"
     );
+}
+
+#[tokio::test]
+async fn a_refusal_keeps_the_nodes_words_verbatim() {
+    let dir = scratch("words");
+    let node = start(&dir, None);
+    let sessions = Sessions::new(Arc::new(NoPause));
+    let handle = sessions.handle(&address(node.network().port())).unwrap();
+    connected(&handle).await;
+
+    let detail = "lease lost while quiet: taken by atlas-next";
+    let answer = handle
+        .with_client(move |_| -> Result<(), orion::Error> {
+            Err(orion::Error::Client(ClientError::refused(
+                orion::types::Error::LeaseLost,
+                detail,
+            )))
+        })
+        .await;
+    match answer {
+        Err(SessionError::Failed(failure)) => {
+            assert_eq!(failure.text(), detail);
+            assert_eq!(failure.code(), Some(22));
+        }
+        other => panic!("expected a failed call, got {other:?}"),
+    }
 }

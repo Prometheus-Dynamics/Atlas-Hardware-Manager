@@ -4,7 +4,7 @@
 
 #![cfg(target_os = "linux")]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -17,6 +17,8 @@ use atlas_session::{
 };
 use atlas_sim_node::{DEADLINE, Hello, Kind, Mode, SimNode};
 use orion::{Address, Orion};
+mod common;
+use common::scratch;
 
 /// The monitor's wait between tries: it only yields, so a node that is gone is not spun on.
 #[derive(Debug)]
@@ -26,10 +28,6 @@ impl Pause for NoPause {
     fn pause(&self, _delay: Duration, _stop: &AtomicBool) {
         std::thread::yield_now();
     }
-}
-
-fn scratch(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("long-{name}"))
 }
 
 fn start_node(dir: &Path, port: Option<u16>) -> SimNode {
@@ -422,16 +420,14 @@ async fn a_transfer_that_fails_for_good_answers_failed_and_the_session_carries_o
     struct Refused;
     impl SteppedTransfer<String> for Refused {
         fn step(&mut self, _wait: Duration) -> Result<Step<String>, StepError> {
-            Err(StepError::Failed("the board refused the file".to_owned()))
+            Err(StepError::Failed("the board refused the file".into()))
         }
         fn cancel(&mut self) {}
     }
     let outcome = handle.long(&Cancel::new(), start(Refused)).await;
     assert_eq!(
         outcome,
-        Err(SessionError::Failed(
-            "the board refused the file".to_owned()
-        ))
+        Err(SessionError::Failed("the board refused the file".into()))
     );
     let name = handle
         .with_client(|orion| orion.node().map(|node| node.name))

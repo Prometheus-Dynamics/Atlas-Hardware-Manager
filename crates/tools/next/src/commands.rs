@@ -10,6 +10,7 @@ use atlas_board_slots::{
     BoardSlots, Follower, InstallRequest, SlotError, SlotInstalls, Source, TrialStart,
 };
 use atlas_jobs::{DeviceHolds, Events, JobTiming};
+use atlas_session::Failure;
 use atlas_slots::{SlotList, Stage};
 use atlas_trial::{Running, TrialState};
 use atlas_types::DeviceKey;
@@ -19,7 +20,7 @@ use serde_json::json;
 
 use crate::args::{Command, Verb};
 use crate::identity;
-use crate::link::{self, BoardInfo, Link, Security};
+use crate::link::{self, BoardInfo, Link};
 use crate::pins::{Pin, Pins};
 use crate::report::Report;
 use crate::{Env, parse_address};
@@ -29,19 +30,15 @@ const POLL: Duration = Duration::from_millis(50);
 
 /// The name this PC's identity is enrolled under on a board.
 const ENROL_NAME: &str = "atlas-next";
-/// The first line of a board command on a board with security off: its key is checked, but the
-/// session is not signed.
-pub const SECURITY_OFF_LINE: &str =
-    "security off: the board's key is checked, the session is not signed";
-/// Refused by `enrol` on a board with security off.
-pub const SECURITY_OFF_NO_ENROL: &str =
-    "this board runs with security off: there is nothing to enrol";
 
-/// A command that did not succeed: its status and the words to show.
+/// A command that did not succeed: its status and the words to show. `denied` is set when the
+/// board's refusal was Orion's `Denied` (a key the board does not know, or one it has not let
+/// act): it is read from the kind the session carried, never from the words.
 #[derive(Debug)]
 pub struct Refusal {
     pub code: i32,
     pub words: String,
+    pub denied: bool,
 }
 
 impl Refusal {
@@ -49,13 +46,19 @@ impl Refusal {
         Self {
             code,
             words: words.into(),
+            denied: false,
         }
     }
 }
 
 impl From<SlotError> for Refusal {
     fn from(error: SlotError) -> Self {
-        Self::new(1, error.to_string())
+        let denied = error.failure().is_some_and(Failure::is_denied);
+        Self {
+            code: 1,
+            words: error.to_string(),
+            denied,
+        }
     }
 }
 
@@ -88,14 +91,12 @@ pub async fn run<W: Write>(command: Command, env: &Env, out: &mut W) -> i32 {
             return r.finish(1);
         }
     };
-    // The session mode is asked once per run, and every command of this run uses the answer.
-    let mode = link::security(&address).await;
     let outcome = match &command.verb {
-        Verb::Fingerprint => fingerprint(&mut r, env, &state, &address, &key).await,
-        Verb::Pin => pin(&mut r, env, &state, &address, &key).await,
-        Verb::Repin => repin(&mut r, env, &state, &address, command.reflashed, &key).await,
-        Verb::Enrol => enrol(&mut r, env, &state, &address, &key, mode).await,
-        verb => board(&mut r, env, &state, &address, verb, &key, mode).await,
+        Verb::Fingerprint => fingerprint(&mut r, &state, &address, &key).await,
+        Verb::Pin => pin(&mut r, &state, &address, &key).await,
+        Verb::Repin => repin(&mut r, &state, &address, command.reflashed, &key).await,
+        Verb::Enrol => enrol(&mut r, env, &state, &address, &key).await,
+        verb => board(&mut r, env, &state, &address, verb, &key).await,
     };
     match outcome {
         Ok(()) => r.finish(0),
@@ -104,7 +105,7 @@ pub async fn run<W: Write>(command: Command, env: &Env, out: &mut W) -> i32 {
             if !matches!(
                 command.verb,
                 Verb::Fingerprint | Verb::Pin | Verb::Repin | Verb::Enrol
-            ) && denied_by_board(&refusal.words)
+            ) && refusal.denied
             {
                 r.say(format!(
                     "this PC's key is not enrolled on this board: run atlas-next enrol {}",
@@ -116,30 +117,20 @@ pub async fn run<W: Write>(command: Command, env: &Env, out: &mut W) -> i32 {
     }
 }
 
-/// Whether a board's words are Orion's refusal of the call (`denied`): a key the board does not
-/// know, or one it has not let act. Only the words reach here: a board command's refusal crosses
-/// `atlas-board-slots` and `atlas-session` as text, so the variant (`ClientError::Refused`) is not
-/// visible to the tool. `enrol` makes its call directly and matches the variant instead.
-fn denied_by_board(words: &str) -> bool {
-    words
-        .split(|c: char| !c.is_ascii_alphabetic())
-        .any(|word| word == orion::types::Error::Denied.as_str())
-}
-
 async fn fingerprint<W: Write>(
     r: &mut Report<'_, W>,
-    env: &Env,
     state: &Path,
     address: &Address,
     key: &[u8; 32],
 ) -> Result<(), Refusal> {
     let text = address.to_string();
-    let node = probe_or_refuse(env, address, &text, key).await?;
-    r.say(format!("{text}: key fingerprint {}", node.fingerprint));
+    let proved = transport_or_refuse(address, &text, key).await?;
+    let fingerprint = identity::fingerprint(&proved);
+    r.say(format!("{text}: key fingerprint {fingerprint}"));
     let pins = load_pins(state)?;
     match pins.get(&text) {
         None => r.say("not pinned: run `pin` to trust this key"),
-        Some(pin) if pin.key == node.public_key => {
+        Some(pin) if pin.key == proved => {
             r.say("pinned: this is the key the address is pinned to");
         }
         Some(pin) => r.say(format!(
@@ -148,52 +139,51 @@ async fn fingerprint<W: Write>(
         )),
     }
     r.field("address", text);
-    r.field("fingerprint", node.fingerprint);
+    r.field("fingerprint", fingerprint);
     Ok(())
 }
 
 async fn pin<W: Write>(
     r: &mut Report<'_, W>,
-    env: &Env,
     state: &Path,
     address: &Address,
     key: &[u8; 32],
 ) -> Result<(), Refusal> {
     let text = address.to_string();
-    let node = probe_or_refuse(env, address, &text, key).await?;
+    let proved = transport_or_refuse(address, &text, key).await?;
+    let fingerprint = identity::fingerprint(&proved);
     let mut pins = load_pins(state)?;
     match pins.get(&text).cloned() {
-        Some(pin) if pin.key == node.public_key => {
-            r.say(format!("already pinned: {}", node.fingerprint));
+        Some(pin) if pin.key == proved => {
+            r.say(format!("already pinned: {fingerprint}"));
         }
-        Some(pin) => return Err(link::replaced(&text, &pin, Some(node.fingerprint.clone()))),
+        Some(pin) => return Err(link::replaced(&text, &pin, Some(fingerprint.clone()))),
         None => {
             pins.set(Pin {
                 address: text.clone(),
-                key: node.public_key,
-                fingerprint: node.fingerprint.clone(),
+                key: proved,
+                fingerprint: fingerprint.clone(),
             });
             save_pins(&pins)?;
             r.say(format!(
-                "pinned {} for {text}: every command now checks this key",
-                node.fingerprint
+                "pinned {fingerprint} for {text}: every command now checks this key"
             ));
         }
     }
-    r.field("fingerprint", node.fingerprint);
+    r.field("fingerprint", fingerprint);
     Ok(())
 }
 
 async fn repin<W: Write>(
     r: &mut Report<'_, W>,
-    env: &Env,
     state: &Path,
     address: &Address,
     reflashed: bool,
     key: &[u8; 32],
 ) -> Result<(), Refusal> {
     let text = address.to_string();
-    let node = probe_or_refuse(env, address, &text, key).await?;
+    let proved = transport_or_refuse(address, &text, key).await?;
+    let fingerprint = identity::fingerprint(&proved);
     let mut pins = load_pins(state)?;
     let old = pins.get(&text).cloned();
     if !reflashed {
@@ -203,50 +193,53 @@ async fn repin<W: Write>(
         return Err(Refusal::new(
             3,
             format!(
-                "repin replaces the pin, and is for a reflashed board only. Pinned: {pinned}. Answering now: {}. Nothing was changed. If the board was reflashed, run it again with --reflashed.",
-                node.fingerprint
+                "repin replaces the pin, and is for a reflashed board only. Pinned: {pinned}. Answering now: {fingerprint}. Nothing was changed. If the board was reflashed, run it again with --reflashed."
             ),
         ));
     }
     match &old {
-        Some(pin) if pin.key == node.public_key => {
-            r.say(format!("unchanged: {} is still the pin", node.fingerprint));
+        Some(pin) if pin.key == proved => {
+            r.say(format!("unchanged: {fingerprint} is still the pin"));
         }
         Some(pin) => r.say(format!(
-            "repinned {text}: {} -> {}",
-            pin.fingerprint, node.fingerprint
+            "repinned {text}: {} -> {fingerprint}",
+            pin.fingerprint
         )),
-        None => r.say(format!(
-            "pinned {text} as {} (it had no pin)",
-            node.fingerprint
-        )),
+        None => r.say(format!("pinned {text} as {fingerprint} (it had no pin)")),
     }
     pins.set(Pin {
         address: text,
-        key: node.public_key,
-        fingerprint: node.fingerprint.clone(),
+        key: proved,
+        fingerprint: fingerprint.clone(),
     });
     save_pins(&pins)?;
-    r.field("fingerprint", node.fingerprint);
+    r.field("fingerprint", fingerprint);
     Ok(())
+}
+
+/// The key the board proves it holds (see [`link::transport_key`]), or the words for a board that
+/// did not answer.
+async fn transport_or_refuse(
+    address: &Address,
+    text: &str,
+    key: &[u8; 32],
+) -> Result<[u8; 32], Refusal> {
+    link::transport_key(address, key)
+        .await
+        .map_err(|why| Refusal::new(1, format!("the board at {text} did not answer: {why}")))
 }
 
 /// `enrol`: asks the board to know this PC's identity. The request carries no proof, so the
 /// board decides: its answer says whether this key is pending the owner's approval, enrolled, or
-/// revoked. The request is made on a pinned board only (the pin rule), and never on a board with
-/// security off, which has nothing to enrol.
+/// revoked. The request is made on a pinned board only (the pin rule).
 async fn enrol<W: Write>(
     r: &mut Report<'_, W>,
     env: &Env,
     state: &Path,
     address: &Address,
     key: &[u8; 32],
-    mode: Security,
 ) -> Result<(), Refusal> {
     let text = address.to_string();
-    if mode == Security::Off {
-        return Err(Refusal::new(1, SECURITY_OFF_NO_ENROL));
-    }
     let pins = load_pins(state)?;
     let Some(pin) = pins.get(&text).cloned() else {
         let node = probe_or_refuse(env, address, &text, key).await?;
@@ -308,12 +301,8 @@ async fn board<W: Write>(
     address: &Address,
     verb: &Verb,
     key: &[u8; 32],
-    mode: Security,
 ) -> Result<(), Refusal> {
     let text = address.to_string();
-    if mode == Security::Off {
-        r.say(SECURITY_OFF_LINE);
-    }
     let pins = load_pins(state)?;
     let link = link::pinned(env, &pins, &text, address, key).await?;
     let info = link::board_info(&link.node);
@@ -345,7 +334,7 @@ async fn board<W: Write>(
             r.field("removed", id.clone());
             Ok(())
         }
-        Verb::Install(path) => install(r, state, &link, &info, path).await,
+        Verb::Install(path) => install(r, state, &link, &info, path).await.map(drop),
         Verb::Trial(id) => trial(r, env, state, &link, &slots, &pins, address, id, key).await,
         Verb::Fingerprint | Verb::Pin | Verb::Repin | Verb::Enrol => {
             Err(Refusal::new(2, "not a board command"))
@@ -382,7 +371,7 @@ async fn list<W: Write>(r: &mut Report<'_, W>, slots: &BoardSlots) -> Result<(),
 
 /// The list as lines: a header, a trial line when one is pending, then one line per slot with
 /// its state words.
-fn list_lines(list: &SlotList) -> Vec<String> {
+pub(crate) fn list_lines(list: &SlotList) -> Vec<String> {
     let mut lines = vec![format!(
         "running {}, default {}, keep {}",
         list.running, list.default, list.keep
@@ -421,13 +410,15 @@ fn list_lines(list: &SlotList) -> Vec<String> {
     lines
 }
 
-async fn install<W: Write>(
+/// Installs the bundle at `path` on the board and returns the id it was installed as. Shared with
+/// `cycle`, which needs the id.
+pub(crate) async fn install<W: Write>(
     r: &mut Report<'_, W>,
     state: &Path,
     link: &Link,
     info: &BoardInfo,
     path: &Path,
-) -> Result<(), Refusal> {
+) -> Result<String, Refusal> {
     let Some(family) = info.family.clone() else {
         return Err(Refusal::new(
             1,
@@ -486,8 +477,8 @@ async fn install<W: Write>(
         match stage {
             Some(Stage::Done { slot }) => {
                 r.say(format!("installed as {slot}"));
-                r.field("slot", slot);
-                return Ok(());
+                r.field("slot", slot.clone());
+                return Ok(slot);
             }
             Some(Stage::Failed { reason }) => return Err(Refusal::new(1, reason)),
             Some(Stage::Cancelled) => return Err(Refusal::new(1, "the install was cancelled")),
@@ -553,7 +544,7 @@ async fn trial<W: Write>(
     trial_outcome(r, env, pins, address, id, ended.state, key).await
 }
 
-async fn trial_outcome<W: Write>(
+pub(crate) async fn trial_outcome<W: Write>(
     r: &mut Report<'_, W>,
     env: &Env,
     pins: &Pins,
@@ -648,15 +639,15 @@ fn now_ms() -> u64 {
         })
 }
 
-fn load_pins(state: &Path) -> Result<Pins, Refusal> {
+pub(crate) fn load_pins(state: &Path) -> Result<Pins, Refusal> {
     Pins::load(state).map_err(|why| Refusal::new(1, why))
 }
 
-fn save_pins(pins: &Pins) -> Result<(), Refusal> {
+pub(crate) fn save_pins(pins: &Pins) -> Result<(), Refusal> {
     pins.save().map_err(|why| Refusal::new(1, why))
 }
 
-async fn probe_or_refuse(
+pub(crate) async fn probe_or_refuse(
     env: &Env,
     address: &Address,
     text: &str,
@@ -669,13 +660,43 @@ async fn probe_or_refuse(
 
 #[cfg(test)]
 mod tests {
-    use super::denied_by_board;
+    use atlas_actions::ActionError;
+    use atlas_board_slots::SlotError;
+    use atlas_session::{Failure, FailureKind};
+
+    use super::Refusal;
 
     #[test]
-    fn only_orions_denied_word_marks_a_refusal_of_the_board() {
-        assert!(denied_by_board("the call failed: denied"));
-        assert!(denied_by_board("denied"));
-        assert!(!denied_by_board("the board did not answer: timed out"));
-        assert!(!denied_by_board("undenied"));
+    fn a_denied_refusal_marks_the_not_enrolled_line_whatever_its_words() {
+        // Reworded on purpose: the kind decides.
+        let error = SlotError::Board(ActionError::Refused(Failure::new(
+            FailureKind::Denied,
+            None,
+            "no",
+        )));
+        assert!(Refusal::from(error).denied);
+        let unknown = SlotError::Board(ActionError::Unknown {
+            name: "system.slots.list".into(),
+            reason: Failure::new(FailureKind::Denied, Some(10), "no"),
+        });
+        assert!(Refusal::from(unknown).denied);
+    }
+
+    #[test]
+    fn a_refusal_that_is_not_denied_does_not_mark_it_even_if_its_words_say_denied() {
+        let board_words = SlotError::Board(ActionError::Refused("denied".into()));
+        assert!(!Refusal::from(board_words).denied);
+        let other = SlotError::Board(ActionError::Failed(Failure::new(
+            FailureKind::Other,
+            None,
+            "the call failed: denied",
+        )));
+        assert!(!Refusal::from(other).denied);
+        let refused = SlotError::Board(ActionError::Refused(Failure::new(
+            FailureKind::Refused,
+            Some(11),
+            "busy",
+        )));
+        assert!(!Refusal::from(refused).denied);
     }
 }

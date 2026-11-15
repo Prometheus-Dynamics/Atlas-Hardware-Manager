@@ -521,6 +521,12 @@ impl SimNode {
         lock(&self.shared.model).slots.healthy = healthy;
     }
 
+    /// Leaves the slot called `id` out of `list` (`None` lists every slot). A board that has lost
+    /// a slot it just installed shows this; a test uses it to reach an unexpected state.
+    pub fn slot_hide_from_list(&self, id: Option<&str>) {
+        lock(&self.shared.model).slots.hide_from_list = id.map(str::to_owned);
+    }
+
     /// Sets how many of the next trial boots do not reach the daemon. Each such boot spends one
     /// attempt; after `trial_attempts` of them the trial falls back. Each boot is a restart: `trial`
     /// starts the first one, and the reboot action or [`SimNode::slot_power_cut`] starts the next.
@@ -551,6 +557,11 @@ impl SimNode {
     /// `confirm_deadline_s` or `auto_confirm`.
     pub fn slot_config(&self, change: impl FnOnce(&mut trial::Config)) {
         change(&mut lock(&self.shared.model).slots.trial_config);
+    }
+
+    /// Sets the free space the install gate sees, so a test can have an install refused for room.
+    pub fn slot_set_free_bytes(&self, bytes: u64) {
+        lock(&self.shared.model).slots.free_bytes = bytes;
     }
 
     /// How many runs of `name` the node has been asked to start, refused ones included. A run is
@@ -1129,6 +1140,7 @@ impl Node {
                 model.slots.state = State::Error;
                 model.slots.error.clone_from(&status.message);
             }
+            model.slots.note_install(&outcome);
             outcome
         };
         match result {
@@ -1460,6 +1472,7 @@ fn apply(model: &mut Model, name: &str, args: &[u8], caller: &str) -> Result<Vec
             )
             .map(|()| nothing),
         names::SLOTS_CONFIRM => model.slots.confirm(caller).map(|()| nothing),
+        names::SLOTS_INFO => Ok(model.slots.info_json().into_bytes()),
         names::SLOTS_REMOVE => model.slots.remove(&slot_id(&found)?).map(|()| nothing),
         names::SLOTS_PIN => model
             .slots

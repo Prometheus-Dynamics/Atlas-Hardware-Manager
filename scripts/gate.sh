@@ -85,9 +85,39 @@ fi
 
 # Nothing that runs on a board lives here except the flasher image description
 # and the SystemCore package description, which are data under devices/.
+#
+# no_match passes only when grep finds nothing (status 1). A match (0) fails, and so does a grep error (2): with
+# `! grep` an error counted as a pass, and grep reports 2 even when it also matched, so a glob that named a missing
+# directory (apps/*/src-tauri/src before the app lands) turned both checks into no-ops (G10). Only directories that
+# exist are searched.
+no_match() {  # <grep args...> -- <dir globs...>
+  local args=() dirs=() glob d status
+  while [ "$1" != "--" ]; do args+=("$1"); shift; done
+  shift
+  for glob in "$@"; do
+    for d in $glob; do [ -d "$d" ] && dirs+=("$d"); done
+  done
+  [ ${#dirs[@]} -gt 0 ] || return 0
+  status=0
+  grep "${args[@]}" "${dirs[@]}" || status=$?
+  case $status in
+    1) return 0 ;;
+    0) echo "    found above: not allowed here" >&2; return 1 ;;
+    *) echo "    grep failed (status $status): the check did not run" >&2; return 1 ;;
+  esac
+}
+no_match_self_test() {
+  local d
+  d=$(mktemp -d "${TMPDIR:-/mnt/ssd-samsung/atlas-next-scratch-root}/gate-no-match.XXXXXX" 2>/dev/null) || d=$(mktemp -d)
+  mkdir -p "$d/a" && echo "raze" > "$d/a/f"
+  no_match -rn -i raze -- "$d/a" "$d/missing/*" >/dev/null 2>&1 && { rm -r "$d"; echo "no_match passed a match" >&2; return 1; }
+  no_match -rn -i helios -- "$d/a" "$d/missing/*" || { rm -r "$d"; echo "no_match failed a clean tree" >&2; return 1; }
+  rm -r "$d"
+}
 if compgen -G "crates/*/*/src" > /dev/null; then
-  step "no board or product names in code" bash -c '! grep -rn -i -E "\b(raze|helios|photonvision|zero-?3e|rock-?5c|cubie|luckfox|k230d)\b" crates/*/*/src apps/*/src-tauri/src 2>/dev/null'
-  step "no shell-outs to ssh for board jobs" bash -c '! grep -rn -E "Command::new\(\"(ssh|scp|sftp)\"\)" crates/*/*/src apps/*/src-tauri/src 2>/dev/null'
+  step "the grep guard refuses a match even with a missing directory" no_match_self_test
+  step "no board or product names in code" no_match -rn -i -E "\b(raze|helios|photonvision|zero-?3e|rock-?5c|cubie|luckfox|k230d)\b" -- "crates/*/*/src" "apps/*/src-tauri/src"
+  step "no shell-outs to ssh for board jobs" no_match -rn -E "Command::new\(\"(ssh|scp|sftp)\"\)" -- "crates/*/*/src" "apps/*/src-tauri/src"
 fi
 
 echo "gate passed"

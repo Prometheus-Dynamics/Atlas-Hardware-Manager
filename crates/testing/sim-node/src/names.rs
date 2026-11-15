@@ -80,6 +80,12 @@ pub const SURFACE: &[Method] = &[
         long_job: false,
     },
     Method {
+        contract: "system.slots/1",
+        lemnos: "info",
+        action: SLOTS_INFO,
+        long_job: false,
+    },
+    Method {
         contract: "system.reboot/1",
         lemnos: "reboot",
         action: REBOOT,
@@ -98,6 +104,7 @@ pub const ACTIONS: &[&str] = &[
     SLOTS_REMOVE,
     SLOTS_PIN,
     SLOTS_SET_KEEP,
+    SLOTS_INFO,
     REBOOT,
     STATUS,
     LOCATE,
@@ -166,6 +173,8 @@ pub const SLOTS_CONFIRM: &str = "system.slots.confirm";
 pub const SLOTS_REMOVE: &str = "system.slots.remove";
 pub const SLOTS_PIN: &str = "system.slots.pin";
 pub const SLOTS_SET_KEEP: &str = "system.slots.set-keep";
+/// `info` (Lemnos I5k): a JSON text reply with `last_attempt`, whose `boot` is the board's boot id.
+pub const SLOTS_INFO: &str = "system.slots.info";
 
 /// The directory a pushed bundle lands in, relative to the data partition. The driver owns it:
 /// it is cleared when the node starts, and a file is removed when its install job ends.

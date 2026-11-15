@@ -32,7 +32,7 @@ fn classify(error: orion::Error) -> StepError {
     if error.is_lost() {
         StepError::Lost(error.to_string())
     } else {
-        StepError::Failed(error.to_string())
+        StepError::Failed(atlas_session::Failure::of(&error))
     }
 }
 
@@ -63,7 +63,7 @@ struct Stepped {
 impl SteppedTransfer<Transfer> for Stepped {
     fn step(&mut self, wait: Duration) -> Result<Step<Transfer>, StepError> {
         let Some(pushing) = self.pushing.as_mut() else {
-            return Err(StepError::Failed("the push already ended".to_owned()));
+            return Err(StepError::Failed("the push already ended".into()));
         };
         match pushing.step(wait) {
             // `Waiting` is a step in which the board has not yet said how much it has.

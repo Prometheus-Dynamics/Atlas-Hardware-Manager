@@ -573,6 +573,14 @@ fn a_removal_refusal_names_its_reason() {
     let running = refused(&orion, names::SLOTS_REMOVE, b"slot-1");
     assert!(running.detail.starts_with("-16:"), "{}", running.detail);
 
+    // A pinned slot is not removed. It is installed before any trial: an install is refused while a
+    // trial is pending (Lemnos's rule).
+    let pinned = bundle_for("slot-3", "3.0.0", None);
+    assert_eq!(
+        install(&orion, &pinned, true, true).outcome,
+        Outcome::Succeeded
+    );
+
     // A pending trial's slot is busy too.
     ok(&orion, names::SLOTS_TRIAL, b"slot-2 false false false");
     // The boot does not reach the daemon: the default runs, and the trial stays pending.
@@ -582,12 +590,6 @@ fn a_removal_refusal_names_its_reason() {
     let tried = refused(&orion, names::SLOTS_REMOVE, b"slot-2");
     assert!(tried.detail.starts_with("-16:"), "{}", tried.detail);
 
-    // A pinned slot is not removed.
-    let pinned = bundle_for("slot-3", "3.0.0", None);
-    assert_eq!(
-        install(&orion, &pinned, true, true).outcome,
-        Outcome::Succeeded
-    );
     let finished = refused(&orion, names::SLOTS_REMOVE, b"slot-3");
     assert!(finished.detail.starts_with("-1:"), "{}", finished.detail);
     assert!(finished.detail.contains("pinned"), "{}", finished.detail);

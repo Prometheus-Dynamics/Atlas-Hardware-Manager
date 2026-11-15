@@ -1,6 +1,12 @@
 //! Making a slot bundle from a [`SlotSource`]: two passes over the source,
 //! then the tar.
 //!
+//! TEST AND SIM ONLY. This writer exists for the tests and the simulated node. It
+//! builds its manifest with Lemnos's `Manifest::to_json` and its record and message
+//! with Lemnos's `signing` functions, so its bytes are Lemnos's; but real bundles
+//! are made by Gaia's `lemnos-ctl bundle`, which owns the board rules, the command
+//! line and the tree. Nothing installs a bundle this writer made on a real board.
+//!
 //! Pass one hashes the rootfs (its SHA-256 and size; the verity root hash of its
 //! data, salted, against the source's `verity.root_hash`; the file's length
 //! against the layout) and every boot file. That is what `slot.json` says, and
