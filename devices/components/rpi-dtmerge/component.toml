@@ -7,8 +7,9 @@
 version = 1
 name = "rpi-dtmerge"
 description = "dtmerge from raspberrypi/utils, linked statically with libfdt from dtc: a host tool"
+# The Makefile's directory is `make/`, not `build/`: the repository ignores build/ (.gitignore).
 [sources.build]
-path = "build"
+path = "make"
 [sources.utils]
 git = "https://github.com/raspberrypi/utils.git"
 ref = "eac8944a8f30a8365ea57e4d20d268baadd0eb67"

@@ -114,7 +114,7 @@ commit = "6f0881cba8bea8ec24956a5718714730e9936ec5"
 
 [source."rpi-dtmerge.build"]
 kind = "tree"
-path = "../../components/rpi-dtmerge/build"
+path = "../../components/rpi-dtmerge/make"
 digest = "sha256:d8ee3a03a7d7e09849f08062d083d4a3aed03a746123b978d2824e4d2af057b4"
 
 [source."rpi-dtmerge.dtc"]
