@@ -1,22 +1,26 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-Subject: [PATCH] arm64: dts: allwinner: add the Radxa Cubie A7A (bench, untested)
+Subject: [PATCH] arm64: dts: allwinner: add the Radxa Cubie A7A (bench, UNVERIFIED, derived from A7A)
 
-Bench image device tree (candidate, UNTESTED). Makefile line after the A7S entry; the A7S entry is the DockSeed series' (fe0a8ed).
+UNVERIFIED. No Radxa device tree for the A7A exists in any source read; this is an authored candidate.
+Peripherals from Radxa's A7A U-Boot dts (radxa/u-boot 9da4b3e8): vcc5v, reg_usb_vbus (PL2, no always-on, no boot-on) as usb1_vbus-supply, ehci1/ohci1 okay. No VBUS regulator on USB0 (port 1 undriven).
+Device mode on port 1 (USB0, no VBUS source). The usb1 host port: ehci1 and ohci1 enabled, usb1 VBUS from PL2.
+UNVERIFIED on the usb1 wiring: the A7S series (DockSeed, tested on the A7S) uses PM5 for usb1 and PL2 for J4 Type-C.
+No host overlay for port 1.
+Makefile line after the A7S entry; the A7S entry is the DockSeed series (fe0a8ed).
 ---
---- a/arch/arm64/boot/dts/allwinner/Makefile	2026-11-14 23:02:58.700170418 -0700
-+++ b/arch/arm64/boot/dts/allwinner/Makefile	2026-11-14 23:02:58.770645338 -0700
+--- a/arch/arm64/boot/dts/allwinner/Makefile
++++ b/arch/arm64/boot/dts/allwinner/Makefile
 @@ -1,3 +1,4 @@
  dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h700-anbernic-rg35xx-sp.dtb
  dtb-$(CONFIG_ARCH_SUNXI) += sun60i-a733-cubie-a7s.dtb
 +dtb-$(CONFIG_ARCH_SUNXI) += sun60i-a733-cubie-a7a.dtb
  dtb-$(CONFIG_ARCH_SUNXI) += sun55i-a527-cubie-a5e.dtb
-
 diff --git a/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7a.dts b/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7a.dts
 new file mode 100644
 index 0000000..1111111
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7a.dts
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,117 @@
 +// SPDX-License-Identifier: (GPL-2.0-only OR MIT)
 +/*
 + * Radxa Cubie A7A: a kernel device tree for bench images. CANDIDATE, UNTESTED, NEVER BOOTED. Bench only.
@@ -29,6 +33,7 @@ index 0000000..1111111
 +
 +/dts-v1/;
 +
++#include <dt-bindings/gpio/gpio.h>
 +#include "sun60i-a733.dtsi"
 +
 +/ {
@@ -43,6 +48,25 @@ index 0000000..1111111
 +
 +	chosen {
 +		stdout-path = "serial0:115200n8";
++	};
++
++	reg_vcc5v: vcc5v {
++		compatible = "regulator-fixed";
++		regulator-name = "vcc-5v";
++		regulator-min-microvolt = <5000000>;
++		regulator-max-microvolt = <5000000>;
++		regulator-always-on;
++	};
++
++	/* PL2 (USB0-DRVVBUS): the usb1 host port VBUS switch. Off at boot: no always-on, no boot-on. Radxa A7A dts 31-38. */
++	reg_usb_vbus: vbus {
++		compatible = "regulator-fixed";
++		regulator-name = "usb-vbus";
++		regulator-min-microvolt = <5000000>;
++		regulator-max-microvolt = <5000000>;
++		vin-supply = <&reg_vcc5v>;
++		gpio = <&r_pio 0 2 GPIO_ACTIVE_HIGH>;	/* PL2 */
++		enable-active-high;
 +	};
 +
 +	reserved-memory {
@@ -98,4 +122,19 @@ index 0000000..1111111
 +		reset-assert-us = <10000>;
 +		reset-deassert-us = <150000>;
 +	};
++};
++
++/* usb1 host port (Radxa A7A dts 69-72, 83-88): VBUS from PL2 via reg_usb_vbus, enabled by the host controller only.
++ * UNVERIFIED on the bench: the A7S series (DockSeed, tested) uses PM5 for usb1 instead; see docs/prs/A7AZ.md. */
++&usbphy {
++	usb1_vbus-supply = <&reg_usb_vbus>;
++	status = "okay";
++};
++
++&ehci1 {
++	status = "okay";
++};
++
++&ohci1 {
++	status = "okay";
 +};

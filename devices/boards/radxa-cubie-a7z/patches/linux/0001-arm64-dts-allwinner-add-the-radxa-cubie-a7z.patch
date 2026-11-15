@@ -1,13 +1,15 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 Subject: [PATCH] arm64: dts: allwinner: add the Radxa Cubie A7Z (bench, UNVERIFIED, derived from A7A)
 
-UNVERIFIED. The A7Z has no Radxa device tree (the A7A tree and the A7S series dts are the bases).
-Peripherals from the A7A (radxa/u-boot 9da4b3e8 sun60i-a733-radxa-a7a.dts). No VBUS regulator on any USB port
-(port 1 is undriven; the host port PL2 regulator is in the U-Boot dts only). Device mode only: no host overlay is shipped.
+UNVERIFIED. No Radxa device tree for the A7Z exists in any source read; this is an authored candidate.
+Peripherals from the A7A (Radxa U-Boot 9da4b3e8); the PL2 regulator is Armbian 00c27198 0005 (usbc2-vbus, no always-on, no boot-on). usb1 host port as the coordinator ruled (PL2 as usb1 vbus-supply). No VBUS regulator on USB0 (port 1 undriven).
+Device mode on port 1 (USB0, no VBUS source). The usb1 host port: ehci1 and ohci1 enabled, usb1 VBUS from PL2.
+UNVERIFIED on the usb1 wiring: the A7S series (DockSeed, tested on the A7S) uses PM5 for usb1 and PL2 for J4 Type-C.
+No host overlay for port 1.
 Makefile line after the A7S entry; the A7S entry is the DockSeed series (fe0a8ed).
 ---
---- a/arch/arm64/boot/dts/allwinner/Makefile	2026-11-14 23:02:58.966170085 -0700
-+++ b/arch/arm64/boot/dts/allwinner/Makefile	2026-11-14 23:02:59.020170018 -0700
+--- a/arch/arm64/boot/dts/allwinner/Makefile
++++ b/arch/arm64/boot/dts/allwinner/Makefile
 @@ -1,3 +1,4 @@
  dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h700-anbernic-rg35xx-sp.dtb
  dtb-$(CONFIG_ARCH_SUNXI) += sun60i-a733-cubie-a7s.dtb
@@ -18,7 +20,7 @@ new file mode 100644
 index 0000000..1111111
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7z.dts
-@@ -0,0 +1,83 @@
+@@ -0,0 +1,108 @@
 +// SPDX-License-Identifier: (GPL-2.0-only OR MIT)
 +/*
 + * Radxa Cubie A7Z: a kernel device tree for bench images. CANDIDATE, UNTESTED, NEVER BOOTED. Bench only.
@@ -31,6 +33,7 @@ index 0000000..1111111
 +
 +/dts-v1/;
 +
++#include <dt-bindings/gpio/gpio.h>
 +#include "sun60i-a733.dtsi"
 +
 +/ {
@@ -45,6 +48,15 @@ index 0000000..1111111
 +
 +	chosen {
 +		stdout-path = "serial0:115200n8";
++	};
++
++	reg_usbc2_vbus: usbc2-vbus {
++		compatible = "regulator-fixed";
++		regulator-name = "usbc2-vbus";
++		regulator-min-microvolt = <5000000>;
++		regulator-max-microvolt = <5000000>;
++		gpio = <&r_pio 0 2 GPIO_ACTIVE_HIGH>;  /* PL2 */
++		enable-active-high;
 +	};
 +
 +	reserved-memory {
@@ -102,3 +114,18 @@ index 0000000..1111111
 +	};
 +};
 +
++/* usb1 host port: VBUS from PL2 via reg_usbc2_vbus (Armbian 00c27198 0005 patch:57-64, no always-on, no boot-on),
++ * enabled by the host controller only. Armbian enables ehci1/ohci1 status okay (same patch); the PL2 consumer here is
++ * usb1 per the coordinator ruling; Armbian names PL2 as usbc2 drvvbus. UNVERIFIED: see docs/prs/A7AZ.md. */
++&usbphy {
++	usb1_vbus-supply = <&reg_usbc2_vbus>;
++	status = "okay";
++};
++
++&ehci1 {
++	status = "okay";
++};
++
++&ohci1 {
++	status = "okay";
++};
