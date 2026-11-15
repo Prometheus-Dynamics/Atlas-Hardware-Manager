@@ -7,9 +7,18 @@
 # Redundant environment in the SDK's fixed device form (the board file sets uboot_env_device,
 # uboot_env_offset and uboot_env_offset_redund), not the GPT type-GUID form: the SDK layout puts the env
 # copies at fixed offsets (B7: 1.875 MiB and 3.5 MiB). The SDK's fixed offset is 0x1e0000; redund is 0x380000.
+# The env LOCATION is MMC only. The SDK's board_common (board/canaan/common/k230_board_common.c:61-75,
+# arch_env_get_location) returns ENVL_NOWHERE first whenever CONFIG_ENV_IS_NOWHERE is set, and accepts only prio 0,
+# so NOWHERE must be off, and no other location may be on. The SDK defconfigs set CONFIG_ENV_IS_IN_SPI_FLASH=y
+# (k230d_canmv_bpi_defconfig:72); the series removes it.
 CONFIG_ENV_IS_IN_MMC=y
-# The SDK also sets CONFIG_ENV_IS_IN_SPI_FLASH=y. The series removes it: two env locations is a conflict.
+# CONFIG_ENV_IS_NOWHERE is not set
 # CONFIG_ENV_IS_IN_SPI_FLASH is not set
+# The MMC device number is NOT taken from CONFIG_ENV_MMC_DEVICE_INDEX alone at run time: mmc_get_env_dev
+# (k230_board_common.c:53-59) returns 1 when booted from SDIO1 and 0 otherwise. So the env disk follows the boot mode.
+# SD boot gives 1, which matches uboot_env_mmc_index = 1. An eMMC boot would write the env to mmc0. Our slot images boot SD.
+# No u-boot,mmc-env-offset, -offset-redundant or -partition property is set in our dts patch (env/mmc.c:72-106 would
+# override the offsets above); the SDK dts has none of them (grep of arch/riscv/dts and board/canaan: no hits).
 CONFIG_ENV_REDUNDANT=y
 CONFIG_ENV_SIZE=0x10000
 CONFIG_ENV_OFFSET=0x1e0000
