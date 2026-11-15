@@ -54,17 +54,19 @@ config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", b
 # ON-BOARD UNCONFIRMED (Lemnos's own marks, socs/sun60i-a733.toml): the /soc@0 bus path (the series' bus node renamed by a later
 # patch), the UDC name (the kernel names the controller musb-hdrc.N.auto; the port is given as udc:4100000.usb, resolved by
 # lemnos-linux resolve_udc), the PHY (no PHY needs entry: the PHY node's path is not in any source read), and VBUS: the map
-# has NO [bases.*] entry for the A733, so the board states VBUS itself: vbus_undriven (coordinator ruling 2026-11-14, option 1).
-# Evidence: Radxa's J16 label "USB 2.0, 5V power input and OTG", and the series (fe0a8ed, a733-usb0-gadget) gives the port no
-# VBUS supply and no ID/VBUS detect line. SCHEMATIC UNVERIFIED (the Radxa A7S schematic read is in progress), METER not needed
-# for the bench. Bench only, powered from J16 only. The vendor/product pair is the managed gadget's (0x1d6b:0x0104, as the
-# ZERO 3E's): a test identity until the release identity.
+# has NO [bases.*] entry for the A733, so the board states VBUS itself: vbus_undriven (coordinator ruling 2026-11-14).
+# Evidence: Radxa Cubie A7S schematic V1.10 (RS504, dl.radxa.com, sha256 89bf60f0...500f), sheet 13 "USBC0_T-CARD": J16's
+# VBUS pins are the net VCC5V0, which feeds only IN of U12 (SGM40666AS); U12's OUT is VCC5V0_SYS. VCC5V0 appears on no other
+# sheet, and no GPIO or switch drives it. The SoC's USB0-DRVVBUS (sheet 12) enables U2 (SGM2576) for J4's VBUS_USB, not J16.
+# Not proven from the sheet: whether U12 blocks reverse current if VCC5V0_SYS were fed from elsewhere (header 5 V); the bench
+# is powered from J16 only. No meter (coordinator: not needed for the bench). The vendor/product pair is the managed gadget's
+# (0x1d6b:0x0104, as the ZERO 3E's): a test identity until the release identity.
 [[hardware]]
 name = "udc:4100000.usb"
 controller = "usb-otg0"
 role = "peripheral"
 vbus_undriven = true
-vbus_reason = "J16 is the board's 5 V power input (Radxa: USB 2.0, 5V power input and OTG); the bring-up series gives usb@4100000 no VBUS supply and no ID or VBUS detect line; schematic unverified; bench powered from J16 only"
+vbus_reason = "J16 VBUS is the board's 5 V input: net VCC5V0 feeds only the input of load switch U12 (SGM40666AS), whose output is VCC5V0_SYS; no GPIO or switch drives VCC5V0 (Radxa Cubie A7S schematic V1.10, sheet 13); USB0-DRVVBUS switches J4, not J16 (sheet 12)"
 
 [[devices]]
 id = "gadget"
