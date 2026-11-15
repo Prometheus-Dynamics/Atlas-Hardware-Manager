@@ -145,6 +145,13 @@ fn slot<'a>(listing: &'a Value, id: &str) -> &'a Value {
         .unwrap_or_else(|| panic!("no slot {id} in {listing}"))
 }
 
+/// `info`: the JSON document the board answers (Lemnos I5k).
+fn info(orion: &Orion) -> Value {
+    let finished = call(orion, names::SLOTS_INFO, b"").expect("info answers");
+    assert_eq!(finished.outcome, Outcome::Succeeded);
+    serde_json::from_slice(&finished.output).expect("info is JSON")
+}
+
 fn ok(orion: &Orion, name: &str, args: &[u8]) -> Finished {
     let finished = call(orion, name, args).unwrap_or_else(|error| panic!("{name}: {error}"));
     assert_eq!(
@@ -237,10 +244,22 @@ fn every_surface_method_answers_and_its_result_is_right() {
     ok(&orion, names::SLOTS_SET_KEEP, b"3");
     exercised.push(names::SLOTS_SET_KEEP);
 
+    // info (Lemnos I5k): the boot id changes at a restart, and the last install attempt is cleared.
+    let boot_before = info(&orion)["last_attempt"]["boot"].clone();
     // reboot restarts into the default.
     ok(&orion, names::REBOOT, b"");
     assert_eq!(list(&orion)["slot_active"], "slot-1");
     exercised.push(names::REBOOT);
+    let after = info(&orion);
+    assert_ne!(
+        after["last_attempt"]["boot"], boot_before,
+        "a restart changes the boot id"
+    );
+    assert_eq!(
+        after["last_attempt"]["state"], "none",
+        "a restart clears the last attempt"
+    );
+    exercised.push(names::SLOTS_INFO);
 
     let mut surface: Vec<&str> = SURFACE.iter().map(|method| method.action).collect();
     surface.sort_unstable();

@@ -201,7 +201,24 @@ pub struct Slots {
     pub fail_record_writes: bool,
     /// The boot partition's `trial-reason` line, written when a fall back cannot be recorded.
     pub trial_reason: Option<String>,
+    /// The board's boot counter. It goes up at every restart (see [`Slots::restarted`]); the
+    /// sim's boot id is its text (`info.last_attempt.boot`, Lemnos I5k).
+    pub boot: u64,
+    /// The last install attempt, as `info.last_attempt` reports it. The daemon's memory: a restart
+    /// clears it (Lemnos I5k: after a restart the outcome is read from the slot list).
+    pub last_attempt: Option<LastAttempt>,
+    /// A test's script: this slot is left out of `list`, as a board that lost it would show.
+    pub hide_from_list: Option<String>,
     seq: u64,
+}
+
+/// The install attempt `info.last_attempt` reports (Lemnos I5k). `state` is one of `installed`,
+/// `refused` or `failed`, as the board writes it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LastAttempt {
+    pub state: &'static str,
+    pub slot: String,
+    pub reason: String,
 }
 
 const RESERVE_BYTES: u64 = 2048 * 1024 * 1024;
@@ -255,6 +272,9 @@ impl Slots {
             boots_without_daemon: 0,
             fail_record_writes: false,
             trial_reason: None,
+            boot: 0,
+            last_attempt: None,
+            hide_from_list: None,
             seq: 1,
         }
     }
@@ -385,6 +405,18 @@ impl Slots {
         pin: bool,
         keep_old: bool,
     ) -> Result<String, Status> {
+        // Lemnos I5i/REINSTALL rule: any install while a trial is pending is refused, and nothing is
+        // written. The words name the pending trial and the install to repeat after it.
+        if let Some(trial) = &self.trial {
+            let left = self.attempts_left();
+            return Err(Status::new(
+                code::BUSY,
+                format!(
+                    "slot {} is on trial with {left} attempts left: nothing was written; wait until the trial is promoted or falls back, then install {} again",
+                    trial.id, new.id
+                ),
+            ));
+        }
         if self.active.as_deref() == Some(new.id.as_str())
             || self.default.as_deref() == Some(new.id.as_str())
         {
@@ -426,6 +458,59 @@ impl Slots {
             self.housekeeping();
         }
         Ok(id)
+    }
+
+    /// Records the outcome of one install attempt for `info.last_attempt`.
+    pub fn note_install(&mut self, outcome: &Result<String, Status>) {
+        self.last_attempt = Some(match outcome {
+            Ok(id) => LastAttempt {
+                state: "installed",
+                slot: id.clone(),
+                reason: String::new(),
+            },
+            Err(status) => LastAttempt {
+                state: "refused",
+                slot: String::new(),
+                reason: status.message.clone(),
+            },
+        });
+    }
+
+    /// A restart of the board: the boot counter goes up, and the daemon's memory of its last
+    /// install attempt is gone.
+    pub fn restarted(&mut self) {
+        self.boot += 1;
+        self.last_attempt = None;
+    }
+
+    /// `info`, as Lemnos I5k gives it: the last install attempt, with the boot id it was seen in.
+    /// The text form is the sim's own wording.
+    #[must_use]
+    pub fn info_json(&self) -> String {
+        let boot = format!("sim-boot-{}", self.boot);
+        let (state, slot, reason) = match &self.last_attempt {
+            Some(attempt) => (attempt.state, attempt.slot.clone(), attempt.reason.clone()),
+            None => ("none", String::new(), String::new()),
+        };
+        let text = match (state, reason.is_empty()) {
+            ("none", _) => format!("last install: none since the service started (boot {boot})"),
+            (_, true) => format!("last install: {state} {slot}"),
+            (_, false) => format!("last install: {state} {slot}: {reason}"),
+        };
+        json!({
+            "last_attempt": {
+                "state": state,
+                "slot": slot,
+                "reason": reason,
+                "received": null,
+                "total": null,
+                "boot": boot,
+                "started_ms": null,
+                "ended_ms": null,
+                "text": text,
+            }
+        })
+        .to_string()
     }
 
     /// Makes `id` the default. The old default becomes previous.
@@ -611,7 +696,11 @@ impl Slots {
     /// `list`, as the slot driver writes it: newest slot first.
     #[must_use]
     pub fn list_json(&self) -> String {
-        let mut ordered: Vec<&Entry> = self.entries.iter().collect();
+        let mut ordered: Vec<&Entry> = self
+            .entries
+            .iter()
+            .filter(|entry| self.hide_from_list.as_deref() != Some(entry.id.as_str()))
+            .collect();
         ordered.sort_by_key(|entry| std::cmp::Reverse(entry.seq));
         let slots: Vec<serde_json::Value> = ordered
             .iter()

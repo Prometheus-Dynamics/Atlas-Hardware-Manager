@@ -197,6 +197,7 @@ impl Slots {
     /// runs.
     // LOCK: Lemnos L1 (I5f). Pre-L1 board: a trial is confirmed only by an explicit confirm; no resolved, no record_error.
     pub fn reboot(&mut self) {
+        self.restarted();
         self.state = State::Idle;
         match self.trial.as_ref() {
             Some(trial) if trial.record.reached => {
@@ -256,6 +257,15 @@ impl Slots {
         Ok(())
     }
 
+    /// The attempts the pending trial has left (`attempts_left` in `list`).
+    pub(super) fn attempts_left(&self) -> u32 {
+        let failed = self
+            .trial
+            .as_ref()
+            .map_or(0, |trial| trial.record.without_daemon);
+        self.trial_config.trial_attempts.saturating_sub(failed)
+    }
+
     /// The `trial` and `resolved` fields of `list`.
     // LOCK: Lemnos L1 (I5f). Pre-L1 board: a trial is confirmed only by an explicit confirm; no resolved, no record_error.
     pub(super) fn trial_json(&self) -> Value {
@@ -263,10 +273,7 @@ impl Slots {
             return Value::Null;
         };
         let record = &trial.record;
-        let attempts_left = self
-            .trial_config
-            .trial_attempts
-            .saturating_sub(record.without_daemon);
+        let attempts_left = self.attempts_left();
         json!({
             "slot": trial.id,
             "attempts_left": attempts_left,
@@ -394,6 +401,8 @@ impl Slots {
     /// boot partition's `trial-reason`.
     // LOCK: Lemnos L1 (I5f). Pre-L1 board: a trial is confirmed only by an explicit confirm; no resolved, no record_error.
     fn fall_back(&mut self, id: &str, reason: &str, by: By) {
+        // A fall back is a restart into the default: the boot id changes.
+        self.restarted();
         self.fail(id, reason);
         self.trial = None;
         self.active = self.default.clone();
