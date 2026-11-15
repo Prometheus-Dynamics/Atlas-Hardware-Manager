@@ -45,8 +45,10 @@ usb-gadget-family = "components/usb-gadget-family/component.toml"
 # The Raze/ZERO 3E serial-hash-v1 address scheme (shared; from pr/Z1, merged into this branch). It addresses the lemnos0
 # NCM interface; on this board that interface exists only if the Lemnos gadget is declared (see docs/prs/C1-cubie-a7s-bench.md).
 lemnos0-addressing = "../../components/lemnos0-addressing/component.toml"
-# The shared hostname from the serial (cubie-a7s-<six hex>), with this product's prefix. No bench-watchdog here: lemnosd is the
-# one watchdog opener on this board (INPUTS rule: no systemd RuntimeWatchdogSec on a board whose lemnosd keeps the watchdog).
+# The shared hostname from the serial (cubie-a7s-<six hex>), with this product's prefix.
+# No bench-watchdog (devices/components/bench-watchdog, systemd's RuntimeWatchdogSec) here, by design: on a Lemnos slot board
+# lemnosd owns the hardware watchdog (keepalive, 15 s, the board file's watchdog device) and lemnos-slot-init arms it at 15 s;
+# a second opener (systemd's RuntimeWatchdogSec) would be a second opener on the r_wdt node (INPUTS rule: one opener per board).
 bench-hostname = "../../components/bench-hostname/component.toml"
 bench-hostname-prefix = "components/bench-hostname-prefix/component.toml"
 # Shared with the other products: Gaia's USB network script (configfs NCM; its own pin), and Orion.
