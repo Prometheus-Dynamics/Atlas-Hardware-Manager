@@ -30,9 +30,9 @@ fragments = ["kernel/bench.fragment"]
 # /soc/usb-otg@91500000, UDC 91500000.usb-otg. Pre-filled in lemnos-board.toml.pending, pending the coordinator's pin.
 # UDC name: CONFIRM ON BOARD (Lemnos: not checked on a board).
 #
-# VBUS: TODO, the coordinator's ruling. The SDK names no VBUS supply, regulator, GPIO or phy-supply for usbotg0:
-# k230.dtsi:209-216 has no such property, and k230d_canmv_bpi.dts:57-59 sets only status = "okay".
-# The Lemnos generator needs a VBUS statement (vbus_undriven + vbus_reason). Not written from guesswork.
+# VBUS (coordinator ruling (a), 2026-11-14): vbus_undriven = true, with a reason. The SDK names no VBUS supply,
+# regulator, GPIO or phy-supply for usbotg0 (k230.dtsi:209-216; k230d_canmv_bpi.dts:56-58 sets only status). dr_mode is
+# pinned to "peripheral" (assets/usbotg0-peripheral.dtsi), so the controller never drives VBUS. Bench only, unconfirmed.
 #
 # Power: the supply is not named by the SDK. The Zero's USB-C 5 V 2 A rating is Atlas's B7 record, not this board's.
 # From the SDK, unconfirmed until first boot.

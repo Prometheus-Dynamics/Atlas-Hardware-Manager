@@ -25,9 +25,8 @@ uses = { watchdog = "watchdog:/soc/wdt0@91106000" }
 name = "udc:91500000.usb-otg"
 controller = "usb-otg0"
 role = "peripheral"
-# VBUS: TODO, the coordinator's ruling. The generator requires a VBUS statement (model: service/devtree/tests/k230_port.rs,
-# vbus_undriven + vbus_reason). The SDK names NO VBUS supply or phy-supply for usbotg0 (see docs/prs/K1-k230d.md, "VBUS").
-# Not written from guesswork.
+vbus_undriven = true
+vbus_reason = "bench only, unconfirmed on the board. The SDK names no VBUS supply for usbotg0: k230.dtsi:209-216 has no vbus-supply, phy-supply or gpio, and the BPI dts (k230d_canmv_bpi.dts:56-58) only sets status. dr_mode is pinned to peripheral (assets/usbotg0-peripheral.dtsi), so the controller never enters host mode or drives VBUS. CONFIRM ON BOARD: the host side supplies VBUS, and the port detects it without a vbus gpio."
 
 [[devices]]
 id = "gadget"
@@ -44,13 +43,15 @@ uses = { function = "udc:91500000.usb-otg" }
 #                                    a wrong device makes Lemnos refuse ("no valid environment"), it never writes blindly.
 #   uboot_watchdog_ms       10000    see docs/prs/K1-k230d.md (the SDK's dw-wdt clock is not on disk)
 # The uboot_usb_vendor/product pair is the pid.codes test pair, a placeholder Lemnos says to replace before release.
-# boot_sources is the path Lemnos's map names for the SD host (6b84e099, the socs/k230.toml header). The MMC hosts are
-# not map rows (by design); the node names in the kernel dts must match this path (see the doc, "MMC").
+# boot_sources is "<U-Boot DT path>=<kernel DT path>" (Lemnos docs/slots.md, "The boot source"). The left side is the
+# SD host's path in the SDK U-Boot dt: /soc/mmc1@91581000 (k230.dtsi:60 soc {, :161 mmc1@91581000, closed :277).
+# The right side is the kernel path, sdhci1@91581000, which the kernel dts names (Lemnos's map, 6b84e099). The MMC
+# hosts are not map rows (by design).
 [[devices]]
 id = "slots"
 driver = "system-slots"
 record = "uboot"
-config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", boot_sources = ["/soc/sdhci1@91581000=/soc/sdhci1@91581000"], uboot_env_size = 0x10000, uboot_env_device = "/dev/mmcblk1", uboot_env_offset = 0x1E0000, uboot_env_offset_redund = 0x380000, uboot_env_mmc_index = 1, uboot_usb_vendor = 0x1209, uboot_usb_product = 0x0001, uboot_watchdog_ms = 10000 }
+config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", boot_sources = ["/soc/mmc1@91581000=/soc/sdhci1@91581000"], uboot_env_size = 0x10000, uboot_env_device = "/dev/mmcblk1", uboot_env_offset = 0x1E0000, uboot_env_offset_redund = 0x380000, uboot_env_mmc_index = 1, uboot_usb_vendor = 0x1209, uboot_usb_product = 0x0001, uboot_watchdog_ms = 10000 }
 
 # Not written here: Ethernet (none, the SoC has no MAC; coordinator ruling 2026-11-14); the crash log / pstore reserved
 # region (a board kernel item, address not chosen).
