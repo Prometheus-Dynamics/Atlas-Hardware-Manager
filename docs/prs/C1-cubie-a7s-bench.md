@@ -73,21 +73,28 @@
 - `gaia lock` and `gaia plan`: see the PR text (pasted from the real run).
 - The gate: see the report; it is not claimed to pass.
 
-## PL2 (USB0-DRVVBUS): who holds it at each step (C1 change, not yet applied)
+## PL2 (USB0-DRVVBUS): J4's VBUS, no hog (coordinator ruling)
 
-Facts from the Radxa A7S schematic V1.10 (dl-a7s-schematic/radxa_cubie_a7s_schematic_v1.10.pdf):
-- Sheet 7 (GPIO): PL2 is the pin `PL2/S-UART1-TX/S-UART0-TX/S-TWI1-SDA/S-PWM0-0/PL-EINT2` (the PL bank, pin 2 = `<&r_pio 0 2>` in the DTS). The net `USB0-DRVVBUS` is on this pin in the sheet-7 pin list (the crop shows the PL2 row; the net label sits at the right edge, read from the coordinator's reading of the same sheet).
-- Sheet 12 (TYPE C): `USB0-DRVVBUS` goes through R79 (0 R) to the EN pin of U2, SGM2576YN5G_TR, whose output is `VBUS_USB` on J4 (the USB 3 host Type-C, `VCC5V0_SYS` in). So PL2 high turns on J4's 5 V; low keeps it off.
-- Sheet 13 (USBC0_T-CARD): J16 (the gadget port) has its VBUS pins on `VCC5V0` (the 5 V input net); no supply drives its VBUS; its DM/DP go to USB0-DM/DP. J16 is the input, not a source.
+PL2 switches J4, the USB 3 host Type-C, which the product image needs for USB cameras. No output-low hog is written (cancelled by the coordinator; the earlier hog plan is withdrawn).
 
-Who holds PL2, step by step:
-1. BootROM / FEL: nothing of ours. The pin is at its reset state (input) until a loader drives it. The schematic shows no pull on EN in the sheets read, so J4's 5 V may be on while the BootROM runs. J4 is not used by the bench, and J16 powers the board.
-2. SPL (Radxa U-Boot 9da4b3e8, the family's SPL): UNVERIFIED. Not read from source here; the PMIC init is on r_i2c0 (PL0/PL1), not PL2.
-3. U-Boot: the planned gpio-hog (output-low on `<&r_pio 0 2>`) in U-Boot's A7S dts. NOT WRITTEN: the U-Boot dts file and its r_pio context are not on disk, and an invented hunk would fail Gaia's strict apply.
-4. Kernel: the planned gpio-hog in the kernel dts, through the family's patch path. NOT WRITTEN, same reason.
-5. lemnosd: its own boot hold (not in our data; UNVERIFIED).
+Schematic V1.10 (dl-a7s-schematic/radxa_cubie_a7s_schematic_v1.10.pdf): sheet 7 (GPIO) puts PL2 on the pin with function list `PL2/S-UART1-TX/S-UART0-TX/S-TWI1-SDA/S-PWM0-0/PL-EINT2`; sheet 12 (TYPE C) routes `USB0-DRVVBUS` through R79 (0 R) to the EN of U2, SGM2576YN5G_TR, whose output is `VBUS_USB` on J4; sheet 13 (USBC0_T-CARD) puts J16's VBUS pins on `VCC5V0`, undriven (the input), so J16 stays `vbus_undriven`.
 
-CONFLICT (step 2 of the brief): the DockSeed series requests PL2 as a regulator gpio for J4's VBUS (`reg_usbc_vbus`, `regulator-gpio`, `gpio = <&r_pio 0 2 GPIO_ACTIVE_HIGH>; /* PL2 */`). It is set in the patches `a733-a7s-usbc/arm64-dts-allwinner-a733-cubie-a7s-enable-the-usb-c-port.patch`, `a7s-5v-sys/...describe-the-pmic-input-supplies.patch` and `a7s-usb-hub/...describe-the-usb-hub-and-the-wifi-module.patch`. A gpio-hog and that regulator cannot both own PL2 (the second request fails with -EBUSY). The brief allows two resolutions: drop the regulator's gpio, or make the hog the only owner. Dropping it needs an edit to the series' regulator node; making the hog the owner needs the regulator disabled. Either is a hunk against the applied dts, which this machine does not have. DECISION PENDING: the coordinator picks the resolution, and the hunks are written against the applied dts (Gaia's strict build is the first apply check).
+The vendor regulator (DockSeed series fe0a8ed, patches/a733-a7s-usbc/arm64-dts-allwinner-a733-cubie-a7s-enable-the-usb-c-port.patch, lines 45-53 of the hunk at `@@ -67,6 +67,27 @@`):
 
-Step 3 (no host-mode overlay for J16): nothing in this branch is an overlay; J16 is the MUSB peripheral from the series (`dr_mode = "peripheral"`).
-Step 5 (apply with --fuzz=0): not run. The series repo is patches only (402 files); the applied kernel tree is not on disk.
+    reg_usbc_vbus: regulator-usbc-vbus {
+        compatible = "regulator-fixed";
+        regulator-name = "usbc-vbus";
+        regulator-min-microvolt = <5000000>;
+        regulator-max-microvolt = <5000000>;
+        gpio = <&r_pio 0 2 GPIO_ACTIVE_HIGH>; /* PL2 */
+        enable-active-high;
+    };
+
+- regulator-always-on: NOT set on this node. Its later hunks (a7s-5v-sys, a7s-usb-hub, dp) add only `vin-supply`.
+- regulator-boot-on: NOT set anywhere in the series (grep of patches/ finds none).
+- Consumer: the HUSB311 Type-C controller, `vbus-supply = <&reg_usbc_vbus>` (the typec@4e node, same patch, `data-role = "host"`, `power-role = "source"`). The regulator is enabled only when the controller asks for VBUS.
+- The series' usb1 VBUS is a different regulator: `usb1_vbus-supply = <&reg_usb1_vbus>` (on PM5, not PL2). The brief's "reg_usb_vbus on PL2 as usb1's vbus-supply" does not match the series; PL2 belongs to reg_usbc_vbus, the J4 controller's supply.
+
+Result: nothing to remove. The image builds the whole series (the family's `patches` lists the full directory), and neither property is set on the node, so no patch is written here.
+
+Step 5 (apply with --fuzz=0): not run here, because the applied kernel tree is not on disk; Gaia's strict build is the apply check.
