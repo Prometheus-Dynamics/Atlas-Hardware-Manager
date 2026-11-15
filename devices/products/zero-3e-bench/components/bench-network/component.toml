@@ -4,12 +4,12 @@
 #   10-bench-ethernet.network: the Ethernet port (second path, present but NOT tested on the bench: the bench tests go over USB
 #     only). Matched by type, DHCP, mDNS; excludes the gadget interfaces (usb0, lemnos0).
 #   20-bench-mdns.network: mDNS on lemnos0 (systemd-resolved, os.fragment).
-#   bench-hostname: names the board from the device-tree serial: zero3e-<last six hex digits>. Written to the kernel's hostname
-#     (the root is read-only). The serial is the same source the gadget's identity uses.
+#   The hostname from the serial: NOT here, the shared component devices/components/bench-hostname (its prefix is in
+#     bench-hostname-prefix). The serial is the same source the gadget's identity uses.
 # Untested on board.
 version = 1
 name = "bench-network"
-description = "The bench's network: USB gadget addressed as a Raze's (serial-hash-v1 on lemnos0) and Ethernet DHCP, mDNS on both, and the hostname from the board serial."
+description = "The bench's network: USB gadget addressed as a Raze's (serial-hash-v1 on lemnos0) and Ethernet DHCP, mDNS on both."
 
 [[install]]
 from = { file = "files/10-bench-ethernet.network" }
@@ -21,16 +21,3 @@ from = { file = "files/20-bench-mdns.network" }
 to = "/etc/systemd/network/20-bench-mdns.network"
 mode = "0644"
 
-[[install]]
-from = { file = "files/bench-hostname.sh" }
-to = "/usr/libexec/bench-hostname"
-mode = "0755"
-
-[[install]]
-from = { file = "files/bench-hostname.service" }
-to = "/etc/systemd/system/bench-hostname.service"
-mode = "0644"
-
-[[services]]
-unit = "bench-hostname.service"
-enable = true

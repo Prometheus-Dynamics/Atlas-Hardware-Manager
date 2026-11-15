@@ -26,12 +26,14 @@ bench-board = "components/bench-board/component.toml"
 bench-pc-key = "components/bench-pc-key/component.toml"
 bench-network = "components/bench-network/component.toml"
 lemnos0-addressing = "../../components/lemnos0-addressing/component.toml"
-bench-watchdog = "components/bench-watchdog/component.toml"
+bench-watchdog = "../../components/bench-watchdog/component.toml"
+bench-hostname = "../../components/bench-hostname/component.toml"
+bench-hostname-prefix = "components/bench-hostname-prefix/component.toml"
 
 [[images]]
 name = "zero-3e-bench"
 board = "../../boards/radxa-zero-3e/board.toml"
-components = ["radxa-zero-3e-extlinux", "dev-bringup-hostkey", "lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "orion", "bench-board", "bench-pc-key", "bench-network", "lemnos0-addressing", "bench-watchdog"]
+components = ["radxa-zero-3e-extlinux", "dev-bringup-hostkey", "lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "orion", "bench-board", "bench-pc-key", "bench-network", "lemnos0-addressing", "bench-watchdog", "bench-hostname", "bench-hostname-prefix"]
 # The base OS, then the bench's own lines (SSH, mDNS, the BusyBox applet lemnos0-address needs).
 os = { provider = "buildroot", source = "buildroot", fragments = ["../zero-3e-base/os.fragment", "os.fragment"] }
 recipe = "sd-image"
