@@ -107,6 +107,7 @@ version = "2026.1.0-dev"
 dependencies = [
  "atlas-image",
  "atlas-release",
+ "lemnos-slot-store",
  "serde",
  "serde_json",
  "sha2 0.11.1",
@@ -303,6 +304,7 @@ dependencies = [
  "atlas-trial",
  "atlas-types",
  "fatfs",
+ "lemnos-slot-store",
  "orion",
  "serde_json",
  "sha2 0.11.1",
@@ -1427,6 +1429,14 @@ dependencies = [
  "cfg-if",
  "futures-util",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "lemnos-slot-store"
+version = "2.0.1-dev"
+source = "git+https://github.com/Prometheus-Dynamics/Lemnos.git?rev=f4a295c611972ba422df20a78112b9fb409c47d0#f4a295c611972ba422df20a78112b9fb409c47d0"
+dependencies = [
+ "sha2 0.10.9",
 ]
 
 [[package]]

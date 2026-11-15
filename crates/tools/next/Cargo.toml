@@ -13,6 +13,7 @@ path = "src/main.rs"
 [dependencies]
 atlas-board-slots = { path = "../../drivers/board-slots" }
 atlas-bundle = { path = "../../core/bundle" }
+lemnos-slot-store = { workspace = true }
 atlas-release = { path = "../../core/release" }
 atlas-jobs = { path = "../../core/jobs" }
 atlas-session = { path = "../../board/session" }
