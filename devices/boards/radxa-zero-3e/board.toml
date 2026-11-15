@@ -39,3 +39,6 @@ platform = "rk3568"
 # the merged loader boot_merger builds from it (versions as that commit's ini names them).
 [flash.files]
 loader_ini = { source = "rkbin", path = "RKBOOT/RK3566MINIALL.ini" }
+
+[descriptions]
+lemnos = "lemnos-board.toml"

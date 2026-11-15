@@ -2,44 +2,17 @@
 # leaves its logs for the support bundle (Orion).
 version = 1
 name = "raze-base-files"
-description = "Raze base system config: the bounded persistent journal, the USB network address of lemnos0 (serial-hash-v1, DHCP server), networkd enabled"
+description = "Raze base system config: the bounded persistent journal, networkd enabled"
 
 [[install]]
 from = { file = "files/60-board-journald.conf" }
 to = "/usr/lib/systemd/journald.conf.d/60-board.conf"
 mode = "0644"
 
-# The USB network: lemnos0 (the gadget's NCM interface) gets its address at boot from the board serial (scheme
-# serial-hash-v1; the parameters are data in lemnos0-addressing.conf, the script is lemnos0-address). The board serves
-# DHCP to the host from the rest of its /29 with systemd-networkd's DHCPServer. Decided at milestone 2 (coordinator's
-# RULING, INPUTS "RULING (replaces ...)", 2026-11-14). The IPv6 link-local address stays on.
-[[install]]
-from = { file = "files/lemnos0-addressing.conf" }
-to = "/etc/lemnos/lemnos0-addressing.conf"
-mode = "0644"
+# The USB network address of lemnos0 (serial-hash-v1) is the lemnos0-addressing component (its files moved there so the
+# bench and the Raze share one copy). Raze's product names that component.
 
-[[install]]
-from = { file = "files/lemnos0-address" }
-to = "/usr/lib/lemnos/lemnos0-address"
-mode = "0755"
-
-# The interim sysctl: the comm core may bind its USB address before the address exists (see the file's comment).
-[[install]]
-from = { file = "files/60-raze-lemnos0.conf" }
-to = "/etc/sysctl.d/60-raze-lemnos0.conf"
-mode = "0644"
-
-[[install]]
-from = { file = "files/lemnos0-address.service" }
-to = "/etc/systemd/system/lemnos0-address.service"
-mode = "0644"
-
-# The address unit runs before systemd-networkd, which runs the network file it writes. networkd is built by the Raze
-# fragment (BR2_PACKAGE_SYSTEMD_NETWORKD=y): on an allnoconfig base it is not built, so there is no unit to enable.
-[[services]]
-unit = "lemnos0-address.service"
-enable = true
-
+# networkd is built by the Raze fragment (BR2_PACKAGE_SYSTEMD_NETWORKD=y): on an allnoconfig base it is not built, so there is no unit to enable.
 [[services]]
 unit = "systemd-networkd.service"
 enable = true
