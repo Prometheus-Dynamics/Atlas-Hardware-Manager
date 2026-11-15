@@ -1,4 +1,4 @@
-# One Lemnos cargo package: lemnos-slot-init, built from Lemnos pr/BB1b e2e45ce7 (the C1 rev for the A7S bench image).
+# One Lemnos cargo package: lemnos-slot-init, built from Lemnos pr/BB1b 7748a241 (the C1 rev for the A7S bench image).
 # The target is the board's and the crates come from Cargo.lock: no triple, no vendor here.
 # Gaia's rust builder, at 4abf626 and later: `--package lemnos-slot-init --profile service`.
 version = 1
@@ -7,7 +7,7 @@ description = "the Lemnos slot init, lemnos-slot-init: it goes in the slot INITR
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "e2e45ce795e922ff92cf6334586ed7fd66f9c3d1"  # Lemnos pr/BB1b e2e45ce7 (bench-board slot declarations; the pin follows the branch head until BB1b merges), the C1 rev for the A7S bench image
+ref = "7748a241fa98e703c9703ce25c7f10dda210564b"  # Lemnos pr/BB1b 7748a241 (bench-board slot declarations; the pin follows the branch head until BB1b merges), the C1 rev for the A7S bench image
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
