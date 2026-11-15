@@ -57,6 +57,14 @@ key_args = ["--key-file", "@key@", "--expect-key-id", "@key-id@"]
 verify = ["bundle", "--layout-of", "@description@", "--socs", "@source@/socs", "--verify", "@out@"]
 verify_key_args = ["--pubkey", "@pubkey@"]
 
+# The data partition: the slot installed on it (the bundle, the boot partition image, the bench keys, the time), made an ext4
+# filesystem of exactly @data-size@ (the board's data partition size, board.toml). Form as the Raze's raze-lemnos-board at
+# pr/D1 (slot-disk): the same args, verify and keys. Untested on board.
+[generate.data]
+args = ["data-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--install", "@bundle@", "--boot-image", "@boot-image@", "--keys", "@keys@", "--time", "@time@", "--data-size", "@data-size@", "--out", "@out@"]
+verify = ["data-partition", "--verify", "@out@", "--layout-of", "@description@", "--boot-image", "@boot-image@", "--deep"]
+keys = "files/slot-keys"
+
 # The trust root (Lemnos [security] keys: one line per key, `<64 hex public key> <owner>`). The bench key's PUBLIC line only.
 [[install]]
 from = { file = "files/slot-keys" }

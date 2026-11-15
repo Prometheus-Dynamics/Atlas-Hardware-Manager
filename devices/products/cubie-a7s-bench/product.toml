@@ -17,8 +17,8 @@
 #   security OFF (board file), lemnosd feeds the hardware watchdog (15 s), the kernel's pstore/ramoops for crash logs (BB3 reader
 #   NOT on the pin), a serial console (ttyS0).
 #
-# THE PINS. The Gaia binary: eae34d7 (the board-patch series support; `[kernel] patches`), at
-#   /mnt/ssd-samsung/atlas-next-scratch-gaia/bin-eae34d7/gaia. gaia.lock is written by `gaia lock` at that binary; the repo's
+# THE PINS. The Gaia binary: 355cc81 (pr/slot-disk-blobs: slot-disk, the first-flash image; on eae34d7 + rk-env), at
+#   /mnt/ssd-samsung/atlas-next-scratch-gaia/bin-355cc81/gaia. gaia.lock is written by `gaia lock` at that binary; the repo's
 #   devices/gaia.lock is NOT changed (the coordinator moves that pin). Lemnos pr/BB1b e2e45ce7 (the product-local components).
 #   Buildroot 2026.02.3 (the bring-up's, systemd 258.7). Orion 455a956 and Gaia usb-gadget-network b8585a0 are the shared
 #   components' own pins (unchanged). This PR may NOT merge while it pins the unmerged Lemnos branch pr/BB1b (see docs/prs/C1.md).
@@ -62,9 +62,9 @@ components = ["lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "cubie-lemnos-b
 # The slot's initramfs: lemnos-slot-init goes there (as the Raze's), not on the root filesystem.
 initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
-recipe = "slot-boot"
+recipe = "slot-disk"
 
-# The slot-boot settings (recipes/slot-boot.toml at eae34d7; each names what it sets; the Raze's product states them the same way).
+# The slot settings (slot-disk, which is slot-boot plus the data partition and the disk, at 355cc81; each names what it sets; the Raze's product states them the same way).
 #  slot, version   NOT SET HERE: `--setting cubie-a7s-bench.slot=...` and `.version=...`, from scripts/version-rule.sh (as the Raze).
 #  device          where the slot is read from on the board: the data partition's slots directory.
 #  boot_size       the boot partition's size in bytes (board.toml's boot partition). PLACEHOLDER, NOT MEASURED: the Raze's 79 MiB,
@@ -76,6 +76,10 @@ recipe = "slot-boot"
 #  sign_key_env / sign_key_id / sign_pubkey_env: the BENCH key (a test credential, milestone 2 only: `atlas-next bench-key`,
 #                  9af003d9... is the Raze's bench key id; the bench key file is the environment's, never in a repo).
 [images.settings]
+# slot-disk (Gaia 355cc81, pr/slot-disk-blobs): the first-flash .img.xz is this recipe's output (`flash`); slot-boot makes no flash file.
+id = "cubie-a7s-bench"
+board_id = "radxa-cubie-a7s"
+data_label = "lemnos-data"
 device = "/data/slots/root.img"
 product = "cubie-a7s-bench"
 boot_size = 82837504

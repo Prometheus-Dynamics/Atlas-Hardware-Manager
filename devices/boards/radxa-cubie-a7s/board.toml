@@ -74,8 +74,12 @@ role = "boot"
 type = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"
 size = "82837504"
 
-# data: the slots and the slot state (Lemnos's data partition), the last partition, no size: the board grows it on first boot.
+# data: the slots and the slot state (Lemnos's data partition), the last partition. slot-disk (355cc81) needs its SIZE: the
+# ext4 filesystem is made this big and the same number is @data-size@ for the data-partition tool. PLACEHOLDER, NOT MEASURED:
+# 512 MiB (536,870,912 bytes) holds one installed slot (the Raze's root is 18 MB; the A7S root is not measured) plus its bundle
+# with room for a second install while the first runs. Replace with the measured number before any release.
 [[partitions]]
 name = "data"
 role = "data"
 type = "0fc63daf-8483-4772-8e79-3d69d8477de4"
+size = "536870912"
