@@ -869,6 +869,61 @@ erofs_rule_self_test() {
   return $rc
 }
 
+# The RK35xx U-Boot environment rule (Z2, the coordinator's HARD RULE of 2026-11-14): no RK slot image ships with an
+# as-built U-Boot environment. A product on a slot recipe whose board extends an rk35xx family must have, in the U-Boot
+# fragments that board builds with (the board's own [bootloader] fragments when it names some, else the family's), the lines
+# CONFIG_ENV_MMC_USE_DT=y (no raw-offset fallback over the partition table) and CONFIG_ENV_MMC_DEVICE_INDEX=1 (the SD card is
+# U-Boot's mmc 1), and the family's table must carry the uboot-env partition (16M, 128K) the environment lives in.
+# Prints one FAIL line per problem and returns 1 when any. Reads the descriptions only (no Gaia run).
+RK_ENV_RECIPES="slot|slot-boot|slot-disk"
+bootloader_fragments() {  # <family.toml or board.toml> -> the [bootloader] fragments, as paths
+  local f=$1
+  awk '/^\[bootloader\]/{s=1;next} /^\[/{s=0} s && /^fragments = /' "$f" | grep -ho '"[^"]*"' | tr -d '"' \
+    | while IFS= read -r x; do realpath -m "$(dirname "$f")/$x"; done
+}
+rk_env_rule() {  # <devices dir>
+  local dev=$1 p b fam famfile frags=() text out="" f
+  while IFS= read -r p; do
+    grep -qE "^recipe = \"($RK_ENV_RECIPES)\"" "$p" || continue
+    b=$(product_board "$p")
+    [[ -n $b && -f $b ]] || continue
+    fam=$(product_family "$p")
+    [[ $fam == rk35* ]] || continue
+    famfile=$dev/families/$fam/family.toml
+    local name; name=$(basename "$(dirname "$p")")
+    mapfile -t frags < <(bootloader_fragments "$b")
+    [[ ${#frags[@]} -gt 0 ]] || mapfile -t frags < <(bootloader_fragments "$famfile")
+    text=""
+    for f in ${frags[@]+"${frags[@]}"}; do [[ -f $f ]] && text+=$(grep -v '^[[:space:]]*#' "$f")$'\n'; done
+    grep -qx 'CONFIG_ENV_MMC_USE_DT=y' <<<"$text" \
+      || out+="FAIL $name: its U-Boot config lacks CONFIG_ENV_MMC_USE_DT=y: without it the environment falls back to the raw offsets over the partition table, so a slot record is lost: add it to the U-Boot fragment (rk35xx family assets/u-boot.fragment)"$'\n'
+    grep -qx 'CONFIG_ENV_MMC_DEVICE_INDEX=1' <<<"$text" \
+      || out+="FAIL $name: its U-Boot config lacks CONFIG_ENV_MMC_DEVICE_INDEX=1: the SD card is U-Boot's mmc 1 on this family, so the environment would be looked for on the disabled eMMC (mmc 0): add it to the U-Boot fragment"$'\n'
+    awk '/name = "uboot-env"/{s=1} s&&/^\[\[/{s=0} s' "$famfile" | grep -q 'offset = "16M"' \
+      && awk '/name = "uboot-env"/{s=1} s&&/^\[\[/{s=0} s' "$famfile" | grep -q 'size = "128K"' \
+      || out+="FAIL $name: its family $fam has no uboot-env partition at 16M of 128K: the image GPT must carry the environment partition"$'\n'
+  done < <(find "$dev/products" -mindepth 2 -maxdepth 2 -name product.toml 2>/dev/null | sort)
+  printf '%s' "$out"
+  [[ -z $out ]]
+}
+# Proves the RK env rule passes the real tree and refuses a scratch copy whose rk35xx U-Boot fragment lacks each line.
+rk_env_self_test() {
+  local tmp rc=0 out
+  tmp=$(mktemp -d)
+  cp -a "$repo/devices" "$tmp/devices"
+  if ! out=$(rk_env_rule "$repo/devices"); then echo "check-devices: self-test: the RK env rule refuses the real tree: $out" >&2; rc=1; fi
+  sed -i '/^CONFIG_ENV_MMC_USE_DT=y$/d' "$tmp/devices/families/rk35xx/assets/u-boot.fragment"
+  if out=$(rk_env_rule "$tmp/devices"); then echo "check-devices: self-test: a slot image without CONFIG_ENV_MMC_USE_DT=y was not refused" >&2; rc=1
+  elif [[ $out != *"CONFIG_ENV_MMC_USE_DT=y"* ]]; then echo "check-devices: self-test: the USE_DT refusal does not name the line: $out" >&2; rc=1; fi
+  cp -a "$repo/devices/families/rk35xx/assets/u-boot.fragment" "$tmp/devices/families/rk35xx/assets/u-boot.fragment"
+  sed -i '/^CONFIG_ENV_MMC_DEVICE_INDEX=1$/d' "$tmp/devices/families/rk35xx/assets/u-boot.fragment"
+  if out=$(rk_env_rule "$tmp/devices"); then echo "check-devices: self-test: a slot image without CONFIG_ENV_MMC_DEVICE_INDEX=1 was not refused" >&2; rc=1
+  elif [[ $out != *"CONFIG_ENV_MMC_DEVICE_INDEX=1"* ]]; then echo "check-devices: self-test: the DEVICE_INDEX refusal does not name the line: $out" >&2; rc=1; fi
+  rm -rf "$tmp"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the RK env rule passes the tree and refuses a slot image missing USE_DT or DEVICE_INDEX"
+  return $rc
+}
+
 # Prints each description file (family.toml, board.toml, component.toml) under <devices dir> that no product or board
 # names, relative to that dir. A product or board names a file by a quoted path ending .toml. Only description files count:
 # a board's other .toml files (lemnos-board.toml, lemnos-board.pending.toml) are not descriptions. (PR B32: the note used to
@@ -1446,6 +1501,11 @@ while IFS= read -r line; do
   esac
 done <<<"$erofs_msg"
 
+# The RK35xx U-Boot environment rule (Z2): every rk35xx slot image's U-Boot config is the hard-rule one.
+if ! rk_env_out=$(rk_env_rule "$root"); then
+  while IFS= read -r line; do [[ -n $line ]] && bad "${line#FAIL }"; done <<<"$rk_env_out"
+fi
+
 # The Atlas side of the Lemnos pin and the one-copy rule (PR L3). Both read this repository's own Cargo files,
 # so they run for the default tree only. They are here, in the device checker, because that is where the Lemnos
 # rev of the image is held (the products' gaia.lock) and this checker already runs in the gate.
@@ -1490,6 +1550,7 @@ if [[ $root_given -eq 0 ]]; then
   firmware_rule_self_test || die "self-check: the boot firmware rule no longer refuses a Lemnos record that disagrees with its firmware"
   unnamed_self_test || die "self-check: the in-no-product note lists a product's board, or misses a board nothing names"
   erofs_rule_self_test || die "self-check: the erofs rule no longer reads each product's plan"
+  rk_env_self_test || die "self-check: the RK env rule no longer refuses a slot image without USE_DT or DEVICE_INDEX"
   slot_id_rule_self_test || die "self-check: the slot id rule no longer refuses an id that is not the version's"
   boot_size_rule_self_test || die "self-check: the boot partition rule no longer refuses a boot_size that is not the board's"
   # The version gate: a binary that prints another commit, or none, is refused, and the refusal names the pin.
