@@ -1,4 +1,4 @@
-# One Lemnos cargo package: lemnosd, built from Lemnos pr/BB1b e2e45ce7 (Z2, unmerged; this product's copy).
+# One Lemnos cargo package: lemnosd, built from Lemnos pr/BB1b 7748a241 (BB1b head; M36 plus BB1b, data-partition) (Z2, unmerged; this product's copy).
 # The target is the board's and the crates come from Cargo.lock: no triple, no vendor here.
 # Gaia's rust builder, at 4abf626 and later: `--package lemnosd --profile service`.
 version = 1
@@ -7,7 +7,7 @@ description = "the Lemnos hardware daemon, lemnosd (service profile)"
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "e2e45ce795e922ff92cf6334586ed7fd66f9c3d1"  # Lemnos pr/BB1b TIP (Z2): the U-Boot slot form for bench boards. UNMERGED pin, moves to the merged rev before merge
+ref = "7748a241fa98e703c9703ce25c7f10dda210564b"  # Lemnos pr/BB1b TIP (Z2): the U-Boot slot form for bench boards. UNMERGED pin, moves to the merged rev before merge
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"

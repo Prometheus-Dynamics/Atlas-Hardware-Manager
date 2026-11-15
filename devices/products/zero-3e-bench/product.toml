@@ -8,10 +8,10 @@
 # Access over the USB gadget on the OTG Type-C (serial-hash-v1 lemnos0 addressing), plus Ethernet DHCP and mDNS (Z1; the
 # coordinator's ruling of 2026-11-14: Ethernet stays, the gadget is added). Hostname from the serial. PC key, watchdog, serial console.
 #
-# PINS (Z2): the Lemnos components here are this product's own copies at Lemnos pr/BB1b TIP e2e45ce7 (unmerged), NOT the shared
+# PINS (Z2): the Lemnos components here are this product's own copies at Lemnos pr/BB1b TIP 7748a241 (BB1b head; M36 plus BB1b, data-partition) (unmerged), NOT the shared
 # devices/components/lemnos* at f4a295c6 (the Raze's L2 rev), so the Raze's lock does not move. The root Cargo.toml's
 # lemnos-slot-store rev is still f4a295c6: check-devices refuses the mismatch (Z2 stopped there; see docs/prs/Z2.md).
-# Gaia: devices/gaia.lock is d8441c9d; the rk-env rev (1db105c) is for the coordinator to move.
+# Gaia: c0d084fa (merged next: rk-env, slot-disk-blobs). devices/gaia.lock moves to it in PR #127 (G12).
 version = 1
 name = "zero-3e-bench"
 description = "Radxa ZERO 3E bench OS: U-Boot slot form (Lemnos BB1b), USB gadget and Ethernet, mDNS, serial-based hostname, lemnosd and Orion with security off, systemd watchdog."
@@ -48,7 +48,7 @@ recipe = "slot-disk"
 # Raze's board measurement (lzma, 6); the ZERO 3E kernel carries the lzma decoder (families/rk35xx linux.fragment, EROFS_FS_ZIP_LZMA).
 # version and slot are NOT set: Gaia takes them as --setting (scripts/version-rule.sh).
 [images.settings]
-# slot-disk (Gaia 355cc81): the first-flash disk. id names the disk (its GUIDs derive from it); board_id is the board
+# slot-disk (Gaia c0d084fa, as 355cc81): the first-flash disk. id names the disk (its GUIDs derive from it); board_id is the board
 # id the flasher checks the file against (the Lemnos board file [board] id); data_label is the data filesystem label that
 # lemnos-slot-init finds the partition by (the coordinator's value, as Raze's D1 draft: not yet checked against Lemnos source).
 # The data partition size is NOT a setting: the board gives it (boards/radxa-zero-3e/board.toml, data = 1 GiB).
