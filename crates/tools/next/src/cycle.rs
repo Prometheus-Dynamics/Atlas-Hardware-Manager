@@ -23,7 +23,7 @@ use serde_json::{Value, json};
 use crate::args::CycleArgs;
 use crate::commands::{self, Refusal};
 use crate::identity;
-use crate::link::{self, Link, Security};
+use crate::link::{self, Link};
 use crate::pins::Pin;
 use crate::report::Report;
 use crate::{Env, parse_address};
@@ -65,7 +65,7 @@ pub const STEPS: [StepInfo; 12] = [
     StepInfo {
         id: "2",
         title: "the board's key fingerprint and security",
-        does: "Reads the board's key fingerprint and whether security is on or off.",
+        does: "Reads the board's key fingerprint. The security mode is not read: the probe is gone with the Orion J9 pin.",
         if_it_fails: "Reads only. Nothing changes on the board.",
     },
     StepInfo {
@@ -218,7 +218,6 @@ struct Ctx<'a> {
     pc: String,
     board_key: [u8; 32],
     board_fingerprint: String,
-    security: Option<Security>,
     link: Option<Link>,
     follower: Follower,
     good: String,
@@ -454,20 +453,10 @@ async fn step_identity(ctx: &mut Ctx<'_>, r: &mut Report<'_, Vec<u8>>) -> Result
 }
 
 async fn step_fingerprint(ctx: &mut Ctx<'_>, r: &mut Report<'_, Vec<u8>>) -> Result<(), Refusal> {
-    let security = link::security(&ctx.address).await;
-    ctx.security = Some(security);
     let node = commands::probe_or_refuse(ctx.env, &ctx.address, &ctx.text, &ctx.key).await?;
     ctx.board_key = node.public_key;
     ctx.board_fingerprint.clone_from(&node.fingerprint);
     r.say(format!("the board's key fingerprint: {}", node.fingerprint));
-    r.say(match security {
-        Security::On => "security on the board: on (a signed session is needed)".to_owned(),
-        Security::Off => {
-            "security on the board: off (the board proves no key, so there is nothing to pin)"
-                .to_owned()
-        }
-        Security::Unknown => "security on the board: not known from this address".to_owned(),
-    });
     Ok(())
 }
 
@@ -725,15 +714,7 @@ fn render(ctx: &Ctx<'_>, card: &Card, code: i32, started: SystemTime, ended: Sys
             &ctx.pc
         }
     ));
-    text.push_str(&format!(
-        "Security on the board: {}\n",
-        match ctx.security {
-            Some(Security::On) => "on",
-            Some(Security::Off) => "off",
-            Some(Security::Unknown) => "not known",
-            None => "not read",
-        }
-    ));
+    text.push_str(&format!("Security on the board: {}\n", "not read"));
     text.push_str(&format!("Atlas build: {ATLAS_BUILD}\n"));
     text.push_str(&format!(
         "Run started (this PC's clock, UTC): {}\n",
@@ -798,12 +779,7 @@ fn render_json(
         "board_address": ctx.text,
         "board_fingerprint": ctx.board_fingerprint,
         "pc_fingerprint": ctx.pc,
-        "security": match ctx.security {
-            Some(Security::On) => "on",
-            Some(Security::Off) => "off",
-            Some(Security::Unknown) => "not known",
-            None => "not read",
-        },
+        "security": "not read",
         "atlas_build": ATLAS_BUILD,
         "started": utc_stamp(started),
         "ended": utc_stamp(ended),
@@ -918,7 +894,6 @@ pub async fn run<W: Write>(args: &CycleArgs, env: &Env, out: &mut W) -> i32 {
         pc: String::new(),
         board_key: [0; 32],
         board_fingerprint: String::new(),
-        security: None,
         link: None,
         follower: Follower::open(&state).with_recheck(env.recheck),
         good: String::new(),
