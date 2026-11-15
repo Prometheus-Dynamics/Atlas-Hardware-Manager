@@ -1,15 +1,28 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-Subject: [PATCH] radxa: add the Cubie A7Z defconfig and device tree (bench, untested)
+Subject: [PATCH] radxa: add the Cubie A7Z defconfig and device tree (bench, UNVERIFIED, derived from A7A)
 
-A copy of the A7A (sun60i-a733-radxa-a7a) for the A7Z. Untested; the A7Z schematic is not read.
+UNVERIFIED. DERIVED FROM THE A7A, NOT RADXA'S A7Z CONTENT.
+Radxa publishes no A7Z device tree or defconfig in radxa/u-boot 9da4b3e8 (checked by WebFetch of the raw
+file at that rev: sun60i-a733-radxa-a7z.dts and configs/radxa-cubie-a7z_defconfig both 404; the A7A file
+loads at the same rev). This file is a copy of arch/arm/dts/sun60i-a733-radxa-a7a.dts (9da4b3e8) with the
+model and compatible renamed, and of configs/radxa-cubie-a7a_defconfig with CONFIG_DEFAULT_DEVICE_TREE renamed.
+Its USB0 VBUS is the A7A's fixed rail (usb0_vbus-supply = <&reg_vcc5v>), which is NOT the A7Z's: the A7Z's
+USB-C 2.0 OTG & Power port is host-capable (Radxa's type-c page), and a third-party A7Z vendor patch (Armbian
+armbian/build 00c27198, patch/kernel/archive/sun60iw2-opi-vendor/0005-cubie-a7z-add-device-tree.patch, lines 56-62)
+gives a GPIO-switched host VBUS (PL2). Do not rely on this file for the A7Z's VBUS.
+
+UNVERIFIED, DERIVED FROM THE A7A (a copy with names changed; not Radxa's A7Z content).
+- The A7A's PL2 regulator (usb1 VBUS, reg_usb_vbus) is removed: PL2 gets one owner, a gpio-hog on r_pio (output-low).
+- The hog is the coordinator's U-Boot step for the A7Z: no VBUS sourced on any USB-C port of the bench image.
+
 ---
 diff --git a/arch/arm/dts/sun60i-a733-radxa-a7z.dts b/arch/arm/dts/sun60i-a733-radxa-a7z.dts
 --- a/arch/arm/dts/sun60i-a733-radxa-a7z.dts	1969-12-31 16:00:00.000000000 -0800
-+++ b/arch/arm/dts/sun60i-a733-radxa-a7z.dts	2026-11-14 23:03:25.234137215 -0700
-@@ -0,0 +1,256 @@
++++ b/arch/arm/dts/sun60i-a733-radxa-a7z.dts	2026-11-14 23:18:44.339829404 -0700
+@@ -0,0 +1,258 @@
 +// SPDX-License-Identifier: (GPL-2.0-only OR MIT)
 +// Copyright (C) 2025 Arm Ltd.
-+// Bench candidate for the Radxa Cubie A7Z (sun60i-a733-radxa-a7z): a copy of the A7A dts, UNTESTED, no A7Z schematic read.
++// UNVERIFIED, DERIVED FROM sun60i-a733-radxa-a7a.dts (9da4b3e8). No Radxa A7Z dts exists at that rev.
 +
 +/dts-v1/;
 +
@@ -38,15 +51,6 @@ diff --git a/arch/arm/dts/sun60i-a733-radxa-a7z.dts b/arch/arm/dts/sun60i-a733-r
 +		regulator-always-on;
 +	};
 +
-+	reg_usb_vbus: vbus {
-+		compatible = "regulator-fixed";
-+		regulator-name = "usb-vbus";
-+		regulator-min-microvolt = <5000000>;
-+		regulator-max-microvolt = <5000000>;
-+		vin-supply = <&reg_vcc5v>;
-+		gpio = <&r_pio 0 2 GPIO_ACTIVE_HIGH>;	/* PL2 */
-+		enable-active-high;
-+	};
 +};
 +
 +&uart0 {
@@ -78,7 +82,6 @@ diff --git a/arch/arm/dts/sun60i-a733-radxa-a7z.dts b/arch/arm/dts/sun60i-a733-r
 +
 +&usbphy {
 +	usb0_vbus-supply = <&reg_vcc5v>;
-+	usb1_vbus-supply = <&reg_usb_vbus>;
 +	status = "okay";
 +};
 +
@@ -262,6 +265,18 @@ diff --git a/arch/arm/dts/sun60i-a733-radxa-a7z.dts b/arch/arm/dts/sun60i-a733-r
 +	status = "okay";
 +	pcie1v8-supply = <&reg_bldo1>;
 +	pcie3v3-supply = <&reg_dcdc1>;
++};
++
++/* PL2 is held low from U-Boot on: no VBUS is sourced on any USB-C port of this bench image (the A7Z is
++ * powered from port 1 and runs in device mode). The A7A dts used PL2 as the USB1 VBUS regulator; that
++ * regulator is removed here so this hog is the only owner of PL2 (coordinator ruling). */
++&r_pio {
++	usbc-vbus-hold {
++		gpio-hog;
++		gpios = <2 GPIO_ACTIVE_HIGH>;
++		output-low;
++		line-name = "usbc-vbus-en";
++	};
 +};
 diff --git a/configs/radxa-cubie-a7z_defconfig b/configs/radxa-cubie-a7z_defconfig
 --- a/configs/radxa-cubie-a7z_defconfig	1969-12-31 16:00:00.000000000 -0800

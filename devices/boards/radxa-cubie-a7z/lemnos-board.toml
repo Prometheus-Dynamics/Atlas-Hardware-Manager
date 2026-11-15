@@ -64,7 +64,8 @@ config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", b
 name = "udc:4100000.usb"
 controller = "usb-otg0"
 role = "peripheral"
-# TODO (OPEN, the device port VBUS statement): the A7Z device port VBUS is not stated. Radxa's A7Z page (https://docs.radxa.com/en/cubie/a7z) labels no port; its Type-C page is 404. Needs a ruling before a VBUS line is written.  It is NOT a guess and no vbus_* key is set here.
+vbus_undriven = true
+vbus_reason = "Radxa Cubie A7Z port 1 (https://docs.radxa.com/en/cubie/a7z/hardware-use/type-c): \"USB-C 2.0 OTG & Power\", \"Supports 5V power input\", device mode by default; host mode needs a device-tree overlay, which this image does not ship. The A7S family pattern (Radxa Cubie A7S schematic V1.10): sheet 13 J16 VBUS = VCC5V0, only into the input of load switch U12; sheet 12 USB0-DRVVBUS enables U2 (SGM2576) for J4 (USBC2 VBUS); sheet 7 PL2 = USB0-DRVVBUS. Armbian armbian/build 00c27198 patch/kernel/archive/sun60iw2-opi-vendor/0005-cubie-a7z-add-device-tree.patch:56-62 gives usbc2-vbus on PL2 (the switched port is USBC2). A7Z schematic not read. Bench only, powered from port 1. Coordinator ruling (A7Z (a)), 2026-11-14."
 
 [[devices]]
 id = "gadget"

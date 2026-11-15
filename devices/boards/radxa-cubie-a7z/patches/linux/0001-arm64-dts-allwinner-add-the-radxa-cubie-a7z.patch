@@ -1,7 +1,10 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-Subject: [PATCH] arm64: dts: allwinner: add the Radxa Cubie A7Z (bench, untested)
+Subject: [PATCH] arm64: dts: allwinner: add the Radxa Cubie A7Z (bench, UNVERIFIED, derived from A7A)
 
-Bench image device tree (candidate, UNTESTED). Makefile line after the A7S entry; the A7S entry is the DockSeed series' (fe0a8ed).
+UNVERIFIED. The A7Z has no Radxa device tree (the A7A tree and the A7S series dts are the bases).
+Peripherals from the A7A (radxa/u-boot 9da4b3e8 sun60i-a733-radxa-a7a.dts). No VBUS regulator on any USB port;
+PL2 held low by a gpio-hog (coordinator ruling). Device mode only: no host overlay is shipped.
+Makefile line after the A7S entry; the A7S entry is the DockSeed series (fe0a8ed).
 ---
 --- a/arch/arm64/boot/dts/allwinner/Makefile	2026-11-14 23:02:58.966170085 -0700
 +++ b/arch/arm64/boot/dts/allwinner/Makefile	2026-11-14 23:02:59.020170018 -0700
@@ -10,13 +13,12 @@ Bench image device tree (candidate, UNTESTED). Makefile line after the A7S entry
  dtb-$(CONFIG_ARCH_SUNXI) += sun60i-a733-cubie-a7s.dtb
 +dtb-$(CONFIG_ARCH_SUNXI) += sun60i-a733-cubie-a7z.dtb
  dtb-$(CONFIG_ARCH_SUNXI) += sun55i-a527-cubie-a5e.dtb
-
 diff --git a/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7z.dts b/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7z.dts
 new file mode 100644
 index 0000000..1111111
 --- /dev/null
 +++ b/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7z.dts
-@@ -0,0 +1,82 @@
+@@ -0,0 +1,96 @@
 +// SPDX-License-Identifier: (GPL-2.0-only OR MIT)
 +/*
 + * Radxa Cubie A7Z: a kernel device tree for bench images. CANDIDATE, UNTESTED, NEVER BOOTED. Bench only.
@@ -29,6 +31,7 @@ index 0000000..1111111
 +
 +/dts-v1/;
 +
++#include <dt-bindings/gpio/gpio.h>
 +#include "sun60i-a733.dtsi"
 +
 +/ {
@@ -97,5 +100,18 @@ index 0000000..1111111
 +		reset-gpios = <&pio 7 16 GPIO_ACTIVE_LOW>; /* PH16, from the A7A U-Boot dts */
 +		reset-assert-us = <10000>;
 +		reset-deassert-us = <150000>;
++	};
++};
++
++/*
++ * PL2 is held low from the kernel on: no VBUS is sourced on any USB-C port of the bench image (device mode only).
++ * Until lemnosd's boot hold takes over. Coordinator ruling; the A7S series drives PL2 as J4 VBUS (not used here).
++ */
++&r_pio {
++	usbc-vbus-hold {
++		gpio-hog;
++		gpios = <2 GPIO_ACTIVE_HIGH>;
++		output-low;
++		line-name = "usbc-vbus-en";
 +	};
 +};
