@@ -52,6 +52,16 @@ key_args = ["--key-file", "@key@", "--expect-key-id", "@key-id@"]
 verify = ["bundle", "--layout-of", "@description@", "--socs", "@source@/socs", "--verify", "@out@"]
 verify_key_args = ["--pubkey", "@pubkey@"]
 
+# The data partition (slot-disk): the tool writes the installed slot into a data directory in its own layout, from the bundle,
+# with the boot partition image, the keys and the data partition's size (the board's; one number with the ext4 size).
+# The args and verify are D1's (devices/products/raze-base on pr/D1, components/raze-lemnos-board). NOT at Lemnos pr/BB1b
+# e2e45ce7: `data-partition` is Lemnos M36 (not at the pin), so the first real build of this image will fail here until the
+# pin moves. Plan does not run it.
+[generate.data]
+args = ["data-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--install", "@bundle@", "--boot-image", "@boot-image@", "--keys", "@keys@", "--time", "@time@", "--data-size", "@data-size@", "--out", "@out@"]
+verify = ["data-partition", "--verify", "@out@", "--layout-of", "@description@", "--boot-image", "@boot-image@", "--deep"]
+keys = "files/slot-keys"
+
 # The board file, as /etc/lemnos/board.toml (the board's own, named by its [descriptions]).
 [[install]]
 from = { description = "lemnos" }

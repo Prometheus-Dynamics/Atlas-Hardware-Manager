@@ -42,3 +42,38 @@ loader_ini = { source = "rkbin", path = "RKBOOT/RK3566MINIALL.ini" }
 
 [descriptions]
 lemnos = "lemnos-board.toml"
+
+# The partitions, in table order (Z2, slot-disk). A board's [[partitions]] REPLACE the family's, so the two areas the family
+# gives are restated here, unchanged: `u-boot` (the U-Boot binary at 32K, outside the table; its content is the OS's
+# bootloader output) and `uboot-env` (the environment, 16M, 128K). Then `boot` (the FAT partition the U-Boot form reads
+# boot.scr and the three bay sets from: its size is the product's boot_size, check-devices requires that) and `data`
+# (the slot file; last, and its size is the one number `@data-size@` takes and the ext4 filesystem is made to).
+# DATA SIZE 1 GiB (1073741824): one slot is an EROFS root of about 18 to 40 MB (the Raze's measured root: 18,178,048 bytes
+# at lzma level 6) and the data partition holds the slot files of every install (the keep-last-N policy), so the first flash
+# holds several slots with room; a 1 GiB card area is small for the 8 GB+ SD cards the bench uses. Not grown on first boot:
+# the first-start grow is Lemnos M36b, not at the pin. UNVERIFIED on board.
+[[partitions]]
+name = "u-boot"
+role = "bootloader"
+offset = "32K"
+in_table = false
+content = "u-boot-rockchip.bin"
+
+[[partitions]]
+name = "uboot-env"
+role = "raw"
+type = "3de21764-95bd-54bd-a5c3-4abe786f38a8"
+offset = "16M"
+size = "128K"
+
+[[partitions]]
+name = "boot"
+role = "boot"
+type = "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"
+size = "134217728"
+
+[[partitions]]
+name = "data"
+role = "data"
+type = "0fc63daf-8483-4772-8e79-3d69d8477de4"
+size = "1073741824"

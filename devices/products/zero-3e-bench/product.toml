@@ -1,6 +1,6 @@
 # Radxa ZERO 3E bench image, Gaia F8 form, as a U-Boot SLOT image (Z2; replaces Z1's plain sd-image). One image: the ZERO 3E
 # board (its U-Boot with the Lemnos environment, the kernel with pstore), the bench's OS (zero-3e-base's and this product's
-# fragments), the Lemnos and Orion packages, and the root slot made by the `slot-boot` recipe (the raze-base pattern): the EROFS
+# fragments), the Lemnos and Orion packages, and the first-flash disk made by the `slot-disk` recipe (the raze-base pattern; slot-boot makes the slot, slot-disk the disk): the EROFS
 # root with dm-verity, the initramfs (lemnos-slot-init), the overlay, the cmdline, the slot bundle (`[generate.bundle]`, signed by
 # the BENCH key: a test credential, milestone 2 only) and the boot partition (`[generate.image]`, the U-Boot form: boot.scr and
 # the three bay sets, written by Lemnos's tool).
@@ -42,12 +42,19 @@ components = ["dev-bringup-hostkey", "lemnos", "lemnosd", "lemnos-ctl", "lemnos-
 # The slot's initramfs carries lemnos-slot-init (installed there as /init); it is not on the root filesystem.
 initramfs = ["lemnos-slot-init"]
 os = { provider = "buildroot", source = "buildroot", fragments = ["../zero-3e-base/os.fragment", "os.fragment"] }
-recipe = "slot-boot"
+recipe = "slot-disk"
 
-# The slot-boot settings (as raze-base's; each named in devices/products/raze-base/product.toml). Compression and level are the
+# The slot settings (as raze-base's slot-disk ones; each named in devices/products/raze-base/product.toml). Compression and level are the
 # Raze's board measurement (lzma, 6); the ZERO 3E kernel carries the lzma decoder (families/rk35xx linux.fragment, EROFS_FS_ZIP_LZMA).
 # version and slot are NOT set: Gaia takes them as --setting (scripts/version-rule.sh).
 [images.settings]
+# slot-disk (Gaia 355cc81): the first-flash disk. id names the disk (its GUIDs derive from it); board_id is the board
+# id the flasher checks the file against (the Lemnos board file [board] id); data_label is the data filesystem label that
+# lemnos-slot-init finds the partition by (the coordinator's value, as Raze's D1 draft: not yet checked against Lemnos source).
+# The data partition size is NOT a setting: the board gives it (boards/radxa-zero-3e/board.toml, data = 1 GiB).
+id = "zero-3e-bench"
+board_id = "radxa-zero-3e"
+data_label = "lemnos-data"
 device = "/data/slots/root.img"
 product = "zero-3e-bench"
 # UNVERIFIED: the board's boot partition size (boards/radxa-zero-3e/board.toml [[partitions]] role = "boot"). check-devices
