@@ -4,10 +4,13 @@
 #     neither CONFIG_ROCKCHIP_IODOMAIN nor CONFIG_SPL_ROCKCHIP_IODOMAIN; drivers/misc/Kconfig:114-121 defaults the
 #     io-domain driver on for PX30, RK3308, RK3328, RK3399 and RK3568 only (not RK3588); no io-domains node in
 #     dts/upstream/src/arm64/rockchip/rk3588-base.dtsi, rk3588s.dtsi or rk3588s-rock-5c.dts.
+#     Built config on disk: research/rock5c.config:1443 and research/rock5c-fam.config:1452, both
+#     "# CONFIG_ROCKCHIP_IODOMAIN is not set". These are U-Boot 2026.10 configs (their header says so, with 277 CONFIG_SPL
+#     entries), so they show the U-Boot side only, not the kernel's.
 #   Kernel (the kernel-side dts copy research/scratch-uboot-mainline/dts/upstream/src/arm64/rockchip/): no io-domains node in
-#     rk3588-base.dtsi, rk3588s.dtsi or rk3588s-rock-5c.dts. The kernel config is not on disk; the io-domain driver applies
-#     only from an io-domains node, so with no node no table is applied. This copy is not the mainline 7.3.4 tag, which
-#     this session could not reach (kernel.org 403/404): UNVERIFIED against 7.3.4.
+#     rk3588-base.dtsi, rk3588s.dtsi or rk3588s-rock-5c.dts. The kernel config is not on disk, so the kernel-config side is
+#     UNVERIFIED. With no io-domains node the io-domain driver has no table to apply. This copy is not the mainline 7.3.4
+#     tag, which this session could not reach (kernel.org 403/404): UNVERIFIED against 7.3.4.
 # The pinmux is per-node pinctrl-0 in the dts, not a bank-voltage table.
 applies_pad_table = false
-pad_table_reason = "no pad or io-domain table is applied by our bootloader or kernel: U-Boot rock-5c-rk3588s_defconfig (CONFIG_ROCKCHIP_RK3588=y, no ROCKCHIP_IODOMAIN, no SPL_ROCKCHIP_IODOMAIN; drivers/misc/Kconfig:114-121 not on for RK3588) and no io-domains node in the U-Boot or kernel rk3588s-rock-5c dts (rk3588-base.dtsi, rk3588s.dtsi, rk3588s-rock-5c.dts); kernel config not on disk, and no node means no table; kernel dts copy is not the 7.3.4 tag (unverified)"
+pad_table_reason = "no pad or io-domain table is applied by our bootloader or kernel: U-Boot rock-5c-rk3588s_defconfig (CONFIG_ROCKCHIP_RK3588=y, no ROCKCHIP_IODOMAIN, no SPL_ROCKCHIP_IODOMAIN; drivers/misc/Kconfig:114-121 not on for RK3588) and no io-domains node in the U-Boot or kernel rk3588s-rock-5c dts (rk3588-base.dtsi, rk3588s.dtsi, rk3588s-rock-5c.dts); U-Boot config research/rock5c.config:1443 (CONFIG_ROCKCHIP_IODOMAIN not set); kernel config not on disk (unverified); no io-domains node in the kernel dts copy; that copy is not the 7.3.4 tag"

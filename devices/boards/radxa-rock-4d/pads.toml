@@ -5,6 +5,7 @@
 #     io-domain driver on for RK3576; no io-domains node in dts/upstream/src/arm64/rockchip/rk3576.dtsi or rk3576-rock-4d.dts.
 #   Kernel (the kernel-side dts copy research/scratch-uboot-mainline/dts/upstream/src/arm64/rockchip/): no io-domains node in
 #     rk3576.dtsi or rk3576-rock-4d.dts. The kernel config is not on disk; with no node no table is applied. This copy is not
-#     the mainline 7.3.4 tag (kernel.org unreachable here): UNVERIFIED against 7.3.4.
+#     the mainline 7.3.4 tag (kernel.org unreachable here): UNVERIFIED against 7.3.4. No built RK3576 config exists in research/
+#     (only a7s, rock5c, zero3), so the kernel and U-Boot config side is UNVERIFIED for this board.
 applies_pad_table = false
-pad_table_reason = "no pad or io-domain table is applied by our bootloader or kernel: U-Boot rock-4d-rk3576_defconfig (CONFIG_ROCKCHIP_RK3576=y, no ROCKCHIP_IODOMAIN; drivers/misc/Kconfig:114-121 not on for RK3576) and no io-domains node in the U-Boot or kernel rk3576 dts (rk3576.dtsi, rk3576-rock-4d.dts); kernel config not on disk, and no node means no table; kernel dts copy is not the 7.3.4 tag (unverified)"
+pad_table_reason = "no pad or io-domain table is applied by our bootloader or kernel: U-Boot rock-4d-rk3576_defconfig (CONFIG_ROCKCHIP_RK3576=y, no ROCKCHIP_IODOMAIN; drivers/misc/Kconfig:114-121 not on for RK3576) and no io-domains node in the U-Boot or kernel rk3576 dts (rk3576.dtsi, rk3576-rock-4d.dts); kernel config not on disk (unverified); no RK3576 config is built on disk (research/ has none); no io-domains node in the kernel dts copy, which is not the 7.3.4 tag"
