@@ -10,3 +10,5 @@ node_modules/
 dist/
 build/
 .svelte-kit/
+# The gate's scratch root (scripts/gate.sh): every temp file of a gate run.
+.scratch/

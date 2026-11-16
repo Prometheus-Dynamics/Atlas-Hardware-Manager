@@ -138,7 +138,11 @@ impl Leases {
     }
 }
 
-/// What a run ends with when its caller's lease ran out.
-pub(crate) const CALLER_WORDS: &str = "the lease ran out: the caller was silent for longer than its lease, so the board dropped its connection and this run with it";
+/// What a run ends with when its caller's lease ran out: the bridge's words verbatim, with the
+/// outcome `Failed` (not a refusal, and no code: Orion's typed `Finished` has none yet).
+// LOCK: Lemnos bded77a0 service/orion/src/calls.rs:318, the string passed to `ended_with` at :314
+// by the lease sweep. The run's `Done` is `Outcome::Failed` with this as its detail (`ended_with`, :598-600).
+// A code match once Orion's typed Finished `code` lands and Lemnos sets one for "lease ran out".
+pub(crate) const CALLER_WORDS: &str = "its lease ran out; the job ended with its connection";
 /// What a stalled run ends with when the stall time ran out.
 pub(crate) const STALL_WORDS: &str = "the stall time ran out: this run was stalled for longer than the board allows, and was dropped";

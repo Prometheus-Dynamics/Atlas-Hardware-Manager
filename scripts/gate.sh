@@ -4,6 +4,31 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 export CARGO_INCREMENTAL="${CARGO_INCREMENTAL:-0}"
 
+# Every temp file of the gate and of the scripts it runs lands under one scratch root, never /tmp (PR G12). mktemp
+# and ${TMPDIR:-/tmp} both follow TMPDIR, which is set here for every step; the directory is removed on exit.
+scratch_root=${ATLAS_SCRATCH_ROOT:-$(pwd)/.scratch}
+mkdir -p "$scratch_root"
+gate_tmp=$(mktemp -d "$scratch_root/gate-XXXXXX")
+export TMPDIR=$gate_tmp
+trap 'rm -rf "$gate_tmp"' EXIT
+
+# A Unix socket path must fit sun_path: 108 bytes with the NUL on Linux. Orion's test stub (orion c9eb5a2,
+# crates/testing/stubs, used by atlas-actions and others) binds TMPDIR/atl-c3-<pid>-<name>/node/orion.sock. The
+# fixed part of that is 45 bytes with a 7-digit pid and the longest test name in crates/board/actions (13 bytes).
+# A TMPDIR of 63 bytes or more makes every such test panic with "path must be shorter than SUN_LEN" (PR G12, CI).
+# The gate refuses it here, once, with the path and the limit, before any step runs.
+SUN_PATH_BYTES=108
+SOCKET_SUFFIX_BYTES=45
+socket_room_ok() {  # <dir>: 0 when a socket path under it fits sun_path, else prints why and returns 1
+  local n
+  n=$(printf '%s' "$1" | wc -c)
+  if (( n + SOCKET_SUFFIX_BYTES >= SUN_PATH_BYTES )); then
+    echo "gate: TMPDIR is $n bytes ($1); a test socket path under it needs $((n + SOCKET_SUFFIX_BYTES)) bytes, the limit is $((SUN_PATH_BYTES - 1)). Set ATLAS_SCRATCH_ROOT to a shorter directory (on CI: the runner's temp dir)." >&2
+    return 1
+  fi
+}
+socket_room_ok "$gate_tmp" || exit 1
+
 step() {
   local label="$1" start
   shift
@@ -106,6 +131,13 @@ no_match() {  # <grep args...> -- <dir globs...>
     *) echo "    grep failed (status $status): the check did not run" >&2; return 1 ;;
   esac
 }
+socket_room_self_test() {
+  local long short
+  long=$(printf '%0.s/x' $(seq 1 40))   # 80 bytes: must be refused
+  short=/mnt/ssd-samsung/atlas-next-scratch-G12/gate-abcdef   # 52 bytes: must be accepted
+  socket_room_ok "$long" >/dev/null 2>&1 && { echo "gate self-test: a TMPDIR that leaves no room for a socket was accepted" >&2; return 1; }
+  socket_room_ok "$short" || { echo "gate self-test: a short TMPDIR was refused" >&2; return 1; }
+}
 no_match_self_test() {
   local d
   d=$(mktemp -d "${TMPDIR:-/mnt/ssd-samsung/atlas-next-scratch-root}/gate-no-match.XXXXXX" 2>/dev/null) || d=$(mktemp -d)
@@ -115,6 +147,7 @@ no_match_self_test() {
   rm -r "$d"
 }
 if compgen -G "crates/*/*/src" > /dev/null; then
+  step "the socket path room check refuses a TMPDIR too long for sun_path" socket_room_self_test
   step "the grep guard refuses a match even with a missing directory" no_match_self_test
   step "no board or product names in code" no_match -rn -i -E "\b(raze|helios|photonvision|zero-?3e|rock-?5c|cubie|luckfox|k230d)\b" -- "crates/*/*/src" "apps/*/src-tauri/src"
   step "no shell-outs to ssh for board jobs" no_match -rn -E "Command::new\(\"(ssh|scp|sftp)\"\)" -- "crates/*/*/src" "apps/*/src-tauri/src"
