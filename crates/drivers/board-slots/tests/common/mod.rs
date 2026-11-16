@@ -167,9 +167,9 @@ where
     .unwrap_or_else(|_| panic!("{what} did not take effect within {DEADLINE:?}"))
 }
 
-/// A scratch directory under the system temp dir, kept short for the node's socket path.
-pub fn scratch(name: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("atl-c5-{}-{name}", std::process::id()))
+/// A node's directory: short whatever the name, so its socket path fits a Unix socket.
+pub fn scratch(name: &str) -> atlas_sim_node::socket::NodeDir {
+    atlas_sim_node::socket::node_dir(name).unwrap_or_else(|error| panic!("{name}: {error}"))
 }
 
 /// A simulated board with Lemnos, its slots, and the slot operations through a session.
@@ -180,7 +180,7 @@ pub struct Rig {
     pub handle: Handle,
     pub slots: BoardSlots,
     pub installs: SlotInstalls,
-    pub dir: PathBuf,
+    pub dir: atlas_sim_node::socket::NodeDir,
     /// The node's key, read once when the rig connected. A test names the board by this, not by
     /// the handle's presence at that moment, which is empty between two connections.
     pub key: [u8; 32],
