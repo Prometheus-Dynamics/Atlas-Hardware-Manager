@@ -72,13 +72,13 @@ CONFIG_MMC_SDHCI_OF_DWCMSHC=y
 #   in rk356x-base.dtsi:1377, rk3588-base.dtsi:2724, rk3576.dtsi:2438 have no status, so they are enabled). systemd opens it
 #   (RuntimeWatchdogSec in components/bringup-alive). Built in: it is open before any module could load.
 CONFIG_DW_WATCHDOG=y
-# CONFIG_WATCHDOG_OPEN_TIMEOUT (Z2, PROVISIONAL, value to be agreed with Lemnos): the kernel keeps feeding a boot-armed
-# watchdog only until this many seconds after registration, unless userspace has opened /dev/watchdog by then
-# (watchdog_dev.c:1088 sets the deadline; :204-215 stops the pings after it). Without it (default 0) an armed product with no
-# owner is kernel-fed forever and never resets. Must exceed the slowest legitimate first boot before lemnosd binds the
-# watchdog (the data-partition growth, fsck and first-boot key creation are NOT MEASURED). The value below is a placeholder,
-# NOT derived from a measurement. The Raze has 30 (devices/boards/raze/kernel/raze.config:59).
-CONFIG_WATCHDOG_OPEN_TIMEOUT=180
+# CONFIG_WATCHDOG_OPEN_TIMEOUT=30 (Z2; the same value as the Raze, raze.config:59). Reason: the kernel keeps feeding a
+# boot-armed watchdog only until this many seconds after registration, unless userspace has opened /dev/watchdog by then
+# (watchdog_dev.c:1088 sets the deadline, :204-215 stops the pings after it). The window it covers is the one from the
+# driver probe to slot-init's open (Lemnos service/slot-init/src/boot.rs:185-186, sys.rs:65-83). Default 0 would mean
+# kernel-fed forever. CONDITION: the watchdog driver must be built in, CONFIG_DW_WATCHDOG=y (not =m), or the deadline
+# never runs from the driver's probe; checked by scripts/check-watchdog-owner.sh (open-timeout condition).
+CONFIG_WATCHDOG_OPEN_TIMEOUT=30
 # CONFIG_LEDS_TRIGGER_HEARTBEAT: the heartbeat pattern the bring-up LEDs beat with from boot (board-alive-led).
 CONFIG_LEDS_TRIGGER_HEARTBEAT=y
 # CONFIG_LEDS_TRIGGER_TIMER: the 1 s blink, the second state once the named link has an address (board-alive-led).
