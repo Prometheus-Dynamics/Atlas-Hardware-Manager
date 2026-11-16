@@ -274,7 +274,7 @@ Nothing names a Lemnos file by its path under a component any more (PR B26; befo
 ## The Gaia pin
 
 `gaia.lock` is Atlas's, written by hand: a Gaia URL and a full commit. It is not Gaia's lock. The
-commit is `b8585a049326ed29ef6eb37a7afde56a3acfda8c` (Gaia `next`'s head at PR L2d, its recipes equal `b3fa40f`'s: the `slot-boot` recipe with `[generate.bundle]` and `[generate.image]`, the lzma default for slots, and the rule that every product making a slot names `BR2_PACKAGE_HOST_EROFS_UTILS=y` and `BR2_PACKAGE_HOST_CRYPTSETUP=y`; before it `c6a3d102467f11a86ecc7fb53965cbaca9a09725` (PR B32's pin); before that `3f6e561016752b60c50a9b8731fa28b37e48da81` (Gaia `next`'s head at PR B32: #115 an image's `initramfs` key, #116 what an image names that its recipe does not take is refused by name, #112 `[sources.tools]`, #113 generator roles and the `slot-boot` recipe, #114 failed-step logs; before it `7177d72e27fdcada74a8ade7b282e343542dc9f6` (Gaia `next`'s head at PR B27: #100 the `[generate]` tool runs in the sandbox, in the image its tool was built in; #99 the slot directory step, `gaia.tree.by-role` at layout version 2 (no pinned recipe uses it yet); before it `e1cc2951c726d21ce300e68fa1560d0ba77bacc6` (Gaia `next`'s head at PR B26: #98 `[generate]` (a component's
+commit is `c0d084fa73a137cb0c3e9b51e7c900a123dbf25d` (Gaia `next`'s head at PR G12: #150 the rk35xx env (`uboot-env`, `ENV_MMC_DEVICE_INDEX=1`, `ENV_MMC_USE_DT=y`, two copies) checked against the disk by `gaia.disk`, #151 the config directory, #152 the slot disk's first flash carries the bootloader areas; before it `d8441c9d4d86ec537b9ac20d602739a1db29d50a` (PR G11: #146 `@firmware@`, #147 builder make, #148 `@tool:NAME@`); before it `b8585a049326ed29ef6eb37a7afde56a3acfda8c` (Gaia `next`'s head at PR L2d, its recipes equal `b3fa40f`'s: the `slot-boot` recipe with `[generate.bundle]` and `[generate.image]`, the lzma default for slots, and the rule that every product making a slot names `BR2_PACKAGE_HOST_EROFS_UTILS=y` and `BR2_PACKAGE_HOST_CRYPTSETUP=y`; before it `c6a3d102467f11a86ecc7fb53965cbaca9a09725` (PR B32's pin); before that `3f6e561016752b60c50a9b8731fa28b37e48da81` (Gaia `next`'s head at PR B32: #115 an image's `initramfs` key, #116 what an image names that its recipe does not take is refused by name, #112 `[sources.tools]`, #113 generator roles and the `slot-boot` recipe, #114 failed-step logs; before it `7177d72e27fdcada74a8ade7b282e343542dc9f6` (Gaia `next`'s head at PR B27: #100 the `[generate]` tool runs in the sandbox, in the image its tool was built in; #99 the slot directory step, `gaia.tree.by-role` at layout version 2 (no pinned recipe uses it yet); before it `e1cc2951c726d21ce300e68fa1560d0ba77bacc6` (Gaia `next`'s head at PR B26: #98 `[generate]` (a component's
 tool writes files from the board's description; no product uses it yet), #97 board `[descriptions]` and the install
 that names one, #94 the gadget identity 1d6b:0103 with bcdDevice 0x0b00, #95 the slot kernel check, #96 Daedalus; before it
 `4509f6b74247f56594cb2667e701c5d1f7566498` (Gaia `next`'s head: #91 the usb-gadget-network component in its configfs NCM form, #89 flash-xz, #90 verified-on-put, #92 the check fix; before it `7db227f6648917434b14da4117150ad6ab007530` (Gaia `next`: PR #85 `gaia lock` resolves nothing a
@@ -285,7 +285,7 @@ builds with `gaia.tree.under`, and the `system` input). Before it: `f5a32f9fe242
 `10beed87d9591175305997a2ebf1f88e3f5e4b2b`. To move it: change `commit`, build Gaia at the new commit,
 and run `scripts/check-devices.sh --write-locks` with that binary (`GAIA_BIN=...`); the check refuses a
 binary that prints another commit or none. Commit the pin and every changed `gaia.lock` together.
-(The binary PR B32 used: `/mnt/ssd-samsung/atlas-next-scratch-gaia/bin-3f6e561/gaia`; PR B27 used `bin-7177d72`; PR B26 used `bin-e1cc295`.)
+(The binary PR G12 used: `/mnt/ssd-samsung/atlas-next-scratch-gaia/bin-c0d084f/gaia`; PR G11 used `bin-d8441c9`; PR B32 used `bin-3f6e561`; PR B27 used `bin-7177d72`; PR B26 used `bin-e1cc295`.)
 
 ## Product locks
 
@@ -413,10 +413,10 @@ At `b8585a0` (PR L2d; read against it, not re-read item by item):
 - `slot-boot` with `sign_key_env` set needs `sign_key_id` set; a `[generate.bundle]` needs `key_args`.
 - The Raze's `slot-boot` plans and config-resolves; nothing is built here (the device check does not build).
 
-These hold at Gaia `3f6e561`, the pin in `gaia.lock` (PR B32, where every product was planned at the pin; PR B27 checked them at `7177d72`, PR B26 at `e1cc295`; the items were checked at `7db227f` and carried to
+These were read at Gaia `3f6e561` (PR B32). The lock has moved since; they were not re-run at `c0d084f` (PR G12), so they stand until re-checked. Read at `3f6e561`: PR B32, where every product was planned at the pin; PR B27 checked them at `7177d72`, PR B26 at `e1cc295`; the items were checked at `7db227f` and carried to
 `e1cc295` by planning every product, not by re-running each refusal). Items 1 and 2 were re-run only through the products: the
 sd-image products plan with the veritysetup stand-in and the Rust component with the bwrap stand-in, as at `aa987cc`.
-Item 5 is carried from `aa987cc` and was not re-run. They lift when the pin moves.
+Item 5 is carried from `aa987cc` and was not re-run.
 
 1. **`slot` and `sd-image` need `veritysetup`.** A product on either recipe cannot be planned where
    that tool is not on PATH (or passed with `--tool veritysetup=PATH`). The check passes a stand-in
