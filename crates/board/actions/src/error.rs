@@ -36,10 +36,11 @@ pub enum ActionError {
     /// The action was cancelled. The message is the board's reason, or what the cancel did.
     #[error("{0}")]
     Cancelled(String),
-    /// A short action did not finish within its wait. A direct action was asked to stop; a read
-    /// keeps running on the board, and the next call for it picks that run up. A longer action
-    /// runs as a job.
-    #[error("{name} did not finish within {wait:?}; a longer action runs as a job")]
+    /// A short action did not finish within its wait. It was asked to stop; a longer action runs
+    /// as a job.
+    #[error(
+        "{name} did not finish within {wait:?}; it was asked to stop, and a longer action runs as a job"
+    )]
     NotFinished { name: String, wait: Duration },
     /// A short action's call did not come back. It may have run and may still be running; the
     /// board cancels a run whose session ends. The caller decides what to do next.
