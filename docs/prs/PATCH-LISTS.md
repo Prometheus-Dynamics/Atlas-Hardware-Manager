@@ -91,3 +91,20 @@ must show:
 - Gaia's rule change and its pin (the coordinator's merged rev).
 - Other branches (A7AZ, b8's K230D board): the table is the record.
 - The bootloader and TF-A patch lists on the sun60i family (C1 declares them; this PR moves only the kernel series).
+
+## The pin and the proof with Gaia 9efa797f
+
+Gaia next 9efa797f (the patch-append rule, PR #154). `gaia --version`: `gaia 2.0.6-dev (9efa797f8991069f338da3ba2eec655afb738cfa)`,
+sha256 `389b7bc2f9b71b7b1363d1a24c38255ff77ce5e255f11afa8b4e2f5f05b1a129` (`/mnt/ssd-samsung/gaia/bin/next-9efa797f/gaia`).
+`devices/gaia.lock` moved from a6299c62 to 9efa797f. The product locks passed the offline lock check unchanged, so none was rewritten.
+
+Plan (the probe product, not committed; `gaia validate` ok on the board, the family and the product): the kernel `linux.patched` is built from
+`["patches", "a7s-rails.patch"]`: the family's series (source `radxa-cubie-a7s.a733-kernel-series`, `patches`), then
+`boards/radxa-cubie-a7s/kernel/a7s-rails.patch`.
+
+Refusal of the old restated list (the pre-flip board, which lists the series itself, against the family that now carries it), from
+`gaia validate boards/radxa-cubie-a7s/board.toml --kind board` with 9efa797f:
+
+    gaia: boards/radxa-cubie-a7s/board.toml: kernel.patches[0]: this entry is in the family's list (families/sun60i/family.toml) already, and a board's patches follow its family's: remove it here, or set `inherit_patches = false` in [kernel] to replace the family's list
+
+The device check (`scripts/check-devices.sh` with `GAIA_BIN` set to 9efa797f) passes, and its self-check passes.

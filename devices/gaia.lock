@@ -5,4 +5,4 @@
 # disk), config-dir #151, slot-disk-blobs #152 (the first flash carries the bootloader areas).
 version = 1
 url = "https://github.com/Prometheus-Dynamics/Gaia-Image-Builder.git"
-commit = "a6299c62a036b83172fdeb1c7b43aa3eaa719d30"
+commit = "9efa797f8991069f338da3ba2eec655afb738cfa"
