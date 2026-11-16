@@ -733,10 +733,15 @@ async fn a_push_silent_past_the_lease_is_sent_again_from_zero_and_says_why() {
     relay.pass_up_to(u64::MAX);
     let back =
         SimNode::start_with(&dir.join("node"), &board, Some(port)).expect("the node is back");
-    progress_where(&push, "the push says the file starts over", |p| {
-        matches!(p.stage, Stage::Resending { .. })
+    // The restart is a durable fact of the push, not a stage that can pass unseen: it stays set to
+    // the end, so the wait cannot miss it however the host is scheduled.
+    let restarted = progress_where(&push, "the push says the file starts over", |p| {
+        p.restart.is_some()
     })
     .await;
+    let restart = restarted.restart.expect("the restart is recorded");
+    assert_eq!(restart.count, 1, "{restart:?}");
+    assert!(restart.reason.contains("from its start"), "{restart:?}");
     job_where(&jobs, push.job(), "the push commits", |status| {
         *status == JobStatus::Done
     })
