@@ -1,0 +1,27 @@
+# Pad statement for the Luckfox Aura (sidecar, PADS rule). Derived from the Aura schematic on disk, not from the
+# SoC datasheet or a TRM (neither is read). A bank with no established voltage is left out on purpose: the
+# image is refused until it is stated, and that is correct.
+version = 1
+derived_from_board = "board.toml"
+
+[source]
+kind = "schematic"
+path = "/mnt/ssd-samsung/gaia/work/b7/aura-docs/schematic.pdf"
+sha256 = "036cb8f0ba9f4e5dcf82d46a8e75c51fd7e41310c12ba9cfb8680cd0b33c5b5b"
+pages = 1
+
+# Established by the schematic text and render (no bank voltage is printed for any SoC bank):
+#   VCC_3V3 and VCC_1V8 rails exist; VCC_SD_S0 is the microSD card supply (MicroSD sheet).
+#   VCC3V3_PHY1 is the PHY's 3.3 V supply (pin 29, DVDD33); VCCIO_PHY1 is the PHY's RGMII I/O rail (pin 28, DVDD_RG).
+#   VCC_PHY0_IO "Voltage Config" (R218-R226) sets the PHY I/O level by strap resistors; the level for each strap
+#   pattern is not printed on the sheet (it is in the PHY datasheet, not on disk).
+#
+# NOT stated (refuse the image until established):
+#   bank VCCIO1 (GPIO1), VCCIO2 (GPIO2: microSD sdmmc0), VCCIO3..VCCIO7: no net naming their supply on the sheet.
+#   VCC_PHY0_IO (the PHY's IO domain): its voltage follows from the strap pattern, which needs the datasheet.
+
+[banks]
+# (empty on purpose: see above)
+
+[io_domains]
+# (empty on purpose: VCC_PHY0_IO is a strap block, not a PMU io-domain; the level needs the PHY datasheet)
