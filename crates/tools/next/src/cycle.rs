@@ -306,6 +306,137 @@ async fn boot_id(ctx: &Ctx<'_>) -> BootRead {
     }
 }
 
+/// Why the boot loader will not run a trial, as BB1c's `info.trial_block` states it. The wire value is
+/// read into this type once, here. A value this build does not know is kept as the board sent it and
+/// shown as unknown: it is never read as a reason, and never matched as a string anywhere else.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum TrialBlock {
+    NoEnvPartition,
+    EnvUnreadable,
+    FatEnvFile,
+    BootPartitionUnreadable,
+    LoaderNotUpdated,
+    Unknown(String),
+}
+
+impl TrialBlock {
+    fn from_wire(value: &str) -> Self {
+        match value {
+            "no-env-partition" => Self::NoEnvPartition,
+            "env-unreadable" => Self::EnvUnreadable,
+            "fat-env-file" => Self::FatEnvFile,
+            "boot-partition-unreadable" => Self::BootPartitionUnreadable,
+            "loader-not-updated" => Self::LoaderNotUpdated,
+            other => Self::Unknown(other.to_owned()),
+        }
+    }
+
+    fn words(&self) -> String {
+        match self {
+            Self::NoEnvPartition => {
+                "no-env-partition (the boot loader's environment partition is missing)".to_owned()
+            }
+            Self::EnvUnreadable => {
+                "env-unreadable (the boot loader's environment cannot be read)".to_owned()
+            }
+            Self::FatEnvFile => {
+                "fat-env-file (the environment is a FAT file, not the loader's own copy)".to_owned()
+            }
+            Self::BootPartitionUnreadable => {
+                "boot-partition-unreadable (the boot partition cannot be read)".to_owned()
+            }
+            Self::LoaderNotUpdated => {
+                "loader-not-updated (the boot loader does not carry the trial marker)".to_owned()
+            }
+            Self::Unknown(raw) => format!("unknown block {raw:?} (this build does not know it)"),
+        }
+    }
+}
+
+/// What `info` says about trials. `NotReported`: the board does not carry BB1c's `trial_updates` key, so
+/// nothing is said. `Clear`: no block is stated. `Blocked`: a typed reason, with the board's sentence and detail.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum BoardTrialState {
+    NotReported,
+    Clear,
+    Blocked {
+        block: TrialBlock,
+        text: String,
+        detail: String,
+    },
+}
+
+/// The trial state in one `info` document. A non-string `trial_block` that is not null is a block the
+/// build cannot read: it is blocked and unknown, never clear.
+fn trial_state_of(document: &Value) -> BoardTrialState {
+    if document.get("trial_updates").is_none() {
+        return BoardTrialState::NotReported;
+    }
+    let text_of = |key: &str| {
+        document
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned()
+    };
+    match document.get("trial_block") {
+        None | Some(Value::Null) => BoardTrialState::Clear,
+        Some(Value::String(wire)) => BoardTrialState::Blocked {
+            block: TrialBlock::from_wire(wire),
+            text: text_of("trial_block_text"),
+            detail: text_of("trial_block_detail"),
+        },
+        Some(other) => BoardTrialState::Blocked {
+            block: TrialBlock::Unknown(other.to_string()),
+            text: text_of("trial_block_text"),
+            detail: text_of("trial_block_detail"),
+        },
+    }
+}
+
+/// The trial state the board states now. Read only where the pin carries BB1c's keys (`info_in_pin`),
+/// as the boot id is; a read that fails says nothing.
+async fn trial_state(ctx: &Ctx<'_>) -> BoardTrialState {
+    if !ctx.env.info_in_pin {
+        return BoardTrialState::NotReported;
+    }
+    let Ok(link) = ctx.link() else {
+        return BoardTrialState::NotReported;
+    };
+    let actions = BoardActions::new(link.handle.clone());
+    match actions.run(&info_action(), &[]).await {
+        Ok(done) => serde_json::from_slice::<Value>(&done.output)
+            .map_or(BoardTrialState::NotReported, |document| {
+                trial_state_of(&document)
+            }),
+        Err(_) => BoardTrialState::NotReported,
+    }
+}
+
+/// The scorecard's words for a trial state.
+fn trial_state_words(state: &BoardTrialState) -> String {
+    match state {
+        BoardTrialState::NotReported => {
+            "not reported by the board (no trial_updates key)".to_owned()
+        }
+        BoardTrialState::Clear => "clear: no block is stated".to_owned(),
+        BoardTrialState::Blocked {
+            block,
+            text,
+            detail,
+        } => {
+            let mut words = format!("blocked: {}", block.words());
+            if !text.is_empty() {
+                words.push_str(&format!(" -- {text}"));
+            }
+            if !detail.is_empty() {
+                words.push_str(&format!(" ({detail})"));
+            }
+            words
+        }
+    }
+}
+
 /// Shows the boot id, and fails only when it is read both times and did not change.
 fn boot_check<W: Write>(
     r: &mut Report<'_, W>,
@@ -521,6 +652,13 @@ async fn step_trial_good(ctx: &mut Ctx<'_>, r: &mut Report<'_, Vec<u8>>) -> Resu
     let id = ctx.good.clone();
     let before = boot_id(ctx).await;
     r.say(format!("boot id before the trial: {}", before.words()));
+    if ctx.env.info_in_pin {
+        let state = trial_state(ctx).await;
+        r.say(format!(
+            "trial state before the trial: {}",
+            trial_state_words(&state)
+        ));
+    }
     if let Some(note) = start(ctx, &id, now_ms()).await? {
         r.say(note);
     }
@@ -1090,6 +1228,104 @@ mod tests {
         assert_eq!(
             BootRead::NotChecked(NOT_CHECKED_AT_PIN.to_owned()).words(),
             "not checked (needs Lemnos I5k: info.last_attempt.boot)"
+        );
+    }
+}
+
+#[cfg(test)]
+mod trial_block_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn every_wire_reason_maps_to_its_typed_block_and_others_stay_unknown() {
+        assert_eq!(
+            TrialBlock::from_wire("no-env-partition"),
+            TrialBlock::NoEnvPartition
+        );
+        assert_eq!(
+            TrialBlock::from_wire("env-unreadable"),
+            TrialBlock::EnvUnreadable
+        );
+        assert_eq!(
+            TrialBlock::from_wire("fat-env-file"),
+            TrialBlock::FatEnvFile
+        );
+        assert_eq!(
+            TrialBlock::from_wire("boot-partition-unreadable"),
+            TrialBlock::BootPartitionUnreadable
+        );
+        assert_eq!(
+            TrialBlock::from_wire("loader-not-updated"),
+            TrialBlock::LoaderNotUpdated
+        );
+        assert_eq!(
+            TrialBlock::from_wire("a-future-reason"),
+            TrialBlock::Unknown("a-future-reason".to_owned()),
+            "a value this build does not know is kept, not read as a reason"
+        );
+    }
+
+    #[test]
+    fn a_document_without_trial_updates_says_nothing() {
+        assert_eq!(
+            trial_state_of(&json!({"last_attempt": {}})),
+            BoardTrialState::NotReported
+        );
+    }
+
+    #[test]
+    fn a_null_or_absent_block_is_clear_and_a_string_is_a_typed_block() {
+        assert_eq!(
+            trial_state_of(&json!({"trial_updates": true, "trial_block": null})),
+            BoardTrialState::Clear
+        );
+        assert_eq!(
+            trial_state_of(&json!({"trial_updates": true})),
+            BoardTrialState::Clear
+        );
+        assert_eq!(
+            trial_state_of(&json!({
+                "trial_updates": true,
+                "trial_block": "loader-not-updated",
+                "trial_block_text": "the boot loader does not carry the trial marker",
+                "trial_block_detail": "lemnos_env_rev=1 is absent"
+            })),
+            BoardTrialState::Blocked {
+                block: TrialBlock::LoaderNotUpdated,
+                text: "the boot loader does not carry the trial marker".to_owned(),
+                detail: "lemnos_env_rev=1 is absent".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn a_block_that_is_not_a_string_is_blocked_and_unknown_never_clear() {
+        match trial_state_of(&json!({"trial_updates": true, "trial_block": 7})) {
+            BoardTrialState::Blocked {
+                block: TrialBlock::Unknown(raw),
+                ..
+            } => assert_eq!(raw, "7"),
+            other => panic!("a numeric block must be blocked and unknown, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_scorecard_shows_the_typed_block_and_the_unknown_value_as_unknown() {
+        let words = trial_state_words(&BoardTrialState::Blocked {
+            block: TrialBlock::from_wire("env-unreadable"),
+            text: String::new(),
+            detail: String::new(),
+        });
+        assert!(words.starts_with("blocked: env-unreadable"), "{words}");
+        let unknown = trial_state_words(&BoardTrialState::Blocked {
+            block: TrialBlock::from_wire("new-reason"),
+            text: String::new(),
+            detail: String::new(),
+        });
+        assert!(
+            unknown.contains("unknown block \"new-reason\""),
+            "{unknown}"
         );
     }
 }

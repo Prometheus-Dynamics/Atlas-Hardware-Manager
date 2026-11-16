@@ -2,7 +2,33 @@
 
 **Status: DRAFT. Do not merge.** The pair in this tree is mismatched on purpose.
 
-## Provisional pins
+## The pair (final, approved by the coordinator 2026-11-16)
+
+| Pin | Rev | Where |
+|---|---|---|
+| Lemnos (`lemnos-slot-store`; every Lemnos component; the image's Lemnos packaging) | `f14b833eb2adf911225aa54199f25f93fb4cb89c` (M39-PIN, PR #396) | `Cargo.toml`, `devices/components/lemnos*`, `raze-lemnos-board`, `devices/products/raze-base/gaia.lock` |
+| Orion (workspace, `atlas-nt`, `atlas-topics`, `atlas-sim-node`, the image's `orion` and `orion-recovery`) | `3dde304e396f5769d3aa25884b5a9ff5bd4b9180` (C54) | as before |
+
+The pair is Lemnos f14b833e with its bridge's Orion pin (3dde304e, the same Orion this PR carries). PINS-2 stays a DRAFT:
+it waits for Orion's stub to issue run handles, and the three handle sim tests and step 7c must pass before it leaves draft.
+
+`origin/next` (d1adf855) is merged into this branch; it moved `devices/gaia.lock` to Gaia `9efa797f`, and the lock
+regeneration uses that Gaia binary (`/mnt/ssd-samsung/gaia/target/gaia-pr-patchappend/release/gaia`, which reports 9efa797f).
+
+## Lemnos f14b833e: consumer-visible changes and where Atlas reads them
+
+| Lemnos change | Atlas consumer (file:line) | What changed in Atlas | Test |
+|---|---|---|---|
+| A deadline-ended run is `TimedOut` with code 110 (was 0) | `crates/board/actions/src/board.rs:592` (`Outcome::TimedOut` becomes `Failed` with the run's code) | None needed: the code is read from the run's end, so 110 flows through. Nothing in Atlas keys on code 0 | `board.rs` test `a_failed_or_cancelled_run_keeps_its_code_when_it_has_one` (its TimedOut case asserts code 110) |
+| The bridge reads `detached` from the request; a cancel matches on the node's run number | bridge-internal. Atlas sends `detached: true` for starts (`board.rs` `start_encoded`) and `false` for direct runs (`board.rs` `direct`) | None: the bridge now honours both | the action and job tests (`crates/board/actions/tests/actions.rs`) on the gate |
+| BB1c: `info` gains `trial_updates`, `trial_block`, `trial_block_text`, `trial_block_detail` | `crates/tools/next/src/cycle.rs`: `trial_state` (one `info` read, only where `info_in_pin`), `trial_state_of`, `TrialBlock::from_wire`, `BoardTrialState` | The wire value is read once into the typed `TrialBlock` (five known reasons). An unknown value, or a non-string value, is kept as sent and shown as unknown; it is never matched as a string elsewhere. The state is printed in step 6 before the trial | `trial_block_tests` in `cycle.rs` (five unit tests: every reason maps; absent updates say nothing; null is clear; a string is typed; a non-string block is unknown and never clear; the words show the typed block and the unknown value) |
+| BB1c: a `uboot` board without `lemnos_env_rev=1` refuses trials with NOT_PERMITTED and reports Degraded; `uboot_env_size` below 394 is refused | none in `devices/`: no board or product uses `record = "uboot"` yet (the Raze uses `tryboot`), and no board sets `uboot_env_size` | no device rule added: there is no subject to check. The image-side facts (the marker in `u-boot.bin`, the `uboot-env` partition, no FAT `uboot.env`) are for Gaia's image build and the first `uboot` board's description | none |
+| R1: status `TORN` (-4101) and `Error::StreamTorn` | none: Atlas links no `lemnos-client` and reads no stream frames. The only Lemnos crate Atlas links is `lemnos-slot-store` (the bundle format), which R1 does not touch | None | none |
+
+BRIDGE-BOUNCE and the missing refusal key are open on this pair (the second session after a gadget bounce can time out; there
+is no refusal key yet). Both come with the next pair. No image is built from this PR.
+
+## Earlier provisional pins (superseded by the pair above)
 
 | Pin | Rev on this branch | Final |
 |---|---|---|
