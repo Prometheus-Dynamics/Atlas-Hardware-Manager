@@ -1,2 +1,0 @@
-# Dropbear's options, read by dropbear.service. -s: no password logins; the PC key is the only way in over SSH.
-DROPBEAR_ARGS="-s"

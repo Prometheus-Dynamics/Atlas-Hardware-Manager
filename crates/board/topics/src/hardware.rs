@@ -11,16 +11,17 @@
 //! is removed.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use atlas_session::{Handle, Presence, SessionError};
 use atlas_types::{Identity, LinkId};
 
+use crate::describe::Refresh;
 use crate::device::{Availability, Device, Freshness, RawDevice, describe};
 use crate::logs::{LogLine, LogRing};
-use crate::read::{self, Read};
+use crate::read::{self, Read, RefreshCell};
 use crate::value::Reported;
 
 /// How long a device the node has stopped listing keeps its last description. Lemnos publishes
@@ -68,8 +69,11 @@ pub struct Hardware {
     link: LinkId,
     grace: Duration,
     state: Mutex<State>,
-    /// Set by [`Hardware::refresh_descriptions`]: the next read asks every description again.
-    refresh: AtomicBool,
+    /// The refresh in progress, if one was asked for and has not been completed by a read: the
+    /// answers it has received (see [`crate::describe`]).
+    refresh: Arc<RefreshCell>,
+    /// How many refreshes have been asked for: the number of the newest one.
+    refreshes: AtomicU64,
 }
 
 /// A device held by the crate, with when it was last current.
@@ -110,7 +114,8 @@ impl Hardware {
             handle,
             link,
             grace,
-            refresh: AtomicBool::new(false),
+            refresh: Arc::new(Mutex::new(None)),
+            refreshes: AtomicU64::new(0),
             state: Mutex::new(State {
                 connection: Connection::Stale {
                     since: Instant::now(),
@@ -125,10 +130,15 @@ impl Hardware {
         }
     }
 
-    /// Asks every device's description again on the next read, whatever its generation says: the
-    /// app's manual refresh. Nothing else asks again (see [`crate::describe`]).
+    /// Asks every device's description again: the app's manual refresh. Each device is asked once
+    /// in it, and it is complete when a read has every device's answer. An answer a failed read
+    /// has already received holds for it, whatever the session did since (see [`crate::describe`]).
     pub fn refresh_descriptions(&self) {
-        self.refresh.store(true, Ordering::SeqCst);
+        let id = self.refreshes.fetch_add(1, Ordering::SeqCst) + 1;
+        *lock(&self.refresh) = Some(Refresh {
+            id,
+            answered: BTreeMap::new(),
+        });
     }
 
     /// Reads the node now and returns what the app shows. Never an error: a read that cannot be
@@ -143,24 +153,37 @@ impl Hardware {
         };
         let link = self.link.clone();
         let key = address.clone();
-        let refresh = self.refresh.swap(false, Ordering::SeqCst);
+        let serving = lock(&self.refresh).as_ref().map(|refresh| refresh.id);
+        let cell = Arc::clone(&self.refresh);
         let answer = self
             .handle
-            .with_client(move |orion| read::read(orion, &key, &session, &link, refresh))
+            .with_client(move |orion| {
+                read::read(orion, &key, &session, &link, serving.map(|id| (&*cell, id)))
+            })
             .await;
         let now = Instant::now();
         let mut state = lock(&self.state);
         match answer {
-            Ok(Ok(read)) => state.absorb(read, now, self.grace),
+            Ok(Ok(read)) => {
+                // Every device has answered (held or asked) in a read that got through.
+                if let Some(id) = serving {
+                    self.complete_refresh(id);
+                }
+                state.absorb(read, now, self.grace);
+            }
             Ok(Err(reason)) => state.lose(reason, now),
             Err(SessionError::Gone(reason)) => state.lose(reason, now),
             Err(SessionError::Failed(failure)) => state.lose(failure.to_string(), now),
         }
-        // A refresh is kept until a read is made: a read that failed asked for nothing.
-        if refresh && !matches!(state.connection, Connection::Live) {
-            self.refresh.store(true, Ordering::SeqCst);
-        }
         state.snapshot()
+    }
+
+    /// Ends refresh `id` if it is still the one in progress: a newer refresh is left alone.
+    fn complete_refresh(&self, id: u64) {
+        let mut refresh = lock(&self.refresh);
+        if refresh.as_ref().is_some_and(|current| current.id == id) {
+            *refresh = None;
+        }
     }
 }
 
