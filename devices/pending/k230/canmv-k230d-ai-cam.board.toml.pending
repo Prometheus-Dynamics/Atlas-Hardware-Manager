@@ -44,11 +44,11 @@ fragments = ["kernel/bench.fragment"]
 #
 # Slots: the uboot record, env in the device form (assets/uboot-bench.fragment; values in lemnos-board.toml.pending).
 
-# PAD TABLE (K1, 2026-11-16, updated 2026-11-16 from the vendor AI-CAM source): the AI-CAM's own table, from
-# kendryte/k230_linux_sdk fc6cc215 (see docs/prs/K1-k230d.md, "AI-CAM vendor source"). Verbatim from the vendor's
-# U-Boot dts; not the BPI Zero's table. The pad rule (scripts/check-devices.sh pads_rule) takes it on provenance.
-# Once PADS merges, this moves to devices/boards/canmv-k230d-ai-cam/pads.toml (see canmv-k230d-ai-cam.pads.toml.pending).
-[pads]
-source = "kendryte/k230_linux_sdk fc6cc215 buildroot-overlay/boot/uboot/u-boot-2022.10-overlay/arch/riscv/dts/k230d_canmv_junroc_ai_cam.dts: bank table from the file's own 'from schematic' comment (lines 31-38) and defines (lines 48-54); pin table lines 95-187"
-derived_from_board = ""
-bank_voltages = { IO0_IO1 = "1V8", IO2_IO13 = "1V8", IO14_IO25 = "3V3", IO26_IO37 = "3V3", IO38_IO49 = "3V3", IO50_IO61 = "3V3", IO62_IO63 = "3V3" }
+# U-BOOT DEFCONFIG (the board's, not the family's): the vendor AI-CAM's U-Boot defconfig at kendryte/k230_linux_sdk fc6cc215
+# (configs/k230d_canmv_junroc_ai_cam_defconfig). The defconfig carries the pad and voltage setup, so the board names it.
+[bootloader]
+defconfig = "k230d_canmv_junroc_ai_cam"
+
+# PAD TABLE: the board's pads.toml (devices/pending/k230/canmv-k230d-ai-cam.pads.toml.pending, moving with the board). The
+# provenance is the vendor file: kendryte/k230_linux_sdk fc6cc215, buildroot-overlay/boot/uboot/u-boot-2022.10-overlay/arch/
+# riscv/dts/k230d_canmv_junroc_ai_cam.dts (bank table at 31-38, defines 48-54). Not the BPI Zero's table.
