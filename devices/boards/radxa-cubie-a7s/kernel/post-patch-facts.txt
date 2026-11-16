@@ -59,3 +59,8 @@ bank-pins PH 20
 bank-pins PI 17
 bank-pins PJ 28
 bank-pins PK 26
+# range-required: these regulator nodes must stay ranges in the built dts (the unprogrammed rails; Gaia's unprogrammed_rails list)
+range-required aldo1 range
+range-required bldo1 range
+range-required dcdc1 range
+range-required dcdc4 range

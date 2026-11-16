@@ -421,3 +421,48 @@ which is the rail PH runs from.
 **Result for both written banks:** PC reads its own fixed 1.8 V, written 11, which is the 1.8 V rail the schematic and the
 eMMC wiring support. PH reads DCDC1's register through the switch, written 10 or 11 to match that parent, never 1.8 V mode on a
 3.3 V output. No stop is needed.
+
+### 13.7 The correction is wired into the build; the plan shows it after the series
+
+Gaia at a6299c62 takes a board's `[kernel] patches` in place of the family's (`crates/core/describe/src/board.rs`: `patches: b.patches.or(f.patches)`),
+and applies them in list order (`crates/core/graph/src/os.rs`, `locked_source`: a `Local` file or a directory, or an `InSource` path).
+The family declares no series on this branch, so the series is wired on the board: `devices/boards/radxa-cubie-a7s/board.toml`:
+
+    patches = [{ source = "a733-kernel-series", path = "patches" }, { file = "kernel/a7s-rails.patch" }]
+
+Proof: a scratch probe product (not committed; named cubie-a7s-bench to take C1's lock at origin/pr/C1) with the A7S board and
+C1's gaia.lock. `gaia validate` passes on the board and the product. `gaia plan` (a6299c62) gives the kernel as
+`linux.patched` built from `patches0` (the series, `radxa-cubie-a7s.a733-kernel-series`) and then `patch1` (our file,
+`boards/radxa-cubie-a7s/kernel/a7s-rails.patch`):
+
+```
+  cubie-a7s-bench.os.radxa-cubie-a7s.linux.patched  gaia.source.patch      products/a7s-probe/product.toml
+  radxa-cubie-a7s.a733-kernel-series                gaia.source.git        boards/radxa-cubie-a7s/board.toml
+  cubie-a7s-bench.os.radxa-cubie-a7s.linux.patch1   gaia.source.input      products/a7s-probe/product.toml
+  radxa-cubie-a7s.a733-kernel-series.tree -> cubie-a7s-bench.os.radxa-cubie-a7s.linux.patched.patches0
+  cubie-a7s-bench.os.radxa-cubie-a7s.linux.patch1.tree -> cubie-a7s-bench.os.radxa-cubie-a7s.linux.patched.patches1
+```
+
+and in the plan's JSON the patched node takes `["patches", "a7s-rails.patch"]` in that order.
+
+**The gap is closed by three checks:**
+- `scripts/check-devices.sh` (pads rule): a pads.toml that names a correction must find `{ file = "<it>" }` in its board's or
+  family's `[kernel] patches`, and the file must exist. Otherwise the statement cites a patch the build does not include, and the
+  image is refused. The self-test has a case for it (`railunwired`).
+- `scripts/check-kernel-fragments.sh`: applies the series, then the board's own patches (`--fuzz=0`, a reject fails the gate) to
+  the pinned 7.3.4 tree, then runs `scripts/check-board-facts.py` on the patched tree. Only boards with kernel patches take the
+  facts step.
+- `scripts/check-board-facts.py`: regenerates every fact from the patched tree (the io_bias_banks set, each bank's supply
+  line, the PI references, the bank pin table, and that the unprogrammed regulators are ranges) and fails on any difference.
+  Verified on the kept 7.3.4 patched tree: 53 recorded facts match. Shown negative: a PD supply added to the dts is refused
+  (`pio-supply PD` and the dts sha256 both differ).
+
+**The lift:** `check-kernel-fragments` ran clean at the head of this PR: 7 kernels, 0 skipped, the A7S row patched and its facts
+matching. The correction is in the build's inputs and in Gaia's plan, after the series.
+
+### 13.8 What would lift A7A and A7Z
+
+Both stay refused on PI only. PI needs a mechanical check that the board's pin groups use no bank-PI pin. Their pin groups are named in
+the Radxa SoC dtsi (`sun60i-a733.dtsi` of the Radxa tree), which is not on disk, so no `<&pio 8 ...>` reference can be read from their
+dts. What would lift it: their dts on `pr/A7AZ` (#134), with the pinctrl groups resolved to their bank (from the Radxa or series dtsi, on
+disk), and a `pio-ref PI 0` fact recorded and checked by `check-board-facts.py` against that tree. Until then, PI is refused.

@@ -11,6 +11,10 @@ description = "Radxa Cubie A7S (Allwinner A733), candidate sources, untested on 
 # the USB-C ports (see the notes below). candidate, UNVERIFIED.
 [kernel]
 device_tree = "allwinner/sun60i-a733-cubie-a7s"
+# The kernel patches, in order. Gaia takes a board's list in place of the family's (board.rs merge: `b.patches.or(f.patches)`),
+# so the series is named here too: the DockSeed series (fe0a8ed, the source in the family), then our correction
+# (kernel/a7s-rails.patch; its recorded edits are kernel/edits.toml). Applied with patch -p1 --fuzz=0 in this order.
+patches = [{ source = "a733-kernel-series", path = "patches" }, { file = "kernel/a7s-rails.patch" }]
 
 # U-Boot defconfig: radxa-cubie-a7s_defconfig in radxa/u-boot @ 9da4b3e8 (its CONFIG_DEFAULT_DEVICE_TREE is
 # sun60i-a733-cubie-a7s). UNVERIFIED, never booted.

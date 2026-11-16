@@ -1100,6 +1100,17 @@ pads_rule() {  # <devices dir>
     # pads.toml); the patch must leave that rail a range, not a fixed voltage. And "no pads: ... 0 pins" for a bank the
     # SoC's own pin table gives no pins (the source must say so).
     corr=$(grep -E '^correction *=' <<<"$sec" | sed -E 's/^correction *= *"(.*)" *$/\1/' | head -1)
+    # The correcting patch is a build input (PR A7RAILS, second ruling): a pads.toml that names one must find it in the
+    # board's or the family's [kernel] patches, where Gaia applies it after the series, and the file must exist. Without
+    # the entry the statement cites a patch the build does not carry, so the image is refused.
+    if [[ -n $corr ]]; then
+      if [[ ! -f $(dirname "$b")/$corr ]]; then
+        out+="FAIL $name: board $bname's pads.toml names correction $corr, which is not a file beside the board"$'\n'
+      fi
+      if ! grep -qF "file = \"$corr\"" "$b" && ! grep -qF "file = \"$corr\"" "$ff"; then
+        out+="FAIL $name: board $bname's pads.toml names correction $corr, but its board.toml (or family) [kernel] patches does not apply it: the statement cites a patch the build does not include. Add { file = \"$corr\" } after the series"$'\n'
+      fi
+    fi
     rails=$(grep -E '^bank_rails *=' <<<"$sec" || true)
     checks=$(grep -E '^bank_checks *=' <<<"$sec" || true)
     while IFS= read -r kv; do
@@ -1262,6 +1273,7 @@ bank_voltages = { A = "'"$railstate"'", B = "fixed by hardware, per sheet 4" }
 bank_rails = { A = "bldo2" }
 correction = "corr.patch"'
   printf '%s\n' "$railpatch" > "$tmp/railok/devices/boards/bd/corr.patch"
+  printf '[kernel]\npatches = [{ file = "corr.patch" }]\n' >> "$tmp/railok/devices/boards/bd/board.toml"
   if ! out=$(pads_rule "$tmp/railok/devices"); then echo "check-devices: self-test: a rail statement on a rail the patch leaves a range was refused: $out" >&2; rc=1; fi
   mk "$tmp/railfixed" true 'soc = "tst"
 source = "test schematic, sheet 4"
@@ -1270,8 +1282,19 @@ bank_voltages = { A = "'"$railstate"'", B = "fixed by hardware, per sheet 4" }
 bank_rails = { A = "bldo2" }
 correction = "corr.patch"'
   printf '%s\n' "$railfixed" > "$tmp/railfixed/devices/boards/bd/corr.patch"
+  printf '[kernel]\npatches = [{ file = "corr.patch" }]\n' >> "$tmp/railfixed/devices/boards/bd/board.toml"
   if out=$(pads_rule "$tmp/railfixed/devices"); then echo "check-devices: self-test: a rail statement on a rail the patch still pins to a fixed voltage was not refused" >&2; rc=1
   elif [[ $out != *"still pins it to a fixed voltage"* ]]; then echo "check-devices: self-test: the fixed-rail refusal does not say so: $out" >&2; rc=1; fi
+  # The gap (PR A7RAILS, second ruling): a correction the board does not wire into its kernel patches refuses the image.
+  mk "$tmp/railunwired" true 'soc = "tst"
+source = "test schematic, sheet 4"
+derived_from_board = ""
+bank_voltages = { A = "'"$railstate"'", B = "fixed by hardware, per sheet 4" }
+bank_rails = { A = "bldo2" }
+correction = "corr.patch"'
+  printf '%s\n' "$railpatch" > "$tmp/railunwired/devices/boards/bd/corr.patch"
+  if out=$(pads_rule "$tmp/railunwired/devices"); then echo "check-devices: self-test: a correction that the board does not wire into its kernel patches was not refused" >&2; rc=1
+  elif [[ $out != *"does not apply it"* ]]; then echo "check-devices: self-test: the unwired-correction refusal does not say so: $out" >&2; rc=1; fi
   mk "$tmp/railnopatch" true 'soc = "tst"
 source = "test schematic, sheet 4"
 derived_from_board = ""

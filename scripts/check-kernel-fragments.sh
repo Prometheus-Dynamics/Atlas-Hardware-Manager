@@ -164,7 +164,14 @@ for bpath in sorted(glob.glob(os.path.join(dev, "boards", "*", "board.toml"))):
     else:
         frags = [os.path.normpath(os.path.join(fdir, f)) for f in fk.get("fragments", [])]
     fam_name = fam.get("name", os.path.basename(fdir))
-    print("|".join([name, fam_name, src["git"], commit_of(name, src_name, src), defconfig, ",".join(frags), series_pin]))
+    # The board's kernel patches (PR A7RAILS): Gaia takes a board's list in place of the family's (board.rs merge). Its
+    # `file` entries are patches beside the board (or the family): applied after the series, in the list's order.
+    kp_list = bk.get("patches", fk.get("patches")) or []
+    kp_base = bdir if "patches" in bk else fdir
+    extra = [os.path.normpath(os.path.join(kp_base, e["file"])) for e in kp_list if isinstance(e, dict) and "file" in e]
+    # The series pin is "url commit" (a space: the row's own separator is `|`, which the pin used to carry).
+    series_pin = series_pin.replace("|", " ")
+    print("|".join([name, fam_name, src["git"], commit_of(name, src_name, src), defconfig, ",".join(frags), series_pin, ",".join(extra), bdir]))
 PY
 }
 
@@ -208,10 +215,10 @@ PY
 # A kernel fragment line that is only "#" is refused by file and line, before any kernel is fetched: Gaia's build
 # chokes on it (PR B29). Replace the line with an empty one. Checked on every fragment a board reads.
 bare_marker_check() {
-  local bad=0 row name fam url ref defconfig frags series_pin f num
+  local bad=0 row name fam url ref defconfig frags series_pin extra bdir f num
   local -a fa
   while IFS= read -r row; do
-    IFS='|' read -r name fam url ref defconfig frags series_pin <<<"$row"
+    IFS='|' read -r name fam url ref defconfig frags series_pin extra bdir <<<"$row"
     [[ $fam == SKIP ]] && continue
     IFS=',' read -ra fa <<<"$frags"
     for f in "${fa[@]}"; do
@@ -268,7 +275,7 @@ fetch_pin() {
 }
 
 while IFS= read -r row; do
-  IFS='|' read -r name fam url ref defconfig frags series_pin <<<"$row"
+  IFS='|' read -r name fam url ref defconfig frags series_pin extra bdir <<<"$row"
   if [[ $fam == SKIP && $url == NO-DEFCONFIG ]]; then
     die "$name: its kernel states no \`defconfig\` (board.toml or the family's [kernel]). Buildroot cannot build a kernel without a starting configuration; state it."
   fi
@@ -290,36 +297,56 @@ while IFS= read -r row; do
     echo "$url $ref" > "$src/.pin"
   fi
   res=$src
-  if [[ -n ${series_pin:-} ]]; then
-    surl=${series_pin%%|*}; sref=${series_pin#*|}
-    fam_key=$(printf '%s %s %s' "$url" "$ref" "$surl $sref" | sha256sum | cut -c1-16)
+  if [[ -n ${series_pin:-} || -n ${extra:-} ]]; then
+    surl=""; sref=""
+    if [[ -n ${series_pin:-} ]]; then surl=${series_pin% *}; sref=${series_pin##* }; fi
+    fam_key=$(printf '%s %s %s %s' "$url" "$ref" "$surl $sref" "$extra" | sha256sum | cut -c1-16)
     if [[ -z ${patched[$fam_key]:-} ]]; then
-      skey=$(printf '%s %s' "$surl" "$sref" | sha256sum | cut -c1-16)
-      ssrc=$cache/series-$skey/src
-      if [[ ! -f $ssrc/.pin ]]; then
-        echo "check-kernel-fragments: fetching $name's patch series: $surl at $sref" >&2
-        rm -rf "$cache/series-$skey"; mkdir -p "$ssrc"
-        if ! fetch_pin "$ssrc" "$surl" "$sref" 2>"$scratch/series-fetch.err"; then
-          cat "$scratch/series-fetch.err" >&2
-          rm -rf "$cache/series-$skey"
-          die "$name: CANNOT FETCH the patch series $surl at $sref. This FAILS in CI too."
-        fi
-        echo "$surl $sref" > "$ssrc/.pin"
-      fi
       pdir=$scratch/patched-$fam_key
-      echo "check-kernel-fragments: applying $name's patch series (the series' own method: patch -p1 --fuzz=0, in its order) to a copy of $url at $ref" >&2
+      echo "check-kernel-fragments: applying $name's kernel patches (the series, then the board's own) to a copy of $url at $ref" >&2
       rm -rf "$pdir"; cp -a "$src" "$pdir"
-      n=0
-      while IFS= read -r p; do
-        [[ -z $p ]] && continue
-        if ! { patch -d "$pdir" -p1 --fuzz=0 --batch --forward --dry-run -s < "$ssrc/patches/$p" && patch -d "$pdir" -p1 --fuzz=0 --batch --forward --no-backup-if-mismatch -s < "$ssrc/patches/$p"; } >"$scratch/patch.out" 2>&1; then
-          echo "check-kernel-fragments: FAIL $name: patch $p (number $((n + 1)) of the series) does not apply to $ref:" >&2
-          sed 's/^/    /' "$scratch/patch.out" >&2
-          die "$name: the patch series does not apply to $ref (see above)"
+      if [[ -n $surl ]]; then
+        skey=$(printf '%s %s' "$surl" "$sref" | sha256sum | cut -c1-16)
+        ssrc=$cache/series-$skey/src
+        if [[ ! -f $ssrc/.pin ]]; then
+          echo "check-kernel-fragments: fetching $name's patch series: $surl at $sref" >&2
+          rm -rf "$cache/series-$skey"; mkdir -p "$ssrc"
+          if ! fetch_pin "$ssrc" "$surl" "$sref" 2>"$scratch/series-fetch.err"; then
+            cat "$scratch/series-fetch.err" >&2
+            rm -rf "$cache/series-$skey"
+            die "$name: CANNOT FETCH the patch series $surl at $sref. This FAILS in CI too."
+          fi
+          echo "$surl $sref" > "$ssrc/.pin"
         fi
-        n=$((n + 1))
-      done < <(awk '{ sub(/[[:space:]]*#.*/, "") } /[^[:space:]]/' "$ssrc/patches/series")
-      echo "check-kernel-fragments: $name's patch series applied: $n patches, 0 failed" >&2
+        n=0
+        while IFS= read -r p; do
+          [[ -z $p ]] && continue
+          if ! { patch -d "$pdir" -p1 --fuzz=0 --batch --forward --dry-run -s < "$ssrc/patches/$p" && patch -d "$pdir" -p1 --fuzz=0 --batch --forward --no-backup-if-mismatch -s < "$ssrc/patches/$p"; } >"$scratch/patch.out" 2>&1; then
+            echo "check-kernel-fragments: FAIL $name: patch $p (number $((n + 1)) of the series) does not apply to $ref:" >&2
+            sed 's/^/    /' "$scratch/patch.out" >&2
+            die "$name: the patch series does not apply to $ref (see above)"
+          fi
+          n=$((n + 1))
+        done < <(awk '{ sub(/[[:space:]]*#.*/, "") } /[^[:space:]]/' "$ssrc/patches/series")
+        echo "check-kernel-fragments: $name's patch series applied: $n patches, 0 failed" >&2
+      fi
+      # The board's own patches, after the series, in the order its kernel.patches lists them (PR A7RAILS).
+      if [[ -n ${extra:-} ]]; then
+        IFS=',' read -ra xs <<<"$extra"
+        for x in "${xs[@]}"; do
+          [[ -f $x ]] || die "$name: its kernel patch ${x#$devices/} is missing"
+          if ! { patch -d "$pdir" -p1 --fuzz=0 --batch --forward --dry-run -s < "$x" && patch -d "$pdir" -p1 --fuzz=0 --batch --forward --no-backup-if-mismatch -s < "$x"; } >"$scratch/patch.out" 2>&1; then
+            sed 's/^/    /' "$scratch/patch.out" >&2
+            die "$name: the board's kernel patch ${x#$devices/} does not apply after the series (see above)"
+          fi
+          echo "check-kernel-fragments: $name: applied ${x#$devices/} after the series, 0 failed" >&2
+        done
+        # Facts verified against the patched tree (PR A7RAILS): the recorded facts must be what the built kernel says.
+        if [[ -n $bdir && -f $bdir/kernel/post-patch-facts.txt ]]; then
+          python3 -I "$repo/scripts/check-board-facts.py" "$pdir" "$bdir" >&2 \
+            || die "$name: its recorded facts do not match the kernel built with its patches (see above)"
+        fi
+      fi
       patched[$fam_key]=$pdir
     fi
     res=${patched[$fam_key]}
