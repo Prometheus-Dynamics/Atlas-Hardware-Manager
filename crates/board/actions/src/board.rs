@@ -286,11 +286,22 @@ impl BoardActions {
                 Ok(Seen::Doing(progress)) => on_progress(&progress),
                 Ok(Seen::Ended(finished)) => {
                     let result = ended(finished);
+                    let on_issuing_session = self.handle.session() == issued.session;
                     let done = match (hold, result) {
                         (Some(hold), Err(error)) if hold.lapsed() => {
                             return Err(ActionError::HoldLapsed {
                                 call,
                                 reason: error.to_string(),
+                            });
+                        }
+                        // An end read on a later session is not trusted, failure or cancel alike:
+                        // a cancel confirmed from another session's answer is not a confirmed cancel.
+                        (_, Err(error)) if !on_issuing_session => {
+                            return Err(ActionError::Unconfirmed {
+                                call,
+                                reason: format!(
+                                    "the run ended as `{error}`, which the node said on a later session"
+                                ),
                             });
                         }
                         (_, result) => result?,

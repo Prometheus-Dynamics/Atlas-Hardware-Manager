@@ -507,6 +507,46 @@ async fn a_run_started_on_an_earlier_session_is_not_cancelled_blind() {
 }
 
 #[tokio::test]
+async fn a_cancel_read_on_a_later_session_is_not_a_confirmed_cancel() {
+    // The cancel is sent on the session the run was started on. The session then goes and comes
+    // back before the run's end is read: the end the node gives for that number is not trusted as
+    // this run's cancel, so the follow reports the outcome as unknown, never as Cancelled.
+    let rig = Rig::start("cancel-confirm", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let handle = rig
+        .sessions
+        .handle(&rig.address)
+        .expect("the node is on");
+    connected(&handle).await;
+    let board = BoardActions::new(handle);
+    let issued = board
+        .start(self_test, &[])
+        .await
+        .expect("the run starts");
+    until("the run to stall", || rig.node.stalled_runs() == 1).await;
+    board.cancel(&issued).await.expect("the cancel is sent on the session it started on");
+
+    let text = rig.address.to_string();
+    rig.sessions.turn_off(&text);
+    rig.sessions.turn_on(&text);
+    let handle = rig
+        .sessions
+        .handle(&rig.address)
+        .expect("the node is on again");
+    connected(&handle).await;
+
+    let read = BoardActions::new(handle)
+        .follow(&issued, atlas_actions::any_answer, |_| {})
+        .await;
+    assert!(
+        matches!(read, Err(ActionError::Unconfirmed { .. })),
+        "a cancel read on a later session is unknown, not confirmed: {read:?}"
+    );
+}
+
+#[tokio::test]
 async fn a_start_the_node_does_not_confirm_is_not_sent_again() {
     // A call's wait of one second: the blocked monitor makes the start's answer late.
     let node = start(&scratch("inflight").join("node"), &lemnos_kind());
