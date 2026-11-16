@@ -1,0 +1,194 @@
+From cec365a5341ce9648e4f7bdc8c7a728c350d4a9e Mon Sep 17 00:00:00 2001
+From: "Claude Haiku 5.5" <a@b>
+Date: Mon, 16 Nov 2026 06:42:00 -0700
+Subject: [PATCH] rv1126b: align the Aura U-Boot data with the vendor SDK:
+ UART0 console, pin groups (7 of 7)
+
+Aligns the Aura's U-Boot data with the vendor Aura SDK (Luckfox_Aura_SDK_202611, verified by
+sha256 against aura-files.sha256; the files are in gaia-bsp-aura/aura/):
+- Console is UART0 on M0 (uart0m0_xfer_pins), not UART2. The vendor U-Boot sets
+  chosen stdout-path = &uart0 (aura/uboot/rv1126b-u-boot.dtsi lines 19-20) and the debug UART base is
+  0x20810000 (aura/uboot/rv1126b_defconfig lines 161-163); the Aura kernel dts's earlycon is the same
+  (aura/kernel-dts/rv1126b-luckfox-aura.dts bootargs line 21). The defconfig's CONFIG_DEBUG_UART_BASE
+  moves to 0x20810000; baud stays 1500000 (defconfig line 160, the same as the vendor).
+- The SoC node set and pin groups are the kernel series' (rv1126b.dtsi gains uart0; rv1126b-pinctrl.dtsi
+  gains the Aura's pmic, usb, uart0, eth_clk_25m and sdmmc0_pwren groups, from the vendor dtsi and pinctrl
+  at the lines the kernel series' commit cites).
+- rv1126b-u-boot.dtsi tags uart0 and uart0m0 for SPL, not uart2.
+- The U-Boot board dts uses uart0 for stdout and serial0.
+Built: spl/u-boot-spl.bin and u-boot.bin, clean build, zero warnings (after this patch).
+
+Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>
+---
+ arch/arm/dts/rv1126b-luckfox-aura.dts  | 13 +++---
+ arch/arm/dts/rv1126b-pinctrl.dtsi      | 57 ++++++++++++++++++++++++++
+ arch/arm/dts/rv1126b-u-boot.dtsi       |  6 +--
+ arch/arm/dts/rv1126b.dtsi              | 11 +++++
+ configs/luckfox-aura-rv1126b_defconfig |  2 +-
+ 5 files changed, 79 insertions(+), 10 deletions(-)
+
+diff --git a/arch/arm/dts/rv1126b-luckfox-aura.dts b/arch/arm/dts/rv1126b-luckfox-aura.dts
+index 52ca4bd6..13c24cfe 100644
+--- a/arch/arm/dts/rv1126b-luckfox-aura.dts
++++ b/arch/arm/dts/rv1126b-luckfox-aura.dts
+@@ -18,19 +18,20 @@
+ 
+ 	aliases {
+ 		mmc0 = &sdmmc0;
+-		serial2 = &uart2;
++		serial0 = &uart0;
+ 	};
+ 
+ 	chosen {
+-		stdout-path = "serial2:1500000n8";
++		/* uart0, 1500000: the vendor U-Boot stdout (rv1126b-u-boot.dtsi 19-20, defconfig CONFIG_BAUDRATE) */
++		stdout-path = "serial0:1500000n8";
+ 	};
+ };
+ 
+-/* Console: UART2 on M0 (the Aura schematic's DEBUG block: NLUART20TX0M0 / RX0M0 / CTSN0M0 /
+- * RTSN0M0, the uart2m0 groups). Baud 1500000 as the vendor EVB debug UART (UNVERIFIED on the bench). */
+-&uart2 {
++/* Console: UART0 on M0 (vendor: uart0m0_xfer_pins, rv1126b-pinctrl.dtsi). The schematic's DEBUG nets are
++ * named NLUART20TX0M0 / NLUART20RX0M0, which read as UART0 TX/RX on M0 (UNVERIFIED against the pads). */
++&uart0 {
+ 	pinctrl-names = "default";
+-	pinctrl-0 = <&uart2m0_xfer_pins>;
++	pinctrl-0 = <&uart0m0_xfer_pins>;
+ 	status = "okay";
+ };
+ 
+diff --git a/arch/arm/dts/rv1126b-pinctrl.dtsi b/arch/arm/dts/rv1126b-pinctrl.dtsi
+index dac97746..29bc5ef1 100644
+--- a/arch/arm/dts/rv1126b-pinctrl.dtsi
++++ b/arch/arm/dts/rv1126b-pinctrl.dtsi
+@@ -202,3 +202,60 @@
+ 		};
+ 	};
+ };
++
++/*
++ * Aura groups from the vendor Aura dtsi (rv1126b-luckfox-aura.dtsi, Rockchip SDK 202611, the
++ * "pmic" and "usb" nodes at 674-691, and the sdmmc0_pwren node in the board dts at 97-101), and the
++ * vendor pinctrl for uart0m0 (rv1126b-pinctrl.dtsi 2038-2045) and eth_clk_25m (397-403). Pin numbers
++ * as the vendor writes them. TRM not read; UNTESTED ON BOARD.
++ */
++&pinctrl {
++	/* vendor rv1126b-pinconf.dtsi 616-619 */
++	pcfg_output_high: pcfg-output-high {
++		output-high;
++	};
++
++	pmic {
++		pmic_int: pmic-int {
++			rockchip,pins = <0 RK_PC0 RK_FUNC_GPIO &pcfg_pull_up>;
++		};
++
++		soc_pwrctrl_reset: soc-pwrctrl-reset {
++			rockchip,pins = <0 RK_PC1 RK_FUNC_GPIO &pcfg_output_high>;
++		};
++	};
++
++	usb {
++		typec5v_pwren: typec5v-pwren {
++			rockchip,pins = <0 RK_PC6 RK_FUNC_GPIO &pcfg_pull_none>;
++		};
++
++		vcc5v0_host_en: vcc5v0-host-en {
++			rockchip,pins = <0 RK_PC4 RK_FUNC_GPIO &pcfg_pull_none>;
++		};
++	};
++
++	uart0 {
++		uart0m0_xfer_pins: uart0m0-xfer-pins {
++			rockchip,pins =
++				/* uart0_rx_m0 */
++				<2 RK_PA0 2 &pcfg_pull_up>,
++				/* uart0_tx_m0 */
++				<2 RK_PA1 2 &pcfg_pull_up>;
++		};
++	};
++
++	eth_clk_25m {
++		eth_clk_25mm0_out_pins: eth-clk-25mm0-out-pins {
++			rockchip,pins =
++				/* eth_clk_25m_out_m0 */
++				<6 RK_PC1 2 &pcfg_pull_none_drv_level_3_75>;
++		};
++	};
++
++	sdmmc0 {
++		sdmmc0_pwren: sdmmc0-pwren {
++			rockchip,pins = <0 RK_PB2 RK_FUNC_GPIO &pcfg_pull_down>;
++		};
++	};
++};
+diff --git a/arch/arm/dts/rv1126b-u-boot.dtsi b/arch/arm/dts/rv1126b-u-boot.dtsi
+index 2df7657b..7a2b9076 100644
+--- a/arch/arm/dts/rv1126b-u-boot.dtsi
++++ b/arch/arm/dts/rv1126b-u-boot.dtsi
+@@ -38,7 +38,7 @@
+ 	bootph-all;
+ };
+ 
+-&uart2 {
++&uart0 {
+ 	bootph-all;
+ };
+ 
+@@ -46,7 +46,7 @@
+ 	bootph-all;
+ };
+ 
+-/* The pin groups and pull configs the SPL pinmux uses: the sdmmc0 and uart2 groups (see
++/* The pin groups and pull configs the SPL pinmux uses: the sdmmc0 and uart0 groups (see
+  * rv1126b-pinctrl.dtsi) and the pcfgs they reference. */
+ &sdmmc0_bus4_pins {
+ 	bootph-all;
+@@ -64,7 +64,7 @@
+ 	bootph-all;
+ };
+ 
+-&uart2m0_xfer_pins {
++&uart0m0_xfer_pins {
+ 	bootph-all;
+ };
+ 
+diff --git a/arch/arm/dts/rv1126b.dtsi b/arch/arm/dts/rv1126b.dtsi
+index 81d72b46..fa5be31b 100644
+--- a/arch/arm/dts/rv1126b.dtsi
++++ b/arch/arm/dts/rv1126b.dtsi
+@@ -258,6 +258,17 @@
+ 		};
+ 	};
+ 
++	uart0: serial@20810000 {
++		compatible = "rockchip,rv1126b-uart", "snps,dw-apb-uart";
++		reg = <0x20810000 0x100>;
++		interrupts = <GIC_SPI 56 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&cru SCLK_UART0>, <&cru PCLK_UART0>;
++		clock-names = "baudclk", "apb_pclk";
++		reg-shift = <2>;
++		reg-io-width = <4>;
++		status = "disabled";
++	};
++
+ 	uart2: serial@21170000 {
+ 		compatible = "rockchip,rv1126b-uart", "snps,dw-apb-uart";
+ 		reg = <0x21170000 0x100>;
+diff --git a/configs/luckfox-aura-rv1126b_defconfig b/configs/luckfox-aura-rv1126b_defconfig
+index 0c3252e5..cd54aa5c 100644
+--- a/configs/luckfox-aura-rv1126b_defconfig
++++ b/configs/luckfox-aura-rv1126b_defconfig
+@@ -18,7 +18,7 @@ CONFIG_SPL_LIBGENERIC_SUPPORT=y
+ CONFIG_DM_RESET=y
+ CONFIG_SPL_DM_RESET=y
+ CONFIG_DEBUG_UART=y
+-CONFIG_DEBUG_UART_BASE=0x21170000
++CONFIG_DEBUG_UART_BASE=0x20810000
+ CONFIG_DEBUG_UART_CLOCK=24000000
+ CONFIG_DEBUG_UART_SHIFT=2
+ CONFIG_BAUDRATE=1500000
+-- 
+2.56.0
+
