@@ -68,7 +68,11 @@ jobs:
           path: ~/.cache/atlas/gaia-store
           key: gaia-store-${{ runner.os }}-${{ hashFiles('devices/gaia.lock', 'devices/families/*/family.toml', 'devices/boards/*/board.toml', 'devices/products/*/gaia.lock') }}
           restore-keys: gaia-store-${{ runner.os }}-
+      # The gate's scratch (TMPDIR) goes in the runner's temp dir: a short path, so the test stubs' Unix sockets fit
+      # sun_path (gate.sh refuses a TMPDIR that leaves no room; PR G12). The checkout path is too long for that.
       - run: ./scripts/gate.sh
+        env:
+          ATLAS_SCRATCH_ROOT: ${{ runner.temp }}
       - uses: actions/cache/save@v4
         if: always() && steps.kernel-cache.outputs.cache-hit != 'true'
         with:
