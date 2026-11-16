@@ -263,6 +263,8 @@ pub struct SimNode {
     shared: Shared,
     node: Option<JoinHandle<()>>,
     proxy: Option<JoinHandle<()>>,
+    /// The directory given by [`SimNode::start_owned`], removed after the node stops (declared last).
+    owned: Option<atlas_types::socket::NodeDir>,
 }
 
 impl SimNode {
@@ -276,13 +278,15 @@ impl SimNode {
     }
 
     /// Starts a simulated Orion node in `dir`, which is created if it is missing. Its socket lives
-    /// there, so the path must stay short enough for a Unix socket. `kind` says whether it runs
+    /// there, so the path must stay short enough for a Unix socket: make `dir` with
+    /// [`atlas_types::socket::node_dir`], which is short whatever the name. `kind` says whether it runs
     /// Lemnos ([`Kind::WithLemnos`], publishing that hello) or is plain Orion ([`Kind::Plain`]).
     /// It listens on `port` (any free port when `None`).
     ///
     /// # Errors
     ///
-    /// If the directory cannot be made, the port cannot be taken, or the node logic cannot
+    /// If the socket path in `dir` is too long for a Unix socket (named in the error, nothing is
+    /// bound), the directory cannot be made, the port cannot be taken, or the node logic cannot
     /// connect to the comm core or declare its facts.
     pub fn start_with(dir: &Path, kind: &Kind, port: Option<u16>) -> Result<Self, String> {
         Self::start_inner(dir, kind, port, Security::Off)
@@ -299,6 +303,22 @@ impl SimNode {
     /// As [`SimNode::start_with`].
     pub fn start_secured(dir: &Path, kind: &Kind, port: Option<u16>) -> Result<Self, String> {
         Self::start_inner(dir, kind, port, Security::On)
+    }
+
+    /// As [`SimNode::start_with`], for a directory made by [`atlas_types::socket::node_dir`]: the
+    /// directory is removed when the node drops, panics included.
+    ///
+    /// # Errors
+    ///
+    /// As [`SimNode::start_with`].
+    pub fn start_owned(
+        dir: atlas_types::socket::NodeDir,
+        kind: &Kind,
+        port: Option<u16>,
+    ) -> Result<Self, String> {
+        let mut node = Self::start_inner(&dir, kind, port, Security::Off)?;
+        node.owned = Some(dir);
+        Ok(node)
     }
 
     /// The trust list's state for `key`: `None` when the board holds no record of it.
@@ -346,6 +366,10 @@ impl SimNode {
         port: Option<u16>,
         security: Security,
     ) -> Result<Self, String> {
+        // The stub panics inside its own thread when the socket path is too long: refuse here, typed,
+        // before anything is made or bound.
+        atlas_types::socket::check_socket_path(&dir.join(atlas_types::socket::NODE_SOCKET))
+            .map_err(|error| error.to_string())?;
         std::fs::create_dir_all(dir).map_err(|error| format!("{}: {error}", dir.display()))?;
         let board = Arc::new(Board::start_with(
             dir,
@@ -404,6 +428,7 @@ impl SimNode {
             shared,
             node: Some(node),
             proxy: Some(proxy),
+            owned: None,
         })
     }
 
