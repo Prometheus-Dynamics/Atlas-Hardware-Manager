@@ -43,3 +43,18 @@ fragments = ["kernel/bench.fragment"]
 # LPDDR type of the package): the table's name is the only source. From the SDK, unconfirmed until first boot.
 #
 # Slots: the uboot record, env in the device form (assets/uboot-bench.fragment; values in lemnos-board.toml.pending).
+
+# PAD TABLE (K1, 2026-11-16): PRECONDITION. The SDK's BPI boot chain (arch/riscv/dts/k230d_canmv_bpi.dts:61-171, applied
+# pre-relocation, so in SPL) writes ONE iomux table to nearly every pad, including the bank-voltage mode: IO2-63 at 3V3,
+# IO0-1 at 1V8 (the defines at dts:27-32). The file warns: "Please pay attention to the bank voltage! will damage the
+# chip" (dts:65). That table is the BPI Zero's. Nothing on disk says what the AI-CAM supplies or wires. So the AI-CAM's
+# pad table and bank voltages must come from the AI-CAM's own data (its schematic, or the vendor AI-CAM firmware or dts if
+# published). They must never be the Zero's table carried over. Until that data exists, no AI-CAM image may be built.
+# Unknown pads stay inputs with no output enable (the drop_pins form, k230d.dtsi:51-69), not copied from the Zero.
+#
+# This [pads] block is read by scripts/check-devices.sh (pads_rule). It is marked as derived from the Zero, so the rule
+# refuses any product on this board today. Clear it only with the AI-CAM's own source and bank voltages.
+[pads]
+source = "SDK BPI Zero table, arch/riscv/dts/k230d_canmv_bpi.dts:61-171 (copied, NOT the AI-CAM's own)"
+derived_from_board = "bpi-canmv-k230d-zero"
+bank_voltages = {}
