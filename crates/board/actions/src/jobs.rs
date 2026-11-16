@@ -41,7 +41,7 @@ use serde::{Deserialize, Serialize};
 use tokio::time::{self, timeout};
 
 use crate::args;
-use crate::board::{BoardActions, Issued, Progress, any_answer};
+use crate::board::{BoardActions, Followed, Issued, Progress, any_answer};
 use crate::catalog::Action;
 use crate::error::ActionError;
 
@@ -219,9 +219,19 @@ impl JobKind for ActionKind {
             })
             .await;
         match followed {
-            Ok(_) => {
+            Ok(Followed::Confirmed(_)) => {
                 self.forget(&spec.nonce);
                 Ok(())
+            }
+            // The run was started on an earlier session, and its end is the node's answer for a
+            // number that may have been used again. It is not trusted: the job ends as unknown,
+            // never as done.
+            Ok(Followed::Reconnected(_)) => {
+                self.forget(&spec.nonce);
+                Err(DriverError::Unknown(format!(
+                    "the outcome of {} is unknown after a reconnect: the run was started on an earlier session",
+                    spec.name
+                )))
             }
             // The run is still on the board: the next attempt follows it.
             Err(error @ ActionError::Lost { .. }) => {
@@ -237,6 +247,11 @@ impl JobKind for ActionKind {
                     }
                 });
                 Err(DriverError::Unreachable(error.to_string()))
+            }
+            // The run's end was read on a later session and is not trusted: the outcome is unknown.
+            Err(error @ ActionError::Unconfirmed { .. }) => {
+                self.forget(&spec.nonce);
+                Err(DriverError::Unknown(error.to_string()))
             }
             // The board's own answer: the job ends with its words.
             Err(error) => {
@@ -378,7 +393,10 @@ impl ActionJobs {
         }
         match timeout(CANCEL_CONFIRM, board.follow(issued, any_answer, |_| {})).await {
             Ok(Err(ActionError::Cancelled(_))) => CancelState::Confirmed,
-            Ok(Ok(_)) => {
+            Ok(Ok(Followed::Reconnected(_))) => CancelState::NotConfirmed(format!(
+                "the outcome of run {call} is unknown after a reconnect"
+            )),
+            Ok(Ok(Followed::Confirmed(_))) => {
                 CancelState::NotConfirmed("the run finished before the cancel took effect".into())
             }
             Ok(Err(other)) => CancelState::NotConfirmed(other.to_string()),

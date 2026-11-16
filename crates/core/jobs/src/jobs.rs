@@ -83,6 +83,11 @@ pub enum JobStatus {
     Paused,
     /// Every step finished.
     Done,
+    /// The outcome of a step is not known, so the job is neither done nor failed: the reason says
+    /// what would settle it. Nothing is tried again by the job.
+    Unknown {
+        reason: String,
+    },
     /// A step got a settled answer (refused or unsupported). The job ends with that reason.
     Failed {
         reason: String,
@@ -99,7 +104,11 @@ impl JobStatus {
     fn is_finished(&self) -> bool {
         matches!(
             self,
-            Self::Done | Self::Cancelled | Self::Failed { .. } | Self::Interrupted { .. }
+            Self::Done
+                | Self::Cancelled
+                | Self::Failed { .. }
+                | Self::Interrupted { .. }
+                | Self::Unknown { .. }
         )
     }
 }
@@ -604,6 +613,17 @@ async fn run_job(inner: Arc<Inner>, id: JobId, mut command: watch::Receiver<Comm
                 if let Some(job) = inner.set(id, |job| job.completed += 1) {
                     inner.announce(job).await;
                 }
+            }
+            Some(Err(error)) if error.is_unknown() => {
+                inner
+                    .status(
+                        id,
+                        JobStatus::Unknown {
+                            reason: error.to_string(),
+                        },
+                    )
+                    .await;
+                return;
             }
             Some(Err(error)) if error.is_settled() => {
                 inner

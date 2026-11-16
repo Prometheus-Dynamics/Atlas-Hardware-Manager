@@ -432,13 +432,14 @@ async fn a_session_lost_during_a_long_action_is_followed_and_never_started_again
         .expect("the node is on again");
     connected(&handle).await;
 
-    // The run ends (the service restarts): the followed run's own result reaches the job.
+    // The run ends (the service restarts). The run was started on an earlier session, so its end is
+    // not trusted as this job's outcome: the job ends as unknown, never as done or failed.
     rig.node.restart_daemon();
     wait_status(
         &jobs,
         id,
-        "the followed run's result",
-        |status| matches!(status, JobStatus::Failed { reason } if reason == RESTARTED),
+        "the job's outcome to be unknown after the reconnect",
+        |status| matches!(status, JobStatus::Unknown { reason } if reason.contains("reconnect")),
     )
     .await;
     assert_eq!(
