@@ -566,7 +566,8 @@ async fn the_signature_outcome_of_an_installed_slot_is_not_checked_when_unsigned
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_install_interrupted_by_a_replaced_board_stays_unknown_and_sends_nothing_to_the_other() {
+async fn an_install_interrupted_by_a_replaced_board_is_unknown_or_failed_and_sends_nothing_to_the_other()
+ {
     let rig = Rig::start("replaced").await;
     rig.node.hold_installs(true);
     let path = write_bundle(
@@ -599,28 +600,31 @@ async fn an_install_interrupted_by_a_replaced_board_stays_unknown_and_sends_noth
             .expect("the replacement node starts on the same port");
     // Keep the relay alive for the whole test.
     let _relay = relay;
-    // The replaced board's list cannot be read, so no read decides the install: it is shown as unknown
-    // while the list is checked, and it is not failed on that evidence alone (the run may still be on
-    // the first node). The sim's one generous bound only checks that it is shown at once.
-    let unknown = tokio::time::timeout(DEADLINE, async {
+    // The replaced board is seen by the install's list read, which may come before or after the
+    // install is shown as unknown. Either is right: unknown while the list is checked, or failed on the
+    // replacement (positive evidence). It is never done, and nothing is sent to the other board.
+    let settled = tokio::time::timeout(DEADLINE, async {
         while !installs
             .stage(job)
-            .is_some_and(|stage| matches!(stage, Stage::Unknown { .. }))
+            .is_some_and(|stage| matches!(stage, Stage::Unknown { .. } | Stage::Failed { .. }))
         {
             tokio::time::sleep(Duration::from_millis(5)).await;
         }
     })
     .await;
     assert!(
-        unknown.is_ok(),
-        "the install is not shown as unknown: {:?}",
+        settled.is_ok(),
+        "the install is neither unknown nor failed on the replacement: {:?}",
         installs.stage(job)
     );
-    assert!(
-        !installs.stage(job).is_some_and(|stage| stage.is_final()),
-        "unknown is not final while a read can decide: {:?}",
-        installs.stage(job)
-    );
+    match installs.stage(job) {
+        Some(Stage::Unknown { .. }) => {}
+        Some(Stage::Failed { reason }) => assert!(
+            reason.contains("replaced"),
+            "the failure names the replacement: {reason}"
+        ),
+        other => panic!("the install must not be done or cancelled here: {other:?}"),
+    }
     assert_eq!(
         replacement.runs_started(names::SLOTS_ACCEPT),
         0,

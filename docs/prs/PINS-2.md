@@ -55,8 +55,9 @@ Atlas's Lemnos pin does not move, so the lock names one Lemnos rev per package (
        `a_follow_cut_by_a_lost_connection_is_not_repeated_by_number_and_the_list_decides`: the install is shown
        `Unknown` (not `WaitingForBoard`), and once the board finishes, the list shows the slot.
      - `an_install_interrupted_by_a_replaced_board_ends_and_sends_nothing_to_the_other` is renamed
-       `..._stays_unknown_and_sends_nothing_to_the_other`: the replaced board's list is unreadable, so the install
-       stays `Unknown` (not `Failed(REPLACED)`), and still sends nothing to the other board.
+       `..._is_unknown_or_failed_and_sends_nothing_to_the_other`. The install is `Unknown` while the list is checked,
+       or `Failed` on the replacement (`REPLACED`) once the list read sees it, which depends on timing; either is
+       accepted. It is never done, and it sends nothing to the other board.
      - The cycle test's refusal-after-restart (step 7c, exit 1) may change; see the gate result.
      - With a handle on a later pin the first of these returns to a follow by handle.
    - **Known limit (not built here):** nothing is persisted. After an Atlas restart a running board job cannot be
