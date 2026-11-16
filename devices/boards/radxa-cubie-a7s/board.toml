@@ -11,6 +11,10 @@ description = "Radxa Cubie A7S (Allwinner A733), candidate sources, untested on 
 # the USB-C ports (see the notes below). candidate, UNVERIFIED.
 [kernel]
 device_tree = "allwinner/sun60i-a733-cubie-a7s"
+# The board's own kernel patches. Gaia appends them to the family's list (the DockSeed series, sun60i family.toml [kernel]):
+# the effective list is the family's entries, then this one. Our correction (kernel/a7s-rails.patch; recorded edits in
+# kernel/edits.toml). Applied with patch -p1 --fuzz=0 after the series.
+patches = [{ file = "kernel/a7s-rails.patch" }]
 
 # U-Boot defconfig: radxa-cubie-a7s_defconfig in radxa/u-boot @ 9da4b3e8 (its CONFIG_DEFAULT_DEVICE_TREE is
 # sun60i-a733-cubie-a7s). UNVERIFIED, never booted.
@@ -40,3 +44,11 @@ SUNXI_LIBDRAM = { source = "dlan17-pkg", path = "awbin/a733/ddr.bin" }
 #
 # LED: the blue status LED is PJ26 (the series' gpio-leds; "PJ26" is in its comment). Radxa's page says it blinks
 # during a normal boot. The bring-up board (cubie-a7-bringup, deleted in PADS: a copy of this board) set it to the heartbeat trigger.
+
+# FIRST-BOOT RECORD (required, PR A7RAILS; docs/research/a7s-rail-voltages.md section 11). The first boot of an A7S image
+# reads, read-only, the regulator summary and each /sys/class/regulator/*/microvolts, and the pin bank modes (POW_MOD_SEL and
+# each bank's vcc-p* supply read-back). The result is recorded in the boot log and the pads.toml statements are then updated
+# as "measured on board, our image <sha>, <date>". No stock-image boot or meter is asked for.
+# Recorded edits to the series (the rails this board's kernel leaves unprogrammed): kernel/edits.toml. For Gaia's
+# unprogrammed_rails check, to be added when Gaia's rev with the key is pinned (not added now):
+#   unprogrammed_rails = ["aldo1", "bldo1", "dcdc1", "dcdc4"]

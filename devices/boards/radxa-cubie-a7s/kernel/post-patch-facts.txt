@@ -1,0 +1,66 @@
+# Facts the pad rule checks mechanically (scripts/check-devices.sh, pads_facts). Read from the tree the image builds
+# from: linux 7.3.3 (tarball sha256 79c66dde66cd96877fcde8f7d36aec946b1f423d2b97b5a7b1751b75c764f3d1) with the DockSeed
+# A7S series (379 patches in patches/series order, fe0a8ed) and kernel/a7s-rails.patch on top, each applied patch -p1 --fuzz=0.
+# The pinned kernel the gate builds is v7.3.4 (7595a62d); the sunxi pinctrl core and the A733 driver are identical there
+# after the same patches (checked: docs/research/a7s-rail-voltages.md section 4). Regenerate by hand from that tree.
+# Format: <key> <bank> <value>. Banks: PA PB PC PD PE PF PG PH PI PJ PK (main pio, index 0-10); PL PM are on r_pio.
+dts-sha256 5b972c738c67961ef8855d7d40429a4a29d3d4c4a052d2331608ee8878213a4a
+# pio-supply: the vcc-p* supply each main-pio bank declares in the shipped dts (none = no supply property).
+pio-supply PA none
+pio-supply PB swout2
+pio-supply PC cldo5
+pio-supply PD none
+pio-supply PE bldo1
+pio-supply PF swout2
+pio-supply PG aldo1
+pio-supply PH swout2
+pio-supply PI none
+pio-supply PJ none
+pio-supply PK bldo1
+# rpio-supply: r_pio (PL, PM). PL has none; PM is aldo1.
+rpio-supply PL none
+rpio-supply PM aldo1
+# io-bias: whether the driver writes this bank's withstand mode (io_bias_banks in pinctrl-sun60i-a733.c).
+io-bias PA no
+io-bias PB no
+io-bias PC yes
+io-bias PD no
+io-bias PE no
+io-bias PF no
+io-bias PG no
+io-bias PH yes
+io-bias PI no
+io-bias PJ no
+io-bias PK no
+# the r_pio controller (PL, PM) has no withstand variant (the series: a733-r description)
+io-bias PL no
+io-bias PM no
+# pio-ref: count of pin references to the bank (<&pio N ...>) in the shipped dts and its included dtsi (sun60i-a733.dtsi).
+pio-ref PA 0
+pio-ref PB 0
+pio-ref PC 1
+pio-ref PD 2
+pio-ref PE 0
+pio-ref PF 1
+pio-ref PG 0
+pio-ref PH 1
+pio-ref PI 0
+pio-ref PJ 1
+pio-ref PK 0
+# bank-pins: the SoC's pin count per bank (a733_nr_bank_pins in the series' pinctrl-sun60i-a733.c, as built).
+bank-pins PA 0
+bank-pins PB 11
+bank-pins PC 17
+bank-pins PD 24
+bank-pins PE 16
+bank-pins PF 7
+bank-pins PG 15
+bank-pins PH 20
+bank-pins PI 17
+bank-pins PJ 28
+bank-pins PK 26
+# range-required: these regulator nodes must stay ranges in the built dts (the unprogrammed rails; Gaia's unprogrammed_rails list)
+range-required aldo1 range
+range-required bldo1 range
+range-required dcdc1 range
+range-required dcdc4 range

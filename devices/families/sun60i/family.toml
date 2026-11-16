@@ -103,6 +103,9 @@ defconfig = "defconfig"
 fragments = ["assets/linux.fragment"]
 # The storage controller a slot boots from, built in (=y): the A733 SD and eMMC hosts (sunxi-mmc) (PR B26).
 storage_drivers = ["CONFIG_MMC_SUNXI"]
+# The DockSeed A7S series, applied first; a board's own patches follow it (Gaia appends a board list to the family's:
+# the effective list is the family's entries, then the board's). The same entry as pr/C1 (family.toml [kernel] patches).
+patches = [{ source = "a733-kernel-series", path = "patches" }]
 
 [bootloader]
 source = "u-boot"
