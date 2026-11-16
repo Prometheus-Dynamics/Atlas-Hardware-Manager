@@ -25,6 +25,34 @@ regeneration uses that Gaia binary (`/mnt/ssd-samsung/gaia/target/gaia-pr-patcha
 | BB1c: a `uboot` board without `lemnos_env_rev=1` refuses trials with NOT_PERMITTED and reports Degraded; `uboot_env_size` below 394 is refused | none in `devices/`: no board or product uses `record = "uboot"` yet (the Raze uses `tryboot`), and no board sets `uboot_env_size` | no device rule added: there is no subject to check. The image-side facts (the marker in `u-boot.bin`, the `uboot-env` partition, no FAT `uboot.env`) are for Gaia's image build and the first `uboot` board's description | none |
 | R1: status `TORN` (-4101) and `Error::StreamTorn` | none: Atlas links no `lemnos-client` and reads no stream frames. The only Lemnos crate Atlas links is `lemnos-slot-store` (the bundle format), which R1 does not touch | None | none |
 
+### Trial state for users (BB1c, the CLI; the app is not in this repository)
+
+- **Shared reading**: `crates/drivers/board-slots/src/trial_updates.rs`: `TrialBlock` (the five known reasons, and
+  `Unknown(as sent)`), `TrialUpdates` (`NotReported` / `Clear` / `Blocked`), `of_info`, `words`, `read`. One copy: the
+  cycle tool (`crates/tools/next/src/cycle.rs`) uses it too; its local copy is gone.
+- **The CLI, where a user looks**:
+  - `list` (`commands.rs` `list`): a line "this board cannot take trial updates: <reason>" when the board states a block;
+    nothing is shown for a clear board.
+  - `trial` (`commands.rs` `trial`): **refused up front** when the board states a block (`trial_refusal`), before
+    `Follower::open` and before any write, with the typed reason. An unknown value is shown as "unknown (as sent: …)".
+  - `install` (`commands.rs` `install`): **not refused**. The bay is written, as Lemnos BB1c says ("install still writes the
+    bays and says in its reply that the boot loader will not start the slot"). Before writing, the CLI prints the same
+    line and "the slot is installed, but the boot loader will not start it as a trial until the board takes trial updates".
+  - Today (before this change) an install onto a blocked board was attempted and succeeded, and a trial failed with the
+    board's own NOT_PERMITTED. That is (b). It is now (a) for the trial, and the install's note is up front.
+- **Open ruling**: the coordinator's brief asked for the install to be refused up front too. Lemnos's BB1c keeps the bay write
+  working (the slot is installed and can be trialled once the board takes trial updates), so this PR does not refuse the
+  install. If the install should be refused, say so and it is a one-line change in `install`.
+- **The board's own refusal** still handled: the trial's refusal from the board is reported as it always was.
+- **The app**: `apps/` is not in this repository, so the app's board view is not changed here. It should call the same
+  `trial_updates::read` and show `TrialUpdates::words()` on one line.
+- **Tests**: `board-slots/tests/slots.rs` (`trial_updates_read_each_known_block_as_its_typed_reason`,
+  `trial_updates_keep_an_unknown_block_as_sent_and_a_clear_or_absent_board_says_so`) on the sim board (`slot_set_trial_block`,
+  `slot_set_trial_updates_key`); unit tests in `trial_updates.rs` and in `commands.rs` (`trial_refusal_tests`).
+- **Image-side facts** (`lemnos_env_rev=1` in `u-boot.bin`, a `uboot-env` partition, no FAT `uboot.env`, `uboot_env_size` ≥ 394):
+  their subjects are the bench branches that use `record = "uboot"` (Z2, R1, C1). Each gains that device rule when it takes
+  this pin. Not added here.
+
 BRIDGE-BOUNCE and the missing refusal key are open on this pair (the second session after a gadget bounce can time out; there
 is no refusal key yet). Both come with the next pair. No image is built from this PR.
 
