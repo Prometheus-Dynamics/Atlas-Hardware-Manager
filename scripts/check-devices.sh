@@ -913,8 +913,18 @@ family_pad_state() {  # <family.toml> -> "true", "false:<reason>", "false:" (no 
     *) echo unstated ;;
   esac
 }
+family_bank_names() {  # <family.toml> <soc> -> the bank names the family lists for that SoC (space-separated), or nothing
+  local pf
+  pf=$(dirname "$1")/pads.toml
+  [[ -f $pf ]] || return 0
+  awk -v soc="$2" '
+    /^\[banks\./ { s = ($0 == "[banks." soc "]"); next }
+    /^\[/ { s = 0 }
+    s && /^names *=/ { gsub(/^names *= *"|" *$/, ""); print; exit }' "$pf"
+}
 pads_rule() {  # <devices dir>
-  local dev=$1 p b sec src derived bank name bname ff fam state reason applies out=""
+  local dev=$1 p b sec src derived bank name bname ff fam state reason applies soc names key val out=""
+  local n k v found bad
   while IFS= read -r p; do
     b=$(product_board "$p")
     [[ -n $b && -f $b ]] || continue
@@ -936,7 +946,7 @@ pads_rule() {  # <devices dir>
         if [[ ! -f $(dirname "$b")/pads.toml ]]; then continue; fi ;;
       true)
         if [[ ! -f $(dirname "$b")/pads.toml ]]; then
-          out+="FAIL $name: board $bname: its family's bootloader applies a pad table, and the board states none. Add its pads.toml with source, derived_from_board and bank_voltages"$'\n'
+          out+="FAIL $name: board $bname: its family's bootloader applies a pad table, and the board states none. Add its pads.toml with soc, source, derived_from_board and bank_voltages"$'\n'
           continue
         fi ;;
     esac
@@ -948,10 +958,23 @@ pads_rule() {  # <devices dir>
       if [[ -z $reason ]]; then
         out+="FAIL $name: board $bname's pads.toml says no pad table is applied but gives no pad_table_reason: state the evidence for both the bootloader and the kernel"$'\n'
       fi
+      # The kernel side of the statement, checked against the kernel fragments the image builds with (the family's and the
+      # board's). The resolved .config exists only after Gaia's build, so the check reads fragments, not the resolved config.
+      kopt=$(grep -E '^kernel_option *=' "$(dirname "$ff")/pads.toml" 2>/dev/null | sed -E 's/^kernel_option *= *"(.*)" *$/\1/' | head -1)
+      if [[ -z $kopt ]]; then
+        out+="FAIL $name: family $fam's pads.toml names no kernel_option, so board $bname's \"no table applied\" statement cannot be checked against the kernel"$'\n'
+      else
+        kfrags=()
+        while IFS= read -r f; do kfrags+=("$f"); done < <(fragments_of "$ff"; fragments_of "$b")
+        for f in ${kfrags[@]+"${kfrags[@]}"}; do
+          [[ -f $f ]] && grep -qE "^CONFIG_${kopt}=y\$" "$f" && out+="FAIL $name: board $bname states no pad table is applied, but ${f#"$dev/"} sets CONFIG_${kopt}=y: the statement is false, so the bank voltages are required"$'\n'
+        done
+      fi
       continue
     fi
     src=$(grep -E '^source *=' <<<"$sec" | sed -E 's/^source *= *"(.*)" *$/\1/' | head -1)
     derived=$(grep -E '^derived_from_board *=' <<<"$sec" | sed -E 's/^derived_from_board *= *"(.*)" *$/\1/' | head -1)
+    soc=$(grep -E '^soc *=' <<<"$sec" | sed -E 's/^soc *= *"(.*)" *$/\1/' | head -1)
     bank=$(grep -E '^bank_voltages *=' <<<"$sec" | grep -E '\{ *[A-Za-z0-9_-]+ *=' || true)
     if [[ -n $derived ]]; then
       out+="FAIL $name: board $bname's pad table is derived from board $derived, not its own: the bank voltages and pad modes are that board's, and another board's table can damage the chip (\"Please pay attention to the bank voltage! will damage the chip\"). Take the table from this board's own schematic or vendor dts"$'\n'
@@ -959,10 +982,35 @@ pads_rule() {  # <devices dir>
     if [[ -z $src ]]; then
       out+="FAIL $name: board $bname's pad table has no provenance: its pads.toml source is empty or missing, so nothing says where the table came from. Add the schematic or vendor dts it was read from"$'\n'
     fi
-    if [[ -z $bank ]]; then
-      out+="FAIL $name: board $bname's bank voltages are not stated: its pads.toml bank_voltages must name each bank the table drives (for example IO0_IO1 = \"1V8\"). A bank voltage is not inherited from another board"$'\n'
+    if [[ -z $soc ]]; then
+      out+="FAIL $name: board $bname's pads.toml names no soc, so the rule cannot know the SoC's full bank list"$'\n'
+      continue
     fi
-    # A range is accepted only for a bank that a named part switches, and only with both endpoints (1.8 V and 3.3 V).
+    names=$(family_bank_names "$ff" "$soc")
+    if [[ -z $names ]]; then
+      out+="FAIL $name: family $fam's pads.toml lists no banks for soc $soc: the family must give the SoC's full bank list ([banks.$soc] names)"$'\n'
+      continue
+    fi
+    if [[ -z $bank ]]; then
+      out+="FAIL $name: board $bname's bank voltages are not stated: its pads.toml must name every bank of $soc ($names): a voltage with its source, or \"fixed by hardware, per sheet N\""$'\n'
+      continue
+    fi
+    # Every bank of the SoC must be named, and nothing else: a missing bank and an unknown bank both refuse the image.
+    keys=$(grep -oE '[A-Za-z0-9_-]+ *= *"' <<<"$bank" | sed -E 's/ *= *"$//')
+    for n in $names; do
+      grep -qx -- "$n" <<<"$keys" || out+="FAIL $name: board $bname does not state bank $n of $soc: every bank needs a voltage with its source, or \"fixed by hardware, per sheet N\". The image is refused"$'\n'
+    done
+    for k in $keys; do
+      grep -qw -- "$k" <<<"$names" || out+="FAIL $name: board $bname names bank $k, which is not a bank of $soc ($names)"$'\n'
+    done
+    # The value forms: a voltage ("1.8V", "3.3V"), or fixed by hardware with the sheet cited.
+    while IFS= read -r kv; do
+      k=${kv%%=*}; k=${k// /}; v=${kv#*=}; v=${v#*\"}; v=${v%\"*}
+      if [[ $v =~ ^[0-9.]+V ]] || [[ $v =~ ^fixed\ by\ hardware,\ per\ sheet\ [0-9]+ ]] || [[ $v == *" to "* ]]; then :; else
+        out+="FAIL $name: board $bname's bank $k value \"$v\" is neither a voltage (for example 1.8V) nor \"fixed by hardware, per sheet N\""$'\n'
+      fi
+    done < <(grep -oE '[A-Za-z0-9_-]+ *= *"[^"]*"' <<<"$bank")
+    # A range is accepted only for a bank that a named part switches, and only with both endpoints (1.8V and 3.3V).
     if grep -qE '"[^"]* to [^"]*"' <<<"$bank"; then
       if ! grep -qE '^switched_by *= *"[^"]+"' <<<"$sec"; then
         out+="FAIL $name: board $bname's bank_voltages gives a range but pads.toml has no switched_by: a range is accepted only with the part that switches it (for example the SD voltage regulator)"$'\n'
@@ -980,72 +1028,109 @@ pads_rule() {  # <devices dir>
 pads_self_test() {
   local tmp rc=0 out
   tmp=$(mktemp -d)
-  mk() {  # <case dir> <family state: true|false-reason|false-noreason|unstated> <[pads] body, empty for no table>
+  # mk <dir> <family state: true|false-reason|false-noreason|unstated|true-nobanks> <board pads.toml body, empty for none>
+  mk() {
     mkdir -p "$1/devices/families/fam" "$1/devices/boards/bd" "$1/devices/products/pd"
-    rm -f "$1/devices/families/fam/pads.toml"
+    rm -f "$1/devices/families/fam/pads.toml" "$1/devices/boards/bd/pads.toml"
     printf 'version = 1\nname = "fam"\n' > "$1/devices/families/fam/family.toml"
     case $2 in
-      true) printf 'applies_pad_table = true\n' > "$1/devices/families/fam/pads.toml" ;;
+      true) printf 'applies_pad_table = true\n\n[banks.tst]\nnames = "A B"\n' > "$1/devices/families/fam/pads.toml" ;;
+      true-nobanks) printf 'applies_pad_table = true\n' > "$1/devices/families/fam/pads.toml" ;;
       false-reason) printf 'applies_pad_table = false\npad_table_reason = "pads are set by the test firmware; not applicable"\n' > "$1/devices/families/fam/pads.toml" ;;
       false-noreason) printf 'applies_pad_table = false\n' > "$1/devices/families/fam/pads.toml" ;;
       *) : ;;
     esac
     printf 'version = 1\nextends = "../../families/fam/family.toml"\nname = "bd"\n' > "$1/devices/boards/bd/board.toml"
-    rm -f "$1/devices/boards/bd/pads.toml"
     [[ -n $3 ]] && printf '%s\n' "$3" > "$1/devices/boards/bd/pads.toml"
     printf 'version = 1\nname = "pd"\n\n[[images]]\nname = "pd"\nboard = "../../boards/bd/board.toml"\nrecipe = "sd-image"\n' > "$1/devices/products/pd/product.toml"
   }
-  mk "$tmp/own" true 'source = "test schematic, sheet 4"
+  mk "$tmp/own" true 'soc = "tst"
+source = "test schematic, sheet 4"
 derived_from_board = ""
-bank_voltages = { IO0_IO1 = "1V8", IO2_IO63 = "3V3" }'
-  if ! out=$(pads_rule "$tmp/own/devices"); then echo "check-devices: self-test: a flagged family's board with its own sourced, stated table was refused: $out" >&2; rc=1; fi
-  mk "$tmp/derived" true 'source = "SDK BPI dts"
+bank_voltages = { A = "1.8V", B = "fixed by hardware, per sheet 4" }'
+  if ! out=$(pads_rule "$tmp/own/devices"); then echo "check-devices: self-test: a board that names every bank with a voltage or a sheet was refused: $out" >&2; rc=1; fi
+  mk "$tmp/derived" true 'soc = "tst"
+source = "SDK BPI dts"
 derived_from_board = "bpi-canmv-k230d-zero"
-bank_voltages = { IO0_IO1 = "1V8", IO2_IO63 = "3V3" }'
+bank_voltages = { A = "1.8V", B = "1.8V" }'
   if out=$(pads_rule "$tmp/derived/devices"); then echo "check-devices: self-test: a pad table derived from another board was not refused" >&2; rc=1
   elif [[ $out != *"derived from board bpi-canmv-k230d-zero"* || $out != *"bd"* ]]; then echo "check-devices: self-test: the derived refusal does not name the board and its origin: $out" >&2; rc=1; fi
-  mk "$tmp/noprov" true 'source = ""
+  mk "$tmp/noprov" true 'soc = "tst"
+source = ""
 derived_from_board = ""
-bank_voltages = { IO0_IO1 = "1V8" }'
+bank_voltages = { A = "1.8V", B = "1.8V" }'
   if out=$(pads_rule "$tmp/noprov/devices"); then echo "check-devices: self-test: a pad table with no provenance was not refused" >&2; rc=1
   elif [[ $out != *"no provenance"* || $out != *"bd"* ]]; then echo "check-devices: self-test: the provenance refusal does not name the board and reason: $out" >&2; rc=1; fi
-  mk "$tmp/nobank" true 'source = "test schematic, sheet 4"
+  mk "$tmp/missingbank" true 'soc = "tst"
+source = "test schematic, sheet 4"
 derived_from_board = ""
-bank_voltages = {}'
-  if out=$(pads_rule "$tmp/nobank/devices"); then echo "check-devices: self-test: a pad table with bank voltages not stated was not refused" >&2; rc=1
-  elif [[ $out != *"bank voltages are not stated"* || $out != *"bd"* ]]; then echo "check-devices: self-test: the bank refusal does not name the board and reason: $out" >&2; rc=1; fi
+bank_voltages = { A = "1.8V" }'
+  if out=$(pads_rule "$tmp/missingbank/devices"); then echo "check-devices: self-test: a board that leaves a bank of its SoC unstated was not refused" >&2; rc=1
+  elif [[ $out != *"does not state bank B"* || $out != *"board bd"* ]]; then echo "check-devices: self-test: the missing-bank refusal does not name the board and bank: $out" >&2; rc=1; fi
+  mk "$tmp/unknownbank" true 'soc = "tst"
+source = "test schematic, sheet 4"
+derived_from_board = ""
+bank_voltages = { A = "1.8V", B = "3.3V", C = "1.8V" }'
+  if out=$(pads_rule "$tmp/unknownbank/devices"); then echo "check-devices: self-test: a board that names a bank its SoC does not have was not refused" >&2; rc=1
+  elif [[ $out != *"names bank C"* || $out != *"board bd"* ]]; then echo "check-devices: self-test: the unknown-bank refusal does not name the board and bank: $out" >&2; rc=1; fi
+  mk "$tmp/badvalue" true 'soc = "tst"
+source = "test schematic, sheet 4"
+derived_from_board = ""
+bank_voltages = { A = "1.8V", B = "maybe" }'
+  if out=$(pads_rule "$tmp/badvalue/devices"); then echo "check-devices: self-test: a bank value that is neither a voltage nor fixed by hardware was not refused" >&2; rc=1
+  elif [[ $out != *"neither a voltage"* || $out != *"board bd"* ]]; then echo "check-devices: self-test: the value refusal does not name the board and reason: $out" >&2; rc=1; fi
   mk "$tmp/missing" true ''
-  if out=$(pads_rule "$tmp/missing/devices"); then echo "check-devices: self-test: a flagged family's board with no [pads] table was not refused" >&2; rc=1
+  if out=$(pads_rule "$tmp/missing/devices"); then echo "check-devices: self-test: a flagged family's board with no pads.toml was not refused" >&2; rc=1
   elif [[ $out != *"states none"* || $out != *"board bd"* ]]; then echo "check-devices: self-test: the missing-table refusal does not name the board and reason: $out" >&2; rc=1; fi
-  mk "$tmp/notapplies" false-reason ''
-  if ! out=$(pads_rule "$tmp/notapplies/devices"); then echo "check-devices: self-test: a family that says no pad table applies, with a reason, was refused: $out" >&2; rc=1; fi
-  mk "$tmp/noreason" false-noreason ''
-  if out=$(pads_rule "$tmp/noreason/devices"); then echo "check-devices: self-test: a family that says no pad table applies with no reason was not refused" >&2; rc=1
-  elif [[ $out != *"no pad_table_reason"* || $out != *"fam"* ]]; then echo "check-devices: self-test: the no-reason refusal does not name the family and reason: $out" >&2; rc=1; fi
-  # A board that states no pad table is applied, with a reason, passes; without a reason it is refused.
-  mk "$tmp/bdfalse" true ''
-  printf 'applies_pad_table = false\npad_table_reason = "no pad or io-domain table is applied (test evidence)"\n' > "$tmp/bdfalse/devices/boards/bd/pads.toml"
+  mk "$tmp/nobanks" true-nobanks 'soc = "tst"
+source = "test schematic, sheet 4"
+derived_from_board = ""
+bank_voltages = { A = "1.8V" }'
+  if out=$(pads_rule "$tmp/nobanks/devices"); then echo "check-devices: self-test: a family that lists no banks for the board's SoC was not refused" >&2; rc=1
+  elif [[ $out != *"lists no banks"* ]]; then echo "check-devices: self-test: the no-banks refusal does not name the reason: $out" >&2; rc=1; fi
+  mk "$tmp/bdfalse" true 'applies_pad_table = false
+pad_table_reason = "no pad or io-domain table is applied (test evidence)"'
+  printf 'kernel_option = "FAKE_IODOMAIN"\n' >> "$tmp/bdfalse/devices/families/fam/pads.toml"
   if ! out=$(pads_rule "$tmp/bdfalse/devices"); then echo "check-devices: self-test: a board that states no pad table is applied, with a reason, was refused: $out" >&2; rc=1; fi
-  mk "$tmp/bdnoreason" true ''
-  printf 'applies_pad_table = false\n' > "$tmp/bdnoreason/devices/boards/bd/pads.toml"
+  mk "$tmp/bdnoreason" true 'applies_pad_table = false'
   if out=$(pads_rule "$tmp/bdnoreason/devices"); then echo "check-devices: self-test: a board that states no pad table is applied with no reason was not refused" >&2; rc=1
   elif [[ $out != *"no pad_table_reason"* || $out != *"board bd"* ]]; then echo "check-devices: self-test: the board no-reason refusal does not name the board and reason: $out" >&2; rc=1; fi
-  # A bank range needs switched_by and both endpoints; without them it is refused, with them it passes.
-  mk "$tmp/rangeno" true 'source = "test schematic, sheet 4"
+  mk "$tmp/rangeno" true 'soc = "tst"
+source = "test schematic, sheet 4"
 derived_from_board = ""
-bank_voltages = { vccio3 = "1.8V to 3.3V (vccio_sd, run-time)" }'
+bank_voltages = { A = "1.8V to 3.3V (sd regulator, run-time)", B = "3.3V" }'
   if out=$(pads_rule "$tmp/rangeno/devices"); then echo "check-devices: self-test: a bank range with no switched_by was not refused" >&2; rc=1
   elif [[ $out != *"no switched_by"* || $out != *"board bd"* ]]; then echo "check-devices: self-test: the range refusal does not name the board and reason: $out" >&2; rc=1; fi
-  mk "$tmp/rangeok" true 'source = "test schematic, sheet 4"
+  mk "$tmp/rangeok" true 'soc = "tst"
+source = "test schematic, sheet 4"
 derived_from_board = ""
-bank_voltages = { vccio3 = "1.8V to 3.3V (vccio_sd, run-time)" }
-switched_by = "vccio_sd: the SD card voltage regulator, 1.8V and 3.3V"'
+bank_voltages = { A = "1.8V to 3.3V (sd regulator, run-time)", B = "3.3V" }
+switched_by = "A: the SD card voltage regulator, 1.8V and 3.3V"'
   if ! out=$(pads_rule "$tmp/rangeok/devices"); then echo "check-devices: self-test: a bank range with switched_by and both endpoints was refused: $out" >&2; rc=1; fi
+  mk "$tmp/ffalse" false-reason ''
+  if ! out=$(pads_rule "$tmp/ffalse/devices"); then echo "check-devices: self-test: a family that says no pad table applies, with a reason, was refused: $out" >&2; rc=1; fi
+  # The kernel side of a "no table applied" board statement: its fragments must not set the family's kernel_option.
+  mk "$tmp/kclean" false-reason ''
+  printf 'kernel_option = "FAKE_IODOMAIN"\n' >> "$tmp/kclean/devices/families/fam/pads.toml"
+  printf 'applies_pad_table = false\npad_table_reason = "no table (test)"\n' > "$tmp/kclean/devices/boards/bd/pads.toml"
+  printf 'version = 1\nname = "fam"\nfragments = ["assets/k.fragment"]\n' > "$tmp/kclean/devices/families/fam/family.toml"
+  mkdir -p "$tmp/kclean/devices/families/fam/assets"; printf '# CONFIG_FAKE_IODOMAIN is not set\n' > "$tmp/kclean/devices/families/fam/assets/k.fragment"
+  if ! out=$(pads_rule "$tmp/kclean/devices"); then echo "check-devices: self-test: a board stating no table applies, with the kernel option unset, was refused: $out" >&2; rc=1; fi
+  mk "$tmp/kset" false-reason ''
+  printf 'kernel_option = "FAKE_IODOMAIN"\n' >> "$tmp/kset/devices/families/fam/pads.toml"
+  printf 'applies_pad_table = false\npad_table_reason = "no table (test)"\n' > "$tmp/kset/devices/boards/bd/pads.toml"
+  printf 'version = 1\nname = "fam"\nfragments = ["assets/k.fragment"]\n' > "$tmp/kset/devices/families/fam/family.toml"
+  mkdir -p "$tmp/kset/devices/families/fam/assets"; printf 'CONFIG_FAKE_IODOMAIN=y\n' > "$tmp/kset/devices/families/fam/assets/k.fragment"
+  if out=$(pads_rule "$tmp/kset/devices"); then echo "check-devices: self-test: a no-table statement with the kernel option set was not refused" >&2; rc=1
+  elif [[ $out != *"sets CONFIG_FAKE_IODOMAIN=y"* || $out != *"board bd"* ]]; then echo "check-devices: self-test: the kernel-option refusal does not name the board and fragment: $out" >&2; rc=1; fi
+  mk "$tmp/fnoreason" false-noreason ''
+  if out=$(pads_rule "$tmp/fnoreason/devices"); then echo "check-devices: self-test: a family that says no pad table applies with no reason was not refused" >&2; rc=1
+  elif [[ $out != *"no pad_table_reason"* || $out != *"fam"* ]]; then echo "check-devices: self-test: the no-reason refusal does not name the family and reason: $out" >&2; rc=1; fi
   mk "$tmp/unstated" unstated ''
   if out=$(pads_rule "$tmp/unstated/devices"); then echo "check-devices: self-test: a family that states no pad-table fact was not refused" >&2; rc=1
   elif [[ $out != *"states no pad-table fact"* || $out != *"fam"* ]]; then echo "check-devices: self-test: the unstated refusal does not name the family and reason: $out" >&2; rc=1; fi
   rm -rf "$tmp"
-  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the pad rule passes a sourced, stated table and a family that states none applies, and refuses a derived, unsourced, unstated or missing table, and an unstated or unreasoned family, naming the board or family"
+  [[ $rc -eq 0 ]] && echo "check-devices: self-test: the pad rule passes a board that names every bank of its SoC with a voltage or a sheet, and refuses a derived, unsourced, missing, partial or unknown bank, a bad value, a family with no banks, an unreasoned or unstated family, and a range without switched_by"
   return $rc
 }
 

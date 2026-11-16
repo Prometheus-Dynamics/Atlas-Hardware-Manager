@@ -3,3 +3,10 @@
 # &pmu_io_domains supplies, under CONFIG_ROCKCHIP_IODOMAIN, which U-Boot v2026.10 turns on by default for RK3568
 # (drivers/misc/Kconfig:114-121). Each board states its own table in its pads.toml.
 applies_pad_table = true
+
+# The RK3566/RK3568 io domains (the rk35xx family's io-domain table; the board names each): pmuio1, pmuio2 and vccio1 to vccio7,
+# as in the upstream dts's &pmu_io_domains node (research/u-boot/dts/upstream/src/arm64/rockchip/rk3566-radxa-zero-3.dtsi:456).
+# RK3588 and RK3576 boards state applies_pad_table = false, so they need no list here.
+[banks.rk3566]
+names = "pmuio1 pmuio2 vccio1 vccio2 vccio3 vccio4 vccio5 vccio6 vccio7"
+kernel_option = "ROCKCHIP_IODOMAIN"

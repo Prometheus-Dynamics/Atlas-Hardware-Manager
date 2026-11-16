@@ -1,15 +1,17 @@
 # Pad-table statement for the Cubie A7S (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
-# Source: the board's own regulator nodes, cross-referenced to the schematic V1.10 net names (sheet 4, 04 POWER AXP318,
-# dl-a7s-schematic/radxa_cubie_a7s_schematic_v1.10.pdf). The nodes are in the Radxa U-Boot device tree at commit 9da4b3e8:
-#   research/radxa-u-boot/arch/arm/dts/sun60i-a733-cubie-a7s.dts
-#     reg_bldo1 "vcc-pe"  1.8 V (min and max): lines 178-183 (name line 182)
-#     reg_bldo2 "vcc-pd"  1.8 V: lines 185-190 (name line 189)
-#     cldo1     "vcc-pm"  1.8 V: lines 218-222 (name line 221)
-#     cldo5     "vcc-pc"  1.8 V: lines 240-244 (name line 243)
-# Schematic sheet 4 net names: BLDO1 feeds VCC-PE, VCC-PK, VCC-MCSI; BLDO2 feeds VCC-PD, VCC-LVDS0, VCC-PJ, VCC18-LCD.
-# Whose table: the Radxa U-Boot dts (9da4b3e8). The DockSeed series dts (fe0a8ed) is not on disk and is not cited.
-# NOT stated (no regulator node, and not mapped on sheet 4 in this session): VCC-PH, VCC18-PF, VCC-PL, VCC-IO, VCC-PG.
-# Those banks are left out of bank_voltages until their rail is read. This is a partial statement, and the PR text says so.
-source = "Radxa U-Boot dts sun60i-a733-cubie-a7s.dts at 9da4b3e8 (research/radxa-u-boot/arch/arm/dts/): regulator nodes reg_bldo1 vcc-pe (lines 178-183), reg_bldo2 vcc-pd (185-190), cldo1 vcc-pm (218-222), cldo5 vcc-pc (240-244); cross-referenced to schematic V1.10 sheet 4 net names"
+# NOT COMPLETE: the rule needs every bank of the A733 named (family sun60i: PA PB PC PD PE PF PG PH PI PJ PK PL PM). Stated below:
+#   PE: VCC-PE, BLDO1 -> 1.8V (dts reg_bldo1 vcc-pe, Radxa U-Boot dts sun60i-a733-cubie-a7s.dts:178-183; schematic V1.10 sheet 4 BLDO1)
+#   PK: VCC-PK, BLDO1 -> 1.8V (same regulator; sheet 4 BLDO1 feeds VCC-PE, VCC-PK, VCC-MCSI)
+#   PD: VCC-PD, BLDO2 -> 1.8V (dts reg_bldo2 vcc-pd, lines 185-190; sheet 4 BLDO2)
+#   PJ: VCC-PJ, BLDO2 -> 1.8V (same regulator; sheet 4 BLDO2 feeds VCC-PD, VCC-LVDS0, VCC-PJ, VCC18-LCD)
+#   PC: VCC-PC, CLDO5 -> 1.8V (dts cldo5 vcc-pc, lines 240-244)
+#   PM: VCC-PM, CLDO1 -> 1.8V (dts cldo1 vcc-pm, lines 218-222)
+# NOT ESTABLISHED (refuses the board): PA, PB, PI (no rail label found on sheets 4, 7 or 8); PG, PH, PF (VCC18-PF), PL: the rail
+# labels are on sheet 7 (VCC-PG, VCC-PH, VCC18-PF, VCC-PL) and sheet 4 (VCC-PH, VCC-PL on ALDO1, which the dts names
+# vcc-mipi-dsi at 1.8 V: a conflict this session did not resolve). No regulator node gives their voltage.
+# Whose table: the Radxa U-Boot dts at 9da4b3e8 (research/radxa-u-boot/arch/arm/dts/sun60i-a733-cubie-a7s.dts). The DockSeed
+# series dts (fe0a8ed) is not on disk and is not cited.
+soc = "a733"
+source = "Radxa U-Boot dts sun60i-a733-cubie-a7s.dts at 9da4b3e8 (research/radxa-u-boot/arch/arm/dts/): reg_bldo1 vcc-pe (178-183), reg_bldo2 vcc-pd (185-190), cldo1 vcc-pm (218-222), cldo5 vcc-pc (240-244); net-to-bank from schematic V1.10 sheet 4 (BLDO1, BLDO2)"
 derived_from_board = ""
-bank_voltages = { VCC-PE = "1.8V", VCC-PK = "1.8V", VCC-MCSI = "1.8V", VCC-PD = "1.8V", VCC-LVDS0 = "1.8V", VCC-PJ = "1.8V", VCC18-LCD = "1.8V", VCC-PM = "1.8V", VCC-PC = "1.8V" }
+bank_voltages = { PC = "1.8V", PD = "1.8V", PE = "1.8V", PJ = "1.8V", PK = "1.8V", PM = "1.8V" }

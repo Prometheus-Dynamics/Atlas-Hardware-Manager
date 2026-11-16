@@ -42,7 +42,7 @@ and a range without both endpoints.
 
 ## Boards (devices/boards/<b>/pads.toml)
 
-**radxa-cubie-a7s: stated (source: the board's own regulator nodes, cross-referenced to the schematic).**
+**radxa-cubie-a7s: REFUSED (the bank list is not complete; see the update below).**
 - Whose: the Radxa U-Boot device tree at commit 9da4b3e8, `research/radxa-u-boot/arch/arm/dts/sun60i-a733-cubie-a7s.dts`.
   The DockSeed series dts (fe0a8ed) is not on disk and is not cited.
 - The regulator nodes give the voltages: `reg_bldo1` "vcc-pe" 1.8 V (lines 178-183, name at 182); `reg_bldo2` "vcc-pd" 1.8 V
@@ -135,3 +135,47 @@ The four good fixtures (`devices/tests/fixtures/good`, `good-f8`, `good-rust`, `
 
 - No K230 part (K1 keeps it). No board is built, flashed or booted.
 - The product and component deletion is the only removal (cubie-a7-bringup).
+
+
+## Update: the bank-list rule and the kernel-side check (2026-11-16 rulings)
+
+**Every bank is named.** A family's `pads.toml` lists the SoC's full bank list (`[banks.<soc>] names = "..."`), and a board names
+its `soc`. The board's `bank_voltages` must name every bank of that list exactly. A missing bank and an unknown bank are both
+refusals. Each bank's value is either a voltage (`1.8V`, `3.3V`, or a range with `switched_by`) or
+`fixed by hardware, per sheet N`. Any other value is refused. The refusal names the board and the bank.
+- sun60i (A733): `PA PB PC PD PE PF PG PH PI PJ PK PL PM`. The main pin controller has 11 banks from A, and the R-domain
+  controller has 2 from L (research/radxa-u-boot/drivers/pinctrl/sunxi/pinctrl-sunxi.c, `sun60i_a733_pinctrl_desc` and
+  `sun60i_a733_r_pinctrl_desc`).
+- rk35xx (RK3566): `pmuio1 pmuio2 vccio1 ... vccio7` (the io domains of `rk3566-radxa-zero-3.dtsi:456-467`). RK3588 and RK3576
+  boards state `applies_pad_table = false`, so they need no list.
+
+**radxa-cubie-a7s: REFUSED.** The board names PC, PD, PE, PJ, PK and PM, from the dts regulators and the sheet-4 nets:
+PE and PK on BLDO1 at 1.8V, PD and PJ on BLDO2 at 1.8V, PC on CLDO5 at 1.8V, PM on CLDO1 at 1.8V. The rest are not
+established: **PA, PB, PI** (no rail label found on sheets 4, 7 or 8 in this session), and **PF, PG, PH, PL** (their rail
+labels are on sheets 4 and 7: VCC18-PF, VCC-PG, VCC-PH, VCC-PL, but no regulator node gives their voltage, and sheet 4 puts
+VCC-PL on ALDO1, which the dts names `vcc-mipi-dsi` at 1.8V, a conflict this session did not resolve). A probe product on the
+A7S refuses on exactly PA, PB, PF, PG, PH, PI and PL. The A7S has no product in this PR, so nothing builds. No A7S image may
+build until those seven banks are established.
+
+**The kernel side is checked against fragments.** For a board stating `applies_pad_table = false`, the family's `pads.toml`
+names a `kernel_option`, and the rule refuses the statement if any kernel fragment of the family or the board sets
+`CONFIG_<kernel_option>=y`. rk35xx names `ROCKCHIP_IODOMAIN`. The resolved `.config` exists only after Gaia's build, so
+**at check time the rule reads fragments, not the resolved config**. The U-Boot side has no resolved config at check time
+either (the U-Boot defconfig is not in the repository); it is checked only through the built configs on disk, not the rule.
+
+**RK3588 evidence, corrected.** `research/rock5c.config:1443` and `research/rock5c-fam.config:1452` both say
+`# CONFIG_ROCKCHIP_IODOMAIN is not set`. Their headers say `U-Boot 2026.10 Configuration` and they carry 277 `CONFIG_SPL`
+entries, so they are **U-Boot** configs, not the kernel 7.3.3 config the ruling assumed. They verify the U-Boot side of the
+statement for that build. The kernel side stays unverified: no kernel config for ROCK 5C is on disk. The rock-5c `pads.toml`
+cites the U-Boot config and says so.
+
+**RK3576 (ROCK 4D):** no built config exists in `research/` (only a7s, rock5c and zero3), so both sides stay unverified.
+
+**Tracked lines, so the bring-up products are not forgotten:**
+- zero-3e-bringup: deleted in Z2 (#125), with its fixture moved there.
+- rock-5c-bringup: deleted in R1 (#131).
+- rock-4d-bringup: stays until a ROCK 4D bench product exists.
+The same lines go into the Z2 and R1 PRs.
+
+**Rulings not yet made (with the coordinator):** the remaining bring-up products (above), the A7S's seven unstated banks (the
+A7S stays refused), and the K230 bootargs override (the K1 recorded-edits list is one entry).
