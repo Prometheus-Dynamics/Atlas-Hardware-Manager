@@ -263,3 +263,41 @@ What our products do with /var today (read by reading):
 - The 31 unnamed `[Install]` units (258.7): under `10-raze-base.preset`'s final `disable *` they are disabled unless named;
   which of them are present in the image: NEEDS-THE-BUILD (not chased one by one, per the ruling).
 - Dropping dbus stays: a later size item, measured on a built root.
+
+## 13. The split (after the Gaia log: the helper trips three places in post-build)
+Gaia's log: post-build stopped at the ELF scan (old line 134) on the helper. So the helper tripped the removal list, the
+leftover check and the ELF scan. Ruling: split by stage, not exemptions.
+- `post-build.sh` (output/target, before mkusers/makedevs/preset-all, Makefile:827-832): ONLY the wait-online mask. It no
+  longer removes D-Bus and has no dbus check. Its self-test: the mask is placed, the helper and dbus.service are still there.
+- `post-fakeroot.sh` (per-filesystem copy, fs/common.mk:183-185, after makedevs:180 and preset-all:181): the WHOLE D-Bus
+  removal (the fixed list, the helper included), then the checks: no dbus path left, no ELF needing libdbus-1, no
+  Type=dbus enabled unit, no socket starting a turned-off daemon or naming a missing unit, no dangling wants link, the mask
+  still present. Its self-test: the refusals listed in the script.
+
+Order check (is the split right?):
+- makedevs (fs/common.mk:180) needs the helper present (DBUS_PERMISSIONS, dbus.mk:32-34; makedevs.c:578-582). Post-build
+  does not remove it, so makedevs passes. Nothing else in the permission table names a dbus path. OK.
+- preset-all (fs/common.mk:181, systemd.mk:834) runs BEFORE post-fakeroot. A dbus unit a preset ENABLES is linked by then;
+  post-fakeroot removes it, and the dangling-link check fails if its link survived. Our preset ends `disable *`, so
+  preset-all disables dbus.service and dbus.socket (their links go). The dry run models both outcomes (A: links removed,
+  B: links kept); both pass, and the post-fakeroot list tolerates an absent wants link for that reason.
+- The mask: preset-all honours a mask (systemd.mk:834 runs after post-build's mask, Makefile:827 before fs/common.mk:181).
+  OK.
+- Anything between target-finalize and post-fakeroot that needs dbus present: NOT FOUND in fs/common.mk:179-182 (mkusers,
+  makedevs, the pre-cmd hooks). The skeleton var factory, if on, moves /var before the removal: NOT on for raze-base
+  (raze-base fragment does not set BR2_INIT_SYSTEMD_VAR_FACTORY; rock-4d/rock-5c/zero-3e fragments do, os.fragment:103).
+- The dbus USERS (`dbus`, DBUS_USERS dbus.mk:36-38) stay in /etc/passwd and /etc/group after the removal: a user with no
+  files. Harmless; the built-root rule checks enabled units' accounts only.
+
+What this means for the image, plainly: between now and the Gaia pin, `raze.fragment` names only post-build.sh (now the
+mask only), so the image KEEPS D-Bus (the helper included, the libdbus ELF too). The build no longer fails on dbus. That is
+what Gaia's timing copy does too. The helper is setuid (4750) and ships until the pin; the pin commit wires post-fakeroot.
+
+Dry run order (scripts/check-product-scripts.sh, fake tree): post-build.sh; the simulated makedevs check (helper present);
+the simulated preset-all (A: dbus links removed; B: kept); post-fakeroot.sh on each; refusals: helper absent, mask missing,
+dangling link to a dbus unit off the list. The fake tree is a placeholder tree (scripts/fake-raze-root.sh), not a built root:
+every step of post-fakeroot runs to the end on it, including the ELF scan on a real small ELF (fixture-user-elf, no NEEDED
+libdbus). The ELF scan decides by `readelf -d` for `Shared library: [libdbus-1.so…]` on every file whose first four bytes
+are the ELF magic.
+
+Gaia's own packed rootfs.tar (its current run's fakeroot-stage result): requested from Gaia; not in this session.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # A FAKE stand-in for an extracted raze-base root, for dry runs of os/post-build.sh and the device checks. It is NOT a
 # built root: every file is a placeholder, and only the paths the post-build script names exist, plus the hostnamed
-# units its self-test needs. The paths come from os/post-build.sh itself (DBUS_REQUIRED, DBUS_OPTIONAL), so the
+# units its self-test needs. The paths come from os/post-fakeroot.sh itself (DBUS_REQUIRED, DBUS_OPTIONAL), so the
 # fixture cannot drift from the list it is meant to exercise.
 #
 #   scripts/fake-raze-root.sh DIR    makes DIR (must not exist) and fills it
@@ -11,7 +11,7 @@ die() { echo "fake-raze-root: $*" >&2; exit 1; }
 dir=$1
 [ ! -e "$dir" ] || die "$dir exists; give a new directory"
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-pb=$repo/devices/products/raze-base/os/post-build.sh
+pb=$repo/devices/products/raze-base/os/post-fakeroot.sh
 block() { sed -n "/^$1='/,/^'/p" "$pb" | sed '1s/.*='"'"'//; $d' | sed '/^$/d'; }
 mkdir -p "$dir"
 echo "FAKE raze-base root (scripts/fake-raze-root.sh): placeholders, not a built root" > "$dir/FAKE-ROOT.txt"
@@ -33,4 +33,8 @@ printf '[Socket]\nListenStream=/run/fake-hostnamed\nService=systemd-hostnamed.se
 ln -sfn ../systemd-hostnamed.socket "$u/sockets.target.wants/systemd-hostnamed.socket"
 echo "FAKE placeholder" > "$dir/usr/lib/systemd/systemd-hostnamed"
 echo "FAKE placeholder" > "$dir/usr/bin/hostnamectl"
+# A real small ELF (no NEEDED libdbus-1), so the post-fakeroot ELF scan parses a real file. Host gcc; a test file only.
+if command -v gcc >/dev/null 2>&1; then
+  mkdir -p "$dir/usr/lib" && echo 'int main(void){return 0;}' | gcc -o "$dir/usr/lib/fixture-user-elf" -x c - 2>/dev/null || true
+fi
 echo "fake-raze-root: made $dir (fake; every file is a placeholder)"

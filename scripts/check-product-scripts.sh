@@ -5,7 +5,9 @@
 #   2. a dry run against a stand-in tree, where one exists. Where none exists the run prints, visibly,
 #        dry run: NOT CHECKED (no stand-in tree for <script>)
 #      and it never passes silently.
-# The stand-in for raze-base's post-build.sh is scripts/fake-raze-root.sh (a labelled fake tree, not a built root).
+# The stand-in is scripts/fake-raze-root.sh (a labelled fake tree, not a built root). The raze-base dry runs follow
+# Buildroot's order (see os/post-fakeroot.sh): post-build.sh; then the helper must exist for makedevs; then the presets'
+# result (simulated); then post-fakeroot.sh. post-fakeroot.sh is STAGED (not yet named by a fragment) and is checked anyway.
 #
 #   scripts/check-product-scripts.sh               the device check (scripts/gate.sh runs it)
 #   scripts/check-product-scripts.sh --self-test    a script with a syntax error is refused; a clean one passes
@@ -30,23 +32,29 @@ syntax_ok() {
   echo "check-product-scripts: ok syntax ($interp -n) $f"
 }
 
+# A stand-in tree for the raze-base dry runs: the fake root, with the HOSTNAMED-off removal the build makes.
+raze_tree() {  # raze_tree DIR: makes DIR as the tree before the post-build script runs
+  local d=$1
+  "$repo/scripts/fake-raze-root.sh" "$d" >/dev/null 2>&1 || die "no fake root for the dry run"
+  rm -f "$d/usr/lib/systemd/system/systemd-hostnamed.service" "$d/usr/lib/systemd/system/systemd-hostnamed.socket" \
+    "$d/usr/lib/systemd/system/sockets.target.wants/systemd-hostnamed.socket" "$d/usr/lib/systemd/systemd-hostnamed" \
+    "$d/usr/bin/hostnamectl"
+}
+
 # The dry run of one script (its path in the repo). Returns 1 on a failure; prints NOT CHECKED when there is no stand-in.
 dry_run() {
-  local f=$1 rel=${1#"$repo"/} scratch
+  local f=$1 rel=${1#"$repo"/} scratch pb pf
+  pb=$repo/devices/products/raze-base/os/post-build.sh
+  pf=$repo/devices/products/raze-base/os/post-fakeroot.sh
   case $rel in
     devices/products/raze-base/os/post-build.sh)
       scratch=$(mktemp -d "${TMPDIR:-/tmp}/dry-XXXXXX")
       trap 'rm -rf "$scratch"' RETURN
-      "$repo/scripts/fake-raze-root.sh" "$scratch/root" >/dev/null 2>&1 || die "no fake root for the dry run"
-      cp -a "$scratch/root" "$scratch/copy"
-      # The tree the HOSTNAMED-off build makes: hostnamed's units, link and binaries are not there (as post-build's own
-      # self-test builds it). The raw fixture keeps them, to prove the refusal in that self-test.
-      d=$scratch/copy
-      rm -f "$d/usr/lib/systemd/system/systemd-hostnamed.service" "$d/usr/lib/systemd/system/systemd-hostnamed.socket" \
-        "$d/usr/lib/systemd/system/sockets.target.wants/systemd-hostnamed.socket" "$d/usr/lib/systemd/systemd-hostnamed" \
-        "$d/usr/bin/hostnamectl"
-      if sh "$f" "$scratch/copy" >"$scratch/run.log" 2>&1; then
-        echo "check-product-scripts: ok dry run: $rel on the fake tree (the stand-in; not a built root)"
+      raze_tree "$scratch/t"
+      if sh "$f" "$scratch/t" >"$scratch/run.log" 2>&1 \
+          && [ "$(readlink "$scratch/t/etc/systemd/system/systemd-networkd-wait-online.service")" = /dev/null ] \
+          && [ -e "$scratch/t/usr/libexec/dbus-daemon-launch-helper" ]; then
+        echo "check-product-scripts: ok dry run: $rel (fake tree: masks wait-online; leaves the dbus paths for post-fakeroot)"
       else
         echo "check-product-scripts: FAIL dry run: $rel on the fake tree: $(tail -1 "$scratch/run.log")" >&2
         return 1
@@ -55,32 +63,43 @@ dry_run() {
     devices/products/raze-base/os/post-fakeroot.sh)
       scratch=$(mktemp -d "${TMPDIR:-/tmp}/dry-XXXXXX")
       trap 'rm -rf "$scratch"' RETURN
-      "$repo/scripts/fake-raze-root.sh" "$scratch/root" >/dev/null 2>&1 || die "no fake root for the dry run"
-      # 1. The tree as the build leaves it before the fakeroot stage: post-build has run (the HOSTNAMED-off tree, then the
-      #   post-build script), so the helper is there; the post-fakeroot script removes it and passes.
-      cp -a "$scratch/root" "$scratch/ok"
-      d=$scratch/ok
-      rm -f "$d/usr/lib/systemd/system/systemd-hostnamed.service" "$d/usr/lib/systemd/system/systemd-hostnamed.socket" \
-        "$d/usr/lib/systemd/system/sockets.target.wants/systemd-hostnamed.socket" "$d/usr/lib/systemd/systemd-hostnamed" \
-        "$d/usr/bin/hostnamectl"
-      sh "$repo/devices/products/raze-base/os/post-build.sh" "$d" >"$scratch/pb.log" 2>&1 \
-        || { echo "check-product-scripts: FAIL dry run: post-build.sh before $rel: $(tail -1 "$scratch/pb.log")" >&2; return 1; }
-      cp -a "$d" "$scratch/pre"
-      sh "$f" "$d" >"$scratch/ok.log" 2>&1 || { echo "check-product-scripts: FAIL dry run: $rel: $(tail -1 "$scratch/ok.log")" >&2; return 1; }
-      [ ! -e "$d/usr/libexec/dbus-daemon-launch-helper" ] || { echo "check-product-scripts: FAIL dry run: $rel left the helper" >&2; return 1; }
-      # 2. The helper absent: refused, and the message says so (Buildroot's table changed).
-      cp -a "$scratch/pre" "$scratch/absent"; rm -f "$scratch/absent/usr/libexec/dbus-daemon-launch-helper"
-      if sh "$f" "$scratch/absent" >"$scratch/absent.log" 2>&1; then
-        echo "check-product-scripts: FAIL dry run: $rel accepted a tree with no helper to remove" >&2; return 1
+      # The build order, on the fake tree: post-build (the mask) ...
+      raze_tree "$scratch/base"
+      sh "$pb" "$scratch/base" >"$scratch/pb.log" 2>&1 || { echo "check-product-scripts: FAIL dry run: post-build before $rel: $(tail -1 "$scratch/pb.log")" >&2; return 1; }
+      # ... then makedevs: the permission table names the helper, so the helper must be there (fs/common.mk:180).
+      [ -e "$scratch/base/usr/libexec/dbus-daemon-launch-helper" ] \
+        || { echo "check-product-scripts: FAIL dry run: makedevs would fail: the helper is absent before makedevs" >&2; return 1; }
+      # ... then preset-all (fs/common.mk:181): variant A disables the dbus units (their links go), variant B leaves them.
+      cp -a "$scratch/base" "$scratch/A"
+      rm -f "$scratch/A/usr/lib/systemd/system/multi-user.target.wants/dbus.service" \
+            "$scratch/A/usr/lib/systemd/system/sockets.target.wants/dbus.socket"
+      cp -a "$scratch/base" "$scratch/B"
+      for v in A B; do
+        sh "$pf" "$scratch/$v" >"$scratch/$v.log" 2>&1 \
+          || { echo "check-product-scripts: FAIL dry run: $rel ($v, after simulated preset-all): $(tail -1 "$scratch/$v.log")" >&2; return 1; }
+        [ ! -e "$scratch/$v/usr/libexec/dbus-daemon-launch-helper" ] \
+          || { echo "check-product-scripts: FAIL dry run: $rel ($v) left the helper" >&2; return 1; }
+      done
+      # Refusals: the helper absent when post-fakeroot runs; the mask missing; a dangling wants link to a dbus unit off the list.
+      cp -a "$scratch/base" "$scratch/absent"; rm -f "$scratch/absent/usr/libexec/dbus-daemon-launch-helper"
+      if sh "$pf" "$scratch/absent" >"$scratch/absent.log" 2>&1; then
+        echo "check-product-scripts: FAIL dry run: $rel accepted a tree with no helper" >&2; return 1
       fi
-      grep -q 'absent before the removal' "$scratch/absent.log" || { echo "check-product-scripts: FAIL dry run: $rel refused the absent helper without saying why" >&2; return 1; }
-      # 3. Another dbus path survives: refused, and it is named.
-      cp -a "$scratch/pre" "$scratch/left"; echo "FAKE leftover" > "$scratch/left/usr/bin/dbus-send"
-      if sh "$f" "$scratch/left" >"$scratch/left.log" 2>&1; then
-        echo "check-product-scripts: FAIL dry run: $rel accepted a tree with a dbus path left" >&2; return 1
+      grep -q 'usr/libexec/dbus-daemon-launch-helper' "$scratch/absent.log" \
+        || { echo "check-product-scripts: FAIL dry run: $rel refused the absent helper without naming it" >&2; return 1; }
+      cp -a "$scratch/base" "$scratch/nomask"; rm -f "$scratch/nomask/etc/systemd/system/systemd-networkd-wait-online.service"
+      if sh "$pf" "$scratch/nomask" >"$scratch/nomask.log" 2>&1; then
+        echo "check-product-scripts: FAIL dry run: $rel accepted a tree with no wait-online mask" >&2; return 1
       fi
-      grep -q 'usr/bin/dbus-send' "$scratch/left.log" || { echo "check-product-scripts: FAIL dry run: $rel did not name the leftover dbus path" >&2; return 1; }
-      echo "check-product-scripts: ok dry run: $rel (fake tree: removes the helper; refused when the helper is absent; refused when a dbus path is left)"
+      cp -a "$scratch/base" "$scratch/extra"
+      printf '[Unit]\nDescription=fake\n[Service]\nExecStart=/bin/false\n' > "$scratch/extra/usr/lib/systemd/system/dbus-fake-extra.service"
+      ln -s ../dbus-fake-extra.service "$scratch/extra/usr/lib/systemd/system/multi-user.target.wants/dbus-fake-extra.service"
+      if sh "$pf" "$scratch/extra" >"$scratch/extra.log" 2>&1; then
+        echo "check-product-scripts: FAIL dry run: $rel accepted a dangling wants link to a dbus unit off the list" >&2; return 1
+      fi
+      grep -q 'dbus-fake-extra' "$scratch/extra.log" \
+        || { echo "check-product-scripts: FAIL dry run: $rel did not name the dangling link" >&2; return 1; }
+      echo "check-product-scripts: ok dry run: $rel (fake tree, Buildroot order: post-build, makedevs check, preset result A and B, post-fakeroot; refused: helper absent, mask missing, dangling dbus link)"
       ;;
     *)
       echo "check-product-scripts: dry run: NOT CHECKED (no stand-in tree for $rel)"
@@ -110,7 +129,8 @@ if [ "${1:-}" = --self-test ]; then
   syntax_ok "$t/bad.sh" >/dev/null 2>&1 && die "self-test: a script with a syntax error was accepted"
   syntax_ok "$t/good.sh" >/dev/null || die "self-test: a clean script was refused"
   # The fragment scan must find raze-base's post-build script (the one this rule exists for).
-  named_scripts | grep -q 'raze-base/os/post-build.sh' || die "self-test: the fragment scan misses raze-base's post-build.sh"
+  named_scripts > "$t/names"
+  grep -q 'raze-base/os/post-build.sh' "$t/names" || die "self-test: the fragment scan misses raze-base's post-build.sh"
   echo "check-product-scripts: self-test passed (a syntax error is refused; a clean script passes; the fragment scan finds post-build.sh)"
   exit 0
 fi
