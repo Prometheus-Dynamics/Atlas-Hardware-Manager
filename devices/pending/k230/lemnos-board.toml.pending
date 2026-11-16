@@ -39,7 +39,7 @@ uses = { function = "udc:91500000.usb-otg" }
 #   uboot_env_offset_redund 0x320000 vendor genimage env_b (the second copy). The vendor defconfig has NO ENV_REDUNDANT: a decision for Lemnos's record.
 #   uboot_env_mmc_index     1        SD = mmc1 (SYSCTL_BOOT_SDIO1, k230_spl.c:65, 167). Pinned by the alias mmc1 in the
 #                                    U-Boot dts and the kernel dts (assets/mmc-aliases.dtsi). CONFIRM ON BOARD.
-#   uboot_env_device        /dev/mmcblk1  UNRESOLVED: the vendor U-Boot bootargs say root=/dev/mmcblk1p2 (board.c, fdt_chosen_bootargs) but the vendor Linux dts aliases mmc0 = the SD (mmc_sd1), so Linux names it mmcblk0 (patch 0024). CONFIRM ON BOARD before the first Lemnos write:
+#   uboot_env_device        /dev/mmcblk0  (the kernel alias mmc0 = the SD host; Gaia pins it): the vendor U-Boot bootargs say root=/dev/mmcblk1p2 (board.c, fdt_chosen_bootargs) but the vendor Linux dts aliases mmc0 = the SD (mmc_sd1), so Linux names it mmcblk0 (patch 0024). CONFIRM ON BOARD before the first Lemnos write:
 #                                    a wrong device makes Lemnos refuse ("no valid environment"), it never writes blindly.
 #   uboot_watchdog_ms       10000    see docs/prs/K1-k230d.md (the SDK's dw-wdt clock is not on disk)
 # The uboot_usb_vendor/product pair is the pid.codes test pair, a placeholder Lemnos says to replace before release.
@@ -51,7 +51,7 @@ uses = { function = "udc:91500000.usb-otg" }
 id = "slots"
 driver = "system-slots"
 record = "uboot"
-config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", boot_sources = ["/soc/mmc1@91581000=/soc/sdhci1@91581000"], uboot_env_size = 0x2000, uboot_env_device = "/dev/mmcblk1", uboot_env_offset = 0x300000, uboot_env_offset_redund = 0x320000, uboot_env_mmc_index = 1, uboot_usb_vendor = 0x1209, uboot_usb_product = 0x0001, uboot_watchdog_ms = 10000 }
+config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", boot_sources = ["/soc/mmc1@91581000=/soc/sdhci1@91581000"], uboot_env_size = 0x2000, uboot_env_device = "/dev/mmcblk0", uboot_env_offset = 0x300000, uboot_env_offset_redund = 0x320000, uboot_env_mmc_index = 1, uboot_usb_vendor = 0x1209, uboot_usb_product = 0x0001, uboot_watchdog_ms = 10000 }
 
 # Not written here: Ethernet (none, the SoC has no MAC; coordinator ruling 2026-11-14); the crash log / pstore reserved
 # region (a board kernel item, address not chosen).
