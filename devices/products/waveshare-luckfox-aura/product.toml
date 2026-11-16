@@ -1,11 +1,15 @@
-# Luckfox Aura: the bench product (AU1 draft). Its image is hand-flashed and never published (the closed DDR blob).
+# Luckfox Aura: LABELLED BENCH IMAGE (bench-only, not for release). Its image is hand-flashed and never published.
+# Bench-only facts: the first-stage SPL is Rockchip's CLOSED vendor blob (rkbin rv1126b_spl_ipc_v1.05.bin, not on disk
+# for hash check), and the DDR init is the closed rkbin DDR blob (v1.06 per the vendor ini; v1.10 used as TPL input, UNVERIFIED
+# for this board). Console: UART0 M0 at 1500000 baud (vendor stdout-path &uart0, base 0x20810000).
+# No vsel register is written by our bootloader or kernel (scripts/check-no-vsel.sh).
 #
 # The recipe is a PLACEHOLDER: `firmware` (the built tree as a tar). It is NOT the flashable image. The bench image
 # must become the U-Boot slot form (Lemnos) once the RV1126B U-Boot port and Lemnos's RV1126B SoC map exist; until
 # then this product plans nothing that boots. No gaia.lock is committed: Gaia writes it when its pins are given.
 version = 1
 name = "waveshare-luckfox-aura"
-description = "Luckfox Aura: bench base OS (draft)"
+description = "Luckfox Aura: labelled bench image (bench-only, closed SPL and DDR blobs, UART0 M0 1500000)"
 
 [sources.buildroot]
 git = "https://gitlab.com/buildroot.org/buildroot.git"

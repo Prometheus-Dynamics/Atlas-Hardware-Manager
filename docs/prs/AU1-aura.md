@@ -204,3 +204,31 @@ Source: Luckfox_Aura_SDK_202611.tar.gz, sha256 b9a95edbd9b17efef477509926874b498
 ### Still open (bench)
 
 PMIC power-on with the closed SPL; the SD card-power GPIO (PB2 or B0); the console pads (UART0 M0); the PHY strap levels and the part; the `vdd0v9_sys` value; the ramoops address; the blob versions.
+
+## 2026-11-16: pads, no-VSEL check, bench-only label
+
+Pads (`devices/families/rv11xx/pads.toml` and `devices/boards/waveshare-luckfox-aura/pads.toml`). Both set `applies_pad_table = false` with a reason. Every bank is named and carries a "not established" statement with its source. No voltage is stated that was not read from a source.
+
+| Bank | Pins (SDK dts) | Voltage |
+|---|---|---|
+| pmuio0 | GPIO0 A/B, sdmmc0_detn PA5 | not established |
+| pmuio1 | GPIO0 C/D, RK801 int PC0, vbus PC6 | not established |
+| vccio1 | GPIO1, none used | not established (vendor U-Boot reads IO1_VSEL, never writes) |
+| vccio2 | GPIO2 A, sdmmc0 data/cmd/clk | not established (card IO is vqmmc = vccio_sd, fixed 3.3 V from RK801 DCDC2) |
+| vccio3 | GPIO3, WiFi/BT pins, none used here | not established |
+| vccio4 | GPIO4, none used | not established |
+| vccio5 | GPIO5, none used | not established |
+| vccio6 | GPIO6, GMAC/RGMII, MDIO, PHY reset | not established (PHY rail VCCIO_PHY1 is on the schematic ETHER sheet, level not on disk) |
+| vccio7 | GPIO7, none used | not established |
+
+PMIC: RK801 at I2C 0x27; its DCDC2 3.3 V feeds vcc3v3_sys. Sources: vendor SDK at /mnt/ssd-samsung/gaia-bsp-aura (kernel c67d457c, U-Boot 649e8bd3), schematic text in scratch.
+
+No-VSEL check: `scripts/check-no-vsel.sh`. It reads the added lines of the patch files and refuses an IO-domain or VSEL write, an io-domains node, an IODOMAIN config switch, or a pad-bank supply change. Reads are allowed. vqmmc is the card-side regulator, not a bank supply, and is not matched.
+Self-test (`--self-test`): 5 planted offending patches refused, 3 clean patches accepted, result PASS. Real run over 18 carried patches (7 U-Boot, 11 kernel): PASS.
+Finding preserved: no VSEL write in vendor U-Boot or kernel. The vendor SPL is closed and accepted for bench only.
+
+Bench-only label: the product is a labelled bench image. Closed SPL (rkbin rv1126b_spl_ipc_v1.05.bin) and closed DDR blob. Console UART0 M0 at 1500000 baud.
+
+Gate and device check: run as systemd user units `atlas-AU1-devices` and `atlas-AU1-gate`, each with LimitNOFILE=1048576 and the environment passed explicitly. Logs under /mnt/ssd-samsung/atlas-next-scratch-AU1/logs/.
+
+Not built, not on a board: no image build, TPL/binman not run (pylibfdt absent on the host), no flash, no board touched.

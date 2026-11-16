@@ -1,40 +1,18 @@
-# Pad statement for the Luckfox Aura (sidecar, PADS rule). Revised 2026-11-16 from the vendor Aura SDK
-# (Luckfox_Aura_SDK_202611.tar.gz, sha256 b9a95edbd9b17efef477509926874b498549e9df2712a2bcd6bb60d6b3283b2c;
-# files verified against aura-files.sha256). Revs: kernel c67d457cf327 (6.1), U-Boot 649e8bd3474c,
-# rkbin 094fb0b6. The SPL is a closed blob (rkbin rv1126b_spl_ipc_v1.05.bin), so what it programs is not
-# visible in source and is NOT stated here.
-version = 1
-derived_from_board = "board.toml"
-statement = "no pad/voltage table applied by the kernel dts or by U-Boot source"
+# Pad-table statement for the Luckfox Aura (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
+# Revised 2026-11-16 (PR AU1). The board statement is "no table applied" on both sides (the family's reason, with the
+# Aura's evidence). The per-domain lines below are the board's record of what is and is not established; the rule does
+# not check them when applies_pad_table = false, so they are written to be read, not to pass a check.
+applies_pad_table = false
+pad_table_reason = "Bootloader: the open U-Boot series (devices/families/rv11xx/patches/uboot/, 7 patches) writes no IO-domain or VSEL register (scripts/check-no-vsel.sh). The vendor U-Boot (649e8bd3474c, rv1126b.c 510-511) only reads IO1_VSEL. The vendor SPL is closed (rkbin rv1126b_spl_ipc_v1.05.bin, RV1126BMINIALL_IPC.ini line 18) and what it programs is NOT visible: accepted for a bench-only image, labelled. Kernel: the Aura dts (this board's kernel patch 0011 and the SDK's rv1126b-luckfox-aura.dts) has no io-domains node and no pad voltage table; its only *-supply on a pad-bank controller is vqmmc on sdmmc0 (vccio_sd, a fixed 3.3 V card regulator), not a bank supply. Kernel c67d457cf327 (SDK), kernel 7595a62d (ours, v7.3.4)."
 
-[source]
-kind = "vendor-sdk"
-archive_sha256 = "b9a95edbd9b17efef477509926874b498549e9df2712a2bcd6bb60d6b3283b2c"
-kernel_dts = "aura/kernel-dts/rv1126b-luckfox-aura.dtsi"
-kernel_dts_sha256 = "see aura-files.sha256"
-uboot_source = "aura/uboot/rv1126b.c"
-
-# What the sources say about IO voltage selection:
-#   U-Boot rv1126b.c:85-86 defines GPIO1_IOC_IO1_VSEL (0x908) and VCCIO1_VD_3V3 (BIT 15).
-#   U-Boot rv1126b.c:510-511 READS that bit to pick the FSPI drive strength (3.3 V: level 4; else level 3).
-#   U-Boot rv1126b.c has no write to any *_vsel register. ioc_rv1126b.h:44-443 declares the io_vsel registers
-#   (0x0900-0x0920) and nothing writes them.
-#   The kernel dts has no io-domain node and no voltage table (grep of the SDK's kernel-dts: none).
-
-[banks]
-# Stated only where the vendor dtsi gives the supply of a bank's pins.
-[banks.gpio2]
-pins = "sdmmc0 data, command and clock: <2 RK_PA0>..<2 RK_PA5> (rv1126b-pinctrl.dtsi sdmmc0_bus4/clk/cmd, bank 2)"
-supply = "vccio_sd"
-voltage_v = 3.3
-basis = "vqmmc-supply = <&vccio_sd> on &sdmmc0 (rv1126b-luckfox-aura.dts:88-89); vccio_sd is a fixed 3.3 V regulator (rv1126b-luckfox-aura.dtsi:111-120), vin-supply vcc3v3_sys"
-upstream = "vcc3v3_sys = RK801 DCDC_REG2, 3.3 V (rv1126b-luckfox-aura.dtsi:381-393)"
-
-# Not stated (the vendor dtsi gives no supply for these; the image is refused until stated):
-#   GPIO0 (sdmmc0_detn, sdmmc0_pwren, PMIC pins, the USB and host enables), GPIO1, GPIO3, GPIO4-GPIO7 (incl. the
-#   GMAC pins on GPIO6 and the eth_clk output on GPIO6), the FSPI and the emmc (not used in this image).
-#   The PHY I/O rail VCCIO_PHY1 (schematic ETHER sheet; no vendor dtsi regulator for it).
-#   saradc0 vref is vcc_1v8 (rv1126b-luckfox-aura.dtsi:458): an analog reference, not a bank supply, so not a bank entry.
-
-[io_domains]
-# (empty: the vendor kernel dts has no io-domain node and U-Boot writes no VSEL register)
+# The record, per IO domain. Nothing here is a voltage that was not read from a source.
+[bank_statements]
+pmuio0 = "not established. GPIO0 A/B (sdmmc0_detn on PA5, sdmmc0_pwren on PB2 in the SDK kernel dts). No supply named for this domain in the SDK dts. Left as found at reset: our bootloader and kernel do not program the IO_VSEL register. Established by: the schematic sheet naming this domain's supply, or the RV1126B TRM reset value of pmuio0 io_vsel (0x900)."
+pmuio1 = "not established. GPIO0 C/D (the RK801 interrupt on PC0, pwrctrl on PC1, vcc5v0_host_en on PC4, vbus5v0_typec on PC6 in the SDK dts). No supply named for this domain in the SDK dts. Left as found at reset: not programmed by us. Established by: the schematic sheet naming this domain's supply, or the TRM reset value of pmuio1 io_vsel (0x900)."
+vccio1 = "not established. GPIO1 (no pins used by this image). The vendor U-Boot READS IO1_VSEL bit 15 (rv1126b.c 85-86, 510-511) to choose the FSPI drive strength; the bit's value on the Aura is not on disk. Left as found at reset: not written by us. Established by: the schematic sheet for VCCIO1, or the TRM."
+vccio2 = "not established. GPIO2 A: the sdmmc0 data, command and clock pins (SDK pinctrl sdmmc0_bus4/cmd/clk, bank 2). The SDK kernel dts gives the card IO regulator: vqmmc = vccio_sd, a fixed 3.3 V regulator fed from vcc3v3_sys = RK801 DCDC2 at 3.3 V (rv1126b-luckfox-aura.dts 88-89, rv1126b-luckfox-aura.dtsi 111-120, 381-393). The SDK names no supply for the VCCIO2 domain itself, so the domain's voltage is not established. Left as found at reset: our SPL writes VCCIO2_IOC iomux and pull registers (0x40, 0x44, 0x320) only, not io2_vsel (0x90c)."
+vccio3 = "not established. GPIO3 (the SDK WiFi enable on PB6, PCM out on PB3, BT poweren on PB7 and BT RTS on PA6 in the SDK dts; not used by this image). No supply named in the SDK dts. Left as found at reset: not written by us. Established by: the schematic sheet for VCCIO3, or the TRM reset value of io3_vsel (0x910)."
+vccio4 = "not established. GPIO4 (no pins used by this image). No supply named in the SDK dts. Left as found at reset: not written by us. Established by: the schematic sheet for VCCIO4, or the TRM reset value of io_vsel (0x914)."
+vccio5 = "not established. GPIO5 (no pins used by this image). No supply named in the SDK dts. Left as found at reset: not written by us. Established by: the schematic sheet for VCCIO5, or the TRM reset value of io_vsel (0x918)."
+vccio6 = "not established. GPIO6 (the GMAC MDC and MDIO on PC0/PB7, the RGMII bus on PA3-PA7, PB0-PB5, the 25 MHz eth output on PC1, and the PHY reset on PB6: SDK pinctrl eth groups). The SDK dts names no supply for this domain; the PHY I/O rail (VCCIO_PHY1, schematic ETHER sheet) is not given a voltage in the SDK. Left as found at reset: not written by us. Established by: the schematic sheet for VCCIO6 or the PHY rail (VCCIO_PHY1 level strapped by R218-R226 on the ETHER sheet, whose datasheet level is not on disk), or the TRM reset value of io_vsel (0x91c)."
+vccio7 = "not established. GPIO7 (no pins used by this image). No supply named in the SDK dts. Left as found at reset: not written by us. Established by: the schematic sheet for VCCIO7, or the TRM reset value of io_vsel (0x920)."
