@@ -9,7 +9,7 @@ description = "ROCK 5C slot board: the Lemnos board file (U-Boot record), the ge
 
 [sources.lemnos]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "7748a241fa98e703c9703ce25c7f10dda210564b"  # Lemnos pr/BB1b TIP (Z2), unmerged: moves to the merged rev before merge
+ref = "31e0f736a334260a7df2ea86bcfa358e9a640f08"  # Lemnos pr/BB1b TIP (Z2), unmerged: moves to the merged rev before merge
 
 # The image lemnos-ctl is built in, and the generator runs in (the same as lemnos-ctl's own component).
 [sources.root]
@@ -55,7 +55,7 @@ verify_key_args = ["--pubkey", "@pubkey@"]
 # The data partition (slot-disk): the tool writes the installed slot into a data directory in its own layout, from the bundle,
 # with the boot partition image, the keys and the data partition's size (the board's; one number with the ext4 size).
 # The args and verify are D1's (devices/products/raze-base on pr/D1, components/raze-lemnos-board). NOT at Lemnos pr/BB1b
-# 7748a241 (BB1b head; M36 plus BB1b, data-partition): `data-partition` is Lemnos M36 (not at the pin), so the first real build of this image will fail here until the
+# 31e0f736 (BB1b head; M36 plus BB1b, data-partition): `data-partition` is Lemnos M36 (not at the pin), so the first real build of this image will fail here until the
 # pin moves. Plan does not run it.
 [generate.data]
 args = ["data-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--install", "@bundle@", "--boot-image", "@boot-image@", "--keys", "@keys@", "--time", "@time@", "--data-size", "@data-size@", "--out", "@out@"]

@@ -6,7 +6,22 @@ the rk35xx family proof (Z2, `zero-3e-bench`) and on the Lemnos and Gaia merges 
 Built the way Z2 builds `zero-3e-bench`: `products/rock-5c-bench` (recipe `slot-disk`, `initramfs = ["lemnos-slot-init"]`),
 the board's `lemnos-board.toml` in slot form, the shared bench components, and a board component `rock-5c-slot-board`.
 
-## Pins (as found; none moved)
+## Pins (the next pins; PINS-2 comes later)
+
+- Gaia: `9efa797f` (next's pin; `devices/gaia.lock`). Built and used: `/mnt/ssd-samsung/gaia/bin/next-9efa797f/gaia`.
+- Lemnos: `31e0f736` (next's `lemnos-slot-store` pin, root `Cargo.toml`, BB1b slot declarations). Every Lemnos component of
+  `rock-5c-bench` and the slot board is locked to it, so the one-rev rule passes. It replaces the earlier `7748a241` (Z2's pin).
+- What R1 depends on in these pins (PINS-2 must need no rework here, or this is the list that changes):
+  - `lemnos-board.toml` keys: `[[devices]] system-slots` with `record = "uboot"`, `uboot_env_size`, `uboot_env_mmc_index`,
+    `boot_sources`; `[[hardware]] vbus = "gpio:gpio0:28"` with `vbus_off` and `vbus_reason`; `options = ["usb3"]`;
+    `usb-gadget` config; `[security] orion = false`; `[descriptions] lemnos`.
+  - `socs/rk3588.toml` names: controller `usb-otg0` (path `/usb@fc000000`, sysfs `fc000000.usb`) and watchdog
+    `/watchdog@feaf0000`.
+  - The slot-board component's `lemnos-ctl tree` / `boot-partition` / `bundle` / `data-partition` arguments and flags.
+  - The packaging paths in the Lemnos components (`packaging/systemd/...`).
+  - If PINS-2 renames or removes any of these, R1 changes in those files only (`lemnos-board.toml` and the slot-board component).
+- Earlier pin record (for history): this branch used `7748a241` before the merge of next; that is no longer used.
+
 - Lemnos: the product's components are locked at `7748a241` (pr/BB1b tip, the same pin as Z2's `zero-3e-bench`).
   NOTE: the brief named `e8472620` as "pr/BB1b, the same as Z2". At the Lemnos checkout on disk, `e8472620` is the commit
   "BB1: the A733 USB OTG controller is a device port", not the BB1b tip. Z2 uses `7748a241`, so R1 does too. Coordinator to confirm.
@@ -71,27 +86,44 @@ search results says the SY6280 has reverse blocking with no body diode, and the 
 search results say "Target design specification" in one case. That is not a datasheet read. So the BootROM window is harmless only if
 reverse blocking holds with EN floating: UNVERIFIED. Read the Silergy datasheet (section on reverse current) before a board run.
 
-## Gate and checks
-- `gaia validate` (board, family, product): ok.
-- `gaia lock` for `rock-5c-bench`: wrote `devices/products/rock-5c-bench/gaia.lock` (rc 0). Lemnos `7748a241`, Gaia `c0d084fa`.
-- `gaia plan` for `rock-5c-bench` (throwaway pc-key, the `2026.1.0-dev.0+check` test version; recipes from the c0d084f source): rc 0. Not built.
-- `scripts/check-devices.sh` with `GAIA_BIN=bin-d8441c9/gaia` (the binary `devices/gaia.lock` names; with `bin-c0d084f` the script
-  stops first with "a stale binary", the known refusal). Result: FAIL, and all of it is expected or caused by the Gaia pin:
-  - `boards/radxa-rock-5c/board.toml:31: bootloader.patches: unknown key` under d8441c9. The patch key is in Gaia c0d084f (validates
-    there). This also fails the existing `rock-5c-base` and `rock-5c-bringup` products under the current pin. It clears when G12 moves
-    `devices/gaia.lock` to c0d084fa. Until then this PR cannot merge without breaking those two products.
-  - `Lemnos pin`: rock-5c-bench locks 7748a241 (the Z2 pin), Cargo.toml pins f4a295c6. The same refusal Z2 has.
-  - Not R1: `cubie-a7s-bench` (e2e45ce7, A733 family) and `cubie-a7-bringup` fail on their own lines.
-  - `rk_env_rule`: no FAIL for rock-5c-bench (the family's U-Boot fragment carries USE_DT=y and DEVICE_INDEX=1).
-- `scripts/gate.sh`: its clippy and tests run on the busy disk and took more than an hour; the result is in the PR body.
+## Gate and checks (on next 9efa797f; merged with origin/next d1adf855)
+
+- `gaia validate` (board, family, product): ok, with `/mnt/ssd-samsung/gaia/bin/next-9efa797f/gaia`.
+- `gaia lock --check` for `rock-5c-bench` and `rock-5c-base`: both match the descriptions. `rock-5c-bench/gaia.lock` is locked to
+  Gaia `9efa797f` and Lemnos `31e0f736`.
+- `gaia plan` for `rock-5c-bench` (throwaway pc-key, test version): ok. Not built. The plan's patch list (the plan's graph, nodes
+  `radxa-rock-5c.u-boot.patched` and `rock-5c-bench.os.radxa-rock-5c.u-boot.patch0`): ONE entry, `devices/boards/radxa-rock-5c/assets/patches/u-boot/0001-rock-5c-hold-usb-otg-vbus-low.patch`.
+  The family (rk35xx) has no patches, so the board's own list stays as is: PATCH-LISTS says a board's list follows its family's, and
+  the family has none. The kernel and TF-A have no patches in the plan.
+- `scripts/check-devices.sh` with the same binary: passes (3 families, 7 boards, 19 components, 7 products), including the Lemnos pin,
+  the RK env rule, the PADS rule (ROCK 5C states `applies_pad_table = false` with its reason), and the bring-up self-test.
+- `scripts/gate.sh`: see the gate result at the bottom of this section and in the PR comment.
+
+## Bring-up product deleted (R1 owns this)
+
+- `devices/products/rock-5c-bringup` is deleted. Its files moved to `devices/tests/fixtures/bringup-rock-5c/`: the bring-up rule's
+  self-test (`bringup_rule_self_test` in `scripts/check-devices.sh`) copies that fixture in as `products/rock-5c-bringup` and
+  runs its refusal cases on it, so the coverage stays.
+- References updated: `devices/README.md` (bring-up list), `devices/components/dev-bringup-hostkey/component.toml`,
+  `scripts/build-product.sh` (example name now `rock-5c-bench`). PADS.md's line "rock-5c-bringup: deleted in R1 (#131)" is the record.
+- Nothing else in the tree names the product (grep).
+
+## Dependencies on Z2 and C1 pieces not on next yet
+
+R1 was cut from `pr/Z2`. The shared pieces R1's product needs are Z2's, and are not on next yet: the rk35xx `u-boot.fragment`
+(env rule lines, Lemnos boot-path lines) and `linux.fragment` (PSTORE lines), `devices/components/lemnos0-addressing`,
+`devices/components/bench-hostname`, `scripts/pc-key-strip.sh`, and the RK env rule and pc-key input in `scripts/check-devices.sh`.
+The Z2 product (`zero-3e-bench`) and the C1 product (`cubie-a7s-bench`) are removed from R1: they are Z2's and C1's, not R1's.
+So R1 lands after Z2 (or with its shared pieces).
 
 ## Missing (named, by owner)
-- Lemnos: Q2g boot hold (merged + locked) and its PD4 claim (conflicts with the regulator; see above); pr/BB1b merged rev; the root
-  Cargo.toml Lemnos rev (`f4a295c6`), which the one-rev rule needs moved; `data-partition` at a pin with M36 (already at 7748a241 in Z2).
-- Gaia: `devices/gaia.lock` (G12, d8441c9 -> c0d084fa); ownership of the R1 additions to `board.toml`, `rk3588s-rock-5c-loader.dts`,
-  and the U-Boot patch; the U-Boot patch applied to v2026.10 (UNVERIFIED file text); ROCK 5C `boot-report` fit.
-- Mainline: RK3588S ramoops address confirmed with `/proc/iomem` at first boot (vendor values cited above); Ethernet GMAC driver present in the family kernel (UNVERIFIED).
-- Hardware: SY6280AAC reverse-current datasheet read (b); pad reset state of GPIO0_D4; U-Boot late-init regulator behaviour; the kernel
-  build of the fragments (`check-kernel-fragments`); a meter check of VBUS on the port (B21's list applies).
-- Z2 proof: the rk35xx family's proof on the ZERO 3E (`Z2-proof`), which gates shipping R1.
+- Lemnos: Q2g boot hold (merged + locked) and its PD4 claim: Q2g skips PD4 because the regulator `vcc5v0_usb_otg0` owns it (coordinator
+  ruling 2026-11-14; Lemnos told). The PINS-2 merged rev of BB1b/BB2/BB3 (the list in "Pins" above).
+- Gaia: ownership of the R1 additions to `board.toml`, `rk3588s-rock-5c-loader.dts` and the U-Boot patch (Z2 edited Gaia's files the same
+  way); the U-Boot patch against v2026.10's file text (UNVERIFIED: the file on disk is Radxa's tree); ROCK 5C `boot-report` fit.
+- Mainline: RK3588S ramoops confirmed with `/proc/iomem` at first boot (vendor values cited above); Ethernet GMAC driver present in the
+  family kernel (UNVERIFIED).
+- Hardware: SY6280AAC reverse-current datasheet read (b); pad reset state of GPIO0_D4; U-Boot late-init regulator behaviour; a meter check
+  of VBUS on the port (B21's list applies).
+- Z2 (shared pieces, see "Dependencies"): R1 lands with or after Z2. Shipping waits on the rk35xx family proof on the ZERO 3E.
 - Nothing booted. Nothing flashed. No board access. No image built.

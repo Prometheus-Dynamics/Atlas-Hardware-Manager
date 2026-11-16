@@ -4,10 +4,10 @@
 # and the other devices are not written here. Untested on board.
 #
 # Sources (every fact says its source; DERIVED = read from a file, not run; UNVERIFIED = no source read here):
-# - Lemnos socs/rk3588.toml at pr/BB1b 7748a241 (the pin the ZERO 3E uses; Lemnos is the file's owner):
+# - Lemnos socs/rk3588.toml at pr/BB1b 31e0f736 (the pin the ZERO 3E uses; Lemnos is the file's owner):
 #   [controllers.usb-otg0] (path /usb@fc000000, sysfs fc000000.usb, usb-peripheral; USB 2 PHY 0 and USBDP PHY 0 as needs),
 #   [controllers.watchdog] (/watchdog@feaf0000, rockchip,rk3588-wdt). Both DERIVED from Lemnos's v6.12 base read.
-# - Lemnos rk3566-slots.toml form (testing/boards/rk3566-slots.toml at 7748a241), the RK3588 values as below.
+# - Lemnos rk3566-slots.toml form (testing/boards/rk3566-slots.toml at 31e0f736), the RK3588 values as below.
 # - The U-Boot mmc order (SD = mmc 1): research/radxa-u-boot dts/upstream/src/arm64/rockchip/rk3588s-rock-5c.dts lines 20-21
 #   (mmc0 = &sdhci, the eMMC; mmc1 = &sdmmc, the microSD, at rk3588-base.dtsi:2200 /mmc@fe2c0000). That is the Radxa U-Boot copy on
 #   disk, not U-Boot v2026.10: UNVERIFIED for v2026.10. CONFIG_ENV_MMC_DEVICE_INDEX=1 in the family fragment is the same value.
