@@ -4,13 +4,19 @@
 //! The rule is "fetch once, then follow": a device is asked when this connection first sees it,
 //! and again only when its description generation moves (its `<device>.description` topic, the
 //! number the description carries). Nothing is asked on a timer, and nothing is asked again while
-//! the generation is the same. A manual refresh asks every device again.
+//! the generation is the same.
+//!
+//! A manual refresh asks every device once. Its answers belong to the refresh, not to the
+//! connection: when a read fails part way through a refresh, the answers it has received still
+//! answer that refresh, and the retry asks only the devices that have not answered it, plus any
+//! whose generation has moved since.
 //!
 //! Paging: Lemnos's `describe` has no paged form at e5c0ff0e (a description over 60 KiB is refused
 //! whole by the bridge, by name). When it gets one (Lemnos's `list_page` shape, as M8b gives
 //! `system.slots`), [`fetch`] is the one place that changes: it walks the pages and returns the
 //! whole text.
 
+use std::collections::BTreeMap;
 use std::io::ErrorKind;
 use std::time::Duration;
 
@@ -38,6 +44,16 @@ pub(crate) struct Asked {
     /// The generation the state answers: the description's own, or, for a refusal, the topic's
     /// generation at the time of the ask.
     pub generation: Option<u64>,
+}
+
+/// One refresh in progress (see [`crate::Hardware::refresh_descriptions`]): the answer each device
+/// has given it so far. A session that fails and comes back takes back none of them.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct Refresh {
+    /// This refresh's number: a read serves the refresh it was started for, and no other.
+    pub id: u64,
+    /// The answers received in this refresh, by device resource name.
+    pub answered: BTreeMap<String, Asked>,
 }
 
 /// Whether a device's description is asked for now. It is asked when nothing is held for the

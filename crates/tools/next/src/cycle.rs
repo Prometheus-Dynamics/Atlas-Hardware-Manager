@@ -18,6 +18,7 @@ use atlas_board_slots::{BoardSlots, Ended, Follower, SlotError, TrialStart};
 use atlas_session::Handle;
 use atlas_trial::{Running, TrialState};
 use orion::Address;
+use orion::node::Security;
 use serde_json::{Value, json};
 
 use crate::args::CycleArgs;
@@ -65,7 +66,7 @@ pub const STEPS: [StepInfo; 12] = [
     StepInfo {
         id: "2",
         title: "the board's key fingerprint and security",
-        does: "Reads the board's key fingerprint. The security mode is not read: the probe is gone with the Orion J9 pin.",
+        does: "Reads the board's key fingerprint and its security switch, as the board's hello says them. Reads only.",
         if_it_fails: "Reads only. Nothing changes on the board.",
     },
     StepInfo {
@@ -218,6 +219,8 @@ struct Ctx<'a> {
     pc: String,
     board_key: [u8; 32],
     board_fingerprint: String,
+    /// The board's security switch as its hello says it (Orion C43); None until step 2 reads it.
+    security: Option<Security>,
     link: Option<Link>,
     follower: Follower,
     good: String,
@@ -374,7 +377,7 @@ async fn install_and_check<W: Write>(
 ) -> Result<String, Refusal> {
     let link = ctx.link()?;
     let info = link::board_info(&link.node);
-    let id = commands::install(r, &ctx.state, link, &info, bundle).await?;
+    let id = commands::install(r, &ctx.state, link, &info, bundle, ctx.env.wait).await?;
     let list = ctx.slots()?.list().await?;
     if !list.slots.iter().any(|slot| slot.id == id) {
         return Err(Refusal::new(
@@ -457,6 +460,12 @@ async fn step_fingerprint(ctx: &mut Ctx<'_>, r: &mut Report<'_, Vec<u8>>) -> Res
     ctx.board_key = node.public_key;
     ctx.board_fingerprint.clone_from(&node.fingerprint);
     r.say(format!("the board's key fingerprint: {}", node.fingerprint));
+    let security = node.security();
+    ctx.security = Some(security);
+    r.say(format!(
+        "security on the board: {}",
+        security_words(security)
+    ));
     Ok(())
 }
 
@@ -560,7 +569,7 @@ async fn step_install_good_refused(
     let link = ctx.link()?;
     let info = link::board_info(&link.node);
     let bundle = ctx.good_bundle.clone();
-    match commands::install(r, &ctx.state, link, &info, &bundle).await {
+    match commands::install(r, &ctx.state, link, &info, &bundle, ctx.env.wait).await {
         Ok(id) => Err(Refusal::new(
             1,
             format!(
@@ -568,7 +577,7 @@ async fn step_install_good_refused(
                 ctx.bad
             ),
         )),
-        Err(refusal) if refusal.words.contains("is on trial with") => {
+        Err(refusal) if refusal.busy => {
             r.say("refused while the trial is pending, as the board's rule says:");
             r.say(refusal.words);
             Ok(())
@@ -714,7 +723,10 @@ fn render(ctx: &Ctx<'_>, card: &Card, code: i32, started: SystemTime, ended: Sys
             &ctx.pc
         }
     ));
-    text.push_str(&format!("Security on the board: {}\n", "not read"));
+    text.push_str(&format!(
+        "Security on the board: {}\n",
+        ctx.security.map_or("not read".to_owned(), security_words)
+    ));
     text.push_str(&format!("Atlas build: {ATLAS_BUILD}\n"));
     text.push_str(&format!(
         "Run started (this PC's clock, UTC): {}\n",
@@ -779,7 +791,8 @@ fn render_json(
         "board_address": ctx.text,
         "board_fingerprint": ctx.board_fingerprint,
         "pc_fingerprint": ctx.pc,
-        "security": "not read",
+        "security": ctx.security.map_or("not read", security_token),
+        "security_generation": ctx.security.and_then(security_generation),
         "atlas_build": ATLAS_BUILD,
         "started": utc_stamp(started),
         "ended": utc_stamp(ended),
@@ -894,6 +907,7 @@ pub async fn run<W: Write>(args: &CycleArgs, env: &Env, out: &mut W) -> i32 {
         pc: String::new(),
         board_key: [0; 32],
         board_fingerprint: String::new(),
+        security: None,
         link: None,
         follower: Follower::open(&state).with_recheck(env.recheck),
         good: String::new(),
@@ -947,9 +961,104 @@ fn write_scorecard(path: &Path, text: &str, json: Option<&str>) -> Result<(), St
     Ok(())
 }
 
+/// The board's security switch in words for people: step 2 and the scorecard's text.
+fn security_words(security: Security) -> String {
+    match security {
+        Security::NotTold => "the board has not said".to_owned(),
+        Security::On { generation } => {
+            with_generation("on: a signed session is needed".to_owned(), generation)
+        }
+        Security::Off { generation } => {
+            with_generation("off: a plain session is enough".to_owned(), generation)
+        }
+        Security::Damaged => {
+            "damaged: its security record cannot be read, so the board counts it as on".to_owned()
+        }
+        _ => "the board has not said".to_owned(),
+    }
+}
+
+fn with_generation(words: String, generation: Option<u64>) -> String {
+    match generation {
+        Some(generation) => format!("{words} (record generation {generation})"),
+        None => words,
+    }
+}
+
+/// The security switch as one word, for the scorecard's JSON.
+fn security_token(security: Security) -> &'static str {
+    match security {
+        Security::NotTold => "not told",
+        Security::On { .. } => "on",
+        Security::Off { .. } => "off",
+        Security::Damaged => "damaged",
+        _ => "not told",
+    }
+}
+
+fn security_generation(security: Security) -> Option<u64> {
+    match security {
+        Security::On { generation } | Security::Off { generation } => generation,
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use orion::node::{Fact, Node};
+
     use super::*;
+
+    fn node_with(facts: &[(&str, &str)]) -> Node {
+        Node {
+            name: "board".into(),
+            cluster: "lab".into(),
+            public_key: [0; 32],
+            fingerprint: String::new(),
+            revision: 1,
+            time_ms: 0,
+            facts: facts
+                .iter()
+                .map(|(name, value)| Fact {
+                    name: (*name).into(),
+                    ty: 4,
+                    value: value.as_bytes().to_vec(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn each_security_state_is_read_from_the_hello_and_worded_for_people() {
+        // On, with the record's generation.
+        let on = node_with(&[("security", "on"), ("security_generation", "7")]).security();
+        assert_eq!(
+            security_words(on),
+            "on: a signed session is needed (record generation 7)"
+        );
+        assert_eq!(security_token(on), "on");
+        assert_eq!(security_generation(on), Some(7));
+
+        // Off, with no record generation.
+        let off = node_with(&[("security", "off")]).security();
+        assert_eq!(security_words(off), "off: a plain session is enough");
+        assert_eq!(security_token(off), "off");
+        assert_eq!(security_generation(off), None);
+
+        // Damaged: the board counts it as on.
+        let damaged = node_with(&[("security", "damaged")]).security();
+        assert_eq!(
+            security_words(damaged),
+            "damaged: its security record cannot be read, so the board counts it as on"
+        );
+        assert_eq!(security_token(damaged), "damaged");
+
+        // An older board says nothing: not told.
+        let old = node_with(&[("state", "running")]).security();
+        assert_eq!(security_words(old), "the board has not said");
+        assert_eq!(security_token(old), "not told");
+        assert_eq!(security_generation(old), None);
+    }
 
     #[test]
     fn utc_stamp_reads_a_known_time() {

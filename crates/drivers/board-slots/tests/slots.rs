@@ -6,7 +6,7 @@
 mod common;
 
 use atlas_actions::CancelState;
-use atlas_actions::{Action, ActionError, BoardActions, Reported};
+use atlas_actions::{Action, BoardActions, Reported};
 use atlas_board_slots::{BoardSlots, InstallRequest, SlotError, Source};
 use atlas_image::BoardOutcome;
 use atlas_jobs::JobId;
@@ -190,7 +190,7 @@ async fn a_session_lost_during_the_push_resumes_without_a_second_install() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_session_lost_during_the_boards_install_never_starts_install_file_twice() {
+async fn a_follow_cut_by_a_lost_connection_is_repeated_and_the_first_answer_is_the_only_answer() {
     let rig = Rig::start("lost-install").await;
     rig.node.hold_installs(true);
     let path = write_bundle(
@@ -208,6 +208,9 @@ async fn a_session_lost_during_the_boards_install_never_starts_install_file_twic
     })
     .await;
     rig.relay.cut();
+    // The session is lost while the board runs the install: the outcome is unknown, and the board's
+    // list is what decides it. It is not reported as waiting, and not as failed.
+    // The follow produced no answer: the install waits for the board, and follows the run again.
     stage_is(&rig, job, "the install to wait for the board", |stage| {
         matches!(stage, Stage::WaitingForBoard { .. })
     })
@@ -223,10 +226,10 @@ async fn a_session_lost_during_the_boards_install_never_starts_install_file_twic
 }
 
 /// An install is a hold on its board. Its session goes silent past the lease period while the board
-/// is running it: the install ends as a lapse, with the words that say the board may have dropped
-/// it, and it is not reported as installed.
+/// is running it. The lapse is not an answer, so the install is not failed for it: the run is followed
+/// again, and the install is done once the board answers and the list shows the new slot.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_install_whose_session_lapses_while_the_board_runs_it_ends_as_a_lapse() {
+async fn a_lapsed_hold_is_no_answer_and_the_run_is_followed_again_when_it_answers() {
     // The lease is read on a manual clock: the lapse is an advance of it, made once the install is held
     // on the board, and nothing in the run depends on how long a step takes.
     let clock = atlas_session::Clock::manual();
@@ -257,10 +260,10 @@ async fn an_install_whose_session_lapses_while_the_board_runs_it_ends_as_a_lapse
     .await;
     // The install is held on the board, and its session is silent past the lease.
     clock.advance(Duration::from_secs(61));
-    stage_is(&rig, job, "the install to end as a lapse", |stage| {
-        matches!(stage, Stage::Failed { reason } if reason.contains("may have dropped the hold"))
-    })
-    .await;
+    // A lapsed hold is not an answer: the install is not failed for it. The board finishes the
+    // install, the run answers, and the list shows the slot.
+    rig.node.hold_installs(false);
+    assert_eq!(installed(&rig, job).await, "slot-2");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -523,44 +526,6 @@ async fn a_board_without_the_slot_contract_has_no_slots_and_is_asked_nothing() {
     );
 }
 
-/// A read that takes longer than one direct wait (the sim's run takes 150 ticks, 3 s, against a 2 s
-/// wait) completes: the caller gets its answer, and the board runs the list once, not once per
-/// attempt. A list started again from zero on every cut-off never gets through a slow board.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_list_longer_than_one_window_completes_and_is_not_started_again() {
-    let rig = Rig::start("slow-list").await;
-    rig.node.script().slow_action(names::SLOTS_LIST, 150);
-    let listed = list(&rig).await;
-    assert_eq!(listed.running, "slot-1");
-    assert_eq!(
-        rig.node.runs_started(names::SLOTS_LIST),
-        1,
-        "the slow list was started once, and its attempts followed that one run"
-    );
-}
-
-/// A read cut at its window, that the board finishes while nobody waits for it, is answered by the
-/// next call: the board keeps the answer of a detached run for its starter, so the caller does not
-/// start the listing again to get it. The sim's run takes 105 ticks (2.1 s): the first call is cut
-/// at 2 s, and the second comes after the run has ended unattended.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_read_the_board_finished_unattended_is_answered_by_the_next_call() {
-    let rig = Rig::start("unattended-list").await;
-    rig.node.script().slow_action(names::SLOTS_LIST, 105);
-    match rig.slots.list().await {
-        Err(SlotError::Board(ActionError::NotFinished { .. })) => {}
-        other => panic!("the first call is cut at its window, got {other:?}"),
-    }
-    tokio::time::sleep(Duration::from_secs(1)).await;
-    let listed = list(&rig).await;
-    assert_eq!(listed.running, "slot-1");
-    assert_eq!(
-        rig.node.runs_started(names::SLOTS_LIST),
-        1,
-        "the second call took the answer of the one run"
-    );
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_list_over_the_size_bound_is_passed_on_by_name_and_not_truncated() {
     let rig = Rig::start("oversize").await;
@@ -698,4 +663,26 @@ async fn a_refused_install_keeps_its_typed_failure_and_the_boards_words() {
         reason.contains("bytes"),
         "the board's words are shown as they are: {reason}"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_follow_answered_at_once_is_checked_against_the_list() {
+    let rig = Rig::start("answered-at-once").await;
+    let path = write_bundle(
+        &rig.dir.join("bundles"),
+        "at-once.tar",
+        &bundle_bytes("slot-2", "2.0.0", None),
+    );
+    let job = rig
+        .installs
+        .submit(device(), &rig.address(), BOARD, true, request(path, false))
+        .await
+        .expect("queued");
+    assert_eq!(installed(&rig, job).await, "slot-2");
+    assert_eq!(
+        rig.node.runs_started(names::SLOTS_INSTALL_FILE),
+        1,
+        "the run was started once and answered at once"
+    );
+    assert!(list(&rig).await.get("slot-2").is_some());
 }

@@ -38,7 +38,6 @@ pub enum LinkFault {
 pub struct Script {
     actions: BTreeMap<String, VecDeque<Behaviour>>,
     links: VecDeque<LinkFault>,
-    slow: BTreeMap<String, u32>,
 }
 
 impl Script {
@@ -62,18 +61,6 @@ impl Script {
             .get_mut(action)
             .and_then(VecDeque::pop_front)
             .unwrap_or(Behaviour::Answer)
-    }
-
-    /// Every run of `action` takes `ticks` ticks (20 ms each) instead of one, until changed. A slow
-    /// board: a read that takes longer than a caller's direct wait.
-    pub fn slow_action(&mut self, action: &str, ticks: u32) {
-        self.slow.insert(action.to_string(), ticks.max(1));
-    }
-
-    /// How many ticks each run of `action` takes, when [`Script::slow_action`] set it.
-    #[must_use]
-    pub fn ticks_of(&self, action: &str) -> Option<u32> {
-        self.slow.get(action).copied()
     }
 
     /// Queues a fault for the next connection through the link.

@@ -4,21 +4,13 @@
 //! (a run, or its cancel, which renews the board's lease), so it has the session's call
 //! wait and never runs after its caller gave up.
 //!
-//! Three ways to run an action:
+//! Two ways to run an action:
 //!
-//! - A **short** action is one call ([`BoardActions::run`]): started and waited for inside a
-//!   single call, **not detached**. The board cancels a run whose session ends, so a direct run
-//!   is never left on the board where nobody can follow it. A direct run that does not finish
-//!   within half the call wait (at most [`DIRECT_WAIT`]) is asked to stop and reported as
-//!   [`ActionError::NotFinished`]: a longer action is a job.
-//! - A **read** ([`BoardActions::read`], and [`BoardActions::catalog`]) is a short action whose
-//!   answer is kept, so a slow board does not cost the caller its progress. It is started
-//!   **detached**, with a deadline ([`READ_DEADLINE_MS`]), and waited for inside the call. A read
-//!   not finished within the window is **not** asked to stop: it carries on on the board, and the
-//!   next call for the same read follows that run by its number instead of starting it again.
-//!   The board keeps the answer of a detached run that ended with nobody attached for its starter
-//!   (Orion's action list, for ten minutes). Only a read on a node without detached runs (an
-//!   older node) is a direct run, cancelled at the window like a short action.
+//! - A **short** action is one call ([`BoardActions::run`], [`BoardActions::catalog`]): started
+//!   and waited for inside a single call, **not detached**. The board cancels a run whose session
+//!   ends, so a direct run is never left on the board where nobody can follow it. A direct run
+//!   that does not finish within half the call wait (at most [`DIRECT_WAIT`]) is asked to stop
+//!   and reported as [`ActionError::NotFinished`]: a longer action is a job.
 //! - A **long** action is started **detached** ([`BoardActions::start`]), so the board keeps the
 //!   run if the session ends, and is followed in short polls ([`BoardActions::follow`]). A lost
 //!   session returns [`ActionError::Lost`] with the run's number; following that number again on
@@ -28,9 +20,7 @@
 //!
 //! Retry safety of each call:
 //!
-//! - [`BoardActions::catalog`] and [`BoardActions::read`] read. They change nothing, so they may
-//!   be made again; a call made again while its run is still on the board follows that run, so
-//!   the work is done once.
+//! - [`BoardActions::catalog`] reads the list. It changes nothing, so it may be made again.
 //! - A direct [`BoardActions::run`] is never retried by this crate: a call that did not come back
 //!   is [`ActionError::Unknown`], and the caller decides.
 //! - [`BoardActions::start`] is never retried by this crate: a start that was sent and not
@@ -41,15 +31,13 @@
 //! - [`BoardActions::cancel`] asks a run to stop. Asking again after it has ended changes
 //!   nothing, so it may be made again.
 
-use std::collections::BTreeMap;
 use std::io::ErrorKind;
-use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use atlas_session::{Failure, Handle, Hold, Presence, SessionError};
+use atlas_session::{Failure, FailureKind, Handle, Hold, Presence, SessionError};
 use orion::actions::{ActionCall, Finished, Outcome, Target, Update};
 use orion::types::NodeName;
-use orion::{ClientError, Error as OrionError, Orion};
+use orion::{ClientError, Error as OrionError};
 
 use crate::args;
 use crate::catalog::{Action, Catalog, Route};
@@ -62,13 +50,20 @@ pub const CATALOG_ACTION: &str = "actions.list";
 pub const POLL: Duration = Duration::from_millis(250);
 /// The longest a short action may take in one call. Half the call wait is used when that is less.
 pub const DIRECT_WAIT: Duration = Duration::from_secs(2);
-/// The deadline a read's detached run carries on the board: a read is one listing, so a board that
-/// has not answered in a minute has failed, and the board ends the run as timed out. Well under the
-/// node's cap on detached runs (an hour).
-const READ_DEADLINE_MS: u64 = 60_000;
 
 /// What a hold lapse reports as the board's words when the run had not ended yet.
 const NOT_FINISHED: &str = "not finished";
+
+/// The prefix a board's reply carries once the caller's lease ended and its holds were released:
+/// the first reply after the drop begins with it (Lemnos M39-TCP, docs/daemon.md). This is a text
+/// match, kept until Lemnos sends the typed reply field (M40); then that field replaces it.
+pub const LEASE_ENDED_PREFIX: &str = "lease-ended:";
+
+/// Whether a reply's detail says the board released the caller's holds when its lease ended.
+#[must_use]
+pub fn lease_ended(detail: &str) -> bool {
+    detail.starts_with(LEASE_ENDED_PREFIX)
+}
 
 /// A run that ended successfully.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -93,17 +88,6 @@ pub struct Progress {
 #[derive(Clone, Debug)]
 pub struct BoardActions {
     handle: Handle,
-    /// The reads still running on the board, by action name, shared by every clone.
-    reads: Arc<Mutex<BTreeMap<String, KeptRead>>>,
-}
-
-/// A read the board still runs, kept for the next call for the same read.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct KeptRead {
-    /// The run's number on the board.
-    call: u64,
-    /// The node's public key: a run number means nothing on another node.
-    key: [u8; 32],
 }
 
 /// What one poll of a detached run saw.
@@ -124,11 +108,8 @@ enum Direct {
 impl BoardActions {
     /// The actions of the node `handle` keeps a session with.
     #[must_use]
-    pub fn new(handle: Handle) -> Self {
-        Self {
-            handle,
-            reads: Arc::new(Mutex::new(BTreeMap::new())),
-        }
+    pub const fn new(handle: Handle) -> Self {
+        Self { handle }
     }
 
     /// The session this reaches the node through.
@@ -149,38 +130,20 @@ impl BoardActions {
     /// answer; [`ActionError::BadCatalog`] when the list is not one Atlas reads.
     pub async fn catalog(&self) -> Result<Catalog, ActionError> {
         // Retry: reading the list changes nothing, so the caller may make it again.
-        let done =
-            self.read_named(CATALOG_ACTION, Vec::new())
-                .await
-                .map_err(|error| match error {
-                    // The board's own words, verbatim: a size refusal is never reported as "no actions".
-                    refused @ (ActionError::Refused(_)
-                    | ActionError::Failed(_)
-                    | ActionError::Cancelled(_)) => refused,
-                    other => ActionError::NotAnswering(other.to_string()),
-                })?;
+        let done = self
+            .direct(CATALOG_ACTION, Vec::new())
+            .await
+            .map_err(|error| match error {
+                // The board's own words, verbatim: a size refusal is never reported as "no actions".
+                refused @ (ActionError::Refused(_)
+                | ActionError::Failed(_)
+                | ActionError::Cancelled(_)) => refused,
+                other => ActionError::NotAnswering(other.to_string()),
+            })?;
         // An out-buffer reply through the bridge (Lemnos M8a, in the lock since d6b9361d).
         let text = String::from_utf8(done.output)
             .map_err(|_| ActionError::BadCatalog("the list is not text".into()))?;
         Catalog::parse(&text).map_err(|error| ActionError::BadCatalog(error.to_string()))
-    }
-
-    /// Reads an action's answer in one call, for a short read the board answers (the slot list).
-    ///
-    /// A read not finished within the window is reported as [`ActionError::NotFinished`], and the
-    /// board keeps running it: the next call for the same read picks up that run. Its answer is
-    /// the same as a direct run's. Reading changes nothing, so it may be made again.
-    ///
-    /// # Errors
-    ///
-    /// As [`BoardActions::run`], for the read's own words, and [`ActionError::NotFinished`] while
-    /// the board is still answering.
-    pub async fn read(&self, action: &Action, words: &[String]) -> Result<Done, ActionError> {
-        if action.route() == Route::Job {
-            return Err(ActionError::NeedsJob(action.name.clone()));
-        }
-        args::check(action, words)?;
-        self.read_named(&action.name, args::encode(words)).await
     }
 
     /// Runs a short action in one call and returns its result.
@@ -216,7 +179,7 @@ impl BoardActions {
     ///
     /// [`ActionError::BadArguments`] (nothing sent), [`ActionError::NotConnected`] (nothing sent),
     /// or [`ActionError::StartInDoubt`].
-    pub async fn start(&self, action: &Action, words: &[String]) -> Result<u64, ActionError> {
+    pub async fn start(&self, action: &Action, words: &[String]) -> Result<Issued, ActionError> {
         args::check(action, words)?;
         self.start_encoded(&action.name, args::encode(words)).await
     }
@@ -226,9 +189,13 @@ impl BoardActions {
         &self,
         name: &str,
         encoded: Vec<u8>,
-    ) -> Result<u64, ActionError> {
+    ) -> Result<Issued, ActionError> {
         let node_name = self.node_name()?;
         let owned = name.to_owned();
+        let started = name.to_owned();
+        // Read before the start is sent: a session that changes meanwhile makes the run look
+        // older than it is, so a later use treats it as another session's (the safe side).
+        let session = self.handle.session();
         let sent = self
             .handle
             .with_bridge(move |orion| {
@@ -239,7 +206,11 @@ impl BoardActions {
                     deadline_ms: 0,
                     detached: true,
                 })?;
-                Ok(run.call())
+                Ok(Issued {
+                    call: run.call(),
+                    session,
+                    name: started.clone(),
+                })
             })
             .await;
         // Retry: never by this crate. A start that was sent and not answered may already be on
@@ -263,10 +234,11 @@ impl BoardActions {
     /// board's reason when the run ended that way, or [`ActionError::Lost`].
     pub async fn follow(
         &self,
-        call: u64,
+        issued: &Issued,
+        contract: Contract,
         on_progress: impl FnMut(&Progress),
-    ) -> Result<Done, ActionError> {
-        self.follow_inner(call, None, on_progress).await
+    ) -> Result<Followed, ActionError> {
+        self.follow_inner(issued, contract, None, on_progress).await
     }
 
     /// As [`BoardActions::follow`], for a run whose hold the caller keeps. When the session lapsed
@@ -279,19 +251,23 @@ impl BoardActions {
     /// As [`BoardActions::follow`], and [`ActionError::HoldLapsed`].
     pub async fn follow_while_held(
         &self,
-        call: u64,
+        issued: &Issued,
+        contract: Contract,
         hold: &Hold,
         on_progress: impl FnMut(&Progress),
-    ) -> Result<Done, ActionError> {
-        self.follow_inner(call, Some(hold), on_progress).await
+    ) -> Result<Followed, ActionError> {
+        self.follow_inner(issued, contract, Some(hold), on_progress)
+            .await
     }
 
     async fn follow_inner(
         &self,
-        call: u64,
+        issued: &Issued,
+        contract: Contract,
         hold: Option<&Hold>,
         mut on_progress: impl FnMut(&Progress),
-    ) -> Result<Done, ActionError> {
+    ) -> Result<Followed, ActionError> {
+        let call = issued.call;
         // Retry: following is a read. A lost session returns `Lost` with the run's number, and
         // following that number on the new session resumes it; the run is never started again.
         loop {
@@ -320,14 +296,52 @@ impl BoardActions {
                 Ok(Seen::Quiet) => {}
                 Ok(Seen::Doing(progress)) => on_progress(&progress),
                 Ok(Seen::Ended(finished)) => {
-                    let result = ended(finished);
-                    return match (hold, result) {
-                        (Some(hold), Err(error)) if hold.lapsed() => Err(ActionError::HoldLapsed {
+                    // The board says the caller's lease ended before this reply: its holds are gone.
+                    if lease_ended(&finished.detail) {
+                        return Err(ActionError::HoldLapsed {
                             call,
-                            reason: error.to_string(),
-                        }),
-                        (_, result) => result,
+                            reason: finished.detail,
+                        });
+                    }
+                    let result = ended(finished);
+                    let on_issuing_session = self.handle.session() == issued.session;
+                    let done = match (hold, result) {
+                        (Some(hold), Err(error)) if hold.lapsed() => {
+                            return Err(ActionError::HoldLapsed {
+                                call,
+                                reason: error.to_string(),
+                            });
+                        }
+                        // An end read on a later session is not trusted, failure or cancel alike:
+                        // a cancel confirmed from another session's answer is not a confirmed cancel.
+                        (_, Err(error)) if !on_issuing_session => {
+                            let reason = format!(
+                                "the run ended as `{error}`, which the node said on a later session"
+                            );
+                            let ended =
+                                matches!(error, ActionError::Refused(_) | ActionError::Failed(_))
+                                    .then(|| Box::new(error));
+                            return Err(ActionError::Unconfirmed {
+                                call,
+                                reason,
+                                ended,
+                            });
+                        }
+                        (_, result) => result?,
                     };
+                    // The answer is checked against what was started, before anything reads it.
+                    if let Err(got) = contract(&done.output) {
+                        return Err(ActionError::WrongAnswer {
+                            call,
+                            started: issued.name.clone(),
+                            got,
+                        });
+                    }
+                    return Ok(if self.handle.session() == issued.session {
+                        Followed::Confirmed(done)
+                    } else {
+                        Followed::Reconnected(done)
+                    });
                 }
                 Ok(Seen::Refused(reason)) => return Err(ActionError::Refused(reason)),
                 Err(SessionError::Gone(reason)) => {
@@ -351,7 +365,17 @@ impl BoardActions {
     /// # Errors
     ///
     /// [`ActionError::Lost`] when the session did not carry the request.
-    pub async fn cancel(&self, call: u64) -> Result<(), ActionError> {
+    pub async fn cancel(&self, issued: &Issued) -> Result<(), ActionError> {
+        let call = issued.call;
+        // A number issued on an earlier session may now name another run on the board. It is not
+        // sent a cancel, since a cancel to the wrong run stops someone else's work.
+        if self.handle.session() != issued.session {
+            return Err(ActionError::Unconfirmed {
+                call,
+                reason: "the run was started on an earlier session, and its number may now belong to another run: not cancelled blind".to_owned(),
+                ended: None,
+            });
+        }
         self.handle
             .with_bridge(move |orion| {
                 let mut run = orion.attach(call)?;
@@ -367,13 +391,15 @@ impl BoardActions {
             })
     }
 
-    /// The node's name, from its hello document, as the board's target.
-    fn node_name(&self) -> Result<NodeName, ActionError> {
-        self.identity().map(|(name, _)| name)
+    /// Whether the session is still the one `issued` was started on. A stored run number answers
+    /// for its own session only; a caller that uses an answer checks this first.
+    #[must_use]
+    pub fn same_session(&self, issued: &Issued) -> bool {
+        self.handle.session() == issued.session
     }
 
-    /// The node's name and public key, from the hello document it answered with.
-    fn identity(&self) -> Result<(NodeName, [u8; 32]), ActionError> {
+    /// The node's name, from its hello document, as the board's target.
+    fn node_name(&self) -> Result<NodeName, ActionError> {
         let node = match self.handle.presence() {
             Presence::Found(node) => node,
             Presence::Lost(reason) => return Err(ActionError::NotConnected(reason)),
@@ -386,67 +412,18 @@ impl BoardActions {
                 ));
             }
         };
-        let name = node.name.parse().map_err(|_| {
+        node.name.parse().map_err(|_| {
             ActionError::NotAnswering(format!(
                 "the node's name {:?} is not a valid name",
                 node.name
             ))
-        })?;
-        Ok((name, node.public_key))
+        })
     }
 
     /// How long a direct call may wait for its run inside one call: half the call wait, and at
     /// most [`DIRECT_WAIT`].
     fn direct_wait(&self) -> Duration {
         (self.handle.call_wait() / 2).min(DIRECT_WAIT)
-    }
-
-    /// One read: followed if the board still runs it, else started detached. See the module docs.
-    async fn read_named(&self, name: &str, encoded: Vec<u8>) -> Result<Done, ActionError> {
-        let (node_name, key) = self.identity()?;
-        let wait = self.direct_wait();
-        let owned = name.to_owned();
-        let reads = Arc::clone(&self.reads);
-        let answered = self
-            .handle
-            .with_bridge(move |orion| {
-                let kept = reads
-                    .lock()
-                    .unwrap_or_else(PoisonError::into_inner)
-                    .get(&owned)
-                    .filter(|kept| kept.key == key)
-                    .map(|kept| kept.call);
-                let (direct, still) = read_once(orion, &owned, node_name, &encoded, wait, kept)?;
-                let mut map = reads.lock().unwrap_or_else(PoisonError::into_inner);
-                match still {
-                    Some(call) => {
-                        map.insert(owned, KeptRead { call, key });
-                    }
-                    None => {
-                        map.remove(&owned);
-                    }
-                }
-                Ok(direct)
-            })
-            .await;
-        match answered {
-            Ok(Direct::Ended(finished)) => ended(finished),
-            Ok(Direct::Refused(reason)) => Err(ActionError::Refused(reason)),
-            // Not finished in time: the run stays on the board for the next call. Nothing is asked
-            // to stop.
-            Ok(Direct::Late) => Err(ActionError::NotFinished {
-                name: name.to_owned(),
-                wait,
-            }),
-            Err(SessionError::Gone(reason)) => Err(ActionError::Unknown {
-                name: name.to_owned(),
-                reason: Failure::other(reason),
-            }),
-            Err(SessionError::Failed(reason)) => Err(ActionError::Unknown {
-                name: name.to_owned(),
-                reason,
-            }),
-        }
     }
 
     /// One short call: the action is started and waited for inside the call, not detached.
@@ -497,79 +474,6 @@ impl BoardActions {
     }
 }
 
-/// One read, on the session's call. A run the board still has (`kept`) is followed by its number,
-/// and is started again only when the board no longer has it. Otherwise the read is started
-/// detached with its deadline, and waited for inside the window. Returns how it stood, and the
-/// run's number when the board still runs it after this call.
-fn read_once(
-    orion: &Orion,
-    name: &str,
-    node: NodeName,
-    encoded: &[u8],
-    wait: Duration,
-    kept: Option<u64>,
-) -> Result<(Direct, Option<u64>), OrionError> {
-    if let Some(call) = kept {
-        let mut run = orion.attach(call)?;
-        match run.finish(wait) {
-            // The board has no such run any more (it ended and was forgotten): started again below.
-            Err(ClientError::Refused {
-                error: orion::types::Error::NotFound,
-                ..
-            }) => {}
-            finished => {
-                let direct = direct_of(finished)?;
-                let still = matches!(direct, Direct::Late).then_some(call);
-                return Ok((direct, still));
-            }
-        }
-    }
-    let started = orion.run(&ActionCall {
-        name,
-        target: Target::Node(node.clone()),
-        args: encoded,
-        deadline_ms: READ_DEADLINE_MS,
-        detached: true,
-    });
-    let mut run = match started {
-        Ok(run) => run,
-        // A node without detached runs (an older one): a direct read, cancelled at the window.
-        Err(OrionError::Client(ClientError::Level { .. })) => {
-            let mut run = orion.run(&ActionCall {
-                name,
-                target: Target::Node(node),
-                args: encoded,
-                deadline_ms: 0,
-                detached: false,
-            })?;
-            return match direct_of(run.finish(wait))? {
-                Direct::Late => {
-                    let _ = run.cancel();
-                    Ok((Direct::Late, None))
-                }
-                direct => Ok((direct, None)),
-            };
-        }
-        Err(error) => return Err(error),
-    };
-    let call = run.call();
-    let direct = direct_of(run.finish(wait))?;
-    let still = matches!(direct, Direct::Late).then_some(call);
-    Ok((direct, still))
-}
-
-/// What a wait on a run gave: its end, a refusal, or no end within the wait.
-fn direct_of(finished: Result<Finished, ClientError>) -> Result<Direct, OrionError> {
-    match finished {
-        Ok(finished) => Ok(Direct::Ended(finished)),
-        Err(ClientError::Refused { error, detail }) => {
-            Ok(Direct::Refused(Failure::of_core(error, detail)))
-        }
-        Err(ClientError::Io(error)) if error.kind() == ErrorKind::TimedOut => Ok(Direct::Late),
-        Err(error) => Err(OrionError::Client(error)),
-    }
-}
-
 impl Seen {
     fn of(update: Option<Update>) -> Self {
         match update {
@@ -583,8 +487,11 @@ impl Seen {
     }
 }
 
-/// How a run that ended is answered: the board's words for anything that did not succeed.
+/// How a run that ended is answered: the board's words for anything that did not succeed. The
+/// board's status code is kept on the refusal or failure (zero is none): a Rejected ending carries
+/// the lemnosd status it was refused with (BUSY is 16, see [`ActionError::is_busy`]).
 fn ended(finished: Finished) -> Result<Done, ActionError> {
+    let code = u16::try_from(finished.code).ok().filter(|code| *code != 0);
     let detail = finished.detail;
     let reason = |default: &str| {
         if detail.trim().is_empty() {
@@ -599,16 +506,134 @@ fn ended(finished: Finished) -> Result<Done, ActionError> {
             output: finished.output,
             detail,
         }),
-        Outcome::Rejected => Err(ActionError::Refused(
-            reason("the board refused it, without a reason").into(),
-        )),
+        // Lemnos M39: a refusal without running is Rejected with the status's code.
+        Outcome::Rejected => Err(ActionError::Refused(match code {
+            Some(code) => Failure::new(
+                FailureKind::Refused,
+                Some(code),
+                reason("the board refused it, without a reason"),
+            ),
+            None => reason("the board refused it, without a reason").into(),
+        })),
         Outcome::Cancelled => Err(ActionError::Cancelled(reason("the run was cancelled"))),
-        Outcome::Failed => Err(ActionError::Failed(reason("the action failed").into())),
-        Outcome::TimedOut => Err(ActionError::Failed(
-            reason("the action ran out of time").into(),
-        )),
+        Outcome::Failed => Err(ActionError::Failed(Failure::new(
+            FailureKind::Other,
+            code,
+            reason("the action failed"),
+        ))),
+        Outcome::TimedOut => Err(ActionError::Failed(Failure::new(
+            FailureKind::Other,
+            code,
+            reason("the action ran out of time"),
+        ))),
         Outcome::Unknown(code) => Err(ActionError::Failed(
             reason(&format!("the board ended the action with outcome {code}")).into(),
         )),
+    }
+}
+
+/// A started run, with the session it was started on. A run number is only known within its
+/// session: on a later session the same number may name another run (the node keeps finished
+/// answers by number), so a later use of it is checked before it is trusted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Issued {
+    call: u64,
+    session: u64,
+    name: String,
+}
+
+impl Issued {
+    /// The run's number on the board, within its session.
+    #[must_use]
+    pub const fn call(&self) -> u64 {
+        self.call
+    }
+
+    /// The action the run was started as.
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+/// What a followed run's answer must look like: `Err` says why it is not what was started. A
+/// caller states the kind it started (for example a slot id for an install); a list answer for an
+/// install is refused by it, never read as a slot.
+pub type Contract = fn(&[u8]) -> Result<(), String>;
+
+/// Accepts any answer. Used only where the answer's kind cannot be checked yet, and said so at the
+/// call site.
+pub fn any_answer(_output: &[u8]) -> Result<(), String> {
+    Ok(())
+}
+
+/// A followed run's end. `Confirmed`: the run was started on this session, and its answer is the
+/// run's own. `Reconnected`: the run was started on an earlier session; its answer is the one the
+/// node gave for that number, which may not be this run's, so the caller confirms it by an
+/// independent read before it relies on it.
+#[derive(Debug)]
+pub enum Followed {
+    /// The run was started on the session it ended on.
+    Confirmed(Done),
+    /// The run was started on an earlier session: confirm before using.
+    Reconnected(Done),
+}
+
+impl Followed {
+    /// The run's answer, without the session check. For a caller whose check is not written yet:
+    /// each such call site says so where it is.
+    #[must_use]
+    pub fn into_done(self) -> Done {
+        match self {
+            Self::Confirmed(done) | Self::Reconnected(done) => done,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn finished(outcome: Outcome, code: u32, detail: &str) -> Finished {
+        Finished {
+            outcome,
+            output: Vec::new(),
+            detail: detail.to_owned(),
+            code,
+        }
+    }
+
+    #[test]
+    fn a_rejected_run_keeps_its_code_and_busy_is_read_from_it() {
+        let busy = ended(finished(Outcome::Rejected, 16, "an install is running")).unwrap_err();
+        assert!(busy.is_busy(), "{busy:?}");
+        assert_eq!(busy.board_reason(), Some("an install is running"));
+        // The words alone never make it busy.
+        let words = ended(finished(
+            Outcome::Rejected,
+            0,
+            "busy: an install is running",
+        ))
+        .unwrap_err();
+        assert!(!words.is_busy(), "{words:?}");
+        let missing = ended(finished(Outcome::Rejected, 2, "there is no pushed file")).unwrap_err();
+        assert!(!missing.is_busy());
+        assert_eq!(missing.failure().and_then(Failure::code), Some(2));
+    }
+
+    #[test]
+    fn a_failed_or_cancelled_run_keeps_its_code_when_it_has_one() {
+        let failed = ended(finished(Outcome::Failed, 0, "")).unwrap_err();
+        assert_eq!(failed.failure().and_then(Failure::code), None);
+        let timed = ended(finished(Outcome::TimedOut, 110, "")).unwrap_err();
+        assert_eq!(timed.failure().and_then(Failure::code), Some(110));
+        assert!(!timed.is_busy());
+    }
+
+    #[test]
+    fn the_lease_note_is_read_by_its_prefix() {
+        assert!(lease_ended("lease-ended: holds released"));
+        assert!(lease_ended("lease-ended: holds released; cancelled"));
+        assert!(!lease_ended("the board says lease-ended"));
     }
 }
