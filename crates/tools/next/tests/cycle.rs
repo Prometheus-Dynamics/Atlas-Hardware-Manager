@@ -202,7 +202,9 @@ async fn a_full_run_passes_every_step_and_writes_the_scorecard() {
     );
     assert!(card_text.contains("Verdict: PASSED"), "{card_text}");
     assert!(
-        card_text.contains("Security on the board: not read"),
+        // The sim's hello carries no security fact (the stand-in comm core has no record): the
+        // board has not said. Orion's `Node::security` reads it from the hello.
+        card_text.contains("Security on the board: the board has not said"),
         "{card_text}"
     );
     assert!(
