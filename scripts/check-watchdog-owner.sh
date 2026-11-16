@@ -529,6 +529,8 @@ wd_self_test() {  # <repo>
   local rboard=$dev/boards/raze/lemnos-board.toml
   local zboard=$dev/boards/radxa-zero-3e/lemnos-board.toml
   local fam=$dev/families/rk35xx/assets/u-boot.fragment
+  # The baseline is UNARMED: the NOTE cases are no-owner products the family does not arm. The armed cases restore and arm it below.
+  sed -i '/^CONFIG_WATCHDOG_AUTOSTART=y$/d' "$fam"
 
   fail() { echo "watchdog owner self-test: $1" >&2; rc=1; }
   has() { [[ $out == *"$1"* ]]; }
