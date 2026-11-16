@@ -65,7 +65,20 @@ loader_ini = { source = "rkbin", path = "RKBOOT/RK3588MINIALL.ini" }
 # [[partitions]] REPLACE the family's, so the two family areas are restated unchanged here (u-boot at 32K, uboot-env 16M/128K),
 # then boot (the FAT partition the U-Boot form reads boot.scr and the bays from; size = the product's boot_size, which check-devices
 # requires to match) and data (the slot file; last; its size is the one number @data-size@ takes). Sizes as the ZERO 3E's (Z2):
-# DATA 1 GiB, BOOT 128 MiB. UNVERIFIED on board; Gaia's boot-report gives the real fit on the first build.
+# DATA 512 MiB (536870912), BOOT 128 MiB. The data size is FINAL, not a first guess (Lemnos's grow is MBR-only, so on this
+# GPT disk the partition never grows; see the arithmetic below). Lemnos room check (drivers/system-slots/src/lib.rs, 82f6c075
+# :746-772; the pinned 31e0f736 has the same reserve default at :82): free >= new slot + reserve_mb, else NO_SPACE.
+#   Medium: 8 GB, the smallest the bench uses (Z2's radxa-zero-3e/board.toml, "8 GB+ SD cards the bench uses"; the tree states
+#           no smaller). UNVERIFIED for the product: a 16 GB card would also fit.
+#   Slot: the largest EROFS root, bounded at 40 MiB (Z2's upper estimate; the Raze measured 18,178,048 bytes = 17.3 MiB).
+#           UNVERIFIED for this board; Gaia's data-report gives the real figure.
+#   keep = 2 slots (the running one and the previous one, so a rollback target exists) x 40 MiB       =  80 MiB
+#   reserve_mb = 128 MiB (Lemnos suggests 64-128 for a bench image; the install needs a new slot + reserve free) = 128 MiB
+#   subtotal                                                                                             = 208 MiB
+#   margin 10%                                                                                           -> 228.8 MiB minimum
+#   declared: 512 MiB (headroom for ext4 metadata and a pushed bundle, which Lemnos has not confirmed is spooled on the data
+#           partition; if it is, it adds a term, and 512 MiB leaves room for one more 40 MiB slot).
+#   Fixed data size >= 2 x max slot + reserve_mb + 10 % is met (512 >= 229); Z2's device-check rule takes the same form.
 [descriptions]
 lemnos = "lemnos-board.toml"
 
@@ -93,4 +106,4 @@ size = "134217728"
 name = "data"
 role = "data"
 type = "0fc63daf-8483-4772-8e79-3d69d8477de4"
-size = "1073741824"
+size = "536870912"
