@@ -7,6 +7,8 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+# The one socket-path check (atlas-types::socket): a node directory is made by it, never a long one.
+atlas-types = { path = "../../core/types" }
 ed25519-dalek = "2"
 serde_json = "1"
 sha2 = "0.10"

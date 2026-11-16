@@ -48,6 +48,8 @@ pub mod readings;
 pub mod script;
 pub mod slots;
 
+/// The socket-path check and the node directory every rig makes (atlas-types::socket).
+pub use atlas_types::socket;
 pub use lease::{PERIOD as LEASE_PERIOD, STALL as LEASE_STALL};
 #[cfg(target_os = "linux")]
 pub use node::{DEADLINE, Hello, Kind, Mode, NODE_NAME, SimNode, call};

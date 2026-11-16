@@ -587,7 +587,7 @@ async fn an_install_interrupted_by_a_replaced_board_is_unknown_or_failed_and_sen
     // The address now answers with another board: the first node goes away, and a different
     // node (a new key, a new keys directory) answers on the same port.
     let port = rig.node.network().port();
-    let dir = rig.dir.clone();
+    let dir = rig.dir.to_path_buf();
     let Rig {
         node,
         relay,

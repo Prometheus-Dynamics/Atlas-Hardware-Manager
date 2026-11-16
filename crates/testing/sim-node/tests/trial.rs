@@ -10,7 +10,7 @@ use atlas_sim_node::names;
 use atlas_sim_node::slots::NewSlot;
 use atlas_sim_node::slots::Signed;
 use atlas_sim_node::slots::trial::Config;
-use atlas_sim_node::{DEADLINE, SimNode, call};
+use atlas_sim_node::{DEADLINE, Kind, SimNode, call};
 use ed25519_dalek::SigningKey;
 use orion::Orion;
 use orion::actions::{ActionCall, Finished, Outcome};
@@ -18,11 +18,9 @@ use serde_json::Value;
 
 /// A node for one test, in its own directory.
 fn start(name: &str) -> SimNode {
-    // Under the system temp dir and short: the node's Unix socket path must fit SUN_LEN, and a
-    // long build path (CI's workspace) would not.
-    let dir = std::env::temp_dir().join(format!("atl-trial-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    SimNode::start(&dir).expect("the simulated node starts")
+    // A short directory whatever the name: the node's Unix socket path must fit SUN_LEN.
+    let dir = atlas_sim_node::socket::node_dir(name).expect("a node directory");
+    SimNode::start_owned(dir, &Kind::default(), None).expect("the simulated node starts")
 }
 
 /// A bundle for slot `id`, signed by `key` when given (its signature and key id).

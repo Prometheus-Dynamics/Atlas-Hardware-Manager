@@ -317,6 +317,7 @@ dependencies = [
 name = "atlas-nt"
 version = "2026.1.0-dev"
 dependencies = [
+ "atlas-types",
  "orion",
  "orion-comm-app",
  "orion-config",
@@ -400,6 +401,7 @@ dependencies = [
 name = "atlas-sim-node"
 version = "2026.1.0-dev"
 dependencies = [
+ "atlas-types",
  "ed25519-dalek 2.2.0",
  "orion",
  "orion-stubs",

@@ -50,6 +50,7 @@ pub struct BoardInfo {
 /// signed handshake when the session is signed, else asked once with a nonce, checked and kept.
 /// Pin on this key, not on the hello document's. The session signs with the PC's identity `key`.
 pub async fn transport_key(address: &Address, key: &[u8; 32]) -> Result<[u8; 32], String> {
+    atlas_session::check_address(address).map_err(|error| error.to_string())?;
     let address = address.clone();
     let key = *key;
     tokio::task::spawn_blocking(move || {
@@ -78,6 +79,7 @@ pub async fn enrol(
     secret: [u8; 32],
     name: &'static str,
 ) -> Result<Result<Enrollment, orion::Error>, String> {
+    atlas_session::check_address(address).map_err(|error| error.to_string())?;
     let address = match address {
         Address::Network { host, .. } => Address::Network {
             host: host.clone(),
@@ -105,6 +107,7 @@ pub async fn enrol(
 /// The board's key and fingerprint as it answers now, with no pin. Trusts nothing. The session
 /// signs with the PC's identity `key`.
 pub async fn probe(env: &Env, address: &Address, key: &[u8; 32]) -> Result<Node, String> {
+    atlas_session::check_address(address).map_err(|error| error.to_string())?;
     let sessions = Sessions::with_identity(env.pause.clone(), *key);
     let handle = sessions
         .handle(address)

@@ -14,6 +14,8 @@ thiserror = "2"
 tokio = { version = "1", features = ["macros", "sync"] }
 
 [dev-dependencies]
+# The socket-path check and the node directory (atlas-types::socket).
+atlas-types = { path = "../../core/types" }
 # The real comm core, in process, with its NT4 gateway (as Orion's own gateway test runs it).
 orion = { workspace = true, features = ["topics"] }
 orion-comm-app = { git = "https://github.com/Prometheus-Dynamics/Orion.git", rev = "3dde304e396f5769d3aa25884b5a9ff5bd4b9180", default-features = false, features = ["nt4"] }
