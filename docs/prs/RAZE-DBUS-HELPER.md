@@ -1,0 +1,162 @@
+# RAZE-DBUS-HELPER (working title: GAIA-EXECBIT) — evidence, not yet a fix
+
+Status: NOT COMMITTED. Evidence only. Nothing in devices/ changed. The helper fix is on hold
+(coordinator ruling): it will be `BR2_ROOTFS_POST_FAKEROOT_SCRIPT` once Gaia ships the fakeroot-stage root
+and that rev is pinned in the same commit. No placeholder, no workaround.
+
+Pinned sources (read by git form, no download): Buildroot 2026.08 at d5180309b1b66ef3b8eaccca70ad69be8e0729a1
+(`git --git-dir /mnt/ssd-samsung/gaia/git/66fcad2eba12298ff9818d43.git show <rev>:<path>`); systemd 258.7 and
+dbus 1.16.2 tarballs in the Gaia store-build download cache (read with `tar -xOz`, not extracted into the repo).
+
+## 1. Buildroot order (file:line at d5180309)
+- Permission table applied: fs/common.mk:85 writes PACKAGES_PERMISSIONS_TABLE into ROOTFS_FULL_DEVICES_TABLE;
+  dbus.mk:32-34 DBUS_PERMISSIONS (unconditional) names usr/libexec/dbus-daemon-launch-helper; pkg-generic.mk:1227-1228.
+- Users table: fs/common.mk:80 PACKAGES_USERS; dbus.mk:36-38 DBUS_USERS (group dbus), systemd.mk:700-712 SYSTEMD_USERS.
+- Fakeroot script (per-filesystem copy, `$(FS_DIR)/<fs>/target`, fs/common.mk:110 and Makefile:470-473):
+  rsync from output/target (172-173) → chown -R 0:0 (178) → mkusers (179, writes /etc/passwd, group in THAT copy)
+  → makedevs -d table (180; makedevs.c:486 chdir(rootdir), group lookup from etc/group at 286 = the copy)
+  → ROOTFS_PRE_CMD_HOOKS (181-182): ROOTFS_RM_HWDB_DATA (Makefile:842), SYSTEMD_LOCALE_PURGE_CATALOGS (systemd.mk:809),
+  SYSTEMD_UPDATE_CATALOGS (823), SYSTEMD_RM_CATALOG_UPDATE_SERVICE (831), SYSTEMD_PRESET_ALL (836 → 834)
+  → BR2_ROOTFS_POST_FAKEROOT_SCRIPT (183-185) → run/ and tmp/ emptied (189-190) → rootfs command (193)
+  → `rm -rf $(TARGET_DIR)` (196). So nothing from the fakeroot stage is in output/target.
+- post-build script: Makefile:827-832 (target-finalize, before the fakeroot stage; output/target).
+- dbus is built with meson (dbus.mk:168): traditional_activation defaults true (dbus meson_options.txt:261-264),
+  so dbus-daemon-launch-helper is built and installed only because use_traditional_activation is true
+  (dbus meson.build:522, bus/meson.build:145-184). dbus.mk sets no -Dtraditional_activation.
+- libdbus soname: dbus meson.build:63-80 gives lt_current 41, lt_age 38, revision 3 → version_info 3.38.3,
+  soversion 3. usr/lib/libdbus-1.so.3.38.3 in post-build.sh's list is correct for 1.16.2.
+
+## 2. Options for the helper (evidence only)
+- (d) Do not install dbus: package/systemd/Config.in:31 `select BR2_PACKAGE_DBUS if !BR2_PACKAGE_DBUS_BROKER` is a
+  Kconfig select; no fragment line can turn it off. systemd.mk has no dbus dependency; it sets -Ddbus=disabled
+  (systemd.mk:69, 915). Dropping the select line needs a Buildroot patch. A product cannot carry one today: the
+  product.toml [sources.buildroot] has only git and ref (devices/products/raze-base/product.toml:20-22), and no
+  Atlas file patches Buildroot. Gaia 9efa797f support for a Buildroot patch: UNCLEAR, ask Gaia.
+  Other packages that select or depend on BR2_PACKAGE_DBUS (full grep): at-spi2-core, avahi, basu, bluez, cog,
+  connman, dtui, efl, firewalld, gvfs, iwd, network-manager, polkit, rauc, udisks, wpa_supplicant, and more. The
+  ones this product enables: systemd only (fragment). dbus-broker (dbus-broker.mk:27,54) is the alternative
+  selection: it has no DBUS_PERMISSIONS entry, but it is still a bus on the image.
+- (e) dbus without the helper: `-Dtraditional_activation=false` would stop the build of the helper, but
+  DBUS_PERMISSIONS (dbus.mk:32-34) is unconditional, so makedevs still fails ("regular file ... does not exist",
+  makedevs.c:578-582). Clearing makedevs needs the entry removed too: a Buildroot patch (same problem as d).
+- (c) Placeholder (empty file, rejected by the coordinator). Would leave an empty root:dbus 4750 file in the image:
+  a setuid-bit file, which the fragment's own comment (busybox entry) says Gaia strips unless listed; and it
+  would fail the post-build leftover check unless exempted. The dbus group exists at makedevs time (mkusers runs
+  first, fs/common.mk:179-180), so makedevs resolves it.
+- Chosen (on hold): post-fakeroot removal once Gaia's fakeroot-stage root is pinned.
+- Step 3 of post-build.sh fails at the leftover check (line 122 `find . -path '*dbus*'`) if the helper is kept,
+  as Gaia reported. The dry run must reproduce that before any change; it is not yet run (see section 5).
+
+## 3. Audit table (post-build.sh lines)
+Verdict key: NOW = no effect today (script runs before fakeroot; output/target is what Gaia takes); AFTER = takes
+effect once the fakeroot-stage root is the image.
+
+| line(s) | what it assumes | verified how | verdict |
+|---|---|---|---|
+| 50 DBUS_REQUIRED usr/libexec/dbus-daemon-launch-helper | dbus installs the helper | dbus.mk:32-34; meson bus/meson.build:145-184 | removal blocked by makedevs; see §2 |
+| 50-64 other required paths | dbus 1.16.2 file layout | dbus.mk, meson; not verified against an installed tree | NEEDS-THE-BUILD |
+| 65-66 libdbus-1.so.3.38.3 | soname from version_info | dbus meson.build:63-80 → 3.38.3 | VERIFIED-BY-READING |
+| 68-69 DBUS_OPTIONAL run/dbus, dbus-*-hostname1/timedate1 | units created by dbus-activation | systemd units dbus-org.*: NOT VERIFIED in 258.7 tarball | NEEDS-THE-BUILD |
+| 88-93 OFF_SERVICES | fragment turns resolved/timesyncd/hostnamed/timedated off | fragment lines; systemd.mk resolve=false (907) | VERIFIED-BY-READING (config) |
+| 118-124 removal + `rm -rf` | files present at target-finalize | Makefile:756-827 | NOW |
+| 124-138 mask ln -sfn /dev/null wait-online | preset-all honours a mask | systemd 258.7 install.c not read for masks | NEEDS-THE-BUILD |
+| 140-146 `find . -path '*dbus*'` leftover | fails on the helper (Gaia log) | Gaia log: step 3 fails with the helper kept | VERIFIED (Gaia log) |
+| 148-160 ELF libdbus scan | readelf of target ELF | readelf present on host; TARGET_READELF not exported | NOW |
+| 162-210 enabled-units checks | presets applied after the script | Makefile:827 vs fs/common.mk:181-182 | NOW (its model is the preset set; see §4) |
+
+Wait-online mask (the one Gaia asked about): systemd-networkd.service [Install] has
+`Also=systemd-networkd-wait-online.service` (systemd-258.7 units/systemd-networkd.service.in:70),
+and 90-systemd.preset:  `enable systemd-networkd-wait-online.service` (a named rule). A lower-sorted preset
+`disable systemd-networkd-wait-online.service` would be the first match, so the preset file can decide it; whether
+the Also= link is then made anyway when networkd is enabled is NEEDS-THE-BUILD (install.c enable path not read).
+The mask must stay until that is run.
+
+## 4. preset-all, read from systemd 258.7 source
+- query_presets (src/shared/install.c:3484-3520): when no rule matches, the action is PRESET_ENABLE
+  ("Preset files don't specify rule for %s. Enabling."). So preset-all ENABLES EVERY INSTALLED UNIT that no
+  rule names. This is VERIFIED-BY-READING. The post-build header's claim is the same.
+- Presets on the image: 90-systemd.preset (systemd meson presets/meson.build, installed to system-preset),
+  80-buildroot.preset (empty, systemd.mk:785-787), 80-orion.preset (Orion component, orion/component.toml:84-86,
+  content at Orion 455a956e not read here: NOT VERIFIED).
+- Units with an [Install] section in 258.7 units/: 69. Matched by 90-systemd.preset: 38 (enable/disable/ignore rules). Not named
+  (UNMATCHED → enabled by preset-all): 31 units. The unmatched list (source: units/ in the tarball) — every one is
+  enabled if its option is on in our build; many are absent because the fragment turns the option off. Which
+  are present on the image: NEEDS-THE-BUILD (needs the built tree). Examples of the unmatched ones:
+  serial-getty@.service (template; the getty@ rule does not match serial-getty), systemd-networkd.socket,
+  systemd-networkd-varlink.socket, systemd-oomd.service/socket, systemd-sysupdate(.timer), systemd-nspawn@.service,
+  systemd-pcrlock-* (5), systemd-udev-load-credentials.service, systemd-userdb-load-credentials.service,
+  systemd-factory-reset.socket, systemd-homed-firstboot.service, systemd-journald@.socket,
+  systemd-mountfsd.service, systemd-nsresourced.service, systemd-pcrextend.socket, systemd-sysext.socket,
+  systemd-resolved-monitor/varlink.socket, systemd-userdbd.service, systemd-vmspawn@.service.
+  Names with an option we turn off (resolved, timesyncd, pstore=false at systemd.mk:917, tpm2=disabled at 905,
+  bootloader=disabled at 908): their units are not in the image (NEEDS-THE-BUILD to be sure).
+
+Per-unit delta table (the built image is NEEDS-THE-BUILD; "wanted?" is from the product's own statements):
+
+| unit | rule | today (output/target) | after fix | wanted? | fix if not wanted |
+|---|---|---|---|---|---|
+| systemd-networkd.service | 90 enable | enabled by Gaia [[services]] (raze-base-files:44) | enabled | yes (lemnos0 DHCP) | — |
+| systemd-networkd-wait-online.service | 90 enable + Also= | not enabled | masked by post-build (line 124-138) | no | a `disable` line in a lower file; mask only if the Also= link survives (NEEDS-THE-BUILD) |
+| systemd-network-generator.service | 90 enable | not enabled | enabled | unclear (kernel cmdline ip=) | `disable` in product preset |
+| systemd-pstore.service | 90 enable | not enabled | enabled (pstore=false at systemd.mk:917 may remove it) | ramoops is kernel-side; pstore unit reads /sys/fs/pstore | NEEDS-THE-BUILD |
+| systemd-journald-audit.socket | 90 enable | not enabled | enabled | no (no audit) | `disable` |
+| systemd-userdbd.socket / homed / homed-activate | 90 enable | not enabled | enabled if the option is on | no | `disable` (option check first) |
+| systemd-mountfsd / nsresourced sockets | 90 enable | not enabled | enabled if present | no | `disable` |
+| systemd-sysext / confext / boot-clear-sysfail / boot-update | 90 enable | not enabled | enabled if present | no | `disable` (bootloader off; check presence) |
+| remote-fs / remote-*-target | 90 enable | not enabled | enabled (targets, harmless) | no need | `disable` (keep or drop) |
+| machines.target | 90 enable | not enabled | enabled if machined on | no | `disable` |
+| serial-getty@.service, getty@.service | UNMATCHED / 90 enable | not enabled (serial-getty@ttyGS0 is Gaia's) | template: instances per [Install] | ttyGS0 yes; others no | `disable serial-getty@*` plus the explicit ttyGS0 link (Gaia [[services]] already names it) |
+| systemd-oomd.service/socket | UNMATCHED | not enabled | enabled if oomd on | no | `disable` (option check) |
+| systemd-sysupdate*, pcrlock*, factory-reset, vmspawn, nspawn@ | UNMATCHED | not enabled | enabled if present | no | `disable` (options off → absent) |
+| systemd-udev-load-credentials, userdb-load-credentials | UNMATCHED | not enabled | enabled | unclear | NEEDS-THE-BUILD |
+| lemnosd, lemnos-orion, orion-comm, orion-node, lemnos0-address | none (Lemnos/Orion units) | enabled by Gaia [[services]] | enabled | yes | — |
+
+The preset file that carries these `disable` lines is a product file (for example devices/products/raze-base/os/
+presets/…preset, installed by a fragment, numbered before 90-systemd). It must be written and gated; not done here.
+
+## 5. What could not be checked here
+- No built tree, so the presence of every unit above is NEEDS-THE-BUILD.
+- The fake-tree dry run of post-build.sh (must fail at step 3 with the helper kept, as Gaia's log says) is not run;
+  the self-test needs a fixture root, which is not built.
+- User/group table (2b) and /var (2d): from reading only:
+  - systemd-networkd runs as User=systemd-network (systemd-258.7 units/systemd-networkd.service.in:54). The user
+    is defined in SYSTEMD_NETWORKD_USER (systemd.mk:572), added to PACKAGES_USERS via SYSTEMD_USERS (systemd.mk:709),
+    which is applied in mkusers in the fakeroot stage (fs/common.mk:179). It is NOT in output/target, so networkd's
+    User= cannot be resolved today (consistent with Gaia's finding that no package users are in the image).
+  - Units or tmpfiles that name lemnos, lemnos-orion, orion: created by component [[users]] (lemnos/component.toml:65-71,
+    orion/component.toml:95-98), which Gaia applies outside the fakeroot stage: VERIFIED-BY-READING of the components.
+  - systemd-network.conf tmpfiles (systemd-258.7 tmpfiles.d/systemd-network.conf) owns /run/systemd/netif as
+    systemd-network: after the fix, it works only if the user exists at boot.
+  - Permissions table: SYSTEMD_JOURNALD_PERMISSIONS (systemd.mk:119) makes /var/log/journal owned by systemd-journal
+    (group from SYSTEMD_USERS, systemd.mk:704). After the fix, /var is read-only (see below), so this directory
+    cannot be written at runtime.
+- /var:
+  - skeleton-init-systemd.mk:23/29: /etc/fstab gets only `/dev/root / auto ro 0 1` (output/target, not fakeroot).
+  - skeleton-init-systemd.mk:32-60 (with BR2_INIT_SYSTEMD_VAR_FACTORY, system/Config.in:214): moves /var to
+    /usr/share/factory/var, writes usr/lib/tmpfiles.d/00-buildroot-var.conf (C!/L+! lines) and installs
+    factory/var.mount. That hook is ROOTFS_PRE_CMD_HOOKS → fakeroot stage only (line 60). Today /var in output/target is
+    a real directory with build content.
+  - var.mount (factory/var.mount, package/skeleton-init-systemd/factory/var.mount) has no [Install]; nothing in
+    the components pulls it: a read-only root keeps /var on the EROFS root. So after the fix /var is an empty
+    read-only directory, and the C! copies cannot be written. NEEDS-THE-BUILD.
+  - Orion's comments say /var is "RAM on the bring-up layout and inside the slot root on a managed board"
+    (orion/files/orion.conf:11), which contradicts a read-only slot root. Orion moved its state to /data.
+  - The journal: raze-base-files/files/60-board-journald.conf:2-3 says the OS keeps /var/log/journal on /data.
+    No component installs a /var/log/journal link or a /data mount (only dev-bringup-hostkey data.mount, a DEV-only
+    component). That comment is unimplemented: the journal would stay on /run unless systemd falls back itself.
+    NEEDS-THE-BUILD.
+  - Conflicts: SYSTEMD_JOURNALD_PERMISSIONS (`/var/log/journal d 2755`) makes that directory in the fakeroot copy;
+    the var factory moves /var, so the directory is created under /var only if /var is still writable at tmpfiles
+    time. Flag for the coordinator; NEEDS-THE-BUILD.
+- Journal catalog (systemd.mk:813-823): fakeroot stage; builds /usr/share/factory/var/lib/systemd/catalog/database
+  and adds a tmpfiles L line to usr/lib/tmpfiles.d/var.conf (line 820-821). Those files come only with the fakeroot root.
+- hwdb.d removal: Makefile:839-842, fakeroot stage.
+
+## 6. Exec bits (Gaia 9efa797f)
+Gaia 9efa797f stores `post-build.sh` at mode 644 (confirmed: a stored tree object under
+`$GAIA_STORE/objects/tree/e6/e6c52cce…/post-build.sh` is `644`). The exec-bit check (to add) must fail on that build.
+The check is not written yet.
+
+## 7. Status
+- Not done: the helper fix (on hold), the sh -n + dry-run rule, the exec-bit check, the built-tree rule, the gate run,
+  the pin, and the PR.
