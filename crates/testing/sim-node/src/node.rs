@@ -972,7 +972,10 @@ impl Node {
             self.finish(call, Outcome::Rejected, &[], "describe takes no arguments");
             return;
         }
-        let behaviour = lock(&self.shared.script).take_action(name);
+        let (behaviour, slow) = {
+            let mut script = lock(&self.shared.script);
+            (script.take_action(name), script.ticks_of(name))
+        };
         match behaviour {
             Behaviour::Refuse(reason) => self.finish(call, Outcome::Rejected, &[], &reason),
             Behaviour::Fail(reason) => self.finish(call, Outcome::Failed, &[], &reason),
@@ -998,7 +1001,9 @@ impl Node {
                 self.install_start(call, &args);
             }
             Behaviour::Answer => {
-                let total = crate::actions::ticks(name, &args).unwrap_or_else(|| ticks_for(name));
+                let total = crate::actions::ticks(name, &args)
+                    .or(slow)
+                    .unwrap_or_else(|| ticks_for(name));
                 self.active.push(Run {
                     call,
                     name: name.to_string(),
