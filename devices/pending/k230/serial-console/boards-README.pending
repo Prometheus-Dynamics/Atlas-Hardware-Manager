@@ -1,0 +1,13 @@
+PENDING (K1): board variants for serial-console/product.toml.pending.
+- canmv-k230d-ai-cam: the existing draft devices/pending/k230/canmv-k230d-ai-cam.board.toml.pending, with its kernel
+  fragment swapped to serial-console/kernel.fragment and its U-Boot fragment to serial-console/uboot.fragment.
+  Kernel dts: none in the SDK; Gaia's own examples/boards/k230d-ai-cam/assets/dts/k230d-ai-cam.dts (its SD node is
+  mmc_sd1 at mmc@91581000, root=/dev/mmcblk0p2 in its bootargs: the kernel's disk name is UNVERIFIED and conflicts with
+  the SDK's root=/dev/mmcblk1p2 at buildroot-overlay/board/canaan/k230-soc/k230_canmv.env:31).
+- bpi-canmv-k230d-zero: U-Boot dts = the SDK's k230d_canmv_bpi.dts UNCHANGED (in the SDK U-Boot overlay, per the
+  Zero's first-boot ruling). Kernel dts: the SDK has NONE for Linux. Gaia's ruyisdk-derived
+  examples/boards/k230d-zero/assets/dts/bananapi-canmv-k230d-zero.dts is the only one on disk; it is a fork dts, not
+  mainline, and is UNCHECKED against 7.3.3. Its bootargs root=/dev/mmcblk0p2 differ from the SDK's mmcblk1p2.
+  Its dts adds dr_mode = "peripheral" on usbotg0 (line 52) and no gadget is enabled for the first boot.
+Console: stdout-path serial0 (k230.dtsi uart0 alias, SDK k230d.dtsi) and bootargs console=ttyS0,115200 (Gaia's
+ai-cam dts line 24, SDK k230_canmv.env:31 console=ttyS0,115200). Same UART both ways: ttyS0 is serial0.

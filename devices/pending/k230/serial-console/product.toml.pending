@@ -1,0 +1,30 @@
+# PENDING (K1): the FIRST K230D image, serial console only. Not a description; not named by any product. Moves to
+# devices/products/ when Gaia confirms its riscv64 form and rev (not pinned here). Lemnos's slot form, the USB gadget,
+# and any watchdog are OUT for this image: the second image adds the slot form.
+# Two variants share this product: the AI-CAM (boards/canmv-k230d-ai-cam) and the BPI Zero (boards/bpi-canmv-k230d-zero).
+# Every value is from the SDK on disk or Gaia's B8 commit a99b7589, and is UNCONFIRMED until first boot.
+version = 1
+name = "k230d-serial-console"
+description = "K230D first boot: SDK U-Boot, kernel, a rootfs with getty on the console UART. Nothing armed."
+
+[sources.buildroot]
+git = "https://gitlab.com/buildroot.org/buildroot.git"
+ref = "2026.02.3"          # Gaia B8's pin (examples/products/k230d-zero/product.toml); Gaia confirms
+
+[[images]]
+name = "k230d-serial-console-ai-cam"
+board = "../../boards/canmv-k230d-ai-cam/board.toml"
+os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
+recipe = "sd-image"
+budget = "256M"
+[images.settings]
+id = "k230d-serial-console-ai-cam"
+
+[[images]]
+name = "k230d-serial-console-zero"
+board = "../../boards/bpi-canmv-k230d-zero/board.toml"
+os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
+recipe = "sd-image"
+budget = "256M"
+[images.settings]
+id = "k230d-serial-console-zero"

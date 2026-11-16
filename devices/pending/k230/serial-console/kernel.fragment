@@ -1,0 +1,19 @@
+# PENDING (K1): kernel for the first K230D image. Serial console only.
+# Deliberately NOT here (for the second image or later): CONFIG_DW_WATCHDOG (the driver alone does not arm, but its
+# first-boot behaviour is unverified; the watchdog stays off until lemnosd exists), PSTORE/ramoops (no reserved region
+# yet), the dwc2 gadget and NCM/RNDIS (the gadget is the second image), and DMABUF/CMA heaps (not needed to boot).
+CONFIG_ARCH_CANAAN=y
+CONFIG_COMMON_CLK_K230=y
+CONFIG_RESET_K230=y
+CONFIG_PINCTRL_K230=y
+CONFIG_SERIAL_8250=y
+CONFIG_SERIAL_8250_CONSOLE=y
+CONFIG_SERIAL_OF_PLATFORM=y
+CONFIG_MMC=y
+CONFIG_MMC_SDHCI=y
+CONFIG_MMC_SDHCI_PLTFM=y
+CONFIG_MMC_SDHCI_OF_DWCMSHC=y
+CONFIG_EXT4_FS=y
+CONFIG_TMPFS=y
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
