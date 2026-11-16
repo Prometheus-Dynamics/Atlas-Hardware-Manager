@@ -21,6 +21,11 @@ CONFIG_OF_CONTROL=y
 CONFIG_PARTITION_TYPE_GUID=y
 # CONFIG_ENV_IS_NOWHERE is not set
 CONFIG_ENV_IS_IN_MMC=y
+# CONFIG_ENV_MMC_DEVICE_INDEX=1 and CONFIG_ENV_MMC_USE_DT=y (PR G12): the environment is on the SD (mmc 1; mmc 0 is the eMMC
+#   socket), and U-Boot's raw-offset fallback is off, so it saves nowhere else. Gaia's rk35xx example (u-boot.fragment, rk-env
+#   #150, c0d084f) has the same two lines; the coordinator's 2026-11-14 hard rule requires them on every RK slot image.
+CONFIG_ENV_MMC_DEVICE_INDEX=1
+CONFIG_ENV_MMC_USE_DT=y
 # CONFIG_TOOLS_MKEFICAPSULE is not set
 
 # PLACEHOLDER, not yet config names: `record = "uboot"` slot boot (Lemnos) needs
