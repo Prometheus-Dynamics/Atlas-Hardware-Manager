@@ -49,7 +49,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use atlas_actions::{
-    ActionError, ArgKind, BoardActions, CANCEL_CONFIRM, CancelState, Followed, Issued, any_answer,
+    ActionError, ArgKind, BoardActions, CANCEL_CONFIRM, CancelState, Followed, Issued, RunKind,
+    any_answer,
 };
 use atlas_driver::DriverError;
 use atlas_files::{Push, PushKind, Stage as PushStage, submit as submit_push};
@@ -603,8 +604,14 @@ impl InstallKind {
                 let runs = Arc::clone(&self.runs);
                 let nonce = spec.nonce.clone();
                 let starter = board.clone();
+                // The install's deadline comes from its payload: the bundle's size, as the bundle step took it.
+                let bytes = self
+                    .with_run(&spec.nonce, |run| Some(run.size))
+                    .unwrap_or(0);
                 let started = tokio::spawn(async move {
-                    let result = starter.start(&action, &words).await;
+                    let result = starter
+                        .start_as(&action, &words, RunKind::Install { bytes })
+                        .await;
                     let call = result.as_ref().ok().cloned();
                     // Recorded only while the install is still known: an install already ended
                     // (a cancel that gave up waiting) gets no new entry.

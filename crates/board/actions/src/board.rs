@@ -42,6 +42,7 @@ use orion::types::NodeName;
 use orion::{ClientError, Error as OrionError};
 
 use crate::args;
+use crate::bounds::{RunKind, deadline_ms, overrun_words};
 use crate::catalog::{Action, Catalog, Route};
 use crate::error::ActionError;
 
@@ -190,8 +191,24 @@ impl BoardActions {
     /// [`ActionError::BadArguments`] (nothing sent), [`ActionError::NotConnected`] (nothing sent),
     /// or [`ActionError::StartInDoubt`].
     pub async fn start(&self, action: &Action, words: &[String]) -> Result<Issued, ActionError> {
+        self.start_as(action, words, RunKind::Generic).await
+    }
+
+    /// Starts `action` as a run of `kind`: its deadline and its expiry words come from that kind (see
+    /// [`crate::bounds`]). An install passes its bundle's size.
+    ///
+    /// # Errors
+    ///
+    /// As [`BoardActions::start`].
+    pub async fn start_as(
+        &self,
+        action: &Action,
+        words: &[String],
+        kind: RunKind,
+    ) -> Result<Issued, ActionError> {
         args::check(action, words)?;
-        self.start_encoded(&action.name, args::encode(words)).await
+        self.start_encoded(&action.name, args::encode(words), kind)
+            .await
     }
 
     /// Starts `name` with `encoded` arguments, detached. The arguments must already be checked.
@@ -199,6 +216,7 @@ impl BoardActions {
         &self,
         name: &str,
         encoded: Vec<u8>,
+        kind: RunKind,
     ) -> Result<Issued, ActionError> {
         let node_name = self.node_name()?;
         let owned = name.to_owned();
@@ -209,11 +227,17 @@ impl BoardActions {
         let sent = self
             .handle
             .with_bridge(move |orion| {
-                let mut run = orion.run(&detached_call(&owned, node_name, &encoded))?;
+                let mut run = orion.run(&detached_call(
+                    &owned,
+                    node_name,
+                    &encoded,
+                    deadline_ms(kind),
+                ))?;
                 let issued = Issued {
                     call: run.call(),
                     session,
                     name: started.clone(),
+                    kind,
                     handle: Arc::new(Mutex::new(None)),
                 };
                 // The handle comes with the node's started frame: wait for it, briefly. A refusal or
@@ -344,7 +368,15 @@ impl BoardActions {
                             reason: finished.detail,
                         });
                     }
-                    let result = ended(finished);
+                    let result = match finished.outcome {
+                        // The node ended the run at its deadline (110): the words say which kind, and the bound.
+                        Outcome::TimedOut => Err(ActionError::Failed(Failure::new(
+                            FailureKind::Other,
+                            u16::try_from(finished.code).ok(),
+                            overrun_words(issued.kind, &issued.name),
+                        ))),
+                        _ => ended(finished),
+                    };
                     let on_issuing_session = self.handle.session() == issued.session;
                     let done = match (hold, result) {
                         (Some(hold), Err(error)) if hold.lapsed() => {
@@ -594,19 +626,21 @@ fn ended(finished: Finished) -> Result<Done, ActionError> {
     }
 }
 
-/// The node-side deadline of every detached run, in milliseconds. A real node refuses a detached run with no
-/// deadline (`NoDeadline`), so a detached start always carries this one: 24 hours, longer than any install or
-/// trial. A run the node ends at its deadline is `TimedOut` with code 110.
-pub const DETACHED_DEADLINE_MS: u64 = 24 * 60 * 60 * 1000;
-
-/// The call that starts `name` detached on `node`, with its deadline. The only place a detached start is built.
+/// The call that starts `name` detached on `node`, with the deadline its kind gives (`bounds::deadline_ms`). A real
+/// node refuses a detached run with no deadline (`NoDeadline`), so the deadline is never zero. The only place a
+/// detached start is built.
 #[must_use]
-pub fn detached_call<'a>(name: &'a str, node: NodeName, args: &'a [u8]) -> ActionCall<'a> {
+pub fn detached_call<'a>(
+    name: &'a str,
+    node: NodeName,
+    args: &'a [u8],
+    deadline_ms: u64,
+) -> ActionCall<'a> {
     ActionCall {
         name,
         target: Target::Node(node),
         args,
-        deadline_ms: DETACHED_DEADLINE_MS,
+        deadline_ms,
         detached: true,
     }
 }
@@ -665,6 +699,7 @@ pub struct Issued {
     call: u64,
     session: u64,
     name: String,
+    kind: RunKind,
     handle: Arc<Mutex<Option<RunHandle>>>,
 }
 
@@ -782,19 +817,53 @@ mod tests {
             call,
             session,
             name: "install_file".to_owned(),
+            kind: RunKind::Generic,
             handle: Arc::new(Mutex::new(None)),
         }
     }
 
     #[test]
-    fn every_detached_start_carries_a_deadline_the_node_accepts() {
-        // A real node refuses a detached run with no deadline (NoDeadline): the start must never be built with 0.
+    fn every_detached_start_carries_its_kinds_deadline_and_no_kind_is_unbounded() {
+        // A real node refuses a detached run with no deadline (NoDeadline). Each kind's bound is the one the table
+        // gives, and it is never zero.
         let node: NodeName = "node.local".parse().expect("a valid node name");
-        let call = detached_call("install_file", node, b"args");
-        assert!(call.detached, "a start is detached");
-        assert_eq!(call.deadline_ms, DETACHED_DEADLINE_MS);
-        assert!(call.deadline_ms > 0, "no detached start without a deadline");
-        assert_eq!(DETACHED_DEADLINE_MS, 86_400_000, "24 hours");
+        // A generic action: the one-hour interim (pending the ruling and Lemnos's M40 stall bound).
+        let generic = detached_call(
+            "system.long",
+            node.clone(),
+            b"args",
+            deadline_ms(RunKind::Generic),
+        );
+        assert!(generic.detached);
+        assert_eq!(
+            generic.deadline_ms, 3_600_000,
+            "the generic interim: one hour"
+        );
+        // An install of the sim's bundle: the floor of five minutes.
+        let small = detached_call(
+            "install_file",
+            node.clone(),
+            b"args",
+            deadline_ms(RunKind::Install { bytes: 28_160 }),
+        );
+        assert_eq!(
+            small.deadline_ms, 300_000,
+            "a small install: the five-minute floor"
+        );
+        // A 1 GiB install: 120 s overhead + 1024 s to write + 256 s to read back = 1400 s.
+        let large = detached_call(
+            "install_file",
+            node,
+            b"args",
+            deadline_ms(RunKind::Install {
+                bytes: 1024 * 1024 * 1024,
+            }),
+        );
+        assert_eq!(
+            large.deadline_ms, 1_400_000,
+            "a 1 GiB install: derived, not a constant"
+        );
+        assert!(small.deadline_ms > 0 && large.deadline_ms > small.deadline_ms);
     }
 
     #[test]

@@ -76,6 +76,46 @@ Orion 671d29d, next to Orion 3dde304. The coordinator approved building the cont
 Orion's own Lemnos dependency (its `shm-*` crates) moves with Orion's manifest from bded77a0 to b0a75d93.
 Atlas's Lemnos pin does not move, so the lock names one Lemnos rev per package (the one-copy rule holds).
 
+## Detached-run deadlines, per kind (one table in code: `crates/board/actions/src/bounds.rs`)
+
+A real node refuses a detached run with no deadline (`NoDeadline`), and it ends a run at its deadline as `TimedOut`
+(code 110 at this pin). Each kind of detached run has a deadline derived from what Atlas knows; nothing is a single
+huge constant.
+
+| Kind | What the run does on the board | What bounds it | Deadline | Floor / ceiling |
+|---|---|---|---|---|
+| Install (`install_file`, `RunKind::Install { bytes }`) | writes the bundle into the slot's bay, reads it back to verify | the bundle's size (the caller knows it), a minimum write rate of 1 MiB/s, a read-back rate of 4 MiB/s, and a fixed 2 min overhead (bundle check, slot record, list refresh) | `120 s + ceil(bytes / 1 MiB/s) + ceil(bytes / 4 MiB/s)` | floor 5 min, ceiling 4 h |
+| Generic board action (`RunKind::Generic`, `ActionJobs`) | whatever the action does | nothing Atlas knows: the catalog's `long_running` says it is long, not how long | interim 1 h | interim, pending the ruling |
+| Trial (`BoardSlots::start_trial`) | not a detached run: a direct, attached call that returns at once, after which the trial is followed by the slot list | the board's own confirm deadline (`confirm_deadline_s`), which Atlas does not read | none here | missing (below) |
+
+Worked values: a 28 160 byte bundle (the sim's) gets the 5 min floor; 1 GiB gets 120 + 1024 + 256 = 1400 s (23 min 20 s).
+The rates and the overhead are stated for ruling; a slower bay needs its own rate.
+
+**What the user sees when a run expires** (`bounds::overrun_words`, plain, one line): an install says "the install
+did not finish within N minutes; the board ended it"; a generic action says "<action> did not finish within N minutes;
+the board ended it". The node's code (110) is kept on the failure. Test:
+`a_run_the_node_ends_at_its_deadline_says_which_action_and_bound_in_plain_words` (stub: `Behaviour::TimeOut`).
+
+**Missing, proposed interim for the ruling**
+- Trial: no detached run, so no deadline row. Its bound is the board's `confirm_deadline_s` (plus the good-boot window),
+  which Atlas does not read today. Proposed: read the board's trial config and show its deadline; until then the trial
+  shows "the trial is followed until the board decides", with no Atlas bound.
+- Generic action: the one-hour interim. Lemnos's per-job stall bound (M40) will end a stalled job as `TimedOut` 110 by
+  itself; the interim is replaced when M40 lands and the catalog states a length per action.
+
+**Interaction with the lease and with T6b**
+- The lease (Lemnos): a caller with a run in flight is not dropped; the deadline is the most a run can hold the
+  caller's lease and the slot. Tests: `a_renewal_is_not_starved_by_a_long_operation` and
+  `a_silent_session_with_a_hold_records_a_lapse_and_one_without_does_not` (`crates/board/session/tests/lease.rs`).
+- An install whose answer is heard and ends at its deadline: the board's TimedOut (110) is the outcome, and the install
+  fails with the plain line. Test: the stub test above (the same `ended` path for an install; the install's failure
+  carries the same words).
+- An install whose answer is lost (T6b): the outcome is the list comparison, not the TimedOut: a new matching slot is
+  Installed, none is Unknown. Tests: `a_follow_cut_by_a_lost_connection_is_not_repeated_by_number_and_the_list_decides`
+  and the T6b decision table in `docs/prs/T6b.md`.
+- Unit tests for the table: `bounds::tests` (floor, derived value, ceiling, the one-hour interim, the words) and
+  `board.rs` `every_detached_start_carries_its_kinds_deadline_and_no_kind_is_unbounded`.
+
 ## Changes, in order
 
 1. **Compile on Orion 3dde304** (`e4258407`). Every Orion pin moves from 671d29d; `cargo update -p` for the

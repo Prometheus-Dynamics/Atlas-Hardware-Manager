@@ -1031,3 +1031,31 @@ async fn a_stale_handle_cancel_is_refused_and_the_newer_run_keeps_running() {
         "B is still running: the stale cancel reached no run"
     );
 }
+
+#[tokio::test]
+async fn a_run_the_node_ends_at_its_deadline_says_which_action_and_bound_in_plain_words() {
+    // The node ends a run at its deadline: TimedOut with code 110. The user is told which action and the bound
+    // its kind gives, not a generic failure.
+    let rig = Rig::start("deadline-words", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+    rig.node
+        .script()
+        .push_action(SELF_TEST, Behaviour::TimeOut("the deadline passed".into()));
+    let issued = rig
+        .board
+        .start(self_test, &[])
+        .await
+        .expect("the run starts");
+    let error = rig
+        .board
+        .follow(&issued, atlas_actions::any_answer, |_| {})
+        .await
+        .expect_err("a run the node ended at its deadline does not succeed");
+    assert_eq!(error.failure().and_then(|f| f.code()), Some(110));
+    assert_eq!(
+        error.to_string(),
+        atlas_actions::bounds::overrun_words(atlas_actions::RunKind::Generic, SELF_TEST),
+        "the plain line names the action and its bound"
+    );
+}

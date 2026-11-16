@@ -42,6 +42,7 @@ use tokio::time::{self, timeout};
 
 use crate::args;
 use crate::board::{BoardActions, Followed, Issued, Progress, any_answer};
+use crate::bounds::RunKind;
 use crate::catalog::Action;
 use crate::error::ActionError;
 
@@ -196,7 +197,7 @@ impl JobKind for ActionKind {
             None => {
                 self.update(&spec.nonce, |tracked| tracked.starting = true);
                 let started = board
-                    .start_encoded(&spec.name, args::encode(&spec.words))
+                    .start_encoded(&spec.name, args::encode(&spec.words), RunKind::Generic)
                     .await;
                 self.update(&spec.nonce, |tracked| tracked.starting = false);
                 match started {

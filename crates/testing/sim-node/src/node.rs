@@ -1067,6 +1067,9 @@ impl Node {
         match behaviour {
             Behaviour::Refuse(reason) => self.finish(call, Outcome::Rejected, &[], &reason),
             Behaviour::Fail(reason) => self.finish(call, Outcome::Failed, &[], &reason),
+            Behaviour::TimeOut(reason) => {
+                self.finish_coded(call, Outcome::TimedOut, 110, &[], &reason)
+            }
             Behaviour::Stall => {
                 self.shared.leases.stalled(call);
                 self.shared.stalled.fetch_add(1, Ordering::SeqCst);
