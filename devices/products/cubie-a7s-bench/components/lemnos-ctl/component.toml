@@ -1,4 +1,4 @@
-# One Lemnos cargo package: lemnos-ctl, built from Lemnos pr/BB1b e8472620 (the C1 rev for the A7S bench image).
+# One Lemnos cargo package: lemnos-ctl, built from Lemnos Lemnos 31e0f736 (BB1b, merged to next) (the C1 rev for the A7S bench image).
 # The target is the board's and the crates come from Cargo.lock: no triple, no vendor here.
 # Gaia's rust builder, at 4abf626 and later: `--package lemnos-ctl --profile service`.
 version = 1
@@ -7,7 +7,7 @@ description = "the Lemnos command-line client, lemnos-ctl (service profile; the 
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "e847262064ee1e88c5277592e6705ab46eca0670"  # Lemnos pr/BB1b e8472620 (bench-board slot declarations; the pin follows the branch head until BB1b merges), the C1 rev for the A7S bench image
+ref = "31e0f736a334260a7df2ea86bcfa358e9a640f08"  # Lemnos 31e0f736 (BB1b, merged to next; bench-board slot declarations; the pin follows the branch head until BB1b merges), the C1 rev for the A7S bench image
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"
