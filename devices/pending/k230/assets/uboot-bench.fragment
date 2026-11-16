@@ -20,9 +20,11 @@ CONFIG_ENV_IS_IN_MMC=y
 # No u-boot,mmc-env-offset, -offset-redundant or -partition property is set in our dts patch (env/mmc.c:72-106 would
 # override the offsets above); the SDK dts has none of them (grep of arch/riscv/dts and board/canaan: no hits).
 CONFIG_ENV_REDUNDANT=y
-CONFIG_ENV_SIZE=0x10000
-CONFIG_ENV_OFFSET=0x1e0000
-CONFIG_ENV_OFFSET_REDUND=0x380000
+# Vendor AI-CAM values (k230d_canmv_junroc_ai_cam_defconfig:6-7; genimage_cfg/genimage.cfg env_a 3M, env_b 0x320000):
+CONFIG_ENV_SIZE=0x2000
+CONFIG_ENV_OFFSET=0x300000
+# The vendor has no CONFIG_ENV_REDUNDANT; Lemnos's uboot record needs the second copy. Proposed: 0x320000 (vendor env_b). A decision.
+CONFIG_ENV_OFFSET_REDUND=0x320000
 CONFIG_ENV_MMC_DEVICE_INDEX=0
 CONFIG_CMD_SAVEENV=y
 CONFIG_HUSH_PARSER=y

@@ -44,17 +44,11 @@ fragments = ["kernel/bench.fragment"]
 #
 # Slots: the uboot record, env in the device form (assets/uboot-bench.fragment; values in lemnos-board.toml.pending).
 
-# PAD TABLE (K1, 2026-11-16): PRECONDITION. The SDK's BPI boot chain (arch/riscv/dts/k230d_canmv_bpi.dts:61-171, applied
-# pre-relocation, so in SPL) writes ONE iomux table to nearly every pad, including the bank-voltage mode: IO2-63 at 3V3,
-# IO0-1 at 1V8 (the defines at dts:27-32). The file warns: "Please pay attention to the bank voltage! will damage the
-# chip" (dts:65). That table is the BPI Zero's. Nothing on disk says what the AI-CAM supplies or wires. So the AI-CAM's
-# pad table and bank voltages must come from the AI-CAM's own data (its schematic, or the vendor AI-CAM firmware or dts if
-# published). They must never be the Zero's table carried over. Until that data exists, no AI-CAM image may be built.
-# Unknown pads stay inputs with no output enable (the drop_pins form, k230d.dtsi:51-69), not copied from the Zero.
-#
-# This [pads] block is read by scripts/check-devices.sh (pads_rule). It is marked as derived from the Zero, so the rule
-# refuses any product on this board today. Clear it only with the AI-CAM's own source and bank voltages.
+# PAD TABLE (K1, 2026-11-16, updated 2026-11-16 from the vendor AI-CAM source): the AI-CAM's own table, from
+# kendryte/k230_linux_sdk fc6cc215 (see docs/prs/K1-k230d.md, "AI-CAM vendor source"). Verbatim from the vendor's
+# U-Boot dts; not the BPI Zero's table. The pad rule (scripts/check-devices.sh pads_rule) takes it on provenance.
+# Once PADS merges, this moves to devices/boards/canmv-k230d-ai-cam/pads.toml (see canmv-k230d-ai-cam.pads.toml.pending).
 [pads]
-source = "SDK BPI Zero table, arch/riscv/dts/k230d_canmv_bpi.dts:61-171 (copied, NOT the AI-CAM's own)"
-derived_from_board = "bpi-canmv-k230d-zero"
-bank_voltages = {}
+source = "kendryte/k230_linux_sdk fc6cc215 buildroot-overlay/boot/uboot/u-boot-2022.10-overlay/arch/riscv/dts/k230d_canmv_junroc_ai_cam.dts: bank table from the file's own 'from schematic' comment (lines 31-38) and defines (lines 48-54); pin table lines 95-187"
+derived_from_board = ""
+bank_voltages = { IO0_IO1 = "1V8", IO2_IO13 = "1V8", IO14_IO25 = "3V3", IO26_IO37 = "3V3", IO38_IO49 = "3V3", IO50_IO61 = "3V3", IO62_IO63 = "3V3" }
