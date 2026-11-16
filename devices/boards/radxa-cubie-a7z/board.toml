@@ -13,8 +13,9 @@ description = "Radxa Cubie A7Z (Allwinner A733), bench candidate: kernel dts, an
 [kernel]
 device_tree = "allwinner/sun60i-a733-cubie-a7z"
 cmdline = "console=ttyS0,115200"
-# The family's series patches, then this board's dts patch (an own patch dir beside this file). Each names its source.
-patches = [{ source = "a733-kernel-series", path = "patches" }, { file = "patches/linux" }]
+# This board's own kernel dts patch only. The family's series (sun60i family.toml [kernel]) comes first: Gaia appends the board list
+# to the family's (a restated family entry is refused). UNVERIFIED: see docs/prs/A7AZ.md.
+patches = [{ file = "patches/linux" }]
 
 [descriptions]
 lemnos = "lemnos-board.toml"
@@ -22,7 +23,8 @@ lemnos = "lemnos-board.toml"
 # U-Boot: the vendor defconfig in radxa/u-boot 9da4b3e8 (A7A) or this repo's patch (A7Z, patches/u-boot, UNVERIFIED).
 [bootloader]
 defconfig = "radxa-cubie-a7z_defconfig"
-patches = [{ source = "a733-bootchain", path = "patches/u-boot" }, { file = "patches/u-boot" }]
+# The board's own U-Boot patch only (A7Z defconfig and dts). The family's bootchain U-Boot patches come first (append rule).
+patches = [{ file = "patches/u-boot" }]
 
 [bootloader.blobs]
 SUNXI_LIBDRAM = { source = "dlan17-pkg", path = "awbin/a733/ddr.bin" }

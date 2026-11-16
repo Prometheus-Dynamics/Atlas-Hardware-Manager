@@ -13,8 +13,9 @@ description = "Radxa Cubie A7A (Allwinner A733), bench candidate: kernel dts and
 [kernel]
 device_tree = "allwinner/sun60i-a733-cubie-a7a"
 cmdline = "console=ttyS0,115200"
-# The family's series patches, then this board's dts patch (an own patch dir beside this file). Each names its source.
-patches = [{ source = "a733-kernel-series", path = "patches" }, { file = "patches/linux" }]
+# This board's own kernel dts patch only. The family's series (sun60i family.toml [kernel]) comes first: Gaia appends the board list
+# to the family's (a restated family entry is refused). UNVERIFIED: see docs/prs/A7AZ.md.
+patches = [{ file = "patches/linux" }]
 
 [descriptions]
 lemnos = "lemnos-board.toml"
