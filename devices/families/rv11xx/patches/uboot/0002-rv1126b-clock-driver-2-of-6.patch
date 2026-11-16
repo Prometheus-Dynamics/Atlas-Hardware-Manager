@@ -1,0 +1,2929 @@
+From d2ead1a4fb711c17edaa75e2a456d4830e9add77 Mon Sep 17 00:00:00 2001
+From: "Claude Haiku 5.5" <a@b>
+Date: Mon, 16 Nov 2026 03:54:31 -0700
+Subject: [PATCH] rv1126b: clock driver (2 of 6)
+
+Ports Rockchip u-boot-next-dev 1c535d65 drivers/clk/rockchip/clk_rv1126b.c (2013 lines; the
+RV1126B CRU tables) and arch/arm/mach-rockchip/rv1126b/clk_rv1126b.c (the rockchip_get_clk
+wrapper, seed lines 1-41), with the clock IDs header include/dt-bindings/clock/rockchip,rv1126b-cru.h
+from the seed.
+
+API changes to the v2026.10 driver model (behaviour unchanged):
+- priv_auto_alloc_size -> priv_auto; ofdata_to_platdata -> of_to_plat
+- clk_set_defaults(dev) -> clk_set_defaults(dev, CLK_DEFAULTS_POST)
+- clk_free(&clk) -> clk_release_all(&clk, 1)
+- child priv set with dev_set_priv() (seed wrote ->priv directly)
+- the seed's softreset_reg binding is replaced by rockchip_reset_bind() (reset-uclass), with
+  the same offset (softrst_con[0]) and count (CLK_NR_SRST)
+- DM_GET_DRIVER -> DM_DRIVER_GET
+
+Build (scratch, aarch64-linux-gnu-gcc, NO_PYTHON=1): clk_rv1126b.o (driver) and the wrapper
+clk_rv1126b.o build with 0 warnings and 0 errors.
+
+Co-Authored-By: Claude Haiku 5.5 <noreply@anthropic.com>
+---
+ arch/arm/mach-rockchip/rv1126b/Makefile       |    1 +
+ arch/arm/mach-rockchip/rv1126b/clk_rv1126b.c  |   42 +
+ drivers/clk/rockchip/Makefile                 |    1 +
+ drivers/clk/rockchip/clk_rv1126b.c            | 2008 +++++++++++++++++
+ .../dt-bindings/clock/rockchip,rv1126b-cru.h  |  806 +++++++
+ 5 files changed, 2858 insertions(+)
+ create mode 100644 arch/arm/mach-rockchip/rv1126b/clk_rv1126b.c
+ create mode 100644 drivers/clk/rockchip/clk_rv1126b.c
+ create mode 100644 include/dt-bindings/clock/rockchip,rv1126b-cru.h
+
+diff --git a/arch/arm/mach-rockchip/rv1126b/Makefile b/arch/arm/mach-rockchip/rv1126b/Makefile
+index bdfa2051..c9e79071 100644
+--- a/arch/arm/mach-rockchip/rv1126b/Makefile
++++ b/arch/arm/mach-rockchip/rv1126b/Makefile
+@@ -8,3 +8,4 @@ ifneq ($(CONFIG_TPL_BUILD)$(CONFIG_TPL_TINY_FRAMEWORK),yy)
+ obj-y += syscon_rv1126b.o
+ endif
+ obj-y += rv1126b.o
++obj-y += clk_rv1126b.o
+diff --git a/arch/arm/mach-rockchip/rv1126b/clk_rv1126b.c b/arch/arm/mach-rockchip/rv1126b/clk_rv1126b.c
+new file mode 100644
+index 00000000..0098de61
+--- /dev/null
++++ b/arch/arm/mach-rockchip/rv1126b/clk_rv1126b.c
+@@ -0,0 +1,42 @@
++/*
++ * (C) Copyright 2025 Rockchip Electronics Co., Ltd.
++ *
++ * SPDX-License-Identifier:	GPL-2.0+
++ */
++
++#include <linux/bitops.h>
++#include <linux/err.h>
++#include <dm.h>
++#include <syscon.h>
++#include <asm/arch/clock.h>
++#include <asm/arch/cru_rv1126b.h>
++
++int rockchip_get_clk(struct udevice **devp)
++{
++	return uclass_get_device_by_driver(UCLASS_CLK,
++			DM_DRIVER_GET(rockchip_rv1126b_cru), devp);
++}
++
++#if CONFIG_IS_ENABLED(CLK_SCMI)
++int rockchip_get_scmi_clk(struct udevice **devp)
++{
++	return uclass_get_device_by_driver(UCLASS_CLK,
++			DM_DRIVER_GET(scmi_clock), devp);
++}
++#endif
++
++void *rockchip_get_cru(void)
++{
++	struct rv1126b_clk_priv *priv;
++	struct udevice *dev;
++	int ret;
++
++	ret = rockchip_get_clk(&dev);
++	if (ret)
++		return ERR_PTR(ret);
++
++	priv = dev_get_priv(dev);
++
++	return priv->cru;
++}
++
+diff --git a/drivers/clk/rockchip/Makefile b/drivers/clk/rockchip/Makefile
+index 07525c36..db21d77d 100644
+--- a/drivers/clk/rockchip/Makefile
++++ b/drivers/clk/rockchip/Makefile
+@@ -22,3 +22,4 @@ obj-$(CONFIG_ROCKCHIP_RK3576) += clk_rk3576.o
+ obj-$(CONFIG_ROCKCHIP_RK3588) += clk_rk3588.o
+ obj-$(CONFIG_ROCKCHIP_RV1108) += clk_rv1108.o
+ obj-$(CONFIG_ROCKCHIP_RV1126) += clk_rv1126.o
++obj-$(CONFIG_ROCKCHIP_RV1126B) += clk_rv1126b.o
+diff --git a/drivers/clk/rockchip/clk_rv1126b.c b/drivers/clk/rockchip/clk_rv1126b.c
+new file mode 100644
+index 00000000..13e05fb1
+--- /dev/null
++++ b/drivers/clk/rockchip/clk_rv1126b.c
+@@ -0,0 +1,2008 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Copyright (c) 2025 Rockchip Electronics Co., Ltd
++ * Author: Elaine Zhang <zhangqing@rock-chips.com>
++ */
++
++#include <linux/bitops.h>
++#include <reset-uclass.h>
++#include <dm/device-internal.h>
++#include <bitfield.h>
++#include <clk-uclass.h>
++#include <dm.h>
++#include <errno.h>
++#include <syscon.h>
++#include <asm/arch/clock.h>
++#include <asm/arch/cru_rv1126b.h>
++#include <asm/arch/hardware.h>
++#include <asm/io.h>
++#include <dm/lists.h>
++#include <dt-bindings/clock/rockchip,rv1126b-cru.h>
++
++DECLARE_GLOBAL_DATA_PTR;
++
++#define DIV_TO_RATE(input_rate, div)	((input_rate) / ((div) + 1))
++
++#if defined(CONFIG_SPL_BUILD) || defined(CONFIG_SUPPORT_USBPLUG)
++#ifndef BITS_WITH_WMASK
++#define BITS_WITH_WMASK(bits, msk, shift) \
++	((bits) << (shift)) | ((msk) << ((shift) + 16))
++#endif
++#endif
++
++static struct rockchip_pll_rate_table rv1126b_pll_rates[] = {
++	/* _mhz, _refdiv, _fbdiv, _postdiv1, _postdiv2, _dsmpd, _frac */
++	RK3036_PLL_RATE(1200000000, 1, 100, 2, 1, 1, 0),
++	RK3036_PLL_RATE(1188000000, 1, 99, 2, 1, 1, 0),
++	RK3036_PLL_RATE(1179648000, 1, 49, 1, 1, 0, 2550137),
++	RK3036_PLL_RATE(1000000000, 3, 250, 2, 1, 1, 0),
++	RK3036_PLL_RATE(993484800, 1, 41, 1, 1, 0, 6630355),
++	RK3036_PLL_RATE(983040000, 1, 40, 1, 1, 0, 16106127),
++	RK3036_PLL_RATE(903168000, 1, 75, 2, 1, 0, 4429185),
++	{ /* sentinel */ },
++};
++
++static struct rockchip_pll_clock rv1126b_pll_clks[] = {
++	[GPLL] = PLL(pll_rk3328, PLL_GPLL, RV1126B_PLL_CON(8),
++		     RV1126B_MODE_CON, 2, 10, 0, rv1126b_pll_rates),
++	[AUPLL] = PLL(pll_rk3328, PLL_AUPLL, RV1126B_PLL_CON(0),
++		     RV1126B_MODE_CON, 0, 10, 0, rv1126b_pll_rates),
++	[CPLL] = PLL(pll_rk3328, PLL_CPLL, RV1126B_PERIPLL_CON(0),
++		     RV1126B_MODE_CON, 4, 10, 0, rv1126b_pll_rates),
++};
++
++#ifndef CONFIG_SPL_BUILD
++#define RV1126B_CLK_DUMP(_id, _name, _iscru)	\
++{						\
++	.id = _id,				\
++	.name = _name,				\
++	.is_cru = _iscru,			\
++}
++
++static const struct rv1126b_clk_info clks_dump[] = {
++	RV1126B_CLK_DUMP(PLL_GPLL, "gpll", true),
++	RV1126B_CLK_DUMP(PLL_AUPLL, "aupll", true),
++	RV1126B_CLK_DUMP(PLL_CPLL, "cpll", true),
++	RV1126B_CLK_DUMP(ACLK_PERI_ROOT, "aclk_peri_root", true),
++	RV1126B_CLK_DUMP(PCLK_PERI_ROOT, "pclk_peri_root", true),
++	RV1126B_CLK_DUMP(ACLK_TOP_ROOT, "aclk_top_root", true),
++	RV1126B_CLK_DUMP(PCLK_TOP_ROOT, "pclk_top_root", true),
++	RV1126B_CLK_DUMP(ACLK_BUS_ROOT, "aclk_bus_root", true),
++	RV1126B_CLK_DUMP(HCLK_BUS_ROOT, "hclk_bus_root", true),
++	RV1126B_CLK_DUMP(PCLK_BUS_ROOT, "pclk_bus_root", true),
++	RV1126B_CLK_DUMP(BUSCLK_PMU_SRC, "busclk_pmu_src", true),
++};
++#endif
++
++static ulong rv1126b_peri_get_clk(struct rv1126b_clk_priv *priv, ulong clk_id)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 con, sel, rate;
++
++	switch (clk_id) {
++	case ACLK_PERI_ROOT:
++		con = readl(&cru->clksel_con[47]);
++		sel = (con & ACLK_PERI_SEL_MASK) >> ACLK_PERI_SEL_SHIFT;
++		if (sel == ACLK_PERI_SEL_200M)
++			rate = 200 * MHz;
++		else
++			rate = OSC_HZ;
++		break;
++	case PCLK_PERI_ROOT:
++		con = readl(&cru->clksel_con[47]);
++		sel = (con & PCLK_PERI_SEL_MASK) >> PCLK_PERI_SEL_SHIFT;
++		if (sel == PCLK_PERI_SEL_100M)
++			rate = 100 * MHz;
++		else
++			rate = OSC_HZ;
++		break;
++	case ACLK_TOP_ROOT:
++		con = readl(&cru->clksel_con[44]);
++		sel = (con & ACLK_TOP_SEL_MASK) >> ACLK_TOP_SEL_SHIFT;
++		if (sel == ACLK_TOP_SEL_600M)
++			rate = 600 * MHz;
++		else if (sel == ACLK_TOP_SEL_400M)
++			rate = 400 * MHz;
++		else
++			rate = 200 * MHz;
++		break;
++	case PCLK_TOP_ROOT:
++	case PCLK_BUS_ROOT:
++	case BUSCLK_PMU_SRC:
++		rate = 100 * MHz;
++		break;
++	case ACLK_BUS_ROOT:
++		con = readl(&cru->clksel_con[44]);
++		sel = (con & ACLK_BUS_SEL_MASK) >> ACLK_BUS_SEL_SHIFT;
++		if (sel == ACLK_BUS_SEL_400M)
++			rate = 400 * MHz;
++		else if (sel == ACLK_BUS_SEL_300M)
++			rate = 300 * MHz;
++		else
++			rate = 200 * MHz;
++		break;
++	case HCLK_BUS_ROOT:
++		con = readl(&cru->clksel_con[44]);
++		sel = (con & HCLK_BUS_SEL_MASK) >> HCLK_BUS_SEL_SHIFT;
++		if (sel == HCLK_BUS_SEL_200M)
++			rate = 200 * MHz;
++		else
++			rate = 100 * MHz;
++		break;
++	default:
++		return -ENOENT;
++	}
++
++	return rate;
++}
++
++static ulong rv1126b_peri_set_clk(struct rv1126b_clk_priv *priv,
++				  ulong clk_id, ulong rate)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	int src_clk;
++
++	switch (clk_id) {
++	case ACLK_PERI_ROOT:
++		if (rate >= 198 * MHz)
++			src_clk = ACLK_PERI_SEL_200M;
++		else
++			src_clk = ACLK_PERI_SEL_24M;
++		rk_clrsetreg(&cru->clksel_con[47],
++			     ACLK_PERI_SEL_MASK,
++			     src_clk << ACLK_PERI_SEL_SHIFT);
++		break;
++	case PCLK_PERI_ROOT:
++		if (rate >= 99 * MHz)
++			src_clk = PCLK_PERI_SEL_100M;
++		else
++			src_clk = PCLK_PERI_SEL_24M;
++		rk_clrsetreg(&cru->clksel_con[47],
++			     PCLK_PERI_SEL_MASK,
++			     src_clk << PCLK_PERI_SEL_SHIFT);
++		break;
++	case ACLK_TOP_ROOT:
++		if (rate >= 594 * MHz)
++			src_clk = ACLK_TOP_SEL_600M;
++		else if (rate >= 396 * MHz)
++			src_clk = ACLK_TOP_SEL_400M;
++		else
++			src_clk = ACLK_TOP_SEL_200M;
++		rk_clrsetreg(&cru->clksel_con[44],
++			     ACLK_TOP_SEL_MASK,
++			     src_clk << ACLK_TOP_SEL_SHIFT);
++		break;
++	case PCLK_TOP_ROOT:
++	case PCLK_BUS_ROOT:
++	case BUSCLK_PMU_SRC:
++		break;
++	case ACLK_BUS_ROOT:
++		if (rate >= 396 * MHz)
++			src_clk = ACLK_BUS_SEL_400M;
++		else if (rate >= 297 * MHz)
++			src_clk = ACLK_BUS_SEL_300M;
++		else
++			src_clk = ACLK_BUS_SEL_200M;
++		rk_clrsetreg(&cru->clksel_con[44],
++			     ACLK_BUS_SEL_MASK,
++			     src_clk << ACLK_BUS_SEL_SHIFT);
++		break;
++	case HCLK_BUS_ROOT:
++		if (rate >= 198 * MHz)
++			src_clk = HCLK_BUS_SEL_200M;
++		else
++			src_clk = HCLK_BUS_SEL_100M;
++		rk_clrsetreg(&cru->clksel_con[44],
++			     HCLK_BUS_SEL_MASK,
++			     src_clk << HCLK_BUS_SEL_SHIFT);
++		break;
++	default:
++		printf("do not support this permid freq\n");
++		return -EINVAL;
++	}
++
++	return rv1126b_peri_get_clk(priv, clk_id);
++}
++
++static ulong rv1126b_i2c_get_clk(struct rv1126b_clk_priv *priv, ulong clk_id)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 sel, con;
++	ulong rate;
++
++	switch (clk_id) {
++	case CLK_I2C0:
++	case CLK_I2C1:
++	case CLK_I2C3:
++	case CLK_I2C4:
++	case CLK_I2C5:
++	case CLK_I2C_BUS_SRC:
++		con = readl(&cru->clksel_con[50]);
++		sel = (con & CLK_I2C_SEL_MASK) >> CLK_I2C_SEL_SHIFT;
++		if (sel == CLK_I2C_SEL_200M)
++			rate = 200 * MHz;
++		else
++			rate = OSC_HZ;
++		break;
++	case CLK_I2C2:
++		con = readl(&cru->pmu_clksel_con[2]);
++		sel = (con & CLK_I2C2_SEL_MASK) >> CLK_I2C2_SEL_SHIFT;
++		if (sel == CLK_I2C2_SEL_100M)
++			rate = 100 * MHz;
++		else if (sel == CLK_I2C2_SEL_RCOSC)
++			rate = RC_OSC_HZ;
++		else
++			rate = OSC_HZ;
++		break;
++	default:
++		return -ENOENT;
++	}
++
++	return rate;
++}
++
++static ulong rv1126b_i2c_set_clk(struct rv1126b_clk_priv *priv, ulong clk_id,
++				 ulong rate)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	int src_clk;
++
++	switch (clk_id) {
++	case CLK_I2C0:
++	case CLK_I2C1:
++	case CLK_I2C3:
++	case CLK_I2C4:
++	case CLK_I2C5:
++	case CLK_I2C_BUS_SRC:
++		if (rate == OSC_HZ)
++			src_clk = CLK_I2C_SEL_24M;
++		else
++			src_clk = CLK_I2C_SEL_200M;
++		rk_clrsetreg(&cru->clksel_con[50], CLK_I2C_SEL_MASK,
++			     src_clk << CLK_I2C_SEL_SHIFT);
++		break;
++	case CLK_I2C2:
++		if (rate == OSC_HZ)
++			src_clk = CLK_I2C2_SEL_24M;
++		else if (rate == RC_OSC_HZ)
++			src_clk = CLK_I2C2_SEL_RCOSC;
++		else
++			src_clk = CLK_I2C2_SEL_100M;
++		rk_clrsetreg(&cru->pmu_clksel_con[2], CLK_I2C2_SEL_MASK,
++			     src_clk << CLK_I2C2_SEL_SHIFT);
++		break;
++	default:
++		return -ENOENT;
++	}
++	return rv1126b_i2c_get_clk(priv, clk_id);
++}
++
++static ulong rv1126b_crypto_get_clk(struct rv1126b_clk_priv *priv, ulong clk_id)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 sel, con, rate;
++
++	switch (clk_id) {
++	case PCLK_RKCE:
++		return rv1126b_peri_get_clk(priv, PCLK_BUS_ROOT);
++	case HCLK_NS_RKCE:
++		return rv1126b_peri_get_clk(priv, HCLK_BUS_ROOT);
++	case ACLK_RKCE_SRC:
++	case ACLK_NSRKCE:
++		con = readl(&cru->clksel_con[50]);
++		sel = (con & ACLK_RKCE_SEL_MASK) >>
++		      ACLK_RKCE_SEL_SHIFT;
++		if (sel == ACLK_RKCE_SEL_200M)
++			rate = 200 * MHz;
++		else
++			rate = OSC_HZ;
++		break;
++	case CLK_PKA_RKCE_SRC:
++	case CLK_PKA_NSRKCE:
++		con = readl(&cru->clksel_con[50]);
++		sel = (con & CLK_PKA_RKCE_SEL_MASK) >>
++		      CLK_PKA_RKCE_SEL_SHIFT;
++		if (sel == CLK_PKA_RKCE_SEL_300M)
++			rate = 300 * MHz;
++		else
++			rate = 200 * MHz;
++		break;
++	default:
++		return -ENOENT;
++	}
++	return rate;
++}
++
++static ulong rv1126b_crypto_set_clk(struct rv1126b_clk_priv *priv,
++				    ulong clk_id, ulong rate)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 sel;
++
++	switch (clk_id) {
++	case PCLK_RKCE:
++		break;
++	case HCLK_NS_RKCE:
++		rv1126b_peri_set_clk(priv, HCLK_BUS_ROOT, rate);
++	case ACLK_RKCE_SRC:
++	case ACLK_NSRKCE:
++		if (rate >= 198 * MHz)
++			sel = ACLK_RKCE_SEL_200M;
++		else
++			sel = ACLK_RKCE_SEL_24M;
++		rk_clrsetreg(&cru->clksel_con[50],
++			     ACLK_RKCE_SEL_MASK,
++			     (sel << ACLK_RKCE_SEL_SHIFT));
++		break;
++	case CLK_PKA_RKCE_SRC:
++	case CLK_PKA_NSRKCE:
++		if (rate >= 297 * MHz)
++			sel = CLK_PKA_RKCE_SEL_300M;
++		else
++			sel = CLK_PKA_RKCE_SEL_200M;
++		rk_clrsetreg(&cru->clksel_con[50],
++			     CLK_PKA_RKCE_SEL_MASK,
++			     (sel << CLK_PKA_RKCE_SEL_SHIFT));
++		break;
++	default:
++		return -ENOENT;
++	}
++	return rv1126b_crypto_get_clk(priv, clk_id);
++}
++
++static ulong rv1126b_mmc_get_clk(struct rv1126b_clk_priv *priv, ulong clk_id)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 div, sel, con, prate;
++
++	switch (clk_id) {
++	case CCLK_SDMMC0:
++	case HCLK_SDMMC0:
++		con = readl(&cru->clksel_con[45]);
++		sel = (con & CLK_SDMMC_SEL_MASK) >>
++		      CLK_SDMMC_SEL_SHIFT;
++		div = (con & CLK_SDMMC_DIV_MASK) >>
++		      CLK_SDMMC_DIV_SHIFT;
++		if (sel == CLK_SDMMC_SEL_GPLL)
++			prate = priv->gpll_hz;
++		else if (sel == CLK_SDMMC_SEL_CPLL)
++			prate = priv->cpll_hz;
++		else
++			prate = OSC_HZ;
++		return DIV_TO_RATE(prate, div);
++	case CCLK_SDMMC1:
++	case HCLK_SDMMC1:
++		con = readl(&cru->clksel_con[46]);
++		sel = (con & CLK_SDMMC_SEL_MASK) >>
++		      CLK_SDMMC_SEL_SHIFT;
++		div = (con & CLK_SDMMC_DIV_MASK) >>
++		      CLK_SDMMC_DIV_SHIFT;
++		if (sel == CLK_SDMMC_SEL_GPLL)
++			prate = priv->gpll_hz;
++		else if (sel == CLK_SDMMC_SEL_CPLL)
++			prate = priv->cpll_hz;
++		else
++			prate = OSC_HZ;
++		return DIV_TO_RATE(prate, div);
++	case CCLK_EMMC:
++	case HCLK_EMMC:
++		con = readl(&cru->clksel_con[47]);
++		sel = (con & CLK_SDMMC_SEL_MASK) >>
++		      CLK_SDMMC_SEL_SHIFT;
++		div = (con & CLK_SDMMC_DIV_MASK) >>
++		      CLK_SDMMC_DIV_SHIFT;
++		if (sel == CLK_SDMMC_SEL_GPLL)
++			prate = priv->gpll_hz;
++		else if (sel == CLK_SDMMC_SEL_CPLL)
++			prate = priv->cpll_hz;
++		else
++			prate = OSC_HZ;
++		return DIV_TO_RATE(prate, div);
++	case SCLK_2X_FSPI0:
++	case HCLK_FSPI0:
++	case HCLK_XIP_FSPI0:
++		con = readl(&cru->clksel_con[48]);
++		sel = (con & CLK_SDMMC_SEL_MASK) >>
++		      CLK_SDMMC_SEL_SHIFT;
++		div = (con & CLK_SDMMC_DIV_MASK) >>
++		      CLK_SDMMC_DIV_SHIFT;
++		if (sel == CLK_SDMMC_SEL_GPLL)
++			prate = priv->gpll_hz;
++		else if (sel == CLK_SDMMC_SEL_CPLL)
++			prate = priv->cpll_hz;
++		else
++			prate = OSC_HZ;
++		return DIV_TO_RATE(prate, div);
++	case SCLK_1X_FSPI1:
++	case HCLK_FSPI1:
++	case HCLK_XIP_FSPI1:
++		con = readl(&cru->pmu1_clksel_con[0]);
++		sel = (con & SCLK_1X_FSPI1_SEL_MASK) >>
++		     SCLK_1X_FSPI1_SEL_SHIFT;
++		div = (con & SCLK_1X_FSPI1_DIV_MASK) >>
++		      SCLK_1X_FSPI1_DIV_SHIFT;
++		if (sel == SCLK_1X_FSPI1_SEL_100M)
++			prate = 100 * MHz;
++		else if (sel == SCLK_1X_FSPI1_SEL_RCOSC)
++			prate = RC_OSC_HZ;
++		else
++			prate = OSC_HZ;
++		return DIV_TO_RATE(prate, div);
++	default:
++		return -ENOENT;
++	}
++}
++
++static ulong rv1126b_mmc_set_clk(struct rv1126b_clk_priv *priv,
++				 ulong clk_id, ulong rate)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 sel, src_clk_div;
++	ulong prate = 0;
++
++	if ((OSC_HZ % rate) == 0) {
++		sel = CLK_SDMMC_SEL_24M;
++		prate = OSC_HZ;
++	} else if ((priv->cpll_hz % rate) == 0) {
++		sel = CLK_SDMMC_SEL_CPLL;
++		prate = priv->cpll_hz;
++	} else {
++		sel = CLK_SDMMC_SEL_GPLL;
++		prate = priv->gpll_hz;
++	}
++	src_clk_div = DIV_ROUND_UP(prate, rate);
++
++	switch (clk_id) {
++	case CCLK_SDMMC0:
++	case HCLK_SDMMC0:
++		src_clk_div = DIV_ROUND_UP(prate, rate);
++		rk_clrsetreg(&cru->clksel_con[45],
++			     CLK_SDMMC_SEL_MASK |
++			     CLK_SDMMC_DIV_MASK,
++			     (sel << CLK_SDMMC_SEL_SHIFT) |
++			     ((src_clk_div - 1) <<
++			      CLK_SDMMC_DIV_SHIFT));
++		break;
++	case CCLK_SDMMC1:
++	case HCLK_SDMMC1:
++		src_clk_div = DIV_ROUND_UP(prate, rate);
++		rk_clrsetreg(&cru->clksel_con[46],
++			     CLK_SDMMC_SEL_MASK |
++			     CLK_SDMMC_DIV_MASK,
++			     (sel << CLK_SDMMC_SEL_SHIFT) |
++			     ((src_clk_div - 1) <<
++			      CLK_SDMMC_DIV_SHIFT));
++		break;
++	case CCLK_EMMC:
++	case HCLK_EMMC:
++		src_clk_div = DIV_ROUND_UP(prate, rate);
++		rk_clrsetreg(&cru->clksel_con[47],
++			     CLK_SDMMC_SEL_MASK |
++			     CLK_SDMMC_DIV_MASK,
++			     (sel << CLK_SDMMC_SEL_SHIFT) |
++			     ((src_clk_div - 1) <<
++			      CLK_SDMMC_DIV_SHIFT));
++		break;
++	case SCLK_2X_FSPI0:
++	case HCLK_FSPI0:
++	case HCLK_XIP_FSPI0:
++		src_clk_div = DIV_ROUND_UP(prate, rate);
++		rk_clrsetreg(&cru->clksel_con[48],
++			     CLK_SDMMC_SEL_MASK |
++			     CLK_SDMMC_DIV_MASK,
++			     (sel << CLK_SDMMC_SEL_SHIFT) |
++			     ((src_clk_div - 1) <<
++			      CLK_SDMMC_DIV_SHIFT));
++		break;
++	case SCLK_1X_FSPI1:
++	case HCLK_FSPI1:
++	case HCLK_XIP_FSPI1:
++		if ((OSC_HZ % rate) == 0) {
++			sel = SCLK_1X_FSPI1_SEL_24M;
++			prate = OSC_HZ;
++		} else if ((100 * MHz % rate) == 0) {
++			sel = SCLK_1X_FSPI1_SEL_100M;
++			prate = priv->cpll_hz;
++		} else {
++			sel = SCLK_1X_FSPI1_SEL_RCOSC;
++			prate = RC_OSC_HZ;
++		}
++		src_clk_div = DIV_ROUND_UP(prate, rate);
++		rk_clrsetreg(&cru->pmu1_clksel_con[0],
++			     SCLK_1X_FSPI1_SEL_MASK |
++			     SCLK_1X_FSPI1_DIV_MASK,
++			     (sel << SCLK_1X_FSPI1_SEL_SHIFT) |
++			     ((src_clk_div - 1) <<
++			      SCLK_1X_FSPI1_DIV_SHIFT));
++		break;
++	default:
++		return -ENOENT;
++	}
++	return rv1126b_mmc_get_clk(priv, clk_id);
++}
++
++static ulong rv1126b_spi_get_clk(struct rv1126b_clk_priv *priv, ulong clk_id)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 sel, con, rate;
++
++	switch (clk_id) {
++	case CLK_SPI0:
++		con = readl(&cru->clksel_con[50]);
++		sel = (con & CLK_SPI0_SEL_MASK) >> CLK_SPI0_SEL_SHIFT;
++		break;
++	case CLK_SPI1:
++		con = readl(&cru->clksel_con[50]);
++		sel = (con & CLK_SPI1_SEL_MASK) >> CLK_SPI1_SEL_SHIFT;
++		break;
++	default:
++		return -ENOENT;
++	}
++	if (sel == CLK_SPI0_SEL_200M)
++		rate = 200 * MHz;
++	else if (sel == CLK_SPI0_SEL_100M)
++		rate = 100 * MHz;
++	else if (sel == CLK_SPI0_SEL_50M)
++		rate = 50 * MHz;
++	else
++		rate = OSC_HZ;
++
++	return rate;
++}
++
++static ulong rv1126b_spi_set_clk(struct rv1126b_clk_priv *priv,
++				 ulong clk_id, ulong rate)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	int src_clk;
++
++	if (rate >= 198 * MHz)
++		src_clk = CLK_SPI0_SEL_200M;
++	else if (rate >= 99 * MHz)
++		src_clk = CLK_SPI0_SEL_100M;
++	else if (rate >= 48 * MHz)
++		src_clk = CLK_SPI0_SEL_50M;
++	else
++		src_clk = CLK_SPI0_SEL_24M;
++
++	switch (clk_id) {
++	case CLK_SPI0:
++		rk_clrsetreg(&cru->clksel_con[50], CLK_SPI0_SEL_MASK,
++			     src_clk << CLK_SPI0_SEL_SHIFT);
++		break;
++	case CLK_SPI1:
++		rk_clrsetreg(&cru->clksel_con[50], CLK_SPI1_SEL_MASK,
++			     src_clk << CLK_SPI1_SEL_SHIFT);
++		break;
++	default:
++		return -ENOENT;
++	}
++
++	return rv1126b_spi_get_clk(priv, clk_id);
++}
++
++static ulong rv1126b_pwm_get_clk(struct rv1126b_clk_priv *priv, ulong clk_id)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 sel, div, con;
++
++	switch (clk_id) {
++	case CLK_PWM0:
++		con = readl(&cru->clksel_con[50]);
++		sel = (con & CLK_PWM0_SEL_MASK) >> CLK_PWM0_SEL_SHIFT;
++		break;
++	case CLK_PWM2:
++		con = readl(&cru->clksel_con[50]);
++		sel = (con & CLK_PWM2_SEL_MASK) >> CLK_PWM2_SEL_SHIFT;
++		break;
++	case CLK_PWM3:
++		con = readl(&cru->clksel_con[50]);
++		sel = (con & CLK_PWM3_SEL_MASK) >> CLK_PWM3_SEL_SHIFT;
++		break;
++	case CLK_PWM1:
++		con = readl(&cru->pmu_clksel_con[2]);
++		sel = (con & CLK_PWM1_SEL_MASK) >> CLK_PWM1_SEL_SHIFT;
++		div = (con & CLK_PWM1_DIV_MASK) >>
++		      CLK_PWM1_DIV_SHIFT;
++		if (sel == CLK_PWM1_SEL_100M)
++			return DIV_TO_RATE(100 * MHz, div);
++		else if (sel == CLK_PWM1_SEL_RCOSC)
++			return DIV_TO_RATE(RC_OSC_HZ, div);
++		else
++			return DIV_TO_RATE(OSC_HZ, div);
++	default:
++		return -ENOENT;
++	}
++
++	switch (sel) {
++	case CLK_PWM_SEL_100M:
++		return 100 * MHz;
++	case CLK_PWM_SEL_24M:
++		return OSC_HZ;
++	default:
++		return -ENOENT;
++	}
++}
++
++static ulong rv1126b_pwm_set_clk(struct rv1126b_clk_priv *priv,
++				 ulong clk_id, ulong rate)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	int src_clk, src_clk_div, prate;
++
++	if (rate >= 99 * MHz)
++		src_clk = CLK_PWM_SEL_100M;
++	else
++		src_clk = CLK_PWM_SEL_24M;
++
++	switch (clk_id) {
++	case CLK_PWM0:
++		rk_clrsetreg(&cru->clksel_con[50],
++			     CLK_PWM0_SEL_MASK,
++			     src_clk << CLK_PWM0_SEL_SHIFT);
++		break;
++	case CLK_PWM2:
++		rk_clrsetreg(&cru->clksel_con[50],
++			     CLK_PWM2_SEL_MASK,
++			     src_clk << CLK_PWM2_SEL_SHIFT);
++		break;
++	case CLK_PWM3:
++		rk_clrsetreg(&cru->clksel_con[50],
++			     CLK_PWM3_SEL_MASK,
++			     src_clk << CLK_PWM3_SEL_SHIFT);
++		break;
++	case CLK_PWM1:
++		if ((OSC_HZ % rate) == 0) {
++			src_clk = CLK_PWM1_SEL_24M;
++			prate = OSC_HZ;
++		} else if ((100 * MHz % rate) == 0) {
++			src_clk = CLK_PWM1_SEL_100M;
++			prate = priv->cpll_hz;
++		} else {
++			src_clk = CLK_PWM1_SEL_RCOSC;
++			prate = RC_OSC_HZ;
++		}
++		src_clk_div = DIV_ROUND_UP(prate, rate);
++		rk_clrsetreg(&cru->pmu1_clksel_con[2],
++			     CLK_PWM1_SEL_MASK |
++			     CLK_PWM1_DIV_MASK,
++			     (src_clk << CLK_PWM1_SEL_SHIFT) |
++			     ((src_clk_div - 1) <<
++			      CLK_PWM1_DIV_SHIFT));
++		break;
++
++	default:
++		return -ENOENT;
++	}
++
++	return rv1126b_pwm_get_clk(priv, clk_id);
++}
++
++static ulong rv1126b_adc_get_clk(struct rv1126b_clk_priv *priv, ulong clk_id)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 sel, div, con;
++
++	switch (clk_id) {
++	case CLK_SARADC0:
++	case CLK_SARADC0_SRC:
++		con = readl(&cru->clksel_con[63]);
++		sel = (con & CLK_SARADC0_SEL_MASK) >> CLK_SARADC0_SEL_SHIFT;
++		div = (con & CLK_SARADC0_DIV_MASK) >>
++		      CLK_SARADC0_DIV_SHIFT;
++		break;
++	case CLK_SARADC1:
++	case CLK_SARADC1_SRC:
++		con = readl(&cru->clksel_con[63]);
++		sel = (con & CLK_SARADC1_SEL_MASK) >> CLK_SARADC1_SEL_SHIFT;
++		div = (con & CLK_SARADC1_DIV_MASK) >>
++		      CLK_SARADC1_DIV_SHIFT;
++		break;
++	case CLK_SARADC2:
++	case CLK_SARADC2_SRC:
++		con = readl(&cru->clksel_con[63]);
++		sel = (con & CLK_SARADC2_SEL_MASK) >> CLK_SARADC2_SEL_SHIFT;
++		div = (con & CLK_SARADC2_DIV_MASK) >>
++		      CLK_SARADC2_DIV_SHIFT;
++		break;
++	case CLK_TSADC:
++	case CLK_TSADC_PHYCTRL:
++		return OSC_HZ;
++	default:
++		return -ENOENT;
++	}
++
++	if (sel == CLK_SARADC_SEL_200M)
++		return DIV_TO_RATE(200 * MHz, div);
++	else
++		return DIV_TO_RATE(OSC_HZ, div);
++}
++
++static ulong rv1126b_adc_set_clk(struct rv1126b_clk_priv *priv,
++				 ulong clk_id, ulong rate)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	int src_clk_sel, src_clk_div, prate;
++
++	if ((OSC_HZ % rate) == 0) {
++		src_clk_sel = CLK_SARADC_SEL_24M;
++		prate = OSC_HZ;
++	} else {
++		src_clk_sel = CLK_SARADC_SEL_200M;
++		prate = 200 * MHz;
++	}
++	src_clk_div = DIV_ROUND_UP(prate, rate);
++
++	switch (clk_id) {
++	case CLK_SARADC0:
++	case CLK_SARADC0_SRC:
++		assert(src_clk_div - 1 <= 7);
++		rk_clrsetreg(&cru->clksel_con[63],
++			     CLK_SARADC0_SEL_MASK |
++			     CLK_SARADC0_DIV_MASK,
++			     (src_clk_sel << CLK_SARADC0_SEL_SHIFT) |
++			     ((src_clk_div - 1) <<
++			      CLK_SARADC0_DIV_SHIFT));
++		break;
++	case CLK_SARADC1:
++	case CLK_SARADC1_SRC:
++		assert(src_clk_div - 1 <= 7);
++		rk_clrsetreg(&cru->clksel_con[63],
++			     CLK_SARADC1_SEL_MASK |
++			     CLK_SARADC1_DIV_MASK,
++			     (src_clk_sel << CLK_SARADC1_SEL_SHIFT) |
++			     ((src_clk_div - 1) <<
++			      CLK_SARADC1_DIV_SHIFT));
++		break;
++	case CLK_SARADC2:
++	case CLK_SARADC2_SRC:
++		assert(src_clk_div - 1 <= 7);
++		rk_clrsetreg(&cru->clksel_con[63],
++			     CLK_SARADC2_SEL_MASK |
++			     CLK_SARADC2_DIV_MASK,
++			     (src_clk_sel << CLK_SARADC2_SEL_SHIFT) |
++			     ((src_clk_div - 1) <<
++			      CLK_SARADC2_DIV_SHIFT));
++		break;
++	case CLK_TSADC:
++	case CLK_TSADC_PHYCTRL:
++		break;
++	default:
++		return -ENOENT;
++	}
++	return rv1126b_adc_get_clk(priv, clk_id);
++}
++
++/*
++ *
++ * rational_best_approximation(31415, 10000,
++ *		(1 << 8) - 1, (1 << 5) - 1, &n, &d);
++ *
++ * you may look at given_numerator as a fixed point number,
++ * with the fractional part size described in given_denominator.
++ *
++ * for theoretical background, see:
++ * http://en.wikipedia.org/wiki/Continued_fraction
++ */
++static void rational_best_approximation(unsigned long given_numerator,
++					unsigned long given_denominator,
++					unsigned long max_numerator,
++					unsigned long max_denominator,
++					unsigned long *best_numerator,
++					unsigned long *best_denominator)
++{
++	unsigned long n, d, n0, d0, n1, d1;
++
++	n = given_numerator;
++	d = given_denominator;
++	n0 = 0;
++	d1 = 0;
++	n1 = 1;
++	d0 = 1;
++	for (;;) {
++		unsigned long t, a;
++
++		if (n1 > max_numerator || d1 > max_denominator) {
++			n1 = n0;
++			d1 = d0;
++			break;
++		}
++		if (d == 0)
++			break;
++		t = d;
++		a = n / d;
++		d = n % d;
++		n = t;
++		t = n0 + a * n1;
++		n0 = n1;
++		n1 = t;
++		t = d0 + a * d1;
++		d0 = d1;
++		d1 = t;
++	}
++	*best_numerator = n1;
++	*best_denominator = d1;
++}
++
++static ulong rv1126b_frac_get_rate(struct rv1126b_clk_priv *priv, ulong clk_id)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 reg, reg_h, src, con, p_rate;
++	unsigned long m, n, m_l, n_l, m_h, n_h;
++
++	switch (clk_id) {
++	case CLK_CM_FRAC0:
++		con = readl(&cru->clksel_con[10]);
++		src = (con & CLK_CM_FRAC0_SRC_SEL_MASK) >>
++		      CLK_CM_FRAC0_SRC_SEL_SHIFT;
++		reg = readl(&cru->clksel_con[25]);
++		reg_h = readl(&cru->clk_cm_frac0_div_h);
++		break;
++	case CLK_CM_FRAC1:
++		con = readl(&cru->clksel_con[10]);
++		src = (con & CLK_CM_FRAC1_SRC_SEL_MASK) >>
++		      CLK_CM_FRAC1_SRC_SEL_SHIFT;
++		reg = readl(&cru->clksel_con[26]);
++		reg_h = readl(&cru->clk_cm_frac1_div_h);
++		break;
++	case CLK_CM_FRAC2:
++		con = readl(&cru->clksel_con[10]);
++		src = (con & CLK_CM_FRAC2_SRC_SEL_MASK) >>
++		      CLK_CM_FRAC2_SRC_SEL_SHIFT;
++		reg = readl(&cru->clksel_con[27]);
++		reg_h = readl(&cru->clk_cm_frac2_div_h);
++		break;
++	case CLK_UART_FRAC0:
++		con = readl(&cru->clksel_con[10]);
++		src = (con & CLK_UART_FRAC0_SRC_SEL_MASK) >>
++		      CLK_UART_FRAC0_SRC_SEL_SHIFT;
++		reg = readl(&cru->clksel_con[28]);
++		reg_h = readl(&cru->clk_uart_frac0_div_h);
++		break;
++	case CLK_UART_FRAC1:
++		con = readl(&cru->clksel_con[10]);
++		src = (con & CLK_UART_FRAC1_SRC_SEL_MASK) >>
++		      CLK_UART_FRAC1_SRC_SEL_SHIFT;
++		reg = readl(&cru->clksel_con[29]);
++		reg_h = readl(&cru->clk_uart_frac1_div_h);
++		break;
++	case CLK_AUDIO_FRAC0:
++		con = readl(&cru->clksel_con[10]);
++		src = (con & CLK_AUDIO_FRAC0_SRC_SEL_MASK) >>
++		      CLK_AUDIO_FRAC0_SRC_SEL_SHIFT;
++		reg = readl(&cru->clksel_con[30]);
++		reg_h = readl(&cru->clk_audio_frac0_div_h);
++		break;
++	case CLK_AUDIO_FRAC1:
++		con = readl(&cru->clksel_con[10]);
++		src = (con & CLK_AUDIO_FRAC1_SRC_SEL_MASK) >>
++		      CLK_AUDIO_FRAC1_SRC_SEL_SHIFT;
++		reg = readl(&cru->clksel_con[31]);
++		reg_h = readl(&cru->clk_audio_frac1_div_h);
++		break;
++
++	default:
++		return -ENOENT;
++	}
++
++	switch (src) {
++	case CLK_FRAC_SRC_SEL_24M:
++		p_rate = OSC_HZ;
++		break;
++	case CLK_FRAC_SRC_SEL_GPLL:
++		p_rate = priv->gpll_hz;
++		break;
++	case CLK_FRAC_SRC_SEL_AUPLL:
++		p_rate = priv->aupll_hz;
++		break;
++	case CLK_FRAC_SRC_SEL_CPLL:
++		p_rate = priv->cpll_hz;
++		break;
++	default:
++		return -ENOENT;
++	}
++
++	n_l = reg & CLK_FRAC_NUMERATOR_MASK;
++	n_l >>= CLK_FRAC_NUMERATOR_SHIFT;
++	m_l = reg & CLK_FRAC_DENOMINATOR_MASK;
++	m_l >>= CLK_FRAC_DENOMINATOR_SHIFT;
++	n_h = reg_h & CLK_FRAC_H_NUMERATOR_MASK;
++	n_h >>= CLK_FRAC_H_NUMERATOR_SHIFT;
++	m_h = reg_h & CLK_FRAC_H_DENOMINATOR_MASK;
++	m_h >>= CLK_FRAC_H_DENOMINATOR_SHIFT;
++	n = n_l | (n_h << 16);
++	m = m_l | (m_h << 16);
++	return p_rate * n / m;
++}
++
++static ulong rv1126b_frac_set_rate(struct rv1126b_clk_priv *priv,
++				   ulong clk_id, ulong rate)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 src, p_rate, val;
++	unsigned long m, n, m_l, n_l, m_h, n_h;
++
++	if ((OSC_HZ % rate) == 0) {
++		src = CLK_FRAC_SRC_SEL_24M;
++		p_rate = OSC_HZ;
++	} else if ((priv->aupll_hz % rate) == 0) {
++		src = CLK_FRAC_SRC_SEL_AUPLL;
++		p_rate = priv->aupll_hz;
++	} else if ((priv->cpll_hz % rate) == 0) {
++		src = CLK_FRAC_SRC_SEL_CPLL;
++		p_rate = priv->cpll_hz;
++	} else {
++		src = CLK_FRAC_SRC_SEL_GPLL;
++		p_rate = priv->gpll_hz;
++	}
++
++	rational_best_approximation(rate, p_rate,
++				    GENMASK(24 - 1, 0),
++				    GENMASK(24 - 1, 0),
++				    &m, &n);
++
++	if (m < 4 && m != 0) {
++		if (n % 2 == 0)
++			val = 1;
++		else
++			val = DIV_ROUND_UP(4, m);
++
++		n *= val;
++		m *= val;
++		if (n > 0xffffff)
++			n = 0xffffff;
++	}
++
++	n_l = n & 0xffff;
++	m_l = m & 0xffff;
++	n_h = (n & 0xff0000) >> 16;
++	m_h = (m & 0xff0000) >> 16;
++
++	switch (clk_id) {
++	case CLK_CM_FRAC0:
++		rk_clrsetreg(&cru->clksel_con[10],
++			     CLK_CM_FRAC0_SRC_SEL_MASK,
++			     (src << CLK_CM_FRAC0_SRC_SEL_SHIFT));
++		val = m_h << CLK_FRAC_H_NUMERATOR_SHIFT | n_h;
++		writel(val, &cru->clk_cm_frac0_div_h);
++		val = m_l << CLK_FRAC_NUMERATOR_SHIFT | n_l;
++		writel(val, &cru->clksel_con[25]);
++		break;
++	case CLK_CM_FRAC1:
++		rk_clrsetreg(&cru->clksel_con[10],
++			     CLK_CM_FRAC1_SRC_SEL_MASK,
++			     (src << CLK_CM_FRAC1_SRC_SEL_SHIFT));
++		val = m_h << CLK_FRAC_H_NUMERATOR_SHIFT | n_h;
++		writel(val, &cru->clk_cm_frac1_div_h);
++		val = m_l << CLK_FRAC_NUMERATOR_SHIFT | n_l;
++		writel(val, &cru->clksel_con[26]);
++		break;
++	case CLK_CM_FRAC2:
++		rk_clrsetreg(&cru->clksel_con[10],
++			     CLK_CM_FRAC2_SRC_SEL_MASK,
++			     (src << CLK_CM_FRAC2_SRC_SEL_SHIFT));
++		val = m_h << CLK_FRAC_H_NUMERATOR_SHIFT | n_h;
++		writel(val, &cru->clk_cm_frac2_div_h);
++		val = m_l << CLK_FRAC_NUMERATOR_SHIFT | n_l;
++		writel(val, &cru->clksel_con[27]);
++		break;
++	case CLK_UART_FRAC0:
++		rk_clrsetreg(&cru->clksel_con[10],
++			     CLK_UART_FRAC0_SRC_SEL_MASK,
++			     (src << CLK_UART_FRAC0_SRC_SEL_SHIFT));
++		val = m_h << CLK_FRAC_H_NUMERATOR_SHIFT | n_h;
++		writel(val, &cru->clk_uart_frac0_div_h);
++		val = m_l << CLK_FRAC_NUMERATOR_SHIFT | n_l;
++		writel(val, &cru->clksel_con[28]);
++		break;
++	case CLK_UART_FRAC1:
++		rk_clrsetreg(&cru->clksel_con[10],
++			     CLK_UART_FRAC1_SRC_SEL_MASK,
++			     (src << CLK_UART_FRAC1_SRC_SEL_SHIFT));
++		val = m_h << CLK_FRAC_H_NUMERATOR_SHIFT | n_h;
++		writel(val, &cru->clk_uart_frac1_div_h);
++		val = m_l << CLK_FRAC_NUMERATOR_SHIFT | n_l;
++		writel(val, &cru->clksel_con[29]);
++		break;
++	case CLK_AUDIO_FRAC0:
++		rk_clrsetreg(&cru->clksel_con[10],
++			     CLK_AUDIO_FRAC0_SRC_SEL_MASK,
++			     (src << CLK_AUDIO_FRAC0_SRC_SEL_SHIFT));
++		val = m_h << CLK_FRAC_H_NUMERATOR_SHIFT | n_h;
++		writel(val, &cru->clk_audio_frac0_div_h);
++		val = m_l << CLK_FRAC_NUMERATOR_SHIFT | n_l;
++		writel(val, &cru->clksel_con[30]);
++		break;
++	case CLK_AUDIO_FRAC1:
++		rk_clrsetreg(&cru->clksel_con[10],
++			     CLK_AUDIO_FRAC0_SRC_SEL_MASK,
++			     (src << CLK_AUDIO_FRAC0_SRC_SEL_SHIFT));
++		val = m_h << CLK_FRAC_H_NUMERATOR_SHIFT | n_h;
++		writel(val, &cru->clk_audio_frac1_div_h);
++		val = m_l << CLK_FRAC_NUMERATOR_SHIFT | n_l;
++		writel(val, &cru->clksel_con[31]);
++		break;
++
++	default:
++		return -ENOENT;
++	}
++
++	return rv1126b_frac_get_rate(priv, clk_id);
++}
++
++static ulong rv1126b_uart_get_rate(struct rv1126b_clk_priv *priv, ulong clk_id)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 con, div, src, p_rate;
++
++	switch (clk_id) {
++	case SCLK_UART0:
++		con = readl(&cru->pmu_clksel_con[3]);
++		src = (con & SCLK_UART0_SEL_MASK) >> SCLK_UART0_SEL_SHIFT;
++		if (src == SCLK_UART0_SEL_UART0_SRC)
++			return rv1126b_uart_get_rate(priv, SCLK_UART0_SRC);
++		else if (src == SCLK_UART0_SEL_UART0_SRC)
++			return RC_OSC_HZ;
++		else
++			return OSC_HZ;
++	case SCLK_UART0_SRC:
++		con = readl(&cru->clksel_con[12]);
++		src = (con & SCLK_UART0_SRC_SEL_MASK) >>
++		      SCLK_UART0_SRC_SEL_SHIFT;
++		div = (con & SCLK_UART0_SRC_DIV_MASK) >>
++		      SCLK_UART0_SRC_DIV_SHIFT;
++		break;
++	case SCLK_UART1:
++		con = readl(&cru->clksel_con[12]);
++		src = (con & SCLK_UART1_SEL_MASK) >> SCLK_UART1_SEL_SHIFT;
++		div = (con & SCLK_UART1_DIV_MASK) >> SCLK_UART1_DIV_SHIFT;
++		break;
++	case SCLK_UART2:
++		con = readl(&cru->clksel_con[13]);
++		src = (con & SCLK_UART2_SEL_MASK) >> SCLK_UART2_SEL_SHIFT;
++		div = (con & SCLK_UART2_DIV_MASK) >> SCLK_UART2_DIV_SHIFT;
++		break;
++	case SCLK_UART3:
++		con = readl(&cru->clksel_con[13]);
++		src = (con & SCLK_UART3_SEL_MASK) >> SCLK_UART3_SEL_SHIFT;
++		div = (con & SCLK_UART3_DIV_MASK) >> SCLK_UART3_DIV_SHIFT;
++		break;
++	case SCLK_UART4:
++		con = readl(&cru->clksel_con[14]);
++		src = (con & SCLK_UART4_SEL_MASK) >> SCLK_UART4_SEL_SHIFT;
++		div = (con & SCLK_UART4_DIV_MASK) >> SCLK_UART4_DIV_SHIFT;
++		break;
++	case SCLK_UART5:
++		con = readl(&cru->clksel_con[14]);
++		src = (con & SCLK_UART5_SEL_MASK) >> SCLK_UART5_SEL_SHIFT;
++		div = (con & SCLK_UART5_DIV_MASK) >> SCLK_UART5_DIV_SHIFT;
++		break;
++	case SCLK_UART6:
++		con = readl(&cru->clksel_con[15]);
++		src = (con & SCLK_UART6_SEL_MASK) >> SCLK_UART6_SEL_SHIFT;
++		div = (con & SCLK_UART6_DIV_MASK) >> SCLK_UART6_DIV_SHIFT;
++		break;
++	case SCLK_UART7:
++		con = readl(&cru->clksel_con[15]);
++		src = (con & SCLK_UART7_SEL_MASK) >> SCLK_UART7_SEL_SHIFT;
++		div = (con & SCLK_UART7_DIV_MASK) >> SCLK_UART7_DIV_SHIFT;
++		break;
++
++	default:
++		return -ENOENT;
++	}
++
++	switch (src) {
++	case SCLK_UART_SEL_OSC:
++		p_rate = OSC_HZ;
++		break;
++	case SCLK_UART_SEL_CM_FRAC0:
++		p_rate = rv1126b_frac_get_rate(priv, CLK_CM_FRAC0);
++		break;
++	case SCLK_UART_SEL_CM_FRAC1:
++		p_rate = rv1126b_frac_get_rate(priv, CLK_CM_FRAC1);
++		break;
++	case SCLK_UART_SEL_CM_FRAC2:
++		p_rate = rv1126b_frac_get_rate(priv, CLK_CM_FRAC2);
++		break;
++	case SCLK_UART_SEL_UART_FRAC0:
++		p_rate = rv1126b_frac_get_rate(priv, CLK_UART_FRAC0);
++		break;
++	case SCLK_UART_SEL_UART_FRAC1:
++		p_rate = rv1126b_frac_get_rate(priv, CLK_UART_FRAC1);
++		break;
++	default:
++		return -ENOENT;
++	}
++
++	return DIV_TO_RATE(p_rate, div);
++}
++
++static ulong rv1126b_uart_set_rate(struct rv1126b_clk_priv *priv,
++				   ulong clk_id, ulong rate)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 uart_src, div, p_rate;
++
++	if (rv1126b_frac_get_rate(priv, CLK_CM_FRAC0) % rate == 0) {
++		uart_src = SCLK_UART_SEL_CM_FRAC0;
++		p_rate = rv1126b_frac_get_rate(priv, CLK_CM_FRAC0);
++	} else if (rv1126b_frac_get_rate(priv, CLK_CM_FRAC1) % rate == 0) {
++		uart_src = SCLK_UART_SEL_CM_FRAC1;
++		p_rate = rv1126b_frac_get_rate(priv, CLK_CM_FRAC1);
++	} else if (rv1126b_frac_get_rate(priv, CLK_CM_FRAC2) % rate == 0) {
++		uart_src = SCLK_UART_SEL_CM_FRAC2;
++		p_rate = rv1126b_frac_get_rate(priv, CLK_CM_FRAC2);
++	} else if (rv1126b_frac_get_rate(priv, CLK_UART_FRAC0) % rate == 0) {
++		uart_src = SCLK_UART_SEL_UART_FRAC0;
++		p_rate = rv1126b_frac_get_rate(priv, CLK_UART_FRAC0);
++	} else if (rv1126b_frac_get_rate(priv, CLK_UART_FRAC1) % rate == 0) {
++		uart_src = SCLK_UART_SEL_UART_FRAC1;
++		p_rate = rv1126b_frac_get_rate(priv, CLK_UART_FRAC1);
++	} else {
++		uart_src = SCLK_UART_SEL_OSC;
++		p_rate = OSC_HZ;
++	}
++
++	div = DIV_ROUND_UP(p_rate, rate);
++
++	switch (clk_id) {
++	case SCLK_UART0:
++		if (rate == OSC_HZ)
++			uart_src = SCLK_UART0_SEL_OSC;
++		else if (rate == RC_OSC_HZ)
++			uart_src = SCLK_UART0_SEL_RCOSC;
++		else
++			uart_src = SCLK_UART0_SEL_UART0_SRC;
++		rk_clrsetreg(&cru->pmu_clksel_con[3],
++			     SCLK_UART0_SEL_MASK,
++			     uart_src << SCLK_UART0_SEL_SHIFT);
++		if (uart_src == SCLK_UART0_SEL_UART0_SRC)
++			rv1126b_uart_set_rate(priv, SCLK_UART0_SRC, rate);
++		break;
++	case SCLK_UART0_SRC:
++		rk_clrsetreg(&cru->clksel_con[12],
++			     SCLK_UART0_SRC_SEL_MASK |
++			     SCLK_UART0_SRC_DIV_MASK,
++			     (uart_src << SCLK_UART0_SRC_SEL_SHIFT) |
++			     ((div - 1) <<
++			      SCLK_UART0_SRC_DIV_SHIFT));
++		break;
++	case SCLK_UART1:
++		rk_clrsetreg(&cru->clksel_con[12],
++			     SCLK_UART1_SEL_MASK |
++			     SCLK_UART1_DIV_MASK,
++			     (uart_src << SCLK_UART1_SEL_SHIFT) |
++			     ((div - 1) <<
++			      SCLK_UART1_DIV_SHIFT));
++		break;
++	case SCLK_UART2:
++		rk_clrsetreg(&cru->clksel_con[13],
++			     SCLK_UART2_SEL_MASK |
++			     SCLK_UART2_DIV_MASK,
++			     (uart_src << SCLK_UART2_SEL_SHIFT) |
++			     ((div - 1) <<
++			      SCLK_UART2_DIV_SHIFT));
++		break;
++	case SCLK_UART3:
++		rk_clrsetreg(&cru->clksel_con[13],
++			     SCLK_UART3_SEL_MASK |
++			     SCLK_UART3_DIV_MASK,
++			     (uart_src << SCLK_UART3_SEL_SHIFT) |
++			     ((div - 1) <<
++			      SCLK_UART3_DIV_SHIFT));
++		break;
++	case SCLK_UART4:
++		rk_clrsetreg(&cru->clksel_con[14],
++			     SCLK_UART4_SEL_MASK |
++			     SCLK_UART4_DIV_MASK,
++			     (uart_src << SCLK_UART4_SEL_SHIFT) |
++			     ((div - 1) <<
++			      SCLK_UART4_DIV_SHIFT));
++		break;
++	case SCLK_UART5:
++		rk_clrsetreg(&cru->clksel_con[14],
++			     SCLK_UART5_SEL_MASK |
++			     SCLK_UART5_DIV_MASK,
++			     (uart_src << SCLK_UART5_SEL_SHIFT) |
++			     ((div - 1) <<
++			      SCLK_UART5_DIV_SHIFT));
++		break;
++	case SCLK_UART6:
++		rk_clrsetreg(&cru->clksel_con[15],
++			     SCLK_UART6_SEL_MASK |
++			     SCLK_UART6_DIV_MASK,
++			     (uart_src << SCLK_UART6_SEL_SHIFT) |
++			     ((div - 1) <<
++			      SCLK_UART6_DIV_SHIFT));
++		break;
++	case SCLK_UART7:
++		rk_clrsetreg(&cru->clksel_con[15],
++			     SCLK_UART7_SEL_MASK |
++			     SCLK_UART7_DIV_MASK,
++			     (uart_src << SCLK_UART7_SEL_SHIFT) |
++			     ((div - 1) <<
++			      SCLK_UART7_DIV_SHIFT));
++		break;
++	default:
++		return -ENOENT;
++	}
++
++	return rv1126b_uart_get_rate(priv, clk_id);
++}
++
++static ulong rv1126b_wdt_get_rate(struct rv1126b_clk_priv *priv, ulong clk_id)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 sel, con;
++
++	switch (clk_id) {
++	case TCLK_WDT_NS_SRC:
++	case TCLK_WDT_NS:
++		con = readl(&cru->clksel_con[46]);
++		sel = (con & TCLK_WDT_NS_SEL_MASK) >>
++		      TCLK_WDT_NS_SEL_SHIFT;
++		break;
++	case TCLK_WDT_S:
++		con = readl(&cru->clksel_con[46]);
++		sel = (con & TCLK_WDT_S_SEL_MASK) >>
++		      TCLK_WDT_S_SEL_SHIFT;
++		break;
++	case TCLK_WDT_HPMCU:
++		con = readl(&cru->clksel_con[46]);
++		sel = (con & TCLK_WDT_HPMCU_SEL_MASK) >>
++		      TCLK_WDT_HPMCU_SEL_SHIFT;
++		break;
++	case TCLK_WDT_LPMCU:
++		con = readl(&cru->pmu_clksel_con[3]);
++		sel = (con & TCLK_WDT_LPMCU_SEL_MASK) >>
++		      TCLK_WDT_LPMCU_SEL_SHIFT;
++		if (sel == TCLK_WDT_LPMCU_SEL_100M)
++			return 100 * MHz;
++		else if (sel == TCLK_WDT_LPMCU_SEL_RCOSC)
++			return RC_OSC_HZ;
++		else if (sel == TCLK_WDT_LPMCU_SEL_OSC)
++			return OSC_HZ;
++		else
++			return 32768;
++	default:
++		return -ENOENT;
++	}
++
++	if (sel == TCLK_WDT_SEL_100M)
++		return 100 * MHz;
++	else
++		return OSC_HZ;
++}
++
++static ulong rv1126b_wdt_set_rate(struct rv1126b_clk_priv *priv,
++				  ulong clk_id, ulong rate)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	int src_clk_sel;
++
++	if (rate == OSC_HZ)
++		src_clk_sel = TCLK_WDT_SEL_OSC;
++	else
++		src_clk_sel = TCLK_WDT_SEL_100M;
++
++	switch (clk_id) {
++	case TCLK_WDT_NS_SRC:
++		rk_clrsetreg(&cru->clksel_con[46],
++			     TCLK_WDT_NS_SEL_MASK,
++			     (src_clk_sel << TCLK_WDT_NS_SEL_SHIFT));
++		break;
++	case TCLK_WDT_S:
++		rk_clrsetreg(&cru->clksel_con[46],
++			     TCLK_WDT_NS_SEL_MASK,
++			     (src_clk_sel << TCLK_WDT_NS_SEL_SHIFT));
++		break;
++	case TCLK_WDT_HPMCU:
++		rk_clrsetreg(&cru->clksel_con[46],
++			     TCLK_WDT_HPMCU_SEL_MASK,
++			     (src_clk_sel << TCLK_WDT_HPMCU_SEL_SHIFT));
++		break;
++	case TCLK_WDT_LPMCU:
++		if (rate == OSC_HZ)
++			src_clk_sel = TCLK_WDT_LPMCU_SEL_OSC;
++		else if (rate == RC_OSC_HZ)
++			src_clk_sel = TCLK_WDT_LPMCU_SEL_RCOSC;
++		else if (rate == 1000000)
++			src_clk_sel = TCLK_WDT_LPMCU_SEL_100M;
++		else
++			src_clk_sel = TCLK_WDT_LPMCU_SEL_32K;
++		rk_clrsetreg(&cru->pmu_clksel_con[3],
++			     TCLK_WDT_LPMCU_SEL_MASK,
++			     (src_clk_sel << TCLK_WDT_LPMCU_SEL_SHIFT));
++		break;
++	default:
++		return -ENOENT;
++	}
++	return rv1126b_wdt_get_rate(priv, clk_id);
++}
++
++static ulong rv1126b_vop_get_rate(struct rv1126b_clk_priv *priv, ulong clk_id)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 sel, div, con, p_rate;
++
++	switch (clk_id) {
++	case DCLK_VOP:
++		con = readl(&cru->clksel_con[43]);
++		sel = (con & DCLK_VOP_SEL_MASK) >> DCLK_VOP_SEL_SHIFT;
++		div = (con & DCLK_VOP_DIV_MASK) >> DCLK_VOP_DIV_SHIFT;
++		break;
++	default:
++		return -ENOENT;
++	}
++	if (sel == DCLK_VOP_SEL_CPLL)
++		p_rate = priv->cpll_hz;
++	else
++		p_rate = priv->gpll_hz;
++
++	return DIV_TO_RATE(p_rate, div);
++}
++
++static ulong rv1126b_vop_set_rate(struct rv1126b_clk_priv *priv,
++				 ulong clk_id, ulong rate)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	int src_clk, div, p_rate;
++
++	if (!(priv->cpll_hz % rate)) {
++		src_clk = DCLK_VOP_SEL_CPLL;
++		p_rate = priv->cpll_hz;
++	} else {
++		src_clk = DCLK_VOP_SEL_GPLL;
++		p_rate = priv->gpll_hz;
++	}
++
++	div = DIV_ROUND_UP(p_rate, rate);
++	switch (clk_id) {
++	case DCLK_VOP:
++		rk_clrsetreg(&cru->clksel_con[43], DCLK_VOP_SEL_MASK | DCLK_VOP_DIV_MASK,
++			     (src_clk << DCLK_VOP_SEL_SHIFT) |
++			     ((div - 1) << DCLK_VOP_DIV_SHIFT) );
++		break;
++	default:
++		return -ENOENT;
++	}
++
++	return rv1126b_vop_get_rate(priv, clk_id);
++}
++
++static ulong rv1126b_mac_get_rate(struct rv1126b_clk_priv *priv, ulong clk_id)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	u32 sel, div, con, p_rate;
++
++	switch (clk_id) {
++	case CLK_GMAC_PTP_REF_SRC:
++	case CLK_GMAC_PTP_REF:
++		con = readl(&cru->clksel_con[45]);
++		sel = (con & CLK_GMAC_PTP_REF_SRC_SEL_MASK) >>
++		      CLK_GMAC_PTP_REF_SRC_SEL_SHIFT;
++		div = (con & CLK_GMAC_PTP_REF_SRC_DIV_MASK) >>
++		      CLK_GMAC_PTP_REF_SRC_DIV_SHIFT;
++		if (sel == CLK_GMAC_PTP_REF_SRC_SEL_CPLL)
++			p_rate = priv->cpll_hz;
++		else
++			p_rate = OSC_HZ;
++		break;
++	case CLK_MAC_OUT2IO:
++		con = readl(&cru->clksel_con[69]);
++		sel = (con & CLK_MAC_OUT2IO_SEL_MASK) >>
++		      CLK_MAC_OUT2IO_SEL_SHIFT;
++		div = (con & CLK_MAC_OUT2IO_DIV_MASK) >>
++		      CLK_MAC_OUT2IO_DIV_SHIFT;
++		if (sel == CLK_MAC_OUT2IO_SEL_CPLL)
++			p_rate = priv->cpll_hz;
++		else if (sel == CLK_MAC_OUT2IO_SEL_GPLL)
++			p_rate = priv->gpll_hz;
++		else
++			p_rate = OSC_HZ;
++		break;
++	case CLK_GMAC_125M:
++		return priv->cpll_hz / 8;
++	case CLK_50M_GMAC_IOBUF_VI:
++		return priv->cpll_hz / 20;
++	default:
++		return -ENOENT;
++	}
++
++	return DIV_TO_RATE(p_rate, div);
++}
++
++static ulong rv1126b_mac_set_rate(struct rv1126b_clk_priv *priv,
++				  ulong clk_id, ulong rate)
++{
++	struct rv1126b_cru *cru = priv->cru;
++	int src_clk, div, p_rate;
++
++	switch (clk_id) {
++	case CLK_GMAC_PTP_REF_SRC:
++	case CLK_GMAC_PTP_REF:
++		if (!(priv->cpll_hz % rate)) {
++			src_clk = CLK_GMAC_PTP_REF_SRC_SEL_CPLL;
++			p_rate = priv->cpll_hz;
++		} else {
++			src_clk = CLK_GMAC_PTP_REF_SRC_SEL_24M;
++			p_rate = OSC_HZ;
++		}
++		div = DIV_ROUND_UP(p_rate, rate);
++		rk_clrsetreg(&cru->clksel_con[45],
++			     CLK_GMAC_PTP_REF_SRC_DIV_MASK |
++			     CLK_GMAC_PTP_REF_SRC_SEL_MASK,
++			     (src_clk << CLK_GMAC_PTP_REF_SRC_SEL_SHIFT) |
++			     ((div - 1) << CLK_GMAC_PTP_REF_SRC_DIV_SHIFT));
++		break;
++	case CLK_MAC_OUT2IO:
++		if (!(priv->cpll_hz % rate)) {
++			src_clk = CLK_MAC_OUT2IO_SEL_CPLL;
++			p_rate = priv->cpll_hz;
++		} else if (!(priv->gpll_hz % rate)) {
++			src_clk = CLK_MAC_OUT2IO_SEL_GPLL;
++			p_rate = priv->gpll_hz;
++		} else {
++			src_clk = CLK_MAC_OUT2IO_SEL_24M;
++			p_rate = OSC_HZ;
++		}
++		div = DIV_ROUND_UP(p_rate, rate);
++		rk_clrsetreg(&cru->clksel_con[69],
++			     CLK_MAC_OUT2IO_DIV_MASK | CLK_MAC_OUT2IO_SEL_MASK,
++			     (src_clk << CLK_MAC_OUT2IO_SEL_SHIFT) |
++			     ((div - 1) << CLK_MAC_OUT2IO_DIV_SHIFT));
++		writel(0x01000000, &cru->clkgate_con[15]);
++		break;
++	case CLK_GMAC_125M:
++		return rv1126b_mac_get_rate(priv, clk_id);;
++	case CLK_50M_GMAC_IOBUF_VI:
++		return rv1126b_mac_get_rate(priv, clk_id);;
++	default:
++		return -ENOENT;
++	}
++
++	return rv1126b_mac_get_rate(priv, clk_id);
++}
++
++static ulong rv1126b_clk_get_rate(struct clk *clk)
++{
++	struct rv1126b_clk_priv *priv = dev_get_priv(clk->dev);
++	ulong rate = 0;
++
++	if (!priv->gpll_hz) {
++		printf("%s gpll=%lu\n", __func__, priv->gpll_hz);
++		return -ENOENT;
++	}
++
++	switch (clk->id) {
++	case PLL_GPLL:
++		rate = rockchip_pll_get_rate(&rv1126b_pll_clks[GPLL], priv->cru,
++					     GPLL);
++		break;
++	case PLL_AUPLL:
++		rate = rockchip_pll_get_rate(&rv1126b_pll_clks[AUPLL],
++					     priv->cru, AUPLL);
++		break;
++	case PLL_CPLL:
++		rate = rockchip_pll_get_rate(&rv1126b_pll_clks[CPLL], priv->cru,
++					     CPLL);
++		break;
++	case ACLK_PERI_ROOT:
++	case PCLK_PERI_ROOT:
++	case ACLK_TOP_ROOT:
++	case PCLK_TOP_ROOT:
++	case PCLK_BUS_ROOT:
++	case BUSCLK_PMU_SRC:
++	case ACLK_BUS_ROOT:
++	case HCLK_BUS_ROOT:
++		rate = rv1126b_peri_get_clk(priv, clk->id);
++		break;
++	case PCLK_RKCE:
++	case HCLK_NS_RKCE:
++	case ACLK_RKCE_SRC:
++	case ACLK_NSRKCE:
++	case CLK_PKA_RKCE_SRC:
++	case CLK_PKA_NSRKCE:
++		rate = rv1126b_crypto_get_clk(priv, clk->id);
++		break;
++	case CCLK_SDMMC0:
++	case HCLK_SDMMC0:
++	case CCLK_SDMMC1:
++	case HCLK_SDMMC1:
++	case CCLK_EMMC:
++	case HCLK_EMMC:
++	case SCLK_2X_FSPI0:
++	case HCLK_FSPI0:
++	case HCLK_XIP_FSPI0:
++	case SCLK_1X_FSPI1:
++	case HCLK_FSPI1:
++	case HCLK_XIP_FSPI1:
++		rate = rv1126b_mmc_get_clk(priv, clk->id);
++		break;
++	case CLK_I2C0:
++	case CLK_I2C1:
++	case CLK_I2C3:
++	case CLK_I2C4:
++	case CLK_I2C5:
++	case CLK_I2C2:
++	case CLK_I2C_BUS_SRC:
++		rate = rv1126b_i2c_get_clk(priv, clk->id);
++		break;
++	case CLK_SPI0:
++	case CLK_SPI1:
++		rate = rv1126b_spi_get_clk(priv, clk->id);
++		break;
++	case CLK_PWM0:
++	case CLK_PWM2:
++	case CLK_PWM3:
++	case CLK_PWM1:
++		rate = rv1126b_pwm_get_clk(priv, clk->id);
++		break;
++	case CLK_SARADC0:
++	case CLK_SARADC0_SRC:
++	case CLK_SARADC1:
++	case CLK_SARADC1_SRC:
++	case CLK_SARADC2:
++	case CLK_SARADC2_SRC:
++	case CLK_TSADC:
++	case CLK_TSADC_PHYCTRL:
++		rate = rv1126b_adc_get_clk(priv, clk->id);
++		break;
++	case CLK_CM_FRAC0:
++	case CLK_CM_FRAC1:
++	case CLK_CM_FRAC2:
++	case CLK_UART_FRAC0:
++	case CLK_UART_FRAC1:
++	case CLK_AUDIO_FRAC0:
++	case CLK_AUDIO_FRAC1:
++		rate = rv1126b_frac_get_rate(priv, clk->id);
++		break;
++	case SCLK_UART0:
++	case SCLK_UART0_SRC:
++	case SCLK_UART1:
++	case SCLK_UART2:
++	case SCLK_UART3:
++	case SCLK_UART4:
++	case SCLK_UART5:
++	case SCLK_UART6:
++	case SCLK_UART7:
++		rate = rv1126b_uart_get_rate(priv, clk->id);
++		break;
++	case DCLK_DECOM:
++		rate = 400 * MHz;
++		break;
++	case TCLK_WDT_NS_SRC:
++	case TCLK_WDT_NS:
++	case TCLK_WDT_S:
++	case TCLK_WDT_HPMCU:
++	case TCLK_WDT_LPMCU:
++		rate = rv1126b_wdt_get_rate(priv, clk->id);
++		break;
++	case DCLK_VOP:
++		rate = rv1126b_vop_get_rate(priv, clk->id);
++		break;
++	case CLK_GMAC_125M:
++	case CLK_GMAC_PTP_REF_SRC:
++	case CLK_50M_GMAC_IOBUF_VI:
++	case CLK_MAC_OUT2IO:
++	case CLK_GMAC_PTP_REF:
++		rate = rv1126b_mac_get_rate(priv, clk->id);
++		break;
++
++	default:
++		return -ENOENT;
++	}
++
++	return rate;
++};
++
++static ulong rv1126b_clk_set_rate(struct clk *clk, ulong rate)
++{
++	struct rv1126b_clk_priv *priv = dev_get_priv(clk->dev);
++	ulong ret = 0;
++
++	if (!priv->gpll_hz) {
++		printf("%s gpll=%lu\n", __func__, priv->gpll_hz);
++		return -ENOENT;
++	}
++
++	switch (clk->id) {
++	case PLL_GPLL:
++		ret = rockchip_pll_set_rate(&rv1126b_pll_clks[GPLL], priv->cru,
++					    GPLL, rate);
++		break;
++	case PLL_AUPLL:
++		ret = rockchip_pll_set_rate(&rv1126b_pll_clks[AUPLL], priv->cru,
++					    AUPLL, rate);
++		break;
++	case PLL_CPLL:
++		ret = rockchip_pll_set_rate(&rv1126b_pll_clks[CPLL], priv->cru,
++					    CPLL, rate);
++		break;
++	case ACLK_PERI_ROOT:
++	case PCLK_PERI_ROOT:
++	case ACLK_TOP_ROOT:
++	case PCLK_TOP_ROOT:
++	case PCLK_BUS_ROOT:
++	case BUSCLK_PMU_SRC:
++	case ACLK_BUS_ROOT:
++	case HCLK_BUS_ROOT:
++		ret = rv1126b_peri_set_clk(priv, clk->id, rate);
++		break;
++	case PCLK_RKCE:
++	case HCLK_NS_RKCE:
++	case ACLK_RKCE_SRC:
++	case ACLK_NSRKCE:
++	case CLK_PKA_RKCE_SRC:
++	case CLK_PKA_NSRKCE:
++		ret = rv1126b_crypto_set_clk(priv, clk->id, rate);
++		break;
++	case CCLK_SDMMC0:
++	case HCLK_SDMMC0:
++	case CCLK_SDMMC1:
++	case HCLK_SDMMC1:
++	case CCLK_EMMC:
++	case HCLK_EMMC:
++	case SCLK_2X_FSPI0:
++	case HCLK_FSPI0:
++	case HCLK_XIP_FSPI0:
++	case SCLK_1X_FSPI1:
++	case HCLK_FSPI1:
++	case HCLK_XIP_FSPI1:
++		ret = rv1126b_mmc_set_clk(priv, clk->id, rate);
++		break;
++	case CLK_I2C0:
++	case CLK_I2C1:
++	case CLK_I2C3:
++	case CLK_I2C4:
++	case CLK_I2C5:
++	case CLK_I2C2:
++	case CLK_I2C_BUS_SRC:
++		ret = rv1126b_i2c_set_clk(priv, clk->id, rate);
++		break;
++	case CLK_SPI0:
++	case CLK_SPI1:
++		ret = rv1126b_spi_set_clk(priv, clk->id, rate);
++		break;
++	case CLK_PWM0:
++	case CLK_PWM2:
++	case CLK_PWM3:
++	case CLK_PWM1:
++		ret = rv1126b_pwm_set_clk(priv, clk->id, rate);
++		break;
++	case CLK_SARADC0:
++	case CLK_SARADC0_SRC:
++	case CLK_SARADC1:
++	case CLK_SARADC1_SRC:
++	case CLK_SARADC2:
++	case CLK_SARADC2_SRC:
++	case CLK_TSADC:
++	case CLK_TSADC_PHYCTRL:
++		ret = rv1126b_adc_set_clk(priv, clk->id, rate);
++		break;
++	case CLK_CM_FRAC0:
++	case CLK_CM_FRAC1:
++	case CLK_CM_FRAC2:
++	case CLK_UART_FRAC0:
++	case CLK_UART_FRAC1:
++	case CLK_AUDIO_FRAC0:
++	case CLK_AUDIO_FRAC1:
++		ret = rv1126b_frac_set_rate(priv, clk->id, rate);
++		break;
++	case SCLK_UART0:
++	case SCLK_UART0_SRC:
++	case SCLK_UART1:
++	case SCLK_UART2:
++	case SCLK_UART3:
++	case SCLK_UART4:
++	case SCLK_UART5:
++	case SCLK_UART6:
++	case SCLK_UART7:
++		ret = rv1126b_uart_set_rate(priv, clk->id, rate);
++		break;
++	case DCLK_DECOM:
++		break;
++	case TCLK_WDT_NS_SRC:
++	case TCLK_WDT_NS:
++	case TCLK_WDT_S:
++	case TCLK_WDT_HPMCU:
++	case TCLK_WDT_LPMCU:
++		ret = rv1126b_wdt_set_rate(priv, clk->id, rate);
++		break;
++	case DCLK_VOP:
++		ret = rv1126b_vop_set_rate(priv, clk->id, rate);
++		break;
++	case CLK_GMAC_125M:
++	case CLK_GMAC_PTP_REF_SRC:
++	case CLK_50M_GMAC_IOBUF_VI:
++	case CLK_MAC_OUT2IO:
++	case CLK_GMAC_PTP_REF:
++		ret = rv1126b_mac_set_rate(priv, clk->id, rate);
++		break;
++
++	default:
++		return -ENOENT;
++	}
++
++	return ret;
++};
++
++static int rv1126b_clk_set_parent(struct clk *clk, struct clk *parent)
++{
++	switch (clk->id) {
++	default:
++		return -ENOENT;
++	}
++
++	return 0;
++}
++
++static int rv1126b_clk_enable(struct clk *clk)
++{
++	ulong ret = 0;
++
++	switch (clk->id) {
++#ifdef CONFIG_SPL_BUILD
++	case PCLK_KEY_READER_S:
++		ret = writel(BITS_WITH_WMASK(0, 0x1U, 13),
++			     RV1126B_CRU_BASE + RV1126B_SBUSCLKGATE_CON(0));
++		break;
++	case HCLK_KL_RKCE_S:
++		ret = writel(BITS_WITH_WMASK(0, 0x1U, 9),
++			     RV1126B_CRU_BASE + RV1126B_SBUSCLKGATE_CON(0));
++		break;
++	case HCLK_RKCE_S:
++		ret = writel(BITS_WITH_WMASK(0, 0x1U, 8),
++			     RV1126B_CRU_BASE + RV1126B_SBUSCLKGATE_CON(0));
++		break;
++	case HCLK_RKRNG_S:
++		ret = writel(BITS_WITH_WMASK(0, 0x1U, 14),
++			     RV1126B_CRU_BASE + RV1126B_SBUSCLKGATE_CON(2));
++		break;
++	case CLK_PKA_RKCE_S:
++		ret = writel(BITS_WITH_WMASK(0, 0x1U, 13),
++			     RV1126B_CRU_BASE + RV1126B_SBUSCLKGATE_CON(2));
++		break;
++	case ACLK_RKCE_S:
++		ret = writel(BITS_WITH_WMASK(0, 0x1U, 12),
++			     RV1126B_CRU_BASE + RV1126B_SBUSCLKGATE_CON(2));
++		break;
++#endif
++	default:
++		return ret;
++	}
++	return ret;
++}
++
++static int rv1126b_clk_disable(struct clk *clk)
++{
++	ulong ret = 0;
++
++	switch (clk->id) {
++#ifdef CONFIG_SPL_BUILD
++	case PCLK_KEY_READER_S:
++		ret = writel(BITS_WITH_WMASK(1, 0x1U, 13),
++			     RV1126B_CRU_BASE + RV1126B_SBUSCLKGATE_CON(0));
++		break;
++	case HCLK_KL_RKCE_S:
++		ret = writel(BITS_WITH_WMASK(1, 0x1U, 9),
++			     RV1126B_CRU_BASE + RV1126B_SBUSCLKGATE_CON(0));
++		break;
++	case HCLK_RKCE_S:
++		ret = writel(BITS_WITH_WMASK(1, 0x1U, 8),
++			     RV1126B_CRU_BASE + RV1126B_SBUSCLKGATE_CON(0));
++		break;
++	case HCLK_RKRNG_S:
++		ret = writel(BITS_WITH_WMASK(1, 0x1U, 14),
++			     RV1126B_CRU_BASE + RV1126B_SBUSCLKGATE_CON(2));
++		break;
++	case CLK_PKA_RKCE_S:
++		ret = writel(BITS_WITH_WMASK(1, 0x1U, 13),
++			     RV1126B_CRU_BASE + RV1126B_SBUSCLKGATE_CON(2));
++		break;
++	case ACLK_RKCE_S:
++		ret = writel(BITS_WITH_WMASK(1, 0x1U, 12),
++			     RV1126B_CRU_BASE + RV1126B_SBUSCLKGATE_CON(2));
++		break;
++#endif
++	default:
++		return ret;
++	}
++	return ret;
++}
++
++static struct clk_ops rv1126b_clk_ops = {
++	.get_rate = rv1126b_clk_get_rate,
++	.set_rate = rv1126b_clk_set_rate,
++#if CONFIG_IS_ENABLED(OF_CONTROL) && !CONFIG_IS_ENABLED(OF_PLATDATA)
++	.set_parent = rv1126b_clk_set_parent,
++#endif
++	.enable = rv1126b_clk_enable,
++	.disable = rv1126b_clk_disable,
++};
++
++static void rv1126b_clk_init(struct rv1126b_clk_priv *priv)
++{
++	int ret;
++
++	priv->sync_kernel = false;
++	priv->gpll_hz = rockchip_pll_get_rate(&rv1126b_pll_clks[GPLL],
++					      priv->cru, GPLL);
++	if (priv->gpll_hz != GPLL_HZ) {
++		ret = rockchip_pll_set_rate(&rv1126b_pll_clks[GPLL], priv->cru,
++					    GPLL, GPLL_HZ);
++		if (!ret)
++			priv->gpll_hz = GPLL_HZ;
++	}
++	priv->aupll_hz = rockchip_pll_get_rate(&rv1126b_pll_clks[AUPLL],
++					       priv->cru, AUPLL);
++	if (priv->aupll_hz != AUPLL_HZ) {
++		ret = rockchip_pll_set_rate(&rv1126b_pll_clks[AUPLL], priv->cru,
++					    AUPLL, AUPLL_HZ);
++		if (!ret)
++			priv->aupll_hz = AUPLL_HZ;
++	}
++	priv->cpll_hz = rockchip_pll_get_rate(&rv1126b_pll_clks[CPLL],
++					      priv->cru, CPLL);
++	if (priv->cpll_hz != CPLL_HZ) {
++		ret = rockchip_pll_set_rate(&rv1126b_pll_clks[CPLL], priv->cru,
++					    CPLL, CPLL_HZ);
++		if (!ret)
++			priv->cpll_hz = CPLL_HZ;
++	}
++}
++
++static int rv1126b_clk_probe(struct udevice *dev)
++{
++	struct rv1126b_clk_priv *priv = dev_get_priv(dev);
++	int ret;
++
++#if defined(CONFIG_SPL_BUILD) || defined(CONFIG_SUPPORT_USBPLUG)
++	/* fix gpll and some clks modify by maskrom */
++	writel(BITS_WITH_WMASK(11, 0x1fU, 5),
++	       RV1126B_CRU_BASE + RV1126B_CLKSEL_CON(1));
++	writel(BITS_WITH_WMASK(1, 0x1U, 15),
++	       RV1126B_CRU_BASE + RV1126B_CLKSEL_CON(1));
++	writel(BITS_WITH_WMASK(5, 0x1fU, 5),
++	       RV1126B_CRU_BASE + RV1126B_CLKSEL_CON(2));
++	writel(BITS_WITH_WMASK(1, 0x7U, 0),
++	       RV1126B_CRU_BASE + RV1126B_CLKSEL_CON(60));
++	writel(BITS_WITH_WMASK(1, 0x7U, 6),
++	       RV1126B_CRU_BASE + RV1126B_PLL_CON(9));
++	writel(BITS_WITH_WMASK(1, 0x3U, 4),
++	       RV1126B_CRU_BASE + RV1126B_MODE_CON);
++	/* Set clk_pka_rkce to 198M */
++	writel(BITS_WITH_WMASK(1, 0x1U, 12),
++	       RV1126B_CRU_BASE + RV1126B_CLKSEL_CON(50));
++#endif
++
++	rv1126b_clk_init(priv);
++
++	/* Process 'assigned-{clocks/clock-parents/clock-rates}' properties */
++	ret = clk_set_defaults(dev, CLK_DEFAULTS_POST);
++	if (ret)
++		debug("%s clk_set_defaults failed %d\n", __func__, ret);
++	else
++		priv->sync_kernel = true;
++	return 0;
++}
++
++static int rv1126b_clk_ofdata_to_platdata(struct udevice *dev)
++{
++	struct rv1126b_clk_priv *priv = dev_get_priv(dev);
++
++	priv->cru = dev_read_addr_ptr(dev);
++
++	return 0;
++}
++
++static int rv1126b_clk_bind(struct udevice *dev)
++{
++	int ret;
++	struct udevice *sys_child;
++	struct sysreset_reg *priv;
++
++	/* The reset driver does not have a device node, so bind it here */
++	ret = device_bind_driver(dev, "rockchip_sysreset", "sysreset",
++				 &sys_child);
++	if (ret) {
++		debug("Warning: No sysreset driver: ret=%d\n", ret);
++	} else {
++		priv = malloc(sizeof(struct sysreset_reg));
++		priv->glb_srst_fst_value = offsetof(struct rv1126b_cru,
++						    glb_srst_fst);
++		priv->glb_srst_snd_value = offsetof(struct rv1126b_cru,
++						    glb_srst_snd);
++		dev_set_priv(sys_child, priv);
++	}
++
++	/* Generic Rockchip reset controller: soft resets start at softrst_con[0] (seed 1c535d65 clk_rv1126b.c bind) */
++	ret = rockchip_reset_bind(dev, offsetof(struct rv1126b_cru, softrst_con[0]),
++				  CLK_NR_SRST);
++	if (ret)
++		debug("Warning: No rockchip reset driver: ret=%d\n", ret);
++
++	return 0;
++}
++
++static const struct udevice_id rv1126b_clk_ids[] = {
++	{ .compatible = "rockchip,rv1126b-cru" },
++	{ }
++};
++
++U_BOOT_DRIVER(rockchip_rv1126b_cru) = {
++	.name		= "rockchip_rv1126b_cru",
++	.id		= UCLASS_CLK,
++	.of_match	= rv1126b_clk_ids,
++	.priv_auto = sizeof(struct rv1126b_clk_priv),
++	.of_to_plat = rv1126b_clk_ofdata_to_platdata,
++	.ops		= &rv1126b_clk_ops,
++	.bind		= rv1126b_clk_bind,
++	.probe		= rv1126b_clk_probe,
++};
++
++#ifndef CONFIG_SPL_BUILD
++/**
++ * soc_clk_dump() - Print clock frequencies
++ * Returns zero on success
++ *
++ * Implementation for the clk dump command.
++ */
++int soc_clk_dump(void)
++{
++	struct udevice *cru_dev;
++	struct rv1126b_clk_priv *priv;
++	const struct rv1126b_clk_info *clk_dump;
++	struct clk clk;
++	unsigned long clk_count = ARRAY_SIZE(clks_dump);
++	unsigned long rate;
++	int i, ret;
++
++	ret = uclass_get_device_by_driver(UCLASS_CLK,
++					  DM_DRIVER_GET(rockchip_rv1126b_cru),
++					  &cru_dev);
++	if (ret) {
++		printf("%s failed to get cru device\n", __func__);
++		return ret;
++	}
++
++	priv = dev_get_priv(cru_dev);
++	printf("CLK: (%s. arm: enter %lu KHz, init %lu KHz, kernel %lu%s)\n",
++	       priv->sync_kernel ? "sync kernel" : "uboot",
++	       priv->armclk_enter_hz / 1000,
++	       priv->armclk_init_hz / 1000,
++	       priv->set_armclk_rate ? priv->armclk_hz / 1000 : 0,
++	       priv->set_armclk_rate ? " KHz" : "N/A");
++	for (i = 0; i < clk_count; i++) {
++		clk_dump = &clks_dump[i];
++		if (clk_dump->name) {
++			clk.id = clk_dump->id;
++			if (clk_dump->is_cru)
++				ret = clk_request(cru_dev, &clk);
++			if (ret < 0)
++				return ret;
++
++			rate = clk_get_rate(&clk);
++			clk_release_all(&clk, 1);
++			if (i == 0) {
++				if (rate < 0)
++					printf("  %s %s\n", clk_dump->name,
++					       "unknown");
++				else
++					printf("  %s %lu KHz\n", clk_dump->name,
++					       rate / 1000);
++			} else {
++				if (rate < 0)
++					printf("  %s %s\n", clk_dump->name,
++					       "unknown");
++				else
++					printf("  %s %lu KHz\n", clk_dump->name,
++					       rate / 1000);
++			}
++		}
++	}
++
++	return 0;
++}
++#endif
+diff --git a/include/dt-bindings/clock/rockchip,rv1126b-cru.h b/include/dt-bindings/clock/rockchip,rv1126b-cru.h
+new file mode 100644
+index 00000000..d622dc64
+--- /dev/null
++++ b/include/dt-bindings/clock/rockchip,rv1126b-cru.h
+@@ -0,0 +1,806 @@
++/* SPDX-License-Identifier: (GPL-2.0+ OR MIT) */
++/*
++ * Copyright (c) 2024 Rockchip Electronics Co., Ltd.
++ * Author: Elaine Zhang <zhangqing@rock-chips.com>
++ */
++
++#ifndef _DT_BINDINGS_CLK_ROCKCHIP_RV1126B_H
++#define _DT_BINDINGS_CLK_ROCKCHIP_RV1126B_H
++
++/* pll clocks */
++#define PLL_GPLL				1
++#define PLL_CPLL				2
++#define PLL_AUPLL				3
++#define ARMCLK					4
++#define SCLK_DDR				5
++
++/* clk (clocks) */
++#define CLK_CPLL_DIV20				8
++#define CLK_CPLL_DIV10				9
++#define CLK_CPLL_DIV8				10
++#define CLK_GPLL_DIV8				11
++#define CLK_GPLL_DIV6				12
++#define CLK_GPLL_DIV4				13
++#define CLK_CPLL_DIV3				14
++#define CLK_GPLL_DIV3				15
++#define CLK_CPLL_DIV2				16
++#define CLK_GPLL_DIV2				17
++#define CLK_CM_FRAC0				18
++#define CLK_CM_FRAC1				19
++#define CLK_CM_FRAC2				20
++#define CLK_UART_FRAC0				21
++#define CLK_UART_FRAC1				22
++#define CLK_AUDIO_FRAC0				23
++#define CLK_AUDIO_FRAC1				24
++#define CLK_AUDIO_INT0				25
++#define CLK_AUDIO_INT1				26
++#define SCLK_UART0_SRC				27
++#define SCLK_UART1				28
++#define SCLK_UART2				29
++#define SCLK_UART3				30
++#define SCLK_UART4				31
++#define SCLK_UART5				32
++#define SCLK_UART6				33
++#define SCLK_UART7				34
++#define MCLK_SAI0				35
++#define MCLK_SAI1				36
++#define MCLK_SAI2				37
++#define MCLK_PDM				38
++#define CLKOUT_PDM				39
++#define MCLK_ASRC0				40
++#define MCLK_ASRC1				41
++#define MCLK_ASRC2				42
++#define MCLK_ASRC3				43
++#define CLK_ASRC0				44
++#define CLK_ASRC1				45
++#define CLK_CORE_PLL				46
++#define CLK_NPU_PLL				47
++#define CLK_VEPU_PLL				48
++#define CLK_ISP_PLL				49
++#define CLK_AISP_PLL				50
++#define CLK_SARADC0_SRC				51
++#define CLK_SARADC1_SRC				52
++#define CLK_SARADC2_SRC				53
++#define HCLK_NPU_ROOT				54
++#define PCLK_NPU_ROOT				55
++#define ACLK_VEPU_ROOT				56
++#define HCLK_VEPU_ROOT				57
++#define PCLK_VEPU_ROOT				58
++#define CLK_CORE_RGA_SRC			59
++#define ACLK_GMAC_ROOT				60
++#define ACLK_VI_ROOT				61
++#define HCLK_VI_ROOT				62
++#define PCLK_VI_ROOT				63
++#define DCLK_VICAP_ROOT				64
++#define CLK_SYS_DSMC_ROOT			65
++#define ACLK_VDO_ROOT				66
++#define ACLK_RKVDEC_ROOT			67
++#define HCLK_VDO_ROOT				68
++#define PCLK_VDO_ROOT				69
++#define DCLK_OOC_SRC				70
++#define DCLK_VOP				71
++#define DCLK_DECOM_SRC				72
++#define PCLK_DDR_ROOT				73
++#define ACLK_SYSMEM_SRC				74
++#define ACLK_TOP_ROOT				75
++#define ACLK_BUS_ROOT				76
++#define HCLK_BUS_ROOT				77
++#define PCLK_BUS_ROOT				78
++#define CCLK_SDMMC0				79
++#define CCLK_SDMMC1				80
++#define CCLK_EMMC				81
++#define SCLK_2X_FSPI0				82
++#define CLK_GMAC_PTP_REF_SRC			83
++#define CLK_GMAC_125M				84
++#define CLK_TIMER_ROOT				85
++#define TCLK_WDT_NS_SRC				86
++#define TCLK_WDT_S_SRC				87
++#define TCLK_WDT_HPMCU				88
++#define CLK_CAN0				89
++#define CLK_CAN1				90
++#define PCLK_PERI_ROOT				91
++#define ACLK_PERI_ROOT				92
++#define CLK_I2C_BUS_SRC				93
++#define CLK_SPI0				94
++#define CLK_SPI1				95
++#define BUSCLK_PMU_SRC				96
++#define CLK_PWM0				97
++#define CLK_PWM2				98
++#define CLK_PWM3				99
++#define CLK_PKA_RKCE_SRC			100
++#define ACLK_RKCE_SRC				101
++#define ACLK_VCP_ROOT				102
++#define HCLK_VCP_ROOT				103
++#define PCLK_VCP_ROOT				104
++#define CLK_CORE_FEC_SRC			105
++#define CLK_CORE_AVSP_SRC			106
++#define CLK_50M_GMAC_IOBUF_VI			107
++#define PCLK_TOP_ROOT				108
++#define CLK_MIPI0_OUT2IO			109
++#define CLK_MIPI1_OUT2IO			110
++#define CLK_MIPI2_OUT2IO			111
++#define CLK_MIPI3_OUT2IO			112
++#define CLK_CIF_OUT2IO				113
++#define CLK_MAC_OUT2IO				114
++#define MCLK_SAI0_OUT2IO			115
++#define MCLK_SAI1_OUT2IO			116
++#define MCLK_SAI2_OUT2IO			117
++#define CLK_CM_FRAC0_SRC			118
++#define CLK_CM_FRAC1_SRC			119
++#define CLK_CM_FRAC2_SRC			120
++#define CLK_UART_FRAC0_SRC			121
++#define CLK_UART_FRAC1_SRC			122
++#define CLK_AUDIO_FRAC0_SRC			123
++#define CLK_AUDIO_FRAC1_SRC			124
++#define ACLK_NPU_ROOT				125
++#define HCLK_RKNN				126
++#define ACLK_RKNN				127
++#define PCLK_GPIO3				128
++#define DBCLK_GPIO3				129
++#define PCLK_IOC_VCCIO3				130
++#define PCLK_SARADC0				131
++#define CLK_SARADC0				132
++#define HCLK_SDMMC1				133
++#define HCLK_VEPU				134
++#define ACLK_VEPU				135
++#define CLK_CORE_VEPU				136
++#define HCLK_FEC				137
++#define ACLK_FEC				138
++#define CLK_CORE_FEC				139
++#define HCLK_AVSP				140
++#define ACLK_AVSP				141
++#define BUSCLK_PMU1_ROOT			142
++#define HCLK_AISP				143
++#define ACLK_AISP				144
++#define CLK_CORE_AISP				145
++#define CLK_CORE_ISP_ROOT			146
++#define PCLK_DSMC				147
++#define ACLK_DSMC				148
++#define HCLK_CAN0				149
++#define HCLK_CAN1				150
++#define PCLK_GPIO2				151
++#define DBCLK_GPIO2				152
++#define PCLK_GPIO4				153
++#define DBCLK_GPIO4				154
++#define PCLK_GPIO5				155
++#define DBCLK_GPIO5				156
++#define PCLK_GPIO6				157
++#define DBCLK_GPIO6				158
++#define PCLK_GPIO7				159
++#define DBCLK_GPIO7				160
++#define PCLK_IOC_VCCIO2				161
++#define PCLK_IOC_VCCIO4				162
++#define PCLK_IOC_VCCIO5				163
++#define PCLK_IOC_VCCIO6				164
++#define PCLK_IOC_VCCIO7				165
++#define HCLK_ISP				166
++#define ACLK_ISP				167
++#define CLK_CORE_ISP				168
++#define HCLK_VICAP				169
++#define ACLK_VICAP				170
++#define DCLK_VICAP				171
++#define ISP0CLK_VICAP				172
++#define HCLK_VPSS				173
++#define ACLK_VPSS				174
++#define CLK_CORE_VPSS				175
++#define PCLK_CSI2HOST0				176
++#define DCLK_CSI2HOST0				177
++#define PCLK_CSI2HOST1				178
++#define DCLK_CSI2HOST1				179
++#define PCLK_CSI2HOST2				180
++#define DCLK_CSI2HOST2				181
++#define PCLK_CSI2HOST3				182
++#define DCLK_CSI2HOST3				183
++#define HCLK_SDMMC0				184
++#define ACLK_GMAC				185
++#define PCLK_GMAC				186
++#define CLK_GMAC_PTP_REF			187
++#define PCLK_CSIPHY0				188
++#define PCLK_CSIPHY1				189
++#define PCLK_MACPHY				190
++#define PCLK_SARADC1				191
++#define CLK_SARADC1				192
++#define PCLK_SARADC2				193
++#define CLK_SARADC2				194
++#define ACLK_RKVDEC				195
++#define HCLK_RKVDEC				196
++#define CLK_HEVC_CA_RKVDEC			197
++#define ACLK_VOP				198
++#define HCLK_VOP				199
++#define HCLK_RKJPEG				200
++#define ACLK_RKJPEG				201
++#define ACLK_RKMMU_DECOM			202
++#define HCLK_RKMMU_DECOM			203
++#define DCLK_DECOM				204
++#define ACLK_DECOM				205
++#define PCLK_DECOM				206
++#define PCLK_MIPI_DSI				207
++#define PCLK_DSIPHY				208
++#define ACLK_OOC				209
++#define ACLK_SYSMEM				210
++#define PCLK_DDRC				211
++#define PCLK_DDRMON				212
++#define CLK_TIMER_DDRMON			213
++#define PCLK_DFICTRL				214
++#define PCLK_DDRPHY				215
++#define PCLK_DMA2DDR				216
++#define CLK_RCOSC_SRC				217
++#define BUSCLK_PMU_MUX				218
++#define BUSCLK_PMU_ROOT				219
++#define PCLK_PMU				220
++#define CLK_XIN_RC_DIV				221
++#define CLK_32K					222
++#define PCLK_PMU_GPIO0				223
++#define DBCLK_PMU_GPIO0				224
++#define PCLK_PMU_HP_TIMER			225
++#define CLK_PMU_HP_TIMER			226
++#define CLK_PMU_32K_HP_TIMER			227
++#define PCLK_PWM1				228
++#define CLK_PWM1				229
++#define CLK_OSC_PWM1				230
++#define CLK_RC_PWM1				231
++#define CLK_FREQ_PWM1				232
++#define CLK_COUNTER_PWM1			233
++#define PCLK_I2C2				234
++#define CLK_I2C2				235
++#define PCLK_UART0				236
++#define SCLK_UART0				237
++#define PCLK_RCOSC_CTRL				238
++#define CLK_OSC_RCOSC_CTRL			239
++#define CLK_REF_RCOSC_CTRL			240
++#define PCLK_IOC_PMUIO0				241
++#define CLK_REFOUT				242
++#define CLK_PREROLL				243
++#define CLK_PREROLL_32K				244
++#define HCLK_PMU_SRAM				245
++#define PCLK_WDT_LPMCU				246
++#define TCLK_WDT_LPMCU				247
++#define CLK_LPMCU				248
++#define CLK_LPMCU_RTC				249
++#define PCLK_LPMCU_MAILBOX			250
++#define HCLK_OOC				251
++#define PCLK_SPI2AHB				252
++#define HCLK_SPI2AHB				253
++#define HCLK_FSPI1				254
++#define HCLK_XIP_FSPI1				255
++#define SCLK_1X_FSPI1				256
++#define PCLK_IOC_PMUIO1				257
++#define PCLK_AUDIO_ADC_PMU			258
++#define MCLK_AUDIO_ADC_PMU			259
++#define MCLK_AUDIO_ADC_DIV4_PMU			260
++#define MCLK_LPSAI				261
++#define ACLK_GIC400				262
++#define PCLK_WDT_NS				263
++#define TCLK_WDT_NS				264
++#define PCLK_WDT_HPMCU				265
++#define HCLK_CACHE				266
++#define PCLK_HPMCU_MAILBOX			267
++#define PCLK_HPMCU_INTMUX			268
++#define CLK_HPMCU				269
++#define CLK_HPMCU_RTC				270
++#define PCLK_RKDMA				271
++#define ACLK_RKDMA				272
++#define PCLK_DCF				273
++#define ACLK_DCF				274
++#define HCLK_RGA				275
++#define ACLK_RGA				276
++#define CLK_CORE_RGA				277
++#define PCLK_TIMER				278
++#define CLK_TIMER0				279
++#define CLK_TIMER1				280
++#define CLK_TIMER2				281
++#define CLK_TIMER3				282
++#define CLK_TIMER4				283
++#define CLK_TIMER5				284
++#define PCLK_I2C0				285
++#define CLK_I2C0				286
++#define PCLK_I2C1				287
++#define CLK_I2C1				288
++#define PCLK_I2C3				289
++#define CLK_I2C3				290
++#define PCLK_I2C4				291
++#define CLK_I2C4				292
++#define PCLK_I2C5				293
++#define CLK_I2C5				294
++#define PCLK_SPI0				295
++#define PCLK_SPI1				296
++#define PCLK_PWM0				297
++#define CLK_OSC_PWM0				298
++#define CLK_RC_PWM0				299
++#define PCLK_PWM2				300
++#define CLK_OSC_PWM2				301
++#define CLK_RC_PWM2				302
++#define PCLK_PWM3				303
++#define CLK_OSC_PWM3				304
++#define CLK_RC_PWM3				305
++#define PCLK_UART1				306
++#define PCLK_UART2				307
++#define PCLK_UART3				308
++#define PCLK_UART4				309
++#define PCLK_UART5				310
++#define PCLK_UART6				311
++#define PCLK_UART7				312
++#define PCLK_TSADC				313
++#define CLK_TSADC				314
++#define HCLK_SAI0				315
++#define HCLK_SAI1				316
++#define HCLK_SAI2				317
++#define HCLK_RKDSM				318
++#define MCLK_RKDSM				319
++#define HCLK_PDM				320
++#define HCLK_ASRC0				321
++#define HCLK_ASRC1				322
++#define PCLK_AUDIO_ADC_BUS			323
++#define MCLK_AUDIO_ADC_BUS			324
++#define MCLK_AUDIO_ADC_DIV4_BUS			325
++#define PCLK_RKCE				326
++#define HCLK_NS_RKCE				327
++#define PCLK_OTPC_NS				328
++#define CLK_SBPI_OTPC_NS			329
++#define CLK_USER_OTPC_NS			330
++#define CLK_OTPC_ARB				331
++#define PCLK_OTP_MASK				332
++#define CLK_TSADC_PHYCTRL			333
++#define LRCK_SRC_ASRC0				334
++#define LRCK_DST_ASRC0				335
++#define LRCK_SRC_ASRC1				336
++#define LRCK_DST_ASRC1				337
++#define PCLK_KEY_READER				338
++#define ACLK_NSRKCE				339
++#define CLK_PKA_NSRKCE				340
++#define PCLK_RTC_ROOT				341
++#define PCLK_GPIO1				342
++#define DBCLK_GPIO1				343
++#define PCLK_IOC_VCCIO1				344
++#define ACLK_USB3OTG				345
++#define CLK_REF_USB3OTG				346
++#define CLK_SUSPEND_USB3OTG			347
++#define HCLK_USB2HOST				348
++#define HCLK_ARB_USB2HOST			349
++#define PCLK_RTC_TEST				350
++#define HCLK_EMMC				351
++#define HCLK_FSPI0				352
++#define HCLK_XIP_FSPI0				353
++#define PCLK_PIPEPHY				354
++#define PCLK_USB2PHY				355
++#define CLK_REF_PIPEPHY_CPLL_SRC		356
++#define CLK_REF_PIPEPHY				357
++#define HCLK_VPSL				358
++#define ACLK_VPSL				359
++#define CLK_CORE_VPSL				360
++#define CLK_MACPHY				361
++#define HCLK_RKRNG_NS				362
++#define HCLK_RKRNG_S_NS				362
++
++/* secure clks */
++#define CLK_USER_OTPC_S				400
++#define CLK_SBPI_OTPC_S				401
++#define PCLK_OTPC_S				402
++#define PCLK_KEY_READER_S			403
++#define HCLK_KL_RKCE_S				404
++#define HCLK_RKCE_S				405
++#define PCLK_WDT_S				406
++#define TCLK_WDT_S				407
++#define CLK_STIMER0				408
++#define CLK_STIMER1				409
++#define PLK_STIMER				410
++#define HCLK_RKRNG_S				411
++#define CLK_PKA_RKCE_S				412
++#define ACLK_RKCE_S				413
++
++#define CLK_NR_CLKS				(ACLK_RKCE_S + 1)
++
++// ======================= TOPCRU module definition bank=0 ========================
++// TOPCRU_SOFTRST_CON15(Offset:0xA3C)
++#define SRST_PRESETN_CRU			0x000000F1
++#define SRST_PRESETN_CRU_BIU			0x000000F2
++
++// ======================= BUSCRU module definition bank=1 ========================
++// BUSCRU_SOFTRST_CON00(Offset:0xA00)
++#define SRST_ARESETN_TOP_BIU			0x00040000
++#define SRST_ARESETN_RKCE_BIU			0x00040001
++#define SRST_ARESETN_BUS_BIU			0x00040002
++#define SRST_HRESETN_BUS_BIU			0x00040003
++#define SRST_PRESETN_BUS_BIU			0x00040004
++#define SRST_PRESETN_CRU_BUS			0x00040005
++#define SRST_PRESETN_SYS_GRF			0x00040006
++#define SRST_HRESETN_BOOTROM			0x00040007
++#define SRST_ARESETN_GIC400			0x00040008
++#define SRST_ARESETN_SPINLOCK			0x00040009
++#define SRST_PRESETN_WDT_NS			0x0004000A
++#define SRST_TRESETN_WDT_NS			0x0004000B
++
++// BUSCRU_SOFTRST_CON01(Offset:0xA04)
++#define SRST_PRESETN_WDT_HPMCU			0x00040010
++#define SRST_TRESETN_WDT_HPMCU			0x00040011
++#define SRST_HRESETN_CACHE			0x00040012
++#define SRST_PRESETN_HPMCU_MAILBOX		0x00040013
++#define SRST_PRESETN_HPMCU_INTMUX		0x00040014
++#define SRST_RESETN_HPMCU_FULL_CLUSTER		0x00040015
++#define SRST_RESETN_HPMCU_PWUP			0x00040016
++#define SRST_RESETN_HPMCU_ONLY_CORE		0x00040017
++#define SRST_TRESETN_HPMCU_JTAG			0x00040018
++#define SRST_PRESETN_RKDMA			0x0004001B
++#define SRST_ARESETN_RKDMA			0x0004001C
++
++// BUSCRU_SOFTRST_CON02(Offset:0xA08)
++#define SRST_PRESETN_DCF			0x00040020
++#define SRST_ARESETN_DCF			0x00040021
++#define SRST_HRESETN_RGA			0x00040022
++#define SRST_ARESETN_RGA			0x00040023
++#define SRST_RESETN_CORE_RGA			0x00040024
++#define SRST_PRESETN_TIMER			0x00040025
++#define SRST_RESETN_TIMER0			0x00040026
++#define SRST_RESETN_TIMER1			0x00040027
++#define SRST_RESETN_TIMER2			0x00040028
++#define SRST_RESETN_TIMER3			0x00040029
++#define SRST_RESETN_TIMER4			0x0004002A
++#define SRST_RESETN_TIMER5			0x0004002B
++#define SRST_ARESETN_RKCE			0x0004002C
++#define SRST_RESETN_PKA_RKCE			0x0004002D
++#define SRST_HRESETN_RKRNG_S			0x0004002E
++#define SRST_HRESETN_RKRNG_NS			0x0004002F
++
++// BUSCRU_SOFTRST_CON03(Offset:0xA0C)
++#define SRST_PRESETN_I2C0			0x00040030
++#define SRST_RESETN_I2C0			0x00040031
++#define SRST_PRESETN_I2C1			0x00040032
++#define SRST_RESETN_I2C1			0x00040033
++#define SRST_PRESETN_I2C3			0x00040034
++#define SRST_RESETN_I2C3			0x00040035
++#define SRST_PRESETN_I2C4			0x00040036
++#define SRST_RESETN_I2C4			0x00040037
++#define SRST_PRESETN_I2C5			0x00040038
++#define SRST_RESETN_I2C5			0x00040039
++#define SRST_PRESETN_SPI0			0x0004003A
++#define SRST_RESETN_SPI0			0x0004003B
++#define SRST_PRESETN_SPI1			0x0004003C
++#define SRST_RESETN_SPI1			0x0004003D
++
++// BUSCRU_SOFTRST_CON04(Offset:0xA10)
++#define SRST_PRESETN_PWM0			0x00040040
++#define SRST_RESETN_PWM0			0x00040041
++#define SRST_PRESETN_PWM2			0x00040044
++#define SRST_RESETN_PWM2			0x00040045
++#define SRST_PRESETN_PWM3			0x00040048
++#define SRST_RESETN_PWM3			0x00040049
++
++// BUSCRU_SOFTRST_CON05(Offset:0xA14)
++#define SRST_PRESETN_UART1			0x00040050
++#define SRST_SRESETN_UART1			0x00040051
++#define SRST_PRESETN_UART2			0x00040052
++#define SRST_SRESETN_UART2			0x00040053
++#define SRST_PRESETN_UART3			0x00040054
++#define SRST_SRESETN_UART3			0x00040055
++#define SRST_PRESETN_UART4			0x00040056
++#define SRST_SRESETN_UART4			0x00040057
++#define SRST_PRESETN_UART5			0x00040058
++#define SRST_SRESETN_UART5			0x00040059
++#define SRST_PRESETN_UART6			0x0004005A
++#define SRST_SRESETN_UART6			0x0004005B
++#define SRST_PRESETN_UART7			0x0004005C
++#define SRST_SRESETN_UART7			0x0004005D
++
++// BUSCRU_SOFTRST_CON06(Offset:0xA18)
++#define SRST_PRESETN_TSADC			0x00040060
++#define SRST_RESETN_TSADC			0x00040061
++#define SRST_HRESETN_SAI0			0x00040062
++#define SRST_MRESETN_SAI0			0x00040063
++#define SRST_HRESETN_SAI1			0x00040064
++#define SRST_MRESETN_SAI1			0x00040065
++#define SRST_HRESETN_SAI2			0x00040066
++#define SRST_MRESETN_SAI2			0x00040067
++#define SRST_HRESETN_RKDSM			0x00040068
++#define SRST_MRESETN_RKDSM			0x00040069
++#define SRST_HRESETN_PDM			0x0004006A
++#define SRST_MRESETN_PDM			0x0004006B
++#define SRST_RESETN_PDM				0x0004006C
++
++// BUSCRU_SOFTRST_CON07(Offset:0xA1C)
++#define SRST_HRESETN_ASRC0			0x00040070
++#define SRST_RESETN_ASRC0			0x00040071
++#define SRST_HRESETN_ASRC1			0x00040072
++#define SRST_RESETN_ASRC1			0x00040073
++#define SRST_PRESETN_AUDIO_ADC_BUS		0x00040074
++#define SRST_MRESETN_AUDIO_ADC_BUS		0x00040075
++#define SRST_PRESETN_RKCE			0x00040076
++#define SRST_HRESETN_NS_RKCE			0x00040077
++#define SRST_PRESETN_OTPC_NS			0x00040078
++#define SRST_RESETN_SBPI_OTPC_NS		0x00040079
++#define SRST_RESETN_USER_OTPC_NS		0x0004007A
++#define SRST_RESETN_OTPC_ARB			0x0004007B
++#define SRST_PRESETN_OTP_MASK			0x0004007C
++#define SRST_RESETN_TSADC_PHYCTRL		0x0004007E
++
++// ======================= PERICRU module definition bank=2 =======================
++// PERICRU_SOFTRST_CON00(Offset:0xA00)
++#define SRST_ARESETN_PERI_BIU			0x00080000
++#define SRST_PRESETN_PERI_BIU			0x00080001
++#define SRST_PRESETN_RTC_BIU			0x00080002
++#define SRST_PRESETN_CRU_PERI			0x00080003
++#define SRST_PRESETN_PERI_GRF			0x00080004
++#define SRST_PRESETN_GPIO1			0x00080005
++#define SRST_DBRESETN_GPIO1			0x00080006
++#define SRST_PRESETN_IOC_VCCIO1			0x00080007
++#define SRST_ARESETN_USB3OTG			0x00080008
++#define SRST_HRESETN_USB2HOST			0x0008000B
++#define SRST_HRESETN_ARB_USB2HOST		0x0008000C
++#define SRST_PRESETN_RTC_TEST			0x0008000D
++
++// PERICRU_SOFTRST_CON01(Offset:0xA04)
++#define SRST_HRESETN_EMMC			0x00080010
++#define SRST_HRESETN_FSPI0			0x00080011
++#define SRST_HRESETN_XIP_FSPI0			0x00080012
++#define SRST_SRESETN_2X_FSPI0			0x00080013
++#define SRST_RESETN_UTMI_USB2HOST		0x00080015
++#define SRST_RESETN_REF_PIPEPHY			0x00080017
++#define SRST_PRESETN_PIPEPHY			0x00080018
++#define SRST_PRESETN_PIPEPHY_GRF		0x00080019
++#define SRST_PRESETN_USB2PHY			0x0008001A
++#define SRST_RESETN_POR_USB2PHY			0x0008001B
++#define SRST_RESETN_OTG_USB2PHY			0x0008001C
++#define SRST_RESETN_HOST_USB2PHY		0x0008001D
++
++// ======================= CORECRU module definition bank=3 =======================
++// CORECRU_SOFTRST_CON00(Offset:0xA00)
++#define SRST_RESETN_REF_PVTPLL_CORE		0x000C0000
++#define SRST_NCOREPORESET0			0x000C0001
++#define SRST_NCORESET0				0x000C0002
++#define SRST_NCOREPORESET1			0x000C0003
++#define SRST_NCORESET1				0x000C0004
++#define SRST_NCOREPORESET2			0x000c0005
++#define SRST_NCORESET2				0x000C0006
++#define SRST_NCOREPORESET3			0x000C0007
++#define SRST_NCORESET3				0x000C0008
++#define SRST_NDBGRESET				0x000C0009
++#define SRST_NL2RESET				0x000C000A
++
++// CORECRU_SOFTRST_CON01(Offset:0xA04)
++#define SRST_ARESETN_CORE_BIU			0x000C0010
++#define SRST_PRESETN_CORE_BIU			0x000C0011
++#define SRST_HRESETN_CORE_BIU			0x000C0012
++#define SRST_PRESETN_DBG			0x000C0013
++#define SRST_POTRESETN_DBG			0x000C0014
++#define SRST_NTRESETN_DBG			0x000C0015
++#define SRST_PRESETN_CORE_PVTPLL		0x000C0016
++#define SRST_PRESETN_CRU_CORE			0x000C0017
++#define SRST_PRESETN_CORE_GRF			0x000C0018
++#define SRST_PRESETN_DFT2APB			0x000C001A
++
++// ======================= PMUCRU module definition bank=4 ========================
++// PMUCRU_SOFTRST_CON00(Offset:0xA00)
++#define SRST_HRESETN_PMU_BIU			0x00100000
++#define SRST_PRESETN_PMU_GPIO0			0x00100007
++#define SRST_DBRESETN_PMU_GPIO0			0x00100008
++#define SRST_PRESETN_PMU_HP_TIMER		0x0010000A
++#define SRST_RESETN_PMU_HP_TIMER		0x0010000B
++#define SRST_RESETN_PMU_32K_HP_TIMER		0x0010000C
++
++// PMUCRU_SOFTRST_CON01(Offset:0xA04)
++#define SRST_PRESETN_PWM1			0x00100010
++#define SRST_RESETN_PWM1			0x00100011
++#define SRST_PRESETN_I2C2			0x00100012
++#define SRST_RESETN_I2C2			0x00100013
++#define SRST_PRESETN_UART0			0x00100014
++#define SRST_SRESETN_UART0			0x00100015
++
++// PMUCRU_SOFTRST_CON02(Offset:0xA08)
++#define SRST_PRESETN_RCOSC_CTRL			0x00100020
++#define SRST_RESETN_REF_RCOSC_CTRL		0x00100022
++#define SRST_PRESETN_IOC_PMUIO0			0x00100023
++#define SRST_PRESETN_CRU_PMU			0x00100024
++#define SRST_PRESETN_PMU_GRF			0x00100025
++#define SRST_RESETN_PREROLL			0x00100027
++#define SRST_RESETN_PREROLL_32K			0x00100028
++#define SRST_HRESETN_PMU_SRAM			0x00100029
++
++// PMUCRU_SOFTRST_CON03(Offset:0xA0C)
++#define SRST_PRESETN_WDT_LPMCU			0x00100030
++#define SRST_TRESETN_WDT_LPMCU			0x00100031
++#define SRST_RESETN_LPMCU_FULL_CLUSTER		0x00100032
++#define SRST_RESETN_LPMCU_PWUP			0x00100033
++#define SRST_RESETN_LPMCU_ONLY_CORE		0x00100034
++#define SRST_TRESETN_LPMCU_JTAG			0x00100035
++#define SRST_PRESETN_LPMCU_MAILBOX		0x00100036
++
++// ======================= PMU1CRU module definition bank=5 =======================
++// PMU1CRU_SOFTRST_CON00(Offset:0xA00)
++#define SRST_PRESETN_SPI2AHB			0x00140000
++#define SRST_HRESETN_SPI2AHB			0x00140001
++#define SRST_HRESETN_FSPI1			0x00140002
++#define SRST_HRESETN_XIP_FSPI1			0x00140003
++#define SRST_SRESETN_1X_FSPI1			0x00140004
++#define SRST_PRESETN_IOC_PMUIO1			0x00140005
++#define SRST_PRESETN_CRU_PMU1			0x00140006
++#define SRST_PRESETN_AUDIO_ADC_PMU		0x00140007
++#define SRST_MRESETN_AUDIO_ADC_PMU		0x00140008
++#define SRST_HRESETN_PMU1_BIU			0x00140009
++
++// PMU1CRU_SOFTRST_CON01(Offset:0xA04)
++#define SRST_PRESETN_LPDMA			0x00140010
++#define SRST_ARESETN_LPDMA			0x00140011
++#define SRST_HRESETN_LPSAI			0x00140012
++#define SRST_MRESETN_LPSAI			0x00140013
++#define SRST_PRESETN_AOA_TDD			0x00140014
++#define SRST_PRESETN_AOA_FE			0x00140015
++#define SRST_PRESETN_AOA_AAD			0x00140016
++#define SRST_PRESETN_AOA_APB			0x00140017
++#define SRST_PRESETN_AOA_SRAM			0x00140018
++
++// ======================= DDRCRU module definition bank=6 ========================
++// DDRCRU_SOFTRST_CON00(Offset:0xA00)
++#define SRST_PRESETN_DDR_BIU			0x00180001
++#define SRST_PRESETN_DDRC			0x00180002
++#define SRST_PRESETN_DDRMON			0x00180003
++#define SRST_RESETN_TIMER_DDRMON		0x00180004
++#define SRST_PRESETN_DFICTRL			0x00180005
++#define SRST_PRESETN_DDR_GRF			0x00180006
++#define SRST_PRESETN_CRU_DDR			0x00180007
++#define SRST_PRESETN_DDRPHY			0x00180008
++#define SRST_PRESETN_DMA2DDR			0x00180009
++
++// ====================== SUBDDRCRU module definition bank=7 ======================
++// SUBDDRCRU_SOFTRST_CON00(Offset:0xA00)
++#define SRST_ARESETN_SYSMEM_BIU			0x001A0000
++#define SRST_ARESETN_SYSMEM			0x001A0001
++#define SRST_ARESETN_DDR_BIU			0x001A0002
++#define SRST_ARESETN_DDRSCH0_CPU		0x001A0003
++#define SRST_ARESETN_DDRSCH1_NPU		0x001A0004
++#define SRST_ARESETN_DDRSCH2_POE		0x001A0005
++#define SRST_ARESETN_DDRSCH3_VI			0x001A0006
++#define SRST_RESETN_CORE_DDRC			0x001A0007
++#define SRST_RESETN_DDRMON			0x001A0008
++#define SRST_RESETN_DFICTRL			0x001A0009
++#define SRST_RESETN_RS				0x001A000B
++#define SRST_ARESETN_DMA2DDR			0x001A000C
++#define SRST_RESETN_DDRPHY			0x001A000D
++
++// ======================== VICRU module definition bank=8 ========================
++// VICRU_SOFTRST_CON00(Offset:0xA00)
++#define SRST_RESETN_REF_PVTPLL_ISP		0x001C0000
++#define SRST_ARESETN_GMAC_BIU			0x001C0001
++#define SRST_ARESETN_VI_BIU			0x001C0002
++#define SRST_HRESETN_VI_BIU			0x001C0003
++#define SRST_PRESETN_VI_BIU			0x001C0004
++#define SRST_PRESETN_CRU_VI			0x001C0005
++#define SRST_PRESETN_VI_GRF			0x001C0006
++#define SRST_PRESETN_VI_PVTPLL			0x001C0007
++#define SRST_PRESETN_DSMC			0x001C0008
++#define SRST_ARESETN_DSMC			0x001C0009
++#define SRST_HRESETN_CAN0			0x001C000A
++#define SRST_RESETN_CAN0			0x001C000B
++#define SRST_HRESETN_CAN1			0x001C000C
++#define SRST_RESETN_CAN1			0x001C000D
++
++// VICRU_SOFTRST_CON01(Offset:0xA04)
++#define SRST_PRESETN_GPIO2			0x001C0010
++#define SRST_DBRESETN_GPIO2			0x001C0011
++#define SRST_PRESETN_GPIO4			0x001C0012
++#define SRST_DBRESETN_GPIO4			0x001C0013
++#define SRST_PRESETN_GPIO5			0x001C0014
++#define SRST_DBRESETN_GPIO5			0x001C0015
++#define SRST_PRESETN_GPIO6			0x001C0016
++#define SRST_DBRESETN_GPIO6			0x001C0017
++#define SRST_PRESETN_GPIO7			0x001C0018
++#define SRST_DBRESETN_GPIO7			0x001C0019
++#define SRST_PRESETN_IOC_VCCIO2			0x001C001A
++#define SRST_PRESETN_IOC_VCCIO4			0x001C001B
++#define SRST_PRESETN_IOC_VCCIO5			0x001C001C
++#define SRST_PRESETN_IOC_VCCIO6			0x001C001D
++#define SRST_PRESETN_IOC_VCCIO7			0x001C001E
++
++// VICRU_SOFTRST_CON02(Offset:0xA08)
++#define SRST_RESETN_CORE_ISP			0x001C0020
++#define SRST_HRESETN_VICAP			0x001C0021
++#define SRST_ARESETN_VICAP			0x001C0022
++#define SRST_DRESETN_VICAP			0x001C0023
++#define SRST_ISP0RESETN_VICAP			0x001C0024
++#define SRST_RESETN_CORE_VPSS			0x001C0025
++#define SRST_RESETN_CORE_VPSL			0x001C0026
++#define SRST_PRESETN_CSI2HOST0			0x001C0027
++#define SRST_PRESETN_CSI2HOST1			0x001C0028
++#define SRST_PRESETN_CSI2HOST2			0x001C0029
++#define SRST_PRESETN_CSI2HOST3			0x001C002A
++#define SRST_HRESETN_SDMMC0			0x001C002B
++#define SRST_ARESETN_GMAC			0x001C002C
++#define SRST_PRESETN_CSIPHY0			0x001C002D
++#define SRST_PRESETN_CSIPHY1			0x001C002E
++
++// VICRU_SOFTRST_CON03(Offset:0xA0C)
++#define SRST_PRESETN_MACPHY			0x001C0030
++#define SRST_RESETN_MACPHY			0x001C0031
++#define SRST_PRESETN_SARADC1			0x001C0032
++#define SRST_RESETN_SARADC1			0x001C0033
++#define SRST_RESETN_SARADC1_PHY			0x001C0034
++#define SRST_PRESETN_SARADC2			0x001C0035
++#define SRST_RESETN_SARADC2			0x001C0036
++#define SRST_RESETN_SARADC2_PHY			0x001C0037
++
++// ======================= VEPUCRU module definition bank=9 =======================
++// VEPUCRU_SOFTRST_CON00(Offset:0xA00)
++#define SRST_RESETN_REF_PVTPLL_VEPU		0x00200000
++#define SRST_ARESETN_VEPU_BIU			0x00200001
++#define SRST_HRESETN_VEPU_BIU			0x00200002
++#define SRST_PRESETN_VEPU_BIU			0x00200003
++#define SRST_PRESETN_CRU_VEPU			0x00200004
++#define SRST_PRESETN_VEPU_GRF			0x00200005
++#define SRST_PRESETN_GPIO3			0x00200007
++#define SRST_DBRESETN_GPIO3			0x00200008
++#define SRST_PRESETN_IOC_VCCIO3			0x00200009
++#define SRST_PRESETN_SARADC0			0x0020000A
++#define SRST_RESETN_SARADC0			0x0020000B
++#define SRST_RESETN_SARADC0_PHY			0x0020000C
++#define SRST_HRESETN_SDMMC1			0x0020000D
++
++// VEPUCRU_SOFTRST_CON01(Offset:0xA04)
++#define SRST_PRESETN_VEPU_PVTPLL		0x00200010
++#define SRST_HRESETN_VEPU			0x00200011
++#define SRST_ARESETN_VEPU			0x00200012
++#define SRST_RESETN_CORE_VEPU			0x00200013
++
++// ======================= NPUCRU module definition bank=10 =======================
++// NPUCRU_SOFTRST_CON00(Offset:0xA00)
++#define SRST_RESETN_REF_PVTPLL_NPU		0x00240000
++#define SRST_ARESETN_NPU_BIU			0x00240002
++#define SRST_HRESETN_NPU_BIU			0x00240003
++#define SRST_PRESETN_NPU_BIU			0x00240004
++#define SRST_PRESETN_CRU_NPU			0x00240005
++#define SRST_PRESETN_NPU_GRF			0x00240006
++#define SRST_PRESETN_NPU_PVTPLL			0x00240008
++#define SRST_HRESETN_RKNN			0x00240009
++#define SRST_ARESETN_RKNN			0x0024000A
++
++// ======================= VDOCRU module definition bank=11 =======================
++// VDOCRU_SOFTRST_CON00(Offset:0xA00)
++#define SRST_ARESETN_RKVDEC_BIU			0x00280000
++#define SRST_ARESETN_VDO_BIU			0x00280001
++#define SRST_HRESETN_VDO_BIU			0x00280003
++#define SRST_PRESETN_VDO_BIU			0x00280004
++#define SRST_PRESETN_CRU_VDO			0x00280005
++#define SRST_PRESETN_VDO_GRF			0x00280006
++#define SRST_ARESETN_RKVDEC			0x00280007
++#define SRST_HRESETN_RKVDEC			0x00280008
++#define SRST_RESETN_HEVC_CA_RKVDEC		0x00280009
++#define SRST_ARESETN_VOP			0x0028000A
++#define SRST_HRESETN_VOP			0x0028000B
++#define SRST_DRESETN_VOP			0x0028000C
++#define SRST_ARESETN_OOC			0x0028000D
++#define SRST_HRESETN_OOC			0x0028000E
++#define SRST_DRESETN_OOC			0x0028000F
++
++// VDOCRU_SOFTRST_CON01(Offset:0xA04)
++#define SRST_HRESETN_RKJPEG			0x00280013
++#define SRST_ARESETN_RKJPEG			0x00280014
++#define SRST_ARESETN_RKMMU_DECOM		0x00280015
++#define SRST_HRESETN_RKMMU_DECOM		0x00280016
++#define SRST_DRESETN_DECOM			0x00280018
++#define SRST_ARESETN_DECOM			0x00280019
++#define SRST_PRESETN_DECOM			0x0028001A
++#define SRST_PRESETN_MIPI_DSI			0x0028001C
++#define SRST_PRESETN_DSIPHY			0x0028001D
++
++// ======================= VCPCRU module definition bank=12 =======================
++// VCPCRU_SOFTRST_CON00(Offset:0xA00)
++#define SRST_RESETN_REF_PVTPLL_VCP		0x002C0000
++#define SRST_ARESETN_VCP_BIU			0x002C0001
++#define SRST_HRESETN_VCP_BIU			0x002C0002
++#define SRST_PRESETN_VCP_BIU			0x002C0003
++#define SRST_PRESETN_CRU_VCP			0x002C0004
++#define SRST_PRESETN_VCP_GRF			0x002C0005
++#define SRST_PRESETN_VCP_PVTPLL			0x002C0007
++#define SRST_ARESETN_AISP_BIU			0x002C0008
++#define SRST_HRESETN_AISP_BIU			0x002C0009
++#define SRST_ARESETN_AISPMEM_BIU		0x002C000A
++#define SRST_RESETN_CORE_AISP			0x002C000D
++#define SRST_ARESETN_AISPMEM			0x002C000E
++
++// VCPCRU_SOFTRST_CON01(Offset:0xA04)
++#define SRST_HRESETN_FEC			0x002C0010
++#define SRST_ARESETN_FEC			0x002C0011
++#define SRST_RESETN_CORE_FEC			0x002C0012
++#define SRST_HRESETN_AVSP			0x002C0013
++#define SRST_ARESETN_AVSP			0x002C0014
++
++#define CLK_NR_SRST				(SRST_ARESETN_AVSP + 1)
++
++#endif
+-- 
+2.56.0
+
