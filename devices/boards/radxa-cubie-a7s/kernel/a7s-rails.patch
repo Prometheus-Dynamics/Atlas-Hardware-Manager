@@ -1,6 +1,19 @@
 --- a/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7s.dts
 +++ b/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7s.dts
-@@ -477,16 +477,18 @@
+@@ -431,12 +431,10 @@
+ &pio {
+ 	vcc-pb-supply = <&reg_swout2>;
+ 	vcc-pc-supply = <&reg_cldo5>;
+-	vcc-pd-supply = <&reg_swout1>;
+ 	vcc-pe-supply = <&reg_bldo1>;
+ 	vcc-pf-supply = <&reg_swout2>;	/* or VCC18-PF, see power-source */
+ 	vcc-pg-supply = <&reg_aldo1>;
+ 	vcc-ph-supply = <&reg_swout2>;
+-	vcc-pj-supply = <&reg_swout1>;
+ 	vcc-pk-supply = <&reg_bldo1>;
+ };
+ 
+@@ -477,16 +475,18 @@
  			 */
  			reg_aldo1: aldo1 {
  				regulator-name = "vcc-pl";
@@ -23,7 +36,7 @@
  			};
  
  			/* 1.8 V I/O: eMMC VCCQ, bank PC, VCC18-PF of bank PF */
-@@ -522,8 +524,8 @@
+@@ -522,8 +522,8 @@
  			 */
  			reg_bldo1: bldo1 {
  				regulator-name = "vcc-pe-pk-mcsi";
@@ -34,7 +47,7 @@
  				regulator-always-on;
  			};
  
-@@ -535,13 +537,14 @@
+@@ -535,13 +535,14 @@
  				regulator-always-on;
  			};
  

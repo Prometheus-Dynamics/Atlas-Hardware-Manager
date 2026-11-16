@@ -283,3 +283,89 @@ our kernel does not write a rail that the driver reads as unprogrammed. This is 
 - It does not change any bank's voltage in the bootloader.
 - It does not add the `[checks]` key (section 9).
 - It does not touch pr/A7AZ or the A7A/A7Z dts.
+
+## 13. Coordinator rulings of 2026-11-16: the lift basis, GPU, PD/PI/PJ/PA, A7A and A7Z
+
+### 13.1 The driver reading, from the kernel the gate builds
+
+Two trees, both read from disk:
+
+- **The tree this doc was verified on:** linux 7.3.3, pristine from `/mnt/ssd-samsung/gaia/store-next/buildroot-downloads/linux/linux-7.3.3.tar.xz`
+  (sha256 `79c66dde66cd96877fcde8f7d36aec946b1f423d2b97b5a7b1751b75c764f3d1`, verified). The DockSeed series (fe0a8ed, the
+  rev the family pins) applied with `patch -p1 --fuzz=0` in `patches/series` order: 379 of 379 applied. Then
+  `kernel/a7s-rails.patch` applied with `--fuzz=0`.
+- **The image's kernel base:** `devices/families/sun60i/family.toml` pins `linux` at `7595a62d` (v7.3.4), not 7.3.3. The gate's
+  kernel-fragments step (`scripts/check-kernel-fragments.sh:290-322`) applies the series to that pinned tree. So the image
+  builds from **v7.3.4 plus the series**. To check the difference, the pristine `drivers/pinctrl/sunxi/pinctrl-sunxi.c`
+  and `pinctrl-sunxi.h` of 7.3.3 and of the gate's cached 7.3.4 (`~/.cache/atlas/kernel/7552930bd7aabcd5/src`) were compared:
+  byte-identical. The sunxi pinctrl hunks of the series, applied in series order to the 7.3.4 files, give files identical to
+  the 7.3.3 result, and so does the A733 driver with our correction. Nothing differs on the four points below.
+
+The four points, from the 7.3.3 + series + correction tree (`drivers/pinctrl/sunxi/pinctrl-sunxi.c` unless marked):
+
+| Point | Citation | What the line does |
+|---|---|---|
+| (a) reads the bank supply's voltage | `:865` `uV = regulator_get_voltage(supply);` | the supply's read-back |
+| (b) writes 1.8 V only at or below 1.8 V | `:929-930` `/* 0b11: 1.8V, 0b10: 3.3V */` `val = uV <= 1800000 ? 3 : 2;` | 0b11 (1.8 V) only when the read-back is at or below 1.8 V; otherwise 0b10 (3.3 V) |
+| (c) writes nothing on error or zero | `:866-867` `if (uV < 0) return uV;`, `:870-871` `if (uV == 0) return 0;` | both return before any write; the caller at `:1083` ignores the return value |
+| (d) writes only for io_bias_banks | `:925-927` `case ..._2BIT:` `if (!(pctl->desc->io_bias_banks & BIT(bank))) return 0;`; the set is `pinctrl-sun60i-a733.c:36` `.io_bias_banks = BIT(2) | BIT(7),` | only PC and PH |
+
+The 6.1 vendor copy (section 4) has the same structure for each point. Mainline differs on none of the four, so the lift
+condition holds. The series' only other pinctrl writer for the A7S is the PF path (`pf_power_source`), unchanged by this PR.
+
+Caveat, stated: the gate's kernel-fragments step applies the series to a copy of the tree, but the correcting patch is not
+applied by any step (board kernel patches are not wired yet). So the image's build does not yet carry the correction.
+
+### 13.2 The GPU (dcdc4): which case, and what was done
+
+Case 1 applies. Radxa's kernel dts gives `reg_dcdc4` as a range (`configs/cubie_a7s/linux-6.6/board.dts:1307-1313`, 500000 to
+1540000, boot-on and always-on) with the consumer `&gpu { gpu-supply = <&reg_dcdc4>; }` (lines 1956-1957). Radxa's SoC dtsi
+with a GPU OPP table is not on disk, so Radxa's OPP table is UNVERIFIED.
+
+Our kernel has the same consumer (the series dts, `&gpu`, `gpu-supply`, line 347, status okay), and the OPP table exists in
+our SoC dtsi: `sun60i-a733.dtsi:379-385` `gpu_opp_table` with `opp-1008000000 { opp-microvolt = <960000 960000 960000>; }`,
+and the GPU node has `operating-points-v2 = <&gpu_opp_table>` (line 437). So the GPU driver scales VDD-GPU to 960 mV through
+the OPP when the GPU runs. That is the maker's form: a range, with the value set by the consumer's OPP.
+
+Done: `dcdc4` is a range of 500000 to 1540000 (the Radxa range, edit E4), boot-on and always-on. It stays on the
+`unprogrammed_rails` list (it must stay a range). GPU voltage scaling is enabled, through the OPP. The 960 mV is not a probe-time
+value. Recorded in `kernel/edits.toml` E4.
+
+### 13.3 PD, PJ, PI and PA: mechanical statements
+
+- **PD and PJ** are stated as "left as the PMIC powers it up", the supply cited as BLDO2 or SWOUT1 with both sources (Radxa
+  U-Boot dts:185-190; the series bank-supplies patch :38 and :50; schematic sheet 4 and sheet 7 R251). The correcting patch
+  removes `vcc-pd-supply` and `vcc-pj-supply` from `&pio` (edit E8), so neither rail is named as the bank's supply in our dts.
+  Neither rail is programmed by our kernel (no `bldo2` node; `swout1` has no min or max). The driver writes neither bank's mode
+  (`io_bias_banks` excludes BIT(3) and BIT(9)), and with no supply the request path finds the dummy regulator, which reads 0 V
+  and writes nothing (`drivers/regulator/core.c:2453-2458`, full constraints).
+- **PI**: "left as the PMIC powers it up", on the mechanical condition that the built dts and the board's pin use name no pin
+  of bank PI. In the built tree, `pio-ref PI 0`: no `<&pio 8 ...>` reference in `sun60i-a733-cubie-a7s.dts` or
+  `sun60i-a733.dtsi`, and no `_pi_` pin group in either. The SoC pin table gives PI 17 pins, so a reference would be a real use.
+- **PA**: "no pads", on the mechanical condition `bank-pins PA 0`: `pinctrl-sun60i-a733.c:18` `{ 0, 11, 17, 24, 16, 7, 15, 20, 17, 28, 26 }`, PA first (cited).
+
+The checker reads these facts from `devices/boards/radxa-cubie-a7s/kernel/post-patch-facts.txt` (recorded from the tree
+above, with the dts sha256). A statement whose fact disagrees is refused: a dts that muxes PI, or a supply on PD or PJ, or a
+mode write, each refuses the image. Shown on a mirror: PI with `pio-ref PI 1` refuses, and PD with `pio-supply PD swout1`
+refuses. The self-test covers each kind (`scripts/check-devices.sh`, `pads_self_test`).
+
+### 13.4 A7A and A7Z (Radxa files only)
+
+Both boards: `configs/cubie_a7a|a7z/linux-6.6/board.dts` and `uboot-board.dts`, from radxa/allwinner-device 7b63c9ec. Read facts:
+no `vcc-p*-supply` property in either kernel dts; no regulator with min equal to max in either file (all 25 PMIC nodes are
+ranges, and the bootloader file has no values). Their pin use is by pinctrl group name, and the Radxa SoC dtsi that names the
+groups is not on disk.
+
+- Edits: none (`devices/boards/radxa-cubie-a7a/kernel/edits.toml`, `...a7z...`). The series does not apply to these boards in
+  this repo; the pr/A7AZ dts (#134) was not read, and it must be checked against the facts file.
+- Statements (their pads.toml): PA "no pads" (zero-pins); PB..PE, PG, PH, PJ..PM "left as the PMIC powers it up" with the
+  unsupplied check (no supply, no mode write); PF a switched range 1.8V to 3.3V with `switched_by` (the SD driver's IO-voltage
+  switch, `vqmmc18sw = cldo5` and `vqmmc33sw = dc1sw2`, lines 920-923 / 953-956). PI is REFUSED: its pin groups are not checkable
+  without the SoC dtsi. So both A7A and A7Z pads.toml still refuse, on PI only.
+
+### 13.5 What is still open
+
+- The PI and PD/PJ facts are recorded, not regenerated by the check: the check reads the recorded file and cannot re-derive it
+  without the series tree. The facts file names the tree and the sha256 of the dts it was read from.
+- PG, PL and PM (the rail behind ALDO1 or CLDO1) are unchanged from section 5.
+- The 7.3.4 full-series build is not run: only the sunxi pinctrl hunks were applied to the 7.3.4 files (identical result).

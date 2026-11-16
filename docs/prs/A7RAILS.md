@@ -50,3 +50,20 @@ are unknown. The GPU rail (E4) has no operating point in this dts. The mainline 
 The base is pr/PADS (#138). If #138 has merged into next when this is reviewed, this PR stacks on next.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+## Coordinator rulings applied (second commit)
+
+- **PD and PJ** are "left as the PMIC powers it up", the supply cited as BLDO2 or SWOUT1 with both sources. The patch removes
+  their supply lines from `&pio` (edit E8), so neither rail is named as the bank's supply in our dts. Mechanical check: the
+  built dts names no supply and the driver writes no mode for the bank (`kernel/post-patch-facts.txt`).
+- **PI** is "left as the PMIC powers it up" on the mechanical condition that the built dts names no PI pin (`pio-ref PI 0`).
+  **PA** is "no pads" on the mechanical condition of zero pins in the SoC table (`bank-pins PA 0`). Both are checked by the
+  rule, and a fact that disagrees refuses the image.
+- **dcdc4 (GPU)**: case 1. The consumer and an OPP at 960 mV exist in our dts and dtsi, so the range is the maker's form and the
+  OPP sets the voltage when the GPU runs (section 13.2 of docs/research/a7s-rail-voltages.md).
+- **The driver reading** is from the image's kernel base: linux 7.3.3 (tarball sha verified) with the 379-patch series and the
+  correction applied, and the 7.3.4 sunxi pinctrl files of the gate's cache give identical results. The four points are cited
+  in section 13.1 of the research doc; nothing differs from the 6.1 copy.
+- **A7A and A7Z**: edits files and facts from their own Radxa files (no edits needed, no bank supplies, no fixed rail). Their
+  pads.toml state every bank except PI, which is refused (no pin groups on disk). Both still refuse, on PI.
+- **#138 merged**: origin/next is merged into this branch.

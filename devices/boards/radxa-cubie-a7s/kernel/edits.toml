@@ -39,11 +39,11 @@ reason = "the kernel fixed value is the bootloader's to set; the kernel must not
 [[edit]]
 id = "E4"
 file = "arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7s.dts"
-node = "dcdc4"         # reg_dcdc4, regulator-name "vdd-gpu"; the GPU's gpu-supply (series a733-gpu/...enable-the-gpu.patch)
+node = "dcdc4"         # reg_dcdc4, regulator-name "vdd-gpu"; the GPU's gpu-supply (series a733-gpu/...enable-the-gpu.patch:68-)
 series = "a733-gpu/arm64-dts-allwinner-a733-cubie-a7s-enable-the-gpu.patch:68-: min = max = 960000 (\"fixed at the 1008 MHz operating point\"), always-on"
-maker = "Radxa 7b63c9ec board.dts:1307-1313: range 500000-1540000, boot-on and always-on, gpu-supply = dcdc4 (line 1957). Radxa U-Boot 9da4b3e8: no dcdc4 node"
+maker = "Radxa 7b63c9ec board.dts:1307-1313: range 500000-1540000, boot-on and always-on; board.dts:1956-1957 &gpu { gpu-supply = <&reg_dcdc4>; } (no OPP in the board dts; Radxa's A733 SoC dtsi is not on disk, so its GPU OPP table is UNVERIFIED). Radxa U-Boot 9da4b3e8: no dcdc4 node"
 change = "min = 500000, max = 1540000 (the kernel dts range); regulator-boot-on added"
-reason = "no maker file fixes the GPU rail. CONSEQUENCE, UNVERIFIED: the GPU's voltage is then the PMIC's value until a GPU operating-point table sets it (the series' a733-gpu-opp patch targets the dtsi and is not in this dts, so none applies here)"
+reason = "GPU CASE (coordinator's rule 3, case 1): the consumer exists in our dts (&gpu gpu-supply = dcdc4, series dts:347, GPU enabled status okay) and the operating point exists in our SoC dtsi (sun60i-a733.dtsi:379-385, opp-1008000000 at opp-microvolt 960000, operating-points-v2 on the GPU node). The GPU driver scales the supply to the OPP's 960 mV when it runs, so the voltage is set by the GPU's OPP path and not by a probe-time fixed value. Radxa has a range and the same consumer, so the range is the maker's form. dcdc4 stays in the unprogrammed_rails list: it must remain a range, and the 960 mV comes from the OPP when the GPU runs."
 
 [[edit]]
 id = "E5"
@@ -70,3 +70,12 @@ series = "a733-power-a7s (no min/max; always-on)"
 maker = "Radxa U-Boot 9da4b3e8 arch/arm/dts/sun60i-a733-cubie-a7s.dts:158-170: 3.3 V fixed, always-on (the value U-Boot requests). Radxa 7b63c9ec: dc1sw1/dc1sw2 switches, no value"
 change = "none. The series gives no value to SWOUT1 or SWOUT2 (no min/max), so the kernel programs neither"
 reason = "recorded for the bank statements: PH and PB use SWOUT2 (3.3 V); PJ and PD use SWOUT1 and remain unresolved"
+
+[[edit]]
+id = "E8"
+file = "arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7s.dts"
+node = "&pio vcc-pd-supply, vcc-pj-supply"
+series = "a733-a7s-bank-supplies/arm64-dts-allwinner-a733-cubie-a7s-add-the-pin-bank-supplies.patch:38 (vcc-pd-supply = <&reg_swout1>); a733-a7s-bank-supplies-2/...add-the-remaining-pin-bank-supplies.patch:50 (vcc-pj-supply = <&reg_swout1>)"
+maker = "Radxa U-Boot 9da4b3e8 dts:185-190 (bldo2 named vcc-pd, always-on 1.8V); schematic sheet 4 puts VCC-PD and VCC-PJ on the BLDO2 bus; schematic sheet 7 R251 puts VCC-PD on VCC33-LCD (SWOUT1). Radxa's own files name no vcc-pd or vcc-pj supply in the kernel dts (RK6, RK5 grep)"
+change = "both lines removed from &pio. Banks PD and PJ then have no supply: the driver's request path finds the dummy regulator (drivers/regulator/core.c:2453-2458, full constraints), reads 0 V and writes nothing (pinctrl-sunxi.c:870-871)"
+reason = "the sources conflict on the rail (BLDO2 or SWOUT1), so neither may be named as the bank's supply in our dts. Statements for PD and PJ are then 'left as the PMIC powers it up', checked mechanically (kernel/post-patch-facts.txt)"
