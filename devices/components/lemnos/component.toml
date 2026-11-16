@@ -53,6 +53,12 @@ from = { file = "files/lemnos-orion-links.conf" }
 to = "/etc/systemd/system/lemnos-orion.service.d/10-raze-links.conf"
 mode = "0644"
 
+# The bridge's address: this node's local comm core socket (the orion component's). A drop-in, as the links are.
+[[install]]
+from = { file = "files/lemnos-orion-address.conf" }
+to = "/etc/systemd/system/lemnos-orion.service.d/20-local-socket.conf"
+mode = "0644"
+
 # The users the sysusers file names (lemnos and lemnos-orion), made at build time as well: the
 # image's root is read-only, so systemd-sysusers cannot add them at boot. No fixed ids (Lemnos's
 # sysusers file leaves them to the system).

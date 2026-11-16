@@ -1,15 +1,15 @@
 # Orion's recovery package: orion-recovery-bin (binary orion-recovery): the comm core alone, as one static
 # file, for an initramfs or a flasher image. NOT in the base product: it is named here so the check reads it,
-# and the flasher product (B9) puts it in its image. Built by Gaia at its pin (3f6e561) for aarch64:
-# bin/orion-recovery 2,595,064 bytes (Orion 455a956e), with the same zig 0.15.2 tools source as orion-bin
-# below. x86_64 build hosts only.
+# and the flasher product (B9) puts it in its image. Built for aarch64 from Orion 3dde304 (the orion component's
+# pin), with the same zig 0.15.2 tools source as orion-bin below. x86_64 build hosts only. Its size is not
+# recorded at this rev: the image's own build reports it.
 version = 1
 name = "orion-recovery"
 description = "Orion recovery: orion-recovery-bin (binary orion-recovery), the comm core alone, for an initramfs or flasher image"
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
+ref = "3dde304e396f5769d3aa25884b5a9ff5bd4b9180"
 
 [sources.root]
 image = "docker.io/library/rust:1.99-slim"

@@ -59,8 +59,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."orion-recovery.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
-commit = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
+ref = "3dde304e396f5769d3aa25884b5a9ff5bd4b9180"
+commit = "3dde304e396f5769d3aa25884b5a9ff5bd4b9180"
 
 [source."orion-recovery.tools"]
 kind = "download"
@@ -75,8 +75,8 @@ digest = "sha256:f6c4a35d21dbb3c89d7a8d056c193e94fc09037f2b58dd858b09c39a47dd02d
 [source."orion.src"]
 kind = "git"
 url = "https://github.com/Prometheus-Dynamics/Orion.git"
-ref = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
-commit = "455a956e13e62c97081d66e0e8f3bf2aced1eac8"
+ref = "3dde304e396f5769d3aa25884b5a9ff5bd4b9180"
+commit = "3dde304e396f5769d3aa25884b5a9ff5bd4b9180"
 
 [source."orion.tools"]
 kind = "download"

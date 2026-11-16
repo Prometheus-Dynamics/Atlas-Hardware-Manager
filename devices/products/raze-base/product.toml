@@ -11,7 +11,9 @@
 #
 # THE PINS: Gaia is pinned at a6299c62 (devices/gaia.lock; c0d084fa and before, PR G12: --setting, keep_setid, the [generate.data] placeholders, @firmware@, @tool:NAME@).
 # Its `slot-boot` recipe declares version and slot; the build gives both with --setting (scripts/version-rule.sh).
-# Lemnos next 31e0f736 (BB1b; pair with Orion 671d29d): the rev for this image, declared by the coordinator 2026-11-16.
+# Lemnos next 31e0f736 (BB1b): the rev for this image, declared by the coordinator 2026-11-16. Its bridge pins Orion 671d29d.
+# The Orion of this image is Orion 3dde304 (C54), provisional (PINS-2, docs/prs/PINS-2.md): the pair is mismatched on purpose
+# until the announced Lemnos rev that pins 3dde304 lands; this tree must not merge like that.
 # It replaces the plumbing pin 7d7fabab (origin/pr/I5j), which Gaia built once as a never-flashed proof.
 version = 1
 name = "raze-base"
