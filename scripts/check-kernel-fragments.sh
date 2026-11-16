@@ -164,11 +164,15 @@ for bpath in sorted(glob.glob(os.path.join(dev, "boards", "*", "board.toml"))):
     else:
         frags = [os.path.normpath(os.path.join(fdir, f)) for f in fk.get("fragments", [])]
     fam_name = fam.get("name", os.path.basename(fdir))
-    # The board's kernel patches (PR A7RAILS): Gaia takes a board's list in place of the family's (board.rs merge). Its
-    # `file` entries are patches beside the board (or the family): applied after the series, in the list's order.
-    kp_list = bk.get("patches", fk.get("patches")) or []
-    kp_base = bdir if "patches" in bk else fdir
-    extra = [os.path.normpath(os.path.join(kp_base, e["file"])) for e in kp_list if isinstance(e, dict) and "file" in e]
+    # The effective kernel patch list (PR PATCH-LISTS, Gaia's append rule: a board's list is appended to its family's, so
+    # the family's entries come first; `inherit_patches = false` in [kernel] takes the board's list alone). Each `file`
+    # entry is a patch beside the board or the family; applied after the series, in this order. Gaia a6299c62 replaced
+    # the family's list instead: the family's entries are still listed here by the same rule.
+    inherit = bk.get("inherit_patches", True)
+    fam_list = [(fdir, e) for e in (fk.get("patches") or [])]
+    board_list = [(bdir, e) for e in (bk.get("patches") or [])]
+    eff = board_list if inherit is False else (fam_list + board_list if "patches" in bk else fam_list)
+    extra = [os.path.normpath(os.path.join(base, e["file"])) for base, e in eff if isinstance(e, dict) and "file" in e]
     # The series pin is "url commit" (a space: the row's own separator is `|`, which the pin used to carry).
     series_pin = series_pin.replace("|", " ")
     print("|".join([name, fam_name, src["git"], commit_of(name, src_name, src), defconfig, ",".join(frags), series_pin, ",".join(extra), bdir]))
