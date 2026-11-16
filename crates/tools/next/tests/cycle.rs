@@ -490,8 +490,8 @@ async fn an_unexpected_state_stops_the_run_at_that_step() {
     );
     assert_eq!(
         node.runs_started(names::SLOTS_LIST),
-        2,
-        "the list before and the check after, and no more"
+        3,
+        "the list before, the install's own snapshot of the slots before its start, and the check after, and no more"
     );
 }
 

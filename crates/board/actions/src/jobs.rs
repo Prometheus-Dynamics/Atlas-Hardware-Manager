@@ -121,7 +121,9 @@ impl ActionKind {
     }
 
     fn call_of(&self, nonce: &str) -> Option<Issued> {
-        self.map().get(nonce).and_then(|tracked| tracked.call.clone())
+        self.map()
+            .get(nonce)
+            .and_then(|tracked| tracked.call.clone())
     }
 
     fn is_starting(&self, nonce: &str) -> bool {
@@ -179,7 +181,10 @@ impl JobKind for ActionKind {
             .and_then(|tracked| tracked.hold.clone());
         let board = BoardActions::new(handle);
 
-        let known = self.map().get(&spec.nonce).and_then(|tracked| tracked.call.clone());
+        let known = self
+            .map()
+            .get(&spec.nonce)
+            .and_then(|tracked| tracked.call.clone());
         let call = match known {
             // A run that is already on the board is followed, never started again.
             Some(call) => call,

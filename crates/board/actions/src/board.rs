@@ -297,11 +297,16 @@ impl BoardActions {
                         // An end read on a later session is not trusted, failure or cancel alike:
                         // a cancel confirmed from another session's answer is not a confirmed cancel.
                         (_, Err(error)) if !on_issuing_session => {
+                            let reason = format!(
+                                "the run ended as `{error}`, which the node said on a later session"
+                            );
+                            let ended =
+                                matches!(error, ActionError::Refused(_) | ActionError::Failed(_))
+                                    .then(|| Box::new(error));
                             return Err(ActionError::Unconfirmed {
                                 call,
-                                reason: format!(
-                                    "the run ended as `{error}`, which the node said on a later session"
-                                ),
+                                reason,
+                                ended,
                             });
                         }
                         (_, result) => result?,
@@ -350,6 +355,7 @@ impl BoardActions {
             return Err(ActionError::Unconfirmed {
                 call,
                 reason: "the run was started on an earlier session, and its number may now belong to another run: not cancelled blind".to_owned(),
+                ended: None,
             });
         }
         self.handle
@@ -365,6 +371,13 @@ impl BoardActions {
                 },
                 SessionError::Failed(reason) => ActionError::Lost { call, reason },
             })
+    }
+
+    /// Whether the session is still the one `issued` was started on. A stored run number answers
+    /// for its own session only; a caller that uses an answer checks this first.
+    #[must_use]
+    pub fn same_session(&self, issued: &Issued) -> bool {
+        self.handle.session() == issued.session
     }
 
     /// The node's name, from its hello document, as the board's target.

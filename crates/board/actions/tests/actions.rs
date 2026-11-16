@@ -33,8 +33,6 @@ const SERIAL: &str = "0123abcd";
 /// The bridge's words for a run whose caller's lease ran out (Lemnos bded77a0 calls.rs:318).
 const LEASE_RAN_OUT: &str = "its lease ran out; the job ended with its connection";
 
-const RESTARTED: &str = "-4: the service restarted before this finished";
-
 /// A pause that does not wait: the failure rule is tested on the session's side. It only yields,
 /// so the monitor thread does not spin while the node is gone.
 #[derive(Debug)]
@@ -439,7 +437,7 @@ async fn a_session_lost_during_a_long_action_is_followed_and_never_started_again
         &jobs,
         id,
         "the job's outcome to be unknown after the reconnect",
-        |status| matches!(status, JobStatus::Unknown { reason } if reason.contains("reconnect")),
+        |status| matches!(status, JobStatus::Unknown { reason, checking: None } if reason.contains("reconnect")),
     )
     .await;
     assert_eq!(
@@ -459,10 +457,7 @@ async fn a_run_started_on_an_earlier_session_is_not_cancelled_blind() {
     // Two stalls: the first run, and the one started on the later session.
     rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
     rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
-    let handle = rig
-        .sessions
-        .handle(&rig.address)
-        .expect("the node is on");
+    let handle = rig.sessions.handle(&rig.address).expect("the node is on");
     connected(&handle).await;
     let issued = BoardActions::new(handle)
         .start(self_test, &[])
@@ -516,18 +511,15 @@ async fn a_cancel_read_on_a_later_session_is_not_a_confirmed_cancel() {
     let catalog = rig.catalog().await;
     let self_test = named(&catalog, SELF_TEST);
     rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
-    let handle = rig
-        .sessions
-        .handle(&rig.address)
-        .expect("the node is on");
+    let handle = rig.sessions.handle(&rig.address).expect("the node is on");
     connected(&handle).await;
     let board = BoardActions::new(handle);
-    let issued = board
-        .start(self_test, &[])
-        .await
-        .expect("the run starts");
+    let issued = board.start(self_test, &[]).await.expect("the run starts");
     until("the run to stall", || rig.node.stalled_runs() == 1).await;
-    board.cancel(&issued).await.expect("the cancel is sent on the session it started on");
+    board
+        .cancel(&issued)
+        .await
+        .expect("the cancel is sent on the session it started on");
 
     let text = rig.address.to_string();
     rig.sessions.turn_off(&text);
@@ -544,6 +536,71 @@ async fn a_cancel_read_on_a_later_session_is_not_a_confirmed_cancel() {
     assert!(
         matches!(read, Err(ActionError::Unconfirmed { .. })),
         "a cancel read on a later session is unknown, not confirmed: {read:?}"
+    );
+}
+
+/// CHARACTERIZATION, not a guarantee. It asserts the known-bad outcome of today's Orion pin, so the
+/// hazard stays visible in the suite. Session 1 starts run A and nobody follows it; session 2
+/// starts run B with the same run number and stalls it. Following B should wait for B. Orion's stub
+/// router matches an attach on the caller's number alone, so it answers with A's result at once.
+/// No Atlas guard can see this for a generic job: the answer carries no run identity, and the
+/// session is the one B started on.
+///
+/// This test FLIPS when the Orion pin moves to a13d4030 (C53b: run handles, a bare attach refused
+/// when ambiguous). Then the follow waits for B, and this assertion must be changed to match.
+#[tokio::test]
+async fn until_orion_run_handles_a_same_session_follow_can_return_an_older_runs_answer() {
+    let rig = Rig::start("attach-characterize", &lemnos_kind()).await;
+    let catalog = rig.catalog().await;
+    let self_test = named(&catalog, SELF_TEST);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Answer);
+    let a = rig
+        .board
+        .start(self_test, &[])
+        .await
+        .expect("A starts on session 1");
+    until("A to run on session 1", || rig.node.calls_received() >= 2).await;
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    let a_call = a.call();
+
+    let text = rig.address.to_string();
+    rig.sessions.turn_off(&text);
+    rig.sessions.turn_on(&text);
+    let handle = rig.sessions.handle(&rig.address).expect("on again");
+    connected(&handle).await;
+    let board = BoardActions::new(handle);
+    let catalog2 = board.catalog().await.expect("catalog on session 2");
+    let self_test2 = named(&catalog2, SELF_TEST);
+    rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
+    let b = board
+        .start(self_test2, &[])
+        .await
+        .expect("B starts on session 2");
+    until("B to stall on session 2", || rig.node.stalled_runs() == 1).await;
+    assert_eq!(
+        a_call,
+        b.call(),
+        "the two runs carry the same number, which is the hazard"
+    );
+
+    let followed = tokio::spawn({
+        let board = board.clone();
+        async move {
+            board
+                .follow(&b, atlas_actions::any_answer, |_| {})
+                .await
+                .map(|followed| followed.into_done().output)
+        }
+    });
+    until("the follow of B to answer (known-bad today)", || {
+        followed.is_finished()
+    })
+    .await;
+    let answer = followed.await.expect("the follow task ends");
+    assert_eq!(
+        answer.expect("today the answer is A's result, and it comes back at once"),
+        b"passed".to_vec(),
+        "the known-bad outcome: B's follow returned run A's answer"
     );
 }
 
