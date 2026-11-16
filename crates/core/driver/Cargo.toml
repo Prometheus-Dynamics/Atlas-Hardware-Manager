@@ -8,6 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 atlas-types = { path = "../types" }
+atlas-usb = { path = "../../flash/usb" }
 async-trait = "0.1"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"

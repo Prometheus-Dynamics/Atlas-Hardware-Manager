@@ -11,9 +11,14 @@ use atlas_rpiboot::{
     BootEvent, BootFiles, BootSettings, Chip, FileServerOutcome, RpiBootError, boot_device,
 };
 use atlas_usb::sim::{Answer, SimBus};
-use atlas_usb::{DeviceSummary, OpenOptions, Timeouts, UsbBus, UsbError};
+use atlas_usb::{DeviceSummary, OpenOptions, Outcome, Timeouts, UsbBus, UsbId};
 
 const LOCATION: &str = "1-2";
+/// The boot ROM's id for the BCM2712 the tests use.
+const ROM: UsbId = UsbId {
+    vendor: 0x0a5c,
+    product: 0x2712,
+};
 
 fn device() -> DeviceSummary {
     DeviceSummary::new(LOCATION, 0x0a5c, 0x2712)
@@ -75,7 +80,16 @@ async fn both_rounds_boot_through_a_reset_and_serve_the_files() {
     let started = tokio::time::Instant::now();
 
     let (outcome, ()) = tokio::join!(
-        boot_device(&bus, LOCATION, Chip::Bcm2712, &files, &cfg, &record, &never,),
+        boot_device(
+            &bus,
+            LOCATION,
+            ROM,
+            Chip::Bcm2712,
+            &files,
+            &cfg,
+            &record,
+            &never,
+        ),
         async {
             // The device is gone for two seconds, then comes back.
             tokio::time::sleep(Duration::from_secs(2)).await;
@@ -129,7 +143,16 @@ async fn a_stalled_request_is_asked_again_and_the_boot_finishes() {
     bus.script(LOCATION, first_round());
 
     let (outcome, ()) = tokio::join!(
-        boot_device(&bus, LOCATION, Chip::Bcm2712, &files, &cfg, &record, &never,),
+        boot_device(
+            &bus,
+            LOCATION,
+            ROM,
+            Chip::Bcm2712,
+            &files,
+            &cfg,
+            &record,
+            &never,
+        ),
         async {
             tokio::time::sleep(Duration::from_secs(2)).await;
             re_enumerate(
@@ -174,7 +197,16 @@ async fn a_file_the_boot_files_lack_is_reported_and_the_boot_goes_on() {
     bus.script(LOCATION, first_round());
 
     let (outcome, ()) = tokio::join!(
-        boot_device(&bus, LOCATION, Chip::Bcm2712, &files, &cfg, &record, &never,),
+        boot_device(
+            &bus,
+            LOCATION,
+            ROM,
+            Chip::Bcm2712,
+            &files,
+            &cfg,
+            &record,
+            &never,
+        ),
         async {
             tokio::time::sleep(Duration::from_secs(2)).await;
             re_enumerate(
@@ -211,7 +243,16 @@ async fn a_device_that_resets_again_ends_the_boot_as_booted() {
     bus.script(LOCATION, first_round());
 
     let (outcome, ()) = tokio::join!(
-        boot_device(&bus, LOCATION, Chip::Bcm2712, &files, &cfg, &ignore, &never,),
+        boot_device(
+            &bus,
+            LOCATION,
+            ROM,
+            Chip::Bcm2712,
+            &files,
+            &cfg,
+            &ignore,
+            &never,
+        ),
         async {
             tokio::time::sleep(Duration::from_secs(2)).await;
             re_enumerate(&bus, vec![request(0, "config.txt"), Answer::Disconnect]);
@@ -236,6 +277,7 @@ async fn cancelling_between_the_rounds_touches_nothing_more() {
     let outcome = boot_device(
         &bus,
         LOCATION,
+        ROM,
         Chip::Bcm2712,
         &files,
         &cfg,
@@ -257,7 +299,17 @@ async fn a_second_stage_that_is_missing_is_refused_before_the_device_is_touched(
     bus.attach(device());
     let files = BootFiles::in_memory([("config.txt", b"x".to_vec())]);
 
-    let outcome = boot_device(&bus, LOCATION, Chip::Bcm2711, &files, &cfg, &ignore, &never).await;
+    let outcome = boot_device(
+        &bus,
+        LOCATION,
+        ROM,
+        Chip::Bcm2711,
+        &files,
+        &cfg,
+        &ignore,
+        &never,
+    )
+    .await;
 
     assert!(matches!(outcome, Err(RpiBootError::MissingFile { .. })));
     assert!(bus.records(LOCATION).is_empty());
@@ -275,6 +327,7 @@ async fn no_device_within_the_appear_timeout_is_a_timeout() {
     let outcome = boot_device(
         &bus,
         LOCATION,
+        ROM,
         Chip::Bcm2712,
         &files,
         &quick,
@@ -283,8 +336,34 @@ async fn no_device_within_the_appear_timeout_is_a_timeout() {
     )
     .await;
 
-    assert!(matches!(
-        outcome,
-        Err(RpiBootError::Usb(UsbError::Timeout(_)))
-    ));
+    // Nothing came back on the port in the appear timeout: absent.
+    assert!(
+        matches!(outcome, Err(RpiBootError::Stop(Outcome::Absent(_)))),
+        "{outcome:?}"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_board_with_another_identity_on_the_port_gets_no_second_stage() {
+    let files = flasher();
+    let never = never_cancelled;
+    let ignore = |_: BootEvent| {};
+    let bus = SimBus::new();
+    bus.attach(DeviceSummary::new(LOCATION, 0x1d6b, 0x0002));
+    let outcome = boot_device(
+        &bus,
+        LOCATION,
+        ROM,
+        Chip::Bcm2712,
+        &files,
+        &settings(),
+        &ignore,
+        &never,
+    )
+    .await;
+    assert!(
+        matches!(outcome, Err(RpiBootError::Stop(Outcome::Refused(_)))),
+        "{outcome:?}"
+    );
+    assert!(bus.records(LOCATION).is_empty(), "nothing was sent");
 }

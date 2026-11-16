@@ -204,7 +204,7 @@ async fn flash_without_images_is_refused_before_the_bus_is_touched() {
     let bus = SimBus::new();
     bus.attach(device("1-2", 0x1f3a, 0xefe8));
     let driver = FelDriver::new(Arc::new(bus.clone()), IDS.to_vec(), None);
-    let error = driver.flash(&candidate("1-2")).await.unwrap_err();
+    let error = driver.flash(&candidate("1-2"), IDS[0]).await.unwrap_err();
     assert!(matches!(error, DriverError::Incompatible(_)));
     assert!(bus.records("1-2").is_empty());
 }
@@ -217,7 +217,7 @@ async fn flash_through_the_driver_loads_the_spl_and_the_image() {
         device: Mutex::new(Some(board)),
     });
     let driver = FelDriver::new(bus, IDS.to_vec(), Some(images.clone()));
-    let report = driver.flash(&candidate("1-2")).await.unwrap();
+    let report = driver.flash(&candidate("1-2"), IDS[0]).await.unwrap();
     assert_eq!(report.soc_id, MOCK_SOC_ID);
     assert_eq!(report.spl_pieces, 1);
     assert_eq!(report.image_bytes, images.image.len());
@@ -234,7 +234,7 @@ async fn a_wrong_soc_is_incompatible_and_a_drop_mid_flash_is_unreachable() {
         IDS.to_vec(),
         Some(images(Some(0x1234))),
     );
-    let error = driver.flash(&candidate("1-2")).await.unwrap_err();
+    let error = driver.flash(&candidate("1-2"), IDS[0]).await.unwrap_err();
     assert!(matches!(error, DriverError::Incompatible(_)), "{error:?}");
     assert_eq!(bus.records("1-2").len(), 6);
 
@@ -251,6 +251,48 @@ async fn a_wrong_soc_is_incompatible_and_a_drop_mid_flash_is_unreachable() {
     ]);
     bus.script("1-2", steps);
     let driver = FelDriver::new(Arc::new(bus), IDS.to_vec(), Some(images(None)));
-    let error = driver.flash(&candidate("1-2")).await.unwrap_err();
-    assert!(matches!(error, DriverError::Unreachable(_)), "{error:?}");
+    let error = driver.flash(&candidate("1-2"), IDS[0]).await.unwrap_err();
+    // The device left the bus during the write: absent, and the write may have applied.
+    match error {
+        DriverError::Flash(atlas_usb::Outcome::Absent(absent)) => {
+            assert!(absent.may_have_applied);
+            assert_eq!(absent.port.to_string(), "1-2");
+        }
+        other => panic!("expected Absent, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_different_identity_on_the_port_is_refused_and_never_opened() {
+    // The plan expects the FEL id on 1-2; another board sits there.
+    let bus = SimBus::new();
+    bus.attach(device("1-2", 0x0a5c, 0x2764));
+    bus.script("1-2", verify_answers(1));
+    let images = images(Some(MOCK_SOC_ID));
+    let driver = FelDriver::new(Arc::new(bus.clone()), IDS.to_vec(), Some(images));
+    let error = driver.flash(&candidate("1-2"), IDS[0]).await.unwrap_err();
+    assert!(
+        matches!(
+            error,
+            DriverError::Flash(atlas_usb::Outcome::Refused(ref refused))
+                if refused.by == atlas_usb::Party::Host
+        ),
+        "{error:?}"
+    );
+    assert!(bus.claimed("1-2").is_empty(), "nothing was claimed");
+    assert!(bus.records("1-2").is_empty(), "nothing was sent");
+}
+
+#[tokio::test]
+async fn a_candidate_with_no_port_path_is_refused() {
+    let bus = SimBus::new();
+    bus.attach(device("1-2", 0x1f3a, 0xefe8));
+    let driver = FelDriver::new(
+        Arc::new(bus.clone()),
+        IDS.to_vec(),
+        Some(images(Some(MOCK_SOC_ID))),
+    );
+    let error = driver.flash(&candidate("usb-x"), IDS[0]).await.unwrap_err();
+    assert!(matches!(error, DriverError::Incompatible(_)), "{error:?}");
+    assert!(bus.records("1-2").is_empty());
 }

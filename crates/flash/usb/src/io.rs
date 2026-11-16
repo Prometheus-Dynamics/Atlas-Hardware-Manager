@@ -189,6 +189,13 @@ impl UsbId {
     }
 }
 
+/// `vendor:product` in lowercase hex, as `lsusb` writes it.
+impl std::fmt::Display for UsbId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:04x}:{:04x}", self.vendor, self.product)
+    }
+}
+
 /// The direction of an endpoint, from bit 7 of its address.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EndpointDirection {

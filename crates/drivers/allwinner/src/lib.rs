@@ -27,7 +27,11 @@ use atlas_types::{
     Candidate, CapabilityKind, CapabilitySet, DeviceKey, DeviceState, Family, Identity, Link,
     LinkKind,
 };
-use atlas_usb::{OpenOptions, UsbBus, UsbError, UsbId};
+use atlas_usb::{
+    Expect, OpenOptions, Opened, PortPath, UsbBus, UsbError, UsbId, observe_stop, open_expected,
+};
+use std::str::FromStr;
+use std::time::Duration;
 
 /// The family every Allwinner FEL device belongs to: the chip's download
 /// mode, not a board.
@@ -74,7 +78,15 @@ impl FelDriver {
 
     /// Flashes the device a candidate names: the SPL through the thunk, then
     /// the image. Needs an [`Images`]; refused otherwise.
-    pub async fn flash(&self, candidate: &Candidate) -> Result<Report, DriverError> {
+    ///
+    /// The device is selected by the candidate's port path and must hold
+    /// `expected` there: a different identity on that port is refused before
+    /// anything is opened. `expected` must be one of the driver's ids.
+    pub async fn flash(
+        &self,
+        candidate: &Candidate,
+        expected: UsbId,
+    ) -> Result<Report, DriverError> {
         let images = self.images.as_ref().ok_or_else(|| {
             DriverError::Incompatible(
                 "no flash images are set: the description gives no SRAM layout for this SoC \
@@ -82,12 +94,24 @@ impl FelDriver {
                     .into(),
             )
         })?;
-        let mut io = self
-            .bus
-            .open(&candidate.address, &OpenOptions::default())
-            .await
-            .map_err(usb_error)?;
-        flash(
+        let port = port_of(&candidate.address)?;
+        if !self.ids.contains(&expected) {
+            return Err(DriverError::Incompatible(format!(
+                "{expected} is not an id this FEL driver handles"
+            )));
+        }
+        let Opened { mut io, .. } = open_expected(
+            self.bus.as_ref(),
+            &port,
+            Expect::Exactly(expected),
+            &OpenOptions::default(),
+            Duration::ZERO,
+        )
+        .await
+        .into_result()
+        .map_err(DriverError::Flash)?;
+        let timeouts = OpenOptions::default().timeouts;
+        match flash(
             io.as_mut(),
             &images.layout,
             &images.spl,
@@ -95,7 +119,22 @@ impl FelDriver {
             images.expected_soc,
         )
         .await
-        .map_err(flash_error)
+        {
+            Ok(report) => Ok(report),
+            Err(FlashError::Usb(error)) => Err(DriverError::Flash(
+                observe_stop(
+                    self.bus.as_ref(),
+                    &port,
+                    Expect::Exactly(expected),
+                    "the FEL flash",
+                    timeouts.bulk,
+                    true,
+                    error,
+                )
+                .await,
+            )),
+            Err(error) => Err(flash_error(error)),
+        }
     }
 }
 
@@ -107,6 +146,12 @@ impl fmt::Debug for FelDriver {
             .field("flashable", &self.images.is_some())
             .finish_non_exhaustive()
     }
+}
+
+/// The port path a candidate names. A candidate with no valid port is refused
+/// before any device is touched.
+fn port_of(address: &str) -> Result<PortPath, DriverError> {
+    PortPath::from_str(address).map_err(|error| DriverError::Incompatible(error.to_string()))
 }
 
 fn usb_error(error: UsbError) -> DriverError {

@@ -10,5 +10,8 @@ rust-version.workspace = true
 thiserror = "2"
 xz2 = { version = "0.1", features = ["static"] }
 
+[dev-dependencies]
+sha2 = "0.11"
+
 [lints]
 workspace = true

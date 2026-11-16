@@ -80,6 +80,8 @@ struct Slot {
     interfaces: Vec<InterfaceSummary>,
     string_requests: StringRequests,
     claimed: Vec<u8>,
+    /// The next opens fail with these errors, in order, before one succeeds.
+    open_failures: VecDeque<UsbError>,
     pipe: Arc<Pipe>,
 }
 
@@ -153,6 +155,7 @@ impl SimBus {
                 interfaces: Vec::new(),
                 string_requests: StringRequests::Answer,
                 claimed: Vec::new(),
+                open_failures: VecDeque::new(),
                 pipe: Arc::new(Pipe::new()),
             },
         );
@@ -231,6 +234,46 @@ impl SimBus {
         lock(&self.state).slots.get(location).map(|slot| SimPeer {
             pipe: Arc::clone(&slot.pipe),
         })
+    }
+
+    /// Makes the next `count` opens of the device at `location` fail with
+    /// `error`, as a device that will not be claimed does. `false` if no device
+    /// is there.
+    pub fn fail_opens(&self, location: &str, count: usize, error: UsbError) -> bool {
+        match lock(&self.state).slots.get_mut(location) {
+            Some(slot) => {
+                slot.open_failures.extend(std::iter::repeat_n(error, count));
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Re-enumerates the device at `from` on the port `to`, with the same ids:
+    /// the device has moved, so handles on `from` die and `from` is empty. `false`
+    /// if no device is at `from`.
+    pub fn move_device(&self, from: &str, to: &str) -> bool {
+        let (summary, interfaces) = match lock(&self.state).slots.get(from) {
+            Some(slot) => (slot.summary.clone(), slot.interfaces.clone()),
+            None => return false,
+        };
+        self.detach(from);
+        self.attach(DeviceSummary {
+            location: to.to_string(),
+            ..summary
+        });
+        self.set_interfaces(to, interfaces);
+        true
+    }
+
+    /// The device at `location` answers its next `count` transfers, then leaves
+    /// the bus on the one after: a device that vanishes mid-exchange. `false` if
+    /// no device is there.
+    pub fn vanish_after(&self, location: &str, count: usize) -> bool {
+        self.script(
+            location,
+            std::iter::repeat_n(Answer::Ok, count).chain(std::iter::once(Answer::Disconnect)),
+        )
     }
 
     /// Hotplug events from now on.
@@ -319,6 +362,9 @@ impl UsbBus for SimBus {
                 .slots
                 .get_mut(location)
                 .ok_or_else(|| UsbError::NotFound(location.to_string()))?;
+            if let Some(error) = slot.open_failures.pop_front() {
+                return Err(error);
+            }
             if !slot.interfaces.is_empty() {
                 // Claim the named interface, or else the first one with a
                 // bulk endpoint, as the real bus does.

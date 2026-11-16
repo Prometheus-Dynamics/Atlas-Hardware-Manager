@@ -19,7 +19,10 @@ mod hotplug;
 mod io;
 mod link;
 mod nusb_backend;
+mod outcome;
+mod port;
 mod record;
+mod select;
 pub mod sim;
 mod traced;
 
@@ -39,5 +42,8 @@ pub use link::{
     usb_error,
 };
 pub use nusb_backend::NusbBus;
+pub use outcome::{Absent, Deaf, Expect, Outcome, Party, Reason, Refused, Stop, TimedOut};
+pub use port::{MAX_TIERS, PortPath, PortPathError};
 pub use record::{Record, Transfer};
+pub use select::{Opened, at_port, observe, observe_stop, open_expected};
 pub use traced::{Recorder, Sink, Traced};

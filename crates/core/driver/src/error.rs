@@ -19,6 +19,14 @@ pub enum DriverError {
     /// would settle it. The job ends as unknown; it is not tried again.
     #[error("{0}")]
     Unknown(String),
+    /// A flashing step stopped with a typed observation: a device that is
+    /// present but silent (Deaf), one that is not there (Absent), a refusal by
+    /// the device or this host, or a phase that ran out of time. The job layer
+    /// and the CLI read the case from the value, never from the text. Its
+    /// `may_have_applied` says whether the device may have acted without the
+    /// completion being seen.
+    #[error("{0}")]
+    Flash(atlas_usb::Stop),
     #[error("{0}")]
     Other(String),
 }

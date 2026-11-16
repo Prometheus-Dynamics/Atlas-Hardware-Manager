@@ -16,6 +16,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["fs", "io-util", "macros", "rt", "sync", "time"] }
 
 [dev-dependencies]
+atlas-usb = { path = "../../flash/usb" }
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt", "sync", "test-util", "time"] }
 

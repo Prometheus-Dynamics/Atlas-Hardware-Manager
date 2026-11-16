@@ -3,7 +3,11 @@ use std::time::Duration;
 use async_trait::async_trait;
 use tokio::time::{Instant, sleep};
 
-use crate::{DeviceSummary, InterfaceSummary, OpenOptions, Timeouts, UsbError, UsbIo};
+use std::str::FromStr;
+
+use crate::{
+    DeviceSummary, InterfaceSummary, OpenOptions, PortPath, Timeouts, UsbError, UsbId, UsbIo,
+};
 
 /// The devices on the bus, and opening one of them.
 #[async_trait]
@@ -14,6 +18,31 @@ pub trait UsbBus: Send + Sync {
     /// Opens the device at `location` and claims its interface.
     async fn open(&self, location: &str, options: &OpenOptions)
     -> Result<Box<dyn UsbIo>, UsbError>;
+
+    /// Opens the device at `location` as [`open`](Self::open) does, but only if
+    /// its vendor and product ids are `expected` (when one is given). The ids are
+    /// read from the device itself before its interface is claimed; a device with
+    /// other ids is refused with [`UsbError::WrongIdentity`] and nothing is
+    /// claimed. A bus must not claim first and check afterwards.
+    async fn open_at(
+        &self,
+        location: &str,
+        expected: Option<UsbId>,
+        options: &OpenOptions,
+    ) -> Result<Box<dyn UsbIo>, UsbError> {
+        if let Some(expected) = expected {
+            let found = self
+                .devices()
+                .await?
+                .into_iter()
+                .find(|device| device.location == location)
+                .ok_or_else(|| UsbError::NotFound(location.to_string()))?;
+            if !expected.matches(&found) {
+                return Err(wrong_identity(location, expected, &found));
+            }
+        }
+        self.open(location, options).await
+    }
 
     /// The interfaces of the device at `location`: class, interface string
     /// and endpoints. Each interface string is read from the device with
@@ -27,6 +56,21 @@ pub trait UsbBus: Send + Sync {
         Err(UsbError::Other(
             "this USB bus cannot list interfaces".into(),
         ))
+    }
+}
+
+/// The error for a device at `location` whose ids are not `expected`.
+pub(crate) fn wrong_identity(location: &str, expected: UsbId, found: &DeviceSummary) -> UsbError {
+    match PortPath::from_str(location) {
+        Ok(location) => UsbError::WrongIdentity {
+            location,
+            expected,
+            found: UsbId {
+                vendor: found.vendor,
+                product: found.product,
+            },
+        },
+        Err(error) => UsbError::Other(error.to_string()),
     }
 }
 

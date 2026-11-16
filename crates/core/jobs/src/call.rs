@@ -21,17 +21,25 @@ impl CallError {
     }
 
     /// The outcome is not known, so the job ends as unknown rather than being tried again.
+    /// That is an `Unknown` from the driver, and a flash stop whose write or start may have
+    /// reached the device without its completion being seen.
     pub(crate) fn is_unknown(&self) -> bool {
-        matches!(self, Self::Driver(DriverError::Unknown(_)))
+        match self {
+            Self::Driver(DriverError::Unknown(_)) => true,
+            Self::Driver(DriverError::Flash(stop)) => stop.may_have_applied(),
+            _ => false,
+        }
     }
 
     /// A settled answer: the device is refused or unsupported as it is now.
-    /// Not retried on backoff; it is asked again only when the device changes.
+    /// Not retried on backoff; it is asked again only when the device changes. A flash stop
+    /// that is a refusal (by the device, or by the host for a wrong identity) is settled.
     pub(crate) fn is_settled(&self) -> bool {
-        matches!(
-            self,
-            Self::Driver(DriverError::Incompatible(_) | DriverError::Unsupported(_))
-        )
+        match self {
+            Self::Driver(DriverError::Incompatible(_) | DriverError::Unsupported(_)) => true,
+            Self::Driver(DriverError::Flash(stop)) => stop.is_refusal(),
+            _ => false,
+        }
     }
 }
 

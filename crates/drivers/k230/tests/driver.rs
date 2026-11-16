@@ -145,7 +145,10 @@ async fn an_image_is_started_and_the_device_comes_back_as_the_stage_it_answers()
         ],
     );
     let driver = driver(&bus);
-    driver.start_image("1-2", &image, ADDRESS).await.unwrap();
+    driver
+        .start_image("1-2", id(), &image, ADDRESS)
+        .await
+        .unwrap();
     assert!(bus.devices().await.unwrap().is_empty());
 
     // The image came back: the burner answers at the same port.
@@ -164,7 +167,7 @@ async fn a_stalled_image_page_fails_the_start_and_no_start_is_sent() {
     bus.attach(device("1-2", None));
     bus.script("1-2", [cpu_info("K230"), Answer::Ok, Answer::Stall]);
     let error = driver(&bus)
-        .start_image("1-2", &[5u8; 2000], ADDRESS)
+        .start_image("1-2", id(), &[5u8; 2000], ADDRESS)
         .await
         .unwrap_err();
     assert!(error.to_string().contains("stalled"), "{error}");
@@ -178,7 +181,7 @@ async fn a_burner_is_not_started_over_again() {
     bus.attach(device("1-2", None));
     bus.script("1-2", [cpu_info("Uboot Stage for K230")]);
     let error = driver(&bus)
-        .start_image("1-2", &[1u8; 4], ADDRESS)
+        .start_image("1-2", id(), &[1u8; 4], ADDRESS)
         .await
         .unwrap_err();
     assert!(matches!(error, DriverError::Incompatible(_)), "{error:?}");
@@ -190,7 +193,7 @@ async fn an_address_the_caller_gives_outside_the_range_is_refused_before_any_tra
     let bus = SimBus::new();
     bus.attach(device("1-2", None));
     let error = driver(&bus)
-        .start_image("1-2", &[1u8; 4], 0x8000_0000)
+        .start_image("1-2", id(), &[1u8; 4], 0x8000_0000)
         .await
         .unwrap_err();
     assert!(error.to_string().contains("outside"), "{error}");
@@ -204,6 +207,45 @@ async fn a_device_that_never_comes_back_is_reported_at_the_deadline() {
         .await_restart("1-2", Duration::from_secs(12))
         .await
         .unwrap_err();
-    assert!(matches!(error, DriverError::Unreachable(_)), "{error:?}");
-    assert!(error.to_string().contains("timed out"), "{error}");
+    // Nothing came back on the port: absent, with what was waited for.
+    assert!(
+        matches!(error, DriverError::Flash(atlas_usb::Outcome::Absent(_))),
+        "{error:?}"
+    );
+    assert!(error.to_string().starts_with("absent"), "{error}");
+}
+
+#[tokio::test]
+async fn a_different_identity_on_the_port_is_refused_and_nothing_is_sent() {
+    let bus = SimBus::new();
+    bus.attach(DeviceSummary::new("1-2", 0x0a5c, 0x2764));
+    let error = driver(&bus)
+        .start_image("1-2", id(), &[1u8; 4], ADDRESS)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            error,
+            DriverError::Flash(atlas_usb::Outcome::Refused(ref refused))
+                if refused.by == atlas_usb::Party::Host
+        ),
+        "{error:?}"
+    );
+    assert!(bus.claimed("1-2").is_empty());
+    assert!(bus.records("1-2").is_empty());
+}
+
+#[tokio::test]
+async fn a_device_that_is_silent_to_the_stage_query_is_deaf() {
+    let bus = SimBus::new();
+    bus.attach(device("1-2", None));
+    bus.script("1-2", [Answer::Timeout]);
+    let error = driver(&bus)
+        .start_image("1-2", id(), &[1u8; 4], ADDRESS)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, DriverError::Flash(atlas_usb::Outcome::Deaf(_))),
+        "{error:?}"
+    );
 }

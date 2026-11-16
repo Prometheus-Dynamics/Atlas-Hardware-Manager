@@ -12,7 +12,7 @@ use atlas_rockchip::flow::{chip_agrees, ready, report, run_usbplug};
 use atlas_rockchip::loader::{EntryKind, Loader, build_loader};
 use atlas_rockchip::maskrom::{self, STAGE_DDR, STAGE_USBPLUG};
 use atlas_rockchip::sim::{Fault, SimRockchip};
-use atlas_usb::{OpenOptions, UsbBus, UsbError, UsbId};
+use atlas_usb::{OpenOptions, Outcome, Party, PortPath, Reason, UsbBus, UsbError, UsbId};
 use tokio::time::Instant;
 
 const ID: UsbId = UsbId {
@@ -20,6 +20,11 @@ const ID: UsbId = UsbId {
     product: 0x350b,
 };
 const LOCATION: &str = "1-2";
+
+fn port() -> PortPath {
+    LOCATION.parse().unwrap()
+}
+
 const REENUMERATE: Duration = Duration::from_secs(10);
 
 /// A loader whose DDR stage is 5000 bytes and whose usbplug is 4094 bytes:
@@ -49,23 +54,25 @@ async fn maskrom_download_reenumerates_in_loader_mode_and_reports_the_board() {
     let sim = maskrom_board();
     let file = loader_file(b"8853");
     let loader = Loader::parse(&file).unwrap();
-    let mut io = run_usbplug(
+    let mut opened = run_usbplug(
         &sim,
-        LOCATION,
+        &port(),
+        ID,
         &loader,
         &file,
         &OpenOptions::default(),
         REENUMERATE,
     )
     .await
+    .into_result()
     .unwrap();
 
     // DDR init first, then the usbplug; the board is in loader mode after.
     assert_eq!(sim.stages(), vec![STAGE_DDR, STAGE_USBPLUG]);
     assert!(sim.in_loader_mode());
 
-    ready(io.as_mut()).await.unwrap();
-    let board = report(io.as_mut()).await.unwrap();
+    ready(opened.io.as_mut()).await.unwrap();
+    let board = report(opened.io.as_mut()).await.unwrap();
     assert_eq!(board.chip.as_deref(), Some("3588"));
     assert_eq!(chip_agrees(&loader, &board), Some(true));
     assert_eq!(board.flash.sectors, 1000);
@@ -100,16 +107,27 @@ async fn a_stalled_stage_fails_and_leaves_the_board_in_maskrom_for_a_retry() {
     let options = OpenOptions::default();
 
     sim.inject(Fault::Stall);
-    let error = run_usbplug(&sim, LOCATION, &loader, &file, &options, REENUMERATE)
+    let error = run_usbplug(&sim, &port(), ID, &loader, &file, &options, REENUMERATE)
         .await
+        .into_result()
         .err();
-    assert_eq!(error, Some(UsbError::Stall));
+    // The device stalled the download: refused by the device, nothing ran.
+    match error {
+        Some(Outcome::Refused(refused)) => {
+            assert_eq!(refused.by, Party::Device);
+            assert!(
+                matches!(refused.reason, Reason::Message(ref text) if text.contains("stalled"))
+            );
+        }
+        other => panic!("expected a device refusal, got {other:?}"),
+    }
     assert!(sim.stages().is_empty());
     assert!(!sim.in_loader_mode());
 
     // The same board takes the whole download again.
-    run_usbplug(&sim, LOCATION, &loader, &file, &options, REENUMERATE)
+    run_usbplug(&sim, &port(), ID, &loader, &file, &options, REENUMERATE)
         .await
+        .into_result()
         .unwrap();
     assert!(sim.in_loader_mode());
 }
@@ -124,16 +142,19 @@ async fn a_timed_out_stage_waits_for_its_timeout_then_fails() {
     let started = Instant::now();
     let error = run_usbplug(
         &sim,
-        LOCATION,
+        &port(),
+        ID,
         &loader,
         &file,
         &OpenOptions::default(),
         REENUMERATE,
     )
     .await
+    .into_result()
     .err();
-    assert!(matches!(error, Some(UsbError::Timeout(_))), "got {error:?}");
-    // The default control timeout is five seconds.
+    // The board is on the bus and does not answer: deaf, after the bulk bound.
+    assert!(matches!(error, Some(Outcome::Deaf(_))), "got {error:?}");
+    // The default bulk timeout is five seconds.
     assert_eq!(started.elapsed(), Duration::from_secs(5));
     assert!(sim.stages().is_empty());
 }
@@ -149,20 +170,26 @@ async fn a_stage_that_arrives_with_a_bad_crc_is_refused() {
 
     let error = run_usbplug(
         &sim,
-        LOCATION,
+        &port(),
+        ID,
         &loader,
         &file,
         &OpenOptions::default(),
         REENUMERATE,
     )
     .await
+    .into_result()
     .err();
     match error {
-        Some(UsbError::Protocol(message)) => {
+        Some(Outcome::Refused(refused)) => {
+            assert_eq!(refused.by, Party::Device);
+            let Reason::Message(message) = refused.reason else {
+                panic!("expected the device's words");
+            };
             assert!(message.contains("CRC"), "{message}");
             assert!(message.contains("0x0471"), "{message}");
         }
-        other => panic!("expected a protocol error, got {other:?}"),
+        other => panic!("expected a device refusal, got {other:?}"),
     }
     assert!(sim.stages().is_empty());
     assert!(!sim.in_loader_mode());
@@ -177,15 +204,21 @@ async fn a_board_that_drops_off_mid_download_is_disconnected_and_gone() {
 
     let error = run_usbplug(
         &sim,
-        LOCATION,
+        &port(),
+        ID,
         &loader,
         &file,
         &OpenOptions::default(),
         REENUMERATE,
     )
     .await
+    .into_result()
     .err();
-    assert_eq!(error, Some(UsbError::Disconnected));
+    // The board left the bus during the download: absent, and the write may have applied.
+    match error {
+        Some(Outcome::Absent(absent)) => assert!(absent.may_have_applied),
+        other => panic!("expected Absent, got {other:?}"),
+    }
     // Nothing is at the location any more, so a retry says so at once.
     let again = sim.open(LOCATION, &OpenOptions::default()).await.err();
     assert_eq!(again, Some(UsbError::NotFound(LOCATION.into())));
@@ -248,13 +281,15 @@ async fn the_bus_says_maskrom_before_the_usbplug_and_loader_after() {
     let loader = Loader::parse(&file).unwrap();
     run_usbplug(
         &sim,
-        LOCATION,
+        &port(),
+        ID,
         &loader,
         &file,
         &OpenOptions::default(),
         REENUMERATE,
     )
     .await
+    .into_result()
     .unwrap();
 
     let after = sim.devices().await.unwrap();
@@ -268,4 +303,33 @@ async fn a_loader_board_is_read_as_loader_from_the_start() {
     let sim = SimRockchip::loader(LOCATION, ID, "3588", 1000);
     let devices = sim.devices().await.unwrap();
     assert_eq!(Mode::of(&devices[0]), Mode::Loader);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_board_with_another_identity_on_the_port_is_refused_before_any_download() {
+    let sim = maskrom_board();
+    let file = loader_file(b"8853");
+    let loader = Loader::parse(&file).unwrap();
+    let other = UsbId {
+        vendor: 0x2207,
+        product: 0x0001,
+    };
+    match run_usbplug(
+        &sim,
+        &port(),
+        other,
+        &loader,
+        &file,
+        &OpenOptions::default(),
+        REENUMERATE,
+    )
+    .await
+    {
+        Outcome::Refused(refused) => {
+            assert_eq!(refused.by, Party::Host);
+            assert!(matches!(refused.reason, Reason::WrongIdentity { .. }));
+        }
+        other => panic!("expected a refusal, got {other}"),
+    }
+    assert!(sim.stages().is_empty(), "no stage was sent");
 }

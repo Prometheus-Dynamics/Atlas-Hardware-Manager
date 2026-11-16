@@ -565,3 +565,194 @@ async fn a_step_that_is_checking_shows_unknown_with_what_it_checks_and_then_reso
     gate.notify_one();
     wait_for_job(&mut rx, id, |job| job.status == JobStatus::Done).await;
 }
+
+/// A step that stops with a flash outcome: the stop is returned `failures` times, then
+/// the step succeeds.
+struct StopKind {
+    stop: DriverError,
+    failures: Mutex<u32>,
+    log: Arc<Mutex<Vec<String>>>,
+}
+
+#[async_trait]
+impl JobKind for StopKind {
+    fn name(&self) -> &str {
+        "stop-kind"
+    }
+
+    fn resumable(&self) -> bool {
+        true
+    }
+
+    async fn run_step(&self, _claim: &DeviceClaim, step: &str) -> Result<(), DriverError> {
+        self.log.lock().unwrap().push(step.to_owned());
+        let fail = {
+            let mut left = self.failures.lock().unwrap();
+            if *left > 0 {
+                *left -= 1;
+                true
+            } else {
+                false
+            }
+        };
+        if fail { Err(self.stop.clone()) } else { Ok(()) }
+    }
+}
+
+fn stop_job_timing() -> JobTiming {
+    JobTiming {
+        step_timeout: Duration::from_secs(60),
+        backoff: Backoff {
+            first: Duration::from_millis(1),
+            cap: Duration::from_millis(5),
+        },
+    }
+}
+
+fn port(text: &str) -> atlas_usb::PortPath {
+    text.parse().unwrap()
+}
+
+#[tokio::test]
+async fn a_write_that_may_have_applied_ends_the_job_as_unknown_and_is_not_tried_again() {
+    let dir = tempfile::tempdir().unwrap();
+    let events = Events::new(256);
+    let mut rx = events.subscribe();
+    let calls = log();
+    let stop = DriverError::Flash(atlas_usb::Outcome::Absent(atlas_usb::Absent {
+        port: port("1-2"),
+        looked_for: None,
+        during: "writing the image".into(),
+        waited: Duration::from_secs(5),
+        may_have_applied: true,
+    }));
+    let jobs = Jobs::open(
+        dir.path().join("jobs.json"),
+        vec![Arc::new(StopKind {
+            stop,
+            failures: Mutex::new(1000),
+            log: Arc::clone(&calls),
+        })],
+        events.clone(),
+        stop_job_timing(),
+        DeviceHolds::new(),
+    )
+    .await
+    .unwrap();
+    let id = jobs
+        .submit("stop-kind", DeviceClaim::none(), steps(&["write"]))
+        .await
+        .unwrap();
+    let job = wait_for_job(&mut rx, id, |job| {
+        matches!(job.status, JobStatus::Unknown { .. })
+    })
+    .await;
+    match &job.status {
+        JobStatus::Unknown { reason, checking } => {
+            assert!(reason.contains("absent"), "{reason}");
+            assert!(checking.is_none());
+        }
+        other => panic!("expected Unknown, got {other:?}"),
+    }
+    time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(
+        calls.lock().unwrap().len(),
+        1,
+        "a write is never sent twice"
+    );
+    jobs.shutdown();
+}
+
+#[tokio::test]
+async fn a_refusal_of_the_identity_on_the_port_is_settled_and_the_job_fails_with_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let events = Events::new(256);
+    let mut rx = events.subscribe();
+    let calls = log();
+    let stop = DriverError::Flash(atlas_usb::Outcome::Refused(atlas_usb::Refused {
+        by: atlas_usb::Party::Host,
+        reason: atlas_usb::Reason::WrongIdentity {
+            location: port("1-2"),
+            expected: atlas_usb::UsbId {
+                vendor: 0x1d6b,
+                product: 0x0100,
+            },
+            found: atlas_usb::UsbId {
+                vendor: 0x2e8a,
+                product: 0x000c,
+            },
+        },
+    }));
+    let jobs = Jobs::open(
+        dir.path().join("jobs.json"),
+        vec![Arc::new(StopKind {
+            stop,
+            failures: Mutex::new(1000),
+            log: Arc::clone(&calls),
+        })],
+        events.clone(),
+        stop_job_timing(),
+        DeviceHolds::new(),
+    )
+    .await
+    .unwrap();
+    let id = jobs
+        .submit("stop-kind", DeviceClaim::none(), steps(&["flash"]))
+        .await
+        .unwrap();
+    let job = wait_for_job(&mut rx, id, |job| {
+        matches!(job.status, JobStatus::Failed { .. })
+    })
+    .await;
+    match &job.status {
+        JobStatus::Failed { reason } => {
+            assert!(
+                reason.contains("2e8a:000c") && reason.contains("nothing was opened"),
+                "{reason}"
+            );
+        }
+        other => panic!("expected Failed, got {other:?}"),
+    }
+    assert_eq!(calls.lock().unwrap().len(), 1);
+    jobs.shutdown();
+}
+
+#[tokio::test]
+async fn a_deaf_device_before_any_write_is_retried_like_any_transient_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let events = Events::new(256);
+    let mut rx = events.subscribe();
+    let calls = log();
+    let stop = DriverError::Flash(atlas_usb::Outcome::Deaf(atlas_usb::Deaf {
+        port: port("1-2"),
+        expected: None,
+        sent: "the hello".into(),
+        waited: Duration::from_secs(5),
+        may_have_applied: false,
+    }));
+    let jobs = Jobs::open(
+        dir.path().join("jobs.json"),
+        vec![Arc::new(StopKind {
+            stop,
+            failures: Mutex::new(2),
+            log: Arc::clone(&calls),
+        })],
+        events.clone(),
+        stop_job_timing(),
+        DeviceHolds::new(),
+    )
+    .await
+    .unwrap();
+    let id = jobs
+        .submit("stop-kind", DeviceClaim::none(), steps(&["hello"]))
+        .await
+        .unwrap();
+    let job = wait_for_job(&mut rx, id, |job| job.status == JobStatus::Done).await;
+    assert_eq!(job.completed, 1);
+    assert_eq!(
+        calls.lock().unwrap().len(),
+        3,
+        "two deaf answers, then one success"
+    );
+    jobs.shutdown();
+}
