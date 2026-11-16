@@ -114,9 +114,9 @@ impl Relay {
 }
 
 /// The session waits at most 2 s for a short call's answer (`DIRECT_WAIT`), and a later answer
-/// comes back as `NotFinished` with the run asked to stop. Under load that happens to a call that
-/// is correct and only slow, so the tests make the call again: for a call that is safe to repeat
-/// (`list`, `set_default`, `set_starred`, `set_keep`). Every answer other than `NotFinished` is
+/// comes back as `NotFinished` (a read keeps its run on the board for the next call). Under load
+/// that happens to a call that is correct and only slow, so the tests make the call again: for a
+/// call that is safe to repeat (`list`, `set_default`, `set_starred`, `set_keep`). Every answer other than `NotFinished` is
 /// returned as it is, so a refusal is still checked as the board's words. Bounded by the sim's
 /// [`DEADLINE`].
 pub async fn answered<T, Fut>(what: &str, mut call: impl FnMut() -> Fut) -> Result<T, SlotError>
