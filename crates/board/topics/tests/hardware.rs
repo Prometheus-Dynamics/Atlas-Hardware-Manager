@@ -484,7 +484,7 @@ async fn a_board_that_refuses_describe_shows_its_devices_as_not_available_until_
 /// once. The refresh's own count is kept: one ask per device.
 #[tokio::test]
 async fn a_refresh_whose_session_fails_asks_again_only_the_devices_that_have_not_answered() {
-    let dir = scratch("refresh-session");
+    let dir = scratch("refresh");
     let node = start(&dir, None);
     node.refuse_describe(true);
     let sessions = Sessions::with_call_wait(Arc::new(NoPause), Duration::from_secs(5));
