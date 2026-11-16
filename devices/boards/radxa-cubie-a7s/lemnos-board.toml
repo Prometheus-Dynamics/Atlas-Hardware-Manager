@@ -1,9 +1,9 @@
-# The Radxa Cubie A7S's Lemnos board file (C1, the bench image). Untested on board. Built from Lemnos pr/BB1b at e2e45ce7,
+# The Radxa Cubie A7S's Lemnos board file (C1, the bench image). Untested on board. Built from Lemnos 31e0f736 (BB1b, merged to next),
 # its testing/boards/sun60i-a733-slots.toml (the bench-board slot declarations), with THIS board's id and the rules below.
 # Every fact cites its source. DERIVED: from source, not run. UNVERIFIED: no board has run it.
 #
 # Named by this board's [descriptions] lemnos (board.toml). The product installs it as /etc/lemnos/board.toml.
-# lemnos-ctl validate / tree at e2e45ce7 has NOT been run on this file (no build is run in this PR).
+# lemnos-ctl validate / tree at 31e0f736 has NOT been run on this file (no build is run in this PR).
 format = "lemnos.board"
 schema_version = 1
 
@@ -45,7 +45,7 @@ id = "slots"
 driver = "system-slots"
 config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", boot_sources = ["/soc@0/mmc@4020000=/soc@0/mmc@4020000"], uboot_env_size = 0x8000, uboot_env_mmc_index = 0, uboot_usb_vendor = 0x1209, uboot_usb_product = 0x0001 }
 
-# The Lemnos gadget on the A733 device port (pr/BB1b e8472620: socs/sun60i-a733.toml [controllers.usb-otg0], kind
+# The Lemnos gadget on the A733 device port (Lemnos 31e0f736 (BB1b, merged to next): socs/sun60i-a733.toml [controllers.usb-otg0], kind
 # usb-peripheral, path /soc@0/usb@4100000, sysfs 4100000.usb). The port is J16 (USB-C 1, the 5 V input), the MUSB controller,
 # dr_mode peripheral (series fe0a8ed, a733-usb0-gadget). Form as the ZERO 3E's (Z1: [[hardware]] name udc:..., controller,
 # role peripheral; the gadget device uses the udc, identity from the identity device). The NCM interface is lemnos0, which

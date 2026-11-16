@@ -28,35 +28,21 @@ impl Pause for NoPause {
     }
 }
 
-/// Every name the session test files give `scratch`, the worst socket path among them fits
-/// `SUN_LEN`, and the CI build path would not (the reason scratch dirs are not under it).
+/// A name of any length gives a node directory whose socket path fits a Unix socket, and the
+/// readable name is kept in the directory. The path is checked before anything binds.
 #[test]
-fn every_socket_path_fits_sun_len() {
-    let longest = common::NAMES
-        .iter()
-        .map(|name| name.len())
-        .max()
-        .unwrap_or(0);
-    let worst = common::worst_socket_len(longest);
+fn a_long_name_still_gives_a_socket_that_fits() {
+    let name = "session-".to_owned() + &"n".repeat(200);
+    let dir = common::scratch(&name);
+    let socket = common::socket_in(&dir);
     assert!(
-        worst <= common::SUN_PATH_MAX,
-        "the longest socket path would be {worst} bytes (SUN_LEN allows {}): shorten TMPDIR or the longest name",
-        common::SUN_PATH_MAX
+        atlas_types::socket::check_socket_path(&socket).is_ok(),
+        "{socket:?}"
     );
-    let ci_base = "/home/runner/work/Atlas-Hardware-Manager/Atlas-Hardware-Manager/target/tmp";
-    let under_ci = ci_base.len() + "/session-".len() + longest + "/orion.sock".len();
-    assert!(
-        under_ci > common::SUN_PATH_MAX,
-        "the CI build path must be too long for a socket here ({under_ci} bytes)"
+    assert_eq!(
+        std::fs::read_to_string(dir.join(atlas_types::socket::NAME_FILE)).expect("the name"),
+        name
     );
-    for name in common::NAMES {
-        let socket = common::socket_in(&common::scratch(name));
-        assert!(
-            socket.as_os_str().len() <= common::SUN_PATH_MAX,
-            "{name}: socket path {socket:?} is {} bytes",
-            socket.as_os_str().len()
-        );
-    }
 }
 
 fn start(dir: &Path, port: Option<u16>) -> SimNode {

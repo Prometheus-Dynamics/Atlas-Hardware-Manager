@@ -1,21 +1,22 @@
-# Lemnos's packaging for an image with systemd, at Lemnos pr/BB1b e8472620: the units, sysusers, udev rules and
+# Lemnos's packaging for an image with systemd, at Lemnos Lemnos 31e0f736 (BB1b, merged to next): the units, sysusers, udev rules and
 # settings files, at the paths Lemnos's packaging/README.md gives (the "one privilege path": no setcap, no xattrs, no
 # User= in the units; lemnosd starts as root and drops itself). Board-neutral.
 #
 # This is the C1 copy of the shared components/lemnos (which is pinned at f4a295c6 for the Raze). It is pinned to the
 # BB1b rev because the bench-board slot declarations (the U-Boot form, BB1b) exist only there. One Lemnos commit per
-# product: all five Lemnos components of this product carry e8472620. TODO: when BB1b merges, move this product to the
-# merged rev and delete these copies in favour of the shared components.
+# product: all five Lemnos components of this product carry 31e0f736 (BB1b, merged to next: the same rev the shared components
+# take). The copies stay product-local only because the A7S needs the bench-board slot declarations, which the shared
+# components' rev (Raze, f4a295c6) does not have; they follow the same rev as the rest of the product.
 #
 # Not installed here: the BusyBox init files (this image has systemd); the Raze's lemnos-orion-links drop-in (the
 # A7S has no gadget device in its board file, so no LEMNOS_ORION_LINKS line).
 version = 1
 name = "lemnos"
-description = "Lemnos packaging for systemd (pr/BB1b e8472620): the lemnosd and lemnos-orion units, the lemnos and lemnos-orion users, the device-node rules, the settings files"
+description = "Lemnos packaging for systemd (Lemnos 31e0f736 (BB1b, merged to next)): the lemnosd and lemnos-orion units, the lemnos and lemnos-orion users, the device-node rules, the settings files"
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "e847262064ee1e88c5277592e6705ab46eca0670"  # Lemnos pr/BB1b e8472620 (C1 bench image)
+ref = "31e0f736a334260a7df2ea86bcfa358e9a640f08"  # Lemnos Lemnos 31e0f736 (BB1b, merged to next) (C1 bench image)
 
 [[install]]
 from = { source = "src", path = "packaging/systemd/lemnosd.service" }

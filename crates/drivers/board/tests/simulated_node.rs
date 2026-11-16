@@ -5,7 +5,7 @@
 #![cfg(target_os = "linux")]
 
 use std::net::TcpListener;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use std::thread;
@@ -48,8 +48,8 @@ async fn paused_beyond(pause: &Delays, count: usize) {
     .expect("the monitor backed off");
 }
 
-fn scratch(name: &str) -> PathBuf {
-    Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("board-{name}"))
+fn scratch(name: &str) -> atlas_sim_node::socket::NodeDir {
+    atlas_sim_node::socket::node_dir(name).unwrap_or_else(|error| panic!("{name}: {error}"))
 }
 
 fn start(dir: &Path, kind: &Kind, port: Option<u16>) -> SimNode {

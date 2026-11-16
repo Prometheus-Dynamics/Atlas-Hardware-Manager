@@ -72,3 +72,29 @@
   - `ok  family  devices/families/sun60i/family.toml`
 - `gaia lock` and `gaia plan`: see the PR text (pasted from the real run).
 - The gate: see the report; it is not claimed to pass.
+
+## PL2 (USB0-DRVVBUS): J4's VBUS, no hog (coordinator ruling)
+
+PL2 switches J4, the USB 3 host Type-C, which the product image needs for USB cameras. No output-low hog is written (cancelled by the coordinator; the earlier hog plan is withdrawn).
+
+Schematic V1.10 (dl-a7s-schematic/radxa_cubie_a7s_schematic_v1.10.pdf): sheet 7 (GPIO) puts PL2 on the pin with function list `PL2/S-UART1-TX/S-UART0-TX/S-TWI1-SDA/S-PWM0-0/PL-EINT2`; sheet 12 (TYPE C) routes `USB0-DRVVBUS` through R79 (0 R) to the EN of U2, SGM2576YN5G_TR, whose output is `VBUS_USB` on J4; sheet 13 (USBC0_T-CARD) puts J16's VBUS pins on `VCC5V0`, undriven (the input), so J16 stays `vbus_undriven`.
+
+The vendor regulator (DockSeed series fe0a8ed, patches/a733-a7s-usbc/arm64-dts-allwinner-a733-cubie-a7s-enable-the-usb-c-port.patch, lines 45-53 of the hunk at `@@ -67,6 +67,27 @@`):
+
+    reg_usbc_vbus: regulator-usbc-vbus {
+        compatible = "regulator-fixed";
+        regulator-name = "usbc-vbus";
+        regulator-min-microvolt = <5000000>;
+        regulator-max-microvolt = <5000000>;
+        gpio = <&r_pio 0 2 GPIO_ACTIVE_HIGH>; /* PL2 */
+        enable-active-high;
+    };
+
+- regulator-always-on: NOT set on this node. Its later hunks (a7s-5v-sys, a7s-usb-hub, dp) add only `vin-supply`.
+- regulator-boot-on: NOT set anywhere in the series (grep of patches/ finds none).
+- Consumer: the HUSB311 Type-C controller, `vbus-supply = <&reg_usbc_vbus>` (the typec@4e node, same patch, `data-role = "host"`, `power-role = "source"`). The regulator is enabled only when the controller asks for VBUS.
+- The series' usb1 VBUS is a different regulator: `usb1_vbus-supply = <&reg_usb1_vbus>` (on PM5, not PL2). The brief's "reg_usb_vbus on PL2 as usb1's vbus-supply" does not match the series; PL2 belongs to reg_usbc_vbus, the J4 controller's supply.
+
+Result: nothing to remove. The image builds the whole series (the family's `patches` lists the full directory), and neither property is set on the node, so no patch is written here.
+
+Step 5 (apply with --fuzz=0): not run here, because the applied kernel tree is not on disk; Gaia's strict build is the apply check.

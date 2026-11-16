@@ -1,5 +1,5 @@
-# Planned, not built. Cannot build today: the TF-A, U-Boot and kernel patch series this family names are applied by nothing.
-# Allwinner A733 (sun60i) family: Radxa Cubie A7A, A7S and A7Z. aarch64 Linux.
+# Planned, not built. The TF-A, U-Boot and kernel patch series are now declared (`patches`, below; Gaia eae34d7 applies
+# them), but nothing has been built with them. Allwinner A733 (sun60i) family: Radxa Cubie A7A, A7S and A7Z. aarch64 Linux.
 #
 # CANDIDATE SOURCES, ALL UNVERIFIED, NEVER BOOTED ON BOARD (2026-11-13). Every pin below is a full
 # commit read from its repository on 2026-11-13. "UNVERIFIED" on a pin means no board has run it.
@@ -110,10 +110,14 @@ patches = [{ source = "a733-kernel-series", path = "patches" }]
 [bootloader]
 source = "u-boot"
 fragments = ["assets/u-boot.fragment"]
+# DockSeed's 18 U-Boot patches (patches/u-boot/series in a733-bootchain). Strict application.
+patches = [{ source = "a733-bootchain", path = "patches/u-boot" }]
 
 [bootloader.trusted_firmware]
 source = "tf-a"
 platform = "sun60i_a733"
+# DockSeed's 17 TF-A patches (patches/tf-a/series in a733-bootchain): they add plat/allwinner/sun60i_a733.
+patches = [{ source = "a733-bootchain", path = "patches/tf-a" }]
 
 # The boot ROM loads the SPL and U-Boot from the card at 128 KiB (sector 256). They are one file,
 # u-boot-sunxi-with-spl.bin, which the OS build makes. UNVERIFIED: the 128 KiB rule is from DockSeed's
