@@ -353,6 +353,15 @@ async fn a_description_is_asked_once_and_again_only_when_its_generation_moves() 
     connected(&handle).await;
     let hardware = Hardware::new(handle, link());
     read_until(&hardware, "every reading", all_read).await;
+    // The connect-time ask is counted once its answer is in (the description is described): the
+    // reading does not wait for the description, so counting before this would race the ask.
+    read_until(&hardware, "the descriptions of both devices", |snapshot| {
+        ["lemnos.vane0", "lemnos.gauge1"].iter().all(|name| {
+            device(snapshot, name)
+                .is_some_and(|device| matches!(device.description, DescriptionState::Described(_)))
+        })
+    })
+    .await;
     let asked = |name: &str| node.runs_started(&format!("{name}.call"));
     assert_eq!(asked("lemnos.vane0"), 1, "asked once at connect");
     assert_eq!(asked("lemnos.gauge1"), 1);
