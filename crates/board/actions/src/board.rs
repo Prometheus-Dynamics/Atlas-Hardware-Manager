@@ -209,13 +209,7 @@ impl BoardActions {
         let sent = self
             .handle
             .with_bridge(move |orion| {
-                let mut run = orion.run(&ActionCall {
-                    name: &owned,
-                    target: Target::Node(node_name),
-                    args: &encoded,
-                    deadline_ms: 0,
-                    detached: true,
-                })?;
+                let mut run = orion.run(&detached_call(&owned, node_name, &encoded))?;
                 let issued = Issued {
                     call: run.call(),
                     session,
@@ -600,6 +594,23 @@ fn ended(finished: Finished) -> Result<Done, ActionError> {
     }
 }
 
+/// The node-side deadline of every detached run, in milliseconds. A real node refuses a detached run with no
+/// deadline (`NoDeadline`), so a detached start always carries this one: 24 hours, longer than any install or
+/// trial. A run the node ends at its deadline is `TimedOut` with code 110.
+pub const DETACHED_DEADLINE_MS: u64 = 24 * 60 * 60 * 1000;
+
+/// The call that starts `name` detached on `node`, with its deadline. The only place a detached start is built.
+#[must_use]
+pub fn detached_call<'a>(name: &'a str, node: NodeName, args: &'a [u8]) -> ActionCall<'a> {
+    ActionCall {
+        name,
+        target: Target::Node(node),
+        args,
+        deadline_ms: DETACHED_DEADLINE_MS,
+        detached: true,
+    }
+}
+
 /// What a follow's refusal from the node means: a run the node restarted past is gone (its outcome is
 /// unknown), a number the node does not have is no such run, and any other refusal keeps the board's words.
 fn refusal_seen(error: CoreError, detail: String) -> Seen {
@@ -773,6 +784,17 @@ mod tests {
             name: "install_file".to_owned(),
             handle: Arc::new(Mutex::new(None)),
         }
+    }
+
+    #[test]
+    fn every_detached_start_carries_a_deadline_the_node_accepts() {
+        // A real node refuses a detached run with no deadline (NoDeadline): the start must never be built with 0.
+        let node: NodeName = "node.local".parse().expect("a valid node name");
+        let call = detached_call("install_file", node, b"args");
+        assert!(call.detached, "a start is detached");
+        assert_eq!(call.deadline_ms, DETACHED_DEADLINE_MS);
+        assert!(call.deadline_ms > 0, "no detached start without a deadline");
+        assert_eq!(DETACHED_DEADLINE_MS, 86_400_000, "24 hours");
     }
 
     #[test]
