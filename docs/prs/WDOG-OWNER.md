@@ -58,9 +58,9 @@ Run: `scripts/check-watchdog-owner.sh` (exit 0, no FINDING).
 
 rock-4d-base is deleted in this PR (below).
 
-## Results on the bench branches (read-only; origin/pr/Z2, pr/R1, pr/C1 extracted with git archive, not changed)
+## What this rule will say when the bench branches take next (origin/pr/Z2, pr/R1, pr/C1, read-only; extracted with git archive, not changed)
 
-Run against each branch's devices/ tree with this PR's rule, before any merge of this PR into them.
+Run against each branch's devices/ tree with this PR's rule. The branches are not merged with this PR; this is the result when they take next. The U-Boot arming FINDING below is the branches' to resolve (Z2 is removing every rk35xx product that its U-Boot line arms without an owner).
 
 | Branch | Product | Result |
 |---|---|---|
