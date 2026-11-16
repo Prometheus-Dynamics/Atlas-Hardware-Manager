@@ -301,3 +301,85 @@ libdbus). The ELF scan decides by `readelf -d` for `Shared library: [libdbus-1.s
 are the ELF magic.
 
 Gaia's own packed rootfs.tar (its current run's fakeroot-stage result): requested from Gaia; not in this session.
+
+## 14. CORRECTION to §10 and §11: who mounts /data, and when (Lemnos at the pinned rev 31e0f736, read by git form)
+- My earlier wording "nothing on raze-base mounts /data" was about devices/components only. It is WRONG as a statement about
+  the board: Lemnos's slot-init mounts it. Read: service/slot-init/src/boot.rs:1268-1284 — the data partition (ext4,
+  `noatime,errors=remount-ro`) is mounted at `self.layout.data` (`/data` by default, drivers/system-slots/src/lib.rs:231,
+  named-files lib.rs:79), in the INITRAMFS, before the root switch. `data_mounted` is set (boot.rs:1284).
+- Then boot.rs:1392-1412: the slot's EROFS root is mounted at `newroot`, and the data mount is MOVED into it:
+  `move_mount(&self.layout.data, &newroot/data)` (boot.rs:1405). The move fails with "no /data in the image?" when the
+  image has no `/data` directory (boot.rs:1405-1407). So the raze image MUST contain an empty `/data` directory; nothing in
+  devices/components/raze-base-files creates it (only the DEV-ONLY dev-bringup-hostkey does, data-mountpoint). OPEN, to add
+  in the same commit as the journal, or Lemnos's requirement stated by Lemnos.
+- The driver (system-slots) does NOT mount /data: it reads the mount table to find the device mounted at `data`
+  (drivers/system-slots/src/lib.rs:1198-1210, /proc/self/mountinfo). So: slot-init mounts, lemnosd reads.
+- Timing: /data is mounted BEFORE systemd starts (the initramfs), and it is inside the slot root from switch_root on. A
+  journal path on /data is therefore available to every unit of the slot, from the first unit, with no ordering needed.
+  Slots live there too: `<data>/slots/<id>.erofs` (Lemnos docs/slots.md:15-17), so the journal shares the partition with the
+  slot images (see §16).
+- Correction to §11: "Orion's state is already on /data": true (orion/files/orion.conf:13-19). The reason it is on /data is the
+  one above. §11's "nothing mounts /data" is replaced by this section.
+
+## 15. Built-root rule: the one derivation, the Also= closure, the open questions
+- expected enabled set = the product's preset `enable` lines ∪ every `[[services]] enable = true` of the components the
+  product's images use (Gaia's answer: [[services]] links are a LATER Gaia step, gaia.tree.services, Gaia
+  crates/nodes/tree/src/services.rs:25-103, a layer of symlinks in etc/systemd/system/*.wants merged over the OS root).
+- Two claims refused: a unit in the preset AND in a component's [[services]] (two owners of one link path); a unit masked in
+  the tree AND expected (its [[services]] or a preset line): the mask wins, the link is lost. Both have self-tests.
+- Masked units are not counted as enabled (systemd refuses a masked unit's link).
+- Preset (10-raze-base.preset), now: `enable` for the Also= units of systemd-networkd (below); `disable` for wait-online
+  (masked, not counted); `disable *` for the rest. The lemnosd/orion/networkd/getty units are NOT in the preset: their
+  components own them (`[[services]]`).
+- Also= closure, from the units of systemd 258.7 (the only Also= in the closure of the units we enable):
+  - systemd-networkd.service.in:59 `Also=systemd-networkd.socket systemd-networkd-varlink.socket` → both listed `enable`.
+  - systemd-networkd.service.in:64 `Also=systemd-network-generator.service` → listed `enable`.
+  - systemd-networkd.service.in:70 `Also=systemd-networkd-wait-online.service` → listed `disable` (masked by post-build.sh).
+  - The Also= targets have no further Also= (checked: networkd.socket, varlink.socket, network-generator.service.in,
+    wait-online.service.in, wait-online@.service.in). serial-getty@.service.in:54 and getty@.service.in:64 have WantedBy only.
+  - NOT CHECKED: Lemnos's and Orion's own units (their [Install] Also=): their unit files are not read here; Lemnos's
+    packaging/systemd is at its pinned rev, not read. Needs reading before the pin.
+- wait-online outcome the rule expects: masked ⇒ no wants link ⇒ not counted. Whether the Also= link is still made when the
+  mask exists: NEEDS-THE-BUILD (the enable path in install.c was not read). If a link appears, the rule reports it as
+  "enabled but in neither" (the expected set does not list it), which is the detection we want.
+- OPEN (NEEDS-GAIA, asked as the coordinator relayed): none left on the services question; Gaia's answer is recorded above.
+
+## 16. Journal on the data partition: what is decided, and what is NOT (prepared, not wired)
+Not wired: no unit, tmpfiles line or conf is added to any fragment in this PR. The coordinator said: prepare, or describe the
+exact files. These are the conditions, each with what I can establish now:
+1. Hard cap and rate limit. Data partition size: boards/raze/board.toml:66-72 gives the data partition the LAST place and NO
+   size; its size is the rest of the disk. The smallest data partition we ship is therefore NOT FOUND here (the bench boards
+   on their branches are not read). So the cap cannot be chosen against a number yet. What is known: the slot images live on
+   the same partition (Lemnos docs/slots.md:15-17; a raze root image is 18,178,048 bytes at lzma, docs of §PR B20 / product
+   comment: devices/products/raze-base/product.toml:61-62), so the journal must leave room for at least the slots, the
+   slot store (the trial, previous and default slots: slots.md:23) and the state. Proposal, to be set by the coordinator:
+   SystemMaxUse=16M (the 60-board-journald.conf value) and SystemKeepFree = slot store headroom (NEEDS the slot store's
+   peak size, Lemnos slots.md). Rate limit: RateLimitIntervalSec=30s, RateLimitBurst=200 (journald.conf(5) defaults are
+   30s/10000, which is too loose for a small partition; the value is a proposal, not verified against journald here).
+2. Flash wear. SyncIntervalSec is a journald.conf setting (default 5m); journald fsyncs immediately on CRIT/ALERT/EMERG
+   messages (journald.conf(5); NOT verified in the 258.7 source here). The steady-state write rate on a quiet robot is an
+   ESTIMATE that needs a board: what our units log per minute is not measured. Method: count the lines our units produce on
+   a quiet board for an hour (journalctl --disk-usage before/after), then multiply. Mark: ESTIMATE, NEEDS-THE-BOARD.
+3. Early boot. /data is mounted in the initramfs (§14), so the journal can write to /var/log/journal from the first unit IF
+   the directory exists at that point. Before that (the initramfs), the journal does not run. So there is no flush unit
+   needed for the boot path; systemd-journal-flush.service is only needed when the journal started volatile (/run) and is
+   moved later. Our layout does not need it. How /var/log/journal gets onto the data partition: a symlink in the image,
+   /var/log/journal -> /data/journal, created at build time (the root is read-only, /var is a real directory in the image:
+   Buildroot's var factory is off for raze-base, see the doc §10), plus a tmpfiles line `d /data/journal 2755 root systemd-journal`
+   so the target exists. Owner: the tmpfiles line and the symlink are image content (overlay or a component), not a unit.
+   The mount unit: none needed (the mount is slot-init's, §14). NEEDS-BUILD: whether journald follows the symlink when its
+   target is created by tmpfiles at boot (it should, as a directory path, unverified).
+4. Slot switch and rollback. Nothing in the slot switch path was read to wipe /data: the slot-init move keeps the data mount
+   (boot.rs:1405-1411). The journal is on data, not in the slot, so a slot change does not remove it. Journal files written by
+   slot A are readable after booting slot B only if the machine-id is the same, or with `journalctl -D /data/journal/<id>` /
+   `--merge`. The machine-id: Buildroot writes an EMPTY /etc/machine-id (systemd.mk:673-675, `touch`), in a read-only root.
+   What systemd does with an empty machine-id on a read-only root: NEEDS-THE-BUILD (it may generate one per boot, in which case
+   each boot writes a new /data/journal/<id>/ directory; the old ones stay readable with --merge). The comment in
+   60-board-journald.conf refers to "board-machine-id.service" to keep one directory: NO such unit exists in devices/ (grep:
+   the comment is the only mention). So the stable-id promise in that comment is UNIMPLEMENTED: it would need that unit
+   (the coordinator's call: a unit that writes /etc/machine-id once onto /data, or a fixed id in the image).
+Found, not fixed here: (a) 60-board-journald.conf's /data claim is unimplemented (no symlink, no tmpfiles line, no
+board-machine-id.service); (b) the image needs an empty /data directory for the slot-init move (boot.rs:1405-1407), which
+raze-base-files does not create; (c) machine-id is an empty file from Buildroot's hook (systemd.mk:673-675).
+The journal direction stays as the coordinator confirmed in principle; conditions 1 (the sizes) and 4 (the machine-id) are the
+two that can change the direction, and both need the build or the bench boards.

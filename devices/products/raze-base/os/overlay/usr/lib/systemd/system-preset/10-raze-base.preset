@@ -1,36 +1,27 @@
-# The raze-base image's preset: the units this image is MEANT to run, and nothing else (ruling A, PR RAZE-DBUS-HELPER).
+# The raze-base image's preset (PR RAZE-DBUS-HELPER): the units preset-all enables, and nothing else.
 #
-# Read by `systemctl preset-all` in the fakeroot stage (package/systemd/systemd.mk:836 via ROOTFS_PRE_CMD_HOOKS,
-# fs/common.mk:181-182). INERT TODAY: Gaia takes the root from output/target, where presets never run; it takes effect
-# with Gaia's fixed root (the fakeroot-stage result), pinned in the same commit that wires os/post-fakeroot.sh.
+# OWNERSHIP, one owner per unit: a unit a component declares in [[services]] is enabled by Gaia's services layer
+# (gaia.tree.services, Gaia crates/nodes/tree/src/services.rs:25-103: a layer of symlinks in etc/systemd/system/*.wants,
+# merged over the OS root, never written into Buildroot's target). So lemnosd, lemnos-orion, orion-comm, orion-node,
+# lemnos0-address, systemd-networkd and serial-getty@ttyGS0 are NOT listed here: the components own them
+# (components/lemnos/component.toml:74-80, components/orion/component.toml:102-108,
+# components/raze-base-files/component.toml:39-53). The build refuses a unit listed both here and in [[services]].
 #
-# How systemd 258.7 reads it (systemd-258.7 src/shared/install.c, read by reading, not run):
-#   - the presets of /etc/systemd/system-preset and /usr/lib/systemd/system-preset are merged by file name (presets_find_config,
-#     :3292-3322, conf_files_list_strv); this file sorts ahead of 80-buildroot.preset, 80-orion.preset and 90-systemd.preset;
-#   - the FIRST line that matches a unit decides (query_presets, :3484-3520);
-#   - a unit no line names is ENABLED (query_presets, PRESET_UNKNOWN -> PRESET_ENABLE, :3504). So the last line disables the rest;
-#   - `disable` removes the unit's links (unit_file_preset, PRESET_DISABLE -> install_info_discover, :3636-3637).
-#
-# Each `enable` names a unit this image ships and wants. The reason follows it. `UNSURE:` lines are for the coordinator's
-# ruling; they are enabled here because systemd's Also= (systemd-258.7 units/systemd-networkd.service.in:59) would link them
-# when networkd is enabled, and removing them without a build is a guess.
+# Read by `systemctl preset-all` in the fakeroot stage (package/systemd/systemd.mk:836, fs/common.mk:181). Systemd 258.7 reads
+# the presets of /etc and /usr/lib merged by file name; the FIRST matching line decides (install.c:3484-3520), and a unit no
+# line names is ENABLED (install.c:3504). So the last line disables the rest.
+# INERT TODAY: Gaia takes the root from output/target, where presets never run; it takes effect with Gaia's fixed root.
 
-# -- the lemnos and orion units (Gaia [[services]] of the components; their links are Gaia's own, see the delta table) -----------
-enable lemnosd.service                    # components/lemnos/component.toml:74-76 (the Raze's controller)
-enable lemnos-orion.service               # components/lemnos/component.toml:78-80
-enable orion-comm.service                 # components/orion/component.toml:102-104 (SSH and the comm core)
-enable orion-node.service                 # components/orion/component.toml:106-108
+# -- systemd-networkd's Also= units (systemd-258.7 units/systemd-networkd.service.in:59 and :64). networkd itself is owned by
+#    raze-base-files [[services]]; these are listed so that preset-all enables exactly what networkd's [Install] links.
+enable systemd-networkd.socket            # part of systemd-networkd: its [Install] Also= (units/systemd-networkd.service.in:59)
+enable systemd-networkd-varlink.socket    # part of systemd-networkd: its [Install] Also= (units/systemd-networkd.service.in:59)
+enable systemd-network-generator.service  # part of systemd-networkd: its [Install] Also= (units/systemd-networkd.service.in:64)
 
-# -- networking: lemnos0 and networkd (components/raze-base-files) ------------------------------------------------------------
-enable lemnos0-address.service            # raze-base-files/component.toml:39-41 (writes the lemnos0 network file)
-enable systemd-networkd.service           # raze-base-files/component.toml:43-45 (lemnos0 DHCP to the host)
-enable systemd-networkd.socket            # UNSURE: Also= of networkd (units/systemd-networkd.service.in:59), varlink/socket use
-enable systemd-networkd-varlink.socket    # UNSURE: Also= of networkd (units/systemd-networkd.service.in:59)
-disable systemd-network-generator.service # Also= of networkd (:64); generates networkd files from the kernel command line, not used
-disable systemd-networkd-wait-online.service # Also= of networkd (:70); the wait the mask in post-build.sh also covers (see the doc)
+# -- the mask's unit: masked by post-build.sh, so NOT counted as enabled (a masked unit's link is refused). Listed so that
+#    preset-all's default (enable) cannot apply to it. Its [Install] Also= from networkd (units/systemd-networkd.service.in:70)
+#    would link it; whether the mask refuses that is NEEDS-THE-BUILD. The built-root rule expects it NOT enabled.
+disable systemd-networkd-wait-online.service
 
-# -- the console: the USB gadget's getty only (components/raze-base-files:51-53) ----------------------------------------------
-enable serial-getty@ttyGS0.service        # the one console; the security switch is its ExecCondition (30-security-console.conf)
-
-# -- everything else: off, including systemd's own presets (none of them is named above) ------------------------------------------
+# -- everything else: off (no rule names it, so preset-all's default would enable it).
 disable *

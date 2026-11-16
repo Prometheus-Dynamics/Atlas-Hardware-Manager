@@ -1864,6 +1864,22 @@ while IFS= read -r line; do
   esac
 done <<<"$watchdog_msg"
 
+# The built-root rule (PR RAZE-DBUS-HELPER): the enabled units of a built root equal the product's derived set (preset enable
+# lines plus components' [[services]]), and the accounts they run as exist. The same built trees as the watchdog rule
+# (ATLAS_BUILT_TREES, NAME=DIR); with none it prints NOT CHECKED. Both layers print together here.
+built_root_args=()
+for t in ${ATLAS_BUILT_TREES:-}; do built_root_args+=(--built "$t"); done
+built_root_status=0
+built_root_msg=$("$repo/scripts/check-built-root.sh" ${built_root_args[@]+"${built_root_args[@]}"} 2>&1) || built_root_status=$?
+[ "$built_root_status" -eq 0 ] || bad "built-root rule failed (scripts/check-built-root.sh)"
+while IFS= read -r line; do
+  case $line in
+    *FAIL*) bad "${line#check-built-root: }" ;;
+    "") ;;
+    *) echo "check-devices: $line" ;;
+  esac
+done <<<"$built_root_msg"
+
 if [ -n "$unbuilt" ]; then
   echo "check-devices: NOTE in no product yet, validated but never planned:$unbuilt"
 fi
