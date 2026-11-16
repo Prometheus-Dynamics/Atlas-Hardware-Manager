@@ -39,4 +39,4 @@ SUNXI_LIBDRAM = { source = "dlan17-pkg", path = "awbin/a733/ddr.bin" }
 # Ethernet: the gigabit GMAC (gmac210, its PHY is named MAE0621A-Q3C in B12's notes), built in by the family fragment.
 #
 # LED: the blue status LED is PJ26 (the series' gpio-leds; "PJ26" is in its comment). Radxa's page says it blinks
-# during a normal boot. The bring-up board's dts sets it to the heartbeat trigger (pending/cubie-a7-bringup/board).
+# during a normal boot. The bring-up board (cubie-a7-bringup, deleted in PADS: a copy of this board) set it to the heartbeat trigger.

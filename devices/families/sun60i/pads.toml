@@ -1,0 +1,11 @@
+# Pad-table statement for the sun60i family (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
+# The A733 boot chain (U-Boot and SPL) reads the board's pin and PIO bank setup from its device tree. Each board
+# states its own table, and the bank voltages, in its pads.toml.
+applies_pad_table = true
+
+# The SoC's full bank list (the rule needs every bank named, by the board: a voltage with its source, or "fixed by hardware,
+# per sheet N"). A733 PIO banks: the main pin controller has 11 banks from A (PA to PK), the R-domain controller has 2 from L
+# (PL, PM). Source: research/radxa-u-boot/drivers/pinctrl/sunxi/pinctrl-sunxi.c, sun60i_a733_pinctrl_desc (first_bank
+# SUNXI_GPIO_A, num_banks 11; around line 826) and sun60i_a733_r_pinctrl_desc (first_bank SUNXI_GPIO_L, num_banks 2; line 900).
+[banks.a733]
+names = "PA PB PC PD PE PF PG PH PI PJ PK PL PM"
