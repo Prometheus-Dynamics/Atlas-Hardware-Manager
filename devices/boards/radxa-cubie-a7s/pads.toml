@@ -1,17 +1,36 @@
 # Pad-table statement for the Cubie A7S (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
-# NOT COMPLETE: the rule needs every bank of the A733 named (family sun60i: PA PB PC PD PE PF PG PH PI PJ PK PL PM). Stated below:
-#   PE: VCC-PE, BLDO1 -> 1.8V (dts reg_bldo1 vcc-pe, Radxa U-Boot dts sun60i-a733-cubie-a7s.dts:178-183; schematic V1.10 sheet 4 BLDO1)
-#   PK: VCC-PK, BLDO1 -> 1.8V (same regulator; sheet 4 BLDO1 feeds VCC-PE, VCC-PK, VCC-MCSI)
-#   PD: VCC-PD, BLDO2 -> 1.8V (dts reg_bldo2 vcc-pd, lines 185-190; sheet 4 BLDO2)
-#   PJ: VCC-PJ, BLDO2 -> 1.8V (same regulator; sheet 4 BLDO2 feeds VCC-PD, VCC-LVDS0, VCC-PJ, VCC18-LCD)
-#   PC: VCC-PC, CLDO5 -> 1.8V (dts cldo5 vcc-pc, lines 240-244)
-#   PM: VCC-PM, CLDO1 -> 1.8V (dts cldo1 vcc-pm, lines 218-222)
-# NOT ESTABLISHED (refuses the board): PA, PB, PI (no rail label found on sheets 4, 7 or 8); PG, PH, PF (VCC18-PF), PL: the rail
-# labels are on sheet 7 (VCC-PG, VCC-PH, VCC18-PF, VCC-PL) and sheet 4 (VCC-PH, VCC-PL on ALDO1, which the dts names
-# vcc-mipi-dsi at 1.8 V: a conflict this session did not resolve). No regulator node gives their voltage.
-# Whose table: the Radxa U-Boot dts at 9da4b3e8 (research/radxa-u-boot/arch/arm/dts/sun60i-a733-cubie-a7s.dts). The DockSeed
-# series dts (fe0a8ed) is not on disk and is not cited.
+# Two sources, cross-checked bank by bank. Any DISAGREEMENT between them leaves the bank out (refused) until ruled:
+#   S = the DockSeed A7S series, /mnt/ssd-samsung/gaia/bsp/a733/a7s-linux-mainline/patches (rev fe0a8ed), the patch files below.
+#   R = the Radxa U-Boot dts at 9da4b3e8, research/radxa-u-boot/arch/arm/dts/sun60i-a733-cubie-a7s.dts.
+#   Sch = schematic V1.10 sheet 4 net names (dl-a7s-schematic PDF).
+# soc = "a733": the banks PA PB PC PD PE PF PG PH PI PJ PK PL PM (family sun60i, [banks.a733]).
 soc = "a733"
-source = "Radxa U-Boot dts sun60i-a733-cubie-a7s.dts at 9da4b3e8 (research/radxa-u-boot/arch/arm/dts/): reg_bldo1 vcc-pe (178-183), reg_bldo2 vcc-pd (185-190), cldo1 vcc-pm (218-222), cldo5 vcc-pc (240-244); net-to-bank from schematic V1.10 sheet 4 (BLDO1, BLDO2)"
+source = "DockSeed A7S series fe0a8ed (patches/ files cited per bank) cross-checked with Radxa U-Boot dts 9da4b3e8 (sun60i-a733-cubie-a7s.dts) and schematic V1.10 sheet 4 net names"
 derived_from_board = ""
-bank_voltages = { PC = "1.8V", PD = "1.8V", PE = "1.8V", PJ = "1.8V", PK = "1.8V", PM = "1.8V" }
+# PB  S: vcc-pb-supply = <&reg_swout2> (a733-a7s-bank-supplies/..add-the-pin-bank-supplies.patch:36); swout2 = "vcc-io" with no
+#       voltage in S (a733-power-a7s/..add-the-axp318w-pmic.patch:68-71). R: swout2 3.3V (sun60i-a733-cubie-a7s.dts:165-169). 3.3V.
+# PC  S: vcc-pc-supply = <&reg_cldo5> (..add-the-pin-bank-supplies.patch:37); cldo5 1.8V (..add-the-remaining-pin-bank-supplies.patch:80-82).
+#       R: cldo5 "vcc-pc" 1.8V (dts:240-244). AGREE: 1.8V.
+# PE  S: vcc-pe-supply = <&reg_bldo1> (..add-the-remaining-pin-bank-supplies.patch:46); bldo1 1.8V (same patch:102-105).
+#       R: bldo1 "vcc-pe" 1.8V (dts:178-183). AGREE: 1.8V.
+# PF  S: vcc-pf-supply = <&reg_swout2> "or VCC18-PF, see power-source" (..remaining...patch:47); the patch's text: PF switches
+#       between VCC-IO (SWOUT2, 3.3V, reset selection) and VCC18-PF (CLDO5, 1.8V) through its power-source. R: no node for PF.
+#       A range, switched by the pin controller's power-source selection (named by S, not a register). 1.8V to 3.3V.
+# PH  S: vcc-ph-supply = <&reg_swout2> (..add-the-pin-bank-supplies.patch:39). swout2 3.3V from R (dts:165-169). 3.3V.
+# PK  S: vcc-pk-supply = <&reg_bldo1> (..remaining...patch:51); bldo1 1.8V (above). Sch: BLDO1 feeds VCC-PK. R: none for PK.
+#       AGREE with the sheet net and bldo1 1.8V: 1.8V.
+# NOT STATED, sources disagree (refused until ruled):
+#   PD  S: vcc-pd-supply = <&reg_swout1> (..add-the-pin-bank-supplies.patch:38): swout1 = "vcc33-lcd", 3.3V from R (dts:158-164).
+#       R: bldo2 is named "vcc-pd" at 1.8V (dts:185-190, name line 189). S's own text says: "the VCC-PD ball is connected to
+#       VCC33-LCD through R251, not to BLDO2, whose output also carries a VCC-PD label". DISAGREEMENT: 3.3V (S) vs 1.8V (R).
+#   PG  S: vcc-pg-supply = <&reg_aldo1> (..describe-aldo1-as.patch:44); aldo1 "vcc-pl" 3.3V (..describe-aldo1-as.patch:61-64).
+#       R: aldo1 "vcc-mipi-dsi" 1.8V (dts:172-175). DISAGREEMENT on the ALDO1 voltage: 3.3V (S) vs 1.8V (R).
+#   PJ  S: vcc-pj-supply = <&reg_swout1> (..remaining...patch:50): "Bank PJ runs from VCC33-LCD (SWOUT1) with no series part".
+#       Sch: sheet 4 puts VCC-PJ on BLDO2 (1.8V). DISAGREEMENT: SWOUT1 3.3V (S) vs BLDO2 1.8V (Sch/R).
+#   PL  S: no vcc-pl-supply on r_pio (..remaining...patch:117: "Bank PL has no vcc-pl-supply on r_pio"), the rail is ALDO1
+#       "vcc-pl" at 3.3V (describe-aldo1-as.patch:61-64). R: ALDO1 at 1.8V. DISAGREEMENT (the ALDO1 voltage, as PG).
+#   PM  S: vcc-pm-supply = <&reg_aldo1> on r_pio (..remaining...patch:118), and S says "the net named VCC-PM on CLDO1 does not
+#       reach the SoC". R: cldo1 "vcc-pm" 1.8V (dts:218-222, name 221). DISAGREEMENT: ALDO1 3.3V (S) vs CLDO1 1.8V (R).
+# NOT ESTABLISHED (no source names a supply): PA, PI.
+bank_voltages = { PB = "3.3V", PC = "1.8V", PE = "1.8V", PF = "1.8V to 3.3V (pin-controller power-source select; reset to 3.3V VCC-IO)", PH = "3.3V", PK = "1.8V" }
+switched_by = "PF: the pin controller's power-source select (DockSeed series, a733-a7s-bank-supplies-2 patch, the PF comment), 1.8V (CLDO5, VCC18-PF) or 3.3V (SWOUT2, VCC-IO) after reset"

@@ -922,6 +922,19 @@ family_bank_names() {  # <family.toml> <soc> -> the bank names the family lists 
     /^\[/ { s = 0 }
     s && /^names *=/ { gsub(/^names *= *"|" *$/, ""); print; exit }' "$pf"
 }
+io_domain_nodes() {  # <assets dir>... -> "file:line" for each io-domains node definition not marked disabled within 8 lines
+  local d f n
+  for d in "$@"; do
+    [[ -d $d ]] || continue
+    while IFS= read -r f; do
+      while IFS= read -r n; do
+        if ! sed -n "${n},$((n+8))p" "$f" | grep -q 'status *= *"disabled"'; then
+          echo "$f:$n"
+        fi
+      done < <(grep -n -E '(io-domains|io_domains|io-voltage-domain)[^=;]*\{' "$f" | cut -d: -f1)
+    done < <(grep -rl -E '(io-domains|io_domains)' "$d" 2>/dev/null)
+  done
+}
 pads_rule() {  # <devices dir>
   local dev=$1 p b sec src derived bank name bname ff fam state reason applies soc names key val out=""
   local n k v found bad
@@ -958,8 +971,15 @@ pads_rule() {  # <devices dir>
       if [[ -z $reason ]]; then
         out+="FAIL $name: board $bname's pads.toml says no pad table is applied but gives no pad_table_reason: state the evidence for both the bootloader and the kernel"$'\n'
       fi
-      # The kernel side of the statement, checked against the kernel fragments the image builds with (the family's and the
-      # board's). The resolved .config exists only after Gaia's build, so the check reads fragments, not the resolved config.
+      # The kernel side of the statement, checked against the NODES (the io-domain driver applies nothing without a node). The
+      # check reads the dts sources this repository ships for the board and family (their assets/). The in-tree dts the image
+      # builds from is not in this repository, so the BUILT dtb is checked by Gaia's built-image check, not here.
+      nodes=$(io_domain_nodes "$(dirname "$b")/assets" "$(dirname "$ff")/assets")
+      if [[ -n $nodes ]]; then
+        out+="FAIL $name: board $bname states no pad table is applied, but a shipped dts enables an io-domains node: ${nodes//$'\n'/; }. The statement is false, so the bank voltages are required"$'\n'
+      fi
+      # Secondary: the fragments must not set the family's kernel_option (a driver with no node applies nothing; this only
+      # shows the option is unset in the fragments, not what the built image does).
       kopt=$(grep -E '^kernel_option *=' "$(dirname "$ff")/pads.toml" 2>/dev/null | sed -E 's/^kernel_option *= *"(.*)" *$/\1/' | head -1)
       if [[ -z $kopt ]]; then
         out+="FAIL $name: family $fam's pads.toml names no kernel_option, so board $bname's \"no table applied\" statement cannot be checked against the kernel"$'\n'
@@ -1123,6 +1143,18 @@ switched_by = "A: the SD card voltage regulator, 1.8V and 3.3V"'
   mkdir -p "$tmp/kset/devices/families/fam/assets"; printf 'CONFIG_FAKE_IODOMAIN=y\n' > "$tmp/kset/devices/families/fam/assets/k.fragment"
   if out=$(pads_rule "$tmp/kset/devices"); then echo "check-devices: self-test: a no-table statement with the kernel option set was not refused" >&2; rc=1
   elif [[ $out != *"sets CONFIG_FAKE_IODOMAIN=y"* || $out != *"board bd"* ]]; then echo "check-devices: self-test: the kernel-option refusal does not name the board and fragment: $out" >&2; rc=1; fi
+  # The node side: a shipped dts that enables an io-domains node makes the "no table applied" statement false; a disabled one is fine.
+  mk "$tmp/nodeon" true 'applies_pad_table = false
+pad_table_reason = "no table (test)"'
+  printf 'kernel_option = "FAKE_IODOMAIN"\n' >> "$tmp/nodeon/devices/families/fam/pads.toml"
+  mkdir -p "$tmp/nodeon/devices/boards/bd/assets"; printf '&pinctrl {\n\tpmu_io_domains: io-domains {\n\t\tstatus = "okay";\n\t};\n};\n' > "$tmp/nodeon/devices/boards/bd/assets/board.dtsi"
+  if out=$(pads_rule "$tmp/nodeon/devices"); then echo "check-devices: self-test: a no-table statement with an enabled io-domains node was not refused" >&2; rc=1
+  elif [[ $out != *"enables an io-domains node"* || $out != *"board bd"* ]]; then echo "check-devices: self-test: the node refusal does not name the board and node: $out" >&2; rc=1; fi
+  mk "$tmp/nodeoff" true 'applies_pad_table = false
+pad_table_reason = "no table (test)"'
+  printf 'kernel_option = "FAKE_IODOMAIN"\n' >> "$tmp/nodeoff/devices/families/fam/pads.toml"
+  mkdir -p "$tmp/nodeoff/devices/boards/bd/assets"; printf '&pinctrl {\n\tpmu_io_domains: io-domains {\n\t\tstatus = "disabled";\n\t};\n};\n' > "$tmp/nodeoff/devices/boards/bd/assets/board.dtsi"
+  if ! out=$(pads_rule "$tmp/nodeoff/devices"); then echo "check-devices: self-test: a no-table statement with a disabled io-domains node was refused: $out" >&2; rc=1; fi
   mk "$tmp/fnoreason" false-noreason ''
   if out=$(pads_rule "$tmp/fnoreason/devices"); then echo "check-devices: self-test: a family that says no pad table applies with no reason was not refused" >&2; rc=1
   elif [[ $out != *"no pad_table_reason"* || $out != *"fam"* ]]; then echo "check-devices: self-test: the no-reason refusal does not name the family and reason: $out" >&2; rc=1; fi

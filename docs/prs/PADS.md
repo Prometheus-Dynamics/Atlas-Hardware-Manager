@@ -179,3 +179,46 @@ The same lines go into the Z2 and R1 PRs.
 
 **Rulings not yet made (with the coordinator):** the remaining bring-up products (above), the A7S's seven unstated banks (the
 A7S stays refused), and the K230 bootargs override (the K1 recorded-edits list is one entry).
+
+## Update 2026-11-16 (second round): the A7S banks from the DockSeed series, and the kernel side by node
+
+Supersedes the A7S bank mapping above where they differ. Earlier I had PD on BLDO2 and PM on CLDO1; the series corrects both.
+
+**The sources.** S = the DockSeed A7S series at `/mnt/ssd-samsung/gaia/bsp/a733/a7s-linux-mainline/patches` (rev fe0a8ed), which
+supplies the per-bank `vcc-p?-supply` properties and the regulator nodes. R = the Radxa U-Boot dts at 9da4b3e8 (the regulator
+voltages). Sch = schematic V1.10 sheet 4 net names. Every bank is cited in `devices/boards/radxa-cubie-a7s/pads.toml` with
+file:line. **Any disagreement leaves the bank refused until ruled**, and no source is picked silently.
+
+| Bank | S (series, file:line) | R (Radxa dts) | Result |
+|---|---|---|---|
+| PA | none | none | **refused**: no source names a supply |
+| PB | `vcc-pb-supply = reg_swout2` (bank-supplies patch :36); swout2 "vcc-io", no voltage in S (axp318w patch :68-71) | swout2 3.3V (dts :165-169) | **3.3V** |
+| PC | `vcc-pc-supply = reg_cldo5` (bank-supplies :37); cldo5 1.8V (bank-supplies-2 :80-82) | cldo5 "vcc-pc" 1.8V (dts :240-244) | **1.8V**, agree |
+| PD | `vcc-pd-supply = reg_swout1` (bank-supplies :38); swout1 "vcc33-lcd", no voltage in S (axp318w :59-62) | bldo2 named "vcc-pd" 1.8V (dts :185-190, name :189) | **refused: DISAGREEMENT**, S puts PD on SWOUT1 (3.3V), R names BLDO2 at 1.8V. S's own text: "the VCC-PD ball is connected to VCC33-LCD through R251, not to BLDO2, whose output also carries a VCC-PD label" (bank-supplies patch, the commit message) |
+| PE | `vcc-pe-supply = reg_bldo1` (bank-supplies-2 :46); bldo1 1.8V (bank-supplies-2 :102-105) | bldo1 "vcc-pe" 1.8V (dts :178-183) | **1.8V**, agree |
+| PF | `vcc-pf-supply = reg_swout2`, "or VCC18-PF, see power-source" (bank-supplies-2 :47) | none | **1.8V to 3.3V, switched by the pin controller's power-source select** (reset: 3.3V VCC-IO) |
+| PG | `vcc-pg-supply = reg_aldo1` (describe-aldo1-as :44); aldo1 "vcc-pl" **3.3V** (describe-aldo1-as :61-64) | aldo1 "vcc-mipi-dsi" **1.8V** (dts :172-175) | **refused: DISAGREEMENT** on the ALDO1 voltage |
+| PH | `vcc-ph-supply = reg_swout2` (bank-supplies :39) | swout2 3.3V (dts :165-169) | **3.3V** |
+| PI | none | none | **refused**: no source names a supply |
+| PJ | `vcc-pj-supply = reg_swout1` (bank-supplies-2 :50), "Bank PJ runs from VCC33-LCD (SWOUT1) with no series part" | sheet 4 puts VCC-PJ on BLDO2 (1.8V) | **refused: DISAGREEMENT**, SWOUT1 3.3V (S) against BLDO2 1.8V (Sch) |
+| PK | `vcc-pk-supply = reg_bldo1` (bank-supplies-2 :51) | sheet 4 BLDO1 feeds VCC-PK; bldo1 1.8V (dts :178-183) | **1.8V**, agree |
+| PL | none on r_pio (bank-supplies-2 :117, "Bank PL has no vcc-pl-supply on r_pio"); its rail is ALDO1 "vcc-pl" 3.3V (describe-aldo1-as :61-64) | aldo1 "vcc-mipi-dsi" 1.8V (dts :172-175) | **refused: DISAGREEMENT** on the ALDO1 voltage |
+| PM | r_pio `vcc-pm-supply = reg_aldo1` (bank-supplies-2 :118); S: "the net named VCC-PM on CLDO1 does not reach the SoC" | cldo1 "vcc-pm" 1.8V (dts :218-222, name :221) | **refused: DISAGREEMENT**, ALDO1 3.3V (S) against CLDO1 1.8V (R) |
+
+**The VCC-PL / ALDO1 / vcc-mipi-dsi question (the first candidate).** It is one node, the AXP318's ALDO1. The Radxa dts calls it
+`vcc-mipi-dsi`, 1.8V (dts :172-175). The series calls it `vcc-pl`, **3.3V** (describe-aldo1-as :61-64). The series' voltage is
+the one with the series' reasoning behind it (the PMIC bus runs on bank PL), but it is a disagreement, and the ruling decides the
+voltage. Until then PG, PL and PM stay refused. **Finding for the coordinator, with both lines:** ALDO1 is 1.8V in R (dts :172-175)
+and 3.3V in S (describe-aldo1-as :63-64).
+
+**The A7S probe refuses exactly on PA, PD, PG, PI, PJ, PL and PM.** No A7S product exists in this PR, so nothing builds.
+
+**The kernel side is checked by node.** A board stating `applies_pad_table = false` is refused if a dts the repository ships for
+the board or the family (their `assets/`) enables an io-domains node (a node definition not marked `status = "disabled"` within
+eight lines). The rock boards ship no such node, so they pass. The in-tree dts the image builds from is not in the repository,
+so **the built dtb must be checked by Gaia's built-image check** (to be asked of Gaia). The fragment check (the family's
+`kernel_option` unset in the fragments) stays as a secondary line only. It is not the verification.
+
+**U-Boot side:** a resolved U-Boot config is not available at check time (the U-Boot defconfig is not in the repository), so the
+U-Boot side is checked by the built-image check too. The built U-Boot configs on disk (`research/rock5c.config`) show the option is
+unset for that build; that is evidence for that build, not a check of the image.
