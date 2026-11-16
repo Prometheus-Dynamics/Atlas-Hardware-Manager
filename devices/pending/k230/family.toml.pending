@@ -38,6 +38,9 @@ git = "https://github.com/kendryte/k230_sdk.git"
 ref = "7e302f733311d284be255f0d81d3463b6ae6ee6d"
 
 [bootloader]
+# The SDK's boot chain applies a pad table at boot (SPL, k230d_canmv_bpi.dts:61-171). Every board of this family
+# must declare [pads] (scripts/check-devices.sh, pads_rule).
+applies_pad_table = true
 # The SDK's own U-Boot is a subdirectory of the SDK, which the source form cannot name yet (B7 outside need 1,
 # Gaia subdir). Until then this points at the SDK source and the subdir is an open item, not a fix.
 source = "k230-sdk"
