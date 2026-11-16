@@ -495,3 +495,73 @@ async fn a_claim_is_restored_after_a_restart_while_the_job_is_active() {
         .expect("the device stayed held after the job ended");
     jobs.shutdown();
 }
+
+/// A step that checks its outcome while it waits: it reports the outcome as unknown, with what it
+/// checks, and resolves it only when the gate is released.
+struct Checker {
+    jobs: std::sync::OnceLock<Jobs>,
+    id: Mutex<Option<JobId>>,
+    gate: Arc<tokio::sync::Notify>,
+}
+
+#[async_trait]
+impl JobKind for Checker {
+    fn name(&self) -> &str {
+        "checking-kind"
+    }
+
+    fn resumable(&self) -> bool {
+        false
+    }
+
+    async fn run_step(&self, _claim: &DeviceClaim, _step: &str) -> Result<(), DriverError> {
+        let id = self.id.lock().unwrap().expect("the job id is known");
+        let jobs = self.jobs.get().expect("the jobs are open");
+        assert!(
+            jobs.report_unknown(
+                id,
+                "the session was lost while this ran; checking the board".into(),
+                "the board's slot list".into(),
+            )
+            .await,
+            "the job is still known"
+        );
+        self.gate.notified().await;
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn a_step_that_is_checking_shows_unknown_with_what_it_checks_and_then_resolves() {
+    let dir = tempfile::tempdir().unwrap();
+    let events = Events::new(256);
+    let mut rx = events.subscribe();
+    let gate = Arc::new(tokio::sync::Notify::new());
+    let kind = Arc::new(Checker {
+        jobs: std::sync::OnceLock::new(),
+        id: Mutex::new(None),
+        gate: Arc::clone(&gate),
+    });
+    let jobs = open(&dir.path().join("jobs.json"), vec![kind.clone()], &events).await;
+    assert!(kind.jobs.set(jobs.clone()).is_ok(), "the jobs are set once");
+    let id = jobs
+        .submit("checking-kind", DeviceClaim::none(), steps(&["check"]))
+        .await
+        .expect("the job is queued");
+    *kind.id.lock().unwrap() = Some(id);
+
+    // Visible, non-terminal, with the reason and what is checked.
+    let unknown = wait_for_job(&mut rx, id, |job| {
+        matches!(&job.status, JobStatus::Unknown { checking: Some(checking), .. } if checking == "the board's slot list")
+    })
+    .await;
+    assert!(
+        matches!(&unknown.status, JobStatus::Unknown { reason, .. } if reason.contains("checking the board")),
+        "{:?}",
+        unknown.status
+    );
+
+    // The step resolves it: the job is then done.
+    gate.notify_one();
+    wait_for_job(&mut rx, id, |job| job.status == JobStatus::Done).await;
+}

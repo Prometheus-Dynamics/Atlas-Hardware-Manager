@@ -48,7 +48,9 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use atlas_actions::{ActionError, ArgKind, BoardActions, CANCEL_CONFIRM, CancelState};
+use atlas_actions::{
+    ActionError, ArgKind, BoardActions, CANCEL_CONFIRM, CancelState, Followed, Issued, any_answer,
+};
 use atlas_driver::DriverError;
 use atlas_files::{Push, PushKind, Stage as PushStage, submit as submit_push};
 use atlas_jobs::{DeviceClaim, DeviceHolds, Events, JobId, JobKind, JobTiming, Jobs};
@@ -61,7 +63,7 @@ use tokio::sync::watch;
 use tokio::time;
 
 use crate::SlotError;
-use crate::calls::{ACCEPT, INSTALL_FILE, short};
+use crate::calls::{ACCEPT, INSTALL_FILE, LIST, short};
 
 /// The name the install job kind is saved under.
 pub const KIND: &str = "slot-install";
@@ -150,11 +152,11 @@ struct Run {
     /// The push's counters, kept when the install ends (the push handle is dropped then).
     push_counters: Option<atlas_files::Counters>,
     pushed: bool,
-    call: Option<u64>,
+    call: Option<Issued>,
     /// The install run's start while its reply is awaited: `None` in the channel until the board
     /// answers, then `Some(Some(call))` or `Some(None)` when it did not start. A cancel waits on it,
     /// so a run the board started while the cancel came in is still stopped.
-    starting: Option<watch::Receiver<Option<Option<u64>>>>,
+    starting: Option<watch::Receiver<Option<Option<Issued>>>>,
     stage: Option<Stage>,
     /// The typed refusal the install ended with, when the board or the session gave one (kind,
     /// code and text: see [`Failure`]). `None` when the install did not end by a refusal.
@@ -168,6 +170,97 @@ struct Run {
     /// The install's hold on the board: taken at its first step, kept across its steps and across
     /// a lost session, and dropped when the install ends (see `finish`).
     hold: Option<Hold>,
+    /// The job this install is, so a step can report its outcome as unknown while it checks.
+    job: Option<JobId>,
+    /// What the bundle says it installs: product, board, version and variant (from its manifest).
+    identity: Option<BundleIdentity>,
+    /// The board's slot ids before the install's start was sent (the snapshot the new slot is found
+    /// against). Taken once, before the start.
+    before: Option<Vec<String>>,
+    /// Whether the run's answer has been followed once. A stored run number is followed at most
+    /// once; the board's list decides the outcome after that.
+    followed: bool,
+}
+
+/// What a bundle says it installs (its `slot.json`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct BundleIdentity {
+    board: String,
+    product: String,
+    version: String,
+    variant: String,
+}
+
+impl BundleIdentity {
+    /// Whether a listed slot is the one this bundle installs.
+    fn matches(&self, slot: &atlas_slots::Slot) -> bool {
+        slot.product == self.product
+            && slot.board == self.board
+            && slot.version == self.version
+            && slot.variant == self.variant
+    }
+}
+
+/// Whether a follow's failure is a session event with no answer from the board: the session went, so
+/// nothing was answered and the run may still be on the board. Every other failure is an answer.
+fn no_answer(error: &ActionError) -> bool {
+    matches!(
+        error,
+        ActionError::Lost { .. }
+            | ActionError::HoldLapsed { .. }
+            | ActionError::NotConnected(_)
+            | ActionError::NotAnswering(_)
+    )
+}
+
+/// What the install's one follow said, before the list is read.
+enum Answered {
+    /// A slot id: the run's own answer (kind-checked).
+    Slot(String),
+    /// The run's own refusal or failure, with the board's words.
+    Refused(ActionError),
+    /// No usable answer: a session change, a lost session, or a wrong kind.
+    Nothing,
+}
+
+/// What the board's list decides for an install whose session changed (or that has no answer).
+#[derive(Debug, PartialEq, Eq)]
+enum Decision {
+    /// Exactly one new slot is the one installed: its id.
+    Installed(String),
+    /// Not decided yet: what is being checked.
+    Unknown(String),
+}
+
+/// The slots the list shows that were not there before the install started, and that are the
+/// bundle's product, board, version and variant.
+fn new_matching<'a>(
+    before: &[String],
+    list: &'a atlas_slots::SlotList,
+    identity: &BundleIdentity,
+) -> Vec<&'a atlas_slots::Slot> {
+    list.slots
+        .iter()
+        .filter(|slot| !before.contains(&slot.id) && identity.matches(slot))
+        .collect()
+}
+
+/// Decides an install from the board's own list alone (across a session change). Never from a
+/// followed answer, and never by picking one of several matches.
+fn decide(before: &[String], list: &atlas_slots::SlotList, identity: &BundleIdentity) -> Decision {
+    match new_matching(before, list, identity).as_slice() {
+        [only] => Decision::Installed(only.id.clone()),
+        [] => Decision::Unknown(format!(
+            "no new {} {} slot in the board's list yet",
+            identity.product, identity.version
+        )),
+        many => Decision::Unknown(format!(
+            "{} new slots match {} {}: not picking one",
+            many.len(),
+            identity.product,
+            identity.version
+        )),
+    }
 }
 
 /// Why a step stopped: wait and try again, or the job ends with these words, or with a refusal
@@ -188,6 +281,48 @@ fn wait_of(error: &ActionError) -> Option<String> {
         }
         _ => None,
     }
+}
+
+/// Why an install is unknown while it checks, as the app and the CLI say it.
+const LOST_REASON: &str = "the session was lost while this ran; checking the board";
+
+/// The kind check for an install's answer: the node answers an install with the new slot's id, a
+/// short name of letters, digits, `-` and `_`. Anything else (a list, a refusal's text, a document)
+/// is refused, and is not read as an id.
+fn slot_id_answer(output: &[u8]) -> Result<(), String> {
+    let text = std::str::from_utf8(output).map_err(|_| "answer that is not text".to_owned())?;
+    let is_id = !text.is_empty()
+        && text.len() <= 64
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
+    if is_id {
+        Ok(())
+    } else {
+        let preview: String = text.chars().take(60).collect();
+        Err(format!("`{preview}`, which is not a slot id"))
+    }
+}
+
+/// The board's slot list, read now on this session.
+async fn slot_list(board: &BoardActions) -> Result<atlas_slots::SlotList, String> {
+    let done = board
+        .run(&short(LIST, &[]), &[])
+        .await
+        .map_err(|error| error.to_string())?;
+    let text = String::from_utf8(done.output)
+        .map_err(|_| "the board's slot list is not text".to_owned())?;
+    atlas_slots::SlotList::parse(&text).map_err(|error| error.to_string())
+}
+
+/// The ids of the slots the board lists now.
+async fn slot_ids(board: &BoardActions) -> Result<Vec<String>, String> {
+    Ok(slot_list(board)
+        .await?
+        .slots
+        .into_iter()
+        .map(|slot| slot.id)
+        .collect())
 }
 
 fn classify(error: &ActionError) -> Step {
@@ -327,17 +462,20 @@ impl InstallKind {
         {
             return Ok(());
         }
-        let found = bundle_board(bundle).map_err(Step::Settled)?;
-        if found != spec.board {
+        let identity = bundle_identity(bundle).map_err(Step::Settled)?;
+        if identity.board != spec.board {
             return Err(Step::Settled(
                 SlotError::BoardMismatch {
-                    bundle: found,
+                    bundle: identity.board.clone(),
                     board: spec.board.clone(),
                 }
                 .to_string(),
             ));
         }
-        self.with(&spec.nonce, |run| run.checked = true);
+        self.with(&spec.nonce, |run| {
+            run.checked = true;
+            run.identity = Some(identity);
+        });
         Ok(())
     }
 
@@ -432,9 +570,22 @@ impl InstallKind {
 
     /// Step 5 and 6: install_file, started once, then followed to its result.
     async fn install(&self, spec: &Spec, board: &BoardActions) -> Result<String, Step> {
-        let call = match self.with_run(&spec.nonce, |run| run.call) {
+        let call = match self.with_run(&spec.nonce, |run| run.call.clone()) {
             Some(call) => call,
             None => {
+                // The board's slots before this start: the new slot is found against them, never by
+                // the run's number. Taken once, before the start is sent.
+                if self
+                    .with_run(&spec.nonce, |run| Some(run.before.is_none()))
+                    .unwrap_or(true)
+                {
+                    let ids = slot_ids(board).await.map_err(|reason| {
+                        Step::Wait(format!(
+                            "the board's slot list cannot be read before the install starts: {reason}"
+                        ))
+                    })?;
+                    self.with(&spec.nonce, |run| run.before = Some(ids));
+                }
                 let words = [spec.dest.clone(), flag(spec.starred), "false".to_owned()];
                 let action = short(
                     INSTALL_FILE,
@@ -454,10 +605,10 @@ impl InstallKind {
                 let starter = board.clone();
                 let started = tokio::spawn(async move {
                     let result = starter.start(&action, &words).await;
-                    let call = result.as_ref().ok().copied();
+                    let call = result.as_ref().ok().cloned();
                     // Recorded only while the install is still known: an install already ended
                     // (a cancel that gave up waiting) gets no new entry.
-                    if let Some(call) = call
+                    if let Some(call) = call.clone()
                         && let Some(run) = runs
                             .lock()
                             .unwrap_or_else(PoisonError::into_inner)
@@ -491,7 +642,6 @@ impl InstallKind {
         let nonce = spec.nonce.clone();
         // Followed on the install's own hold: a lapse while the board runs the install ends it with
         // the board's words about the lapse (`ActionError::HoldLapsed`), not as a wait.
-        let hold = self.with_run(&spec.nonce, |run| run.hold.clone());
         let on_progress = move |progress: &atlas_actions::Progress| {
             runs.lock()
                 .unwrap_or_else(PoisonError::into_inner)
@@ -502,13 +652,153 @@ impl InstallKind {
                 message: progress.message.clone(),
             });
         };
-        let followed = match &hold {
-            Some(hold) => board.follow_while_held(call, hold, on_progress).await,
-            None => board.follow(call, on_progress).await,
+        // A follow cut by a lost connection is repeated: that follow produced no answer, so the install
+        // waits (the job retries with its backoff) and follows the same run once the session is back.
+        // The first answer is the only answer: after it the run is never followed again, and the answer
+        // counts only with the list's agreement, checked below.
+        let answer = if self
+            .with_run(&spec.nonce, |run| Some(run.followed))
+            .unwrap_or(false)
+        {
+            None
+        } else {
+            let followed = board.follow(&call, slot_id_answer, on_progress).await;
+            if let Err(error) = &followed
+                && no_answer(error)
+            {
+                return Err(Step::Wait(format!(
+                    "waiting for the board to answer for run {}: {error}",
+                    call.call()
+                )));
+            }
+            self.with(&spec.nonce, |run| run.followed = true);
+            Some(followed)
         };
-        let done = followed.map_err(|error| classify(&error))?;
-        String::from_utf8(done.output)
-            .map_err(|_| Step::Settled("the board's result is not a slot id".into()))
+        let same_session = board.same_session(&call);
+        let before = self
+            .with_run(&spec.nonce, |run| Some(run.before.clone()))
+            .flatten()
+            .unwrap_or_default();
+        let identity = self
+            .with_run(&spec.nonce, |run| Some(run.identity.clone()))
+            .flatten()
+            .ok_or_else(|| Step::Settled("the bundle was not checked before the install".into()))?;
+        let job = self.with_run(&spec.nonce, |run| Some(run.job)).flatten();
+
+        // What the one follow said, as the install decides on it.
+        let answered = match answer {
+            Some(Ok(Followed::Confirmed(done) | Followed::Reconnected(done))) => {
+                match String::from_utf8(done.output) {
+                    Ok(id) => Answered::Slot(id),
+                    Err(_) => Answered::Nothing,
+                }
+            }
+            Some(Err(ActionError::WrongAnswer { started, got, .. })) => {
+                if same_session {
+                    return Err(Step::Settled(format!(
+                        "the answer for {started} was {got}, which is not a slot id: not used"
+                    )));
+                }
+                Answered::Nothing
+            }
+            Some(Err(ActionError::Refused(failure))) if same_session => {
+                Answered::Refused(ActionError::Refused(failure))
+            }
+            Some(Err(ActionError::Failed(text))) if same_session => {
+                Answered::Refused(ActionError::Failed(text))
+            }
+            // A later session's end that was the run's own refusal: the words, kept typed.
+            Some(Err(ActionError::Unconfirmed {
+                ended: Some(error), ..
+            })) => Answered::Refused(*error),
+            _ => Answered::Nothing,
+        };
+
+        // The table. Same session with a slot id, or a refusal: the fresh list confirms or disagrees.
+        // No usable answer: the list alone decides. A list that cannot be read is retried.
+        let mut wait = Duration::from_millis(250);
+        loop {
+            let list = match slot_list(board).await {
+                Ok(list) => list,
+                Err(reason) => {
+                    if let (true, Answered::Slot(id)) = (same_session, &answered) {
+                        return Err(Step::Wait(format!(
+                            "the board answered {id}; its list cannot be read to check it: {reason}"
+                        )));
+                    }
+                    self.report_unknown(
+                        &spec.nonce,
+                        job,
+                        format!("the board's slot list cannot be read: {reason}"),
+                    )
+                    .await;
+                    tokio::time::sleep(wait).await;
+                    wait = (wait * 2).min(Duration::from_secs(10));
+                    continue;
+                }
+            };
+            let new = new_matching(&before, &list, &identity);
+            match &answered {
+                Answered::Slot(id) => {
+                    return if new.iter().any(|slot| &slot.id == id) {
+                        Ok(id.clone())
+                    } else {
+                        Err(Step::Settled(format!(
+                            "the board answered {id}; its list does not show {id} after the install"
+                        )))
+                    };
+                }
+                Answered::Refused(error) => {
+                    let words = error.to_string();
+                    return Err(match new.first() {
+                        Some(slot) => Step::Settled(format!(
+                            "the board refused the install ({words}), but its list shows a new {} {} slot, {}: the two disagree",
+                            identity.product, identity.version, slot.id
+                        )),
+                        // The board's refusal stays typed (its code says BUSY); the list's agreement is
+                        // added to its words.
+                        None => match error {
+                            ActionError::Refused(failure) | ActionError::Failed(failure) => {
+                                Step::Refused(Failure::new(
+                                    failure.kind(),
+                                    failure.code(),
+                                    format!(
+                                        "{} (the list confirmed nothing was installed: no new {} {} slot)",
+                                        failure.text(),
+                                        identity.product,
+                                        identity.version
+                                    ),
+                                ))
+                            }
+                            other => classify(other),
+                        },
+                    });
+                }
+                Answered::Nothing => match decide(&before, &list, &identity) {
+                    Decision::Installed(id) => return Ok(id),
+                    Decision::Unknown(checking) => {
+                        self.report_unknown(&spec.nonce, job, checking).await;
+                        tokio::time::sleep(wait).await;
+                        wait = (wait * 2).min(Duration::from_secs(10));
+                    }
+                },
+            }
+        }
+    }
+
+    /// Shows the install as unknown while it checks: on the run (for the app) and on the job (kept
+    /// with it, so it is shown after a restart as it stood). `checking` says what is read.
+    async fn report_unknown(&self, nonce: &str, job: Option<JobId>, checking: String) {
+        let reason = LOST_REASON.to_owned();
+        self.with(nonce, |run| {
+            run.stage = Some(Stage::Unknown {
+                reason: reason.clone(),
+                checking: checking.clone(),
+            });
+        });
+        if let (Some(job), Some(jobs)) = (job, self.jobs.get()) {
+            jobs.report_unknown(job, reason, checking).await;
+        }
     }
 }
 
@@ -645,7 +935,7 @@ fn flag(value: bool) -> String {
 }
 
 /// The bundle's `board`, read from its `slot.json` member. Refuses anything that is not a bundle.
-fn bundle_board(path: &Path) -> Result<String, String> {
+fn bundle_identity(path: &Path) -> Result<BundleIdentity, String> {
     let file = File::open(path).map_err(|error| format!("the bundle cannot be opened: {error}"))?;
     let mut archive = tar::Archive::new(file);
     let entries = archive
@@ -666,11 +956,23 @@ fn bundle_board(path: &Path) -> Result<String, String> {
                 .map_err(|error| format!("slot.json cannot be read: {error}"))?;
             let value: serde_json::Value = serde_json::from_str(&text)
                 .map_err(|error| format!("slot.json is not JSON: {error}"))?;
-            return value
-                .get("board")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-                .ok_or_else(|| "slot.json has no board".to_owned());
+            let text_of = |key: &str| {
+                value
+                    .get(key)
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned)
+                    .ok_or_else(|| format!("slot.json has no {key}"))
+            };
+            return Ok(BundleIdentity {
+                board: text_of("board")?,
+                product: text_of("product")?,
+                version: text_of("version")?,
+                variant: value
+                    .get("variant")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("")
+                    .to_owned(),
+            });
         }
     }
     Err("the bundle has no slot.json".to_owned())
@@ -829,7 +1131,10 @@ impl SlotInstalls {
             .submit(KIND, DeviceClaim::writes([device]), vec![text])
             .await
         {
-            Ok(id) => Ok(id),
+            Ok(id) => {
+                self.kind.with(&spec.nonce, |run| run.job = Some(id));
+                Ok(id)
+            }
             Err(error) => {
                 self.kind.finish(&spec.nonce);
                 Err(SlotError::Job(error))
@@ -891,7 +1196,7 @@ impl SlotInstalls {
         if !self.jobs.cancel(job) {
             return false;
         }
-        let call = match self.kind.with_run(&spec.nonce, |run| run.call) {
+        let call = match self.kind.with_run(&spec.nonce, |run| run.call.clone()) {
             Some(call) => Some(call),
             // A start in flight: wait for the board's answer, so a run it started is stopped too.
             None => match self.kind.with_run(&spec.nonce, |run| run.starting.clone()) {
@@ -900,7 +1205,7 @@ impl SlotInstalls {
                         .await
                         .ok()
                         .and_then(Result::ok)
-                        .and_then(|said| *said)
+                        .and_then(|said| said.clone())
                         .flatten()
                 }
                 None => None,
@@ -915,7 +1220,7 @@ impl SlotInstalls {
             push.cancel();
         }
         let state = match call {
-            Some(call) => stop_on_board(&self.kind, &spec, call).await,
+            Some(call) => stop_on_board(&self.kind, &spec, &call).await,
             None => CancelState::NoRun,
         };
         self.kind.with(&spec.nonce, |run| {
@@ -933,7 +1238,8 @@ impl SlotInstalls {
     }
 }
 
-async fn stop_on_board(kind: &InstallKind, spec: &Spec, call: u64) -> CancelState {
+async fn stop_on_board(kind: &InstallKind, spec: &Spec, issued: &Issued) -> CancelState {
+    let call = issued.call();
     let Ok(address) = Address::from_str(&spec.address) else {
         return CancelState::NotConfirmed(format!("{} is not an address", spec.address));
     };
@@ -943,12 +1249,15 @@ async fn stop_on_board(kind: &InstallKind, spec: &Spec, call: u64) -> CancelStat
         ));
     };
     let board = BoardActions::new(handle);
-    if let Err(error) = board.cancel(call).await {
+    if let Err(error) = board.cancel(issued).await {
         return CancelState::NotConfirmed(format!(
             "the cancel did not reach the board ({error}); install run {call} may still be going"
         ));
     }
-    match time::timeout(CANCEL_CONFIRM, board.follow(call, |_| {})).await {
+    match time::timeout(CANCEL_CONFIRM, board.follow(issued, any_answer, |_| {}))
+        .await
+        .map(|result| result.map(Followed::into_done))
+    {
         Ok(Err(ActionError::Cancelled(_))) => CancelState::Confirmed,
         Ok(Ok(_)) => {
             CancelState::NotConfirmed("the install finished before the cancel took effect".into())
@@ -957,5 +1266,111 @@ async fn stop_on_board(kind: &InstallKind, spec: &Spec, call: u64) -> CancelStat
         Err(_) => {
             CancelState::NotConfirmed(format!("the board did not confirm that run {call} stopped"))
         }
+    }
+}
+
+#[cfg(test)]
+mod answer_tests {
+    use super::{BundleIdentity, Decision, decide, slot_id_answer};
+
+    fn identity() -> BundleIdentity {
+        BundleIdentity {
+            board: "b".into(),
+            product: "p".into(),
+            version: "2.0.0".into(),
+            variant: String::new(),
+        }
+    }
+
+    /// A list document as the board gives it: `(id, product, version)` slots, and whether a trial
+    /// is pending.
+    fn list(
+        state: &str,
+        slots: &[(&str, &str, &str)],
+        trial: Option<&str>,
+    ) -> atlas_slots::SlotList {
+        let slots: Vec<serde_json::Value> = slots
+            .iter()
+            .map(|(id, product, version)| {
+                serde_json::json!({
+                    "id": id, "product": product, "board": "b",
+                    "version": version, "variant": "",
+                })
+            })
+            .collect();
+        let mut document = serde_json::json!({ "state": state, "slots": slots });
+        if let Some(slot) = trial {
+            document["slot_trial"] = serde_json::json!(slot);
+        }
+        atlas_slots::SlotList::parse(&document.to_string()).expect("the list reads")
+    }
+
+    fn before() -> Vec<String> {
+        vec!["slot-1".to_owned()]
+    }
+
+    #[test]
+    fn one_new_slot_of_the_bundles_identity_is_the_install() {
+        let board = list(
+            "idle",
+            &[("slot-1", "p", "1.0.0"), ("slot-2", "p", "2.0.0")],
+            None,
+        );
+        assert_eq!(
+            decide(&before(), &board, &identity()),
+            Decision::Installed("slot-2".into())
+        );
+    }
+
+    #[test]
+    fn a_slot_that_was_there_before_is_not_the_install() {
+        // The old slot has the bundle's version, but it was listed before the start: not new.
+        let board = list("idle", &[("slot-1", "p", "2.0.0")], None);
+        assert!(matches!(
+            decide(&before(), &board, &identity()),
+            Decision::Unknown(_)
+        ));
+    }
+
+    #[test]
+    fn no_new_slot_yet_is_not_decided() {
+        let board = list("staging", &[("slot-1", "p", "1.0.0")], None);
+        assert!(matches!(
+            decide(&before(), &board, &identity()),
+            Decision::Unknown(text) if text.contains("no new p 2.0.0 slot")
+        ));
+        // A trial pending with no new slot is not decided on its own across a session change.
+        let trial = list("idle", &[("slot-1", "p", "1.0.0")], Some("slot-3"));
+        assert!(matches!(
+            decide(&before(), &trial, &identity()),
+            Decision::Unknown(_)
+        ));
+    }
+
+    #[test]
+    fn two_new_matching_slots_are_ambiguous_and_none_is_picked() {
+        let board = list(
+            "idle",
+            &[
+                ("slot-1", "p", "1.0.0"),
+                ("slot-2", "p", "2.0.0"),
+                ("slot-3", "p", "2.0.0"),
+            ],
+            None,
+        );
+        assert!(matches!(
+            decide(&before(), &board, &identity()),
+            Decision::Unknown(text) if text.contains("2 new slots match")
+        ));
+    }
+
+    #[test]
+    fn a_list_answer_is_refused_as_a_slot_id_and_a_slot_id_is_accepted() {
+        assert!(slot_id_answer(b"slot-2").is_ok());
+        let listing = br#"{"error":"","slots":[{"id":"slot-1"}]}"#;
+        let refused = slot_id_answer(listing).expect_err("a list is not a slot id");
+        assert!(refused.contains("not a slot id"), "{refused}");
+        assert!(slot_id_answer(b"").is_err());
+        assert!(slot_id_answer(&[0xff, 0xfe]).is_err());
     }
 }

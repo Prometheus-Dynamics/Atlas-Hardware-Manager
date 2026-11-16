@@ -377,7 +377,7 @@ async fn install_and_check<W: Write>(
 ) -> Result<String, Refusal> {
     let link = ctx.link()?;
     let info = link::board_info(&link.node);
-    let id = commands::install(r, &ctx.state, link, &info, bundle).await?;
+    let id = commands::install(r, &ctx.state, link, &info, bundle, ctx.env.wait).await?;
     let list = ctx.slots()?.list().await?;
     if !list.slots.iter().any(|slot| slot.id == id) {
         return Err(Refusal::new(
@@ -569,7 +569,7 @@ async fn step_install_good_refused(
     let link = ctx.link()?;
     let info = link::board_info(&link.node);
     let bundle = ctx.good_bundle.clone();
-    match commands::install(r, &ctx.state, link, &info, &bundle).await {
+    match commands::install(r, &ctx.state, link, &info, &bundle, ctx.env.wait).await {
         Ok(id) => Err(Refusal::new(
             1,
             format!(

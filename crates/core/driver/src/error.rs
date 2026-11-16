@@ -15,6 +15,10 @@ pub enum DriverError {
     Unsupported(String),
     #[error("cancelled before any change was made")]
     Cancelled,
+    /// The outcome of the work is not known: it is neither done nor failed. The message says what
+    /// would settle it. The job ends as unknown; it is not tried again.
+    #[error("{0}")]
+    Unknown(String),
     #[error("{0}")]
     Other(String),
 }
