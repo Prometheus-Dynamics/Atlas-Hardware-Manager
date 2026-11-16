@@ -127,3 +127,20 @@ Kernel fragment: `CONFIG_WATCHDOG_OPEN_TIMEOUT=30` beside `CONFIG_SUNXI_WATCHDOG
 4. Bind to running-ok: lemnosd's `running` state in `lemnos-ctl list` (the hw-watchdog device's health).
 5. The applied timeout read back at each open: slot-init's `watchdog armed: N s` (or its `NO WATCHDOG` line), and lemnosd's applied value at bind.
 6. Whether `NO WATCHDOG` was logged at any step (slot-init `arm()` error path).
+
+## Data partition sizing, keep, reserve, and the known limit (C1, 2026-11-16)
+
+Sizing (board.toml comment has the same arithmetic): medium the A7S SD card, smallest card supported 16 GB PROPOSED (not stated in the tree; flagged for the coordinator's ruling). Fixed areas below the data partition take under 81 MiB. Slot bound S = 64 MiB, a planning bound (the Raze's measured EROFS root is 18,178,048 bytes; the ZERO 3E estimates 18 to 40 MB; the A7S root is not measured). Rule: data >= 1.10 x (keep x S + reserve_mb). With keep = 2 and reserve_mb = 128 MiB that is 281.6 MiB minimum. Chosen: 1 GiB (1073741824): above the minimum, the same as the ZERO 3E bench (Z2), and room for keep = 3 (352 MiB) plus ext4 overhead.
+
+Settings, on the system-slots device (lemnos-board.toml): keep = 2 (Lemnos default 3, store.rs:32; two is the minimum that takes an update, three would cost one more slot of data); reserve_mb = 128 (Lemnos default 2048, lib.rs:82, which would refuse every install on a 1 GiB partition; the 64 to 128 MiB Lemnos suggests); grow_data = false (lib.rs:1344). The ZERO 3E (Z2) sets neither keep nor reserve_mb yet, so the rk35xx bench values are not yet stated: these are the A7S numbers for the coordinator to align.
+
+UNCONFIRMED (Lemnos): whether a pushed bundle is spooled on the data partition; if it is, it adds a term to the rule.
+
+**Known limit: the data partition does not grow on GPT boards until Lemnos GROW.** The grow is MBR-only at 31e0f736 (drivers/system-slots/src/grow.rs:3 and :33, `mbr::plan_grow`), so on this GPT disk it would refuse every pass. grow_data = false stops its 8 s refusal loop. Remove when Lemnos says.
+
+Watchdog owner check (scripts/check-watchdog-owner.sh, next c2482fb9, run on 5ab70763): no FINDING. The lines for cubie-a7s-bench are:
+- NOTE product cubie-a7s-bench: inputs say Lemnos; built config unverified
+- NOTE product cubie-a7s-bench: bootloader arming: armed (Lemnos slot init in the initramfs arms the watchdog (its timeout is in Lemnos, not in this tree) at products/cubie-a7s-bench/product.toml line 62); fed by Lemnos
+- NOTE product cubie-a7s-bench: bootloader arming: NOT CHECKED (resolved U-Boot config needs a build)
+
+Reading: one owner, Lemnos (the hw-watchdog keepalive device plus lemnosd). The first arming line is the initramfs slot-init. The U-Boot line is NOT CHECKED: the autostart line (CONFIG_WATCHDOG_AUTOSTART=y) is in the DockSeed series patch sunxi-cubie-a7s-watchdog-autostart.patch, not in this tree's explicit lines, so the check cannot see it. The expected "armed by U-Boot" is therefore the series' claim, not the check's result.
