@@ -519,6 +519,7 @@ wd_self_test() {  # <repo>
   dev=$tmp/devices
   cp -a "$repo/devices" "$dev"
   # A synthetic sd-image product with no owner: the bring-up fixture with its systemd watchdog lines removed (zero-3e-base is deleted in Z2).
+  mkdir -p "$dev/products/example-bringup" && cp -a "$repo/devices/tests/fixtures/bringup/." "$dev/products/example-bringup/"
   mkdir -p "$dev/products/sd-noowner" && cp -a "$repo/devices/tests/fixtures/bringup/." "$dev/products/sd-noowner/"
   sed -i -e '/^bringup-alive = /d' -e '/^bringup-alive-settings = /d' -e 's/"bringup-alive", "bringup-alive-settings", //' "$dev/products/sd-noowner/product.toml"
   # On the ZERO 3E board (it keeps a hw-watchdog keepalive nothing feeds: one NOTE, as zero-3e-base was).
@@ -539,7 +540,7 @@ wd_self_test() {  # <repo>
   has "NOTE product sd-noowner (sd-image, not a slot product): no watchdog owner" || fail "sd-noowner is not one NOTE line: $out"
   has "bootloader arming: NOT CHECKED (resolved U-Boot config needs a build)" || fail "sd-noowner's U-Boot arming was not NOT CHECKED: $out"
   has "FINDING product sd-noowner" && fail "an sd-image product without an owner failed the gate: $out"
-  has "NOTE product zero-3e-bringup (sd-image, not a slot product): systemd owner: RuntimeWatchdogSec=16s" || fail "the bring-up product's systemd owner was not seen: $out"
+  has "NOTE product example-bringup (sd-image, not a slot product): systemd owner: RuntimeWatchdogSec=16s" || fail "the bring-up product's systemd owner was not seen: $out"
   has "rock-4d-base" && fail "rock-4d-base is still in the tree: $out"
   has "FINDING" && fail "the real tree has a FINDING: $out"
 
@@ -616,8 +617,8 @@ wd_self_test() {  # <repo>
   out=$(watchdog_owner_rule "$dev") || true
   has "FINDING product sd-noowner: the boot chain arms the watchdog (U-Boot config CONFIG_WATCHDOG_AUTOSTART=y arms the watchdog at boot" || fail "armed with no owner was not refused: $out"
   # Armed + one owner: the same line on the bring-up product (its systemd owner feeds it): a pass.
-  has "NOTE product zero-3e-bringup: bootloader arming: armed (U-Boot config CONFIG_WATCHDOG_AUTOSTART=y" || fail "armed with an owner was refused: $out"
-  has "FINDING product zero-3e-bringup" && fail "armed with an owner was a FINDING: $out"
+  has "NOTE product example-bringup: bootloader arming: armed (U-Boot config CONFIG_WATCHDOG_AUTOSTART=y" || fail "armed with an owner was refused: $out"
+  has "FINDING product example-bringup" && fail "armed with an owner was a FINDING: $out"
 
   # A boot script's wdt command arms too (a Lemnos-free product with an owner passes; this one has none: a FINDING).
   cp -a "$repo/devices/families/rk35xx/assets/u-boot.fragment" "$fam"
