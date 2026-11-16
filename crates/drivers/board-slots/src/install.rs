@@ -63,7 +63,7 @@ use tokio::sync::watch;
 use tokio::time;
 
 use crate::SlotError;
-use crate::calls::{ACCEPT, INSTALL_FILE, short};
+use crate::calls::{ACCEPT, INSTALL_FILE, LIST, short};
 
 /// The name the install job kind is saved under.
 pub const KIND: &str = "slot-install";
@@ -189,6 +189,53 @@ fn wait_of(error: &ActionError) -> Option<String> {
             Some(reason.text().to_owned())
         }
         _ => None,
+    }
+}
+
+/// The kind check for an install's answer: the node answers an install with the new slot's id, a
+/// short name of letters, digits, `-` and `_`. Anything else (a list, a refusal's text, a document)
+/// is refused, and is not read as an id.
+fn slot_id_answer(output: &[u8]) -> Result<(), String> {
+    let text = std::str::from_utf8(output).map_err(|_| "answer that is not text".to_owned())?;
+    let is_id = !text.is_empty()
+        && text.len() <= 64
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
+    if is_id {
+        Ok(())
+    } else {
+        let preview: String = text.chars().take(60).collect();
+        Err(format!("`{preview}`, which is not a slot id"))
+    }
+}
+
+/// Whether the board's own slot list shows `id`: an independent read, made now on this session.
+async fn confirm_by_list(board: &BoardActions, id: &str) -> Result<(), String> {
+    let done = board
+        .run(&short(LIST, &[]), &[])
+        .await
+        .map_err(|error| format!("the list could not be read: {error}"))?;
+    let text = String::from_utf8(done.output)
+        .map_err(|_| "the board's slot list is not text".to_owned())?;
+    let list = atlas_slots::SlotList::parse(&text)
+        .map_err(|error| format!("the board's slot list does not read: {error}"))?;
+    if list.slots.iter().any(|slot| slot.id == id) {
+        Ok(())
+    } else {
+        Err(format!("the board's list does not show {id}"))
+    }
+}
+
+/// A followed answer's failure, as the install step takes it: an unconfirmed outcome is waited on
+/// and asked again, a wrong answer settles the step with what came back.
+fn classify_follow(error: &ActionError) -> Step {
+    match error {
+        ActionError::Unconfirmed { reason, .. } => Step::Wait(format!(
+            "the install's outcome is unknown after a reconnect: {reason}"
+        )),
+        ActionError::WrongAnswer { .. } => Step::Settled(error.to_string()),
+        other => classify(other),
     }
 }
 
@@ -505,13 +552,27 @@ impl InstallKind {
             });
         };
         let followed = match &hold {
-            Some(hold) => board.follow_while_held(&call, any_answer, hold, on_progress).await,
-            None => board.follow(&call, any_answer, on_progress).await,
+            Some(hold) => board.follow_while_held(&call, slot_id_answer, hold, on_progress).await,
+            None => board.follow(&call, slot_id_answer, on_progress).await,
+        };
+        let followed = followed.map_err(|error| classify_follow(&error))?;
+        let (done, confirmed) = match followed {
+            Followed::Confirmed(done) => (done, true),
+            Followed::Reconnected(done) => (done, false),
+        };
+        let id = String::from_utf8(done.output)
+            .map_err(|_| Step::Settled("the board's result is not a slot id".into()))?;
+        if confirmed {
+            return Ok(id);
         }
-        .map(Followed::into_done);
-        let done = followed.map_err(|error| classify(&error))?;
-        String::from_utf8(done.output)
-            .map_err(|_| Step::Settled("the board's result is not a slot id".into()))
+        // The run was started on an earlier session: its answer is the node's answer for a number
+        // that may have been used again. The board's own list must show the slot before it counts.
+        match confirm_by_list(board, &id).await {
+            Ok(()) => Ok(id),
+            Err(reason) => Err(Step::Wait(format!(
+                "the install's outcome is unknown after a reconnect: {reason}"
+            ))),
+        }
     }
 }
 
@@ -963,5 +1024,22 @@ async fn stop_on_board(kind: &InstallKind, spec: &Spec, issued: &Issued) -> Canc
         Err(_) => {
             CancelState::NotConfirmed(format!("the board did not confirm that run {call} stopped"))
         }
+    }
+}
+
+#[cfg(test)]
+mod answer_tests {
+    use super::slot_id_answer;
+
+    #[test]
+    fn an_install_answer_is_a_slot_id_and_a_list_is_refused() {
+        assert!(slot_id_answer(b"slot-2").is_ok());
+        assert!(slot_id_answer(b"slot_3").is_ok());
+        // A listing, as the board gives it for `system.slots.list`, is not a slot id.
+        let listing = br#"{"error":"","slots":[{"id":"slot-1"}]}"#;
+        let refused = slot_id_answer(listing).expect_err("a list is not a slot id");
+        assert!(refused.contains("not a slot id"), "{refused}");
+        assert!(slot_id_answer(b"").is_err());
+        assert!(slot_id_answer(&[0xff, 0xfe]).is_err());
     }
 }
