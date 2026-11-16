@@ -1,0 +1,75 @@
+# Lemnos's packaging for an image with systemd, at Lemnos Lemnos 31e0f736 (BB1b, merged to next): the units, sysusers, udev rules and
+# settings files, at the paths Lemnos's packaging/README.md gives (the "one privilege path": no setcap, no xattrs, no
+# User= in the units; lemnosd starts as root and drops itself). Board-neutral.
+#
+# This is the C1 copy of the shared components/lemnos (which is pinned at f4a295c6 for the Raze). It is pinned to the
+# BB1b rev because the bench-board slot declarations (the U-Boot form, BB1b) exist only there. One Lemnos commit per
+# product: all five Lemnos components of this product carry 31e0f736 (BB1b, merged to next: the same rev the shared components
+# take). The copies stay product-local only because the A7S needs the bench-board slot declarations, which the shared
+# components' rev (Raze, f4a295c6) does not have; they follow the same rev as the rest of the product.
+#
+# Not installed here: the BusyBox init files (this image has systemd); the Raze's lemnos-orion-links drop-in (the
+# A7S has no gadget device in its board file, so no LEMNOS_ORION_LINKS line).
+version = 1
+name = "lemnos"
+description = "Lemnos packaging for systemd (Lemnos 31e0f736 (BB1b, merged to next)): the lemnosd and lemnos-orion units, the lemnos and lemnos-orion users, the device-node rules, the settings files"
+
+[sources.src]
+git = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "31e0f736a334260a7df2ea86bcfa358e9a640f08"  # Lemnos Lemnos 31e0f736 (BB1b, merged to next) (C1 bench image)
+
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnosd.service" }
+to = "/usr/lib/systemd/system/lemnosd.service"
+mode = "0644"
+
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnos-orion.service" }
+to = "/usr/lib/systemd/system/lemnos-orion.service"
+mode = "0644"
+
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnos.conf" }
+to = "/usr/lib/sysusers.d/lemnos.conf"
+mode = "0644"
+
+[[install]]
+from = { source = "src", path = "packaging/udev/70-lemnos.rules" }
+to = "/usr/lib/udev/rules.d/70-lemnos.rules"
+mode = "0644"
+
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnosd.env.example" }
+to = "/etc/lemnos/lemnosd.env"
+mode = "0644"
+
+[[install]]
+from = { source = "src", path = "packaging/systemd/lemnos-orion.env.example" }
+to = "/etc/lemnos/lemnos-orion.env"
+mode = "0644"
+
+# The gadget drop-in is NOT installed: the A7S board file has no usb-gadget device (no device port in socs/sun60i-a733.toml).
+
+# The users the sysusers file names, made at build time as well: the image's root is read-only.
+[[groups]]
+name = "lemnos"
+
+[[groups]]
+name = "lemnos-orion"
+
+[[users]]
+name = "lemnos"
+group = "lemnos"
+
+[[users]]
+name = "lemnos-orion"
+group = "lemnos-orion"
+groups = ["lemnos", "orion"]
+
+[[services]]
+unit = "lemnosd.service"
+enable = true
+
+[[services]]
+unit = "lemnos-orion.service"
+enable = true

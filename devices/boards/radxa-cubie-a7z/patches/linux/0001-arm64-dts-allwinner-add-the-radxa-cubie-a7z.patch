@@ -1,0 +1,139 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+Subject: [PATCH] arm64: dts: allwinner: add the Radxa Cubie A7Z (bench, UNVERIFIED)
+
+UNVERIFIED. No Radxa device tree for the A7Z exists in any source read; this is an authored candidate.
+Source: Armbian armbian/build 00c27198 0005-cubie-a7z-add-device-tree.patch: reg_usbc2_vbus 57-64 (PL2) as &usbc2 drvvbus-supply; ehci1/ohci1 status okay; no usb1 supply (none in Armbian). The base is the A7A (Radxa U-Boot 9da4b3e8) and the A7S series; UNVERIFIED.
+Port 1 (USB0, device mode) gets no VBUS supply. The host controllers ehci1/ohci1 are enabled. The PL2 regulator is
+off at boot (no always-on, no boot-on). The three sources differ on PL2; each board follows its own (docs/prs/A7AZ.md).
+Syntax checked with cpp and dtc against stubbed labels only (no kernel tree, no base dtsi): labels UNVERIFIED.
+Makefile line after the A7S entry; the A7S entry is the DockSeed series (fe0a8ed).
+---
+--- a/arch/arm64/boot/dts/allwinner/Makefile
++++ b/arch/arm64/boot/dts/allwinner/Makefile
+@@ -1,3 +1,4 @@
+ dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h700-anbernic-rg35xx-sp.dtb
+ dtb-$(CONFIG_ARCH_SUNXI) += sun60i-a733-cubie-a7s.dtb
++dtb-$(CONFIG_ARCH_SUNXI) += sun60i-a733-cubie-a7z.dtb
+ dtb-$(CONFIG_ARCH_SUNXI) += sun55i-a527-cubie-a5e.dtb
+diff --git a/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7z.dts b/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7z.dts
+new file mode 100644
+index 0000000..1111111
+--- /dev/null
++++ b/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7z.dts
+@@ -0,0 +1,116 @@
++// SPDX-License-Identifier: (GPL-2.0-only OR MIT)
++/*
++ * Radxa Cubie A7Z: a kernel device tree for bench images. CANDIDATE, UNTESTED, NEVER BOOTED. Bench only.
++ * Base: the Cubie A7S board tree of the DockSeed A733 series (fe0a8ed, patches/a733-dts, a733-ramoops-a7s,
++ * a733-a7s-usbc not carried, a733-board LEDs not carried). Peripherals from Radxa's U-Boot tree 9da4b3e8
++ * (arch/arm/dts/sun60i-a733-radxa-a7a.dts), which is the A7A's only public board description. The A7Z has no
++ * public board description; its peripherals are the A7A's and are UNVERIFIED.
++ * Not written here: the PMIC (AXP318), LEDs, USB-C typec, UFS, and any VBUS regulator on the device port.
++ */
++
++/dts-v1/;
++
++#include <dt-bindings/gpio/gpio.h>
++#include "sun60i-a733.dtsi"
++
++/ {
++	model = "Radxa A7Z";
++	compatible = "radxa,cubie-a7z", "allwinner,sun60i-a733";
++
++	aliases {
++		serial0 = &uart0;
++		mmc0 = &mmc0;
++		mmc2 = &mmc2;
++	};
++
++	chosen {
++		stdout-path = "serial0:115200n8";
++	};
++
++	reg_usbc2_vbus: usbc2-vbus {
++		compatible = "regulator-fixed";
++		regulator-name = "usbc2-vbus";
++		regulator-min-microvolt = <5000000>;
++		regulator-max-microvolt = <5000000>;
++		gpio = <&r_pio 0 2 GPIO_ACTIVE_HIGH>;  /* PL2 */
++		enable-active-high;
++	};
++
++	reserved-memory {
++		/* pstore records, kept in DRAM across a warm reset (values as in the A7S series ramoops patch) */
++		ramoops@60000000 {
++			compatible = "ramoops";
++			reg = <0x0 0x60000000 0x0 0x100000>;
++			console-size = <0x40000>;
++			record-size = <0x20000>;
++			ecc-size = <16>;
++		};
++	};
++};
++
++&pio {
++	uart0_pb9_pb10_pins: uart0-pb9-pb10-pins {
++		pins = "PB9", "PB10";
++		function = "uart0";
++	};
++};
++
++&uart0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&uart0_pb9_pb10_pins>;
++	status = "okay";
++};
++
++&mmc0 {
++	bus-width = <4>;
++	status = "okay";
++};
++
++&mmc2 {
++	bus-width = <8>;
++	cap-mmc-hw-reset;
++	mmc-ddr-1_8v;
++	mmc-hs200-1_8v;
++	non-removable;
++	status = "okay";
++};
++
++&usb_otg {
++	dr_mode = "peripheral";
++	status = "okay";
++};
++
++&gmac0 {
++	phy-mode = "rgmii-id";
++	phy-handle = <&ext_rgmii1_phy>;
++	tx-internal-delay-ps = <1200>;
++	rx-internal-delay-ps = <1000>;
++	status = "okay";
++};
++
++&mdio0 {
++	ext_rgmii1_phy: ethernet-phy@1 {
++		compatible = "ethernet-phy-ieee802.3-c22";
++		reg = <1>;
++		reset-gpios = <&pio 7 16 GPIO_ACTIVE_LOW>; /* PH16, from the A7A U-Boot dts */
++		reset-assert-us = <10000>;
++		reset-deassert-us = <150000>;
++	};
++};
++
++/* Armbian 00c27198 0005 patch: &usbc2 is the Type-C port controller; PL2 (reg_usbc2_vbus) is its drvvbus-supply.
++ * Armbian gives usb1 no VBUS supply (no usb1_vbus-supply line in that patch), so none is set here.
++ * ehci1/ohci1 are enabled as Armbian enables them (status okay). Line numbers not read: UNVERIFIED. */
++&usbc2 {
++	device_type = "usbc2";
++	drvvbus-supply = <&reg_usbc2_vbus>;
++	status = "okay";
++};
++
++&ehci1 {
++	status = "okay";
++};
++
++&ohci1 {
++	status = "okay";
++};

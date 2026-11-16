@@ -1,0 +1,82 @@
+# The Radxa Cubie A7S's Lemnos board file (C1, the bench image). Untested on board. Built from Lemnos 31e0f736 (BB1b, merged to next),
+# its testing/boards/sun60i-a733-slots.toml (the bench-board slot declarations), with THIS board's id and the rules below.
+# Every fact cites its source. DERIVED: from source, not run. UNVERIFIED: no board has run it.
+#
+# Named by this board's [descriptions] lemnos (board.toml). The product installs it as /etc/lemnos/board.toml.
+# lemnos-ctl validate / tree at 31e0f736 has NOT been run on this file (no build is run in this PR).
+format = "lemnos.board"
+schema_version = 1
+
+[board]
+# The board's name (devices/README.md, "The board id"): the Gaia board name and the directory name.
+id = "radxa-cubie-a7s"
+soc = "sun60i-a733"
+
+[[hardware]]
+controller = "watchdog"
+
+[[devices]]
+id = "identity"
+driver = "system-identity"
+config = { serial = "device-tree" }
+
+[[devices]]
+id = "reboot"
+driver = "system-reboot"
+
+# The always-on watchdog, r_wdt (socs/sun60i-a733.toml [controllers.watchdog]: /soc@0/watchdog@7021000, the series'
+# add-the-watchdogs node). The driver's hardware maximum is 16 s (drivers/watchdog/sunxi_wdt.c:25); the timeout is 15 s.
+# WDT0 (watchdog@2050000) is NOT used: the series disables it ("does not reliably reset the SoC").
+[[devices]]
+id = "watchdog"
+driver = "hw-watchdog"
+keepalive = true
+uses = { watchdog = "watchdog:/soc@0/watchdog@7021000" }
+config = { timeout_s = 15 }
+
+# The slot record: U-Boot's own redundant environment (record = "uboot"). The environment is the GPT partition uboot-env
+# (board.toml; 128 KiB at 16 MiB, type 3de21764-95bd-54bd-a5c3-4abe786f38a8), and U-Boot's MMC device for it is 0 (the SD).
+# uboot_env_size = 0x8000 is the family's CONFIG_ENV_SIZE (u-boot.fragment); the BB1b sample says the same for this SoC.
+# SD first: `/soc@0/mmc@4020000` (the series' mmc0 alias; sun60i-a733-slots.toml, same node). No eMMC boot source here: the
+# boot ROM's eMMC support is UNVERIFIED (the BB1b sample names it; this bench image does not use it).
+# The fastboot pair 1209:0001 is the pid.codes TEST pair (not registered): replaced before any release (boards.md, uboot_usb_*).
+[[devices]]
+id = "slots"
+driver = "system-slots"
+config = { data = "/data", boot = "/boot", record = "uboot", boot_args = "os", boot_sources = ["/soc@0/mmc@4020000=/soc@0/mmc@4020000"], uboot_env_size = 0x8000, uboot_env_mmc_index = 0, uboot_usb_vendor = 0x1209, uboot_usb_product = 0x0001 }
+
+# The Lemnos gadget on the A733 device port (Lemnos 31e0f736 (BB1b, merged to next): socs/sun60i-a733.toml [controllers.usb-otg0], kind
+# usb-peripheral, path /soc@0/usb@4100000, sysfs 4100000.usb). The port is J16 (USB-C 1, the 5 V input), the MUSB controller,
+# dr_mode peripheral (series fe0a8ed, a733-usb0-gadget). Form as the ZERO 3E's (Z1: [[hardware]] name udc:..., controller,
+# role peripheral; the gadget device uses the udc, identity from the identity device). The NCM interface is lemnos0, which
+# lemnos0-addressing (serial-hash-v1) addresses. One gadget per UDC: Gaia's usb-gadget-network (usb0) is NOT in this image.
+#
+# ON-BOARD UNCONFIRMED (Lemnos's own marks, socs/sun60i-a733.toml): the /soc@0 bus path (the series' bus node renamed by a later
+# patch), the UDC name (the kernel names the controller musb-hdrc.N.auto; the port is given as udc:4100000.usb, resolved by
+# lemnos-linux resolve_udc), the PHY (no PHY needs entry: the PHY node's path is not in any source read), and VBUS: the map
+# has NO [bases.*] entry for the A733, so the board states VBUS itself: vbus_undriven (coordinator ruling 2026-11-14).
+# Evidence: Radxa Cubie A7S schematic V1.10 (RS504, dl.radxa.com, sha256 89bf60f0...500f), sheet 13 "USBC0_T-CARD": J16's
+# VBUS pins are the net VCC5V0, which feeds only IN of U12 (SGM40666AS); U12's OUT is VCC5V0_SYS. VCC5V0 appears on no other
+# sheet, and no GPIO or switch drives it. The SoC's USB0-DRVVBUS (sheet 12) enables U2 (SGM2576) for J4's VBUS_USB, not J16.
+# Not proven from the sheet: whether U12 blocks reverse current if VCC5V0_SYS were fed from elsewhere (header 5 V); the bench
+# is powered from J16 only. No meter (coordinator: not needed for the bench). The vendor/product pair is the managed gadget's
+# (0x1d6b:0x0104, as the ZERO 3E's): a test identity until the release identity.
+[[hardware]]
+name = "udc:4100000.usb"
+controller = "usb-otg0"
+role = "peripheral"
+vbus_undriven = true
+vbus_reason = "J16 VBUS is the board's 5 V input: net VCC5V0 feeds only the input of load switch U12 (SGM40666AS), whose output is VCC5V0_SYS; no GPIO or switch drives VCC5V0 (Radxa Cubie A7S schematic V1.10, sheet 13); USB0-DRVVBUS switches J4, not J16 (sheet 12)"
+
+[[devices]]
+id = "gadget"
+driver = "usb-gadget"
+uses = { function = "udc:4100000.usb" }
+config = { vendor = 0x1d6b, product = 0x0104, identity = "identity" }
+
+# The security switch OFF: no record kept, Orion not authenticating here. The bench image is security-off (the coordinator's
+# ruling, 2026-11-14; INPUTS "RULING REPLACED: security off"). The trust list is the bench's public line (keys below).
+[security]
+record = "/var/lib/lemnos/security.rec"
+keys = "/etc/lemnos/slot-keys"
+orion = false

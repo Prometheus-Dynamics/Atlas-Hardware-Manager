@@ -49,9 +49,23 @@ name = "udc:fcc00000.usb"
 controller = "usb-otg0"
 role = "peripheral"
 
-# The gadget (the Lemnos usb-gadget driver). Its interfaces are not written here: the function list and
-# the identity device come with the rest of the board file.
+# The identity: the board's serial from the device tree (the Raze's way; the rk3566 device-tree serial is read on a board, docs/identity.md).
+# name and revision are the board's own facts.
+[[devices]]
+id = "identity"
+driver = "system-identity"
+config = { serial = "device-tree", name = "Radxa ZERO 3E", revision = "bench" }
+
+# The gadget (the Lemnos usb-gadget driver), with the Raze's addressing: the default composition (the orion link, NCM
+# derived from the board serial, one ACM console); the NCM interface is lemnos<N>, addressed by the lemnos0-addressing
+# component (serial-hash-v1). identity names the identity device above (the daemon reads it from the gadget's config).
 [[devices]]
 id = "gadget"
 driver = "usb-gadget"
 uses = { function = "udc:fcc00000.usb" }
+config = { vendor = 0x1d6b, product = 0x0104, identity = "identity" }
+
+# The security switch OFF: no record is kept, Orion does not ship here, so nothing is authenticated (docs/slots.md).
+[security]
+record = "/var/lib/lemnos/security.rec"
+orion = false

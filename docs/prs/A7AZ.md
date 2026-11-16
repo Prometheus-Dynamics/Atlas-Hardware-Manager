@@ -1,0 +1,101 @@
+# A7AZ: the Cubie A7A and A7Z bench images (A733, sun60i), slot form
+
+**Group:** C (bench images). **Base:** C1 (`pr/C1`, 38a1f624). **Status:** DRAFT. Candidate, UNTESTED, NEVER BOOTED. Bench images only: the closed DRAM blob (`ddr.bin`, family LICENCE) is in the bootloader; nothing is published.
+
+**Runs:** nowhere in this PR. No image is built (Gaia builds). No board is reached.
+
+## What is here
+- `devices/products/cubie-a7a-bench/`, `devices/products/cubie-a7z-bench/`: C1's product form (slot-disk, the Lemnos set at Lemnos pr/BB1b e8472620, bench-network, bench-pc-ssh-key, lemnos0-addressing, bench-hostname). Copies of C1's product with the names changed; `gaia.lock` written by `gaia lock` at Gaia c0d084f.
+- `devices/boards/radxa-cubie-a7a/`: `board.toml` (kernel dts `allwinner/sun60i-a733-cubie-a7a`, U-Boot defconfig `radxa-cubie-a7a_defconfig` from radxa/u-boot 9da4b3e8), `lemnos-board.toml`, `patches/linux/0001-...-a7a.patch` (kernel dts + Makefile line).
+- `devices/boards/radxa-cubie-a7z/`: `board.toml` (kernel dts `allwinner/sun60i-a733-cubie-a7z`, U-Boot defconfig `radxa-cubie-a7z_defconfig` from this repo's patch), `lemnos-board.toml`, `patches/linux/0001-...-a7z.patch`, `patches/u-boot/0001-...-a7z.patch` (A7Z defconfig and dts; dry-run applies cleanly to radxa/u-boot 9da4b3e8).
+
+## Per item: proven / unverified
+| Item | Status | Source |
+|---|---|---|
+| Product form, `gaia validate` (4 files) | PROVEN at Gaia c0d084f: `ok` for both products and both boards | this run |
+| `gaia lock` (both products) | PROVEN: lock written | this run |
+| `gaia plan` (both products) | PROVEN at c0d084fa (bin-c0d084f): exit 0 with `--lock`, `--recipes` (c0d084f src/recipes), `--tool python=`, `--input pc-key=<comment-stripped scratch copy>`, and the `slot_settings_args` settings. The earlier "no recipe slot-disk" was the call without `--recipes` | this run |
+| A733 kernel dts, A7A | UNVERIFIED: derived from the DockSeed A7S dts (series fe0a8ed, `a733-dts`, `a733-ramoops-a7s`) and Radxa's A7A U-Boot dts (9da4b3e8) | `devices/boards/radxa-cubie-a7a/patches/linux` |
+| A733 kernel dts, A7Z | UNVERIFIED: no public A7Z description; it is the A7A dts with the names changed | same |
+| A7A U-Boot defconfig | UNVERIFIED: `radxa-cubie-a7a_defconfig` in radxa/u-boot 9da4b3e8 (exists) | research/radxa-u-boot |
+| A7Z U-Boot defconfig and dts | UNVERIFIED, DERIVED FROM THE A7A (copy with the names changed); Radxa publishes none at 9da4b3e8 (both raw URLs 404; the A7A raw file loads). `patch --dry-run` clean | `devices/boards/radxa-cubie-a7z/patches/u-boot` |
+| Kernel Makefile hunk (dtb line) | UNVERIFIED: the context lines come from the series' A7S patch; no kernel tree is on disk, so the hunk is not applied | `patches/linux` |
+| Ports (A7A) | per Radxa (see VBUS) | `hardware-use/usb-type-c` |
+| Ports (A7Z) | Radxa's type-c page: "USB-C 2.0 OTG & Power", 5 V input, device by default (overlay for host); user ruling: port 1 carries power+OTG+FEL | https://docs.radxa.com/en/cubie/a7z/hardware-use/type-c |
+| Pins uart0 (A7A) | UNVERIFIED: PB9/PB10 are the A7S's pins; the A7A U-Boot dts names `uart0_pb_pins` | series a733-dts / radxa U-Boot |
+| LEDs | MISSING (both): no source gives the GPIO | - |
+| USB-C J4-type typec (A7S only) | NOT on A7A/A7Z: not in the A7A U-Boot dts, not known for the A7Z | - |
+| eMMC (A7A, mmc2) | UNVERIFIED: enabled in the A7A U-Boot dts (8-bit, HS200); its vmmc/vqmmc supplies are NOT written (PMIC not in this dts) | radxa U-Boot a7a dts |
+| A7Z eMMC | UNKNOWN | - |
+| Ramoops | UNVERIFIED: the A7S series' values (reg 0x60000000 0x100000, console 0x40000, record 0x20000, ecc 16) | `a733-ramoops-a7s` |
+| Watchdog | UNVERIFIED: `r_wdt` (C1 sets it in the product; lemnosd owns it) | C1 |
+| PSTORE set to y | in the family fragment (C1) | families/sun60i/assets/linux.fragment |
+| Lemnos gadget | UNVERIFIED on board: `udc:4100000.usb`, the same MUSB port form as the A7S | C1 / Lemnos pr/BB1b |
+
+## VBUS (the gadget port)
+The coordinator's ruling (2026-11-14): if Radxa's own page labels the gadget port as the 5 V power input, `vbus_undriven = true` with its label cited, the A7S schematic V1.10 sheet 13 as the family precedent, bench only. Otherwise stop and report.
+
+- **A7A: `vbus_undriven = true`.** Radxa's page https://docs.radxa.com/en/cubie/a7a/hardware-use/usb-type-c labels the one USB-C port: "Supports 5V power input" and "Supports USB OTG (USB0 port)". Radxa's A7A U-Boot dts (radxa/u-boot 9da4b3e8, `arch/arm/dts/sun60i-a733-radxa-a7a.dts`) gives USB0 VBUS the fixed 5 V rail (`usb0_vbus-supply = <&reg_vcc5v>`), not a GPIO-switched one; the switched PL2 rail is on USB1. The A7A is not host-capable with a switched VBUS on that port, so no stop.
+- **A7Z: `vbus_undriven = true` (coordinator ruling A7Z (a), 2026-11-14).** Port 1 is Radxa's "USB-C 2.0 OTG & Power", "Supports 5V power input", device mode by default (https://docs.radxa.com/en/cubie/a7z/hardware-use/type-c). Family pattern, Radxa Cubie A7S schematic V1.10: sheet 13 (J16 VBUS = VCC5V0, only into the input of U12), sheet 12 (USB0-DRVVBUS enables U2, SGM2576, for J4 = USBC2 VBUS), sheet 7 (PL2 = USB0-DRVVBUS). The switched port is USBC2 (Armbian armbian/build 00c27198, patch/kernel/archive/sun60iw2-opi-vendor/0005-cubie-a7z-add-device-tree.patch:56-62, usbc2-vbus on PL2). **A7Z schematic not read.** Bench only, powered from port 1.
+  Earlier this PR stopped on that Armbian line and then the coordinator ruled (a). The URLs tried for a Radxa A7Z dts are in the table above.
+
+## PL2: the host port's VBUS (per board, corrected ruling)
+- **No PL2 hog on either board** (coordinator, corrected: a permanent output-low hog would kill the host port that USB cameras and other devices need). The earlier hog commit is reverted in this branch.
+- **PL2 is the USB0-DRVVBUS pin, the VBUS switch of the usb1 host port.** The A7S schematic V1.10 names it: sheet 7 (PL2 = USB0-DRVVBUS), sheet 12 (USB0-DRVVBUS enables U2, SGM2576, for J4 = the host port's VBUS). The same dts wiring is in Radxa's A7A and A7S U-Boot dts and the A7S series.
+- **A7A** (Radxa's file, unmodified in source): `sun60i-a733-radxa-a7a.dts` (radxa/u-boot 9da4b3e8) line 31-38 `reg_usb_vbus` (fixed, PL2, `gpio = <&r_pio 0 2 GPIO_ACTIVE_HIGH>`), line 71 `usb1_vbus-supply = <&reg_usb_vbus>`. No `regulator-always-on` and no `regulator-boot-on` in that node. Consumer: the usb1 USBPHY supply (only the host controller asks for it).
+- **A7S** (for the family pattern): Radxa's `sun60i-a733-cubie-a7s.dts` at 9da4b3e8, line 37 (same gpio) and line 85 (`usb1_vbus-supply`); DockSeed's series names the regulator `reg_usbc_vbus` (A7S `a733-a7s-usbc`, PL2, consumer the HUSB311 Type-C controller, no always-on, no boot-on). Both A7S sources are C1's; this PR does not change the A7S.
+- **A7Z**: the regulator is Armbian `reg_usbc2_vbus` (`usbc2-vbus`, PL2, `armbian/build` 00c27198 `0005-cubie-a7z-add-device-tree.patch:57-64`: no always-on, no boot-on, no vin supply), consumer `usb1_vbus-supply` (in the U-Boot dts this PR adds). Enabled only by the host controller.
+- Flags check: none of the three PL2 regulators (A7A, A7S series, A7Z) has `regulator-always-on` or `regulator-boot-on`. Nothing was removed.
+- Per board, who holds PL2 at each step: BootROM/FEL, nothing of ours; SPL, UNVERIFIED (the SPL uses the same board dt, and no PL2 regulator is always-on or boot-on, so nothing turns PL2 on from the SPL that the dts asks for); U-Boot, PL2 driven only when the usb1 host controller enables its supply; kernel, no PL2 user in either kernel dts (the bench kernels do not enable ehci1/ohci1 nor usb1 vbus); lemnosd, nothing.
+- **Host ports (usb1 and the PL2 regulator), per board, each following its OWN source.** The three sources differ on what PL2 feeds, and this PR does not move a consumer between them (coordinator ruling, corrected):
+  - **A7A = Radxa's vendor layout, as it is.** Radxa `sun60i-a733-radxa-a7a.dts` (radxa/u-boot 9da4b3e8): `reg_vcc5v` lines 22-27; `reg_usb_vbus` lines 31-38 (PL2, `vin-supply = <&reg_vcc5v>`, no always-on, no boot-on), consumer `usb1_vbus-supply` (`&usbphy`, lines 69-72); `&ehci1` 83-84, `&ohci1` 87-88 (`status = "okay"`). The A7A kernel dts (`devices/boards/radxa-cubie-a7a/patches/linux`) copies these names. The uart0 pinctrl node `uart0_pb9_pb10_pins` is added there (the `&uart0` block uses it; Radxa's dts names `uart0_pb_pins`).
+  - **A7Z = Armbian's layout, as it is.** Armbian `armbian/build` 00c27198 `0005-cubie-a7z-add-device-tree.patch`: `reg_usbc2_vbus` lines 57-64 (PL2, `usbc2-vbus`, no always-on, no boot-on, no vin supply), consumer `&usbc2` `drvvbus-supply` (the Type-C port controller's rail, as in the DockSeed A7S series' `reg_usbc_vbus`). **Armbian gives usb1 no VBUS supply, so none is set here, and A7Z's usb1 root port has no VBUS source in this PR: it is UNVERIFIED whether the root port powers devices. Nothing is invented.** `&ehci1` and `&ohci1` are `status = "okay"` as Armbian has them (no line numbers read: UNVERIFIED).
+  - **The A7S series (DockSeed, the tested source for the A7S):** `a733-usb2/...enable-the-usb-a-port.patch` enables `&ehci1`/`&ohci1` `status = "okay"`, with usb1's VBUS as `reg_usb1_vbus` on PM5 (USB-A port J8, behind an on-board hub). `a733-a7s-usbc/...enable-the-usb-c-port.patch` lines 41-44 is `reg_usbc_vbus` on PL2 (Type-C controller, no always-on, no boot-on). Consumers: `usb1_vbus-supply = <&reg_usb1_vbus>` (`a733-usb0-gadget` line 45, `a733-a7s-usbc` line 132). The A7S is not changed in this PR.
+  - **Radxa's A7S U-Boot dts:** PL2 at line 37 (`reg_usb_vbus`), `usb1_vbus-supply` at line 85; PM5 `reg_usb_host_en` (`regulator-always-on`, `regulator-boot-on`) at lines 41-51. Also differs from the series.
+  - **PL2 off at boot on both boards:** the A7A and A7Z PL2 regulators have no always-on and no boot-on. Nothing in this PR turns PL2 on before a host controller asks.
+  - **Compile check (syntax only):** cpp and dtc on the A7A and A7Z kernel dts, and the A7Z U-Boot dts, against stubbed labels (the base dtsi is not on disk: `/mnt/ssd-samsung/gaia/bsp/a733/a7s-linux-mainline` holds the patches, not the tree). The label existence (`&usbc2`, `&ehci1`, `&usbphy`, `&pio`) and the dtsi itself are UNVERIFIED against a real A733 tree. `GPIO_ACTIVE_HIGH` was defined as a two-value stub (0/1).
+- **Port 1 (the gadget port)**: `vbus_undriven = true` in both boards' lemnos-board.toml, undriven (no VBUS regulator on USB0). No host overlay for port 1 is shipped.
+
+Radxa schematic URLs (NOT downloaded, for the lead to approve): A7A V1.10 `https://dl.radxa.com/cubie/a7a/docs/hw/radxa_cubie_a7a_v1.10_schematic.pdf`; A7Z V1.10 `https://dl.radxa.com/cubie/a7z/docs/hw/radxa_Cubie_A7Z_v1100__schematic.pdf`, V1.11 `https://dl.radxa.com/cubie/a7z/docs/hw/radxa_cubie_a7z_schematic_v1.11.pdf`, V2.00 `https://dl.radxa.com/cubie/a7z/docs/hw/radxa_cubie_a7z_schematic_v2.00.pdf`.
+
+## Ethernet, per board (mainline gap)
+- **A7A:** present in Radxa's U-Boot (gmac0, RGMII, PHY reset PH16). In the kernel: the GMAC210 driver (`dwmac-sun55i`, its gmac210 match) is NOT in mainline 7.3.4 (family.toml, B19); it comes from the DockSeed series (`a733-gmac210`, `a733-gmac-a7s`). **Missing in mainline; present in the series.**
+- **A7Z:** UNKNOWN (no Radxa description). Same SoC gmac path assumed, unverified. **Missing in mainline (assumed); present in the series only if the A7Z uses gmac0.**
+- Per the user's correction, Ethernet stays in the bench image (driver, DHCP, mDNS) plus the USB gadget. Ethernet untested on the bench.
+
+## The missing list
+- **Both:** a VBUS line for the A7Z; the A7Z U-Boot and kernel dts from a schematic (the lead's approval for the A7Z and A7A schematic URLs above); LED GPIOs; PMIC (AXP318) supplies in the kernel dts; eMMC supplies; UFS (A7A U-Boot enables it; not in the kernel dts); the A7Z device-port VBUS statement; `boot` and `data` partition sizes (placeholders, as C1); the Lemnos board file validation (`lemnos-ctl validate`, not run here).
+- **Gaia:** `gaia plan` for both products is blocked by `no recipe "slot-disk"` (shared with C1). The kernel dts Makefile hunk is not applied (no kernel tree on disk).
+- **Pins:** Lemnos pr/BB1b e8472620 and Gaia c0d084f are kept (not moved). Merge waits for the merged pins.
+
+## Not done (and why)
+- No schematic downloaded (the lead decides).
+- No image built; no board touched.
+- `devices/gaia.lock` and the root `Cargo.toml` not changed.
+
+## 2026-11-16: patch lists, device check, provenance (Gaia 9efa797f)
+
+**Gaia binary:** `/mnt/ssd-samsung/gaia/bin/next-9efa797f/gaia`, `gaia 2.0.6-dev (9efa797f8991069f338da3ba2eec655afb738cfa)`, sha256 `389b7bc2f9b7...`. Read-only, not built here.
+
+**Patch lists (append rule, PATCH-LISTS.md).** The restated entries are removed:
+- `radxa-cubie-a7a` kernel: `patches = [{ file = "patches/linux" }]` (was the series plus `patches/linux`).
+- `radxa-cubie-a7z` kernel: `patches = [{ file = "patches/linux" }]`.
+- `radxa-cubie-a7z` bootloader: `patches = [{ file = "patches/u-boot" }]` only. On `next` the sun60i family no longer declares a `[bootloader]` patch list (C1 moved only the kernel series), so nothing is restated.
+
+**Plan quotes (gaia plan, 9efa797f, both products exit 0):**
+- A7A kernel: `linux.patched` is built from the family's series (`patches`, source `radxa-cubie-a7a.a733-kernel-series`), then `devices/boards/radxa-cubie-a7a/patches/linux` (plan `$S/plan-cubie-a7a-bench.json`, node `linux.patched`).
+- A7Z kernel: the family's series, then `devices/boards/radxa-cubie-a7z/patches/linux`.
+- A7Z U-Boot: `u-boot.patched` from `devices/boards/radxa-cubie-a7z/patches/u-boot` only. The DockSeed bootchain U-Boot patches are NOT in the A7Z build (the family declares none on `next`). Open: whether the A7Z U-Boot needs them (see missing).
+
+**Device check (`scripts/check-devices.sh`, GAIA_BIN=9efa797f, unit `atlas-A7AZ-devices`, exit 1):**
+- A7A and A7Z boards and products: `ok` (validate and plan). Their only failure is the PADS refusal below.
+- `cubie-a7a-bench` and `cubie-a7z-bench`: FAIL, bank PI. Their `pads.toml` states PI as "UNSTATED: REFUSED" (no Radxa SoC dtsi on disk, so the pio references cannot be checked). The check refuses the image. This is the refusal the coordinator asked for: A7A and A7Z stay REFUSED for images.
+- Lemnos pin: known, expected refusal (the products lock Lemnos e847262, `Cargo.toml` pins lemnos-slot-store at 31e0f736: the one-rev rule).
+- Not mine, from `next` (this branch took `next`'s version of the A7S board and family in the merge): `cubie-a7s-bench` FAILS (its board `radxa-cubie-a7s` no longer states `[descriptions] lemnos`, so `cubie-lemnos-board` cannot generate). C1's owner must fix it. `zero-3e-bench` FAILS its gaia.lock (regenerate; not my product).
+
+**Provenance, what is missing per board:**
+- **A7A:** pad table PI (no Radxa SoC dtsi on disk to name the pin groups). No A7A schematic has been read (not downloaded; URL recorded above, needs the lead's approval). The `pads.toml` sources (Radxa allwinner-device 7b63c9ec) were stated by the A7RAILS work and are not re-read in this session. Device-mode-only port 1 is stated; usb1 host VBUS stays on the PL2 regulator per Radxa's dts. The A7A kernel dts is UNVERIFIED (no kernel tree; syntax-only check earlier).
+- **A7Z:** the same PI refusal. No A7Z dts from Radxa exists (both raw URLs 404 at 9da4b3e8; allwinner-device has `configs/cubie_a7z/linux-6.6/board.dts`, not read for this PR). The A7Z U-Boot dts is a copy of the A7A's, derived and UNVERIFIED. The PL2 regulator is Armbian's; the A7Z schematic is not read.
+- **Both:** no VBUS schematic evidence (A7A/A7Z schematics not downloaded). Ethernet per board as above. Kernel and U-Boot not compiled against real trees. The bench-only, no-image rule stays.
+
+**Gate:** see the PR body and the unit log `atlas-A7AZ-gate` (scratch `gate.log`).

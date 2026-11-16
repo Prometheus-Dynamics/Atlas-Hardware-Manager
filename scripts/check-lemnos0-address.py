@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The Raze's lemnos0 address (scheme serial-hash-v1), off the board.
 
-Runs the component's shipped script, devices/components/raze-base-files/files/lemnos0-address, with the
+Runs the component's shipped script, devices/components/lemnos0-addressing/files/lemnos0-address, with the
 serial and output directory pointed at fixtures (LEMNOS0_SERIAL, LEMNOS0_OUT) and the component's own
 data file (LEMNOS0_CONF). Checks:
   - the six dev vectors (INPUTS "RULING": the address for each serial8);
@@ -23,7 +23,7 @@ import subprocess
 import sys
 import tempfile
 
-COMPONENT = os.path.join("devices", "components", "raze-base-files", "files")
+COMPONENT = os.path.join("devices", "components", "lemnos0-addressing", "files")
 SCRIPT = os.path.join(COMPONENT, "lemnos0-address")
 CONF = os.path.join(COMPONENT, "lemnos0-addressing.conf")
 

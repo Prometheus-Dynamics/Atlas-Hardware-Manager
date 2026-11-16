@@ -1,0 +1,78 @@
+# The A7A bench image's Lemnos board files: the board file, the bench trust line, the files lemnos-ctl writes from the board
+# file (tree, bundle, boot partition). Modeled on components/raze-lemnos-board (Raze, pinned f4a295c6); this copy is pinned
+# to Lemnos 31e0f736, the approved rev with the rest of the product's Lemnos components. Untested on board.
+version = 1
+name = "cubie-lemnos-board"
+description = "Cubie A7A bench board files for lemnosd: the board file (from the board directory), the bench trust line, and the files lemnos-ctl writes (overlay, cmdline, slot bundle, boot partition)"
+
+# /etc/lemnos/board.toml: the A7A's board file (devices/boards/radxa-cubie-a7a/lemnos-board.toml, named by its [descriptions]).
+[[install]]
+from = { description = "lemnos" }
+to = "/etc/lemnos/board.toml"
+mode = "0644"
+
+# The Lemnos packaging is the product's own `lemnos` component (Lemnos 31e0f736, the approved rev). The generator and the boot partition
+# tool are lemnos-ctl at the same rev.
+[sources.lemnos]
+git = "https://github.com/Prometheus-Dynamics/Lemnos"
+ref = "31e0f736a334260a7df2ea86bcfa358e9a640f08"  # Lemnos Lemnos 31e0f736, the approved rev (C1 bench image)
+
+[sources.root]
+image = "docker.io/library/rust:1.99-slim"
+platform = "host"
+
+# The files `lemnos-ctl tree` writes from the board file: NO --boot-dir (the boot partition is one image from boot-partition),
+# --manifest-boot from the same invocation as -o, --cmdline-slot with --slot. Flag names as in the Raze component (f4a295c6):
+# CHECK at BB1b: `lemnos-ctl tree --help` was NOT run here (no build is run in this PR). UNVERIFIED.
+[generate]
+description = "lemnos"
+tool = { source = "lemnos", package = "lemnos-ctl" }
+args = [
+  "tree", "--socs", "@source@/socs", "@description@",
+  "-o", "@out@/overlay.dts",
+  "--manifest-boot", "@out@/manifest-boot.json",
+  "--modprobe", "@out@/modprobe.conf",
+  "--cmdline", "@out@/cmdline.words",
+  "--cmdline-slot", "@out@/cmdline-slot.words", "--slot", "@slot@",
+]
+outputs = ["overlay.dts", "manifest-boot.json", "modprobe.conf", "cmdline.words", "cmdline-slot.words"]
+
+[generate.provides]
+board-overlay = "overlay.dts"
+manifest-boot = "manifest-boot.json"
+cmdline = "cmdline.words"
+cmdline-slot = "cmdline-slot.words"
+
+# The boot partition: one image, written by the tool from the payload, at the image's boot_size (the board's boot partition).
+[generate.image]
+fit = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--min-size", "--payload", "@payload@"]
+args = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--slot", "@slot@", "--payload", "@payload@", "--size", "@size@", "--out", "@out@"]
+verify = ["boot-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--verify", "@out@"]
+
+# The slot bundle: lemnos-ctl writes it from the payload, the root image and its verity table, signed by the key the
+# environment names (sign_key_env). The bench key is a test credential: milestone 2 only, not for a released image.
+[generate.bundle]
+args = ["bundle", "--layout-of", "@description@", "--socs", "@source@/socs", "--slot", "@slot@", "--payload", "@payload@", "--rootfs", "@rootfs@", "--verity-table", "@verity-table@", "--product", "@product@", "--version", "@version@", "--payload-out", "@payload-out@", "--out", "@out@"]
+key_args = ["--key-file", "@key@", "--expect-key-id", "@key-id@"]
+verify = ["bundle", "--layout-of", "@description@", "--socs", "@source@/socs", "--verify", "@out@"]
+verify_key_args = ["--pubkey", "@pubkey@"]
+
+# The data partition: the slot installed on it (the bundle, the boot partition image, the bench keys, the time), made an ext4
+# filesystem of exactly @data-size@ (the board's data partition size, board.toml). Form as the Raze's raze-lemnos-board at
+# pr/D1 (slot-disk): the same args, verify and keys. Untested on board.
+[generate.data]
+args = ["data-partition", "--layout-of", "@description@", "--socs", "@source@/socs", "--install", "@bundle@", "--boot-image", "@boot-image@", "--keys", "@keys@", "--time", "@time@", "--data-size", "@data-size@", "--out", "@out@"]
+verify = ["data-partition", "--verify", "@out@", "--layout-of", "@description@", "--boot-image", "@boot-image@", "--deep"]
+keys = "files/slot-keys"
+
+# The trust root (Lemnos [security] keys: one line per key, `<64 hex public key> <owner>`). The bench key's PUBLIC line only.
+[[install]]
+from = { file = "files/slot-keys" }
+to = "/etc/lemnos/slot-keys"
+mode = "0644"
+
+# lemnos.conf for the modprobe.d fragment the generator writes (no lemnos.ko in this kernel; the file is what the module needs).
+[[install]]
+from = { generated = "modprobe.conf" }
+to = "/etc/modprobe.d/lemnos.conf"
+mode = "0644"
