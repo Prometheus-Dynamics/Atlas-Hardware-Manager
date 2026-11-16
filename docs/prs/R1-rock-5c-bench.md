@@ -147,3 +147,41 @@ feeds. One bench product per board is the supported image, so `devices/products/
 
 Board-id fix: `devices/boards/radxa-rock-5c/lemnos-board.toml` now states `[board] id = "radxa-rock-5c"` (the same form the ZERO 3E's
 Lemnos file uses), which the board-ids check requires.
+
+## Data partition, reserve and keep (the 2026-11-16 ruling)
+
+- Declared data size: 512 MiB (`devices/boards/radxa-rock-5c/board.toml`, `[[partitions]] data`). The arithmetic is in that file's
+  comment: keep 2 x 40 MiB slot bound + reserve_mb 128 MiB = 208 MiB, x1.1 = 228.8 MiB minimum; 512 MiB declared.
+- Medium: 8 GB (the smallest the tree states, Z2's `radxa-zero-3e/board.toml`). UNVERIFIED for the product; the coordinator's 16 GB
+  fallback is not used because the tree states 8 GB.
+- Lemnos system-slots config (`devices/boards/radxa-rock-5c/lemnos-board.toml`): `keep = 2` and `reserve_mb = 128` set explicitly.
+  Lemnos's defaults are keep 3 and reserve 2048 MiB (`drivers/slot-store/src/store.rs:32` DEFAULT_KEEP; `drivers/system-slots/src/lib.rs:83`
+  DEFAULT_RESERVE at the pin). Raze sets reserve_mb = 2048 and keep = 3 explicitly; Z2's ZERO 3E sets neither (it inherits). So R1
+  differs from Raze and from Z2's defaults: keep 2 (a rollback slot, one update) and reserve 128 MiB (the bench image). Align with Z2
+  when Z2 names its numbers; the rule is the same form either way.
+- Room check (Lemnos, `drivers/system-slots/src/lib.rs:746-772` at 82f6c075; the pinned 31e0f736 keeps the same reserve semantics
+  at :82): an install needs free >= new slot + reserve_mb, else NO_SPACE.
+- Data partition growth: `grow_data` does NOT exist in Lemnos at 31e0f736 or at 82f6c075 (`git grep grow_data`: no hit). Lemnos's
+  first-start grow is `drivers/slot-store/src/mbr.rs` (plan_grow, MBR arithmetic) driven by `drivers/system-slots/src/grow.rs`
+  (BACKOFF_CAP 8 s, grow.rs:59). So the key the coordinator asked for cannot be set; it is not written. The data size is declared
+  final, so no grow is needed for the first image or for updates at this size.
+- Open: whether a pushed bundle is spooled on the data partition is unconfirmed by Lemnos; if it is, it adds a term to the arithmetic.
+
+## Known-limit lines (for the PR body and this doc)
+
+- "data partition does not grow on GPT boards until Lemnos GROW" (Lemnos's grow path is MBR-only at 31e0f736, mbr.rs; the first-start
+  refusal retries every 8 s, grow.rs:59, until Lemnos changes it).
+- KNOWN BLOCKER (first ROCK 5C boot, the same as Z2's): Lemnos slot-init refuses an applied watchdog timeout above 15 s on the
+  DesignWare watchdog. The rk35xx watchdog windows and the 30 s kernel open timeout come from Z2's change; see Z2's doc (`docs/prs/Z2.md`
+  on `origin/pr/Z2`) for the first-boot measurement list. R1 takes the same windows and the same measurement list by reference.
+
+## Watchdog owner (WDOG-OWNER, `scripts/check-watchdog-owner.sh`, next c2482fb9)
+
+Output lines for R1's product `rock-5c-bench` (the check's own lines, no FINDING for it):
+```
+NOTE product rock-5c-bench: inputs say Lemnos; built config unverified
+NOTE product rock-5c-bench: bootloader arming: armed (Lemnos slot init in the initramfs arms the watchdog (its timeout is in Lemnos, not in this tree) at products/rock-5c-bench/product.toml line 44); fed by Lemnos
+NOTE product rock-5c-bench: bootloader arming: armed (U-Boot config CONFIG_WATCHDOG_AUTOSTART=y arms the watchdog at boot, in families/rk35xx/assets/u-boot.fragment line 61); fed by Lemnos
+NOTE product rock-5c-bench: bootloader arming: NOT CHECKED (resolved U-Boot config needs a build)
+```
+The same check's FINDING is for `zero-3e-base` (next's product; not R1's): no watchdog owner, and the boot chain arms the watchdog.
