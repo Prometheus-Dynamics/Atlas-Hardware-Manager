@@ -26,7 +26,7 @@ Each patch is a plain unified diff against pristine v7.3.4. All seven apply in o
 | 0008 OTP | `rockchip,rv1126b-otp`: the BSP's byte-addressed read path (`rv1126b_otp_read`), data size 0x90, clocks usr, sbpi, apb, phy. Word size 0 so the common path passes byte offsets. | builds, 0 warnings |
 | 0009 thermal | `rockchip,rv1126b-tsadc`: the BSP chip (v14 initialize, v5 get-temp, v4 alarm and tshut, the amplitude limiter, GRF bias and offset trim). Shared-code change: an optional `phy_init` hook, a `phy_config` field, and a probe call that is skipped when the hook is NULL. | builds, 0 warnings |
 | 0010 SARADC | `rockchip,rv1126b-saradc`: eight 13-bit channels, 24 MHz, the v2 start and read with DAS 0x14 (the BSP's v3 non-DMA path). Shared-code change: an optional `das_soc_data` field, default 0xc as before. DMA mode is NOT ported. | builds, 0 warnings |
-| 0011 Aura dts | `rv1126b-luckfox-aura.dts` and its Makefile line: ramoops, watchdog, UART2, SD, USB2 gadget, GMAC (RGMII), I2C0 pins | dtc clean |
+| 0011 Aura dts | `rv1126b-luckfox-aura.dts`: RK801 PMIC with the vendor regulators, UART0 console, sdmmc0 with vmmc and vqmmc, the external RGMII PHY (vendor delays and 25 MHz clock), USB OTG, ramoops, watchdog | dtc clean (checked from the applied series) |
 
 ## Register layouts: TRM not read
 
@@ -73,7 +73,7 @@ Triage classes come from `/mnt/ssd-samsung/atlas-next-scratch-root/research/rv11
 | GRF, IOC GRF | `grf`, `ioc_grf` syscon nodes | `syscon` works | UNVERIFIED per consumer: the register offsets the PHYs and GMAC use. |
 | PMU | node only, no power domains | binding and power domain driver exist | power-controller children (vendor `rv1126b-power.h` IDs; mainline's header is `rockchip,rv1126b-power-controller.h`) not carried. |
 | Pinctrl and GPIO | pinctrl node + 8 GPIO banks (`rockchip,gpio-bank`) | 0001 adds the RV1126B banks, calculators and dispatch | builds; the pin groups are 0002 |
-| UART2 (console) | `uart2` node, `rockchip,rv1126b-uart` + `snps,dw-apb-uart` | 8250_dw | pinctrl-0 set to `uart2m0_xfer_pins` (0002). Aura console pins UNVERIFIED (the EVB uses uart2m0). |
+| UART0 (console) | `uart0` node added to the SoC dtsi; pinctrl-0 `uart0m0_xfer_pins`, the vendor's choice (vendor U-Boot stdout = uart0). Settled by the vendor dts; the bench still has to confirm the pads. |
 | Watchdog | `wdt`, enabled on the Aura | `snps,dw-wdt` exists | none |
 | SD (microSD) | `sdmmc0` (`rk3288-dw-mshc` fallback), enabled | `dw_mmc-rockchip` binds via fallback | pinctrl-0 set (0002, bus4, cmd, clk, detn). Card-detect and clock phase UNVERIFIED. vmmc is a fixed stand-in (see PMIC). |
 | eMMC | `emmc` node, disabled | same as SD | not used for the bench image (SD first). |
@@ -97,9 +97,9 @@ Triage classes come from `/mnt/ssd-samsung/atlas-next-scratch-root/research/rv11
 | Storage: microSD boot | Ruled (coordinator, SD first). eMMC layout unconfirmed. |
 | USB: USB 3 OTG Type-C as a USB 2 gadget, peripheral mode | Port per the user's ruling. SuperSpeed not in this image. |
 | Power: 5 V 3 A; a PC port may not supply it | UNVERIFIED. Whether a separate power port exists is still to confirm (user). |
-| Console UART | UNVERIFIED: the dts uses the EVB's uart2 (1.5 Mbaud, `stdout-path`). Aura pins from the schematic still owed. |
-| Ethernet: external RGMII PHY U25 (schematic ETHER sheet, not the integrated FE PHY). Part marking not legible in the render; the pin names are RTL8211F-class; UNVERIFIED. PHYAD = 1 (sheet table `PHYAD[2:0] 3'b001`, R237 pull-up; R238/R239 pull-down). Delays: RXDLY high, TXDLY low (R233 populated, R234 on the pull-down side); the sheet heading calls R234 a pull-up, so the TX side is UNVERIFIED. |
-| PMIC | UNIDENTIFIED. Per ruling 5: two fixed supplies (`vcc3v3_sys`, always on) stand in, marked in the dts. Identify on the bench. |
+| Console UART | SETTLED by the vendor SDK: UART0 on M0 (`uart0m0_xfer_pins`), 1500000 baud. The schematic's DEBUG nets are named NLUART20TX0M0 / RX0M0 (read as UART0 TX/RX on M0). Confirm the pads on the bench. |
+| Ethernet: external RGMII PHY U25 (schematic ETHER sheet, not the integrated FE PHY). Vendor (SDK 202611) settles: PHY `ethernet-phy-ieee802.3-c22` at address 1, `phy-mode = "rgmii"` with `tx_delay = <0x20>` and no rx_delay (the PHY strap supplies RX delay), reset gpio6 PB6 active low (20 ms, then 100 ms), 25 MHz from the SoC (CLK_MAC_OUT2IO on eth_clk_25m_out_m0). Still unverified: the part (not legible on the render), the strap level (RXDLY high is the schematic reading). |
+| PMIC | SETTLED by the vendor dtsi: RK801 at I2C0 0x27, interrupt gpio0 PC0, regulators as in the vendor dtsi (section below). The schematic text has no PMIC part name; the identity rests on the vendor dtsi. |
 | DDR | Closed rkbin blob `rv1126b_ddr_1332MHz_v1.10.bin` (ruling 4). Bench-only, never published. |
 
 ## U-Boot (scoped; rkcommon blocked on a decision; SoC port not written)
@@ -158,7 +158,7 @@ Grouped by owner. "Gaia" is the build owner; "Lemnos" owns non-trivial driver wo
 ## 2026-11-16 update: GMAC pins, bindings, rkcommon, gate
 
 - **GMAC1 M0 RGMII groups** (0002, UNTESTED ON BOARD, TRM not read): vendor refs `/mnt/ssd-samsung/gaia/work/b7/ref/rv1126b-pinctrl.dtsi` 247-302 and 397-403; pcfg BSP `rv1126b-pinconf.dtsi` 107-110 and 137-140. Schematic: `/mnt/ssd-samsung/gaia/work/b7/aura-docs/schematic.pdf` (1 page, sha256 036cb8f0ba9f4e5dcf82d46a8e75c51fd7e41310c12ba9cfb8680cd0b33c5b5b), ETHER sheet nets `GMAC1_*_M0`, strap table, and the `VCC_PHY0_IO Voltage Config` block.
-- **Aura gmac** (0011): `phy-mode = "rgmii-rxid"`, `phy-handle`, PHY `reg = <1>`, pinctrl-0 the five `ethm0` groups. No `clock_in_out`: for RGMII the PHY supplies RXC and the RK MAC ignores that property; the RMII-only path uses it.
+- **Aura gmac** (0011, superseded 2026-11-16 by the vendor values in the section below): 
 - **Bindings (dt-schema)**: 0008 adds `rockchip,rv1126b-otp` with four clocks and resets (usr, sbpi, apb, phy); 0009 adds `rockchip,rv1126b-tsadc` and an RV1126B-only block for the third clock `tsadc_phyctrl` (the shared clock limit is unchanged); 0010 adds `rockchip,rv1126b-saradc`. **`dtbs_check` has NOT run**: dt-schema is not installed and no download was cleared. The YAML parses.
 - **rkcommon row** (U-Boot, scratch patch at `uboot/rkcommon.patch`): `{ "rv1126b", "110F", 0x10000 - 0x1000, false, RK_HEADER_V2 }`, citing `RKBOOT/RV1126BMINIALL.ini` line 2 (`NAME=RV110F`), line 25 (`NEWIDB=true`), line 27-28 (RC4 off). Mainline V2 rows use the family tag as a label (`RK35` for rk3568/rk3576); the image gets the `RKNS` magic. The size limit follows the rk3568/rk3576 rows' 0x1000 reserve, against 64 KiB system SRAM at 0x3ffb0000. UNVERIFIED until a board boots it. **Not built**: an out-of-tree host build could not run in this pass.
 - **Closed blobs**: the DDR init (`rv1126b_ddr_1332MHz_v1.10.bin`) and BL31 if used. An Aura image built with them stays on the bench, and its image metadata must say so.
@@ -166,3 +166,41 @@ Grouped by owner. "Gaia" is the build owner; "Lemnos" owns non-trivial driver wo
   1. `families/rv11xx/family.toml:41: kernel.patches: unknown key`. The gate pins Gaia `d8441c9` (`devices/gaia.lock`), which does not accept `[kernel] patches`. My local check used `c0d084f`, which does, and the gate correctly refuses that binary as stale. The fix is a Gaia pin that has `patches` (the coordinator's pending pin move). I did not move the pin.
   2. `products/waveshare-luckfox-aura/product.toml: no gaia.lock beside it`. The lock cannot be written until the Gaia pin accepts the family (1).
 - **Not done**: the U-Boot SoC series (rv1126b.c, clk, pinctrl, dtsi, defconfig, common header). It is a multi-file port that needs a build to check, and it is not started in code.
+
+## Vendor SDK check (2026-11-16): what the vendor files settle
+
+Source: Luckfox_Aura_SDK_202611.tar.gz, sha256 b9a95edbd9b17efef477509926874b498549e9df2712a2bcd6bb60d6b3283b2c. The extracted files are at `/mnt/ssd-samsung/gaia-bsp-aura/aura/` and match `aura-files.sha256` (25 of 25). Revs: kernel c67d457cf327 (6.1), U-Boot 649e8bd3474c, rkbin 094fb0b6. Read only: nothing from the SDK was executed.
+
+### Pads statement (devices/boards/waveshare-luckfox-aura/pads.toml)
+
+"no pad/voltage table applied by the kernel dts or by U-Boot source."
+
+- U-Boot `rv1126b.c`: lines 85-86 define `GPIO1_IOC_IO1_VSEL` (0x908) and `VCCIO1_VD_3V3` (BIT 15). Lines 510-511 READ that bit to pick the FSPI drive strength. No line in `rv1126b.c` writes a `*_vsel` register; `ioc_rv1126b.h` declares them at 0x900-0x920 (lines 44-443) and nothing uses them.
+- The vendor kernel dts has no io-domain node and no voltage table.
+- The SPL is a closed blob (`rv1126b_spl_ipc_v1.05.bin`, `RV1126BMINIALL_IPC.ini`). What it programs is not visible in source, so it is not stated.
+- Bank supplies, where the vendor dtsi gives them: GPIO2 (the sdmmc0 data, command and clock pins, `rv1126b-pinctrl.dtsi` sdmmc0 groups, bank 2) has `vqmmc = vccio_sd` (`rv1126b-luckfox-aura.dts:88-89`), a fixed 3.3 V regulator (`rv1126b-luckfox-aura.dtsi:111-120`), fed from `vcc3v3_sys` = RK801 DCDC_REG2 at 3.3 V (`dtsi:381-393`). Every other bank is unstated: the vendor gives no supply for them. The PHY I/O rail (VCCIO_PHY1, schematic) has no vendor regulator, and is unstated.
+
+### RK801 (PMIC)
+
+- The vendor dtsi places it at I2C0 0x27 with `interrupts = <gpio0 PC0 low>` (`dtsi:344-349`). The schematic text has no PMIC part name: the identity rests on the vendor dtsi only.
+- Mainline v7.3.4 HAS the driver: the MFD (`drivers/mfd/rk8xx-i2c.c` 192-193, 257; `rk8xx-core.c` 65-69) and the binding `Documentation/devicetree/bindings/mfd/rockchip,rk801.yaml`; and the regulators (`drivers/regulator/rk808-regulator.c` `rk801_reg[]` 1199-1280: dcdc1-4, ldo1, ldo2, switch; buck ranges 1174-1190). No new triage item for the driver.
+- Our dts now uses those regulators, with the vendor values: dcdc1 `vdd_npu` 0.5-1.5 V; dcdc2 `vcc3v3_sys` 3.3 V; dcdc3 `vcc_ddr` (no range in the vendor); dcdc4 `vdd_logic` 0.5-1.5 V; ldo1 `vdd0v9_sys`; ldo2 `vcc_1v8` 1.8-3.3 V; switch `vcc_3v3`. All are always-on, as the vendor marks them.
+- Not carried: the vendor's `pwrctrl-gpios` (gpio0 PC1) and `pmic-reset` pinctrl state; the mainline binding does not accept them. `soc_pwrctrl_reset` is in the pin file, unused.
+- The `vdd0v9_sys` oddity: the name says 0.9 V and the vendor value is min = max = 3.3 V (`dtsi:419-429`). The schematic has no 0V9 net (text search of the one-page sheet: none), so the rail's voltage cannot be checked against it. We keep the vendor's 3.3 V, marked UNVERIFIED in the dts, and nothing in our dts consumes it.
+- Gap for bring-up: the vendor SPL is closed and may program the RK801 before the kernel runs. Our open SPL does not. The SD card's 3.3 V comes from `vcc3v3_sys` (DCDC2). Whether DCDC2 is on at reset without SPL help is UNVERIFIED on the bench.
+
+### Our U-Boot port against the vendor's voltage registers
+
+- Our SPL writes `VCCIO2_IOC` at 0x40, 0x44 and 0x320 and `PMUIO0_IOC` at 0x4 (the SD iomux), plus the SGRF and firewall writes in `arch_cpu_init`. None is a `*_vsel` register (the vendor's are at 0x900 and up). Our port has no FSPI drive-strength read: it is not needed for SD boot.
+
+### Console, SD, Ethernet, blobs
+
+- **Console:** UART0 on M0 (`uart0m0_xfer_pins`, `rv1126b-pinctrl.dtsi` 2038-2045). Vendor U-Boot `stdout-path = &uart0` (`uboot/rv1126b-u-boot.dtsi` 19-20), `CONFIG_DEBUG_UART_BASE=0x20810000` (`rv1126b_defconfig` 161-163), baud 1500000 (line 160). Our UART2 choice was wrong and is changed in the U-Boot and kernel patches. The schematic's DEBUG nets are named `NLUART20TX0M0` / `RX0M0`, which read as UART0 TX/RX on M0. Pads still to confirm on the bench.
+- **SD:** `sdmmc0` 4-bit, 52 MHz; the vendor U-Boot uses the same bus4, cmd, clk and detn groups as ours. Card power: the vendor kernel enables `sdmmc0_pwren` on gpio0 PB2 (`dts:96-101`), but the vendor SPL toggles GPIO0 B0 (`uboot/rv1126b.c:204-208`, bit 8). The vendor's own two sources disagree; our SPL copies the vendor SPL. UNVERIFIED on the bench.
+- **Ethernet:** `phy-mode = "rgmii"` with `tx_delay = <0x20>` and no rx_delay; the RX delay comes from the PHY strap (`rv1126b-luckfox-aura.dtsi:305-330`). PHY `ethernet-phy-ieee802.3-c22` at address 1 (`dtsi:332-338`). Reset `snps,reset-gpio = gpio6 PB6`, active low, 0 / 20 ms / 100 ms (`dtsi:309-312`). The 25 MHz clock is supplied by the SoC (`assigned-clocks = CLK_MAC_OUT2IO`, 25 MHz; `dtsi:314-315`; eth_clk_25m_out_m0 on gpio6 PC1), so the earlier note that the PHY has its own crystal is wrong for the vendor design. The schematic's RXDLY reading (R233 pulled to VCCIO_PHY1) is the same as the vendor's strap intent. The part is still not legible on the render.
+- **eMMC:** the vendor Aura boots from eMMC (`&emmc` enabled, non-removable, `rv1126b-luckfox-aura.dts:55-64`). Our bench image is SD boot as ruled; the eMMC is not described.
+- **DDR and SPL blobs:** the vendor loader ini names `rv1126b_ddr_1332MHz_v1.06.bin` and `rv1126b_spl_ipc_v1.05.bin` (`aura/rkbin/RV1126BMINIALL_IPC.ini` lines 8, 17, 18). Our pin is rkbin 3e288fe with `rv1126b_ddr_1332MHz_v1.10.bin`. We do not switch: the v1.06 binaries are not in the SDK extract (only the ini), so their hashes cannot be checked, and the vendor rkbin rev 094fb0b6 is not fetched. Pinning it needs a download, which is not cleared. The vendor's U-Boot defconfig also sets `CONFIG_ROCKCHIP_EMMC_IOMUX` (an eMMC boot), not SD.
+
+### Still open (bench)
+
+PMIC power-on with the closed SPL; the SD card-power GPIO (PB2 or B0); the console pads (UART0 M0); the PHY strap levels and the part; the `vdd0v9_sys` value; the ramoops address; the blob versions.

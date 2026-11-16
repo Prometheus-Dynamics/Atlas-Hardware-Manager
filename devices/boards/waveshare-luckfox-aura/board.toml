@@ -26,6 +26,9 @@ git = "https://github.com/rockchip-linux/rkbin.git"
 ref = "3e288fe814e059dd06833495f845cab04ac20a5c"
 
 # DDR init, the closed blob: bench-only, never published in an image (coordinator ruling 4).
+[bootloader]
+defconfig = "luckfox-aura-rv1126b_defconfig"
+
 [bootloader.blobs]
 ROCKCHIP_TPL = { source = "rkbin", path = "bin/rv11/rv1126b_ddr_1332MHz_v1.10.bin" }
 

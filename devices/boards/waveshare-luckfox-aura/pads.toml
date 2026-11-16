@@ -1,27 +1,40 @@
-# Pad statement for the Luckfox Aura (sidecar, PADS rule). Derived from the Aura schematic on disk, not from the
-# SoC datasheet or a TRM (neither is read). A bank with no established voltage is left out on purpose: the
-# image is refused until it is stated, and that is correct.
+# Pad statement for the Luckfox Aura (sidecar, PADS rule). Revised 2026-11-16 from the vendor Aura SDK
+# (Luckfox_Aura_SDK_202611.tar.gz, sha256 b9a95edbd9b17efef477509926874b498549e9df2712a2bcd6bb60d6b3283b2c;
+# files verified against aura-files.sha256). Revs: kernel c67d457cf327 (6.1), U-Boot 649e8bd3474c,
+# rkbin 094fb0b6. The SPL is a closed blob (rkbin rv1126b_spl_ipc_v1.05.bin), so what it programs is not
+# visible in source and is NOT stated here.
 version = 1
 derived_from_board = "board.toml"
+statement = "no pad/voltage table applied by the kernel dts or by U-Boot source"
 
 [source]
-kind = "schematic"
-path = "/mnt/ssd-samsung/gaia/work/b7/aura-docs/schematic.pdf"
-sha256 = "036cb8f0ba9f4e5dcf82d46a8e75c51fd7e41310c12ba9cfb8680cd0b33c5b5b"
-pages = 1
+kind = "vendor-sdk"
+archive_sha256 = "b9a95edbd9b17efef477509926874b498549e9df2712a2bcd6bb60d6b3283b2c"
+kernel_dts = "aura/kernel-dts/rv1126b-luckfox-aura.dtsi"
+kernel_dts_sha256 = "see aura-files.sha256"
+uboot_source = "aura/uboot/rv1126b.c"
 
-# Established by the schematic text and render (no bank voltage is printed for any SoC bank):
-#   VCC_3V3 and VCC_1V8 rails exist; VCC_SD_S0 is the microSD card supply (MicroSD sheet).
-#   VCC3V3_PHY1 is the PHY's 3.3 V supply (pin 29, DVDD33); VCCIO_PHY1 is the PHY's RGMII I/O rail (pin 28, DVDD_RG).
-#   VCC_PHY0_IO "Voltage Config" (R218-R226) sets the PHY I/O level by strap resistors; the level for each strap
-#   pattern is not printed on the sheet (it is in the PHY datasheet, not on disk).
-#
-# NOT stated (refuse the image until established):
-#   bank VCCIO1 (GPIO1), VCCIO2 (GPIO2: microSD sdmmc0), VCCIO3..VCCIO7: no net naming their supply on the sheet.
-#   VCC_PHY0_IO (the PHY's IO domain): its voltage follows from the strap pattern, which needs the datasheet.
+# What the sources say about IO voltage selection:
+#   U-Boot rv1126b.c:85-86 defines GPIO1_IOC_IO1_VSEL (0x908) and VCCIO1_VD_3V3 (BIT 15).
+#   U-Boot rv1126b.c:510-511 READS that bit to pick the FSPI drive strength (3.3 V: level 4; else level 3).
+#   U-Boot rv1126b.c has no write to any *_vsel register. ioc_rv1126b.h:44-443 declares the io_vsel registers
+#   (0x0900-0x0920) and nothing writes them.
+#   The kernel dts has no io-domain node and no voltage table (grep of the SDK's kernel-dts: none).
 
 [banks]
-# (empty on purpose: see above)
+# Stated only where the vendor dtsi gives the supply of a bank's pins.
+[banks.gpio2]
+pins = "sdmmc0 data, command and clock: <2 RK_PA0>..<2 RK_PA5> (rv1126b-pinctrl.dtsi sdmmc0_bus4/clk/cmd, bank 2)"
+supply = "vccio_sd"
+voltage_v = 3.3
+basis = "vqmmc-supply = <&vccio_sd> on &sdmmc0 (rv1126b-luckfox-aura.dts:88-89); vccio_sd is a fixed 3.3 V regulator (rv1126b-luckfox-aura.dtsi:111-120), vin-supply vcc3v3_sys"
+upstream = "vcc3v3_sys = RK801 DCDC_REG2, 3.3 V (rv1126b-luckfox-aura.dtsi:381-393)"
+
+# Not stated (the vendor dtsi gives no supply for these; the image is refused until stated):
+#   GPIO0 (sdmmc0_detn, sdmmc0_pwren, PMIC pins, the USB and host enables), GPIO1, GPIO3, GPIO4-GPIO7 (incl. the
+#   GMAC pins on GPIO6 and the eth_clk output on GPIO6), the FSPI and the emmc (not used in this image).
+#   The PHY I/O rail VCCIO_PHY1 (schematic ETHER sheet; no vendor dtsi regulator for it).
+#   saradc0 vref is vcc_1v8 (rv1126b-luckfox-aura.dtsi:458): an analog reference, not a bank supply, so not a bank entry.
 
 [io_domains]
-# (empty on purpose: VCC_PHY0_IO is a strap block, not a PMU io-domain; the level needs the PHY datasheet)
+# (empty: the vendor kernel dts has no io-domain node and U-Boot writes no VSEL register)

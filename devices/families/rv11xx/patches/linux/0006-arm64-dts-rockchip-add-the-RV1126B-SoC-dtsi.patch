@@ -2,7 +2,7 @@ diff --git a/arch/arm64/boot/dts/rockchip/rv1126b.dtsi b/arch/arm64/boot/dts/roc
 new file mode 100644
 --- /dev/null
 +++ b/arch/arm64/boot/dts/rockchip/rv1126b.dtsi
-@@ -0,0 +1,473 @@
+@@ -0,0 +1,484 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * RV1126B SoC: the boot set (CPU, GIC, timer, PSCI, CRU, GRF, pinctrl banks,
@@ -261,6 +261,17 @@ new file mode 100644
 +			interrupt-controller;
 +			#interrupt-cells = <2>;
 +		};
++	};
++
++	uart0: serial@20810000 {
++		compatible = "rockchip,rv1126b-uart", "snps,dw-apb-uart";
++		reg = <0x20810000 0x100>;
++		interrupts = <GIC_SPI 56 IRQ_TYPE_LEVEL_HIGH>;
++		clocks = <&cru SCLK_UART0>, <&cru PCLK_UART0>;
++		clock-names = "baudclk", "apb_pclk";
++		reg-shift = <2>;
++		reg-io-width = <4>;
++		status = "disabled";
 +	};
 +
 +	uart2: serial@21170000 {

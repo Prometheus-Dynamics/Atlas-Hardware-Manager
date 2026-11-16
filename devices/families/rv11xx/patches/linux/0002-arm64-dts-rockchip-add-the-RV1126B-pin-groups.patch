@@ -2,7 +2,7 @@ diff --git a/arch/arm64/boot/dts/rockchip/rv1126b-pinctrl.dtsi b/arch/arm64/boot
 new file mode 100644
 --- /dev/null
 +++ b/arch/arm64/boot/dts/rockchip/rv1126b-pinctrl.dtsi
-@@ -0,0 +1,204 @@
+@@ -0,0 +1,261 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * RV1126B pin configurations and the pin groups the Luckfox Aura's boot set uses (UART2, SD on
@@ -204,6 +204,63 @@ new file mode 100644
 +				<6 RK_PA4 2 &pcfg_pull_none>,
 +				<6 RK_PA5 2 &pcfg_pull_none_drv_level_3_75>,
 +				<6 RK_PA6 2 &pcfg_pull_none_drv_level_3_75>;
++		};
++	};
++};
++
++/*
++ * Aura groups from the vendor Aura dtsi (rv1126b-luckfox-aura.dtsi, Rockchip SDK 202611, the
++ * "pmic" and "usb" nodes at 674-691, and the sdmmc0_pwren node in the board dts at 97-101), and the
++ * vendor pinctrl for uart0m0 (rv1126b-pinctrl.dtsi 2038-2045) and eth_clk_25m (397-403). Pin numbers
++ * as the vendor writes them. TRM not read; UNTESTED ON BOARD.
++ */
++&pinctrl {
++	/* vendor rv1126b-pinconf.dtsi 616-619 */
++	pcfg_output_high: pcfg-output-high {
++		output-high;
++	};
++
++	pmic {
++		pmic_int: pmic-int {
++			rockchip,pins = <0 RK_PC0 RK_FUNC_GPIO &pcfg_pull_up>;
++		};
++
++		soc_pwrctrl_reset: soc-pwrctrl-reset {
++			rockchip,pins = <0 RK_PC1 RK_FUNC_GPIO &pcfg_output_high>;
++		};
++	};
++
++	usb {
++		typec5v_pwren: typec5v-pwren {
++			rockchip,pins = <0 RK_PC6 RK_FUNC_GPIO &pcfg_pull_none>;
++		};
++
++		vcc5v0_host_en: vcc5v0-host-en {
++			rockchip,pins = <0 RK_PC4 RK_FUNC_GPIO &pcfg_pull_none>;
++		};
++	};
++
++	uart0 {
++		uart0m0_xfer_pins: uart0m0-xfer-pins {
++			rockchip,pins =
++				/* uart0_rx_m0 */
++				<2 RK_PA0 2 &pcfg_pull_up>,
++				/* uart0_tx_m0 */
++				<2 RK_PA1 2 &pcfg_pull_up>;
++		};
++	};
++
++	eth_clk_25m {
++		eth_clk_25mm0_out_pins: eth-clk-25mm0-out-pins {
++			rockchip,pins =
++				/* eth_clk_25m_out_m0 */
++				<6 RK_PC1 2 &pcfg_pull_none_drv_level_3_75>;
++		};
++	};
++
++	sdmmc0 {
++		sdmmc0_pwren: sdmmc0-pwren {
++			rockchip,pins = <0 RK_PB2 RK_FUNC_GPIO &pcfg_pull_down>;
 +		};
 +	};
 +};

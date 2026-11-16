@@ -42,6 +42,9 @@ patches = [{ file = "patches/linux" }]
 
 [bootloader]
 source = "u-boot"
+# The RV1126B U-Boot series (AU1): SoC code, clock, pinctrl, device tree, the Aura board, rkcommon row.
+# Applied in order by Gaia on the v2026.10 baseline (patch -p1 --fuzz=0).
+patches = [{ file = "patches/uboot" }]
 
 [bootloader.trusted_firmware]
 source = "tf-a"
