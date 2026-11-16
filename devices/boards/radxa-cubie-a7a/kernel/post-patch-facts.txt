@@ -1,0 +1,42 @@
+# Facts the pad rule checks mechanically for the Cubie A7A, read from the Radxa files (no series, no edits; see edits.toml).
+# Tree: radxa/allwinner-device 7b63c9ec configs/cubie_a7a/linux-6.6/board.dts sha256 633a4e72b5dacd9d588c9f023bc236afb8e3f2fca8e74856e6abe15f376f0b54.
+# bank-pins: the SoC is the same A733 as the A7S; the count is the series' a733_nr_bank_pins (pinctrl-sun60i-a733.c, same SoC).
+dts-sha256 633a4e72b5dacd9d588c9f023bc236afb8e3f2fca8e74856e6abe15f376f0b54
+pio-supply PA none
+pio-supply PB none
+pio-supply PC none
+pio-supply PD none
+pio-supply PE none
+pio-supply PF none
+pio-supply PG none
+pio-supply PH none
+pio-supply PI none
+pio-supply PJ none
+pio-supply PK none
+rpio-supply PL none
+rpio-supply PM none
+io-bias PA no
+io-bias PB no
+io-bias PC no
+io-bias PD no
+io-bias PE no
+io-bias PF no
+io-bias PG no
+io-bias PH no
+io-bias PI no
+io-bias PJ no
+io-bias PK no
+# the r_pio controller (PL, PM) has no withstand variant (the series: a733-r description)
+io-bias PL no
+io-bias PM no
+bank-pins PA 0
+bank-pins PB 11
+bank-pins PC 17
+bank-pins PD 24
+bank-pins PE 16
+bank-pins PF 7
+bank-pins PG 15
+bank-pins PH 20
+bank-pins PI 17
+bank-pins PJ 28
+bank-pins PK 26

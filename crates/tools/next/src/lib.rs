@@ -77,7 +77,8 @@ options:
   --json             one JSON document on stdout instead of text
 
 exit status: 0 done; 1 the board refused or the outcome is a failure; 2 usage;
-             3 the pin rule refused the board";
+             3 the pin rule refused the board; 4 the outcome is unknown after a reconnect (what was
+             checked is said; running it again is your choice)";
 
 /// What a run needs from its surroundings. The binary builds it from the real clock and the
 /// real waits; a test builds it with a yielding pause and short polls.

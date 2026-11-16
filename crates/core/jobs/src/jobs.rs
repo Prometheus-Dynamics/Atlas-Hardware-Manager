@@ -83,6 +83,13 @@ pub enum JobStatus {
     Paused,
     /// Every step finished.
     Done,
+    /// The outcome of a step is not known. With `checking` set, the step is still checking it and
+    /// the job is not finished: the step resolves it to Done or Failed. With `checking` unset the
+    /// outcome is terminal until the user asks for the work again; nothing is tried by the job.
+    Unknown {
+        reason: String,
+        checking: Option<String>,
+    },
     /// A step got a settled answer (refused or unsupported). The job ends with that reason.
     Failed {
         reason: String,
@@ -99,7 +106,11 @@ impl JobStatus {
     fn is_finished(&self) -> bool {
         matches!(
             self,
-            Self::Done | Self::Cancelled | Self::Failed { .. } | Self::Interrupted { .. }
+            Self::Done
+                | Self::Cancelled
+                | Self::Failed { .. }
+                | Self::Interrupted { .. }
+                | Self::Unknown { checking: None, .. }
         )
     }
 }
@@ -369,6 +380,22 @@ impl Jobs {
     }
 
     /// Adds a job and starts it. It is saved before this returns.
+    /// A step reports, while it is still checking, that its outcome is not known yet: the job shows
+    /// `Unknown` with the reason and what is being checked, and stays running. The step then
+    /// resolves it (returns Ok, or a settled error). Persisted with the job, like every status.
+    /// Returns false when the job is no longer known.
+    pub async fn report_unknown(&self, id: JobId, reason: String, checking: String) -> bool {
+        self.inner
+            .status(
+                id,
+                JobStatus::Unknown {
+                    reason,
+                    checking: Some(checking),
+                },
+            )
+            .await
+    }
+
     pub async fn submit(
         &self,
         kind: &str,
@@ -604,6 +631,18 @@ async fn run_job(inner: Arc<Inner>, id: JobId, mut command: watch::Receiver<Comm
                 if let Some(job) = inner.set(id, |job| job.completed += 1) {
                     inner.announce(job).await;
                 }
+            }
+            Some(Err(error)) if error.is_unknown() => {
+                inner
+                    .status(
+                        id,
+                        JobStatus::Unknown {
+                            reason: error.to_string(),
+                            checking: None,
+                        },
+                    )
+                    .await;
+                return;
             }
             Some(Err(error)) if error.is_settled() => {
                 inner

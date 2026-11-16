@@ -13,6 +13,7 @@ pub mod code {
     pub const NOT_FOUND: i32 = -2;
     pub const INTERRUPTED: i32 = -4;
     pub const IO: i32 = -5;
+    pub const AGAIN: i32 = -11;
     pub const BUSY: i32 = -16;
     pub const NO_DEVICE: i32 = -19;
     pub const INVALID_ARGUMENT: i32 = -22;
@@ -20,6 +21,8 @@ pub mod code {
     /// `NOT_SUPPORTED` (-95): a slot built for another board.
     pub const NOT_SUPPORTED: i32 = -95;
     pub const CANCELLED: i32 = -125;
+    /// `BUFFER_TOO_SMALL` (-4098): a reply over the bridge's bound.
+    pub const BUFFER_TOO_SMALL: i32 = -4098;
 }
 
 /// A failure with its Lemnos status and a sentence for people.

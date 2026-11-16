@@ -478,6 +478,75 @@ async fn a_board_that_refuses_describe_shows_its_devices_as_not_available_until_
     );
 }
 
+/// A session that fails in the middle of a refresh, and comes back on a new connection: the answers
+/// the refresh has already received still answer it. The devices that answered before the failure
+/// are not asked again; the device whose ask was lost is asked again; the device after it is asked
+/// once. The refresh's own count is kept: one ask per device.
+#[tokio::test]
+async fn a_refresh_whose_session_fails_asks_again_only_the_devices_that_have_not_answered() {
+    let dir = scratch("refresh");
+    let node = start(&dir, None);
+    node.refuse_describe(true);
+    let sessions = Sessions::with_call_wait(Arc::new(NoPause), Duration::from_secs(5));
+    let handle = sessions
+        .handle(&address(node.network().port()))
+        .expect("the node is on");
+    connected(&handle).await;
+    let hardware = Hardware::new(handle, link());
+    read_until(&hardware, "the devices shown, none described", |snapshot| {
+        all_read(snapshot)
+            && snapshot
+                .devices
+                .iter()
+                .all(|device| matches!(device.description, DescriptionState::NotAvailable(_)))
+    })
+    .await;
+    // Every generation known: each device's sample has come, and with it the one ask it is owed.
+    read_until(&hardware, "every generation known", |snapshot| {
+        snapshot
+            .devices
+            .iter()
+            .all(|device| matches!(device.generation, Reported::Value(_)))
+    })
+    .await;
+    for _ in 0..5 {
+        let _ = hardware.snapshot().await;
+    }
+    let asked = |device: &str| node.runs_started(&format!("lemnos.{device}.call"));
+    let (bare, gauge, vane) = (asked("bare0"), asked("gauge1"), asked("vane0"));
+
+    // The session ends on off0's ask, after bare0 and gauge1 have answered this refresh.
+    node.drop_session_at_describe("off0");
+    node.refuse_describe(false);
+    hardware.refresh_descriptions();
+    read_until(
+        &hardware,
+        "the vane described after the failed refresh",
+        |snapshot| {
+            device(snapshot, "lemnos.vane0")
+                .is_some_and(|device| matches!(device.description, DescriptionState::Described(_)))
+        },
+    )
+    .await;
+    assert_eq!(
+        asked("bare0"),
+        bare + 1,
+        "bare0 answered before the session failed: not asked again"
+    );
+    assert_eq!(
+        asked("gauge1"),
+        gauge + 1,
+        "gauge1 answered before the session failed: not asked again"
+    );
+    assert_eq!(asked("vane0"), vane + 1, "one ask on the refresh");
+    for _ in 0..5 {
+        let _ = hardware.snapshot().await;
+    }
+    assert_eq!(asked("bare0"), bare + 1, "no ask on a timer");
+    assert_eq!(asked("gauge1"), gauge + 1, "no ask on a timer");
+    assert_eq!(asked("vane0"), vane + 1, "no ask on a timer");
+}
+
 /// An off device comes back to running: its generation moves, and it is described again.
 #[tokio::test]
 async fn a_device_that_comes_back_from_off_is_described_again() {
