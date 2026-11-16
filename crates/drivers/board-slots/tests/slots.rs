@@ -699,3 +699,70 @@ async fn a_follow_answered_at_once_is_checked_against_the_list() {
     );
     assert!(list(&rig).await.get("slot-2").is_some());
 }
+
+// The shared reading of BB1c's trial state (crates/drivers/board-slots/src/trial_updates.rs), on the sim board:
+// the stub reports each block value, an unknown value, a board without the key, and a clear board.
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn trial_updates_read_each_known_block_as_its_typed_reason() {
+    use atlas_board_slots::{TrialBlock, TrialUpdates};
+    let rig = Rig::start("trial-updates-known").await;
+    let actions = BoardActions::new(rig.handle.clone());
+    for (wire, expected) in [
+        ("no-env-partition", TrialBlock::NoEnvPartition),
+        ("env-unreadable", TrialBlock::EnvUnreadable),
+        ("fat-env-file", TrialBlock::FatEnvFile),
+        (
+            "boot-partition-unreadable",
+            TrialBlock::BootPartitionUnreadable,
+        ),
+        ("loader-not-updated", TrialBlock::LoaderNotUpdated),
+    ] {
+        rig.node.slot_set_trial_block(
+            Some(serde_json::json!(wire)),
+            "the boot loader says so",
+            "detail",
+        );
+        match atlas_board_slots::trial_updates::read(&actions).await {
+            TrialUpdates::Blocked {
+                block,
+                text,
+                detail,
+            } => {
+                assert_eq!(block, expected, "{wire}");
+                assert_eq!(text, "the boot loader says so");
+                assert_eq!(detail, "detail");
+            }
+            other => panic!("{wire} must be a typed block, got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn trial_updates_keep_an_unknown_block_as_sent_and_a_clear_or_absent_board_says_so() {
+    use atlas_board_slots::{TrialBlock, TrialUpdates};
+    let rig = Rig::start("trial-updates-unknown").await;
+    let actions = BoardActions::new(rig.handle.clone());
+    rig.node
+        .slot_set_trial_block(Some(serde_json::json!("a-reason-this-build-lacks")), "", "");
+    match atlas_board_slots::trial_updates::read(&actions).await {
+        TrialUpdates::Blocked {
+            block: TrialBlock::Unknown(raw),
+            ..
+        } => {
+            assert_eq!(raw, "a-reason-this-build-lacks");
+        }
+        other => panic!("an unknown block must stay unknown as sent, got {other:?}"),
+    }
+    rig.node.slot_set_trial_block(None, "", "");
+    assert_eq!(
+        atlas_board_slots::trial_updates::read(&actions).await,
+        TrialUpdates::Clear
+    );
+    rig.node.slot_set_trial_updates_key(false);
+    assert_eq!(
+        atlas_board_slots::trial_updates::read(&actions).await,
+        TrialUpdates::NotReported,
+        "a board without BB1c's key says nothing"
+    );
+}

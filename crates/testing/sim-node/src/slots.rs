@@ -200,6 +200,14 @@ pub struct Slots {
     pub healthy: bool,
     /// Trial boots still to come that do not reach the daemon (a test's script).
     pub boots_without_daemon: u32,
+    /// Whether `info` carries BB1c's `trial_updates` key (the sim's boards do by default).
+    pub trial_updates_key: bool,
+    /// The `trial_block` `info` states, as the wire value (a string, or another JSON value to test an
+    /// unknown shape). `None` is a clear board (`null`).
+    pub trial_block: Option<serde_json::Value>,
+    /// The sentence and the detail `info` states with the block.
+    pub trial_block_text: String,
+    pub trial_block_detail: String,
     /// Whether the driver's writes of the trial record fail (a test's script).
     pub fail_record_writes: bool,
     /// The boot partition's `trial-reason` line, written when a fall back cannot be recorded.
@@ -273,6 +281,10 @@ impl Slots {
             now_s: 0,
             healthy: true,
             boots_without_daemon: 0,
+            trial_updates_key: true,
+            trial_block: None,
+            trial_block_text: String::new(),
+            trial_block_detail: String::new(),
             fail_record_writes: false,
             trial_reason: None,
             boot: 0,
@@ -500,7 +512,7 @@ impl Slots {
             (_, true) => format!("last install: {state} {slot}"),
             (_, false) => format!("last install: {state} {slot}: {reason}"),
         };
-        json!({
+        let mut document = json!({
             "last_attempt": {
                 "state": state,
                 "slot": slot,
@@ -512,8 +524,15 @@ impl Slots {
                 "ended_ms": null,
                 "text": text,
             }
-        })
-        .to_string()
+        });
+        if self.trial_updates_key {
+            // BB1c's keys, appended after the existing ones (Lemnos L2-breaking, BB1c).
+            document["trial_updates"] = json!(true);
+            document["trial_block"] = self.trial_block.clone().unwrap_or(serde_json::Value::Null);
+            document["trial_block_text"] = json!(self.trial_block_text);
+            document["trial_block_detail"] = json!(self.trial_block_detail);
+        }
+        document.to_string()
     }
 
     /// Makes `id` the default. The old default becomes previous.
