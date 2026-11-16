@@ -67,3 +67,12 @@ The base is pr/PADS (#138). If #138 has merged into next when this is reviewed, 
 - **A7A and A7Z**: edits files and facts from their own Radxa files (no edits needed, no bank supplies, no fixed rail). Their
   pads.toml state every bank except PI, which is refused (no pin groups on disk). Both still refuse, on PI.
 - **#138 merged**: origin/next is merged into this branch.
+
+## Build wiring and verification (third commit)
+
+- **The correction is a build input.** The A7S board declares `patches = [{ source = "a733-kernel-series", path = "patches" }, { file = "kernel/a7s-rails.patch" }]` (Gaia takes a board's list in place of the family's, so the series is named on the board). `gaia plan` (a6299c62, a scratch probe with C1's A7S lock, not committed) gives the kernel as `patches0` (the series) and then `patch1` (`boards/radxa-cubie-a7s/kernel/a7s-rails.patch`). See docs/research/a7s-rail-voltages.md section 13.7.
+- **The gap is refused.** A pads.toml that names a correction must find it in the board's or family's `[kernel] patches`; the self-test covers the case.
+- **The facts are verified, not recorded.** `check-kernel-fragments.sh` applies the series and then the board's patches (`--fuzz=0`, a reject fails) to the pinned 7.3.4 tree, and runs `scripts/check-board-facts.py` on it: 53 recorded facts match (io_bias_banks, supply lines, PI references, pin table, the four unprogrammed rails as ranges). A negative (a PD supply) is refused. The step runs only for boards with kernel patches.
+- **PH and PC** (docs/research/a7s-rail-voltages.md 13.6): PH's SWOUT2 has no voltage ops, so its read-back is its parent DCDC1's (core.c:4822-4823), never a 1.8 V mode on a 3.3 V output. PC is a fixed 1.8 V applied at registration, read back as 1.8 V.
+- **A7A and A7Z** stay refused on PI only (13.8 says what lifts it).
+- **dcdc4** stays on the unprogrammed list (a range); GPU scaling is the OPP's 960 mV when the GPU runs.
