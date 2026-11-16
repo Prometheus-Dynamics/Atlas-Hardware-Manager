@@ -8,8 +8,8 @@
 //! the temp dir (`TMPDIR`) when it leaves room, else a typed error. Sockets live under the runtime dir
 //! and not under `TMPDIR` because the runtime dir is short by design and `TMPDIR` is whatever the caller
 //! gave (on CI, the build path, which is too long for a socket). The directory is a [`NodeDir`] guard:
-//! dropped, it removes the directory, panics included. Only directories this module made (the prefix
-//! and the `name` file) are ever removed.
+//! dropped, it removes the directory, panics included. Only directories with the `atlas-t-` prefix are ever
+//! removed.
 
 use std::fmt;
 use std::io;
@@ -42,15 +42,8 @@ const MAX_TRIES: u32 = 1000;
 /// The most bytes [`node_dir_in`] adds to its base on the way to a node's socket path: `/`, the prefix,
 /// the hash, `-`, the pid, `-`, the counter, `/` and `orion.sock`. The gate's room check uses this figure
 /// (`SOCKET_SUFFIX_BYTES` in scripts/gate.sh); a unit test in this module keeps them equal.
-pub const NODE_SOCKET_SUFFIX_MAX: usize = 1
-    + PREFIX.len()
-    + HASH_DIGITS
-    + 1
-    + PID_DIGITS
-    + 1
-    + COUNTER_DIGITS
-    + 1
-    + NODE_SOCKET.len();
+pub const NODE_SOCKET_SUFFIX_MAX: usize =
+    1 + PREFIX.len() + HASH_DIGITS + 1 + PID_DIGITS + 1 + COUNTER_DIGITS + 1 + NODE_SOCKET.len();
 
 static NEXT: AtomicU32 = AtomicU32::new(0);
 
@@ -148,13 +141,13 @@ impl AsRef<Path> for NodeDir {
 
 impl Drop for NodeDir {
     fn drop(&mut self) {
-        // Only what this module made: the prefix and the name file. Anything else is left alone.
+        // Only what this module made: the prefix. Tests may clear a node's directory and start again in
+        // it, which removes the name file too, so the prefix is the mark. Anything else is left alone.
         let ours = self
             .path
             .file_name()
             .and_then(|name| name.to_str())
-            .is_some_and(|name| name.starts_with(PREFIX))
-            && self.path.join(NAME_FILE).is_file();
+            .is_some_and(|name| name.starts_with(PREFIX));
         if ours {
             let _ = std::fs::remove_dir_all(&self.path);
         }
@@ -229,7 +222,8 @@ pub fn node_dir_in(base: &Path, name: &str) -> Result<NodeDir, SocketError> {
             Ok(()) => {
                 let guard = NodeDir { path: dir };
                 let file = guard.path.join(NAME_FILE);
-                std::fs::write(&file, name).map_err(|error| SocketError::Io { path: file, error })?;
+                std::fs::write(&file, name)
+                    .map_err(|error| SocketError::Io { path: file, error })?;
                 return Ok(guard);
             }
             // Another directory of this process or an old run has the name: try the next counter.
@@ -259,17 +253,19 @@ fn fnv1a(bytes: &[u8]) -> u64 {
 mod tests {
     use super::*;
 
-    fn base_dir(tag: &str) -> PathBuf {
-        let base = std::env::temp_dir().join(format!("sun-unit-{}-{tag}", std::process::id()));
-        std::fs::create_dir_all(&base).expect("a base directory");
-        base
+    /// The base the tests make node dirs under: the runtime dir when set (short), else the temp dir.
+    /// The tests make no directories of their own under it: only node dirs, which their guards remove.
+    fn base() -> PathBuf {
+        std::env::var_os("XDG_RUNTIME_DIR")
+            .map(PathBuf::from)
+            .filter(|dir| dir.is_absolute())
+            .unwrap_or_else(std::env::temp_dir)
     }
 
     #[test]
     fn a_long_name_gives_a_short_socket_path_and_keeps_the_name() {
         let name = "x".repeat(200);
-        let base = base_dir("long-name");
-        let dir = node_dir_in(&base, &name).expect("a directory for any name");
+        let dir = node_dir_in(&base(), &name).expect("a directory for any name");
         let socket = dir.join(NODE_SOCKET);
         assert!(check_socket_path(&socket).is_ok(), "{socket:?}");
         assert!(
@@ -285,39 +281,40 @@ mod tests {
 
     #[test]
     fn two_names_in_one_process_give_two_directories() {
-        let base = base_dir("two");
-        let a = node_dir_in(&base, "same").expect("first");
-        let b = node_dir_in(&base, "same").expect("second");
+        let a = node_dir_in(&base(), "same").expect("first");
+        let b = node_dir_in(&base(), "same").expect("second");
         assert_ne!(a.to_path_buf(), b.to_path_buf());
     }
 
     #[test]
     fn dropping_the_guard_removes_the_directory_and_nothing_else() {
-        let base = base_dir("drop");
-        let dir = node_dir_in(&base, "gone").expect("a directory");
+        let dir = node_dir_in(&base(), "gone").expect("a directory");
         let path = dir.to_path_buf();
         std::fs::write(path.join(NODE_SOCKET), b"x").expect("a file in it");
         drop(dir);
         assert!(!path.exists(), "the directory is removed on drop");
-        // A directory without our marker (no name file, no prefix) is never removed by a guard.
-        let foreign = base.join("not-ours");
+        // A directory without our marker (no prefix, no name file) is never removed by a guard.
+        let foreign = base().join(format!("not-ours-{}", std::process::id()));
         std::fs::create_dir_all(&foreign).expect("a foreign dir");
         drop(NodeDir {
             path: foreign.clone(),
         });
         assert!(foreign.exists(), "a foreign directory is left alone");
+        std::fs::remove_dir(&foreign).expect("the test removes its own foreign dir");
     }
 
     #[test]
     fn a_panic_still_removes_the_directory() {
-        let base = base_dir("panic");
-        let path = std::panic::catch_unwind(|| {
+        let base = base();
+        let result = std::panic::catch_unwind(|| {
             let dir = node_dir_in(&base, "panics").expect("a directory");
             let path = dir.to_path_buf();
             std::panic::resume_unwind(Box::new(path));
-        })
-        .expect_err("the closure panics");
-        let path = path.downcast::<PathBuf>().expect("the path");
+        });
+        let path = result
+            .expect_err("the closure panics")
+            .downcast::<PathBuf>()
+            .expect("the path");
         assert!(!path.exists(), "a panicking rig leaves nothing behind");
     }
 
@@ -338,15 +335,14 @@ mod tests {
 
     #[test]
     fn runtime_dir_is_used_when_set_and_fits() {
-        let runtime = base_dir("runtime");
-        let temp = base_dir("temp");
-        let dir = node_dir_from(Some(runtime.clone()), temp, "rt").expect("a directory");
-        assert!(dir.starts_with(&runtime), "{:?}", dir.to_path_buf());
+        let temp = std::env::temp_dir();
+        let dir = node_dir_from(Some(base()), temp, "rt").expect("a directory");
+        assert!(dir.starts_with(base()), "{:?}", dir.to_path_buf());
     }
 
     #[test]
     fn falls_back_to_the_temp_dir_when_runtime_is_unset_or_too_long() {
-        let temp = base_dir("fallback");
+        let temp = std::env::temp_dir();
         let unset = node_dir_from(None, temp.clone(), "unset").expect("a directory");
         assert!(unset.starts_with(&temp));
         let too_long = PathBuf::from("/").join("r".repeat(120));
@@ -355,7 +351,7 @@ mod tests {
     }
 
     #[test]
-    fn a_too_long_temp_dir_with_no_runtime_dir_is_a_typed_error() {
+    fn no_base_that_fits_is_a_typed_error_naming_the_last_try() {
         let temp = std::env::temp_dir().join("t".repeat(120));
         let error = node_dir_from(None, temp.clone(), "nowhere").expect_err("no base fits");
         assert!(matches!(error, SocketError::TooLong { .. }), "{error:?}");
@@ -377,10 +373,9 @@ mod tests {
     fn the_suffix_constant_is_the_gate_figure() {
         // scripts/gate.sh: SOCKET_SUFFIX_BYTES. Change both together.
         assert_eq!(NODE_SOCKET_SUFFIX_MAX, 52);
-        let base = base_dir("suffix");
+        let base = base();
         let dir = node_dir_in(&base, "suffix").expect("a directory");
         let socket = dir.join(NODE_SOCKET);
-        let base_len = base.as_os_str().len();
-        assert!(socket.as_os_str().len() <= base_len + NODE_SOCKET_SUFFIX_MAX);
+        assert!(socket.as_os_str().len() <= base.as_os_str().len() + NODE_SOCKET_SUFFIX_MAX);
     }
 }

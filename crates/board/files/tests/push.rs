@@ -335,7 +335,8 @@ async fn a_cancelled_push_stops_and_the_board_gets_no_more_of_the_file() {
 async fn a_changed_source_is_refused_and_nothing_more_is_sent() {
     let rig = rig("changed", 8 * 1024 * 1024).await;
     let size = 4 * 1024 * 1024;
-    let path = scratch("changed-source").join("source.bin");
+    let source_dir = scratch("changed-source");
+    let path = source_dir.join("source.bin");
     write_file(&path, 0x11, size);
     let destination = "images/changed.img";
     let push = submit(

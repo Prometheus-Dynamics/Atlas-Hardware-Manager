@@ -117,11 +117,14 @@ struct Rig {
     sessions: Arc<Sessions>,
     address: Address,
     board: BoardActions,
+    /// The node's directory: kept as long as the rig, removed after the node.
+    _dir: atlas_sim_node::socket::NodeDir,
 }
 
 impl Rig {
     async fn start(name: &str, kind: &Kind) -> Self {
-        let node = start(&scratch(name).join("node"), kind);
+        let dir = scratch(name);
+        let node = start(&dir.join("node"), kind);
         let sessions = Arc::new(Sessions::new(Arc::new(NoPause)));
         let address = address(&node);
         let handle = sessions.handle(&address).expect("the node is on");
@@ -131,6 +134,7 @@ impl Rig {
             sessions,
             address,
             board: BoardActions::new(handle),
+            _dir: dir,
         }
     }
 
@@ -142,11 +146,16 @@ impl Rig {
     }
 }
 
-async fn jobs(name: &str, sessions: Arc<Sessions>) -> ActionJobs {
-    let dir = scratch(name).join("jobs");
-    let _ = std::fs::remove_dir_all(&dir);
-    ActionJobs::open(
-        dir.join("jobs.json"),
+/// The job store for `name`, in a directory the caller keeps for as long as the store is used.
+async fn jobs(
+    name: &str,
+    sessions: Arc<Sessions>,
+) -> (ActionJobs, atlas_sim_node::socket::NodeDir) {
+    let dir = scratch(name);
+    let jobs_dir = dir.join("jobs");
+    let _ = std::fs::remove_dir_all(&jobs_dir);
+    let jobs = ActionJobs::open(
+        jobs_dir.join("jobs.json"),
         sessions,
         Events::new(64),
         JobTiming {
@@ -159,7 +168,8 @@ async fn jobs(name: &str, sessions: Arc<Sessions>) -> ActionJobs {
         DeviceHolds::new(),
     )
     .await
-    .expect("the job list opens")
+    .expect("the job list opens");
+    (jobs, dir)
 }
 
 fn status(jobs: &ActionJobs, id: JobId) -> JobStatus {
@@ -227,7 +237,7 @@ async fn the_catalog_gives_what_the_board_gives_and_marks_the_rest_not_reported(
 async fn every_listed_action_runs_on_the_simulated_node() {
     let rig = Rig::start("every", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let jobs = jobs("every", rig.sessions.clone()).await;
+    let (jobs, _jobs_dir) = jobs("every", rig.sessions.clone()).await;
 
     for action in catalog.actions() {
         let argv = sample_words(action);
@@ -286,7 +296,7 @@ async fn an_action_the_code_has_never_heard_of_runs_from_its_description() {
 async fn a_refusal_comes_back_with_the_boards_reason_for_a_call_and_for_a_job() {
     let rig = Rig::start("refusal", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let jobs = jobs("refusal", rig.sessions.clone()).await;
+    let (jobs, _jobs_dir) = jobs("refusal", rig.sessions.clone()).await;
 
     let reason = "no dry runs while the board is in maintenance";
     rig.node
@@ -325,7 +335,7 @@ async fn a_refusal_comes_back_with_the_boards_reason_for_a_call_and_for_a_job() 
 async fn bad_arguments_are_refused_before_anything_is_sent() {
     let rig = Rig::start("badargs", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let jobs = jobs("badargs", rig.sessions.clone()).await;
+    let (jobs, _jobs_dir) = jobs("badargs", rig.sessions.clone()).await;
     let dry = named(&catalog, DRY_RUN);
 
     // A queued refusal stands in front of the next real send. If a bad call reached the node it
@@ -358,7 +368,7 @@ async fn bad_arguments_are_refused_before_anything_is_sent() {
 async fn a_cancel_stops_the_run_on_the_board_and_the_board_confirms_it() {
     let rig = Rig::start("cancel", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let jobs = jobs("cancel", rig.sessions.clone()).await;
+    let (jobs, _jobs_dir) = jobs("cancel", rig.sessions.clone()).await;
     let self_test = named(&catalog, SELF_TEST);
 
     rig.node.script().push_action(SELF_TEST, Behaviour::Stall);
@@ -397,7 +407,7 @@ async fn a_cancel_stops_the_run_on_the_board_and_the_board_confirms_it() {
 async fn a_session_lost_during_a_long_action_is_followed_and_never_started_again() {
     let rig = Rig::start("lost", &lemnos_kind()).await;
     let catalog = rig.catalog().await;
-    let jobs = jobs("lost", rig.sessions.clone()).await;
+    let (jobs, _jobs_dir) = jobs("lost", rig.sessions.clone()).await;
     let self_test = named(&catalog, SELF_TEST);
 
     // Two stalls queued: a second start would take the second one, so the count shows it.
@@ -447,7 +457,8 @@ async fn a_session_lost_during_a_long_action_is_followed_and_never_started_again
 #[tokio::test]
 async fn a_start_the_node_does_not_confirm_is_not_sent_again() {
     // A call's wait of one second: the blocked monitor makes the start's answer late.
-    let node = start(&scratch("inflight").join("node"), &lemnos_kind());
+    let inflight_dir = scratch("inflight");
+    let node = start(&inflight_dir.join("node"), &lemnos_kind());
     let sessions = Arc::new(Sessions::with_call_wait(
         Arc::new(NoPause),
         Duration::from_secs(1),
@@ -533,7 +544,8 @@ async fn a_short_action_that_runs_past_its_wait_is_asked_to_stop() {
 
 #[tokio::test]
 async fn a_start_with_no_connection_sends_nothing() {
-    let node = start(&scratch("noconn").join("node"), &lemnos_kind());
+    let noconn_dir = scratch("noconn");
+    let node = start(&noconn_dir.join("node"), &lemnos_kind());
     let sessions = Arc::new(Sessions::new(Arc::new(NoPause)));
     let handle = sessions.handle(&address(&node)).expect("the node is on");
     connected(&handle).await;
@@ -554,7 +566,8 @@ async fn a_start_with_no_connection_sends_nothing() {
 
 #[tokio::test]
 async fn a_plain_orion_node_lists_no_actions_and_says_why() {
-    let node = start(&scratch("plain").join("node"), &Kind::Plain);
+    let plain_dir = scratch("plain");
+    let node = start(&plain_dir.join("node"), &Kind::Plain);
     let sessions = Arc::new(Sessions::new(Arc::new(NoPause)));
     let handle = sessions.handle(&address(&node)).expect("the node is on");
     connected(&handle).await;
@@ -598,7 +611,8 @@ async fn progress_is_reported_while_a_run_goes_and_ends_with_its_result() {
 /// M39).
 #[tokio::test]
 async fn a_board_keeps_the_run_of_a_silent_caller_after_the_session_reports_a_lapse() {
-    let node = start(&scratch("lapse").join("node"), &lemnos_kind());
+    let lapse_dir = scratch("lapse");
+    let node = start(&lapse_dir.join("node"), &lemnos_kind());
     // The session's lease is on a manual clock: the lapse is an advance of that clock, not a wait. The
     // renew is far away, so nothing renews the lease but the job's own requests.
     let clock = Clock::manual();
@@ -618,7 +632,7 @@ async fn a_board_keeps_the_run_of_a_silent_caller_after_the_session_reports_a_la
         .catalog()
         .await
         .expect("the board lists its actions");
-    let jobs = jobs("lapse", sessions.clone()).await;
+    let (jobs, _jobs_dir) = jobs("lapse", sessions.clone()).await;
     let self_test = named(&catalog, SELF_TEST);
 
     node.script().push_action(SELF_TEST, Behaviour::Stall);

@@ -22,8 +22,8 @@ so three failures came from long names or a long TMPDIR: the gate's scratch root
   - `node_dir(name)` / `node_dir_in(base, name)`: a fresh directory `<base>/<fnv1a-64 of name, 16 hex>-<pid>-<counter>`,
     with the readable name written to its `name` file. The directory name has a fixed length, so a 200-character
     name gives the same short path as a 1-character one. The socket path is checked before the directory is made.
-  - `socket_base()`: `$XDG_RUNTIME_DIR` when it is an absolute path, else the temp dir.
-  - `NODE_SOCKET_SUFFIX_MAX = 44`: the fixed worst-case bytes past the base. The gate uses it.
+  - `node_dir(name)`: base `$XDG_RUNTIME_DIR` when it is an absolute path and leaves room, else the temp dir when that leaves room, else a typed error.
+  - `NODE_SOCKET_SUFFIX_MAX = 52`: the fixed worst-case bytes past the base (`/atlas-t-` prefix, 16-digit hash, pid, counter, `/orion.sock`). The gate uses it.
 - Sim and rigs (`crates/testing/sim-node`): `SimNode::start_with` / `start_secured` check `<dir>/orion.sock`
   before anything is made or bound and return the typed error as a string. `sim-node` now depends on
   `atlas-types` (an internal path dependency, no external crate). It re-exports the module as
@@ -79,8 +79,8 @@ Total: 8 product sites and 14 rig or test sites, 22 in all. The queue note said 
 
 ## Gate
 
-`scripts/gate.sh`: `SOCKET_SUFFIX_BYTES` is now 44 (the helper's constant), not 45. A TMPDIR of 64 bytes or
-more is refused. The self-test is kept (80 bytes refused, 52 bytes accepted). A unit test
+`scripts/gate.sh`: `SOCKET_SUFFIX_BYTES` is 52 (the helper's constant). The room check uses `XDG_RUNTIME_DIR` when it
+is set and leaves room; only when it is unset or too short does the check fall back to TMPDIR. The self-test is kept (80 bytes refused, 52 bytes accepted). A unit test
 (`the_suffix_constant_is_the_gate_figure`) keeps the Rust constant and the gate figure equal.
 
 ## Tests
@@ -93,16 +93,16 @@ more is refused. The self-test is kept (80 bytes refused, 52 bytes accepted). A 
 - Refusal: `sim_node.rs::a_socket_path_too_long_for_a_unix_socket_is_refused_at_start_naming_it`, which
   checks the error names the path and nothing is made.
 - Session: `session.rs::a_long_name_still_gives_a_socket_that_fits` replaces the old length table test.
-- Proof: the cycle and topics suites run with TMPDIR set to a directory of about 60 characters (see the
-  report for the results).
+- Proof: the cycle and topics suites run with TMPDIR set to a 61-byte directory: cycle 6/6, topics 32+6+9, all
+  pass. The same suites with `XDG_RUNTIME_DIR` unset (the fallback to TMPDIR): see the report.
+- Cleanup check: `/run/user/1000` before and after the full changed-crate run has no `atlas-t-` entries.
 
 ## Notes
 
 - The helper can be simplified once Orion's `SOCKET_PATH_MAX` and `Board::try_start_with` are pinned: the
   stub could return a typed error instead of panicking, and the check here becomes a second line of defence.
-- Node directories are not removed after a test. They sit under `$XDG_RUNTIME_DIR` (tmpfs, cleared at logout)
-  or the temp dir.
-- `XDG_RUNTIME_DIR` is used only by `socket_base`; the product's fixed `/run/orion/orion.sock` path needs no
-  XDG handling.
+- Node directories are removed by their guard when they drop (see Naming and cleanup). A test that keeps a dir
+  past its own scope keeps the guard with it.
+- `XDG_RUNTIME_DIR` is read only by `node_dir`; the product's fixed `/run/orion/orion.sock` path needs no XDG handling.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)

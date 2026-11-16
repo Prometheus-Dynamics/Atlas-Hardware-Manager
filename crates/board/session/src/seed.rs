@@ -2,8 +2,8 @@
 
 use std::str::FromStr;
 
-use atlas_types::{Link, LinkId, LinkKind};
 use atlas_types::socket::{SocketError, check_socket_path};
+use atlas_types::{Link, LinkId, LinkKind};
 use orion::Address;
 
 /// A local socket's path must be one a Unix socket takes. A network or serial address has no socket

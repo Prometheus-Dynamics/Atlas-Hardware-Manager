@@ -160,8 +160,11 @@ impl JobKind for ActionKind {
         let address = Address::from_str(&spec.address).map_err(|error| {
             DriverError::Unsupported(format!("a saved action has no node address: {error}"))
         })?;
-        atlas_session::check_address(&address)
-            .map_err(|error| DriverError::Unsupported(format!("a saved action has no usable node address: {error}")))?;
+        atlas_session::check_address(&address).map_err(|error| {
+            DriverError::Unsupported(format!(
+                "a saved action has no usable node address: {error}"
+            ))
+        })?;
         let Some(handle) = self.sessions.handle(&address) else {
             return Err(DriverError::Unreachable(format!(
                 "{address} is turned off, so {} is not being followed",
