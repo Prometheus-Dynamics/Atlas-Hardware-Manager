@@ -1,6 +1,6 @@
 # Radxa ZERO 3E bench image, Gaia F8 form, as a U-Boot SLOT image (Z2; replaces Z1's plain sd-image). One image: the ZERO 3E
-# board (its U-Boot with the Lemnos environment, the kernel with pstore), the bench's OS (zero-3e-base's and this product's
-# fragments), the Lemnos and Orion packages, and the first-flash disk made by the `slot-disk` recipe (the raze-base pattern; slot-boot makes the slot, slot-disk the disk): the EROFS
+# board (its U-Boot with the Lemnos environment, the kernel with pstore), the bench's OS (the base OS folded into os.fragment, Z2),
+# the Lemnos and Orion packages, and the first-flash disk made by the `slot-disk` recipe (the raze-base pattern; slot-boot makes the slot, slot-disk the disk): the EROFS
 # root with dm-verity, the initramfs (lemnos-slot-init), the overlay, the cmdline, the slot bundle (`[generate.bundle]`, signed by
 # the BENCH key: a test credential, milestone 2 only) and the boot partition (`[generate.image]`, the U-Boot form: boot.scr and
 # the three bay sets, written by Lemnos's tool).
@@ -8,10 +8,10 @@
 # Access over the USB gadget on the OTG Type-C (serial-hash-v1 lemnos0 addressing), plus Ethernet DHCP and mDNS (Z1; the
 # coordinator's ruling of 2026-11-14: Ethernet stays, the gadget is added). Hostname from the serial. PC key, watchdog, serial console.
 #
-# PINS (Z2): the Lemnos components here are this product's own copies at Lemnos Lemnos next 31e0f736 (BB1b; pair with Orion 671d29d) (unmerged), NOT the shared
-# devices/components/lemnos* at f4a295c6 (the Raze's L2 rev), so the Raze's lock does not move. The root Cargo.toml's
-# lemnos-slot-store rev is still f4a295c6: check-devices refuses the mismatch (Z2 stopped there; see docs/prs/Z2.md).
-# Gaia: c0d084fa (merged next: rk-env, slot-disk-blobs). devices/gaia.lock moves to it in PR #127 (G12).
+# PINS (Z2): the Lemnos components here are this product's own copies at Lemnos next 31e0f736 (BB1b; pair with Orion 671d29d).
+# The root Cargo.toml lemnos-slot-store rev is also 31e0f736, so the one-rev rule passes. The shared devices/components/lemnos*
+# (the Raze's pin) are unchanged.
+# Gaia: 9efa797f (devices/gaia.lock, as next).
 version = 1
 name = "zero-3e-bench"
 description = "Radxa ZERO 3E bench OS: U-Boot slot form (Lemnos BB1b), USB gadget and Ethernet, mDNS, serial-based hostname, lemnosd and Orion with security off, systemd watchdog."
@@ -41,7 +41,7 @@ board = "../../boards/radxa-zero-3e/board.toml"
 components = ["dev-bringup-hostkey", "lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "orion", "zero-3e-slot-board", "bench-pc-key", "bench-network", "lemnos0-addressing", "bench-hostname", "bench-hostname-prefix"]
 # The slot's initramfs carries lemnos-slot-init (installed there as /init); it is not on the root filesystem.
 initramfs = ["lemnos-slot-init"]
-os = { provider = "buildroot", source = "buildroot", fragments = ["../zero-3e-base/os.fragment", "os.fragment"] }
+os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
 recipe = "slot-disk"
 
 # The slot settings (as raze-base's slot-disk ones; each named in devices/products/raze-base/product.toml). Compression and level are the

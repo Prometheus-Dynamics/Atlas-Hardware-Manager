@@ -396,16 +396,18 @@ bringup_rule_self_test() {
   local tmp rc=0 out
   tmp=$(mktemp -d)
   cp -a "$repo/devices" "$tmp/devices"
+  # The fixture stands in for a bring-up product (generic name, not a live product): devices/tests/fixtures/bringup.
+  mkdir -p "$tmp/devices/products/example-bringup" && cp -a "$repo/devices/tests/fixtures/bringup/." "$tmp/devices/products/example-bringup/"
   if ! out=$(bringup_rule "$tmp/devices"); then
     echo "check-devices: self-test: the real tree no longer passes the bring-up rule: $out" >&2; rc=1
   fi
-  sed -i '/^bringup-alive = /d' "$tmp/devices/products/rock-4d-bringup/product.toml"
+  sed -i '/^bringup-alive = /d' "$tmp/devices/products/example-bringup/product.toml"
   if out=$(bringup_rule "$tmp/devices"); then
     echo "check-devices: self-test: a bring-up product with no watchdog component was not refused" >&2; rc=1
-  elif [[ $out != *"product rock-4d-bringup: no bringup-alive component"* ]]; then
+  elif [[ $out != *"product example-bringup: no bringup-alive component"* ]]; then
     echo "check-devices: self-test: the refusal does not name the product: $out" >&2; rc=1
   fi
-  cp -a "$repo/devices/products/rock-4d-bringup/product.toml" "$tmp/devices/products/rock-4d-bringup/product.toml"
+  cp -a "$repo/devices/products/example-bringup/product.toml" "$tmp/devices/products/example-bringup/product.toml"
   sed -i '/^to = "\/etc\/board-alive.leds"$/d' "$tmp/devices/products/rock-5c-bringup/components/bringup-alive-settings/component.toml"
   if out=$(bringup_rule "$tmp/devices"); then
     echo "check-devices: self-test: settings that do not install the LED file were not refused" >&2; rc=1
@@ -427,13 +429,13 @@ bringup_rule_self_test() {
     echo "check-devices: self-test: the link refusal does not name the product and link: $out" >&2; rc=1
   fi
   echo ether > "$tmp/devices/products/rock-5c-bringup/components/bringup-alive-settings/files/board-alive.links"
-  sed -i '/^BR2_SYSTEM_DHCP=""$/d' "$tmp/devices/products/rock-4d-bringup/os.fragment"
+  sed -i '/^BR2_SYSTEM_DHCP=""$/d' "$tmp/devices/products/example-bringup/os.fragment"
   if out=$(bringup_rule "$tmp/devices"); then
     echo "check-devices: self-test: a bring-up product that leaves BR2_SYSTEM_DHCP on was not refused" >&2; rc=1
-  elif [[ $out != *"product rock-4d-bringup: its os.fragment does not unset BR2_SYSTEM_DHCP"* ]]; then
+  elif [[ $out != *"product example-bringup: its os.fragment does not unset BR2_SYSTEM_DHCP"* ]]; then
     echo "check-devices: self-test: the DHCP refusal does not name the product: $out" >&2; rc=1
   fi
-  cp -a "$repo/devices/products/rock-4d-bringup/os.fragment" "$tmp/devices/products/rock-4d-bringup/os.fragment"
+  cp -a "$repo/devices/products/example-bringup/os.fragment" "$tmp/devices/products/example-bringup/os.fragment"
   sed -i 's/^Type=ether$/Name=eth0/' "$tmp/devices/components/bringup-network/files/10-bringup-ethernet.network"
   if out=$(bringup_rule "$tmp/devices"); then
     echo "check-devices: self-test: a bring-up network file matching eth0 by name was not refused" >&2; rc=1
@@ -443,7 +445,7 @@ bringup_rule_self_test() {
   sed -i 's/offset = <0x40>;/offset = <0x44>;/' "$tmp/devices/boards/radxa-rock-4d/assets/dts/rockchip/rk3576-rock-4d-loader.dts"
   if out=$(bringup_rule "$tmp/devices"); then
     echo "check-devices: self-test: a reboot-mode node at the wrong offset was not refused" >&2; rc=1
-  elif [[ $out != *"product rock-4d-bringup: its board's dts"* ]]; then
+  elif [[ $out != *"product example-bringup: its board's dts"* ]]; then
     echo "check-devices: self-test: the reboot-mode refusal does not name the product: $out" >&2; rc=1
   fi
   cp -a "$repo/devices/boards/radxa-rock-4d/assets/dts/rockchip/rk3576-rock-4d-loader.dts" "$tmp/devices/boards/radxa-rock-4d/assets/dts/rockchip/rk3576-rock-4d-loader.dts"
