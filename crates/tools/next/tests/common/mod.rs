@@ -25,11 +25,9 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// A scratch directory for one test, kept short: the node's socket path must fit a Unix socket.
-pub fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("atl-next-{}-{name}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    dir
+/// A scratch directory for one test: short whatever the name, so the node's socket path fits.
+pub fn scratch(name: &str) -> atlas_sim_node::socket::NodeDir {
+    atlas_sim_node::socket::node_dir(name).unwrap_or_else(|error| panic!("{name}: {error}"))
 }
 
 /// The simulated board: a node with Lemnos that publishes the slot contract.
