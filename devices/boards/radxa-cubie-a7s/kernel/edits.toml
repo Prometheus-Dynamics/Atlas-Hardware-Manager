@@ -1,0 +1,72 @@
+# Recorded edits to the DockSeed A7S series (fe0a8ed, 379 patches, applied in patches/series order), applied AFTER the series
+# by kernel/a7s-rails.patch. Each entry: the series' change, the board maker's source (Radxa allwinner-device 7b63c9ec, and
+# Radxa U-Boot 9da4b3e8), and what this edit does. Reason: the series pins PMIC rails to fixed voltages that no Radxa file
+# programs in the kernel. Facts only; the voltages are the board maker's, not measured (see docs/research/a7s-rail-voltages.md).
+# Line numbers are into the post-series dts rebuilt from the series (dts-series, 680 lines) and the Radxa files at the commits named.
+#
+# FOR GAIA's unprogrammed_rails CHECK, to be added when Gaia's rev with the key is pinned (NOT in board.toml yet: the pinned Gaia
+# would refuse the unknown key). Node names as they appear under the PMIC in the BUILT kernel dtb:
+#   unprogrammed_rails = ["aldo1", "bldo1", "dcdc1", "dcdc4"]
+# (cldo5 stays a fixed 1.8 V and is not listed. dcdc3 and dcdc5 are ranges in the series and are unchanged.)
+
+[[edit]]
+id = "E1"
+file = "arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7s.dts"
+node = "aldo1"          # reg_aldo1, regulator-name "vcc-pl" (banks PL, PG and PM; r_pio vcc-pm-supply)
+series = "a733-eeprom-a7s/arm64-dts-allwinner-a733-cubie-a7s-describe-aldo1-as.patch:61-66: min = max = 3300000, always-on"
+maker = "Radxa 7b63c9ec configs/cubie_a7s/linux-6.6/board.dts:1369-1375: range 500000-3400000, boot-on and always-on, no value. Radxa U-Boot 9da4b3e8 arch/arm/dts/sun60i-a733-cubie-a7s.dts:172-176: 1800000 fixed, NO always-on or boot-on, and no consumer, so U-Boot does not program it (drivers/power/regulator/regulator-uclass.c: autoset only for boot-on/always-on or a probing consumer)"
+change = "min = 500000, max = 3400000 (the kernel dts range); regulator-boot-on added; always-on kept"
+reason = "the series' 3.3 V is not the maker's value; nothing in the maker's files fixes ALDO1"
+
+[[edit]]
+id = "E2"
+file = "arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7s.dts"
+node = "dcdc1"          # reg_dcdc1, regulator-name "vcc-3v3-sys" (the 3.3 V input of the switches)
+series = "a733-power-a7s/arm64-dts-allwinner-a733-cubie-a7s-add-the-axp318w-pmic.patch:47-50: min = max = 3300000, always-on"
+maker = "Radxa 7b63c9ec board.dts:1280-1288: range 1000000-3800000, boot-on and always-on. Radxa U-Boot 9da4b3e8 sun60i-a733-cubie-a7s.dts:151-156: range 1000000-3400000, always-on"
+change = "min = 1000000, max = 3400000 (the intersection of both maker ranges, the narrower upper bound); regulator-boot-on added"
+reason = "no maker file fixes DCDC1 at 3.3 V; the series' fixed value is not in either file"
+
+[[edit]]
+id = "E3"
+file = "arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7s.dts"
+node = "bldo1"         # reg_bldo1, regulator-name "vcc-pe-pk-mcsi" (banks PE and PK, VCC-MCSI)
+series = "a733-a7s-bank-supplies-2/arm64-dts-allwinner-a733-cubie-a7s-add-the-remaining-pin-bank-supplies.patch:102-105: min = max = 1800000, always-on"
+maker = "Radxa U-Boot 9da4b3e8 sun60i-a733-cubie-a7s.dts:178-183: 1800000 fixed, always-on: U-Boot PROGRAMS it to 1.8 V at probe (regulator-uclass.c: AUTOSET_UV path). Radxa 7b63c9ec board.dts:1407-1412: range 500000-3400000, no always-on. The schematic (sheet 4) names the net VCC-PE from BLDO1 with no voltage"
+change = "min = 500000, max = 3400000; always-on kept. The 1.8 V is then the BOOTLOADER's value (U-Boot), not the kernel's"
+reason = "the kernel fixed value is the bootloader's to set; the kernel must not write it. The bank mode for PE and PK is no longer written by the driver (E5)"
+
+[[edit]]
+id = "E4"
+file = "arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7s.dts"
+node = "dcdc4"         # reg_dcdc4, regulator-name "vdd-gpu"; the GPU's gpu-supply (series a733-gpu/...enable-the-gpu.patch)
+series = "a733-gpu/arm64-dts-allwinner-a733-cubie-a7s-enable-the-gpu.patch:68-: min = max = 960000 (\"fixed at the 1008 MHz operating point\"), always-on"
+maker = "Radxa 7b63c9ec board.dts:1307-1313: range 500000-1540000, boot-on and always-on, gpu-supply = dcdc4 (line 1957). Radxa U-Boot 9da4b3e8: no dcdc4 node"
+change = "min = 500000, max = 1540000 (the kernel dts range); regulator-boot-on added"
+reason = "no maker file fixes the GPU rail. CONSEQUENCE, UNVERIFIED: the GPU's voltage is then the PMIC's value until a GPU operating-point table sets it (the series' a733-gpu-opp patch targets the dtsi and is not in this dts, so none applies here)"
+
+[[edit]]
+id = "E5"
+file = "drivers/pinctrl/sunxi/pinctrl-sun60i-a733.c"
+node = "a733_pinctrl_data.io_bias_banks"
+series = "a733-pinctrl-pow-mod-sel-2bit/pinctrl-sunxi-a733-set-the-withstand-voltage-of-the-banks-with-a-supply.patch:+ (io_bias_banks = BIT(2) BIT(3) BIT(4) BIT(6) BIT(7) BIT(9) BIT(10): PC PD PE PG PH PJ PK)"
+change = "io_bias_banks = BIT(2) | BIT(7): only PC and PH keep a driver-written withstand mode. PD (BIT 3), PE (BIT 4), PG (BIT 6), PJ (BIT 9) and PK (BIT 10) are removed from the driver's programmed set"
+reason = "the 2-bit variant writes 11 (1.8 V) when regulator_get_voltage() of the bank supply reads <= 1.8 V (series pinctrl-sunxi.c hunk, the sunxi_pinctrl_set_io_bias_cfg 2BIT case; the read-back of a rail the maker leaves unprogrammed is a power-up value, and the schematic does not settle PD or PJ). A bank out of the set keeps the mode the SoC sets: U-Boot SPL gpio_init copies POW_MOD_VAL into POW_MOD_SEL (arch/arm/mach-sunxi/board.c:204-207, MACH_SUN60I_A733 selects SUNXI_GEN_NCAT2). The series' own reset value 0x022aaaa0 is 3.3 V for every bank (commit text)"
+
+[[edit]]
+id = "E6"
+file = "(none: the PMIC's fixed rails kept)"
+node = "cldo5"         # reg_cldo5, regulator-name "vcc-pc" (bank PC, eMMC VCCQ): 1800000 fixed, always-on, KEPT by this patch
+series = "a733-a7s-pmic-rails/arm64-dts-allwinner-a733-cubie-a7s-supply-the-emmc-from-the-pmic.patch:61-62"
+maker = "Radxa U-Boot 9da4b3e8 arch/arm/dts/sun60i-a733-cubie-a7s.dts:240-244 (1.8 V fixed; programmed when its consumer probes: mmc2 vmmc-supply, line 73); Radxa 7b63c9ec board.dts:1465-1471 range. Schematic sheet 4 annotates VCC-PC from CLDO5 as 1.8 V; sheet 9 ties eMMC VCCQ1-5 to VCC-PC"
+change = "none. The fixed 1.8 V is kept because the schematic's consumers prove it (sheet 4 annotation and the eMMC VCCQ), and the series tested PC in 1.8 V mode on the A7S"
+reason = "the ruling: a fixed voltage stays only where the schematic's consumers prove it"
+
+[[edit]]
+id = "E7"
+file = "(none)"
+node = "swout1, swout2"
+series = "a733-power-a7s (no min/max; always-on)"
+maker = "Radxa U-Boot 9da4b3e8 arch/arm/dts/sun60i-a733-cubie-a7s.dts:158-170: 3.3 V fixed, always-on (the value U-Boot requests). Radxa 7b63c9ec: dc1sw1/dc1sw2 switches, no value"
+change = "none. The series gives no value to SWOUT1 or SWOUT2 (no min/max), so the kernel programs neither"
+reason = "recorded for the bank statements: PH and PB use SWOUT2 (3.3 V); PJ and PD use SWOUT1 and remain unresolved"

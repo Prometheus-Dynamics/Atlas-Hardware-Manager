@@ -935,6 +935,45 @@ io_domain_nodes() {  # <assets dir>... -> "file:line" for each io-domains node d
     done < <(grep -rl -E '(io-domains|io_domains)' "$d" 2>/dev/null)
   done
 }
+pads_rail_state() {  # <patch> <rail> -> "<rail>=range", "<rail>=fixed:<uV>", "<rail>=open" or "<rail>=absent"
+  # Reads the POST-image of a unified diff (the context and added lines of every hunk of each .dts/.dtsi) and finds the
+  # regulator node named <rail>. A node whose min and max are equal is fixed; a node with a min and a different max is a
+  # range; a node with neither is open (no constraint). A node the patch does not show is absent.
+  python3 -I -c '
+import re, sys
+patch, rail = sys.argv[1], sys.argv[2]
+post, cur = {}, None
+for line in open(patch, encoding="utf-8"):
+    line = line.rstrip("\n")
+    if line.startswith("+++ b/"):
+        cur = line[6:]; post.setdefault(cur, []); continue
+    if cur is None or line.startswith(("--- ", "diff ", "index ", "@@")):
+        continue
+    if line[:1] in (" ", "+"):
+        post[cur].append(line[1:])
+head = re.compile(r"(^|\s)" + re.escape(rail) + r" \{")
+for f, lines in post.items():
+    if not (f.endswith(".dts") or f.endswith(".dtsi")):
+        continue
+    for i, l in enumerate(lines):
+        if not head.search(l):
+            continue
+        mn = mx = None
+        for m in lines[i + 1:]:
+            a = re.search(r"regulator-min-microvolt = <(\d+)>", m)
+            b = re.search(r"regulator-max-microvolt = <(\d+)>", m)
+            if a: mn = int(a.group(1))
+            if b: mx = int(b.group(1))
+            if re.match(r"^\s*};", m):
+                break
+        if mn is None and mx is None:
+            print(rail + "=open"); sys.exit(0)
+        if mn is not None and mn == mx:
+            print(rail + "=fixed:" + str(mn)); sys.exit(0)
+        print(rail + "=range"); sys.exit(0)
+print(rail + "=absent")
+' "$1" "$2"
+}
 pads_rule() {  # <devices dir>
   local dev=$1 p b sec src derived bank name bname ff fam state reason applies soc names key val out=""
   local n k v found bad
@@ -1023,15 +1062,40 @@ pads_rule() {  # <devices dir>
     for k in $keys; do
       grep -qw -- "$k" <<<"$names" || out+="FAIL $name: board $bname names bank $k, which is not a bank of $soc ($names)"$'\n'
     done
-    # The value forms: a voltage ("1.8V", "3.3V"), or fixed by hardware with the sheet cited.
+    # The value forms: a voltage ("1.8V", "3.3V"), or fixed by hardware with the sheet cited (the first two). Three more
+    # statements (PR A7RAILS) name a rail that the board's correcting kernel patch leaves unprogrammed (a range):
+    #   "set by the bootloader <name@rev> to <V> per <file:line>; not re-programmed by the kernel"
+    #   "left as the PMIC powers it up; not programmed by our bootloader or kernel; source: <file> line <N>"
+    # Both need the bank's rail (bank_rails = { PE = "bldo1" }) and the correcting patch (correction = "<file>" beside
+    # pads.toml); the patch must leave that rail a range, not a fixed voltage. And "no pads: ... 0 pins" for a bank the
+    # SoC's own pin table gives no pins (the source must say so).
+    corr=$(grep -E '^correction *=' <<<"$sec" | sed -E 's/^correction *= *"(.*)" *$/\1/' | head -1)
+    rails=$(grep -E '^bank_rails *=' <<<"$sec" || true)
     while IFS= read -r kv; do
       k=${kv%%=*}; k=${k// /}; v=${kv#*=}; v=${v#*\"}; v=${v%\"*}
-      if [[ $v =~ ^[0-9.]+V ]] || [[ $v =~ ^fixed\ by\ hardware,\ per\ sheet\ [0-9]+ ]] || [[ $v == *" to "* ]]; then :; else
-        out+="FAIL $name: board $bname's bank $k value \"$v\" is neither a voltage (for example 1.8V) nor \"fixed by hardware, per sheet N\""$'\n'
+      if [[ $v =~ ^[0-9.]+V$ ]] || [[ $v =~ ^[0-9.]+V\ to\ [0-9.]+V ]] || [[ $v =~ ^fixed\ by\ hardware,\ per\ sheet\ [0-9]+ ]]; then :
+      elif [[ $v =~ ^set\ by\ the\ bootloader\ .+\ to\ [0-9.]+V\ per\ [^\;]+\;\ not\ re-programmed\ by\ the\ kernel$ ]] \
+        || [[ $v =~ ^left\ as\ the\ PMIC\ powers\ it\ up\;\ not\ programmed\ by\ our\ bootloader\ or\ kernel\;\ source:\ [^\;]+$ ]]; then
+        rail=$(grep -oE "(^|[ {,])$k *= *\"[^\"]+\"" <<<"$rails" | sed -E 's/^[ {,]?[A-Za-z0-9_-]+ *= *"//; s/"$//' | head -1)
+        if [[ -z $rail ]]; then
+          out+="FAIL $name: board $bname's bank $k states a rail, but its pads.toml bank_rails names no rail for $k"$'\n'
+        elif [[ -z $corr || ! -f $(dirname "$b")/$corr ]]; then
+          out+="FAIL $name: board $bname's bank $k leaves rail $rail unprogrammed, but the board's correcting kernel patch (correction in pads.toml) is missing"$'\n'
+        else
+          st=$(pads_rail_state "$(dirname "$b")/$corr" "$rail")
+          case $st in
+            "$rail=range"|"$rail=open") ;;
+            "$rail=fixed"*) out+="FAIL $name: board $bname's bank $k says rail $rail is left unprogrammed, but $corr still pins it to a fixed voltage (${st#*=fixed:} microvolts): the statement is false, the image is refused"$'\n' ;;
+            *) out+="FAIL $name: board $bname's bank $k: rail $rail is not in $corr, so the patch cannot be checked against the statement"$'\n' ;;
+          esac
+        fi
+      elif [[ $v =~ ^no\ pads:\ .*\ 0\ pins ]]; then :
+      else
+        out+="FAIL $name: board $bname's bank $k value \"$v\" is neither a voltage (for example 1.8V), \"fixed by hardware, per sheet N\", nor a stated rail or no-pads form"$'\n'
       fi
     done < <(grep -oE '[A-Za-z0-9_-]+ *= *"[^"]*"' <<<"$bank")
     # A range is accepted only for a bank that a named part switches, and only with both endpoints (1.8V and 3.3V).
-    if grep -qE '"[^"]* to [^"]*"' <<<"$bank"; then
+    if grep -qE '"[0-9.]+V to [0-9.]+V' <<<"$bank"; then
       if ! grep -qE '^switched_by *= *"[^"]+"' <<<"$sec"; then
         out+="FAIL $name: board $bname's bank_voltages gives a range but pads.toml has no switched_by: a range is accepted only with the part that switches it (for example the SD voltage regulator)"$'\n'
       fi
@@ -1127,6 +1191,53 @@ derived_from_board = ""
 bank_voltages = { A = "1.8V to 3.3V (sd regulator, run-time)", B = "3.3V" }
 switched_by = "A: the SD card voltage regulator, 1.8V and 3.3V"'
   if ! out=$(pads_rule "$tmp/rangeok/devices"); then echo "check-devices: self-test: a bank range with switched_by and both endpoints was refused: $out" >&2; rc=1; fi
+  # The rail statements (PR A7RAILS): a rail the correcting patch leaves a range passes; the same statement on a rail the
+  # patch still pins to a fixed voltage is refused; a rail statement with no correcting patch is refused; "no pads" needs 0 pins.
+  railpatch='--- a/x.dts
++++ b/x.dts
+@@ -1,4 +1,4 @@
+ reg_x: bldo2 {
+-regulator-min-microvolt = <1800000>;
++regulator-min-microvolt = <500000>;
+ regulator-max-microvolt = <3400000>;
+ };'
+  railfixed='--- a/x.dts
++++ b/x.dts
+@@ -1,4 +1,4 @@
+ reg_x: bldo2 {
+-regulator-min-microvolt = <3300000>;
++regulator-min-microvolt = <1800000>;
+ regulator-max-microvolt = <1800000>;
+ };'
+  railstate='set by the bootloader u-boot@9da4b3e8 to 1.8V per sun60i-a733-cubie-a7s.dts:178-183; not re-programmed by the kernel'
+  mk "$tmp/railok" true 'soc = "tst"
+source = "test schematic, sheet 4"
+derived_from_board = ""
+bank_voltages = { A = "'"$railstate"'", B = "fixed by hardware, per sheet 4" }
+bank_rails = { A = "bldo2" }
+correction = "corr.patch"'
+  printf '%s\n' "$railpatch" > "$tmp/railok/devices/boards/bd/corr.patch"
+  if ! out=$(pads_rule "$tmp/railok/devices"); then echo "check-devices: self-test: a rail statement on a rail the patch leaves a range was refused: $out" >&2; rc=1; fi
+  mk "$tmp/railfixed" true 'soc = "tst"
+source = "test schematic, sheet 4"
+derived_from_board = ""
+bank_voltages = { A = "'"$railstate"'", B = "fixed by hardware, per sheet 4" }
+bank_rails = { A = "bldo2" }
+correction = "corr.patch"'
+  printf '%s\n' "$railfixed" > "$tmp/railfixed/devices/boards/bd/corr.patch"
+  if out=$(pads_rule "$tmp/railfixed/devices"); then echo "check-devices: self-test: a rail statement on a rail the patch still pins to a fixed voltage was not refused" >&2; rc=1
+  elif [[ $out != *"still pins it to a fixed voltage"* ]]; then echo "check-devices: self-test: the fixed-rail refusal does not say so: $out" >&2; rc=1; fi
+  mk "$tmp/railnopatch" true 'soc = "tst"
+source = "test schematic, sheet 4"
+derived_from_board = ""
+bank_voltages = { A = "left as the PMIC powers it up; not programmed by our bootloader or kernel; source: radxa board.dts line 1369", B = "fixed by hardware, per sheet 4" }
+bank_rails = { A = "aldo1" }'
+  if out=$(pads_rule "$tmp/railnopatch/devices"); then echo "check-devices: self-test: a rail statement with no correcting patch was not refused" >&2; rc=1; fi
+  mk "$tmp/nopads" true 'soc = "tst"
+source = "A733 driver bank table"
+derived_from_board = ""
+bank_voltages = { A = "no pads: A733 pinctrl-sun60i-a733.c a_nr_bank_pins gives 0 pins", B = "fixed by hardware, per sheet 4" }'
+  if ! out=$(pads_rule "$tmp/nopads/devices"); then echo "check-devices: self-test: a no-pads bank with 0 pins was refused: $out" >&2; rc=1; fi
   mk "$tmp/ffalse" false-reason ''
   if ! out=$(pads_rule "$tmp/ffalse/devices"); then echo "check-devices: self-test: a family that says no pad table applies, with a reason, was refused: $out" >&2; rc=1; fi
   # The kernel side of a "no table applied" board statement: its fragments must not set the family's kernel_option.

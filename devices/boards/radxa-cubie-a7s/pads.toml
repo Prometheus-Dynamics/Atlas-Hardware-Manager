@@ -1,36 +1,38 @@
 # Pad-table statement for the Cubie A7S (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
-# Two sources, cross-checked bank by bank. Any DISAGREEMENT between them leaves the bank out (refused) until ruled:
-#   S = the DockSeed A7S series, /mnt/ssd-samsung/gaia/bsp/a733/a7s-linux-mainline/patches (rev fe0a8ed), the patch files below.
-#   R = the Radxa U-Boot dts at 9da4b3e8, research/radxa-u-boot/arch/arm/dts/sun60i-a733-cubie-a7s.dts.
-#   Sch = schematic V1.10 sheet 4 net names (dl-a7s-schematic PDF).
 # soc = "a733": the banks PA PB PC PD PE PF PG PH PI PJ PK PL PM (family sun60i, [banks.a733]).
+#
+# SOURCES (all read from disk; no board was touched):
+#   S   = DockSeed A7S series fe0a8ed, /mnt/ssd-samsung/gaia/bsp/a733/a7s-linux-mainline/patches (the patch files cited below)
+#   RK  = Radxa allwinner-device 7b63c9ec, configs/cubie_a7s/linux-6.6/board.dts (kernel)
+#   RU  = Radxa U-Boot 9da4b3e8, research/radxa-u-boot/arch/arm/dts/sun60i-a733-cubie-a7s.dts (the bootloader our image builds)
+#   Sch = schematic V1.10 (dl-a7s-schematic/radxa_cubie_a7s_schematic_v1.10.pdf), sheets 4, 7, 9
+# The correcting kernel patch (kernel/a7s-rails.patch, recorded edits in kernel/edits.toml) is applied AFTER S. It makes the
+# rails below that no maker file programs into ranges, so the kernel does not write them. PMIC facts: docs/research/a7s-rail-voltages.md.
 soc = "a733"
-source = "DockSeed A7S series fe0a8ed (patches/ files cited per bank) cross-checked with Radxa U-Boot dts 9da4b3e8 (sun60i-a733-cubie-a7s.dts) and schematic V1.10 sheet 4 net names"
+source = "DockSeed A7S series fe0a8ed (patches cited per bank), Radxa U-Boot dts 9da4b3e8, Radxa kernel dts 7b63c9ec, schematic V1.10 sheets 4, 7 and 9"
 derived_from_board = ""
-# PB  S: vcc-pb-supply = <&reg_swout2> (a733-a7s-bank-supplies/..add-the-pin-bank-supplies.patch:36); swout2 = "vcc-io" with no
-#       voltage in S (a733-power-a7s/..add-the-axp318w-pmic.patch:68-71). R: swout2 3.3V (sun60i-a733-cubie-a7s.dts:165-169). 3.3V.
-# PC  S: vcc-pc-supply = <&reg_cldo5> (..add-the-pin-bank-supplies.patch:37); cldo5 1.8V (..add-the-remaining-pin-bank-supplies.patch:80-82).
-#       R: cldo5 "vcc-pc" 1.8V (dts:240-244). AGREE: 1.8V.
-# PE  S: vcc-pe-supply = <&reg_bldo1> (..add-the-remaining-pin-bank-supplies.patch:46); bldo1 1.8V (same patch:102-105).
-#       R: bldo1 "vcc-pe" 1.8V (dts:178-183). AGREE: 1.8V.
-# PF  S: vcc-pf-supply = <&reg_swout2> "or VCC18-PF, see power-source" (..remaining...patch:47); the patch's text: PF switches
-#       between VCC-IO (SWOUT2, 3.3V, reset selection) and VCC18-PF (CLDO5, 1.8V) through its power-source. R: no node for PF.
-#       A range, switched by the pin controller's power-source selection (named by S, not a register). 1.8V to 3.3V.
-# PH  S: vcc-ph-supply = <&reg_swout2> (..add-the-pin-bank-supplies.patch:39). swout2 3.3V from R (dts:165-169). 3.3V.
-# PK  S: vcc-pk-supply = <&reg_bldo1> (..remaining...patch:51); bldo1 1.8V (above). Sch: BLDO1 feeds VCC-PK. R: none for PK.
-#       AGREE with the sheet net and bldo1 1.8V: 1.8V.
-# NOT STATED, sources disagree (refused until ruled):
-#   PD  S: vcc-pd-supply = <&reg_swout1> (..add-the-pin-bank-supplies.patch:38): swout1 = "vcc33-lcd", 3.3V from R (dts:158-164).
-#       R: bldo2 is named "vcc-pd" at 1.8V (dts:185-190, name line 189). S's own text says: "the VCC-PD ball is connected to
-#       VCC33-LCD through R251, not to BLDO2, whose output also carries a VCC-PD label". DISAGREEMENT: 3.3V (S) vs 1.8V (R).
-#   PG  S: vcc-pg-supply = <&reg_aldo1> (..describe-aldo1-as.patch:44); aldo1 "vcc-pl" 3.3V (..describe-aldo1-as.patch:61-64).
-#       R: aldo1 "vcc-mipi-dsi" 1.8V (dts:172-175). DISAGREEMENT on the ALDO1 voltage: 3.3V (S) vs 1.8V (R).
-#   PJ  S: vcc-pj-supply = <&reg_swout1> (..remaining...patch:50): "Bank PJ runs from VCC33-LCD (SWOUT1) with no series part".
-#       Sch: sheet 4 puts VCC-PJ on BLDO2 (1.8V). DISAGREEMENT: SWOUT1 3.3V (S) vs BLDO2 1.8V (Sch/R).
-#   PL  S: no vcc-pl-supply on r_pio (..remaining...patch:117: "Bank PL has no vcc-pl-supply on r_pio"), the rail is ALDO1
-#       "vcc-pl" at 3.3V (describe-aldo1-as.patch:61-64). R: ALDO1 at 1.8V. DISAGREEMENT (the ALDO1 voltage, as PG).
-#   PM  S: vcc-pm-supply = <&reg_aldo1> on r_pio (..remaining...patch:118), and S says "the net named VCC-PM on CLDO1 does not
-#       reach the SoC". R: cldo1 "vcc-pm" 1.8V (dts:218-222, name 221). DISAGREEMENT: ALDO1 3.3V (S) vs CLDO1 1.8V (R).
-# NOT ESTABLISHED (no source names a supply): PA, PI.
-bank_voltages = { PB = "3.3V", PC = "1.8V", PE = "1.8V", PF = "1.8V to 3.3V (pin-controller power-source select; reset to 3.3V VCC-IO)", PH = "3.3V", PK = "1.8V" }
+# The correcting patch, relative to this directory. The check reads its post-image: a rail named in bank_rails must be a range.
+correction = "kernel/a7s-rails.patch"
+# The rail each bank's supply is (for the two rail statement forms). Only a rail the patch leaves a range can be named.
+bank_rails = { PE = "bldo1", PG = "aldo1", PK = "bldo1", PL = "aldo1", PM = "aldo1" }
+# Per bank:
+#  PA  no pins: the series' pinctrl-sun60i-a733.c gives PA 0 pins (a733_nr_bank_pins, first entry).
+#  PB  3.3V: SWOUT2 (Sch sheet 4 net VCC-IO; RU swout2 3.3 V fixed, always-on, dts:165-170). The kernel does not write PB's mode.
+#  PC  1.8V: CLDO5 (Sch sheet 4 annotation 1.8V; sheet 9 eMMC VCCQ = VCC-PC; RU cldo5 1.8 V fixed, dts:240-244). Kernel keeps it fixed (edits E6).
+#      The driver writes 11 (1.8 V mode) from the read-back, tested on the A7S by S (eMMC HS400, commit text).
+#  PD  UNSTATED, REFUSED: S says VCC-PD is SWOUT1 (3.3 V, via R251); RU names BLDO2 1.8 V as "vcc-pd"; Sch sheet 4 labels the BLDO2
+#      bus VCC-PD. Two drivers under one net name. Not settled by any source.
+#  PE  set by the bootloader: RU bldo1 "vcc-pe" 1.8 V fixed, always-on (dts:178-183). RU's U-Boot programs it at probe (regulator-uclass.c).
+#      The kernel does not write it (edits E3; the driver no longer writes PE's mode, E5). Sch: VCC-PE from BLDO1, no voltage annotated.
+#  PF  a range switched by the pin controller's power-source bit (S, a733-a7s-bank-supplies-2 PF comment and sunxi-pinctrl-power-source).
+#  PG  left as the PMIC powers it up: rail ALDO1 (S vcc-pg-supply; Sch sheet 7 net VCC-PL via RA3). Neither RU nor RK programs ALDO1
+#      (RU aldo1 has no always-on and no consumer; RK gives a range). The rail's value is the PMIC's power-up value, UNVERIFIED.
+#  PH  3.3V: SWOUT2 (Sch sheet 4 VCC-PH from SWOUT2; sheet 7 ball VCC-PH; RU swout2 3.3 V). The driver writes 10 (3.3 V mode) from the switch.
+#  PI  UNSTATED, REFUSED: no supply in any source. S's table gives PI 17 pins and no PI field; no PI pad name in the schematic text layer.
+#  PJ  UNSTATED, REFUSED: S says PJ runs from SWOUT1 (3.3 V); Sch sheet 4 puts VCC-PJ on BLDO2 (1.8 V); sheet 7 names the ball VCC33-LCD.
+#  PK  set by the bootloader: RU bldo1 1.8 V fixed (as PE). Edits E3, E5.
+#  PL  left as the PMIC powers it up: rail ALDO1 (Sch sheet 7 ball 1M23 VCC-PL; S r_pio has no vcc-pl-supply). As PG, not programmed.
+#  PM  left as the PMIC powers it up: rail ALDO1 via RA13 (Sch sheet 7) or CLDO1 (Sch sheet 4 label; RU cldo1 1.8 V fixed, NOT always-on,
+#      no consumer, so RU does not program it). S: vcc-pm-supply = aldo1 (r_pio). Not programmed by the bootloader or kernel either way.
+bank_voltages = { PA = "no pads: series pinctrl-sun60i-a733.c a733_nr_bank_pins gives 0 pins", PB = "3.3V", PC = "1.8V", PD = "UNSTATED: REFUSED, SWOUT1 3.3 V or BLDO2 1.8 V, unresolved", PE = "set by the bootloader u-boot@9da4b3e8 to 1.8V per arch/arm/dts/sun60i-a733-cubie-a7s.dts:178-183; not re-programmed by the kernel", PF = "1.8V to 3.3V (pin-controller power-source select; reset to 3.3V VCC-IO)", PG = "left as the PMIC powers it up; not programmed by our bootloader or kernel; source: Radxa allwinner-device 7b63c9ec configs/cubie_a7s/linux-6.6/board.dts line 1369", PH = "3.3V", PI = "UNSTATED: REFUSED, no supply in any source", PJ = "UNSTATED: REFUSED, SWOUT1 3.3 V or BLDO2 1.8 V, unresolved", PK = "set by the bootloader u-boot@9da4b3e8 to 1.8V per arch/arm/dts/sun60i-a733-cubie-a7s.dts:178-183; not re-programmed by the kernel", PL = "left as the PMIC powers it up; not programmed by our bootloader or kernel; source: Radxa allwinner-device 7b63c9ec configs/cubie_a7s/linux-6.6/board.dts line 1369", PM = "left as the PMIC powers it up; not programmed by our bootloader or kernel; source: Radxa allwinner-device 7b63c9ec configs/cubie_a7s/linux-6.6/board.dts line 1369" }
 switched_by = "PF: the pin controller's power-source select (DockSeed series, a733-a7s-bank-supplies-2 patch, the PF comment), 1.8V (CLDO5, VCC18-PF) or 3.3V (SWOUT2, VCC-IO) after reset"

@@ -1,0 +1,76 @@
+--- a/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7s.dts
++++ b/arch/arm64/boot/dts/allwinner/sun60i-a733-cubie-a7s.dts
+@@ -477,16 +477,18 @@
+ 			 */
+ 			reg_aldo1: aldo1 {
+ 				regulator-name = "vcc-pl";
+-				regulator-min-microvolt = <3300000>;
+-				regulator-max-microvolt = <3300000>;
++				regulator-min-microvolt = <500000>;
++				regulator-max-microvolt = <3400000>;
+ 				regulator-always-on;
++				regulator-boot-on;
+ 			};
+ 
+ 			reg_dcdc1: dcdc1 {
+ 				regulator-name = "vcc-3v3-sys";
+-				regulator-min-microvolt = <3300000>;
+-				regulator-max-microvolt = <3300000>;
++				regulator-min-microvolt = <1000000>;
++				regulator-max-microvolt = <3400000>;
+ 				regulator-always-on;
++				regulator-boot-on;
+ 			};
+ 
+ 			/* 1.8 V I/O: eMMC VCCQ, bank PC, VCC18-PF of bank PF */
+@@ -522,8 +524,8 @@
+ 			 */
+ 			reg_bldo1: bldo1 {
+ 				regulator-name = "vcc-pe-pk-mcsi";
+-				regulator-min-microvolt = <1800000>;
+-				regulator-max-microvolt = <1800000>;
++				regulator-min-microvolt = <500000>;
++				regulator-max-microvolt = <3400000>;
+ 				regulator-always-on;
+ 			};
+ 
+@@ -535,13 +537,14 @@
+ 				regulator-always-on;
+ 			};
+ 
+-			/* GPU, fixed at the 1008 MHz operating point */
++			/* GPU: a range, no fixed value (Radxa's kernel dts gives 0.5-1.54 V) */
+ 			reg_dcdc4: dcdc4 {
+ 				regulator-name = "vdd-gpu";
+-				regulator-min-microvolt = <960000>;
+-				regulator-max-microvolt = <960000>;
++				regulator-min-microvolt = <500000>;
++				regulator-max-microvolt = <1540000>;
+ 				regulator-ramp-delay = <1280>;
+ 				regulator-always-on;
++				regulator-boot-on;
+ 			};
+ 
+ 			reg_dcdc5: dcdc5 {
+--- a/drivers/pinctrl/sunxi/pinctrl-sun60i-a733.c
++++ b/drivers/pinctrl/sunxi/pinctrl-sun60i-a733.c
+@@ -26,12 +26,14 @@
+ 	.pf_power_source = true,
+ 	.io_bias_cfg_variant = BIAS_VOLTAGE_PIO_POW_MODE_SEL_2BIT,
+ 	/*
+-	 * PC, PD, PE, PG, PH, PJ, PK. PF follows its supply switch, see
+-	 * sunxi_pconf_set_power_source(); PB has no field of its own
+-	 * and the field of PI is reserved.
++	 * PC and PH only. Their supplies are fixed (PC: CLDO5 1.8 V,
++	 * PH: SWOUT2 3.3 V) and the schematic proves them. PD, PE, PG, PJ
++	 * and PK are NOT written by the driver: their rails are a range
++	 * in the board's dts (recorded edit), so a read-back would be a
++	 * power-up value, not a bootloader-set one. Their withstand mode
++	 * stays as the bootloader sets it. See devices/boards/radxa-cubie-a7s/kernel/edits.toml.
+ 	 */
+-	.io_bias_banks = BIT(2) | BIT(3) | BIT(4) | BIT(6) | BIT(7) |
+-			 BIT(9) | BIT(10),
++	.io_bias_banks = BIT(2) | BIT(7),
+ };
+ 
+ static int a733_pinctrl_probe(struct platform_device *pdev)
