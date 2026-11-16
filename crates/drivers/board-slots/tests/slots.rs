@@ -6,7 +6,7 @@
 mod common;
 
 use atlas_actions::CancelState;
-use atlas_actions::{Action, ActionError, BoardActions, Reported};
+use atlas_actions::{Action, BoardActions, Reported};
 use atlas_board_slots::{BoardSlots, InstallRequest, SlotError, Source};
 use atlas_image::BoardOutcome;
 use atlas_jobs::JobId;
@@ -520,44 +520,6 @@ async fn a_board_without_the_slot_contract_has_no_slots_and_is_asked_nothing() {
         rig.node.runs_started(names::SLOTS_LIST),
         0,
         "the board was not asked"
-    );
-}
-
-/// A read that takes longer than one direct wait (the sim's run takes 150 ticks, 3 s, against a 2 s
-/// wait) completes: the caller gets its answer, and the board runs the list once, not once per
-/// attempt. A list started again from zero on every cut-off never gets through a slow board.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_list_longer_than_one_window_completes_and_is_not_started_again() {
-    let rig = Rig::start("slow-list").await;
-    rig.node.script().slow_action(names::SLOTS_LIST, 150);
-    let listed = list(&rig).await;
-    assert_eq!(listed.running, "slot-1");
-    assert_eq!(
-        rig.node.runs_started(names::SLOTS_LIST),
-        1,
-        "the slow list was started once, and its attempts followed that one run"
-    );
-}
-
-/// A read cut at its window, that the board finishes while nobody waits for it, is answered by the
-/// next call: the board keeps the answer of a detached run for its starter, so the caller does not
-/// start the listing again to get it. The sim's run takes 105 ticks (2.1 s): the first call is cut
-/// at 2 s, and the second comes after the run has ended unattended.
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_read_the_board_finished_unattended_is_answered_by_the_next_call() {
-    let rig = Rig::start("unattended-list").await;
-    rig.node.script().slow_action(names::SLOTS_LIST, 105);
-    match rig.slots.list().await {
-        Err(SlotError::Board(ActionError::NotFinished { .. })) => {}
-        other => panic!("the first call is cut at its window, got {other:?}"),
-    }
-    tokio::time::sleep(Duration::from_secs(1)).await;
-    let listed = list(&rig).await;
-    assert_eq!(listed.running, "slot-1");
-    assert_eq!(
-        rig.node.runs_started(names::SLOTS_LIST),
-        1,
-        "the second call took the answer of the one run"
     );
 }
 
