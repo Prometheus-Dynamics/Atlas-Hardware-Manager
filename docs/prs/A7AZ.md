@@ -72,3 +72,30 @@ Radxa schematic URLs (NOT downloaded, for the lead to approve): A7A V1.10 `https
 - No schematic downloaded (the lead decides).
 - No image built; no board touched.
 - `devices/gaia.lock` and the root `Cargo.toml` not changed.
+
+## 2026-11-16: patch lists, device check, provenance (Gaia 9efa797f)
+
+**Gaia binary:** `/mnt/ssd-samsung/gaia/bin/next-9efa797f/gaia`, `gaia 2.0.6-dev (9efa797f8991069f338da3ba2eec655afb738cfa)`, sha256 `389b7bc2f9b7...`. Read-only, not built here.
+
+**Patch lists (append rule, PATCH-LISTS.md).** The restated entries are removed:
+- `radxa-cubie-a7a` kernel: `patches = [{ file = "patches/linux" }]` (was the series plus `patches/linux`).
+- `radxa-cubie-a7z` kernel: `patches = [{ file = "patches/linux" }]`.
+- `radxa-cubie-a7z` bootloader: `patches = [{ file = "patches/u-boot" }]` only. On `next` the sun60i family no longer declares a `[bootloader]` patch list (C1 moved only the kernel series), so nothing is restated.
+
+**Plan quotes (gaia plan, 9efa797f, both products exit 0):**
+- A7A kernel: `linux.patched` is built from the family's series (`patches`, source `radxa-cubie-a7a.a733-kernel-series`), then `devices/boards/radxa-cubie-a7a/patches/linux` (plan `$S/plan-cubie-a7a-bench.json`, node `linux.patched`).
+- A7Z kernel: the family's series, then `devices/boards/radxa-cubie-a7z/patches/linux`.
+- A7Z U-Boot: `u-boot.patched` from `devices/boards/radxa-cubie-a7z/patches/u-boot` only. The DockSeed bootchain U-Boot patches are NOT in the A7Z build (the family declares none on `next`). Open: whether the A7Z U-Boot needs them (see missing).
+
+**Device check (`scripts/check-devices.sh`, GAIA_BIN=9efa797f, unit `atlas-A7AZ-devices`, exit 1):**
+- A7A and A7Z boards and products: `ok` (validate and plan). Their only failure is the PADS refusal below.
+- `cubie-a7a-bench` and `cubie-a7z-bench`: FAIL, bank PI. Their `pads.toml` states PI as "UNSTATED: REFUSED" (no Radxa SoC dtsi on disk, so the pio references cannot be checked). The check refuses the image. This is the refusal the coordinator asked for: A7A and A7Z stay REFUSED for images.
+- Lemnos pin: known, expected refusal (the products lock Lemnos e847262, `Cargo.toml` pins lemnos-slot-store at 31e0f736: the one-rev rule).
+- Not mine, from `next` (this branch took `next`'s version of the A7S board and family in the merge): `cubie-a7s-bench` FAILS (its board `radxa-cubie-a7s` no longer states `[descriptions] lemnos`, so `cubie-lemnos-board` cannot generate). C1's owner must fix it. `zero-3e-bench` FAILS its gaia.lock (regenerate; not my product).
+
+**Provenance, what is missing per board:**
+- **A7A:** pad table PI (no Radxa SoC dtsi on disk to name the pin groups). No A7A schematic has been read (not downloaded; URL recorded above, needs the lead's approval). The `pads.toml` sources (Radxa allwinner-device 7b63c9ec) were stated by the A7RAILS work and are not re-read in this session. Device-mode-only port 1 is stated; usb1 host VBUS stays on the PL2 regulator per Radxa's dts. The A7A kernel dts is UNVERIFIED (no kernel tree; syntax-only check earlier).
+- **A7Z:** the same PI refusal. No A7Z dts from Radxa exists (both raw URLs 404 at 9da4b3e8; allwinner-device has `configs/cubie_a7z/linux-6.6/board.dts`, not read for this PR). The A7Z U-Boot dts is a copy of the A7A's, derived and UNVERIFIED. The PL2 regulator is Armbian's; the A7Z schematic is not read.
+- **Both:** no VBUS schematic evidence (A7A/A7Z schematics not downloaded). Ethernet per board as above. Kernel and U-Boot not compiled against real trees. The bench-only, no-image rule stays.
+
+**Gate:** see the PR body and the unit log `atlas-A7AZ-gate` (scratch `gate.log`).
