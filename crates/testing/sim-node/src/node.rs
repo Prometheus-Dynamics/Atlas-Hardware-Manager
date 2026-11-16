@@ -229,6 +229,9 @@ struct Shared {
     /// node logic publishes the change. Only a node with Lemnos publishes them.
     hello: Arc<Mutex<Hello>>,
     script: Arc<Mutex<Script>>,
+    /// The device whose next `describe` ends the session instead of answering it (see
+    /// [`SimNode::drop_session_at_describe`]). Cleared once it has fired.
+    drop_session_at_describe: Arc<Mutex<Option<String>>>,
     stop: Arc<AtomicBool>,
     restart: Arc<AtomicBool>,
     /// Set while Lemnos is stopped on a node that has it: the node stays up and its Lemnos calls
@@ -364,6 +367,7 @@ impl SimNode {
             model: Arc::new(Mutex::new(Model::new())),
             hello: Arc::new(Mutex::new(hello)),
             script: Arc::new(Mutex::new(Script::new())),
+            drop_session_at_describe: Arc::new(Mutex::new(None)),
             stop: Arc::new(AtomicBool::new(false)),
             restart: Arc::new(AtomicBool::new(false)),
             lemnos_down: Arc::new(AtomicBool::new(false)),
@@ -470,6 +474,13 @@ impl SimNode {
     /// resource. The node applies it on its next tick.
     pub fn change_device(&self, device: &str, change: readings::Change) {
         self.shared.devices.change(device, change);
+    }
+
+    /// Ends the node's session when the next `describe` of device `device` (its id, as in
+    /// `lemnos.<device>`) arrives: that call is not answered, and the node is published again on
+    /// a new session. Used once. A client that was waiting for the answer sees its connection end.
+    pub fn drop_session_at_describe(&self, device: &str) {
+        *lock(&self.shared.drop_session_at_describe) = Some(device.to_owned());
     }
 
     /// Refuses `describe` on every device (`true`), as a board does whose Lemnos has no describe
@@ -982,6 +993,21 @@ impl Node {
             return;
         }
         if is_device_call(name) && args == b"describe" {
+            // The session ends with this call unanswered: the node is published again on a new
+            // session, as a node that reconnects is (the old connection is closed by the drop).
+            let dropped = {
+                let mut armed = lock(&self.shared.drop_session_at_describe);
+                if armed.as_deref() == Some(device_id(name)) {
+                    *armed = None;
+                    true
+                } else {
+                    false
+                }
+            };
+            if dropped {
+                self.reopen = true;
+                return;
+            }
             // `.call describe`: the device's description as `describe 1` text (Lemnos I6h, e5c0ff0e).
             // It changes nothing, so the session's lease renewal is the same call.
             let answer = match self.devices.as_ref() {
