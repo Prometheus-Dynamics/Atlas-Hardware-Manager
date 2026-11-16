@@ -8,6 +8,7 @@ mod capability;
 mod device;
 mod ids;
 mod link;
+pub mod socket;
 
 pub use capability::{CapabilityKind, CapabilitySet, Offers, Reading};
 pub use device::{DeviceState, Identity, LemnosState};

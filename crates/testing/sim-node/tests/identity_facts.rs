@@ -4,7 +4,6 @@
 
 #![cfg(target_os = "linux")]
 
-use std::path::Path;
 use std::time::Instant;
 
 use atlas_sim_node::node::call;
@@ -35,9 +34,8 @@ fn fact_in(orion: &Orion, fact: &str) -> Option<String> {
 }
 
 fn start(name: &str, hello: Hello) -> SimNode {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("identity-{name}"));
-    let _ = std::fs::remove_dir_all(&dir);
-    SimNode::start_with(&dir, &Kind::WithLemnos(hello), None).expect("the node starts")
+    let dir = atlas_sim_node::socket::node_dir(name).expect("a node directory");
+    SimNode::start_owned(dir, &Kind::WithLemnos(hello), None).expect("the node starts")
 }
 
 #[test]
@@ -137,8 +135,7 @@ fn a_fact_that_appears_republishes_the_session_and_the_node_answers_again() {
 
 #[test]
 fn a_plain_node_publishes_no_hello_facts_but_the_hello_document_still_answers() {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join("identity-plain");
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = atlas_sim_node::socket::node_dir("identity-plain").expect("a node directory");
     let node = SimNode::start_with(&dir, &Kind::Plain, None).expect("the node starts");
     let orion = node.connect("plain").expect("a session");
     let document = orion.node().expect("the document");

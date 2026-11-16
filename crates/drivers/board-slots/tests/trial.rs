@@ -531,7 +531,7 @@ async fn a_board_replaced_mid_trial_ends_the_watch_and_reads_nothing_from_the_ot
 
     // Another board answers at the same address: a new key, a new directory, the same port.
     let port = rig.node.network().port();
-    let dir = rig.dir.clone();
+    let dir = rig.dir.to_path_buf();
     let Rig { node, relay, .. } = rig;
     drop(node);
     let replacement = SimNode::start_with(&dir.join("replacement"), &common::kind(), Some(port))
@@ -564,7 +564,7 @@ async fn a_board_replaced_mid_trial_ends_the_watch_and_reads_nothing_from_the_ot
 async fn the_session_reports_a_replacement_as_replaced() {
     let rig = start_board("pinned").await;
     let port = rig.node.network().port();
-    let dir = rig.dir.clone();
+    let dir = rig.dir.to_path_buf();
     let Rig {
         node,
         relay,
