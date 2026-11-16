@@ -76,6 +76,10 @@ pub struct VerityEntry {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BootEntry {
     pub files: BTreeMap<String, String>,
+    /// SHA-256 (lowercase hex) of the firmware config lines the board declares (`boot.config`, Lemnos
+    /// M37+). Absent when the board declares none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config: Option<String>,
 }
 
 impl SlotManifest {
@@ -102,7 +106,10 @@ impl SlotManifest {
                 data_blocks: verity.data_blocks,
                 hash_offset: verity.hash_offset,
             },
-            boot: BootEntry { files: boot },
+            boot: BootEntry {
+                files: boot,
+                config: None,
+            },
         }
     }
 
@@ -148,6 +155,7 @@ impl SlotManifest {
                 .map(|(path, digest)| (path.clone(), digest.clone()))
                 .collect(),
             overlay: None,
+            boot_config: self.boot.config.clone(),
         }
     }
 
@@ -174,6 +182,7 @@ impl SlotManifest {
             },
             boot: BootEntry {
                 files: lemnos.boot_files.into_iter().collect(),
+                config: lemnos.boot_config,
             },
         }
     }

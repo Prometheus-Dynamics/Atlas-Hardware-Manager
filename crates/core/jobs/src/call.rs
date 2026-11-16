@@ -20,6 +20,11 @@ impl CallError {
         matches!(self, Self::TimedOut(_))
     }
 
+    /// The outcome is not known, so the job ends as unknown rather than being tried again.
+    pub(crate) fn is_unknown(&self) -> bool {
+        matches!(self, Self::Driver(DriverError::Unknown(_)))
+    }
+
     /// A settled answer: the device is refused or unsupported as it is now.
     /// Not retried on backoff; it is asked again only when the device changes.
     pub(crate) fn is_settled(&self) -> bool {
