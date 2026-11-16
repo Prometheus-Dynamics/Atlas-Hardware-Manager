@@ -369,3 +369,55 @@ groups is not on disk.
   without the series tree. The facts file names the tree and the sha256 of the dts it was read from.
 - PG, PL and PM (the rail behind ALDO1 or CLDO1) are unchanged from section 5.
 - The 7.3.4 full-series build is not run: only the sunxi pinctrl hunks were applied to the 7.3.4 files (identical result).
+
+### 13.6 The two written banks, read back: PH (SWOUT2) and PC (CLDO5)
+
+The driver writes a mode only for PC and PH after this PR (section 13.1). Each one's `regulator_get_voltage()` result is read
+from the code, not assumed. Sources: the series' AXP318W patch (`x-powers-axp318w/regulator-axp20x-add-support-for-the-axp318w.patch`),
+the base `drivers/regulator/axp20x-regulator.c` and `drivers/regulator/core.c` of linux 7.3.3 (tarball sha256 above), and our
+post-patch dts (line numbers from the post-series dts).
+
+**PH: bank PH's supply is `vcc-ph-supply = <&reg_swout2>` (dts:438). SWOUT2 is a switch.**
+
+- *Its node, our dts* (dts:514-517): `reg_swout2: swout2 { regulator-name = "vcc-io"; regulator-always-on; };`. No min,
+  no max, no voltage property. Not a fixed value (case 3 does not apply).
+- *Its descriptor, the series* (patch:294-295): `AXP_DESC_SW(AXP318, SWOUT2, "swout2", NULL, AXP318_DCDC_OUTPUT_CONTROL2, BIT(4))`.
+  The `supply` argument is NULL. The macro (base :394-405) gives it `.ops = &axp20x_ops_sw` (base :593-597), which has only
+  `enable`, `disable`, `is_enabled`. No `get_voltage`, no `get_voltage_sel`, no `list_voltage`, and `fixed_uV` is 0.
+- *The probe* (base :1652-1662, extended by the series at patch:447-448): a switch descriptor gets
+  `new_desc->supply_name = dcdc1_name`, the DCDC1 rail's `regulator-name`, which is `vcc-3v3-sys` (dts:486).
+- *The core* (`core.c`, `regulator_get_voltage_rdev`): with no `get_voltage_sel` (:4811), no `get_voltage`, no `list_voltage`
+  and no `fixed_uV`, it reaches `else if (rdev->supply)` (:4822) and returns `regulator_get_voltage_rdev(rdev->supply->rdev)`
+  (:4823). That is the parent. The `uV_offset` of SWOUT2 is 0.
+
+So the case is **(1), the parent rail's read-back**: the parent is DCDC1 (`vcc-3v3-sys`), and its value is read from its own
+AXP register (DCDC1 has `axp20x_ops` with `get_voltage_sel`, descriptor patch:257). The parent is not fixed by us: our dts
+gives DCDC1 a range of 1.0 V to 3.4 V (dts:486-489 after E2), and neither Radxa file programs it (section 2). So DCDC1's
+read-back is the PMIC's power-up value, which is the value the switch passes on.
+
+- If DCDC1 is not yet registered when the pin is requested, the core returns `-EPROBE_DEFER` (`core.c:4824-4826`): case (2), an
+  error, and nothing is written (`pinctrl-sunxi.c:866-867`).
+- The result is 10 (3.3 V mode) when DCDC1 reads above 1.8 V, and 11 (1.8 V mode) when it reads 1.8 V or less.
+
+**Can PH be the 1.8 V mode on a 3.3 V rail?** Only if DCDC1's register and its output disagreed, because PH's output is DCDC1's
+output (SWOUT2 is always on, with no enable of ours to change it). A 1.8 V read-back is a 1.8 V parent, so the bank mode and the
+rail agree. The mode can therefore follow DCDC1's power-up value, not a 3.3 V assumption, but it cannot be 1.8 V mode on a 3.3 V
+rail unless the PMIC contradicts its own register. That is the same residual risk every read-back in this PR carries, and the
+first-boot record (section 11) measures DCDC1's register and output. **Result: no stop.** PH's mode is set by DCDC1's read-back,
+which is the rail PH runs from.
+
+**PC: `vcc-pc-supply = <&reg_cldo5>` (dts:433). CLDO5 is a fixed 1.8 V in our dts.**
+
+- *Its node* (dts, post-series, `reg_cldo5`): `regulator-min-microvolt = <1800000>; regulator-max-microvolt = <1800000>;`,
+  always-on. That is case (3), a fixed value from the node's properties, and the kernel keeps it fixed (edit E6).
+- *Its descriptor* (patch, `AXP_DESC_DO(AXP318, CLDO5, "cldo5", ...)`): an LDO with `axp20x_ops` (base :583-591), so
+  `get_voltage_sel` reads the register. The step is 100 mV from 0.5 V, so 1.8 V is an exact register value.
+- *Applied at registration*: the core applies a constraint with min equal to max (`apply_uV`, `core.c:1233-1234`). With the
+  current voltage outside it, the core moves the rail to the bound (`core.c:1346-1351`). So after registration CLDO5 reads
+  1.8 V whatever the power-up value was.
+- *The read-back* is therefore 1.8 V, and the mode written is 11 (1.8 V), which matches the rail. If the registration step
+  failed, the regulator would not register and the request would return an error (case 2): nothing written.
+
+**Result for both written banks:** PC reads its own fixed 1.8 V, written 11, which is the 1.8 V rail the schematic and the
+eMMC wiring support. PH reads DCDC1's register through the switch, written 10 or 11 to match that parent, never 1.8 V mode on a
+3.3 V output. No stop is needed.
