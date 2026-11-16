@@ -135,7 +135,9 @@ impl BoardSlots {
     /// [`SlotError::NoSlots`], [`SlotError::Board`] or [`SlotError::BadList`].
     pub async fn list(&self) -> Result<SlotList, SlotError> {
         self.require_offered()?;
-        let done = self.actions.run(&short(LIST, &[]), &[]).await?;
+        // A read: a board that answers slowly keeps its listing on the board, and the next call
+        // follows it instead of starting the listing again (see `atlas_actions`' module docs).
+        let done = self.actions.read(&short(LIST, &[]), &[]).await?;
         let text = String::from_utf8(done.output).map_err(|_| {
             SlotError::Board(ActionError::Failed(
                 "the board's slot list is not text".into(),
