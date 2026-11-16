@@ -383,3 +383,30 @@ board-machine-id.service); (b) the image needs an empty /data directory for the 
 raze-base-files does not create; (c) machine-id is an empty file from Buildroot's hook (systemd.mk:673-675).
 The journal direction stays as the coordinator confirmed in principle; conditions 1 (the sizes) and 4 (the machine-id) are the
 two that can change the direction, and both need the build or the bench boards.
+
+## 17. Data partition budget with a journal (Lemnos's install-room rule, Gaia's inode count)
+Lemnos's install check counts FREE space on the data partition: free ≥ the new slot + reserve_mb. So a journal's cap is
+space the check no longer sees once it is used. The budget, to be kept true with any cap:
+
+  data partition ≥ 1.10 × ( keep × largest slot + reserve_mb + journal cap )
+
+- raze-base (Lemnos board file, devices/boards/raze/lemnos-board.toml:156: `keep = 3`, `reserve_mb = 2048`, `data = "/data"`):
+  largest slot = the root image, 18,178,048 bytes = 17.3 MiB (devices/products/raze-base/product.toml:61-62; the slot
+  manifest and bundle are small; NOT MEASURED in full). keep × slot = 52 MiB. Journal cap 16 MiB (60-board-journald.conf
+  SystemMaxUse). Sum = 52 + 2048 + 16 = 2116 MiB; × 1.10 = 2328 MiB, about 2.3 GiB. The raze data partition is the rest of
+  the disk (board.toml:66-72, no size), so the budget fits trivially. The journal's 16 MiB is 0.7 % of the reserve.
+- The fixed-size GPT bench boards (Z2, R1, C1 on their branches; data 512 MiB to 1 GiB per the coordinator): the journal
+  cap is part of their arithmetic, not chosen here. For a 512 MiB data partition with a 2048 MiB reserve, the install check
+  can never pass whatever the journal does: their reserve_mb must be set by their own file. NOT CHANGED here (their files
+  are on their branches). Stated for Z2/R1/C1: each needs its own sum with its reserve_mb, and the journal cap term above.
+- Inodes (Gaia creates the raze data filesystem with 112 inodes per group; Lemnos's mke2fs contract line for the grown size
+  is not in Gaia yet; the grown partition, 14.9 GB, has about 13 thousand inodes until it lands). The journal uses few inodes:
+  journald keeps journal files of at most SystemMaxFileSize=4M (60-board-journald.conf) and at most SystemMaxUse=16M in total,
+  so at most about 4 archived files plus one active file per machine-id directory, plus the directory itself. That is about
+  6 to 10 inodes, far below 13 thousand. The slot store uses a few files per slot (<data>/slots/<id>.erofs, .json, .meta,
+  .boot: slots.md:15-17), also few.
+- Hard caps and rate limits (condition 1): SystemMaxUse=16M, SystemKeepFree = the keep × slot term plus reserve headroom,
+  RateLimitIntervalSec=30s, RateLimitBurst=200 (PROPOSALS; not verified against journald.conf(5) here). The journal's own
+  limits never remove a slot file: SystemKeepFree is what journald keeps free for everything else on the filesystem.
+- Lemnos confirms nothing forbids other directories on /data (its store owns only its own paths), so /data/journal is
+  allowed by Lemnos.
