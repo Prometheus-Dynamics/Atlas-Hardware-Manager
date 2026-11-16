@@ -127,3 +127,23 @@ So R1 lands after Z2 (or with its shared pieces).
   of VBUS on the port (B21's list applies).
 - Z2 (shared pieces, see "Dependencies"): R1 lands with or after Z2. Shipping waits on the rk35xx family proof on the ZERO 3E.
 - Nothing booted. Nothing flashed. No board access. No image built.
+
+## rock-5c-base deleted (R1 owns this)
+
+The base product had no owner for the bench: it is an sd-image with no lemnosd, no watchdog owner, and a board keepalive nothing
+feeds. One bench product per board is the supported image, so `devices/products/rock-5c-base` is deleted.
+
+- Moved before the delete: the base's `os.fragment` (158 lines) is now the first part of `devices/products/rock-5c-bench/os.fragment`,
+  because the bench built on it (`fragments = ["os.fragment"]` in `rock-5c-bench/product.toml`). No other lines moved.
+- Removed: `devices/products/rock-5c-base/` (`product.toml`, `os.fragment`, `gaia.lock`).
+- Fixed: `devices/tests/fixtures/bringup-rock-5c/` (the bring-up fixture) no longer lists the base; its OS fragment is its own lines.
+  Z2 will name the bring-up fixture `devices/tests/fixtures/bringup/`; align to that after Z2 lands.
+- Kept: `devices/components/radxa-rock-5c-extlinux` (the base's extlinux component). It is named by the bring-up fixture only,
+  so the checker lists it as in no product yet (a NOTE, not a failure).
+- Active docs fixed: `docs/prs/PADS.md` (the kept list says the base is deleted in R1), this file.
+- Historical PR records not edited: `docs/prs/B16.md`, `B22.md`, `B31.md`, `B32.md`, `L2d.md` (they describe the base as it was).
+- Nothing else names the product: no CI workflow, no matrix, no release script (`git grep` over the tree; `scripts/build-product.sh`
+  holds an example name only, already changed to `rock-5c-bench`).
+
+Board-id fix: `devices/boards/radxa-rock-5c/lemnos-board.toml` now states `[board] id = "radxa-rock-5c"` (the same form the ZERO 3E's
+Lemnos file uses), which the board-ids check requires.

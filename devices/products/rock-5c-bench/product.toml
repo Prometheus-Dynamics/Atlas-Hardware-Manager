@@ -1,5 +1,5 @@
 # Radxa ROCK 5C bench image, Gaia F8 form, as a U-Boot SLOT image (R1; the Z2 zero-3e-bench form, board files as Gaia has them on next). One image: the ROCK 5C
-# board (its U-Boot with the Lemnos environment, the kernel with pstore), the bench's OS (rock-5c-base's and this product's
+# board (its U-Boot with the Lemnos environment, the kernel with pstore), the bench's OS (this product's os.fragment, which holds the base's lines moved in R1
 # fragments), the Lemnos and Orion packages, and the first-flash disk made by the `slot-disk` recipe (the raze-base pattern; slot-boot makes the slot, slot-disk the disk): the EROFS
 # root with dm-verity, the initramfs (lemnos-slot-init), the overlay, the cmdline, the slot bundle (`[generate.bundle]`, signed by
 # the BENCH key: a test credential, milestone 2 only) and the boot partition (`[generate.image]`, the U-Boot form: boot.scr and
@@ -42,7 +42,7 @@ board = "../../boards/radxa-rock-5c/board.toml"
 components = ["dev-bringup-hostkey", "lemnos", "lemnosd", "lemnos-ctl", "lemnos-orion", "orion", "rock-5c-slot-board", "bench-pc-key", "bench-network", "lemnos0-addressing", "bench-hostname", "bench-hostname-prefix"]
 # The slot's initramfs carries lemnos-slot-init (installed there as /init); it is not on the root filesystem.
 initramfs = ["lemnos-slot-init"]
-os = { provider = "buildroot", source = "buildroot", fragments = ["../rock-5c-base/os.fragment", "os.fragment"] }
+os = { provider = "buildroot", source = "buildroot", fragments = ["os.fragment"] }
 recipe = "slot-disk"
 
 # The slot settings (as raze-base's slot-disk ones; each named in devices/products/raze-base/product.toml). Compression and level are the

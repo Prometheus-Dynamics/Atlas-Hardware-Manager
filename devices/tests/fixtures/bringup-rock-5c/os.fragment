@@ -1,6 +1,6 @@
-# Radxa ROCK 5C bring-up only, on top of rock-5c-base's os.fragment (the base is
-# listed first in the product). DEV ONLY: the one place a dev-only unit is
-# allowed; the base stays clean. Every line says why it is here.
+# Radxa ROCK 5C bring-up only (a test fixture, not a product). The rock-5c-base layer was deleted in R1, so this
+# fixture carries only the bring-up lines; the bring-up rule reads its components and settings, and it is not planned.
+# DEV ONLY: the one place a dev-only unit is allowed. Every line says why it is here.
 
 # SSH server for the bench key: the way in until Orion serves SSH on the board.
 # dropbear.service is enabled by dev-bench-ssh-key's [[services]] entry.

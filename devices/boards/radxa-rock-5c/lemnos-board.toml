@@ -1,3 +1,6 @@
+[board]
+id = "radxa-rock-5c"
+
 # The ROCK 5C's Lemnos board file for the bench slot image (R1): the USB device port (the upper USB 3.0 Type-A, DRD0), the
 # identity, the hardware watchdog, the reboot and the U-Boot slot record (record = "uboot", Lemnos BB1b). Installed by
 # rock-5c-bench as /etc/lemnos/board.toml (through the board's [descriptions]). Not the whole board file: the buses, the fan
