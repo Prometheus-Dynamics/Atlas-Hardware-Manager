@@ -1,0 +1,11 @@
+# Pad-table statement for the ZERO 3E (read by scripts/check-devices.sh pads_rule; Gaia does not read this file).
+# Source: upstream U-Boot dts rk3566-radxa-zero-3e.dts (U-Boot v2026.10, research/u-boot dts/upstream/src/arm64/rockchip/)
+# via rk3566-radxa-zero-3.dtsi:456-467, the &pmu_io_domains node. Supplies, each voltage from its regulator node in the same file:
+# pmuio1 vcc3v3_pmu 3.3 V (:349), pmuio2 vcca1v8_pmu 1.8 V (:287), vccio1 vccio_acodec 3.3 V (:325), vccio2 vcc_1v8 1.8 V (:38),
+# vccio3 vccio_sd 1.8 V to 3.3 V (:337), vccio4 vcc_1v8 1.8 V, vccio5 to vccio7 vcc_3v3 3.3 V (:68).
+# The io-domain driver is on in U-Boot proper (configs/radxa-zero-3-rk3566_defconfig:7) and not in SPL.
+soc = "rk3566"
+source = "upstream U-Boot dts rk3566-radxa-zero-3e.dts at U-Boot v2026.10: rk3566-radxa-zero-3.dtsi:456-467 (&pmu_io_domains), regulators in the same file (vccio_acodec :325, vccio_sd :337, vcc3v3_pmu :349, vcca1v8_pmu :287, vcc_1v8 :38, vcc_3v3 :68)"
+derived_from_board = ""
+bank_voltages = { pmuio1 = "3.3V", pmuio2 = "1.8V", vccio1 = "3.3V", vccio2 = "1.8V", vccio3 = "1.8V to 3.3V (vccio_sd, run-time)", vccio4 = "1.8V", vccio5 = "3.3V", vccio6 = "3.3V", vccio7 = "3.3V" }
+switched_by = "vccio3: the SD card voltage regulator vccio_sd (min 1800000, max 3300000, rk3566-radxa-zero-3.dtsi:337-342), which switches the SD bank between 1.8V and 3.3V at run time"

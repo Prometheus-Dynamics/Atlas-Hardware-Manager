@@ -103,12 +103,8 @@ defconfig = "defconfig"
 fragments = ["assets/linux.fragment"]
 # The storage controller a slot boots from, built in (=y): the A733 SD and eMMC hosts (sunxi-mmc) (PR B26).
 storage_drivers = ["CONFIG_MMC_SUNXI"]
-# The A733 kernel series, applied in its own `series` order (Gaia eae34d7: `[kernel] patches`, a directory of patches
-# in a source; patch -p1 --fuzz=0). The series carries the A7S board dts with its ramoops region
-# (arm64-dts-allwinner-a733-cubie-a7s-add-a-ramoops-region.patch, reg 0x60000000 0x100000, console 0x40000, record
-# 0x20000, ecc 16) and the always-on watchdog r_wdt at /soc@0/watchdog@7021000 (a733-soc-kern/
-# arm64-dts-allwinner-a733-add-the-watchdogs.patch). UNVERIFIED: the patch files were not read here; the values are
-# the series' own as the C1 brief states them. Built nowhere yet.
+# The DockSeed A7S series, applied first; a board's own patches follow it (Gaia appends a board list to the family's:
+# the effective list is the family's entries, then the board's). The same entry as pr/C1 (family.toml [kernel] patches).
 patches = [{ source = "a733-kernel-series", path = "patches" }]
 
 [bootloader]
