@@ -21,6 +21,9 @@ pub enum Stage {
         percent: Option<u8>,
         message: String,
     },
+    /// The outcome is not known yet after a lost session: the install is still checking it. `reason`
+    /// says why, `checking` what is being read to decide it. Not final: it resolves to done or failed.
+    Unknown { reason: String, checking: String },
     /// Done: the new slot's id.
     Done { slot: String },
     /// Ended without a slot. `reason` is the board's words when it refused, or Atlas's.
@@ -57,6 +60,12 @@ impl fmt::Display for Stage {
                 message,
             } => {
                 write!(f, "the board is installing: {message}")
+            }
+            Self::Unknown { reason, checking } => {
+                write!(
+                    f,
+                    "unknown after a reconnect: {reason}; checking: {checking}"
+                )
             }
             Self::Done { slot } => write!(f, "installed as {slot}"),
             Self::Failed { reason } => write!(f, "failed: {reason}"),

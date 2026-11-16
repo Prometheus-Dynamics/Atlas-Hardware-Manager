@@ -190,7 +190,7 @@ async fn a_session_lost_during_the_push_resumes_without_a_second_install() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_session_lost_during_the_boards_install_never_starts_install_file_twice() {
+async fn a_follow_cut_by_a_lost_connection_is_repeated_and_the_first_answer_is_the_only_answer() {
     let rig = Rig::start("lost-install").await;
     rig.node.hold_installs(true);
     let path = write_bundle(
@@ -208,6 +208,9 @@ async fn a_session_lost_during_the_boards_install_never_starts_install_file_twic
     })
     .await;
     rig.relay.cut();
+    // The session is lost while the board runs the install: the outcome is unknown, and the board's
+    // list is what decides it. It is not reported as waiting, and not as failed.
+    // The follow produced no answer: the install waits for the board, and follows the run again.
     stage_is(&rig, job, "the install to wait for the board", |stage| {
         matches!(stage, Stage::WaitingForBoard { .. })
     })
@@ -223,10 +226,10 @@ async fn a_session_lost_during_the_boards_install_never_starts_install_file_twic
 }
 
 /// An install is a hold on its board. Its session goes silent past the lease period while the board
-/// is running it: the install ends as a lapse, with the words that say the board may have dropped
-/// it, and it is not reported as installed.
+/// is running it. The lapse is not an answer, so the install is not failed for it: the run is followed
+/// again, and the install is done once the board answers and the list shows the new slot.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_install_whose_session_lapses_while_the_board_runs_it_ends_as_a_lapse() {
+async fn a_lapsed_hold_is_no_answer_and_the_run_is_followed_again_when_it_answers() {
     // The lease is read on a manual clock: the lapse is an advance of it, made once the install is held
     // on the board, and nothing in the run depends on how long a step takes.
     let clock = atlas_session::Clock::manual();
@@ -257,10 +260,10 @@ async fn an_install_whose_session_lapses_while_the_board_runs_it_ends_as_a_lapse
     .await;
     // The install is held on the board, and its session is silent past the lease.
     clock.advance(Duration::from_secs(61));
-    stage_is(&rig, job, "the install to end as a lapse", |stage| {
-        matches!(stage, Stage::Failed { reason } if reason.contains("may have dropped the hold"))
-    })
-    .await;
+    // A lapsed hold is not an answer: the install is not failed for it. The board finishes the
+    // install, the run answers, and the list shows the slot.
+    rig.node.hold_installs(false);
+    assert_eq!(installed(&rig, job).await, "slot-2");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
@@ -660,4 +663,26 @@ async fn a_refused_install_keeps_its_typed_failure_and_the_boards_words() {
         reason.contains("bytes"),
         "the board's words are shown as they are: {reason}"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_follow_answered_at_once_is_checked_against_the_list() {
+    let rig = Rig::start("answered-at-once").await;
+    let path = write_bundle(
+        &rig.dir.join("bundles"),
+        "at-once.tar",
+        &bundle_bytes("slot-2", "2.0.0", None),
+    );
+    let job = rig
+        .installs
+        .submit(device(), &rig.address(), BOARD, true, request(path, false))
+        .await
+        .expect("queued");
+    assert_eq!(installed(&rig, job).await, "slot-2");
+    assert_eq!(
+        rig.node.runs_started(names::SLOTS_INSTALL_FILE),
+        1,
+        "the run was started once and answered at once"
+    );
+    assert!(list(&rig).await.get("slot-2").is_some());
 }
