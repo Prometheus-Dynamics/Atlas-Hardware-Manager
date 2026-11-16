@@ -8,7 +8,7 @@
 # Access over the USB gadget on the OTG Type-C (serial-hash-v1 lemnos0 addressing), plus Ethernet DHCP and mDNS (Z1; the
 # coordinator's ruling of 2026-11-14: Ethernet stays, the gadget is added). Hostname from the serial. PC key, watchdog, serial console.
 #
-# PINS (Z2): the Lemnos components here are this product's own copies at Lemnos pr/BB1b TIP 7748a241 (BB1b head; M36 plus BB1b, data-partition) (unmerged), NOT the shared
+# PINS (Z2): the Lemnos components here are this product's own copies at Lemnos Lemnos next 31e0f736 (BB1b; pair with Orion 671d29d) (unmerged), NOT the shared
 # devices/components/lemnos* at f4a295c6 (the Raze's L2 rev), so the Raze's lock does not move. The root Cargo.toml's
 # lemnos-slot-store rev is still f4a295c6: check-devices refuses the mismatch (Z2 stopped there; see docs/prs/Z2.md).
 # Gaia: c0d084fa (merged next: rk-env, slot-disk-blobs). devices/gaia.lock moves to it in PR #127 (G12).

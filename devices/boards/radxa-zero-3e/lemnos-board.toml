@@ -3,7 +3,7 @@
 # /etc/lemnos/board.toml (through the board's [descriptions]). It is not the whole board file: the buses, the fan and the
 # other devices are not written here. Untested on board.
 #
-# Z2 sources (Lemnos pr/BB1b 7748a241 (BB1b head; M36 plus BB1b, data-partition), testing/boards/rk3566-slots.toml, which is the form this file takes for the
+# Z2 sources (Lemnos Lemnos next 31e0f736 (BB1b; pair with Orion 671d29d), testing/boards/rk3566-slots.toml, which is the form this file takes for the
 # RK3566 with the SD as the one medium): the watchdog `/watchdog@fe600000` (socs/rk3566.toml [controllers.watchdog]),
 # the slots device with uboot_env_size 0x10000, uboot_env_mmc_index 1 (SD = U-Boot mmc 1, sdmmc0 `/mmc@fe2b0000`),
 # boot_sources, and the test fastboot pair 1209:0001 (pid.codes test pair: NOT a registered id, a test value).
