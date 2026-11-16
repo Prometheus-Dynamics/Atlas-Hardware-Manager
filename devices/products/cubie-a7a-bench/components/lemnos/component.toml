@@ -1,4 +1,4 @@
-# Lemnos's packaging for an image with systemd, at Lemnos pr/BB1b e8472620: the units, sysusers, udev rules and
+# Lemnos's packaging for an image with systemd, at Lemnos Lemnos 31e0f736, the approved rev: the units, sysusers, udev rules and
 # settings files, at the paths Lemnos's packaging/README.md gives (the "one privilege path": no setcap, no xattrs, no
 # User= in the units; lemnosd starts as root and drops itself). Board-neutral.
 #
@@ -11,11 +11,11 @@
 # A7A has no gadget device in its board file, so no LEMNOS_ORION_LINKS line).
 version = 1
 name = "lemnos"
-description = "Lemnos packaging for systemd (pr/BB1b e8472620): the lemnosd and lemnos-orion units, the lemnos and lemnos-orion users, the device-node rules, the settings files"
+description = "Lemnos packaging for systemd (Lemnos 31e0f736, the approved rev): the lemnosd and lemnos-orion units, the lemnos and lemnos-orion users, the device-node rules, the settings files"
 
 [sources.src]
 git = "https://github.com/Prometheus-Dynamics/Lemnos"
-ref = "e847262064ee1e88c5277592e6705ab46eca0670"  # Lemnos pr/BB1b e8472620 (C1 bench image)
+ref = "31e0f736a334260a7df2ea86bcfa358e9a640f08"  # Lemnos Lemnos 31e0f736, the approved rev (C1 bench image)
 
 [[install]]
 from = { source = "src", path = "packaging/systemd/lemnosd.service" }

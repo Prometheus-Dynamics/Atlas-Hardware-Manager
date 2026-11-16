@@ -9,7 +9,7 @@
 #   the board: radxa-cubie-a7z (board.toml): the series' A7Z dts (ramoops, r_wdt watchdog), the U-Boot env on GPT (no FAT env).
 #   the boot ROM files: the family's u-boot-sunxi-with-spl.bin at 128 KiB, the uboot-env GPT partition at 16 MiB (family.toml).
 #   the slot: slot-boot (EROFS root, dm-verity, initramfs = lemnos-slot-init), the Lemnos bundle, the FAT boot partition.
-#   lemnosd, lemnos-ctl, lemnos-orion, lemnos-slot-init at Lemnos pr/BB1b e8472620 (components/lemnos*: product-local copies).
+#   lemnosd, lemnos-ctl, lemnos-orion, lemnos-slot-init at Lemnos Lemnos 31e0f736, the approved rev (components/lemnos*: product-local copies).
 #   Orion (the shared orion component, Orion 455a956).
 #   Ethernet by DHCP and mDNS (components/bench-network); SSH with the PC's key (components/bench-pc-ssh-key, pc-key input).
 #   the USB network on the device port J16 (USB-C 1): the Lemnos gadget on udc:4100000.usb (board file), its NCM interface lemnos0.
@@ -20,7 +20,7 @@
 #
 # THE PINS. The Gaia binary: c0d084f (merged next: the eae34d7 patch series and pr/slot-disk-blobs, slot-disk), at
 #   /mnt/ssd-samsung/atlas-next-scratch-gaia/bin-c0d084f/gaia. gaia.lock is written by `gaia lock` at that binary; the repo's
-#   devices/gaia.lock is NOT changed (the coordinator moves that pin). Lemnos pr/BB1b e8472620 (the product-local components).
+#   devices/gaia.lock is NOT changed (the coordinator moves that pin). Lemnos Lemnos 31e0f736, the approved rev (the product-local components).
 #   Buildroot 2026.02.3 (the bring-up's, systemd 258.7). Orion 455a956 is the shared
 #   components' own pins (unchanged). This PR may NOT merge while it pins the unmerged Lemnos branch pr/BB1b (see docs/prs/C1.md).
 version = 1
@@ -32,7 +32,7 @@ git = "https://gitlab.com/buildroot.org/buildroot.git"
 ref = "2026.02.3"
 
 [components]
-# The Lemnos set, product-local, at pr/BB1b e8472620 (one Lemnos commit for the product).
+# The Lemnos set, product-local, at Lemnos 31e0f736, the approved rev (one Lemnos commit for the product).
 lemnos = "components/lemnos/component.toml"
 lemnosd = "components/lemnosd/component.toml"
 lemnos-ctl = "components/lemnos-ctl/component.toml"
