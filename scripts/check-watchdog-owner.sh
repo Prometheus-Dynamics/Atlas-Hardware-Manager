@@ -521,6 +521,8 @@ wd_self_test() {  # <repo>
   # A synthetic sd-image product with no owner: the bring-up fixture with its systemd watchdog lines removed (zero-3e-base is deleted in Z2).
   mkdir -p "$dev/products/sd-noowner" && cp -a "$repo/devices/tests/fixtures/bringup/." "$dev/products/sd-noowner/"
   sed -i -e '/^bringup-alive = /d' -e '/^bringup-alive-settings = /d' -e 's/"bringup-alive", "bringup-alive-settings", //' "$dev/products/sd-noowner/product.toml"
+  # On the ZERO 3E board (it keeps a hw-watchdog keepalive nothing feeds: one NOTE, as zero-3e-base was).
+  sed -i -e 's#boards/radxa-rock-4d/board.toml#boards/radxa-zero-3e/board.toml#' "$dev/products/sd-noowner/product.toml"
   raze=$dev/products/raze-base
   zbase=$dev/products/sd-noowner
   local rboard=$dev/boards/raze/lemnos-board.toml
