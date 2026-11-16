@@ -16,6 +16,7 @@
 
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use atlas_board::{identity, lemnos};
@@ -26,13 +27,18 @@ use orion::types::NodeName;
 use orion_msg_topics::Declare;
 use orion_wire::Decode;
 
-use crate::describe::{Asked, fetch, is_due};
+use crate::describe::{Asked, Refresh, fetch, is_due};
 use crate::description::DescriptionState;
 use crate::device::{
     RESOURCE_KIND, RESOURCE_PREFIX, RawDevice, RawField, RawTopic, TopicLive, generation_of,
 };
 use crate::logs::{LOG_CAPACITY, LOG_TOPIC};
 use crate::value::{Scalar, decode};
+
+/// The refresh in progress for a hardware reader: its answers are kept here, not on the
+/// connection, so they outlive a session that fails. Only the refresh whose number a read was
+/// given is written to.
+pub(crate) type RefreshCell = Mutex<Option<Refresh>>;
 
 thread_local! {
     /// The live state of each node this thread serves, by the node's address.
@@ -70,8 +76,9 @@ struct Live {
 /// monitor saw it on connect (its key fingerprint and clock at that connect): every connection
 /// has its own, where the comm core's session number is reused by a restarted node and cannot
 /// tell two connections apart. A state from another connection is dropped, and its
-/// subscriptions and descriptions are made again on this one. `refresh` asks every device's
-/// description again on this read.
+/// subscriptions and descriptions are made again on this one. `refresh`, when a refresh is in
+/// progress, is its cell and its number: a device that has answered that refresh is held, and
+/// every other device is asked.
 ///
 /// The outer `Err` is the session (the caller applies the failure rule); the inner `Err` is a
 /// reading this crate cannot make from what the node said (the session is up).
@@ -80,7 +87,7 @@ pub(crate) fn read(
     address: &str,
     session: &str,
     link: &LinkId,
-    refresh: bool,
+    refresh: Option<(&RefreshCell, u64)>,
 ) -> Result<Result<Read, String>, orion::Error> {
     LIVE.with(|cell| {
         let mut slots = cell.borrow_mut();
@@ -101,12 +108,9 @@ impl Live {
         orion: &Orion,
         link: &LinkId,
         address: &str,
-        refresh: bool,
+        refresh: Option<(&RefreshCell, u64)>,
     ) -> Result<Result<Read, String>, orion::Error> {
         orion.pump(Duration::ZERO)?;
-        if refresh {
-            self.asked.clear();
-        }
         if self.identity.is_none() {
             let node = orion.node()?;
             let lemnos = if lemnos::published_by(&node) {
@@ -145,7 +149,8 @@ impl Live {
             // `generation`) is followed here. The device-set topic (`lemnos.devices`) is not
             // subscribed: the resource list is read on every snapshot, so an appearing or leaving
             // device is seen there, and its description is asked once when it first shows.
-            let description = self.description_of(orion, &resource.name, generation_of(&topics))?;
+            let description =
+                self.description_of(orion, &resource.name, generation_of(&topics), refresh)?;
             listed.insert(resource.name.clone());
             devices.push(RawDevice {
                 resource: resource.name,
@@ -155,6 +160,11 @@ impl Live {
             });
         }
         self.asked.retain(|name, _| listed.contains(name));
+        if let Some((cell, id)) = refresh
+            && let Some(current) = lock(cell).as_mut().filter(|current| current.id == id)
+        {
+            current.answered.retain(|name, _| listed.contains(name));
+        }
 
         if self.logs.is_none() {
             self.logs = Some(orion.subscribe(LOG_TOPIC)?);
@@ -171,19 +181,31 @@ impl Live {
         }))
     }
 
-    /// The description of one device now: held when it is not due, else asked for. A node with no
-    /// name yet is not asked (its state stays pending until it has one).
+    /// The description of one device now: held when it is not due, else asked for. During a
+    /// refresh the held answer is the refresh's own, so an answer it has received is not asked
+    /// again, whatever the connection did since. A node with no name yet is not asked (its state
+    /// stays pending until it has one).
     fn description_of(
         &mut self,
         orion: &Orion,
         device: &str,
         generation: Option<u64>,
+        refresh: Option<(&RefreshCell, u64)>,
     ) -> Result<DescriptionState, orion::Error> {
-        if !is_due(self.asked.get(device), generation) {
-            return Ok(self
-                .asked
-                .get(device)
-                .map_or(DescriptionState::Pending, |asked| asked.state.clone()));
+        let held = match refresh {
+            Some((cell, id)) => {
+                // The refresh's answer is also this connection's: once the refresh is over, the
+                // connection follows it, and does not ask again.
+                let answer = refreshed(cell, id, device);
+                if let Some(asked) = &answer {
+                    self.asked.insert(device.to_owned(), asked.clone());
+                }
+                answer
+            }
+            None => self.asked.get(device).cloned(),
+        };
+        if !is_due(held.as_ref(), generation) {
+            return Ok(held.map_or(DescriptionState::Pending, |asked| asked.state));
         }
         let Ok(node) = orion.node()?.name.parse::<NodeName>() else {
             return Ok(DescriptionState::Pending);
@@ -198,14 +220,34 @@ impl Live {
             },
             Err(reason) => (DescriptionState::NotAvailable(reason), generation),
         };
-        self.asked.insert(
-            device.to_owned(),
-            Asked {
-                state: state.clone(),
-                generation: answers,
-            },
-        );
+        let asked = Asked {
+            state: state.clone(),
+            generation: answers,
+        };
+        if let Some((cell, id)) = refresh {
+            answer_refresh(cell, id, device, &asked);
+        }
+        self.asked.insert(device.to_owned(), asked);
         Ok(state)
+    }
+}
+
+fn lock(cell: &RefreshCell) -> std::sync::MutexGuard<'_, Option<Refresh>> {
+    cell.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The answer a device has given refresh `id`, if it has given one.
+fn refreshed(cell: &RefreshCell, id: u64, device: &str) -> Option<Asked> {
+    lock(cell)
+        .as_ref()
+        .filter(|current| current.id == id)
+        .and_then(|current| current.answered.get(device).cloned())
+}
+
+/// Keeps device `device`'s answer for refresh `id`, if that refresh is still the one in progress.
+fn answer_refresh(cell: &RefreshCell, id: u64, device: &str, asked: &Asked) {
+    if let Some(current) = lock(cell).as_mut().filter(|current| current.id == id) {
+        current.answered.insert(device.to_owned(), asked.clone());
     }
 }
 
