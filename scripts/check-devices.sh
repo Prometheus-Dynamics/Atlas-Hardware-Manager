@@ -889,6 +889,30 @@ erofs_rule_self_test() {
 #   derived_from_board = ""            (empty: the table is the board's own; a board id: copied from that board, refused)
 #   bank_voltages = { IO0_IO1 = "1V8", IO2_IO63 = "3V3" }   (every bank the table drives, stated, not inherited)
 # The rule runs over each product's board. Limit: it trusts the family's statement; it does not read the dts.
+effective_has_file() {  # <board.toml> <family.toml> <absolute patch path> -> 0 when the effective kernel/bootloader/TF list has it
+  # Gaia's append rule (a6299c62 replaced; the pinned rev after this PR appends): the effective list is the family's entries,
+  # then the board's, unless the board's [kernel|bootloader|bootloader.trusted_firmware] says inherit_patches = false.
+  python3 -I - "$1" "$2" "$3" <<'PY'
+import os, sys, tomllib
+bp, fp, want = sys.argv[1], sys.argv[2], os.path.normpath(sys.argv[3])
+b = tomllib.load(open(bp, "rb")); f = tomllib.load(open(fp, "rb")) if os.path.isfile(fp) else {}
+def table(d, path):
+    for k in path:
+        d = d.get(k, {}) if isinstance(d, dict) else {}
+    return d
+found = False
+for path in (("kernel",), ("bootloader",), ("bootloader", "trusted_firmware")):
+    bt, ft = table(b, path), table(f, path)
+    inherit = bt.get("inherit_patches", True)
+    fam = [(os.path.dirname(fp), e) for e in (ft.get("patches") or [])]
+    brd = [(os.path.dirname(bp), e) for e in (bt.get("patches") or [])]
+    eff = brd if inherit is False else (fam + brd if "patches" in bt else fam)
+    for base, e in eff:
+        if isinstance(e, dict) and "file" in e and os.path.normpath(os.path.join(base, e["file"])) == want:
+            found = True
+sys.exit(0 if found else 1)
+PY
+}
 pads_section() {  # <pads.toml> -> its statement (top-level keys)
   cat "$1" 2>/dev/null
 }
@@ -1100,15 +1124,15 @@ pads_rule() {  # <devices dir>
     # pads.toml); the patch must leave that rail a range, not a fixed voltage. And "no pads: ... 0 pins" for a bank the
     # SoC's own pin table gives no pins (the source must say so).
     corr=$(grep -E '^correction *=' <<<"$sec" | sed -E 's/^correction *= *"(.*)" *$/\1/' | head -1)
-    # The correcting patch is a build input (PR A7RAILS, second ruling): a pads.toml that names one must find it in the
-    # board's or the family's [kernel] patches, where Gaia applies it after the series, and the file must exist. Without
+    # The correcting patch is a build input (PR A7RAILS, second ruling; PR PATCH-LISTS: the effective list): a pads.toml that
+    # names one must find it in the effective list (family, then board), where Gaia applies it after the series. Without
     # the entry the statement cites a patch the build does not carry, so the image is refused.
     if [[ -n $corr ]]; then
       if [[ ! -f $(dirname "$b")/$corr ]]; then
         out+="FAIL $name: board $bname's pads.toml names correction $corr, which is not a file beside the board"$'\n'
       fi
-      if ! grep -qF "file = \"$corr\"" "$b" && ! grep -qF "file = \"$corr\"" "$ff"; then
-        out+="FAIL $name: board $bname's pads.toml names correction $corr, but its board.toml (or family) [kernel] patches does not apply it: the statement cites a patch the build does not include. Add { file = \"$corr\" } after the series"$'\n'
+      if ! effective_has_file "$b" "$ff" "$(dirname "$b")/$corr"; then
+        out+="FAIL $name: board $bname's pads.toml names correction $corr, but its effective kernel patch list (the family's entries, then the board's) does not include it: the statement cites a patch the build does not include. List { file = \"$corr\" } on the board or the family"$'\n'
       fi
     fi
     rails=$(grep -E '^bank_rails *=' <<<"$sec" || true)
@@ -1294,7 +1318,31 @@ bank_rails = { A = "bldo2" }
 correction = "corr.patch"'
   printf '%s\n' "$railpatch" > "$tmp/railunwired/devices/boards/bd/corr.patch"
   if out=$(pads_rule "$tmp/railunwired/devices"); then echo "check-devices: self-test: a correction that the board does not wire into its kernel patches was not refused" >&2; rc=1
-  elif [[ $out != *"does not apply it"* ]]; then echo "check-devices: self-test: the unwired-correction refusal does not say so: $out" >&2; rc=1; fi
+  elif [[ $out != *"does not include it"* ]]; then echo "check-devices: self-test: the unwired-correction refusal does not say so: $out" >&2; rc=1; fi
+  # The effective list (PR PATCH-LISTS): a correction listed on the family counts; a board that opts out with
+  # inherit_patches = false does not inherit it, so the same statement is refused.
+  mk "$tmp/railfam" true 'soc = "tst"
+source = "test schematic, sheet 4"
+derived_from_board = ""
+bank_voltages = { A = "'"$railstate"'", B = "fixed by hardware, per sheet 4" }
+bank_rails = { A = "bldo2" }
+correction = "corr.patch"'
+  printf '%s\n' "$railpatch" > "$tmp/railfam/devices/boards/bd/corr.patch"
+  printf 'version = 1\nname = "fam"\n\n[kernel]\npatches = [{ file = "../../boards/bd/corr.patch" }]\n' > "$tmp/railfam/devices/families/fam/family.toml"
+  printf 'version = 1\nextends = "../../families/fam/family.toml"\nname = "bd"\n' > "$tmp/railfam/devices/boards/bd/board.toml"
+  out=$(pads_rule "$tmp/railfam/devices") || true
+  if [[ -n $out ]]; then echo "check-devices: self-test: a correction listed on the family (in the effective list) was refused: $out" >&2; rc=1; fi
+  mk "$tmp/railoptout" true 'soc = "tst"
+source = "test schematic, sheet 4"
+derived_from_board = ""
+bank_voltages = { A = "'"$railstate"'", B = "fixed by hardware, per sheet 4" }
+bank_rails = { A = "bldo2" }
+correction = "corr.patch"'
+  printf '%s\n' "$railpatch" > "$tmp/railoptout/devices/boards/bd/corr.patch"
+  printf 'version = 1\nname = "fam"\n\n[kernel]\npatches = [{ file = "../../boards/bd/corr.patch" }]\n' > "$tmp/railoptout/devices/families/fam/family.toml"
+  printf 'version = 1\nextends = "../../families/fam/family.toml"\nname = "bd"\n\n[kernel]\ninherit_patches = false\npatches = []\n' > "$tmp/railoptout/devices/boards/bd/board.toml"
+  out=$(pads_rule "$tmp/railoptout/devices") || true
+  if [[ -z $out || $out != *"does not include it"* ]]; then echo "check-devices: self-test: a board that opts out of the family's list did not refuse its correction: $out" >&2; rc=1; fi
   mk "$tmp/railnopatch" true 'soc = "tst"
 source = "test schematic, sheet 4"
 derived_from_board = ""
