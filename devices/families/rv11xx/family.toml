@@ -38,13 +38,33 @@ fragments = ["../rk35xx/assets/trim.fragment"]
 storage_drivers = ["CONFIG_MMC_DW_ROCKCHIP"]
 # The RV1126B series, applied in `series` order (else sorted), on top of linux.
 # Each patch says what it adds; the rest of the SoC port is listed in the PR.
-patches = [{ file = "patches/linux" }]
+patches = [
+  { file = "patches/linux/0001-pinctrl-rockchip-add-the-RV1126B-pin-banks-and-tables.patch" },
+  { file = "patches/linux/0002-arm64-dts-rockchip-add-the-RV1126B-pin-groups.patch" },
+  { file = "patches/linux/0003-phy-rockchip-inno-usb2-add-the-RV1126B-USB2-PHY.patch" },
+  { file = "patches/linux/0004-phy-rockchip-naneng-combphy-add-the-RV1126B-USB3-PHY.patch" },
+  { file = "patches/linux/0005-i2c-rk3x-add-the-RV1126B-soc-data.patch" },
+  { file = "patches/linux/0006-arm64-dts-rockchip-add-the-RV1126B-SoC-dtsi.patch" },
+  { file = "patches/linux/0007-net-stmmac-dwmac-rk-add-the-RV1126B-GMAC-glue.patch" },
+  { file = "patches/linux/0008-nvmem-rockchip-otp-add-the-RV1126B-byte-addressed-read.patch" },
+  { file = "patches/linux/0009-thermal-rockchip-add-the-RV1126B-tsadc.patch" },
+  { file = "patches/linux/0010-iio-adc-rockchip-saradc-add-the-RV1126B-v3-non-DMA-path.patch" },
+  { file = "patches/linux/0011-arm64-dts-rockchip-add-the-Luckfox-Aura-board-dts.patch" },
+]
 
 [bootloader]
 source = "u-boot"
 # The RV1126B U-Boot series (AU1): SoC code, clock, pinctrl, device tree, the Aura board, rkcommon row.
 # Applied in order by Gaia on the v2026.10 baseline (patch -p1 --fuzz=0).
-patches = [{ file = "patches/uboot" }]
+patches = [
+  { file = "patches/uboot/0001-rv1126b-SoC-code-Kconfig-and-common-header-1-of-6.patch" },
+  { file = "patches/uboot/0002-rv1126b-clock-driver-2-of-6.patch" },
+  { file = "patches/uboot/0003-rv1126b-pinctrl-3-of-6.patch" },
+  { file = "patches/uboot/0004-rv1126b-device-tree-set-for-U-Boot-4-of-6.patch" },
+  { file = "patches/uboot/0005-rv1126b-Luckfox-Aura-board-defconfig-and-link-fixes-.patch" },
+  { file = "patches/uboot/0006-rv1126b-rkcommon-row-for-the-RV1126B-V2-idblock-and-.patch" },
+  { file = "patches/uboot/0007-rv1126b-align-the-Aura-U-Boot-data-with-the-vendor-S.patch" },
+]
 
 [bootloader.trusted_firmware]
 source = "tf-a"
