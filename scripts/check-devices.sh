@@ -32,6 +32,8 @@ set -euo pipefail
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # slot_id_for and the test version (CHECK_VERSION): scripts/version-rule.sh, the one rule's one place.
 source "$repo/scripts/version-rule.sh"
+# The watchdog owner rule (PR WDOG-OWNER): its functions only; run as a script it is its own check.
+source "$repo/scripts/check-watchdog-owner.sh"
 self=$repo/scripts/check-devices.sh
 root=$repo/devices
 mode=check
@@ -1704,7 +1706,7 @@ SLOT_CHAIN=(
 )
 # A product whose recipe is one of these boots a slot (sd-image makes the slot file, slot is the slot recipe, slot-boot is
 # the slot with its bundle and boot partition: L2d).
-SLOT_RECIPES="sd-image|slot|slot-boot"
+SLOT_RECIPES="sd-image|slot|slot-boot|slot-disk"
 # The LZMA decompression stream count a slot family's kernel states (see the rule in slot_chain_check).
 LZMA_STREAMS=4
 
@@ -1903,6 +1905,20 @@ while IFS= read -r line; do
     *) bad "$line" ;;
   esac
 done <<<"$bringup_msg"
+
+# The watchdog owner rule (PR WDOG-OWNER): every slot product has exactly one watchdog owner (a Lemnos hw-watchdog keepalive
+# or systemd's RuntimeWatchdogSec, never both or neither). The built trees come from ATLAS_BUILT_TREES ("NAME=DIR ...").
+watchdog_status=0
+watchdog_msg=$(watchdog_owner_rule "$root" ${ATLAS_BUILT_TREES:-} -- ${ATLAS_BUILT_BOOTLOADERS:-}) || watchdog_status=$?
+rule_ran watchdog_owner_rule "$watchdog_status" "$watchdog_msg"
+while IFS= read -r line; do
+  case $line in
+    NOTE\ *) echo "check-devices: $line" ;;
+    FINDING\ *) bad "${line#FINDING }" ;;
+    "") ;;
+    *) bad "$line" ;;
+  esac
+done <<<"$watchdog_msg"
 
 if [ -n "$unbuilt" ]; then
   echo "check-devices: NOTE in no product yet, validated but never planned:$unbuilt"
@@ -2145,6 +2161,7 @@ if [[ $root_given -eq 0 ]]; then
   rk_env_self_test || die "self-check: the RK env rule no longer refuses a slot image without USE_DT or DEVICE_INDEX"
   slot_id_rule_self_test || die "self-check: the slot id rule no longer refuses an id that is not the version's"
   boot_size_rule_self_test || die "self-check: the boot partition rule no longer refuses a boot_size that is not the board's"
+  wd_self_test "$repo" >/dev/null || die "self-check: the watchdog owner rule no longer refuses a product with two owners, none, or a build that disagrees with its inputs"
   # The version gate: a binary that prints another commit, or none, is refused, and the refusal names the pin.
   fake=$(mktemp -d)
   vout=$(mktemp)
